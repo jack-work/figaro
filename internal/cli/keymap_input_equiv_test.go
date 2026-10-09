@@ -486,6 +486,10 @@ var inputOracle = []struct {
 		"nav:Up":          "stop=false rest=\"\" act=true off:+740 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"jump", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"", map[string]string{
+		// M-m IS LIVE IN A BOX NOW, 2026-10-09: it is the toggle that titles the
+		// composer, and the exclusion it used to share with ^C/^D/^L/^T was
+		// about escape hatches, which it is not. verb=true is the toggle.
+		"alt m": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		// THE NINE CELLS THE READLINE PASS MOVED, all in this state and none
 		// outside it: while the ':' box is up, ^C ^D ^G ^L ^O ^T (and their
 		// CSI-u spellings) belong to the LINE rather than to the process. See

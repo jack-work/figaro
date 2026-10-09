@@ -1059,7 +1059,7 @@ func renderWithCursor(runes []rune, at int, washFrom, washTo int) string {
 }
 
 // ---------------------------------------------------------------------------
-// What the compose pit's normal mode needs: motions that are not edits, a
+// What the composer's normal mode needs: motions that are not edits, a
 // search over the buffer, and a laid-out view that can carry a wash.
 // ---------------------------------------------------------------------------
 

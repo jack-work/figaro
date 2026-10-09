@@ -171,7 +171,7 @@ var oracleStates = map[string]func(*transcript){
 	// A y/n question up: the mode a destructive verb opens, where every key
 	// that is not an answer is swallowed.
 	"confirm": func(tr *transcript) { tr.askConfirm("kill aria1234?", func() {}) },
-	// The compose drawer in NORMAL mode: '>' opens it, two words are typed,
+	// The composer in NORMAL mode: '>' opens it, two words are typed,
 	// Esc drops into the motions. No pre-refactor twin -- the mode is new --
 	// so its row records the behaviour it was built to have.
 	"compose": func(tr *transcript) {

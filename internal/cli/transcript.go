@@ -79,14 +79,14 @@ type transcript struct {
 	// completer returns Tab candidates for a partially typed command line. Set
 	// by the input loop, which owns the router.
 	completer func(string) []string
-	// composeCompleter is Tab in the '>' draft: what belongs in a prompt, not
+	// composerCompleter is Tab in the '>' draft: what belongs in a prompt, not
 	// what belongs in a command line. Defaulted, because both of its sources
 	// (form keys, paths) are local questions a fixture can answer too.
-	composeCompleter func(string) []string
-	// sendCompose submits the '>' draft as a prompt, bytes intact. Set by the
+	composerCompleter func(string) []string
+	// sendComposer submits the '>' draft as a prompt, bytes intact. Set by the
 	// input loop for the same reason command is, and under the same rule: it
 	// is called holding the render lock, so it must hand off.
-	sendCompose func(string)
+	sendComposer func(string)
 	// openForm is 'S': the input loop's door to the live form view, because
 	// opening one dials. IT MUST NOT TAKE THE RENDER LOCK -- every hook here
 	// is called from dispatch, which already holds it, so implementations hand
@@ -166,19 +166,19 @@ type transcript struct {
 	// and a separate history, because a prompt and a command line are not each
 	// other's past. It OUTLIVES the drawer: Esc puts it away and '>' brings
 	// the draft back, which is what makes a long paste safe to look away from.
-	compose lineEditor
-	// composeMode is which keymap the drawer answers to: the readline box it
+	draft lineEditor
+	// composerMode is which keymap the drawer answers to: the readline box it
 	// opens as, or the transcript's own motions over the draft. See
 	// compose_normal.go.
-	composeMode composeKeys
-	// composeMark is the anchor of the drawer's highlight, a rune index, with
-	// composeKind saying what kind it is. The same two-part shape the
+	composerMode composerKeys
+	// composerMark is the anchor of the drawer's highlight, a rune index, with
+	// composerKind saying what kind it is. The same two-part shape the
 	// transcript's visual selection has, over a buffer instead of a window.
-	composeMark int
-	composeKind visualKind
-	// composeHeld remembers a drawer a ':' line was taken out of, so closing
+	composerMark int
+	composerKind visualKind
+	// composerHeld remembers a drawer a ':' line was taken out of, so closing
 	// the command line comes back to the draft instead of to the conversation.
-	composeHeld bool
+	composerHeld bool
 	// menu is Tab's completion pit, open while it is non-nil. See
 	// transcript_complete.go.
 	menu *completionMenu
@@ -1213,7 +1213,7 @@ const (
 // fullPit is whether the pit takes the pane right now: the disposition, and
 // the focus. A fullscreen pit recedes when the transcript takes the keys.
 func (t *transcript) fullPit() bool {
-	return t.full && (t.pit.open() || t.box == boxCompose) && t.focused == focusPit
+	return t.full && (t.pit.open() || t.box == boxComposer) && t.focused == focusPit
 }
 
 // focusTranscriptKey is `T`: hand the screen to the conversation without
@@ -1318,7 +1318,7 @@ func (t *transcript) renderOpenMsg(m aria.Message) cachedMessage {
 }
 
 func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
-	c := t.composer(m)
+	c := t.rowComposer(m)
 	if memo != nil {
 		c.Memo = memo.compose
 	}
@@ -1379,7 +1379,7 @@ func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
 // composer is the pager's composition: the shared shape, plus the two things
 // only the pager has: each block's address, and the per-block expansion state a
 // gesture toggles.
-func (t *transcript) composer(m aria.Message) ldrender.Composer {
+func (t *transcript) rowComposer(m aria.Message) ldrender.Composer {
 	c := ldrender.Composer{
 		// The pager is the surface where Enter means something, so its view
 		// may open arguments as well as output (see ariaView.gesture).
@@ -1938,8 +1938,8 @@ func (t *transcript) mode() keyMode {
 	// sub-mode is asked AFTER openPit has decided what is open: a search box or
 	// a ':' line over the drawer outranks it, exactly as they outrank a list.
 	open := t.openPit()
-	if open == pitCompose && t.composeMode == composeNormal {
-		return modeCompose
+	if open == pitComposer && t.composerMode == composerNormal {
+		return modeComposer
 	}
 	return open.keys()
 }
@@ -1954,8 +1954,8 @@ func (t *transcript) openPit() pitID {
 		return pitSearch
 	case t.box == boxCommand:
 		return pitCommand
-	case t.box == boxCompose:
-		return pitCompose
+	case t.box == boxComposer:
+		return pitComposer
 	case t.pit.open():
 		return t.pit.id
 	default:
@@ -2020,11 +2020,11 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		t.render()
 		return
-	case modeCompose:
+	case modeComposer:
 		// THE DRAWER OWNS THE KEYBOARD, the way a visual selection does: a key
 		// with no row here is inert rather than scrolling the conversation
 		// behind the draft a reader is reading.
-		if act := pagerAct.pager(modeCompose, ev); act != nil {
+		if act := pagerAct.pager(modeComposer, ev); act != nil {
 			act(t)
 			t.pendG = ev.b == 'g' && !t.pendG
 			t.render()
@@ -2365,9 +2365,9 @@ func searchAccept(t *transcript) {
 	// meant, and a query that silently moved the wrong thing is worse than
 	// one that reports finding nothing.
 	switch {
-	case t.box == boxCompose:
-		t.composeMode = composeNormal
-		t.composeFind(t.searchStep())
+	case t.box == boxComposer:
+		t.composerMode = composerNormal
+		t.composerFind(t.searchStep())
 	case t.pit.open() && t.pit.list() != nil:
 		if !t.pit.findRow(t.query, t.searchStep()) {
 			t.setCommandNoteAt("no row matching "+t.query, alertError)
@@ -2401,8 +2401,8 @@ func (t *transcript) findRow(dir int) {
 // box draws: a drawer, a list, or the conversation.
 func (t *transcript) searchTarget() string {
 	switch {
-	case t.box == boxCompose:
-		return composeGlyph
+	case t.box == boxComposer:
+		return composerGlyph
 	case t.pit.open() && t.pit.list() != nil:
 		return t.pit.id.face().glyph
 	}
@@ -3050,7 +3050,7 @@ func (t *transcript) inputDrawerLines() []string {
 		// drawer may take the pane (F); the command line may not, because it
 		// is a thing you type INTO rather than a screen you read.
 		e := t.editor()
-		rows = t.composeTitle()
+		rows = t.composerTitle()
 		// FULLSCREEN LIFTS THE DRAWER'S OWN CAP: the cap exists so a draft does
 		// not quietly eat the conversation, and F is the reader saying they
 		// want it to.
@@ -3059,14 +3059,14 @@ func (t *transcript) inputDrawerLines() []string {
 			room = max(t.pitRoom()-len(rows), 1)
 		}
 		lo, hi := -1, -1
-		if from, to, ok := t.composeSpan(); ok {
+		if from, to, ok := t.composerSpan(); ok {
 			lo, hi = from, to
 		}
 		rows = append(rows, e.wrapWash(e.prompt(t.boxSigil()), t.w, room, lo, hi)...)
 		// FULLSCREEN IS A SURFACE, so it keeps the room it took: a drawer that
 		// asked for the pane and then drew three rows would leave the rest of
 		// it blank behind a transcript that is not there any more.
-		if t.box == boxCompose && t.fullPit() {
+		if t.box == boxComposer && t.fullPit() {
 			for len(rows) < room {
 				rows = append(rows, "")
 			}

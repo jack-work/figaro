@@ -1211,8 +1211,8 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 		// asked while a list is up.
 		// THE COMPOSE DRAWER OWNS 'y' while it is in normal mode: what the
 		// reader marked is in the draft, not in the conversation behind it.
-		if in.lt.tr.box == boxCompose && in.lt.tr.composeMode == composeNormal {
-			text, ok := in.lt.tr.composeYankText()
+		if in.lt.tr.box == boxComposer && in.lt.tr.composerMode == composerNormal {
+			text, ok := in.lt.tr.composerYankText()
 			if !ok {
 				in.lt.tr.setCommandNoteAt("nothing to copy", alertError)
 				in.lt.tr.render()

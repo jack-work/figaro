@@ -334,7 +334,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  / · ?               search forward / backward (in a pit, its rows)",
 		"  n / N               next / previous match, with the cursor on it",
 		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
-		"  > · (in >) M-Enter  compose a prompt: type or paste it, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)",
+		"  > · (in >) M-Enter  the composer: type or paste a prompt, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)",
 		"  (in >) Esc · i a I A normal mode (✎) and back to insert; Esc again puts the drawer away, keeping the draft",
 		"  (in ✎) h j k l w b e 0 ^ $ gg G { } the transcript's motions, over the draft; / ? n N search it; F takes the pane; : is the command line",
 		"  (in ✎) v / V · y    mark by character / by line; y copies the mark, or the whole draft",

@@ -22,7 +22,7 @@ const (
 	modeVisual                    // v/V: a visual selection is up and owns the motions
 	modeFork                      // 'f' is down, waiting for the direction of the fork jump
 	modeConfirm                   // a y/n question owns the keyboard until it is answered
-	modeCompose                   // the compose drawer's NORMAL mode: motions over the draft
+	modeComposer                  // the composer's NORMAL mode: motions over the draft
 	numKeyModes
 )
 
@@ -40,12 +40,12 @@ const (
 	inVisual     keyModeSet = 1 << modeVisual
 	inFork       keyModeSet = 1 << modeFork
 	inConfirm    keyModeSet = 1 << modeConfirm
-	inCompose    keyModeSet = 1 << modeCompose
+	inComposer   keyModeSet = 1 << modeComposer
 
 	// inPager is every mode with the pager up. Note that a transcript-mode
 	// row is ALSO reachable while a panel is showing: the panel swallows only
 	// its own keys and every other key wipes it and acts (see dispatch).
-	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inCompose
+	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer
 	inAnyBox = inIncipit | inPager
 )
 
@@ -208,7 +208,12 @@ var keymap = []keyBinding{
 		// Ctrl+M because Ctrl+M IS ENTER'S BYTE (0x0d) and cannot be bound
 		// apart from it. It shares its letter with 'm', the status bar's own
 		// verbosity: one letter, two depths, and the modifier says which.
-		chord: metaChord('m'), modes: inAnyBox &^ inBox,
+		// LIVE IN A BOX TOO, unlike the escape hatches above: ^C/^D/^L/^T are
+		// excluded there because a command line that answers them is not a
+		// command line, and M-m is not one of those -- it is the toggle that
+		// titles the composer, and a reader in insert mode could otherwise not
+		// reach it without leaving the mode first.
+		chord: metaChord('m'), modes: inAnyBox,
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
@@ -247,7 +252,7 @@ var keymap = []keyBinding{
 	{
 		// In incipit 'y' copies the aria id, a feature of its own, not a
 		// reason to open the pager. In the search box it is literal text.
-		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel | inVisual | inCompose,
+		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel | inVisual | inComposer,
 		open: staysInline, why: "in incipit it already copies the aria id",
 		help: helpYank, input: inputYank,
 	},
@@ -400,7 +405,7 @@ var keymap = []keyBinding{
 		// the box a reader opens looks like the key they pressed.
 		chord: byteChord('>'), modes: inTranscript,
 		open: opensPager,
-		help: helpDraft, pager: pagerComposeBox,
+		help: helpDraft, pager: pagerComposerBox,
 	},
 	{
 		// With a highlight up it opens holding the range, which the submit
@@ -408,7 +413,7 @@ var keymap = []keyBinding{
 		// something already said, typed where you are reading it.
 		chord: byteChord('>'), modes: inVisual,
 		open: opensPager,
-		help: helpDraft, pager: pagerVisualCompose,
+		help: helpDraft, pager: pagerVisualComposer,
 	},
 
 	// -- pager level: panels -----------------------------------------------
@@ -622,40 +627,40 @@ var keymap = []keyBinding{
 	// There are no editing verbs here on purpose (no d, c, x, p): a draft is
 	// written in insert mode, and this mode is for reading one, marking part of
 	// it and searching it.
-	{chord: byteChord('i'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpComposeNormal, pager: composeInsertHere},
-	{chord: byteChord('a'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeInsertAfter},
-	{chord: byteChord('I'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeInsertHome},
-	{chord: byteChord('A'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeInsertEnd},
-	{chord: byteChord('h'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpComposeMotions, pager: composeLeft},
-	{chord: byteChord('l'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeRight},
-	{chord: byteChord('k'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeUpLine},
-	{chord: byteChord('j'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeDownLine},
-	{chord: navChord(navLeft), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeLeft},
-	{chord: navChord(navRight), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeRight},
-	{chord: navChord(navUp), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeUpLine},
-	{chord: navChord(navDown), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeDownLine},
-	{chord: byteChord('w'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeWordFwd},
-	{chord: byteChord('b'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeWordBack},
-	{chord: byteChord('e'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeWordEnd},
-	{chord: byteChord('0'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeLineStart},
-	{chord: byteChord('^'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeFirstText},
-	{chord: byteChord('$'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeLineEnd},
-	{chord: byteChord('g'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeTop},
-	{chord: byteChord('G'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeBottom},
-	{chord: byteChord('{'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeParaPrev},
-	{chord: byteChord('}'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeParaNext},
-	{chord: navChord(navHome), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeLineStart},
-	{chord: navChord(navEnd), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeLineEnd},
-	{chord: byteChord('v'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpComposeMark, pager: composeMarkChar},
-	{chord: byteChord('V'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeMarkLine},
-	{chord: byteChord('/'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeSearchFwd},
-	{chord: byteChord('?'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeSearchBack},
-	{chord: byteChord('n'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeFindNext},
-	{chord: byteChord('N'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeFindPrev},
-	{chord: byteChord('F'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeFullscreen},
-	{chord: byteChord(':'), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeCommand},
-	{chord: byteChord(0x1b), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeEscape},
-	{chord: metaChord(0x0d), modes: inCompose, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composeSubmit},
+	{chord: byteChord('i'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerNormal, pager: composerInsertHere},
+	{chord: byteChord('a'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertAfter},
+	{chord: byteChord('I'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertHome},
+	{chord: byteChord('A'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertEnd},
+	{chord: byteChord('h'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerMotions, pager: composerLeft},
+	{chord: byteChord('l'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerRight},
+	{chord: byteChord('k'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerUpLine},
+	{chord: byteChord('j'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerDownLine},
+	{chord: navChord(navLeft), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLeft},
+	{chord: navChord(navRight), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerRight},
+	{chord: navChord(navUp), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerUpLine},
+	{chord: navChord(navDown), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerDownLine},
+	{chord: byteChord('w'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerWordFwd},
+	{chord: byteChord('b'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerWordBack},
+	{chord: byteChord('e'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerWordEnd},
+	{chord: byteChord('0'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineStart},
+	{chord: byteChord('^'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFirstText},
+	{chord: byteChord('$'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineEnd},
+	{chord: byteChord('g'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerTop},
+	{chord: byteChord('G'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerBottom},
+	{chord: byteChord('{'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerParaPrev},
+	{chord: byteChord('}'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerParaNext},
+	{chord: navChord(navHome), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineStart},
+	{chord: navChord(navEnd), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineEnd},
+	{chord: byteChord('v'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerMark, pager: composerMarkChar},
+	{chord: byteChord('V'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerMarkLine},
+	{chord: byteChord('/'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerSearchFwd},
+	{chord: byteChord('?'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerSearchBack},
+	{chord: byteChord('n'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFindNext},
+	{chord: byteChord('N'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFindPrev},
+	{chord: byteChord('F'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFullscreen},
+	{chord: byteChord(':'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerCommand},
+	{chord: byteChord(0x1b), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerEscape},
+	{chord: metaChord(0x0d), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerSubmit},
 	{
 		// Alt+Enter, and Ctrl+Enter on a CSI-u terminal (the input loop folds
 		// the second onto the first: a legacy terminal cannot tell Ctrl+Enter
@@ -822,9 +827,9 @@ const (
 	helpSearchRepeat
 	helpJump
 	helpDraft
-	helpComposeNormal
-	helpComposeMotions
-	helpComposeMark
+	helpComposerNormal
+	helpComposerMotions
+	helpComposerMark
 	helpYank
 	helpVerbose
 	helpSticky
@@ -891,10 +896,10 @@ var helpRows = []helpRow{
 	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
 	{helpSearchRepeat, "n / N", "next / previous match, with the cursor on it"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
-	{helpDraft, "> · (in >) M-Enter", "compose a prompt: type or paste it, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)"},
-	{helpComposeNormal, "(in >) Esc · i a I A", "normal mode (✎) and back to insert; Esc again puts the drawer away, keeping the draft"},
-	{helpComposeMotions, "(in ✎) h j k l w b e 0 ^ $ gg G { }", "the transcript's motions, over the draft; / ? n N search it; F takes the pane; : is the command line"},
-	{helpComposeMark, "(in ✎) v / V · y", "mark by character / by line; y copies the mark, or the whole draft"},
+	{helpDraft, "> · (in >) M-Enter", "the composer: type or paste a prompt, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)"},
+	{helpComposerNormal, "(in >) Esc · i a I A", "normal mode (✎) and back to insert; Esc again puts the drawer away, keeping the draft"},
+	{helpComposerMotions, "(in ✎) h j k l w b e 0 ^ $ gg G { }", "the transcript's motions, over the draft; / ? n N search it; F takes the pane; : is the command line"},
+	{helpComposerMark, "(in ✎) v / V · y", "mark by character / by line; y copies the mark, or the whole draft"},
 	{helpCmdHistory, "(in :) ^P/^N · ^R", "command history · search it"},
 	{helpCmdComplete, "(in :) Tab", "complete the verb, an id, or a flag"},
 	// ONE ROW FOR THIRTY BINDINGS, on purpose. The ':' box is readline's

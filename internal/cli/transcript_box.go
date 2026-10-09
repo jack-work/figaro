@@ -1,6 +1,8 @@
 package cli
 
-// THE TWO BOXES: one editor, two doors.
+// THE TWO BOXES: one editor, two doors. The ':' line is a COMMAND BOX; the
+// '>' drawer is the COMPOSER, a pit of its own (pitComposer) that holds a
+// draft and, under Esc, a keymap of its own (composer_normal.go).
 //
 //	:send --id 9b7a -- a question      ← ':', a command line (the CLI's grammar)
 //	> a question, pasted, on several   ← '>', a draft (the prompt's own bytes)
@@ -28,31 +30,31 @@ type boxKind uint8
 const (
 	boxNone boxKind = iota
 	boxCommand
-	boxCompose
+	boxComposer
 )
 
 // boxSigil is the one indicator the drawer wears: ':' for the command line,
 // '>' for a draft being typed, '✎' for one being moved around in. The mode is
 // the prompt, so the drawer costs no row to say what it is.
 func (t *transcript) boxSigil() string {
-	if t.box == boxCompose {
-		return t.composeSigil()
+	if t.box == boxComposer {
+		return t.composerSigil()
 	}
 	return ":"
 }
 
-// composeTitle is the drawer's heading, and it exists ONLY under M-m: the
+// composerTitle is the drawer's heading, and it exists ONLY under M-m: the
 // toggle that already means "spell it out" is where the words belong, and
 // without it the sigil says everything a reader needs.
-func (t *transcript) composeTitle() []string {
-	if t.box != boxCompose || !t.verbose() {
+func (t *transcript) composerTitle() []string {
+	if t.box != boxComposer || !t.verbose() {
 		return nil
 	}
-	parts := []string{composeGlyph + " compose"}
-	if t.composeMode == composeNormal {
-		parts = []string{composeGlyph + " normal", "i insert"}
+	parts := []string{composerGlyph + " composer"}
+	if t.composerMode == composerNormal {
+		parts = []string{composerGlyph + " normal", "i insert"}
 	}
-	if n := strings.Count(t.compose.String(), "\n"); n > 0 {
+	if n := strings.Count(t.draft.String(), "\n"); n > 0 {
 		parts = append(parts, plural(n+1, "line"))
 	}
 	parts = append(parts, "M-⏎ send")
@@ -65,8 +67,8 @@ func (t *transcript) boxOpen() bool { return t.box != boxNone }
 // through it, so a chord added to the keymap works in both boxes by
 // construction rather than by being bound twice.
 func (t *transcript) editor() *lineEditor {
-	if t.box == boxCompose {
-		return &t.compose
+	if t.box == boxComposer {
+		return &t.draft
 	}
 	return &t.cmdline
 }
@@ -75,35 +77,35 @@ func (t *transcript) editor() *lineEditor {
 // prompt. A command line is one thing you read in a glance; a draft is a
 // paragraph, and a reader pasting one needs to see it.
 func (t *transcript) boxRows() int {
-	if t.box == boxCompose {
-		return composeDrawerRows
+	if t.box == boxComposer {
+		return composerDrawerRows
 	}
 	return pickerRows
 }
 
-const composeDrawerRows = 12
+const composerDrawerRows = 12
 
-// pagerComposeBox is '>': open the draft. The draft is NOT cleared, so a box
+// pagerComposerBox is '>': open the draft. The draft is NOT cleared, so a box
 // put away with Esc comes back as it was.
-func pagerComposeBox(t *transcript) {
-	t.box, t.jumpNote = boxCompose, ""
+func pagerComposerBox(t *transcript) {
+	t.box, t.jumpNote = boxComposer, ""
 	t.menu = nil
 	// '>' IS THE KEY THAT TYPES, so it opens in insert mode however the drawer
 	// was last left: a reader who pressed it means to write, not to navigate.
-	t.composeMode = composeInsert
-	t.composeDropMark()
-	t.compose.end()
+	t.composerMode = composerInsert
+	t.composerDropMark()
+	t.draft.end()
 }
 
-// pagerVisualCompose is '>' with a selection up: the draft opens holding the
+// pagerVisualComposer is '>' with a selection up: the draft opens holding the
 // range placeholder, which the submit expands into the coordinate that quotes
 // the passage. The highlight stays, so the reader can see what they are
 // quoting while they type about it.
-func pagerVisualCompose(t *transcript) {
-	pagerComposeBox(t)
-	if t.visual.highlighted() && !strings.HasPrefix(t.compose.String(), visualRangePlaceholder) {
-		t.compose.home()
-		t.compose.insert(visualRangePlaceholder + " ")
+func pagerVisualComposer(t *transcript) {
+	pagerComposerBox(t)
+	if t.visual.highlighted() && !strings.HasPrefix(t.draft.String(), visualRangePlaceholder) {
+		t.draft.home()
+		t.draft.insert(visualRangePlaceholder + " ")
 	}
 }
 
@@ -112,7 +114,7 @@ func pagerVisualCompose(t *transcript) {
 // arrives as bytes with CRs in it, and a box whose Enter submits would send
 // the first line of a paragraph and discard the rest.
 func boxEnter(t *transcript) {
-	if t.box == boxCompose {
+	if t.box == boxComposer {
 		if t.acceptCompletion() {
 			return
 		}
@@ -122,31 +124,31 @@ func boxEnter(t *transcript) {
 	t.boxSubmit(false)
 }
 
-// composeSubmit is Alt+Enter (and Ctrl+Enter): send what is in the draft, as
+// composerSubmit is Alt+Enter (and Ctrl+Enter): send what is in the draft, as
 // its own bytes. The coordinate placeholder is expanded HERE, under the
 // render lock, because it is read off the index and the selection and the
 // next keystroke may move either.
-func composeSubmit(t *transcript) {
-	t.compose.endSearch()
+func composerSubmit(t *transcript) {
+	t.draft.endSearch()
 	if t.acceptCompletion() {
 		return
 	}
-	text := strings.TrimRight(t.compose.String(), "\n")
+	text := strings.TrimRight(t.draft.String(), "\n")
 	if strings.TrimSpace(text) == "" {
-		t.composeClose(true)
+		t.composerClose(true)
 		return
 	}
-	expanded, note, err := t.expandComposeRange(text)
+	expanded, note, err := t.expandComposerRange(text)
 	if err != "" {
 		t.noteOrClear(err)
 		return
 	}
-	if t.sendCompose == nil {
+	if t.sendComposer == nil {
 		t.noteOrClear("sending needs a live session")
 		return
 	}
-	t.compose.remember(composeFirstLine(text))
-	t.composeClose(true)
+	t.draft.remember(composerFirstLine(text))
+	t.composerClose(true)
 	if note != "" {
 		t.setCommandNoteAt(note, alertInfo)
 	} else {
@@ -154,14 +156,14 @@ func composeSubmit(t *transcript) {
 	}
 	t.leaveVisual()
 	pagerTail(t)
-	t.sendCompose(expanded)
+	t.sendComposer(expanded)
 }
 
-// expandComposeRange rewrites a leading `<,>` into the fully qualified
+// expandComposerRange rewrites a leading `<,>` into the fully qualified
 // coordinate the daemon resolves. A prompt quotes by BEGINNING with the
 // token, so the expansion is a replacement of the first word and nothing
 // else: there is no verb here to move it past.
-func (t *transcript) expandComposeRange(text string) (string, string, string) {
+func (t *transcript) expandComposerRange(text string) (string, string, string) {
 	if !strings.HasPrefix(text, visualRangePlaceholder) {
 		return text, "", ""
 	}
@@ -179,27 +181,27 @@ func (t *transcript) expandComposeRange(text string) (string, string, string) {
 	return token + " " + rest, note, ""
 }
 
-// composeResume reopens the drawer a ':' line was taken out of, in the mode it
-// was left in. composeHeld is what remembers there was one.
-func (t *transcript) composeResume() {
-	if !t.composeHeld {
+// composerResume reopens the drawer a ':' line was taken out of, in the mode it
+// was left in. composerHeld is what remembers there was one.
+func (t *transcript) composerResume() {
+	if !t.composerHeld {
 		return
 	}
-	t.composeHeld = false
-	t.box = boxCompose
+	t.composerHeld = false
+	t.box = boxComposer
 }
 
-// composeClose puts the drawer away. clear says whether the draft goes with it:
+// composerClose puts the drawer away. clear says whether the draft goes with it:
 // Esc keeps it (a paste is expensive to lose), ^C and a send spend it.
-func (t *transcript) composeClose(clear bool) {
+func (t *transcript) composerClose(clear bool) {
 	t.box = boxNone
 	t.clearCompletions()
 	if clear {
-		t.compose.reset()
+		t.draft.reset()
 	}
 }
 
-func composeFirstLine(s string) string {
+func composerFirstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return s[:i]
 	}
@@ -215,11 +217,11 @@ func (t *transcript) pasteText(text string) {
 		return
 	}
 	if !t.boxOpen() {
-		pagerComposeBox(t)
+		pagerComposerBox(t)
 	}
 	t.editor().endSearch()
 	t.clearCompletions()
-	t.editor().insertPasted(text, t.box == boxCompose)
+	t.editor().insertPasted(text, t.box == boxComposer)
 	t.render()
 }
 
@@ -228,15 +230,15 @@ func (t *transcript) pasteText(text string) {
 // completer answers a different question and would offer `--id` where a
 // reader is typing a sentence.
 func (t *transcript) draftCompleter() func(string) []string {
-	if t.composeCompleter == nil {
+	if t.composerCompleter == nil {
 		return nil
 	}
-	return t.composeCompleter
+	return t.composerCompleter
 }
 
-// composeCandidates is the default pool, for a transcript with no session
+// composerCandidates is the default pool, for a transcript with no session
 // behind it: paths and form keys are both local questions, so a fixture and a
 // live pager answer the same way.
-func composeCandidates(line string) []string {
+func composerCandidates(line string) []string {
 	return completePromptContext(&cmdkit.CompleteContext{Describe: true, Current: lastWord(line)})
 }

@@ -108,16 +108,16 @@ func (in *interactiveInput) noteLocked(msg string) { in.lt.tr.setCommandNote(msg
 // The verbs.
 // ---------------------------------------------------------------------------
 
-// sendCompose is the '>' box's hook, and like runCommand it is CALLED WITH THE
+// sendComposer is the '>' box's hook, and like runCommand it is CALLED WITH THE
 // RENDER LOCK HELD, so it hands off and does nothing else.
-func (in *interactiveInput) sendCompose(text string) { go in.execSendCompose(text) }
+func (in *interactiveInput) sendComposer(text string) { go in.execSendComposer(text) }
 
-// execSendCompose submits a draft: the reader's bytes, whole. NOTHING PARSES
+// execSendComposer submits a draft: the reader's bytes, whole. NOTHING PARSES
 // THEM. A draft is not a command line, so there is no argv, no tokenizer and
 // no `--`: the one thing that could change what was typed is the quote
 // coordinate the client already expanded, which belongs at the head of the
 // prompt and is the daemon's to resolve.
-func (in *interactiveInput) execSendCompose(text string) {
+func (in *interactiveInput) execSendComposer(text string) {
 	in.commandAsync(func(ctx context.Context) (string, error) {
 		plan := sendPlan{prompt: text}
 		id, resp, err := sendVerb(ctx, verbEnv{}, plan, in.aria(), in.currentID())
@@ -136,13 +136,13 @@ func (in *interactiveInput) execSendCompose(text string) {
 	})
 }
 
-// completeCompose is Tab in the draft: the pool a PROMPT draws from, which is
+// completeComposer is Tab in the draft: the pool a PROMPT draws from, which is
 // form references and paths. The command line's completer answers about verbs
 // and flags and would offer `--id` to a reader typing a sentence.
-func (in *interactiveInput) completeCompose(line string) []string {
+func (in *interactiveInput) completeComposer(line string) []string {
 	completionSubject = in.figaroID
 	defer func() { completionSubject = "" }()
-	return composeCandidates(line)
+	return composerCandidates(line)
 }
 
 // commandSend is `:send [<spec>] -- <text>`. With no spec the text goes to
@@ -1030,8 +1030,8 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.setHistoryFetcher(in.historyFetcher())
 	in.lt.setCommandRunner(in.runCommand)
 	in.lt.setCommandCompleter(in.complete)
-	in.lt.tr.composeCompleter = in.completeCompose
-	in.lt.tr.sendCompose = in.sendCompose
+	in.lt.tr.composerCompleter = in.completeComposer
+	in.lt.tr.sendComposer = in.sendComposer
 	in.lt.setCatchUp(in.pagerCatchUp)
 	in.lt.tr.dropRow = in.dropPitRow
 	in.lt.tr.attendAria = in.attendFromPager

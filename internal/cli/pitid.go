@@ -15,7 +15,7 @@ const (
 	pitQueue         pitID = "queue"
 	pitNotifications pitID = "notifications"
 	pitCommand       pitID = "command"
-	pitCompose       pitID = "prompt"
+	pitComposer      pitID = "composer"
 	pitSearch        pitID = "search"
 	pitHelp          pitID = "help"
 	pitStatus        pitID = "status"
@@ -55,16 +55,16 @@ var pitFaces = map[pitID]pitFace{
 	pitQueue:         {"𝄚", "queue", "♭", modePanel},
 	pitNotifications: {"𝄞", "notifications", "♩", modePanel},
 	pitCommand:       {"∴", "command", "", modeBox},
-	// The compose drawer. One glyph for one thing: the pencil is the sigil the
+	// The composer. One glyph for one thing: the pencil is the sigil the
 	// box wears in normal mode, the title it takes under M-m, and the token on
 	// the bar, so a reader learns it once.
-	pitCompose: {"✎", "compose", "", modeBox},
-	pitSearch:  {"⌕", "search", "", modeSearch},
-	pitHelp:    {"?", "help", "", modePanel},
-	pitStatus:  {"!", "status", "", modePanel},
-	pitNote:    {"", "", "", modePanel},
-	pitOutput:  {"", "", "♭", modePanel},
-	pitDropped: {"𝄽", "dropped", "♭", modePanel},
+	pitComposer: {"✎", "composer", "", modeBox},
+	pitSearch:   {"⌕", "search", "", modeSearch},
+	pitHelp:     {"?", "help", "", modePanel},
+	pitStatus:   {"!", "status", "", modePanel},
+	pitNote:     {"", "", "", modePanel},
+	pitOutput:   {"", "", "♭", modePanel},
+	pitDropped:  {"𝄽", "dropped", "♭", modePanel},
 	// 웃 is the form itself: a figure, arms out -- the dummy an outfit is
 	// folded onto. Wide (East Asian W, two cells) rather than ambiguous, so
 	// runewidth reports 2 everywhere and the bar's arithmetic holds. Its

@@ -112,7 +112,11 @@ func TestSkillLinksStayInTheTree(t *testing.T) {
 // it links to. Four labels once read turn-addressing.md, a name that had not
 // existed for months, because a rename fixed the targets and left the text.
 func TestSkillLinkLabelsMatchTargets(t *testing.T) {
-	labelled := regexp.MustCompile(`\[([^\]]+\.md)\]\(([^)\s]+?)(#[^)]*)?\)`)
+	// A LABEL IS ONE LINE. Without \n in the excluded class the label class
+	// crosses paragraphs, so an unmatched '[' anywhere above (a half-open
+	// interval inside a code fence, say) pairs with the next real link and the
+	// failure names a page of prose as the label.
+	labelled := regexp.MustCompile(`\[([^\]\n]+\.md)\]\(([^)\s]+?)(#[^)]*)?\)`)
 	root := skillsDir(t)
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
