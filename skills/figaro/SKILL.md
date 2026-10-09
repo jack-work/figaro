@@ -33,7 +33,7 @@ Nine commands cover almost everything. Exact forms, not summaries.
 ```sh
 figaro -- <prompt>                 prompt the aria this shell is attended to
 figaro send -f --id <id> -- <p>    fire and forget: submit, do not stream, exit now
-figaro send -er -- <prompt>        one-shot throwaway aria, raw text on stdout
+figaro send -A -f -S system.ttl=1h -- <p>   a one-off: a fresh aria that reaps itself
 figaro ls                          your own lineage: parent, siblings, branches
 figaro show <id> -n 5              the last 5 turns of an aria
 figaro fork <id>:12 -- <prompt>    branch at turn 12 and prompt the new branch
@@ -42,12 +42,14 @@ figaro state <id>                  that aria's form
 figaro status <id> -j | jq -r .state    dormant, idle, or active
 ```
 
-Three rules that are not guessable:
+Four rules that are not guessable:
 
 - **`--` is mandatory** before a prompt. Everything after it is the prompt.
 - **`-f` is how you avoid waiting.** Without it, `send` attaches to the stream
   and stays until the turn ends. With it, the daemon keeps working and you get
   your shell back. Follow along later with `figaro listen <id>`.
+- **Inside an aria, `send` without `--id` reaches you.** `FIGARO_ARIA`
+  outranks `-A`; mint with `new` instead. See [subagents.md](subagents.md).
 - **`ls` is scoped to where you are attended.** It is `ls`, not `ls -R /`.
   Start scoped; widen with `-H` (home) or `-g` (global) only when scoped comes
   back empty.

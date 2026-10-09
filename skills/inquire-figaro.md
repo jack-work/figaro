@@ -65,7 +65,6 @@ figaro send --id <ARIA_ID> -r -- "<the user's question>"
 
 Each becomes its own session. Record `{aria_id → session_id}`.
 
-Do not use `-e` (that's for ephemeral throwaways, contradicts `--id`).
 Do not use `-f` here: `-f` returns before the reply exists, and this
 skill's whole point is *collecting* the reply.
 

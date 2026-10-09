@@ -6,8 +6,8 @@ exact meaning.
 
 These hold across the whole CLI:
 
-- **Flags go after the verb.** `figaro send -e -- <prompt>`, never
-  `figaro -e send -- <prompt>`. The only tokens figaro reads *before* a verb
+- **Flags go after the verb.** `figaro send -f -- <prompt>`, never
+  `figaro -f send -- <prompt>`. The only tokens figaro reads *before* a verb
   are `--version`/`-V`, `--help`/`-h`, and the binding overrides
   `--no-bind`/`--absolute`/`-A`/`--bind`; anything else there is an unknown
   command, and gets a did-you-mean rather than a guess. The bare prompt form
@@ -21,7 +21,7 @@ These hold across the whole CLI:
   precedence is `--id` beats `FIGARO_ARIA` beats the pid binding.
 - **`-j`/`--json`** submits and exits, printing one machine-readable line on
   stdout and nothing else. It contradicts anything that streams or renders
-  (`-r`, `-v`, `-o`, `-l`, `-x`, `-e`), and says so rather than dropping them.
+  (`-r`, `-v`, `-o`, `-l`, `-x`), and says so rather than dropping them.
 - **`-h`/`--help`** prints that verb's help on **stdout**, exit 0: reserved on
   every verb, so no command may claim `-h` for itself. Usage printed because
   argv was wrong goes to **stderr** with **exit 2**; exit 1 means the command
@@ -42,7 +42,7 @@ These hold across the whole CLI:
 | Flag | Meaning |
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
-| `-O`, `--outfit <names>` | Dress the aria in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-O`, `--outfit <names>` | Dress the aria in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-rO sonn5` or `-rOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
 | `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Folded AFTER `-O`, so your key beats the outfit's. |
 | `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
@@ -50,10 +50,14 @@ These hold across the whole CLI:
 | `-l`, `--listen` | Open the transcript pager at startup. |
 | `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
-| `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`/`-e`. |
+| `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`. |
 
-Persistence (`-e`) and formatting (`-r`) are orthogonal. The workhorse for
-scripts is `figaro send -er -- <prompt>`: one shot, isolated, pipe clean.
+Every aria persists. A one-off is an ordinary send that mints and states its
+own lifetime: `figaro send -A -f -S system.ttl=1h -- <prompt>`, or `-r` in
+place of `-f` to stream plain text into a pipe. `-A` ignores this shell's
+binding, so the send mints instead of steering the attended aria. Inside an
+aria's own shell `FIGARO_ARIA` outranks `-A` and the send reaches you; mint
+with `new` there ([subagents.md](subagents.md)).
 
 Timing is not a flag. A prompt that arrives while a turn is running joins it as
 a steering aside; a prompt that arrives when nothing is running opens a turn.
@@ -170,7 +174,7 @@ the no-TTY rule would switch writes off); both go before the verb.
 |---|---|
 | `figaro fork` | Branch the attended aria at its head. |
 | `figaro fork <id>:12` | Interior fork: history through turn 11 is shared, the original suffix continues, a fresh empty alternative diverges. |
-| `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags; `-e` is rejected. |
+| `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags. |
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
@@ -212,7 +216,8 @@ under `system.` are hidden from the agent and read directly by the harness.
 
 **Lifetimes.** `figaro set --id <id> system.ttl 30d` gives a node a lifetime:
 the daemon's reclamation sweep deletes that node and its subtree once the
-lifetime is spent. It is counted from when the node was CREATED, not from its
+lifetime is spent. `-S system.ttl=1h` states one at birth, on `new`, `fork`, or
+a `send` that mints. It is counted from when the node was CREATED, not from its
 last turn, and a fork inherits the key with its own creation time. Go duration
 syntax plus `d` and `w`; `0`, an empty value or `unset system.ttl` means no
 lifetime and nothing is ever deleted. The sweep runs on

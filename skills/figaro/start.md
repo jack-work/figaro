@@ -47,7 +47,7 @@ Two flags on `send` are worth learning on day one:
 
 ```sh
 figaro send -f -- <prompt>   fire and forget: submit and get your shell back
-figaro send -er -- <prompt>  a throwaway aria, plain text out, good for pipes
+figaro send -A -f -S system.ttl=1h -- <prompt>   a one-off that reaps itself
 ```
 
 Without `-f`, `send` stays attached and streams until the turn ends. Ctrl-D
