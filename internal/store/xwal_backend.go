@@ -528,6 +528,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 		return "", 0, err
 	}
 	b.inheritStudies(child)
+	b.ttlCommitted(child, patch)
 	// The Form for a node born a moment ago must not be a replay of a channel
 	// that was empty when someone else opened it first. Close what is
 	// dropped: a Form holds a writer, and a dropped one nobody closed is a
@@ -544,6 +545,7 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch) (string, ui
 	if err != nil {
 		return "", 0, err
 	}
+	b.ttlCommitted(id, patch)
 	b.dropForm(id)
 	return id, version, nil
 }
