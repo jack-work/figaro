@@ -160,7 +160,7 @@ func BenchmarkMarshalResponseRequest(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			request := responseCreateRequest{Type: "response.create", Input: input, Model: "gpt-test"}
+			request := responseCreateRequest{Type: "response.create", responseBody: responseBody{Input: input, Model: "gpt-test"}}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

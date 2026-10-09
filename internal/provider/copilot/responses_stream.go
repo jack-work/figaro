@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/coder/websocket"
-
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -229,10 +227,10 @@ func newResponseStreamState() *responseStreamState {
 	return &responseStreamState{calls: map[string]*responseCall{}, items: map[string]*responseCall{}, byIndex: map[int]*responseCall{}}
 }
 
-func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.Bus, observers ...responseStreamObserver) (responseObject, error) {
+func readResponseStream(ctx context.Context, next responseFrames, bus provider.Bus, observers ...responseStreamObserver) (responseObject, error) {
 	state := newResponseStreamState()
 	for {
-		_, raw, err := conn.Read(ctx)
+		raw, err := next(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				err = ctx.Err()

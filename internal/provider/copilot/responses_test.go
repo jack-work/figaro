@@ -981,8 +981,16 @@ func TestEncodeResponseMessageIsDeterministic(t *testing.T) {
 }
 
 func TestRouteForCatalogModel(t *testing.T) {
-	assert.Equal(t, modelRouteResponses, routeForCatalogModel(catalogModel{
+	assert.Equal(t, modelRouteResponsesSocket, routeForCatalogModel(catalogModel{
 		ID:                 "gpt-5.6-terra",
+		SupportedEndpoints: []string{"/responses", "ws:/responses"},
+	}))
+	assert.Equal(t, modelRouteResponsesSocket, routeForCatalogModel(catalogModel{
+		ID:                 "socket-listed-first",
+		SupportedEndpoints: []string{"ws:/responses", "/responses"},
+	}))
+	assert.Equal(t, modelRouteResponsesHTTP, routeForCatalogModel(catalogModel{
+		ID:                 "grok-4.7",
 		SupportedEndpoints: []string{"/responses"},
 	}))
 	assert.Equal(t, modelRouteMessages, routeForCatalogModel(catalogModel{
@@ -1134,7 +1142,7 @@ func TestPromptCacheBreakpointSkippedOnTheFirstTurn(t *testing.T) {
 // OpenAI's automatic breakpoints stay in play and a bad placement cannot
 // forfeit the whole prefix at the 1.25x write rate.
 func TestNoExplicitModeIsSent(t *testing.T) {
-	body, err := json.Marshal(responseCreateRequest{Type: "response.create", Model: "gpt-5.6-sol"})
+	body, err := json.Marshal(responseCreateRequest{Type: "response.create", responseBody: responseBody{Model: "gpt-5.6-sol"}})
 	require.NoError(t, err)
 	assert.NotContains(t, string(body), "prompt_cache_options",
 		"mode=explicit disables OpenAI-managed breakpoints; ship the additive half first")
@@ -1152,7 +1160,7 @@ func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
 	assert.NotEqual(t, key, provider.SessionKey("30bc6333"))
 
 	body, err := json.Marshal(responseCreateRequest{
-		Type: "response.create", Model: "gpt-5.6-sol", PromptCacheKey: key,
+		Type: "response.create", responseBody: responseBody{Model: "gpt-5.6-sol", PromptCacheKey: key},
 	})
 	require.NoError(t, err)
 	assert.Contains(t, string(body), `"prompt_cache_key":"`+key+`"`)

@@ -129,7 +129,7 @@ func (c *Copilot) Fingerprint() string {
 	model := c.model
 	route := routeForCatalogModel(c.catalog[model])
 	c.mu.RUnlock()
-	if route == modelRouteResponses {
+	if route.responses() {
 		return c.responses.Fingerprint()
 	}
 	return c.inner.Fingerprint()
@@ -171,8 +171,9 @@ func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.
 	if err != nil {
 		return err
 	}
-	if route == modelRouteResponses {
+	if route.responses() {
 		c.responses.SetModel(model)
+		c.responses.SetTransport(model, route.transport())
 		c.mu.RLock()
 		c.responses.SetContextLimits(model, catalogContextLimits(c.catalog[model]))
 		c.mu.RUnlock()
@@ -272,8 +273,20 @@ type modelRoute int
 const (
 	modelRouteUnknown modelRoute = iota
 	modelRouteMessages
-	modelRouteResponses
+	modelRouteResponsesSocket
+	modelRouteResponsesHTTP
 )
+
+func (r modelRoute) responses() bool {
+	return r == modelRouteResponsesSocket || r == modelRouteResponsesHTTP
+}
+
+func (r modelRoute) transport() responseTransport {
+	if r == modelRouteResponsesHTTP {
+		return responseTransportHTTP
+	}
+	return responseTransportSocket
+}
 
 func (c *Copilot) routeForModel(ctx context.Context, model string) (modelRoute, error) {
 	c.mu.RLock()
@@ -300,10 +313,19 @@ func (c *Copilot) routeForModel(ctx context.Context, model string) (modelRoute, 
 }
 
 func routeForCatalogModel(model catalogModel) modelRoute {
+	route := modelRouteUnknown
 	for _, endpoint := range model.SupportedEndpoints {
-		if strings.Contains(strings.ToLower(endpoint), "responses") {
-			return modelRouteResponses
+		endpoint = strings.ToLower(endpoint)
+		if !strings.Contains(endpoint, "responses") {
+			continue
 		}
+		if strings.HasPrefix(endpoint, "ws:") || strings.HasPrefix(endpoint, "wss:") {
+			return modelRouteResponsesSocket
+		}
+		route = modelRouteResponsesHTTP
+	}
+	if route != modelRouteUnknown {
+		return route
 	}
 	for _, endpoint := range model.SupportedEndpoints {
 		if strings.Contains(strings.ToLower(endpoint), "messages") {

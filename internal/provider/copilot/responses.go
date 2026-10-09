@@ -1,10 +1,13 @@
 package copilot
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -32,6 +35,15 @@ type responseTokenSource interface {
 
 type responseDialer func(context.Context, string, http.Header) (*websocket.Conn, error)
 
+type responseTransport int
+
+const (
+	responseTransportSocket responseTransport = iota
+	responseTransportHTTP
+)
+
+type responseFrames func(context.Context) ([]byte, error)
+
 type responsesProvider struct {
 	tokenSrc  responseTokenSource
 	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
@@ -44,6 +56,7 @@ type responsesProvider struct {
 	cache     store.Log[[]json.RawMessage]
 	sessionID string
 	limits    map[string]responseContextLimits
+	transport map[string]responseTransport
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -62,6 +75,7 @@ func newResponsesProvider(
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
 		limits:    map[string]responseContextLimits{},
+		transport: map[string]responseTransport{},
 		baseURL: func(token string) string {
 			if b, ok := tokenSrc.(interface{ BaseURL() string }); ok {
 				if u := b.BaseURL(); u != "" {
@@ -93,6 +107,21 @@ func (p *responsesProvider) SetContextLimits(model string, limits responseContex
 	p.mu.Lock()
 	p.limits[model] = limits
 	p.mu.Unlock()
+}
+
+func (p *responsesProvider) SetTransport(model string, transport responseTransport) {
+	if model == "" {
+		return
+	}
+	p.mu.Lock()
+	p.transport[model] = transport
+	p.mu.Unlock()
+}
+
+func (p *responsesProvider) transportFor(model string) responseTransport {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.transport[model]
 }
 
 func (p *responsesProvider) Fingerprint() string {
@@ -163,22 +192,9 @@ func (p *responsesProvider) sendWithToken(
 	taskID := uuid.NewString()
 	sessionID := p.sessionIDFor()
 	interactionID := uuid.NewString()
-	endpoint := responsesEndpoint(p.baseURL(token))
+	base := p.baseURL(token)
 	headers := responseHeaders(token, taskID, sessionID, interactionID, machineID)
-	trace := wirelog.BeginStream(ctx, in.AriaID, wirelog.StreamMethodWS, endpoint)
-	terminalStatus := ""
-	defer func() { trace.Finish(terminalStatus, sendErr) }()
-	conn, err := p.dial(ctx, endpoint, headers)
-	if err != nil {
-		return fmt.Errorf("copilot responses: dial: %w", err)
-	}
-	defer conn.CloseNow()
-
-	request := responseCreateRequest{
-		Type:              "response.create",
-		AgentTaskID:       taskID,
-		Headers:           responseRequestHeaders(taskID, sessionID, interactionID, machineID),
-		Initiator:         "user",
+	body := responseBody{
 		Input:             input,
 		Instructions:      responseInstructions(in.Snapshot),
 		Model:             model,
@@ -192,20 +208,55 @@ func (p *responsesProvider) sendWithToken(
 		PromptCacheKey:    provider.SessionKey(in.AriaID),
 	}
 	if maxTokens > 0 {
-		request.MaxOutputTokens = maxTokens
-	}
-	// Serialize once: the same text frame supplies byte accounting and the
-	// actual request, without retaining or logging the payload.
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("copilot responses: encode create: %w", err)
-	}
-	trace.RequestBytes(int64(len(payload)))
-	if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
-		return fmt.Errorf("copilot responses: send create: %w", err)
+		body.MaxOutputTokens = maxTokens
 	}
 
-	response, err := readResponseStream(ctx, conn, bus, trace)
+	transport := p.transportFor(model)
+	method, endpoint := wirelog.StreamMethodWS, responsesEndpoint(base)
+	if transport == responseTransportHTTP {
+		method, endpoint = wirelog.StreamMethodSSE, responsesHTTPEndpoint(base)
+	}
+	trace := wirelog.BeginStream(ctx, in.AriaID, method, endpoint)
+	terminalStatus := ""
+	defer func() { trace.Finish(terminalStatus, sendErr) }()
+
+	var frames responseFrames
+	if transport == responseTransportHTTP {
+		payload, err := json.Marshal(responseStreamRequest{responseBody: body, Stream: true})
+		if err != nil {
+			return fmt.Errorf("copilot responses: encode request: %w", err)
+		}
+		trace.RequestBytes(int64(len(payload)))
+		stream, err := postResponses(ctx, endpoint, headers, payload)
+		if err != nil {
+			return fmt.Errorf("copilot responses: post: %w", err)
+		}
+		defer stream.Close()
+		frames = sseFrames(stream)
+	} else {
+		conn, err := p.dial(ctx, endpoint, headers)
+		if err != nil {
+			return fmt.Errorf("copilot responses: dial: %w", err)
+		}
+		defer conn.CloseNow()
+		payload, err := json.Marshal(responseCreateRequest{
+			Type:         "response.create",
+			AgentTaskID:  taskID,
+			Headers:      responseRequestHeaders(taskID, sessionID, interactionID, machineID),
+			Initiator:    "user",
+			responseBody: body,
+		})
+		if err != nil {
+			return fmt.Errorf("copilot responses: encode create: %w", err)
+		}
+		trace.RequestBytes(int64(len(payload)))
+		if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
+			return fmt.Errorf("copilot responses: send create: %w", err)
+		}
+		frames = socketFrames(conn)
+	}
+
+	response, err := readResponseStream(ctx, frames, bus, trace)
 	terminalStatus = response.Status
 	if err != nil {
 		// Any interrupted stream hands over what it actually received. A
@@ -492,6 +543,132 @@ func responsesEndpoint(baseURL string) string {
 	return baseURL + "/responses"
 }
 
+func responsesHTTPEndpoint(baseURL string) string {
+	return strings.TrimRight(baseURL, "/") + "/responses"
+}
+
+func socketFrames(conn *websocket.Conn) responseFrames {
+	return func(ctx context.Context) ([]byte, error) {
+		_, raw, err := conn.Read(ctx)
+		return raw, err
+	}
+}
+
+const maxResponseFrame = 32 << 20
+
+func postResponses(ctx context.Context, endpoint string, headers http.Header, payload []byte) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header = headers.Clone()
+	req.Header.Set("Accept", "text/event-stream")
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		return nil, httpResponseRejection(resp.StatusCode, raw)
+	}
+	return resp.Body, nil
+}
+
+func httpResponseRejection(status int, body []byte) error {
+	var envelope struct {
+		Error json.RawMessage `json:"error"`
+	}
+	_ = json.Unmarshal(body, &envelope)
+	var rejected *responseAPIError
+	if !errors.As(responseFailure(envelope.Error), &rejected) {
+		rejected = &responseAPIError{code: "provider_error"}
+	}
+	if rejected.code == "provider_error" {
+		rejected.code = statusRejectionCode(status, "provider_error")
+	}
+	rejected.status = status
+	rejected.retryable = status == http.StatusUnauthorized
+	return rejected
+}
+
+func statusRejectionCode(status int, fallback string) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "permission_denied"
+	case http.StatusTooManyRequests:
+		return "rate_limit_exceeded"
+	}
+	return fallback
+}
+
+func sseFrames(r io.Reader) responseFrames {
+	reader := bufio.NewReaderSize(r, 64<<10)
+	finished := false
+	return func(context.Context) ([]byte, error) {
+		if finished {
+			return nil, io.EOF
+		}
+		var data []byte
+		have := false
+		for {
+			line, err := readSSELine(reader)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			atEOF := err == io.EOF
+			line = bytes.TrimRight(line, "\r\n")
+			switch {
+			case len(line) == 0:
+			case line[0] == ':':
+			default:
+				field, value, _ := bytes.Cut(line, []byte(":"))
+				if string(field) == "data" {
+					if have {
+						data = append(data, '\n')
+					}
+					data = append(data, bytes.TrimPrefix(value, []byte(" "))...)
+					have = true
+					if len(data) > maxResponseFrame {
+						return nil, fmt.Errorf("server-sent event exceeds %d bytes", maxResponseFrame)
+					}
+				}
+			}
+			if have && (len(line) == 0 || atEOF) {
+				if string(data) == "[DONE]" {
+					finished = true
+					return nil, io.EOF
+				}
+				finished = atEOF
+				return data, nil
+			}
+			if atEOF {
+				finished = true
+				return nil, io.EOF
+			}
+		}
+	}
+}
+
+func readSSELine(r *bufio.Reader) ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		line = append(line, chunk...)
+		if len(line) > maxResponseFrame {
+			return nil, fmt.Errorf("server-sent event line exceeds %d bytes", maxResponseFrame)
+		}
+		if err != bufio.ErrBufferFull {
+			return line, err
+		}
+	}
+}
+
 func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*websocket.Conn, error) {
 	headers = headers.Clone()
 	headers.Set("Origin", "https://github.com")
@@ -506,22 +683,14 @@ func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*
 	})
 	if err != nil {
 		if response != nil {
-			code := "handshake_rejected"
-			switch response.StatusCode {
-			case http.StatusUnauthorized:
-				code = "unauthorized"
-			case http.StatusForbidden:
-				code = "permission_denied"
-			case http.StatusTooManyRequests:
-				code = "rate_limit_exceeded"
-			}
+			code := statusRejectionCode(response.StatusCode, "handshake_rejected")
 			return nil, &responseAPIError{code: code, status: response.StatusCode, retryable: response.StatusCode == http.StatusUnauthorized}
 		}
 		return nil, err
 	}
 	// Match the previous transport's frame budget. The library default is
 	// only 32 KiB, smaller than an ordinary coding tool's argument payload.
-	conn.SetReadLimit(32 << 20)
+	conn.SetReadLimit(maxResponseFrame)
 	return conn, nil
 }
 
@@ -559,10 +728,19 @@ func responseRequestHeaders(taskID, sessionID, interactionID, machineID string) 
 }
 
 type responseCreateRequest struct {
-	Type              string             `json:"type"`
-	AgentTaskID       string             `json:"agent_task_id"`
-	Headers           map[string]string  `json:"headers"`
-	Initiator         string             `json:"initiator"`
+	Type        string            `json:"type"`
+	AgentTaskID string            `json:"agent_task_id"`
+	Headers     map[string]string `json:"headers"`
+	Initiator   string            `json:"initiator"`
+	responseBody
+}
+
+type responseStreamRequest struct {
+	responseBody
+	Stream bool `json:"stream"`
+}
+
+type responseBody struct {
 	Input             []json.RawMessage  `json:"input"`
 	Instructions      string             `json:"instructions,omitempty"`
 	MaxOutputTokens   int                `json:"max_output_tokens,omitempty"`
@@ -574,12 +752,7 @@ type responseCreateRequest struct {
 	Text              *responseText      `json:"text,omitempty"`
 	TopP              *float64           `json:"top_p,omitempty"`
 	Tools             []responseTool     `json:"tools,omitempty"`
-	// PromptCacheKey pins cache routing for a conversation. OpenAI states
-	// it must be set on GPT-5.6 and later to get the reliable cache
-	// matching; without it, requests are routed by a hash of roughly the
-	// first 256 tokens and a conversation can drift onto a machine holding
-	// no cache for it.
-	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
+	PromptCacheKey    string             `json:"prompt_cache_key,omitempty"`
 }
 
 type responseReasoning struct {

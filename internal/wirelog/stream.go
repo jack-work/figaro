@@ -17,7 +17,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
-// Streaming transports (websocket today) never touch http.RoundTripper, so
+// Streaming transports never touch http.RoundTripper, so
 // the ledger could not see them at all: an aria talking over a socket looked
 // idle. A Stream is the same diagnostic contract as a round-trip, driven by
 // the provider instead of the transport, and it is transport-independent on
@@ -32,6 +32,8 @@ const (
 	// StreamMethodWS is the method a websocket stream is filed under, so the
 	// ledger's method column keeps meaning something.
 	StreamMethodWS = "WS"
+
+	StreamMethodSSE = "SSE"
 
 	maxEventTypes  = 24 // distinct type names retained per stream
 	maxTokenLen    = 48

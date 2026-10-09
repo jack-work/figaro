@@ -1,0 +1,363 @@
+package copilot
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"golang.org/x/net/websocket"
+
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
+)
+
+// A MODEL THE CATALOG OFFERS ONLY OVER HTTP MUST NOT BE DIALLED AS A SOCKET.
+//
+// Copilot's catalog lists each model's transports in supported_endpoints. The
+// OpenAI models list both "/responses" and "ws:/responses"; grok-4.7 lists
+// only "/responses". Routing used to match the substring "responses" and send
+// every such model down the websocket, where grok's socket answers the
+// response.create with {"type":"error","error":{"code":"internal_error"}} and
+// the turn ends with zero tokens. Measured against the live catalog on
+// 2026-10-09: the same body POSTed to /responses with stream:true returns 200
+// and a text/event-stream carrying the very event types the socket carries.
+//
+// The SSE below keeps the framing of that live capture (an event: line, a
+// data: line whose JSON repeats the type, a blank line; item ids that rotate
+// between events of the same item) with identifiers and quota data removed.
+const grokTextSSE = `event: response.created
+data: {"response":{"id":"r1","status":"in_progress","output":[],"usage":null},"sequence_number":0,"type":"response.created"}
+
+event: response.in_progress
+data: {"response":{"id":"r1","status":"in_progress","output":[],"usage":null},"sequence_number":1,"type":"response.in_progress"}
+
+event: response.output_item.added
+data: {"item":{"id":"rs-a","status":"in_progress","summary":[],"type":"reasoning"},"output_index":0,"sequence_number":2,"type":"response.output_item.added"}
+
+event: response.output_item.done
+data: {"item":{"encrypted_content":"opaque","id":"rs-b","status":"completed","summary":[],"type":"reasoning"},"output_index":0,"sequence_number":3,"type":"response.output_item.done"}
+
+event: response.output_item.added
+data: {"item":{"content":[],"id":"msg-a","role":"assistant","status":"in_progress","type":"message"},"output_index":1,"sequence_number":4,"type":"response.output_item.added"}
+
+event: response.content_part.added
+data: {"content_index":0,"item_id":"msg-b","output_index":1,"part":{"annotations":[],"logprobs":[],"text":"","type":"output_text"},"sequence_number":5,"type":"response.content_part.added"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"pong","item_id":"msg-c","logprobs":[],"output_index":1,"sequence_number":6,"type":"response.output_text.delta"}
+
+event: response.output_text.done
+data: {"content_index":0,"item_id":"msg-d","logprobs":[],"output_index":1,"sequence_number":7,"text":"pong","type":"response.output_text.done"}
+
+event: response.content_part.done
+data: {"content_index":0,"item_id":"msg-e","output_index":1,"part":{"annotations":[],"logprobs":[],"text":"pong","type":"output_text"},"sequence_number":8,"type":"response.content_part.done"}
+
+event: response.output_item.done
+data: {"item":{"content":[{"annotations":[],"logprobs":[],"text":"pong","type":"output_text"}],"id":"msg-f","role":"assistant","status":"completed","type":"message"},"output_index":1,"sequence_number":9,"type":"response.output_item.done"}
+
+event: response.completed
+data: {"response":{"id":"r1","status":"completed","output":[{"encrypted_content":"opaque","id":"rs-c","status":"completed","summary":[],"type":"reasoning"},{"content":[{"annotations":[],"logprobs":[],"text":"pong","type":"output_text"}],"id":"msg-g","role":"assistant","status":"completed","type":"message"}],"usage":{"input_tokens":12,"output_tokens":5,"total_tokens":17}},"sequence_number":10,"type":"response.completed"}
+
+`
+
+type copilotRouteServer struct {
+	mu        sync.Mutex
+	sockets   int
+	posts     int
+	postBody  map[string]any
+	postHead  http.Header
+	postPaths []string
+}
+
+func (s *copilotRouteServer) snapshot() (int, int, map[string]any, http.Header) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sockets, s.posts, s.postBody, s.postHead
+}
+
+// newCopilotRouteServer answers /models with one catalog entry and /responses
+// over whichever transport the client chooses, counting each. The socket side
+// replies as gpt does; the POST side replies with sse, or with the status and
+// body of the first entry of rejects while any remain.
+func newCopilotRouteServer(t *testing.T, model string, endpoints []string, sse string, rejects ...string) (*httptest.Server, *copilotRouteServer) {
+	t.Helper()
+	rec := &copilotRouteServer{}
+	socket := websocket.Handler(func(conn *websocket.Conn) {
+		defer conn.Close()
+		var req responseCreateRequest
+		if websocket.JSON.Receive(conn, &req) != nil {
+			return
+		}
+		_ = websocket.JSON.Send(conn, map[string]any{"type": "response.output_text.delta", "delta": "socket"})
+		_ = websocket.JSON.Send(conn, map[string]any{"type": "response.completed", "response": map[string]any{
+			"status": "completed",
+			"output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{
+				map[string]any{"type": "output_text", "text": "socket"},
+			}}},
+		}})
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{
+				"id": model, "name": model, "model_picker_enabled": true,
+				"supported_endpoints": endpoints,
+			}}})
+		case r.URL.Path == "/responses" && strings.EqualFold(r.Header.Get("Upgrade"), "websocket"):
+			rec.mu.Lock()
+			rec.sockets++
+			rec.mu.Unlock()
+			socket.ServeHTTP(w, r)
+		case r.URL.Path == "/responses" && r.Method == http.MethodPost:
+			raw, _ := io.ReadAll(r.Body)
+			var body map[string]any
+			_ = json.Unmarshal(raw, &body)
+			rec.mu.Lock()
+			rec.posts++
+			rec.postBody, rec.postHead = body, r.Header.Clone()
+			var reject string
+			if len(rejects) > 0 {
+				reject, rejects = rejects[0], rejects[1:]
+			}
+			rec.mu.Unlock()
+			if reject != "" {
+				var status int
+				var payload string
+				fmt.Sscanf(reject, "%d", &status)
+				payload = strings.TrimSpace(strings.TrimPrefix(reject, fmt.Sprint(status)))
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, payload)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, frame := range strings.SplitAfter(sse, "\n\n") {
+				_, _ = io.WriteString(w, frame)
+				w.(http.Flusher).Flush()
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, rec
+}
+
+func sendThroughCopilot(t *testing.T, srv *httptest.Server, model string, resolver responseTokenSource) (*captureBus, error) {
+	t.Helper()
+	be, aria := store.NewTestAria(t, "d", message.Patch{})
+	figLog, err := be.OpenFigIR(aria)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("reply with the single word pong")},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	responsesRows, err := be.OpenTranslator(aria, "copilot-responses")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(provider.Knobs{Model: model, MaxTokens: 64},
+		resolver,
+		Config{BaseURL: srv.URL},
+		func(string) (store.Log[[]json.RawMessage], error) { return nil, nil },
+		func(string) (store.Log[[]json.RawMessage], error) { return responsesRows, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := &captureBus{}
+	err = c.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, bus)
+	return bus, err
+}
+
+func TestAModelOfferedOnlyOverHTTPStreamsOverHTTP(t *testing.T) {
+	srv, rec := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, grokTextSSE)
+
+	bus, err := sendThroughCopilot(t, srv, "grok-test", staticResolver("gh-token"))
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	sockets, posts, body, head := rec.snapshot()
+	if sockets != 0 {
+		t.Errorf("dialled %d socket(s): the catalog offers this model no socket", sockets)
+	}
+	if posts != 1 {
+		t.Fatalf("POST /responses %d times, want 1", posts)
+	}
+	if got := bus.text.String(); got != "pong" {
+		t.Errorf("streamed %q, want %q", got, "pong")
+	}
+	if !bus.sawFigaro || len(bus.caches) == 0 {
+		t.Fatal("the assistant message, or its native output, never reached the bus")
+	}
+	if got := string(bus.caches[0].Payload[len(bus.caches[0].Payload)-1]); !strings.Contains(got, "pong") {
+		t.Errorf("the native payload does not carry the reply: %s", got)
+	}
+	if body["stream"] != true {
+		t.Errorf("stream=%v: without it the endpoint answers one JSON object, not events", body["stream"])
+	}
+	if body["model"] != "grok-test" {
+		t.Errorf("model=%v", body["model"])
+	}
+	for _, envelope := range []string{"type", "agent_task_id", "headers", "initiator"} {
+		if _, ok := body[envelope]; ok {
+			t.Errorf("the body carries the socket envelope field %q", envelope)
+		}
+	}
+	if got := head.Get("Authorization"); got != "Bearer gh-token" {
+		t.Errorf("Authorization=%q", got)
+	}
+	if got := head.Get("Accept"); got != "text/event-stream" {
+		t.Errorf("Accept=%q, want text/event-stream", got)
+	}
+	if head.Get("X-Interaction-Id") == "" || head.Get("Copilot-Integration-Id") == "" {
+		t.Error("the Copilot request headers did not reach the POST")
+	}
+}
+
+// The control for the test above: a model that offers the socket still gets
+// one, so the HTTP route is a choice the catalog made and not the new default.
+func TestAModelOfferedASocketStillGetsTheSocket(t *testing.T) {
+	srv, rec := newCopilotRouteServer(t, "gpt-test", []string{"/responses", "ws:/responses"}, grokTextSSE)
+
+	bus, err := sendThroughCopilot(t, srv, "gpt-test", staticResolver("gh-token"))
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	sockets, posts, _, _ := rec.snapshot()
+	if sockets != 1 || posts != 0 {
+		t.Fatalf("sockets=%d posts=%d, want the socket once and no POST", sockets, posts)
+	}
+	if got := bus.text.String(); got != "socket" {
+		t.Errorf("streamed %q, want the socket's reply", got)
+	}
+}
+
+type countingResolver struct {
+	mu          sync.Mutex
+	tokens      []string
+	invalidated []string
+}
+
+func (r *countingResolver) Resolve() (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.tokens[len(r.invalidated)], nil
+}
+
+func (r *countingResolver) Invalidate(token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.invalidated = append(r.invalidated, token)
+	return nil
+}
+
+// A 401 on the POST is the expired-session case the socket handshake already
+// recovers from: invalidate, mint, send once more.
+func TestAnHTTPUnauthorizedRemintsAndRetriesOnce(t *testing.T) {
+	srv, rec := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, grokTextSSE,
+		`401 {"error":{"message":"token expired","code":"unauthorized"}}`)
+	resolver := &countingResolver{tokens: []string{"stale", "fresh"}}
+
+	bus, err := sendThroughCopilot(t, srv, "grok-test", resolver)
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	_, posts, _, head := rec.snapshot()
+	if posts != 2 {
+		t.Fatalf("POSTs=%d, want the rejected one and one retry", posts)
+	}
+	if len(resolver.invalidated) != 1 || resolver.invalidated[0] != "stale" {
+		t.Errorf("invalidated %v, want exactly the stale token", resolver.invalidated)
+	}
+	if got := head.Get("Authorization"); got != "Bearer fresh" {
+		t.Errorf("the retry presented %q", got)
+	}
+	if bus.text.String() != "pong" {
+		t.Errorf("streamed %q after the retry", bus.text.String())
+	}
+}
+
+// Any other rejection is reported with its class and status, and not retried.
+func TestAnHTTPRejectionIsClassifiedNotRetried(t *testing.T) {
+	srv, rec := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, grokTextSSE,
+		`400 {"error":{"message":"model is not accessible via this endpoint","code":"unsupported_api_for_model"}}`)
+
+	_, err := sendThroughCopilot(t, srv, "grok-test", staticResolver("gh-token"))
+	if err == nil {
+		t.Fatal("a 400 must fail the send")
+	}
+	if _, posts, _, _ := rec.snapshot(); posts != 1 {
+		t.Errorf("POSTs=%d, want 1", posts)
+	}
+	if got := err.Error(); !strings.Contains(got, "status 400") {
+		t.Errorf("error %q does not carry the status", got)
+	}
+	if strings.Contains(err.Error(), "not accessible") {
+		t.Errorf("error %q carries the server's raw text, which this provider never retains", err)
+	}
+}
+
+// A stream that stops before a terminal event is a broken stream, not a
+// completed one.
+func TestAnHTTPStreamThatEndsEarlyIsAnError(t *testing.T) {
+	cut := grokTextSSE[:strings.Index(grokTextSSE, "event: response.completed")]
+	srv, _ := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, cut)
+
+	bus, err := sendThroughCopilot(t, srv, "grok-test", staticResolver("gh-token"))
+	if err == nil {
+		t.Fatal("a stream with no terminal event reported success")
+	}
+	if !strings.Contains(err.Error(), "receive") {
+		t.Errorf("error %q does not say the stream broke", err)
+	}
+	if bus.text.String() != "pong" {
+		t.Errorf("the deltas that did arrive were not streamed: %q", bus.text.String())
+	}
+}
+
+func TestServerSentEventFraming(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"event and data lines", "event: a\ndata: {\"type\":\"a\"}\n\n", []string{`{"type":"a"}`}},
+		{"no space after the colon", "data:{\"x\":1}\n\n", []string{`{"x":1}`}},
+		{"crlf", "event: a\r\ndata: {\"x\":1}\r\n\r\n", []string{`{"x":1}`}},
+		{"multi-line data joins with newline", "data: {\"x\":\ndata: 1}\n\n", []string{"{\"x\":\n1}"}},
+		{"comments and ids are skipped", ": keepalive\nid: 7\ndata: {}\n\n", []string{`{}`}},
+		{"a final event with no blank line", "data: {\"last\":true}", []string{`{"last":true}`}},
+		{"the done sentinel ends the stream", "data: {}\n\ndata: [DONE]\n\ndata: {\"after\":1}\n\n", []string{`{}`}},
+		{"two events", "data: 1\n\ndata: 2\n\n", []string{"1", "2"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			next := sseFrames(strings.NewReader(tc.in))
+			var got []string
+			for {
+				frame, err := next(context.Background())
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("frame %d: %v", len(got), err)
+				}
+				got = append(got, string(frame))
+			}
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
