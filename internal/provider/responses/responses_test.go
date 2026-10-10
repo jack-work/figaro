@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"bytes"
@@ -49,13 +49,13 @@ type responseTestBus struct {
 }
 
 type responseAgentProvider struct {
-	*responsesProvider
+	*Provider
 }
 
-func (*responseAgentProvider) Name() string { return providerName }
+func (*responseAgentProvider) Name() string { return "test" }
 
 func (*responseAgentProvider) Models(context.Context) ([]provider.ModelInfo, error) {
-	return []provider.ModelInfo{{ID: "gpt-5.6-terra", Provider: providerName}}, nil
+	return []provider.ModelInfo{{ID: "gpt-5.6-terra", Provider: "test"}}, nil
 }
 
 type responseIntegrationTool struct {
@@ -123,12 +123,12 @@ func (b *responseTestBus) PushMessageEnd(reason string) {
 func newResponsesTestProvider(
 	server *httptest.Server,
 	cache store.Log[[]json.RawMessage],
-) *responsesProvider {
+) *Provider {
 	tokenSource := &staticResponseTokenSource{token: "test-token"}
-	p := newResponsesProvider(provider.Knobs{
+	p := New(provider.Knobs{
 		Model:     "gpt-5.6-terra",
 		MaxTokens: 1024,
-	}, tokenSource, "", func(string) (store.Log[[]json.RawMessage], error) {
+	}, tokenSource, testConfig, func(string) (store.Log[[]json.RawMessage], error) {
 		return cache, nil
 	})
 	p.baseURL = func(string) string { return server.URL }
@@ -236,7 +236,7 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	require.Len(t, entries, 1)
 	assert.Equal(t, p.Fingerprint(), entries[0].Fingerprint)
 	require.Len(t, bus.cache, 1)
-	assert.Equal(t, "copilot-responses", bus.cache[0].Namespace)
+	assert.Equal(t, testConfig.Namespace, bus.cache[0].Namespace)
 	assert.Equal(t, p.Fingerprint(), bus.cache[0].Fingerprint)
 	assert.Contains(t, string(bus.cache[0].Payload[0]), `"output_text"`)
 }
@@ -419,7 +419,7 @@ func TestResponseOptionsRejectInvalidFormParameters(t *testing.T) {
 
 func TestResponsesProviderContextTierBudget(t *testing.T) {
 	p := newResponsesTestProvider(newResponseServer(t, func(conn *websocket.Conn) { conn.Close() }), store.NewMemLog[[]json.RawMessage]())
-	p.SetContextLimits("gpt-5.6-terra", responseContextLimits{Default: 20, Long: 200})
+	p.SetContextLimits("gpt-5.6-terra", ContextLimits{Default: 20, Long: 200})
 	log := store.NewMemLog[message.Message]()
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
@@ -440,34 +440,6 @@ func TestResponsesProviderContextTierBudget(t *testing.T) {
 	err = p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "default"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds the default-context limit")
-}
-
-func TestCatalogContextLimits(t *testing.T) {
-	var model catalogModel
-	model.Billing.TokenPrices.Default.MaxPromptTokens = 128000
-	model.Billing.TokenPrices.LongContext.MaxPromptTokens = 1000000
-	model.Capabilities.Limits.MaxContextWindowTokens = 1000000
-	assert.Equal(t, responseContextLimits{Default: 128000, Long: 1000000}, catalogContextLimits(model))
-}
-
-func TestCopilotContextLimitUsesCachedCatalog(t *testing.T) {
-	var model catalogModel
-	model.Billing.TokenPrices.Default.MaxPromptTokens = 128000
-	model.Billing.TokenPrices.LongContext.MaxPromptTokens = 1000000
-	c := &Copilot{catalog: map[string]catalogModel{"gpt-5.6-terra": model}}
-
-	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", form.Snapshot{}))
-	assert.Equal(t, 1000000, c.ContextLimit("gpt-5.6-terra", form.FromMap(map[string]json.RawMessage{
-		"system.context_tier": json.RawMessage(`"long_context"`),
-	})))
-	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`120000`),
-	})))
-	// The pin is an override, not a clamp: it wins even when it is larger
-	// than the catalog's number.
-	assert.Equal(t, 2000000, c.ContextLimit("gpt-5.6-terra", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`2000000`),
-	})))
 }
 
 func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
@@ -599,13 +571,13 @@ func runResponsesToolRoundTrip(t *testing.T, malformed bool) {
 	// to the backend's translator log; a provider reading a different log
 	// serves a re-encode of the fig IR, which cannot carry an opaque
 	// reasoning block.
-	cache, err := be.OpenTranslator(ariaID, "copilot-responses")
+	cache, err := be.OpenTranslator(ariaID, testConfig.Namespace)
 	require.NoError(t, err)
 	p := newResponsesTestProvider(server, cache)
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         ariaID,
 		SocketPath: t.TempDir() + "/figaro.sock",
-		Provider:   &responseAgentProvider{responsesProvider: p},
+		Provider:   &responseAgentProvider{Provider: p},
 		Tools:      registry,
 		Backend:    be,
 		Form:       cb,
@@ -802,14 +774,14 @@ func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
 	_, err = cache.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT:    first.LT,
 		Payload:     []json.RawMessage{json.RawMessage(`{"type":"message","role":"user","content":[{"type":"input_text","text":"question"}]}`)},
-		Fingerprint: responseFingerprint("gpt-5.6-terra"),
+		Fingerprint: testFingerprint("gpt-5.6-terra"),
 	})
 	require.NoError(t, err)
 	rawAssistant := json.RawMessage(`{"type":"reasoning","id":"rs_1","encrypted_content":"opaque"}`)
 	_, err = cache.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT:    second.LT,
 		Payload:     []json.RawMessage{rawAssistant},
-		Fingerprint: responseFingerprint("gpt-5.6-terra"),
+		Fingerprint: testFingerprint("gpt-5.6-terra"),
 	})
 	require.NoError(t, err)
 
@@ -930,31 +902,6 @@ func TestDecodeResponseAssistantQuarantinesNonObjectFunctionArguments(t *testing
 	assert.Equal(t, "[]", raw)
 }
 
-func TestCopilotSeparatesMessagesAndResponsesCaches(t *testing.T) {
-	messages := store.NewMemLog[[]json.RawMessage]()
-	responses := store.NewMemLog[[]json.RawMessage]()
-	p, err := New(
-		provider.Knobs{Model: "gpt-5.6-terra"},
-		&staticResponseTokenSource{token: "test-token"},
-		Config{},
-		func(string) (store.Log[[]json.RawMessage], error) { return messages, nil },
-		func(string) (store.Log[[]json.RawMessage], error) { return responses, nil },
-	)
-	require.NoError(t, err)
-
-	messageCache, err := p.inner.CacheOpen("aria-1")
-	require.NoError(t, err)
-	responseCache, err := p.responses.cacheOpen("aria-1")
-	require.NoError(t, err)
-	_, err = messageCache.Append(store.Entry[[]json.RawMessage]{
-		FigaroLT:    1,
-		Payload:     []json.RawMessage{json.RawMessage(`{"type":"message"}`)},
-		Fingerprint: p.inner.Fingerprint(),
-	})
-	require.NoError(t, err)
-	assert.Empty(t, responseCache.Read())
-}
-
 func TestEncodeResponseMessageIsDeterministic(t *testing.T) {
 	msg := message.Message{
 		Role: message.RoleOutput,
@@ -980,43 +927,11 @@ func TestEncodeResponseMessageIsDeterministic(t *testing.T) {
 	assert.True(t, bytes.Equal(firstJSON, secondJSON))
 }
 
-func TestRouteForCatalogModel(t *testing.T) {
-	assert.Equal(t, modelRouteResponsesSocket, routeForCatalogModel(catalogModel{
-		ID:                 "gpt-5.6-terra",
-		SupportedEndpoints: []string{"/responses", "ws:/responses"},
-	}))
-	assert.Equal(t, modelRouteResponsesSocket, routeForCatalogModel(catalogModel{
-		ID:                 "socket-listed-first",
-		SupportedEndpoints: []string{"ws:/responses", "/responses"},
-	}))
-	assert.Equal(t, modelRouteResponsesHTTP, routeForCatalogModel(catalogModel{
-		ID:                 "grok-4.7",
-		SupportedEndpoints: []string{"/responses"},
-	}))
-	assert.Equal(t, modelRouteMessages, routeForCatalogModel(catalogModel{
-		ID:                 "claude-sonnet-4.5",
-		SupportedEndpoints: []string{"/v1/messages"},
-	}))
-	assert.Equal(t, modelRouteUnknown, routeForCatalogModel(catalogModel{
-		ID:                 "unknown",
-		SupportedEndpoints: []string{"/chat/completions"},
-	}))
-}
-
 func TestResponsesEndpoint(t *testing.T) {
 	assert.Equal(t, "wss://api.enterprise.githubcopilot.com/responses",
 		responsesEndpoint("https://api.enterprise.githubcopilot.com"))
 	assert.Equal(t, "ws://127.0.0.1:8080/responses",
 		responsesEndpoint("http://127.0.0.1:8080"))
-}
-
-func TestResponseHeadersMatchResponsesHandshakeShape(t *testing.T) {
-	headers := responseHeaders("opaque-token", "task-1", "session-1", "interaction-1", "machine-1")
-	assert.Equal(t, "Bearer opaque-token", headers.Get("Authorization"))
-	assert.Equal(t, "application/json", headers.Get("Content-Type"))
-	assert.Equal(t, "session-1", headers.Get("X-Client-Session-Id"))
-	assert.Equal(t, "github.com", headers.Get("X-Github-Repository-Host"))
-	assert.Contains(t, headers.Get("Copilot-Integration-Id"), "vscode")
 }
 
 func TestResponseFunctionArgumentsAcceptJSONStringOrObject(t *testing.T) {
@@ -1366,4 +1281,13 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 	if got := responseCallFor(calls, items, byIndex, stray); got != nil {
 		t.Fatalf("unknown output_index resolved to %v, want nil", got)
 	}
+}
+
+var testConfig = Config{
+	Namespace: "test-responses",
+	BaseURL:   func(string) string { return "http://127.0.0.1:1" },
+}
+
+func testFingerprint(model string) string {
+	return (&Provider{namespace: testConfig.Namespace}).fingerprintFor(model)
 }

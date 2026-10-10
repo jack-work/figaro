@@ -1,24 +1,13 @@
-// Package copilot implements GitHub Copilot's catalog-routed Messages and
-// Responses transports behind its credential and endpoint layer.
 package copilot
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"strings"
-	"sync"
-	"text/template"
 
-	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/provider/anthropic"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/provider/responses"
+	"github.com/jack-work/figaro/internal/provider/routed"
 )
 
 const (
@@ -26,9 +15,6 @@ const (
 	defaultBaseURL    = "https://api.individual.githubcopilot.com"
 	directBaseURL     = "https://api.enterprise.githubcopilot.com"
 	copilotAPIVersion = "2026-06-01"
-	// The Anthropic messages dialect version this endpoint speaks. Not the
-	// GitHub API version above: two different headers, two different vendors.
-	copilotAnthropicVersion = "2023-06-01"
 )
 
 var copilotStaticHeaders = map[string]string{
@@ -42,346 +28,40 @@ var copilotGitHubHeaders = map[string]string{
 	"X-GitHub-Api-Version": copilotAPIVersion,
 }
 
-type Copilot struct {
-	inner     *anthropic.Anthropic
-	responses *responsesProvider
-	tokenSrc  *CopilotTokenSource
-
-	mu      sync.RWMutex
-	model   string
-	catalog map[string]catalogModel
-}
-
-func New(
-	knobs provider.Knobs,
-	githubToken auth.TokenResolver,
-	cfg Config,
-	messagesCacheOpen func(string) (store.Log[[]json.RawMessage], error),
-	responsesCacheOpen func(string) (store.Log[[]json.RawMessage], error),
-) (*Copilot, error) {
-	if githubToken == nil {
-		return nil, fmt.Errorf("copilot: nil token resolver (need GitHub access token)")
+func Spec(tokens *CopilotTokenSource) routed.Spec {
+	headers := map[string]string{
+		"Openai-Intent": "conversation-edits",
+		"X-Initiator":   "user",
 	}
-	tokenSrc := newTokenSource(githubToken, cfg)
-
-	// THE HAND-ROLLED ANTHROPIC PROVIDER, NOT THE VENDOR SDK. Gluck, 2026-08-20:
-	// "prefer anthropic provider please." It reaches the wire through
-	// SendWithTransport, which exists for exactly this caller -- its own
-	// comment says oauth is "false for Copilot" -- and it costs 45-66us and 6
-	// allocations per send against the SDK path's 11.2ms and 73,008, all of
-	// which was the SDK's parse of stored rows into typed values.
-	//
-	// NOTHING IS LOST HERE. The one capability the SDK path has that this one
-	// does not is eager_input_streaming, and this endpoint REJECTS it outright
-	// -- the SDK build set NoEagerToolStreaming for that reason. Claude models
-	// here keep the API's buffered default; GPT models take the responses
-	// route, which streams arguments natively.
-	inner, err := anthropic.New(knobs, tokenSrc, messagesCacheOpen)
-	if err != nil {
-		return nil, err
-	}
-	inner.CacheNamespace = "copilot-messages"
-
-	return &Copilot{
-		inner:     inner,
-		responses: newResponsesProvider(knobs, tokenSrc, cfg.EnterpriseDomain, responsesCacheOpen),
-		tokenSrc:  tokenSrc,
-		model:     knobs.Model,
-		catalog:   map[string]catalogModel{},
-	}, nil
-}
-
-// copilotTransport is the messages-dialect HTTP call, built here because the
-// endpoint is decided per request: the proxy-ep inside the Copilot token
-// names the host, so it cannot be fixed at construction.
-func (c *Copilot) copilotTransport(client *http.Client) anthropic.TransportFn {
-	return func(ctx context.Context, body *provider.RequestBody) (*http.Response, error) {
-		token, err := c.tokenSrc.Resolve()
-		if err != nil {
-			return nil, err
-		}
-		req, err := http.NewRequestWithContext(ctx, "POST",
-			c.tokenSrc.BaseURL()+"/v1/messages", nil)
-		if err != nil {
-			return nil, err
-		}
-		body.Attach(req)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", copilotAnthropicVersion)
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
-		req.Header.Set("Openai-Intent", "conversation-edits")
-		req.Header.Set("X-Initiator", "user")
-		for k, v := range copilotStaticHeaders {
-			req.Header.Set(k, v)
-		}
-		for k, v := range copilotGitHubHeaders {
-			req.Header.Set(k, v)
-		}
-		return client.Do(req)
-	}
-}
-
-func (c *Copilot) Name() string { return providerName }
-
-func (c *Copilot) Fingerprint() string {
-	c.mu.RLock()
-	model := c.model
-	route := routeForCatalogModel(c.catalog[model])
-	c.mu.RUnlock()
-	if route.responses() {
-		return c.responses.Fingerprint()
-	}
-	return c.inner.Fingerprint()
-}
-
-func (c *Copilot) SetModel(model string) {
-	c.mu.Lock()
-	c.model = model
-	c.mu.Unlock()
-	c.inner.SetModel(model)
-	c.responses.SetModel(model)
-}
-
-func (c *Copilot) SetTemplates(t *template.Template) {
-	c.inner.Templates = t
-	c.responses.SetTemplates(t)
-}
-
-func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	model := responseString(in.Snapshot, "system.model")
-	if model == "" {
-		c.mu.RLock()
-		model = c.model
-		c.mu.RUnlock()
-	}
-	// Known Responses families can be checked before even fetching the
-	// catalog. Otherwise an invalid local setting still spends a credential
-	// and network request just to discover what we already know.
-	if _, known := capabilitiesFor(model); known {
-		options, err := responseOptionsFor(in.Snapshot)
-		if err != nil {
-			return err
-		}
-		if err := validateCapabilities(model, options); err != nil {
-			return err
-		}
-	}
-	route, err := c.routeForModel(ctx, model)
-	if err != nil {
-		return err
-	}
-	if route.responses() {
-		c.responses.SetModel(model)
-		c.responses.SetTransport(model, route.transport())
-		c.mu.RLock()
-		c.responses.SetContextLimits(model, catalogContextLimits(c.catalog[model]))
-		c.mu.RUnlock()
-		return c.responses.Send(ctx, in, bus)
-	}
-	// oauth=false: the Claude Code identity preamble belongs to Anthropic's
-	// own OAuth path and not to this endpoint.
-	return c.inner.SendWithTransport(ctx, in, bus, false, c.copilotTransport(c.inner.HTTPClient))
-}
-
-func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	catalog, err := c.fetchCatalog(ctx)
-	if err != nil {
-		return nil, err
-	}
-	models := make([]provider.ModelInfo, 0, len(catalog))
-	for _, model := range catalog {
-		if !model.ModelPickerEnabled || routeForCatalogModel(model) == modelRouteUnknown {
-			continue
-		}
-		name := model.Name
-		if name == "" {
-			name = model.ID
-		}
-		models = append(models, provider.ModelInfo{
-			ID:            model.ID,
-			Name:          name,
-			Provider:      providerName,
-			ContextWindow: model.Capabilities.Limits.MaxContextWindowTokens,
-			MaxTokens:     model.Capabilities.Limits.MaxOutputTokens,
-		})
-	}
-	return models, nil
-}
-
-// ContextLimit returns the active Responses prompt cap from the catalog already
-// cached while routing the model. It deliberately avoids fetching the catalog
-// so status rendering cannot add network latency.
-func (c *Copilot) ContextLimit(model string, snapshot form.Snapshot) int {
-	c.mu.RLock()
-	entry, ok := c.catalog[model]
-	c.mu.RUnlock()
-	limit := 0
-	if ok {
-		limits := catalogContextLimits(entry)
-		limit = limits.Default
-		if responseString(snapshot, "system.context_tier") == "long_context" && limits.Long > 0 {
-			limit = limits.Long
-		}
-	}
-	// An explicit user pin wins outright, in either direction.
-	if override, ok := provider.ContextLimitOverride(snapshot); ok {
-		return override
-	}
-	return limit
-}
-
-type catalogModel struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	ModelPickerEnabled bool     `json:"model_picker_enabled"`
-	SupportedEndpoints []string `json:"supported_endpoints"`
-	Billing            struct {
-		TokenPrices struct {
-			Default struct {
-				MaxPromptTokens int `json:"max_prompt_tokens"`
-			} `json:"default"`
-			LongContext struct {
-				MaxPromptTokens int `json:"max_prompt_tokens"`
-			} `json:"long_context"`
-		} `json:"token_prices"`
-	} `json:"billing"`
-	Capabilities struct {
-		Limits struct {
-			MaxContextWindowTokens int `json:"max_context_window_tokens"`
-			MaxOutputTokens        int `json:"max_output_tokens"`
-		} `json:"limits"`
-	} `json:"capabilities"`
-}
-
-func catalogContextLimits(model catalogModel) responseContextLimits {
-	limits := responseContextLimits{
-		Default: model.Billing.TokenPrices.Default.MaxPromptTokens,
-		Long:    model.Billing.TokenPrices.LongContext.MaxPromptTokens,
-	}
-	if limits.Default == 0 {
-		limits.Default = model.Capabilities.Limits.MaxContextWindowTokens
-	}
-	if limits.Long == 0 {
-		limits.Long = model.Capabilities.Limits.MaxContextWindowTokens
-	}
-	return limits
-}
-
-type modelRoute int
-
-const (
-	modelRouteUnknown modelRoute = iota
-	modelRouteMessages
-	modelRouteResponsesSocket
-	modelRouteResponsesHTTP
-)
-
-func (r modelRoute) responses() bool {
-	return r == modelRouteResponsesSocket || r == modelRouteResponsesHTTP
-}
-
-func (r modelRoute) transport() responseTransport {
-	if r == modelRouteResponsesHTTP {
-		return responseTransportHTTP
-	}
-	return responseTransportSocket
-}
-
-func (c *Copilot) routeForModel(ctx context.Context, model string) (modelRoute, error) {
-	c.mu.RLock()
-	entry, known := c.catalog[model]
-	c.mu.RUnlock()
-	if !known {
-		if _, err := c.fetchCatalog(ctx); err != nil {
-			if isAnthropicModel(model) {
-				return modelRouteMessages, nil
-			}
-			return modelRouteUnknown, fmt.Errorf("copilot: get capabilities for %q: %w", model, err)
-		}
-		c.mu.RLock()
-		entry, known = c.catalog[model]
-		c.mu.RUnlock()
-	}
-	if known {
-		if route := routeForCatalogModel(entry); route != modelRouteUnknown {
-			return route, nil
-		}
-		return modelRouteUnknown, fmt.Errorf("copilot: model %q has no supported direct transport", model)
-	}
-	return modelRouteUnknown, fmt.Errorf("copilot: model %q is not in this Copilot catalog", model)
-}
-
-func routeForCatalogModel(model catalogModel) modelRoute {
-	route := modelRouteUnknown
-	for _, endpoint := range model.SupportedEndpoints {
-		endpoint = strings.ToLower(endpoint)
-		if !strings.Contains(endpoint, "responses") {
-			continue
-		}
-		if strings.HasPrefix(endpoint, "ws:") || strings.HasPrefix(endpoint, "wss:") {
-			return modelRouteResponsesSocket
-		}
-		route = modelRouteResponsesHTTP
-	}
-	if route != modelRouteUnknown {
-		return route
-	}
-	for _, endpoint := range model.SupportedEndpoints {
-		if strings.Contains(strings.ToLower(endpoint), "messages") {
-			return modelRouteMessages
-		}
-	}
-	if isAnthropicModel(model.ID) {
-		return modelRouteMessages
-	}
-	return modelRouteUnknown
-}
-
-func isAnthropicModel(model string) bool {
-	return strings.Contains(strings.ToLower(model), "claude")
-}
-
-func (c *Copilot) fetchCatalog(ctx context.Context) ([]catalogModel, error) {
-	token, err := c.tokenSrc.Resolve()
-	if err != nil {
-		return nil, fmt.Errorf("copilot models: resolve token: %w", err)
-	}
-	baseURL := c.tokenSrc.BaseURL()
-	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/models", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
 	for k, v := range copilotStaticHeaders {
-		req.Header.Set(k, v)
+		headers[k] = v
 	}
 	for k, v := range copilotGitHubHeaders {
-		req.Header.Set(k, v)
+		headers[k] = v
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+	return routed.Spec{
+		Name:    providerName,
+		BaseURL: tokens.BaseURL,
+		Headers: headers,
+		TransportHeaders: map[routed.Transport]map[string]string{
+			routed.Messages: {"anthropic-dangerous-direct-browser-access": "true"},
+		},
+		IdentityHeaders: identityHeaders,
+		Catalog:         "/models",
+		Rules:           []routed.Rule{{Model: "claude-*", Transport: routed.Messages}},
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("copilot models %d: %s", resp.StatusCode, body)
+}
+
+func identityHeaders(ids responses.IDs) map[string]string {
+	return map[string]string{
+		"X-Agent-Task-Id":          ids.Task,
+		"X-Client-Machine-Id":      ids.Machine,
+		"X-Client-Session-Id":      ids.Session,
+		"X-Interaction-Id":         ids.Interaction,
+		"X-Interaction-Type":       "user",
+		"X-Github-Repository-Host": "github.com",
+		"X-Github-Repository-Nwo":  "",
 	}
-	var raw struct {
-		Data []catalogModel `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	c.catalog = make(map[string]catalogModel, len(raw.Data))
-	for _, model := range raw.Data {
-		c.catalog[model.ID] = model
-	}
-	c.mu.Unlock()
-	return raw.Data, nil
 }
 
 func baseURLFromToken(token, enterpriseDomain string) string {
@@ -464,9 +144,4 @@ func (s *CopilotTokenSource) Resolve() (string, error) {
 
 func (s *CopilotTokenSource) Invalidate(token string) error {
 	return s.resolver.Invalidate(token)
-}
-
-// debug helper (kept; guarded by env var)
-func init() {
-	_ = os.Getenv("FIGARO_COPILOT_DEBUG")
 }

@@ -51,7 +51,7 @@ func benchProvider(b *testing.B, mode provider.MarkMode) *Provider {
 	if err != nil {
 		b.Fatal(err)
 	}
-	p.setMarkMode(mode)
+	p.SetMarkMode(mode)
 	return p
 }
 

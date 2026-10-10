@@ -104,7 +104,7 @@ func (p *Provider) resolveModel(snap form.Snapshot) string {
 	return p.Route.QualifyModel(p.Model)
 }
 
-func (p *Provider) setMarkMode(mode provider.MarkMode) {
+func (p *Provider) SetMarkMode(mode provider.MarkMode) {
 	p.mu.Lock()
 	p.markMode = mode
 	p.mu.Unlock()
@@ -159,6 +159,9 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 }
 
 func (p *Provider) authorize(req *http.Request) error {
+	for k, v := range p.Route.Headers {
+		req.Header.Set(k, v)
+	}
 	key, err := p.auth.Resolve()
 	if err != nil {
 		if !p.Route.AuthOptional {
@@ -183,7 +186,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
 	// Before anything reads Fingerprint: the mode decides the wire shape.
-	p.setMarkMode(provider.ResolveMarkMode(in.Snapshot))
+	p.SetMarkMode(provider.ResolveMarkMode(in.Snapshot))
 
 	cache, err := p.cacheFor(in.AriaID)
 	if err != nil {

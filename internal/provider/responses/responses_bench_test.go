@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"encoding/json"
@@ -61,15 +61,15 @@ func appendResponsesBenchSuffix(b *testing.B, log store.Log[message.Message]) {
 	}
 }
 
-func responsesBenchProvider(cache store.Log[[]json.RawMessage]) *responsesProvider {
+func responsesBenchProvider(cache store.Log[[]json.RawMessage]) *Provider {
 	var cacheOpen func(string) (store.Log[[]json.RawMessage], error)
 	if cache != nil {
 		cacheOpen = func(string) (store.Log[[]json.RawMessage], error) { return cache, nil }
 	}
-	p := newResponsesProvider(
+	p := New(
 		provider.Knobs{Model: "gpt-test"},
 		nil,
-		"",
+		testConfig,
 		cacheOpen,
 	)
 	return p
@@ -137,7 +137,7 @@ func BenchmarkValidateContext(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			log := responsesBenchLog(b, n)
 			p := responsesBenchProvider(newCopyingBenchLog[[]json.RawMessage]())
-			p.SetContextLimits("gpt-test", responseContextLimits{Default: 1_000_000})
+			p.SetContextLimits("gpt-test", ContextLimits{Default: 1_000_000})
 			in := provider.SendInput{AriaID: "bench", FigLog: log}
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -178,11 +178,11 @@ func BenchmarkCacheValidation(b *testing.B) {
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			for i := 0; i < n; i++ {
 				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
-					FigaroLT: uint64(i + 1), Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: responseFingerprint("gpt-test"),
+					FigaroLT: uint64(i + 1), Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: testFingerprint("gpt-test"),
 				})
 			}
 			p := responsesBenchProvider(cache)
-			fingerprint := responseFingerprint("gpt-test")
+			fingerprint := testFingerprint("gpt-test")
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

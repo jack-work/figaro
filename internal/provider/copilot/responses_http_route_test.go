@@ -14,24 +14,14 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// A MODEL THE CATALOG OFFERS ONLY OVER HTTP MUST NOT BE DIALLED AS A SOCKET.
-//
-// Copilot's catalog lists each model's transports in supported_endpoints. The
-// OpenAI models list both "/responses" and "ws:/responses"; grok-4.7 lists
-// only "/responses". Routing used to match the substring "responses" and send
-// every such model down the websocket, where grok's socket answers the
-// response.create with {"type":"error","error":{"code":"internal_error"}} and
-// the turn ends with zero tokens. Measured against the live catalog on
-// 2026-10-09: the same body POSTed to /responses with stream:true returns 200
-// and a text/event-stream carrying the very event types the socket carries.
-//
-// The SSE below keeps the framing of that live capture (an event: line, a
-// data: line whose JSON repeats the type, a blank line; item ids that rotate
-// between events of the same item) with identifiers and quota data removed.
+// grok-4.7's catalog entry offers only "/responses"; its socket answers
+// internal_error. The SSE keeps the framing of a live capture (2026-10-09),
+// identifiers and quota data removed.
 const grokTextSSE = `event: response.created
 data: {"response":{"id":"r1","status":"in_progress","output":[],"usage":null},"sequence_number":0,"type":"response.created"}
 
@@ -91,7 +81,7 @@ func newCopilotRouteServer(t *testing.T, model string, endpoints []string, sse s
 	rec := &copilotRouteServer{}
 	socket := websocket.Handler(func(conn *websocket.Conn) {
 		defer conn.Close()
-		var req responseCreateRequest
+		var req map[string]any
 		if websocket.JSON.Receive(conn, &req) != nil {
 			return
 		}
@@ -150,7 +140,7 @@ func newCopilotRouteServer(t *testing.T, model string, endpoints []string, sse s
 	return srv, rec
 }
 
-func sendThroughCopilot(t *testing.T, srv *httptest.Server, model string, resolver responseTokenSource) (*captureBus, error) {
+func sendThroughCopilot(t *testing.T, srv *httptest.Server, model string, resolver auth.TokenResolver) (*captureBus, error) {
 	t.Helper()
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, err := be.OpenFigIR(aria)
@@ -166,12 +156,13 @@ func sendThroughCopilot(t *testing.T, srv *httptest.Server, model string, resolv
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := New(provider.Knobs{Model: model, MaxTokens: 64},
-		resolver,
-		Config{BaseURL: srv.URL},
-		func(string) (store.Log[[]json.RawMessage], error) { return nil, nil },
-		func(string) (store.Log[[]json.RawMessage], error) { return responsesRows, nil },
-	)
+	c, err := newTestCopilot(srv.URL, model, resolver,
+		func(aria, ns string) (store.Log[[]json.RawMessage], error) {
+			if ns == "copilot-responses" {
+				return responsesRows, nil
+			}
+			return nil, nil
+		})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,41 +314,5 @@ func TestAnHTTPStreamThatEndsEarlyIsAnError(t *testing.T) {
 	}
 	if bus.text.String() != "pong" {
 		t.Errorf("the deltas that did arrive were not streamed: %q", bus.text.String())
-	}
-}
-
-func TestServerSentEventFraming(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want []string
-	}{
-		{"event and data lines", "event: a\ndata: {\"type\":\"a\"}\n\n", []string{`{"type":"a"}`}},
-		{"no space after the colon", "data:{\"x\":1}\n\n", []string{`{"x":1}`}},
-		{"crlf", "event: a\r\ndata: {\"x\":1}\r\n\r\n", []string{`{"x":1}`}},
-		{"multi-line data joins with newline", "data: {\"x\":\ndata: 1}\n\n", []string{"{\"x\":\n1}"}},
-		{"comments and ids are skipped", ": keepalive\nid: 7\ndata: {}\n\n", []string{`{}`}},
-		{"a final event with no blank line", "data: {\"last\":true}", []string{`{"last":true}`}},
-		{"the done sentinel ends the stream", "data: {}\n\ndata: [DONE]\n\ndata: {\"after\":1}\n\n", []string{`{}`}},
-		{"two events", "data: 1\n\ndata: 2\n\n", []string{"1", "2"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			next := sseFrames(strings.NewReader(tc.in))
-			var got []string
-			for {
-				frame, err := next(context.Background())
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					t.Fatalf("frame %d: %v", len(got), err)
-				}
-				got = append(got, string(frame))
-			}
-			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
 	}
 }

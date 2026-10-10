@@ -164,6 +164,7 @@ type Route struct {
 	Auth        AuthStyle
 	ModelPrefix string // e.g. "anthropic/" for OpenRouter model ids
 	Caps        CacheCaps
+	Headers     map[string]string
 
 	// AuthOptional marks a route that may be reached without a credential.
 	// A local gateway holds the real provider keys itself; demanding one

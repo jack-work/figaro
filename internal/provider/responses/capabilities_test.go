@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"context"
@@ -137,7 +137,7 @@ func TestCapabilityErrorNamesEveryIncompatibleSetting(t *testing.T) {
 
 func TestSendRejectsAstraSamplingBeforeResolvingCredentials(t *testing.T) {
 	tokenSource := &refusingTokenSource{}
-	p := newResponsesProvider(provider.Knobs{Model: "gpt-6-astra"}, tokenSource, "",
+	p := New(provider.Knobs{Model: "gpt-6-astra"}, tokenSource, testConfig,
 		func(string) (store.Log[[]json.RawMessage], error) {
 			return store.NewMemLog[[]json.RawMessage](), nil
 		})
@@ -160,15 +160,4 @@ func TestSendRejectsAstraSamplingBeforeResolvingCredentials(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "gpt-6-astra")
 	assert.Zero(t, tokenSource.resolves, "credentials resolved before validation")
-}
-
-func TestCopilotRejectsInvalidAstraSettingsBeforeCatalogFetch(t *testing.T) {
-	source := &refusingTokenSource{}
-	p, err := New(provider.Knobs{Model: "gpt-6-astra"}, source, Config{}, nil, nil)
-	require.NoError(t, err)
-	err = p.Send(context.Background(), provider.SendInput{
-		Snapshot: form.FromMap(map[string]json.RawMessage{"system.thinking_effort": json.RawMessage(`"none"`)}),
-	}, &responseTestBus{})
-	require.ErrorContains(t, err, "system.thinking_effort")
-	require.Zero(t, source.resolves, "routing must not fetch a catalog before local validation")
 }

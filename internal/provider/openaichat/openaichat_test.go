@@ -32,7 +32,7 @@ func newTestProvider(t *testing.T, route provider.Route, mode provider.MarkMode)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	p.setMarkMode(mode)
+	p.SetMarkMode(mode)
 	return p
 }
 
@@ -590,3 +590,9 @@ func TestSingleToolCallWithoutIndexAssembles(t *testing.T) {
 		t.Fatalf("got %+v", got.ToolCalls)
 	}
 }
+
+type staticToken string
+
+func (s staticToken) Resolve() (string, error) { return string(s), nil }
+
+func (s staticToken) Invalidate(string) error { return nil }

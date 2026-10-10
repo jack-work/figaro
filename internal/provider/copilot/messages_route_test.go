@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/net/websocket"
-
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/provider/routed"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -72,12 +72,13 @@ data: {"type":"message_stop"}`,
 		t.Fatal(err)
 	}
 
-	c, err := New(provider.Knobs{Model: "claude-test", MaxTokens: 64},
-		staticResolver("gh-token"),
-		Config{BaseURL: srv.URL},
-		func(string) (store.Log[[]json.RawMessage], error) { return rows, nil },
-		func(string) (store.Log[[]json.RawMessage], error) { return nil, nil },
-	)
+	c, err := newTestCopilot(srv.URL, "claude-test", staticResolver("gh-token"),
+		func(aria, ns string) (store.Log[[]json.RawMessage], error) {
+			if ns == "copilot-messages" {
+				return rows, nil
+			}
+			return nil, nil
+		})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +100,9 @@ data: {"type":"message_stop"}`,
 	if got := gotHeader.Get("Authorization"); !strings.HasPrefix(got, "Bearer ") {
 		t.Errorf("Authorization=%q, want a bearer token from the token source", got)
 	}
-	if got := gotHeader.Get("anthropic-version"); got != copilotAnthropicVersion {
+	if got := gotHeader.Get("anthropic-version"); got != "2023-06-01" {
 		t.Errorf("anthropic-version=%q, want %q -- the VENDOR dialect version, not GitHub's",
-			got, copilotAnthropicVersion)
+			got, "2023-06-01")
 	}
 	if got := gotHeader.Get("X-GitHub-Api-Version"); got != copilotAPIVersion {
 		t.Errorf("X-GitHub-Api-Version=%q, want %q", got, copilotAPIVersion)
@@ -151,50 +152,7 @@ func (b *captureBus) PushFigaro(_ message.Message, caches ...provider.AssistantC
 	b.caches = append(b.caches, caches...)
 }
 
-// A CANCELLED RESPONSES STREAM HANDS OVER WHAT IT ACCUMULATED.
-//
-// This provider's message otherwise exists only at "response.completed",
-// built from the server's own object -- so an interrupt had nothing but the
-// deltas and figaro synthesised a message with NO native payload, whose
-// translation had to be re-encoded from text. The accumulator is in the
-// provider now, and its output items are the server's own wire shape.
-func TestACancelledResponsesStreamHandsOverItsPartial(t *testing.T) {
-	srv := newResponseServer(t, func(conn *websocket.Conn) {
-		defer conn.Close()
-		var req responseCreateRequest
-		if err := websocket.JSON.Receive(conn, &req); err != nil {
-			return
-		}
-		_ = websocket.JSON.Send(conn, map[string]any{
-			"type": "response.output_text.delta", "delta": "half a thou",
-		})
-		var next any
-		_ = websocket.JSON.Receive(conn, &next) // cancellation closes the socket
-	})
-	defer srv.Close()
-
-	p := newResponsesTestProvider(srv, store.NewMemLog[[]json.RawMessage]())
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	bus := &captureBus{onDelta: cancel} // cancel only once the consumer has the delta
-
-	err := p.Send(ctx, provider.SendInput{
-		AriaID: "aria-cancel",
-		FigLog: newResponsesInputLog(t),
-	}, bus)
-	if err == nil {
-		t.Fatal("a cancelled send must still report the cancellation")
-	}
-	if !bus.sawFigaro {
-		t.Fatal("the partial never reached the bus: an interrupted turn loses what the model produced")
-	}
-	if len(bus.caches) == 0 {
-		t.Fatal("the partial carries no native payload, so its translation would be a re-encode")
-	}
-	if got := string(bus.caches[0].Payload[0]); !strings.Contains(got, "half a thou") {
-		t.Fatalf("the native payload does not carry what streamed: %s", got)
-	}
-	if bus.lastStop != string(message.StopAborted) {
-		t.Fatalf("stop reason %q, want %q", bus.lastStop, message.StopAborted)
-	}
+func newTestCopilot(base, model string, resolver auth.TokenResolver, translators routed.Translators) (*routed.Provider, error) {
+	tokens := newTokenSource(resolver, Config{BaseURL: base})
+	return routed.New(Spec(tokens), provider.Knobs{Model: model, MaxTokens: 64}, tokens, translators)
 }

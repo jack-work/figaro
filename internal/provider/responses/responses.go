@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"bufio"
@@ -26,27 +26,42 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-const responsesFingerprintPrefix = "copilot-responses/v5"
+type IDs struct {
+	Task        string
+	Session     string
+	Interaction string
+	Machine     string
+}
 
-type responseTokenSource interface {
+type Config struct {
+	Namespace string
+	BaseURL   func(token string) string
+	Headers   func(token string, ids IDs) http.Header
+	Envelope  func(ids IDs) map[string]string
+}
+
+type TokenSource interface {
 	Resolve() (string, error)
 	Invalidate(string) error
 }
 
 type responseDialer func(context.Context, string, http.Header) (*websocket.Conn, error)
 
-type responseTransport int
+type Transport int
 
 const (
-	responseTransportSocket responseTransport = iota
-	responseTransportHTTP
+	Socket Transport = iota
+	HTTP
 )
 
 type responseFrames func(context.Context) ([]byte, error)
 
-type responsesProvider struct {
-	tokenSrc  responseTokenSource
+type Provider struct {
+	tokenSrc  TokenSource
 	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
+	namespace string
+	headers   func(string, IDs) http.Header
+	envelope  func(IDs) map[string]string
 
 	mu        sync.Mutex
 	model     string
@@ -55,52 +70,66 @@ type responsesProvider struct {
 	machineID string
 	cache     store.Log[[]json.RawMessage]
 	sessionID string
-	limits    map[string]responseContextLimits
-	transport map[string]responseTransport
+	limits    map[string]ContextLimits
+	transport map[string]Transport
 
 	baseURL func(string) string
 	dial    responseDialer
 }
 
-func newResponsesProvider(
+func New(
 	knobs provider.Knobs,
-	tokenSrc responseTokenSource,
-	enterpriseDomain string,
+	tokenSrc TokenSource,
+	cfg Config,
 	cacheOpen func(string) (store.Log[[]json.RawMessage], error),
-) *responsesProvider {
-	return &responsesProvider{
+) *Provider {
+	headers := cfg.Headers
+	if headers == nil {
+		headers = func(token string, _ IDs) http.Header { return BearerHeaders(token) }
+	}
+	return &Provider{
 		tokenSrc:  tokenSrc,
 		cacheOpen: cacheOpen,
+		namespace: cfg.Namespace,
+		headers:   headers,
+		envelope:  cfg.Envelope,
 		model:     knobs.Model,
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
-		limits:    map[string]responseContextLimits{},
-		transport: map[string]responseTransport{},
-		baseURL: func(token string) string {
-			if b, ok := tokenSrc.(interface{ BaseURL() string }); ok {
-				if u := b.BaseURL(); u != "" {
-					return u
-				}
-			}
-			return baseURLFromToken(token, enterpriseDomain)
-		},
-		dial: dialResponses,
+		limits:    map[string]ContextLimits{},
+		transport: map[string]Transport{},
+		baseURL:   cfg.BaseURL,
+		dial:      dialResponses,
 	}
 }
 
-func (p *responsesProvider) SetModel(model string) {
+func BearerHeaders(token string) http.Header {
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer "+token)
+	headers.Set("Accept", "application/json")
+	headers.Set("Content-Type", "application/json")
+	return headers
+}
+
+func (p *Provider) Namespace() string { return p.namespace }
+
+func (p *Provider) CacheOpen(aria string) (store.Log[[]json.RawMessage], error) {
+	return p.cacheOpen(aria)
+}
+
+func (p *Provider) SetModel(model string) {
 	p.mu.Lock()
 	p.model = model
 	p.mu.Unlock()
 }
 
-func (p *responsesProvider) SetTemplates(templates *template.Template) {
+func (p *Provider) SetTemplates(templates *template.Template) {
 	p.mu.Lock()
 	p.templates = templates
 	p.mu.Unlock()
 }
 
-func (p *responsesProvider) SetContextLimits(model string, limits responseContextLimits) {
+func (p *Provider) SetContextLimits(model string, limits ContextLimits) {
 	if model == "" {
 		return
 	}
@@ -109,7 +138,7 @@ func (p *responsesProvider) SetContextLimits(model string, limits responseContex
 	p.mu.Unlock()
 }
 
-func (p *responsesProvider) SetTransport(model string, transport responseTransport) {
+func (p *Provider) SetTransport(model string, transport Transport) {
 	if model == "" {
 		return
 	}
@@ -118,19 +147,19 @@ func (p *responsesProvider) SetTransport(model string, transport responseTranspo
 	p.mu.Unlock()
 }
 
-func (p *responsesProvider) transportFor(model string) responseTransport {
+func (p *Provider) transportFor(model string) Transport {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.transport[model]
 }
 
-func (p *responsesProvider) Fingerprint() string {
+func (p *Provider) Fingerprint() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return responseFingerprint(p.model)
+	return p.fingerprintFor(p.model)
 }
 
-func (p *responsesProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	if model, ok, err := responseOptionalString(in.Snapshot, "system.model"); err != nil {
 		return err
 	} else if ok && model != "" {
@@ -149,7 +178,7 @@ func (p *responsesProvider) Send(ctx context.Context, in provider.SendInput, bus
 	}
 	token, err := p.tokenSrc.Resolve()
 	if err != nil {
-		return fmt.Errorf("copilot responses: resolve token: %w", err)
+		return fmt.Errorf("responses: resolve token: %w", err)
 	}
 
 	err = p.sendWithToken(ctx, token, in, bus, options)
@@ -157,16 +186,16 @@ func (p *responsesProvider) Send(ctx context.Context, in provider.SendInput, bus
 		return err
 	}
 	if ierr := p.tokenSrc.Invalidate(token); ierr != nil {
-		return fmt.Errorf("copilot responses: invalidate token: %w", ierr)
+		return fmt.Errorf("responses: invalidate token: %w", ierr)
 	}
 	token, err = p.tokenSrc.Resolve()
 	if err != nil {
-		return fmt.Errorf("copilot responses: resolve refreshed token: %w", err)
+		return fmt.Errorf("responses: resolve refreshed token: %w", err)
 	}
 	return p.sendWithToken(ctx, token, in, bus, options)
 }
 
-func (p *responsesProvider) sendWithToken(
+func (p *Provider) sendWithToken(
 	ctx context.Context,
 	token string,
 	in provider.SendInput,
@@ -178,13 +207,13 @@ func (p *responsesProvider) sendWithToken(
 		return err
 	}
 	if len(input) == 0 {
-		return fmt.Errorf("copilot responses: empty context")
+		return fmt.Errorf("responses: empty context")
 	}
 	input, breakpoints := markPromptCacheBreakpoint(input)
 
 	model, maxTokens, machineID := p.settings()
 	if model == "" {
-		return fmt.Errorf("copilot responses: model is required")
+		return fmt.Errorf("responses: model is required")
 	}
 	if in.MaxTokens > 0 {
 		maxTokens = in.MaxTokens
@@ -193,7 +222,8 @@ func (p *responsesProvider) sendWithToken(
 	sessionID := p.sessionIDFor()
 	interactionID := uuid.NewString()
 	base := p.baseURL(token)
-	headers := responseHeaders(token, taskID, sessionID, interactionID, machineID)
+	ids := IDs{Task: taskID, Session: sessionID, Interaction: interactionID, Machine: machineID}
+	headers := p.headers(token, ids)
 	body := responseBody{
 		Input:             input,
 		Instructions:      responseInstructions(in.Snapshot),
@@ -213,7 +243,7 @@ func (p *responsesProvider) sendWithToken(
 
 	transport := p.transportFor(model)
 	method, endpoint := wirelog.StreamMethodWS, responsesEndpoint(base)
-	if transport == responseTransportHTTP {
+	if transport == HTTP {
 		method, endpoint = wirelog.StreamMethodSSE, responsesHTTPEndpoint(base)
 	}
 	trace := wirelog.BeginStream(ctx, in.AriaID, method, endpoint)
@@ -221,37 +251,37 @@ func (p *responsesProvider) sendWithToken(
 	defer func() { trace.Finish(terminalStatus, sendErr) }()
 
 	var frames responseFrames
-	if transport == responseTransportHTTP {
+	if transport == HTTP {
 		payload, err := json.Marshal(responseStreamRequest{responseBody: body, Stream: true})
 		if err != nil {
-			return fmt.Errorf("copilot responses: encode request: %w", err)
+			return fmt.Errorf("responses: encode request: %w", err)
 		}
 		trace.RequestBytes(int64(len(payload)))
 		stream, err := postResponses(ctx, endpoint, headers, payload)
 		if err != nil {
-			return fmt.Errorf("copilot responses: post: %w", err)
+			return fmt.Errorf("responses: post: %w", err)
 		}
 		defer stream.Close()
 		frames = sseFrames(stream)
 	} else {
 		conn, err := p.dial(ctx, endpoint, headers)
 		if err != nil {
-			return fmt.Errorf("copilot responses: dial: %w", err)
+			return fmt.Errorf("responses: dial: %w", err)
 		}
 		defer conn.CloseNow()
-		payload, err := json.Marshal(responseCreateRequest{
-			Type:         "response.create",
-			AgentTaskID:  taskID,
-			Headers:      responseRequestHeaders(taskID, sessionID, interactionID, machineID),
-			Initiator:    "user",
-			responseBody: body,
-		})
+		create := responseCreateRequest{Type: "response.create", responseBody: body}
+		if p.envelope != nil {
+			create.AgentTaskID = taskID
+			create.Headers = p.envelope(ids)
+			create.Initiator = "user"
+		}
+		payload, err := json.Marshal(create)
 		if err != nil {
-			return fmt.Errorf("copilot responses: encode create: %w", err)
+			return fmt.Errorf("responses: encode create: %w", err)
 		}
 		trace.RequestBytes(int64(len(payload)))
 		if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
-			return fmt.Errorf("copilot responses: send create: %w", err)
+			return fmt.Errorf("responses: send create: %w", err)
 		}
 		frames = socketFrames(conn)
 	}
@@ -283,7 +313,7 @@ func (p *responsesProvider) sendWithToken(
 		// A turn that produced nothing renders as nothing: no text, no
 		// aria, no error. Silence here is indistinguishable from a bug
 		// anywhere upstream, and it cost two agents an afternoon.
-		slog.Warn("copilot responses: empty completion, nothing to render",
+		slog.Warn("responses: empty completion, nothing to render",
 			"model", model, "status", response.Status,
 			"input_tokens", response.Usage.InputTokens,
 			"output_tokens", response.Usage.OutputTokens,
@@ -301,12 +331,12 @@ func (p *responsesProvider) sendWithToken(
 //
 // THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT, so "the
 // entry exists before anything that names it" is a shape rather than a rule.
-func (p *responsesProvider) handOver(assistant message.Message, output []json.RawMessage, bus provider.Bus) {
+func (p *Provider) handOver(assistant message.Message, output []json.RawMessage, bus provider.Bus) {
 	bus.PushMessageEnd(string(assistant.StopReason))
 	var commit []provider.AssistantCache
 	if len(output) > 0 {
 		commit = append(commit, provider.AssistantCache{
-			Namespace:   "copilot-responses",
+			Namespace:   p.namespace,
 			Payload:     output,
 			Fingerprint: p.Fingerprint(),
 		})
@@ -314,18 +344,18 @@ func (p *responsesProvider) handOver(assistant message.Message, output []json.Ra
 	bus.PushFigaro(assistant, commit...)
 }
 
-func (p *responsesProvider) settings() (string, int, string) {
+func (p *Provider) settings() (string, int, string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.model, p.maxTokens, p.machineID
 }
 
-type responseContextLimits struct {
+type ContextLimits struct {
 	Default int
 	Long    int
 }
 
-func (p *responsesProvider) validateContext(
+func (p *Provider) validateContext(
 	in provider.SendInput,
 	model string,
 	options responseRequestOptions,
@@ -335,7 +365,7 @@ func (p *responsesProvider) validateContext(
 		return err
 	}
 	if limitSet && requestedLimit <= 0 {
-		return fmt.Errorf("copilot responses: system.max_context_tokens must be greater than 0")
+		return fmt.Errorf("responses: system.max_context_tokens must be greater than 0")
 	}
 
 	p.mu.Lock()
@@ -348,7 +378,7 @@ func (p *responsesProvider) validateContext(
 	if requestedLimit > 0 {
 		if tierLimit > 0 && requestedLimit > tierLimit {
 			return fmt.Errorf(
-				"copilot responses: system.max_context_tokens %d exceeds the %s limit of %d for %q",
+				"responses: system.max_context_tokens %d exceeds the %s limit of %d for %q",
 				requestedLimit,
 				contextTierName(options.contextTier),
 				tierLimit,
@@ -364,7 +394,7 @@ func (p *responsesProvider) validateContext(
 	used, _ := contextSizeForLog(in.FigLog)
 	if used > tierLimit {
 		return fmt.Errorf(
-			"copilot responses: estimated prompt context %d tokens exceeds the %s limit of %d for %q; compact the aria or set system.context_tier to \"long_context\"",
+			"responses: estimated prompt context %d tokens exceeds the %s limit of %d for %q; compact the aria or set system.context_tier to \"long_context\"",
 			used,
 			contextTierName(options.contextTier),
 			tierLimit,
@@ -432,7 +462,7 @@ func contextTierName(tier string) string {
 	return "default-context"
 }
 
-func (p *responsesProvider) sessionIDFor() string {
+func (p *Provider) sessionIDFor() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.sessionID != "" {
@@ -442,36 +472,36 @@ func (p *responsesProvider) sessionIDFor() string {
 	return p.sessionID
 }
 
-func (p *responsesProvider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
+func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	if aria == "" || p.cacheOpen == nil {
 		return nil, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	fingerprint := responseFingerprint(p.model)
+	fingerprint := p.fingerprintFor(p.model)
 	if p.cache != nil {
 		if !p.invalidateCache(p.cache, fingerprint) {
-			return nil, fmt.Errorf("copilot responses cache invalidation failed for %s", aria)
+			return nil, fmt.Errorf("responses cache invalidation failed for %s", aria)
 		}
 		return p.cache, nil
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
-		return nil, fmt.Errorf("copilot responses open translator log: %w", err)
+		return nil, fmt.Errorf("responses open translator log: %w", err)
 	}
 	if !p.invalidateCache(cache, fingerprint) {
-		return nil, fmt.Errorf("copilot responses translator log invalidation failed")
+		return nil, fmt.Errorf("responses translator log invalidation failed")
 	}
 	p.cache = cache
 	return cache, nil
 }
 
-func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) bool {
+func (p *Provider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) bool {
 	_, _, err := provider.ClearStaleTranslationCache(cache, fingerprint)
 	return err == nil
 }
 
-func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
+func (p *Provider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 	rows, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return nil, err
@@ -487,7 +517,7 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
-				return nil, fmt.Errorf("copilot responses: encode message %d: %w", msg.LogicalTime, err)
+				return nil, fmt.Errorf("responses: encode message %d: %w", msg.LogicalTime, err)
 			}
 			// The observed set folds in beside the board: each study
 			// reminder becomes one input_text message part.
@@ -504,12 +534,12 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 			return encoded, nil
 		},
 		ReportWriteError: func(lt uint64, err error) {
-			slog.Error("copilot responses write row", "aria", in.AriaID, "lt", lt, "err", err)
+			slog.Error("responses write row", "aria", in.AriaID, "lt", lt, "err", err)
 		},
 	}); err != nil {
 		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
 		// would assemble is not the one on disk.
-		return nil, fmt.Errorf("copilot responses catch up: %w", err)
+		return nil, fmt.Errorf("responses catch up: %w", err)
 	}
 
 	// The websocket frame is a typed array, so this tenant assembles one. What
@@ -526,7 +556,7 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 	return input, nil
 }
 
-func (p *responsesProvider) templatesForEncoding() *template.Template {
+func (p *Provider) templatesForEncoding() *template.Template {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.templates
@@ -694,44 +724,11 @@ func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*
 	return conn, nil
 }
 
-func responseHeaders(token, taskID, sessionID, interactionID, machineID string) http.Header {
-	headers := make(http.Header)
-	headers.Set("Authorization", "Bearer "+token)
-	headers.Set("Accept", "application/json")
-	headers.Set("Content-Type", "application/json")
-	headers.Set("Openai-Intent", "conversation-edits")
-	headers.Set("X-Initiator", "user")
-	headers.Set("X-GitHub-Api-Version", copilotAPIVersion)
-	headers.Set("X-Agent-Task-Id", taskID)
-	headers.Set("X-Client-Machine-Id", machineID)
-	headers.Set("X-Client-Session-Id", sessionID)
-	headers.Set("X-Github-Repository-Host", "github.com")
-	headers.Set("X-Github-Repository-Nwo", "")
-	headers.Set("X-Interaction-Id", interactionID)
-	headers.Set("X-Interaction-Type", "user")
-	for key, value := range copilotStaticHeaders {
-		headers.Set(key, value)
-	}
-	return headers
-}
-
-func responseRequestHeaders(taskID, sessionID, interactionID, machineID string) map[string]string {
-	return map[string]string{
-		"X-Agent-Task-Id":          taskID,
-		"X-Client-Machine-Id":      machineID,
-		"X-Client-Session-Id":      sessionID,
-		"X-Interaction-Id":         interactionID,
-		"X-Interaction-Type":       "user",
-		"X-Github-Repository-Host": "github.com",
-		"X-Github-Repository-Nwo":  "",
-	}
-}
-
 type responseCreateRequest struct {
 	Type        string            `json:"type"`
-	AgentTaskID string            `json:"agent_task_id"`
-	Headers     map[string]string `json:"headers"`
-	Initiator   string            `json:"initiator"`
+	AgentTaskID string            `json:"agent_task_id,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	Initiator   string            `json:"initiator,omitempty"`
 	responseBody
 }
 
@@ -1053,12 +1050,12 @@ func responseString(snap form.Snapshot, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func responseFingerprint(model string) string {
+func (p *Provider) fingerprintFor(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		model = "unset"
 	}
-	return responsesFingerprintPrefix + "/" + model
+	return p.namespace + "/v5/" + model
 }
 
 func responseOptionsFor(snap form.Snapshot) (responseRequestOptions, error) {
@@ -1075,7 +1072,7 @@ func responseOptionsFor(snap form.Snapshot) (responseRequestOptions, error) {
 		return responseRequestOptions{}, err
 	}
 	if contextTier != "" && contextTier != "default" && contextTier != "long_context" {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.context_tier must be \"default\" or \"long_context\", got %q", contextTier)
+		return responseRequestOptions{}, fmt.Errorf("responses: system.context_tier must be \"default\" or \"long_context\", got %q", contextTier)
 	}
 	options.contextTier = contextTier
 
@@ -1088,14 +1085,14 @@ func responseOptionsFor(snap form.Snapshot) (responseRequestOptions, error) {
 		return responseRequestOptions{}, err
 	}
 	if reasoningContext != "" && reasoningContext != "auto" && reasoningContext != "current_turn" && reasoningContext != "all_turns" {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_context must be \"auto\", \"current_turn\", or \"all_turns\", got %q", reasoningContext)
+		return responseRequestOptions{}, fmt.Errorf("responses: system.reasoning_context must be \"auto\", \"current_turn\", or \"all_turns\", got %q", reasoningContext)
 	}
 	reasoningSummary, _, err := responseOptionalString(snap, "system.reasoning_summary")
 	if err != nil {
 		return responseRequestOptions{}, err
 	}
 	if reasoningSummary != "" && reasoningSummary != "auto" && reasoningSummary != "concise" && reasoningSummary != "detailed" {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_summary must be \"auto\", \"concise\", or \"detailed\", got %q", reasoningSummary)
+		return responseRequestOptions{}, fmt.Errorf("responses: system.reasoning_summary must be \"auto\", \"concise\", or \"detailed\", got %q", reasoningSummary)
 	}
 	if reasoningContext != "" || effort != "" || reasoningSummary != "" {
 		options.reasoning = &responseReasoning{
@@ -1116,17 +1113,17 @@ func responseOptionsFor(snap form.Snapshot) (responseRequestOptions, error) {
 		return responseRequestOptions{}, err
 	}
 	if temperatureSet && (temperature < 0 || temperature > 2) {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.temperature must be between 0 and 2")
+		return responseRequestOptions{}, fmt.Errorf("responses: system.temperature must be between 0 and 2")
 	}
 	topP, topPSet, err := responseOptionalFloat(snap, "system.top_p")
 	if err != nil {
 		return responseRequestOptions{}, err
 	}
 	if topPSet && (topP <= 0 || topP > 1) {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.top_p must be greater than 0 and at most 1")
+		return responseRequestOptions{}, fmt.Errorf("responses: system.top_p must be greater than 0 and at most 1")
 	}
 	if temperatureSet && topPSet {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: set either system.temperature or system.top_p, not both")
+		return responseRequestOptions{}, fmt.Errorf("responses: set either system.temperature or system.top_p, not both")
 	}
 	if temperatureSet {
 		options.temperature = &temperature
@@ -1145,7 +1142,7 @@ func responseOptionalString(snap form.Snapshot, key string) (string, bool, error
 	}
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return "", false, fmt.Errorf("copilot responses: %s must be a string: %w", key, err)
+		return "", false, fmt.Errorf("responses: %s must be a string: %w", key, err)
 	}
 	return strings.TrimSpace(value), true, nil
 }
@@ -1157,7 +1154,7 @@ func responseOptionalBool(snap form.Snapshot, key string) (bool, bool, error) {
 	}
 	var value bool
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return false, false, fmt.Errorf("copilot responses: %s must be a boolean: %w", key, err)
+		return false, false, fmt.Errorf("responses: %s must be a boolean: %w", key, err)
 	}
 	return value, true, nil
 }
@@ -1169,7 +1166,7 @@ func responseOptionalFloat(snap form.Snapshot, key string) (float64, bool, error
 	}
 	var value float64
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return 0, false, fmt.Errorf("copilot responses: %s must be a number: %w", key, err)
+		return 0, false, fmt.Errorf("responses: %s must be a number: %w", key, err)
 	}
 	return value, true, nil
 }
@@ -1181,7 +1178,7 @@ func responseOptionalInt(snap form.Snapshot, key string) (int, bool, error) {
 	}
 	var value int
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return 0, false, fmt.Errorf("copilot responses: %s must be an integer: %w", key, err)
+		return 0, false, fmt.Errorf("responses: %s must be an integer: %w", key, err)
 	}
 	return value, true, nil
 }
@@ -1203,7 +1200,7 @@ func decodeResponseAssistant(response responseObject) (message.Message, error) {
 	for _, raw := range response.Output {
 		var item responseOutputItem
 		if err := json.Unmarshal(raw, &item); err != nil {
-			return message.Message{}, fmt.Errorf("copilot responses: decode output item: %w", err)
+			return message.Message{}, fmt.Errorf("responses: decode output item: %w", err)
 		}
 		switch item.Type {
 		case "message":
@@ -1221,7 +1218,7 @@ func decodeResponseAssistant(response responseObject) (message.Message, error) {
 			}
 		case "function_call":
 			if item.CallID == "" || item.Name == "" {
-				return message.Message{}, fmt.Errorf("copilot responses: function call missing call_id or name")
+				return message.Message{}, fmt.Errorf("responses: function call missing call_id or name")
 			}
 			arguments := responseArguments(string(responseArgumentBytes(item.Arguments)))
 			out.Content = append(out.Content, message.Content{
@@ -1316,7 +1313,7 @@ func logPromptCacheEconomics(usage responseUsage, breakpoints int) {
 	if reads == 0 && writes == 0 {
 		return
 	}
-	slog.Debug("copilot responses prompt cache",
+	slog.Debug("responses prompt cache",
 		"cache_read_tokens", reads,
 		"cache_write_tokens", writes,
 		"uncached_input_tokens", usage.InputTokens-reads-writes,
