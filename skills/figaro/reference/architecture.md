@@ -369,7 +369,7 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   thinking blocks rather than emit unsigned ones.
 - **A stream that closed cleanly is not yet a reply.** Both Anthropic-shaped
   providers (this one and the hand-rolled `internal/provider/anthropic`, which
-  the copilot Messages route rides) run the drained message through
+  the routed `messages` transport rides) run the drained message through
   `provider.CheckCompletion` before it lands. Two faults: no content blocks at
   all, whatever the stop reason; or a stop reason that is not a way of
   finishing. `provider.AnthropicStopReason` is the one table for the wire's
@@ -444,14 +444,16 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.
 
-### Copilot Responses: per-request streams, local history
+### Responses dialect: `internal/provider/responses`
 
-`internal/provider/copilot` routes by the Copilot model catalog's advertised
-endpoints. The Responses route sends the locally reconstructed conversation on
-one WebSocket per request. There is no remote continuation dependency,
-`previous_response_id`, or durable server-side session.
+Which provider and transport a model reaches is decided in
+`internal/provider/routed`; see [providers.md](providers.md). The Responses
+dialect sends the locally reconstructed conversation as one request per turn,
+over a WebSocket or an HTTP SSE stream as the route chose. There is no remote
+continuation dependency, `previous_response_id`, or durable server-side
+session.
 
-- `responses_stream.go` forwards argument deltas immediately and correlates
+- `stream.go` forwards argument deltas immediately and correlates
   calls by call ID, announced item ID, then an **explicit** output index.
   Copilot may re-encrypt item IDs between events; an absent index must not
   accidentally match tool zero. Complete calls can execute while other output
@@ -474,7 +476,8 @@ one WebSocket per request. There is no remote continuation dependency,
   before credential resolution. Astra rejects sampling controls and supports
   `low`, `medium`, `high`, `xhigh`, `max` reasoning effort. Unknown model families
   remain unconstrained; settings are never silently discarded.
-- `wirelog.BeginStream` makes WebSocket attempts visible in `doctor provider`,
+- `wirelog.BeginStream` makes both transports visible in `doctor provider`
+  (method `WS` or `SSE`),
   including while in flight. It records timing, byte/event counts, argument
   deltas, unmatched deltas and terminal status, not headers, argument text,
   opaque identifiers or free-form provider errors. An unknown event increments

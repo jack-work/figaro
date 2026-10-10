@@ -94,6 +94,7 @@ about changing figaro rather than using it live under
 | [reference/turns.md](reference/turns.md) | Turn ids, the turn-shaped read wire, pagination. |
 | [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
+| [reference/providers.md](reference/providers.md) | Writing `providers/<name>.toml`, pointing a gateway at a new endpoint, or a model failing on one provider and working on another. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
 | [reference/quoting.md](reference/quoting.md) | Quoting a passage into a prompt (`<412.0:23-1180>!`), visual selection, and the pager's `:send` / `:fork` / `:listen` / `:attend`. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
