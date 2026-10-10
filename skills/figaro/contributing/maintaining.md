@@ -96,11 +96,13 @@ invocation, and non-interactive work is what `--command` is for:
 ```sh
 FIGARO_RUNTIME_DIR=/var/tmp/x/run FIGARO_STATE_DIR=/var/tmp/x/state \
   FIGARO_CONFIG_DIR=$HOME/.config/figaro \
-  nix develop .#share-hush --command bash -c 'figaro send -e -- "…"'
+  nix develop .#share-hush --command bash -c 'figaro send -A -r -S system.ttl=1h -- "…"'
 ```
 
 Real credentials and real outfits, an isolated store and socket, the flake's
 own binary, and no first-run picker, because the config knob was overridden.
+From inside an aria, prefix `env -u FIGARO_ARIA`: the shell inherits your id,
+and `send` would address that id in the dev store rather than mint.
 A shell entry takes tens of seconds, so give it room in any timeout.
 
 ## Without a shell

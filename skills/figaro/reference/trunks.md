@@ -142,8 +142,7 @@ with no credentials and no tokens.
   (that is where the prompt went); forking anyone else's aria never moves
   you, so `fork <other>:12 --stay -- "try it this way"` is a clean fan-out.
   Flags are `send`'s (same parser, same dispatch): `-r` raw, `-v` verbatim,
-  `-o` verbose, `-l` listen, `-x`(+`-n`/`-y`) exec, `-f` forget. `-e` is
-  **rejected** (a fork mints a persistent branch), and a send flag without a
+  `-o` verbose, `-l` listen, `-x`(+`-n`/`-y`) exec, `-f` forget. A send flag without a
   prompt is an error rather than a no-op. `-j` prints one line -
   `mode:"fork-send"`, `aria_id` = the branch. `fork --` with an empty body
   opens the composer.

@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"bytes"
@@ -9,8 +9,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-
-	"github.com/coder/websocket"
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -229,21 +227,21 @@ func newResponseStreamState() *responseStreamState {
 	return &responseStreamState{calls: map[string]*responseCall{}, items: map[string]*responseCall{}, byIndex: map[int]*responseCall{}}
 }
 
-func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.Bus, observers ...responseStreamObserver) (responseObject, error) {
+func readResponseStream(ctx context.Context, next responseFrames, bus provider.Bus, observers ...responseStreamObserver) (responseObject, error) {
 	state := newResponseStreamState()
 	for {
-		_, raw, err := conn.Read(ctx)
+		raw, err := next(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				err = ctx.Err()
 			} else {
-				err = fmt.Errorf("copilot responses: receive: %w", err)
+				err = fmt.Errorf("responses: receive: %w", err)
 			}
 			return responseObject{Output: state.partial.outputItems()}, err
 		}
 		var event responseStreamEvent
 		if err := json.Unmarshal(raw, &event); err != nil {
-			return responseObject{Output: state.partial.outputItems()}, fmt.Errorf("copilot responses: decode event: %w", err)
+			return responseObject{Output: state.partial.outputItems()}, fmt.Errorf("responses: decode event: %w", err)
 		}
 		for _, o := range observers {
 			o.Event(event.Type, len(raw))
@@ -290,7 +288,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 		var call *responseCall
 		if event.Item.Type == "function_call" {
 			if event.Item.CallID == "" || event.Item.Name == "" {
-				return fail(fmt.Errorf("copilot responses: function call missing call_id or name"))
+				return fail(fmt.Errorf("responses: function call missing call_id or name"))
 			}
 			call = s.calls[event.Item.CallID]
 			newCall := call == nil
@@ -301,11 +299,11 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 				}
 				bus.PushToolInvokeStart(call.ID, call.Name)
 			} else if call.Name != event.Item.Name {
-				return fail(fmt.Errorf("copilot responses: function name changed during stream"))
+				return fail(fmt.Errorf("responses: function name changed during stream"))
 			}
 			if event.OutputIndex != nil {
 				if old := s.byIndex[*event.OutputIndex]; old != nil && old != call {
-					return fail(fmt.Errorf("copilot responses: output index reused for another function"))
+					return fail(fmt.Errorf("responses: output index reused for another function"))
 				}
 				s.byIndex[*event.OutputIndex] = call
 			}
@@ -326,7 +324,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 		}
 		part := s.partial.part(event, event.Item.Type, call)
 		if part.kind != event.Item.Type || part.call != call {
-			return fail(fmt.Errorf("copilot responses: output index changed item identity"))
+			return fail(fmt.Errorf("responses: output index changed item identity"))
 		}
 		if event.Type == "response.output_item.done" {
 			if call != nil {
@@ -349,7 +347,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 		}
 		if call != nil && event.Delta != "" {
 			if call.ready {
-				return fail(fmt.Errorf("copilot responses: argument delta after completed function call"))
+				return fail(fmt.Errorf("responses: argument delta after completed function call"))
 			}
 			call.arguments.WriteString(event.Delta)
 			bus.PushToolInvokeDelta(call.ID, event.Delta)
@@ -357,7 +355,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 	case "response.function_call_arguments.done":
 		call := responseCallFor(s.calls, s.items, s.byIndex, event)
 		if call == nil {
-			return fail(fmt.Errorf("copilot responses: completed arguments have no announced function call"))
+			return fail(fmt.Errorf("responses: completed arguments have no announced function call"))
 		}
 		if event.Arguments != nil {
 			if err := call.setArguments(responseArgumentBytes(event.Arguments)); err != nil {
@@ -381,7 +379,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 		case "failed":
 			terminalErr = responseFailure(event.Error, response.Error)
 		case "cancelled", "canceled":
-			terminalErr = fmt.Errorf("copilot responses: response cancelled by provider")
+			terminalErr = fmt.Errorf("responses: response cancelled by provider")
 		case "incomplete":
 			if response.IncompleteDetails.Reason != "max_output_tokens" {
 				// There is no automatic-continuation/session layer here. Report
@@ -390,7 +388,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 				terminalErr = &responseIncompleteError{reason: response.IncompleteDetails.Reason}
 			}
 		default:
-			return fail(fmt.Errorf("copilot responses: unexpected terminal response status"))
+			return fail(fmt.Errorf("responses: unexpected terminal response status"))
 		}
 		if err := s.reconcile(&response); err != nil {
 			return fail(err)
@@ -421,7 +419,7 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 	for _, raw := range response.Output {
 		var item responseOutputItem
 		if err := json.Unmarshal(raw, &item); err != nil {
-			return fmt.Errorf("copilot responses: decode terminal item: %w", err)
+			return fmt.Errorf("responses: decode terminal item: %w", err)
 		}
 		if item.Type != "function_call" {
 			if vetted, ok := vetResponseMessageItem(raw); ok {
@@ -430,16 +428,16 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 			continue
 		}
 		if item.CallID == "" || item.Name == "" {
-			return fmt.Errorf("copilot responses: terminal function missing call_id or name")
+			return fmt.Errorf("responses: terminal function missing call_id or name")
 		}
 		if seen[item.CallID] {
-			return fmt.Errorf("copilot responses: duplicate terminal function call_id")
+			return fmt.Errorf("responses: duplicate terminal function call_id")
 		}
 		seen[item.CallID] = true
 		call := s.calls[item.CallID]
 		if item.Status == "in_progress" || item.Status == "incomplete" || (response.Status != "completed" && item.Status != "completed" && (call == nil || !call.ready)) {
 			if call != nil && call.ready {
-				return fmt.Errorf("copilot responses: completed function became incomplete")
+				return fmt.Errorf("responses: completed function became incomplete")
 			}
 			continue
 		}
@@ -447,7 +445,7 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 			call = ensureResponseCall(s.calls, item.CallID, item.Name)
 		}
 		if call.Name != item.Name {
-			return fmt.Errorf("copilot responses: terminal function name changed")
+			return fmt.Errorf("responses: terminal function name changed")
 		}
 		if err := call.setArguments(responseArgumentBytes(item.Arguments)); err != nil {
 			return err
@@ -458,7 +456,7 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 	}
 	for id, call := range s.calls {
 		if call.ready && !seen[id] {
-			return fmt.Errorf("copilot responses: terminal output omitted a completed function call")
+			return fmt.Errorf("responses: terminal output omitted a completed function call")
 		}
 	}
 	response.Output = out
@@ -508,7 +506,7 @@ func (call *responseCall) setArguments(raw []byte) error {
 	if call.ready {
 		args := responseArguments(string(raw))
 		if !reflect.DeepEqual(args, call.decoded) {
-			return fmt.Errorf("copilot responses: completed function arguments changed")
+			return fmt.Errorf("responses: completed function arguments changed")
 		}
 		return nil
 	}
@@ -530,7 +528,7 @@ func readyResponseCall(call *responseCall, bus provider.Bus) error {
 		return nil
 	}
 	if call.ID == "" || call.Name == "" {
-		return fmt.Errorf("copilot responses: function call missing call_id or name")
+		return fmt.Errorf("responses: function call missing call_id or name")
 	}
 	call.decoded = responseArguments(call.arguments.String())
 	call.ready = true
@@ -564,9 +562,9 @@ func (e *responseAPIError) DiagnosticCode() string { return e.code }
 
 func (e *responseAPIError) Error() string {
 	if e.status != 0 {
-		return fmt.Sprintf("copilot responses: provider rejected request (%s, status %d)", e.code, e.status)
+		return fmt.Sprintf("responses: provider rejected request (%s, status %d)", e.code, e.status)
 	}
-	return fmt.Sprintf("copilot responses: provider rejected request (%s)", e.code)
+	return fmt.Sprintf("responses: provider rejected request (%s)", e.code)
 }
 
 func responseFailure(payloads ...json.RawMessage) error {
@@ -687,7 +685,7 @@ func quarantineResponseItem(raw json.RawMessage) json.RawMessage {
 type responseIncompleteError struct{ reason string }
 
 func (e *responseIncompleteError) Error() string {
-	return fmt.Sprintf("copilot responses: incomplete response (%s)", safeResponseReason(e.reason))
+	return fmt.Sprintf("responses: incomplete response (%s)", safeResponseReason(e.reason))
 }
 
 func (e *responseIncompleteError) DiagnosticCode() string {

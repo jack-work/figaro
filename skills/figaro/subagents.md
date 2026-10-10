@@ -23,7 +23,7 @@ figaro send -f --id <id> -- "<p>"  steer that worker later
 |------|---------|----------|
 | Spawn, fire and forget | `figaro new -f -j -- "<prompt>"` | Launch a worker and get its aria id back immediately |
 | Spawn, stream to a log | `figaro new -r -- "<prompt>"` | Background work you want to read as it lands |
-| Ephemeral one-shot | `figaro send -er -- "<prompt>"` | A throwaway answer; no aria survives |
+| One-off | `figaro new -r -S system.ttl=1h -- "<prompt>"` | A throwaway answer; the aria reaps itself |
 | Steer | `figaro send -f --id <id> -- "<p>"` | Give a running worker new instructions |
 | Reattach | `figaro listen <id>` | Watch a running aria's stream |
 | Check status | `figaro status <id> -j` | `dormant`, `idle` or `active` |
@@ -74,12 +74,12 @@ figaro status "$ARIA"
 figaro listen "$ARIA"
 ```
 
-## Example: one-shot fan-out (kill them when done)
+## Example: one-off fan-out (they reap themselves)
 
 ```bash
 # Quick parallel lookups, results only
 for topic in "goroutines" "channels" "select"; do
-  figaro send -r -- "Explain Go $topic in 3 sentences" > "/tmp/$topic.txt" 2>&1 &
+  figaro new -r -S system.ttl=1h -- "Explain Go $topic in 3 sentences" > "/tmp/$topic.txt" 2>&1 &
 done
 wait
 cat /tmp/goroutines.txt /tmp/channels.txt /tmp/select.txt
@@ -104,8 +104,7 @@ figaro list -g
 ## Notes
 
 - Each subagent gets its own context window and token budget.
-- Persistent arias (`new`, with or without `-r`) remain in the store. Clean up with `figaro kill <id>` when done.
-- Ephemeral arias (`-er`) are destroyed on completion (no cleanup needed).
+- Every aria remains in the store until removed. Clean up with `figaro kill <id>`, or state a lifetime at birth (`-S system.ttl=1h`) and the daemon removes it once spent; `figaro doctor ttl` lists what is due.
 - The angelus daemon manages all concurrent arias. It starts automatically on the first command that needs it.
 - Practical concurrency: depends on your provider's rate limits. 4-8 simultaneous arias is typical before throttling.
 - Subagents inherit the default outfit (provider, model, skills). Override per-aria with `figaro set --id <id> system.model <model>` after creation.

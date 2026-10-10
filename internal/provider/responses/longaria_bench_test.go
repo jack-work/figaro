@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"encoding/json"
@@ -11,14 +11,14 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func benchmarkWarmResponsesInput(b *testing.B, n int) (*responsesProvider, provider.SendInput) {
+func benchmarkWarmResponsesInput(b *testing.B, n int) (*Provider, provider.SendInput) {
 	b.Helper()
 	figLog := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
-	p := newResponsesProvider(
+	p := New(
 		provider.Knobs{Model: "gpt-5.6-terra", MaxTokens: 1024},
 		&staticResponseTokenSource{token: "test-token"},
-		"",
+		testConfig,
 		func(string) (store.Log[[]json.RawMessage], error) { return cache, nil },
 	)
 	fp := p.Fingerprint()

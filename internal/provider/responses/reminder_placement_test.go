@@ -1,4 +1,4 @@
-package copilot
+package responses
 
 import (
 	"encoding/json"

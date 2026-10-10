@@ -83,7 +83,7 @@ Two different things happen to an outfit, and which one you get depends on
 whether the call creates the aria.
 
 **Birth.** `figaro new -O <names>`, and `send -O` when this call has to mint an
-aria (an unbound shell, or `-e`).
+aria (an unbound shell, or `-A`).
 
 TWO PATCHES, and which is which is the whole economy. The **parent** carries a
 closure and nothing else, one node per content version, so its identity is a

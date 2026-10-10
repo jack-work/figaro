@@ -257,7 +257,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-O <spec>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-O <spec>] [-S <k=v>] [-D <paths>] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding): or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
@@ -363,7 +363,7 @@ config.toml's default_outfit. See ` + "`figaro help outfits`" + ` for the spec s
 
 new shares send's flag parser, so -O, -j and the short bundles behave
 identically; the flags that only make sense when sending to something that
-already exists (--id, -e, -x) are refused rather than ignored.
+already exists (--id, -x) are refused rather than ignored.
 
 -j/--json emits {aria_id, mode:'new'} on stdout.`,
 		PassRaw: true,

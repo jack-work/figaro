@@ -1,8 +1,10 @@
-package copilot
+package responses
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Model-shape rules published by OpenAI, checked before a request is built:
@@ -106,7 +108,7 @@ func joinProblems(model string, problems []string) error {
 	if len(problems) == 0 {
 		return nil
 	}
-	return fmt.Errorf("copilot responses: %s: %s", model, strings.Join(problems, "; "))
+	return fmt.Errorf("responses: %s: %s", model, strings.Join(problems, "; "))
 }
 
 func contains(set []string, value string) bool {
@@ -124,4 +126,15 @@ func quoteList(values []string) string {
 		quoted = append(quoted, fmt.Sprintf("%q", value))
 	}
 	return strings.Join(quoted, ", ")
+}
+
+func Prevalidate(model string, snapshot form.Snapshot) error {
+	if _, known := capabilitiesFor(model); !known {
+		return nil
+	}
+	options, err := responseOptionsFor(snapshot)
+	if err != nil {
+		return err
+	}
+	return validateCapabilities(model, options)
 }

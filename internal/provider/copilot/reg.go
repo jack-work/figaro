@@ -1,7 +1,6 @@
 package copilot
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/provider/routed"
 )
 
 // Config is the copilot-specific provider config (providers/copilot.toml).
@@ -67,25 +66,20 @@ func init() {
 }
 
 func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
-	knobs := ctx.Knobs
-	if knobs.MaxTokens == 0 {
-		knobs.MaxTokens = 16000
-	}
-	reg := provider.Lookup("copilot")
-	if knobs.Model == "" && reg != nil {
-		knobs.Model = reg.DefaultModel
+	if ctx.Resolver == nil {
+		return nil, fmt.Errorf("copilot: nil token resolver (need GitHub access token)")
 	}
 	cfg := loadConfig(ctx.Loaded)
-	messagesCacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		return ctx.Backend.OpenTranslator(aria, "copilot-messages")
-	}
-	responsesCacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		return ctx.Backend.OpenTranslator(aria, "copilot-responses")
-	}
-	p, err := New(knobs, ctx.Resolver, cfg, messagesCacheOpen, responsesCacheOpen)
+	tokens := newTokenSource(ctx.Resolver, cfg)
+	file, err := routed.LoadFile(ctx.Loaded, providerName)
 	if err != nil {
 		return nil, err
 	}
-	p.SetTemplates(ctx.Templates)
-	return p, nil
+	file.BaseURL = ""
+	spec, err := file.Apply(Spec(tokens))
+	if err != nil {
+		return nil, err
+	}
+	ctx.Resolver = tokens
+	return routed.Build(ctx, spec, "")
 }
