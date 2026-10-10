@@ -117,6 +117,13 @@ dp_reply() {
   cat > "$DP_DIR/replies/$n.md" || return 1
 }
 
+# dp_delay <seconds>: how long the provider holds each turn. A turn in flight
+# is the only way to QUEUE a prompt, so anything about the queue needs this.
+# 0 turns it off.
+dp_delay() {
+  printf '%s' "${1:?dp_delay <seconds>}" > "$DP_DIR/requests.jsonl.delay"
+}
+
 # dp_fig: the dev shell's figaro, from here, against the isolated store.
 dp_fig() {
   local -a e=(); local v

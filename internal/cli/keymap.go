@@ -942,7 +942,7 @@ var helpRows = []helpRow{
 	{helpCmdSubmitSnap, "(in :) M-Enter", "submit, leave visual mode, and snap to the live tail"},
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpStatusPanel, "!", "figaro status panel"},
-	{helpQueuedPanel, "Q", "queued prompts panel"},
+	{helpQueuedPanel, "Q", "queued prompts panel; with nothing queued it says so on the bar and opens nothing"},
 	{helpNotifications, "space n", "notifications: what figaro said, and what went wrong"},
 	{helpFormPit, "S", "the form (state) in the pit"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},

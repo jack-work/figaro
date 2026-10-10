@@ -14,6 +14,7 @@ The text is chunked so the SSE path is exercised rather than bypassed.
 import json
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8897
@@ -27,6 +28,21 @@ USAGE = {
     "prompt_tokens_details": {"cached_tokens": 0},
 }
 CHUNK = 48
+
+# A TURN THAT TAKES ITS TIME, on demand, the same knob fake-gateway-tools.py
+# carries: a prompt sent while a turn is in flight is QUEUED rather than run,
+# which is the only way to put rows in the queue pit. Read per request from a
+# file beside the record, so a script can turn it on for one turn and off again
+# without a restart.
+DELAY_FILE = RECORD + ".delay"
+
+
+def delay_seconds():
+    try:
+        with open(DELAY_FILE) as fh:
+            return float(fh.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0.0
 
 
 def reply_text(n):
@@ -67,6 +83,8 @@ class Handler(BaseHTTPRequestHandler):
             fh.write(json.dumps({"path": self.path, "body": parsed}) + "\n")
         n = sum(1 for _ in open(RECORD))
         text = reply_text(n)
+        if (secs := delay_seconds()) > 0:
+            time.sleep(secs)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")

@@ -967,6 +967,7 @@ func (t *livelogTurn) setQueued(prompts []queuedItem, errMsg string) {
 	// THE SNAPSHOT LANDS FIRST: the pit builds its rows from this copy, so
 	// refreshing before it landed drew every queue one poll stale.
 	t.tr.queued = t.queued
+	t.tr.queuedErr = t.queuedErr
 	t.tr.queuedRows = t.queuedRows()
 	// The panel opens itself when there is something to show and closes when
 	// there is not. Auto-close is skipped once the user has opened it by hand,

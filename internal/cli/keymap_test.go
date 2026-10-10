@@ -368,7 +368,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in :) M-Enter      submit, leave visual mode, and snap to the live tail",
 		"  ^L                  open the transcript (stays open until you close it)",
 		"  !                   figaro status panel",
-		"  Q                   queued prompts panel",
+		"  Q                   queued prompts panel; with nothing queued it says so on the bar and opens nothing",
 		"  space n             notifications: what figaro said, and what went wrong",
 		"  S                   the form (state) in the pit",
 		"  T                   read the conversation without closing the pit (again to go back)",

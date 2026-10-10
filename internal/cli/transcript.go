@@ -65,7 +65,12 @@ type transcript struct {
 	queueDismissed bool
 	queuedRows     []string     // pre-rendered by livelogTurn, for the inline trailer
 	queued         []queuedItem // the queue itself, ids intact, for the pit
-	queuedFetch    func()       // async refresh of the queued snapshot; set by the input loop
+	// queuedErr is why the queue could not be read, when it could not. It is
+	// carried here so "the queue is empty" is only ever said about a queue
+	// this client actually read: a failure that reported as emptiness would be
+	// the worst of the three answers.
+	queuedErr   string
+	queuedFetch func() // async refresh of the queued snapshot; set by the input loop
 	// command runs a ':' line that is not a coordinate. Set by the input loop,
 	// which owns the RPC clients; nil in a fixture, where the box still takes
 	// coordinates and says so for anything else.
@@ -1660,7 +1665,9 @@ func (t *transcript) statusPanelLines() []string {
 }
 
 // showQueuedAuto opens or closes the queue pit because the QUEUE changed, not
-// because a key was pressed. A pit opened by hand is never auto-closed.
+// because a key was pressed. Opening defers to a reader who has said what they
+// want on screen; closing does not, because a drained queue has nothing left
+// to be deliberate about.
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
 		if t.showing(pitQueue) {
@@ -1681,17 +1688,15 @@ func (t *transcript) showQueuedAuto(on bool) {
 	if !t.showing(pitQueue) {
 		return
 	}
-	// REFRESHING IS NOT CLOSING. A pit the reader opened is never auto-closed
-	// -- that rule is right -- but applying it to the ROWS as well left
-	// fossils: a queue that drained while the pit was up kept showing the
-	// messages it used to hold, at "→", forever. NO TEST COVERS THIS; the
-	// resize-paint suite only opens and closes the pit. `:send` sets
-	// queuedByKey, so this is the ordinary path, not a corner.
-	if t.queuedByKey {
-		t.refreshQueuePit()
-		return
-	}
+	// A DRAINED QUEUE CLOSES ITS PIT, by hand or not, and says so on the bar.
+	// "A pit the reader opened is never auto-closed" was the rule, and it
+	// refreshed the rows instead -- which for a queue means an empty list: the
+	// pit stayed open showing nothing, over a conversation it was still
+	// costing rows. The rule is right for a pit whose CONTENT is the point and
+	// wrong for one whose content is gone.
+	t.queuedByKey = false
 	t.pit.close()
+	t.noteQueueEmpty()
 }
 
 // firstLineTrim returns the first non-empty line of s with surrounding
@@ -1711,12 +1716,39 @@ func firstLineTrim(s string) string {
 // an async refresh. The stale snapshot renders immediately so the user sees
 // something even if the RPC lags; the refresh replaces it in place.
 func (t *transcript) openQueueFromKey() {
-	t.queuedByKey, t.queueDismissed = true, false
+	// AN EMPTY QUEUE IS A SENTENCE, NOT A PIT. A pit with no rows costs the
+	// conversation its rows to say what the bar can say in four words and
+	// retire. The reader asked, so the earlier dismissal is revoked either
+	// way: a queue that arrives later opens the panel by itself.
+	t.queueDismissed = false
+	if t.queueEmpty() {
+		t.noteQueueEmpty()
+		if t.queuedFetch != nil {
+			// RESYNC ANYWAY. The snapshot may be empty because the seed is
+			// still in flight, and showQueuedAuto opens the pit the moment a
+			// real queue lands, so the refusal costs nothing but the sentence.
+			t.queuedFetch()
+		}
+		return
+	}
+	t.queuedByKey = true
 	t.openQueuePit()
 	if t.queuedFetch != nil {
 		t.queuedFetch()
 	}
 }
+
+// queueEmpty reports a queue this client has read and found empty. An
+// unreadable queue is not empty, which is why queuedErr is part of the test.
+func (t *transcript) queueEmpty() bool {
+	return len(t.queued) == 0 && t.queuedErr == ""
+}
+
+// queueEmptyNote is the sentence, in one place: the pit's absence and its
+// auto-close are the same fact and must not be worded twice.
+const queueEmptyNote = "message queue is empty"
+
+func (t *transcript) noteQueueEmpty() { t.setCommandNoteAt(queueEmptyNote, alertInfo) }
 
 // openQueuePit builds the queue as a SELECTABLE list: `y` yanks a message's
 // text and `x` drops it, which is what turns the queue from a thing you watch

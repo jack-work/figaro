@@ -155,11 +155,18 @@ var oracleStates = map[string]func(*transcript){
 	"transcript+pendG": func(tr *transcript) { tr.key('g') },
 	"help":             func(tr *transcript) { tr.key('h') },
 	"status":           func(tr *transcript) { tr.key('!') },
-	"queued":           func(tr *transcript) { tr.key('Q') },
-	"panel+sel":        func(tr *transcript) { tr.selectNode(1, false); tr.key('!') },
-	"search":           func(tr *transcript) { tr.key('/'); tr.key('m'); tr.key('s') },
-	"search+sel":       func(tr *transcript) { tr.selectNode(1, false); tr.key('/'); tr.key('m') },
-	"jump":             func(tr *transcript) { tr.key(':'); tr.key('1'); tr.key('2') },
+	// THE QUEUE PIT NEEDS A QUEUE, as of 2026-10-10: `Q` on an empty one is a
+	// bar notice and no pit, so this state used to describe a panel that can
+	// no longer exist. One queued message, and the row describes the pit a
+	// reader actually sees.
+	"queued": func(tr *transcript) {
+		tr.queued = []queuedItem{{id: 1, text: "a queued prompt"}}
+		tr.key('Q')
+	},
+	"panel+sel":  func(tr *transcript) { tr.selectNode(1, false); tr.key('!') },
+	"search":     func(tr *transcript) { tr.key('/'); tr.key('m'); tr.key('s') },
+	"search+sel": func(tr *transcript) { tr.selectNode(1, false); tr.key('/'); tr.key('m') },
+	"jump":       func(tr *transcript) { tr.key(':'); tr.key('1'); tr.key('2') },
 	// v puts the cursor up; a second v/V anchors the highlight.
 	"visual":        func(tr *transcript) { tr.key('V'); tr.key('V'); tr.key('j') },
 	"visual+char":   func(tr *transcript) { tr.key('v'); tr.key('v'); tr.key('l'); tr.key('l') },
@@ -258,6 +265,10 @@ var pagerOracle = []struct {
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// `Q` ON AN EMPTY QUEUE IS A BAR NOTICE, 2026-10-10, and no pit: this
+		// signature has no column for the bar, so it reads as inert here. The
+		// notice itself is asserted in transcript_test.go, where it can be
+		// seen.
 		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
@@ -335,7 +346,6 @@ var pagerOracle = []struct {
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
-		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"jump", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12\" vis=none", map[string]string{
@@ -534,7 +544,6 @@ var pagerOracle = []struct {
 		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=true jq=\"\" vis=none",
 		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
-		"0x51": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
@@ -566,7 +575,7 @@ var pagerOracle = []struct {
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x58": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
@@ -900,7 +909,6 @@ var pagerOracle = []struct {
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"transcript", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
@@ -931,7 +939,6 @@ var pagerOracle = []struct {
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6b": "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x75": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -967,7 +974,6 @@ var pagerOracle = []struct {
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x67": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6b": "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x75": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -993,7 +999,6 @@ var pagerOracle = []struct {
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=true jq=\"\" vis=none",
 		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x47": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
-		"0x51": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x64": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x67": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x6a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
@@ -1146,7 +1151,6 @@ var pagerOracle = []struct {
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
