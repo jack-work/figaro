@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
+	"log/slog"
 
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/turns"
 )
 
 // The lineage read. See api/rpc/lineage.go for what it is for; this is where
@@ -23,93 +21,50 @@ import (
 // told that number would keep one turn too many and render the parent's
 // answer under the branch's question.
 
-// baseTurns memoizes the LT to turn conversion. A fork base never moves, so
-// within one process an entry is true forever.
-type baseTurns struct {
-	mu sync.Mutex
-	at map[string]uint64 // "<parent node>:<base lt>" -> turn
+// baseTurnRecorder is a backend that can write a fork base's turn down beside
+// the base. Optional: without one the lineage read still answers, it just
+// cannot save the next reader the trouble.
+type baseTurnRecorder interface {
+	RecordBaseTurn(trunk string, baseLT, turn uint64, exact bool) error
 }
 
-func (b *baseTurns) get(key string) (uint64, bool) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	t, ok := b.at[key]
-	return t, ok
-}
-
-func (b *baseTurns) put(key string, turn uint64) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.at == nil {
-		b.at = map[string]uint64{}
+// baseTurnOf is the turn link l starts at, in its parent's turn space.
+//
+// IT IS DATA. A fork records it beside its base when it is born, so the common
+// answer reads no log at all. Two cases still touch the parent's log, for one
+// record or a short backward read, never a walk from LT 1:
+//
+//   - A fork older than the recording, or whose record was lost. Computed
+//     once and recorded, so it is the last time anyone asks.
+//   - A base that was PAST THE END of the parent when it was recorded, which
+//     is every head fork. The recorded answer is the parent's last turn: the
+//     one turn the two arias can still disagree about if the parent was
+//     mid-turn when it was cut, so keeping it would be the one mistake
+//     retention may never make. That costs a single re-read of one turn. Once
+//     the parent writes AT the base the precise answer is one record away,
+//     and it is recorded the first time it is seen.
+func (a *Angelus) baseTurnOf(parent string, l store.Link) uint64 {
+	if l.BaseTurnKnown && l.BaseTurnExact {
+		return l.BaseTurn
 	}
-	b.at[key] = turn
-}
-
-// turnAtLT is the turn that owns lt in node's log. One record read in the
-// common case: every record carries the turn it belongs to. The walk is the
-// fallback for a log written before turn ids were stamped, where the id has to
-// be counted from the openers.
-func (a *Angelus) turnAtLT(node string, lt uint64) uint64 {
-	if lt == 0 {
-		return 0
-	}
-	key := node + ":" + fmt.Sprint(lt)
-	if t, ok := a.baseTurns.get(key); ok {
-		return t
-	}
-	log := a.openNodeIR(node)
+	log := a.openNodeIR(parent)
 	if log == nil {
-		return 0
+		return l.BaseTurn // 0 when unknown: keeps nothing, which is safe
 	}
-	turn, sealed := uint64(0), false
-	// THE RECORD MUST BE THE ONE ASKED FOR. A read past the end of a log comes
-	// back with the last record rather than with nothing, and taking its turn
-	// id answers one turn too low for a fork that begins AFTER the end.
-	if entries, _ := log.ReadPage(lt, lt+1, 1); len(entries) > 0 &&
-		entries[0].LT == lt && entries[0].Payload.TurnID != 0 {
-		turn, sealed = entries[0].Payload.TurnID, true
-	} else {
-		var msgs []message.Message
-		for from := uint64(1); ; {
-			got := log.ReadFrom(from, 512)
-			if len(got) == 0 {
-				break
-			}
-			for _, e := range got {
-				m := e.Payload
-				m.LogicalTime = e.LT
-				msgs = append(msgs, m)
-			}
-			from = got[len(got)-1].LT + 1
-			if from > lt {
-				break
-			}
-		}
-		if t, ok := turns.At(msgs, lt); ok {
-			turn, sealed = t, true
-		} else if len(msgs) > 0 {
-			// THE LAST TURN OF A LOG IS NOT SHARED. The coordinate is past the
-			// end, so the fork begins where this log stops, and the turn it
-			// stops inside is the one turn the two arias can still DISAGREE
-			// about: the child repairs a tool call left hanging at the cut
-			// (an error result, because the call never returned to it) while
-			// the parent goes on to complete the same call successfully. Same
-			// turn id, different content, which is the one thing retention may
-			// never be wrong about.
-			//
-			// So the answer is the last turn, not one past it. It costs a head
-			// fork a single turn re-read and it is correct whether or not that
-			// turn was still running, which is the part a log cannot tell us.
-			turn = turns.StampIDs(msgs)
+	if l.BaseTurnKnown {
+		// Recorded past the end. The parent's tail says whether it has
+		// written at the base since; until it has, the record stands. The
+		// tail is a positional read, not ReadPage, which on a raw node log
+		// materializes the whole log to return one record.
+		if tail, ok := log.PeekTail(); !ok || tail.LT < l.BaseLT {
+			return l.BaseTurn
 		}
 	}
-	// ONLY A SEALED COORDINATE IS MEMOIZED. A fork base never moves, but "past
-	// the end of the log" is not a coordinate, it is a statement about a log
-	// that grows: the parent writes the rest of that turn a second later and
-	// the answer changes. Caching it kept the first answer forever.
-	if turn != 0 && sealed {
-		a.baseTurns.put(key, turn)
+	turn, exact := store.TurnAtLT(log, l.BaseLT)
+	if rec, ok := a.Backend.(baseTurnRecorder); ok {
+		if err := rec.RecordBaseTurn(l.Node, l.BaseLT, turn, exact); err != nil {
+			slog.Debug("lineage: base turn not recorded", "node", l.Node, "err", err)
+		}
 	}
 	return turn
 }
@@ -134,7 +89,7 @@ func (a *Angelus) chainOf(id string) ([]rpc.LineageLink, error) {
 		}
 		base := uint64(0)
 		if len(out) > 0 {
-			base = a.turnAtLT(links[i-1].Node, l.BaseLT)
+			base = a.baseTurnOf(links[i-1].Node, l)
 		}
 		out = append(out, rpc.LineageLink{Node: l.Node, Base: base})
 	}

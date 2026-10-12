@@ -62,12 +62,17 @@ func TestLineage_AHeadForkSharesAllButTheLastTurn(t *testing.T) {
 	}
 }
 
-// AND THE ANSWER IS NOT CACHED WHILE IT CAN STILL CHANGE. "Past the end of the
-// log" is not a coordinate, it is a statement about a log that grows: the
-// parent writes the rest of that turn a second later and the true answer
-// moves. The memo used to keep the first answer forever, which is how a stale
-// sharing claim could outlive the thing it was true of.
-func TestLineage_AnUnsealedBaseIsNotMemoized(t *testing.T) {
+// AND A RECORDED ANSWER THAT CAN STILL CHANGE IS NOT TRUSTED FOREVER. "Past
+// the end of the log" is not a coordinate, it is a statement about a log that
+// grows: the parent writes the record that coordinate names a second later and
+// the true answer moves. A head fork records the conservative answer at birth
+// (the turn the parent's log stops inside) and marks it inexact; the first
+// lineage read after the parent writes AT the base must see the new turn, and
+// must record it, so the next one reads no log.
+//
+// This used to be a test of an in-process memo that declined to cache the
+// unsealed answer. The answer is data on disk now; the property is the same.
+func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -79,23 +84,39 @@ func TestLineage_AnUnsealedBaseIsNotMemoized(t *testing.T) {
 		t.Fatal(err)
 	}
 	plog, _ := be.OpenFigIR(parent)
-	var last uint64
 	for i := uint64(1); i <= 3; i++ {
 		if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, TurnID: i, Content: []message.Content{message.TextContent("q")}}}); err != nil {
 			t.Fatal(err)
 		}
-		e, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
-			Role: message.RoleOutput, TurnID: i, Content: []message.Content{message.TextContent("a")}}})
+		if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role: message.RoleOutput, TurnID: i, Content: []message.Content{message.TextContent("a")}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A head fork through the birth verb, which records its base turn.
+	branch, _, err := be.ForkWith(parent, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"aria_id": json.RawMessage(`"b"`)}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := lastLink(t, be, branch)
+	if !link.BaseTurnKnown || link.BaseTurnExact || link.BaseTurn != 3 {
+		t.Fatalf("a head fork recorded %+v, want turn 3, known, inexact", link)
+	}
+
+	a := &Angelus{Backend: be, uiProj: uiir.New(nil)}
+	h := &handlers{angelus: a}
+	divergence := func() uint64 {
+		t.Helper()
+		params, _ := json.Marshal(rpc.LineageRequest{FigaroID: branch, Against: parent})
+		out, err := h.lineage(t.Context(), params)
 		if err != nil {
 			t.Fatal(err)
 		}
-		last = e.LT
+		return out.(rpc.LineageResponse).Divergence
 	}
-	a := &Angelus{Backend: be, uiProj: uiir.New(nil)}
-
-	base := last + 1
-	if got := a.turnAtLT(parent, base); got != 3 {
+	if got := divergence(); got != 3 {
 		t.Fatalf("a base past the end answers %d, want the turn the log stops inside", got)
 	}
 	// The parent writes the record that coordinate names. The answer is now a
@@ -104,7 +125,19 @@ func TestLineage_AnUnsealedBaseIsNotMemoized(t *testing.T) {
 		Role: message.RoleInput, TurnID: 4, Content: []message.Content{message.TextContent("q4")}}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := a.turnAtLT(parent, base); got != 4 {
-		t.Fatalf("after the parent wrote at that coordinate the answer is %d, want 4: the memo kept a claim that had expired", got)
+	if got := divergence(); got != 4 {
+		t.Fatalf("after the parent wrote at that coordinate the answer is %d, want 4: a recorded claim outlived the log it was true of", got)
 	}
+	if link := lastLink(t, be, branch); !link.BaseTurnExact || link.BaseTurn != 4 {
+		t.Fatalf("the refined answer was not recorded: %+v", link)
+	}
+}
+
+func lastLink(t *testing.T, be *store.XwalBackend, id string) store.Link {
+	t.Helper()
+	links := be.LineageLinks(id)
+	if len(links) == 0 {
+		t.Fatalf("no lineage for %s", id)
+	}
+	return links[len(links)-1]
 }

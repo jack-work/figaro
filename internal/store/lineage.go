@@ -8,39 +8,47 @@ import (
 // first LT it owns. Kind is what tells a conversation from the outfit stump
 // and the genesis root above it, which matters to anyone who wants the part of
 // a lineage that has readable turns in it.
+//
+// BaseTurn is BaseLT as a turn of the PARENT, when one was recorded (see
+// RecordBaseTurn). BaseTurnKnown is false for a fork made before turns were
+// recorded, or whose record was lost; the caller computes it then, and should
+// record what it computed.
 type Link struct {
-	Node   string
-	Kind   string
-	BaseLT uint64
+	Node          string
+	Kind          string
+	BaseLT        uint64
+	BaseTurn      uint64
+	BaseTurnKnown bool
+	BaseTurnExact bool
 }
 
 // LineageLinks walks a trunk's ancestry root first. The root owns from the
 // beginning, so its base is zero whatever the tree recorded.
+//
+// ONE LOOKUP PER LINK. This used to list every trunk in the store to build a
+// map and then walk a handful of entries of it: a full walk of the index, and
+// a marker read per trunk, on every hop between two arias. The walk is
+// proportional to the depth of the ancestry now, not to the size of the store.
 func (s *XwalStore) LineageLinks(id string) []Link {
 	s.mu.Lock()
-	infos := s.trunks.ListLight()
-	s.mu.Unlock()
-
-	by := make(map[string]int, len(infos))
-	for i, t := range infos {
-		by[t.ID] = i
-	}
-
+	defer s.mu.Unlock()
 	var links []Link
 	seen := map[string]struct{}{}
 	for cur := id; cur != ""; {
-		i, ok := by[cur]
-		if !ok {
-			break
-		}
 		// A cycle would loop forever; topology should not have one, and a
 		// partial lineage degrades to a miss rather than a lie.
 		if _, dup := seen[cur]; dup {
 			break
 		}
 		seen[cur] = struct{}{}
-		t := infos[i]
-		links = append(links, Link{Node: t.ID, Kind: t.Kind, BaseLT: t.BranchedLT})
+		t, ok := s.trunks.InfoLight(cur)
+		if !ok {
+			break
+		}
+		links = append(links, Link{
+			Node: t.ID, Kind: t.Kind, BaseLT: t.BranchedLT,
+			BaseTurn: t.BranchedTurn, BaseTurnKnown: t.BranchedTurnKnown, BaseTurnExact: t.BranchedTurnExact,
+		})
 		cur = t.Parent
 	}
 	if len(links) == 0 {
@@ -50,6 +58,7 @@ func (s *XwalStore) LineageLinks(id string) []Link {
 		links[l], links[r] = links[r], links[l]
 	}
 	links[0].BaseLT = 0
+	links[0].BaseTurn, links[0].BaseTurnKnown, links[0].BaseTurnExact = 0, true, true
 	return links
 }
 

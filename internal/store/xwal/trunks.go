@@ -1774,7 +1774,20 @@ type TrunkInfo struct {
 	Stump      string   // stump name, if the trunk is rooted directly at a stump
 	Kind       string   // the founding node's kind, from its marker ("conversation", "form", …)
 	BranchedLT uint64
-	Tip        uint64
+	// BranchedTurn is BranchedLT in the caller's turn coordinate, recorded
+	// beside the base by whoever knew it (SetBranchedTurn). xwal does not know
+	// what a turn is and never computes one; it carries the number so the
+	// caller does not have to read a log to ask again. Known is false for a
+	// node nobody recorded one for. Exact means the parent had a record AT the
+	// base when it was recorded; a base past the parent's end is recorded
+	// conservatively and may be refined once the parent writes there.
+	//
+	// Filled by InfoLight only: a listing does not need it, and reading a
+	// second marker per trunk would tax every `figaro list`.
+	BranchedTurn      uint64
+	BranchedTurnKnown bool
+	BranchedTurnExact bool
+	Tip               uint64
 }
 
 // List returns every trunk, in id order.
@@ -1821,6 +1834,115 @@ func (t *Trunks) lineage(trunk string) (parent, stump string, bl uint64) {
 		return "", "", 0
 	}
 	return p.Trunk, stumpName(n.From, p), t.forkBaseOf(head)
+}
+
+// forkTurnName is the sidecar that carries a fork base's turn. It lives
+// beside .fork in the founding node's main-channel directory and is a
+// DERIVED value: it is self-validating (it names the base it is true of) and
+// self-healing (absent, torn or stale, it is simply not believed, and the
+// caller recomputes). That is why it is not part of .fork itself: .fork is
+// load-bearing for opening the store, and a number that can always be
+// recomputed has no business sharing a file with one that cannot.
+const forkTurnName = ".forkturn"
+
+// forkTurnOf reads a node's recorded base turn, if one was recorded for the
+// base the node has now.
+func (t *Trunks) forkTurnOf(key string, base uint64) (turn uint64, known, exact bool) {
+	b, err := os.ReadFile(filepath.Join(t.irDir(key), forkTurnName))
+	if err != nil {
+		return 0, false, false
+	}
+	var gotBase, gotTurn bool
+	var recBase uint64
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		switch k {
+		case "base":
+			n, perr := strconv.ParseUint(v, 10, 64)
+			recBase, gotBase = n, perr == nil
+		case "turn":
+			n, perr := strconv.ParseUint(v, 10, 64)
+			turn, gotTurn = n, perr == nil
+		case "exact":
+			exact = v == "true"
+		}
+	}
+	if !gotBase || !gotTurn || recBase != base {
+		return 0, false, false
+	}
+	return turn, true, exact
+}
+
+// SetBranchedTurn records the turn a trunk's fork base falls in, in the
+// PARENT's turn space, so an ancestry read never has to open a log to learn
+// it. base must be the base on disk now: the number is only true of that
+// base, and a topology change that moved it must not inherit it.
+//
+// The write is atomic (temp + rename) and deliberately NOT synced. A crash
+// can lose it; a lost or torn sidecar is not believed and is recomputed, so
+// durability would buy nothing but a slower fork.
+func (t *Trunks) SetBranchedTurn(trunk string, base, turn uint64, exact bool) error {
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		return err
+	}
+	defer endRead()
+	key, ok := t.idx.Head(trunk)
+	if !ok {
+		return fmt.Errorf("%w %q", ErrUnknownTrunk, trunk)
+	}
+	if have := t.forkBaseOf(key); have != base {
+		return fmt.Errorf("xwal: %s forks at LT %d, not %d: refusing to record its turn", trunk, have, base)
+	}
+	dir := t.irDir(key)
+	f, err := os.CreateTemp(dir, "."+forkTurnName+"-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := fmt.Fprintf(f, "base=%d\nturn=%d\nexact=%t\n", base, turn, exact); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(dir, forkTurnName)); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// InfoLight is ListLight for ONE trunk: the same fields from the same
+// in-memory index and the same marker read, plus the recorded base turn,
+// without visiting every other trunk in the store. An ancestry walk is a
+// handful of these. It used to be a full listing of the store, per walk.
+func (t *Trunks) InfoLight(id string) (TrunkInfo, bool) {
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		return TrunkInfo{}, false
+	}
+	defer endRead()
+	key, ok := t.idx.Head(id)
+	if !ok {
+		return TrunkInfo{}, false
+	}
+	ti := TrunkInfo{ID: id, Head: []string{key}}
+	if n := t.node(key); n != nil {
+		ti.Kind = n.Kind
+	}
+	ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+	if ti.BranchedLT > 0 {
+		ti.BranchedTurn, ti.BranchedTurnKnown, ti.BranchedTurnExact = t.forkTurnOf(key, ti.BranchedLT)
+	}
+	return ti, true
 }
 
 // forkBaseOf reads a node's main-channel .fork base (the LT it forked at)

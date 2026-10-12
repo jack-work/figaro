@@ -534,7 +534,37 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	// dropped: a Form holds a writer, and a dropped one nobody closed is a
 	// writer nobody can reach.
 	b.dropForm(child)
+	b.recordForkTurn(child)
 	return child, version, nil
+}
+
+// recordForkTurn writes down, beside a new conversation fork's base, the turn
+// that base falls in. It is read from the PARENT, now, while the answer is a
+// record or two away and the parent's log is warm; after this no ancestry read
+// has to open a log to learn it.
+//
+// Best effort by design. A fork that does not get one (a crash, a parent that
+// is not a conversation, an error here) is answered the old way by whoever
+// next needs it, and that reader records what it computed.
+func (b *XwalBackend) recordForkTurn(child string) {
+	me, ok := b.store.trunks.InfoLight(child)
+	if !ok || me.Kind != string(kindConversation) || me.Parent == "" || me.BranchedLT == 0 {
+		return
+	}
+	parent, ok := b.store.trunks.InfoLight(me.Parent)
+	if !ok || parent.Kind != string(kindConversation) {
+		return
+	}
+	turn, exact := TurnAtLT(b.OpenNode(me.Parent), me.BranchedLT)
+	if err := b.RecordBaseTurn(child, me.BranchedLT, turn, exact); err != nil {
+		slog.Debug("fork: base turn not recorded", "child", child, "err", err)
+	}
+}
+
+// RecordBaseTurn persists the turn a trunk's fork base falls in, in its
+// parent's turn space. See xwal.Trunks.SetBranchedTurn.
+func (b *XwalBackend) RecordBaseTurn(trunk string, baseLT, turn uint64, exact bool) error {
+	return b.store.trunks.SetBranchedTurn(trunk, baseLT, turn, exact)
 }
 
 // CreateForm mints an unbound form: see XwalStore.CreateForm. `fig form
