@@ -715,7 +715,7 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	go func() { base <- in.divergence(ctx, id, from) }()
 
 	dial := mark.Span("hop.dial", "to", id, "gen", gen)
-	fcli, err := sdk.DialAriaWith(ep, in.notifyHandler(gen), markTap(in.tap))
+	fcli, err := sdk.DialAriaWith(ep, in.notifyHandler(gen, id), markTap(in.tap))
 	dial()
 	// THE ANSWER IS TAKEN BEFORE THE LOCK. Asking the angelus takes in.mu, so
 	// waiting for it under that lock would park the switch on a goroutine that
@@ -955,8 +955,24 @@ func (in *interactiveInput) seedMetrics(gen uint64) {
 }
 
 // notifyHandler folds one connection's frames, and only while that connection
-// is the subject.
-func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
+// is the subject: dialled for id, under generation gen, AND claimed.
+//
+// THE GENERATION ALONE WAS NOT A FENCE (issue #25). A switch takes its
+// generation before it dials, the connection is subscribed the moment it is
+// accepted, and the client is swapped only later, in claimSubject, after the
+// lineage read returns. Every frame the new aria sent in between passed the
+// generation check and was folded into the client of the aria being LEFT,
+// which claimSubject then put on the shelf. A branch's opening question,
+// prompted by `:fork -- <prompt>` a moment before the hop, landed in the
+// parent's window that way and was painted at the end of the parent's last
+// reply when the reader came back.
+//
+// So the handler knows which aria it was dialled for and drops what arrives
+// before that aria is the claimed subject. Nothing is lost by it: the seed
+// read that follows the claim covers the same ground, Client.Apply is
+// idempotent, a live frame that arrives after a gap trips the desync path and
+// re-reads, and the intrinsic mirrors are re-seeded whole after the claim.
+func (in *interactiveInput) notifyHandler(gen uint64, id string) sdk.NotifyHandler {
 	return func(method string, params json.RawMessage) {
 		if atomic.LoadUint64(&in.subjectGen) != gen {
 			return
@@ -968,10 +984,18 @@ func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 		// that reads as if it holds the lock throughout. One entrance, one
 		// lock discipline.
 		if method == rpc.MethodFormDelta {
+			if in.currentID() != id {
+				return
+			}
 			in.applyIntrinsicDelta(params)
 			return
 		}
 		in.mu.Lock()
+		if in.figaroID != id {
+			in.mu.Unlock()
+			mark.Mark("hop.early", "to", id, "method", method)
+			return
+		}
 		switch method {
 		case rpc.MethodAriaFrame:
 			in.turnFrame(params)

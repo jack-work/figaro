@@ -17,6 +17,7 @@ as a float.
 | `hop` | cli | `from`, `to`, `gen`, `ms` | one subject change, keystroke to seeded window; the phases below add up to it |
 | `hop.dial` | cli | `to`, `gen`, `ms` | connecting to the new aria |
 | `hop.read` | cli | `kind`, `ms`, `parts`, `err` | one read on the pager's behalf: `seed` (retarget), `enter` (cold pager), `catchup`, `history` (scrolling up), `page` (a jump) |
+| `hop.early` | cli | `to`, `method` | a frame from the aria being dialled arrived before the hop claimed it, and was dropped (issue #25: it used to land in the aria being left); the seed read covers it |
 | `wire.rx`, `wire.tx` | cli | `conn`, `bytes` | bytes on one aria connection, as they pass |
 | `aria.frame` | cli | `bytes`, `parts`, `live`, `deltas` | one `figaro.aria` notification arrived |
 | `frame` | cli | `aria` or `view`, `bytes`, `full`, `content`, `tail`, `rows` | the terminal was written: a painted frame. `content` says the transcript had rows; `tail` says the view was following |

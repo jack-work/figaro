@@ -165,7 +165,7 @@ func TestHop_AGapFromTheStreamIsChasedWithoutAKey(t *testing.T) {
 	in.lt.apply(aria.Page{Parts: partsFor(1, 3, "PARENT")})
 	in.lt.tr.buildIndex()
 
-	handler := in.notifyHandler(in.subjectGeneration())
+	handler := in.notifyHandler(in.subjectGeneration(), in.currentID())
 	frame, err := json.Marshal(aria.Page{
 		Parts: partsFor(9, 1, "LATER"),
 		More:  aria.More{Before: true},
