@@ -286,8 +286,75 @@ func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
 	return out
 }
 
+// ReadPage is readPage's contract read by POSITION: only the records the page
+// returns are read and decoded.
+//
+// It used to be readPage(l.Read(), ...), which decoded every record in the
+// channel to return n of them. Every caller that asked for "the last record"
+// (the dormant reader's tail probe, the agent's, the composed cache's seed for
+// an ancestor range) was walking the whole conversation, while the comments
+// beside them said it cost one read. The channel is addressed by its own LT
+// (see ReadFrom), so the window is arithmetic on the bounds.
+//
+// total is the channel's extent, as Len reports it: the number the tree log
+// in front of this already returns. It counted DECODABLE records before, which
+// is the same number unless a record fails to decode, and counting those meant
+// decoding all of them.
 func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
-	return readPage(l.Read(), from, before, n)
+	var out []Entry[T]
+	total := 0
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		first, last, ok := channelBounds(xw, l.channel)
+		if !ok {
+			return nil
+		}
+		total = int(last-first) + 1
+		read := func(lt uint64) (Entry[T], bool) {
+			r, err := xw.ReadAt(l.channel, lt)
+			if err != nil {
+				return Entry[T]{}, false
+			}
+			return decodeRecord[T](r)
+		}
+		if before > 0 {
+			if n <= 0 {
+				return nil
+			}
+			// Backward from before-1, until n are found or the channel ends.
+			// A record that does not read is skipped, as Read skips it, so the
+			// page reaches past it exactly as the whole-log slice did.
+			top := last
+			if before-1 < top {
+				top = before - 1
+			}
+			for lt := top; lt >= first && len(out) < n; lt-- {
+				if e, ok := read(lt); ok {
+					out = append(out, e)
+				}
+				if lt == 0 {
+					break
+				}
+			}
+			for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+				out[i], out[j] = out[j], out[i]
+			}
+			return nil
+		}
+		start := first
+		if from > start {
+			start = from
+		}
+		for lt := start; lt <= last && (n <= 0 || len(out) < n); lt++ {
+			if e, ok := read(lt); ok {
+				out = append(out, e)
+			}
+		}
+		return nil
+	})
+	if out == nil && before > 0 && n > 0 {
+		out = []Entry[T]{}
+	}
+	return out, total
 }
 
 // TailSnapshot is the last n entries, ascending, read from the tail

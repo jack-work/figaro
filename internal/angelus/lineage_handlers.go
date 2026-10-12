@@ -53,9 +53,7 @@ func (a *Angelus) baseTurnOf(parent string, l store.Link) uint64 {
 	}
 	if l.BaseTurnKnown {
 		// Recorded past the end. The parent's tail says whether it has
-		// written at the base since; until it has, the record stands. The
-		// tail is a positional read, not ReadPage, which on a raw node log
-		// materializes the whole log to return one record.
+		// written at the base since; until it has, the record stands.
 		if tail, ok := log.PeekTail(); !ok || tail.LT < l.BaseLT {
 			return l.BaseTurn
 		}

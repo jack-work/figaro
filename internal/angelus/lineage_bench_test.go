@@ -22,12 +22,12 @@ import (
 // long conversation, then a CHAIN of forks, each forked again after its own
 // turn, the leaf read against its parent. Two shapes:
 //
-//   head      each link a head fork of an abandoned parent: the base sits past
-//             the end of the parent's log, which used to mean a walk of that
-//             log from LT 1 for every link, unmemoized, on every hop.
-//   interior  each link cut at a turn the parent has: the base is a real
-//             record, which the old memo did remember, so this shape isolates
-//             the other cost: listing every trunk in the store per read.
+//	head      each link a head fork of an abandoned parent: the base sits past
+//	          the end of the parent's log, which used to mean a walk of that
+//	          log from LT 1 for every link, unmemoized, on every hop.
+//	interior  each link cut at a turn the parent has: the base is a real
+//	          record, which the old memo did remember, so this shape isolates
+//	          the other cost: listing every trunk in the store per read.
 //
 // unrelated is how many other arias share the store, which is what the
 // listing paid for.

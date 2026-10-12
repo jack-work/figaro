@@ -369,3 +369,71 @@ func onlySidecar(t *testing.T, root string) string {
 	}
 	return found[0]
 }
+
+// READPAGE BY POSITION IS THE SAME PAGE AS THE WHOLE-LOG SLICE. The raw log's
+// ReadPage used to decode every record and slice; it reads only the window
+// now. Every (from, before, n) shape is asked of every aria in random fork
+// chains (whose prefixes are read through their parents), raw and through the
+// aria's own log, and compared with readPage over Read().
+func TestReadPageByPositionMatchesTheSlice(t *testing.T) {
+	for seed := int64(1); seed <= 12; seed++ {
+		rng := rand.New(rand.NewSource(seed))
+		be, cur, log := newConversation(t)
+		chain := []string{cur}
+		turn := uint64(0)
+		for hop := 0; hop < 3; hop++ {
+			for i := 0; i < 2+rng.Intn(5); i++ {
+				turn++
+				put(t, log, ask(turn, "q"))
+				put(t, log, answer(turn, "a"))
+			}
+			at := uint64(0)
+			if rng.Intn(2) == 0 {
+				tail, _ := log.ReadPage(0, 1<<62, 1)
+				at = 1 + uint64(rng.Int63n(int64(tail[0].LT)))
+			}
+			child, _, err := be.ForkWith(cur, at, birth("c"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cur = child
+			chain = append(chain, cur)
+			log, _ = be.OpenFigIR(cur)
+		}
+		for _, id := range chain {
+			aria, _ := be.OpenFigIR(id)
+			for name, l := range map[string]Log[message.Message]{"raw": be.OpenNode(id), "aria": aria} {
+				all := l.Read()
+				if len(all) == 0 {
+					continue
+				}
+				top := all[len(all)-1].LT
+				for q := 0; q < 200; q++ {
+					from, before, n := uint64(0), uint64(0), rng.Intn(6)
+					switch rng.Intn(4) {
+					case 0:
+						before = 1 + uint64(rng.Int63n(int64(top+3)))
+					case 1:
+						before = ^uint64(0)
+					case 2:
+						from = uint64(rng.Int63n(int64(top + 3)))
+					case 3:
+						from = 0
+					}
+					got, _ := l.ReadPage(from, before, n)
+					want, _ := readPage(all, from, before, n)
+					if len(got) != len(want) {
+						t.Fatalf("seed %d %s %s ReadPage(%d, %d, %d): %d entries, the slice has %d",
+							seed, name, id, from, before, n, len(got), len(want))
+					}
+					for i := range got {
+						if got[i].LT != want[i].LT || got[i].Payload.TurnID != want[i].Payload.TurnID {
+							t.Fatalf("seed %d %s %s ReadPage(%d, %d, %d)[%d]: LT %d turn %d, the slice has LT %d turn %d",
+								seed, name, id, from, before, n, i, got[i].LT, got[i].Payload.TurnID, want[i].LT, want[i].Payload.TurnID)
+						}
+					}
+				}
+			}
+		}
+	}
+}

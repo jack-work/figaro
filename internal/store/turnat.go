@@ -22,9 +22,8 @@ import (
 // It used to be a walk from LT 1 whenever the base was past the end of the
 // parent's log, which is every head fork, on every hop between two arias.
 //
-// ONLY INDEXED READS. PeekTail and ReadFrom address the channel by position;
-// ReadPage, on a raw node log, materializes the whole log and slices it, so
-// the backward read here is built from ReadFrom windows and never from it.
+// ONLY POSITIONAL READS: PeekTail and ReadFrom windows, each of which reads
+// the records it returns and nothing else.
 //
 // Were the invariant ever broken (an unstamped question below lt), the answer
 // would be the stamp BELOW that question: a smaller turn than the truth. For
