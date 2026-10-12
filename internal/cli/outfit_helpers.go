@@ -21,6 +21,9 @@ import (
 type encryptedAPIKey struct {
 	Hush       *hush.Client
 	ConfigPath string
+	// Revive brings the agent back when a decrypt finds it gone; see
+	// auth.WithAgent.
+	Revive func() error
 
 	mu       sync.Mutex
 	cached   string
@@ -52,7 +55,9 @@ func (e *encryptedAPIKey) TryResolve() (string, bool, error) {
 	if !strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
 		return "", false, nil
 	}
-	res, err := e.Hush.Decrypt(map[string]string{"v": pa.APIKey})
+	res, err := auth.WithAgent(e.Revive, func() (map[string]string, error) {
+		return e.Hush.Decrypt(map[string]string{"v": pa.APIKey})
+	})
 	if err != nil {
 		return "", false, fmt.Errorf("hush decrypt %s: %w", e.ConfigPath, err)
 	}

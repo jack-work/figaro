@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"sync"
 	"syscall"
 	"time"
 
@@ -59,6 +60,23 @@ func incumbentAnswers() bool {
 }
 
 // runAngelus runs the supervisor side of the binary.
+// hushEnsureMu serializes bringing the agent up. managed.EnsureReady pings
+// and then spawns, with no lock of its own, and since a dead agent is now
+// revived by whichever caller finds it dead (every provider goroutine
+// resolving a token, as well as the keep-alive), several of them arrive at
+// once. Serialized, the first spawns and the rest find it answering.
+var hushEnsureMu sync.Mutex
+
+// ensureHushAgent makes sure the embedded agent is up, starting it if not. It
+// is the Revive of every vault-backed credential strategy (auth.WithAgent),
+// so a turn that lands in the gap after the agent's TTL brings the agent back
+// rather than failing until the keep-alive's next tick.
+func ensureHushAgent() error {
+	hushEnsureMu.Lock()
+	defer hushEnsureMu.Unlock()
+	return mustHush().EnsureReady()
+}
+
 // keepHushAlive pings the embedded hush agent on an interval and respawns it
 // if it has died (EnsureReady), so the token-refresh machinery survives for
 // the whole daemon session. Interval is well under the agent TTL so a dead
@@ -77,7 +95,7 @@ func keepHushAlive(ctx context.Context) {
 	// `figaro stop` acts on, and a claim written before there is anything
 	// to claim would name a socket that never existed.
 	ensure := func(stage string) {
-		if err := h.EnsureReady(); err != nil {
+		if err := ensureHushAgent(); err != nil {
 			slog.Warn("hush keep-alive: "+stage+" ensure failed", "err", err)
 			return
 		}

@@ -96,6 +96,10 @@ type OAuth struct {
 	Hush *hush.Client
 	Name string
 
+	// Revive brings the agent back when a call finds it gone (see
+	// WithAgent). Nil means a missing agent is an error, as it always was.
+	Revive func() error
+
 	// endpoint is the routing minted alongside the token, for credentials
 	// whose exchange chooses the host (Copilot). Published atomically
 	// because Resolve runs on provider goroutines and Endpoint is read by
@@ -107,7 +111,15 @@ func (o *OAuth) TryResolve() (string, bool, error) {
 	if o.Hush == nil || o.Name == "" {
 		return "", false, nil
 	}
-	tok, meta, err := o.Hush.OAuthGetFull(o.Name)
+	type full struct {
+		tok  string
+		meta map[string]string
+	}
+	got, err := WithAgent(o.Revive, func() (full, error) {
+		tok, meta, err := o.Hush.OAuthGetFull(o.Name)
+		return full{tok, meta}, err
+	})
+	tok, meta := got.tok, got.meta
 	if err != nil {
 		if errors.Is(err, hush.ErrOAuthNotFound) {
 			return "", false, nil
@@ -151,7 +163,10 @@ func (o *OAuth) Invalidate(token string) error {
 	if o.Hush == nil || o.Name == "" {
 		return nil
 	}
-	_, meta, err := o.Hush.OAuthRefreshFull(o.Name)
+	meta, err := WithAgent(o.Revive, func() (map[string]string, error) {
+		_, meta, err := o.Hush.OAuthRefreshFull(o.Name)
+		return meta, err
+	})
 	if err == nil {
 		o.rememberEndpoint(meta)
 		return nil

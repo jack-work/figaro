@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The bug this splits: a 403 from GitHub's Copilot token-exchange endpoint
 // arrived as "resolve token: copilot token exchange 403: <html>", figaro
@@ -44,4 +47,31 @@ func contains(hay, needle string) bool {
 		}
 		return false
 	})()
+}
+
+// THE MESSAGE GLUCK GOT, verbatim: the vault agent's socket was missing, and
+// the hint blamed a rate-limited exchange endpoint for a credential that never
+// left the vault. It names the vault now, as does a failed revival.
+func TestAuthFailureHintNamesTheVaultWhenTheAgentIsGone(t *testing.T) {
+	for _, reason := range []string{
+		"copilot: resolve token: dial unix /tmp/figaro-hush/agent.sock: connect: no such file or directory",
+		"resolve token: no credential available; first strategy error: dial unix /tmp/figaro-hush/agent.sock: connect: connection refused",
+		"copilot: resolve token: dial unix /tmp/figaro-hush/agent.sock: connect: no such file or directory\nhush agent would not start: unlock figaro: keyring locked",
+	} {
+		hint, ok := authFailureHint(reason)
+		if !ok {
+			t.Fatalf("no hint for %q", reason)
+		}
+		if strings.Contains(hint, "rate-limits") || strings.Contains(hint, "exchanging it for a session token failed") {
+			t.Fatalf("the vault agent's absence was blamed on the exchange endpoint:\n%s", hint)
+		}
+		if !strings.Contains(hint, "figaro vault status") {
+			t.Fatalf("the hint does not point at the vault:\n%s", hint)
+		}
+	}
+	// And a genuine exchange failure keeps the exchange hint.
+	hint, _ := authFailureHint("copilot: resolve token: token exchange: 429 Too Many Requests")
+	if !strings.Contains(hint, "exchanging it for a session token failed") {
+		t.Fatalf("an exchange failure lost its hint:\n%s", hint)
+	}
 }

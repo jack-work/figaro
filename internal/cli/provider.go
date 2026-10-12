@@ -54,7 +54,7 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		}
 		// Returned bare, not wrapped in an Aggregate: it is the only
 		// source, and the provider reads the routing off it directly.
-		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
+		return &auth.OAuth{Hush: hushClient, Name: providerName, Revive: ensureHushAgent}, nil
 	}
 
 	strategies := environmentStrategies(reg)
@@ -70,12 +70,14 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		&encryptedAPIKey{
 			Hush:       hushClient,
 			ConfigPath: loaded.ProviderAuthPath(providerName),
+			Revive:     ensureHushAgent,
 		},
 	)
 	if hasOAuth {
 		strategies = append(strategies, &auth.OAuth{
-			Hush: hushClient,
-			Name: providerName,
+			Hush:   hushClient,
+			Name:   providerName,
+			Revive: ensureHushAgent,
 		})
 	}
 	return &auth.Aggregate{Strategies: strategies}, nil
@@ -135,10 +137,43 @@ func sessionExchangeHint(reason string) string {
 	return b.String()
 }
 
-// authFailureHint picks the right explanation for a failed turn: no
-// credential at all, or a credential that could not be exchanged.
+// vaultAgentHint explains a credential that could not be READ, because the
+// hush agent that holds it was not running and could not be started. It used
+// to fall through to sessionExchangeHint, which told the user an exchange
+// endpoint was rate-limiting them while the credential had never left the
+// vault.
+func vaultAgentHint(reason string) string {
+	var b strings.Builder
+	b.WriteString(reason)
+	if !strings.HasSuffix(reason, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("\nfigaro's vault agent (hush) was not running, so the stored credential\n")
+	b.WriteString("could not be read, and starting it again failed. Nothing was sent to the\n")
+	b.WriteString("provider. To see why, and to start it by hand:\n")
+	b.WriteString("  figaro vault status     (identity, unlock method, agent)\n")
+	b.WriteString("  figaro vault unlock\n")
+	return b.String()
+}
+
+// vaultAgentDown reports whether a failure reason is the vault agent being
+// unreachable rather than anything the provider said: the revival failing,
+// or (from a build that did not revive) the raw dial error on its socket.
+func vaultAgentDown(reason string) bool {
+	if strings.Contains(reason, "hush agent would not start") {
+		return true
+	}
+	return strings.Contains(reason, "agent.sock") &&
+		(strings.Contains(reason, "no such file or directory") || strings.Contains(reason, "connection refused"))
+}
+
+// authFailureHint picks the right explanation for a failed turn: the vault
+// agent unreachable, no credential at all, or a credential that could not be
+// exchanged.
 func authFailureHint(reason string) (string, bool) {
 	switch {
+	case vaultAgentDown(reason):
+		return vaultAgentHint(reason), true
 	case strings.Contains(reason, "resolve token"), strings.Contains(reason, "token exchange"):
 		return sessionExchangeHint(reason), true
 	case strings.Contains(reason, "no credential"):
