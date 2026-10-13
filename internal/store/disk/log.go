@@ -22,10 +22,8 @@ var (
 	ErrOutOfOrder = errors.New("write index out of order")
 	ErrNotFound   = errors.New("index not found")
 	ErrEmpty      = errors.New("log is empty")
-	// ErrNotHeaderMode is returned by SegmentHeaderAt for a log opened
-	// without an OnSegmentOpen callback, i.e. one whose segments carry no
-	// block-0 header. It is a distinct sentinel so a caller can tell "this
-	// log has no headers at all" from "this index is not here".
+	// ErrNotHeaderMode is distinct so a caller can tell "no headers at all"
+	// from "this index is not here".
 	ErrNotHeaderMode   = errors.New("log is not in header mode")
 	ErrCodecMismatch   = errors.New("log directory contains segments with a different codec")
 	ErrPayloadTooLarge = errors.New("payload too large for segment size")
@@ -34,26 +32,18 @@ var (
 	errRangeBoundary   = errors.New("range reached fork boundary")
 )
 
-// Options configures a Log.
 type Options struct {
 	SegmentSize int64                // 0 = default
 	Codec       segment.SegmentCodec // nil = segment.BinaryCodec{}
-	// MaxUnflushedBytes bounds the caller-side write buffer (used by the
-	// caching log wrapper, ignored here); 0 = its default.
+	// MaxUnflushedBytes is used by the caching log wrapper, ignored here.
 	MaxUnflushedBytes int64
-	// Parent, if non-nil, is the log this dir was forked from. When nil
-	// and the dir contains a .fork marker file, Open auto-walks `..` to
-	// resolve the parent. Use a Store if you need to deduplicate parent
-	// instances across many sibling forks.
+	// Parent nil with a .fork marker makes Open auto-walk `..`; use a Store
+	// to deduplicate parent instances across sibling forks.
 	Parent *Log
-	// OnSegmentOpen, if non-nil, puts the log in header mode: every
-	// segment leads with an opaque block-0 header that is not part of
-	// the index. It is invoked when a new segment is opened (the first
-	// one, and on each rotation) to compute that header from the
-	// previous segment's header (nil for the first) and the payloads of
-	// the segment just sealed (nil for the first). The returned bytes
-	// are stored verbatim; figwal never interprets them. Used by the
-	// reducible/watermark model — the fold lives in the caller.
+	// OnSegmentOpen puts the log in header mode: every segment leads with an
+	// opaque block-0 header, not part of the index, computed on each new
+	// segment from the previous header (nil for the first) and the sealed
+	// payloads. Stored verbatim; the fold lives in the caller.
 	OnSegmentOpen func(prevHeader []byte, sealed [][]byte) ([]byte, error)
 }
 
@@ -71,8 +61,7 @@ type Log struct {
 	readOnly   bool   // true when the dir has child subdirs (branch point)
 }
 
-// SyncDir durably persists directory entry changes where the platform
-// supports directory fsync.
+// SyncDir fsyncs a directory where the platform supports it.
 func SyncDir(dir string) error { return syncDir(dir) }
 
 func Open(dir string, opts Options) (*Log, error) {
@@ -82,8 +71,7 @@ func Open(dir string, opts Options) (*Log, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
-	// Auto-detect codec from the on-disk extension when the caller did
-	// not specify one. Empty dirs default to binary.
+	// Codec is detected from the on-disk extension; empty dirs default to binary.
 	if opts.Codec == nil {
 		detected, err := detectCodec(dir)
 		if err != nil {
@@ -95,8 +83,7 @@ func Open(dir string, opts Options) (*Log, error) {
 			opts.Codec = segment.BinaryCodec{}
 		}
 	}
-	// A leftover fork sentinel means a previous fork operation crashed
-	// before completing; refuse to open until an operator resolves it.
+	// A leftover fork sentinel: refuse until an operator resolves it.
 	if pending, err := hasForkPending(dir); err != nil {
 		return nil, err
 	} else if pending {
@@ -109,9 +96,8 @@ func Open(dir string, opts Options) (*Log, error) {
 	parent := opts.Parent
 	ownsParent := false
 	if parent == nil && base > 0 {
-		// Auto-walk `..` for the parent. Inherit codec/segment options
-		// so the parent reads its own files consistently. Plain Open
-		// without dedup; callers that need sharing should use a Store.
+		// Auto-walk `..`, inheriting codec/segment options so the parent
+		// reads its own files consistently.
 		parentDir := filepath.Dir(dir)
 		parentOpts := opts
 		parentOpts.Parent = nil // walk fully up the chain
@@ -151,11 +137,10 @@ func Open(dir string, opts Options) (*Log, error) {
 		} else {
 			firstBase = l.active.FirstIndex()
 		}
-		// A fork may own MORE than its base claims: absorbing an inherited
+		// A fork may own more than its base claims: absorbing an inherited
 		// prefix (Detach) writes segments below it, and reads under the base
-		// still delegate to the parent, which serves identical bytes. Only
-		// the other direction is a defect -- a marker claiming data that
-		// starts later than it says, i.e. records nobody can serve.
+		// still delegate to the parent, which serves identical bytes. Only a
+		// marker claiming data that starts later than it says is a defect.
 		if firstBase > base {
 			_ = l.Close()
 			return nil, fmt.Errorf("%w: marker=%d firstSegment=%d",
@@ -188,12 +173,8 @@ func (l *Log) Write(idx uint64, payload []byte) error {
 	if l.readOnly {
 		return fmt.Errorf("%w: %s", ErrReadOnly, l.dir)
 	}
-	// Recheck on disk: another process (or another goroutine, since Fork
-	// applies its plan then Opens a new child) may have just made this
-	// dir a branch point. Without this recheck a live handle would keep
-	// happily writing to a now-frozen parent segment, corrupting the
-	// single-leaf-per-trunk invariant. One ReadDir per write is cheap
-	// compared to the fsync that follows.
+	// Recheck on disk: Fork applies its plan then Opens a new child, so a
+	// live handle could otherwise keep writing to a now-frozen parent.
 	if kids, err := hasSubdirs(l.dir); err != nil {
 		return err
 	} else if kids {
@@ -250,14 +231,11 @@ func (l *Log) Sync() error {
 	return l.active.Sync()
 }
 
-// Range iterates entries from `from` to the current LastIndex, calling
-// fn for each. If fn returns a non-nil error, iteration stops and that
-// error is returned. If `from` is below FirstIndex, iteration begins at
-// FirstIndex. For forks, low indices are served from the parent chain.
+// Range iterates from `from` (clamped to FirstIndex) to LastIndex; fork
+// prefixes are served from the parent chain.
 func (l *Log) Range(from uint64, fn func(idx uint64, payload []byte) error) error {
-	// Walk parent chain for indices below this fork's range. After a
-	// fork the parent's segments are truncated to end at forkBase-1, so
-	// parent.Range will not yield beyond our forkBase on its own.
+	// After a fork the parent's segments end at forkBase-1, so parent.Range
+	// will not yield beyond our forkBase on its own.
 	if l.parent != nil && from < l.forkBase {
 		err := l.parent.Range(from, func(idx uint64, payload []byte) error {
 			if idx >= l.forkBase {
@@ -307,9 +285,8 @@ func (l *Log) Range(from uint64, fn func(idx uint64, payload []byte) error) erro
 	return nil
 }
 
-// ScanFromEnd iterates entries in descending index order, starting at from
-// (or the current tail when from is past it). Fork prefixes continue through
-// the parent chain. A callback error stops the scan and is returned.
+// ScanFromEnd iterates descending from `from` (or the tail when past it);
+// fork prefixes continue through the parent chain.
 func (l *Log) ScanFromEnd(from uint64, fn func(idx uint64, payload []byte) error) error {
 	l.mu.RLock()
 	if l.parent != nil && from < l.forkBase {
@@ -360,10 +337,8 @@ func (l *Log) ScanFromEnd(from uint64, fn func(idx uint64, payload []byte) error
 	return nil
 }
 
-// TruncateFront removes whole sealed segments whose LastIndex is below
-// beforeIdx. Partial segments (those containing entries on both sides
-// of beforeIdx) and the active segment are left intact; callers should
-// size segments so the UNLINK granularity matches their needs.
+// TruncateFront removes whole sealed segments below beforeIdx; partial
+// segments and the active one are left intact.
 func (l *Log) TruncateFront(beforeIdx uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -397,14 +372,12 @@ func (l *Log) TruncateFront(beforeIdx uint64) error {
 	return syncDir(l.dir)
 }
 
-// Dir is the log's directory.
 func (l *Log) Dir() string { return l.dir }
 
 func (l *Log) Read(idx uint64) ([]byte, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	// Indices below this fork's range live in the parent. Delegate
-	// recursively; the parent's own lock protects its state.
+	// Indices below this fork's range live in the parent.
 	if l.parent != nil && idx < l.forkBase {
 		return l.parent.Read(idx)
 	}
@@ -421,8 +394,7 @@ func (l *Log) Read(idx uint64) ([]byte, error) {
 	return s.ReadIndex(idx - s.BaseIndex())
 }
 
-// FirstIndex returns the first index visible from this log, walking
-// the parent chain if this log is a fork.
+// FirstIndex walks the parent chain.
 func (l *Log) FirstIndex() uint64 {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -434,9 +406,8 @@ func (l *Log) FirstIndex() uint64 {
 	return l.firstIndexLocked()
 }
 
-// LastIndex returns the highest index in this log's own segments. For
-// a fork with no local entries yet, LastIndex returns forkBase-1 to
-// reflect that the fork starts immediately after the parent.
+// LastIndex is the highest index in this log's own segments; a fork with no
+// local entries reports forkBase-1.
 func (l *Log) LastIndex() uint64 {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -457,19 +428,15 @@ func (l *Log) Hash(idx uint64) (string, error) {
 	return l.codec.Hash(b)
 }
 
-// HashPayload returns this log's codec hash for an arbitrary payload.
-// Cheaper than Hash when the caller already has the payload in hand.
+// HashPayload is cheaper than Hash when the caller holds the payload.
 func (l *Log) HashPayload(payload []byte) (string, error) {
 	return l.codec.Hash(payload)
 }
 
-// Parent returns the parent log if this one is a fork, or nil for a
-// trunk. Exposed so higher layers (e.g. the cached Log wrapper) can
-// walk the fork chain without poking internal fields.
+// Parent is nil for a trunk.
 func (l *Log) Parent() *Log { return l.parent }
 
-// ForkBase returns the global index at which this log begins relative
-// to its parent. Zero for a trunk.
+// ForkBase is zero for a trunk.
 func (l *Log) ForkBase() uint64 { return l.forkBase }
 
 // IsReadOnly reports whether this log is a frozen branch point.
@@ -479,11 +446,9 @@ func (l *Log) IsReadOnly() bool {
 	return l.readOnly
 }
 
-// HeaderAt returns the opaque block-0 header of the segment that holds
-// idx (the watermark, in reducible use). It walks the parent chain for
-// indices below this fork's range, mirroring Read. Returns nil for a
-// header-less log. The reducible read (state-at-idx) folds the entries
-// in [segment-base, idx] onto this header.
+// HeaderAt is the opaque block-0 header of the segment holding idx (the
+// watermark, in reducible use), walking the parent chain as Read does. Nil
+// for a header-less log.
 func (l *Log) HeaderAt(idx uint64) ([]byte, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -503,10 +468,9 @@ func (l *Log) HeaderAt(idx uint64) ([]byte, error) {
 	return s.Header(), nil
 }
 
-// SegmentHeaderAt returns the opaque block-0 header of the segment that
-// holds idx TOGETHER WITH THAT SEGMENT'S BASE INDEX, both read from the
-// same segment under one lock. It walks the parent chain for indices
-// below this fork's range, exactly as StateAt and Read do.
+// SegmentHeaderAt returns the header together with that segment's base
+// index, both read from the same segment under one lock; it walks the parent
+// chain as StateAt and Read do.
 func (l *Log) SegmentHeaderAt(idx uint64) (header []byte, base uint64, err error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -529,12 +493,8 @@ func (l *Log) SegmentHeaderAt(idx uint64) (header []byte, base uint64, err error
 	return s.Header(), s.BaseIndex(), nil
 }
 
-// StateAt reconstructs the reducible state at idx for a header-mode log:
-// the watermark (block-0 header) of idx's segment folded — via the
-// OnSegmentOpen callback — with that segment's entries up to and
-// including idx. It walks the parent chain for indices below this fork's
-// range, mirroring Read. Returns an error if the log is not in header
-// mode, or ErrNotFound for a missing idx.
+// StateAt folds the watermark of idx's segment with that segment's entries
+// through idx, via OnSegmentOpen; it walks the parent chain as Read does.
 func (l *Log) StateAt(idx uint64) ([]byte, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -567,9 +527,8 @@ func (l *Log) stateAtLocked(idx uint64) ([]byte, error) {
 	return l.opts.OnSegmentOpen(s.Header(), sealed)
 }
 
-// SegmentBaseIndexes returns the base (first owned) index of each of
-// this log's own segments, sealed then active, in order. It does not
-// walk the parent chain. Useful for locating watermark boundaries.
+// SegmentBaseIndexes lists this log's own segments' bases, sealed then
+// active; it does not walk the parent chain.
 func (l *Log) SegmentBaseIndexes() []uint64 {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -583,11 +542,8 @@ func (l *Log) SegmentBaseIndexes() []uint64 {
 	return out
 }
 
-// RangeOwn iterates over this log's own entries (does NOT walk the
-// parent chain), calling fn for each entry from the given index
-// forward. A read lock is held for the duration of the iteration so
-// new writes cannot append while a caller is materializing entries.
-// Intended for cache-snapshot construction.
+// RangeOwn iterates this log's own entries only, holding the read lock for
+// the duration so new writes cannot append while a caller materializes.
 func (l *Log) RangeOwn(from uint64, fn func(idx uint64, payload []byte) error) error {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -777,9 +733,7 @@ func (l *Log) findSegmentLocked(idx uint64) (*segment.Segment, error) {
 // known segment extensions, used to detect codec mismatch in a directory.
 var knownExts = []string{".seg", ".jsonl"}
 
-// detectCodec inspects dir for files with known codec extensions and
-// returns the matching codec. Returns (nil, nil) if the dir is empty
-// or contains no segment files (caller picks a default). Returns an
+// detectCodec returns (nil, nil) for a dir with no segment files, and
 // ErrCodecMismatch when both extensions are present.
 func detectCodec(dir string) (segment.SegmentCodec, error) {
 	entries, err := os.ReadDir(dir)
@@ -912,8 +866,7 @@ func parseSegName(name, ext string) (uint64, error) {
 }
 
 // DropPayloadCache releases the payload blocks of every segment this log
-// owns. The log stays open and serves reads from its files; this is what an
-// idle unload reclaims now that opening a log retains nothing on its own.
+// owns; the log stays open and serves reads from its files.
 func (l *Log) DropPayloadCache() {
 	l.mu.RLock()
 	defer l.mu.RUnlock()

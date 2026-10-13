@@ -42,9 +42,8 @@ func writeFigIR(t *testing.T, log Log[message.Message], text string) Entry[messa
 	return e
 }
 
-// A TRANSLATION IS WRITTEN BY THE SITE THAT HOLDS THE REPAIRED PAYLOAD, and it
-// is written to the channels the aria ALREADY HAS -- never to a channel it
-// does not, which is what keeps the fan-out proportional to use.
+// A translation is written by the site that holds the repaired payload, to
+// the channels the aria already has, never to one it does not.
 func TestAnAppendTranslatesIntoTheChannelsTheAriaAlreadyHas(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	anth := &countingEncoder{provider: "anthropic"}
@@ -92,10 +91,8 @@ func TestAnAppendTranslatesIntoTheChannelsTheAriaAlreadyHas(t *testing.T) {
 	}
 }
 
-// AN ENCODER THAT FAILS DOES NOT FAIL THE APPEND. The fig IR entry is
-// canonical and has landed; a translation that did not is derived, missing,
-// and rebuilt by the next catch-up. This is the asymmetry that makes fig-IR-
-// first the safe order.
+// An encoder that fails does not fail the append: the IR entry is canonical
+// and has landed; the translation is rebuilt by the next catch-up.
 func TestATranslationFailureDoesNotFailTheFigIRAppend(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	bad := &countingEncoder{provider: "anthropic", fail: true}
@@ -125,10 +122,8 @@ func TestATranslationFailureDoesNotFailTheFigIRAppend(t *testing.T) {
 	}
 }
 
-// THE SYNTHESIZED ENTRIES ARE TRANSLATED TOO. The fig IR write path mints
-// records nobody upstream knows about -- the tool-close message and the
-// late-result note -- and they must reach the wire well-formed. A caller
-// writing translations upstream would miss exactly these.
+// The synthesized entries (the tool-close message, the late-result note) are
+// translated too; a caller writing translations upstream would miss exactly these.
 func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	enc := &countingEncoder{provider: "anthropic"}
@@ -174,10 +169,8 @@ func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The ASSISTANT entry belongs to the provider that produced it, so what
-	// must be translated here is the minted tool-close and the message after
-	// it -- and the minted one is the whole point: nobody upstream knows it
-	// exists.
+	// The assistant entry belongs to the provider that produced it, so what
+	// must be translated here is the minted tool-close and the message after it.
 	var want []uint64
 	for _, e := range appended {
 		if e.Payload.Role != message.RoleOutput {
@@ -202,10 +195,8 @@ func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 	}
 }
 
-// REGISTRATION IS ADDITIVE, because providers are built one at a time as arias
-// open. A set that replaced would leave the last one registered as the only
-// translator and put every other provider silently back on the catch-up --
-// which looks exactly like working software.
+// Registration is additive: providers are built one at a time as arias open,
+// and a replacing set would put every other provider silently back on catch-up.
 func TestRegisteringASecondEncoderKeepsTheFirst(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	first := &countingEncoder{provider: "anthropic"}
@@ -232,16 +223,10 @@ func TestRegisteringASecondEncoderKeepsTheFirst(t *testing.T) {
 	}
 }
 
-// AN ASSISTANT ENTRY IS LEFT TO THE PROVIDER THAT PRODUCED IT.
-//
-// Its wire form carries provider-native material the fig IR does not hold, and
-// the turn commits that durably. A rendering written here would be a SECOND
-// entry at one FigaroLT -- and the residency index cannot represent that: a
-// warm read serves the first, so the model would get the unsigned rendering
-// while the signed original sat underneath it until a restart.
-//
-// Found live, not in a fixture: scripts/live/onappendlive.sh read translations
-// naming LTs "4 5 5" against fig IR entries "3 4 5".
+// An assistant entry is left to the provider that produced it: its wire form
+// carries provider-native material the IR does not hold, and a rendering
+// written here would be a second entry at one FigaroLT, serving the unsigned
+// rendering over the signed original.
 func TestAnAssistantEntryIsNotTranslatedOnAppend(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	enc := &countingEncoder{provider: "anthropic"}
@@ -281,13 +266,9 @@ func TestAnAssistantEntryIsNotTranslatedOnAppend(t *testing.T) {
 	}
 }
 
-// A READ OF THE ENCODER SET TAKES NO LOCK, so a fig IR append is never held up
-// by a provider being built for some other aria. The property is the artifact:
-// hold the WRITER's lock and serve a read from another goroutine. Under the
-// RWMutex this test deadlocks; under an atomic publish it returns.
-//
-// CANARY: restore `writeMu` around the body of get() and this goes red by
-// timeout.
+// A read of the encoder set takes no lock, so an IR append is never held up
+// by a provider being built for another aria. The property is the artifact:
+// hold the writer's lock and serve a read from another goroutine.
 func TestReadingTheEncoderSetTakesNoLock(t *testing.T) {
 	var set translatorEncoders
 	set.add([]TranslatorEncoder{fakeEncoder{name: "anthropic"}})

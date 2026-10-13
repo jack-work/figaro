@@ -27,16 +27,11 @@ type Segment struct {
 	count     uint64
 	offsets   []int64
 	readOnly  bool
-	// hasHeader marks the segment as carrying an opaque block-0 header
-	// (a watermark, in reducible use). The header is framed like any
-	// other record but is not counted in the index: baseIndex/count/
-	// offsets describe the entries that follow it. header caches the
-	// decoded header payload.
+	// hasHeader: the segment carries an opaque block-0 header (a watermark,
+	// in reducible use), framed like a record but not counted in the index.
 	hasHeader bool
 	header    []byte
 
-	// block is this segment's lazily loaded payload cache; see cache.go.
-	// Nil means "not resident": reads fall through to the file.
 	// registered marks this segment findable by the payload cache's Source.
 	registered atomic.Bool
 	// h is this segment's node in the payload cache, resolved once.
@@ -126,11 +121,8 @@ func openRO(path string, codec SegmentCodec, baseIndex uint64, hasHeader bool) (
 	return s, nil
 }
 
-// recover scans the file to rebuild the in-memory entry index and, for
-// read-write segments, truncates any torn tail. The scan is the standard
-// WAL recovery procedure: read forward until the codec reports a torn
-// frame or clean EOF, accept all frames before that point, and discard
-// everything after.
+// recover rebuilds the entry index and, for read-write segments, truncates a
+// torn tail: every frame before the first torn one is accepted.
 func (s *Segment) recover() error {
 	start := time.Now()
 	if _, err := s.f.Seek(0, 0); err != nil {
@@ -219,11 +211,9 @@ func (s *Segment) Append(payload []byte) (offset int64, err error) {
 	return offset, nil
 }
 
-// WriteHeader writes the opaque block-0 header. It must be called on a
-// fresh segment before any Append (the header occupies offset 0). The
-// header is framed by the codec like a record but is never counted in
-// the entry index, so reads and indices are identical to a header-less
-// segment. The framed index is a fixed sentinel (0).
+// WriteHeader writes the opaque block-0 header on a fresh segment, before
+// any Append. It is framed like a record with index sentinel 0 but never
+// counted in the entry index.
 func (s *Segment) WriteHeader(payload []byte) error {
 	if s.readOnly {
 		return ErrReadOnly
@@ -255,9 +245,7 @@ func (s *Segment) Header() []byte { return s.header }
 // HasHeader reports whether the segment carries a block-0 header.
 func (s *Segment) HasHeader() bool { return s.hasHeader }
 
-// ReadAt reads the entry at the given file offset, which must be a known
-// entry boundary. This is the offset-based debug path; ReadIndex is the
-// fast path for log replay.
+// ReadAt is the offset-based debug path; ReadIndex is the fast path.
 func (s *Segment) ReadAt(offset int64) ([]byte, error) {
 	nextOff := s.nextOffsetAfter(offset)
 	payload, _, err := s.codec.ReadFrame(s.f, offset, nextOff)
@@ -280,8 +268,7 @@ func (s *Segment) ReadIndex(i uint64) ([]byte, error) {
 	return payload, err
 }
 
-// nextOffsetAfter is the linear lookup used only by the offset-based
-// ReadAt path. Per-index reads use the direct offsets slice.
+// nextOffsetAfter is the linear lookup for the offset-based ReadAt path.
 func (s *Segment) nextOffsetAfter(off int64) int64 {
 	for i, o := range s.offsets {
 		if o != off {

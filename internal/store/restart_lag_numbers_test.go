@@ -10,17 +10,10 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE THREE NUMBERS THAT DECIDE THE RESTART LAG.
-//
-// The libretto-fold hypothesis is refuted (the stamp is right), so the loss is
-// downstream of the stamp. plans/delta-seam-rebased.md names what to print on
-// the first turn after a restart: the watermark row's FigaroLT, the
-// StudyVersions of the entry it names, and the StudyVersions of the entry
-// being translated. Those decide whether the delta range is empty and why.
-//
-// This is a MEASUREMENT, not an assertion about the cure: it fails only if the
-// range comes out empty, which is the defect, and it prints the numbers either
-// way so the next reader does not have to rebuild the fixture.
+// The three numbers that decide the restart lag: the watermark row's
+// FigaroLT, the StudyVersions of the entry it names, and the StudyVersions of
+// the entry being translated. A measurement: it fails only if the range comes
+// out empty, and prints the numbers either way.
 func TestTheThreeNumbersBehindTheRestartLag(t *testing.T) {
 	t.Run("librettos opened when the aria loads", func(t *testing.T) {
 		require.True(t, restartRange(t, true) > 0,

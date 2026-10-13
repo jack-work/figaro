@@ -1,7 +1,5 @@
 package store
 
-// Lazy self-healing for the _meta sidecar.
-
 import (
 	"log/slog"
 	"sync/atomic"
@@ -10,32 +8,26 @@ import (
 	"github.com/jack-work/figaro/internal/tokens"
 )
 
-// metaHealFolded counts entries folded by the healer, ever. It is the probe
-// the bound test asserts on: healing an aria whose watermark trails by k must
-// fold k entries, never the whole log.
 var metaHealFolded atomic.Int64
 
-// MetaHealFolded reports the number of IR entries the healer has folded.
 func MetaHealFolded() int64 { return metaHealFolded.Load() }
 
-// healMeta advances the sidecar to the log tail if it lags. Called from Open
-// : the point where content is actually read: so the cost rides along with a
-// read the caller was doing anyway, and `list` (Meta only) never pays it.
+// healMeta advances the sidecar to the log tail if it lags. It runs from Open
+// so the cost rides a read the caller was doing anyway; `list` never pays it.
 func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	tail, ok := log.PeekTail()
 	if !ok {
 		return
 	}
 	c := b.metaCache(ariaID)
-	c.mu.Lock() // a writer: the file write and the publish must stay in order
+	c.mu.Lock() // the file write and the publish must stay in order
 	defer c.mu.Unlock()
 	st, err := c.loadOnce(b.metaPath(ariaID))
 	if err != nil || st.Value == nil {
 		return
 	}
-	// LastFigaroLT == 0 means "no watermark" (a pre-watermark sidecar): the
-	// counts are absolute, not resumable, so folding from LT 1 would double
-	// them. Leave it to the owning agent; healing is a suffix, never a scan.
+	// LastFigaroLT == 0 is a pre-watermark sidecar: its counts are absolute, so
+	// folding from LT 1 would double them. Healing is a suffix, never a scan.
 	if st.Value.LastFigaroLT == 0 || st.Value.LastFigaroLT >= tail.LT {
 		return
 	}
@@ -70,19 +62,15 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	slog.Info("meta healed", "aria", ariaID, "from", st.Value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
 }
 
-// metaIdentityHealed counts sidecars the identity healer has upgraded, ever.
 var metaIdentityHealed atomic.Int64
 
-// MetaIdentityHealed reports how many sidecars were migrated on read.
 func MetaIdentityHealed() int64 { return metaIdentityHealed.Load() }
 
-// healIdentity folds a board's identity keys into a sidecar below
-// CurrentMetaVersion and stamps it, on the read that wanted those fields.
-// Returns the upgraded copy, or nil for the caller's own. `from` is the state
-// it was read from: a write on the read path abandons when that state was
-// superseded while the board was folding. See plans/lazy-store-passes.md.
+// healIdentity folds the board's identity keys into a sidecar below
+// CurrentMetaVersion. Returns the upgraded copy, or nil; the write abandons
+// when `from` was superseded while the board was folding.
 func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMeta) *AriaMeta {
-	// Before the sidecar lock: this takes the store's own.
+	// Before the sidecar lock: FormState takes the store's own.
 	snap, err := b.FormState(ariaID)
 	if err != nil {
 		return nil

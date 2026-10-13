@@ -12,13 +12,10 @@ import (
 )
 
 // Per-node last-record-timestamp counters, retained for the life of the
-// Trunks. Design narrative: docs/store/architecture.md, "Recency: LastTS".
-// THE LOOKUP IS LOCK-FREE. The map is published whole and grows by successor;
-// mu serializes GROWTH only. What made the old shape wrong is that the counter
-// itself is already atomics -- the mutex protected nothing but the map's
-// internal structure, on a path `fig ls` walks once per aria.
+// Trunks. The lookup is lock-free: the map is published whole and grows by
+// successor; mu serializes growth only.
 type lastTSRegistry struct {
-	mu sync.Mutex // WRITERS ONLY: growth
+	mu sync.Mutex // writers only: growth
 	m  atomic.Pointer[map[string]*nodeTS]
 }
 
@@ -65,11 +62,9 @@ func mergeMax(ts *atomic.Int64, v int64) {
 	}
 }
 
-// LastTS is the newest record timestamp anywhere in a trunk, unix millis.
-// Warm: one map lookup and one atomic load, no allocation, no lock on the
-// value. Cold: a bounded tail probe of the node's own newest segment per
-// channel — a file read, never a full Open. Zero for pre-timestamp
-// history. See docs/store/architecture.md, "Recency: LastTS".
+// LastTS: warm is one map lookup and one atomic load; cold is a bounded tail
+// probe of the node's newest segment per channel, a file read, never a full
+// Open. Zero for pre-timestamp history.
 func (t *Trunks) LastTS(trunk TrunkID) int64 {
 	key, ok := t.anchorOf(trunk)
 	if !ok {

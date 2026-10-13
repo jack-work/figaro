@@ -1,14 +1,7 @@
 package store
 
-// system.ttl: a node states its own lifetime on its board, and the daemon's
-// sweep removes it once that lifetime is spent.
-//
-// The deadline lives in the _meta sidecar, never on the board, for one
-// measured reason: the sweep must find what is due WITHOUT opening nodes. A
-// node open materialises every channel the node owns (~8 logs, ~5 segment
-// recoveries), so a reaper that read boards would cost more per tick than the
-// whole boot walk. Sidecars are a flat directory of small JSON files: 738 of
-// them read in 14 ms with zero node opens.
+// The deadline lives in the _meta sidecar, never on the board: the sweep must
+// find what is due without opening nodes.
 
 import (
 	"encoding/json"
@@ -23,13 +16,10 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// SystemTTLKey is the board key that gives a node a lifetime. It is read from
-// an aria's own board and from an unbound form's state alike -- both are
-// boards, and b.form refuses only librettos, whose lifetime is a refcount and
-// never a clock.
+// SystemTTLKey is read from an aria's board and an unbound form's state alike;
+// b.form refuses only librettos, whose lifetime is a refcount, never a clock.
 const SystemTTLKey = "system.ttl"
 
-// TTLEntry is one node with a lifetime, as the reaper and the doctor see it.
 type TTLEntry struct {
 	ID          string
 	TTL         time.Duration
@@ -37,13 +27,10 @@ type TTLEntry struct {
 	DeadlineMS  int64
 }
 
-// Expired reports whether this entry is due at nowMS.
 func (e TTLEntry) Expired(nowMS int64) bool { return e.DeadlineMS <= nowMS }
 
-// ParseTTL reads a lifetime. Go's duration syntax, plus the d and w suffixes a
-// retention policy is actually written in ("30d" is the unit a human reaches
-// for; time.ParseDuration stops at hours). An empty value, or a duration of
-// zero or less, means no lifetime.
+// ParseTTL accepts Go duration syntax plus the d and w suffixes. Empty, zero
+// or negative means no lifetime.
 func ParseTTL(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -70,15 +57,13 @@ func ParseTTL(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// ttlOf reads the ttl a patch states, and whether the patch speaks about it at
-// all. A removal clears the lifetime.
+// ttlOf: spoke reports whether the patch names the key at all; a removal clears the lifetime.
 func ttlOf(patch message.Patch) (raw string, spoke bool) {
 	if e, ok := patch.Entry(SystemTTLKey); ok && !e.IsRemoval() {
 		v := e.New
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
-			// A non-string value is a mistake, not a lifetime. Clearing is
-			// the safe reading: a malformed ttl must never delete anything.
+			// A malformed ttl must never delete anything: clear it.
 			return "", true
 		}
 		return s, true
@@ -95,10 +80,8 @@ func ttlOf(patch message.Patch) (raw string, spoke bool) {
 	return "", false
 }
 
-// ttlCommitted mirrors a board's stated lifetime into the sidecar, stamping a
-// creation time if the node has none. 117 arias and every one of 345 forms
-// predate created_at_ms, so "first seen is now" is the stamp they get -- taken
-// at the moment the ttl is set, which is the only moment anybody asked.
+// ttlCommitted mirrors the board's lifetime into the sidecar; a node without
+// created_at_ms is stamped now, the only moment anybody asked.
 func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
 	raw, spoke := ttlOf(patch)
 	if !spoke {
@@ -129,9 +112,7 @@ func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
 	}
 }
 
-// ttlNoted keeps the in-memory deadline set current. It holds only the nodes
-// that carry a lifetime -- an opt-in key, so the map is empty on a store
-// nobody has asked to expire anything on.
+// ttlNoted holds only the nodes that carry a lifetime.
 func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 	b.ttlMu.Lock()
 	defer b.ttlMu.Unlock()
@@ -150,9 +131,8 @@ func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 	}
 }
 
-// TTLEntries is every node with a lifetime. The first call scans the sidecar
-// directory once (a flat directory of small files, no node opens); after that
-// it is a map read, kept current by every board commit that names the key.
+// TTLEntries scans the sidecar directory once; after that it is a map read
+// kept current by every board commit that names the key.
 func (b *XwalBackend) TTLEntries() []TTLEntry {
 	b.ttlMu.Lock()
 	if b.ttl == nil {
@@ -166,7 +146,6 @@ func (b *XwalBackend) TTLEntries() []TTLEntry {
 	return out
 }
 
-// TTLDue is the entries whose lifetime is spent at nowMS.
 func (b *XwalBackend) TTLDue(nowMS int64) []TTLEntry {
 	var due []TTLEntry
 	for _, e := range b.TTLEntries() {
@@ -177,8 +156,6 @@ func (b *XwalBackend) TTLDue(nowMS int64) []TTLEntry {
 	return due
 }
 
-// TTLForget drops a node from the deadline set: what the reaper deleted, and
-// what a delete by any other hand took with it.
 func (b *XwalBackend) TTLForget(ids ...string) {
 	b.ttlMu.Lock()
 	defer b.ttlMu.Unlock()
@@ -187,15 +164,13 @@ func (b *XwalBackend) TTLForget(ids ...string) {
 	}
 }
 
-// ttlScan reads the sidecar directory. Caller holds ttlMu.
+// Caller holds ttlMu.
 func (b *XwalBackend) ttlScan() map[string]TTLEntry {
 	return ScanTTL(b.root)
 }
 
-// ScanTTL reads every lifetime an aria root states, from the sidecars alone:
-// no store is opened, no lock is taken, nothing is woken. That is what lets
-// the report run against a LIVE daemon's store -- and the sidecar is the
-// authority in any case, because it is written before the daemon notes it.
+// ScanTTL reads the sidecars alone: no store opened, no lock taken, nothing
+// woken, so it may run against a live daemon's store.
 func ScanTTL(root string) map[string]TTLEntry {
 	found := map[string]TTLEntry{}
 	dir := filepath.Join(root, "_meta")

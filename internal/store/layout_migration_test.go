@@ -14,10 +14,8 @@ import (
 	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
-// The seam this covers: figaro migrates a store BEFORE it opens it. Nothing
-// in figwal's own suite proves that the daemon's open path does it, and the
-// failure it prevents is the quiet one -- a store that opens reporting its
-// outfits and none of its arias.
+// figaro migrates a store before it opens it; the failure prevented is a
+// store that opens reporting its outfits and none of its arias.
 
 func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string]string) {
 	t.Helper()
@@ -92,9 +90,7 @@ func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 	ids, boards := seedForkedArias(t, root)
 	nestStore(t, root)
 
-	// Belt and braces: the store really is in the old shape, and figwal
-	// really does refuse it. Without this the test could pass on a store
-	// that never needed migrating.
+	// The store really is in the old shape, and figwal really does refuse it.
 	if need, err := xwal.NeedsFlatten(root); err != nil || !need {
 		t.Fatalf("fixture does not need migrating (need=%v err=%v)", need, err)
 	}
@@ -136,9 +132,7 @@ func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 }
 
 // nestStore rewrites a flat store into the pre-migration shape: lineage
-// becomes the directory path and the marker becomes the legacy .trunk. It is
-// the inverse of the migration, and exists so the test can start from a
-// store that was really written rather than one hand-built.
+// becomes the directory path and the marker becomes the legacy .trunk.
 func nestStore(t *testing.T, root string) {
 	t.Helper()
 	main := "ir"

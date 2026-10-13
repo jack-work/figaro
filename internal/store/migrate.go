@@ -15,31 +15,23 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// The migrations that rewrite records in place, and the walk they share.
-//
-// Each runs with the store CLOSED, is idempotent, and rewrites through
-// segment.JSONLCodec so the frame's index and content hash are the codec's own
-// rather than arithmetic here.
+// Migrations that rewrite records in place. Each runs with the store closed,
+// is idempotent, and rewrites through segment.JSONLCodec so the frame's index
+// and content hash are the codec's own.
 
 const migrateSegmentSize = 1 << 40
 
-// migrateNode is one channel directory: its records, and where it forked from.
 type migrateNode struct {
 	dir    string
 	name   string
 	parent string
 	seen   bool
-	// carry is whatever a migration needs to hand a child, since a fork
-	// continues its parent's state.
+	// carry is handed to a child: a fork continues its parent's state.
 	carry any
 }
 
-// rewriteChannel walks every node of a channel, parents first, handing each
-// record to convert. A nil result leaves the record alone.
-//
-// Parents first is not a detail: a fork inherits its parent's state, so a
-// migration that needs one -- the board a patch lands on, the turn a log has
-// reached -- must have visited the parent already.
+// rewriteChannel walks every node of a channel parents first (a fork inherits
+// its parent's state), handing each record to convert; nil leaves it alone.
 func rewriteChannel(root, channel string, seed func() any,
 	convert func(n *migrateNode, payload []byte) ([]byte, error)) error {
 
@@ -94,15 +86,10 @@ func rewriteChannel(root, channel string, seed func() any,
 	return nil
 }
 
-// MigrateFormToStructural is the form channel v1 -> v2: flat patches become
-// structural ones.
-//
-// It replays each node in order, so at every record it holds the board that
-// record applies to. That is the whole reason this is a migration and not a
-// decoder: a flat patch says "set these dotted keys" and records nothing of
-// what it replaced, and only a caller holding the prior board can turn that
-// into a patch carrying what it destroyed. The result inverts; a decoded one
-// never could.
+// MigrateFormToStructural is form channel v1 -> v2: flat patches become
+// structural. It replays each node so that at every record it holds the board
+// the record applies to; only that board can turn a flat set into a patch
+// that carries what it replaced.
 func MigrateFormToStructural(root string) error {
 	return rewriteChannel(root, chanForm,
 		func() any { return form.Snapshot{} },
@@ -134,12 +121,9 @@ func MigrateFormToStructural(root string) error {
 		})
 }
 
-// MigrateStampTurnIDs is the fig IR channel v4 -> v5: every record carries
-// turn_id explicitly.
-//
-// The rule is turns.StampIDs', so a stamped log reads as the derive-on-read
-// path made it read. A record belonging to no turn keeps 0 and now says so,
-// which is the distinction the field's absence could not make.
+// MigrateStampTurnIDs is IR channel v4 -> v5: every record carries turn_id
+// explicitly, by turns.StampIDs' rule. A record belonging to no turn keeps 0
+// and now says so.
 func MigrateStampTurnIDs(root string) error {
 	return rewriteChannel(root, chanIR,
 		func() any { return uint64(0) },
@@ -167,9 +151,8 @@ func MigrateStampTurnIDs(root string) error {
 			}
 			n.carry = cur
 
-			// Key presence, not value: an explicit zero is a stamped record
-			// that belongs to no turn, and reading the value cannot tell it
-			// from one that was never written.
+			// Key presence, not value: an explicit zero is a stamped record that
+			// belongs to no turn.
 			if stamped {
 				return nil, nil
 			}
@@ -182,8 +165,6 @@ func MigrateStampTurnIDs(root string) error {
 			return json.Marshal(frame)
 		})
 }
-
-// ---- shared plumbing ------------------------------------------------------
 
 func framePayload(raw []byte) (map[string]json.RawMessage, json.RawMessage, bool) {
 	var frame map[string]json.RawMessage
@@ -303,9 +284,8 @@ func loadMigrateNodes(dir string) (map[string]*migrateNode, []string, error) {
 		}
 		nd := filepath.Join(dir, e.Name())
 		n := &migrateNode{dir: nd, name: e.Name()}
-		// The main channel owns lineage for every channel. Related channel
-		// directories have a .fork but no .node, so reading identity there
-		// would convert every child against an empty board.
+		// Lineage comes from the main channel: related channel directories have
+		// a .fork but no .node.
 		marker := filepath.Join(filepath.Dir(dir), chanIR, e.Name(), ".node")
 		n.parent = readMigrateKV(marker)["from"]
 		if n.parent == "" {

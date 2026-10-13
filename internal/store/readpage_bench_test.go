@@ -8,15 +8,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// READPAGE, by the shapes its callers actually ask. The tail probe (0, ^0, 1)
-// is what the dormant reader runs on every read of an aria and the agent runs
-// on its own log; a tail page (0, ^0, 32) is a backward page of history; a
-// forward page from the middle is the composed cache filling an LT bracket of
-// an ancestor. raw is the node log the composed cache opens for an ancestor;
-// aria is the aria's own log, the tree log in front of the same channel.
-//
-// Compiles against the tree before the positional ReadPage, so benchstat
-// compares like with like.
+// ReadPage by the shapes its callers ask: the tail probe (0, ^0, 1), a tail
+// page (0, ^0, 32), and a forward page from the middle. raw is the node log;
+// aria is the tree log in front of the same channel.
 func BenchmarkReadPage(b *testing.B) {
 	prose := strings.Repeat("a sentence of ordinary length in a reply. ", 24) // ~1 KB
 	for _, history := range []int{300, 3000} {

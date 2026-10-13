@@ -8,10 +8,8 @@ import (
 	"github.com/jack-work/figaro/internal/store/disk"
 )
 
-// Store owns shared log handles for one physical directory tree. It wraps a
-// disk.Store and creates exactly one immutable cache snapshot per physical
-// log. Fork children point at the same parent snapshot rather than copying
-// their inherited history.
+// Store owns shared log handles for one directory tree: one Log per physical
+// log, and fork children point at the same parent rather than copying.
 type Store struct {
 	mu      sync.Mutex
 	disk    *disk.Store
@@ -26,7 +24,6 @@ type storeOpen struct {
 	err   error
 }
 
-// NewStore creates an empty shared log store.
 func NewStore() *Store {
 	return &Store{
 		disk:    disk.NewStore(),
@@ -89,10 +86,9 @@ func (s *Store) open(abs string, opts Options) (*Log, error) {
 	return &Log{inner: inner, shared: true, maxLag: maxLagFor(opts)}, nil
 }
 
-// Evict syncs and drops the cached Log for dir, releasing the payload
-// blocks its segments hold; the next Open rebuilds nothing but the index.
-// The underlying disk log stays cached in the disk store for cheap reload.
-// On sync failure the log stays cached, so no pending entry is orphaned.
+// Evict syncs and drops the cached Log for dir, releasing its payload blocks;
+// the disk log stays cached for cheap reload. On sync failure the log stays,
+// so no pending entry is orphaned.
 func (s *Store) Evict(dir string) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {

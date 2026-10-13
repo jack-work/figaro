@@ -34,15 +34,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// testSeed picks the root seed. IT IS FIXED BY DEFAULT, and that is a choice
-// about what a gate is for: this harness kills a child mid-write and checks
-// what survived, so a time-based seed makes every push a fresh lottery -- the
-// same commit passed on main and failed on release, which teaches nobody
-// anything and trains everybody to re-run the job.
-//
-// So: deterministic here, random where randomness pays. FIGWAL_CRASH_RANDOM=1
-// (or -seed) explores; a scheduled run that sets it is worth more than a
-// flaky one that blocks a merge.
+// testSeed is fixed by default: a time-based seed makes every push a fresh
+// lottery. FIGWAL_CRASH_RANDOM=1 (or -seed) explores.
 func testSeed(t *testing.T) (int64, int64) {
 	root := *seedFlag
 	if root == 0 {
@@ -56,7 +49,7 @@ func testSeed(t *testing.T) (int64, int64) {
 	return root, root ^ int64(h.Sum64())
 }
 
-// crashSeed is the fixed root. Any value works; this one is a date.
+// crashSeed is the fixed root; any value works.
 const crashSeed = 20260903
 
 func cycleCounts() (stores, perStore int) {

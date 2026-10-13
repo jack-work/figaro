@@ -260,8 +260,8 @@ func verifyTrunk(st Store, m *model, trunk, salt string, md verifyMode, cutoff i
 				vs = append(vs, violation{class: vOrphan, trunk: trunk, ch: ch,
 					detail: fmt.Sprintf("related tail references main %d, main tail %d", tail, mainLast)})
 			}
-			// Contract (memory-first v0.8.1): reducible channels get one
-			// turn of slack — a patch keyed mainTail+1 survives by design.
+			// Reducible channels get one turn of slack: a patch keyed
+			// mainTail+1 survives by design.
 			if ch == chanState && tail > mainLast+1 {
 				vs = append(vs, violation{class: vAhead, trunk: trunk, ch: ch,
 					detail: fmt.Sprintf("reducible tail references main %d, main tail %d", tail, mainLast)})

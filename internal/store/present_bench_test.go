@@ -8,11 +8,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// The presentation pass runs inside every snapshot rebuild, so its cost is
-// paid by `fig ls`, by `fig status`, and by anything that resolves a node.
-// Three arms, because the question is not "how fast is a promote" (it is
-// two map writes) but "what does carrying a second hierarchy cost the
-// listing that never uses it".
+// The presentation pass runs inside every snapshot rebuild; the question is
+// what carrying a second hierarchy costs a listing that never uses it.
 //
 //	trunkless  the capability off: no edges, no second walk
 //	idle       the capability on, nothing promoted

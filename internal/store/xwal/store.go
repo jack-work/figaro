@@ -30,11 +30,10 @@ type StoreOptions struct {
 	Genesis     []byte
 	MintTrunkID func(kind string) string
 
-	// NoBackgroundFlush stops the periodic syncDirty pass. A caller that
-	// syncs explicitly before publishing (SyncChannelThrough) needs no
-	// second, later opinion about when a record becomes durable, and a
-	// background flush that can turn a REJECTED write durable afterwards is
-	// worse than no flush at all.
+	// NoBackgroundFlush stops the periodic syncDirty pass: a caller that syncs
+	// explicitly before publishing needs no second opinion about when a record
+	// becomes durable, and a background flush can turn a rejected write
+	// durable afterwards.
 	NoBackgroundFlush bool
 }
 
@@ -219,13 +218,9 @@ func (s *Store) purgeVanished() {
 	}
 }
 
-// Remove deletes a trunk (and, recursively, its branches) and clears
-// their flusher bookkeeping so a dirty-at-removal lineage cannot poison
-// the store. Unflushed appends on the removed trunks are flushed first
-// (best effort; they are deleted either way).
-// Detach makes a node self-sufficient, absorbing the history prefix it
-// reads through an ancestor. Call it for every boundary survivor before
-// removing the set they inherit from.
+// Detach makes a node self-sufficient, absorbing the history prefix it reads
+// through an ancestor; call it for every boundary survivor before removing
+// the set they inherit from.
 func (s *Store) Detach(node string) error {
 	s.syncDirty()
 	return s.Trunks.Detach(node)
@@ -237,6 +232,8 @@ func (s *Store) HeadNode(trunk string) (string, bool) {
 	return s.Trunks.idx.Head(trunk)
 }
 
+// Remove clears the removed trunks' flusher bookkeeping so a dirty-at-removal
+// lineage cannot poison the store; unflushed appends are flushed first, best effort.
 func (s *Store) Remove(trunk string, recursive bool) error {
 	s.syncDirty()
 	removed, err := s.Trunks.remove(trunk, recursive)
@@ -246,8 +243,7 @@ func (s *Store) Remove(trunk string, recursive bool) error {
 	return err
 }
 
-// RemoveStump deletes a childless stump. See Trunks.RemoveStump: it refuses
-// while any trunk is still beneath it.
+// RemoveStump refuses while any trunk is still beneath the stump.
 func (s *Store) RemoveStump(name string) error {
 	s.syncDirty()
 	if err := s.Trunks.RemoveStump(name); err != nil {
@@ -257,11 +253,10 @@ func (s *Store) RemoveStump(name string) error {
 	return nil
 }
 
-// Clear wipes a channel's own data for a trunk's lineage and reseeds it
-// empty, atomically with the flusher: pending buffers for the channel
-// are drained and every hot handle is retired under the topology lock
-// before the wipe, so an in-flight flush can never resurrect wiped
-// records. Intended for trunk-level cache resets (translation caches).
+// Clear wipes a channel for a trunk's lineage and reseeds it empty,
+// atomically with the flusher: pending buffers are drained and every hot
+// handle retired under the topology lock before the wipe, so an in-flight
+// flush can never resurrect wiped records.
 func (s *Store) Clear(trunk, channel string) error {
 	endMutation, err := s.Trunks.beginTopologyMutation()
 	if err != nil {
@@ -287,9 +282,8 @@ func (s *Store) Clear(trunk, channel string) error {
 	return clearErr
 }
 
-// SyncStump synchronously persists a stump's birth records, lineage-
-// coherently. Raw StumpHead writes are invisible to the flusher; call
-// this before spawning children under a freshly written stump.
+// SyncStump persists a stump's birth records lineage-coherently. Raw StumpHead
+// writes are invisible to the flusher; call this before spawning children.
 func (s *Store) SyncStump(name string) error {
 	sx, err := s.Trunks.StumpHead(name)
 	if err != nil {
@@ -366,8 +360,6 @@ func (s *Store) evictIdle() {
 	}
 }
 
-// LoadedHeads reports how many lineage heads are currently resident in
-// memory (loaded hot snapshots).
 func (s *Store) LoadedHeads() int {
 	t := s.Trunks
 	t.hotMu.Lock()
@@ -412,12 +404,8 @@ func (o StoreOptions) config() Config {
 	opaque, unkeyed := nameSet(o.Opaque), nameSet(o.Unkeyed)
 	seen := map[string]bool{o.Main: true}
 	cfg.Channels = append(cfg.Channels, ChannelSpec{Name: o.Main, Opaque: opaque[o.Main]})
-	// The UNION of every name the options mention, once. Three loops over
-	// three name sets is how a channel named ONLY in Unkeyed came to be
-	// declared nowhere: it is not a reducer and not opaque, so it fell
-	// through both, and reconciliation could not see it to fix an existing
-	// store. This is the third time a per-channel property has been lost in
-	// a copy of the same loop; the next one lands here alone.
+	// The union of every name the options mention, once: a channel named only
+	// in Unkeyed was declared nowhere when three loops each missed it.
 	names := make([]string, 0, len(o.Reducers)+len(o.Opaque)+len(o.Unkeyed))
 	for name := range o.Reducers {
 		names = append(names, name)
@@ -466,13 +454,10 @@ func (s *Store) Append(trunk, channel string, mainLT uint64, payload, meta []byt
 }
 
 func (s *Store) autoCreateChannel(channel string) error {
-	// Opaque and Unkeyed are properties of the CHANNEL, and this is the one
-	// place a channel is born without passing through opts.config().
-	// Dropping Unkeyed here created a keyed channel under an unkeyed name:
-	// the append path then reads main to stamp a key -- the exact coupling
-	// unkeyed exists to remove -- and a fork takes its boundary from that
-	// key instead of from the cursor stamps. Written as one shape so the
-	// third such property lands once rather than being forgotten once.
+	// Opaque and Unkeyed are properties of the channel, and this is the one
+	// place a channel is born without passing through opts.config(). Dropping
+	// Unkeyed here makes the append path read main to stamp a key, the exact
+	// coupling unkeyed exists to remove.
 	spec := ChannelSpec{
 		Name:    channel,
 		Kind:    ChannelLog,
@@ -530,11 +515,8 @@ func (s *Store) StateAt(trunk, channel string, channelLT uint64) ([]byte, error)
 	return x.StateAt(channel, channelLT)
 }
 
-// SegmentHeaderAt returns the opaque block-0 header of the segment holding
-// channelLT together with that segment's base index, for a reducible
-// channel of trunk. See xwal.SegmentHeaderAt and disk.Log.SegmentHeaderAt:
-// the two facts must come from one call because HeaderAt walks the parent
-// chain and SegmentBaseIndexes does not.
+// SegmentHeaderAt: the two facts must come from one call because HeaderAt
+// walks the parent chain and SegmentBaseIndexes does not.
 func (s *Store) SegmentHeaderAt(trunk, channel string, channelLT uint64) ([]byte, uint64, error) {
 	s.markTouched(trunk)
 	x, err := s.Trunks.Head(trunk)
@@ -565,8 +547,7 @@ func (s *Store) Channels(trunk string) ([]ChannelInfo, error) {
 	return x.Channels(), nil
 }
 
-// DurableThrough is the highest index in a trunk's channel that has reached
-// the disk. See XWAL.DurableThrough.
+// DurableThrough is the highest index in a trunk's channel that has reached the disk.
 func (s *Store) DurableThrough(trunk, channel string) (uint64, error) {
 	x, err := s.Trunks.Head(trunk)
 	if err != nil {

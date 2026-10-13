@@ -7,28 +7,15 @@ import (
 	"github.com/jack-work/figaro/internal/store/segment"
 )
 
-// THE POSITIVE SIDE OF headerfold_fork_test.go.
+// The positive side of headerfold_fork_test.go: the one-call route is right
+// at every index, on a trunk, across a fork, across two forks, and on a
+// frozen branch point. The oracle is StateAt.
 //
-// That file pins why the TWO-CALL ROUTE is unsafe and it STAYS AS IT IS:
-// HeaderAt still walks the parent chain, SegmentBaseIndexes still does not,
-// and pairing them is still wrong below a fork point. Nothing here makes that
-// false. This file asserts the ONE-CALL route is right, at every index, on a
-// trunk, across a fork, across TWO forks, and on a FROZEN branch point.
-//
-// The oracle is StateAt, because it is the same computation performed by the
-// library that owns the segments: whatever SegmentHeaderAt hands back must
-// fold to exactly what StateAt already returns.
-//
-// A WARNING THIS FILE OWES ITS SIBLING, learned from a canary: the value
-// oracle below works here ONLY because sumFold is NOT IDEMPOTENT. Folding a
-// range that starts too LOW re-adds numbers, so the sum moves and the check
-// fires. For an IDEMPOTENT reducer -- which is what figaro's form patches and
-// xwal's jsonMerge are -- a too-low base re-applies records the header
-// already contains and the value is IDENTICAL, so a value oracle is
-// structurally blind to it. That is why the xwal-level test
-// (xwal/segmentheaderat_test.go) checks the returned base against the segment
-// bases of the log that owns the index, obtained independently. If sumFold is
-// ever replaced with an idempotent reducer, this file needs the same.
+// The value oracle works here only because sumFold is not idempotent: for
+// an idempotent reducer a too-low base re-applies records the header
+// already contains and the value is identical. If sumFold is ever replaced
+// with an idempotent reducer, check the returned base independently, as
+// xwal/segmentheaderat_test.go does.
 
 // foldFromSegmentHeader is what a consumer writes given the NEW call: ask for
 // the header and its base together, then fold the records in [base..idx] onto
@@ -61,11 +48,8 @@ func foldFromSegmentHeader(t *testing.T, l *Log, idx uint64) ([]byte, uint64, er
 	return got, base, err
 }
 
-// naiveBaseFor is the base the TWO-CALL route would have computed: the
-// greatest of THIS log's own segment bases that is <= idx. Kept here so the
-// fork tests can assert, positively, that they are exercising indices where
-// the two routes DISAGREE -- otherwise a green run proves only that the
-// fixture never reached the hazard.
+// naiveBaseFor is the base the two-call route would compute, so the fork
+// tests can assert that they exercise indices where the two routes disagree.
 func naiveBaseFor(l *Log, idx uint64) uint64 {
 	base := uint64(1)
 	for _, b := range l.SegmentBaseIndexes() {
@@ -94,10 +78,8 @@ func assertFoldsMatchStateAt(t *testing.T, l *Log, lo, hi uint64) {
 	}
 }
 
-// TestSegmentHeaderAt_OnATrunkItAgreesWithStateAt is the control: on a log
-// with no parent both routes describe the same lineage, so this proves the
-// new call is right in the easy case and, if it fails, tells the reader the
-// fork tests below prove nothing.
+// The control: on a log with no parent both routes describe the same
+// lineage.
 func TestSegmentHeaderAt_OnATrunkItAgreesWithStateAt(t *testing.T) {
 	dir := t.TempDir()
 	l := openReducible(t, dir, 256)
@@ -115,10 +97,8 @@ func TestSegmentHeaderAt_OnATrunkItAgreesWithStateAt(t *testing.T) {
 	assertFoldsMatchStateAt(t, l, 1, n)
 }
 
-// TestSegmentHeaderAt_AcrossAForkItAgreesWhereThePairingDoesNot is the
-// hazard, answered. Same fixture as TestHeaderFold_AcrossAForkTheNaive-
-// PairingIsWrong: 40 entries, forked at 30, so there are indices below the
-// fork base living in the parent's EARLIER segments.
+// The hazard, answered: 40 entries forked at 30, so there are indices below
+// the fork base living in the parent's earlier segments.
 func TestSegmentHeaderAt_AcrossAForkItAgreesWhereThePairingDoesNot(t *testing.T) {
 	dir := t.TempDir()
 	parent := openReducible(t, dir, 256)
@@ -152,12 +132,9 @@ func TestSegmentHeaderAt_AcrossAForkItAgreesWhereThePairingDoesNot(t *testing.T)
 	// index, above and below the fork base.
 	assertFoldsMatchStateAt(t, child, 1, cut+7)
 
-	// AND THEN THE POSITIVE ASSERTION THAT THE HAZARD IS REACHED: at some
-	// index below the fork base the one-call base must DIFFER from the base
-	// the two-call route computes. Without this, a green run above could mean
-	// the two routes happen to agree everywhere the fixture looks. It is
-	// second because a wrong VALUE is the finding and a fixture that missed
-	// the hazard is only a finding about the fixture.
+	// And the positive assertion that the hazard is reached: at some index
+	// below the fork base the one-call base must differ from the two-call
+	// base, or a green run could mean the two routes happen to agree.
 	disagreed := 0
 	for idx := uint64(1); idx < cut; idx++ {
 		_, base, err := foldFromSegmentHeader(t, child, idx)
@@ -180,11 +157,9 @@ func TestSegmentHeaderAt_AcrossAForkItAgreesWhereThePairingDoesNot(t *testing.T)
 		"below the fork base", disagreed, cut-1)
 }
 
-// TestSegmentHeaderAt_TwoLevelsOfForkGrandchildReadsGrandparent: HeaderAt
-// RECURSES, and a one-level fixture cannot tell a correct walk from one that
-// stops after a single hop -- at one level, "ask the parent" and "walk to the
-// root" are the same instruction. This forks twice and reads an index owned
-// by the GRANDPARENT through the GRANDCHILD.
+// HeaderAt recurses, and a one-level fixture cannot tell a correct walk from
+// one that stops after a single hop: this forks twice and reads an index
+// owned by the grandparent through the grandchild.
 func TestSegmentHeaderAt_TwoLevelsOfForkGrandchildReadsGrandparent(t *testing.T) {
 	dir := t.TempDir()
 	gp := openReducible(t, dir, 256)
@@ -262,11 +237,9 @@ func TestSegmentHeaderAt_TwoLevelsOfForkGrandchildReadsGrandparent(t *testing.T)
 	assertFoldsMatchStateAt(t, grand, 1, cut2+5)
 }
 
-// TestSegmentHeaderAt_OnAFrozenBranchPoint: a fork makes its parent read-only
-// at the split -- Fork closes the active segment and sets readOnly -- so a
-// frozen log's segments are ALL sealed, and a lookup that leans on the active
-// segment's shape answers differently there. Assert against the frozen log
-// itself, not only against a live trunk and a live child.
+// A fork makes its parent read-only at the split, so a frozen log's segments
+// are all sealed, and a lookup that leans on the active segment's shape
+// answers differently there.
 func TestSegmentHeaderAt_OnAFrozenBranchPoint(t *testing.T) {
 	dir := t.TempDir()
 	parent := openReducible(t, dir, 256)
@@ -294,12 +267,10 @@ func TestSegmentHeaderAt_OnAFrozenBranchPoint(t *testing.T) {
 	assertFoldsMatchStateAt(t, parent, 1, cut-1)
 }
 
-// TestSegmentHeaderAt_AMissNeverALie: three distinct refusals, because a
-// caller must never read base == 0 as "unknown". A nil header beside a VALID
-// base is the dangerous answer -- it folds to a from-empty state that looks
-// entirely plausible -- so a log with no headers is an ERROR here even though
-// HeaderAt answers nil for it. That difference is deliberate; see the doc on
-// SegmentHeaderAt.
+// Three distinct refusals, because a caller must never read base == 0 as
+// "unknown". A nil header beside a valid base folds to a plausible
+// from-empty state, so a log with no headers is an error here even though
+// HeaderAt answers nil for it.
 func TestSegmentHeaderAt_AMissNeverALie(t *testing.T) {
 	t.Run("not in header mode", func(t *testing.T) {
 		l, err := Open(t.TempDir(), Options{

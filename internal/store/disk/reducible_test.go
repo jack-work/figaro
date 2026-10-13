@@ -10,12 +10,10 @@ import (
 	"github.com/jack-work/figaro/internal/store/segment"
 )
 
-// The reducible model layered on top of figwal headers: each segment's
-// block-0 header is a watermark (here, the running sum of all entry
-// values in prior segments); each entry is an opaque value (a "patch").
-// State at any index = header(segment-of-idx) folded with the entries in
-// [segment-base, idx]. These tests exercise the figwal primitive only —
-// the fold lives in the OnSegmentOpen callback, as it will in xwal.
+// The reducible model layered on figwal headers: each segment's block-0
+// header is a watermark (here, the running sum of all entry values in prior
+// segments); state at any index is header(segment-of-idx) folded with the
+// entries in [segment-base, idx].
 
 func u64(v uint64) []byte {
 	b := make([]byte, 8)

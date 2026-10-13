@@ -9,10 +9,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// A ROW APPENDED MUST BE VISIBLE TO THE VERY NEXT READ ON THE SAME HANDLE.
-// The send path does exactly this and nothing else: catch up (which appends
-// the rows it had to encode), then read the conversation back out. If the
-// read cannot see the write, the provider assembles an EMPTY conversation.
+// A row appended must be visible to the very next read on the same handle:
+// the send path catches up, then reads the conversation back out.
 func TestAnAppendedRowIsVisibleToTheNextWarmRead(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
@@ -44,10 +42,8 @@ func TestAnAppendedRowIsVisibleToTheNextWarmRead(t *testing.T) {
 	require.Len(t, rows.Read(), 1, "the row just appended is invisible to a warm read")
 }
 
-// AND THE DAEMON HAS TWO HANDLES ON ONE CHANNEL: the fig IR write path
-// translates a record as it lands, and the provider opens the same channel to
-// read the conversation back. A row written through one must be visible
-// through the other.
+// The daemon has two handles on one channel: the IR write path translates a
+// record as it lands, and the provider reads the same channel back.
 func TestARowWrittenThroughOneHandleIsVisibleThroughAnother(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
@@ -81,11 +77,9 @@ func TestARowWrittenThroughOneHandleIsVisibleThroughAnother(t *testing.T) {
 	require.Len(t, reader.Read(), 1, "the reader's handle cannot see a row the writer's handle appended")
 }
 
-// THE DAEMON'S SHAPE: an aria whose lineage has a fork base above 1, which is
-// every aria created from an outfit. The translator channel is addressed by
-// its OWN dense LT (1, 2, 3 ...) while the lineage's bases are MAIN-channel
-// LTs, so a read that splits the span by fork base is mixing two coordinate
-// spaces.
+// The daemon's shape: a lineage with a fork base above 1, which is every aria
+// created from an outfit. The translator channel is addressed by its own
+// dense LT while the lineage's bases are main-channel LTs.
 func TestATranslatorRowIsReadableOnAnAriaWhoseForkBaseIsAboveOne(t *testing.T) {
 	root := t.TempDir()
 	be, err := NewXwalBackend(root, 0)

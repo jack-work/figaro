@@ -1,12 +1,7 @@
 package store
 
-// THE FLOOR, ASSERTED WHERE IT CAN FAIL.
-//
-// A mem log under a intrinsic form is appended to for as long as the daemon lives.
-// Unbounded growth there is not a slow leak, it is the whole memory of the
-// process. These tests hold the three promises the paging makes: it is
-// bounded, it never drops below the floor, and when it cannot answer it SAYS
-// SO rather than answering short.
+// The paging's three promises: bounded, never below the floor, and a refusal
+// rather than a short answer when it cannot serve.
 
 import (
 	"encoding/json"
@@ -17,11 +12,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// setRecord is one real patch payload. THE SHAPE MATTERS: a form patch is
-// {"object":{"Set":…}}, not {"set":…}, and a hand-written approximation
-// unmarshals into an EMPTY patch that applies cleanly and changes nothing --
-// which would let every assertion below pass over a log that had lost
-// everything.
+// setRecord is one real patch payload. The shape matters: a hand-written
+// approximation unmarshals into an empty patch that changes nothing, which
+// would let every assertion pass over a log that had lost everything.
 func setRecord(t *testing.T, key string, value any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(value)

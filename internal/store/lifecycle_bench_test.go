@@ -10,10 +10,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// The everyday operations, at the layer that owns them: what `fig new`, `fig
-// fork`, `fig kill` and `fig ls` actually do to the store. The form work moved
-// all four (a birth writes a form patch, a fork inherits one, a kill closes a
-// writer, a listing reads a published snapshot), so all four want numbers.
+// The everyday operations at the layer that owns them: what `fig new`, `fig
+// fork`, `fig kill` and `fig ls` do to the store.
 
 func birthPatch(i int) message.Patch {
 	return form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -142,9 +140,8 @@ func BenchmarkListWithForms(b *testing.B) {
 	}
 }
 
-// BenchmarkForkWith is the verb a human performs: `fig fork` as the angelus
-// calls it. BenchmarkFork above measures Fork+ApplyForm, which is NOT this path
-// : it never touches ForkWith: so it cannot be evidence about it.
+// BenchmarkForkWith is `fig fork` as the angelus calls it; BenchmarkFork
+// never touches ForkWith.
 func BenchmarkForkWith(b *testing.B) {
 	back, err := store.NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
@@ -163,9 +160,7 @@ func BenchmarkForkWith(b *testing.B) {
 	}
 }
 
-// BenchmarkFormApplySameAria is the cost that is paid on EVERY form write -
-// `fig set`, a mantra update, every system.* patch a turn commits: not once per
-// fork. Folded inside a fork number it was invisible.
+// BenchmarkFormApplySameAria is the cost paid on every form write, not once per fork.
 func BenchmarkFormApplySameAria(b *testing.B) {
 	back, err := store.NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
@@ -188,9 +183,7 @@ func BenchmarkFormApplySameAria(b *testing.B) {
 	}
 }
 
-// BenchmarkFormApplyFreshAria is the same write against an aria nobody has
-// touched: it includes OPENING the form, which replays the channel. A caller
-// that only wants to append pays for materializing the whole state.
+// BenchmarkFormApplyFreshAria includes opening the form, which replays the channel.
 func BenchmarkFormApplyFreshAria(b *testing.B) {
 	back, err := store.NewXwalBackend(b.TempDir(), 0)
 	if err != nil {

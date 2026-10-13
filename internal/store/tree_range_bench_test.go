@@ -6,12 +6,9 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// A fresh fork holds 298 inherited rows and 0 of its own, so under the
-// corrected seam every read of a new branch takes the shared (mutex) path
-// until it appends. That is not the path the 516ns lock-free number covers.
-//
-// The unit carries its own coordinate so the Keyer is a field read: a keyer
-// that parses would benchmark the fixture instead of the cache.
+// A fresh fork holds only inherited rows, so every read of a new branch takes
+// the shared path until it appends. The unit carries its own coordinate so
+// the Keyer is a field read.
 type benchUnit struct {
 	lt   uint64
 	body string
@@ -58,10 +55,8 @@ func BenchmarkTreeRangeSerial(b *testing.B) {
 	}
 }
 
-// A SINGLE-UNIT read under many readers: the shape where a lock on the read
-// path can actually show. BenchmarkTreeRange* above asks for 64 units, so its
-// cost is dominated by copying them and a mutex acquisition disappears inside
-// it -- which is why a lock's removal must not be measured there.
+// A single-unit read under many readers: the shape where a lock on the read
+// path can show; a 64-unit range is dominated by copying.
 func BenchmarkTreeRangeOneUnitParallel(b *testing.B) {
 	c, lineage := benchCache(2000)
 	defer c.Close()

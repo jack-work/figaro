@@ -5,29 +5,11 @@ import (
 	"time"
 )
 
-// THE PACKAGE FOLLOWS ITS OWN RULE IN ONE DIRECTION ONLY.
-//
-// docs/store/tree.md requires that an Evicted hook take NO lock: eviction can
-// fire while a consumer holds its own write lock, so a hook that needs that
-// lock deadlocks -- "and only under budget pressure with concurrent readers,
-// which is the shape that reaches production first". The rule is honoured for
-// Evicted, which is invoked outside every lock.
-//
-// materializeLocked CALLS A CALLER-SUPPLIED Source WHILE HOLDING c.mu. Same
-// hazard, opposite direction, in the package that states the rule.
-//
-// WHY IT IS NOT LIVE TODAY, AND WHY THAT IS THE REASON TO FIX IT NOW. The only
-// tenant (segment's payload cache) passes src = nil, so no caller-supplied
-// code runs under c.mu and the deadlock is UNREACHABLE. IT BECOMES REACHABLE
-// THE MOMENT A Source IS INSTALLED -- which is precisely what the
-// consolidation does, since a tree cache that can rematerialize is the whole
-// point of moving figaro's logs onto it. A hazard with a known arrival date.
-//
-// THIS TEST FAILS RATHER THAN HANGS. A deadlock in a test blocks the package
-// until go test's global timeout and reports as a panic in an unrelated place,
-// so the call runs in a goroutine under a deadline and the assertion is that
-// it FINISHED. The goroutine is leaked when it does not; that is the honest
-// cost of demonstrating a deadlock and it is bounded to a failing run.
+// An Evicted hook may take no lock, and the package honours that; the same
+// hazard runs the other way if the Source is called while holding c.mu, and
+// it becomes reachable the moment a re-entrant Source is installed. The call
+// runs in a goroutine under a deadline so a deadlock fails rather than
+// hanging the package.
 
 // reentrantSource calls back into the cache it is serving, which is the
 // smallest faithful model of a real Source: a layer below that consults the
@@ -55,10 +37,9 @@ func TestASourceMustNotRunUnderTheCacheLock(t *testing.T) {
 	}, NewBudget(1<<20),
 		func(string) int { return 8 },
 		func(string) uint64 { return 1 })
-	// NO defer c.Close() HERE, DELIBERATELY. Close takes c.mu, so on the
-	// failing path it would block behind the deadlocked goroutine and turn a
-	// clean 3-second assertion into a 60-second package timeout reported as a
-	// panic somewhere else. My first version did exactly that.
+	// No defer c.Close() here: Close takes c.mu, so on the failing path it
+	// would block behind the deadlocked goroutine and turn a clean assertion
+	// into a package timeout.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

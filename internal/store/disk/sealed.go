@@ -75,8 +75,7 @@ func (ss *sealedSeg) close() error {
 	return nil
 }
 
-// segmentAt opens the sealed segment holding idx, or nil when no sealed
-// segment does.
+// sealedFor is the sealed segment holding idx, if any.
 func (l *Log) sealedFor(idx uint64) (*sealedSeg, bool) {
 	i := searchSealed(l.sealed, idx)
 	if i < len(l.sealed) && idx >= l.sealed[i].base {
@@ -103,11 +102,9 @@ func (l *Log) openSealed(ss *sealedSeg) (*segment.Segment, error) {
 	return ss.open(l.codec, l.opts.OnSegmentOpen != nil)
 }
 
-// materializeLocked opens every sealed segment. The topology operations
-// (fork, re-split, prefix absorption) reason about counts, headers and
-// payloads across the whole log, so they take the eager path rather than
-// growing an on-demand open in the middle of a plan they have already
-// committed to. Called with the write lock held.
+// materializeLocked opens every sealed segment: the topology operations
+// reason about the whole log, so they take the eager path rather than an
+// on-demand open in the middle of a committed plan. Write lock held.
 func (l *Log) materializeLocked() error {
 	for _, ss := range l.sealed {
 		if _, err := l.openSealed(ss); err != nil {

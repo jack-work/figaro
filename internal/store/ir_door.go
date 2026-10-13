@@ -9,48 +9,34 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// figIRLog is the ONE write path into an aria's fig IR channel: every Append,
-// from any provider or any caller, passes through it, and it is where the
-// tool-call invariant is enforced rather than patrolled.
+// figIRLog is the one write path into an aria's IR channel, where the
+// tool-call invariant is enforced: a message may not land while tool results
+// are outstanding. The door closes open invokes with error results first,
+// completing a partial result set in place or synthesizing a whole one.
 //
-// THE INVARIANT: a message may not land while tool results are outstanding.
-// If one tries, the door closes the open invokes with error results first --
-// completing a partial result set in place, or synthesizing a whole one -- so
-// the history a provider sees always pairs every invoke with a result.
+// A result for a call no longer open does not fail the write: the block is
+// dropped (an unmatched tool_result is a hard error for every provider) and a
+// system note is appended in its place.
 //
-// A result for a call that is no longer open does NOT fail the write. The
-// block is dropped from the wire history (an unmatched tool_result is a hard
-// error for every provider we speak) and a system note is appended in its
-// place, so the model is told the result arrived rather than left to infer it.
-//
-// APPEND-ONLY: the door never edits a record already written. It completes the
-// message it is given before writing it, and appends its own records after.
+// Append-only: the door never edits a record already written.
 type figIRLog struct {
 	Log[message.Message]
 	backend *XwalBackend
 	ariaID  string
 
-	// mu serializes this door's own appends. It does NOT make the door the
-	// only writer: OpenFigIR mints one per call, so what is open must be read
-	// from the LOG on every append rather than remembered. Two doors holding
-	// their own idea of it closed one call twice, which the provider refuses
-	// (Gluck, 0.28.2: "messages.682.content.2: unexpected tool_use_id").
+	// mu serializes this door's own appends; it does not make the door the
+	// only writer. OpenFigIR mints one per call, so what is open is read from
+	// the log on every append, never remembered.
 	mu sync.Mutex
 }
 
-// roundLookback bounds the tail read that resolves outstanding invokes. THE
-// FIG IR IS CORRECT BY CONSTRUCTION: every append through this door closes
-// what it opened, so the only invokes that can be open when a door is created
-// belong to the LAST round -- an assistant message and the results after it.
-// A whole-history read to find them would be O(history) on a path every
-// append takes, to answer a question about the tail.
+// roundLookback bounds the tail read that resolves outstanding invokes: every
+// append through the door closes what it opened, so the only open invokes
+// belong to the last round.
 const roundLookback = 64
 
 const (
-	// toolClosedNotice is the result text for an invoke the door had to close.
 	toolClosedNotice = "tool call closed without a result (interrupt, fork, or fault)"
-	// lateResultNotice prefixes the system note for a result that arrived
-	// after its call was closed.
 	lateResultNotice = "a tool result arrived after its call was closed"
 )
 
@@ -72,16 +58,15 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 				late = append(late, r)
 			}
 		}
-		// Drop the late blocks from the message: unmatched on the wire is a
-		// hard error. They come back as a system note below.
+		// Late blocks leave the message (unmatched on the wire is a hard error)
+		// and come back as a system note below.
 		if len(late) > 0 {
 			e.Payload.Content = keepContent(e.Payload.Content, func(c message.Content) bool {
 				return c.Type != message.ContentToolResult || matched[c.ToolCallID]
 			})
 		}
-		// Complete the set: anything still open is closed here, in this very
-		// message, because a provider wants the results immediately after the
-		// call and a second record would not be immediately after.
+		// Anything still open is closed in this very message: a provider wants
+		// the results immediately after the call.
 		for _, inv := range pending {
 			if !matched[inv.ToolCallID] {
 				e.Payload.Content = append(e.Payload.Content,
@@ -119,19 +104,15 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 	return stamped, nil
 }
 
-// GuardIR wraps any fig IR log in the door, so an ephemeral aria gets the same
-// tool-call invariant as a backed one. A backendless door skips the recency
-// stamp and does nothing else differently.
+// GuardIR wraps any IR log in the door so an ephemeral aria gets the same
+// invariant; a backendless door only skips the recency stamp.
 func GuardIR(inner Log[message.Message]) Log[message.Message] {
 	return &figIRLog{Log: inner}
 }
 
-// CloseOpenToolCalls closes every outstanding invoke with an error result and
-// reports how many it closed. The door does this on the next append anyway;
-// calling it directly is for the INTERRUPT PATH, where the history must be
-// well-formed the moment the turn ends rather than the next time somebody
-// writes -- a fork or a read taken in between would otherwise see a call with
-// no result.
+// CloseOpenToolCalls: the door does this on the next append anyway; the
+// interrupt path calls it so a fork or read taken before the next write never
+// sees a call without a result.
 func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -158,20 +139,15 @@ func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], erro
 		return stamped, err
 	}
 	l.backend.wroteTo(l.ariaID, time.Now().UnixMilli())
-	// THE FIG IR ENTRY IS CANONICAL AND HAS LANDED; ITS TRANSLATIONS ARE
-	// DERIVED AND FOLLOW. Gluck, 2026-08-20: "fig ir entry first... if a
-	// crash happens there, the translator IR should self-heal." It does: a
-	// torn frame is truncated at open, so a translation is either whole or
-	// absent, and an absent one is rebuilt by the next catch-up.
+	// The IR entry is canonical and has landed; translations are derived and
+	// follow. A torn translator frame is truncated at open, so a translation is
+	// whole or absent, and an absent one is rebuilt by the next catch-up.
 	l.backend.translateOnAppend(l.ariaID, l.Log, stamped)
 	return stamped, nil
 }
 
-// outstandingInvokes reports the invokes of the last assistant message that
-// still lack results, which is the door's state after a restart or a fork.
-// openInvokes reads what is open FROM THE LOG, at every append. Bounded to
-// the round, never the history, and never cached: a cached copy is a second
-// answer that can disagree with the first.
+// openInvokes reads what is open from the log at every append, bounded to the
+// round and never cached: a cached copy is a second answer that can disagree.
 func (l *figIRLog) openInvokes() []message.Content {
 	return outstandingInvokes(TailSnapshot(l.Log, roundLookback))
 }
@@ -185,8 +161,7 @@ func isOpen(pending []message.Content, id string) bool {
 	return false
 }
 
-// outstandingInvokes is the invokes of the last invoke-bearing message that
-// nothing after it answered. rows is a TAIL, not a history.
+// outstandingInvokes: rows is a tail, not a history.
 func outstandingInvokes(rows []Entry[message.Message]) []message.Content {
 	at := -1
 	for i := len(rows) - 1; i >= 0; i-- {
@@ -249,8 +224,6 @@ func keepContent(in []message.Content, keep func(message.Content) bool) []messag
 	return out
 }
 
-// UnmatchedToolCalls counts the invokes in an aria's history that no result
-// answered. Read-only; the audit half of RepairToolCalls.
 func (b *XwalBackend) UnmatchedToolCalls(ariaID string) (int, error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
@@ -261,10 +234,8 @@ func (b *XwalBackend) UnmatchedToolCalls(ariaID string) (int, error) {
 	return len(unansweredInvokes(h.ir.Read())), nil
 }
 
-// duplicateResults is every tool_result block that answers a call some EARLIER
-// result already answered. The wire pairs one result with one invoke, so a
-// second one has nothing left to pair with and the provider refuses the whole
-// history. Returns the entry LT and the offending block, in log order.
+// duplicateResults: a second result for one invoke has nothing to pair with
+// and the provider refuses the whole history. Entry LT and block, in log order.
 func duplicateResults(rows []Entry[message.Message]) []struct {
 	LT    uint64
 	Block message.Content
@@ -292,7 +263,6 @@ func duplicateResults(rows []Entry[message.Message]) []struct {
 	return out
 }
 
-// unansweredInvokes is every invoke in rows with no result anywhere after it.
 func unansweredInvokes(rows []Entry[message.Message]) []message.Content {
 	answered := map[string]bool{}
 	for _, e := range rows {
@@ -313,11 +283,9 @@ func unansweredInvokes(rows []Entry[message.Message]) []message.Content {
 	return open
 }
 
-// RepairToolCalls closes every unanswered invoke in an aria's whole history
-// and reports how many it closed. It is the ONE place that reads the history
-// to find them: the door maintains the invariant going forward, so this
-// exists for arias whose records predate it. Run by `figaro doctor toolcalls`,
-// never on a read path.
+// RepairToolCalls is the one place that reads the whole history for unanswered
+// invokes: the door keeps the invariant going forward, so this exists for
+// records that predate it. Never on a read path.
 func (b *XwalBackend) RepairToolCalls(ariaID string) (int, error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
@@ -341,13 +309,10 @@ func (b *XwalBackend) RepairToolCalls(ariaID string) (int, error) {
 	return len(open), nil
 }
 
-// turnIDFor is the door's second invariant: no record reaches the log without
-// a turn id.
-//
-// The rule is turns.StampIDs' own, applied to one record -- it depends only on
-// the previous record's id and this message, and the tail IS the previous
-// record. A caller that supplies an id keeps it: a steering message or a tool
-// result belongs to the turn that provoked it, not to whatever the tail says.
+// turnIDFor: no record reaches the log without a turn id. The rule is
+// turns.StampIDs' own applied to one record, and the tail is the previous
+// record. A caller-supplied id is kept: a steering message or a tool result
+// belongs to the turn that provoked it.
 func (l *figIRLog) turnIDFor(m message.Message) uint64 {
 	if m.TurnID != 0 {
 		return m.TurnID

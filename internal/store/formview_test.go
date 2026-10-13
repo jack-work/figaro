@@ -1,19 +1,9 @@
 package store
 
-// The view's three properties, pinned.
-//
-// This file exists because the change it guards is a change of KIND, not of
-// speed: Patches() copied the whole history and handed over ownership;
 // PatchesBetween answers a range with a window onto memory the writer still
-// owns. Faster, and it can be wrong in ways a copy could not be. So: it must
-// answer exactly what the old walk answered, it must not let a caller scribble
-// on the writer, and its cost must not track the history it is drawn from.
-//
-// The differential test is the one that matters. "Pin the identity with a
-// verbatim-old-implementation differential test before you optimize it" is
-// advice from the aria that did the allocation surgery on the render
-// primitives, and it is right: a benchmark that is faster and wrong is the
-// worst outcome available here.
+// owns, where Patches() copied. It must answer what the old walk answered,
+// must not let a caller scribble on the writer, and must not cost the
+// history behind it.
 
 import (
 	"encoding/json"
@@ -23,9 +13,8 @@ import (
 	"testing"
 )
 
-// oldPatchesThenWalk is the pre-view path, verbatim in behaviour: copy the
-// entire published history out of the form (Form.Patches), then walk a fresh
-// forward cursor to the absolute range (figaro.patchCursor).
+// oldPatchesThenWalk is the pre-view path: copy the whole history, then walk
+// a forward cursor to the absolute range.
 func oldPatchesThenWalk(f *Form, after, upTo uint64) []VersionedPatch {
 	all := append([]VersionedPatch(nil), f.state.Load().patches...)
 	i := 0
@@ -58,9 +47,8 @@ func formWithPatches(t testing.TB, n int) *Form {
 	return f
 }
 
-// TestFormPatchesBetweenMatchesOldWalk is the differential: for every range a
-// projection can ask for, including the degenerate and out-of-bounds ones, the
-// view answers exactly what copy-then-walk answered.
+// The differential: for every range a projection can ask for, the view
+// answers exactly what copy-then-walk answered.
 func TestFormPatchesBetweenMatchesOldWalk(t *testing.T) {
 	const n = 64
 	f := formWithPatches(t, n)
@@ -84,8 +72,7 @@ func TestFormPatchesBetweenMatchesOldWalk(t *testing.T) {
 	}
 }
 
-// TestFormPatchesBetweenIsAViewNotACopy states the property the whole change
-// rests on, and the guard that makes it safe to hand out.
+// The property the whole change rests on, and the guard that makes it safe.
 func TestFormPatchesBetweenIsAViewNotACopy(t *testing.T) {
 	f := formWithPatches(t, 32)
 	published := f.state.Load().patches
@@ -113,10 +100,8 @@ func TestFormPatchesBetweenIsAViewNotACopy(t *testing.T) {
 	}
 }
 
-// TestFormPatchesBetweenCostIsWindowNotHistory is the regression alarm as a
-// test rather than as a metric: the delta read must cost the delta, whatever
-// is behind it. A counter of this shape outlives any benchmark, because it
-// fails in CI instead of drifting in a report nobody reruns.
+// The delta read must cost the delta, whatever is behind it; a counter fails
+// in CI where a benchmark drifts.
 func TestFormPatchesBetweenCostIsWindowNotHistory(t *testing.T) {
 	var last float64
 	for _, history := range []int{100, 1000, 10000} {
@@ -139,9 +124,8 @@ func TestFormPatchesBetweenCostIsWindowNotHistory(t *testing.T) {
 	}
 }
 
-// TestFormPatchesBetweenUnderConcurrentWrites drives the read against the
-// writer, which is the arrangement the view legitimises: readers holding
-// windows onto an array a writer is appending to. Meaningful under -race.
+// Readers holding windows onto an array a writer is appending to; meaningful
+// under -race.
 func TestFormPatchesBetweenUnderConcurrentWrites(t *testing.T) {
 	f := formWithPatches(t, 8)
 	stop := make(chan struct{})

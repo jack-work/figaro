@@ -125,8 +125,8 @@ func (BinaryCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) erro
 	}
 }
 
-// JSONLCodec stores entries as one flat JSON object per line, with the
-// payload's keys at the top level alongside two reserved sidecar keys:
+// JSONLCodec stores entries as one flat JSON object per line: the payload's
+// keys at the top level beside two reserved sidecar keys, _idx and _hash.
 type JSONLCodec struct{}
 
 func (JSONLCodec) Name() string    { return "jsonl" }
@@ -165,11 +165,8 @@ func (JSONLCodec) Frame(idx uint64, payload []byte) ([]byte, error) {
 	return append(line, '\n'), nil
 }
 
-// ReadFrame extracts the payload without verifying the stored hash; the
-// hash is verified in ScanFrames during recovery. When the line is in
-// canonical form (which is what Frame emits) the decode is a slice and
-// pointer dance with no JSON parse and no allocations beyond the read
-// buffer itself.
+// ReadFrame does not verify the stored hash; ScanFrames does, during
+// recovery. A canonical line (what Frame emits) decodes with no JSON parse.
 func (JSONLCodec) ReadFrame(r io.ReaderAt, off, nextOff int64) ([]byte, int, error) {
 	if nextOff <= off {
 		return nil, 0, errors.New("jsonl ReadFrame requires nextOff > off")
@@ -238,25 +235,16 @@ func (JSONLCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) error
 	}
 }
 
-// decodeJSONLLine returns the payload bytes from a JSONL envelope line
-// (with or without a trailing newline). If verify is true, the stored
-// `_hash` is recomputed from the payload and a mismatch returns
-// ErrCorrupt; this is the recovery-scan path. Otherwise the fast
-// canonical-slice path is used when the line matches the on-disk format
-// Frame emits, with a parsing fallback for lines that have been hand
-// edited (e.g. re-pretty-printed by jq).
+// decodeJSONLLine returns the payload bytes from an envelope line. verify
+// recomputes the stored _hash and returns ErrCorrupt on mismatch (the
+// recovery-scan path). Hand-edited lines fall back to a parse.
 func decodeJSONLLine(line []byte, verify bool) ([]byte, error) {
 	if n := len(line); n > 0 && line[n-1] == '\n' {
 		line = line[:n-1]
 	}
-	// Fast path for the canonical on-disk form Frame emits: extract the
-	// payload as a slice with no JSON parse. When verifying, the stored
-	// `_hash` covers exactly this canonical payload, so we hash the slice
-	// directly (a single SHA over already-canonical bytes) instead of
-	// parsing + re-marshaling (marshalCanonical) to recompute it. That
-	// re-canonicalization dominated recovery-scan cost when a segment is
-	// opened per operation. Only non-canonical (hand-edited) lines fall to
-	// the slow parse path.
+	// Fast path for the canonical form Frame emits: the payload is a slice
+	// with no JSON parse, and the stored _hash covers exactly that canonical
+	// payload, so verification hashes the slice directly.
 	var stored string
 	if verify && len(line) >= len(hashPrefix)+hashHexLen && bytes.HasPrefix(line, []byte(hashPrefix)) {
 		stored = string(line[len(hashPrefix) : len(hashPrefix)+hashHexLen])
@@ -321,9 +309,7 @@ func fastDecodeCanonicalLine(line []byte) ([]byte, bool) {
 	}
 }
 
-// slowDecodeJSONLLine handles lines that aren't in our canonical
-// on-disk form (e.g. hand-edited by jq) and the recovery-scan path
-// that needs to verify the stored hash.
+// slowDecodeJSONLLine handles lines not in canonical form.
 func slowDecodeJSONLLine(line []byte, verify bool) ([]byte, error) {
 	obj, err := decodeJSONObject(line)
 	if err != nil {

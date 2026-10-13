@@ -6,19 +6,11 @@ import (
 	"testing"
 )
 
-// THE SEAM: every read path forks between the resident tail and whatever
-// answers below it -- c.inner today, a frozen forest run after the re-seat.
-// Two structures that can answer for the same LT is the hazard, and a
-// duplicate reads as a real record rather than an error: a translation would
-// encode the same message twice and the per-LT cache would make it permanent.
-// Not a crash, a lie that survives -- the displaced-tool_result family.
-//
-// Asserted on the LT SEQUENCE, never on contents: contents can coincide,
-// coordinates cannot. Green today, so a re-seat that moves the boundary
-// without moving the ownership fails here.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the forest
-// re-seat and outlives it: do not retire this file with the temporary code.
+// The seam: every read path forks between the resident tail and whatever
+// answers below it. Two structures that can answer for one LT is the hazard,
+// and a duplicate reads as a real record rather than an error. Asserted on
+// the LT sequence, never on contents: contents can coincide, coordinates
+// cannot. Permanent, not migration scaffolding.
 
 func seamLog(t *testing.T, n int) *treeLog[string] {
 	t.Helper()

@@ -55,16 +55,10 @@ func answer(turn uint64, text string) message.Message {
 	return message.Message{Role: message.RoleOutput, TurnID: turn, Content: []message.Content{message.TextContent(text)}}
 }
 
-// THE LOCAL READ AGREES WITH THE DEFINITION, everywhere. turns.StampIDs over
-// the whole log is what "the turn that owns lt" means; TurnAtLT must give the
-// same answer from a record or two.
-//
-// The logs are fork chains, because that is where the interesting records
-// are: every fork writes a raw birth record (turn 0) at its base, in the
-// middle of a log whose neighbours are stamped. Interior and head forks at
-// random points, more turns written in each child, tool-shaped rounds and
-// ceremonial records between and inside turns. Every LT from 1 to past the
-// end of every aria in the chain is asked.
+// The local read agrees with the definition everywhere: turns.StampIDs over
+// the whole log is what "the turn that owns lt" means, and TurnAtLT must give
+// the same answer from a record or two. The logs are random fork chains, with
+// birth records (turn 0) between stamped neighbours.
 func TestTurnAtLTAgreesWithStampIDs(t *testing.T) {
 	for seed := int64(1); seed <= 30; seed++ {
 		rng := rand.New(rand.NewSource(seed))
@@ -196,8 +190,7 @@ func TestForkWithRecordsTheBaseTurn(t *testing.T) {
 			if !l.BaseTurnKnown || l.BaseTurn != c.wantTurn || l.BaseTurnExact != c.wantExact {
 				t.Fatalf("recorded %+v, want turn %d exact=%v", l, c.wantTurn, c.wantExact)
 			}
-			// And it is what a log read would have said, which is the whole
-			// claim: the number is a cache of the read, never a different answer.
+			// The number is a cache of the read, never a different answer.
 			gotT, gotE := TurnAtLT(be.OpenNode(parent), l.BaseLT)
 			if gotT != l.BaseTurn || gotE != l.BaseTurnExact {
 				t.Fatalf("recorded (%d, %v) but the parent's log says (%d, %v)", l.BaseTurn, l.BaseTurnExact, gotT, gotE)
@@ -286,9 +279,8 @@ func TestForkTurnSidecarIsSelfValidating(t *testing.T) {
 	}
 }
 
-// THE ANCESTRY WALK IS THE SAME WALK, just without listing the store. Built
-// against the listing it replaced, over a tree with siblings, cousins and
-// unrelated arias beside it.
+// The ancestry walk is the same walk without listing the store, built
+// against the listing it replaced.
 func TestLineageLinksMatchesTheListingWalk(t *testing.T) {
 	be, root, log := newConversation(t)
 	for turn := uint64(1); turn <= 3; turn++ {
@@ -370,11 +362,9 @@ func onlySidecar(t *testing.T, root string) string {
 	return found[0]
 }
 
-// READPAGE BY POSITION IS THE SAME PAGE AS THE WHOLE-LOG SLICE. The raw log's
-// ReadPage used to decode every record and slice; it reads only the window
-// now. Every (from, before, n) shape is asked of every aria in random fork
-// chains (whose prefixes are read through their parents), raw and through the
-// aria's own log, and compared with readPage over Read().
+// ReadPage by position is the same page as the whole-log slice, for every
+// (from, before, n) shape over random fork chains, raw and through the aria's
+// own log.
 func TestReadPageByPositionMatchesTheSlice(t *testing.T) {
 	for seed := int64(1); seed <= 12; seed++ {
 		rng := rand.New(rand.NewSource(seed))

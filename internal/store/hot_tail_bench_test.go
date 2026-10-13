@@ -7,26 +7,9 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// THE COMPARISON THE CARVE-OUT RESTS ON, IN ONE BINARY AND ONE RUN.
-//
-// plans/log-cache-policy.md carved out "LRU owns the COLD ranges, never the HOT
-// TAIL" on a figwal measurement of 1218ns against a lock-free view's 516ns,
-// with the sign flipping as readers were added. That number was taken on
-// another machine against another tree, it has never been reproduced here, and
-// it is the whole reason figaro still runs a flat tail window beside
-// tree.Cache. It is also the premise for the last open question of this
-// consolidation.
-//
-// TWO BENCHMARKS IN THE SAME BINARY IS THE PROTOCOL. Every A/B I ran tonight
-// compared two builds across time and needed a calibration I did not run
-// (plans/tree-shaped-log.md, the retraction). Two benchmarks in one binary
-// share the machine, the second, the page cache and the scheduler, so no
-// interleaving, counterbalancing or benchstat pairing can go wrong: read the
-// two lines of one output.
-//
-// WHAT IS COMPARED: the hot-tail read each structure actually offers -- the
-// flat window's published-view slice, and the tree's Range over the same span.
-// Both are lock-free on the read path since 63902f44.
+// The flat tail window's published-view slice against the tree's Range over
+// the same span, in one binary and one run so the two share the machine.
+// Both are lock-free on the read path.
 
 func hotTailFixture(entries, body int) (*treeLog[string], *fwtree.Cache[Entry[string]], []fwtree.Ref) {
 	mem := NewMemLog[string]()

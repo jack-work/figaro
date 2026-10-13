@@ -1,24 +1,8 @@
 package store
 
-// What the PROVIDER pays, per Send, to learn what a form did between two
-// stamps.
-//
-// This is the benchmark the copy hid. BenchmarkFormPatches10000, now deleted,
-// measured the old API honestly -- and the old API was the wrong question. A translate asks
-// "what changed between the last stamp and this one", whose answer is one
-// patch or none; the accessor answered it by handing over a copy of the whole
-// history and letting the caller walk to the end. A tool loop is many Sends,
-// and a studying aria pays it once per observed form per Send, so the slope in
-// (history length x observed forms) was the real cost and no benchmark named
-// it.
-//
-// The two shapes measured here are the two that happen in production:
-//
-//   Delta: the warm case. Ask for the last patch of a form with N behind it.
-//   Whole: the cold case, and the first sighting of a studied form.
-//
-// The names are identical in the pre-change tree (see the copy in
-// perfbase/, which implements the same two questions against FormPatches), so
+// What the provider pays per Send to learn what a form did between two
+// stamps. Delta is the warm case (the last patch with N behind it); Whole is
+// the cold case and the first sighting of a studied form.
 // benchstat compares like with like.
 
 import (
@@ -102,9 +86,8 @@ func BenchmarkFormWholePerSend100(b *testing.B)   { wholePerSend(b, 100) }
 func BenchmarkFormWholePerSend1000(b *testing.B)  { wholePerSend(b, 1000) }
 func BenchmarkFormWholePerSend10000(b *testing.B) { wholePerSend(b, 10000) }
 
-// A studying aria pays the accessor cost once per observed form per Send.
-// Fifty is the storm harness's number, and the slope in it is what decides
-// whether a figaro can watch many things or few.
+// A studying aria pays the accessor cost once per observed form per Send; the
+// slope in observed forms decides whether a figaro can watch many things or few.
 func studiedSetPerSend(b *testing.B, observed, history int) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
@@ -148,24 +131,15 @@ func studiedSetPerSend(b *testing.B, observed, history int) {
 func BenchmarkStudiedSetPerSend8x500(b *testing.B)  { studiedSetPerSend(b, 8, 500) }
 func BenchmarkStudiedSetPerSend50x500(b *testing.B) { studiedSetPerSend(b, 50, 500) }
 
-// accessorRange is THE SEAM: the one place a benchmark or probe in this
-// package asks "what did this form do between these two stamps". The
-// pre-change tree implements the same function against FormPatches plus a
-// forward cursor, so every measurement built on it compares like with like
-// when the internals swap.
-//
-// The seam is the lesson of the chalkboard->form migration, where three
-// one-line bodies let an entire before/after suite recompile unchanged: if
-// call sites scatter the literal API, the AFTER is not comparable to the
-// BEFORE and the exercise is theatre.
+// accessorRange is the seam: the one place a benchmark in this package asks
+// what a form did between two stamps, so a before/after suite recompiles
+// unchanged when the internals swap.
 func accessorRange(be *XwalBackend, id string, after, upTo uint64) ([]VersionedPatch, error) {
 	return be.FormPatchesBetween(id, after, upTo)
 }
 
-// What a form patch costs, and how it scales with concurrency. The number to
-// watch is not ns/op alone but SYNCS PER PATCH: group commit is the reason a
-// mandatory fsync is affordable, and if the batch stops batching this is
-// where it shows.
+// The number to watch is syncs per patch, not ns/op alone: group commit is
+// what makes a mandatory fsync affordable.
 func applyContended(b *testing.B, writers int) {
 	be, id := benchFormWithHistory(b, 8)
 	b.ReportAllocs()
@@ -229,13 +203,9 @@ func BenchmarkFormApplyManyForms(b *testing.B) {
 	}
 }
 
-// coldDeltaBelowWindow is the RETRANSLATE: one small range, deep in a history
-// the resident window no longer holds. The projection asks for
-// (prev, cur] once per IR record, so this cost is paid per record, and if it
-// is O(offset) the whole retranslate is O(records x history).
-//
-// The form's patch window is set small so the range is genuinely below it,
-// which is the configuration whoever tightens form_patch_window will meet.
+// coldDeltaBelowWindow is the retranslate: one small range deep in a history
+// the resident window no longer holds, paid once per IR record. The patch
+// window is set small so the range is genuinely below it.
 func coldDeltaBelowWindow(b *testing.B, history, at int) {
 	SetPatchWindow(64)
 	b.Cleanup(func() { SetPatchWindow(2048) })

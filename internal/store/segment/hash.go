@@ -23,9 +23,7 @@ func ValueHash(b []byte) (string, error) {
 	return hashCanonical(canon), nil
 }
 
-// hashCanonical hashes already-canonical JSON bytes. Use this when you
-// have already produced canonical form via marshalCanonical and want to
-// skip the redundant re-canonicalization in ValueHash.
+// hashCanonical hashes already-canonical JSON bytes.
 func hashCanonical(canon []byte) string {
 	sum := sha256.Sum256(canon)
 	return hex.EncodeToString(sum[:])[:hashHexLen]

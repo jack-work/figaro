@@ -7,10 +7,9 @@ import (
 	"testing"
 )
 
-// The ordering is the design (durable-forms §12.2.1): every crash must leave
-// the refcount too HIGH, because too high is a leak the sweep repairs and too
-// low reclaims a copy a live observer still needs. These hold the
-// POSTCONDITIONS of both verbs and the idempotence that makes a retry safe.
+// Every crash must leave the refcount too high: too high is a leak the sweep
+// repairs, too low reclaims a copy a live observer still needs. These hold
+// the postconditions of both verbs and the idempotence that makes a retry safe.
 
 func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
@@ -145,8 +144,8 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 	}
 }
 
-// Dropping a form that has since been deleted is legal (§12.2.2): the
-// subscription goes, the board stops naming it, and the copy stays.
+// Dropping a form that has since been deleted is legal: the subscription
+// goes, the board stops naming it, and the copy stays.
 func TestDropAfterTheSourceIsDead(t *testing.T) {
 	be, sourceID, src := librettoFixture(t)
 	outfit, err := be.CreateOutfit("dead", setPatch(map[string]string{"system.model": "m"}))
@@ -190,11 +189,9 @@ func TestDropAfterTheSourceIsDead(t *testing.T) {
 	}
 }
 
-// FORK is a refcount participant (durable-forms §12.2.2), and it is the one
-// that fails in the unrecoverable direction: a child inherits the board,
-// therefore the study set, therefore every study its parent held -- with
-// nothing incrementing the librettos it names. Fork, then let the parent
-// drop, and refs reaches zero while the child is still observing.
+// Fork is a refcount participant, and the one that fails in the
+// unrecoverable direction: a child inherits the board and therefore the study
+// set, with nothing incrementing the librettos it names.
 func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("fork", setPatch(map[string]string{"system.model": "m"}))
@@ -279,10 +276,8 @@ func TestKillReleasesWhatItsBoardStudied(t *testing.T) {
 	}
 }
 
-// Every path that gives a board a COPY is a participant. ForkWith is the one
-// a live `fig fork` takes, and it was missed while every test that called
-// Fork passed -- which is why this asserts the property on both entry points
-// rather than on the one the last test happened to use.
+// Every path that gives a board a copy is a participant; ForkWith is the one
+// a live `fig fork` takes, so the property is asserted on both entry points.
 func TestEveryForkEntryPointInheritsTheReference(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -360,11 +355,8 @@ func TestLibrettoStumpsAreNeverListed(t *testing.T) {
 	}
 }
 
-// IMPORT restores a board wholesale, and `system.studies` is an ordinary key
-// that an exported board carries -- so an import can name studied forms that
-// nothing counted. durable-forms §12.2.2 lists it beside fork and kill, and
-// it is the site I first wrote off as "this store has no import verb". It
-// has one; the angelus calls this hook.
+// Import restores a board wholesale, and `system.studies` is an ordinary key
+// an exported board carries, so an import can name studied forms nothing counted.
 func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("imported", setPatch(map[string]string{"system.model": "m"}))
@@ -394,10 +386,8 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A HAND-WRITTEN study set is refused: `system.studies` is system-managed
-	// because each entry is refcounted, and a board naming a study nothing
-	// counted is the unrecoverable direction of §12.2.2, reachable from the
-	// CLI until this key was protected.
+	// A hand-written study set is refused: `system.studies` is system-managed
+	// because each entry is refcounted.
 	if _, err := be.ApplyForm(imported, form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil)); err == nil {
 		t.Fatal("an unprivileged write of system.studies was allowed")
 	}
@@ -434,15 +424,10 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 	}
 }
 
-// SIXTEEN ARIAS STUDYING ONE FORM AT ONCE. Three races meet here and each
-// one is silent if it is wrong: the libretto singleton (two openers, one
-// instance, and the loser must not leave a second writer on the stump), the
-// refcount's compare-and-set loop, and sixteen boards each doing a
-// version-guarded read-modify-write of their own study set.
-//
-// The assertion that matters is not "no panic" but that the SWEEP agrees
-// afterwards: the count derived from the boards is what reclamation trusts,
-// so a lost retain is a copy reclaimed under a live observer.
+// Sixteen arias studying one form at once: the libretto singleton, the
+// refcount's compare-and-set loop, and sixteen version-guarded
+// read-modify-writes. What matters is that the sweep agrees afterwards: the
+// count derived from the boards is what reclamation trusts.
 func TestConcurrentStudiesOfOneForm(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("crowd", setPatch(map[string]string{"system.model": "m"}))
@@ -518,10 +503,8 @@ func TestConcurrentStudiesOfOneForm(t *testing.T) {
 	}
 }
 
-// A study that ultimately FAILS must not leave a reference behind. The
-// retain happens before the first board write, and if the declaration never
-// lands the count would otherwise stay high with nothing naming it -- a leak
-// only the sweep could explain.
+// A study that ultimately fails must not leave a reference behind: the
+// retain happens before the first board write.
 func TestAFailedStudyLeavesNoReference(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("failed", setPatch(map[string]string{"system.model": "m"}))
@@ -561,10 +544,8 @@ func TestAFailedStudyLeavesNoReference(t *testing.T) {
 	}
 }
 
-// STUDY AND DROP RACING ON ONE FORM. The last drop closes the libretto's
-// fold; a study arriving in that window retains an instance that is being
-// torn down. Nothing here may end with a board naming a study whose copy has
-// stopped following, which is the silent-staleness failure again.
+// Study and drop racing on one form: nothing may end with a board naming a
+// study whose copy has stopped following.
 func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("race", setPatch(map[string]string{"system.model": "m"}))
@@ -634,14 +615,10 @@ func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 	})
 }
 
-// EXHAUSTING THE RETRIES IS NOT A DROP. The board write is the participant
-// that must land FIRST; if it never lands, releasing the libretto anyway
-// takes a reference off a copy a live board still names -- the under-count
-// §12.2.1's ordering exists to make impossible, and the one the sweep cannot
-// distinguish from a legitimate observer.
-//
-// The exhaustion branch is unreachable without 32 real conflicts, so the
-// attempt budget is a var and this drives it to zero.
+// Exhausting the retries is not a drop: releasing the libretto anyway takes a
+// reference off a copy a live board still names, the under-count the sweep
+// cannot distinguish from a legitimate observer. The attempt budget is a var
+// so the exhaustion branch is reachable.
 func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
 	be, src, _ := librettoFixture(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
@@ -684,10 +661,8 @@ func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
 	}
 }
 
-// PRIMARY FORMS ONLY (Gluck, 2026-08-13): "studying is something for forms.
-// Outfits are just the names I give the named files that seed primary forms."
-// The refusal names what was aimed at, because "not a form" is not a useful
-// thing to tell someone who pointed at an outfit on purpose.
+// Primary forms only. The refusal names what was aimed at, because "not a
+// form" is not useful to someone who pointed at an outfit on purpose.
 func TestKindWordNamesWhatWasAimedAt(t *testing.T) {
 	if got := KindWord(string(kindOutfit)); got != "outfit, not a form" {
 		t.Errorf("outfit: %q", got)
@@ -697,15 +672,11 @@ func TestKindWordNamesWhatWasAimedAt(t *testing.T) {
 	}
 }
 
-// A PAIR THAT EXISTED. Every optimistic read-modify-write in this package
-// quotes a version alongside a value read from the same form; if the two come
-// from separate loads, a writer landing between them hands back a pair that
-// never existed, and the guarded apply then passes while overwriting a change
-// it never saw.
-//
-// The board is the case that matters: `system.studies` is edited this way,
-// and unlike a refcount there is no sweep that can recompute a board -- the
-// board is what the sweep recomputes FROM.
+// A pair that existed: every optimistic read-modify-write quotes a version
+// alongside a value from the same form; if the two come from separate loads
+// a writer landing between them hands back a pair that never existed. The
+// board is the case that matters, since there is no sweep that can recompute
+// a board.
 func TestFormAtIsAPairThatExisted(t *testing.T) {
 	be, _, _ := librettoFixture(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
@@ -729,10 +700,8 @@ func TestFormAtIsAPairThatExisted(t *testing.T) {
 			_, _ = be.ApplyForm(aria, patchOf(t, map[string]string{"n": fmt.Sprintf("%d", i)}))
 		}
 	}()
-	// WAIT for the writer, not merely signal it: a goroutine mid-ApplyForm
-	// when the test returns recreates files under the TempDir while cleanup
-	// removes it, and the failure reads "directory not empty" -- seen twice
-	// under a loaded gate before this line existed.
+	// Wait for the writer, not merely signal it: a goroutine mid-ApplyForm
+	// when the test returns recreates files under the TempDir during cleanup.
 	defer func() { close(stop); <-writerDone }()
 
 	for i := 0; i < 200; i++ {

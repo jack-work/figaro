@@ -87,9 +87,7 @@ func TestFlatForkInheritsPrefix(t *testing.T) {
 }
 
 // A fork below a node's own first index must fork the ancestor that owns
-// that LT. Walking the directory branch cannot find it: every flat node is
-// depth-1, so the walk falls through to the root and the child ends up
-// numbering above a hole in its own prefix.
+// that LT; every flat node is depth-1, so a directory walk cannot find it.
 func TestResplitBelowForksTheOwner(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	for range 6 {
@@ -124,9 +122,8 @@ func TestResplitBelowForksTheOwner(t *testing.T) {
 	}
 }
 
-// Reopening a flat store must not walk the directory tree as if it were
-// the lineage. A reducible channel's fork base belongs to a sibling
-// parent, so the open-time repair resolved it against the root and failed.
+// Reopening a flat store must not walk the directory tree as if it were the
+// lineage.
 func TestFlatStoreReopens(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)
@@ -169,9 +166,7 @@ func TestOwnerOfRefusesALineageCycle(t *testing.T) {
 	}
 }
 
-// A fork does not freeze the parent, so a rebuild from disk must not
-// demote it. The incremental path keeps the parent's head; the walk used
-// the nested rule "a node with subdirectories is frozen" and dropped it.
+// A fork does not freeze the parent, so a rebuild from disk must not demote it.
 func TestRebuildKeepsAForkedParentLive(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)
@@ -201,8 +196,7 @@ func TestRebuildKeepsAForkedParentLive(t *testing.T) {
 	}
 }
 
-// lineage climbed n.Parent, which no flat writer sets, so every trunk
-// reported no parent and no stump.
+// lineage must follow .from, which is what a flat writer sets.
 func TestLineageReadsTheFlatParent(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	if _, stump, _ := f.lineage(string(trunk)); stump != "s" {
@@ -226,11 +220,9 @@ func TestLineageReadsTheFlatParent(t *testing.T) {
 	}
 }
 
-// The bottom line: an aria forks itself without blocking any other aria.
-// A flat fork writes only its own new sibling, so a head open elsewhere
-// must not delay it. Asserted by COUNT, never by duration: we hold real
-// heads open and require the fork to succeed, where the old global gate
-// spun until it timed out.
+// An aria forks itself without blocking any other aria: a flat fork writes
+// only its own new sibling, so a head open elsewhere must not delay it.
+// Asserted by count, never by duration.
 func TestForkDoesNotWaitOnOtherOpenHeads(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	for range 3 {
@@ -262,10 +254,8 @@ func TestForkDoesNotWaitOnOtherOpenHeads(t *testing.T) {
 	}
 }
 
-// A related channel is sparse: most main LTs have no record of their own.
-// An interior fork at such an LT must still inherit everything keyed below
-// it. Taking the boundary from an EXACT main-LT match instead made the
-// child claim base 1, severing the channel and dropping inherited state.
+// A related channel is sparse: an interior fork at a main LT it never keyed
+// must still inherit everything keyed below it.
 func TestInteriorForkInheritsSparseChannel(t *testing.T) {
 	f, trunk := seedMapTrunk(t, filepath.Join(t.TempDir(), "f"))
 	_, lt, err := f.Append(trunk, 0, []byte(`"turn"`), nil)
@@ -319,11 +309,8 @@ func TestInteriorForkInheritsSparseChannel(t *testing.T) {
 	}
 }
 
-// A fork sharing main [1..at] must not inherit a RELATED record keyed
-// above at. Such a record references a turn the child does not have, which
-// the crash harness reports as [orphan-related] -- and it needs no crash
-// to produce, only a related channel with records on both sides of the
-// fork point.
+// A fork sharing main [1..at] must not inherit a related record keyed above
+// at: such a record references a turn the child does not have.
 func TestInteriorForkDropsRelatedRecordsPastTheForkPoint(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	var lts []uint64
@@ -366,11 +353,8 @@ func TestInteriorForkDropsRelatedRecordsPastTheForkPoint(t *testing.T) {
 	}
 }
 
-// A related record may be keyed AHEAD of main: a note written for a turn
-// whose main record is not durable yet. A tail fork must not hand that
-// record to the child, which would then hold a note referencing a turn it
-// does not have -- the crash harness's [orphan-related], and it needs no
-// crash to produce.
+// A related record may be keyed ahead of main (a note for a turn whose main
+// record is not durable yet); a tail fork must not hand it to the child.
 func TestTailForkDropsRelatedRecordsAheadOfMain(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	var lts []uint64
@@ -411,10 +395,8 @@ func TestTailForkDropsRelatedRecordsAheadOfMain(t *testing.T) {
 	}
 }
 
-// A store written before the markers merged is REFUSED, and Flatten is what
-// carries it across: every node keeps its from, kind and trunk, and the
-// pair is retired. The upgrade used to happen lazily on the read path; old
-// formats now live only in the migration.
+// A store written before the markers merged is refused, and Flatten carries
+// it across: every node keeps its from, kind and trunk, and the pair is retired.
 func TestLegacyMarkersMigrateWithFlatten(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)

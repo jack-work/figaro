@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// The accounting must survive an append racing an eviction: the evictor CASes
-// the pointer it read, and an extended block means it lost. Dropping the
-// segment from the held set on that path charged bytes to something nothing
-// could ever evict, and the budget then shrank for the process's life.
+// The accounting must survive an append racing an eviction: bytes charged to
+// something nothing can evict shrink the budget for the process's life.
 func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	old := CacheBudget()
 	defer SetCacheBudget(old)
@@ -67,11 +65,9 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	}()
 	wg.Wait()
 
-	// The property the old CAS-race test protected, restated for the
-	// tree seat: however extend, evict and reload interleave, the
-	// accounting must return to consistency -- an evict returns ALL the
-	// run's bytes, a reload charges exactly the fresh block, and nothing
-	// is stranded.
+	// However extend, evict and reload interleave, the accounting must return
+	// to consistency: an evict returns all the run's bytes, a reload charges
+	// exactly the fresh block, and nothing is stranded.
 	if _, err := s.ReadIndex(0); err != nil {
 		t.Fatal(err)
 	}
@@ -88,9 +84,8 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	if _, err := s.ReadIndex(0); err != nil { // reload
 		t.Fatal(err)
 	}
-	// THE ACCOUNTING IS TREE'S NOW, so the assertion is against tree rather
-	// than against a second copy this package used to keep: something is
-	// resident and the meter agrees it is non-zero.
+	// The accounting is tree's, so the assertion is against tree: something
+	// is resident and the meter agrees it is non-zero.
 	if CachedRanges() == 0 {
 		t.Fatal("reload after drop did not cache")
 	}

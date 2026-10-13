@@ -6,15 +6,10 @@ import (
 	"testing"
 )
 
-// A reducible channel's fork state is derived from the SEGMENT holding the
-// fork point: that segment's header (its watermark) folded with the patches
-// after it, up to the point. disk.stateAtLocked does exactly that, and it
-// recurses into l.parent when the index falls below the fork base.
-//
-// Flattening rests on that recursion following an injected parent rather than
-// a directory ancestor. This pins the semantics it has to preserve: a child
-// inherits everything through the fork point and nothing after it, without
-// replaying the channel.
+// A reducible channel's fork state is the header of the segment holding the
+// fork point folded with the patches after it; stateAtLocked recurses into
+// the parent below the fork base. A child inherits everything through the
+// fork point and nothing after it, without replaying the channel.
 func TestReducibleForkInheritsThroughTheFork(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 

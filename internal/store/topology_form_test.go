@@ -1,12 +1,7 @@
 package store
 
-// PARITY. This is internal/trunk's own test suite, pointed at the
-// form-backed tree that replaces it: same diagram, same claims, same names.
-// Porting the tests rather than writing new ones is what makes "it behaves
-// as trunks.json did" a checked statement instead of a hopeful one.
-//
-// The two differences are mechanical: the tree is opened over a store (a
-// form needs a log), and the fake topology is installed on it.
+// Parity: internal/trunk's own suite pointed at the form-backed tree that
+// replaces it, so "it behaves as trunks.json did" is a checked statement.
 
 import (
 	"os"
@@ -247,11 +242,9 @@ func TestTopologyForm_MigrationIsOnce(t *testing.T) {
 	}
 }
 
-// THE CRASH WINDOW. The migration folds the file in and then renames it, so
-// a crash between the two leaves a store whose form holds the edges AND
-// whose trunks.json is still there. The next open must not fold them again:
-// that is what "ordering, not a journal" means here, and it is checked by
-// putting the file back rather than by killing a process.
+// The crash window: the migration folds the file in and then renames it, so
+// a crash between the two leaves the edges in the form and trunks.json still
+// there. The next open must not fold them again.
 func TestTopologyForm_CrashBetweenFoldAndRename(t *testing.T) {
 	dir := t.TempDir()
 	f := tree()
@@ -281,9 +274,8 @@ func TestTopologyForm_CrashBetweenFoldAndRename(t *testing.T) {
 	}
 }
 
-// ABSENCE IS THE TRUTHFUL DEFAULT (durable-forms §1). A store whose topology
-// form holds nothing draws every aria where its history puts it, rather than
-// drawing a wrong tree. This is what makes the form's loss survivable.
+// Absence is the truthful default: a store whose topology form holds nothing
+// draws every aria where its history puts it.
 func TestTopologyForm_EmptyDegradesToTheTopology(t *testing.T) {
 	x, f := openTopo(t)
 	if !x.Normalized() {

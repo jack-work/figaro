@@ -23,8 +23,6 @@ func burialFixture(t *testing.T) (*XwalBackend, string) {
 }
 
 // A delete tells whoever is listening, through the stream they already read.
-// Before this, a subscriber to a deleted form simply stopped hearing from it,
-// which is indistinguishable from a form nobody is patching.
 func TestDeleteBuriesTheFormBeforeUnlinking(t *testing.T) {
 	be, outfit := burialFixture(t)
 	id, err := be.CreateConversation(outfit)
@@ -91,8 +89,7 @@ func TestRefusedDeleteBuriesNothing(t *testing.T) {
 	}
 }
 
-// A recursive delete used to unlink a subtree while leaving its children's
-// forms and read handles resident, pointed at files that no longer existed.
+// A recursive delete must drop the children's forms and read handles too.
 func TestRecursiveDeleteBuriesTheWholeSet(t *testing.T) {
 	be, outfit := burialFixture(t)
 	parent, err := be.CreateConversation(outfit)
@@ -120,12 +117,9 @@ func TestRecursiveDeleteBuriesTheWholeSet(t *testing.T) {
 	}
 }
 
-// The delete set is computed from the topology adjacency, and that adjacency
-// was reading the CACHED snapshot without asking whether it was still true.
-// A fork made after the last refresh was therefore invisible: the drawn
-// refusal did not fire, figwal refused instead with a message no listing
-// could explain, and `-r` unlinked a child that figaro never added to its
-// own delete set, so its form, handles and meta stayed resident afterwards.
+// The delete set is computed from the topology adjacency; reading a stale
+// cached snapshot made a fork since the last refresh invisible, so the refusal
+// did not fire and the child's caches stayed resident.
 func TestDeleteSetSeesAForkMadeSinceTheLastRefresh(t *testing.T) {
 	be, outfit := burialFixture(t)
 	parent, err := be.CreateConversation(outfit)

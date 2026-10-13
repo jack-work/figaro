@@ -1,8 +1,5 @@
-// Package log is the caller-facing figwal log: append-only, segment
-// rotated, fork-able, with reads that serve from a lazily loaded,
-// budgeted payload cache in the segment layer. The underlying disk
-// layout and segment management live in figwal/disk; this package
-// wraps them.
+// Package log is the caller-facing figwal log: append-only, segment rotated,
+// fork-able; the disk layout and segment management live in disk.
 package log
 
 import (
@@ -27,9 +24,7 @@ var (
 	errRangeBoundary  = errors.New("log cache range reached fork boundary")
 )
 
-// Options aliases disk.Options so the caller-facing API is a single
-// package. Code that already imported figwal/log keeps working with a
-// trivial type-name change at the import site.
+// Options aliases disk.Options so the caller-facing API is one package.
 type Options = disk.Options
 
 // SetPayloadCacheBudget bounds the bytes of segment payloads held in memory
@@ -43,7 +38,6 @@ func SweepPayloadCache() (int, int64) { return segment.SweepBudget() }
 // PayloadCacheBytes reports what is currently held against that bound.
 func PayloadCacheBytes() int64 { return segment.CachedBytes() }
 
-// Log is a figwal write-ahead log.
 const defaultMaxUnflushedBytes = 64 << 20
 
 type Log struct {
@@ -80,8 +74,7 @@ func (p *pendingView) at(idx uint64) ([]byte, bool) {
 	return p.entries[i], true
 }
 
-// Open opens (or creates) a figwal log at dir. It reads the segment index,
-// not the segment payloads.
+// Open reads the segment index, not the segment payloads.
 func Open(dir string, opts Options) (*Log, error) {
 	inner, err := disk.Open(dir, opts)
 	if err != nil {
@@ -90,7 +83,6 @@ func Open(dir string, opts Options) (*Log, error) {
 	return &Log{inner: inner, maxLag: maxLagFor(opts)}, nil
 }
 
-// Read returns the payload at idx.
 func (l *Log) Read(idx uint64) ([]byte, error) {
 	if payload, ok := l.pend.Load().at(idx); ok {
 		return payload, nil
@@ -263,7 +255,6 @@ func (l *Log) PendingBounds() (first, last uint64, ok bool) {
 	return pend.first, pend.last(), true
 }
 
-// Hash returns the codec's integrity token for the payload at idx.
 func (l *Log) Hash(idx uint64) (string, error) {
 	payload, err := l.Read(idx)
 	if err != nil {
@@ -272,9 +263,8 @@ func (l *Log) Hash(idx uint64) (string, error) {
 	return l.inner.HashPayload(payload)
 }
 
-// Fork splits this Log at atIdx. See disk.Log.Fork for semantics
-// (N-ary siblings, re-split below an existing branch point). The child
-// reads its inherited prefix through the parent handle.
+// Fork: see disk.Log.Fork. The child reads its inherited prefix through the
+// parent handle.
 func (l *Log) Fork(atIdx uint64, name string, oldFutureNameOpt ...string) (*Log, error) {
 	if l.shared {
 		return nil, ErrSharedMutation
@@ -345,7 +335,6 @@ func (l *Log) RangeOwn(from uint64, fn func(idx uint64, payload []byte) error) e
 	return l.inner.RangeOwn(from, fn)
 }
 
-// ChildForkBases reports child fork boundaries for topology planning.
 func (l *Log) ChildForkBases() (map[string]uint64, error) {
 	return l.inner.ChildForkBases()
 }
@@ -360,16 +349,11 @@ func (l *Log) StateAt(idx uint64) ([]byte, error) {
 	return l.inner.StateAt(idx)
 }
 
-// SegmentBaseIndexes returns this log's own segment bases.
 func (l *Log) SegmentBaseIndexes() []uint64 { return l.inner.SegmentBaseIndexes() }
 
-// SegmentHeaderAt returns the block-0 header of the segment holding idx
-// together with that segment's base index. Like StateAt it SYNCS FIRST:
-// the header and the segment boundaries are facts about what is on disk,
-// and pending entries have no segment yet, so an unsynced answer would
-// describe a log older than the one the caller is about to fold records
-// out of. See disk.Log.SegmentHeaderAt for why the two facts must come
-// from one call.
+// SegmentHeaderAt syncs first, like StateAt: the header and the segment
+// boundaries are facts about what is on disk, and pending entries have no
+// segment yet.
 func (l *Log) SegmentHeaderAt(idx uint64) ([]byte, uint64, error) {
 	if err := l.Sync(); err != nil {
 		return nil, 0, err
@@ -377,9 +361,8 @@ func (l *Log) SegmentHeaderAt(idx uint64) ([]byte, uint64, error) {
 	return l.inner.SegmentHeaderAt(idx)
 }
 
-// Close syncs pending entries and closes the underlying disk.Log.
-// Parent logs auto-opened during Open are not closed automatically;
-// manage them via a Store or explicit handles for shared lifetimes.
+// Close syncs pending entries. Parent logs auto-opened during Open are not
+// closed; manage them via a Store.
 func (l *Log) Close() error {
 	if l.shared {
 		return nil
@@ -391,16 +374,13 @@ func (l *Log) Close() error {
 	return syncErr
 }
 
-// Snapshot returns a point-in-time view bounded at the current tail, for
-// callers that want one consistent view across many operations (typical
-// use: dump the log to the network as of "now"). Records appended after
-// the capture are invisible; a topology mutation (fork, truncate) below
-// the capture is not, which is why those require a private log.
+// Snapshot is a point-in-time view bounded at the current tail. Records
+// appended after the capture are invisible; a topology mutation below the
+// capture is not, which is why those require a private log.
 func (l *Log) Snapshot() *Snapshot {
 	return &Snapshot{l: l, pend: l.pend.Load(), last: l.LastIndex()}
 }
 
-// Snapshot is a point-in-time view of a Log.
 type Snapshot struct {
 	l    *Log
 	pend *pendingView

@@ -9,17 +9,10 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// EVICTED TAKES NO LOCK.
-//
-// forest fires Evicted outside its own locks so a lower layer can clear a
-// fast pointer. The inversion runs the other way: a consumer that calls Put
-// while holding its write lock can have eviction pick one of ITS runs, so
-// Evicted runs with that lock held. A hook that needs the lock deadlocks, and
-// only under budget pressure with concurrent readers.
-//
-// The first test proves the hazard is real without hanging: the hook reports
-// whether the consumer's lock was already held when it fired. The second
-// proves the atomic-swap escape survives the load that provokes it.
+// Evicted takes no lock. A consumer that calls Put while holding its write
+// lock can have eviction pick one of its runs, so Evicted runs with that lock
+// held; a hook that needs the lock deadlocks. The first test shows the
+// hazard, the second the atomic-swap escape under load.
 
 type lockingConsumer struct {
 	mu   sync.Mutex
@@ -71,10 +64,8 @@ func TestEvictedFiresUnderTheConsumersWriteLock(t *testing.T) {
 	for i := 0; i < 200 && !c.firedUnderLock.Load(); i++ {
 		c.mu.Lock()
 		cache.Put(fwtree.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
-		// EVICTION IS THE STANDING SWEEP'S NOW, so the hazard this test exists
-		// for -- the hook firing while a consumer holds its own lock -- has to
-		// be provoked here, with the lock held, exactly as the daemon's sweep
-		// would while a consumer is mid-write.
+		// Eviction is the standing sweep's, so the hazard is provoked here with
+		// the lock held, as the daemon's sweep would while a consumer is mid-write.
 		cache.Budget().Sweep()
 		c.mu.Unlock()
 	}
@@ -87,9 +78,8 @@ func TestEvictedFiresUnderTheConsumersWriteLock(t *testing.T) {
 	}
 }
 
-// The escape, under the load that provokes the hazard: Put under the write
-// lock, concurrent readers, a budget too small to hold the working set. A
-// deadlock fails as a timeout rather than wedging the suite.
+// The escape under the load that provokes the hazard; a deadlock fails as a
+// timeout rather than wedging the suite.
 func TestPutUnderWriteLockDoesNotDeadlock(t *testing.T) {
 	c := &lockingConsumer{}
 	cache := newPressuredCache(c, 128<<10)

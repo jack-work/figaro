@@ -5,14 +5,8 @@ import (
 	"testing"
 )
 
-// A spawn must not rebuild the index. It used to do so twice, each one a walk
-// of every node directory reading a .Trunk marker, which is why minting aria
-// 400 was a function of arias 1 through 399.
-//
-// This counts rebuilds rather than timing them on purpose. The cost is
-// filesystem syscalls, so a wall-clock assertion passes on a fast local disk
-// and only fails on the machine that reported the problem. The invariant is
-// "does not re-read the tree", and that is observable directly.
+// A spawn must not rebuild the index. Counted rather than timed: the cost is
+// filesystem syscalls, so a wall-clock assertion passes on a fast local disk.
 func TestSpawnWalksTheTreeOnce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, err := createTrunks(dir, trunksCfg())

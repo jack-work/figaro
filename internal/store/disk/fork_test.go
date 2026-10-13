@@ -19,9 +19,8 @@ import (
 func forkSetup(t *testing.T, codec segment.SegmentCodec, count int, entriesPerSeg int) (string, *Log) {
 	t.Helper()
 	dir := t.TempDir()
-	// Estimate: each binary frame is 8 + payload bytes, each JSONL line
-	// is at least 50 bytes for our shape. Be generous to keep segment
-	// boundaries predictable. Tests don't depend on the exact size.
+	// Generous, so segment boundaries are predictable; tests do not depend
+	// on the exact size.
 	approxPerEntry := 80
 	segSize := int64(approxPerEntry * entriesPerSeg)
 	l, err := Open(dir, Options{SegmentSize: segSize, Codec: codec})

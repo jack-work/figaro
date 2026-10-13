@@ -70,9 +70,8 @@ func TestLineageWalksToTheRootWithOwnedBases(t *testing.T) {
 	}
 }
 
-// The base figaro reports must equal the base the cache will split on. This is
-// the live-store agreement (marker/first-record/branched_lt) asserted on a
-// fixture, so it fails here rather than as a sibling's record in a read.
+// The base figaro reports must equal the base the cache will split on, so a
+// disagreement fails here rather than as a sibling's record in a read.
 func TestLineageBaseMatchesTheTrunkBranchPoint(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {

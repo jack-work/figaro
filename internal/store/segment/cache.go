@@ -1,6 +1,6 @@
 package segment
 
-// The payload cache. THE RUNS LIVE IN tree AND NOWHERE ELSE.
+// The payload cache; the runs live in tree and nowhere else.
 
 import (
 	"sync"
@@ -9,9 +9,8 @@ import (
 	"github.com/jack-work/figaro/internal/store/tree"
 )
 
-// chunkRecords bounds a materialized range. A miss reads the ALIGNED chunk
-// containing the record asked for, so a sequential scan materializes each
-// chunk exactly once and never re-reads a record -- the traversal the fig IR
+// chunkRecords bounds a materialized range: a miss reads the aligned chunk
+// containing the record, so a sequential scan materializes each chunk once.
 const chunkRecords = 32
 
 // unit is one record's payload with the coordinate tree slices by. A bare
@@ -25,7 +24,6 @@ type unit struct {
 // many tiny records is not accounted as free.
 const sliceHeaderBytes = 24
 
-// defaultCacheBudget matches the pre-tree default: 32 MiB.
 const defaultCacheBudget = 32 << 20
 
 var (
@@ -34,8 +32,8 @@ var (
 
 	loads atomic.Int64
 
-	// registry maps a node path to the segment that can read it, for the
-	// SOURCE. Consulted on a MISS only; the hit path never touches it.
+	// registry maps a node path to the segment that can read it; consulted
+	// on a miss only.
 	regMu    sync.Mutex
 	registry = map[string]*Segment{}
 )
@@ -48,8 +46,7 @@ func segmentFor(path string) *Segment {
 
 func newPayloadCache() *tree.Cache[unit] {
 	return tree.New[unit](
-		// THE SOURCE. tree could not rematerialize anything before this: the
-		// cache was built with src = nil, so Range, per-gap refill and
+		// The Source: without it tree could rematerialize nothing.
 		func(coord tree.Coord) ([]unit, error) {
 			s := segmentFor(coord.Node)
 			if s == nil {
@@ -82,8 +79,8 @@ func CacheBudget() int64 { _, limit, _ := payloadBudget.Stats(); return limit }
 // CachedBytes reports the payload bytes currently resident.
 func CachedBytes() int64 { resident, _, _ := payloadBudget.Stats(); return resident }
 
-// CacheLoads reports RANGE materializations to date: the thrash alarm.
-// Climbing with READS rather than with distinct ranges means runs are
+// CacheLoads counts range materializations: climbing with reads rather than
+// with distinct ranges means runs are dropped as fast as they are built.
 func CacheLoads() int64 { return loads.Load() }
 
 // CachedRanges reports how many resident ranges tree holds for segments.
@@ -94,8 +91,8 @@ func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 	if CacheBudget() <= 0 {
 		return nil, false
 	}
-	// THE HIT IS A POINT LOOKUP, NOT A RANGE READ. Asking the range surface
-	// for one record allocated and copied the whole chunk to answer -- 1153
+	// A point lookup, not a range read: asking the range surface for one
+	// record copied the whole chunk.
 	if u, ok := s.handle().At(i + 1); ok {
 		return u.b, true
 	}
@@ -128,9 +125,8 @@ func (s *Segment) handle() *tree.Handle[unit] {
 	return h
 }
 
-// register makes this segment findable by the Source. Idempotent and off the
-// hot path's critical work: it is a map write per read, which is why it is
-// guarded by a CAS on a flag rather than taking regMu every time.
+// register is idempotent and guarded by a CAS on a flag rather than taking
+// regMu on every read.
 func (s *Segment) register() {
 	if s.registered.Load() {
 		return
@@ -141,10 +137,8 @@ func (s *Segment) register() {
 	s.registered.Store(true)
 }
 
-// SweepBudget brings the payload cache back within its budget. Eviction is no
-// longer done by the reader that crossed the limit -- charge raises pressure
-// and the daemon's standing sweep lowers it -- so this is the segment cache's
-// half of that contract, called from the same beat as SweepIdle.
+// SweepBudget is the segment cache's half of the standing sweep: charge
+// raises pressure and the daemon's sweep lowers it.
 func SweepBudget() (dropped int, freed int64) { return payloadBudget.Sweep() }
 
 // SweepIdle drops every run not read since `keep` sweeps ago and advances the
@@ -156,8 +150,7 @@ func SweepIdle(keep int64) (dropped int, freed int64) {
 	return payloadBudget.TrimIdle(keep)
 }
 
-// readRange reads records [from, to) and NOTHING ELSE: O(records in range)
-// where the pre-range cache read O(records in segment).
+// readRange reads records [from, to) and nothing else.
 func (s *Segment) readRange(from, to uint64) ([]unit, error) {
 	if to > s.count {
 		to = s.count
@@ -178,16 +171,15 @@ func (s *Segment) readRange(from, to uint64) ([]unit, error) {
 	return units, nil
 }
 
-// extendTail keeps the writer's own tail resident. It is now a tree.Put at the
-// tail coord, which tree documents as replace-in-place with the budget charged
+// extendTail keeps the writer's own tail resident via a Put at the tail coord.
 func (s *Segment) extendTail(payload []byte) {
 	if CacheBudget() <= 0 {
 		return
 	}
 	last := s.count - 1 // the record just appended, 0-based
 	lo := (last / chunkRecords) * chunkRecords
-	// ResidentAt, NOT RangeAt: an append must EXTEND what is resident and must
-	// never FAULT IT IN. Materializing here re-creates residency the evictor
+	// ResidentAt, not RangeAt: an append must extend what is resident and
+	// never fault it in.
 	units, ok := s.handle().ResidentAt(lo, last)
 	if !ok {
 		return // the tail chunk is not resident; nothing to extend

@@ -14,33 +14,22 @@ type Entry[T any] struct {
 	FigaroLT    uint64
 	Payload     T
 	Fingerprint string
-	// FormChannelVersion, on IR entries only: how far the form had advanced
-	// when this turn was written. The board is unkeyed, so a patch carries
+	// FormChannelVersion, IR entries only: the form version this turn was written at.
 	FormChannelVersion uint64
-	// StudyVersions, on IR entries of a STUDYING aria: where each observed
-	// form stood when this record was written, keyed by form id: the
+	// StudyVersions, IR entries of a studying aria: each observed form's
+	// version at write, keyed by form id.
 	StudyVersions map[string]uint64
-	// EncodedBytes is the record's on-disk payload size, captured at decode
-	// because that is the one place it is known for free.
+	// EncodedBytes is captured at decode, the one place it is known for free.
 	EncodedBytes int
-	// FigaroHash, on TRANSLATOR rows only: the content hash of the fig IR
-	// record this row translates.
-	//
-	// IT IS AN IDENTITY, NOT A CHECKSUM. A row names its record by FigaroLT,
-	// which is a POSITION, and a position can be reissued -- the next main LT
-	// is derived from what is durable, not reserved, so a row written for a
-	// record that never landed would be adopted by whatever lands there next.
-	// The row would then read as a legitimate translation of a message that
-	// was never in the conversation. Hashing the CONTENT makes that
-	// detectable: the row either describes the record at that position or it
-	// does not.
+	// FigaroHash, translator rows only: the content hash of the IR record this
+	// row translates. An identity, not a checksum: FigaroLT is a position and
+	// can be reissued, so a row written for a record that never landed would
+	// otherwise be adopted by whatever lands there next.
 	FigaroHash string
 }
 
-// Log is one column of an aria's write-ahead log. Logs are
-// append-only; dangling state at the tail is repaired with an
+// Log is one column of an aria's write-ahead log; append-only.
 type Log[T any] interface {
-	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]
 	Len() int
 	// ReadFrom returns up to n entries whose FigaroLT is at least figaroLT,
@@ -58,15 +47,13 @@ type Log[T any] interface {
 	Clear() error
 }
 
-// tailBudgetedLog reads the tail without decoding the prefix. Optional: an
-// implementation that cannot do it gets the read-everything-then-compact path,
-// which is correct and merely wasteful.
+// tailBudgetedLog reads the tail without decoding the prefix; optional, the
+// fallback is read-everything-then-compact.
 type tailBudgetedLog[T any] interface {
 	TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], int)
 }
 
-// tailAfterLog is the suffix read. Optional so an implementation without a
-// cheap one falls back to the generic walk.
+// tailAfterLog is the optional suffix read.
 type tailAfterLog[T any] interface {
 	TailAfter(lt uint64) ([]Entry[T], int)
 }
@@ -89,9 +76,6 @@ type tailSnapshotLog[T any] interface {
 	TailSnapshot(n int) []Entry[T]
 }
 
-// store.Snapshot is gone on purpose. It returned the cache's own backing
-// slice when the log happened to be materialized, which made "the entire log
-
 // TailSnapshot returns a read-only ascending view of the last n entries.
 func TailSnapshot[T any](log Log[T], n int) []Entry[T] {
 	if s, ok := log.(tailSnapshotLog[T]); ok {
@@ -107,10 +91,8 @@ func TailSnapshot[T any](log Log[T], n int) []Entry[T] {
 	return entries[len(entries)-n:]
 }
 
-// readPage pages a channel IN ITS OWN COORDINATES. It filtered by FigaroLT,
-// which is identity on the fig IR -- every caller pages that -- and a FOREIGN
-// key everywhere else: a side channel paged in another log's numbering. LT is
-// the same value on the main channel and the right one on the others.
+// readPage pages in the channel's own coordinates (LT), not FigaroLT, which
+// is a foreign key on every side channel.
 func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], int) {
 	total := len(rows)
 	if before > 0 {
@@ -143,11 +125,9 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 	return out, total
 }
 
-// FigaroHash is the content identity of a fig IR record: the truncated
-// SHA-256 of its canonical JSON, which is the same function the segment codec
-// already stamps on every record it writes. Two records that differ only in
-// key order or whitespace hash alike, which is what makes it an identity of
-// the VALUE rather than of a particular serialization.
+// FigaroHash is the truncated SHA-256 of canonical JSON, the same function the
+// segment codec stamps on every record: an identity of the value, not of one
+// serialization.
 func FigaroHash[T any](payload T) (string, error) {
 	b, err := json.Marshal(payload)
 	if err != nil {

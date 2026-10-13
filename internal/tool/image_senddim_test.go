@@ -43,15 +43,9 @@ func dims(t *testing.T, data string) (int, int) {
 	return cfg.Width, cfg.Height
 }
 
-// NOTHING IS EVER SENT OVER MaxSendDim.
-//
-// The fitter treats MaxDim as a target and will hand back an oversized original
-// when shrinking it would cost more bytes than it saves -- a sound trade while
-// the only cost is bandwidth, and a fatal one above 2000px, where the provider
-// rejects the entire request rather than the image.
-//
-// Canary: drop the withinDim guard on the passthrough and every case here comes
-// back at its original size. The first three are shapes taken from the store.
+// Nothing is ever sent over MaxSendDim: the fitter treats MaxDim as a target
+// and may hand back an oversized original when shrinking costs more bytes
+// than it saves, but above 2000px the provider rejects the whole request.
 func TestFitImageNeverExceedsSendDim(t *testing.T) {
 	for _, d := range []struct{ w, h int }{
 		{2120, 56}, {2800, 640}, {2100, 480},

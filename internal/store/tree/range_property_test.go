@@ -7,17 +7,10 @@ import (
 	"time"
 )
 
-// A PROPERTY TEST OVER THE PUBLISHED INDEX, written because the read path was
-// rewritten from a locked walk into a lock-free one and the existing tests
-// exercise the shapes their authors thought of. The invariant is the only one
-// that matters to a caller:
-//
-//	A RANGE RETURNS EXACTLY THE UNITS ITS SPAN NAMES, whatever residency did.
-//
-// Residency is not asserted at all -- a hit, a refill and a cold materialize
-// must be INDISTINGUISHABLE in the answer, which is precisely what a cache is
-// promising. The randomness drives eviction, refill, replacement at an exact
-// coord, and Drop, against a budget small enough that runs are being hollowed
+// A range returns exactly the units its span names, whatever residency did:
+// a hit, a refill and a cold materialize must be indistinguishable in the
+// answer. The randomness drives eviction, refill, replacement at an exact
+// coord, and Drop, against a budget small enough that runs are hollowed
 // under the reads.
 func TestRangeAnswersItsSpanUnderRandomResidency(t *testing.T) {
 	const universe = 600

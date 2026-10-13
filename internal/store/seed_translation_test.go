@@ -9,23 +9,12 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// SEEDING THE DECODED TRANSLATION CACHE.
-//
-// The provider round-trips are ALREADY shared: the translation log goes
-// through newXwalLog, so it inherits xwal's fork base and a child reads its
-// ancestor's durable records below it. Nobody is re-translating. What is
-// duplicated is the DECODE -- two forks holding two in-memory copies of the
-// same records -- exactly as it was for the fig IR before 9343979f.
-//
-// TWO HAZARDS THAT DO NOT APPLY TO THE FIG IR, pinned before the code:
-//
-//  1. FINGERPRINT. A translation cache is keyed by encoder fingerprint and
-//     cleared WHOLESALE on mismatch. Donating rows rendered for another
-//     dialect is a lie, not a miss, and it would survive in memory after the
-//     durable log was cleared.
-//  2. NAMESPACE. There are three (anthropic, copilot-messages,
-//     copilot-responses). A cross-namespace donation is the same lie in a
-//     different costume.
+// Seeding the decoded translation cache. The durable records are already
+// shared through xwal's fork base; what is duplicated is the decode. Two
+// hazards the IR does not have: a translation cache is keyed by encoder
+// fingerprint and cleared wholesale on mismatch, so rows rendered for another
+// dialect are a lie, not a miss; and there are three provider namespaces, so
+// a cross-namespace donation is the same lie.
 
 // sameRaw reports whether two raw blocks point at the same bytes.
 func sameRaw(a, b json.RawMessage) bool {
@@ -87,9 +76,7 @@ func TestATranslationSeedWithAMatchingFingerprintIsUsed(t *testing.T) {
 	if len(got) != len(rows) {
 		t.Fatalf("seeded log serves %d rows, the log holds %d", len(got), len(rows))
 	}
-	// IDENTITY ON THE SLICE, NOT ON A CONVERTED STRING. json.RawMessage is
-	// []byte, and string(raw) COPIES -- comparing the string headers reports
-	// "0 of 3 shared" no matter what, which is what this fixture said first.
+	// Identity on the slice, not on a converted string: string(raw) copies.
 	shared := 0
 	for i := 0; i < 3; i++ {
 		if sameRaw(rows[i].Payload[0], got[i].Payload[0]) {
@@ -101,12 +88,10 @@ func TestATranslationSeedWithAMatchingFingerprintIsUsed(t *testing.T) {
 	}
 }
 
-// translatedTrunk builds a parent with IR records AND their translations, in
-// the shape production writes them -- each translation entry carrying
-// FigaroLT = the IR LT it translates (provider/projection.go) -- and then
-// forks it twice. Translations must exist BEFORE the fork: a child inherits
-// what was durable at its base and nothing after, so a fixture that appends
-// afterwards measures an empty child. It measured exactly that first.
+// translatedTrunk builds a parent with IR records and their translations,
+// each translation carrying FigaroLT = the IR LT it translates, then forks it
+// twice. Translations must exist before the fork: a child inherits what was
+// durable at its base and nothing after.
 func translatedTrunk(t *testing.T, namespaces ...string) (b *XwalBackend, parent, childA, childB string) {
 	t.Helper()
 	b, err := NewXwalBackend(t.TempDir(), 0)
@@ -250,9 +235,8 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 
 var _ = message.Message{}
 
-// THE MEASUREMENT, BY IDENTITY, per namespace: with the ancestor's
-// translation cache resident, the child's shared prefix must point at the
-// ancestor's bytes rather than decoding its own copy.
+// By identity, per namespace: with the ancestor's translation cache resident,
+// the child's shared prefix must point at the ancestor's bytes.
 func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 	for _, ns := range []string{"anthropic", "copilot-messages", "copilot-responses"} {
 		t.Run(ns, func(t *testing.T) {
@@ -306,19 +290,10 @@ func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 	}
 }
 
-// DOES THE FINGERPRINT CHECK LEAVE A MECHANISM THAT NEVER FIRES?
-//
-// A guard that blocks the common case would make this a knob nobody sends,
-// which this project has refused to ship before. So the two cases are
-// measured rather than argued:
-//
-//	normal ancestor            -> the seed FIRES  (76 of 76 blocks shared)
-//	ancestor on a new dialect  -> the seed REFUSES and the child decodes
-//
-// The second is an encoder-config drift event, not a per-open condition: a
-// live ancestor clears its cache wholesale on mismatch, so its resident rows
-// are uniform in the steady state. The check costs one pass over the donated
-// rows and blocks only after a drift.
+// Does the fingerprint check leave a mechanism that never fires? Both cases
+// are measured: a normal ancestor fires the seed; an ancestor on a new
+// dialect refuses and the child decodes. The second is a drift event, not a
+// per-open condition.
 func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	b, parent, childA, _ := translatedTrunk(t, "anthropic")
 	defer b.Close()
@@ -366,13 +341,9 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 		len(donated), fp)
 }
 
-// AND THE CHILD'S OWN ROWS ARE ITS OWN. The ancestor may serve the inherited
-// prefix and NOT ONE COORDINATE MORE: past the channel's own fork base the
-// two lineages hold DIFFERENT records at the same number, so an ancestor
-// asked for them answers with another conversation's rows.
-//
-// This is what distinguishes the channel's own fork base from the ancestor's
-// tail, which is why it is a test and not a comment.
+// The child's own rows are its own: the ancestor may serve the inherited
+// prefix and not one coordinate more, since past the channel's own fork base
+// the two lineages hold different records at the same number.
 func TestAForkServesItsOwnRowsAboveTheChannelsForkBase(t *testing.T) {
 	b, parent, childA, _ := translatedTrunk(t, "anthropic")
 	defer b.Close()

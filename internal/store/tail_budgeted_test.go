@@ -129,9 +129,8 @@ func TestWindowedOverRealStore_Equivalent(t *testing.T) {
 	full := mk(0, 0)
 	win := mk(10, 0)
 
-	// The ROW-COUNT WINDOW IS GONE: residency is bytes, demand-driven, and one
-	// budget for every aria. What survives is the claim this test was really
-	// about -- the cache answers exactly as the substrate does.
+	// Residency is bytes, demand-driven, one budget for every aria; the claim
+	// is that the cache answers exactly as the substrate does.
 	assert.Equal(t, full.Len(), win.Len(), "Len must report the channel")
 
 	fullRows := full.Read()

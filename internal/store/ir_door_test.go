@@ -231,8 +231,7 @@ func TestDoorClosesOnDemandForTheInterruptPath(t *testing.T) {
 	require.Len(t, log.Read(), before, "a second close wrote a record")
 }
 
-// An EPHEMERAL aria has no backend and used to bypass every guard. It goes
-// through the same door.
+// An ephemeral aria has no backend and goes through the same door.
 func TestEphemeralLogGetsTheSameInvariant(t *testing.T) {
 	log := GuardIR(NewMemLog[message.Message]())
 	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})

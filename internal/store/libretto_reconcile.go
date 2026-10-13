@@ -1,8 +1,5 @@
 package store
 
-// Reconciliation: recompute every libretto's refcount from the boards that
-// name it (durable-forms §12.2.1, §12.2.2).
-
 import (
 	"encoding/json"
 	"fmt"
@@ -11,7 +8,6 @@ import (
 	"strings"
 )
 
-// LibrettoAudit is what one reconciliation pass found.
 type LibrettoAudit struct {
 	Boards    int // boards read
 	Librettos int // librettos examined
@@ -21,30 +17,23 @@ type LibrettoAudit struct {
 	Minted    int // librettos this pass created (the migration)
 }
 
-// StudiesKey is the board key naming the forms a figaro studies. The store
-// owns the name -- its reconciliation sweep recomputes refcounts FROM the
-// boards -- and figaro re-exports it, because figaro imports the store and
-// not the other way around.
+// StudiesKey: the store owns the name because its reconciliation sweep
+// recomputes refcounts from the boards; figaro re-exports it.
 const StudiesKey = "system.studies"
 
-// ReconcileLibrettos recounts every libretto from the boards. Idempotent, and
-// safe to run while the daemon is live: each correction is an ordinary patch
-// on the libretto's own actor, so a study landing mid-sweep either lands
-// before the recount (and is counted) or after it (and moves the count from
-// the value the sweep just wrote).
+// ReconcileLibrettos is idempotent and safe while live: each correction is an
+// ordinary patch on the libretto's own actor, so a study landing mid-sweep is
+// counted either before or after it.
 func (b *XwalBackend) ReconcileLibrettos() (LibrettoAudit, error) {
 	return b.reconcileLibrettos(true)
 }
 
-// AuditLibrettos is ReconcileLibrettos without the writes: the same counts,
-// nothing changed. `Corrected` then reads as "would correct".
+// AuditLibrettos is ReconcileLibrettos without the writes; Corrected reads as "would correct".
 func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
 	return b.reconcileLibrettos(false)
 }
 
-// RefsNeedMigration reports whether any libretto still carries a COUNT where
-// the backref set belongs. Reads only the librettos, never the boards, so a
-// migrated store answers in O(librettos) and never scans again.
+// RefsNeedMigration reads only the librettos, never the boards.
 func (b *XwalBackend) RefsNeedMigration() bool {
 	for _, st := range b.store.trunks.Stumps() {
 		source, ok := SourceOfLibretto(st.Name)
@@ -91,8 +80,8 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		}
 		seen[source] = true
 		audit.Librettos++
-		// The SHARED instance, never a fresh one: opening a second Libretto
-		// over the same stump puts a second writer on its channel.
+		// The shared instance: a second Libretto over the same stump is a
+		// second writer on its channel.
 		lib, err := b.librettoInstance(source)
 		if err != nil {
 			return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
@@ -114,27 +103,19 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		if seen[source] {
 			continue
 		}
-		// A form somebody studies with no libretto to hold the copy. This is
-		// the MIGRATION case and it is not hypothetical: the author's store
-		// has eleven such studies, all made before librettos existed. Left
-		// alone they would never acquire one, because the study verb mints
-		// at study time and these were studied long ago.
+		// A studied form with no libretto: a study made before librettos
+		// existed, which the study verb (minting at study time) never revisits.
 		audit.Missing++
 		if !apply {
 			continue
 		}
-		// Minting seeds the copy from the source and starts the fold; the
-		// refcount is then whatever the boards say, which is what the rest
-		// of this pass already computes.
 		lib, err := b.libretto(source)
 		if err != nil {
 			slog.Info("reconcile: cannot mint a libretto for a studied form",
 				"form", source, "err", err)
 			continue // and it is still missing, which is what Missing means
 		}
-		// Repaired, so it is no longer missing. Counting the PRE-state here
-		// made the pass report "missing 4" immediately after creating those
-		// four, which is a repair tool lying about its own work.
+		// Repaired, so no longer missing.
 		audit.Missing--
 		audit.Minted++
 		slog.Info("reconcile: minted a libretto for a pre-existing study",
@@ -149,7 +130,6 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	return audit, nil
 }
 
-// sortedIDs is the durable order of a backref set.
 func sortedIDs(ids []string) []string {
 	out := slices.Clone(ids)
 	for i := range out {
@@ -159,7 +139,6 @@ func sortedIDs(ids []string) []string {
 	return slices.Compact(out)
 }
 
-// studiesOf reads a board's declared study set.
 func studiesOf(snap interface {
 	Get(string) (json.RawMessage, bool)
 }) []string {
@@ -174,8 +153,7 @@ func studiesOf(snap interface {
 	return ids
 }
 
-// isReservedStump reports the nodes that carry machinery rather than a
-// conversation: the topology form and every libretto.
+// isReservedStump: nodes carrying machinery rather than a conversation.
 func isReservedStump(id string) bool {
 	if id == topologyStump {
 		return true

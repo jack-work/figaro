@@ -159,12 +159,10 @@ func segFileName(base uint64, codec segment.SegmentCodec) string {
 	return fmt.Sprintf("%020d%s", base, codec.FileExt())
 }
 
-// trimChannelNode drops the suffix of a related channel node whose
-// records reference main-LTs beyond mainTail — beyond mainTail+1 for
-// reducible channels, whose one-ahead patch convention keys a patch to
-// the upcoming turn; such a patch survives a crash by contract. Records
-// are main-LT non-decreasing, so the violating region is a contiguous
-// tail.
+// trimChannelNode drops the suffix whose records reference main-LTs beyond
+// mainTail (mainTail+1 for reducible channels, whose one-ahead patch survives
+// a crash by contract). Records are main-LT non-decreasing, so the violating
+// region is a contiguous tail.
 func trimChannelNode(dir string, codec segment.SegmentCodec, headered bool, mainTail uint64) (int, error) {
 	if headered {
 		mainTail++

@@ -5,17 +5,12 @@ import (
 	"strings"
 )
 
-// A NODE KEY IS NOT A FILENAME.
+// A node key is not a filename.
 const fsReserved = `<>:"|?*%`
 
-// fsEncode gates the whole mechanism to the platform that needs it. The
-// reserved set is WINDOWS's; on POSIX every one of those bytes is a legal
-// path component, existing stores already hold literal names (figaro's
-// "@libretto::<id>" among them), and encoding on read made every such
-// node unreachable -- the daemon could not start on a Linux store
-// carrying a libretto. So a POSIX store is byte-for-byte identity in
-// both directions, and only Windows -- where no literal reserved name
-// can exist, because mkdir refuses it -- represents keys encoded.
+// fsEncode gates encoding to Windows: the reserved set is Windows's, and on
+// POSIX existing stores hold literal names ("@libretto::<id>" among them),
+// so a POSIX store is byte-for-byte identity in both directions.
 var fsEncode = runtime.GOOS == "windows"
 
 func fsName(key string) string {

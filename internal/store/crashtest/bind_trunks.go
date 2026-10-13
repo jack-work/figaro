@@ -31,9 +31,8 @@ func lastWins(_, patch []byte) ([]byte, error) {
 	return append([]byte(nil), patch...), nil
 }
 
-// Known contract gaps of the bound implementation, kept green so the
-// harness stays a regression net; each class is documented in FINDINGS.md
-// with a replay seed.
+// Known contract gaps of the bound implementation, kept green so the harness
+// stays a regression net.
 func storeGaps(md verifyMode) map[string]bool {
 	gaps := map[string]bool{
 		vAppendLost: true,

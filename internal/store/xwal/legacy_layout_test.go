@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// The lazy read-path upgrade of the .from/.kind pair is gone. A build
-// either understands a store or refuses it; there is no third path that
-// half-reads an older one. So a store carrying the legacy pair must not
-// open, and must open with everything after Flatten.
+// A build either understands a store or refuses it: a store carrying the
+// legacy pair must not open, and must open with everything after Flatten.
 func TestLegacyPairIsRefusedThenMigrated(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)

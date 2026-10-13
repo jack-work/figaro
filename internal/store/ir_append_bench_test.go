@@ -6,11 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// BenchmarkIRAppend is one fig IR append on a real backend, which is the
-// operation the stamp hoist changed: the stamp used to be recovered by
-// OPENING THE NODE AGAIN and reading the record back out (openOnce ->
-// openNode -> ReadAt -> Close), and now comes back from the append that
-// wrote it.
+// BenchmarkIRAppend is one IR append on a real backend: the stamp comes back
+// from the append that wrote it rather than from reopening the node.
 func BenchmarkIRAppend(b *testing.B) {
 	be, aria := NewTestAria(b, "d", message.Patch{})
 	ir, err := be.OpenFigIR(aria)

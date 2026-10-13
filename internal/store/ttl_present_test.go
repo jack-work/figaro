@@ -39,8 +39,8 @@ func ttlIDs(b *store.XwalBackend) map[string]bool {
 	return live
 }
 
-// An expired ancestor takes its branches however new they are: Gluck's rule,
-// and the reason the sweep deletes recursively.
+// An expired ancestor takes its branches however new they are, which is why
+// the sweep deletes recursively.
 func TestExpiredAncestorTakesNewerBranches(t *testing.T) {
 	b, outfit := ttlPresentBackend(t)
 	parent, err := b.CreateConversation(outfit)
@@ -74,10 +74,9 @@ func TestNonRecursiveRemoveOfAParentIsRefused(t *testing.T) {
 	}
 }
 
-// THE PROMOTION RULE. A child promoted past its former parent is no longer
-// presented under it, so an expired parent's delete set no longer contains the
-// child: the child survives, and the delete's boundary repair detaches it --
-// disk normalisation, forced exactly when it is owed.
+// The promotion rule: a child promoted past its former parent is no longer
+// presented under it, so it survives the parent's expiry and the delete's
+// boundary repair detaches it.
 func TestPromotedChildSurvivesItsExpiredFormerParent(t *testing.T) {
 	b, outfit := ttlPresentBackend(t)
 	parent, err := b.CreateConversation(outfit)

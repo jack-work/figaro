@@ -27,11 +27,8 @@ func fks(entries []Entry[uint64]) []uint64 {
 	return out
 }
 
-// A CHANNEL IS PAGED IN ITS OWN COORDINATES. This used to page by FigaroLT,
-// which is identity on the fig IR -- the only channel anything pages -- and a
-// FOREIGN key everywhere else. The fixture below is the shape that makes the
-// difference visible: five entries whose own LTs are 1..5 and whose FigaroLTs
-// are 10..50, i.e. a side channel.
+// A channel is paged in its own coordinates, not by FigaroLT, which is a
+// foreign key on a side channel. The fixture: own LTs 1..5, FigaroLTs 10..50.
 func TestReadPage(t *testing.T) {
 	c := newCachedLog[uint64](buildLog(t, []uint64{10, 20, 30, 40, 50}))
 
@@ -43,15 +40,12 @@ func TestReadPage(t *testing.T) {
 	assert.Equal(t, 5, total)
 	assert.Equal(t, []uint64{30, 40}, fks(page), "before=5 is the channel's fifth entry")
 
-	// AND THE FOREIGN KEY NO LONGER ADDRESSES ANYTHING: 20 is a FigaroLT here,
-	// not a coordinate, so paging from it reads past the end.
+	// The foreign key no longer addresses anything: paging from 20 reads past the end.
 	page, _ = c.ReadPage(20, 0, 2)
 	assert.Empty(t, fks(page), "a FigaroLT must not select a page")
 }
 
-// Read is point-in-time by construction: it copies. This used to be
-// store.Snapshot, which handed back the cache's own backing slice: free, and
-// exactly why full residency became something callers silently relied on.
+// Read is point-in-time by construction: it copies.
 func TestRead_CachedLogRemainsStableAfterAppend(t *testing.T) {
 	inner := buildLog(t, []uint64{10, 20})
 	c := newCachedLog[uint64](inner)
@@ -102,10 +96,7 @@ func TestTailSnapshot_CachedLogIsAscending(t *testing.T) {
 	assert.Equal(t, []uint64{20, 30}, fks(TailSnapshot[uint64](c, 2)))
 }
 
-// newCachedLog is an UNBOUNDED cache: everything decoded is retained. No
-// shipped configuration builds one -- production always passes a window or a
-// budget -- so the constructor lives with the tests that want a cache whose
-// hit-rate is 100% by construction.
+// newCachedLog is an unbounded cache; no shipped configuration builds one.
 func newCachedLog[T any](inner Log[T]) *treeLog[T] {
 	return newWindowedLog[T](inner, 0, 0, 1, 1, nil)
 }

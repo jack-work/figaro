@@ -4,39 +4,16 @@ import (
 	"testing"
 )
 
-// THE HAZARD TEST FOR FOLDING FROM A HEADER, WRITTEN BEFORE THE API THAT
-// WOULD MAKE IT PASS.
-//
-// figaro's delta seam wants to build a snapshot the cheap way: take the
-// block-0 header of the segment holding idx, and fold ONLY [segBase..idx]
-// onto it. StateAt already does exactly that internally. What figaro cannot
-// do is StateAt, because StateAt folds through the reducer -- and figaro's
-// reducer JSON round-trips the entire board PER RECORD. It needs the header
-// BYTES and then folds the records itself, decoded, once.
-//
-// TO DO THAT IT NEEDS TWO FACTS: the header, and THE BASE INDEX OF THE
-// SEGMENT THAT HEADER BELONGS TO. The base is what says which records to
-// fold. And the two facts are not equally available:
-//
-//	HeaderAt(idx)          WALKS THE PARENT CHAIN for idx < forkBase.
-//	SegmentBaseIndexes()   "does NOT walk the parent chain" -- its own doc.
-//
-// SO ON A BRANCH, FOR ANY INDEX BELOW THE FORK POINT, PAIRING THEM IS WRONG
-// AND SILENT: HeaderAt answers from the parent, SegmentBaseIndexes answers
-// only about the child, and a caller that pairs them folds the parent's
-// header onto a range computed from the child's boundaries. Nobody is told.
-// The result is a wrong snapshot, only before a fork point.
-//
-// This file pins that, and pins the property any exposure must satisfy:
-// FOLD(header-of-idx, records[base-of-idx .. idx]) == StateAt(idx), AT EVERY
-// INDEX, ON A TRUNK AND ACROSS A FORK. StateAt is the oracle because it is
-// the same computation done by the library that owns the segments.
+// The hazard test for folding from a header. A consumer that pairs
+// HeaderAt (which walks the parent chain) with SegmentBaseIndexes (which
+// does not) folds the parent's header onto a range computed from the
+// child's boundaries, silently, for any index below the fork point. This
+// pins that, and the property any exposure must satisfy: FOLD(header-of-idx,
+// records[base-of-idx .. idx]) == StateAt(idx) at every index, on a trunk
+// and across a fork.
 
-// headerFoldAt is what a consumer would write given ONLY the two functions as
-// they exist today: ask for the header, then find the base by searching this
-// log's own segment bases for the greatest one <= idx. It is the naive
-// pairing, written out so the test can show exactly where it goes wrong
-// rather than describing it.
+// headerFoldAt is the naive pairing: ask for the header, then find the base
+// by searching this log's own segment bases for the greatest one <= idx.
 func headerFoldAt(t *testing.T, l *Log, idx uint64) ([]byte, error) {
 	t.Helper()
 	header, err := l.HeaderAt(idx)
@@ -60,11 +37,8 @@ func headerFoldAt(t *testing.T, l *Log, idx uint64) ([]byte, error) {
 	return sumFold(header, sealed)
 }
 
-// TestHeaderFold_OnATrunkTheNaivePairingIsCorrect: the control. On a log with
-// no parent, HeaderAt and SegmentBaseIndexes describe the same lineage, so
-// the naive pairing reproduces StateAt at every index. If this fails, the
-// test below proves nothing about forks -- it would only prove the harness
-// is broken.
+// The control: on a log with no parent the naive pairing reproduces StateAt
+// at every index. If this fails, the fork test below proves nothing.
 func TestHeaderFold_OnATrunkTheNaivePairingIsCorrect(t *testing.T) {
 	dir := t.TempDir()
 	l := openReducible(t, dir, 256) // small, so it rotates
@@ -97,31 +71,11 @@ func TestHeaderFold_OnATrunkTheNaivePairingIsCorrect(t *testing.T) {
 	}
 }
 
-// TestHeaderFold_AcrossAForkTheNaivePairingIsWrong is the hazard.
-//
-// AMENDED BY ba221ff1 AFTER SegmentHeaderAt LANDED, on d921742d's ruling.
-// This test was written expecting to be INVERTED once an exposure handed
-// the header and its base together. That instruction was wrong and is
-// withdrawn: ADDING SegmentHeaderAt DOES NOT MAKE THIS FALSE. HeaderAt
+// The hazard. Adding SegmentHeaderAt does not make this false: HeaderAt
 // still walks the parent chain, SegmentBaseIndexes still does not, and
-// pairing them is still wrong below a fork base -- and will REMAIN wrong
-// unless someone changes one of those two functions, which this campaign
-// is not doing. Inverting it would make it assert something untrue on the
-// day it was inverted. Assert the fact, not the wish.
-//
-// SO IT STAYS, AND IT EARNS ITS KEEP TWICE. It is the STANDING REASON
-// disk.Log.SegmentHeaderAt exists -- the positive side is
-// TestSegmentHeaderAt_AcrossAForkItAgreesWhereThePairingDoesNot. And it is
-// a TRIPWIRE: whoever makes this test go red has changed HeaderAt or
-// SegmentBaseIndexes -- most likely by "tidying" SegmentBaseIndexes into
-// walking the parent chain -- and owes the design that depends on that
-// difference a look before landing it.
-//
-// THE MEASURED COUNT, which is the part an argument cannot replace: on a
-// 40-entry reducible log forked at 30, the naive pairing produces WRONG
-// STATE AT 14 OF 29 INDICES BELOW THE FORK BASE, and is correct at EVERY
-// index at or above it. That is why a single-lineage test would have found
-// nothing: the pairing is right everywhere such a test would look.
+// pairing them is still wrong below a fork base. Whoever makes this test go
+// red has changed one of those two functions and owes the design that
+// depends on the difference a look.
 func TestHeaderFold_AcrossAForkTheNaivePairingIsWrong(t *testing.T) {
 	dir := t.TempDir()
 	parent := openReducible(t, dir, 256)

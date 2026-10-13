@@ -6,11 +6,8 @@ import (
 	"fmt"
 )
 
-// MapPatch is the native nested-map patch: deep set/remove on a JSON
-// object, addressed by path. It is the canonical reducible data structure
-// (figaro's chalkboard). figaro and the figwal CLI both fold through
-// reduceMap, so the persistent-map semantics are defined and validated in
-// one place rather than reimplemented per consumer.
+// MapPatch is the native nested-map patch: deep set/remove on a JSON object,
+// addressed by path.
 type MapPatch struct {
 	Set    []MapSet   `json:"set,omitempty"`
 	Remove [][]string `json:"remove,omitempty"`
@@ -27,9 +24,8 @@ type MapSet struct {
 // reducible channel declared with it needs no caller registration.
 const MapReducerName = "map"
 
-// MapReducer is the built-in nested-map reducer (fold + empty-object
-// initial state). Exposed so callers can register it under another name
-// if they like; it is auto-available as "map" regardless.
+// MapReducer is auto-available as "map"; exposed so a caller can register it
+// under another name.
 func MapReducer() Reducer { return Reducer{Reduce: reduceMap, Initial: []byte("{}")} }
 
 // MapSetPatch builds (and validates) a patch setting value at path.
@@ -51,9 +47,7 @@ func MapRemovePatch(path []string) ([]byte, error) {
 	return json.Marshal(MapPatch{Remove: [][]string{path}})
 }
 
-// reduceMap folds one MapPatch onto a JSON-object state. It plugs into the
-// generic reducible machinery (it is a ReduceFunc), so the watermark fold
-// and StateAt use the very same code path.
+// reduceMap is the ReduceFunc, so the watermark fold and StateAt share one path.
 func reduceMap(state, patch []byte) ([]byte, error) {
 	root, err := decodeObject(state)
 	if err != nil {

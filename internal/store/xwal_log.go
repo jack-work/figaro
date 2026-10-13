@@ -1,7 +1,7 @@
 package store
 
-// xwalLog adapts one channel of an aria's xwal to the store.Log[T]
-// interface. It is stateless with respect to xwal handles: every read
+// xwalLog adapts one channel of an aria's xwal to Log[T]; every read opens the
+// node afresh.
 
 import (
 	"encoding/json"
@@ -23,14 +23,9 @@ func newXwalLog[T any](store *XwalStore, ariaID, channel string, isMain bool) *x
 	return &xwalLog[T]{store: store, ariaID: ariaID, channel: channel, isMain: isMain}
 }
 
-// encodeMeta/decodeMeta carry Entry.Fingerprint through xwal's opaque
-// meta slot as a JSON string.
-// entryMeta is the sidecar a row carries beside its payload. It was a bare
-// JSON string holding the fingerprint; it is an object now because a row also
-// names the record it translates BY CONTENT (see Entry.FigaroHash).
-//
-// A BARE STRING STILL DECODES: rows written before this shape carry a JSON
-// string and are read as a fingerprint with no hash, which is what they are.
+// entryMeta is the sidecar a row carries beside its payload, through xwal's
+// opaque meta slot. A bare JSON string still decodes: rows written before this
+// shape carry only the fingerprint.
 type entryMeta struct {
 	Fingerprint string `json:"fp,omitempty"`
 	FigaroHash  string `json:"rec,omitempty"`
@@ -57,15 +52,14 @@ func decodeMeta(meta []byte) (fingerprint, recordHash string) {
 	return legacy, ""
 }
 
-// decodeRecord OWNS ITS BYTES. Everything that can outlive the read -- a
-// materialized page, anything the tree cache will hold -- goes through it. See
-// rowsplit.go for why that is not merely tidy.
+// decodeRecord owns its bytes; everything that can outlive the read goes
+// through it (see rowsplit.go).
 func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 	return decodeRecordInto[T](r, false)
 }
 
-// decodeRecordAliased hands back rows that are WINDOWS onto r.Payload. Only
-// ScanRange may call it: the row it yields is written to the wire and dropped.
+// decodeRecordAliased hands back windows onto r.Payload. Only ScanRange may
+// call it: the row is written to the wire and dropped.
 func decodeRecordAliased[T any](r xwal.Record) (Entry[T], bool) {
 	return decodeRecordInto[T](r, true)
 }
@@ -91,8 +85,6 @@ func decodeRecordInto[T any](r xwal.Record, alias bool) (Entry[T], bool) {
 	}, true
 }
 
-// openOnce opens a fresh xwal for the aria, runs fn, closes. Errors
-// from Open, fn, and Close are propagated in that order.
 func (l *xwalLog[T]) openOnce(fn func(*xwal.XWAL) error) error {
 	xw, err := l.store.openNode(l.ariaID)
 	if err != nil {
@@ -125,10 +117,8 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 	return out
 }
 
-// ScanRange walks (from..to] under ONE open, decoding a record and handing it
-// over before the next is read, so the walk holds one entry and not the
-// channel. Read is this function with an append: see scan.go for why the
-// append is the part worth removing.
+// ScanRange walks (from..to] under one open, handing each record over before
+// the next is read.
 func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
@@ -159,12 +149,11 @@ func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 	})
 }
 
-// channelBounds reports the channel's first and last LT. ok is false for an
-// empty channel. It opens THAT channel and no other.
+// ok is false for an empty channel.
 func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) {
 	first, last, _ = xw.ChannelBounds(channel)
-	// first == 0 with last > 0 means "channel starts at index 1 with no parent
-	// to inherit from" (common for a channel added mid-life). Normalize.
+	// first == 0 with last > 0: the channel starts at index 1 with no parent
+	// to inherit from.
 	if first == 0 {
 		if last == 0 {
 			return 0, 0, false
@@ -177,8 +166,8 @@ func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) 
 	return first, last, true
 }
 
-// TailBudgeted reads BACKWARD from the channel tail, decoding only entries it
-// keeps, and stops once the accumulated encoded bytes would exceed budget or
+// TailBudgeted reads backward from the tail, decoding only what it keeps,
+// until budget or maxRows is reached.
 func (l *xwalLog[T]) TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], int) {
 	var (
 		out   []Entry[T]
@@ -249,15 +238,9 @@ func (l *xwalLog[T]) Len() int {
 	return n
 }
 
-// ReadFrom returns up to n entries from a coordinate in THIS CHANNEL'S OWN
-// index. It used to take a FigaroLT on every channel, which on a side channel
-// is a FOREIGN key: the start had to be found by BINARY SEARCH with a ReadAt
-// per probe, and every entry read was then re-checked against it.
-//
-// Both are gone. A channel is addressed by its own LT -- the main channel
-// always was (figwal guarantees main-LT == channel-LT there) and the
-// translation channels are now too -- so the start index IS the coordinate,
-// at O(1) and with no per-entry predicate.
+// ReadFrom takes a coordinate in this channel's own index: on the main channel
+// main-LT equals channel-LT, and the translation channels are addressed by
+// their own LT, so the start index is the coordinate.
 func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
 	var out []Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
@@ -286,20 +269,8 @@ func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
 	return out
 }
 
-// ReadPage is readPage's contract read by POSITION: only the records the page
-// returns are read and decoded.
-//
-// It used to be readPage(l.Read(), ...), which decoded every record in the
-// channel to return n of them. Every caller that asked for "the last record"
-// (the dormant reader's tail probe, the agent's, the composed cache's seed for
-// an ancestor range) was walking the whole conversation, while the comments
-// beside them said it cost one read. The channel is addressed by its own LT
-// (see ReadFrom), so the window is arithmetic on the bounds.
-//
-// total is the channel's extent, as Len reports it: the number the tree log
-// in front of this already returns. It counted DECODABLE records before, which
-// is the same number unless a record fails to decode, and counting those meant
-// decoding all of them.
+// ReadPage reads and decodes only the records the page returns: the window is
+// arithmetic on the bounds. total is the channel's extent, as Len reports it.
 func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 	var out []Entry[T]
 	total := 0
@@ -320,9 +291,8 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 			if n <= 0 {
 				return nil
 			}
-			// Backward from before-1, until n are found or the channel ends.
-			// A record that does not read is skipped, as Read skips it, so the
-			// page reaches past it exactly as the whole-log slice did.
+			// Backward from before-1 until n are found. A record that does not
+			// read is skipped, as Read skips it.
 			top := last
 			if before-1 < top {
 				top = before - 1
@@ -357,11 +327,9 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 	return out, total
 }
 
-// TailSnapshot is the last n entries, ascending, read from the tail
-// COORDINATE rather than by materializing the channel. Without it the generic
-// helper falls back to Read(), so a caller asking for the last few entries on
-// every append pays the whole history each time -- which is quadratic over a
-// conversation, and is exactly what it cost before this existed.
+// TailSnapshot reads from the tail coordinate rather than materializing the
+// channel; without it the generic helper falls back to Read(), quadratic over
+// a conversation.
 func (l *xwalLog[T]) TailSnapshot(n int) []Entry[T] {
 	if n <= 0 {
 		return nil
@@ -423,9 +391,8 @@ func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	return decodeRecord[T](rec)
 }
 
-// ForkBase is the first coordinate THIS node owns of this channel, in the
-// CHANNEL'S OWN key space -- 0 where nothing is inherited. It is not the main
-// channel's fork base and the two are not interchangeable.
+// ForkBase is the first coordinate this node owns in the channel's own key
+// space, 0 where nothing is inherited. It is not the main channel's fork base.
 func (l *xwalLog[T]) ForkBase() (uint64, bool) {
 	var (
 		base  uint64
@@ -464,8 +431,7 @@ func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 	return decodeRecord[T](rec)
 }
 
-// Append routes through Trunks.Append / Trunks.AppendChannel, which
-// serialize against topology changes inside figwal.
+// Append routes through Trunks, which serializes against topology changes inside figwal.
 func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	payload, err := json.Marshal(e.Payload)
 	if err != nil {
@@ -473,8 +439,8 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	meta := encodeMeta(e.Fingerprint, e.FigaroHash)
 	if l.isMain {
-		// The stamp moment: alongside the automatic own-channel cursors,
-		// record where every OBSERVED form stands right now. This is the
+		// The stamp moment: beside the own-channel cursors, record where every
+		// observed form stands.
 		_, lt, cursors, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
 			return Entry[T]{}, aerr
@@ -484,10 +450,8 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
 			return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 		}
-		// THE STAMP COMES BACK FROM THE APPEND THAT WROTE IT. It is computed
-		// under the main channel's lock and was previously recovered by
-		// reading the record out of the log again -- one ReadAt per append to
-		// learn a value the writer had in hand.
+		// The stamp comes back from the append that wrote it, computed under
+		// the main channel's lock.
 		e.FormChannelVersion = cursors[chanForm]
 		e.StudyVersions = studyCursors(cursors)
 		return e, nil
@@ -503,9 +467,9 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return e, nil
 }
 
-// Clear goes through Store.Clear, which drops the channel's pending
-// flush buffer atomically with the on-disk wipe, a raw XWAL.Clear
-// would race the flusher into resurrecting wiped records.
+// Clear goes through Store.Clear, which drops the pending flush buffer
+// atomically with the on-disk wipe; a raw XWAL.Clear would race the flusher
+// into resurrecting wiped records.
 func (l *xwalLog[T]) Clear() error {
 	return l.store.trunks.Clear(l.ariaID, l.channel)
 }

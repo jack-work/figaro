@@ -58,10 +58,8 @@ func healFixtureSized(t *testing.T, dir string, n, segmentSize int) (*XwalBacken
 	return b, conv, lts
 }
 
-// TestMetaHealsOnReadBounded is the whole contract of meta_heal.go: a sidecar
-// whose watermark trails is caught up by the next READ of the aria, and the
-// replay touches EXACTLY the entries after the watermark: the count is
-// measured, not asserted by inspection.
+// A sidecar whose watermark trails is caught up by the next read, and the
+// replay touches exactly the entries after the watermark.
 func TestMetaHealsOnReadBounded(t *testing.T) {
 	b, conv, lts := healFixture(t, t.TempDir(), 10)
 
@@ -113,8 +111,7 @@ func TestMetaHealsOnReadBounded(t *testing.T) {
 	}
 }
 
-// TestMetaHealNoopWhenCurrent: the settled case (212 of 213 arias in the
-// author's store) must fold nothing and rewrite nothing.
+// The settled case must fold nothing and rewrite nothing.
 func TestMetaHealNoopWhenCurrent(t *testing.T) {
 	b, conv, lts := healFixture(t, t.TempDir(), 6)
 	current := &AriaMeta{MessageCount: 6, TurnCount: 3, LastFigaroLT: lts[5]}
@@ -156,10 +153,8 @@ func TestMetaHealNoopWhenCurrent(t *testing.T) {
 	}
 }
 
-// TestSegmentRollsAtSegmentSize pins the figaro-chosen segment size: writing
-// past it must produce a second segment file (with 64MB it never did). It runs
-// once on the default and once on a configured size, so the `[store]
-// segment_size` knob is proven to reach the disk and not merely parse.
+// Writing past the configured segment size must produce a second segment
+// file, on the default and on a configured size.
 func TestSegmentRollsAtSegmentSize(t *testing.T) {
 	var noConfig *config.Loaded
 	for _, tc := range []struct {
@@ -188,10 +183,8 @@ func TestSegmentRollsAtSegmentSize(t *testing.T) {
 			if err := b.store.trunks.Close(); err != nil { // flush to disk
 				t.Fatal(err)
 			}
-			// The aria's segments live in the node dir carrying figwal's
-			// identity marker. (.node since figwal merged .from and .trunk;
-			// both names are checked so this does not silently find nothing
-			// again if the layout moves.)
+			// Both marker names are checked so this does not silently find
+			// nothing if the layout moves.
 			var leaf string
 			filepath.WalkDir(filepath.Join(dir, chanIR), func(p string, d os.DirEntry, err error) error {
 				if err == nil && !d.IsDir() && (d.Name() == ".node" || d.Name() == ".trunk") {

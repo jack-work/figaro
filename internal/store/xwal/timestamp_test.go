@@ -160,10 +160,9 @@ func TestLegacyFramesReadZeroTS(t *testing.T) {
 	}
 }
 
-// The wire format, pinned: t is the LAST field of the fast shape, after
-// p/p64 and the optional x. These bytes are what production appends emit;
-// if the shape drifts, the fast decoder silently degrades to the slow
-// path forever — this test is the canary.
+// The wire format, pinned: t is the last field of the fast shape, after
+// p/p64 and the optional x. If the shape drifts, the fast decoder silently
+// degrades to the slow path forever.
 func TestFastDecodeParsesTimestampShapes(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -254,13 +253,9 @@ func TestLastTSLegacyStoreThenFreshAppend(t *testing.T) {
 	}
 }
 
-// The encoder's own output must take the FAST decode path — not merely
-// decode correctly via the slow one — and so must the bytes the JSONL
-// codec hands back AFTER a disk round-trip, which are NOT the encoder's
-// bytes: the codec re-canonicalizes key order. Testing only the encoder
-// side is exactly how the first draft shipped a fast path that every
-// segment read missed. If this fails, every read of every new record
-// silently pays the reflection path forever.
+// The encoder's own output must take the fast decode path, and so must the
+// bytes the JSONL codec hands back after a disk round-trip, which
+// re-canonicalizes key order.
 func TestEncoderOutputTakesFastPath(t *testing.T) {
 	frames := map[string][]byte{
 		"channel":        encodeChannelFrame(7, []byte(`{"a":1}`), nil, false, 1754850000000),

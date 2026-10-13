@@ -11,9 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// The libretto is a COPY that follows one source. These are the properties
-// the rest of phase 9 will rest on, so they are stated here rather than
-// inferred from the verb that will drive them.
+// The libretto is a copy that follows one source.
 
 func librettoFixture(t *testing.T) (*XwalBackend, string, *Form) {
 	t.Helper()
@@ -370,14 +368,10 @@ func TestLibrettoBatchFoldEndsWhereTheSourceDoes(t *testing.T) {
 	}
 }
 
-// THE ORPHANED READER. The libretto's Form is the writer the fold appends
-// through. A reader that opens its own Form over the same stump replays once
-// and never hears that writer again, so it renders one correct study block
-// and then freezes -- which is exactly what the translator did the first time
-// it read a libretto, while every unit test and every refcount stayed green.
-//
-// Two halves: the shared instance sees a fold that happens AFTER it was
-// handed out, and the node path refuses to hand out a second one at all.
+// The orphaned reader: a reader that opens its own Form over the libretto's
+// stump replays once and never hears the fold again, rendering one correct
+// study block and then freezing. The shared instance sees later folds, and
+// the node path refuses to hand out a second Form.
 func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 	be, src, _ := librettoFixture(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
@@ -418,13 +412,8 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 	}
 }
 
-// THE DEATH ENDS THE LISTENING (wym.md:21, the half that was never built).
-//
-// A subscription that outlives its source pins that Form resident forever:
-// the idle sweep refuses to evict anything subscribed, so the corpse of every
-// studied-then-deleted form would be held for the daemon's life. The copy
-// must stay READABLE while ceasing to listen -- that is the whole point of it
-// being a copy.
+// The death ends the listening: a subscription that outlives its source pins
+// that Form resident forever. The copy stays readable while ceasing to listen.
 func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	be, src, srcForm := librettoFixture(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
@@ -451,9 +440,8 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 		t.Error("the death was not recorded, but the listening stopped anyway")
 	}
 
-	// The copy outlives the source, which is what makes a studied form
-	// deletable at all: its history is still readable AND the death itself
-	// arrives as an ordinary key transition the render can show.
+	// The copy outlives the source: its history is still readable and the
+	// death arrives as an ordinary key transition.
 	sawDeath := false
 	for _, p := range lib.PatchesBetween(before, lib.Version()) {
 		if _, ok := p.Patch.Entry(KeyLibrettoAlive); ok {
@@ -574,9 +562,7 @@ func TestLibrettoReadersWhileItFolds(t *testing.T) {
 	}
 }
 
-// Alive is the tests' read of the death record on the copy. The product
-// renders the key itself (system.libretto.alive); no shipped code needs
-// the accessor, so it lives with its callers.
+// Alive is the tests' read of the death record on the copy.
 func (l *Libretto) Alive() bool {
 	raw, ok := l.formState().Get(KeyLibrettoAlive)
 	if !ok {

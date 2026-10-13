@@ -6,11 +6,9 @@ import (
 	"testing"
 )
 
-// The counter registry grows by successor, and a successor built from a stale
-// copy silently drops a node's counter -- which reads as "this trunk has no
-// recency" rather than as a fault. `fig ls` walks this once per aria, so the
-// lookup is lock-free and only GROWTH is serialized; this pins the half that
-// still needs the lock.
+// The counter registry grows by successor, and a successor built from a
+// stale copy silently drops a node's counter. The lookup is lock-free and
+// only growth is serialized; this pins the half that still needs the lock.
 func TestLastTSRegistryGrowthKeepsEveryCounter(t *testing.T) {
 	r := newLastTSRegistry()
 
