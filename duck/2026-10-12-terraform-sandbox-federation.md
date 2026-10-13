@@ -539,3 +539,27 @@ a merge". The integrator is one more agent, long-lived, serial. The
 alternative is the repo's own `skills/parallel-arias.md`: figaro arias as
 the workers with the same briefs, which is the dogfooding option once the
 `sandbox` lane has landed and the workers can be boxed.
+
+## 8. Status at 2026-10-12, end of first run
+
+Merged into `terraform` (all gates green: build, vet, `go test ./...`, boundary 22 allowed / 0 new):
+seams, hygiene, gate, store fix, door (peercred, hub guarded), sandbox
+(tools behind `api/sandbox`; `local` and `bwrap` providers), shrink
+(anthropicsdk gone), boundary (daemon entry in `internal/daemon`, `sdk/aria`
+client), helpers (`internal/boot`), slop-cli (CLI comments 15.5k → 4.3k lines).
+
+Unmerged, were still running on their branches: `slop-core`, `slop-store`.
+Merge each with `git merge <branch>` after `go test ./...` on its worktree.
+
+Not done: the per-aria open check under `.#snapshot` (the list flag was wrong;
+the store opened and `doctor schema` passed). Rerun:
+
+```sh
+cd ~/dev/figaro-qua/terraform
+FIGARO_DEV_ROOT=/var/tmp/figaro-dev-snap nix develop .#snapshot --command bash -c '
+  figaro ls --json > /var/tmp/snap-ls.json; jq length /var/tmp/snap-ls.json
+  for id in $(jq -r ".[].id" /var/tmp/snap-ls.json); do figaro show "$id" -n 1 >/dev/null || echo "FAIL $id"; done
+  figaro stop'
+```
+Expected count: 1331. Also pending: drop the five `/var/tmp` test skips from
+`flake.nix` `checks.unit` once `slop-core` lands; merge `terraform` to `main`.
