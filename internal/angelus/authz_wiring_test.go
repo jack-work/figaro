@@ -98,7 +98,7 @@ func TestEveryServedMethodIsGuarded(t *testing.T) {
 		rpc.MethodCreate, rpc.MethodFork, rpc.MethodPromote, rpc.MethodKill,
 		rpc.MethodList, rpc.MethodAttach, rpc.MethodBind, rpc.MethodResolve,
 		rpc.MethodUnbind, rpc.MethodStatus, rpc.MethodSaveBindings, rpc.MethodIR,
-		rpc.MethodProviderLedger,
+		rpc.MethodProviderLedger, rpc.MethodHello,
 	} {
 		if hs.Map[m] == nil {
 			t.Fatalf("method %s missing from the guarded map", m)
@@ -122,6 +122,20 @@ func TestUnknownPolicyNameFallsBackToAllowAll(t *testing.T) {
 	_, ferr := hs.Map[rpc.MethodFork](context.Background(), selfFork(t))
 	if ferr != nil && strings.Contains(ferr.Error(), "deadlock") {
 		t.Fatalf("unknown policy name gated a request: %v", ferr)
+	}
+}
+
+func TestHelloStampsTheConnectionPrincipal(t *testing.T) {
+	hs := authzHandlers(t, "", nil)
+	if _, err := hs.Map[rpc.MethodHello](context.Background(), []byte(`{"version":99}`)); err == nil {
+		t.Fatal("version 99 accepted")
+	}
+	out, err := hs.Map[rpc.MethodHello](context.Background(), []byte(`{"version":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.(rpc.HelloResponse); got.Version != rpc.ProtocolVersion || got.Principal != (rpc.Principal{}) {
+		t.Fatalf("hello = %+v", got)
 	}
 }
 

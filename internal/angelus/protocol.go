@@ -124,9 +124,23 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodContext:        h.context,
 			rpc.MethodForm:           h.form,
 			rpc.MethodLineage:        h.lineage,
+			rpc.MethodHello:          h.hello,
 		}, authz.AriaHeader{}, h.policy()),
 		h: h,
 	}
+}
+
+func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, error) {
+	var req rpc.HelloRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+	}
+	if req.Version != rpc.ProtocolVersion {
+		return nil, fmt.Errorf("protocol version %d; this node speaks %d", req.Version, rpc.ProtocolVersion)
+	}
+	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Principal: authz.PrincipalOf(ctx)}, nil
 }
 
 func (h *handlers) policy() authz.Policy {
