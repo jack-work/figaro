@@ -45,6 +45,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},
 		{Key: "system.study_incantation", Short: `What to SAY at a study lifecycle event: {"onstudy":…,"onupdate":…,"ondrop":…}, any subset, strings`, Mode: KeyUserSettable},
 		{Key: "system.fork_incantation", Short: `What to say to a branch at birth: a string, or {"onfork":…}. Unset means silence, which is the historical behaviour`, Mode: KeyUserSettable},
+		{Key: "system.decide.model", Short: "The decision model `figaro decide` asks over this aria (default: providers/decisions.toml, then jev-latest); never a conversation model", Mode: KeyUserSettable},
 		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
