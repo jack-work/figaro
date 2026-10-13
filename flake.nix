@@ -32,7 +32,7 @@
       overlays.default = final: prev: {
         figaro = final.buildGoModule rec {
           pname = "figaro";
-          version = "0.38.2";
+          version = "0.39.0";
           src = self;
           vendorHash = "sha256-R5vx6zxlsHLo6VhpyaR5oERdVYZx9aBHDbq7feKKpy8=";
 
