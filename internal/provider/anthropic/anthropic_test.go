@@ -120,11 +120,8 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	require.NotNil(t, rowMessage(stm).Content[len(rowMessage(stm).Content)-1].CacheControl, "the tail message's last content block must have cache_control set")
 	assert.Equal(t, "ephemeral", rowMessage(stm).Content[len(rowMessage(stm).Content)-1].CacheControl.Type)
 
-	// The tail marker deliberately covers the new user prompt. The old rule
-	// here ("leave the leaf unmarked, it isn't stable yet") cost a message of
-	// cache coverage every turn: the prompt IS part of the prefix on the next
-	// turn, so leaving it unmarked forces a fresh write of it every time.
-	// anthropicsdk has always marked n-1; this is the two paths converging.
+	// The tail marker covers the new user prompt: it is part of the prefix on
+	// the next turn, so leaving it unmarked forces a fresh write every time.
 }
 
 // TestProjectMessages_SingleMessageStillMarksTheTail verifies that a first
@@ -232,22 +229,6 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 // TestCachingIsOnByDefault pins the contract that known_keys.go and the
 // cache-control skill both state: caching is ON at short retention with no
 // form key set at all.
-//
-// It was not. The direct provider marked breakpoints only when
-// system.cache_control was explicitly set, so every default aria: this is
-// the provider you get without UseOfficialSDK: sent zero cache_control
-// markers and re-paid full input price for its entire prefix every turn.
-//
-// Scale, measured on two live figaro arias running the SDK path (which did
-// mark), `figaro status <id> -j`:
-//
-//	aria 30bc6333: cache_read=13,661,486  uncached input=210
-//	aria ed3915b1: cache_read= 4,522,492  uncached input=122
-//
-// 99.998% of input tokens arrived as cache reads. Billed at Sonnet 4.5
-// rates ($3.00/M input, $0.30/M cache read, $3.75/M cache write), the first
-// aria cost ~$4.98 with caching and would have cost ~$41.69 without: an 8.4x
-// input bill for a one-line difference in behaviour.
 func TestCachingIsOnByDefault(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{

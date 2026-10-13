@@ -33,15 +33,13 @@ func providerKnobs(snap form.Snapshot) provider.Knobs {
 		Model:            snapshotString(snap, "system.model"),
 		MaxTokens:        snapshotInt(snap, "system.max_tokens"),
 		ReminderRenderer: snapshotString(snap, "system.reminder_renderer"),
-		UseOfficialSDK:   snapshotBool(snap, "system.use_official_sdk"),
 	}
 }
 
 // sameBuild reports whether two knob sets yield the same provider instance.
 func sameBuild(a, b provider.Knobs) bool {
 	return a.MaxTokens == b.MaxTokens &&
-		a.ReminderRenderer == b.ReminderRenderer &&
-		a.UseOfficialSDK == b.UseOfficialSDK
+		a.ReminderRenderer == b.ReminderRenderer
 }
 
 // bindProvider installs the initial binding from the constructor's provider,
@@ -126,14 +124,4 @@ func snapshotInt(snap form.Snapshot, key string) int {
 	var n int
 	_ = json.Unmarshal(raw, &n)
 	return n
-}
-
-func snapshotBool(snap form.Snapshot, key string) bool {
-	raw, ok := snap.Get(key)
-	if !ok {
-		return false
-	}
-	var b bool
-	_ = json.Unmarshal(raw, &b)
-	return b
 }

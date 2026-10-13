@@ -5,7 +5,6 @@ github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/outf
 github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider
 github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider/anthropic
 github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider/anthropicmodels
-github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider/anthropicsdk
 github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider/copilot
 github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider/openaichat
 github.com/jack-work/figaro/cmd/figaro github.com/jack-work/figaro/internal/provider/responses

@@ -103,21 +103,11 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		_ = json.Unmarshal(raw, &n)
 		return n
 	}
-	cbBool := func(key string) bool {
-		raw, ok := cbSnap.Get(key)
-		if !ok {
-			return false
-		}
-		var b bool
-		_ = json.Unmarshal(raw, &b)
-		return b
-	}
 	provName := cbStr("system.provider")
 	knobs := providerPkg.Knobs{
 		Model:            cbStr("system.model"),
 		MaxTokens:        cbInt("system.max_tokens"),
 		ReminderRenderer: cbStr("system.reminder_renderer"),
-		UseOfficialSDK:   cbBool("system.use_official_sdk"),
 	}
 	prov, err := h.factory(provName, knobs)
 	if err != nil {

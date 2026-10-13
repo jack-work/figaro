@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -30,14 +29,6 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 	}
 	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
 		return ctx.Backend.OpenTranslator(aria, "anthropic")
-	}
-	if knobs.UseOfficialSDK {
-		p, err := anthropicsdk.New(knobs, ctx.Resolver, cacheOpen)
-		if err != nil {
-			return nil, err
-		}
-		p.Templates = ctx.Templates
-		return p, nil
 	}
 	a, err := New(knobs, ctx.Resolver, cacheOpen)
 	if err != nil {

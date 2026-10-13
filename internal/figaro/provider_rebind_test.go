@@ -26,7 +26,7 @@ import (
 // turn actually reached.
 type namedProvider struct {
 	name  string
-	sdk   bool
+	renderer string
 	sends atomic.Int32
 
 	mu     sync.Mutex
@@ -57,11 +57,11 @@ func (p *namedProvider) Send(_ context.Context, in provider.SendInput, bus provi
 	return nil
 }
 
-// rebindFactory hands out one namedProvider per (name, sdk-knob) pair and
+// rebindFactory hands out one namedProvider per (name, renderer-knob) pair and
 // records the build requests, so a test can tell a rebuild from a reuse.
 type rebindFactory struct {
 	mu    sync.Mutex
-	built []string // "name/sdk" per call, in order
+	built []string // "name/renderer" per call, in order
 	insts map[string]*namedProvider
 	fail  map[string]bool
 }
@@ -71,7 +71,7 @@ func newRebindFactory() *rebindFactory {
 }
 
 func (f *rebindFactory) key(name string, knobs provider.Knobs) string {
-	return fmt.Sprintf("%s/%t", name, knobs.UseOfficialSDK)
+	return fmt.Sprintf("%s/%s", name, knobs.ReminderRenderer)
 }
 
 func (f *rebindFactory) build(name string, knobs provider.Knobs) (provider.Provider, error) {
@@ -84,16 +84,16 @@ func (f *rebindFactory) build(name string, knobs provider.Knobs) (provider.Provi
 	}
 	p, ok := f.insts[key]
 	if !ok {
-		p = &namedProvider{name: name, sdk: knobs.UseOfficialSDK}
+		p = &namedProvider{name: name, renderer: knobs.ReminderRenderer}
 		f.insts[key] = p
 	}
 	return p, nil
 }
 
-func (f *rebindFactory) inst(name string, sdk bool) *namedProvider {
+func (f *rebindFactory) inst(name string, renderer string) *namedProvider {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.insts[fmt.Sprintf("%s/%t", name, sdk)]
+	return f.insts[fmt.Sprintf("%s/%s", name, renderer)]
 }
 
 func (f *rebindFactory) builds() []string {
@@ -169,7 +169,7 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 	})
 
 	runTurn(t, a, ch, "first")
-	require.EqualValues(t, 1, f.inst("alpha", false).sends.Load())
+	require.EqualValues(t, 1, f.inst("alpha", "").sends.Load())
 	assert.Equal(t, "alpha", a.Info().Provider)
 
 	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -180,9 +180,9 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 
 	runTurn(t, a, ch, "second")
 
-	assert.EqualValues(t, 1, f.inst("alpha", false).sends.Load(), "alpha must not serve the round after the switch")
-	require.NotNil(t, f.inst("beta", false), "beta was never built")
-	assert.EqualValues(t, 1, f.inst("beta", false).sends.Load(), "beta must serve the round after the switch")
+	assert.EqualValues(t, 1, f.inst("alpha", "").sends.Load(), "alpha must not serve the round after the switch")
+	require.NotNil(t, f.inst("beta", ""), "beta was never built")
+	assert.EqualValues(t, 1, f.inst("beta", "").sends.Load(), "beta must serve the round after the switch")
 	assert.Equal(t, "beta", a.Info().Provider, "status must report the live provider")
 }
 
@@ -203,15 +203,15 @@ func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 	require.NoError(t, err)
 	runTurn(t, a, ch, "second")
 
-	assert.Equal(t, []string{"alpha/false"}, f.builds(), "model change must not rebuild the provider")
-	p := f.inst("alpha", false)
+	assert.Equal(t, []string{"alpha/"}, f.builds(), "model change must not rebuild the provider")
+	p := f.inst("alpha", "")
 	assert.EqualValues(t, 2, p.sends.Load())
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	assert.Equal(t, []string{"m-1", "m-2"}, p.models, "the live model rides the snapshot")
 }
 
-// A build-time knob (here system.use_official_sdk) selects a different
+// A build-time knob (here system.reminder_renderer) selects a different
 // implementation behind the same provider name, so changing it must rebuild.
 func TestProviderKnobChangeRebuilds(t *testing.T) {
 	f := newRebindFactory()
@@ -222,14 +222,14 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	runTurn(t, a, ch, "first")
 
 	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
-		"system.use_official_sdk": json.RawMessage(`true`),
+		"system.reminder_renderer": json.RawMessage(`"tool"`),
 	}, nil), 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "second")
 
-	assert.Equal(t, []string{"alpha/false", "alpha/true"}, f.builds())
-	assert.EqualValues(t, 1, f.inst("alpha", false).sends.Load())
-	assert.EqualValues(t, 1, f.inst("alpha", true).sends.Load())
+	assert.Equal(t, []string{"alpha/", "alpha/tool"}, f.builds())
+	assert.EqualValues(t, 1, f.inst("alpha", "").sends.Load())
+	assert.EqualValues(t, 1, f.inst("alpha", "tool").sends.Load())
 }
 
 // A provider that cannot be built must fail the turn loudly, and must not
@@ -251,7 +251,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	require.NoError(t, err)
 	reason := runTurn(t, a, ch, "second")
 
-	assert.EqualValues(t, 1, f.inst("alpha", false).sends.Load(), "the wedged provider must not serve a round meant for gamma")
+	assert.EqualValues(t, 1, f.inst("alpha", "").sends.Load(), "the wedged provider must not serve a round meant for gamma")
 	assert.Contains(t, reason, `provider "gamma"`, "the failure must name the provider that could not be built")
 
 	// Correct the board: the aria is still usable.
@@ -261,6 +261,6 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	}, nil), 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "third")
-	require.NotNil(t, f.inst("beta", false))
-	assert.EqualValues(t, 1, f.inst("beta", false).sends.Load())
+	require.NotNil(t, f.inst("beta", ""))
+	assert.EqualValues(t, 1, f.inst("beta", "").sends.Load())
 }

@@ -38,7 +38,7 @@ figaro set system.cache_control ephemeral # explicit short (the default)
 **`none` stops figaro signalling; it does not stop the provider caching.**
 The distinction is the provider's, not ours, and it was measured:
 
-- **Anthropic-family** (anthropic, anthropicsdk, copilot serving Claude)
+- **Anthropic-family** (anthropic, copilot serving Claude)
   caches only what you mark. With `none`, a turn whose prompt had been
   reading 8,833 tokens from cache reported **9,118 uncached input tokens and
   a cache-read delta of exactly 0**. Here `none` really does turn caching
