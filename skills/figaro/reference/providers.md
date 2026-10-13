@@ -1,7 +1,7 @@
 # Providers: routing a model to a transport
 
-`copilot`, `gateway` and `openrouter` are one provider, `internal/provider/routed`,
-given three different specs. A spec names a host, the headers to send, and how
+`copilot`, `gateway`, `openrouter` and `azure` are one provider,
+`internal/provider/routed`, given four different specs. A spec names a host, the headers to send, and how
 to choose a transport for each model. `anthropic` (native OAuth) is separate.
 
 ## Transports
@@ -53,6 +53,36 @@ with no transport, a bad glob, or a spec with no way to route at all.
 | `copilot` | catalog `/models`; rule `claude-*` → `messages`; Copilot and identity headers; host from the hush token | rules, headers. `base_url` stays Copilot's own override (`token_mode`, `enterprise_domain`). |
 | `gateway` | default `chat`; credential optional | everything. `base_url` is required; `FIGARO_GATEWAY_BASE_URL` wins over the file. |
 | `openrouter` | default `chat`; OpenRouter host; `anthropic/` model prefix | everything. |
+| `azure` | default `chat`; credential from `AZURE_OPENAI_API_KEY`, a stored key, or a Microsoft Entra login | everything. `base_url` is required; `AZURE_BASE_URL` wins over the file. |
+
+## Azure AI Foundry, signed in with Microsoft Entra
+
+```sh
+figaro login azure                     # asks for the endpoint and tenant once
+figaro set system.provider azure
+figaro set system.model <deployment>   # the deployment name, not the model family
+```
+
+The login is Entra's device flow: a code to enter at Microsoft's device page,
+then hush holds the tokens and refreshes them with its `entra` grant, which
+names the scope on every refresh. A hush agent without that grant refuses the
+registration, and the login says to update hush.
+
+`providers/azure.toml` keeps what the login asked for. Every key but
+`base_url` is optional:
+
+```toml
+base_url  = "https://<resource>.openai.azure.com/openai/v1"
+tenant    = "contoso.onmicrosoft.com"   # or the tenant id; default organizations
+client_id = "..."                        # default: the Azure CLI's public client
+scope     = "https://ai.azure.com/.default"   # default: Cognitive Services
+authority = "https://login.microsoftonline.us" # sovereign clouds only
+```
+
+The account needs the Cognitive Services OpenAI User role on the resource. A
+tenant whose policy blocks the Azure CLI's client needs an app registration of
+its own (a public client with the Cognitive Services delegated permission),
+named by `client_id`.
 
 ## Not a provider: decision models
 
