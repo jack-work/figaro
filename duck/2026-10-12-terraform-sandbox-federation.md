@@ -540,26 +540,28 @@ alternative is the repo's own `skills/parallel-arias.md`: figaro arias as
 the workers with the same briefs, which is the dogfooding option once the
 `sandbox` lane has landed and the workers can be boxed.
 
-## 8. Status at 2026-10-12, end of first run
+## 8. Status at 2026-10-13: first run complete
 
-Merged into `terraform` (all gates green: build, vet, `go test ./...`, boundary 22 allowed / 0 new):
-seams, hygiene, gate, store fix, door (peercred, hub guarded), sandbox
-(tools behind `api/sandbox`; `local` and `bwrap` providers), shrink
-(anthropicsdk gone), boundary (daemon entry in `internal/daemon`, `sdk/aria`
-client), helpers (`internal/boot`), slop-cli (CLI comments 15.5k → 4.3k lines).
+`terraform` (74 commits on `main`) holds everything below. Gates on the final
+tree: `go build`, `go vet`, `go test ./...`, `scripts/check-boundary.sh`
+(5 rules, 22 allowed, 0 new), `nix flake check`, and `.#snapshot` opening a
+copy of the real store: 1485 entries listed, every one opened (`show -n 1`),
+the only refusal being the ceremonial `null` root.
 
-Unmerged, were still running on their branches: `slop-core`, `slop-store`.
-Merge each with `git merge <branch>` after `go test ./...` on its worktree.
+Landed: seams (`api/sandbox`, door types), hygiene, gate, store fix (json v2
+interning broke a pointer-identity meter), door (peercred, hub guarded,
+asserted ids render bare), sandbox (tools behind the contract; `local` and
+`bwrap` providers, `system.sandbox`), shrink (anthropicsdk and 12 deps gone),
+boundary (`internal/daemon`, `sdk/aria`, `figarod` symlink), helpers
+(`internal/boot`, daemon no longer links the TUI), comment passes over every
+package, probe tests dropped, plans archived on `history`.
 
-Not done: the per-aria open check under `.#snapshot` (the list flag was wrong;
-the store opened and `doctor schema` passed). Rerun:
+Footprint: non-test Go 111.5k to 94.8k lines; test Go 130.3k to 113.3k;
+tracked files 1498 to 1337; markdown 177 to 70; worktrees 151 to 91.
 
-```sh
-cd ~/dev/figaro-qua/terraform
-FIGARO_DEV_ROOT=/var/tmp/figaro-dev-snap nix develop .#snapshot --command bash -c '
-  figaro ls --json > /var/tmp/snap-ls.json; jq length /var/tmp/snap-ls.json
-  for id in $(jq -r ".[].id" /var/tmp/snap-ls.json); do figaro show "$id" -n 1 >/dev/null || echo "FAIL $id"; done
-  figaro stop'
-```
-Expected count: 1331. Also pending: drop the five `/var/tmp` test skips from
-`flake.nix` `checks.unit` once `slop-core` lands; merge `terraform` to `main`.
+Not in this run, deferred by the owner's "add as little as possible": the
+figwal collapse and `snap` (§4), Ingress daemon mode and `figbox` (§3.3),
+node identity and federation (§2), the cli/pager/input split (§1.1). The 22
+remaining boundary edges are listed in `scripts/boundary-allow.txt`; the
+largest group is `cli -> provider` for `figaro models` and the first-run
+wizard, which needs a `models.list` RPC to cut.
