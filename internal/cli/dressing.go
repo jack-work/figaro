@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
 	"os"
@@ -119,7 +120,7 @@ func parseNames(text string) ([]string, error) {
 func softFetchOutfitNames() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
 	if err != nil {
 		// NO DAEMON IS NOT NO OUTFITS. They are files in the config dir,
 		// which is readable without one, and the first run -- before any

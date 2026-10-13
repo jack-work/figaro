@@ -23,7 +23,7 @@ rm -rf "$BOX"; mkdir -p "$BOX"/{cfg/outfits,cfg/providers,state,rt,cache,wire}
 trap 'kill $(cat "$BOX/rt/angelus.pid" 2>/dev/null) 2>/dev/null || true; kill ${GW_PID:-0} 2>/dev/null || true' EXIT
 
 echo "== building from $(git -C "$ROOT" rev-parse --short HEAD)"
-( cd "$ROOT" && go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro )
+( cd "$ROOT" && go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro )
 
 echo "== starting the fake gateway on :$PORT"
 python3 "$ROOT/scripts/fake-gateway.py" "$PORT" "$BOX/requests.jsonl" & GW_PID=$!

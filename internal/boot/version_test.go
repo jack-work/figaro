@@ -1,4 +1,4 @@
-package cli
+package boot
 
 import (
 	"runtime/debug"

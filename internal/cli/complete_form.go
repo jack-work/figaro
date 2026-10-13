@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -135,7 +136,7 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 // mixed-version daemon ("method not found") is distinguishable from a dead
 // aria socket at the one place anyone will ever look.
 func softFetchLiveSnapshot() (form.Snapshot, liveKeysStatus, error) {
-	ep := transport.UnixEndpoint(AngelusSocketPath())
+	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)

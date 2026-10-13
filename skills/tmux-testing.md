@@ -44,7 +44,7 @@ nix develop .#share-config   # isolated runtime+state, YOUR config + hush
 ```
 
 Inside it, `figaro`/`fig`/`q` are **this worktree's build, already stamped**
-(`flake.nix` passes `-X …internal/cli.commit=${rev}`), and
+(`flake.nix` passes `-X …internal/boot.commit=${rev}`), and
 `FIGARO_RUNTIME_DIR`/`FIGARO_STATE_DIR` are dev-scoped, so nothing you do
 touches your live daemon or arias. `duck/HOW_TO_TEST.md` is the long version.
 
@@ -130,7 +130,7 @@ The dev shell stamps for you, and so do `scripts/*.sh` and the harness
 comparison):
 
 ```sh
-go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" \
+go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" \
   -o /tmp/figaro ./cmd/figaro
 ```
 

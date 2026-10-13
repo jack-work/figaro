@@ -4,14 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
-
-	// Provider registrations (init side effects).
-	_ "github.com/jack-work/figaro/internal/provider/anthropic"
-	_ "github.com/jack-work/figaro/internal/provider/copilot"
-	_ "github.com/jack-work/figaro/internal/provider/routed"
 )
 
 // defaultModelFor returns the default model for a provider.
@@ -20,73 +15,6 @@ func defaultModelFor(providerName string) string {
 		return r.DefaultModel
 	}
 	return ""
-}
-
-// BuildResolver assembles a credential resolver for a provider.
-// Walks env -> plaintext api_key -> encrypted api_key -> OAuth.
-func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
-	h := MustHush()
-	hushClient := h.Client()
-
-	reg := providerPkg.Lookup(providerName)
-	hasOAuth := false
-	if reg != nil {
-		hasOAuth = reg.HasOAuth
-	}
-
-	// A provider whose bearer must be EXCHANGED has exactly one credential
-	// source: hush, which performs the exchange and owns the result. The
-	// env var and the stored api_key are the durable secret, not a bearer;
-	// presenting either to the API would present the wrong credential. They
-	// are handed to hush once, here, and never read again.
-	if reg != nil && reg.ExchangeGrant != "" && reg.ExchangeURL != nil && reg.ExchangeURL(loaded) != "" {
-		if err := ensureExchangeCredential(loaded, hushClient, reg, providerName); err != nil {
-			return nil, err
-		}
-		// Returned bare, not wrapped in an Aggregate: it is the only
-		// source, and the provider reads the routing off it directly.
-		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
-	}
-
-	strategies := environmentStrategies(reg)
-	strategies = append(strategies,
-		&auth.ConfigValue{Get: func() string {
-			var pa config.ProviderAuth
-			_ = loaded.LoadProviderAuth(providerName, &pa)
-			if pa.APIKey == "" || strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
-				return ""
-			}
-			return pa.APIKey
-		}},
-		&encryptedAPIKey{
-			Hush:       hushClient,
-			ConfigPath: loaded.ProviderAuthPath(providerName),
-		},
-	)
-	if hasOAuth {
-		strategies = append(strategies, &auth.OAuth{
-			Hush: hushClient,
-			Name: providerName,
-		})
-	}
-	return &auth.Aggregate{Strategies: strategies}, nil
-}
-
-func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrategy {
-	if reg == nil {
-		return nil
-	}
-	names := reg.EnvVars
-	if len(names) == 0 && reg.EnvVar != "" {
-		names = []string{reg.EnvVar}
-	}
-	strategies := make([]auth.CredentialStrategy, 0, len(names))
-	for _, name := range names {
-		if name != "" {
-			strategies = append(strategies, &auth.EnvVar{Name: name})
-		}
-	}
-	return strategies
 }
 
 // providerSetupHint is the user-facing guidance shown when a turn fails
@@ -149,7 +77,7 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	// to authenticate with, not the model an aria would use. Reading that off
 	// the default outfit meant a client folding server state to list models.
 	knobs := providerPkg.Knobs{Model: reg.DefaultModel, MaxTokens: 8192}
-	resolver, err := BuildResolver(loaded, name)
+	resolver, err := boot.BuildResolver(loaded, name)
 	if err != nil {
 		return nil, 0
 	}

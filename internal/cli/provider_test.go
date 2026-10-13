@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
@@ -15,7 +16,7 @@ func TestEnvironmentStrategiesUsesRegistrationOrder(t *testing.T) {
 	t.Setenv("GH_TOKEN", "gh")
 	t.Setenv("GITHUB_TOKEN", "github")
 
-	resolver := &auth.Aggregate{Strategies: environmentStrategies(&provider.Registration{
+	resolver := &auth.Aggregate{Strategies: boot.EnvironmentStrategies(&provider.Registration{
 		EnvVars: []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"},
 	})}
 	token, err := resolver.Resolve()
@@ -35,7 +36,7 @@ func TestEnvironmentStrategiesUsesRegistrationOrder(t *testing.T) {
 
 func TestEnvironmentStrategiesFallsBackToSingleEnvVar(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "key")
-	resolver := &auth.Aggregate{Strategies: environmentStrategies(&provider.Registration{
+	resolver := &auth.Aggregate{Strategies: boot.EnvironmentStrategies(&provider.Registration{
 		EnvVar: "ANTHROPIC_API_KEY",
 	})}
 	token, err := resolver.Resolve()

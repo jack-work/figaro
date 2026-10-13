@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"github.com/jack-work/figaro/internal/boot"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,7 +113,7 @@ func (a *widthAudit) check(s string) {
 				return
 			}
 			a.sink = f
-			fmt.Fprintf(a.sink, "\n=== figaro %s, %s ===\n", BuildRevision(), time.Now().Format(time.RFC3339))
+			fmt.Fprintf(a.sink, "\n=== figaro %s, %s ===\n", boot.BuildRevision(), time.Now().Format(time.RFC3339))
 		}
 		a.seen[key] = true
 		a.nreport++

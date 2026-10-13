@@ -10,7 +10,7 @@
 #   scripts/release.sh patch --tag-message .git/RELEASE_EDITMSG   # resume
 #
 # THE SINGLE LIVE VERSION is the `version` line in flake.nix. It is what a
-# built binary reports (-X ...cli.semver), and the tag is minted to match it
+# built binary reports (-X ...boot.semver), and the tag is minted to match it
 #: never the other way round. The bump argument is therefore optional: with
 # one, flake.nix moves and the tag follows; without one, whatever flake.nix
 # already declares gets cut. The two can never disagree at the end of a run.

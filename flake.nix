@@ -42,8 +42,8 @@
           nativeBuildInputs = [ final.installShellFiles ];
 
           # self.shortRev is a clean 7-char hash; dirtyShortRev appends
-          # "-dirty". Strip the suffix so cli.commit gets the bare rev
-          # and cli.commitDirty carries the dirty signal separately.
+          # "-dirty". Strip the suffix so boot.commit gets the bare rev
+          # and boot.commitDirty carries the dirty signal separately.
           rev =
             if self ? rev then builtins.substring 0 12 self.rev
             else if self ? dirtyRev then builtins.substring 0 12 self.dirtyRev
@@ -54,9 +54,9 @@
             # The single live version: this string is what `figaro --version`
             # reports, and the release script mints the matching vX.Y.Z tag
             # from the same line above. Nothing else declares a version.
-            "-X github.com/jack-work/figaro/internal/cli.semver=${version}"
-            "-X github.com/jack-work/figaro/internal/cli.commit=${rev}"
-            "-X github.com/jack-work/figaro/internal/cli.commitDirty=${dirty}"
+            "-X github.com/jack-work/figaro/internal/boot.semver=${version}"
+            "-X github.com/jack-work/figaro/internal/boot.commit=${rev}"
+            "-X github.com/jack-work/figaro/internal/boot.commitDirty=${dirty}"
           ];
 
           # Multi-call shims used to live here (q/l/x symlinks); they

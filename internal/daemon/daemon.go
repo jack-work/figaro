@@ -1,5 +1,4 @@
-// Package daemon is the angelus entry: it owns the store and the provider
-// wiring, and borrows configuration and credentials from cli.
+// Package daemon is the angelus entry.
 package daemon
 
 import (
@@ -17,7 +16,7 @@ import (
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/cli"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/figaro/wire"
@@ -36,7 +35,7 @@ const lockHandoff = 10 * time.Second
 // or until a live incumbent answers the socket.
 func lockStore() (*os.File, bool) {
 	// Keep the daemon lock outside the XWAL tree.
-	dir := cli.StateDir()
+	dir := boot.StateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, false
 	}
@@ -58,7 +57,7 @@ func lockStore() (*os.File, bool) {
 }
 
 func incumbentAnswers() bool {
-	c, err := sdk.DialAngelus(transport.UnixEndpoint(cli.AngelusSocketPath()))
+	c, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
 	if err != nil {
 		return false
 	}
@@ -70,14 +69,18 @@ func incumbentAnswers() bool {
 // if it has died, so the token-refresh machinery outlives the agent TTL for
 // the whole daemon session. Errors are logged, never fatal.
 func keepHushAlive(ctx context.Context) {
-	interval := cli.HushAgentTTL() / 3
+	interval := boot.HushAgentTTL() / 3
 	if interval > 5*time.Minute {
 		interval = 5 * time.Minute
 	}
 	if interval < 30*time.Second {
 		interval = 30 * time.Second
 	}
-	h := cli.MustHush()
+	h, err := boot.Hush()
+	if err != nil {
+		slog.Error("hush keep-alive", "err", err)
+		return
+	}
 	claimed := false
 	// Claim only an agent we have watched come up: the claim is what
 	// `figaro stop` acts on, and a claim written before there is anything
@@ -90,7 +93,7 @@ func keepHushAlive(ctx context.Context) {
 		if claimed {
 			return
 		}
-		if err := cli.ClaimHushAgent(h.Mode(), h.Config().RuntimeDir); err != nil {
+		if err := boot.ClaimHushAgent(h.Mode(), h.Config().RuntimeDir); err != nil {
 			slog.Warn("hush keep-alive: could not advertise the agent", "err", err)
 			return
 		}
@@ -165,7 +168,7 @@ func armMemoryLimit(loaded *config.Loaded) {
 // ariaBackend constructs the XWAL aria tree under the configured state root,
 // sized by `[store] segment_size` (config owns the default and its floor).
 func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
-	root := cli.AriaRoot()
+	root := boot.AriaRoot()
 	b, err := store.NewXwalBackend(root, loaded.SegmentSize())
 	if err != nil {
 		return nil, err
@@ -186,7 +189,7 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 		if reg == nil {
 			return nil, fmt.Errorf("unknown provider: %q", providerName)
 		}
-		resolver, err := cli.BuildResolver(loaded, providerName)
+		resolver, err := boot.BuildResolver(loaded, providerName)
 		if err != nil {
 			return nil, err
 		}
@@ -244,10 +247,13 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 
 // Run is the supervisor side of the binary.
 func Run() {
-	defer cli.RecoverExit()
 	mark.Init("angelus")
-	loaded := cli.MustLoadConfig()
-	runtimeDir := cli.AngelusRuntimeDir()
+	loaded, err := boot.LoadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
+	runtimeDir := boot.AngelusRuntimeDir()
 
 	// One angelus per store. A second daemon (e.g. from an ensureAngelus
 	// startup race) fails the lock and exits cleanly; the client then connects
@@ -261,7 +267,7 @@ func Run() {
 	}
 	defer lockF.Close()
 
-	otelShutdown, err := figOtel.Init(context.Background(), cli.StateDir())
+	otelShutdown, err := figOtel.Init(context.Background(), boot.StateDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
 	} else {
@@ -285,9 +291,9 @@ func Run() {
 		Backend:    backend,
 		Settings:   loaded,
 	})
-	a.Build = cli.BuildRevision()
+	a.Build = boot.BuildRevision()
 
-	formTmpls := cli.BuildFormTemplates()
+	formTmpls := boot.BuildFormTemplates()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

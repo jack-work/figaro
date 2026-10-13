@@ -19,6 +19,8 @@ package cli
 // into a file with the answer in it.
 
 import (
+	"github.com/jack-work/figaro/internal/boot"
+
 	"fmt"
 	"log/slog"
 	"os"
@@ -116,7 +118,7 @@ func (l *renderLock) heldFor(now time.Time) (time.Duration, int64) {
 // freezeDir is where dumps land: beside the telemetry the daemon already
 // writes, because that is the directory a reader is already being asked for.
 func freezeDir() string {
-	dir := filepath.Join(StateDir(), "freeze")
+	dir := filepath.Join(boot.StateDir(), "freeze")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return os.TempDir()
 	}
@@ -166,7 +168,7 @@ func dumpGoroutines(why string) string {
 	}
 	path := filepath.Join(freezeDir(), fmt.Sprintf("stacks-%s.txt", time.Now().Format("20060102-150405.000")))
 	head := fmt.Sprintf("# figaro %s pid %d\n# why: %s\n# %s\n\n",
-		BuildRevision(), os.Getpid(), why, time.Now().Format(time.RFC3339Nano))
+		boot.BuildRevision(), os.Getpid(), why, time.Now().Format(time.RFC3339Nano))
 	if err := os.WriteFile(path, append([]byte(head), buf...), 0o600); err != nil {
 		slog.Error("freeze dump failed", "err", err)
 		return ""

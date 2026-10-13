@@ -3,124 +3,36 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"text/template"
 	"time"
 
-	hushconfig "github.com/jack-work/hush/config"
 	"github.com/jack-work/hush/managed"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/tui"
 )
 
+func init() { boot.PromptPassphrase = promptVaultPassphrase }
+
 func MustLoadConfig() *config.Loaded {
-	dir := config.DefaultConfigDir()
-	if changes, mErr := config.MigrateLegacyOutfits(dir); mErr != nil {
-		slog.Warn("outfit migration", "dir", dir, "err", mErr)
-	} else {
-		for _, c := range changes {
-			fmt.Fprintln(stderrw, "figaro: "+c)
-		}
-	}
-	loaded, err := config.Load(dir)
+	loaded, err := boot.LoadConfig()
 	if err != nil {
-		die("config: %s", err)
+		die("%s", err)
 	}
 	return loaded
 }
 
-// hushOnce lazily initializes the managed hush instance.
-var (
-	hushInstance *managed.Hush
-	hushOnce     sync.Once
-	hushErr      error
-)
-
-// HushAgentTTL is how long the embedded hush agent lives before it
-// self-terminates. Upstream defaults to 30m, which silently kills the
-// credential mid-session on a long autonomous run: the daemon issues no CLI
-// activity to respawn the agent, so after 30m every model request fails with
-// "no credential". figaro needs the agent to outlive hour-long+ turns, so we
-// set it long; the daemon also keep-alives/respawns it (see angelus.go).
-// Override with FIGARO_HUSH_TTL (a Go duration) for testing.
-func HushAgentTTL() time.Duration {
-	if v := os.Getenv("FIGARO_HUSH_TTL"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			return d
-		}
-	}
-	return 24 * time.Hour
-}
-
 func MustHush() *managed.Hush {
-	hushOnce.Do(func() {
-		// FIGARO_HUSH_APP lets dev shells pivot the entire hush
-		// surface (identity, encrypted providers, socket) onto an
-		// isolated AppName without touching the user's real one.
-		appName := os.Getenv("FIGARO_HUSH_APP")
-		if appName == "" {
-			appName = "figaro"
-		}
-		ttl := HushAgentTTL()
-		opts := managed.Options{
-			AppName: appName,
-			TTL:     ttl,
-			// opts.TTL only sets THIS parent's view; the re-exec'd embedded
-			// agent re-loads its own config and would use the 30m default.
-			// hush binds HUSH_TTL via viper AutomaticEnv and passes AgentEnv to
-			// the child, so this is what actually gives the agent a long life
-			// (without it, the credential dies every 30m mid-session).
-			AgentEnv: []string{"HUSH_TTL=" + ttl.String()},
-			// Drive the passphrase UX from figaro's TUI so hush doesn't
-			// try to read /dev/tty in parallel with a bubbletea form
-			// holding the terminal. Falls back to a plain numbered
-			// prompt when the env can't host the TUI.
-			PromptPassphrase: func() ([]byte, error) {
-				// Test/dev bypass: a preset passphrase unlocks the hush without
-				// a TTY prompt, so a detached daemon doesn't hang on first run
-				// (dev shells autogenerate one). Honored ONLY for an isolated
-				// embedded hush (FIGARO_HUSH_DIR set) so it can never touch the
-				// user's real keystore.
-				if pass := os.Getenv("FIGARO_HUSH_PASSPHRASE"); pass != "" && os.Getenv("FIGARO_HUSH_DIR") != "" {
-					return []byte(pass), nil
-				}
-				// hush calls this for two different questions and used
-				// to get one answer: the create screen, shown to a
-				// returning user who was then told his correct
-				// passphrase was wrong. hushInstance is assigned before
-				// anything can call this (the callback fires from
-				// EnsureReady, never from managed.New), so it is safe
-				// to ask it which question this is.
-				return promptVaultPassphrase(hushInstance, appName)
-			},
-		}
-		// FIGARO_HUSH_DIR pins a fully isolated, EMBEDDED hush rooted at one
-		// directory (its own identity, encrypted secrets, and agent socket
-		// under <dir>/run). Hermetic dev shells set it so figaro runs its
-		// own hush instance: re-authenticated per shell: instead of
-		// reaching the user's shared agent, whose socket isn't visible
-		// inside the sandbox. Without it, hush resolves its normal surface.
-		if dir := os.Getenv("FIGARO_HUSH_DIR"); dir != "" {
-			opts.Mode = managed.ModeEmbedded
-			opts.Dirs = &hushconfig.Dirs{
-				ConfigDir:  filepath.Join(dir, "config"),
-				StateDir:   filepath.Join(dir, "state"),
-				RuntimeDir: filepath.Join(dir, "run"),
-			}
-		}
-		hushInstance, hushErr = managed.New(opts)
-	})
-	if hushErr != nil {
-		die("hush: %s", hushErr)
+	h, err := boot.Hush()
+	if err != nil {
+		die("%s", err)
 	}
-	return hushInstance
+	return h
 }
 
 // promptVaultPassphrase asks the question the vault's state actually
@@ -227,38 +139,6 @@ func buildPromptForm(d dressing) *rpc.FormInput {
 		return nil
 	}
 	return &rpc.FormInput{Context: snap, Outfits: d.names, Patch: d.patch}
-}
-
-// BuildFormTemplates loads body templates with user overrides.
-func BuildFormTemplates() *template.Template {
-	tmpls, err := form.LoadDefaultTemplates()
-	if err != nil {
-		slog.Warn("form templates load failed (disabled)", "err", err)
-		return nil
-	}
-	overrideDir := filepath.Join(config.DefaultConfigDir(), "form")
-	if _, err := os.Stat(overrideDir); err == nil {
-		if t, err := form.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
-			tmpls = t
-		} else {
-			slog.Warn("form override templates (using defaults)", "err", err)
-		}
-	}
-	return tmpls
-}
-
-// StateDir returns the directory for persistent figaro state
-// (OTel data, aria archives, aria forms). XDG_STATE_HOME and
-// FIGARO_STATE_DIR are honored to allow dev-shell isolation.
-func StateDir() string {
-	if d := os.Getenv("FIGARO_STATE_DIR"); d != "" {
-		return d
-	}
-	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
-		return filepath.Join(d, "figaro")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "state", "figaro")
 }
 
 // cacheDir returns the directory for ephemeral figaro data that can

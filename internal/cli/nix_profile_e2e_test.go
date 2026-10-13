@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/internal/boot"
 )
 
 func TestNixProfileCopilotE2E(t *testing.T) {
@@ -27,7 +29,7 @@ func TestNixProfileCopilotE2E(t *testing.T) {
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	loaded := MustLoadConfig()
-	resolver, err := BuildResolver(loaded, "copilot")
+	resolver, err := boot.BuildResolver(loaded, "copilot")
 	require.NoError(t, err)
 	token, err := resolver.Resolve()
 	require.NoError(t, err)

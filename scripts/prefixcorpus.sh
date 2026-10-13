@@ -23,7 +23,7 @@ cleanup() { [ -z "${GW_PID:-}" ] || kill "$GW_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "== building from $(git -C "$ROOT" rev-parse --short HEAD)"
-( cd "$ROOT" && go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro ) || exit 1
+( cd "$ROOT" && go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro ) || exit 1
 
 python3 "$ROOT/scripts/fake-gateway-bulk.py" "$PORT" "$BOX/requests.jsonl" "$SIZE" & GW_PID=$!
 sleep 1

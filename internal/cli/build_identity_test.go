@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jack-work/figaro/internal/boot"
+)
 
 // The build handshake must compare LIKE WITH LIKE.
 //
@@ -38,8 +42,8 @@ func TestBuildIdentityKind(t *testing.T) {
 		{"unknown", "other"},
 	}
 	for _, tc := range cases {
-		if got := buildIdentityKind(tc.in); got != tc.want {
-			t.Errorf("buildIdentityKind(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := boot.BuildIdentityKind(tc.in); got != tc.want {
+			t.Errorf("boot.BuildIdentityKind(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -48,17 +52,17 @@ func TestBuildIdentityKind(t *testing.T) {
 // must NOT die is a git-revision daemon beside a module-version CLI, while
 // two values of the SAME scheme remain a real mismatch.
 //
-// CANARY: delete the `buildIdentityKind(...) != buildIdentityKind(...)` case
+// CANARY: delete the `boot.BuildIdentityKind(...) != boot.BuildIdentityKind(...)` case
 // from checkDaemonBuild and the mixed pair falls through to die().
 func TestMixedSchemesAreNotRefused(t *testing.T) {
 	daemon, cli := "8e92e2677ac0", "v0.17.0"
-	if buildIdentityKind(daemon) == buildIdentityKind(cli) {
+	if boot.BuildIdentityKind(daemon) == boot.BuildIdentityKind(cli) {
 		t.Fatalf("fixture is wrong: %q and %q must be different schemes", daemon, cli)
 	}
-	if buildIdentityKind("8e92e2677ac0") != buildIdentityKind("b7e91d23aaaa") {
+	if boot.BuildIdentityKind("8e92e2677ac0") != boot.BuildIdentityKind("b7e91d23aaaa") {
 		t.Fatal("two revisions must share a scheme, so an inequality between them is real")
 	}
-	if buildIdentityKind("v0.17.0") != buildIdentityKind("v0.16.1") {
+	if boot.BuildIdentityKind("v0.17.0") != boot.BuildIdentityKind("v0.16.1") {
 		t.Fatal("two module versions must share a scheme, so an inequality between them is real")
 	}
 }

@@ -103,7 +103,7 @@ if [ -z "$BIN" ]; then
   # Stamp the revision. An unstamped CLI reports `unknown` and will happily
   # talk to a wrong-version daemon, which has cost at least one aria twenty
   # minutes of debugging "a bug that was two binaries".
-  ( cd "$REPO" && go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro ) \
+  ( cd "$REPO" && go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro ) \
     || { echo "ariastress: build failed" >&2; exit 1; }
 fi
 echo "== binary: $BIN ($REV)"

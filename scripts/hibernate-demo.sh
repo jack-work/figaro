@@ -104,7 +104,7 @@ chmod +x "$BOX/teardown.sh"
 # to compare.
 echo "== building $(git -C "$ROOT" rev-parse --short HEAD)"
 ( cd "$ROOT" && go build \
-    -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" \
+    -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" \
     -o "$BIN" ./cmd/figaro )
 
 # Egregiously short on purpose: one minute is the floor above "disabled", and a

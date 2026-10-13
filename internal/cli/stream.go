@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/sdk"
@@ -65,7 +66,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			Cols:    term.Width(),
 			Rows:    term.Height(),
 			Term:    os.Getenv("TERM"),
-			Binary:  BuildRevision(),
+			Binary:  boot.BuildRevision(),
 			Command: strings.Join(os.Args, " "),
 		})
 		if terr != nil {

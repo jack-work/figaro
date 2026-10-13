@@ -315,7 +315,7 @@ missing-credential** path. Two consequences:
 
 ```sh
 nix develop .#tools --command go build \
-  -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
+  -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse --short=12 HEAD)" \
   -o /var/tmp/paint-<hunter>/figaro ./cmd/figaro
 ```
 

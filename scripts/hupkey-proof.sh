@@ -27,7 +27,7 @@ rm -rf "$ROOT"; mkdir -p "$ROOT/run" "$ROOT/state"
 
 # Stamped: a plain build in a WORKTREE records no revision at all (trap: the
 # CLI/daemon build handshake then has nothing to compare).
-go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" \
+go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" \
   -o "$BIN" ./cmd/figaro || exit 1
 echo "binary: $(md5sum "$BIN" | cut -d' ' -f1)  $("$BIN" version | head -1)"
 

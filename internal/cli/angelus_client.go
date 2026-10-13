@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/exec"
@@ -16,28 +17,11 @@ import (
 	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
-func AngelusRuntimeDir() string {
-	// FIGARO_RUNTIME_DIR is an explicit override used as-is (no
-	// "figaro" suffix appended): lets dev shells point at an
-	// isolated runtime without colliding with the user's daemon.
-	if d := os.Getenv("FIGARO_RUNTIME_DIR"); d != "" {
-		return d
-	}
-	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
-		return filepath.Join(d, "figaro")
-	}
-	return filepath.Join(os.TempDir(), "figaro")
-}
-
-func AngelusSocketPath() string {
-	return filepath.Join(AngelusRuntimeDir(), "angelus.sock")
-}
-
 // angelusStartupLog is where a detaching angelus writes its early stderr.
 // The daemon inherits the descriptor for its lifetime, so it doubles as a
 // daemon log; ensureAngelus only truncates it when no daemon answered.
 func angelusStartupLog() string {
-	return filepath.Join(AngelusRuntimeDir(), "angelus.startup")
+	return filepath.Join(boot.AngelusRuntimeDir(), "angelus.startup")
 }
 
 // startupDiagnosisLines bounds how much of the daemon's early output is
@@ -90,7 +74,7 @@ func isTestBinary(exe string) bool {
 
 // ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
-	sockPath := AngelusSocketPath()
+	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := sdk.DialAngelus(ep); err == nil {
 		checkDaemonBuild(cli)
@@ -111,7 +95,7 @@ func ensureAngelus() {
 	cmd.SysProcAttr = detachAttr()
 	// Best-effort: if we cannot open the log, fall back to the old
 	// discard rather than refusing to start a daemon over it.
-	if err := os.MkdirAll(AngelusRuntimeDir(), 0o700); err == nil {
+	if err := os.MkdirAll(boot.AngelusRuntimeDir(), 0o700); err == nil {
 		// APPEND, not truncate. Several clients racing a cold start each
 		// open this file, and O_CREATE|O_TRUNC let a loser wipe the log the
 		// winner was writing into -- including the only trace a daemon
@@ -162,7 +146,7 @@ func ensureAngelus() {
 		switch {
 		case !deferred.IsZero() && time.Since(deferred) > incumbentGrace:
 			die("angelus stood down for another instance that never answered on %s%s",
-				AngelusSocketPath(), startupDiagnosis())
+				boot.AngelusSocketPath(), startupDiagnosis())
 		case time.Since(start) > startupHardCap:
 			die("angelus has not answered in %s%s", startupHardCap, startupDiagnosis())
 		}
@@ -176,18 +160,12 @@ func ensureAngelus() {
 	}
 }
 
-// AriaRoot is the aria store's directory. ONE spelling, because the
-// startup notice is only truthful while every caller agrees on it, and
-// the notice is the one that would drift silently -- it degrades to
-// "still starting" with no error.
-func AriaRoot() string { return filepath.Join(StateDir(), "arias") }
-
 // startupActivity says what the daemon is doing, and only says the thing
 // it can check. Asserting a migration that is not happening is what sends
 // a user to pkill -- a wrong explanation is worse than none. NeedsFlatten
 // is one file read.
 func startupActivity() string {
-	if need, err := xwal.NeedsFlatten(AriaRoot()); err == nil && need {
+	if need, err := xwal.NeedsFlatten(boot.AriaRoot()); err == nil && need {
 		return "migrating the store layout: let it finish; interrupting a migration " +
 			"is the one thing that can cost you arias"
 	}
@@ -212,7 +190,7 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	_ = loaded
 	ensureHush()
 	ensureAngelus()
-	ep := transport.UnixEndpoint(AngelusSocketPath())
+	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
 	cli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		die("connect angelus: %s", err)
@@ -267,7 +245,7 @@ func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
 // rather than a stale process. Naming both revisions turns an hour of
 // confusion into one command.
 func checkDaemonBuild(cli *sdk.Angelus) {
-	mine := BuildRevision()
+	mine := boot.BuildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
@@ -299,7 +277,7 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 				"        They may or may not be the same release. If output is missing\n"+
 				"        or garbled, run `figaro stop`: the next command starts an\n"+
 				"        angelus from THIS binary, and the pair matches by construction.\n",
-			short12(st.Build), buildIdentityKind(st.Build), short12(mine), buildIdentityKind(mine))
+			short12(st.Build), boot.BuildIdentityKind(st.Build), short12(mine), boot.BuildIdentityKind(mine))
 	case handshakeRefuse:
 		die("running angelus is a different build than this CLI:\n"+
 			"  daemon %s\n  cli    %s\n"+
@@ -318,7 +296,7 @@ func buildHandshake(daemon, mine string) handshakeVerdict {
 		return handshakeCLIUnknown
 	case daemon == "":
 		return handshakeDaemonOld
-	case buildIdentityKind(daemon) != buildIdentityKind(mine):
+	case boot.BuildIdentityKind(daemon) != boot.BuildIdentityKind(mine):
 		return handshakeMixedSchemes
 	default:
 		return handshakeRefuse

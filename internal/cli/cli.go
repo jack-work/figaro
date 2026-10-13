@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/mark"
 	"os"
 	"strconv"
@@ -58,7 +59,7 @@ func Run(progName string, args []string) {
 	if len(args) > 0 {
 		switch args[0] {
 		case "--version", "-V":
-			runVersion()
+			boot.PrintVersion(os.Stdout)
 			return
 		}
 	}
@@ -103,10 +104,10 @@ func Run(progName string, args []string) {
 
 	// The sinks answer to config before they open: level and directory,
 	// with FIGARO_LOG_LEVEL still overriding for a single noisy run.
-	telemetryDir := StateDir()
+	telemetryDir := boot.StateDir()
 	if loaded, lerr := config.Load(config.DefaultConfigDir()); lerr == nil {
 		figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
-		telemetryDir = loaded.TelemetryDir(StateDir())
+		telemetryDir = loaded.TelemetryDir(boot.StateDir())
 	}
 	shutdown, err := figOtel.Init(ctx, telemetryDir)
 	if err != nil {
@@ -1453,7 +1454,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Short:   "Print build identity (revision, exe path, Go version)",
 		Usage:   "version",
 		Run: func(ctx *cmdkit.RunContext) error {
-			runVersion()
+			boot.PrintVersion(os.Stdout)
 			return nil
 		},
 	})

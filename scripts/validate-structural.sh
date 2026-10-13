@@ -105,7 +105,7 @@ trap cleanup EXIT
 step "build (stamped: a worktree records no revision otherwise)"
 SHA=$(cd "$ROOT" && git rev-parse HEAD)
 if (cd "$ROOT" && nix develop -c go build \
-      -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$SHA" \
+      -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$SHA" \
       -o "$BIN" ./cmd/figaro) 2>"$LOG/build.err"; then
   ok "binary built"
 else

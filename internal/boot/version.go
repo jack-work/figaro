@@ -1,4 +1,4 @@
-package cli
+package boot
 
 import (
 	"fmt"
@@ -22,13 +22,6 @@ var (
 	// where the revision is the only identity there is.
 	semver = ""
 )
-
-// runVersion prints binary identity: VCS revision, build state,
-// Go version, OS/arch, and the path under which this binary was built.
-// Designed so a wrong binary on $PATH stands out.
-func runVersion() {
-	printVersion(os.Stdout)
-}
 
 // BuildRevision is this binary's VCS revision, from -ldflags when set and
 // debug.ReadBuildInfo otherwise. Empty when neither knows (a bare `go build`
@@ -62,7 +55,7 @@ func moduleVersion(info *debug.BuildInfo) string {
 	return ""
 }
 
-func printVersion(w io.Writer) {
+func PrintVersion(w io.Writer) {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		fmt.Fprintln(w, "figaro (build info unavailable)")
@@ -130,7 +123,7 @@ func currentExe() string {
 }
 
 // buildIdentityKind names WHICH identity scheme a build string belongs to.
-func buildIdentityKind(s string) string {
+func BuildIdentityKind(s string) string {
 	if s == "" {
 		return "unknown"
 	}

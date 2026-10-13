@@ -88,7 +88,7 @@ pp_init() {
   # (pp_figaro_daemons). The old "no nix dev shells" note was about RUNNING
   # figaro under a shared dev root; it never applied to the compiler.
   ( cd "$PP_REPO" && nix develop .#tools --command go build \
-      -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
+      -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse --short=12 HEAD)" \
       -o "$PP_BIN" ./cmd/figaro ) || return 1
 
   # Prove which binary we will drive. Trap #11: two arms that produce identical

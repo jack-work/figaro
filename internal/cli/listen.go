@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"log/slog"
 	"os"
@@ -49,7 +50,7 @@ func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, 
 			Cols:    term.Width(),
 			Rows:    term.Height(),
 			Term:    os.Getenv("TERM"),
-			Binary:  BuildRevision(),
+			Binary:  boot.BuildRevision(),
 			Command: strings.Join(os.Args, " "),
 			Note:    note,
 		})

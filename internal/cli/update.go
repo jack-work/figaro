@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/update"
 )
@@ -28,7 +29,7 @@ func updateCache() *update.Cache {
 // newer release is comparable and available. The passive nudge lives in
 // the help surfaces exactly so it never interleaves with real output.
 func helpVersionLine() string {
-	cur := update.CurrentVersion(commit)
+	cur := update.CurrentVersion(boot.BuildRevision())
 	line := "figaro " + cur
 	if info := updateCache().Read(30 * 24 * time.Hour); info != nil {
 		info.Current = cur
@@ -60,7 +61,7 @@ func runUpdateCheck(loaded *config.Loaded) {
 	ttl := time.Duration(loaded.UpdateCheckTTLHours()) * time.Hour
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	info := update.Check(ctx, updateCache(), ttl, figaroModule, update.CurrentVersion(commit))
+	info := update.Check(ctx, updateCache(), ttl, figaroModule, update.CurrentVersion(boot.BuildRevision()))
 	if msg := update.Nudge(info, figaroModule); msg != "" {
 		fmt.Fprintln(stderrw, msg)
 	}
@@ -100,7 +101,7 @@ func runUpdate(loaded *config.Loaded, args []string) error {
 		}
 	}
 
-	current := update.CurrentVersion(commit)
+	current := update.CurrentVersion(boot.BuildRevision())
 	cache := updateCache()
 	ttl := time.Duration(loaded.UpdateCheckTTLHours()) * time.Hour
 	if force {

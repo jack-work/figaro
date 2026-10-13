@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"github.com/jack-work/figaro/internal/boot"
+
 	"encoding/json"
 	"fmt"
 	"net"
@@ -35,7 +37,7 @@ type fakeHushAgent struct {
 func newFakeHushAgent(t *testing.T, dir string) *fakeHushAgent {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o700))
-	sock := hushAgentSocket(dir)
+	sock := boot.HushAgentSocket(dir)
 	ln, err := net.Listen("unix", sock)
 	require.NoError(t, err)
 	a := &fakeHushAgent{sock: sock, ln: ln, done: make(chan struct{})}
@@ -78,7 +80,7 @@ func isolateRuntime(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("FIGARO_RUNTIME_DIR", dir)
-	require.Equal(t, dir, AngelusRuntimeDir())
+	require.Equal(t, dir, boot.AngelusRuntimeDir())
 	return dir
 }
 
@@ -86,11 +88,11 @@ func TestClaimHushAgentRecordsTheSocketItOwns(t *testing.T) {
 	isolateRuntime(t)
 	hushRun := filepath.Join(t.TempDir(), "run")
 
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRun))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, hushRun))
 
-	claimed, err := os.ReadFile(hushClaimPath())
+	claimed, err := os.ReadFile(boot.HushClaimPath())
 	require.NoError(t, err)
-	require.Equal(t, hushAgentSocket(hushRun)+"\n", string(claimed))
+	require.Equal(t, boot.HushAgentSocket(hushRun)+"\n", string(claimed))
 }
 
 // The claim is a promise that the agent is figaro's to stop. An external
@@ -105,9 +107,9 @@ func TestClaimHushAgentRefusesToClaimAnExternalHush(t *testing.T) {
 	isolateRuntime(t)
 	hushRun := filepath.Join(t.TempDir(), "run")
 
-	require.NoError(t, ClaimHushAgent(managed.ModeExternal, hushRun))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeExternal, hushRun))
 
-	_, err := os.Stat(hushClaimPath())
+	_, err := os.Stat(boot.HushClaimPath())
 	require.ErrorIs(t, err, os.ErrNotExist,
 		"an external hush agent must never be claimed, and so never stopped")
 }
@@ -115,7 +117,7 @@ func TestClaimHushAgentRefusesToClaimAnExternalHush(t *testing.T) {
 func TestRetireHushAgentShutsDownTheClaimedAgent(t *testing.T) {
 	isolateRuntime(t)
 	agent := newFakeHushAgent(t, filepath.Join(t.TempDir(), "run"))
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, filepath.Dir(agent.sock)))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, filepath.Dir(agent.sock)))
 
 	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
@@ -132,7 +134,7 @@ func TestRetireHushAgentShutsDownTheClaimedAgent(t *testing.T) {
 
 	// The claim is spent: a second stop must not try again, and a stale
 	// claim naming a recycled socket path is how this reaches a stranger.
-	_, err = os.Stat(hushClaimPath())
+	_, err = os.Stat(boot.HushClaimPath())
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
@@ -144,7 +146,7 @@ func TestRetireHushAgentTouchesOnlyTheClaimedSocket(t *testing.T) {
 	isolateRuntime(t)
 	mine := newFakeHushAgent(t, filepath.Join(t.TempDir(), "mine"))
 	theirs := newFakeHushAgent(t, filepath.Join(t.TempDir(), "theirs"))
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, filepath.Dir(mine.sock)))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, filepath.Dir(mine.sock)))
 
 	_, stopped, _, err := retireHushAgent()
 	require.NoError(t, err)
@@ -173,12 +175,12 @@ func TestRetireHushAgentWithoutAClaimDoesNothing(t *testing.T) {
 func TestRetireHushAgentClearsAClaimOnADeadSocket(t *testing.T) {
 	dir := isolateRuntime(t)
 	dead := filepath.Join(t.TempDir(), "run")
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, dead))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, dead))
 
 	sock, stopped, _, err := retireHushAgent()
 	require.NoError(t, err, "a socket nobody answers is the outcome we wanted")
 	require.False(t, stopped)
-	require.Equal(t, hushAgentSocket(dead), sock)
+	require.Equal(t, boot.HushAgentSocket(dead), sock)
 
 	_, err = os.Stat(filepath.Join(dir, "hush-agent"))
 	require.ErrorIs(t, err, os.ErrNotExist)
@@ -205,7 +207,7 @@ func deadPID(t *testing.T) int {
 func claimAs(t *testing.T, runtimeDir, hushRuntimeDir string) {
 	t.Helper()
 	t.Setenv("FIGARO_RUNTIME_DIR", runtimeDir)
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRuntimeDir))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, hushRuntimeDir))
 }
 
 // One agent, two daemons. `.#share-hush`, `.#snapshot` and `.#sandbox` all
@@ -222,7 +224,7 @@ func TestRetireHushAgentLeavesAnAgentAnotherLiveDaemonIsUsing(t *testing.T) {
 	claimAs(t, theirRuntime, hushRun)
 
 	myRuntime := isolateRuntime(t)
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRun))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, hushRun))
 
 	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
@@ -233,11 +235,11 @@ func TestRetireHushAgentLeavesAnAgentAnotherLiveDaemonIsUsing(t *testing.T) {
 		"the other daemon's agent was shut down from under it")
 
 	// My claim and my registration are gone; theirs is untouched.
-	_, err = os.Stat(hushClaimPath())
+	_, err = os.Stat(boot.HushClaimPath())
 	require.ErrorIs(t, err, os.ErrNotExist)
-	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(myRuntime)))
+	_, err = os.Stat(filepath.Join(boot.HushUsersDir(sock), boot.HushUserKey(myRuntime)))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(theirRuntime)))
+	_, err = os.Stat(filepath.Join(boot.HushUsersDir(sock), boot.HushUserKey(theirRuntime)))
 	require.NoError(t, err)
 }
 
@@ -253,7 +255,7 @@ func TestRetireHushAgentPrunesADeadDaemonAndRetires(t *testing.T) {
 	claimAs(t, goneRuntime, hushRun)
 
 	isolateRuntime(t)
-	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRun))
+	require.NoError(t, boot.ClaimHushAgent(managed.ModeEmbedded, hushRun))
 
 	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
@@ -261,7 +263,7 @@ func TestRetireHushAgentPrunesADeadDaemonAndRetires(t *testing.T) {
 	require.Empty(t, heldBy)
 	<-agent.done
 
-	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(goneRuntime)))
+	_, err = os.Stat(filepath.Join(boot.HushUsersDir(sock), boot.HushUserKey(goneRuntime)))
 	require.ErrorIs(t, err, os.ErrNotExist, "the dead daemon's registration should have been pruned")
 }
 
@@ -299,7 +301,7 @@ func TestAStaleClaimCannotAdoptTheAgentOfALiveDaemon(t *testing.T) {
 func asDaemon(t *testing.T, runtimeDir string) {
 	t.Helper()
 	t.Setenv("FIGARO_RUNTIME_DIR", runtimeDir)
-	require.Equal(t, runtimeDir, AngelusRuntimeDir())
+	require.Equal(t, runtimeDir, boot.AngelusRuntimeDir())
 }
 
 // The rule, in one sequence: a shared agent lives until its LAST daemon
@@ -336,7 +338,7 @@ func TestASharedHushAgentLivesUntilItsLastDaemonStops(t *testing.T) {
 
 	// The crashed daemon's registration is gone on the way past, so it can
 	// never pin the agent: that is what makes the last stop able to act.
-	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(crashed)))
+	_, err = os.Stat(filepath.Join(boot.HushUsersDir(sock), boot.HushUserKey(crashed)))
 	require.ErrorIs(t, err, os.ErrNotExist)
 
 	// SECOND STOP: nobody is left, so the agent goes.
@@ -353,7 +355,7 @@ func TestASharedHushAgentLivesUntilItsLastDaemonStops(t *testing.T) {
 	require.Equal(t, []string{"shutdown"}, agent.received())
 
 	// Nothing of any of the three is left behind.
-	entries, err := os.ReadDir(hushUsersDir(sock))
+	entries, err := os.ReadDir(boot.HushUsersDir(sock))
 	require.NoError(t, err)
 	require.Empty(t, entries, "the registry should be empty once every daemon has stopped")
 }

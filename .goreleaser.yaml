@@ -40,12 +40,12 @@ builds:
       # reports exactly what a nix figaro reports. semver carries NO leading
       # v: goreleaser's .Version is already stripped, trimprefix is belt and
       # braces for the snapshot/nightly paths where it is not.
-      - -X github.com/jack-work/figaro/internal/cli.semver={{ trimprefix .Version "v" }}
-      - -X github.com/jack-work/figaro/internal/cli.commit={{ .FullCommit }}
+      - -X github.com/jack-work/figaro/internal/boot.semver={{ trimprefix .Version "v" }}
+      - -X github.com/jack-work/figaro/internal/boot.commit={{ .FullCommit }}
       # Release builds run on a clean checkout, so the honest value is empty.
       # A dirty tree only ever happens under --snapshot, and saying so keeps
       # a locally-built snapshot from impersonating a release.
-      - -X github.com/jack-work/figaro/internal/cli.commitDirty={{ if .IsGitDirty }}true{{ end }}
+      - -X github.com/jack-work/figaro/internal/boot.commitDirty={{ if .IsGitDirty }}true{{ end }}
 
 archives:
   - id: figaro

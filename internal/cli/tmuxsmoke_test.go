@@ -231,7 +231,7 @@ func smokeBinary(t *testing.T) string {
 	}
 	bin := filepath.Join(t.TempDir(), "figaro")
 	rev, _ := exec.Command("git", "rev-parse", "--short=12", "HEAD").Output()
-	ld := fmt.Sprintf("-X github.com/jack-work/figaro/internal/cli.commit=%s",
+	ld := fmt.Sprintf("-X github.com/jack-work/figaro/internal/boot.commit=%s",
 		strings.TrimSpace(string(rev)))
 	cmd := exec.Command("go", "build", "-ldflags", ld, "-o", bin, "./cmd/figaro")
 	cmd.Dir = repoRoot(t)

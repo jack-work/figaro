@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -11,126 +9,9 @@ import (
 	"syscall"
 
 	"github.com/jack-work/hush/client"
-	"github.com/jack-work/hush/managed"
+
+	"github.com/jack-work/figaro/internal/boot"
 )
-
-// The hush agent is the daemon's dependent, and nothing used to retire it.
-//
-// hush/managed spawns an EMBEDDED agent by re-exec'ing the consuming binary
-// with HUSH_AGENT_CHILD=1, and its contract is that the agent OUTLIVES the
-// process that spawned it: a sound default for hush, whose agent is shared
-// across consumers and across upgrades. figaro's is not shared. It is scoped
-// to figaro's own AppName, it is spawned by the daemon, it is kept alive by
-// the daemon (keepHushAlive), and when the daemon is gone nothing will ever
-// ask it anything again. It then sits on its socket holding an unlocked
-// identity until its TTL, which figaro sets to 24 hours.
-//
-// So retiring it is figaro's policy, not hush's, and `figaro stop` is where
-// it belongs.
-//
-// WHICH agent is the whole difficulty. Every figaro on the machine is the
-// same executable with the same argv; a dev shell's agent, the user's real
-// one and this one are distinguishable only by the socket they answer. And
-// the socket a CLI would DERIVE from its own environment is not necessarily
-// the one the daemon it is stopping actually has: FIGARO_HUSH_APP and
-// FIGARO_HUSH_DIR are shell state, and a `figaro stop` typed in the wrong
-// shell would then reach into another figaro's vault. So the daemon
-// ADVERTISES the agent it owns, and stop reads that claim. The claim is a
-// fact recorded by the only process that knows it, rather than a guess
-// reconstructed by a process that does not.
-
-// hushClaimPath is where a daemon advertises the embedded hush agent it
-// owns: one line, the absolute path of that agent's socket. It sits beside
-// angelus.pid, in the runtime dir, so it is scoped exactly the way the
-// daemon is.
-//
-// Its EXISTENCE is the claim "this agent is mine to stop". A daemon using an
-// external hush (the user's own `hush up`) writes nothing, and stop therefore
-// has nothing to act on, which is the correct answer rather than a check
-// somebody has to remember to write.
-func hushClaimPath() string {
-	return filepath.Join(AngelusRuntimeDir(), "hush-agent")
-}
-
-// ONE AGENT CAN HAVE SEVERAL DAEMONS, and a claim alone cannot see them.
-//
-// The agent belongs to a hush SURFACE, not to a daemon. Three dev shells
-// (`.#share-hush`, `.#snapshot`, `.#sandbox`) exist precisely to isolate the
-// runtime dir while SHARING that surface, so a sandbox daemon and the user's
-// real one both use /tmp/figaro-hush/agent.sock and each writes a claim
-// naming it. A claim-only stop in the sandbox would then shut down the agent
-// the live daemon is mid-turn against: keepHushAlive would rebuild it within
-// five minutes, which is five minutes of "no credential" and exactly the
-// failure keepHushAlive exists to prevent.
-//
-// The same shape answers the stale-claim question. A runtime dir on disk
-// (`/var/tmp/...`, which a test or a dev root may well use) outlives a
-// reboot while the agent socket under /tmp does not, so a claim can survive
-// into a world where a DIFFERENT daemon has since started an agent at that
-// same path. Adopting it would be the same misfire arriving by another road.
-//
-// So a daemon registers as a USER of the socket, beside the socket, and stop
-// retires the agent only when no other live daemon is still registered.
-//
-// Beside the socket is the point: that directory is the only path two
-// daemons are guaranteed to agree on, because they derive it from the socket
-// they already share. A figaro-owned registry under os.TempDir() would not
-// survive contact with nix, which rewrites TMPDIR per shell: that is the
-// documented reason the shared-hush preset has to reset TMPDIR at all (see
-// mkHushKnob in flake.nix), and a registry with the same flaw would have
-// every shell believing it was alone.
-func hushUsersDir(sock string) string {
-	return filepath.Join(filepath.Dir(sock), "figaro-users")
-}
-
-// hushUserKey names this daemon's registry entry. The runtime dir is the
-// daemon's identity here (it holds the socket, the pid file and the claim),
-// and it is hashed because it is a path being used as a filename.
-func hushUserKey(runtimeDir string) string {
-	sum := sha256.Sum256([]byte(runtimeDir))
-	return hex.EncodeToString(sum[:8])
-}
-
-// ClaimHushAgent records the socket of the embedded agent this daemon owns,
-// and registers this daemon as one of that agent's users.
-//
-// It takes the mode and the runtime dir rather than a *managed.Hush so the
-// external case is reachable from a test: constructing a managed.Hush in
-// external mode requires a live external agent, which a test may not have,
-// and the one branch that must never be wrong is exactly the one that would
-// then go unexercised.
-func ClaimHushAgent(mode managed.Mode, hushRuntimeDir string) error {
-	if mode != managed.ModeEmbedded {
-		// An external agent belongs to the user or to a service manager.
-		// Killing it is not ours to do.
-		return nil
-	}
-	if hushRuntimeDir == "" {
-		return errors.New("hush claim: empty runtime dir")
-	}
-	sock := hushAgentSocket(hushRuntimeDir)
-	mine := AngelusRuntimeDir()
-	if err := os.MkdirAll(mine, 0o700); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(hushUsersDir(sock), 0o700); err != nil {
-		return err
-	}
-	// The entry holds the runtime dir in the clear: that is what a later
-	// stop needs in order to ask whether this daemon is still alive.
-	if err := os.WriteFile(filepath.Join(hushUsersDir(sock), hushUserKey(mine)), []byte(mine+"\n"), 0o600); err != nil {
-		return err
-	}
-	return os.WriteFile(hushClaimPath(), []byte(sock+"\n"), 0o600)
-}
-
-// hushAgentSocket is where hush/managed puts an agent's socket for a given
-// runtime dir. It mirrors managed.setupEmbedded, which joins "agent.sock"
-// onto the resolved RuntimeDir; hush exposes the dir (via Config) but not
-// the assembled path.
-func hushAgentSocket(runtimeDir string) string {
-	return filepath.Join(runtimeDir, "agent.sock")
-}
 
 // retireHushAgent shuts down the agent the daemon claimed, and drops the
 // claim. It reports the socket it acted on, whether an agent was actually
@@ -146,7 +27,7 @@ func hushAgentSocket(runtimeDir string) string {
 // reported, because a vault that refuses to shut down is worth a line on
 // stderr.
 func retireHushAgent() (sock string, stopped bool, heldBy []string, err error) {
-	raw, readErr := os.ReadFile(hushClaimPath())
+	raw, readErr := os.ReadFile(boot.HushClaimPath())
 	if readErr != nil {
 		if errors.Is(readErr, os.ErrNotExist) {
 			return "", false, nil, nil
@@ -155,14 +36,14 @@ func retireHushAgent() (sock string, stopped bool, heldBy []string, err error) {
 	}
 	sock = strings.TrimSpace(string(raw))
 	if sock == "" {
-		os.Remove(hushClaimPath())
+		os.Remove(boot.HushClaimPath())
 		return "", false, nil, nil
 	}
 
 	// Deregister first, so the question below is "is anyone ELSE using it".
-	os.Remove(filepath.Join(hushUsersDir(sock), hushUserKey(AngelusRuntimeDir())))
+	os.Remove(filepath.Join(boot.HushUsersDir(sock), boot.HushUserKey(boot.AngelusRuntimeDir())))
 	// The claim is spent whatever the answer turns out to be.
-	defer os.Remove(hushClaimPath())
+	defer os.Remove(boot.HushClaimPath())
 
 	heldBy, err = otherLiveHushUsers(sock)
 	if err != nil {
@@ -194,7 +75,7 @@ func retireHushAgent() (sock string, stopped bool, heldBy []string, err error) {
 // is the direction to be wrong in: the agent lingers until the next stop
 // instead of being taken out from under a daemon that is using it.
 func otherLiveHushUsers(sock string) ([]string, error) {
-	dir := hushUsersDir(sock)
+	dir := boot.HushUsersDir(sock)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

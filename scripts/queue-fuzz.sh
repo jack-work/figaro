@@ -22,7 +22,7 @@ cleanup() {
 trap cleanup EXIT
 
 rm -rf "$ROOT"; mkdir -p "$ROOT/run" "$ROOT/state"
-go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" \
+go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" \
   -o "$BIN" ./cmd/figaro || exit 1
 echo "binary $(md5sum "$BIN" | cut -d' ' -f1)"
 

@@ -372,7 +372,7 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 			t.Skipf("git rev-parse: %v", err)
 		}
 		build := exec.Command("go", "build", "-ldflags",
-			"-X github.com/jack-work/figaro/internal/cli.commit="+strings.TrimSpace(string(rev)),
+			"-X github.com/jack-work/figaro/internal/boot.commit="+strings.TrimSpace(string(rev)),
 			"-o", bin, "../../cmd/figaro")
 		if out, err := build.CombinedOutput(); err != nil {
 			t.Fatalf("build figaro: %v: %s", err, out)

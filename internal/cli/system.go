@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 		reportRetiredHushAgent()
 	}
 
-	sockPath := AngelusSocketPath()
+	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if keepPIDs {
 		cli, err := sdk.DialAngelus(ep)
@@ -58,7 +59,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 		return
 	}
 
-	pidBytes, err := os.ReadFile(filepath.Join(AngelusRuntimeDir(), "angelus.pid"))
+	pidBytes, err := os.ReadFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid"))
 	if err != nil {
 		os.Remove(sockPath)
 		fmt.Fprintln(stderrw, "angelus pid file missing; socket removed")

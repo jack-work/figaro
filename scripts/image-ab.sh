@@ -82,7 +82,7 @@ fi
 # revision at all (Go's VCS autodetection needs .git to be a directory, and a
 # worktree's is a file), so `figaro version` would say "unknown" in both arms.
 
-stamp() { echo "-X github.com/jack-work/figaro/internal/cli.commit=$1"; }
+stamp() { echo "-X github.com/jack-work/figaro/internal/boot.commit=$1"; }
 
 AFTER_SHA=$(git rev-parse HEAD)
 echo "building after  ($(git rev-parse --abbrev-ref HEAD) @ ${AFTER_SHA:0:7})"

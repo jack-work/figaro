@@ -30,7 +30,7 @@ trap cleanup EXIT
 
 if [[ -z "${BIN:-}" ]]; then
   BIN=$BOX/figaro
-  (cd "$ROOT" && go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro) || exit 1
+  (cd "$ROOT" && go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" -o "$BIN" ./cmd/figaro) || exit 1
 fi
 mkdir -p "$BOX"/{cfg/outfits,state,rt,cache} "$BOX/tree/alpha" "$BOX/tree/alpine" "$BOX/tree/beta"
 printf 'You are a test agent.\n' > "$BOX/cfg/credo.md"
