@@ -15,7 +15,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// stripBashFences removes markdown code fences.
 func stripBashFences(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
@@ -31,7 +30,6 @@ func stripBashFences(s string) string {
 	return s
 }
 
-// plainPrompt streams the response and returns an exit code.
 func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer, d dressing) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -75,9 +73,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 }
 
-// verbatimPrompt dumps the raw wire frames as JSON (one object per line)
-// and returns an exit code. No formatting, no delta application: the
-// literal protocol stream.
+// verbatimPrompt writes the wire frames as JSON lines, with no delta application.
 func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer, d dressing) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -121,8 +117,6 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 	}
 }
 
-// verbatimSink writes every wire notification as a JSON line
-// {"method","params"}: the protocol exactly as it arrives, no decoding.
 type verbatimSink struct {
 	out      io.Writer
 	doneCh   chan struct{}
@@ -151,15 +145,11 @@ func (s *verbatimSink) handle(method string, params json.RawMessage) {
 	}
 }
 
-// plainSink streams the assistant unit to out as raw text for
-// pipes/scripts: it maintains the current unit's node list and writes the
-// new tail of its flattened text on each update. The user's prompt unit
-// is skipped. Tool nodes contribute their raw output (no widget chrome);
-// raw-mode callers (figaro x) prompt the model for plain output anyway.
+// plainSink writes the new tail of the assistant unit's flattened text on each update.
 type plainSink struct {
 	out      io.Writer
 	client   *aria.Client
-	written  string // exactly what's been emitted for the current assistant unit
+	written  string
 	doneCh   chan struct{}
 	sawError bool
 }
@@ -177,7 +167,7 @@ func newPlainSink(out io.Writer) *plainSink {
 		}
 		s.emit(plainText(m.Nodes))
 		if s.written != "" {
-			s.out.Write([]byte("\n")) // terminate the unit's line
+			s.out.Write([]byte("\n"))
 		}
 		s.written = ""
 	}
@@ -205,10 +195,8 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 	}
 }
 
-// emit writes the assistant unit's new text tail. It only emits when the
-// flattened text grows monotonically (the streaming case); a structural
-// change that rewrites already-printed text is swallowed rather than
-// reprinted: raw mode keeps the streamed copy.
+// emit writes only monotonic growth; a rewrite of printed text is swallowed, not
+// reprinted.
 func (s *plainSink) emit(text string) {
 	b := strings.TrimRight(text, "\n")
 	if strings.HasPrefix(b, s.written) {
@@ -217,14 +205,12 @@ func (s *plainSink) emit(text string) {
 	s.written = b
 }
 
-// plainText flattens a node list to raw text: prose markdown verbatim,
-// tool nodes as their streamed output.
 func plainText(nodes []livedoc.Node) string {
 	var parts []string
 	for _, n := range nodes {
 		switch n.Type {
 		case livedoc.NodeThinking:
-			// Thinking is omitted from raw output (it's for pipes/scripts).
+			// Omitted from raw output.
 		case livedoc.NodeTool:
 			if strings.TrimSpace(n.Output) != "" {
 				parts = append(parts, n.Output)

@@ -9,8 +9,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// tallTableMarkdown is a table that needs well over a dozen physical rows once
-// its cells wrap.
 func tallTableMarkdown() string {
 	var b strings.Builder
 	b.WriteString("| state | meaning |\n|---|---|\n")
@@ -29,8 +27,6 @@ func proseNode(md string) livedoc.Node {
 	return livedoc.Node{Type: livedoc.NodeProse, Markdown: md}
 }
 
-// TestNodeExpandable is the predicate the pager's gesture asks before it
-// toggles: true exactly when toggling would reveal something.
 func TestNodeExpandable(t *testing.T) {
 	const w = 40
 	cases := []struct {
@@ -40,7 +36,6 @@ func TestNodeExpandable(t *testing.T) {
 	}{
 		{"tool with output", livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Output: "one\ntwo"}, true},
 		{"tool without output", livedoc.Node{Type: livedoc.NodeTool, Name: "bash"}, false},
-		// Every one of these used to be true, on account of the table clamp.
 		{"prose with a tall table", proseNode(tallTableMarkdown()), false},
 		{"thinking with a tall table", livedoc.Node{Type: livedoc.NodeThinking, Markdown: tallTableMarkdown()}, false},
 		{"steering with a tall table", livedoc.Node{Type: livedoc.NodeSteering, Markdown: tallTableMarkdown()}, false},
@@ -55,11 +50,8 @@ func TestNodeExpandable(t *testing.T) {
 	}
 }
 
-// TestNodeExpandable_AgreesWithTheRender is the anti-lie test: a predicate that
-// DENIES expandability while the two renders differ makes the gesture drop a
-// form the user could have seen. The converse (true while they match) is
-// asserted for non-tools only, a tool with output shorter than the cap reports
-// expandable although nothing changes, which is longstanding.
+// A predicate that denies expandability while the two renders differ drops a form
+// the user could have seen; the converse holds for non-tools only.
 func TestNodeExpandable_AgreesWithTheRender(t *testing.T) {
 	nodes := []livedoc.Node{
 		proseNode(tallTableMarkdown()),
@@ -88,8 +80,8 @@ func TestNodeExpandable_AgreesWithTheRender(t *testing.T) {
 	}
 }
 
-// TestSurfaceContract_NoSurfaceCollapsesProse pins that every surface draws
-// prose the same: the transcript's expansion state reaches tools only.
+// Every surface draws prose the same: the transcript's expansion state reaches
+// tools only.
 func TestSurfaceContract_NoSurfaceCollapsesProse(t *testing.T) {
 	n := proseNode(tallTableMarkdown())
 	const w = 40
@@ -110,14 +102,12 @@ func TestSurfaceContract_NoSurfaceCollapsesProse(t *testing.T) {
 		t.Errorf("show: %d rows, want the full %d", got, full)
 	}
 	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{verbose: true})); got != full {
-		// The address rides the block's first row, so asking for it moves
-		// nothing: the same rows, one of them wearing its coordinate.
+		// The address rides the first row, so asking for it moves nothing.
 		t.Errorf("show -o: %d rows, want the full %d, and the address adds none", got, full)
 	}
 }
 
-// TestProseRows_HoldPainterInvariant guards architecture.md invariant #1 over
-// the rows a table produces: one physical line per row, never past the edge.
+// One physical line per row, never past the edge, over the rows a table produces.
 func TestProseRows_HoldPainterInvariant(t *testing.T) {
 	nodes := []livedoc.Node{
 		proseNode(tallTableMarkdown()),

@@ -12,23 +12,11 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// How a tool is drawn.
 type toolStyle struct {
-	// Label replaces the tool's name on the minimized header. A shell is
-	// better announced by its prompt than by the word "bash".
-	Label string
-	// Headline is the argument that speaks for the call: the command for a
-	// shell, the path for a file tool. It rides the minimized header and opens
-	// the expanded body, and it is the one argument drawn in the call colour.
-	Headline string
-	// Body is the argument to draw in place of the tool's own output. `write`
-	// sets it to `content`, so the file body streams in exactly the way a
-	// command's output does, and its receipt ("Wrote N bytes") is dropped,
-	// since the content is the interesting half and the reader can see it.
-	Body string
-	// Diff paints the body's +/- lines. The tool declares that its output is a
-	// diff; the renderer never guesses from the shape of a line.
-	Diff bool
+	Label    string // replaces the tool's name on the minimized header
+	Headline string // the argument that rides the header, in the call colour
+	Body     string // the argument drawn in place of the tool's output
+	Diff     bool   // declared, never guessed from the shape of a line
 }
 
 var toolStyles = map[string]toolStyle{
@@ -39,16 +27,10 @@ var toolStyles = map[string]toolStyle{
 	"edit":    {Headline: "path", Diff: true},
 }
 
-// styleFor answers for every tool, named or not. An unknown tool keeps its
-// name and takes its first argument as the headline, which is the same shape
-// as the known ones rather than a special case.
 func styleFor(name string) toolStyle { return toolStyles[name] }
 
-// toolArgFields answers "what are this tool's arguments": the streaming JSON
-// prefix while they arrive, the decoded map once they land: sorted by name in
-// BOTH phases, since the streamed order is the model's and the settled order
-// is a Go map's, and anything else reshuffles the block the instant the
-// arguments land.
+// toolArgFields sorts by name in both phases, or the block reshuffles the instant
+// the arguments land.
 func toolArgFields(n livedoc.Node) []partialjson.Field {
 	if strings.TrimSpace(n.Input) != "" {
 		f := partialjson.Fields([]byte(n.Input))
@@ -67,8 +49,7 @@ func toolArgFields(n livedoc.Node) []partialjson.Field {
 	return out
 }
 
-// flattenArg turns one argument into the fields a reader can actually read,
-// naming nested ones by PATH: `edits[0].new_text` rather than `edits`.
+// flattenArg names nested arguments by path: `edits[0].new_text`.
 func flattenArg(out []partialjson.Field, name string, v any, depth int) []partialjson.Field {
 	const maxDepth = 4
 	switch t := v.(type) {
@@ -96,8 +77,6 @@ func flattenArg(out []partialjson.Field, name string, v any, depth int) []partia
 		}
 		return out
 	}
-	// A scalar that is not a string, or a nest too deep to name: JSON, which is
-	// at least the notation the value arrived in. %v never is.
 	b, err := json.Marshal(v)
 	if err != nil {
 		b = []byte(fmt.Sprintf("%v", v))
@@ -105,10 +84,7 @@ func flattenArg(out []partialjson.Field, name string, v any, depth int) []partia
 	return append(out, partialjson.Field{Name: name, Value: string(b), Done: true})
 }
 
-// pick returns the named argument, or: when the tool has no such argument at
-// all: the first one there is. The fallback is what lets `process` be drawn
-// like a shell without having a `command`: it gets its `action`, the nearest
-// thing it has to one.
+// pick falls back to the first argument when the tool has no such name.
 func pick(fields []partialjson.Field, name string, settled bool) (partialjson.Field, bool) {
 	for _, f := range fields {
 		if f.Name == name {
@@ -126,16 +102,8 @@ const (
 	toolGutterCells = 4
 )
 
-// toolBody is the block's content: the argument a tool declares as its body,
-// or its own output. clamp is the row budget; -1 for all of them.
-//
-// The rows come out TYPED because a tool may declare that some of them are a
-// diff: `edit` declares it for its whole output in the style table, anything
-// else declares a region by fencing it (render.FencedLines). Nothing is
-// guessed from the shape of a line.
-//
-// Only the OUTPUT is scanned. A `write` body is a file, and a file holding
-// ```diff is a file about diffs.
+// toolBody: clamp -1 keeps every row. Only output is scanned for diff fences,
+// never a declared body argument, which is a file.
 func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp int) []bodyLine {
 	text, fenced := n.Output, true
 	if st.Body != "" {
@@ -167,9 +135,6 @@ func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp in
 	return rows
 }
 
-// bodyLine is one line of a tool block's body and what it is. How a diff line
-// is PAINTED is render's answer, not this package's, so one picture serves
-// every diff figaro draws.
 type bodyLine struct {
 	text string
 	diff bool
@@ -179,7 +144,6 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	st := styleFor(n.Name)
 	fields := toolArgFields(n)
 	settled := strings.TrimSpace(n.Input) == ""
-	// settled says the arguments have landed; settledResult says the call has.
 	settledResult := n.FinishedAt != 0 ||
 		n.Status == livedoc.StatusOK || n.Status == livedoc.StatusError
 	headline, hasHeadline := pick(fields, st.Headline, settled)
@@ -197,10 +161,8 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		dur = " " + term.Dim("["+d+"]")
 	}
 
-	// The header. Minimized it carries the call itself: `$ grep …`, `write
-	// /tmp/x`: because that is what a reader scanning a transcript is looking
-	// for. Expanded it steps back to the tool's name, since the call is about
-	// to be shown in full on the row below.
+	// Minimized, the header carries the call; expanded, the tool's name, since
+	// the call follows in full.
 	name := n.Name
 	if name == "" {
 		name = "tool"
@@ -221,9 +183,6 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	row := func(s string) { rows = append(rows, term.Dim(toolGutter)+clipToWidth(s, content)) }
 
 	if expand {
-		// The call, then everything else about it. The headline argument is
-		// drawn in the call colour and without a label; the rest are labelled
-		// and body-coloured, so the eye finds the command without reading.
 		if hasHeadline {
 			for _, l := range hardWrap(render.SanitizeForTerminal(headline.Value), content) {
 				row(term.Arg(l))
@@ -233,11 +192,8 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 			if f.Name == headline.Name || f.Name == st.Body {
 				continue
 			}
-			// While the call is still being written its arguments are all there
-			// is to look at, so a multi-line one is a block, head-clamped. Once
-			// the result lands it stands in for them and each argument shrinks
-			// to one clipped row, an allusion to the call, not the payload.
-			// A yank still gives them whole; see toolClipboardFull.
+			// A multi-line argument is a block only until the result
+			// lands; a yank still gives it whole.
 			if !settledResult && strings.ContainsRune(f.Value, '\n') {
 				row(term.Label(f.Name))
 				for _, l := range argBlock(f.Value, content, bashCap) {
@@ -255,16 +211,14 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		}
 	}
 
-	// The body: the tool's output, or the argument that stands in for it.
-	// Minimized it is clamped and each row is cut rather than wrapped, a
-	// preview that reflows is harder to scan than one that stops.
+	// Minimized, body rows are cut rather than wrapped.
 	clamp := bashCap
 	if expand {
 		clamp = nodeOutputUnlimited
 	}
 	body := toolBody(n, st, fields, clamp)
 	if len(body) > 0 && expand && len(rows) > 1 {
-		row("") // one blank row, where the junction used to be
+		row("")
 	}
 	for _, l := range body {
 		paint := plainPaint
@@ -282,19 +236,13 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	return rows
 }
 
-// plainPaint is the body's own voice: what a row wears when the tool declared
-// nothing about it.
 func plainPaint(s string) string { return s }
 
-// argRow draws one argument as exactly one row: newlines flattened to a ⏎
-// scar, the rest clipped to an ellipsis.
 func argRow(name, value string, width int) string {
 	v := oneLine(render.SanitizeForTerminal(value))
 	return term.Label(name) + " " + term.Body(clipToWidthEllipsis(v, width-len(name)-1))
 }
 
-// argBlock draws a multi-line argument value: head-clamped to limit rows,
-// wrapped to width, in the body voice.
 func argBlock(value string, width, limit int) []string {
 	text := strings.TrimRight(render.SanitizeForTerminal(value), "\n")
 	if text == "" {
@@ -313,7 +261,6 @@ func argBlock(value string, width, limit int) []string {
 	return out
 }
 
-// headOutput is tailOutput's twin, keeping the FIRST limit lines.
 func headOutput(text string, limit int) (string, int) {
 	total := 1 + strings.Count(text, "\n")
 	if limit < 0 || total <= limit {
@@ -333,8 +280,7 @@ func headOutput(text string, limit int) (string, int) {
 	return text[:at], total
 }
 
-// oneLine flattens a value for a row that must be exactly one: a multi-line
-// command in a header would desync the painter's one-row-per-line arithmetic.
+// oneLine: a header row with a newline desyncs the painter's cursor math.
 func oneLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return strings.TrimRight(s[:i], " \t") + " ⏎"

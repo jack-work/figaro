@@ -8,56 +8,30 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// THE ADORNMENT: a block's form deltas drawn as part of the block.
-//
-// Collapsed, a block wears one glyph in the right gutter (Δ) and nothing
-// else. Open, every delta is a row of its own -- a pseudonode, selected and
-// yanked like a node -- and a snake joins the rows to the block they
-// explain: its head (Δ) marks the selected row, and parks at the anchor
-// when the selection is elsewhere. The MORE a reader asks for, the more
-// rows: a block that has state says so in one column until it is asked.
-//
-// A tool or thinking block hangs the snake off a connector row under
-// its text; prose off its first line; a turn's question
-// ENCLOSES its deltas between the text and the rule that closes the seam,
-// so its snake runs down to a corner instead of up to a block. Everything
-// else -- the glyph law, the row bodies, the refs the rows take -- is
-// shared across the layouts.
-
-// The snake's glyphs. One column each, and painted plain: the row they
-// stand in carries the rendition, so a glyph is never a second colour.
+// An adornment is a block's form deltas drawn as part of the block: collapsed, one
+// glyph in the right gutter; open, one pseudonode row per delta joined to the
+// block by a snake. The glyphs are painted plain: the row carries the rendition.
 const (
-	snakeHang  = "╭" // the anchor, while the cursor is in the list below it
-	snakeBody  = "│" // between the anchor and the cursor
-	snakeClose = "╰" // the corner an enclosed adornment closes on
-	snakeElbow = "╯" // a tool connector's turn back into its own gutter
+	snakeHang  = "╭"
+	snakeBody  = "│"
+	snakeClose = "╰"
+	snakeElbow = "╯"
 )
 
-// adorner is one node type's layout. The methods are the whole of what
-// differs between a tool, a line of prose and a turn's question.
+// adorner is what differs between a tool, a line of prose and a turn's question.
 type adorner interface {
-	// spineCol is the column the snake takes, left of the rows.
 	spineCol() int
-	// textCol is where a delta row's text begins.
 	textCol() int
-	// anchorRow is a row of the adornment's OWN to hang the snake from,
-	// and false when it hangs from the block's first row instead.
+	// anchorRow is false when the snake hangs from the block's first row instead.
 	anchorRow() (string, bool)
-	// tail closes an adornment the chrome beneath it encloses, drawn into
-	// that chrome's first column.
+	// tail closes an enclosed adornment, drawn into the chrome beneath it.
 	tail() string
-	// liftFork reports whether a fork leaves the list and rides the
-	// block's chrome. True on the question, where a fork happens; see
-	// deltaRows.
+	// liftFork moves a fork out of the list onto the block's chrome.
 	liftFork() bool
-	// gutterLast puts the collapsed marker on the block's LAST row, which
-	// is where prose tacks it: onto the end of what it says.
+	// gutterLast puts the collapsed marker on the block's last row.
 	gutterLast() bool
 }
 
-// proseAdorner hangs the snake off the first line of the prose it adorns:
-// there is no chrome to hang it from, and the text's own left margin is
-// free.
 type proseAdorner struct{}
 
 func (proseAdorner) spineCol() int             { return 0 }
@@ -67,14 +41,12 @@ func (proseAdorner) tail() string              { return "" }
 func (proseAdorner) liftFork() bool            { return false }
 func (proseAdorner) gutterLast() bool          { return true }
 
-// Thinking already has a gutter at column 2. Connect it to the delta spine
-// below the text rather than placing a second spine alongside the text.
+// Thinking already has a gutter at column 2; the connector joins it rather than
+// adding a second spine.
 type thinkingAdorner struct{ proseAdorner }
 
 func (thinkingAdorner) anchorRow() (string, bool) { return " ─" + snakeElbow, true }
 
-// toolAdorner hangs the snake off a connector row below the tool's output,
-// whose elbow turns out of the output gutter the widget already draws.
 type toolAdorner struct{}
 
 func (toolAdorner) spineCol() int             { return 1 }
@@ -84,9 +56,8 @@ func (toolAdorner) tail() string              { return "" }
 func (toolAdorner) liftFork() bool            { return false }
 func (toolAdorner) gutterLast() bool          { return false }
 
-// inquiryAdorner encloses the turn's deltas: the question above, the rule
-// that closes the seam below, and the snake running between them. A fork is
-// invariantly a property of the question, so it rises into the header.
+// inquiryAdorner encloses the deltas between the question and the closing rule; a
+// fork rises into the header.
 type inquiryAdorner struct{}
 
 func (inquiryAdorner) spineCol() int             { return 0 }
@@ -96,7 +67,6 @@ func (inquiryAdorner) tail() string              { return snakeClose }
 func (inquiryAdorner) liftFork() bool            { return true }
 func (inquiryAdorner) gutterLast() bool          { return false }
 
-// adornerFor chooses the layout. The block's type decides, not the reader.
 func adornerFor(block int, n livedoc.Node) adorner {
 	switch {
 	case block == ldrender.BlockInquiry:
@@ -110,7 +80,6 @@ func adornerFor(block int, n livedoc.Node) adorner {
 	}
 }
 
-// buildAdornment composes the rows shared by every layout.
 func buildAdornment(a adorner, deltas map[string]livedoc.FormDelta, w int, open bool) ldrender.Adornment {
 	out := ldrender.Adornment{GutterLast: a.gutterLast(), Tail: a.tail()}
 	lift := a.liftFork()
@@ -121,22 +90,11 @@ func buildAdornment(a adorner, deltas map[string]livedoc.FormDelta, w int, open 
 			forked = true
 		}
 	}
-	// A CLOSED ADORNMENT ONLY HAS TO KNOW WHETHER THERE IS ANYTHING TO OPEN,
-	// and closed is the state nearly every block is in on nearly every frame.
-	// Building the rows to measure them was the cost of that common case: the
-	// whole delta set grouped into maps and sorted, per block, per frame, to
-	// decide between one glyph and no glyph.
+	// Closed is the common case on every frame: decide without building the rows.
 	if !open || w < adornFloor(a) {
 		if !anyDeltaRow(deltas, lift, forked) {
-			// A turn whose only state was the fork has nothing to open: the
-			// header says it all, and a marker over an empty list would be a
-			// gesture that answers nothing.
 			return out
 		}
-		// TOO NARROW TO SAY ANYTHING DRAWS THE MARKER INSTEAD. A list needs
-		// the snake's column, a key and both sides of a transition; below
-		// that the rows would be glyphs and ellipses, and the one column the
-		// gutter costs still tells the reader there is state here.
 		out.Gutter = term.StateDim(deltaGlyph)
 		return out
 	}
@@ -163,17 +121,12 @@ func buildAdornment(a adorner, deltas map[string]livedoc.FormDelta, w int, open 
 	return out
 }
 
-// adornFloor is the narrowest pane an open list draws in: the rows' inset,
-// the key, both sides of a transition and the arrow between them.
+// adornFloor is the narrowest pane an open list draws in.
 func adornFloor(a adorner) int {
 	return a.textCol() + ldrender.GutterCols + 2*formDeltaValueFloor + len(deltaArrow) + 1
 }
 
-// adornRow dresses one row of an adornment: the snake's resting glyph in
-// its column, the whole row in the form-state role, and the delta index it
-// answers to. Index 0 is the adornment's own chrome (the anchor, the link):
-// it belongs to the block's coordinate but selects as nothing, which is why
-// the selection wash stops short of it.
+// adornRow: delta 0 is the adornment's own chrome, which selects as nothing.
 func adornRow(text string, slot ldrender.SpineSlot, delta int) ldrender.Row {
 	text = ldrender.OverlayColumn(text, slot.Col, spineGlyph(slot, delta, 0))
 	return ldrender.Row{
@@ -184,16 +137,10 @@ func adornRow(text string, slot ldrender.SpineSlot, delta int) ldrender.Row {
 	}
 }
 
-// spineGlyph is the snake, one row at a time: what the slot on delta row
-// `delta` carries while the cursor stands on row `cursor` (0: the cursor is
-// not in this adornment at all).
-//
-// THE SNAKE JOINS THE CURSOR TO THE BLOCK. An adornment that hangs below
-// its block reaches it upward, so the body runs from the cursor up to the
-// anchor and nothing is drawn below; an enclosed one reaches its block
-// through the corner beneath it, so the body runs down to the tail. With no
-// cursor in the list the head parks at the anchor, and an enclosed
-// adornment still draws its full body: the enclosure has to close.
+// spineGlyph is the snake on delta row `delta` while the cursor is on row `cursor`
+// (0: not in this adornment). A hanging adornment runs the body up to the anchor;
+// an enclosed one runs it down to the tail, and draws it whole with no cursor,
+// because the enclosure has to close.
 func spineGlyph(slot ldrender.SpineSlot, delta, cursor int) string {
 	switch slot.Kind {
 	case ldrender.SpineAnchor:
@@ -224,19 +171,14 @@ func spineGlyph(slot ldrender.SpineSlot, delta, cursor int) string {
 	return ""
 }
 
-// adornRowCount is how many pseudonodes a block's deltas become: the refs
-// the selection walks, and nothing about the screen.
 func adornRowCount(deltas map[string]livedoc.FormDelta, lift bool) int {
 	return deltaRowCount(deltas, lift, lift && forkParentOf(deltas) != "")
 }
 
-// adornLift reports whether a block's coordinate lifts its fork: the
-// question does, a node does not. One derivation, so the refs the selection
-// walks and the rows the screen draws cannot disagree.
+// adornLift is the one derivation shared by the selection's refs and the screen's rows.
 func adornLift(index int) bool { return index == inquiryNode }
 
-// adornRowFull is the i'th pseudonode of a delta set, whole: what it hashes
-// as and what it yanks as. i is 1-based, as nodeRef.delta is.
+// adornRowFull: i is 1-based, as nodeRef.delta is.
 func adornRowFull(deltas map[string]livedoc.FormDelta, lift bool, i int) (string, bool) {
 	rows := deltaRows(deltas, lift)
 	if i < 1 || i > len(rows) {

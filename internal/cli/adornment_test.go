@@ -12,10 +12,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The ADORNMENT as the reader sees it, state by state, against the sketch it
-// was drawn from (/var/tmp/23e03e27/delta-adornments.md). Rows are compared
-// plain: the glyphs and their columns are the claim, and the colours have
-// their own tests below.
+// Rows are compared plain: glyphs and columns are the claim; colours have their
+// own tests.
 
 const adornWidth = 72
 
@@ -33,13 +31,10 @@ func adornDeltas(pairs ...string) map[string]livedoc.FormDelta {
 	return out
 }
 
-// adornFixture is one turn wearing all three layouts: a question with a fork
-// and state of its own, a settled tool with state, and a line of prose with
-// state.
 func adornFixture(t testing.TB) *transcript { return adornFixtureH(t, 40, 1) }
 
-// adornFixtureH is the same turn, at a given viewport height and repeated
-// `turns` times: a short viewport is what makes a scroll observable.
+// adornFixtureH repeats the turn at a viewport height short enough to make a
+// scroll observable.
 func adornFixtureH(t testing.TB, h, turns int) *transcript {
 	t.Helper()
 	deltas := adornDeltas(
@@ -85,7 +80,6 @@ func adornScreen(tr *transcript) []string {
 	return rows
 }
 
-// adornRowsAt is the run of rows starting at the first one containing head.
 func adornRowsAt(t testing.TB, tr *transcript, head string, n int) []string {
 	t.Helper()
 	rows := adornScreen(tr)
@@ -113,9 +107,8 @@ func wantRows(t testing.TB, got []string, want ...string) {
 	}
 }
 
-// COLLAPSED: one glyph in the right gutter and nothing else. The tool wears
-// it on its header, prose on the end of its text, the question on the header
-// row that names the voice.
+// Collapsed: one glyph in the right gutter; the tool on its header, prose on the
+// end of its text, the question on the voice row.
 func TestAdornmentCollapsedIsOneGlyphInTheGutter(t *testing.T) {
 	tr := adornFixture(t)
 	rows := adornScreen(tr)
@@ -139,8 +132,7 @@ func TestAdornmentCollapsedIsOneGlyphInTheGutter(t *testing.T) {
 	}
 }
 
-// THE FORK IS LIFTED, and lifted means gone from the list: the header says it
-// once. The keys the fork patch wrote are what the header is made of.
+// A lifted fork leaves the list: the header says it once.
 func TestInquiryLiftsTheForkOutOfItsList(t *testing.T) {
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
@@ -156,7 +148,6 @@ func TestInquiryLiftsTheForkOutOfItsList(t *testing.T) {
 	if strings.Contains(strings.Join(rows, "\n"), "forked_from") {
 		t.Fatalf("the lifted fork left a row behind:\n%s", strings.Join(rows, "\n"))
 	}
-	// The enclosure closes on the rule below it.
 	for _, r := range rows {
 		if strings.HasPrefix(r, "╰") {
 			return
@@ -165,10 +156,8 @@ func TestInquiryLiftsTheForkOutOfItsList(t *testing.T) {
 	t.Fatalf("the question's list must close on the rule:\n%s", strings.Join(rows, "\n"))
 }
 
-// A NODE'S FORK IS A DELTA LIKE ANY OTHER. Only the question invariantly
-// carries one (see forkParent), so nothing lifts anywhere else: the same set
-// of deltas hides its fork under the question's coordinate and shows it under
-// a node's.
+// Only the question lifts a fork; under a node's coordinate it is a delta like any
+// other.
 func TestNodeForkIsAnOrdinaryRow(t *testing.T) {
 	deltas := adornDeltas(
 		"mantra", "", "harness behavior test",
@@ -186,9 +175,8 @@ func TestNodeForkIsAnOrdinaryRow(t *testing.T) {
 	}
 }
 
-// THE SNAKE, as sketched. Open with nothing selected the head parks at the
-// anchor; with a row selected the body runs from the anchor down to it and
-// stops there.
+// Open with nothing selected the head parks at the anchor; with a row selected the
+// body runs from the anchor down to it.
 func TestToolSnakeFollowsTheSelection(t *testing.T) {
 	tr := adornFixture(t)
 	ref := nodeRef{turn: 1, index: 0}
@@ -218,7 +206,6 @@ func TestToolSnakeFollowsTheSelection(t *testing.T) {
 		" Δ mantra    going to test some harness behav… -> harness behavior test",
 	)
 
-	// The state resets when the selection leaves the list.
 	tr.selectRef(nodeRef{turn: 1, index: 1}, false)
 	wantRows(t, adornRowsAt(t, tr, "set mantra (figaro", 2),
 		"  │ set mantra (figaro e5abf08d) @7",
@@ -226,9 +213,8 @@ func TestToolSnakeFollowsTheSelection(t *testing.T) {
 	)
 }
 
-// The question's list is ENCLOSED, so its snake runs the other way: from the
-// cursor down to the corner that closes it, and the full body when the
-// cursor is elsewhere.
+// An enclosed list's snake runs from the cursor down to the closing corner, and
+// whole when the cursor is elsewhere.
 func TestInquirySnakeRunsDownToItsCorner(t *testing.T) {
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
@@ -250,9 +236,8 @@ func TestInquirySnakeRunsDownToItsCorner(t *testing.T) {
 	)
 }
 
-// Prose hangs its snake off the first line of its own text, and the marker
-// changes sides on opening: the gutter while collapsed, the margin while
-// open.
+// Prose hangs its snake off its first line; the marker moves from gutter to margin
+// on opening.
 func TestProseSnakeHangsFromItsFirstLine(t *testing.T) {
 	tr := adornFixture(t)
 	ref := nodeRef{turn: 1, index: 1}
@@ -273,9 +258,8 @@ func TestProseSnakeHangsFromItsFirstLine(t *testing.T) {
 	)
 }
 
-// ^N/^P WALK THE ROWS ONE AT A TIME. Entering an open list from above lands
-// on its first row, from below on its last, and stepping up past the first
-// row selects the block, which is where d, t and Enter act.
+// Entering an open list from above lands on its first row, from below on its last;
+// up past the first row selects the block.
 func TestSelectionWalksEveryDeltaRow(t *testing.T) {
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
@@ -301,8 +285,6 @@ func TestSelectionWalksEveryDeltaRow(t *testing.T) {
 			t.Fatalf("stop %d: want %+v, got %+v (all %+v)", i, want[i], got[i], got)
 		}
 	}
-	// From below: the last row of the list above, then up through it to the
-	// block.
 	for i := len(want) - 2; i >= 0; i-- {
 		tr.selectNode(-1, false)
 		if ref := tr.selection.focus.nodeRef; ref != want[i] {
@@ -311,7 +293,7 @@ func TestSelectionWalksEveryDeltaRow(t *testing.T) {
 	}
 }
 
-// A COLLAPSED LIST OFFERS NO STOPS: there is nothing on screen to select.
+// A collapsed list offers no stops.
 func TestClosedListIsNotWalked(t *testing.T) {
 	tr := adornFixture(t)
 	var got []nodeRef
@@ -327,9 +309,7 @@ func TestClosedListIsNotWalked(t *testing.T) {
 	}
 }
 
-// t and Enter: the narrow half, and both halves together. ENTER IS THE ONLY
-// KEY THAT OPENS A FORM-DELTA LIST -- 'd' had it for a while and took the
-// half-page motion hostage, which is the kind of trade a pager cannot make.
+// Enter is the only key that opens a form-delta list.
 func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
@@ -349,8 +329,6 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 		t.Fatalf("Enter opens both: adorned=%v expanded=%v", tr.adorned[tool], tr.expanded[tool])
 	}
 
-	// On prose there is no body to open, so t is inert and Enter opens the
-	// list alone.
 	tr.selectRef(prose, false)
 	tr.key('e')
 	if tr.expanded[prose] {
@@ -361,8 +339,6 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 		t.Fatal("Enter must open prose's list")
 	}
 
-	// Enter from inside the list closes it and leaves the selection on the
-	// block.
 	tr.selectRef(deltaRefOf(prose, 2), false)
 	tr.key(0x0d)
 	if tr.adorned[prose] {
@@ -373,9 +349,7 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 	}
 }
 
-// 'd' IS A MOTION AGAIN, unconditionally: half a page down whether or not the
-// selection carries state. A motion that sometimes folds a block instead is a
-// key the hand cannot trust.
+// 'd' is a motion unconditionally, whether or not the selection carries state.
 func TestDeltaKeyIsTheHalfPageScroll(t *testing.T) {
 	tr := adornFixtureH(t, 10, 4)
 	tr.offset = 0
@@ -395,12 +369,8 @@ func TestDeltaKeyIsTheHalfPageScroll(t *testing.T) {
 	}
 }
 
-// THE WASH COVERS THE WHOLE BLOCK, chrome included. The blank row between a
-// question and its delta rows carries the block's coordinate but none of its
-// content; it used to be left unwashed, which cut a hole in the band. Gluck
-// asked for a selection that is defined at every space it covers, so the hole
-// is gone: the cue is one continuous lift, and the snake's head remains the
-// thing that says which row inside it the cursor is on.
+// The wash covers the whole block, chrome included; the snake head says which row
+// the cursor is on.
 func TestWashCoversTheBlocksChrome(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
@@ -431,8 +401,7 @@ func TestWashCoversTheBlocksChrome(t *testing.T) {
 	}
 }
 
-// A DELTA ROW KEEPS ITS SNAKE UNDER THE WASH, and keeps its own colour: the
-// head is how a reader tells which row of a washed list the cursor is on.
+// A delta row keeps its snake and its own colour under the wash.
 func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
@@ -461,8 +430,7 @@ func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 	t.Fatal("fixture: no delta row found")
 }
 
-// A DELTA ROW YANKS WHOLE. What the screen had room for is not what the row
-// says: the value is elided on screen and complete on the clipboard.
+// A delta row yanks whole: elided on screen, complete on the clipboard.
 func TestDeltaRowYanksItsValueWhole(t *testing.T) {
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
@@ -484,9 +452,7 @@ func TestDeltaRowYanksItsValueWhole(t *testing.T) {
 	}
 }
 
-// THE COORDINATE MARK NEVER PAINTS OVER THE GUTTER. M-m draws a block's
-// address against the right edge, and the marker that says the block carries
-// state has to survive it.
+// The coordinate mark never paints over the gutter.
 func TestCoordinateMarkStopsShortOfTheGutter(t *testing.T) {
 	tr := adornFixture(t)
 	tr.view.(*ariaView).settings.verbose = true
@@ -503,10 +469,8 @@ func TestCoordinateMarkStopsShortOfTheGutter(t *testing.T) {
 	}
 }
 
-// EVERY ROW IS ONE ROW, AT EVERY WIDTH. An adornment draws in the margins of
-// a pane, so a narrow one is where its arithmetic breaks: a row that runs one
-// column past the edge wraps in the terminal and desyncs the painter's
-// one-row-per-line cursor math.
+// Every row is one row at every width: one column past the edge wraps and desyncs
+// the painter's cursor math.
 func TestAdornmentRowsFitEveryWidth(t *testing.T) {
 	deltas := adornDeltas(
 		"mantra", "going to test some harness behavior", "harness behavior test",
@@ -538,9 +502,7 @@ func TestAdornmentRowsFitEveryWidth(t *testing.T) {
 	}
 }
 
-// A second click on a BLOCK opens what the block has (its body, its list); a
-// second click on a delta row opens nothing, because a row is already
-// everything it says.
+// A second click on a block opens what it has; on a delta row, nothing.
 func TestSecondClickOnADeltaRowOpensNothing(t *testing.T) {
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
@@ -558,11 +520,8 @@ func TestSecondClickOnADeltaRowOpensNothing(t *testing.T) {
 	}
 }
 
-// A SELECTED BLOCK KEEPS ITS MARKER. The wash used to close with an
-// erase-to-end-of-line, and with autowrap off the cursor still stands on the
-// last column it wrote: the erase wiped the gutter glyph, and the last
-// character of any row that filled the pane with it. Found by replaying the
-// pager into a real pty (adornment_pty_test.go).
+// With autowrap off the cursor stands on the last column written, so a closing
+// erase-to-end-of-line wipes the gutter glyph.
 func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
@@ -589,8 +548,7 @@ func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 	if !seen {
 		t.Fatal("fixture: no row carries the collapsed marker")
 	}
-	// A row that does NOT reach the edge still carries the wash to it: the
-	// tool's output line stops where its output does.
+	// A row that does not reach the edge still carries the wash to it.
 	tool := nodeRef{turn: 1, index: 0}
 	tr.selectRef(tool, false)
 	for _, e := range tr.index.entries {
@@ -607,8 +565,6 @@ func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 	t.Fatal("fixture: no short row to wash")
 }
 
-// stickyAdorned is the fixture for what the header hides: three turns, the
-// last one's question adorned and open, and the sticky header on.
 func stickyAdorned(t testing.TB) (*transcript, nodeRef) {
 	t.Helper()
 	tr := adornFixtureH(t, 8, 3)
@@ -620,15 +576,12 @@ func stickyAdorned(t testing.TB) (*transcript, nodeRef) {
 	return tr, inq
 }
 
-// THE HEADER COVERS ROWS, SO THE CURSOR MUST CLEAR IT. Walking a delta list
-// upward with ^P used to park the focused row underneath the pinned question,
-// where it cannot be seen: the scroll floor was the offset, and the offset is
-// not where the conversation starts on screen.
+// The header covers rows, so the cursor must clear it: the scroll floor is not the
+// offset.
 func TestSelectedRowClearsTheStickyHeader(t *testing.T) {
 	tr, inq := stickyAdorned(t)
 	tr.selectRef(deltaRefOf(inq, 2), false)
 
-	// Park the selection under the header on purpose, then ask for it back.
 	span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
 	if !ok {
 		t.Fatal("fixture: the delta row has no span")
@@ -644,7 +597,6 @@ func TestSelectedRowClearsTheStickyHeader(t *testing.T) {
 			span.first, tr.offset, head)
 	}
 
-	// And every step up the list stays clear of it.
 	for range 2 {
 		tr.key(0x10) // ^P
 		span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
@@ -658,9 +610,8 @@ func TestSelectedRowClearsTheStickyHeader(t *testing.T) {
 	}
 }
 
-// THE BAND STOPS AT THE CORNER THE SNAKE CLOSES INTO. That row is a rule
-// wearing a corner glyph, so a band that only knew `─` ran straight past it
-// and washed the voice header of the answer below.
+// The band stops at the corner the snake closes into, which is a rule row wearing
+// a corner glyph.
 func TestWashStopsAtTheAdornmentsCorner(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, inq := stickyAdorned(t)

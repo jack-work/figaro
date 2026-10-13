@@ -1,14 +1,5 @@
 package cli
 
-// :models AS A PIT YOU CHOOSE IN.
-//
-// It was a table printed with os.Stdout: round the pager's writer, onto the
-// terminal, and nothing on it could be acted on. It is now an itemised live
-// view (itemView, pit.go), so the pit's one picker drives it exactly as it
-// drives the queue, the form and the tab menu: ^N/^P and j/k move, the wash
-// and the marker show the choice, `y` yanks the id, `/` searches. Enter is
-// this view's own action, and it makes the chosen model the subject's.
-
 import (
 	"context"
 	"fmt"
@@ -22,21 +13,16 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// modelChoice is what Enter chose: a model is only meaningful to its own
-// provider, so the two travel together.
 type modelChoice struct {
 	provider string
 	model    string
 }
 
-// modelsView is the pit's model: the list, which one the subject is on, and
-// what to do when one is chosen.
 type modelsView struct {
 	mu      sync.Mutex
 	models  []provider.ModelInfo
 	current string
-	// choose applies a choice. It dials, so Activate never calls it on the
-	// input goroutine: Activate runs under the render lock.
+	// choose dials, so Activate (under the render lock) hands it off.
 	choose func(modelChoice)
 }
 
@@ -44,14 +30,9 @@ func newModelsView(models []provider.ModelInfo, current string, choose func(mode
 	return &modelsView{models: models, current: current, choose: choose}
 }
 
-// modelRowID addresses a row by position, because one model id can be served
-// by two providers (a gateway re-exporting Anthropic's names) and the row, not
-// the id, is what was chosen.
+// modelRowID is positional: one model id can be served by two providers.
 func modelRowID(i int) string { return "model:" + strconv.Itoa(i) }
 
-// Items renders one row per model, grouped by provider under a heading. The
-// subject's current model carries ● so a reader knows where they are before
-// choosing where to go.
 func (v *modelsView) Items(width int) []pitRow {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -72,9 +53,7 @@ func (v *modelsView) Items(width int) []pitRow {
 			mark = "●"
 		}
 		text := fmt.Sprintf("%s %s  %s", mark, padTo(clipHead(m.ID, idW), idW), modelDetail(m))
-		// The provider rides every row as its note, not only the heading: `/`
-		// walks selectable rows, and a heading is chrome, so `/copilot` found
-		// nothing among three hundred models until the row said it.
+		// The provider rides every row so `/` can find it; a heading is chrome.
 		rows = append(rows, pitRow{text: text, note: m.Provider, yank: m.ID, id: modelRowID(i)})
 	}
 	if len(rows) == 0 {
@@ -83,8 +62,6 @@ func (v *modelsView) Items(width int) []pitRow {
 	return rows
 }
 
-// modelDetail is the row's second column: the name when it says more than the
-// id, and the context window and output cap when the provider reported them.
 func modelDetail(m provider.ModelInfo) string {
 	var parts []string
 	if m.Name != "" && !strings.EqualFold(m.Name, m.ID) {
@@ -99,8 +76,7 @@ func modelDetail(m provider.ModelInfo) string {
 	return strings.Join(parts, " · ")
 }
 
-// Activate is Enter: choose the model. It HANDS OFF -- it runs under the
-// render lock, and the set it causes dials the daemon.
+// Activate runs under the render lock and dials, so it hands off.
 func (v *modelsView) Activate(id string) {
 	n, err := strconv.Atoi(strings.TrimPrefix(id, "model:"))
 	v.mu.Lock()
@@ -109,18 +85,14 @@ func (v *modelsView) Activate(id string) {
 		return
 	}
 	m := v.models[n]
-	v.current = m.ID // the mark moves now; the bar says whether it took
+	v.current = m.ID
 	choose := v.choose
 	v.mu.Unlock()
 	go choose(modelChoice{provider: m.Provider, model: m.ID})
 }
 
-// Close: the list is a snapshot, holding nothing.
 func (v *modelsView) Close() {}
 
-// fetchModels asks every configured provider for its models, in the order
-// `figaro models` lists them. A provider that fails is skipped and reported,
-// as the table did.
 func fetchModels(loaded *config.Loaded) ([]provider.ModelInfo, []string) {
 	ensureHush()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

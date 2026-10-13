@@ -10,11 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// Composing a prompt in a terminal editor.
-
-// composeCancelled reports that the user dismissed the editor. Callers exit
-// quietly rather than treating it as a failure, abandoning a draft is a
-// decision, not an error.
+// composeCancelled is not a failure: callers exit quietly.
 type composeCancelled struct{}
 
 func (composeCancelled) Error() string { return "compose cancelled" }
@@ -24,7 +20,6 @@ const (
 	composeMaxRows = 12
 )
 
-// composeModel is the editor: a textarea and a one-line hint.
 type composeModel struct {
 	ta        textarea.Model
 	hint      string
@@ -36,9 +31,6 @@ func (m composeModel) Init() tea.Cmd { return textarea.Blink }
 func (m composeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// A bounded box, not a full-screen takeover: a prompt is usually short,
-		// and reserving the whole terminal for one would misstate how much is
-		// expected.
 		h := msg.Height - 4
 		if h > composeMaxRows {
 			h = composeMaxRows
@@ -50,23 +42,15 @@ func (m composeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ta.SetHeight(h)
 		return m, nil
 	case tea.KeyMsg:
-		// Match on String(), not Type. The Type constants are easy to get
-		// subtly wrong across bubbletea versions, and a submit key that
-		// silently does not fire leaves the user trapped in an editor with no
-		// way out but Esc: which throws the draft away. String() is what the
-		// library itself prints and is stable.
+		// String(), not Type: the Type constants shift across bubbletea
+		// versions.
 		switch msg.String() {
 		case "esc", "ctrl+c":
 			m.cancelled = true
 			return m, tea.Quit
 		case "alt+enter", "ctrl+enter", "ctrl+s":
-			// SUBMIT IS NOT CTRL-D. It was, on the theory that ^D ends stdin
-			// everywhere else -- but nothing here is a pipe: there is one
-			// binary, one editor, and one draft, and ^D in an editor is delete
-			// forward (which the textarea binds it to, and which this switch
-			// was swallowing). Alt-Enter is what the pager's ':' box submits
-			// on, Ctrl-Enter is the same chord on a terminal that can send it,
-			// and Ctrl-S is for the ones that eat both.
+			// Not ^D: the textarea binds it to delete-forward. ^S is
+			// for terminals that eat both Enter chords.
 			return m, tea.Quit
 		}
 	}
@@ -79,7 +63,6 @@ func (m composeModel) View() string {
 	return "\n" + m.ta.View() + "\n" + term.Dim(m.hint) + "\n"
 }
 
-// composePrompt opens the editor and returns what was written.
 func composePrompt(placeholder string) (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
 		return "", fmt.Errorf("a prompt is required when stdin or stdout is not a terminal " +
@@ -88,11 +71,10 @@ func composePrompt(placeholder string) (string, error) {
 	ta := textarea.New()
 	ta.Placeholder = placeholder
 	ta.ShowLineNumbers = false
-	ta.CharLimit = 0 // a prompt is not a tweet
+	ta.CharLimit = 0
 	ta.Focus()
 
-	// Draw on stderr so a composed prompt can still be piped: `q -- | tee`
-	// keeps stdout clean for the reply.
+	// stderr keeps stdout clean for a piped reply.
 	m := composeModel{ta: ta, hint: "  M-enter / ^S send · esc cancel"}
 	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
 	if err != nil {

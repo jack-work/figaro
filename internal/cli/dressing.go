@@ -19,11 +19,8 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// dressing is what the three dressing flags produced: the text as typed, for
-// messages; the outfit NAMES `-O` asked for; and the patch `-S`/`-D` spelled
-// out. Two axes, never mixed: names travel as names and the daemon's one
-// dressing call resolves them, which is what lets `-O` mean the same thing on
-// a live aria as at birth without a directive ever riding inside a patch.
+// dressing keeps outfit names and the patch apart: names travel as names and the
+// daemon resolves them.
 type dressing struct {
 	text  string
 	names []string
@@ -34,8 +31,6 @@ func (d dressing) IsEmpty() bool {
 	return len(d.names) == 0 && (d.patch == nil || d.patch.IsIdentity())
 }
 
-// label is the text, shortened. A literal can be kilobytes; a notice that
-// reprints it is not a notice.
 func (d dressing) label() string {
 	if len(d.text) <= 72 {
 		return d.text
@@ -43,9 +38,7 @@ func (d dressing) label() string {
 	return d.text[:69] + "..."
 }
 
-// parseDress reads the three flags into one dressing. Precedence is fixed and
-// stated everywhere it matters: outfits fold first, then --set, then --delete.
-// Any of the three may be empty.
+// parseDress: outfits fold first, then --set, then --delete.
 func parseDress(outfits, set, del string) (dressing, error) {
 	d := dressing{}
 	var texts []string
@@ -88,7 +81,6 @@ func parseDress(outfits, set, del string) (dressing, error) {
 	return d, nil
 }
 
-// mustDress is parseDress for the flag trio, dying on a grammar error.
 func mustDress(outfits, set, del string) dressing {
 	d, err := parseDress(outfits, set, del)
 	if err != nil {
@@ -97,9 +89,6 @@ func mustDress(outfits, set, del string) dressing {
 	return d
 }
 
-// parseNames reads a positional or flag value that must be outfit NAMES -
-// `state outfit a,b`, `cast -O role`. A `k=v` there is a grammar error that
-// names the flag which takes it.
 func parseNames(text string) ([]string, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("--outfit requires a value")
@@ -114,17 +103,13 @@ func parseNames(text string) ([]string, error) {
 	return names, nil
 }
 
-// softFetchOutfitNames asks the angelus what outfits exist, for completion.
-// Returns nil on any failure: completion must never autostart the daemon,
-// prompt, or block long.
+// softFetchOutfitNames never autostarts the daemon, prompts, or blocks long.
 func softFetchOutfitNames() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
 	if err != nil {
-		// NO DAEMON IS NOT NO OUTFITS. They are files in the config dir,
-		// which is readable without one, and the first run -- before any
-		// daemon exists -- is when a person most needs to see the names.
+		// No daemon is not no outfits: they are files in the config dir.
 		return outfitNamesOnDisk()
 	}
 	defer acli.Close()
@@ -135,8 +120,6 @@ func softFetchOutfitNames() []string {
 	return resp.Names
 }
 
-// outfitNamesOnDisk is the config directory's own answer: every *.toml under
-// outfits/, by name.
 func outfitNamesOnDisk() []string {
 	loaded, _ := config.Load(config.DefaultConfigDir())
 	if loaded == nil {

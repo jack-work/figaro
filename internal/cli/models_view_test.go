@@ -9,11 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// :models IS A PIT YOU CHOOSE IN. It used to be a table printed to os.Stdout
-// -- round the pager, onto the terminal -- that nothing could act on. Now it is
-// an itemised view: the picker drives it (^N/^P, j/k, the wash, the marker),
-// `y` yanks the id, and Enter makes the chosen model the subject's.
-
 func modelsFixture() []provider.ModelInfo {
 	return []provider.ModelInfo{
 		{Provider: "anthropic", ID: "claude-opus-5", Name: "Claude Opus 5", ContextWindow: 1_000_000, MaxTokens: 32000},
@@ -54,10 +49,8 @@ func TestModelsViewIsAListYouChooseIn(t *testing.T) {
 	}
 }
 
-// ENTER SETS system.model, and system.provider with it: a model is only
-// meaningful to its own provider, and choosing copilot's gpt-5 while the board
-// still says anthropic would send a model name Anthropic has never heard of on
-// the next turn.
+// Enter sets system.provider with system.model: a model is only meaningful to its
+// own provider.
 func TestModelsViewEnterSetsTheModelAndItsProvider(t *testing.T) {
 	var mu sync.Mutex
 	var got []modelChoice
@@ -83,8 +76,8 @@ func TestModelsViewEnterSetsTheModelAndItsProvider(t *testing.T) {
 	}
 }
 
-// Activate runs under the render lock: it must hand off, never call the set
-// itself (which dials) on the input goroutine.
+// Activate runs under the render lock: it must hand off, never dial on the input
+// goroutine.
 func TestModelsViewActivateDoesNotBlock(t *testing.T) {
 	block := make(chan struct{})
 	v := newModelsView(modelsFixture(), "", func(modelChoice) { <-block })
@@ -108,8 +101,7 @@ func TestModelsViewActivateDoesNotBlock(t *testing.T) {
 
 func timeAfter() <-chan time.Time { return time.After(2 * time.Second) }
 
-// `/` walks selectable rows; the provider heading is chrome. So each row must
-// carry its provider for `/copilot` to land anywhere.
+// `/` walks selectable rows and a heading is chrome, so each row carries its provider.
 func TestModelsViewRowsCarryTheirProvider(t *testing.T) {
 	v := newModelsView(modelsFixture(), "", nil)
 	p := newPicker(v.Items(100))

@@ -1,7 +1,5 @@
 package cli
 
-// The backward walk that makes `show` reach the tail of any aria.
-
 import (
 	"context"
 	"encoding/json"
@@ -19,30 +17,20 @@ type irEntry struct {
 	Payload message.Message
 }
 
-// showPage is how many IR entries one backward step asks for. It matches the
-// angelus's own per-call ceiling: asking for more gets silently clamped, and
-// asking for less would only mean more round trips for the same bytes.
+// showPage matches the angelus per-call ceiling; more is silently clamped.
 const showPage = 1000
 
-// showWindow is the result of the walk: the entries held, whether the walk
-// reached the head of the aria, and the total the store reports.
 type showWindow struct {
-	entries []irEntry
-	// deltas is each record's form-state window, keyed by LT, as the hub
-	// assembled it (the client holds neither the stamps nor the store).
-	deltas map[uint64]map[string]livedoc.FormDelta
-	total  int  // entries in the whole aria, from the store
-	atHead bool // the oldest entry held is the aria's first
-	pages  int  // backward reads issued, for the diagnostics
-
-	// fromHead marks the legacy fallback: the window was read FORWARD from
-	// LT 0 and may stop short of the tail.
-	fromHead bool
+	entries  []irEntry
+	deltas   map[uint64]map[string]livedoc.FormDelta // keyed by LT
+	total    int
+	atHead   bool
+	pages    int
+	fromHead bool // read forward from LT 0; may stop short of the tail
 }
 
-// gatherShowWindow walks the RAW IR backward for --verbose/--literal, the
-// two views that render records rather than turns. Everything else pages
-// composed turns from the daemon (show_pages.go).
+// gatherShowWindow walks the raw IR backward for the two record views, --verbose
+// and --literal.
 func gatherShowWindow(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showWindow, error) {
 	var w showWindow
 	before := uint64(math.MaxUint64)
@@ -76,8 +64,7 @@ func gatherShowWindow(ctx context.Context, acli *sdk.Angelus, figaroID string, o
 			w.atHead = true
 			return w, nil
 		}
-		// The RAW view shows records, so its selector is a record count:
-		// -n N in --verbose/--literal means N messages, not N turns.
+		// -n N here means N records, not N turns.
 		if !opts.all && len(w.entries) > opts.last {
 			return w, nil
 		}
@@ -85,8 +72,7 @@ func gatherShowWindow(ctx context.Context, acli *sdk.Angelus, figaroID string, o
 	}
 }
 
-// clipToBudget drops turns from the OLDEST end until the rendered size fits
-// maxBytes, and reports how many it dropped. Zero means no budget.
+// clipToBudget drops from the oldest end; maxBytes 0 means no budget.
 func clipToBudget(ts []aria.Turn, maxBytes int) ([]aria.Turn, int) {
 	if maxBytes <= 0 || len(ts) == 0 {
 		return ts, 0
@@ -110,9 +96,7 @@ func clipToBudget(ts []aria.Turn, maxBytes int) ([]aria.Turn, int) {
 	return ts[drop:], drop
 }
 
-// showNote prints a line to STDERR about what the window is and is not.
-// Stderr on purpose: `figaro show > snapshot.txt` must not have diagnostics
-// land in the file it is snapshotting.
+// showNote goes to stderr so a redirected `show` stays clean.
 func showNote(format string, args ...any) {
 	fmt.Fprintf(stderrw, "show: "+format+"\n", args...)
 }

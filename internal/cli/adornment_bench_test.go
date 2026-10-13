@@ -11,10 +11,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// What an adornment costs a frame. The paint path gained two decisions per
-// row (a gutter glyph, a snake column) and the open state gained rows, so
-// both are measured against the same window with no state at all.
-
 func benchAdornDeltas(i int) map[string]livedoc.FormDelta {
 	out := map[string]livedoc.FormDelta{}
 	for k, key := range []string{"mantra", "datetime", "phase"} {
@@ -27,7 +23,6 @@ func benchAdornDeltas(i int) map[string]livedoc.FormDelta {
 	return out
 }
 
-// benchAdorned is a window of turns whose every block carries form state.
 func benchAdorned(b *testing.B, turns int, deltas bool) *transcript {
 	b.Helper()
 	client := aria.NewClient()
@@ -89,8 +84,8 @@ func BenchmarkAdornmentFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkAdornmentFold is the gesture: the rows it drops are recomposed by
-// the frame after it, so the pair is what a keypress costs.
+// BenchmarkAdornmentFold measures the fold and the frame that recomposes it: what
+// a keypress costs.
 func BenchmarkAdornmentFold(b *testing.B) {
 	tr := benchAdorned(b, 2_000, true)
 	tr.selectNode(-1, false)

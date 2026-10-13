@@ -16,9 +16,7 @@ const quotePassage = "Pronto. The barber works in three strokes: isolate the env
 	"on what the renderer returned. Everything else is decoration, and decoration is what " +
 	"makes a green suite lie to you on the one evening it matters."
 
-// quotedQuestion is a question as the daemon writes it: the quote block, then
-// the reader's own words. It goes through quote.Block so the test cannot
-// drift from the writer.
+// quotedQuestion goes through quote.Block so the test cannot drift from the writer.
 func quotedQuestion(t *testing.T, token, question string) string {
 	t.Helper()
 	r, _, err := quote.Parse(token)
@@ -39,7 +37,6 @@ func mustMention(t *testing.T, inquiry string) quote.Mention {
 
 const quotedQuestionTail = "what did you mean by this?"
 
-// quotedPagerAt is the pager over one turn whose question quotes a passage.
 func quotedPagerAt(t *testing.T, width int) (*transcript, string) {
 	t.Helper()
 	inquiry := quotedQuestion(t, "<5.0:0-180>!", quotedQuestionTail)
@@ -57,8 +54,6 @@ func quotedPagerAt(t *testing.T, width int) (*transcript, string) {
 	return tr, inquiry
 }
 
-// selectQuestion puts the selection on the turn's opening question, which is
-// what Enter acts on.
 func selectQuestion(t *testing.T, tr *transcript, turn int, inquiry string) {
 	t.Helper()
 	p, ok := inquiryPoint(aria.Message{Turn: turn, Inquiry: inquiry})
@@ -87,8 +82,8 @@ func rowContaining(rows []string, s string) (int, bool) {
 	return 0, false
 }
 
-// A quote is CONTEXT for the question under it, so the pager's default is a
-// heading that names the passage, a few rows of it, and a count of the rest.
+// The default is a heading naming the passage, a few rows of it, and a count of
+// the rest.
 func TestQuoteCardIsBriefAndFoldsTheRest(t *testing.T) {
 	tr, _ := quotedPagerAt(t, 72)
 	rows := plainRows(tr.lines())
@@ -115,8 +110,7 @@ func TestQuoteCardIsBriefAndFoldsTheRest(t *testing.T) {
 	}
 }
 
-// ENTER OVER THE QUESTION OPENS THE CARD, the same gesture that opens a tool
-// body, and closes it again. Nothing else reveals the rest of a passage.
+// Enter over the question opens and closes the card; nothing else reveals the rest.
 func TestQuoteCardOpensOnEnter(t *testing.T) {
 	tr, inquiry := quotedPagerAt(t, 72)
 	selectQuestion(t, tr, 1, inquiry)
@@ -150,8 +144,7 @@ func TestQuoteCardOpensOnEnter(t *testing.T) {
 	}
 }
 
-// A question with no quote in it has nothing for Enter to open, so the key
-// stays inert rather than flipping a flag that changes no row.
+// A question with no quote leaves Enter inert.
 func TestEnterOverAPlainQuestionIsInert(t *testing.T) {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
@@ -169,9 +162,7 @@ func TestEnterOverAPlainQuestionIsInert(t *testing.T) {
 	}
 }
 
-// The count on the closing row is the number of rows opening it reveals.
-// Folded and open are each other's oracle: without the second column this
-// test would assert that some number was printed, which any number satisfies.
+// The count on the closing row equals the rows opening reveals.
 func TestQuoteFoldCountIsWhatOpeningReveals(t *testing.T) {
 	m := mustMention(t, quotedQuestion(t, "<5.0:0-180>!", quotedQuestionTail))
 	const width = 72
@@ -188,10 +179,7 @@ func TestQuoteFoldCountIsWhatOpeningReveals(t *testing.T) {
 	}
 }
 
-// One card, three surfaces. A quote drawn only by the pager would be a second
-// renderer for one representation, which is the defect class the shared
-// composer exists to remove. `show` is a dump and opens it; the pager and the
-// inline view fold it.
+// One card, three surfaces: `show` opens it; the pager and the inline view fold it.
 func TestQuoteCardAgreesAcrossViews(t *testing.T) {
 	const width = 72
 	inquiry := quotedQuestion(t, "<5.0:0-180>!", quotedQuestionTail)
@@ -234,8 +222,7 @@ func TestQuoteCardAgreesAcrossViews(t *testing.T) {
 		if _, ok := rowContaining(rows, quoteMark); !ok {
 			t.Fatalf("show drew no card:\n%s", strings.Join(rows, "\n"))
 		}
-		// A DUMP HAS NO GESTURE, so it cannot fold: a reader of `show` who
-		// could not see the rest of the passage would have no way to ask.
+		// A dump has no gesture, so it cannot fold.
 		if _, found := rowContaining(rows, quoteClose+" "); found {
 			t.Fatalf("show folded a card nobody can open:\n%s", strings.Join(rows, "\n"))
 		}
@@ -245,9 +232,7 @@ func TestQuoteCardAgreesAcrossViews(t *testing.T) {
 	})
 }
 
-// Prose that merely opens with a markdown blockquote is prose. The card is
-// chrome naming a passage of the conversation, and inventing one over a line
-// a reader typed by hand would be a lie about where those words came from.
+// Prose that opens with a markdown blockquote is prose, not a card.
 func TestHandTypedBlockquoteIsNotACard(t *testing.T) {
 	m := aria.Message{
 		Role:    livedoc.RoleOutput,
@@ -263,8 +248,8 @@ func TestHandTypedBlockquoteIsNotACard(t *testing.T) {
 	}
 }
 
-// A narrow pane still draws the card: the gutter costs four columns, and the
-// passage wraps inside what is left rather than past the edge.
+// A narrow pane still draws the card; the passage wraps inside the gutter, never
+// past the edge.
 func TestQuoteCardAtNarrowWidth(t *testing.T) {
 	const width = 36
 	tr, _ := quotedPagerAt(t, width)

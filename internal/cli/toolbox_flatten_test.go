@@ -7,16 +7,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// AN EDIT MUST SHOW THE EDIT.
-//
-// `edits` is a list of objects: the one argument shape in figaro that is not
-// a scalar, and it used to render through fmt's %v:
-//
-//	edits [map[new_text:// render draws one block… old_text:…]]
-//
-// Go syntax, unspecified map order, and both strings crushed onto one line
-// with their newlines gone. Named by path instead, each leaf arrives as its
-// own value and the block draws it the way it draws any other string.
+// A list-of-objects argument renders by path, each leaf as its own value, never
+// through %v.
 func TestNestedArgsFlattenByPath(t *testing.T) {
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "edit",
@@ -49,14 +41,13 @@ func TestNestedArgsFlattenByPath(t *testing.T) {
 			t.Errorf("Go syntax leaked into %s: %q", f.Name, f.Value)
 		}
 	}
-	// Sorted, so the block does not reshuffle: edits[…] before path.
+	// Sorted, so the block does not reshuffle.
 	if names[0] != "edits[0].new_text" || names[len(names)-1] != "path" {
 		t.Errorf("fields are not in sorted order: %v", names)
 	}
 }
 
-// Scalars that are not strings are JSON, which is the notation they arrived
-// in: never %v, and never quoted like a string.
+// Non-string scalars are JSON, never %v, never quoted.
 func TestNonStringScalarsAreJSON(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "bash",
 		Args: map[string]any{"command": "true", "timeout": float64(240), "quiet": true}}
@@ -72,8 +63,7 @@ func TestNonStringScalarsAreJSON(t *testing.T) {
 	}
 }
 
-// The streaming phase is untouched: while arguments arrive there is a raw
-// prefix and it is parsed as it stands.
+// While arguments stream there is a raw prefix, parsed as it stands.
 func TestStreamingPrefixStillParsed(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Input: `{"path": "x.go", "edits": [{"old_te`}
 	fields := toolArgFields(n)

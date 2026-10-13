@@ -9,16 +9,15 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// clipToWidthReference is the pre-optimization implementation of clipToWidth,
-// kept verbatim as the differential oracle: the fast path is only allowed to
-// exist if it is byte-identical to this for every input.
+// clipToWidthReference is the differential oracle: the fast path must be
+// byte-identical to it.
 func clipToWidthReference(s string, width int) string {
 	col := 0
 	var b strings.Builder
 	rs := []rune(s)
 	clipped := false
 	for i := 0; i < len(rs); {
-		if rs[i] == '\x1b' { // copy the whole escape sequence, uncounted
+		if rs[i] == '\x1b' {
 			j := i + 1
 			for j < len(rs) && !((rs[j] >= 'A' && rs[j] <= 'Z') || (rs[j] >= 'a' && rs[j] <= 'z')) {
 				j++
@@ -31,7 +30,7 @@ func clipToWidthReference(s string, width int) string {
 			continue
 		}
 		r := rs[i]
-		if r < 0x20 || r == 0x7f { // control char → space
+		if r < 0x20 || r == 0x7f {
 			r = ' '
 		}
 		w := runewidth.RuneWidth(r)
@@ -49,9 +48,6 @@ func clipToWidthReference(s string, width int) string {
 	return b.String()
 }
 
-// clipCorpus is the shared input corpus for the differential tests: empty,
-// ANSI-only, wide runes, combining marks, control characters, exactly-at-width,
-// over-width, invalid UTF-8, long runs.
 var clipCorpus = []string{
 	"",
 	" ",
@@ -60,7 +56,7 @@ var clipCorpus = []string{
 	"\x1b[2m",
 	"\x1b[2mdim\x1b[0m",
 	"\x1b[38;5;238mcolored text with a reset\x1b[0m and a tail",
-	"\x1b[", // truncated escape, no terminator
+	"\x1b[",
 	"\x1b",
 	"\x1b[0",
 	"a\x1bZb",
@@ -99,8 +95,7 @@ func TestClipToWidthMatchesReference(t *testing.T) {
 	}
 }
 
-// TestClipFitsImpliesIdentity pins the contract the fast path relies on:
-// clipFits may only report true when the rewrite is genuinely a no-op.
+// clipFits may only report true when the rewrite is a no-op.
 func TestClipFitsImpliesIdentity(t *testing.T) {
 	for _, s := range clipCorpus {
 		for _, w := range clipWidths {
@@ -112,8 +107,7 @@ func TestClipFitsImpliesIdentity(t *testing.T) {
 	}
 }
 
-// TestClipFitsASCIIWidthAssumption pins the assumption that lets the fast
-// scan count printable ASCII as one column without consulting runewidth.
+// Pins the assumption that printable ASCII is one column without consulting runewidth.
 func TestClipFitsASCIIWidthAssumption(t *testing.T) {
 	for r := rune(0x20); r < 0x7f; r++ {
 		if w := runewidth.RuneWidth(r); w != 1 {
@@ -125,8 +119,7 @@ func TestClipFitsASCIIWidthAssumption(t *testing.T) {
 	}
 }
 
-// TestClipToWidthNoAllocOnFit is the point of the exercise: a row that
-// already fits must cost zero allocations.
+// A row that already fits must cost zero allocations.
 func TestClipToWidthNoAllocOnFit(t *testing.T) {
 	rows := []string{
 		"plain ascii row well within the width",
@@ -148,7 +141,7 @@ func FuzzClipToWidth(f *testing.F) {
 		}
 	}
 	f.Fuzz(func(t *testing.T, s string, width int) {
-		if width > 4096 || width < -16 { // keep the reference from building huge strings
+		if width > 4096 || width < -16 {
 			return
 		}
 		got, want := clipToWidth(s, width), clipToWidthReference(s, width)
