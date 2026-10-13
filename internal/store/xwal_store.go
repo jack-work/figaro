@@ -213,12 +213,6 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 // owns all durability: every append syncs before it is visible, and the
 // background flush is off).
 type XwalStore struct {
-	// keepStump is the stump collection spares (the live default). One
-	// precisely because collectStump runs under s.mu and KeepStump does not,
-	// so sharing s.mu would invert the order. A pointer swap has no order to
-	// invert.
-	keepStump atomic.Pointer[string]
-
 	root     string
 	mu       sync.Mutex
 	trunks   *xwal.Store
@@ -544,13 +538,6 @@ func (s *XwalStore) writeBirth(node string, patch message.Patch) (uint64, error)
 	// Durable before anything spawns beneath it: a crash between here and the
 	// next flush would orphan a child's fork base.
 	return version, x.SyncCoherent()
-}
-
-// KeepStump names the one stump collection spares: the current default. The
-// angelus sets it whenever it mints or reuses one, so "current" tracks the
-// outfit's content rather than its name.
-func (s *XwalStore) KeepStump(id string) {
-	s.keepStump.Store(&id)
 }
 
 // isStumpLocked reports whether an id names a stump. Caller holds s.mu.
@@ -1161,19 +1148,6 @@ func (s *XwalStore) CollectStump(id string) error {
 // collectStump removes a stump that has just lost its last child.
 func (s *XwalStore) collectStump(name string) {
 	if name == "" {
-		return
-	}
-	// The LIVE default is kept even when childless: it is the one stump the
-	// next `fig new` will want, and re-minting it means re-writing the whole
-	// outfit: every skill, every credo: for nothing. Superseded versions of
-	// the same outfit are not spared: the hash is what varies when the files
-	// change, so keeping "the default" by name would pin every version it ever
-	// had.
-	keep := ""
-	if p := s.keepStump.Load(); p != nil {
-		keep = *p
-	}
-	if name == keep {
 		return
 	}
 	for _, st := range s.trunks.Stumps() {

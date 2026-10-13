@@ -449,20 +449,10 @@ func (b *XwalBackend) FormPatchesBetween(ariaID string, after, upTo uint64) ([]V
 // them apart. It survives reopen because the channel is the durable truth.
 func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
 	b.touch(ariaID)
-	return b.ApplyFormIf(ariaID, patch, 0)
-}
-
-// ApplyFormIf refuses the patch unless the form still stands at ifVersion.
-func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error) {
-	b.touch(ariaID)
-	version, _, err := b.ApplyFormEffect(ariaID, patch, ifVersion)
+	version, _, err := b.ApplyFormEffectIntent(ariaID, patch, 0, Ensure)
 	return version, err
 }
 
-// ApplyFormEffect is ApplyFormIf, and also returns what actually landed after
-// the writer reduced the patch against the board: which is what a caller
-// reporting to a human, or fanning a delta out to listeners, should be
-// speaking about.
 // FormReclaimable reports whether a form is tombstoned with no reader left.
 func (b *XwalBackend) FormReclaimable(ariaID string) (bool, error) {
 	f, err := b.form(ariaID)
@@ -470,14 +460,6 @@ func (b *XwalBackend) FormReclaimable(ariaID string) (bool, error) {
 		return false, err
 	}
 	return f.Reclaimable(), nil
-}
-
-func (b *XwalBackend) SubscribeForm(ariaID string, buffer int) (*Subscription, error) {
-	f, err := b.form(ariaID)
-	if err != nil {
-		return nil, err
-	}
-	return f.SubscribeFrom(buffer), nil
 }
 
 func (b *XwalBackend) ApplyFormPrivileged(ariaID string, patch message.Patch) (uint64, error) {
@@ -503,14 +485,6 @@ func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, 
 		return 0, message.Patch{}, err
 	}
 	return f.ApplyEffectIntent(patch, ifVersion, intent)
-}
-
-func (b *XwalBackend) ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
-	f, err := b.form(ariaID)
-	if err != nil {
-		return 0, message.Patch{}, err
-	}
-	return f.ApplyEffect(patch, ifVersion)
 }
 
 // ---- tree operations (delegated) ----
@@ -584,10 +558,6 @@ func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, er
 	return b.store.CreateOutfit(name, patch)
 }
 
-// KeepStump names the one stump collection spares. WHICH stump that is, is
-// policy: the angelus knows what the configured default resolves to today; the
-// store only knows what it was asked to build.
-func (b *XwalBackend) KeepStump(id string) { b.store.KeepStump(id) }
 func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
 	return b.store.CreateConversation(outfitID)
 }

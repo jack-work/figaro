@@ -31,10 +31,11 @@ func TestDeleteBuriesTheFormBeforeUnlinking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := be.SubscribeForm(id, 8)
+	f, err := be.form(id)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sub := f.SubscribeFrom(8)
 	defer sub.Close()
 
 	if err := be.Remove(id, false); err != nil {
