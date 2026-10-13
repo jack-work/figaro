@@ -1162,12 +1162,17 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			attribute.String("tool", tc.ToolName),
 			attribute.String("tool_call_id", tc.ToolCallID),
 		)
+		started := time.Now()
 		content, err := t.Execute(turnCtx, tc.Arguments, onChunk)
 		figOtel.Event(turnCtx, "agent.tool.execute_post",
 			attribute.String("tool", tc.ToolName),
 			attribute.String("tool_call_id", tc.ToolCallID),
 			attribute.Bool("err", err != nil),
 		)
+		figOtel.RecordTool(turnCtx, time.Since(started),
+			attribute.String("tool", tc.ToolName),
+			attribute.String("sandbox", a.tools.Sandbox()),
+			attribute.Bool("err", err != nil))
 		if err != nil {
 			emitEnd(toolOutcome{
 				content: []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))},

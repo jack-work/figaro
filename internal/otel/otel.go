@@ -102,6 +102,7 @@ var (
 	providerTTFT otelmetric.Float64Histogram
 	turnDuration otelmetric.Float64Histogram
 	turnRounds   otelmetric.Int64Histogram
+	toolDuration otelmetric.Float64Histogram
 
 	instrumentsOnce sync.Once
 
@@ -302,6 +303,7 @@ func initInstruments(m otelmetric.Meter) {
 		providerTTFT = histogram(m, "figaro.provider.ttft", "Round start to the first content delta", turnMS)
 		turnDuration = histogram(m, "figaro.turn.duration", "One user turn: every round and tool call", turnMS)
 		turnRounds = counts(m, "figaro.turn.rounds", "{round}", "Provider rounds one turn took")
+		toolDuration = histogram(m, "figaro.tool.duration", "One tool call, Execute to return", subMS)
 	})
 }
 
@@ -341,6 +343,10 @@ func RecordTTFT(ctx context.Context, d time.Duration, attrs ...attribute.KeyValu
 func RecordTurn(ctx context.Context, d time.Duration, rounds int, attrs ...attribute.KeyValue) {
 	record(ctx, turnDuration, d, attrs...)
 	recordN(ctx, turnRounds, int64(rounds), attrs...)
+}
+
+func RecordTool(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, toolDuration, d, attrs...)
 }
 
 func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {

@@ -12,9 +12,12 @@ import (
 )
 
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
+	mu      sync.RWMutex
+	tools   map[string]Tool
+	sandbox string
 }
+
+func (r *Registry) Sandbox() string { return r.sandbox }
 
 func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
@@ -100,6 +103,7 @@ func DefaultRegistry(box sandbox.Sandbox, cwdFn func() string, opts ...RegistryO
 		opt(&settings)
 	}
 	r := NewRegistry()
+	r.sandbox = box.Isolation().Provider
 	r.MustRegister(
 		&BashTool{Box: box, CwdFn: cwdFn},
 		&ProcessTool{Sessions: box.Sessions()},
