@@ -14,7 +14,8 @@ teams.log
 /figaro-turnid-backfill
 
 # Go test executables
-/*.test
+*.test
 
 # Python bytecode from the measurement fixtures
 __pycache__/
+*.pyc
