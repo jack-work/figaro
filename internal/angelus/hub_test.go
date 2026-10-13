@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/jkrpc"
 )
@@ -44,7 +45,7 @@ func (f *fakeAgent) push(t *testing.T, method string, params any) {
 
 func testHub(t *testing.T) *ariaHub {
 	t.Helper()
-	hb := newAriaHub("abcd1234", t.TempDir()+"/aria.sock")
+	hb := newAriaHub("abcd1234", t.TempDir()+"/aria.sock", authz.AllowAll())
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); hb.Close() })
 	require.NoError(t, hb.listen(ctx))

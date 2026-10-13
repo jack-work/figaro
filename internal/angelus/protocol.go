@@ -124,31 +124,30 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodContext:        h.context,
 			rpc.MethodForm:           h.form,
 			rpc.MethodLineage:        h.lineage,
-		}, h.authenticator(), h.policy()),
+			rpc.MethodHello:          h.hello,
+		}, authz.AriaHeader{}, h.policy()),
 		h: h,
 	}
 }
 
-// authenticator builds the configured authn provider. Disabled by default, so
-// a config that says nothing behaves as figaro did before this existed.
-func (h *handlers) authenticator() authz.Authenticator {
-	return authz.AriaHeader{Enabled: h.config != nil && h.config.CallerIdentityEnabled()}
+func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, error) {
+	var req rpc.HelloRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+	}
+	if req.Version != rpc.ProtocolVersion {
+		return nil, fmt.Errorf("protocol version %d; this node speaks %d", req.Version, rpc.ProtocolVersion)
+	}
+	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Principal: authz.PrincipalOf(ctx)}, nil
 }
 
-// policy builds the configured authorization policy. The turn-active predicate
-// is read off the live registry: a dormant or unknown aria has no turn in
-// flight, so it cannot be mid-turn, and a fork of it is free to proceed.
 func (h *handlers) policy() authz.Policy {
-	name := "allow-all"
-	if h.config != nil {
-		name = h.config.AuthzPolicy()
-	}
-	switch name {
-	case "default":
+	if h.config != nil && h.config.AuthzPolicy() == "default" {
 		return authz.DefaultRules(h.turnActive)
-	default:
-		return authz.AllowAll()
 	}
+	return authz.AllowAll()
 }
 
 func (h *handlers) turnActive(ariaID string) bool {

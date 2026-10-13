@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/jkrpc"
 )
@@ -47,7 +48,8 @@ type ariaHub struct {
 	// "form", …). A form has no agent to wake, ever: methods that reach
 	// the wake path on a form node get a named refusal instead of a
 	// nonsensical restore attempt.
-	kind string
+	kind   string
+	policy authz.Policy
 
 	mu    sync.Mutex
 	ln    net.Listener
@@ -59,8 +61,8 @@ type ariaHub struct {
 	closed bool
 }
 
-func newAriaHub(id, sockPath string) *ariaHub {
-	return &ariaHub{id: id, sockPath: sockPath, conns: map[*jkrpc.Server]struct{}{}}
+func newAriaHub(id, sockPath string, policy authz.Policy) *ariaHub {
+	return &ariaHub{id: id, sockPath: sockPath, policy: policy, conns: map[*jkrpc.Server]struct{}{}}
 }
 
 // listen binds the socket. It is separate from construction so a failure to
@@ -99,7 +101,12 @@ func (hb *ariaHub) accept(ctx context.Context) {
 			}
 			continue
 		}
-		go hb.serve(ctx, conn)
+		cctx, err := authz.Admit(ctx, conn)
+		if err != nil {
+			conn.Close()
+			continue
+		}
+		go hb.serve(cctx, conn)
 	}
 }
 
@@ -236,7 +243,7 @@ func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
 			return hb.route(ctx, method, params)
 		}
 	}
-	return out
+	return authz.Guard(out, authz.AriaHeader{}, hb.policy)
 }
 
 // route sends a request to the agent, waking the aria when the method needs
