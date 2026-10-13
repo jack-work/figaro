@@ -66,7 +66,9 @@ type transcript struct {
 	// are local.
 	composerCompleter func(string) []string
 	// sendComposer is called holding the render lock: it must hand off.
-	sendComposer func(string)
+	sendComposer   func(string)
+	decideComposer func(question string, choices []string)
+	decision       *decision
 	// openForm must not take the render lock: every hook here is called from
 	// dispatch, which holds it.
 	openForm func()
@@ -135,6 +137,8 @@ type transcript struct {
 	// composerHeld: a ':' line was opened over the drawer, so closing it
 	// returns to the draft.
 	composerHeld bool
+	optline      lineEditor
+	askOptions   bool
 	menu         *completionMenu
 	// notes lives here, not on the status, because a status is replaced on
 	// every hop.

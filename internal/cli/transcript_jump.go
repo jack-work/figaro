@@ -126,6 +126,10 @@ func boxCancel(t *transcript) {
 		t.dismissCompletion()
 		return
 	}
+	if t.box == boxComposer && t.askOptions {
+		t.closeOptions()
+		return
+	}
 	// The drawer has one more rung: insert drops into normal mode, where Esc
 	// puts it away.
 	if t.box == boxComposer {

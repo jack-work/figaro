@@ -5,6 +5,7 @@ package cli
 // it and a quote changes the words.
 
 import (
+	"github.com/jack-work/figaro/api/decide"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -20,13 +21,18 @@ const (
 
 func (t *transcript) boxSigil() string {
 	if t.box == boxComposer {
+		if t.askOptions {
+			return optionsPrompt
+		}
 		return t.composerSigil()
 	}
 	return ":"
 }
 
-// Only under M-m.
 func (t *transcript) composerTitle() []string {
+	if t.box == boxComposer && t.askOptions {
+		return t.optionsTitle()
+	}
 	if t.box != boxComposer || !t.verbose() {
 		return nil
 	}
@@ -47,6 +53,9 @@ func (t *transcript) boxOpen() bool { return t.box != boxNone }
 // construction.
 func (t *transcript) editor() *lineEditor {
 	if t.box == boxComposer {
+		if t.askOptions {
+			return &t.optline
+		}
 		return &t.draft
 	}
 	return &t.cmdline
@@ -85,6 +94,10 @@ func pagerVisualComposer(t *transcript) {
 // would send the first line and drop the rest.
 func boxEnter(t *transcript) {
 	if t.box == boxComposer {
+		if t.askOptions {
+			composerSubmit(t)
+			return
+		}
 		if t.acceptCompletion() {
 			return
 		}
@@ -97,11 +110,23 @@ func boxEnter(t *transcript) {
 // The placeholder is expanded here, under the render lock: it reads the index and
 // the selection, and the next keystroke may move either.
 func composerSubmit(t *transcript) {
+	if t.askOptions {
+		t.optline.endSearch()
+		t.decideDraft(strings.TrimRight(t.draft.String(), "\n"), decide.Choices(t.optline.String()))
+		return
+	}
 	t.draft.endSearch()
 	if t.acceptCompletion() {
 		return
 	}
 	text := strings.TrimRight(t.draft.String(), "\n")
+	if strings.TrimSpace(text) != "" && t.routeDraft(text) {
+		return
+	}
+	t.sendDraft(text)
+}
+
+func (t *transcript) sendDraft(text string) {
 	if strings.TrimSpace(text) == "" {
 		t.composerClose(true)
 		return
@@ -161,6 +186,7 @@ func (t *transcript) composerClose(clear bool) {
 	t.box = boxNone
 	t.clearCompletions()
 	if clear {
+		t.closeOptions()
 		t.draft.reset()
 	}
 }
@@ -188,7 +214,7 @@ func (t *transcript) pasteText(text string) {
 
 // Tab in a draft offers form references and paths, not verbs and flags.
 func (t *transcript) draftCompleter() func(string) []string {
-	if t.composerCompleter == nil {
+	if t.composerCompleter == nil || t.askOptions {
 		return nil
 	}
 	return t.composerCompleter

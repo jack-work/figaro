@@ -52,6 +52,7 @@ var pitFaces = map[pitID]pitFace{
 	pitForm:       {"웃", "form", "⌖", modePanel},
 	pitConfirm:    {"[y/N]", "confirm", "", modeConfirm},
 	pitCompletion: {"", "completion", "♪", modeBox},
+	pitDecision:   {"⁇", "decision", "", modePanel},
 }
 
 func (d pitID) face() pitFace {

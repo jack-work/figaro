@@ -807,6 +807,7 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.setCommandCompleter(in.complete)
 	in.lt.tr.composerCompleter = in.completeComposer
 	in.lt.tr.sendComposer = in.sendComposer
+	in.lt.tr.decideComposer = in.decideComposer
 	in.lt.setCatchUp(in.pagerCatchUp)
 	in.lt.tr.dropRow = in.dropPitRow
 	in.lt.tr.attendAria = in.attendFromPager

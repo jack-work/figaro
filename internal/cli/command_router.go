@@ -72,7 +72,8 @@ var overlayVerbs = map[string]bool{
 	"listen": true,
 	"attend": true, "at": true,
 	"send": true, "s": true,
-	"new": true, "replay": true, "fork": true,
+	"decide": true,
+	"new":    true, "replay": true, "fork": true,
 	"kill":   true, // may kill the aria on screen, and must then move
 	"import": true, // reads os.Stdin for `-`
 	"login":  true, // an interactive OAuth flow
@@ -184,6 +185,8 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandFork(ctx, args)
 		})
+	case "decide":
+		in.commandDecide(args)
 	case "notifications", "no":
 		in.mu.Lock()
 		if len(args) > 0 && args[0] == "clear" {
