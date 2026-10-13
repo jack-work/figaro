@@ -233,7 +233,7 @@ fig set --id <aria> 'system.fork_incantation=you are a branch; the trunk went on
 *Design depth: [../contributing/forms-design.md](../contributing/forms-design.md)
 and [../contributing/roles-design.md](../contributing/roles-design.md)
 (storage, hub routing, lifecycle internals). Spec of record:
-`plans/forms-and-roles-v2.md`, in the repository, not in the binary.*
+`history:plans/forms-and-roles-v2.md`, in the repository, not in the binary.*
 
 ## Intrinsic forms
 

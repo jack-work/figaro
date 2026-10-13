@@ -114,7 +114,7 @@ that can rebuild the form from footers.
 
 Unresolved when it stopped: "normalizations need no locks" holds only in the
 sense that no topology lock is held across disk I/O. The patches still
-serialize on the one writer, which is cure B in `plans/store-locks.md`. Open
+serialize on the one writer, which is cure B in `history:plans/store-locks.md`. Open
 question was whether the actor loop lands first as its own refactor.
 
 ## Tonight's addition: the convergence

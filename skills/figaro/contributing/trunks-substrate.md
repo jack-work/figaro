@@ -415,7 +415,7 @@ the RPC does with it.
   methods in `internal/store/xwal_backend.go` (`ApplyForm`,
   `FormState`, `FormPatchesBetween`, which answers an absolute range
   `(after, upTo]` with a read-only VIEW on the published patch array
-  rather than a copy: see `plans/form-view-perf.md`). One gotcha: the channel's foreign-key
+  rather than a copy: see `history:plans/form-view-perf.md`). One gotcha: the channel's foreign-key
   index maps a main LT to the **last** entry at that LT, so a mapping with
   several entries per LT must range-scan rather than `Lookup`.
 

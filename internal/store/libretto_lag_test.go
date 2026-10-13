@@ -70,7 +70,7 @@ func TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped(t *testing.T) {
 			"change rides the next entry.")
 	} else {
 		t.Logf("THE FOLD IS NOT BEHIND HERE. The hypothesis in " +
-			"plans/delta-seam-rebased.md does not explain the restart lag, and the " +
+			"history:plans/delta-seam-rebased.md does not explain the restart lag, and the " +
 			"cause is elsewhere -- which is what a previous bearer already suspected.")
 	}
 }

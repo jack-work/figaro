@@ -12,7 +12,7 @@ for what shipped, and the differences below before changing either.
   the form needs no marker file and no lookup, and it cannot be forked or
   bound. An unbound form node would have needed client-specified trunk ids,
   which figwal does not have yet (and which Gluck wants for other reasons:
-  see `plans/answers-forms.md` §2). `listStumps` filters it out, or the
+  see `history:plans/answers-forms.md` §2). `listStumps` filters it out, or the
   hierarchy grows a row describing itself.
 - **Retention is NOT built.** This document asks for a single rewritten
   segment, which needs figwal's compacting channel (phase 7). Until then the

@@ -82,4 +82,4 @@ re-seated here and cachedLog was deleted; the composed UI IR followed,
 which deleted UIBudget and its LRU. Three tenants, one budget, one
 eviction order. The composed layer addresses turns by the LT that OPENED
 them, so its coordinates and the decoded layer's are the same key space.
-See plans/composed-layer-on-tree.md.
+See history:plans/composed-layer-on-tree.md.

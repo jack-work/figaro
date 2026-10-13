@@ -92,5 +92,5 @@ Deeper: [reference/forms.md](reference/forms.md) (all semantics, both
 personas, including `fig study` and `fig cast`, which are built and
 documented there), and [contributing/forms-design.md](contributing/forms-design.md)
 plus [contributing/roles-design.md](contributing/roles-design.md) for the
-design. The governing brief, `plans/forms-and-roles-v2.md`, lives in the
+design. The governing brief, `history:plans/forms-and-roles-v2.md`, lives in the
 repository and does not ship with the binary.

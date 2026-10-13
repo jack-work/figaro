@@ -240,7 +240,7 @@ not have and cannot get. A form socket is a single-channel stream.
 
 That is precisely why it is the right specimen for this exercise — and why the
 same machinery is worth pointing at things that *do* move (see
-`plans/reactive-queue-and-state-forms.md`).
+`history:plans/reactive-queue-and-state-forms.md`).
 
 ---
 

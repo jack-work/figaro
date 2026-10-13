@@ -50,5 +50,5 @@ done
 echo
 echo "# The lock SITES above are where to look. What each lock is FOR, and"
 echo "# whether its critical section holds an invariant that could be published"
-echo "# instead, is plans/store-locks.md's question and not this script's."
+echo "# instead, is history:plans/store-locks.md's question and not this script's."
 rm -rf "$(dirname "$BIN")"

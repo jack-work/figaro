@@ -116,9 +116,9 @@ worktree (branch `figaro`, 15 commits, 2026-09-29, unmerged), and
 
 | # | date | design | status |
 |---|---|---|---|
-| 1 | 08-09 | `plans/figaro-lab.md`: nspawn test fleet on spain; isolation = the four `FIGARO_*_DIR` knobs | proposal |
+| 1 | 08-09 | `history:plans/figaro-lab.md`: nspawn test fleet on spain; isolation = the four `FIGARO_*_DIR` knobs | proposal |
 | 2 | 08-24 | CLI dials a remote origin behind Authelia | superseded same day |
-| 3 | 08-25 | **peer mesh, "CLI stays dumb"**: CLI → local angelus → peers; control plane fanned out, data plane direct to owner; doorkey peer links, Authelia for browsers | `gateway/plans/http-gateway.md` rev 3; steps 0-4c built on the branch; spain deploy lost |
+| 3 | 08-25 | **peer mesh, "CLI stays dumb"**: CLI → local angelus → peers; control plane fanned out, data plane direct to owner; doorkey peer links, Authelia for browsers | `gateway/history:plans/http-gateway.md` rev 3; steps 0-4c built on the branch; spain deploy lost |
 | 4 | 08-26 | `figaro new --node <peer>`; forks stay on parent's node; no ambient origin; peers symmetric in role, asymmetric in reachability | decided, not built |
 | 5 | 09-10 | **"CLI speaks both doors"**: CLI can use a remote gateway natively like a browser, local angelus has the same contract, federation still behind the angelus | reverses rule 1 of #3; never reconciled into the plan |
 | 6 | 09-10/16 | topology as a form; **store UUID at its root; ids never reused; `(store,id)` on the wire, bare locally**; presence out of the form; rev is an ETag not an anti-loop token | agreed in `duck/2026-09-16-one-model-two-faces.md` |
@@ -481,7 +481,7 @@ integrator. Not forty worktrees.
   no credentials, no provider.
 - **`sandbox-uid` needs host facilities**: `podman`, `bwrap`, a second uid.
   Add them to the lane's shell, or run that lane in the nspawn container
-  `plans/figaro-lab.md` describes on spain, where a throwaway uid is free.
+  `history:plans/figaro-lab.md` describes on spain, where a throwaway uid is free.
 - Five daemons at the 512 MB soft limit is fine on the dev box; it is not
   fine inside one small container. Size the container or stagger.
 

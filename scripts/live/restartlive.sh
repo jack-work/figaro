@@ -38,7 +38,7 @@ SEND_OUT=$("$BIN" send --id "$ARIA" -- "say: two" 2>&1); assert_send "say: two" 
 # branch. It does not reproduce on either. Do not treat its absence as a fix
 # by anything on this branch; treat the number below as the assertion, and if
 # the symptom returns by hand it needs a new instrument, not this one.
-# History and the refuted hypotheses: plans/lazy-store-passes.md.
+# History and the refuted hypotheses: history:plans/lazy-store-passes.md.
 echo "--- source vs libretto version, immediately before the first send:"
 "$BIN" state show --id "$FORM" -j 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);print("    source form keys:",sorted(k for k in d if not k.startswith("libretto")))' 2>/dev/null || echo "    (could not read the form)"
 

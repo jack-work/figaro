@@ -1,7 +1,7 @@
 # Does a real endpoint accept a request body with NO CONTENT-LENGTH, and are
 # the bytes the same as the buffered framing puts on the wire?
 #
-# Part III of plans/delta-seam.md called the first question "the risk that
+# Part III of history:plans/delta-seam.md called the first question "the risk that
 # decides feasibility" and said it is a short experiment against each
 # endpoint, not an argument. This is that experiment, plus the oracle the unit
 # test cannot reach: the SAME send under both framings, with figaro's own wire

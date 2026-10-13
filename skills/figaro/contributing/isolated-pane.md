@@ -60,7 +60,7 @@ shell by hand, set it.
 **A fake provider is not a lesser test, it is a different axis.** The smoke
 suite drives a real model and reports fourteen ways to DECLINE, every one of
 them produced by the model answering too fast, not calling the tool, or
-producing a reply long enough to promote the pager (`plans/smoke-skip-profile.md`).
+producing a reply long enough to promote the pager (`history:plans/smoke-skip-profile.md`).
 A hunt into chrome does not want that weather: it wants a paragraph of a known
 length, every run. `scripts/fake-gateway-prose.py` serves `<replydir>/<n>.md`
 for request n, so `dp_reply` decides what the turn says. Anything about

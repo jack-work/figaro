@@ -6,7 +6,7 @@ family in `internal/cli`. If you want to USE forms, read
 [../reference/forms.md](../reference/forms.md) first; if you want the outfit grammar, read
 [../reference/outfits.md](../reference/outfits.md).
 
-Spec of record: `plans/forms-and-roles-v2.md`. This file is the distilled
+Spec of record: `history:plans/forms-and-roles-v2.md`. This file is the distilled
 design, kept current with the code.
 
 ## 1. One primitive, one verb, nothing converts
@@ -211,7 +211,7 @@ them:
 - The translator asks each member for an ABSOLUTE range, `(after, upTo]`,
   and the store answers with a read-only VIEW into an immutable, published
   patch array. It used to answer with a copy of the whole history, once per
-  member per Send: `plans/form-view-perf.md` has the measurements and the
+  member per Send: `history:plans/form-view-perf.md` has the measurements and the
   reason a bounded question was being answered at unbounded cost.
 - What each event SAYS beyond the fact is `system.study_incantation` on the
   observer's own board. See §8c.
@@ -225,7 +225,7 @@ them:
   (recompute, never adjust, so it repairs both directions). The copy outlives
   its source: that is what makes a studied form deletable, and it is why a
   libretto is NOT reclaimed merely because its refcount reached zero.
-  Design: `plans/durable-forms.md` §12, corrections in §12.8.
+  Design: `history:plans/durable-forms.md` §12, corrections in §12.8.
 
 ## 8c. Incantations
 

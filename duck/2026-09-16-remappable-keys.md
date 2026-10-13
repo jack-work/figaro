@@ -91,7 +91,7 @@ TOML section.** Reasons, in order of weight:
 2. **The shape is different.** Everything in `[cli]` is a scalar with a
    default; a keymap is a list of rows with merge semantics (replace, unbind,
    refuse), sharing no loader, validator or error report with the scalars.
-3. **It is the direction of travel.** `plans/tui-config-section-and-sticky.md`
+3. **It is the direction of travel.** `history:plans/tui-config-section-and-sticky.md`
    §2 proposes `[cli.tui]` for pager-only scalars; `keys.toml` is the same cut
    one level further, and scalars stay in `config.toml` under `[cli.tui]`.
 
@@ -333,14 +333,14 @@ defaults behave as they did before the table refactor, and that survives.
 
 ## 6. Where this lands relative to prior art
 
-- `plans/tui-config-section-and-sticky.md` is the direct ancestor: its
+- `history:plans/tui-config-section-and-sticky.md` is the direct ancestor: its
   `[cli.tui]` split, one-seam rule (shipped, `nodes.go:520-537`),
   `md.Undecoded()` warning and staging all stand. `keys.toml` is the next cut
   after `[cli.tui]`, not a rival to it.
-- `plans/transcript-command-mode.md` makes the `:` box the CLI's grammar, so
+- `history:plans/transcript-command-mode.md` makes the `:` box the CLI's grammar, so
   `figaro keys bind …` works from `:` free through `runThroughRouter`. An
   argument for a real verb over a pager-only gesture.
-- `plans/status-bar-and-modes.md` gave us "modes proper, not flags checked ad
+- `history:plans/status-bar-and-modes.md` gave us "modes proper, not flags checked ad
   hoc"; its `statusView`-as-a-value argument is §5's.
 - `duck/2026-09-16-attendance-form.md` hit the same missing update path from the
   other end and proposes an in-memory form for client state, which is the
@@ -391,7 +391,7 @@ Gluck's, restated as questions rather than answered:
 1. Is `keys.toml` the file, or should `[cli]`/`[cli.tui]` leave `config.toml`
    for a `tui.toml` with the keymap as one table inside it? I argued the keymap
    into its own file (§2); the scalars are a separate call, and
-   `plans/tui-config-section-and-sticky.md` §7 question 1 is still open.
+   `history:plans/tui-config-section-and-sticky.md` §7 question 1 is still open.
 2. May remapping reach the `:` box's readline set (`keymap.go:552-660`, about 60
    rows)? Those chords are readline's by contract and a user who moves them
    diverges from every shell they know. I would allow it and warn.
