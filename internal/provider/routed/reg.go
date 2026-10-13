@@ -15,6 +15,7 @@ import (
 const (
 	openRouterName = "openrouter"
 	gatewayName    = "gateway"
+	azureName      = "azure"
 )
 
 func init() {
@@ -32,6 +33,39 @@ func init() {
 		LoginHint:    "OpenAI-compatible gateway: set base_url in providers/gateway.toml",
 		Build:        buildGateway,
 	})
+	registerAzure()
+}
+
+func registerAzure() {
+	provider.Register(&provider.Registration{
+		Name:      azureName,
+		EnvVar:    "AZURE_OPENAI_API_KEY",
+		HasOAuth:  true,
+		LoginHint: "Azure AI Foundry (Microsoft Entra device code):  figaro login azure",
+		Build:     buildAzure,
+	})
+}
+
+func buildAzure(ctx provider.BuildContext) (provider.Provider, error) {
+	f, err := LoadFile(ctx.Loaded, azureName)
+	if err != nil {
+		return nil, err
+	}
+	if v := strings.TrimSpace(os.Getenv(provider.BaseURLEnv(azureName))); v != "" {
+		f.BaseURL = v
+	}
+	if strings.TrimSpace(f.BaseURL) == "" {
+		return nil, fmt.Errorf("azure: no base_url: set AZURE_BASE_URL or base_url in providers/azure.toml, e.g. https://<resource>.openai.azure.com/openai/v1")
+	}
+	spec, err := f.Apply(Spec{
+		Name:    azureName,
+		Default: Chat,
+		Caps:    provider.UncachedRoute(f.BaseURL).Caps,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return Build(ctx, spec, f.APIKey)
 }
 
 func buildOpenRouter(ctx provider.BuildContext) (provider.Provider, error) {
