@@ -8,15 +8,9 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// A LIFETIME STATED AT BIRTH IS A LIFETIME.
-//
-// `figaro new -S system.ttl=10m` and a `figaro send -S system.ttl=10m` that
-// mints both land the key in the BIRTH patch, which writeBirth appends to the
-// form channel directly. The mirror into the sidecar hangs off Form.OnCommit,
-// which a birth never passes through, so the board said "10m" and the reaper
-// never heard of it. Measured on the live daemon, 2026-10-09: a birth with
-// system.ttl absent from `figaro doctor ttl`, while the same key set a moment
-// later with `figaro set` appeared at once.
+// A lifetime stated at birth is a lifetime: the birth patch is appended to
+// the form channel directly by writeBirth, bypassing Form.OnCommit, so the
+// sidecar mirror must be taken at birth too.
 func TestTTLStatedAtBirthReachesTheSidecar(t *testing.T) {
 	b := newTTLBackend(t)
 	outfit, err := b.CreateOutfit("ttl", form.Build(form.Snapshot{}, map[string]json.RawMessage{

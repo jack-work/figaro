@@ -6,21 +6,10 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// SEEDING A FORK'S DECODED CACHE FROM ITS ANCESTOR.
-//
-// Phase 3 measured the duplication and named the fix: a fork re-decodes its
-// parent's prefix, and a shallow copy shares every payload string. This is the
-// hazard test for that fix, written before it.
-//
-// THE HAZARD IS NOT PERFORMANCE, IT IS TRUTH. A seeded cache builds its
-// resident window from rows another log decoded. If the rows are the wrong
-// ones -- wrong lineage, wrong side of the fork base, an off-by-one on the
-// seam -- the cache does not go slow, it SERVES THE WRONG HISTORY, and
-// trimmed/belowWindow decide whether a read falls through to disk or is
-// answered from memory. A miss is recoverable; this would be a lie.
-//
-// So the oracle is an UNSEEDED cache over the same aria: every read method
-// must agree, row for row, LT for LT.
+// Seeding a fork's decoded cache from its ancestor. The hazard is truth, not
+// performance: a seeded cache built from the wrong rows serves the wrong
+// history rather than going slow. The oracle is an unseeded cache over the
+// same aria: every read method must agree, row for row.
 
 // unseededOpen builds a cache for id the way a cold process would: a fresh
 // backend, no ancestor resident, nothing to seed from.
@@ -67,11 +56,9 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// THE CHILD MUST HAVE HISTORY OF ITS OWN AT CONSTRUCTION TIME, or the seam
-	// is never exercised. A fork opened the instant it is cut owns nothing
-	// above the base, so seed+own degenerates to seed and an off-by-one at the
-	// seam is invisible -- proven: a deliberate +2 mutation passed this test
-	// before this paragraph existed.
+	// The child must have history of its own at construction time, or the
+	// seam is never exercised: a fork opened the instant it is cut owns
+	// nothing above the base, and an off-by-one at the seam is invisible.
 	cIR, err := b.OpenFigIR(child)
 	if err != nil {
 		t.Fatal(err)
@@ -139,8 +126,8 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 	}
 }
 
-// THE MEASUREMENT THE FIX EXISTS FOR, by identity: with the ancestor resident,
-// the child's shared prefix must be the ancestor's decoded entries.
+// With the ancestor resident, the child's shared prefix must be the
+// ancestor's decoded entries, by identity.
 func TestSeededForkSharesTheAncestorsEntries(t *testing.T) {
 	b, parent, childA, childB := forkedPair(t)
 	defer b.Close()

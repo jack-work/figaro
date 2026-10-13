@@ -10,25 +10,11 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE INVARIANT: folding every patch the figaro was shown reproduces its
-// form exactly.
-//
-// A patch is shown when some IR entry's cursor stamp is at or above the
-// patch's version -- that is how the projection decides what to render as
-// <system-reminder> blocks. So a patch nobody's stamp reaches is state the
-// aria HAS and has never been told about, which is invisible: `figaro
-// state` shows it, the model does not know it.
-//
-// Two defects hid under the absence of this assertion. The outfit patch
-// was written after the record meant to introduce it, so no aria rendered
-// its skills; and every entry appended in-process came back with cursor
-// zero, because the cache stored the caller's struct instead of the record
-// that was written -- so nothing rendered at all until a restart.
-//
-// The outfit needs no special case, and that is the point of the model:
-// the null root's board is empty, so the outfit's own patch IS the
-// snapshot, and every aria forked from the stump inherits it as an
-// ordinary delta.
+// Folding every patch the figaro was shown reproduces its form exactly. A
+// patch is shown when some IR entry's cursor stamp is at or above its
+// version; a patch nobody's stamp reaches is state the aria has and was
+// never told about. The outfit needs no special case: the null root's board
+// is empty, so the outfit's own patch is the snapshot.
 func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -120,12 +106,9 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	}
 }
 
-// A fork changes the aria's identity, and the branch must be TOLD -- the
-// new aria_id is an ordinary form patch, so it has to reach the
-// child as an ordinary delta. The child inherits its parent's history, so
-// it sees the old value first and then the transition, which is the whole
-// point of encoding state as point-in-time deltas: the model can read its
-// own past and know which value is current.
+// A fork changes the aria's identity, and the branch must be told: the new
+// aria_id is an ordinary form patch, so the child sees the old value first
+// and then the transition.
 func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {

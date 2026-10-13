@@ -121,9 +121,8 @@ func BenchmarkWindowAppend(b *testing.B) {
 // so a skewed distribution is expressible.
 func costOf(e Entry[uint64]) int { return int(e.Payload) }
 
-// The byte budget is the bound that matters. Row windowing is a poor proxy:
-// measured on a real aria, dropping 80% of rows released 26% of bytes, because
-// the large tool results cluster at the tail.
+// The byte budget is the bound that matters: the large tool results cluster
+// at the tail, so row windowing is a poor proxy.
 func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 	// Head entries are cheap, tail entries expensive: the real shape.
 	fks := make([]uint64, 100)
@@ -185,9 +184,8 @@ func TestWindow_RowAndByteBoundsCompose(t *testing.T) {
 	assert.LessOrEqual(t, c.ResidentBytes(), 100)
 }
 
-// The budget has to reach the CACHE, not just the config struct. A window set
-// after the first handle is built would leave that aria unbounded for the
-// daemon's life, which is the bug the IR window's own comment warns about.
+// The budget has to reach the cache, not just the config struct: a window set
+// after the first handle is built would leave that aria unbounded.
 func TestTranslationBudgetReachesTheCache(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {

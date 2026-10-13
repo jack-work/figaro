@@ -83,8 +83,7 @@ func putSchema(tb testing.TB, root string, m map[string]int) {
 	}
 }
 
-// A store written by a NEWER figaro must be refused, not silently misread.
-// This is the failure mode nothing covered before the schema sidecar.
+// A store written by a newer figaro must be refused, not silently misread.
 func TestSchemaRefusesNewerStore(t *testing.T) {
 	root, _ := seedSchemaStore(t)
 	putSchema(t, root, map[string]int{chanIR: 999})
@@ -166,10 +165,8 @@ func TestSchemaWrittenOnFirstOpen(t *testing.T) {
 	}
 }
 
-// A store written by a NEWER build must be refused, not silently
-// misread. This is the gate that covers the form becoming unkeyed:
-// an older binary reads its main LT of 0 as real and loses every inline
-// transition, so the IR bump has to stop it at the door.
+// The gate that covers the form becoming unkeyed: an older binary would read
+// its main LT of 0 as real and lose every inline transition.
 func TestSchemaRefusesANewerStore(t *testing.T) {
 	dir := t.TempDir()
 	b, err := NewXwalBackend(dir, 0)

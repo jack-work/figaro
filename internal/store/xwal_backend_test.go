@@ -73,10 +73,9 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	if str(cbGet(snap, "system.cwd")) != "/tmp" {
 		t.Fatalf("cwd after apply = %q", str(cbGet(snap, "system.cwd")))
 	}
-	// Commit a turn so the set is below the fork point (the realistic
-	// flow: set rides with its turn). A set with NO intervening turn sits
-	// at the fork boundary and would ride only with the continuation -
-	// a known edge to revisit.
+	// Commit a turn so the set is below the fork point. A set with no
+	// intervening turn sits at the fork boundary and rides only with the
+	// continuation.
 	if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}}); err != nil {
 		t.Fatal(err)
 	}
@@ -332,11 +331,8 @@ func TestXwalBackend_TreeVectors(t *testing.T) {
 	}
 }
 
-// TestNoStranding_SiblingPromoteDoesNotInvalidate reproduces the exact
-// production bug: agent for aria A holds its Log; sibling aria B is
-// promoted (which used to trigger evictAll → close every aria's cached
-// xwal → next A.Append returns "file already closed"). Under the new
-// design A's Log has no cached xwal, so a promote on B is invisible.
+// A sibling's promote must not invalidate a held Log: the backend caches no
+// xwal handle, so a promote on B is invisible to A.
 func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -364,16 +360,14 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	// backend does NOT evict A's handle).
 	_, _ = b.Promote(convB, 1)
 
-	// A can still append. Under the old evictAll this returned
-	// "append message: write .../n50/...jsonl: file already closed".
+	// A can still append.
 	if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("post-promote-on-sibling append: %v", err)
 	}
 }
 
-// TestNoStranding_ConcurrentAppendsAcrossArias hammers many arias in
-// parallel while promotes and forks fire on some of them. No append
-// should fail, no reads should observe corruption.
+// Many arias appended in parallel while promotes and forks fire on some of
+// them: no append fails, no read observes corruption.
 func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {

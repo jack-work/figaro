@@ -8,15 +8,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE ENTRY AN APPEND RETURNS CARRIES THE SAME STAMP THE LOG DOES.
-//
-// FormChannelVersion and StudyVersions are stamped BY the append -- the
-// caller cannot compute them -- and xwalLog.Append recovers them by READING
-// THE RECORD BACK. This test pins the equivalence rather than the mechanism:
-// whatever the append returns must equal what the log serves for that LT.
-//
-// It is the guard for hoisting the stamp out of the readback. If the returned
-// value is ever derived a second way, this is what goes red.
+// The entry an append returns carries the same stamp the log serves for that
+// LT: FormChannelVersion and StudyVersions are stamped by the append, and
+// this pins the equivalence rather than the mechanism.
 func TestTheAppendedEntryCarriesTheSameStampTheLogServes(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	ir, err := be.OpenFigIR(aria)

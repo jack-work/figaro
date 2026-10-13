@@ -48,11 +48,7 @@ func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 	return root, conv
 }
 
-// BenchmarkOpenLargeAria guards the "fresh open per op" cost. Opening an xwal
-// for a large aria used to re-scan + JSON-decode + hash-verify every frame and
-// eagerly build the FK index (~O(entries)); the figwal lazy-buildFK +
-// hash-without-remarshal changes made it cheap. If this regresses, "fresh open
-// per op" (the write path) makes large arias crawl again.
+// BenchmarkOpenLargeAria guards the fresh-open-per-op cost on a large aria.
 func BenchmarkOpenLargeAria(b *testing.B) {
 	root, conv := seedLargeAria(b, 600, 2048) // ~1.2MB IR
 	s, err := OpenXwalStore(root, 0)

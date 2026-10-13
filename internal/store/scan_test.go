@@ -109,13 +109,9 @@ func TestScanBoundHoldsAgainstAppends(t *testing.T) {
 	require.Len(t, collect[string](mem, 0, 0), 11, "an unbounded one does")
 }
 
-// A WALK MUST CROSS A FORK SEAM THE WAY A READ DOES.
-//
-// Every other scan test here builds a log with no lineage, so cuts() returns
-// one coordinate and the whole ancestor path -- substrateScan against another
-// node, interleaved with resident runs -- never runs. That is the riskiest
-// code in the change and it was the least covered: this test is the one that
-// executes it.
+// A walk must cross a fork seam the way a read does: every other scan test
+// has no lineage, so substrateScan against another node interleaved with
+// resident runs only executes here.
 func TestScanCrossesAForkSeam(t *testing.T) {
 	parentMem := NewMemLog[string]()
 	for i := 0; i < 40; i++ {

@@ -8,23 +8,11 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// SCAN POLLUTION, measured: a whole-history read through tree.Cache DOES
-// evict other nodes' hot tails. Both tests below assert that it happens.
-//
-// tree is not at fault -- a cache that caches what it reads is correct, and
-// bounding a scan is not something it promises. The conclusion is a POLICY for
-// the consumer: only bounded reads near the window are routed through the
-// cache; a whole-history read passes through to the source, retaining nothing.
-//
-// cachedLog already states that policy for backward paging in its own words --
-// "a scroll must not permanently re-resident a prefix nobody will read again"
-// -- and the re-seat must extend it rather than route everything through
-// Range. These tests are why.
-//
-// If tree ever bounds scans itself, these fail, and the policy can be
-// simplified. That is the point of asserting the fact rather than the wish.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING.
+// Scan pollution, asserted: a whole-history read through tree.Cache does
+// evict other nodes' hot tails. The cache is correct; the policy is the
+// consumer's: only bounded reads near the window go through the cache, and a
+// whole-history read passes through to the source. If tree ever bounds scans
+// itself, these fail and the policy can be simplified.
 
 type scanFixture struct {
 	cache  *fwtree.Cache[string]
@@ -79,9 +67,8 @@ func TestWholeHistoryReadEvictsOtherAriasTails(t *testing.T) {
 			before["ariaA"], f.calls["ariaA"], before["ariaB"], f.calls["ariaB"])
 	}
 
-	// The scan: one aria's whole history, far larger than the budget. Eviction
-	// is the standing sweep's work now, so the pollution lands when the sweep
-	// runs rather than inside the read.
+	// The scan: one aria's whole history, far larger than the budget. The
+	// pollution lands when the standing sweep runs, not inside the read.
 	f.read("ariaC", 0, history)
 	f.cache.Budget().Settle(2 * time.Second)
 

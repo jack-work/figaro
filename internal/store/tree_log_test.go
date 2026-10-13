@@ -84,10 +84,8 @@ func TestTreeLogResidencyIsTheTreesIndex(t *testing.T) {
 		mem.Append(Entry[string]{Payload: body})
 	}
 	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-	// The budget must exceed ONE RUN or nothing can stay: a run larger than the
-	// whole budget is evicted the moment it is charged, which is the
-	// run-granularity-in-bytes question in plans/tree-shaped-log.md. 300 rows
-	// of ~560 B in runs of 64 is ~36 KB per run.
+	// The budget must exceed one run or nothing can stay: a run larger than
+	// the whole budget is evicted the moment it is charged.
 	budget := int64(128 << 10)
 	cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf, irKey[string])
 	l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
@@ -140,17 +138,10 @@ func TestTreeLogForkSharesThePrefixStructurally(t *testing.T) {
 		"the child re-materialized a prefix its parent already holds")
 }
 
-// A CHANNEL ADDRESSED BY ITS OWN LT MAY NOT BE CUT BY A FORK BASE MEASURED IN
-// ANOTHER CHANNEL'S COORDINATES.
-//
-// The translator channel is keyed by its own dense LT (1, 2, 3 ...) since
-// 26c21eb0; the lineage's Base is a MAIN-channel LT. Read() splits (0..tail]
-// across the lineage by that Base, so on a real aria -- fork base 3, one
-// translator row at channel LT 1 -- the WHOLE span is attributed to the
-// PARENT node, which holds no rows of that channel, and the provider assembles
-// an EMPTY conversation. Live symptom: every send on a new aria fails with
-// "empty context" (scripts/live/streambodylive.sh, and onappendlive.sh's first
-// send was failing silently into /dev/null).
+// A channel addressed by its own LT may not be cut by a fork base measured in
+// another channel's coordinates: the translator channel is keyed by its own
+// dense LT, the lineage's Base is a main-channel LT, and splitting by it
+// attributes the whole span to the parent, which holds no rows of that channel.
 func TestAChannelKeyedByItsOwnLTIsNotCutByAnotherChannelsForkBase(t *testing.T) {
 	child := NewMemLog[string]()
 	_, err := child.Append(Entry[string]{FigaroLT: 6, Payload: "the only row"})

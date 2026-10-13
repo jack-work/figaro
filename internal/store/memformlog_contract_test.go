@@ -6,24 +6,11 @@ import (
 	"testing"
 )
 
-// THE CONTRACT, STATED AND THEN ASSERTED WHERE IT CAN FAIL.
-//
-// MemFormLog's writer is SINGLE by construction: AppendPatch is reached only
-// from Form.reduceOne, which is reached only from Form.runBatch, which is the
-// actor's one drainer. Its READERS are genuinely concurrent -- patchesFromLog
-// (form.go:292) runs on whatever goroutine asks for a range.
-//
-// SO THE MUTEX WAS NOT DEFENSIVE CONCURRENCY FOR AN UNKNOWN CALLER, and this
-// is the distinction the escalation rule turns on: the writer really is
-// serialized, so writer-versus-writer exclusion is dead weight, but
-// reader-versus-writer is REAL and may not simply be deleted. The cure is to
-// PUBLISH AN IMMUTABLE VALUE, which removes the lock and KEEPS the concurrency.
-//
-// These two tests are what stop that from being an assumption.
+// MemFormLog's writer is single by construction and its readers are
+// concurrent; the lock-free design publishes an immutable value. These two
+// tests keep that from being an assumption.
 
-// A SECOND CONCURRENT WRITER IS A CONTRACT VIOLATION AND MUST BE REPORTED,
-// not tolerated. Deleting a lock on the strength of "the caller is serialized"
-// is only safe if the code says so when the caller stops being serialized.
+// A second concurrent writer is a contract violation and must be reported.
 func TestMemFormLogRefusesASecondConcurrentWriter(t *testing.T) {
 	m := &MemFormLog{}
 	release := make(chan struct{})
@@ -58,8 +45,8 @@ func TestMemFormLogRefusesASecondConcurrentWriter(t *testing.T) {
 	}
 }
 
-// AND THE HALF THAT MAY NOT BE DELETED: readers run concurrently with the
-// writer, and must never observe a torn or short history. Run under -race.
+// Readers run concurrently with the writer and must never observe a torn or
+// short history. Run under -race.
 func TestMemFormLogReadersSeeAConsistentHistoryDuringAppends(t *testing.T) {
 	m := &MemFormLog{}
 	const writes = 400

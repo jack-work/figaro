@@ -6,19 +6,9 @@ import (
 	"testing"
 )
 
-// The SUBJECT here is figaro, not tree.
-//
-// scan_pollution_test.go establishes a fact about tree: route a scan through
-// Range and it evicts other nodes. This asserts the fact that actually
-// protects a user -- a whole-history read through cachedLog's PUBLIC surface
-// does not cost the neighbours their residency, because it is not routed
-// through the cache at all.
-//
-// That is the one the re-seat can silently break: point one belowWindow branch
-// at the cache instead of the source and the policy is gone with nothing red.
-// Green before the re-seat and green after, or the policy did not survive.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING.
+// A whole-history read through the public surface does not cost the
+// neighbours their residency, because it is not routed through the cache.
+// Permanent, not migration scaffolding.
 
 // countingLog counts what the layer BELOW the window is asked to do, which is
 // the only externally visible sign that residency was lost.
@@ -94,9 +84,7 @@ func TestWholeHistoryReadKeepsNeighboursResident(t *testing.T) {
 	}
 }
 
-// Backward paging is the case cachedLog already decided, and the re-seat must
-// not quietly re-decide it: a scroll must not re-resident a prefix nobody will
-// read again.
+// Backward paging: a scroll must not re-resident a prefix nobody will read again.
 func TestBackwardPagingKeepsNeighboursResident(t *testing.T) {
 	const window = 40
 

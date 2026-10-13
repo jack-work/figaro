@@ -7,15 +7,10 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE MEMO NEVER GOES BACKWARD. Meta reads the sidecar with NO LOCK HELD when
-// nothing has been published yet, so a reader can be holding a file value that
-// a SetMeta has already superseded. The CAS is what makes that safe: the late
-// reader loses and discards its own. Without it the memo would serve a value
-// older than one the same process had already returned -- the exact shape of
-// the mirror race the cast fix fought (8bc497a1), one layer down.
-//
-// The oracle is MONOTONICITY rather than a final equality, because a final
-// equality passes for a cache that is simply always cold.
+// The memo never goes backward: Meta reads the sidecar with no lock held, so
+// a reader can hold a file value a SetMeta has already superseded, and the
+// CAS makes the late reader lose. The oracle is monotonicity, since a final
+// equality passes for a cache that is always cold.
 func TestMetaMemoNeverGoesBackward(t *testing.T) {
 	be, id := realAria(t, 2, 16)
 
@@ -96,15 +91,9 @@ func TestObservedDeclarationsDoNotLoseEachOther(t *testing.T) {
 	}
 }
 
-// THE COLD-READ WINDOW, WHICH IS THE ONE THE CAS ACTUALLY GUARDS. The window
-// exists only between "nobody has published for this aria yet" and the first
-// publish, so a test that hammers ONE aria never reaches it -- the monotonicity
-// test above passes with the CAS replaced by a plain Store, and that passing
-// canary is what sent me here.
-//
-// This opens a fresh window per iteration: a value on disk, a cold cache, and
-// a reader racing a writer. If the reader may publish what it read, the memo
-// ends holding the SUPERSEDED value.
+// The cold-read window is the one the CAS guards: between "nobody has
+// published for this aria" and the first publish. A test that hammers one
+// aria never reaches it, so this opens a fresh window per iteration.
 func TestAColdReadCannotOverwriteAWriteThatBeatIt(t *testing.T) {
 	be, _ := realAria(t, 1, 16)
 

@@ -7,21 +7,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// TWO ENTRIES AT ONE FigaroLT ARE BOTH VISIBLE, WARM AND COLD.
-//
-// THIS TEST USED TO ASSERT THE OPPOSITE, and its own failure message named the
-// condition for rewriting it: "if these now AGREE the divergence is closed and
-// this test should assert equality instead." It is closed.
-//
-// The defect was an index keyed by a FOREIGN key. The translation channel was
-// addressed by FigaroLT -- which names an entry in ANOTHER channel and is
-// unique only by convention -- so when two entries carried the same one, the
-// residency index held one while the segments held both: a live handle read
-// ONE and a fresh process read TWO. The channel is addressed by its own LT
-// now, which is unique and dense by construction.
-//
-// The law, kept where the next reader of this file will need it: AN INDEX MAY
-// BE KEYED ONLY BY SOMETHING THE CHANNEL GUARANTEES UNIQUE.
+// Two entries at one FigaroLT are both visible, warm and cold. An index may
+// be keyed only by something the channel guarantees unique: the translation
+// channel is addressed by its own dense LT, and FigaroLT is a field.
 func TestTwoEntriesAtOneFigaroLTAreVisibleWarmAndCold(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	ir, err := be.OpenFigIR(aria)
@@ -56,10 +44,8 @@ func TestTwoEntriesAtOneFigaroLTAreVisibleWarmAndCold(t *testing.T) {
 		t.Fatalf("PeekTail served %s, want the later entry", got)
 	}
 
-	// A POINT READ BY FigaroLT SERVES THE LATER ENTRY. FigaroLT is a field
-	// now, not the address, so this resolves through the substrate's own
-	// foreign-key map -- last write wins -- rather than through a residency
-	// index that could hold either.
+	// A point read by FigaroLT serves the later entry, through the
+	// substrate's own foreign-key map (last write wins).
 	at, ok := trans.Lookup(entry.LT)
 	if !ok {
 		t.Fatal("no entry at the record's LT")

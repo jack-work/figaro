@@ -204,12 +204,6 @@ func BenchmarkConversations(b *testing.B) {
 
 // BenchmarkListPathFill is the angelus list path's tree fill: one
 // Backend.Nodes() snapshot, indexed by id, however many rows follow.
-//
-// It used to be a pair, bracketing the O(N^2) it replaced -- the handler
-// called Backend.Node(id) per result and each call recomputed the whole
-// tree. The "before" arm is gone: the topology snapshot is cached by
-// version now, so the pattern it measured no longer costs what it cost, and a
-// benchmark whose premise has expired reports a number nobody can read.
 func BenchmarkListPathFill(b *testing.B) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
@@ -275,12 +269,6 @@ func BenchmarkFormState10000(b *testing.B) {
 		}
 	}
 }
-
-// BenchmarkFormPatches10000 is gone with the API it measured. It timed
-// "copy the whole patch history", which was never a question the provider
-// asked: a translate asks what changed between two stamps. Its successors,
-// which measure that question in both shapes, are BenchmarkFormDeltaPerSend*
-// and BenchmarkFormWholePerSend* in formview_bench_test.go.
 
 func BenchmarkVectors10000Branches(b *testing.B) {
 	infos := make([]xwal.TrunkInfo, 10_000)

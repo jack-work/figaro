@@ -45,11 +45,8 @@ func TestSplitJSONArrayMatchesEncodingJSON(t *testing.T) {
 	}
 	for _, in := range cases {
 		t.Run(in, func(t *testing.T) {
-			// ONE conversion, used for both. []byte(s) allocates a fresh
-			// array every time it is written, so converting twice compares
-			// two unrelated buffers -- which reported copies that were not
-			// copies, and could just as easily have reported an alias that
-			// was not one, if the two happened to land adjacent.
+			// One conversion for both: []byte(s) allocates a fresh array each
+			// time, so converting twice compares two unrelated buffers.
 			payload := []byte(in)
 			var want []json.RawMessage
 			require.NoError(t, json.Unmarshal(payload, &want), "fixture is not valid JSON")
@@ -103,14 +100,9 @@ func TestScannedRowsAliasTheirFrame(t *testing.T) {
 	}
 }
 
-// THE RULE, ENFORCED: alias on the way to the wire, copy on the way into the
-// cache.
-//
-// A cached entry is sized as the sum of its rows' lengths. If those rows were
-// windows onto a bigger frame, the entry would report less than it holds and
-// the budget would stop bounding what it believes it bounds -- the same
-// failure eeec2bc0 was written about, one layer down. So a row that reaches
-// the cache must own its bytes, and this test reaches into the cache to check.
+// The rule, enforced: alias on the way to the wire, copy on the way into the
+// cache. A cached entry is sized as the sum of its rows' lengths, so a row
+// that reaches the cache must own its bytes.
 func TestCacheSeededRowsDoNotAliasTheirFrame(t *testing.T) {
 	root := t.TempDir()
 	b, err := NewXwalBackend(root, 0)
@@ -135,11 +127,9 @@ func TestCacheSeededRowsDoNotAliasTheirFrame(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// A COLD BACKEND, OR THIS TEST PROVES NOTHING. An append seeds the tree
-	// cache with the payload the WRITER passed -- never a decoded frame -- so
-	// a read on the same process is served from memory and the decode path
-	// under test never runs. It did not, and the test passed anyway against a
-	// deliberately broken decoder. Reopening is what makes the read cold.
+	// A cold backend, or this test proves nothing: an append seeds the tree
+	// cache with the payload the writer passed, so a warm read never runs
+	// the decode path under test.
 	require.NoError(t, b.Close())
 	cold, err := NewXwalBackend(root, 0)
 	require.NoError(t, err)
@@ -150,14 +140,9 @@ func TestCacheSeededRowsDoNotAliasTheirFrame(t *testing.T) {
 	read := coldRows.Read()
 	require.Len(t, read, 8)
 
-	// TWO ROWS OF ONE RECORD ARE THE TEST. In the frame they are separated
-	// by exactly one comma, so a WINDOW onto that frame puts row 1 at
-	// &row0 + len(row0) + 1. A copy cannot land there except by an accident
-	// no allocator will hand you twice at this size.
-	//
-	// (cap(row) != len(row) is NOT the test: json.RawMessage decodes with
-	// append, which rounds up to a size class, so an owned 4124-byte row has
-	// capacity 4864 and the naive check calls it a window.)
+	// Two rows of one record are the test: in the frame they are separated by
+	// one comma, so a window puts row 1 at &row0 + len(row0) + 1, where a copy
+	// cannot land. (cap != len is not the test: append rounds up to a size class.)
 	for i, e := range read {
 		require.Len(t, e.Payload, 2)
 		first, second := e.Payload[0], e.Payload[1]
