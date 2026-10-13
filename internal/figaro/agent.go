@@ -11,14 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
@@ -1110,18 +1107,11 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	slog.DebugContext(ctx, "rpc notify", "aria", a.id, "method", n.Method, "params", n.Params)
 	mark.Mark("fanout", "aria", a.id, "method", n.Method)
 
-	figOtel.Event(ctx, "agent.fanout.pre",
-		attribute.String("method", n.Method),
-		attribute.Int("subscribers", len(a.subs)),
-	)
 	for sub := range a.subs {
 		if err := sub.Notify(n.Method, n.Params); err != nil {
 			slog.Warn("notify subscriber", "aria", a.id, "err", err)
 		}
 	}
-	figOtel.Event(ctx, "agent.fanout.post",
-		attribute.String("method", n.Method),
-	)
 }
 
 func truncLog(s string, n int) string {

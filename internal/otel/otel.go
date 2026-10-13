@@ -100,6 +100,9 @@ var (
 	syncBatch    otelmetric.Int64Histogram
 
 	instrumentsOnce sync.Once
+
+	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
+	subMS  = []float64{1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}
 )
 
 func envLogLevel() slog.Level {
@@ -255,6 +258,7 @@ func initInstruments(m otelmetric.Meter) {
 			"figaro.request.duration",
 			otelmetric.WithUnit("ms"),
 			otelmetric.WithDescription("Provider request roundtrip latency"),
+			otelmetric.WithExplicitBucketBoundaries(turnMS...),
 		)
 		if err != nil {
 			slog.Warn("metric init", "name", "request.duration", "err", err)
