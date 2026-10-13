@@ -136,6 +136,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		),
 	)
 	defer span.End()
+	started, rounds := time.Now(), 0
+	defer func() {
+		figOtel.RecordTurn(turnCtx, time.Since(started), rounds,
+			attribute.String("provider", a.providerName()),
+			attribute.String("model", a.currentModel()),
+			attribute.String("status", turnStatus(a.turnReason)))
+	}()
 	turnCtx, cancel := context.WithCancel(turnCtx)
 	a.mu.Lock()
 	a.turnCtx = turnCtx
@@ -164,6 +171,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 
 	allowSteering := false
 	for {
+		rounds++
 		stop := a.driveOneRound(turnCtx, allowSteering)
 		if stop {
 			return
@@ -308,6 +316,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		MaxTokens: a.formInt("system.max_tokens"),
 	}
 	sendDone := make(chan error, 1)
+	started := time.Now()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -316,7 +325,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			close(bus.events)
 			close(bus.toolsReady)
 		}()
-		started := time.Now()
 		err := prov.Send(turnCtx, in, bus)
 		figOtel.RecordRequestDuration(turnCtx, time.Since(started),
 			attribute.String("provider", prov.Name()),
@@ -376,6 +384,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				if !tokenSeen {
 					tokenSeen = true
 					mark.Mark("token.first", "aria", a.id, "turn", a.turnID)
+					figOtel.RecordTTFT(turnCtx, time.Since(started),
+						attribute.String("provider", prov.Name()),
+						attribute.String("model", a.currentModel()))
 				}
 				asmMsg.addText(ev.content.Type, ev.content.Text)
 			case evToolStart:
@@ -1417,6 +1428,16 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 // additivePatch never removes keys absent from ctx: Context is additive by contract.
 func additivePatch(ctx, snap form.Snapshot) form.Patch {
 	return snap.Apply(ctx.AsPatch()).Diff(snap)
+}
+
+func turnStatus(reason string) string {
+	switch {
+	case strings.HasPrefix(reason, "error:"):
+		return "failure"
+	case reason == "interrupted":
+		return "interrupted"
+	}
+	return "success"
 }
 
 func statusOf(err error) string {

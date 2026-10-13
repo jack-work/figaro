@@ -118,6 +118,7 @@ type Agent struct {
 	turnCancel  context.CancelFunc
 	turnRunning atomic.Bool // mirrors turnCancel != nil
 	interrupted bool
+	turnReason  string
 
 	mu   sync.RWMutex
 	subs map[Notifier]struct{}
@@ -1011,6 +1012,7 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
+	a.turnReason = reason
 	// asm holds the whole streamed reply; an idle aria must not keep it.
 	if a.turn != nil {
 		a.turn.asm = nil

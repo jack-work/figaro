@@ -99,6 +99,10 @@ var (
 	syncDuration otelmetric.Float64Histogram
 	syncBatch    otelmetric.Int64Histogram
 
+	providerTTFT otelmetric.Float64Histogram
+	turnDuration otelmetric.Float64Histogram
+	turnRounds   otelmetric.Int64Histogram
+
 	instrumentsOnce sync.Once
 
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
@@ -295,7 +299,48 @@ func initInstruments(m otelmetric.Meter) {
 		if err != nil {
 			slog.Warn("metric init", "name", "form.patches.history", "err", err)
 		}
+		providerTTFT = histogram(m, "figaro.provider.ttft", "Round start to the first content delta", turnMS)
+		turnDuration = histogram(m, "figaro.turn.duration", "One user turn: every round and tool call", turnMS)
+		turnRounds = counts(m, "figaro.turn.rounds", "{round}", "Provider rounds one turn took")
 	})
+}
+
+func histogram(m otelmetric.Meter, name, desc string, bounds []float64) otelmetric.Float64Histogram {
+	h, err := m.Float64Histogram(name, otelmetric.WithUnit("ms"), otelmetric.WithDescription(desc),
+		otelmetric.WithExplicitBucketBoundaries(bounds...))
+	if err != nil {
+		slog.Warn("metric init", "name", name, "err", err)
+	}
+	return h
+}
+
+func counts(m otelmetric.Meter, name, unit, desc string) otelmetric.Int64Histogram {
+	h, err := m.Int64Histogram(name, otelmetric.WithUnit(unit), otelmetric.WithDescription(desc))
+	if err != nil {
+		slog.Warn("metric init", "name", name, "err", err)
+	}
+	return h
+}
+
+func record(ctx context.Context, h otelmetric.Float64Histogram, d time.Duration, attrs ...attribute.KeyValue) {
+	if h != nil {
+		h.Record(ctx, float64(d.Microseconds())/1000, otelmetric.WithAttributes(attrs...))
+	}
+}
+
+func recordN(ctx context.Context, h otelmetric.Int64Histogram, n int64, attrs ...attribute.KeyValue) {
+	if h != nil {
+		h.Record(ctx, n, otelmetric.WithAttributes(attrs...))
+	}
+}
+
+func RecordTTFT(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, providerTTFT, d, attrs...)
+}
+
+func RecordTurn(ctx context.Context, d time.Duration, rounds int, attrs ...attribute.KeyValue) {
+	record(ctx, turnDuration, d, attrs...)
+	recordN(ctx, turnRounds, int64(rounds), attrs...)
 }
 
 func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {
