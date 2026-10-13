@@ -122,8 +122,6 @@ var (
 
 	memProbe atomic.Pointer[func() MemSample]
 
-	instrumentsOnce sync.Once
-
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
 	subMS  = []float64{1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}
 )
@@ -275,85 +273,83 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 }
 
 func initInstruments(m otelmetric.Meter) {
-	instrumentsOnce.Do(func() {
-		var err error
-		requestDuration, err = m.Float64Histogram(
-			"figaro.request.duration",
-			otelmetric.WithUnit("ms"),
-			otelmetric.WithDescription("Provider request roundtrip latency"),
-			otelmetric.WithExplicitBucketBoundaries(turnMS...),
-		)
-		if err != nil {
-			slog.Warn("metric init", "name", "request.duration", "err", err)
-		}
-		formPatchesReturned, err = m.Int64Histogram(
-			"figaro.form.patches.returned",
-			otelmetric.WithUnit("{patch}"),
-			otelmetric.WithDescription("Form patches handed to one range read: the delta actually rendered"),
-		)
-		if err != nil {
-			slog.Warn("metric init", "name", "form.patches.returned", "err", err)
-		}
-		syncDuration, err = m.Float64Histogram(
-			"figaro.wal.sync.duration",
-			otelmetric.WithUnit("ms"),
-			otelmetric.WithDescription("One fsync on a WAL channel, before anything it covers is published"),
-		)
-		if err != nil {
-			slog.Warn("metric init", "name", "wal.sync.duration", "err", err)
-		}
-		syncBatch, err = m.Int64Histogram(
-			"figaro.wal.sync.batch",
-			otelmetric.WithUnit("{patch}"),
-			otelmetric.WithDescription("How many patches one fsync covered: the distribution that says whether group commit is working"),
-		)
-		if err != nil {
-			slog.Warn("metric init", "name", "wal.sync.batch", "err", err)
-		}
-		formPatchesHistory, err = m.Int64Histogram(
-			"figaro.form.patches.history",
-			otelmetric.WithUnit("{patch}"),
-			otelmetric.WithDescription("The form's whole patch history at the moment of a range read: what the old copy-everything read paid, and the alarm if returned ever starts tracking it"),
-		)
-		if err != nil {
-			slog.Warn("metric init", "name", "form.patches.history", "err", err)
-		}
-		providerTTFT = histogram(m, "figaro.provider.ttft", "Round start to the first content delta", turnMS)
-		turnDuration = histogram(m, "figaro.turn.duration", "One user turn: every round and tool call", turnMS)
-		turnRounds = counts(m, "figaro.turn.rounds", "{round}", "Provider rounds one turn took")
-		toolDuration = histogram(m, "figaro.tool.duration", "One tool call, Execute to return", subMS)
-		catchUpDuration = histogram(m, "figaro.translator.catchup", "One translator catch-up before a send", subMS)
-		catchUpVisited = counts(m, "figaro.translator.catchup.visited", "{record}", "Fig IR records at or after the watermark")
-		catchUpEncoded = counts(m, "figaro.translator.catchup.encoded", "{record}", "Records translated and written; visited far above this is the O(delta) alarm")
-		rpcDuration = histogram(m, "figaro.rpc.duration", "One daemon-side RPC handler, by method", subMS)
-		storeOpen = histogram(m, "figaro.store.open", "Cold open of an aria handle: node open plus handle build", subMS)
-		sweepDuration = histogram(m, "figaro.sweep.duration", "One sweep phase on the angelus ticker", subMS)
-		sweepEvicted = counts(m, "figaro.sweep.evicted", "{handle}", "Aria handles one idle sweep evicted")
-		requestBytes = counts(m, "figaro.provider.request_bytes", "By", "Serialized request body per provider round")
-		rss, heapInuse, heapReleased := gauge(m, "figaro.mem.rss", "By"), gauge(m, "figaro.mem.heap_inuse", "By"), gauge(m, "figaro.mem.heap_released", "By")
-		resident, goroutines := gauge(m, "figaro.mem.resident_arias", "{aria}"), gauge(m, "figaro.mem.goroutines", "{goroutine}")
-		_, err = m.RegisterCallback(func(_ context.Context, o otelmetric.Observer) error {
-			probe := memProbe.Load()
-			if probe == nil {
-				return nil
-			}
-			s := (*probe)()
-			o.ObserveInt64(rss, rssBytes())
-			o.ObserveInt64(heapInuse, s.HeapInuse)
-			o.ObserveInt64(heapReleased, s.HeapReleased)
-			o.ObserveInt64(resident, int64(s.ResidentArias))
-			o.ObserveInt64(goroutines, int64(s.Goroutines))
+	var err error
+	requestDuration, err = m.Float64Histogram(
+		"figaro.request.duration",
+		otelmetric.WithUnit("ms"),
+		otelmetric.WithDescription("Provider request roundtrip latency"),
+		otelmetric.WithExplicitBucketBoundaries(turnMS...),
+	)
+	if err != nil {
+		slog.Warn("metric init", "name", "request.duration", "err", err)
+	}
+	formPatchesReturned, err = m.Int64Histogram(
+		"figaro.form.patches.returned",
+		otelmetric.WithUnit("{patch}"),
+		otelmetric.WithDescription("Form patches handed to one range read: the delta actually rendered"),
+	)
+	if err != nil {
+		slog.Warn("metric init", "name", "form.patches.returned", "err", err)
+	}
+	syncDuration, err = m.Float64Histogram(
+		"figaro.wal.sync.duration",
+		otelmetric.WithUnit("ms"),
+		otelmetric.WithDescription("One fsync on a WAL channel, before anything it covers is published"),
+	)
+	if err != nil {
+		slog.Warn("metric init", "name", "wal.sync.duration", "err", err)
+	}
+	syncBatch, err = m.Int64Histogram(
+		"figaro.wal.sync.batch",
+		otelmetric.WithUnit("{patch}"),
+		otelmetric.WithDescription("How many patches one fsync covered: the distribution that says whether group commit is working"),
+	)
+	if err != nil {
+		slog.Warn("metric init", "name", "wal.sync.batch", "err", err)
+	}
+	formPatchesHistory, err = m.Int64Histogram(
+		"figaro.form.patches.history",
+		otelmetric.WithUnit("{patch}"),
+		otelmetric.WithDescription("The form's whole patch history at the moment of a range read: what the old copy-everything read paid, and the alarm if returned ever starts tracking it"),
+	)
+	if err != nil {
+		slog.Warn("metric init", "name", "form.patches.history", "err", err)
+	}
+	providerTTFT = histogram(m, "figaro.provider.ttft", "Round start to the first content delta", turnMS)
+	turnDuration = histogram(m, "figaro.turn.duration", "One user turn: every round and tool call", turnMS)
+	turnRounds = counts(m, "figaro.turn.rounds", "{round}", "Provider rounds one turn took")
+	toolDuration = histogram(m, "figaro.tool.duration", "One tool call, Execute to return", subMS)
+	catchUpDuration = histogram(m, "figaro.translator.catchup", "One translator catch-up before a send", subMS)
+	catchUpVisited = counts(m, "figaro.translator.catchup.visited", "{record}", "Fig IR records at or after the watermark")
+	catchUpEncoded = counts(m, "figaro.translator.catchup.encoded", "{record}", "Records translated and written; visited far above this is the O(delta) alarm")
+	rpcDuration = histogram(m, "figaro.rpc.duration", "One daemon-side RPC handler, by method", subMS)
+	storeOpen = histogram(m, "figaro.store.open", "Cold open of an aria handle: node open plus handle build", subMS)
+	sweepDuration = histogram(m, "figaro.sweep.duration", "One sweep phase on the angelus ticker", subMS)
+	sweepEvicted = counts(m, "figaro.sweep.evicted", "{handle}", "Aria handles one idle sweep evicted")
+	requestBytes = counts(m, "figaro.provider.request_bytes", "By", "Serialized request body per provider round")
+	rss, heapInuse, heapReleased := gauge(m, "figaro.mem.rss", "By"), gauge(m, "figaro.mem.heap_inuse", "By"), gauge(m, "figaro.mem.heap_released", "By")
+	resident, goroutines := gauge(m, "figaro.mem.resident_arias", "{aria}"), gauge(m, "figaro.mem.goroutines", "{goroutine}")
+	_, err = m.RegisterCallback(func(_ context.Context, o otelmetric.Observer) error {
+		probe := memProbe.Load()
+		if probe == nil {
 			return nil
-		}, rss, heapInuse, heapReleased, resident, goroutines)
-		if err != nil {
-			slog.Warn("metric init", "name", "mem", "err", err)
 		}
-		tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
-			otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
-		if err != nil {
-			slog.Warn("metric init", "name", "tokens", "err", err)
-		}
-	})
+		s := (*probe)()
+		o.ObserveInt64(rss, rssBytes())
+		o.ObserveInt64(heapInuse, s.HeapInuse)
+		o.ObserveInt64(heapReleased, s.HeapReleased)
+		o.ObserveInt64(resident, int64(s.ResidentArias))
+		o.ObserveInt64(goroutines, int64(s.Goroutines))
+		return nil
+	}, rss, heapInuse, heapReleased, resident, goroutines)
+	if err != nil {
+		slog.Warn("metric init", "name", "mem", "err", err)
+	}
+	tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
+		otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
+	if err != nil {
+		slog.Warn("metric init", "name", "tokens", "err", err)
+	}
 }
 
 type MemSample struct {
