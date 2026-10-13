@@ -224,16 +224,16 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			return
 		case <-ticker.C:
 			a.reapDeadPIDs()
-			a.sweepCacheBudgets()
+			sweep(ctx, "cache_budgets", a.sweepCacheBudgets)
 		case <-evict.C:
 			// Reclaim agents before sweeping caches: an aria hibernated on this
 			// tick is eligible for eviction on the next.
-			a.hibernateIdleArias()
-			a.capLiveArias()
-			a.expireTTL()
-			a.evictIdleArias()
-			a.trimResident()
-			a.releaseIdleMemory()
+			sweep(ctx, "hibernate", a.hibernateIdleArias)
+			sweep(ctx, "cap_live", a.capLiveArias)
+			sweep(ctx, "expire_ttl", a.expireTTL)
+			sweep(ctx, "evict_idle", a.evictIdleArias)
+			sweep(ctx, "trim_resident", a.trimResident)
+			sweep(ctx, "release_memory", a.releaseIdleMemory)
 		}
 	}
 }
@@ -385,6 +385,12 @@ func (a *Angelus) expireTTL() {
 	}
 }
 
+func sweep(ctx context.Context, phase string, fn func()) {
+	start := time.Now()
+	fn()
+	figOtel.RecordSweep(ctx, time.Since(start), attribute.String("phase", phase))
+}
+
 func (a *Angelus) evictIdleArias() {
 	ev, ok := a.Backend.(idleEvictor)
 	if !ok {
@@ -398,7 +404,9 @@ func (a *Angelus) evictIdleArias() {
 	if idle <= 0 {
 		return // reclamation disabled
 	}
-	if n := ev.EvictIdle(live, idle); n > 0 {
+	n := ev.EvictIdle(live, idle)
+	figOtel.RecordEvicted(context.Background(), n)
+	if n > 0 {
 		slog.Info("released idle aria caches", "evicted", n, "live", len(live), "resident", ev.Resident())
 	}
 	// keep is in sweeps, so the window is dormant_after / sweep_interval.

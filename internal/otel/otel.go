@@ -112,6 +112,10 @@ var (
 
 	rpcDuration otelmetric.Float64Histogram
 
+	storeOpen     otelmetric.Float64Histogram
+	sweepDuration otelmetric.Float64Histogram
+	sweepEvicted  otelmetric.Int64Histogram
+
 	instrumentsOnce sync.Once
 
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
@@ -316,6 +320,9 @@ func initInstruments(m otelmetric.Meter) {
 		catchUpVisited = counts(m, "figaro.translator.catchup.visited", "{record}", "Fig IR records at or after the watermark")
 		catchUpEncoded = counts(m, "figaro.translator.catchup.encoded", "{record}", "Records translated and written; visited far above this is the O(delta) alarm")
 		rpcDuration = histogram(m, "figaro.rpc.duration", "One daemon-side RPC handler, by method", subMS)
+		storeOpen = histogram(m, "figaro.store.open", "Cold open of an aria handle: node open plus handle build", subMS)
+		sweepDuration = histogram(m, "figaro.sweep.duration", "One sweep phase on the angelus ticker", subMS)
+		sweepEvicted = counts(m, "figaro.sweep.evicted", "{handle}", "Aria handles one idle sweep evicted")
 		tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
 			otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
 		if err != nil {
@@ -383,6 +390,18 @@ func AddTokens(ctx context.Context, in, out, cacheRead, cacheWrite int, attrs ..
 
 func RecordRPC(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
 	record(ctx, rpcDuration, d, attrs...)
+}
+
+func RecordStoreOpen(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, storeOpen, d, attrs...)
+}
+
+func RecordSweep(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, sweepDuration, d, attrs...)
+}
+
+func RecordEvicted(ctx context.Context, n int, attrs ...attribute.KeyValue) {
+	recordN(ctx, sweepEvicted, int64(n), attrs...)
 }
 
 func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {

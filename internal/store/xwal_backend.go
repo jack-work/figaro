@@ -7,6 +7,7 @@ package store
 // cosmetic.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
@@ -181,6 +183,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 		return h, nil
 	}
 	// Sanity-open once to fail fast on an unknown aria.
+	start := time.Now()
 	xw, err := b.store.openNode(id)
 	if err != nil {
 		return nil, err
@@ -197,6 +200,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 		trans: map[string]*treeLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
+	figOtel.RecordStoreOpen(context.Background(), time.Since(start))
 	return h, nil
 }
 
