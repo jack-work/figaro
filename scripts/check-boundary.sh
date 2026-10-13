@@ -96,6 +96,14 @@ grep "^$MOD/internal/cli " "$direct" | while IFS= read -r line; do
 	done
 done >>"$found"
 
+# Rule 5 (transitive): internal/daemon must not reach the TUI.
+NRULES=$((NRULES + 1))
+go list -deps -f '{{.ImportPath}}' "$MOD/internal/daemon" | while IFS= read -r dep; do
+	if under "$dep" "$MOD/internal/cli"; then
+		echo "$MOD/internal/daemon $dep daemon-reaches"
+	fi
+done >>"$found"
+
 sort -u -o "$found" "$found"
 cut -d' ' -f1,2 "$found" | sort -u >"$tmp/pairs"
 
