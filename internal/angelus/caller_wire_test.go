@@ -15,14 +15,8 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// recordingServer accepts one connection on a unix socket and records the raw
-// params of every request it receives.
-//
-// This goes over a REAL socket rather than a stubbed client because the thing
-// under test is the seam between our typed wrapper and jkrpc's marshaling -
-// exactly the seam a mock would paper over. It also means a client that
-// recurses instead of dialing fails here loudly (stack overflow) rather than
-// in production on the first RPC.
+// recordingServer records raw params over a real socket: the seam under test
+// is the wrapper-to-jkrpc marshaling, which a stub would paper over.
 type recordingServer struct {
 	sock   string
 	params chan json.RawMessage
