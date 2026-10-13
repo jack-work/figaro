@@ -111,6 +111,59 @@
         default = figaro;
       });
 
+      # The T0 gate (duck/2026-10-12-terraform-sandbox-federation.md §7.4):
+      # `nix flake check` is the same gate in every worktree and in CI, with
+      # the same toolchain and the same vendor hash. CGO stays off.
+      checks = forAllSystems ({ pkgs }: let
+        figaro = self.packages.${pkgs.system}.figaro;
+        # The modules the package was built against, mounted as vendor/ so
+        # `go list` works offline inside the sandbox.
+        goEnv = ''
+          export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPATH=$TMPDIR/go
+          export GOFLAGS="-mod=vendor" GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+        '';
+      in {
+        # go vet + go test -short over the whole module, in the package's own
+        # build (same flags, same vendor dir). -short because the sandbox has
+        # no network and no pty; a test that needs either must skip itself.
+        unit = figaro.overrideAttrs (old: {
+          pname = "figaro-unit";
+          doCheck = true;
+          # buildGoModule copies the modules into vendor/, and
+          # TestSkillPathsCitedFromOutsideResolve walks the whole repo for
+          # .md citations: a symlink is not descended, so the modules stay
+          # out of the walk and `go` still resolves them (go list, go test).
+          postConfigure = ''
+            chmod -R u+w vendor && rm -rf vendor
+            ln -s ${figaro.goModules} vendor
+          '';
+          # The skipped tests scratch on a hardcoded /var/tmp (short unix
+          # socket paths); the sandbox has no /var and refuses to make one.
+          # They run on the host and in the CI build job. Nothing else is
+          # skipped: a failure here is a failure.
+          checkPhase = ''
+            runHook preCheck
+            export HOME=$TMPDIR
+            go vet ./...
+            go test -short ./... \
+              -skip '^(TestAngelusClientPresentsCallerOnBothParamShapes|TestAngelusClientOmitsCallerWhenUnset|TestAgentClientPresentsCallerAcrossTheSecondHop|TestExportMessagesReadsPastTheReadCap|TestAriaMessagesReadsPastTheReadCap)$'
+            runHook postCheck
+          '';
+        });
+
+        boundary = pkgs.runCommand "figaro-boundary" {
+          nativeBuildInputs = [ figaro.go ];
+        } ''
+          cp -r ${self} src
+          chmod -R u+w src
+          cd src
+          ln -s ${figaro.goModules} vendor
+          ${goEnv}
+          set -o pipefail
+          sh scripts/check-boundary.sh | tee $out
+        '';
+      });
+
       devShells = forAllSystems ({ pkgs }: let
         figaroPkg = self.packages.${pkgs.system}.default;
 
