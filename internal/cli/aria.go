@@ -19,29 +19,24 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
 func runShow(loaded *config.Loaded, idFlag string, args []string) {
 	renderAria(loaded, idFlag, args)
 }
 
-// showOpts is the parsed flag state of `figaro show`.
 type showOpts struct {
-	last     int // last N units (default 10)
-	from, to int // unit-index range; -1 = unset
-	before   int // keyset pagination: show N entries before this LT; -1 = unset
+	last     int
+	from, to int
+	before   int
 	all      bool
 	jsonOut  bool
 	verbose  bool
 	literal  bool
-	details  bool // -o: the metadata M-m shows in the pager
-	maxBytes int  // --max-bytes: paint budget; the OLDEST turns are dropped first. 0 = none
+	details  bool
+	maxBytes int
 }
 
-// renderAria prints history for an aria. The default view derives the
-// conversational units from the IR and renders them through the node
-// widget renderer. --json emits those units verbatim (materialized, no
-// delta compression). N / --last N / --from A [--to B] / --all select a
-// unit range. --verbose and --literal use the raw IR path.
+// renderAria: the default view renders the daemon's composed units; --json
+// emits them verbatim; --verbose and --literal use the raw IR path.
 func renderAria(loaded *config.Loaded, id string, args []string) {
 	opts := parseShowArgs(args)
 
@@ -62,9 +57,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		figaroID = r.FigaroID
 	}
 
-	// --verbose / --literal are the RAW IR view: records, not turns. They
-	// read entries through the api and render them as records; nothing
-	// here builds a turn out of IR.
+	// --verbose / --literal are the raw IR view: records, not turns.
 	if opts.verbose || opts.literal {
 		w, err := gatherShowWindow(ctx, acli, figaroID, opts)
 		if err != nil {
@@ -78,18 +71,15 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		return
 	}
 
-	// THE DAEMON COMPOSES. It owns the IR, the projection and the composed
-	// cache; this walks its pages until the selector is covered. A client
-	// that built turns out of raw IR would be a third composition of the
-	// same data, disagreeing with the pager and the stream at every seam.
+	// The daemon composes; a client that built turns from raw IR would be a
+	// third composition of the same data.
 	w, err := gatherShowTurns(ctx, acli, figaroID, opts)
 	if err != nil {
 		die("read %s: %s", figaroID, err)
 	}
-	// NOTHING IN RANGE IS NOT AN EMPTY ARIA. A selector past the end of a
-	// short aria selects nothing and must still print the empty page (-j)
-	// or the "no turn in range" line; only an aria with no turns at all is
-	// empty, and saying so on stdout would put prose in a json pipe.
+	// A selector past the end selects nothing and still prints the empty page;
+	// only an aria with no turns is empty, and prose on stdout would break a
+	// json pipe.
 	if len(w.turns) == 0 && opts.from < 0 && opts.before < 0 {
 		fmt.Fprintln(stderrw, "(empty aria)")
 		return
@@ -104,8 +94,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	if opts.jsonOut {
-		// The UI IR wire shape VERBATIM, an aria.Page: the same bytes the
-		// pager folds and the stream pushes.
+		// The wire shape verbatim: the same bytes the pager folds.
 		page := aria.Page{Parts: make([]aria.TurnPart, 0, hi-lo)}
 		for _, t := range turns[lo:hi] {
 			page.Parts = append(page.Parts, aria.TurnPart{Turn: t, From: 0})
@@ -120,16 +109,13 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	width := termWidth()
-	// Label the window by TURN ID, not by slice position. They coincide only
-	// while ids are gapless and 1-based; printing lo+1 here would be a fourth
-	// coordinate system in the one command that just collapsed three.
+	// The window is labelled by turn id, not slice position.
 	if lo >= hi {
 		if w.atHead {
 			fmt.Fprintf(stdout, "# aria %s: %d turns (no turn in range)\n\n", figaroID, len(turns))
 		} else {
-			// The count is NOT known here: the walk stopped as soon as the
-			// selector was covered, so len(turns) is the size of the window,
-			// not of the aria.
+			// The count is not known: the walk stopped once the
+			// selector was covered.
 			fmt.Fprintf(stdout, "# aria %s: no turn in that range within the %d turns walked back from the tail\n\n", figaroID, len(turns))
 		}
 		return
@@ -143,10 +129,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		u := turns[i]
 		fmt.Fprintln(stdout, term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Fprintln(stdout)
-		// The DEFAULT is what `figaro listen` draws: the same composer, the
-		// same rows, no metadata. `-o` adds the addresses and timestamps M-m
-		// shows in the pager: it used to be on unconditionally, which meant
-		// every `show` printed detail nobody had asked for.
+		// The default is what `figaro listen` draws; -o adds the metadata M-m
+		// shows in the pager.
 		rows := renderTurnRows(aria.Message{
 			Turn: int(u.ID), Role: livedoc.RoleOutput,
 			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments,
@@ -158,13 +142,12 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 }
 
-// parseShowArgs turns `show`'s reassembled argv into showOpts.
 func parseShowArgs(args []string) showOpts {
 	opts := showOpts{last: 10, from: -1, to: -1, before: -1}
 
 	expanded := make([]string, 0, len(args))
 	for _, a := range args {
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' { // expand bundled bool shorts (-vj)
+		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
 			for _, r := range a[1:] {
 				expanded = append(expanded, "-"+string(r))
 			}
@@ -234,19 +217,15 @@ func mustAtoi(s string) int {
 	return v
 }
 
-// selectUnitRange resolves the [lo,hi) unit window from the flags:
-// selectTurnRange picks the slice of turns to show. Every selector speaks TURN
-// IDs: the same coordinate `fig send <aria>:<turn>` takes and the same one the
-// header prints. Before this there were three coordinate systems in one
-// command: --from/--to were slice indices, --before was an LT, and the printed
-// label was a third thing. Now there is one.
+// selectTurnRange: every selector speaks turn ids, the coordinate `fig send
+// <aria>:<turn>` takes.
 func selectTurnRange(turns []aria.Turn, o showOpts) (int, int) {
 	total := len(turns)
 	if o.all {
 		return 0, total
 	}
-	// Turn id -> slice index. Turns are in order, so a scan is enough and it
-	// tolerates gaps (a forked trunk need not start at turn 1).
+	// Turns are in order; a scan tolerates gaps (a forked trunk need not start
+	// at turn 1).
 	indexOf := func(id uint64) int {
 		for i := range turns {
 			if turns[i].ID >= id {
@@ -284,9 +263,6 @@ func selectTurnRange(turns []aria.Turn, o showOpts) (int, int) {
 	return lo, total
 }
 
-// renderAriaIR is the raw IR path for --verbose / --literal: it renders
-// each message (markdown via largo, or unrendered when --literal) and, in
-// verbose mode, appends credo / state transitions / form.
 func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts showOpts) {
 	entries := win.entries
 	start := 0
@@ -305,9 +281,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 		flush = func() { sw.Flush() }
 	}
 
-	// The denominator is the ARIA's message count, not the window's. A tail
-	// window that reported its own size as the total is exactly how `show`
-	// used to claim a 4000 message aria had 1000 messages in it.
+	// The denominator is the aria's message count, not the window's.
 	fmt.Fprintf(w, "# aria %s: showing %d of %d messages\n\n", figaroID, len(entries)-start, win.total)
 	for _, e := range entries[start:] {
 		renderMessage(w, e.Payload, e.LT, opts.verbose)
@@ -321,14 +295,10 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 	fmt.Fprintln(stdout, "---")
 	fmt.Fprintln(stdout, "## credo")
 	fmt.Fprintln(stdout)
-	// The form is a reducible channel now (there is no the form channel);
-	// fetch the live snapshot through the angelus. Best-effort: the credo and
-	// form sections degrade to empty rather than aborting the dump.
+	// The form snapshot is best-effort: credo and form sections degrade to empty.
 	snap := fetchFormSnapshot(loaded, figaroID)
 	if raw, ok := snap.Get("system.credo"); ok {
-		// system.credo may be a bare string or a ContentEnvelope object
-		// ({content, frontmatter, filePath}). Prefer content, fall back to
-		// frontmatter, then to the raw string.
+		// system.credo may be a bare string or a ContentEnvelope object.
 		var env struct {
 			Content     string `json:"content,omitempty"`
 			Frontmatter string `json:"frontmatter,omitempty"`
@@ -363,7 +333,6 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 	_ = enc.Encode(nestSnapshot(snap))
 }
 
-// printTransitions prints all form patches in LT order.
 func printTransitions(w io.Writer, entries []irEntry) {
 	any := false
 	for _, e := range entries {
@@ -393,7 +362,6 @@ func printTransitions(w io.Writer, entries []irEntry) {
 	}
 }
 
-// renderMessage writes one IR message as markdown.
 func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 	switch m.Role {
 	case message.RoleInput:

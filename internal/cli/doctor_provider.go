@@ -15,8 +15,6 @@ import (
 	"github.com/jack-work/figaro/api/transport"
 )
 
-// runDoctorProvider answers the question no figaro surface could answer:
-// "this aria is not responding - what is the provider actually doing?"
 func runDoctorProvider(ariaID, count string, asJSON bool) error {
 	limit := 20
 	if count != "" {
@@ -79,8 +77,6 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 			}
 			dur = humanMillis(r.DurationMS)
 		} else {
-			// An in-flight row's age is the number that matters: a request
-			// out for four minutes is the story.
 			dur = "in flight " + humanMillis(time.Since(time.UnixMilli(r.StartedAtMS)).Milliseconds())
 		}
 
@@ -100,9 +96,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 	return nil
 }
 
-// streamLine is the second row a streaming attempt earns: an HTTP status says
-// nothing about a socket that opened, delivered nine events and stopped.
-// Counts, sizes and timings only - never a payload, an id, or an error text.
+// streamLine: counts, sizes and timings only, never a payload, an id, or an error text.
 func streamLine(s *rpc.StreamStats) string {
 	if s == nil {
 		return ""
@@ -138,8 +132,6 @@ func streamLine(s *rpc.StreamStats) string {
 	return "stream " + strings.Join(parts, " ")
 }
 
-// summarizeProviderTrouble names the diagnosis rather than leaving it in the
-// table. The table is evidence; an operator wants the verdict.
 func summarizeProviderTrouble(rounds []rpc.ProviderRound) {
 	var refused, inFlight int
 	var worstRetry int64
@@ -184,9 +176,6 @@ func summarizeProviderTrouble(rounds []rpc.ProviderRound) {
 	}
 }
 
-// summarizeStreamTrouble reads the failure modes a status code cannot express:
-// a socket that ended badly, tool arguments that matched no call, events the
-// parser did not recognize, and a stream that has been silent since it opened.
 func summarizeStreamTrouble(rounds []rpc.ProviderRound) []string {
 	var (
 		lines     []string
@@ -245,7 +234,6 @@ func summarizeStreamTrouble(rounds []rpc.ProviderRound) []string {
 	return lines
 }
 
-// compactBytes is humanBytes without the space, for a dense metric line.
 func compactBytes(n int64) string { return strings.ReplaceAll(humanBytes(n), " ", "") }
 
 func sortedRateLimitKeys(m map[string]string) []string {
@@ -264,8 +252,6 @@ func humanMillis(ms int64) string {
 	return (time.Duration(ms) * time.Millisecond).Round(100 * time.Millisecond).String()
 }
 
-// shortEndpoint keeps the part of a URL that distinguishes one call from
-// another; the host repeats on every row and earns no column.
 func shortEndpoint(raw string) string {
 	if i := strings.Index(raw, "://"); i >= 0 {
 		raw = raw[i+3:]

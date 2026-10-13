@@ -11,9 +11,7 @@ import (
 	"github.com/jack-work/hush/managed"
 )
 
-// newTestVault builds a managed hush rooted entirely under t.TempDir():
-// its own identity, config and socket dir. Nothing here touches the
-// user's real vault, and no agent is started.
+// newTestVault is rooted under t.TempDir(); no agent is started.
 func newTestVault(t *testing.T) *managed.Hush {
 	t.Helper()
 	root := t.TempDir()
@@ -32,9 +30,8 @@ func newTestVault(t *testing.T) *managed.Hush {
 	return h
 }
 
-// The point of the file arrangement is that the NEXT process, which
-// knows nothing but hush.toml, unlocks without asking anyone anything.
-// So the test resolves the config from disk the way that process would.
+// The next process knows nothing but hush.toml, so the config is resolved from
+// disk the way it would.
 func TestSetupFileUnlockIsReadBackByHush(t *testing.T) {
 	h := newTestVault(t)
 	pp, path, err := setupFileUnlock(h)
@@ -68,7 +65,6 @@ func TestSetupFileUnlockIsReadBackByHush(t *testing.T) {
 		t.Fatalf("reloaded file = %q, want %q", cfg.Unlock.File, path)
 	}
 
-	// And the identity it creates opens with the passphrase in the file.
 	if _, err := h.Init(pp); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -82,9 +78,7 @@ func TestSetupFileUnlockIsReadBackByHush(t *testing.T) {
 	}
 }
 
-// figaro sets a long hush ttl on purpose (a 30m default kills the
-// credential in the middle of an hour-long turn). Writing the unlock
-// section must not cost that.
+// figaro sets a long hush ttl on purpose; writing the unlock section must not cost it.
 func TestWriteHushUnlockFileKeepsWhatIsAlreadyThere(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hush.toml")
@@ -145,9 +139,7 @@ func TestWriteHushUnlockFileCreatesOneWhenThereIsNone(t *testing.T) {
 	}
 }
 
-// vault reset must know which providers to send the user back through
-// BEFORE it moves their token files, since afterwards there is nothing
-// left to read.
+// vault reset reads the providers before it moves their token files.
 func TestVaultOAuthProvidersListsTokenFiles(t *testing.T) {
 	h := newTestVault(t)
 	oauthDir := filepath.Join(h.Config().StateDir, "oauth")

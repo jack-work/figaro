@@ -7,24 +7,11 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// Every keyring call in figaro goes through this file, and every one of
-// them is bounded.
-//
-// The reason is a WSL box where gnome-keyring is running but no Secret
-// Service collection exists and none can be created: CreateCollection
-// raises a prompt and there is no prompter to answer it. keyring.Get on
-// a locked collection does not fail there. It BLOCKS, forever, inside
-// dbus, with no output. `figaro vault status`, the one command whose
-// whole job is to explain why the vault is stuck, was itself the thing
-// that hung.
-//
-// The goroutine that made the call is deliberately left running: it is
-// blocked in dbus and cannot be cancelled, so we abandon it and let
-// process exit collect it. Leaking one goroutine beats hanging the CLI.
-
+// Every keyring call is bounded: on a locked Secret Service collection with no
+// prompter (WSL), keyring.Get blocks forever inside dbus. The blocked goroutine
+// cannot be cancelled and is abandoned to process exit.
 const keyringTimeout = 5 * time.Second
 
-// errKeyringTimeout is what a hung Secret Service looks like from here.
 var errKeyringTimeout = errors.New("keyring did not answer")
 
 type keyringResult struct {
@@ -64,11 +51,8 @@ func keyringDelete(service, account string) error {
 	return err
 }
 
-// keyringReachable reports whether this host has a keyring that answers.
-// "Not found" is an answer and counts as reachable: the entry is simply
-// not written yet. A timeout, a dbus error, or a missing provider all
-// count as no keyring, which is what the create prompt needs to know
-// before it promises the user he will never be asked again.
+// "Not found" is an answer and counts as reachable; a timeout, a dbus error, or
+// a missing provider count as no keyring.
 func keyringReachable(service, account string) bool {
 	if service == "" || account == "" {
 		return false

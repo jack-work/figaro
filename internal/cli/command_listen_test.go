@@ -17,9 +17,7 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// YOU HAVE TO LISTEN TO A FIGARO. `:listen` is the pager's spelling of
-// `figaro listen`; `:open` was a second name for it and is gone. `:at` is
-// `:attend`, and the two verbs differ only in the binding.
+// `:listen` is `figaro listen`; `:at` is `:attend`; there is no `:open`.
 func TestOverlay_ListenAttendAndNoOpen(t *testing.T) {
 	if !overlayVerbs["listen"] {
 		t.Fatal(":listen is not an overlay verb")
@@ -32,8 +30,6 @@ func TestOverlay_ListenAttendAndNoOpen(t *testing.T) {
 	if !overlayVerbs["attend"] || !overlayVerbs["at"] {
 		t.Fatal(":attend / :at must stay")
 	}
-	// listen vs attend: one verb body each, and attend's is listen's plus a
-	// binding. The difference is visible in what a spec-less call refuses.
 	env := verbEnv{}
 	if _, _, err := listenVerb(context.Background(), env, ""); err == nil || !strings.Contains(err.Error(), "listen") {
 		t.Fatalf("listenVerb(\"\"): %v", err)
@@ -43,15 +39,7 @@ func TestOverlay_ListenAttendAndNoOpen(t *testing.T) {
 	}
 }
 
-// ONE PREPARATION, TWO SURFACES.
-//
-// There is no second fork parser to compare against: both doors call
-// prepareFork, and the only thing that differs is what the surface they were
-// typed at can honour. (This test used to call planFork twice and compare the
-// results, which is true of any function, while its name claimed to open two
-// doors it never touched. The send half of the pair is gone for the same
-// reason; the property it claimed is proved against a real request in
-// send_outfit_test.go.)
+// Both doors call prepareFork; only the surface differs.
 func TestForkPreparationDiffersOnlyByTheSurface(t *testing.T) {
 	for _, line := range []string{
 		"fork -- what about this?",
@@ -78,9 +66,7 @@ func TestForkPreparationDiffersOnlyByTheSurface(t *testing.T) {
 	}
 }
 
-// A FLAG THE SURFACE CANNOT HONOUR IS REFUSED BY NAME, and by BOTH prompt
-// verbs: `:fork -x` used to be parsed and dropped while `:send -x` was
-// refused, so one of the two lied about what it was going to do.
+// A flag the surface cannot honour is refused by name, by both prompt verbs.
 func TestPagerRefusesWhatItCannotHonour(t *testing.T) {
 	for _, argv := range [][]string{
 		{"-x", "--", "list the files"},
@@ -97,13 +83,11 @@ func TestPagerRefusesWhatItCannotHonour(t *testing.T) {
 		if _, err := prepareFork(argv, pagerSurface); err == nil {
 			t.Errorf("fork %v was accepted by the pager", argv)
 		}
-		// The shell honours every one of them: the refusal is the surface's,
-		// not the grammar's.
 		if _, err := prepareFork(argv, shellSurface); err != nil {
 			t.Errorf("fork %v refused at a shell: %v", argv, err)
 		}
 	}
-	// -f is a stream's notion: a shell can decline a stream, the pager IS one.
+	// -f is a stream's notion: the pager is one.
 	if _, err := prepareFork([]string{"-f", "--", "hi"}, pagerSurface); err == nil {
 		t.Error("the pager accepted fork -f")
 	}
@@ -122,10 +106,7 @@ func TestPagerRefusesWhatItCannotHonour(t *testing.T) {
 	}
 }
 
-// A FORK FROM THE PAGER ATTENDS THE BRANCH. Gluck excluded the one command
-// that shows an aria the shell does not attend: under `:listen B` while bound
-// to A, the pager's fork used to retarget to B's branch and leave the shell on
-// A, because the shared verb applied the SHELL's fan-out rule to it.
+// A fork from the pager attends the branch, even under `:listen B` while bound to A.
 func TestForkBindingIntent(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -154,8 +135,6 @@ func TestForkBindingIntent(t *testing.T) {
 	}
 }
 
-// The box's own two refusals for :fork: -f (the transcript is the stream)
-// and a prompt-less fork (nothing to show).
 func TestCommandFork_RefusesForgetAndNoPrompt(t *testing.T) {
 	p := newInputProbe(t, true)
 	_, err := p.in.commandFork(context.Background(), []string{"-f", "--", "hello"})
@@ -166,14 +145,11 @@ func TestCommandFork_RefusesForgetAndNoPrompt(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--") {
 		t.Fatalf("no prompt: %v", err)
 	}
-	// --stay is accepted by the grammar: it is the way to stay.
 	if plan, err := planFork([]string{"--stay", "--", "x"}); err != nil || !plan.opts.stay {
 		t.Fatalf("--stay: %+v %v", plan, err)
 	}
 }
 
-// forkVerb's binding rule is the shell's: rebind only when the fork was of
-// the shell's own aria and --stay was not given. With no shell, say so.
 func TestVerbEnv_BoundAriaWithoutAShell(t *testing.T) {
 	env := verbEnv{shellPID: 0}
 	id, why := env.boundAria(context.Background())
@@ -182,8 +158,7 @@ func TestVerbEnv_BoundAriaWithoutAShell(t *testing.T) {
 	}
 }
 
-// THE BOX'S VERBS TAKE THE BOX'S ARGV. `:attend` used to join its words with
-// spaces, so `:attend a b` asked the daemon for an aria called "a b".
+// `:attend a b` must not ask for an aria called "a b".
 func TestOverlaySpecIsOnePositional(t *testing.T) {
 	if spec, err := oneSpec("attend", []string{"abcd1234"}); err != nil || spec != "abcd1234" {
 		t.Fatalf("one spec: %q %v", spec, err)
@@ -196,9 +171,8 @@ func TestOverlaySpecIsOnePositional(t *testing.T) {
 	}
 }
 
-// AND THE BOX'S DOOR IS OPENED. commandFork is driven with one ':' line, and
-// what is asserted is the REQUEST a daemon receives: the trunk, the turn and
-// the dressing the plan carried. Nothing here compares a parser with itself.
+// commandFork is driven with one ':' line; what is asserted is the request a
+// daemon receives.
 func TestCommandForkSendsThePlansRequest(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "angelus.sock")
 	got := make(chan rpc.ForkRequest, 2)
@@ -212,8 +186,6 @@ func TestCommandForkSendsThePlansRequest(t *testing.T) {
 				return nil, err
 			}
 			got <- req
-			// Recorded: stop the flow here rather than mint a branch the
-			// test would then have to prompt and show.
 			return nil, errors.New("fork stops here")
 		},
 	})

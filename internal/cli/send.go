@@ -20,57 +20,45 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// sendOpts captures the parsed flag state of the send command.
 type sendOpts struct {
 	id       string
-	target   string // positional [<trunk>]:<LT> target (alt to --id)
-	stay     bool   // --attend=false / --stay: don't rebind to the new branch
-	raw      bool   // --raw / -r: raw stream, no ANSI/markdown
-	verbatim bool   // --verbatim / -v: dump raw wire frames as JSON
-	verbose  bool   // --verbose / -o (or -t alias): expand tool inputs (M-m toggles live)
+	target   string
+	stay     bool
+	raw      bool
+	verbatim bool
+	verbose  bool
 	exec     bool
-	dryRun   bool     // --exec only
-	skipYes  bool     // --exec only
-	forget   bool     // --forget / -f: submit and exit; do not stream
-	json     bool     // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
-	listen   bool     // --listen / -l: auto-enter the transcript at startup
-	outfit   dressing // the assembled dressing: -O names, -S keys, -D removals
-	// The three axes as typed, accumulated so repeats compose. -O is outfit
-	// NAMES only; -S carries k=v and JSON literals; -D carries key paths.
+	dryRun   bool
+	skipYes  bool
+	forget   bool
+	json     bool
+	listen   bool
+	outfit   dressing
+	// -O is outfit names only; -S carries k=v and JSON literals; -D key paths.
 	outfitText string
 	setText    string
 	delText    string
-	record     string // --record: write a wire tape of this stream (testing)
-	cast       bool   // --cast / -C: new only: autocast the fresh aria into a role
+	record     string
+	cast       bool
 }
 
-// extractSendFlags scans a PassRaw arg list for the send command's
-// recognized flags: --id, --exec/-x, --dry-run/-n,
-// --yes/-y. Returns the parsed opts and the residual args (which
-// still include the `--` boundary and the prompt body).
+// extractSendFlags returns the parsed opts and the residual args, `--` boundary
+// and prompt included.
 func extractSendFlags(args []string) (sendOpts, []string, error) {
 	return extractPromptFlags(args, false)
 }
 
-// extractForkFlags is extractSendFlags for `figaro fork`, where the prompt
-// is OPTIONAL: `fork <id>:12` is a complete gesture, so a bare positional
-// is the target even with no `--` boundary in sight. Sharing the parser is
-// deliberate: fork and send must not drift apart on what a flag or a
-// coordinate means.
+// extractForkFlags: the prompt is optional, so a bare positional is the target
+// without a `--`.
 func extractForkFlags(args []string) (sendOpts, []string, error) {
 	return extractPromptFlags(args, true)
 }
 
-// extractPromptFlags is the shared implementation. bareTarget says whether a
-// positional is allowed without a `--` boundary (fork: yes; send: no, because
-// there a boundary-less bare word is a prompt the user forgot to delimit).
+// bareTarget allows a positional without a `--` boundary.
 func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, error) {
 	var opts sendOpts
 	rest := make([]string, 0, len(args))
 
-	// A bare positional is the target only in the `… -- <prompt>` form;
-	// without a `--`, bare args are the prompt itself (except under
-	// bareTarget, where the prompt is optional to begin with).
 	hasDoubleDash := false
 	for _, a := range args {
 		if a == "--" {
@@ -79,9 +67,8 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		}
 	}
 
-	// One expander, one table: the letters come from sendFlagDefs, so a
-	// short cannot be documented and un-gangable at once (which is how
-	// `send -fj` failed while `-f -j` worked).
+	// The letters come from sendFlagDefs, so a short cannot be documented and
+	// un-gangable at once.
 	expanded := cmdkit.ExpandBundled(argsBeforeBoundary(args), sendFlagDefs)
 	expanded = append(expanded, argsFromBoundary(args)...)
 
@@ -219,14 +206,12 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			i++
 			continue
 		}
-		// First bare positional before a `--` boundary is the target
-		// ([<trunk>]:<LT>).
 		if (hasDoubleDash || bareTarget) && opts.target == "" && opts.id == "" && a != "" && !strings.HasPrefix(a, "-") {
 			opts.target = a
 			i++
 			continue
 		}
-		// Anything else before `--` is unconsumed argv. Never drop it.
+		// Unconsumed argv is never dropped.
 		switch {
 		case strings.HasPrefix(a, "-"):
 			return opts, nil, fmt.Errorf("unknown flag %q (flags go before `--`; everything after `--` is the prompt)", a)
@@ -239,9 +224,7 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 	return opts, rest, opts.armOutfit()
 }
 
-// addOutfit folds one -O value onto the names. Repeats compose rather than
-// conflict: `-O a -O b` means `-O a,b`, the same left-to-right fold every
-// other outfit surface uses.
+// Repeats compose: `-O a -O b` means `-O a,b`.
 func (o *sendOpts) addOutfit(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("--outfit requires a value")
@@ -250,8 +233,6 @@ func (o *sendOpts) addOutfit(text string) error {
 	return nil
 }
 
-// joinTerms appends one flag value to what the same flag already carried,
-// comma-separated: the one composition rule all three axes share.
 func joinTerms(have, more string) string {
 	if strings.TrimSpace(have) == "" {
 		return more
@@ -259,9 +240,6 @@ func joinTerms(have, more string) string {
 	return have + "," + more
 }
 
-// armOutfit assembles the three axes and hands the dressing to the prompt
-// builder. Every sending verb parses through here, so none can forget to carry
-// it: buildPromptForm puts it on the same call as the message.
 func (o *sendOpts) armOutfit() error {
 	d, err := parseDress(o.outfitText, o.setText, o.delText)
 	if err != nil {
@@ -271,9 +249,7 @@ func (o *sendOpts) armOutfit() error {
 	return nil
 }
 
-// sendFlagDefs is the single source of truth for the prompt verbs' flags:
-// bundle expansion reads it, and it is what keeps the hand-rolled PassRaw
-// scan and the router's parser speaking the same language.
+// sendFlagDefs is what keeps the PassRaw scan and the router's parser in agreement.
 var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Target aria id"},
 	{Long: "raw", Short: "r", IsBool: true, Description: "Raw stream: no ANSI, no markdown"},
@@ -293,8 +269,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "cast", Short: "C", IsBool: true, Description: "new: cast the fresh aria into a role (named @form, or minted from -O/-S)"},
 }
 
-// argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.
-// Everything after it is the prompt and must never be touched.
+// Everything after the first bare `--` is the prompt and is never touched.
 func argsBeforeBoundary(args []string) []string {
 	for i, a := range args {
 		if a == "--" {
@@ -313,35 +288,20 @@ func argsFromBoundary(args []string) []string {
 	return nil
 }
 
-// forkPoint is WHERE in an aria a fork lands, in whichever coordinate the
-// user named. Zero value = the head.
-//
-// THREE COORDINATES, one type, because they are three names for one cut and
-// the parser must not let a caller carry two at once:
-//
-//	:19       turn 19 is replaced        (the human coordinate)
-//	:19.10    node 10 of turn 19 is      (the coordinate the PAGER shows)
-//	.326      LT 326 exactly             (the model's coordinate)
-//
-// The node form is the only one that cannot go on the wire as typed: a node
-// is a RENDERING coordinate, minted by the composer out of a message's content
-// blocks, and the fork wire speaks messages. resolveForkPoint (forknode.go)
-// does that translation against the daemon's own composed nodes -- the same
-// ones the pager numbered on screen -- rather than re-deriving them here.
+// forkPoint is where a fork lands; zero value is the head. `:19` is a turn,
+// `:19.10` a node of that turn (a rendering coordinate, resolved by
+// resolveForkPoint), `.326` an LT.
 type forkPoint struct {
 	turn uint64
 	lt   uint64
 
-	// node is meaningful only with hasNode, because node 0 is a real address
-	// (the first thing the agent produced) and -1 is another (the turn's
-	// opening question, as the pager numbers it).
+	// node 0 and -1 are both real addresses, so hasNode carries presence.
 	node    int
 	hasNode bool
 }
 
 func (f forkPoint) isHead() bool { return f.turn == 0 && f.lt == 0 && !f.hasNode }
 
-// String names the coordinate the way the user typed it, for messages.
 func (f forkPoint) String() string {
 	switch {
 	case f.turn > 0 && f.hasNode && f.node == inquiryNode:
@@ -357,9 +317,6 @@ func (f forkPoint) String() string {
 	}
 }
 
-// parseTarget splits a target spec into a trunk id and an optional fork
-// point: ":<n>" is a turn, ":<n>.<k>" is a node within that turn, and ".<n>"
-// (with no colon) is an LT.
 func parseTarget(spec string) (trunk string, at forkPoint, err error) {
 	if spec == "" {
 		return "", forkPoint{}, nil
@@ -386,8 +343,6 @@ func parseTarget(spec string) (trunk string, at forkPoint, err error) {
 	return trunk, at, nil
 }
 
-// parseTurnCoord reads what follows the colon: `<turn>` or `<turn>.<node>`.
-// spec is carried only so the error can quote what the user typed.
 func parseTurnCoord(spec, coord string) (forkPoint, error) {
 	turnText, nodeText, hasNode := strings.Cut(coord, ".")
 	turn, err := strconv.ParseUint(turnText, 10, 64)
@@ -397,9 +352,7 @@ func parseTurnCoord(spec, coord string) (forkPoint, error) {
 	if !hasNode {
 		return forkPoint{turn: turn}, nil
 	}
-	// The node is SIGNED: -1 is the turn's opening question, which the pager
-	// addresses as `:12.-1` and which is a real fork point (it is the whole
-	// turn, question included). Nothing below -1 addresses anything.
+	// -1 is the turn's opening question; nothing below -1 addresses anything.
 	node, err := strconv.Atoi(nodeText)
 	if err != nil || node < inquiryNode {
 		return forkPoint{}, fmt.Errorf("bad :<turn>.<node> in %q (want [<trunk>]:<n>.<k>, nodes start at 0; -1 is the question)", spec)
@@ -407,8 +360,6 @@ func parseTurnCoord(spec, coord string) (forkPoint, error) {
 	return forkPoint{turn: turn, node: node, hasNode: true}, nil
 }
 
-// validateSendID wraps rpc.ValidateAriaID with a friendlier error
-// prefix. Pulled out so extractSendFlags reads cleanly.
 func validateSendID(id string) error {
 	if err := rpc.ValidateAriaID(id); err != nil {
 		return fmt.Errorf("--id %q: %w", id, err)
@@ -416,19 +367,13 @@ func validateSendID(id string) error {
 	return nil
 }
 
-// runSend is the unified send dispatcher. Branches:
-//
-//	--exec                -> bash wrapper; --raw is silently ignored
-//	                         (the script governs its own output)
-//	--raw                 -> raw stream, no ANSI/markdown
-//	(no flags)            -> bound/named aria, interactive stream
+// runSend: --exec runs the bash wrapper (--raw ignored); --raw streams
+// unformatted; otherwise interactive.
 func runSend(loaded *config.Loaded, rawArgs []string) {
 	runSendAs(loaded, "send", rawArgs)
 }
 
-// runSendAs is runSend with the verb that appears in diagnostics. The bare
-// `figaro [flags] -- <prompt>` form dispatches here too: one parser, one
-// set of semantics, and labels its errors with the program name instead.
+// The bare `figaro [flags] -- <prompt>` form dispatches here too, labelled with verb.
 func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
@@ -436,14 +381,12 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
-		// A boundary with nothing after it is an INVITATION, not a mistake:
-		// open the editor and send what gets written. That is what lets a `q`
-		// alias expanding to `figaro --` be typed with no arguments at all.
+		// A boundary with nothing after it opens the editor.
 		if hasDashBoundary(rest) {
 			text, cerr := composePrompt("Write a prompt. Markdown is fine.")
 			if cerr != nil {
 				if _, cancelled := cerr.(composeCancelled); cancelled {
-					return // nothing written; not an error
+					return
 				}
 				die("%s: %s", verb, cerr)
 			}
@@ -470,26 +413,22 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		dieUsage("%s: %s", verb, err)
 	}
 	if opts.json {
-		// The turn is submitted and not attached to: exactly --forget, which
-		// already knows how to emit the object.
 		opts.forget = true
 	}
 
 	set := pagerSettings(loaded)
 	set.verbose, set.listen, set.record = opts.verbose, opts.listen, opts.record
 
-	// `send <trunk>:<turn>`: fork at that turn, then send. The message lands
-	// on whichever trunk we end up attended to: the new alternative by default
-	// (rebind), or the original with --attend=false/--stay.
+	// `send <trunk>:<turn>` forks at that turn, then sends to whichever trunk
+	// is attended afterwards.
 	if !at.isHead() {
 		runSendForkAt(loaded, trunkID, at, opts.stay, opts.json, prompt, set, opts.outfit)
 		return
 	}
-	// No coordinate: a positional target is just the aria to send to.
 	if opts.id == "" {
 		opts.id = trunkID
 	} else {
-		opts.id = trunkID // strip any :<turn> that parseTarget already consumed
+		opts.id = trunkID
 	}
 
 	switch {
@@ -502,7 +441,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	case opts.raw:
 		runSendRaw(loaded, opts.id, opts.outfit, prompt)
 	default:
-		// Today's interactive send: pid-bound or --id named.
 		if opts.id == "" {
 			runPrompt(loaded, opts.outfit, prompt, set)
 			return
@@ -511,10 +449,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 }
 
-// validateSendOpts holds every "these flags contradict" rule for the prompt
-// verbs as a PURE function: it decides, never exits, never opens a socket.
-// That matters: inline in runSendAs, the only way to test a rejection was
-// to call the dispatcher, and a dispatcher past its guard reaches
+// validateSendOpts is pure: a dispatcher past its guard reaches
 // mustConnectAngelus, which in a test binary is a fork bomb.
 func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
@@ -534,8 +469,6 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	return nil
 }
 
-// validateNewOpts holds `new`'s own rules. It shares send's parser, so it must
-// say which of send's flags it cannot honour rather than ignoring them.
 func validateNewOpts(opts sendOpts) error {
 	switch {
 	case opts.id != "" || opts.target != "":
@@ -546,9 +479,6 @@ func validateNewOpts(opts sendOpts) error {
 	return validateSendOpts(opts, false)
 }
 
-// jsonIncompatible names the first flag that cannot survive --json's
-// contract. --raw and --verbatim want the stream itself; --exec hands stdout
-// to a script; --listen and --verbose shape a render that will not happen.
 func jsonIncompatible(opts sendOpts) string {
 	switch {
 	case opts.raw:
@@ -565,9 +495,6 @@ func jsonIncompatible(opts sendOpts) string {
 	return ""
 }
 
-// runSendRaw streams raw output from a persistent aria (bound, named, or
-// minted here when this shell has none). The aria is left alive; only the
-// formatting is raw.
 func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -586,9 +513,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 	}
 }
 
-// runSendVerbatim dumps the raw wire frames (one JSON object per line:
-// {"method","params"}) with no formatting: the literal protocol stream.
-// Runs against the bound/named aria, left alive.
+// runSendVerbatim dumps the wire frames, one JSON object per line.
 func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -606,8 +531,6 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 }
 
-// runSendExec implements the --exec branch. Creates an aria when unbound,
-// otherwise scoped to the named aria.
 func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -683,13 +606,10 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	}
 }
 
-// runSendForget submits a prompt and exits: fire-and-forget. The daemon
-// keeps the turn alive; the CLI does not attach to the stream and never
-// sends figaro.interrupt. Useful from scripts, or when you want a prompt
-// to run and check on it later via `figaro show` / `figaro listen`.
+// runSendForget submits and exits; the daemon keeps the turn alive.
 func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
-	// 30s, not 10: this call may now MINT the aria before submitting, and a
-	// cold daemon plus a first-run outfit render does not fit in ten.
+	// 30s: this call may mint the aria first, and a cold daemon plus a
+	// first-run outfit render does not fit in ten.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -721,12 +641,8 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
 }
 
-// promptFlagDefs is the prompt verbs' flags, declared for COMPLETION ONLY
-// (cmdkit.Command.CompleteFlags). send, new and fork are PassRaw: they parse
-// their own argv (above) and document their flags in their own help text,
-// which is richer than anything generated. Without this, `send --<TAB>`
-// offered nothing in every shell and in the pager. The descriptions are the
-// first line of that help; keep them beside the parser they describe.
+// promptFlagDefs exists for completion only: send, new and fork are PassRaw and
+// parse their own argv.
 var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Target a specific existing aria"},
 	{Long: "outfit", Short: "O", Description: "Dress the aria in an outfit"},

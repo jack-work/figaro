@@ -1,4 +1,3 @@
-// Package cli: `figaro gc` command.
 package cli
 
 import (
@@ -14,16 +13,12 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// Fields the gc report reads.
 const (
 	fieldUsed     = "used"
 	fieldChildren = "children"
 	fieldFate     = "fate"
 )
 
-// gcColors: a stump still hosting arias is green, one about to go is red: the
-// same reading as an outfit closure, where red is what is not there (or, here,
-// what is about to stop being).
 var gcColors = []figtree.FieldColor{{
 	FieldName: fieldUsed,
 	Rules: []figtree.ColorRule{

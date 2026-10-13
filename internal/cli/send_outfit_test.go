@@ -16,17 +16,14 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// Three flags, one parser, three verbs. -O takes outfit NAMES, -S takes keys,
-// -D takes removals; each composes on repeat, survives bundling, and is legal
-// against an existing target (dressing is a form fold now, not a birth-only
-// modifier). The axes are checked apart: a `k=v` under -O is a grammar error
-// that names the flag which takes it.
+// -O takes outfit names, -S keys, -D removals; each composes on repeat,
+// survives bundling, and is legal against an existing target.
 func TestSendOutfitParses(t *testing.T) {
 	cases := []struct {
 		name    string
 		in      []string
-		want    string // the outfit names, as typed
-		wantSet string // the -S text, as typed
+		want    string
+		wantSet string
 		err     string
 	}{
 		{name: "long form", in: []string{"--outfit", "sonn5", "-r", "--", "p"}, want: "sonn5"},
@@ -76,16 +73,12 @@ func TestSendOutfitParses(t *testing.T) {
 	}
 }
 
-// The wiring that matters: whatever the parser read must reach the prompt, in
-// the SAME call as the text, and it must travel ON THE PLAN. Parsing used to
-// write a package global, so a second command parsed while the first was in
-// flight sent the first one's question wearing the second one's dressing.
+// The dressing must travel on the plan, in the same call as the text.
 func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	opts, _, err := extractSendFlags([]string{"-O", "a", "-S", "ttl=1h", "--", "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A SECOND PARSE IS NOT THE FIRST ONE'S BUSINESS.
 	other, _, err := extractSendFlags([]string{"-S", "ttl=9h", "--", "q"})
 	if err != nil {
 		t.Fatal(err)
@@ -94,8 +87,7 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	if in == nil || in.Patch == nil {
 		t.Fatal("no form input")
 	}
-	// The names travel AS NAMES, in their own field: no directive is smuggled
-	// through the patch, and the daemon resolves them at its API boundary.
+	// The names travel as names, in their own field; the daemon resolves them.
 	if len(in.Outfits) != 1 || in.Outfits[0] != "a" {
 		t.Errorf("prompt outfits: %v", in.Outfits)
 	}
@@ -109,7 +101,6 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	if got := string(mustEntry(*buildPromptForm(other.outfit).Patch, "ttl")); got != `"9h"` {
 		t.Errorf("the second plan's ttl: %q", got)
 	}
-	// And the first plan still carries its own, parsed before the second.
 	if got := string(mustEntry(*buildPromptForm(opts.outfit).Patch, "ttl")); got != `"1h"` {
 		t.Errorf("the first plan wore the second's dressing: %q", got)
 	}
@@ -123,8 +114,6 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	}
 }
 
-// `new` shares send's parser, so it must reject what it cannot honour rather
-// than ignore it.
 func TestNewRejectsSendOnlyFlags(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -149,7 +138,6 @@ func TestNewRejectsSendOnlyFlags(t *testing.T) {
 	}
 }
 
-// mustEntry is the value a patch sets at key, for tests that assert on one.
 func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {
@@ -158,9 +146,7 @@ func mustEntry(p form.Patch, key string) json.RawMessage {
 	return e.New
 }
 
-// THE REQUEST IS WHERE IT COUNTS. The reviewer's probe: parse one send, parse
-// another, submit the FIRST, and read what the aria received. With the dressing
-// in a package global the first question arrived wearing the second's -S.
+// Parse one send, parse another, submit the first, and read what the aria received.
 func TestSubmittedQuestionWearsItsOwnPlansDressing(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "aria.sock")
 	got := make(chan rpc.QuaRequest, 4)

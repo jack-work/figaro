@@ -17,21 +17,15 @@ import (
 	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
-// angelusStartupLog is where a detaching angelus writes its early stderr.
-// The daemon inherits the descriptor for its lifetime, so it doubles as a
-// daemon log; ensureAngelus only truncates it when no daemon answered.
+// The daemon inherits the descriptor for its lifetime, so the startup log
+// doubles as a daemon log; it is truncated only when no daemon answered.
 func angelusStartupLog() string {
 	return filepath.Join(boot.AngelusRuntimeDir(), "angelus.startup")
 }
 
-// startupDiagnosisLines bounds how much of the daemon's early output is
-// quoted back: enough for a stack-free error, not a wall of slog.
 const startupDiagnosisLines = 8
 
-// startupDiagnosis quotes whatever the daemon managed to say before it
-// failed. Without it a deliberate refusal (the schema gate, a corrupt
-// store) is indistinguishable from a hang: the daemon detaches, so its
-// stderr is the only channel it has to explain itself.
+// The daemon detaches, so its stderr is the only channel it has to explain a refusal.
 func startupDiagnosis() string {
 	b, err := os.ReadFile(angelusStartupLog())
 	if err != nil {
@@ -48,8 +42,6 @@ func startupDiagnosis() string {
 	return ":\n  " + strings.Join(lines, "\n  ")
 }
 
-// refuseSelfSpawn stops the bootstrap when the executable about to be
-// forked is not figaro.
 func refuseSelfSpawn(exe string) {
 	if envTruthy(os.Getenv("FIGARO_NO_SELF_SPAWN")) {
 		die("refusing to spawn an angelus: FIGARO_NO_SELF_SPAWN is set\n" +
@@ -65,14 +57,11 @@ func refuseSelfSpawn(exe string) {
 	}
 }
 
-// isTestBinary reports whether exe looks like a `go test` binary. Go names
-// them <pkg>.test (<pkg>.test.exe on Windows).
 func isTestBinary(exe string) bool {
 	base := strings.TrimSuffix(filepath.Base(exe), ".exe")
 	return strings.HasSuffix(base, ".test")
 }
 
-// ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
@@ -93,34 +82,26 @@ func ensureAngelus() {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.SysProcAttr = detachAttr()
-	// Best-effort: if we cannot open the log, fall back to the old
-	// discard rather than refusing to start a daemon over it.
 	if err := os.MkdirAll(boot.AngelusRuntimeDir(), 0o700); err == nil {
-		// APPEND, not truncate. Several clients racing a cold start each
-		// open this file, and O_CREATE|O_TRUNC let a loser wipe the log the
-		// winner was writing into -- including the only trace a daemon
-		// crash leaves.
+		// Append, not truncate: several clients racing a cold start each
+		// open this file.
 		if f, err := os.OpenFile(angelusStartupLog(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
 			cmd.Stderr = f
-			defer f.Close() // the child holds its own dup
+			defer f.Close()
 		}
 	}
 	if err := cmd.Start(); err != nil {
 		die("start angelus: %s", err)
 	}
 
-	// The daemon is still our child until we exit, so a fast failure is
-	// observable: report it immediately instead of idling out the
-	// deadline on a process that is already gone.
+	// The daemon is our child until we exit, so a fast failure is observable.
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	// A LIVE daemon is never declared dead: the first open after an upgrade
-	// migrates the store, and killing it mid-way destroys arias. While the
-	// child is alive we wait and say what it is doing; only an exit, or a
-	// very long silence, is a failure.
+	// A live daemon is never declared dead: the first open after an upgrade
+	// migrates the store, and killing it mid-way destroys arias.
 	start := time.Now()
-	var deferred time.Time // when our child stood down for an incumbent
+	var deferred time.Time
 	var lastNotice time.Time
 	notified := false
 	for {
@@ -136,10 +117,8 @@ func ensureAngelus() {
 			if werr != nil {
 				die("angelus exited during startup (%v)%s", werr, startupDiagnosis())
 			}
-			// Exit 0 means it found an incumbent and stood down. That is
-			// the ordinary outcome of several clients starting at once,
-			// not an error: keep dialing for the incumbent instead of
-			// reporting a failure with a nil cause.
+			// Exit 0 means it found an incumbent and stood down: keep
+			// dialing for the incumbent.
 			deferred = time.Now()
 		default:
 		}
@@ -160,10 +139,7 @@ func ensureAngelus() {
 	}
 }
 
-// startupActivity says what the daemon is doing, and only says the thing
-// it can check. Asserting a migration that is not happening is what sends
-// a user to pkill -- a wrong explanation is worse than none. NeedsFlatten
-// is one file read.
+// startupActivity says only what it can check; NeedsFlatten is one file read.
 func startupActivity() string {
 	if need, err := xwal.NeedsFlatten(boot.AriaRoot()); err == nil && need {
 		return "migrating the store layout: let it finish; interrupting a migration " +
@@ -173,16 +149,13 @@ func startupActivity() string {
 }
 
 const (
-	// startupNoticeAfter is when we start explaining rather than waiting
-	// silently, and startupNoticeEvery keeps explaining: one hopeful
-	// sentence followed by ten minutes of silence reads exactly like the
-	// hang the sentence told the user not to interrupt.
+	// After startupNoticeAfter we explain, and keep explaining every
+	// startupNoticeEvery.
 	startupNoticeAfter = 3 * time.Second
 	startupNoticeEvery = 30 * time.Second
 	startupHardCap     = 10 * time.Minute
-	// incumbentGrace is how long we keep dialing after our own child stood
-	// down for an existing daemon. Short: the incumbent is already up, or
-	// it is not.
+	// incumbentGrace is how long we keep dialing after our own child stood down
+	// for an existing daemon.
 	incumbentGrace = 10 * time.Second
 )
 
@@ -198,15 +171,8 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	return cli
 }
 
-// mustCreate mints an aria. An empty dressing means "as usual": the angelus
-// folds the configured default.
-//
-// IT DOES NOT ATTEND. Minting used to bind this shell as a side effect, which
-// made attendance a property of the helper rather than of the verb -- five
-// verbs, five rules, and a restoreAttendance whose whole job was to undo a
-// bind its own mint should never have done. Now every birth verb says what it
-// means with attendNew, and a verb that does not say it does not move the
-// shell.
+// mustCreate mints an aria and does not attend it: every birth verb says so
+// with attendNew.
 func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, d.names, d.patch)
@@ -227,38 +193,28 @@ func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d
 	return createResp.FigaroID, ep
 }
 
-// attendNew moves this shell onto a thing a verb just created. THE ONE LAW:
-// a verb that creates something FOR you attends it; a verb that creates
-// something BESIDE you (a fan-out fork, an ephemeral send) does not; --stay
-// suppresses the move wherever it is offered; and `attend` is the only verb
-// whose purpose IS the move. Binding disabled makes this a silent no-op, so a
-// script gets its aria without acquiring a binding it never asked for.
+// attendNew moves the shell onto what a verb created for it; with binding
+// disabled it is a silent no-op.
 func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
 	if err := bindBinding(ctx, acli, shellPID, id, 0); err != nil {
 		die("attend %s: %s", id, err)
 	}
 }
 
-// checkDaemonBuild refuses to speak to a daemon built from a different
-// revision. The wire shape changes between builds, so a mismatched pair does
-// not fail loudly: it renders NOTHING, which reads as a broken terminal
-// rather than a stale process. Naming both revisions turns an hour of
-// confusion into one command.
+// A daemon from another revision renders nothing rather than failing loudly, so
+// the mismatch is named.
 func checkDaemonBuild(cli *sdk.Angelus) {
 	mine := boot.BuildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
 	if err != nil || st == nil {
-		return // transient: not worth blocking on
+		return
 	}
 	switch buildHandshake(st.Build, mine) {
 	case handshakeOK:
 		return
 	case handshakeCLIUnknown:
-		// We cannot prove incompatibility, but silence is the failure mode we
-		// are here to kill: warn loudly rather than let the user stare at an
-		// empty screen.
 		fmt.Fprintf(stderrw,
 			"figaro: this CLI's build is unknown, so it cannot be checked against\n"+
 				"        the running angelus (%s). If output is missing or garbled,\n"+
@@ -286,12 +242,10 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 	}
 }
 
-// buildHandshake is the whole decision, pure so it can be tested as a matrix
-// rather than through a daemon.
 func buildHandshake(daemon, mine string) handshakeVerdict {
 	switch {
 	case daemon == mine:
-		return handshakeOK // matched, or both unknown
+		return handshakeOK
 	case mine == "":
 		return handshakeCLIUnknown
 	case daemon == "":

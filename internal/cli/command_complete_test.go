@@ -9,15 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// TAB'S PIT, as a unit -- because every bug in the menu it replaced was found
-// by squinting at a terminal, and the worst of them (candidates printed over
-// the status bar, the menu empty) was invisible to every test that existed.
-//
-// The rules are bash's and fish's between them; see transcript_complete.go.
-
-// completerFor is a completer over a fixed candidate table, keyed by the text
-// before the cursor exactly as the router's completer would see it, counting
-// its calls so a test can see a pool being reused.
+// completerFor counts its calls so a test can see a pool being reused.
 type completerFor struct {
 	pools map[string][]string
 	calls int
@@ -84,10 +76,8 @@ func TestTabPit(t *testing.T) {
 		}
 	})
 
-	// BOTH ENCODINGS. figaro turns on modified-key reporting, so ^N arrives as
-	// a CSI-u chord (keyEvent{ctrl:'n'}) on a real terminal and as the byte
-	// 0x0e elsewhere. A table binding only one of them does nothing where the
-	// other is sent.
+	// Both encodings: with modified-key reporting on, ^N arrives as a CSI-u
+	// chord; elsewhere as the byte 0x0e.
 	for _, enc := range []struct {
 		name string
 		next keyEvent
@@ -106,7 +96,6 @@ func TestTabPit(t *testing.T) {
 				t.Fatalf("after next: %q chosen %q", tr.cmdline.String(), chosen(tr))
 			}
 			tr.dispatch(enc.next)
-			// CYCLING REPLACES, it does not append.
 			if tr.cmdline.String() != "attend 3b9c14e2" {
 				t.Fatalf("after next twice: %q", tr.cmdline.String())
 			}
@@ -188,15 +177,12 @@ func TestTabPit(t *testing.T) {
 		tr, _ := menuFixture(t, ariaPool)
 		typeInto(tr, "attend herald")
 		cmdComplete(tr)
-		// One candidate found by its description is still one candidate.
 		if tr.cmdline.String() != "attend 3b9c14e2 " {
 			t.Fatalf("herald should find the aria whose mantra says it: %q", tr.cmdline.String())
 		}
 		tr2, _ := menuFixture(t, ariaPool)
 		typeInto(tr2, "attend de")
 		cmdComplete(tr2)
-		// "insert mode ..." and "deploy herald" both contain it; neither id
-		// starts with it, so nothing is inserted and the pit says why.
 		if tr2.menu == nil || !tr2.menu.loose || len(tr2.menu.shown) != 2 || tr2.cmdline.String() != "attend de" {
 			t.Fatalf("de should match two descriptions loosely, line untouched: %+v %q", tr2.menu, tr2.cmdline.String())
 		}
@@ -275,7 +261,6 @@ func TestTabPit(t *testing.T) {
 		if !strings.Contains(rows[0], "♪") {
 			t.Fatalf("the chosen row carries the pit's marker: %q", rows[0])
 		}
-		// Never more than the pit has room for.
 		if got := tr.menu.lines(80, 3); len(got) > 3 {
 			t.Fatalf("room 3 drew %d rows", len(got))
 		}
@@ -292,7 +277,6 @@ func TestTabPit(t *testing.T) {
 			t.Fatal("two directories should open the pit")
 		}
 		typeInto(tr, "rc/")
-		// The word left the directory the pool was fetched for.
 		if last := c.asked[len(c.asked)-1]; last != "cd src/" {
 			t.Fatalf("the completer was last asked %q; a new directory must be fetched", last)
 		}
@@ -320,8 +304,8 @@ func TestCompletionStem(t *testing.T) {
 	}
 }
 
-// A value wider than its column keeps its tail, as a file pane does: the end
-// of a path is what tells two candidates apart.
+// A value wider than its column keeps its tail: the end of a path is what tells
+// two candidates apart.
 func TestClipHead(t *testing.T) {
 	for _, c := range []struct {
 		in    string
@@ -334,7 +318,7 @@ func TestClipHead(t *testing.T) {
 		{"skills.using-tuis-n-fancy-clis", 12, "…-fancy-clis"},
 		{"abc", 1, "…"},
 		{"abc", 0, ""},
-		{"日本語のパス", 7, "…のパス"}, // wide runes are measured, never split
+		{"日本語のパス", 7, "…のパス"},
 	} {
 		got := clipHead(c.in, c.width)
 		if got != c.want {
@@ -346,7 +330,6 @@ func TestClipHead(t *testing.T) {
 	}
 }
 
-// In the pit, a long value shows its end and the descriptions still line up.
 func TestTabPitKeepsTheTailOfALongValue(t *testing.T) {
 	long := "~/dev/figaro-qua/some-very-long-worktree-name/internal/"
 	tr, _ := menuFixture(t, map[string][]string{

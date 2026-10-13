@@ -1,4 +1,3 @@
-// Package cli: first-run setup wizard.
 package cli
 
 import (
@@ -26,15 +25,12 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// providerChoice describes one entry in the first-run menu. A single
-// underlying provider (e.g. "anthropic") can appear multiple times
-// here with different modes (OAuth vs API key): the menu shows the
-// human-facing options; the underlying provider name is what gets
-// written into the outfit.
+// One underlying provider can appear several times with different modes;
+// provider is what the outfit gets.
 type providerChoice struct {
-	label    string // shown in the menu
-	provider string // value for outfit's [system].provider
-	hint     string // short description after the label
+	label    string
+	provider string
+	hint     string
 	setup    func(loaded *config.Loaded) error
 }
 
@@ -52,9 +48,7 @@ func init() {
 	}
 }
 
-// catalog is the menu shown for each underlying provider. Ordering
-// matters: first entry is "recommended" by virtue of position. Add
-// new providers here and they appear in the wizard automatically.
+// Position is the recommendation: the first entry is the default.
 var providerCatalog = []providerChoice{
 	{
 		label:    "GitHub Copilot (device code login)",
@@ -78,9 +72,6 @@ var providerCatalog = []providerChoice{
 	},
 }
 
-// catalogFor filters the catalog to entries whose underlying
-// provider appears in the available list. Lets us hide options the
-// build doesn't actually support.
 func catalogFor(available []string) []providerChoice {
 	if len(available) == 0 {
 		return providerCatalog
@@ -98,11 +89,9 @@ func catalogFor(available []string) []providerChoice {
 	return out
 }
 
-// createFn is the shape of the `acli.Create*` family. We accept a
-// closure so the same retry wrapper covers Create and CreateWithID.
 type createFn func() (*rpc.CreateResponse, error)
 
-// createWithFirstRun invokes fn once. On a typed first-run error, drives the
+// createWithFirstRun invokes fn once; on a typed first-run error, drives the
 // wizard and retries.
 func createWithFirstRun(ctx context.Context, loaded *config.Loaded, d dressing, fn createFn) (*rpc.CreateResponse, error) {
 	resp, err := fn()
@@ -128,8 +117,6 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, d dressing, 
 	}
 }
 
-// decodeTypedError extracts the (Data, Code) pair from a typed
-// JSON-RPC error. Returns ok=false for any other error type.
 func decodeTypedError(err error) (rpc.ErrorData, int, bool) {
 	var jerr *jkrpc.Error
 	if !errors.As(err, &jerr) {
@@ -142,10 +129,8 @@ func decodeTypedError(err error) (rpc.ErrorData, int, bool) {
 	return data, jerr.Code, true
 }
 
-// runWizard orchestrates the three-station first-run flow. Hush
-// (Station 1) was already handled by ensureHush before any RPC went
-// out, so this drives Stations 2 (provider + credentials) and 3
-// (default outfit).
+// Hush (station 1) was handled by ensureHush before any RPC; this drives
+// stations 2 and 3.
 func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) error {
 	if !isStdinTTY() {
 		return fmt.Errorf(
@@ -165,7 +150,6 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 
 	printWelcome(loaded)
 
-	// --- Station 2: provider + credentials -------------------------------
 	printStep(2, 3, "Provider")
 	fmt.Fprintln(os.Stderr, dim("     Where should your prompts go? You can add more later with `figaro login`."))
 	fmt.Fprintln(os.Stderr)
@@ -181,16 +165,11 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 	}
 	fmt.Fprintln(os.Stderr)
 
-	// --- Station 3: default outfit --------------------------------------
 	printStep(3, 3, "Default outfit")
 	fmt.Fprintln(os.Stderr, dim("     An outfit bundles a provider + model so `fig` knows what to do"))
 	fmt.Fprintln(os.Stderr, dim("     when you don't pass flags. We'll make one for you and set it as default."))
 	fmt.Fprintln(os.Stderr)
 
-	// Try to fetch the live model list and let the user pick. If the
-	// listing fails for any reason (transient API hiccup, OAuth token
-	// not yet active, provider missing a /models endpoint), we silently
-	// fall back to defaultModelFor so first-run never blocks on it.
 	chosenModel := pickModelOrFallback(loaded, chosen.provider)
 
 	acli := mustConnectAngelus(loaded)
@@ -211,9 +190,7 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 	return nil
 }
 
-// pickFromMenu uses the TUI picker when interactive mode is on (the
-// default); falls back to a numbered prompt otherwise. The first
-// option is the default (Enter / no input selects it).
+// The first option is the default.
 func pickFromMenu(loaded *config.Loaded, options []providerChoice) (providerChoice, error) {
 	if loaded != nil && !loaded.Interactive() {
 		return pickFromMenuNumbered(options)
@@ -221,7 +198,7 @@ func pickFromMenu(loaded *config.Loaded, options []providerChoice) (providerChoi
 	tuiOpts := make([]tui.ProviderOption, len(options))
 	for i, o := range options {
 		tuiOpts[i] = tui.ProviderOption{
-			Key:   strconv.Itoa(i), // index round-trip; cleaner than label match
+			Key:   strconv.Itoa(i),
 			Label: o.label,
 			Hint:  o.hint,
 		}
@@ -237,9 +214,6 @@ func pickFromMenu(loaded *config.Loaded, options []providerChoice) (providerChoi
 	return options[idx], nil
 }
 
-// pickFromMenuNumbered prints a numbered list and returns the chosen
-// entry. The first entry is the default (Enter selects it). Used as
-// the explicit-non-interactive fallback when interactive=false.
 func pickFromMenuNumbered(options []providerChoice) (providerChoice, error) {
 	for i, opt := range options {
 		num := fmt.Sprintf("[%d]", i+1)
@@ -265,31 +239,19 @@ func pickFromMenuNumbered(options []providerChoice) (providerChoice, error) {
 	return options[n-1], nil
 }
 
-// setupCredentialsFor runs the credential acquisition flow for the
-// chosen provider+mode. OAuth opens a browser (or prints a URL),
-// awaits a callback or pasted code, and persists tokens via hush.
-// API-key mode prompts (no echo), encrypts via hush, writes to
-// providers/<name>.toml.
 func setupCredentialsFor(loaded *config.Loaded, choice providerChoice) error {
 	return choice.setup(loaded)
 }
 
-// runOAuthInline calls auth.Login, which drives the PKCE handshake
-// and persists the result through hush. Errors propagate.
 func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 	h := MustHush()
 	hushClient := h.Client()
 	return auth.Login(hushClient, cfg, func() (string, error) {
-		// Login prints the (styled) paste prompt; we only read.
 		line, err := term.ReadLine("")
 		return strings.TrimSpace(line), err
 	})
 }
 
-// runAPIKeyInline prompts for a key (no echo), encrypts it via hush,
-// and writes it as `api_key = "AGE-ENC[...]"` in providers/<name>.toml.
-// runCopilotLogin runs the device code flow and hands the GitHub token to
-// hush under the copilot grant.
 func runCopilotLogin(loaded *config.Loaded) error {
 	line, err := term.ReadLine("       GitHub Enterprise domain (blank for github.com): ")
 	if err != nil {
@@ -302,8 +264,7 @@ func runCopilotLogin(loaded *config.Loaded) error {
 		return err
 	}
 
-	// Keep the domain on disk: it is not a secret, and it is what tells
-	// the provider where to exchange and which host to talk to.
+	// The domain is not a secret; it says where to exchange.
 	if domain != "" {
 		if err := writeCopilotDomain(loaded, domain); err != nil {
 			return err
@@ -332,8 +293,6 @@ func runCopilotLogin(loaded *config.Loaded) error {
 	return nil
 }
 
-// writeCopilotDomain persists the enterprise domain (plaintext, not a
-// secret) without disturbing anything else in the file.
 func writeCopilotDomain(loaded *config.Loaded, domain string) error {
 	cfg := struct {
 		EnterpriseDomain string `toml:"enterprise_domain"`
@@ -366,7 +325,6 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 
 	h := MustHush()
 	encrypted, err := h.Client().Encrypt(map[string]string{"api_key": string(key)})
-	// wipe the in-memory plaintext immediately
 	for i := range key {
 		key[i] = 0
 	}
@@ -395,10 +353,7 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 	return nil
 }
 
-// createDefaultOutfit asks the ANGELUS to write outfits/default.toml (or
-// default-<provider>.toml if that name is taken) and point default_outfit at
-// it. The wizard composes the body: that is client ergonomics: but the file
-// and the config are the server's state, so the server writes them.
+// The angelus writes the outfit and the config: the file is server state.
 func createDefaultOutfit(ctx context.Context, acli *sdk.Angelus, existing []string, providerName, model string) (string, error) {
 	name := "default"
 	for _, n := range existing {
@@ -424,12 +379,8 @@ func createDefaultOutfit(ctx context.Context, acli *sdk.Angelus, existing []stri
 	return name, nil
 }
 
-// starterOutfitBody is a minimal outfit. It declares NO skills of its own: the
-// outfit references the skills directory via `skills = { dirName = "skills" }`,
-// and that alone is enough, because first-party skills ship inside the binary
-// and load from there. A copy in config would be overridden by the shipped one
-// anyway, so it would sit there stale and unread: which is the pointlessness
-// this deliberately avoids.
+// The starter outfit declares no skills: first-party skills ship inside the
+// binary, and a copy in config would be stale and unread.
 func starterOutfitBody(providerName, model string) string {
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
 # Edit to taste; see docs/outfits for the schema.
@@ -446,8 +397,6 @@ provider = %q
 	}
 	return body
 }
-
-// --- pretty bits -----------------------------------------------------------
 
 func dim(s string) string   { return term.Dim(s) }
 func cyan(s string) string  { return term.Cyan(s) }
@@ -471,17 +420,12 @@ func printDone() {
 	fmt.Fprintln(os.Stderr)
 }
 
-// --- compile-time wiring ---------------------------------------------------
-
-// Compile-time check: angelus.Client.Create matches createFn shape
-// when bound (modulo context: caller supplies one).
 var _ = func(acli *sdk.Angelus, ctx context.Context) createFn {
 	return func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, nil, nil)
 	}
 }
 
-// isStdinTTY returns true when stdin is attached to a terminal.
 func isStdinTTY() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {
@@ -490,11 +434,8 @@ func isStdinTTY() bool {
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
-// pickModelOrFallback queries the freshly-credentialed provider for
-// its model list and prompts the user to pick one. On any failure
-// (no network, listing endpoint missing, user dismisses the prompt)
-// it falls back to defaultModelFor(providerName). Never blocks the
-// wizard: the outfit always gets *some* model.
+// On any failure it falls back to defaultModelFor: the wizard never blocks on a
+// listing.
 func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 	fallback := defaultModelFor(providerName)
 
@@ -510,7 +451,6 @@ func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 		return fallback
 	}
 
-	// Newest-first when ids carry a sortable suffix; otherwise stable.
 	sort.SliceStable(models, func(i, j int) bool { return models[i].ID > models[j].ID })
 
 	opts := make([]tui.ProviderOption, len(models))

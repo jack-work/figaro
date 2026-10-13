@@ -7,9 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// deltaRowCount is the cheap answer to a question deltaRows used to be asked
-// for its length. The two must agree on every shape, or the collapsed glyph
-// and the selection's refs disagree with the rows a reader opens.
+// deltaRowCount and deltaRows must agree on every shape.
 func TestDeltaRowCountAgreesWithDeltaRows(t *testing.T) {
 	set := func(form string, kind livedoc.FormKind, event livedoc.FormEvent, key, val string) (string, livedoc.FormDelta) {
 		d := livedoc.FormDelta{Form: form, Kind: kind, Event: event}

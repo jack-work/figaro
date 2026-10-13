@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The rule is EXISTENCE, so the fixture is a real directory with real files in
-// it: a stub that answers yes to a shape would be testing the shape.
+// The rule is existence, so the fixture is a real directory with real files.
 func TestEditorTargetIsExistenceThenCoordinate(t *testing.T) {
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
@@ -21,7 +20,7 @@ func TestEditorTargetIsExistenceThenCoordinate(t *testing.T) {
 		return p
 	}
 	plain := write("src/main.go")
-	colon := write("odd/main.go:12") // a colon is legal in a filename
+	colon := write("odd/main.go:12")
 	write("home/notes/todo.md")
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "adir"), 0o755))
 
@@ -37,8 +36,6 @@ func TestEditorTargetIsExistenceThenCoordinate(t *testing.T) {
 		{name: "line", text: "src/main.go:41", path: plain, line: 41, ok: true},
 		{name: "line and column", text: "src/main.go:41:7", path: plain, line: 41, ok: true},
 		{name: "tilde", text: "~/notes/todo.md", path: filepath.Join(home, "notes/todo.md"), ok: true},
-		// The file that is really named "main.go:12" wins over reading the
-		// suffix as a coordinate: what is on disk outranks the pattern.
 		{name: "colon in the name", text: "odd/main.go:12", path: colon, ok: true},
 		{name: "not a file", text: "src/missing.go", ok: false},
 		{name: "a directory is not a file", text: "adir", ok: false},
@@ -80,11 +77,9 @@ func TestEditorArgvCarriesLineOnlyToVim(t *testing.T) {
 	}
 }
 
-// The gate is the whole of "the editor does not fight the reader for
-// keystrokes": prove it parks, and prove it lets go.
 func TestInputGateParksAndResumes(t *testing.T) {
 	var g inputGate
-	g.park() // nothing requested: never blocks
+	g.park()
 
 	paused, resume := g.request()
 	parked := make(chan struct{})

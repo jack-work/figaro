@@ -10,7 +10,6 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// The pre-flight needs no daemon for an LT cut: both numbers are in hand.
 func TestForkQuotePreflightAgainstAnLTCut(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
@@ -21,7 +20,7 @@ func TestForkQuotePreflightAgainstAnLTCut(t *testing.T) {
 		{400, "<412.0:0-5>! what", true},
 		{412, "<412>! what", true},
 		{413, "<412>! what", false},
-		{400, "<300.0:0-412.0:8>! what", true}, // a span ending past the cut
+		{400, "<300.0:0-412.0:8>! what", true},
 		{400, "<300.0:0-399.0:8>! what", false},
 		{400, "no quote here", false},
 		{400, "<412.0:0-5> unterminated is text", false},

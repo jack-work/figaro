@@ -6,13 +6,12 @@ import (
 	"time"
 )
 
-// The hang this bounds is a keyring.Get that never returns on a locked
-// collection with no prompter. Five seconds is the production limit;
-// the test uses its own so the suite does not wait for it.
+// The test uses its own limit so the suite does not wait for the production five
+// seconds.
 func TestBoundedKeyringGivesUp(t *testing.T) {
 	start := time.Now()
 	_, err := boundedKeyringWithin(20*time.Millisecond, func() (string, error) {
-		select {} // exactly as informative as dbus is
+		select {}
 	})
 	if !errors.Is(err, errKeyringTimeout) {
 		t.Fatalf("err = %v, want errKeyringTimeout", err)

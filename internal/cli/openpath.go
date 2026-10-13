@@ -1,20 +1,9 @@
 package cli
 
-// THE PAGER HANDS THE TERMINAL OVER, AND TAKES IT BACK.
-//
-// `a` over text that is not an aria id asks this file whether the text names a
-// file, and if it does, runs the configured editor on the terminal the pager
-// is holding. Three things have to be arranged for that, and none of them is
-// optional:
-//
-//   - the input loop must stop reading stdin, or figaro and the editor race
-//     for every keystroke;
-//   - the terminal must go back to what the shell handed us (cooked, normal
-//     screen, no mouse reporting) and then be taken again;
-//   - the editor must be the FOREGROUND process group, or the tty's Ctrl-C
-//     lands on figaro as well, and figaro's default action for SIGINT is to
-//     die.
-
+// Handing the terminal to an editor: the input loop must stop reading stdin,
+// the terminal must go back to cooked/normal screen/no mouse and be retaken,
+// and the editor must be the foreground process group or the tty's Ctrl-C lands
+// on figaro too.
 import (
 	"os"
 	"os/exec"
@@ -24,12 +13,8 @@ import (
 	"time"
 )
 
-// editorTarget decides whether text names a file and, if so, which line of it.
-// The rule is existence: after a leading ~ is expanded and a relative path is
-// resolved against cwd, os.Stat has to find a file. A `:LINE` or `:LINE:COL`
-// suffix is stripped only when the text with it kept is NOT a file, because a
-// colon is a legal character in a filename and what is on disk outranks what
-// the pattern suggests.
+// editorTarget: a `:LINE` or `:LINE:COL` suffix is stripped only when the text
+// with it kept is not a file, since a colon is legal in a filename.
 func editorTarget(text, cwd, home string, isFile func(string) bool) (path string, line int, ok bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -49,8 +34,6 @@ type pathCandidate struct {
 	line int
 }
 
-// coordCandidates is the text itself, then the text with a trailing :LINE or
-// :LINE:COL taken off, in that order.
 func coordCandidates(text string) []pathCandidate {
 	out := []pathCandidate{{text: text}}
 	rest, n, ok := trimCoord(text)
@@ -58,7 +41,6 @@ func coordCandidates(text string) []pathCandidate {
 		return out
 	}
 	if rest2, n2, ok2 := trimCoord(rest); ok2 {
-		// :LINE:COL -- the first number off the end is the column.
 		out = append(out, pathCandidate{text: rest2, line: n2})
 	}
 	out = append(out, pathCandidate{text: rest, line: n})
@@ -100,9 +82,7 @@ func isRegularFile(p string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
-// editorArgv builds the command line. The line number travels only to editors
-// that understand `+N`; anything else is given the path and nothing else,
-// because a stray argument is worse than a lost coordinate.
+// The line number travels only to editors that understand `+N`.
 func editorArgv(spec, path string, line int) []string {
 	argv := tokenize(spec)
 	if len(argv) == 0 {
@@ -122,11 +102,9 @@ func takesPlusLine(cmd string) bool {
 	return false
 }
 
-// openPath is the transcript's path hook. IT RUNS ON THE INPUT GOROUTINE WITH
-// THE RENDER LOCK HELD, which decides the shape of everything below: the
-// decision is made here (it only stats), the pause is REQUESTED here (so it is
-// ordered before the read loop's next Read, with no handshake to race), and
-// the work happens on a goroutine of its own.
+// openPath runs on the input goroutine with the render lock held: it decides
+// here (a stat), requests the pause here so it orders before the next Read, and
+// works on its own goroutine.
 func (in *interactiveInput) openPath(text string) {
 	cwd, _ := os.Getwd()
 	path, line, ok := editorTarget(text, cwd, os.Getenv("HOME"), isRegularFile)
@@ -143,16 +121,15 @@ func (in *interactiveInput) openPath(text string) {
 	go in.runEditor(argv, path, paused, resume)
 }
 
-// editorParkWait bounds how long the editor waits for the read loop to park.
-// It parks as soon as the current input chunk is drained, so exceeding this
-// means there is no read loop to park: the terminal is not ours to give away.
+// Exceeding editorParkWait means there is no read loop to park: the terminal is
+// not ours to give away.
 const editorParkWait = 2 * time.Second
 
 func (in *interactiveInput) runEditor(argv []string, path string, paused <-chan struct{}, resume chan<- struct{}) {
 	select {
 	case <-paused:
 	case <-time.After(editorParkWait):
-		close(resume) // whoever parks later leaves immediately
+		close(resume)
 		in.note("editor: the terminal is busy")
 		return
 	}
@@ -162,10 +139,8 @@ func (in *interactiveInput) runEditor(argv []string, path string, paused <-chan 
 		in.note("editor: this session does not own a terminal")
 		return
 	}
-	// Hold the frame. Every renderer entry point records that the screen is
-	// stale and returns while a batch is open, so nothing paints over the
-	// editor; the resume below voids the painter's model of the screen and
-	// draws one full frame.
+	// Hold the frame: every renderer entry point returns while a batch is open,
+	// so nothing paints over the editor.
 	in.mu.Lock()
 	in.lt.tr.beginBatch()
 	in.mu.Unlock()
@@ -187,9 +162,8 @@ func (in *interactiveInput) runEditor(argv []string, path string, paused <-chan 
 	in.note("edited " + filepath.Base(path))
 }
 
-// runEditorCommand runs the editor on the real terminal, as its own foreground
-// process group. A non-zero exit is reported, not raised: the reader is coming
-// back to the pager either way.
+// The editor runs as its own foreground process group; a non-zero exit is
+// reported, not raised.
 func runEditorCommand(argv []string) error {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -198,8 +172,8 @@ func runEditorCommand(argv []string) error {
 		return err
 	}
 	err := cmd.Wait()
-	// The child took the terminal's foreground group with it; without this,
-	// the next read from stdin raises SIGTTIN and stops figaro.
+	// Without reclaiming the foreground group, the next read from stdin raises
+	// SIGTTIN and stops figaro.
 	reclaimTerminal()
 	return err
 }

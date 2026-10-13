@@ -18,11 +18,9 @@ import (
 
 func runRestWithFlags(force, keepPIDs bool) {
 
-	// --keep-pids says a restart is coming. The hush agent holds an
-	// unlocked identity that the next daemon would otherwise have to
-	// rebuild (a keyring read at best, a passphrase prompt a detached
-	// daemon cannot answer at worst), so it is exactly what "keep"
-	// should keep. Every other path retires it: see hushagent.go.
+	// --keep-pids says a restart is coming: the hush agent holds an unlocked
+	// identity the next daemon would otherwise have to rebuild. Every other
+	// path retires it.
 	retireAgent := func() {
 		if keepPIDs {
 			return
@@ -39,7 +37,6 @@ func runRestWithFlags(force, keepPIDs bool) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		// TODO: server should save bindings automatically.
 		resp, err := cli.SaveBindings(ctx)
 		cancel()
 		cli.Close()
@@ -50,10 +47,8 @@ func runRestWithFlags(force, keepPIDs bool) {
 	} else if cli, err := sdk.DialAngelus(ep); err == nil {
 		cli.Close()
 	} else {
-		// No daemon answering, but its agent may well still be up: an
-		// agent outlives a daemon that was killed rather than stopped,
-		// and that is where the orphans come from. The claim file is
-		// the daemon's own record of the one it owned.
+		// An agent outlives a daemon that was killed rather than stopped; the
+		// claim file is the daemon's record of the one it owned.
 		fmt.Fprintln(stderrw, "angelus is not running")
 		retireAgent()
 		return
@@ -77,8 +72,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 		waitForExit(pid, 5*time.Second)
 		os.Remove(sockPath)
 		fmt.Fprintf(stderrw, "angelus (pid %d) forcefully terminated\n", pid)
-		// A SIGKILLed daemon runs no cleanup of its own, so --force is
-		// the path that needs this most, not least.
+		// A SIGKILLed daemon runs no cleanup of its own.
 		retireAgent()
 		return
 	}
@@ -91,14 +85,11 @@ func runRestWithFlags(force, keepPIDs bool) {
 		return
 	}
 
-	// The daemon is still up, and keepHushAlive would respawn anything we
-	// retired within seconds. Leave the claim standing for the next stop.
+	// keepHushAlive would respawn anything retired while the daemon is up.
 	fmt.Fprintf(stderrw,
 		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
 }
 
-// waitForExit polls until pid is gone or the deadline passes; reports whether
-// it is gone.
 func waitForExit(pid int, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for {
@@ -112,7 +103,6 @@ func waitForExit(pid int, within time.Duration) bool {
 	}
 }
 
-// dashCount renders a token count for the models table, "-" when unknown.
 func dashCount(n int) string {
 	if n <= 0 {
 		return "-"
@@ -120,14 +110,12 @@ func dashCount(n int) string {
 	return formatCtxCell(n)
 }
 
-// runModels lists provider models.
 func runModels(loaded *config.Loaded) {
 	models, warnings := fetchModels(loaded)
 	for _, w := range warnings {
 		fmt.Fprintf(stderrw, "warning: %s\n", w)
 	}
-	// The package's writer, never os.Stdout: the pager captures this one, and
-	// a table printed round it lands on the terminal over the status bar.
+	// The package's writer, never os.Stdout: the pager captures this one.
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(w, "PROVIDER\tMODEL ID\tNAME\tCONTEXT\tMAX OUT\n")
 	for _, m := range models {

@@ -14,20 +14,14 @@ import (
 	"github.com/jack-work/figaro/internal/update"
 )
 
-// figaroModule is the module path used both to ask the module proxy
-// for the latest tag and to construct the go-install suggestion.
 const figaroModule = "github.com/jack-work/figaro"
 
-// updateCache returns a cache handle rooted at the CLI's cacheDir().
 func updateCache() *update.Cache {
 	return update.NewCache(filepath.Join(cacheDir(), "figaro"))
 }
 
-// helpVersionLine is the version line for the transcript's '?' panel:
-// "figaro <version>", extended with the update nudge when the CACHE
-// (only: never the network; this runs inside the live pager) says a
-// newer release is comparable and available. The passive nudge lives in
-// the help surfaces exactly so it never interleaves with real output.
+// helpVersionLine reads the cache only, never the network: it runs inside the live
+// pager.
 func helpVersionLine() string {
 	cur := update.CurrentVersion(boot.BuildRevision())
 	line := "figaro " + cur
@@ -41,20 +35,15 @@ func helpVersionLine() string {
 	return line
 }
 
-// runUpdateCheck is the help-surface update nudge (figaro help /
-// --help). It prints a single stderr line if a newer release is
-// available and the config allows it. All error paths are silent, a
-// failed update check must never interfere with real CLI work.
+// runUpdateCheck is silent on every error path.
 func runUpdateCheck(loaded *config.Loaded) {
 	if loaded == nil || !loaded.CheckUpdates() {
 		return
 	}
-	// Only nudge when stderr is a real terminal. Scripts and pipes
-	// stay quiet; they can call `figaro update` on demand.
+	// Only nudge when stderr is a real terminal.
 	if !isStderrTTY() {
 		return
 	}
-	// Dev-shell builds churn faster than any release cadence: skip.
 	if update.DetectChannel() == update.ChannelDevShell {
 		return
 	}
@@ -67,7 +56,6 @@ func runUpdateCheck(loaded *config.Loaded) {
 	}
 }
 
-// isStderrTTY reports whether stderr is a character device (terminal).
 func isStderrTTY() bool {
 	fi, err := os.Stderr.Stat()
 	if err != nil {
@@ -76,9 +64,8 @@ func isStderrTTY() bool {
 	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
-// runUpdate implements `figaro update`. Default behavior is advisory:
-// print the current version, the latest available version, the install
-// channel, and the exact command the user should run to upgrade.
+// runUpdate is advisory by default: it prints versions, the channel and the
+// upgrade command.
 func runUpdate(loaded *config.Loaded, args []string) error {
 	var (
 		force  bool
@@ -105,7 +92,7 @@ func runUpdate(loaded *config.Loaded, args []string) error {
 	cache := updateCache()
 	ttl := time.Duration(loaded.UpdateCheckTTLHours()) * time.Hour
 	if force {
-		ttl = 0 // bypass cache
+		ttl = 0
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

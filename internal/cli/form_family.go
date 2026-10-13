@@ -13,21 +13,15 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// The `fig form new|fork|ls|rm` family: unbound forms as first-class
-// primitives. Semantics: plans/forms-and-roles-v2.md; the daemon half is
-// form.create + the hub's agentless read/write paths.
-
-// runFormNew mints an unbound form. Dressing is REQUIRED: `fig form new`
-// never touches the default outfit, and extra k=v positionals fold on top of
-// -S, later terms winning.
+// Dressing is required: `fig form new` never touches the default outfit; k=v
+// positionals fold on top of -S.
 func runFormNew(loaded *config.Loaded, outfits, set, del string, kvs []string, asJSON bool) {
 	d := mustFormDress(outfits, set, del, kvs, "form new -O <names> [-S k=v] [k=v …]")
 	createFormAndReport(loaded, "", d, asJSON)
 }
 
-// runFormFork duplicates a form's state into a fresh @id. The patch is
-// required by the one-birth-verb law (a fork nobody can name is refused
-// by the store), so at least one of -O / k=v must be present.
+// A fork nobody can name is refused by the store, so at least one of -O / k=v
+// must be present.
 func runFormFork(loaded *config.Loaded, parent, outfits, set, del string, kvs []string, asJSON bool) {
 	if parent == "" {
 		die("usage: form fork <@form-id> [-O <names>] [-S k=v] [k=v …]")
@@ -36,9 +30,6 @@ func runFormFork(loaded *config.Loaded, parent, outfits, set, del string, kvs []
 	createFormAndReport(loaded, parent, d, asJSON)
 }
 
-// mustFormDress assembles the birth dressing: outfit NAMES from -O, keys from
-// -S and from the bare k=v positionals (which are the same grammar, so they
-// simply join the -S terms), removals from -D.
 func mustFormDress(outfits, set, del string, kvs []string, usage string) dressing {
 	terms := make([]string, 0, len(kvs)+1)
 	if strings.TrimSpace(set) != "" {
@@ -78,19 +69,13 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 	} else {
 		fmt.Fprintf(stdout, "forked %s from %s (version %d)\n", resp.FormID, parent, resp.Version)
 	}
-	// A form you just minted is a thing created FOR you, so the shell moves
-	// onto it -- the same law every other birth verb obeys. It was the lone
-	// exception (Gluck, 2026-08-21: "fig form new should attend"), and being
-	// an exception is the whole of what was wrong with it: attendance was a
-	// property of which helper a verb happened to call.
+	// A form you just minted is created for you, so the shell moves onto it.
 	attendNew(ctx, acli, resp.FormID)
 	fmt.Fprintf(stderrw, "attending %s (it binds with `fig bind %s`)\n", resp.FormID, resp.FormID)
 }
 
-// runFormLs lists unbound forms: the form rows of the global listing,
-// scoped by attendance per the brief, attending a form shows its
-// subtree, attending a figaro shows its nearest unbound ancestor's tree,
-// otherwise the top level.
+// runFormLs scopes by attendance: a form shows its subtree, a figaro its
+// nearest unbound ancestor's tree, else the top level.
 func runFormLs(loaded *config.Loaded, asJSON bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -112,7 +97,6 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 		}
 	}
 
-	// Scope: the attended node decides which part of the genealogy shows.
 	if scope := attendedFormScope(ctx, acli, byID); scope != "" {
 		var kept []rpc.FigaroInfoResponse
 		for _, f := range forms {
@@ -145,9 +129,7 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 	}
 }
 
-// attendedFormScope maps this shell's attendance to a form-tree scope: the
-// attended form itself, or an attended figaro's nearest unbound ancestor.
-// "" means unscoped (top level, attending null, or nothing resolvable).
+// "" means unscoped.
 func attendedFormScope(ctx context.Context, acli *sdk.Angelus, byID map[string]rpc.FigaroInfoResponse) string {
 	r, err := resolveBinding(ctx, acli, shellPID)
 	if err != nil || r == nil || !r.Found {
@@ -160,7 +142,6 @@ func attendedFormScope(ctx context.Context, acli *sdk.Angelus, byID map[string]r
 	if node.Kind == "form" {
 		return node.ID
 	}
-	// A figaro: climb to the nearest unbound ancestor.
 	for cur := node; ; {
 		parent, ok := byID[cur.Parent]
 		if !ok {
@@ -173,7 +154,6 @@ func attendedFormScope(ctx context.Context, acli *sdk.Angelus, byID map[string]r
 	}
 }
 
-// formDescendsFrom reports whether id sits in scope's subtree (inclusive).
 func formDescendsFrom(byID map[string]rpc.FigaroInfoResponse, id, scope string) bool {
 	for cur := id; cur != ""; {
 		if cur == scope {
@@ -188,10 +168,8 @@ func formDescendsFrom(byID map[string]rpc.FigaroInfoResponse, id, scope string) 
 	return false
 }
 
-// runBind births a figaro from an unbound form. No positional: the
-// attended form. "null": the naked figaro (fails its first TURN unless
-// -O or later patches supply a provider: minting is not the gate).
-// Never rebinds this shell: the printed id is attended by hand.
+// runBind: no positional means the attended form; "null" births the naked
+// figaro. Never rebinds this shell.
 func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()

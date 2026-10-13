@@ -20,14 +20,8 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// longAria is a real angelus over a real store holding an aria with n
-// conversation messages: input and output alternating, each stamped with
-// its ordinal so a reader can prove it saw every one, in order. It returns
-// the angelus client and the aria id.
-//
-// The angelus is the subject, not a fake of it: aria.read caps one page at
-// ariaReadHardCap (1000), and the cap is what a whole-history reader has to
-// page past. A fake that copied the cap would only agree with itself.
+// longAria is a real angelus over a real store: aria.read caps one page at
+// ariaReadHardCap, and the cap is what a whole-history reader has to page past.
 func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 	t.Helper()
 	backend, id := store.NewTestAria(t, "long", message.Patch{})
@@ -45,7 +39,7 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 		require.NoError(t, err)
 	}
 
-	// A unix socket path is length-capped, so keep the runtime dir short.
+	// A unix socket path is length-capped, so the runtime dir is short.
 	dir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "f")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
@@ -79,7 +73,6 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 	return acli, id
 }
 
-// ordinals asserts msgs is exactly m0..m{n-1} in order.
 func ordinals(t *testing.T, msgs []message.Message, n int) {
 	t.Helper()
 	require.Equal(t, n, len(msgs), "messages read, of %d in the aria", n)
@@ -89,14 +82,11 @@ func ordinals(t *testing.T, msgs []message.Message, n int) {
 	}
 }
 
-// Issue #23: `figaro export` stopped at one page of aria.read (998 messages
-// once the two scaffolding tics were dropped), reported the truncated count
-// as the whole aria, and exited 0. The whole history must come out.
+// export must read past one page of aria.read (#23).
 func TestExportMessagesReadsPastTheReadCap(t *testing.T) {
-	const n = 2_507 // two full pages and a partial third
+	const n = 2_507
 	acli, id := longAria(t, n)
 
-	// The fixture can fail: one page is genuinely short of the aria.
 	page, err := acli.IR(context.Background(), id, 0, 0)
 	require.NoError(t, err)
 	require.Less(t, len(page.Entries), n, "aria.read no longer caps a page; this test is measuring nothing")
@@ -107,18 +97,14 @@ func TestExportMessagesReadsPastTheReadCap(t *testing.T) {
 	ordinals(t, msgs, n)
 }
 
-// The twin: the CLI resolves a turn itself for `attend <id>:N` and for the
-// lineage line in `status`, through ariaMessages (fork and send resolve on
-// the daemon, off the full log). A truncated read resolves turn N against a
-// prefix, or reports "no turn N" for a turn that exists.
+// ariaMessages resolves turns client-side for `attend <id>:N` and `status`; a
+// truncated read resolves against a prefix.
 func TestAriaMessagesReadsPastTheReadCap(t *testing.T) {
 	const n = 2_507
 	acli, id := longAria(t, n)
 
 	msgs, err := ariaMessages(context.Background(), acli, id)
 	require.NoError(t, err)
-	// ariaMessages keeps the scaffolding (genesis, outfit birth); the
-	// conversation behind it is the whole fixture.
 	var conv []message.Message
 	for _, m := range msgs {
 		if m.Role == message.RoleGenesis || (m.Role == message.RoleInput && len(m.Content) == 0) {
@@ -127,15 +113,12 @@ func TestAriaMessagesReadsPastTheReadCap(t *testing.T) {
 		conv = append(conv, m)
 	}
 	ordinals(t, conv, n)
-	// LTs are stitched on, monotonic, and none is the zero a forgotten stitch
-	// leaves behind.
+	// LTs are stitched on, monotonic, and never the zero a forgotten stitch leaves.
 	for i := 1; i < len(msgs); i++ {
 		require.Greater(t, msgs[i].LogicalTime, msgs[i-1].LogicalTime, "message %d", i)
 	}
 	require.NotZero(t, msgs[0].LogicalTime)
 
-	// What the user sees: the last turn resolves. Every input opens a turn,
-	// so the last one is well past the first page.
 	last := turns.StampIDs(msgs)
 	require.Greater(t, last, uint64(1000))
 	_, err = resolveTurn(context.Background(), acli, id, last)

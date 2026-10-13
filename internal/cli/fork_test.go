@@ -6,15 +6,9 @@ import (
 	"testing"
 )
 
-// TestPlanFork pins the `fork` grammar: the whole surface that used to be
-// "one optional positional and two bools" and is now `send`'s parser with a
-// fork-shaped set of rejections.
-//
-// The rules under test:
-//   - a prompt is OPTIONAL; without one this is the imperative fork it
-//     always was, and the send-only flags are then errors, not no-ops
-//   - a bare positional is the target even with no `--` in sight
-//   - --stay composes with everything; it governs the shell, not the prompt
+// TestPlanFork: a prompt is optional and send-only flags are then errors; a
+// bare positional is the target without `--`; --stay governs the shell, not the
+// prompt.
 func TestPlanFork(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -85,14 +79,12 @@ func TestPlanFork(t *testing.T) {
 			wantOpts:   sendOpts{exec: true, dryRun: true},
 		},
 		{
-			// `fork --` is an invitation, like `send --`: the prompt is
-			// composed in the editor, so the send flags stay legal.
+			// `fork --` opens the composer, so the send flags stay legal.
 			name:       "empty boundary opens the composer",
 			args:       []string{"-r", "--"},
 			wantCompos: true,
 			wantOpts:   sendOpts{raw: true},
 		},
-		// --- rejections ---
 		{
 			name:    "raw without a prompt",
 			args:    []string{"-r"},
@@ -161,9 +153,7 @@ func TestPlanFork(t *testing.T) {
 	}
 }
 
-// TestForkPromptRoute pins which `send` dispatch a forked prompt takes. The
-// point of the fork+prompt form is that these mean exactly what they mean on
-// `send`: the routing table is the contract.
+// The routing table is the contract: a forked prompt means what it means on `send`.
 func TestForkPromptRoute(t *testing.T) {
 	cases := []struct {
 		name string
@@ -188,13 +178,10 @@ func TestForkPromptRoute(t *testing.T) {
 	}
 }
 
-// TestPromptForkedAriaClearsJSON: fork owns the machine-readable line
-// (mode "fork-send"). If --json survived into the send dispatch, `-fj`
-// would print TWO objects on stdout and break every consumer.
+// fork owns the machine-readable line; --json surviving into the send dispatch
+// would print two objects.
 func TestPromptForkedAriaClearsJSON(t *testing.T) {
 	opts := sendOpts{json: true, forget: true, id: "old11111", target: "old11111:3"}
-	// Mirror promptForkedAria's normalization; the dispatch itself needs a
-	// daemon, the normalization does not.
 	opts.id = "new22222"
 	opts.target = ""
 	opts.json = false
@@ -206,7 +193,6 @@ func TestPromptForkedAriaClearsJSON(t *testing.T) {
 	}
 }
 
-// TestForkTargetHint keeps the usage nudge echoing what the user typed.
 func TestForkTargetHint(t *testing.T) {
 	if got := forkTargetHint(""); got != "" {
 		t.Errorf(`forkTargetHint("") = %q, want ""`, got)
@@ -216,16 +202,8 @@ func TestForkTargetHint(t *testing.T) {
 	}
 }
 
-// TestForkJSONSubmitsAndExits pins the second copy of the --json contract.
-//
-// `fork -- <prompt>` is a send, so it inherits send's rules: but it kept
-// its own copy of two of them and its own tail, which is how the fork-send
-// path went on printing the object AND THEN streaming the rendered turn to
-// the same stdout after `send` had stopped. Two copies of a rule is one
-// copy too many.
+// -j with anything that streams or renders is a usage error on fork exactly as on send.
 func TestForkJSONSubmitsAndExits(t *testing.T) {
-	// The shared validator is what fork now consults: -j with anything that
-	// streams or renders is a usage error here exactly as it is on send.
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -249,8 +227,6 @@ func TestForkJSONSubmitsAndExits(t *testing.T) {
 	}
 }
 
-// TestForkJSONIsPlannedAsAPrompt guards the honourable form: `fork -j --
-// <prompt>` must plan cleanly (it submits and exits at run time).
 func TestForkJSONIsPlannedAsAPrompt(t *testing.T) {
 	plan, err := planFork([]string{"-j", "--", "what if"})
 	if err != nil {

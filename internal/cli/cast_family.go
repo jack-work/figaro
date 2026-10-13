@@ -1,11 +1,7 @@
 package cli
 
-// The study/cast family: `fig study`, `fig drop`, `fig cast`.
-// Grammar (plans/forms-and-roles-v2.md §3): the FORM is always the last
-// positional; -O occupies the form slot (cast only); with one positional
-// the aria comes from attendance, and for cast, from an auto-fork of
-// the default form when no aria is available.
-
+// study/cast grammar: the form is always the last positional; -O occupies the
+// form slot (cast only); with one positional the aria comes from attendance.
 import (
 	"context"
 	"encoding/json"
@@ -19,8 +15,6 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// resolveStudyArgs applies the positional grammar shared by study/drop/
-// cast: [<aria>] <form>, with kind validation naming its slot errors.
 func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, formInFlags bool, verb string) (ariaID, formID string, err error) {
 	switch {
 	case len(args) == 2:
@@ -28,15 +22,12 @@ func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, for
 	case len(args) == 1 && formInFlags:
 		ariaID = args[0]
 	case len(args) == 1 && verb == "study" && !strings.HasPrefix(args[0], "@"):
-		// The form is always the last positional, so a lone one is the form.
-		// A lone positional that CANNOT be a form is the aria, and for study
-		// that means "list what this aria studies" without having to attend
-		// it first. The sigil is what makes this lexical rather than a guess.
+		// A lone positional that cannot be a form is the aria; the sigil makes
+		// this lexical.
 		ariaID = args[0]
 	case len(args) == 1:
 		formID = args[0]
 	case len(args) == 0 && !formInFlags && verb != "cast-list":
-		// form must come from somewhere
 	}
 	if ariaID == "" {
 		if r, rerr := resolveBinding(ctx, acli, shellPID); rerr == nil && r != nil && r.Found && !strings.HasPrefix(r.FigaroID, "@") {
@@ -112,11 +103,8 @@ func verbPast(v string) string {
 	return "studies"
 }
 
-// runCast performs one casting call. With -O the role is minted BY the
-// figaro's actor loop, born cast; with no aria available the figaro
-// itself is minted first from the default form (the fig new path,
-// unattended): figaro-minted-but-role-failed is reported as the
-// partial it is.
+// runCast: with -O the role is minted by the figaro's actor loop; with no aria
+// available the figaro is minted first, unattended.
 func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJSON, stay bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -125,11 +113,8 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 
 	minting := strings.TrimSpace(outfits) != "" || strings.TrimSpace(set) != "" || strings.TrimSpace(del) != ""
 
-	// ATTENDING A FORM, with no aria named: the figaro that will play it does
-	// not exist yet. Mint one and cast it, which is the other entrance to
-	// `new -C` and the same operation from the other end. Here the dressing
-	// dresses the ARIA: the form is already standing in front of us, so there
-	// is nothing else -O could be for.
+	// Attending a form with no aria named: mint one and cast it; the dressing
+	// dresses the aria.
 	if len(args) == 0 {
 		if attended := attendedForm(ctx, acli); attended != "" {
 			d := mustDress(outfits, set, del)
@@ -172,8 +157,6 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 		resp, cerr := s.Figaro.Cast(ctx, rpc.CastRequest{FormID: formID, Outfits: role.names, RolePatch: role.patch})
 		if cerr != nil {
 			if minted != "" {
-				// The partial, spelled out: the figaro exists, the casting
-				// failed. -j callers see both facts.
 				if asJSON {
 					_ = json.NewEncoder(stdout).Encode(map[string]any{
 						"figaro_id": minted, "cast": false, "error": cerr.Error(),
@@ -191,8 +174,8 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 				"minted_figaro": minted != "",
 			})
 		}
-		// A role this call MINTED is what the shell should end up in front
-		// of; a role that already existed leaves attendance alone.
+		// A role this call minted is what the shell ends up in front of; an
+		// existing role leaves attendance alone.
 		attendAfterCast(loaded, resp.RoleID, minting, stay)
 		fmt.Fprintf(stdout, "cast %s into %s", ariaID, resp.RoleID)
 		if resp.Studied {

@@ -16,43 +16,22 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// liveKeysStatus names the three distinct answers a live-key fetch can
-// give. They used to be collapsed into "nil or not", and the collapse
-// was a defect: "no aria bound" (the catalog is all that is knowable -
-// offer it) and "an aria is bound but unreadable" (offering the catalog
-// substitutes documentation for state) both looked like nil, so a shell
-// attending a real aria was shown a hardcoded key list with every
-// skills.* key silently missing, and only a human reading the
-// candidates could tell.
+// liveKeysStatus distinguishes "no aria bound" (offer the catalog) from "bound
+// but unreadable" (the catalog would substitute documentation for state).
 type liveKeysStatus int
 
 const (
-	// liveKeysUnbound: no aria is bound to this shell: including the
-	// no-daemon case, where nothing CAN be bound. The well-known
-	// catalog is the honest and complete answer.
+	// liveKeysUnbound includes the no-daemon case.
 	liveKeysUnbound liveKeysStatus = iota
 
-	// liveKeysOK: the bound aria's snapshot keys were fetched.
 	liveKeysOK
 
-	// liveKeysFetchFailed: an aria IS bound but its form could not be
-	// read, a dead endpoint, a daemon from another revision refusing
-	// the method, a timeout. The board's real keys exist and are
-	// unknowable right now; a catalog offered here is a wrong answer
-	// dressed as a right one.
+	// liveKeysFetchFailed: an aria is bound but its form could not be read.
 	liveKeysFetchFailed
 )
 
-// completeFormKeys returns the union of well-known keys and
-// live snapshot keys for the pid-bound aria. Used by both `set` and
-// `unset`: no mode filtering, the runtime decides what's actionable.
-// Templated keys like "system.environment.<name>" are expanded to
-// one entry per allowlist member.
-//
-// DESCRIBED, when the caller asked: a catalog key by its documentation, a
-// live key by its current value, and a skill by what its frontmatter says it
-// is for. A skill is offered as ITSELF (skills.<name>) as well as by its
-// leaves, because the skill is the thing a person means.
+// completeFormKeys is the union of well-known keys and the bound aria's live
+// keys; a skill is offered as itself as well as by its leaves.
 func completeFormKeys(c *cmdkit.CompleteContext) []string {
 	snap, status, err := softFetchLiveSnapshot()
 	if status == liveKeysFetchFailed {
@@ -73,9 +52,7 @@ func completeFormKeys(c *cmdkit.CompleteContext) []string {
 	}
 	for _, d := range form.WellKnownKeys() {
 		if strings.HasSuffix(d.Key, "<name>") {
-			// Only the environment template has a known expander; other
-			// <name>-shaped catalog entries are documentation-only and
-			// rely on the live snapshot to surface concrete instances.
+			// Only the environment template has an expander.
 			if d.Key == "system.environment.<name>" {
 				prefix := strings.TrimSuffix(d.Key, "<name>")
 				for _, name := range form.EnvironmentAllowlist {
@@ -87,7 +64,6 @@ func completeFormKeys(c *cmdkit.CompleteContext) []string {
 		add(d.Key, d.Short)
 	}
 	if status == liveKeysOK {
-		// Skills first, as units, so they sort beside their own leaves.
 		for k, v := range snap.All() {
 			rest, ok := strings.CutPrefix(k, "skills.")
 			if !ok {
@@ -107,8 +83,6 @@ func completeFormKeys(c *cmdkit.CompleteContext) []string {
 	return out
 }
 
-// valueSummaryRaw is a string value with its newlines intact, for a reader
-// that parses it (a frontmatter), rather than for a description column.
 func valueSummaryRaw(raw json.RawMessage) string {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
@@ -117,8 +91,6 @@ func valueSummaryRaw(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// softFetchLiveKeys is the key list alone, for a caller with no use for the
-// values.
 func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 	snap, status, err := softFetchLiveSnapshot()
 	if status != liveKeysOK {
@@ -127,22 +99,14 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 	return snapshotKeys(snap), status, nil
 }
 
-// softFetchLiveSnapshot best-effort fetches the board of the aria completion
-// is about: the pager's subject when one is set (completionSubject), else the
-// pid-bound aria. It never autostarts the daemon, prompts the user, or blocks
-// long: but it does say which of the three facts it found (see
-// liveKeysStatus): unbound, fetched, or bound-but-unreadable. The error
-// accompanies liveKeysFetchFailed and names the failing step, so a
-// mixed-version daemon ("method not found") is distinguishable from a dead
-// aria socket at the one place anyone will ever look.
+// softFetchLiveSnapshot never autostarts the daemon, prompts, or blocks long;
+// the error names the failing step.
 func softFetchLiveSnapshot() (form.Snapshot, liveKeysStatus, error) {
 	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
-		// No daemon, so no aria can be bound: the catalog is all that
-		// is knowable, not a substitute for anything.
 		return form.Snapshot{}, liveKeysUnbound, nil
 	}
 	defer acli.Close()

@@ -19,13 +19,10 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// Run dispatches a CLI invocation. progName is the basename of argv[0]
-// (e.g. "figaro" or "fig"); it threads through to the router so help,
-// errors, and shell completion reflect the name the user actually typed.
+// Run dispatches a CLI invocation; progName is argv[0]'s basename.
 func Run(progName string, args []string) {
-	// THE ABORT BOUNDARY. die() unwinds rather than calling os.Exit, so that the
-	// same verb can be run in-process (command mode) without taking the process
-	// with it. This is where an abort means what it has always meant at a shell.
+	// die() unwinds rather than calling os.Exit, so a verb can run in-process;
+	// this is where an abort becomes an exit.
 	defer RecoverExit()
 
 	if progName == "" {
@@ -35,27 +32,18 @@ func Run(progName string, args []string) {
 	mark.Init("cli")
 	atExit(profileSession())
 
-	// AMBIGUOUS-WIDTH GLYPHS: believe the terminal, not the default table.
 	applyAmbiguousWidth()
 
-	// Arm the console we WRITE to, before the first escape leaves the process.
+	// Arm the console before the first escape leaves the process.
 	restoreConsole := sync.OnceFunc(term.ArmOutput())
 	defer restoreConsole()
 	atExit(restoreConsole)
 
-	// Repair the console we READ, before the first prompt asks it for a line.
-	// figaro clears line-editing, echo and Ctrl-C processing for every
-	// interactive session, and a session killed without unwinding leaves them
-	// clear for every process that touches that console afterwards: PSReadLine
-	// saves and restores whatever it finds, so the damage outlives the shell
-	// prompt and the next figaro's MakeRaw dutifully saves RAW as the mode to
-	// return to. In that state a prompt echoes nothing and Enter sends a bare
-	// \r. Unlike the output arming this takes NO restore: what it replaces is
-	// wreckage, and handing it back is how the wreckage spreads. A no-op off
-	// Windows and on a redirected stdin.
+	// Repair the console we read, with no restore: a raw mode left by a killed
+	// session is what MakeRaw would otherwise save as the mode to return to.
+	// No-op off Windows.
 	term.SanitizeInput()
 
-	// --version / -V pre-empt the router so they need no config or session.
 	if len(args) > 0 {
 		switch args[0] {
 		case "--version", "-V":
@@ -64,9 +52,8 @@ func Run(progName string, args []string) {
 		}
 	}
 
-	// __complete is the hidden dispatcher for shell autocompletion.
-	// Skip otel init and tolerate config errors: completion must be
-	// cheap and never appear broken.
+	// __complete skips otel init and tolerates config errors: completion must
+	// be cheap.
 	if len(args) > 0 && args[0] == "__complete" {
 		loaded, _ := config.Load(config.DefaultConfigDir())
 		if loaded != nil {
@@ -74,14 +61,8 @@ func Run(progName string, args []string) {
 				SetRefSigil(s)
 			}
 		}
-		// The binding policy must be computed HERE too: this branch
-		// exits before the main path's initBindingPolicy(), and the
-		// live-key completers resolve the shell's aria through
-		// shellPID. Left at zero, the daemon is asked which aria pid 0
-		// attends, answers not-found, and completion falls back to the
-		// well-known catalog: which is how every pid-bound shell got
-		// a static key list with its aria's skills.* silently missing,
-		// while FIGARO_ARIA shell-outs (which skip the pid) worked.
+		// The binding policy is needed here too: live-key completers resolve
+		// the shell's aria through shellPID.
 		initBindingPolicy()
 		exitAt(buildRouter(progName, loaded).Run(args))
 	}
@@ -89,21 +70,15 @@ func Run(progName string, args []string) {
 	ctx := context.Background()
 	loaded := MustLoadConfig()
 
-	// Apply config-driven sigil for form references.
 	if sigil, err := loaded.RefSigil(); err != nil {
 		die("%s", err)
 	} else {
 		SetRefSigil(sigil)
 	}
 
-	// Compute binding policy (interactive? --no-bind? env?) once, before
-	// the router dispatches. Consulted by every command that would
-	// otherwise look up the pid-binding.
 	initBindingPolicy()
 	args = extractNoBindFlag(args)
 
-	// The sinks answer to config before they open: level and directory,
-	// with FIGARO_LOG_LEVEL still overriding for a single noisy run.
 	telemetryDir := boot.StateDir()
 	if loaded, lerr := config.Load(config.DefaultConfigDir()); lerr == nil {
 		figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
@@ -116,18 +91,15 @@ func Run(progName string, args []string) {
 		defer shutdown(ctx)
 	}
 
-	// Update nudge: help surfaces only (config-gated, TTY-only, cached).
-	// It used to fire on every command, which interleaved with real output;
-	// now it rides along with the help text (and the transcript's '?' panel).
+	// The update nudge rides only help surfaces.
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		runUpdateCheck(loaded)
 	}
 
 	router := buildRouter(progName, loaded)
 
-	// Bare `figaro [send-flags] -- <prompt>` is the prompt verb: same parser,
-	// same semantics as `figaro send` (see bare.go). The `--` boundary is
-	// mandatory, and args[0] must not name a command.
+	// Bare `figaro [send-flags] -- <prompt>` is the prompt verb; args[0] must
+	// not name a command.
 	if isBareForm(args, router.HasCommand) {
 		runBarePrompt(progName, router, loaded, args)
 		return
@@ -137,9 +109,6 @@ func Run(progName string, args []string) {
 	exitAt(code)
 }
 
-// buildRouter is the whole command surface, declared once. Every command is a
-// cmdkit.Command value here; the router owns dispatch, help, arg counts and
-// completion, so a Command declares what it accepts and Run does the work.
 func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r := cmdkit.NewRouter(progName)
 	r.Extra = loaded
@@ -200,12 +169,10 @@ fig IR, but it is not an address: turns are.`,
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			// Positional (or --id) is the aria; everything else is a flag.
 			ariaID := ctx.Flag("id")
 			if ariaID == "" && len(ctx.Args) > 0 {
 				ariaID = ctx.Args[0]
 			}
-			// renderAria has its own flag parser; reassemble the parsed flags.
 			var args []string
 			if ctx.BoolFlag("details") {
 				args = append(args, "-o")
@@ -235,9 +202,7 @@ fig IR, but it is not an address: turns are.`,
 				args = append(args, "--last", v)
 			}
 			// A flag declared in the registry and not reassembled here is
-			// SILENTLY IGNORED: cmdkit consumes it, renderAria never sees it,
-			// and the command succeeds having done nothing you asked. That is
-			// how --max-bytes did nothing on its first run.
+			// silently ignored.
 			if v := ctx.Flag("max-bytes"); v != "" {
 				args = append(args, "--max-bytes", v)
 			}
@@ -364,13 +329,8 @@ already exists (--id, -x) are refused rather than ignored.
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			// Same parser as send and fork: -O composes the same way, shorts
-			// bundle the same way, and a rejection reads the same.
-			// The role positional is lifted out BEFORE the prompt parser
-			// sees it: `new` refuses bare arguments (a prompt must follow
-			// `--`), and that refusal is right for everything except the one
-			// argument this verb now takes. The `@` sigil is what makes the
-			// lift lexical rather than a guess.
+			// The role positional is lifted before the prompt parser
+			// sees it: `new` refuses bare arguments.
 			role, raw, rerr := liftRoleArg(ctx.RawArgs)
 			if rerr != nil {
 				return fmt.Errorf("new: %s", rerr)
@@ -393,8 +353,6 @@ already exists (--id, -x) are refused rather than ignored.
 				return nil
 			}
 			if prompt == "" {
-				// No prompt: mint under the spec (empty = default_outfit) and
-				// attend it, no turn. A prompt needs the `--` boundary.
 				runNewFromOutfit(ld, opts.outfit, set)
 				return nil
 			}
@@ -626,10 +584,7 @@ positional slot belongs to the sub-verb.`,
 				if verb != "ls" && verb != "list" {
 					dieUsage("queue --watch follows the queue; it does not %s", verb)
 				}
-				// The queue IS a form, so watching it is `form show` and needs
-				// no renderer of its own. That is the whole argument for
-				// making it a intrinsic instead of inventing a queue-shaped
-				// notification: every form verb works on it for free.
+				// The queue is a form, so watching it is `form show`.
 				runListenIntrinsic(ld, ariaID, "", "", true, intrinsicQueue)
 				return nil
 			}
@@ -1468,7 +1423,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider)"},
 			{Long: "id", Description: "Restrict to one aria (provider)"},
-			// -n is already dry-run on this command, so count takes -c.
+			// -n is already dry-run on this command.
 			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
 			{Long: "gc", IsBool: true, Description: "mem: collect first, then report -- the only honest live-set reading (stops the world)"},
 		},
@@ -1626,16 +1581,11 @@ auto-load it on the next tab.
 		}, nil),
 	})
 
-	// Bare-prompt completion: when the user invokes `figaro -- <body>`
-	// (or an alias such as `q ` expanding to it), the cursor in <body>
-	// should pull from the prompt-context pool, not the verb list.
 	r.SetBarePromptComplete(completePromptContext)
 
-	// The bare form is not a registered command: Run dispatches it before
-	// the router sees argv: so it needs its own usage line.
+	// The bare form is not a registered command, so it needs its own usage line.
 	r.Synopsis = []string{progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)"}
-	// Consumed by extractNoBindFlag before dispatch, so no Command declares
-	// them and nothing else would print them.
+	// Consumed by extractNoBindFlag before dispatch, so no Command declares them.
 	r.GlobalFlags = []cmdkit.FlagDef{
 		{Long: "no-bind", Short: "A", IsBool: true,
 			Description: "Absolute mode: ignore this shell's attend binding (alias --absolute; FIGARO_NO_BIND=1)"},

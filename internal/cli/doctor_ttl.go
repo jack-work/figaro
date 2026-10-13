@@ -11,8 +11,8 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// runDoctorTTL reports every node carrying system.ttl and when its lifetime is
-// spent, as the daemon's own sweep sees it.
+// runDoctorTTL reports every node carrying system.ttl as the daemon's own sweep
+// sees it.
 func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()

@@ -8,8 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// The form is stored flat: one dotted key, one value, one patch record: but
-// read as the tree those keys describe.
 func TestNestSnapshotBuildsTheTree(t *testing.T) {
 	snap := form.FromMap(map[string]json.RawMessage{
 		"mantra":          json.RawMessage(`"sing"`),
@@ -29,8 +27,7 @@ func TestNestSnapshotBuildsTheTree(t *testing.T) {
 	}
 }
 
-// A key whose prefix is already a leaf keeps its dotted name: setting `a` must
-// not make `a.b` unreadable, in either order.
+// A key whose prefix is already a leaf keeps its dotted name, in either order.
 func TestNestSnapshotKeepsCollidingKeysReadable(t *testing.T) {
 	snap := form.FromMap(map[string]json.RawMessage{
 		"a":   json.RawMessage(`"leaf"`),

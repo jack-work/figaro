@@ -20,11 +20,9 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// deadChannels name store channels nothing reads or writes: turn-wal (drain +
-// tail repair replaced it) and _live (the transcript pivot); both are scanned
-// on disk too, since _live was never a manifest entry. Legacy translations/* is
-// swept by prefix: translations-v2/ does not carry it. GC rewrites the figwal
-// manifest directly, so it requires the daemon stopped.
+// deadChannels are store channels nothing reads or writes; _live was never a
+// manifest entry, so disk is scanned too. GC rewrites the figwal manifest, so
+// the daemon must be stopped.
 var deadChannels = []string{"turn-wal", "_live"}
 
 func deadChannel(name string) bool {
@@ -107,7 +105,7 @@ func runDoctorGC(dryRun bool) error {
 			return fmt.Errorf("remove %s: %w", name, err)
 		}
 		if strings.Contains(name, "/") {
-			_ = os.Remove(filepath.Dir(dir)) // drop the legacy parent once empty
+			_ = os.Remove(filepath.Dir(dir))
 		}
 	}
 	fmt.Fprintf(stdout, "removed %d dead channel(s), freed %s: %s\n", len(dead), humanBytes(freed), strings.Join(dead, ", "))
@@ -128,9 +126,8 @@ func dirSize(dir string) int64 {
 	return n
 }
 
-// runDoctorSchema reports each channel's on-disk schema against what this
-// binary understands. It reads the sidecar directly, so it still answers when
-// the schema gate is exactly what refused to open the store.
+// runDoctorSchema reads the sidecar directly, so it answers when the schema
+// gate refused to open the store.
 func runDoctorSchema() error {
 	root := boot.AriaRoot()
 	reports, err := store.SchemaStatus(root)
@@ -164,10 +161,7 @@ func runDoctorSchema() error {
 	return nil
 }
 
-// runDoctorMem asks the running daemon what it is holding: the answer to
-// "the daemon is at 3 GB" is which of live agents, cached aria handles,
-// sessions or goroutines the number is attached to. It reports the
-// daemon's accounting, never this process's.
+// runDoctorMem reports the daemon's accounting, never this process's.
 func runDoctorMem(asJSON, collect bool) error {
 	cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
 	if err != nil {
@@ -181,8 +175,7 @@ func runDoctorMem(asJSON, collect bool) error {
 	if collect {
 		st, err = cli.MemCollect(ctx)
 		if err != nil && strings.Contains(err.Error(), "method not found") {
-			// A daemon older than this flag answers -32601, which tells the
-			// operator nothing. Name the actual remedy.
+			// A daemon older than this flag answers -32601.
 			return fmt.Errorf("the running angelus predates `doctor mem --gc`; `figaro stop` and retry")
 		}
 	}
@@ -232,14 +225,9 @@ func runDoctorMem(asJSON, collect bool) error {
 	fmt.Fprintf(stdout, "heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",
 		humanBytes(int64(m.HeapAllocBytes)), humanBytes(int64(m.HeapInuseBytes)),
 		humanBytes(int64(m.HeapSysBytes)), humanBytes(int64(m.SysBytes)))
-	// WHAT THE OPERATING SYSTEM SEES, spelled out, because RSS next to the
-	// caches above reads as a leak when it is usually arithmetic: idle spans
-	// the scavenger has not yet handed back are resident and are not held by
-	// anything.
-	//
-	// A LIVE GO HEAP ALWAYS HAS SOME IDLE SPAN. Zero here means the daemon
-	// predates the field, and printing a measured-looking 0 would be worse
-	// than printing nothing.
+	// Idle spans the scavenger has not handed back are resident and held by
+	// nothing. A live Go heap always has some idle span, so zero means the
+	// daemon predates the field.
 	if m.HeapIdleBytes == 0 && m.HeapSysBytes > 0 {
 		fmt.Fprintf(stdout, "           (this angelus predates idle/released accounting; `figaro stop` to refresh)\n")
 	} else {
@@ -252,7 +240,6 @@ func runDoctorMem(asJSON, collect bool) error {
 	}
 
 	limit := "unlimited"
-	// math.MaxInt64 is what debug.SetMemoryLimit reports with no ceiling.
 	if m.MemLimitBytes != math.MaxInt64 {
 		limit = humanBytes(m.MemLimitBytes)
 	}
@@ -265,16 +252,13 @@ func runDoctorMem(asJSON, collect bool) error {
 		fmt.Fprintf(stdout, "           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
 	}
 
-	// A live aria pins its resident handle, so eviction cannot touch it.
-	// Saying so beats making the reader remember the rule.
+	// A live aria pins its resident handle.
 	if m.LiveArias > 0 && m.LiveArias == m.ResidentArias {
 		fmt.Fprintf(stdout, "\nevery resident aria has a live agent, so idle eviction can free nothing.\n")
 	}
 	return nil
 }
 
-// humanBytes renders a byte count at three significant figures. These are
-// read by eye, not parsed: --json exists for the machine.
 func humanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {
@@ -288,8 +272,6 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
 
-// runDoctorSkills prints the first-party skill the binary carries: where it
-// unpacked to, and every file in it.
 func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
 	outfit.SetBundledSkills(loaded.BundledSkills())
 	root := outfit.BundledSkillsRoot()
@@ -333,7 +315,6 @@ func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
 	return nil
 }
 
-// runDoctorLibrettos recounts every libretto from the boards that name it.
 func runDoctorLibrettos(dryRun bool) error {
 	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath())); err == nil {
 		cli.Close()
@@ -373,12 +354,8 @@ func runDoctorLibrettos(dryRun bool) error {
 	return nil
 }
 
-// runDoctorToolCalls closes tool invokes that no result ever answered.
-//
-// The door keeps this from happening going forward, so what this finds is
-// history written by a figaro older than the door. An aria carrying one is
-// refused by every provider on every send -- "tool_use ids were found without
-// tool_result blocks" -- and cannot be used again until it is closed.
+// runDoctorToolCalls closes tool invokes no result answered: history from
+// before the door; providers refuse an aria carrying one.
 func runDoctorToolCalls(dryRun bool) error {
 	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath())); err == nil {
 		cli.Close()

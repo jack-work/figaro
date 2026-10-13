@@ -2,10 +2,7 @@ package cli
 
 import "testing"
 
-// The bug this splits: a 403 from GitHub's Copilot token-exchange endpoint
-// arrived as "resolve token: copilot token exchange 403: <html>", figaro
-// flattened it into the setup menu, and the reader was told to connect a
-// provider that was already connected - with the status code discarded.
+// A 403 from the token exchange must not be flattened into the setup menu.
 func TestAuthFailureHintSeparatesMissingFromUnexchangeable(t *testing.T) {
 	setup, ok := authFailureHint("provider \"copilot\": no credential available (no strategy returned a token)")
 	if !ok {

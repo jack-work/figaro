@@ -21,7 +21,7 @@ func TestForkSeedIncludesUnretainedLiveTurn(t *testing.T) {
 		}},
 	}}}})
 	plan := lt.retarget("child", newSessionStatus("child", time.Time{}), 7)
-	// The clone discarded turn6's live region. The seed must fetch it again.
+	// The clone discarded turn6's live region; the seed must fetch it again.
 	var suffix []aria.TurnPart
 	for _, part := range partsFor(6, 2, "CHILD") {
 		if int(part.ID) >= plan.from {

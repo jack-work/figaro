@@ -15,29 +15,25 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// formMirror is a client's OWN copy of an aria's form, kept live by applying the
-// patches the server broadcasts.
+// formMirror is a client's own copy of an aria's form, kept live by the server's
+// patches.
 type formMirror struct {
 	mu      sync.Mutex
 	snap    form.Snapshot
 	version uint64
-	// gaps counts resyncs, so a listener can say it noticed instead of hiding it.
-	gaps int
-	// schema is the envelope version a peer sent that we could not read, once
-	// seen. Non-zero means this mirror has stopped tracking.
+	gaps    int
+	// schema is non-zero once a peer sent an envelope version we cannot read:
+	// the mirror has stopped tracking.
 	schema int
 }
 
-// formApply is what a delta did. Three outcomes, because there are three
-// different things to do about them.
 type formApply int
 
 const (
-	// formApplied: folded in, or already held.
 	formApplied formApply = iota
-	// formResync: we missed one. Re-read the snapshot.
+	// formResync: a delta was missed; re-read the snapshot.
 	formResync
-	// formIncompatible: the peer speaks a shape we do not. Nothing to re-read.
+	// formIncompatible: the peer speaks a shape we do not.
 	formIncompatible
 )
 
@@ -47,8 +43,6 @@ func (m *formMirror) reset(snap form.Snapshot, version uint64) {
 	m.snap, m.version = snap, version
 }
 
-// apply folds a delta in. Returns false when the delta does not follow ours, in
-// which case the caller must re-read the snapshot.
 func (m *formMirror) apply(d rpc.FormDelta) formApply {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -57,7 +51,7 @@ func (m *formMirror) apply(d rpc.FormDelta) formApply {
 		m.schema = d.Schema
 		return formIncompatible
 	case d.Version <= m.version:
-		return formApplied // already have it; a replay after resync is not a gap
+		return formApplied
 	case d.Version != m.version+1:
 		m.gaps++
 		return formResync
@@ -73,22 +67,18 @@ func (m *formMirror) state() (form.Snapshot, uint64, int) {
 	return m.snap, m.version, m.gaps
 }
 
-// formNode is one row of the rendered tree. The tree is rebuilt from the mirror
-// on every change and the expansion set is keyed by PATH, so a row keeps its
-// open/closed state across an update that reorders or replaces its neighbours.
+// The expansion set is keyed by path, so a row keeps its state across a reorder.
 type formNode struct {
 	path     string
 	label    string
-	value    json.RawMessage // leaf only
+	value    json.RawMessage
 	children []*formNode
 	depth    int
 }
 
 func (n *formNode) leaf() bool { return len(n.children) == 0 }
 
-// buildFormTree turns the flat dotted keys into the tree they describe. Same
-// rule as `fig state`: a key whose prefix is already a leaf keeps its dotted
-// name rather than making that leaf unreachable.
+// A key whose prefix is already a leaf keeps its dotted name, as in `fig state`.
 func buildFormTree(snap form.Snapshot) *formNode {
 	root := &formNode{path: "", label: "form"}
 	index := map[string]*formNode{"": root}
@@ -139,7 +129,6 @@ func sortFormTree(n *formNode) {
 	}
 }
 
-// flattenFormTree is the visible rows, in order, honouring the expansion set.
 func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*formNode {
 	for _, c := range n.children {
 		out = append(out, c)
@@ -150,8 +139,6 @@ func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*form
 	return out
 }
 
-// renderFormRow is one line: the indent, the label, and a value clipped to
-// what is left. No marker on a branch -- the indent and the "(8)" say it.
 func renderFormRow(n *formNode, width int, selected bool) string {
 	indent := strings.Repeat("  ", n.depth-1)
 	line := indent + n.label
@@ -160,8 +147,7 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	} else {
 		line += fmt.Sprintf(" (%d)", len(n.children))
 	}
-	// COLUMNS, NOT BYTES: len() gave a row of Japanese 75 columns of 100 and
-	// cut the preview mid-rune.
+	// Columns, not bytes.
 	line = clipToWidthEllipsis(line, width)
 	if selected {
 		return "\x1b[7m" + line + strings.Repeat(" ", max(0, width-displayWidth(line))) + "\x1b[0m"
@@ -169,23 +155,17 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	return line
 }
 
-// formValuePreview keeps a value to one line. A form holds skill bodies measured
-// in kilobytes; a tree that pastes one into a row is not a tree.
+// A form holds skill bodies measured in kilobytes.
 func formValuePreview(raw json.RawMessage) string {
 	s := strings.Join(strings.Fields(string(raw)), " ")
-	// 120 columns, not bytes: a byte cap gave CJK a third of the preview.
 	return clipToWidthEllipsis(s, 120)
 }
 
-// openBranch is Enter: a branch's children, or a leaf's value spelled out.
 func openBranch(n *formNode, open map[string]bool) {
 	open[n.path] = !open[n.path]
 }
 
-// formValueLines is an opened leaf, made readable: a JSON object or array is
-// indented; a JSON STRING that itself parses as one is unwrapped and then
-// indented (a skill's frontmatter, a tool result); anything else is the plain
-// string with its own newlines.
+// A JSON string that itself parses as JSON is unwrapped and indented.
 func formValueLines(raw json.RawMessage, width int) []string {
 	var out []string
 	if lines, ok := prettyJSON(raw); ok {
@@ -200,9 +180,8 @@ func formValueLines(raw json.RawMessage, width int) []string {
 			out = strings.Split(s, "\n")
 		}
 	}
-	// Wrap rather than clip, and strip at the source as well as at the paint:
-	// a value's escapes must not become rows even for a host that is not the
-	// picker. The yank is untouched -- `y` copies the value as stored.
+	// Escapes are stripped at the source as well as at the paint; the yank is
+	// untouched.
 	wrapped := make([]string, 0, len(out))
 	for _, l := range out {
 		wrapped = append(wrapped, wrapPlain(pitText(strings.TrimRight(l, "\r")), max(width, 20))...)
@@ -210,7 +189,6 @@ func formValueLines(raw json.RawMessage, width int) []string {
 	return wrapped
 }
 
-// prettyJSON indents an object or array and refuses anything else.
 func prettyJSON(b []byte) ([]string, bool) {
 	t := bytes.TrimSpace(b)
 	if len(t) == 0 || (t[0] != '{' && t[0] != '[') {
@@ -223,11 +201,7 @@ func prettyJSON(b []byte) ([]string, bool) {
 	return strings.Split(buf.String(), "\n"), true
 }
 
-// wrapPlain breaks at the width, at a space where there is one within reach.
-// Display width, not bytes.
-// ONE PASS: measuring the remainder every iteration was O(n²), and Items()
-// re-wrapped on every paint -- 117ms per keystroke on 120KB. wrappedValue
-// caches, so a repaint costs nothing.
+// wrapPlain breaks at display width, one pass; wrappedValue caches it.
 func wrapPlain(s string, width int) []string {
 	if s == "" {
 		return []string{""}
@@ -237,8 +211,6 @@ func wrapPlain(s string, width int) []string {
 	for i, r := range s {
 		rw := runewidth.RuneWidth(r)
 		if w+rw > width && i > start {
-			// Break at a space when there is one past the halfway mark;
-			// wrapping a word's first letter onto its own row helps nobody.
 			if lastSpace > start && lastSpace-start > width/2 {
 				out = append(out, s[start:lastSpace])
 				start = lastSpace + 1
@@ -259,8 +231,7 @@ func wrapPlain(s string, width int) []string {
 	return append(out, s[start:])
 }
 
-// yankFormNode is what `y` copies: a leaf's value, or a branch as the object it
-// stands for, so a yank is always valid JSON.
+// A branch yanks as the object it stands for, so a yank is always valid JSON.
 func yankFormNode(n *formNode) string {
 	if n.leaf() {
 		return string(n.value)
@@ -286,8 +257,7 @@ func yankFormNode(n *formNode) string {
 	return string(b)
 }
 
-// copyToClipboard writes through OSC 52, so it works over ssh and in tmux
-// without a helper binary. Best effort by nature: a terminal may refuse.
+// OSC 52 works over ssh and in tmux without a helper binary; a terminal may refuse.
 func copyToClipboard(w *os.File, text string) {
 	fmt.Fprintf(w, "\x1b]52;c;%s\x07", base64.StdEncoding.EncodeToString([]byte(text)))
 }

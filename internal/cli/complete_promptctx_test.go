@@ -92,7 +92,6 @@ func TestCompletePromptContext_UnionOfFormAndCWD(t *testing.T) {
 		t.Errorf("missing CWD entry marker.go in %v", got)
 	}
 
-	// At least one well-known form key must be present.
 	found := false
 	for _, d := range form.WellKnownKeys() {
 		if strings.HasSuffix(d.Key, "<name>") {
@@ -107,8 +106,6 @@ func TestCompletePromptContext_UnionOfFormAndCWD(t *testing.T) {
 		t.Errorf("no well-known form key in candidates: %v", got)
 	}
 
-	// Output must be sorted (callers and shells assume nothing, but
-	// stable order is friendly).
 	for i := 1; i < len(got); i++ {
 		if got[i-1] > got[i] {
 			t.Errorf("not sorted at %d: %q > %q", i, got[i-1], got[i])
@@ -133,10 +130,8 @@ func TestCompletePromptContext_AtPrefixNarrowsToFormKeys(t *testing.T) {
 		PastSeparator: true,
 	})
 
-	// Every candidate must be of the form @<key>: prefixed with @,
-	// no trailing terminator. The `!` is opt-in expansion typed by
-	// the user; most references are meant to pass literally to the
-	// model, which is already aware of the form.
+	// Candidates are @<key> with no terminator: `!` expansion is opt-in, typed
+	// by the user.
 	for _, c := range got {
 		if !strings.HasPrefix(c, "@") {
 			t.Errorf("candidate %q missing @ prefix", c)
@@ -145,13 +140,11 @@ func TestCompletePromptContext_AtPrefixNarrowsToFormKeys(t *testing.T) {
 			t.Errorf("candidate %q should not include the ! terminator", c)
 		}
 	}
-	// CWD entries must NOT appear in the narrowed pool.
 	for _, c := range got {
 		if strings.Contains(c, "cwd_entry") {
 			t.Errorf("CWD entry leaked into @-pool: %v", got)
 		}
 	}
-	// At least one well-known form key must be present.
 	found := false
 	for _, c := range got {
 		if c == "@cwd" || c == "@model" {
@@ -165,21 +158,17 @@ func TestCompletePromptContext_AtPrefixNarrowsToFormKeys(t *testing.T) {
 }
 
 func TestCompletePromptOrIDFlag_Routing(t *testing.T) {
-	// nil ctx -> nil, no panic.
 	if got := completePromptOrIDFlag(nil); got != nil {
 		t.Errorf("expected nil for nil ctx, got %v", got)
 	}
 
-	// Plain (no separator, no --id): nil.
 	got := completePromptOrIDFlag(&cmdkit.CompleteContext{Args: []string{"--verbose"}})
 	if got != nil {
 		t.Errorf("expected nil for unrelated flag, got %v", got)
 	}
 
-	// After --id: aria ids (daemon may or may not be up; if up the
-	// list is non-empty, if down it's nil: both acceptable; what we
-	// assert is that form/CWD keys are NOT present, which
-	// distinguishes the --id branch from the past-separator branch).
+	// After --id the list may be empty or not; what is asserted is that
+	// form/CWD keys are absent.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "should_not_appear.txt"), nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -197,7 +186,6 @@ func TestCompletePromptOrIDFlag_Routing(t *testing.T) {
 		}
 	}
 
-	// PastSeparator: full pool, CWD entry must appear.
 	pastCands := completePromptOrIDFlag(&cmdkit.CompleteContext{
 		Args:          []string{"--"},
 		PastSeparator: true,

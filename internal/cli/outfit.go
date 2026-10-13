@@ -1,4 +1,3 @@
-// Package cli: `figaro state outfit`.
 package cli
 
 import (
@@ -19,9 +18,6 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// runStateOutfit is `figaro state outfit …`: the apply, the closure and the
-// listing. It is a verb rather than a flag because dressing state is an
-// action; the same fold reaches send/new/fork through -O.
 func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string) error {
 	arg := ""
 	if len(args) > 0 {
@@ -45,13 +41,8 @@ func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string
 	return nil
 }
 
-// stateSubwords is the form family's position-2 vocabulary, in the order a
-// human is likeliest to want it. Completion offers these before ids.
 var stateSubwords = []string{"show", "set", "delete", "outfit", "new", "fork", "ls", "rm", "listen", "help"}
 
-// completeStateArgs offers the sub-verbs first, then whatever the position
-// wants: outfit names after `outfit`, help topics after `help`, aria ids for
-// the snapshot form.
 func completeStateArgs(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
@@ -65,17 +56,14 @@ func completeStateArgs(c *cmdkit.CompleteContext) []string {
 		case "set", "delete":
 			return completeAriaIDsAfterFlag(completeFormKeys)(c)
 		case "show":
-			// `state show [<id>]` takes an aria, not a key.
 			return ariaCandidates(c)
 		}
 	}
 	return append(append([]string{}, stateSubwords...), completeAriaIDsPositionalOrFlag(c)...)
 }
 
-// completeOutfits completes `state outfit`: available outfit names for the
-// positional slot (sourced from the config, so it works with no aria
-// attached), or aria ids after --id. A comma-separated list completes its last
-// segment, so `figaro state outfit a,<TAB>` offers the rest.
+// completeOutfits sources names from the config, so it works with no aria
+// attached; a comma list completes its last segment.
 func completeOutfits(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
@@ -109,9 +97,7 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 	return out
 }
 
-// runOutfit dresses the targeted aria: outfit NAMES, sent as names, folded by
-// the daemon's one dressing call and applied like any other patch. The verb
-// takes names only: keys go through `form set`, which is the other axis.
+// runOutfit sends outfit names only; keys go through `form set`.
 func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	names, err := parseNames(arg)
 	if err != nil {
@@ -151,15 +137,12 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	}
 }
 
-// dieOutfitFailure reports a failed apply.
 func dieOutfitFailure(label string, err error) {
 	dieWithClosure(err, "outfit %s: %s", label, err)
 }
 
-// dieWithClosure reports err, drawing the outfit layer closure when the server
-// sent one. The shape is the explanation: every outfit that was found is green
-// and every one that was not is red, so a broken reference several layers down
-// is located rather than merely named. Without a closure it is an ordinary die.
+// dieWithClosure draws the layer closure when the server sent one: found
+// outfits green, missing red.
 func dieWithClosure(err error, format string, args ...any) {
 	if !reportClosure(err, format, args...) {
 		die(format, args...)
@@ -167,9 +150,6 @@ func dieWithClosure(err error, format string, args ...any) {
 	exitNow(1)
 }
 
-// reportClosure prints err with its closure tree when it carries one, and
-// reports whether it did. Callers that return an exit code rather than dying
-// use it directly.
 func reportClosure(err error, format string, args ...any) bool {
 	closure := outfitClosureFrom(err)
 	if closure == nil {
@@ -181,7 +161,6 @@ func reportClosure(err error, format string, args ...any) bool {
 	return true
 }
 
-// outfitClosureFrom digs the layer closure out of a typed RPC error.
 func outfitClosureFrom(err error) *rpc.OutfitLayer {
 	var jerr *jkrpc.Error
 	if !errors.As(err, &jerr) || len(jerr.Data) == 0 {
@@ -194,14 +173,11 @@ func outfitClosureFrom(err error) *rpc.OutfitLayer {
 	return data.OutfitClosure
 }
 
-// Closure field names, and the colour rules read off them.
 const (
 	fieldFound = "found"
 	fieldPath  = "path"
 )
 
-// outfitClosureColors paints a found outfit with the diff renderer's green and
-// a missing one with its red.
 var outfitClosureColors = []figtree.FieldColor{{
 	FieldName: fieldFound,
 	Rules: []figtree.ColorRule{
@@ -210,9 +186,8 @@ var outfitClosureColors = []figtree.FieldColor{{
 	},
 }}
 
-// renderOutfitClosure draws the closure. The synthetic root: the one with no
-// name, holding several requested outfits side by side: is not drawn; its
-// children become the roots, so `figaro outfit a,b` shows two trees.
+// The synthetic root holding several requested outfits is not drawn; its
+// children become the roots.
 func renderOutfitClosure(root *rpc.OutfitLayer) string {
 	tree := figtree.Tree{
 		Columns: []figtree.Column{
@@ -263,7 +238,6 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 	return "✗"
 }
 
-// runOutfitTree prints an outfit's layer closure without applying anything.
 func runOutfitTree(loaded *config.Loaded, arg string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -281,7 +255,6 @@ func runOutfitTree(loaded *config.Loaded, arg string) {
 	}
 }
 
-// outfitClosureBroken names every node that is missing or cyclic.
 func outfitClosureBroken(l *rpc.OutfitLayer) []string {
 	if l == nil {
 		return nil
@@ -296,8 +269,6 @@ func outfitClosureBroken(l *rpc.OutfitLayer) []string {
 	return out
 }
 
-// runOutfitRefresh tells the angelus to re-read config and drop its cached
-// folds, for an outfit added or edited by hand.
 func runOutfitRefresh(loaded *config.Loaded) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -307,7 +278,6 @@ func runOutfitRefresh(loaded *config.Loaded) {
 	fmt.Fprintln(stderrw, "outfits refreshed")
 }
 
-// runOutfitList prints the outfits the server has on disk.
 func runOutfitList(loaded *config.Loaded) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()

@@ -10,9 +10,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// The verdict is the product. A table of HTTP statuses is evidence; an
-// operator staring at a silent aria needs to be told, in words, that the
-// provider refused them and for how long.
 func TestProviderTroubleSummaryNamesTheQuotaWait(t *testing.T) {
 	rounds := []rpc.ProviderRound{
 		{Seq: 1, Aria: "94f0752b", Status: 200, DurationMS: 11000},
@@ -28,8 +25,7 @@ func TestProviderTroubleSummaryNamesTheQuotaWait(t *testing.T) {
 	}
 }
 
-// A healthy ledger says nothing. Diagnostics that always print something
-// train people to stop reading them.
+// A healthy ledger says nothing.
 func TestProviderTroubleSummarySilentWhenHealthy(t *testing.T) {
 	rounds := []rpc.ProviderRound{{Seq: 1, Status: 200, DurationMS: 900}}
 	if out := captureStdout(t, func() { summarizeProviderTrouble(rounds) }); out != "" {
@@ -72,8 +68,6 @@ func TestHumanMillis(t *testing.T) {
 	}
 }
 
-// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
-// it wrote.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()

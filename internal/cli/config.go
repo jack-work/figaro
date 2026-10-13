@@ -35,13 +35,9 @@ func MustHush() *managed.Hush {
 	return h
 }
 
-// promptVaultPassphrase asks the question the vault's state actually
-// poses. With no identity on disk, that is "choose one", twice, and the
-// keyring promise is made only if there is a keyring to keep it: where
-// there is none, the user is offered a key file instead, which is the
-// only arrangement on such a host that does not ask him something on
-// every command. With an identity, it is "what is yours", once, checked
-// against the identity, with a bounded retry.
+// With no identity on disk: choose one, twice, and the keyring promise only
+// where there is a keyring, else a key file. With an identity: ask once,
+// bounded retry.
 func promptVaultPassphrase(h *managed.Hush, appName string) ([]byte, error) {
 	if h == nil {
 		return tui.PromptPassphrase(tui.PassphraseRequest{App: appName, Mode: tui.PassphraseCreate})
@@ -64,12 +60,9 @@ func promptVaultPassphrase(h *managed.Hush, appName string) ([]byte, error) {
 	return promptFirstRunWithoutKeyring(h, appName)
 }
 
-// promptFirstRunWithoutKeyring offers the key file first, because on a
-// host with no keyring a passphrase is a question asked forever. The
-// returned bytes are the ones hush will encrypt the new identity with,
-// so writing the file here and handing back its contents is the whole
-// of the file arrangement: hush writes the identity, and the next
-// process reads the file and never asks.
+// On a host with no keyring a passphrase is a question asked forever, so the
+// key file is offered first; the returned bytes are what hush encrypts the new
+// identity with.
 func promptFirstRunWithoutKeyring(h *managed.Hush, appName string) ([]byte, error) {
 	choice := string(unlockKindFile)
 	if tui.Available() || isStdinTTY() {
@@ -99,12 +92,11 @@ func promptFirstRunWithoutKeyring(h *managed.Hush, appName string) ([]byte, erro
 	return pp, nil
 }
 
-// ensureHush initializes hush. Must be called from the CLI process.
+// ensureHush must be called from the CLI process.
 func ensureHush() {
 	h := MustHush()
 	if err := h.EnsureReady(); err != nil {
-		// A saved passphrase that stopped decrypting is otherwise a dead
-		// end: every command fails and nothing names the lever.
+		// A saved passphrase that stopped decrypting is otherwise a dead end.
 		if strings.Contains(err.Error(), "incorrect passphrase") {
 			fmt.Fprintf(stderrw, "figaro: hush: %s\n\n", err)
 			fmt.Fprintln(stderrw, "The saved passphrase does not decrypt this vault.")
@@ -116,22 +108,16 @@ func ensureHush() {
 	}
 }
 
-// buildPromptForm collects the per-prompt form values and the dressing THIS
-// prompt asked for. The dressing is the caller's, carried down from the plan
-// that parsed it: a package-global here meant two commands in flight swapped
-// each other's -S, -D and -O.
+// The dressing is carried down from the plan: a package-global meant two
+// commands in flight swapped each other's -S, -D and -O.
 func buildPromptForm(d dressing) *rpc.FormInput {
-	// `cwd` IS NOT SENT. system.cwd is the canonical working directory, written
-	// by the harness at create time through the privileged path; the CLI used
-	// to write a second, unprivileged spelling of the same fact on every
-	// prompt. Gluck, 2026-08-19: keep whichever is canonical, a stale cwd is
-	// acceptable.
+	// `cwd` is not sent: system.cwd is written by the harness at create time
+	// through the privileged path.
 	snap := map[string]json.RawMessage{}
 	dt := time.Now().Format("Monday, January 2, 2006, 3PM MST")
 	if b, err := json.Marshal(dt); err == nil {
 		snap["datetime"] = b
 	}
-	// Allowlisted env vars from the caller's shell.
 	for k, v := range form.EnvironmentSnapshot() {
 		snap[k] = v
 	}
@@ -141,9 +127,7 @@ func buildPromptForm(d dressing) *rpc.FormInput {
 	return &rpc.FormInput{Context: snap, Outfits: d.names, Patch: d.patch}
 }
 
-// cacheDir returns the directory for ephemeral figaro data that can
-// be regenerated (update-check memo, etc). XDG_CACHE_HOME and
-// FIGARO_CACHE_DIR win in that order.
+// XDG_CACHE_HOME and FIGARO_CACHE_DIR win in that order.
 func cacheDir() string {
 	if d := os.Getenv("FIGARO_CACHE_DIR"); d != "" {
 		return d

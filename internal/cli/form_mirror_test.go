@@ -16,7 +16,6 @@ func formDeltaAt(version uint64, key, value string) rpc.FormDelta {
 	}
 }
 
-// The ordinary case: a delta that follows ours folds in and moves the version.
 func TestMirrorAppliesInOrder(t *testing.T) {
 	m := &formMirror{}
 	m.reset(form.Snapshot{}, 0)
@@ -31,8 +30,7 @@ func TestMirrorAppliesInOrder(t *testing.T) {
 	}
 }
 
-// A gap is transient and re-reading cures it, and a delta we already hold (a
-// replay after that re-read) is not a second gap.
+// A replay after a resync is not a second gap.
 func TestMirrorGapAsksForResyncAndReplayDoesNot(t *testing.T) {
 	m := &formMirror{}
 	m.reset(form.Snapshot{}, 1)
@@ -43,7 +41,6 @@ func TestMirrorGapAsksForResyncAndReplayDoesNot(t *testing.T) {
 	if _, _, gaps := m.state(); gaps != 1 {
 		t.Fatalf("gaps = %d, want 1, a gap the header cannot see is a gap that hides", gaps)
 	}
-	// The resync lands, and the delta that triggered it arrives again.
 	m.reset(form.Snapshot{}, 5)
 	if got := m.apply(formDeltaAt(5, "x", `1`)); got != formApplied {
 		t.Fatalf("replay outcome = %v, want applied", got)
@@ -53,9 +50,8 @@ func TestMirrorGapAsksForResyncAndReplayDoesNot(t *testing.T) {
 	}
 }
 
-// A schema mismatch is PERMANENT: the next delta wears the same shape, so
-// answering it with a re-read is one RPC per frame against a peer that will
-// never agree. It gets its own outcome so the caller can stop instead.
+// A schema mismatch is permanent: answering it with a re-read is one RPC per
+// frame against a peer that will never agree.
 func TestMirrorSchemaMismatchIsNotAResync(t *testing.T) {
 	m := &formMirror{}
 	m.reset(form.Snapshot{}, 1)

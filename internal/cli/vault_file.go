@@ -12,31 +12,14 @@ import (
 	"github.com/jack-work/hush/managed"
 )
 
-// File unlock: the vault's passphrase is a random string in a 0600 file
-// next to the identity, and nobody ever types anything.
-//
-// This exists because a host can have no way to answer either question.
-// On WSL, gnome-keyring runs but no Secret Service collection can be
-// created without a prompter, so the keyring can never hold the
-// passphrase; and a figaro daemon started from a script has no terminal
-// to be asked at. The honest options there are a key file or nothing.
-//
-// The security claim is exactly the file's mode: anyone who can read
-// the home directory can read the passphrase and therefore the provider
-// tokens. Say so, every time, rather than implying more.
-
-// passphraseFileName is the file hush.toml will point at, in the same
-// directory as identity.age.
+// File unlock: the passphrase is a random string in a 0600 file next to the
+// identity, for hosts with no keyring and no terminal (WSL cannot create a
+// Secret Service collection without a prompter). The security claim is exactly
+// the file's mode.
 const passphraseFileName = "passphrase"
 
-// setupFileUnlock generates a passphrase, writes it where only the
-// owner can read it, and points hush.toml at it. It returns the live
-// passphrase bytes so the caller can create or unlock the identity
-// without reading the file back.
-//
-// The in-memory config is updated too: hush loaded it before this file
-// existed, so without that this process would go on trying to unlock
-// through the keyring it just decided not to use.
+// setupFileUnlock returns the live passphrase bytes and updates the in-memory
+// config too: hush loaded it before this file existed.
 func setupFileUnlock(h *managed.Hush) ([]byte, string, error) {
 	cfg := h.Config()
 	if cfg == nil {
@@ -71,11 +54,8 @@ func setupFileUnlock(h *managed.Hush) ([]byte, string, error) {
 	return pp, path, nil
 }
 
-// writePrivateFile writes data at path with mode 0600, atomically. The
-// temp file is created in the destination directory so the rename never
-// crosses a filesystem, and it is born 0600 (os.CreateTemp's mode), so
-// the passphrase is never readable by anyone else, not even for the
-// moment between create and chmod.
+// The temp file is born 0600 in the destination directory, so the rename never
+// crosses a filesystem and the passphrase is never readable by anyone else.
 func writePrivateFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".tmp-"+filepath.Base(path)+"-*")
@@ -105,10 +85,8 @@ func writePrivateFile(path string, data []byte) error {
 	return nil
 }
 
-// writeHushUnlockFile rewrites hush.toml so [unlock] names the file
-// method and the file. Everything else in the document survives: ttl in
-// particular, which figaro sets long on purpose, and which a blind
-// overwrite would silently return to hush's 30m default.
+// writeHushUnlockFile rewrites only [unlock]: a blind overwrite would reset ttl
+// to hush's 30m default.
 func writeHushUnlockFile(configPath, passphrasePath string) error {
 	doc := map[string]any{}
 	data, err := os.ReadFile(configPath)

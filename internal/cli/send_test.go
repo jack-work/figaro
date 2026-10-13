@@ -99,9 +99,6 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "p"},
 		},
 		{
-			// -j and -l are bool shorts like the rest; they were missing
-			// from the bundle table, so `-fj` (the scripting workhorse:
-			// fire-and-forget + machine-readable) died as an unknown flag.
 			name:     "bundled fj",
 			in:       []string{"-fj", "--", "p"},
 			wantOpts: sendOpts{forget: true, json: true},
@@ -146,9 +143,7 @@ func TestExtractSendFlags(t *testing.T) {
 			wantErr: "the prompt must follow `--`",
 		},
 		{
-			// The whole point of the fix: an unconsumed flag is an error,
-			// never a silent drop. `figaro --id X -- hi` ignoring --id was
-			// the same class of bug one layer up.
+			// An unconsumed flag is an error, never a silent drop.
 			name:    "unknown long flag",
 			in:      []string{"--verbos", "--", "hi"},
 			wantErr: `unknown flag "--verbos"`,
@@ -175,8 +170,8 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "hi"},
 		},
 		{
-			// Guard: a `--` inside the prompt body is prompt text, not a
-			// second boundary. extractPrompt splits on the FIRST one.
+			// A `--` inside the prompt body is prompt text: extractPrompt
+			// splits on the first one.
 			name:     "double dash inside the prompt",
 			in:       []string{"-o", "--", "text", "--", "more"},
 			wantOpts: sendOpts{verbose: true},
@@ -212,8 +207,7 @@ func TestExtractSendFlags(t *testing.T) {
 	}
 }
 
-// TestParseTarget pins the coordinate grammar. The suffix is a TURN id, not an
-// LT: turns start at 1, so :0 is rejected rather than silently meaning "head".
+// The suffix is a turn id, not an LT: turns start at 1, so :0 is rejected.
 func TestParseTarget(t *testing.T) {
 	cases := []struct {
 		spec    string
@@ -228,14 +222,12 @@ func TestParseTarget(t *testing.T) {
 		{"t1", "t1", 0, 0, false},
 		{":", "", 0, 0, true},
 		{"t1:x", "", 0, 0, true},
-		{"t1:0", "", 0, 0, true}, // turns are 1-based
-		// The DOT form is the model's coordinate. Same parser, so the two
-		// can never drift on what a suffix means.
+		{"t1:0", "", 0, 0, true},
 		{".42", "", 0, 42, false},
 		{"t1.42", "t1", 0, 42, false},
 		{"t1.", "", 0, 0, true},
 		{"t1.x", "", 0, 0, true},
-		{"t1.0", "", 0, 0, true}, // LTs are 1-based
+		{"t1.0", "", 0, 0, true},
 	}
 	for _, c := range cases {
 		trunk, at, err := parseTarget(c.spec)
@@ -253,10 +245,8 @@ func TestParseTarget(t *testing.T) {
 	}
 }
 
-// TestExtractForkFlags pins the one axis on which fork's parse differs from
-// send's: fork's prompt is OPTIONAL, so a bare positional is the target even
-// with no `--` boundary. Everything else (flags, --id, :<turn>, the "never
-// drop argv" rule) is the same code and must stay the same.
+// fork's prompt is optional, so a bare positional is the target without a `--`;
+// everything else is send's code.
 func TestExtractForkFlags(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -328,20 +318,14 @@ func TestExtractForkFlags(t *testing.T) {
 	}
 }
 
-// TestBundleExpansionFollowsTheFlagTable is the drift guard for #9.
-//
-// send.go used to carry a hardcoded bundle-letter list with no link to its
-// documented flags. -j and -l were missing from it, so `send -fj`: the
-// fire-and-forget-plus-machine-output pair a script wants: failed as
-// "unknown flag" while `-f -j` worked. Now the letters come from
-// sendFlagDefs, so a flag cannot be documented and un-gangable at once.
+// The bundle letters come from sendFlagDefs, so a flag cannot be documented and
+// un-gangable at once.
 func TestBundleExpansionFollowsTheFlagTable(t *testing.T) {
 	for _, f := range sendFlagDefs {
 		if f.Short == "" || !f.IsBool {
 			continue
 		}
 		t.Run("-"+f.Short+" gangs", func(t *testing.T) {
-			// Pair it with -r (or -v, if this IS -r) and require both to land.
 			partner := "r"
 			if f.Short == "r" {
 				partner = "v"
@@ -386,14 +370,8 @@ func flagIsSet(o sendOpts, short string) bool {
 	return false
 }
 
-// The defect this file's parser exists to prevent, pinned as behaviour:
-// `send <id>:<turn>` used to resolve the turn to an LT client-side and then
-// send that LT in the TURN field. Since an LT is far larger than the turn
-// count, the server rejected every one with "aria has no turn N".
-//
-// The two coordinates now travel in separate, named fields, so the only way
-// to reintroduce it is to write the wrong field name: which reads as a bug
-// instead of as a plausible number.
+// Turns and LTs travel in separate, named fields; an LT sent in the turn field
+// was rejected as "aria has no turn N".
 func TestForkPointKeepsTurnsAndLTsApart(t *testing.T) {
 	trunk, at, err := parseTarget("a1b2c3d4:12")
 	if err != nil {
@@ -417,7 +395,6 @@ func TestForkPointKeepsTurnsAndLTsApart(t *testing.T) {
 		t.Errorf("an LT describes itself as %q", at.String())
 	}
 
-	// A head fork names neither, and both verbs read that the same way.
 	if _, at, err = parseTarget("a1b2c3d4"); err != nil || !at.isHead() {
 		t.Errorf("bare id: at=%+v err=%v; want the head", at, err)
 	}

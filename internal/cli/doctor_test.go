@@ -8,10 +8,8 @@ import (
 	"testing"
 )
 
-// gcFixture builds an isolated store root: a manifest listing channels and
-// on-disk dirs for each of dirs. FIGARO_STATE_DIR points GC at it and
-// FIGARO_RUNTIME_DIR at a socket-less dir so the "angelus is running" guard
-// falls through. Returns the arias root.
+// gcFixture: FIGARO_STATE_DIR points GC at the root, FIGARO_RUNTIME_DIR at a
+// socket-less dir so the running-daemon guard falls through.
 func gcFixture(t *testing.T, channels, dirs []string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -66,9 +64,7 @@ func manifestChannels(t *testing.T, arias string) []string {
 	return got
 }
 
-// live channels must survive; dead ones must leave both the manifest and disk.
-// translations-v2/* is the critical non-regression: it must NOT be swept by the
-// legacy translations/ prefix rule.
+// translations-v2/* must not be swept by the legacy translations/ prefix rule.
 func TestDoctorGCPrunesDeadChannels(t *testing.T) {
 	channels := []string{"ir", "form", "turn-wal", "translations/anthropic", "translations-v2/anthropic"}
 	dirs := []string{"ir", "form", "turn-wal", "_live", "translations/anthropic", "translations-v2/anthropic"}
@@ -94,7 +90,6 @@ func TestDoctorGCPrunesDeadChannels(t *testing.T) {
 	}
 }
 
-// --dry-run reports but mutates nothing.
 func TestDoctorGCDryRunMutatesNothing(t *testing.T) {
 	arias := gcFixture(t, []string{"ir", "turn-wal"}, []string{"ir", "turn-wal", "_live"})
 
@@ -112,7 +107,6 @@ func TestDoctorGCDryRunMutatesNothing(t *testing.T) {
 	}
 }
 
-// A store with nothing dead is left strictly alone.
 func TestDoctorGCCleanStoreNoOp(t *testing.T) {
 	arias := gcFixture(t, []string{"ir", "translations-v2/anthropic"}, []string{"ir", "translations-v2/anthropic"})
 

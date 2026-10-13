@@ -5,13 +5,10 @@ import (
 	"time"
 )
 
-// THE COMPLETER RUNS WITH in.mu HELD. Keystrokes are dispatched under it
-// (stream.go), and Tab calls the completer from dispatch. A completer that
-// takes in.mu -- in.currentID() does -- deadlocks the input goroutine against
-// itself: the first Tab froze the pager dead, in a real terminal, while every
-// fixture test (which supplies its own completer) stayed green.
+// The completer runs with in.mu held (Tab is dispatched under it), so a
+// completer that takes in.mu deadlocks the input goroutine.
 func TestCompleterDoesNotTakeTheInputLock(t *testing.T) {
-	t.Setenv("FIGARO_RUNTIME_DIR", t.TempDir()) // no daemon: every RPC fails fast
+	t.Setenv("FIGARO_RUNTIME_DIR", t.TempDir())
 	in := &interactiveInput{figaroID: "aria1234", mu: new(renderLock)}
 	in.mu.Lock()
 	defer in.mu.Unlock()

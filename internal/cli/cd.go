@@ -12,9 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// runCd points an aria's system.cwd at path, resolved against the calling
-// process's own working directory. No path is the home directory, as in a
-// shell.
+// No path is the home directory, as in a shell.
 func runCd(loaded *config.Loaded, ariaID, path string) error {
 	dir, err := resolveCdPath(path)
 	if err != nil {
@@ -45,9 +43,6 @@ func resolveCdPath(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
-// completeCdDirs offers directories under the partial token, the way a shell
-// completes a path, and aria ids after --id. It could not expand ~ (it read a
-// directory literally named "~") and went silent after `--id <aria>`.
 func completeCdDirs(ctx *cmdkit.CompleteContext) []string {
 	if ctx == nil {
 		return nil
@@ -63,7 +58,7 @@ func completeCdDirs(ctx *cmdkit.CompleteContext) []string {
 			continue
 		}
 		if !strings.HasPrefix(a, "-") {
-			return nil // the directory is already named
+			return nil
 		}
 	}
 	return pathCandidatesFor(ctx, ctx.Current, true)

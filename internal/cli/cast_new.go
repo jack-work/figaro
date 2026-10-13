@@ -1,7 +1,5 @@
 package cli
 
-// AUTOCASTING: minting a figaro and a role in one gesture.
-
 import (
 	"context"
 	"encoding/json"
@@ -15,8 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// castOutcome is what an autocast did, step by step, so a caller can report a
-// partial as the described state it is.
+// castOutcome reports a partial as the described state it is.
 type castOutcome struct {
 	AriaID   string `json:"aria_id"`
 	RoleID   string `json:"role_id,omitempty"`
@@ -28,10 +25,8 @@ type castOutcome struct {
 	MintedBy string `json:"-"`
 }
 
-// autocast casts an existing aria into a role: either a named form, or one
-// minted from the dressing. It never dies; the outcome carries the verdict,
-// because by the time it is called the figaro already exists and killing the
-// process would strand it without saying so.
+// autocast never dies: by the time it is called the figaro exists, and exiting
+// would strand it unreported.
 func autocast(loaded *config.Loaded, ariaID, formID string, role dressing) castOutcome {
 	out := castOutcome{AriaID: ariaID, RoleID: formID}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -44,10 +39,8 @@ func autocast(loaded *config.Loaded, ariaID, formID string, role dressing) castO
 			RolePatch: role.patch,
 		})
 		if cerr != nil {
-			// Swallowed on purpose: WithSessionFor's error path dies, and by
-			// here the figaro exists. A partial has to be REPORTED, not
-			// exited on, or the aria is stranded without its id ever being
-			// printed.
+			// WithSessionFor's error path dies; a partial must be
+			// reported, not exited on.
 			out.Err = cerr.Error()
 			return nil
 		}
@@ -58,9 +51,7 @@ func autocast(loaded *config.Loaded, ariaID, formID string, role dressing) castO
 	return out
 }
 
-// reportCast prints an autocast's verdict. A partial exits non-zero while
-// still naming everything that did land: the aria is real and addressable
-// whether or not the role is.
+// A partial exits non-zero while still naming everything that landed.
 func reportCast(out castOutcome, asJSON bool) {
 	if asJSON {
 		_ = json.NewEncoder(stdout).Encode(out)
@@ -81,8 +72,7 @@ func reportCast(out castOutcome, asJSON bool) {
 		out.RoleID, out.AriaID)
 }
 
-// liftRoleArg removes the role positional from an argument list and returns
-// it: the one bare `@`-sigiled word before the prompt boundary.
+// liftRoleArg removes the one bare `@`-sigiled word before the prompt boundary.
 func liftRoleArg(args []string) (string, []string, error) {
 	role := ""
 	kept := make([]string, 0, len(args))
@@ -103,10 +93,7 @@ func liftRoleArg(args []string) (string, []string, error) {
 	return role, kept, nil
 }
 
-// mintFigaroFor creates an aria and returns its id. The `fig new` path,
-// reused so that an autocast-born figaro is born exactly like a hand-made
-// one. It does NOT attend: attendAfterCast decides that, once, for the whole
-// cast family.
+// mintFigaroFor does not attend: attendAfterCast decides that once for the cast family.
 func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -119,8 +106,6 @@ func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 	return id, nil
 }
 
-// attendAfterCast puts this shell where the casting left the interesting
-// thing.
 func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 	if stay || !minted || roleID == "" || bindingDisabled() {
 		return
@@ -136,7 +121,6 @@ func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 	fmt.Fprintf(stderrw, "attending %s (--stay to keep your previous attendance)\n", roleID)
 }
 
-// runNewCast is `fig new -C`: mint the figaro, then cast it.
 func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string, set renderSettings, stay bool) {
 	ariaDress, roleDress := d, dressing{}
 	if roleID == "" {
@@ -166,17 +150,12 @@ func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string,
 		reportCast(out, false)
 	}
 	if prompt != "" {
-		// The shell is attending either the aria or its new role, and a role
-		// redirects to its holder, so the bare prompt path reaches the same
-		// figaro either way: one entry point, not a second spelling of send
-		// that could drift from it.
+		// A role redirects to its holder, so the bare prompt path reaches the
+		// same figaro either way.
 		runPrompt(loaded, dressing{}, prompt, set)
 	}
 }
 
-// runCastFromAttendedForm is `fig cast` with a form attended and no aria
-// named: the figaro that will play the role does not exist yet, so mint it
-// and cast it into what this shell is standing in front of.
 func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, asJSON, stay bool) {
 	ariaID, err := mintFigaroFor(loaded, d)
 	if err != nil {
@@ -185,16 +164,12 @@ func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, a
 	fmt.Fprintf(stderrw, "attending %s: minted %s to play it\n", formID, ariaID)
 	out := autocast(loaded, ariaID, formID, dressing{})
 	out.Minted = true
-	// The shell stays on the FORM it was attending: the aria was minted to
-	// play the role, not to take the shell. Nothing to undo -- the mint no
-	// longer moves anyone.
+	// The shell stays on the form it was attending: the aria was minted to
+	// play the role.
 	_ = stay
 	reportCast(out, asJSON)
 }
 
-// attendedForm reports the form this shell is attending, if it is attending a
-// form rather than an aria. The `@` sigil is what makes this lexical instead
-// of a lookup.
 func attendedForm(ctx context.Context, acli *sdk.Angelus) string {
 	r, err := resolveBinding(ctx, acli, shellPID)
 	if err != nil || r == nil || !r.Found {

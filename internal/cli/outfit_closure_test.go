@@ -8,8 +8,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// The closure is drawn so the GAP is located, not merely named: a layer four
-// levels down reads as a red leaf under green parents.
 func TestRenderOutfitClosureMarksFoundAndMissing(t *testing.T) {
 	restore := term.SetColorMode(term.ColorNever)
 	defer restore()
@@ -40,8 +38,7 @@ func TestRenderOutfitClosureMarksFoundAndMissing(t *testing.T) {
 	}
 }
 
-// The synthetic root that holds several requested outfits is not itself an
-// outfit, so `figaro outfit a,b` draws two trees rather than one nameless one.
+// The synthetic root holding several requested outfits is not drawn.
 func TestRenderOutfitClosureDrawsEachRequestedOutfitAsARoot(t *testing.T) {
 	restore := term.SetColorMode(term.ColorNever)
 	defer restore()
@@ -62,8 +59,6 @@ func TestRenderOutfitClosureDrawsEachRequestedOutfitAsARoot(t *testing.T) {
 	}
 }
 
-// Colour comes from the palette the diff renderer uses, and only the name is
-// painted: the glyphs stay plain so the shape does not compete with the rows.
 func TestRenderOutfitClosureUsesTheDiffPalette(t *testing.T) {
 	restore := term.SetColorMode(term.ColorAlways)
 	defer restore()
@@ -99,8 +94,7 @@ func TestRenderOutfitClosureExplainsACycle(t *testing.T) {
 	}
 }
 
-// --tree resolves against the config dir directly, so it must work with no
-// aria bound and no daemon running.
+// --tree resolves against the config dir directly: no aria, no daemon.
 func TestOutfitTreeExitsNonZeroOnlyWhenTheClosureIsBroken(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

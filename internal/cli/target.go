@@ -11,11 +11,8 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// resolveTargetEndpoint resolves both id and endpoint. Used by verbs
-// that talk to the figaro directly (send, plain, x, set, state...).
-// Aria ids are system-minted, so a missing explicitID is always an
-// error: there is no create-by-name. autoCreate is retained for call
-// compatibility but no longer creates.
+// Aria ids are system-minted, so a missing explicitID is an error; autoCreate
+// decides whether an unbound shell mints.
 func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
 	if explicitID == "" {
 		ppid := shellPID
@@ -24,23 +21,14 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 			return "", transport.Endpoint{}, fmt.Errorf("resolve: %w", err)
 		}
 		if !r.Found {
-			// autoCreate has been a parameter here since the function
-			// existed, discarded by `_ = autoCreate` on the second line.
-			// Every prompt path passes true and every read-only path passes
-			// false, so the intent was written down and never honoured:
-			// `send -f`, `-r` and `-v` all refused to work in a shell with
-			// no binding, while a plain `send` in the same shell minted an
-			// aria happily. Which flag you chose decided whether the verb
-			// could create, and nothing said so.
 			if !mintsWhenUnbound(autoCreate) {
 				if resolveDisabled() {
 					return "", transport.Endpoint{}, fmt.Errorf("no aria specified (pass --id <id>; binding disabled in this shell)")
 				}
 				return "", transport.Endpoint{}, fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
 			}
-			// Mint one, on the named outfit, and bind this shell to it -
-			// bindBinding is a no-op when binding is disabled, so a script
-			// gets the aria without acquiring a binding it never asked for.
+			// bindBinding is a no-op when binding is disabled, so a
+			// script gets the aria without a binding.
 			id, ep := mustCreate(ctx, acli, loaded, d)
 			attendNew(ctx, acli, id)
 			return id, ep, nil
@@ -64,19 +52,11 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 	return "", transport.Endpoint{}, fmt.Errorf("attach %q: %w", explicitID, err)
 }
 
-// mintsWhenUnbound is the create decision, pulled out so the truth table is
-// testable without a daemon: a call that reached here has no --id and no
-// binding, so the only question left is whether the verb is allowed to make
-// one. Prompt verbs are; read-only verbs (hup, listen, outfit) are not,
-// because "show me the aria" cannot sensibly answer by inventing one.
+// Prompt verbs mint when unbound; read-only verbs (hup, listen, outfit) do not.
 func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
 
-// resolveFigaroTargetEndpoint is resolveTargetEndpoint for verbs that need
-// a FIGARO (send, listen, hup, queue): an unbound-form target is resolved
-// through its role. The `form` namespace never redirects: set, state,
-// form listen, state outfit address the form itself and use the raw
-// resolver. Resolution is LATE, per call: repoint target-aria and the
-// next invocation reaches the successor; nothing chases mid-stream.
+// An unbound-form target is resolved through its role, late, per call; the
+// `form` namespace never redirects.
 func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
 	id, ep, err := resolveTargetEndpoint(ctx, loaded, acli, explicitID, autoCreate, d)
 	if err != nil {
@@ -85,10 +65,8 @@ func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acl
 	return redirectRole(ctx, loaded, acli, id, ep)
 }
 
-// redirectRole follows a role form to its target aria, once. A plain
-// form (no target-aria) refuses by name; a target that is itself a form
-// refuses too: target-aria names an aria, and a chain of roles is a
-// misconfiguration better reported than walked.
+// redirectRole follows a role form to its target aria once; a chain of roles is
+// refused.
 func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, id string, ep transport.Endpoint) (string, transport.Endpoint, error) {
 	if !strings.HasPrefix(id, "@") && !strings.Contains(id, "@") {
 		return id, ep, nil

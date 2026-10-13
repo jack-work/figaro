@@ -1,22 +1,8 @@
 package cli
 
-// THE COMMAND LANGUAGE IS THE CLI'S, and this file is the proof rather than the
-// promise: a ':' line is tokenized into argv and handed to THE SAME
-// cmdkit.Router that `figaro` dispatches at a shell. There is no second table,
-// no second parser, and no second set of flags. `:ls -a`, `:doctor mem`,
-// `:status --id x` work the day they work at a shell, because they are the same
-// call.
-//
-// Three things had to be true for that, and two of them were already:
-//
-//  1. The router's writers are FIELDS (Router.Stdout/Stderr), so output can be
-//     captured instead of printed. Already true.
-//  2. Process exit is a VARIABLE (exitProcess), so a die() deep inside a verb
-//     can be turned into something recoverable. Already true -- the test suite
-//     swaps it for a panic, and this reuses that seam. It is still the dodgiest
-//     thing here; see plans/transcript-command-mode.md.
-//  3. The verbs that TAKE OVER THE TERMINAL cannot run inside a pager that
-//     already owns it. Those are overlaid (below) rather than run.
+// A ':' line is tokenized into argv and dispatched through the same
+// cmdkit.Router the shell uses. Verbs that take over the terminal are overlaid
+// instead.
 
 import (
 	"context"
@@ -30,15 +16,13 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// tokenize splits a command line into argv the way a shell would: whitespace
-// separates, quotes group, backslash escapes inside double quotes and outside.
-// It is deliberately small -- no expansion, no globbing, no substitution -
-// because a command line in a pager is a place to name things, not a shell.
+// tokenize splits like a shell: whitespace separates, quotes group, backslash
+// escapes. No expansion.
 func tokenize(line string) []string {
 	var (
 		out  []string
 		cur  strings.Builder
-		have bool // a token has begun (so "" is a real empty token)
+		have bool
 	)
 	flush := func() {
 		if have {
@@ -81,66 +65,38 @@ func tokenize(line string) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------------
-// The overlay: verbs that mean something different with a transcript open.
-// ---------------------------------------------------------------------------
-
-// overlayVerbs are the ones the pager answers itself. Two reasons a verb lands
-// here, and only two:
-//
-//   - IT WOULD TAKE THE TERMINAL. `listen`, `send`, `new`, `replay` and `fork`
-//     open a renderer of their own, and there is already one on the screen.
-//   - GLUCK'S RULE: "since the transcript is ambiently open, whatever the
-//     result is should replace the current transcript". A verb that RESOLVES an
-//     aria shows it. So `attend` binds AND displays, where at a shell it only
-//     binds.
-//
-// Everything else -- ls, status, doctor, state, set, unset, queue,
-// promote, gc, models, show... -- falls through to the real router untouched.
+// overlayVerbs are answered by the pager itself: they would take the terminal,
+// or they resolve an aria and so must show it.
 var overlayVerbs = map[string]bool{
-	"notifications": true, "no": true, // the pager's own history (notifications.go)
+	"notifications": true, "no": true,
 	"listen": true,
 	"attend": true, "at": true,
 	"send": true, "s": true,
 	"new": true, "replay": true, "fork": true,
-	"kill":   true, // it can kill the aria on screen, and must then move
-	"import": true, // reads os.Stdin for `-` (portable.go)
-	"login":  true, // an interactive OAuth flow with its own prompts
-	// models is a PIT, not a table: a list you choose the subject's model
-	// in (models_view.go). As a routed verb it printed to os.Stdout.
+	"kill":   true, // may kill the aria on screen, and must then move
+	"import": true, // reads os.Stdin for `-`
+	"login":  true, // an interactive OAuth flow
+	// models is a pit; as a routed verb it would print to os.Stdout.
 	"models": true,
 }
 
-// terminalSubverbs are verb+subverb pairs that take the terminal, which a bare
-// verb name cannot express. `figaro form` is a perfectly good in-process
-// command; `figaro form listen` is a FOLLOWER -- it reads os.Stdin in a loop
-// and only returns on q/^C.
-//
-// Found by asking the question Gluck asked ("does form listen work in the
-// status bar?"), and the answer is worse than no: run in command mode it would
-// block the command goroutine forever, holding routerMu so every later command
-// hangs -- AND read os.Stdin concurrently with the pager's own input loop, two
-// readers racing for one fd, each swallowing half the user's keystrokes.
+// terminalSubverbs take the terminal: `form listen` reads os.Stdin in a loop,
+// which would race the pager's input loop for the fd and hold routerMu forever.
 var terminalSubverbs = map[string]bool{
-	"vault unlock": true, // prompts for a passphrase
-	"vault init":   true, // may prompt for a passphrase
-	"vault reset":  true, // confirms, then walks the provider logins
+	"vault unlock": true,
+	"vault init":   true,
+	"vault reset":  true,
 }
 
-// READING A FORM IS ONE THING, and in the pager it is the live view: `show`,
-// `listen`, and bare `form`/`state` all open it. A snapshot in a repainting
-// window is just a live view that lies when the form changes.
-//
-// formSubverbs are the ones that DO something else and still go to the router.
+// A form read in the pager is the live view; formSubverbs do something else and
+// go to the router.
 var formSubverbs = map[string]bool{
 	"set": true, "delete": true, "unset": true,
 	"new": true, "fork": true, "ls": true, "rm": true,
 	"outfit": true, "help": true,
 }
 
-// liveForm decides whether argv is a form READ, and names the aria it reads.
-// The spec is the first positional that is not the subverb, or --id's value;
-// empty means "the aria on screen", per THE SUBJECT rule.
+// liveForm decides whether argv is a form read; an empty spec means the aria on screen.
 func liveForm(argv []string) (name, spec string, ok bool) {
 	if len(argv) == 0 || (argv[0] != "form" && argv[0] != "state") {
 		return "", "", false
@@ -165,8 +121,8 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 		case strings.HasPrefix(a, "--id="):
 			return name, strings.TrimPrefix(a, "--id="), true
 		case strings.HasPrefix(a, "-"):
-			// A FLAG THE PIT CANNOT HONOUR is a command, not a view: `-j`
-			// wants JSON on a stdout the pit does not have.
+			// A flag the pit cannot honour (-j wants a stdout) is a
+			// command, not a view.
 			return "", "", false
 		default:
 			return name, a, true
@@ -175,15 +131,8 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 	return name, "", true
 }
 
-// runCommand is the ':' box's hook, and it is CALLED WITH THE RENDER LOCK HELD
-// -- the input loop takes that lock around every keystroke, and the box's Enter
-// is a keystroke like any other.
-//
-// So this function does exactly one thing: hand off. It may not take the lock
-// (Go mutexes do not recurse) and it may not block (the input goroutine is the
-// only thing reading the keyboard). MEASURED, in a pty, before this hand-off
-// existed: `:listen <id>` froze the whole pager, dead, with the box still on
-// screen -- the input goroutine parked on a mutex it was already holding.
+// runCommand is called with the render lock held: it may not take the lock or
+// block, so it hands off.
 func (in *interactiveInput) runCommand(line string) { go in.execCommand(line) }
 
 func (in *interactiveInput) execCommand(line string) {
@@ -207,7 +156,6 @@ func (in *interactiveInput) execCommand(line string) {
 	in.runThroughRouter(argv)
 }
 
-// runOverlay answers the verbs the pager owns.
 func (in *interactiveInput) runOverlay(verb string, args []string) {
 	switch verb {
 	case "listen":
@@ -227,8 +175,6 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 			return in.switchSubject(ctx, spec, true)
 		})
 	case "kill":
-		// ASK FIRST, from the ':' box as from the 'x' key: one question, one
-		// wording, one place that spends it.
 		in.askKill(args)
 	case "send", "s":
 		in.commandAsync(func(ctx context.Context) (string, error) {
@@ -241,7 +187,6 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 	case "notifications", "no":
 		in.mu.Lock()
 		if len(args) > 0 && args[0] == "clear" {
-			// Vim's `:messages clear`: the pager's copy, and only it.
 			in.lt.tr.notes.clear()
 			in.lt.tr.setCommandNote("notifications cleared")
 		} else {
@@ -257,9 +202,8 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 	}
 }
 
-// openModels hosts the models pit. Asking every provider dials, so the list is
-// fetched off the input goroutine and installed under the render lock, as a
-// live form view is (openLive).
+// openModels fetches off the input goroutine (it dials) and installs under the
+// render lock.
 func (in *interactiveInput) openModels() {
 	in.progress("…models")
 	go func() {
@@ -275,8 +219,6 @@ func (in *interactiveInput) openModels() {
 	}()
 }
 
-// subjectModel is the aria on screen's system.model, or "" when it cannot be
-// read: the ● in the list is a courtesy, not a precondition.
 func (in *interactiveInput) subjectModel() string {
 	cli := in.aria()
 	if cli == nil {
@@ -295,13 +237,8 @@ func (in *interactiveInput) subjectModel() string {
 	return valueSummary(raw)
 }
 
-// chooseModel is Enter in the models pit: the subject's system.model becomes
-// the chosen id, and system.provider the provider that listed it, in ONE
-// patch. A model is only meaningful to its own provider; choosing copilot's
-// gpt-5 while the board still said anthropic would send a name Anthropic has
-// never heard of on the next turn. When the provider already matches, the
-// write lands only the model (the store drops an unchanged key), which is
-// exactly `figaro set system.model <id>`. It runs on its own goroutine.
+// chooseModel writes system.model and system.provider in one patch: a model is
+// only meaningful to its own provider.
 func (in *interactiveInput) chooseModel(c modelChoice) {
 	cli := in.aria()
 	id := in.currentID()
@@ -327,30 +264,12 @@ func mustJSON(s string) json.RawMessage {
 	return b
 }
 
-// ---------------------------------------------------------------------------
-// The router, run in-process.
-// ---------------------------------------------------------------------------
-
-// routerMu serializes in-process router runs. THE DODGE: exitProcess is a
-// package-level variable, so swapping it is not safe against a concurrent
-// second command -- and commands run on their own goroutines. One at a time is
-// the cheap correct answer while the real fix (verbs that return errors instead
-// of calling die) is unwritten.
+// routerMu serializes in-process router runs: the router's writers are
+// package-level, and commands run on their own goroutines.
 var routerMu sync.Mutex
 
-// runThroughRouter dispatches argv to the CLI's own table and shows whatever it
-// wrote. Output goes to a panel, because `:ls` is thirty lines and the status
-// row is one.
-// THE SUBJECT IS THE IMPLIED ARIA. At a shell, a verb with no target falls back
-// to the binding -- `figaro state` means "the aria this shell attends". In the
-// pager that is the wrong default by a mile: there is an aria ON SCREEN, and it
-// is what the reader means. Measured before this rule: `:state` inside a live
-// transcript answered "no figaro bound to this shell", which is true and
-// useless.
-//
-// So a command that ACCEPTS --id and was given no target gets the subject. The
-// rule is deliberately narrow -- it never overrides a target the user typed,
-// and it never invents one for a verb that does not take an aria at all.
+// withSubject gives a command that accepts --id and was given no target the
+// aria on screen; it never overrides a typed target.
 func (in *interactiveInput) withSubject(argv []string) []string {
 	if len(argv) == 0 {
 		return argv
@@ -372,7 +291,7 @@ func (in *interactiveInput) withSubject(argv []string) []string {
 	}
 	for _, a := range argv[1:] {
 		if a == "--id" || a == "-i" || strings.HasPrefix(a, "--id=") {
-			return argv // the user named a target; never second-guess it
+			return argv
 		}
 		if a == "--" {
 			break
@@ -385,9 +304,8 @@ func (in *interactiveInput) withSubject(argv []string) []string {
 	return append(append([]string{}, argv...), "--id", id)
 }
 
-// pagerUncapped drops `list`'s row cap inside the pager. The cap exists so a
-// shell prompt is not buried; the pager scrolls, and a reader who typed `:ls`
-// there means all of them. An explicit -a, -n or -j is left alone.
+// pagerUncapped drops `list`'s row cap inside the pager; an explicit -a, -n or
+// -j is left alone.
 func pagerUncapped(argv []string) []string {
 	if len(argv) == 0 {
 		return argv
@@ -429,8 +347,8 @@ func (in *interactiveInput) runThroughRouter(argv []string) {
 	}()
 }
 
-// routeCaptured runs one command with the router's writers pointed at a buffer
-// and process exit turned into a panic we catch.
+// routeCaptured runs one command with the writers pointed at a buffer and die()
+// turned into a recovered panic.
 func (in *interactiveInput) routeCaptured(argv []string) (captured, int) {
 	routerMu.Lock()
 	defer routerMu.Unlock()
@@ -442,14 +360,9 @@ func (in *interactiveInput) routeCaptured(argv []string) (captured, int) {
 
 	code := 0
 	func() {
-		// An abort unwinds to here and becomes this command's exit code. No
-		// global is swapped for it any more: die() always panics, and the
-		// boundary decides what that means (see exitPanic).
 		prevOut, prevErr := stdout, stderrw
-		// AND the package's ordinary-output writer, which is where the verbs
-		// actually write: the router's Stdout field only catches what the ROUTER
-		// prints (help, usage, its own diagnostics). Measured before this line:
-		// `:ls` painted its table straight over the pager's status row.
+		// The package's ordinary-output writer is swapped too: the router's
+		// Stdout field only catches what the router itself prints.
 		stdout, stderrw = &buf, &buf
 		defer func() {
 			stdout, stderrw = prevOut, prevErr
@@ -458,8 +371,6 @@ func (in *interactiveInput) routeCaptured(argv []string) (captured, int) {
 					code = int(ep)
 					return
 				}
-				// A real panic in a verb must not take the pager with it
-				// either: report it as the failure it is.
 				fmt.Fprintf(&buf, "panic: %v\n", rec)
 				code = 1
 			}
@@ -469,17 +380,14 @@ func (in *interactiveInput) routeCaptured(argv []string) (captured, int) {
 	return buf.captured(), code
 }
 
-// captured is what a command printed, plus the id each line is ABOUT. A verb
-// declares that id when it writes the line (see emitRow); nothing reads it back
-// out of the rendered text, because rendered text is a place a mantra can name
-// someone else's aria and steal the row.
+// captured is what a command printed, plus the id each line is about, declared
+// by the verb at write time (emitRow): never parsed back out of rendered text.
 type captured struct {
 	text string
-	ids  map[int]string // line index within text
+	ids  map[int]string
 }
 
-// rows pairs the split lines with the ids their verb declared. A line with no
-// id is chrome: not selectable, and nothing to yank or attend.
+// A line with no id is chrome: not selectable.
 func (c captured) rows(lines []string) []pitRow {
 	out := make([]pitRow, 0, len(lines))
 	for i, line := range lines {
@@ -489,9 +397,7 @@ func (c captured) rows(lines []string) []pitRow {
 	return out
 }
 
-// lockedBuffer is a writer a command can hand to a goroutine of its own without
-// racing the read that follows. Verbs do that (the queue fetch, the tree walk),
-// and a data race in a dry run is still a data race.
+// lockedBuffer is safe for a verb that writes from a goroutine of its own.
 type lockedBuffer struct {
 	mu    sync.Mutex
 	b     strings.Builder
@@ -506,7 +412,6 @@ func (w *lockedBuffer) Write(p []byte) (int, error) {
 	return w.b.Write(p)
 }
 
-// WriteRow writes one line and remembers what it is about.
 func (w *lockedBuffer) WriteRow(line, id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -535,23 +440,10 @@ func splitOutputLines(s string) []string {
 	return strings.Split(s, "\n")
 }
 
-// ---------------------------------------------------------------------------
-// Completion: the router's own, again rather than a second copy.
-// ---------------------------------------------------------------------------
-
-// complete returns the candidates for a partially typed command line, in the
-// protocol's "value<TAB>description" shape. It calls the SAME hidden
-// `__complete` verb the shell completion scripts call, so aria ids, form ids,
-// flags, paths, outfits and prompt-context refs are all completed here by the
-// code that already knew how -- asking, as a shell cannot, for descriptions.
-//
-// Two things only the pager knows are supplied around that call: the aria on
-// screen, which is whose board keys and skills a completion should offer
-// (completionSubject), and a path fallback for a word that names a
-// directory, which fish gives its users for free and this box did not.
+// complete calls the same hidden `__complete` verb the shell scripts call,
+// adding the aria on screen and a path fallback.
 func (in *interactiveInput) complete(line string) []string {
 	argv := tokenize(line)
-	// A trailing space means "the cursor is on a fresh word".
 	atBoundary := line == "" || strings.HasSuffix(line, " ")
 	current := ""
 	if !atBoundary && len(argv) > 0 {
@@ -559,17 +451,14 @@ func (in *interactiveInput) complete(line string) []string {
 		argv = argv[:len(argv)-1]
 	}
 	if len(argv) == 0 {
-		// Completing the VERB itself: the router's own names, plus the overlay
-		// aliases that exist only here.
 		verbs := append(buildRouter("figaro", in.loaded).CommandCandidates(),
 			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"),
 			cmdkit.Candidate("notifications", "what figaro said, and what went wrong (space n)"))
 		return matchPrefix(verbs, current)
 	}
 	req := append([]string{"__complete", argv[0], "--describe", "--current", current, "--"}, argv[1:]...)
-	// in.figaroID, NOT in.currentID(): the completer runs from dispatch, and
-	// dispatch holds in.mu (stream.go). currentID takes it again, and a Go
-	// mutex is not reentrant: the first Tab froze the pager dead.
+	// in.figaroID, not in.currentID(): the completer runs from dispatch, which
+	// holds in.mu.
 	completionSubject = in.figaroID
 	out, _ := in.routeCaptured(req)
 	completionSubject = ""
@@ -580,14 +469,10 @@ func (in *interactiveInput) complete(line string) []string {
 	return cands
 }
 
-// commandVerbs is every verb the router knows.
 func commandVerbs(loaded *config.Loaded) []string {
 	return buildRouter("figaro", loaded).CommandNames()
 }
 
-// matchPrefix keeps the candidates whose VALUE starts with prefix, with their
-// descriptions. It used to strip the descriptions, which is how the protocol
-// came to carry a column nobody ever saw.
 func matchPrefix(cands []string, prefix string) []string {
 	out := cands[:0:0]
 	for _, c := range cands {
@@ -601,8 +486,6 @@ func matchPrefix(cands []string, prefix string) []string {
 	return out
 }
 
-// commonPrefix is what Tab inserts when several candidates share a head: the
-// longest thing that cannot be wrong.
 func commonPrefix(ss []string) string {
 	if len(ss) == 0 {
 		return ""
@@ -619,10 +502,8 @@ func commonPrefix(ss []string) string {
 	return p
 }
 
-// oneSpec is the single positional listen and attend take, from the argv the
-// box already lexed. Joining the words with spaces made `:attend a b` mean an
-// aria called "a b" and pushed the refusal down into a resolver that could
-// only say it did not exist.
+// oneSpec takes exactly one positional; joining words would make `:attend a b`
+// an aria called "a b".
 func oneSpec(verb string, args []string) (string, error) {
 	switch len(args) {
 	case 0:
@@ -633,16 +514,13 @@ func oneSpec(verb string, args []string) (string, error) {
 	return "", fmt.Errorf("%s takes one aria: %s <id|@role>[:<turn>]", verb, verb)
 }
 
-// runLive hosts a live verb in the pit. The view is built off the input
-// goroutine (it dials) and installed under the render lock.
 func (in *interactiveInput) runLive(name, spec string) { in.openLive(name, spec, false) }
 
 // openLive dials off the input goroutine and installs under the render lock.
 func (in *interactiveInput) openLive(name, spec string, full bool) {
 	if spec == "" {
-		spec = in.currentID() // the aria on screen, per THE SUBJECT rule
+		spec = in.currentID()
 	}
-	// A pit that opens fullscreen is its own announcement.
 	if !full {
 		in.progress("…" + name + " " + spec)
 	}
@@ -653,7 +531,6 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 			return
 		}
 		view.closeConn = closeView
-		// THE PIT host repaints the pager; the view never writes anywhere.
 		view.repaint = in.renderLocked
 		in.mu.Lock()
 		in.lt.tr.showLivePit(name, view, full)
@@ -661,7 +538,6 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 	}()
 }
 
-// renderLocked repaints the pager from a background pump.
 func (in *interactiveInput) renderLocked() {
 	in.mu.Lock()
 	in.lt.render()

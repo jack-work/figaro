@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// An export taken by a pre-rename figaro names the outfit "loadout".
 func TestPortableAriaReadsLegacyOutfitFieldAndWritesOnlyNew(t *testing.T) {
 	var d portableAria
 	blob := `{"figaro":"aria/v1","loadout":"legacy","mantra":"m","messages":[]}`

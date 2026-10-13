@@ -54,9 +54,8 @@ func TestRenderListRowsUsesReducedColumnsOnMediumTerminals(t *testing.T) {
 	}
 }
 
-// A mantra that names another aria used to take the row: the pager read the
-// first aria-shaped word out of the RENDERED line, and `figaro ls` prints the
-// mantra before the id. Gluck attended and yanked the wrong aria that way.
+// A mantra naming another aria must not take the row: ids come from the verb,
+// not the rendered text.
 func TestListRowIDComesFromTheVerbNotTheRenderedText(t *testing.T) {
 	rows := []figtree.Row{{
 		Marker: "▸",

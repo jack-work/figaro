@@ -14,20 +14,16 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// Moving an aria between stores.
-
-// portableAria is the file format. Deliberately plain: a JSON object a human
-// can read, diff and hand-edit, with the messages verbatim as they sit in the
-// IR. It carries no node ids, no LTs and no fork bases, because those belong
-// to the store an aria happens to be in and not to the aria.
+// portableAria carries the messages verbatim and no node ids, LTs or fork
+// bases: those belong to the store, not the aria.
 type portableAria struct {
-	Figaro   string            `json:"figaro"`             // format marker + version
-	AriaID   string            `json:"aria_id,omitempty"`  // the id it had; offered, not demanded
-	Outfit   string            `json:"outfit"`             // the outfit name to resolve or create
-	Mantra   string            `json:"mantra,omitempty"`   // for the human reading the file
-	Provider string            `json:"provider,omitempty"` // provenance, for the list sidecar
+	Figaro   string            `json:"figaro"`
+	AriaID   string            `json:"aria_id,omitempty"`
+	Outfit   string            `json:"outfit"`
+	Mantra   string            `json:"mantra,omitempty"`
+	Provider string            `json:"provider,omitempty"`
 	Model    string            `json:"model,omitempty"`
-	Exported string            `json:"exported,omitempty"` // RFC3339, provenance only
+	Exported string            `json:"exported,omitempty"`
 	Board    message.Patch     `json:"form,omitempty"`
 	Messages []message.Message `json:"messages"`
 }
@@ -51,7 +47,6 @@ func (d *portableAria) UnmarshalJSON(b []byte) error {
 
 const portableFormat = "aria/v1"
 
-// runExport writes an aria to a file (or stdout) in the portable format.
 func runExport(loaded *config.Loaded, args []string) {
 	id, out := "", ""
 	for i := 0; i < len(args); i++ {
@@ -102,17 +97,14 @@ func runExport(loaded *config.Loaded, args []string) {
 	fmt.Fprintf(stderrw, "exported %s (%d messages) to %s\n", id, len(doc.Messages), out)
 }
 
-// exportMessages reads an aria's whole conversation, in LT order, minus the
-// scaffolding that does not travel.
 func exportMessages(ctx context.Context, acli *sdk.Angelus, id string) ([]message.Message, error) {
 	resp, err := acli.IRAll(ctx, id, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", id, err)
 	}
-	// An export is the only copy once the aria is deleted, so a short read
-	// is an error and never a smaller file. Issue #23 was one page of a
-	// capped read written out with its count reported as the whole aria.
-	// Short only: a live aria can grow between the count and the read.
+	// An export is the only copy once the aria is deleted, so a short read is
+	// an error (#23). Short only: a live aria can grow between the count and
+	// the read.
 	if len(resp.Entries) < resp.Total {
 		return nil, fmt.Errorf("read %s: got %d of %d entries; refusing to write a partial export", id, len(resp.Entries), resp.Total)
 	}
@@ -122,11 +114,8 @@ func exportMessages(ctx context.Context, acli *sdk.Angelus, id string) ([]messag
 		if err := json.Unmarshal(e.Payload, &m); err != nil {
 			return nil, fmt.Errorf("parse LT=%d: %w", e.LT, err)
 		}
-		// Scaffolding does not travel. The genesis tic and the outfit-birth
-		// stamp belong to the store's topology: the destination mints its own
-		// when it spawns, and a contentless input tic is a pure form
-		// carrier, whose effect is already in the folded board below. What is
-		// left is the conversation.
+		// Scaffolding does not travel: the genesis tic and a contentless input
+		// tic belong to the store's topology.
 		if m.Role == message.RoleGenesis || (m.Role == message.RoleInput && len(m.Content) == 0) {
 			continue
 		}
@@ -135,8 +124,8 @@ func exportMessages(ctx context.Context, acli *sdk.Angelus, id string) ([]messag
 	return msgs, nil
 }
 
-// exportAria gathers everything portable about one aria, through the angelus -
-// so it works while the aria is live, and never touches the store's flock.
+// exportAria goes through the angelus, so it works while the aria is live and
+// never touches the store's flock.
 func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, id string) (portableAria, error) {
 	msgs, err := exportMessages(ctx, acli, id)
 	if err != nil {
@@ -149,9 +138,8 @@ func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, i
 		Messages: msgs,
 	}
 
-	// The form lives on the ARIA socket, not the angelus, so this
-	// attaches: which also revives a dormant aria, exactly as `figaro state`
-	// does. It is the same fold the agent itself would read.
+	// The form lives on the aria socket, so this attaches and revives a
+	// dormant aria.
 	var board form.Snapshot
 	var boardErr error
 	WithSessionFor(loaded, id, func(s *Session) error {
@@ -168,7 +156,7 @@ func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, i
 	}
 	keys := map[string]json.RawMessage{}
 	for k, v := range board.All() {
-		// The destination stamps its own id; carrying this one would lie.
+		// The destination stamps its own id.
 		if k == "aria_id" {
 			continue
 		}
@@ -198,7 +186,6 @@ func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, i
 	return doc, nil
 }
 
-// runImport restores an exported aria as a new conversation in this store.
 func runImport(loaded *config.Loaded, args []string) {
 	path := ""
 	for _, a := range args {

@@ -14,15 +14,10 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// setWait is `--wait`: the caller accepts a tool round's worth of latency in
-// exchange for the writer's verdict, instead of the acknowledgement that the
-// patch was queued. Package-level because the CLI's set surface is a family
-// of small entry points and threading a bool through all of them would be
-// noise; it is set once, by the flag, before any of them runs.
+// setWait is `--wait`: the writer's verdict instead of the queued
+// acknowledgement. Set once by the flag before any entry point runs.
 var setWait bool
 
-// runSetArgs patches a form key. Supports dotted paths like
-// system.tags[42].cache_control.
 func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 	value := json.RawMessage(raw)
@@ -55,7 +50,6 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
 }
 
-// runFormSet is `fig form set`, in both spellings the grammar allows:
 func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	switch len(args) {
 	case 0:
@@ -79,8 +73,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	return nil
 }
 
-// runFormDelete is `fig form delete a.b,c`: key paths, comma-separated, in
-// the -D grammar. `unset` is the same verb under its older name.
+// runFormDelete takes key paths, comma-separated; `unset` is the same verb.
 func runFormDelete(loaded *config.Loaded, ariaID string, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: form delete <path>[,<path>…]")
@@ -100,8 +93,6 @@ func runFormDelete(loaded *config.Loaded, ariaID string, args []string) error {
 	return nil
 }
 
-// runFormHelp is `fig form help <topic>`: the router's own page, printed from
-// the form family's third position rather than mapped onto a stateful verb.
 func runFormHelp(ctx *cmdkit.RunContext, args []string) error {
 	if len(args) == 0 {
 		ctx.Help("state")
@@ -113,7 +104,6 @@ func runFormHelp(ctx *cmdkit.RunContext, args []string) error {
 	return fmt.Errorf("no help topic %q (try `figaro help` for the list)", args[0])
 }
 
-// runUnsetArgs removes form keys.
 func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 	keys := map[string]json.RawMessage{}
 	var drops []string
@@ -146,17 +136,14 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 		fmt.Fprintln(stderrw, "unset: nothing to do")
 		return
 	}
-	// A removal names something the caller believes is there, so an absent
-	// key is a refusal rather than a silent success.
+	// An absent key is a refusal, not a silent success.
 	resp := mustCallSetAsserting(loaded, ariaID, form.Build(form.Snapshot{}, keys, drops), ifVersion)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("unset"), strings.Join(args, ", "), resp.figaroID, resp.at())
 }
 
-// runForm prints the current form snapshot.
 func runForm(loaded *config.Loaded, ariaID string) {
-	// `<host>/<intrinsic>`: the host is attached to, the intrinsic selects which
-	// of its forms is printed. "" is the identity segment, the board.
+	// `<host>/<intrinsic>`: "" is the identity segment, the board.
 	spec, intrinsic := splitIntrinsic(ariaID)
 	if !knownIntrinsic(intrinsic) {
 		die("no intrinsic %q (have: %s; %s is the host's own form, and is implied)",
@@ -175,9 +162,7 @@ func runForm(loaded *config.Loaded, ariaID string) {
 	})
 }
 
-// nestSnapshot rebuilds the tree the dotted keys describe. Flatness is how the
-// form is STORED: one key, one value, one patch record: not what it is: a
-// reader wants `system.model` under `system`, and a script wants to walk it.
+// Flat is how the form is stored, not what it is.
 func nestSnapshot(snap form.Snapshot) map[string]any {
 	root := map[string]any{}
 	for k, v := range snap.All() {
@@ -211,7 +196,6 @@ func nestSnapshot(snap form.Snapshot) map[string]any {
 	return root
 }
 
-// parseFormPath splits a dotted key into top-level key + segments.
 func parseFormPath(s string) (string, []string, error) {
 	if s == "" {
 		return "", nil, fmt.Errorf("empty key")
@@ -265,7 +249,6 @@ func parseFormPath(s string) (string, []string, error) {
 	return top, path, nil
 }
 
-// deepSetJSON sets a value at a nested path.
 func deepSetJSON(current json.RawMessage, path []string, value json.RawMessage) (json.RawMessage, error) {
 	var root any
 	if len(current) == 0 || string(current) == "null" {
@@ -301,8 +284,7 @@ func deepSetJSON(current json.RawMessage, path []string, value json.RawMessage) 
 	return out, nil
 }
 
-// deepDeleteJSON deletes a value at a nested path. Returns nil if the
-// top-level key should be removed.
+// Returns nil if the top-level key should be removed.
 func deepDeleteJSON(current json.RawMessage, path []string) (json.RawMessage, bool, error) {
 	if len(path) == 0 {
 		return nil, true, nil
@@ -350,9 +332,7 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 	return changed
 }
 
-// fetchFormSnapshot returns the aria's live form snapshot via the
-// angelus, or an empty snapshot on failure (best-effort: callers degrade
-// gracefully).
+// fetchFormSnapshot is best-effort: an empty snapshot on failure.
 func fetchFormSnapshot(loaded *config.Loaded, ariaID string) form.Snapshot {
 	var snap form.Snapshot
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
@@ -366,9 +346,7 @@ func fetchFormSnapshot(loaded *config.Loaded, ariaID string) form.Snapshot {
 	return snap
 }
 
-// mustFetchFormKey reads one key AND the version the board stood at, so
-// the write that follows can be conditional: editing inside a value means
-// reading it first, and two shells doing that must not clobber each other.
+// mustFetchFormKey reads the version too, so the write that follows can be conditional.
 func mustFetchFormKey(loaded *config.Loaded, ariaID, key string) (json.RawMessage, uint64) {
 	var result json.RawMessage
 	var version uint64
@@ -391,9 +369,7 @@ type setResult struct {
 	resp     *rpc.SetResponse
 }
 
-// verb reports what actually happened, so the CLI stops claiming a write it
-// did not make. A set of the value a board already holds reduces to nothing,
-// and saying "set" there is a lie a script cannot see through.
+// verb reports what happened: a set of the value already held reduces to nothing.
 func (r setResult) verb(did string) string {
 	if r.resp == nil {
 		return did
@@ -406,8 +382,6 @@ func (r setResult) verb(did string) string {
 	}
 }
 
-// at names the durable version a write landed at, when there is one. A
-// script doing read-modify-write quotes it back as if_version.
 func (r setResult) at() string {
 	if r.resp == nil || r.resp.Version == 0 {
 		return ""
@@ -426,10 +400,8 @@ func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVe
 func callSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64, assert bool) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		// --wait is the caller accepting a tool round's worth of latency in
-		// exchange for the writer's verdict. The timeout is longer for the
-		// same reason, and it is still a timeout: an aria mid-turn answers
-		// when the round ends, not when the patch is submitted.
+		// An aria mid-turn answers when the round ends, so --wait's
+		// timeout is longer.
 		timeout := 10 * time.Second
 		if setWait {
 			timeout = 5 * time.Minute

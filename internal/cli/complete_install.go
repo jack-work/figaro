@@ -8,9 +8,6 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 )
 
-// runCompletionInstall writes the generated completion script for
-// shellArg (or the detected shell, when empty) to the standard
-// autoload path for that shell. Creates intermediate directories.
 func runCompletionInstall(r *cmdkit.Router, shellArg string) error {
 	shell, err := resolveShell(shellArg)
 	if err != nil {
@@ -38,8 +35,6 @@ func runCompletionInstall(r *cmdkit.Router, shellArg string) error {
 	return nil
 }
 
-// resolveShell returns the requested shell, or detects it from
-// $SHELL when arg is empty.
 func resolveShell(arg string) (cmdkit.CompletionShell, error) {
 	if arg != "" {
 		switch arg {
@@ -63,9 +58,7 @@ func resolveShell(arg string) (cmdkit.CompletionShell, error) {
 	}
 }
 
-// completionInstallPath resolves the standard autoload path for a
-// shell. The optional note is printed to stderr after install (for
-// extra setup steps the user may need to take).
+// The note is printed to stderr after install.
 func completionInstallPath(shell cmdkit.CompletionShell) (path, note string, err error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -11,64 +11,42 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// Form deltas as ROWS: one row per key, each a pseudonode of its own. What
-// draws them beside a block is the adornment (adornment.go); this file is
-// the rows themselves, ordered and worded.
-
-// formDeltaKeyCap bounds the key column so one long key does not push
-// every transition off the right edge.
 const formDeltaKeyCap = 28
 
 // formDeltaValueFloor is the narrowest a value is squeezed to before the row
-// gives up on showing both sides of the transition. Below it the row says
-// nothing a reader can use.
+// gives up on showing both sides.
 const formDeltaValueFloor = 6
 
-// forkGlyph names the aria this one was forked from, beside the parent id in
-// the question's header row. U+2442 is carried by FreeMono, which is the same
-// fallback path that already paints the pit's 𝄚 and ♭.
+// U+2442 is carried by FreeMono, the same fallback that paints the pit's glyphs.
 const forkGlyph = "⑂"
 
-// deltaGlyph is the adornment's marker, and the head of its snake.
 const deltaGlyph = "Δ"
 
-// deadGlyph marks the row saying a studied form's source died. A dead
-// form is not a key transition either, so it takes a banner row: glyph
-// and id, nothing else.
 const deadGlyph = "⊘"
 
-// absentValue stands in for the side of a transition that does not exist:
-// a key being born has no old, a key removed has no new.
+// absentValue is the missing side of a transition: a key born has no old, a key
+// removed has no new.
 const absentValue = "∅"
 
-// emptyValue is a key that exists and holds the empty string.
 const emptyValue = `""`
 
-// deltaRow is one delta: one key's transition, or a banner (a fork, a
-// death) that carries a glyph and an id and nothing else.
 type deltaRow struct {
-	glyph  string // banner rows only
+	glyph  string
 	key    string
 	from   deltaCell
 	to     deltaCell
 	banner bool
 }
 
-// deltaCell is one side of a transition. Absence and the empty string are
-// different rows: ∅ means the key did not exist.
+// Absence and the empty string are different rows.
 type deltaCell struct {
 	text    string
 	present bool
 }
 
-// deltaRows orders the rows: the fork banner first when it is lifted out of
-// the list, then this figaro's own board, then every other form by id, keys
-// sorted.
-//
-// liftFork is the INQUIRY's: a fork happens on the turn's question and
-// nowhere else (see forkParent), so there the glyph and the parent id rise
-// into the header row and leave the list. On any other block a forked_from
-// delta is a delta like any other.
+// deltaRows: the fork banner first when lifted, then this figaro's own board,
+// then every other form by id. liftFork is the inquiry's: a fork happens only
+// on the turn's question.
 func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 	if len(deltas) == 0 {
 		return nil
@@ -82,11 +60,8 @@ func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 			out = append(out, deltaRow{glyph: deadGlyph, key: sanitize(formID), banner: true})
 		}
 		for _, k := range g.keys {
-			// A LIFTED FORK LEAVES NO ROWS BEHIND. The glyph and the parent
-			// id ride the question's header instead, and the keys the fork
-			// patch wrote are what the header is made of; drawing them again
-			// would say the same thing twice. Anywhere else a forked_from is
-			// a key like any other.
+			// A lifted fork leaves no rows behind: the glyph and
+			// parent id ride the question's header.
 			if liftFork && forkKey(g.kind, k) && forkParent(g) != "" {
 				continue
 			}
@@ -101,19 +76,11 @@ func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 	return out
 }
 
-// deltaRowCount is how many rows a delta set draws, WITHOUT drawing them: the
-// banner a dead form gets, plus one row per surviving key, less the keys a
-// lifted fork consumed. forked says the lift found a parent, which is the only
-// thing that suppresses a key (see deltaRows).
-//
-// It exists because the two cheapest questions about an adornment -- "is there
-// anything in it" and "how many refs does the selection walk" -- were both
-// answered by building every row of it, which grouped and sorted the whole
-// set. On the frame path that is the difference between a map scan and a
-// sort per block per frame.
+// deltaRowCount counts without building rows; forked says the lift found a
+// parent, the only thing that suppresses a key.
 func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) int {
 	n := 0
-	var dead map[string]bool // only allocated if a form actually died
+	var dead map[string]bool
 	for key, d := range deltas {
 		if d.Event == livedoc.FormDeleted {
 			if dead == nil {
@@ -121,7 +88,7 @@ func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) i
 			}
 			if !dead[d.Form] {
 				dead[d.Form] = true
-				n++ // one banner per dead form, as groupDeltas folds it
+				n++
 			}
 			continue
 		}
@@ -133,12 +100,10 @@ func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) i
 	return n
 }
 
-// anyDeltaRow reports whether an adornment has anything to open.
 func anyDeltaRow(deltas map[string]livedoc.FormDelta, liftFork, forked bool) bool {
 	return deltaRowCount(deltas, liftFork, forked) > 0
 }
 
-// deltaKeyWidth is the key column shared by a set of rows.
 func deltaKeyWidth(rows []deltaRow) int {
 	w := 0
 	for _, r := range rows {
@@ -152,10 +117,7 @@ func deltaKeyWidth(rows []deltaRow) int {
 	return w
 }
 
-// deltaRowText is one row as the reader sees it: the key, then the
-// transition, fitted to width columns. ONE ROW PER KEY IS THE WHOLE POINT,
-// so a value too long for the space it has is elided rather than wrapped;
-// yanking the row gives it back whole (see deltaRowFull).
+// One row per key: a value too long is elided, not wrapped; yank gives it back whole.
 func deltaRowText(r deltaRow, keyw, width int) string {
 	if r.banner {
 		return truncCols(r.glyph+" "+r.key, width)
@@ -173,12 +135,9 @@ func deltaRowText(r deltaRow, keyw, width int) string {
 	return truncCols(b.String(), width)
 }
 
-// deltaArrow separates the two sides of a transition.
 const deltaArrow = " -> "
 
-// fitTransition shares room between the two sides of a transition. The NEW
-// value gets the odd column and whatever the old one does not want: a
-// reader is reading forward.
+// The new value gets the odd column and whatever the old one does not want.
 func fitTransition(from, to string, room int) (string, string) {
 	fw, tw := runewidth.StringWidth(from), runewidth.StringWidth(to)
 	if fw+tw <= room {
@@ -194,8 +153,6 @@ func fitTransition(from, to string, room int) (string, string) {
 	return elide(from, room-tw), to
 }
 
-// elide truncates to w columns, spending the last one on an ellipsis so the
-// row says that it dropped something.
 func elide(s string, w int) string {
 	if w < formDeltaValueFloor {
 		w = formDeltaValueFloor
@@ -206,9 +163,7 @@ func elide(s string, w int) string {
 	return truncCols(s, w-1) + "…"
 }
 
-// deltaRowFull is one row whole: nothing capped, nothing elided. It is what
-// the row HASHES as and what it YANKS as, so a value that differs past the
-// column the screen ran out of is a different row.
+// deltaRowFull is what the row hashes and yanks as, uncapped.
 func deltaRowFull(r deltaRow) string {
 	if r.banner {
 		return r.glyph + " " + r.key
@@ -216,7 +171,6 @@ func deltaRowFull(r deltaRow) string {
 	return r.key + "  " + cell(r.from) + deltaArrow + cell(r.to)
 }
 
-// cell renders one side of a transition, single-lined.
 func cell(v deltaCell) string {
 	if !v.present {
 		return absentValue
@@ -228,14 +182,12 @@ func cell(v deltaCell) string {
 	return s
 }
 
-// flatten puts a multi-line value on one row.
 func flatten(s string) string {
 	return strings.Join(strings.Fields(sanitize(s)), " ")
 }
 
-// sanitize drops control characters from untrusted form text. The row
-// clipper passes ANSI escapes through uncounted, so a stored \x1b[2J would
-// otherwise erase the display.
+// The row clipper passes ANSI escapes through uncounted, so a stored \x1b[2J
+// would erase the display.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
@@ -248,12 +200,10 @@ func sanitize(s string) string {
 	}, s)
 }
 
-// deltaGroup is one form's slice of a delta set, keys bare (form prefix
-// stripped), plus whether the form itself died in this window.
 type deltaGroup struct {
 	kind    livedoc.FormKind
 	deleted bool
-	keys    []string // sorted bare keys
+	keys    []string
 	byKey   map[string]livedoc.FormDelta
 }
 
@@ -278,8 +228,6 @@ func groupDeltas(deltas map[string]livedoc.FormDelta) (map[string]*deltaGroup, [
 		sort.Strings(g.keys)
 		order = append(order, id)
 	}
-	// The bound board first -- it is this figaro's own state -- then the
-	// rest by id, stably.
 	sort.Slice(order, func(i, j int) bool {
 		bi, bj := groups[order[i]].kind == livedoc.FormBound, groups[order[j]].kind == livedoc.FormBound
 		if bi != bj {
@@ -290,15 +238,9 @@ func groupDeltas(deltas map[string]livedoc.FormDelta) (map[string]*deltaGroup, [
 	return groups, order
 }
 
-// forkedFromKey is the bare key a fork's birth patch stamps on the new
-// aria's board. Named once: forkParent reads it off a group, forkParentOf
-// reads it off the raw set, and they must agree.
 const forkedFromKey = "system.forked_from"
 
-// forkParent names the aria this figaro was forked from, when the window
-// holds a fork's birth patch. A fork's birth patch stamps
-// system.forked_from beside the new aria_id, so the parent comes off the
-// delta itself.
+// forkParent comes off the fork's birth patch, which stamps system.forked_from.
 func forkParent(g *deltaGroup) string {
 	if g.kind != livedoc.FormBound {
 		return ""
@@ -309,15 +251,11 @@ func forkParent(g *deltaGroup) string {
 	return ""
 }
 
-// forkKeys are consumed by the lifted fork and suppressed from the list, or
-// the header and its raw material both draw.
 func forkKey(kind livedoc.FormKind, key string) bool {
 	return kind == livedoc.FormBound && (key == forkedFromKey || key == "aria_id")
 }
 
-// deltaFormName prefixes a key with the form it belongs to. The bound
-// board says nothing (the row is about this figaro's own state); every
-// other form is named by id, dotted onto the key.
+// The bound board is unnamed; every other form is named by id.
 func deltaFormName(formID string, g *deltaGroup) string {
 	if g.kind == livedoc.FormBound {
 		return ""
@@ -325,10 +263,8 @@ func deltaFormName(formID string, g *deltaGroup) string {
 	return formID + "."
 }
 
-// unquote renders a raw JSON value for a row: a JSON string comes back as
-// its text (escapes decoded, so a credo's newlines are newlines and flatten
-// can fold them), anything else as the raw JSON it is. An absent raw value
-// is an absent cell, distinct from an empty string.
+// A JSON string comes back decoded; anything else as raw JSON; absent is an absent
+// cell.
 func unquote(raw []byte) deltaCell {
 	s := strings.TrimSpace(string(raw))
 	if s == "" {

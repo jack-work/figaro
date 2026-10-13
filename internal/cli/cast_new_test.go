@@ -2,9 +2,7 @@ package cli
 
 import "testing"
 
-// The `-C` grammar, at the parser boundary. These are the shapes Gluck wrote
-// down, and the point of testing them here is that each one has to survive
-// bundle expansion, which is where the last flag to be added broke.
+// Each shape has to survive bundle expansion.
 func TestCastFlagBundlesWithDressing(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -35,8 +33,6 @@ func TestCastFlagBundlesWithDressing(t *testing.T) {
 	}
 }
 
-// The role id is the one @-sigiled positional. The sigil is what makes this
-// lexical rather than a guess, exactly as it is in the study/cast grammar.
 func TestLiftRoleArg(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -68,8 +64,6 @@ func TestLiftRoleArg(t *testing.T) {
 	}
 }
 
-// The lift must leave the rest of the argv exactly as the prompt parser
-// expects it, including the boundary and everything past it.
 func TestLiftRoleArgKeepsTheRest(t *testing.T) {
 	role, kept, err := liftRoleArg([]string{"-C", "@abc", "-O", "sonn5", "--", "do", "@it"})
 	if err != nil {

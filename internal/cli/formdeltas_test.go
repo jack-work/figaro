@@ -24,8 +24,6 @@ func fdPrev(form string, kind livedoc.FormKind, event livedoc.FormEvent, prev, v
 	return d
 }
 
-// rowTexts is a delta set as the rows a reader would see, at width columns,
-// with the fork left in the list (a node's coordinate).
 func rowTexts(deltas map[string]livedoc.FormDelta, width int) []string {
 	rows := deltaRows(deltas, false)
 	keyw := deltaKeyWidth(rows)
@@ -48,9 +46,8 @@ func wantTexts(t *testing.T, got []string, want ...string) {
 	}
 }
 
-// One row per key: the key, then the transition. The board's rows draw first
-// and unprefixed; every other form's key is dotted onto its id. The key
-// column is padded to the widest key so the arrows line up.
+// The board's rows draw first and unprefixed; every other form's key is dotted
+// onto its id.
 func TestFormDeltaRows(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{
 		"@f1.status": fdPrev("@f1", livedoc.FormStudied, livedoc.FormSet, `"open"`, `"merged"`),
@@ -64,8 +61,7 @@ func TestFormDeltaRows(t *testing.T) {
 	)
 }
 
-// A removed key still has an old side; a dead form is not a key at all, so it
-// takes a banner row of its own.
+// A removed key still has an old side; a dead form takes a banner row.
 func TestFormDeltaRemovedVersusDeleted(t *testing.T) {
 	wantTexts(t, rowTexts(map[string]livedoc.FormDelta{
 		"@f1.brief": fdPrev("@f1", livedoc.FormStudied, livedoc.FormRemoved, `"ship it"`, ""),
@@ -76,15 +72,12 @@ func TestFormDeltaRemovedVersusDeleted(t *testing.T) {
 	}, 120), "⊘ @f1")
 }
 
-// A role recast is an ordinary row: target-aria, old to new.
 func TestRoleRecastIsARow(t *testing.T) {
 	wantTexts(t, rowTexts(map[string]livedoc.FormDelta{
 		"@r1.target-aria": fdPrev("@r1", livedoc.FormRole, livedoc.FormSet, `"a3"`, `"a9"`),
 	}, 120), "@r1.target-aria  a3 -> a9")
 }
 
-// A multi-line value is one row. A form value can be a whole credo, and the
-// row it lands on is still a row.
 func TestFormDeltaValuesAreSingleLined(t *testing.T) {
 	rows := rowTexts(map[string]livedoc.FormDelta{
 		"a1.credo": fd("a1", livedoc.FormBound, livedoc.FormSet, `"one\ntwo\n\nthree"`),
@@ -94,8 +87,7 @@ func TestFormDeltaValuesAreSingleLined(t *testing.T) {
 	}
 }
 
-// A form value is untrusted text: no control sequence it carries may reach a
-// row, at any width, in the text or in the yank.
+// A form value is untrusted text: no control sequence may reach a row or the yank.
 func TestFormDeltaStripsControlSequences(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{
 		"a1.k":            fd("a1", livedoc.FormBound, livedoc.FormSet, `"safe\u001b[2Jhidden"`),
@@ -115,16 +107,14 @@ func TestFormDeltaStripsControlSequences(t *testing.T) {
 	}
 }
 
-// An existing key holding the empty string is not an absent key.
 func TestFormDeltaEmptyStringIsNotAbsent(t *testing.T) {
 	wantTexts(t, rowTexts(map[string]livedoc.FormDelta{
 		"a1.k": fdPrev("a1", livedoc.FormBound, livedoc.FormSet, `""`, `"v"`),
 	}, 120), `k  "" -> v`)
 }
 
-// ONE ROW PER KEY IS THE POINT, so a narrow pane elides the transition rather
-// than wrapping it, and the NEW value is what survives: a reader reads
-// forward. The row keeps its width whatever it had to drop.
+// A narrow pane elides the transition rather than wrapping it, and the new
+// value survives.
 func TestFormDeltaRowFitsItsWidth(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{
 		"a1.mantra": fdPrev("a1", livedoc.FormBound, livedoc.FormSet,
@@ -144,10 +134,8 @@ func TestFormDeltaRowFitsItsWidth(t *testing.T) {
 	}
 }
 
-// IDENTITY IS THE ROW, NOT THE TERMINAL. The copy and the hash of a delta row
-// are taken from the whole row, so two rows that differ only past the column
-// the screen ran out of are two rows to a yank and to the selection's change
-// detection.
+// The copy and the hash of a delta row are taken from the whole row, not the
+// clipped one.
 func TestDeltaRowIdentityIsNotClipped(t *testing.T) {
 	long := func(tail string) livedoc.FormDelta {
 		return fd("a1", livedoc.FormBound, livedoc.FormSet, `"`+strings.Repeat("x", 240)+tail+`"`)

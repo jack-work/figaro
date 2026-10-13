@@ -1,9 +1,5 @@
 package cli
 
-// Which rows the listing withholds. The deadline itself is the store's
-// (internal/store/ttl.go) and the deletion is the daemon's; this covers the
-// client's reading of both.
-
 import (
 	"testing"
 	"time"
@@ -13,13 +9,10 @@ import (
 
 var listTTLNow = time.Date(2026, 9, 3, 23, 0, 0, 0, time.UTC).UnixMilli()
 
-// ttlRow is a dormant conversation with no lifetime, at the given vector, drawn
-// beneath parent.
 func ttlRow(id, parent string, vec ...int) rpc.FigaroInfoResponse {
 	return rpc.FigaroInfoResponse{ID: id, State: "dormant", Parent: parent, Vector: vec}
 }
 
-// expiredAt returns the row with a lifetime that ended ago before now.
 func expiredAt(f rpc.FigaroInfoResponse, ago time.Duration) rpc.FigaroInfoResponse {
 	f.TTLMS = time.Hour.Milliseconds()
 	f.ExpiresAt = listTTLNow - ago.Milliseconds()
@@ -59,8 +52,8 @@ func TestDropExpiredHidesAnExpiredDormantAria(t *testing.T) {
 	}
 }
 
-// The same fixture one second BEFORE the deadline: without this the test above
-// would pass on a filter that hid every row carrying system.ttl.
+// One second before the deadline: a filter that hid every row carrying
+// system.ttl would pass the test above.
 func TestDropExpiredKeepsALifetimeStillRunning(t *testing.T) {
 	figs := []rpc.FigaroInfoResponse{
 		ttlRow("keeper", "", 0),
@@ -73,7 +66,6 @@ func TestDropExpiredKeepsALifetimeStillRunning(t *testing.T) {
 	}
 }
 
-// A turn in flight and an attending shell are the two holds on an expired row.
 func TestDropExpiredKeepsAHeldRow(t *testing.T) {
 	live := expiredAt(ttlRow("busy", "", 0), time.Hour)
 	live.State = "active"
@@ -86,9 +78,7 @@ func TestDropExpiredKeepsAHeldRow(t *testing.T) {
 	}
 }
 
-// Residency is not a hold. The daemon keeps an idle agent in memory for
-// fifteen minutes by default and will not delete the node until it lets go;
-// the listing does not wait for that.
+// Residency is not a hold.
 func TestDropExpiredHidesAnIdleResidentAria(t *testing.T) {
 	idle := expiredAt(ttlRow("scratch", "", 0), time.Minute)
 	idle.State = "idle"
@@ -99,8 +89,6 @@ func TestDropExpiredHidesAnIdleResidentAria(t *testing.T) {
 	}
 }
 
-// An expired trunk with a branch that survives keeps its row: the branch is
-// drawn beneath it, and a hidden parent takes the whole subtree off the tree.
 func TestDropExpiredKeepsAnExpiredAncestorOfASurvivor(t *testing.T) {
 	parent := expiredAt(ttlRow("trunk", "", 0), time.Hour)
 	child := ttlRow("branch", "trunk", 0, 0)
@@ -112,9 +100,7 @@ func TestDropExpiredKeepsAnExpiredAncestorOfASurvivor(t *testing.T) {
 	}
 }
 
-// A promote moves where a row is drawn, so the reprieve has to follow Present
-// rather than Parent: the branch below is drawn under an ancestor its expired
-// forking parent no longer holds.
+// The reprieve follows Present, not Parent: a promote moves where a row is drawn.
 func TestDropExpiredFollowsThePresentedParent(t *testing.T) {
 	root := ttlRow("root", "", 0)
 	forkedFrom := expiredAt(ttlRow("trunk", "root", 0, 0), time.Hour)
@@ -137,8 +123,7 @@ func TestDropExpiredHidesAnExpiredUnboundForm(t *testing.T) {
 	}
 }
 
-// Anchors and ordinary arias state no lifetime, and the common listing is
-// entirely such rows: it must come back byte for byte, and untouched.
+// A listing with nothing expired comes back untouched.
 func TestDropExpiredReturnsTheInputWhenNothingExpired(t *testing.T) {
 	figs := []rpc.FigaroInfoResponse{ttlRow("a", "", 0), ttlRow("b", "a", 0, 0)}
 	kept, n := dropExpired(figs, listTTLNow)
@@ -148,8 +133,7 @@ func TestDropExpiredReturnsTheInputWhenNothingExpired(t *testing.T) {
 	}
 }
 
-// A parent link pointing back into its own subtree must not spin the reprieve
-// walk. The rows are nonsense; the termination is the assertion.
+// Termination is the assertion.
 func TestDropExpiredTerminatesOnACycle(t *testing.T) {
 	a := expiredAt(ttlRow("a", "b", 0), time.Hour)
 	b := ttlRow("b", "a", 1)

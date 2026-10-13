@@ -18,10 +18,9 @@ import (
 	"github.com/jack-work/figaro/internal/tui"
 )
 
-// The vault is figaro's embedded hush: its own identity, its own agent,
-// its own keyring entry (service "figaro", not "hush"). The hush binary
-// on PATH addresses a different instance, so lifecycle lives here.
-
+// The vault is figaro's embedded hush: its own identity, agent and keyring
+// entry (service "figaro"). The hush binary on PATH addresses a different
+// instance.
 func runVaultStatus() error {
 	h := MustHush()
 	fmt.Fprintf(stdout, "mode       %s\n", h.Mode())
@@ -50,9 +49,7 @@ func runVaultStatus() error {
 		fmt.Fprintf(stdout, "unlock     %s\n", method)
 	}
 
-	// A file- or exec-unlocked vault never reads the keyring, so
-	// reporting on the entry there invites the reader to fix something
-	// that is not in the path.
+	// A file- or exec-unlocked vault never reads the keyring.
 	if method == "file" || method == "exec" {
 		fmt.Fprintln(stdout, "keyring    not used by this unlock method")
 		return nil
@@ -121,9 +118,8 @@ func runVaultUnlock() error {
 			pp[i] = 0
 		}
 	}()
-	// A vault that unlocks from a file or a helper has no use for a
-	// keyring entry, and writing one would leave a second copy of the
-	// passphrase in a place the user did not choose.
+	// A file- or exec-unlocked vault must not get a keyring entry: a second
+	// copy of the passphrase.
 	if method := h.Config().Unlock.Method; method == "" || method == "auto" || method == "keyring" {
 		svc, acct := h.KeyringTarget()
 		if svc != "" && acct != "" {
@@ -154,9 +150,7 @@ func runVaultLock() error {
 	return nil
 }
 
-// vaultAppName is the name the vault answers to, and the keyring
-// service it scopes itself under. Dev shells pivot it with
-// FIGARO_HUSH_APP; MustHush reads the same variable.
+// Dev shells pivot the app name with FIGARO_HUSH_APP; MustHush reads the same variable.
 func vaultAppName() string {
 	if n := os.Getenv("FIGARO_HUSH_APP"); n != "" {
 		return n
@@ -164,8 +158,6 @@ func vaultAppName() string {
 	return "figaro"
 }
 
-// vaultUnlockKind is what the caller asked for on the command line, or
-// what we work out for him when he asked for nothing.
 type vaultUnlockKind string
 
 const (
@@ -174,9 +166,8 @@ const (
 	unlockKindAuto       vaultUnlockKind = ""
 )
 
-// resolveUnlockKind turns "no flag" into a choice. The rule is the one
-// the host imposes: with no keyring to remember a passphrase, asking
-// for one means asking for it forever, so the file is the default.
+// With no keyring to remember a passphrase, asking for one means asking
+// forever, so the file is the default.
 func resolveUnlockKind(kind vaultUnlockKind, h *managed.Hush) vaultUnlockKind {
 	if kind != unlockKindAuto {
 		return kind
@@ -198,7 +189,6 @@ func runVaultInit(kind vaultUnlockKind) error {
 	return initVault(h, resolveUnlockKind(kind, h))
 }
 
-// initVault creates the identity and leaves the agent running.
 func initVault(h *managed.Hush, kind vaultUnlockKind) error {
 	var pp []byte
 	var err error
@@ -248,11 +238,8 @@ func initVault(h *managed.Hush, kind vaultUnlockKind) error {
 	return nil
 }
 
-// runVaultReset throws away the identity and everything it encrypted,
-// makes a new one, and walks back through the provider logins that the
-// old identity was holding. The old files are renamed, never deleted:
-// if the tokens turn out to be recoverable after all, they are still
-// there, and if they are not, a stale file costs a kilobyte.
+// runVaultReset archives the identity and its tokens (renamed, never deleted),
+// makes a new one, and walks the provider logins again.
 func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error {
 	h := MustHush()
 	providers := vaultOAuthProviders(h)
@@ -278,9 +265,7 @@ func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error 
 		}
 	}
 
-	// Stop the agent first: it holds the decrypted identity, and it
-	// would go on serving the old one from memory while we write a new
-	// one to disk.
+	// Stop the agent first: it would go on serving the old identity from memory.
 	if err := h.Client().Ping(); err == nil {
 		if err := h.Client().Shutdown(); err != nil {
 			fmt.Fprintf(stderrw, "warning: couldn't stop the vault agent (%v)\n", err)
@@ -294,7 +279,6 @@ func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error 
 		case err == nil:
 			fmt.Fprintf(stdout, "forgot          %s:%s\n", svc, acct)
 		case errors.Is(err, keyring.ErrNotFound):
-			// Nothing was saved. Not worth a line.
 		default:
 			fmt.Fprintf(stderrw, "warning: couldn't clear the keyring entry (%v)\n", err)
 		}
@@ -320,9 +304,7 @@ func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error 
 	return reloginProviders(loaded, providers)
 }
 
-// vaultOAuthProviders names the providers whose tokens this identity is
-// holding, read before anything is moved: after the files are renamed
-// there is nothing left to ask.
+// Read before anything is moved: after the rename there is nothing left to ask.
 func vaultOAuthProviders(h *managed.Hush) []string {
 	cfg := h.Config()
 	if cfg == nil {
@@ -343,8 +325,6 @@ func vaultOAuthProviders(h *managed.Hush) []string {
 	return out
 }
 
-// archiveVaultFiles renames the identity and every oauth token file out
-// of the way, returning what it moved.
 func archiveVaultFiles(h *managed.Hush, providers []string, stamp string) ([]string, error) {
 	cfg := h.Config()
 	paths := []string{h.IdentityFile(), h.IdentityFile() + ".pub"}
@@ -365,10 +345,7 @@ func archiveVaultFiles(h *managed.Hush, providers []string, stamp string) ([]str
 	return moved, nil
 }
 
-// reloginProviders drives `figaro login <provider>` for each provider
-// the old identity held, in turn and interactively, and says which ones
-// took. One failure does not stop the rest: a browser flow that the
-// user abandons should not cost him the others.
+// One failure does not stop the rest.
 func reloginProviders(loaded *config.Loaded, providers []string) error {
 	var ok, failed []string
 	for _, name := range providers {
@@ -403,9 +380,7 @@ func wipeBytes(b []byte) {
 	}
 }
 
-// vaultUnlockKindFromFlags reads --file / --passphrase. Neither means
-// "decide for me"; both together is a contradiction and says so rather
-// than silently preferring one.
+// Neither flag means "decide for me"; both is a contradiction.
 func vaultUnlockKindFromFlags(file, passphrase bool) (vaultUnlockKind, error) {
 	switch {
 	case file && passphrase:

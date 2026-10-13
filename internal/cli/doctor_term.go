@@ -11,8 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// runDoctorTerm prints what figaro believes about this terminal, and what the
-// terminal itself says when asked.
 func runDoctorTerm() error {
 	w, h := term.Width(), term.Height()
 	fmt.Fprintf(stdout, "TERM         %s\n", envOr("TERM", "(unset)"))

@@ -7,8 +7,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// A stream's story is not a status code. The detail line is where an operator
-// reads whether the socket delivered anything and when.
 func TestStreamLineNamesTheShapeOfTheStream(t *testing.T) {
 	line := streamLine(&rpc.StreamStats{
 		Status: "incomplete", ErrClass: "unexpected_eof",
@@ -27,8 +25,6 @@ func TestStreamLineNamesTheShapeOfTheStream(t *testing.T) {
 	}
 }
 
-// A plain HTTP round earns no second line, and a clean stream stays quiet
-// about the fields that only matter when something went wrong.
 func TestStreamLineIsQuietWhenThereIsNothingToSay(t *testing.T) {
 	if got := streamLine(nil); got != "" {
 		t.Errorf("nil stream produced a line: %q", got)
@@ -41,8 +37,6 @@ func TestStreamLineIsQuietWhenThereIsNothingToSay(t *testing.T) {
 	}
 }
 
-// The verdict, in words: a socket that ended early, tool arguments that
-// matched no call, and a schema that moved are three different incidents.
 func TestStreamTroubleSummaryNamesEachFailure(t *testing.T) {
 	rounds := []rpc.ProviderRound{
 		{Seq: 1, Aria: "94f0752b", Method: "WS", DurationMS: 4000,
@@ -63,8 +57,6 @@ func TestStreamTroubleSummaryNamesEachFailure(t *testing.T) {
 	}
 }
 
-// An open socket that has said nothing is the incident people actually open
-// the doctor for.
 func TestStreamTroubleSummaryNamesASilentOpenStream(t *testing.T) {
 	rounds := []rpc.ProviderRound{
 		{Seq: 1, Aria: "94f0752b", Method: "WS", InFlight: true,
@@ -76,7 +68,6 @@ func TestStreamTroubleSummaryNamesASilentOpenStream(t *testing.T) {
 	}
 }
 
-// A healthy stream says nothing, same rule as a healthy round-trip.
 func TestStreamTroubleSummarySilentWhenHealthy(t *testing.T) {
 	rounds := []rpc.ProviderRound{
 		{Seq: 1, Method: "WS", DurationMS: 900,
