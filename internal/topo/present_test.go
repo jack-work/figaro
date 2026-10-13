@@ -10,9 +10,7 @@ func TestPresentAppliesAnOverride(t *testing.T) {
 	}
 }
 
-// A state file written by an older figaro can name an aria that has since
-// been deleted. The row must fall back to its history rather than hang off
-// nothing.
+// A state file can name an aria that has since been deleted.
 func TestPresentRefusesAnEdgeToAnUnknownAria(t *testing.T) {
 	parent := map[string]string{"root": "", "a": "root", "b": "a"}
 	got := Present(parent, map[string]string{"b": "ghost"})
@@ -21,7 +19,6 @@ func TestPresentRefusesAnEdgeToAnUnknownAria(t *testing.T) {
 	}
 }
 
-// A cycle is the one thing a listing cannot survive: it walks parents.
 func TestPresentRefusesACycle(t *testing.T) {
 	parent := map[string]string{"root": "", "a": "root", "b": "a", "c": "b"}
 	got := Present(parent, map[string]string{"a": "c"})

@@ -8,12 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// A FAILED CALL STILL SHOWS WHAT ARRIVED.
-//
-// The point of unbuffered tool-input streaming is to watch the bytes land.
-// When they turn out not to parse, the thing worth looking at is exactly
-// those bytes: so a quarantined call renders as its raw input, not as the
-// envelope figaro wrapped it in to keep the wire legal.
 func TestQuarantinedCallRendersItsBytes(t *testing.T) {
 	raw := "{\"edits\": [{\"new_text\": \"\tif len(rows) > 0 {\n\t\tchrome(\"\")"
 	inv := message.Content{
@@ -36,21 +30,16 @@ func TestQuarantinedCallRendersItsBytes(t *testing.T) {
 	}
 }
 
-// And it survives a reload: the bytes travel on the message, not in the
-// turn's scratch map, so history reads the same as the live view did.
 func TestQuarantinedBytesDoNotDependOnTheLiveMap(t *testing.T) {
 	inv := message.Content{
 		Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "edit",
 		Arguments: message.MalformedArgs("{\"path\": \"x.go\", \"new_text\": \"\tbroken"),
 	}
-	// argPartials empty: exactly the state after a restart.
 	if n := toolNode(inv, 7, 0, 0, nil, map[string]string{}, map[string]string{}, nil); n.Input == "" {
 		t.Error("a reloaded failed call lost the only copy of its arguments")
 	}
 }
 
-// The healthy streaming path is untouched: while arguments are still arriving
-// there are no decoded Args, and the live prefix is what there is to show.
 func TestStreamingPrefixStillShows(t *testing.T) {
 	inv := message.Content{Type: message.ContentToolInvoke, ToolCallID: "tc_2", ToolName: "write"}
 	n := toolNode(inv, 7, 0, 0, nil, map[string]string{}, map[string]string{"tc_2": `{"path": "x.g`}, nil)

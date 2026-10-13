@@ -93,7 +93,6 @@ func TestRecordError_FlipsSpanStatusAndAddsEvent(t *testing.T) {
 }
 
 func TestRecordError_NoOpWithoutActiveSpan(t *testing.T) {
-	// Plain background ctx has no recording span; must not panic.
 	figOtel.RecordError(context.Background(), "nope", errors.New("x"))
 }
 

@@ -1,6 +1,5 @@
-// Package wirelog wraps http.RoundTripper to emit OTel span events
-// (always-on metadata) and optionally dump raw bytes to disk
-// (opt-in via WithLogging). Logging errors never fail requests.
+// Package wirelog wraps http.RoundTripper to emit OTel span events and,
+// with WithLogging, dump raw bytes to disk. Logging errors never fail requests.
 package wirelog
 
 import (
@@ -26,7 +25,6 @@ type cfg struct {
 	dir  string
 }
 
-// WithLogging stamps ctx to enable raw byte dumps for this call.
 func WithLogging(ctx context.Context, ariaID, dir string) context.Context {
 	if ariaID == "" || dir == "" {
 		return ctx
@@ -36,12 +34,8 @@ func WithLogging(ctx context.Context, ariaID, dir string) context.Context {
 	return context.WithValue(ctx, ctxKey{}, c)
 }
 
-// WithAria attributes this call's round-trips to an aria WITHOUT turning on
-// byte dumps. Attribution and dumping used to be the same switch, which meant
-// the ledger and the span events could only name an aria in the rare case
-// someone had set figaro_wire_dir. Providers should call this on every send:
-// it costs one context value and it is the difference between "some request
-// got a 429" and "94f0752b got a 429".
+// WithAria attributes this call's round-trips to an aria without turning on
+// byte dumps.
 func WithAria(ctx context.Context, ariaID string) context.Context {
 	if ariaID == "" {
 		return ctx
@@ -56,7 +50,6 @@ func cfgFromContext(ctx context.Context) (cfg, bool) {
 	return c, ok
 }
 
-// Transport wraps an http.RoundTripper with telemetry.
 type Transport struct {
 	Inner http.RoundTripper
 }
@@ -70,7 +63,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	logCfg, _ := cfgFromContext(req.Context())
 	var (
 		bodyBytes []byte
-		logBase   string // file path without suffix; empty when not logging
+		logBase   string
 	)
 
 	if logCfg.dir != "" && logCfg.aria != "" {
@@ -80,7 +73,6 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	// Only materialize the body when writing to disk.
 	if logBase != "" && req.Body != nil {
 		b, err := io.ReadAll(req.Body)
 		req.Body.Close()
@@ -92,11 +84,6 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	start := time.Now()
-	// reqBytes is the size of the request as SENT, which is the number that
-	// explains a slow or refused round-trip. It used to be len(bodyBytes) -
-	// and bodyBytes is only materialized when dumping to disk, so in the
-	// normal case the field was always 0. ContentLength is what the client
-	// set; fall back to the materialized body when it is unknown.
 	reqBytes := req.ContentLength
 	if reqBytes <= 0 {
 		reqBytes = int64(len(bodyBytes))
@@ -147,8 +134,6 @@ func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, re
 		if rid := requestID(resp.Header); rid != "" {
 			attrs = append(attrs, attribute.String("http.request_id", rid))
 		}
-		// The retry-after is the whole explanation of a stall, so it goes on
-		// the span whether or not anyone honors it.
 		if ra := RetryAfter(resp.Header); ra > 0 {
 			attrs = append(attrs, attribute.Int64("http.retry_after_s", int64(ra/time.Second)))
 		}
@@ -197,7 +182,6 @@ func (t *teeBody) Close() error {
 	return err2
 }
 
-// sanitize prevents path traversal from aria ids.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {

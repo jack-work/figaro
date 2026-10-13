@@ -17,45 +17,33 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
-// Streaming transports never touch http.RoundTripper, so
-// the ledger could not see them at all: an aria talking over a socket looked
-// idle. A Stream is the same diagnostic contract as a round-trip, driven by
-// the provider instead of the transport, and it is transport-independent on
-// purpose - nothing here knows what a websocket is.
-//
-// What it deliberately does NOT keep: raw error text, headers, bodies, event
-// payloads, content, or item/tool identifiers. A stream carries the model's
-// output and the caller's credentials; the only safe things to record are
-// counts, sizes, timings, schema-level event type names, and a class.
+// A Stream records a streaming provider attempt the way Transport records a
+// round-trip. It never retains raw error text, headers, bodies, event
+// payloads, or item/tool identifiers: a stream carries the model's output and
+// the caller's credentials. Counts, sizes, timings, declared event type names
+// and an error class are all that is kept.
 
 const (
-	// StreamMethodWS is the method a websocket stream is filed under, so the
-	// ledger's method column keeps meaning something.
-	StreamMethodWS = "WS"
-
+	StreamMethodWS  = "WS"
 	StreamMethodSSE = "SSE"
 
-	maxEventTypes  = 24 // distinct type names retained per stream
+	maxEventTypes  = 24
 	maxTokenLen    = 48
 	maxErrClassLen = 64
 
-	// otherEventType is where an event whose name is not in the caller's
-	// declared vocabulary is counted. The name itself is discarded: it came
-	// off the wire, and anything off the wire is payload until proven
-	// otherwise.
+	// An event name outside the declared vocabulary came off the wire and is
+	// payload until proven otherwise; it is counted here and discarded.
 	otherEventType = "other"
 )
 
-// streamStatuses is the closed set of terminal statuses. A provider passes one
-// of these or the stream is filed under "other": a status is metadata, and
-// metadata does not come off the wire verbatim.
+// streamStatuses is closed: a status is metadata and does not come off the
+// wire verbatim.
 var streamStatuses = map[string]bool{
 	"ok": true, "completed": true, "incomplete": true, "failed": true,
 	"error": true, "canceled": true, "cancelled": true, "interrupted": true,
 	"timeout": true, "refused": true, "closed": true, "unknown": true,
 }
 
-// StreamStatus reduces a caller's status to the recognized set.
 func StreamStatus(status string) string {
 	tok := sanitizeToken(status, maxTokenLen)
 	if tok == "" {
@@ -70,14 +58,10 @@ func StreamStatus(status string) string {
 	return "other"
 }
 
-// StreamOption configures a stream at Begin.
 type StreamOption func(*Stream)
 
-// WithEventVocabulary declares the event type names the caller's parser
-// recognizes. Only these are retained per-type; everything else is counted
-// under "other" with its name discarded. Without it a stream keeps totals
-// only, which is the safe default: wirelog cannot know a provider's schema,
-// and an event type read off a frame is not metadata until someone says it is.
+// WithEventVocabulary declares the event type names retained per-type; any
+// other name is counted under "other" and discarded.
 func WithEventVocabulary(names ...string) StreamOption {
 	return func(s *Stream) {
 		if s.vocab == nil {
@@ -91,8 +75,7 @@ func WithEventVocabulary(names ...string) StreamOption {
 	}
 }
 
-// StreamStats is a snapshot of one stream's accounting. Safe to serialize:
-// every field is a count, a size, a duration, or a bounded token.
+// StreamStats holds only counts, sizes, durations and bounded tokens.
 type StreamStats struct {
 	Status   string `json:"status,omitempty"`
 	ErrClass string `json:"err_class,omitempty"`
@@ -109,16 +92,12 @@ type StreamStats struct {
 	ArgumentBytes     int64 `json:"argument_bytes,omitempty"`
 	ArgumentUnmatched int64 `json:"argument_unmatched,omitempty"`
 
-	// EventTypes is bounded at maxEventTypes distinct names; anything past
-	// that is counted in TypesDropped rather than growing the map.
 	EventTypes   map[string]int64 `json:"event_types,omitempty"`
 	TypesDropped int64            `json:"types_dropped,omitempty"`
 }
 
-// Stream is one streaming provider attempt: visible in Outstanding while it
-// runs, one RoundLog record when it finishes. Every method is safe on a nil
-// receiver and after Finish, so a provider can defer Finish and keep calling
-// without guarding.
+// Stream is one streaming provider attempt. Every method is safe on a nil
+// receiver and after Finish.
 type Stream struct {
 	ctx      context.Context
 	seq      uint64
@@ -151,8 +130,7 @@ type Stream struct {
 	vocab map[string]bool
 }
 
-// BeginStream opens a stream record. endpoint is stripped of userinfo and
-// query before it is retained: those are where credentials live.
+// BeginStream strips userinfo and query from endpoint before retaining it.
 func BeginStream(ctx context.Context, aria, method, endpoint string, opts ...StreamOption) *Stream {
 	if ctx == nil {
 		ctx = context.Background()
@@ -180,8 +158,7 @@ func BeginStream(ctx context.Context, aria, method, endpoint string, opts ...Str
 	return s
 }
 
-// RequestBytes records the size of what was sent to open the stream. Additive:
-// a provider that sends more mid-stream can call it again.
+// RequestBytes is additive.
 func (s *Stream) RequestBytes(n int64) {
 	if s == nil || n <= 0 {
 		return
@@ -194,9 +171,8 @@ func (s *Stream) RequestBytes(n int64) {
 	s.reqBytes += n
 }
 
-// Event records one decoded event. eventType is a schema-level name
-// ("response.output_item.added"), never content. receivedBytes is the size of
-// the frame it was decoded from. Call it for EVERY decoded event.
+// Event records one decoded event; eventType is a schema-level name, never
+// content.
 func (s *Stream) Event(eventType string, receivedBytes int) {
 	if s == nil {
 		return
@@ -216,8 +192,6 @@ func (s *Stream) Event(eventType string, receivedBytes int) {
 	}
 	name := otherEventType
 	if len(s.vocab) > 0 {
-		// With no declared vocabulary, no event spelling can be retained.
-		// Do not allocate a sanitized copy of every token merely to discard it.
 		name = s.bucket(sanitizeToken(eventType, maxTokenLen))
 	}
 	if _, ok := s.types[name]; !ok && len(s.types) >= maxEventTypes {
@@ -228,8 +202,7 @@ func (s *Stream) Event(eventType string, receivedBytes int) {
 }
 
 // UnknownEvent marks the event just recorded as one the parser did not
-// recognize: call it from the parser's default branch, after Event. A rising
-// count is the early warning that the provider's schema moved.
+// recognize.
 func (s *Stream) UnknownEvent() {
 	if s == nil {
 		return
@@ -242,9 +215,7 @@ func (s *Stream) UnknownEvent() {
 	s.unknown++
 }
 
-// ToolStart marks the first evidence of a tool call. Only the parser knows
-// which events those are - an output item can be anything - so the timing is
-// declared, not guessed.
+// ToolStart marks the first evidence of a tool call.
 func (s *Stream) ToolStart() {
 	if s == nil {
 		return
@@ -257,10 +228,8 @@ func (s *Stream) ToolStart() {
 	s.firstTool = time.Since(s.started)
 }
 
-// ArgumentDelta records a tool-argument fragment. bytes is the fragment's
-// size, never its text. matched=false means the delta named a call the
-// accumulator has no record of - the shape of a silent tool-call corruption,
-// and the reason this method exists at all.
+// ArgumentDelta records a tool-argument fragment by size; matched=false means
+// the delta named a call the accumulator has no record of.
 func (s *Stream) ArgumentDelta(bytes int, matched bool) {
 	if s == nil {
 		return
@@ -282,12 +251,8 @@ func (s *Stream) ArgumentDelta(bytes int, matched bool) {
 	}
 }
 
-// Finish completes the stream: one RoundLog record, one span event, and the
-// in-flight row goes away. Idempotent - later calls are ignored, so a defer
-// plus an explicit call on the error path is fine.
-//
-// err is classified, never quoted: websocket errors routinely carry the frame
-// that failed, which carries the payload and sometimes the token.
+// Finish is idempotent. err is classified, never quoted: websocket errors
+// carry the frame that failed, payload and sometimes token included.
 func (s *Stream) Finish(status string, err error) {
 	if s == nil {
 		return
@@ -319,7 +284,6 @@ func (s *Stream) Finish(status string, err error) {
 	emitStreamMeta(ctx, aria, method, endpoint, d, reqBytes, stats)
 }
 
-// Stats reports the stream's accounting so far, running or finished.
 func (s *Stream) Stats() StreamStats {
 	if s == nil {
 		return StreamStats{}
@@ -329,7 +293,6 @@ func (s *Stream) Stats() StreamStats {
 	return s.snapshotLocked()
 }
 
-// row is the in-flight ledger view of a running stream.
 func (s *Stream) row() InFlight {
 	s.mu.Lock()
 	st := s.snapshotLocked()
@@ -372,15 +335,13 @@ func millis(d time.Duration) int64 {
 	if ms := d.Milliseconds(); ms > 0 {
 		return ms
 	}
-	return 1 // a sub-millisecond first event happened; 0 reads as "never"
+	return 1 // 0 reads as "never"
 }
 
-// StreamAttrPrefix is the flat-attr namespace the ledger reads back. The
-// names below are the whole contract between wirelog and the daemon.
+// StreamAttrPrefix and the attr names below are the contract the daemon's
+// ledger reads back.
 const StreamAttrPrefix = "stream_"
 
-// StreamEventTypeAttrPrefix namespaces the per-type counters, the way
-// ratelimit_ namespaces harvested headers.
 const StreamEventTypeAttrPrefix = "stream_event_"
 
 func logStream(ctx context.Context, aria, method, endpoint string, d time.Duration, reqBytes int64, st StreamStats) {
@@ -471,12 +432,10 @@ func emitStreamMeta(ctx context.Context, aria, method, endpoint string, d time.D
 	figOtel.Event(ctx, "provider.stream", attrs...)
 }
 
-// diagnosticCoder lets a provider name its own failure without handing over
-// the error text. Anything it returns is still sanitized and truncated.
 type diagnosticCoder interface{ DiagnosticCode() string }
 
-// ErrorClass names a failure without quoting it. A websocket error commonly
-// embeds the frame it choked on, so err.Error() is never safe to retain.
+// ErrorClass names a failure without quoting it; err.Error() may carry the
+// frame that failed.
 func ErrorClass(err error) string {
 	if err == nil {
 		return ""
@@ -508,7 +467,6 @@ func ErrorClass(err error) string {
 		}
 		return "net"
 	}
-	// A Go type name carries no payload; the message does. Keep the type.
 	return sanitizeToken(strings.ToLower(typeName(err)), maxErrClassLen)
 }
 
@@ -521,11 +479,9 @@ func typeName(err error) string {
 	return name
 }
 
-// sanitizeToken reduces a caller-supplied label to a bounded identifier: the
-// leading run of identifier characters, truncated. Stopping at the first
-// disallowed rune is the load-bearing part - it is what turns an error string
-// that someone passed as a status ("failed: Bearer sk-live-...") into one
-// harmless word instead of a redacted-looking copy of the secret.
+// sanitizeToken keeps the leading run of identifier characters, truncated.
+// Stopping at the first disallowed rune is what turns "failed: Bearer sk-..."
+// into one harmless word.
 func sanitizeToken(s string, max int) string {
 	s = strings.TrimSpace(strings.ToLower(s))
 	var b strings.Builder
@@ -543,8 +499,6 @@ func sanitizeToken(s string, max int) string {
 	return strings.Trim(b.String(), "_-.")
 }
 
-// bucket names the counter an event is filed under. Only a declared
-// vocabulary term survives as itself.
 func (s *Stream) bucket(name string) string {
 	if name != "" && s.vocab[name] {
 		return name
@@ -552,14 +506,11 @@ func (s *Stream) bucket(name string) string {
 	return otherEventType
 }
 
-// InvalidEndpoint stands in for anything that does not parse as a plain
-// scheme://host/path URL.
 const InvalidEndpoint = "<invalid-endpoint>"
 
-// SanitizeEndpoint keeps scheme, host and path and drops everything a
-// credential can hide in: userinfo, query, fragment. Anything it cannot parse
-// into exactly that shape is refused outright rather than trimmed by hand: a
-// malformed or opaque URL is where a token survives a textual strip.
+// SanitizeEndpoint keeps scheme, host and path. A URL it cannot parse into
+// that shape is refused rather than trimmed: an opaque URL is where a token
+// survives a textual strip.
 func SanitizeEndpoint(raw string) string {
 	if raw == "" {
 		return ""

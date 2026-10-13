@@ -31,10 +31,9 @@ type DeviceCodeConfig struct {
 	Scope        string
 }
 
-// LoginDeviceCode runs the GitHub OAuth device code flow: it requests a
-// user code, opens the browser, polls for approval, and returns the
-// long-lived GitHub access token (which is then stored as the "refresh"
-// credential for the Copilot token exchange).
+// LoginDeviceCode runs the GitHub device code flow and returns the long-lived
+// GitHub access token, stored as the "refresh" credential for the Copilot
+// token exchange.
 func LoginDeviceCode(cfg DeviceCodeConfig, domain string, promptCode func(userCode, verificationURI string) error) (githubToken string, err error) {
 	if domain == "" {
 		domain = "github.com"
@@ -42,7 +41,6 @@ func LoginDeviceCode(cfg DeviceCodeConfig, domain string, promptCode func(userCo
 	deviceCodeURL := fmt.Sprintf("https://%s/login/device/code", domain)
 	accessTokenURL := fmt.Sprintf("https://%s/login/oauth/access_token", domain)
 
-	// Step 1: request device + user code
 	form := url.Values{
 		"client_id": {cfg.ClientID},
 		"scope":     {cfg.Scope},
@@ -73,13 +71,11 @@ func LoginDeviceCode(cfg DeviceCodeConfig, domain string, promptCode func(userCo
 		return "", fmt.Errorf("parse device code: %w", err)
 	}
 
-	// Step 2: show user the code and open browser
 	if err := promptCode(device.UserCode, device.VerificationURI); err != nil {
 		return "", err
 	}
 	openBrowserDevice(device.VerificationURI)
 
-	// Step 3: poll for the access token
 	interval := time.Duration(device.Interval) * time.Second
 	if interval < 5*time.Second {
 		interval = 5 * time.Second
@@ -144,8 +140,7 @@ func pollAccessToken(tokenURL, clientID, deviceCode string) (token string, done 
 	}
 }
 
-// LoginCopilot runs the full Copilot login: device code flow for GitHub,
-// then prints a success message. Returns the GitHub access token.
+// LoginCopilot returns the GitHub access token.
 func LoginCopilot(domain string) (string, error) {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "       "+term.Dim("GitHub Copilot uses the device code flow."))

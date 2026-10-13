@@ -8,10 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// Turns projects a message log into turns: the single projection. There is no
-// longer a separate "prompt unit": a turn is one exchange, its opening question
-// is Turn.Inquiry (text, not a node), and its Nodes are what the agent produced
-// plus any steering that rode along.
+// InquirySegmentsOf returns nil unless some prose block carries a sender.
 func InquirySegmentsOf(m message.Message) []aria.InquirySegment {
 	var out []aria.InquirySegment
 	attributed := false
@@ -59,18 +56,12 @@ func Turns(msgs []message.Message) []aria.Turn {
 		if turns.Opens(m) {
 			flush()
 			id, first = m.TurnID, m.LogicalTime
-			// The inquiry is the whole opening question as text. turns.Opens
-			// already required non-empty prose, so an inquiry is 1:1 with a turn
-			// boundary by construction: a turn cannot open without one, and a
-			// second cannot arrive without closing the first.
 			inquiry = turns.Text(m)
 			segments = InquirySegmentsOf(m)
-			// The inquiry is bare text and cannot carry its own timestamp, so the
-			// TURN carries it: At is when the question arrived.
 			at = m.Timestamp
 		}
 		if id == 0 {
-			continue // boot / state-only tics precede the first prompt
+			continue
 		}
 		last = m.LogicalTime
 		group = append(group, m)

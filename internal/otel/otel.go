@@ -32,17 +32,10 @@ import (
 
 const scopeName = "figaro"
 
-// telemetryFileMax caps each telemetry .jsonl file; at most 2x that lives on
-// disk (the active file + one rolled-over ".1"). Keeps the file exporter: the
-// default when no OTLP agent is configured: from growing without bound in a
-// long-lived daemon.
-const telemetryFileMax = 16 << 20 // 16 MiB
+// telemetryFileMax caps each telemetry .jsonl file; the active file plus one
+// rolled-over ".1" is all that lives on disk.
+const telemetryFileMax = 16 << 20
 
-// rotatingWriter is a size-capped append writer for the file exporters: when a
-// write would push the file past maxBytes it rolls the file over (current →
-// path+".1", fresh file started). Writes are serialized (the batch/periodic
-// exporters write from one goroutine, but the lock keeps it correct if that
-// changes). Implements io.Writer + io.Closer.
 type rotatingWriter struct {
 	path     string
 	maxBytes int64
@@ -80,7 +73,7 @@ func (w *rotatingWriter) rotateLocked() error {
 	if err := w.f.Close(); err != nil {
 		return err
 	}
-	_ = os.Rename(w.path, w.path+".1") // keep one previous generation
+	_ = os.Rename(w.path, w.path+".1")
 	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -98,24 +91,17 @@ func (w *rotatingWriter) Close() error {
 var (
 	requestDuration otelmetric.Float64Histogram
 
-	// The form/patch read path, as a PAIR: what a range read returned, and
-	// how long the history it was drawn from was. A duration tells you it got
-	// slow; the pair tells you whether a bounded read is still bounded, which
-	// is the failure mode this path can actually have in production.
+	// returned against history says whether a bounded read is still bounded.
 	formPatchesReturned otelmetric.Int64Histogram
 	formPatchesHistory  otelmetric.Int64Histogram
 
-	// The durability pair. syncDuration is how long an fsync took;
-	// syncBatch is how many patches it covered. Group commit is the only
-	// reason a mandatory sync is affordable, and a batch distribution
-	// collapsing to 1 is the alarm that it stopped working.
+	// A syncBatch distribution collapsing to 1 means group commit stopped.
 	syncDuration otelmetric.Float64Histogram
 	syncBatch    otelmetric.Int64Histogram
 
 	instrumentsOnce sync.Once
 )
 
-// envLogLevel resolves FIGARO_LOG_LEVEL into a slog level. Defaults to INFO.
 func envLogLevel() slog.Level {
 	lvl := os.Getenv("FIGARO_LOG_LEVEL")
 	if lvl == "" {
@@ -132,7 +118,6 @@ func envLogLevel() slog.Level {
 	return slog.LevelInfo
 }
 
-// leveledHandler filters by slog level on top of the otelslog bridge.
 type leveledHandler struct {
 	inner slog.Handler
 	level slog.Level
@@ -151,12 +136,8 @@ func (h *leveledHandler) WithGroup(name string) slog.Handler {
 	return &leveledHandler{inner: h.inner.WithGroup(name), level: h.level}
 }
 
-// newSpanProcessor picks how spans reach the file exporter. The long-lived
-// daemon (_FIGARO_DAEMON=1) batches, so ending a span never blocks a turn on
-// file I/O. A short-lived CLI process uses the simple (synchronous) processor:
-// its span count is tiny so the cost is negligible, and it flushes on span end
-// : batching there would silently drop spans on the os.Exit / die() paths that
-// skip the deferred shutdown flush.
+// The daemon batches so a span end never blocks a turn; the CLI exports
+// synchronously because os.Exit paths skip the deferred flush.
 func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
 	if os.Getenv("_FIGARO_DAEMON") == "1" {
 		return sdktrace.NewBatchSpanProcessor(exp)
@@ -164,18 +145,17 @@ func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
 	return sdktrace.NewSimpleSpanProcessor(exp)
 }
 
-// Init wires OTel providers writing to dir. Installs slog.Default().
-// configuredLevel is the [telemetry] level from config, set by the CLI
-// before Init. FIGARO_LOG_LEVEL still wins: one noisy run needs no edit.
+// configuredLevel is the [telemetry] level from config; FIGARO_LOG_LEVEL
+// overrides it.
 var configuredLevel string
 
-// SetConfiguredLevel records the config-supplied floor. Call before Init.
+// SetConfiguredLevel must be called before Init.
 func SetConfiguredLevel(level string) { configuredLevel = level }
 
-// The file sink exports inline: measured, a queued one retained records
-// forever at idle (+1.0MB/26min even bounded to 64/512).
+// The file sink exports inline: a queue before it retains records at idle.
 const fileQueue = 0
 
+// Init wires OTel providers writing to dir and installs slog.Default().
 func Init(ctx context.Context, dir string) (func(context.Context) error, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("state dir: %w", err)
@@ -220,10 +200,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 	)
 	otellogglobal.SetLoggerProvider(lp)
 	bridge := otelslog.NewHandler(scopeName, otelslog.WithLoggerProvider(lp))
-	// Retain a bounded tail of what the daemon says, so it can be ASKED
-	// rather than grepped. Records are kept in addition to being exported,
-	// never instead: a ring that suppressed logging would die with the
-	// process, exactly when a crash makes you want it most.
+	// The ring retains in addition to exporting, never instead.
 	ring := logring.New(&leveledHandler{inner: bridge, level: envLogLevel()},
 		logring.DefaultCapacity,
 		logring.Any(
@@ -317,7 +294,6 @@ func initInstruments(m otelmetric.Meter) {
 	})
 }
 
-// RecordSync records one fsync and how many patches it made durable.
 func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {
 	if syncDuration != nil {
 		syncDuration.Record(ctx, float64(d.Microseconds())/1000, otelmetric.WithAttributes(attrs...))
@@ -327,8 +303,6 @@ func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attr
 	}
 }
 
-// RecordFormPatchRead records one form patch-range read: how many patches the
-// caller got, and how long the history it was drawn from was.
 func RecordFormPatchRead(ctx context.Context, returned, history int, attrs ...attribute.KeyValue) {
 	if formPatchesReturned != nil {
 		formPatchesReturned.Record(ctx, int64(returned), otelmetric.WithAttributes(attrs...))
@@ -338,22 +312,19 @@ func RecordFormPatchRead(ctx context.Context, returned, history int, attrs ...at
 	}
 }
 
-// Tracer returns the figaro tracer.
 func Tracer() trace.Tracer {
 	return otel.GetTracerProvider().Tracer(scopeName)
 }
 
-// Start begins a new span. Shorthand for Tracer().Start(ctx, name).
 func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return Tracer().Start(ctx, name, opts...)
 }
 
-// WithAttributes returns a SpanStartOption that sets attributes on the span.
 func WithAttributes(attrs ...attribute.KeyValue) trace.SpanStartOption {
 	return trace.WithAttributes(attrs...)
 }
 
-// Event records an event on the span in ctx. No-op if no active span.
+// Event is a no-op without an active span.
 func Event(ctx context.Context, name string, attrs ...attribute.KeyValue) {
 	span := trace.SpanFromContext(ctx)
 	if span.IsRecording() {
@@ -361,11 +332,8 @@ func Event(ctx context.Context, name string, attrs ...attribute.KeyValue) {
 	}
 }
 
-// RecordError attaches an error to the span in ctx and flips its status
-// to Error with the given description. Also emits a span event named
-// `name` carrying the supplied attributes plus the error string, so the
-// failure is greppable in traces.jsonl even before consulting Status.
-// No-op if no active span.
+// RecordError sets the span status to Error and also emits a span event
+// named `name`, so the failure is greppable in traces.jsonl.
 func RecordError(ctx context.Context, name string, err error, attrs ...attribute.KeyValue) {
 	span := trace.SpanFromContext(ctx)
 	if !span.IsRecording() {
@@ -377,7 +345,6 @@ func RecordError(ctx context.Context, name string, err error, attrs ...attribute
 	span.SetStatus(codes.Error, name)
 }
 
-// RecordRequestDuration records a request roundtrip.
 func RecordRequestDuration(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
 	if requestDuration == nil {
 		return
@@ -385,11 +352,8 @@ func RecordRequestDuration(ctx context.Context, d time.Duration, attrs ...attrib
 	requestDuration.Record(ctx, float64(d.Milliseconds()), otelmetric.WithAttributes(attrs...))
 }
 
-// retainedMessages are the slog messages kept in the ring regardless of
-// level. Keep this list SHORT and keep it here: a package that wants its
-// INFO-level stream to survive in memory should have to say so in one central
-// place, so the memory bound stays a decision someone made rather than a thing
-// that accreted.
+// retainedMessages are kept in the ring regardless of level. Keep the list
+// short: it is the memory bound.
 var retainedMessages = []string{
 	"provider round-trip",
 }
@@ -405,16 +369,11 @@ func setRecent(r *logring.Ring) {
 	recentMu.Unlock()
 }
 
-// Recent is the process's log ring, or nil before Init (in tests, and in the
-// CLI, which does not install telemetry). Callers must tolerate nil: a
-// diagnostic that panics when diagnostics are off is not a diagnostic.
+// Recent is nil before Init; callers must tolerate that.
 func Recent() *logring.Ring {
 	recentMu.Lock()
 	defer recentMu.Unlock()
 	return recent
 }
 
-// SetRecentForTest points Recent at a ring (or nil) without running Init. It
-// exists so tests of daemon handlers can install the same wiring the daemon
-// gets, instead of asserting against a package they cannot reach.
 func SetRecentForTest(r *logring.Ring) { setRecent(r) }

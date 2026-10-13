@@ -1,7 +1,5 @@
-// Package toolout bounds and coalesces streamed tool text (execution output
-// and streamed tool-argument previews). It is deterministic and single-
-// threaded: the caller drives cadence, this package holds no timers and no
-// locks.
+// Package toolout bounds and coalesces streamed tool text. The caller drives
+// cadence: no timers, no locks.
 package toolout
 
 import "strings"
@@ -31,9 +29,7 @@ func (g *Governor) Feed(key, chunk string) {
 
 func (g *Governor) Tail(key string) string { return g.tails[key] }
 
-// Tails exposes the live bounded tails keyed by id for a consumer that reads
-// every key at once (composing a frame). Read-only: the caller must not mutate
-// the returned map. Zero-copy: safe because the governor is single-threaded.
+// Tails is the live map itself; the caller must not mutate it.
 func (g *Governor) Tails() map[string]string { return g.tails }
 
 func (g *Governor) Dirty() bool { return g.dirty }
@@ -42,13 +38,11 @@ func (g *Governor) ClearDirty() { g.dirty = false }
 
 func (g *Governor) Drop(key string) { delete(g.tails, key) }
 
-// clampTail keeps only the last n lines of s. A trailing partial line (no
-// terminating '\n') counts as a line.
+// clampTail keeps the last n lines; a trailing partial line counts as one.
 func clampTail(s string, n int) string {
 	if s == "" {
 		return s
 	}
-	// Count '\n'; last-line-with-newline vs partial trailing line.
 	newlines := strings.Count(s, "\n")
 	lineCount := newlines
 	if !strings.HasSuffix(s, "\n") {
@@ -57,12 +51,7 @@ func clampTail(s string, n int) string {
 	if lineCount <= n {
 		return s
 	}
-	// Find start of the (lineCount-n)-th line's successor: skip that many '\n'.
 	skip := lineCount - n
-	// If the tail has a partial trailing line, the "lines" are:
-	//   line0 \n line1 \n ... \n lineK-1 \n partial
-	// where K = newlines. Skipping `skip` lines means advancing past `skip`
-	// newlines from the start.
 	idx := 0
 	for i := 0; i < skip; i++ {
 		j := strings.IndexByte(s[idx:], '\n')

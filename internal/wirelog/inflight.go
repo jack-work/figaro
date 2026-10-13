@@ -10,31 +10,20 @@ import (
 	"time"
 )
 
-// What this file keeps, and what it deliberately does not.
-
-// RoundLog is the slog message every provider round-trip is recorded under.
-// The daemon's log ring retains records with this message regardless of level,
-// which is how a successful call - INFO, uninteresting on its own - is still
-// there to compare against when the next one is refused.
+// RoundLog is the slog message the daemon's log ring retains regardless of
+// level.
 const RoundLog = "provider round-trip"
 
-// InFlight is a request that has left and not come back.
 type InFlight struct {
-	Seq       uint64    `json:"seq"`
-	Aria      string    `json:"aria,omitempty"`
-	Method    string    `json:"method"`
-	URL       string    `json:"url"`
-	StartedAt time.Time `json:"started_at"`
-	ReqBytes  int64     `json:"req_bytes,omitempty"`
-	// Stream is set for a streaming attempt and carries live counters: a
-	// stream that has been open two minutes with zero events is a different
-	// incident from one still receiving deltas, and only the running row can
-	// say which.
-	Stream *StreamStats `json:"stream,omitempty"`
+	Seq       uint64       `json:"seq"`
+	Aria      string       `json:"aria,omitempty"`
+	Method    string       `json:"method"`
+	URL       string       `json:"url"`
+	StartedAt time.Time    `json:"started_at"`
+	ReqBytes  int64        `json:"req_bytes,omitempty"`
+	Stream    *StreamStats `json:"stream,omitempty"`
 }
 
-// Age is how long the request has been outstanding, which is the number that
-// matters: a request out for four minutes is the story.
 func (f InFlight) Age() time.Duration { return time.Since(f.StartedAt) }
 
 var inflight = struct {
@@ -63,8 +52,8 @@ func arrive(seq uint64) (InFlight, bool) {
 	return f, ok
 }
 
-// departStream stamps the seq and publishes under the same lock: a reader
-// that reached the map first would otherwise see a zero seq.
+// departStream stamps the seq and publishes under one lock, or a reader sees
+// a zero seq.
 func departStream(s *Stream) {
 	inflight.mu.Lock()
 	defer inflight.mu.Unlock()
@@ -92,8 +81,7 @@ func Outstanding() []InFlight {
 	}
 	inflight.mu.Unlock()
 
-	// Snapshot streams outside the registry lock: a Stream takes its own
-	// mutex, and taking them in the other order in Finish would deadlock.
+	// Outside the registry lock: Finish takes the stream mutex first.
 	for _, s := range live {
 		out = append(out, s.row())
 	}
@@ -105,7 +93,6 @@ func Outstanding() []InFlight {
 	return out
 }
 
-// logRound records one completed round-trip.
 func logRound(ctx context.Context, f InFlight, resp *http.Response, d time.Duration, err error) {
 	level := slog.LevelInfo
 	attrs := []any{
@@ -137,8 +124,7 @@ func logRound(ctx context.Context, f InFlight, resp *http.Response, d time.Durat
 	slog.Default().Log(ctx, level, RoundLog, attrs...)
 }
 
-// RetryAfter reads a Retry-After header expressed in seconds. The HTTP-date
-// form is not honored (no provider we speak to uses it) and reads as absent.
+// RetryAfter reads only the seconds form; an HTTP-date reads as absent.
 func RetryAfter(h http.Header) time.Duration {
 	v := strings.TrimSpace(h.Get("Retry-After"))
 	if v == "" {
@@ -151,9 +137,6 @@ func RetryAfter(h http.Header) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
-// rateLimitHeaders harvests the provider's own limit accounting. Anthropic
-// sends anthropic-ratelimit-*; the x-ratelimit-* spelling is common elsewhere.
-// Whatever it is called, it names WHICH limit was hit, which "429" does not.
 func rateLimitHeaders(h http.Header) map[string]string {
 	var out map[string]string
 	for k, vs := range h {
@@ -164,8 +147,6 @@ func rateLimitHeaders(h http.Header) map[string]string {
 		if out == nil {
 			out = make(map[string]string, 4)
 		}
-		// Keep the distinguishing tail ("requests-remaining"), not the vendor
-		// prefix, so the same key means the same thing across providers.
 		key := lk
 		for _, pfx := range []string{"anthropic-ratelimit-", "x-ratelimit-", "ratelimit-"} {
 			if strings.HasPrefix(lk, pfx) {

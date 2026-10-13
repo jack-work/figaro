@@ -13,7 +13,6 @@ func userPrompt(text string) message.Message {
 	return message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent(text)}}
 }
 
-// turnText flattens a turn's nodes to one string for assertions.
 func turnText(t aria.Turn) string {
 	var b strings.Builder
 	for _, n := range t.Nodes {
@@ -34,8 +33,6 @@ func types(t aria.Turn) []livedoc.NodeType {
 	return out
 }
 
-// A turn is one exchange: the question that opened it is Turn.Inquiry: text,
-// not a unit and not a node, and Nodes holds only what came back.
 func TestTurns_InquiryIsTextAndNodesAreTheReply(t *testing.T) {
 	msgs := []message.Message{
 		userPrompt("first question"),
@@ -63,7 +60,6 @@ func TestTurns_InquiryIsTextAndNodesAreTheReply(t *testing.T) {
 	if turns[0].ID != 1 || turns[1].ID != 2 {
 		t.Errorf("turn ids = %d,%d want 1,2", turns[0].ID, turns[1].ID)
 	}
-	// The second turn folds invoke + result into one tool node.
 	if got := turnText(turns[1]); !strings.Contains(got, "bash") || !strings.Contains(got, "hi") {
 		t.Errorf("turn 1 should carry the folded tool output:\n%s", got)
 	}
@@ -81,8 +77,6 @@ func TestTurns_SkipsControlOnlyTics(t *testing.T) {
 	}
 }
 
-// Ordering: a tool node spanning [invokeLT, resultLT] comes BEFORE a steering
-// node that shares the result LT.
 func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	msgs := []message.Message{
 		userPrompt("hello"),
@@ -93,14 +87,14 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 		}},
 		{Role: message.RoleInput, Content: []message.Content{
 			message.ToolResultContent("t1", "test", "result-out", false),
-			{Type: message.ContentProse, Text: "oh and by the way"}, // the steer
+			{Type: message.ContentProse, Text: "oh and by the way"},
 		}},
 		{Role: message.RoleOutput, Content: []message.Content{
 			{Type: message.ContentProse, Text: "oh cool sure"},
 		}},
 	}
 	for i := range msgs {
-		msgs[i].LogicalTime = uint64(60 + i) // 60 prompt, 61 asst, 62 results, 63 asst
+		msgs[i].LogicalTime = uint64(60 + i)
 	}
 	turns := Turns(msgs)
 	if len(turns) != 1 {
@@ -108,10 +102,10 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	}
 	tn := turns[0]
 	want := []livedoc.NodeType{
-		livedoc.NodeProse,    // "hey": node 0 is the agent's first block
-		livedoc.NodeTool,     // t1
-		livedoc.NodeSteering, // the steer
-		livedoc.NodeProse,    // "oh cool sure"
+		livedoc.NodeProse,
+		livedoc.NodeTool,
+		livedoc.NodeSteering,
+		livedoc.NodeProse,
 	}
 	got := types(tn)
 	if len(got) != len(want) {
@@ -122,14 +116,12 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 			t.Fatalf("node[%d] = %q, want %q (all: %v)", i, got[i], want[i], got)
 		}
 	}
-	// The tool spans invoke and result; the steer carries only the result LT.
 	if gotLTs := tn.Nodes[1].LTs; len(gotLTs) != 2 || gotLTs[0] != 61 || gotLTs[1] != 62 {
 		t.Errorf("tool node lts = %v, want [61 62]", gotLTs)
 	}
 	if gotLTs := tn.Nodes[2].LTs; len(gotLTs) != 1 || gotLTs[0] != 62 {
 		t.Errorf("steering node lts = %v, want [62]", gotLTs)
 	}
-	// Two coordinates, at different block indices in different messages.
 	if src := tn.Nodes[1].Src; len(src) != 2 || src[0].Block != 1 || src[1].Block != 0 {
 		t.Errorf("tool node src = %+v, want invoke 61.1 then result 62.0", src)
 	}
@@ -141,9 +133,7 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	}
 }
 
-// S11: the purity property. Turns() may not depend on whether the tail is
-// open: composing every prefix must agree with composing the whole and
-// truncating. This is what stops the screen rewriting itself at seal.
+// Composing every prefix must agree with composing the whole and truncating.
 func TestTurns_PureUnderOpenTail(t *testing.T) {
 	msgs := []message.Message{
 		userPrompt("q1"),
@@ -164,8 +154,6 @@ func TestTurns_PureUnderOpenTail(t *testing.T) {
 			if i >= len(full) {
 				t.Fatalf("prefix %d produced turn %d beyond the full projection", n, i)
 			}
-			// Every turn the prefix completed must match the full projection
-			// exactly; only the last (still-growing) turn may be shorter.
 			if i < len(prefix)-1 && len(tn.Nodes) != len(full[i].Nodes) {
 				t.Errorf("prefix %d turn %d: %d nodes, full has %d",
 					n, i, len(tn.Nodes), len(full[i].Nodes))
@@ -180,8 +168,6 @@ func TestTurns_PureUnderOpenTail(t *testing.T) {
 	}
 }
 
-// Invariant 6: an empty block is minted, not skipped, so nodes after it cannot
-// shift when it fills. The renderer is what hides empties.
 func TestTurns_EmptyBlocksAreMintedNotSkipped(t *testing.T) {
 	empty := message.Message{Role: message.RoleOutput, LogicalTime: 2, Content: []message.Content{
 		{Type: message.ContentThinking, Text: ""},

@@ -11,7 +11,6 @@ import (
 func TestDimNoColor(t *testing.T) {
 	os.Setenv("NO_COLOR", "1")
 	defer os.Unsetenv("NO_COLOR")
-	// Re-detect after env change.
 	mode = ColorNever
 
 	got := Dim("hello")
@@ -35,7 +34,6 @@ func TestDimForceColor(t *testing.T) {
 }
 
 func TestWidth(t *testing.T) {
-	// In CI/test environment, stdout is probably not a TTY.
 	w := Width()
 	if w < 20 {
 		t.Errorf("Width() = %d, expected >= 20", w)
@@ -72,18 +70,13 @@ func TestTruncateVisible(t *testing.T) {
 	}
 }
 
-// A prompt must end on \r as surely as on \n. On a Windows console left in raw
-// mode by a figaro that died without unwinding (console mode belongs to the
-// console, not the process), Enter delivers a bare \r, and the old
-// ReadString('\n') waited for a byte that would never arrive. MEASURED:
-// `figaro login copilot` hung at its first prompt, echoing nothing, and took
-// two Ctrl-C to leave.
+// A raw Windows console delivers a bare \r for Enter.
 func TestReadLineTerminators(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
 		want string
-		rest string // what the NEXT prompt must see
+		rest string
 	}{
 		{"lf", "github.com\nnext", "github.com", "next"},
 		{"crlf", "github.com\r\nnext", "github.com", "next"},
@@ -101,8 +94,6 @@ func TestReadLineTerminators(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("line = %q, want %q", got, tc.want)
 			}
-			// The paired \n of a CRLF must not surface as a phantom
-			// empty line at the next prompt.
 			rest, _ := io.ReadAll(r)
 			if string(rest) != tc.rest {
 				t.Fatalf("next prompt would see %q, want %q", rest, tc.rest)
@@ -111,9 +102,6 @@ func TestReadLineTerminators(t *testing.T) {
 	}
 }
 
-// present/absent exist so a tree can mark what is there and what is not. They
-// are required to be the diff renderer's own green and red: the claim lives
-// here, where the palette is defined, rather than in each caller that paints.
 func TestPresentAndAbsentShareTheDiffForegrounds(t *testing.T) {
 	restore := SetColorMode(ColorAlways)
 	defer restore()

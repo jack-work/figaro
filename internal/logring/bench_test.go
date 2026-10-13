@@ -6,18 +6,6 @@ import (
 	"testing"
 )
 
-// The two numbers that decide whether this is affordable.
-//
-// NotRetained is the common case - a log line the policy does not keep - and
-// it must cost nothing beyond the predicate. Measured: 0 B/op, 0 allocs/op;
-// the nanoseconds are the inner JSON handler's, not ours.
-//
-// Retained is what a kept record costs: ~500 B and ~950ns over the baseline,
-// for the mandatory copy of the attributes (a Handler may not retain a
-// Record). At the default capacity of 512 that bounds the ring at roughly a
-// quarter of a megabyte, which `figaro doctor mem` reports next to a 32 MiB
-// segment cache.
-
 func BenchmarkHandleNotRetained(b *testing.B) {
 	ring := New(slog.NewJSONHandler(io.Discard, nil), DefaultCapacity, AtLeast(slog.LevelWarn))
 	log := slog.New(ring)

@@ -1,8 +1,5 @@
-// Package compose maps the Figaro IR (a turn's message.Message blocks)
-// to the canonical live-render unit: an ordered list of typed nodes. It
-// is the producer-side translation, analogous to a provider Encode -
-// pure, deterministic, and dependency-light (no renderer/glamour), so the
-// agent can compose without importing the terminal renderer.
+// Package compose maps a turn's message.Message blocks to livedoc nodes.
+// It must stay free of renderer dependencies: the agent composes too.
 package compose
 
 import (
@@ -16,38 +13,25 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// nodeID mints a stable id for an id-less node (thinking/prose/steering) from
-// its primary-IR coordinate: the message's logical time and the content
-// block's index within that message. Both are stable: LT is immutable once
-// assigned and the block index is append-only: so the id doesn't move when
-// the flattened, empty-skipped render position shifts. (Tool nodes key off
-// their ToolCallID instead.) The in-flight message gets a provisional LT from
-// composeTurn so its ids match what they'll be after it seals.
+// nodeID keys an id-less node by its IR coordinate (LT, block index), both
+// of which are stable; a render position is not.
 func nodeID(lt uint64, blockIdx int) string {
 	return fmt.Sprintf("%d.%d", lt, blockIdx)
 }
 
-// composeBashCap bounds how many source lines of tool output a node
-// carries; the renderer further clamps the display. Full output lives in
-// the canonical Content IR.
+// composeBashCap bounds the source lines of tool output a node carries.
 const composeBashCap = 200
 
-// ToolPreviewArg returns the name of the "body" argument whose live-streaming
-// value should surface as a running tool node's preview (e.g. "content" for
 type ToolTiming struct {
-	// OpenedAt is when the tool block opened on the provider stream: the
-	// start of GENERATION. StartedAt/FinishedAt bracket EXECUTION.
+	// OpenedAt is when the tool block opened on the provider stream;
+	// StartedAt/FinishedAt bracket execution.
 	OpenedAt   int64
 	StartedAt  int64
 	FinishedAt int64
 }
 
-// Nodes maps a turn's messages to the live node list: each assistant
-// content block becomes a node in order: text/thinking → prose, tool
-// invoke → a tool node folding in its result (or streamed partial). A
-// tool with no result yet is left status=running with whatever output has
-// streamed. argPartials carries the raw, still-truncated tool_use argument
-// JSON per tool_call_id; it becomes the node's Input, for every tool alike.
+// Nodes maps a turn's messages to the live node list. argPartials carries the
+// still-streaming tool_use argument JSON per tool_call_id.
 func Nodes(msgs []message.Message, partials, argPartials map[string]string, timings ...map[string]ToolTiming) []livedoc.Node {
 	results := indexResults(msgs)
 	var toolTimings map[string]ToolTiming
@@ -57,12 +41,6 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, timi
 	var nodes []livedoc.Node
 	for _, m := range msgs {
 		if m.Role == message.RoleInput {
-			// A steering interjection is a direction aimed at the turn already in
-			// flight. Two accepted shapes for the one concept: the drain's
-			// explicit flag, and the legacy shape where prose rides on the
-			// tool_result message. Either way it becomes one steering node,
-			// positioned where it arrived (after the tool nodes). tool_result
-			// blocks themselves fold under their invoke (indexResults).
 			if turns.IsSteering(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
@@ -75,12 +53,11 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, timi
 			continue
 		}
 		if m.Role != message.RoleOutput {
-			continue // tool_result messages fold under their invoke; user prompts aren't in the turn
+			continue
 		}
 		for ci, c := range m.Content {
 			// Empty prose/thinking blocks are minted, not skipped: a block that
-			// arrives empty and fills later must already own its position, or the
-			// nodes after it would shift under it. The renderer hides empties.
+			// fills later must already own its position.
 			switch c.Type {
 			case message.ContentProse:
 				nodes = append(nodes, textNode(livedoc.NodeProse, roleOutput, m.LogicalTime, ci, m.Timestamp, c.Text))
@@ -99,9 +76,6 @@ const (
 	roleOutput = livedoc.RoleOutput
 )
 
-// textNode builds a prose/thinking/steering node at one fig-IR coordinate.
-// at is the source message's wall-clock timestamp, carried through so the UI
-// can show WHEN a node was written the way it already shows tool timings.
 func textNode(t livedoc.NodeType, role string, lt uint64, block int, at int64, text string) livedoc.Node {
 	return livedoc.Node{
 		ID:       nodeID(lt, block),
@@ -120,11 +94,7 @@ func toolNode(inv message.Content, lt uint64, block int, at int64, results map[s
 		name = "tool"
 	}
 	args := inv.Arguments
-	// A QUARANTINED CALL IS SHOWN AS THE BYTES THAT ARRIVED. Its arguments
-	// never parsed, so figaro wrapped them in an envelope to keep the wire
-	// legal (message.MalformedArgs): but that envelope is bookkeeping, not
-	// something a reader asked to see, and rendering it would put a sentinel
-	// key where the arguments belong AND hide the very bytes worth looking at.
+	// A quarantined call shows the raw bytes, not the MalformedArgs envelope.
 	rawArgs, quarantined := message.MalformedArgsOf(inv)
 	if quarantined {
 		args = nil
@@ -149,15 +119,10 @@ func toolNode(inv message.Content, lt uint64, block int, at int64, results map[s
 		n.StartedAt = timing.StartedAt
 		n.FinishedAt = timing.FinishedAt
 	} else {
-		// The clocks a live turn kept are gone once it is read back from the
-		// log, so the messages answer instead: the call was written when its
-		// invocation was, and it was done when its result arrived.
 		n.StartedAt = at
 	}
 	if got, done := results[inv.ToolCallID]; done {
 		res := got.Content
-		// A tool node spans two coordinates: the invoke and its result, in
-		// different messages at different block indices.
 		n.Src = append(n.Src, got.Src)
 		if got.Src.LT != lt {
 			n.LTs = append(n.LTs, got.Src.LT)
@@ -173,10 +138,6 @@ func toolNode(inv message.Content, lt uint64, block int, at int64, results map[s
 	} else {
 		n.Status = livedoc.StatusRunning
 		n.Output, n.OutputBase = tailBoundAt(partials[inv.ToolCallID])
-		// Generation phase: the arguments are still arriving. Show the raw
-		// prefix for EVERY tool: no name is consulted and none is special -
-		// and drop it the moment the decoded Arguments land, since Args says
-		// the same thing without the truncation.
 		if len(args) == 0 && !quarantined {
 			n.Input = tailBound(argPartials[inv.ToolCallID])
 		}
@@ -184,11 +145,7 @@ func toolNode(inv message.Content, lt uint64, block int, at int64, results map[s
 	return n
 }
 
-// summaryFor is a tool node's one-line description, used for SEARCH and for
-// the clipboard: never for rendering, which reads the arguments directly
-// through the CLI's tool table. It is deliberately generic: the per-tool
-// Summarize() hooks it used to call said which argument spoke for a call,
-// which is the same thing the table says, in a second place.
+// summaryFor feeds search and the clipboard, never rendering.
 func summaryFor(args map[string]any) string {
 	if len(args) == 0 {
 		return ""
@@ -205,17 +162,13 @@ func summaryFor(args map[string]any) string {
 	return strings.Join(parts, " ")
 }
 
-// tailBound clamps streamed tool output to the last composeBashCap source
-// lines; the full result stays in the canonical Content IR.
 func tailBound(text string) string {
 	out, _ := tailBoundAt(text)
 	return out
 }
 
-// tailBoundAt is tailBound and the rune offset of what it kept within the
-// source text. A reader quotes what the preview showed, and that quote
-// resolves against the whole block: without the offset the coordinate is
-// valid, accepted, and names a different passage.
+// tailBoundAt also returns the rune offset of the kept tail within text, so
+// a quote of the preview resolves against the whole block.
 func tailBoundAt(text string) (string, int) {
 	if text == "" {
 		return "", 0
@@ -232,16 +185,10 @@ func tailBoundAt(text string) (string, int) {
 	return s[cut+1:], utf8.RuneCountInString(s[:cut+1])
 }
 
-// Units is gone. compose.Turns is the single projection now, a turn is one
-// exchange, opened by Turn.Inquiry (text) rather than by a unit or a node. See
-// internal/compose/turns.go and skills/figaro/reference/turns.md.
-
-// resultAt is a tool_result block together with the coordinate it was found
-// at, so a tool node can record both of its sources.
 type resultAt struct {
 	Content message.Content
 	Src     livedoc.Src
-	At      int64 // the result message's wall clock
+	At      int64
 }
 
 func indexResults(msgs []message.Message) map[string]resultAt {

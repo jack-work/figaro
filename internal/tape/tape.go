@@ -1,5 +1,5 @@
-// Package tape records and replays the aria wire: every JSON-RPC message that
-// crosses the CLI↔agent socket, with the time it crossed.
+// Package tape records and replays every JSON-RPC message crossing the
+// CLI<->agent socket, with the time it crossed.
 package tape
 
 import (
@@ -13,13 +13,11 @@ import (
 	"time"
 )
 
-// FormatVersion is bumped when a record's shape changes incompatibly. A
-// replay refuses a tape it does not understand rather than painting something
-// plausible from half-read records.
+// FormatVersion is bumped when a record's shape changes incompatibly; a replay
+// refuses a tape it does not understand.
 const FormatVersion = 1
 
-// Header is the first line of a tape: everything a replay needs to reconstruct
-// the conditions, and everything a reader needs to know what they are holding.
+// Header is the first line of a tape.
 type Header struct {
 	Tape    int    `json:"tape"`              // FormatVersion
 	Aria    string `json:"aria"`              // the aria id the tape was taken from
@@ -32,30 +30,24 @@ type Header struct {
 	Note    string `json:"note,omitempty"`    // free text: what was being hunted
 }
 
-// Direction is which way a frame crossed the socket.
 type Direction string
 
 const (
-	// In is server -> client: notifications (figaro.aria, turn.done) and the
-	// responses to our own calls. This is the half a replay must reproduce.
+	// In is server -> client: the half a replay must reproduce.
 	In Direction = "in"
-	// Out is client -> server: the requests the CLI made. Recorded because a
-	// replay has to ANSWER them, and because the order in which a pager asks
-	// for history is itself part of the behaviour under test.
+	// Out is client -> server: recorded because a replay has to answer it.
 	Out Direction = "out"
 )
 
-// Frame is one JSON-RPC message and the moment it crossed.
 type Frame struct {
 	T   float64         `json:"t"`
 	Dir Direction       `json:"dir"`
 	Msg json.RawMessage `json:"msg"`
 }
 
-// At is the frame's offset as a Duration.
 func (f Frame) At() time.Duration { return time.Duration(f.T * float64(time.Second)) }
 
-// Method reports the JSON-RPC method of the frame, "" for a response.
+// Method is "" for a response.
 func (f Frame) Method() string {
 	var m struct {
 		Method string `json:"method"`
@@ -64,7 +56,7 @@ func (f Frame) Method() string {
 	return m.Method
 }
 
-// ID reports the JSON-RPC id, or -1 for a notification.
+// ID is -1 for a notification.
 func (f Frame) ID() int64 {
 	var m struct {
 		ID *int64 `json:"id"`
@@ -75,13 +67,8 @@ func (f Frame) ID() int64 {
 	return *m.ID
 }
 
-// ---------------------------------------------------------------------------
-// Writing
-// ---------------------------------------------------------------------------
-
-// Writer appends frames to a tape. Safe for concurrent use: the tap runs on
-// the reader and writer goroutines of one connection, which are different
-// goroutines by construction.
+// Writer is safe for concurrent use: the tap runs on both goroutines of one
+// connection.
 type Writer struct {
 	mu    sync.Mutex
 	w     io.WriteCloser
@@ -91,8 +78,7 @@ type Writer struct {
 	err   error
 }
 
-// Create opens a tape file and writes its header. The header's Started is the
-// zero of every frame offset, so it is taken here and nowhere else.
+// Create writes the header; its Started is the zero of every frame offset.
 func Create(path string, h Header) (*Writer, error) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -101,7 +87,6 @@ func Create(path string, h Header) (*Writer, error) {
 	return NewWriter(f, h)
 }
 
-// NewWriter writes a tape to an arbitrary sink (a file, a pipe, a buffer).
 func NewWriter(w io.WriteCloser, h Header) (*Writer, error) {
 	start := time.Now()
 	h.Tape = FormatVersion
@@ -121,9 +106,8 @@ func NewWriter(w io.WriteCloser, h Header) (*Writer, error) {
 	return tw, tw.buf.Flush()
 }
 
-// Frame appends one message. Recording errors are latched and reported by
-// Close: a tape that fails to write must not take the session down with it -
-// the recording is the observer, never the subject.
+// Frame latches recording errors for Close: the recording never takes the
+// session down.
 func (t *Writer) Frame(dir Direction, msg []byte) {
 	if t == nil {
 		return
@@ -143,15 +127,12 @@ func (t *Writer) Frame(dir Direction, msg []byte) {
 		t.err = err
 		return
 	}
-	// Flushed per frame, deliberately: a tape is most wanted exactly when the
-	// process it was recording died badly, and a buffered tail is the part of
-	// the recording that matters.
+	// Flushed per frame: the tape most wanted is from a process that died.
 	if err := t.buf.Flush(); err != nil {
 		t.err = err
 	}
 }
 
-// Close flushes and reports the first recording error, if any.
 func (t *Writer) Close() error {
 	if t == nil {
 		return nil
@@ -168,10 +149,6 @@ func (t *Writer) Close() error {
 	return err
 }
 
-// ---------------------------------------------------------------------------
-// The tap: the middleware itself
-// ---------------------------------------------------------------------------
-
 // Tap wraps a connection so every NDJSON message crossing it is recorded.
 func Tap(c net.Conn, w *Writer) net.Conn {
 	if w == nil {
@@ -184,8 +161,7 @@ type tapped struct {
 	net.Conn
 	w  *Writer
 	in lineSplitter
-	// out is a second splitter because the two directions interleave on
-	// different goroutines and each needs its own partial-line remainder.
+	// Each direction runs on its own goroutine and needs its own remainder.
 	out lineSplitter
 }
 
@@ -205,11 +181,8 @@ func (t *tapped) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// lineSplitter reassembles newline-terminated messages out of arbitrary read
-// chunks. A chunk boundary is not a message boundary: one Read can carry
-// three notifications and half of a fourth, and timing a partial message
-// would attribute a frame to the moment its first byte arrived rather than the
-// moment it was complete and actionable.
+// lineSplitter reassembles newline-terminated messages out of read chunks: a
+// frame is timed when complete, not when its first byte arrived.
 type lineSplitter struct{ rem []byte }
 
 func (s *lineSplitter) feed(b []byte, emit func([]byte)) {
@@ -238,12 +211,7 @@ func indexByte(b []byte, c byte) int {
 	return -1
 }
 
-// ---------------------------------------------------------------------------
-// Reading
-// ---------------------------------------------------------------------------
-
-// Read loads a whole tape. Tapes are bounded by a session's wire volume (a
-// long turn is a few MB), so streaming buys nothing a slice does not give.
+// Read loads a whole tape.
 func Read(path string) (Header, []Frame, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -253,11 +221,9 @@ func Read(path string) (Header, []Frame, error) {
 	return ReadFrom(f)
 }
 
-// ReadFrom parses a tape from any reader.
 func ReadFrom(r io.Reader) (Header, []Frame, error) {
 	sc := bufio.NewScanner(r)
-	// A tool node's captured output can be large; the default 64 KB token is
-	// not enough for a real frame.
+	// A tool node's captured output exceeds the default 64 KB token.
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var h Header
 	if !sc.Scan() {

@@ -1,8 +1,6 @@
-// Package partialjson extracts a top-level string field from a JSON object
-// prefix that may be truncated anywhere. It never errors: it returns the
-// longest safely-decodable prefix of the value so far, so that repeated calls
-// on growing inputs are monotonic: the live preview never rewrites what it
-// already showed.
+// Package partialjson reads fields from a JSON object prefix truncated
+// anywhere. It never errors and is monotonic over growing input: a live
+// preview never rewrites what it already showed.
 package partialjson
 
 import (
@@ -11,10 +9,8 @@ import (
 	"unicode/utf8"
 )
 
-// StringField returns the value of the top-level string field name, decoded
-// from the (possibly-truncated) JSON prefix data. present is false when the
-// field's value has not begun in the prefix yet, or when the field is present
-// but is not a string.
+// StringField: present is false until the field's value has begun, or when
+// it is not a string.
 func StringField(data []byte, name string) (value string, present bool) {
 	p := parser{b: data}
 	if !p.skipWS() || p.peek() != '{' {
@@ -83,7 +79,6 @@ func (p *parser) skipWS() bool {
 	return false
 }
 
-// parseCompleteString requires a terminated string; returns false on truncation.
 func (p *parser) parseCompleteString() (string, bool) {
 	if p.peek() != '"' {
 		return "", false
@@ -129,10 +124,8 @@ func (p *parser) parseCompleteString() (string, bool) {
 	return "", false
 }
 
-// decodeEscape decodes a JSON escape starting at b[0]=='\\'. Returns bytes
-// consumed and the rune (or -1 for byte escapes that were appended raw via r).
-// For \uXXXX returns the raw code unit (may be a surrogate half).
-// ok=false means malformed or truncated.
+// decodeEscape returns bytes consumed and the rune; for \uXXXX the raw code
+// unit, which may be a surrogate half.
 func decodeEscape(b []byte) (n int, r rune, ok bool) {
 	if len(b) < 2 {
 		return 0, 0, false
@@ -187,8 +180,8 @@ func parseHex4(b []byte) (uint16, bool) {
 	return r, true
 }
 
-// decodeTolerant reads from the byte after the opening quote, tolerating
-// truncation. Returns the longest safe prefix.
+// decodeTolerant reads from after the opening quote and returns the longest
+// safe prefix.
 func (p *parser) decodeTolerant() string {
 	var buf []byte
 	for p.i < len(p.b) {
@@ -202,8 +195,6 @@ func (p *parser) decodeTolerant() string {
 			}
 			n, r, ok := decodeEscape(p.b[p.i:])
 			if !ok {
-				// Might just be truncation mid-\uXXXX. Distinguish by looking
-				// at whether we have enough bytes for the escape family.
 				if p.b[p.i+1] == 'u' && p.i+6 > len(p.b) {
 					return string(buf)
 				}
@@ -235,8 +226,7 @@ func (p *parser) decodeTolerant() string {
 			p.i++
 			continue
 		}
-		// Multi-byte UTF-8 start; hold back if continuation bytes are missing
-		// so growth is monotonic.
+		// Hold back a multi-byte start until its continuation bytes arrive.
 		want := 0
 		switch {
 		case c&0xE0 == 0xC0:
@@ -353,27 +343,23 @@ func (p *parser) skipNumber() bool {
 		}
 		break
 	}
-	// A complete number requires we stopped because of a non-numeric byte,
-	// not because we ran off the end.
+	// A number is complete only when a non-numeric byte ended it.
 	if p.i == len(p.b) {
 		return false
 	}
 	return p.i > start
 }
 
-// Field is one top-level field of a (possibly truncated) JSON object.
-// Value is decoded for strings and raw for everything else; Done says the
-// value was terminated in the prefix rather than cut off mid-flight.
+// Field: Value is decoded for strings and raw otherwise; Done says the value
+// was terminated in the prefix.
 type Field struct {
 	Name  string
 	Value string
 	Done  bool
 }
 
-// Fields walks the top-level fields of a JSON object prefix in order,
-// stopping at the first truncation. Like StringField it never errors: it
-// returns what is safely readable so far, so repeated calls on a growing
-// input are monotonic and a live view never rewrites what it showed.
+// Fields walks the top-level fields in order, stopping at the first
+// truncation.
 func Fields(data []byte) []Field {
 	p := parser{b: data}
 	if !p.skipWS() || p.peek() != '{' {
@@ -399,14 +385,13 @@ func Fields(data []byte) []Field {
 		if p.peek() == '"' {
 			p.i++
 			v := p.decodeTolerant()
-			// decodeTolerant stops ON the closing quote when the value is
-			// whole, and at the end of the buffer when it is still arriving.
+			// decodeTolerant stops on the closing quote when the value is whole.
 			done := p.peek() == '"'
 			out = append(out, Field{Name: key, Value: v, Done: done})
 			if !done {
 				return out
 			}
-			p.i++ // past the closing quote
+			p.i++
 		} else {
 			start := p.i
 			if !p.skipValue() {

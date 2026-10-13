@@ -49,7 +49,6 @@ func TestContextSize_MessagesAfterWatermark(t *testing.T) {
 			OutputTokens: 50,
 		}},
 		{Role: message.RoleInput, Content: []message.Content{
-			// 40 chars → ceil(40/4) = 10 tokens
 			message.TextContent("now do something else for me please ok?!"),
 		}},
 	}
@@ -62,11 +61,9 @@ func TestContextSize_MessagesAfterWatermark(t *testing.T) {
 func TestContextSize_NoUsage(t *testing.T) {
 	msgs := []message.Message{
 		{Role: message.RoleInput, Content: []message.Content{
-			// 12 chars → ceil(12/4) = 3
 			message.TextContent("hello world!"),
 		}},
 		{Role: message.RoleOutput, Content: []message.Content{
-			// 8 chars → ceil(8/4) = 2
 			message.TextContent("hi there"),
 		}},
 	}
@@ -78,14 +75,14 @@ func TestContextSize_NoUsage(t *testing.T) {
 
 func TestEstimateMessage_Text(t *testing.T) {
 	m := message.Message{Content: []message.Content{
-		message.TextContent("abcdefgh"), // 8 chars → 2
+		message.TextContent("abcdefgh"),
 	}}
 	assert.Equal(t, 2, EstimateMessage(m))
 }
 
 func TestEstimateMessage_Thinking(t *testing.T) {
 	m := message.Message{Content: []message.Content{
-		{Type: message.ContentThinking, Text: "abcdefgh"}, // 8 chars → 2
+		{Type: message.ContentThinking, Text: "abcdefgh"},
 	}}
 	assert.Equal(t, 2, EstimateMessage(m))
 }
@@ -105,7 +102,6 @@ func TestEstimateMessage_ToolCall(t *testing.T) {
 			Arguments: map[string]interface{}{"command": "ls -la"},
 		},
 	}}
-	// "bash" = 4 chars, {"command":"ls -la"} = 20 chars → 24 chars → 6
 	tokens := EstimateMessage(m)
 	assert.Greater(t, tokens, 0)
 }
@@ -114,7 +110,6 @@ func TestEstimateMessage_ToolResult(t *testing.T) {
 	m := message.Message{Content: []message.Content{
 		message.ToolResultContent("call-1", "bash", "abcdefgh", false),
 	}}
-	// call-1 (6) + bash (4) + output (8) = 18 chars → 5 tokens
 	assert.Equal(t, 5, EstimateMessage(m))
 }
 
@@ -124,7 +119,6 @@ func TestEstimateMessage_Empty(t *testing.T) {
 }
 
 func TestEstimateMessage_CeilRounding(t *testing.T) {
-	// 5 chars → ceil(5/4) = 2
 	m := message.Message{Content: []message.Content{
 		message.TextContent("abcde"),
 	}}
@@ -141,8 +135,7 @@ func TestContextFromUsage(t *testing.T) {
 		{"zero", &message.Usage{}, 0},
 		{"uncached first turn", &message.Usage{InputTokens: 500, OutputTokens: 50}, 550},
 		{
-			// The shape figaro actually sees from turn two on: the prompt is
-			// almost entirely a cache read, InputTokens is the uncached tail.
+			// From turn two on, the prompt is almost entirely a cache read.
 			name:  "cache heavy",
 			usage: &message.Usage{InputTokens: 2025, OutputTokens: 50, CacheReadTokens: 130_000, CacheWriteTokens: 3_000},
 			want:  135_075,
@@ -172,10 +165,8 @@ func TestContextSize_CountsCachedInput(t *testing.T) {
 	assert.Equal(t, 134_675, got)
 	assert.True(t, exact)
 
-	// A trailing un-metered message estimates only the tail on top of the
-	// same watermark base.
 	msgs = append(msgs, message.Message{Role: message.RoleInput, Content: []message.Content{
-		message.TextContent("now do something else for me please ok?!"), // 40 chars → 10
+		message.TextContent("now do something else for me please ok?!"),
 	}})
 	got, exact = ContextSize(msgs)
 	assert.Equal(t, 134_685, got)

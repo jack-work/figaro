@@ -10,23 +10,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE HAZARD, pinned before the composer that could violate it.
-//
-// Incremental composition must produce EXACTLY what wholesale composition
-// produces, for the same inputs, AT EVERY FRAME -- not merely at seal. A
-// composer that converges only when the turn seals shows correct transcripts
-// and wrong live frames, and live/committed divergence is forbidden by
-// invariant. So the test drives a whole turn frame by frame, the way the agent
-// does, and compares node for node on every single frame.
-//
-// The frame script is built to contain the ways a node MUTATES after it was
-// first composed: a tool_invoke composed while its result is still absent, the
-// result landing a message later, argument JSON arriving in pieces, output
-// streaming under a running tool, timings stamped after the node existed, a
-// steering interjection arriving mid-turn, and an interrupt repair appending
-// an aborted assistant message.
+// Incremental composition must equal wholesale composition at every frame,
+// not merely at seal.
 
-// frame is one call the agent would make to the projector.
 type frame struct {
 	what        string
 	msgs        []message.Message
@@ -35,8 +21,8 @@ type frame struct {
 	timings     map[string]ToolTiming
 }
 
-// turnScript builds the frame sequence for a turn of r tool rounds. Every
-// frame carries the WHOLE open region, exactly as composeTurn hands it over.
+// turnScript builds the frames of a turn of r tool rounds, each carrying the
+// whole open region.
 func turnScript(r int) []frame {
 	var frames []frame
 	var durable []message.Message
@@ -74,7 +60,6 @@ func turnScript(r int) []frame {
 		durable = append(durable, m)
 	}
 
-	// The user's prompt opens the region.
 	appendDurable(message.Message{Role: message.RoleInput,
 		Content: []message.Content{message.TextContent("do the thing")}})
 	snap("prompt", nil)
@@ -82,7 +67,6 @@ func turnScript(r int) []frame {
 	for round := 0; round < r; round++ {
 		id := fmt.Sprintf("call_%d", round)
 
-		// The assistant streams prose into a message that is not yet durable.
 		inflight := &message.Message{Role: message.RoleOutput}
 		for i := 1; i <= 3; i++ {
 			inflight.Content = []message.Content{
@@ -90,8 +74,6 @@ func turnScript(r int) []frame {
 			}
 			snap(fmt.Sprintf("round %d: prose frame %d", round, i), inflight)
 		}
-		// A tool block opens: the arguments arrive as raw JSON in pieces, and
-		// the node exists before they finish.
 		inflight.Content = append(inflight.Content,
 			message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: "bash"})
 		for i, part := range []string{`{"comm`, `{"command": "ls -`, `{"command": "ls -la"}`} {
@@ -99,7 +81,6 @@ func turnScript(r int) []frame {
 			timings[id] = ToolTiming{OpenedAt: 100 + int64(i)}
 			snap(fmt.Sprintf("round %d: args frame %d", round, i), inflight)
 		}
-		// The assistant message becomes durable, arguments decoded.
 		delete(argPartials, id)
 		appendDurable(message.Message{Role: message.RoleOutput, Content: []message.Content{
 			{Type: message.ContentProse, Text: strings.Repeat("thinking out loud. ", 3)},
@@ -111,13 +92,10 @@ func turnScript(r int) []frame {
 		timings[id] = t
 		snap(fmt.Sprintf("round %d: assistant durable", round), nil)
 
-		// The tool runs: output streams under a node whose result is absent.
 		for i := 1; i <= 3; i++ {
 			partials[id] = strings.Repeat("streamed output line\n", i*90)
 			snap(fmt.Sprintf("round %d: output frame %d", round, i), nil)
 		}
-		// A steering interjection arrives mid-round in one round, appended as
-		// a durable input message that composes to a steering node.
 		if round == 1 {
 			steer := message.Message{Role: message.RoleInput,
 				Content: []message.Content{{Type: message.ContentProse, Text: "actually, stop"}}}
@@ -125,9 +103,6 @@ func turnScript(r int) []frame {
 			appendDurable(steer)
 			snap(fmt.Sprintf("round %d: steering", round), nil)
 		}
-		// The result lands one message later: the invoke node composed in
-		// every frame above now MUTATES -- status running -> ok, output from
-		// the streamed partial to the clamped durable text.
 		t = timings[id]
 		t.FinishedAt = 300
 		timings[id] = t
@@ -138,8 +113,6 @@ func turnScript(r int) []frame {
 		snap(fmt.Sprintf("round %d: result durable", round), nil)
 	}
 
-	// An interrupt repair appends an aborted assistant message with an
-	// unmatched tool_invoke, then its synthetic result.
 	appendDurable(message.Message{Role: message.RoleOutput, StopReason: message.StopAborted,
 		Content: []message.Content{
 			{Type: message.ContentProse, Text: "partial work"},
@@ -172,9 +145,6 @@ func TestIncrementalEqualsWholesaleAtEveryFrame(t *testing.T) {
 	}
 }
 
-// TestIncrementalActuallyReuses is the other half: an implementation that
-// simply calls Nodes every frame would pass the equality test and buy nothing.
-// The subject here is the WORK SKIPPED.
 func TestIncrementalActuallyReuses(t *testing.T) {
 	frames := turnScript(8)
 	inc := NewIncremental()
@@ -185,8 +155,6 @@ func TestIncrementalActuallyReuses(t *testing.T) {
 	if reused == 0 {
 		t.Fatalf("composed %d messages, reused 0: nothing was memoized", composed)
 	}
-	// Wholesale would compose sum(len(msgs)) over the script. Incremental must
-	// be a small fraction of it.
 	var wholesale int
 	for _, f := range frames {
 		wholesale += len(f.msgs)
@@ -197,9 +165,6 @@ func TestIncrementalActuallyReuses(t *testing.T) {
 	t.Logf("composed %d messages, reused %d, wholesale would compose %d", composed, reused, wholesale)
 }
 
-// TestIncrementalSurvivesAResetBetweenTurns pins the lifecycle: the memo is
-// per turn, and a stale memo from the previous turn must never bleed into the
-// next one.
 func TestIncrementalSurvivesAResetBetweenTurns(t *testing.T) {
 	inc := NewIncremental()
 	for _, f := range turnScript(2) {
@@ -215,17 +180,14 @@ func TestIncrementalSurvivesAResetBetweenTurns(t *testing.T) {
 	}
 }
 
-// TestIncrementalDropsAMemoItCannotTrust proves the memo degrades to a miss
-// rather than to a lie. The region is append-only in the product (repair
-// appends, it never rewrites), so this input cannot arise there -- which is
-// exactly why the guard needs a test: nothing else would exercise it.
+// The region is append-only in production, so nothing else exercises the
+// memo's distrust path.
 func TestIncrementalDropsAMemoItCannotTrust(t *testing.T) {
 	frames := turnScript(3)
 	inc := NewIncremental()
 	for _, f := range frames {
 		inc.Nodes(f.msgs, f.partials, f.argPartials, f.timings)
 	}
-	// Rewrite history under the memo: same shape, different content.
 	last := frames[len(frames)-1]
 	rewritten := append([]message.Message(nil), last.msgs...)
 	for i := range rewritten {
@@ -244,8 +206,6 @@ func TestIncrementalDropsAMemoItCannotTrust(t *testing.T) {
 	}
 }
 
-// join is the frame as one slice, which is what wholesale composition
-// returns and therefore what equality is asserted against.
 func join(prefix, suffix []livedoc.Node) []livedoc.Node {
 	if len(prefix)+len(suffix) == 0 {
 		return nil

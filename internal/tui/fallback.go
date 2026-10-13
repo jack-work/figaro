@@ -1,10 +1,5 @@
 package tui
 
-// Non-TTY fallbacks. These reuse the same UX as the pre-huh wizard:
-// numbered prompts with `term.ReadPassword` for the passphrase.
-// Living here keeps the public API (PromptPassphrase / PickProvider)
-// a single function the caller doesn't have to branch around.
-
 import (
 	"fmt"
 	"io"
@@ -15,9 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// promptOut and readPassword are variables so a test can drive the
-// fallback prompts without a terminal. Production keeps stderr and the
-// real no-echo read; nothing else may reassign them.
+// Variables so a test can drive the prompts; nothing else may reassign them.
 var (
 	promptOut    io.Writer = os.Stderr
 	readPassword           = func() ([]byte, error) {
@@ -28,11 +21,6 @@ var (
 	}
 )
 
-// promptPassphraseFallback is the same two questions without the huh
-// form: a plain numbered prompt for a terminal that cannot host a TUI.
-// It splits create from unlock exactly as the TUI does, because a user
-// on a dumb terminal is no more able to guess which one he is looking
-// at than anyone else.
 func promptPassphraseFallback(req PassphraseRequest) ([]byte, error) {
 	if !stdinIsTTY() {
 		if req.Mode == PassphraseUnlock {

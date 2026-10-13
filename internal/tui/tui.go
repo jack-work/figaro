@@ -1,4 +1,4 @@
-// Package tui: figaro's bubbletea-based first-run components.
+// Package tui holds the huh-based first-run prompts.
 package tui
 
 import (
@@ -13,9 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// Available reports whether a rich TUI can run in the current
-// environment. Callers should branch on this before constructing a
-// huh form; for negative cases, fall back to plain prompts.
+// Available reports whether a huh form can run here.
 func Available() bool {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return false
@@ -29,10 +27,7 @@ func Available() bool {
 	return true
 }
 
-// withFigaroKeymap augments huh's default key bindings with emacs
-// equivalents (ctrl+p / ctrl+n) on top of the already-supported vim
-// j/k and arrow keys. huh ships j/ctrl+j/ctrl+n/down for next-field
-// navigation by default; we add ctrl+p as a synonym for prev.
+// withFigaroKeymap adds ctrl+p/ctrl+n beside huh's j/k and arrows.
 func withFigaroKeymap(form *huh.Form) *huh.Form {
 	km := huh.NewDefaultKeyMap()
 	km.Input.Prev = key.NewBinding(
@@ -63,39 +58,24 @@ func withFigaroKeymap(form *huh.Form) *huh.Form {
 	return form
 }
 
-// PassphraseMode says which of the two questions we are asking. They
-// are different questions and they used to share one screen, which is
-// how a returning user was told to "choose a passphrase" and then had
-// his correct answer rejected: the confirm field only checked that he
-// had typed the same new passphrase twice.
 type PassphraseMode int
 
 const (
-	// PassphraseCreate: there is no identity yet. Ask twice, since a
-	// typo here is unrecoverable.
+	// PassphraseCreate asks twice: a typo is unrecoverable.
 	PassphraseCreate PassphraseMode = iota
-	// PassphraseUnlock: an identity exists. Ask once and check the
-	// answer against it.
 	PassphraseUnlock
 )
 
-// PassphraseRequest is what the caller knows and the prompt cannot
-// work out for itself.
 type PassphraseRequest struct {
-	// App names the vault in the prompt ("figaro").
-	App string
-	// Mode picks the screen.
+	App  string
 	Mode PassphraseMode
-	// SavesToKeyring is honored in create mode: promise silence only
-	// when there is a keyring to be silent with. On a host where no
-	// Secret Service can be reached, the old screen's "you won't be
-	// asked again" was a lie told once per command.
+	// SavesToKeyring, in create mode, is the only case that may promise
+	// "you won't be asked again".
 	SavesToKeyring bool
-	// Verify, in unlock mode, reports whether the typed passphrase
-	// decrypts the identity. Non-nil enables the retry loop; nil means
-	// the caller checks for itself and one attempt is all we make.
+	// Verify, in unlock mode, enables the retry loop; nil means one attempt
+	// and the caller checks.
 	Verify func(pp []byte) error
-	// Tries bounds unlock attempts. Zero means defaultPassphraseTries.
+	// Tries bounds unlock attempts; zero means defaultPassphraseTries.
 	Tries int
 }
 
@@ -118,15 +98,10 @@ func (r PassphraseRequest) app() string {
 	return r.App
 }
 
-// ErrTooManyAttempts ends the unlock loop. It carries no wrapped
-// crypto error: "incorrect passphrase" is the whole of what the user
-// needs, and a wrapped age failure underneath it reads as a crash.
+// ErrTooManyAttempts deliberately wraps no crypto error.
 var ErrTooManyAttempts = errors.New("incorrect passphrase")
 
-// PromptPassphrase asks for the passphrase that encrypts the vault.
-// In create mode it asks twice and returns the agreed bytes; in unlock
-// mode it asks once per attempt and returns the first answer that
-// verifies. Aborting (esc/ctrl+c) returns huh.ErrUserAborted.
+// PromptPassphrase returns huh.ErrUserAborted on esc/ctrl+c.
 func PromptPassphrase(req PassphraseRequest) ([]byte, error) {
 	if !Available() {
 		return promptPassphraseFallback(req)
@@ -170,7 +145,6 @@ func promptCreate(req PassphraseRequest) ([]byte, error) {
 	if err := form.Run(); err != nil {
 		return nil, err
 	}
-	// Wipe the second buffer; return the first.
 	out := []byte(pass1)
 	zeroString(&pass1)
 	zeroString(&pass2)
@@ -182,7 +156,6 @@ func createNote(req PassphraseRequest) string {
 	if req.SavesToKeyring {
 		return note + "We'll save it to your OS keyring: you won't be asked again.\n"
 	}
-	// No keyring here, so say what actually happens, and name the way out.
 	return note +
 		"This host has no reachable OS keyring, so you'll be asked for it\n" +
 		"on every start. Escape now and run figaro vault init --file to use\n" +
@@ -241,18 +214,13 @@ func unlockNote(attempt, tries int) string {
 	return fmt.Sprintf("incorrect passphrase: %d %s left.\n", left, word)
 }
 
-// ProviderOption is one row in the picker. Label is shown; Hint is
-// dimmed alongside. The Key is returned (caller uses it to dispatch
-// to the right credential flow).
 type ProviderOption struct {
-	Key   string // returned to caller
+	Key   string
 	Label string
 	Hint  string
 }
 
-// PickProvider shows a select with the given options. First option
-// is the default (Enter selects it without moving). Returns the
-// chosen Key.
+// PickProvider returns the chosen Key; the first option is the default.
 func PickProvider(title string, options []ProviderOption) (string, error) {
 	if !Available() {
 		return pickProviderFallback(title, options)
@@ -288,13 +256,8 @@ func PickProvider(title string, options []ProviderOption) (string, error) {
 	return chosen, nil
 }
 
-// zeroString tries to overwrite a string's backing bytes. Best-effort
-// : Go's string immutability means the runtime may have made copies,
-// but doing the wipe here at least kills the local reference and
-// shortens the window before GC reclaims.
+// zeroString is best-effort: the runtime may hold copies.
 func zeroString(s *string) {
-	// Replace with a same-length zeroed string so the original
-	// header points elsewhere immediately.
 	if s == nil {
 		return
 	}

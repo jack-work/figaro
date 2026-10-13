@@ -7,23 +7,15 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// BACKCOMPAT IS READ-ONLY.
-//
-// The drain now folds a batch of queued prompts into ONE message whose prose is
-// the texts joined by newlines. Logs written before that carry N SEPARATE input
-// messages, and nothing on disk is migrated: so the read path must keep
-// producing N steering nodes for them, exactly as it did.
-//
-// This is the shape the user has 23 of in his real store. If this test ever
-// starts failing, an old conversation has begun rendering differently than it
-// did when it was written, which is the one thing a read path may never do.
+// Logs on disk carry N separate steer messages; nothing is migrated, so the
+// read path must keep producing N nodes for them.
 func TestTurns_LegacySeparateSteersStillRenderSeparately(t *testing.T) {
 	legacy := []message.Message{
-		inqUser(prose("do the thing")), // opens turn 1
-		asstLT(0, tool("t1", "bash")),  // turn 1
+		inqUser(prose("do the thing")),
+		asstLT(0, tool("t1", "bash")),
 		{Role: message.RoleInput, Steering: true, Content: []message.Content{prose("nudge one")}},
 		{Role: message.RoleInput, Steering: true, Content: []message.Content{prose("nudge two")}},
-		asstLT(0, prose("done")), // turn 1
+		asstLT(0, prose("done")),
 	}
 	tns := Turns(legacy)
 	if len(tns) != 1 {
@@ -43,9 +35,6 @@ func TestTurns_LegacySeparateSteersStillRenderSeparately(t *testing.T) {
 	}
 }
 
-// The NEW write shape: one message carrying newline-joined text: renders as a
-// SINGLE steering node holding every line. Three nudges typed during one tool
-// round are one aside, not three the model must reconcile.
 func TestTurns_ConcatenatedSteerIsOneNode(t *testing.T) {
 	modern := []message.Message{
 		inqUser(prose("do the thing")),

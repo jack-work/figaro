@@ -15,8 +15,7 @@ func newTestRing(capacity int, keep Keep) (*Ring, *bytes.Buffer) {
 	return New(inner, capacity, keep), &buf
 }
 
-// Retention must never replace emission. A ring that swallowed log lines
-// would lose them exactly when the process dies, which is when you want them.
+// Retention must never replace emission.
 func TestEverythingIsStillEmitted(t *testing.T) {
 	ring, out := newTestRing(8, AtLeast(slog.LevelWarn))
 	log := slog.New(ring)
@@ -35,8 +34,6 @@ func TestEverythingIsStillEmitted(t *testing.T) {
 	}
 }
 
-// The default policy is why the ring is free: nothing is copied until
-// something goes wrong.
 func TestQuietOperationRetainsNothing(t *testing.T) {
 	ring, _ := newTestRing(8, nil) // nil => AtLeast(WARN)
 	log := slog.New(ring)
@@ -48,9 +45,6 @@ func TestQuietOperationRetainsNothing(t *testing.T) {
 	}
 }
 
-// A subsystem opts one INFO stream in by message, without lowering the bar
-// for everything else. This is how a SUCCESSFUL provider round-trip survives
-// to be compared against the one that was refused.
 func TestMessageOptInKeepsAnInfoStream(t *testing.T) {
 	ring, _ := newTestRing(16, Any(AtLeast(slog.LevelWarn), WithMessage("provider round-trip")))
 	log := slog.New(ring)
@@ -71,14 +65,11 @@ func TestMessageOptInKeepsAnInfoStream(t *testing.T) {
 	}
 }
 
-// Attributes must be COPIED. A Handler may not retain a Record: the
-// attributes past the inline few live in a slice the record does not own, and
-// slog reuses it. Retaining without copying reads as corruption later.
+// A Handler may not retain a Record: slog reuses the spilled attr slice.
 func TestAttrsSurviveRecordReuse(t *testing.T) {
 	ring, _ := newTestRing(16, AtLeast(slog.LevelInfo))
 	log := slog.New(ring)
 
-	// More attrs than a Record holds inline, twice, to force the spill path.
 	for i := 0; i < 2; i++ {
 		log.Info("wide", "a", i, "b", i, "c", i, "d", i, "e", i, "f", i, "g", i)
 	}
@@ -91,8 +82,7 @@ func TestAttrsSurviveRecordReuse(t *testing.T) {
 	}
 }
 
-// WithAttrs/WithGroup produce derived handlers; they must share one buffer, or
-// a subsystem that scopes its logger retains into a ring nobody can read.
+// Derived handlers must share one buffer.
 func TestDerivedHandlersShareTheRing(t *testing.T) {
 	ring, _ := newTestRing(16, AtLeast(slog.LevelWarn))
 	base := slog.New(ring)
@@ -134,8 +124,6 @@ func TestRingWrapsAndReportsOldestFirst(t *testing.T) {
 	if got[len(got)-1].Attrs["i"] != int64(9) {
 		t.Errorf("newest = %v, want i=9", got[len(got)-1].Attrs)
 	}
-	// Seq is monotonic across the ring's whole life: the gap between the
-	// oldest retained seq and 1 is what retention dropped.
 	if got[0].Seq != 7 {
 		t.Errorf("oldest seq = %d, want 7", got[0].Seq)
 	}
@@ -156,8 +144,6 @@ func TestStatsReportTheBound(t *testing.T) {
 	}
 }
 
-// slog handlers are called from every goroutine in the process. The race
-// detector makes this test worth its runtime.
 func TestConcurrentUse(t *testing.T) {
 	ring, _ := newTestRing(64, AtLeast(slog.LevelInfo))
 	log := slog.New(ring)

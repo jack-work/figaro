@@ -13,7 +13,6 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// fakeStrategy is a CredentialStrategy with canned results.
 type fakeStrategy struct {
 	token       string
 	invErr      error
@@ -46,8 +45,7 @@ func TestAggregateInvalidateNilWhenAllSucceed(t *testing.T) {
 	assert.NoError(t, agg.Invalidate("tok"))
 }
 
-// fakeHushAgent serves one canned JSON response per connection on a
-// unix socket, mimicking the hush agent wire protocol.
+// fakeHushAgent serves one canned JSON response per connection.
 func fakeHushAgent(t *testing.T, respJSON string) *hush.Client {
 	t.Helper()
 	sock := filepath.Join(t.TempDir(), "hush.sock")

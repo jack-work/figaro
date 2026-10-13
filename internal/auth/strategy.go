@@ -9,17 +9,13 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// CredentialStrategy is one source of API credentials.
 type CredentialStrategy interface {
 	TryResolve() (token string, ok bool, err error)
-	// Invalidate is called when a token is rejected (e.g. 401). A
-	// non-nil error means invalidation itself failed (e.g. an OAuth
-	// refresh was rejected).
+	// Invalidate: a non-nil error means invalidation itself failed.
 	Invalidate(token string) error
 }
 
-// Aggregate is a TokenResolver that walks strategies in priority
-// order. Re-evaluates on each call (picks up config changes).
+// Aggregate walks strategies in priority order on every call.
 type Aggregate struct {
 	Strategies []CredentialStrategy
 }
@@ -51,7 +47,6 @@ func (a *Aggregate) Invalidate(token string) error {
 	return errors.Join(errs...)
 }
 
-// EnvVar reads a token from an env var.
 type EnvVar struct {
 	Name string
 }
@@ -69,7 +64,6 @@ func (e *EnvVar) TryResolve() (string, bool, error) {
 
 func (*EnvVar) Invalidate(string) error { return nil }
 
-// ConfigValue reads a plaintext token via a closure.
 type ConfigValue struct {
 	Get func() string
 }
@@ -87,19 +81,13 @@ func (c *ConfigValue) TryResolve() (string, bool, error) {
 
 func (*ConfigValue) Invalidate(string) error { return nil }
 
-// OAuth reads the access token for a named credential from the hush
-// agent. Minting and renewal are the agent's responsibility - whether the
-// credential is refreshed (OAuth) or exchanged (a Copilot session token);
-// this strategy only fetches the current value and forces a mint on
-// Invalidate so the next call sees a new token.
+// OAuth fetches a named credential from the hush agent, which owns minting
+// and renewal; Invalidate forces a mint.
 type OAuth struct {
 	Hush *hush.Client
 	Name string
 
-	// endpoint is the routing minted alongside the token, for credentials
-	// whose exchange chooses the host (Copilot). Published atomically
-	// because Resolve runs on provider goroutines and Endpoint is read by
-	// whoever is about to build a request.
+	// endpoint is published atomically: Resolve runs on provider goroutines.
 	endpoint atomic.Pointer[string]
 }
 
@@ -118,9 +106,8 @@ func (o *OAuth) TryResolve() (string, bool, error) {
 	return tok, true, nil
 }
 
-// Resolve makes OAuth usable as a TokenResolver on its own, which is what a
-// provider whose bearer hush MINTS wants: there is no chain to walk, since
-// no other source holds a bearer for it.
+// Resolve makes OAuth a TokenResolver on its own, for a provider whose bearer
+// only hush mints.
 func (o *OAuth) Resolve() (string, error) {
 	tok, ok, err := o.TryResolve()
 	if err != nil {
@@ -132,8 +119,7 @@ func (o *OAuth) Resolve() (string, error) {
 	return tok, nil
 }
 
-// Endpoint is the API host the current token must be spent at, or "" when
-// the credential says nothing about routing.
+// Endpoint is the API host the current token must be spent at, or "".
 func (o *OAuth) Endpoint() string {
 	if p := o.endpoint.Load(); p != nil {
 		return *p
@@ -162,9 +148,8 @@ func (o *OAuth) Invalidate(token string) error {
 	return fmt.Errorf("oauth refresh for %q: %w", o.Name, err)
 }
 
-// EndpointCarrier is a resolver whose credential also names where its token
-// must be spent. Copilot's exchange answers with an API host; nothing else
-// does, so callers type-assert rather than widening TokenResolver.
+// EndpointCarrier is a resolver whose credential also names the API host.
+// Only Copilot's exchange does, so callers type-assert.
 type EndpointCarrier interface {
 	Endpoint() string
 }

@@ -1,7 +1,5 @@
-// Package update surfaces available new releases of figaro and helps
-// the user apply the upgrade against whichever install channel they
-// chose. It is intentionally humble: it never mutates the binary on
-// its own, it only *nudges*.
+// Package update surfaces new releases and the upgrade command for the
+// install channel. It never mutates the binary.
 package update
 
 import (
@@ -18,7 +16,6 @@ import (
 	"time"
 )
 
-// Channel names the install medium figaro is running under.
 type Channel string
 
 const (
@@ -30,26 +27,21 @@ const (
 	ChannelUnknown   Channel = "unknown"
 )
 
-// ChannelMarker is the file an installer drops BESIDE the binary to say how
-// figaro got there. Path sniffing cannot answer this honestly: ~/.local/bin
-// holds binaries from a dozen sources, and a wrong guess here prints an
-// upgrade command that damages someone's install. The installer knows, so it
-// writes it down; the file holds one word, the channel name.
+// ChannelMarker is the one-word file an installer drops beside the binary;
+// a wrong channel guess prints an upgrade command that damages the install.
 const ChannelMarker = ".figaro-channel"
 
-// Info is the result of a check. Latest is empty on failure; Available
-// is true iff Latest is strictly greater than Current.
+// Info is the result of a check; Latest is empty on failure.
 type Info struct {
-	Current    string    `json:"current"`   // module version of the running binary, e.g. "v0.1.4" or "(devel)"
-	Latest     string    `json:"latest"`    // latest tag on the module proxy, "" if the check failed
-	Available  bool      `json:"available"` // true iff Latest > Current
+	Current    string    `json:"current"`
+	Latest     string    `json:"latest"`
+	Available  bool      `json:"available"`
 	Channel    Channel   `json:"channel"`
 	Exe        string    `json:"exe"`
 	CheckedAt  time.Time `json:"checked_at"`
 	FetchError string    `json:"fetch_error,omitempty"`
 }
 
-// DetectChannel returns the install channel of the running binary.
 func DetectChannel() Channel {
 	exe, err := os.Executable()
 	if err != nil {
@@ -58,40 +50,27 @@ func DetectChannel() Channel {
 	return channelFor(exe)
 }
 
-// channelFor is DetectChannel against a given path, so the rules are testable
-// without a binary in every install layout.
 func channelFor(exe string) Channel {
-	// Resolve one level of symlink (Nix wrappers, ~/.nix-profile, …)
-	// so /nix/store detection is robust.
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
 	if strings.HasPrefix(exe, "/nix/store/") {
-		// A dev-shell build under a worktree still lives in /nix/store
-		// (the flake output). Differentiate by the presence of the
-		// dev-shell marker envs.
 		if os.Getenv("FIGARO_DEV_ROOT") != "" {
 			return ChannelDevShell
 		}
 		return ChannelNix
 	}
-	// An installer's own word about itself outranks every heuristic below.
 	if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ChannelMarker)); err == nil {
 		switch ch := Channel(strings.TrimSpace(string(b))); ch {
 		case ChannelScript, ChannelHomebrew, ChannelGoInstall, ChannelNix:
 			return ch
 		}
 	}
-	// Homebrew keeps every formula under a Cellar and links it into its bin
-	// dir; the symlink was resolved above, so the Cellar segment is the
-	// proof, and it holds for a custom brew prefix too (/opt/brew, and every
-	// other place someone has put one).
+	// The Cellar segment holds for a custom brew prefix too.
 	if strings.Contains(exe, string(os.PathSeparator)+"Cellar"+string(os.PathSeparator)) {
 		return ChannelHomebrew
 	}
-	// Heuristic: $GOBIN or $GOPATH/bin. We don't shell out to `go env`
-	// (adds a dependency on the go toolchain being installed); we sniff
-	// the env directly with fallbacks.
+	// No `go env`: the toolchain may not be installed.
 	if gobin := os.Getenv("GOBIN"); gobin != "" && strings.HasPrefix(exe, gobin+string(os.PathSeparator)) {
 		return ChannelGoInstall
 	}
@@ -110,9 +89,8 @@ func channelFor(exe string) Channel {
 	return ChannelUnknown
 }
 
-// CurrentVersion returns the semver-ish version stamped on the module,
-// or "(devel)" for `go run`, or a short git rev for -ldflags-stamped
-// worktree builds.
+// CurrentVersion is the module version, "dev-<rev>" for a stamped worktree
+// build, or "(devel)".
 func CurrentVersion(commitFallback string) string {
 	info, ok := debug.ReadBuildInfo()
 	if ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
@@ -125,15 +103,12 @@ func CurrentVersion(commitFallback string) string {
 		return "dev-" + commitFallback
 	}
 	if ok {
-		return info.Main.Version // "(devel)" or ""
+		return info.Main.Version
 	}
 	return "(unknown)"
 }
 
-// FetchLatest asks proxy.golang.org for the latest tagged version of
-// the module. Uses the public /@latest endpoint, which returns JSON
-// like {"Version":"v0.1.4","Time":"..."}. No auth, no rate limits
-// that matter for a once-a-day poll.
+// FetchLatest asks proxy.golang.org for the module's latest tag.
 func FetchLatest(ctx context.Context, module string) (string, error) {
 	url := "https://proxy.golang.org/" + module + "/@latest"
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -162,11 +137,8 @@ func FetchLatest(ctx context.Context, module string) (string, error) {
 	return payload.Version, nil
 }
 
-// Compare returns +1 if a > b, -1 if a < b, 0 if equal. Both are
-// expected to be "vMAJOR.MINOR.PATCH" (optional pre-release suffix
-// tolerated by falling back to string compare on that segment). Any
-// unparseable input is treated as "-inf" so unknowns never spuriously
-// claim to be newer than the proxy answer.
+// Compare orders vMAJOR.MINOR.PATCH strings; unparseable input is -inf so an
+// unknown never claims to be newer.
 func Compare(a, b string) int {
 	am, ap, ao, aok := parseSemver(a)
 	bm, bp, bo, bok := parseSemver(b)
@@ -188,7 +160,6 @@ func Compare(a, b string) int {
 	if ao != bo {
 		return sign(ao - bo)
 	}
-	// Equal numeric core: shorter pre-release string > longer (v1.0.0 > v1.0.0-rc1).
 	as := suffix(a)
 	bs := suffix(b)
 	switch {
@@ -214,10 +185,8 @@ func sign(n int) int {
 	return 0
 }
 
-// parseSemver returns (major, minor, patch, ok). Accepts "v" prefix.
 func parseSemver(s string) (int, int, int, bool) {
 	s = strings.TrimPrefix(s, "v")
-	// strip pre-release / build metadata for numeric compare
 	if i := strings.IndexAny(s, "-+"); i >= 0 {
 		s = s[:i]
 	}
@@ -243,9 +212,7 @@ func suffix(s string) string {
 	return ""
 }
 
-// UpgradeCommand returns the shell command the user should run to
-// upgrade, given the install channel. Empty means "no automatic
-// suggestion possible on this channel".
+// UpgradeCommand is "" when the channel has no suggestion.
 func UpgradeCommand(ch Channel, module, latest string) string {
 	switch ch {
 	case ChannelGoInstall:
@@ -259,8 +226,6 @@ func UpgradeCommand(ch Channel, module, latest string) string {
 	case ChannelDevShell:
 		return "git pull && exit && nix develop   # (dev shell: rebuild by re-entering)"
 	case ChannelScript:
-		// The installer is idempotent and overwrites in place, so re-running
-		// it IS the upgrade. It takes the same route it took the first time.
 		return "curl -fsSL https://figar.org/install.sh | sh"
 	case ChannelHomebrew:
 		return "brew upgrade figaro"
