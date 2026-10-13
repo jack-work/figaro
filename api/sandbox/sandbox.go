@@ -11,8 +11,9 @@ import (
 	"time"
 )
 
-// ErrOutsideWorkspace is returned by FS for a path that, after cleaning and
-// symlink resolution, does not lie under Spec.Workspace.
+// ErrOutsideWorkspace is returned by a provider that claims Isolation.FS
+// for a path that, after cleaning and symlink resolution, does not lie
+// under Spec.Workspace.
 var ErrOutsideWorkspace = errors.New("sandbox: path escapes workspace")
 
 // ErrNoSession is returned by Sessions for an unknown or expired id.
@@ -28,8 +29,9 @@ type Spec struct {
 	// Workspace is the one path the box sees read-write, and the root
 	// every FS path resolves against. Absolute, on the host.
 	Workspace string
-	// Env is the whole environment a process starts with. Nothing is
-	// inherited from the daemon.
+	// Env is what every process starts with. A provider that claims
+	// Isolation.Env adds nothing from the daemon's environment; one that
+	// does not lays Env over what the daemon has.
 	Env map[string]string
 }
 
@@ -47,7 +49,7 @@ type Sandbox interface {
 // delivered to OnChunk in order as it is produced.
 type ExecRequest struct {
 	Command string
-	// Cwd is relative to Spec.Workspace; empty means the workspace itself.
+	// Cwd is resolved like an FS path; empty means the workspace itself.
 	Cwd string
 	// Env overrides Spec.Env for this process only.
 	Env map[string]string
@@ -121,9 +123,10 @@ type SessionInfo struct {
 	EndedAt   time.Time
 }
 
-// FS is the workspace filesystem. Every path is resolved against
-// Spec.Workspace; one that escapes it, by ".." or by being absolute
-// elsewhere, fails with ErrOutsideWorkspace.
+// FS is the workspace filesystem. A relative path is resolved against
+// Spec.Workspace. A provider that claims Isolation.FS refuses, with
+// ErrOutsideWorkspace, any path that escapes it by ".." or by being
+// absolute elsewhere; one that does not serves any absolute path.
 type FS interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, data []byte, perm fs.FileMode) error
@@ -142,7 +145,8 @@ type Isolation struct {
 	Provider string
 	// UID: processes run as a uid other than the daemon's.
 	UID bool
-	// FS: nothing outside Spec.Workspace is visible to a process.
+	// FS: a process can write to the host only under Spec.Workspace, and
+	// FS refuses any path outside it.
 	FS bool
 	// Env: a process sees exactly Spec.Env.
 	Env bool
@@ -151,6 +155,6 @@ type Isolation struct {
 	// Secrets: the daemon's config and credential stores are unreachable.
 	Secrets bool
 	// Persistent: sessions outlive Close and are found again by a later
-	// Open of the same Workspace.
+	// Open for the same aria.
 	Persistent bool
 }
