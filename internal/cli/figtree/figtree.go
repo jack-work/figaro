@@ -1,5 +1,4 @@
-// Package figtree renders a tree of records as an indented table: one row per
-// node, tree glyphs in the first cell, named fields in the columns after it.
+// Package figtree renders a tree of records as an indented table.
 package figtree
 
 import (
@@ -10,20 +9,15 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// Node is one record in the tree. Fields carries everything the columns and
-// the colour rules read, so adding a column never means changing this type.
 type Node struct {
-	// Marker is an optional glyph between the branch glyphs and the label
-	// (`figaro ls` uses it for ●/▸/○). Omitted when empty, along with the
-	// space that would follow it.
+	// Marker is an optional glyph between the branch glyphs and the label.
 	Marker string
 
-	// Label is the node's name, the only cell a reader is guaranteed to see:
-	// it survives every width fallback.
+	// Label survives every width fallback.
 	Label string
 
-	// Fields are the node's named values, keyed as the Columns and
-	// FieldColors name them. Nil is legal, a missing field reads as "".
+	// Fields is keyed as Columns and FieldColors name them; a missing field
+	// reads as "".
 	Fields map[string]string
 
 	Children []*Node
@@ -35,24 +29,20 @@ type ColorRule struct {
 	Color string
 }
 
-// FieldColor watches one field and paints the label by its value. Rules are
-// tried in order; the first match wins, and no match leaves the label plain.
+// FieldColor paints the label by one field's value; first matching rule wins.
 type FieldColor struct {
 	FieldName string
 	Rules     []ColorRule
 }
 
-// Column is one printed column. An empty Field means the tree cell itself
-// (branch glyphs, marker, label), which is why it is normally listed first.
-// Max truncates the value to that many runes; 0 leaves it whole.
+// Column with an empty Field is the tree cell itself; Max 0 leaves the value whole.
 type Column struct {
 	Header string
 	Field  string
 	Max    int
 }
 
-// Tree is a whole renderable picture: what to walk, what to print, how to
-// paint it. Columns nil renders the bare tree with no header.
+// Tree with nil Columns renders the bare tree with no header.
 type Tree struct {
 	Roots       []*Node
 	Columns     []Column
@@ -60,35 +50,26 @@ type Tree struct {
 	Backgrounds []RowBackground
 }
 
-// RowBackground washes an ENTIRE row: glyphs, label, every padded cell,
-// through to the right edge: with a raw SGR sequence when the watched
-// field holds the value. figaro uses it to give unbound-form rows the
-// same wash the transcript's node selection uses, one shared token.
+// RowBackground washes the whole row to the right edge with a raw SGR sequence
+// when the field holds Value.
 type RowBackground struct {
 	Field string
 	Value string
 	Seq   string
 }
 
-// Row is one flattened node. Branch/Marker/Label are kept apart so a caller
-// can lay them out itself (a narrow fallback, say) rather than take Cell.
+// Row keeps Branch/Marker/Label apart so a caller can lay them out itself.
 type Row struct {
 	Branch string
 	Marker string
 	Label  string
 	Fields map[string]string
 
-	// Color is the role resolved from the Tree's FieldColors, "" for none.
-	Color string
-
-	// Background is the raw SGR wash resolved from the Tree's
-	// Backgrounds, "" for none. Applied by RenderRows over the whole line.
+	Color      string
 	Background string
 }
 
-// Cell is the tree cell: branch glyphs, marker, then the label painted with
-// Color. Only the label is painted: colouring the glyphs would make the shape
-// of the tree compete with the meaning of its rows.
+// Cell paints only the label, never the branch glyphs.
 func (r Row) Cell() string {
 	label := r.Label
 	if r.Color != "" {
@@ -101,10 +82,8 @@ func (r Row) Cell() string {
 	return out + label
 }
 
-// Field reads a field, "" when absent.
 func (r Row) Field(name string) string { return r.Fields[name] }
 
-// Rows flattens the tree depth-first, assigning each node its branch glyphs.
 func (t Tree) Rows() []Row {
 	var rows []Row
 	var walk func(n *Node, prefix string, isLast, isRoot bool)
@@ -145,7 +124,6 @@ func (t Tree) Rows() []Row {
 	return rows
 }
 
-// backgroundOf resolves a node's row wash: first matching rule wins.
 func (t Tree) backgroundOf(n *Node) string {
 	for _, b := range t.Backgrounds {
 		if n.Fields[b.Field] == b.Value {
@@ -155,7 +133,6 @@ func (t Tree) backgroundOf(n *Node) string {
 	return ""
 }
 
-// colorOf resolves a node's role: first FieldColor with a matching rule wins.
 func (t Tree) colorOf(n *Node) string {
 	for _, fc := range t.Colors {
 		value, ok := n.Fields[fc.FieldName]
@@ -171,14 +148,11 @@ func (t Tree) colorOf(n *Node) string {
 	return ""
 }
 
-// Render lays the rows out in columns and clips each line to width. Width 0
-// leaves lines unclipped.
+// Render clips each line to width; 0 leaves lines unclipped.
 func (t Tree) Render(width int) string {
 	return RenderRows(t.Rows(), t.Columns, width)
 }
 
-// RenderRows lays out rows a caller has already flattened, and possibly
-// filtered or truncated, which is why this is not folded into Render.
 func RenderRows(rows []Row, columns []Column, width int) string {
 	if len(columns) == 0 {
 		var out bytes.Buffer
@@ -220,8 +194,7 @@ func RenderRows(rows []Row, columns []Column, width int) string {
 		var line strings.Builder
 		for i, cell := range cells {
 			line.WriteString(cell)
-			// The final column is not padded: trailing blanks are invisible
-			// and would only widen every line toward the clip.
+			// The final column is not padded.
 			if i < len(cells)-1 {
 				line.WriteString(strings.Repeat(" ", widths[i]-term.VisibleLen(cell)+padding))
 			}
@@ -235,10 +208,8 @@ func RenderRows(rows []Row, columns []Column, width int) string {
 	return out.String()
 }
 
-// washRow wraps a rendered line in a background sequence, re-arming the
-// wash after any embedded reset (the idiom the transcript's selection
-// wash established) and painting to the right edge with EL so the row
-// reads as one band, not a ragged run of cells.
+// washRow re-arms the wash after every embedded reset and paints to the right edge
+// with EL.
 func washRow(line, bg string) string {
 	if bg == "" || line == "" {
 		return line
@@ -248,8 +219,7 @@ func washRow(line, bg string) string {
 	return bg + line + "\x1b[K" + reset
 }
 
-// padding is the gap between columns, matching what `figaro ls` printed when
-// it built this table with text/tabwriter.
+// padding matches text/tabwriter's gap, which `figaro ls` printed before.
 const padding = 2
 
 func clip(s string, width int) string {
@@ -259,8 +229,6 @@ func clip(s string, width int) string {
 	return term.TruncateVisible(s, width)
 }
 
-// truncRunes shortens s to max runes, matching the ".." ellipsis `figaro ls`
-// already used for its narrow OUTFIT column. max 0 means no limit.
 func truncRunes(s string, max int) string {
 	if max <= 0 {
 		return s

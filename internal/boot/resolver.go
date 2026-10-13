@@ -18,8 +18,7 @@ import (
 	_ "github.com/jack-work/figaro/internal/provider/routed"
 )
 
-// BuildResolver assembles a credential resolver for a provider.
-// Walks env -> plaintext api_key -> encrypted api_key -> OAuth.
+// BuildResolver resolves in order: env, plaintext api_key, encrypted api_key, OAuth.
 func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
 	h, err := Hush()
 	if err != nil {
@@ -33,17 +32,13 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		hasOAuth = reg.HasOAuth
 	}
 
-	// A provider whose bearer must be EXCHANGED has exactly one credential
-	// source: hush, which performs the exchange and owns the result. The
-	// env var and the stored api_key are the durable secret, not a bearer;
-	// presenting either to the API would present the wrong credential. They
-	// are handed to hush once, here, and never read again.
+	// An exchanged bearer has one source, hush; the env var and api_key are
+	// the durable secret, not a bearer.
 	if reg != nil && reg.ExchangeGrant != "" && reg.ExchangeURL != nil && reg.ExchangeURL(loaded) != "" {
 		if err := ensureExchangeCredential(loaded, h, reg, providerName); err != nil {
 			return nil, err
 		}
-		// Returned bare, not wrapped in an Aggregate: it is the only
-		// source, and the provider reads the routing off it directly.
+		// Bare, not an Aggregate: the provider reads the routing off it.
 		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
 	}
 
@@ -88,16 +83,10 @@ func EnvironmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrat
 	return strategies
 }
 
-// Some providers will not accept the credential a human owns. GitHub Copilot
-// is the standing example: the API refuses a GitHub token outright, and
-// wants a session token exchanged from it, good for about half an hour.
-
-// exchangeSetupMu serializes credential bootstrap within this process.
 var exchangeSetupMu sync.Mutex
 
-// ensureExchangeCredential registers the provider's durable secret with hush
-// under an exchange grant, if hush does not already hold it. Idempotent and
-// cheap: the common path is one oauth_list over a unix socket.
+// ensureExchangeCredential hands the durable secret to hush under an exchange
+// grant, once.
 func ensureExchangeCredential(loaded *config.Loaded, mh *managed.Hush, reg *providerPkg.Registration, name string) error {
 	exchangeSetupMu.Lock()
 	defer exchangeSetupMu.Unlock()
@@ -111,13 +100,10 @@ func ensureExchangeCredential(loaded *config.Loaded, mh *managed.Hush, reg *prov
 		tokenURL = reg.ExchangeURL(loaded)
 	}
 	if tokenURL == "" {
-		// This installation does not exchange (Copilot's direct mode).
 		return nil
 	}
 
-	// The agent may predate this figaro: it is figaro's own re-exec and
-	// outlives the binary that spawned it. hush knows how to replace its
-	// own child.
+	// The agent may predate this binary; hush replaces its own child.
 	if err := mh.EnsureGrant(reg.ExchangeGrant); err != nil {
 		return err
 	}
@@ -134,8 +120,6 @@ func ensureExchangeCredential(loaded *config.Loaded, mh *managed.Hush, reg *prov
 
 	durable, source := durableSecretFor(loaded, h, reg, name)
 	if durable == "" {
-		// Nothing to hand over. The turn will fail with the ordinary
-		// no-credential hint, which is the truth.
 		return nil
 	}
 
@@ -151,8 +135,6 @@ func ensureExchangeCredential(loaded *config.Loaded, mh *managed.Hush, reg *prov
 	return nil
 }
 
-// durableSecretFor finds the long-lived secret to hand hush, and names where
-// it came from so the migration is not silent.
 func durableSecretFor(loaded *config.Loaded, h *hush.Client, reg *providerPkg.Registration, name string) (secret, source string) {
 	envNames := reg.EnvVars
 	if len(envNames) == 0 && reg.EnvVar != "" {

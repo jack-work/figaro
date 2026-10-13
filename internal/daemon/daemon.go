@@ -1,4 +1,3 @@
-// Package daemon is the angelus entry.
 package daemon
 
 import (
@@ -27,14 +26,11 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// lockHandoff bounds the wait for a dying incumbent to release the store.
 const lockHandoff = 10 * time.Second
 
-// lockStore takes the exclusive flock that admits one angelus per store, and
-// keeps the handle: closing it releases the lock. Retries until lockHandoff,
-// or until a live incumbent answers the socket.
+// lockStore returns the flock handle that admits one angelus per store; closing it
+// releases the lock.
 func lockStore() (*os.File, bool) {
-	// Keep the daemon lock outside the XWAL tree.
 	dir := boot.StateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, false
@@ -65,9 +61,6 @@ func incumbentAnswers() bool {
 	return true
 }
 
-// keepHushAlive pings the embedded hush agent on an interval and respawns it
-// if it has died, so the token-refresh machinery outlives the agent TTL for
-// the whole daemon session. Errors are logged, never fatal.
 func keepHushAlive(ctx context.Context) {
 	interval := boot.HushAgentTTL() / 3
 	if interval > 5*time.Minute {
@@ -82,9 +75,8 @@ func keepHushAlive(ctx context.Context) {
 		return
 	}
 	claimed := false
-	// Claim only an agent we have watched come up: the claim is what
-	// `figaro stop` acts on, and a claim written before there is anything
-	// to claim would name a socket that never existed.
+	// Claim only after EnsureReady: a claim written earlier names a socket
+	// that may never exist.
 	ensure := func(stage string) {
 		if err := h.EnsureReady(); err != nil {
 			slog.Warn("hush keep-alive: "+stage+" ensure failed", "err", err)
@@ -112,9 +104,8 @@ func keepHushAlive(ctx context.Context) {
 	}
 }
 
-// applyStoreSettings hands the store its clocks and bounds BEFORE the backend
-// opens: the store reads its idle window at open, and a form built earlier
-// would keep the old linger for the daemon's life.
+// applyStoreSettings must run before the backend opens: the store reads its bounds
+// at open.
 func applyStoreSettings(loaded *config.Loaded) {
 	store.SetFormLinger(loaded.ActorLinger())
 	store.SetHandleIdle(loaded.HandleIdle())
@@ -124,9 +115,8 @@ func applyStoreSettings(loaded *config.Loaded) {
 	}
 }
 
-// applyCacheSettings TUNES the per-aria caches: the store bounds itself at
-// construction, and this applies only what the config file actually says, so
-// an omission here cannot make a daemon unbounded.
+// applyCacheSettings applies only what the config file says; the store bounds
+// itself at construction.
 func applyCacheSettings(loaded *config.Loaded, backend any) bool {
 	w, ok := backend.(interface {
 		SetIRWindow(int)
@@ -148,11 +138,6 @@ func applyCacheSettings(loaded *config.Loaded, backend any) bool {
 	return true
 }
 
-// The soft ceiling is `[memory] soft_limit_mb`. Go collects harder as it
-// approaches instead of growing to meet whatever the last big sweep asked
-// for, which makes the ceiling a licence as much as a limit: a high one
-// leaves the runtime no reason to give memory back. A backstop, not the fix;
-// idle-aria eviction is the fix.
 func armMemoryLimit(loaded *config.Loaded) {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return
@@ -165,24 +150,19 @@ func armMemoryLimit(loaded *config.Loaded) {
 	slog.Info("daemon memory limit armed", "soft_limit_bytes", limit)
 }
 
-// ariaBackend constructs the XWAL aria tree under the configured state root,
-// sized by `[store] segment_size` (config owns the default and its floor).
 func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 	root := boot.AriaRoot()
 	b, err := store.NewXwalBackend(root, loaded.SegmentSize())
 	if err != nil {
 		return nil, err
 	}
-	// The one place the trunk capability is decided. With it off, nothing
-	// constructs a trunk pstate and the hierarchy is the fork topology.
+	// The one place the trunk capability is decided.
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: loaded.Trunks()}); err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-// buildProviderFactory wires per-aria provider construction via the
-// registry. No provider-specific switches.
 func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
 		reg := providerPkg.Lookup(providerName)
@@ -215,13 +195,8 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 	}
 }
 
-// registerOnAppend puts a provider's encoder behind the fig IR write path, so
-// an entry is translated WHEN IT LANDS -- by the only site that holds its
-// repaired payload -- instead of by the next send's catch-up.
-//
-// A provider that does not implement EntryEncoder is simply not registered,
-// and its channel is filled by the catch-up exactly as before. That is the
-// whole fallback: no flag, no mode, and no second code path.
+// registerOnAppend translates an entry when it lands; a provider without
+// EntryEncoder is left to catch-up.
 func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 	setter, ok := backend.(interface {
 		AddTranslatorEncoders(...store.TranslatorEncoder)
@@ -245,7 +220,6 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 	))
 }
 
-// Run is the supervisor side of the binary.
 func Run() {
 	mark.Init("angelus")
 	loaded, err := boot.LoadConfig()
@@ -255,11 +229,8 @@ func Run() {
 	}
 	runtimeDir := boot.AngelusRuntimeDir()
 
-	// One angelus per store. A second daemon (e.g. from an ensureAngelus
-	// startup race) fails the lock and exits cleanly; the client then connects
-	// to the incumbent. This must happen BEFORE the backend opens and before
-	// the socket is bound, so a loser never opens the store or steals the
-	// live socket.
+	// Lock before the backend opens or the socket binds, so a losing daemon
+	// never opens the store or steals the socket.
 	lockF, ok := lockStore()
 	if !ok {
 		slog.Info("another angelus already owns this store; exiting")
@@ -307,16 +278,12 @@ func Run() {
 		FormTemplates:      formTmpls,
 	})
 	a.Handlers = handlers.Map
-	// The TTL sweep deletes through the same four steps `figaro kill` does.
 	a.RemoveAria = handlers.RemoveAria
 
-	// The agent self-terminates after its TTL, and the daemon (unlike the
-	// CLI) issues no activity to respawn it: without this, a turn running
-	// past the TTL loses its credential mid-session.
 	go keepHushAlive(ctx)
 
-	// Rebind surviving shells WITHOUT restoring their arias: the binding
-	// alone is what a shell needs; the aria wakes on its next prompt.
+	// Rebind shells without restoring their arias; an aria wakes on its next
+	// prompt.
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.OpenEndpoint)
 
 	drained := make(chan struct{})
@@ -329,11 +296,8 @@ func Run() {
 
 	err = a.Run(ctx)
 	if ctx.Err() != nil {
-		// Run returns the instant the listener closes; the drain (seal
-		// in-flight turns, close backend) runs behind it. Exiting before it
-		// finishes would lose every active turn: wait, bounded. The socket
-		// is removed only after the drain so `figaro rest` reports success
-		// when turns are actually sealed.
+		// Run returns when the listener closes; the drain seals in-flight
+		// turns behind it, and the socket goes only after.
 		select {
 		case <-drained:
 		case <-time.After(60 * time.Second):

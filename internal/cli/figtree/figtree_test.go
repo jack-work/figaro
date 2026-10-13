@@ -10,10 +10,8 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// Render pads its own columns instead of using text/tabwriter, because
-// tabwriter counts an ANSI escape as several runes of cell width. That is only
-// safe if the padding it produces is the padding tabwriter produced, for the
-// unpainted case `figaro ls` has been printing all along.
+// Render pads its own columns because tabwriter counts ANSI escapes as width;
+// unpainted output must still match it.
 func TestRenderMatchesTabwriter(t *testing.T) {
 	tree := Tree{
 		Columns: []Column{
@@ -51,9 +49,6 @@ func TestRenderMatchesTabwriter(t *testing.T) {
 	}
 }
 
-// The glyphs are the ones `figaro ls` drew: a root with no branch at all,
-// ├─ for every child but the last, └─ for the last, and │ carried down only
-// past a parent that still has siblings below it.
 func TestRowsDrawTheExpectedGlyphs(t *testing.T) {
 	tree := Tree{Roots: []*Node{{
 		Label: "root",
@@ -112,7 +107,6 @@ func TestColorRulesPaintTheLabelByFieldValue(t *testing.T) {
 	if rows[0].Color != "present" || rows[1].Color != "absent" {
 		t.Fatalf("resolved colors = %q, %q", rows[0].Color, rows[1].Color)
 	}
-	// A value no rule mentions, and a node without the field at all, stay plain.
 	if rows[2].Color != "" || rows[3].Color != "" {
 		t.Fatalf("unmatched nodes were painted: %q, %q", rows[2].Color, rows[3].Color)
 	}
@@ -123,15 +117,11 @@ func TestColorRulesPaintTheLabelByFieldValue(t *testing.T) {
 	if !strings.Contains(rows[1].Cell(), term.Absent("gone")) {
 		t.Fatalf("missing node not painted absent: %q", rows[1].Cell())
 	}
-	// The branch glyphs must stay unpainted, so the shape of the tree does not
-	// compete with the meaning of its rows.
 	if strings.HasPrefix(rows[1].Cell(), "\033") {
 		t.Fatalf("branch glyphs were painted: %q", rows[1].Cell())
 	}
 }
 
-// Painting must not disturb the column geometry: the whole reason Render does
-// its own padding.
 func TestPaintedLabelsDoNotShiftColumns(t *testing.T) {
 	build := func() Tree {
 		return Tree{

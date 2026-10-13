@@ -9,24 +9,16 @@ import (
 	"strings"
 )
 
-// commit and commitTime are populated via -ldflags at build time:
+// Set with -ldflags -X; strings because -X cannot set a bool.
 var (
-	commit     = ""
-	commitTime = ""
-	// commitDirty is "true" or "": string so it survives -ldflags -X.
+	commit      = ""
+	commitTime  = ""
 	commitDirty = ""
-	// semver is the release version, injected from flake.nix's `version`.
-	// It is the single live version: flake.nix declares it, the release
-	// script mints the matching vX.Y.Z tag from it, and this is where it
-	// becomes visible on a running binary. Empty for a bare `go build`,
-	// where the revision is the only identity there is.
-	semver = ""
+	semver      = ""
 )
 
-// BuildRevision is this binary's VCS revision, from -ldflags when set and
-// debug.ReadBuildInfo otherwise. Empty when neither knows (a bare `go build`
-// outside a repo), in which case callers must skip build comparisons rather
-// than treat unknown as mismatched.
+// BuildRevision is empty when unknown; callers must skip the comparison rather
+// than treat it as a mismatch.
 func BuildRevision() string {
 	if commit != "" {
 		return commit
@@ -43,8 +35,6 @@ func BuildRevision() string {
 	return moduleVersion(info)
 }
 
-// moduleVersion is the release Go stamped into a `<module>@version` install.
-// Empty for anything built from a local tree, where Go writes "(devel)".
 func moduleVersion(info *debug.BuildInfo) string {
 	if info == nil {
 		return ""
@@ -122,7 +112,6 @@ func currentExe() string {
 	return exe
 }
 
-// buildIdentityKind names WHICH identity scheme a build string belongs to.
 func BuildIdentityKind(s string) string {
 	if s == "" {
 		return "unknown"

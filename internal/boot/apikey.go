@@ -14,8 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// encryptedAPIKey reads an AGE-encrypted api_key from a provider auth
-// TOML file and decrypts it through hush. Mtime-cached.
+// encryptedAPIKey decrypts an AGE-encrypted api_key through hush, cached by file mtime.
 type encryptedAPIKey struct {
 	Hush       *hush.Client
 	ConfigPath string
@@ -70,9 +69,6 @@ func (e *encryptedAPIKey) Invalidate(token string) error {
 	return nil
 }
 
-// loadProviderAuthFrom decodes a provider auth TOML file. Thin
-// wrapper that bypasses the config.Loaded path so encryptedAPIKey
-// can target a precomputed path.
 func loadProviderAuthFrom(path string, target *config.ProviderAuth) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

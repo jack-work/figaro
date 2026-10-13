@@ -1,4 +1,3 @@
-// figaro is a minimal CLI coding agent.
 package main
 
 import (
@@ -13,7 +12,6 @@ import (
 )
 
 func main() {
-	// Re-exec guard for embedded hush agent.
 	if managed.IsAgentChild() {
 		if err := managed.RunAgentChild(); err != nil {
 			log.Fatal(err)
@@ -21,9 +19,7 @@ func main() {
 		return
 	}
 
-	// argv[0] basename is the invocation name. Symlinks like `fig` and
-	// `figarod` (flake.nix postInstall) flow through here so help/usage/
-	// completion output the name the user actually typed.
+	// argv[0] carries the symlink name (fig, figarod) the user typed.
 	name := filepath.Base(os.Args[0])
 	if name == "figarod" || os.Getenv("_FIGARO_DAEMON") == "1" || (len(os.Args) > 1 && os.Args[1] == "--angelus") {
 		daemon.Run()
