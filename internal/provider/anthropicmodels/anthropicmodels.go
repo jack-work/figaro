@@ -1,5 +1,5 @@
-// Package anthropicmodels holds the context-window knowledge shared by the
-// two Anthropic providers (the hand-rolled HTTP one and the SDK one).
+// Package anthropicmodels holds context-window and client-version facts
+// shared by the Anthropic-shaped providers.
 package anthropicmodels
 
 import (
@@ -11,9 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// windowTable maps a normalized model-id prefix to that model's total context
-// window in tokens. Longest matching prefix wins, so "claude-opus-4-6" beats
-// "claude-opus-4".
+// windowTable is keyed by normalized model-id prefix; longest match wins.
 var windowTable = map[string]int{
 	"claude-opus-5":     1_000_000,
 	"claude-opus-4-8":   1_000_000,
@@ -31,9 +29,8 @@ var windowTable = map[string]int{
 	"claude-3":        200_000,
 }
 
-// normalize folds the spellings we see across surfaces onto one form: the
-// Anthropic API uses "claude-opus-4-6", Copilot's catalog uses
-// "claude-opus-4.6", and some configs prefix a vendor ("anthropic/...").
+// normalize folds "claude-opus-4.6" and "anthropic/claude-opus-4-6" onto
+// "claude-opus-4-6".
 func normalize(model string) string {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.LastIndex(m, "/"); i >= 0 {
@@ -42,8 +39,7 @@ func normalize(model string) string {
 	return strings.ReplaceAll(m, ".", "-")
 }
 
-// ContextWindow returns the static table's window for model, or 0 if the model
-// is not one we have verified.
+// ContextWindow returns 0 for a model not in the table.
 func ContextWindow(model string) int {
 	m := normalize(model)
 	best, window := 0, 0
@@ -51,8 +47,7 @@ func ContextWindow(model string) int {
 		if len(prefix) <= best || !strings.HasPrefix(m, prefix) {
 			continue
 		}
-		// Only match on an id boundary: "claude-opus-4" must not match
-		// "claude-opus-42".
+		// "claude-opus-4" must not match "claude-opus-42".
 		if len(m) > len(prefix) && m[len(prefix)] != '-' {
 			continue
 		}
@@ -61,15 +56,13 @@ func ContextWindow(model string) int {
 	return window
 }
 
-// Catalog caches windows learned from the models endpoint. The zero value is
-// ready to use and safe for concurrent access.
+// Catalog's zero value is ready to use and safe for concurrent access.
 type Catalog struct {
 	mu      sync.RWMutex
 	windows map[string]int
 }
 
-// Learn records a model's context window as reported by the provider.
-// Non-positive windows are ignored.
+// Learn ignores non-positive windows.
 func (c *Catalog) Learn(model string, window int) {
 	if model == "" || window <= 0 {
 		return
@@ -82,8 +75,7 @@ func (c *Catalog) Learn(model string, window int) {
 	c.windows[normalize(model)] = window
 }
 
-// Window returns the learned window for model, falling back to the static
-// table, then 0.
+// Window prefers the learned window, then the table, then 0.
 func (c *Catalog) Window(model string) int {
 	if c != nil {
 		c.mu.RLock()
@@ -96,11 +88,7 @@ func (c *Catalog) Window(model string) int {
 	return ContextWindow(model)
 }
 
-// ContextLimit implements provider.ContextLimitProvider's contract for an
-// Anthropic-shaped provider: an explicit system.max_context_tokens on the
-// form wins outright (that is what an override is for), otherwise the
-// catalog/table window is reported. It never performs network I/O: callers
-// use it on live status paths.
+// ContextLimit lets system.max_context_tokens win outright. No network I/O.
 func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 	if override, ok := provider.ContextLimitOverride(snapshot); ok {
 		return override
@@ -108,39 +96,20 @@ func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 	return c.Window(model)
 }
 
-// ClaudeCodeVersion is the client version figaro presents to the Anthropic
-// API. It lives HERE, once, because it used to be two constants in two
-// providers -- and the API gates newer models on it: Fable 5.1 refuses any
-// client below 2.1.251 with a 400 (claude_code_version_too_old) telling you
-// to run `claude update`. A stale copy in one provider is an error that
-// only appears for whichever models shipped after it, which reads as
-// "figaro cannot do fable" when the truth is "one string is old".
-//
-// TRACK `latest`, NOT `stable`. The floor for Fable 5.1 (2.1.251) is ABOVE
-// the stable channel (2.1.236 at the time): real Claude Code on stable
-// fails identically (anthropics/claude-code#91345). The check is a numeric
-// threshold, not a whitelist of released versions, so the rule when a new
-// model 400s is: record the floor the error names in versionFloors, then
-// `npm view @anthropic-ai/claude-code dist-tags.latest` and paste it here.
-//
-// See docs/anthropic-oauth-posture.md for how long this arrangement can be
-// expected to hold at all.
+// ClaudeCodeVersion is the client version presented to the API, which gates
+// newer models on it (claude_code_version_too_old). Track the `latest` npm
+// dist-tag, not `stable`: model floors can sit above stable. When a model
+// 400s, record its floor in versionFloors and bump this.
 const ClaudeCodeVersion = "2.1.281"
 
-// versionFloors records, per model prefix, the client version the API
-// demanded in a claude_code_version_too_old 400. Each entry is a fact copied
-// out of an error message, not a guess. TestClaudeCodeVersionClearsFloors
-// holds ClaudeCodeVersion at or above every one of them, so the next model
-// that raises the floor is a red test and a table entry, not a live 400
-// found by whoever tries the model first.
+// versionFloors holds, per model prefix, the client version a
+// claude_code_version_too_old 400 named.
 var versionFloors = map[string]string{
 	"claude-fable-5-1": "2.1.251",
 	"claude-opus-5-5":  "2.1.280",
 }
 
-// VersionFloor returns the client version the API is known to require for
-// model, or "" if no floor has been recorded. Longest matching prefix wins,
-// on an id boundary, the same rule ContextWindow uses.
+// VersionFloor returns "" when no floor is recorded; longest prefix wins.
 func VersionFloor(model string) string {
 	m := normalize(model)
 	best, floor := 0, ""
@@ -156,8 +125,7 @@ func VersionFloor(model string) string {
 	return floor
 }
 
-// CompareVersions orders two dotted numeric versions ("2.1.280"). Missing
-// components read as zero, so "2.1" == "2.1.0". Returns -1, 0 or 1.
+// CompareVersions returns -1, 0 or 1; missing components read as zero.
 func CompareVersions(a, b string) int {
 	as, bs := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < len(as) || i < len(bs); i++ {

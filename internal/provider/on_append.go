@@ -10,17 +10,10 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// OnAppend puts a provider's encoder behind store.TranslatorEncoder, so a fig
-// IR entry is translated by the site that holds its repaired payload rather
-// than by a read that comes later.
-//
-// IT IS THE SAME DERIVATION THE CATCH-UP USES, one entry at a time: a Deriver
-// per aria, seeded from the translator log's own watermark the first time it
-// is needed and advanced as entries land. Two derivations would be two
-// answers to "what did the board look like then", written to one channel.
-//
-// THE ACCESSORS ARE FUNCTIONS OF THE ARIA, not values, because a board and an
-// observed set belong to an aria and this object outlives any one of them.
+// OnAppend puts a provider's encoder behind store.TranslatorEncoder: one
+// Deriver per aria, seeded from the translator log's watermark, the same
+// derivation the catch-up uses. The accessors are functions of the aria
+// because the adapter outlives any one aria.
 type OnAppend struct {
 	name        string
 	encode      func(message.Message, form.Snapshot) ([]json.RawMessage, error)
@@ -33,8 +26,6 @@ type OnAppend struct {
 	at map[string]*Deriver
 }
 
-// NewOnAppend builds the adapter. Every argument is a function of the aria
-// because one adapter serves every aria this provider speaks for.
 func NewOnAppend(
 	name string,
 	encode func(message.Message, form.Snapshot) ([]json.RawMessage, error),
@@ -52,15 +43,9 @@ func NewOnAppend(
 
 func (o *OnAppend) Provider() string { return o.name }
 
-// EncodeEntry renders one entry. It returns no bytes for an entry that
-// translates to nothing (genesis, an empty message), and the store writes
-// nothing in that case.
-//
-// THE CURSOR IS SEEDED FROM THE LOGS, NEVER ASSUMED. The first entry after an
-// open finds no cursor for that aria and rebuilds one from the translator's
-// tail -- the same watermark a catch-up would use -- so a restart, a fork or
-// a catch-up that ran in between cannot leave this path rendering patches
-// twice or not at all.
+// EncodeEntry returns no bytes for an entry that translates to nothing. The
+// cursor is seeded from the translator's tail, never assumed, so a restart,
+// fork or catch-up in between cannot render patches twice or not at all.
 func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message], e store.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	o.mu.Lock()
 	d, ok := o.at[ariaID]
@@ -77,9 +62,7 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 				watermark = tail.FigaroLT
 			}
 		}
-		// SEEDING NEEDS THE FIG IR, and the entry that just landed is not it:
-		// the watermark names an EARLIER entry. The caller holds the log, so
-		// it is passed as the source of that one Lookup.
+		// The watermark names an earlier entry, so seeding needs the log.
 		d.SeedAt(source, watermark)
 		o.at[ariaID] = d
 	}
@@ -94,9 +77,7 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 		return nil, "", err
 	}
 	if len(encoded) == 0 {
-		// NO ROW, NO COMMIT. The store drops an empty encode, so committing
-		// here would consume a window that nothing renders -- the defect
-		// TestAContentlessEntryDoesNotEatTheStudyWindow reproduces.
+		// No row, no commit: a window must not close on nothing.
 		o.mu.Unlock()
 		return nil, "", nil
 	}
@@ -105,8 +86,7 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 	return encoded, o.fingerprint(), nil
 }
 
-// Forget drops an aria's cursor, so the next entry reseeds from the logs.
-// Called when a fork or a clear makes the position meaningless.
+// Forget drops an aria's cursor so the next entry reseeds from the logs.
 func (o *OnAppend) Forget(ariaID string) {
 	o.mu.Lock()
 	delete(o.at, ariaID)

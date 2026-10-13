@@ -6,12 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// AnthropicStopReason maps a Messages-API stop_reason onto the IR's. Shared
-// by every Anthropic-shaped provider so a word one of them learns the other
-// cannot forget. A word this table does not know is StopError, never the
-// empty string: an empty stop reason used to decode as "" and a later default
-// turned it into a normal stop, which is how a refusal became a blank reply
-// (jack-work/figaro#24).
+// AnthropicStopReason maps a Messages-API stop_reason onto the IR's. An
+// unknown word is StopError, never the empty string.
 func AnthropicStopReason(raw string) message.StopReason {
 	switch raw {
 	case "end_turn", "stop", "stop_sequence":
@@ -26,10 +22,8 @@ func AnthropicStopReason(raw string) message.StopReason {
 	return message.StopError
 }
 
-// CompletionFault is a completed stream that cannot be taken as a reply:
-// the provider stopped for a reason that is not a way of finishing, or it
-// finished with nothing to say. Wire is the provider's own word, kept so the
-// user reads what the proxy said and not figaro's paraphrase of it.
+// CompletionFault is a cleanly closed stream that is not a reply; Wire is
+// the provider's own stop reason.
 type CompletionFault struct {
 	Provider string
 	Wire     string
@@ -48,14 +42,8 @@ func (f *CompletionFault) Error() string {
 	return fmt.Sprintf("%s: the provider stopped for a reason figaro does not know (stop_reason=%s)", f.Provider, f.Wire)
 }
 
-// CheckCompletion is the verdict on a stream that closed cleanly. nil means
-// the message is a reply and may land as one. Otherwise the caller decides
-// what to do with any content the model produced (keep it, marked StopError)
-// and returns the fault so the turn ends in error rather than in silence.
-//
-// An assistant message with no content is never a reply, whatever the stop
-// reason says: a filter that answers 200 with an empty body is the case this
-// exists for, and it does not depend on knowing the filter's vocabulary.
+// CheckCompletion returns nil when the message may land as a reply. A message
+// with no content is never one, whatever the stop reason says.
 func CheckCompletion(providerName string, msg message.Message, wire string) error {
 	empty := len(msg.Content) == 0
 	if !empty && msg.StopReason != message.StopError {

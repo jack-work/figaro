@@ -48,8 +48,7 @@ type responseStreamEvent struct {
 	Arguments json.RawMessage    `json:"arguments"`
 	Response  responseObject     `json:"response"`
 	Error     json.RawMessage    `json:"error"`
-	// Absent is NOT index zero: an uncorrelated delta must never enter the
-	// first tool's arguments merely because Go zero-initialized this field.
+	// Absent is not index zero.
 	OutputIndex  *int `json:"output_index"`
 	ContentIndex int  `json:"content_index"`
 	SummaryIndex int  `json:"summary_index"`
@@ -67,9 +66,8 @@ type responseOutputItem struct {
 	Arguments json.RawMessage   `json:"arguments"`
 }
 
-// One request's accumulator, never a remote session. Completed native items
-// survive cancellation/failure byte-for-byte, including encrypted reasoning.
-// Unfinished text is recoverable; an unfinished function call is not runnable.
+// Completed native items survive cancellation byte-for-byte, encrypted
+// reasoning included; an unfinished function call is not runnable.
 type responsePartial struct {
 	parts   []*responsePart
 	indexed map[int]*responsePart
@@ -93,8 +91,7 @@ func (p *responsePartial) part(event responseStreamEvent, kind string, call *res
 		}
 	}
 	// A proxy can omit indices on deltas and include one only on the done
-	// envelope. Adopt that envelope into the open part rather than replaying
-	// both the fragment reconstruction and the native item after failure.
+	// envelope; adopt it into the open part.
 	if event.OutputIndex != nil && event.Type == "response.output_item.done" && call == nil && len(p.parts) > 0 {
 		last := p.parts[len(p.parts)-1]
 		if last.index == nil && last.kind == kind && last.raw == nil {
@@ -106,8 +103,7 @@ func (p *responsePartial) part(event responseStreamEvent, kind string, call *res
 			return last
 		}
 	}
-	// Some proxies omit indices on prose deltas. Keep consecutive fragments
-	// together, without conflating separate indexed messages/reasoning items.
+	// Some proxies omit indices on prose deltas.
 	if event.OutputIndex == nil && call == nil && len(p.parts) > 0 {
 		last := p.parts[len(p.parts)-1]
 		if last.kind == kind && last.raw == nil {
@@ -139,8 +135,7 @@ func (p *responsePart) appendText(index int, text string) {
 
 func (p *responsePartial) outputItems() []json.RawMessage {
 	parts := append([]*responsePart(nil), p.parts...)
-	// Indexed items are ordered by the protocol. Unindexed legacy events
-	// retain arrival order; do not invent an index for an omitted field.
+	// Unindexed events keep arrival order; never invent an index.
 	allIndexed := true
 	for _, part := range parts {
 		if part.index == nil {
@@ -206,8 +201,8 @@ type responseCall struct {
 	part      *responsePart
 }
 
-// Only metadata crosses this interface. In particular, no arguments, opaque
-// IDs, native items, headers, or upstream error messages reach diagnostics.
+// Only metadata crosses this interface: no arguments, opaque IDs, native
+// items, headers, or upstream error messages.
 type responseStreamObserver interface {
 	Event(string, int)
 	ArgumentDelta(int, bool)
@@ -249,8 +244,8 @@ func readResponseStream(ctx context.Context, next responseFrames, bus provider.B
 		response, terminal, err := state.consume(event, raw, bus, observers)
 		if terminal || err != nil {
 			if err != nil {
-				// Never retry a rejected request after any assistant output has
-				// escaped: a completed call may already have had side effects.
+				// Never retry after assistant output has escaped: a completed
+				// call may have had side effects.
 				var rejected *responseAPIError
 				if errors.As(err, &rejected) {
 					rejected.retryable = !state.started && len(response.Output) == 0
@@ -307,8 +302,8 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 				}
 				s.byIndex[*event.OutputIndex] = call
 			}
-			// Only the announced ID is retained. Copilot can re-encrypt it on
-			// each delta; retaining every spelling grows a useless alias map.
+			// Copilot re-encrypts the ID on each delta; only the announced one
+			// is retained.
 			if event.Item.ID != "" && call.part == nil {
 				s.items[event.Item.ID] = call
 			}
@@ -382,9 +377,8 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 			terminalErr = fmt.Errorf("responses: response cancelled by provider")
 		case "incomplete":
 			if response.IncompleteDetails.Reason != "max_output_tokens" {
-				// There is no automatic-continuation/session layer here. Report
-				// unsolicited steering/filtering, but retain the richer terminal
-				// output (notably encrypted reasoning) whenever it is supplied.
+				// Report filtering, but keep the terminal output (encrypted
+				// reasoning included).
 				terminalErr = &responseIncompleteError{reason: response.IncompleteDetails.Reason}
 			}
 		default:
@@ -398,7 +392,6 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 		"response.content_part.added", "response.content_part.done", "response.output_text.done",
 		"response.reasoning_summary_part.added", "response.reasoning_summary_part.done",
 		"response.reasoning_summary_text.done", "response.reasoning_text.done", "response.reasoning.done":
-		// Known lifecycle/aggregate events; their content is handled elsewhere.
 	default:
 		for _, o := range observers {
 			o.UnknownEvent()
@@ -407,9 +400,8 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 	return responseObject{}, false, nil
 }
 
-// The terminal object is authoritative, but it cannot retroactively change a
-// call which was already dispatched. Incomplete call items never become ready
-// merely because a truncated JSON prefix happens to parse.
+// The terminal object is authoritative but cannot change a call already
+// dispatched; a truncated JSON prefix that parses is still incomplete.
 func (s *responseStreamState) reconcile(response *responseObject) error {
 	if response.Output == nil || (response.Status != "completed" && len(response.Output) == 0) {
 		response.Output = s.partial.outputItems()
@@ -450,8 +442,7 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 		if err := call.setArguments(responseArgumentBytes(item.Arguments)); err != nil {
 			return err
 		}
-		// Terminal-only calls run after the whole message is committed by the
-		// agent, not speculatively while this object is still being validated.
+		// Terminal-only calls run after commit, never speculatively.
 		out = append(out, quarantineResponseItem(raw))
 	}
 	for id, call := range s.calls {
@@ -489,8 +480,8 @@ func responseCallFor(calls map[string]*responseCall, items map[string]*responseC
 		}
 		call = item
 	}
-	// Copilot re-encrypts item_id per event; output_index is its stable
-	// handle. Known handles must agree; never splice one call into another.
+	// Copilot re-encrypts item_id per event; output_index is the stable
+	// handle. Known handles must agree.
 	if event.OutputIndex != nil {
 		if indexed := byIndex[*event.OutputIndex]; indexed != nil {
 			if call != nil && call != indexed {
@@ -547,8 +538,7 @@ func responseArgumentBytes(raw json.RawMessage) []byte {
 			return []byte(encoded)
 		}
 	}
-	// json.Unmarshal(null, *string) succeeds with an empty string. Null is
-	// malformed arguments, not an empty value; preserve those exact bytes.
+	// json.Unmarshal(null, *string) yields ""; null is malformed arguments.
 	return raw
 }
 
@@ -657,9 +647,8 @@ func responsePartIsBlank(raw json.RawMessage) bool {
 	}
 }
 
-// Keep the native item's other fields verbatim, but give a rejected call a
-// valid arguments object for replay. The sentinel retains the original bytes;
-// the agent refuses execution and sends INVALID_JSON on the original call_id.
+// A rejected call gets a valid arguments object for replay; the sentinel
+// keeps the original bytes and the agent answers INVALID_JSON.
 func quarantineResponseItem(raw json.RawMessage) json.RawMessage {
 	var item responseOutputItem
 	if json.Unmarshal(raw, &item) != nil || item.Type != "function_call" {

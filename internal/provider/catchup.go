@@ -11,21 +11,13 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// CatchUp translates the fig IR records that have no translation yet and
-// WRITES THEM TO THE LOG. It keeps no representation of its own: what it
-// produces lives in the log, and the caller reads the log.
-//
-// The watermark is the log's -- the newest row names the last fig IR record
-// that has a translation -- and the record at the watermark carries the
-// cursors, so nothing is held between calls.
+// CatchUp translates the untranslated fig IR records into the translator
+// log. The watermark and cursors are read from the log's newest row; nothing
+// is held between calls.
 type CatchUpConfig struct {
-	// Log is the fig IR.
-	Log store.Log[message.Message]
-	// Rows is the translator log for this provider.
-	Translator store.Log[[]json.RawMessage]
-	// Form is the bound board's patch accessor; nil for a log with none.
-	Form Form
-	// Studies are the observed forms' accessors, keyed by form id.
+	Log         store.Log[message.Message]
+	Translator  store.Log[[]json.RawMessage]
+	Form        Form
 	Studies     map[string]Form
 	Fingerprint string
 	Encode      func(message.Message, form.Snapshot) ([]json.RawMessage, error)
@@ -34,22 +26,17 @@ type CatchUpConfig struct {
 	ReportWriteError  func(uint64, error)
 }
 
-// CatchUpStats reports what one pass did. Counts, not times: the question is
-// how many records had to be translated.
 type CatchUpStats struct {
 	Entries   int // fig IR records in the log
 	Visited   int // records at or after the watermark
 	Encoded   int // records translated and written
 	Unwritten int // records that encoded to nothing (genesis, empty)
-	// RepairedAt is the fig IR LT of a hole found BELOW the watermark, which
-	// clears the rows and re-derives them whole. Zero when there was none.
+	// RepairedAt is the LT of a hole found below the watermark; zero when none.
 	RepairedAt uint64
 }
 
-// ErrNoTranslator is returned when there is no translator log to write to. A send
-// that cannot read its own conversation back must fail rather than encode a
-// second copy in memory and send that: "degrade to a miss" here means showing
-// the model a different conversation than the one on disk.
+// ErrNoTranslator fails the send: encoding a second copy in memory would show
+// the model a conversation other than the one on disk.
 var ErrNoTranslator = errors.New("provider: no translator log")
 
 func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
@@ -61,15 +48,11 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	var watermark uint64
 	if tail, ok := cfg.Translator.PeekTail(); ok {
 		watermark = tail.FigaroLT
-		// THE NEWEST ROW IS THE ONLY ONE THAT CAN BE LYING: a position can be
-		// reissued, so a row written for a record that never landed is adopted
-		// by whatever lands there next. Everything below the tail is followed
-		// by a record that did land, so one comparison settles it.
+		// Only the newest row can describe a record that never landed; a
+		// reissued position adopts it.
 		if tail.FigaroHash != "" {
 			if at, ok := cfg.Log.Lookup(watermark); ok {
 				if have, err := store.FigaroHash(at.Payload); err == nil && have != tail.FigaroHash {
-					// The row describes a record that is not there: clear and
-					// re-derive.
 					if cerr := cfg.Translator.Clear(); cerr != nil {
 						return stats, fmt.Errorf("clear misaligned rows at %d: %w", watermark, cerr)
 					}
@@ -117,8 +100,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			return stats, fmt.Errorf("encode at %d: %w", entry.LT, err)
 		}
 		if len(encoded) == 0 {
-			// NO ROW, NO COMMIT: the window stays open and its patches ride
-			// the next entry that writes one.
+			// No row, no commit: the patches ride the next entry that writes one.
 			stats.Unwritten++
 			continue
 		}
@@ -143,23 +125,11 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	return stats, nil
 }
 
-// The hole check runs ONCE PER LOG HANDLE, which is once per aria per daemon
-// lifetime -- and that is when a hole can appear, since making one takes a
-// crash between the canonical append and the derived one. The flag lives on
-// the handle (store.VerifyOnce): it used to live in a process-global sync.Map
-// keyed by the log itself, which never forgot, so it pinned every translator
-// handle the backend had already evicted and grew for the life of the daemon.
+// The hole check runs once per log handle; the flag lives on the handle so
+// an evicted handle is not pinned by it.
 
-// firstGap is the earliest fig IR record at or below the watermark that would
-// have written a row and has none. The watermark alone cannot see one: it is
-// the newest row's LT, so a record whose row was lost while later records got
-// theirs sits below it forever.
-// IT WALKS BOTH LOGS AND HOLDS NEITHER. The check is O(total history) by
-// nature -- a hole is defined against the whole prefix -- but it used to be
-// O(total history) IN THE HEAP as well: two Read() calls, the translations and
-// the fig IR, both materialized inside a send. What it needs from the
-// translator is a set of logical times, and what it needs from the fig IR is
-// one record at a time.
+// firstGap is the earliest record at or below the watermark that owed a row
+// and has none. It walks both logs and materializes neither.
 func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
 	have := make(map[uint64]struct{})
 	store.ScanAll(cfg.Translator, func(r store.Entry[[]json.RawMessage]) bool {
@@ -183,8 +153,7 @@ func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
 			d.Commit(entry, msg)
 			return true
 		}
-		// No row is a hole only where a row was owed: an entry that encodes
-		// to nothing never had one, and its patches ride the next entry.
+		// A missing row is a hole only where one was owed.
 		sendable, _ := SendableImages(msg)
 		if encoded, err := cfg.Encode(sendable, snap); err == nil && len(encoded) > 0 {
 			gap, found = entry.LT, true
@@ -195,18 +164,10 @@ func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
 	return gap, found
 }
 
-// TranslationRows streams a translator log as wire rows, in order, as they lie
-// on disk: the messages array, one row resident at a time.
-//
-// It replaces Translations(), which returned the whole log as a slice. The
-// slice was the memory bug: 87% of a 461MB live heap, in one in-flight send,
-// was the conversation decoded and held for the length of a request. Nothing
-// about the WALK changed -- eeec2bc0 ruled that the walk is the design -- only
-// that the walk no longer builds an array on its way past.
-//
-// to bounds the read at a coordinate captured before the request, so a body
-// REPLAYED by net/http (a GOAWAY, a 307) sends the same conversation the first
-// attempt did rather than one that grew underneath it. Zero means the tail.
+// TranslationRows streams the translator log one row resident at a time; a
+// whole-history slice on the send path is the design failure of invariant
+// #14. to bounds the read so an http replay sends the same conversation;
+// zero means the tail.
 func TranslationRows(rows store.Log[[]json.RawMessage], to uint64) RowSeq {
 	return func(yield func(json.RawMessage, uint64) bool) {
 		if rows == nil {
@@ -226,9 +187,7 @@ func TranslationRows(rows store.Log[[]json.RawMessage], to uint64) RowSeq {
 	}
 }
 
-// TranslationTail is the coordinate TranslationRows should be bounded at, and
-// reports whether the log has anything in it at all. A send with no rows is an
-// empty context, which is an error its caller raises by name.
+// TranslationTail is the bound for TranslationRows; false when the log is empty.
 func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
 	if rows == nil {
 		return 0, false
@@ -240,15 +199,11 @@ func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
 	return tail.LT, true
 }
 
-// carriesStudy reports whether a record can carry a studied-form block. Only
-// a user message can: every encoder renders StudyReminderTexts under
-// RoleInput. A record that cannot carry one must not consume a window.
+// carriesStudy: only a user message carries a studied-form block, so only
+// one may consume a window.
 func carriesStudy(msg message.Message) bool { return msg.Role == message.RoleInput }
 
-// ClearStaleTranslationCache empties a translator log whose stored rows were
-// written under a different encoder fingerprint. A provider checks it when it
-// opens the log, so everything downstream may assume the rows were written by
-// the encoder about to read them.
+// ClearStaleTranslationCache empties a log written under another fingerprint.
 func ClearStaleTranslationCache(rows store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
 	entry, ok := rows.PeekTail()
 	if !ok || entry.Fingerprint == "" || entry.Fingerprint == fingerprint {

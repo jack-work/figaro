@@ -20,10 +20,8 @@ func rolesOf(t *testing.T, rows []json.RawMessage) []string {
 	return out
 }
 
-// THE API REJECTS CONSECUTIVE SAME-ROLE MESSAGES, and the history legitimately
-// contains them: a turn that errors after committing the prompt and before any
-// reply leaves two user records in a row. The SDK provider has always merged
-// them; the raw one did not, and every new aria is on the raw one.
+// A turn that errors after committing the prompt leaves two user records;
+// the API rejects consecutive same-role messages.
 func TestAdjacentSameRoleRowsAreMergedForTheWire(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"user","content":[{"type":"text","text":"first prompt"}]}`),
@@ -43,9 +41,6 @@ func TestAdjacentSameRoleRowsAreMergedForTheWire(t *testing.T) {
 	require.Equal(t, "second prompt", m.Content[1].Text)
 }
 
-// An already-alternating history must come back BYTE-IDENTICAL: the common
-// case pays a role peek and nothing else, and a row nobody merged is a row
-// nobody rewrote.
 func TestAnAlternatingHistoryIsUntouched(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage("{\n  \"role\": \"user\",\n  \"content\": []\n}"),
@@ -59,8 +54,6 @@ func TestAnAlternatingHistoryIsUntouched(t *testing.T) {
 	}
 }
 
-// A row that cannot be parsed must not be rewritten, and must not silently
-// vanish into its neighbour.
 func TestAnUnreadableRowIsLeftAlone(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"user","content":[{"type":"text","text":"ok"}]}`),
@@ -71,13 +64,10 @@ func TestAnUnreadableRowIsLeftAlone(t *testing.T) {
 	require.Equal(t, string(rows[1]), string(got[1]))
 }
 
-// AND END TO END: the assembler must not put two consecutive user messages on
-// the wire, which is what it did before this.
 func TestTheAssemblerNeverEmitsTwoConsecutiveUserMessages(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt")}},
-		// the turn errored here: no assistant record was ever committed
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second prompt")}},
 	}
 	snap := systemSnapshot(t, "you are a test agent")
@@ -93,11 +83,7 @@ func TestTheAssemblerNeverEmitsTwoConsecutiveUserMessages(t *testing.T) {
 
 var _ = provider.MaxCacheBreakpoints
 
-// GLUCK'S SHAPE, 0.28.2: the closing notice written twice, so the second
-// tool_result has no tool_use left to pair with and the API refuses the whole
-// history -- "messages.682.content.2: unexpected tool_use_id found in
-// tool_result blocks". The fig IR keeps both records (it is append-only and
-// both really happened); the WIRE must carry one.
+// A closing notice written twice: the IR keeps both, the wire carries one.
 func TestADuplicateToolResultNeverReachesTheWire(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"assistant","content":[{"type":"tool_use","id":"X","name":"bash","input":{}}]}`),
@@ -121,12 +107,8 @@ func TestADuplicateToolResultNeverReachesTheWire(t *testing.T) {
 	require.Len(t, got, 3, "a message left with no blocks must be dropped, not sent empty")
 }
 
-// GLUCK'S SHAPE, 0.37.0: a turn cut during a tool call's arguments cached an
-// assistant message with no tool_use, while the IR kept the call and the seal
-// wrote its closing result. The result had nothing to pair with and the API
-// refused the whole history on every later send -- "messages.144.content.1:
-// unexpected tool_use_id found in tool_result blocks" (aria 90ec6584, which
-// could not be prompted again at all). The gate carries such a history.
+// A cached assistant row with no tool_use, followed by the seal's closing
+// result: the orphan result must not reach the wire.
 func TestAnOrphanToolResultNeverReachesTheWire(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"running it"}]}`),
@@ -139,9 +121,6 @@ func TestAnOrphanToolResultNeverReachesTheWire(t *testing.T) {
 	require.NotContains(t, string(got[1]), "tool_result")
 }
 
-// The other half of the pairing law: a call the next message does not answer
-// is closed here, because the API wants the result in the message that
-// directly follows the call.
 func TestAnUnansweredToolCallIsClosedOnTheWire(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"assistant","content":[{"type":"tool_use","id":"X","name":"bash","input":{}}]}`),
@@ -152,22 +131,13 @@ func TestAnUnansweredToolCallIsClosedOnTheWire(t *testing.T) {
 	require.Contains(t, string(got[1]), `"tool_use_id":"X"`)
 	require.Contains(t, string(got[1]), `"is_error":true`)
 
-	// A call left open at the very end is closed too: the next request would
-	// otherwise open with an unanswered call.
 	tail := pairToolCalls(rows[:1])
 	require.Len(t, tail, 2)
 	require.Contains(t, string(tail[1]), `"tool_use_id":"X"`)
 }
 
-// A paired history is returned BYTE-IDENTICAL: the gate reads, it does not
-// re-encode what it has nothing to say about.
-// A BATCH'S RESULTS ARRIVE AS SEPARATE RECORDS. The IR appends one per tool,
-// so two calls in one assistant message are answered by two adjacent user
-// rows. The gate paired each row on its own: it closed Y with the
-// unclosed-call notice while X was being answered, then dropped Y's real
-// result as an orphan -- the model was told a tool it had run never returned,
-// and lost its output, on every parallel tool call. Found by the reviewer of
-// 386acc0d (041b8abf).
+// A parallel batch's results arrive as separate IR records; the gate must
+// pair them against the coalesced message.
 func TestAResultInTheNextRecordIsStillTheAnswer(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"assistant","content":[{"type":"tool_use","id":"X","name":"bash","input":{}},{"type":"tool_use","id":"Y","name":"bash","input":{}}]}`),
@@ -182,8 +152,6 @@ func TestAResultInTheNextRecordIsStillTheAnswer(t *testing.T) {
 	require.Contains(t, wire, "actual X")
 	require.Contains(t, wire, "actual Y", "the real result was dropped as an orphan")
 	require.NotContains(t, wire, unclosedCallNotice, "a call that was answered was closed as unanswered")
-	// In the order the calls were made, which is the order the results were
-	// written.
 	require.Less(t, strings.Index(wire, "actual X"), strings.Index(wire, "actual Y"))
 }
 
@@ -200,8 +168,6 @@ func TestAPairedHistoryIsUntouched(t *testing.T) {
 	}
 }
 
-// And a history with no duplicate is returned BYTE-IDENTICAL: whitespace and
-// key order are the wire bytes, and re-encoding them changes what ships.
 func TestAHistoryWithoutDuplicatesIsUntouched(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage("{\n  \"role\": \"user\",\n  \"content\": []\n}"),
@@ -214,10 +180,6 @@ func TestAHistoryWithoutDuplicatesIsUntouched(t *testing.T) {
 	}
 }
 
-// coalesceRows and dropDuplicateResults were the slice passes. THEY ARE GONE
-// FROM THE PRODUCTION TREE -- these adapters keep every case that was written
-// against them, pointed at the sequences that replaced them, so the table is
-// testing what ships rather than a shape nothing calls.
 func coalesceRows(rows []json.RawMessage, lts []uint64) ([]json.RawMessage, []uint64) {
 	return provider.CollectRows(coalesceRowsSeq(provider.SliceRows(rows, lts)))
 }

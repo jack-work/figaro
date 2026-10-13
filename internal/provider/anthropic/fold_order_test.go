@@ -9,9 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Each patch renders against the board BEFORE it. Nothing in this package
-// asserted that until now: a deliberate inversion built, ran, and the whole
-// provider suite passed.
+// Each patch renders against the board before it.
 func TestRenderPatchBlocksRendersAgainstThePriorBoard(t *testing.T) {
 	base, err := form.LoadDefaultTemplates()
 	if err != nil {

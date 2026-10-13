@@ -7,8 +7,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// projectMessages renders a whole IR slice for tests that want
-// before/after wire-shape parity.
 func (a *Anthropic) projectMessages(msgs []message.Message) (result []nativeMessage, perFLT []json.RawMessage) {
 	perFLT = make([]json.RawMessage, len(msgs))
 	prevSnap := form.Snapshot{}
@@ -25,8 +23,6 @@ func (a *Anthropic) projectMessages(msgs []message.Message) (result []nativeMess
 	return result, perFLT
 }
 
-// encodeAll mimics what the agent's catchUpTranslator does: encode
-// each IR message into per-message wire bytes.
 func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
 	out := make([][]json.RawMessage, 0, len(msgs))
 	prevSnap := form.Snapshot{}

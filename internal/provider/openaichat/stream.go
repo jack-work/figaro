@@ -11,7 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// streamChunk is one SSE frame of a streamed completion.
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -23,7 +22,6 @@ type streamChunk struct {
 	Usage *chatUsage `json:"usage"`
 }
 
-// assembled is the result of draining one response stream.
 type assembled struct {
 	Text       string
 	ToolCalls  []toolCall
@@ -31,16 +29,13 @@ type assembled struct {
 	Usage      *message.Usage
 }
 
-// drainSSE consumes a streamed Chat Completions response, pushing deltas to
-// the bus as they arrive and accumulating the final assistant message.
 func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled, error) {
 	var out assembled
 	byIndex := map[int]*toolCall{}
 	byID := map[string]int{}
 	var order []int
 	started := map[int]bool{}
-	// Synthetic slots count down so they can never collide with a real
-	// index; haveLast is a separate flag because -1 is a legal slot here.
+	// Synthetic slots count down from -1 so they never collide with a real index.
 	lastIdx, haveLast := 0, false
 	nextSynthetic := -1
 
@@ -62,8 +57,7 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 		}
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			// A gateway is free to emit keep-alives and comments; a frame we
-			// cannot parse is not a reason to lose a turn already in flight.
+			// Keep-alives and comments are not a reason to lose the turn.
 			continue
 		}
 		if chunk.Usage != nil {
@@ -80,13 +74,8 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 				bus.PushDelta(message.TextContent(text))
 			}
 			for _, tc := range choice.Delta.ToolCalls {
-				// `index` is required by the spec and gateways omit it
-				// anyway. Defaulting the missing case to 0 merged every
-				// call of a turn into one slot and concatenated their
-				// arguments, a client must not silently corrupt a tool
-				// call because an upstream left a field out. With no
-				// index: a new id opens a new slot, and a bare fragment
-				// continues the slot it is obviously continuing.
+				// Gateways omit `index`: a new id opens a new slot, a bare
+				// fragment continues the last one.
 				idx := 0
 				switch {
 				case tc.Index != nil:
@@ -145,10 +134,8 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 	return out, nil
 }
 
-// toolInvokeContent decodes one accumulated call into IR. Malformed
-// arguments become an empty object rather than failing the turn: the model
-// gets the tool's own error back and can correct itself, which is strictly
-// better than losing the whole response.
+// toolInvokeContent turns malformed arguments into an empty object; the
+// model gets the tool's error back rather than losing the turn.
 func toolInvokeContent(call toolCall) message.Content {
 	args := map[string]any{}
 	if strings.TrimSpace(call.Function.Arguments) != "" {
@@ -164,7 +151,6 @@ func toolInvokeContent(call toolCall) message.Content {
 	}
 }
 
-// toIRMessage folds a drained stream into the canonical assistant message.
 func (a assembled) toIRMessage() message.Message {
 	msg := message.Message{Role: message.RoleOutput, Usage: a.Usage}
 	if a.Text != "" {
@@ -177,7 +163,6 @@ func (a assembled) toIRMessage() message.Message {
 	return msg
 }
 
-// stopReason maps the dialect's finish_reason onto figaro's vocabulary.
 func stopReason(finish string, hasCalls bool) message.StopReason {
 	switch finish {
 	case "length":

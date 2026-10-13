@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeResolver returns tokens in sequence (repeating the last) and a
-// canned Invalidate error.
 type fakeResolver struct {
 	tokens      []string
 	invErr      error

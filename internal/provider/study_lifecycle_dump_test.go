@@ -11,15 +11,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// TestStudyLifecycleDump prints, verbatim, what a figaro is shown at every
-// lifecycle event of a studied form: the moment observation begins, each
-// window in which the form moved, a window in which it did not, the form
-// being deleted while observed, and the drop.
-//
-// It is a dump, not an assertion: the assertions live elsewhere. This exists
-// so the rendered surface can be read as a whole, which is the only way to
-// see the traps in it (two blocks that differ only by a version number, an
-// intermediate value inside one window, a baseline rendered as a change).
+// TestStudyLifecycleDump prints what a figaro is shown at each lifecycle
+// event of a studied form; it asserts nothing.
 func TestStudyLifecycleDump(t *testing.T) {
 	f := store.NewMemForm()
 	defer f.Close()
@@ -35,7 +28,6 @@ func TestStudyLifecycleDump(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The form's life before anyone watches it.
 	set(map[string]string{"brief": "ship the thing", "owner": "gluck"})
 	set(map[string]string{"status": "open"})
 	v0 := f.Read().Version
@@ -46,13 +38,13 @@ func TestStudyLifecycleDump(t *testing.T) {
 
 	log := store.NewMemLog[message.Message]()
 
-	// 1. STUDY BEGINS. The mark, stamped at the form's current version.
+	// 1. Study begins.
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload:       message.Message{Role: message.RoleInput, Study: &message.StudyMark{FormID: fid, Began: true}},
 		StudyVersions: map[string]uint64{fid: v0},
 	})
 
-	// 2. THE FORM MOVES, twice inside one window.
+	// 2. The form moves twice inside one window.
 	set(map[string]string{"status": "in review"})
 	set(map[string]string{"status": "merged", "sha": "8b12f128"})
 	_, _ = log.Append(store.Entry[message.Message]{
@@ -60,13 +52,13 @@ func TestStudyLifecycleDump(t *testing.T) {
 		StudyVersions: map[string]uint64{fid: f.Read().Version},
 	})
 
-	// 3. THE FORM DOES NOT MOVE.
+	// 3. The form does not move.
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload:       message.Message{Role: message.RoleInput},
 		StudyVersions: map[string]uint64{fid: f.Read().Version},
 	})
 
-	// 4. A KEY IS REMOVED.
+	// 4. A key is removed.
 	if _, err := f.Apply(form.Build(form.Snapshot{}, nil, []string{"owner"}), 0); err != nil {
 		t.Fatal(err)
 	}
@@ -75,13 +67,13 @@ func TestStudyLifecycleDump(t *testing.T) {
 		StudyVersions: map[string]uint64{fid: f.Read().Version},
 	})
 
-	// 5. THE FORM CEASES TO EXIST while observed: stamped, no accessor.
+	// 5. The form ceases to exist while observed.
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload:       message.Message{Role: message.RoleInput},
 		StudyVersions: map[string]uint64{"@gone99": 7},
 	})
 
-	// 6. DROP.
+	// 6. Drop.
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleInput, Study: &message.StudyMark{FormID: fid, Began: false}},
 	})

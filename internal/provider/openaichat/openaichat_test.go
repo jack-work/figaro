@@ -59,8 +59,6 @@ func conversation() []message.Message {
 	}
 }
 
-// --- king's assertion (d): never more than four markers, in any mode -------
-
 func TestMarkerCapAcrossModes(t *testing.T) {
 	routes := map[string]provider.Route{
 		"openrouter": provider.OpenRouterRoute(),
@@ -79,16 +77,12 @@ func TestMarkerCapAcrossModes(t *testing.T) {
 			if n := countCacheMarkers(req); n > provider.MaxCacheBreakpoints {
 				t.Errorf("%s/%s emitted %d markers, cap is %d", name, mode, n, provider.MaxCacheBreakpoints)
 			}
-			// Figaro's own ceiling is lower: a downstream router must have a
-			// slot left to top up with.
 			if n := countCacheMarkers(req); n > provider.AutoCacheBreakpoints {
 				t.Errorf("%s/%s emitted %d markers, figaro's budget is %d", name, mode, n, provider.AutoCacheBreakpoints)
 			}
 		}
 	}
 }
-
-// --- the default: bare strings plus one request-level directive ------------
 
 func TestGatewayAutoSendsStringsAndOneDirective(t *testing.T) {
 	p := newTestProvider(t, provider.GatewayRoute("http://127.0.0.1:61890/v1"), provider.MarkAuto)
@@ -151,12 +145,7 @@ func markedIndexes(t *testing.T, req chatRequest) []int {
 	return out
 }
 
-// --- byte stability: shape is a function of route, never of position -------
-
-// Two consecutive turns must serialize the shared prefix identically. If a
-// message is a string on one turn and a block list on the next: or carries
-// a marker on one turn and not the next: the prefix bytes change and the
-// cache it was building is thrown away.
+// Two consecutive turns must serialize the shared prefix identically.
 func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 	for _, mode := range []provider.MarkMode{provider.MarkAuto, provider.MarkBlocks} {
 		p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), mode)
@@ -176,7 +165,6 @@ func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 			t.Fatalf("%s turn 2: %v", mode, err)
 		}
 
-		// Everything up to (not including) turn 1's tail is shared prefix.
 		shared := len(req1.Messages) - 1
 		for i := 0; i < shared; i++ {
 			a, _ := json.Marshal(req1.Messages[i])
@@ -187,8 +175,6 @@ func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 		}
 	}
 }
-
-// --- king's assertion (c) support: one stable session key ------------------
 
 func TestSessionKeyIsSentUnderBothNamesAndIsStable(t *testing.T) {
 	p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), provider.MarkAuto)
@@ -227,8 +213,6 @@ func TestUnknownGatewayIsNeverMarked(t *testing.T) {
 	}
 }
 
-// --- king's assertion (b): usage lands in the right buckets ----------------
-
 func TestUsageMappingKeepsContextHonest(t *testing.T) {
 	var u chatUsage
 	if err := json.Unmarshal([]byte(`{
@@ -249,8 +233,7 @@ func TestUsageMappingKeepsContextHonest(t *testing.T) {
 	if got.InputTokens != 21 {
 		t.Errorf("uncached input = %d, want 21 (prompt_tokens is INCLUSIVE of cache reads)", got.InputTokens)
 	}
-	// The whole point: the four buckets must re-sum to the prompt plus the
-	// reply, or every cached aria's context figure is wrong.
+	// The four buckets must re-sum to prompt plus reply.
 	total := got.InputTokens + got.CacheReadTokens + got.CacheWriteTokens + got.OutputTokens
 	if total != 10399 {
 		t.Errorf("ContextFromUsage sum = %d, want total_tokens 10399", total)
@@ -273,8 +256,6 @@ func TestUsageMappingWithCacheWrites(t *testing.T) {
 	}
 }
 
-// A gateway that reports no details at all must not be read as "everything
-// was uncached and also cached".
 func TestUsageMappingWithoutDetails(t *testing.T) {
 	u := chatUsage{PromptTokens: 900, CompletionTokens: 12}
 	got := u.toIR()
@@ -285,8 +266,6 @@ func TestUsageMappingWithoutDetails(t *testing.T) {
 		t.Error("an empty usage block must map to nil, not to a zeroed one")
 	}
 }
-
-// --- streaming ------------------------------------------------------------
 
 type recordingBus struct {
 	text   strings.Builder
@@ -337,8 +316,6 @@ func TestDrainSSEAssemblesTextToolsAndUsage(t *testing.T) {
 	}
 }
 
-// Two calls streamed with interleaved fragments must not have their
-// arguments concatenated onto each other. Keyed by index, not arrival.
 func TestDrainSSEKeepsInterleavedToolCallsApart(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"one","arguments":"{\"x\":1"}}]}}]}`,
@@ -361,11 +338,7 @@ func TestDrainSSEKeepsInterleavedToolCallsApart(t *testing.T) {
 	}
 }
 
-// --- shape / fingerprint ---------------------------------------------------
-
-// Changing the marking mode changes the wire shape, so it must move the
-// fingerprint: otherwise a prefix cached as strings is replayed alongside
-// new entries cached as blocks.
+// A marking mode change must move the fingerprint.
 func TestFingerprintTracksTheWireShape(t *testing.T) {
 	route := provider.GatewayRoute("http://x/v1")
 	strings0 := newTestProvider(t, route, provider.MarkAuto).Fingerprint()
@@ -403,9 +376,6 @@ func TestToolResultsEncodeAsToolRole(t *testing.T) {
 	}
 }
 
-// FuzzStampLeafCache: marking must never produce more than one marker on a
-// message, never lose the message's text, and never succeed on bare-string
-// content (which has nowhere to hang a marker).
 func FuzzStampLeafCache(f *testing.F) {
 	f.Add(`"hello"`, true)
 	f.Add(`[{"type":"text","text":"hello"}]`, true)
@@ -444,12 +414,7 @@ func FuzzStampLeafCache(f *testing.F) {
 	})
 }
 
-// A local gateway holds the real provider credentials itself. Demanding one
-// from figaro means inventing a secret that nothing reads, and the CLI's
-// credential gate is keyed on the provider name, so it refused to start a
-// turn at all ("No provider connected") until one existed. Found by driving
-// the real binary in a pty against a local endpoint; no unit test saw it,
-// because no unit test went through the credential gate.
+// A local gateway holds the real credentials itself.
 func TestAuthOptionalRouteSendsNoAuthorizationHeader(t *testing.T) {
 	p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), provider.MarkAuto)
 	p.auth = failingResolver{}
@@ -465,8 +430,6 @@ func TestAuthOptionalRouteSendsNoAuthorizationHeader(t *testing.T) {
 	}
 }
 
-// A route that DOES need a credential must still fail loudly rather than
-// send an anonymous request and collect a 401 later.
 func TestAuthRequiredRouteFailsLoudly(t *testing.T) {
 	p := newTestProvider(t, provider.OpenRouterRoute(), provider.MarkAuto)
 	p.auth = failingResolver{}
@@ -483,12 +446,7 @@ func (failingResolver) Invalidate(string) error  { return nil }
 
 var errNoCredential = errors.New("no credential available")
 
-// A stream that carries no usage block must not be mistaken for a turn
-// that used no tokens. Found in the e2e round against a gateway whose
-// streaming path returned no usage at all: every bucket read 0 while the
-// context figure kept climbing off the estimator, so the aria looked
-// accounted for. drainSSE must report nil: not a zeroed Usage: so the
-// caller can tell the two apart and say so.
+// No usage block must come back as nil, not a zeroed Usage.
 func TestNoUsageBlockIsDistinctFromZeroUsage(t *testing.T) {
 	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
@@ -505,18 +463,13 @@ func TestNoUsageBlockIsDistinctFromZeroUsage(t *testing.T) {
 	}
 }
 
-// And the reverse: an explicit all-zero usage block is also nil, because
-// there is nothing to account and folding zeros would be indistinguishable
-// from the case above anyway.
 func TestExplicitZeroUsageFoldsToNil(t *testing.T) {
 	if (chatUsage{}).toIR() != nil {
 		t.Error("an empty usage block must map to nil")
 	}
 }
 
-// The conservative default is correct and was silent: a gateway configured
-// with base_url alone gets no markers and no session key. This pins WHAT
-// the default is, so a change to it has to be deliberate.
+// A gateway configured with base_url alone gets no markers and no session key.
 func TestBareBaseURLGatewayIsUncachedAndUnsticky(t *testing.T) {
 	route := provider.UncachedRoute("http://127.0.0.1:61890/v1")
 	if route.Caps.BlockMarkers || route.Caps.TopLevel {
@@ -540,10 +493,7 @@ func TestBareBaseURLGatewayIsUncachedAndUnsticky(t *testing.T) {
 }
 
 // A gateway that omits `index` on tool_call deltas must not have its calls
-// merged. Defaulting the missing index to 0 put every call of a turn in one
-// slot and concatenated their arguments; downstream that surfaced as a tool
-// invoked with arguments belonging to a different call: or with none at
-// all. Twenty turns of a real session were lost to this class of failure.
+// merged.
 func TestToolCallsWithoutIndexDoNotMerge(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"choices":[{"delta":{"tool_calls":[{"id":"a","type":"function","function":{"name":"bash","arguments":"{\"command\":"}}]}}]}`,
@@ -573,8 +523,7 @@ func TestToolCallsWithoutIndexDoNotMerge(t *testing.T) {
 	}
 }
 
-// The single-call case a gateway most often emits: no index anywhere, id and
-// name on the first fragment only. It must still assemble.
+// No index anywhere, id and name on the first fragment only.
 func TestSingleToolCallWithoutIndexAssembles(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"choices":[{"delta":{"tool_calls":[{"id":"a","function":{"name":"bash","arguments":"{\"comm"}}]}}]}`,

@@ -9,14 +9,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// THE TWO PATHS MUST AGREE, BECAUSE THEY WRITE TO ONE CHANNEL.
-//
-// A catch-up walks a suffix; the fig IR write path renders each entry as it
-// lands. If they derived the board differently, an aria's history would read
-// one way when it was written live and another when it was rebuilt -- and
-// nothing downstream could tell which it had.
-//
-// This drives the SAME log through both and compares the bytes.
+// The catch-up and the write path must produce the same bytes: they write to
+// one channel.
 func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 	board := newFakeBoard(2, 3, 4, 5, 6)
 	build := func() *store.MemLog[message.Message] {
@@ -48,7 +42,6 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		return []json.RawMessage{body}, nil
 	}
 
-	// ARM A: one catch-up over the whole log.
 	catchLog, catchTrans := build(), store.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(CatchUpConfig{
 		Log: catchLog, Translator: catchTrans, Form: board,
@@ -57,7 +50,6 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ARM B: the write path, entry by entry, through the adapter.
 	appendLog, appendTrans := build(), store.NewMemLog[[]json.RawMessage]()
 	adapter := NewOnAppend("fake",
 		encode,
@@ -96,9 +88,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 	}
 }
 
-// AND THE ADAPTER RESUMES FROM THE LOG, NOT FROM MEMORY. A cursor that did not
-// survive a restart would render the whole board onto the first entry after
-// it -- the exact defect the deleted memo had, one layer over.
+// The adapter resumes from the log, not from memory.
 func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	trans := store.NewMemLog[[]json.RawMessage]()
@@ -128,8 +118,6 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 	}
 
 	entries := log.Read()
-	// One adapter renders the first entry and is then thrown away, as a
-	// restart throws away everything held in memory.
 	first, fp, err := newAdapter().EncodeEntry("aria", log, entries[0])
 	if err != nil {
 		t.Fatal(err)
@@ -140,8 +128,6 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A FRESH adapter renders the second. If it seeded from zero it would
-	// re-render the patches the first entry already carried.
 	if _, _, err := newAdapter().EncodeEntry("aria", log, entries[1]); err != nil {
 		t.Fatal(err)
 	}

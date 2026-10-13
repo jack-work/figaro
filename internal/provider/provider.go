@@ -24,123 +24,85 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// Knobs are operational provider settings derived from the outfit's
-// system.* form keys. The harness reads these to construct the
-// provider; the agent never sees them (no rendering template).
+// Knobs are provider settings from the outfit's system.* keys; the model
+// never sees them.
 type Knobs struct {
 	Model            string
 	MaxTokens        int
 	ReminderRenderer string // "tag" (default) or "tool"
 }
 
-// Bus is the sink for per-turn provider output. The figaro side folds
-// these calls into the open tail message and emits log.* frames; the
-// provider vocabulary is unchanged by the wire respec.
+// Bus is the sink for per-turn provider output.
 type Bus interface {
 	PushDelta(content message.Content)
 	PushFigaro(msg message.Message, cache ...AssistantCache)
-	// PushToolInvokeStart fires when the assistant begins a tool_use
-	// block: the model starts *authoring* an invocation. The figaro
-	// side opens a tool_invoke block on the open assistant message.
 	PushToolInvokeStart(toolCallID, toolName string)
-	// PushToolInvokeDelta carries partial input JSON. Best-effort.
+	// PushToolInvokeDelta is best-effort.
 	PushToolInvokeDelta(toolCallID, partialJSON string)
-	// PushToolReady fires when a tool_use block's input JSON is fully
-	// decoded: typically at content_block_stop. The harness may dispatch
-	// the tool immediately, before PushFigaro / message_stop arrives.
+	// PushToolReady lets the harness dispatch a tool before PushFigaro.
 	PushToolReady(call message.Content)
-	// PushMessageEnd fires at message_stop, before PushFigaro. Under the
-	// log.* model the figaro side ignores it (the stop reason rides the
-	// sealed message), but providers still call it.
+	// PushMessageEnd fires at message_stop, before PushFigaro.
 	PushMessageEnd(stopReason string)
 }
 
-// AssistantCache is the exact input-ready provider-native payload paired with
-// a canonical assistant candidate. The actor commits both before acknowledging
-// PushFigaro.
+// AssistantCache is the input-ready native payload of an assistant message;
+// the actor commits IR then cache before acknowledging PushFigaro.
 type AssistantCache struct {
 	Namespace   string
 	Payload     []json.RawMessage
 	Fingerprint string
 }
 
-// Form is the per-LT transition accessor. Form patches no
-// longer ride inline on IR messages; they live in a reducible channel keyed
-// by IR logical time. PatchesAt returns the transitions to render on the
-// message at lt: the encoder folds them into that message's wire bytes
-// exactly as it did the inline patches, so per-LT caching stays sound
-// (a message's bytes depend only on state up to that message). Live state for the
-// system prefix still arrives via SendInput.Snapshot, which is rebuilt
-// each turn and never cached per-LT.
-// Form supplies the board patches that landed before a turn, so the
-// projection can render a `set` inline where it happened.
+// Form is the per-LT board patch accessor; the encoder folds a message's
+// patches into its wire bytes so per-LT caching stays sound.
 type Form interface {
 	PatchesBetween(after, upTo uint64) []message.Patch
 }
 
-// EntryEncoder is the optional interface a provider implements to have its
-// translations written WHEN AN ENTRY LANDS rather than on the next send.
-//
-// It is the same function the catch-up calls; exposing it is what lets one
-// encoder serve both paths, so a history written live and a history rebuilt
-// later cannot differ.
+// EntryEncoder lets a provider's translations be written when an entry
+// lands; the catch-up calls the same function.
 type EntryEncoder interface {
-	// TranslatorChannel names the provider channel these bytes belong to.
 	TranslatorChannel() string
-	// EncodeMessage renders one message against the board as it stood
-	// BEFORE it.
+	// EncodeMessage renders against the board as it stood before the message.
 	EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
 	Fingerprint() string
 }
 
-// SendInput is one turn's input.
 type SendInput struct {
 	AriaID   string
 	FigLog   store.Log[message.Message]
 	Snapshot form.Snapshot
 	Form     Form // inline transitions; nil = none (ephemeral)
-	// Studies are the OBSERVED forms' accessors, keyed by form id (the
-	// study half of the cursor stamp). Same contract as Form, one per
-	// member; the projection folds each member's transitions into the
-	// provider IR exactly as it folds the board's.
+	// Studies are the observed forms' accessors, keyed by form id.
 	Studies   map[string]Form
 	Tools     []Tool
 	MaxTokens int
 }
 
-// Provider is the LLM provider interface.
 type Provider interface {
 	Name() string
 
-	// Fingerprint hashes the encoder config.
+	// Fingerprint hashes the encoder config; a change clears the translator cache.
 	Fingerprint() string
 
 	Models(ctx context.Context) ([]ModelInfo, error)
 	SetModel(model string)
 
-	// Send drives one turn end-to-end.
 	Send(ctx context.Context, in SendInput, bus Bus) error
 }
 
-// ContextLimitProvider optionally reports the selected model's effective
-// prompt-context cap from already-cached provider metadata. Implementations
-// must not perform network I/O here because callers use it on live UI paths.
+// ContextLimitProvider reports the model's context cap from cached metadata;
+// no network I/O, it runs on live UI paths.
 type ContextLimitProvider interface {
 	ContextLimit(model string, snapshot form.Snapshot) int
 }
 
-// ContextLimitOverrideKey is the form key a user pins a context window
-// with. It overrides whatever the provider would otherwise report.
+// ContextLimitOverrideKey pins a context window over the provider's report.
 const ContextLimitOverrideKey = "system.max_context_tokens"
 
-// StreamRequestBodyKey chooses the request framing. DEFAULT ON: the body is
-// written as it is sent. Setting it false on an aria's board -- or on its
-// outfit -- buffers the whole conversation again.
+// StreamRequestBodyKey, default on; false buffers the whole conversation.
 const StreamRequestBodyKey = "system.stream_request_body"
 
-// StreamsRequestBody reports whether this aria sends its request body as it is
-// written instead of copying the conversation into one buffer first. The bytes
-// are identical either way; only the peak is not.
 func StreamsRequestBody(snapshot form.Snapshot) bool {
 	raw, ok := snapshot.Get(StreamRequestBodyKey)
 	if !ok {
@@ -153,9 +115,6 @@ func StreamsRequestBody(snapshot form.Snapshot) bool {
 	return on
 }
 
-// ContextLimitOverride reads the user's pinned context window off the
-// form. One implementation so every provider spells the override the
-// same way.
 func ContextLimitOverride(snapshot form.Snapshot) (int, bool) {
 	raw, ok := snapshot.Get(ContextLimitOverrideKey)
 	if !ok {

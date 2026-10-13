@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// The streamed body must be the SAME BYTES the marshalled one is. This tenant
-// has its own oracle because it has its own request type: the splice is shared
-// and the field order is not.
 func TestStreamedBodyIsByteIdenticalToMarshal(t *testing.T) {
 	rows := func(bodies ...string) []json.RawMessage {
 		out := make([]json.RawMessage, 0, len(bodies))

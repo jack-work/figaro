@@ -53,7 +53,6 @@ func TestResponsesTerminalEventsDoNotWaitForSocketClose(t *testing.T) {
 					"incomplete_details": map[string]any{"reason": tc.reason},
 					"output":             []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "partial"}}}},
 				}})
-				// Protocol termination, not a TCP close, must release the client.
 				var next any
 				_ = websocket.JSON.Receive(conn, &next)
 			})
@@ -106,7 +105,6 @@ func TestResponsesCallCorrelationAndExactlyOnceReadiness(t *testing.T) {
 		}})
 		require.NoError(t, err)
 	}
-	// Neither an unrecognized item ID nor a fabricated call ID gets index zero.
 	for _, e := range []any{
 		map[string]any{"type": "response.function_call_arguments.delta", "item_id": "unknown", "delta": "WRONG"},
 		map[string]any{"type": "response.function_call_arguments.delta", "call_id": "unknown", "output_index": 0, "delta": "WRONG"},
@@ -258,10 +256,8 @@ func TestResponsesAbnormalTerminalPreservesAuthoritativeNativeOutput(t *testing.
 	require.Equal(t, string(native), string(out.Output[0]))
 }
 
-// A model that answers through its tools and then says nothing ends the turn
-// with an empty assistant message. Cached, it is replayed on every later turn,
-// and the proxy refuses the whole request: the aria goes mute for good. The
-// item must never reach the cache.
+// An empty assistant item must never reach the cache: replayed, the proxy
+// refuses the whole request.
 func TestResponsesTextFreeAssistantItemNeverEntersTheCache(t *testing.T) {
 	reasoning := json.RawMessage(`{"type":"reasoning","id":"signed","encrypted_content":"opaque","content":[],"summary":[]}`)
 	empty := json.RawMessage(`{"type":"message","role":"assistant","id":"blank","content":[{"type":"output_text","text":"","annotations":[],"logprobs":[]}]}`)

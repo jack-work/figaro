@@ -11,9 +11,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// TestRenderMessage_InterruptSentinel verifies the sentinel becomes a
-// user-role nativeMessage with one tool_result block per dangling
-// tool_use_id, IsError=true.
 func TestRenderMessage_InterruptSentinel(t *testing.T) {
 	a := &Anthropic{}
 	sentinel := message.NewInterruptSentinel(
@@ -33,8 +30,6 @@ func TestRenderMessage_InterruptSentinel(t *testing.T) {
 	assert.Equal(t, "toolu_a", nm.Content[0].ToolUseID)
 	assert.True(t, nm.Content[0].IsError)
 
-	// The Content field on nativeBlock is interface{} carrying nested
-	// blocks; assert via the JSON round-trip.
 	raw, err := json.Marshal(nm)
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), `"role":"user"`)

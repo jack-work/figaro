@@ -146,10 +146,7 @@ func TestAssistantCacheNativeDropsEmptyStreamedBlocks(t *testing.T) {
 	assert.NotContains(t, string(cache.Payload[0]), `{"type":"text"}`)
 }
 
-// THE CUT THAT KILLED ARIA 90ec6584, from the wire in. The stream ends in the
-// middle of a call's arguments: no content_block_stop, so the input is a
-// fragment of JSON. The IR and the cache must come out of that agreeing, or
-// the seal closes a call the wire has never heard of.
+// A stream cut mid-arguments: IR and cache must agree on dropping the call.
 func TestAStreamCutMidArgumentsLeavesNoHalfCall(t *testing.T) {
 	sse := "event: message_start\n" +
 		`data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}` + "\n\n" +
@@ -204,12 +201,6 @@ func TestAssistantCacheNativeKeepsSignedEmptyThinking(t *testing.T) {
 	assert.Contains(t, string(cache.Payload[0]), `"signature":"sig"`)
 }
 
-// A turn cut during the arguments leaves partial JSON where the input should
-// be. That block is not a call: it cannot replay, so neither the cache nor the
-// IR may keep it, and the rest of the message is unharmed. While the two
-// predicates disagreed the IR kept the call, the seal wrote its closing
-// result, and every later request carried a result whose tool_use was gone:
-// aria 90ec6584, 400 forever.
 func TestAnUnparsedToolCallLeavesTheCacheAndTheIRTogether(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
 	partial := nativeMessage{
@@ -273,11 +264,7 @@ func TestCacheableNativeBlockShapesCarryRequiredFields(t *testing.T) {
 	}
 }
 
-// A turn cut mid-thought leaves thinking text whose signature_delta never
-// arrived. Caching that block bricks the aria: it replays on EVERY later
-// request and the API answers 400 (thinking.signature: Field required)
-// forever, with no prompt that can get past it. The summary text is worth
-// nothing on the wire without its signature, so the cache refuses it.
+// Unsigned thinking must not reach the cache: it replays as a 400.
 func TestAssistantCacheNativeDropsUnsignedThinking(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
 	cache, err := a.assistantCacheNative(nativeMessage{
@@ -292,8 +279,6 @@ func TestAssistantCacheNativeDropsUnsignedThinking(t *testing.T) {
 	assert.NotContains(t, string(cache.Payload[0]), "thinking")
 	assert.Contains(t, string(cache.Payload[0]), "salve")
 
-	// Thinking alone leaves nothing cacheable at all: no row, and the
-	// fallback encoder re-derives the turn from the IR.
 	cache, err = a.assistantCacheNative(nativeMessage{
 		Role:    "assistant",
 		Content: []nativeBlock{{Type: "thinking", Thinking: "cut before the signature arrived"}},

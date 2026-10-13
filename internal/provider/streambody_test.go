@@ -12,8 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// A fault mid-body must abort the request. The failure this forbids is a
-// truncated body the far end accepts as a whole conversation.
+// A fault mid-body must abort the request, not truncate it.
 func TestAMidBodyFaultAbortsTheRequestRatherThanTruncatingIt(t *testing.T) {
 	type seen struct {
 		body string
@@ -56,8 +55,6 @@ func TestAMidBodyFaultAbortsTheRequestRatherThanTruncatingIt(t *testing.T) {
 	}
 }
 
-// GetBody is what makes a replay possible: without it an HTTP/2 GOAWAY or a
-// 307 is a hard failure rather than a second attempt.
 func TestTheBodyIsReplayedFromGetBody(t *testing.T) {
 	var bodies []string
 	var attempts int
@@ -101,7 +98,6 @@ func TestTheBodyIsReplayedFromGetBody(t *testing.T) {
 	}
 }
 
-// The pipe's writer must not outlive a request nobody read.
 func TestAnAbandonedBodyStopsItsWriter(t *testing.T) {
 	stopped := make(chan error, 1)
 	req, err := http.NewRequest("POST", "http://example.invalid", nil)
@@ -128,8 +124,6 @@ func TestAnAbandonedBodyStopsItsWriter(t *testing.T) {
 	}
 }
 
-// A buffered body and a streamed body are the same bytes, however often the
-// request is replayed.
 func TestBothFramingsPutTheSameBytesOnTheWire(t *testing.T) {
 	write := func(w io.Writer) error {
 		_, err := io.WriteString(w, `{"model":"m","messages":[{"role":"user"}]}`)
@@ -170,10 +164,7 @@ func TestBothFramingsPutTheSameBytesOnTheWire(t *testing.T) {
 	}
 }
 
-// The two framings differ in EXACTLY ONE THING on the wire: whether the
-// request declares its length. Over HTTP/1.1 that is chunked transfer
-// encoding; over HTTP/2 -- which api.anthropic.com, api.openai.com and
-// api.githubcopilot.com all negotiate -- it is simply an absent length.
+// The two framings differ only in whether the request declares its length.
 func TestTheFramingsDifferOnlyInTheirLength(t *testing.T) {
 	write := func(w io.Writer) error {
 		_, err := io.WriteString(w, `{"model":"m"}`)

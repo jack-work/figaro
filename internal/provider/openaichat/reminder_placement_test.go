@@ -10,10 +10,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// A tool round with nobody speaking must not grow a `user` message holding
-// only a reminder: on this dialect that is, byte for byte, the user sending an
-// empty prompt. The reminder rides inside the last tool message instead, in
-// the same round.
+// A results-only round must not grow a `user` message holding only a
+// reminder; it rides inside the last tool message.
 func TestAReminderOnAToolRoundRidesInsideTheToolMessage(t *testing.T) {
 	p := &Provider{Templates: mustTemplates(t)}
 	msg := message.Message{

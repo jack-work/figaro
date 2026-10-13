@@ -8,18 +8,14 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// Benchmark the projection hot path. projectMessagesWithModel is
-// called once per Send.
-
 func benchMessages(nMessages int) []message.Message {
 	msgs := make([]message.Message, nMessages)
 	for i := range msgs {
-		// Leaf must be user-role for the realistic projection.
 		role := message.RoleOutput
 		if i%2 == 0 {
 			role = message.RoleInput
 		}
-		// If nMessages is even, the leaf would be assistant. Force user.
+		// The leaf must be user-role.
 		if i == nMessages-1 {
 			role = message.RoleInput
 		}

@@ -12,8 +12,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// fakeSchema is a minimal JSON-Schema-shaped value used to exercise
-// nativeTool.InputSchema serialization without depending on a real tool.
 func fakeSchema() interface{} {
 	return map[string]interface{}{
 		"type": "object",
@@ -23,11 +21,6 @@ func fakeSchema() interface{} {
 	}
 }
 
-// systemSnapshot returns a form snapshot that injects the given
-// text as system.credo: the canonical source for the projection's
-// system block.
-// withKey returns snap plus one key. Snapshots are immutable values,
-// so derived boards are built with Apply rather than assigned into.
 func withKey(s form.Snapshot, key string, v json.RawMessage) form.Snapshot {
 	return s.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{key: v}, nil))
 }
@@ -39,9 +32,6 @@ func systemSnapshot(t *testing.T, text string) form.Snapshot {
 	return form.FromMap(map[string]json.RawMessage{"system.credo": raw})
 }
 
-// TestProjectTools_Deterministic verifies that two consecutive
-// projections of the same tool list produce byte-identical output.
-// This is load-bearing for the tools-block cache breakpoint.
 func TestProjectTools_Deterministic(t *testing.T) {
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -60,11 +50,6 @@ func TestProjectTools_Deterministic(t *testing.T) {
 	assert.Equal(t, string(abytes), string(bbytes), "consecutive projectTools calls must produce equal bytes")
 }
 
-// TestProjectTools_RoundTrip verifies that projectTools output survives
-// a JSON encode/decode cycle without byte-level reordering when
-// re-projected. This guards against accidental introduction of a
-// non-deterministic field (e.g. a map[string]interface{} schema whose
-// key order depends on iteration).
 func TestProjectTools_RoundTrip(t *testing.T) {
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -83,12 +68,6 @@ func TestProjectTools_RoundTrip(t *testing.T) {
 	assert.Equal(t, string(first), string(second), "projectTools output must round-trip through JSON byte-identically")
 }
 
-// TestProjectMessages_CacheBreakpoints verifies that markCacheBreakpoints
-// sets cache_control on:
-//   - the last system block,
-//   - the last tool definition,
-//   - the last content block of the LAST message (the rolling tail, so the
-//     next turn reads the whole transcript back out of cache).
 func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -120,15 +99,8 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	require.NotNil(t, rowMessage(stm).Content[len(rowMessage(stm).Content)-1].CacheControl, "the tail message's last content block must have cache_control set")
 	assert.Equal(t, "ephemeral", rowMessage(stm).Content[len(rowMessage(stm).Content)-1].CacheControl.Type)
 
-	// The tail marker covers the new user prompt: it is part of the prefix on
-	// the next turn, so leaving it unmarked forces a fresh write every time.
 }
 
-// TestProjectMessages_SingleMessageStillMarksTheTail verifies that a first
-// turn is marked. The old rule suppressed the message-level breakpoint
-// below two messages, so an aria's opening turn: typically the largest
-// stable prefix it will ever have, credo plus tools: wrote no cache at all
-// and turn two paid full price for it.
 func TestProjectMessages_SingleMessageStillMarksTheTail(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -142,9 +114,6 @@ func TestProjectMessages_SingleMessageStillMarksTheTail(t *testing.T) {
 	assert.NotNil(t, rowMessage(req.Messages[0]).Content[0].CacheControl, "the opening turn must write the cache")
 }
 
-// TestProjectMessages_StableAcrossCalls verifies that the same input
-// produces byte-identical request output across two consecutive calls.
-// Cache-prefix invariant in its weakest form (same input → same bytes).
 func TestProjectMessages_StableAcrossCalls(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -170,10 +139,6 @@ func TestProjectMessages_StableAcrossCalls(t *testing.T) {
 	assert.Equal(t, string(b1), string(b2), "projectMessagesWithModel must produce byte-identical output for the same input")
 }
 
-// TestProjectMessages_OAuthSystemArray verifies that the OAuth path
-// produces a two-element system array with the Claude Code identity
-// prefix first, the credo (with its override preamble) second, and
-// cache_control attached to the last (credo) block.
 func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -191,9 +156,6 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 	require.NotNil(t, req.System[1].CacheControl, "last OAuth system block must carry cache_control")
 }
 
-// TestProjectMessages_PerLTTag verifies that a `system.tags[<lt>].cache_control`
-// form entry attaches cache_control to the wire message whose
-// figLog LT matches.
 func TestProjectMessages_PerLTTag(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -211,24 +173,18 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, req.Messages, 3)
 
-	// The assistant turn at LT 11 (index 1) should carry the marker.
 	tagged := req.Messages[1]
 	require.NotEmpty(t, rowMessage(tagged).Content)
 	require.NotNil(t, rowMessage(tagged).Content[len(rowMessage(tagged).Content)-1].CacheControl,
 		"message at LT 11 must carry cache_control from system.tags")
 	assert.Equal(t, "ephemeral", rowMessage(tagged).Content[len(rowMessage(tagged).Content)-1].CacheControl.Type)
 
-	// The untagged, non-tail message carries nothing; the tail carries the
-	// automatic rolling marker (caching is on by default).
 	assert.Nil(t, rowMessage(req.Messages[0]).Content[0].CacheControl)
 	assert.NotNil(t, rowMessage(req.Messages[2]).Content[0].CacheControl, "the rolling tail marker is automatic")
 	assert.LessOrEqual(t, countCacheMarkers(req), provider.MaxCacheBreakpoints,
 		"per-LT tags layer on top of the automatic markers and must not breach the API cap")
 }
 
-// TestCachingIsOnByDefault pins the contract that known_keys.go and the
-// cache-control skill both state: caching is ON at short retention with no
-// form key set at all.
 func TestCachingIsOnByDefault(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -238,7 +194,6 @@ func TestCachingIsOnByDefault(t *testing.T) {
 	}
 	tools := []provider.Tool{{Name: "alpha", Description: "first", Parameters: fakeSchema()}}
 
-	// No system.cache_control key anywhere on the board.
 	snap := systemSnapshot(t, "you are a test agent")
 	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, tools, 1024, false, "claude-test")
 	require.NoError(t, err)
@@ -251,7 +206,6 @@ func TestCachingIsOnByDefault(t *testing.T) {
 	assert.Greater(t, countCacheMarkers(req), 0, "default aria must SIGNAL caching (markers are all figaro controls; whether the provider then caches is its decision)")
 }
 
-// TestCachingOffIsHonoured keeps the escape hatch working.
 func TestCachingOffIsHonoured(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -263,8 +217,6 @@ func TestCachingOffIsHonoured(t *testing.T) {
 	assert.Equal(t, 0, countCacheMarkers(req), `system.cache_control "none" must mark nothing`)
 }
 
-// TestNeverExceedsTheAPIMarkerCap is the assertion that a fifth marker is a
-// hard 400: figaro emits at most 3, leaving one slot for a gateway.
 func TestNeverExceedsTheAPIMarkerCap(t *testing.T) {
 	a := &Anthropic{}
 	var msgs []message.Message
@@ -285,9 +237,6 @@ func TestNeverExceedsTheAPIMarkerCap(t *testing.T) {
 		"figaro must emit at most 3 markers so a downstream gateway can top up within Anthropic's cap of 4")
 }
 
-// TestTTLIsAFieldNotAType is bug 3: `figaro set system.cache_control 1h`
-// used to write the retention into the type field, producing
-// {"type":"1h"}, a documented setting that the API rejects.
 func TestTTLIsAFieldNotAType(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -307,8 +256,6 @@ func TestTTLIsAFieldNotAType(t *testing.T) {
 	assert.JSONEq(t, `{"type":"ephemeral","ttl":"1h"}`, string(raw))
 }
 
-// A per-LT tag took the same unvalidated path, so system.tags[N].cache_control
-// "none" emitted {"type":"none"} instead of disabling the marker.
 func TestPerLTTagNoneDisablesRatherThanEmittingGarbage(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -321,8 +268,6 @@ func TestPerLTTagNoneDisablesRatherThanEmittingGarbage(t *testing.T) {
 	assert.Nil(t, rowMessage(req.Messages[0]).Content[0].CacheControl, `a "none" tag must not stamp a marker`)
 }
 
-// The ttl is dropped on a route that does not honour it rather than sent to
-// be ignored or rejected.
 func TestTTLDroppedOnARouteThatDoesNotHonourIt(t *testing.T) {
 	a := &Anthropic{Route: provider.GatewayRoute("http://127.0.0.1:61890/v1")}
 	msgs := []message.Message{

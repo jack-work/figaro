@@ -15,7 +15,6 @@ func incantBoard(t *testing.T, key, raw string) form.Snapshot {
 	return form.FromMap(map[string]json.RawMessage{key: json.RawMessage(raw)})
 }
 
-// The three study events each carry their own phrase, and only their own.
 func TestStudyIncantationRidesEachEvent(t *testing.T) {
 	board := incantBoard(t, form.StudyIncantationKey,
 		`{"onstudy":"BEGIN","onupdate":"MOVED","ondrop":"END"}`)
@@ -41,9 +40,8 @@ func TestStudyIncantationRidesEachEvent(t *testing.T) {
 	}
 }
 
-// No incantation, no change: the blocks are byte-identical to what they were
-// before the feature existed. The per-LT translation cache makes any drift
-// here permanent, so this is the compatibility guard.
+// Without an incantation the bytes must not drift: the per-LT cache makes
+// drift permanent.
 func TestStudyBlocksUnchangedWithoutIncantation(t *testing.T) {
 	msg := message.Message{
 		Study:        &message.StudyMark{FormID: "@f", Began: true},
@@ -61,8 +59,6 @@ func TestStudyBlocksUnchangedWithoutIncantation(t *testing.T) {
 	}
 }
 
-// A malformed incantation costs its phrase and nothing else: the fact still
-// reaches the model.
 func TestStudyBlockSurvivesMalformedIncantation(t *testing.T) {
 	board := incantBoard(t, form.StudyIncantationKey, `["nope"]`)
 	msg := message.Message{Study: &message.StudyMark{FormID: "@f", Began: true}}
@@ -93,9 +89,7 @@ func TestForkIncantationRendersOnlyOnTheBirthPatch(t *testing.T) {
 	}
 }
 
-// The default is silence, and it stays silence. Forked arias have never been
-// told they were forked; turning that on for everyone who never asked would
-// put a new block in every branch in the store.
+// The default is silence: a new block in every branch would move cached bytes.
 func TestForkSilentWithoutIncantation(t *testing.T) {
 	born := message.Message{Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"abc123"`),

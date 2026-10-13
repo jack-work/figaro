@@ -15,19 +15,10 @@ var (
 	commaSeparator = []byte(",")
 )
 
-// RowSeq is a conversation's wire rows, pulled one at a time, each with the
-// figaro logical time of the record it translates.
-//
-// IT IS THE POINT OF THE STREAMED BODY. A []json.RawMessage of the whole
-// history is the conversation decoded into the heap and held until the request
-// ends; a RowSeq is the same rows in the same order with one of them resident.
-// The sequence must be RE-RUNNABLE: net/http replays a body on a GOAWAY or a
-// 307, so a producer reads its source again rather than remembering it.
+// RowSeq pulls wire rows one at a time with their figaro LTs. It must be
+// re-runnable: net/http replays a body on a GOAWAY or a 307.
 type RowSeq = iter.Seq2[json.RawMessage, uint64]
 
-// SliceRows is the RowSeq over rows already in memory: for tests, for the
-// assemblers that have no log, and as the definition every streamed source is
-// asserted equal to.
 func SliceRows(rows []json.RawMessage, lts []uint64) RowSeq {
 	return func(yield func(json.RawMessage, uint64) bool) {
 		for i, row := range rows {
@@ -42,8 +33,7 @@ func SliceRows(rows []json.RawMessage, lts []uint64) RowSeq {
 	}
 }
 
-// PerMessageRows flattens stored rows -- one record translates to one or more
-// wire messages -- into the sequence an assembler consumes.
+// PerMessageRows flattens records, each of one or more wire messages.
 func PerMessageRows(perMessage [][]json.RawMessage, lts []uint64) RowSeq {
 	return func(yield func(json.RawMessage, uint64) bool) {
 		for i, entry := range perMessage {
@@ -63,10 +53,8 @@ func PerMessageRows(perMessage [][]json.RawMessage, lts []uint64) RowSeq {
 	}
 }
 
-// CollectRows drains a RowSeq. THE ONE PLACE THE WHOLE CONVERSATION IS
-// ALLOWED IN MEMORY: tests that assert on an assembled request, and callers
-// whose wire format is a typed array rather than a splice. Nothing on the
-// anthropic send path may call it.
+// CollectRows materializes the conversation; nothing on the anthropic send
+// path may call it.
 func CollectRows(seq RowSeq) ([]json.RawMessage, []uint64) {
 	var (
 		rows []json.RawMessage
@@ -82,8 +70,6 @@ func CollectRows(seq RowSeq) ([]json.RawMessage, []uint64) {
 	return rows, lts
 }
 
-// WriteJSONWithRowSeq is WriteJSONWithRows over a pulled sequence: the same
-// bytes, with one row resident instead of all of them.
 func WriteJSONWithRowSeq(w io.Writer, frame any, field string, rows RowSeq) error {
 	head, tail, err := spliceFrame(frame, field)
 	if err != nil {
@@ -135,8 +121,6 @@ func WriteJSONWithRowSeq(w io.Writer, frame any, field string, rows RowSeq) erro
 	return err
 }
 
-// spliceFrame marshals the frame and cuts it at the null field the rows
-// replace.
 func spliceFrame(frame any, field string) (head, tail []byte, err error) {
 	encoded, err := json.Marshal(frame)
 	if err != nil {
@@ -151,15 +135,10 @@ func spliceFrame(frame any, field string) (head, tail []byte, err error) {
 	return encoded[: i+len(name) : i+len(name)], encoded[i+len(token):], nil
 }
 
-// WriteJSONWithRows writes the bytes json.Marshal would produce for frame with
-// rows in the named field, without ever holding them in one buffer. frame must
-// carry that field as a nil slice; the field must not be omitempty.
-//
-// Each tenant asserts the equality against its own request type -- see
-// TestStreamedBodyIsByteIdenticalToMarshal in anthropic and openaichat.
+// WriteJSONWithRows writes what json.Marshal would, with rows spliced into
+// the named field. frame must carry that field as a nil, non-omitempty slice.
 func WriteJSONWithRows(w io.Writer, frame any, field string, rows []json.RawMessage) error {
 	if rows == nil {
-		// A nil field is the literal null, which is not the empty array.
 		return WriteJSONWithRowSeq(w, frame, field, nil)
 	}
 	return WriteJSONWithRowSeq(w, frame, field, SliceRows(rows, nil))

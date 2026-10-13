@@ -53,9 +53,7 @@ func TestBaseURLOverrideUnsetLeavesRouteAlone(t *testing.T) {
 }
 
 // A route that advances the breakpoint itself must not also get a moving
-// per-block marker. Marking a message on turn N and un-marking it on turn
-// N+1 rewrites bytes that are already inside the cached prefix, which
-// invalidates the cache the marker exists to fill.
+// per-block marker: un-marking rewrites bytes inside the cached prefix.
 func TestMarkPlanAutoPrefersTheGatewayDirective(t *testing.T) {
 	gw := GatewayRoute("http://x/v1").MarkPlan(MarkAuto)
 	if !gw.TopLevel || gw.Blocks || gw.Tail {
@@ -71,7 +69,6 @@ func TestMarkPlanAutoPrefersTheGatewayDirective(t *testing.T) {
 	}
 }
 
-// Both modes must be reachable by configuration alone, no rebuild.
 func TestMarkPlanModesAreConfigurable(t *testing.T) {
 	gw := GatewayRoute("http://x/v1")
 	if p := gw.MarkPlan(MarkBlocks); !p.Blocks || !p.Tail || p.TopLevel {

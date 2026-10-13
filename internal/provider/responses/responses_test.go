@@ -208,28 +208,20 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	assert.Equal(t, "be concise", request.Instructions)
 	require.Len(t, request.Input, 1)
 	assert.Contains(t, string(request.Input[0]), `"ciao"`)
-	// What the CLIENT sent, through the real Send path: GPT-5.6 needs a
-	// stable cache key to route a conversation back to its warm machine.
 	assert.Equal(t, provider.SessionKey("aria-1"), request.PromptCacheKey)
 	assert.NotEmpty(t, request.PromptCacheKey)
 	assert.NotContains(t, request.PromptCacheKey, "aria-1", "the key must not leak the aria id")
-	// A single user turn has no completed exchange behind it, so no
-	// explicit breakpoint is stamped and the implicit one stands alone.
+	// A single user turn has no completed exchange to mark.
 	assert.NotContains(t, string(request.Input[0]), "prompt_cache_breakpoint")
 	assert.Equal(t, []message.Content{{Type: message.ContentProse, Text: "salve"}}, bus.deltas)
 	require.Len(t, bus.messages, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
 	assert.Equal(t, message.StopEnd, bus.messages[0].StopReason)
-	// input_tokens (11) is INCLUSIVE of the cached (5) and written (2)
-	// tokens broken out beside it, so the uncached remainder is 4. This
-	// assertion previously read 11, which pinned a double count: every
-	// cached token was also counted as fresh input.
+	// input_tokens (11) includes the cached (5) and written (2) tokens.
 	assert.Equal(t, 4, bus.messages[0].Usage.InputTokens)
 	assert.Equal(t, 5, bus.messages[0].Usage.CacheReadTokens)
 	assert.Equal(t, 2, bus.messages[0].Usage.CacheWriteTokens)
 	assert.Equal(t, 3, bus.messages[0].Usage.OutputTokens)
-	// The invariant that matters: the four buckets tokens.ContextFromUsage
-	// sums must equal the provider's own input_tokens + output_tokens.
 	assert.Equal(t, 11+3, tokens.ContextFromUsage(bus.messages[0].Usage))
 
 	entries := cache.Read()
@@ -567,10 +559,7 @@ func runResponsesToolRoundTrip(t *testing.T, malformed bool) {
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}, nil))
 	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
-	// ONE LOG PER CHANNEL. The agent commits the assistant's native payload
-	// to the backend's translator log; a provider reading a different log
-	// serves a re-encode of the fig IR, which cannot carry an opaque
-	// reasoning block.
+	// The provider must read the same translator log the agent commits to.
 	cache, err := be.OpenTranslator(ariaID, testConfig.Namespace)
 	require.NoError(t, err)
 	p := newResponsesTestProvider(server, cache)
@@ -703,10 +692,6 @@ func TestResponsesProviderSuppliesCacheWithoutAppendingIt(t *testing.T) {
 	require.Len(t, bus.messages, 1)
 	require.Len(t, bus.cache, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
-	// THE PROVIDER NO LONGER APPENDS. It hands the message to the bus and the
-	// fig IR side writes it, so the log still holds only what was there before
-	// the send. The name of this test was already the rule; now it is the
-	// shape.
 	assert.Len(t, log.Read(), 1)
 }
 
@@ -959,8 +944,6 @@ func TestResponsesProviderHonorsContextDeadline(t *testing.T) {
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// --- GPT-5.6 prompt caching -------------------------------------------------
-
 func assistantItem(t *testing.T, text string) json.RawMessage {
 	t.Helper()
 	raw, err := marshalResponseItem(responseMessage("assistant", []responseContent{
@@ -996,10 +979,8 @@ func breakpointsIn(t *testing.T, input []json.RawMessage) []int {
 	return out
 }
 
-// The mark goes BEHIND the newest turn. GPT-5.6 carries an implicit
-// breakpoint at the latest user message and does not fall back to the
-// longest matching unmarked prefix, so the useful explicit mark is one that
-// existed byte for byte on the previous turn.
+// The mark goes behind the newest turn: GPT-5.6 does not fall back to the
+// longest matching unmarked prefix.
 func TestPromptCacheBreakpointLandsOnTheLastAssistantItem(t *testing.T) {
 	input := []json.RawMessage{
 		userItem(t, "first"),
@@ -1012,8 +993,8 @@ func TestPromptCacheBreakpointLandsOnTheLastAssistantItem(t *testing.T) {
 		"the mark belongs on the last assistant item, not on the new user turn")
 }
 
-// inputFor returns the live projection slice. Stamping it in place would
-// bake a moving marker into the per-LT cache forever.
+// inputFor returns the live projection slice; stamping it in place would
+// bake a moving marker into the per-LT cache.
 func TestPromptCacheBreakpointDoesNotMutateTheProjection(t *testing.T) {
 	input := []json.RawMessage{
 		userItem(t, "first"),
@@ -1036,7 +1017,6 @@ func TestPromptCacheBreakpointDoesNotMutateTheProjection(t *testing.T) {
 	assert.Empty(t, breakpointsIn(t, input), "the projection must stay unmarked")
 }
 
-// Marking twice must not accumulate: each turn stamps exactly one.
 func TestPromptCacheBreakpointIsIdempotentAcrossTurns(t *testing.T) {
 	input := []json.RawMessage{userItem(t, "first"), assistantItem(t, "reply"), userItem(t, "second")}
 	once, _ := markPromptCacheBreakpoint(input)
@@ -1045,7 +1025,6 @@ func TestPromptCacheBreakpointIsIdempotentAcrossTurns(t *testing.T) {
 	assert.Len(t, breakpointsIn(t, twice), 1, "one mark per request, never accumulating")
 }
 
-// A first turn has nothing behind it that was ever cached.
 func TestPromptCacheBreakpointSkippedOnTheFirstTurn(t *testing.T) {
 	input := []json.RawMessage{userItem(t, "only turn")}
 	marked, n := markPromptCacheBreakpoint(input)
@@ -1053,9 +1032,7 @@ func TestPromptCacheBreakpointSkippedOnTheFirstTurn(t *testing.T) {
 	assert.Empty(t, breakpointsIn(t, marked))
 }
 
-// The breakpoint is ADDITIVE: no prompt_cache_options.mode is sent, so
-// OpenAI's automatic breakpoints stay in play and a bad placement cannot
-// forfeit the whole prefix at the 1.25x write rate.
+// No prompt_cache_options.mode is sent, so automatic breakpoints stay in play.
 func TestNoExplicitModeIsSent(t *testing.T) {
 	body, err := json.Marshal(responseCreateRequest{Type: "response.create", responseBody: responseBody{Model: "gpt-5.6-sol"}})
 	require.NoError(t, err)
@@ -1063,9 +1040,7 @@ func TestNoExplicitModeIsSent(t *testing.T) {
 		"mode=explicit disables OpenAI-managed breakpoints; ship the additive half first")
 }
 
-// The key must be the SAME derivation openaichat uses, so one conversation
-// pins to one name on both OpenAI-family routes, and it must never be the
-// raw aria id.
+// The key must match openaichat's derivation and never be the raw aria id.
 func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
 	const aria = "4cf7d08f"
 	key := provider.SessionKey(aria)
@@ -1081,11 +1056,6 @@ func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
 	assert.Contains(t, string(body), `"prompt_cache_key":"`+key+`"`)
 }
 
-// TestPromptCacheBreakpointOnTheWireAcrossTurns drives two real turns
-// through Send over a real websocket and asserts what the CLIENT put on the
-// wire: the only thing figaro controls, and the only thing observable on
-// this route at all (it speaks websocket, so wirelog cannot see it and
-// FIGARO_WIRE_DIR yields nothing here).
 func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	requests := make(chan responseCreateRequest, 3)
 	reply := func(conn *websocket.Conn, text string) {
@@ -1123,23 +1093,18 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	log := newResponsesInputLog(t)
 	snap := form.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)})
 
-	// Turn 1: nothing completed behind it.
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
 		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
 	}, &responseTestBus{}))
 	first := <-requests
 
-	// THE FIG IR SIDE APPENDS THE ASSISTANT, NOT THE PROVIDER. In production
-	// the drain loop does it on PushFigaro; this test has no loop, so it plays
-	// that part -- without it there is no completed exchange behind turn 2 and
-	// the breakpoint has nothing to sit after.
+	// This test plays the drain loop's part and appends the assistant.
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleOutput,
 		Content: []message.Content{message.TextContent("first reply")},
 	}})
 	require.NoError(t, err)
 
-	// Turn 2: a completed exchange now sits behind the new prompt.
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("again")},
@@ -1171,10 +1136,7 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	assert.Equal(t, 1, countBreakpoints(second.Input),
 		"turn 2 must carry exactly one explicit breakpoint")
 
-	// Turn 3 is where in-place stamping would show itself: the projection
-	// is warm-started from the previous turn's state, so a marker written
-	// into it would still be there AND a new one would be added. Two turns
-	// cannot see that; three can.
+	// Only a third turn can show a marker accumulated by in-place stamping.
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("third")},
@@ -1187,7 +1149,6 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	assert.Equal(t, 1, countBreakpoints(third.Input),
 		"exactly one marker per request; markers must not accumulate across turns")
 
-	// It must sit on the assistant item, not on the new user turn.
 	var marked responseInputItem
 	for _, raw := range second.Input {
 		var item responseInputItem
@@ -1203,15 +1164,11 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	assert.Equal(t, "assistant", marked.Role,
 		"the mark belongs behind the newest turn, on a boundary that existed last turn")
 
-	// One conversation, one key, both turns.
 	assert.Equal(t, provider.SessionKey("aria-gc"), first.PromptCacheKey)
 	assert.Equal(t, first.PromptCacheKey, second.PromptCacheKey,
 		"a key that changes between turns is a key that pins nothing")
 
-	// The per-LT cache must never carry the moving marker. Note this
-	// assertion alone is weak: cache entries are written during projection,
-	// BEFORE stamping, so in-place mutation of the retained state would not
-	// show up here. The turn-3 count above is what catches that.
+	// The per-LT cache must never carry the moving marker.
 	for _, entry := range cache.Read() {
 		for _, raw := range entry.Payload {
 			assert.NotContains(t, string(raw), "prompt_cache_breakpoint",
@@ -1220,20 +1177,8 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	}
 }
 
-// TestResponseCallForReencryptedItemID pins the lookup that decides whether a
-// streamed tool-argument fragment reaches the bus at all.
-//
-// The bug: on the GitHub Copilot proxy, `response.output_item.added` announces
-// a function_call with an encrypted `item.id`, and every subsequent
-// `response.function_call_arguments.delta` for that same item carries a
-// DIFFERENT encryption of it. Keying only on item_id therefore missed on every
-// delta, `call` came back nil, and the push was skipped silently: measured on
-// gpt-5.6-sol: 1211 upstream argument deltas, 0 forwarded. The arguments still
-// arrived whole on `output_item.done`, so nothing looked broken; the tool node
-// simply sat empty for 25 seconds and then filled in one jump.
-//
-// output_index is the stable handle across those events, and it is what makes
-// the fallback correct.
+// The Copilot proxy re-encrypts item_id on every delta; output_index is the
+// stable handle.
 func TestResponseCallForReencryptedItemID(t *testing.T) {
 	calls := map[string]*responseCall{}
 	items := map[string]*responseCall{}
@@ -1253,8 +1198,6 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 	items[added.Item.ID] = call
 	byIndex[*added.OutputIndex] = call
 
-	// A delta as the proxy actually sends it: no call_id, an item_id that is a
-	// fresh encryption of the same item, and the item's output_index.
 	delta := responseStreamEvent{
 		Type:        "response.function_call_arguments.delta",
 		OutputIndex: responseIndex(1),
@@ -1265,7 +1208,6 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 		t.Fatalf("delta with a re-encrypted item_id did not resolve to its call: got %v, want %p", got, call)
 	}
 
-	// The direct handles still win, and still work.
 	byItem := responseStreamEvent{ItemID: "ENCRYPTED-BLOB-AT-ADD", OutputIndex: responseIndex(99)}
 	if got := responseCallFor(calls, items, byIndex, byItem); got != call {
 		t.Fatalf("item_id lookup regressed: got %v, want %p", got, call)
@@ -1275,8 +1217,6 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 		t.Fatalf("call_id lookup regressed: got %v, want %p", got, call)
 	}
 
-	// An index nobody announced is still nothing: the fallback must not
-	// invent a call for an unrelated output item.
 	stray := responseStreamEvent{ItemID: "UNKNOWN", OutputIndex: responseIndex(7)}
 	if got := responseCallFor(calls, items, byIndex, stray); got != nil {
 		t.Fatalf("unknown output_index resolved to %v, want nil", got)

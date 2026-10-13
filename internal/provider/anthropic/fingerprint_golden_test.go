@@ -11,55 +11,18 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE FINGERPRINT IS THE MECHANISM; THIS IS ITS TRIPWIRE.
-//
-// Every cached translation entry carries a fingerprint, and lookupCached
-// REFUSES any entry whose fingerprint differs from the current one. So a
-// change to how a message encodes is handled by bumping the version: stale
-// bytes become UNREACHABLE rather than merely detected. That is the guarantee,
-// and it is structural.
-//
-// IT HAS A HOLE, AND UNTIL THIS TEST THE HOLE WAS UNGUARDED. The dangerous
-// accident is not bumping the version by mistake -- it is CHANGING THE
-// ENCODING AND NOT BUMPING, which silently mixes old and new renderings under
-// one fingerprint, with the per-LT cache making whichever ran first permanent.
-//
-// Nothing pinned it. The closest assertion, commit_test.go:33, is
-//
-//	assert.Equal(t, a.Fingerprint(), native.Fingerprint)
-//
-// which compares the function TO ITSELF: it passes unchanged if the encoding
-// moves and the version does not. A grep for the literal "anthropic/.../v5"
-// across internal/ finds nothing. Found by aria 3a9225b1, verified before
-// being acted on.
-//
-// THE SHAPE, AND WHY IT IS ONE MECHANISM RATHER THAN TWO DISCIPLINES: the
-// golden file is KEYED BY THE FINGERPRINT.
-//
-//	change the encoding          -> the golden no longer matches, so you
-//	                                must regenerate
-//	regenerate without bumping   -> you would overwrite the EXISTING key,
-//	                                which this test refuses
-//	bump the version             -> a new key, no collision, golden written
-//
-// So "the fingerprint moved when the encoding did" stops being a habit
-// somebody has to remember and becomes a fact the suite enforces.
-//
-// REGENERATING: bump Fingerprint(), then run with FIGARO_GOLDEN=1.
+// The golden file is keyed by Fingerprint(), so an encoding change without a
+// version bump collides with the existing key and is refused.
+// To regenerate: bump Fingerprint(), then run with FIGARO_GOLDEN=1.
 func TestEncodingChangeRequiresAFingerprintBump(t *testing.T) {
 	tpl, err := form.LoadDefaultTemplates()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Templates on: without them no reminder renders, and the corpus cannot
-	// see where one is placed. It could not, until v7: v6 and v7 produced the
-	// same golden bytes for a change that moved every tool-round reminder.
+	// Without templates no reminder renders and placement is invisible.
 	a := &Anthropic{Model: "claude-test", MaxTokens: 64, Templates: tpl}
 	fp := a.Fingerprint()
 
-	// A fixture that exercises the shapes the encoder actually branches on:
-	// a prose input, an assistant reply, a tool invoke and its result, and a
-	// board patch riding that result (the aria set its own mantra).
 	msgs := []message.Message{
 		{Role: message.RoleInput, LogicalTime: 1,
 			Content: []message.Content{message.TextContent("what is the time")}},
@@ -93,14 +56,11 @@ func TestEncodingChangeRequiresAFingerprintBump(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The fingerprint contains '/', which is a path separator.
 	name := strings.ReplaceAll(fp, "/", "_") + ".json"
 	path := filepath.Join("testdata", name)
 
 	if os.Getenv("FIGARO_GOLDEN") != "" {
 		if _, err := os.Stat(path); err == nil {
-			// THE COLLISION IS THE POINT. Regenerating under an existing key
-			// means the encoding moved while the fingerprint stood still.
 			t.Fatalf("REFUSING TO OVERWRITE %s.\n"+
 				"The encoding changed but Fingerprint() still returns %q. Cached entries written\n"+
 				"under that fingerprint would be served for bytes this code no longer produces,\n"+

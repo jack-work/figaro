@@ -10,14 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// A FAILED ENCODE LEAVES THE WATERMARK WHERE IT WAS. The catch-up writes a row
-// per record as it goes, so the watermark is the last row written -- a record
-// that failed to encode has no row, and the retry starts exactly there and
-// re-attempts it.
-//
-// Under the deleted memo this needed three assertions about a published
-// watermark, a start index and a carried entry count. It needs one now: the
-// row log IS the watermark, so "did not advance" is a count of rows.
+// A failed encode leaves the watermark where it was.
 func TestAFailedEncodeLeavesTheWatermarkWhereItWas(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()

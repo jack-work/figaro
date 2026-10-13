@@ -86,7 +86,6 @@ func baseURLFromToken(token, enterpriseDomain string) string {
 	return defaultBaseURL
 }
 
-// CopilotTokenSource presents the credential hush holds for Copilot.
 type CopilotTokenSource struct {
 	resolver     auth.TokenResolver
 	domain       string
@@ -103,10 +102,8 @@ func newTokenSource(resolver auth.TokenResolver, cfg Config) *CopilotTokenSource
 	}
 }
 
-// BaseURL reports the API host for the current credential. An explicit
-// override wins, then the routing the exchange chose (which hush minted
-// with the token and hands back as metadata), then the legacy derivation
-// from the token body.
+// BaseURL: explicit override, then the routing hush minted with the token,
+// then the derivation from the token body.
 func (s *CopilotTokenSource) BaseURL() string {
 	if s.baseOverride != "" {
 		return s.baseOverride
@@ -120,8 +117,7 @@ func (s *CopilotTokenSource) BaseURL() string {
 			return api
 		}
 	}
-	// Nothing has been resolved yet in this process: ask for the token,
-	// which is what fetches the routing alongside it.
+	// Resolving the token fetches the routing alongside it.
 	tok, err := s.resolver.Resolve()
 	if err != nil {
 		return defaultBaseURL

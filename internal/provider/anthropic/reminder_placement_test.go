@@ -10,23 +10,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// A REMINDER IS NEVER THE ONLY THING SAID IN A USER-ROLE MESSAGE.
-//
-// A tool round returns in a user-role message because that is the only role
-// a tool_result may ride. When the aria sets its own mantra as the last act
-// of an answer, the patch lands on that tool round, and before this the
-// reminder went out as a top-level text block beside the tool_result: the
-// only TEXT in the message. Models read that as their master speaking and
-// saying nothing. Reproduced live on claude-opus-5 by replaying turn 24 of a
-// real aria (1ce1f09e) from its real context; the model's own thinking:
-//
-//	"This message appears to be empty aside from the system reminder--there's
-//	 no actual user content to act on."
-//
-// and to the user: "No question came through -- empty message."
-//
-// The reminder must still arrive in the SAME round (a patch is seen when it is
-// ready), so it moves inside the tool_result rather than being held back.
+// A reminder is never the only text in a user-role message: in a results-only
+// round it rides inside the last tool_result, in the same round.
 func TestAReminderOnAToolRoundRidesInsideTheToolResult(t *testing.T) {
 	p := &Anthropic{Templates: mustTemplates(t)}
 	msg := message.Message{
@@ -76,8 +61,6 @@ func TestAReminderOnAToolRoundRidesInsideTheToolResult(t *testing.T) {
 	}
 }
 
-// When a person DID speak, the reminder stays beside their words, as a
-// top-level block, exactly as before. Only the message with no speaker moves.
 func TestAReminderBesidePersonSpeechStaysAtTheTopLevel(t *testing.T) {
 	p := &Anthropic{Templates: mustTemplates(t)}
 	msg := message.Message{
@@ -102,9 +85,6 @@ func mantraPatch() message.Patch {
 	}, nil)
 }
 
-// mustTemplates is the renderer production uses. Without it FoldRender emits
-// nothing, and a test of WHERE a reminder lands proves only that none was
-// built.
 func mustTemplates(t *testing.T) *template.Template {
 	t.Helper()
 	tpl, err := form.LoadDefaultTemplates()

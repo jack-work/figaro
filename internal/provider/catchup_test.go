@@ -25,13 +25,8 @@ func catchUpTestConfig(log store.Log[message.Message], rows store.Log[[]json.Raw
 	}
 }
 
-// SYNCHRONISATION IS O(NEW), AND THIS COUNTS RATHER THAN TIMES IT: a second
-// pass may visit only the records appended since the first. The count is the
-// property; a benchmark over MemLog would measure the fixture's read instead,
-// since MemLog has no TailAfter of its own.
-//
-// The assembly read (Rows) is deliberately O(history) and is NOT this
-// property -- see BenchmarkTranslations.
+// Synchronisation is O(new): a second pass visits only the records appended
+// since the first.
 func TestCatchUpVisitsOnlyWhatIsNew(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
@@ -74,8 +69,6 @@ func TestCatchUpVisitsOnlyWhatIsNew(t *testing.T) {
 	}
 }
 
-// A SEND THAT CANNOT WRITE ITS ROWS FAILS. Degrading to an in-memory encode
-// here means showing the model a conversation that is not the one on disk.
 func TestCatchUpWithoutRowsIsAnError(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	appendProjectionMessage(t, log, "body")
@@ -84,21 +77,13 @@ func TestCatchUpWithoutRowsIsAnError(t *testing.T) {
 	}
 }
 
-// A ROW THAT DESCRIBES A RECORD THAT IS NOT THERE IS REFUSED, AND THE CHANNEL
-// IS RE-DERIVED.
-//
-// This is the failure row-first ordering can produce and no ordering can
-// prevent: a crash between writing a row and writing its record leaves the row
-// at a position the NEXT append reissues, so it is adopted by a different
-// message. Without the content hash the row reads as a legitimate translation
-// of a conversation that never happened.
+// A row whose record hash does not match was adopted by a reissued LT; the
+// channel is re-derived.
 func TestARowWhoseFigaroHashDoesNotMatchIsRefused(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
 	first := appendProjectionMessage(t, log, "the real one")
 
-	// A row for that LT, but describing a DIFFERENT record: exactly the shape
-	// a reissued LT produces.
 	wrongHash, err := store.FigaroHash(message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("a message that never landed")},
 	})
@@ -133,8 +118,6 @@ func TestARowWhoseFigaroHashDoesNotMatchIsRefused(t *testing.T) {
 	}
 }
 
-// AND A ROW THAT DOES MATCH IS A WATERMARK, so the check costs one comparison
-// and does not re-derive a healthy channel.
 func TestAMatchingFigaroHashLeavesTheChannelAlone(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
@@ -160,12 +143,8 @@ func TestAMatchingFigaroHashLeavesTheChannelAlone(t *testing.T) {
 	}
 }
 
-// THE HOLE THE WATERMARK CANNOT SEE (2026-08-21, from a live incident). A
-// daemon killed between the canonical fig IR append and the derived row leaves
-// a record with no row; the records after it get theirs, so the watermark
-// moves past the hole and nothing revisits it. The aria then sends a
-// tool_result whose tool_use was never translated, and the provider rejects
-// every turn forever.
+// A record with no row below the watermark (a crash between the canonical
+// and derived appends) is found and repaired.
 func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
@@ -177,16 +156,12 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Punch the hole: drop one row from the middle, as a crash between the
-	// two appends would have left it.
 	all := rows.Read()
 	if len(all) < 6 {
 		t.Fatalf("fixture wrote %d rows", len(all))
 	}
 	missing := all[3].FigaroLT
-	// A FRESH HANDLE IS A FRESH PROCESS. The once-per-log flag lives on the
-	// log, so the restart this test is about is spelled by opening the
-	// channel again rather than by reaching into a global.
+	// A fresh handle stands in for a restart: the once flag lives on it.
 	rows = store.NewMemLog[[]json.RawMessage]()
 	cfg = catchUpTestConfig(log, rows)
 	for _, r := range all {
@@ -218,12 +193,8 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 	}
 }
 
-// And the repair is not a per-send tax: once a log has been checked, the
-// watermark fast path is what every later send takes.
-//
-// The flag lives ON THE HANDLE now, so the observation is store.VerifyOnce
-// itself: it answers true to the first caller and false after. Asking
-// CONSUMES it, which is why each half of this test gets its own log.
+// store.VerifyOnce answers true once per handle; asking consumes it, so each
+// half of this test gets its own log.
 func TestCatchUpChecksForHolesOncePerLog(t *testing.T) {
 	t.Run("an empty translator is not checked", func(t *testing.T) {
 		log := store.NewMemLog[message.Message]()

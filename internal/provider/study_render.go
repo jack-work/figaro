@@ -1,10 +1,6 @@
 package provider
 
-// Shared, provider-neutral rendering of the OBSERVED SET's transitions:
-// each studied form's patch-fold, tombstones, and began/stopped marks as
-// system-reminder texts. Providers wrap these strings in their own block
-// types, so every provider folds studied state into its IR exactly as it
-// folds the board's: one derivation, N dialects.
+// Provider-neutral rendering of studied forms' transitions as reminder texts.
 
 import (
 	"encoding/json"
@@ -17,30 +13,18 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// StudyReminderTexts renders a message's studied transitions as ordered
-// reminder strings. Deterministic (members sorted, keys sorted by
-// encoding/json) because encoded bytes land in the per-LT cache and must be
-// stable across retranslations of unchanged history.
+// StudyReminderTexts is deterministic: its bytes land in the per-LT cache.
 func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 	var out []string
-	// The board is read for ONE thing: the incantation. Reading it costs a
-	// lookup, and only when this message carries a study event at all, so an
-	// aria that studies nothing pays nothing.
 	var incantation form.StudyIncantation
 	limits := form.DeltaLimits{KeyBytes: -1, TotalBytes: -1}
 	if msg.Study != nil || len(msg.StudyPatches) > 0 {
 		incantation = form.ReadStudyIncantation(board)
-		// Same board, same moment: point-in-time limits, so a cold
-		// retranslation reproduces these bytes (form/limits.go).
+		// Point-in-time limits, so a cold retranslation reproduces the bytes.
 		limits = form.ReadDeltaLimits(board)
 	}
-	// The mark, and the BASELINE with it. At the moment observation begins,
-	// the window is (0, V]: the form's whole history, which folds to its
-	// STATE, not to a change. Rendering that as an ordinary transition block
-	// puts two structurally identical blocks in the context whose only
-	// difference is a version number, and a small model reads the first. So
-	// the mark carries the state it began with, labelled as such, and no
-	// separate fold block is emitted for the same form at the same stamp.
+	// The began mark carries the baseline state; no separate fold block is
+	// emitted for the same form at the same stamp.
 	begun := ""
 	if msg.Study != nil {
 		body := map[string]any{"form": msg.Study.FormID, "observing": msg.Study.Began}
@@ -90,7 +74,6 @@ func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 	return out
 }
 
-// studyBlock wraps one body in the reminder envelope every provider uses.
 func studyBlock(name string, body any) string {
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -100,9 +83,7 @@ func studyBlock(name string, body any) string {
 		escapeStudyAttr(name), b)
 }
 
-// studyFold folds one form's window of patches into what a reader needs: the
-// keys that now hold new values, the keys that went away, and how many times
-// it moved. nil when nothing readable changed.
+// studyFold is nil when nothing readable changed.
 func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map[string]any {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
@@ -118,13 +99,8 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 			if ent.IsRemoval() {
 				continue
 			}
-			// THE ONE SYSTEM KEY A READER IS OWED. A studied form's death is
-			// reported IN BAND, as a key on the copy that outlives it
-			// (durable-forms §12.7b), which is what keeps liveness out of the
-			// projection entirely. It arrives here as
-			// system.libretto.alive=false and would otherwise be dropped with
-			// the rest of the machinery -- so the ruling would be built,
-			// durable, correct, and invisible.
+			// The one system key a reader is owed: a studied form's death is
+			// reported in band.
 			if k == store.KeyLibrettoAlive {
 				var alive bool
 				if json.Unmarshal(v, &alive) == nil && !alive {
@@ -132,8 +108,6 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 				}
 				continue
 			}
-			// The harness's own namespace belongs to the machinery, not to a
-			// reader: the board's own renderer skips it for the same reason.
 			if strings.HasPrefix(k, "system.") {
 				continue
 			}
@@ -157,15 +131,11 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 	}
 	body := map[string]any{"form": fid, "changes": changes}
 	if dead {
-		// The same word the old tombstone note used, without the error
-		// framing: the form is gone, the copy is not, and history renders.
 		body["exists"] = false
 	}
 	if len(set) > 0 {
-		// BOUNDED, DETERMINISTICALLY. Keys are spent in sorted order so
-		// two renderings of one record agree byte for byte -- the
-		// per-LT cache makes whichever ran first permanent, and a fold
-		// that shuffled would make history disagree with itself.
+		// Keys are spent in sorted order: the per-LT cache makes whichever
+		// rendering ran first permanent.
 		names := make([]string, 0, len(set))
 		for k := range set {
 			names = append(names, k)
@@ -177,8 +147,7 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 			v := set[k]
 			cut, wasCut := form.TruncateUTF8(string(v), limits.KeyBytes)
 			if wasCut {
-				// A cut value is no longer valid JSON, so it rides as a
-				// JSON STRING: the block must stay parseable.
+				// A cut value is no longer valid JSON; it rides as a string.
 				if q, err := json.Marshal(cut); err == nil {
 					v = q
 				}
