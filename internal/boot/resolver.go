@@ -53,6 +53,16 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	return &auth.Aggregate{Strategies: strategies}, nil
 }
 
+func BorrowedResolver(loaded *config.Loaded, provider, name string, envs []string) (auth.TokenResolver, error) {
+	if provider == "" {
+		return KeyResolver(loaded, name, envs)
+	}
+	if providerPkg.Lookup(provider) == nil {
+		return nil, fmt.Errorf("%s: provider = %q is not a provider (have: %s)", name, provider, strings.Join(providerPkg.Names(), ", "))
+	}
+	return BuildResolver(loaded, provider)
+}
+
 func KeyResolver(loaded *config.Loaded, name string, envs []string) (auth.TokenResolver, error) {
 	h, err := Hush()
 	if err != nil {

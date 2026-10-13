@@ -29,7 +29,7 @@ func Decisions(loaded *config.Loaded) (Upstream, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolver, err := boot.KeyResolver(loaded, decide.Name, decide.CredentialEnvs)
+	resolver, err := boot.BorrowedResolver(loaded, settings.Provider, decide.Name, decide.CredentialEnvs)
 	if err != nil {
 		return nil, err
 	}

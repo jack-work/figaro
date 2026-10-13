@@ -98,14 +98,20 @@ whether or not a turn is running. A `??` line meant literally is `\??`.
 ## Where the model comes from
 
 `-m`, else the aria's `system.decide.model`, else `model` in
-`providers/decisions.toml`, else `jev-latest`. The file also holds `base_url`
-and `api_key`; `DECISIONS_BASE_URL` overrides the URL. Both are read per call.
+`providers/decisions.toml`, else `jev-latest`. The file also holds `base_url`,
+`api_key` and `provider`; `DECISIONS_BASE_URL` overrides the URL. All of it is
+read per call.
+
+`provider = "<name>"` borrows that provider's whole credential chain instead
+of the keys below: its env var, its stored key, and the OAuth token hush
+holds for it. It is how a host that takes no key is reached.
 
 | Host | base_url | Credential |
 |---|---|---|
 | TypeSafe | `https://api.typesafe.ai/v1` (default) | `TYPESAFE_API_KEY` |
 | Experiential Labs | `https://api.experientiallabs.ai/v1` | `EXPLABS_API_KEY` |
 | a broker holding the key (rou2) | `http://127.0.0.1:8787/v1` | none; model `explabs/jev-latest` |
+| Microsoft `decision-1` on Azure Foundry | `https://<resource>.cognitiveservices.azure.com/providers/microsoft/v1` | `provider = "azure"` (Entra, `figaro login azure`); model is the deployment name |
 
 The request body is closed on the far side: `model`, `state`, `questions`,
 nothing else. A broker that stamps request bodies has to leave this path

@@ -38,12 +38,14 @@ type Source struct {
 }
 
 type Engine struct {
-	settings func() (Settings, error)
-	resolver auth.TokenResolver
+	settings    func() (Settings, error)
+	credentials Credentials
 }
 
-func New(settings func() (Settings, error), resolver auth.TokenResolver) *Engine {
-	return &Engine{settings: settings, resolver: resolver}
+type Credentials func(Settings) (auth.TokenResolver, error)
+
+func New(settings func() (Settings, error), credentials Credentials) *Engine {
+	return &Engine{settings: settings, credentials: credentials}
 }
 
 func Fixed(baseURL, model string) func() (Settings, error) {
@@ -140,7 +142,13 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if model == "" {
 		model = settings.Model
 	}
-	client := NewClient(settings.BaseURL, e.resolver)
+	var resolver auth.TokenResolver
+	if e.credentials != nil {
+		if resolver, err = e.credentials(settings); err != nil {
+			return out, err
+		}
+	}
+	client := NewClient(settings.BaseURL, resolver)
 
 	var resp response
 	var w built

@@ -28,9 +28,10 @@ const (
 var CredentialEnvs = []string{"TYPESAFE_API_KEY", "EXPLABS_API_KEY"}
 
 type Settings struct {
-	APIKey  string `toml:"api_key"`
-	BaseURL string `toml:"base_url,omitempty"`
-	Model   string `toml:"model,omitempty"`
+	APIKey   string `toml:"api_key"`
+	BaseURL  string `toml:"base_url,omitempty"`
+	Model    string `toml:"model,omitempty"`
+	Provider string `toml:"provider,omitempty"`
 }
 
 func LoadSettings(loaded *config.Loaded) (Settings, error) {

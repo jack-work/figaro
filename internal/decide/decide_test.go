@@ -3,6 +3,7 @@ package decide
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -464,3 +466,46 @@ func TestTheEstimateIsConservativeForToolOutput(t *testing.T) {
 		t.Fatalf("tokensOf = %d, under the measured %d", got, floor)
 	}
 }
+
+// A decisions host that takes no key (Microsoft's Foundry deployment of
+// decision-1 has local auth disabled; Entra bearer only) is reached with
+// another provider's credential: providers/decisions.toml names it, and the
+// credential is chosen per call from the settings, so the file takes effect
+// without a restart.
+func TestTheCredentialComesFromTheProviderTheSettingsName(t *testing.T) {
+	var bearer string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bearer = r.Header.Get("Authorization")
+		io.WriteString(w, liveNoul)
+	}))
+	defer srv.Close()
+	var asked []string
+	e := New(func() (Settings, error) {
+		return Settings{BaseURL: srv.URL, Model: "decision-1", Provider: "azure"}, nil
+	}, func(s Settings) (auth.TokenResolver, error) {
+		asked = append(asked, s.Provider)
+		return fixedToken("entra-access-token"), nil
+	})
+	decide(t, e, Source{}, rpc.DecideRequest{Question: "is it urgent?"})
+	if len(asked) != 1 || asked[0] != "azure" {
+		t.Fatalf("credentials asked for %v", asked)
+	}
+	if bearer != "Bearer entra-access-token" {
+		t.Fatalf("Authorization = %q", bearer)
+	}
+}
+
+func TestACredentialThatCannotBeBuiltIsTheError(t *testing.T) {
+	e := New(Fixed("http://127.0.0.1:1", ""), func(Settings) (auth.TokenResolver, error) {
+		return nil, errors.New(`decisions: provider "nope" is not a provider`)
+	})
+	_, err := e.Decide(context.Background(), Source{}, rpc.DecideRequest{Question: "q?"})
+	if err == nil || !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+type fixedToken string
+
+func (f fixedToken) Resolve() (string, error) { return string(f), nil }
+func (f fixedToken) Invalidate(string) error  { return nil }
