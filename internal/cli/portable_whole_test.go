@@ -46,7 +46,7 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 	}
 
 	// A unix socket path is length-capped, so keep the runtime dir short.
-	dir, err := os.MkdirTemp("/var/tmp", "figexp")
+	dir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "f")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	a := angelus.New(angelus.Config{Backend: backend, RuntimeDir: dir})
