@@ -23,7 +23,7 @@ var alignCorpus = []struct {
 	{"emphasis", "This is **bold** and this is _italic_ and this is `code` in a sentence that wraps because it is long enough to wrap at sixty columns."},
 	{"heading and list", "## Findings\n\n- first point about the thing\n- second point, with **weight**\n  - a nested point under the second\n- third"},
 	{"numbered list", "1. open the file\n2. read the header\n3. seek past it\n4. read the body"},
-	{"link", "See [the plan](https://example.com/history:plans/x.md) for the whole design, and [this](https://example.com/y) too."},
+	{"link", "See [the plan](https://example.com/plans/x.md) for the whole design, and [this](https://example.com/y) too."},
 	{"code fence", "Before:\n\n```go\nfunc a() int {\n\treturn 1\n}\n```\n\nAfter the fence."},
 	{"table", "| key | value |\n|---|---|\n| head_chars | 480 |\n| tail_chars | 160 |"},
 	{"cjk", "日本語のテキストは幅が二倍です。これは折り返されるべき長い行で、六十列を超えます。"},
