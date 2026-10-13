@@ -5,17 +5,24 @@ import (
 
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
 func Upstreams(loaded *config.Loaded, names []string) (map[string]Upstream, map[string]string) {
 	if len(names) == 0 {
-		names = provider.Names()
+		names = append(provider.Names(), decide.Name)
 	}
 	ups := map[string]Upstream{}
 	skipped := map[string]string{}
 	for _, name := range names {
-		up, err := build(loaded, name)
+		var up Upstream
+		var err error
+		if name == decide.Name {
+			up, err = Decisions(loaded)
+		} else {
+			up, err = build(loaded, name)
+		}
 		if err != nil {
 			skipped[name] = err.Error()
 			continue

@@ -58,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", s.routeByModel(routed.Chat))
 	mux.HandleFunc("POST /v1/responses", s.routeByModel(routed.Responses))
 	mux.HandleFunc("POST /v1/messages", s.routeByModel(routed.Messages))
+	mux.HandleFunc("POST /v1/systemone", s.routeByModelTo("", systemOne))
 	mux.HandleFunc("/u/{provider}/{rest...}", s.passthrough)
 	return loopbackOnly(mux)
 }
@@ -138,7 +139,13 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request) {
 	s.relay(w, r, name, up, routed.TransportForPath(rest), target, body)
 }
 
+func systemOne(up Upstream) string { return up.Base() + "/systemone" }
+
 func (s *Server) routeByModel(t routed.Transport) http.HandlerFunc {
+	return s.routeByModelTo(t, func(up Upstream) string { return up.Endpoint(t) })
+}
+
+func (s *Server) routeByModelTo(t routed.Transport, target func(Upstream) string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := readBody(r)
 		if err != nil {
@@ -170,7 +177,7 @@ func (s *Server) routeByModel(t routed.Transport) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		s.relay(w, r, name, up, t, up.Endpoint(t), rewritten)
+		s.relay(w, r, name, up, t, target(up), rewritten)
 	}
 }
 

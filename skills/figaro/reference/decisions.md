@@ -110,3 +110,19 @@ and `api_key`; `DECISIONS_BASE_URL` overrides the URL. Both are read per call.
 The request body is closed on the far side: `model`, `state`, `questions`,
 nothing else. A broker that stamps request bodies has to leave this path
 alone.
+
+## Over `figaro serve`
+
+`figaro serve` relays the same wire to anything on loopback that wants it,
+with figaro's credentials:
+
+| Request | Goes to |
+|---|---|
+| `POST /v1/systemone`, model `decisions/jev-latest` | the decisions host above, prefix removed |
+| `POST /v1/systemone`, model `gateway/explabs/jev-latest` | the gateway provider's base URL + `/systemone` |
+| `POST /u/decisions/systemone` | the decisions host, body untouched |
+
+The relay rewrites the model and nothing else, so the body stays closed. The
+decisions host is served when it has a key, or keyless when its `base_url` is
+a broker. Point `figaro decide` at a serve with
+`DECISIONS_BASE_URL=http://127.0.0.1:8788/u/decisions`.

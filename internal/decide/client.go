@@ -21,7 +21,7 @@ import (
 const (
 	Name           = "decisions"
 	DefaultModel   = "jev-latest"
-	defaultBaseURL = "https://api.typesafe.ai/v1"
+	DefaultBaseURL = "https://api.typesafe.ai/v1"
 	BaseURLEnv     = "DECISIONS_BASE_URL"
 )
 
@@ -53,7 +53,7 @@ func LoadSettings(loaded *config.Loaded) (Settings, error) {
 	}
 	s.BaseURL = strings.TrimRight(strings.TrimSpace(s.BaseURL), "/")
 	if s.BaseURL == "" {
-		s.BaseURL = defaultBaseURL
+		s.BaseURL = DefaultBaseURL
 	}
 	if s.Model == "" {
 		s.Model = DefaultModel
