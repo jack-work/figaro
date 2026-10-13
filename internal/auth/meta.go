@@ -43,7 +43,7 @@ func LoginMeta() (MuseCodeKey, error) {
 		return MuseCodeKey{}, err
 	}
 	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized with Meta")
-	return MintMuseCodeKey(http.DefaultClient, MetaAPIBase, access)
+	return MintMuseCodeKey(http.DefaultClient, MetaAPIBase, access.AccessToken)
 }
 
 func MintMuseCodeKey(client *http.Client, base, accessToken string) (MuseCodeKey, error) {

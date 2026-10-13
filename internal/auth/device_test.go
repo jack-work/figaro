@@ -40,12 +40,12 @@ func TestDeviceFlowPollsThroughStandardErrors(t *testing.T) {
 
 	cfg := DeviceCodeConfig{ClientID: "c", DeviceURL: srv.URL + "/device", TokenURL: srv.URL + "/token"}
 	tok, next, err := pollDeviceToken(cfg, "dc", time.Second)
-	if err != nil || tok != "" || next != time.Second {
-		t.Fatalf("pending poll: tok=%q next=%v err=%v", tok, next, err)
+	if err != nil || tok.AccessToken != "" || next != time.Second {
+		t.Fatalf("pending poll: tok=%+v next=%v err=%v", tok, next, err)
 	}
 	tok, _, err = pollDeviceToken(cfg, "dc", time.Second)
-	if err != nil || tok != "granted" {
-		t.Fatalf("granted poll: tok=%q err=%v", tok, err)
+	if err != nil || tok.AccessToken != "granted" {
+		t.Fatalf("granted poll: tok=%+v err=%v", tok, err)
 	}
 
 	resp, err := postDeviceForm(cfg, cfg.DeviceURL, url.Values{"client_id": {"c"}})
@@ -76,5 +76,22 @@ func TestDeviceFlowSurfacesDenial(t *testing.T) {
 	_, _, err := pollDeviceToken(DeviceCodeConfig{TokenURL: srv.URL}, "dc", time.Second)
 	if err == nil || !strings.Contains(err.Error(), "user said no") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Entra's grant carries a refresh token and a lifetime beside the access
+// token; dropping them is what made a device login unusable for anything
+// that must outlive the first hour.
+func TestDeviceFlowKeepsTheRefreshTokenAndLifetime(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"token_type":"Bearer","scope":"https://cognitiveservices.azure.com/.default","expires_in":4532,"ext_expires_in":4532,"access_token":"eyA","refresh_token":"0.AR"}`))
+	}))
+	defer srv.Close()
+	tok, _, err := pollDeviceToken(DeviceCodeConfig{TokenURL: srv.URL}, "dc", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok.AccessToken != "eyA" || tok.RefreshToken != "0.AR" || tok.ExpiresIn != 4532 {
+		t.Fatalf("tokens = %+v", tok)
 	}
 }

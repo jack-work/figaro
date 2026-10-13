@@ -21,25 +21,31 @@ type DeviceCodeConfig struct {
 	Headers      map[string]string
 }
 
+type DeviceTokens struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int
+}
+
 type DevicePrompt struct {
 	UserCode        string
 	VerificationURI string
 	Prefilled       bool
 }
 
-func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (string, error) {
+func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (DeviceTokens, error) {
 	form := url.Values{"client_id": {cfg.ClientID}}
 	if cfg.Scope != "" {
 		form.Set("scope", cfg.Scope)
 	}
 	resp, err := postDeviceForm(cfg, cfg.DeviceURL, form)
 	if err != nil {
-		return "", fmt.Errorf("device code request: %w", err)
+		return DeviceTokens{}, fmt.Errorf("device code request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("device code request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return DeviceTokens{}, fmt.Errorf("device code request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var device struct {
 		DeviceCode              string `json:"device_code"`
@@ -50,10 +56,10 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (str
 		ExpiresIn               int    `json:"expires_in"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&device); err != nil {
-		return "", fmt.Errorf("parse device code: %w", err)
+		return DeviceTokens{}, fmt.Errorf("parse device code: %w", err)
 	}
 	if device.DeviceCode == "" || device.UserCode == "" {
-		return "", fmt.Errorf("device code response is missing device_code or user_code")
+		return DeviceTokens{}, fmt.Errorf("device code response is missing device_code or user_code")
 	}
 
 	p := DevicePrompt{UserCode: device.UserCode, VerificationURI: device.VerificationURI}
@@ -62,7 +68,7 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (str
 		p.Prefilled = true
 	}
 	if err := prompt(p); err != nil {
-		return "", err
+		return DeviceTokens{}, err
 	}
 	openBrowserDevice(p.VerificationURI)
 
@@ -75,57 +81,59 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (str
 	for {
 		time.Sleep(interval)
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("device code expired (user did not authorize in time)")
+			return DeviceTokens{}, fmt.Errorf("device code expired (user did not authorize in time)")
 		}
 		token, next, err := pollDeviceToken(cfg, device.DeviceCode, interval)
 		if err != nil {
-			return "", err
+			return DeviceTokens{}, err
 		}
-		if token != "" {
+		if token.AccessToken != "" {
 			return token, nil
 		}
 		interval = next
 	}
 }
 
-func pollDeviceToken(cfg DeviceCodeConfig, deviceCode string, interval time.Duration) (string, time.Duration, error) {
+func pollDeviceToken(cfg DeviceCodeConfig, deviceCode string, interval time.Duration) (DeviceTokens, time.Duration, error) {
 	resp, err := postDeviceForm(cfg, cfg.TokenURL, url.Values{
 		"client_id":   {cfg.ClientID},
 		"device_code": {deviceCode},
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
 	})
 	if err != nil {
-		return "", interval, fmt.Errorf("poll token: %w", err)
+		return DeviceTokens{}, interval, fmt.Errorf("poll token: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var raw struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-		Description string `json:"error_description"`
-		Interval    int    `json:"interval"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		Error        string `json:"error"`
+		Description  string `json:"error_description"`
+		Interval     int    `json:"interval"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return "", interval, fmt.Errorf("parse poll response (HTTP %d): %w", resp.StatusCode, err)
+		return DeviceTokens{}, interval, fmt.Errorf("parse poll response (HTTP %d): %w", resp.StatusCode, err)
 	}
 	if raw.AccessToken != "" {
-		return raw.AccessToken, interval, nil
+		return DeviceTokens{AccessToken: raw.AccessToken, RefreshToken: raw.RefreshToken, ExpiresIn: raw.ExpiresIn}, interval, nil
 	}
 	switch raw.Error {
 	case "authorization_pending":
-		return "", interval, nil
+		return DeviceTokens{}, interval, nil
 	case "slow_down":
 		if raw.Interval > 0 {
-			return "", time.Duration(raw.Interval) * time.Second, nil
+			return DeviceTokens{}, time.Duration(raw.Interval) * time.Second, nil
 		}
-		return "", interval + 5*time.Second, nil
+		return DeviceTokens{}, interval + 5*time.Second, nil
 	case "":
-		return "", interval, fmt.Errorf("device flow: HTTP %d with neither a token nor an error", resp.StatusCode)
+		return DeviceTokens{}, interval, fmt.Errorf("device flow: HTTP %d with neither a token nor an error", resp.StatusCode)
 	}
 	if raw.Description != "" {
-		return "", interval, fmt.Errorf("device flow error: %s: %s", raw.Error, raw.Description)
+		return DeviceTokens{}, interval, fmt.Errorf("device flow error: %s: %s", raw.Error, raw.Description)
 	}
-	return "", interval, fmt.Errorf("device flow error: %s", raw.Error)
+	return DeviceTokens{}, interval, fmt.Errorf("device flow error: %s", raw.Error)
 }
 
 func postDeviceForm(cfg DeviceCodeConfig, endpoint string, form url.Values) (*http.Response, error) {

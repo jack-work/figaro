@@ -32,7 +32,7 @@ func LoginCopilot(domain string) (string, error) {
 		return "", err
 	}
 	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized with GitHub")
-	return token, nil
+	return token.AccessToken, nil
 }
 
 func printDevicePrompt(p DevicePrompt) error {
