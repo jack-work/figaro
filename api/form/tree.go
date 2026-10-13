@@ -3,11 +3,8 @@
 package form
 
 import (
-	"encoding/json"
 	"iter"
-	"slices"
 	"sort"
-	"strings"
 )
 
 // ptree is an immutable, string-keyed ordered map of JSON values. The zero
@@ -28,41 +25,6 @@ type node struct {
 	left, right *node
 	height      int
 	size        int
-}
-
-// treeFromMap builds a tree from a plain map, in O(n log n) for the sort plus
-// O(n) for the build: exactly n nodes, no rotations, no rebalancing garbage.
-func treeFromMap(m map[string]json.RawMessage) ptree {
-	entries := make([]treeEntry, 0, len(m))
-	for k, v := range m {
-		entries = append(entries, treeEntry{key: k, value: NewValue(v)})
-	}
-	return treeFromEntries(entries)
-}
-
-// treeEntry is a key/value pair for bulk construction.
-type treeEntry struct {
-	key   string
-	value Value
-}
-
-// treeFromEntries sorts entries by key and builds a perfectly balanced tree
-// bottom-up. Keys must be unique (they always are: they come from a map or a
-// JSON object). Bulk-building beats n repeated Sets by a wide margin: no
-// comparisons past the sort, no rotations, and no intermediate path copies -
-// and it is on the aria-load and WAL-replay paths, so it matters.
-func treeFromEntries(entries []treeEntry) ptree {
-	slices.SortFunc(entries, func(a, b treeEntry) int { return strings.Compare(a.key, b.key) })
-	return ptree{root: buildBalanced(entries)}
-}
-
-func buildBalanced(entries []treeEntry) *node {
-	if len(entries) == 0 {
-		return nil
-	}
-	mid := len(entries) / 2
-	return makeNode(entries[mid].key, entries[mid].value,
-		buildBalanced(entries[:mid]), buildBalanced(entries[mid+1:]))
 }
 
 // Len returns the number of entries. O(1).
@@ -214,13 +176,6 @@ func rangeNode(n *node, yield func(string, Value) bool) bool {
 		return true
 	}
 	return rangeNode(n.left, yield) && yield(n.key, n.value) && rangeNode(n.right, yield)
-}
-
-func makeBranch(key string, kids ptree, left, right *node) *node {
-	n := &node{key: key, kids: kids, branch: true, left: left, right: right}
-	n.height = 1 + max(nodeHeight(left), nodeHeight(right))
-	n.size = 1 + nodeSize(left) + nodeSize(right)
-	return n
 }
 
 func makeNode(key string, value Value, left, right *node) *node {

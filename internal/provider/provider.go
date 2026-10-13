@@ -31,7 +31,6 @@ type Knobs struct {
 	Model            string
 	MaxTokens        int
 	ReminderRenderer string // "tag" (default) or "tool"
-	UseOfficialSDK   bool
 }
 
 // Bus is the sink for per-turn provider output. The figaro side folds

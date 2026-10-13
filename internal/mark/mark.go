@@ -63,15 +63,6 @@ func Mark(name string, kv ...any) {
 	at(time.Now(), name, kv...)
 }
 
-// At writes one event stamped with a time the caller already took, for spans
-// whose start must not include the cost of deciding to mark.
-func At(t time.Time, name string, kv ...any) {
-	if !enabled.Load() {
-		return
-	}
-	at(t, name, kv...)
-}
-
 func at(t time.Time, name string, kv ...any) {
 	rec := make(map[string]any, len(kv)/2+5)
 	rec["t"] = t.UnixNano()

@@ -1040,16 +1040,6 @@ func responseInstructions(snap form.Snapshot) string {
 	return value
 }
 
-func responseString(snap form.Snapshot, key string) string {
-	raw, ok := snap.Get(key)
-	if !ok {
-		return ""
-	}
-	var value string
-	_ = json.Unmarshal(raw, &value)
-	return strings.TrimSpace(value)
-}
-
 func (p *Provider) fingerprintFor(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" {

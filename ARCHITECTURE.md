@@ -22,7 +22,6 @@ ephemeral          1 per user            N per user
 
 ```
 cmd/figaro/                multi-call entry: figaro / q / l + --angelus daemon
-cmd/form-test/             form test harness
 sdk/                       Go client: angelus + aria connections
 skills.go                  embeds skills/figaro into the binary
 
@@ -50,8 +49,8 @@ internal/mark/             timing sink for transcript benchmarks
 internal/otel/             OpenTelemetry init + span helpers
 internal/outfit/           assembles an aria's form from on-disk config; unpacks bundled skills
 internal/partialjson/      string field from a truncated JSON prefix
-internal/provider/         Provider interface; anthropic (direct HTTP+SSE), anthropicsdk,
-                           anthropicmodels, copilot, openaichat, responses, routed
+internal/provider/         Provider interface; anthropic (direct HTTP+SSE), anthropicmodels,
+                           copilot, openaichat, responses, routed
 internal/render/           markdown -> ANSI rows (glamour)
 internal/store/            generic Log[T]; XWAL backend, forms, libretto, fork tree;
                            disk/ log/ segment/ tree/ xwal/ layers

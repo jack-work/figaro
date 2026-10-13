@@ -25,8 +25,8 @@ func oldFold(s Snapshot, patches []Patch) Snapshot {
 }
 
 // oldRenderLoop is the shape shared by anthropic.renderPatchBlocks,
-// anthropicsdk.renderPatchBlocks, openaichat.renderPatches and copilot's
-// inline loop: render against the pre-patch board, then advance.
+// openaichat.renderPatches and copilot's inline loop: render against the
+// pre-patch board, then advance.
 func oldRenderLoop(s Snapshot, patches []Patch, tmpls *template.Template) ([]string, Snapshot, []error) {
 	var out []string
 	var errs []error

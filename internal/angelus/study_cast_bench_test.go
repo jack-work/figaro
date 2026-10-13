@@ -4,7 +4,7 @@ package angelus_test
 // call costs through the whole stack (RPC → actor loop → cross-call to
 // the role's writer), and what one role-redirect READ costs (the
 // hub-served figaro.Form every role-targeted invocation pays). Run with
-// -count=6; the numbers ride scratch/m5-receipts.md.
+// -count=6.
 
 import (
 	"context"

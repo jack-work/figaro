@@ -355,22 +355,19 @@ Ctrl-T enters or leaves the transcript. Thinking is muted by default, tools are
 native widgets, and spinners animate locally. The wire carries semantic node
 data rather than terminal rows, ANSI, width, theme, or animation ticks.
 
-## Provider layer: `internal/provider/anthropicsdk`
+## Provider layer: `internal/provider/anthropic`
 
-Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
-(`store.Log[[]json.RawMessage]`, keyed by figaro LT).
+Direct HTTP+SSE, no SDK. Translates IR <-> Anthropic wire and caches the
+per-aria wire bytes (`store.Log[[]json.RawMessage]`, keyed by figaro LT).
 
-- **Cache the exact accumulated turn, never a lossy re-encode.** `drainStream`
-  returns both the figaro IR and the raw `anthropic.Message`; `Send` caches
-  `acc.ToParam()`: the SDK's response→request projection, which preserves
+- **Cache the exact accumulated turn, never a lossy re-encode.** `Send`
+  caches the sanitized provider-native assistant response, which preserves
   thinking-block **signatures** and `redacted_thinking` verbatim. Re-encoding
   from the IR would drop the signature (the IR has no home for it) and a
   replayed unsigned thinking block is a 400. The cache-miss fallback drops
   thinking blocks rather than emit unsigned ones.
-- **A stream that closed cleanly is not yet a reply.** Both Anthropic-shaped
-  providers (this one and the hand-rolled `internal/provider/anthropic`, which
-  the routed `messages` transport rides) run the drained message through
-  `provider.CheckCompletion` before it lands. Two faults: no content blocks at
+- **A stream that closed cleanly is not yet a reply.** The drained message
+  goes through `provider.CheckCompletion` before it lands. Two faults: no content blocks at
   all, whatever the stop reason; or a stop reason that is not a way of
   finishing. `provider.AnthropicStopReason` is the one table for the wire's
   words, and a word it does not know (`refusal`, `content_filter`, anything
@@ -383,64 +380,16 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   history every later turn did the same (jack-work/figaro#24). The SSE
   drain no longer synthesises `end_turn` for a `message_stop` that arrived
   without one either; the empty string travels and decodes as the fault it is.
-- **Extended thinking** (`assemble.go::applyThinking`). Two model families:
+- **Extended thinking** (`anthropic.go::applyThinking`). Two model families:
   adaptive (Opus 4.6/4.7/4.8, Sonnet 4.6) take `{type:"adaptive"}` +
   `output_config:{effort}` and ignore a token budget; older models take
   `{type:"enabled", budget_tokens}`. Crucially, set `display:"summarized"` -
   the Claude-Code/OAuth default is `"omitted"` (signature only, empty thinking
   text). Knobs: `system.thinking_effort` (low|medium|high|xhigh|max; default
   high) and `system.thinking_budget`.
-- **Automatic prompt caching** (`resolveCacheControl` / `markCacheBreakpoints`)
+- **Automatic prompt caching** (`markCacheBreakpoints`)
 : see cache-control.md.
-- **Streamed tool input** (`assemble.go::eagerToolStreaming`). Anthropic
-  **buffers each tool parameter value** until it is complete before streaming
-  it, so a large argument arrives in one lump: measured on a 5 KB `write`,
-  seven fragments in the first half-second (the short `path`) and then 25
-  seconds of silence before the rest. `system.eager_tool_streaming = true`
-  sets the per-tool `eager_input_streaming` field, which turns the buffering
-  off; absent or false omits the field and keeps the API default.
-  **Copilot refuses it**: the Anthropic-dialect endpoint rejects the field
-  with a 400, so `anthropicsdk.Provider.NoEagerToolStreaming` (set by the
-  copilot provider) drops it there whatever the board says.
-  **The price is real and it is paid in whole tool calls.** The buffering is
-  what guarantees a parameter arrives as complete, ESCAPED JSON text. Without
-  it the model's own escaping mistakes arrive verbatim: raw tabs, raw newlines,
-  bare quotes, a string value that never closes. Measured 2026-08-06: five
-  turns, every one an `edit` carrying Go source, every affected aria carrying
-  the key, and the one aria without it never hit it once. **Anthropic documents
-  this outcome**: the input is streamed "without server-side buffering or JSON
-  validation", so invalid JSON is contractual, and the prescribed response is
-  not to repair it but to "report the failure back to Claude instead".
-  ONE RULE: IF IT DOES NOT PARSE, IT DOES NOT RUN: in two mechanisms:
-  1. `quarantineMalformedToolInput` (decode.go). The bytes are kept verbatim
-     under `message.MalformedArgsKey`, which is a legal JSON object: so the
-     tool_use replays and its tool_result is not orphaned, and the call is
-     REFUSED rather than guessed: half-parsed `edit` arguments would write the
-     wrong bytes into a source file, and the damage is not invertible anyway
-     (measured across five payloads: 83 escape characters in one, zero in
-     another, and in that one a required argument never transmitted at all).
-     The agent returns the documented result: `is_error` with content
-     `{"INVALID_JSON": "<what arrived>"}`, built by the encoder, and the model
-     resends. **One bad block costs one tool call, not the turn**; before this
-     it cost the thinking, the prose, and every tool call already streamed.
-     An earlier control-character repair (81137e6) was reverted in b64d0b6: it
-     was sound but it was a second rule, and it rewrote model output where
-     nothing downstream could tell.
-  2. `compose.toolNode` unwraps the envelope back into `Node.Input`, so a
-     failed call is drawn as THE BYTES THAT ARRIVED rather than as a sentinel
-     argument row: which is the whole point of unbuffered streaming, and the
-     bytes ride the message, so it reads the same after a reload as it did
-     live. **figaro never stands eager streaming down**: an earlier per-aria
-     latch was reverted, because the model simply resends and a resample
-     almost always succeeds.
-  `provider.tool_use.unescaped_chunk` (stream.go) is the canary that named the
-  cause and will name the next one: it fires on the first argument fragment
-  carrying a raw control character, seconds before the marshal fails, and
-  carries `wire.doubled_escape`: false means the fragment was already
-  single-escaped when it reached us, true would mean something below us decoded
-  twice (`TestWireIsDecodedExactlyOnce` says that something is neither figaro
-  nor the SDK).
-- **Auth** (`auth.go`): OAuth via hush; Claude-Code identity headers + beta
+- **Auth**: OAuth via hush; Claude-Code identity headers + beta
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.
 
@@ -502,7 +451,7 @@ provider while the board said otherwise.
 - **Model is not a rebuild trigger.** Every provider resolves `system.model`
   from the per-turn snapshot inside `Send`; rebuilding on a model change would
   only discard the in-memory wire projection. Build-time knobs
-  (`system.reminder_renderer`, `system.use_official_sdk`, `system.max_tokens`)
+  (`system.reminder_renderer`, `system.max_tokens`)
   do trigger one.
 - A factory error **fails the turn** naming the provider. Falling back to the
   old instance would silently contradict the board: the exact confusion the

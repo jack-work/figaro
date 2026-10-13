@@ -276,18 +276,6 @@ func patchInt(p form.Patch, key string) int {
 	return n
 }
 
-// patchBool reads a value the patch sets.
-func patchBool(p form.Patch, key string) bool {
-	e, ok := p.Entry(key)
-	if !ok || e.IsRemoval() {
-		return false
-	}
-	raw := e.New
-	var b bool
-	_ = json.Unmarshal(raw, &b)
-	return b
-}
-
 // knobsFromPatch extracts the operational provider knobs from a
 // outfit patch's system.* keys.
 func knobsFromPatch(p form.Patch) providerPkg.Knobs {
@@ -295,6 +283,5 @@ func knobsFromPatch(p form.Patch) providerPkg.Knobs {
 		Model:            patchString(p, "system.model"),
 		MaxTokens:        patchInt(p, "system.max_tokens"),
 		ReminderRenderer: patchString(p, "system.reminder_renderer"),
-		UseOfficialSDK:   patchBool(p, "system.use_official_sdk"),
 	}
 }

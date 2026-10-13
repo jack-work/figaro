@@ -518,24 +518,6 @@ func removeKey(order []string, key string) []string {
 
 // ---- value shapes -------------------------------------------------------
 
-// decodeObject reads a value as a JSON object of raw members. A patch that
-// says "object" and meets something else is a bug in the differ, not a
-// condition to paper over.
-func decodeObject(v Value) (map[string]Value, error) {
-	if len(v.Raw()) == 0 {
-		return map[string]Value{}, nil
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(v.Raw(), &raw); err != nil {
-		return nil, fmt.Errorf("object patch against a non-object: %w", err)
-	}
-	out := make(map[string]Value, len(raw))
-	for k, r := range raw {
-		out[k] = NewValue(r)
-	}
-	return out, nil
-}
-
 // encodeObject writes the members verbatim: their bytes are already JSON and
 // re-marshalling them was the cost of every apply.
 func encodeObject(m map[string]Value) Value {

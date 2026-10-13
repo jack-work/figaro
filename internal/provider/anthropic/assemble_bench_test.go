@@ -117,16 +117,6 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 		"the gap between them should be most of a body: the conversation the slice path holds")
 }
 
-// liveHeap is the live heap after a collection: the floor a measurement is
-// taken against.
-func liveHeap() uint64 {
-	var ms runtime.MemStats
-	runtime.GC()
-	runtime.GC()
-	runtime.ReadMemStats(&ms)
-	return ms.HeapAlloc
-}
-
 // liveAtEnd samples the live heap on the last write of the body, which is the
 // moment the whole conversation would be reachable if anything were holding
 // it.
