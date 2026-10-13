@@ -7,34 +7,19 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// Hot trees: the arias this session has already shown, kept warm.
-//
-// A reader browsing a fork tree moves between a handful of arias and moves
-// BACK. Retention (see plans/prefix-retention.md) makes the outward hop cheap
-// by keeping the prefix two arias share; this keeps the whole of the aria that
-// was on screen a moment ago, so the hop back costs one read of whatever
-// arrived while we were away, and often nothing at all.
-//
-// THE LAW THAT MAKES A PARKED STORE SAFE IS THE ONE THAT MAKES RETENTION SAFE.
-// History is append-only below the live edge and a fork point is sealed, so
-// what a parked store holds is always a true PREFIX of the aria it names. It
-// can be short, never wrong. Every path that adopts one therefore reads
-// forward from what it holds and never reconciles.
+// Parked arias: history is append-only below the live edge and a fork point is
+// sealed, so a parked store is always a true prefix of its aria, short but never
+// wrong; every path that adopts one reads forward and never reconciles.
 
-// parkedSubjects is how many arias stay warm. The jumplist's own working set:
-// a reader hopping a fork tree turns around inside three or four.
 const parkedSubjects = 3
 
-// parkedSubject is one aria as this session last had it: its store, the rows
-// drawn from that store, and where the reader was standing.
 type parkedSubject struct {
 	id     string
 	client *aria.Client
 	rows   map[sliceKey]cachedMessage
 	sticky map[sliceKey]stickyQuestion
-	// expand and adorn are the fold states, both keyed by node reference: a
-	// switch that carried one and not the other would open a block of the aria
-	// it arrived at because the aria it left had that one open.
+	// Both fold states travel together, or a switch opens a block of the wrong
+	// aria.
 	expand map[nodeRef]bool
 	adorn  map[nodeRef]bool
 	from   aria.Anchor
@@ -43,7 +28,6 @@ type parkedSubject struct {
 	at     time.Time
 }
 
-// messages is the size of what is parked, in the unit eviction works in.
 func (p *parkedSubject) messages() int {
 	if p == nil || p.client == nil {
 		return 0
@@ -51,15 +35,9 @@ func (p *parkedSubject) messages() int {
 	return p.client.Count()
 }
 
-// park takes the subject off the pager and puts it on the shelf.
-//
-// WHAT IS PARKED MUST BE INERT AND MUST NOT BE THE LIVE OBJECT. It is not the
-// live object because the switch that follows mints its own client from this
-// one (Client.CloneBelow) and its own cache maps (transcript.retarget) rather
-// than editing these in place; the version that edited in place gave the shelf
-// back half a parent and half its branch. Detach is the other half of the same
-// rule: a copy on a shelf keeps no callbacks, so a fold that finds its way
-// into it cannot reach a renderer that is showing something else by now.
+// What is parked must be inert and must not be the live object: the switch clones
+// from it (Client.CloneBelow, transcript.retarget), and Detach drops callbacks so
+// a late fold cannot reach a renderer showing something else.
 func (t *transcript) park(id string) *parkedSubject {
 	if id == "" || t.client == nil || t.client.Count() == 0 {
 		return nil
@@ -72,10 +50,8 @@ func (t *transcript) park(id string) *parkedSubject {
 	}
 }
 
-// adopt puts a parked subject back on the pager. here says the window on
-// screen already stands in the prefix this aria shares with the one being
-// left, in which case it stays exactly where it is and the remembered position
-// is discarded.
+// here: the window on screen already stands in the shared prefix, so the position
+// stays and the remembered one is discarded.
 func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, base int) {
 	t.client = p.client
 	t.setStatus(status)
@@ -99,9 +75,7 @@ func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, b
 	t.kept = here || !t.follow
 	t.tailTuned, t.tailWant = false, 0
 	t.openMemo = openMemo{}
-	// A cue standing in the shared prefix points at the same node here; see
-	// retarget, where the same rule keeps the gutter from blinking off under a
-	// reader who has not moved.
+	// A cue in the shared prefix points at the same node here (see retarget).
 	if !here || !t.selection.below(base) {
 		t.selection = nodeSelection{}
 	}
@@ -122,8 +96,7 @@ func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, b
 	}
 }
 
-// parkSubject shelves the aria on screen under id. Caller holds the render
-// lock.
+// Caller holds the render lock.
 func (in *interactiveInput) parkSubject(id string) {
 	p := in.lt.tr.park(id)
 	if p == nil {
@@ -136,10 +109,7 @@ func (in *interactiveInput) parkSubject(id string) {
 		in.parkOrder = append(in.parkOrder, id)
 	}
 	in.parked[id] = p
-	// THE BOUND IS A COUNT OF ARIAS, and the oldest visit goes first. The rows
-	// are the per-aria cost; the prose itself is shared with whatever else
-	// holds those nodes, because a Message carries a slice of them and Go
-	// strings are immutable.
+	// The bound is a count of arias; the oldest visit goes first.
 	for len(in.parkOrder) > parkedSubjects {
 		oldest := in.parkOrder[0]
 		in.parkOrder = in.parkOrder[1:]
@@ -148,12 +118,8 @@ func (in *interactiveInput) parkSubject(id string) {
 		}
 		delete(in.parked, oldest)
 	}
-	// ONLY THE NEWEST PARKED ARIA KEEPS ITS ROWS. Measured, the rows of a
-	// 40-turn aria cost five times the conversation in it: they are the
-	// wrapped, decorated strings of every line. They are also the one thing on
-	// the shelf that can be rebuilt from what is beside it, so they are what
-	// the bound spends first. The aria a reader is most likely to return to is
-	// the one they just left, and it keeps them.
+	// Only the newest parked aria keeps its rows: they cost several times the
+	// conversation and can be rebuilt from what is beside them.
 	for _, older := range in.parkOrder[:max(len(in.parkOrder)-1, 0)] {
 		if o := in.parked[older]; o != nil {
 			o.rows, o.sticky = nil, nil
@@ -162,7 +128,6 @@ func (in *interactiveInput) parkSubject(id string) {
 	mark.Mark("hop.park", "aria", id, "msgs", p.messages(), "held", len(in.parked))
 }
 
-// takeParked removes and returns the shelved copy of id, if there is one.
 // Caller holds the render lock.
 func (in *interactiveInput) takeParked(id string) *parkedSubject {
 	p := in.parked[id]
@@ -179,9 +144,7 @@ func (in *interactiveInput) takeParked(id string) *parkedSubject {
 	return p
 }
 
-// dropParked forgets every shelved aria. The lineage epoch moving is the one
-// thing that can make a parked store's coordinates untrue: the shape of the
-// tree changed under it.
+// A lineage epoch move is the one thing that makes a parked store's coordinates untrue.
 func (in *interactiveInput) dropParked() {
 	in.parked = nil
 	in.parkOrder = nil

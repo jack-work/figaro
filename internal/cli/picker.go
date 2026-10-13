@@ -1,47 +1,30 @@
 package cli
 
-// THE PICKER: one scrollable, selectable list, and the only one. Every pit
-// conforms to it -- help, status, queue, command output, a form -- and what
-// differs between them is the rows and the verb keys.
-//
-//	j / k  ↓ / ↑  ^N / ^P   one row, moving the selection where there is one
-//	u / d                   half a page
-//	gg / G  Home/End        the ends
-//
-// A list with no selectable rows still scrolls; a cursor is a property of the
-// ROWS, not a mode. The completion menu is one too (transcript_complete.go):
-// what it adds is a ring (cycle) and a description column (pitRow.note).
+// Every pit is a picker; a cursor is a property of the rows, not a mode.
 
 import "fmt"
 
-// picker is a window over rows, plus an optional cursor.
 type picker struct {
 	rows   []pitRow
 	cursor int // the selected row, or -1 when this list only scrolls
-	top    int // the first visible row; pagination is a window, never a truncation
-	height int // the height last drawn at, so a motion between paints pages right
-	// dir is the direction of the last motion. Some tops are not
-	// representable -- a marker never says "1 more", so a window cannot sit
-	// one row from an edge -- and a motion must round away from where it came
-	// from, or the first `j` in a long list snaps back and looks dead.
+	top    int
+	height int // the height last drawn at: a motion between paints pages against it
+	// dir: a marker never says "1 more", so some tops are unrepresentable and
+	// a motion must round away from where it came.
 	dir int
 }
 
-// pickerRows is the tallest a picker may be: fixed, so that a position means
-// the same thing on every screen.
+// Fixed, so a position means the same thing on every screen.
 const pickerRows = 12
 
-// newPicker builds a list over rows. There is no "selectable" flag: a cursor
-// is the rows' answer, asked afresh every time they change. (Born from a flag,
-// a queue opened while empty stayed cursorless for life.)
+// A cursor is the rows' answer, asked afresh every time they change; a flag went stale.
 func newPicker(rows []pitRow) *picker {
 	p := &picker{cursor: -1}
 	p.setRows(rows, "")
 	return p
 }
 
-// setRows swaps the list in place, keeping the window and the selection --
-// restored by row id, not index, because a queue re-sorts under the cursor.
+// The selection is restored by row id, not index: a queue re-sorts under the cursor.
 func (p *picker) setRows(rows []pitRow, keepID string) {
 	prev, was := "", p.cursor
 	if p.hasCursor() && p.cursor < len(p.rows) {
@@ -61,11 +44,8 @@ func (p *picker) setRows(rows []pitRow, keepID string) {
 			}
 		}
 	}
-	// THE ROW IS GONE: STAY WHERE YOU WERE STANDING. Walk the OLD list outward
-	// from the cursor and take the first row still here, backwards first. The
-	// head of the list is the wrong answer -- Enter closing a value threw a
-	// reader to the top of the form -- and an index is not enough, because the
-	// two lists are different lengths.
+	// The row is gone: walk the old list outward from the cursor and take the
+	// first row still here.
 	if p.cursor < 0 && was >= 0 {
 		alive := make(map[string]int, len(rows))
 		for i, r := range rows {
@@ -94,8 +74,6 @@ func (p *picker) setRows(rows []pitRow, keepID string) {
 	p.follow()
 }
 
-// focus puts the cursor on the row carrying id and scrolls it into view.
-// Reports false when no selectable row carries it, leaving the cursor alone.
 func (p *picker) focus(id string) bool {
 	if id == "" {
 		return false
@@ -110,8 +88,6 @@ func (p *picker) focus(id string) bool {
 	return false
 }
 
-// find moves the cursor onto the next row whose text holds q, walking in dir
-// and wrapping once around the list.
 func (p *picker) find(q string, dir int) bool {
 	if len(p.rows) == 0 {
 		return false
@@ -128,7 +104,7 @@ func (p *picker) find(q string, dir int) bool {
 		if !p.rows[n].selectable() {
 			continue
 		}
-		// The note is drawn, so it is searched: a row is what a reader SEES.
+		// The note is drawn, so it is searched.
 		if searchContains(p.rows[n].text, q) || searchContains(p.rows[n].note, q) {
 			p.cursor = n
 			p.follow()
@@ -138,11 +114,8 @@ func (p *picker) find(q string, dir int) bool {
 	return false
 }
 
-// hasCursor reports whether this list is one you choose in as well as read.
 func (p *picker) hasCursor() bool { return p.cursor >= 0 }
 
-// nextSelectable walks from i in direction d to the next row that can hold the
-// cursor, or returns i unchanged when there is none.
 func (p *picker) nextSelectable(i, d int) int {
 	for n := i + d; n >= 0 && n < len(p.rows); n += d {
 		if p.rows[n].selectable() {
@@ -155,11 +128,8 @@ func (p *picker) nextSelectable(i, d int) int {
 	return -1
 }
 
-// TWO MOTIONS: step moves the window (reading), pick moves the cursor
-// (choosing). A list with no cursor answers both the same way.
+// step moves the window (reading), pick moves the cursor (choosing).
 
-// step scrolls by rows, carrying the cursor only when it would leave the
-// window.
 func (p *picker) step(d int) {
 	if len(p.rows) == 0 {
 		return
@@ -170,7 +140,6 @@ func (p *picker) step(d int) {
 	}
 }
 
-// pick moves the selection to the next selectable row.
 func (p *picker) pick(d int) {
 	if len(p.rows) == 0 {
 		return
@@ -190,11 +159,7 @@ func (p *picker) pick(d int) {
 	p.follow()
 }
 
-// cycle is pick on a RING: past the last row it comes back to the first.
-// Tab and ^N walk a completion menu that way in bash's menu-complete and in
-// fish, where a list the user is reading (a queue) must stop at its ends.
-// From no selection at all, forward lands on the first row and backward on
-// the last.
+// cycle wraps (a completion menu); pick stops at the ends (a list being read).
 func (p *picker) cycle(d int) {
 	n := len(p.rows)
 	if n == 0 || d == 0 {
@@ -220,11 +185,8 @@ func (p *picker) cycle(d int) {
 	p.follow()
 }
 
-// unselect takes the cursor off the list without touching the window: a
-// completion menu opens showing its candidates with none of them chosen.
 func (p *picker) unselect() { p.cursor = -1 }
 
-// dragCursorIntoView keeps the selection inside the window after a scroll.
 func (p *picker) dragCursorIntoView() {
 	h := p.visible()
 	if p.cursor < p.top {
@@ -240,17 +202,14 @@ func (p *picker) dragCursorIntoView() {
 	}
 }
 
-// scroll moves the window without touching a cursor.
 func (p *picker) scroll(d int) {
 	p.dir = sign(d)
 	p.top = clampInt(p.top+d, 0, p.maxTop())
 }
 
-// half is u/d: half a page, and it moves the CURSOR -- a half-page that left
-// the selection behind snapped back on the next ^N.
+// Moves the cursor, or the next ^N snaps back.
 func (p *picker) half(d int) { p.pick(d * max(p.visible()/2, 1)) }
 
-// home / end are gg and G.
 func (p *picker) home() {
 	p.top = 0
 	if p.hasCursor() {
@@ -265,7 +224,6 @@ func (p *picker) end() {
 	}
 }
 
-// follow slides the window to keep the cursor in view.
 func (p *picker) follow() {
 	h := p.visible()
 	if p.cursor < p.top {
@@ -277,7 +235,6 @@ func (p *picker) follow() {
 	p.top = clampInt(p.top, 0, p.maxTop())
 }
 
-// visible is the list height as last drawn.
 func (p *picker) visible() int {
 	if p.height > 0 {
 		return p.height
@@ -287,7 +244,6 @@ func (p *picker) visible() int {
 
 func (p *picker) maxTop() int { return max(len(p.rows)-p.visible(), 0) }
 
-// selected is the row under the cursor, if any.
 func (p *picker) selected() (pitRow, bool) {
 	if !p.hasCursor() || p.cursor >= len(p.rows) {
 		return pitRow{}, false
@@ -295,8 +251,6 @@ func (p *picker) selected() (pitRow, bool) {
 	return p.rows[p.cursor], true
 }
 
-// neighbour is the selectable row a cursor would fall onto if the one it is
-// standing on disappeared: the next one, else the previous.
 func (p *picker) neighbour() (pitRow, bool) {
 	if !p.hasCursor() {
 		return pitRow{}, false
@@ -309,7 +263,6 @@ func (p *picker) neighbour() (pitRow, bool) {
 	return pitRow{}, false
 }
 
-// remove drops the selected row, leaving the cursor on what takes its place.
 func (p *picker) remove() {
 	if !p.hasCursor() || p.cursor >= len(p.rows) {
 		return
@@ -323,18 +276,16 @@ func (p *picker) remove() {
 	p.follow()
 }
 
-// lines draws the window: the visible rows, the selection marker, and an
-// honest count of what is out of view. A list that overflows always draws
-// exactly h rows, so the transcript above it never jumps.
+// A list that overflows always draws exactly h rows, so the transcript above it
+// never jumps.
 func (p *picker) lines(id pitID, w, h int) []string {
 	budget := clampInt(h, 1, max(h, pickerRows))
-	// The window is decided here, top and all: motions run against the height
-	// last DRAWN at, so only this can guarantee the cursor is inside it.
+	// Motions run against the height last drawn at, so only the draw can
+	// guarantee the cursor is inside the window.
 	markAbove, markBelow := p.window(budget)
 	end := min(p.top+p.height, len(p.rows))
 
-	// Rows plus markers is always the budget: where a marker is not needed its
-	// row goes back to the list. A list that FITS is drawn at its own size.
+	// Rows plus markers is always the budget.
 	out := make([]string, 0, budget)
 	if markAbove {
 		out = append(out, pitGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
@@ -345,8 +296,7 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		if i == p.cursor {
 			prefix = mark + " "
 		}
-		// Every row through the gate (pitText, pit.go), once, so that no pit
-		// can forget.
+		// Every row passes pitText once.
 		text := prefix + pitText(p.rows[i].text)
 		if note := p.rows[i].note; note != "" {
 			if i == p.cursor {
@@ -375,22 +325,11 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// window picks the marker rows, the height and the top inside a budget, under
-// ONE RULE: A MARKER NEVER SAYS "1 MORE". It costs exactly the row it hides,
-// so at one the reader would rather have the row; at two it stands in for
-// several. (fzf and less agree: spend the row on content, put the position
-// somewhere that costs nothing. The pit has no margin, so it drops the marker
-// instead.)
-//
-// Arithmetic, not search. hiddenAbove is top and hiddenBelow is
-// len-top-height, and each side hides nothing or two, which pins the legal
-// tops:
-//
-//	no marker above → top = 0           marker above → top ≥ 2
-//	no marker below → top = len-height  marker below → top ≤ len-height-2
-//
-// Pick the configuration holding a top nearest where the reader already is,
-// with the cursor inside it; fewer markers breaks ties.
+// window picks markers, height and top inside a budget. A marker never says "1
+// more", so each side hides nothing or at least two: no marker above means top =
+// 0, a marker above means top >= 2; no marker below means top = len-height, a
+// marker below means top <= len-height-2. Nearest top to where the reader is,
+// cursor inside, fewer markers on ties.
 func (p *picker) window(budget int) (above, below bool) {
 	want := clampInt(p.top, 0, max(len(p.rows)-1, 0))
 	best, bestCost := -1, 0
@@ -401,8 +340,7 @@ func (p *picker) window(budget int) (above, below bool) {
 		if height < 1 {
 			continue
 		}
-		// bottom is the top that shows the last row -- 0 when the list fits,
-		// which a negative len-height would otherwise reject.
+		// bottom is 0 when the list fits.
 		bottom := max(len(p.rows)-height, 0)
 		lo, hi := 0, bottom
 		if a {
@@ -420,7 +358,6 @@ func (p *picker) window(budget int) (above, below bool) {
 		}
 		top := clampInt(want, lo, hi)
 		if p.hasCursor() {
-			// The cursor must be inside the window this configuration paints.
 			if p.cursor < top {
 				top = clampInt(p.cursor, lo, hi)
 			}
@@ -432,8 +369,8 @@ func (p *picker) window(budget int) (above, below bool) {
 			}
 		}
 		cost := abs(top-want)*4 + boolToInt(a) + boolToInt(b)
-		// Round away from where the reader came from, or an unrepresentable
-		// top makes the motion look like a dead key.
+		// Round away from where the reader came from, or the motion looks
+		// like a dead key.
 		if (p.dir > 0 && top < want) || (p.dir < 0 && top > want) {
 			cost += 2
 		}
@@ -442,7 +379,6 @@ func (p *picker) window(budget int) (above, below bool) {
 		}
 	}
 	if best < 0 {
-		// Only when the budget cannot hold the cursor at all.
 		p.height = max(budget-2, 1)
 		return true, true
 	}
@@ -450,7 +386,6 @@ func (p *picker) window(budget int) (above, below bool) {
 	return best == 2 || best == 3, best == 1 || best == 3
 }
 
-// AndMore is the one spelling of a truncated list.
 func AndMore(n int, where string) string {
 	if n <= 0 {
 		return ""

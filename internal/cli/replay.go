@@ -16,8 +16,7 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// tapeTap is the recorder as connection middleware. nil writer, nil tap: the
-// non-recording path does not even wrap the conn.
+// nil writer, nil tap: the non-recording path does not wrap the conn.
 func tapeTap(w *tape.Writer) transport.Tap {
 	if w == nil {
 		return nil
@@ -25,11 +24,6 @@ func tapeTap(w *tape.Writer) transport.Tap {
 	return func(c net.Conn) net.Conn { return tape.Tap(c, w) }
 }
 
-// ---------------------------------------------------------------------------
-// Replay
-// ---------------------------------------------------------------------------
-
-// runReplay plays a wire tape back to a REAL CLI.
 func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	h, frames, err := tape.Read(path)
 	if err != nil {
@@ -58,11 +52,8 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	if err := srv.listen(ctx, ep); err != nil {
 		die("replay: %s", err)
 	}
-	// The renderer leaves when the tape runs out, a replay that hung on the
-	// last frame would need a keypress to end, and CI has no fingers. It goes
-	// out through tailFigaro's ordinary end-of-stream door, not through ctx
-	// cancellation, which is Ctrl-C and would have the replay report an
-	// interrupt that never happened.
+	// The renderer leaves through tailFigaro's end-of-stream door, not ctx
+	// cancellation, which would report an interrupt that never happened.
 	end := make(chan struct{})
 	go func() {
 		<-srv.done
@@ -70,15 +61,12 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 		close(end)
 	}()
 
-	// The recording's own start time is the session clock, so a tape paints
-	// the same status row today as it did the day it was taken.
+	// The recording's start time is the session clock, so the status row
+	// paints as it did when taken.
 	started, _ := time.Parse(time.RFC3339Nano, h.Started)
 	tailFigaro(ctx, cancel, ep, h.Aria, loaded, tailOpts{end: end, startedAt: started})
 }
 
-// printTapeSummary is `--summary`: what is on this tape, without playing it.
-// A tape is an opaque blob otherwise, and the first question anyone asks of a
-// recording is "is the thing I am hunting even in here".
 func printTapeSummary(w *os.File, h tape.Header, frames []tape.Frame) {
 	fmt.Fprintf(w, "tape v%d · aria %s · %d frames\n", h.Tape, h.Aria, len(frames))
 	fmt.Fprintf(w, "  recorded  %s by %s\n", h.Started, h.Binary)
@@ -106,7 +94,6 @@ func printTapeSummary(w *os.File, h tape.Header, frames []tape.Frame) {
 	}
 }
 
-// tapeServer answers a real CLI from a recording.
 type tapeServer struct {
 	frames []tape.Frame
 	speed  float64
@@ -134,8 +121,8 @@ func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
 }
 
 func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
-	// Responses are keyed by method, in recorded order, and consumed as the
-	// client asks. replies[m] is the queue of recorded results for method m.
+	// replies[m] is the queue of recorded results for method m, consumed as
+	// the client asks.
 	replies := map[string][]json.RawMessage{}
 	for i, f := range s.frames {
 		if f.Dir != tape.Out || f.Method() == "" {
@@ -174,11 +161,10 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 	srv := jkrpc.NewServer(jkrpc.NewConn(conn), handlers)
 	go srv.Serve(ctx)
 
-	// Push the recorded notifications on the recorded schedule.
 	start := time.Now()
 	for _, f := range s.frames {
 		if f.Dir != tape.In || f.Method() == "" {
-			continue // responses are served by the handlers above
+			continue
 		}
 		if err := s.waitUntil(ctx, start, f.At()); err != nil {
 			break
@@ -200,9 +186,7 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 	}
 }
 
-// waitUntil sleeps until the frame is due. speed scales the recorded
-// intervals; speed <= 0 means "as fast as the client will take them", which is
-// what a golden-frame test wants and what a human never does.
+// speed <= 0 plays as fast as the client will take frames.
 func (s *tapeServer) waitUntil(ctx context.Context, start time.Time, at time.Duration) error {
 	if s.speed <= 0 {
 		return ctx.Err()

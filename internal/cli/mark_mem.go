@@ -10,8 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/mark"
 )
 
-// markMemory samples the process and the pager's retained state on a clock
-// while marks are on. Stops with the returned func.
 func markMemory(mu *renderLock, lt *livelogTurn, every time.Duration) func() {
 	if !mark.Enabled() {
 		return func() {}
@@ -46,7 +44,6 @@ func markMemory(mu *renderLock, lt *livelogTurn, every time.Duration) func() {
 	return func() { close(done) }
 }
 
-// rssBytes is the resident set from /proc, or 0 where there is none.
 func rssBytes() uint64 {
 	b, err := os.ReadFile("/proc/self/statm")
 	if err != nil {

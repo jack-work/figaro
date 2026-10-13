@@ -10,9 +10,6 @@ import (
 
 var connSeq atomic.Uint64
 
-// markTap counts every byte of one aria connection into the mark sink, so a
-// hop's wire cost is measured where it is paid rather than estimated from the
-// pages it returned. Composed with the tape tap when both are on.
 func markTap(inner transport.Tap) transport.Tap {
 	if !mark.Enabled() {
 		return inner

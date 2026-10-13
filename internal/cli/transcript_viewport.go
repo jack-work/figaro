@@ -1,9 +1,5 @@
 package cli
 
-// ---------------------------------------------------------------------------
-// Viewport geometry over the line index.
-
-// shiftViewport moves the viewport by delta lines, clamped to the line space.
 func (t *transcript) shiftViewport(delta int) {
 	if delta == 0 {
 		return
@@ -17,9 +13,7 @@ func (t *transcript) shiftViewport(delta int) {
 	}
 }
 
-// anchorBelow re-pins the viewport so that ref's tail, and therefore
-// everything after it: keeps its screen row across a height change. mutate
-// performs the change.
+// anchorBelow keeps ref's tail on its screen row across mutate.
 func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 	t.buildIndex()
 	before, ok := t.nodeSpanOf(ref)
@@ -27,11 +21,7 @@ func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 		mutate()
 		return false
 	}
-	// A change ENTIRELY BELOW the viewport must not move it. The rule is that
-	// content at or below the change holds still; when none of that content is
-	// on screen there is nothing to hold, and shifting anyway would scroll the
-	// reader away from a part of the transcript that did not change. Reachable:
-	// select a tool, scroll up away from it, then press Enter.
+	// A change entirely below the viewport must not move it.
 	_, bottom := t.viewportLines()
 	belowViewport := before.first >= bottom
 	mutate()
@@ -47,13 +37,10 @@ func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 	return true
 }
 
-// entryRowsStart is the absolute line of an entry's first CONTENT row: its
-// start, plus whatever separator rows precede it. The entry answers for its own
-// separator (sepHeight), so this cannot go stale if the separator changes size.
 func entryRowsStart(e *lineEntry) int { return e.start + e.sepHeight() }
 
-// viewportSeedRef picks the node a COLD selection should start on: the one the
-// reader is looking at, not the one the retained window happens to end with.
+// viewportSeedRef picks the node a cold selection starts on: the one in view, not
+// the window's last.
 func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
 	top, bottom := t.viewportLines()
 	var (
@@ -62,8 +49,6 @@ func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
 	)
 	take := func(ref nodeRef, first, last int) {
 		if first >= top && first < bottom {
-			// dir<0 keeps overwriting and ends on the last match; dir>0 takes
-			// the first and holds it.
 			if dir < 0 || !haveStartsIn {
 				startsIn, haveStartsIn = ref, true
 			}
@@ -78,10 +63,9 @@ func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
 		e := &t.index.entries[k]
 		base := entryRowsStart(e)
 		if base >= bottom && haveStartsIn {
-			break // past the viewport, and we already have an answer
+			break
 		}
-		// A ref's rows are contiguous within an entry (renderMsgBase emits one
-		// run per node), so a run ends where the ref changes.
+		// A ref's rows are contiguous within an entry.
 		runRef, runFirst := nodeRef{}, -1
 		flush := func(end int) {
 			if runFirst >= 0 && runRef.valid() {
@@ -102,10 +86,7 @@ func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
 	return overlaps, haveOverlap
 }
 
-// viewportLines is the half-open line range the body is currently showing,
-// [top, bottom). It reads the CURRENT geometry, an open panel and the
-// follow-mode padding row both change the body height: so the caller must have
-// a fresh index.
+// viewportLines reads the current geometry: the caller needs a fresh index.
 func (t *transcript) viewportLines() (top, bottom int) {
 	body, _ := t.layout(len(t.footLines()))
 	return t.offset, t.offset + body

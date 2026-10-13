@@ -1,22 +1,8 @@
 package cli
 
-// FREEZE FORENSICS: what to do when the pager stops answering.
-//
-// A frozen pager is one of two animals and they need the same evidence. Either
-// a goroutine holds the render lock and will not give it back (a deadlock: no
-// CPU, dead keys, no repaint on resize), or something under that lock is
-// spinning (a livelock: one core pinned, dead keys, no repaint on resize). A
-// full goroutine dump names both -- who holds it, and where they are.
-//
-// Three doors, because a freeze rarely happens while anyone is watching:
-//
-//	SIGUSR1   dump every goroutine, now, and keep running
-//	SIGUSR2   ten seconds of CPU profile, for the spinning kind
-//	watchdog  dump by itself when one acquisition of the render lock outlives
-//	          any frame that could be honest
-//
-// The watchdog is the one that matters: it turns "it locked up last night"
-// into a file with the answer in it.
+// Freeze forensics: SIGUSR1 dumps goroutines, SIGUSR2 profiles CPU, and the
+// watchdog dumps by itself when one render-lock acquisition outlives any honest
+// frame.
 
 import (
 	"github.com/jack-work/figaro/internal/boot"
@@ -34,53 +20,24 @@ import (
 	"time"
 )
 
-// freezeStuckAfter is how long ONE acquisition of the render lock may stay
-// open before the pager is presumed frozen. A slow frame is milliseconds; a
-// page fetch under the lock would be a bug of its own. Five seconds is far
-// past both.
+// One acquisition, not contention: a frame is milliseconds.
 const freezeStuckAfter = 5 * time.Second
 
-// freezePollEvery is how often the watchdog reads the lock's clock. Reading it
-// is one atomic load, so this can be frequent without being felt; it only sets
-// how late a report can be.
 const freezePollEvery = 500 * time.Millisecond
 
-// freezeDumpCap is how many episodes one session reports. A pager that is
-// genuinely wedged is described by its first dump; the rest are noise that
-// slows the thing being diagnosed (every dump stops the world).
+// Every dump stops the world; the first describes a wedged pager.
 const freezeDumpCap = 8
 
-// freezeKeep is how many files the freeze directory holds. Forensics older
-// than that have outlived their session: 7069 of them accumulated under the
-// watchdog this comment's sibling describes, which is its own kind of bug
-// report.
 const freezeKeep = 200
 
-// freezeProfileFor is how long SIGUSR2 profiles for.
 const freezeProfileFor = 10 * time.Second
 
-// renderLock is the pager's render lock AND the watchdog's witness: a mutex
-// that remembers when the acquisition in force began. Nothing outside a
-// sync.Mutex can answer "has one frame been stuck under this", which is the
-// only question worth raising an alarm over.
-//
-// THE OLD WATCHDOG ASKED WITH TryLock AND BELIEVED THE ANSWER. TryLock fails
-// when the mutex is merely BUSY: it joins no waiter queue, it does not spin,
-// its single CAS gives up on any race, and it returns false outright while the
-// mutex is in starvation mode -- which one waiter parked for a millisecond is
-// enough to set. The pager takes this lock eleven times a second for the
-// spinner alone, plus once per keystroke and once per streamed token, so five
-// consecutive failed polls were routine rather than alarming. Modelled at that
-// duty cycle with a 5ms hold, 37 of 40 polls failed and the watchdog "found"
-// six freezes in forty seconds. One log here carried 236 of those reports,
-// each one costing a stop-the-world stack dump and a ten-second CPU profile of
-// a process that was answering keys the whole time, and each one surfacing in
-// the pager as an error the reader could do nothing about.
+// renderLock remembers when the acquisition in force began. The watchdog must not
+// poll TryLock: it fails on a merely busy mutex (and outright in starvation mode),
+// which at the spinner's duty cycle reports freezes that never happened.
 type renderLock struct {
 	mu sync.Mutex
-	// since is the UnixNano at which the acquisition in force began, or 0 when
-	// the lock is free. Written by the holder, read by the watchdog: the only
-	// field in figaro a sampler is allowed to race with, and it is atomic.
+	// since is written by the holder and read by the watchdog; 0 when free.
 	since atomic.Int64
 }
 
@@ -94,8 +51,7 @@ func (l *renderLock) Unlock() {
 	l.mu.Unlock()
 }
 
-// TryLock is still here for the callers that must never block -- the exit hook
-// and the memory mark -- and it stamps the clock like any other acquisition.
+// For callers that must never block (the exit hook, the memory mark).
 func (l *renderLock) TryLock() bool {
 	if !l.mu.TryLock() {
 		return false
@@ -104,9 +60,7 @@ func (l *renderLock) TryLock() bool {
 	return true
 }
 
-// heldFor reports how long the acquisition in force has been open, and the
-// stamp that identifies it. A zero duration means the lock was free at the
-// instant it was read: not "contended", not "busy", FREE.
+// A zero duration means the lock was free at the instant it was read.
 func (l *renderLock) heldFor(now time.Time) (time.Duration, int64) {
 	since := l.since.Load()
 	if since == 0 {
@@ -115,8 +69,6 @@ func (l *renderLock) heldFor(now time.Time) (time.Duration, int64) {
 	return now.Sub(time.Unix(0, since)), since
 }
 
-// freezeDir is where dumps land: beside the telemetry the daemon already
-// writes, because that is the directory a reader is already being asked for.
 func freezeDir() string {
 	dir := filepath.Join(boot.StateDir(), "freeze")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -128,9 +80,7 @@ func freezeDir() string {
 
 var freezeTrim sync.Once
 
-// trimFreezeDir keeps the newest `keep` forensic files and removes the rest.
-// The names are timestamps, so sorting them IS sorting by age. Called once per
-// session: a directory nobody prunes is a directory nobody reads.
+// The names are timestamps, so sorting them is sorting by age.
 func trimFreezeDir(dir string, keep int) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -153,9 +103,7 @@ func trimFreezeDir(dir string, keep int) {
 	}
 }
 
-// dumpGoroutines writes every goroutine's stack to a timestamped file and
-// returns its path. It never fails loudly: this runs when something is already
-// wrong, and a diagnostic that panics is worse than no diagnostic.
+// Never fails loudly: a diagnostic that panics is worse than none.
 func dumpGoroutines(why string) string {
 	buf := make([]byte, 1<<20)
 	for {
@@ -177,7 +125,6 @@ func dumpGoroutines(why string) string {
 	return path
 }
 
-// profileCPU records a CPU profile for d, for the spinning kind of freeze.
 func profileCPU(d time.Duration) string {
 	path := filepath.Join(freezeDir(), fmt.Sprintf("cpu-%s.pprof", time.Now().Format("20060102-150405")))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
@@ -199,25 +146,15 @@ func profileCPU(d time.Duration) string {
 	return path
 }
 
-// watchRenderLock is the watchdog. Twice a second it reads the render lock's
-// own clock and reports when ONE acquisition has stayed open past
-// freezeStuckAfter -- once per acquisition, because a pager that is stuck
-// stays stuck and a dump per poll would bury the one that matters.
-//
-// IT MEASURES WHAT THE MESSAGE CLAIMS. The old version polled TryLock and
-// counted failures, which reports a busy lock as a frozen one (see renderLock).
-// An episode here is a single holder that will not let go, identified by the
-// stamp it wrote: when the stamp changes or goes to zero, that holder finished,
-// and the pager was never frozen.
-//
-// Only the first episode of a session profiles. The profiler slows every frame
-// it watches, and the second answer is the same as the first.
+// An episode is one holder, identified by its stamp; a changed or zero stamp means
+// it finished. Only the first episode profiles: the profiler slows every frame it
+// watches.
 func watchRenderLock(l *renderLock) func() {
 	done := make(chan struct{})
 	go func() {
 		t := time.NewTicker(freezePollEvery)
 		defer t.Stop()
-		var reported int64 // the acquisition already written up
+		var reported int64
 		dumps, profiled := 0, false
 		for {
 			select {
@@ -244,9 +181,8 @@ func watchRenderLock(l *renderLock) func() {
 	return func() { close(done) }
 }
 
-// ProfileEnv names a directory; when set, the CLI writes a CPU profile of the
-// whole session and a heap profile at exit there, so a benchmark run can be
-// read with `go tool pprof` instead of guessed at.
+// ProfileEnv names a directory for a CPU profile of the session and a heap profile
+// at exit.
 const ProfileEnv = "FIGARO_CLI_PPROF"
 
 func profileSession() func() {

@@ -9,38 +9,27 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A line index over the retained message window.
-
-// lineEntry is one message's contribution to the transcript's line space.
-// start is the absolute line of the entry's first line: the separator's
-// first blank when sep is set, otherwise the first row.
+// start is the absolute line of the entry's first line: the separator's first
+// blank when sep is set.
 type lineEntry struct {
 	turn int
-	// key is the SLICE the lines belong to, not just its turn: a tall turn is
-	// several entries, and the viewport anchor has to tell them apart or a page
-	// landing that prepends an earlier slice of the SAME turn snaps the viewport
-	// to that slice's top.
+	// key is the slice, not just the turn: a tall turn is several entries and
+	// the viewport anchor must tell them apart.
 	key   sliceKey
 	start int
 	sep   bool // preceded by the ""/rule separator pair
-	open  bool // the live/held-open message, re-rendered every frame
+	open  bool // the live message, re-rendered every frame
 	rows  []transcriptRow
-	// gap is the hole this entry stands for, when it stands for one. A gap
-	// entry has NO rows: it renders as EXACTLY ONE row, synthesized per frame
-	// because its text depends on the width. See transcript.gapRow.
+	// A gap entry has no rows: it renders as exactly one row, synthesized per
+	// frame (transcript.gapRow).
 	gap *aria.Gap
 }
 
-// isGap reports whether the entry is a hole rather than a message.
 func (e *lineEntry) isGap() bool { return e.gap != nil }
 
-// sepRows is the height of the separator between two messages: a blank, then
-// the RULE, and the next message's voice header directly beneath it, with no
-// gap.
+// A blank, then the rule, with the next message's voice header directly beneath.
 const sepRows = 2
 
-// sepHeight is how many lines THIS entry spends on its leading separator: the
-// separator's height when it has one, zero otherwise.
 func (e *lineEntry) sepHeight() int {
 	if e.sep {
 		return sepRows
@@ -48,7 +37,6 @@ func (e *lineEntry) sepHeight() int {
 	return 0
 }
 
-// height is the number of lines the entry occupies, separator included.
 func (e *lineEntry) height() int {
 	if e.isGap() {
 		return e.sepHeight() + 1
@@ -56,68 +44,51 @@ func (e *lineEntry) height() int {
 	return e.sepHeight() + len(e.rows)
 }
 
-// refAt is the node a line of this entry belongs to, or the zero nodeRef for a
-// line that belongs to no node: a separator row, a gap sentinel, or an
-// out-of-range index.
 func (e *lineEntry) refAt(rel int) nodeRef {
-	rel -= e.sepHeight() // separator rows go negative: they belong to no node
+	rel -= e.sepHeight()
 	if rel < 0 || e.isGap() || rel >= len(e.rows) {
 		return nodeRef{}
 	}
 	return e.rows[rel].ref
 }
 
-// lineIndex is the per-frame index. entries and scratch ping-pong so a rebuild
-// can compare the new shape against the old one without allocating.
+// entries and scratch ping-pong so a rebuild compares shapes without allocating.
 type lineIndex struct {
 	entries []lineEntry
 	scratch []lineEntry
 	total   int
-	// rev is the transcript's windowRev this index was built from: the single
-	// authority on "the retained page set changed", shared with the page layer.
-	// See transcript.invalidateWindow.
+	// rev is the windowRev this index was built from: the one authority on
+	// "the page set changed".
 	rev uint64
-	// stamp is everything the entries above are a function of, as of the build
-	// that produced them. An index whose stamp still holds does not need
-	// rebuilding; see transcript.indexStamp.
+	// An index whose stamp still holds does not need rebuilding.
 	stamp indexStamp
 	built bool
 }
 
-// indexShape is everything the line index is a function of EXCEPT the live
-// message: which messages the window holds, what width they were drawn at,
-// and whose rows are cached. Two frames with the same shape describe the same
-// entries, so the second one has nothing to do.
+// indexShape is everything the index is a function of except the live message.
 type indexShape struct {
 	rev       uint64 // aria.Client.Revision: something was folded
-	windowRev uint64 // the window's floor moved (invalidateWindow)
-	rowRev    uint64 // cached rows were dropped (a fold gesture, a setting, a prune)
-	w, h      int    // the geometry every row and the tail keep are derived at
+	windowRev uint64 // the window's floor moved
+	rowRev    uint64 // cached rows were dropped
+	w, h      int
 	from      aria.Anchor
 	tailWant  int
 	tailTuned bool
-	// resetting is whether THIS frame's buildIndex re-derives the tail. A walk
-	// into history does not (see below), so entering or leaving one changes
-	// what the index describes even when nothing else moved.
+	// resetting: whether this frame re-derives the tail; a walk into history
+	// does not.
 	resetting bool
-	openKey   sliceKey // which message is the live one, if any
+	openKey   sliceKey
 }
 
-// indexStamp is a shape plus the one thing that moves under a steady shape:
-// the spinner of a live message.
+// indexStamp is a shape plus the spinner of a live message.
 type indexStamp struct {
 	shape indexShape
-	// animTick is the frame counter, but ONLY while something under the open
-	// message animates. A tool's spinner is a function of the clock, so those
-	// frames must recompose the live entry; every other tick -- the status
-	// bar's own spinner, an alert expiring, a repaint after a scroll -- leaves
-	// the index exactly as it was and is now free.
+	// animTick is the frame counter only while the open message animates;
+	// every other tick leaves the index as it was.
 	animTick int
 }
 
-// indexStamp reads the current stamp. It materializes NOTHING: the live
-// message is identified by its key (Client.OpenKey), because the whole point
-// of the stamp is to be cheaper than what it guards.
+// Materializes nothing: the stamp must be cheaper than what it guards.
 func (t *transcript) indexStamp() indexStamp {
 	st := indexStamp{shape: indexShape{
 		rev:       t.client.Revision(),
@@ -139,7 +110,6 @@ func (t *transcript) indexStamp() indexStamp {
 	return st
 }
 
-// entryAt returns the index of the entry owning absolute line i, or -1.
 func (x *lineIndex) entryAt(i int) int {
 	if i < 0 || i >= x.total || len(x.entries) == 0 {
 		return -1
@@ -156,25 +126,16 @@ func (x *lineIndex) entryAt(i int) int {
 	return lo - 1
 }
 
-// buildIndex refreshes the line index for the current retained window. It
-// subsumes the bookkeeping lines() used to do: tail reset while following,
-// width invalidation of rowCache, and keeping lineTurn current: but stops short
-// of materializing any row text.
-//
-// IT IS IDEMPOTENT AND IT IS CHEAP TO ASK. Thirty call sites call it to be
-// sure the index is current, and the frame path calls it through settle up to
-// four times a frame; it used to re-walk the window and recompose the live
-// message every single time. Now the stamp decides: nothing moved is nothing
-// to do, only the live message moved is only the live entry to redraw, and the
-// full walk happens when the window itself changed.
+// Idempotent and cheap: the stamp decides whether nothing, the live entry, or the
+// whole window is redone.
 func (t *transcript) buildIndex() {
 	st := t.indexStamp()
 	if t.index.built && st == t.index.stamp {
-		return // the index already describes this state
+		return
 	}
 	if t.index.built && st.shape == t.index.stamp.shape {
-		// Only the spinner moved. The live entry is the LAST entry by
-		// construction, so redrawing it moves no other entry's start.
+		// Only the spinner moved; the live entry is the last, so redrawing
+		// it moves no other start.
 		if t.refreshOpenEntry(t.openMessage()) {
 			t.index.stamp = st
 			return
@@ -183,9 +144,7 @@ func (t *transcript) buildIndex() {
 	t.rebuildIndex(t.openMessage())
 }
 
-// refreshOpenEntry redraws the live message in place, and reports whether it
-// could: a window whose last entry is not the open message (there is none, or
-// the index predates it) needs the full walk instead.
+// Reports false when the last entry is not the open message: the full walk is needed.
 func (t *transcript) refreshOpenEntry(open *aria.Message) bool {
 	if open == nil || len(t.index.entries) == 0 {
 		return false
@@ -203,28 +162,13 @@ func (t *transcript) refreshOpenEntry(open *aria.Message) bool {
 	return true
 }
 
-// rebuildIndex is the full walk of the retained window: every entry's rows and
-// the line space they occupy, from the window's floor to the live message.
 func (t *transcript) rebuildIndex(live *aria.Message) {
-	// A WALK INTO HISTORY IS NOT FOLLOWING, and this line is why the pager
-	// could lock up with a core pinned.
-	//
-	// Following means "the window IS the tail", and resetToTail enforces it by
-	// RAISING the floor. A search or a jump walks the other way: the worker
-	// asks for a page below the floor, applyPage lowers the floor to hold it,
-	// and the next buildIndex -- which pageCursor itself calls -- put the floor
-	// straight back. So the walk asked for the same page again, and again: an
-	// RPC and two acquisitions of the render lock per pass, forever. From the
-	// outside that is a dead keyboard, a pane that will not repaint on resize,
-	// and a hot CPU.
-	//
-	// The tail can wait. It is re-derived the moment the walk ends (every exit
-	// from a search or a jump renders, and the next buildIndex follows again),
-	// so nothing is lost by not fighting for it here.
+	// A search or jump walks below the floor; resetting the tail here would
+	// raise it back and re-request the same page forever, with the keyboard
+	// dead. The tail is re-derived when the walk ends.
 	if t.follow && t.search == nil && t.jump == nil {
 		t.resetToTail()
-		// The floor it raised decides which message is live, so the caller's
-		// answer may be stale by one frame.
+		// The raised floor decides which message is live.
 		live = t.openMessage()
 	}
 	if t.cacheW != t.w { // width changed: cached rows are stale
@@ -233,15 +177,9 @@ func (t *transcript) rebuildIndex(live *aria.Message) {
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
-	// ONE AUTHORITY ON HOW TALL AN ENTRY IS: lineEntry.height. Line space is
-	// advanced by asking the entry, not by re-deriving it here: the two
-	// disagreeing is how a gap could be one row in the index and several on
-	// screen, which no frame golden would catch.
-	// A SEPARATOR MARKS A TURN BOUNDARY, NOT AN ENTRY BOUNDARY. One turn can be
-	// several entries, a long agentic turn is delivered in slices, and paging
-	// back into it delivers more, and a rule between those slices says "another
-	// exchange began here" when nothing did. That is what made a long turn read
-	// as a run of turns each missing its question.
+	// lineEntry.height is the one authority on height; a separator marks a
+	// turn boundary, not an entry boundary, since a long turn is delivered in
+	// slices.
 	prevTurn := -1
 	add := func(turn int, key sliceKey, rows []transcriptRow, open bool, gap *aria.Gap) {
 		sep := total > 0 && turn != prevTurn
@@ -253,10 +191,9 @@ func (t *transcript) rebuildIndex(live *aria.Message) {
 		entries = append(entries, e)
 		total += e.height()
 	}
-	// GAP-AWARE, and the only consumer that is. The pager draws a hole rather
-	// than closing over it, so it walks the window as SEGMENTS: runs, and the
-	// holes between them. Everything else in the pager stays gap-blind (see
-	// forEachMessage) and is simply told less.
+	// The only gap-aware consumer: the window is walked as segments and the
+	// holes between them; everything else is simply told less
+	// (forEachMessage).
 	t.client.ForEachSegment(t.from, windowEnd, func(m aria.Message) bool {
 		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
@@ -266,10 +203,8 @@ func (t *transcript) rebuildIndex(live *aria.Message) {
 		add(m.Turn, keyOf(m), rows.rows, false, nil)
 		return true
 	}, func(g aria.Gap) bool {
-		// The gap's key is its own first missing anchor, packed the way a slice
-		// key is. It cannot collide with a held message's key (that anchor is
-		// precisely what we do NOT hold), so the viewport anchor and the resize
-		// restore keep working across a hole.
+		// A gap's key is its first missing anchor, which no held message
+		// can carry.
 		hole := g
 		add(0, gapKey(g), nil, false, &hole)
 		return true
@@ -277,10 +212,8 @@ func (t *transcript) rebuildIndex(live *aria.Message) {
 	if live != nil {
 		add(live.Turn, keyOf(*live), t.renderOpenMsg(*live).rows, true, nil)
 	}
-	// The page set moved => the index describes a different window, full stop.
-	// That is the one authority (windowRev); the shape diff below only has to
-	// catch the things the page set cannot see, a width change, an expanded
-	// tool, the open message growing a token.
+	// windowRev is the authority; the shape diff only catches what the page
+	// set cannot see.
 	changed := t.index.rev != t.windowRev
 	if !changed {
 		changed = len(entries) != len(t.index.entries) || total != t.index.total
@@ -297,19 +230,15 @@ func (t *transcript) rebuildIndex(live *aria.Message) {
 	}
 	t.index.scratch, t.index.entries, t.index.total = t.index.entries, entries, total
 	t.index.rev = t.windowRev
-	// STAMPED FROM THE STATE THE WALK LANDED ON, not the state it started
-	// from: resetToTail above may have moved the floor, and a stamp taken
-	// before it would describe a window that no longer exists and send the
-	// next frame down this path again.
+	// Stamped from the state the walk landed on: resetToTail may have moved
+	// the floor.
 	t.index.stamp, t.index.built = t.indexStamp(), true
 	if changed {
 		t.rebuildLineLT()
 	}
 }
 
-// rebuildLineLT refills the slice-per-line map used for resize anchoring. Only
-// called when the index shape actually changed, a scroll leaves it alone.
-// Separator rows carry the FOLLOWING message's slice, as they always have.
+// Separator rows carry the following message's slice.
 func (t *transcript) rebuildLineLT() {
 	if cap(t.lineKey) < t.index.total {
 		t.lineKey = make([]sliceKey, t.index.total)
@@ -317,27 +246,20 @@ func (t *transcript) rebuildLineLT() {
 	t.lineKey = t.lineKey[:t.index.total]
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
-		// Driven by height(), the one authority: separator, rows and the gap
-		// sentinel alike. Counting e.rows here instead is how a gap entry ends
-		// up with a lineKey hole that only resize anchoring can see.
+		// Driven by height(): counting e.rows leaves a gap entry with a
+		// lineKey hole.
 		for i := e.start; i < e.start+e.height(); i++ {
 			t.lineKey[i] = e.key
 		}
 	}
 }
 
-// gapKey is the sliceKey a hole is addressed by: its first MISSING anchor,
-// packed exactly as a message's (Turn, From) is. It cannot collide with a held
-// message: that anchor is the one we do not hold, and it moves when the hole
-// shrinks, which is what makes the viewport anchor follow a fill.
+// A hole's key is its first missing anchor, packed like (Turn, From); it moves
+// when the hole shrinks, so the viewport anchor follows a fill.
 func gapKey(g aria.Gap) sliceKey {
 	return sliceKey(int64(g.From.Turn)<<sliceKeyFromBits | int64(g.From.Node&(1<<sliceKeyFromBits-1)))
 }
 
-// transRule lives in transcript.go, memoized per width there.
-
-// forEachWindowRow walks absolute lines [a, b) and hands each to fn as the
-// (entry, entry-relative row) it comes from.
 func (t *transcript) forEachWindowRow(a, b int, fn func(e *lineEntry, rel int)) {
 	if a < 0 {
 		a = 0
@@ -361,11 +283,8 @@ func (t *transcript) forEachWindowRow(a, b int, fn func(e *lineEntry, rel int)) 
 	}
 }
 
-// window materializes absolute lines [a, b) into dst (reusing its storage),
-// applying selection decoration and search highlighting to those rows only.
-// The rows themselves come out of rowCache already clipped and gutter-prefixed
-// (C's plainNodeRow), so an undecorated, unhighlighted row costs a slice read
-// and no allocation at all.
+// Rows come out of rowCache already clipped and gutter-prefixed; an undecorated
+// row costs a slice read.
 func (t *transcript) window(a, b int, dst []string) []string {
 	dst = dst[:0]
 	hl := t.activeHighlight()
@@ -382,8 +301,8 @@ func (t *transcript) window(a, b int, dst []string) []string {
 		line := e.start + rel
 		row := t.entryLine(e, rel, hl, sel)
 		if !e.refAt(rel).valid() && band.covers(line) {
-			// Chrome inside the band: rows that carry a ref were washed by
-			// their own block, and a band with holes in it is not a band.
+			// Chrome inside the band: a band with holes in it is not a
+			// band.
 			row = washRow(row, t.w, term.NodeWash(false))
 		}
 		row = t.washVisual(line, row, vis)
@@ -399,20 +318,14 @@ func (t *transcript) window(a, b int, dst []string) []string {
 	return dst
 }
 
-// selectionBand is the run of absolute lines the wash covers: the selected
-// blocks, the chrome between them, and the chrome that closes the band at
-// either end, up to and including the rule that fences the box. A question
-// selected on its own therefore lifts its heading, its text and the seam
-// beneath it, rather than the text alone.
-//
-// The walk stops at the first row of a block that is NOT selected: the
-// answer's voice header is the answer's, not the question's.
+// The band covers the selected blocks, the chrome between them and the chrome
+// closing it up to the fencing rule; it stops at the first row of a block that is
+// not selected.
 type lineBand struct{ lo, hi int }
 
 func (b lineBand) covers(line int) bool { return line >= b.lo && line <= b.hi }
 
-// It is asked of the lines about to be painted, [a, b): a selection reaching
-// past them is clamped to what is on screen, which is all the wash can cover.
+// A selection reaching past [a, b) is clamped to what is on screen.
 func (t *transcript) selectionBand(sel selectionSpan, a, b int) lineBand {
 	band := lineBand{lo: 1, hi: 0} // empty until a selected row is found
 	if !sel.active {
@@ -434,9 +347,6 @@ func (t *transcript) selectionBand(sel selectionSpan, a, b int) lineBand {
 	return band
 }
 
-// bandEdge walks from a selected line in one direction through rows that
-// belong to no block, and answers the last line the band may claim: the
-// fencing rule when it reaches one, the row before the next block otherwise.
 func (t *transcript) bandEdge(from, step int) int {
 	edge := from
 	for line := from + step; line >= 0 && line < t.index.total; line += step {
@@ -456,10 +366,8 @@ func (t *transcript) bandEdge(from, step int) int {
 	return edge
 }
 
-// isRuleRow reports whether a row is one of the box's horizontal rules, which
-// is where a band stops. A rule may open on a corner (the adornment's snake
-// closes into one) so the glyph at column zero is not the test: the row is a
-// rule when the line runs from its first cell or its second.
+// A rule may open on a corner (the adornment's snake closes into one), so the test
+// is the first or second cell.
 func isRuleRow(row string) bool {
 	rest, _ := firstVisible(row)
 	if strings.HasPrefix(rest, "─") {
@@ -469,10 +377,7 @@ func isRuleRow(row string) bool {
 	return n > 0 && strings.HasPrefix(rest[n:], "─")
 }
 
-// washVisual paints the visual highlight over a finished row. It is applied
-// after every other decoration, at paint time, for the reason node selection
-// is: the region moves on every keystroke and the rows do not. The cursor
-// cell is painted after it, on top.
+// Applied at paint time: the region moves on every keystroke and the rows do not.
 func (t *transcript) washVisual(line int, row string, vis visualSpan) string {
 	from, to, ok := vis.cols(line, t.w)
 	if !ok {
@@ -481,9 +386,6 @@ func (t *transcript) washVisual(line int, row string, vis visualSpan) string {
 	return washColumns(row, from, to)
 }
 
-// rowRefs appends the node each of absolute lines [a, b) belongs to, in the
-// same order window materializes them, so a row's text and the node it
-// addresses share an index once the caller's chrome is accounted for.
 func (t *transcript) rowRefs(a, b int, dst []nodeRef) []nodeRef {
 	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
 		dst = append(dst, e.refAt(rel))
@@ -491,9 +393,7 @@ func (t *transcript) rowRefs(a, b int, dst []nodeRef) []nodeRef {
 	return dst
 }
 
-// lineAt materializes a single absolute line. Search walks line space one
-// candidate at a time through this, so a jump costs O(distance to the match)
-// rather than materializing the whole retained window up front.
+// Search walks line space one candidate at a time through this.
 func (t *transcript) lineAt(i int) string {
 	k := t.index.entryAt(i)
 	if k < 0 {
@@ -503,16 +403,11 @@ func (t *transcript) lineAt(i int) string {
 	return t.entryLine(e, i-e.start, t.activeHighlight(), t.selectionSpan())
 }
 
-// entryLine renders line rel of an entry exactly as the whole-window
-// materialization pass did: separator rows raw, node rows decorated then
-// highlighted. Decoration happens HERE, at paint time, and not into rowCache:
-// the cue is a function of the selection, which changes far more often than
-// the rows do, so baking it into the cache would mean invalidating (and
-// re-rendering prose for) every message the selection touches on every ^N.
+// Decoration happens at paint time, not into rowCache: the cue is a function of
+// the selection, which changes far more often than the rows.
 func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSpan) string {
 	if e.sep {
-		// The one place the separator's rows are NAMED rather than counted:
-		// a blank, then the rule. Everything else asks sepHeight().
+		// The one place the separator's rows are named rather than counted.
 		switch rel {
 		case 0:
 			return ""
@@ -522,25 +417,15 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 	}
 	rel -= e.sepHeight()
 	if e.isGap() {
-		// THE SEPARATOR PAIR ABOVE A GAP IS DELIBERATE, and it is the same pair
-		// as anywhere else: the rule is the OVERLINE of what sits beneath it
-		// (see sepRows). The sentinel row plays the part of the voice header for
-		// the block that is missing, so the seam above a hole looks exactly like
-		// the seam above a message: which is the point, because a hole IS where
-		// messages would be.
+		// The separator pair above a gap is deliberate: the sentinel row
+		// plays the voice header of the block that is missing.
 		return t.gapRow(e.gap)
 	}
 	return t.rowLine(e.rows[rel], hl, sel)
 }
 
-// rowLine is one composed row as it is painted: the address at the right edge
-// when ^O is on, the adornment's glyphs, the selection cue, then the search
-// highlight. The header paints through it too, so a row reads the same in the
-// body and above it.
-//
-// THE RIGHT GUTTER IS NEVER PAINTED OVER. The address stops one column short
-// of it and the adornment marker is put back after it, so a block that
-// carries state says so whether or not ^O is on.
+// The right gutter is never painted over: the address stops one column short and
+// the adornment marker is put back after it.
 func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) string {
 	line := r.text
 	if r.mark != "" && t.verbose() {
@@ -549,17 +434,14 @@ func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) stri
 			line = ldrender.OverlayGutter(line, r.gutter, t.w)
 		}
 	}
-	// The snake's head follows the cursor, so its column is resolved here and
-	// not baked into the cache: the row holds the resting glyph, and only a
-	// cursor standing inside this block's list moves it.
+	// The snake's head follows the cursor, so it is resolved here and not
+	// baked into the cache.
 	if r.spine.Kind != ldrender.SpineNone {
 		if c := spineCursor(r.ref, sel); c != 0 {
 			line = ldrender.OverlayColumn(line, r.spine.Col, spineGlyph(r.spine, r.ref.delta, c))
 		}
 	}
 	if r.ref.valid() {
-		// r.text is already in its plainNodeRow resting form, so this is a
-		// no-op returning line untouched unless the row is actually selected.
 		line = decorateNodeRow(line, sel.mark(r.ref), t.w)
 	}
 	if hl != "" {
@@ -568,9 +450,7 @@ func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) stri
 	return line
 }
 
-// spineCursor is the delta row the selection's focus stands on inside ref's
-// adornment, or 0 when the focus is anywhere else. A block's snake knows one
-// cursor: its own.
+// A block's snake knows one cursor: its own.
 func spineCursor(ref nodeRef, sel selectionSpan) int {
 	if !sel.active {
 		return 0
@@ -581,9 +461,8 @@ func spineCursor(ref nodeRef, sel selectionSpan) int {
 	return sel.focus.delta
 }
 
-// selectionSpan is the O(1) form of selectionMarks: the ordered endpoints of
-// the active selection, answering "is this ref selected/focused" by
-// comparison instead of by building a map over every retained node.
+// selectionSpan answers "is this ref selected" by comparison rather than a map
+// over every retained node.
 type selectionSpan struct {
 	active bool
 	lo, hi selectionPoint
@@ -601,11 +480,8 @@ func (t *transcript) selectionSpan() selectionSpan {
 	return selectionSpan{active: true, lo: lo, hi: hi, focus: t.selection.focus.nodeRef}
 }
 
-// THE WASH IS THE BLOCK'S, NEVER A DELTA ROW'S OWN. An adornment row is part
-// of the block it explains, so selecting one lifts that whole block and the
-// snake's head (the Δ) says which row the cursor stands on. A band that broke
-// to highlight one adornment row told the reader they had left the message,
-// which they had not.
+// The wash is the block's, never a delta row's own; the snake's head says which
+// row the cursor stands on.
 func (s selectionSpan) mark(ref nodeRef) selectionMark {
 	if !s.active {
 		return selectionMark{}
@@ -619,10 +495,7 @@ func (s selectionSpan) mark(ref nodeRef) selectionMark {
 	return selectionMark{selected: true, active: block == blockOf(s.focus)}
 }
 
-// nodeSpanOf reports the line range a node occupies, derived from the index
-// instead of from a map rebuilt over every materialized row. Duplicated LTs
-// (a held-open message shadowing a committed one) widen the span, matching the
-// old nodeRows accumulation.
+// Duplicated LTs (a held-open message shadowing a committed one) widen the span.
 func (t *transcript) nodeSpanOf(ref nodeRef) (nodeSpan, bool) {
 	span, found := nodeSpan{}, false
 	for k := range t.index.entries {

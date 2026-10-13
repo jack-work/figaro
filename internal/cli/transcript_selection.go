@@ -20,43 +20,32 @@ import (
 type nodeRef struct {
 	turn  int
 	index int
-	// delta addresses ONE ROW of the form-delta adornment drawn beside the
-	// block at (turn, index) rather than the block itself: 0 is the block,
-	// n the n'th delta. It is a separate axis instead of another sentinel
-	// index because a delta row must sort immediately AFTER the block it
-	// explains, which a negative sentinel (see inquiryNode) cannot do, and
-	// because the axis cannot collide with a node index by construction.
+	// delta addresses one row of the block's form-delta adornment (0 is the
+	// block): a separate axis because a delta row must sort immediately after
+	// its block, which a negative sentinel cannot do.
 	delta int
 }
 
-// deltaRefOf is the i'th delta row of a block, 1-based. Every surface that
-// addresses a pseudonode goes through this, so the axis has one name.
+// deltaRefOf is the i'th delta row of a block, 1-based.
 func deltaRefOf(ref nodeRef, i int) nodeRef {
 	ref.delta = i
 	return ref
 }
 
-// blockOf is the block a ref belongs to: itself, or the block a delta row
-// adorns. d, t and Enter all act on the block, wherever the cursor stands
-// inside its list.
+// blockOf is the block a delta row adorns, or the ref itself.
 func blockOf(ref nodeRef) nodeRef {
 	ref.delta = 0
 	return ref
 }
 
-// nodeRefAt identifies the i'th node OF THE SLICE m by its position within the
-// whole TURN. m.From is the positional id of m.Nodes[0]: the wire guarantees
-// Nodes[i].ID == From+i: so a turn that reaches the renderer as several slices
-// still yields one distinct ref per node.
+// m.From is the positional id of m.Nodes[0] (the wire guarantees Nodes[i].ID ==
+// From+i), so a turn delivered in slices yields one ref per node.
 func nodeRefAt(m aria.Message, i int) nodeRef {
 	return nodeRef{turn: m.Turn, index: int(m.From) + i}
 }
 
-// blockRef is the ref of a composed row's block coordinate: a node's, or
-// the sentinel the turn's opening question takes. The question is TEXT ON
-// THE TURN and occupies no node index, so it needs a ref of its own: that
-// is what makes it select, copy and highlight exactly as a node does,
-// which is how it behaved when it WAS one.
+// The question is text on the turn and occupies no node index, so it takes the
+// inquiry sentinel.
 func blockRef(m aria.Message, block int) nodeRef {
 	if block == ldrender.BlockInquiry {
 		return nodeRef{turn: m.Turn, index: inquiryNode}
@@ -64,20 +53,12 @@ func blockRef(m aria.Message, block int) nodeRef {
 	return nodeRefAt(m, block)
 }
 
-// inquiryNode is the index a turn's opening question takes. The question is
-// TEXT ON THE TURN and occupies no node slot, but selection, copy and the
-// M-m expansion state all key on nodeRef: so it needs one, and it must not
-// collide with any node's. Node indices are positional and therefore never
-// negative (Nodes[i].ID == From+i), which makes a negative sentinel free of
-// collisions by construction rather than by convention; and pointLess then
-// orders the question ahead of every node of its own turn, which is exactly
-// where every renderer draws it.
+// Node indices are positional and never negative, so -1 cannot collide, and
+// pointLess orders the question ahead of every node of its turn.
 const inquiryNode = -1
 
-// inquiryPoint is the selection point of a slice's opening question, or false
-// when the slice carries none (only the slice with From == 0 does). The hash is
-// taken over a node bearing the question as prose, so the copy path can verify
-// the endpoint the same way it verifies a node.
+// Only the slice with From == 0 carries the question; the hash is over a prose
+// node bearing it, so the copy path verifies it like a node.
 func inquiryPoint(m aria.Message) (selectionPoint, bool) {
 	if m.Inquiry == "" {
 		return selectionPoint{}, false
@@ -88,12 +69,8 @@ func inquiryPoint(m aria.Message) (selectionPoint, bool) {
 	}, true
 }
 
-// deltaPoints are the selection points of a block's form-delta adornment:
-// one per row, in the order the rows draw. Each is a PSEUDONODE: it occupies
-// no node slot, selects and yanks like one, and hashes over its own row so
-// an endpoint notices when the state under it changed. A closed adornment
-// draws no rows and so offers no points: there is nothing on screen to
-// select.
+// Each delta row is a pseudonode hashed over its own row; a closed adornment draws
+// no rows and offers no points.
 func deltaPoints(ref nodeRef, deltas map[string]livedoc.FormDelta, open bool) []selectionPoint {
 	if len(deltas) == 0 || !open {
 		return nil
@@ -109,16 +86,11 @@ func deltaPoints(ref nodeRef, deltas map[string]livedoc.FormDelta, open bool) []
 	return out
 }
 
-// deltaNodeOf is one delta row as the one livedoc.Node shape everything else
-// speaks. WHOLE: the identity of a row is what it says, not how much of it
-// today's terminal had room for, and a row clipped to some nominal width
-// hashed and copied the same as one that differed past that column.
+// Whole: a row's identity is what it says, not what today's width had room for.
 func deltaNodeOf(row string) livedoc.Node {
 	return livedoc.Node{Type: livedoc.NodeProse, Markdown: row}
 }
 
-// inquiryNodeOf is the question as the one livedoc.Node shape everything else
-// speaks: what it hashes as, and what it copies as.
 func inquiryNodeOf(inquiry string) livedoc.Node {
 	return livedoc.Node{Type: livedoc.NodeProse, Markdown: inquiry}
 }
@@ -140,42 +112,32 @@ type selectionCopyPlan struct {
 	lo   selectionPoint
 	hi   selectionPoint
 	open *aria.Message
-	// held is the retained window's copy of everything the selection covers.
-	// A yank of what is on screen is answered from it, so the common case
-	// touches no wire and cannot fail on a page that comes back clipped.
+	// held is the window's copy of what the selection covers: a yank of what
+	// is on screen touches no wire.
 	held []aria.Message
-	// expanded is the fold state at the moment the yank was asked for. The
-	// copy follows the EYE: a folded tool yanks its output, an expanded one
-	// yanks the call and the result in full. Snapshotted into the plan so the
-	// copier: which may page history in the background: never reads the
-	// live map from another goroutine.
+	// expanded is snapshotted: the copier may page history in the background
+	// and must not read the live map from another goroutine.
 	expanded map[nodeRef]bool
-	// adorned is the same snapshot for the delta lists: a closed list is not
-	// on screen, so a selection that spans it copies the blocks and not the
-	// state behind them.
+	// adorned is the same snapshot for the delta lists.
 	adorned map[nodeRef]bool
 }
 
 type transcriptRow struct {
 	text string
 	ref  nodeRef
-	// mark is the block's address, carried by its first row and drawn against
-	// the right edge only while ^O is on. It rides the row rather than taking
-	// one of its own, so toggling it moves nothing and invalidates no cache.
+	// mark rides the row rather than taking one, so toggling ^O moves nothing
+	// and invalidates no cache.
 	mark string
-	// gutter is the glyph the row wears in the right gutter: a block's
-	// collapsed adornment marker. It rides the row for the same reason the
-	// mark does.
+	// gutter is the collapsed adornment marker, riding the row for the same reason.
 	gutter string
-	// spine is the row's place in its block's adornment snake, re-resolved at
-	// paint time because the snake's head follows the selection.
+	// spine is re-resolved at paint time because the snake's head follows the
+	// selection.
 	spine ldrender.SpineSlot
-	// chrome marks a row that carries its block's ref but none of its
-	// content. See ldrender.Row.Chrome.
+	// chrome: carries the block's ref but none of its content
+	// (ldrender.Row.Chrome).
 	chrome bool
 }
 
-// searchText is the row's text as the reader sees it.
 func (r transcriptRow) searchText() string {
 	return r.text
 }
@@ -194,11 +156,8 @@ type selectionMark struct {
 	active   bool
 }
 
-// nodeRefs is every selection stop in the retained window, in reading
-// order: each block, and immediately after it the rows of its adornment
-// while the adornment is open. Walking with ^N/^P therefore enters an open
-// list from above at its first row and from below at its last, and steps out
-// of it onto the block, where d, t and Enter act.
+// nodeRefs is every selection stop in reading order: each block, then the rows of
+// its open adornment.
 func (t *transcript) nodeRefs() []selectionPoint {
 	refs := make([]selectionPoint, 0)
 	appendMessage := func(m aria.Message) {
@@ -282,11 +241,8 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	}
 	cold := index < 0
 	if cold {
-		// COLD ENTRY SEEDS FROM THE VIEWPORT, NOT FROM THE WINDOW. The retained
-		// window holds far more than the screen shows, so len(refs)-1 was the
-		// last node of everything HELD, not the last one VISIBLE, and
-		// ensureSelectionVisible then yanked the page to it. Entering a
-		// selection must not move the page at all.
+		// Cold entry seeds from the viewport, not the window, and must not
+		// move the page.
 		t.stopFollowing()
 		t.buildIndex()
 		if ref, ok := t.viewportSeedRef(delta); ok {
@@ -299,8 +255,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		}
 	}
 	if index < 0 {
-		// Nothing on screen to seed from (an empty or unbuilt index). Fall back
-		// to the ends of the retained window, where this always began.
+		// Nothing on screen to seed from: fall back to the ends of the window.
 		if delta < 0 {
 			index = len(refs) - 1
 		} else {
@@ -308,10 +263,8 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		}
 	} else if !cold {
 		next := index + delta
-		// Clamped at the ends of the retained window. Moving past the top used to
-		// ARM the older-history fetch; the fetch is asked for by geometry now
-		// (see wantOlder), and the scroll-into-view below is what brings the
-		// viewport close enough to the floor to trigger one.
+		// Clamped at the ends of the window; the older-history fetch is
+		// asked for by geometry (wantOlder).
 		if next < 0 {
 			next = 0
 		} else if next >= len(refs) {
@@ -325,20 +278,16 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	t.selection.focus = refs[index]
 	t.selection.active = true
 	if cold {
-		// Seeded from what is on screen, so it is visible by construction and
-		// already detached. Calling ensureSelectionVisible here is precisely the
-		// scroll this exists to remove: a tall block whose head is on screen but
-		// whose tail runs off the bottom would drag the page down to it.
+		// Seeded from the screen: visible by construction, and
+		// ensureSelectionVisible would drag the page to a tall block's
+		// tail.
 		return
 	}
 	t.stopFollowing()
 	t.ensureSelectionVisible()
 }
 
-// clearSelection drops the selection and re-anchors the viewport on the line
-// it was showing. It used to trim the retained page set in the direction the
-// selection had been dragged: the pages are gone, and the store's own
-// retention (evictStale) is what bounds memory now.
+// clearSelection re-anchors the viewport on the line it was showing.
 func (t *transcript) clearSelection() {
 	anchor, within := t.viewportAnchor()
 	t.selection = nodeSelection{}
@@ -361,9 +310,7 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		open = &copy
 	}
-	// What the reader selected is what the reader can see, so the window holds
-	// it: take a copy now and the copy needs no wire at all. Only a selection
-	// dragged past what is retained falls back to reading pages.
+	// The window holds what is on screen: copy it now and the yank needs no wire.
 	var held []aria.Message
 	t.forEachMessage(func(m aria.Message) {
 		if m.Turn < lo.turn || m.Turn > hi.turn {
@@ -387,12 +334,8 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 	}, true
 }
 
-// nodeClipboardText is what `y` puts on the clipboard for one node. For a
-// tool it follows the EYE: what is on screen folded is the output, so that is
-// what a fold-state yank gives; an expanded node shows the call and its
-// result, so an expanded yank gives both, in full and untruncated. Copying
-// something the reader cannot see is how a yank ends up in a commit message
-// nobody meant to write.
+// The yank follows the eye: a folded tool yanks its output, an expanded one the
+// call and result in full.
 func nodeClipboardText(n livedoc.Node, expanded bool) string {
 	switch n.Type {
 	case livedoc.NodeTool:
@@ -416,9 +359,7 @@ func nodeClipboardText(n livedoc.Node, expanded bool) string {
 	}
 }
 
-// anchorAbove reports whether a addresses a position strictly later than b in
-// (turn, node) reading order: i.e. whether a backward walk sitting at a still
-// has ground to cover before it reaches b.
+// anchorAbove: a backward walk at a still has ground to cover before b.
 func anchorAbove(a, b aria.Anchor) bool {
 	return a.Turn > b.Turn || a.Turn == b.Turn && a.Node > b.Node
 }
@@ -437,9 +378,8 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 	if foundLo && foundHi {
 		return strings.Join(newest, "\n\n"), nil
 	}
-	// The window first: a selection the reader is looking at is already here,
-	// and a question is the case that proves it, being text on the turn that
-	// only the slice starting it carries.
+	// The window first: the question is text on the turn that only the slice
+	// starting it carries.
 	var fromWindow []string
 	for _, m := range plan.held {
 		text, lo, hi, err := selectedMessageText(m, plan, plan.expanded)
@@ -453,10 +393,8 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 		return strings.Join(append(fromWindow, newest...), "\n\n"), nil
 	}
 	newest = append(fromWindow, newest...)
-	// The walk is anchored on (turn, NODE), not on the turn alone. A turn too
-	// big for one page comes back in slices, and a turn-granular step lands on
-	// the turn BEFORE it: skipping every slice below the first, the head slice
-	// among them, which is the only one that carries the inquiry.
+	// Anchored on (turn, node): a turn-granular step lands on the turn before,
+	// skipping the head slice that carries the inquiry.
 	at := aria.Anchor{Turn: uint64(plan.hi.turn + 1)}
 	if plan.open != nil && plan.open.Turn == plan.hi.turn {
 		at = aria.Anchor{Turn: uint64(plan.open.Turn), Node: plan.open.From}
@@ -488,7 +426,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 		pages = append(pages, page)
 		next := aria.Anchor{Turn: uint64(messages[0].Turn), Node: messages[0].From}
 		if !anchorAbove(at, next) {
-			break // the read made no progress; nothing older is coming
+			break // no progress
 		}
 		at = next
 	}
@@ -506,9 +444,8 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[nodeRef]bool) ([]string, bool, bool, error) {
 	var out []string
 	foundLo, foundHi := false, false
-	// One rule for the question and for every node: the hash is taken only at an
-	// endpoint (it is the guard against the selection having moved under us),
-	// and the text is taken whenever the point falls inside the range.
+	// The hash is checked only at an endpoint; the text is taken whenever the
+	// point falls inside the range.
 	take := func(ref nodeRef, n livedoc.Node, text string) error {
 		if ref == plan.lo.nodeRef || ref == plan.hi.nodeRef {
 			hash := nodeHash(n)
@@ -563,10 +500,8 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[no
 	return out, foundLo, foundHi, nil
 }
 
-// toolClipboardFull is an expanded tool node's yank: the call, then its
-// result, both whole. The arguments come from the decoded map when it exists
-// and from the streamed prefix when it does not, so yanking a call that is
-// still being written gives what has arrived rather than nothing.
+// Arguments come from the decoded map when it exists, else the streamed prefix, so
+// a call still being written yields what has arrived.
 func toolClipboardFull(n livedoc.Node) string {
 	var b strings.Builder
 	b.WriteString(n.Name)
@@ -587,7 +522,6 @@ func pointLess(a, b selectionPoint) bool {
 	if a.index != b.index {
 		return a.index < b.index
 	}
-	// A block's delta rows come after the block they explain, in order.
 	return a.delta < b.delta
 }
 
@@ -617,32 +551,22 @@ func nodeHash(n livedoc.Node) uint64 {
 	return h.Sum64()
 }
 
-// FOLD GESTURES. Three keys, one subject: the BLOCK. `t` opens a tool's
-// body, `d` opens the form-delta list beside a block, Enter opens both, and
-// each is inert where it has nothing to show. A cursor standing on a delta
-// row is a cursor on that block's state, so the gestures reach the block
-// from inside its own list, which is what makes the list escapable with the
-// keys that opened it.
+// Fold gestures act on the block: `t` opens a tool body, `d` the delta list, Enter
+// both; a cursor on a delta row reaches its block.
 
-// foldTarget is one thing a gesture flips: a ref, the map that holds its fold
-// state, and which of the two it is, so a gesture can say what it did.
 type foldTarget struct {
 	state  map[nodeRef]bool
 	ref    nodeRef
 	deltas bool
 }
 
-// foldSubjects are the blocks under the selection: every block inside the
-// range, plus the parent of any selected delta row. tools are the ones with
-// a body to open, adorned the ones with state to show.
+// foldSubjects: every block in the range plus the parent of any selected delta row.
 func (t *transcript) foldSubjects() (tools, adorned []nodeRef) {
 	marks := t.selectionMarks()
 	if len(marks) == 0 {
 		return nil, nil
 	}
-	// A block counts as selected when it is selected itself or when a delta
-	// row of its own is: blockOf answers both in one pass, where a scan per
-	// candidate was the selection size times the window.
+	// blockOf answers both cases in one pass.
 	blocks := make(map[nodeRef]bool, len(marks))
 	for ref, m := range marks {
 		if m.selected {
@@ -680,16 +604,11 @@ func (t *transcript) foldSubjects() (tools, adorned []nodeRef) {
 	return tools, adorned
 }
 
-// toggleSelectedNodes is Enter: open (or re-close) everything the selection
-// covers, body and state together. It was toggleSelectedTools, and the
-// rename is the point: what a block can reveal is a property it reports, not
-// a synonym for "is a tool".
 func (t *transcript) toggleSelectedNodes() bool {
 	tools, adorned := t.foldSubjects()
 	return t.toggleFolds(targets(tools, t.expanded, false), targets(adorned, t.adorned, true))
 }
 
-// toggleSelectedTools is `t`: bodies only, and only where there is a body.
 func (t *transcript) toggleSelectedTools() bool {
 	tools, _ := t.foldSubjects()
 	return t.toggleFolds(targets(tools, t.expanded, false))
@@ -703,15 +622,10 @@ func targets(refs []nodeRef, state map[nodeRef]bool, deltas bool) []foldTarget {
 	return out
 }
 
-// toggleExpansion is one node's body, for the mouse: a second click on a
-// block opens it.
 func (t *transcript) toggleExpansion(refs []nodeRef) bool {
 	return t.toggleFolds(targets(refs, t.expanded, false))
 }
 
-// toggleFolds flips sets of blocks between their collapsed and open renders.
-// Shared by Enter, t and a second click, so the viewport discipline below
-// is written once.
 func (t *transcript) toggleFolds(sets ...[]foldTarget) bool {
 	var targets []foldTarget
 	for _, set := range sets {
@@ -741,13 +655,8 @@ func (t *transcript) toggleFolds(sets ...[]foldTarget) bool {
 		t.dropTurnsRows(dirty)
 		t.repairSelection()
 	}
-	// EXPANDING GROWS UPWARD. Leaving t.offset alone pins the viewport TOP, and
-	// because the offset is an ABSOLUTE line index the new rows shove everything
-	// after the expansion down and off the bottom: the half of the screen the
-	// reader is actually anchored on. anchorBelow pins the tail of the change
-	// instead, so every node at or after it keeps its screen row and the earlier
-	// content is what scrolls away. See anchorBelow for why that is the right way
-	// round.
+	// Expanding grows upward: anchorBelow pins the tail of the change so every
+	// node at or after it keeps its screen row.
 	if t.follow {
 		toggle()
 		t.ensureSelectionVisible()
@@ -755,21 +664,15 @@ func (t *transcript) toggleFolds(sets ...[]foldTarget) bool {
 		return true
 	}
 	if !t.anchorBelow(targets[len(targets)-1].ref, toggle) {
-		// No span on one side of the change, so there is no honest delta to
-		// apply. Keep the old behaviour rather than guess.
+		// No span on one side of the change: no honest delta to apply.
 		t.ensureSelectionVisible()
 	}
 	markFold(targets, open, started)
-	// Deliberately NOT ensureSelectionVisible on the anchored path. The focus is
-	// the block that just grew; scrolling to reveal its far end is exactly the
-	// downward growth this replaced, and on a 200-line expansion it throws the
-	// reader into the middle of the output with the anchor pushed off-screen.
+	// Not ensureSelectionVisible on the anchored path: revealing the far end
+	// of a 200-line expansion is the downward growth this replaced.
 	return true
 }
 
-// markFold records what a fold gesture did and what it cost: the rows it
-// invalidated are recomposed on the next frame, so this is the keystroke half
-// of the span the frame mark closes.
 func markFold(targets []foldTarget, open bool, started time.Time) {
 	if !mark.Enabled() {
 		return
@@ -786,12 +689,8 @@ func markFold(targets []foldTarget, open bool, started time.Time) {
 		"ms", float64(time.Since(started).Microseconds())/1000)
 }
 
-// repairSelection brings a selection back onto a row that still exists. A
-// list closed under the cursor leaves the cursor addressing a pseudonode
-// that draws nothing: the block it adorned is where the reader is, and is
-// where d pressed again re-opens the list. The selection collapses onto that
-// block rather than keeping an endpoint nobody can see, and it re-derives the
-// point through selectRef so the copier's hash guard stays honest.
+// A list closed under the cursor collapses the selection onto its block,
+// re-derived through selectRef so the hash guard stays honest.
 func (t *transcript) repairSelection() {
 	if !t.selection.active {
 		return
@@ -805,14 +704,7 @@ func (t *transcript) repairSelection() {
 	t.selectRef(blockOf(t.selection.focus.nodeRef), false)
 }
 
-// ensureSelectionVisible scrolls the focused node into the body, if it is not
-// already there.
-//
-// THE HEADER COVERS ROWS, so "in the body" is not "past the offset". The
-// sticky question stands ON the first rows of the viewport rather than pushing
-// them down, and a selection scrolled to the offset landed UNDER it: walking
-// a delta list upward with ^P looked like a cursor that stopped moving. The
-// floor is the offset plus whatever the header hides.
+// The sticky header covers rows, so the floor is the offset plus what the header hides.
 func (t *transcript) ensureSelectionVisible() {
 	if !t.selection.active {
 		return
@@ -824,17 +716,14 @@ func (t *transcript) ensureSelectionVisible() {
 	}
 	body, _ := t.layout(len(t.footLines()))
 	if head := t.headRows(); span.first < t.offset+head {
-		// One pass, not a fixed point: scrolling up may retire the header
-		// (the question's own rows reach the top), and the row is only ever
-		// further from the chrome for it.
+		// One pass: scrolling up can only move the row further from the chrome.
 		t.offset = max(span.first-head, 0)
 	} else if span.last >= t.offset+body {
 		t.offset = span.last - body + 1
 	}
 }
 
-// plainNodeRow is a node row in its undecorated resting state: clipped to the
-// pane width, and NOTHING ELSE.
+// Clipped to the pane width and nothing else.
 func plainNodeRow(row string, width int) string {
 	if width < 1 {
 		width = 1
@@ -842,14 +731,7 @@ func plainNodeRow(row string, width int) string {
 	return clipToWidth(row, width)
 }
 
-// decorateNodeRow paints one row's selection cue, which is a WASH AND NOTHING
-// ELSE: the row is lifted one step off the pane, the focused block one step
-// further. There used to be a slim bar in the left margin as well; it said
-// what the wash already says, in a column the delta snake also wanted.
-//
-// A chrome row of a selected block (a snake's anchor, a tool's header) is
-// washed like any other: the band a reader sees must be the block, not the
-// half of it that happens to be text.
+// A wash and nothing else; a chrome row of a selected block is washed like any other.
 func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	if !mark.selected && !mark.active {
 		return plain
@@ -857,8 +739,6 @@ func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	return washRow(plain, width, term.NodeWash(mark.active))
 }
 
-// washRow lifts a whole row, carried to the right edge so the band has no
-// ragged end.
 func washRow(plain string, width int, wash string) string {
 	if wash == "" {
 		return plain
@@ -866,15 +746,8 @@ func washRow(plain string, width int, wash string) string {
 	return wash + washBody(plain, wash) + washFill(plain, width) + "\x1b[0m"
 }
 
-// washFill carries the wash from the end of the row to the right edge, and
-// draws NOTHING when the row already reaches it.
-//
-// THE ERASE WOULD WIPE THE LAST COLUMN. The pager runs with autowrap off, so
-// writing the pane's last column leaves the cursor standing ON it, and an
-// erase-to-end-of-line then clears the cell just written: the adornment's
-// gutter glyph, or the last character of a row that happens to fill the pane.
-// appendRowUpdate learned this from a tmux replay and erases before it writes;
-// a wash cannot do that, so it asks first.
+// Autowrap is off, so a row reaching the last column leaves the cursor on it and
+// \x1b[K would wipe that cell: no erase when the row already reaches the edge.
 func washFill(plain string, width int) string {
 	if displayWidth(plain) >= width {
 		return ""
@@ -882,9 +755,7 @@ func washFill(plain string, width int) string {
 	return "\x1b[K"
 }
 
-// washBody re-emits the wash after every reset the row carries, so
-// highlighting survives inline styling (dim, cyan, a glyph in the margin)
-// instead of ending at the first reset inside the row.
+// The wash is re-emitted after every reset, so inline styling cannot end it.
 func washBody(plain, wash string) string {
 	body := plain
 	for _, r := range []string{"\x1b[0m", "\x1b[m"} {
@@ -893,10 +764,8 @@ func washBody(plain, wash string) string {
 	return body
 }
 
-// below reports whether every end of the selection sits in the turns below
-// base: the prefix a fork shares with its ancestor, where a node reference
-// means the same node in both arias. An inactive selection is below
-// everything, because there is nothing to point anywhere.
+// below: every end sits in the prefix a fork shares with its ancestor, where a ref
+// means the same node in both.
 func (s nodeSelection) below(base int) bool {
 	if !s.active {
 		return true

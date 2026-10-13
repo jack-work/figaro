@@ -1,26 +1,11 @@
 package cli
 
-// FROM A ROW ON SCREEN TO A RUNE IN THE LOG.
-//
-// A node's rows are glamour's: reflowed, wrapped, indented, bulleted, with
-// `**bold**` turned into bold and the asterisks gone. render.Row carries no
-// provenance, and glamour cannot be asked for any. So the mapping is
-// recovered after the fact by walking the node's source and its rendered
-// rows together, rune by rune:
-//
-//	a row rune that matches the next source rune (within a short lookahead)
-//	CONSUMES it and records the source index it stood for;
-//	a row rune that matches nothing nearby was INSERTED by the renderer
-//	(a bullet, a gutter, an indent) and records nothing;
-//	source runes the walk skipped over were syntax the renderer ATE.
-//
-// The result is, per row, the source rune each visible column stands for.
-// Where alignment is lost the row is marked and the coordinate WIDENS to the
-// nearest aligned boundary; it never guesses a narrower range than it can
-// justify, and the status row says when it widened.
-//
-// This is plan §6 option A, built directly rather than after option C: the
-// per-rune walk yields the per-line map as a by-product.
+// render.Row carries no provenance, so the mapping from a rendered row to the
+// source is recovered by walking source and rows together rune by rune: a row rune
+// matching the next source rune (within a short lookahead) consumes it; one
+// matching nothing nearby was inserted by the renderer; skipped source runes were
+// syntax. Where alignment is lost the coordinate widens to the nearest aligned
+// boundary and says so.
 
 import (
 	"strings"
@@ -33,38 +18,27 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// sourceRow is one rendered row's provenance.
 type sourceRow struct {
-	// cols[c] is the source rune index the visible column c stands for, or
-	// -1 for an inserted cell. Wide runes occupy two columns and repeat.
+	// cols[c] is the source rune index for visible column c, or -1 for an
+	// inserted cell; wide runes repeat.
 	cols []int
-	// start and end bound the source runes this row covers, half open.
-	// aligned is false when too few of the row's runes found a home, in which
-	// case start and end are not to be trusted.
+	// start and end are not to be trusted when aligned is false.
 	start, end int
 	aligned    bool
 }
 
-// alignLookahead bounds how far past the cursor a row rune may look for its
-// source rune. Markdown syntax between two visible runes is short: "**",
-// "](", a backtick, a heading's "## ". A row rune that is further than this
-// from anything matching is an insertion, not a skip.
+// Markdown syntax between two visible runes is short; further than this is an
+// insertion, not a skip.
 const alignLookahead = 48
 
-// alignFloor is the share of a row's visible non-space runes that must find
-// a source rune for the row to count as aligned.
 const alignFloor = 0.6
 
-// alignRun is the shortest run of CONSECUTIVE matches a row must contain to
-// anchor. Single-rune hits are how a chrome row ("· prose", a tool's header)
-// finds its letters scattered through a paragraph; text that was rendered
-// from the source runs alongside it.
+// Single-rune hits are how a chrome row finds its letters scattered through a
+// paragraph.
 const alignRun = 4
 
-// alignRows walks source and rows together. rows are the rendered rows with
-// escapes still in; they are stripped here. A row that does not align does
-// not move the cursor, so chrome between two text rows cannot push the
-// second one off its place.
+// A row that does not align does not move the cursor, so chrome cannot push the
+// next text row off its place.
 func alignRows(source string, rows []string) []sourceRow {
 	src := []rune(source)
 	out := make([]sourceRow, len(rows))
@@ -79,8 +53,6 @@ func alignRows(source string, rows []string) []sourceRow {
 	return out
 }
 
-// alignRow aligns one row from cursor and reports where the cursor would
-// stand after it.
 func alignRow(src []rune, cursor int, plain string) (sourceRow, int) {
 	sr := sourceRow{start: -1, end: -1}
 	matched, tried, run, longest := 0, 0, 0, 0
@@ -89,8 +61,8 @@ func alignRow(src []rune, cursor int, plain string) (sourceRow, int) {
 		hit := -1
 		if !unicode.IsSpace(r) {
 			tried++
-			// Source whitespace between two visible runes is not a break in
-			// the run: the renderer folds it, it does not delete it.
+			// Source whitespace between two visible runes is folded,
+			// not deleted: not a break in the run.
 			next := cursor
 			for next < len(src) && unicode.IsSpace(src[next]) {
 				next++
@@ -142,13 +114,8 @@ func runeCells(r rune) int {
 	return 1
 }
 
-// ---------------------------------------------------------------------------
-// The node's side: which text, at which coordinate.
-
-// nodeQuoteSource is the text a node's rows were rendered from and the log
-// coordinate that text lives at. base is the rune offset of `text` within
-// the block (a clamped tool tail starts partway in). ok is false for a node
-// that cannot be quoted, with why saying so in one sentence.
+// base is the rune offset of text within the block (a clamped tool tail starts
+// partway in).
 func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, base int, why string) {
 	if ref.delta > 0 {
 		return "", quote.Coord{}, 0, "form state is not quotable: it is state, not something anyone said"
@@ -178,9 +145,8 @@ func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, 
 		if styleFor(n.Name).Body != "" {
 			return "", quote.Coord{}, 0, "this tool shows an argument, not its result, and arguments are not quotable yet"
 		}
-		// The rows are the output's TAIL when the node is folded, and the
-		// producer already cut its own head off: base is both distances,
-		// back to the block the coordinate names.
+		// The rows are the output's tail when folded, and the producer
+		// already cut its own head: base is both distances.
 		src := n.Src[len(n.Src)-1]
 		raw := strings.TrimRight(n.Output, "\n")
 		shown, _ := tailOutput(raw, t.toolCap(ref))
@@ -194,9 +160,7 @@ func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, 
 	}
 }
 
-// messageOf finds the slice that starts turn. It walks the window from that
-// turn's anchor, not from its start: a coordinate over a wide range must not
-// cost a copy of every message between its ends.
+// Walks from the turn's anchor, not the window's start.
 func (t *transcript) messageOf(turn int) (aria.Message, bool) {
 	var found aria.Message
 	ok := false
@@ -223,8 +187,6 @@ func (t *transcript) messageOf(turn int) (aria.Message, bool) {
 	return aria.Message{}, false
 }
 
-// nodeNear is nodeAt without the walk from the window's start: it begins at
-// the node's own anchor.
 func (t *transcript) nodeNear(ref nodeRef) (livedoc.Node, bool) {
 	var node livedoc.Node
 	ok := false
@@ -257,8 +219,6 @@ func (t *transcript) nodeNear(ref nodeRef) (livedoc.Node, bool) {
 	return livedoc.Node{}, false
 }
 
-// toolCap is the output tail the pager draws for a tool, which is what a
-// selection over a tool's rows can address.
 func (t *transcript) toolCap(ref nodeRef) int {
 	if t.expanded[ref] {
 		return nodeOutputUnlimited
@@ -266,7 +226,6 @@ func (t *transcript) toolCap(ref nodeRef) int {
 	return nodeBashCapDefault
 }
 
-// nodeRows are the cached rows that belong to ref, in order, as painted.
 func (t *transcript) nodeRows(ref nodeRef) []string {
 	var out []string
 	for k := t.entriesOfTurn(ref.turn); k >= 0 && k < len(t.index.entries); k++ {
@@ -286,21 +245,13 @@ func (t *transcript) nodeRows(ref nodeRef) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------------
-// The selection's coordinate.
-
-// visualRange resolves the visual selection to a quote range. note is set
-// when the range was widened past an unaligned row; err is one sentence when
-// it cannot be resolved at all.
+// note is set when the range was widened past an unaligned row.
 func (t *transcript) visualRange() (r quote.Range, note string, err string) {
 	if !t.visual.highlighted() {
 		return quote.Range{}, "", "no highlight (v or V at the cursor to start one)"
 	}
-	// AN END THAT HAS PHASED OUT OF THE RETAINED WINDOW IS A REFUSAL. The
-	// pager evicts messages far behind what it shows; the wash keeps painting
-	// to the window's edge so the reader sees the range is still open, but a
-	// coordinate for text this process no longer holds would be a guess.
-	// Scrolling up pages it back in, and the sentence says so.
+	// An end evicted from the retained window is a refusal, not a guess;
+	// scrolling up pages it back in.
 	if _, ok := t.visualLineOf(t.visual.anchor); !ok {
 		return quote.Range{}, "", "the start of the selection is no longer in memory (scroll up to page it back in)"
 	}
@@ -344,10 +295,8 @@ func (t *transcript) visualRange() (r quote.Range, note string, err string) {
 	return r, note, ""
 }
 
-// resolveEnd turns one endpoint into a coordinate and a rune offset. For the
-// start it is the first rune the endpoint's cell stands for; for the end,
-// one past the last. widened reports that the row was not aligned and the
-// offset came from a neighbour.
+// Start: the first rune the cell stands for; end: one past the last. widened: the
+// offset came from a neighbour row.
 func (t *transcript) resolveEnd(p visualPoint, s visualSpan, isStart bool) (quote.Coord, int, bool, string) {
 	text, at, base, why := t.nodeQuoteSource(p.ref)
 	if why != "" {
@@ -367,8 +316,8 @@ func (t *transcript) resolveEnd(p visualPoint, s visualSpan, isStart bool) (quot
 			}
 			return at, base + row.end, false, ""
 		}
-		// Char mode: the column's own rune, snapping an inserted cell to the
-		// next (start) or previous (end) real one on the row.
+		// Char mode: an inserted cell snaps to the next (start) or
+		// previous (end) real rune.
 		if off, inclusive, ok := colToRune(row, p.col, isStart); ok {
 			if isStart || !inclusive {
 				return at, base + off, false, ""
@@ -376,7 +325,6 @@ func (t *transcript) resolveEnd(p visualPoint, s visualSpan, isStart bool) (quot
 			return at, base + off + 1, false, ""
 		}
 	}
-	// Unaligned: widen outward to the nearest aligned row of this node.
 	if isStart {
 		for i := p.row - 1; i >= 0; i-- {
 			if aligned[i].aligned {
@@ -393,12 +341,8 @@ func (t *transcript) resolveEnd(p visualPoint, s visualSpan, isStart bool) (quot
 	return at, base + total, true, ""
 }
 
-// colToRune is the source rune a column stands for, snapping past inserted
-// cells toward the range's interior. For an end, inclusive says the rune is
-// part of the range (the cell stood on it or on padding after it); an end
-// that sits in the indent BEFORE a row's first rune names that rune as the
-// exclusive bound instead, so the row contributes nothing rather than
-// everything.
+// An end in the indent before a row's first rune names that rune as the exclusive
+// bound, so the row contributes nothing rather than everything.
 func colToRune(row sourceRow, col int, isStart bool) (off int, inclusive, ok bool) {
 	if len(row.cols) == 0 {
 		return 0, false, false
@@ -430,8 +374,6 @@ func colToRune(row sourceRow, col int, isStart bool) (off int, inclusive, ok boo
 	return 0, false, false
 }
 
-// visualCoordinate is the qualified token for the selection, or an error
-// sentence: what `:<,>` expands to and what Y yanks.
 func (t *transcript) visualCoordinate() (token, note, err string) {
 	r, note, err := t.visualRange()
 	if err != "" {
@@ -440,19 +382,15 @@ func (t *transcript) visualCoordinate() (token, note, err string) {
 	return quote.Format(r), note, ""
 }
 
-// ---------------------------------------------------------------------------
-// Surviving a reflow. A visualPoint is (node, row, column) at ONE width; a
-// resize re-wraps every node and the same row index now names different
-// text. The point is pinned to a source rune before the reflow and found
-// again after it, so the wash follows the text rather than the row number.
+// A visualPoint is (node, row, column) at one width; across a resize it is pinned
+// to a source rune and found again.
 
 type visualPin struct {
 	p   visualPoint
 	off int  // source rune offset the cell stood for
-	ok  bool // false: the node could not be aligned; keep (row, col) as is
+	ok  bool // false: the node could not be aligned; keep (row, col)
 }
 
-// visualPin resolves p's cell to a source rune at the current width.
 func (t *transcript) visualPin(p visualPoint) visualPin {
 	pin := visualPin{p: p}
 	text, _, _, why := t.nodeQuoteSource(p.ref)
@@ -470,8 +408,6 @@ func (t *transcript) visualPin(p visualPoint) visualPin {
 	return pin
 }
 
-// visualUnpin finds the cell that stands for the pinned rune at the width
-// the index now holds, or the nearest cell after it.
 func (t *transcript) visualUnpin(pin visualPin) visualPoint {
 	p := pin.p
 	rows := t.nodeRows(p.ref)

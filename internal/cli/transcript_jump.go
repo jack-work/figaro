@@ -12,12 +12,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE `:` JUMP: go to a coordinate.
-
-// jumpTarget is a parsed coordinate. It is deliberately NOT an aria.Anchor:
-// Anchor{Turn: 0} means UNSET on the wire, and `:0` means the opposite of
-// unset. Keeping the sentinel in the parser's own type is what stops a
-// backward read from being handed a zero anchor and returning the tail.
+// Not an aria.Anchor: Anchor{Turn: 0} means unset on the wire, and `:0` means the
+// beginning; a zero anchor handed to a backward read returns the tail.
 type jumpTarget struct {
 	start   bool // ":0": the lowest turn that exists
 	turn    int
@@ -43,8 +39,7 @@ func (tg jumpTarget) String() string {
 	return "turn " + strconv.Itoa(tg.turn)
 }
 
-// anchor is the coordinate to read at to bring the target in. The beginning is
-// the zero anchor, which a forward read answers with the head of the aria.
+// The beginning is the zero anchor, which a forward read answers with the head.
 func (tg jumpTarget) anchor() aria.Anchor {
 	if tg.start {
 		return aria.Anchor{}
@@ -53,7 +48,7 @@ func (tg jumpTarget) anchor() aria.Anchor {
 		return aria.Anchor{Turn: uint64(tg.turn + 1)}
 	}
 	if tg.travel < 0 {
-		// Backward, before this turn: the read excludes its anchor.
+		// A backward read excludes its anchor.
 		return aria.Anchor{Turn: uint64(tg.turn)}
 	}
 	a := aria.Anchor{Turn: uint64(tg.turn)}
@@ -63,7 +58,6 @@ func (tg jumpTarget) anchor() aria.Anchor {
 	return a
 }
 
-// missing is what the footer says when the target cannot exist.
 func (tg jumpTarget) missing() string {
 	if tg.start {
 		return "nothing here to jump to"
@@ -71,9 +65,8 @@ func (tg jumpTarget) missing() string {
 	return "no " + tg.String() + " in this aria"
 }
 
-// parseJumpTarget reads the text of the jump box. It accepts `<turn>` and
-// `<turn>.<node>`, with the node allowed to be the inquiry sentinel (-1), and
-// nothing else, a coordinate is not an expression.
+// Accepts `<turn>` and `<turn>.<node>` (node may be the inquiry sentinel -1); a
+// coordinate is not an expression.
 func parseJumpTarget(s string) (jumpTarget, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -85,8 +78,7 @@ func parseJumpTarget(s string) (jumpTarget, error) {
 		return jumpTarget{}, fmt.Errorf("%q is not a turn", turnText)
 	}
 	if turn == 0 {
-		// Turn 0 is the reserved sentinel; it is never an address, so ":0.n"
-		// is a mistake worth naming rather than silently reading as ":0".
+		// Turn 0 is never an address, so ":0.n" is named as a mistake.
 		if hasNode {
 			return jumpTarget{}, fmt.Errorf("turn 0 is not an address; :0 alone means the beginning")
 		}
@@ -102,16 +94,14 @@ func parseJumpTarget(s string) (jumpTarget, error) {
 	return jumpTarget{turn: turn, node: node, hasNode: true}, nil
 }
 
-// jumpReach is what the retained window can do about a target right now.
 type jumpReach uint8
 
 const (
-	jumpHere   jumpReach = iota // it is loaded: land on it
+	jumpHere   jumpReach = iota // loaded: land on it
 	jumpRead                    // fetch the target page
-	jumpAbsent                  // it cannot exist; say so
+	jumpAbsent                  // cannot exist
 )
 
-// transcriptJump retains the target and origin while a page is in flight.
 type transcriptJump struct {
 	target jumpTarget
 	asked  *aria.Anchor
@@ -119,11 +109,6 @@ type transcriptJump struct {
 	follow bool
 }
 
-// ---------------------------------------------------------------------------
-// The keymap actions. One row each; see keymap.go.
-// ---------------------------------------------------------------------------
-
-// pagerCommandBox is ':': open the command line.
 func pagerCommandBox(t *transcript) {
 	t.box, t.jumpNote = boxCommand, ""
 	t.cmdline.reset()
@@ -131,23 +116,18 @@ func pagerCommandBox(t *transcript) {
 }
 
 func boxCancel(t *transcript) {
-	// ESC IS THE LADDER OUT, one rung per press, and it takes back the most
-	// recent thing first: a running history search, then the completion menu's
-	// offer, then the box itself. That is what a shell does, and it is why the
-	// same key can be "toggle command mode off" without ever discarding a line
-	// you were still looking at.
+	// Esc takes back the most recent thing first: history search, then the
+	// menu, then the box.
 	if t.editor().searching() {
 		t.editor().endSearch()
 		return
 	}
 	if t.menu != nil {
-		// Esc from the menu is "never mind": the word goes back to what was
-		// typed before the menu started choosing for you.
 		t.dismissCompletion()
 		return
 	}
-	// THE DRAWER HAS ONE MORE RUNG: insert drops into normal mode, which is
-	// where Esc then puts it away. Vim's ladder, on the key everyone presses.
+	// The drawer has one more rung: insert drops into normal mode, where Esc
+	// puts it away.
 	if t.box == boxComposer {
 		composerNormalEnter(t)
 		return
@@ -155,10 +135,7 @@ func boxCancel(t *transcript) {
 	boxClose(t)
 }
 
-// boxClose puts the box away. A COMMAND LINE GOES WITH IT -- ^C at a shell
-// prompt does not leave its text lying around either -- but a DRAFT STAYS:
-// it may be a page of pasted text, and losing one to a stray Esc is not a
-// trade any reader would make. cmdAbort is the key that spends it.
+// A command line goes with the box; a draft stays (cmdAbort spends it).
 func boxClose(t *transcript) {
 	if t.box == boxComposer {
 		t.composerClose(false)
@@ -167,22 +144,17 @@ func boxClose(t *transcript) {
 	t.box = boxNone
 	t.cmdline.reset()
 	t.clearCompletions()
-	// A COMMAND LINE OPENED FROM THE DRAWER GOES BACK TO IT. ':' over a draft
-	// is a detour, not a dismissal: the draft is still what the reader is
-	// writing, and losing the drawer under them would be the surprise.
+	// A command line opened from the drawer goes back to it.
 	t.composerResume()
 }
 
 func boxBackspace(t *transcript) {
-	// While a history search runs, Backspace shortens the NEEDLE: that is what
-	// it does at a shell, and it is the only way to back out of a failed
-	// search without abandoning it.
+	// During a history search Backspace shortens the needle.
 	if t.editor().searching() {
 		t.editor().searchBackspace()
 		return
 	}
 	if t.menu != nil {
-		// Backspace inside the word keeps the menu and widens it again.
 		t.editor().endSearch()
 		t.editor().backspace()
 		t.refilterCompletion()
@@ -191,13 +163,8 @@ func boxBackspace(t *transcript) {
 	t.edit(func(e *lineEditor) { e.backspace() })
 }
 
-// edit runs one editing motion and drops the completion list: any change to
-// the line makes the last Tab's candidates a lie.
-//
-// IT ALSO ENDS A HISTORY SEARCH, keeping what the search found. readline's
-// rule: any key that is not part of the search accepts the line it landed on
-// and then acts. Putting it here rather than in each action is what makes that
-// true of every binding, including ones added later.
+// edit ends a history search (readline: a key outside the search accepts the line,
+// then acts) and drops the completion list.
 func (t *transcript) edit(fn func(*lineEditor)) {
 	e := t.editor()
 	e.endSearch()
@@ -205,8 +172,6 @@ func (t *transcript) edit(fn func(*lineEditor)) {
 	t.clearCompletions()
 }
 
-// The emacs/readline motions, one row each in the keymap. Names are readline's
-// because the fingers pressing these keys learned them there.
 func cmdHome(t *transcript)      { t.edit(func(e *lineEditor) { e.home() }) }
 func cmdEnd(t *transcript)       { t.edit(func(e *lineEditor) { e.end() }) }
 func cmdLeft(t *transcript)      { t.edit(func(e *lineEditor) { e.left() }) }
@@ -234,10 +199,7 @@ func cmdPrefixPrev(t *transcript)    { t.edit(func(e *lineEditor) { e.historyPre
 func cmdPrefixNext(t *transcript)    { t.edit(func(e *lineEditor) { e.historyPrefix(1) }) }
 func cmdYankLastArg(t *transcript)   { t.edit(func(e *lineEditor) { e.yankLastArg() }) }
 
-// cmdYankPop is M-y. It must NOT go through edit(): edit ends a search and
-// clears completions, neither of which matters here, but it would also be the
-// wrong place to hide the one rule this key has -- it only follows a yank, and
-// the editor is what knows whether the last thing that happened was one.
+// Not through edit(): only the editor knows whether the last action was a yank.
 func cmdYankPop(t *transcript) {
 	if !t.editor().yankPop() {
 		return
@@ -245,9 +207,7 @@ func cmdYankPop(t *transcript) {
 	t.clearCompletions()
 }
 
-// cmdUndo is ^_ : one step back, and it says so when there is nothing left,
-// because a key that silently does nothing is indistinguishable from a key
-// that is not bound.
+// Says so when nothing is left: a silent key is indistinguishable from an unbound one.
 func cmdUndo(t *transcript) {
 	t.editor().endSearch()
 	t.clearCompletions()
@@ -256,12 +216,8 @@ func cmdUndo(t *transcript) {
 	}
 }
 
-// cmdDeleteFwd is ^D, and it carries the ONE rule that made unbinding detach
-// inside this box safe: on an EMPTY line it closes the box instead of deleting
-// nothing. That is bash's ^D exactly -- delete the character under the cursor,
-// or leave when there is no line -- and it keeps the escape hatch one press
-// deeper rather than removing it: ^D on an empty box closes it, and the next
-// ^D detaches the session as it always did.
+// bash's ^D: delete under the cursor, or close the box when the line is empty; the
+// next ^D detaches.
 func cmdDeleteFwd(t *transcript) {
 	if t.editor().searching() {
 		t.editor().endSearch()
@@ -274,16 +230,13 @@ func cmdDeleteFwd(t *transcript) {
 	t.edit(func(e *lineEditor) { e.deleteForward() })
 }
 
-// cmdAbort is ^G, and ^C: abandon the line, keep the pager. readline's ^G.
-// Inside a search it puts back the line the search was started from, which is
-// the only way to say "no, never mind" to a search that has walked far away.
+// readline's ^G: inside a search it restores the line the search started from.
 func cmdAbort(t *transcript) {
 	if t.editor().searching() {
 		t.editor().abortSearch()
 		return
 	}
-	// ^C AND ^G SPEND THE DRAFT. Esc only puts the drawer away; these two say
-	// "no", which at a shell prompt means the line is gone.
+	// ^C and ^G spend the draft; Esc only puts the drawer away.
 	if t.box == boxComposer {
 		t.composerClose(true)
 		return
@@ -291,33 +244,19 @@ func cmdAbort(t *transcript) {
 	boxClose(t)
 }
 
-// cmdRedraw is ^L: readline's clear-screen. The pager owns the whole grid, so
-// clearing it means painting it again from nothing -- which is also the repair
-// for a screen some other program has scribbled on.
+// Repaints from nothing: the repair for a screen another program scribbled on.
 func cmdRedraw(t *transcript) {
 	t.prev = nil
 	t.render()
 }
 
-// cmdSearchPrev / cmdSearchNext are ^R / ^S: the incremental history search.
 func cmdSearchPrev(t *transcript) {
 	t.clearCompletions()
 	t.editor().searchAgain(-1)
 }
 
-// cmdSearchNext is ^S in the command line, and SUBMIT in the composer.
-//
-// THE REASON IS WINDOWS. Alt+Enter is the portable submit everywhere else,
-// and on Windows it never arrives: conhost and Windows Terminal both claim it
-// for their own fullscreen toggle, so the one chord that sends a draft is
-// unreachable on that platform. ^S is what internal/cli/compose.go already
-// chose for the same problem ("Ctrl-S is for the ones that eat both"), so the
-// two composers in this program agree.
-//
-// It costs the composer readline's forward i-search, which the COMMAND line
-// keeps: a box with a prompt history worth walking and a box with a draft in
-// it are different boxes, which is the same reason Enter differs between them.
-// ^S is safe in a terminal this program put in raw mode: IXON is off, so the
+// In the composer ^S submits: Alt+Enter never arrives on Windows (conhost and
+// Windows Terminal claim it for fullscreen). Safe in raw mode: IXON is off, so the
 // byte arrives instead of pausing the tty.
 func cmdSearchNext(t *transcript) {
 	if t.box == boxComposer {
@@ -328,17 +267,13 @@ func cmdSearchNext(t *transcript) {
 	t.editor().searchAgain(1)
 }
 
-// ^P/^N are HISTORY when there is no completion menu and MENU MOVEMENT when
-// there is -- which is what a shell does, and what Gluck asked for: the menu
-// takes the keys while it is up and the history has them back the moment it is
-// not.
+// ^P/^N move the menu while it is up, and walk history when it is not.
 func cmdHistPrev(t *transcript) {
 	if t.menu != nil {
 		t.cycleCompletion(-1)
 		return
 	}
-	// IN A DRAFT THEY ARE LINE MOTIONS, emacs's. A draft has lines to move
-	// between and no past worth walking; a command line is the opposite.
+	// In a draft they are line motions.
 	if t.box == boxComposer {
 		t.edit(func(e *lineEditor) { e.lineUp() })
 		return
@@ -358,14 +293,8 @@ func cmdHistNext(t *transcript) {
 	t.edit(func(e *lineEditor) { e.historyNext() })
 }
 
-// boxLiteral is the box's fallback: a printable key is text, not a binding -
-// which is what makes '/' an ordinary character in here, as ':' is in the
-// search box. The keymap does not enumerate "every printable byte"; see
-// searchLiteral, whose contract this mirrors exactly.
-//
-// While a history search runs the same bytes grow the NEEDLE instead. One
-// acceptor, two destinations: that is the whole of what ^R changes about
-// typing, and it is why ^R needs no mode of the pager's own.
+// A printable key is text, not a binding; during a history search the same bytes
+// grow the needle instead (mirrors searchLiteral).
 func (t *transcript) boxLiteral(b byte) {
 	e := t.editor()
 	if e.searching() {
@@ -377,8 +306,7 @@ func (t *transcript) boxLiteral(b byte) {
 	if !e.insertByte(b) {
 		return
 	}
-	// TYPING WHILE THE MENU IS UP NARROWS IT, the way fish's pager does. A
-	// space finishes the word, and with it the menu: Tab asks again.
+	// Typing narrows the open menu; a space finishes the word and the menu.
 	if t.menu != nil && b != ' ' {
 		t.refilterCompletion()
 		return
@@ -386,9 +314,8 @@ func (t *transcript) boxLiteral(b byte) {
 	t.clearCompletions()
 }
 
-// searchRune keeps the needle ASCII-simple: the editor's UTF-8 reassembly
-// belongs to the line, and a needle built one byte at a time out of a
-// multi-byte rune would search for half a character.
+// A needle built one byte at a time from a multi-byte rune would search for half a
+// character.
 func searchRune(b byte) (rune, bool) {
 	if b < 0x20 || b >= 0x7f {
 		return 0, false
@@ -396,20 +323,11 @@ func searchRune(b byte) (rune, bool) {
 	return rune(b), true
 }
 
-// boxAccept is Enter in the ':' box, which is a COMMAND LINE with a
-// coordinate shorthand -- exactly the arrangement vim has, where `:12` goes to
-// line 12 and `:w` writes. A bare coordinate is handled here, because it needs
-// nothing but the window; anything else is handed to the owner of this
-// transcript, which is the only thing in the process holding an RPC client.
-//
-// The transcript therefore knows nothing about the command language. It knows
-// "this is not a coordinate" and who to give it to.
+// A bare coordinate is handled here; anything else goes to the owner of the
+// transcript, which holds the RPC client.
 func boxAccept(t *transcript) { boxEnter(t) }
 
-// boxAcceptSnap is Alt+Enter (or Ctrl+Enter): the same submit, then SNAP TO
-// CURRENT: leave visual mode and re-follow the live tail, which is where a
-// reader who has just dispatched a question wants to be when the answer
-// lands.
+// Submit, then leave visual mode and re-follow the live tail.
 func boxAcceptSnap(t *transcript) {
 	if t.box == boxComposer {
 		composerSubmit(t)
@@ -418,18 +336,11 @@ func boxAcceptSnap(t *transcript) {
 	t.boxSubmit(true)
 }
 
-// boxSubmit runs the box's line. SUBMITTING LEAVES VISUAL MODE AND KEEPS THE
-// PLACE: the viewport stays, the last search survives (so n keeps working),
-// and only the cursor and highlight go, spent or not. A coordinate jump is
-// not a submission in that sense and leaves the mode alone.
+// Submitting leaves visual mode and keeps the place: viewport and last search
+// survive. A coordinate jump leaves the mode alone.
 func (t *transcript) boxSubmit(snap bool) {
-	// Enter DURING a search accepts what the search found, and runs it: the
-	// line on screen is the line, and a reader who has found it and pressed
-	// Enter has said so.
 	t.cmdline.endSearch()
-	// ENTER ON A CHOSEN CANDIDATE TAKES IT and leaves the line to be finished,
-	// as fish's pager does: the menu was a question, and Enter answers it. With
-	// nothing chosen, Enter runs the line as typed.
+	// Enter on a chosen candidate takes it and leaves the line to be finished.
 	if t.acceptCompletion() {
 		return
 	}
@@ -450,9 +361,8 @@ func (t *transcript) boxSubmit(snap bool) {
 		t.noteOrClear("commands need a live session")
 		return
 	}
-	// A RANGE BEFORE THE VERB is the selection as an argument. It is expanded
-	// HERE, under the render lock, because the coordinate is read off the
-	// index and the selection, both of which the next keystroke may move.
+	// The range is expanded here, under the render lock: the coordinate is
+	// read off the index and the selection, which the next keystroke may move.
 	expanded, note, err := t.expandRange(text)
 	if err != "" {
 		t.noteOrClear(err)
@@ -470,10 +380,8 @@ func (t *transcript) boxSubmit(snap bool) {
 	t.command(expanded)
 }
 
-// expandRange rewrites `<,>verb … -- text` into `verb … -- <lt.block:a-b>! text`.
-// The placeholder stands where vim's '<,'> does; the qualified token goes
-// where the daemon reads it, at the head of the prompt. A qualified token
-// typed by hand in the placeholder's position is moved the same way.
+// expandRange rewrites `<,>verb ... -- text` into `verb ... -- <lt.block:a-b>!
+// text`; a qualified token typed by hand is moved the same way.
 func (t *transcript) expandRange(text string) (string, string, string) {
 	var token, note string
 	rest := text
@@ -503,10 +411,8 @@ func (t *transcript) expandRange(text string) (string, string, string) {
 	if rest == "" {
 		return "", "", "range: a verb must follow it (send, fork)"
 	}
-	// The prompt is everything after the first `--`, AND IT IS THE READER'S
-	// BYTES: the token is spliced in front of it, never re-joined around it.
-	// Splitting on fields and joining collapsed the spaces inside a quoted
-	// argument, so `<...>!send -- "a  b"` sent `a b`.
+	// The prompt is the reader's bytes: the token is spliced in front, never
+	// re-joined through Fields, which collapsed quoted spaces.
 	head, tail, ok := cutVerbBoundary(rest)
 	if !ok {
 		return "", "", "range: the prompt must follow `--` (" + strings.Fields(rest)[0] + " -- <text>)"
@@ -514,9 +420,7 @@ func (t *transcript) expandRange(text string) (string, string, string) {
 	return head + " " + token + tail, note, ""
 }
 
-// cutVerbBoundary splits a command line at its first bare `--`: the head is
-// the verb and its flags, the tail is the prompt exactly as it was typed,
-// leading space and all.
+// The tail keeps its leading space.
 func cutVerbBoundary(line string) (head, tail string, ok bool) {
 	for i := 0; i+1 < len(line); i++ {
 		if line[i] != '-' || line[i+1] != '-' {
@@ -532,7 +436,6 @@ func cutVerbBoundary(line string) (head, tail string, ok bool) {
 	return "", "", false
 }
 
-// startJump selects a resident target or requests its page.
 func (t *transcript) startJump(tg jumpTarget) {
 	t.search = nil
 	t.abandonJump("")
@@ -550,7 +453,6 @@ func (t *transcript) startJump(tg jumpTarget) {
 	t.stopFollowing()
 }
 
-// jumpAdvance resolves a pending target against the resident window.
 func (t *transcript) jumpAdvance() {
 	if t.jump == nil {
 		return
@@ -576,7 +478,6 @@ func (t *transcript) jumpSeek() (aria.Anchor, int, bool) {
 	return at, dir, true
 }
 
-// jumpReachOf returns a target's row and selection when its head is resident.
 func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 	if tg.travel != 0 {
 		tg.turn += tg.travel
@@ -624,8 +525,6 @@ func (t *transcript) firstRefOfTurn(turn int) nodeRef {
 	return ref
 }
 
-// landJump snaps the viewport so the target's first row sits at the top, and
-// puts the selection on it so the landing is visibly identified.
 func (t *transcript) landJump(line int, ref nodeRef) {
 	t.wantTop = false
 	t.jumpNote = ""
@@ -643,9 +542,8 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	t.wantTop = false
 	var point selectionPoint
 	found := false
-	// A delta row's point is taken from the list it belongs to, so its hash
-	// is the row's own and the copier's guard still catches state that moved
-	// under the reader.
+	// A delta row's hash is the row's own, so the copier's guard catches state
+	// that moved.
 	takeDelta := func(block nodeRef, deltas map[string]livedoc.FormDelta) {
 		for _, p := range deltaPoints(block, deltas, true) {
 			if p.nodeRef == ref {
@@ -689,9 +587,7 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	return true
 }
 
-// abandonJump gives up and puts the reader back where they were, exactly as
-// finishSearch does for a search that found nothing. An empty note clears the
-// walk silently (a second ':' replacing the first).
+// An empty note clears the walk silently.
 func (t *transcript) abandonJump(note string) {
 	if t.jump == nil {
 		t.noteOrClear(note)
@@ -705,7 +601,6 @@ func (t *transcript) abandonJump(note string) {
 	t.pruneCaches()
 }
 
-// noteOrClear puts a note in the message pit, or closes it when empty.
 func (t *transcript) noteOrClear(note string) {
 	t.jumpNote = note
 	if note == "" {
@@ -717,9 +612,6 @@ func (t *transcript) noteOrClear(note string) {
 	t.pit.showNote(note)
 }
 
-// jumpFooter is what a WALK IN PROGRESS says while it runs. The box itself and
-// its failures are drawn by the pit now (see transcript.inputDrawerLines and
-// noteOrClear); this is only the transient "jumping to turn 12…".
 func (t *transcript) jumpFooter() (string, bool) {
 	if t.jump != nil {
 		return "jumping to " + t.jump.target.String() + "…", true
@@ -727,20 +619,14 @@ func (t *transcript) jumpFooter() (string, bool) {
 	return "", false
 }
 
-// cmdPaste is ^V in the command box: the system clipboard, folded onto one
-// line. It reverses the "deliberately unbound" note in keymap.go, and the
-// reversal is Gluck's: that argument was that quoting had no use in a box
-// where every printable byte is already literal text, and paste is a different
-// verb with an obvious one.
+// ^V: the system clipboard, folded onto one line in a command box.
 func cmdPaste(t *transcript) {
 	text, err := clipboardRead()
 	if err != nil {
 		t.noteOrClear("paste: " + err.Error())
 		return
 	}
-	// A DRAFT KEEPS THE LINES. Folding a paragraph onto one line is right for
-	// a command box, where a newline cannot be represented at all, and wrong
-	// for the box that exists to hold one.
+	// A draft keeps the lines.
 	if t.box == boxComposer {
 		t.editor().endSearch()
 		t.clearCompletions()
@@ -753,7 +639,6 @@ func cmdPaste(t *transcript) {
 	t.edit(func(e *lineEditor) { e.insert(text) })
 }
 
-// jumpTurn uses the selected inquiry, or the turn at the viewport's top.
 func (t *transcript) jumpTurn(dir int) {
 	t.settle()
 	turn := 0

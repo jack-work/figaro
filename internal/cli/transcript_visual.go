@@ -1,30 +1,10 @@
 package cli
 
-// VISUAL MODE: a block cursor over the transcript's rows, and a highlight
-// anchored from it.
-//
-// `v` (or `V`) puts a CURSOR on the rows: one cell, moved by hjkl and the
-// arrow cluster, the viewport following it. Pressing `v` again anchors a
-// character-wise highlight at the cursor; from then on moving the cursor
-// extends the wash between anchor and cursor. `V` anchors line-wise. The
-// same key again turns the highlight off and leaves the cursor; Esc leaves
-// the mode entirely. This is vim's shape with one difference: vim always
-// has a cursor, and the pager did not, so the first press supplies one.
-//
-// Node selection (^N/^P) addresses whole blocks and is what Enter and the
-// copier act on; the visual highlight addresses what the reader can see
-// between two points, and is what `y` yanks and what `:<,>` hands to a
-// command. The two cannot both be active: entering one drops the other.
-//
-// THE POINTS ARE NOT LINE NUMBERS. Line space is rebuilt every frame and a
-// page landing above the viewport shifts every absolute line, so a point
-// held as a line would drift under the reader's hand. It is held as (node,
-// row within that node, column), which survives a rebuild for the same
-// reason a node selection does, and is turned back into a line only when a
-// frame is painted or a motion is asked for. Chrome rows (a voice header, a
-// rule, a blank) belong to no node and so cannot hold the cursor: the
-// motions step over them, which is also the honest answer for a highlight,
-// since chrome has no source to quote.
+// Visual mode: v/V put a cursor on the rows, the next press anchors a highlight.
+// Node selection and the cursor are exclusive. A point is held as (node, row
+// within node, column), never a line number: line space is rebuilt every frame and
+// a page landing above shifts every absolute line. Chrome rows belong to no node
+// and cannot hold the cursor.
 
 import (
 	"strings"
@@ -41,36 +21,29 @@ type visualKind uint8
 
 const (
 	visualNone visualKind = iota // no highlight: the cursor alone
-	visualChar                   // v: from a column on one row to a column on another
+	visualChar                   // v: column to column
 	visualLine                   // V: whole rows
 )
 
-// visualPoint is the cursor, or one end of a highlight.
 type visualPoint struct {
 	ref nodeRef
-	row int // index among the rows that belong to ref, in this width
+	row int // index among the rows that belong to ref, at this width
 	col int // display column; only visualChar reads it
 }
 
 type visualSelection struct {
-	on     bool        // the mode is up and the cursor is drawn
-	cursor visualPoint // where the reader is
-	kind   visualKind  // visualNone until v/V anchors a highlight
-	anchor visualPoint // the other end of the highlight, when kind != visualNone
+	on     bool
+	cursor visualPoint
+	kind   visualKind
+	anchor visualPoint // the other end, when kind != visualNone
 }
 
-// active reports whether the mode is up (a cursor is showing).
 func (s visualSelection) active() bool { return s.on }
 
-// highlighted reports whether a range is marked, which is what y, Y and
-// `:<,>` spend.
 func (s visualSelection) highlighted() bool { return s.on && s.kind != visualNone }
 
-// focus is the moving end of the highlight: the cursor.
 func (s visualSelection) focus() visualPoint { return s.cursor }
 
-// visualSpan is the per-frame form: the ordered endpoints as absolute lines,
-// so a row can answer "am I inside, and which columns" by comparison.
 type visualSpan struct {
 	kind           visualKind
 	loLine, hiLine int
@@ -79,9 +52,8 @@ type visualSpan struct {
 
 func (s visualSpan) active() bool { return s.kind != visualNone }
 
-// cols reports the column range [from, to) a row at absolute line i paints,
-// and whether it paints at all. Line mode washes the whole row; char mode
-// washes from loCol on the first line to hiCol inclusive on the last.
+// Line mode washes the whole row; char mode from loCol on the first line to hiCol
+// inclusive on the last.
 func (s visualSpan) cols(i, width int) (from, to int, ok bool) {
 	if !s.active() || i < s.loLine || i > s.hiLine {
 		return 0, 0, false
@@ -100,18 +72,12 @@ func (s visualSpan) cols(i, width int) (from, to int, ok bool) {
 		to = width
 	}
 	if from >= to {
-		// The focus stands on a column past the row's end (a shorter row
-		// under a wider one). One cell still marks where the cursor is.
+		// The focus is past the row's end: one cell still marks the cursor.
 		to = from + 1
 	}
 	return from, to, true
 }
 
-// ---------------------------------------------------------------------------
-// Between points and lines.
-
-// visualLineOf resolves a point to its absolute line in the current index, or
-// false when the node has left the retained window.
 func (t *transcript) visualLineOf(p visualPoint) (int, bool) {
 	for k := t.entriesOfTurn(p.ref.turn); k >= 0 && k < len(t.index.entries); k++ {
 		e := &t.index.entries[k]
@@ -135,9 +101,7 @@ func (t *transcript) visualLineOf(p visualPoint) (int, bool) {
 	return 0, false
 }
 
-// entriesOfTurn is the index of the first entry of turn, or -1. Entries are
-// in turn order, so this is a binary search rather than a walk: a highlight
-// over a wide range resolves its ends without visiting the nodes between.
+// Binary search: entries are in turn order.
 func (t *transcript) entriesOfTurn(turn int) int {
 	es := t.index.entries
 	lo, hi := 0, len(es)
@@ -155,8 +119,6 @@ func (t *transcript) entriesOfTurn(turn int) int {
 	return -1
 }
 
-// visualPointAt is the inverse: the point standing on absolute line i, or
-// false when that line belongs to no node (a separator, a gap, chrome).
 func (t *transcript) visualPointAt(i, col int) (visualPoint, bool) {
 	k := t.index.entryAt(i)
 	if k < 0 {
@@ -180,9 +142,8 @@ func (t *transcript) visualPointAt(i, col int) (visualPoint, bool) {
 	return visualPoint{ref: ref, row: n, col: col}, true
 }
 
-// visualSpan is the frame's view of the selection. An endpoint whose node has
-// left the window resolves to the window's edge on that side, so the wash
-// never vanishes while the other end is still on screen.
+// An endpoint whose node left the window resolves to the window's edge, so the
+// wash never vanishes while the other end is on screen.
 func (t *transcript) visualSpan() visualSpan {
 	if !t.visual.highlighted() {
 		return visualSpan{}
@@ -206,8 +167,6 @@ func (t *transcript) visualSpan() visualSpan {
 	return s
 }
 
-// edgeToward picks the window edge an evicted endpoint stands for: before the
-// surviving line when its turn is earlier, after it otherwise.
 func (t *transcript) edgeToward(p visualPoint, other int) (int, int) {
 	k := t.index.entryAt(other)
 	if k >= 0 && p.ref.turn < t.index.entries[k].turn {
@@ -216,16 +175,10 @@ func (t *transcript) edgeToward(p visualPoint, other int) (int, int) {
 	return t.index.total - 1, t.w
 }
 
-// ---------------------------------------------------------------------------
-// Entering, moving, leaving.
-
-// visualCursorLine is the cursor's absolute line, or false when its node has
-// left the window.
 func (t *transcript) visualCursorLine() (int, bool) { return t.visualLineOf(t.visual.cursor) }
 
-// pressVisual is v or V. The first press puts the cursor up; the next anchors
-// a highlight of that kind at the cursor; the same kind again drops the
-// highlight and keeps the cursor; the other kind switches the highlight.
+// First press: cursor; next: anchor a highlight of that kind; same kind again:
+// drop it; other kind: switch.
 func (t *transcript) pressVisual(kind visualKind) {
 	if !t.visual.on {
 		t.enterVisual()
@@ -241,10 +194,7 @@ func (t *transcript) pressVisual(kind visualKind) {
 	}
 }
 
-// enterVisual puts the cursor up. It starts on the first row of the node
-// selection when there is one (the reader has already pointed at something),
-// else on the top row of the bottommost node on screen: the newest thing in
-// view, which is what a reader who just watched a reply land wants to mark.
+// Starts on the node selection when there is one, else the bottommost node on screen.
 func (t *transcript) enterVisual() {
 	seed, ok := t.visualSeed()
 	if t.selection.active {
@@ -262,7 +212,6 @@ func (t *transcript) enterVisual() {
 	t.visual = visualSelection{on: true, cursor: seed}
 }
 
-// visualSeed is where the cursor starts; see enterVisual.
 func (t *transcript) visualSeed() (visualPoint, bool) {
 	t.buildIndex()
 	if t.selection.active {
@@ -273,13 +222,11 @@ func (t *transcript) visualSeed() (visualPoint, bool) {
 		}
 	}
 	top, bottom := t.viewportLines()
-	// The bottommost node that starts on screen, then its first row.
 	for i := bottom - 1; i >= top; i-- {
 		p, ok := t.visualPointAt(i, 0)
 		if !ok {
 			continue
 		}
-		// Walk up to this node's first row inside the viewport.
 		first := i
 		for j := i - 1; j >= top; j-- {
 			q, ok := t.visualPointAt(j, 0)
@@ -296,9 +243,8 @@ func (t *transcript) visualSeed() (visualPoint, bool) {
 
 func (t *transcript) leaveVisual() { t.visual = visualSelection{} }
 
-// visualMove shifts the cursor by delta lines, stepping over rows that belong
-// to no node, and keeps it on screen. The column is kept across lines and
-// clamped to the row it lands on.
+// Steps over rows that belong to no node; the column is kept and clamped to the
+// landing row.
 func (t *transcript) visualMove(delta int) {
 	if !t.visual.active() || delta == 0 {
 		return
@@ -320,7 +266,7 @@ func (t *transcript) visualMove(delta int) {
 		target = t.index.total - 1
 	}
 	// Land on a node row: past the target in the direction of travel, then
-	// back toward it, then give up and stay.
+	// back toward it.
 	land := -1
 	for i := target; i >= 0 && i < t.index.total; i += step {
 		if _, ok := t.visualPointAt(i, 0); ok {
@@ -345,9 +291,8 @@ func (t *transcript) visualMove(delta int) {
 	t.visualEnsureVisible(land)
 }
 
-// visualMoveCol shifts the cursor's column, clamped to the row's visible
-// width. The column is a cursor property, so it moves in every kind: a
-// line-wise highlight ignores it, and the cursor still has to be somewhere.
+// The column moves in every kind: a line-wise highlight ignores it, but the cursor
+// is still somewhere.
 func (t *transcript) visualMoveCol(delta int) {
 	if !t.visual.active() {
 		return
@@ -364,8 +309,7 @@ func (t *transcript) visualClampCol() {
 	if !ok {
 		return
 	}
-	// The row's text, not its padding: a cursor parked in the blank tail
-	// of a short row points at nothing.
+	// The row's text, not its padding.
 	w := runewidth.StringWidth(strings.TrimRight(render.StripEscapes(t.lineText(i)), " "))
 	if w == 0 {
 		t.visual.cursor.col = 0
@@ -374,7 +318,6 @@ func (t *transcript) visualClampCol() {
 	}
 }
 
-// visualJump moves the cursor to the first or last node row of the window.
 func (t *transcript) visualJump(toEnd bool) {
 	if !t.visual.active() {
 		return
@@ -387,22 +330,14 @@ func (t *transcript) visualJump(toEnd bool) {
 	}
 }
 
-// visualEnsureVisible scrolls the viewport the least it must so that line i
-// is on screen.
 func (t *transcript) visualEnsureVisible(i int) {
 	body, _ := t.layout(len(t.footLines()))
-	// THE HEADER COVERS ROWS, for the block cursor exactly as for the
-	// selection (ensureSelectionVisible): the floor is the offset plus what
-	// the sticky question hides, or k up a wrapped answer parks the cursor
-	// under the chrome and looks stuck.
+	// The sticky header covers rows: the floor is the offset plus what it hides.
 	if i >= t.offset+body {
 		t.offset = i - body + 1
 	}
-	// THE HEADER IS A FUNCTION OF THE OFFSET: a scroll up can bring a
-	// question's pin INTO view as well as retire it (measured: offset 24
-	// with no header, the cursor to line 21, offset 21 now under a
-	// three-row header). So the floor is re-read after every move, until
-	// the cursor clears whatever stands at the offset it landed on.
+	// The header is a function of the offset: a scroll up can bring a
+	// question's pin into view, so re-read the floor after every move.
 	for pass := 0; pass < 3; pass++ {
 		head := t.headRows()
 		if i >= t.offset+head {
@@ -412,7 +347,6 @@ func (t *transcript) visualEnsureVisible(i int) {
 	}
 }
 
-// lineText is the undecorated row at absolute line i.
 func (t *transcript) lineText(i int) string {
 	k := t.index.entryAt(i)
 	if k < 0 {
@@ -426,11 +360,6 @@ func (t *transcript) lineText(i int) string {
 	return e.rows[rel].text
 }
 
-// ---------------------------------------------------------------------------
-// What the selection holds.
-
-// visualText is the selected text as the reader sees it: rows joined by
-// newlines, columns narrowed in char mode, escapes stripped.
 func (t *transcript) visualText() string {
 	s := t.visualSpan()
 	if !s.active() {
@@ -450,7 +379,6 @@ func (t *transcript) visualText() string {
 	return b.String()
 }
 
-// sliceColumns cuts plain (no escapes) to display columns [from, to).
 func sliceColumns(plain string, from, to int) string {
 	col := 0
 	start, end := -1, len(plain)
@@ -471,46 +399,31 @@ func sliceColumns(plain string, from, to int) string {
 	return plain[start:end]
 }
 
-// ---------------------------------------------------------------------------
-// Painting.
+// The wash is re-emitted after every reset inside the range; with colour off the
+// row is returned untouched.
 
-// The wash is re-emitted after every reset inside the range, as
-// decorateNodeRow does for a whole row, so inline styling cannot end it
-// early; a row shorter than `to` is padded so the paint reaches the column
-// the reader's eye expects. The colours are the palette's (term.SelectWash,
-// term.Cursor); with colour off the row is returned untouched.
-
-// cursorCell paints the block cursor over display column col. restore is
-// the body to re-arm after the cell when the cursor stands inside a wash,
-// since the cell's own close is a full reset; washTo bounds it, so a cursor
-// on the wash's last cell does not re-open the wash past its end.
+// restore re-arms the wash after the cell (the cell's close is a full reset);
+// washTo bounds it so a cursor on the wash's last cell does not re-open it.
 func cursorCell(row string, col int, restore string, washTo int) string {
 	return paintColumns(row, col, col+1, term.Cursor(), restore, washTo)
 }
 
-// washColumns paints the highlight; see paintColumns.
 func washColumns(row string, from, to int) string {
 	return paintColumns(row, from, to, term.SelectWash(), "", 0)
 }
 
-// paintColumns is the one column painter: body is a bare SGR body applied
-// over [from, to), re-armed after every reset the row carries inside it,
-// and closed with a reset followed by restore while the column is still
-// short of restoreUntil.
 func paintColumns(row string, from, to int, body, restore string, restoreUntil int) string {
 	const reset = "\x1b[0m"
 	if from >= to || body == "" {
 		return row
 	}
-	// under is the row's OWN rendition where the paint started: the sequences
-	// still in force, in order, since its last full reset. Closing the paint
-	// with a bare reset dropped them, so washing three columns of a red line
-	// left the rest of the line default-coloured.
+	// under is the row's own rendition since its last reset: closing with a
+	// bare reset would leave the rest of a coloured line default.
 	var under []string
 	closeAt := func(col int) string {
 		out := strings.Join(under, "")
-		// The wash IS one of the row's own sequences once washColumns has
-		// run, so re-arming it after replaying them would emit it twice.
+		// After washColumns the wash is one of the row's own sequences: do
+		// not emit it twice.
 		if restore != "" && col < restoreUntil && !strings.HasSuffix(out, restore) {
 			out += restore
 		}
@@ -528,12 +441,10 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 				isReset := row[i:j] == reset || row[i:j] == "\x1b[m"
 				switch {
 				case col < to:
-					// The row's own styling inside the range (a reset, or a
-					// heading's background) must not end the paint: re-arm
-					// after every escape while the range continues.
+					// Re-arm after every escape while the
+					// range continues.
 					b.WriteString(body)
 				case isReset:
-					// At the edge the row's reset is the close.
 					if restore != "" && col < restoreUntil {
 						b.WriteString(restore)
 					}
@@ -545,9 +456,8 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 		}
 		r, size := utf8.DecodeRuneInString(row[i:])
 		w := runewidth.RuneWidth(r)
-		// A rune whose cells INTERSECT the range is painted whole: a wide
-		// rune cannot be half painted, and a cursor standing on its second
-		// cell is standing on it.
+		// A rune whose cells intersect the range is painted whole: a wide
+		// rune cannot be half painted.
 		if !inside && col+w > from && col < to {
 			b.WriteString(body)
 			inside = true
@@ -566,8 +476,8 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 			inside = true
 		}
 		if pad := from; pad > col {
-			// Nothing of the row reaches the range: the reader still sees the
-			// cursor cell, so pad up to it and paint one cell.
+			// Nothing of the row reaches the range: pad up to it and
+			// paint one cell.
 			b.WriteString(reset)
 			b.WriteString(strings.Repeat(" ", pad-col))
 			b.WriteString(body)
@@ -576,8 +486,7 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 		b.WriteString(strings.Repeat(" ", to-col))
 	}
 	if inside {
-		// At the END of the row there is nothing left to wear the rendition,
-		// and every painted row must finish in the default one (compactRow).
+		// Every painted row must finish in the default rendition (compactRow).
 		b.WriteString(reset)
 		if restore != "" && col < restoreUntil {
 			b.WriteString(restore)
@@ -586,9 +495,7 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 	return b.String()
 }
 
-// foldSGR keeps the row's own rendition: the SGR sequences in force since its
-// last full reset, in order. A non-SGR escape is not a rendition and a full
-// reset clears what came before it.
+// A non-SGR escape is not a rendition; a full reset clears what came before.
 func foldSGR(under []string, esc string) []string {
 	if len(esc) < 3 || esc[1] != '[' || esc[len(esc)-1] != 'm' {
 		return under
@@ -599,22 +506,13 @@ func foldSGR(under []string, esc string) []string {
 	return append(under, esc)
 }
 
-// ---------------------------------------------------------------------------
-// The vim motions. Each moves the cursor; with a highlight anchored, moving
-// the cursor is what extends it. Word motions treat the row's visible text
-// as vim does (a word is a run of word characters or a run of other
-// non-blanks) and cross rows the way vim crosses lines: w at the end of a
-// row lands on the next row's first word, b at the start of a row on the
-// previous row's last.
+// The vim motions: a word is a run of word characters or of other non-blanks, and
+// w/b cross rows as vim crosses lines.
 
-// visualRowPlain is the cursor row's text without escapes, as runes and
-// display columns.
 func (t *transcript) visualRowPlain(line int) []rune {
 	return []rune(strings.TrimRight(render.StripEscapes(t.lineText(line)), " "))
 }
 
-// colOfRune and runeOfCol translate between rune indices and display columns
-// on one row; wide runes take two columns.
 func colOfRune(row []rune, i int) int {
 	col := 0
 	for k := 0; k < i && k < len(row); k++ {
@@ -635,7 +533,7 @@ func runeOfCol(row []rune, col int) int {
 	return len(row)
 }
 
-// wordClass is vim's: 0 blank, 1 word (letters, digits, _), 2 other.
+// vim's: 0 blank, 1 word (letters, digits, _), 2 other.
 func wordClass(r rune) int {
 	switch {
 	case r == ' ' || r == '\t':
@@ -646,7 +544,6 @@ func wordClass(r rune) int {
 	return 2
 }
 
-// visualWord is w (dir>0) or b (dir<0); toEnd makes w into e.
 func (t *transcript) visualWord(dir int, toEnd bool) {
 	if !t.visual.active() {
 		return
@@ -663,7 +560,6 @@ func (t *transcript) visualWord(dir int, toEnd bool) {
 	}
 	switch {
 	case dir > 0 && !toEnd:
-		// w: past the current run, then past blanks.
 		if i < len(row) {
 			c := wordClass(row[i])
 			for i < len(row) && wordClass(row[i]) == c {
@@ -674,7 +570,6 @@ func (t *transcript) visualWord(dir int, toEnd bool) {
 			}
 		}
 		if i >= len(row) {
-			// Next row's first non-blank.
 			if next, ok := t.visualNextRow(line, 1); ok {
 				t.visual.cursor, _ = t.visualPointAt(next, 0)
 				t.visualEnsureVisible(next)
@@ -683,7 +578,6 @@ func (t *transcript) visualWord(dir int, toEnd bool) {
 			return
 		}
 	case dir > 0 && toEnd:
-		// e: to the end of the current (or next) run.
 		i++
 		for i < len(row) && wordClass(row[i]) == 0 {
 			i++
@@ -702,8 +596,7 @@ func (t *transcript) visualWord(dir int, toEnd bool) {
 			i++
 		}
 	default:
-		// b: back over blanks, then to the start of the run. Nothing but
-		// blanks behind the cursor means the row's start, which hops.
+		// b: nothing but blanks behind the cursor hops to the previous row.
 		j := i - 1
 		for j > 0 && wordClass(row[j]) == 0 {
 			j--
@@ -732,8 +625,7 @@ func (t *transcript) visualWord(dir int, toEnd bool) {
 	t.visualClampCol()
 }
 
-// visualNextRow is the nearest node row past line in direction dir that
-// carries text: a word motion has nothing to land on in a blank row.
+// A word motion has nothing to land on in a blank row.
 func (t *transcript) visualNextRow(line, dir int) (int, bool) {
 	for i := line + dir; i >= 0 && i < t.index.total; i += dir {
 		if _, ok := t.visualPointAt(i, 0); ok && len(t.visualRowPlain(i)) > 0 {
@@ -743,7 +635,6 @@ func (t *transcript) visualNextRow(line, dir int) (int, bool) {
 	return 0, false
 }
 
-// visualRowStart is 0; visualFirstNonBlank is ^; visualRowEnd is $.
 func (t *transcript) visualRowStart() {
 	if t.visual.active() {
 		t.visual.cursor.col = 0
@@ -785,8 +676,6 @@ func (t *transcript) visualRowEnd() {
 	t.visual.cursor.col = colOfRune(row, len(row)-1)
 }
 
-// visualScreen is H (where<0), M (0) or L (>0): the top, middle or bottom
-// node row of the viewport.
 func (t *transcript) visualScreen(where int) {
 	if !t.visual.active() {
 		return
@@ -816,8 +705,6 @@ func (t *transcript) visualScreen(where int) {
 	}
 }
 
-// visualParagraph is } (dir>0) or {: the first row of the next or previous
-// node, which is the paragraph a transcript has.
 func (t *transcript) visualParagraph(dir int) {
 	if !t.visual.active() {
 		return
@@ -830,7 +717,6 @@ func (t *transcript) visualParagraph(dir int) {
 	cur := t.visual.cursor.ref
 	i := line
 	if dir < 0 {
-		// To this node's first row; if already there, the previous node's.
 		for {
 			prev, ok := t.visualNextRow(i, -1)
 			if !ok {
@@ -839,7 +725,6 @@ func (t *transcript) visualParagraph(dir int) {
 			p, _ := t.visualPointAt(prev, 0)
 			if p.ref != cur {
 				if i == line {
-					// Already on the first row: go to the previous node's first.
 					cur = p.ref
 					i = prev
 					continue
@@ -869,9 +754,7 @@ func (t *transcript) visualParagraph(dir int) {
 	t.visualEnsureVisible(i)
 }
 
-// visualLandSearch puts the cursor on a search hit: line, and the column the
-// match begins at. A search in visual mode moves the cursor, and with a
-// highlight up that extends the wash to the match.
+// With a highlight up, landing on a hit extends the wash to it.
 func (t *transcript) visualLandSearch(line int, q string) {
 	if !t.visual.active() {
 		return
@@ -890,7 +773,6 @@ func (t *transcript) visualLandSearch(line int, q string) {
 	t.visualEnsureVisible(line)
 }
 
-// below is nodeSelection.below for the visual cursor and its highlight.
 func (s visualSelection) below(base int) bool {
 	if !s.on {
 		return true
@@ -898,13 +780,7 @@ func (s visualSelection) below(base int) bool {
 	return base > 0 && s.cursor.ref.turn < base && (s.kind == visualNone || s.anchor.ref.turn < base)
 }
 
-// ---------------------------------------------------------------------------
-// Acting from the cursor: the node under it, and the word under it.
-
-// pagerVisualSelect is Enter in visual mode: leave the mode and select the
-// node the cursor stands on. The node selection and the cursor are
-// exclusive (enterVisual clears one to seed the other), so this is the
-// handoff between them: Enter points, then e expands.
+// Enter hands off from the cursor to the node selection; the two are exclusive.
 func pagerVisualSelect(t *transcript) {
 	ref := t.visual.cursor.ref
 	t.leaveVisual()
@@ -915,10 +791,8 @@ func pagerVisualSelect(t *transcript) {
 	t.ensureSelectionVisible()
 }
 
-// pagerVisualAttend is 'a' in visual mode: attend what the cursor is on. A
-// highlight names its text; a bare cursor names the word under it. An aria
-// id attends; anything else is offered to the path hook, which decides
-// whether it is a file.
+// An aria id attends; anything else goes to the path hook, which decides whether
+// it is a file.
 func pagerVisualAttend(t *transcript) {
 	text := t.visualTextUnderCursor()
 	if text == "" {
@@ -941,9 +815,7 @@ func pagerVisualAttend(t *transcript) {
 	t.openPath(text)
 }
 
-// pagerFindNextVisual and pagerFindPrevVisual are n/N from the transcript:
-// the hit is where the reader means to act, so the cursor lands on it. In
-// visual mode the plain rows do that already (landSearch).
+// n/N from the transcript land the cursor on the hit.
 func pagerFindNextVisual(t *transcript) { t.findRepeatVisual(1) }
 func pagerFindPrevVisual(t *transcript) { t.findRepeatVisual(-1) }
 
@@ -953,8 +825,7 @@ func (t *transcript) findRepeatVisual(delta int) {
 	}
 	if !t.visual.on {
 		t.enterVisual()
-		// The cursor was seeded from the viewport; the search walks from
-		// where the reader was reading, which is the offset.
+		// The search walks from the offset, where the reader was reading.
 		if p, ok := t.visualPointAt(t.offset, 0); ok {
 			t.visual.cursor = p
 		}
@@ -962,10 +833,8 @@ func (t *transcript) findRepeatVisual(delta int) {
 	t.findRepeat(delta)
 }
 
-// looksLikeAriaID is the SHAPE of a minted id (eight hex digits) or a form
-// reference (@...): what the daemon mints, not what ValidateAriaID would
-// merely accept. Every other word is offered to the path hook, which is
-// where a plain English word is refused with a reason.
+// The shape of a minted id (eight hex digits) or a form reference, not what
+// ValidateAriaID would merely accept.
 func looksLikeAriaID(s string) bool {
 	if strings.HasPrefix(s, "@") {
 		return rpc.ValidateAriaID(s) == nil
@@ -981,8 +850,6 @@ func looksLikeAriaID(s string) bool {
 	return true
 }
 
-// visualTextUnderCursor is the highlighted text when there is one, else the
-// word the cursor stands in: a run of non-space runes on the cursor's row.
 func (t *transcript) visualTextUnderCursor() string {
 	if t.visual.highlighted() {
 		if text := strings.TrimSpace(t.visualText()); text != "" {

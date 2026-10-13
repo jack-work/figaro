@@ -8,32 +8,23 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// ---------------------------------------------------------------------------
-// Paint-layer byte compaction.
-
-// sgrStyleMax caps how many distinct SGR sequences we track for one row before
-// giving up and emitting it verbatim. Real rows use one or two.
 const sgrStyleMax = 8
 
-// sgrStyle is the ordered set of SGR sequences in effect, most recently
-// applied last. Replaying the list from a reset reproduces the state exactly,
-// because SGR parameters are order-dependent only through last-writer-wins and
-// apply() keeps each sequence at its last-applied position.
+// Replaying the list from a reset reproduces the state: apply keeps each sequence
+// at its last-applied position.
 type sgrStyle struct {
 	parts [sgrStyleMax]string
 	invis [sgrStyleMax]bool // parts[i] cannot show up on a blank cell
 	n     int
 	over  bool // more than sgrStyleMax distinct sequences: bail out
 
-	// One-entry memo for paramsInvisibleOnSpace. A row is typically a single
-	// style flipped on and off around every segment, so the same parameter
-	// string is classified dozens of times per row.
+	// One-entry memo for paramsInvisibleOnSpace: a row flips the same style
+	// dozens of times.
 	memoParams string
 	memoInvis  bool
 	memoValid  bool
 }
 
-// invisibleOn classifies a parameter string, memoizing the last answer.
 func (s *sgrStyle) invisibleOn(params string) bool {
 	if s.memoValid && s.memoParams == params {
 		return s.memoInvis
@@ -45,9 +36,7 @@ func (s *sgrStyle) invisibleOn(params string) bool {
 
 func (s *sgrStyle) reset() { s.n = 0 }
 
-// apply folds one SGR parameter string into the state. "" and "0" are resets;
-// a sequence that merely *opens* with a reset ("0;1;31") resets first and is
-// then recorded, so replay still reproduces it exactly.
+// A sequence that opens with a reset ("0;1;31") resets first and is then recorded.
 func (s *sgrStyle) apply(params string) {
 	if params == "" || params == "0" {
 		s.reset()
@@ -86,15 +75,11 @@ func (s *sgrStyle) equal(o *sgrStyle) bool {
 	return true
 }
 
-// adopt copies the style state (but not the memo) from o.
 func (s *sgrStyle) adopt(o *sgrStyle) {
 	s.parts, s.invis, s.n = o.parts, o.invis, o.n
 }
 
-// spaceInvisible reports whether a run of spaces under this style is
-// indistinguishable from unstyled spaces: no background, no reverse video, no
-// underline, no strikethrough. Foreground colour and bold/dim/italic have
-// nothing to paint on a blank cell.
+// Foreground, bold, dim and italic have nothing to paint on a blank cell.
 func (s *sgrStyle) spaceInvisible() bool {
 	for i := 0; i < s.n; i++ {
 		if !s.invis[i] {
@@ -104,10 +89,8 @@ func (s *sgrStyle) spaceInvisible() bool {
 	return true
 }
 
-// paramsInvisibleOnSpace reports whether every parameter in an SGR sequence is
-// one that cannot show up on a blank cell. Anything unrecognized is treated as
-// visible: the conservative direction. Allocation-free: it runs per escape
-// sequence on every painted row.
+// Anything unrecognized is visible, the conservative direction. Allocation-free:
+// runs per escape per painted row.
 func paramsInvisibleOnSpace(params string) bool {
 	for params != "" {
 		var field string
@@ -137,17 +120,15 @@ func paramsInvisibleOnSpace(params string) bool {
 				_, params = cutSGRField(params)
 			}
 		default:
-			// 4/21 underline, 7/27 reverse, 9/29 strike, 40-49 & 100-107 and 48
-			// extended background all repaint the cell.
+			// underline, reverse, strike and any background repaint
+			// the cell
 			return false
 		}
 	}
 	return true
 }
 
-// cutSGRField splits off the first ';'-separated parameter, reducing a colon
-// sub-parameter group (e.g. "4:3" curly underline) to its leading number,
-// which is what selects the attribute.
+// A colon sub-parameter group ("4:3") reduces to its leading number.
 func cutSGRField(params string) (field, rest string) {
 	field = params
 	if i := strings.IndexByte(params, ';'); i >= 0 {
@@ -176,9 +157,8 @@ func atoiSmall(s string) (int, bool) {
 	return n, true
 }
 
-// writeTransition appends the shortest escape taking the terminal from `from`
-// to `s`. When `from` is a prefix of `s` only the new sequences are needed;
-// otherwise a reset comes first.
+// When from is a prefix of s only the new sequences are needed; otherwise a reset
+// comes first.
 func (s *sgrStyle) writeTransition(dst []byte, from *sgrStyle) []byte {
 	start := 0
 	if s.n >= from.n {
@@ -204,9 +184,7 @@ func (s *sgrStyle) writeTransition(dst []byte, from *sgrStyle) []byte {
 	return dst
 }
 
-// sgrParams returns the parameter string of an SGR sequence, or ok=false if
-// the escape is anything else (a cursor move, an OSC, a private mode…), in
-// which case the row is emitted verbatim.
+// ok=false for any non-SGR escape: the row is then emitted verbatim.
 func sgrParams(seq string) (string, bool) {
 	if len(seq) < 3 || seq[0] != '\x1b' || seq[1] != '[' || seq[len(seq)-1] != 'm' {
 		return "", false
@@ -220,16 +198,13 @@ func sgrParams(seq string) (string, bool) {
 	return params, true
 }
 
-// compactRow appends the compacted form of row to dst. See the file comment
-// for the contract: default SGR in, default SGR out, same visible cells.
+// Contract: default SGR in, default SGR out, same visible cells.
 func compactRow(dst []byte, row string) []byte {
 	return compactRowFrom(dst, row, sgrStyle{})
 }
 
-// compactRowFrom is compactRow starting from a row whose leading columns are
-// already on screen: `pending` is the style in effect at that point, which has
-// to be re-established because SGR is terminal state, not cell state, and the
-// escapes that set it were emitted in an earlier frame.
+// pending is the style in effect at the fragment start: SGR is terminal state, not
+// cell state, and its escapes were emitted in an earlier frame.
 func compactRowFrom(dst []byte, row string, pending sgrStyle) []byte {
 	if pending.n == 0 && !strings.ContainsRune(row, '\x1b') {
 		return append(dst, trimTrailingSpaces(row)...)
@@ -259,14 +234,11 @@ func compactRowFrom(dst []byte, row string, pending sgrStyle) []byte {
 		text := row[i:j]
 		i = j
 		trailing := len(text) - len(trimTrailingSpaces(text))
-		// A blank run may skip the transition only if the style it would be
-		// drawn under AND the style the terminal is still holding are both
-		// invisible on a blank. The second half was missing: a background
-		// painted on one cell (the visual cursor) leaked onto the blank that
-		// followed it, because the reset between them was deferred until the
-		// next visible text and the terminal kept the background meanwhile.
+		// A blank run skips the transition only if both the pending style
+		// and the one the terminal still holds are invisible on a blank,
+		// or a background leaks onto it.
 		if trailing == len(text) && pending.spaceInvisible() && emitted.spaceInvisible() {
-			dst = append(dst, text...) // pure blank run under an invisible style
+			dst = append(dst, text...)
 			continue
 		}
 		if !pending.equal(&emitted) {
@@ -287,8 +259,8 @@ func compactRowFrom(dst []byte, row string, pending sgrStyle) []byte {
 	return dst
 }
 
-// verbatimRow is the bail-out: re-establish the entry style, emit the row
-// untouched, then force the default state so the next row starts clean.
+// Bail-out: re-establish the entry style, emit untouched, force the default state
+// after.
 func verbatimRow(dst []byte, row string, entry *sgrStyle) []byte {
 	if entry.n > 0 {
 		dst = entry.writeTransition(dst, &sgrStyle{})
@@ -308,17 +280,11 @@ func trimTrailingSpaces(s string) string {
 	return s[:n]
 }
 
-// ---------------------------------------------------------------------------
-// Shifted-frame painting (scroll regions).
-
 const (
-	// maxScrollShift bounds the search. Beyond a half page or so, a repaint of
-	// the exposed rows costs as much as the whole frame.
+	// Beyond a half page a repaint of the exposed rows costs as much as the frame.
 	maxScrollShift = 32
-	// minScrollRun is the shortest moved run worth a region switch.
-	minScrollRun = 4
-	// scrollCost is the byte overhead of DECSTBM + SU/SD + margin reset.
-	scrollCost = 24
+	minScrollRun   = 4
+	scrollCost     = 24
 )
 
 type scrollPlan struct {
@@ -326,17 +292,12 @@ type scrollPlan struct {
 	top, bot int // scroll region, 0-based inclusive
 }
 
-// transcriptScrollRegions is the escape hatch. DECSTBM + SU/SD is VT100/VT420
-// bedrock and every terminal this pager runs on implements it, but a paint
-// path that moves rows the emulator does not move would be visually wrong
-// rather than merely slow, so there is a way to switch it off in the field
-// without a rebuild: FIGARO_NO_SCROLL_REGION=1.
+// FIGARO_NO_SCROLL_REGION=1 switches DECSTBM + SU/SD off in the field: a terminal
+// that does not move rows would be visually wrong, not slow.
 var transcriptScrollRegions = os.Getenv("FIGARO_NO_SCROLL_REGION") == ""
 
-// rowKey is an O(1) fingerprint of a row: length plus four sampled bytes. It
-// only has to be good enough to *propose* a shift: the winning candidate is
-// re-verified with real string equality, so a collision costs a wasted compare
-// and never a wrong frame.
+// rowKey only proposes a shift; the winner is re-verified by string equality, so a
+// collision costs a compare, never a wrong frame.
 func rowKey(s string) uint32 {
 	n := len(s)
 	if n == 0 {
@@ -350,9 +311,8 @@ func rowKey(s string) uint32 {
 	return h
 }
 
-// planScroll looks for a shift between t.prev and screen. On success it fills
-// t.predBuf with the grid the terminal will hold after the scroll and reports
-// the plan; the caller diffs against t.predBuf instead of t.prev.
+// On success t.predBuf holds the grid the terminal will show after the scroll; the
+// caller diffs against it.
 func (t *transcript) planScroll(screen []string) (scrollPlan, bool) {
 	prev := t.prev
 	h := len(screen)
@@ -370,11 +330,9 @@ func (t *transcript) planScroll(screen []string) (scrollPlan, bool) {
 		}
 	}
 	if changed < minScrollRun {
-		return scrollPlan{}, false // a small local edit; the plain diff wins
+		return scrollPlan{}, false // a small local edit: the plain diff wins
 	}
 
-	// Propose: for each candidate shift, the longest run of rows whose
-	// fingerprints line up.
 	bestN, bestLen, bestAt := 0, 0, 0
 	limit := min(maxScrollShift, h-1)
 	for s := -limit; s <= limit; s++ {
@@ -398,7 +356,6 @@ func (t *transcript) planScroll(screen []string) (scrollPlan, bool) {
 		return scrollPlan{}, false
 	}
 
-	// Verify with real equality, shrinking the run to what actually matches.
 	a, b := bestAt, bestAt+bestLen-1
 	for a <= b && screen[a] != prev[a+bestN] {
 		a++
@@ -414,7 +371,6 @@ func (t *transcript) planScroll(screen []string) (scrollPlan, bool) {
 		return scrollPlan{}, false
 	}
 
-	// Predict the post-scroll grid and price the plan against the plain diff.
 	t.predBuf = growStrings(t.predBuf, h)
 	copy(t.predBuf, prev)
 	for r := plan.top; r <= plan.bot; r++ {
@@ -441,7 +397,6 @@ func (t *transcript) planScroll(screen []string) (scrollPlan, bool) {
 	return plan, true
 }
 
-// appendScroll emits DECSTBM + SU/SD + margin reset for the plan.
 func appendScroll(dst []byte, p scrollPlan) []byte {
 	dst = append(dst, '\x1b', '[')
 	dst = appendUint(dst, p.top+1)
@@ -479,16 +434,11 @@ func growStrings(s []string, n int) []string {
 	return s[:n]
 }
 
-// ---------------------------------------------------------------------------
-// Shared-prefix row updates.
-
-// minPrefixColumns is the shortest shared prefix worth a cursor address. Below
-// this the escape costs about as much as the text it skips.
+// Below this the escape costs about as much as the text it skips.
 const minPrefixColumns = 32
 
-// commonRowPrefix reports the byte index at which old and new diverge, the
-// display column there, and the style in effect. ok is false when the prefix
-// cannot be trusted (see the guards above) or is too short to pay.
+// ok is false when the prefix cannot be trusted (non-SGR escape, invalid or
+// non-single-width rune) or is too short to pay.
 func commonRowPrefix(old, new string) (idx, col int, st sgrStyle, ok bool) {
 	i := 0
 	for i < len(old) && i < len(new) {
@@ -522,31 +472,14 @@ func commonRowPrefix(old, new string) (idx, col int, st sgrStyle, ok bool) {
 		i += size
 	}
 	if col < minPrefixColumns || (i == len(new) && i == len(old)) {
-		return 0, 0, st, false // too short to pay for a cursor address, or identical
+		return 0, 0, st, false
 	}
 	return i, col, st, true
 }
 
-// appendRowUpdate emits the update for one row: a cursor address, the row (or
-// just its tail when it shares a long prefix with what is on screen), and then
-// an erase of whatever the old row still occupies beyond it.
-//
-// NOTHING IS ERASED BEFORE IT IS REWRITTEN, and that ordering is the flicker
-// fix. The frame is wrapped in a synchronized update (?2026), and for a while
-// that was treated as licence to erase first, because an erase inside the
-// bracket is invisible. It is not licence. A trace through tmux found a
-// synchronization END at byte 4,686 of a 7,418-byte write with fourteen row
-// erases after it: tmux parses ?2026 itself and re-emits its own brackets
-// around its own redraw, on its own schedule, so ours is a request an
-// intermediary is free to reshape. Balanced start/end COUNTS in a capture prove
-// nothing about the order the outer terminal saw. An erase we never emit needs
-// no protection, and that is the only version of this that does not depend on
-// somebody else's cooperation.
-//
-// The cost of erasing first was never only the rows that changed. resyncDue
-// periodically repaints EVERY row to re-earn the painter's model of the screen,
-// and each of those rows was blanked and rewritten with the same text: which is
-// how a footer spinner came to flash the whole screen every two seconds.
+// Nothing is erased before it is rewritten: tmux parses ?2026 and re-emits its own
+// brackets on its own schedule, so an erase inside ours is not guaranteed
+// invisible, and resyncDue repaints every row.
 func appendRowUpdate(dst []byte, screenRow, screenW int, old, row string) []byte {
 	if idx, col, st, ok := commonRowPrefix(old, row); ok {
 		dst = appendCUPCol(dst, screenRow+1, col+1)
@@ -560,45 +493,23 @@ func appendRowUpdate(dst []byte, screenRow, screenW int, old, row string) []byte
 	return appendRowTailErase(dst, screenRow, screenW, 0, text)
 }
 
-// appendRowTailErase clears from the end of the text just written to the right
-// margin. startCol is the column the text began at and textStart the offset in
-// dst where its bytes begin.
-//
-// THE RIGHT MARGIN IS THE TRAP, and it is the reason a bare trailing erase was
-// rejected once before. The pager runs with autowrap off, so a row whose text
-// reaches the last column leaves the cursor sitting ON that column rather than
-// past it, and an erase-to-end-of-line from there deletes the character just
-// written. (Found by replaying a frame into tmux, which a screen model that let
-// the cursor run past the margin had happily accepted.)
-//
-// So the only question is whether the text reached the margin, and the cheap
-// answer is usually enough: EVERY COLUMN COSTS AT LEAST ONE BYTE, and escapes
-// cost bytes without columns, so the bytes emitted are an upper bound on the
-// columns occupied. Under that bound the cursor is known to be short of the
-// margin and the erase needs no cursor address at all -- the terminal already
-// left the cursor exactly where the erase should start.
-//
-// Only a row whose emitted bytes reach the screen width pays for an exact
-// count, and that is measured over the EMITTED bytes rather than the source
-// row: compactRow throws away trailing blanks, so a row rendered as "hi" plus
-// ninety columns of styled padding occupies two columns, and measuring the
-// source would put the cursor ninety columns past the text and erase nothing
-// that was actually stale.
+// With autowrap off, text reaching the last column leaves the cursor on it, and
+// \x1b[K from there deletes the character just written. Every column costs at
+// least one byte, so emitted bytes bound the columns: under the width no cursor
+// address is needed; otherwise count the emitted bytes (not the source row, whose
+// trailing blanks compactRow threw away).
 func appendRowTailErase(dst []byte, screenRow, screenW, startCol, textStart int) []byte {
 	if startCol+(len(dst)-textStart) < screenW {
 		return append(dst, "\x1b[K"...) // cursor is at the end of the text
 	}
-	// Counting stops at the margin: a row that reached it needs no erase, and
-	// the exact number would be thrown away.
 	cols := startCol + displayWidthBytesUpTo(dst[textStart:], screenW-startCol)
 	if cols >= screenW {
-		return dst // the text reached the margin; there is nothing beyond it
+		return dst // the text reached the margin
 	}
 	dst = appendCUPCol(dst, screenRow+1, cols+1)
 	return append(dst, "\x1b[K"...)
 }
 
-// appendCUPCol appends "\x1b[<row>;<col>H".
 func appendCUPCol(dst []byte, row, col int) []byte {
 	if col == 1 {
 		return appendCUP(dst, row)

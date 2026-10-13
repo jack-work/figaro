@@ -1,8 +1,6 @@
 package cli
 
-// `show`'s page walk. The DAEMON composes turns (it owns the IR, the
-// projection and the composed cache); this walks its pages backward or
-// forward until the selector is covered and hands the renderer turns.
+// The daemon composes turns; this walks its pages until the selector is covered.
 
 import (
 	"context"
@@ -13,12 +11,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// showPageBytes is one page's byte budget. The daemon clamps it to its own
-// ceiling; asking for less only costs round trips.
+// The daemon clamps this to its own ceiling.
 const showPageBytes = 512 << 10
 
-// showTurns is what the walk holds: whole turns, oldest first, plus
-// whether anything exists on either side of them.
 type showTurns struct {
 	turns  []aria.Turn
 	atHead bool // nothing older than turns[0]
@@ -26,7 +21,6 @@ type showTurns struct {
 	pages  int
 }
 
-// gatherShowTurns pulls composed pages until opts is satisfiable.
 func gatherShowTurns(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showTurns, error) {
 	var w showTurns
 	if opts.from >= 0 {
@@ -57,10 +51,9 @@ func gatherShowTurns(ctx context.Context, acli *sdk.Angelus, figaroID string, op
 			w.atHead = true
 			return w, nil
 		}
-		// The server states where the page before this one begins. A page is
-		// cut by a byte budget, so its oldest element is usually the middle of
-		// a turn, and an anchor derived from the turn alone would ask for
-		// everything before that turn's node 0, dropping the rest of it.
+		// A page is cut by a byte budget, so its oldest element is usually
+		// mid-turn; an anchor derived from the turn alone would drop the
+		// rest of it.
 		at = *page.Prev
 		if turnsSatisfy(w, opts) {
 			return w, nil
@@ -68,8 +61,7 @@ func gatherShowTurns(ctx context.Context, acli *sdk.Angelus, figaroID string, op
 	}
 }
 
-// prepend joins an OLDER run of turns onto a newer one, welding the turn
-// the page boundary cut in half back together.
+// prepend welds the turn a page boundary cut in half.
 func prepend(older, newer []aria.Turn) []aria.Turn {
 	if len(older) == 0 {
 		return newer
@@ -83,8 +75,8 @@ func prepend(older, newer []aria.Turn) []aria.Turn {
 	return append(older, newer...)
 }
 
-// gatherForward walks up from --from, since that selector names its OLDEST
-// turn and a backward walk would have to reach the head to find it.
+// --from names its oldest turn; a backward walk would have to reach the head to
+// find it.
 func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showTurns, error) {
 	var w showTurns
 	at := aria.Anchor{Turn: uint64(max(opts.from, 0))}
@@ -114,17 +106,13 @@ func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts
 			return w, nil
 		}
 		if *page.Next == at {
-			return w, nil // no progress; the daemon has nothing further
+			return w, nil // no progress
 		}
 		at = *page.Next
 	}
 }
 
-// joinParts folds a page's parts into whole turns. A page is cut by a byte
-// budget, so one turn can arrive as several parts (TurnPart.From); the
-// renderer draws turns, so they are rejoined here. This is NOT composition
-// -- the nodes were composed by whoever owns the aria -- it is the seam a
-// wire budget introduced.
+// One turn can arrive as several parts (TurnPart.From); the renderer draws turns.
 func joinParts(p aria.Page) []aria.Turn {
 	var out []aria.Turn
 	for _, part := range p.Parts {
@@ -139,9 +127,8 @@ func joinParts(p aria.Page) []aria.Turn {
 	return out
 }
 
-// turnsSatisfy reports whether the turns held can answer the selector. Each
-// case asks for one more turn than it will show, because the oldest turn a
-// walk reached may be the one the next page completes.
+// Each case asks for one more turn than it will show: the oldest may be the one
+// the next page completes.
 func turnsSatisfy(w showTurns, opts showOpts) bool {
 	if opts.all {
 		return w.atHead
@@ -163,7 +150,6 @@ func turnsSatisfy(w showTurns, opts showOpts) bool {
 	}
 }
 
-// selectShowRange is the slice of the held turns the selector names.
 func selectShowRange(ts []aria.Turn, opts showOpts) (lo, hi int) {
 	if len(ts) == 0 {
 		return 0, 0

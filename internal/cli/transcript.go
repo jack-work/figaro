@@ -26,11 +26,8 @@ const (
 	altScreenOff = "\x1b[?1049l"
 )
 
-// transcript is a full-screen, live-updating pager over a paged conversation,
-// drawn on the alternate screen and toggled with Ctrl-T. Because it owns a fixed
-// canvas with a bounded message window, it is both resize-clean and scrollable
-// without retaining or re-rendering the whole aria. At the bottom it follows
-// the shared client's live tail; otherwise it holds the current page window.
+// transcript is the alt-screen pager over a paged conversation: a fixed canvas
+// with a bounded message window that follows the live tail at the bottom.
 type transcript struct {
 	out    io.Writer
 	view   ldrender.NodeView
@@ -38,242 +35,170 @@ type transcript struct {
 	status *sessionStatus
 
 	active bool
-	// pit is THE transient region below the transcript: help, figaro status,
-	// the queue, a command's output, an error, the completion list. One at a
-	// time, Esc closes it, and none of them may touch the status bar. See
-	// pit.go for why that last clause is the point of the type.
+	// pit is the one transient region below the transcript; none of its
+	// contents may touch the status bar.
 	pit         pit
-	queuedByKey bool // ...because the user pressed 'Q', not because it filled
+	queuedByKey bool // opened by 'Q', not because the queue filled
 
-	// full is FULLSCREEN, and it is the pager's, not the pit's: `F` sets a
-	// disposition that whatever pit is open inherits, so closing a form and
-	// opening the queue does not quietly change how much of the screen a
-	// reader gets. It applies only while the PIT has the focus.
+	// full is the pager's fullscreen disposition, inherited by whatever pit is
+	// open; it applies only while the pit has the focus.
 	full bool
-	// focused says whether keys and the screen belong to the pit or to the
-	// conversation behind it. `T` moves it. A fullscreen pit RECEDES when the
-	// transcript takes focus rather than closing: the reader asked to look
-	// past it, not to lose it. Gluck: "the pit should remain open."
+	// A fullscreen pit recedes when the transcript takes focus (`T`) rather
+	// than closing.
 	focused pitFocus
-	// queueDismissed latches a DELIBERATE close of the queue pit, so the
-	// next poll does not put it straight back. This is Gluck's bug: `fig send`
-	// that queues a message and enters the pager showed the queue, Esc closed
-	// it, and the very next figaro.queued reopened it -- because the queue was
-	// still non-empty and nothing anywhere recorded that the reader said no. An
-	// auto-opening panel needs an auto-open SUPPRESSOR or it cannot be
-	// dismissed at all.
+	// queueDismissed suppresses the auto-open after a deliberate close;
+	// without it the next poll reopens the pit.
 	queueDismissed bool
-	queuedRows     []string     // pre-rendered by livelogTurn, for the inline trailer
-	queued         []queuedItem // the queue itself, ids intact, for the pit
-	// queuedErr is why the queue could not be read, when it could not. It is
-	// carried here so "the queue is empty" is only ever said about a queue
-	// this client actually read: a failure that reported as emptiness would be
-	// the worst of the three answers.
+	queuedRows     []string // pre-rendered, for the inline trailer
+	queued         []queuedItem
+	// "the queue is empty" is only ever said about a queue this client
+	// actually read; queuedErr keeps a failure from reporting as emptiness.
 	queuedErr   string
-	queuedFetch func() // async refresh of the queued snapshot; set by the input loop
-	// command runs a ':' line that is not a coordinate. Set by the input loop,
-	// which owns the RPC clients; nil in a fixture, where the box still takes
-	// coordinates and says so for anything else.
-	//
-	// IT IS CALLED UNDER THE RENDER LOCK, like every other key action, so an
-	// implementation MUST hand off rather than work: taking the lock deadlocks
-	// the input goroutine against itself, and blocking on an RPC stops the
-	// keyboard. See interactiveInput.runCommand, which is one `go` statement
-	// for exactly this reason.
+	queuedFetch func() // async refresh; set by the input loop
+	// command is called under the render lock, like every hook here: an
+	// implementation must hand off (one `go` statement), since taking the lock
+	// deadlocks the input goroutine and blocking on an RPC stops the keyboard.
+	// nil in a fixture.
 	command func(string)
-	// completer returns Tab candidates for a partially typed command line. Set
-	// by the input loop, which owns the router.
+	// completer: set by the input loop, which owns the router.
 	completer func(string) []string
-	// composerCompleter is Tab in the '>' draft: what belongs in a prompt, not
-	// what belongs in a command line. Defaulted, because both of its sources
-	// (form keys, paths) are local questions a fixture can answer too.
+	// composerCompleter is Tab in the '>' draft; defaulted, since its sources
+	// are local.
 	composerCompleter func(string) []string
-	// sendComposer submits the '>' draft as a prompt, bytes intact. Set by the
-	// input loop for the same reason command is, and under the same rule: it
-	// is called holding the render lock, so it must hand off.
+	// sendComposer is called holding the render lock: it must hand off.
 	sendComposer func(string)
-	// openForm is 'S': the input loop's door to the live form view, because
-	// opening one dials. IT MUST NOT TAKE THE RENDER LOCK -- every hook here
-	// is called from dispatch, which already holds it, so implementations hand
-	// off to a goroutine. `S` froze the pager dead until they did.
+	// openForm must not take the render lock: every hook here is called from
+	// dispatch, which holds it.
 	openForm func()
-	// dropRow is 'x' on a selected pit row: the owner decides what dropping
-	// means for that pit's name. next names the row the cursor falls onto,
-	// which is where a kill of the aria on screen should leave the pager.
+	// dropRow: next names the row the cursor falls onto, where a kill should
+	// leave the pager.
 	dropRow func(pit, id, next string)
-	// attendAria is 'a': bind the shell to that aria and show it. ariaHop is
-	// ^O/^I over the jumplist. Both dial, so they hand off to a goroutine on
-	// the same law as openForm above.
-	attendAria func(id string)
-	ariaHop    func(dir int)
-	// attendParent is '^': attend whoever this aria was forked from.
+	// attendAria and ariaHop dial, so they hand off to a goroutine on the same
+	// rule as openForm.
+	attendAria   func(id string)
+	ariaHop      func(dir int)
 	attendParent func()
-	// confirm is the y/n question on screen, if any. See confirm.go.
-	confirm *confirmAsk
-	// openPath is 'a' over text that is not an aria id: the session decides
-	// whether it is a file and what to open it with. Dials nothing itself,
-	// but takes the terminal, so it hands off like every other hook.
+	confirm      *confirmAsk
+	// openPath takes the terminal, so it hands off like every other hook.
 	openPath func(path string)
 	w, h     int
 	tick     int
 
-	prev   []string // last painted screen (the frame the terminal is holding)
-	prefix string   // one-shot escapes emitted with the next frame (see enter)
-	// altPending/altOn are the alt-screen PAIRING. enter() queues the switch in
-	// prefix and sets altPending; the paint that actually emits it sets altOn;
-	// leave() writes the exit sequence only when altOn. Without this, a pager
-	// that never painted (h < 4, or a frame deferred behind the rate gate) still
-	// wrote 2J + ?1049l: to the user's real screen.
+	prev   []string // the frame the terminal is holding
+	prefix string   // one-shot escapes emitted with the next frame
+	// altPending/altOn pair the alt-screen switch: enter() queues it, the
+	// paint that emits it sets altOn, leave() writes the exit only when altOn,
+	// so a pager that never painted never writes 2J + ?1049l to the real
+	// screen.
 	altPending bool
 	altOn      bool
-	// resync clock: the painter's model of the screen (prev) is only true while
-	// figaro is the ONLY writer to the terminal. It is not. See screenMoved and
-	// resyncDue: lastFull is when the screen was last painted unconditionally,
-	// and now is injectable so the interval is testable without sleeping.
+	// The painter's model of the screen (prev) is only true while figaro is
+	// the only writer; lastFull is when it was last repainted unconditionally,
+	// and now is injectable for tests.
 	now      func() time.Time
 	lastFull time.Time
-	lineKey  []sliceKey // slice owning each line of lines(), for resize anchoring
-	offset   int        // top line of the viewport into lines()
-	// wantTop is a STANDING request for the beginning, armed by Home/gg.
+	lineKey  []sliceKey // slice owning each line, for resize anchoring
+	offset   int        // top line of the viewport
+	// wantTop is a standing request for the beginning, armed by Home/gg.
 	wantTop bool
-	// kept says the last subject switch left the window where it was.
-	kept   bool
-	follow bool // stick to the bottom on new content
-	pendG  bool // saw one 'g' (for gg)
-	pendF  bool // saw 'f' (for the fork jump's f j / f k): the inFork mode
+	kept    bool
+	follow  bool
+	pendG   bool // saw one 'g' (for gg)
+	pendF   bool // saw 'f' (for f j / f k)
 
-	// Frame scheduling. render() marks the screen stale and defers when a
-	// batch is open (an input burst being drained) or when the frame-rate gate
-	// declines; flush() draws the deferred frame. See beginBatch/endBatch.
+	// render() defers while a batch is open or the frame-rate gate declines;
+	// flush() draws the deferred frame.
 	batch   int
 	dirty   bool
-	gate    func() bool // "may I paint now?", a false answer owes a later flush()
-	painted func()      // notified after each painted frame
+	gate    func() bool // "may I paint now?": a false answer owes a later flush()
+	painted func()
 
 	inSearch bool
-	// searchDir is which way the query walks: 1 for '/', -1 for '?'. n
-	// repeats it, N reverses, as in vim.
+	// searchDir: 1 for '/', -1 for '?'; n repeats, N reverses.
 	searchDir  int
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
 
-	// box is which text box owns the keyboard, and the zero value is none.
-	// Both kinds are one mode to the keymap (modeBox) and one pit to the
-	// screen: what differs is the sigil, what Enter does, and where a submit
-	// goes. See transcript_jump.go.
+	// box is which text box owns the keyboard; both are one keyMode (modeBox)
+	// and one pit.
 	box boxKind
-	// cmdline is the ':' box's editor: runes, a cursor, emacs motions and
-	// history. It replaced a `q += string(b)` string for the reasons in
-	// lineedit.go -- the short one being that the old box could not represent
-	// "café", let alone a cursor.
+	// cmdline is the ':' box's editor.
 	cmdline lineEditor
-	// compose is the '>' drawer's editor: the same editor, a separate buffer
-	// and a separate history, because a prompt and a command line are not each
-	// other's past. It OUTLIVES the drawer: Esc puts it away and '>' brings
-	// the draft back, which is what makes a long paste safe to look away from.
+	// draft outlives the drawer: Esc puts it away and '>' brings it back.
 	draft lineEditor
-	// composerMode is which keymap the drawer answers to: the readline box it
-	// opens as, or the transcript's own motions over the draft. See
-	// compose_normal.go.
+	// composerMode is which keymap the drawer answers to (composer_normal.go).
 	composerMode composerKeys
-	// composerMark is the anchor of the drawer's highlight, a rune index, with
-	// composerKind saying what kind it is. The same two-part shape the
-	// transcript's visual selection has, over a buffer instead of a window.
+	// composerMark/composerKind are the drawer's highlight, a rune index and
+	// its kind.
 	composerMark int
 	composerKind visualKind
-	// composerHeld remembers a drawer a ':' line was taken out of, so closing
-	// the command line comes back to the draft instead of to the conversation.
+	// composerHeld: a ':' line was opened over the drawer, so closing it
+	// returns to the draft.
 	composerHeld bool
-	// menu is Tab's completion pit, open while it is non-nil. See
-	// transcript_complete.go.
-	menu *completionMenu
-	// notes is the notification history (notifications.go). It lives here,
-	// not on the status, because a status is replaced on every hop.
+	menu         *completionMenu
+	// notes lives here, not on the status, because a status is replaced on
+	// every hop.
 	notes *notificationStore
-	// noticeTTL is the configured alert lifetime, when there is one: it has
-	// to outlive the status the same way notes does.
+	// noticeTTL outlives the status for the same reason notes does.
 	noticeTTL *time.Duration
-	// pendLeader: saw space, the leader, so the next key is a leader chord
-	// (`space n`). Like pendG and pendF, one key and then it is spent.
+	// pendLeader: saw space, so the next key is a leader chord.
 	pendLeader bool
 	jumpNote   string
 	jump       *transcriptJump
 
-	// Lazy history paging: the pager opens on the store's tail and pulls older
-	// history via keyset ReadBefore only when the viewport comes near the window
-	// floor ("like Twitter").
+	// Older history is pulled only when the viewport nears the window floor.
 	search *transcriptSearch
 
-	// THE WINDOW IS THE STORE'S OWN TAIL, not a copy of it: the half-open
-	// interval [from, ∞), whose floor is the anchor of its oldest message. There
-	// is no second copy of anything, in either direction.
+	// The window is the store's own tail, the interval [from, inf): there is
+	// no second copy.
 	from aria.Anchor
 
-	// tailTuned latches the one row-budget retune allowed per tail window.
 	tailTuned bool
-	// tailWant is the tuned tail-window size in messages (0 = not yet tuned).
-	tailWant int
-	// windowRev is THE authority on "the retained window changed". Every
-	// mutation of the window's floor goes through invalidateWindow, which bumps
-	// this counter so the line index refills lineKey instead of inferring the
-	// move from a shape diff.
+	tailWant  int
+	// windowRev: every mutation of the window's floor goes through
+	// invalidateWindow, so the line index refills lineKey rather than
+	// inferring the move.
 	windowRev uint64
-	// rowRev is the same authority for CACHED ROWS: every path that drops rows
-	// (a fold gesture, a settings change, a prune) bumps it, so the line index
-	// knows its entries were composed under state that is gone. Without it the
-	// index's stamp would hold while the rows under it had been thrown away.
+	// rowRev: every path that drops cached rows bumps it, or the index stamp
+	// would hold over rows that are gone.
 	rowRev uint64
 
-	// rowCache memoizes rows of committed messages in their unselected resting
-	// form: clipped and gutter-prefixed (plainNodeRow), but carrying no
-	// selection cue and no search highlight. That keeps the cache a pure
-	// function of (message, width), so selection and search state can change
-	// without invalidating a single cached row; the cue and the highlight are
-	// applied per painted row by window()/entryLine().
+	// rowCache rows carry no selection cue and no search highlight, so it is a
+	// pure function of (message, width); the cue and highlight are applied per
+	// painted row.
 	rowCache map[sliceKey]cachedMessage
-	// stickyCache holds the question block of a turn the reader is inside, for
-	// the header (see transcript_sticky.go). Keyed and invalidated like
-	// rowCache, whose rows these are.
+	// stickyCache is keyed and invalidated like rowCache, whose rows these are.
 	stickyCache map[sliceKey]stickyQuestion
-	// openMemo is the same economy for the message that is still being
-	// written, where a slice key cannot serve: its rows change every frame.
-	// It memoizes the drawn lines of each BLOCK, so a tick redraws only what
-	// the stream touched.
+	// openMemo memoizes each block of the open message, so a tick redraws only
+	// what the stream touched.
 	openMemo  openMemo
 	cacheW    int
 	selection nodeSelection
 	visual    visualSelection
 	expanded  map[nodeRef]bool
-	// adorned is the second fold state: whether a block's form-delta list is
-	// open. Separate from expanded because a tool has both, and Enter opens
-	// the pair while d and t open one each.
+	// adorned is the form-delta fold state; a tool has both, Enter opens the
+	// pair, d and t one each.
 	adorned map[nodeRef]bool
 
-	// index is the viewport virtualization: a per-frame map from line space to
-	// message rows, rebuilt in O(#messages) so scrolling never re-materializes
-	// (or re-decorates) rows it will not paint. See transcript_index.go.
+	// index maps line space to message rows so scrolling never materializes
+	// rows it will not paint.
 	index   lineIndex
-	ruleStr string // memoized separator rule for ruleW columns
+	ruleStr string
 	ruleW   int
-	// Reused buffers. Each has a distinct owner so no two of them can ever
-	// alias: rowBuf belongs to render (the visible window), lineBuf to lines()
-	// (the whole-window materialization, off the frame path), paintBuf to the
-	// painter, and screenSpare is the composed frame paint displaced when it
-	// retained the previous one as t.prev.
-	rowBuf      []string     // the visible window, valid until the next render()
-	frameRefs   []nodeRef    // the node behind each BODY row of the last painted frame
-	lineBuf     []string     // whole-window rows, valid until the next lines()
-	keepBuf     map[int]bool // reused live-turn set for pruneCaches
-	paintBuf    []byte       // reused escape-sequence output buffer
-	predBuf     []string     // predicted grid after a scroll-region shift
-	keysNew     []uint32     // row fingerprints, screen side (shift detection)
-	keysOld     []uint32     // row fingerprints, prev side
-	screenSpare []string     // the frame buffer displaced by the last paint
+	// Reused buffers, each with one owner so none can alias.
+	rowBuf      []string  // valid until the next render()
+	frameRefs   []nodeRef // the node behind each body row of the last painted frame
+	lineBuf     []string  // valid until the next lines()
+	keepBuf     map[int]bool
+	paintBuf    []byte
+	predBuf     []string
+	keysNew     []uint32
+	keysOld     []uint32
+	screenSpare []string
 }
 
-// transcriptSearch is a paged search in progress: the query, and enough of the
-// origin to put the reader back where they were if the walk finds nothing.
-// Only the VIEWPORT is restored: history the walk paged in stays in the store.
+// Only the viewport is restored when a walk finds nothing; history it paged in
+// stays in the store.
 type transcriptSearch struct {
 	query  string
 	offset int
@@ -304,10 +229,8 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	return t
 }
 
-// setStatus is the ONE way the transcript takes a session status, because the
-// status is replaced on every subject switch and the notification history is
-// not: each new status is bound to the same store, or the bar's unread mark
-// would reset on every hop.
+// Every status is bound to the same notification store, or the unread mark would
+// reset on every hop.
 func (t *transcript) setStatus(s *sessionStatus) {
 	if s == nil {
 		return
@@ -319,10 +242,6 @@ func (t *transcript) setStatus(s *sessionStatus) {
 	t.status = s
 }
 
-// setNoticeTTL is `[cli] notice_ttl`, applied to the status on show and to
-// every status a hop mints after it. It was documented and never applied:
-// nothing called sessionStatus.setNoticeTTL, so every alert held the bar for
-// the built-in ten seconds whatever the config said.
 func (t *transcript) setNoticeTTL(d time.Duration) {
 	t.noticeTTL = &d
 	if t.status != nil {
@@ -330,11 +249,8 @@ func (t *transcript) setNoticeTTL(d time.Duration) {
 	}
 }
 
-// enter switches to the alternate screen and draws the transcript at the bottom.
-// autowrapOff is asserted explicitly here (not just inherited from the caller):
-// this is a fixed-canvas pager, and a single wide glyph tipping the bottom-right
-// cell past the last column with autowrap ON scrolls the whole screen up by a
-// row: which reads as the status line "eating" the line above it.
+// Autowrap must be off: a wide glyph tipping the bottom-right cell past the last
+// column with autowrap on scrolls the whole screen up a row.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.pendF, t.inSearch, t.query, t.matchQuery = false, false, false, "", ""
@@ -342,30 +258,26 @@ func (t *transcript) enter() {
 	t.box, t.jumpNote, t.jump = boxNone, "", nil
 	t.cmdline.reset()
 	t.menu = nil
-	// THE PAGER OWNS RETENTION while it is up. The client's count-based trim
-	// drops the OLDEST messages, which is precisely wrong once the window is the
-	// store itself: a reader scrolled up, or a catch-up page merged in to open on
-	// history, would be trimmed out from under. evictStale keeps the store bounded
-	// against the window instead; leave() hands the count limit back.
+	// The pager owns retention while it is up: the client's count-based trim
+	// drops the oldest, which would evict a reader scrolled up; evictStale
+	// bounds the store against the window instead.
 	t.client.SetClosedLimit(0)
 	t.from = aria.Anchor{}
-	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
+	t.invalidateWindow() // a fresh session rebuilds the window from the tail
 	t.resetToTail()
-	// QUEUED, NOT WRITTEN: the switch rides the next frame, so a pager that
-	// never paints never switches the terminal at all. leave() must honour the
-	// same condition: that is what altPending/altOn record.
+	// Queued, not written: a pager that never paints never switches the
+	// terminal (altPending/altOn).
 	t.prefix = altScreenOn + ldmouse.Enable
 	t.altPending = true
 	t.render()
 }
 
-// leave restores the normal screen: but ONLY if enter() ever actually reached
-// it. Mouse reporting is disabled before the alt-screen swap so no stray
-// \x1b[<…M leaks into the shell.
+// Mouse reporting is disabled before the alt-screen swap so no stray \x1b[<...M
+// leaks into the shell.
 func (t *transcript) leave() {
 	t.active = false
-	t.selection = nodeSelection{} // no selection survives outside the pager
-	t.prefix = ""                 // a frame that never painted must not switch us back
+	t.selection = nodeSelection{}
+	t.prefix = ""
 	t.altPending = false
 	t.client.SetClosedLimit(transcriptTailLimit)
 	if t.altOn {
@@ -375,12 +287,8 @@ func (t *transcript) leave() {
 	t.prev = nil
 }
 
-// scroll moves the viewport by delta lines. Detaching comes FIRST:
-// stopFollowing pins the offset at the live view's own position, so the motion
-// is relative to what is on screen. Moving the offset first instead scrolled
-// from a stale value: zero on a pager that had not painted a frame yet, which
-// is how one 'k' from the inline view landed at the top of a window it had
-// never seen.
+// stopFollowing first: it pins the offset at the live position, so the motion is
+// relative to what is on screen.
 func (t *transcript) scroll(delta int) {
 	t.wantTop = false
 	t.stopFollowing()
@@ -390,13 +298,9 @@ func (t *transcript) scroll(delta int) {
 	}
 }
 
-// scrollNotch is the single-notch gesture (k/Up, one wheel notch). Upward out
-// of live, DETACHING IS THE MOTION: stopFollowing hands the live padding row
-// back to content, and that row IS the notch of travel spent: the window keeps
-// its last line, so nothing scrolls away and the only change on screen is the
-// blank row above the rule becoming content while the footer drops 'live'. The
-// next notch scrolls normally. Deliberate jumps (u/PgUp, gg) do not route
-// through here: a jump should land where it lands.
+// Upward out of live, detaching is the motion: the live padding row becomes
+// content and nothing scrolls. Deliberate jumps (u/PgUp, gg) do not route through
+// here.
 func (t *transcript) scrollNotch(delta int) {
 	if t.follow && delta < 0 {
 		t.stopFollowing()
@@ -405,8 +309,7 @@ func (t *transcript) scrollNotch(delta int) {
 	t.scroll(delta)
 }
 
-// scrollBy is the native wheel's entry point; render clamps the offset (see
-// render, which clamps the low side even when the frame itself is deferred).
+// render clamps the offset, even when the frame itself is deferred.
 func (t *transcript) scrollBy(delta int) {
 	if !t.active {
 		return
@@ -415,8 +318,6 @@ func (t *transcript) scrollBy(delta int) {
 	t.render()
 }
 
-// transcriptPageSize is the ceiling on how many older messages a single
-// scroll-up fetch pulls; transcriptWindowRows is the real budget.
 const (
 	transcriptPageSize    = 30
 	transcriptMinPageSize = 6
@@ -424,16 +325,11 @@ const (
 	transcriptTailLimit   = 2 * transcriptPageSize
 )
 
-// transcriptWindowRows is the retained-window budget in rendered rows. A var,
-// not a const, so the geometry sweep in transcript_geometry_bench_test.go can
-// measure the tradeoff it encodes. See skills/figaro/contributing/notes/transcript-paging.md for the
-// numbers behind the chosen value.
+// A var so the geometry sweep in transcript_geometry_bench_test.go can measure the
+// tradeoff.
 var transcriptWindowRows = 2400
 
-// heldWindow is the EXACT size of the retained window in line space: rendered
-// rows (inter-message rules included) and the number of committed messages
-// they belong to. It reads axis A's line index, which already computes both as
-// a side effect of every frame.
+// heldWindow reads the line index, which already computes both counts per frame.
 func (t *transcript) heldWindow() (rows, messages int) {
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
@@ -446,8 +342,6 @@ func (t *transcript) heldWindow() (rows, messages int) {
 	return rows, messages
 }
 
-// avgRowsPerMessage is the measured height of the messages the retained window
-// holds, or 0 when the index has not been built yet (a cold pager).
 func (t *transcript) avgRowsPerMessage() int {
 	rows, n := t.heldWindow()
 	if n == 0 {
@@ -459,13 +353,8 @@ func (t *transcript) avgRowsPerMessage() int {
 	return 1
 }
 
-// pageRowBudget is the row budget of ONE page: the retained window is
-// transcriptPageLimit pages, and the tail window is exactly one.
 func pageRowBudget() int { return transcriptWindowRows / transcriptPageLimit }
 
-// pageMessages is how many messages one page should hold so that a full window
-// (transcriptPageLimit pages) lands near the row budget. Falls back to the
-// message-count ceiling until we have measured anything.
 func (t *transcript) pageMessages() int {
 	avg := t.avgRowsPerMessage()
 	if avg <= 0 {
@@ -481,31 +370,20 @@ func (t *transcript) pageMessages() int {
 	return n
 }
 
-// tailKeep is how many messages the tail window holds. Cold (nothing rendered
-// yet, so no idea how tall this aria's messages are) it deliberately starts at
-// the floor rather than the ceiling: opening the pager on an aria of 400-row
-// tool dumps used to render thirty of them to paint one screen. tuneTail then
-// grows the window into the row budget, which is invisible because the added
-// rows are ABOVE a viewport pinned to the tail.
+// Cold, it starts at the floor rather than the ceiling: tuneTail grows the window
+// into the budget, invisibly, since the added rows are above a viewport pinned to
+// the tail.
 func (t *transcript) tailKeep() int {
 	if t.tailWant > 0 {
 		return t.tailWant
 	}
-	// COLD: nothing rendered, so no height is known and every number here would
-	// be invented. Start at the floor and let tuneTail walk up, which is
-	// invisible: the rows it adds are ABOVE a viewport pinned to the tail.
 	return transcriptMinPageSize
 }
 
-// transcriptPrefetchScreens is how close (in viewports) the scroll position has
-// to get to an edge of the retained window before we start pulling the next
-// page. One screen means the fetch is armed only once the user is already
-// looking at the last rows we have, so the RPC lands *after* they hit the wall;
-// two gives a screenful of runway, which at wheel speed is a few hundred
-// milliseconds: enough to cover a local daemon round trip.
+// Two screens of runway: at wheel speed a few hundred milliseconds, enough for a
+// local daemon round trip.
 const transcriptPrefetchScreens = 2
 
-// wantOlder reports a history search or proximity to the window's floor.
 func (t *transcript) wantOlder() bool {
 	if t.search != nil {
 		return true
@@ -513,9 +391,6 @@ func (t *transcript) wantOlder() bool {
 	return t.offset < transcriptPrefetchScreens*t.h
 }
 
-// atAriaFloor reports whether the window already stands on the beginning of
-// the aria: the store holds nothing below the floor and the wire says there is
-// nothing before it.
 func (t *transcript) atAriaFloor() bool {
 	if t.client.Count() == 0 {
 		return !t.client.MoreBefore()
@@ -529,11 +404,6 @@ func (t *transcript) atAriaFloor() bool {
 	return !t.client.MoreBefore()
 }
 
-// growWindow lowers the floor over history THE STORE ALREADY HOLDS, and reports
-// the messages it gained. This is the job the payload LRU used to do for the
-// return trip, except that with one owner there is nothing to hold a second
-// copy in: the messages are in the store, their rows are still in the cache,
-// and the whole move is one backward walk and a new floor.
 func (t *transcript) growWindow(n int) []aria.Message {
 	if n <= 0 {
 		return nil
@@ -551,8 +421,7 @@ func (t *transcript) growWindow(n int) []aria.Message {
 	return gained
 }
 
-// lowerFloor moves the window's floor down onto a. It never raises it: that is
-// resetToTail's job, and only while following.
+// Never raises the floor: that is resetToTail's job, and only while following.
 func (t *transcript) lowerFloor(a aria.Anchor) {
 	if !a.Less(t.from) {
 		return
@@ -561,9 +430,8 @@ func (t *transcript) lowerFloor(a aria.Anchor) {
 	t.invalidateWindow()
 }
 
-// reachedFloor is what to do when the walk can go no further: a search that
-// found nothing goes home, and a jump resolves against the beginning it was
-// waiting for (`:0` lands on the lowest turn that actually exists).
+// At the floor a search that found nothing goes home and a jump resolves against
+// the beginning.
 func (t *transcript) reachedFloor() {
 	t.wantTop = false
 	t.finishSearch(false)
@@ -571,7 +439,6 @@ func (t *transcript) reachedFloor() {
 	t.render()
 }
 
-// pageCursor prioritizes an explicit target over viewport prefetch.
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	if !t.active {
 		return transcriptPageRequest{}, false
@@ -608,10 +475,6 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	return transcriptPageRequest{at: t.from, limit: t.pageMessages()}, true
 }
 
-// absorbOlder is what every arrival of older history does once it is IN the
-// window, whether it came from the store or from the wire: re-anchor the
-// viewport on the line it was showing, let a search look at what arrived, and
-// let a jump resolve against it.
 func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within int) {
 	if t.search != nil {
 		if t.findPage(t.search.query, gained) {
@@ -621,8 +484,7 @@ func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within 
 	}
 	t.buildIndex()
 	if t.wantTop {
-		// The reader asked for the beginning and has not asked for anything
-		// since. Hold them at the top of what is now held; the floor clears it.
+		// Hold at the top of what is now held; the floor clears wantTop.
 		t.offset = 0
 		if t.atAriaFloor() {
 			t.wantTop = false
@@ -633,8 +495,6 @@ func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within 
 	t.jumpAdvance()
 }
 
-// applyPage folds a fetched page of older history into the one owner and drops
-// the window's floor onto it.
 func (t *transcript) applyPage(req transcriptPageRequest, page aria.Page) {
 	if !t.active {
 		return
@@ -650,14 +510,14 @@ func (t *transcript) applyPage(req transcriptPageRequest, page aria.Page) {
 	t.client.SetMoreBefore(page.More.Before)
 	msgs := t.client.Apply(page, aria.Quiet)
 	if len(msgs) == 0 {
-		// Nothing on the wire reports where an aria begins: a read that hands
-		// back nothing new is the floor.
+		// Nothing on the wire reports where an aria begins: a read that
+		// hands back nothing new is the floor.
 		t.client.SetMoreBefore(false)
 		t.reachedFloor()
 		return
 	}
-	// Progress is the floor moving. A page that does not lower it ends the
-	// walk, whatever the wire says about more.
+	// A page that does not lower the floor ends the walk, whatever the wire
+	// says about more.
 	before := t.from
 	t.lowerFloor(anchorOf(msgs[0]))
 	if t.from == before {
@@ -667,12 +527,11 @@ func (t *transcript) applyPage(req transcriptPageRequest, page aria.Page) {
 	}
 	t.absorbOlder(msgs, anchor, within)
 	if t.search != nil {
-		return // still walking; the worker asks for the next page
+		return // still walking
 	}
 	t.render()
 }
 
-// applySeek resolves the request from its response, including already-held parts.
 func (t *transcript) applySeek(req transcriptPageRequest, page aria.Page) {
 	t.client.Apply(page, aria.Quiet)
 	t.invalidateWindow()
@@ -721,47 +580,33 @@ func (t *transcript) applySeek(req transcriptPageRequest, page aria.Page) {
 	t.render()
 }
 
-// anchorOf is a message's address: the pair (Turn, From) that identifies it
-// everywhere in this codebase.
 func anchorOf(m aria.Message) aria.Anchor {
 	return aria.Anchor{Turn: uint64(m.Turn), Node: m.From}
 }
 
-// pageMessages materializes a page on its own, for callers that want its
-// content without folding it into a view: the fold is the one that runs
-// everywhere else, so a page reads the same wherever it is read.
 func pageMessages(p aria.Page) []aria.Message {
 	return aria.NewClient().Apply(p, aria.Quiet)
 }
 
-// sliceKey identifies one pager unit: the turn id in the high bits, the node
-// offset within that turn in the low 20. Packed into one integer rather than a
-// struct because the row cache is a per-frame hot path and a two-word key
-// measurably slowed selection rehydrate (+40% at 10k messages). 2^20 nodes in a
-// single turn is not reachable; composeBashCap bounds a node long before that.
+// sliceKey packs turn (high bits) and node offset (low 20) into one integer: a
+// two-word key measurably slowed the per-frame row cache. 2^20 nodes in a turn is
+// not reachable.
 type sliceKey int64
 
 const sliceKeyFromBits = 20
 
 func keyOf(m aria.Message) sliceKey { return sliceKeyOf(m.Turn, m.From) }
 
-// sliceKeyOf packs the same key from the coordinate alone, for the callers
-// that have the identity of a message but not the message.
 func sliceKeyOf(turn int, from uint64) sliceKey {
 	return sliceKey(int64(turn)<<sliceKeyFromBits | int64(from))
 }
 
-// turn is the turn id a unit belongs to.
 func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 
-// from is the node offset within that turn.
 func (k sliceKey) from() uint64 { return uint64(k) & (1<<sliceKeyFromBits - 1) }
 
-// resetToTail re-points the window at the STORE's tail. It does not copy: the
-// window is the interval [from, ∞) and the store is its only holder, so
-// "rebuilding" it is recomputing one anchor: the floor, tailKeep messages
-// back from the end, which Store.TailFrom walks BACKWARD and which therefore
-// costs the window's own size, not the aria's.
+// Recomputes one anchor; Store.TailFrom walks backward, so this costs the window's
+// size, not the aria's.
 func (t *transcript) resetToTail() {
 	t.wantTop = false
 	keep := t.tailKeep()
@@ -771,16 +616,15 @@ func (t *transcript) resetToTail() {
 	}
 	from, held := t.client.TailFrom(keep)
 	if !held {
-		// Nothing CLOSED is retained, which a cold join to a long running
-		// turn produces: every node still belongs to the open turn. The zero
-		// anchor would be read as the tail, so the fetch for the turn's
-		// missing head would return the tail we are already showing.
+		// Nothing closed is retained (a cold join to a long turn): the
+		// zero anchor would read as the tail, so anchor on the open
+		// message.
 		if open := t.openMessage(); open != nil {
 			from = anchorOf(*open)
 		}
 	}
 	if t.from == from {
-		return // the window already IS the tail at this floor
+		return
 	}
 	t.from = from
 	t.invalidateWindow()
@@ -789,17 +633,11 @@ func (t *transcript) resetToTail() {
 	t.pruneCaches()
 }
 
-// transcriptRetainRows is how many rendered rows the STORE is allowed to hold
-// behind the pager's window: the return trip's worth. It plays the part
-// transcriptPayloadLRU plays for fetched pages: what the store still holds,
-// the row cache still holds rows for, so scrolling back up costs neither I/O
-// nor a re-render. Four windows, which is what the LRU was sized at.
+// transcriptRetainRows bounds what the store holds behind the window: the return
+// trip's worth, four windows.
 var transcriptRetainRows = 4 * transcriptWindowRows
 
-// retainMessages converts that row budget into the unit eviction works in,
-// through the measured height of the messages this aria actually has: the
-// same conversion pageMessages does, and for the same reason: a message is
-// anywhere from 4 rows to 400, so a message count is not a memory bound.
+// A message is anywhere from 4 rows to 400, so a message count is not a memory bound.
 func (t *transcript) retainMessages() int {
 	avg := t.avgRowsPerMessage()
 	if avg <= 0 {
@@ -815,55 +653,44 @@ func (t *transcript) retainMessages() int {
 	return n
 }
 
-// evictStale forgets what has fallen far enough behind the window, and NEVER
-// what the window shows. With one owner this is the whole of retention: the
-// client's count-based trim is suspended while the pager is up (see enter),
-// because trimming the oldest is exactly wrong for a reader who has scrolled
-// up: it would drop the page they are looking at.
+// evictStale never evicts what the window shows.
 func (t *transcript) evictStale() {
 	floor, ok := t.client.TailFrom(t.retainMessages())
 	if !ok {
 		return
 	}
 	if t.from.Less(floor) {
-		floor = t.from // never evict inside the window
+		floor = t.from
 	}
 	t.client.EvictBefore(floor)
 }
 
-// tuneTail re-cuts the tail window towards the row budget, using what the last
-// frame taught us about how tall this aria's messages are. It grows a window
-// that does not fill its budget (or the viewport) and shrinks one that overshot
-// it, and reports whether the window changed so the caller can re-materialize.
+// tuneTail grows a window that does not fill its budget (or the viewport) and
+// shrinks one that overshot; reports whether the window changed.
 func (t *transcript) tuneTail() bool {
 	if t.tailTuned || !t.follow {
 		return false
 	}
-	_, have := t.heldWindow() // the messages the window holds
+	_, have := t.heldWindow()
 	if have == 0 {
 		return false
 	}
 	budget := pageRowBudget()
 	fits, rows := t.tailFit(budget)
 
-	// OVERSHOT: the window holds more rows than the budget, and because the
-	// walk measured every one of them we know exactly where to cut AND that the
-	// message just outside the cut overflows. That is the whole convergence
-	// argument: the boundary is a fact about heights we have, not a prediction
-	// from an average, so re-deriving it gives the same answer forever.
+	// Overshot: the cut is a fact about measured heights, not a prediction
+	// from an average, so re-deriving it converges.
 	if fits < have {
 		t.tailWant = fits
-		t.tailTuned = true // the cut IS the fixed point; do not re-tune into it
+		t.tailTuned = true // the cut is the fixed point
 		before := t.from
 		t.resetToTail()
 		t.tailTuned = true // resetToTail cleared it; the cut still stands
 		return t.from != before
 	}
 
-	// UNDER BUDGET: the window is everything we hold and it does not fill the
-	// budget (or the viewport). Ask for more. The average is used HERE, as a
-	// hint for how far to jump, and nowhere else, a wrong hint costs one extra
-	// pass, where before it was the control law and could not settle.
+	// Under budget: the average is a hint for how far to jump, and nowhere
+	// else the control law.
 	full := rows >= budget || have >= transcriptPageSize
 	if full && t.index.total >= t.h {
 		t.tailWant = have
@@ -873,17 +700,14 @@ func (t *transcript) tuneTail() bool {
 	want := have + max(t.pageMessages(), 1)
 	before := t.from
 	t.tailWant = want
-	t.resetToTail() // clears tailTuned; re-derives the floor
+	t.resetToTail()
 	if t.from == before {
-		t.tailTuned = true // no messages left to take: this is the whole aria
+		t.tailTuned = true // the whole aria is held
 		return false
 	}
 	return true
 }
 
-// tailFit walks the retained window from the NEWEST committed message
-// backwards, adding real measured heights, and reports how many messages fit
-// inside budget rows (at least one) and how many rows they are.
 func (t *transcript) tailFit(budget int) (messages, rows int) {
 	for k := len(t.index.entries) - 1; k >= 0; k-- {
 		e := &t.index.entries[k]
@@ -900,16 +724,11 @@ func (t *transcript) tailFit(budget int) (messages, rows int) {
 	return messages, rows
 }
 
-// invalidateWindow is the ONE authority on "the retained window changed". Every
-// mutation of the window: the pages, or the store interval's floor: goes
-// through it, and it publishes the fact to the line index: windowRev++, which
-// buildIndex records, so a moved window always refills lineKey instead of
-// relying on the shape diff to notice.
+// The one authority on "the retained window changed".
 func (t *transcript) invalidateWindow() { t.windowRev++ }
 
 func (t *transcript) pruneCaches() {
-	// Called from resetToTail, i.e. once per frame while following the live
-	// tail, so the turn set is reused rather than rebuilt.
+	// Once per frame while following: the turn set is reused.
 	keep := t.keepBuf
 	if keep == nil {
 		keep = make(map[int]bool, transcriptPageSize*transcriptPageLimit)
@@ -917,22 +736,14 @@ func (t *transcript) pruneCaches() {
 	} else {
 		clear(keep)
 	}
-	// ROWS FOLLOW THE STORE. A message that has merely fallen out of the WINDOW
-	// (the row budget shrinking it back to the tail) is still held by the one
-	// owner, and the scroll back up over it must cost neither I/O nor a
-	// re-render: which is the whole job the payload LRU used to do.
+	// Rows follow the store, not the window: scrolling back over a message the
+	// store still holds must cost neither I/O nor a re-render.
 	t.client.ForEachIn(aria.Anchor{}, windowEnd, func(m aria.Message) bool {
 		keep[m.Turn] = true
 		return true
 	})
-	// The OPEN turn is not in the store's window: it is the live suffix, held
-	// separately: so a walk of the window alone does not see it. Without this
-	// line its caches were pruned as though it had scrolled out of history:
-	// the row cache re-renders and nobody notices, but `expanded` is USER
-	// state, and losing it silently undid an expansion the reader had just
-	// asked for. It undid it on Escape (which clears the selection through
-	// here) and, worse, on every frame while following the live tail: so
-	// expanding a streaming tool appeared not to work at all.
+	// The open turn is the live suffix, not in the store's window; pruning it
+	// loses `expanded`, which is user state, on every following frame.
 	if open := t.openMessage(); open != nil {
 		keep[open.Turn] = true
 	}
@@ -948,14 +759,11 @@ func (t *transcript) pruneCaches() {
 			}
 		}
 	}
-	// A prune that dropped nothing is not news, but it is called from the
-	// frame path and counting what it deleted would cost as much as the bump.
+	// Counting what was deleted would cost as much as the bump.
 	t.rowRev++
 }
 
-// forEachMessage walks the retained window without materializing a slice of
-// it: it is called from the frame path, where one allocation and a copy of
-// every retained message header per frame is pure waste.
+// On the frame path: no slice of the window is materialized.
 func (t *transcript) forEachMessage(fn func(aria.Message)) {
 	t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
 		fn(m)
@@ -963,8 +771,6 @@ func (t *transcript) forEachMessage(fn func(aria.Message)) {
 	})
 }
 
-// windowEnd is past every real anchor: the high edge of a window that runs to
-// the live tail.
 var windowEnd = aria.Anchor{Turn: ^uint64(0), Node: ^uint64(0)}
 
 func (t *transcript) subjectID() string {
@@ -974,7 +780,6 @@ func (t *transcript) subjectID() string {
 	return t.status.figaroID
 }
 
-// retained is what the pager holds: messages in the window and cached rows.
 func (t *transcript) retained() (msgs, rows int) {
 	if t.client != nil {
 		msgs = t.client.Count()
@@ -991,12 +796,10 @@ func (t *transcript) messages() []aria.Message {
 	return out
 }
 
-// oldestFrom is the node offset the retained window starts at inside its
-// oldest turn. Non-zero means the window holds only the TAIL of that turn, so
-// the backward fetch must be anchored on the node: see transcriptPageRequest.
+// Non-zero means the window holds only the tail of its oldest turn, so the
+// backward fetch must anchor on the node.
 func (t *transcript) oldestFrom() uint64 { return t.from.Node }
 
-// setSize records a new viewport for a transcript that is NOT on screen.
 func (t *transcript) setSize(w, h int) {
 	if w == t.w && h == t.h {
 		return
@@ -1007,14 +810,10 @@ func (t *transcript) setSize(w, h int) {
 }
 
 func (t *transcript) resize(w, h int) {
-	// Anchor on the message at the viewport top: a width change re-wraps rows and
-	// changes line counts, so keeping the raw line offset would jump the view.
-	// Record the top message's turn + how many lines into it we are, then restore
-	// after re-rendering at the new width. (Skipped when following the tail.)
+	// Anchor on the slice at the viewport top: a width change re-wraps rows.
 	anchor, within := t.viewportAnchor()
-	// The visual points are pinned to source runes across the reflow; see
-	// visualPin. Done before the width changes, against the rows the points
-	// were made on.
+	// Visual points are pinned to source runes before the width changes
+	// (visualPin).
 	var pinCur, pinAnchor visualPin
 	if t.visual.active() {
 		t.buildIndex()
@@ -1024,20 +823,13 @@ func (t *transcript) resize(w, h int) {
 		}
 	}
 	t.w, t.h = w, h
-	// THE ROW CACHE IS NOT KEYED BY WIDTH. rowCache holds each committed
-	// message's rendered rows under (turn, from) alone, and buildIndex below
-	// reads it rather than re-rendering: so without this line a width change
-	// re-serves rows composed for the OLD width, forever, and the pager paints
-	// them into the new viewport.
+	// The row cache is not keyed by width: without this a width change
+	// re-serves rows composed for the old width.
 	t.invalidateRows()
-	// Nil means "I know nothing about the screen", and paint honours that by
-	// repainting every row: including the blank ones, which is the whole point.
-	// It used to claim "full repaint (diff vs nil)" and not get one: paint read a
-	// missing base row as "", so every legitimately-blank row compared equal and
-	// was skipped, leaving the terminal's own post-resize leftovers in the gaps
-	// between nodes. See the comment in paint.
+	// Nil: paint repaints every row, the blank ones included, or the
+	// terminal's post-resize leftovers stay in the gaps.
 	t.prev = nil
-	t.buildIndex() // re-render at the new width, repopulating lineKey
+	t.buildIndex()
 	if t.visual.active() {
 		t.visual.cursor = t.visualUnpin(pinCur)
 		if t.visual.highlighted() {
@@ -1049,11 +841,8 @@ func (t *transcript) resize(w, h int) {
 	t.render()
 }
 
-// viewportAnchor names the line at the top of the viewport by the SLICE that
-// owns it plus how far into that slice it is. Slice, not turn: a page landing
-// can prepend an earlier slice of the turn already at the top (the head of one
-// clipped by the page budget), and a turn-granular anchor would then restore to
-// the head's first line, a jump to the top of a turn the reader was inside.
+// Slice, not turn: a page landing can prepend an earlier slice of the turn at the
+// top, and a turn-granular anchor would restore to its head.
 func (t *transcript) viewportAnchor() (sliceKey, int) {
 	if t.follow || t.offset >= len(t.lineKey) {
 		return 0, 0
@@ -1081,17 +870,13 @@ func (t *transcript) restoreViewportAnchor(key sliceKey, within int) {
 func (t *transcript) invalidateRows() {
 	t.rowRev++
 	t.rowCache = map[sliceKey]cachedMessage{}
-	// The open message's blocks were drawn under the same settings and at the
-	// same width, so whatever voided the committed rows voided them too.
+	// Whatever voided the committed rows voided the open message's blocks too.
 	t.openMemo = openMemo{}
 }
 
-// screenMoved voids the painter's model of the terminal: something wrote to
-// the screen outside the frame buffer, so t.prev: "the frame the terminal is
-// holding": is now fiction, and the next frame must repaint in full.
+// screenMoved: something else wrote to the screen, so the next frame repaints in full.
 func (t *transcript) screenMoved() { t.prev = nil }
 
-// resyncDue reports whether the painter owes an unconditional full frame.
 func (t *transcript) resyncDue() bool {
 	if transcriptResyncInterval <= 0 {
 		return false
@@ -1102,10 +887,8 @@ func (t *transcript) resyncDue() bool {
 	return t.now().Sub(t.lastFull) >= transcriptResyncInterval
 }
 
-// screensEqual is the question a due resync asks before spending a full frame:
-// is what we composed already what we believe is on the screen? Rows that have
-// not changed are usually the same string values (the row cache hands them
-// back), so most of these comparisons are a pointer and a length.
+// Unchanged rows are usually the same string values, so most comparisons are a
+// pointer and a length.
 func screensEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -1118,17 +901,13 @@ func screensEqual(a, b []string) bool {
 	return true
 }
 
-// lines renders the retained message window and live tail to physical rows.
-// Committed messages are immutable, so their rendered rows are cached by turn;
-// only the open message renders every frame.
 func (t *transcript) lines() []string {
 	t.buildIndex()
 	t.lineBuf = t.window(0, t.index.total, t.lineBuf)
 	return t.lineBuf
 }
 
-// transRule is the memoized message separator: strings.Repeat per message per
-// frame is 16 KB/frame of identical strings.
+// Memoized: strings.Repeat per message per frame is 16 KB/frame of identical strings.
 func (t *transcript) transRule() string {
 	if t.ruleStr == "" || t.ruleW != t.w {
 		t.ruleStr, t.ruleW = dimTransRule(t.w), t.w
@@ -1136,13 +915,10 @@ func (t *transcript) transRule() string {
 	return t.ruleStr
 }
 
-// openMessage is the live region: the open turn's suffix, straight from the
-// client, EVEN WHEN THE READER HAS SCROLLED AWAY.
 func (t *transcript) openMessage() *aria.Message { return t.client.Open() }
 
-// stopFollowing detaches the viewport from the live tail and PINS it where it
-// was. Two things must happen before follow drops, because both are only true
-// while following:
+// stopFollowing pins the viewport where it was; settle first, since both are only
+// true while following.
 func (t *transcript) stopFollowing() {
 	if !t.follow {
 		return
@@ -1152,9 +928,8 @@ func (t *transcript) stopFollowing() {
 	_, t.offset = t.layout(len(t.footLines()))
 }
 
-// settle converges the tail window on the row budget (usually 0-1 passes) -
-// the window a following frame would show. Shared by the frame path and by
-// stopFollowing, which must not freeze an unconverged window.
+// settle converges the tail window on the row budget; stopFollowing must not
+// freeze an unconverged window.
 func (t *transcript) settle() {
 	t.buildIndex()
 	for range 3 {
@@ -1165,11 +940,7 @@ func (t *transcript) settle() {
 	}
 }
 
-// footLines is the PIT's body: everything between the transcript's rule and
-// the status bar. See pit.go.
 func (t *transcript) footLines() []string {
-	// The typing boxes are pits too: they used to write themselves into the
-	// status row, and take the mantra and the context figure with them.
 	rows := t.inputDrawerLines()
 	if rows == nil {
 		if !t.pit.open() {
@@ -1178,17 +949,13 @@ func (t *transcript) footLines() []string {
 		t.pit.full = t.fullPit()
 		rows = t.pit.lines(t.w, t.pitRoom())
 	}
-	// FULLSCREEN IS THE PIT AND NOTHING ELSE: no rule, no page position. They
-	// describe a conversation that is not on the screen.
+	// Fullscreen is the pit and nothing else: no rule, no page position.
 	if t.fullPit() {
 		return rows
 	}
-	// The rule opens the region: conversation, rule, pit, blank, bar.
 	return append([]string{t.transcriptRule()}, rows...)
 }
 
-// transcriptRule is the rule that closes the conversation: the aria, and where
-// in it you are.
 func (t *transcript) transcriptRule() string {
 	total := t.index.total
 	body, _ := t.layoutNow()
@@ -1207,22 +974,18 @@ func (t *transcript) transcriptRule() string {
 	return "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
 }
 
-// pitFocus is who the keys and the screen belong to while a pit is open.
 type pitFocus uint8
 
 const (
-	focusPit        pitFocus = iota // the default: a pit you opened is a pit you are in
+	focusPit        pitFocus = iota // a pit you opened is a pit you are in
 	focusTranscript                 // `T`: read the conversation, keep the pit
 )
 
-// fullPit is whether the pit takes the pane right now: the disposition, and
-// the focus. A fullscreen pit recedes when the transcript takes the keys.
+// A fullscreen pit recedes when the transcript takes the keys.
 func (t *transcript) fullPit() bool {
 	return t.full && (t.pit.open() || t.box == boxComposer) && t.focused == focusPit
 }
 
-// focusTranscriptKey is `T`: hand the screen to the conversation without
-// closing what is open, and hand it back on the next press.
 func focusTranscriptKey(t *transcript) {
 	if !t.pit.open() {
 		return
@@ -1234,21 +997,18 @@ func focusTranscriptKey(t *transcript) {
 	t.focused = focusPit
 }
 
-// pitRoom is how many rows the pit may have, and the only place that
-// arithmetic is done: the pane, minus the bar (one row, or three when it
-// wraps), the blank above it, the rule, and a row of conversation.
+// The only place this arithmetic is done: the pane, minus the bar (one row, or
+// three when it wraps), the blank above it, the rule, and a row of conversation.
 func (t *transcript) pitRoom() int {
 	if t.fullPit() {
-		// FULLSCREEN TAKES THE PANE: everything but the status bar, which is
-		// inviolable, and the blank row above it. No rule is drawn, so no row
-		// is reserved for one.
+		// Fullscreen: everything but the status bar and the blank above
+		// it; no rule is drawn.
 		return max(t.h-t.barRows()-1, 1)
 	}
 	return max(t.h-t.barRows()-5, 1)
 }
 
-// layoutNow is layout against the CURRENT stanza height, without re-entering
-// footLines (which calls transcriptRule, which would call this).
+// Without re-entering footLines, which calls transcriptRule, which would call this.
 func (t *transcript) layoutNow() (body, maxOff int) {
 	foot := 0
 	if rows := t.inputDrawerLines(); rows != nil {
@@ -1257,10 +1017,9 @@ func (t *transcript) layoutNow() (body, maxOff int) {
 		t.pit.full = t.fullPit()
 		foot = len(t.pit.lines(t.w, t.pitRoom()))
 	}
-	return t.layout(foot + 1) // +1 for the transcript rule above the pit
+	return t.layout(foot + 1)
 }
 
-// padTo right-pads to n display columns.
 func padTo(s string, n int) string {
 	if w := runewidth.StringWidth(s); w < n {
 		return s + strings.Repeat(" ", n-w)
@@ -1268,27 +1027,18 @@ func padTo(s string, n int) string {
 	return s
 }
 
-// setCmdOut shows a command's output panel. The rows arrive with their ids
-// already on them: a row is selectable because its verb said what it names, not
-// because its text happens to contain something aria-shaped.
+// A row is selectable because its verb said what it names, not because its text
+// looks aria-shaped.
 func (t *transcript) setCmdOut(title string, rows []pitRow) {
 	t.queuedByKey = false
 	t.pit.showList(pitOutput, ":"+title, rows)
-	// A LISTING OPENS ON WHERE YOU ARE. The top row is a stranger; the aria
-	// on screen is the one a reader navigates from, so the cursor starts
-	// there and the window scrolls to hold it.
 	t.pit.focus(t.status.figaroID)
 	t.focused = focusPit
 	t.render()
 }
 
-// layout splits the viewport into the content body and the bottom chrome: the
-// rule and the status row always, the open panel when there is one, and: ONLY
-// while following: one blank padding row above the rule.
-// layout reserves the footer's rows. THE BAR IS NOT ALWAYS ONE ROW: on a
-// narrow pane it is three (left, blank, right), and reserving one while
-// painting three would push the conversation's last line off the top. The
-// rule is one row; barRows is the rest.
+// The bar is not always one row: on a narrow pane it is three, and reserving one
+// while painting three pushes the conversation off the top.
 func (t *transcript) layout(foot int) (body, maxOff int) {
 	body = t.h - 1 - t.barRows() - foot
 	if t.follow {
@@ -1300,18 +1050,12 @@ func (t *transcript) layout(foot int) (body, maxOff int) {
 	return body, max(t.index.total-body, 0)
 }
 
-// renderMsgBase renders one message without selection decoration. Committed
-// instances are cached by the caller, under their slice key.
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	return t.renderMsg(m, nil)
 }
 
-// renderOpenMsg renders the message still being written. Every frame of a live
-// turn redraws it, and markdown layout is the most expensive thing the pager
-// does: a hundred-block turn cost 60ms a frame to lay out blocks that had not
-// changed since the last one, which held the render lock through the whole
-// stream and read as a frozen pane (freeze/stacks-20260912-125749). The memo
-// makes a frame cost what the stream changed.
+// Markdown layout is the most expensive thing the pager does and the open message
+// is redrawn every frame: the memo makes a frame cost what the stream changed.
 func (t *transcript) renderOpenMsg(m aria.Message) cachedMessage {
 	if t.openMemo.key != keyOf(m) || t.openMemo.w != t.w || t.openMemo.blocks == nil {
 		t.openMemo = openMemo{key: keyOf(m), w: t.w, blocks: map[int]*memoBlock{}}
@@ -1357,20 +1101,14 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 	return cachedMessage{rows: rows}
 }
 
-// pagerRow is one composed row as the pager keeps it: addressed, clipped and
-// with its rendition churn collapsed.
 func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
 	ref := blockRef(m, r.Block)
 	if r.Delta > 0 {
-		// Every delta is its own selectable unit, drawn beside the block it
-		// explains and addressed on the delta axis.
 		ref = deltaRefOf(ref, r.Delta)
 	}
-	// Rows are stored already clipped (their unselected resting form) so a
-	// frame that touches nothing allocates nothing; see plainNodeRow.
-	// collapseSGR then strips the rendition churn glamour emits per cell -
-	// 3/4 of the retained row text, and of the bytes each painted frame puts
-	// on the wire; see sgr.go.
+	// Stored clipped (plainNodeRow) so an untouched frame allocates nothing;
+	// sgrCollapse strips the per-cell rendition churn glamour emits, 3/4 of
+	// the row bytes.
 	return transcriptRow{
 		text:   sgrCollapse(plainNodeRow(r.Text, t.w)),
 		ref:    ref,
@@ -1381,25 +1119,20 @@ func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
 	}
 }
 
-// composer is the pager's composition: the shared shape, plus the two things
-// only the pager has: each block's address, and the per-block expansion state a
-// gesture toggles.
 func (t *transcript) rowComposer(m aria.Message) ldrender.Composer {
 	c := ldrender.Composer{
-		// The pager is the surface where Enter means something, so its view
-		// may open arguments as well as output (see ariaView.gesture).
+		// The pager view may open arguments as well as output
+		// (ariaView.gesture).
 		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, InputHeader: inputHeader, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[blockRef(m, block)] },
-		// The delta list folds on its own gesture (d), and with the body on
-		// Enter; the layout is the block type's (see adornment.go).
 		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
 			ref := blockRef(m, block)
 			return buildAdornment(adornerFor(block, n), deltas, w, t.adorned[ref])
 		},
 		Quote: quoteRows,
 	}
-	// The address is composed always and drawn only under M-m, so the toggle is
-	// a paint-time decision and the row cache does not know about it.
+	// The address is composed always and drawn only under M-m: the toggle is a
+	// paint-time decision and the row cache does not know it.
 	layout := t.coordFormat()
 	c.Mark = func(block int, n livedoc.Node) string {
 		ref := blockRef(m, block)
@@ -1412,13 +1145,9 @@ func (t *transcript) render() {
 	if !t.active {
 		return
 	}
-	// Clamp the low side BEFORE the gate. "render clamps the offset" was the
-	// contract every mutation site relied on (scrollBy, key, the selection
-	// scroll-into-view all leave it unclamped on purpose); B's gate made the
-	// frame skippable, and with it the clamp. That matters because the offset
-	// is read off the frame path too: viewportAnchor indexes lineKey with it
-	// when a prefetched page lands, and the search wrap-around takes it modulo
-	// the row total, and a negative index is a panic, not a wrong pixel.
+	// Clamp the low side before the gate: the offset is read off the frame
+	// path too (viewportAnchor, the search wrap-around), and a negative index
+	// panics.
 	if t.offset < 0 {
 		t.offset = 0
 	}
@@ -1433,9 +1162,7 @@ func (t *transcript) render() {
 	}
 }
 
-// beginBatch/endBatch bracket a run of state changes that must produce ONE
-// frame. Every mutation inside still calls render(); render just records that
-// the screen is stale and returns. endBatch draws the settled state once.
+// beginBatch/endBatch bracket state changes that must produce one frame.
 func (t *transcript) beginBatch() { t.batch++ }
 
 func (t *transcript) endBatch() {
@@ -1444,13 +1171,11 @@ func (t *transcript) endBatch() {
 	}
 	if t.batch == 0 && t.dirty {
 		t.dirty = false
-		t.render() // re-checks the frame-rate gate, which may defer once more
+		t.render() // re-checks the gate, which may defer once more
 	}
 }
 
-// flush paints a deferred frame unconditionally, ignoring the frame-rate gate.
-// It is the trailing render: whoever refuses a frame owes a later flush, so
-// the final state is always on screen.
+// Whoever refuses a frame owes a later flush, so the final state is always on screen.
 func (t *transcript) flush() {
 	if !t.active || !t.dirty || t.batch > 0 {
 		return
@@ -1462,15 +1187,8 @@ func (t *transcript) flush() {
 	}
 }
 
-// renderNow paints without asking the frame-rate ceiling.
-//
-// THE CEILING IS FOR A STREAM, NOT FOR AN ANSWER. It exists so a fast provider
-// cannot make the pager repaint faster than a reader can see; a subject switch
-// is one discrete thing the reader asked for, and it should appear at once.
-// Measured: once retention made a hop back cost 0.3 ms of work instead of 7,
-// its first frame started landing INSIDE the previous frame's window and waited
-// out the ceiling, so the screen took twice as long to change as it had before
-// the work got faster. A batch still holds it: mid-keystroke is not a frame.
+// The ceiling is for a stream, not for an answer: a subject switch is one discrete
+// thing and appears at once. A batch still holds it.
 func (t *transcript) renderNow() {
 	if !t.active || t.batch > 0 {
 		t.render()
@@ -1486,21 +1204,13 @@ func (t *transcript) renderNow() {
 	}
 }
 
-// renderFrame is the frame itself: compose the visible window and paint it.
-// render() is only the gate in front of it.
 func (t *transcript) renderFrame() {
-	// The frame ends in a two-row footer (rule, status), plus one padding row
-	// while following, so a viewport shorter than that has nowhere to draw and
-	// would index screen[-2]. A pane this small cannot show a paged transcript
-	// usefully; skip the frame rather than crash, and pick up on the next
-	// resize.
+	// A pane under four rows has nowhere to draw the footer and would index
+	// screen[-2]: skip the frame.
 	if t.h < 4 {
 		return
 	}
-	// Converge the tail window on the row budget. D drove this off
-	// len(t.lines()), a full materialization of the retained window, which is
-	// exactly what A deleted from the frame path. settle reads the index
-	// instead, which carries the same counts exactly and for free.
+	// settle reads the index, never a full materialization of the window.
 	t.settle()
 	foot := t.footLines()
 	body, maxOff := t.layout(len(foot))
@@ -1515,50 +1225,34 @@ func (t *transcript) renderFrame() {
 		t.offset = 0
 	}
 	screen := t.nextScreen()
-	// A's windowed accessor: only the ~40 rows about to be painted are
-	// materialized, decorated and highlighted. C's primitives make each of
-	// those rows cost a slice read.
+	// Only the rows about to be painted are materialized, decorated and
+	// highlighted.
 	t.rowBuf = t.window(t.offset, t.offset+body, t.rowBuf)
-	// THE FRAME'S OWN ROW->NODE MAP, recorded here and nowhere else: a click
-	// arrives naming a screen row, and the only honest answer to "which node was
-	// on that row" is the one taken from the geometry that was actually painted.
-	// Re-deriving it at click time would consult an offset that a live token or a
-	// tail re-tune may already have moved: the same staleness selectNode's cold
-	// path documents for its viewport seed. See transcript_mouse.go.
+	// The row->node map is recorded from the geometry actually painted:
+	// re-deriving it at click time would consult an offset a live token may
+	// have moved.
 	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs[:0])
 	copy(screen[:body], t.rowBuf)
-	// The header stands ON the conversation rather than pushing it down, so the
-	// rows beneath it are covered: they address nothing while they cannot be
-	// seen, and they emerge as the reader scrolls.
+	// The header covers rows: they address nothing while they cannot be seen.
 	head := t.stickyLines(t.activeHighlight(), t.selectionSpan())
 	copy(screen[:len(head)], head)
 	for i := range min(len(head), len(t.frameRefs)) {
 		t.frameRefs[i] = nodeRef{}
 	}
-	// BOTTOM-ALIGNED, and that is the fix for a stray blank line. layout() takes
-	// one row off the body while following (the live padding), so writing the
-	// stanza from `body` upward left the slack at the BOTTOM -- an empty row
-	// between the pit's last entry and its closing rule. The padding belongs
-	// above the transcript's rule, where the live region ends; anchoring the
-	// stanza to the bottom of the screen puts it there.
+	// Bottom-aligned: the live padding row belongs above the transcript rule,
+	// not between the pit and its rule.
 	if t.fullPit() {
-		// FULLSCREEN OBSCURES. The first cut dimmed the conversation and left
-		// it in place, so the pit read as something laid OVER it. Gluck wants
-		// the pane: a form at full height is a screen of its own, and the
-		// people it is being built for may not be reading the agent's output
-		// at all -- may not, one day, be allowed to. A dimmed transcript is
-		// still a transcript on the screen.
+		// Fullscreen obscures the conversation rather than dimming it.
 		for r := range screen {
 			if r < t.h-2 {
 				screen[r] = ""
 			}
 		}
 	}
-	// The row above the rule is left blank while following -- layout reserved
-	// it, and is content otherwise. See layout.
+	// The row above the rule is blank while following (layout reserved it).
 	rule, bar := t.footerRows(total, body)
-	// A STANZA TALLER THAN THE PANE KEEPS ITS TAIL, rather than not being
-	// drawn: the rows nearest the bar are the ones being read.
+	// A stanza taller than the pane keeps its tail: the rows nearest the bar
+	// are the ones being read.
 	start := t.h - 1 - len(bar) - len(foot)
 	clipped := false
 	if start < 0 {
@@ -1566,12 +1260,9 @@ func (t *transcript) renderFrame() {
 		start = 0
 		clipped = true
 	}
-	// THE RULE THAT CLOSES THE CONVERSATION CARRIES THE JUNCTION, as the
-	// sticky header's does and for the same reason (see joinRule). Which rule
-	// that is depends on what is open: the pit's own when a panel is up, the
-	// footer's otherwise. Nothing is below it but the status bar, so the floor
-	// only ever wears the up stroke. A clipped stanza has lost its rule along
-	// with its head, and a fullscreen pit has no conversation under it.
+	// The closing rule carries the gutter junction (joinRule): the pit's own
+	// when a panel is up, the footer's otherwise; a clipped stanza has lost
+	// its rule, a fullscreen pit has no conversation under it.
 	floor := t.lineCut(t.offset+body-1, t.offset+body)
 	if len(foot) > 0 && !clipped && !t.fullPit() && start > 0 {
 		foot[0] = joinRule(foot[0], floor, gutterCut{})
@@ -1582,17 +1273,10 @@ func (t *transcript) renderFrame() {
 		}
 	}
 	if t.pit.open() || t.inSearch || t.boxOpen() {
-		// NO CLOSING RULE, AND NO HINTS. An open pit used to be fenced top
-		// and bottom, with the lower fence carrying "^N/^P select · y yank ·
-		// Esc close" -- a second rule and a row of key advice between the list
-		// and the status bar. Gluck's design has neither: one rule above the
-		// pit, the rows, a blank, then the bar. The keys are in the help
-		// panel, which is now scrollable and one keystroke away; printing them
-		// under every list is a caption on a photograph of a caption.
+		// No closing rule and no key hints under an open pit: one rule
+		// above, the rows, a blank, the bar.
 		rule = ""
 	}
-	// The bar occupies the bottom rows and the rule sits directly above it,
-	// however many rows that is.
 	if top := t.h - 1 - len(bar); top >= 0 {
 		if rule != "" && len(foot) == 0 && top > 0 {
 			rule = joinRule(rule, floor, gutterCut{})
@@ -1607,17 +1291,9 @@ func (t *transcript) renderFrame() {
 	t.paint(screen)
 }
 
-// footerRows is the transcript's two-row footer, shared with the incipit
-// bookend so both modes speak one visual language:
-// footerRows is the transcript's own rule and THE STATUS BAR.
-//
-// THE STATUS BAR IS INVIOLABLE. It used to be a contended resource: the search
-// box wrote its query there, the command line wrote itself there, and every
-// error wrote its text there -- so the mantra, the context percentage and the
-// cost vanished exactly when something had gone wrong. All three now live in
-// the pit (see pit.go), and this row shows what is always true.
-// barRows is how many rows the status bar will take, asked before it is drawn
-// so the reservation and the painting cannot disagree.
+// barRows is asked before the bar is drawn so the reservation and the painting
+// cannot disagree. The status bar is inviolable: search, command line and errors
+// live in the pit.
 func (t *transcript) barRows() int {
 	if t.status == nil {
 		return 1
@@ -1638,13 +1314,12 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 		}
 		pos = fmt.Sprintf("%d–%d/%d%s", t.offset+1, end, total, mark)
 	}
-	// The live marker is the ONLY thing on screen that says which mode you are
-	// in, so it does not ride on the range: a transcript that fits the pane is
-	// still either following the tail or pinned where you left it.
+	// The live marker does not ride on the range: a transcript that fits the
+	// pane is still either following or pinned.
 	if t.follow {
 		pos = strings.TrimSpace(pos + " live")
 	}
-	// ONE FOOTER, shared with the incipit's bookend: see footerStanza.
+	// One footer, shared with the incipit's bookend (footerStanza).
 	stanza := footerStanza(t.status, t.w, pos, t.openPit(), t.status.barVerbose())
 	if len(stanza) == 0 {
 		return "", []string{""}
@@ -1652,7 +1327,6 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 	return stanza[0], stanza[1:]
 }
 
-// statusPanelLines is the '!' panel: the figaro-status detail above the footer.
 func (t *transcript) statusPanelLines() []string {
 	rows := t.status.panelLines()
 	if max := t.h - 4; len(rows) > max && max > 0 {
@@ -1664,44 +1338,32 @@ func (t *transcript) statusPanelLines() []string {
 	return rows
 }
 
-// showQueuedAuto opens or closes the queue pit because the QUEUE changed, not
-// because a key was pressed. Opening defers to a reader who has said what they
-// want on screen; closing does not, because a drained queue has nothing left
-// to be deliberate about.
+// Opening defers to a reader who has said what they want on screen; closing does not.
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
 		if t.showing(pitQueue) {
 			t.refreshQueuePit()
 			return
 		}
-		// Dismissed by hand, or a deliberate pit is up: the reader has said
-		// what they want on screen. A note is not deliberate.
+		// Dismissed by hand, or a deliberate pit is up. A note is not
+		// deliberate.
 		if t.queueDismissed || (t.pit.open() && !t.pit.glance()) {
 			return
 		}
 		t.openQueuePit()
 		return
 	}
-	// The queue is empty: the suppressor has nothing left to suppress, so a
-	// LATER queue can open the pit again.
 	t.queueDismissed = false
 	if !t.showing(pitQueue) {
 		return
 	}
-	// A DRAINED QUEUE CLOSES ITS PIT, by hand or not, and says so on the bar.
-	// "A pit the reader opened is never auto-closed" was the rule, and it
-	// refreshed the rows instead -- which for a queue means an empty list: the
-	// pit stayed open showing nothing, over a conversation it was still
-	// costing rows. The rule is right for a pit whose CONTENT is the point and
-	// wrong for one whose content is gone.
+	// A drained queue closes its pit, opened by hand or not, and says so on
+	// the bar.
 	t.queuedByKey = false
 	t.pit.close()
 	t.noteQueueEmpty()
 }
 
-// firstLineTrim returns the first non-empty line of s with surrounding
-// whitespace trimmed: the panel needs one line per queued prompt so the
-// list stays scannable.
 func firstLineTrim(s string) string {
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimSpace(line)
@@ -1712,21 +1374,16 @@ func firstLineTrim(s string) string {
 	return ""
 }
 
-// openQueueFromKey marks the queued-prompts panel visible and (if wired) kicks
-// an async refresh. The stale snapshot renders immediately so the user sees
-// something even if the RPC lags; the refresh replaces it in place.
+// The stale snapshot renders immediately; the async refresh replaces it in place.
 func (t *transcript) openQueueFromKey() {
-	// AN EMPTY QUEUE IS A SENTENCE, NOT A PIT. A pit with no rows costs the
-	// conversation its rows to say what the bar can say in four words and
-	// retire. The reader asked, so the earlier dismissal is revoked either
-	// way: a queue that arrives later opens the panel by itself.
+	// An empty queue is a sentence on the bar, not a pit; the dismissal is
+	// revoked either way.
 	t.queueDismissed = false
 	if t.queueEmpty() {
 		t.noteQueueEmpty()
 		if t.queuedFetch != nil {
-			// RESYNC ANYWAY. The snapshot may be empty because the seed is
-			// still in flight, and showQueuedAuto opens the pit the moment a
-			// real queue lands, so the refusal costs nothing but the sentence.
+			// Resync anyway: the seed may still be in flight, and
+			// showQueuedAuto opens the pit when a real queue lands.
 			t.queuedFetch()
 		}
 		return
@@ -1738,32 +1395,24 @@ func (t *transcript) openQueueFromKey() {
 	}
 }
 
-// queueEmpty reports a queue this client has read and found empty. An
-// unreadable queue is not empty, which is why queuedErr is part of the test.
+// An unreadable queue is not empty.
 func (t *transcript) queueEmpty() bool {
 	return len(t.queued) == 0 && t.queuedErr == ""
 }
 
-// queueEmptyNote is the sentence, in one place: the pit's absence and its
-// auto-close are the same fact and must not be worded twice.
+// The pit's absence and its auto-close are the same fact, worded once.
 const queueEmptyNote = "message queue is empty"
 
 func (t *transcript) noteQueueEmpty() { t.setCommandNoteAt(queueEmptyNote, alertInfo) }
 
-// openQueuePit builds the queue as a SELECTABLE list: `y` yanks a message's
-// text and `x` drops it, which is what turns the queue from a thing you watch
-// into a thing you can act on.
 func (t *transcript) openQueuePit() {
-	// NO TITLE. The pit says what it is on the status bar ("𝄚 queue"), and a
-	// title row repeated the same word one line above it while costing a row
-	// of the conversation.
+	// No title: the bar already says "queue".
 	t.pit.showList(pitQueue, "", t.queuedPitRows())
 	t.focused = focusPit
 }
 
-// refreshQueuePit replaces the rows in place, keeping the selection where
-// the reader put it: a queue that re-sorts under the cursor on every poll is a
-// queue nobody can hit `x` on.
+// Keeps the selection: a queue that re-sorts under the cursor on every poll is one
+// nobody can hit `x` on.
 func (t *transcript) refreshQueuePit() {
 	sel, had := t.pit.selected()
 	keep := ""
@@ -1774,8 +1423,6 @@ func (t *transcript) refreshQueuePit() {
 }
 
 func (t *transcript) queuedPitRows() []pitRow {
-	// An empty queue is an empty pit: the bar says the queue is open, and a
-	// row saying "(none)" spends a row on what no rows already said.
 	if len(t.queued) == 0 {
 		return nil
 	}
@@ -1789,23 +1436,14 @@ func (t *transcript) queuedPitRows() []pitRow {
 	return rows
 }
 
-// helpLines is the '?' panel: the footer grown upward into a key reference,
-// drawn above the footer while output keeps streaming past above it. Any key
-// wipes it. (Deliberately a bottom panel, not a floating overlay: the terminal
-// has exactly one alternate buffer, and compositing a float into every live
-// repaint buys nothing over this.)
+// A bottom panel, not a floating overlay: the terminal has one alternate buffer.
 func (t *transcript) helpLines() []string {
 	body := helpBody()
 	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
 	rows = append(rows, body...)
-	// The mouse is documented HERE and not in the keymap because it is not a
-	// chord: the table is keyed by keystroke, and every invariant it enforces
-	// (one help row per binding, openers derived from the rows) is stated in terms
-	// of keys. Smuggling a pointer in as a fake chord would buy one help line at
-	// the cost of those invariants. The gesture still has to be discoverable,
-	// though, an affordance nobody is told about is one nobody uses (trap #6:
-	// test the path of someone who does not know the affordance exists).
+	// The mouse is documented here, not in the keymap: the table is keyed by
+	// keystroke and its invariants are stated in keys.
 	rows = append(rows, mouseHelpRows()...)
 	if v := helpVersionLine(); v != "" {
 		rows = append(rows, "", "  "+v)
@@ -1819,10 +1457,8 @@ func (t *transcript) helpLines() []string {
 	return rows
 }
 
-// nextScreen hands out the frame buffer to compose into. Two are kept and
-// swapped: paint retains the composed frame as t.prev for the next diff, so
-// the buffer it displaces can be recycled instead of allocating a fresh
-// []string of screen height every frame.
+// Two frame buffers are swapped so a frame does not allocate a []string of screen
+// height.
 func (t *transcript) nextScreen() []string {
 	screen := t.screenSpare
 	if cap(screen) < t.h {
@@ -1835,50 +1471,24 @@ func (t *transcript) nextScreen() []string {
 	return screen
 }
 
-// paint writes the frame diff. Only changed rows are touched, and each is
-// emitted through compactRow, which strips the SGR churn and trailing blanks
-// the renderers leave behind (see transcript_paint.go): same cells, a
-// fraction of the bytes. The scratch buffer is retained across frames so a
-// steady scroll allocates nothing here.
 func (t *transcript) paint(screen []string) {
 	buf := append(t.paintBuf[:0], t.prefix...)
-	// THE SWITCH HAS NOW REACHED THE TERMINAL: record it, because leave() is
-	// only allowed to switch back if this happened. enter() queues; this is the
-	// only place the queue is drained.
+	// The alt-screen switch has reached the terminal; leave() may switch back
+	// only if this happened.
 	if t.altPending && t.prefix != "" {
 		t.altOn, t.altPending = true, false
 	}
 	t.prefix = ""
 	buf = append(buf, "\x1b[?2026h"...)
-	// A FRAME THAT SAYS NOTHING IS NOT SENT. Everything below appends only
-	// where the screen must change, so if nothing does, the only bytes here
-	// are the synchronized-update brackets -- and writing those, over and
-	// over, is how an idle pager kept a remote terminal busy.
+	// A frame that says nothing is not sent: writing the ?2026 brackets alone
+	// kept a remote terminal busy.
 	quiet := len(buf)
 	base := t.prev
-	// A FULL FRAME IS THE ONLY THING THAT CANNOT BE WRONG. base == nil says the
-	// painter has no claim on the screen (enter/resize/screenMoved); resyncDue
-	// says its claim has gone stale enough that it must be re-earned. Either way
-	// the diff below is skipped wholesale rather than trusted row by row: note
-	// that this also disables planScroll, whose prediction is a claim about the
-	// screen built from exactly the base we have just disowned.
-	// A PERIODIC RESYNC MUST NOT BE THE REASON TO PAINT. Re-earning the screen
-	// erases and rewrites every row -- invisible under a synchronized update,
-	// a visible flash on the terminals that implement none, which is WSL under
-	// a remote desktop. So a resync UPGRADES a frame that has something to
-	// say, and a frame that says nothing is dropped below, with lastFull left
-	// alone: the debt is paid by the next frame that differs.
-	//
-	// ASKED UP FRONT, and measured rather than reasoned. Folding the question
-	// into the row loop below looks cheaper -- the loop already compares every
-	// row -- but a resync writes each row WHOLE, so the quiet case then builds
-	// sixty rows of escape bytes and throws them away: 5.5us against 0.4us for
-	// a comparison pass that answers the same question. The extra pass costs
-	// nothing in the common case, because it only runs when a resync is due.
-	//
-	//	PaintUnchanged            415ns   (no resync due: the loop, no writes)
-	//	PaintUnchangedResyncDue  5499ns   (folded: build the frame, discard it)
-	//	PaintUnchangedResyncDue   561ns   (this: compare, skip)
+	// base == nil: the painter has no claim on the screen; a due resync
+	// upgrades a frame that has something to say, and a quiet frame leaves the
+	// debt owed, since re-earning the screen is a visible flash on terminals
+	// without synchronized update (WSL under remote desktop). Asked up front:
+	// folding it into the row loop builds a whole frame to throw away.
 	full := base == nil
 	if !full && t.resyncDue() {
 		full = !screensEqual(screen, base)
@@ -1894,11 +1504,7 @@ func (t *transcript) paint(screen []string) {
 		base = t.predBuf
 	}
 	for r := 0; r < len(screen); r++ {
-		// A ROW WE HAVE NO RECORD OF IS A ROW WE MUST PAINT: it is unknown, not
-		// blank. Reading the base as `var old string; if r < len(base) { old =
-		// base[r] }` and then comparing made a missing record indistinguishable
-		// from a record of an empty row, so every row whose new content is ""
-		// compared EQUAL to a base that did not exist and was skipped entirely.
+		// A row with no record is unknown, not blank: it must be painted.
 		if r < len(base) && screen[r] == base[r] {
 			continue
 		}
@@ -1909,8 +1515,7 @@ func (t *transcript) paint(screen []string) {
 		buf = appendRowUpdate(buf, r, t.w, old, screen[r])
 	}
 	if len(buf) == quiet {
-		// Nothing to say. The screen already holds this frame, so the belief
-		// stands and the resync debt stays owed until a frame differs.
+		// Nothing to say: the resync debt stays owed until a frame differs.
 		t.paintBuf = buf[:0]
 		t.screenSpare, t.prev = t.prev, screen
 		mark.Mark("frame.quiet", "aria", t.subjectID())
@@ -1926,8 +1531,7 @@ func (t *transcript) paint(screen []string) {
 	}
 }
 
-// appendCUP appends "\x1b[<row>;1H" without going through fmt: the profile put
-// 9% of paint in fmt.(*pp).doPrintf for a two-digit number.
+// Not fmt: the profile put 9% of paint in doPrintf for a two-digit number.
 func appendCUP(dst []byte, row int) []byte {
 	dst = append(dst, '\x1b', '[')
 	dst = appendUint(dst, row)
@@ -1944,31 +1548,23 @@ func appendUint(dst []byte, n int) []byte {
 	return append(dst, byte('0'+n%10))
 }
 
-// mode reports which input mode the pager is in: the keymap's view of it.
-// The order is the dispatch order: the search box owns the keyboard before a
-// panel does, and a panel before the plain pager.
-// mode is the KEYBOARD's view, and it is now DERIVED from the pit identity
-// rather than computed in parallel with it (pitid.go). The boxes keep their
-// own buffers; what they no longer keep is a second opinion about what is on
-// screen.
+// mode is derived from the pit identity (pitid.go); the dispatch order is the
+// order here.
 func (t *transcript) mode() keyMode {
 	if !t.active {
 		return modeIncipit
 	}
-	// A BOX OUTRANKS THE SELECTION: `:` with a selection up opens the command
-	// line, and the line must own the keyboard while the highlight stays.
+	// A box outranks the selection: the line owns the keyboard while the
+	// highlight stays.
 	if t.visual.active() && !t.inSearch && !t.boxOpen() {
 		return modeVisual
 	}
-	// A HALF-TYPED GESTURE OWNS THE NEXT KEY. 'f' is armed, so j/k mean fork
-	// points; every other key falls through to the transcript's own rows (see
-	// dispatch), which is what the second key of gg does too.
+	// 'f' is armed: j/k mean fork points, every other key falls through.
 	if t.pendF && !t.inSearch && !t.boxOpen() {
 		return modeFork
 	}
-	// THE COMPOSE DRAWER HAS TWO KEYMAPS where every other pit has one, so its
-	// sub-mode is asked AFTER openPit has decided what is open: a search box or
-	// a ':' line over the drawer outranks it, exactly as they outrank a list.
+	// The drawer's sub-mode is asked after openPit: a search box or ':' line
+	// over it outranks it.
 	open := t.openPit()
 	if open == pitComposer && t.composerMode == composerNormal {
 		return modeComposer
@@ -1976,8 +1572,6 @@ func (t *transcript) mode() keyMode {
 	return open.keys()
 }
 
-// openPit is what is open, as an identity. THE ONE PLACE that reads the
-// booleans: everything else asks this.
 func (t *transcript) openPit() pitID {
 	switch {
 	case t.confirm != nil:
@@ -1995,19 +1589,13 @@ func (t *transcript) openPit() pitID {
 	}
 }
 
-// key handles one input byte. Transcript is a locked mode: keys only scroll
-// or search: it NEVER self-exits. Exit is Ctrl-D / Ctrl-C, handled at the
-// input loop. q and Ctrl-T are deliberately inert here.
+// The pager never self-exits: Ctrl-D / Ctrl-C are handled at the input loop; q and
+// Ctrl-T are inert here.
 func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
 
-// navMotion drives a logical navigation key. The arrow cluster shares the
-// letter keys' motions as a peer: Up and k are one action bound twice -
-// rather than by translating itself back into a byte:
+// Up and k are one action bound twice; a nav key is never translated back into a byte.
 func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
-// dispatch runs one keystroke through the keymap (see keymap.go). Three rules
-// live here rather than in the table, because each is a property of a MODE
-// rather than of any one binding:
 func (t *transcript) dispatch(ev keyEvent) {
 	if t.pendLeader && t.leaderChord(ev) {
 		t.render()
@@ -2015,9 +1603,8 @@ func (t *transcript) dispatch(ev keyEvent) {
 	}
 	switch t.mode() {
 	case modeConfirm:
-		// THE QUESTION OWNS THE KEYBOARD: an answer, or nothing at all. A key
-		// with no row here must not reach the pager underneath, or the reader
-		// scrolls a transcript they cannot see while consent is pending.
+		// The question owns the keyboard: a key with no row must not reach
+		// the pager underneath.
 		if act := pagerAct.pager(modeConfirm, ev); act != nil {
 			act(t)
 		}
@@ -2034,10 +1621,8 @@ func (t *transcript) dispatch(ev keyEvent) {
 		t.render()
 		return
 	case modeBox:
-		// THE ARROW CLUSTER IS LIVE HERE, unlike in the search box: Up/Down are
-		// history and Home/End are motions, which is what a command line means
-		// by them. An arrow with no row is still swallowed rather than allowed
-		// to scroll the transcript behind the prompt.
+		// Arrows are live here (history, motions); one with no row is
+		// swallowed rather than scrolling the transcript.
 		if ev.nav != navNone {
 			if act := pagerAct.pager(modeBox, ev); act != nil {
 				act(t)
@@ -2053,9 +1638,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 		t.render()
 		return
 	case modeComposer:
-		// THE DRAWER OWNS THE KEYBOARD, the way a visual selection does: a key
-		// with no row here is inert rather than scrolling the conversation
-		// behind the draft a reader is reading.
+		// The drawer owns the keyboard: a key with no row is inert.
 		if act := pagerAct.pager(modeComposer, ev); act != nil {
 			act(t)
 			t.pendG = ev.b == 'g' && !t.pendG
@@ -2063,9 +1646,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		return
 	case modeFork:
-		// The direction key, or nothing: an 'f' followed by anything else is
-		// the ordinary key, not a swallowed one, so the gesture costs a
-		// keystroke and never a meaning.
+		// 'f' followed by anything but a direction is the ordinary key.
 		t.pendF = false
 		if act := pagerAct.pager(modeFork, ev); act != nil {
 			act(t)
@@ -2073,8 +1654,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 			return
 		}
 	case modeVisual:
-		// The selection owns the keyboard: a key with no row is inert, so a
-		// stray letter cannot scroll the reader away from what they marked.
+		// The selection owns the keyboard: a key with no row is inert.
 		if act := pagerAct.pager(modeVisual, ev); act != nil {
 			act(t)
 			t.pendG = ev.b == 'g' && !t.pendG
@@ -2087,19 +1667,12 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.render()
 			return
 		}
-		// A SELECTABLE PIT KEEPS ITS OWN KEYS. The any-key-dismisses rule is
-		// right for help and status -- you glance and move on -- and wrong the
-		// moment a pit is a thing you navigate: ^N used to move the
-		// selection and dismiss the list it was selecting in, in that order.
-		// A HOSTED VERB GETS FIRST REFUSAL on every key -- UNLESS IT HAS A
-		// LIST, in which case the pit owns everything a finger does to move
-		// and the view keeps only the verbs that are its own. That inversion
-		// is the fix for `form show`: the view was taking j/k and running its
-		// own cursor against its own window, which disagreed with the pit's,
-		// so the highlight appeared to skip rows.
+		// A hosted verb with a list: the pit owns every motion and the
+		// view keeps only its own verbs; without a list the view gets
+		// first refusal.
 		if t.focused == focusTranscript {
-			// THE CONVERSATION HAS THE KEYS until `T` hands them back; Esc
-			// still closes the pit.
+			// The conversation has the keys until `T` hands them back;
+			// Esc still closes the pit.
 			if act := pagerAct.pager(modeTranscript, ev); act != nil {
 				act(t)
 				t.pendG = ev.b == 'g' && !t.pendG
@@ -2109,8 +1682,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		if t.focused == focusPit && t.pit.live != nil && t.pit.list() != nil {
 			if t.pitVerb(ev) {
-				// gg is two keys and this branch returns before the epilogue
-				// that arms the first one.
+				// This branch returns before the epilogue that arms gg.
 				t.pendG = ev.b == 'g' && !t.pendG
 				t.render()
 				return
@@ -2119,23 +1691,10 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.render()
 			return
 		}
-		// EVERY PIT IS NAVIGABLE, not just a selectable one. The help panel
-		// was the proof that this mattered: it is the list that tells you how
-		// to scroll, and it was the one list you could not scroll -- taller
-		// than the pane, it simply lost its bottom. Now j/k, the arrows, u/d
-		// and gg/G drive whichever pit is open, moving a cursor where there
-		// is one and the window where there is not.
-		// A MESSAGE IS A GLANCE, NOT A LIST. It has one row and nothing to
-		// scroll, so it keeps the old rule: any key wipes it. Measured -- with
-		// motions gated on `pick != nil`, a failed `:999` note survived every
-		// keystroke, because the note is a pit too.
+		// Every pit is navigable; a one-row note is a glance, wiped by any key.
 		if t.focused == focusPit && t.pit.list() != nil && !t.pit.glance() && pitOwnsKey(ev) {
 			if t.pitMotion(ev) {
-				// gg IS TWO KEYS, and the arming lives in the dispatcher's
-				// epilogue -- which this branch returns before reaching, so
-				// `g` in a pit never armed and `gg` never fired. Measured
-				// in a pty; the unit tests press keys through a path that
-				// happened to arm it anyway.
+				// This branch returns before the epilogue that arms gg.
 				t.pendG = ev.b == 'g' && !t.pendG
 				t.render()
 				return
@@ -2153,51 +1712,34 @@ func (t *transcript) dispatch(ev keyEvent) {
 	}
 	t.pendG = ev.b == 'g' && !t.pendG
 	t.pendF = ev.b == 'f' && !t.pendF
-	// A jump's report is TRANSIENT, on the same discipline as pendG: it owns the
-	// status row until the next key, then the ordinary status line takes the row
-	// back. Without this a failed `:999` would eat the mantra/ctx/cost line for
-	// the rest of the session. The key that SET the note never reaches here -
-	// boxAccept returns from the modeBox arm above: so the note always gets
-	// its frame.
+	// A jump's report is transient, like pendG: the key that set it returned
+	// from the modeBox arm, so it always gets its frame.
 	if !t.boxOpen() {
 		t.jumpNote = ""
 	}
 	t.render()
 }
 
-// ---------------------------------------------------------------------------
-// The pager's key actions. Each is one row of the keymap (see keymap.go);
-// naming them is what lets the table point at behaviour instead of repeating
-// it. They mutate state; painting belongs to the dispatcher.
-// ---------------------------------------------------------------------------
-
 func pagerLineDown(t *transcript) { t.scroll(1) }
 func pagerLineUp(t *transcript)   { t.scrollNotch(-1) }
 func pagerHalfDown(t *transcript) { t.scroll(t.h / 2) }
 func pagerHalfUp(t *transcript)   { t.scroll(-(t.h / 2)) }
 
-// pagerTail follows the live tail (G, End).
 func pagerTail(t *transcript) {
 	t.follow = true
 	t.resetToTail()
 }
 
-// note is how a pager row reports. NOT jumpNote: the dispatcher's epilogue
-// wipes that on every key, which is right for the note the PREVIOUS key
-// left and erases the one the current key just wrote. This is the bar's
-// notice, the same slot the ':' box's verbs answer in, and it retires on
-// its own clock.
+// note is the bar's notice, not jumpNote, which the dispatcher's epilogue wipes on
+// every key.
 func (t *transcript) note(s string) { t.setCommandNote(s) }
 
-// pagerTop goes to the beginning (Home, and the second g).
 func pagerTop(t *transcript) {
 	t.stopFollowing()
 	t.offset = 0
 	t.wantTop = !t.atAriaFloor()
 }
 
-// pagerPendingTop is the second half of the two-key gg gesture; the first 'g'
-// only arms pendG, which the dispatcher's epilogue owns.
 func pagerPendingTop(t *transcript) {
 	if t.pendG {
 		pagerTop(t)
@@ -2206,14 +1748,10 @@ func pagerPendingTop(t *transcript) {
 
 func pagerSearchPrompt(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", 1 }
 
-// pagerSearchPromptBack is '?': the same box, walking backwards.
 func pagerSearchPromptBack(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", -1 }
 
-// pagerHelpPit is 'h'. '?' used to open it and is the backward search now.
 func pagerHelpPit(t *transcript) { t.openHelpPit() }
 
-// pagerListPit is 'l': the listing, in the pager, through the same door the
-// ':' box uses. 'L' is the home view.
 func pagerListPit(t *transcript) { t.runListCommand("ls") }
 
 func pagerListHome(t *transcript) { t.runListCommand("ls -H") }
@@ -2231,8 +1769,6 @@ func pagerHelpPanel(t *transcript)   { t.openHelpPit() }
 func pagerStatusPanel(t *transcript) { t.openStatusPit() }
 func pagerQueuedPanel(t *transcript) { t.openQueueFromKey() }
 
-// pagerFormPit is 'S': the form, on the same terms as '?' and 'Q'. S for the
-// verb's other spelling, `figaro state`.
 func pagerFormPit(t *transcript) {
 	if strings.HasPrefix(string(t.pit.id), string(pitForm)) {
 		t.closePanels()
@@ -2243,18 +1779,13 @@ func pagerFormPit(t *transcript) {
 	}
 }
 
-// pagerFocusTranscript is 'T'.
 func pagerFocusTranscript(t *transcript) { focusTranscriptKey(t) }
 
-// ^N/^P MOVE THE PIT'S SELECTION WHEN ONE IS UP, and the transcript's node
-// selection otherwise. The reader's eye is on the list; a key that scrolled the
-// conversation behind it would be answering a question nobody asked.
+// ^N/^P move the pit's selection when one is up, the node selection otherwise.
 func pagerSelectNext(t *transcript) { t.selectDown(1) }
 func pagerSelectPrev(t *transcript) { t.selectDown(-1) }
 
 func (t *transcript) selectDown(dir int) {
-	// A PIT WITH A CURSOR OWNS ^N/^P; the transcript's node selection is a
-	// different question, and it is not the one being asked while a list is up.
 	if p := t.pit.list(); p != nil && p.hasCursor() {
 		t.pit.moveSelection(dir)
 		return
@@ -2262,22 +1793,16 @@ func (t *transcript) selectDown(dir int) {
 	t.selectNode(dir, false)
 }
 
-// pagerToggleBlocks is Enter: body and form deltas together.
 func pagerToggleBlocks(t *transcript) { t.toggleSelectedNodes() }
 
-// pagerToggleBodies is `t`: tool bodies only.
 func pagerToggleBodies(t *transcript) { t.toggleSelectedTools() }
 
-// pagerClearSelection is Esc in the pager: drop the active selection, and do
-// nothing at all when there is none.
 func pagerClearSelection(t *transcript) {
 	if t.selection.active {
 		t.clearSelection()
 	}
 }
 
-// Visual mode's rows. The viewport follows the focus (visualMove), which is
-// the one way these differ from the transcript's own motions.
 func pagerVisualChar(t *transcript)     { t.pressVisual(visualChar) }
 func pagerVisualLine(t *transcript)     { t.pressVisual(visualLine) }
 func pagerVisualLeave(t *transcript)    { t.leaveVisual() }
@@ -2302,17 +1827,13 @@ func pagerVisualScreenBot(t *transcript) { t.visualScreen(1) }
 func pagerVisualParaNext(t *transcript)  { t.visualParagraph(1) }
 func pagerVisualParaPrev(t *transcript)  { t.visualParagraph(-1) }
 
-// pagerVisualPendingTop is the first g of gg, exactly as pagerPendingTop.
 func pagerVisualPendingTop(t *transcript) {
 	if t.pendG {
 		t.visualJump(false)
 	}
 }
 
-// pagerVisualCommand is ':' in visual mode: with a highlight up the box opens
-// holding the range placeholder, and the highlight stays so the reader sees
-// what the command will be handed. With only the cursor up it is the plain
-// command line.
+// With a highlight up the box opens holding the range placeholder; the highlight stays.
 func pagerVisualCommand(t *transcript) {
 	pagerCommandBox(t)
 	if t.visual.highlighted() {
@@ -2320,28 +1841,22 @@ func pagerVisualCommand(t *transcript) {
 	}
 }
 
-// visualRangePlaceholder is what `:` inserts, and what the client expands into
-// the fully qualified coordinate at submit. It is vim's '<,'> without the
-// marks, because there are no marks here to name.
+// vim's '<,'> without the marks; expanded to the qualified coordinate at submit.
 const visualRangePlaceholder = "<,>"
 
-// closePanels shuts the pit.
 func (t *transcript) closePanels() {
 	if t.showing(pitQueue) {
 		t.queueDismissed = true
 	}
 	t.pit.close()
 	t.queuedByKey = false
-	t.focused = focusPit // the next pit opens focused; there is nothing to focus now
+	t.focused = focusPit // the next pit opens focused
 }
 
-// showing reports whether the named pit is the one that is open.
 func (t *transcript) showing(id pitID) bool {
 	return t.pit.open() && t.pit.id == id
 }
 
-// panelToggleHelp/Status/Queued: a pit's own key closes it, another
-// pit's key switches straight over.
 func panelToggleHelp(t *transcript) { t.togglePit(pitHelp, t.openHelpPit) }
 
 func panelToggleStatus(t *transcript) { t.togglePit(pitStatus, t.openStatusPit) }
@@ -2356,7 +1871,6 @@ func (t *transcript) togglePit(id pitID, open func()) {
 	}
 }
 
-// openHelpPit is '?': the key reference, unselectable.
 func (t *transcript) openHelpPit() {
 	rows := make([]pitRow, 0, 24)
 	for _, l := range helpBody() {
@@ -2373,7 +1887,6 @@ func (t *transcript) openHelpPit() {
 	t.focused = focusPit
 }
 
-// openStatusPit is '!': this figaro's own numbers.
 func (t *transcript) openStatusPit() {
 	rows := make([]pitRow, 0, 12)
 	for _, l := range t.status.panelLines() {
@@ -2383,19 +1896,13 @@ func (t *transcript) openStatusPit() {
 	t.focused = focusPit
 }
 
-// panelDismiss is Esc with a panel up: close it, and leave the selection
-// alone: Esc's other meaning is not reached from here.
+// Esc's other meaning (clear the selection) is not reached from here.
 func panelDismiss(t *transcript) { t.closePanels() }
-
-// The search sub-mode's actions.
 
 func searchAccept(t *transcript) {
 	t.inSearch = false
 	t.matchQuery = t.query
-	// THE SEARCH TARGETS WHAT IS OPEN. A reader inside a drawer asked about
-	// the drawer; the transcript scrolling underneath it is not what they
-	// meant, and a query that silently moved the wrong thing is worse than
-	// one that reports finding nothing.
+	// The search targets what is open: the drawer, the list, else the conversation.
 	switch {
 	case t.box == boxComposer:
 		t.composerMode = composerNormal
@@ -2411,15 +1918,12 @@ func searchAccept(t *transcript) {
 
 func searchCancel(t *transcript) { t.inSearch, t.query = false, "" }
 
-// pagerFindRowNext and pagerFindRowPrev are n and N inside a pit: the same
-// walk searchAccept made, repeated.
 func pagerFindRowNext(t *transcript) { t.findRow(t.searchStep()) }
 func pagerFindRowPrev(t *transcript) { t.findRow(-t.searchStep()) }
 
 func (t *transcript) findRow(dir int) {
-	// THE BAR, NOT A NOTE PIT. A note is itself a pit, so reporting a failed
-	// search that way closed the list the search was aimed at: the reader
-	// pressed n and lost the form they were reading.
+	// The bar, not a note pit: a note is a pit and would close the list the
+	// search was aimed at.
 	if t.matchQuery == "" {
 		t.setCommandNoteAt("no search yet", alertError)
 		return
@@ -2429,8 +1933,6 @@ func (t *transcript) findRow(dir int) {
 	}
 }
 
-// searchTarget names what the box will search, for the one row of chrome the
-// box draws: a drawer, a list, or the conversation.
 func (t *transcript) searchTarget() string {
 	switch {
 	case t.box == boxComposer:
@@ -2447,16 +1949,13 @@ func searchBackspace(t *transcript) {
 	}
 }
 
-// searchLiteral is the search box's fallback: a printable key is text, not a
-// binding. The one thing the keymap does not decide: "every printable byte"
-// is not a set worth enumerating as rows.
+// A printable key is text, not a binding.
 func (t *transcript) searchLiteral(b byte) {
 	if b >= 0x20 && b < 0x7f {
 		t.query += string(b)
 	}
 }
 
-// find scrolls to the first line at/after the cursor containing q (wrapping).
 func (t *transcript) find(q string) {
 	if q == "" {
 		return
@@ -2484,27 +1983,21 @@ func (t *transcript) find(q string) {
 	t.stopFollowing()
 }
 
-// landSearch is where every in-window hit lands: the viewport on the line,
-// and, in visual mode, the cursor on the match. The viewport is pinned by
-// stopFollowing FIRST so the jump comes after it.
+// stopFollowing pins the viewport first, so the jump comes after it.
 func (t *transcript) landSearch(idx int, q string) {
 	t.stopFollowing()
 	if t.visual.active() {
 		t.visualLandSearch(idx, q)
-		// The cursor is on the hit; keep the viewport where the reader can
-		// see it without snapping the hit to the top row, which would drag a
-		// highlight's other end off screen more often than not.
+		// Keep the viewport rather than snapping the hit to the top row,
+		// which would drag a highlight's other end off screen.
 		t.visualEnsureVisible(idx)
 		return
 	}
 	t.offset = idx
 }
 
-// findRepeat jumps to the next (delta > 0) or previous (delta < 0) match of
-// the persistent matchQuery. Wraps within loaded lines. If nothing matches
-// in-window, falls back to the paged-search worker, which walks BACKWARD: the
-// window reaches the live tail by construction, so the only history a search
-// can page in is older.
+// The paged fallback walks backward: the window reaches the live tail by
+// construction, so the only history to page in is older.
 func (t *transcript) findRepeat(delta int) {
 	if t.matchQuery == "" || delta == 0 {
 		return
@@ -2529,13 +2022,10 @@ func (t *transcript) findRepeat(delta int) {
 			return
 		}
 	}
-	// Nothing in the loaded window; page older history in and keep looking.
 	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
 }
 
-// searchStep is the direction the query walks, defaulting forward for a
-// transcript built before a search was ever opened.
 func (t *transcript) searchStep() int {
 	if t.searchDir < 0 {
 		return -1
@@ -2543,8 +2033,6 @@ func (t *transcript) searchStep() int {
 	return 1
 }
 
-// activeHighlight is what lines() paints as reverse-video match spans:
-// the live query while typing, otherwise the last-executed matchQuery.
 func (t *transcript) activeHighlight() string {
 	if t.inSearch && t.query != "" {
 		return t.query
@@ -2552,9 +2040,8 @@ func (t *transcript) activeHighlight() string {
 	return t.matchQuery
 }
 
-// highlightMatches wraps every visible occurrence of q in reverse-video (SGR
-// 7/27). ANSI escapes in row are preserved and step over them for matching,
-// so colored/dimmed rows keep their color and pick up the match band on top.
+// Escapes are stepped over for matching, so coloured rows keep their colour under
+// the match band.
 func highlightMatches(row, q string) string {
 	if q == "" || row == "" {
 		return row
@@ -2566,14 +2053,11 @@ func highlightMatches(row, q string) string {
 		}
 		return strings.ReplaceAll(row, q, hlOn+q+hlOff)
 	}
-	// While a search is active EVERY retained row is run through here on
-	// every frame, and almost none of them match. Reject those with an
-	// allocation-free scan instead of materializing the stripped row.
+	// Every retained row runs through here per frame while a search is active:
+	// reject non-matches without allocating.
 	if visibleIndex(row, q) < 0 {
 		return row
 	}
-	// Slow path: strip ANSI to visible, then re-emit with highlights
-	// spliced at the visible byte positions of matches.
 	var visBuf strings.Builder
 	visBuf.Grow(len(row))
 	for i := 0; i < len(row); {
@@ -2621,7 +2105,6 @@ func highlightMatches(row, q string) string {
 	return b.String()
 }
 
-// skipANSI advances past a single ANSI escape sequence starting at row[i].
 func skipANSI(row string, i int) int {
 	if i >= len(row) || row[i] != '\x1b' {
 		return i
@@ -2658,7 +2141,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 				t.buildIndex()
 				for i := range t.index.total {
 					if t.lineKey[i] != keyOf(m) {
-						continue // only this message's lines can carry the hit
+						continue
 					}
 					if searchContains(t.lineAt(i), q) {
 						t.offset, t.follow = i, false
@@ -2673,11 +2156,8 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 	return false
 }
 
-// visibleIndex returns the byte offset in row at which q occurs in row's
-// visible text (ANSI escape sequences skipped, and allowed to interrupt the
-// match), or -1. It never allocates: the alternative: building the stripped
-// row and calling strings.Contains: cost one allocation per row per frame
-// for every row on screen while a search was active.
+// visibleIndex matches q against the visible text, escapes skipped and allowed to
+// interrupt the match, without allocating.
 func visibleIndex(row, q string) int {
 	if q == "" {
 		return 0
@@ -2721,7 +2201,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 	verbose := t.verbose()
 	if verbose && m.Inquiry != "" &&
 		strings.Contains(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat()), q) {
-		return true // the question's address
+		return true
 	}
 	for i, n := range m.Nodes {
 		if markdownMayRenderQuery(n.Markdown, q) || strings.Contains(n.Name, q) ||
@@ -2729,7 +2209,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 			return true
 		}
 		if verbose && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat()), q) {
-			return true // the node's address
+			return true
 		}
 		if n.Type == livedoc.NodeSteering && strings.Contains("↳ input", q) {
 			return true
@@ -2814,11 +2294,8 @@ func containsIgnoringMarkdown(markdown, q string) bool {
 	return false
 }
 
-// finishSearch ends a paged search that found nothing, putting the reader back
-// where they were. The WINDOW is not put back: history the walk paged in is in
-// the store now, and the floor it reached is honest: restoring a higher floor
-// would throw away work and re-fetch it on the next scroll. Only the viewport
-// goes home.
+// Only the viewport goes home: the floor the walk reached is honest, and restoring
+// a higher one would re-fetch on the next scroll.
 func (t *transcript) finishSearch(found bool) {
 	if found || t.search == nil {
 		return
@@ -2841,7 +2318,6 @@ func dimTransRule(w int) string {
 	return "\x1b[2m" + strings.Repeat("─", w) + "\x1b[0m"
 }
 
-// gapRow is a hole, drawn as EXACTLY ONE ROW:
 func (t *transcript) gapRow(g *aria.Gap) string {
 	label := " the rest of this turn is not loaded "
 	switch n := g.Turns(); {
@@ -2862,12 +2338,10 @@ func (t *transcript) gapRow(g *aria.Gap) string {
 		strings.Repeat("─", w-lead-runewidth.StringWidth(label)) + "\x1b[0m"
 }
 
-// gapNear is the hole the viewport is close enough to that we should fill it
-// before it has to paint: THE PREFETCH DISTANCE, the same
-// transcriptPrefetchScreens the window floor uses. A sentinel that is about to
-// come on screen is a fetch we are already late for.
+// A sentinel about to come on screen is a fetch already late: the same prefetch
+// distance the floor uses.
 func (t *transcript) gapNear() *aria.Gap {
-	t.buildIndex() // the window may have moved since the last frame
+	t.buildIndex()
 	body, _ := t.layout(len(t.footLines()))
 	lo := t.offset - transcriptPrefetchScreens*t.h
 	hi := t.offset + body + transcriptPrefetchScreens*t.h
@@ -2883,9 +2357,8 @@ func (t *transcript) gapNear() *aria.Gap {
 	return nil
 }
 
-// holds reports whether the window is missing anything: a hole inside it, or
-// history below its floor. It is what stops the footer's total from claiming
-// to be the size of the conversation: see footerRows.
+// whole: no hole inside the window and nothing below its floor; the footer's total
+// must not claim to be the conversation's size.
 func (t *transcript) whole() bool {
 	for k := range t.index.entries {
 		if t.index.entries[k].isGap() {
@@ -2895,15 +2368,12 @@ func (t *transcript) whole() bool {
 	return t.atAriaFloor()
 }
 
-// dropTurnRows invalidates every slice of one turn. Expansion is addressed by
-// turn, but a tall turn is several units, so one toggle can touch more than one.
+// A tall turn is several slices, so one toggle can touch more than one.
 func (t *transcript) dropTurnRows(lt int) {
 	t.dropTurnsRows(map[int]struct{}{lt: {}})
 }
 
-// dropTurnsRows is the batched form. Callers invalidating a set of turns must
-// use it: the cache is keyed by slice, so a per-turn call costs a full scan,
-// and scanning once per ref made selection rehydrate quadratic.
+// The cache is keyed by slice, so a per-turn call is a full scan; batch.
 func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 	if len(lts) == 0 {
 		return
@@ -2914,8 +2384,6 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 			delete(t.rowCache, k)
 		}
 	}
-	// The sticky question is composed from the same rows, adornment and all,
-	// so a fold that changes the block changes the header standing on it.
 	for k := range t.stickyCache {
 		if _, ok := lts[k.turn()]; ok {
 			delete(t.stickyCache, k)
@@ -2923,46 +2391,29 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 	}
 }
 
-// retarget points the pager at a different aria's client.
-//
-// base is the first turn the two arias do NOT share. Below it the two are the
-// same conversation, so the rows, the question blocks and the window itself
-// are kept; at or above it everything describes a conversation that is no
-// longer on screen and goes. base 0 keeps nothing, which is the old behaviour
-// and the right one for a switch to a stranger.
-//
-// What is kept either way is the reader's posture: the pane, the panels they
-// had open, the verbose toggle, because those are about the READER.
-//
-// Called with the render lock held, from livelogTurn.retarget.
+// base is the first turn the two arias do not share: below it rows, question
+// blocks and the window are kept. The reader's posture (pane, panels, verbose) is
+// kept either way. Called with the render lock held.
 func (t *transcript) retarget(client *aria.Client, figaroID string, status *sessionStatus, base int) {
 	t.client = client
 	t.setStatus(status)
 	keepScroll := t.keepsScroll(base)
 	t.kept = keepScroll
-	// FRESH MAPS, ALWAYS, carrying over what the two arias share. The old maps
-	// may be on the shelf: deleting from them in place, which is what this did,
-	// edited a parked aria's rows out from under it.
+	// Fresh maps, always: the old ones may be on the shelf (subject_park).
 	t.rowCache = keepRowsBelow(t.rowCache, base)
 	t.stickyCache = keepStickyBelow(t.stickyCache, base)
 	t.expanded = keepRefsBelow(t.expanded, base)
 	t.adorned = keepRefsBelow(t.adorned, base)
 	if !keepScroll {
-		// The window and everything derived from it.
 		t.from = aria.Anchor{}
 		t.offset = 0
 		t.follow = true
 	}
 	t.tailTuned, t.tailWant = false, 0
-	// A slice key is (turn, node): turn 1 of the new aria has the key turn 1 of
-	// the old one had, so every cache under that key goes by hand, the sticky
-	// header included. It was left behind here, and a hop from one branch to
-	// its cousin painted the header of the aria it had just left over the body
-	// of the one it had arrived at.
+	// Turn 1 of the new aria has the key turn 1 of the old one had, so every
+	// cache under it goes by hand, the sticky header included.
 	t.openMemo = openMemo{}
-	// A CUE THAT SITS IN THE SHARED PREFIX POINTS AT THE SAME NODE IN BOTH
-	// ARIAS, so dropping it moved a row that was otherwise byte-identical: the
-	// selection gutter blinked off under a reader who had not moved.
+	// A cue in the shared prefix points at the same node in both arias.
 	if !t.selection.below(base) {
 		t.selection = nodeSelection{}
 	}
@@ -2974,33 +2425,23 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.frameRefs = t.frameRefs[:0]
 	t.invalidateWindow()
 
-	// A walk or a search aimed at the OLD aria's coordinates must not survive
-	// into the new one: `:0` still pending when the subject changes would
-	// resolve against a conversation nobody asked it about.
+	// A walk or search aimed at the old aria's coordinates must not survive.
 	t.jump, t.jumpNote = nil, ""
 	t.search = nil
 	t.inSearch, t.query, t.matchQuery = false, "", ""
 	t.searchDir = 1
 	t.pendG, t.pendF = false, false
 
-	// The pager is repainted whole rather than diffed: prev describes rows that
-	// belong to a conversation that is no longer on screen.
+	// Repainted whole: prev describes a conversation no longer on screen.
 	t.prev = nil
 	if t.active {
 		t.client.SetClosedLimit(0) // the pager owns retention while it is up
 	}
 }
 
-// keepsScroll decides between the two screen states of a subject switch.
-//
-// THE READER'S POSITION IS THE READER'S. If the top of the window is inside
-// the prefix the two arias share, every row from there to the divergence is
-// the same bytes in both, so moving the screen would be moving it for nothing.
-// Otherwise the window shows only what the two do not share, and there is
-// nowhere to stand: go to the live tail and follow it.
-//
-// Following the tail is itself a position: a reader who is at the live edge
-// asked to be at the live edge, and the new subject's edge is elsewhere.
+// If the top of the window is inside the shared prefix every row to the divergence
+// is the same bytes, so the screen stays; otherwise go to the live tail. Following
+// is itself a position.
 func (t *transcript) keepsScroll(base int) bool {
 	if base <= 0 || t.follow {
 		return false
@@ -3013,15 +2454,8 @@ func (t *transcript) keepsScroll(base int) bool {
 	return !e.isGap() && e.turn > 0 && e.turn < base
 }
 
-// keepRowsBelow, keepStickyBelow and keepRefsBelow are the retention rule for
-// everything the pager keys by a coordinate: keep below base, drop at or
-// above, INTO A NEW MAP. The row cache is the expensive half of a switch once
-// the read is small, so carrying it over is what makes a hop inside a fork
-// tree cost the suffix and nothing else.
-//
-// Every fold state obeys the same rule, because a fold left over from the aria
-// we left would open a block of this one, at the same turn, that nobody
-// touched.
+// Keep below base, drop at or above, into a new map; a fold left over from the
+// other aria would open a block of this one.
 func keepRowsBelow(src map[sliceKey]cachedMessage, base int) map[sliceKey]cachedMessage {
 	out := make(map[sliceKey]cachedMessage, len(src))
 	for k, v := range src {
@@ -3052,40 +2486,25 @@ func keepRefsBelow(src map[nodeRef]bool, base int) map[nodeRef]bool {
 	return out
 }
 
-// inputDrawerLines renders the search box or the command line, with Tab's
-// candidates under it when there are any. Nil when neither box is up.
 func (t *transcript) inputDrawerLines() []string {
 	var rows []string
 	switch {
 	case t.inSearch:
-		// THE SIGIL IS THE DIRECTION. A box that always says '/' cannot tell
-		// a reader which way the next Enter walks.
 		sigil := "/"
 		if t.searchStep() < 0 {
 			sigil = "?"
 		}
-		// THE TARGET IS A GLYPH, not a sentence: a search aimed at a drawer
-		// rather than at the conversation has to say so, and one column of
-		// chrome is what that costs.
+		// A search aimed at a drawer or list says so with one glyph.
 		if g := t.searchTarget(); g != "" {
 			sigil = g + sigil
 		}
 		rows = []string{pitGray(clipToWidth(sigil+t.query, t.w))}
 	case t.box != boxNone:
-		// The PROMPT is the editor's, not a constant: while ^R runs it reads
-		// `(reverse-i-search)`needle':` exactly as a shell's does, which is the
-		// only thing on screen that says the box is in a search at all.
-		//
-		// THE BOX WRAPS, and it obeys the pit's page like every other list:
-		// a long command used to scroll sideways under the prompt, which is
-		// the one place a reader cannot check what they typed. The compose
-		// drawer may take the pane (F); the command line may not, because it
-		// is a thing you type INTO rather than a screen you read.
+		// The prompt is the editor's: under ^R it reads
+		// `(reverse-i-search)`. The box wraps on the pit's page; the
+		// drawer may take the pane (F), the command line may not.
 		e := t.editor()
 		rows = t.composerTitle()
-		// FULLSCREEN LIFTS THE DRAWER'S OWN CAP: the cap exists so a draft does
-		// not quietly eat the conversation, and F is the reader saying they
-		// want it to.
 		room := max(min(t.boxRows(), t.pitRoom())-len(rows), 1)
 		if t.fullPit() {
 			room = max(t.pitRoom()-len(rows), 1)
@@ -3095,9 +2514,6 @@ func (t *transcript) inputDrawerLines() []string {
 			lo, hi = from, to
 		}
 		rows = append(rows, e.wrapWash(e.prompt(t.boxSigil()), t.w, room, lo, hi)...)
-		// FULLSCREEN IS A SURFACE, so it keeps the room it took: a drawer that
-		// asked for the pane and then drew three rows would leave the rest of
-		// it blank behind a transcript that is not there any more.
 		if t.box == boxComposer && t.fullPit() {
 			for len(rows) < room {
 				rows = append(rows, "")
@@ -3108,8 +2524,6 @@ func (t *transcript) inputDrawerLines() []string {
 	}
 	footer, own := t.jumpFooter()
 	if t.boxOpen() && t.menu != nil {
-		// THE MENU TAKES WHAT THE PIT HAS LEFT: the pane's allowance for a
-		// pit, less the line being typed and the footer under it.
 		room := t.pitRoom() - len(rows)
 		if own {
 			room--
@@ -3122,9 +2536,7 @@ func (t *transcript) inputDrawerLines() []string {
 	return rows
 }
 
-// pitVerb runs an itemised live view's OWN verbs -- Enter expands, y yanks --
-// against the row the PIT has selected. The view no longer has a cursor to
-// disagree about.
+// pitVerb runs a live view's own verbs against the row the pit selected.
 func (t *transcript) pitVerb(ev keyEvent) bool {
 	iv, ok := t.pit.live.(itemView)
 	if !ok {
@@ -3137,13 +2549,12 @@ func (t *transcript) pitVerb(ev keyEvent) bool {
 			iv.Activate(row.id)
 		}
 		return true
-		// 'y' is NOT claimed here: the input loop already yanks a selected pit row
-		// (see inputYank), and two owners for one key is how a yank comes to copy
-		// one thing and report another.
+		// 'y' is not claimed here: the input loop yanks a selected pit row
+		// (inputYank), and two owners for one key copy one thing and
+		// report another.
 	}
-	// A LIST VIEW'S OWN LETTERS, before the shared motions: the
-	// notifications pit's `f` filter. A view that claims nothing costs one
-	// type assertion.
+	// A list view's own letters (the notifications pit's `f`) before the
+	// shared motions.
 	if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
 		return true
 	}
@@ -3152,25 +2563,18 @@ func (t *transcript) pitVerb(ev keyEvent) bool {
 	return t.pitMotion(ev)
 }
 
-// openNotificationsPit is `space n` and `:notifications`: the history, as a
-// live list. Opening it is reading it, so the unread mark goes.
+// Opening it is reading it, so the unread mark goes.
 func (t *transcript) openNotificationsPit() {
 	t.pit.showLive(pitNotifications, &notificationsView{store: t.notes})
 	t.focused = focusPit
 	t.notes.markRead()
 }
 
-// pagerNotifications toggles it, as Q toggles the queue.
 func pagerNotifications(t *transcript) { t.togglePit(pitNotifications, t.openNotificationsPit) }
 
-// pagerLeader is space: arm the leader, so the next key is a leader chord.
-// Space is the leader because Gluck's Neovim's is, and `<leader>n` is where
-// that opens its notification history.
 func pagerLeader(t *transcript) { t.pendLeader = true }
 
-// leaderChord takes the key after space, and reports whether it was one. Any
-// other key is not swallowed: it is itself, and the leader is spent, as the
-// second key of gg is.
+// Any other key is not swallowed: it is itself, and the leader is spent.
 func (t *transcript) leaderChord(ev keyEvent) bool {
 	t.pendLeader = false
 	if t.inSearch || t.boxOpen() || ev.nav != navNone {
@@ -3184,26 +2588,17 @@ func (t *transcript) leaderChord(ev keyEvent) bool {
 	return false
 }
 
-// pitMotion runs the shared list motions against the open pit, and
-// reports whether it took the key. ONE VOCABULARY: these are the transcript's
-// own motions, pointed at the pit, so a reader who can move around a
-// conversation can move around a list without learning a second set.
 func (t *transcript) pitMotion(ev keyEvent) bool {
 	switch {
-	// j/k CHOOSE. In a pit with a cursor they move the selection and the
-	// window follows it; in one without (help, status) there is nothing to
-	// choose, so they move the window and mean the same thing to the hand.
+	// j/k move the selection where there is one, the window where there is not.
 	case ev.b == 'j', ev.nav == navDown, ev.b == 0x0e:
 		t.pit.moveSelection(1)
 	case ev.b == 'k', ev.nav == navUp, ev.b == 0x10:
 		t.pit.moveSelection(-1)
-	// e/y READ: one row of the window, selection untouched. vim's ^E/^Y
-	// without the modifier, because a pit is a small thing and the chord is
-	// spent on selection already.
+	// e/y scroll one row, selection untouched (vim's ^E/^Y without the modifier).
 	case ev.b == 'F':
-		// FULLSCREEN IS A DISPOSITION, not a property of this list: it is the
-		// pager's, every pit inherits it, and it survives one pit closing and
-		// the next opening.
+		// Fullscreen is the pager's disposition and survives one pit
+		// closing and the next opening.
 		t.full = !t.full
 		t.focused = focusPit
 	case ev.b == 'e':
@@ -3219,8 +2614,6 @@ func (t *transcript) pitMotion(ev keyEvent) bool {
 	case ev.nav == navHome:
 		t.pit.toTop()
 	case ev.b == 'g':
-		// gg, on the transcript's own two-key discipline: the first g arms,
-		// the second acts, and pendG is set by the dispatcher's epilogue.
 		if t.pendG {
 			t.pit.toTop()
 		}
@@ -3230,10 +2623,8 @@ func (t *transcript) pitMotion(ev keyEvent) bool {
 	return true
 }
 
-// pitOwnsKey reports whether an open pit answers this key itself rather
-// than being dismissed by it: the motions, the selection keys and the row
-// verbs. Everything else still wipes the pit and acts, which is the rule
-// that makes a panel a glance rather than a mode.
+// Keys an open pit answers itself; everything else wipes the pit and acts, which
+// is what makes a panel a glance rather than a mode.
 func pitOwnsKey(ev keyEvent) bool {
 	switch {
 	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e', ev.b == 'F':
@@ -3250,7 +2641,6 @@ func pitOwnsKey(ev keyEvent) bool {
 	return false
 }
 
-// showLivePit hosts a live verb in the pit.
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false
 	t.pit.showLive(pitID(name), v)
@@ -3261,28 +2651,11 @@ func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.render()
 }
 
-// setCommandNote is how a command reports back into the footer's status row -
-// the same row the jump box writes its failures to, because to a reader they
-// are the same thing: the last thing I typed, and what came of it.
-// setCommandNote is how a verb reports back. A ONE-LINE RESULT IS AN ALERT, NOT
-// A PIT: "sent" is news, it is true for a moment, and it should not cost the
-// reader the list they were working in. It lands in the bar's first slot --
-// left of the pit's glyph and left of the state -- and retires on its own
-// after cli.notice_ttl.
-//
-// That replaces two older behaviours, both of which were the same mistake in
-// different clothes: showing a message pit (which REPLACED an open queue,
-// so the next poll rebuilt it and an `x` aimed at row two dropped row one),
-// and flashing on the closing rule (which no longer exists).
-//
-// Anything longer than a line is still a pit, because a bar row cannot hold it.
+// A one-line result is an alert on the bar, retiring after cli.notice_ttl;
+// anything longer is a pit. A note must never replace an open list.
 func (t *transcript) setCommandNote(note string) { t.setCommandNoteAt(note, alertInfo) }
 
-// setProgressNote is the bar alone, for a line that says something is UNDER
-// WAY ("…state" while a verb runs). It is not news and it is not kept: the
-// verb's result follows and replaces it, and that is what the notification
-// history records. Posting these made every `:ls` two rows, one of them a
-// progress indicator nobody needs to find later.
+// The bar alone, not posted to the history: the result follows and replaces it.
 func (t *transcript) setProgressNote(note string) {
 	if note == "" || strings.Contains(note, "\n") || displayWidth(note) > t.w/2 {
 		return
@@ -3292,9 +2665,7 @@ func (t *transcript) setProgressNote(note string) {
 }
 
 func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
-	// EVERY NOTE IS POSTED, whatever the bar does with it: a one-liner goes
-	// to the alert slot and retires, a long one to the message pit and is
-	// dismissed, and until now either was then gone.
+	// Every note is posted to the history, whatever the bar does with it.
 	t.notes.post(level, "cli", note)
 	if note == "" {
 		t.status.setNotice("")
@@ -3314,9 +2685,8 @@ func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 	t.render()
 }
 
-// noteYank confirms a yank in the bar and never in a pit -- a confirmation
-// that replaced the list it was yanking from is how this went wrong twice.
-// A long yank is reported by size, because the bar keeps only what fits.
+// In the bar, never a pit: a confirmation must not replace the list it was yanking
+// from.
 func (t *transcript) noteYank(text string) {
 	one := firstLineTrim(text)
 	if displayWidth(one) > 24 {
@@ -3325,17 +2695,12 @@ func (t *transcript) noteYank(text string) {
 	t.setCommandNote("yanked " + one)
 }
 
-// pagerPitDrop is 'x' on a selected row: ask the owner to drop it. The
-// transcript does not know what dropping means -- for the queue it is
-// `figaro queue rm <id>`, an RPC -- so it hands the id up, exactly as the ':'
-// box hands a command line up.
+// The transcript does not know what dropping means; it hands the id up, as the ':'
+// box hands a line up.
 func pagerPitDrop(t *transcript) { t.dropSelected(true) }
 
-// pagerPitDropNow is 'X' on a row: the same drop with no question. The two
-// keys differ in exactly one thing, so neither can drift from the other.
 func pagerPitDropNow(t *transcript) { t.dropSelected(false) }
 
-// dropRowAt is the hook call, with the neighbour the list already knows.
 func (t *transcript) dropRowAt(pit, id, next string) {
 	if t.dropRow != nil {
 		t.dropRow(pit, id, next)
@@ -3348,8 +2713,7 @@ func (t *transcript) dropSelected(ask bool) {
 		return
 	}
 	pit, id := string(t.pit.id), row.id
-	// WHERE THE READER STANDS AFTERWARDS is a fact about this list, not about
-	// the daemon: the row under the cursor once this one is gone.
+	// Where the reader stands afterwards is a fact about this list, not the daemon.
 	next := ""
 	if n, ok := t.pit.neighbour(); ok {
 		next = n.id
@@ -3358,8 +2722,8 @@ func (t *transcript) dropSelected(ask bool) {
 		t.dropRowAt(pit, id, next)
 		t.pit.removeSelected() // optimistic: the refresh confirms it
 	}
-	// ONLY AN ARIA IS WORTH A QUESTION. A queued message is recoverable
-	// (its text is reprinted on the way out); an aria is not.
+	// Only an aria is worth a question: a queued message is reprinted on the
+	// way out, an aria is gone.
 	if ask && rpc.ValidateAriaID(id) == nil {
 		t.askConfirm(killPrompt(id), drop)
 		return
@@ -3367,9 +2731,6 @@ func (t *transcript) dropSelected(ask bool) {
 	drop()
 }
 
-// openMemo holds what each block of the open message composed, so a live frame
-// pays for the blocks the stream moved and nothing else. It is dropped
-// whenever the message it describes or the width it was drawn at changes.
 type openMemo struct {
 	key    sliceKey
 	w      int
@@ -3379,17 +2740,14 @@ type openMemo struct {
 type memoBlock struct {
 	node   livedoc.Node
 	state  ldrender.BlockState
-	rows   []ldrender.Row  // as composed
-	out    []transcriptRow // as the pager keeps them: clipped, collapsed, addressed
-	reused bool            // this frame answered from rows
+	rows   []ldrender.Row
+	out    []transcriptRow // clipped, collapsed, addressed
+	reused bool
 }
 
-// compose is the Composer's Memo: it answers with the rows this block composed
-// last frame when nothing about the block moved.
 func (mo *openMemo) compose(block int, n livedoc.Node, state ldrender.BlockState, draw func() []ldrender.Row) []ldrender.Row {
-	// A RUNNING TOOL IS DRAWN AGAINST THE CLOCK: its spinner is a function of
-	// the frame counter, not of the node, so it is the one block that must be
-	// composed again even when nothing about it changed.
+	// A running tool is drawn against the clock: its spinner is a function of
+	// the frame counter, so it is recomposed every frame.
 	animating := n.Type == livedoc.NodeTool && n.Status != livedoc.StatusOK && n.Status != livedoc.StatusError
 	if b, ok := mo.blocks[block]; ok {
 		if !animating && b.state == state && reflect.DeepEqual(b.node, n) {
@@ -3402,9 +2760,8 @@ func (mo *openMemo) compose(block int, n livedoc.Node, state ldrender.BlockState
 	return rows
 }
 
-// kept returns the pager rows this block held from the last frame, when this
-// frame reused its composition. The processing they went through (clip,
-// collapse, address) costs as much as the composition did.
+// The clip/collapse/address pass costs as much as the composition did, so it is
+// memoized too.
 func (mo *openMemo) kept(block int) ([]transcriptRow, bool) {
 	b, ok := mo.blocks[block]
 	if !ok || !b.reused || b.out == nil {

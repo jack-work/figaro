@@ -1,17 +1,7 @@
 package cli
 
-// THE PIT: the pager's one transient region -- help, status, the queue, a
-// command's output, a hosted verb, a note. One at a time, Esc closes it, and
+// The pit is the pager's one transient region: one at a time, Esc closes it, and
 // none of them may touch the status bar.
-//
-//	┌ the transcript's rule ───────────────────────────────── 1–29/118 live
-//	│   item 1
-//	│ ♭ item 2                        ← at most one selected row
-//	│ … 749 more                      ← never a silent truncation
-//	└ 𝄚 · ✓ · 3b7aff0a · mantra              9.8k/1.0m   ← the bar, inviolable
-//
-// The pit holds an ACT, and never asks what kind of thing is open: everything
-// that question used to decide is answered by what it is holding.
 
 import (
 	"strings"
@@ -20,14 +10,10 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// act is what occupies the pit: a picker (a list) or a screen (a hosted view
-// that renders itself). There is no third.
 type act interface {
 	lines(id pitID, w, h int) []string
 }
 
-// screen adapts a self-rendering view to the pit. A view with Items() never
-// reaches here: the pit takes its rows and drives them with the picker.
 type screen struct{ v cmdkit.ScreenView }
 
 func (s screen) lines(_ pitID, w, h int) []string {
@@ -38,25 +24,18 @@ func (s screen) lines(_ pitID, w, h int) []string {
 	return rows
 }
 
-// pitRow is one line: text is drawn, yank is what `y` copies, id is what a
-// verb key addresses. A row with neither is chrome and cannot be selected.
+// A row with neither yank nor id is chrome and cannot be selected.
 type pitRow struct {
 	text string
 	yank string
 	id   string
-	// note is a dim second column after text: a completion's description.
-	// It goes through the same gate as text, and is drawn at full strength
-	// on the selected row, where dim on a wash would not read.
+	// note is drawn at full strength on the selected row: dim on a wash would
+	// not read.
 	note string
-	// tone is the row's level, painted by the picker. It cannot ride in the
-	// text: every row goes through pitText, which strips escapes, and it must
-	// not, or a form value holding an SGR would repaint the pane. The zero
-	// value is no colour, so a pit that never heard of tones is untouched.
+	// tone cannot ride in the text: pitText strips escapes, and must.
 	tone pitTone
 }
 
-// pitTone is what a row's level looks like. Three, because a message has three
-// (see alertLevel): trouble, a warning, and everything else.
 type pitTone uint8
 
 const (
@@ -65,40 +44,31 @@ const (
 	toneWarn
 )
 
-// staticRow is drawn but never selected. (Not "chromeRow": that name is taken
-// in transcript_mouse_test.go for a different idea.)
 func staticRow(text string) pitRow { return pitRow{text: text} }
 
 func (r pitRow) selectable() bool { return r.yank != "" || r.id != "" }
 
-// pit is the region itself. The zero value is closed.
 type pit struct {
-	// id is which pit this is, and through pitid.go also its glyph, its
-	// keymode and its selection marker. Nothing else names a pit.
 	id    pitID
-	title string // drawn as the pit's first row when non-empty
+	title string
 
-	body act             // the picker or screen on show
-	live cmdkit.LiveView // the hosted verb, when there is one
-	// full is handed down by the transcript on every paint: fullscreen is the
-	// pager's disposition, not this pit's (see transcript.full).
+	body act
+	live cmdkit.LiveView
+	// full is the pager's disposition (transcript.full), handed down on every
+	// paint.
 	full bool
 }
 
 func (d *pit) open() bool { return d.body != nil }
 
-// list is the pit's picker, or nil when what is open renders itself: every
-// motion goes through here, so a screen takes none of them.
 func (d *pit) list() *picker {
 	p, _ := d.body.(*picker)
 	return p
 }
 
-// glance reports a pit that is read at a glance and dismissed by any key.
 func (d *pit) glance() bool { return d.id == pitNote }
 
-// close empties the pit and releases what it was hosting: a live view holds a
-// subscription and a socket.
+// A live view holds a subscription and a socket.
 func (d *pit) close() {
 	if d.live != nil {
 		d.live.Close()
@@ -106,17 +76,14 @@ func (d *pit) close() {
 	*d = pit{}
 }
 
-// itemView is a live view with a LIST rather than a screen: the pit drives the
-// rows, the view keeps only the verbs that are its own.
 type itemView interface {
 	Items(width int) []pitRow
 	Activate(path string)
 }
 
-// showLive hosts a verb: the pit owns the region and the dismissal.
 func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	if d.live != nil && d.live != v {
-		d.live.Close() // one pit, one hosted view
+		d.live.Close()
 	}
 	d.id, d.title, d.live = id, "", v
 	switch view := v.(type) {
@@ -125,14 +92,10 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	case cmdkit.ScreenView:
 		d.body = screen{view}
 	default:
-		// A HOSTED VERB THAT IS NEITHER A LIST NOR A SCREEN has nothing to
-		// show, and saying so beats an empty region with a glyph over it.
 		d.body = newPicker([]pitRow{staticRow("  " + string(id) + ": nothing to render")})
 	}
 }
 
-// refreshLive re-reads an itemised view's rows; the picker keeps the cursor on
-// the same row id across the swap.
 func (d *pit) refreshLive(w int) {
 	iv, ok := d.live.(itemView)
 	if !ok || d.list() == nil {
@@ -141,13 +104,10 @@ func (d *pit) refreshLive(w int) {
 	d.list().setRows(iv.Items(w), "")
 }
 
-// showNote is the one-line pit: a result too long for the bar. Any key wipes
-// it (see glance).
 func (d *pit) showNote(text string) {
 	d.showList(pitNote, "", []pitRow{staticRow("  " + text)})
 }
 
-// showList opens a list. Whether it has a cursor is the rows' answer.
 func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	if d.live != nil {
 		d.live.Close()
@@ -156,7 +116,6 @@ func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	d.body = newPicker(rows)
 }
 
-// focus selects the row carrying id, when the open list has one.
 func (d *pit) focus(id string) bool {
 	if p := d.list(); p != nil {
 		return p.focus(id)
@@ -164,8 +123,6 @@ func (d *pit) focus(id string) bool {
 	return false
 }
 
-// findRow moves the cursor to the next row whose text holds q, walking in
-// dir from where the cursor stands and wrapping once.
 func (d *pit) findRow(q string, dir int) bool {
 	p := d.list()
 	if p == nil || q == "" {
@@ -174,27 +131,21 @@ func (d *pit) findRow(q string, dir int) bool {
 	return p.find(q, dir)
 }
 
-// visible is how many rows the list may draw inside the room the pane has
-// already been asked for (transcript.pitRoom). It must not compute that room
-// itself: the bar is three rows when it wraps, and a pit that assumed one
-// overran the pane and lost its top -- cursor and marker with it.
+// room comes from transcript.pitRoom; the pit must not compute it, since the bar
+// is three rows when it wraps.
 func (d *pit) visible(room int) int {
 	if d.title != "" {
 		room--
 	}
 	n := pickerRows
 	if d.full {
-		n = room // fullscreen takes everything it was given
+		n = room
 	}
 	return max(min(n, room), 1)
 }
 
-// The list behaviours are the picker's; these forward.
-
-// moveSelection is ^N/^P: choose.
 func (d *pit) moveSelection(dir int) { d.motion(func(p *picker) { p.pick(dir) }) }
 
-// scrollBy moves the window by a row and leaves the selection alone.
 func (d *pit) scrollBy(dir int) { d.motion(func(p *picker) { p.step(dir) }) }
 
 func (d *pit) halfPage(dir int) { d.motion(func(p *picker) { p.half(dir) }) }
@@ -202,15 +153,13 @@ func (d *pit) halfPage(dir int) { d.motion(func(p *picker) { p.half(dir) }) }
 func (d *pit) toTop()    { d.motion((*picker).home) }
 func (d *pit) toBottom() { d.motion((*picker).end) }
 
-// motion runs one list motion against whatever is open. The height is the
-// picker's own -- it measures itself when it draws, and nobody else may.
+// The height is the picker's own: it measures itself when it draws.
 func (d *pit) motion(f func(*picker)) {
 	if p := d.list(); p != nil {
 		f(p)
 	}
 }
 
-// selected is the row under the cursor, in whatever pit is open.
 func (d *pit) selected() (pitRow, bool) {
 	if p := d.list(); p != nil {
 		return p.selected()
@@ -218,7 +167,6 @@ func (d *pit) selected() (pitRow, bool) {
 	return pitRow{}, false
 }
 
-// neighbour is where the cursor would land if the selected row went away.
 func (d *pit) neighbour() (pitRow, bool) {
 	if p := d.list(); p != nil {
 		return p.neighbour()
@@ -226,8 +174,6 @@ func (d *pit) neighbour() (pitRow, bool) {
 	return pitRow{}, false
 }
 
-// replaceRows swaps the list under a live cursor; picker.setRows keeps the
-// window and the selection.
 func (d *pit) replaceRows(rows []pitRow, keepID string) {
 	if p := d.list(); p != nil {
 		p.setRows(rows, keepID)
@@ -243,7 +189,7 @@ func (d *pit) lines(w, room int) []string {
 		return nil
 	}
 	if d.live != nil {
-		d.refreshLive(w) // the view is live: its rows change under the pit
+		d.refreshLive(w)
 	}
 	full := d.visible(room)
 	out := make([]string, 0, full+1)
@@ -256,20 +202,15 @@ func (d *pit) lines(w, room int) []string {
 	if !d.full {
 		return out
 	}
-	// Fullscreen occupies the whole pane whether or not it needs to.
 	for len(out) < full {
 		out = append(out, "")
 	}
 	return out
 }
 
-// pitGray is the pit's one voice: furniture beside the conversation.
 func pitGray(s string) string { return term.Label(s) }
 
-// pitSelected is the one row in a pit drawn at full strength: it is what every
-// verb acts on, so it must be read first. Dim text on a dark wash was not.
-// A toned row keeps its colour over the wash: the selection says where you
-// are standing, and the tone says what you are standing on.
+// The selected row is full strength over the wash; a toned row keeps its colour.
 func pitSelected(s string, tone pitTone) string {
 	if !term.Enabled() {
 		return s
@@ -281,9 +222,7 @@ func pitSelected(s string, tone pitTone) string {
 	return "\x1b[48;5;240m" + fg + s + "\x1b[39m\x1b[49m"
 }
 
-// paint colours a whole row and hands the pane back as it found it. An untoned
-// row is returned untouched, so a pit that sets no tone renders byte for byte
-// as it did before there were any.
+// An untoned row is returned untouched.
 func (t pitTone) paint(s string) string {
 	body := ""
 	switch t {
@@ -298,9 +237,7 @@ func (t pitTone) paint(s string) string {
 	return body + s + "\x1b[0m"
 }
 
-// washBody is the tone over the selection wash: the same colour, lifted,
-// because the palette's own red on a mid-grey wash is 1.9:1 and reads as mud.
-// The wash is the caller's.
+// The palette's own red on the mid-grey wash is 1.9:1, so the tone is lifted.
 func (t pitTone) washBody() string {
 	switch t {
 	case toneError:
@@ -311,11 +248,8 @@ func (t pitTone) washBody() string {
 	return ""
 }
 
-// pitText is the gate every pit row passes through: THE PIT PAINTS TEXT, NEVER
-// CONTROL. Rows come from forms, command output and queued messages, and any
-// of them can carry escape sequences -- a form holds tool output. A value
-// carrying "\x1b[2J" cleared the pane. Escapes, C0 controls and DEL go; a tab
-// becomes a space. The pit's own colour is applied afterwards.
+// The pit paints text, never control: rows carry tool output, and "\x1b[2J" in one
+// cleared the pane. Escapes, C0 and DEL go; tab becomes a space.
 func pitText(s string) string {
 	if !strings.ContainsFunc(s, isControl) {
 		return s
@@ -329,8 +263,7 @@ func pitText(s string) string {
 			case c == '\t':
 				b.WriteByte(' ')
 			case c < 0x20 || c == 0x7f:
-				// dropped: a newline inside a ROW is not a row break, it is a
-				// row the reader cannot see the end of
+				// dropped: a newline inside a row is not a row break
 			default:
 				b.WriteByte(c)
 			}
@@ -344,8 +277,7 @@ func pitText(s string) string {
 
 func isControl(r rune) bool { return r == 0x1b || r == '\t' || r < 0x20 || r == 0x7f }
 
-// skipEscape returns the index just past the escape at i: CSI and OSC whole,
-// anything else the ESC and one byte.
+// CSI and OSC are skipped whole; anything else is ESC and one byte.
 func skipEscape(s string, i int) int {
 	j := i + 1
 	if j >= len(s) {
