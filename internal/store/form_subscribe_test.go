@@ -129,8 +129,8 @@ func TestSubscribeCloseIsIdempotent(t *testing.T) {
 	}
 }
 
-// Through the backend, which is how everything that is not a test reaches a
-// form: the same no-gap guarantee, and the aria's own board is subscribable
+// Through the backend's form handle, which is how a libretto follows its
+// source: the same no-gap guarantee, and the aria's own board is subscribable
 // like any other.
 func TestSubscribeThroughBackend(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
@@ -142,10 +142,11 @@ func TestSubscribeThroughBackend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := be.SubscribeForm(id, 32)
+	f, err := be.form(id)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sub := f.SubscribeFrom(32)
 	defer sub.Close()
 
 	if _, err := be.ApplyForm(id, patchSet(map[string]string{"brief": "moved"})); err != nil {

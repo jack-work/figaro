@@ -7,8 +7,8 @@ import (
 )
 
 // DefaultFormRecord is the daemon's pointer to the CURRENT default form -
-// the unbound form `fig new` binds from. Successor of KeepStump: where the
-// stump was content-addressed and deduped, the default form is a plain
+// the unbound form `fig new` binds from. Where the stump was
+// content-addressed and deduped, the default form is a plain
 // form plus this record of what it was born from, so the reload lifecycle
 // can decide when a fresh one is due (plans/forms-and-roles-v2.md §6).
 type DefaultFormRecord struct {

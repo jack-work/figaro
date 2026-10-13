@@ -148,14 +148,9 @@ type Backend interface {
 	// handle, not a figaro). Zero for pre-timestamp history.
 	LastTS(id string) int64
 
-	// KeepStump names the stump collection must spare: the live default, whose
-	// re-minting would rewrite a whole outfit to save one directory.
-	// Legacy: new arias are born of the DEFAULT FORM, not a stump.
-	KeepStump(id string)
-
 	// LoadDefaultForm / SaveDefaultForm read and write the daemon's
-	// pointer to the current default form: `fig new`'s forking point and
-	// KeepStump's successor. Load returns (nil, nil) before first mint.
+	// pointer to the current default form: `fig new`'s forking point.
+	// Load returns (nil, nil) before first mint.
 	LoadDefaultForm() (*DefaultFormRecord, error)
 	SaveDefaultForm(rec *DefaultFormRecord) error
 
@@ -168,7 +163,7 @@ type Backend interface {
 	// and the old sink hears nothing more -- which is safe for an agent's own
 	// watch, because the sweep never evicts a live aria, and is NOT safe for
 	// anything else. A long-lived reader of somebody else's form wants
-	// SubscribeForm, whose subscription is a LEASE the sweep honours
+	// Form.SubscribeFrom, whose subscription is a LEASE the sweep honours
 	// (Form.Subscribed).
 
 	// SetObservedForms declares the forms whose positions every IR append
@@ -186,28 +181,15 @@ type Backend interface {
 	// forms fork independently; a conversation parent is refused.
 	CreateForm(parent string, patch message.Patch) (id string, version uint64, err error)
 
-	// ApplyFormIf appends a patch unless the form has moved off ifVersion
-	// (zero applies unconditionally). The comparison happens in the form's
-	// writer, atomically with the append.
-	ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error)
-
-	// ApplyFormEffect is ApplyFormIf plus what actually landed: the writer
-	// reduces a patch against the board (a key already holding the value is
-	// not an event), and a caller that reports or fans out the change must
-	// speak about the reduced patch, not the requested one.
-	ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error)
-
-	// ApplyFormEffectIntent is ApplyFormEffect with the removal rule named:
-	// under Assert a removal of an absent key is refused rather than reduced
-	// away. See store.Intent.
+	// ApplyFormEffectIntent appends a patch unless the form has moved off
+	// ifVersion (zero applies unconditionally; the comparison happens in the
+	// form's writer, atomically with the append) and returns what actually
+	// landed: the writer reduces a patch against the board (a key already
+	// holding the value is not an event), and a caller that reports or fans
+	// out the change must speak about the reduced patch, not the requested
+	// one. intent names the removal rule: under Assert a removal of an absent
+	// key is refused rather than reduced away. See store.Intent.
 	ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error)
-
-	// SubscribeForm gives a caller the form's state and the stream that
-	// continues it, with no gap between them: registration happens BEFORE
-	// the snapshot is read, so a patch landing in the window is a duplicate
-	// the reader drops by version rather than a gap it can never recover.
-	// The caller must Close the subscription.
-	SubscribeForm(ariaID string, buffer int) (*Subscription, error)
 
 	// ApplyFormPrivileged is the harness's own write: it may touch keys the
 	// catalog marks system-managed (the boot patch's system.cwd, and
