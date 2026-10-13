@@ -28,8 +28,8 @@ func providerSetupHint() string {
 		if reg.Login != nil && reg.LoginHint != "" {
 			fmt.Fprintf(&b, "  • %-10s %s\n", name, reg.LoginHint)
 		}
-		if reg.EnvVar != "" {
-			fmt.Fprintf(&b, "  • %-10s credential:                   export %s=…\n", name, reg.EnvVar)
+		if envs := reg.CredentialEnvs(); len(envs) > 0 {
+			fmt.Fprintf(&b, "  • %-10s credential:                   export %s=…\n", name, strings.Join(envs, "=… / "))
 		}
 	}
 	return b.String()

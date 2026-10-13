@@ -71,10 +71,7 @@ func EnvironmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrat
 	if reg == nil {
 		return nil
 	}
-	names := reg.EnvVars
-	if len(names) == 0 && reg.EnvVar != "" {
-		names = []string{reg.EnvVar}
-	}
+	names := reg.CredentialEnvs()
 	strategies := make([]auth.CredentialStrategy, 0, len(names))
 	for _, name := range names {
 		if name != "" {
@@ -137,11 +134,7 @@ func ensureExchangeCredential(loaded *config.Loaded, mh *managed.Hush, reg *prov
 }
 
 func durableSecretFor(loaded *config.Loaded, h *hush.Client, reg *providerPkg.Registration, name string) (secret, source string) {
-	envNames := reg.EnvVars
-	if len(envNames) == 0 && reg.EnvVar != "" {
-		envNames = []string{reg.EnvVar}
-	}
-	for _, env := range envNames {
+	for _, env := range reg.CredentialEnvs() {
 		if v := strings.TrimSpace(os.Getenv(env)); v != "" {
 			return v, "$" + env
 		}

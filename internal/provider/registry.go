@@ -48,6 +48,19 @@ var registry = map[string]*Registration{}
 
 func Register(r *Registration) { registry[r.Name] = r }
 
+func (r *Registration) CredentialEnvs() []string {
+	if r == nil {
+		return nil
+	}
+	if len(r.EnvVars) > 0 {
+		return r.EnvVars
+	}
+	if r.EnvVar != "" {
+		return []string{r.EnvVar}
+	}
+	return nil
+}
+
 func Lookup(name string) *Registration { return registry[name] }
 
 func Names() []string {
