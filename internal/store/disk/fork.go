@@ -11,18 +11,14 @@ import (
 	"strings"
 )
 
-// forkMarkerName is the name of the metadata file present in every
-// forked child directory. It records the global log index this fork
-// begins at; the parent is always the immediate parent directory.
+// forkMarkerName records the global log index this fork begins at; the
+// parent is always the immediate parent directory.
 const forkMarkerName = ".fork"
 
-// forkPendingName, when present in a log directory, signals that a
-// previous fork operation crashed before completing. Open refuses to
-// proceed; the xwal joint-fork recovery consumes it by rolling the
-// channel back to its pre-fork layout and re-forking from the plan.
+// forkPendingName signals a fork that crashed before completing: Open
+// refuses, and the recovery layer consumes it.
 const forkPendingName = ".fork-pending"
 
-// ForkPendingName exposes the sentinel name to the recovery layer.
 const ForkPendingName = forkPendingName
 
 var (
@@ -31,8 +27,7 @@ var (
 	ErrInvalidForkName = errors.New("fork name must be a non-empty filename without separators")
 )
 
-// readForkMarker reads .fork from dir if present. Returns (0, nil) if
-// the file is absent (dir is a root, not a forked child).
+// readForkMarker returns (0, nil) when .fork is absent: dir is a root.
 func readForkMarker(dir string) (uint64, error) {
 	path := filepath.Join(dir, forkMarkerName)
 	data, err := os.ReadFile(path)
@@ -42,8 +37,7 @@ func readForkMarker(dir string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Format: one line, key=value pairs separated by lines. Today we
-	// only carry base=<N>.
+	// key=value lines; today only base=<N>.
 	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -65,9 +59,6 @@ func readForkMarker(dir string) (uint64, error) {
 	return 0, fmt.Errorf(".fork present but missing base= field")
 }
 
-// writeForkMarker writes a .fork file declaring this dir as a fork
-// starting at base. The write goes through a temp file + rename for
-// atomicity.
 func writeForkMarker(dir string, base uint64) error {
 	final := filepath.Join(dir, forkMarkerName)
 	tmp := final + ".tmp"
@@ -93,7 +84,6 @@ func writeForkMarker(dir string, base uint64) error {
 	return syncDir(dir)
 }
 
-// hasForkPending checks for the in-progress sentinel.
 func hasForkPending(dir string) (bool, error) {
 	_, err := os.Stat(filepath.Join(dir, forkPendingName))
 	if err == nil {
@@ -105,9 +95,7 @@ func hasForkPending(dir string) (bool, error) {
 	return false, err
 }
 
-// hasSubdirs returns true if dir contains at least one subdirectory
-// that isn't a dot-prefixed internal directory. Subdirectory presence
-// is what marks a log as a branch point and therefore read-only.
+// Subdirectory presence is what marks a log as a branch point and therefore read-only.
 func hasSubdirs(dir string) (bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -125,14 +113,11 @@ func hasSubdirs(dir string) (bool, error) {
 	return false, nil
 }
 
-// pathExists reports whether a filesystem entry exists at p.
 func pathExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
 }
 
-// childSubdirs returns the names of non-dot subdirectories of dir (the
-// child forks of a branch point).
 func childSubdirs(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -147,9 +132,7 @@ func childSubdirs(dir string) ([]string, error) {
 	return out, nil
 }
 
-// validateForkName rejects empty, dot, double-dot, and names containing
-// any path separator. The user explicitly opted out of canonicalization
-// so we only reject the unambiguously broken inputs.
+// validateForkName rejects only the unambiguously broken inputs; no canonicalization.
 func validateForkName(name string) error {
 	if name == "" || name == "." || name == ".." {
 		return ErrInvalidForkName
@@ -160,9 +143,8 @@ func validateForkName(name string) error {
 	return nil
 }
 
-// segAction classifies what happens to each sealed segment under a
-// fork at atIdx: keep in the trunk, move whole to the old-future
-// subdir, or split into a kept prefix + moved suffix.
+// segAction: keep in the trunk, move whole to the old-future subdir, or
+// split into a kept prefix and a moved suffix.
 type segAction uint8
 
 const (
@@ -171,11 +153,9 @@ const (
 	actSplit
 )
 
-// Fork splits this log at atIdx. The log keeps the prefix
-// [FirstIndex, atIdx-1] and becomes read-only; entries at and after
-// atIdx (if any) move into a same-named "old future" subdir; a fresh
-// subdir named childName is created, empty and writable from atIdx.
-// The new fork is returned, opened with this log as its parent.
+// Fork keeps the prefix [FirstIndex, atIdx-1] and becomes read-only;
+// entries at and after atIdx move into a same-named "old future" subdir; a
+// fresh subdir childName is created, empty and writable from atIdx.
 func (l *Log) Fork(atIdx uint64, childName string, oldFutureNameOpt ...string) (*Log, error) {
 	if len(oldFutureNameOpt) > 1 {
 		return nil, fmt.Errorf("Fork: at most one oldFutureName override permitted, got %d",
@@ -185,23 +165,19 @@ func (l *Log) Fork(atIdx uint64, childName string, oldFutureNameOpt ...string) (
 	if len(oldFutureNameOpt) == 1 {
 		oldFutureName = oldFutureNameOpt[0]
 	}
-	// Heuristic re-home: on a re-split (the node's own segments split), all
-	// existing child forks move into the old-future.
+	// On a re-split all existing child forks move into the old-future.
 	return l.forkImpl(atIdx, childName, oldFutureName, oldFutureName != "", nil, true)
 }
 
-// ForkRehome forks with an EXPLICIT list of child subdir names to re-home
-// into the old-future, instead of the per-channel heuristic. The xwal joint
-// fork uses this so every channel re-homes the SAME children — decided once
-// from the main channel — keeping the triune's node trees in lockstep even
-// when a sparse related channel would otherwise tail-fork and skip the
-// re-home. An empty (non-nil) list re-homes nothing.
+// ForkRehome takes an explicit list of child subdirs to re-home into the
+// old-future, so the joint fork re-homes the same children in every channel,
+// even where a sparse related channel would tail-fork. An empty non-nil list
+// re-homes nothing.
 func (l *Log) ForkRehome(atIdx uint64, childName, oldFutureName string, rehome []string) (*Log, error) {
 	return l.forkImpl(atIdx, childName, oldFutureName, oldFutureName != "", rehome, false)
 }
 
-// ChildForkBases returns each child fork subdir's declared .fork base. Used
-// by the joint fork to decide which children re-home (base > the split point).
+// ChildForkBases is each child fork subdir's declared .fork base.
 func (l *Log) ChildForkBases() (map[string]uint64, error) {
 	kids, err := childSubdirs(l.dir)
 	if err != nil {
@@ -246,33 +222,26 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 			return nil, fmt.Errorf("fork index %d invalid for empty log (want %d)", atIdx, want)
 		}
 	} else {
-		// atIdx must leave a non-empty prefix — EXCEPT a forked node
-		// (forkBase>0) may fork at its own first index: all of its own
-		// entries move to the old-future, the prefix keeps none of its own,
-		// reads below forkBase resolve through the parent, and the watermark
-		// folds from the parent. This is how a sparse related channel (e.g.
-		// a chalkboard whose own patches are all past the fork point) forks.
+		// atIdx must leave a non-empty prefix, except that a forked node may
+		// fork at its own first index: all of its own entries move to the
+		// old-future and reads below forkBase resolve through the parent.
 		lowOK := atIdx > first || (l.forkBase > 0 && atIdx == first)
 		if !lowOK || atIdx > last+1 {
 			return nil, fmt.Errorf("fork index %d out of range (%d, %d]",
 				atIdx, first, last+1)
 		}
 	}
-	// childName must not collide with an existing entry (a segment file
-	// or a sibling fork). The old-future name is validated later, only
-	// when an old-future child is actually created.
+	// childName must not collide with a segment file or a sibling fork.
 	if p := filepath.Join(l.dir, childName); pathExists(p) {
 		return nil, fmt.Errorf("%w: %s", ErrForkConflict, p)
 	}
-	// Capture pre-existing child forks before we create any new subdir.
-	// On a re-split below this branch point they move into the old-future.
+	// Captured before any new subdir is created.
 	existingChildren, err := childSubdirs(l.dir)
 	if err != nil {
 		return nil, err
 	}
 
-	// Seal the active segment so the fork plan only has to consider
-	// sealed segments.
+	// Seal the active segment so the plan only considers sealed segments.
 	if l.active != nil {
 		if err := l.active.Sync(); err != nil {
 			return nil, err
@@ -283,20 +252,16 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		}
 	}
 
-	// A fork reasons about counts, headers and payloads across the whole
-	// log, so it takes the eager path: every sealed segment is opened before
-	// the plan is made, rather than an on-demand open appearing in the
-	// middle of one already committed to.
+	// A fork reasons about the whole log, so every sealed segment is opened
+	// before the plan is made.
 	if err := l.materializeLocked(); err != nil {
 		return nil, err
 	}
 	segs := l.sealedSegments()
 
-	// Header (reducible) mode: the new branches need a fresh watermark
-	// at the fork boundary (state at atIdx-1), because the prefix is
-	// read-only and neither the child nor the old-future should have to
-	// fold back into it. Computed once here, while the log is intact,
-	// via the same fold the log uses on rotation.
+	// Header mode: the new branches need a fresh watermark at the fork
+	// boundary (state at atIdx-1), since the prefix is read-only. Computed
+	// once here, while the log is intact.
 	var forkWatermark []byte
 	headerMode := l.opts.OnSegmentOpen != nil
 	if headerMode {
@@ -335,15 +300,12 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 			hasSplit = true
 		}
 	}
-	// dataMoves: the node's own segments carry a suffix into the old-future
-	// (interior split / re-split). createOldFuture: materialize the
-	// old-future branch at all — always when explicitly named (so the
-	// continuation gets its own branch in every channel, even empty), else
-	// only when there's data to carry.
+	// dataMoves: the node's own segments carry a suffix into the old-future.
+	// The old-future branch is created whenever explicitly named (so the
+	// continuation gets a branch in every channel), else only with data.
 	dataMoves := hasMoves || hasSplit
-	// Which children re-home into the old-future. autoRehome: the heuristic —
-	// all existing children when the node's own segments split. Otherwise the
-	// explicit list (the joint-fork case), filtered to ones that exist here.
+	// autoRehome: all existing children when the node's own segments split;
+	// otherwise the explicit list, filtered to ones that exist here.
 	var rehomeChildren []string
 	if autoRehome {
 		if dataMoves {
@@ -377,14 +339,12 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		return nil, err
 	}
 	rollbackPending := func(err error) error {
-		// Best-effort: clear the sentinel even on failure so the
-		// caller can attempt cleanup. Any half-staged files remain
-		// for the operator to inspect.
+		// Best-effort: clear the sentinel even on failure; half-staged files
+		// remain for the operator.
 		_ = os.Remove(pendingPath)
 		return err
 	}
 
-	// Make subdirs first; populate them next.
 	if createOldFuture {
 		if err := os.MkdirAll(oldFutureDir, 0755); err != nil {
 			return nil, rollbackPending(err)
@@ -394,11 +354,8 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		return nil, rollbackPending(err)
 	}
 
-	// In header mode, seed the child with a header-only first segment
-	// carrying the fork watermark, so its first append builds on the
-	// fork-point state rather than an empty one. The whole-moved
-	// segments already carry their own watermarks; the split suffix got
-	// the watermark above.
+	// Header mode: seed the child with a header-only first segment carrying
+	// the fork watermark, so its first append builds on the fork-point state.
 	writeWatermarkSeg := func(dir string) error {
 		seg, err := segment.Create(filepath.Join(dir, l.segName(atIdx)), l.codec, atIdx, l.opts.SegmentSize)
 		if err != nil {
@@ -449,9 +406,8 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		if err != nil {
 			return nil, rollbackPending(err)
 		}
-		// The prefix keeps the boundary segment's original watermark
-		// (same starting state); the suffix begins a new branch from the
-		// fork watermark (state at atIdx-1).
+		// The prefix keeps the boundary segment's original watermark; the
+		// suffix begins from the fork watermark.
 		if headerMode {
 			if err := prefix.WriteHeader(s.Header()); err != nil {
 				prefix.Close()
@@ -510,8 +466,7 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		if err := os.Rename(prefixTmp, prefixPath); err != nil {
 			return nil, rollbackPending(err)
 		}
-		// Reopen the new prefix as the readOnly segment that will
-		// remain in this Log's sealed list.
+		// The reopened prefix stays in this Log's sealed list.
 		var reopen *segment.Segment
 		if headerMode {
 			reopen, err = segment.OpenReadOnlyHeadered(prefixPath, l.codec, s.BaseIndex())
@@ -541,11 +496,9 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		}
 	}
 
-	// Re-home child forks into the old-future. They branched from the suffix
-	// [atIdx, ...], which now lives there; their own .fork base is unchanged
-	// and their parent resolves via `..` to the old-future. The set was
-	// chosen above (heuristic: all children on a re-split; or the explicit
-	// joint-fork list). A tail fork (no re-home) leaves children in place.
+	// Re-homed children branched from the suffix, which now lives in the
+	// old-future; their own .fork base is unchanged and their parent resolves
+	// via `..`.
 	for _, name := range rehomeChildren {
 		src := filepath.Join(l.dir, name)
 		dst := filepath.Join(oldFutureDir, name)
@@ -554,8 +507,7 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		}
 	}
 
-	// Write .fork markers in the children. For the old-future the
-	// declared base equals atIdx (its first segment starts there).
+	// The old-future's declared base equals atIdx.
 	if createOldFuture {
 		if err := writeForkMarker(oldFutureDir, atIdx); err != nil {
 			return nil, rollbackPending(err)
@@ -578,8 +530,8 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 		return nil, rollbackPending(err)
 	}
 
-	// Rebuild l.sealed: keep the kept segments and the split prefix
-	// (which slots in where the boundary used to be).
+	// Keep the kept segments and the split prefix, which slots in where the
+	// boundary used to be.
 	newSealed := make([]*sealedSeg, 0, len(l.sealed))
 	for i, ss := range l.sealed {
 		switch actions[i] {

@@ -1,5 +1,5 @@
-// Package tree is the ONE shape every derived cache in this stack
-// shares: a window of materialized units over a durable substrate,
+// Package tree is the one shape every derived cache in this stack shares: a
+// window of materialized units over a durable substrate.
 package tree
 
 import (
@@ -8,40 +8,34 @@ import (
 	"time"
 )
 
-// Ref is one step of a lineage: a trunk node and the coordinate at
-// which its child diverged (the fork base). A read below the base
+// Ref is one step of a lineage: a node and the coordinate at which its child
+// diverged (the fork base).
 type Ref struct {
 	Node string
 	Base uint64 // first coordinate that is the CHILD's own; 0 for the root
 }
 
-// Coord names a contiguous unit range within ONE node, (From..To]
-// inclusive of To, exclusive of From -- the bracket convention every
-// substrate in this stack already speaks.
+// Coord names a contiguous unit range within one node, (From..To].
 type Coord struct {
 	Node     string
 	From, To uint64
 }
 
-// Source rematerializes the units of a coord from the layer below.
-// Returning fewer units than the coord names is legal (a hole degrades
-// to a gap, never a lie); returning an error poisons nothing -- the
+// Source rematerializes the units of a coord from the layer below. Returning
+// fewer units than the coord names is legal: a hole degrades to a gap, never
+// a lie.
 type Source[U any] func(Coord) ([]U, error)
 
-// Sizer estimates one unit's resident bytes. An estimate at insert,
-// like every window in this stack; do not reflect-walk (that lied 3x
-// low once already) -- count the strings that dominate.
+// Sizer estimates one unit's resident bytes at insert; count the strings that
+// dominate rather than reflect-walking.
 type Sizer[U any] func(U) int
 
 // Keyer names the coordinate of one unit, so a run's index can be
 // rebuilt from its units and a Range can slice exactly.
 type Keyer[U any] func(U) uint64
 
-// ---- the accountant ----
-
-// Budget is the shared byte bound across every Cache that holds it.
-// One per concern (raw / decoded / composed today; one pool tomorrow is
-// a config choice, not a rewrite). It never calls an owner while
+// Budget is the shared byte bound across every Cache that holds it: one per
+// concern.
 type Budget struct {
 	limit atomic.Int64
 	bytes atomic.Int64
@@ -51,9 +45,9 @@ type Budget struct {
 	// daemon's standing sweep lowers it.
 	pressure atomic.Bool
 
-	// owners is PUBLISHED WHOLE: charge and TrimIdle read it on the eviction
-	// path, where a mutex would serialize every cache that shares this budget
-	ownersMu sync.Mutex // WRITERS ONLY
+	// owners is published whole: charge and TrimIdle read it on the eviction
+	// path, where a mutex would serialize every cache sharing this budget.
+	ownersMu sync.Mutex // writers only
 	owners   atomic.Pointer[[]owner]
 
 	evictions atomic.Int64
@@ -82,8 +76,7 @@ func NewBudget(limit int64) *Budget {
 // SetLimit retunes the bound live (the config reload path).
 func (b *Budget) SetLimit(limit int64) { b.limit.Store(limit) }
 
-// Stats reports resident bytes, the limit, and evictions to date --
-// every resident structure arrives with its number in doctor mem.
+// Stats reports resident bytes, the limit, and evictions to date.
 func (b *Budget) Stats() (resident, limit, evictions int64) {
 	if b == nil {
 		return 0, 0, 0
@@ -91,19 +84,10 @@ func (b *Budget) Stats() (resident, limit, evictions int64) {
 	return b.bytes.Load(), b.limit.Load(), b.evictions.Load()
 }
 
-// charge admits delta bytes and evicts the globally coldest runs until
-// the budget fits. Called by caches on insert and re-tally.
-// charge accounts delta and RAISES PRESSURE. It never evicts on the caller's
-// goroutine, and it starts nothing of its own.
-//
-// GLUCK, 2026-08-19: "I don't want to block anything on eviction. The memory
-// can exceed the threshold temporarily as long as eventual consistency is
-// reached" -- and, on the shape of the cure: "if there is a standing reaper
-// pattern that it makes sense to hook onto, use that rather than defining a new
-// pattern." So this sets a flag, and the daemon's existing sweep calls Sweep on
-// its own beat, exactly as it already does for figwal's segment cache.
-//
-// THE OVERSHOOT IS BOUNDED BY THE REAPER'S CADENCE, not by a second limit.
+// charge accounts delta and raises pressure. It never evicts on the caller's
+// goroutine and starts nothing of its own: the daemon's standing sweep calls
+// Sweep on its own beat, so the overshoot is bounded by the reaper's cadence,
+// not by a second limit.
 func (b *Budget) charge(delta int64) {
 	if b == nil {
 		return
@@ -180,15 +164,9 @@ func (b *Budget) EpochNow() int64 {
 	return b.epoch.Load()
 }
 
-// TrimIdle evicts every unpinned run whose epoch is older than the
-// current epoch minus keep, then advances the epoch: the idle sweep,
-// generalized. Returns runs dropped and bytes freed.
-//
-// ONE PASS PER OWNER. The cutoff is fixed before the sweep starts, so
-// "who is coldest" is not a question this loop has to ask -- it used to
-// ask it once per victim and rescan every run to answer, which made a
-// full sweep O(R^2): 180 ms at R=4096, measured, against 1 ms for the
-// same work in one pass. See evict_cost_bench_test.go.
+// TrimIdle evicts every unpinned run older than the current epoch minus keep,
+// then advances the epoch. One pass per owner: the cutoff is fixed before the
+// sweep starts, so the loop never asks "who is coldest" per victim.
 func (b *Budget) TrimIdle(keep int64) (dropped int, freed int64) {
 	if b == nil {
 		return 0, 0

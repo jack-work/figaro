@@ -7,10 +7,10 @@ import (
 )
 
 // Cache is a byte-budgeted window of materialized units over a durable
-// substrate, per node, LRU by epoch, with an index that survives eviction.
-// A HIT TAKES NO LOCK: everything a reader touches is immutable once published.
-// Writers hold c.mu only to publish -- never across the Source, the budget's
-// eviction pass, or the Evicted hook. See plans/tree-shaped-log.md.
+// substrate, per node, LRU by epoch, with an index that survives eviction. A
+// hit takes no lock: everything a reader touches is immutable once published.
+// Writers hold c.mu only to publish, never across the Source, the eviction
+// pass or the Evicted hook.
 type Cache[U any] struct {
 	src    Source[U]
 	size   Sizer[U]
@@ -27,7 +27,7 @@ type Cache[U any] struct {
 	// nodes is an immutable map published by pointer.
 	nodes atomic.Pointer[map[string]*node[U]]
 
-	mu sync.Mutex // WRITERS ONLY
+	mu sync.Mutex // writers only
 
 	recomposes atomic.Int64
 }
@@ -82,11 +82,8 @@ func (c *Cache[U]) cutByBytes(units []U, cc Coord) []*run[U] {
 	return out
 }
 
-// runTarget is the byte size to cut runs at: the fixed target, or a fraction
-// of the budget when the budget is smaller. A RUN LARGER THAN THE BUDGET CAN
-// NEVER STAY RESIDENT, so a cache with a small budget must cut small runs or
-// it retains nothing at all -- which is what a 3 KiB budget did to 1 KiB units
-// while the target was a flat 32 KiB.
+// runTarget: a run larger than the budget can never stay resident, so a cache
+// with a small budget must cut small runs or it retains nothing at all.
 func (c *Cache[U]) runTarget() int {
 	target := runTargetBytes
 	if c.budget != nil {
@@ -241,13 +238,9 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	if len(lineage) == 0 || to < from {
 		return nil, nil
 	}
-	// ONE CUT IS THE COMMON CASE -- an unforked aria, or a read entirely
-	// above the last fork base -- and it hands back the node's answer
-	// UNCOPIED. Concatenating a single piece into a fresh slice is a copy of
-	// the whole span for nothing.
-	// A SINGLE-NODE LINEAGE ASKS FOR NO SPLIT AT ALL. Every tenant that is not
-	// reading across a fork base is in this case, and building a one-element
-	// []Coord to hand it to the same walk is an allocation per read.
+	// One cut is the common case and hands back the node's answer uncopied; a
+	// single-node lineage skips the split entirely, since a one-element
+	// []Coord would be an allocation per read.
 	if len(lineage) == 1 {
 		return c.rangeInNode(Coord{Node: lineage[0].Node, From: from, To: to})
 	}
@@ -289,8 +282,6 @@ func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
 	return atIn(c, c.runs(node), idx)
 }
 
-// ---- the node handle ----
-
 // Handle is one node resolved once, so a tenant reading it repeatedly does not
 // hash its name per read.
 type Handle[U any] struct {
@@ -307,8 +298,8 @@ func (c *Cache[U]) Node(name string) *Handle[U] {
 	return &Handle[U]{c: c, n: n, name: name}
 }
 
-// At is Cache.At without the name lookup. A per-handle last-run hint was tried
-// and reverted: it made parallel reads 6.5x worse (plans/tree-shaped-log.md).
+// At is Cache.At without the name lookup. A per-handle last-run hint made
+// parallel reads worse.
 func (h *Handle[U]) At(idx uint64) (U, bool) {
 	ix := h.n.index()
 	if ix == nil {
@@ -366,8 +357,7 @@ func atIn[U any](c *Cache[U], rs []*run[U], idx uint64) (U, bool) {
 	return u, ok
 }
 
-// atInWhere is atIn plus WHICH RUN answered, so a caller can remember it. -1
-// when no run covers idx.
+// atInIndex also reports which run answered; -1 when none covers idx.
 func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
 	var zero U
 	// Written out rather than sort.Search: a closure is an indirect call per probe.
@@ -414,11 +404,8 @@ func (c *Cache[U]) ResidentAt(node string, from, to uint64) ([]U, bool) {
 	return residentIn(c.runs(node), from, to)
 }
 
-// ResidentRuns counts runs holding units, across every node. It replaces a
-// tenant counting its own copy of the index.
-// ResidentRuns TAKES NO LOCK: every slice it walks is immutable once
-// published, so the worst it can report is a count from an instant that has
-// already passed -- which is what any count of a live cache is.
+// ResidentRuns takes no lock: every slice it walks is immutable once
+// published, so it reports a count from an instant already passed.
 func (c *Cache[U]) ResidentRuns() int {
 	n := 0
 	for _, nd := range *c.nodes.Load() {
@@ -431,9 +418,7 @@ func (c *Cache[U]) ResidentRuns() int {
 	return n
 }
 
-// DropNode hollows every run of one node, returning their bytes to the budget.
-// The OWNER saying gone, for a whole node at once: a segment closing, a file
-// unlinked.
+// DropNode hollows every run of one node: the owner saying gone.
 func (c *Cache[U]) DropNode(node string) {
 	c.mu.Lock()
 	var freed int64
@@ -626,8 +611,7 @@ func (c *Cache[U]) refill(name string, r *run[U]) ([]U, error) {
 	return units, nil
 }
 
-// fetch calls the Source with no lock held: a Source may re-enter this cache,
-// and source_lock_test.go demonstrates the cycle when it does not.
+// fetch calls the Source with no lock held: a Source may re-enter this cache.
 func (c *Cache[U]) fetch(coord Coord) ([]U, error) {
 	c.recomposes.Add(1)
 	if c.src == nil {
@@ -649,9 +633,8 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 	return r.units[lo:hi]
 }
 
-// upperBound is the first index whose key exceeds target: an arithmetic guess
-// that verifies both ends and falls back to a binary search. A dense run skips
-// it entirely. Rationale and numbers: plans/tree-shaped-log.md.
+// upperBoundRun: an arithmetic guess verified at both ends, falling back to a
+// binary search. A dense run skips it entirely.
 func (c *Cache[U]) upperBoundRun(r *run[U], target uint64) int {
 	if r.dense {
 		if target < r.base {
@@ -681,16 +664,10 @@ func (c *Cache[U]) upperBound(units []U, target uint64) int {
 	return sort.Search(len(units), func(i int) bool { return c.key(units[i]) > target })
 }
 
-// runChunk bounds one run's span in UNITS, and runTargetBytes bounds it in
-// BYTES: a run is cut at whichever comes first.
-//
-// THE BYTE TARGET IS THE LOAD-BEARING ONE. A count alone is a bound on the
-// wrong axis for a tenant whose units are large -- 64 composed turns of 8 KiB
-// is half a megabyte, and a run larger than the whole budget can never stay
-// resident, so a small budget retains NOTHING. Measured while re-seating the
-// decoded IR: a byte budget under one run's worth evicted everything it was
-// given, which reads as a cache that does not work rather than as a run that
-// is too big.
+// runChunk bounds a run in units, runTargetBytes in bytes; a run is cut at
+// whichever comes first. The byte target is load-bearing: a run larger than
+// the whole budget can never stay resident, so a count alone would let a
+// small budget retain nothing.
 const (
 	runChunk        = 64
 	runTargetBytes  = 32 << 10
@@ -709,8 +686,6 @@ func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {
 	}
 	return units[lo:hi]
 }
-
-// ---- the published index ----
 
 func (n *node[U]) load() []*run[U] {
 	if ix := n.idx.Load(); ix != nil {
@@ -827,8 +802,6 @@ func (c *Cache[U]) bump() int64 {
 	}
 	return c.budget.epoch.Add(1)
 }
-
-// ---- the owner half of the accountant ----
 
 func (c *Cache[U]) effEpoch(r *run[U]) int64 {
 	e := r.epoch.Load()

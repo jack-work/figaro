@@ -6,11 +6,8 @@ import (
 	"sync"
 )
 
-// Store is an in-memory cache of opened Logs keyed by their canonical
-// absolute directory path. It exists to deduplicate parent references
-// when many forks share a common ancestor: opening a child fork via
-// the store reuses the already-open parent instead of re-reading its
-// segments into memory.
+// Store deduplicates parent references when many forks share an ancestor:
+// opening a child through it reuses the already-open parent.
 type Store struct {
 	mu     sync.Mutex
 	logs   map[string]*Log
@@ -21,9 +18,8 @@ func NewStore() *Store {
 	return &Store{logs: make(map[string]*Log)}
 }
 
-// Open returns the cached Log for dir if present, otherwise opens it
-// (resolving its parent transitively through the same Store) and
-// caches the result. Concurrent callers receive the same *Log.
+// Open resolves the parent transitively through the same Store; concurrent
+// callers receive the same *Log.
 func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -42,8 +38,7 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	}
 	s.mu.Unlock()
 
-	// Resolve parent through the store if the dir is a fork and no
-	// explicit Parent was injected.
+	// Resolve the parent through the store unless one was injected.
 	if opts.Parent == nil {
 		base, err := readForkMarker(abs)
 		if err != nil {
@@ -79,9 +74,7 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	return l, nil
 }
 
-// Close closes every cached log and marks the Store unusable. Logs
-// returned from this Store should not be closed individually; the
-// Store owns their lifetime.
+// Close closes every cached log; the Store owns their lifetime.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
