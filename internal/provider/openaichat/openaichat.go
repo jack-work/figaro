@@ -388,6 +388,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 		Form:        form,
 		Studies:     studies,
 		Fingerprint: p.Fingerprint(),
+		Provider:    p.Name(),
 		Encode:      p.encode,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Warn("openaichat encode failed", "lt", lt, "err", err)

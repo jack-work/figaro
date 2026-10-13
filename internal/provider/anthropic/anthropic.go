@@ -1083,6 +1083,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]
 		Form:        form,
 		Studies:     studies,
 		Fingerprint: a.Fingerprint(),
+		Provider:    a.Name(),
 		Encode:      a.encode,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropic encode", "flt", lt, "err", err)

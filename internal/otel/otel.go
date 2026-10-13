@@ -104,6 +104,10 @@ var (
 	turnRounds   otelmetric.Int64Histogram
 	toolDuration otelmetric.Float64Histogram
 
+	catchUpDuration otelmetric.Float64Histogram
+	catchUpVisited  otelmetric.Int64Histogram
+	catchUpEncoded  otelmetric.Int64Histogram
+
 	instrumentsOnce sync.Once
 
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
@@ -304,6 +308,9 @@ func initInstruments(m otelmetric.Meter) {
 		turnDuration = histogram(m, "figaro.turn.duration", "One user turn: every round and tool call", turnMS)
 		turnRounds = counts(m, "figaro.turn.rounds", "{round}", "Provider rounds one turn took")
 		toolDuration = histogram(m, "figaro.tool.duration", "One tool call, Execute to return", subMS)
+		catchUpDuration = histogram(m, "figaro.translator.catchup", "One translator catch-up before a send", subMS)
+		catchUpVisited = counts(m, "figaro.translator.catchup.visited", "{record}", "Fig IR records at or after the watermark")
+		catchUpEncoded = counts(m, "figaro.translator.catchup.encoded", "{record}", "Records translated and written; visited far above this is the O(delta) alarm")
 	})
 }
 
@@ -347,6 +354,12 @@ func RecordTurn(ctx context.Context, d time.Duration, rounds int, attrs ...attri
 
 func RecordTool(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
 	record(ctx, toolDuration, d, attrs...)
+}
+
+func RecordCatchUp(ctx context.Context, d time.Duration, visited, encoded int, attrs ...attribute.KeyValue) {
+	record(ctx, catchUpDuration, d, attrs...)
+	recordN(ctx, catchUpVisited, int64(visited), attrs...)
+	recordN(ctx, catchUpEncoded, int64(encoded), attrs...)
 }
 
 func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {

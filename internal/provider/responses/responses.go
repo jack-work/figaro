@@ -503,6 +503,7 @@ func (p *Provider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 		Form:        in.Form,
 		Studies:     in.Studies,
 		Fingerprint: p.Fingerprint(),
+		Provider:    p.Namespace(),
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {

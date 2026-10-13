@@ -1,14 +1,18 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // CatchUp translates the untranslated fig IR records into the translator
@@ -20,6 +24,7 @@ type CatchUpConfig struct {
 	Form        Form
 	Studies     map[string]Form
 	Fingerprint string
+	Provider    string
 	Encode      func(message.Message, form.Snapshot) ([]json.RawMessage, error)
 
 	ReportEncodeError func(uint64, error)
@@ -39,8 +44,11 @@ type CatchUpStats struct {
 // the model a conversation other than the one on disk.
 var ErrNoTranslator = errors.New("provider: no translator log")
 
-func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
-	var stats CatchUpStats
+func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
+	defer func(start time.Time) {
+		figOtel.RecordCatchUp(context.Background(), time.Since(start), stats.Visited, stats.Encoded,
+			attribute.String("provider", cfg.Provider))
+	}(time.Now())
 	if cfg.Translator == nil {
 		return stats, ErrNoTranslator
 	}
