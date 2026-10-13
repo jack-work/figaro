@@ -43,6 +43,10 @@ func init() {
 		r.Setup = runMetaLogin
 		r.Login = runMetaLogin
 	}
+	if r := providerPkg.Lookup(azureProvider); r != nil {
+		r.Setup = runAzureLogin
+		r.Login = runAzureLogin
+	}
 	if r := providerPkg.Lookup("anthropic"); r != nil {
 		login := func(loaded *config.Loaded) error {
 			return runOAuthInline("anthropic", auth.AnthropicOAuth)
@@ -65,6 +69,12 @@ var providerCatalog = []providerChoice{
 		provider: "meta",
 		hint:     "uses your Muse Code subscription",
 		setup:    runMetaLogin,
+	},
+	{
+		label:    "Azure AI Foundry (Microsoft Entra device code)",
+		provider: azureProvider,
+		hint:     "your Azure OpenAI or Foundry resource",
+		setup:    runAzureLogin,
 	},
 	{
 		label:    "Anthropic (Claude.ai login)",
