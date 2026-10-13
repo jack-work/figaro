@@ -1598,6 +1598,8 @@ auto-load it on the next tab.
 
 	r.SetBarePromptComplete(completePromptContext)
 
+	registerDecide(r)
+
 	// The bare form is not a registered command, so it needs its own usage line.
 	r.Synopsis = []string{progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)"}
 	// Consumed by extractNoBindFlag before dispatch, so no Command declares them.
