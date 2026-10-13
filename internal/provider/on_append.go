@@ -76,8 +76,6 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 		return nil, "", err
 	}
 	if len(encoded) == 0 {
-		// An empty row commits no cursor: the window rides the next entry
-		// that carries bytes.
 		o.mu.Unlock()
 		return []json.RawMessage{}, o.fingerprint(), nil
 	}
