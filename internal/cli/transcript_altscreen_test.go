@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // newTestTranscript is a pager wired to a plain writer, so the test reads the
@@ -178,7 +178,7 @@ func TestExitHooksRunBeforeTheProcessGoes(t *testing.T) {
 	// that the same die() can abort ONE in-process command without ending the
 	// process (see exitPanic).
 	func() {
-		defer recoverExit()
+		defer RecoverExit()
 		exitNow(1)
 	}()
 
@@ -211,9 +211,9 @@ func TestDieRunsExitHooks(t *testing.T) {
 			exitProcess = func(c int) { code = c }
 			atExit(func() { restored = true })
 			// Through the boundary, as every real caller is: die() unwinds and
-			// recoverExit runs the hooks. See exitPanic.
+			// RecoverExit runs the hooks. See exitPanic.
 			func() {
-				defer recoverExit()
+				defer RecoverExit()
 				tc.call()
 			}()
 			if !restored {

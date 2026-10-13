@@ -1,27 +1,18 @@
-// Package cli: provider wiring for the CLI process.
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
-	"text/template"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 
 	// Provider registrations (init side effects).
 	_ "github.com/jack-work/figaro/internal/provider/anthropic"
 	_ "github.com/jack-work/figaro/internal/provider/copilot"
 	_ "github.com/jack-work/figaro/internal/provider/routed"
 )
-
-// KnownProviders returns the names of all registered providers.
-func KnownProviders() []string { return providerPkg.Names() }
 
 // defaultModelFor returns the default model for a provider.
 func defaultModelFor(providerName string) string {
@@ -31,10 +22,10 @@ func defaultModelFor(providerName string) string {
 	return ""
 }
 
-// buildResolver assembles a credential resolver for a provider.
+// BuildResolver assembles a credential resolver for a provider.
 // Walks env -> plaintext api_key -> encrypted api_key -> OAuth.
-func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
-	h := mustHush()
+func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
+	h := MustHush()
 	hushClient := h.Client()
 
 	reg := providerPkg.Lookup(providerName)
@@ -147,70 +138,6 @@ func authFailureHint(reason string) (string, bool) {
 	return "", false
 }
 
-// buildProviderFactory wires per-aria provider construction via the
-// registry. No provider-specific switches.
-func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
-	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
-		reg := providerPkg.Lookup(providerName)
-		if reg == nil {
-			return nil, fmt.Errorf("unknown provider: %q", providerName)
-		}
-		resolver, err := buildResolver(loaded, providerName)
-		if err != nil {
-			return nil, err
-		}
-		cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-			if backend == nil {
-				return nil, fmt.Errorf("no backend")
-			}
-			return backend.OpenTranslator(aria, providerName)
-		}
-		p, err := reg.Build(providerPkg.BuildContext{
-			Loaded:    loaded,
-			Knobs:     knobs,
-			Resolver:  resolver,
-			Templates: formTmpls,
-			CacheOpen: cacheOpen,
-			Backend:   backend,
-		})
-		if err != nil {
-			return nil, err
-		}
-		registerOnAppend(backend, p)
-		return p, nil
-	}
-}
-
-// registerOnAppend puts a provider's encoder behind the fig IR write path, so
-// an entry is translated WHEN IT LANDS -- by the only site that holds its
-// repaired payload -- instead of by the next send's catch-up.
-//
-// A PROVIDER THAT DOES NOT IMPLEMENT EntryEncoder IS SIMPLY NOT REGISTERED,
-// and its channel is filled by the catch-up exactly as before. That is the
-// whole fallback: no flag, no mode, and no second code path.
-func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
-	setter, ok := backend.(interface {
-		AddTranslatorEncoders(...store.TranslatorEncoder)
-	})
-	if !ok {
-		return
-	}
-	enc, ok := p.(providerPkg.EntryEncoder)
-	if !ok || enc.TranslatorChannel() == "" {
-		return
-	}
-	setter.AddTranslatorEncoders(providerPkg.NewOnAppend(
-		enc.TranslatorChannel(),
-		enc.EncodeMessage,
-		enc.Fingerprint,
-		func(aria string) providerPkg.Form { return figaro.BoardAccessorFor(backend, aria) },
-		func(aria string) map[string]providerPkg.Form { return figaro.StudyAccessorsFor(backend, aria) },
-		func(aria string) (store.Log[[]json.RawMessage], error) {
-			return backend.OpenTranslator(aria, enc.TranslatorChannel())
-		},
-	))
-}
-
 // buildProvider constructs a one-off provider for read-only flows
 // (e.g. `figaro models`).
 func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, int) {
@@ -222,7 +149,7 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	// to authenticate with, not the model an aria would use. Reading that off
 	// the default outfit meant a client folding server state to list models.
 	knobs := providerPkg.Knobs{Model: reg.DefaultModel, MaxTokens: 8192}
-	resolver, err := buildResolver(loaded, name)
+	resolver, err := BuildResolver(loaded, name)
 	if err != nil {
 		return nil, 0
 	}

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // WHAT IS ON THE SHELF IS NOT WHAT IS ON SCREEN. A parked aria and the live

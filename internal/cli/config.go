@@ -17,11 +17,10 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/tui"
 )
 
-func mustLoadConfig() *config.Loaded {
+func MustLoadConfig() *config.Loaded {
 	dir := config.DefaultConfigDir()
 	if changes, mErr := config.MigrateLegacyOutfits(dir); mErr != nil {
 		slog.Warn("outfit migration", "dir", dir, "err", mErr)
@@ -34,11 +33,6 @@ func mustLoadConfig() *config.Loaded {
 	if err != nil {
 		die("config: %s", err)
 	}
-	// The client folds outfits too (completion, `figaro state`, the first-run
-	// wizard), so the bundled-skills switch is thrown on both sides of the
-	// socket. Setting it in the daemon alone would let a CLI-side fold see a
-	// different skill set than the aria it is describing.
-	outfit.SetBundledSkills(loaded.BundledSkills())
 	return loaded
 }
 
@@ -49,14 +43,14 @@ var (
 	hushErr      error
 )
 
-// hushAgentTTL is how long the embedded hush agent lives before it
+// HushAgentTTL is how long the embedded hush agent lives before it
 // self-terminates. Upstream defaults to 30m, which silently kills the
 // credential mid-session on a long autonomous run: the daemon issues no CLI
 // activity to respawn the agent, so after 30m every model request fails with
 // "no credential". figaro needs the agent to outlive hour-long+ turns, so we
 // set it long; the daemon also keep-alives/respawns it (see angelus.go).
 // Override with FIGARO_HUSH_TTL (a Go duration) for testing.
-func hushAgentTTL() time.Duration {
+func HushAgentTTL() time.Duration {
 	if v := os.Getenv("FIGARO_HUSH_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			return d
@@ -65,7 +59,7 @@ func hushAgentTTL() time.Duration {
 	return 24 * time.Hour
 }
 
-func mustHush() *managed.Hush {
+func MustHush() *managed.Hush {
 	hushOnce.Do(func() {
 		// FIGARO_HUSH_APP lets dev shells pivot the entire hush
 		// surface (identity, encrypted providers, socket) onto an
@@ -74,7 +68,7 @@ func mustHush() *managed.Hush {
 		if appName == "" {
 			appName = "figaro"
 		}
-		ttl := hushAgentTTL()
+		ttl := HushAgentTTL()
 		opts := managed.Options{
 			AppName: appName,
 			TTL:     ttl,
@@ -195,7 +189,7 @@ func promptFirstRunWithoutKeyring(h *managed.Hush, appName string) ([]byte, erro
 
 // ensureHush initializes hush. Must be called from the CLI process.
 func ensureHush() {
-	h := mustHush()
+	h := MustHush()
 	if err := h.EnsureReady(); err != nil {
 		// A saved passphrase that stopped decrypting is otherwise a dead
 		// end: every command fails and nothing names the lever.
@@ -235,8 +229,8 @@ func buildPromptForm(d dressing) *rpc.FormInput {
 	return &rpc.FormInput{Context: snap, Outfits: d.names, Patch: d.patch}
 }
 
-// buildFormTemplates loads body templates with user overrides.
-func buildFormTemplates() *template.Template {
+// BuildFormTemplates loads body templates with user overrides.
+func BuildFormTemplates() *template.Template {
 	tmpls, err := form.LoadDefaultTemplates()
 	if err != nil {
 		slog.Warn("form templates load failed (disabled)", "err", err)
@@ -253,10 +247,10 @@ func buildFormTemplates() *template.Template {
 	return tmpls
 }
 
-// stateDir returns the directory for persistent figaro state
+// StateDir returns the directory for persistent figaro state
 // (OTel data, aria archives, aria forms). XDG_STATE_HOME and
 // FIGARO_STATE_DIR are honored to allow dev-shell isolation.
-func stateDir() string {
+func StateDir() string {
 	if d := os.Getenv("FIGARO_STATE_DIR"); d != "" {
 		return d
 	}

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // While the agent streams, the open suffix begins at the steer's own index: so

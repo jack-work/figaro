@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A steer SPLITS the agent's run, so one turn closes SEVERAL output regions.

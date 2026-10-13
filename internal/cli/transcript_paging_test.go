@@ -4,7 +4,7 @@ package cli
 //
 // Its readBefore double sliced history itself and treated `limit` as a COUNT
 // OF PARTS. Production's limit is a BYTE BUDGET, and the double never called
-// aria.Paginate at all. Result: ~30 tests in this file stayed GREEN while the
+// livelog.Paginate at all. Result: ~30 tests in this file stayed GREEN while the
 // live pager rendered ONE NODE for an 800-node aria, and, separately, a
 // duplicated message at EVERY page boundary went unseen because the double
 // excluded the anchor while production included it. The double did not merely
@@ -21,8 +21,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	livelog "github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // applyTail folds the opening tail page into the client the way the input
@@ -79,7 +80,7 @@ func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
 }
 
 // readBefore is the test double for the read RPC. It routes through the REAL
-// aria.Paginate, with the real Anchor/Backward semantics the server uses
+// livelog.Paginate, with the real Anchor/Backward semantics the server uses
 // (figaro/server.go: Anchor{Turn: req.Before}, Backward, budget).
 //
 // It used to slice the history itself, treating `parts` as a count. That is why
@@ -142,7 +143,7 @@ func readBeforeAt(history []aria.TurnPart, at aria.Anchor, parts int) aria.Page 
 		return aria.Page{}
 	}
 	turns, widest := fixtureView(history)
-	return aria.PaginateBefore(turns, at, aria.Anchor{}, parts*widest)
+	return livelog.PaginateBefore(turns, at, aria.Anchor{}, parts*widest)
 }
 
 // nodeBytes mirrors aria's unexported nodeSize: the paginator spends its budget

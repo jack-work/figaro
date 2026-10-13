@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A resize must reach the pager even while the pager is HIDDEN.

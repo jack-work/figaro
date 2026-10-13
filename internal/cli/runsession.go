@@ -40,11 +40,11 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // sessionOpts is what the two entrances differ by.

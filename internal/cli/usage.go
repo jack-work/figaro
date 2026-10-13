@@ -104,9 +104,9 @@ func exitAt(code int) {
 	exitProcess(code)
 }
 
-// recoverExit is the boundary's half of the abort. Deferred by cli.Run, it
+// RecoverExit is the boundary's half of the abort. Deferred by cli.Run, it
 // turns a verb's die() into a real exit with the hooks run.
-func recoverExit() {
+func RecoverExit() {
 	if rec := recover(); rec != nil {
 		if code, ok := rec.(exitPanic); ok {
 			exitAt(int(code))

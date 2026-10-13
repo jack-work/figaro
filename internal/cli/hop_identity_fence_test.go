@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // ISSUE #25, AT THE SEAM WHERE IT LIVED.

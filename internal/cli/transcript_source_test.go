@@ -11,9 +11,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/internal/compose"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The corpus: the shapes agent output actually takes. For each, every

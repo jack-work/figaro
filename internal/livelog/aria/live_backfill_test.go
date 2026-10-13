@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // A cold reader meets a long turn at its tail, then pages backward.
@@ -48,9 +49,9 @@ func TestClientBackfillsClippedTurn(t *testing.T) {
 			}
 			t.Logf("tail starts at %v; backward read starts at %v", at, from)
 
-			c := NewClient()
-			c.Apply(tail, Quiet)
-			c.Apply(older, Quiet)
+			c := client.NewClient()
+			c.Apply(tail, client.Quiet)
+			c.Apply(older, client.Quiet)
 			view := c.View()
 			held := map[uint64]livedoc.Node{}
 			messages := append([]Message(nil), view.Closed...)
@@ -112,7 +113,7 @@ func TestClientBackfillThenForwardHandsNoNodeTwice(t *testing.T) {
 	s.OpenTurn(6)
 	s.Update(nil, nodes[:10], 0)
 
-	c := NewClient()
+	c := client.NewClient()
 	delivered := map[Anchor]int{}
 	c.OnClosed = func(m Message) {
 		for i := range m.Nodes {
@@ -125,17 +126,17 @@ func TestClientBackfillThenForwardHandsNoNodeTwice(t *testing.T) {
 	if !tail.Parts[0].ClippedHead {
 		t.Fatalf("fixture: the tail read was not clipped, so nothing is being tested: %+v", tail)
 	}
-	c.Apply(tail, Notify)
+	c.Apply(tail, client.Notify)
 	at, _ := tail.Span()
-	c.Apply(s.ReadBefore(at, Anchor{}, budget), Notify)
+	c.Apply(s.ReadBefore(at, Anchor{}, budget), client.Notify)
 	// Forward again over ground already walked: the same nodes, re-offered.
-	c.Apply(s.Read(at, budget), Notify)
+	c.Apply(s.Read(at, budget), client.Notify)
 
 	// The turn keeps running, then seals.
 	s.Update(nil, nodes, 0)
 	s.Close()
 	s.Seal(nil)
-	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), Notify)
+	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), client.Notify)
 
 	for a, n := range delivered {
 		if n != 1 {
@@ -196,9 +197,9 @@ func TestClientBackfillBelowTheLiveBoundary(t *testing.T) {
 		t.Fatalf("fixture: the backward read began at %v, not below Live.From %d", from, s.open.from)
 	}
 
-	c := NewClient()
-	c.Apply(tail, Quiet)
-	c.Apply(older, Quiet)
+	c := client.NewClient()
+	c.Apply(tail, client.Quiet)
+	c.Apply(older, client.Quiet)
 
 	// Everything the backward read handed back that sits below Live.From must
 	// now be in the CLOSED view, not stranded in the open buffer.
@@ -250,22 +251,22 @@ func TestSealOffersEachNodeOnceAfterABackfill(t *testing.T) {
 	s.OpenTurn(6)
 	s.Update(nil, nodes[:10], 0)
 
-	c := NewClient()
+	c := client.NewClient()
 	const budget = 1024
 	tail := s.ReadBefore(Anchor{}, Anchor{}, budget)
-	c.Apply(tail, Quiet)
+	c.Apply(tail, client.Quiet)
 	at, _ := tail.Span()
-	c.Apply(s.ReadBefore(at, Anchor{}, budget), Quiet)
-	c.Apply(s.Read(at, budget), Quiet)
+	c.Apply(s.ReadBefore(at, Anchor{}, budget), client.Quiet)
+	c.Apply(s.Read(at, budget), client.Quiet)
 	s.Update(nil, nodes, 0)
 	s.Close()
 	s.Seal(nil)
-	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), Quiet)
+	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), client.Quiet)
 
 	// Turn 5's single node plus all 14 of turn 6, each offered once.
-	if want := 1 + len(nodes); c.offered != want {
+	if want := 1 + len(nodes); c.Offered() != want {
 		t.Errorf("the fold offered %d nodes for release, want %d: a node was released twice "+
-			"and Insert hid it", c.offered, want)
+			"and Insert hid it", c.Offered(), want)
 	}
 }
 
@@ -295,7 +296,7 @@ func TestFoldOffersEachNodeOnceAcrossTheLiveBoundary(t *testing.T) {
 	s.OpenTurn(6)
 	s.Update(nil, nodes[8:11], 0)
 
-	c := NewClient()
+	c := client.NewClient()
 	const budget = 1024
 	tail := s.ReadBefore(Anchor{}, Anchor{}, budget)
 	at, _ := tail.Span()
@@ -309,25 +310,25 @@ func TestFoldOffersEachNodeOnceAcrossTheLiveBoundary(t *testing.T) {
 	cancel := s.Subscribe(func(p Page) { live = append(live, p) })
 	defer cancel()
 
-	c.Apply(tail, Quiet)
-	c.Apply(older, Quiet)
+	c.Apply(tail, client.Quiet)
+	c.Apply(older, client.Quiet)
 	// A live frame over the same turn, after the backfill.
 	s.Update(nil, nodes[8:], 0)
 	if len(live) == 0 {
 		t.Fatal("fixture: no live frame was pushed, so the second release is not being tested")
 	}
 	for _, p := range live {
-		c.Apply(p, Quiet)
+		c.Apply(p, client.Quiet)
 	}
 	s.Close()
 	s.Seal(nil)
-	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), Quiet)
+	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), client.Quiet)
 
 	// Turn 5's node and all of turn 6's, each offered once. The final full
 	// read legitimately backfills the nodes below the backward read's floor,
 	// which is the first time anything has held them.
-	if want := 1 + len(nodes); c.offered != want {
+	if want := 1 + len(nodes); c.Offered() != want {
 		t.Errorf("the fold offered %d nodes for release, want %d: the reclaimed run was "+
-			"released and then offered again by the next live frame", c.offered, want)
+			"released and then offered again by the next live frame", c.Offered(), want)
 	}
 }

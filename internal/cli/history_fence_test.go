@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A HOLE IS FILLED BY A WORKER THAT MAY OUTLIVE THE SUBJECT IT WAS FILLING IT

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // A steering interjection finalizes WHILE the agent is still streaming. It is

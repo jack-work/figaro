@@ -19,11 +19,11 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
@@ -65,7 +65,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			Cols:    term.Width(),
 			Rows:    term.Height(),
 			Term:    os.Getenv("TERM"),
-			Binary:  buildRevision(),
+			Binary:  BuildRevision(),
 			Command: strings.Join(os.Args, " "),
 		})
 		if terr != nil {

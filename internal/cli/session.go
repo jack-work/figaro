@@ -22,7 +22,7 @@ type Session struct {
 func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	ensureHush()
 	ensureAngelus()
-	ep := transport.UnixEndpoint(angelusSocketPath())
+	ep := transport.UnixEndpoint(AngelusSocketPath())
 	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		die("connect angelus: %s", err)
@@ -36,7 +36,7 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 // WithAngelusIfRunning connects to a RUNNING angelus and calls fn. It starts
 // no daemon and unlocks no vault: a query must not create what it asks about.
 func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
-	ep := transport.UnixEndpoint(angelusSocketPath())
+	ep := transport.UnixEndpoint(AngelusSocketPath())
 	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		die("angelus is not running")

@@ -23,7 +23,7 @@ import (
 // on PATH addresses a different instance, so lifecycle lives here.
 
 func runVaultStatus() error {
-	h := mustHush()
+	h := MustHush()
 	fmt.Fprintf(stdout, "mode       %s\n", h.Mode())
 	fmt.Fprintf(stdout, "identity   %s\n", h.IdentityFile())
 	if !h.HasIdentity() {
@@ -86,7 +86,7 @@ func runVaultStatus() error {
 }
 
 func runVaultForget() error {
-	h := mustHush()
+	h := MustHush()
 	svc, acct := h.KeyringTarget()
 	if svc == "" || acct == "" {
 		return fmt.Errorf("no keyring entry is configured for this vault")
@@ -104,7 +104,7 @@ func runVaultForget() error {
 }
 
 func runVaultUnlock() error {
-	h := mustHush()
+	h := MustHush()
 	if !h.HasIdentity() {
 		return fmt.Errorf("no identity yet at %s: run any figaro command to set one up", h.IdentityFile())
 	}
@@ -142,7 +142,7 @@ func runVaultUnlock() error {
 }
 
 func runVaultLock() error {
-	h := mustHush()
+	h := MustHush()
 	if err := h.Client().Ping(); err != nil {
 		fmt.Fprintln(stdout, "agent already stopped")
 		return nil
@@ -156,7 +156,7 @@ func runVaultLock() error {
 
 // vaultAppName is the name the vault answers to, and the keyring
 // service it scopes itself under. Dev shells pivot it with
-// FIGARO_HUSH_APP; mustHush reads the same variable.
+// FIGARO_HUSH_APP; MustHush reads the same variable.
 func vaultAppName() string {
 	if n := os.Getenv("FIGARO_HUSH_APP"); n != "" {
 		return n
@@ -189,7 +189,7 @@ func resolveUnlockKind(kind vaultUnlockKind, h *managed.Hush) vaultUnlockKind {
 }
 
 func runVaultInit(kind vaultUnlockKind) error {
-	h := mustHush()
+	h := MustHush()
 	if h.HasIdentity() {
 		return fmt.Errorf("this vault already has an identity at %s\n"+
 			"  figaro vault status   inspect it\n"+
@@ -254,7 +254,7 @@ func initVault(h *managed.Hush, kind vaultUnlockKind) error {
 // if the tokens turn out to be recoverable after all, they are still
 // there, and if they are not, a stale file costs a kilobyte.
 func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error {
-	h := mustHush()
+	h := MustHush()
 	providers := vaultOAuthProviders(h)
 
 	if !yes {

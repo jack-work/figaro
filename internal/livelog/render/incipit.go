@@ -6,9 +6,9 @@ import (
 	"io"
 	"strings"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // NodeView renders one block to terminal rows. Each row must be a single

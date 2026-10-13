@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // THE QUESTION IS TEXT ON THE TURN, and the inline renderer draws it from

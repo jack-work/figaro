@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // bookend/rule stand-ins so the footer is identifiable in a capture.

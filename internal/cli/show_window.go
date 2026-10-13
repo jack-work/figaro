@@ -11,9 +11,13 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk/aria"
 )
+
+type irEntry struct {
+	LT      uint64
+	Payload message.Message
+}
 
 // showPage is how many IR entries one backward step asks for. It matches the
 // angelus's own per-call ceiling: asking for more gets silently clamped, and
@@ -23,7 +27,7 @@ const showPage = 1000
 // showWindow is the result of the walk: the entries held, whether the walk
 // reached the head of the aria, and the total the store reports.
 type showWindow struct {
-	entries []store.Entry[message.Message]
+	entries []irEntry
 	// deltas is each record's form-state window, keyed by LT, as the hub
 	// assembled it (the client holds neither the stamps nor the store).
 	deltas map[uint64]map[string]livedoc.FormDelta
@@ -32,9 +36,7 @@ type showWindow struct {
 	pages  int  // backward reads issued, for the diagnostics
 
 	// fromHead marks the legacy fallback: the window was read FORWARD from
-	// LT 0 and may stop short of the tail. Without this a truncated forward
-	// read reports itself as a tail, which is the original bug wearing the
-	// new code's words.
+	// LT 0 and may stop short of the tail.
 	fromHead bool
 }
 
@@ -55,7 +57,7 @@ func gatherShowWindow(ctx context.Context, acli *sdk.Angelus, figaroID string, o
 			w.atHead = true
 			return w, nil
 		}
-		page := make([]store.Entry[message.Message], len(resp.Entries))
+		page := make([]irEntry, len(resp.Entries))
 		for i, e := range resp.Entries {
 			page[i].LT = e.LT
 			if err := json.Unmarshal(e.Payload, &page[i].Payload); err != nil {

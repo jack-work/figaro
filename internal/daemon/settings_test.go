@@ -1,4 +1,4 @@
-package cli
+package daemon
 
 // From a config FILE to the place each value is ENFORCED.
 //

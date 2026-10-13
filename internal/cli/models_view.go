@@ -127,7 +127,7 @@ func fetchModels(loaded *config.Loaded) ([]provider.ModelInfo, []string) {
 	defer cancel()
 	names := loaded.ListProviders()
 	if len(names) == 0 {
-		names = KnownProviders()
+		names = provider.Names()
 	}
 	var out []provider.ModelInfo
 	var warnings []string

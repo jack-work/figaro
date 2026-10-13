@@ -11,10 +11,10 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 const (

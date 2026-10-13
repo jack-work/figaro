@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The wire: how many bytes a frame actually costs the terminal. On a local

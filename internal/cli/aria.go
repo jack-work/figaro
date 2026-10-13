@@ -15,9 +15,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
@@ -365,7 +364,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 }
 
 // printTransitions prints all form patches in LT order.
-func printTransitions(w io.Writer, entries []store.Entry[message.Message]) {
+func printTransitions(w io.Writer, entries []irEntry) {
 	any := false
 	for _, e := range entries {
 		for _, p := range e.Payload.Patches {

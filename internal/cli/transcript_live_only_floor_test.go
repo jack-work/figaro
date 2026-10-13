@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	livelog "github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A PAGER HOLDING ONLY A LIVE TURN MUST NOT ANCHOR ITS READ AT THE ZERO
@@ -19,7 +20,7 @@ import (
 // every node belongs to the open turn, so the client retains no CLOSED
 // message, so TailFrom has nothing to answer with.
 func TestResetToTailAnchorsOnTheOpenMessage(t *testing.T) {
-	s := aria.NewServer()
+	s := livelog.NewServer()
 	s.OpenInquiry(1, "the long one", nil)
 	s.OpenTurn(1)
 	nodes := make([]livedoc.Node, 12)

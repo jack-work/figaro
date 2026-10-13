@@ -29,7 +29,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 		reportRetiredHushAgent()
 	}
 
-	sockPath := angelusSocketPath()
+	sockPath := AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if keepPIDs {
 		cli, err := sdk.DialAngelus(ep)
@@ -58,7 +58,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 		return
 	}
 
-	pidBytes, err := os.ReadFile(filepath.Join(angelusRuntimeDir(), "angelus.pid"))
+	pidBytes, err := os.ReadFile(filepath.Join(AngelusRuntimeDir(), "angelus.pid"))
 	if err != nil {
 		os.Remove(sockPath)
 		fmt.Fprintln(stderrw, "angelus pid file missing; socket removed")

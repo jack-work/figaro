@@ -13,28 +13,10 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro/wire"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
-// ariaBackend constructs the XWAL aria tree under the configured state root,
-// sized by `[store] segment_size` (config owns the default and its floor).
-func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
-	root := ariaRoot()
-	b, err := store.NewXwalBackend(root, loaded.SegmentSize())
-	if err != nil {
-		return nil, err
-	}
-	// The one place the trunk capability is decided. With it off, nothing
-	// constructs a trunk pstate and the hierarchy is the fork topology.
-	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: loaded.Trunks()}); err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func angelusRuntimeDir() string {
+func AngelusRuntimeDir() string {
 	// FIGARO_RUNTIME_DIR is an explicit override used as-is (no
 	// "figaro" suffix appended): lets dev shells point at an
 	// isolated runtime without colliding with the user's daemon.
@@ -47,15 +29,15 @@ func angelusRuntimeDir() string {
 	return filepath.Join(os.TempDir(), "figaro")
 }
 
-func angelusSocketPath() string {
-	return filepath.Join(angelusRuntimeDir(), "angelus.sock")
+func AngelusSocketPath() string {
+	return filepath.Join(AngelusRuntimeDir(), "angelus.sock")
 }
 
 // angelusStartupLog is where a detaching angelus writes its early stderr.
 // The daemon inherits the descriptor for its lifetime, so it doubles as a
 // daemon log; ensureAngelus only truncates it when no daemon answered.
 func angelusStartupLog() string {
-	return filepath.Join(angelusRuntimeDir(), "angelus.startup")
+	return filepath.Join(AngelusRuntimeDir(), "angelus.startup")
 }
 
 // startupDiagnosisLines bounds how much of the daemon's early output is
@@ -108,7 +90,7 @@ func isTestBinary(exe string) bool {
 
 // ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
-	sockPath := angelusSocketPath()
+	sockPath := AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := sdk.DialAngelus(ep); err == nil {
 		checkDaemonBuild(cli)
@@ -129,7 +111,7 @@ func ensureAngelus() {
 	cmd.SysProcAttr = detachAttr()
 	// Best-effort: if we cannot open the log, fall back to the old
 	// discard rather than refusing to start a daemon over it.
-	if err := os.MkdirAll(angelusRuntimeDir(), 0o700); err == nil {
+	if err := os.MkdirAll(AngelusRuntimeDir(), 0o700); err == nil {
 		// APPEND, not truncate. Several clients racing a cold start each
 		// open this file, and O_CREATE|O_TRUNC let a loser wipe the log the
 		// winner was writing into -- including the only trace a daemon
@@ -149,13 +131,10 @@ func ensureAngelus() {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	// A LIVE daemon is never declared dead. The old rule was a flat five
-	// seconds, and the first open after an upgrade migrates the store
-	// layout, which takes about five seconds on a real one: so the CLI
-	// told the user his daemon had failed at the exact moment when killing
-	// it would destroy his arias. Now: while the child is alive we keep
-	// waiting and say what it is doing; only an exit, or a very long
-	// silence, is a failure.
+	// A LIVE daemon is never declared dead: the first open after an upgrade
+	// migrates the store, and killing it mid-way destroys arias. While the
+	// child is alive we wait and say what it is doing; only an exit, or a
+	// very long silence, is a failure.
 	start := time.Now()
 	var deferred time.Time // when our child stood down for an incumbent
 	var lastNotice time.Time
@@ -183,7 +162,7 @@ func ensureAngelus() {
 		switch {
 		case !deferred.IsZero() && time.Since(deferred) > incumbentGrace:
 			die("angelus stood down for another instance that never answered on %s%s",
-				angelusSocketPath(), startupDiagnosis())
+				AngelusSocketPath(), startupDiagnosis())
 		case time.Since(start) > startupHardCap:
 			die("angelus has not answered in %s%s", startupHardCap, startupDiagnosis())
 		}
@@ -197,18 +176,18 @@ func ensureAngelus() {
 	}
 }
 
-// ariaRoot is the aria store's directory. ONE spelling, because the
+// AriaRoot is the aria store's directory. ONE spelling, because the
 // startup notice is only truthful while every caller agrees on it, and
 // the notice is the one that would drift silently -- it degrades to
 // "still starting" with no error.
-func ariaRoot() string { return filepath.Join(stateDir(), "arias") }
+func AriaRoot() string { return filepath.Join(StateDir(), "arias") }
 
 // startupActivity says what the daemon is doing, and only says the thing
 // it can check. Asserting a migration that is not happening is what sends
 // a user to pkill -- a wrong explanation is worse than none. NeedsFlatten
 // is one file read.
 func startupActivity() string {
-	if need, err := xwal.NeedsFlatten(ariaRoot()); err == nil && need {
+	if need, err := xwal.NeedsFlatten(AriaRoot()); err == nil && need {
 		return "migrating the store layout: let it finish; interrupting a migration " +
 			"is the one thing that can cost you arias"
 	}
@@ -233,7 +212,7 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	_ = loaded
 	ensureHush()
 	ensureAngelus()
-	ep := transport.UnixEndpoint(angelusSocketPath())
+	ep := transport.UnixEndpoint(AngelusSocketPath())
 	cli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		die("connect angelus: %s", err)
@@ -288,7 +267,7 @@ func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
 // rather than a stale process. Naming both revisions turns an hour of
 // confusion into one command.
 func checkDaemonBuild(cli *sdk.Angelus) {
-	mine := buildRevision()
+	mine := BuildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)

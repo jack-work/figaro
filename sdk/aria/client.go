@@ -327,6 +327,8 @@ func (c *Client) SetClosedLimit(limit int) {
 	c.mu.Unlock()
 }
 
+func (c *Client) Offered() int { return c.offered }
+
 // Cursor is the highest fully sealed turn: the resume point for a re-read.
 func (c *Client) Cursor() int {
 	c.mu.Lock()
@@ -760,9 +762,9 @@ func (c *Client) advanceCommitted(lt int) {
 	}
 }
 
-// foldDelta applies a NodeDelta to a node: set merges fields, unset clears them,
+// FoldDelta applies a NodeDelta to a node: set merges fields, unset clears them,
 // patch splices a streamed string field on its previous value.
-func foldDelta(n livedoc.Node, d NodeDelta) livedoc.Node {
+func FoldDelta(n livedoc.Node, d NodeDelta) livedoc.Node {
 	for k, v := range d.Set {
 		setField(&n, k, v)
 	}

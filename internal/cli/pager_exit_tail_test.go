@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // Leaving the pager replayed EVERYTHING it had shown. The message-level bounds

@@ -57,7 +57,7 @@ func idCandidates(c *cmdkit.CompleteContext) []string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		return nil
 	}
@@ -399,7 +399,7 @@ const turnCandidatesMax = 200
 func turnCandidates(c *cmdkit.CompleteContext, id string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		return nil
 	}

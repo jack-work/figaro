@@ -3,9 +3,9 @@ package cli
 import (
 	"strings"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The sticky question: the head of a turn's question, held over the top of the

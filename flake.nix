@@ -87,6 +87,7 @@
           # directive fails the build.
           postInstall = ''
             ln -s figaro $out/bin/fig
+            ln -s figaro $out/bin/figarod
           '' + final.lib.optionalString
             (final.stdenv.buildPlatform.canExecute final.stdenv.hostPlatform) ''
             installShellCompletion --cmd figaro \

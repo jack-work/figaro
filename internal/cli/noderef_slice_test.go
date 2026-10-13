@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A tall turn reaches the renderer as SEVERAL messages, cut at unit-size

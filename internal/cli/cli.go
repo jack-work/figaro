@@ -25,18 +25,12 @@ func Run(progName string, args []string) {
 	// THE ABORT BOUNDARY. die() unwinds rather than calling os.Exit, so that the
 	// same verb can be run in-process (command mode) without taking the process
 	// with it. This is where an abort means what it has always meant at a shell.
-	defer recoverExit()
+	defer RecoverExit()
 
 	if progName == "" {
 		progName = "figaro"
 	}
 
-	// Internal: angelus mode.
-	if os.Getenv("_FIGARO_DAEMON") == "1" || (len(args) > 0 && args[0] == "--angelus") {
-		mark.Init("angelus")
-		runAngelus()
-		return
-	}
 	mark.Init("cli")
 	atExit(profileSession())
 
@@ -92,7 +86,7 @@ func Run(progName string, args []string) {
 	}
 
 	ctx := context.Background()
-	loaded := mustLoadConfig()
+	loaded := MustLoadConfig()
 
 	// Apply config-driven sigil for form references.
 	if sigil, err := loaded.RefSigil(); err != nil {
@@ -109,10 +103,10 @@ func Run(progName string, args []string) {
 
 	// The sinks answer to config before they open: level and directory,
 	// with FIGARO_LOG_LEVEL still overriding for a single noisy run.
-	telemetryDir := stateDir()
+	telemetryDir := StateDir()
 	if loaded, lerr := config.Load(config.DefaultConfigDir()); lerr == nil {
 		figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
-		telemetryDir = loaded.TelemetryDir(stateDir())
+		telemetryDir = loaded.TelemetryDir(StateDir())
 	}
 	shutdown, err := figOtel.Init(ctx, telemetryDir)
 	if err != nil {
@@ -1497,9 +1491,9 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			case "toolcalls":
 				return runDoctorToolCalls(ctx.BoolFlag("dry-run"))
 			case "skills":
-				return runDoctorSkills(ctx.BoolFlag("json"))
+				return runDoctorSkills(loaded, ctx.BoolFlag("json"))
 			case "ttl":
-				return runDoctorTTL(ctx.BoolFlag("json"))
+				return runDoctorTTL(loaded, ctx.BoolFlag("json"))
 			}
 			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 		},

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 func gapModelSource(first, last, revision int) []Turn {
@@ -31,7 +32,7 @@ func FuzzForkCloneReadCoverage(f *testing.F) {
 			ops = ops[:300]
 		}
 		source := gapModelSource(1, 9, 0)
-		c := NewClient()
+		c := client.NewClient()
 		held := map[Anchor]string{}
 		more := More{}
 		for i := 0; i+2 < len(ops); i += 3 {
@@ -40,7 +41,7 @@ func FuzzForkCloneReadCoverage(f *testing.F) {
 			case 0:
 				at := Anchor{Turn: uint64(1 + a%(len(source)+2)), Node: uint64(b % 4)}
 				p := PaginateBefore(source, at, Anchor{}, 100+(a+b)%900)
-				c.Apply(p, Notify)
+				c.Apply(p, client.Notify)
 				for _, part := range p.Parts {
 					if len(part.Nodes) == 0 {
 						held[Anchor{Turn: part.ID, Node: 0}] = "inquiry:" + part.Inquiry
@@ -128,7 +129,7 @@ func FuzzForkCloneReadCoverage(f *testing.F) {
 					}
 				}
 			}
-			c.ForEachSegment(Anchor{}, Anchor{Turn: ^uint64(0), Node: ^uint64(0)}, func(Message) bool { return true }, func(g Gap) bool {
+			c.ForEachSegment(Anchor{}, Anchor{Turn: ^uint64(0), Node: ^uint64(0)}, func(Message) bool { return true }, func(g client.Gap) bool {
 				if g.From.Turn == 0 || complete {
 					t.Fatalf("step %d ops=%v: iterator invented gap %v..%v (complete=%v)", i, ops[:i+3], g.From, g.To, complete)
 				}

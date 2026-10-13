@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,10 +14,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tool"
 )
 
 // deadChannels name store channels nothing reads or writes: turn-wal (drain +
@@ -31,11 +31,11 @@ func deadChannel(name string) bool {
 }
 
 func runDoctorGC(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	root := ariaRoot()
+	root := AriaRoot()
 	manPath := filepath.Join(root, "xwal.json")
 	raw, err := os.ReadFile(manPath)
 	if err != nil {
@@ -80,7 +80,7 @@ func runDoctorGC(dryRun bool) error {
 		freed += dirSize(dir)
 	}
 	if dryRun {
-		fmt.Fprintf(stdout, "would remove %d dead channel(s) (%s): %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+		fmt.Fprintf(stdout, "would remove %d dead channel(s) (%s): %s\n", len(dead), humanBytes(freed), strings.Join(dead, ", "))
 		return nil
 	}
 
@@ -109,7 +109,7 @@ func runDoctorGC(dryRun bool) error {
 			_ = os.Remove(filepath.Dir(dir)) // drop the legacy parent once empty
 		}
 	}
-	fmt.Fprintf(stdout, "removed %d dead channel(s), freed %s: %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+	fmt.Fprintf(stdout, "removed %d dead channel(s), freed %s: %s\n", len(dead), humanBytes(freed), strings.Join(dead, ", "))
 	return nil
 }
 
@@ -131,7 +131,7 @@ func dirSize(dir string) int64 {
 // binary understands. It reads the sidecar directly, so it still answers when
 // the schema gate is exactly what refused to open the store.
 func runDoctorSchema() error {
-	root := ariaRoot()
+	root := AriaRoot()
 	reports, err := store.SchemaStatus(root)
 	if err != nil {
 		return err
@@ -168,7 +168,7 @@ func runDoctorSchema() error {
 // sessions or goroutines the number is attached to. It reports the
 // daemon's accounting, never this process's.
 func runDoctorMem(asJSON, collect bool) error {
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -251,13 +251,14 @@ func runDoctorMem(asJSON, collect bool) error {
 	}
 
 	limit := "unlimited"
-	if m.MemLimitBytes != angelus.UnlimitedMemLimit {
+	// math.MaxInt64 is what debug.SetMemoryLimit reports with no ceiling.
+	if m.MemLimitBytes != math.MaxInt64 {
 		limit = humanBytes(m.MemLimitBytes)
 	}
 	fmt.Fprintf(stdout, "limit      %s (GOMEMLIMIT, soft)\n", limit)
 
 	if m.PprofSocket == "" {
-		fmt.Fprintf(stdout, "pprof      not armed: restart the daemon with %s=1\n", angelus.PprofEnv)
+		fmt.Fprintln(stdout, "pprof      not armed: restart the daemon with FIGARO_PPROF=1")
 	} else {
 		fmt.Fprintf(stdout, "pprof      %s\n", m.PprofSocket)
 		fmt.Fprintf(stdout, "           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
@@ -288,7 +289,8 @@ func humanBytes(n int64) string {
 
 // runDoctorSkills prints the first-party skill the binary carries: where it
 // unpacked to, and every file in it.
-func runDoctorSkills(asJSON bool) error {
+func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
+	outfit.SetBundledSkills(loaded.BundledSkills())
 	root := outfit.BundledSkillsRoot()
 	if root == "" {
 		if asJSON {
@@ -332,11 +334,11 @@ func runDoctorSkills(asJSON bool) error {
 
 // runDoctorLibrettos recounts every libretto from the boards that name it.
 func runDoctorLibrettos(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	be, err := store.NewXwalBackend(ariaRoot(), 0)
+	be, err := store.NewXwalBackend(AriaRoot(), 0)
 	if err != nil {
 		return err
 	}
@@ -346,10 +348,6 @@ func runDoctorLibrettos(dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	// Corrected OR Missing: the shortcut used to test only the first, which
-	// was written before the pass could MINT anything, so a store whose only
-	// problem was a missing libretto was audited and then left alone. Found
-	// on the real store, where that is the whole of the migration.
 	if !dryRun && (audit.Corrected > 0 || audit.Missing > 0) {
 		if audit, err = be.ReconcileLibrettos(); err != nil {
 			return err
@@ -381,11 +379,11 @@ func runDoctorLibrettos(dryRun bool) error {
 // refused by every provider on every send -- "tool_use ids were found without
 // tool_result blocks" -- and cannot be used again until it is closed.
 func runDoctorToolCalls(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	be, err := store.NewXwalBackend(ariaRoot(), 0)
+	be, err := store.NewXwalBackend(AriaRoot(), 0)
 	if err != nil {
 		return err
 	}

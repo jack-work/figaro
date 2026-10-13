@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // --- Mock provider ---
@@ -1296,7 +1297,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	// in-flight and appended composition of the SAME message lands as two
 	// node ids across different frames: invisible per-frame, but the
 	// folded view shows a committed assistant message with two nodes.
-	cl := aria.NewClient()
+	cl := client.NewClient()
 	for _, fr := range append(append([]rpc.Notification{}, turn1...), turn2...) {
 		if fr.Method != rpc.MethodAriaFrame {
 			continue
@@ -1304,7 +1305,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		b, _ := json.Marshal(fr.Params)
 		var r aria.Page
 		require.NoError(t, json.Unmarshal(b, &r))
-		cl.Apply(r, aria.Notify)
+		cl.Apply(r, client.Notify)
 	}
 	// Each turn carries its question as TEXT and exactly one assistant reply -
 	// a second turn must not re-compose the first turn's nodes into itself. A

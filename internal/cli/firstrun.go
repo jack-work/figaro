@@ -277,7 +277,7 @@ func setupCredentialsFor(loaded *config.Loaded, choice providerChoice) error {
 // runOAuthInline calls auth.Login, which drives the PKCE handshake
 // and persists the result through hush. Errors propagate.
 func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
-	h := mustHush()
+	h := MustHush()
 	hushClient := h.Client()
 	return auth.Login(hushClient, cfg, func() (string, error) {
 		// Login prints the (styled) paste prompt; we only read.
@@ -319,7 +319,7 @@ func runCopilotLogin(loaded *config.Loaded) error {
 		return fmt.Errorf("copilot is configured for direct mode; nothing to exchange")
 	}
 
-	h := mustHush()
+	h := MustHush()
 	if err := h.Client().OAuthRegister(hush.OAuthRegisterRequest{
 		Name:         "copilot",
 		TokenURL:     tokenURL,
@@ -364,7 +364,7 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 		return fmt.Errorf("empty api key")
 	}
 
-	h := mustHush()
+	h := MustHush()
 	encrypted, err := h.Client().Encrypt(map[string]string{"api_key": string(key)})
 	// wipe the in-memory plaintext immediately
 	for i := range key {

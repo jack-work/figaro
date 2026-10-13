@@ -9,7 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A PAGER THAT IS DOING NOTHING MUST ASK FOR NOTHING. The bench drove four

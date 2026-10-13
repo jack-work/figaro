@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The VERBOSE render path had no benchmark. Ctrl-O now adds a row per node

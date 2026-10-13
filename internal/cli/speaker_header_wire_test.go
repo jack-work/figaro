@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	livelog "github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The whole chain, in production functions, with the production page budget.
@@ -19,7 +20,7 @@ import (
 //
 // This closes it from the other end:
 //
-//	aria.PaginateBefore: the real byte-budget walk, at the real 64 KiB
+//	livelog.PaginateBefore: the real byte-budget walk, at the real 64 KiB
 //	  -> assemble         sets ClippedHead when the window opens mid-turn
 //	  -> the fold gives that part no question
 //	  -> Composer.Message  must therefore draw no speaker header
@@ -64,7 +65,7 @@ func TestSpeakerHeader_RealPageWalkProducesTheSeam(t *testing.T) {
 	turns := realisticTurns()
 	last := turns[len(turns)-1]
 	// Page backward from the tail, exactly as the pager's prefetch does.
-	page := aria.PaginateBefore(turns,
+	page := livelog.PaginateBefore(turns,
 		aria.Anchor{Turn: last.ID, Node: uint64(len(last.Nodes) - 1)}, aria.Anchor{}, productionPageBudget)
 
 	var clipped *aria.TurnPart

@@ -1,6 +1,10 @@
 package aria
 
-import "testing"
+import (
+	"testing"
+
+	client "github.com/jack-work/figaro/sdk/aria"
+)
 
 // A PREFIX PAGE MUST NOT DECLARE A HOLE OVER THE LIVE SUFFIX.
 //
@@ -22,9 +26,9 @@ func TestClient_PrefixPageDoesNotOpenAHoleOverTheOpenTurn(t *testing.T) {
 	s.Update(nil, longNodes(14), 0)
 
 	const budget = 1024
-	c := NewClient()
+	c := client.NewClient()
 	tail := s.ReadBefore(Anchor{}, Anchor{}, budget)
-	c.Apply(tail, Quiet)
+	c.Apply(tail, client.Quiet)
 	if c.MoreAfter() {
 		t.Fatalf("fixture: the tail read did not leave us at the tail")
 	}
@@ -34,7 +38,7 @@ func TestClient_PrefixPageDoesNotOpenAHoleOverTheOpenTurn(t *testing.T) {
 		t.Fatalf("fixture: the backward page does not claim more above it, so nothing is tested")
 	}
 
-	c.Apply(older, Quiet)
+	c.Apply(older, client.Quiet)
 	if c.MoreAfter() {
 		t.Errorf("a page ending at %v opened a hole above it, over the open turn's own "+
 			"suffix [%d,%d) which we hold", at, c.Store().OpenHead(), c.Store().OpenLen())
@@ -52,12 +56,12 @@ func TestClient_AHistoryPageStillReportsMoreAbove(t *testing.T) {
 	s.Restore(turns)
 
 	const budget = 512
-	c := NewClient()
+	c := client.NewClient()
 	mid := s.ReadBefore(Anchor{Turn: 9, Node: 0}, Anchor{}, budget)
 	if !mid.More.After {
 		t.Fatalf("fixture: a page cut at turn 9 of 12 must report more above it: %+v", mid.More)
 	}
-	c.Apply(mid, Quiet)
+	c.Apply(mid, client.Quiet)
 	if !c.MoreAfter() {
 		t.Error("a genuine mid-history page was not allowed to report the conversation above it")
 	}
