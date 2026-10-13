@@ -26,6 +26,7 @@ sdk/                       Go client: angelus + aria connections
 skills.go                  embeds skills/figaro into the binary
 
 api/aria/                  wire types of the paginated read API (Page, TurnPart, deltas)
+api/decide/                the ?? option grammar, -C choices, @refs; renders a decision
 api/form/                  per-aria structured state + system-reminder templates
 api/livedoc/               live-render protocol core: one markdown blob, splice deltas
 api/message/               provider-agnostic IR (Message, Content, Patch)
@@ -41,6 +42,7 @@ internal/cli/              the CLI: commands, transcript pager, line editor, key
 internal/cmdkit/           CLI command routing
 internal/compose/          IR turn -> live-render unit of typed nodes
 internal/config/           TOML config loader
+internal/decide/           figaro.decide: window, focus, @refs, budget; the System One client
 internal/figaro/           actor: agent loop, inbox, translator orchestration; wire/ trunk capability
 internal/formdelta/        per-record form state a transcript reader needs
 internal/livelog/          aria/ page server + field deltas; render/ terminal differential renderer
@@ -50,7 +52,7 @@ internal/otel/             OpenTelemetry init + span helpers
 internal/outfit/           assembles an aria's form from on-disk config; unpacks bundled skills
 internal/partialjson/      string field from a truncated JSON prefix
 internal/provider/         Provider interface; anthropic (direct HTTP+SSE), anthropicmodels,
-                           copilot, openaichat, responses, routed
+                           copilot, meta, openaichat, responses, routed
 internal/render/           markdown -> ANSI rows (glamour)
 internal/store/            generic Log[T]; XWAL backend, forms, libretto, fork tree;
                            disk/ log/ segment/ tree/ xwal/ layers

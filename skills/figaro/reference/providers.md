@@ -54,6 +54,12 @@ with no transport, a bad glob, or a spec with no way to route at all.
 | `gateway` | default `chat`; credential optional | everything. `base_url` is required; `FIGARO_GATEWAY_BASE_URL` wins over the file. |
 | `openrouter` | default `chat`; OpenRouter host; `anthropic/` model prefix | everything. |
 
+## Not a provider: decision models
+
+A decision model (jev) is never an aria's `system.model`; setting one is
+refused. It is asked with `figaro decide`, configured by
+`providers/decisions.toml`. See [decisions.md](decisions.md).
+
 ## Translation channels
 
 `chat` writes `<name>`, `messages` writes `<name>-messages`, and both Responses

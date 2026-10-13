@@ -97,6 +97,7 @@ about changing figaro rather than using it live under
 | [reference/providers.md](reference/providers.md) | Writing `providers/<name>.toml`, pointing a gateway at a new endpoint, or a model failing on one provider and working on another. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
 | [reference/quoting.md](reference/quoting.md) | Quoting a passage into a prompt (`<412.0:23-1180>!`), visual selection, and the pager's `:send` / `:fork` / `:listen` / `:attend`. |
+| [reference/decisions.md](reference/decisions.md) | You want a fast yes/no or a scored choice instead of prose (`figaro decide`, a `??` draft), you are choosing between form entries (`?? @skills`), or you are changing that grammar. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |

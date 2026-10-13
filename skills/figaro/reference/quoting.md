@@ -76,6 +76,10 @@ expands into the coordinate at submit, so the prompt quotes the passage you
 were reading. `:<,>send -- …` still works and still tokenizes like a shell
 line, which is why the composer exists.
 
+A draft ending in a `??` line is a decision rather than a prompt, and there the
+quote is the focus: the window `figaro decide` sends is centred on it. See
+[decisions.md](decisions.md).
+
 ## Selecting it in the pager
 
 `v` puts a cursor in the transcript; `v` again marks by character, `V` by line.
