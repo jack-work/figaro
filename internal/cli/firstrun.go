@@ -39,6 +39,10 @@ func init() {
 		r.Setup = runCopilotLogin
 		r.Login = runCopilotLogin
 	}
+	if r := providerPkg.Lookup("meta"); r != nil {
+		r.Setup = runMetaLogin
+		r.Login = runMetaLogin
+	}
 	if r := providerPkg.Lookup("anthropic"); r != nil {
 		login := func(loaded *config.Loaded) error {
 			return runOAuthInline("anthropic", auth.AnthropicOAuth)
@@ -55,6 +59,12 @@ var providerCatalog = []providerChoice{
 		provider: "copilot",
 		hint:     "recommended: uses your Copilot subscription",
 		setup:    runCopilotLogin,
+	},
+	{
+		label:    "Meta Muse Code (device code login)",
+		provider: "meta",
+		hint:     "uses your Muse Code subscription",
+		setup:    runMetaLogin,
 	},
 	{
 		label:    "Anthropic (Claude.ai login)",
@@ -322,12 +332,26 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 	if len(key) == 0 {
 		return fmt.Errorf("empty api key")
 	}
-
-	h := MustHush()
-	encrypted, err := h.Client().Encrypt(map[string]string{"api_key": string(key)})
+	err = storeEncryptedAPIKey(loaded, providerName, string(key))
 	for i := range key {
 		key[i] = 0
 	}
+	return err
+}
+
+func runMetaLogin(loaded *config.Loaded) error {
+	minted, err := auth.LoginMeta()
+	if err != nil {
+		return err
+	}
+	if minted.Email != "" {
+		fmt.Fprintln(os.Stderr, "       "+dim("Muse Code subscription key minted for "+minted.Email))
+	}
+	return storeEncryptedAPIKey(loaded, "meta", minted.APIKey)
+}
+
+func storeEncryptedAPIKey(loaded *config.Loaded, providerName, key string) error {
+	encrypted, err := MustHush().Client().Encrypt(map[string]string{"api_key": key})
 	if err != nil {
 		return fmt.Errorf("encrypt api key via hush: %w", err)
 	}
@@ -336,8 +360,17 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 		return fmt.Errorf("hush returned no ciphertext for api_key")
 	}
 
-	pa := config.ProviderAuth{APIKey: enc}
 	path := loaded.ProviderAuthPath(providerName)
+	doc := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		if _, err := toml.Decode(string(data), &doc); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	doc["api_key"] = enc
+
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -346,7 +379,7 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 		return err
 	}
 	defer f.Close()
-	if err := toml.NewEncoder(f).Encode(pa); err != nil {
+	if err := toml.NewEncoder(f).Encode(doc); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	fmt.Fprintln(os.Stderr, "  "+green("✓")+" stored encrypted api key → "+dim(path))

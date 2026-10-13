@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/jack-work/figaro/internal/provider/anthropic"
 	_ "github.com/jack-work/figaro/internal/provider/copilot"
+	_ "github.com/jack-work/figaro/internal/provider/meta"
 	_ "github.com/jack-work/figaro/internal/provider/routed"
 )
 
