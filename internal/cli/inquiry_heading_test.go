@@ -13,6 +13,7 @@ func TestInquiryHeadingNamesTheSender(t *testing.T) {
 	for _, tc := range []struct{ sender, heading string }{
 		{"Duke", "> Duke"},
 		{"", "> input"},
+		{"aria 1234abcd", "> figaro 1234abcd"},
 	} {
 		t.Run(tc.heading, func(t *testing.T) {
 			m := aria.Message{Turn: 1, Inquiry: "please run the tests", Role: livedoc.RoleOutput,
