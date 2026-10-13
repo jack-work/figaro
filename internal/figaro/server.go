@@ -95,9 +95,6 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		// what arrives here is data.
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
-		// Attribution comes off the request itself, not from the authn
-		// provider: the agent socket has none, and a human: never
-		// authenticated: is exactly the caller a confused aria needs named.
 		if err := a.SubmitPromptFrom(ctx, req, rpc.SenderFrom(params, a.dukeTitle)); err != nil {
 			// A refused form write is the caller's to see: it is synchronous
 			// now, so it reaches the reply the caller is already waiting on.

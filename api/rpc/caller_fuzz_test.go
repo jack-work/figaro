@@ -100,15 +100,10 @@ func FuzzWithCallerRoundTrip(f *testing.F) {
 			}
 		}
 
-		// THE SECURITY PROPERTY. With no valid credential, the attribution can
-		// never render as an aria: no label, however crafted, is promoted.
-		attr := Attribution(gotID, gotLabel)
-		if gotID == "" && strings.HasPrefix(attr, AriaLabelPrefix) {
-			t.Fatalf("label %q was promoted to an aria attribution: %q", label, attr)
-		}
-		// And SenderFrom, the path the agent actually uses, agrees.
-		if from := SenderFrom(raw, nil); from != attr {
-			t.Fatalf("SenderFrom disagrees with Attribution: %q vs %q", from, attr)
+		// THE SECURITY PROPERTY: nothing on the wire renders with the reserved
+		// prefix, however either field is crafted.
+		if from := SenderFrom(raw, nil); strings.HasPrefix(from, AriaLabelPrefix) {
+			t.Fatalf("id %q label %q rendered as an aria: %q", gotID, gotLabel, from)
 		}
 	})
 }

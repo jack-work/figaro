@@ -16,6 +16,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -216,7 +217,13 @@ func (a *Angelus) Run(ctx context.Context) error {
 				continue
 			}
 		}
-		go a.handleConn(ctx, conn)
+		cctx, err := authz.Admit(ctx, conn)
+		if err != nil {
+			slog.Warn("angelus refused connection", "err", err)
+			conn.Close()
+			continue
+		}
+		go a.handleConn(cctx, conn)
 	}
 }
 

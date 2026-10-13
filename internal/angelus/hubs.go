@@ -68,7 +68,7 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
 		return hb, nil
 	}
-	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"))
+	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"), h.policy())
 	hb.wake = h.wakeForHub
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub

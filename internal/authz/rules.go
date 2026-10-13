@@ -7,7 +7,6 @@ import (
 // TurnActiveFunc reports whether the named aria has a turn in flight.
 type TurnActiveFunc func(ariaID string) bool
 
-// selfForkHelp is the prose a denied self-fork returns.
 const selfForkHelp = `cannot fork %[1]s from inside its own running turn: the fork would deadlock.
 
 A fork is an inbox event, and the agent's drain loop handles one event at a
@@ -43,7 +42,7 @@ func NoSelfForkDuringTurn(turnActive TurnActiveFunc) Rule {
 			if r.Method != rpc.MethodFork {
 				return Allow()
 			}
-			if !r.Identity.Authenticated || !r.SelfTargeted() {
+			if !r.SelfTargeted() {
 				return Allow()
 			}
 			if turnActive == nil || !turnActive(r.Identity.FigaroID) {
@@ -54,9 +53,6 @@ func NoSelfForkDuringTurn(turnActive TurnActiveFunc) Rule {
 	}
 }
 
-// DefaultRules is the policy config selects when authorization is switched on.
-// It is a table so the composition is readable at a glance and so adding a rule
-// is a one-line data change rather than a code change at a call site.
 func DefaultRules(turnActive TurnActiveFunc) Rules {
 	return Rules{
 		NoSelfForkDuringTurn(turnActive),

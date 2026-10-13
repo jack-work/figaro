@@ -16,11 +16,8 @@ const CallerKey = "x-internal-figaro-id"
 // who is calling, when the caller is not an aria.
 const CallerLabelKey = "x-caller"
 
-// AriaLabelPrefix is reserved. An authenticated aria renders as "aria <id>";
-// an asserted label renders bare. If a label could begin with this prefix, a
-// human setting FIGARO_CALLER="aria 76062b18" would be indistinguishable from
-// the real aria in the model's context: confidently misinformed, which is
-// worse than unattributed. SanitizeLabel strips it.
+// AriaLabelPrefix is reserved: SanitizeLabel strips it so no asserted label
+// can pose as an aria.
 const AriaLabelPrefix = "aria "
 
 // MaxCallerLabelLen bounds an asserted label, in RUNES. It is caller-supplied
@@ -223,20 +220,10 @@ func CallerOf(params json.RawMessage) string {
 	return c.FigaroID
 }
 
-// Attribution is the ONE place the rendered form of a sender is decided, so
-// the model, the transcript, the inline view and `figaro show` cannot drift
-// into disagreeing about who spoke.
-func Attribution(figaroID, label string) string {
-	if figaroID != "" {
-		return AriaLabelPrefix + figaroID
-	}
-	return SanitizeLabel(label)
-}
-
-// SenderFrom renders the attribution carried by a request's params.
+// SenderFrom renders the attribution a request's params assert.
 func SenderFrom(params json.RawMessage, dukeTitle func() string) string {
 	if id := CallerOf(params); id != "" {
-		return AriaLabelPrefix + id
+		return id
 	}
 	ref := CallerRefOf(params)
 	if ref == nil {

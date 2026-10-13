@@ -179,15 +179,7 @@ type CLIConfig struct {
 // AuthzConfig selects the authentication provider and the authorization
 // policy for the RPC surface (see internal/authz).
 type AuthzConfig struct {
-	// CallerIdentity enables the authn provider that reads the caller's aria
-	// id from the x-internal-figaro-id params field (rpc.CallerKey). When
-	// false, every request is anonymous no matter what it presented: the
-	// server has chosen not to trust the wire.
-	CallerIdentity *bool `toml:"caller_identity"`
-
-	// Policy names the authorization policy. "" or "allow-all" gates
-	// nothing; "default" selects authz.DefaultRules (today: refuse a
-	// self-fork issued from inside a running turn).
+	// Policy is "default" for authz.DefaultRules; anything else gates nothing.
 	Policy string `toml:"policy"`
 }
 
@@ -745,24 +737,11 @@ func (l *Loaded) Interactive() bool {
 	return *l.cfg().CLI.Interactive
 }
 
-// CallerIdentityEnabled reports whether the caller-identity authn provider
-// is on. Default false: today's behavior.
-func (l *Loaded) CallerIdentityEnabled() bool {
-	if l.cfg().Authz.CallerIdentity == nil {
-		return false
-	}
-	return *l.cfg().Authz.CallerIdentity
-}
-
-// AuthzPolicy returns the configured policy name, normalized. Empty means
-// allow-all.
 func (l *Loaded) AuthzPolicy() string {
-	switch p := strings.ToLower(strings.TrimSpace(l.cfg().Authz.Policy)); p {
-	case "", "allow-all", "none", "off":
-		return "allow-all"
-	default:
-		return p
+	if strings.EqualFold(strings.TrimSpace(l.cfg().Authz.Policy), "default") {
+		return "default"
 	}
+	return "allow-all"
 }
 
 // RefSigil returns the form reference sigil. Default "@".

@@ -71,14 +71,15 @@ func TestExplicitLabelOverridesTheDuke(t *testing.T) {
 	}
 }
 
-// An authenticated aria outranks both. A figaro speaking is never the duke.
+// An asserted aria id outranks both and renders bare: nothing on the wire
+// proves it, so it never wears the reserved prefix.
 func TestAriaIdentityOutranksTheDuke(t *testing.T) {
 	raw, err := WithCaller(QuaRequest{Text: "hi"}, "aria0001", &CallerRef{Duke: true})
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
-	if got := SenderFrom(raw, func() string { return "gluck" }); got != "aria aria0001" {
-		t.Fatalf("SenderFrom = %q, want 'aria aria0001'", got)
+	if got := SenderFrom(raw, func() string { return "gluck" }); got != "aria0001" {
+		t.Fatalf("SenderFrom = %q, want aria0001", got)
 	}
 }
 
