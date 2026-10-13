@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
@@ -117,6 +119,8 @@ var (
 	sweepEvicted  otelmetric.Int64Histogram
 
 	requestBytes otelmetric.Int64Histogram
+
+	memProbe atomic.Pointer[func() MemSample]
 
 	instrumentsOnce sync.Once
 
@@ -326,12 +330,59 @@ func initInstruments(m otelmetric.Meter) {
 		sweepDuration = histogram(m, "figaro.sweep.duration", "One sweep phase on the angelus ticker", subMS)
 		sweepEvicted = counts(m, "figaro.sweep.evicted", "{handle}", "Aria handles one idle sweep evicted")
 		requestBytes = counts(m, "figaro.provider.request_bytes", "By", "Serialized request body per provider round")
+		rss, heapInuse, heapReleased := gauge(m, "figaro.mem.rss", "By"), gauge(m, "figaro.mem.heap_inuse", "By"), gauge(m, "figaro.mem.heap_released", "By")
+		resident, goroutines := gauge(m, "figaro.mem.resident_arias", "{aria}"), gauge(m, "figaro.mem.goroutines", "{goroutine}")
+		_, err = m.RegisterCallback(func(_ context.Context, o otelmetric.Observer) error {
+			probe := memProbe.Load()
+			if probe == nil {
+				return nil
+			}
+			s := (*probe)()
+			o.ObserveInt64(rss, rssBytes())
+			o.ObserveInt64(heapInuse, s.HeapInuse)
+			o.ObserveInt64(heapReleased, s.HeapReleased)
+			o.ObserveInt64(resident, int64(s.ResidentArias))
+			o.ObserveInt64(goroutines, int64(s.Goroutines))
+			return nil
+		}, rss, heapInuse, heapReleased, resident, goroutines)
+		if err != nil {
+			slog.Warn("metric init", "name", "mem", "err", err)
+		}
 		tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
 			otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
 		if err != nil {
 			slog.Warn("metric init", "name", "tokens", "err", err)
 		}
 	})
+}
+
+type MemSample struct {
+	HeapInuse, HeapReleased   int64
+	ResidentArias, Goroutines int
+}
+
+// SetMemProbe supplies the daemon-side numbers the gauges observe every reader tick.
+func SetMemProbe(fn func() MemSample) { memProbe.Store(&fn) }
+
+func rssBytes() int64 {
+	b, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		return 0
+	}
+	f := strings.Fields(string(b))
+	if len(f) < 2 {
+		return 0
+	}
+	pages, _ := strconv.ParseInt(f[1], 10, 64)
+	return pages * int64(os.Getpagesize())
+}
+
+func gauge(m otelmetric.Meter, name, unit string) otelmetric.Int64ObservableGauge {
+	g, err := m.Int64ObservableGauge(name, otelmetric.WithUnit(unit))
+	if err != nil {
+		slog.Warn("metric init", "name", name, "err", err)
+	}
+	return g
 }
 
 func histogram(m otelmetric.Meter, name, desc string, bounds []float64) otelmetric.Float64Histogram {

@@ -263,6 +263,11 @@ func Run() {
 		Settings:   loaded,
 	})
 	a.Build = boot.BuildRevision()
+	figOtel.SetMemProbe(func() figOtel.MemSample {
+		st := a.MemStatus()
+		return figOtel.MemSample{HeapInuse: int64(st.HeapInuseBytes), HeapReleased: int64(st.HeapReleasedBytes),
+			ResidentArias: st.ResidentArias, Goroutines: st.Goroutines}
+	})
 
 	formTmpls := boot.BuildFormTemplates()
 
