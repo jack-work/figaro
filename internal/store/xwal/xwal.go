@@ -956,10 +956,7 @@ func (x *XWAL) Clear(channelName string) error {
 	return nil
 }
 
-// TruncateFrom drops a related channel's own records at or after channelLT
-// and forgets the foreign-key index; records inherited from a parent are
-// never reached (ErrBelowForkBase). Flusher-unaware: use Store.TruncateFrom
-// when the store's flusher is running.
+// Flusher-unaware: use Store.TruncateFrom when the store's flusher is running.
 func (x *XWAL) TruncateFrom(channelName string, channelLT uint64) error {
 	if err := x.ensurePrivate(); err != nil {
 		return err

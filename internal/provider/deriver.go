@@ -22,8 +22,6 @@ func NewDeriver(board Form, studies map[string]Form) *Deriver {
 	return &Deriver{form: board, studies: studies, lastStudy: map[string]uint64{}, snap: form.Snapshot{}}
 }
 
-// SeedAt positions the cursor at the newest entry whose row carries bytes
-// (SeedLT); its record carries the cursors.
 func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}

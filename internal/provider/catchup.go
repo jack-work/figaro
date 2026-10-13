@@ -172,7 +172,6 @@ func SeedLT(rows store.Log[[]json.RawMessage]) uint64 {
 	}
 }
 
-// genesisBelow counts the untranslatable records at or below the watermark.
 // Genesis is written once, at LT 1 of the root, so the count is a lookup.
 func genesisBelow(log store.Log[message.Message], watermark uint64) int {
 	if watermark < 1 {
@@ -184,9 +183,7 @@ func genesisBelow(log store.Log[message.Message], watermark uint64) int {
 	return 0
 }
 
-// firstGap is the earliest translatable record at or below the watermark
-// with no row, and the channel LT of the first row at or after it. It
-// decodes both logs once, in order, and stops at the gap.
+// firstGap decodes both logs once, in order, and stops at the gap.
 func firstGap(cfg CatchUpConfig, watermark uint64) (gap, cut uint64, found bool) {
 	type rowKey struct{ lt, figaroLT uint64 }
 	var rows []rowKey

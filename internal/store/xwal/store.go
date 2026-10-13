@@ -282,9 +282,8 @@ func (s *Store) Clear(trunk, channel string) error {
 	return clearErr
 }
 
-// TruncateFrom cuts a channel's tail for a trunk's lineage with the same
-// discipline as Clear: hot handles retire under the topology lock first, so
-// an in-flight flush can never resurrect cut records.
+// Hot handles retire under the topology lock first, so an in-flight flush
+// can never resurrect cut records.
 func (s *Store) TruncateFrom(trunk, channel string, channelLT uint64) error {
 	endMutation, err := s.Trunks.beginTopologyMutation()
 	if err != nil {

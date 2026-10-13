@@ -892,9 +892,8 @@ func (l *Log) DropPayloadCache() {
 
 const truncatePendingName = ".truncate-pending"
 
-// TruncateFrom drops this log's own entries at or after fromIdx; the parent
-// chain is never touched. The cut is planned on disk first and Open
-// finishes a planned cut, so a crash shows either the old tail or the cut.
+// The cut is planned on disk first and Open finishes a planned cut, so a
+// crash shows either the old tail or the cut.
 func (l *Log) TruncateFrom(fromIdx uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -913,8 +912,6 @@ func (l *Log) TruncateFrom(fromIdx uint64) error {
 	return l.truncateLocked(fromIdx)
 }
 
-// truncateLocked removes whole segments past the cut, highest first, then
-// rewrites the one holding it through a rename, and retires the plan.
 func (l *Log) truncateLocked(fromIdx uint64) error {
 	if !l.isEmptyLocked() && fromIdx <= l.lastIndexLocked() {
 		type seg struct {
@@ -964,8 +961,6 @@ func (l *Log) truncateLocked(fromIdx uint64) error {
 	return syncDir(l.dir)
 }
 
-// rewriteSegment replaces the segment at path with its first keep entries,
-// header included; the swap is one rename.
 func (l *Log) rewriteSegment(path string, base, keep uint64) error {
 	headered := l.opts.OnSegmentOpen != nil
 	var (

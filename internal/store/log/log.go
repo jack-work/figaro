@@ -322,8 +322,6 @@ func (l *Log) TruncateFront(beforeIdx uint64) error {
 	return l.inner.TruncateFront(beforeIdx)
 }
 
-// TruncateFrom drops this Log's own entries at or after fromIdx; parent
-// entries are untouched.
 func (l *Log) TruncateFrom(fromIdx uint64) error {
 	if l.shared {
 		return ErrSharedMutation

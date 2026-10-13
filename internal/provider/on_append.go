@@ -43,10 +43,9 @@ func NewOnAppend(
 
 func (o *OnAppend) Provider() string { return o.name }
 
-// EncodeEntry returns an empty row for an entry that translates to nothing
-// and no fingerprint for one that owes no row. The cursor is seeded from the
-// translator's tail, never assumed, so a restart, fork or catch-up in between
-// cannot render patches twice or not at all.
+// The cursor is seeded from the translator's tail, never assumed, so a
+// restart, fork or catch-up in between cannot render patches twice or not
+// at all.
 func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message], e store.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	o.mu.Lock()
 	d, ok := o.at[ariaID]
