@@ -130,6 +130,24 @@ func (s *MemLog[T]) appendLocked(e Entry[T]) Entry[T] {
 	return e
 }
 
+func (s *MemLog[T]) TruncateFrom(lt uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur := s.load()
+	n := sort.Search(len(cur.entries), func(i int) bool { return cur.entries[i].LT >= lt })
+	if n == len(cur.entries) {
+		return nil
+	}
+	entries := make([]Entry[T], n)
+	copy(entries, cur.entries[:n])
+	byFigaroLT := make(map[uint64]int, n)
+	for i, e := range entries {
+		byFigaroLT[e.FigaroLT] = i
+	}
+	s.state.Store(&memState[T]{entries: entries, byFigaroLT: byFigaroLT, nextLT: lt})
+	return nil
+}
+
 func (s *MemLog[T]) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

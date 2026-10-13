@@ -391,6 +391,11 @@ func (l *treeLog[T]) Clear() error {
 	return l.inner.Clear()
 }
 
+func (l *treeLog[T]) TruncateFrom(lt uint64) error {
+	l.cache.DropNode(l.node)
+	return l.inner.TruncateFrom(lt)
+}
+
 // TailAfter's watermark is an LT, not a FigaroLT; the two agree on an unforked
 // lineage and diverge after a rewrite, so the boundary is resolved through the
 // substrate.

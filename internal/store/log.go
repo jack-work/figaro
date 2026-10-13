@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/jack-work/figaro/internal/store/segment"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // Entry is one record on a Log. LT/FigaroLT are stamped on append.
@@ -45,7 +46,12 @@ type Log[T any] interface {
 	Append(e Entry[T]) (Entry[T], error)
 
 	Clear() error
+	// TruncateFrom drops the rows at or after channel LT lt. A fork's
+	// inherited prefix is out of reach: ErrBelowForkBase.
+	TruncateFrom(lt uint64) error
 }
+
+var ErrBelowForkBase = xwal.ErrBelowForkBase
 
 // tailBudgetedLog reads the tail without decoding the prefix; optional, the
 // fallback is read-everything-then-compact.

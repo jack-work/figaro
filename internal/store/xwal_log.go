@@ -474,6 +474,10 @@ func (l *xwalLog[T]) Clear() error {
 	return l.store.trunks.Clear(l.ariaID, l.channel)
 }
 
+func (l *xwalLog[T]) TruncateFrom(lt uint64) error {
+	return l.store.trunks.TruncateFrom(l.ariaID, l.channel, lt)
+}
+
 func fingerprintOf(meta []byte) string { fp, _ := decodeMeta(meta); return fp }
 
 func recordHashOf(meta []byte) string { _, h := decodeMeta(meta); return h }

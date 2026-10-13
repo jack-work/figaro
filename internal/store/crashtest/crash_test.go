@@ -25,6 +25,10 @@ func TestMain(m *testing.M) {
 		runChild()
 		return
 	}
+	if os.Getenv("FIGWAL_TRUNCATE_CHILD") == "1" {
+		runTruncateChild()
+		return
+	}
 	if os.Getenv("FIGWAL_CRASH_SLOG") != "" {
 		f, _ := os.OpenFile(os.Getenv("FIGWAL_CRASH_SLOG"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		slog.SetDefault(slog.New(slog.NewTextHandler(f, nil)))

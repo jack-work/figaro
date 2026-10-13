@@ -29,6 +29,7 @@ var (
 	ErrPayloadTooLarge = errors.New("payload too large for segment size")
 	ErrReadOnly        = errors.New("log is read-only (branch point with child forks)")
 	ErrForkMismatch    = errors.New(".fork base starts before the first segment")
+	ErrBelowForkBase   = errors.New("cut below the fork base: the prefix is the parent's")
 	errRangeBoundary   = errors.New("range reached fork boundary")
 )
 
@@ -128,6 +129,15 @@ func Open(dir string, opts Options) (*Log, error) {
 	if err := l.loadSegments(); err != nil {
 		_ = l.Close()
 		return nil, err
+	}
+	if idx, pending, perr := readTruncatePending(dir); perr != nil {
+		_ = l.Close()
+		return nil, perr
+	} else if pending && !l.readOnly {
+		if err := l.truncateLocked(idx); err != nil {
+			_ = l.Close()
+			return nil, fmt.Errorf("finish planned truncate at %d: %w", idx, err)
+		}
 	}
 	if base > 0 && len(l.sealed)+boolToInt(l.active != nil) > 0 {
 		// Validate the on-disk first segment lines up with the marker.
@@ -878,4 +888,173 @@ func (l *Log) DropPayloadCache() {
 	if l.active != nil {
 		l.active.DropCache()
 	}
+}
+
+const truncatePendingName = ".truncate-pending"
+
+// TruncateFrom drops this log's own entries at or after fromIdx; the parent
+// chain is never touched. The cut is planned on disk first and Open
+// finishes a planned cut, so a crash shows either the old tail or the cut.
+func (l *Log) TruncateFrom(fromIdx uint64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.readOnly {
+		return fmt.Errorf("%w: %s", ErrReadOnly, l.dir)
+	}
+	if l.forkBase > 0 && fromIdx < l.forkBase {
+		return fmt.Errorf("%w: cut %d, fork base %d", ErrBelowForkBase, fromIdx, l.forkBase)
+	}
+	if l.isEmptyLocked() || fromIdx > l.lastIndexLocked() {
+		return nil
+	}
+	if err := writeTruncatePending(l.dir, fromIdx); err != nil {
+		return err
+	}
+	return l.truncateLocked(fromIdx)
+}
+
+// truncateLocked removes whole segments past the cut, highest first, then
+// rewrites the one holding it through a rename, and retires the plan.
+func (l *Log) truncateLocked(fromIdx uint64) error {
+	if !l.isEmptyLocked() && fromIdx <= l.lastIndexLocked() {
+		type seg struct {
+			base uint64
+			path string
+		}
+		var segs []seg
+		for _, ss := range l.sealed {
+			segs = append(segs, seg{ss.BaseIndex(), ss.Path()})
+			if err := ss.close(); err != nil {
+				return err
+			}
+		}
+		if l.active != nil {
+			segs = append(segs, seg{l.active.BaseIndex(), l.active.Path()})
+			if err := l.active.Close(); err != nil {
+				return err
+			}
+		}
+		l.sealed, l.active = nil, nil
+		dropped := 0
+		for i := len(segs) - 1; i >= 0; i-- {
+			s := segs[i]
+			if s.base >= fromIdx {
+				if err := os.Remove(s.path); err != nil {
+					return err
+				}
+				if err := syncDir(l.dir); err != nil {
+					return err
+				}
+				dropped++
+				continue
+			}
+			if err := l.rewriteSegment(s.path, s.base, fromIdx-s.base); err != nil {
+				return err
+			}
+			break
+		}
+		slog.Info("log truncated from", "dir", l.dir, "fromIdx", fromIdx, "droppedSegments", dropped)
+		if err := l.loadSegments(); err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(filepath.Join(l.dir, truncatePendingName)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return syncDir(l.dir)
+}
+
+// rewriteSegment replaces the segment at path with its first keep entries,
+// header included; the swap is one rename.
+func (l *Log) rewriteSegment(path string, base, keep uint64) error {
+	headered := l.opts.OnSegmentOpen != nil
+	var (
+		old *segment.Segment
+		err error
+	)
+	if headered {
+		old, err = segment.OpenReadOnlyHeadered(path, l.codec, base)
+	} else {
+		old, err = segment.OpenReadOnly(path, l.codec, base)
+	}
+	if err != nil {
+		return err
+	}
+	defer old.Close()
+	tmp := path + ".cut"
+	_ = os.Remove(tmp)
+	fresh, err := segment.Create(tmp, l.codec, base, l.opts.SegmentSize)
+	if err != nil {
+		return err
+	}
+	if headered {
+		if err := fresh.WriteHeader(old.Header()); err != nil {
+			fresh.Close()
+			return err
+		}
+	}
+	if keep > old.Count() {
+		keep = old.Count()
+	}
+	for i := uint64(0); i < keep; i++ {
+		p, err := old.ReadIndex(i)
+		if err != nil {
+			fresh.Close()
+			return err
+		}
+		if _, err := fresh.Append(p); err != nil {
+			fresh.Close()
+			return err
+		}
+	}
+	if err := fresh.Sync(); err != nil {
+		fresh.Close()
+		return err
+	}
+	if err := fresh.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return syncDir(l.dir)
+}
+
+func writeTruncatePending(dir string, fromIdx uint64) error {
+	path := filepath.Join(dir, truncatePendingName)
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(strconv.FormatUint(fromIdx, 10)); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+func readTruncatePending(dir string) (uint64, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, truncatePendingName))
+	if os.IsNotExist(err) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	idx, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", truncatePendingName, err)
+	}
+	return idx, true, nil
 }

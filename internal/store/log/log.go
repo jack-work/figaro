@@ -15,8 +15,9 @@ import (
 // Re-exported error sentinels so callers don't need to import the
 // disk subpackage just to check error identity.
 var (
-	ErrNotFound = disk.ErrNotFound
-	ErrReadOnly = disk.ErrReadOnly
+	ErrNotFound      = disk.ErrNotFound
+	ErrReadOnly      = disk.ErrReadOnly
+	ErrBelowForkBase = disk.ErrBelowForkBase
 	// ErrSharedMutation rejects filesystem topology changes through a
 	// Store-owned log. Retire the shared generation and reopen privately
 	// before forking or truncating.
@@ -319,6 +320,20 @@ func (l *Log) TruncateFront(beforeIdx uint64) error {
 	l.wmu.Lock()
 	defer l.wmu.Unlock()
 	return l.inner.TruncateFront(beforeIdx)
+}
+
+// TruncateFrom drops this Log's own entries at or after fromIdx; parent
+// entries are untouched.
+func (l *Log) TruncateFrom(fromIdx uint64) error {
+	if l.shared {
+		return ErrSharedMutation
+	}
+	if err := l.Sync(); err != nil {
+		return err
+	}
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	return l.inner.TruncateFrom(fromIdx)
 }
 
 // Disk returns the underlying disk.Log for advanced operations.

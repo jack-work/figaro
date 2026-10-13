@@ -100,6 +100,8 @@ var errStopRange = errors.New("xwal: stop range")
 // does not exist (yet). Store.Append reacts by auto-creating it.
 var ErrNoChannel = errors.New("xwal: no channel")
 
+var ErrBelowForkBase = log.ErrBelowForkBase
+
 // ErrLegacyLayout: there is no degraded mode behind it; the caller migrates
 // with Flatten or does not get a store.
 var ErrLegacyLayout = errors.New("xwal: store predates the flat layout; run Flatten to migrate it")
@@ -951,6 +953,35 @@ func (x *XWAL) Clear(channelName string) error {
 	ch.setLog(l)
 	ch.fk = map[uint64]uint64{}
 	ch.fkBuilt = true // wiped channel: the empty index is current
+	return nil
+}
+
+// TruncateFrom drops a related channel's own records at or after channelLT
+// and forgets the foreign-key index; records inherited from a parent are
+// never reached (ErrBelowForkBase). Flusher-unaware: use Store.TruncateFrom
+// when the store's flusher is running.
+func (x *XWAL) TruncateFrom(channelName string, channelLT uint64) error {
+	if err := x.ensurePrivate(); err != nil {
+		return err
+	}
+	ch := x.chans[channelName]
+	if ch == nil {
+		return fmt.Errorf("xwal: no channel %q", channelName)
+	}
+	if channelName == x.main {
+		return fmt.Errorf("xwal: the main channel is append-only")
+	}
+	l, err := ch.Log()
+	if err != nil {
+		return err
+	}
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	if err := l.TruncateFrom(channelLT); err != nil {
+		return err
+	}
+	ch.fk = map[uint64]uint64{}
+	ch.fkBuilt, ch.fkScan, ch.fkNext, ch.fkFloor = false, false, 0, 0
 	return nil
 }
 

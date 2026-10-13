@@ -282,6 +282,34 @@ func (s *Store) Clear(trunk, channel string) error {
 	return clearErr
 }
 
+// TruncateFrom cuts a channel's tail for a trunk's lineage with the same
+// discipline as Clear: hot handles retire under the topology lock first, so
+// an in-flight flush can never resurrect cut records.
+func (s *Store) TruncateFrom(trunk, channel string, channelLT uint64) error {
+	endMutation, err := s.Trunks.beginTopologyMutation()
+	if err != nil {
+		return err
+	}
+	defer endMutation()
+	if err := s.Trunks.ensureNoOpenHeads(); err != nil {
+		return err
+	}
+	s.Trunks.retireRootHotPreservingValidation()
+	branch, err := s.Trunks.headKey(trunk)
+	if err != nil {
+		return err
+	}
+	x, err := Open(s.Trunks.root, s.Trunks.cfg, branch)
+	if err != nil {
+		return err
+	}
+	cutErr := x.TruncateFrom(channel, channelLT)
+	if cerr := x.Close(); cutErr == nil {
+		cutErr = cerr
+	}
+	return cutErr
+}
+
 // SyncStump persists a stump's birth records lineage-coherently. Raw StumpHead
 // writes are invisible to the flusher; call this before spawning children.
 func (s *Store) SyncStump(name string) error {

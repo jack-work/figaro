@@ -72,14 +72,23 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	entries, total := store.TailAfter(cfg.Log, watermark)
 	if watermark > 0 && store.VerifyOnce(cfg.Translator) {
 		if owed := total - len(entries) - genesisBelow(cfg.Log, watermark); cfg.Translator.Len() != owed {
-			if gap, _, found := firstGap(cfg, watermark); found {
-				slog.Warn("translator rows have a hole; re-deriving from the fig IR",
-					"figaro_lt", gap, "watermark", watermark)
-				if cerr := cfg.Translator.Clear(); cerr != nil {
-					return stats, fmt.Errorf("clear rows with a hole at %d: %w", gap, cerr)
+			if gap, cut, found := firstGap(cfg, watermark); found {
+				tail, _ := cfg.Translator.PeekTail()
+				rowsCut, from := tail.LT-cut+1, watermark
+				switch err := cfg.Translator.TruncateFrom(cut); {
+				case errors.Is(err, store.ErrBelowForkBase):
+					rowsCut, watermark = uint64(cfg.Translator.Len()), 0
+					if cerr := cfg.Translator.Clear(); cerr != nil {
+						return stats, fmt.Errorf("clear rows with a hole at %d: %w", gap, cerr)
+					}
+				case err != nil:
+					return stats, fmt.Errorf("cut rows with a hole at %d: %w", gap, err)
+				default:
+					watermark = gap - 1
 				}
+				slog.Warn("translator rows have a hole; re-deriving from the fig IR",
+					"figaro_lt", gap, "watermark", from, "rows_cut", rowsCut)
 				stats.RepairedAt = gap
-				watermark = 0
 				entries, total = store.TailAfter(cfg.Log, watermark)
 			}
 		}

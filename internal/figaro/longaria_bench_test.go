@@ -79,6 +79,8 @@ func (l *benchmarkLog) Append(e store.Entry[message.Message]) (store.Entry[messa
 	return e, nil
 }
 
+func (l *benchmarkLog) TruncateFrom(uint64) error { return nil }
+
 func (l *benchmarkLog) Clear() error {
 	l.rows = nil
 	return nil
