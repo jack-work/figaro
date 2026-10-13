@@ -105,7 +105,7 @@ func TestTruncateFromSurvivesAKill(t *testing.T) {
 			if n := len(rows) - old; n > 0 && n < truncateNew {
 				sawPartial++
 			}
-			if lines[len(lines)-1] == "closed" {
+			if len(lines) > 0 && lines[len(lines)-1] == "closed" {
 				sawClosed++
 				if len(rows)-old != truncateNew {
 					t.Fatalf("cycle %d: a clean close kept %d new rows, want %d", cycle, len(rows)-old, truncateNew)
