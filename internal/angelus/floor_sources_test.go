@@ -12,11 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// ONE REQUEST, TWO SOURCES. A read is routed to the live agent when the aria
-// is resident and to the store when it is not, and a client cannot tell which
-// answered. The floor is honoured in the walk both of them run, so the two
-// pages are the same bytes; a floor plumbed into one door only would be a
-// transcript that changes when an aria happens to be awake.
+// The floor is honoured in the walk both sources run, so the two pages are the same bytes.
 func TestFloorReadsTheSameFromTheAgentAndFromTheStore(t *testing.T) {
 	backend, id := benchStore(t, 24) // twelve turns
 	floor := aria.Anchor{Turn: 9}
@@ -40,8 +36,7 @@ func TestFloorReadsTheSameFromTheAgentAndFromTheStore(t *testing.T) {
 		require.GreaterOrEqual(t, part.ID, uint64(9), "a part below the floor")
 	}
 
-	// Metrics are per source (the live agent knows its provider, the store
-	// does not), so the comparison is the page itself.
+	// Metrics are per source, so the comparison is the page itself.
 	require.Equal(t, mustJSON(t, fromStore.Parts), mustJSON(t, fromAgent.Parts))
 	require.Equal(t, fromStore.More, fromAgent.More)
 	require.Equal(t, fromStore.Prev, fromAgent.Prev)

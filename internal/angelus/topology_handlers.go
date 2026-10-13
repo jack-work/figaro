@@ -1,12 +1,5 @@
 package angelus
 
-// Birth, fork, promote, import and removal: the handlers that change the SHAPE
-// of the store rather than the contents of one aria.
-//
-// Split out of protocol.go, which had grown to 2,011 lines and answered every
-// question at once. Same package, same behaviour: only the reader's job
-// changes. plans/api-coherence.md step 5.
-
 import (
 	"context"
 	"encoding/json"
@@ -41,11 +34,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// Resolve the outfit name. Empty request → configured default →
-	// typed JSON-RPC error so the client can drive first-run setup.
 	loaded, _ := h.settings()
 
-	// TWO PATCHES, and which is which is the whole economy of this.
 	outfitName := loaded.Config.DefaultOutfit
 	named := len(req.Outfits) > 0
 	if named {
@@ -63,18 +53,14 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// The child carries only what is per-aria: the caller's KEYS (-S/-D) and
-	// the runtime fill-ins. The names are in the parent now.
+	// The child carries only the caller's keys and the runtime fill-ins; the
+	// outfit names are in the parent.
 	dress, err := h.dress(nil, req.Patch)
 	if err != nil {
 		return nil, err
 	}
-	// The provider is resolved against what the aria will ACTUALLY wear: the
-	// stump underneath, the dressing on top.
 	base := mergePatches(stumpPatch, dress)
-	// Nothing configured and nothing sent: there is no first move to make. A
-	// default that IS named but missing on disk falls through, so the failure
-	// is reported as the missing provider it actually is.
+	// A named default missing on disk falls through to the missing-provider error.
 	if base.IsIdentity() && outfitName == "" {
 		return nil, h.errNoDefaultOutfit()
 	}
@@ -100,16 +86,12 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	backend := h.angelus.Backend
 
-	// The form channel is the durable truth; cbState is the
-	// in-memory hot view. System mints all ids.
 	cbState, _ := form.Open("")
 	var id string
 
 	{
-		// Ensure the DEFAULT FORM (stumps are legacy), then fork it: `fig
-		// new` is bind-the-default-form, and this reuse is what shares one
-		// rendered prefix, and one warm provider cache, across every
-		// aria on the same outfit. The hash optimization IS the cache.
+		// Forking the shared default form is what shares one rendered prefix
+		// and one warm provider cache across every aria on the same outfit.
 		formID, serr := h.birthParent(backend, stumpPatch, outfitName, named)
 		if serr != nil {
 			return nil, serr
@@ -119,9 +101,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
-		// aria_id can only be stamped once the id exists, so it rides a second
-		// patch rather than the birth one: which keeps the birth patch a pure
-		// function of what was asked for, and so a stable identity.
+		// aria_id rides a second patch so the birth patch stays a pure
+		// function of what was asked for.
 		if _, aerr := backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); aerr != nil {
 			return nil, fmt.Errorf("stamp aria id: %w", aerr)
 		}
@@ -164,9 +145,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// The endpoint is the angelus's, not the agent's: it must already be
-	// listening when this response hands the caller a path to dial, and it
-	// must still be listening after the agent is reclaimed.
+	// The endpoint must be listening before the response hands out its path.
 	unbind, herr := h.bindAgentToHub(id, agent)
 	if herr != nil {
 		agent.Kill()
@@ -186,9 +165,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}, nil
 }
 
-// fork branches a conversation at its head. The addressed trunk keeps its id
-// and remains live; the alternative is a new dormant conversation.
-// forkPointOf maps a turn id to the main-LT a fork takes.
 func (h *handlers) checkForkLT(ariaID string, lt uint64) error {
 	if lt == 0 {
 		return nil
@@ -208,9 +184,10 @@ func (h *handlers) checkForkLT(ariaID string, lt uint64) error {
 	return nil
 }
 
+// forkPointOf maps a turn to the main-LT a fork takes.
 func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
 	if turn == 0 {
-		return 0, nil // head fork
+		return 0, nil
 	}
 	log, err := h.angelus.Backend.OpenFigIR(ariaID)
 	if err != nil {
@@ -232,6 +209,8 @@ func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
 	return first - 1, nil
 }
 
+// fork never kills or restarts the addressed trunk: it keeps its id and
+// stays live; the alternative is a new dormant conversation.
 func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ForkRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -240,11 +219,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo
-	// Two coordinates, and the server owns the translation between them.
-	// A TURN is what a human names and what `fig show` prints; an LT is the
-	// model's own step count. Both name a fork point; neither can be
-	// inferred from the other's magnitude, which is exactly how an LT once
-	// arrived in the turn field and made every `send <id>:<turn>` fail.
+	// A turn and an LT both name a fork point; neither is inferable from the other.
 	if req.AtTurn > 0 && req.AtLT > 0 {
 		return nil, fmt.Errorf("fork: give a turn (:%d) or an LT (.%d), not both", req.AtTurn, req.AtLT)
 	}
@@ -259,18 +234,12 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
-	// Dress the child in the call that mints it, on the alternative and after
-	// the fork: a patch sent to the parent first can be ACKed and still miss
-	// the branch.
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
 	}
-	// The COORDINATE says whether this is interior; atMainLT says where.
-	// They are not the same question: forking at turn 1 retains nothing
-	// before it, so its LT is 0 -- which is also the head-fork sentinel.
-	// Reading interior-ness off the LT collapsed "replace the first turn"
-	// into "fork at the head".
+	// interior is read off the coordinate, not the LT: forking at turn 1 has
+	// LT 0, which is also the head-fork sentinel.
 	interior := req.AtTurn > 0 || req.AtLT > 0
 	where := fmt.Sprintf("turn %d", req.AtTurn)
 	if req.AtLT > 0 {
@@ -291,9 +260,8 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	runFork := func() error {
 		parentMeta := h.forkMetaSnapshot(req.FigaroID)
-		// One critical section: the branch and the patch that dresses it. A
-		// patch sent afterwards can be ACKed on the parent and miss the child;
-		// a patch sent before has no child to land on.
+		// The branch and its dressing are one call: a patch sent afterwards
+		// can be acked on the parent and miss the child.
 		at := uint64(0)
 		if interior {
 			at = atMainLT
@@ -305,15 +273,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		}
 		cont = req.FigaroID
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
-		// The child inherited its parent's aria_id with everything else; it
-		// learns its own here, as a normal transition it sees on its next turn.
+		// The child inherited its parent's aria_id; re-stamp it.
 		if _, aerr := h.angelus.Backend.ApplyForm(alt, withAriaID(form.Patch{}, alt)); aerr != nil {
 			slog.Warn("fork: stamp child aria id", "alt", alt, "err", aerr)
 		}
 		return nil
 	}
 
-	// Run the fork here, not on the target's actor.
 	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
@@ -353,8 +319,6 @@ func (h *handlers) forkMetaSnapshot(parent string) *store.AriaMeta {
 	return &copy
 }
 
-// interior says whether this was a turn-addressed fork. atMainLT alone cannot:
-// forking at turn 1 has LT 0, which is also the head-fork sentinel.
 func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMainLT uint64, interior bool, owner store.OwnerInfo) {
 	if meta == nil {
 		return
@@ -412,7 +376,7 @@ func (h *handlers) outfitAncestor(id string) string {
 func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 	count := int(atMainLT)
 	if count > 0 {
-		count-- // root genesis
+		count--
 	}
 	for count > 0 {
 		node, ok := h.angelus.Backend.Node(id)
@@ -420,7 +384,7 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 			break
 		}
 		if parent, ok := h.angelus.Backend.Node(node.Parent); ok && parent.Kind == string(outfitKind) {
-			count-- // outfit birth
+			count--
 			break
 		}
 		id = node.Parent
@@ -428,10 +392,6 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 	return max(0, count)
 }
 
-// promote climbs a conversation trunk up N stump-bounded levels (it absorbs
-// its parent trunk's run). A live agent on the trunk keeps its id (promotion
-// only relabels ancestor markers), so no agent is killed.
-// gc collects outfit stumps nothing is using.
 func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.GCRequest
 	if len(params) > 0 {
@@ -496,7 +456,6 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 	return rpc.NormalizeResponse{Detached: n}, nil
 }
 
-// importAria restores an exported aria as a NEW conversation.
 func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ImportRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -522,21 +481,16 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 			return nil, fmt.Errorf("import: append message %d of %d: %w", i+1, len(req.Messages), err)
 		}
 	}
-	// The form last, and as ONE patch: it is the aria's settled state,
-	// not a history of how it got there. aria_id is re-stamped because the
-	// exported board carries the id it had in the store it came from: the
-	// same re-stamp a fork does, for the same reason.
+	// The form last, as one patch; aria_id is re-stamped because the export
+	// carries the id it had in the source store.
 	keys := map[string]json.RawMessage{}
 	for _, e := range req.Form.Entries() {
 		if !e.IsRemoval() {
 			keys[e.Key] = e.New
 		}
 	}
-	// The study set is NOT restored by copying the key. `system.studies` is
-	// system-managed precisely because each entry is refcounted on a shared
-	// libretto: a board that names a study nothing counted is §12.2.2's
-	// unrecoverable direction. So it is lifted out of the imported patch and
-	// replayed through the VERB below, which retains as it declares.
+	// system.studies is refcounted on a shared libretto, so it is replayed
+	// through the verb below rather than copied as a key.
 	var studies []string
 	if raw, ok := keys[figaro.StudiesKey]; ok {
 		if err := json.Unmarshal(raw, &studies); err != nil {
@@ -550,21 +504,14 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, keys, nil)); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
 	}
-	// IMPORT IS A REFCOUNT PARTICIPANT (durable-forms §12.2.2), and it pays
-	// by studying rather than by declaring: each id goes through the verb,
-	// which mints the libretto, seeds it and retains it. An import that
-	// names a form this store does not have is not an error -- the libretto
-	// holds an empty copy and starts following if that form ever arrives.
+	// A study naming a form this store lacks is not an error: the libretto
+	// holds an empty copy and follows if that form ever arrives.
 	for _, formID := range studies {
 		if _, err := studyThroughStore(h.angelus.Backend, id, formID, false); err != nil {
 			slog.Warn("import: could not restore a study",
 				"aria", id, "form", formID, "err", err)
 		}
 	}
-	// The list sidecar, so an imported aria is a first-class row in `figaro
-	// ls` rather than an id with dashes after it. Derived from what actually
-	// arrived; the token counts are the source's and are carried as history,
-	// not as a claim about this store's spend.
 	meta := &store.AriaMeta{
 		MessageCount: len(req.Messages),
 		OutfitName:   req.Outfit,
@@ -611,26 +558,20 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	if err := h.RemoveAria(req.FigaroID, req.Recursive); err != nil {
-		return nil, err // surface "has live branches" etc. to the caller
+		return nil, err
 	}
 	return rpc.KillResponse{OK: true}, nil
 }
 
-// RemoveAria is the whole of a deletion: the live agent, its background
-// sessions, the bytes, and the endpoint. Exported because the TTL sweep
-// deletes too, and a second spelling of "remove an aria" is how one of the
-// four steps goes missing.
+// RemoveAria is the whole of a deletion: agent, background sessions, bytes, endpoint.
 func (h *handlers) RemoveAria(id string, recursive bool) error {
-	// Kill live agent or just remove dormant from disk.
 	if h.angelus.Registry.Get(id) != nil {
 		if err := h.angelus.Registry.Kill(id); err != nil {
 			return err
 		}
 	}
 
-	// Kill is a deletion and dormancy is not: a removed aria takes its
-	// background jobs with it. Unconditional, because a hibernated aria has
-	// no live agent and still owns running children.
+	// Unconditional: a hibernated aria has no live agent and still owns running children.
 	if h.angelus.Sessions != nil {
 		if n := h.angelus.Sessions.KillScope(id); n > 0 {
 			slog.Info("killed aria sessions", "id", id, "sessions", n)
@@ -643,9 +584,7 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 		}
 	}
 
-	// The endpoint outlives the AGENT, not the aria. A deleted aria has no
-	// address, so the hub goes with it and connected clients get their EOF -
-	// which is correct here and exactly what must not happen on hibernate.
+	// The endpoint outlives the agent, not the aria; this EOF must not happen on hibernate.
 	if hb := h.angelus.Hubs.drop(id); hb != nil {
 		hb.Close()
 	}

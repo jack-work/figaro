@@ -21,11 +21,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// switchProvider returns different behavior on each Send call: the
-// first call streams a delta then blocks until ctx.Done() (mid-turn
-// interrupt target); subsequent calls reply with a fixed string and
-// seal cleanly. Meant for reproducing the "output never arrives"
-// scenario over a live angelus + figaro socket.
+// switchProvider streams a delta then blocks until ctx.Done() on the first
+// Send; later Sends seal cleanly.
 type switchProvider struct {
 	mu       sync.Mutex
 	calls    atomic.Int64
@@ -63,15 +60,8 @@ func (p *switchProvider) Send(ctx context.Context, in provider.SendInput, bus pr
 	return nil
 }
 
-// TestListenSurvivesConcurrentInterruptedSend drives an end-to-end
-// scenario: a `figaro listen`-style subscriber holds a live connection
-// while a first `figaro send`-style client submits + interrupts mid-turn,
-// then a second send submits a fresh prompt. The listener must receive
-// the second turn's frames.
-//
-// This is the reported bug: on Linux, output after `figaro send` sometimes
-// never arrives over a concurrent `figaro listen`. Strong lead: the
-// mid-turn interrupt breaks read/subscribe coherence on the aria.
+// A listener must receive the second turn's frames after a concurrent client
+// submits and interrupts mid-turn.
 func TestListenSurvivesConcurrentInterruptedSend(t *testing.T) {
 	dir := t.TempDir()
 
@@ -117,7 +107,6 @@ model = "m"
 	figEP := transport.Endpoint{Scheme: create.Endpoint.Scheme, Address: create.Endpoint.Address}
 	waitForFigaro(t, figEP)
 
-	// -- Listener: subscribes and stays connected across both sends. --
 	listenerFrames := make(chan rpc.Notification, 256)
 	listener, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {
 		select {
@@ -128,7 +117,6 @@ model = "m"
 	require.NoError(t, err)
 	defer listener.Close()
 
-	// -- Send 1: submit + wait mid-turn + interrupt + disconnect --
 	send1Frames := make(chan rpc.Notification, 128)
 	sender1, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {
 		select {
@@ -141,7 +129,6 @@ model = "m"
 	_, _, err = sender1.Qua(ctx, "please stream forever", nil)
 	require.NoError(t, err)
 
-	// Wait for the provider to hit its blocking wait.
 	sp.mu.Lock()
 	startedCh := sp.started
 	sp.mu.Unlock()
@@ -155,15 +142,12 @@ model = "m"
 		t.Fatal("provider never entered blocking Send")
 	}
 
-	// Interrupt, wait for turn.done, then disconnect.
 	require.NoError(t, sender1.Interrupt(ctx))
 	waitForMethod(t, send1Frames, rpc.MethodTurnDone, 3*time.Second)
 	sender1.Close()
 
-	// Give the daemon a moment to process the disconnect cleanup.
 	time.Sleep(50 * time.Millisecond)
 
-	// -- Send 2: submit a fresh prompt on a NEW connection. --
 	send2Done := make(chan struct{}, 1)
 	sender2, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {
 		if method == rpc.MethodTurnDone {
@@ -185,9 +169,6 @@ model = "m"
 		t.Fatal("second turn never completed")
 	}
 
-	// -- The listener must have received both turn.done notifications AND
-	//    aria frames for at least one committed message after the second turn.
-	// Drain listenerFrames for up to 500ms and count what we saw.
 	deadline := time.After(500 * time.Millisecond)
 	var doneCount int
 	var committedCount int
@@ -199,7 +180,6 @@ drain:
 			case rpc.MethodTurnDone:
 				doneCount++
 			case rpc.MethodAriaFrame:
-				// The wire is turn-shaped now: one page, N parts.
 				var r struct {
 					Parts []json.RawMessage `json:"parts,omitempty"`
 				}

@@ -12,15 +12,9 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// A FORK BASE IS AN LT AND CAN FALL INSIDE A TURN. The child's log then
-// holds that turn's opening records and its own continuation: SAME TURN
-// ID, DIFFERENT CONTENT. Reading it out of the ancestor's node serves
-// another aria's history as this one's -- the failure a composed cache
-// with lineage can make and a flat one could not, and the one no
-// single-lineage fixture sees.
-//
-// The oracle is a fresh composition of the CHILD'S OWN log, so a defect
-// in the shared prefix cannot corrupt what it is checked against.
+// A fork base can fall inside a turn: the child holds that turn's opening
+// records and its own continuation, same turn id, different content. The
+// oracle is a fresh composition of the child's own log.
 func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -61,9 +55,7 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	ask(plog, "turn three")
 	say(plog, "parent answers three")
 
-	// The fork lands ON the opening record of turn two: everything after
-	// it is the child's, so turn two exists in both lineages with
-	// different content.
+	// The fork lands on the opening record of turn two.
 	_, child, err := be.ForkAt(parent, openedAt)
 	if err != nil {
 		t.Fatal(err)
@@ -73,9 +65,8 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	say(clog, "CHILD ANSWERS TWO")
-	// One more whole turn, so the straddling turn is DISPLACED out of the
-	// staging slot and into the cache: the tail is never read through the
-	// lineage, so a fixture that leaves it there tests nothing.
+	// One more turn displaces the straddling turn out of the staging slot: the
+	// tail is never read through the lineage.
 	ask(clog, "turn three, the child's own")
 	say(clog, "child answers three")
 
@@ -86,7 +77,6 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	srv.BindCache(child, cache)
 	srv.Restore(a.composeTurns(child, 1, ^uint64(0)))
 
-	// The oracle: the child's own log, composed with nothing shared.
 	oracle := a.composeTurns(child, 1, ^uint64(0))
 	if len(oracle) < 2 {
 		t.Fatalf("the fixture built %d turns; it must build the straddling one", len(oracle))
@@ -113,16 +103,8 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	}
 }
 
-// A BRACKET THAT ENDS INSIDE A TURN STILL COMPOSES THAT TURN WHOLE. The
-// cache cuts runs where its byte target and its gap chunking fall, which
-// is nowhere near a turn boundary, and it asks for the span it is
-// filling. A turn composed from the records that happen to be below the
-// cut is a turn with content missing, cached as if it were complete --
-// and a short turn is indistinguishable from a quiet one.
-//
-// The other end needs no repair and this asserts that too: composition
-// drops records until one OPENS a turn, so a bracket that begins
-// mid-turn yields nothing for it and the run below owns it.
+// A bracket that ends inside a turn still composes it whole; one that begins
+// mid-turn yields nothing for it.
 func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -159,8 +141,7 @@ func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 		t.Fatalf("fixture: %d turns, tail has %d nodes", len(whole), len(whole[1].Nodes))
 	}
 
-	// CUT AT THE TURN'S SECOND RECORD: its opener is inside the bracket,
-	// two of its three answers are not.
+	// Cut at the turn's second record: opener inside, two of three answers outside.
 	cut := a.composeTurns(id, 1, opened+1)
 	if len(cut) != 2 {
 		t.Fatalf("a cut bracket returned %d turns, want 2", len(cut))
@@ -170,8 +151,7 @@ func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 			len(cut[1].Nodes), len(whole[1].Nodes))
 	}
 
-	// AND THE OTHER END: a bracket starting after the opener yields the
-	// turn to nobody, which is what lets the run below own it whole.
+	// A bracket starting after the opener yields the turn to nobody.
 	after := a.composeTurns(id, opened+1, last)
 	for _, tn := range after {
 		if tn.ID == whole[1].ID {

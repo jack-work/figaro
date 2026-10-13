@@ -20,7 +20,6 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// mockProviderForIntegration echoes "42" through the new bus shape.
 type mockProviderForIntegration struct{}
 
 func (m *mockProviderForIntegration) Name() string          { return "mock" }
@@ -45,7 +44,6 @@ func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInp
 func TestIntegration_CreateAndPrompt(t *testing.T) {
 	dir := t.TempDir()
 
-	// Mock outfit: the create path resolves it via outfit.
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
@@ -53,13 +51,11 @@ provider = "mock"
 model = "mock-model"
 `), 0600))
 
-	// Create and start angelus.
 	backend, berr := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, berr)
 	t.Cleanup(func() { _ = backend.Close() })
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
 
-	// Wire the provider factory.
 	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
 	}
@@ -81,7 +77,6 @@ model = "mock-model"
 
 	waitForAngelus(t, a.SocketPath)
 
-	// --- Angelus client: create a figaro ---
 	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
@@ -91,31 +86,25 @@ model = "mock-model"
 	assert.NotEmpty(t, createResp.FigaroID)
 	assert.Equal(t, "unix", createResp.Endpoint.Scheme)
 
-	// --- Angelus client: bind a pid ---
 	err = acli.Bind(ctx, 99999, createResp.FigaroID, 0)
 	require.NoError(t, err)
 
-	// --- Angelus client: resolve ---
 	resolveResp, err := acli.Resolve(ctx, 99999)
 	require.NoError(t, err)
 	assert.True(t, resolveResp.Found)
 	assert.Equal(t, createResp.FigaroID, resolveResp.FigaroID)
 
-	// --- Angelus client: list ---
 	listResp, err := acli.List(ctx)
 	require.NoError(t, err)
 	assert.Len(t, listResp.Figaros, 1)
 	assert.Equal(t, createResp.FigaroID, listResp.Figaros[0].ID)
 
-	// --- Figaro client: connect and prompt ---
 	figaroEP := transport.Endpoint{
 		Scheme:  createResp.Endpoint.Scheme,
 		Address: createResp.Endpoint.Address,
 	}
 	waitForFigaro(t, figaroEP)
 
-	// Connect with notification handler to wait for turn.done.
-	// Notifications are delivered in wire order: no envelopes, no reordering.
 	doneCh := make(chan struct{}, 1)
 	fcli, err := sdk.DialAria(figaroEP, func(method string, params json.RawMessage) {
 		if method == "turn.done" {
@@ -131,19 +120,16 @@ model = "mock-model"
 	_, _, err = fcli.Qua(ctx, "what is the answer?", nil)
 	require.NoError(t, err)
 
-	// Wait for done notification.
 	select {
 	case <-doneCh:
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for turn.done")
 	}
 
-	// Verify via context that messages were processed.
 	cresp, err := fcli.Context(ctx)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(cresp.Messages), 2) // user + assistant
 
-	// --- Angelus client: kill ---
 	err = acli.Kill(ctx, createResp.FigaroID, false)
 	require.NoError(t, err)
 
@@ -152,8 +138,6 @@ model = "mock-model"
 	assert.Empty(t, listResp.Figaros)
 }
 
-// TestIntegration_Attach exercises figaro.attach for live, dormant,
-// and unknown ids.
 func TestIntegration_Attach(t *testing.T) {
 	dir := t.TempDir()
 
@@ -194,15 +178,12 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	// Unknown id → error.
 	_, err = acli.Attach(ctx, "no-such-aria")
 	require.Error(t, err)
 
-	// Bad id → error.
 	_, err = acli.Attach(ctx, "bad/id")
 	require.Error(t, err)
 
-	// Create a live aria (system-minted id), then Attach is a no-op success.
 	resp, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.FigaroID)
@@ -213,9 +194,6 @@ model = "mock-model"
 	assert.Equal(t, resp.Endpoint.Address, att.Endpoint.Address)
 }
 
-// TestIntegration_Fork drives a turn, forks the conversation, and
-// verifies both children share the pre-fork prefix while diverging
-// independently: the whole daemon fork path end to end (mock provider).
 func TestIntegration_Fork(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -246,7 +224,6 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	// Create + drive one turn.
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
@@ -270,17 +247,14 @@ model = "mock-model"
 	}
 	fcli.Close()
 
-	// Fork (trunk model): the aria id is STABLE: the continuation keeps it
-	// (cont == id, bind-to-trunk), only the alternative is new.
+	// The continuation keeps the trunk id; only the alternative is new.
 	fr, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, fr.Continuation, fr.Alternative)
 	require.Equal(t, created.FigaroID, fr.Continuation)
 	require.NotEqual(t, created.FigaroID, fr.Alternative)
 
-	// Each child's form names its OWN id: the continuation keeps the
-	// inherited stamp, the alternative is re-stamped at fork time, an aria
-	// that forks itself must be able to learn its new id.
+	// Each child's form names its own id.
 	formAriaID := func(id string) string {
 		snap, serr := backend.FormState(id)
 		require.NoError(t, serr)
@@ -313,8 +287,6 @@ model = "mock-model"
 	assert.Equal(t, 1, countUser(fr.Continuation, "first prompt"), "continuation shares prefix")
 	assert.Equal(t, 1, countUser(fr.Alternative, "first prompt"), "alternative shares prefix")
 
-	// Trunk model: the continuation keeps the original trunk id (cont ==
-	// created.FigaroID); the alternative founds its own trunk.
 	lst, err := acli.List(ctx)
 	require.NoError(t, err)
 	byID := map[string]rpc.FigaroInfoResponse{}
@@ -326,8 +298,7 @@ model = "mock-model"
 	assert.NotEqual(t, cont.Trunk, alt.Trunk, "alternative founds a new trunk")
 	assert.Equal(t, alt.ID, alt.Trunk, "alternative trunk is itself")
 
-	// The trunk is stable and stays live: re-forking the same id again
-	// just adds another alternative (bind-to-trunk: forking doesn't move you).
+	// Re-forking the same id adds another alternative; forking does not move you.
 	fr2, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil, nil)
 	require.NoError(t, err, "the trunk stays live and re-forkable")
 	require.NotEqual(t, fr2.Continuation, fr2.Alternative)

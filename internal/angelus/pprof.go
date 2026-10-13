@@ -16,23 +16,18 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// PprofEnv arms the profiler when set. Off by default because pprof's
-// handlers are a real surface on a long-lived daemon, a profile request
-// stops the world, /debug/pprof/cmdline leaks argv, and behind a 0600
-// unix socket the reach is the owning user, same as angelus.sock.
+// PprofEnv arms the profiler. Off by default: a profile stops the world and
+// /debug/pprof/cmdline leaks argv.
 const PprofEnv = "FIGARO_PPROF"
 
 const PprofSocketName = "pprof.sock"
 
-// UnlimitedMemLimit is what debug.SetMemoryLimit reports with no ceiling.
 const UnlimitedMemLimit int64 = math.MaxInt64
 
 func (a *Angelus) PprofSocketPath() string {
 	return filepath.Join(a.RuntimeDir, PprofSocketName)
 }
 
-// StartPprof serves net/http/pprof on a unix socket when PprofEnv is set,
-// and does nothing otherwise. Attach with:
 func (a *Angelus) StartPprof(ctx context.Context) error {
 	if os.Getenv(PprofEnv) == "" {
 		return nil
@@ -52,12 +47,9 @@ func (a *Angelus) StartPprof(ctx context.Context) error {
 	}
 
 	mux := http.NewServeMux()
-	// /debug/pprof/mutex and /block are served by Index but return nothing
-	// unless sampling is on, and nothing turned it on. For a daemon whose
-	// writers are now serialization points, contention is the profile worth
-	// having.
+	// mutex and block profiles are empty unless sampling is on.
 	runtime.SetMutexProfileFraction(5)
-	runtime.SetBlockProfileRate(10000) // ns: sample blocking over 10us
+	runtime.SetBlockProfileRate(10000)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -81,9 +73,7 @@ func (a *Angelus) StartPprof(ctx context.Context) error {
 	return nil
 }
 
-// MemStatus reports the daemon's footprint and the counters that explain
-// it. ReadMemStats stops the world, so this belongs on a status call and
-// not on a ticker.
+// MemStatus stops the world (ReadMemStats); keep it off tickers.
 func (a *Angelus) MemStatus() *rpc.MemStatus {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
@@ -98,7 +88,7 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 		HeapSysBytes:      ms.HeapSys,
 		SysBytes:          ms.Sys,
 		NumGC:             ms.NumGC,
-		MemLimitBytes:     debug.SetMemoryLimit(-1), // -1 reads without setting
+		MemLimitBytes:     debug.SetMemoryLimit(-1),
 		PprofSocket:       a.pprofPath,
 	}
 	if a.Sessions != nil {
@@ -155,14 +145,8 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	return st
 }
 
-// MemCollectStatus forces a collection and reports the footprint AFTER it,
-// with the live heap either side.
-//
-// IT STOPS THE WORLD TWICE (runtime.GC, then ReadMemStats), which is why it
-// is its own method and not a flag on the status call every client makes. It
-// exists because HeapAlloc without a preceding GC answers a different
-// question than the one an operator is asking: not "what is this daemon
-// holding" but "what has it allocated since the runtime last looked".
+// MemCollectStatus stops the world twice (GC, then ReadMemStats), which is
+// why it is not a flag on the status call.
 func (a *Angelus) MemCollectStatus() *rpc.MemStatus {
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)

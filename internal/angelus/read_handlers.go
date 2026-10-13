@@ -15,10 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// reader builds the store-backed reader on demand. The projector is
-// constructed with an empty tool registry: projection needs tool NAMES to
-// render a call's shape, and a sealed history already carries them in the
-// IR. Nothing here executes a tool.
+// reader's projector has an empty tool registry: sealed IR carries the tool names.
 func (h *handlers) reader() *AriaReader {
 	h.readerOnce.Do(func() {
 		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil), h.angelus.UICache)
@@ -26,11 +23,6 @@ func (h *handlers) reader() *AriaReader {
 	return h.readerInst
 }
 
-// liveAgent returns the aria's agent if one is resident, else nil. This is
-// the routing decision the whole reader rests on: a live agent holds the
-// open streaming region, partial tool arguments and the in-flight turn,
-// none of which are in the store, so serving a client the store's view of a
-// live aria would look like a hang. Dormant, there is nothing to miss.
 func (h *handlers) liveAgent(id string) figaro.AgentServer {
 	f := h.angelus.Registry.Get(id)
 	if f == nil {
@@ -40,18 +32,12 @@ func (h *handlers) liveAgent(id string) figaro.AgentServer {
 	return srv
 }
 
-// readFromStore answers a read WITHOUT an agent, and it is the only place
-// that knows how. Both doors reach it through routeRead, and the hub hands it
-// to a per-aria connection directly: one implementation, so "what a dormant
-// aria reads like" cannot differ between the two.
+// readFromStore is the one agentless read path for both doors.
 func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any, bool, error) {
 	r := h.reader()
 	switch method {
 	case rpc.MethodForm:
-		// AN INTRINSIC FORM IS NOT ON DISK, so a dormant aria cannot answer for
-		// one. Returning the board here would be worse than an error: the
-		// caller asked for `<id>/runtime` and would be handed a snapshot that
-		// looks like a form, reads like a form, and is a DIFFERENT form.
+		// An intrinsic form is not on disk; answering with the board would be a different form.
 		var req rpc.FormRequest
 		if len(params) > 0 {
 			_ = json.Unmarshal(params, &req)
@@ -95,14 +81,8 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 	return nil, false, nil
 }
 
-// routeRead is THE router, and the only one. A read has one name on both
-// doors; this decides where the answer comes from. A live agent holds the
-// open streaming region, partial tool arguments and the in-flight turn, none
-// of which are in the store, so it answers for itself; a dormant aria is
-// answered from the store without being woken. The hub calls this for the
-// per-aria socket and the three handlers below call it for the angelus door,
-// so the two cannot drift -- which they had, as aria.page/figaro.read and
-// their two copies of the same predicate.
+// routeRead is the only router: a live agent answers for itself (it holds
+// the in-flight turn the store does not); a dormant aria is read without waking.
 func (h *handlers) routeRead(ctx context.Context, id, method string, params json.RawMessage) (any, error) {
 	if err := rpc.ValidateAriaID(id); err != nil {
 		return nil, err
@@ -117,8 +97,6 @@ func (h *handlers) routeRead(ctx context.Context, id, method string, params json
 	return v, err
 }
 
-// read serves one window of an aria's history: MethodRead, arriving on the
-// angelus door with the aria named in the request.
 func (h *handlers) read(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ReadRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -127,7 +105,6 @@ func (h *handlers) read(ctx context.Context, params json.RawMessage) (interface{
 	return h.routeRead(ctx, req.FigaroID, rpc.MethodRead, params)
 }
 
-// context serves the fig IR plus render metrics.
 func (h *handlers) context(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	id, err := ariaIDParam(params, rpc.MethodContext)
 	if err != nil {
@@ -136,16 +113,12 @@ func (h *handlers) context(ctx context.Context, params json.RawMessage) (interfa
 	return h.routeRead(ctx, id, rpc.MethodContext, nil)
 }
 
-// form serves an aria's durable board.
 func (h *handlers) form(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	id, err := ariaIDParam(params, rpc.MethodForm)
 	if err != nil {
 		return nil, err
 	}
-	// PARAMS TRAVEL. They used to be dropped here, which silently disabled the
-	// intrinsic-form selector on this door: `figaro.form` with
-	// {"intrinsic":"runtime"} was answered with the BOARD, because the field
-	// naming which form was wanted never reached the agent.
+	// params travel: the intrinsic selector must reach the agent.
 	return h.routeRead(ctx, id, rpc.MethodForm, params)
 }
 
@@ -163,10 +136,6 @@ func ariaIDParam(params json.RawMessage, method string) (string, error) {
 	return req.FigaroID, nil
 }
 
-// ariaRead serves IR entries for an aria through the shared LogCache.
-// Live agents share the same Log instance, so reads run lock-free
-// against the agent's writes. For dormant arias the cache opens on
-// miss and the entry TTLs out naturally.
 func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.IRRequest
 	if len(params) > 0 {
@@ -178,8 +147,6 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		return nil, errors.New("aria.read: empty figaro_id")
 	}
 
-	// The backend returns the same shared, memoized IR instance the live
-	// agent holds, so reads run lock-free against its writes.
 	log, err := h.angelus.Backend.OpenFigIR(req.FigaroID)
 	if err != nil {
 		return nil, fmt.Errorf("aria.read: open: %w", err)
@@ -190,7 +157,7 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		limit = ariaReadHardCap
 	}
 
-	// Keyset pagination: Before takes precedence over From.
+	// Before takes precedence over From.
 	if req.Before > 0 {
 		selected, total := log.ReadPage(0, req.Before, limit)
 		deltas := h.ariaReadDeltas(log, req.FigaroID, selected)
@@ -231,11 +198,8 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	}, nil
 }
 
-// ariaReadDeltas assembles a page's form deltas hub-side, seeding the
-// cursors from the record PRECEDING the page: a backward page that seeds
-// zero attributes everything before its first record to that record,
-// which is over-attribution in the direction a reader cannot detect
-// (formdelta.Seed).
+// ariaReadDeltas seeds cursors from the record preceding the page; a zero
+// seed over-attributes everything before the page to its first record.
 func (h *handlers) ariaReadDeltas(log store.Log[message.Message], figaroID string, page []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	fb, ok := h.angelus.Backend.(formdelta.Backend)
 	if !ok || len(page) == 0 {

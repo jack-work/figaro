@@ -9,8 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/actor"
 )
 
-// One implementation, two shapes of user: a handler-driven queue (the form's
-// writer) and an owner-drained one (the aria's turn loop).
 func TestHandlerDrivenQueueIsFIFO(t *testing.T) {
 	var mu sync.Mutex
 	var got []int
@@ -71,8 +69,7 @@ func TestOwnerDrainedQueueBlocksUntilSent(t *testing.T) {
 	}
 }
 
-// A closed queue REFUSES rather than dropping silently: a caller waiting on a
-// reply must be told, or it waits forever.
+// A closed queue refuses rather than drops: a caller waiting on a reply must be told.
 func TestCloseRefusesAndUnblocks(t *testing.T) {
 	q := actor.Start[int](context.Background(), nil, nil)
 	unblocked := make(chan bool, 1)
@@ -97,8 +94,7 @@ func TestCloseRefusesAndUnblocks(t *testing.T) {
 	}
 }
 
-// Closed() is read from inside Do in production (an inbox asking whether it may
-// still mutate), so it must not take the lock Do holds.
+// Closed is read from inside Do in production, so it must not take Do's lock.
 func TestClosedIsSafeInsideDo(t *testing.T) {
 	q := actor.Start[int](context.Background(), nil, nil)
 	defer q.Close()
@@ -168,13 +164,7 @@ func TestContextCancelCloses(t *testing.T) {
 	}
 }
 
-// Close draws the line at ACCEPTANCE, not at the queue: what Send already took
-// is still delivered, and only new sends are refused.
-//
-// The asymmetry is load-bearing. Form.Apply blocks on a reply its handler
-// produces, so dropping accepted items would leave every caller past Send
-// waiting forever: the hang this is supposed to prevent. The doc used to claim
-// the opposite of what the code did, which is worse than either behaviour.
+// What Send already accepted is still delivered; only new sends are refused.
 func TestCloseDeliversWhatWasAlreadyAccepted(t *testing.T) {
 	q := actor.Start[int](context.Background(), nil, nil)
 	for _, n := range []int{1, 2, 3} {
@@ -197,8 +187,6 @@ func TestCloseDeliversWhatWasAlreadyAccepted(t *testing.T) {
 	}
 }
 
-// The same rule with a handler draining: an item accepted before Close still
-// reaches the handler, so a caller waiting on its reply is answered.
 func TestCloseLetsTheHandlerFinishAcceptedWork(t *testing.T) {
 	release := make(chan struct{})
 	done := make(chan int, 3)

@@ -11,8 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
-// --- Mock figaro for registry tests ---
-
 type mockFigaro struct {
 	id         string
 	socketPath string
@@ -37,8 +35,6 @@ func (m *mockFigaro) Info() figaro.FigaroInfo {
 func newMock(id string) *mockFigaro {
 	return &mockFigaro{id: id, socketPath: "/tmp/" + id + ".sock"}
 }
-
-// --- Registry tests ---
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
 	r := angelus.NewRegistry()
@@ -84,7 +80,6 @@ func TestRegistry_KillUnbindsPIDs(t *testing.T) {
 
 	require.NoError(t, r.Kill("abc"))
 
-	// Both PIDs should be unbound.
 	id, f, _ := r.Resolve(1234)
 	assert.Empty(t, id)
 	assert.Nil(t, f)
@@ -92,8 +87,6 @@ func TestRegistry_KillUnbindsPIDs(t *testing.T) {
 	assert.Empty(t, id)
 	assert.Nil(t, f)
 }
-
-// --- PID index tests ---
 
 func TestRegistry_BindAndResolve(t *testing.T) {
 	r := angelus.NewRegistry()
@@ -113,15 +106,7 @@ func TestRegistry_ResolveUnbound(t *testing.T) {
 	assert.Nil(t, f)
 }
 
-// Binding no longer requires residency. It used to: Bind checked
-// r.figaros[id] and refused, which meant `figaro attend` had to restore an
-// aria before it could name it, and meant hibernation would have silently
-// detached every bound shell.
-//
-// A binding says WHICH ARIA a shell is attended to: identity, not memory -
-// so the Registry accepts a dormant id. Proving the aria exists at all moved
-// up to the handler (handlers.requireAria), which is the layer that has a
-// store to ask.
+// Existence is proven at the handler; the registry accepts a dormant id.
 func TestRegistry_BindDormantAriaIsLegal(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Bind(1234, "dormant-aria", 0))
@@ -132,8 +117,7 @@ func TestRegistry_BindDormantAriaIsLegal(t *testing.T) {
 	assert.Equal(t, []int{1234}, r.BoundPIDs("dormant-aria"))
 }
 
-// ...and waking it must not cost the binding. pidToFigaro and figaroPIDs are
-// inverses; a path that moves one without the other is a bug.
+// pidToFigaro and figaroPIDs are inverses.
 func TestRegistry_WakingABoundDormantAriaKeepsItsPIDs(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Bind(1234, "sleeper", 0))
@@ -148,7 +132,6 @@ func TestRegistry_WakingABoundDormantAriaKeepsItsPIDs(t *testing.T) {
 	assert.NotNil(t, f, "resident now, so Resolve hands back the agent")
 }
 
-// An empty id is still refused: it is not an aria, dormant or otherwise.
 func TestRegistry_BindEmptyIDFails(t *testing.T) {
 	r := angelus.NewRegistry()
 	assert.Error(t, r.Bind(1234, "", 0))
@@ -173,17 +156,13 @@ func TestRegistry_BindRebindsToNewFigaro(t *testing.T) {
 	require.NoError(t, r.Bind(1234, "abc", 0))
 	require.NoError(t, r.Bind(1234, "def", 0)) // rebind
 
-	// Should now resolve to def.
 	id, _, _ := r.Resolve(1234)
 	assert.Equal(t, "def", id)
 
-	// abc should have no bound PIDs.
 	assert.Empty(t, r.BoundPIDs("abc"))
 
-	// def should have the pid.
 	assert.Equal(t, []int{1234}, r.BoundPIDs("def"))
 
-	// Total count is still 1.
 	assert.Equal(t, 1, r.BoundPIDCount())
 }
 
@@ -215,11 +194,8 @@ func TestRegistry_Unbind(t *testing.T) {
 
 func TestRegistry_UnbindNoop(t *testing.T) {
 	r := angelus.NewRegistry()
-	// Should not panic.
 	r.Unbind(9999)
 }
-
-// --- List / counts ---
 
 func TestRegistry_List(t *testing.T) {
 	r := angelus.NewRegistry()

@@ -13,20 +13,9 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// WHAT THE LINEAGE READ PROMISES, CHECKED AGAINST THE CONTENT IT IS ABOUT.
-//
-// Divergence is not a number, it is a claim: every turn below it is the same
-// turn in both arias, with the same id and the same bytes. A client keeps
-// those turns and shows them under the other aria's name, so a claim that is
-// one turn too broad does not look like a bug. It looks like a conversation.
-//
-// The reviewer (27068b2c) caught exactly that in a pane: three tool-gated head
-// forks all claimed to share the turn they were cut inside, while below that
-// boundary the parent's tool read ok and the child's read error. This is that
-// check, in the tree, without a pane: compose both arias and compare the nodes
-// of every turn the read says they share.
+// Every turn below the divergence must be the same bytes in both arias; a
+// claim one turn too broad looks like a conversation, not a bug.
 
-// composedFingerprint is a turn's content as a reader would receive it.
 func composedFingerprint(t *testing.T, a *Angelus, node string, turn uint64) (string, bool) {
 	t.Helper()
 	for _, got := range a.composeTurns(node, 1, ^uint64(0)) {
@@ -72,8 +61,7 @@ func TestLineage_EveryTurnItCallsSharedIsByteIdentical(t *testing.T) {
 		put(plog, message.Message{Role: message.RoleOutput, TurnID: i,
 			Content: []message.Content{message.TextContent("answer")}})
 	}
-	// Turn 4 is IN FLIGHT: a tool call with nothing back yet, which is where a
-	// fork taken at the head of a working aria lands.
+	// Turn 4 is in flight: a tool call with nothing back yet.
 	put(plog, message.Message{Role: message.RoleInput, TurnID: 4,
 		Content: []message.Content{message.TextContent("run the thing")}})
 	last := put(plog, message.Message{Role: message.RoleOutput, TurnID: 4, Content: []message.Content{
@@ -92,10 +80,7 @@ func TestLineage_EveryTurnItCallsSharedIsByteIdentical(t *testing.T) {
 	put(clog, message.Message{Role: message.RoleInput, TurnID: 4, Content: []message.Content{
 		{Type: message.ContentToolResult, ToolCallID: "call-1", Text: "process died mid-turn", IsError: true},
 	}})
-	// THE CLAIM IS MADE AT HOP TIME, while the parent is still working. That is
-	// the whole difficulty: the client acts on it now and the parent finishes
-	// the turn a second later, so a claim that was only true of this instant
-	// has already been spent.
+	// The claim is made while the parent is still working.
 	a := &Angelus{Backend: be, uiProj: uiir.New(nil)}
 	h := &handlers{angelus: a}
 	params, _ := json.Marshal(rpc.LineageRequest{FigaroID: child, Against: parent})
@@ -108,10 +93,7 @@ func TestLineage_EveryTurnItCallsSharedIsByteIdentical(t *testing.T) {
 		t.Fatal("the read found no common ancestry at all")
 	}
 
-	// Now the parent finishes the same call, successfully. THROUGH A FRESH
-	// HANDLE: the fork sealed the node the old one was opened on, so writes
-	// through it land where nothing reads them, and the two arias would then
-	// compose the same turn and the fixture would prove nothing.
+	// Through a fresh handle: the fork sealed the node the old one was opened on.
 	pcont, err := be.OpenFigIR(parent)
 	if err != nil {
 		t.Fatal(err)
@@ -122,10 +104,8 @@ func TestLineage_EveryTurnItCallsSharedIsByteIdentical(t *testing.T) {
 	put(pcont, message.Message{Role: message.RoleOutput, TurnID: 4,
 		Content: []message.Content{message.TextContent("all done")}})
 
-	// THE PROMISE, TURN BY TURN. Anything the read calls shared must be the
-	// same bytes on both sides; the turn AT the divergence is where they are
-	// allowed to differ, and here it must, or the fixture is not testing
-	// anything.
+	// Below the divergence both sides must match; at it they must differ, or the
+	// fixture proves nothing.
 	for turn := uint64(1); turn < d; turn++ {
 		pf, pok := composedFingerprint(t, a, parent, turn)
 		cf, cok := composedFingerprint(t, a, child, turn)

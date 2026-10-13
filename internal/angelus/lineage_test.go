@@ -11,12 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// The lineage read, against a real store with real forks.
-//
-// The number under test is the DIVERGENCE, and it is a turn: the tree records
-// a fork base as an LT, and every client coordinate is a turn. Getting that
-// conversion wrong by one is not a rounding error, it is one aria's answer
-// rendered under another aria's question.
+// The divergence is a turn; the tree records a fork base as an LT.
 
 type lineageFixture struct {
 	be     *store.XwalBackend
@@ -26,9 +21,7 @@ type lineageFixture struct {
 	cousin string
 }
 
-// buildLineage makes a parent of six turns, a branch cut at turn 4 and a
-// cousin cut at turn 6, which is the shape the cousin rule needs: two children
-// of one parent that do NOT share the same amount of it.
+// A parent of six turns, a branch cut at turn 4 and a cousin cut at turn 6.
 func buildLineage(t *testing.T) lineageFixture {
 	t.Helper()
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
@@ -90,7 +83,6 @@ func (f lineageFixture) ask(t *testing.T, id, against string) rpc.LineageRespons
 	return out.(rpc.LineageResponse)
 }
 
-// A branch and its parent diverge at the branch's first own turn.
 func TestLineage_ParentAndBranchDivergeAtTheBranchsFirstTurn(t *testing.T) {
 	f := buildLineage(t)
 	got := f.ask(t, f.branch, f.parent)
@@ -100,16 +92,12 @@ func TestLineage_ParentAndBranchDivergeAtTheBranchsFirstTurn(t *testing.T) {
 	if got.Ancestor != f.parent {
 		t.Fatalf("ancestor %q, want the parent %q", got.Ancestor, f.parent)
 	}
-	// The answer is symmetric: which one is on screen does not change where
-	// they part.
 	if back := f.ask(t, f.parent, f.branch); back.Divergence != 4 {
 		t.Fatalf("the other way round says %d", back.Divergence)
 	}
 }
 
-// TWO COUSINS SHARE THE SHALLOWER CUT. The branch owns from turn 4 and the
-// cousin from turn 6, so they share turns 1 to 3 and nothing more: a client
-// told 6 would paint the parent's turns 4 and 5 as the branch's.
+// The branch owns from turn 4 and the cousin from 6: they share 1 to 3.
 func TestLineage_CousinsShareTheShallowerCut(t *testing.T) {
 	f := buildLineage(t)
 	got := f.ask(t, f.branch, f.cousin)
@@ -121,8 +109,6 @@ func TestLineage_CousinsShareTheShallowerCut(t *testing.T) {
 	}
 }
 
-// An aria against itself shares everything, and says so in the one way the
-// client's rule can use without a special case.
 func TestLineage_AnAriaAgainstItselfSharesEverything(t *testing.T) {
 	f := buildLineage(t)
 	got := f.ask(t, f.branch, f.branch)
@@ -131,8 +117,6 @@ func TestLineage_AnAriaAgainstItselfSharesEverything(t *testing.T) {
 	}
 }
 
-// The chain carries the conversations and nothing above them: the genesis root
-// and the outfit stump hold no turns a reader can see.
 func TestLineage_ChainIsConversationsOnly(t *testing.T) {
 	f := buildLineage(t)
 	got := f.ask(t, f.branch, "")
@@ -150,8 +134,6 @@ func TestLineage_ChainIsConversationsOnly(t *testing.T) {
 	}
 }
 
-// Unrelated arias share nothing, and nothing is zero, which is the reload the
-// switch did before any of this existed.
 func TestLineage_UnrelatedAriasShareNothing(t *testing.T) {
 	f := buildLineage(t)
 	other, _, err := f.be.ForkWith("", 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -165,10 +147,8 @@ func TestLineage_UnrelatedAriasShareNothing(t *testing.T) {
 	}
 }
 
-// THE FAST PATH IS THE STAMPED ONE. Every record a live agent writes carries
-// the turn it belongs to, so the conversion is one record read; the walk above
-// is the fallback for logs written before the stamp existed. Both must give
-// the same answer, or the number depends on the age of the log.
+// Stamped logs convert in one record read; the walk is the fallback for older
+// logs. Both must agree.
 func TestLineage_StampedLogsTakeTheOneRecordPath(t *testing.T) {
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {

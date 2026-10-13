@@ -7,9 +7,7 @@ import (
 	"time"
 )
 
-// The exit race is the only subtle thing in lazy.go: a Submit landing between
-// "queue is empty" and the goroutine declaring itself idle. With a zero
-// linger the window is as wide as it gets.
+// A Submit landing between an empty take and the idle CAS must still be drained.
 func TestLazyExitRaceLosesNothing(t *testing.T) {
 	const writers, each = 16, 400
 
@@ -40,7 +38,6 @@ func TestLazyExitRaceLosesNothing(t *testing.T) {
 	}
 }
 
-// Exactly one drainer at a time is what makes this a serialization point.
 func TestLazyOneDrainerAtATime(t *testing.T) {
 	var inside atomic.Int32
 	var wg sync.WaitGroup
@@ -61,8 +58,6 @@ func TestLazyOneDrainerAtATime(t *testing.T) {
 	wg.Wait()
 }
 
-// The goroutine must leave when idle, and come back when work arrives. This
-// is the whole reason the type exists.
 func TestLazyGoesDormantAndReturns(t *testing.T) {
 	done := make(chan struct{}, 4)
 	q := NewLazy[int](1, 5*time.Millisecond, func(b []int) { done <- struct{}{} })
@@ -89,8 +84,7 @@ func TestLazyGoesDormantAndReturns(t *testing.T) {
 	}
 }
 
-// A burst inside the linger window must not spawn per item: that is the cost
-// the affinity window exists to avoid.
+// A burst inside the linger window must not spawn per item.
 func TestLazyBurstSpawnsOnce(t *testing.T) {
 	var seen atomic.Int64
 	q := NewLazy[int](32, 200*time.Millisecond, func(b []int) { seen.Add(int64(len(b))) })

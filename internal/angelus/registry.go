@@ -17,23 +17,18 @@ type Registry struct {
 
 	pidToFigaro map[int]string
 
-	// pidToLT is a per-pid pending fork-point (figaro main-LT). 0 = none:
-	// the bound aria's leaf. Set by `attend <id>:<LT>`; consumed by the next
-	// prompt (which forks there and rebinds to the new branch, clearing it).
+	// pidToLT is a pending fork point per pid, 0 = the bound aria's leaf;
+	// the next prompt forks there and clears it.
 	pidToLT map[int]uint64
 
 	figaroPIDs map[string]map[int]struct{}
 
-	killing map[string]bool
-	// retiring mirrors killing for hibernation. Separate because the two
-	// differ in what survives: killing deletes an aria, retiring only
-	// reclaims its agent.
+	killing  map[string]bool
 	retiring map[string]bool
 
 	draining atomic.Bool
 }
 
-// NewRegistry creates an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		figaros:     make(map[string]figaro.Figaro),
@@ -45,8 +40,7 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a figaro to the registry. It must not touch figaroPIDs:
-// Bind is that map's only writer, and it allocates lazily.
+// Register must not touch figaroPIDs: Bind is that map's only writer.
 func (r *Registry) Register(f figaro.Figaro) error {
 	if r.draining.Load() {
 		return fmt.Errorf("angelus: shutting down, refusing new figaros")
@@ -62,17 +56,14 @@ func (r *Registry) Register(f figaro.Figaro) error {
 	return nil
 }
 
-// Get returns a figaro by ID, or nil if not found.
 func (r *Registry) Get(id string) figaro.Figaro {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.figaros[id]
 }
 
-// Kill removes a figaro, unbinds its PIDs, and kills it. The id stays
-// registered until the kill (which waits out the drain loop's final seal
-// appends) completes: unpublishing first would let a concurrent restore
-// run tail repair against the still-sealing agent.
+// Kill keeps the id registered until the kill completes: unpublishing first
+// would let a concurrent restore run tail repair against the still-sealing agent.
 func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
 	f, exists := r.figaros[id]
@@ -88,9 +79,6 @@ func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
 	for pid := range r.figaroPIDs[id] {
 		delete(r.pidToFigaro, pid)
-		// Also the pending fork point. Unobservable through Resolve, which
-		// gates pidToLT behind pidToFigaro, so this is a leak rather than a
-		// wrong answer -- and the only map a killed aria used to leave behind.
 		delete(r.pidToLT, pid)
 	}
 	delete(r.figaroPIDs, id)
@@ -100,9 +88,7 @@ func (r *Registry) Kill(id string) error {
 	return nil
 }
 
-// Hibernate reclaims an aria's agent while KEEPING everything that makes the
-// aria addressable: its pid bindings, its trunk, its endpoint. It is Kill
-// minus the deletion.
+// Hibernate is Kill minus the deletion: pid bindings, trunk and endpoint stay.
 func (r *Registry) Hibernate(id string) error {
 	r.mu.Lock()
 	f, exists := r.figaros[id]
@@ -117,8 +103,7 @@ func (r *Registry) Hibernate(id string) error {
 	r.retiring[id] = true
 	r.mu.Unlock()
 
-	// Last look before the irreversible part. A turn that opened while we
-	// were taking the flag wins.
+	// A turn that opened while the flag was being taken wins.
 	if f.Info().State != "idle" {
 		r.mu.Lock()
 		delete(r.retiring, id)
@@ -126,7 +111,7 @@ func (r *Registry) Hibernate(id string) error {
 		return fmt.Errorf("figaro %q became active", id)
 	}
 
-	f.Kill() // tears the agent down; runs OnTeardown, which unbinds the hub
+	f.Kill()
 
 	r.mu.Lock()
 	delete(r.figaros, id)
@@ -135,24 +120,15 @@ func (r *Registry) Hibernate(id string) error {
 	return nil
 }
 
-// Retiring reports whether an aria is mid-hibernate. A restore must wait
-// rather than race it.
+// Retiring reports a hibernate in progress; a restore must wait rather than race it.
 func (r *Registry) Retiring(id string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.retiring[id]
 }
 
-// Bind maps a pid to a figaro. Unbinds from any previous figaro.
-// Bind binds pid to figaroID with an optional pending fork-point lt (0 = the
-// trunk's leaf). lt is always (re)set, so a plain rebind clears any prior
-// pending LT.
-// A binding names WHICH ARIA a shell is attended to. That is an identity
-// fact, not a memory fact, so it deliberately does NOT require the aria to
-// be resident: binding a dormant aria is legal and does not wake it. This is
-// what makes `figaro attend` free, and what lets a bound shell keep its
-// attendance across a hibernate: without it, the sweep would silently
-// detach every terminal it reclaimed.
+// Bind rebinds from any previous figaro and always resets lt. It does not
+// require the aria to be resident: binding a dormant aria never wakes it.
 func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
 	if figaroID == "" {
 		return fmt.Errorf("bind: empty figaro id")
@@ -176,9 +152,7 @@ func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
 	return nil
 }
 
-// Resolve returns the aria a pid is attended to. The figaro is nil when the
-// aria is dormant, which is now an ordinary answer rather than a miss: the
-// caller has the id, and the id is all an endpoint address needs.
+// Resolve returns a nil figaro for a dormant aria; the id is still a found answer.
 func (r *Registry) Resolve(pid int) (string, figaro.Figaro, uint64) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -190,14 +164,12 @@ func (r *Registry) Resolve(pid int) (string, figaro.Figaro, uint64) {
 	return id, r.figaros[id], r.pidToLT[pid]
 }
 
-// Unbind removes a pid binding.
 func (r *Registry) Unbind(pid int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.unbindLocked(pid)
 }
 
-// unbindLocked removes a pid binding. Caller must hold r.mu.
 func (r *Registry) unbindLocked(pid int) {
 	id, ok := r.pidToFigaro[pid]
 	if !ok {
@@ -210,7 +182,6 @@ func (r *Registry) unbindLocked(pid int) {
 	}
 }
 
-// BoundPIDs returns the PIDs bound to a figaro.
 func (r *Registry) BoundPIDs(figaroID string) []int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -226,7 +197,6 @@ func (r *Registry) BoundPIDs(figaroID string) []int {
 	return result
 }
 
-// List returns info for all registered figaros.
 func (r *Registry) List() []figaro.FigaroInfo {
 	r.mu.RLock()
 	figaros := make([]figaro.Figaro, 0, len(r.figaros))
@@ -256,7 +226,6 @@ func (r *Registry) BoundPIDsByFigaro() map[string][]int {
 	return out
 }
 
-// AllPIDs returns all bound PIDs (for the monitor to poll).
 func (r *Registry) AllPIDs() []int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -268,24 +237,20 @@ func (r *Registry) AllPIDs() []int {
 	return result
 }
 
-// FigaroCount returns the number of registered figaros.
 func (r *Registry) FigaroCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.figaros)
 }
 
-// SetDraining marks the registry as shutting down.
 func (r *Registry) SetDraining() {
 	r.draining.Store(true)
 }
 
-// IsDraining reports whether the registry is in shutdown mode.
 func (r *Registry) IsDraining() bool {
 	return r.draining.Load()
 }
 
-// All returns a snapshot of all registered figaros.
 func (r *Registry) All() []figaro.Figaro {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -296,7 +261,6 @@ func (r *Registry) All() []figaro.Figaro {
 	return out
 }
 
-// BoundPIDCount returns the total number of pid bindings.
 func (r *Registry) BoundPIDCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

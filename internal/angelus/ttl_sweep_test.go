@@ -1,9 +1,5 @@
 package angelus
 
-// The lifetime sweep's live policy. The deletion itself is the store's and is
-// tested there (ttl_present_test.go); what this asserts is WHO the sweep is
-// willing to delete.
-
 import (
 	"testing"
 	"time"
@@ -21,7 +17,6 @@ type ttlFakeBackend struct {
 func (f *ttlFakeBackend) TTLDue(int64) []store.TTLEntry { return f.due }
 func (f *ttlFakeBackend) TTLForget(ids ...string)       { f.forgotten = append(f.forgotten, ids...) }
 
-// ttlMockFigaro is a registered agent, which is all "live" means here.
 type ttlMockFigaro struct{ id string }
 
 func (m *ttlMockFigaro) ID() string         { return m.id }
@@ -67,8 +62,6 @@ func TestExpireTTLRemovesADormantNode(t *testing.T) {
 	}
 }
 
-// SKIP UNTIL DORMANT. A lifetime is a promise about storage; it is not a
-// licence to delete the aria somebody is mid-turn with.
 func TestExpireTTLSkipsALiveAria(t *testing.T) {
 	a, be, removed := ttlSweepFixture(t, "busy")
 	if err := a.Registry.Register(&ttlMockFigaro{id: "busy"}); err != nil {
@@ -83,7 +76,6 @@ func TestExpireTTLSkipsALiveAria(t *testing.T) {
 	}
 }
 
-// A bound shell is a user looking at it. Same rule.
 func TestExpireTTLSkipsABoundShell(t *testing.T) {
 	a, _, removed := ttlSweepFixture(t, "watched")
 	if err := a.Registry.Bind(4242, "watched", 0); err != nil {
@@ -95,8 +87,6 @@ func TestExpireTTLSkipsABoundShell(t *testing.T) {
 	}
 }
 
-// Nothing due, nothing touched: the sweep's cost on a store nobody has set a
-// lifetime on is one map read.
 func TestExpireTTLQuietWhenNothingIsDue(t *testing.T) {
 	a, _, removed := ttlSweepFixture(t)
 	a.expireTTL()
@@ -105,8 +95,6 @@ func TestExpireTTLQuietWhenNothingIsDue(t *testing.T) {
 	}
 }
 
-// A backend with no lifetimes at all (a test double, an import tool) must not
-// panic the sweep.
 func TestExpireTTLIgnoresABackendWithoutLifetimes(t *testing.T) {
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
 	a.RemoveAria = func(string, bool) error {

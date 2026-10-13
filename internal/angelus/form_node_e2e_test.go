@@ -25,10 +25,7 @@ func rawPatch(kv map[string]string) *rpc.FormPatch {
 	return &p
 }
 
-// An unbound form lives a full life: minted, read, patched, watched -
-// with NO agent ever constructed: the hub serves reads from the store and
-// writes through the backend's single form writer, and fans the committed
-// delta to attached clients itself.
+// An unbound form is minted, read, patched and watched with no agent ever constructed.
 func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -54,15 +51,13 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	// Read: served store-side.
 	var form rpc.FormResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &form))
 	raw, ok := form.Snapshot.Get("name")
 	require.True(t, ok)
 	require.Equal(t, `"deploy tracker"`, string(raw))
 
-	// Write: served store-side, and the delta fans out to this attached
-	// client because the hub is the notifier when no agent is.
+	// The delta fans out from the hub, which is the notifier when no agent is.
 	var set rpc.SetResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodSet, rpc.SetRequest{
 		Patch: *rawPatch(map[string]string{"status.phase": `"canary"`}),
@@ -89,21 +84,16 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, `"canary"`, string(raw))
 
-	// A turn-shaped method gets a refusal that names the species and the
-	// remedy: never a wake attempt, never a provider error.
+	// A turn-shaped method on a form is refused by name, never a wake attempt.
 	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is a form, not a figaro")
 	require.Contains(t, err.Error(), "bind")
 
-	// The whole life, agentless.
 	require.Nil(t, a.Registry.Get(created.FormID), "a form acquired an agent")
 }
 
-// figaro.set on a DORMANT aria is served without waking it: the same
-// write path forms use. This is also the naked-figaro remedy: a bind-null
-// figaro whose wake fails for want of provider keys can only be repaired
-// through a set that does not wake.
+// The naked-figaro remedy: a set that does not wake is the only way to patch provider keys in.
 func TestDormantAriaSetDoesNotWake(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -135,8 +125,6 @@ func TestDormantAriaSetDoesNotWake(t *testing.T) {
 	require.Nil(t, a.Registry.Get(created.FigaroID), "the read woke the aria")
 }
 
-// Form parentage over the wire: forms fork forms; conversations are
-// refused by name.
 func TestFormCreateParentRules(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
@@ -157,9 +145,6 @@ func TestFormCreateParentRules(t *testing.T) {
 	require.Error(t, err, "an empty birth patch must be refused")
 }
 
-// Listing recency now comes from figwal record timestamps, and reading
-// it NEVER wakes a dormant aria. The row carries a real LastActive while
-// the registry stays empty.
 func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -182,11 +167,7 @@ func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 	require.Nil(t, a.Registry.Get(created.FigaroID), "listing recency woke the aria")
 }
 
-// form.bind births a DORMANT figaro from a form: state inherited,
-// aria_id stamped, endpoint dialable, and no agent, no provider, no
-// registry entry until first use. Dressed with a real outfit it then
-// wakes and answers; naked (bind null) it mints fine and fails its
-// first turn with the provider error, at the right time.
+// bind births dormant: no agent, provider or registry entry until first use.
 func TestFormBindBirthsDormantFigaro(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -198,7 +179,6 @@ func TestFormBindBirthsDormantFigaro(t *testing.T) {
 	require.False(t, strings.HasPrefix(bound.FigaroID, "@"), "bound figaro %q carries the form sigil", bound.FigaroID)
 	require.Nil(t, a.Registry.Get(bound.FigaroID), "bind constructed an agent")
 
-	// Inherited state + stamped identity, readable dormant.
 	conn, err := net.Dial("unix", bound.Endpoint.Address)
 	require.NoError(t, err)
 	defer conn.Close()
@@ -221,8 +201,6 @@ func TestFormBindBirthsDormantFigaro(t *testing.T) {
 	require.NoError(t, err, "the form stopped being forkable after binding")
 }
 
-// bind null mints the naked figaro; its first turn fails for want of a
-// provider, at the turn, not at the mint.
 func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -240,8 +218,7 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})
 	require.Error(t, err, "a provider-less figaro answered a turn")
 
-	// The remedy: patch the provider in THROUGH THE SAME dormant path,
-	// then the next turn wakes for real.
+	// The remedy goes through the same dormant path.
 	var set rpc.SetResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodSet, rpc.SetRequest{
 		Patch: *rawPatch(map[string]string{
@@ -252,18 +229,8 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	require.NoError(t, err, "the patched naked figaro should take its first turn")
 }
 
-// The default-form lifecycle: fig new is bind-the-default-form. Two
-// creates share ONE parent form (the reuse that shares the rendered
-// prefix and the provider's cache); reload with unchanged files is a
-// no-op; a changed outfit file remints on the NEXT create, not at
-// reload; a hand-patched default form remints too: the ad-hoc patch is
-// never silently propagated.
-//
-// Creates here name NO outfit, which is what `fig new` does. Naming one
-// explicitly takes the other path now (-O overrides the default rather than
-// layering on it) and is covered by TestNamedOutfitParentIsShared. The two
-// used to be the same path, which is why this test used to say `-O mock`
-// while describing the default.
+// Two creates share one parent form; reload with unchanged files is a no-op;
+// a changed file or a hand-patched form remints on the next create.
 func TestDefaultFormLifecycle(t *testing.T) {
 	a, acli, ctx, dir := daemonFixtureDir(t)
 
@@ -281,14 +248,14 @@ func TestDefaultFormLifecycle(t *testing.T) {
 	require.Equal(t, p1, p2, "two creates did not share the default form")
 	require.True(t, strings.HasPrefix(p1, "@"), "default parent %q is not a form", p1)
 
-	// Reload with UNCHANGED files: the next create reuses (no-op compute).
+	// Unchanged files: the next create reuses.
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
 	three, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, p1, parentOf(three.FigaroID), "unchanged files reminted the default form")
 
-	// Change the outfit file: reload, and the NEXT create remints.
+	// Changed file: the next create remints.
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
@@ -301,8 +268,7 @@ mantra = "v2"
 	require.NoError(t, err)
 	require.NotEqual(t, p1, parentOf(four.FigaroID), "changed files did not remint")
 
-	// Hand-patch the (new) default form, reload: remint again: the patch
-	// must not silently reach every future aria.
+	// A hand-patched default form remints: the patch must not reach every future aria.
 	p4 := parentOf(four.FigaroID)
 	_, err = a.Backend.ApplyForm(p4, *rawPatch(map[string]string{"sneaky": `true`}))
 	require.NoError(t, err)
@@ -313,13 +279,8 @@ mantra = "v2"
 	require.NotEqual(t, p4, parentOf(five.FigaroID), "a hand-patched default form was reused after reload")
 }
 
-// -O OVERRIDES the default, and arias naming the same outfit still share one
-// parent: the sharing that keeps one rendered prefix and one warm provider
-// cache per outfit, which is the whole reason a birth has a parent at all.
-//
-// The remint property comes from content addressing rather than from the
-// default form's dirty flag: an outfit node is reused by (name, content
-// version), so a changed file is a different node by construction.
+// -O overrides the default; arias naming the same outfit share one parent,
+// keyed by (name, content version).
 func TestNamedOutfitParentIsShared(t *testing.T) {
 	a, acli, ctx, dir := daemonFixtureDir(t)
 
@@ -342,8 +303,7 @@ model = "other-model"
 	p1 := parentOf(one.FigaroID)
 	require.Equal(t, p1, parentOf(two.FigaroID), "two creates on one outfit did not share a parent")
 
-	// A different outfit is a different parent, and the DEFAULT is a third:
-	// naming an outfit must not land you on the default form.
+	// A different outfit is a different parent, and the default is a third.
 	byDefault, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, p1, parentOf(byDefault.FigaroID),

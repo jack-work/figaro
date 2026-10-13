@@ -19,35 +19,26 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// ProviderFactory creates providers for an Agent; instances never span
-// arias. The agent keeps the factory so it can rebind mid-conversation when
-// system.provider changes on the form (see figaro.syncProvider).
 type ProviderFactory = figaro.ProviderFactory
 
-// ServerConfig holds dependencies for the angelus JSON-RPC handlers.
 type ServerConfig struct {
 	Angelus         *Angelus
 	Config          *config.Loaded
 	ProviderFactory ProviderFactory
 	Ctx             context.Context
 
-	// AvailableProviders is the list of provider names the factory
-	// knows how to construct. Surfaced in typed JSON-RPC errors so
-	// clients can drive first-run provider selection.
+	// AvailableProviders is surfaced in typed errors for first-run selection.
 	AvailableProviders []string
 
-	// FormTemplates renders Patches as system reminders. nil = skip.
-	FormTemplates *template.Template
+	FormTemplates *template.Template // nil = skip
 }
 
-// Handlers wraps the angelus JSON-RPC handler map.
 type Handlers struct {
 	Map map[string]jkrpc.HandlerFunc
 	h   *handlers
 }
 
-// noticeUpgrade marks the default form for recomputation when the BINARY's
-// bundled skills have moved since it was minted.
+// noticeUpgrade flags the default form when the binary's bundled skills have moved.
 func (h *handlers) noticeUpgrade() {
 	b := h.angelus.Backend
 	if b == nil {
@@ -72,11 +63,8 @@ func (h *handlers) noticeUpgrade() {
 		"was", was, "now", root, "form", rec.FormID)
 }
 
-// NewHandlers creates the handler set for the angelus socket.
 func NewHandlers(cfg ServerConfig) *Handlers {
-	// Before ANY outfit is folded, and before noticeUpgrade reads the bundled
-	// root: the switch has to be thrown ahead of the first resolution, or the
-	// daemon composes one form with the bundled skills and the next without.
+	// Before any outfit is folded and before noticeUpgrade reads the bundled root.
 	if cfg.Config != nil {
 		outfit.SetBundledSkills(cfg.Config.BundledSkills())
 	}
@@ -89,9 +77,6 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		outfitter:          newOutfitter(cfg.Angelus, cfg.Config),
 		availableProviders: cfg.AvailableProviders,
 	}
-	// Warm the ONE closure `fig new` is certain to want, in the background.
-	// Nothing blocks on it: startup reads no outfit file, and every other name
-	// is folded when someone asks for it.
 	if cfg.Config != nil {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
@@ -158,21 +143,16 @@ func (h *handlers) turnActive(ariaID string) bool {
 	return live != nil && live.TurnActive()
 }
 
-// Restore lazily re-creates the agent for ariaID. wokeBy names the caller's
-// reason, the way a hub names the method; it lands on FigaroInfo.WokeBy.
+// Restore wakes ariaID; wokeBy lands on FigaroInfo.WokeBy.
 func (hs *Handlers) Restore(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
 	return hs.h.restoreByID(ctx, ariaID, wokeBy)
 }
 
-// OpenEndpoint makes an aria dialable without waking it. It is what binding
-// needs: the socket has to be listening before anyone is handed the path,
-// and nothing more than that has to exist.
-// RemoveAria deletes a node and everything a deletion owes: see the handler
-// of the same name. It is what the TTL sweep calls.
 func (hs *Handlers) RemoveAria(id string, recursive bool) error {
 	return hs.h.RemoveAria(id, recursive)
 }
 
+// OpenEndpoint makes an aria dialable without waking it.
 func (hs *Handlers) OpenEndpoint(ariaID string) error {
 	if err := hs.h.requireAria(ariaID); err != nil {
 		return err
@@ -190,40 +170,27 @@ type handlers struct {
 	outfitter          *outfit.Outfitter
 	availableProviders []string
 
-	// readerOnce/readerInst memoize the windowed reader: its per-aria
-	// servers ARE the window, and a reader minted per call would retain
-	// nothing and recompose everything, which is the old behaviour with
-	// extra steps.
+	// readerInst's per-aria servers are the window; a reader per call would retain nothing.
 	readerOnce sync.Once
 	readerInst *AriaReader
 
-	// configMu guards config against concurrent reload + read. The
-	// reload-from-disk is cheap, but other handlers may dereference
-	// h.config concurrently.
+	// configMu guards config and outfitter together against reload.
 	configMu sync.Mutex
 
-	// restoring is the in-flight wake per aria. It is a single-flight, not a
-	// lock table: the entry EXISTS only while a wake is running, so nothing
-	// accumulates. The map it replaces handed out a *sync.Mutex per aria and
-	// never removed one, so it grew by one entry per aria ever restored, for
-	// the life of the daemon (plans/lock-audit.md, fast-follow 2).
+	// restoring is a single-flight, not a lock table: an entry exists only
+	// while a wake is running.
 	restoreMu sync.Mutex
 	restoring map[string]*restoreCall
 }
 
-// settings is the in-memory config and the outfitter over it, read under the
-// lock. Config is loaded once at start and re-read only when a client changes
-// it through MethodConfigure: the first-run wizard's seam: so no request pays
-// a stat, and the two fields can never be observed half-swapped.
+// settings returns config and outfitter under one lock so they are never seen half-swapped.
 func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 	h.configMu.Lock()
 	defer h.configMu.Unlock()
 	return h.config, h.outfitter
 }
 
-// openAriaForm returns the in-memory form hot view for an
-// aria, seeded from its reducible form channel (the durable
-// truth: there is no the form channel). nil on failure.
+// openAriaForm seeds a hot view from the form channel; nil on failure.
 func (h *handlers) openAriaForm(ariaID string) *form.State {
 	if h.formTmpls == nil {
 		return nil
@@ -240,8 +207,7 @@ func (h *handlers) openAriaForm(ariaID string) *form.State {
 	return st
 }
 
-// currentOutfitHash is the content hash the outfit would have right now
-// (recomputed from the on-disk definition), or "" if it can't be loaded.
+// currentOutfitHash is re-resolved from disk; "" when it cannot be.
 func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	_, ofit := h.settings()
 	if ofit == nil {
@@ -249,7 +215,7 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	}
 	names, perr := outfit.TermNames(name)
 	if perr != nil || len(names) == 0 {
-		return "", "" // a stamp carrying a literal is not re-resolvable
+		return "", ""
 	}
 	p, err := ofit.Names(names...)
 	if err != nil {
@@ -260,8 +226,6 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	return current, legacy
 }
 
-// outfitVer is the version column for one row: re-resolve the outfit named by
-// the stamp, and compare.
 func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) string {
 	hashes, ok := vers[name]
 	if !ok {
@@ -274,13 +238,8 @@ func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) st
 	return outfitVerLabel(stamped, hashes[0], hashes[1])
 }
 
-// formCreate mints an unbound form: the form half of the one birth verb.
-// No outfit resolution, no default, no dedup: the patch IS the form, and
-// naming an outfit is the CLIENT's affair (the CLI materializes -O into
-// the patch before calling; a form with no patch is refused by the store).
-// The hub is stood up before the response so the @id is dialable the
-// moment the caller holds it: same rule as every endpoint: unix sockets
-// have no lazy activation.
+// formCreate folds no default outfit; the patch is the form. The hub is
+// stood up before the response: unix sockets have no lazy activation.
 func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.formCreate")
 	defer span.End()
@@ -292,10 +251,6 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if req.Patch == nil || req.Patch.IsIdentity() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
 	}
-	// Dress at the boundary: the request's outfit NAMES fold into keys here,
-	// under the patch's own, and the form is born holding materialized state.
-	// No default outfit is ever folded in: `fig form new` demands its names
-	// explicitly.
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
@@ -315,14 +270,9 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	}, nil
 }
 
-// formBind births a figaro from an unbound form (or the null root): the
-// bind half of the one birth verb. It mirrors create's storage dance -
-// fork with the dressing, stamp aria_id in the boot patch, and then
-// STOPS: no provider is resolved, no agent constructed, no registry
-// entry. The figaro is born dormant behind its hub and wakes on first
-// need; a missing provider fails there, at the first turn, which is what
-// makes `bind null` a mintable naked figaro. It never touches the
-// caller's attendance either: binding shells is the client's affair.
+// formBind births a figaro dormant: no provider resolved, no agent, no
+// registry entry, so `bind null` mints a naked figaro whose missing
+// provider fails at the first turn. It never touches the caller's attendance.
 func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.formBind")
 	defer span.End()
@@ -364,15 +314,10 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	}, nil
 }
 
-// outfitKind / nullKind / conversationKind mirror the store's nodeKind string
-// values (the store package's constants are unexported).
 const (
 	nullKind         = "null"
 	outfitKind       = "outfit"
 	conversationKind = "conversation"
 )
 
-// ariaReadHardCap bounds Limit on aria.read regardless of what the
-// client asks for, so a misconfigured client can't pull megabytes of
-// IR in a single RPC.
 const ariaReadHardCap = 1000

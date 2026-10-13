@@ -1,11 +1,5 @@
 package angelus_test
 
-// The study/cast instruments of the periodic battery: what one casting
-// call costs through the whole stack (RPC → actor loop → cross-call to
-// the role's writer), and what one role-redirect READ costs (the
-// hub-served figaro.Form every role-targeted invocation pays). Run with
-// -count=6.
-
 import (
 	"context"
 	"encoding/json"
@@ -29,8 +23,6 @@ func benchPatch(kv map[string]string) *rpc.FormPatch {
 	return &p
 }
 
-// One casting call, end to end, against an already-studied role: the
-// steady-state shape (the first call's study registration is one-time).
 func BenchmarkCast(b *testing.B) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -64,10 +56,7 @@ func BenchmarkCast(b *testing.B) {
 	}
 }
 
-// The role-redirect read: every role-targeted send/listen/hup pays one
-// hub-served figaro.Form on the role's endpoint before reaching the
-// holder. Dial amortized (the CLI dials per invocation; that cost is
-// the socket's, not the redirect's).
+// Every role-targeted invocation pays one hub-served figaro.Form on the role's endpoint.
 func BenchmarkRoleRedirectRead(b *testing.B) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))

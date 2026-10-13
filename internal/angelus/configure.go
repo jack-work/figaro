@@ -14,10 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// outfits answers what outfits exist and how a spec composes. The outfits
-// directory is the server's state: a client asks rather than reading it, so the
-// CLI needs no notion of where config lives and the daemon may sit on another
-// filesystem entirely.
+// outfits is answered by the daemon: the CLI has no notion of where config lives.
 func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.OutfitsRequest
 	if len(params) > 0 {
@@ -43,9 +40,7 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 	return resp, nil
 }
 
-// configure patches config.toml on the server's behalf. The first-run wizard is
-// a client: it cannot write the daemon's config itself: so this is the seam
-// it drives, and the only config the CLI may change.
+// configure is the only config the CLI may change.
 func (h *handlers) configure(_ context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ConfigureRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -86,10 +81,6 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		}
 		resp.DefaultOutfit = req.DefaultOutfit
 	}
-	// Re-read so the next Create sees what was just written, and turn the
-	// resolver's epoch over so the next fold re-reads and re-snapshots what it
-	// needs. Reload is cheap by design: it reads nothing, it only invalidates
-	//: so a refresh no longer throws the resolver away and rebuilds it.
 	if fresh, err := config.Load(loaded.ConfigDir); err == nil {
 		h.configMu.Lock()
 		h.config = fresh
@@ -105,8 +96,6 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	return resp, nil
 }
 
-// loadedOutfitPath is where an outfit of this name would live, for an error
-// message. Read under the lock like everything else that touches config.
 func loadedOutfitPath(h *handlers, name string) string {
 	loaded, _ := h.settings()
 	if loaded == nil {

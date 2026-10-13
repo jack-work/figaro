@@ -15,9 +15,6 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// fakeAgent stands in for a live agent: it answers methods and accepts one
-// notifier. A real Agent needs a provider, a store and a turn loop, none of
-// which the hub's contract touches.
 type fakeAgent struct {
 	handled chan string
 	notif   figaro.Notifier
@@ -69,10 +66,7 @@ func dialHub(t *testing.T, hb *ariaHub) (*jkrpc.Client, chan frame) {
 	return c, frames
 }
 
-// THE regression this whole step exists to prevent. A client attached to an
-// aria must survive the agent being torn down: no EOF, no reconnect, and it
-// must receive the first frame produced after a new agent binds. Before the
-// hub, killing the agent closed the listener and every connection with it.
+// A client must survive the agent's teardown and see the first frame after a new agent binds.
 func TestHubClientSurvivesAgentTeardown(t *testing.T) {
 	hb := testHub(t)
 
@@ -86,13 +80,10 @@ func TestHubClientSurvivesAgentTeardown(t *testing.T) {
 	first.push(t, rpc.MethodAriaFrame, map[string]any{"gen": 1})
 	require.Equal(t, rpc.MethodAriaFrame, (<-frames).method)
 
-	// The agent goes away. The endpoint must not.
 	unbind()
 	require.Nil(t, hb.boundAgent(), "hub still holds a dead agent")
 	require.Equal(t, 1, hb.Attached(), "teardown disconnected a client")
 
-	// A second agent binds, as a wake would, and the SAME connection sees
-	// its frames.
 	second := newFakeAgent()
 	defer hb.bind(second)()
 	second.push(t, rpc.MethodAriaFrame, map[string]any{"gen": 2})
@@ -113,8 +104,6 @@ func TestHubClientSurvivesAgentTeardown(t *testing.T) {
 	require.Equal(t, "agent", out["served_by"])
 }
 
-// One frame reaches every attached client, so several terminals watching one
-// aria share a producer instead of each pinning one.
 func TestHubFansOutToEveryClient(t *testing.T) {
 	hb := testHub(t)
 	agent := newFakeAgent()
@@ -136,8 +125,6 @@ func TestHubFansOutToEveryClient(t *testing.T) {
 	}
 }
 
-// A dormant aria answers reads from the store and does NOT wake. This is
-// what lets a pager page and a transcript sit open for a week.
 func TestHubServesReadsWithoutWaking(t *testing.T) {
 	hb := testHub(t)
 
@@ -163,8 +150,6 @@ func TestHubServesReadsWithoutWaking(t *testing.T) {
 	require.Nil(t, hb.boundAgent(), "a read constructed an agent")
 }
 
-// A method that mutates or needs in-flight state must wake, and the store
-// must never answer it. Wrong-way-round here costs correctness, not latency.
 func TestHubWakesForMutatingMethods(t *testing.T) {
 	hb := testHub(t)
 
@@ -189,9 +174,8 @@ func TestHubWakesForMutatingMethods(t *testing.T) {
 	require.Equal(t, 1, woke)
 }
 
-// Every method the aria endpoint exposes must be classified. An unclassified
-// one defaults to needing an agent, which is the safe direction: but the
-// read set has to be exactly the three that are pure functions of the store.
+// An unclassified method defaults to needing an agent; the read set must be
+// exactly the store-pure three.
 func TestMethodNeedsAgentClassification(t *testing.T) {
 	storeServable := map[string]bool{
 		rpc.MethodRead:    true,
@@ -205,8 +189,6 @@ func TestMethodNeedsAgentClassification(t *testing.T) {
 		"an unknown method must wake, not be served stale")
 }
 
-// Closing the hub is the deletion path: clients DO get an EOF, and the
-// socket file goes away so a later dial fails fast instead of hanging.
 func TestHubCloseDisconnects(t *testing.T) {
 	hb := testHub(t)
 	defer hb.bind(newFakeAgent())()

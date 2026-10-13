@@ -20,12 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// The hangup disposition, over a real angelus + a real aria socket: the same
-// path `figaro hup` and `figaro cut` take. The unit tests prove the fold and
-// the drain; this proves the wire carries the choice and brings the queue back.
-
-// parkedProvider blocks in Send until the turn context dies, so prompts pile
-// up behind a genuinely running turn.
+// parkedProvider blocks in Send until the turn context dies.
 type parkedProvider struct {
 	mu      sync.Mutex
 	started chan struct{}
@@ -87,7 +82,6 @@ model = "m"
 	return ep, prov, func() { cancel(); a.Shutdown(0) }
 }
 
-// queueUp parks a turn and leaves `texts` waiting behind it.
 func queueUp(t *testing.T, cli *sdk.Aria, prov *parkedProvider, texts ...string) {
 	t.Helper()
 	ctx := context.Background()
@@ -151,21 +145,13 @@ func TestHangup_ClearOverTheWire(t *testing.T) {
 	assert.Equal(t, "one", resp.Queue[0].Text)
 	assert.Equal(t, "two", resp.Queue[1].Text)
 
-	// And it really is gone.
 	queued, err := cli.Queued(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, queued.Prompts)
 }
 
-// An old client sends {} and must get the old behaviour: the turn stops, the
-// queue survives.
-//
-// Observed on the CONVERSATION, not on the queue. The queue is the wrong
-// instrument here: the moment the interrupt lands, the drain loop is free to
-// lift the folded message and start answering it, so a queue read is a race -
-// it passed alone and failed under load, which is how the flake announced
-// itself. What "kept" actually means is that the aria goes on to ask itself
-// the combined question, and that is durable.
+// Observed on the conversation, not the queue: a queue read races the drain
+// loop lifting the folded message.
 func TestHangup_BareInterruptKeepsTheQueue(t *testing.T) {
 	ep, prov, done := hangupFixture(t)
 	defer done()
@@ -189,8 +175,6 @@ func TestHangup_BareInterruptKeepsTheQueue(t *testing.T) {
 		"the kept queue must reach the conversation as ONE combined message")
 }
 
-// contextCarriesText reports whether any message in a figaro.context response
-// carries exactly this text in a prose block.
 func contextCarriesText(t *testing.T, messages []interface{}, want string) bool {
 	t.Helper()
 	for _, m := range messages {
@@ -216,7 +200,6 @@ func contextCarriesText(t *testing.T, messages []interface{}, want string) bool 
 	return false
 }
 
-// The CRUD mutators over the wire, including the refusal a stale epoch earns.
 func TestQueueMutators_OverTheWire(t *testing.T) {
 	ep, prov, done := hangupFixture(t)
 	defer done()
@@ -252,7 +235,7 @@ func TestQueueMutators_OverTheWire(t *testing.T) {
 	assert.Equal(t, []string{"keep me", "fixed"},
 		[]string{after.Prompts[0].Text, after.Prompts[1].Text})
 
-	// A stale epoch is refused as a RESULT: the call itself succeeds.
+	// A stale epoch is refused as a result; the call itself succeeds.
 	stale, err := cli.DeleteQueued(ctx, rpc.QueueDeleteRequest{
 		Epoch: "not-this-generation", IDs: []uint64{after.Prompts[0].ID},
 	})

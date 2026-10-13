@@ -23,23 +23,6 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// TestEndToEndResourceProfile is the before/after for the whole hibernation
-// arc, measured through a real daemon over a real store.
-//
-// It builds N arias, attaches a terminal to every one, and then compares the
-// two regimes the change is about:
-//
-//	BEFORE  every aria resident, every terminal attached  (today's behaviour
-//	        with reclamation disabled)
-//	AFTER   every agent reclaimed, every terminal STILL attached and still
-//	        able to read
-//
-// The second state was previously unreachable: reclaiming an agent closed
-// its listener and disconnected every client, so "attached" and "reclaimed"
-// could not both be true. That is the whole point, and the memory difference
-// is the dividend.
-//
-//	go test ./internal/angelus/ -run EndToEndResourceProfile -v
 func TestEndToEndResourceProfile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds many arias")
@@ -53,7 +36,6 @@ func TestEndToEndResourceProfile(t *testing.T) {
 
 	a, acli, ctx := benchDaemon(t)
 
-	// --- build: N arias, each with real history on disk ------------------
 	ids := make([]string, 0, arias)
 	socks := make([]string, 0, arias)
 	for i := 0; i < arias; i++ {
@@ -63,7 +45,6 @@ func TestEndToEndResourceProfile(t *testing.T) {
 		socks = append(socks, created.Endpoint.Address)
 	}
 
-	// --- attach: a terminal per aria, held open for the whole test -------
 	clients := make([]*jkrpc.Client, 0, arias*clientsPerAria)
 	for _, sock := range socks {
 		for c := 0; c < clientsPerAria; c++ {
@@ -76,7 +57,6 @@ func TestEndToEndResourceProfile(t *testing.T) {
 		}
 	}
 
-	// --- drive turns so the arias have weight ---------------------------
 	body := make([]byte, bigMessageBytes)
 	for i := range body {
 		body[i] = 'x'
@@ -91,7 +71,6 @@ func TestEndToEndResourceProfile(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
-	// Let every turn land before weighing anything.
 	for _, id := range ids {
 		require.Eventually(t, func() bool {
 			f := a.Registry.Get(id)
@@ -103,17 +82,10 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	require.Equal(t, arias, before.mem.LiveArias, "not every aria is resident")
 	require.Equal(t, len(clients), before.mem.AttachedClients)
 
-	// --- reclaim every agent; terminals stay attached -------------------
 	reclaimStart := time.Now()
 	for _, id := range ids {
-		// IDLE IS A READING, NOT A PROMISE. The wait above sampled the state
-		// and the aria was free to leave it: a turn that lands between the
-		// sample and the call makes Hibernate answer "figaro is active", and
-		// the test failed on CI for that and nothing else -- on one branch,
-		// while the same commit passed on another.
-		//
-		// What is under test is that everything CAN be reclaimed, so ask until
-		// it is rather than insisting the first ask lands.
+		// Idle is a reading, not a promise: a turn can land between the sample and
+		// the call, so ask until it is reclaimed.
 		require.Eventually(t, func() bool {
 			if a.Registry.Get(id) == nil {
 				return true
@@ -123,8 +95,7 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	}
 	reclaimWall := time.Since(reclaimStart)
 
-	// Caches become eligible the moment the agent is gone; force the sweep
-	// rather than waiting out a ticker.
+	// Force the sweep rather than waiting out a ticker.
 	a.EvictNow()
 	after := sample(a)
 
@@ -135,7 +106,6 @@ func TestEndToEndResourceProfile(t *testing.T) {
 		"reclamation disconnected a terminal: the regression this arc exists to prevent")
 	require.Equal(t, arias, after.mem.Endpoints, "an endpoint vanished with its agent")
 
-	// --- every terminal still works, and reads do not wake -------------
 	readStart := time.Now()
 	for i, cl := range clients {
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -147,7 +117,6 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	readWall := time.Since(readStart)
 	require.Zero(t, a.Registry.FigaroCount(), "a read woke an aria")
 
-	// --- one prompt wakes exactly one aria -----------------------------
 	wakeStart := time.Now()
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	var out rpc.QuaResponse
@@ -240,8 +209,6 @@ func deltaB(before, after uint64) string {
 	return "-" + humanB(before-after)
 }
 
-// benchDaemon is daemonFixture with reclamation off, so the sweep never
-// fires behind the measurement's back.
 func benchDaemon(t *testing.T) (*angelus.Angelus, *sdk.Angelus, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
@@ -251,8 +218,7 @@ func benchDaemon(t *testing.T) (*angelus.Angelus, *sdk.Angelus, context.Context)
 provider = "mock"
 model = "mock-model"
 `), 0600))
-	// dormant_after_minutes = 0 disables the sweep: this test drives
-	// reclamation by hand so the numbers are attributable.
+	// dormant_after_minutes = 0 disables the sweep; reclamation is driven by hand.
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`
 default_outfit = "mock"
 

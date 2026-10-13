@@ -22,14 +22,11 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// daemonFixture is a real angelus over a real store with a mock provider.
 func daemonFixture(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Context) {
 	a, acli, ctx, _ := daemonFixtureDir(t)
 	return a, acli, ctx
 }
 
-// daemonFixtureDir is daemonFixture plus the config dir, for tests that
-// rewrite outfit files.
 func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Context, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -39,9 +36,7 @@ func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Con
 provider = "mock"
 model = "mock-model"
 `), 0600))
-	// A named default makes the default-form lifecycle observable: without
-	// it the default form is the stable empty form and a file edit can
-	// never move its hash.
+	// A named default makes the lifecycle observable: the empty form's hash never moves.
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0600))
 
 	backend, err := store.NewXwalBackend(dir+"/arias", 0)
@@ -58,17 +53,14 @@ model = "mock-model"
 		Angelus: a,
 		Config:  loaded,
 		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
-			// Real factories refuse an empty/unknown provider; a fixture
-			// more lenient than reality certifies paths reality refuses
-			// (the naked-figaro test needs the refusal).
+			// Real factories refuse an unknown provider; the naked-figaro test needs the refusal.
 			if name != "mock" {
 				return nil, fmt.Errorf("unknown provider %q", name)
 			}
 			return &mockProviderForIntegration{}, nil
 		},
 		Ctx: ctx,
-		// Restore reads the board through these; without them restoreOne
-		// fails "form unavailable" and no wake can ever succeed.
+		// Without FormTemplates restoreOne fails "form unavailable".
 		FormTemplates: template.New("t"),
 	}).Map
 
@@ -82,10 +74,6 @@ model = "mock-model"
 	return a, acli, ctx, dir
 }
 
-// End-to-end proof of the inversion: a client attached to a real aria's
-// endpoint survives the agent being killed out from under it, and the socket
-// keeps answering. Before the hub, Registry.Kill closed the listener and the
-// connection died with it.
 func TestEndpointOutlivesAgent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -94,7 +82,6 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	sock := created.Endpoint.Address
 	require.FileExists(t, sock, "endpoint not listening when Create returned")
 
-	// Attach a client and prove the connection works.
 	conn, err := net.Dial("unix", sock)
 	require.NoError(t, err)
 	defer conn.Close()
@@ -109,19 +96,16 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	var before rpc.FormResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &before))
 
-	// Reclaim the agent. This is what hibernation will do.
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID), "agent still registered")
 
-	// The socket file is still there and the SAME connection still answers -
-	// served from the store, with no agent rebuilt.
+	// The same connection still answers, from the store, with no agent rebuilt.
 	require.FileExists(t, sock, "endpoint vanished with the agent")
 	var after rpc.FormResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &after),
 		"attached client lost its connection when the agent died")
 	require.Nil(t, a.Registry.Get(created.FigaroID), "a read woke the aria")
 
-	// Context and page too, all without waking.
 	var cx rpc.ContextResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodContext, struct{}{}, &cx))
 	require.NotEmpty(t, cx.Messages, "store served an empty context")
@@ -132,8 +116,6 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	require.Nil(t, a.Registry.Get(created.FigaroID), "read woke the aria")
 }
 
-// A prompt on a reclaimed aria must wake it and be answered on the same
-// connection: no new aria, no fork, no error handed to the user.
 func TestPromptWakesReclaimedAria(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -155,13 +137,11 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 		rpc.QuaRequest{Text: "hello after reclamation"}, &out))
 	require.True(t, out.OK)
 
-	// Woken, and it is the SAME aria: the regression that would hurt most.
 	require.Eventually(t, func() bool {
 		return a.Registry.Get(created.FigaroID) != nil
 	}, 5*time.Second, 20*time.Millisecond, "prompt did not wake the aria")
 }
 
-// Deleting an aria DOES take its endpoint: a dead aria has no address.
 func TestKillRemovesEndpoint(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 

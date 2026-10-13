@@ -15,8 +15,6 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
-// studyClient wraps a node endpoint: calls, plus a turn.done latch for
-// the aria case.
 type studyClient struct {
 	c    *sdk.Aria
 	done chan struct{}
@@ -68,8 +66,6 @@ func (sc *studyClient) formValue(t *testing.T, ctx context.Context, key string) 
 	return string(raw), ok
 }
 
-// A cast: the figaro studies the role and the role's target-aria points
-// at it: one call, serialized in the actor loop, durable on the board.
 func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
@@ -88,13 +84,12 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	require.True(t, cast.Studied, "first cast should register the study")
 	require.True(t, cast.Patched)
 
-	// The role points here, durably (read through the role's own hub).
 	rc := dialNode(t, role.Endpoint)
 	target, ok := rc.formValue(t, callCtx, "target-aria")
 	require.True(t, ok)
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
 
-	// The study is on the BOARD (system.studies), not just in memory.
+	// The study is on the board, not just in memory.
 	studies, ok := fc.formValue(t, callCtx, "system.studies")
 	require.True(t, ok, "system.studies missing from the caster's board")
 	require.Contains(t, studies, role.FormID)
@@ -105,8 +100,6 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	require.False(t, cast.Studied, "second cast claims a fresh study")
 }
 
-// cast with a role patch: the role is BORN cast: target-aria rides the
-// birth patch, so there is no window where the role exists unpointed.
 func TestCastMintsRoleBornCast(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
@@ -131,7 +124,6 @@ func TestCastMintsRoleBornCast(t *testing.T) {
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
 }
 
-// A cast at a BOUND board is refused by name: roles are unbound only.
 func TestCastRefusesBoundTargets(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 	a1, err := acli.Create(ctx, dress(t, "mock"), nil)
@@ -147,11 +139,7 @@ func TestCastRefusesBoundTargets(t *testing.T) {
 	require.Contains(t, err.Error(), "figaro, not an unbound form")
 }
 
-// The observation, pull-at-the-stamp: studying STATES itself in the IR
-// (the StudyMark record), every subsequent IR record stamps the studied
-// form's position, and NOTHING of the studied form's content is baked
-// into this aria's records: the provider derives the fold from the
-// stamps at translation time (pinned in provider's projection tests).
+// The study mark and position stamps are in the IR; none of the studied form's content is.
 func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
@@ -166,25 +154,20 @@ func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, study.Studies, role.FormID)
 
-	// Patch the studied form THROUGH THE HUB (agentless write path).
+	// Through the hub: the agentless write path.
 	rc := dialNode(t, role.Endpoint)
 	_, err = rc.c.Set(callCtx, *rawPatch(map[string]string{"phase": `"canary"`}), 0)
 	require.NoError(t, err)
 
 	fc.turn(t, callCtx, "hello")
 	text := fc.contextText(t, callCtx)
-	// The MARK is in the timeline: began-observing is a stated fact.
 	require.Contains(t, text, `"study"`, "study mark missing from the IR")
 	require.Contains(t, text, role.FormID)
-	// The CONTENT is not: no baked reminder text, no copied value. The
-	// studied form's channel is the only place "canary" lives.
+	// "canary" lives only in the studied form's channel.
 	require.NotContains(t, text, "system-reminder", "studied content baked into the IR")
 	require.NotContains(t, text, "canary", "studied VALUE copied into the IR")
 }
 
-// Drop ends the stamps and states itself: the observed set no longer
-// includes the form, so later records carry no position for it, and the
-// stopped-observing mark is in the timeline.
 func TestDropEndsStampsAndStatesItself(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
@@ -208,26 +191,14 @@ func TestDropEndsStampsAndStatesItself(t *testing.T) {
 	fc.turn(t, callCtx, "hello")
 	text := fc.contextText(t, callCtx)
 	require.NotContains(t, text, `"drop"`, "a dropped study's value reached the IR")
-	// Both marks stand: began and stopped.
 	require.Contains(t, text, `"began":true`)
 	require.Contains(t, text, `"began":false`)
 }
 
-// A figaro that cannot WAKE can still be cast. The casting verbs used to
-// demand the actor loop, so reaching them meant restoring the aria and
-// constructing a provider: `fig cast` on a naked figaro (one born of `bind
-// null`, with no provider keys at all) failed with
-//
-//	hub …: wake: restore …: create provider: unknown provider: ""
-//
-// which is the naked-figaro deadlock one verb further out, and the same
-// deadlock M1 broke for `set` by serving it from the hub. This proves the
-// casting half: no agent is constructed, and the store's own writers do the
-// work.
+// A naked figaro cannot wake; cast must be served from the hub with no agent.
 func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
-	// A NAKED figaro: no outfit, no provider. Waking it is impossible.
 	naked, err := acli.FormBind(ctx, "null", nil, nil)
 	if err != nil {
 		t.Fatalf("bind null: %v", err)
@@ -252,7 +223,6 @@ func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
 		t.Fatalf("cast reported studied=%v patched=%v", res.Studied, res.Patched)
 	}
 
-	// The role points here, and the subscription is durable on the board.
 	form, err := fc.Form(ctx)
 	if err != nil {
 		t.Fatalf("form: %v", err)
@@ -261,7 +231,6 @@ func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
 		t.Fatalf("studies on the board: %v", studies)
 	}
 
-	// And it can be dropped again, still without an agent.
 	if _, err := fc.Drop(ctx, role.FormID); err != nil {
 		t.Fatalf("drop: %v", err)
 	}

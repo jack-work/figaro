@@ -10,9 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
-// wokenFigaro is an idle agent whose last turn predates the moment it was
-// constructed: the shape a non-turn wake (figaro.queued, figaro.study) leaves
-// behind. The sweep reads exactly these three facts.
+// wokenFigaro is an idle agent whose last turn predates its construction: what a non-turn wake leaves.
 type wokenFigaro struct {
 	id         string
 	lastActive time.Time
@@ -36,7 +34,6 @@ func (m *wokenFigaro) Info() figaro.FigaroInfo {
 	}
 }
 
-// captureLogs routes slog.Default at a buffer for the test's duration.
 func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -46,11 +43,6 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// Issue #22. A wake buys the agent a dormant window. Before this, the
-// eligibility clock was the last TURN, which a wake by a non-turn method
-// does not move, so an aria woken by figaro.queued was reclaimed on the very
-// next sweep and the poller woke it again: one restore per sweep interval,
-// per attached client, around the clock.
 func TestSweepSparesAFreshlyWokenAria(t *testing.T) {
 	a := &Angelus{Registry: NewRegistry()}
 	f := &wokenFigaro{
@@ -66,8 +58,6 @@ func TestSweepSparesAFreshlyWokenAria(t *testing.T) {
 	if f.killed != 0 || a.Registry.Get("woken") == nil {
 		t.Fatal("the sweep reclaimed an aria that had just been woken")
 	}
-	// And the same clock says the window ends: once the agent has stood idle
-	// for the dormant window, it goes.
 	f.since = time.Now().Add(-defaultDormantAfter - time.Second)
 	a.hibernateIdleArias()
 	if f.killed != 1 || a.Registry.Get("woken") != nil {
@@ -75,10 +65,6 @@ func TestSweepSparesAFreshlyWokenAria(t *testing.T) {
 	}
 }
 
-// Issue #22, the instrument. The reporter could not name the RPC that drove
-// 6,598 restores because nothing recorded it. A reclaim of an aria that was
-// woken and never took a turn is ordinary once; the second consecutive time
-// it is a poller, and the sweep says so, naming the method, at Warn.
 func TestSweepNamesTheMethodThatKeepsWakingAnAria(t *testing.T) {
 	logs := captureLogs(t)
 	a := &Angelus{Registry: NewRegistry()}
@@ -117,8 +103,7 @@ func TestSweepNamesTheMethodThatKeepsWakingAnAria(t *testing.T) {
 		t.Fatalf("the warning does not name the aria:\n%s", out)
 	}
 
-	// A turn between wake and reclaim resets the count: that is use, not a
-	// poller.
+	// A turn between wake and reclaim resets the count: that is use, not a poller.
 	logs.Reset()
 	f = wake()
 	f.since = time.Now().Add(-defaultDormantAfter - time.Second)

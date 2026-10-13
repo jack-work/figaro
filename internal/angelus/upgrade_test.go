@@ -6,16 +6,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// `nix profile upgrade` ships new first-party skills, and nothing else in the
-// daemon notices: the default-form pointer is reused with no comparison while
-// it is clean, and only `fig outfit reload` ever set the flag. A user who
-// upgrades and never runs that verb would keep minting arias wearing the
-// skills of the build they replaced.
-//
-// The bundled root carries the store hash, so it moves on every upgrade. This
-// proves the flag follows it, and that an unchanged root leaves the record
-// alone (the reuse is what shares the rendered prefix in the provider's cache,
-// so a spurious dirty bit is not free).
+// The bundled root moves on every upgrade; the dirty flag must follow it, and
+// an unchanged root must leave the record alone.
 func TestBundledSkillsMoveMarksTheDefaultFormDirty(t *testing.T) {
 	dir := t.TempDir()
 	backend, err := store.NewXwalBackend(dir, 0)

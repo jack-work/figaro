@@ -21,8 +21,6 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// namedMockProvider answers with its own name, so the transcript records
-// which provider actually served a round.
 type namedMockProvider struct{ name string }
 
 func (m *namedMockProvider) Name() string        { return m.name }
@@ -43,9 +41,6 @@ func (m *namedMockProvider) Send(_ context.Context, in provider.SendInput, bus p
 	return nil
 }
 
-// TestIntegration_ProviderSwitchMidConversation drives the whole daemon path
-// of the bug: a live aria whose provider is wedged must be movable to another
-// provider with `figaro set system.provider …`, with no restart and no fork.
 func TestIntegration_ProviderSwitchMidConversation(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -116,7 +111,6 @@ model = "mock-model"
 	require.NoError(t, err)
 	waitDone()
 
-	// The switch: form state, no restart.
 	_, err = fcli.Set(ctx, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"other"`),
 	}, nil), 0)
@@ -149,7 +143,6 @@ model = "mock-model"
 	defer mu.Unlock()
 	assert.Equal(t, []string{"mock", "other"}, asked, "the agent must ask the factory for the new provider")
 
-	// The daemon's view of the aria agrees.
 	list, err := acli.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list.Figaros, 1)

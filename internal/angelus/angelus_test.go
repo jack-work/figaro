@@ -53,7 +53,6 @@ func TestAngelus_SocketCreated(t *testing.T) {
 	_, err := os.Stat(a.SocketPath)
 	require.NoError(t, err, "angelus socket should exist")
 
-	// Should be connectable.
 	conn, err := net.Dial("unix", a.SocketPath)
 	require.NoError(t, err)
 	conn.Close()
@@ -71,7 +70,6 @@ func TestAngelus_FigaroSocketDir(t *testing.T) {
 func TestAngelus_RegistryAvailable(t *testing.T) {
 	a, _ := newTestAngelus(t)
 
-	// Registry should be usable.
 	m := newMock("test-figaro")
 	require.NoError(t, a.Registry.Register(m))
 	assert.Equal(t, 1, a.Registry.FigaroCount())
@@ -83,7 +81,6 @@ func TestAngelus_PIDMonitorUnbindsDeadPID(t *testing.T) {
 	m := newMock("abc")
 	require.NoError(t, a.Registry.Register(m))
 
-	// Get a guaranteed-dead PID: start a process and let it exit.
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
 	require.NoError(t, cmd.Start())
 	deadPID := cmd.Process.Pid
@@ -113,7 +110,6 @@ func TestAngelus_StaleSocketCleanup(t *testing.T) {
 	runtimeDir := testRuntimeDir(t, dir)
 	sockPath := filepath.Join(runtimeDir, "angelus.sock")
 
-	// Create a stale socket file.
 	require.NoError(t, os.WriteFile(sockPath, []byte("stale"), 0600))
 
 	a := angelus.New(angelus.Config{
@@ -141,7 +137,6 @@ func TestAngelus_StaleSocketCleanup(t *testing.T) {
 func TestAngelus_ShutdownDrainsAllFigaros(t *testing.T) {
 	a, _ := newTestAngelus(t)
 
-	// Register a few mock figaros.
 	for _, id := range []string{"a1", "a2", "a3"} {
 		require.NoError(t, a.Registry.Register(newMock(id)))
 	}
@@ -168,7 +163,6 @@ func TestAngelus_ShutdownIdempotent(t *testing.T) {
 	require.NoError(t, a.Registry.Register(newMock("only")))
 
 	a.Shutdown(100 * time.Millisecond)
-	// Second call must not panic, must not error, must do nothing harmful.
 	a.Shutdown(100 * time.Millisecond)
 
 	assert.Zero(t, a.Registry.FigaroCount())

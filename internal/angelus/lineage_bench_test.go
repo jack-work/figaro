@@ -13,28 +13,9 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// THE HOP'S BLOCKING READ, measured. A pager that changes aria waits on this
-// RPC before it may swap its client (see retarget in internal/cli), so its
-// cost is the width of the window issue #25 lived in, on every hop inside a
-// fork tree.
-//
-// The fixture is the shape that was measured at 75-98 ms on a real store: a
-// long conversation, then a CHAIN of forks, each forked again after its own
-// turn, the leaf read against its parent. Two shapes:
-//
-//	head      each link a head fork of an abandoned parent: the base sits past
-//	          the end of the parent's log, which used to mean a walk of that
-//	          log from LT 1 for every link, unmemoized, on every hop.
-//	interior  each link cut at a turn the parent has: the base is a real
-//	          record, which the old memo did remember, so this shape isolates
-//	          the other cost: listing every trunk in the store per read.
-//
-// unrelated is how many other arias share the store, which is what the
-// listing paid for.
-//
-// This file compiles against the tree before the change as well as after it,
-// so the same benchmark measures both. Run it with -count and compare with
-// benchstat (it is in the dev shell).
+// The hop's blocking read. Two shapes: head, each link a head fork whose base
+// sits past the parent's end; interior, each link cut at a turn the parent has.
+// unrelated is how many other arias share the store.
 func BenchmarkLineageRead(b *testing.B) {
 	for _, history := range []int{300, 3000} {
 		for _, unrelated := range []int{0, 1000} {
@@ -48,9 +29,7 @@ func BenchmarkLineageRead(b *testing.B) {
 						}
 						leaf, parent := fx.pair(shape, depth)
 						params, _ := json.Marshal(rpc.LineageRequest{FigaroID: leaf, Against: parent})
-						// One read outside the timer: the first read of a fork that
-						// predates its recording computes and records it. Steady
-						// state is what a reader hopping a tree pays.
+						// One read outside the timer: the first read records the base turn.
 						if _, err := fx.h.lineage(b.Context(), params); err != nil {
 							b.Fatal(err)
 						}
@@ -67,9 +46,6 @@ func BenchmarkLineageRead(b *testing.B) {
 	}
 }
 
-// BenchmarkForkWith is the other side of the trade: the fork now reads the
-// parent's tail and writes a sidecar. Forks are rare next to hops, but a
-// slower fork is still a cost, and it is measured rather than assumed.
 func BenchmarkForkWith(b *testing.B) {
 	for _, history := range []int{300, 3000} {
 		b.Run(fmt.Sprintf("history=%d", history), func(b *testing.B) {
@@ -145,8 +121,7 @@ func newHopFixture(b *testing.B, history, unrelated int) *hopFixture {
 		for d := 0; d < 4; d++ {
 			at := uint64(0) // head: the parent's tail
 			if shape == "interior" {
-				// Cut the parent at its last turn: the base is that turn's
-				// question, a real record.
+				// Cut the parent at its last turn: the base is a real record.
 				log, _ := be.OpenFigIR(cur)
 				page, _ := log.ReadPage(0, 1<<62, 6)
 				for i := len(page) - 1; i >= 0; i-- {
@@ -172,8 +147,6 @@ func newHopFixture(b *testing.B, history, unrelated int) *hopFixture {
 	return fx
 }
 
-// pair is the hop the benchmark measures: the link at depth, read against
-// its parent.
 func (fx *hopFixture) pair(shape string, depth int) (leaf, parent string) {
 	c := fx.chains[shape]
 	return c[depth], c[depth-1]
