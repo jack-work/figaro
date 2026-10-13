@@ -3,30 +3,15 @@ package tool
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/sandbox"
 )
 
-// ProcessTool operates on backgrounded exec sessions created by the
-// bash tool. It shares the bash tool's SessionRegistry and is scoped
-// the same way, so a session is only reachable from the scope that
-// spawned it.
 type ProcessTool struct {
-	Sessions *SessionRegistry
-	ScopeFn  func() string
-}
-
-// NewProcessTool builds a ProcessTool over the given registry. scopeFn
-// must match the bash tool's so the two agree on session visibility;
-// nil => defaultScope.
-func NewProcessTool(sessions *SessionRegistry, scopeFn func() string) *ProcessTool {
-	if sessions == nil {
-		sessions = NewSessionRegistry(DefaultSessionTTL)
-	}
-	return &ProcessTool{Sessions: sessions, ScopeFn: scopeFn}
+	Sessions sandbox.Sessions
 }
 
 func (p *ProcessTool) Name() string { return "process" }
@@ -59,102 +44,68 @@ func (p *ProcessTool) Parameters() interface{} {
 	}
 }
 
-func (p *ProcessTool) scope() string {
-	if p.ScopeFn != nil {
-		if s := p.ScopeFn(); s != "" {
-			return s
-		}
-	}
-	return defaultScope
-}
-
 func (p *ProcessTool) Execute(ctx context.Context, args map[string]any, _ OnOutput) ([]message.Content, error) {
 	action, _ := args["action"].(string)
 	if action == "" {
 		return nil, fmt.Errorf("action is required")
 	}
-	scope := p.scope()
-
 	if action == "list" {
-		return text(p.list(scope)), nil
+		return text(p.list()), nil
 	}
-
 	id, _ := args["session"].(string)
 	if id == "" {
 		return nil, fmt.Errorf("session is required for action %q", action)
 	}
-
+	if action == "remove" {
+		if err := p.Sessions.Remove(id); err != nil {
+			return nil, fmt.Errorf("unknown session %q", id)
+		}
+		return text(fmt.Sprintf("Removed session %s.", id)), nil
+	}
+	sess, err := p.Sessions.Get(id)
+	if err != nil {
+		return nil, fmt.Errorf("unknown session %q", id)
+	}
 	switch action {
 	case "poll":
-		sess, ok := p.Sessions.Get(scope, id)
-		if !ok {
-			return nil, fmt.Errorf("unknown session %q", id)
-		}
-		return text(formatStatus(sess.Info()) + "\n\n" + nonEmpty(sess.Poll())), nil
+		return text(formatStatus(sess.Info()) + "\n\n" + nonEmpty(string(sess.Poll()))), nil
 	case "log":
-		sess, ok := p.Sessions.Get(scope, id)
-		if !ok {
-			return nil, fmt.Errorf("unknown session %q", id)
-		}
-		return text(formatStatus(sess.Info()) + "\n\n" + nonEmpty(sess.Log())), nil
+		return text(formatStatus(sess.Info()) + "\n\n" + nonEmpty(string(sess.Log()))), nil
 	case "write":
-		sess, ok := p.Sessions.Get(scope, id)
-		if !ok {
-			return nil, fmt.Errorf("unknown session %q", id)
-		}
 		data, _ := args["input"].(string)
 		if !strings.HasSuffix(data, "\n") {
 			data += "\n"
 		}
-		if err := sess.WriteStdin([]byte(data)); err != nil {
+		if _, err := sess.Write([]byte(data)); err != nil {
 			return nil, err
 		}
 		return text(fmt.Sprintf("Wrote %d bytes to session %s stdin.", len(data), id)), nil
 	case "kill":
-		sess, ok := p.Sessions.Get(scope, id)
-		if !ok {
-			return nil, fmt.Errorf("unknown session %q", id)
-		}
 		if err := sess.Kill(); err != nil {
 			return nil, err
 		}
 		<-sess.Done()
 		return text(formatStatus(sess.Info())), nil
-	case "remove":
-		sess, ok := p.Sessions.Remove(scope, id)
-		if !ok {
-			return nil, fmt.Errorf("unknown session %q", id)
-		}
-		sess.Kill()
-		return text(fmt.Sprintf("Removed session %s.", id)), nil
 	default:
 		return nil, fmt.Errorf("unknown action %q", action)
 	}
 }
 
-func (p *ProcessTool) list(scope string) string {
-	sessions := p.Sessions.List(scope)
-	if len(sessions) == 0 {
+func (p *ProcessTool) list() string {
+	infos := p.Sessions.List()
+	if len(infos) == 0 {
 		return "No background sessions."
 	}
-	infos := make([]SessionInfo, 0, len(sessions))
-	for _, s := range sessions {
-		infos = append(infos, s.Info())
-	}
-	sort.Slice(infos, func(i, j int) bool { return infos[i].StartedAt.Before(infos[j].StartedAt) })
-
-	var sb strings.Builder
+	lines := make([]string, 0, len(infos))
 	for _, info := range infos {
-		sb.WriteString(formatStatus(info))
-		sb.WriteByte('\n')
+		lines = append(lines, formatStatus(info))
 	}
-	return strings.TrimRight(sb.String(), "\n")
+	return strings.Join(lines, "\n")
 }
 
-// formatStatus renders a one-line session summary.
-func formatStatus(info SessionInfo) string {
-	s := fmt.Sprintf("%s [%s] pid=%d", info.ID, info.State, info.Pid)
-	if info.State != SessionRunning {
+func formatStatus(info sandbox.SessionInfo) string {
+	s := fmt.Sprintf("%s [%s]", info.ID, info.State)
+	if info.State != sandbox.SessionRunning {
 		s += fmt.Sprintf(" exit=%d", info.ExitCode)
 	} else {
 		s += fmt.Sprintf(" up=%s", time.Since(info.StartedAt).Round(time.Second))

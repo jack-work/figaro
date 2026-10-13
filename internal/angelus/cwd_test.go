@@ -1,12 +1,15 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/sandbox"
+	"github.com/jack-work/figaro/internal/sandbox/local"
 )
 
 func TestBirthCwdFallsBackWhenUnusable(t *testing.T) {
@@ -28,11 +31,11 @@ func TestBirthCwdFallsBackWhenUnusable(t *testing.T) {
 }
 
 func TestCwdFromFormFallsBackWhenUnusable(t *testing.T) {
-	daemon, err := os.Getwd()
+	dir := t.TempDir()
+	box, err := sandbox.Open(context.Background(), local.NewHost(local.DefaultTTL), "", "t", dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
 	st, err := form.Open("")
 	if err != nil {
 		t.Fatal(err)
@@ -42,12 +45,16 @@ func TestCwdFromFormFallsBackWhenUnusable(t *testing.T) {
 		st.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.cwd": raw}, nil))
 	}
 
-	set(dir)
-	if got := cwdFromForm(st)(); got != dir {
-		t.Errorf("cwdFromForm = %q, want %q", got, dir)
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	set(sub)
+	if got := cwdFromForm(st, box)(); got != sub {
+		t.Errorf("cwdFromForm = %q, want %q", got, sub)
 	}
 	set(filepath.Join(dir, "nowhere"))
-	if got := cwdFromForm(st)(); got != daemon {
-		t.Errorf("a stale system.cwd must fall back to the daemon's cwd, got %q", got)
+	if got := cwdFromForm(st, box)(); got != dir {
+		t.Errorf("a stale system.cwd must fall back to the workspace, got %q", got)
 	}
 }

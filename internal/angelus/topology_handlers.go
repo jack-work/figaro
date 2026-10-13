@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/turns"
@@ -133,9 +134,18 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
-	reg := tool.DefaultRegistryForAria(id, cwdFromForm(cbState),
-		tool.WithImageBudget(loaded.InlineImageBudget()),
-		tool.WithSessions(h.angelus.Sessions))
+	formStr := func(key string) string {
+		if s := cbState.Snapshot().Lookup(key); s != nil {
+			return *s
+		}
+		return ""
+	}
+	box, err := sandbox.Open(ctx, h.angelus.Sessions, formStr("system.sandbox"), id, formStr("system.cwd"), h.angelus.RuntimeDir)
+	if err != nil {
+		return nil, fmt.Errorf("sandbox: %w", err)
+	}
+	reg := tool.DefaultRegistry(box, cwdFromForm(cbState, box),
+		tool.WithImageBudget(loaded.InlineImageBudget()))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              id,
 		SocketPath:      sockPath,

@@ -74,7 +74,8 @@ func TestRegistry_ListAndNamesAreAlphabetical(t *testing.T) {
 }
 
 func TestDefaultRegistry_ContainsStandardTools(t *testing.T) {
-	r := tool.DefaultRegistry(t.TempDir())
+	dir := t.TempDir()
+	r := tool.DefaultRegistry(openBox(t, dir), func() string { return dir })
 	for _, name := range []string{"bash", "read", "write", "edit"} {
 		_, ok := r.Get(name)
 		assert.Truef(t, ok, "expected standard tool %q to be registered", name)
