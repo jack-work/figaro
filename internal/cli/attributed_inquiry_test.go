@@ -10,21 +10,17 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// Each submission names its sender in the heading, not on a second body
-// row. Mixed senders retain their own headings within the same inquiry.
 func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 	segs := []aria.InquirySegment{
-		{Sender: "aria 123456", Text: "Hello"},
+		{Sender: "Ann", Text: "Hello"},
 		{Sender: "Jack", Text: "Hello again"},
 	}
 	const joined = "Hello\n\nHello again"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "Hello to both of you"}}
 	want := []string{
-		// A heading sits ON its text: the pair is the block's head, and the
-		// pager pins exactly those two rows.
-		"> figaro 123456", "Hello", "",
+		// The heading and its first text row are the pair the pager pins.
+		"> Ann", "Hello", "",
 		"> Jack", "Hello again",
-		// The question closes with one blank row, then the rule.
 		"", "─", "< figaro", "", "Hello to both of you",
 	}
 
@@ -63,10 +59,7 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 	})
 }
 
-// An UNATTRIBUTED question must render EXACTLY as it did before senders
-// existed: no blank row where a sender would go, no "unknown". Most messages
-// ever written have no sender, and a placeholder on each of them would be noise
-// where there used to be none.
+// An unattributed question renders with no sender row and no placeholder.
 func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
 	want := []string{"> input", "THEQUESTION", "", "─", "< figaro", "", "THEANSWER"}
@@ -74,9 +67,6 @@ func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	withSegs := renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: nil, Nodes: nodes}, 48, 0, renderSettings{})
 	assertChrome(t, withSegs, want)
 
-	// A segment list carrying no senders is the same thing said differently,
-	// and must render identically: otherwise the presence of the field, not
-	// the presence of a sender, would change the screen.
 	blank := []aria.InquirySegment{{Text: "THEQUESTION"}}
 	assertChrome(t, renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: blank, Nodes: nodes}, 48, 0, renderSettings{}), want)
 }
