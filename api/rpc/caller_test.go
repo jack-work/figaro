@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// The identity has to survive a round trip through a REAL request struct, a
-// nil params (the no-argument methods), and an already-populated object -
-// those are the three shapes the two client hops actually send.
 func TestWithCallerRoundTrip(t *testing.T) {
 	t.Run("struct params keep their fields", func(t *testing.T) {
 		raw, err := WithCaller(ForkRequest{FigaroID: "target01", AtTurn: 7}, "caller99", nil)
@@ -18,7 +15,6 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		if got := CallerOf(raw); got != "caller99" {
 			t.Fatalf("CallerOf = %q, want caller99", got)
 		}
-		// The payload must be untouched: the caller field rides ALONGSIDE it.
 		var req ForkRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)
@@ -29,9 +25,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	})
 
 	t.Run("nil params still carry the identity", func(t *testing.T) {
-		// figaro.context and figaro.form pass nil. If nil could not
-		// carry an identity, those methods would be unauthenticatable and the
-		// policy seam would have a hole in it.
+		// figaro.context and figaro.form pass nil params.
 		raw, err := WithCaller(nil, "caller99", nil)
 		if err != nil {
 			t.Fatalf("WithCaller(nil): %v", err)
@@ -42,8 +36,6 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	})
 
 	t.Run("empty caller adds nothing", func(t *testing.T) {
-		// A human at a terminal has no aria identity; the wire must look
-		// exactly as it did before this change.
 		raw, err := WithCaller(InterruptRequest{}, "", nil)
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
@@ -57,8 +49,6 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	})
 
 	t.Run("nested values are not re-encoded", func(t *testing.T) {
-		// Values ride as RawMessage. A lossy re-encode here would corrupt
-		// form patches, which are raw JSON by design.
 		in := SetRequest{Patch: form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`{"deep":[1,2,3]}`)}, nil)}
 		raw, err := WithCaller(in, "caller99", nil)
 		if err != nil {
@@ -75,8 +65,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	})
 }
 
-// A scalar or array payload cannot hold a named field. Dropping the credential
-// silently is the one response that must never happen, so it errors.
+// A payload that cannot carry the credential errors rather than dropping it.
 func TestWithCallerRejectsNonObjectParams(t *testing.T) {
 	for name, params := range map[string]any{
 		"array":  []int{1, 2},
@@ -90,8 +79,6 @@ func TestWithCallerRejectsNonObjectParams(t *testing.T) {
 }
 
 func TestCallerOfIsTotal(t *testing.T) {
-	// An unreadable credential is an ABSENT one. Deciding whether absence is
-	// acceptable belongs to the policy, not the decoder, so this never errors.
 	cases := map[string]json.RawMessage{
 		"nil":            nil,
 		"empty":          json.RawMessage(``),
@@ -110,9 +97,7 @@ func TestCallerOfIsTotal(t *testing.T) {
 	}
 }
 
-// The presented id is validated on the way OUT of the decoder, not trusted.
-// It reaches paths that name on-disk aria directories, so a caller must not be
-// able to smuggle a traversal or an over-long name through the credential.
+// The presented id names on-disk directories, so it is validated on decode.
 func TestCallerOfValidatesShape(t *testing.T) {
 	ok := json.RawMessage(`{"x-internal-figaro-id":"a1b2c3d4"}`)
 	if got := CallerOf(ok); got != "a1b2c3d4" {

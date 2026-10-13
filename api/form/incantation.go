@@ -1,7 +1,5 @@
 package form
 
-// INCANTATIONS: the words the harness says to a figaro at a lifecycle event.
-
 import (
 	"bytes"
 	"encoding/json"
@@ -10,52 +8,39 @@ import (
 	"strings"
 )
 
-// StudyIncantationKey and ForkIncantationKey are where the phrases live.
-// ForkedFromKey is the birth mark a fork incantation speaks about; it is
-// named here rather than spelled at each reader, because a key written in one
-// place and matched in three is a key that will eventually disagree with
-// itself.
 const (
 	StudyIncantationKey = "system.study_incantation"
 	ForkIncantationKey  = "system.fork_incantation"
 	ForkedFromKey       = "system.forked_from"
 )
 
-// StudyIncantation is the phrase per study lifecycle event. Any field may be
-// empty, which means "say nothing extra at that event".
+// StudyIncantation is the phrase per study lifecycle event; an empty field
+// says nothing.
 type StudyIncantation struct {
 	OnStudy  string `json:"onstudy,omitempty"`
 	OnUpdate string `json:"onupdate,omitempty"`
 	OnDrop   string `json:"ondrop,omitempty"`
 }
 
-// IsEmpty reports whether this incantation would add anything at all.
 func (s StudyIncantation) IsEmpty() bool {
 	return s.OnStudy == "" && s.OnUpdate == "" && s.OnDrop == ""
 }
 
-// ForkIncantation is the phrase a branch is shown at birth. It accepts two
-// spellings, because one of them is what a human reaches for first:
+// ForkIncantation is the phrase a branch is shown at birth.
 type ForkIncantation struct {
 	OnFork string `json:"onfork,omitempty"`
 }
 
 func (f ForkIncantation) IsEmpty() bool { return f.OnFork == "" }
 
-// studyIncantationFields is the closed set, for naming typos in the warning.
 var studyIncantationFields = []string{"onstudy", "onupdate", "ondrop"}
 
-// ReadStudyIncantation reads system.study_incantation off a board.
 func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	raw, ok := snap.Get(StudyIncantationKey)
 	if !ok {
 		return StudyIncantation{}
 	}
-	// THE FAST PATH IS THE CORRECT ONE. A well-formed incantation decodes
-	// straight into the struct: no intermediate map, no per-field unmarshal,
-	// no diagnostics to assemble for problems that do not exist. Only a value
-	// that fails this decode pays for the explanation of why, and a strict
-	// decoder is what makes "fails" include the typo case.
+	// Only a value the strict decode refuses pays for diagnostics.
 	var fast StudyIncantation
 	if strictDecode(raw, &fast) == nil {
 		fast.OnStudy = strings.TrimSpace(fast.OnStudy)
@@ -74,17 +59,13 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	}
 }
 
-// strictDecode decodes one JSON object into out, refusing unknown fields. The
-// refusal is the point: it routes a typo to the diagnostic path instead of
-// silently dropping it, which is the failure mode that leaves a human staring
-// at a key that "does nothing".
+// strictDecode refuses unknown fields, routing a typo to the diagnostic path.
 func strictDecode(raw json.RawMessage, out any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
 		return err
 	}
-	// Trailing content means the value was not one object.
 	if dec.More() {
 		return errTrailingJSON
 	}
@@ -93,8 +74,7 @@ func strictDecode(raw json.RawMessage, out any) error {
 
 var errTrailingJSON = errors.New("incantation: trailing content after the object")
 
-// ReadForkIncantation reads system.fork_incantation off a board, accepting
-// either a bare string or an object carrying onfork.
+// ReadForkIncantation accepts a bare string or an object carrying onfork.
 func ReadForkIncantation(snap Snapshot) ForkIncantation {
 	raw, ok := snap.Get(ForkIncantationKey)
 	if !ok {
@@ -114,7 +94,6 @@ func ReadForkIncantation(snap Snapshot) ForkIncantation {
 	return ForkIncantation{OnFork: fields["onfork"]}
 }
 
-// incantationString reports whether raw is a JSON string, and its value.
 func incantationString(raw json.RawMessage) (string, bool) {
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
@@ -123,11 +102,8 @@ func incantationString(raw json.RawMessage) (string, bool) {
 	return s, true
 }
 
-// incantationObject decodes one incantation object into its coherent string
-// fields. A value that is not an object is refused wholesale; a field that is
-// not a string is dropped alone, so one bad key cannot silence the rest.
-// Unknown keys are named, because the failure they cause otherwise ("I set it
-// and nothing happened") is the hardest kind to debug.
+// incantationObject refuses a non-object wholesale, drops a non-string field
+// alone, and names unknown keys in the warning.
 func incantationObject(raw json.RawMessage, key string, known []string) (map[string]string, bool) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
@@ -168,9 +144,6 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// jsonKind names a raw value's type for a human reading a warning. It is the
-// difference between "incantation ignored" and "incantation ignored: you gave
-// it an array".
 func jsonKind(raw json.RawMessage) string {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" {

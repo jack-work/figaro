@@ -12,16 +12,13 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// val returns the raw value at key, or nil when the key is absent.
 func val(s form.Snapshot, key string) json.RawMessage {
 	v, _ := s.Get(key)
 	return v
 }
 
-// content renders a snapshot's entries for comparison. A Snapshot is a
-// handle on an immutable tree, so two snapshots holding the same entries
-// need not be == (AVL shape depends on insertion order, and the version
-// counter counts derivations). Content is the thing worth asserting.
+// content compares snapshots by entries: two with the same entries need not
+// be ==.
 func content(t *testing.T, s form.Snapshot) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -31,15 +28,12 @@ func content(t *testing.T, s form.Snapshot) map[string]string {
 	return out
 }
 
-// raw is a tiny helper that marshals a Go value to json.RawMessage.
 func raw(t *testing.T, v interface{}) json.RawMessage {
 	t.Helper()
 	b, err := json.Marshal(v)
 	require.NoError(t, err)
 	return b
 }
-
-// --- Snapshot.Diff / .Apply round-trip ---
 
 func TestDiff_NoChange(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{
@@ -108,8 +102,6 @@ func TestMerge_QWinsOnConflict(t *testing.T) {
 	assert.False(t, hasB, "q's Remove cancels p's Set of the same key")
 }
 
-// --- Patch.Entries: deterministic order ---
-
 func TestEntries_DeterministicOrder(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a"), "omega": raw(t, "gone")})
 	p := form.Build(prev, map[string]json.RawMessage{
@@ -137,8 +129,6 @@ func TestEntries_DeterministicOrder(t *testing.T) {
 		}
 	}
 }
-
-// --- Render with default templates ---
 
 func TestRender_DefaultTemplates_Cwd(t *testing.T) {
 	tmpls, err := form.LoadDefaultTemplates()
@@ -229,8 +219,6 @@ func TestRender_OverrideTemplate(t *testing.T) {
 	assert.Equal(t, "you are working in /over", rendered[0].Body)
 }
 
-// --- Lint ---
-
 func TestLint_ImperativePrefix(t *testing.T) {
 	rendered := []form.RenderedEntry{
 		{Key: "x", Body: "YOU MUST always use ripgrep"},
@@ -274,12 +262,10 @@ func TestLint_CleanBody(t *testing.T) {
 	assert.Empty(t, issues)
 }
 
-// helper
 func writeFile(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o600)
 }
 
-// mustEntry is the value a patch sets at key.
 func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {

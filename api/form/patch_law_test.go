@@ -9,9 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// THE FOUR LAWS. A patch algebra is worth exactly what its laws are worth, and
-// asserting them on hand-picked fixtures proves the fixtures. These run over
-// randomly generated values and random edits.
+// The laws, over random values and random edits:
 //
 //	apply(diff(A,B), A) = B
 //	inverse(diff(A,B)) = diff(B,A)
@@ -45,15 +43,12 @@ func TestLawInverse(t *testing.T) {
 		a := randValue(rng, 3)
 		b := mutate(rng, a, 3)
 
-		// The strong form: the inverse applied to B returns A.
 		back, err := Diff(a, b).Inverse().Apply(b)
 		require.NoError(t, err, "trial %d\n a=%s\n b=%s", i, a.Raw(), b.Raw())
 		requireSameJSON(t, a, back, "trial %d: inverse(diff(A,B)) applied to B != A\n a=%s\n b=%s", i, a.Raw(), b.Raw())
 	}
 }
 
-// A patch must survive the wire: it is written to the form channel and read
-// back by another process.
 func TestPatchRoundTripsThroughJSON(t *testing.T) {
 	rng := rand.New(rand.NewSource(5))
 	for i := 0; i < lawTrials; i++ {
@@ -72,8 +67,6 @@ func TestPatchRoundTripsThroughJSON(t *testing.T) {
 	}
 }
 
-// ---- helpers -------------------------------------------------------------
-
 func requireSameJSON(t *testing.T, want, got Value, msg string, args ...any) {
 	t.Helper()
 	if want.Equal(got) {
@@ -82,8 +75,6 @@ func requireSameJSON(t *testing.T, want, got Value, msg string, args ...any) {
 	require.JSONEq(t, string(want.Raw()), string(got.Raw()), fmt.Sprintf(msg, args...))
 }
 
-// randValue builds a JSON value: scalars, objects, and KEYED lists, which are
-// the three shapes the patch distinguishes.
 func randValue(rng *rand.Rand, depth int) Value {
 	if depth <= 0 {
 		return randScalar(rng)
@@ -135,9 +126,6 @@ func randScalar(rng *rand.Rand) Value {
 
 func randKey(rng *rand.Rand) string { return fmt.Sprintf("k%d", rng.Intn(6)) }
 
-// mutate edits a value the way a caller would: replacing it, adding, removing
-// or altering members, and REORDERING a keyed list, which is what exercises
-// the Order window.
 func mutate(rng *rand.Rand, v Value, depth int) Value {
 	if depth <= 0 || rng.Intn(4) == 0 {
 		return randValue(rng, depth)
@@ -178,7 +166,6 @@ func mutate(rng *rand.Rand, v Value, depth int) Value {
 				out = append(out, KeyedValue{Key: k, Value: randValue(rng, depth-1)})
 			}
 		}
-		// Reorder: the case Order exists for.
 		if len(out) > 1 && rng.Intn(2) == 0 {
 			i, j := rng.Intn(len(out)), rng.Intn(len(out))
 			out[i], out[j] = out[j], out[i]

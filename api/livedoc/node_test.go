@@ -2,7 +2,6 @@ package livedoc
 
 import "testing"
 
-// applyAll folds ops into a node list (consumer side).
 func applyAll(nodes []Node, ops []Op) []Node {
 	for _, op := range ops {
 		nodes = ApplyOp(nodes, op)
@@ -48,7 +47,6 @@ func TestDiffNodes_ToolOutputStreamThenComplete(t *testing.T) {
 	old := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning, Output: "one\n"}}
 	next := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusOK, Output: "one\ntwo\n"}}
 	ops := DiffNodes(old, next)
-	// One output patch + one status set.
 	var patch, set int
 	for _, o := range ops {
 		switch o.Kind {
@@ -72,9 +70,8 @@ func TestDiffNodes_ToolOutputStreamThenComplete(t *testing.T) {
 	}
 }
 
-// A tool block opens (name, no args) before its streamed arguments
-// arrive; the later args must reach the consumer via a Set op, else the
-// rendered widget never shows the command.
+// Args that stream in after the block opens must reach the consumer via a
+// Set op.
 func TestDiffNodes_ToolArgsArriveAfterOpen(t *testing.T) {
 	old := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning}}
 	next := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning,

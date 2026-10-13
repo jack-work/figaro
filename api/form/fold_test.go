@@ -7,16 +7,8 @@ import (
 	"text/template"
 )
 
-// THE EQUIVALENCE ORACLE FOR THE FOLD.
-//
-// Seven sites folded form patches forward, four of them rendering each patch
-// against the board as it stood BEFORE that patch. Fold and FoldRender replace
-// them. The old loops are kept HERE, permanently, because an equivalence claim
-// is a fact about every day after the change, not the day of it: delete the
-// oracle and the corpus degrades into hard-coded strings some later, subtly
-// different implementation will also satisfy.
-
-// oldFold is the loop as it appeared at projection.go:135, :156, :239.
+// oldFold and oldRenderLoop are the loops Fold and FoldRender replaced, kept
+// as the equivalence oracle.
 func oldFold(s Snapshot, patches []Patch) Snapshot {
 	for _, p := range patches {
 		s = s.Apply(p)
@@ -24,9 +16,6 @@ func oldFold(s Snapshot, patches []Patch) Snapshot {
 	return s
 }
 
-// oldRenderLoop is the shape shared by anthropic.renderPatchBlocks,
-// openaichat.renderPatches and copilot's inline loop: render against the
-// pre-patch board, then advance.
 func oldRenderLoop(s Snapshot, patches []Patch, tmpls *template.Template) ([]string, Snapshot, []error) {
 	var out []string
 	var errs []error
@@ -75,8 +64,6 @@ func foldCorpus(t *testing.T) [][]Patch {
 	}
 }
 
-// asMap materializes a snapshot for comparison. Test-only: the product never
-// needs it, which is why Snapshot does not carry one.
 func asMap(s Snapshot) map[string]string {
 	out := map[string]string{}
 	for k, v := range s.All() {
@@ -104,8 +91,6 @@ func TestFoldEqualsTheLoopItReplaced(t *testing.T) {
 				t.Fatalf("board %d corpus %d: Fold diverged from the loop it replaced\n want %v\n got  %v",
 					bi, ci, asMap(want), asMap(got))
 			}
-			// Identity is part of the contract: a no-op fold must not mint a
-			// new root, which is what makes an empty patch free.
 			if len(patches) == 0 && !got.Root().Equal(board.Root()) {
 				t.Fatalf("board %d: an empty fold minted a new root", bi)
 			}
@@ -113,12 +98,8 @@ func TestFoldEqualsTheLoopItReplaced(t *testing.T) {
 	}
 }
 
-// orderSensitiveTemplates render Entry.Old, which is computed against the
-// board handed to Render. The DEFAULT templates print only the new value, so
-// an oracle built on them cannot tell "render then apply" from "apply then
-// render" -- proven: a canary that advanced the board first PASSED against
-// them. Ordering is the whole contract, so the oracle carries a template that
-// can see it.
+// orderSensitiveTemplates render Entry.Old: the default templates print only
+// the new value and cannot tell "render then apply" from the reverse.
 func orderSensitiveTemplates(t *testing.T) *template.Template {
 	t.Helper()
 	base, err := LoadDefaultTemplates()
@@ -162,14 +143,6 @@ func TestFoldRenderEqualsTheLoopItReplaced(t *testing.T) {
 	}
 }
 
-// THE ORDER IS THE POINT. A patch must render against the board BEFORE it is
-// applied; rendering after would show a key's new value as its old context and
-// no output comparison above would necessarily catch it on a corpus where the
-// template ignores the previous value.
-// THE ORDER IS THE POINT, asserted through the render itself rather than
-// through a loop the test writes for itself -- the first version of this test
-// recomputed the boards on the side and would have passed against ANY
-// implementation of FoldRender, including one that never called back.
 func TestFoldRenderSeesTheBoardBeforeEachPatch(t *testing.T) {
 	tmpls := orderSensitiveTemplates(t)
 	board := FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})

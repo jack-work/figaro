@@ -4,13 +4,9 @@ import (
 	"encoding/json"
 )
 
-// Diff is the patch that transforms a into b: apply(diff(A,B), A) = B.
-//
-// It classifies both values and produces the patch shape that matches. Two
-// objects diff structurally, key by key; two keyed lists diff by key with an
-// Order window over what moved; anything else is a scalar swap, which is also
-// the honest answer when the KIND changes (an object that became a string did
-// not have its keys edited).
+// Diff: apply(diff(A,B), A) = B. Two objects diff by key, two keyed lists by
+// key with an Order window; anything else, including a kind change, is a
+// scalar swap.
 func Diff(a, b Value) Patch {
 	if a.Equal(b) {
 		return Patch{}
@@ -34,11 +30,8 @@ func diffObject(a, b map[string]Value) Patch {
 		av, had := a[k]
 		switch {
 		case !had:
-			// A new key whose value is an object is described by the leaves
-			// it introduces, not by the subtree as one blob. Set of a subtree
-			// replaces whatever the board already holds there, so two patches
-			// that add different fields under the same parent would clobber
-			// each other.
+			// A new object is described by its leaves, so two patches adding
+			// different fields under one parent do not clobber each other.
 			if inner, isObj := asObject(bv); isObj && len(inner) > 0 {
 				child := diffObject(map[string]Value{}, inner)
 				if !child.IsIdentity() {
@@ -109,9 +102,8 @@ func diffList(a, b []KeyedValue) Patch {
 			out.Delete = append(out.Delete, it)
 		}
 	}
-	// The window is computed over the sequence AS Apply will see IT: after
-	// creates are appended and deletes removed. Both directions are computed
-	// here because only here are both orders in hand.
+	// The window is over the sequence as Apply will see it: after creates
+	// are appended and deletes removed.
 	fwdFrom := intermediate(a, bi, out.Create)
 	fwdTo := keysOf(b)
 	revFrom := intermediate(b, ai, out.Delete)
@@ -132,8 +124,7 @@ func diffList(a, b []KeyedValue) Patch {
 	return Patch{List: out}
 }
 
-// intermediate is the sequence apply produces before Order runs: the survivors
-// in their original order, then the created keys appended.
+// intermediate is the sequence Apply produces before Order runs.
 func intermediate(from []KeyedValue, survives map[string]Value, created []KeyedValue) []string {
 	var out []string
 	for _, it := range from {
@@ -155,11 +146,8 @@ func keysOf(items []KeyedValue) []string {
 	return out
 }
 
-// windowFor is the window transforming from into to: the positions where they
-// disagree, widened by one neighbour either side as an anchor.
-//
-// The scan is linear, so moving one item far marks every key it passed as
-// moved. A known approximation.
+// windowFor is the positions where from and to disagree, widened by one
+// neighbour either side. A far move marks every key it passed as moved.
 func windowFor(from, to []string) *Order {
 	if len(from) != len(to) {
 		return nil
@@ -194,12 +182,9 @@ func windowFor(from, to []string) *Order {
 	return o
 }
 
-// asObject reports the value as a JSON object, and false for anything else.
 func asObject(v Value) (map[string]Value, bool) { return v.members() }
 
-// asList reports the value as a KEYED list. A bare JSON array is NOT one: its
-// elements have no identity, so it is a scalar and changes wholesale. Keys are
-// what make a list mergeable, and they are supplied by whoever builds it.
+// asList accepts only a keyed list; a bare array is a scalar.
 func asList(v Value) ([]KeyedValue, bool) {
 	raw := v.Raw()
 	if len(raw) == 0 || firstToken(raw) != '[' {
@@ -220,7 +205,7 @@ func asList(v Value) ([]KeyedValue, bool) {
 			return nil, false
 		}
 		if seen[*kv.Key] {
-			return nil, false // duplicate keys: not a keyed list
+			return nil, false
 		}
 		seen[*kv.Key] = true
 		items = append(items, KeyedValue{Key: *kv.Key, Value: NewValue(kv.Value)})

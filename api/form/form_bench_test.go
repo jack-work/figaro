@@ -8,20 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Form microbenchmarks: the BEFORE measurement for the
-// persistent-tree migration (see DESIGN.md, branch form/bench).
-//
-// Everything here uses only the public form API, and every
-// Snapshot construction/read goes through the seam in
-// bench_seam_test.go. Fixtures live in bench_fixtures_test.go.
-//
-// Standard invocation (see scripts/formbench.sh):
-//
-//	go test ./internal/form -bench=. -benchmem -count=10 |
-//	    tee bench-before.txt
-
-// --- Clone ---------------------------------------------------------
-
 func BenchmarkClone(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
@@ -34,10 +20,6 @@ func BenchmarkClone(b *testing.B) {
 	}
 }
 
-// --- Apply ---------------------------------------------------------
-
-// A small patch onto a big board: two sets and one removal, which is
-// what `figaro set` and a turn's context update actually look like.
 func BenchmarkApply_SmallPatch(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
@@ -54,8 +36,6 @@ func BenchmarkApply_SmallPatch(b *testing.B) {
 		})
 	}
 }
-
-// --- Diff ----------------------------------------------------------
 
 func BenchmarkDiff(b *testing.B) {
 	cases := []struct {
@@ -84,17 +64,8 @@ func BenchmarkDiff(b *testing.B) {
 	}
 }
 
-// BenchmarkDiffDerived measures what the agent actually does: diff a
-// snapshot against the snapshot it was derived FROM by Apply.
-//
-// BenchmarkDiff above builds `next` from a fresh map, so before the tree
-// swap it measured the only thing there was to measure, and after the
-// swap it measures the pathological case of two structurally unrelated
-// trees holding near-identical content: no sharing, so no
-// pointer-identity pruning. Every real Diff in figaro (turn.go's context
-// combine, ApplyOutfit, Render's prev) compares a board with its own
-// descendant, which is the case below. Keep both: one is the worst case,
-// one is the real case.
+// BenchmarkDiffDerived diffs a snapshot against the one it was derived from,
+// the real case; BenchmarkDiff's unrelated trees are the worst case.
 func BenchmarkDiffDerived(b *testing.B) {
 	for _, f := range fixtures() {
 		for _, n := range []int{1, 5} {
@@ -115,8 +86,6 @@ func BenchmarkDiffDerived(b *testing.B) {
 	}
 }
 
-// --- Reads ---------------------------------------------------------
-
 func BenchmarkGet(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
@@ -136,8 +105,6 @@ func BenchmarkGet(b *testing.B) {
 	}
 }
 
-// Lookup is the string-decoding read the agent uses for system.model,
-// system.cwd and friends; it unmarshals on every call.
 func BenchmarkLookup(b *testing.B) {
 	s := buildBoard(defaultBoardMap())
 	if s.Lookup("system.model") == nil {
@@ -152,8 +119,6 @@ func BenchmarkLookup(b *testing.B) {
 		sink(len(*p))
 	}
 }
-
-// --- Render --------------------------------------------------------
 
 func BenchmarkRender(b *testing.B) {
 	tmpls, err := form.LoadDefaultTemplates()
@@ -181,12 +146,6 @@ func BenchmarkRender(b *testing.B) {
 		})
 	}
 }
-
-// --- JSON ----------------------------------------------------------
-//
-// The wire shape is a flat object. the form channel on disk, the
-// FormResponse RPC and formReduce all marshal/unmarshal a
-// whole Snapshot, so this is a hot path in its own right.
 
 func BenchmarkMarshalJSON(b *testing.B) {
 	for _, f := range fixtures() {
@@ -229,7 +188,6 @@ func BenchmarkUnmarshalJSON(b *testing.B) {
 	}
 }
 
-// The full round trip is what formReduce pays per WAL record.
 func BenchmarkJSONRoundTrip(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
@@ -249,8 +207,6 @@ func BenchmarkJSONRoundTrip(b *testing.B) {
 		})
 	}
 }
-
-// --- Legacy shapes (kept from the original bench file) -------------
 
 func BenchmarkSnapshot_Diff_Small(b *testing.B) {
 	for _, c := range []struct{ n, diffs int }{{10, 1}, {50, 1}, {50, 5}} {
@@ -299,7 +255,6 @@ func BenchmarkRender_DefaultTemplates_5entries(b *testing.B) {
 	}
 }
 
-// sink keeps the optimizer honest without allocating.
 var sinkValue int
 
 func sink(v int) { sinkValue += v }

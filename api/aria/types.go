@@ -1,8 +1,4 @@
-// Package aria holds the wire types of figaro's paginated read API: the
-// shapes a client decodes, and nothing that reads a store. The pager, the
-// composer and the cache that produce them live in internal/livelog/aria and
-// re-export these names, so there is one definition and the SDK can have it
-// without the daemon.
+// Package aria holds the wire types of figaro's paginated read API.
 package aria
 
 import (
@@ -11,35 +7,23 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// Turn is one exchange: the question that opened it plus everything the agent
-// thought, ran and said in response. The question is Inquiry: TEXT on the
-// turn, never a node: so every entry in Nodes is agent output or a steering
-// interjection that rode along.
-// maxNode is the largest representable node ordinal. It appears only as the
-// predecessor sentinel for node 0 (see Anchor.Prev).
 const maxNode = ^uint64(0)
 
+// Turn is one exchange. The inquiry is text on the turn, never a node, so
+// every node is agent output or a steering interjection.
 type Turn struct {
 	ID uint64 `json:"turn"`
 
-	// Inquiry is the question that opened the turn: plain text, not a node.
-	// A turn is one exchange and an exchange begins with exactly one inquiry,
-	// so it is a property of the turn rather than an element of it. Steering
-	// interjections stay nodes: they ride inside a turn, they do not start one.
 	Inquiry string `json:"inquiry,omitempty"`
 
-	// InquirySegments is the same question, split by WHO ASKED IT.
+	// InquirySegments is Inquiry split by sender.
 	InquirySegments []InquirySegment `json:"inquiry_segments,omitempty"`
 
-	// At is when the inquiry arrived (unix millis). It lives on the turn
-	// because Inquiry is bare text and cannot carry a timestamp of its own.
+	// At is when the inquiry arrived, unix millis.
 	At int64 `json:"at,omitempty"`
 
-	// FormDeltas is the form state a reader would have needed to understand
-	// this turn's INQUIRY: the transitions whose window closed on the record
-	// that opened the turn. The inquiry is not a node, so deltas that belong
-	// to it live here, exactly as At does. Keyed "<formid>.<path>"; see
-	// livedoc.FormDelta.
+	// FormDeltas are the transitions whose window closed on the record that
+	// opened the turn, keyed "<formid>.<path>".
 	FormDeltas map[string]livedoc.FormDelta `json:"formDeltas,omitempty"`
 
 	LTs    []uint64       `json:"lts,omitempty"`
@@ -48,17 +32,14 @@ type Turn struct {
 	Live   *Live          `json:"live,omitempty"`
 }
 
-// InquirySegment is one submission inside a turn's opening question: the text
-// and who sent it, already rendered (rpc.Attribution) so no consumer re-derives
-// the spelling. An empty Sender means unknown and draws nothing.
+// InquirySegment.Sender is already rendered (rpc.Attribution); empty means
+// unknown and draws nothing.
 type InquirySegment struct {
 	Sender string `json:"sender,omitempty"`
 	Text   string `json:"text"`
 }
 
-// Metrics summarizes the current session for the status surfaces. ContextLimit
-// is the effective prompt cap when the provider can determine one; zero means
-// the selected model has no available cap metadata.
+// ContextLimit is zero when the model has no cap metadata.
 type Metrics struct {
 	ContextTokens    int    `json:"context_tokens"`
 	ContextLimit     int    `json:"context_limit,omitempty"`
@@ -70,21 +51,17 @@ type Metrics struct {
 	Mantra           string `json:"mantra,omitempty"`
 }
 
-// Live is a turn's open suffix: the boundary, the record version, and the
-// per-node field deltas in this frame. From is the boundary: nodes below it
-// are closed and can never receive a delta. A frame with no Nodes is a close
-// marker: promote your materialized copy iff your highest seen version is V.
+// Live is a turn's open suffix. Nodes below From are closed and never receive
+// a delta. A frame with no Nodes is a close marker: promote the materialized
+// copy iff the highest seen version is V.
 type Live struct {
 	From  uint64      `json:"from"`
 	V     int         `json:"v"`
 	Nodes []NodeDelta `json:"nodes,omitempty"`
 }
 
-// NodeDelta is a field-level change to one node, addressed by its positional
-// ordinal within the turn. In a snapshot part the i'th node is addressed as
-// From+i. livedoc.Node still carries a legacy string ID as provenance/provider
-// metadata, but that is not a UI address. The ordinal is explicit here because
-// a delta may reference nodes sparsely.
+// NodeDelta addresses a node by its positional ordinal within the turn;
+// livedoc.Node's string ID is provenance, not an address.
 type NodeDelta struct {
 	ID    uint64                   `json:"id"`
 	Set   map[string]any           `json:"set,omitempty"`   // merge fields (create on first set; type required)
@@ -92,70 +69,52 @@ type NodeDelta struct {
 	Patch map[string]livedoc.Delta `json:"patch,omitempty"` // splice a streamed string field on its prev value
 }
 
-// Empty reports whether the delta changes nothing.
 func (d NodeDelta) Empty() bool {
 	return len(d.Set) == 0 && len(d.Unset) == 0 && len(d.Patch) == 0
 }
 
-// Message is the CLIENT-SIDE materialization of one SLICE of a turn, not a
-// wire type. The wire speaks Page/TurnPart; this is what a folded client hands
-// its renderer.
+// Message is the client-side materialization of one slice of a turn, not a
+// wire type.
 type Message struct {
-	Turn int    // turn id: NOT a logical time, and NOT unique per message
-	From uint64 // node offset within the turn; >0 means this is a later slice of it
-	// Inquiry is the turn's opening question, carried ONLY by the slice that
-	// STARTS the turn (From == 0). A later slice must leave it empty, or a long
-	// turn re-asks its own question at every page boundary and halfway down its
-	// own live suffix.
-	Inquiry string
-	// InquirySegments splits Inquiry by sender; see Turn.InquirySegments.
+	Turn int    // turn id, not unique per message
+	From uint64 // node offset within the turn
+	// Inquiry, InquirySegments and FormDeltas are carried only by the slice
+	// that starts the turn (From == 0).
+	Inquiry         string
 	InquirySegments []InquirySegment
-	// InquiryLT is the log coordinate of the record that opened the turn:
-	// Turn.LTs[0], known once the turn is sealed. Zero means not yet known.
-	// The inquiry is text on the turn and occupies no node, so this is the
-	// only way a reader can address it the way nodes are addressed by Src.
-	InquiryLT uint64
-	// FormDeltas is the TURN-level form state (see Turn.FormDeltas), carried
-	// like Inquiry: only by the slice that starts the turn.
+	// InquiryLT is Turn.LTs[0], known once the turn is sealed; zero until then.
+	InquiryLT  uint64
 	FormDeltas map[string]livedoc.FormDelta
 	Role       string
 	Nodes      []livedoc.Node
 }
 
-// Direction says which way a page walks from its anchor.
 type Direction string
 
 const (
-	// Forward pages from the anchor toward the newest node.
 	Forward Direction = "forward"
-	// Backward pages from the anchor toward the oldest node. The page is
-	// still assembled in reading order; only the choice of which nodes fall
-	// inside the budget differs.
+	// Backward pages are still assembled in reading order; only which nodes
+	// fall inside the budget differs.
 	Backward Direction = "backward"
 )
 
-// Anchor addresses one node in the conversation. It is the UI coordinate -
-// turn id plus the node's positional ordinal within that turn. LT never
-// appears here: that is the model's coordinate, carried on nodes as metadata.
+// Anchor is the UI coordinate: turn id plus positional node ordinal. LT is
+// the model's coordinate and never appears here.
 type Anchor struct {
 	Turn uint64 `json:"turn"`
 	Node uint64 `json:"node"`
 }
 
-// Zero reports whether the anchor is unset.
 func (a Anchor) Zero() bool { return a.Turn == 0 && a.Node == 0 }
 
-// More reports whether nodes exist outside this page in each direction. It is
-// the only extent signal a pager needs: a total node count would be a lie for
-// an unsealed turn and useless for sizing a scrollbar, which measures rows.
+// More is the only extent signal: a total node count would be wrong for an
+// unsealed turn.
 type More struct {
 	Before bool `json:"before,omitempty"`
 	After  bool `json:"after,omitempty"`
 }
 
-// TurnPart is one turn as it appears on a page: the turn itself plus where
-// this window sits inside it. A part carries a contiguous run of nodes, so
-// ids are positional: Nodes[i] has id From+i, and are omitted from the wire.
+// TurnPart carries a contiguous run of nodes: Nodes[i] has id From+i.
 type TurnPart struct {
 	Turn
 	From        uint64 `json:"from"`
@@ -163,21 +122,12 @@ type TurnPart struct {
 	ClippedTail bool   `json:"clipped_tail,omitempty"`
 }
 
-// Page is the one wire shape: pulled by read, pushed by the live stream. A
-// pure delta push is a Page whose single part carries Live and no Nodes.
-//
-// Next and Prev are the keyset cursors, each in the shape its direction is
-// read in: read forward AT Next for the page after this one, backward BEFORE
-// Prev for the page before it. They are set only when More says there is
-// something that way, so a client pages an aria of any length by following
-// them rather than by arithmetic on turn numbers.
+// Page is the one wire shape, pulled by read and pushed by the live stream. A
+// pure delta push is a Page whose single part carries Live and no Nodes. Read
+// forward at Next for the following page, backward before Prev for the
+// preceding one; each is set only when More says there is something that way.
 type Page struct {
-	// Parts are the page's turns IN READING ORDER, ascending by (turn, from),
-	// and non-overlapping. Every producer here emits them so, a client folds
-	// them so, and a page that arrives otherwise describes a conversation
-	// nobody can place. It is a wire invariant, written here rather than left
-	// to be discovered: the first thing that depended on it silently was
-	// Span, and it no longer does.
+	// Parts are ascending by (turn, from) and non-overlapping: a wire invariant.
 	Parts   []TurnPart `json:"parts"`
 	More    More       `json:"more"`
 	Next    *Anchor    `json:"next,omitempty"`
@@ -185,15 +135,8 @@ type Page struct {
 	Metrics *Metrics   `json:"metrics,omitempty"`
 }
 
-// Span is the coordinate range a page covers, or the zero anchors when it
-// carries nothing.
-//
-// IT IS THE EXTREMA, NOT THE FIRST AND LAST ELEMENTS. Parts arrive in reading
-// order (see Parts) and every producer in this tree emits them that way, but
-// "the range this page covers" is a statement about the coordinates and not
-// about the slice: a reader that decides what a page may say about the tail
-// from its last ELEMENT is one reversed page away from deciding it wrong, and
-// silently. Pages are small; this walk is not worth an invariant to skip.
+// Span is the coordinate extrema a page covers, not its first and last
+// elements; zero anchors when it carries nothing.
 func (p Page) Span() (from, to Anchor) {
 	if len(p.Parts) == 0 {
 		return Anchor{}, Anchor{}
@@ -219,10 +162,7 @@ func (p Page) Span() (from, to Anchor) {
 	return from, to
 }
 
-// MarshalJSON keeps `parts` present and an ARRAY, always. An empty branch
-// used to serialize as {"more":{}}: no key at all, so a consumer that
-// indexed parts got a nil and a client that iterated it crashed. An empty
-// page is a page with nothing in it, not a page without the field.
+// MarshalJSON keeps `parts` present as an array even when empty.
 func (p Page) MarshalJSON() ([]byte, error) {
 	type wire Page
 	if p.Parts == nil {
@@ -231,11 +171,9 @@ func (p Page) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire(p))
 }
 
-// Empty reports whether the page carries nothing, so it isn't sent.
 func (p Page) Empty() bool { return len(p.Parts) == 0 && p.Metrics == nil }
 
-// Less orders anchors lexicographically on (Turn, Node). This is THE ordering;
-// nothing else in the tree may open-code the comparison.
+// Less is the one anchor ordering; nothing else may open-code it.
 func (a Anchor) Less(b Anchor) bool {
 	if a.Turn != b.Turn {
 		return a.Turn < b.Turn
@@ -243,21 +181,12 @@ func (a Anchor) Less(b Anchor) bool {
 	return a.Node < b.Node
 }
 
-// Next is the immediately following anchor. Within a turn it is the next node.
-// It does NOT otherwise cross a turn boundary, because an anchor does not
-// encode its turn's length: whether (t, n) is the last node of turn t is
-// knowledge the STORE holds (see Store.SetTurnLen and Store.adjacent), not
-// something the coordinate can answer alone. The one exception is the node
-// ceiling, where the lexicographic successor is unambiguous and wrapping to
-// (t, 0) would silently invert the ordering.
+// Next crosses a turn boundary only at the node ceiling: an anchor does not
+// know its turn's length. The ceiling anchor is its own successor; wrapping
+// to the zero anchor would read as "the tail".
 func (a Anchor) Next() Anchor {
 	if a.Node == maxNode {
 		if a.Turn == ^uint64(0) {
-			// THE CEILING IS ITS OWN SUCCESSOR. Adding one here wrapped to the
-			// ZERO anchor, which every reader of this wire takes to mean "the
-			// tail": a gap that ran to the top of the coordinate space asked
-			// to be filled from the beginning, got the tail back, changed
-			// nothing, and was asked for again on the next frame.
 			return a
 		}
 		return Anchor{Turn: a.Turn + 1}
@@ -265,10 +194,7 @@ func (a Anchor) Next() Anchor {
 	return Anchor{Turn: a.Turn, Node: a.Node + 1}
 }
 
-// Prev is the immediately preceding anchor: the mirror of Next. In (turn,
-// node) space ordered lexicographically the predecessor of (t, 0) is the last
-// node of turn t-1, which with uint64 ordinals is (t-1, maxNode). The zero
-// anchor is its own predecessor: it is the floor.
+// Prev of (t, 0) is (t-1, maxNode); the zero anchor is its own predecessor.
 func (a Anchor) Prev() Anchor {
 	if a.Node > 0 {
 		return Anchor{Turn: a.Turn, Node: a.Node - 1}
@@ -279,10 +205,10 @@ func (a Anchor) Prev() Anchor {
 	return Anchor{Turn: a.Turn - 1, Node: maxNode}
 }
 
-// LiveTail returns the page's open suffix, or nil if every node on it is
-// closed. At most one part can carry Live and it is always the last, so this
-// is the whole answer to "is any of this still moving".
+// LiveTail is nil when every node on the page is closed; only the last part
+// can carry Live.
 func (p Page) LiveTail() *Live {
+
 	if n := len(p.Parts); n > 0 {
 		return p.Parts[n-1].Live
 	}

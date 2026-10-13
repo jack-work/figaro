@@ -1,12 +1,6 @@
 package form
 
-// What an incantation does with a value that is not what it wanted.
-//
-// The rule under test is asymmetric on purpose: a malformed incantation costs
-// its own phrase and nothing else. The block it decorates still renders, the
-// coherent fields beside it still speak, and the turn still runs. A strict
-// parse would mean one typo in a shared outfit silently breaking every aria
-// wearing it, discovered as "the model stopped mentioning forks" weeks later.
+// A malformed incantation costs its own phrase and nothing else.
 
 import (
 	"bytes"
@@ -21,8 +15,7 @@ func boardWith(t *testing.T, key, rawValue string) Snapshot {
 	return FromMap(map[string]json.RawMessage{key: json.RawMessage(rawValue)})
 }
 
-// captureWarnings redirects slog for the duration of fn and returns what was
-// logged. The warnings ARE the contract here: a value we drop must say so.
+// captureWarnings returns what fn logged; a dropped value must say so.
 func captureWarnings(t *testing.T, fn func()) string {
 	t.Helper()
 	var buf bytes.Buffer
@@ -98,8 +91,6 @@ func TestStudyIncantationWrongShapeIsRefusedWholesale(t *testing.T) {
 	}
 }
 
-// A key nobody reads is the hardest failure to debug: the value is there, the
-// spelling looks right, and nothing happens. Name it.
 func TestStudyIncantationNamesUnknownKeys(t *testing.T) {
 	board := boardWith(t, StudyIncantationKey, `{"onstudied":"watch it"}`)
 	var got StudyIncantation
@@ -133,8 +124,7 @@ func TestForkIncantationWrongShapeIsRefused(t *testing.T) {
 	}
 }
 
-// Whitespace-only is not a phrase. It would render an empty `say` field, which
-// says less than nothing: it tells the model there was something to say.
+// Whitespace-only is not a phrase.
 func TestIncantationTrimsAndDropsBlank(t *testing.T) {
 	s := ReadStudyIncantation(boardWith(t, StudyIncantationKey, `{"onstudy":"   "}`))
 	if !s.IsEmpty() {

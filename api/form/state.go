@@ -9,22 +9,19 @@ import (
 	"sync/atomic"
 )
 
-// board is the unit of publication: the current snapshot plus whether it
-// holds changes not yet on disk. The two travel together so a reader can
-// never observe one without the other, and so publishing is a single
-// atomic pointer store.
+// board is the unit of publication: snapshot and dirty travel together under
+// one atomic pointer store.
 type board struct {
 	snapshot Snapshot
 	dirty    bool
 }
 
-// State is a per-aria form state handle.
 type State struct {
 	published atomic.Pointer[board]
 	path      string
 }
 
-// Open reads the snapshot at path. Missing file = empty state.
+// Open reads the snapshot at path; a missing file is an empty state.
 func Open(path string) (*State, error) {
 	s := &State{path: path}
 	s.publish(board{})
@@ -39,9 +36,8 @@ func Open(path string) (*State, error) {
 		return s, nil
 	}
 	var snap Snapshot
-	// Direct, not through json.Unmarshal: see formReduce's comment -
-	// encoding/json pre-scans the whole document before handing it to an
-	// Unmarshaler, which doubles the cost for identical bytes.
+	// Direct: json.Unmarshal pre-scans the whole document before handing it
+	// to an Unmarshaler.
 	if err := snap.UnmarshalJSON(data); err != nil {
 		return nil, fmt.Errorf("form.Open: parse %s: %w", path, err)
 	}
@@ -49,7 +45,6 @@ func Open(path string) (*State, error) {
 	return s, nil
 }
 
-// load reads the published board. The zero State reads as an empty board.
 func (s *State) load() board {
 	if b := s.published.Load(); b != nil {
 		return *b
@@ -59,15 +54,11 @@ func (s *State) load() board {
 
 func (s *State) publish(b board) { s.published.Store(&b) }
 
-// Snapshot returns the current board. Lock-free and safe from any
-// goroutine: snapshots are immutable, so the caller holds a stable,
-// self-consistent view no matter what the writer does next.
+// Snapshot is lock-free and safe from any goroutine.
 func (s *State) Snapshot() Snapshot {
 	return s.load().snapshot
 }
 
-// Apply advances the state by the patch and returns the new board.
-// Writer-side only: see the concurrency contract on State.
 func (s *State) Apply(p Patch) Snapshot {
 	if p.IsIdentity() {
 		return s.load().snapshot
@@ -82,16 +73,13 @@ func (s *State) Apply(p Patch) Snapshot {
 		if next.Root().Equal(cur.snapshot.Root()) {
 			return cur.snapshot
 		}
-		// Publish only against the board we computed from. A losing swap
-		// means someone else published in between, and their state is the
-		// one this patch must be applied to.
 		if s.published.CompareAndSwap(old, &board{snapshot: next, dirty: true}) {
 			return next
 		}
 	}
 }
 
-// Save flushes to disk if dirty. Atomic via tmp+rename.
+// Save flushes if dirty, via tmp+rename.
 func (s *State) Save() error {
 	old := s.published.Load()
 	if old == nil || !old.dirty || s.path == "" {
@@ -100,7 +88,7 @@ func (s *State) Save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("form.Save: mkdir: %w", err)
 	}
-	data, err := old.snapshot.MarshalJSON() // direct; see Open
+	data, err := old.snapshot.MarshalJSON()
 	if err != nil {
 		return fmt.Errorf("form.Save: marshal: %w", err)
 	}
@@ -112,17 +100,15 @@ func (s *State) Save() error {
 		os.Remove(tmp)
 		return fmt.Errorf("form.Save: rename: %w", err)
 	}
-	// failed swap means newer state exists and is legitimately still dirty.
+	// A failed swap means newer state exists and is still dirty.
 	s.published.CompareAndSwap(old, &board{snapshot: old.snapshot})
 	return nil
 }
 
-// Path returns the snapshot file path.
 func (s *State) Path() string {
 	return s.path
 }
 
-// Close flushes and releases the State.
 func (s *State) Close() error {
 	return s.Save()
 }

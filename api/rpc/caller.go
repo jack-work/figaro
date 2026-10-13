@@ -9,59 +9,47 @@ import (
 	"unicode/utf8"
 )
 
-// Caller identity on the wire.
+// CallerKey is the params field carrying the presented aria identity.
 const CallerKey = "x-internal-figaro-id"
 
-// CallerLabelKey is the params field carrying an ASSERTED caller reference -
-// who is calling, when the caller is not an aria.
+// CallerLabelKey is the params field carrying an asserted caller reference,
+// for a caller that is not an aria.
 const CallerLabelKey = "x-caller"
 
-// AriaLabelPrefix is reserved: SanitizeLabel strips it so no asserted label
-// can pose as an aria.
+// AriaLabelPrefix is stripped by SanitizeLabel so no asserted label can pose
+// as an aria.
 const AriaLabelPrefix = "aria "
 
-// MaxCallerLabelLen bounds an asserted label, in RUNES. It is caller-supplied
-// text that lands in the model's context on every message, so it is capped
-// rather than trusted to be reasonable.
+// MaxCallerLabelLen is in runes; the label lands in the model's context on
+// every message.
 const MaxCallerLabelLen = 64
 
-// Caller is the decode side of CallerKey. Embed it in a request struct that
-// wants the identity typed, or use CallerOf to read it out of raw params
-// without knowing the request's shape at all: which is what the server-side
-// authenticator does, because it runs before dispatch has chosen a type.
+// Caller is the decode side of CallerKey and CallerLabelKey.
 type Caller struct {
 	FigaroID string     `json:"x-internal-figaro-id,omitempty"`
 	Caller   *CallerRef `json:"x-caller,omitempty"`
 }
 
-// CallerRef is who is calling, when the caller is not an aria. It is a TYPED
-// OBJECT rather than a string on purpose.
 type CallerRef struct {
-	// Duke marks the caller as the end user, to be named by the target aria's
-	// form rather than by the caller. Set only by an INTERACTIVE CLI, so
-	// an aria shelling out cannot accidentally speak as its master.
+	// Duke marks the caller as the end user, named by the target aria's form.
+	// Set only by an interactive CLI, so an aria shelling out cannot speak as
+	// its master.
 	Duke bool `json:"duke,omitempty"`
 
-	// Label is an explicit asserted name (FIGARO_CALLER), which OVERRIDES the
-	// duke placeholder when set. Sanitized; never a credential.
+	// Label is an asserted name (FIGARO_CALLER) that overrides the duke
+	// placeholder. Sanitized; never a credential.
 	Label string `json:"label,omitempty"`
 }
 
-// Empty reports whether the ref names nobody.
 func (c *CallerRef) Empty() bool {
 	return c == nil || (!c.Duke && c.Label == "")
 }
 
-// DukeTitleKey is the form key naming the end user for an aria. Set it
-// in an outfit ("gluck") and every prompt that aria receives from a human
-// terminal is attributed to that name.
+// DukeTitleKey is the form key naming an aria's end user.
 const DukeTitleKey = "duke-title"
 
-// DefaultDukeTitle is what an aria calls its end user when its form does
-// not say. Deliberately generic: a wrong name is worse than a plain one.
 const DefaultDukeTitle = "user"
 
-// SanitizeLabel makes an asserted label safe to render and safe to store.
 func SanitizeLabel(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if r == '\t' {
@@ -73,7 +61,6 @@ func SanitizeLabel(s string) string {
 		return r
 	}, s)
 	s = strings.TrimSpace(s)
-	// Repeatedly, so "aria aria x" cannot smuggle one through.
 	for {
 		trimmed := strings.TrimSpace(strings.TrimPrefix(s, AriaLabelPrefix))
 		if trimmed == s {
@@ -87,15 +74,11 @@ func SanitizeLabel(s string) string {
 	return s
 }
 
-// interactive records whether this process is a human at a terminal. The CLI
-// arms it once at startup (SetInteractive), the same way it computes its
-// binding policy once, so every client dialled afterwards agrees.
 var interactive bool
 
-// SetInteractive arms the duke placeholder. Call once, at startup.
+// SetInteractive arms the duke placeholder; call once, at startup.
 func SetInteractive(v bool) { interactive = v }
 
-// CallerRefFromEnv is the reference this process presents.
 func CallerRefFromEnv() *CallerRef {
 	if label := LabelFromEnv(); label != "" {
 		return &CallerRef{Label: label}
@@ -106,14 +89,12 @@ func CallerRefFromEnv() *CallerRef {
 	return nil
 }
 
-// LabelFromEnv is the asserted label this process presents, from FIGARO_CALLER.
 func LabelFromEnv() string {
 	return SanitizeLabel(os.Getenv("FIGARO_CALLER"))
 }
 
-// CallerRefOf reads the asserted caller reference out of raw params, with its
-// label sanitized. Like CallerOf it never errors, an unusable ref is an absent
-// one, and whether absence is acceptable is the policy's decision.
+// CallerRefOf never errors: an unusable ref is an absent one, and policy
+// decides whether absence is acceptable.
 func CallerRefOf(params json.RawMessage) *CallerRef {
 	if len(params) == 0 {
 		return nil
@@ -130,8 +111,8 @@ func CallerRefOf(params json.RawMessage) *CallerRef {
 	return &ref
 }
 
-// LabelOf is the asserted label alone, ignoring the duke placeholder: the
-// placeholder has no name until a server resolves it against an aria.
+// LabelOf ignores the duke placeholder, which has no name until a server
+// resolves it against an aria.
 func LabelOf(params json.RawMessage) string {
 	ref := CallerRefOf(params)
 	if ref == nil {
@@ -140,8 +121,7 @@ func LabelOf(params json.RawMessage) string {
 	return ref.Label
 }
 
-// CallerFromEnv is the credential a CLI invocation presents: the aria that
-// spawned this process, per FIGARO_ARIA, validated.
+// CallerFromEnv is the validated FIGARO_ARIA, or "".
 func CallerFromEnv() string {
 	id := strings.TrimSpace(os.Getenv("FIGARO_ARIA"))
 	if id == "" {
@@ -153,9 +133,8 @@ func CallerFromEnv() string {
 	return id
 }
 
-// WithCaller marshals params and splices callerID in under CallerKey,
-// returning the bytes to send. An empty callerID marshals params unchanged, so
-// a human-driven CLI puts nothing extra on the wire.
+// WithCaller splices callerID and ref into params. With neither, params
+// marshal unchanged.
 func WithCaller(params any, callerID string, ref *CallerRef) (json.RawMessage, error) {
 	raw, err := json.Marshal(params)
 	if err != nil {
@@ -199,10 +178,8 @@ func WithCaller(params any, callerID string, ref *CallerRef) (json.RawMessage, e
 	return out, nil
 }
 
-// CallerOf reads the presented identity out of raw params, or "" when absent,
-// malformed, or not an object. It never errors: an unreadable credential is
-// simply an absent one, and the authorization policy: not the decoder: is
-// what decides whether absence is acceptable for a given method.
+// CallerOf never errors: an unreadable credential is an absent one, and
+// policy decides whether absence is acceptable.
 func CallerOf(params json.RawMessage) string {
 	if len(params) == 0 {
 		return ""
@@ -220,7 +197,8 @@ func CallerOf(params json.RawMessage) string {
 	return c.FigaroID
 }
 
-// SenderFrom renders the attribution a request's params assert.
+// SenderFrom renders the attribution a request's params assert; the duke is
+// named by the aria being addressed, not by the caller.
 func SenderFrom(params json.RawMessage, dukeTitle func() string) string {
 	if id := CallerOf(params); id != "" {
 		return id
@@ -229,17 +207,12 @@ func SenderFrom(params json.RawMessage, dukeTitle func() string) string {
 	if ref == nil {
 		return ""
 	}
-	// An explicit label wins over the placeholder: FIGARO_CALLER is an
-	// override, and a caller that named itself has said something the target
-	// aria's form cannot know.
 	if ref.Label != "" {
 		return ref.Label
 	}
 	if !ref.Duke {
 		return ""
 	}
-	// The duke is named by the ARIA BEING ADDRESSED, not by the caller. That
-	// is the whole point: the user's name lives in an outfit, not in a shell.
 	if dukeTitle != nil {
 		if t := SanitizeLabel(dukeTitle()); t != "" {
 			return t

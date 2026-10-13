@@ -113,8 +113,7 @@ func TestFromMap_CopiesValueBytes(t *testing.T) {
 	m := map[string]json.RawMessage{"k": buf}
 	s := form.FromMap(m)
 
-	// Mutating the value bytes in place must not be visible either
-	// (Clone has the same depth semantics).
+	// Mutating the value bytes in place must not be visible either.
 	copy(buf, `"XX"`)
 
 	v, _ := s.Get("k")
@@ -132,11 +131,6 @@ func TestFromMap_Nil(t *testing.T) {
 	assert.Equal(t, raw(t, "v"), json.RawMessage(e.New))
 }
 
-// --- JSON wire shape: the form channel on disk, the RPC FormResponse and
-// formReduce in internal/store all read what Snapshot marshals. ---
-
-// realBoardMap is a non-trivial board: dotted keys, awkward key text, every
-// JSON kind, and values that must survive verbatim.
 func realBoardMap(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 	return map[string]json.RawMessage{
@@ -163,15 +157,13 @@ func TestSnapshot_MarshalsAsATreeAndReadsBackByPath(t *testing.T) {
 	got, err := json.Marshal(s)
 	require.NoError(t, err)
 
-	// The wire shape is the tree the keys describe, so a dotted key is not
-	// a member of the root object.
+	// A dotted key is not a member of the root object.
 	var root map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(got, &root))
 	for k := range root {
 		assert.NotContains(t, k, ".", "a dotted key survived into the wire shape")
 	}
 
-	// Every key is readable back at its path, byte for byte.
 	back := form.Snapshot{}
 	require.NoError(t, json.Unmarshal(got, &back))
 	for k, want := range src {

@@ -16,10 +16,7 @@ func mustValue(t testing.TB, text string) Value {
 	return v
 }
 
-// canonicalFormPinned locks in the exact canonical encoding. Equality
-// semantics for the whole form hang off encoding/json emitting map keys
-// in sorted order; if a toolchain ever changes that, this fails loudly instead
-// of silently changing when the agent sees a reminder.
+// Equality hangs off encoding/json emitting map keys in sorted order.
 func TestCanonicalFormPinned(t *testing.T) {
 	cases := []struct{ in, canon string }{
 		{`{ "z" : 1 , "a" : 2 }`, `{"a":2,"z":1}`},
@@ -87,11 +84,9 @@ func TestValueRawPreservedAndEmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// json.Marshal compacts a RawMessage but must not reorder or rewrite it.
 	if !bytes.Contains(out, []byte(`"z":1`)) || bytes.Index(out, []byte(`"z"`)) > bytes.Index(out, []byte(`"a"`)) {
 		t.Fatalf("MarshalJSON emitted canonical form: %s", out)
 	}
-	// The canonical form is emphatically not what comes out.
 	if string(v.canonical()) == v.String() {
 		t.Fatal("test is vacuous: raw and canon coincide")
 	}
@@ -110,7 +105,6 @@ func TestValueInvalidJSONFallsBackToBytes(t *testing.T) {
 		if v.Equal(NewValue(json.RawMessage(s + "x"))) {
 			t.Errorf("NewValue(%q) equal to a different byte string", s)
 		}
-		// An invalid value never equals a valid one.
 		if v.Equal(mustValue(t, `{"a":1}`)) {
 			t.Errorf("NewValue(%q) equal to a valid value", s)
 		}
@@ -142,8 +136,6 @@ func TestValueZeroIsNull(t *testing.T) {
 	if v.IsJSON() {
 		t.Fatal("zero Value claims to carry parsed JSON")
 	}
-	// Zero equals zero, and (because its raw is empty, not "null") is not
-	// claimed to equal an explicit null literal.
 	if !v.Equal(Value{}) {
 		t.Fatal("zero Value not equal to itself")
 	}
@@ -160,7 +152,6 @@ func TestValueDeepNestingDoesNotPanic(t *testing.T) {
 			t.Fatalf("depth %d: raw not preserved", depth)
 		}
 		if v.IsJSON() {
-			// Shallow enough to parse: equality must still work.
 			if !v.Equal(NewValue(json.RawMessage(in))) {
 				t.Fatalf("depth %d: not equal to itself", depth)
 			}
@@ -201,12 +192,7 @@ func TestValueDecodeAndEncode(t *testing.T) {
 	}
 }
 
-// TestValueMarshalsIdenticallyToRawMessage is the ruling-1 pin: swapping
-// json.RawMessage for Value must not move a single byte of output. Whatever
-// encoding/json does to an embedded RawMessage today -- it compacts it and
-// escapes <, > and & -- it must do to a Value, and nothing more: nested object
-// key order preserved, \u00e9 not re-escaped, literal é left alone, number
-// spelling untouched.
+// A Value must marshal byte-identically to the json.RawMessage it wraps.
 func TestValueMarshalsIdenticallyToRawMessage(t *testing.T) {
 	inputs := []string{
 		`{"z":1,"a":2}`,
@@ -232,7 +218,6 @@ func TestValueMarshalsIdenticallyToRawMessage(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			t.Errorf("Value diverged from json.RawMessage:\n in   %s\n got  %s\n want %s", in, got, want)
 		}
-		// And the canonical form is emphatically NOT what came out.
 		v := NewValue(raw)
 		if bytes.Contains(got, v.canonical()) != bytes.Contains(want, v.canonical()) {
 			t.Errorf("%s: canonical form leaked into output", in)
@@ -240,8 +225,6 @@ func TestValueMarshalsIdenticallyToRawMessage(t *testing.T) {
 	}
 }
 
-// Reordering an object's keys must not change what is emitted -- only whether
-// Equal fires. This is the whole raw/canon split in four lines.
 func TestValueReorderedKeysEmitTheirOwnBytes(t *testing.T) {
 	a := NewValue(json.RawMessage(`{"a":1,"b":2}`))
 	b := NewValue(json.RawMessage(`{"b":2,"a":1}`))

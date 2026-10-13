@@ -2,9 +2,6 @@ package quote
 
 import "testing"
 
-// The grammar is written by the daemon and read by the terminal. Round-trip
-// is the whole contract: a heading this file writes is a heading this file
-// can read back, coordinate included, for every shape a Range has.
 func TestHeadingRoundTrips(t *testing.T) {
 	for _, in := range []string{
 		"<412>!",
@@ -58,9 +55,7 @@ func TestBriefNamesTheCoordinate(t *testing.T) {
 	}
 }
 
-// Prose that merely OPENS with a markdown blockquote is prose. Without this,
-// every quoted line a reader types by hand would be drawn as chrome naming a
-// passage that does not exist.
+// Prose that merely opens with a blockquote is prose.
 func TestOrdinaryBlockquoteIsNotAMention(t *testing.T) {
 	for _, in := range []string{
 		"> as you said earlier\n\nwhat about it?",
@@ -74,9 +69,7 @@ func TestOrdinaryBlockquoteIsNotAMention(t *testing.T) {
 	}
 }
 
-// A heading written before this grammar existed still draws as a quote: the
-// coordinate is unknown, and the heading it did write is what a verbose
-// reader sees.
+// A heading written before this grammar existed still draws as a quote.
 func TestHeadingFromBeforeTheGrammar(t *testing.T) {
 	old := "> quoting aria 7e151902 · turn 9 · lt 412.0 · chars 23-1180 (1157 chars)\n> Ecco fatto.\n\nand?"
 	m, rest, ok := Mentioned(old)
@@ -97,7 +90,6 @@ func TestHeadingFromBeforeTheGrammar(t *testing.T) {
 	}
 }
 
-// A quote with no words after it is the whole message.
 func TestMentionWithNothingAfterIt(t *testing.T) {
 	r, _, err := Parse("<9.0>!")
 	if err != nil {

@@ -1,41 +1,29 @@
 // Package message defines the provider-agnostic IR for figaro messages.
-// Per-provider wire-format projections are cached alongside each message.
 package message
 
 import "encoding/json"
 
-// Role identifies the participant in a conversation turn.
 type Role string
 
 const (
-	// RoleInput and RoleOutput name the two voices. They are deliberately
-	// under-specified: "user" was a lie the moment a subagent sent a message,
-	// and figaro does not yet need to know WHO supplied input: only that it is
-	// input. A finer distinction can be added later without another rename.
+	// RoleInput and RoleOutput are deliberately under-specified: input is
+	// input regardless of who supplied it.
 	RoleInput      Role = "input"
 	RoleOutput     Role = "output"
 	RoleToolResult Role = "tool_result"
 	RoleSystem     Role = "system" // compacted summary header
 
-	// RoleSystemInterrupt is a sentinel inserted when a turn left
-	// unmatched tool_invoke blocks (interrupt, fault, agent exit). The
-	// IR stays append-only; the translator is responsible for
-	// emitting a provider-acceptable surrogate (e.g., a synthetic
-	// tool_result block) into the wire stream.
+	// RoleSystemInterrupt marks a turn that left unmatched tool_invoke blocks;
+	// the translator emits the provider-acceptable surrogate.
 	RoleSystemInterrupt Role = "system.interrupt"
 
-	// RoleGenesis marks a node's birth message in the IR: written when a
-	// fork node is created (null root, outfit node, conversation) so the
-	// log is non-empty and forkable, and to anchor provenance. It is
-	// filtered from provider rendering (it is structural, not a turn).
+	// RoleGenesis is a node's birth message: structural, filtered from
+	// provider rendering.
 	RoleGenesis Role = "genesis"
 )
 
-// RoleFromWire maps a provider's wire vocabulary onto figaro's. Providers
-// speak user/assistant; figaro speaks input/output. This is the ONLY place the
-// mapping lives: both the decode boundary and UnmarshalJSON route through it,
-// so the two directions cannot drift apart. Anything unrecognised passes
-// through unchanged (tool_result, system, genesis are not voices).
+// RoleFromWire maps user/assistant onto input/output; the decode boundary and
+// UnmarshalJSON both route through it. Unrecognised values pass through.
 func RoleFromWire(s string) Role {
 	switch s {
 	case "user":
@@ -46,11 +34,7 @@ func RoleFromWire(s string) Role {
 	return Role(s)
 }
 
-// UnmarshalJSON accepts the pre-rename vocabulary so every aria written before
-// this change keeps reading. It lives on the type rather than in the two
-// projection sites because a decode path that forgets to normalise is a bug
-// nobody would see until a turn rendered under the wrong voice: the same
-// class of silent drift this refactor exists to delete.
+// UnmarshalJSON accepts the pre-rename user/assistant vocabulary.
 func (r *Role) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
@@ -60,12 +44,9 @@ func (r *Role) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// IsCeremonial reports whether m is a structural/inherited marker rather than
-// a conversational message: the root genesis sentinel, or the outfit-birth
-// (a RoleInput message with no renderable content: it carries only the
-// outfit's form stamp, inherited by every conversation in the shared
-// prefix). These anchor the IR but are not turns, so the conversation's
-// message count must not include them.
+// IsCeremonial reports whether m is a structural marker (genesis, or an
+// input message with no renderable content: the outfit birth) rather than a
+// turn. Ceremonial messages are excluded from the message count.
 func IsCeremonial(m Message) bool {
 	if m.Role == RoleGenesis {
 		return true
@@ -79,17 +60,13 @@ func IsCeremonial(m Message) bool {
 				return false
 			}
 		}
-		return true // empty user marker (outfit birth)
+		return true
 	}
 	return false
 }
 
-// CountMessages is the SINGLE SOURCE OF TRUTH for a conversation's message
-// count: the number of conversational (non-ceremonial) messages in an IR
-// timeline. Every derivation (live FigaroInfo, the meta sidecar, the durable
-// usage/meta snapshots) routes through this so the count is identical no
-// matter where it is computed, and, because the figwal head is now a single
-// deterministic leaf, it does not depend on fork head-selection order.
+// CountMessages is the single definition of a conversation's message count;
+// every derivation routes through it.
 func CountMessages(msgs []Message) int {
 	n := 0
 	for _, m := range msgs {
@@ -100,9 +77,7 @@ func CountMessages(msgs []Message) int {
 	return n
 }
 
-// InterruptReason classifies why a system.interrupt sentinel was
-// inserted. Travels on each interrupt content block as Text-prefixed
-// metadata; kept open-coded so unknown values pass through.
+// InterruptReason is open-coded so unknown values pass through.
 type InterruptReason string
 
 const (
@@ -111,7 +86,6 @@ const (
 	InterruptAgentExit     InterruptReason = "agent_exit"
 )
 
-// StopReason indicates why the assistant stopped generating.
 type StopReason string
 
 const (
@@ -122,29 +96,21 @@ const (
 	StopAborted    StopReason = "aborted"
 )
 
-// ContentType tags a content block.
 type ContentType string
 
 const (
-	// ContentProse is an assistant/user markdown span. Named to match the
-	// UI IR's "prose" node (livedoc.NodeProse): figaro IR and UI IR are
-	// converging on shared primitive names (prose / thinking / tool / image).
 	ContentProse      ContentType = "prose"
 	ContentImage      ContentType = "image"
 	ContentThinking   ContentType = "thinking"
-	ContentToolInvoke ContentType = "tool_invoke" // assistant emits these
-	ContentToolResult ContentType = "tool_result" // user-role message carries these (one block per tool that completed)
+	ContentToolInvoke ContentType = "tool_invoke"
+	ContentToolResult ContentType = "tool_result" // one block per completed tool, on an input-role message
 
-	// ContentInterrupt blocks live on a RoleSystemInterrupt message,
-	// one per dangling tool_call_id from the prior assistant turn.
-	// ToolCallID names the unmatched call; Reason carries a short
-	// machine-readable classification; Text carries a human-readable
-	// description echoed into the synthetic wire surrogate.
+	// ContentInterrupt blocks live on a RoleSystemInterrupt message, one per
+	// dangling tool_call_id.
 	ContentInterrupt ContentType = "interrupt"
 )
 
-// Content is a single block within a message. Type determines
-// which fields are populated.
+// Content is one block; Type determines which fields are populated.
 type Content struct {
 	Type ContentType `json:"type"`
 
@@ -159,14 +125,11 @@ type Content struct {
 
 	IsError bool `json:"is_error,omitempty"`
 
-	// Reason populates ContentInterrupt blocks.
 	Reason InterruptReason `json:"reason,omitempty"`
 
-	// Sender attributes THIS block to whoever submitted it.
 	Sender string `json:"sender,omitempty"`
 }
 
-// Usage tracks token consumption for a single assistant response.
 type Usage struct {
 	InputTokens      int `json:"input_tokens"`
 	OutputTokens     int `json:"output_tokens"`
@@ -174,9 +137,6 @@ type Usage struct {
 	CacheWriteTokens int `json:"cache_write_tokens"`
 }
 
-// Message is the canonical IR unit for conversation turns and
-// state-only events. Per-provider wire projections are cached
-// in translator streams keyed by LogicalTime.
 // StudyMark states a study/drop transition in the IR.
 type StudyMark struct {
 	FormID string `json:"form_id"`
@@ -187,59 +147,35 @@ type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
 
-	// Patches are form mutations for this message.
 	Patches []Patch `json:"patches,omitempty"`
 
-	// Study marks a change to this aria's OBSERVED SET: it began or
-	// stopped observing a form at this point in the timeline. The record
-	// is what lets the model (and a replay) account for silence: stamps
-	// simply appearing or vanishing would be a fact nobody stated.
+	// Study records that this aria began or stopped observing a form here.
 	Study *StudyMark `json:"study,omitempty"`
 
-	// StudyPatches are the OBSERVED forms' transitions for this message,
-	// keyed by form id: populated at PROJECTION time from the cursor
-	// stamps (never persisted in the IR payload; the studied forms'
-	// channels are the durable truth, and retranslation re-derives).
-	// The encoder folds them into the provider IR exactly as it folds
-	// Patches: the bound board is member zero of the same set.
+	// StudyPatches are the observed forms' transitions for this message,
+	// keyed by form id. Populated at projection time, never persisted: the
+	// studied forms' channels are the durable truth.
 	StudyPatches map[string][]Patch `json:"-"`
 
 	// StudyAt is the version each observed form stood at when this message
-	// was stamped: the upper bound of the window StudyPatches folds. It is
-	// rendered so a reader can ORDER two blocks about the same form without
-	// inferring anything from position. A haiku in the fifty-observer storm
-	// answered from the older of two blocks; ordinals are how a small model
-	// tells "then" from "now".
+	// was stamped: the upper bound of the window StudyPatches folds.
 	StudyAt map[string]uint64 `json:"-"`
 
-	// Assistant-only metadata. (model/provider are NOT here: they are
-	// form values: system.model / system.provider, derived on read.)
+	// Assistant-only. Model and provider are form values, not fields here.
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
 
-	// Logical time: monotonic counter, unique per session. Populated on
-	// read from the WAL frame index (the authoritative LT); omitempty so
-	// it isn't persisted as a meaningless 0 in the payload.
+	// LogicalTime is populated on read from the WAL frame index; omitempty
+	// keeps a meaningless 0 out of the payload.
 	LogicalTime uint64 `json:"logical_time,omitempty"`
 
-	// Steering marks an input message that arrived MID-TURN, a direction
-	// meant to influence the train of thought already in flight, not a new
-	// question. It is provenance, not content: the blocks are ordinary prose
-	// and every provider encodes them exactly as before, so the model reads a
-	// steer the same way it always did.
+	// Steering marks an input message that arrived mid-turn. Provenance only:
+	// providers encode the blocks exactly as ordinary prose.
 	Steering bool `json:"steering,omitempty"`
 
-	// TurnID names the exchange this message belongs to: one user prompt
-	// plus every assistant reply, tool round and steering interjection it
-	// provoked. Monotonic per trunk and shared by every message of the
-	// turn, so it is the coordinate `send`/`fork <trunk>:<turn>` address.
-	// LT remains the storage substrate (positional, the cross-channel
-	// foreign key); TurnID is what a human names. Messages preceding the
-	// first prompt belong to no turn and carry 0.
-	//
-	// Always serialized: with omitempty a zero was indistinguishable from a
-	// field never written, so "belongs to no turn" and "predates turn ids"
-	// were the same bytes. Enforced at the one write path, store.figIRLog.
+	// TurnID is shared by every message of a turn and monotonic per trunk;
+	// messages preceding the first prompt carry 0. Always serialized: with
+	// omitempty "no turn" and "predates turn ids" were the same bytes.
 	TurnID uint64 `json:"turn_id"`
 
 	Timestamp int64 `json:"timestamp"`
@@ -249,9 +185,7 @@ func TextContent(text string) Content {
 	return Content{Type: ContentProse, Text: text}
 }
 
-// SenderText is prose attributed to a submitter. An empty sender yields
-// exactly TextContent, so an unattributed message serializes byte-identically
-// to one written before Sender existed.
+// SenderText with an empty sender serializes byte-identically to TextContent.
 func SenderText(sender, text string) Content {
 	return Content{Type: ContentProse, Text: text, Sender: sender}
 }
@@ -260,12 +194,8 @@ func ImageContent(mimeType, data string) Content {
 	return Content{Type: ContentImage, MimeType: mimeType, Data: data}
 }
 
-// ToolImageContent is an image a tool produced, riding on the tool_result
-// tic alongside the text results and tagged with the call that produced it.
-// The tag is what lets each encoder put the image where its provider wants
-// it: Anthropic nests it inside the matching tool_result block, while the
-// Responses encoder trails it in a following user message because a
-// function_call_output there carries a plain string.
+// ToolImageContent is an image a tool produced, tagged with the call so each
+// encoder can place it where its provider wants it.
 func ToolImageContent(toolCallID, toolName, mimeType, data string) Content {
 	return Content{
 		Type:       ContentImage,
@@ -276,7 +206,6 @@ func ToolImageContent(toolCallID, toolName, mimeType, data string) Content {
 	}
 }
 
-// ToolResultContent constructs a tool_result content block.
 func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 	return Content{
 		Type:       ContentToolResult,
@@ -287,8 +216,6 @@ func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 	}
 }
 
-// InterruptContent constructs a single interrupt block naming one
-// dangling tool_call_id.
 func InterruptContent(toolCallID, toolName string, reason InterruptReason, text string) Content {
 	return Content{
 		Type:       ContentInterrupt,
@@ -299,9 +226,8 @@ func InterruptContent(toolCallID, toolName string, reason InterruptReason, text 
 	}
 }
 
-// NewInterruptSentinel constructs a RoleSystemInterrupt message naming
-// every tool_invoke from the provided assistant content blocks. Callers
-// pass the tool_invoke blocks from the dangling assistant turn.
+// NewInterruptSentinel names every tool_invoke among calls; other blocks are
+// ignored.
 func NewInterruptSentinel(reason InterruptReason, text string, calls []Content) Message {
 	blocks := make([]Content, 0, len(calls))
 	for _, c := range calls {
@@ -316,11 +242,9 @@ func NewInterruptSentinel(reason InterruptReason, text string, calls []Content) 
 	}
 }
 
-// IsInterruptSentinel reports whether m is a system.interrupt message.
 func IsInterruptSentinel(m Message) bool { return m.Role == RoleSystemInterrupt }
 
-// DanglingToolCallIDs returns the tool_call_ids named by the
-// ContentInterrupt blocks in m. Empty for non-sentinel messages.
+// DanglingToolCallIDs is empty for non-sentinel messages.
 func DanglingToolCallIDs(m Message) []string {
 	if !IsInterruptSentinel(m) {
 		return nil
@@ -334,12 +258,9 @@ func DanglingToolCallIDs(m Message) []string {
 	return ids
 }
 
-// ToolImagesByCall indexes the tool-produced images on a message by the call
-// that produced them: but only for calls that actually carry a tool_result
-// block in that same message. An encoder that nests images inside their
-// tool_result needs the restriction: an image naming a call with no result
-// would be claimed by a block that is never rendered, and vanish, which is
-// exactly the class of silent loss this indexing exists to prevent.
+// ToolImagesByCall indexes tool-produced images by call, only for calls that
+// carry a tool_result in the same message: an encoder nesting images inside
+// their tool_result would otherwise drop an image whose block never renders.
 func ToolImagesByCall(content []Content) map[string][]Content {
 	results := make(map[string]bool)
 	for _, c := range content {
@@ -363,29 +284,26 @@ func ToolImagesByCall(content []Content) map[string][]Content {
 	return out
 }
 
-// MalformedArgsKey is the sole key of the arguments map figaro synthesizes for
-// a tool call whose arguments DID NOT ARRIVE AS VALID JSON.
+// MalformedArgsKey is the sole key of the arguments map synthesized for a tool
+// call whose arguments did not arrive as valid JSON.
 const MalformedArgsKey = "__figaro_malformed_tool_input__"
 
-// MalformedArgs is the arguments map for a quarantined tool call.
 func MalformedArgs(raw string) map[string]interface{} {
 	return map[string]interface{}{MalformedArgsKey: raw}
 }
 
-// InvalidJSONResult is the tool_result CONTENT for a quarantined call, in the
-// shape Anthropic publishes for fine-grained tool streaming:
+// InvalidJSONResult is the tool_result content for a quarantined call, in the
+// shape Anthropic publishes for fine-grained tool streaming.
 func InvalidJSONResult(raw string) string {
 	b, err := json.Marshal(map[string]string{"INVALID_JSON": raw})
 	if err != nil {
-		// Unreachable for a map[string]string, and a silent empty result
-		// would be worse than a plain sentence.
 		return "INVALID_JSON: the tool input could not be parsed or re-encoded"
 	}
 	return string(b)
 }
 
 // MalformedArgsOf reports whether a tool invoke was quarantined, and returns
-// the bytes that actually arrived.
+// the bytes that arrived.
 func MalformedArgsOf(c Content) (string, bool) {
 	if c.Type != ContentToolInvoke || len(c.Arguments) != 1 {
 		return "", false

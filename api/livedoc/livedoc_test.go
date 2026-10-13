@@ -67,8 +67,6 @@ func TestDiff_RoundTrip(t *testing.T) {
 }
 
 func TestDiff_SingleRegionMinimal(t *testing.T) {
-	// A one-glyph spinner flip in a large doc must produce a tiny delta,
-	// not a whole-doc resend: the core compression property.
 	prefix := "# Deploy\n\n## build\n"
 	suffix := " building\n\n## test\nqueued\n\n## deploy\nqueued\n"
 	old := prefix + "⠋" + suffix
@@ -82,8 +80,6 @@ func TestDiff_SingleRegionMinimal(t *testing.T) {
 	}
 }
 
-// assertRuneAligned checks the delta never splits a glyph and keeps new
-// valid UTF-8.
 func assertRuneAligned(t *testing.T, old, new string, d Delta) {
 	t.Helper()
 	if d.At < 0 || d.At > len(old) || d.At+d.Del > len(old) {
@@ -103,9 +99,6 @@ func assertRuneAligned(t *testing.T, old, new string, d Delta) {
 	}
 }
 
-// FuzzDiffApply: for any pair of valid-UTF-8 strings, Diff then Apply
-// round-trips, the delta is rune-aligned, and the result stays valid
-// UTF-8. Seeded with glyph-heavy cases.
 func FuzzDiffApply(f *testing.F) {
 	seeds := [][2]string{
 		{"", ""},

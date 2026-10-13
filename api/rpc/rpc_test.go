@@ -12,8 +12,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// roundTripValue marshals v, unmarshals it back, and asserts equality.
-// For shapes without a golden fixture.
 func roundTripValue[T any](t *testing.T, v T) {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -23,9 +21,7 @@ func roundTripValue[T any](t *testing.T, v T) {
 	assertSameJSON(t, v, back)
 }
 
-// assertSameJSON compares two values by what they serialise to. A struct may
-// carry a memo whose state differs between two equal values, and comparing
-// that is comparing a cache rather than a value.
+// assertSameJSON compares by serialisation, since a struct may carry a memo.
 func assertSameJSON[T any](t *testing.T, want, got T) {
 	t.Helper()
 	a, err := json.Marshal(want)
@@ -35,7 +31,6 @@ func assertSameJSON[T any](t *testing.T, want, got T) {
 	assert.JSONEq(t, string(a), string(b))
 }
 
-// loadFixture reads a testdata file.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/" + name)
@@ -43,26 +38,20 @@ func loadFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-// roundTrip marshals v to JSON, then unmarshals into a new instance of the same type,
-// and verifies equality. Also verifies the JSON matches the fixture.
 func roundTrip[T any](t *testing.T, fixture string, expected T) {
 	t.Helper()
 
-	// 1. Unmarshal fixture into type.
 	fixtureData := loadFixture(t, fixture)
 	var fromFixture T
 	require.NoError(t, json.Unmarshal(fixtureData, &fromFixture))
 	assertSameJSON(t, expected, fromFixture)
 
-	// 2. Marshal expected, unmarshal back, verify round-trip.
 	marshaled, err := json.Marshal(expected)
 	require.NoError(t, err)
 	var roundTripped T
 	require.NoError(t, json.Unmarshal(marshaled, &roundTripped))
 	assertSameJSON(t, expected, roundTripped)
 }
-
-// --- Figaro socket types ---
 
 func TestQuaRequest(t *testing.T) {
 	roundTrip(t, "qua_request.json", rpc.QuaRequest{
@@ -88,8 +77,6 @@ func TestFigaroInfoResponse(t *testing.T) {
 		BoundPIDs:    []int{1234, 5678},
 	})
 }
-
-// --- Angelus socket types ---
 
 func TestCreateRequest(t *testing.T) {
 	roundTrip(t, "create_request.json", rpc.CreateRequest{
@@ -142,10 +129,7 @@ func TestStatusResponse(t *testing.T) {
 	})
 }
 
-// --- Method constants ---
-
 func TestMethodConstants(t *testing.T) {
-	// Verify method names follow naming convention.
 	assert.Equal(t, "figaro.aria", rpc.MethodAriaFrame)
 	assert.Equal(t, "turn.done", rpc.MethodTurnDone)
 	assert.Equal(t, "figaro.qua", rpc.MethodQua)

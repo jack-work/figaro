@@ -1,46 +1,28 @@
 package form
 
-// The form is open-schema by design (see form.go): keys
-// are arbitrary, values are raw JSON. WellKnownKeys is a *partial*
-// schema, a curated list of keys the harness reads or writes today,
-// used to drive CLI completion and as a discoverability surface.
+// The form is open-schema; WellKnownKeys is a partial catalog of the keys the
+// harness reads or writes.
 
-// KeyMode classifies a known key by who normally writes it.
+// KeyMode classifies a known key by who writes it.
 type KeyMode int
 
 const (
-	// KeyUserSettable: meant to be set by `figaro set`. Configures
-	// harness behavior.
 	KeyUserSettable KeyMode = iota
-
-	// KeySystemManaged: written by the harness (providers, derive
-	// pipeline). Read-only from the agent's perspective.
-	// derived metrics). Visible in `figaro state`; setting by hand is
-	// rarely meaningful and may be overwritten.
+	// KeySystemManaged keys are written by the harness and may be
+	// overwritten if set by hand.
 	KeySystemManaged
-
-	// KeyEphemeralPerTurn: rewritten on every prompt from CLI-side
-	// context (cwd, datetime, allowlisted env vars). Setting by hand
-	// is overwritten on the next prompt.
+	// KeyEphemeralPerTurn keys are rewritten on every prompt.
 	KeyEphemeralPerTurn
 )
 
-// KeyDoc describes a known form key.
 type KeyDoc struct {
-	// Key is the dotted path. A trailing "<name>" marks a templated
-	// namespace (e.g. "system.environment.<name>"): completion
-	// should treat the literal segment as a placeholder.
-	Key string
-
-	// Short is a one-line description shown in completion menus.
+	// Key is the dotted path; a "<name>" segment is a placeholder.
+	Key   string
 	Short string
-
-	// Mode classifies the writer (see KeyMode).
-	Mode KeyMode
+	Mode  KeyMode
 }
 
-// WellKnownKeys returns the curated catalog of form keys the
-// harness reads or writes. Order is stable; callers may filter by Mode.
+// WellKnownKeys is in stable order.
 func WellKnownKeys() []KeyDoc {
 	return []KeyDoc{
 		{Key: "duke-title", Short: `What this aria calls its END USER (default "user"); set it in an outfit and a human's prompts are attributed to that name`, Mode: KeyUserSettable},
@@ -76,11 +58,8 @@ func WellKnownKeys() []KeyDoc {
 	}
 }
 
-// IntrinsicKeys is the catalog of a INTRINSIC FORM's keys: a non-persistent builtin
-// form bound to a host, addressed as `<host>/<name>`. They are listed
-// separately from WellKnownKeys because they are not keys of any board -- no
-// `figaro set` reaches them, and completion over a board's keys must not offer
-// them. See skills/figaro/reference/forms.md.
+// IntrinsicKeys catalogs a non-persistent builtin form addressed as
+// `<host>/<name>`; no set reaches these keys.
 func IntrinsicKeys(intrinsic string) []KeyDoc {
 	switch intrinsic {
 	case "runtime":
@@ -110,5 +89,4 @@ func IntrinsicKeys(intrinsic string) []KeyDoc {
 	return nil
 }
 
-// IntrinsicNames is every intrinsic this build publishes.
 func IntrinsicNames() []string { return []string{"runtime", "queue"} }

@@ -1,11 +1,5 @@
 package rpc
 
-// THE READS: one name per verb, served on either door (see MethodRead).
-//
-// One family per file: the surface is legible when a reader can see a whole
-// family at once, and the May 2026 tightening drifted partly because 40
-// method names and 70 types shared one 1,012-line file.
-
 import (
 	"encoding/json"
 
@@ -15,16 +9,13 @@ import (
 )
 
 type ContextResponse struct {
-	Messages []interface{} `json:"messages"` // []message.Message, but interface{} for serialization flexibility
+	Messages []interface{} `json:"messages"` // []message.Message
 	Metrics  *aria.Metrics `json:"metrics,omitempty"`
 }
 
-// FormResponse returns the agent's current snapshot and the durable
-// version it stands at, which is what a conditional Set quotes back.
-// FormRequest asks for one form of a host. Intrinsic names WHICH: empty (or
-// "state") is the identity segment, the host's own form; "queue" and "runtime"
-// are the intrinsic forms. The address grammar is `<host>/<intrinsic>`, and `<host>`
-// alone is shorthand for `<host>/state`.
+// FormRequest.Intrinsic: empty or "state" is the host's own form; "queue"
+// and "runtime" are the intrinsic forms. `<host>` is shorthand for
+// `<host>/state`.
 type FormRequest struct {
 	Intrinsic string `json:"intrinsic,omitempty"`
 }
@@ -32,72 +23,49 @@ type FormRequest struct {
 type FormResponse struct {
 	Snapshot form.Snapshot `json:"snapshot"`
 	Version  uint64        `json:"version,omitempty"`
-	// Intrinsic echoes which form answered, so a client that asked for one it
-	// does not get cannot mistake the board for it.
+	// Intrinsic echoes which form answered.
 	Intrinsic string `json:"intrinsic,omitempty"`
 }
 
-// ReadRequest asks for one page of an aria at a coordinate. It is a keyset
-// read: At names where to start, Backward says which way to walk, and the
-// answer carries the coordinate to continue from (aria.Page.Next / .Prev), so
-// a client pages an aria of any length without counting anything.
-//
-// At is a UI coordinate, not a logical time. The zero anchor means the end the
-// direction starts from: the head of the aria going forward, its live tail
-// going backward. A backward read excludes At itself, because the caller
-// already holds it.
+// ReadRequest is a keyset read; the answer carries the coordinate to continue
+// from. The zero At means the end the direction starts from. A backward read
+// excludes At itself.
 type ReadRequest struct {
-	// FigaroID names the aria when the request arrives on the angelus door.
-	// On an aria's own socket the connection already says which aria, and
-	// this is empty.
+	// FigaroID is empty on an aria's own socket.
 	FigaroID string      `json:"figaro_id,omitempty"`
 	At       aria.Anchor `json:"at,omitempty"`
 	Backward bool        `json:"backward,omitempty"`
-	// Limit is a byte budget. Zero asks for the server's configured page
-	// size, which is what makes "start here, then follow Next" the whole of
-	// the client's paging logic.
+	// Limit is a byte budget; zero asks for the server's configured page size.
 	Limit int `json:"limit,omitempty"`
-	// Floor stops a BACKWARD read: no part below this anchor, and More.Before
-	// says there is more that way. It is how a client that already holds the
-	// prefix two arias share asks for only what it does not have. Inclusive of
-	// the anchor itself; zero means no floor, which is every caller that has
-	// nothing to keep.
+	// Floor stops a backward read at this anchor, inclusive; More.Before says
+	// there is more below it. Zero means no floor.
 	Floor aria.Anchor `json:"floor,omitempty"`
 }
 
-// AriaIDRequest names an aria and nothing else: the whole request for the
-// angelus-side context and form reads.
 type AriaIDRequest struct {
 	FigaroID string `json:"figaro_id"`
 }
 
-// IRRequest names the aria and the window of entries to return.
-// From is inclusive; Limit==0 means "no upper bound". The angelus
-// caps responses to a sensible upper bound regardless (1000 entries), and
-// says where the rest starts in IRResponse.NextFrom: one call is ONE PAGE,
-// never the aria. A caller that wants the whole thing walks NextFrom
-// (sdk.Angelus.IRAll), or it will read exactly one page and believe it.
+// IRRequest: From is inclusive; Limit 0 means no bound, but the angelus caps
+// a response at 1000 entries and reports the rest in NextFrom. One call is one
+// page.
 type IRRequest struct {
 	FigaroID string `json:"figaro_id"`
 	From     uint64 `json:"from,omitempty"`
-	Before   uint64 `json:"before,omitempty"` // keyset pagination: return entries with LT < Before
+	Before   uint64 `json:"before,omitempty"` // entries with LT < Before
 	Limit    int    `json:"limit,omitempty"`
 }
 
-// IREntry is one IR entry on the wire, with LT separated from
-// the payload so clients can ignore the figaro-internal envelope.
 type IREntry struct {
 	LT      uint64          `json:"lt"`
 	Payload json.RawMessage `json:"payload"`
-	// FormDeltas is the record's form-state window, assembled HUB-SIDE
-	// (internal/formdelta): the stamps and the patch logs live in the
-	// store, and the client holds neither. Absent when the record's
-	// windows were empty.
+	// FormDeltas is assembled hub-side; absent when the record's windows
+	// were empty.
 	FormDeltas map[string]livedoc.FormDelta `json:"form_deltas,omitempty"`
 }
 
 type IRResponse struct {
 	Entries  []IREntry `json:"entries"`
-	Total    int       `json:"total"`               // total entries in the aria
+	Total    int       `json:"total"`
 	NextFrom uint64    `json:"next_from,omitempty"` // 0 when no more
 }

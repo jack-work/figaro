@@ -11,16 +11,10 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// The queue wire: identity (epoch + id), the hangup's queue disposition, and
-// the per-id outcomes of a mutation. These tests pin the JSON, because the
-// whole point of the epoch is that a client reads it in one call and hands it
-// back in the next, a silent rename would turn that into a no-op.
-
 func TestInterruptRequest_ZeroValueIsKeep(t *testing.T) {
 	b, err := json.Marshal(rpc.InterruptRequest{})
 	require.NoError(t, err)
-	// A client that predates the field sends exactly this, and must keep
-	// getting the old behaviour: stop the turn, leave the queue alone.
+	// A client that predates the field sends exactly this.
 	assert.JSONEq(t, `{}`, string(b))
 
 	var req rpc.InterruptRequest
@@ -50,8 +44,6 @@ func TestInterruptResponse_CarriesTheQueueAsOfTheHangup(t *testing.T) {
 	})
 }
 
-// A drained payload must carry its form input, or `figaro cut -j` is a
-// lossy save of the thing it exists to preserve.
 func TestQueuedPrompt_DrainedPayloadKeepsForm(t *testing.T) {
 	roundTripValue(t, rpc.QueuedPrompt{
 		ID:    7,
@@ -67,7 +59,6 @@ func TestQueuedResponse_EpochAndMergedIDs(t *testing.T) {
 	roundTripValue(t, rpc.QueuedResponse{
 		Epoch: "0123456789abcdef",
 		Prompts: []rpc.QueuedPrompt{
-			// The survivor of an interrupt-time coalesce names what it absorbed.
 			{ID: 3, Text: "a\nb", State: rpc.QueueStateQueued, Merged: []uint64{4, 5}},
 		},
 	})
@@ -76,15 +67,12 @@ func TestQueuedResponse_EpochAndMergedIDs(t *testing.T) {
 func TestQueuedRequest_CarriersAreOptIn(t *testing.T) {
 	b, err := json.Marshal(rpc.QueuedRequest{})
 	require.NoError(t, err)
-	// The default request is byte-identical to what every existing caller
-	// already sends, so the panel's output cannot change under it.
 	assert.JSONEq(t, `{}`, string(b))
 	roundTripValue(t, rpc.QueuedRequest{IncludeCarriers: true})
 }
 
 func TestQueueDelete_EpochIsOnTheRequest(t *testing.T) {
 	roundTripValue(t, rpc.QueueDeleteRequest{Epoch: "abcd", IDs: []uint64{2, 3}})
-	// The all-form names no id, so it needs no epoch.
 	roundTripValue(t, rpc.QueueDeleteRequest{All: true})
 }
 
@@ -107,9 +95,6 @@ func TestQueueUpdate(t *testing.T) {
 	})
 }
 
-// The reason set is CLOSED and its strings are the wire. Pinning them here
-// means a rename has to be deliberate: a client switching on "committed"
-// would otherwise start silently falling through to its default branch.
 func TestQueueRejection_WireStringsAreStable(t *testing.T) {
 	assert.Equal(t, "committing", string(rpc.RejectCommitting))
 	assert.Equal(t, "committed", string(rpc.RejectCommitted))
@@ -129,9 +114,6 @@ func TestQueueRejection_WireStringsAreStable(t *testing.T) {
 	assert.Equal(t, "clear", string(rpc.QueueClear))
 }
 
-// The method names are the contract a hand-written client dials. They are
-// namespaced under figaro.queue.* so the read (figaro.queued, which predates
-// them) keeps its name and its shape.
 func TestQueueMethodNames(t *testing.T) {
 	assert.Equal(t, "figaro.queued", rpc.MethodQueued)
 	assert.Equal(t, "figaro.queue.update", rpc.MethodQueueUpdate)
