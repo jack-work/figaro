@@ -236,8 +236,8 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	if got, want := e1.StudyVersions[role], lib.Version(); got != want || got == 0 {
 		t.Fatalf("first stamp = %v, want the libretto at %d", e1.StudyVersions, want)
 	}
-	// The libretto's log is its OWN. A source version stamped here would read
-	// a wrong range out of it, silently, which is why the namespace changed.
+	// The libretto's log is its own; a source version stamped here would read
+	// a wrong range out of it.
 	if e1.StudyVersions[role] == v0 && lib.Version() != v0 {
 		t.Fatalf("stamp looks like the source version %d", v0)
 	}

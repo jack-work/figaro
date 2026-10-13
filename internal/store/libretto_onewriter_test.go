@@ -2,10 +2,9 @@ package store
 
 import "testing"
 
-// ONE WRITER PER FORM is the base rule. The sweep opened a libretto with
-// OpenLibretto, which constructs a NEW Form over the same stump channel --
-// so a libretto already open and following had a second writer appending to
-// its log, each computing versions from its own replayed state.
+// One writer per form: a sweep that opened a libretto with OpenLibretto put a
+// second Form over the same stump channel, each computing versions from its
+// own replayed state.
 func TestSweepDoesNotCreateASecondWriter(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("onewriter", setPatch(map[string]string{"system.model": "m"}))

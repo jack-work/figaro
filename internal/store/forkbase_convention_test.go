@@ -4,22 +4,14 @@ import (
 	"fmt"
 	"testing"
 
-	// ALIASED, and the reason is worth a line: commit 3c793c85 renamed this
-	// package's own fixture helper forest() -> tree(), so the bare package
-	// name now collides with an identifier already declared in
-	// topology_form_test.go. c64cacf2 predicted this class of collision when
-	// it described the rename; it arrived through an identifier rather than a
-	// call site.
+	// Aliased: the bare package name collides with the tree() fixture helper.
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// Pins the fork-base convention across three parties that must agree, because
-// if they ever disagree nothing fails loudly: a fork reads one record of its
-// sibling's history, which looks like correct data from the wrong branch.
-//
-// Measured agreement on a live store (aria 94f0752b, node n856):
-// figwal .fork marker base=3, first record present in the node _idx=3,
-// figaro branched_lt=3. Base is the FIRST coordinate the child owns.
+// Pins the fork-base convention across three parties: figwal's .fork marker,
+// the first record present in the node, and figaro's branched_lt. Base is the
+// first coordinate the child owns; a disagreement reads a sibling's record as
+// correct data from the wrong branch.
 
 func forkLineage(base uint64) []fwtree.Ref {
 	return []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
@@ -106,9 +98,7 @@ func TestForkBaseBoundaryRecordBelongsToTheChild(t *testing.T) {
 	}
 }
 
-// The point of the tree: N branches of one trunk pay ONE residency for the
-// shared prefix. Today the decoded IR is per-aria flat and each fork pays
-// separately.
+// N branches of one trunk pay one residency for the shared prefix.
 func TestForksShareOnePrefixResidency(t *testing.T) {
 	served := map[string]int{}
 	c := fwtree.New(nodeSource(t, served), fwtree.NewBudget(1<<20),

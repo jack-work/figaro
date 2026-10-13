@@ -9,13 +9,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// The daemon held every aria it had ever touched: cachedLog decodes a whole
-// IR and every translation into the heap at construction, formCache holds
-// the board and every patch, and only Remove ever deleted an entry.
-// Measured on a real daemon: 209 arias, 107,439 messages, 3.0 GB private.
-//
-// All of it is rebuildable from the store, so it is a cache, and a cache
-// that never evicts is a leak with better manners.
+// Every aria ever touched is a cache rebuildable from the store, and a cache
+// that never evicts is a leak.
 func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {

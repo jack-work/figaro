@@ -5,19 +5,9 @@ import (
 	"testing"
 )
 
-// The precondition for seating the frozen prefix on tree.Cache.
-//
-// cachedLog publishes an immutable logView behind an atomic.Pointer, and that
-// is why contended reads are lock-free. A reader therefore holds a value that
-// nobody may mutate. When the prefix moves to tree, hollowing a run must
-// publish a SUCCESSOR view; editing the one readers hold is the study-patch
-// mutation class of bug, and a per-LT cache would make the damage permanent.
-//
-// These assert the property as it stands today, so a re-seat that repeals it
-// fails here rather than in production.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the tree
-// re-seat and outlives it: do not retire this file with the temporary code.
+// A reader holds an immutable published view; hollowing a run must publish a
+// successor rather than edit what readers hold. Permanent, not migration
+// scaffolding.
 
 func heldEntry(i int) Entry[string] {
 	return Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}
@@ -64,10 +54,8 @@ func TestHeldReadSurvivesTrimUnderneath(t *testing.T) {
 	}
 }
 
-// TailSnapshot returns a SUBSLICE of the published array rather than a copy,
-// which is the sharpest form of the hazard: the reader holds the view's own
-// backing store. Appends write past the published length, where no reader can
-// see them, and a trim must build a fresh array rather than shift in place.
+// TailSnapshot returns a subslice of the published array, the sharpest form
+// of the hazard: a trim must build a fresh array rather than shift in place.
 func TestHeldTailSnapshotSurvivesAppendAndTrim(t *testing.T) {
 	c := heldLog(t, 200)
 
@@ -91,9 +79,8 @@ func TestHeldTailSnapshotSurvivesAppendAndTrim(t *testing.T) {
 	}
 }
 
-// The reader must not merely survive: it must still see the range it asked
-// for. A hollow that dropped rows the held view still indexes would read as
-// truncation, which is a lie rather than a miss.
+// The reader must still see the range it asked for: a hollow that dropped
+// rows the held view still indexes would read as truncation.
 func TestHeldReadFromIsCompleteAcrossTrim(t *testing.T) {
 	c := heldLog(t, 300)
 

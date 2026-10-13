@@ -8,21 +8,10 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// ONE INVOKE IS CLOSED ONCE, however many doors are open over the log.
-//
-// Gluck, 0.28.2: "messages.682.content.2: unexpected tool_use_id found in
-// tool_result blocks". The tool_use was present -- the CLOSING NOTICE was
-// written TWICE, and the API refuses the second because the invoke was
-// already answered by the first.
-//
-//	690 output tool_invoke  X
-//	691 input  tool_result  X  "tool call closed without a result (interrupt…"
-//	692 input  tool_result  X  "tool call closed without a result (interrupt…"
-//
-// OpenFigIR mints a NEW door per call, each with its own in-memory idea of
-// what is open. finishTurn's CloseOpenToolCalls opened a second door, closed
-// the call, and the agent's own door never learned -- so its next append
-// closed it again. Two copies of one invariant, disagreeing.
+// One invoke is closed once, however many doors are open over the log: a
+// second closing notice at one tool_use_id is refused by the provider.
+// OpenFigIR mints a door per call, so what is open must be read from the
+// log, not remembered.
 func TestOneInvokeIsClosedOnceAcrossDoors(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)

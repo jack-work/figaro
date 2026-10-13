@@ -10,19 +10,10 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// IS THE LIBRETTO BEHIND THE SOURCE AT THE MOMENT A FIG IR ENTRY IS STAMPED?
-//
-// That is the standing hypothesis for restartlive.sh's one-turn lag, which
-// survives the commit-on-write fix and is pre-existing on main. The stamp reads
-// the LIBRETTO's version (observedCursors -> formTail(LibrettoID)), and the
-// libretto is a copy kept current by an ASYNCHRONOUS fold goroutine. If the
-// fold has not run when the entry lands, the entry carries a stale version,
-// there is no delta to render, and the change waits a turn.
-//
-// IT COUNTS OCCURRENCES rather than asserting a single outcome, because a race
-// asserted once is a coin flip written down. A single stale stamp in many
-// rounds is the finding; zero across many is evidence the fold is not the
-// mechanism and the hypothesis in plans/delta-seam-rebased.md is wrong.
+// Is the libretto behind the source at the moment an IR entry is stamped? The
+// stamp reads the libretto's version, and the libretto is kept current by an
+// asynchronous fold; a stale stamp leaves no delta to render for a turn.
+// Counted over many rounds, since a race asserted once is a coin flip.
 func TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
@@ -84,15 +75,10 @@ func TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped(t *testing.T) {
 	}
 }
 
-// THE RESTART SHAPE: the source is patched while NOTHING IS FOLLOWING, which
-// is what a daemon that is down (or an aria that is not loaded) looks like.
-// The libretto then re-attaches when the aria opens, and the first entry is
-// stamped immediately after.
-//
-// Follow's own seed is conditional -- "Seed only when the copy is BEHIND ...
-// re-attaching an already-current libretto must not write the whole state
-// again" -- so this asks whether the catching-up happens before the stamp or
-// after it.
+// The restart shape: the source is patched while nothing is following, then
+// the libretto re-attaches and the first entry is stamped immediately after.
+// Follow seeds only when the copy is behind, so this asks whether catching up
+// happens before the stamp.
 func TestTheLibrettoAfterAReattachIsCurrentBeforeTheNextStamp(t *testing.T) {
 	root := t.TempDir()
 	be, err := NewXwalBackend(root, 0)

@@ -7,22 +7,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// WHAT DOES FOREST STILL BUY THE DECODED LAYER?
-//
-// The phase exists to stop two forks of one trunk retaining the shared prefix
-// separately. This asks what "separately" actually means, by IDENTITY rather
-// than by heap: if a child's copy of a parent's record is the same decoded
-// value, nothing is duplicated and the tree has no work to do here.
-//
-// Heap is the wrong ruler for this (it has misled this project before). So is
-// string identity: encoding/json on the v2 engine (Go 1.27, goexperiment
-// jsonv2) keeps a string cache on its pooled decoders and hands two separate
-// Unmarshal calls the SAME bytes for equal values of 2..256 bytes, so two
-// cold decodes of one record can share their text without anything in this
-// package having shared it. No decoder reuses a slice's backing array, so the
-// Content slice is the identity of a decoded entry.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING.
+// Measures whether a child's copy of a parent's record is the same decoded
+// value, by identity: the backing array of the Content slice. (encoding/json
+// keeps a string cache across decodes, so string identity is not evidence.)
 
 // textOf returns the entry's first text, or "" for records that carry none
 // (the outfit birth record at LT 1, for one).
@@ -70,23 +57,16 @@ func forkedPair(t *testing.T) (b *XwalBackend, parent, childA, childB string) {
 	return b, parent, childA, childB
 }
 
-// THE DUPLICATION THIS MEASURED IS NOW FIXED for the case that matters: with
-// the ancestor resident, opening a fork seeds from it and shares every string
-// (seed_test.go, 296 of 296). What remains, and what this test now measures,
-// is the COLD case: a process that opens a fork with no ancestor resident has
-// nothing to seed from and decodes, exactly as before.
-//
-// Keeping it in the minting direction matters. It is the canary for the
-// identity meter used to prove the fix: a meter that can only ever report
-// "shared" would report it whether or not seeding happened.
+// The cold case: a process that opens a fork with no ancestor resident has
+// nothing to seed from and decodes. The minting direction is the canary for
+// the identity meter.
 func TestOpeningAForkWithoutAResidentAncestorDecodesItsOwnCopy(t *testing.T) {
 	b, parent, childA, _ := forkedPair(t)
 	dir := b.root
 	b.Close()
 
-	// SEQUENTIALLY, because a store admits one writer: read the parent, close
-	// it, then open the child in a fresh backend. That is exactly a cold open
-	// -- a process that holds nothing of the ancestor.
+	// Sequentially, because a store admits one writer: a cold open holds
+	// nothing of the ancestor.
 	b1, err := NewXwalBackend(dir, 0)
 	if err != nil {
 		t.Fatal(err)

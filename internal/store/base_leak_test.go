@@ -7,15 +7,9 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// A run materialized in the ANCESTOR can span a child's fork base: nothing
-// stops one covering 250-320 when the child forked at 299. Records at or above
-// the base are, in the parent, its own POST-FORK continuation -- a different
-// conversation. If the child sees them it reads as correct data from the wrong
-// branch: the sibling-leak shape in its new home.
-//
-// The seam moved to the fork base, so this is where that hazard now lives.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING.
+// A run materialized in the ancestor can span a child's fork base; records at
+// or above the base are the parent's own post-fork continuation and must
+// never reach the child.
 
 func leakCache(t *testing.T) *fwtree.Cache[string] {
 	t.Helper()
@@ -47,8 +41,7 @@ func TestAncestorRunSpanningTheBaseDoesNotLeakIntoTheChild(t *testing.T) {
 	c := leakCache(t)
 	defer c.Close()
 
-	// The parent materializes its own history straight across the fork point,
-	// including records it wrote AFTER the child diverged.
+	// The parent materializes straight across the fork point.
 	units := make([]string, 0, 70)
 	for i := uint64(251); i <= 320; i++ {
 		units = append(units, fmt.Sprintf("parent@%d", i))
@@ -102,8 +95,8 @@ func TestAncestorRunSpanningTheBaseDoesNotLeakIntoTheChild(t *testing.T) {
 	})
 }
 
-// The same, with the ancestor's spanning run already WARM, since a hit slices
-// an existing run rather than re-materializing and that is a different path.
+// The same with the ancestor's spanning run already warm: a hit slices an
+// existing run, a different path.
 func TestWarmAncestorRunRespectsTheBase(t *testing.T) {
 	const base = 100
 	c := leakCache(t)

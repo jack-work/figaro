@@ -6,18 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// WHERE IS THE DUPLICATION, actually?
-//
-// The ruling says the decoded IR joins the tree because "two forks of one
-// trunk each retain the shared prefix separately". This measures where that
-// shared prefix is RESIDENT, because it decides what the re-seat must share.
-//
-// If the duplication is below the window, the fix is at the window edge and
-// the cache backs the fall-through. If a fork's resident window is itself
-// mostly its parent's rows, the fix is at the FORK BASE and the fall-through
-// is beside the point.
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING.
+// Measures where a fork's shared prefix is resident: if a fresh fork's window
+// is mostly its parent's rows, sharing belongs at the fork base.
 func TestWhereTheForkPrefixIsResident(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -73,9 +63,7 @@ func TestWhereTheForkPrefixIsResident(t *testing.T) {
 		t.Fatal("the fork inherited nothing; the fixture cannot show duplication")
 	}
 
-	// The finding, asserted so it cannot quietly stop being true: a fresh
-	// fork's view is dominated by rows it does not own, and both trunks
-	// decode them separately today.
+	// A fresh fork's view is dominated by rows it does not own.
 	if inherited <= own {
 		t.Errorf("expected a fresh fork to be dominated by inherited rows, got %d inherited vs %d own",
 			inherited, own)

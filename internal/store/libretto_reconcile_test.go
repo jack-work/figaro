@@ -6,10 +6,8 @@ import (
 	"testing"
 )
 
-// Reconciliation RECOMPUTES, which is the whole reason it exists: the study
-// path's ordering only guarantees an over-count, and fork/import/kill break
-// it the other way (durable-forms §12.2.2). A sweep that adjusted rather
-// than recomputed would repair one direction and not the other.
+// Reconciliation recomputes: the study path's ordering only guarantees an
+// over-count, and fork/import/kill break it the other way.
 
 func studySet(t *testing.T, be *XwalBackend, ariaID string, forms ...string) {
 	t.Helper()
@@ -44,9 +42,8 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 	studySet(t, be, watcherA, sourceID)
 	studySet(t, be, watcherB, sourceID)
 
-	// THE SHARED instance, not a fresh one: a second Libretto over the same
-	// stump is a second writer on its channel, which is what this sweep was
-	// caught doing (see TestSweepDoesNotCreateASecondWriter).
+	// The shared instance, not a fresh one: a second Libretto over the same
+	// stump is a second writer on its channel.
 	lib, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
@@ -129,10 +126,9 @@ func TestReconcileZeroesAnOrphan(t *testing.T) {
 	}
 }
 
-// A studied form with no libretto is REPORTED by an audit and MINTED by a
-// repair. That is the migration: a store from before phase 9 carries studies
-// whose librettos were never created, and the verb cannot make them because
-// it only runs at study time.
+// A studied form with no libretto is reported by an audit and minted by a
+// repair: studies from before librettos existed never got one, and the verb
+// only runs at study time.
 func TestReconcileReportsAStudiedFormWithNoLibretto(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("recon2", setPatch(map[string]string{"system.model": "m"}))

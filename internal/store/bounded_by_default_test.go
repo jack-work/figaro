@@ -6,15 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A BARE BACKEND IS BOUNDED. Until 2026-08-19 it was not: irBudget and
-// transBudget defaulted to 0 (unbounded) and only internal/cli's daemon wiring
-// set them, so doctor, every test, and any embedding that forgot the wiring
-// retained every decoded entry forever. Nothing in the tree could go red about
-// it, because the layer that owned the bytes had no opinion about them.
-//
-// The assertion is the ARTIFACT -- bytes actually resident after writing well
-// past the budget -- not the field, because a field can be set by a
-// constructor and then never reach the handle that decodes.
+// A bare backend is bounded. The assertion is the artifact (bytes resident
+// after writing past the budget), not the field.
 func TestBareBackendIsBounded(t *testing.T) {
 	// 400 entries of 8 KiB is ~3.2 MiB encoded, and the estimate charges
 	// irDecodeInflation on top: several times the 4 MiB budget either way.
@@ -24,10 +17,7 @@ func TestBareBackendIsBounded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, log.Read(), "the aria must have history to hold")
 
-	// THE BOUND IS THE PROCESS-WIDE TREE BUDGET NOW, not a per-aria window: one
-	// cache holds every aria's decoded IR under one eviction order, so a single
-	// aria may hold more than the old per-aria figure and all of them together
-	// may not.
+	// The bound is the process-wide tree budget, not a per-aria window.
 	resident := int64(be.ResidentIRBytes())
 	require.NotZero(t, resident, "a read must leave something resident")
 	_, limit, _ := be.irTree.Stats()

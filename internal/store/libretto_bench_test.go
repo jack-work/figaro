@@ -8,18 +8,10 @@ import (
 	"time"
 )
 
-// durable-forms §12.7 says the fold must be TREE SURGERY, not marshal and
-// unmarshal: allocation proportional to the patch, not to the bytes of the
-// board being observed. It says so because the alternative is invisible on a
-// small board and immediate on a large one, and "it has to be the design
-// from the first line, because it is very hard to retrofit once the
-// derivation speaks JSON internally."
-//
-// This measures the built thing against that claim. A libretto follows a
-// source with `size` keys; each iteration patches ONE key and waits for the
-// copy to carry it. If the fold marshalled the board, the per-fold cost
-// would climb with size. If it applies the source's own patch to its own
-// tree, it will not.
+// The fold must be tree surgery, not marshal and unmarshal: allocation
+// proportional to the patch, not to the board. Each iteration patches one key
+// of a `size`-key source and waits for the copy to carry it; the per-fold
+// cost must not climb with size.
 func benchLibrettoFold(b *testing.B, size int) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
@@ -74,16 +66,12 @@ func benchLibrettoFold(b *testing.B, size int) {
 func BenchmarkLibrettoFoldSmallBoard(b *testing.B) { benchLibrettoFold(b, 10) }
 func BenchmarkLibrettoFoldLargeBoard(b *testing.B) { benchLibrettoFold(b, 5000) }
 
-// A BURST is where coalescing shows: the source takes N patches as fast as it
-// can and the copy folds whatever is queued into one durable write. The
-// number to watch is source patches per libretto record -- one means the
-// fold is paying an fsync per source patch, which doubles a studied form's
-// write cost.
+// A burst is where coalescing shows: the number to watch is source patches
+// per libretto record, since one means an fsync per source patch.
 func BenchmarkLibrettoFoldBurst(b *testing.B) { librettoBurst(b, 1) }
 
-// Eight concurrent writers: the source's own group commit folds them into
-// one fsync, so the libretto sees a RUN of events and can fold them into one
-// record. This is where coalescing is supposed to earn its keep.
+// Eight concurrent writers: the source's group commit folds them into one
+// fsync, so the libretto sees a run of events and can fold them into one record.
 func BenchmarkLibrettoFoldBurstConcurrent(b *testing.B) { librettoBurst(b, 8) }
 
 func librettoBurst(b *testing.B, writers int) {
@@ -134,15 +122,9 @@ func librettoBurst(b *testing.B, writers int) {
 	}
 }
 
-// THE FIFTY-OBSERVER STORM, which durable-forms §12.7 names as the case
-// where the derivation's cost stops being theoretical: "50 x 12 MB per patch
-// versus 50 x a few hundred bytes".
-//
-// One libretto per studied FORM is what answers it. Fifty observers share
-// one copy, one fold and one goroutine, so a patch to the source is folded
-// ONCE however many figaros are watching -- which is the whole reason the
-// design reversed from one-libretto-per-figaro. This measures that the
-// sharing is real: the per-patch cost must not move with the observer count.
+// The fifty-observer storm: one libretto per studied form means fifty
+// observers share one copy, one fold and one goroutine, so the per-patch cost
+// must not move with the observer count.
 func benchStorm(b *testing.B, observers int) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {

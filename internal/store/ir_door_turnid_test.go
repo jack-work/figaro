@@ -24,8 +24,7 @@ func reply(text string) message.Message {
 func TestDoorStampsEveryAppendWhoeverMakesIt(t *testing.T) {
 	log := GuardIR(NewMemLog[message.Message]())
 
-	// A caller that stamps nothing at all: the shape study notes, topology
-	// writes and repair records all used.
+	// A caller that stamps nothing at all.
 	for _, m := range []message.Message{
 		prompt("first question"),
 		reply("first answer"),

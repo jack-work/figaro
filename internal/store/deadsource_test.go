@@ -2,10 +2,9 @@ package store
 
 import "testing"
 
-// durable-forms §12.2.2: "drop on a form that has since been deleted is
-// LEGAL: it removes the subscription and decrements, and the board stops
-// naming it." The earlier test tombstones the source. A real `fig kill`
-// UNLINKS it, and then the libretto's source cannot be opened at all.
+// A drop on a deleted form is legal: the subscription goes and the board
+// stops naming it. A real `fig kill` unlinks the source, so the libretto's
+// source cannot be opened at all.
 func TestDropAfterTheSourceIsUnlinked(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("gone", setPatch(map[string]string{"system.model": "m"}))
@@ -61,9 +60,8 @@ func TestForkWithADeadStudiedForm(t *testing.T) {
 	}
 }
 
-// THE REAL CASE: the daemon RESTARTS between the deletion and the drop. Now
-// nothing is cached, so the libretto must be reachable without its source --
-// which is the whole promise of the copy outliving what it copied.
+// The real case: the daemon restarts between the deletion and the drop, so
+// the libretto must be reachable without its source.
 func TestDropAfterTheSourceIsUnlinkedAcrossARestart(t *testing.T) {
 	dir := t.TempDir()
 	be, err := NewXwalBackend(dir, 0)
@@ -117,9 +115,8 @@ func TestDropAfterTheSourceIsUnlinkedAcrossARestart(t *testing.T) {
 	}
 }
 
-// The other half: a source that could not be opened once must be picked up
-// when it can. Attachment is retried by the next caller rather than latched,
-// so a momentary read failure does not freeze a copy forever.
+// A source that could not be opened once must be picked up when it can:
+// attachment is retried by the next caller rather than latched.
 func TestLibrettoAttachesLateWhenItsSourceAppears(t *testing.T) {
 	dir := t.TempDir()
 	be, err := NewXwalBackend(dir, 0)

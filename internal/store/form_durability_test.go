@@ -23,10 +23,8 @@ type failingLog struct {
 func (l *failingLog) SyncThrough(uint64) error {
 	l.syncs.Add(1)
 	if l.slow.Load() {
-		// A real fsync is milliseconds. Without standing in for that, a
-		// memory log drains faster than writers can submit and every write
-		// forms its own batch, which measures the harness rather than the
-		// batching.
+		// Without a stand-in for a real fsync, a memory log drains faster than
+		// writers submit and every write forms its own batch.
 		time.Sleep(2 * time.Millisecond)
 	}
 	if l.failSync.Load() {
