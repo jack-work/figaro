@@ -387,7 +387,7 @@ per-aria wire bytes (`store.Log[[]json.RawMessage]`, keyed by figaro LT).
   the Claude-Code/OAuth default is `"omitted"` (signature only, empty thinking
   text). Knobs: `system.thinking_effort` (low|medium|high|xhigh|max; default
   high) and `system.thinking_budget`.
-- **Automatic prompt caching** (`resolveCacheControl` / `markCacheBreakpoints`)
+- **Automatic prompt caching** (`markCacheBreakpoints`)
 : see cache-control.md.
 - **Auth**: OAuth via hush; Claude-Code identity headers + beta
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive

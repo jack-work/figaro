@@ -22,7 +22,6 @@ ephemeral          1 per user            N per user
 
 ```
 cmd/figaro/                multi-call entry: figaro / q / l + --angelus daemon
-cmd/form-test/             form test harness
 sdk/                       Go client: angelus + aria connections
 skills.go                  embeds skills/figaro into the binary
 

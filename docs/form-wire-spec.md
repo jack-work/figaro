@@ -244,40 +244,8 @@ same machinery is worth pointing at things that *do* move (see
 
 ---
 
-## 7. The harness
-
-`cmd/form-test`, ~250 lines, speaks the wire directly — **no sdk** — so what
-you read there is what goes over the socket.
-
-```sh
-go build -o /tmp/form-test ./cmd/form-test
-
-# terminal 1
-form-test listen @1f84ca51
-
-# terminal 2
-form-test send @1f84ca51 title=rewritten count=7 'tags=["a","b"]'
-```
-
-`listen` prints every frame in both directions with a timestamp, folds the
-deltas into a mirror by hand (so `Set` / `Delete` / `Update` are visible as
-operations, not hidden inside `Snapshot.Apply`), and redraws the derived view
-after each one. `send` prints its request, then reads until it sees its own
-`id` — demonstrating rule 2.
-
-A bare word is sent as a JSON string; anything that parses as JSON is sent as
-itself. That is the only cleverness in it.
-
----
-
 ## 8. Open, for the author
 
 1. The demo form `@1f84ca51` is in your **real** store (my isolation attempt
    fell through — `FIGARO_RUNTIME_DIR`, not `FIGARO_STATE_DIR`, is the knob).
    Say the word and I'll `figaro kill @1f84ca51`.
-2. `form-test listen` currently scrolls; you asked for a TUI. It is a 40-line
-   step to alt-screen it with a fixed derived-state pane on top and a
-   scrolling frame log beneath. Worth doing, or is the scroll enough for viz?
-3. Should this live in `cmd/` (shipped) or `scratch/`? It is a genuinely
-   useful teaching tool, and §1–6 above is arguably the missing
-   `reference/form-wire.md`.
