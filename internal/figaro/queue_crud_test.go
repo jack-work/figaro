@@ -11,8 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// CRUD on the queue. The interesting half is not deletion: it is the shape of
-// a REFUSAL, which has to be specific enough to act on.
+// A refusal must be specific enough to act on.
 
 func TestQueueDelete_RemovesByID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -29,8 +28,7 @@ func TestQueueDelete_RemovesByID(t *testing.T) {
 	assert.Equal(t, []string{"two"}, promptTexts(b.SnapshotPrompts(true)))
 }
 
-// Deleting the message the agent is committing right now is a legitimate ask
-// and a legitimate refusal, and the caller is told which, not just "no".
+// Deleting the message being committed is a legitimate refusal, and the caller is told which.
 func TestQueueDelete_InFlightIsRefusedWithAReason(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -44,15 +42,13 @@ func TestQueueDelete_InFlightIsRefusedWithAReason(t *testing.T) {
 	assert.Equal(t, rpc.RejectCommitting, results[0].Reason)
 	assert.NotEmpty(t, results[0].Detail)
 
-	// Once it is durably part of the conversation the reason sharpens.
 	b.MarkCommitted(taken)
 	_, results = b.DeletePrompts(b.Epoch(), []uint64{1}, false)
 	require.Len(t, results, 1)
 	assert.Equal(t, rpc.RejectCommitted, results[0].Reason)
 }
 
-// An id an interrupt folded away still resolves: to the message that
-// absorbed it: instead of being reported as if it never existed.
+// A folded id resolves to the message that absorbed it.
 func TestQueueDelete_MergedIDPointsAtItsSurvivor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -66,14 +62,12 @@ func TestQueueDelete_MergedIDPointsAtItsSurvivor(t *testing.T) {
 	assert.Equal(t, rpc.RejectMerged, results[0].Reason)
 	assert.Equal(t, uint64(1), results[0].Into, "the caller is told where to aim instead")
 
-	// Deleting the survivor takes the whole folded message with it.
 	_, results = b.DeletePrompts(b.Epoch(), []uint64{1}, false)
 	assert.Equal(t, rpc.QueueDeleted, results[0].Outcome)
 	assert.Empty(t, b.SnapshotPrompts(true))
 }
 
-// REQUIRED ITEM A, executable. An id from a previous generation must never
-// resolve against this one: it would delete a different message.
+// An id from a previous generation must never resolve against this one.
 func TestQueueDelete_StaleEpochMutatesNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -82,7 +76,6 @@ func TestQueueDelete_StaleEpochMutatesNothing(t *testing.T) {
 	old.Send(event{typ: eventUserPrompt, text: "the message the client read"})
 	staleEpoch := old.Epoch()
 
-	// The agent restarts: same id space, entirely different messages.
 	fresh := NewInbox(ctx)
 	fresh.Send(event{typ: eventUserPrompt, text: "somebody else's message"})
 
@@ -95,8 +88,7 @@ func TestQueueDelete_StaleEpochMutatesNothing(t *testing.T) {
 		"a stale id must not delete the message that now holds that number")
 }
 
-// An epoch is required whenever ids are named, a caller that never read the
-// queue cannot know what it is deleting.
+// An epoch is required whenever ids are named.
 func TestQueueDelete_MissingEpochIsStale(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -109,8 +101,7 @@ func TestQueueDelete_MissingEpochIsStale(t *testing.T) {
 	require.Len(t, b.SnapshotPrompts(true), 1)
 }
 
-// The all-form names no id, so it needs no epoch, and it reports one result
-// per message actually removed. Control events are not questions and stay.
+// The all-form needs no epoch and reports one result per message removed; control events stay.
 func TestQueueDelete_AllNeedsNoEpochAndSparesControlEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -139,8 +130,7 @@ func TestQueueDelete_UnknownID(t *testing.T) {
 	assert.Equal(t, rpc.RejectUnknown, results[0].Reason)
 }
 
-// Results come back one per requested id, in request order, so a caller can
-// zip them against what it asked for.
+// Results come back one per requested id, in request order.
 func TestQueueDelete_OneResultPerRequestedID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -168,7 +158,6 @@ func TestQueueUpdate_RewritesQueuedText(t *testing.T) {
 	assert.Equal(t, rpc.QueueUpdated, result.Outcome)
 	assert.Equal(t, []string{"fixed"}, promptTexts(b.SnapshotPrompts(true)))
 
-	// The same refusals apply.
 	_, result = b.UpdatePrompt("wrong-epoch", 1, "nope")
 	assert.Equal(t, rpc.RejectStale, result.Reason)
 	_, result = b.UpdatePrompt(b.Epoch(), 42, "nope")

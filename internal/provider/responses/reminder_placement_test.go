@@ -9,10 +9,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// A tool round with nobody speaking must not grow a user message holding only
-// a reminder: the model reads that as its master sending an empty prompt. The
-// reminder rides inside the last function_call_output instead, in the same
-// round.
+// A results-only round must not grow a user message holding only a
+// reminder; it rides inside the last function_call_output.
 func TestAReminderOnAToolRoundRidesInsideTheFunctionOutput(t *testing.T) {
 	tpl, err := form.LoadDefaultTemplates()
 	if err != nil {

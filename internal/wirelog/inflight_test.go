@@ -11,9 +11,6 @@ import (
 	"time"
 )
 
-// captureLog installs a JSON slog handler for the duration of a test and
-// returns the buffer. The round-trip record IS the ledger now, so asserting
-// on it is asserting on the feature.
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -27,9 +24,6 @@ func newClient() *http.Client {
 	return &http.Client{Transport: &Transport{Inner: http.DefaultTransport}}
 }
 
-// A 429 is the single most important thing a provider ever says, and figaro
-// recorded neither the refusal nor the wait the server asked for. This is the
-// regression test for a 77-minute silent stall.
 func TestRefusalIsLoggedWithTheWaitItAskedFor(t *testing.T) {
 	logs := captureLog(t)
 
@@ -59,13 +53,13 @@ func TestRefusalIsLoggedWithTheWaitItAskedFor(t *testing.T) {
 		t.Fatalf("no round-trip record was written:\n%s", got)
 	}
 	for _, want := range []string{
-		`"level":"WARN"`,                          // a refusal is not routine
-		`"aria":"94f0752b"`,                       // which conversation
-		`"status":429`,                            // what happened
-		`"retry_after_s":3600`,                    // the number that explains the hang
-		`"request_id":"req_test_429"`,             // what to quote to support
-		`"ratelimit_input_tokens_remaining":"0"`,  // WHICH limit
-		`"ratelimit_input_tokens_reset":"2026-08`, // and when it clears
+		`"level":"WARN"`,
+		`"aria":"94f0752b"`,
+		`"status":429`,
+		`"retry_after_s":3600`,
+		`"request_id":"req_test_429"`,
+		`"ratelimit_input_tokens_remaining":"0"`,
+		`"ratelimit_input_tokens_reset":"2026-08`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("record missing %s:\n%s", want, got)
@@ -73,9 +67,6 @@ func TestRefusalIsLoggedWithTheWaitItAskedFor(t *testing.T) {
 	}
 }
 
-// A healthy call is recorded too, at INFO. Without it there is nothing to
-// compare the refusal against: "this used to take 11s and 712 KB" is half the
-// diagnosis.
 func TestSuccessIsRecordedAtInfo(t *testing.T) {
 	logs := captureLog(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,17 +86,11 @@ func TestSuccessIsRecordedAtInfo(t *testing.T) {
 	if !strings.Contains(got, `"level":"INFO"`) || !strings.Contains(got, `"status":200`) {
 		t.Errorf("healthy round-trip not recorded at INFO:\n%s", got)
 	}
-	// req_bytes used to be len(bodyBytes), and bodyBytes is only materialized
-	// when dumping to disk, so in normal operation it was always 0. "This
-	// request was 700 KB" is what you want to know about a refused turn.
 	if !strings.Contains(got, `"req_bytes":4096`) {
 		t.Errorf("req_bytes not taken from ContentLength:\n%s", got)
 	}
 }
 
-// The one thing a log cannot express is "still running". A record is a point
-// in time; an outstanding request is current state, and it is precisely what
-// tracing cannot show either, since spans export on end.
 func TestOutstandingRequestIsVisibleBeforeItReturns(t *testing.T) {
 	captureLog(t)
 
@@ -149,14 +134,11 @@ func TestOutstandingRequestIsVisibleBeforeItReturns(t *testing.T) {
 	}
 }
 
-// A transport error must not strand an entry in the in-flight map. A leak
-// here would read as a permanently hung request, which is worse than no
-// diagnostic at all.
 func TestTransportErrorClearsInFlight(t *testing.T) {
 	logs := captureLog(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	addr := srv.URL
-	srv.Close() // nothing is listening now
+	srv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, addr, nil)
 	if resp, err := newClient().Do(req); err == nil {
@@ -180,7 +162,7 @@ func TestRetryAfterParsing(t *testing.T) {
 		{"60", time.Minute},
 		{" 90 ", 90 * time.Second},
 		{"-1", 0},
-		{"Wed, 21 Oct 2026 07:28:00 GMT", 0}, // HTTP-date form is not honored
+		{"Wed, 21 Oct 2026 07:28:00 GMT", 0},
 	} {
 		h := http.Header{}
 		if tc.in != "" {
@@ -192,8 +174,6 @@ func TestRetryAfterParsing(t *testing.T) {
 	}
 }
 
-// The vendor prefix is stripped so the same key means the same thing across
-// providers.
 func TestRateLimitHeadersAreNormalized(t *testing.T) {
 	h := http.Header{}
 	h.Set("anthropic-ratelimit-input-tokens-remaining", "0")
@@ -209,8 +189,6 @@ func TestRateLimitHeadersAreNormalized(t *testing.T) {
 	}
 }
 
-// Attribution used to ride on the byte-dump switch, so unless someone had set
-// figaro_wire_dir every round-trip was anonymous.
 func TestWithAriaDoesNotEnableDumping(t *testing.T) {
 	ctx := WithAria(context.Background(), "94f0752b")
 	c, ok := cfgFromContext(ctx)

@@ -10,12 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// The incantation is read from the board on the study path, which runs per
-// encoded message per translate. These say what that lookup costs in the three
-// shapes that matter: no key at all (the overwhelming majority of arias), the
-// key present, and a message with no study event (which must not look at the
-// board at all).
-
 func benchStudyMessage() message.Message {
 	return message.Message{
 		Study: &message.StudyMark{FormID: "@f", Began: true},
@@ -26,8 +20,7 @@ func benchStudyMessage() message.Message {
 	}
 }
 
-// A board with realistic weight: an incantation lookup is a tree lookup, and
-// a one-key board would flatter it.
+// A one-key board would flatter the tree lookup.
 func benchBoard(keys int, extra map[string]json.RawMessage) form.Snapshot {
 	m := make(map[string]json.RawMessage, keys+len(extra))
 	for i := 0; i < keys; i++ {
@@ -61,8 +54,6 @@ func BenchmarkStudyReminderWithIncantation(b *testing.B) {
 	}
 }
 
-// The path every non-studying aria takes on every message: no study event, so
-// the board must not be consulted at all.
 func BenchmarkStudyReminderNoStudyEvent(b *testing.B) {
 	msg := message.Message{Role: message.RoleInput}
 	board := benchBoard(40, map[string]json.RawMessage{
@@ -87,9 +78,7 @@ func BenchmarkForkReminderOrdinaryMessage(b *testing.B) {
 	}
 }
 
-// The control: the same render against an EMPTY board, which is what this
-// function did before incantations existed. The gap between this and
-// NoIncantation is the whole price paid by every aria that never sets the key.
+// The control: an empty board.
 func BenchmarkStudyReminderEmptyBoard(b *testing.B) {
 	msg := benchStudyMessage()
 	b.ReportAllocs()

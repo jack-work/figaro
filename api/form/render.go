@@ -13,7 +13,6 @@ import (
 
 func osReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
 
-// RenderedEntry is a form entry with its body produced by a template.
 type RenderedEntry struct {
 	Key  string
 	Body string
@@ -22,7 +21,6 @@ type RenderedEntry struct {
 //go:embed templates
 var defaultTemplates embed.FS
 
-// LoadDefaultTemplates parses the embedded body templates.
 func LoadDefaultTemplates() (*template.Template, error) {
 	root := template.New("form")
 	err := fs.WalkDir(defaultTemplates, "templates", func(path string, d fs.DirEntry, err error) error {
@@ -46,7 +44,6 @@ func LoadDefaultTemplates() (*template.Template, error) {
 	return root, nil
 }
 
-// LoadOverrideTemplates layers user templates on top of a base set.
 func LoadOverrideTemplates(base *template.Template, dir string) (*template.Template, error) {
 	root, err := base.Clone()
 	if err != nil {
@@ -69,18 +66,14 @@ func LoadOverrideTemplates(base *template.Template, dir string) (*template.Templ
 	return root, nil
 }
 
-// Render produces bodies for each patch entry. Keys with a matching
-// template render via that template. Keys in the harness-reserved
-// `system.*` namespace are silently skipped: providers consume those
-// directly. Other keys without a template fall back to a generic
-// body so new form data is visible by default without needing
-// a hand-rolled template per key.
+// Render skips `system.*` keys, which providers consume directly; a key
+// without a template gets a generic body.
 func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, error) {
 	if p.IsIdentity() {
 		return nil, nil
 	}
-	// The limits come off the SAME point-in-time board this render is
-	// against, so a cold retranslation reproduces these bytes exactly.
+	// Limits come off the same board as the render, so a cold retranslation
+	// reproduces these bytes exactly.
 	limits := ReadDeltaLimits(prev)
 	entries := PatchEntries(p, prev)
 	out := make([]RenderedEntry, 0, len(entries))
@@ -112,9 +105,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 	return out, nil
 }
 
-// genericBody is the fallback renderer for untemplated keys. Removal
-// entries produce an empty body (caller skips). String values render
-// as the bare string; object/array values render as their JSON.
+// genericBody is empty for a removal.
 func genericBody(e Entry) string {
 	if e.IsRemoval() {
 		return ""

@@ -2,8 +2,6 @@ package outfit
 
 import "testing"
 
-// A skill is a .md file. Everything else in the directory is not one, and
-// naming it by chopping its last suffix invented skills from backups.
 func TestSkillNameTakesOnlyMarkdown(t *testing.T) {
 	cases := map[string]struct {
 		want string

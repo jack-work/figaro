@@ -8,10 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// The phase-2 surface: what a WINDOWED reader (the pager) needs of the store
-// to stop keeping a second copy of the conversation. Every test here is a
-// canary for a specific claim in skills/figaro/contributing/range-store.md's migration step 2.
-
 // histPage is a sealed backward read of whole two-node turns.
 func histPage(turns ...int) Page {
 	var p Page
@@ -32,10 +28,6 @@ func histMsg(turn int, from uint64, n int) Message {
 	return m
 }
 
-// TestTailFromWalksBackward pins the primitive that replaced the pager's
-// tail-window cache: the anchor N messages from the end, without walking the
-// aria. Revert TailFrom to a forward scan and this still passes: what it
-// really guards is the ANSWER, which resetToTail now recomputes every frame.
 func TestTailFromWalksBackward(t *testing.T) {
 	s := NewStore()
 	for turn := 1; turn <= 10; turn++ {
@@ -58,8 +50,6 @@ func TestTailFromWalksBackward(t *testing.T) {
 	}
 }
 
-// TestTailFromCrossesRanges: the pager's window may straddle a hole (history
-// fetched around a jump), and the tail count must not restart at each range.
 func TestTailFromCrossesRanges(t *testing.T) {
 	s := NewStore()
 	s.SetTurnLen(1, 2)
@@ -74,7 +64,6 @@ func TestTailFromCrossesRanges(t *testing.T) {
 	}
 }
 
-// TestSkipIsTheForwardMirror pins the primitive the bounded window extends by.
 func TestSkipIsTheForwardMirror(t *testing.T) {
 	s := NewStore()
 	for turn := 1; turn <= 6; turn++ {
@@ -92,10 +81,6 @@ func TestSkipIsTheForwardMirror(t *testing.T) {
 	}
 }
 
-// TestQuietFoldIsSilentAndDeduped: history a caller fetched itself goes into
-// the one owner without coming back out through OnClosed, which inline freezes
-// to the user's scrollback, and folding the same history twice does not double
-// it.
 func TestQuietFoldIsSilentAndDeduped(t *testing.T) {
 	c := NewClient()
 	fired := 0
@@ -116,8 +101,6 @@ func TestQuietFoldIsSilentAndDeduped(t *testing.T) {
 	}
 }
 
-// TestClippedTailStatesNoExtent: a part clipped at its tail states no extent,
-// so the store keeps the boundary honest rather than fabricating adjacency.
 func TestClippedTailStatesNoExtent(t *testing.T) {
 	c := NewClient()
 	p := histPage(1, 2)
@@ -128,8 +111,6 @@ func TestClippedTailStatesNoExtent(t *testing.T) {
 	}
 }
 
-// TestQuietFoldBumpsTheRevision: every consumer of ClosedRevision has to see
-// history arrive, even folded quietly.
 func TestQuietFoldBumpsTheRevision(t *testing.T) {
 	c := NewClient()
 	rev := c.ClosedRevision()
@@ -139,8 +120,6 @@ func TestQuietFoldBumpsTheRevision(t *testing.T) {
 	}
 }
 
-// TestEvictBeforeMakesAHole is retention as the contract states it: eviction
-// and never-fetched are the same state.
 func TestEvictBeforeMakesAHole(t *testing.T) {
 	c := NewClient()
 	c.Apply(histPage(1, 2, 3, 4, 5, 6), Quiet)
@@ -152,16 +131,12 @@ func TestEvictBeforeMakesAHole(t *testing.T) {
 	if first := s.First(); first == nil || first.Turn != 4 {
 		t.Fatalf("the floor is turn 4; got %v", first)
 	}
-	// And the same anchor evicted twice is a no-op, not a panic.
 	c.EvictBefore(Anchor{Turn: 4})
 	if got := s.Count(); got != 3 {
 		t.Fatalf("re-evicting changed the store: %d", got)
 	}
 }
 
-// TestMoreBeforeIsTheWiresAnswer: "is there older history" is a fact only a
-// backward read reports, and it now lives in the store instead of as a latched
-// bit on the pager (the old noMoreOlder).
 func TestMoreBeforeIsTheWiresAnswer(t *testing.T) {
 	c := NewClient()
 	if c.MoreBefore() {
@@ -177,10 +152,6 @@ func TestMoreBeforeIsTheWiresAnswer(t *testing.T) {
 	}
 }
 
-// TestBeforeIsTheReturnTrip pins the primitive that replaced the pager's
-// payload LRU: the anchor n messages BELOW a, plus how far it actually got.
-// A windowed reader lowers its floor with it, so the scroll back up over
-// history the store still holds costs a backward walk and no round trip.
 func TestBeforeIsTheReturnTrip(t *testing.T) {
 	s := NewStore()
 	for turn := 1; turn <= 10; turn++ {
@@ -190,26 +161,19 @@ func TestBeforeIsTheReturnTrip(t *testing.T) {
 	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 5}) {
 		t.Fatalf("Before(8, 3) = %v, %d; want turn 5 over 3 messages", got, n)
 	}
-	// Fewer than asked for is not an error: take what there is, and say so.
 	if got, n := s.Before(Anchor{Turn: 3}, 10); n != 2 || got != (Anchor{Turn: 1}) {
 		t.Fatalf("Before(3, 10) = %v, %d; want the oldest held over 2", got, n)
 	}
 	if got, n := s.Before(Anchor{Turn: 1}, 4); n != 0 || got != (Anchor{Turn: 1}) {
 		t.Fatalf("Before at the floor = %v, %d; want the anchor itself over 0", got, n)
 	}
-	// It counts MESSAGES across a hole, exactly as TailFrom does: the window's
-	// floor may straddle one.
+	// Counts messages across a hole, as TailFrom does.
 	s.Evict(Anchor{Turn: 4}, Anchor{Turn: 6, Node: 1})
 	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 2}) {
 		t.Fatalf("Before across a hole = %v, %d; want turn 2 over 3", got, n)
 	}
 }
 
-// TestEnsureFillsAHoleThroughItsFetcher: phase 1 left Ensure a stub returning
-// ErrNoFetcher. It is real now: it asks the store what is missing, reads
-// BEFORE the hole's far end (so the fill arrives nearest what we already
-// hold), folds the extents so the run coalesces, and stops when Query says the
-// interval is whole.
 func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
 	whole := NewStore()
 	for turn := 1; turn <= 20; turn++ {
@@ -246,8 +210,6 @@ func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
 	if len(reads) == 0 {
 		t.Fatal("Ensure closed the hole without reading")
 	}
-	// It reads at the anchor after the hole, so the fill lands against the
-	// reader's own position first.
 	if reads[0] != (Anchor{Turn: 18}) {
 		t.Fatalf("first fill read at %v; want the anchor just past the hole", reads[0])
 	}
@@ -264,8 +226,6 @@ func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
 	}
 }
 
-// TestEnsureRefusesToSpin: a fetcher that answers but never closes the hole
-// must be reported, not looped on.
 func TestEnsureRefusesToSpin(t *testing.T) {
 	c := NewClient()
 	c.Apply(histPage(1, 9), Quiet)
@@ -282,9 +242,6 @@ func TestEnsureRefusesToSpin(t *testing.T) {
 	}
 }
 
-// TestForEachSegmentIsTheGapAwareWalk: the renderer's read path sees runs AND
-// holes, in order, and reports no hole at all when there is none (the
-// degenerate case, which is what keeps the pager quiet).
 func TestForEachSegmentIsTheGapAwareWalk(t *testing.T) {
 	s := NewStore()
 	for turn := 1; turn <= 6; turn++ {

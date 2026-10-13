@@ -1,7 +1,5 @@
 package provider
 
-// The FORK incantation: what a branch is told about being a branch.
-
 import (
 	"encoding/json"
 	"strings"
@@ -10,8 +8,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// ForkReminderTexts renders the fork incantation when this message carries the
-// patch that marks a branch's birth. One block, or none.
+// ForkReminderTexts renders the fork incantation on the message carrying a
+// branch's birth mark.
 func ForkReminderTexts(msg message.Message, board form.Snapshot) []string {
 	parent, forked := forkedFrom(msg.Patches)
 	if !forked {
@@ -29,7 +27,6 @@ func ForkReminderTexts(msg message.Message, board form.Snapshot) []string {
 	return []string{"<system-reminder name=\"fork\">\n" + string(b) + "\n</system-reminder>"}
 }
 
-// forkedFrom finds the birth mark in a message's board transitions.
 func forkedFrom(patches []message.Patch) (string, bool) {
 	for _, p := range patches {
 		e, ok := p.Entry(form.ForkedFromKey)

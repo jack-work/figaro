@@ -23,39 +23,17 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// ---------------------------------------------------------------------------
-// A stress harness for the UNKEYED form channel.
-//
-// The board no longer keys its patches to a main LT: ApplyForm appends
-// with no reference to the timeline and serializes against nothing, so a `set`
-// can land while a turn is in flight. The association runs the other way --
-// each IR record stamps the board version it was written at (Entry.FormChannelVersion)
-// -- and that stamp is what an interior fork inherits.
-//
-// Everything here drives real Agents over a real XwalBackend with a stub
-// provider. No provider round-trip, no sleeps as synchronisation: turns are
-// awaited on rpc.MethodTurnDone, and the inbox's FIFO discipline is used as the
-// barrier that proves every queued `set` has been drained (a prompt submitted
-// after N sets cannot be serviced before them).
-// ---------------------------------------------------------------------------
+// Stress harness for the unkeyed form channel: ApplyForm serializes against
+// nothing, so a set can land mid-turn; each IR record stamps the board version
+// it was written at. No sleeps: turns are awaited on turn.done, and the inbox's
+// FIFO is the barrier proving every queued set drained.
 
-// fuzzTurnTimeout is a LIVENESS guard, not synchronisation: a wedged test
-// must fail on an assertion rather than hang the package.
-//
-// Raised from 5s because the WAL change made every queued `set` a mandatory
-// fsync, and SetWhileTurnInFlight drains 160 of them inside one turn. At ~3
-// ms each that is half a second on an idle box and several times that when
-// `go test ./...` has a dozen packages competing for the same disk -- which
-// is where it timed out twice, on two different builds, while passing at
-// -count=5 and -count=8 in isolation. The deadline was chosen before
-// durability was mandatory and nobody moved it.
+// fuzzTurnTimeout is a liveness guard, not synchronisation; every queued set
+// is an fsync, and a loaded disk needs the room.
 const fuzzTurnTimeout = 20 * time.Second
 
-// gateProvider is a stub provider that parks inside Send until the test opens
-// the gate. That park IS the "turn in flight" window every subtest below needs;
-// nothing else about it is interesting. The channels are shared across every
-// instance a factory hands out, so a test can release "whichever provider is
-// serving" without knowing which one won the rebind.
+// gateProvider parks inside Send until the test opens the gate. The channels
+// are shared across instances so a test can release whichever provider won the rebind.
 type gateProvider struct {
 	name    string
 	entered chan string   // one send per Send entry, carrying the instance name
@@ -80,9 +58,6 @@ func (p *gateProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 	case p.entered <- p.name:
 	default:
 	}
-	// Park until the test releases this round. The deadline is a liveness
-	// guard, not synchronisation: a wedged test must fail on an assertion,
-	// not hang the package.
 	select {
 	case <-p.gate:
 	case <-ctx.Done():
@@ -98,16 +73,13 @@ func (p *gateProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 	return nil
 }
 
-// open releases n parked (or future) rounds.
 func openGate(gate chan struct{}, n int) {
 	for i := 0; i < n; i++ {
 		gate <- struct{}{}
 	}
 }
 
-// fuzzAgent builds a BACKED agent (real XwalBackend, real form channel)
-// around the given provider/factory. Backed is the point: only a backed aria
-// routes `set` through ApplyForm and stamps FormChannelVersion on its IR.
+// fuzzAgent is backed: only a backed aria routes set through ApplyForm and stamps FormChannelVersion.
 func fuzzAgent(t *testing.T, prov provider.Provider, factory figaro.ProviderFactory) (*figaro.Agent, store.Backend, string) {
 	t.Helper()
 	backend, id := backedConv(t, t.TempDir())
@@ -129,8 +101,7 @@ func fuzzAgent(t *testing.T, prov provider.Provider, factory figaro.ProviderFact
 	return a, backend, id
 }
 
-// awaitTurnDone drains notifications until turn.done. It is the only barrier
-// the harness uses for "the turn finished".
+// awaitTurnDone is the only barrier for "the turn finished".
 func awaitTurnDone(t *testing.T, ch <-chan rpc.Notification) {
 	t.Helper()
 	deadline := time.After(fuzzTurnTimeout)
@@ -149,7 +120,6 @@ func awaitTurnDone(t *testing.T, ch <-chan rpc.Notification) {
 	}
 }
 
-// awaitEntered waits for a provider round to actually be in flight.
 func awaitEntered(t *testing.T, entered <-chan string) string {
 	t.Helper()
 	select {
@@ -161,7 +131,6 @@ func awaitEntered(t *testing.T, entered <-chan string) string {
 	}
 }
 
-// setKV is one fuzz patch.
 func setKV(a *figaro.Agent, key, val string) error {
 	raw, err := json.Marshal(val)
 	if err != nil {
@@ -171,7 +140,6 @@ func setKV(a *figaro.Agent, key, val string) error {
 	return err
 }
 
-// snapMap flattens a snapshot for comparison.
 func snapMap(s form.Snapshot) map[string]string {
 	out := map[string]string{}
 	for k, v := range s.All() {
@@ -180,10 +148,8 @@ func snapMap(s form.Snapshot) map[string]string {
 	return out
 }
 
-// barrier submits a prompt and waits for its turn.done. Because Agent.Set and
-// SubmitPrompt share one FIFO inbox, a completed turn proves every set enqueued
-// before the prompt has already been applied. This is the harness's ordering
-// primitive -- there are no sleeps.
+// barrier submits a prompt and waits for turn.done: Set and SubmitPrompt share
+// one FIFO, so a completed turn proves every earlier set applied.
 func barrier(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, gate chan struct{}, text string) {
 	t.Helper()
 	submitPrompt(a, text)
@@ -193,8 +159,6 @@ func barrier(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, gate cha
 
 func TestFuzzFormUnkeyed(t *testing.T) {
 	t.Run("SetWhileTurnInFlight", func(t *testing.T) {
-		// A `set` landing MID-TURN, over and over, from several goroutines.
-		// The turn must still complete and the board must carry every patch.
 		entered, gate := newGate()
 		prov := &gateProvider{name: "gate", entered: entered, gate: gate}
 		a, backend, id := fuzzAgent(t, prov, nil)
@@ -224,12 +188,9 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 				}
 			}(w)
 		}
-		// And one writer straight at the channel, bypassing the inbox. THIS is
-		// the unkeyed path in the narrow sense: ApplyForm reads no
-		// timeline and takes no lock against the turn, so it must complete
-		// while the round is parked rather than queue behind it. Its writes
-		// never reach the agent's in-memory board (nothing told it), so only
-		// the durable board is asserted for these keys.
+		// One writer straight at the channel: ApplyForm takes no lock against the
+		// turn, so it must complete while the round is parked. Its writes never reach
+		// the in-memory board, so only the durable board is asserted.
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -250,7 +211,6 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		openGate(gate, 1) // let the in-flight round finish
 		awaitTurnDone(t, ch)
 
-		// FIFO barrier: this turn cannot run until every set above drained.
 		barrier(t, a, ch, gate, "barrier")
 
 		live := a.Snapshot()
@@ -278,11 +238,8 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 	})
 
 	t.Run("ProviderSwitchAcrossAndMidTurn", func(t *testing.T) {
-		// system.provider is form state like any other key, so a switch
-		// is just a patch -- including one written while a round is parked.
-		// The contract under test is narrow and structural: no panic, no
-		// deadlock, every turn reaches turn.done, and the board's provider is
-		// the one serving once the round boundary has passed.
+		// A provider switch is just a patch; the contract is no panic, no deadlock,
+		// turn.done every time, and the board's provider serving after the boundary.
 		entered, gate := newGate()
 		var mu sync.Mutex
 		insts := map[string]*gateProvider{}
@@ -311,7 +268,6 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 
 		names := []string{"beta", "gamma", "delta", "beta"}
 		for i, next := range names {
-			// MID-TURN switch: park the round, repatch system.provider, release.
 			submitPrompt(a, fmt.Sprintf("round %d", i))
 			awaitEntered(t, entered)
 			require.NoError(t, setKV(a, "system.provider", next))
@@ -319,7 +275,6 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 			openGate(gate, 1)
 			awaitTurnDone(t, ch)
 
-			// BETWEEN-TURN switch: the next round must bind the new name.
 			barrier(t, a, ch, gate, fmt.Sprintf("after %d", i))
 			require.NotNil(t, inst(next), "provider %q was never built", next)
 			assert.Positive(t, inst(next).sends.Load(), "provider %q never served a round", next)
@@ -328,9 +283,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 	})
 
 	t.Run("InteriorForkTakesTheBoardAsOfThatTurn", func(t *testing.T) {
-		// Many patches interleaved with many turns, then a fork at an interior
-		// turn. The fork must inherit the board AS OF that turn -- the version
-		// stamped on its IR record -- not the board as it stands now.
+		// The fork inherits the board as of the forked turn, not as it stands now.
 		entered, gate := newGate()
 		prov := &gateProvider{name: "gate", entered: entered, gate: gate}
 		a, backend, id := fuzzAgent(t, prov, nil)
@@ -348,18 +301,14 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		require.NoError(t, err)
 
 		for k := 0; k < turns; k++ {
-			// A few patches before the turn...
 			for j := 0; j < 3; j++ {
 				require.NoError(t, setKV(a, fmt.Sprintf("turn%d.pre%d", k, j), fmt.Sprintf("v%d", j)))
 			}
 			submitPrompt(a, fmt.Sprintf("turn %d", k))
 			awaitEntered(t, entered)
-			// ...and one landing while the round is in flight.
 			require.NoError(t, setKV(a, fmt.Sprintf("turn%d.mid", k), "in-flight"))
 			openGate(gate, 1)
 			awaitTurnDone(t, ch)
-			// FIFO barrier so the mid-turn patch is certainly applied before
-			// we record what "the board as of turn k" means.
 			barrier(t, a, ch, gate, fmt.Sprintf("settle %d", k))
 
 			entries := log.Read()
@@ -369,7 +318,6 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 			marks = append(marks, mark{lt: entries[len(entries)-1].LT, board: snapMap(board)})
 		}
 
-		// Fork at an INTERIOR turn, not the tail.
 		at := marks[2]
 		cont, alt, err := backend.ForkAt(id, at.lt)
 		require.NoError(t, err)
@@ -395,10 +343,8 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 	})
 
 	t.Run("ConcurrentPatchVersionsAreUniqueAndMonotonic", func(t *testing.T) {
-		// The version a patch comes back with IS its durable index in the
-		// form channel. Concurrent writers must each get their own, the
-		// numbers must never go backwards for a single writer, and the folded
-		// board must contain every key.
+		// The version a patch comes back with is its durable index: unique per
+		// writer, never backwards, and the fold holds every key.
 		backend, id := backedConv(t, t.TempDir())
 
 		const (

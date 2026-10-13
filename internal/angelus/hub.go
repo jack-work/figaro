@@ -16,38 +16,22 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// ariaHub owns one aria's endpoint. It is angelus-side and its lifetime is
-// independent of the agent's, which is the inversion the whole hibernation
-// plan rests on.
+// ariaHub owns one aria's endpoint; its lifetime is independent of the agent's.
 type ariaHub struct {
 	id       string
 	sockPath string
 
-	// wake restores the aria and returns its agent. Called only for methods
-	// that cannot be served from the store, and told which one, so the
-	// restore is attributed (FigaroInfo.WokeBy).
+	// wake is told the method so the restore is attributed (FigaroInfo.WokeBy).
 	wake func(ctx context.Context, id, method string) (figaro.AgentServer, error)
-	// read answers a method from the store. ok=false means "not my method",
-	// which sends the request down the wake path instead.
-	read func(id, method string, params json.RawMessage) (v any, ok bool, err error)
-	// write applies a mutation store-side WITHOUT an agent: the dormant
-	// half of figaro.set. Consulted after read and before wake, so a board
-	// patch never wakes a sleeper (and can reach a naked figaro whose wake
-	// would fail for want of the very provider keys the patch carries).
-	// ok=false hands the request onward. The backend's Form is the one
-	// writer per node whether an agent is live or not (the agent itself
-	// writes through the backend), so this is the same writer, earlier.
+	// read and write answer from the store; ok=false hands the request onward.
+	// write runs after read and before wake, so a board patch never wakes a
+	// sleeper and can reach a naked figaro whose wake would fail for want of
+	// the provider keys the patch carries.
+	read  func(id, method string, params json.RawMessage) (v any, ok bool, err error)
 	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
-	// dress resolves a request's outfit NAMES into keys before it is routed
-	// anywhere. It is the API boundary's one materialization point: whatever
-	// the request reaches next, a live agent's inbox, the store's agentless
-	// writer: receives pure data, and no writer below this line reads a
-	// file. A request naming no outfit is returned byte for byte.
+	// dress resolves outfit names before routing: no writer below it reads a file.
 	dress func(method string, params json.RawMessage) (json.RawMessage, error)
-	// kind is the node's species from its figwal marker ("conversation",
-	// "form", …). A form has no agent to wake, ever: methods that reach
-	// the wake path on a form node get a named refusal instead of a
-	// nonsensical restore attempt.
+	// kind is the node's species; a form has no agent to wake, ever.
 	kind   string
 	policy authz.Policy
 
@@ -55,9 +39,7 @@ type ariaHub struct {
 	ln    net.Listener
 	conns map[*jkrpc.Server]struct{}
 	agent figaro.AgentServer
-	// Nothing is buffered on purpose: a frame produced while no client is
-	// attached is owed to nobody, and a client that attaches catches up with
-	// a read rather than a replay.
+	// Nothing is buffered: a client that attaches catches up with a read, not a replay.
 	closed bool
 }
 
@@ -65,8 +47,6 @@ func newAriaHub(id, sockPath string, policy authz.Policy) *ariaHub {
 	return &ariaHub{id: id, sockPath: sockPath, policy: policy, conns: map[*jkrpc.Server]struct{}{}}
 }
 
-// listen binds the socket. It is separate from construction so a failure to
-// bind is the caller's error rather than a half-built hub.
 func (hb *ariaHub) listen(ctx context.Context) error {
 	os.Remove(hb.sockPath)
 	ln, err := net.Listen("unix", hb.sockPath)
@@ -110,9 +90,6 @@ func (hb *ariaHub) accept(ctx context.Context) {
 	}
 }
 
-// serve runs one client connection. The handler map is the hub's, not an
-// agent's: a request arriving for a dormant aria is answered from the store
-// where it can be, and wakes the aria only where it must.
 func (hb *ariaHub) serve(ctx context.Context, conn net.Conn) {
 	srv := jkrpc.NewServer(jkrpc.NewConn(conn), hb.handlers())
 
@@ -143,10 +120,7 @@ func (hb *ariaHub) serve(ctx context.Context, conn net.Conn) {
 	}
 }
 
-// Notify fans one frame out to every attached client. This is the agent's
-// ONLY subscriber: the agent's subscriber set is now always <=1 and
-// lifetime-independent of any client, so a connection coming or going never
-// touches the agent.
+// Notify is the agent's only subscriber: a connection coming or going never touches the agent.
 func (hb *ariaHub) Notify(method string, params any) error {
 	hb.mu.Lock()
 	targets := make([]*jkrpc.Server, 0, len(hb.conns))
@@ -164,8 +138,7 @@ func (hb *ariaHub) Notify(method string, params any) error {
 	return firstErr
 }
 
-// bind attaches an agent and makes the hub its sole notifier. Returns the
-// unsubscribe the caller must run on teardown.
+// bind returns the unsubscribe the caller must run on teardown.
 func (hb *ariaHub) bind(agent subscribableAgent) func() {
 	hb.mu.Lock()
 	hb.agent = agent
@@ -180,19 +153,15 @@ func (hb *ariaHub) bind(agent subscribableAgent) func() {
 	}
 }
 
-// boundAgent is the live agent or nil. Callers route reads on it: a live
-// agent holds the open streaming region and the in-flight turn, which the
-// store does not have.
+// boundAgent is routed to for reads: it holds the in-flight turn the store does not.
 func (hb *ariaHub) boundAgent() figaro.AgentServer {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	return hb.agent
 }
 
-// Attached reports how many clients hold this endpoint open. A hibernation
-// sweep must NOT consult this: an attached client is exactly the case that
-// used to pin an aria forever, and the hub exists so that it no longer does.
-// It is here for status and tests.
+// Attached is for status and tests; a hibernation sweep must not consult
+// it, or an attached client pins an aria forever.
 func (hb *ariaHub) Attached() int {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
@@ -222,16 +191,12 @@ func (hb *ariaHub) Close() {
 	os.Remove(hb.sockPath)
 }
 
-// subscribableAgent is the half of the agent the hub needs: something that
-// serves methods and accepts one notifier. Narrow on purpose: the hub must
-// not be able to run a turn.
+// subscribableAgent is narrow on purpose: the hub must not be able to run a turn.
 type subscribableAgent interface {
 	figaro.AgentServer
 	Subscribe(figaro.Notifier) func()
 }
 
-// errDormantMethod is returned for a request that needs a running turn loop
-// on an aria that has none and that the hub could not wake.
 var errDormantMethod = errors.New("aria is dormant and this method needs a live agent")
 
 func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
@@ -246,13 +211,9 @@ func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
 	return authz.Guard(out, authz.AriaHeader{}, hb.policy)
 }
 
-// route sends a request to the agent, waking the aria when the method needs
-// a turn loop and answering from the store when it does not.
+// route dresses first, so an outfit that names nothing on disk fails at the
+// boundary rather than landing as a literal on a board.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
-	// Dress FIRST, before any of the three destinations. A spec that names
-	// nothing on disk fails here, at the boundary, rather than landing as a
-	// literal on a board (which is exactly what `fig form outfit test` did
-	// while the hub's writer applied patches verbatim).
 	if hb.dress != nil {
 		dressed, err := hb.dress(method, params)
 		if err != nil {
@@ -263,16 +224,11 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 	if agent := hb.boundAgent(); agent != nil {
 		return agent.Handle(ctx, method, params)
 	}
-	// No agent. Serve it from the store if the method allows, which is what
-	// keeps a pager, a transcript and a `show` from waking anything.
 	if hb.read != nil && !rpc.MethodNeedsAgent(method) {
 		if v, ok, err := hb.read(hb.id, method, params); ok {
 			return v, err
 		}
 	}
-	// Mutations the store can absorb without a turn loop: served here so a
-	// board patch neither wakes a sleeper nor needs a form to have an agent
-	// it will never have.
 	if hb.write != nil {
 		if v, ok, err := hb.write(hb.id, method, params); ok {
 			return v, err
@@ -295,7 +251,4 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 	return agent.Handle(ctx, method, params)
 }
 
-// kindFormNode is the marker kind of an unbound form, as the store mints
-// it. Declared here rather than imported: the angelus knows species by
-// name on the wire, not by the store's internal enum.
 const kindFormNode = "form"

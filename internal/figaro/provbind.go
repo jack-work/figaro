@@ -9,25 +9,18 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// ProviderFactory builds a provider from a name plus the build-time knobs.
-// The agent holds one so it can REBIND mid-conversation: `system.provider`
-// is form state like any other key, and the board is authoritative.
-// Without a factory the agent keeps whatever instance it was constructed
-// with and refuses to pretend a switch happened.
+// ProviderFactory lets the agent rebind mid-conversation; without one the
+// agent keeps its constructed instance.
 type ProviderFactory func(name string, knobs provider.Knobs) (provider.Provider, error)
 
-// providerBinding is the agent's current provider instance together with the
-// form coordinates that produced it. Published through an atomic
-// pointer: the drain loop writes, RPC goroutines (status, metrics) read.
+// providerBinding is published through an atomic pointer: the drain loop writes, RPC goroutines read.
 type providerBinding struct {
 	name  string
 	knobs provider.Knobs
 	prov  provider.Provider
 }
 
-// providerKnobs reads the build-time knobs off a form snapshot. Same
-// keys the angelus reads when it first constructs a provider: this is the
-// re-resolution of that decision, one turn at a time.
+// providerKnobs reads the same keys the angelus reads when it first constructs a provider.
 func providerKnobs(snap form.Snapshot) provider.Knobs {
 	return provider.Knobs{
 		Model:            snapshotString(snap, "system.model"),
@@ -36,17 +29,13 @@ func providerKnobs(snap form.Snapshot) provider.Knobs {
 	}
 }
 
-// sameBuild reports whether two knob sets yield the same provider instance.
 func sameBuild(a, b provider.Knobs) bool {
 	return a.MaxTokens == b.MaxTokens &&
 		a.ReminderRenderer == b.ReminderRenderer
 }
 
-// bindProvider installs the initial binding from the constructor's provider,
-// pairing it with the board coordinates the caller built it from. The name
-// comes off the board (falling back to the instance's own) because
-// `system.provider` is the label that decides rebinds, an instance whose
-// Name() spells things differently must not read as a pending switch.
+// bindProvider takes the name off the board, not the instance: `system.provider`
+// is the label that decides rebinds, and a differently spelled Name() must not read as a switch.
 func (a *Agent) bindProvider(prov provider.Provider) {
 	if prov == nil {
 		return
@@ -63,8 +52,7 @@ func (a *Agent) bindProvider(prov provider.Provider) {
 	})
 }
 
-// provider returns the currently bound provider, or nil when the agent has
-// none (core-only tests, mostly).
+// provider is nil when the agent has none.
 func (a *Agent) provider() provider.Provider {
 	if b := a.provBind.Load(); b != nil {
 		return b.prov
@@ -72,7 +60,6 @@ func (a *Agent) provider() provider.Provider {
 	return nil
 }
 
-// providerName is the bound provider's name, "" when unbound.
 func (a *Agent) providerName() string {
 	if b := a.provBind.Load(); b != nil {
 		return b.name
@@ -80,15 +67,11 @@ func (a *Agent) providerName() string {
 	return ""
 }
 
-// syncProvider re-resolves the provider from the form. It runs at the
-// top of every provider round, so `figaro set system.provider …` (or a
-// re-applied outfit that moves the aria to another provider) takes effect
-// on the very next round: no restart, no fork.
+// syncProvider runs at the top of every round, so a provider change on the form takes effect on the next round.
 func (a *Agent) syncProvider() error {
 	snap := a.Snapshot()
 	name := snapshotString(snap, "system.provider")
 	if name == "" {
-		// Nothing declared on the board: keep the constructor's choice.
 		return nil
 	}
 	knobs := providerKnobs(snap)

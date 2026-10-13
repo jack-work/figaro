@@ -40,8 +40,6 @@ func runGCHandler(t *testing.T, h *handlers, dryRun bool) rpc.GCResponse {
 	return resp
 }
 
-// The backlog gc exists for: outfit versions whose arias are long gone, or
-// which never got one. A stump still hosting an aria must survive.
 func TestGCCollectsOnlyChildlessStumps(t *testing.T) {
 	h, backend := gcHandlers(t)
 
@@ -52,8 +50,6 @@ func TestGCCollectsOnlyChildlessStumps(t *testing.T) {
 	if _, err := backend.CreateConversation(live); err != nil {
 		t.Fatal(err)
 	}
-	// Two older versions nothing was ever born under: the shape a store
-	// accumulates when an outfit is edited between mints.
 	for _, v := range []string{"old-1", "old-2"} {
 		if _, err := backend.CreateOutfit("config", gcPatch(v)); err != nil {
 			t.Fatal(err)
@@ -91,8 +87,6 @@ func TestGCCollectsOnlyChildlessStumps(t *testing.T) {
 	}
 }
 
-// The live aria must still be readable: gc must never touch a prefix
-// something reads its history through.
 func TestGCLeavesLiveAriasReadable(t *testing.T) {
 	h, backend := gcHandlers(t)
 

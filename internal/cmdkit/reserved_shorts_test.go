@@ -2,7 +2,6 @@ package cmdkit
 
 import "testing"
 
-// The trap, closed where it is cheap. `ls` declared -h for --home and
 func TestReservedShortsPanicOnRegister(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -40,8 +39,7 @@ func TestReservedShortsAllowsEverythingElse(t *testing.T) {
 }
 
 func TestValidateReservedShortsNamesOffenders(t *testing.T) {
-	// Built by hand, bypassing Register's panic, to prove the non-fatal
-	// form reports rather than explodes.
+	// Built by hand, bypassing Register's panic.
 	r := NewRouter("figaro")
 	r.commands = append(r.commands, &Command{
 		Name:  "ls",

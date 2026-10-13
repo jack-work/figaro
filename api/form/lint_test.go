@@ -5,34 +5,24 @@ import (
 	"strings"
 )
 
-// LintIssue describes a problem with a rendered reminder body that may
-// reduce the model's responsiveness or trip prompt-injection defenses.
-// Issues are advisory; callers decide whether to warn or fail.
+// LintIssue is advisory.
 type LintIssue struct {
 	Key    string
 	Body   string
 	Reason string
 }
 
-// LintOptions configures the lint heuristics.
 type LintOptions struct {
-	// MaxBodyLength caps the length of a single reminder body (after
-	// TrimSpace). 0 = no limit. Default if zero: DefaultMaxBodyLength.
+	// MaxBodyLength zero means DefaultMaxBodyLength.
 	MaxBodyLength int
-
-	// DuplicateText is a list of phrases (typically pulled from the
-	// static system prompt) that, if present in a rendered body,
-	// indicates redundancy. Empty list = no dup check.
+	// DuplicateText phrases found in a body indicate redundancy.
 	DuplicateText []string
 }
 
-// DefaultMaxBodyLength is the default body cap when MaxBodyLength is 0.
 const DefaultMaxBodyLength = 1500
 
-// imperativePrefixes are the phrases that, when starting a body, trip
-// Anthropic's prompt-injection defenses or look like override
-// instructions. Reminders should sound like factual context, not
-// system commands.
+// imperativePrefixes trip prompt-injection defenses; reminders should read
+// as factual context.
 var imperativePrefixes = []string{
 	"YOU MUST",
 	"YOU SHOULD",
@@ -46,9 +36,7 @@ var imperativePrefixes = []string{
 	"ATTENTION:",
 }
 
-// Lint inspects the rendered bodies for common phrasing problems.
-// Returns one issue per body that fails a check (multiple checks per
-// body produce multiple issues).
+// Lint returns one issue per failed check per body.
 func Lint(rendered []RenderedEntry, opts LintOptions) []LintIssue {
 	max := opts.MaxBodyLength
 	if max == 0 {

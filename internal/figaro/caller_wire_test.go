@@ -15,14 +15,13 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// Hop two: angelus -> agent. A separate client over a separate socket, so it
-// presents the identity independently of the angelus hop and needs its own
-// proof. Real socket for the same reason as the angelus test: the seam under
-// test is the one between our wrapper and jkrpc's marshaling.
+// Hop two: angelus -> agent, over a real socket so the seam between the
+// wrapper and jkrpc's marshaling is the one under test.
 func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	t.Setenv("FIGARO_ARIA", "caller02")
 
-	dir, err := os.MkdirTemp("/var/tmp", "figauthz")
+	// sun_path is length-capped; keep the directory short.
+	dir, err := os.MkdirTemp("", "f")
 	if err != nil {
 		t.Fatalf("tempdir: %v", err)
 	}
@@ -70,7 +69,6 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 		}
 	}
 
-	// A payload-bearing method, with a raw-JSON value that must survive intact.
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"keep me exact"`),
 	}, nil)
@@ -89,7 +87,6 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 		t.Fatalf("patch value re-encoded: %s", v)
 	}
 
-	// figaro.form sends nil params.
 	if _, err := cli.Form(context.Background()); err != nil {
 		t.Fatalf("form: %v", err)
 	}
@@ -98,7 +95,6 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	}
 }
 
-// mustEntry is the value a patch sets at key.
 func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {

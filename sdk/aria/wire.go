@@ -1,6 +1,5 @@
 // Package aria is the client half of the live aria protocol: a range store
-// and the fold that turns pushed pages into a view. The daemon half, which
-// composes the pages, is internal/livelog/aria.
+// and the fold that turns pushed pages into a view.
 package aria
 
 import wire "github.com/jack-work/figaro/api/aria"

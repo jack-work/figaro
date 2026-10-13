@@ -9,12 +9,8 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// composeTurns is the process's ONE answer to a composed-cache miss: open
-// the node's log, read the bracket, compose, attach the form deltas. It is
-// keyed by NODE and backed by the store, so it serves a live aria, a
-// dormant one, and an ANCESTOR nobody has opened identically -- which is
-// what a fork reading its inherited prefix needs and what a per-server
-// source could not do.
+// composeTurns answers a composed-cache miss from the store, keyed by node,
+// so an ancestor nobody has opened composes the same as a live aria.
 func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 	if a == nil || a.Backend == nil || toLT < fromLT {
 		return nil
@@ -45,9 +41,8 @@ func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 	return out
 }
 
-// openNodeIR reads a node's fig IR. An ANCESTOR node is an index node, not
-// an aria: opening it as one would mint a handle and heal a sidecar for a
-// frozen trunk, so a backend that can read a bare node is asked first.
+// openNodeIR asks for a bare node first: opening an ancestor as an aria
+// would mint a handle and heal a sidecar for a frozen trunk.
 func (a *Angelus) openNodeIR(node string) store.Log[message.Message] {
 	if o, ok := a.Backend.(interface {
 		OpenNode(string) store.Log[message.Message]
@@ -61,9 +56,6 @@ func (a *Angelus) openNodeIR(node string) store.Log[message.Message] {
 	return log
 }
 
-// uiLineage is a node's ancestry for the composed cache: the same walk the
-// decoded IR reads its prefix through. A backend with no notion of ancestry
-// makes every aria a root.
 func (a *Angelus) uiLineage(node string) []fwtree.Ref {
 	lb, ok := a.Backend.(store.LineageBackend)
 	if !ok {
@@ -72,16 +64,8 @@ func (a *Angelus) uiLineage(node string) []fwtree.Ref {
 	return lb.Lineage(node)
 }
 
-// tailOfLastTurn is the records the bracket CUT OFF: a turn whose opening
-// record is inside the bracket but whose later records are not composes
-// with its content missing, and the caller cannot tell that from a turn
-// that had nothing to say. A bracket that BEGINS mid-turn needs no such
-// repair -- composition drops records until one OPENS a turn, so the
-// partial head belongs to the run below and is dropped by construction.
-//
-// The boundary is turns.Opens, not the stamped TurnID: a record written
-// before turn ids existed carries a zero, and a rule that reads the stamp
-// stops at the first such record and silently truncates the turn.
+// tailOfLastTurn completes a turn the bracket cut off. The boundary is
+// turns.Opens, not the stamped TurnID: records predating turn ids carry zero.
 func tailOfLastTurn(log store.Log[message.Message], entries []store.Entry[message.Message]) []store.Entry[message.Message] {
 	var extra []store.Entry[message.Message]
 	for from := entries[len(entries)-1].LT + 1; ; {

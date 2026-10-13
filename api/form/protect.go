@@ -1,13 +1,10 @@
 package form
 
-// Protection: which keys a caller off the wire may write.
-
 import (
 	"fmt"
 	"strings"
 )
 
-// systemManaged is the set of keys the harness owns, indexed once.
 var systemManaged = func() map[string]bool {
 	m := map[string]bool{}
 	for _, k := range WellKnownKeys() {

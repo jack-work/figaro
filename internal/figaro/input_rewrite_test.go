@@ -16,12 +16,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// quoteLog builds a log with three messages so every refusal has a target:
-//
-//	lt 1  input   "the question"
-//	lt 2  output  [prose "Alpha bravo charlie delta echo." , tool_invoke bash]
-//	lt 3  input   [tool_result "ran fine"]
-//	lt 4  output  [thinking "hmm", prose "Foxtrot golf hotel."]
+// quoteLog: lt1 input "the question"; lt2 output [prose, tool_invoke bash];
+// lt3 input [tool_result]; lt4 output [thinking, prose].
 func quoteLog(t *testing.T) *store.MemLog[message.Message] {
 	t.Helper()
 	log := store.NewMemLog[message.Message]()
@@ -45,8 +41,7 @@ func quoteLog(t *testing.T) *store.MemLog[message.Message] {
 	return log
 }
 
-// quoteText resolves with a budget big enough to keep everything, which is
-// what the resolution cases are about: the clipping has its own tests.
+// quoteText resolves with a budget big enough to keep everything; clipping has its own tests.
 func quoteText(log LogReader, r quote.Range) (string, error) {
 	p, err := resolveQuote(context.Background(), log, r, budget{head: 1 << 20})
 	if err != nil {
@@ -88,7 +83,6 @@ func TestResolveQuote(t *testing.T) {
 	}
 }
 
-// Every refusal is one sentence that names what the log holds instead.
 func TestResolveQuoteRefuses(t *testing.T) {
 	log := quoteLog(t)
 	cases := []struct{ tok, want string }{
@@ -112,7 +106,6 @@ func TestResolveQuoteRefuses(t *testing.T) {
 	}
 }
 
-// Rune offsets, not bytes: a coordinate can never land inside a character.
 func TestResolveQuoteCountsRunes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
@@ -129,8 +122,7 @@ func TestResolveQuoteCountsRunes(t *testing.T) {
 	}
 }
 
-// mustPassage resolves through the same door Rewrite uses, so a render test
-// cannot be handed a passage the resolver would never produce.
+// mustPassage resolves through the same door Rewrite uses.
 func mustPassage(t *testing.T, view InputView, r quote.Range) passage {
 	t.Helper()
 	b, err := quoteBudget(view.Settings)
@@ -162,8 +154,7 @@ func TestRenderQuoteTruncates(t *testing.T) {
 	}
 }
 
-// A passage no longer than head+tail is sent whole. Truncating 8 chars into
-// 8 chars plus an ellipsis is a bug that reads as a feature.
+// A passage no longer than head+tail is sent whole, without an ellipsis.
 func TestRenderQuoteShortIsWhole(t *testing.T) {
 	log := quoteLog(t)
 	view := InputView{Log: log, Settings: quoteSettings(5, 3)}
@@ -205,7 +196,6 @@ func TestFormRefsExpandAndRefuse(t *testing.T) {
 	}
 }
 
-// The list runs refs before the quote, and each refusal wears its name.
 func TestRewriteInputOrderAndNaming(t *testing.T) {
 	a := &Agent{id: "abcd1234", figLog: quoteLog(t)}
 	if _, err := a.rewriteInput(context.Background(), "<9>! hi"); err == nil || err.Error() != "quote: <9>: no message at lt 9" {
@@ -224,7 +214,6 @@ func TestRewriteInputOrderAndNaming(t *testing.T) {
 	if !strings.HasPrefix(out, "> quoting <2.0:0-5>! · aria abcd1234 · turn 1 · 5 chars\n> Alpha\n\nwhat is this") {
 		t.Fatalf("got %q", out)
 	}
-	// Unterminated tokens are text and pass through, whatever they look like.
 	for _, in := range []string{"<2.0:0-5> what", "@zip what", "<3 you", ""} {
 		if out, err := a.rewriteInput(context.Background(), in); err != nil || out != in {
 			t.Fatalf("%q: %q %v", in, out, err)
@@ -232,9 +221,7 @@ func TestRewriteInputOrderAndNaming(t *testing.T) {
 	}
 }
 
-// THE QUOTE'S COST IS ITS OUTPUT. A selection is walked once, block by block,
-// and only the two ends are copied: the passage is never materialized, never
-// converted to runes whole, and a span never joins the blocks it crosses.
+// Only the two ends are copied: the passage is never materialized.
 func BenchmarkQuoteBoundedByOutput(b *testing.B) {
 	for _, size := range []int{1 << 10, 1 << 20, 4 << 20} {
 		b.Run(fmt.Sprintf("%dKiB", size>>10), func(b *testing.B) {
@@ -273,8 +260,7 @@ func mustParseRange(tb testing.TB, s string) quote.Range {
 	return r
 }
 
-// A quote is clipped to its budget whatever shape the passage arrives in: one
-// block, or a span across several. The head and the tail are exact.
+// Clipping is exact whatever shape the passage arrives in.
 func TestQuoteClipsToItsBudget(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	for _, text := range []string{strings.Repeat("a", 1000), strings.Repeat("b", 1000), strings.Repeat("c", 1000)} {
@@ -294,14 +280,13 @@ func TestQuoteClipsToItsBudget(t *testing.T) {
 	if !p.truncated {
 		t.Fatal("a 3004 rune span under a 9 rune budget says it kept everything")
 	}
-	// 1000 + 2 + 1000 + 2 + 1000: the separators count, because the reader sees
-	// them.
+	// The separators count: the reader sees them.
 	if p.total != 3004 {
 		t.Fatalf("total %d", p.total)
 	}
 }
 
-// A budget with nothing in it is a refusal, not "send everything".
+// A budget with nothing in it is a refusal.
 func TestQuoteBudgetRefusals(t *testing.T) {
 	if _, err := quoteBudget(quoteSettings(0, 0)); err == nil || !strings.Contains(err.Error(), "both 0") {
 		t.Fatalf("a zero budget was accepted: %v", err)
@@ -309,7 +294,7 @@ func TestQuoteBudgetRefusals(t *testing.T) {
 	if _, err := quoteBudget(quoteSettings(-1, 10)); err == nil || !strings.Contains(err.Error(), "negative") {
 		t.Fatalf("a negative budget was accepted: %v", err)
 	}
-	// Zero on ONE end is a real setting: the last 4 chars and nothing before.
+	// Zero on one end is a real setting.
 	b, err := quoteBudget(quoteSettings(0, 4))
 	if err != nil {
 		t.Fatal(err)
@@ -324,7 +309,6 @@ func TestQuoteBudgetRefusals(t *testing.T) {
 	}
 }
 
-// A walk across a long span honours the caller's context.
 func TestQuoteWalkStopsWithTheRequest(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	for range 50 {
@@ -341,7 +325,6 @@ func TestQuoteWalkStopsWithTheRequest(t *testing.T) {
 	}
 }
 
-// snapshotOf is a snapshot from a flat map.
 func snapshotOf(kv map[string]any) form.Snapshot {
 	raw := map[string]json.RawMessage{}
 	for k, v := range kv {

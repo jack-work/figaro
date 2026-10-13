@@ -7,8 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// ContextFromUsage is the single definition of "context used" as of the turn
-// that reported u.
+// ContextFromUsage is the single definition of "context used".
 func ContextFromUsage(u *message.Usage) int {
 	if u == nil {
 		return 0
@@ -16,8 +15,7 @@ func ContextFromUsage(u *message.Usage) int {
 	return u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens + u.OutputTokens
 }
 
-// ContextSize returns estimated tokens. Uses Usage data as a watermark
-// and falls back to chars/4 for messages after it.
+// ContextSize uses Usage as a watermark and chars/4 for messages after it.
 func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	if len(msgs) == 0 {
 		return 0, true
@@ -32,7 +30,6 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	}
 
 	if watermark < 0 {
-		// No usage data; estimate everything.
 		total := 0
 		for _, m := range msgs {
 			total += EstimateMessage(m)
@@ -53,7 +50,7 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	return base + tail, false
 }
 
-// EstimateMessage returns a chars/4 estimate. Images = 1200 tokens.
+// EstimateMessage is chars/4; an image is 1200 tokens.
 func EstimateMessage(m message.Message) int {
 	chars := 0
 	for _, c := range m.Content {

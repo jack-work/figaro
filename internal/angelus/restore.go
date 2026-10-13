@@ -1,12 +1,5 @@
 package angelus
 
-// Waking a dormant aria: the single-flight, and what a restored agent is
-// constructed from.
-//
-// Split out of protocol.go, which had grown to 2,011 lines and answered every
-// question at once. Same package, same behaviour: only the reader's job
-// changes. plans/api-coherence.md step 5.
-
 import (
 	"context"
 	"encoding/json"
@@ -23,31 +16,23 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// restoreCall is one wake, shared by everyone who asked for it while it ran.
 type restoreCall struct {
 	done chan struct{}
 	f    figaro.Figaro
 	err  error
 }
 
-// restoreByID re-creates a figaro from the backend tree. Serialized per
-// aria so concurrent restores cannot double-replay tail repair. wokeBy is
-// the RPC method that needed the agent; it is stamped on the agent and
-// logged, so a restore is never anonymous (issue #22 went unnamed for want
-// of exactly this).
+// restoreByID is single-flight per aria so concurrent restores cannot
+// double-replay tail repair.
 func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
 	}
-	// SINGLE FLIGHT. Two requests for a dormant aria must not build two
-	// agents, and the second must not wait on a lock that outlives the wake.
 	h.restoreMu.Lock()
 	if call, ok := h.restoring[ariaID]; ok {
 		h.restoreMu.Unlock()
 		select {
 		case <-call.done:
-			// The winner registered it; prefer the registry, which is the
-			// truth, and fall back to what the call returned.
 			if f := h.angelus.Registry.Get(ariaID); f != nil {
 				return f, nil
 			}
@@ -68,8 +53,6 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 	} else {
 		call.f, call.err = h.restoreOne(ctx, ariaID, wokeBy)
 	}
-	// The entry goes as the wake ends, which is what makes this bounded by
-	// concurrent wakes rather than by arias ever woken.
 	h.restoreMu.Lock()
 	delete(h.restoring, ariaID)
 	h.restoreMu.Unlock()
@@ -77,8 +60,6 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 	return call.f, call.err
 }
 
-// restoreOne builds and registers a figaro for an existing conversation
-// node, seeding its form from the channel.
 func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
 	cb := h.openAriaForm(ariaID)
 	if cb == nil {

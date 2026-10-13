@@ -10,9 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Each patch renders against the board BEFORE it. Stage 1 rewrote this
-// renderer; nothing in this package asserted the ordering, and the same gap in
-// anthropic let a deliberate inversion pass the whole provider suite.
+// Each patch renders against the board before it.
 func TestRenderPatchesRendersAgainstThePriorBoard(t *testing.T) {
 	tmpl := template.Must(template.New("form").New("mantra").Parse(`{{.OldString}}=>{{.NewString}}`))
 	p := &Provider{Templates: tmpl}

@@ -20,7 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// The shapes are copied from Copilot's live catalog, 2026-10-09.
+// Shapes from Copilot's live catalog.
 func TestTransportForEndpoints(t *testing.T) {
 	cases := map[string]struct {
 		endpoints []string
@@ -208,8 +208,7 @@ type hit struct {
 	model   string
 }
 
-// One gateway, one TOML file, two models, two dialects. Before this, a gateway
-// spoke Chat Completions to every model it was given.
+// One gateway, two models, two dialects.
 func TestAGatewayRoutesEachModelToTheTransportItsFileNames(t *testing.T) {
 	var mu sync.Mutex
 	var hits []hit
@@ -316,8 +315,8 @@ func (b *captureBus) PushToolReady(message.Content)                          {}
 func (b *captureBus) PushMessageEnd(string)                                  {}
 func (b *captureBus) PushFigaro(message.Message, ...provider.AssistantCache) {}
 
-// Copied from rows the pre-routing binary wrote (snapshot store, 2026-10-10).
-// A different string here re-encodes every existing Responses aria's history.
+// Rows as the pre-routing binary wrote them: a different string here
+// re-encodes every existing Responses aria's history.
 func TestCopilotResponsesFingerprintIsUnchanged(t *testing.T) {
 	p := mustNew(t, Spec{Name: "copilot", BaseURL: func() string { return "" }, Catalog: "/models"})
 	p.SetModel("gpt-6-astra")

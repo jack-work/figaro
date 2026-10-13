@@ -7,14 +7,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// The benchmarks in openregion_bench_test.go are only worth their numbers if
-// the fixture composes what a real open turn composes. Fixture fault #7 of the
-// previous campaign was a compose test whose tool_result had no matching
-// tool_use: a result alone composes to NOTHING, and the benchmark would have
-// measured prose while reporting on tools.
-//
-// TestOpenRegionFixtureComposesToolNodes asserts the fact. The subject is the
-// FIXTURE, not composeTurn.
+// The benchmark fixture must compose tool nodes: a tool_result with no
+// matching tool_use composes to nothing. The subject is the fixture.
 func TestOpenRegionFixtureComposesToolNodes(t *testing.T) {
 	const rounds = 4
 	a := openRegionAgent(rounds, 200, false)
@@ -49,19 +43,14 @@ func TestOpenRegionFixtureComposesToolNodes(t *testing.T) {
 		if n.Status != livedoc.StatusOK {
 			t.Fatalf("tool node %s status %q, want ok: a running tool skips the result path the benchmark exists to measure", n.ID, n.Status)
 		}
-		// tailBound clamps to the last composeBashCap source lines. Seeing the
-		// clamp proves the benchmark reaches the code that splits the FULL
-		// result text, which is the allocation under measurement.
+		// Seeing the clamp proves the benchmark reaches the code that splits the full result text.
 		if got := strings.Count(n.Output, "\n") + 1; got != 200 {
 			t.Fatalf("tool node %s output is %d lines, want the 200-line clamp", n.ID, got)
 		}
 	}
 }
 
-// TestOpenRegionFixtureCanFail proves the assertion above is load-bearing:
-// break the invoke/result pairing the way fault #7 did, and the tool output
-// the benchmark measures disappears. If this test ever fails, the check above
-// has stopped being able to catch the fault it was written for.
+// The assertion above is load-bearing: break the pairing and the tool output disappears.
 func TestOpenRegionFixtureCanFail(t *testing.T) {
 	a := openRegionAgent(4, 200, false)
 	log := a.figLog.(*benchmarkLog)
@@ -82,9 +71,7 @@ func TestOpenRegionFixtureCanFail(t *testing.T) {
 	}
 }
 
-// TestOpenRegionGrowsWithTheRegion states the S6 claim as a fact rather than
-// as a benchmark line: one frame's node count is proportional to the whole
-// open region, not to what changed since the previous frame.
+// One frame's node count is proportional to the whole open region.
 func TestOpenRegionGrowsWithTheRegion(t *testing.T) {
 	sp, ss, _ := openRegionAgent(4, 200, false).composeTurn(nil)
 	smallNodes := append(append([]livedoc.Node(nil), sp...), ss...)

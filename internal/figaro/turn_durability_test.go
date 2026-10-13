@@ -427,8 +427,7 @@ func TestPanicAfterIRBeforeLiveCommitReconcilesCanonicalAssistant(t *testing.T) 
 	require.NotEmpty(t, read.Parts)
 	last := read.Parts[len(read.Parts)-1]
 	require.NotEmpty(t, last.Nodes)
-	// The turn holds the prompt at node 0, so look for the reply among the
-	// nodes rather than assuming it is first.
+	// The prompt is node 0; look for the reply among the nodes.
 	found := false
 	for _, n := range last.Nodes {
 		if strings.Contains(n.Markdown, "canonical assistant") {
@@ -530,13 +529,6 @@ func TestPanicRecoveryPreservesQueuedPrompt(t *testing.T) {
 	assert.True(t, sawSecond)
 	assert.True(t, sawCompletion)
 }
-
-// TestAssistantAppendRejectsPredictedLTMismatch IS DELETED WITH THE
-// PREDICTION IT GUARDED. The provider's append used to be STAGED against a
-// guessed next index (deferredAppendLog) and the loop checked the guess; the
-// provider does not append at all now, so the LT is whatever the append
-// returned and there is nothing to disagree with. mismatchLog and
-// mismatchBackend went with it: they existed to make the prediction wrong.
 
 type nativeCommitProvider struct {
 	namespace   string

@@ -28,8 +28,6 @@ func (e *slowExporter) Shutdown(context.Context) error   { return nil }
 func (e *slowExporter) ForceFlush(context.Context) error { return nil }
 func (e *slowExporter) count() int                       { e.mu.Lock(); defer e.mu.Unlock(); return e.got }
 
-// A wedged collector must not stall the caller: OnEmit returns while the
-// exporter is blocked, and the ring sheds instead of growing.
 func TestBoundedProcessorDropsRatherThanBlocks(t *testing.T) {
 	exp := &slowExporter{release: make(chan struct{})}
 	p := newBoundedProcessor(exp, 8)
@@ -57,7 +55,6 @@ func TestBoundedProcessorDropsRatherThanBlocks(t *testing.T) {
 	}
 }
 
-// Capacity is the policy: 0 is the file sink's inline export.
 func TestZeroCapacityIsSynchronous(t *testing.T) {
 	exp := &slowExporter{}
 	p := newLogProcessor(exp, 0)
@@ -71,7 +68,6 @@ func TestZeroCapacityIsSynchronous(t *testing.T) {
 	}
 }
 
-// Shutdown keeps the last seconds.
 func TestShutdownFlushes(t *testing.T) {
 	exp := &slowExporter{}
 	p := newBoundedProcessor(exp, 64)

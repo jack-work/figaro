@@ -6,12 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// TestEveryCallGetsExactlyOneResultInOneTic pins the other distant guard: the
-// boundary in internal/compose matches results to invokes BY ID, and it treats
-// a second result for one call as closing nothing. That is safe because this
-// package emits exactly one result block per call, all of them in a single
-// tic. Both halves matter -- a duplicate id, or the same call answered in two
-// messages, is a shape the composer's prefix rule was not designed for.
+// compose matches results to invokes by id and treats a second result as
+// closing nothing, so this package must emit exactly one result per call in one tic.
 func TestEveryCallGetsExactlyOneResultInOneTic(t *testing.T) {
 	calls := []message.Content{
 		{Type: message.ContentToolInvoke, ToolCallID: "tc_ok", ToolName: "bash", Arguments: map[string]any{"command": "true"}},
@@ -23,8 +19,7 @@ func TestEveryCallGetsExactlyOneResultInOneTic(t *testing.T) {
 		content: []message.Content{{Type: message.ContentProse, Text: "ok"}},
 	}}
 
-	// isInterrupted() is false on a zero Agent, so the "never ran" call gets no
-	// synthetic result unless the turn was interrupted; both paths are checked.
+	// isInterrupted() is false on a zero Agent; both paths are checked.
 	for _, interrupted := range []bool{false, true} {
 		a := &Agent{}
 		a.mu.Lock()

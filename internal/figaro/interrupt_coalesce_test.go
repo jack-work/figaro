@@ -13,9 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// The interrupt-time fold. These are the unit-level half; the agent-level
-// behaviour (an interrupt actually folding a live queue, and an idle aria
-// folding nothing) lives in interrupt_coalesce_agent_test.go.
+// Unit half of the interrupt-time fold; the agent-level half is in interrupt_coalesce_agent_test.go.
 
 func TestCoalesce_FoldsAContiguousRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -31,15 +29,12 @@ func TestCoalesce_FoldsAContiguousRun(t *testing.T) {
 	snap := b.SnapshotPrompts(true)
 	require.Len(t, snap, 1, "a contiguous run is one message")
 	assert.Equal(t, "one\n\ntwo\n\nthree", snap[0].text)
-	// Identity folds with the content: the survivor keeps the first id and
-	// names what it absorbed, so a client holding id 2 can still find it.
+	// The survivor keeps the first id and names what it absorbed.
 	assert.Equal(t, uint64(1), snap[0].id)
 	assert.Equal(t, []uint64{2, 3}, snap[0].merged)
 }
 
-// THE RULING, EXECUTABLE. A queued form set is a barrier: it exists to
-// change context before the prompt behind it, and folding that prompt in front
-// of it would answer the question against state it was never written against.
+// A queued form set is a barrier: a prompt behind it must not be answered against earlier state.
 func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -60,8 +55,7 @@ func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 	assert.Equal(t, "three", b.pending()[2].text, "a prompt behind a set is NOT folded in front of it")
 }
 
-// A carrier (empty text, form only) folds into the run it sits in: its
-// patch rides on the combined message, in queue order, so a later value wins.
+// A carrier folds into its run; its patch rides the combined message in queue order.
 func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,8 +77,7 @@ func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {
 	assert.True(t, hasK)
 }
 
-// Nothing to fold is not an error, and a single prompt is left exactly as it
-// was: including its id, which a client may already be holding.
+// A single prompt is left exactly as it was, id included.
 func TestCoalesce_IsANoOpOnAShortQueue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

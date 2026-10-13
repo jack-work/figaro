@@ -11,16 +11,12 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// The numbers that justify the change, against the real default board.
-//
-// The headline is patch SIZE: what a one-field edit writes to the form channel
-// and re-renders into a turn, since that cost is paid on every change forever.
+// Patch size against the real default board: what a one-field edit writes.
 func BenchmarkOneFieldEdit(b *testing.B) {
 	m := realBoardFor(b)
 	board := form.FromMap(m)
 
-	// The largest object-valued key on the board: what a flat patch rewrote
-	// whole to change one field.
+	// The largest object-valued key on the board.
 	target, field, size := largestObjectKey(b, m)
 	b.Logf("target %s.%s, value is %d bytes", target, field, size)
 
@@ -38,8 +34,6 @@ func BenchmarkOneFieldEdit(b *testing.B) {
 	})
 }
 
-// A one-field edit, measured as bytes, against the whole value a flat patch
-// would have carried.
 func TestPatchSizeAgainstWholeValueRewrite(t *testing.T) {
 	m := realBoardFor(t)
 	board := form.FromMap(m)
@@ -65,8 +59,7 @@ func largestObjectKey(tb testing.TB, m map[string]json.RawMessage) (key, field s
 		}
 		if len(v) > size {
 			key, size = k, len(v)
-			// The SMALLEST field: changing a large one must carry the large
-			// one, because an invertible patch holds what it displaced.
+			// The smallest field: an invertible patch carries what it displaced.
 			best := -1
 			for f, fv := range obj {
 				if best < 0 || len(fv) < best {

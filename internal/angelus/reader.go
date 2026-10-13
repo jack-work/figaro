@@ -14,35 +14,24 @@ import (
 	"github.com/jack-work/figaro/internal/tokens"
 )
 
-// AriaReader answers the read half of the aria contract: history, context
-// and form: straight from the store, with no agent.
+// AriaReader answers history, context and form from the store, with no agent.
 type AriaReader struct {
 	backend store.Backend
 	proj    Projector
 	uiCache *aria.ComposedCache
 
-	// servers is the reader's half of the ONE windowed component: an
-	// aria.Server per read aria, no open region, its sealed section the
-	// same bounded TurnCache the agents use, against the same budget.
-	// The shells are tiny once their turns hollow; what this buys is the
-	// end of the per-call whole-log recompose (13.1 MB/op thrown away at
-	// 10k messages) AND one read path instead of two.
+	// servers share the agents' TurnCache and budget; one read path, not two.
 	mu      sync.Mutex
 	servers map[string]*readAria
 }
 
-// readAria is one read aria's windowed server plus the metrics computed
-// at its last refresh. Metrics only change when the log grows, and log
-// growth is exactly what triggers a refresh, so serving them cached is
-// not staleness.
+// readAria caches metrics from its last refresh; the log growing is what triggers both.
 type readAria struct {
 	srv     *aria.Server
 	metrics *aria.Metrics
 }
 
-// Projector converts fig IR into UI IR. Named here rather than imported
-// from internal/figaro so the reader does not depend on the agent package:
-// the whole point is that this path has no agent in it.
+// Projector is declared here so the reader does not depend on the agent package.
 type Projector interface {
 	Turns(msgs []message.Message) []aria.Turn
 }
@@ -51,16 +40,12 @@ func NewAriaReader(backend store.Backend, proj Projector) *AriaReader {
 	return NewAriaReaderBounded(backend, proj, nil)
 }
 
-// NewAriaReaderBounded is NewAriaReader against the shared composed cache.
 func NewAriaReaderBounded(backend store.Backend, proj Projector, uiCache *aria.ComposedCache) *AriaReader {
 	return &AriaReader{backend: backend, proj: proj, uiCache: uiCache, servers: map[string]*readAria{}}
 }
 
-// messages decodes the aria's IR. The backend hands back the same shared
-// instance a live agent would hold, so this is lock-free against writes.
-// The ENTRIES come back too: they carry the cursor stamps
-// (FormChannelVersion, StudyVersions) that the message payload does not,
-// and the form-delta assembly reads them.
+// messages also returns the entries: they carry the cursor stamps the
+// payload does not, and form-delta assembly reads them.
 func (r *AriaReader) messages(id string) ([]message.Message, []store.Entry[message.Message], error) {
 	if r == nil || r.backend == nil {
 		return nil, nil, errors.New("no backend")
@@ -76,16 +61,13 @@ func (r *AriaReader) messages(id string) ([]message.Message, []store.Entry[messa
 	msgs := make([]message.Message, 0, len(entries))
 	for _, e := range entries {
 		m := e.Payload
-		// The entry's LT is authoritative; the payload's copy may predate
-		// the field. The projection does exactly this.
+		// The entry's LT is authoritative; the payload's copy may predate the field.
 		m.LogicalTime = e.LT
 		msgs = append(msgs, m)
 	}
 	return msgs, entries, nil
 }
 
-// Context returns the aria's fig IR plus the metrics a client renders
-// beside it.
 func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error) {
 	msgs, _, err := r.messages(id)
 	if err != nil {
@@ -94,11 +76,8 @@ func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error
 	return msgs, r.metrics(id, msgs), nil
 }
 
-// Page serves one window of sealed history from the shared windowed
-// component. at.Turn == 0 with before means the tail. There is no open
-// streaming region: a dormant aria has no turn in flight, which is what
-// makes it dormant. floor applies to a backward read only, and it is the
-// same floor the live agent honours: one walk, two sources.
+// Page serves sealed history; at.Turn == 0 with before means the tail, and
+// floor applies to a backward read only.
 func (r *AriaReader) Page(id string, at, floor aria.Anchor, budget int, before bool) (aria.Page, error) {
 	ra, err := r.serverFor(id)
 	if err != nil {
@@ -114,11 +93,8 @@ func (r *AriaReader) Page(id string, at, floor aria.Anchor, budget int, before b
 	return page, nil
 }
 
-// serverFor returns the aria's windowed server, materializing on first
-// sight and REFRESHING when the log has grown past the server's tail --
-// a dormant aria still takes hub writes (sets, study marks), and serving
-// a page that predates them would be the stale-read bug wearing new
-// clothes. The tail probe costs one ReadPage(…,1), not a walk.
+// serverFor refreshes when the log has grown past the server's tail: a
+// dormant aria still takes hub writes. The tail probe is one ReadPage, not a walk.
 func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	if r == nil || r.backend == nil {
 		return nil, errors.New("no backend")
@@ -163,10 +139,7 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	return ra, nil
 }
 
-// Form reads the reducible form channel, which is the durable truth, AND the
-// version it stands at. The version is not decoration: a client mirroring the
-// form applies deltas on top of this snapshot, and without the version it cannot
-// tell whether the next delta follows it or whether it missed one.
+// Form returns the version too: a mirroring client needs it to order deltas.
 func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 	if r == nil || r.backend == nil {
 		return form.Snapshot{}, 0, errors.New("no backend")
@@ -182,11 +155,7 @@ func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 	return snap, version, nil
 }
 
-// metrics recomputes what the agent's refreshMetricsFrom computes, minus
-// the fields that only a live turn can know. Token counts and context size
-// are pure functions of the IR, so they round-trip exactly; a dormant aria
-// simply has no provider bound, so the context LIMIT is whatever the
-// form last recorded rather than a live lookup.
+// metrics matches the agent's refreshMetricsFrom minus what only a live turn knows.
 func (r *AriaReader) metrics(id string, msgs []message.Message) *aria.Metrics {
 	contextTokens, exact := tokens.ContextSize(msgs)
 	m := &aria.Metrics{ContextTokens: contextTokens, ContextExact: exact}

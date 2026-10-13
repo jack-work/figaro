@@ -19,10 +19,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// slowStreamingProvider streams a delta, then blocks. Used to force a
-// mid-turn interrupt (assistant never appends) so the store's on-disk
-// tail is a bare user prompt with no assistant reply: the state
-// prior investigation flagged as breaking read+subscribe coherence.
+// slowStreamingProvider streams a delta, then blocks, so the on-disk tail is a bare user prompt.
 type slowStreamingProvider struct {
 	started chan struct{}
 }
@@ -43,25 +40,14 @@ func (p *slowStreamingProvider) Send(ctx context.Context, _ provider.SendInput, 
 	return ctx.Err()
 }
 
-// TestReadSubscribeAfterInterruptedTurn asserts that after an aria is
-// interrupted mid-turn: content on disk, no assistant append, a fresh
-// agent restored on the same backend sees the aria's content via
-// Read(0), and a live subscriber receives frames on the next prompt.
-//
-// This mirrors the reported bug: "output after 'figaro send' sometimes
-// never arrives over a concurrent 'figaro listen'." The strong lead is
-// that a mid-turn interrupt scrambles the head/fork-ancestry such that
-// reads return 0 units and the subscribe stream goes silent.
+// After a mid-turn interrupt, a fresh agent on the same backend serves Read(0)
+// and a live subscriber receives frames on the next prompt.
 func TestReadSubscribeAfterInterruptedTurn(t *testing.T) {
 	t.Parallel()
 	testReadSubscribeAfterInterrupt(t, true)
 }
 
-// TestReadSubscribeAfterInterrupt_SameAgent runs the same scenario
-// without restarting the backend/agent: the interrupt happens, then a
-// second prompt goes through on the SAME agent. Reads and subscribers
-// must still see it. This is the "disconnect" half of the lead -
-// nothing is recycled, only the turn was cancelled.
+// The same scenario on the same agent: only the turn was cancelled.
 func TestReadSubscribeAfterInterrupt_SameAgent(t *testing.T) {
 	t.Parallel()
 	testReadSubscribeAfterInterrupt(t, false)
@@ -70,7 +56,6 @@ func TestReadSubscribeAfterInterrupt_SameAgent(t *testing.T) {
 func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	dir := t.TempDir()
 
-	// -- Phase 1: create + prompt + interrupt mid-turn -------------------
 	backend1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	outfit, err := backend1.CreateOutfit("d", form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -90,7 +75,6 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		Backend:    backend1,
 	})
 
-	// Subscribe so we can observe the interrupt done.
 	sink1 := make(chan rpc.Notification, 64)
 	unsub := a1.Subscribe(&reproNotifier{ch: sink1})
 
@@ -106,15 +90,11 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	waitFor(t, sink1, rpc.MethodTurnDone, 3*time.Second)
 	unsub()
 
-	// A subscriber that connects AFTER the interrupt (mimicking a
-	// concurrent `figaro listen` that survives past the send's exit)
-	// must see the on-disk content on catch-up Read, and must receive
-	// live frames when the next turn runs on the same agent.
+	// A subscriber attached after the interrupt sees the content on catch-up and live frames next turn.
 	lateSink := make(chan rpc.Notification, 128)
 	lateUnsub := a1.Subscribe(&reproNotifier{ch: lateSink})
 	defer lateUnsub()
 
-	// Catch-up Read from the freshly-attached listener.
 	lateInit := a1.Read(aria.Anchor{Turn: 0}, 1<<20)
 	if len(lateInit.Parts) == 0 {
 		t.Fatalf("late Read(0) after interrupt returned 0 committed units")
@@ -139,21 +119,14 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		})
 		t.Cleanup(a2.Kill)
 	} else {
-		// Same-agent path: keep a1 alive, swap the provider isn't an option,
-		// so we test that a1 (with the slow provider) at least serves a
-		// FRESH Read(0)+Subscribe correctly. The slow provider on the next
-		// prompt is fine: we only assert on the current on-disk content.
 		a2 = a1
 		t.Cleanup(a2.Kill)
 	}
 
-	// The user's prompt "please stream forever" is on disk; a catch-up
-	// Read(0) MUST return at least one user unit.
 	got := a2.Read(aria.Anchor{Turn: 0}, 1<<20)
 	if len(got.Parts) == 0 {
 		t.Fatalf("Read(0) after interrupt+restore returned 0 units; want >=1 (user prompt on disk)")
 	}
-	// The question is TEXT ON THE TURN now, not a unit of its own and not a node.
 	sawUser := false
 	for _, c := range got.Parts {
 		if c.Inquiry == "please stream forever" {
@@ -162,7 +135,6 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	}
 	require.True(t, sawUser, "Read(0) should include the on-disk user prompt")
 
-	// Subscribe BEFORE the next prompt (mirrors a concurrent `figaro listen`).
 	sink2 := make(chan rpc.Notification, 64)
 	unsub2 := a2.Subscribe(&reproNotifier{ch: sink2})
 	defer unsub2()
@@ -171,13 +143,10 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		return // same-agent path: we've verified Read(0) still returns content
 	}
 
-	// Send a fresh prompt and assert we see aria frames + turn.done.
 	a2.SubmitPrompt(rpc.QuaRequest{Text: "hello again"})
 	waitFor(t, sink2, rpc.MethodTurnDone, 5*time.Second)
 
-	// After the second turn, both the older exchange and the new one must be
-	// visible to a fresh reader. Two TURNS, not three units: the question
-	// belongs to the turn that answered it.
+	// Two turns, not three units: the question belongs to the turn that answered it.
 	final := a2.Read(aria.Anchor{Turn: 0}, 1<<20)
 	require.GreaterOrEqual(t, len(final.Parts), 2,
 		"final Read(0) should contain both the original turn and the new one")
@@ -190,7 +159,6 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	require.GreaterOrEqual(t, prompts, 2, "both prompts must survive")
 }
 
-// reproNotifier is a tiny sink adopted as figaro.Notifier.
 type reproNotifier struct{ ch chan rpc.Notification }
 
 func (n *reproNotifier) Notify(method string, params any) error {
@@ -201,7 +169,6 @@ func (n *reproNotifier) Notify(method string, params any) error {
 	return nil
 }
 
-// waitFor drains until it sees the given method or times out.
 func waitFor(t *testing.T, ch <-chan rpc.Notification, method string, d time.Duration) rpc.Notification {
 	t.Helper()
 	timeout := time.After(d)
@@ -217,7 +184,6 @@ func waitFor(t *testing.T, ch <-chan rpc.Notification, method string, d time.Dur
 	}
 }
 
-// staticReplyProvider replies with a fixed string, then appends.
 type staticReplyProvider struct{ reply string }
 
 func (p *staticReplyProvider) Name() string        { return "static" }

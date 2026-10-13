@@ -7,21 +7,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// THE HAZARD, pinned before the memo that could violate it.
-//
-// composeTurn is about to stop re-reading the whole open region every frame
-// and hold it instead, extending it by what the log appended since. Two ways
-// that goes wrong, and neither is slow -- both are wrong:
-//
-//  1. THE MEMO GOES STALE: a message appended between frames, or a new turn's
-//     region, served from the previous turn's memo. The oracle is the full
-//     materialization, kept permanently.
-//  2. THE MEMO IS MUTATED UNDER A READER: composeTurn appends the in-flight
-//     message to the region. If that append lands in the memo's own backing
-//     array, every previously returned slice sharing it is edited in place --
-//     the held-view law, pinned twice in internal/store, broken one package
-//     over. This one cannot be seen by comparing contents at all; it is a
-//     capacity question, so the test asks a capacity question.
+// The region memo must equal the full materialization, and composeTurn's
+// append of the in-flight message must never land in the memo's backing array.
 
 func regionOracle(a *Agent) []message.Message {
 	entries := a.figLog.ReadFrom(a.turnStartLT+1, 0)
@@ -56,14 +43,12 @@ func sameMessages(a, b []message.Message) bool {
 func TestRegionMemoEqualsAFullMaterializationAtEveryFrame(t *testing.T) {
 	a := openRegionAgent(4, 20, true)
 
-	// Frames with nothing new: the memo must still equal the oracle.
 	for i := 0; i < 3; i++ {
 		if got, want := a.regionMessages(), regionOracle(a); !sameMessages(want, got) {
 			t.Fatalf("frame %d with no appends: memo has %d messages, oracle has %d", i, len(got), len(want))
 		}
 	}
 
-	// A message appended between frames must appear.
 	for i := 0; i < 3; i++ {
 		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleOutput,
@@ -77,8 +62,7 @@ func TestRegionMemoEqualsAFullMaterializationAtEveryFrame(t *testing.T) {
 		}
 	}
 
-	// A NEW TURN replaces the region. A memo carried across that boundary
-	// would serve the previous turn's messages under the new turn's LTs.
+	// A new turn replaces the region.
 	a.turnStartLT = uint64(a.figLog.Len()) - 2
 	got, want := a.regionMessages(), regionOracle(a)
 	if !sameMessages(want, got) {
@@ -87,10 +71,7 @@ func TestRegionMemoEqualsAFullMaterializationAtEveryFrame(t *testing.T) {
 	}
 }
 
-// THE ALIASING TRAP, asked as a capacity question because no content
-// comparison can see it. composeTurn appends the in-flight message to what
-// regionMessages returns; if that append fits in the memo's backing array, it
-// overwrites a slot a previously returned slice may still be read through.
+// Aliasing is a capacity question: no content comparison can see it.
 func TestRegionMemoCannotBeExtendedInPlace(t *testing.T) {
 	a := openRegionAgent(4, 20, true)
 	got := a.regionMessages()
@@ -104,7 +85,6 @@ func TestRegionMemoCannotBeExtendedInPlace(t *testing.T) {
 			"Return it capped (s[:n:n]) so the append is forced to copy.", len(got), cap(got))
 	}
 
-	// And the memo must survive the caller doing exactly that.
 	before := len(a.regionMessages())
 	_ = append(got, message.Message{Role: message.RoleOutput}) //nolint:gocritic // the caller's append, on purpose
 	if after := len(a.regionMessages()); after != before {

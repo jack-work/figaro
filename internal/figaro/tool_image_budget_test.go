@@ -11,10 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// TestAssembleToolResultsImages covers what a tool_result tic carries once
-// tool imagery is no longer discarded: attribution, ordering, the error
-// path, and the per-message budget that keeps one screenshot from
-// overflowing a WAL segment and destroying the turn.
+// A tool_result tic carries imagery with attribution, ordering, the error path, and the per-message budget.
 func TestAssembleToolResultsImages(t *testing.T) {
 	budget := (&Agent{}).toolImageBudget()
 	big := strings.Repeat("A", budget+1)
@@ -174,12 +171,8 @@ func TestAssembleToolResultsImages(t *testing.T) {
 	}
 }
 
-// TestAssembleToolResultsBudgetKeepsTicUnderSegment is the reason the budget
-// exists at all: the tic is one figwal record, and a record larger than a WAL
-// segment fails the append and takes the turn with it. The budget is derived
-// from store.segment_size (config.InlineImageBudget), so this pins the
-// derivation rather than a constant: whatever the segment size, the imagery on
-// one record must leave room for the text results sharing it.
+// The tic is one figwal record, and a record larger than a WAL segment fails
+// the append; the budget derives from store.segment_size.
 func TestAssembleToolResultsBudgetKeepsTicUnderSegment(t *testing.T) {
 	var noConfig *config.Loaded // nil-safe accessors: the built-in defaults
 	budget := (&Agent{}).toolImageBudget()

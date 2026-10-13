@@ -10,28 +10,8 @@ import (
 	"testing"
 )
 
-// A COMMENT THAT NAMES A TEST IS A CITATION, AND A CITATION THAT DOES NOT
-// RESOLVE IS A LIE THE SUITE CANNOT SEE.
-//
-// TestSkillPathsCitedFromOutsideResolve does this for file paths. This does it
-// for the other thing comments cite: the name of the test that is supposed to
-// be holding the claim up. "Asserted by TestX" is the strongest sentence a
-// comment can contain -- it tells a reader the claim IS under test -- and it is
-// worth exactly nothing if TestX does not exist.
-//
-// It was written because that happened: a comment in
-// internal/store/translate_on_append.go named a write-path assistant test that
-// never existed under that name, within an hour of the citation being written,
-// by the author of the test it meant to name.
-//
-// A CITATION RESOLVES IF IT IS A PREFIX OF A REAL NAME, because naming a
-// FAMILY is legitimate -- "see TestSmoke" for TestSmoke_DetachedTail, or a
-// benchmark group one would pass to -run. Only a name that prefixes nothing at
-// all is dead.
-//
-// AND A TOMBSTONE IS NOT A DEAD CITATION. A comment saying a test IS DELETED,
-// is GONE, or was RENAMED is naming something that must not exist, and it is
-// the one honest way to record why a guard is absent.
+// A Test-prefixed name in a comment is a citation and must prefix a real test name.
+// A tombstone (a comment saying the test is deleted, gone or renamed) is not one.
 func TestTestNamesCitedInCommentsExist(t *testing.T) {
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
@@ -40,12 +20,9 @@ func TestTestNamesCitedInCommentsExist(t *testing.T) {
 	repo := strings.TrimSpace(string(out))
 
 	var (
-		// A citation is a Test-prefixed identifier appearing in a // comment.
-		cited = regexp.MustCompile(`\b(Test|Benchmark|Fuzz|Example)[A-Z][A-Za-z0-9_]{3,}\b`)
-		// A tombstone names a test in order to say it is not there.
+		cited     = regexp.MustCompile(`\b(Test|Benchmark|Fuzz|Example)[A-Z][A-Za-z0-9_]{3,}\b`)
 		tombstone = regexp.MustCompile(`(?i)\b(deleted|gone|removed|no longer|renamed|replaces|replaced by|superseded)\b`)
-		// A definition is a top-level func with that name.
-		defined = regexp.MustCompile(`(?m)^func\s+((?:Test|Benchmark|Fuzz|Example)[A-Za-z0-9_]+)\s*\(`)
+		defined   = regexp.MustCompile(`(?m)^func\s+((?:Test|Benchmark|Fuzz|Example)[A-Za-z0-9_]+)\s*\(`)
 	)
 
 	have := map[string]bool{}

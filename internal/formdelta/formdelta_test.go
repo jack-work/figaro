@@ -52,8 +52,6 @@ func waitFold(t *testing.T, lib *store.Libretto, v uint64) {
 	t.Fatalf("libretto did not fold source version %d (at %d)", v, lib.At())
 }
 
-// The bound board: consecutive stamps bracket exactly the patches between
-// them, each key renders once, on the record whose window it fell in.
 func TestBoundBoardDeltasBracketTheWindows(t *testing.T) {
 	be := backend(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(map[string]string{"aria_id": `"a1"`}))
@@ -73,9 +71,7 @@ func TestBoundBoardDeltasBracketTheWindows(t *testing.T) {
 	entries := log.Read()
 	deltas := PerRecord(be, aria, entries)
 
-	// The birth patch (aria_id and friends) belongs to the FIRST non-genesis
-	// record's window -- the store mints one at fork, before e1 -- and the
-	// phase change to the record after it landed.
+	// The store mints a genesis record at fork, before e1.
 	var first uint64
 	for _, e := range entries {
 		if e.Payload.Role != message.RoleGenesis {
@@ -98,8 +94,6 @@ func TestBoundBoardDeltasBracketTheWindows(t *testing.T) {
 	}
 }
 
-// A studied form: the delta arrives on the record whose stamp closes the
-// window, the machinery stays hidden, and a removed key says removed.
 func TestStudiedFormDeltas(t *testing.T) {
 	be := backend(t)
 	src, _, err := be.CreateForm("", patchOf(map[string]string{"brief": `"the studied thing"`}))
@@ -148,7 +142,6 @@ func TestStudiedFormDeltas(t *testing.T) {
 	}
 }
 
-// A form carrying target-aria is a role, decided server-side.
 func TestRoleKindIsDecidedServerSide(t *testing.T) {
 	be := backend(t)
 	role, _, err := be.CreateForm("", patchOf(map[string]string{"target-aria": `"a1"`}))
@@ -188,8 +181,6 @@ func TestRoleKindIsDecidedServerSide(t *testing.T) {
 	}
 }
 
-// The death arrives as FormDeleted on the form itself: a reader needs
-// "the form is gone", not the name of the bookkeeping key.
 func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	be := backend(t)
 	src, _, err := be.CreateForm("", patchOf(map[string]string{"brief": `"doomed"`}))
@@ -218,7 +209,6 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	if err := be.Remove(src, false); err != nil {
 		t.Fatal(err)
 	}
-	// The death is recorded on the copy asynchronously; wait for it.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if raw, ok := lib.State().Get(store.KeyLibrettoAlive); ok && string(raw) == "false" {
@@ -238,9 +228,8 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	}
 }
 
-// Two renders of the same transcript must agree: the deltas are a pure
-// function of durable stamps and durable logs. This test exists to fail
-// if anyone reaches for the provider cache to speed it up.
+// Deltas are a pure function of durable stamps and logs, never the provider
+// cache.
 func TestAssemblyIsDeterministic(t *testing.T) {
 	be := backend(t)
 	src, _, err := be.CreateForm("", patchOf(map[string]string{"brief": `"b"`}))
@@ -284,9 +273,6 @@ func TestAssemblyIsDeterministic(t *testing.T) {
 	}
 }
 
-// Attach: a record that projects a node lands on that node (a tool round
-// on the tool node, both LTs); the inquiry record, which is not a node,
-// lands on the turn; and nothing is dropped.
 func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 	turns := []aria.Turn{{
 		ID:  1,
@@ -300,10 +286,10 @@ func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 		return map[string]livedoc.FormDelta{k: {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}}
 	}
 	Attach(turns, map[uint64]map[string]livedoc.FormDelta{
-		10: d("a1.inquiry-window"), // the record that opened the turn: no node
-		11: d("a1.on-prose"),       // the prose record
-		13: d("a1.on-tool-result"), // the tool RESULT record: the tool node claims it
-		14: d("a1.unclaimed"),      // a record no node claims: the seam
+		10: d("a1.inquiry-window"),
+		11: d("a1.on-prose"),
+		13: d("a1.on-tool-result"),
+		14: d("a1.unclaimed"),
 	})
 	if _, ok := turns[0].FormDeltas["a1.inquiry-window"]; !ok {
 		t.Fatalf("the inquiry window should land on the TURN: %+v", turns[0].FormDeltas)
@@ -314,11 +300,6 @@ func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 	if _, ok := turns[0].Nodes[1].FormDeltas["a1.on-tool-result"]; !ok {
 		t.Fatalf("the tool result's delta should land on the tool node: %+v", turns[0].Nodes[1].FormDeltas)
 	}
-	// THE SEAM WAITS. LT 14 trails every node of the only turn there is:
-	// state written after the turn was composed, which that turn never saw.
-	// It draws on the turn it opens, and until that turn exists it draws
-	// nowhere. (This assertion used to read the other way, when a trailing
-	// record attached backwards; see TestSeamDeltasAttachToTheTurnTheyOpen.)
 	if _, ok := turns[0].FormDeltas["a1.unclaimed"]; ok {
 		t.Fatalf("a trailing seam must not attach to the turn before it: %+v", turns[0].FormDeltas)
 	}
@@ -327,9 +308,6 @@ func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 	}
 }
 
-// One key touched twice in a window is one transition, and the same
-// records always fold the same way: the first Prev to the last Value.
-// The live path used to walk a map, so the older value won at random.
 func TestCollapsedTransitionIsChronological(t *testing.T) {
 	rec := func(prev, val string) map[string]livedoc.FormDelta {
 		return map[string]livedoc.FormDelta{"a1.mantra": {
@@ -364,12 +342,8 @@ func TestCollapsedTransitionIsChronological(t *testing.T) {
 	}
 }
 
-// The seam. A fork's birth record is ceremonial: it projects no node and
-// trails every node of the turn whose LT range swallows it, which is the
-// LAST turn of the PARENT. The state it carries was never shown to that
-// turn; the first context it entered is the turn after it. Reproduced from
-// aria 5d366cc5, where the fork banner drew under the first message
-// instead of the second.
+// A fork's birth record projects no node and trails every node of the
+// parent's last turn; it belongs to the turn after it.
 func TestSeamDeltasAttachToTheTurnTheyOpen(t *testing.T) {
 	turns := []aria.Turn{
 		{
@@ -387,8 +361,8 @@ func TestSeamDeltasAttachToTheTurnTheyOpen(t *testing.T) {
 		return map[string]livedoc.FormDelta{k: {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}}
 	}
 	Attach(turns, map[uint64]map[string]livedoc.FormDelta{
-		4: d("a1.mantra"),             // the record that opened turn 1
-		6: d("a1.system.forked_from"), // the fork's birth record: the seam
+		4: d("a1.mantra"),
+		6: d("a1.system.forked_from"),
 	})
 	if _, ok := turns[0].FormDeltas["a1.mantra"]; !ok {
 		t.Fatalf("the inquiry window should stay on its own turn: %+v", turns[0].FormDeltas)
@@ -401,10 +375,6 @@ func TestSeamDeltasAttachToTheTurnTheyOpen(t *testing.T) {
 	}
 }
 
-// With no turn after it, a seam waits: it is not attributed backwards to
-// a turn that never saw it. The live path picks it up when the next turn
-// seals (Agent.stampSealDeltas), and a whole-log read when the turn is
-// there.
 func TestSeamWithNoFollowingTurnWaits(t *testing.T) {
 	turns := []aria.Turn{{
 		ID:    1,

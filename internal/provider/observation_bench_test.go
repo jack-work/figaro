@@ -11,19 +11,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// What OBSERVATION costs, per translated turn, as the observed set grows.
-//
-// The unification made every IR append stamp the whole observed set's
-// positions, and the translator derives each member's patch-fold between
-// consecutive stamps. That derivation runs on EVERY translate: warm and cold,
-// for every provider: so its slope in the number of observed forms is the
-// number that decides whether a figaro can study many things or few.
-//
-// Commissioned when the storm harness went to 50 concurrent arias on one
-// role: correctness at that scale was measured live, and this is the other
-// half: what one aria pays per turn for each thing it watches.
+// What observation costs per translated turn as the observed set grows.
 
-// benchForm is a Form accessor over a fixed patch history.
 type benchForm struct {
 	patches []message.Patch
 }
@@ -48,8 +37,6 @@ func benchPatches(n int) []message.Patch {
 	return out
 }
 
-// projectWith runs one incremental projection over `turns` entries, each
-// stamping `observed` forms.
 func projectWith(b *testing.B, turns, observed int, warm bool) {
 	b.Helper()
 	studies := map[string]provider.Form{}
@@ -77,17 +64,13 @@ func projectWith(b *testing.B, turns, observed int, warm bool) {
 			Translator: store.NewMemLog[[]json.RawMessage](),
 			Studies:    studies,
 			Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
-				// Encode is the provider's business; count the studied folds
-				// so the compiler cannot elide the derivation.
+				// Count the folds so the derivation is not elided.
 				n := len(m.StudyPatches)
 				return []json.RawMessage{json.RawMessage(fmt.Sprintf(`{"n":%d}`, n))}, nil
 			},
 		}
 	}
 
-	// WARM IS A ROW LOG THAT IS ALREADY CAUGHT UP, not a memo: the second
-	// pass over the same rows visits only what has no row yet, which for a
-	// steady log is nothing.
 	warmCfg := newCfg()
 	if warm {
 		if _, err := provider.CatchUp(warmCfg); err != nil {
@@ -113,9 +96,7 @@ func BenchmarkObservationCold1(b *testing.B)  { projectWith(b, 40, 1, false) }
 func BenchmarkObservationCold8(b *testing.B)  { projectWith(b, 40, 8, false) }
 func BenchmarkObservationCold50(b *testing.B) { projectWith(b, 40, 50, false) }
 
-// Warm is the shape a live turn actually takes: the prefix is translated, one
-// entry is new. If the observed set costs anything HERE it costs it on every
-// turn forever.
+// Warm: the prefix is translated, one entry is new.
 func BenchmarkObservationWarm0(b *testing.B)  { projectWith(b, 40, 0, true) }
 func BenchmarkObservationWarm1(b *testing.B)  { projectWith(b, 40, 1, true) }
 func BenchmarkObservationWarm8(b *testing.B)  { projectWith(b, 40, 8, true) }

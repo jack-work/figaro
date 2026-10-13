@@ -6,9 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// x-caller is set from an environment variable by whoever is calling. If it
-// could stand in for an aria id, every rule would be one FIGARO_CALLER away
-// from bypass.
+// x-caller comes from an environment variable; if it could stand in for an
+// aria id every rule would be one FIGARO_CALLER away from bypass.
 func TestLabelCannotAuthorize(t *testing.T) {
 	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "", &rpc.CallerRef{Label: "aria0001"})
 	if err != nil {

@@ -86,10 +86,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	close(bt.release)
 	waitTurnDone(t, frames)
 
-	// A DRAINED BATCH IS ONE MESSAGE. Both steers were queued during the same
-	// tool round, so TakeReadyUserPrompts lifts them together and the drain
-	// joins them with a newline: one message, one LT, one steering decision -
-	// not two messages for the model to reconcile.
+	// Both steers were queued in the same tool round, so they drain as one message at one LT.
 	msgs := conversationOnly(a.Context())
 	require.Len(t, msgs, 5)
 	require.Equal(t, []message.Role{
@@ -106,16 +103,8 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	require.Equal(t, "steer one\n\nsteer two", msgs[3].Content[0].Text)
 	require.True(t, msgs[3].Steering, "a prompt drained mid-turn is classified at the drain")
 
-	// The canonical order survives as ONE turn. A steer is a direction aimed at
-	// the exchange already in flight, so it joins that turn rather than opening
-	// its own: which is what previously truncated the turn being steered and
-	// left its closing prose unrendered.
-	//
-	// The TOOL node belongs here too. This expectation used to omit it, which
-	// pinned a real defect: the assertions above prove a tool ran (msgs[1] is the
-	// assistant, msgs[2] carries its ContentToolResult), so a projection without a
-	// tool node was claiming that a tool present in the IR renders nowhere. It
-	// was overwritten in place when the recomposed window narrowed after a drain.
+	// A steer joins the turn in flight rather than opening its own. The tool node
+	// belongs in the expectation: msgs[2] carries its result.
 	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
 	for _, part := range read.Parts {
 		t.Logf("turn=%d inquiry=%q nodes=%d", part.ID, part.Inquiry, len(part.Nodes))
@@ -139,16 +128,8 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
-// TIMING IS THE WHOLE RULE: a prompt that arrives while a turn is running joins
-// that turn as a steering aside. There is no flag and no declaration: one
-// command, identical whether or not the aria is busy.
-//
-// This test previously asserted the opposite, from an era when intent was
-// CARRIED. That design existed to avoid demoting a genuine question, but it
-// required the caller to know something the caller cannot reliably know, and it
-// put a second classification point outside the drain. The rule now: a message
-// sent while figaro is working IS a direction to the work in progress. A steer
-// is not a turn, so it does not get one.
+// A prompt that arrives while a turn is running joins that turn as a steer:
+// no flag, no declaration, and no turn of its own.
 func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 	bt := &blockingSteeringTool{
 		started: make(chan struct{}),
@@ -205,10 +186,8 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
-// TestFormSetDuringToolRoundAppliesNextRound proves a form patch
-// enqueued mid-turn (a model switch) is serviced at the same tool-window
-// boundary steering prompts are: so the next provider round already sees the
-// new model, rather than the patch waiting out the whole turn.
+// A form patch enqueued mid-turn is serviced at the tool-window boundary,
+// so the next provider round sees it.
 func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 	bt := &blockingSteeringTool{
 		started: make(chan struct{}),
@@ -249,7 +228,6 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("tool did not start")
 	}
-	// Switch the model while the tool round is in flight.
 	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"after"`),
 	}, nil), 0)

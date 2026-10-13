@@ -44,7 +44,6 @@ func TestClampTail(t *testing.T) {
 func TestFeedBoundedTail(t *testing.T) {
 	g := New(5)
 	const total = 10000
-	// Feed one line at a time.
 	for i := 0; i < total; i++ {
 		g.Feed("k", fmt.Sprintf("line-%d\n", i))
 	}
@@ -59,7 +58,6 @@ func TestFeedBoundedTail(t *testing.T) {
 			t.Errorf("line %d = %q, want %q", i, ln, want)
 		}
 	}
-	// Bound: retained text should be small (well under 200 bytes).
 	if len(tail) > 200 {
 		t.Errorf("tail length %d exceeds bound", len(tail))
 	}
@@ -67,7 +65,6 @@ func TestFeedBoundedTail(t *testing.T) {
 
 func TestFeedManyChunksBounded(t *testing.T) {
 	g := New(3)
-	// Fed as one large chunk with 10k lines then more.
 	var b strings.Builder
 	for i := 0; i < 10000; i++ {
 		fmt.Fprintf(&b, "L%d\n", i)
@@ -97,7 +94,6 @@ func TestSplitLineWithClamp(t *testing.T) {
 	g := New(2)
 	g.Feed("k", "a\nb\nhel")
 	g.Feed("k", "lo")
-	// Lines: a, b, hello -> keep last 2: b, hello
 	if got := g.Tail("k"); got != "b\nhello" {
 		t.Errorf("got %q", got)
 	}
@@ -116,7 +112,6 @@ func TestDirtyLifecycle(t *testing.T) {
 	if g.Dirty() {
 		t.Fatal("ClearDirty failed")
 	}
-	// Empty feed does not dirty.
 	g.Feed("k", "")
 	if g.Dirty() {
 		t.Fatal("empty Feed should not dirty")
@@ -140,6 +135,5 @@ func TestDropAndUnknown(t *testing.T) {
 	if g.Tail("k") != "" {
 		t.Fatal("Drop did not forget")
 	}
-	// Drop of unknown is a no-op.
 	g.Drop("never")
 }

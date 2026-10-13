@@ -6,18 +6,12 @@ import (
 	"strings"
 )
 
-// EnvironmentAllowlist is the set of env vars captured into the
-// form. Read by the CLI on every prompt (so the agent sees
-// the caller's current env) and also on the first turn in the agent
-// (fallback for vars set before the daemon started).
+// EnvironmentAllowlist is the env vars captured into the form on every prompt.
 var EnvironmentAllowlist = []string{
 	"FIGARO_WIRE_DIR",
 }
 
-// EnvironmentSnapshot returns the allowlisted env vars as a
-// form snapshot map (key = "system.environment.<lower_name>",
-// value = JSON string). Used by the CLI to send env vars with
-// each prompt so the agent always has the caller's current values.
+// EnvironmentSnapshot keys are "system.environment.<lower_name>".
 func EnvironmentSnapshot() map[string]json.RawMessage {
 	snap := map[string]json.RawMessage{}
 	for _, name := range EnvironmentAllowlist {
@@ -34,7 +28,6 @@ func EnvironmentSnapshot() map[string]json.RawMessage {
 	return snap
 }
 
-// EnvironmentPatch returns a patch with allowlisted env vars.
 func EnvironmentPatch() Patch {
 	var set map[string]json.RawMessage
 	for _, name := range EnvironmentAllowlist {

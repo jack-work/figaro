@@ -12,253 +12,148 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the top-level figaro configuration. Provider/model knobs
-// have moved into outfits; this file holds only the chosen outfit
-// and CLI-side ergonomics.
 // TelemetryConfig is the [telemetry] table.
 type TelemetryConfig struct {
-	// Dir overrides where logs.jsonl and traces.jsonl are written.
-	// Empty means the state dir, which is where they have always gone.
-	// A relative path is resolved against the state dir.
+	// Dir is where logs.jsonl and traces.jsonl go; empty or relative resolves against the state dir.
 	Dir string `toml:"dir"`
 
-	// Level is the floor for what reaches the sinks: debug, info, warn,
-	// error. Empty means info. FIGARO_LOG_LEVEL still wins, so a single
-	// noisy run needs no edit here.
+	// Level is the sink floor (debug, info, warn, error); empty means info. FIGARO_LOG_LEVEL wins.
 	Level string `toml:"level"`
 
-	// OTLPEndpoint, when set, ALSO exports logs and traces over OTLP to a
-	// collector (an LGTM stack, say: Grafana Alloy on :4318, which fans
-	// out to Loki and Tempo). The file sinks keep working either way --
-	// they are the record of last resort, and a collector that is down
-	// must not take the daemon's memory with it.
+	// OTLPEndpoint additionally exports logs and traces over OTLP; the file sinks keep working.
 	OTLPEndpoint string `toml:"otlp_endpoint"`
 }
 
 type Config struct {
-	// DefaultOutfit names the outfit used when -O is not specified.
-	// Empty triggers the first-run flow (see rpc.ErrNoDefaultOutfit).
+	// DefaultOutfit is used when -O is not given; empty triggers the first-run flow.
 	DefaultOutfit string `toml:"default_outfit"`
 
-	// Telemetry configures the daemon's own record of itself: the
-	// rotating JSONL sinks under the state dir (logs.jsonl,
-	// traces.jsonl) and how loud they are.
 	Telemetry TelemetryConfig `toml:"telemetry"`
 
-	// Trunks enables the trunk capability: a presentation hierarchy an
-	// aria can be promoted within, independent of where its history comes
-	// from, and a delete that follows it. Default true.
+	// Trunks enables the trunk capability. Default true.
 	Trunks *bool `toml:"trunks"`
 
-	// BundledSkills controls whether the skills that ship inside the binary
-	// (today: the `figaro` skill, unpacked from the embedded copy) take part
-	// in composing a form. Default true.
+	// BundledSkills lets the skills embedded in the binary take part in composing a form. Default true.
 	BundledSkills *bool `toml:"bundled_skills"`
 
-	// CLI holds the settings a client owns: how it echoes, paces and colours
-	// its own output. They live in their own [cli] section because everything
-	// else here is the SERVER's state, which a client may only ask the daemon
-	// to change (angelus.configure) rather than read.
+	// CLI holds client-owned settings; everything else is the daemon's, which a client changes only through angelus.configure.
 	CLI CLIConfig `toml:"cli"`
 
-	// Wire bounds paginated reads. See WireConfig.
-	Wire WireConfig `toml:"wire"`
-
-	// Store bounds the on-disk WAL geometry. See StoreConfig.
-	Store StoreConfig `toml:"store"`
-
-	// Memory tunes when the daemon reclaims an idle aria. See MemoryConfig.
+	Wire   WireConfig   `toml:"wire"`
+	Store  StoreConfig  `toml:"store"`
 	Memory MemoryConfig `toml:"memory"`
-
-	// Authz gates the RPC surface. See AuthzConfig.
-	Authz AuthzConfig `toml:"authz"`
-
-	// Quote shapes what the agent receives for a quoted coordinate. See
-	// QuoteConfig.
-	Quote QuoteConfig `toml:"quote"`
+	Authz  AuthzConfig  `toml:"authz"`
+	Quote  QuoteConfig  `toml:"quote"`
 }
 
-// QuoteConfig is the daemon's rendering of a quoted passage: a prompt that
-// begins `<lt.block:start-end>!` has the passage resolved against the log
-// and rewritten into a short quote plus the reader's text. The agent already
-// holds the full text in its context, so what travels is enough to recognise
-// the passage, not the passage. Top level, beside [memory] and [wire],
-// because the daemon owns the log and does the extraction.
+// QuoteConfig shapes how a `<lt.block:start-end>!` prompt prefix is rewritten
+// into a short quote: enough to recognise the passage, not the passage.
 type QuoteConfig struct {
-	// HeadChars is how many runes are kept from the START of the passage.
-	// Default 480.
+	// HeadChars is the runes kept from the start. Default 480.
 	HeadChars *int `toml:"head_chars"`
 
-	// TailChars is how many runes are kept from the END. Default 160: the
-	// head says which passage this is, the tail says where it ended, and
-	// the middle is what the agent can reconstruct.
+	// TailChars is the runes kept from the end. Default 160.
 	TailChars *int `toml:"tail_chars"`
 
-	// Ellipsis stands between head and tail. Default "…". A passage no
-	// longer than head+tail is sent whole and never carries one.
+	// Ellipsis stands between head and tail. Default "…"; a passage within head+tail carries none.
 	Ellipsis *string `toml:"ellipsis"`
 
 	// Gutter prefixes every quoted line. Default "> "; "" for none.
 	Gutter *string `toml:"gutter"`
 
-	// Header controls the "quoting aria … lt 412.0 · chars 23-1180" line
-	// above the passage. Default true.
+	// Header controls the "quoting aria … lt 412.0 · chars 23-1180" line. Default true.
 	Header *bool `toml:"header"`
 }
 
 // CLIConfig is the client's own settings. Nothing here reaches the daemon.
 type CLIConfig struct {
-	// EchoPrompt controls whether the CLI echoes the prompt.
-	// Pointer to distinguish unset (default true) from explicit false.
+	// EchoPrompt: default true.
 	EchoPrompt *bool `toml:"echo_prompt"`
 
-	// StatusLine controls the status banner. Default true.
+	// StatusLine: default true.
 	StatusLine *bool `toml:"status_line"`
 
-	// StatusVerbose seeds the status bar's VERBOSITY: names beside the state
-	// glyphs, the model, the key hints, and the last-interaction time. ^V
-	// toggles it for the session; this decides what it starts as. Default
-	// false, because succinct is the default the requirements asked for.
-	// (Distinct from -o/^O, which is verbose TOOL OUTPUT: a different axis.)
+	// StatusVerbose seeds the status bar's verbosity (^V toggles it per session). Default false.
 	StatusVerbose *bool `toml:"status_verbose"`
 
-	// NoticeTTL is how long a notification holds the status bar's first slot
-	// before it retires, in seconds. Default 10. Zero means it stays until
-	// something displaces it.
+	// NoticeTTL is how long a notification holds the status bar, in seconds. Default 10; 0 holds until displaced.
 	NoticeTTL *int `toml:"notice_ttl"`
 
-	// Interactive controls whether the first-run wizard uses a rich
-	// bubbletea/huh-driven TUI. Default true. When false, falls back
-	// to plain numbered prompts (the pre-TUI behavior). Useful for
-	// CI / scripted invocations that prefer not to deal with raw mode.
+	// Interactive selects the TUI first-run wizard over plain numbered prompts. Default true.
 	Interactive *bool `toml:"interactive"`
 
-	// CoordFormat is the time layout the pager's coordinates use (^O): a Go
-	// reference layout. Default "02/01/06 15:04:05", which reads dd/mm/yy
-	// hh:mm:ss.
+	// CoordFormat is the Go time layout for pager coordinates. Default "02/01/06 15:04:05".
 	CoordFormat *string `toml:"coord_format"`
 
-	// StreamCPS is the pacer's target chars/sec. 0 disables pacing.
-	// Pointer to distinguish unset (default) from explicit 0.
+	// StreamCPS is the pacer's target chars/sec; 0 disables pacing.
 	StreamCPS *int `toml:"stream_cps"`
 
-	// StreamFirstByteBypassMs is the sync-write window for TTFT.
-	// Default 80.
+	// StreamFirstByteBypassMs is the sync-write window for TTFT. Default 80.
 	StreamFirstByteBypassMs *int `toml:"stream_first_byte_bypass_ms"`
 
-	// StreamEmitIntervalMs coalesces live streaming emits (recompose +
-	// broadcast). Default 90 (~11fps). A structural change always emits
-	// immediately, so this only trades frame smoothness against CPU and
-	// bytes-on-the-wire: raise it on a slow link, drop it to 0 to emit on
-	// every chunk. Correctness does not depend on it.
+	// StreamEmitIntervalMs coalesces live emits; structural changes always emit at once. Default 90; 0 emits every chunk.
 	StreamEmitIntervalMs *int `toml:"stream_emit_interval_ms"`
 
-	// CheckUpdates controls the passive one-liner nudge on startup
-	// when a newer figaro release is available on the module proxy.
-	// Pointer to distinguish unset (default true) from explicit false.
-	// The explicit `figaro update` command is *always* available;
-	// this only toggles the automatic background hint.
+	// CheckUpdates enables the passive startup update hint. Default true.
 	CheckUpdates *bool `toml:"check_updates"`
 
-	// UpdateCheckTTLHours bounds how often the proxy is asked. Default
-	// 24. Zero disables caching (each check hits the network): useful
-	// only for testing.
+	// UpdateCheckTTLHours bounds how often the proxy is asked. Default 24; 0 disables caching.
 	UpdateCheckTTLHours *int `toml:"update_check_ttl_hours"`
 
-	// RefSigil is the prefix character for form references in
-	// prompts and tab completion. Must be "@" or ":". Default "@".
+	// RefSigil prefixes form references; "@" or ":". Default "@".
 	RefSigil string `toml:"ref_sigil"`
 
-	// Editor is the command the pager hands the terminal to when a reader
-	// opens a path. A literal command line, split the way the ':' box splits
-	// one: no $EDITOR expansion, no globbing, no substitution. Empty (the
-	// default) means the key that would open a file says so instead.
+	// Editor is a literal command line (no $EDITOR, globbing or substitution) the pager opens a path with.
 	Editor *string `toml:"editor"`
 }
 
-// AuthzConfig selects the authorization policy for the RPC surface.
 type AuthzConfig struct {
 	// Policy is "default" for authz.DefaultRules; anything else gates nothing.
 	Policy string `toml:"policy"`
 }
 
-// StoreConfig sizes the aria log on disk.
 type StoreConfig struct {
-	// SegmentSize bounds ONE WAL segment file in bytes; a segment rolls when
-	// the next record would not fit. Default 2 MiB (~1300 IR entries at the
-	// measured 1.6KB/entry). Raise it to roll less often on a big store;
-	// lower it to keep individual files small. New segments only: existing
-	// ones keep their size and simply stop growing.
+	// SegmentSize bounds one WAL segment file in bytes; applies to new segments only. Default 2 MiB.
 	SegmentSize *int `toml:"segment_size"`
 }
 
-// MemoryConfig tunes reclamation. Both knobs trade memory against a
-// rebuild: reclaiming too eagerly costs the next reader a restore,
-// reclaiming too late costs only RSS. The defaults err toward keeping a
-// conversation warm as long as someone plausibly comes back to it.
+// MemoryConfig tunes when the daemon reclaims an idle aria.
 type MemoryConfig struct {
-	// DormantAfterMinutes is how long an aria must sit idle: no turn in
-	// flight, nothing queued: before the daemon reclaims it. Default 15.
+	// DormantAfterMinutes is the idle time before an aria is reclaimed. Default 15.
 	DormantAfterMinutes *int `toml:"dormant_after_minutes"`
 
-	// SweepIntervalSeconds is how often the daemon looks. Default 120.
-	// Reclamation is never urgent, so this is deliberately slower than the
-	// 2-second pid monitor it rides beside.
+	// SweepIntervalSeconds: default 120.
 	SweepIntervalSeconds *int `toml:"sweep_interval_seconds"`
 
-	// MaxLiveArias caps resident agents. 0 (default) is unbounded, which is
-	// correct for a desktop: the time rule already bounds a normal session,
-	// and a cap set below the working set turns into a restore flap that
-	// costs more than the memory it saves.
+	// MaxLiveArias caps resident agents; 0 (default) is unbounded.
 	MaxLiveArias *int `toml:"max_live_arias"`
 
-	// IRWindow bounds how many decoded IR entries stay resident per aria.
-	// 0 (default) retains everything, which is the behaviour figaro has always
-	// had.
+	// IRWindow bounds resident decoded IR entries per aria; 0 (default) retains everything.
 	IRWindow *int `toml:"ir_window"`
 
-	// IRWindowMB bounds resident decoded IR per aria in mebibytes, and is the
-	// knob to reach for: it bounds the axis that actually costs.
+	// IRWindowMB bounds resident decoded IR per aria in mebibytes.
 	IRWindowMB *int `toml:"ir_window_mb"`
 
-	// TranslationWindowMB bounds resident decoded TRANSLATIONS per aria per
-	// provider, in mebibytes. It was the last unbounded cache in the store.
+	// TranslationWindowMB bounds resident decoded translations per aria per provider, in mebibytes.
 	TranslationWindowMB *int `toml:"translation_window_mb"`
 
-	// UIWindowMB bounds resident COMPOSED UI IR (sealed turns) across every
-	// materialized aria, in mebibytes. The turn cache keeps a hollow index
-	// per turn (id, LT bracket, size) and recomposes an evicted range from
-	// the log on the read that lands in it, so eviction is always safe:
-	// UI IR is a pure derivation of fig IR and has no on-disk store to
-	// keep honest. An aria whose records predate turn-id stamps cannot be
-	// range-recomposed and stays whole, which is the old behaviour.
+	// UIWindowMB bounds composed UI IR across every materialized aria, in mebibytes.
+	// Arias whose records predate turn-id stamps cannot be range-recomposed and stay whole.
 	UIWindowMB *int `toml:"ui_window_mb"`
 
-	// SegmentCacheMB bounds the RAW segment payloads figwal holds in memory,
-	// across every open channel of every aria, in mebibytes.
+	// SegmentCacheMB bounds raw segment payloads figwal holds across all channels, in mebibytes.
 	SegmentCacheMB *int `toml:"segment_cache_mb"`
 
-	// SoftLimitMB is the daemon's heap ceiling (Go's GOMEMLIMIT). Go
-	// collects harder as it approaches instead of growing to meet whatever
-	// the last big sweep asked for, so the ceiling is also a licence: a high
-	// one leaves the runtime no reason to give memory back. Default 2048.
-	// 0 removes the limit. GOMEMLIMIT in the environment always wins.
+	// SoftLimitMB is the daemon's GOMEMLIMIT. Default 2048; 0 removes it; GOMEMLIMIT in the environment wins.
 	SoftLimitMB *int `toml:"soft_limit_mb"`
 
-	// ActorLingerMS is how long a form's writer goroutine waits, after
-	// draining, before leaving. Long enough that a burst shares one
-	// goroutine, short enough that an idle form holds nothing. Default 2000.
+	// ActorLingerMS is how long a form's writer goroutine lingers after draining. Default 2000.
 	ActorLingerMS *int `toml:"actor_linger_ms"`
 
-	// HandleIdleMinutes is how long figwal keeps a lineage's in-RAM head
-	// without an append or a read. 0 takes figwal's own default (5m);
-	// negative means never unload.
+	// HandleIdleMinutes is figwal's head-unload window; 0 takes figwal's default, negative never unloads.
 	HandleIdleMinutes *int `toml:"handle_idle_minutes"`
 
-	// FormPatchWindow bounds the decoded patch history a form keeps
-	// resident. A range below it is re-read from the log, which costs a walk
-	// and happens only on a cold retranslate. Default 2048; 0 retains
-	// everything.
+	// FormPatchWindow bounds resident decoded patches per form. Default 2048; 0 retains everything.
 	FormPatchWindow *int `toml:"form_patch_window"`
 }
 
@@ -266,30 +161,12 @@ const (
 	defaultDormantAfter  = 15 * time.Minute
 	defaultSweepInterval = 2 * time.Minute
 	defaultSegmentSize   = 2 * 1024 * 1024
-	// minSegmentSize is a HARD floor, not taste: figwal fails an append with
-	// "payload too large for segment size" when a single record cannot fit
-	// inside one empty segment.
+	// figwal fails an append whose record cannot fit one empty segment.
 	minSegmentSize = 1024 * 1024
 )
 
-// DormantAfter is how long an aria may sit idle before the daemon reclaims
-// it. A non-positive configured value disables reclamation and is
-// returned as 0, which every caller reads as "never".
-// NIL-SAFETY IS STRUCTURAL HERE, not remembered, and it holds for EVERY
-// accessor below: none of them repeats the claim, because a property stated on
-// eight methods out of forty-two reads as a property the other thirty-four
-// lack. TestEveryLoadedAccessorIsNilSafe walks the method set and enforces it.
-//
-// A *Loaded is nil in tests, in tools, and anywhere the daemon has not read a
-// config yet -- and EVERY accessor on it is documented as "nil-safe" in the
-// abstract while being so only where somebody happened to write the check.
-// Measured: of 42 accessors, 20 dereferenced l directly, and the one that
-// caught it (CoordFormat) sat between two that did not.
-//
-// So the guard lives in ONE place and every accessor inherits it: read the
-// config through cfg() and the directory through dir(), and a new accessor is
-// nil-safe by construction rather than by review. The zero Config is exactly
-// "nothing configured", which is what every default branch already tests for.
+// Every accessor reads through cfg() and dir() so a nil *Loaded is safe by
+// construction; TestEveryLoadedAccessorIsNilSafe enforces it.
 func (l *Loaded) cfg() Config {
 	if l == nil {
 		return Config{}
@@ -304,6 +181,7 @@ func (l *Loaded) dir() string {
 	return l.ConfigDir
 }
 
+// DormantAfter returns 0 for a non-positive configured value: never reclaim.
 func (l *Loaded) DormantAfter() time.Duration {
 	if l.cfg().Memory.DormantAfterMinutes == nil {
 		return defaultDormantAfter
@@ -314,9 +192,7 @@ func (l *Loaded) DormantAfter() time.Duration {
 	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
 }
 
-// QuoteHeadChars, QuoteTailChars, QuoteEllipsis, QuoteGutter and QuoteHeader
-// read [quote] with its defaults. A negative count is returned as it was
-// written: the quote refuses it by name rather than quietly meaning zero.
+// A negative quote count is returned as written; the quote refuses it by name.
 func (l *Loaded) QuoteHeadChars() int { return quoteInt(l.cfg().Quote.HeadChars, QuoteHeadDefault) }
 func (l *Loaded) QuoteTailChars() int { return quoteInt(l.cfg().Quote.TailChars, QuoteTailDefault) }
 func (l *Loaded) QuoteEllipsis() string {
@@ -338,8 +214,6 @@ func (l *Loaded) QuoteHeader() bool {
 	return *l.cfg().Quote.Header
 }
 
-// The [quote] defaults, exported so the documented block a user's
-// config.toml carries can be checked against the binary.
 const (
 	QuoteHeadDefault     = 480
 	QuoteTailDefault     = 160
@@ -354,8 +228,7 @@ func quoteInt(p *int, def int) int {
 	return *p
 }
 
-// SweepInterval is how often the reclamation sweep runs, and
-// floored at one second so a misconfiguration cannot spin the ticker.
+// SweepInterval is floored at one second so a misconfiguration cannot spin the ticker.
 func (l *Loaded) SweepInterval() time.Duration {
 	if l.cfg().Memory.SweepIntervalSeconds == nil {
 		return defaultSweepInterval
@@ -366,7 +239,6 @@ func (l *Loaded) SweepInterval() time.Duration {
 	return time.Duration(*l.cfg().Memory.SweepIntervalSeconds) * time.Second
 }
 
-// MaxLiveArias is the resident-agent cap, or 0 for unbounded.
 func (l *Loaded) MaxLiveArias() int {
 	if l.cfg().Memory.MaxLiveArias == nil || *l.cfg().Memory.MaxLiveArias < 0 {
 		return 0
@@ -374,10 +246,7 @@ func (l *Loaded) MaxLiveArias() int {
 	return *l.cfg().Memory.MaxLiveArias
 }
 
-// IRWindow is the resident decoded-IR cap per aria, or 0 for unbounded.
-// Floored at minIRWindow so a value too small to hold a turn
-// cannot be configured: below that the window thrashes against its own
-// appends.
+// IRWindow is 0 for unbounded, else floored at minIRWindow.
 func (l *Loaded) IRWindow() int {
 	if l.cfg().Memory.IRWindow == nil || *l.cfg().Memory.IRWindow <= 0 {
 		return 0
@@ -388,18 +257,14 @@ func (l *Loaded) IRWindow() int {
 	return *l.cfg().Memory.IRWindow
 }
 
-// IRWindowBytes is the CONFIGURED resident decoded-IR byte budget per aria.
-// ok is false when nothing is configured: the default belongs to the store
-// (store.DefaultIRBudgetBytes), the layer that holds the bytes, and a caller
-// that finds nothing here must leave the store's own bound alone rather than
-// substitute a number of its own. An explicit 0 is a real answer -- unbounded
-// -- and comes back with ok true.
+// IRWindowBytes reports ok=false when unset (the store owns the default);
+// an explicit 0 means unbounded and is ok.
 func (l *Loaded) IRWindowBytes() (int, bool) {
 	if l.cfg().Memory.IRWindowMB == nil {
 		return 0, false
 	}
 	if *l.cfg().Memory.IRWindowMB <= 0 {
-		return 0, true // explicitly unbounded
+		return 0, true
 	}
 	if mb := *l.cfg().Memory.IRWindowMB; mb < minIRWindowMB {
 		return minIRWindowMB << 20, true
@@ -407,11 +272,7 @@ func (l *Loaded) IRWindowBytes() (int, bool) {
 	return *l.cfg().Memory.IRWindowMB << 20, true
 }
 
-// TranslationWindowBytes is the CONFIGURED resident decoded-translation byte
-// budget per aria per provider: same unset/explicit-zero contract as
-// IRWindowBytes, same floor, and the same reason for it -- a budget too small
-// to hold the tail a translator is about to send makes it re-read that tail on
-// every Send.
+// TranslationWindowBytes has the same unset/explicit-zero contract and floor as IRWindowBytes.
 func (l *Loaded) TranslationWindowBytes() (int, bool) {
 	if l.cfg().Memory.TranslationWindowMB == nil {
 		return 0, false
@@ -425,8 +286,6 @@ func (l *Loaded) TranslationWindowBytes() (int, bool) {
 	return *l.cfg().Memory.TranslationWindowMB << 20, true
 }
 
-// TelemetryDir resolves the sink directory against the state dir.
-// Empty config means the state dir itself.
 func (l *Loaded) TelemetryDir(stateDir string) string {
 	if l.cfg().Telemetry.Dir == "" {
 		return stateDir
@@ -437,8 +296,6 @@ func (l *Loaded) TelemetryDir(stateDir string) string {
 	return filepath.Join(stateDir, l.cfg().Telemetry.Dir)
 }
 
-// TelemetryLevel is the configured sink floor ("" means info).
-// FIGARO_LOG_LEVEL overrides it; see otel.Init.
 func (l *Loaded) TelemetryLevel() string {
 	if l == nil {
 		return ""
@@ -446,7 +303,6 @@ func (l *Loaded) TelemetryLevel() string {
 	return l.cfg().Telemetry.Level
 }
 
-// TelemetryOTLPEndpoint is the collector to ALSO export to, or "".
 func (l *Loaded) TelemetryOTLPEndpoint() string {
 	if l == nil {
 		return ""
@@ -454,11 +310,7 @@ func (l *Loaded) TelemetryOTLPEndpoint() string {
 	return l.cfg().Telemetry.OTLPEndpoint
 }
 
-// SegmentCacheBytes is the CONFIGURED process-wide budget for raw segment
-// payloads, with the same contract as IRWindowBytes: ok is false when nothing
-// is set, and the default belongs to the package that holds the bytes
-// (internal/store/segment bounds itself at 32 MiB). An explicit 0 is a real
-// answer -- hold none -- and comes back ok.
+// SegmentCacheBytes has the same unset/explicit-zero contract as IRWindowBytes.
 func (l *Loaded) SegmentCacheBytes() (int64, bool) {
 	if l.cfg().Memory.SegmentCacheMB == nil {
 		return 0, false
@@ -469,9 +321,7 @@ func (l *Loaded) SegmentCacheBytes() (int64, bool) {
 	return 0, true
 }
 
-// UIWindowMB is the CONFIGURED budget for composed UI IR, in mebibytes, with
-// the same contract; the default belongs to internal/livelog/aria, which owns
-// the composed turns.
+// UIWindowMB has the same unset/explicit-zero contract as IRWindowBytes.
 func (l *Loaded) UIWindowMB() (int, bool) {
 	if l.cfg().Memory.UIWindowMB == nil {
 		return 0, false
@@ -483,27 +333,14 @@ func (l *Loaded) UIWindowMB() (int, bool) {
 }
 
 const (
-	// minIRWindow is a floor, not taste: a window smaller than one turn's
-	// worth of messages makes an in-flight turn re-read its own tail from disk
-	// on every append.
-	minIRWindow = 64
-	// minIRWindowMB is the same floor in bytes. One turn carrying a couple of
-	// large tool results is comfortably under a mebibyte.
-	minIRWindowMB = 1
-	// defaultSoftLimitMB is the daemon's heap ceiling. Well above a healthy
-	// working set (~40 MB fresh, a few hundred with a dozen live arias) so
-	// it only bites when something is retaining more than it should.
-	defaultSoftLimitMB = 2048
-	// defaultActorLingerMS keeps a form's writer through a tool loop's
-	// writes without keeping it through an idle afternoon.
-	defaultActorLingerMS = 2000
-	// defaultFormPatchWindow is generous: the longest board in the author's
-	// store holds 99 patches, so this only bites a form written to
-	// continuously for a very long time.
+	// A window smaller than one turn makes an in-flight turn re-read its own tail on every append.
+	minIRWindow            = 64
+	minIRWindowMB          = 1
+	defaultSoftLimitMB     = 2048
+	defaultActorLingerMS   = 2000
 	defaultFormPatchWindow = 2048
 )
 
-// SoftLimitBytes is the daemon's heap ceiling in bytes, or 0 for none.
 func (l *Loaded) SoftLimitBytes() int64 {
 	if l.cfg().Memory.SoftLimitMB == nil {
 		return int64(defaultSoftLimitMB) << 20
@@ -514,9 +351,6 @@ func (l *Loaded) SoftLimitBytes() int64 {
 	return 0
 }
 
-// ActorLinger is how long a form's writer lingers after draining.
-// Zero or negative means leave immediately, which is legal and costs a
-// goroutine spawn per burst.
 func (l *Loaded) ActorLinger() time.Duration {
 	if l.cfg().Memory.ActorLingerMS == nil {
 		return time.Duration(defaultActorLingerMS) * time.Millisecond
@@ -528,8 +362,6 @@ func (l *Loaded) ActorLinger() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// HandleIdle is figwal's head-unload window; zero defers to
-// figwal's own default.
 func (l *Loaded) HandleIdle() time.Duration {
 	if l.cfg().Memory.HandleIdleMinutes == nil {
 		return 0
@@ -537,7 +369,6 @@ func (l *Loaded) HandleIdle() time.Duration {
 	return time.Duration(*l.cfg().Memory.HandleIdleMinutes) * time.Minute
 }
 
-// FormPatchWindow bounds resident decoded patches per form.
 func (l *Loaded) FormPatchWindow() int {
 	if l.cfg().Memory.FormPatchWindow == nil {
 		return defaultFormPatchWindow
@@ -548,8 +379,6 @@ func (l *Loaded) FormPatchWindow() int {
 	return 0
 }
 
-// SegmentSize returns the WAL segment size in bytes, so a store opened
-// without config gets the same geometry as one opened with it.
 func (l *Loaded) SegmentSize() int {
 	if l.cfg().Store.SegmentSize == nil {
 		return defaultSegmentSize
@@ -557,18 +386,14 @@ func (l *Loaded) SegmentSize() int {
 	return *l.cfg().Store.SegmentSize
 }
 
-// imageShareNum/imageShareDen is the fraction of a WAL segment that inlined
-// imagery may claim: two thirds. The remaining third holds the tool_result
-// TEXT sharing the record (bounded at MaxOutputBytes per tool) plus the JSON
-// envelope, and figwal needs the whole record to fit an EMPTY segment with
-// nothing to spare.
+// Inlined imagery may claim two thirds of a segment; the rest holds the
+// tool_result text and envelope, and the whole record must fit one empty segment.
 const (
 	imageShareNum = 2
 	imageShareDen = 3
 )
 
-// InlineImageBudget is the SINGLE policy point for how many base64 bytes of
-// tool imagery one tool_result record may carry.
+// InlineImageBudget is the base64 byte budget for imagery in one tool_result record.
 func (l *Loaded) InlineImageBudget() int {
 	budget := l.SegmentSize() / imageShareDen * imageShareNum
 	if budget > maxInlineImageBytes {
@@ -577,13 +402,9 @@ func (l *Loaded) InlineImageBudget() int {
 	return budget
 }
 
-// maxInlineImageBytes mirrors tool.ProviderImageCeiling. It is duplicated
-// rather than imported because internal/tool is a consumer of this package's
-// numbers, not a supplier: the dependency must not run both ways.
+// Mirrors tool.ProviderImageCeiling; internal/tool imports this package, not the reverse.
 const maxInlineImageBytes = 3500 << 10
 
-// validateStream rejects a negative coalescing window (a negative interval
-// would read as "never throttle", which is what 0 already means).
 func (c Config) validateStream() error {
 	if v := c.CLI.StreamEmitIntervalMs; v != nil && *v < 0 {
 		return fmt.Errorf("config: stream_emit_interval_ms must be >= 0 (0 emits every chunk), got %d", *v)
@@ -591,12 +412,6 @@ func (c Config) validateStream() error {
 	return nil
 }
 
-// validateStore rejects a segment too small to hold one record. The largest
-// record seen in a real store is 128KB; the read tool inlines images as
-// base64, bounded by InlineImageBudget, which is itself derived FROM this
-// number: so the two cannot drift into a configuration that cannot append.
-// Below the floor there is no share of the segment large enough to hold a
-// legible picture and the text results beside it.
 func (c Config) validateStore() error {
 	if s := c.Store.SegmentSize; s != nil && *s < minSegmentSize {
 		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record: below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
@@ -604,19 +419,13 @@ func (c Config) validateStore() error {
 	return nil
 }
 
-// WireConfig bounds a paginated read. The budget is spent in BYTES and
-// paid out in whole NODES, a page never splits a node, and always
-// carries at least one even when that node alone exceeds the budget.
-// Node granularity is only safe because tool output is already clamped
-// (compose.composeBashCap); the full text stays in the canonical IR.
+// WireConfig bounds a paginated read: a byte budget paid out in whole nodes,
+// never fewer than one.
 type WireConfig struct {
-	// PageBudget is the server's default page size in bytes, used when a
-	// client names no budget of its own. Default 65536.
+	// PageBudget is the default page size in bytes when a client names none. Default 65536.
 	PageBudget *int `toml:"page_budget"`
 
-	// PageBudgetMax is the ceiling clamped onto a client's request, so a
-	// client can never make the server materialize an unbounded page.
-	// Default 524288.
+	// PageBudgetMax is clamped onto a client's request. Default 524288.
 	PageBudgetMax *int `toml:"page_budget_max"`
 }
 
@@ -625,9 +434,6 @@ const (
 	defaultPageBudgetMax = 524288
 )
 
-// PageBudget returns the server-side default page budget in bytes:
-// an agent constructed without config still gets policy from here, so no
-// second default can grow somewhere else.
 func (l *Loaded) PageBudget() int {
 	if l.cfg().Wire.PageBudget == nil {
 		return defaultPageBudget
@@ -635,10 +441,6 @@ func (l *Loaded) PageBudget() int {
 	return *l.cfg().Wire.PageBudget
 }
 
-// PageBudgetMax returns the ceiling on a client-requested budget, for
-// the same reason, and it matters more here: the ceiling must hold even when
-// no config reached us, or a client could make the server materialize an
-// unbounded page.
 func (l *Loaded) PageBudgetMax() int {
 	if l.cfg().Wire.PageBudgetMax == nil {
 		return defaultPageBudgetMax
@@ -646,9 +448,7 @@ func (l *Loaded) PageBudgetMax() int {
 	return *l.cfg().Wire.PageBudgetMax
 }
 
-// ClampPageBudget resolves a client's requested budget against policy:
-// a non-positive request means "use the server default", and any request
-// is capped at the maximum. Never trust the client to bound server work.
+// ClampPageBudget: a non-positive request means the server default; any request is capped.
 func (l *Loaded) ClampPageBudget(requested int) int {
 	if requested <= 0 {
 		requested = l.PageBudget()
@@ -659,7 +459,6 @@ func (l *Loaded) ClampPageBudget(requested int) int {
 	return requested
 }
 
-// validateWire rejects budgets that cannot describe a page.
 func (c Config) validateWire() error {
 	if b := c.Wire.PageBudget; b != nil && *b <= 0 {
 		return fmt.Errorf("config: wire.page_budget must be > 0, got %d", *b)
@@ -675,7 +474,6 @@ func (c Config) validateWire() error {
 	return nil
 }
 
-// Trunks reports whether the trunk capability is enabled. Default true.
 func (l *Loaded) Trunks() bool {
 	if l.cfg().Trunks == nil {
 		return true
@@ -683,9 +481,6 @@ func (l *Loaded) Trunks() bool {
 	return *l.cfg().Trunks
 }
 
-// BundledSkills reports whether the binary's own skills take part in
-// composing a form. Default true. See Config.BundledSkills, and
-// outfit.SetBundledSkills, which this feeds.
 func (l *Loaded) BundledSkills() bool {
 	if l.cfg().BundledSkills == nil {
 		return true
@@ -693,7 +488,6 @@ func (l *Loaded) BundledSkills() bool {
 	return *l.cfg().BundledSkills
 }
 
-// EchoPrompt returns whether to echo the prompt. Default true.
 func (l *Loaded) EchoPrompt() bool {
 	if l.cfg().CLI.EchoPrompt == nil {
 		return true
@@ -701,7 +495,6 @@ func (l *Loaded) EchoPrompt() bool {
 	return *l.cfg().CLI.EchoPrompt
 }
 
-// StatusLine returns whether to show status banners. Default true.
 func (l *Loaded) StatusLine() bool {
 	if l.cfg().CLI.StatusLine == nil {
 		return true
@@ -709,8 +502,6 @@ func (l *Loaded) StatusLine() bool {
 	return *l.cfg().CLI.StatusLine
 }
 
-// StatusVerbose seeds the status bar's verbosity. Default false: succinct is
-// what the requirements make the default, and ^V is how a session changes it.
 func (l *Loaded) StatusVerbose() bool {
 	if l.cfg().CLI.StatusVerbose == nil {
 		return false
@@ -718,8 +509,6 @@ func (l *Loaded) StatusVerbose() bool {
 	return *l.cfg().CLI.StatusVerbose
 }
 
-// NoticeTTL is how long a notification holds the bar's first slot. Default 10s;
-// zero means it stays until displaced.
 func (l *Loaded) NoticeTTL() time.Duration {
 	if l.cfg().CLI.NoticeTTL == nil {
 		return 10 * time.Second
@@ -727,8 +516,6 @@ func (l *Loaded) NoticeTTL() time.Duration {
 	return time.Duration(*l.cfg().CLI.NoticeTTL) * time.Second
 }
 
-// Interactive returns whether the first-run wizard should use a rich
-// TUI. Default true.
 func (l *Loaded) Interactive() bool {
 	if l.cfg().CLI.Interactive == nil {
 		return true
@@ -743,8 +530,6 @@ func (l *Loaded) AuthzPolicy() string {
 	return "allow-all"
 }
 
-// RefSigil returns the form reference sigil. Default "@".
-// Returns an error if the configured value is not "@" or ":".
 func (l *Loaded) RefSigil() (string, error) {
 	s := l.cfg().CLI.RefSigil
 	if s == "" {
@@ -756,8 +541,6 @@ func (l *Loaded) RefSigil() (string, error) {
 	return "", fmt.Errorf("config: ref_sigil must be \"@\" or \":\", got %q", s)
 }
 
-// Editor returns the command the pager opens a file with. Empty means none is
-// configured.
 func (l *Loaded) Editor() string {
 	if l.cfg().CLI.Editor == nil {
 		return ""
@@ -765,10 +548,8 @@ func (l *Loaded) Editor() string {
 	return strings.TrimSpace(*l.cfg().CLI.Editor)
 }
 
-// CoordFormatDefault reads dd/mm/yy hh:mm:ss.
 const CoordFormatDefault = "02/01/06 15:04:05"
 
-// CoordFormat returns the time layout the pager's coordinates use.
 func (l *Loaded) CoordFormat() string {
 	if l.cfg().CLI.CoordFormat == nil || *l.cfg().CLI.CoordFormat == "" {
 		return CoordFormatDefault
@@ -776,7 +557,6 @@ func (l *Loaded) CoordFormat() string {
 	return *l.cfg().CLI.CoordFormat
 }
 
-// StreamCPS returns the pacer rate. Default 200.
 func (l *Loaded) StreamCPS() int {
 	if l.cfg().CLI.StreamCPS == nil {
 		return 200
@@ -784,7 +564,6 @@ func (l *Loaded) StreamCPS() int {
 	return *l.cfg().CLI.StreamCPS
 }
 
-// StreamFirstByteBypassMs returns the TTFT bypass window. Default 80ms.
 func (l *Loaded) StreamFirstByteBypassMs() int {
 	if l.cfg().CLI.StreamFirstByteBypassMs == nil {
 		return 80
@@ -792,8 +571,6 @@ func (l *Loaded) StreamFirstByteBypassMs() int {
 	return *l.cfg().CLI.StreamFirstByteBypassMs
 }
 
-// StreamEmitIntervalMs returns the live-emit coalescing window in ms.
-// Default 90; an agent built without config paces the same.
 func (l *Loaded) StreamEmitIntervalMs() int {
 	if l.cfg().CLI.StreamEmitIntervalMs == nil {
 		return 90
@@ -801,9 +578,6 @@ func (l *Loaded) StreamEmitIntervalMs() int {
 	return *l.cfg().CLI.StreamEmitIntervalMs
 }
 
-// CheckUpdates returns whether to run the passive startup update check.
-// Default true. Users who prefer silence can set `check_updates = false`
-// in ~/.config/figaro/config.toml.
 func (l *Loaded) CheckUpdates() bool {
 	if l.cfg().CLI.CheckUpdates == nil {
 		return true
@@ -811,7 +585,6 @@ func (l *Loaded) CheckUpdates() bool {
 	return *l.cfg().CLI.CheckUpdates
 }
 
-// UpdateCheckTTLHours returns the update-check cache TTL. Default 24h.
 func (l *Loaded) UpdateCheckTTLHours() int {
 	if l.cfg().CLI.UpdateCheckTTLHours == nil {
 		return 24
@@ -819,41 +592,31 @@ func (l *Loaded) UpdateCheckTTLHours() int {
 	return *l.cfg().CLI.UpdateCheckTTLHours
 }
 
-// ProviderAuth holds credentials for one provider. The on-disk file
-// lives at providers/<name>.toml (flat: no per-provider subdirectory).
-// Secret fields are AGE-encrypted at rest; callers must decrypt
-// through hush before use.
+// ProviderAuth lives at providers/<name>.toml. Secret fields are
+// AGE-encrypted at rest (AGE-ENC[...]) and must be decrypted through hush.
 type ProviderAuth struct {
-	// APIKey is an opaque static credential. AGE-ENC[...] when
-	// encrypted; plain string otherwise.
 	APIKey string `toml:"api_key"`
 
-	// OAuth tokens (AGE-encrypted when present).
 	AccessToken  string `toml:"access_token"`
 	RefreshToken string `toml:"refresh_token"`
 	ExpiresAt    int64  `toml:"expires_at"`
 }
 
-// Loaded holds the parsed top-level config plus path context.
 type Loaded struct {
 	Config     Config
-	ConfigDir  string // e.g. ~/.config/figaro
-	ConfigPath string // e.g. ~/.config/figaro/config.toml
+	ConfigDir  string
+	ConfigPath string
 }
 
-// ProviderAuthPath returns the path to a provider's auth file
-// (providers/<name>.toml: flat, no subdirectory).
 func (l *Loaded) ProviderAuthPath(name string) string {
 	return filepath.Join(l.dir(), "providers", name+".toml")
 }
 
-// OutfitsDir returns the directory housing outfit TOML files.
 func (l *Loaded) OutfitsDir() string {
 	return filepath.Join(l.dir(), "outfits")
 }
 
-// outfitDirs lists where an outfit may live, canonical first (loadouts/ is the
-// pre-rename name).
+// Canonical first; loadouts/ is the pre-rename name.
 func (l *Loaded) outfitDirs() []string {
 	return []string{
 		filepath.Join(l.dir(), "outfits"),
@@ -861,7 +624,6 @@ func (l *Loaded) outfitDirs() []string {
 	}
 }
 
-// OutfitPath returns the path to a named outfit file.
 func (l *Loaded) OutfitPath(name string) string {
 	for _, dir := range l.outfitDirs() {
 		path := filepath.Join(dir, name+".toml")
@@ -872,7 +634,6 @@ func (l *Loaded) OutfitPath(name string) string {
 	return filepath.Join(l.OutfitsDir(), name+".toml")
 }
 
-// ListProviders returns provider names with auth files on disk.
 func (l *Loaded) ListProviders() []string {
 	dir := filepath.Join(l.dir(), "providers")
 	entries, err := os.ReadDir(dir)
@@ -893,7 +654,6 @@ func (l *Loaded) ListProviders() []string {
 	return names
 }
 
-// ListOutfits returns the names of every outfit file on disk.
 func (l *Loaded) ListOutfits() []string {
 	seen := map[string]bool{}
 	var names []string
@@ -922,9 +682,7 @@ func (l *Loaded) ListOutfits() []string {
 	return names
 }
 
-// LoadProviderAuth decodes a provider's auth.toml into target.
-// Returns nil with no error when the file is absent (lets callers
-// fall back to other strategies).
+// LoadProviderAuth returns nil, nil when the file is absent.
 func (l *Loaded) LoadProviderAuth(name string, target interface{}) error {
 	path := l.ProviderAuthPath(name)
 	data, err := os.ReadFile(path)
@@ -940,11 +698,8 @@ func (l *Loaded) LoadProviderAuth(name string, target interface{}) error {
 	return nil
 }
 
-// DefaultConfigDir returns the config directory (XDG-aware).
+// DefaultConfigDir honours FIGARO_CONFIG_DIR as-is, then XDG_CONFIG_HOME/figaro.
 func DefaultConfigDir() string {
-	// FIGARO_CONFIG_DIR is an explicit override used as-is (no
-	// "figaro" suffix appended): lets dev shells point at an
-	// isolated config tree without touching the user's real one.
 	if d := os.Getenv("FIGARO_CONFIG_DIR"); d != "" {
 		return d
 	}
@@ -955,7 +710,7 @@ func DefaultConfigDir() string {
 	return filepath.Join(home, ".config", "figaro")
 }
 
-// Load reads the top-level config. Returns defaults if missing.
+// Load returns defaults when config.toml is missing.
 func Load(configDir string) (*Loaded, error) {
 	configPath := filepath.Join(configDir, "config.toml")
 	cfg := defaultConfig()
@@ -971,7 +726,7 @@ func Load(configDir string) (*Loaded, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", configPath, err)
 	}
-	// default_loadout is the pre-rename key; default_outfit wins when both exist.
+	// default_loadout is the pre-rename key.
 	if cfg.DefaultOutfit == "" {
 		var legacy struct {
 			DefaultOutfit string `toml:"default_loadout"`
@@ -980,13 +735,7 @@ func Load(configDir string) (*Loaded, error) {
 			cfg.DefaultOutfit = legacy.DefaultOutfit
 		}
 	}
-	// The CLI settings were read from the TOP LEVEL until they moved into
-	// [cli]. Same treatment as default_loadout above, for the same reason: a
-	// config.toml written before the move is still on disk, TOML has no idea
-	// the key was renamed, and an unread key here is silent: measured,
-	// `echo_prompt = false` at the top level yielded EchoPrompt() == true with
-	// no error and no warning. A setting that quietly stops applying is worse
-	// than one that fails loudly, because nobody goes looking.
+	// CLI keys were top-level before [cli]; a pre-move config.toml still applies.
 	var preSection CLIConfig
 	if err := toml.Unmarshal(data, &preSection); err == nil {
 		c := &cfg.CLI
@@ -1033,13 +782,10 @@ func Load(configDir string) (*Loaded, error) {
 }
 
 func defaultConfig() Config {
-	// No DefaultOutfit: empty triggers the first-run flow.
 	return Config{}
 }
 
-// SetDefaultOutfit points config.toml at an outfit, preserving everything else
-// in the file. The first-run flow drives it through the angelus: a client may
-// not write the daemon's config itself.
+// SetDefaultOutfit rewrites only the outfit key; the rest of the file survives.
 func SetDefaultOutfit(configPath, outfitName string) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		return err

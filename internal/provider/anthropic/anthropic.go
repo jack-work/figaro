@@ -42,26 +42,19 @@ type Anthropic struct {
 	HTTPClient       *http.Client
 	ReminderRenderer string // "tag" (default) or "tool"
 
-	// Route is where this provider sends and what that endpoint honours.
-	// It is not part of Fingerprint: per-message cache bytes are dialect
-	// state, not route state, so pointing the same provider at a proxy
-	// must not invalidate an aria's translation cache.
+	// Route is not part of Fingerprint: re-pointing at a proxy must not
+	// invalidate an aria's translation cache.
 	Route provider.Route
 
-	// Templates renders Patches as system-reminder blocks. nil = skip.
 	Templates *template.Template
 
-	// CacheOpen opens the per-aria translation cache. nil = no caching.
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
 
-	// windows caches context windows learned from the models endpoint and
-	// falls back to the verified static table.
 	windows anthropicmodels.Catalog
 }
 
-// New constructs an Anthropic provider.
 func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropic: nil token resolver")
@@ -82,9 +75,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 	}, nil
 }
 
-// route returns this provider's route, defaulting to the stock Anthropic
-// endpoint. A zero-value Route must never silently mean "no caching": that
-// is how the direct provider ended up marking nothing at all.
+// A zero-value Route must not mean "no caching".
 func (a *Anthropic) route() provider.Route {
 	if a.Route.BaseURL == "" {
 		return provider.WithBaseURLOverride(provider.AnthropicDirect(), providerName)
@@ -92,7 +83,6 @@ func (a *Anthropic) route() provider.Route {
 	return a.Route
 }
 
-// cacheFor returns this provider's lineage cache, opening lazily.
 func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	if aria == "" || a.CacheOpen == nil {
 		return nil, nil
@@ -113,7 +103,6 @@ func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) 
 	return s, nil
 }
 
-// invalidateIfStale clears the cache on fingerprint mismatch.
 func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	want := a.Fingerprint()
 	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
@@ -127,7 +116,6 @@ func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	return true
 }
 
-// setAuthHeaders applies auth + protocol headers.
 func (a *Anthropic) setAuthHeaders(req *http.Request, apiKey string, betas string) {
 	req.Header.Set("anthropic-version", apiVersion)
 	if isOAuthToken(apiKey) {
@@ -146,26 +134,18 @@ const (
 	betaMessages = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31"
 )
 
-// maxTransientRetries is how many times a transient failure (network, 429, 529
-// overloaded, 5xx) is retried before giving up. Long sessions hit transient
-// overloads; one blip must not kill an hour-long turn.
 const maxTransientRetries = 5
 
-// Backoff bounds: vars so tests can shrink them.
 var (
 	retryBaseDelay = 1 * time.Second
 	retryMaxDelay  = 30 * time.Second
 )
 
-// isTransientStatus reports whether an HTTP status is worth retrying: rate
-// limit (429), anthropic overload (529), and any 5xx.
 func isTransientStatus(code int) bool {
 	return code == 429 || code == 529 || (code >= 500 && code <= 599)
 }
 
-// apiErrorMessage renders an Anthropic-style error body as a short, readable
-// line. The wire shape is {"error":{"type","message"}}; when it doesn't parse
-// (empty or non-JSON body) it falls back to the raw text so nothing is lost.
+// apiErrorMessage reads {"error":{"type","message"}}, falling back to the raw body.
 func apiErrorMessage(status int, body []byte) string {
 	var parsed struct {
 		Error struct {
@@ -185,7 +165,6 @@ func apiErrorMessage(status int, body []byte) string {
 	return fmt.Sprintf("HTTP %d: %s", status, string(body))
 }
 
-// backoffDelay is exponential backoff (1s, 2s, 4s, …) capped at retryMaxDelay.
 func backoffDelay(attempt int) time.Duration {
 	d := retryBaseDelay << attempt
 	if d > retryMaxDelay || d <= 0 {
@@ -194,8 +173,7 @@ func backoffDelay(attempt int) time.Duration {
 	return d
 }
 
-// parseRetryAfter reads a Retry-After header expressed in seconds (0 if absent
-// or non-numeric: HTTP-date form is not honored, exponential backoff covers it).
+// parseRetryAfter honours the seconds form only; HTTP-date yields 0.
 func parseRetryAfter(h http.Header) time.Duration {
 	if v := h.Get("Retry-After"); v != "" {
 		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs >= 0 {
@@ -216,11 +194,8 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// doWithAuthRetry executes a request. It retries once on 401 (fresh token) and
-// up to maxTransientRetries on transient failures: network errors, 429, 529
-// (overloaded), and 5xx: with backoff (honoring Retry-After). Transient
-// retries happen BEFORE the caller reads the body, so no partial stream is
-// emitted. This is what lets a long turn ride out an overload rather than die.
+// doWithAuthRetry retries once on 401 with a fresh token and up to
+// maxTransientRetries on transient failures, before any body is read.
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
@@ -250,8 +225,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			slog.Warn("anthropic request failed, retrying", "attempt", attempt+1, "err", err)
 			continue
 		}
-		// 401: invalidate + one retry with a fresh token (a free attempt -
-		// it does not consume the transient budget).
+		// The 401 retry does not consume the transient budget.
 		if resp.StatusCode == http.StatusUnauthorized && !authRetried {
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -313,11 +287,10 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 	var result struct {
 		Data []struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"display_name"`
-			// max_input_tokens is the model's context window.
-			MaxInputTokens int `json:"max_input_tokens"`
-			MaxTokens      int `json:"max_tokens"`
+			ID             string `json:"id"`
+			DisplayName    string `json:"display_name"`
+			MaxInputTokens int    `json:"max_input_tokens"`
+			MaxTokens      int    `json:"max_tokens"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -326,8 +299,6 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 	var models []provider.ModelInfo
 	for _, m := range result.Data {
-		// Remember the window so ContextLimit can report the provider's own
-		// number instead of the static table.
 		a.windows.Learn(m.ID, m.MaxInputTokens)
 		models = append(models, provider.ModelInfo{
 			ID:            m.ID,
@@ -340,10 +311,8 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return models, nil
 }
 
-// ContextLimit reports the model's context window: the user's pinned
-// system.max_context_tokens if set, else the window learned from the models
-// endpoint, else the verified static table (0 when unknown). No network I/O -
-// status surfaces call this.
+// ContextLimit prefers system.max_context_tokens, then the learned window,
+// then the static table (0 when unknown). No network I/O.
 func (a *Anthropic) ContextLimit(model string, snapshot form.Snapshot) int {
 	if model == "" {
 		a.mu.Lock()
@@ -359,15 +328,11 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
-// Fingerprint hashes the encoder config.
 func (a *Anthropic) Fingerprint() string {
 	rr := a.ReminderRenderer
 	if rr == "" {
 		rr = "tag"
 	}
-	// v7: a reminder in a message that holds only tool results rides INSIDE
-	// the last tool_result rather than as top-level text (placeReminders).
-	// v6 rows put it at the top level, where it read as speech.
 	return "anthropic/" + rr + "/v7"
 }
 
@@ -377,12 +342,8 @@ func (a *Anthropic) SetModel(model string) {
 	a.mu.Unlock()
 }
 
-// validNativeBlock reports whether a streamed block is API-legal to
-// replay. Both the IR decoder and the native cache path use it: the
-// decoder so the sealed message matches the in-flight asm (which never
-// creates a node for empty text/thinking: keeping them shifts later
-// block indices and duplicates the live render), the cache so omitempty
-// never persists a block missing its required field.
+// validNativeBlock gates both the IR decoder and the native cache: an empty
+// text/thinking block shifts later block indices against the live render.
 func validNativeBlock(b nativeBlock) bool {
 	switch b.Type {
 	case "text":
@@ -399,12 +360,8 @@ func validNativeBlock(b nativeBlock) bool {
 	return true
 }
 
-// cacheableToolUse is the ONE predicate for a streamed call. A turn cut
-// during the arguments leaves Input holding partial JSON, which cannot
-// replay: that block is not a call, and it must vanish from the IR and the
-// cache together. While the two predicates disagreed, the IR kept a call the
-// cache had dropped, the seal wrote its closing result, and every later
-// request carried a result whose tool_use was gone (400, forever).
+// cacheableToolUse is the single predicate for IR and cache: a call with
+// partial-JSON input must vanish from both, or a result outlives its tool_use.
 func cacheableToolUse(b nativeBlock) bool {
 	if b.ID == "" {
 		return false
@@ -413,22 +370,15 @@ func cacheableToolUse(b nativeBlock) bool {
 	return ok
 }
 
-// cacheableNativeBlock is the wire-replay predicate: deliberately wider
-// than validNativeBlock for thinking, because a signed empty-summary block
-// must replay (the API requires the thinking block leading a tool-use
-// assistant) even though the renderer skips it.
+// cacheableNativeBlock is wider than validNativeBlock for thinking: a signed
+// empty-summary block must replay to lead a tool-use assistant.
 func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 	switch b.Type {
 	case "text":
 		return strings.TrimSpace(b.Text) != "", false
 	case "thinking":
-		// THE SIGNATURE, NOT THE TEXT, IS WHAT MAKES A THINKING BLOCK
-		// REPLAYABLE. A turn interrupted mid-thought leaves behind thinking
-		// text whose signature_delta never arrived; caching that block
-		// BRICKS THE ARIA, because every later request replays it and the
-		// API answers 400 (thinking.signature: Field required) forever.
-		// Summary text without a signature is worth nothing on the wire, so
-		// it is dropped here and the IR keeps it for the transcript.
+		// An unsigned thinking block replays as a 400 forever; the IR keeps
+		// its text for the transcript.
 		return b.Signature != "", false
 	case "redacted_thinking":
 		return b.Data != "", false
@@ -441,8 +391,6 @@ func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 }
 
 func decodeNativeMessage(nm nativeMessage) message.Message {
-	// model/provider are not on the IR message: they live in the
-	// form (system.model / system.provider), derived on read.
 	m := message.Message{
 		Role: message.RoleFromWire(nm.Role),
 	}
@@ -495,13 +443,8 @@ type nativeRequest struct {
 	Model     string        `json:"model"`
 	MaxTokens int           `json:"max_tokens"`
 	System    []systemBlock `json:"system,omitempty"`
-	// Messages are the rows AS THEY LIE ON DISK. The translator log holds
-	// wire-final messages, so the assembler splices them verbatim: it does
-	// not decode 75,200 rows into a struct and re-encode them to produce
-	// bytes that differ only in key order (measured on the real store,
-	// rows_roundtrip_probe_test.go). ONLY cache_control reaches inside a
-	// row, on at most a few of them, and those rows are decoded one at a
-	// time where they are marked.
+	// Messages are translator rows spliced verbatim; only cache_control
+	// marking decodes a row, and only the rows it marks.
 	Messages     []json.RawMessage `json:"messages"`
 	Tools        []nativeTool      `json:"tools,omitempty"`
 	Stream       bool              `json:"stream"`
@@ -521,8 +464,7 @@ type thinkingParam struct {
 
 type cacheControl struct {
 	Type string `json:"type"`
-	// TTL is the retention: "" (provider default, 5m) or "1h". It is a
-	// field of its own, a retention written into Type is rejected.
+	// TTL is "" (provider default) or "1h"; a retention in Type is rejected.
 	TTL string `json:"ttl,omitempty"`
 }
 
@@ -563,10 +505,8 @@ type nativeBlock struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
-// MarshalJSON emits thinking blocks with their required fields even when
-// empty: a signed empty-summary block must replay as
-// {"type":"thinking","thinking":"","signature":…}: omitempty on the
-// union struct would drop the thinking key and 400 the replay.
+// MarshalJSON keeps the thinking key on an empty signed block; omitempty
+// would drop it and 400 the replay.
 func (b nativeBlock) MarshalJSON() ([]byte, error) {
 	if b.Type == "thinking" {
 		return json.Marshal(struct {
@@ -586,7 +526,6 @@ type nativeTool struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
-// encode projects one IR message to native wire bytes.
 func (a *Anthropic) encode(msg message.Message, prevSnapshot form.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnapshot
 	nm, ok := a.renderMessage(msg, &snap)
@@ -600,7 +539,6 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot form.Snapshot) ([]j
 	return []json.RawMessage{raw}, nil
 }
 
-// renderMessage produces the wire shape.
 func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) (nativeMessage, bool) {
 	switch msg.Role {
 	case message.RoleInput:
@@ -611,9 +549,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			case message.ContentProse:
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentImage:
-				// Claimed images render inside their tool_result below; an
-				// unclaimed one (user attachment, or a call with no result)
-				// still has to reach the model.
+				// Claimed images render inside their tool_result below.
 				if _, claimed := toolImages[c.ToolCallID]; claimed && c.ToolCallID != "" {
 					continue
 				}
@@ -634,16 +570,12 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 				})
 			}
 		}
-		// The board as it stood BEFORE this message's patches: the same
-		// state every other dialect reads incantations from. renderPatchBlocks
-		// advances prevSnap in place, so it has to be taken first or this
-		// provider would answer from a different board than the rest.
+		// Taken before renderPatchBlocks advances prevSnap: every dialect
+		// reads incantations from the pre-patch board.
 		board := *prevSnap
 		patchBlocks, advanced := a.renderPatchBlocks(msg.Patches, board)
 		*prevSnap = advanced
 		reminders := patchBlocks
-		// The observed set folds in beside the board: same reminder
-		// idiom, one derivation upstream (provider.StudyReminderTexts).
 		for _, text := range provider.StudyReminderTexts(msg, board) {
 			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
 		}
@@ -654,9 +586,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 		if len(blocks) == 0 {
 			return nativeMessage{}, false
 		}
-		// Results lead the turn: see resultsFirst. One message can hold both
-		// a closing result the door appended and the prose it was appended
-		// to, and the API takes them in only one order.
+		// The API takes tool_result before text in a user message.
 		return nativeMessage{Role: "user", Content: resultsFirst(blocks)}, true
 
 	case message.RoleOutput:
@@ -666,15 +596,9 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			case message.ContentProse:
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentThinking:
-				// Dropped. This is the cache-MISS fallback: the signed wire
-				// form of a thinking block lives only in the translation
-				// cache, and the IR carries no signature (by design: it
-				// holds no provider secrets). Re-emitting the text without
-				// its signature is a 400 once extended thinking is on, and
-				// this path is now routinely reached: history produced under
-				// another provider has no anthropic translations to hit.
+				// The IR carries no signature; unsigned thinking is a 400.
 			case message.ContentToolInvoke:
-				// Force non-nil input (API requires it).
+				// The API requires non-null input.
 				var input interface{}
 				if len(c.Arguments) == 0 {
 					input = json.RawMessage("{}")
@@ -692,10 +616,8 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 		return nativeMessage{Role: "assistant", Content: blocks}, true
 
 	case message.RoleSystemInterrupt:
-		// Surrogate: synthetic user-role tool_result blocks per
-		// dangling tool_use_id, IsError=true. Anthropic requires each
-		// tool_use to be followed by a tool_result; this satisfies
-		// that for an interrupted turn.
+		// Every tool_use needs a tool_result; an interrupted turn gets
+		// error results.
 		var blocks []nativeBlock
 		for _, c := range msg.Content {
 			if c.Type != message.ContentInterrupt || c.ToolCallID == "" {
@@ -748,7 +670,6 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// systemBlocks builds the system prefix: preamble + credo.
 func systemBlocks(snapshot form.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
 	systemText := readCredo(snapshot)
@@ -764,8 +685,6 @@ func systemBlocks(snapshot form.Snapshot, oauth bool) []systemBlock {
 	return out
 }
 
-// readCredo extracts the credo text from a form snapshot,
-// handling both the bare-string and ContentEnvelope shapes.
 func readCredo(snapshot form.Snapshot) string {
 	raw, ok := snapshot.Get("system.credo")
 	if !ok {
@@ -788,35 +707,23 @@ func readCredo(snapshot form.Snapshot) string {
 	return ""
 }
 
-// projectMessagesWithModel is the MATERIALIZING assembler, and nothing on the
-// send path calls it: see projectRequest.
-//
-// projectMessagesWithModel assembles a nativeRequest from cached
-// per-message bytes.
+// projectMessagesWithModel materializes the request; the send path uses
+// projectRequest's row sequence instead.
 func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	return a.projectMessagesWithLTs(perMessage, nil, snapshot, tools, maxTokens, oauth, model)
 }
 
-// projectMessagesWithLTs is the materializing assembler with per-message LTs.
 func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts []uint64, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	req, rows, err := a.projectRequest(provider.PerMessageRows(perMessage, lts), snapshot, tools, maxTokens, oauth, model)
 	if err != nil {
 		return req, err
 	}
-	// THE MATERIALIZING PATH, AND IT IS NOT THE SEND PATH. Tests assert on an
-	// assembled request and countCacheMarkers counts one; the wire gets the
-	// sequence. Both come out of projectRequest, so there is one set of
-	// semantics and only one of them holds the conversation.
 	req.Messages, _ = provider.CollectRows(rows)
 	return req, nil
 }
 
-// projectRequest builds the request FRAME -- everything but the messages --
-// and returns the row sequence that splices into it.
-//
-// The frame is marked here because system blocks and tools are the frame's own
-// fields; the two marks that land INSIDE a message ride the sequence, where
-// the row they belong to passes exactly once.
+// projectRequest builds everything but the messages and returns the row
+// sequence that splices into it; in-message cache marks ride the sequence.
 func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, provider.RowSeq, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
@@ -831,20 +738,14 @@ func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, 
 		Tools: projectTools(tools),
 	}
 
-	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address the row
-	// they land on, so a pass that drops or merges rows must run first.
+	// Row-dropping passes run before any marking addresses a row.
 	rows := coalesceRowsSeq(pairToolCallsSeq(dropDuplicateResultsSeq(src)))
 
 	var tailMark *cacheControl
 	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
 		route := a.route()
-		// Deliberately NOT gated on the model's minimum cacheable size.
-		// Figaro spends 3 of 4 slots, so there is no scarcity to protect,
-		// and a marker below the minimum is ignored rather than charged.
-		// Gating would trade a free no-op for a false negative on any
-		// prompt a chars/4 estimate under-counts. The thresholds live in
-		// provider.CacheMinTokens for an endpoint that DOES have to ration
-		// slots and knows which model it resolved.
+		// Not gated on the model's minimum cacheable size: a marker below
+		// it is ignored, not charged.
 		if plan := route.MarkPlan(provider.ResolveMarkMode(snapshot)); plan.Blocks {
 			tailMark = markCacheBreakpoints(&req, policy, plan, route.Caps)
 		}
@@ -854,8 +755,8 @@ func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, 
 	return req, rows, nil
 }
 
-// messageTags reads system.tags into the per-LT cache_control overrides the
-// assembler applies to the LAST row carrying each logical time.
+// messageTags reads system.tags into per-LT cache_control overrides, applied
+// to the last row carrying each logical time.
 func messageTags(snapshot form.Snapshot, caps provider.CacheCaps) map[uint64]*cacheControl {
 	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
@@ -891,8 +792,7 @@ func messageTags(snapshot form.Snapshot, caps provider.CacheCaps) map[uint64]*ca
 	return out
 }
 
-// controlFor renders a policy for the wire, dropping a ttl the route will
-// not honour rather than sending one that is ignored or rejected.
+// controlFor drops a ttl the route will not honour.
 func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
 	cc := &cacheControl{Type: p.Type}
 	if caps.TTL {
@@ -901,11 +801,9 @@ func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
 	return cc
 }
 
-// markCacheBreakpoints attaches cache_control to the static prefix (last
-// system block + last tool) and the rolling tail (leaf of the LAST input
-// message), caching the whole prompt-so-far so the next turn reads it back.
-// That is 3 of Anthropic's 4 breakpoints; the fourth is left for a
-// downstream gateway to top up, and for the per-fork long-retention marker.
+// markCacheBreakpoints spends 3 of Anthropic's 4 breakpoints: last system
+// block, last tool, and the tail message; the fourth is left for a gateway
+// or the per-fork long-retention marker.
 func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) *cacheControl {
 	cc := controlFor(policy, caps)
 	budget := caps.MaxMarkers
@@ -928,27 +826,22 @@ func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan 
 	if !plan.Tail {
 		return nil
 	}
-	// The rolling tail is the LAST message, which the assembler has not
-	// reached yet: the marker is handed back and spent there.
+	// The tail marker is spent by the assembler on the last row.
 	if !spend() {
 		return nil
 	}
 	return cc
 }
 
-// rowMessage decodes one spliced row. The assembler does not call it on the
-// hot path -- that is the point of the splice -- but marking, counting and
-// assertions need a typed view of a single row.
+// rowMessage decodes one row; not for the splice path.
 func rowMessage(row json.RawMessage) nativeMessage {
 	var m nativeMessage
 	_ = json.Unmarshal(row, &m)
 	return m
 }
 
-// markRowTail attaches cache_control to a row's LAST content block. This is
-// the ONE edit that reaches inside a message, so it is the one place a row
-// is decoded -- at most four rows per request against N spliced verbatim,
-// and the fraction shrinks as history grows.
+// markRowTail attaches cache_control to a row's last content block; the only
+// edit that reaches inside a row.
 func markRowTail(row *json.RawMessage, cc *cacheControl) {
 	var m nativeMessage
 	if err := json.Unmarshal(*row, &m); err != nil {
@@ -966,9 +859,7 @@ func markRowTail(row *json.RawMessage, cc *cacheControl) {
 	*row = marked
 }
 
-// countCacheMarkers reports how many explicit cache_control markers a
-// request carries. Exercised by tests and the fuzz target: a fifth marker
-// is a 400 from the API, not a warning.
+// countCacheMarkers counts cache_control markers; a fifth is a 400.
 func countCacheMarkers(req nativeRequest) int {
 	n := 0
 	for _, s := range req.System {
@@ -991,8 +882,6 @@ func countCacheMarkers(req nativeRequest) int {
 	return n
 }
 
-// Send drives one turn: catch up cache, POST, stream SSE, land
-// the assistant message in figLog + cache.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
@@ -1047,27 +936,10 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(providerName, bus)
 }
 
-// land is what happens to a drained stream, and there is ONE of it: Send and
-// SendWithTransport used to carry two copies of this tail, and a rule
-// learned on one path was a rule the other could forget. It returns a
-// function so the drain call reads as one expression at both sites.
-//
-// Three outcomes:
-//
-//   - A cancelled turn is a premature close, not a broken stream. What the
-//     accumulator holds is real: it was produced by this provider from this
-//     wire, so the message and its native payload agree by construction.
-//     Dropping it made figaro synthesise a partial from its OWN text, a
-//     message with no native payload whose re-encoded translation lost every
-//     signed thinking block. Anything else that ends a stream (a scanner
-//     fault, a truncated body) is still a broken stream and still drops.
-//   - A stream that closed cleanly but is not a reply (nothing in it, or a
-//     stop reason that is not a way of finishing: refusal, content_filter,
-//     a word from the future) keeps whatever the model produced, marked
-//     StopError, and FAILS THE SEND with the wire's word. This used to land
-//     as a normal stop, or as nothing at all, and the aria went quiet
-//     (jack-work/figaro#24).
-//   - A reply lands as one.
+// land settles a drained stream. A cancelled turn hands over what the
+// accumulator holds (its native payload keeps the signed thinking); any
+// other stream error drops it. A clean close that is not a reply hands over
+// the partial and fails the send with the wire's stop reason.
 func (a *Anthropic) land(nm nativeMessage, err error) func(label string, bus provider.Bus) error {
 	return func(label string, bus provider.Bus) error {
 		if err != nil {
@@ -1093,11 +965,8 @@ func (a *Anthropic) land(nm nativeMessage, err error) func(label string, bus pro
 	}
 }
 
-// handOver gives the fig IR side the message and the native payload from ONE
-// accumulator. The normal close, the premature close and the faulted close
-// all go through it, so a partial message cannot be shaped differently from
-// a whole one. THE PROVIDER DOES NOT OWN THE LOG: it hands the message to
-// the bus and the fig IR side appends it, since only that side has the LT.
+// handOver is the single path to the bus for whole, partial and faulted
+// messages; the fig IR side appends, since only it has the LT.
 func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
 	msg := decodeNativeMessage(nm)
 	if msg.Timestamp == 0 {
@@ -1112,13 +981,10 @@ func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
 	return nil
 }
 
-// TransportFn executes a single HTTP request carrying body.
 type TransportFn func(ctx context.Context, body *provider.RequestBody) (*http.Response, error)
 
-// SendWithTransport is like Send but delegates the HTTP call to fn
-// instead of using the built-in auth retry + Anthropic endpoint.
-// oauth controls whether the Claude Code identity preamble is injected
-// into the system prompt (false for Copilot, true for Anthropic OAuth).
+// SendWithTransport delegates the HTTP call to fn; oauth injects the Claude
+// Code identity preamble.
 func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, oauth bool, fn TransportFn) error {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
@@ -1208,14 +1074,8 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 	return a.Model
 }
 
-// catchUp translates whatever the log has not translated yet, writes those
-// rows, and hands back A WALK OVER THE ROWS THEMSELVES -- the messages array
-// as it lies on disk. It keeps nothing between calls: the watermark is the row
-// log's tail and the cursors are stamped on the record it names.
-//
-// It hands back a sequence rather than a slice because the slice WAS the
-// conversation in the heap: see provider.TranslationRows. A nil sequence means
-// the log has no rows, which the caller reports as an empty context.
+// catchUp translates the untranslated delta and returns a walk over the rows
+// on disk, never a slice of them. Nil means the log has no rows.
 func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
@@ -1231,8 +1091,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]
 			slog.Error("anthropic write row", "flt", lt, "err", err)
 		},
 	}); err != nil {
-		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
-		// would assemble is not the one on disk.
+		// A send that cannot write its rows must not proceed.
 		return nil, fmt.Errorf("anthropic catch up: %w", err)
 	}
 	to, ok := provider.TranslationTail(rows)
@@ -1244,9 +1103,8 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]
 
 const sseReadTimeout = 5 * time.Minute
 
-// drainSSE reads SSE events, folds deltas into an accumulator,
-// and returns the final message at message_stop. Non-nil error
-// means the partial message must be dropped.
+// drainSSE returns the accumulated message at message_stop; a non-nil error
+// means the partial must be dropped.
 func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model string, bus provider.Bus) (nativeMessage, error) {
 	nm := nativeMessage{Role: "assistant", Model: model}
 	var (
@@ -1287,11 +1145,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 		}()
 	}
 
-	// message_stop without a message_delta naming a stop reason is NOT a
-	// clean finish, and it is not this function's place to say it was: an
-	// empty stop reason used to become "end_turn" here, so a cut or filtered
-	// stream was byte-identical to a completion downstream. The empty string
-	// travels, and the decoder reads it as the fault it is.
+	// An empty stop reason travels as-is; the decoder reads it as a fault.
 	finalizeClean := func() (nativeMessage, error) {
 		nm.StopReason = stopReason
 		nm.Usage = &usage
@@ -1341,7 +1195,6 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 	}
 }
 
-// foldSSEEvent updates the accumulator with one SSE event.
 func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []byte, nm *nativeMessage, usage *nativeUsage, stopReason *string, bus provider.Bus) {
 	switch eventType {
 	case "content_block_start":
@@ -1372,7 +1225,6 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 			nm.Content[block.Index] = nativeBlock{
 				Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 			}
-			// Announce tool so CLI can show a spinner.
 			bus.PushToolInvokeStart(block.ContentBlock.ID, block.ContentBlock.Name)
 			figOtel.Event(ctx, "provider.tool_use.block_start",
 				attribute.String("tool_call_id", block.ContentBlock.ID),
@@ -1444,9 +1296,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 				attribute.String("tool_name", b.Name),
 				attribute.Int("input_bytes", rawLen),
 			)
-			// Speculative dispatch: signal the harness that this tool's
-			// input is fully decoded so it can start executing now,
-			// without waiting for the rest of the stream.
+			// Speculative dispatch: the input is complete before the stream is.
 			if args, ok := b.Input.(map[string]interface{}); ok {
 				bus.PushToolReady(message.Content{
 					Type:       message.ContentToolInvoke,
@@ -1493,8 +1343,6 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 	}
 }
 
-// applyThinking enables extended thinking on the request when the
-// form has system.thinking_budget or system.thinking_effort set.
 func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
 	budgetRaw, _ := snap.Get("system.thinking_budget")
 	effortRaw, _ := snap.Get("system.thinking_effort")
@@ -1519,9 +1367,7 @@ func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
 	}
 
 	if provider.IsAdaptiveThinkingModel(model) {
-		// Adaptive models take an effort level, not a token budget -
-		// budget_tokens (and thinking type "enabled") returns a 400 on
-		// Opus 4.6+ and the whole Claude 5 generation.
+		// budget_tokens and type "enabled" are a 400 on adaptive models.
 		if effort == "" {
 			effort = "high"
 		}
@@ -1542,7 +1388,6 @@ func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
 	}
 }
 
-// imageBlock renders one IR image block in Anthropic's base64 source shape.
 func imageBlock(c message.Content) nativeBlock {
 	return nativeBlock{
 		Type: "image",
@@ -1552,34 +1397,15 @@ func imageBlock(c message.Content) nativeBlock {
 	}
 }
 
-// EncodeMessage and TranslatorChannel put this provider's encoder behind
-// provider.EntryEncoder, so the fig IR write path can translate an entry when
-// it lands using the same function a catch-up uses.
 func (a *Anthropic) EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error) {
 	return a.encode(msg, prev)
 }
 
 func (a *Anthropic) TranslatorChannel() string { return a.CacheNamespace }
 
-// placeReminders decides where a message's <system-reminder> blocks go.
-//
-// A tool round travels back in a user-role message, because that is the only
-// role a tool_result may ride. When a person also said something in that
-// message, reminders sit beside their words as top-level text, as they always
-// have. When NOBODY did (the message is tool results and nothing else), a
-// top-level reminder is the only text in a user-role message, and a model
-// reads that as its master speaking and saying nothing.
-//
-// Reproduced live on claude-opus-5, replaying turn 24 of a real aria from its
-// real context: in 9 of the 9 replays where the model set its own mantra as
-// the last act of an answer, the next round's thinking called the message
-// empty ("There's nothing actually in this message besides the system
-// reminder"), and it told the user so. 63 such replies sit in the author's
-// store across 43 arias.
-//
-// So in that case the reminders ride INSIDE the last tool_result instead:
-// delivered in the same round, attached to the output that just arrived, and
-// never mistaken for speech.
+// placeReminders puts reminders beside a person's words when there are any;
+// in a results-only message they ride inside the last tool_result, where a
+// top-level reminder would read as the user speaking and saying nothing.
 func placeReminders(blocks, reminders []nativeBlock) []nativeBlock {
 	if len(reminders) == 0 {
 		return blocks
@@ -1590,7 +1416,6 @@ func placeReminders(blocks, reminders []nativeBlock) []nativeBlock {
 		case "tool_result":
 			last = i
 		case "text", "image":
-			// A person spoke in this message: reminders go beside them.
 			return append(blocks, reminders...)
 		}
 	}
@@ -1599,9 +1424,7 @@ func placeReminders(blocks, reminders []nativeBlock) []nativeBlock {
 	}
 	out := append([]nativeBlock(nil), blocks...)
 	tr := out[last]
-	// A result's content is a block list when this encoder built it and a
-	// bare string when something else did; the API takes both, so both are
-	// widened to a list rather than one being refused.
+	// Result content may be a block list or a bare string; both widen to a list.
 	var inner []nativeBlock
 	switch c := tr.Content.(type) {
 	case []nativeBlock:

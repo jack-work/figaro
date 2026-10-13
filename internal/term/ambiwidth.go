@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// ProbeAmbiguousWide asks the TERMINAL how wide it draws an ambiguous glyph.
+// ProbeAmbiguousWide asks the terminal how wide it draws an ambiguous glyph.
 func ProbeAmbiguousWide(timeout time.Duration) (wide, ok bool) {
 	if !IsTerminal(int(os.Stdin.Fd())) || !IsTerminal(int(os.Stdout.Fd())) {
 		return false, false
@@ -20,21 +20,17 @@ func ProbeAmbiguousWide(timeout time.Duration) (wide, ok bool) {
 	}
 	defer restore()
 
-	// \r puts us at column 1 so the reply's column IS the width drawn.
 	if _, err := os.Stdout.WriteString("\r\u2500\x1b[6n"); err != nil {
 		return false, false
 	}
 	col, got := readCursorCol(timeout)
-	// Erase the probe glyph whatever happened: the user must not see it.
 	os.Stdout.WriteString("\r\x1b[2K")
 	if !got {
 		return false, false
 	}
-	// col is 1-based and the cursor sits AFTER the glyph.
 	return col-1 >= 2, true
 }
 
-// readCursorCol reads a CSI row;col R reply from stdin within timeout.
 func readCursorCol(timeout time.Duration) (int, bool) {
 	type result struct {
 		col int
@@ -62,7 +58,7 @@ func readCursorCol(timeout time.Duration) (int, bool) {
 	case r := <-ch:
 		return r.col, r.ok
 	case <-time.After(timeout):
-		return 0, false // a terminal that will not answer keeps its default
+		return 0, false
 	}
 }
 
@@ -86,8 +82,7 @@ func parseCursorReply(s string) (r struct {
 	return
 }
 
-// MeasureDrawn reports how many columns the terminal actually advanced when it
-// drew s: the ground truth figaro's own measurement is checked against.
+// MeasureDrawn reports how many columns the terminal advanced drawing s.
 func MeasureDrawn(s string, timeout time.Duration) (int, bool) {
 	if !IsTerminal(int(os.Stdin.Fd())) || !IsTerminal(int(os.Stdout.Fd())) {
 		return 0, false

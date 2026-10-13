@@ -28,9 +28,7 @@ func TestRefreshMetricsIncrementalMatchesFullFold(t *testing.T) {
 		},
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("follow up")}},
 		{
-			// Cache-heavy shape: the prompt is nearly all cache read, so the
-			// incremental fast path and the full fold must both count all four
-			// buckets or they diverge by orders of magnitude.
+			// Cache-heavy shape: both paths must count all four buckets.
 			Role:    message.RoleOutput,
 			Content: []message.Content{message.TextContent("second reply")},
 			Usage:   &message.Usage{InputTokens: 120, OutputTokens: 25, CacheReadTokens: 130_000, CacheWriteTokens: 4_000},

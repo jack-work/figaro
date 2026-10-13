@@ -13,11 +13,8 @@ import (
 	figaro "github.com/jack-work/figaro"
 )
 
-// The first-party skills ship INSIDE the binary (see skills.go at the repo
-// root) and are unpacked onto disk here, because a skill without a path is
-// half a skill: the form hands the model a `filePath`, and the model follows
-// links from that file to the chapters beside it. Holding the bytes in memory
-// would give the model a body it cannot navigate.
+// Embedded skills are unpacked to disk: the form hands the model a filePath
+// and the model follows links from it.
 
 var (
 	bundledMu      sync.Mutex
@@ -26,11 +23,7 @@ var (
 	bundledKnown   bool
 )
 
-// SetBundledSkills turns the binary's own skills on or off. Off means figaro
-// composes forms from the user's config dir ALONE, which is what someone who
-// maintains their own copy of the figaro skill wants: config.toml's
-// `bundled_skills = false` reaches this. Startup calls it once, before any
-// outfit is folded.
+// SetBundledSkills must be called before any outfit is folded.
 func SetBundledSkills(enabled bool) {
 	bundledMu.Lock()
 	defer bundledMu.Unlock()
@@ -41,14 +34,10 @@ func SetBundledSkills(enabled bool) {
 	}
 }
 
-// BundledSkillsRoot is where the binary's own first-party skills live. The
-// daemon records it with the default form: when it moves, the shipped skills
-// moved with it, and the default form is due for recomputation.
+// BundledSkillsRoot changes when the shipped skills change; the default form is keyed on it.
 func BundledSkillsRoot() string { return bundledSkillsRoot() }
 
-// bundledSkillsRoot returns the directory whose child `skills/` holds the
-// first-party skills, so a `dirName = "skills"` reference resolves to
-// <root>/skills/figaro. Precedence, highest first:
+// FIGARO_BUNDLED_SKILLS (off, or a root) wins over the config toggle.
 func bundledSkillsRoot() string {
 	if v, ok := os.LookupEnv("FIGARO_BUNDLED_SKILLS"); ok {
 		switch strings.ToLower(strings.TrimSpace(v)) {
@@ -69,8 +58,6 @@ func bundledSkillsRoot() string {
 	}
 	root, err := unpackBundledSkills(bundledSkillsDir())
 	if err != nil {
-		// Not fatal, and not silent either. figaro still runs on the user's
-		// own skills; it just runs without its own, and the reason says so.
 		slog.Warn("bundled skills could not be unpacked: figaro will compose forms without them", "err", err)
 		root = ""
 	}
@@ -78,10 +65,7 @@ func bundledSkillsRoot() string {
 	return root
 }
 
-// bundledSkillsDir is the parent that holds one directory per content hash.
-// It follows internal/cli's stateDir precedence on purpose: a dev shell that
-// isolates FIGARO_STATE_DIR must get its own unpacked skills too, or two
-// figaros with different skills would read one tree.
+// Follows internal/cli's stateDir precedence: an isolated FIGARO_STATE_DIR must get its own tree.
 func bundledSkillsDir() string {
 	base := ""
 	switch {
@@ -99,9 +83,7 @@ func bundledSkillsDir() string {
 	return filepath.Join(base, "bundled-skills")
 }
 
-// unpackBundledSkills writes the embedded tree under dir/<hash> and returns
-// that root. It is idempotent: a root whose .stamp already names the hash is
-// complete and is returned untouched.
+// A root whose .stamp names the hash is complete and returned untouched.
 func unpackBundledSkills(dir string) (string, error) {
 	hash, err := embeddedSkillsHash()
 	if err != nil {
@@ -134,9 +116,7 @@ func unpackBundledSkills(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
-		// Read-only on purpose: an edit here is lost at the next version
-		// bump, because the next version unpacks to a different root. Skills
-		// you own belong in your config dir, where nothing overwrites them.
+		// Read-only: the next version unpacks to a different root, so an edit here is lost.
 		return os.WriteFile(dst, body, 0o444)
 	})
 	if err != nil {
@@ -146,16 +126,12 @@ func unpackBundledSkills(dir string) (string, error) {
 		return "", err
 	}
 
-	// A leftover root here is incomplete by definition: its stamp did not
-	// match above. Clear it before the rename, which will not replace a
-	// non-empty directory.
+	// A leftover root is incomplete (its stamp did not match); rename will not replace a non-empty dir.
 	if err := os.RemoveAll(root); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, root); err != nil {
-		// Another figaro unpacking the same hash at the same moment is a
-		// race we lose gladly: the bytes are identical, and its stamp is
-		// the proof that it finished.
+		// A concurrent unpack of the same hash wrote identical bytes; its stamp proves it finished.
 		if b, rerr := os.ReadFile(stamp); rerr == nil && strings.TrimSpace(string(b)) == hash {
 			return root, nil
 		}
@@ -164,10 +140,7 @@ func unpackBundledSkills(dir string) (string, error) {
 	return root, nil
 }
 
-// embeddedSkillsHash digests every embedded path and its bytes. Paths are
-// part of the digest because moving a chapter changes what the model can
-// follow even when no byte of prose changed; WalkDir is lexical, so the
-// digest is stable across machines and builds.
+// Paths are part of the digest: moving a chapter changes what the model can follow.
 func embeddedSkillsHash() (string, error) {
 	h := sha256.New()
 	err := fs.WalkDir(figaro.Skills, "skills", func(path string, d fs.DirEntry, err error) error {

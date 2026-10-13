@@ -7,8 +7,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// steer is what the drain now writes for a prompt taken off the queue while a
-// turn is already running: ordinary prose, flagged as provenance.
 func steer(text string) message.Message {
 	return message.Message{
 		Role:     message.RoleInput,
@@ -17,13 +15,7 @@ func steer(text string) message.Message {
 	}
 }
 
-// A steer must not open a turn, and it must not truncate the one it steers.
-//
-// This is the defect the user hit: the drain persisted every queued prompt as
-// a bare input message, so both the arithmetic and the projection independently
-// concluded it opened a turn. The exchange being steered was cut off mid-flight
-// : its closing prose never arrived, and the steer became a turn of its own
-// whose inquiry was the steering text.
+// A steer must neither open a turn nor truncate the one it steers.
 func TestSteerJoinsTheTurnItSteers(t *testing.T) {
 	msgs := []message.Message{
 		inqUser(prose("do a bunch of readonly bash work")),
@@ -66,9 +58,8 @@ func TestSteerJoinsTheTurnItSteers(t *testing.T) {
 	}
 }
 
-// The legacy shape predates the flag and still exists in real logs: prose
-// riding on the tool_result message. One concept, two accepted inputs, one
-// output node.
+// The legacy shape, prose riding on the tool_result message, exists in logs
+// on disk.
 func TestLegacySteerShapeStillRenders(t *testing.T) {
 	msgs := []message.Message{
 		inqUser(prose("question")),

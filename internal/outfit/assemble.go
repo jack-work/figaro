@@ -9,17 +9,10 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// NameDefault, as an outfit name, means whatever config calls the default
-// outfit. It is how a client asks for "dressed as usual" without knowing the
-// answer.
+// NameDefault, as an outfit name, means whatever config calls the default outfit.
 const NameDefault = "default"
 
-// The grammar, since 2026-08-11 (Gluck's ruling): outfits and patches are
-// SEPARATE AXES, and neither is smuggled inside the other.
-
-// ParseNames reads the `-O` syntax: a comma-separated list of outfit names,
-// in order, later names winning. Nothing else is admitted, a `k=v` or a JSON
-// literal here is a grammar error naming the flag that takes it.
+// ParseNames reads the `-O` syntax: comma-separated outfit names, later winning.
 func ParseNames(text string) ([]string, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
@@ -45,10 +38,8 @@ func ParseNames(text string) ([]string, error) {
 	return names, nil
 }
 
-// ParseSet reads the `-S` syntax into ONE form patch: `k=v` pairs and whole
-// JSON-object literals, comma-separated, later terms winning. It touches no
-// disk and reads no config, and it resolves nothing, a `layers` key written
-// here is ordinary data, stored as typed.
+// ParseSet reads the `-S` syntax: `k=v` pairs and JSON-object literals,
+// comma-separated, later winning. A `layers` key here is ordinary data.
 func ParseSet(text string) (form.Patch, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
@@ -82,9 +73,7 @@ func ParseSet(text string) (form.Patch, error) {
 	return form.Build(form.Snapshot{}, set, nil), nil
 }
 
-// ParseDelete reads the `-D` syntax: comma-separated key paths to remove.
-// Paths are not validated here beyond emptiness: the dotted/bracketed path
-// grammar belongs to the form, and a key that does not exist is a no-op.
+// ParseDelete reads the `-D` syntax: comma-separated key paths, unvalidated.
 func ParseDelete(text string) ([]string, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
@@ -104,18 +93,13 @@ func ParseDelete(text string) ([]string, error) {
 	return out, nil
 }
 
-// Dress is THE materialization call: the daemon's single point where outfit
-// names become keys. Names fold in order, then the caller's patch lands on
-// top, a client that wrote a key meant its own value, and the removals ride
-// through untouched.
+// Dress folds names in order, then the caller's patch on top; removals ride through.
 func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) (form.Patch, error) {
 	if len(names) == 0 {
 		return patch, nil
 	}
-	// Layers compose as KEY SETS. Each layer's patch is built against an empty
-	// board, so its Set names whole subtrees; merging two of those makes the
-	// later one clobber the earlier at the first shared segment. Composing the
-	// keys and building once keeps every layer's leaves.
+	// Compose as key sets and build once: merging per-layer patches would
+	// clobber subtrees at the first shared segment.
 	layered := map[string]json.RawMessage{}
 	for _, n := range names {
 		var folded form.Patch
@@ -145,7 +129,6 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 	return form.Build(form.Snapshot{}, layered, drops), nil
 }
 
-// defaults folds what config calls the default outfit, leniently.
 func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 	if defaultName == "" {
 		return form.Patch{}, nil
@@ -169,7 +152,6 @@ func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 	return form.Build(form.Snapshot{}, out, nil), nil
 }
 
-// Names folds a list of outfit names, in order.
 func (o *Outfitter) Names(names ...string) (form.Patch, error) {
 	set := map[string]json.RawMessage{}
 	for _, name := range names {
@@ -204,9 +186,6 @@ func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
 	return keys, nil
 }
 
-// literalKeys reads a JSON object term. `layers` inside a literal pulls in
-// named outfits the same way a file's does: but resolving them is the
-// assembler's job, and a literal that only declares layers sets nothing else.
 func literalKeys(part string) (map[string]json.RawMessage, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(part), &raw); err != nil {
@@ -218,9 +197,7 @@ func literalKeys(part string) (map[string]json.RawMessage, error) {
 	return raw, nil
 }
 
-// pairKeys reads `key=value`. The value is JSON when it parses as JSON and a
-// plain string otherwise, so `ttl=1h` and `ttl="1h"` agree and `n=3` is a
-// number.
+// The value is JSON when it parses as JSON, a plain string otherwise.
 func pairKeys(part string) (map[string]json.RawMessage, error) {
 	i := strings.IndexRune(part, '=')
 	key := strings.TrimSpace(part[:i])
@@ -232,8 +209,6 @@ func pairKeys(part string) (map[string]json.RawMessage, error) {
 		return map[string]json.RawMessage{key: json.RawMessage(`""`)}, nil
 	}
 	if !json.Valid([]byte(raw)) {
-		// A value that OPENS a quote and does not parse is an unterminated
-		// string, not a string that happens to start with a quote.
 		if strings.HasPrefix(raw, `"`) {
 			return nil, fmt.Errorf("outfit: %s: unterminated quoted value", part)
 		}
@@ -246,8 +221,6 @@ func pairKeys(part string) (map[string]json.RawMessage, error) {
 	return map[string]json.RawMessage{key: json.RawMessage(raw)}, nil
 }
 
-// sugarHint answers the commonest way a literal is mistyped: unquoted keys,
-// `{mantra:test}`, which is not JSON and is spelled `mantra=test` here.
 func sugarHint(part string) string {
 	body := strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}")
 	k, v, ok := strings.Cut(body, ":")
@@ -257,10 +230,7 @@ func sugarHint(part string) string {
 	return fmt.Sprintf(" (for a one-key literal, write %s=%s)", strings.TrimSpace(k), strings.TrimSpace(v))
 }
 
-// ValidName is the gate every name passes, in the syntax or in a layers list.
-// A name is a file basename, so it is narrow: `=` is the sugar's separator, a
-// path separator would climb out of the outfits directory, and the grammar's
-// own punctuation would otherwise arrive as a name that can only be missing.
+// ValidName: a name is a file basename, so path separators and the grammar's punctuation are refused.
 func ValidName(name string) error {
 	switch {
 	case name == "":
@@ -274,9 +244,7 @@ func ValidName(name string) error {
 	case strings.ContainsAny(name, `{}[]"`):
 		return fmt.Errorf("outfit: %q: a name cannot contain {} [] or a quote (an inline term must be a whole JSON object)", name)
 	case strings.Contains(name, ":"):
-		// `-O {a:1,b:2}` unquoted is brace-EXPANDED by the shell into two
-		// words with the braces gone, so this is usually a literal that never
-		// reached us. `:` is also the turn coordinate.
+		// Usually a shell-brace-expanded literal that lost its braces.
 		return fmt.Errorf("outfit: %q: a name cannot contain `:`: for a literal, quote it ('{\"a\":1}') or use the sugar (a=1)", name)
 	}
 	for _, r := range name {
@@ -287,7 +255,7 @@ func ValidName(name string) error {
 	return nil
 }
 
-// splitTerms splits on commas that are not inside quotes, braces or brackets.
+// splitTerms splits on commas outside quotes, braces and brackets.
 func splitTerms(text string) ([]string, error) {
 	var (
 		out   []string
@@ -329,8 +297,7 @@ func splitTerms(text string) ([]string, error) {
 	return out, nil
 }
 
-// TermNames returns just the names in a spec string, for a caller that wants
-// the layer graph (`state outfit --tree`) rather than the patch.
+// TermNames returns just the names in a spec string.
 func TermNames(text string) ([]string, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
@@ -350,8 +317,7 @@ func TermNames(text string) ([]string, error) {
 	return out, nil
 }
 
-// ResolveAll builds a synthetic root whose layers are these names, in order,
-// for a caller that wants the layer graph rather than the patch.
+// ResolveAll builds a synthetic root whose layers are these names, in order.
 func (o *Outfitter) ResolveAll(names []string) *Closure {
 	root := &Closure{Found: true}
 	memo := map[string]*Closure{}

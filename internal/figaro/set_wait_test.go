@@ -1,12 +1,6 @@
 package figaro_test
 
-// `--wait` is OPT-IN, and this is the pair of tests that keeps it that way.
-//
-// The first attempt at closing this gap made Set synchronous for everyone and
-// hung TestFormSetDuringToolRoundAppliesNextRound for its whole timeout: a set
-// arriving mid-turn is applied at the next ROUND BOUNDARY by design, so a
-// caller that waits waits for a tool round. That is the right trade only when
-// the caller chose it.
+// `--wait` is opt-in.
 
 import (
 	"context"
@@ -23,8 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The default path must NOT wait, whatever the aria is doing. This is the
-// deadlock the first attempt shipped, asserted as an absence.
+// The default path never waits, whatever the aria is doing.
 func TestSetDoesNotWaitByDefaultDuringAToolRound(t *testing.T) {
 	bt := &blockingSteeringTool{started: make(chan struct{}), release: make(chan struct{})}
 	reg := tool.NewRegistry()
@@ -68,8 +61,7 @@ func TestSetDoesNotWaitByDefaultDuringAToolRound(t *testing.T) {
 	waitTurnDone(t, frames)
 }
 
-// And the opt-in path answers with the writer's verdict once the round
-// boundary is reached, rather than with "queued".
+// The opt-in path answers with the writer's verdict.
 func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	bt := &blockingSteeringTool{started: make(chan struct{}), release: make(chan struct{})}
 	reg := tool.NewRegistry()
@@ -109,11 +101,7 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 		got <- result{applied, err}
 	}()
 
-	// IT MUST ANSWER NOW, WITH THE ROUND STILL IN FLIGHT. This assertion is
-	// the inverse of the one it replaces. A set used to ride the figaro's
-	// inbox and be applied at a round boundary, so a caller waiting for the
-	// verdict waited for the tool; the form has its own actor and the figaro
-	// is no longer between them.
+	// It must answer with the round still in flight: the form has its own actor.
 	select {
 	case r := <-got:
 		require.NoError(t, r.err)
@@ -132,10 +120,7 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	require.Equal(t, "awaited", *v)
 }
 
-// A CANCELLED CONTEXT NO LONGER REFUSES A SET, because nothing waits. The
-// write is applied by the form's actor before the call returns, so there is
-// no window in which a caller's patience can expire -- and refusing here
-// would lose a write for a reason that no longer exists.
+// A cancelled context does not refuse a set: nothing waits.
 func TestACancelledContextStillApplies(t *testing.T) {
 	cb, _ := form.Open("")
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})

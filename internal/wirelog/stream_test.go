@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-// The whole point of a stream record: a websocket never touches
-// http.RoundTripper, so before this the ledger showed nothing at all for a
-// provider that streams. One record, with the shape of the stream in it.
 func TestStreamRecordsShapeOnFinish(t *testing.T) {
 	logs := captureLog(t)
 
@@ -47,15 +44,12 @@ func TestStreamRecordsShapeOnFinish(t *testing.T) {
 		`"stream_argument_bytes":64`,
 		`"stream_argument_unmatched":1`,
 		`"stream_event_response.created":1`,
-		// an unmatched argument delta is a corrupted tool call, not routine
 		`"level":"WARN"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("record missing %s:\n%s", want, got)
 		}
 	}
-	// Timings: something must have been recorded for the first event, the
-	// first tool-shaped event, and the first argument fragment.
 	var rec map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(got)), &rec); err != nil {
 		t.Fatalf("record is not one JSON object: %v\n%s", err, got)
@@ -67,8 +61,6 @@ func TestStreamRecordsShapeOnFinish(t *testing.T) {
 	}
 }
 
-// A clean stream is INFO, so there is something to compare a broken one
-// against. Same reason a healthy HTTP round-trip is recorded.
 func TestStreamCleanFinishIsInfo(t *testing.T) {
 	logs := captureLog(t)
 	s := BeginStream(context.Background(), "aaaa1111", StreamMethodWS, "wss://x/y")
@@ -79,9 +71,7 @@ func TestStreamCleanFinishIsInfo(t *testing.T) {
 	}
 }
 
-// The rule this package exists under: a websocket error routinely quotes the
-// frame it choked on, and that frame carries the model's output and sometimes
-// the caller's token. Nothing the caller hands Finish may survive verbatim.
+// Nothing the caller hands Finish may survive verbatim.
 func TestStreamNeverLeaksSecretsOrPayload(t *testing.T) {
 	logs := captureLog(t)
 
@@ -113,8 +103,6 @@ func TestStreamNeverLeaksSecretsOrPayload(t *testing.T) {
 	if !strings.Contains(got, `"stream_unknown_events":1`) {
 		t.Errorf("unknown event not counted:\n%s", got)
 	}
-	// The status arrived as "failed: <secret>"; only the recognized first
-	// token survives, and a status outside the set collapses to "other".
 	if !strings.Contains(got, `"stream_status":"failed"`) {
 		t.Errorf("status not reduced to its recognized token:\n%s", got)
 	}
@@ -123,8 +111,6 @@ func TestStreamNeverLeaksSecretsOrPayload(t *testing.T) {
 	}
 }
 
-// Event type names come off the wire. Without a declared vocabulary the
-// per-type breakdown keeps buckets, never the provider's words.
 func TestStreamKeepsOnlyDeclaredEventTypes(t *testing.T) {
 	captureLog(t)
 	s := BeginStream(context.Background(), "aaaa1111", StreamMethodWS, "wss://x/y",
@@ -152,8 +138,6 @@ func TestStreamKeepsOnlyDeclaredEventTypes(t *testing.T) {
 	}
 }
 
-// The terminal status is metadata: a fixed set, not whatever string a
-// provider (or an error formatted into one) hands over.
 func TestStreamStatusIsAClosedSet(t *testing.T) {
 	for in, want := range map[string]string{
 		"ok":                     "ok",
@@ -181,8 +165,6 @@ func TestStreamStatusIsAClosedSet(t *testing.T) {
 	}
 }
 
-// A stream is the case a log cannot express: it is open for minutes and a
-// record only exists once it is over. The running row is the diagnostic.
 func TestStreamIsVisibleWhileRunning(t *testing.T) {
 	captureLog(t)
 
@@ -216,8 +198,6 @@ func TestStreamIsVisibleWhileRunning(t *testing.T) {
 	}
 }
 
-// Providers defer Finish and also finish explicitly on the error path. Two
-// records for one attempt would double-count every stream in the ledger.
 func TestStreamFinishIsIdempotentAndClosesTheRecord(t *testing.T) {
 	logs := captureLog(t)
 
@@ -225,8 +205,6 @@ func TestStreamFinishIsIdempotentAndClosesTheRecord(t *testing.T) {
 	s.Event("a", 10)
 	s.Finish("failed", io.ErrUnexpectedEOF)
 	s.Finish("ok", nil)
-	// Late stragglers from a cancelled read loop must not mutate a closed
-	// record, and must not resurrect the in-flight row.
 	s.Event("b", 10)
 	s.UnknownEvent()
 	s.ToolStart()
@@ -256,8 +234,6 @@ func TestStreamFinishIsIdempotentAndClosesTheRecord(t *testing.T) {
 	}
 }
 
-// The read loop and the finisher are different goroutines; nothing here may
-// race or lose a count. Run under -race.
 func TestStreamConcurrentEventsAreCountedExactly(t *testing.T) {
 	captureLog(t)
 
@@ -273,7 +249,6 @@ func TestStreamConcurrentEventsAreCountedExactly(t *testing.T) {
 			}
 		}()
 	}
-	// Outstanding snapshots the same stream while it is being written.
 	stop := make(chan struct{})
 	go func() {
 		for {
@@ -298,7 +273,6 @@ func TestStreamConcurrentEventsAreCountedExactly(t *testing.T) {
 	s.Finish("ok", nil)
 }
 
-// Two goroutines racing to Finish must still produce one record.
 func TestStreamConcurrentFinishWritesOneRecord(t *testing.T) {
 	logs := captureLog(t)
 	s := BeginStream(context.Background(), "aaaa1111", StreamMethodWS, "wss://x/y")
@@ -313,8 +287,6 @@ func TestStreamConcurrentFinishWritesOneRecord(t *testing.T) {
 	}
 }
 
-// A provider that renames its events every frame must not grow the process's
-// memory. Cardinality is bounded; the overflow is counted, not kept.
 func TestStreamEventTypeCardinalityIsBounded(t *testing.T) {
 	captureLog(t)
 	s := BeginStream(context.Background(), "aaaa1111", StreamMethodWS, "wss://x/y")
@@ -358,9 +330,6 @@ func TestErrorClass(t *testing.T) {
 		{"eof", io.EOF, "eof"},
 		{"closed", net.ErrClosed, "closed"},
 		{"provider code", codedError{"ws_protocol_error"}, "ws_protocol_error"},
-		// A code is one word: anything past the first non-identifier rune is
-		// dropped rather than transliterated, so a message passed as a code
-		// cannot survive in pieces.
 		{"provider code sanitized", codedError{"bad_frame: Bearer sk-live-XYZ"}, "bad_frame"},
 		{"provider code empty falls through", codedError{""}, "wirelog.codederror"},
 	} {
@@ -369,13 +338,10 @@ func TestErrorClass(t *testing.T) {
 		}
 	}
 
-	// The default class is a Go type name, never the message.
 	err := errors.New("Authorization: Bearer sk-live-XYZ")
 	if got := ErrorClass(err); strings.Contains(got, "sk-live") || strings.Contains(got, "bearer") {
 		t.Fatalf("error text survived classification: %q", got)
 	}
-	// net.Error timeouts are their own diagnosis: a stalled socket is not a
-	// refused one.
 	if got := ErrorClass(&net.DNSError{IsTimeout: true}); got != "net_timeout" {
 		t.Errorf("timeout class = %q", got)
 	}
@@ -386,12 +352,10 @@ func TestSanitizeEndpoint(t *testing.T) {
 		"wss://user:pw@host/v1/stream?token=abc#frag": "wss://host/v1/stream",
 		"wss://host:8443/v1/stream":                   "wss://host:8443/v1/stream",
 		"":                                            "",
-		// Anything that is not scheme://host/path is refused whole: a
-		// textual strip is where a credential survives.
-		"host/v1?x=1":            InvalidEndpoint,
-		"mailto:user:pw@host":    InvalidEndpoint,
-		"://token@host/x":        InvalidEndpoint,
-		"wss://host/x\x7f?t=abc": InvalidEndpoint,
+		"host/v1?x=1":                                 InvalidEndpoint,
+		"mailto:user:pw@host":                         InvalidEndpoint,
+		"://token@host/x":                             InvalidEndpoint,
+		"wss://host/x\x7f?t=abc":                      InvalidEndpoint,
 	} {
 		if got := SanitizeEndpoint(in); got != want {
 			t.Errorf("SanitizeEndpoint(%q) = %q, want %q", in, got, want)
@@ -399,8 +363,6 @@ func TestSanitizeEndpoint(t *testing.T) {
 	}
 }
 
-// A nil Stream is what a provider holds when diagnostics are off. Every
-// method has to tolerate it, or the observer becomes a crash site.
 func TestNilStreamIsInert(t *testing.T) {
 	var s *Stream
 	s.RequestBytes(1)
@@ -414,8 +376,6 @@ func TestNilStreamIsInert(t *testing.T) {
 	}
 }
 
-// BeginStream falls back to the aria already on the context, so a caller that
-// forgot to pass one still gets an attributed row.
 func TestBeginStreamTakesAriaFromContext(t *testing.T) {
 	captureLog(t)
 	s := BeginStream(WithAria(context.Background(), "ctxaria1"), "", "", "wss://x/y")

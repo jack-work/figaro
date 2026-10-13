@@ -1,11 +1,5 @@
 package angelus
 
-// The listing: one snapshot of the tree per request, enriched per aria.
-//
-// Split out of protocol.go, which had grown to 2,011 lines and answered every
-// question at once. Same package, same behaviour: only the reader's job
-// changes. plans/api-coherence.md step 5.
-
 import (
 	"context"
 	"encoding/json"
@@ -20,10 +14,8 @@ type listEnrichment struct {
 	ariaID string
 }
 
-// list merges live and dormant arias.
+// list never opens IR or folds form history: it reads sidecars and one tree snapshot.
 func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	// IDsOnly skips the per-aria form + node fills (the slow part): used
-	// by completion, which only needs the ids. Tolerant of nil/empty params.
 	var req rpc.ListRequest
 	_ = json.Unmarshal(params, &req)
 
@@ -58,9 +50,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		result = append(result, entry)
 	}
 
-	// Snapshot the tree once per request. Ordinary lists need conversation
-	// nodes only; global listings also need the ceremonial anchors. ID-only
-	// completion skips vectors and anchors entirely.
 	var nodeList []store.NodeView
 	nodeByID := map[string]store.NodeView{}
 	var conversationIDs []string
@@ -68,7 +57,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		switch {
 		case req.IDsOnly && !req.Global:
 			conversationIDs = h.angelus.Backend.ConversationIDs()
-			// Forms complete everywhere an id does: attend, kill, set --id.
 			for _, f := range h.angelus.Backend.Forms() {
 				conversationIDs = append(conversationIDs, f.ID)
 			}
@@ -87,7 +75,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Dormant conversation trunks (not currently registered/live).
 	for _, id := range conversationIDs {
 		if _, ok := seen[id]; ok {
 			continue
@@ -102,9 +89,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				entry.CacheReadTokens = meta.CacheReadTokens
 				entry.CacheWriteTokens = meta.CacheWriteTokens
 			}
-			// Recency comes from figwal, not the sidecar: the newest record
-			// timestamp anywhere in the node, read from the store WITHOUT
-			// waking anything.
 			entry.LastActive = h.angelus.Backend.LastTS(id)
 		}
 		result = append(result, entry)
@@ -116,9 +100,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Global: also surface the ceremonial anchors: the null genesis trunk and
-	// every versioned outfit: that the conversation filter above skips.
-	// fillFromNode below stamps their Kind/Outfit/Version/Parent.
 	if req.Global {
 		for _, n := range nodeList {
 			if n.Kind == conversationKind {
@@ -130,11 +111,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			seen[n.ID] = struct{}{}
 			entry := rpc.FigaroInfoResponse{ID: n.ID, State: "anchor", BoundPIDs: boundPIDs[n.ID]}
 			if n.Kind == string(store.KindForm) {
-				// A form is a live row, not a ceremonial anchor: it has
-				// recency (figwal LastTS, wake-free, a form has nothing to
-				// wake) and possibly a name and a casting (role) target,
-				// both read from its folded state. Forms are few; the fold
-				// is the same one `fig form <id>` performs.
 				entry.State = "form"
 				entry.LastActive = h.angelus.Backend.LastTS(n.ID)
 				if snap, err := h.angelus.Backend.FormState(n.ID); err == nil {
@@ -150,10 +126,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Tree position for every entry (live + dormant), from the snapshot -
-	// and the outfit columns, which come from the stump and from nowhere else.
-	// vers memoizes the re-resolve per outfit; it lives here because this pass
-	// is single-threaded, unlike the metadata fill above.
+	// vers memoizes the re-resolve per outfit; this pass is single-threaded,
+	// unlike the metadata fill.
 	if !req.IDsOnly {
 		h.enrichList(result, enrichments)
 		vers := map[string][2]string{}
@@ -166,16 +140,10 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.ListResponse{Figaros: result}, nil
 }
 
-// ttlLister is the backend's half of the lifetime report: the deadline set the
-// sweep already maintains, keyed by node id.
 type ttlLister interface {
 	TTLEntries() []store.TTLEntry
 }
 
-// fillTTL stamps the stated lifetime and its deadline onto every row that has
-// one. The set is held in memory by the backend and covers arias and forms
-// alike, so this is one map build and a lookup per row rather than a sidecar
-// read per row.
 func (h *handlers) fillTTL(result []rpc.FigaroInfoResponse) {
 	lister, ok := h.angelus.Backend.(ttlLister)
 	if !ok {
@@ -216,7 +184,6 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 				if meta != nil {
 					h.fillFromMeta(meta, entry)
 				}
-				// Recency from figwal, sidecar-free, wake-free.
 				entry.LastActive = h.angelus.Backend.LastTS(task.ariaID)
 			}
 		}()
@@ -246,9 +213,6 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	}
 }
 
-// fillFromNode adds the fork-tree position (vector/trunk/parent/branched-at)
-// from the tree. The tree is snapshotted by the caller (once per request)
-// and indexed by id, so this is a map lookup.
 func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string][2]string, entry *rpc.FigaroInfoResponse) {
 	n, ok := nodes[entry.ID]
 	if !ok {
@@ -265,13 +229,8 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)
 		return
 	}
-	// A conversation's outfit is the stump it was BORN under, carried down the
-	// lineage by the topology walk -- not `system.outfit_name`, which is the
-	// agent's own mutable copy, and not the presentation parent, which a
-	// promote moves. Both were live lies: one `set` renamed an aria's outfit in
-	// every listing and, because this column is what the version is
-	// re-resolved against, reported an unchanged outfit as stale in the same
-	// breath.
+	// The outfit is the stump the aria was born under, not the mutable
+	// system.outfit_name and not the presentation parent a promote moves.
 	if n.Outfit != "" {
 		entry.OutfitName = n.Outfit
 		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)

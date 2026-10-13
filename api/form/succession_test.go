@@ -10,8 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// A key that is a proper prefix of another, written deliberately: succession
-// is prose AND a namespace of sub-notes.
+// A key that is a proper prefix of another.
 func TestParentAndChildKeysBothSurvive(t *testing.T) {
 	src := map[string]json.RawMessage{
 		"succession":           json.RawMessage(`"the protocol"`),
@@ -25,7 +24,7 @@ func TestParentAndChildKeysBothSurvive(t *testing.T) {
 		assert.JSONEq(t, string(want), string(got), k)
 	}
 
-	// And across a reload, which is where the shape has to agree with itself.
+	// And across a reload.
 	raw, err := json.Marshal(s)
 	require.NoError(t, err)
 	var back form.Snapshot

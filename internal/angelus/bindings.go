@@ -11,8 +11,7 @@ import (
 	"strconv"
 )
 
-// bindingEntry is one persisted PID->figaro binding. StartTime
-// detects PID reuse (from /proc/<pid>/stat field 22).
+// StartTime detects PID reuse.
 type bindingEntry struct {
 	PID       int    `json:"pid"`
 	FigaroID  string `json:"figaro_id"`
@@ -28,8 +27,7 @@ type bindingsFile struct {
 // the session leader. A mismatch is skipped, not translated.
 const bindingsVersion = 2
 
-// SaveBindings persists PID->figaro bindings atomically, sorted by
-// (aria, pid) so identical state writes identical bytes.
+// SaveBindings writes atomically, sorted so identical state writes identical bytes.
 func SaveBindings(r *Registry, path string) error {
 	if r == nil {
 		return fmt.Errorf("nil registry")
@@ -75,12 +73,10 @@ func SaveBindings(r *Registry, path string) error {
 	return nil
 }
 
-// AriaRestorer prepares an aria to be bound. It used to revive one; it now
-// only opens its endpoint, because a rebind must not wake anything.
+// AriaRestorer opens an aria's endpoint; a rebind must not wake anything.
 type AriaRestorer func(ariaID string) error
 
-// RestoreBindings loads saved bindings, rebinds surviving PIDs,
-// and removes the file. Errors are logged and skipped.
+// RestoreBindings rebinds surviving PIDs and removes the file; errors are logged and skipped.
 func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	if r == nil {
 		return
@@ -136,7 +132,7 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	}
 }
 
-// pidStartTime returns field 22 from /proc/<pid>/stat. 0 on failure.
+// pidStartTime returns field 22 of /proc/<pid>/stat, 0 on failure.
 func pidStartTime(pid int) uint64 {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
@@ -146,7 +142,6 @@ func pidStartTime(pid int) uint64 {
 	if i < 0 || i+1 >= len(data) {
 		return 0
 	}
-	// starttime is the 20th token after the last ')'.
 	fields := bytes.Fields(data[i+1:])
 	if len(fields) < 20 {
 		return 0

@@ -1,5 +1,3 @@
-// Immutable AVL tree for form snapshots.
-
 package form
 
 import (
@@ -7,15 +5,13 @@ import (
 	"sort"
 )
 
-// ptree is an immutable, string-keyed ordered map of JSON values. The zero
-// ptree is a valid empty tree. Every method leaves the receiver untouched.
+// ptree is an immutable AVL map; the zero ptree is empty.
 type ptree struct {
 	root *node
 }
 
-// node is one SEGMENT of a path. It holds either a leaf value or a subtree,
-// never both: a key whose own name contains a dot is a single segment at its
-// level, which is what keeps skills.howto and skills.howto.md apart.
+// node is one path segment holding a leaf or a subtree, never both; a key
+// containing a dot is a single segment at its level.
 type node struct {
 	key    string
 	value  Value
@@ -27,10 +23,8 @@ type node struct {
 	size        int
 }
 
-// Len returns the number of entries. O(1).
 func (t ptree) Len() int { return nodeSize(t.root) }
 
-// Get looks up key. O(log n).
 func (t ptree) Get(key string) (Value, bool) {
 	for n := t.root; n != nil; {
 		switch {
@@ -45,13 +39,11 @@ func (t ptree) Get(key string) (Value, bool) {
 	return Value{}, false
 }
 
-// Has reports whether key is present.
 func (t ptree) Has(key string) bool {
 	_, ok := t.Get(key)
 	return ok
 }
 
-// Set returns a tree containing key bound to value. The receiver is unchanged.
 func (t ptree) Set(key string, value Value) ptree {
 	root := setNode(t.root, key, value)
 	if root == t.root {
@@ -60,7 +52,6 @@ func (t ptree) Set(key string, value Value) ptree {
 	return ptree{root: root}
 }
 
-// Delete returns a tree without key. An absent key returns the receiver.
 func (t ptree) Delete(key string) ptree {
 	root, found := deleteNode(t.root, key)
 	if !found {
@@ -69,17 +60,14 @@ func (t ptree) Delete(key string) ptree {
 	return ptree{root: root}
 }
 
-// Range visits entries in lexical key order, stopping when yield returns false.
 func (t ptree) Range(yield func(key string, value Value) bool) {
 	rangeNode(t.root, yield)
 }
 
-// All iterates entries in lexical key order.
 func (t ptree) All() iter.Seq2[string, Value] {
 	return func(yield func(string, Value) bool) { rangeNode(t.root, yield) }
 }
 
-// setEntry replaces the whole entry at key, preserving nothing of the old.
 func setEntry(n *node, e *node) *node {
 	if n == nil {
 		return &node{key: e.key, value: e.value, kids: e.kids, branch: e.branch, height: 1, size: 1}
@@ -95,7 +83,6 @@ func setEntry(n *node, e *node) *node {
 	return &out
 }
 
-// cloneWith copies n with new children, keeping its own entry.
 func cloneWith(n *node, left, right *node) *node {
 	out := *n
 	out.left, out.right = left, right
@@ -227,10 +214,8 @@ func nodeSize(n *node) int {
 	return n.size
 }
 
-// --- paths -----------------------------------------------------------------
-
-// entry finds the node a dotted path names, longest segment first so a key
-// whose own name contains a dot resolves to itself.
+// entry resolves longest segment first, so a key containing a dot resolves
+// to itself.
 func (t ptree) entry(path string) (*node, bool) {
 	cur, rest := t, path
 	for {
@@ -248,8 +233,6 @@ func (t ptree) entry(path string) (*node, bool) {
 	}
 }
 
-// lookupLongest returns the entry whose key is rest, or the longest key that
-// is a dotted prefix of it.
 func lookupLongest(n *node, rest string) *node {
 	var best *node
 	for n != nil {
@@ -270,8 +253,8 @@ func lookupLongest(n *node, rest string) *node {
 	return best
 }
 
-// setPath rebuilds only the nodes on the path, sharing every subtree it does
-// not touch. Where a segment lands on a leaf, the rest of the path stays whole.
+// setPath shares every subtree it does not touch. Where a segment lands on a
+// leaf, the rest of the path is stored whole beside it.
 func (t ptree) setPath(segs []string, v Value) ptree {
 	if len(segs) == 0 {
 		return t
@@ -282,9 +265,6 @@ func (t ptree) setPath(segs []string, v Value) ptree {
 	}
 	cur := lookupExact(t.root, head)
 	if cur != nil && !cur.branch {
-		// A leaf stands where a branch is wanted, so the rest of this key
-		// stays whole beside it rather than making the leaf unreachable.
-		// succession is prose and a namespace at once.
 		return ptree{root: setEntry(t.root, leafOrBranch(joinSegs(segs), v))}
 	}
 	var kids ptree
@@ -345,7 +325,6 @@ func joinSegs(segs []string) string {
 	return out
 }
 
-// leaves walks every addressable leaf in key order, yielding its dotted path.
 func (t ptree) leaves(prefix string, yield func(string, Value) bool) bool {
 	return rangeEntries(t.root, func(n *node) bool {
 		path := n.key
@@ -372,10 +351,8 @@ func rangeEntries(n *node, yield func(*node) bool) bool {
 	return rangeEntries(n.right, yield)
 }
 
-// leafOrBranch makes the entry a value stands for. An object becomes a
-// branch, so its fields are addressable and stay so across a reload: the
-// storage shape and the read shape must agree or a board would mean one thing
-// when written and another when opened.
+// leafOrBranch makes every object a branch, so the storage shape and the
+// read shape agree.
 func leafOrBranch(key string, v Value) *node {
 	members, isObj := v.members()
 	if !isObj {

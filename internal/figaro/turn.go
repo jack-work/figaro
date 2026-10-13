@@ -28,19 +28,17 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// busEventKind tags one ordered event from the provider Bus.
 type busEventKind int
 
 const (
-	evDelta     busEventKind = iota // text/thinking content delta
-	evToolStart                     // tool_invoke block opened
-	evToolArgs                      // tool_invoke partial argument JSON
-	evToolReady                     // tool_invoke arguments decoded
-	evFigaro                        // assembled message (provider appended it)
+	evDelta busEventKind = iota
+	evToolStart
+	evToolArgs
+	evToolReady
+	evFigaro
 )
 
-// busEvent is one provider Bus call, carried in order to the drain
-// loop so it can fold the open tail message single-threaded.
+// busEvent is one provider Bus call, carried in order so the drain loop folds the open tail single-threaded.
 type busEvent struct {
 	kind    busEventKind
 	content message.Content
@@ -53,11 +51,8 @@ type busEvent struct {
 	ack     chan error
 }
 
-// turnBus is the per-turn provider.Bus. events carries the ordered
-// stream the drain loop folds into the open tail; toolsReady feeds the
-// speculative dispatcher. events is blocking (no drop) so the open
-// message never loses content; toolsReady is best-effort (the post-stream
-// reconciliation re-dispatches any dropped call).
+// events blocks (no drop) so the open message never loses content; toolsReady is
+// best-effort, the post-stream reconciliation re-dispatches any dropped call.
 type turnBus struct {
 	events     chan busEvent
 	toolsReady chan message.Content
@@ -84,12 +79,7 @@ func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCach
 		cache = &copy
 	}
 	ack := make(chan error, 1)
-	// THE HAND-OVER IS Not raced against the cancellation IT REPORTS. This
-	// and nothing in the log to say why.
-	//
-	// A Plain send cannot hang here: the drain loop reads until bus.events is
-	// CLOSED, and it is closed after Send returns -- so the reader is alive
-	// for as long as a provider can still push.
+	// Cannot hang: the drain loop reads until events is closed, which happens after Send returns.
 	b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}
 	select {
 	case err := <-ack:
@@ -109,33 +99,27 @@ func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
 	b.events <- busEvent{kind: evToolArgs, id: toolCallID, partial: partialJSON}
 }
 
-// PushMessageEnd is a no-op under the log.* model: the stop reason rides
-// the appended message.Message (log.entry), so there is no separate
-// pre-append metadata frame.
+// PushMessageEnd is a no-op: the stop reason rides the appended message.
 func (b *turnBus) PushMessageEnd(string) {}
 
-// PushToolReady records the decoded invocation in the open message and
-// arms speculative dispatch.
+// PushToolReady arms speculative dispatch.
 func (b *turnBus) PushToolReady(call message.Content) {
 	b.events <- busEvent{kind: evToolReady, id: call.ToolCallID, name: call.ToolName, args: call.Arguments}
 	select {
 	case b.toolsReady <- call:
 	default:
-		// Buffer full: drop. driveOneRound re-dispatches any call in
-		// the appended assistant message that wasn't dispatched here.
+		// Buffer full: driveOneRound re-dispatches any call not dispatched here.
 	}
 }
 
-// runTurn drives one prompt to completion: user turn, provider.Send,
-// tool dispatch, repeat until done/interrupt/error.
+// runTurn drives one prompt to completion: provider.Send, tool dispatch, repeat.
 func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.mu.Lock()
 	a.lastActive = time.Now()
 	a.mu.Unlock()
 
-	// AN ORPHANED INVOKE IS Closed before the history IS ASSEMBLED, not only
-	// reached this point carrying one -- a fork taken over a dead tool call,
-	// Turn start is the safe moment: no round is in flight by definition.
+	// Turn start is the one moment no round is in flight, so an orphaned invoke
+	// (a fork over a dead tool call) is closed here, before history is assembled.
 	if a.backend != nil {
 		if n, err := a.backend.CloseOpenToolCalls(a.id); err != nil {
 			slog.Error("close orphaned tool calls at turn start", "aria", a.id, "err", err)
@@ -159,10 +143,6 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.interrupted = false
 	a.mu.Unlock()
 	a.turnRunning.Store(true)
-	// COMMITTING: the drain loop has this prompt and is appending it to the
-	// IR. It is the interstitial a one-shot turn.done cannot express, and the
-	// window a reader used to experience as latency -- their message was in
-	// neither the queue nor the transcript.
 	a.publishRuntime(rpc.RuntimeCommitting, "")
 	defer func() {
 		a.mu.Lock()
@@ -177,13 +157,11 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
-	// It is a message now, not a queued one. A delete aimed at it from here on
-	// is refused as committed rather than silently missing its target.
+	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
 	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)
 	a.startAssistantUnit()
 
-	// Drive: provider -> tools -> repeat.
 	allowSteering := false
 	for {
 		stop := a.driveOneRound(turnCtx, allowSteering)
@@ -194,24 +172,15 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	}
 }
 
-// appendUserPrompt persists one external prompt as its own canonical user
-// message and matching committed UI unit.
-//
-// steering distinguishes the two kinds of input, and the DRAIN is the only place
-// this prompt came off the queue. An inquiry opens a turn; a steer joins the one
-// already running. The field is persisted so a replayed log classifies the same
-// way it did live: but nothing outside this package ever supplies it.
+// appendUserPrompt persists one prompt as its own user message. steering is
+// persisted so a replayed log classifies the same way it did live.
 func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleInput,
 		Steering:  steering && prompt.text != "",
 		Timestamp: time.Now().UnixMilli(),
 	}
-	// The client's form input landed at SUBMIT time; what remains here is the
-	// harness's own write.
-	// Seed the mantra from the first user message's opening text, so every
-	// conversation has a stable title (the first n chars) without the agent
-	// having to set one. Only when unset, so it stays fixed to the opener.
+	// Seed the mantra from the first prompt, only when unset.
 	seed := map[string]json.RawMessage{}
 	if prompt.text != "" && a.formString("mantra") == "" {
 		mv, _ := json.Marshal(firstChars(prompt.text, 60))
@@ -219,8 +188,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	}
 	combined := form.Build(form.Snapshot{}, seed, nil)
 	if !combined.IsIdentity() {
-		// Durability precedes visibility: on a failed append the in-memory
-		// form is not advanced, so board and log agree after a restart.
+		// Durability precedes visibility: a failed append does not advance the in-memory form.
 		if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
 			slog.Error("turn form append", "aria", a.id, "err", err)
 			combined = form.Patch{}
@@ -232,15 +200,11 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {
-		// No segments: an event built directly (tests, internal submissions).
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
 	}
 	if len(msg.Content) > 0 {
-		// Only an inquiry opens a turn. A steer joins the exchange already in
-		// flight, so the counter must not move: otherwise the live turn id
-		// runs ahead of the one the projection derives, the client sees a new
-		// turn, and the turn being steered is abandoned mid-stream with its
-		// closing prose never rendered.
+		// Only an inquiry opens a turn; a steer joins the one in flight, or the live
+		// turn id runs ahead of the projection's and the client abandons the steered turn.
 		if !steering {
 			a.openTurn()
 		}
@@ -249,44 +213,18 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	if err != nil {
 		return store.Entry[message.Message]{}, err
 	}
-	// Kick expedites the store's background flush. It is a hint, not a
-	// barrier, a non-blocking channel send, and disk follows with bounded
-	// lag whether or not it is called: so its position buys a watching
-	// client no durability it would not otherwise have. It stays ahead of the
-	// broadcast because it costs ~50ns to have the flush already in flight
-	// when someone is told, and because the steering branch below RETURNS:
-	// anything moved past it is silently skipped for every steer.
-	// refreshMetrics stays here, AHEAD of OpenInquiry, deliberately. Every
-	// aria-server broadcast is stamped with sessionMetrics() by the
-	// subscription in NewAgent, so the frame that first carries the user's
-	// question is also the frame that carries the footer's context count and
-	// the mantra this very prompt just seeded. Refreshing first is what makes
-	// that frame describe a world which already contains the question.
+	// refreshMetrics precedes OpenInquiry so the frame carrying the question also
+	// carries the context count and the mantra this prompt seeded.
 	a.refreshMetrics()
 
 	if prompt.text != "" {
-		// Commit the user message directly: no Open+Update+Close ping-pong.
-		// The old path briefly opened a live region for the user, which the
-		// client rendered as an in-flight message and then immediately appended,
-		// producing a visible flicker between send and durable commit. A direct
-		// Commit makes the message appear only when the transcript truly holds
-		// it: the aria frame carries {Role, Nodes} on the first hop and the
-		// client short-circuits to OnClosed with no OnLive event.
+		// Commit directly: an Open+Update+Close for the user message flickers on the client.
 		if a.proj != nil {
 			if steering {
-				// A steer joins the turn already in flight: no inquiry to record
-				// (that would overwrite the question being steered), and no node
-				// built here: startAssistantUnit keeps the steer inside the
-				// recomposed window so the PROJECTION emits its steering node.
-				// One producer of UI IR, not two: hand-building it here is what
+				// A steer records no inquiry and builds no node; the projection emits its steering node.
 				return entry, nil
 			}
-			// The inquiry is TEXT ON THE TURN, not a node: recording it is
-			// the whole of the prompt's UI IR. It broadcasts, so a watching
-			// client shows the question the instant it commits.
-			// Segments come off the MESSAGE, not the event: the message is what
-			// the projection will re-derive them from on a re-read, so live and
-			// re-read cannot tell two different stories about who asked.
+			// Segments come off the message, not the event, so live and re-read agree on who asked.
 			a.turnFirstLT = entry.LT
 			a.ariaSrv.OpenInquiry(a.turnID, prompt.text, a.openingFormDeltas(), a.projInquirySegments(msg)...)
 		}
@@ -295,20 +233,14 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 }
 
 func (a *Agent) startAssistantUnit() {
-	// The streaming region's boundary is fixed for the LIFETIME OF THE TURN -
-	// aria.Server.OpenTurn recomputes its base only when the turn id changes,
-	// because the producer is contracted to recompose the WHOLE region every
-	// frame so that a reopen replaces rather than appends.
+	// The region boundary is fixed for the turn: the producer recomposes the whole
+	// region every frame, so a reopen replaces rather than appends.
 	if a.turnStartTurn != a.turnID || a.turnStartLT == 0 {
 		a.turnStartTurn = a.turnID
 		a.turnStartLT = 0
 		if tail, ok := a.figLog.PeekTail(); ok {
 			a.turnStartLT = tail.FigaroLT
-			// Steers are the tail when this unit opens right after a drain, and a
-			// single drain can yield several. Back up past the whole trailing run
-			// so every one of them sits INSIDE the recomposed window (which is
-			// turnStartLT+1..) and the PROJECTION emits their steering nodes. The
-			// beyond the first and vanished entirely on the next recompose.
+			// Back up past the trailing run of steers so they sit inside the recomposed window.
 			for a.turnStartLT > 0 {
 				prev := a.figLog.ReadFrom(a.turnStartLT, 1)
 				if len(prev) == 0 || !turns.IsSteering(prev[0].Payload) {
@@ -328,16 +260,9 @@ func (a *Agent) startAssistantUnit() {
 	a.emitSnapshot(livedoc.RoleOutput, nil)
 }
 
-// driveOneRound runs one provider.Send + tool dispatch cycle. The
-// assistant reply streams as an open message that appends into a log
-// entry; if it called tools, their execution streams as an open
-// tool_result message that appends in turn. Returns true when the turn
-// is complete, false when another round is needed.
+// driveOneRound runs one provider.Send + tool dispatch cycle; true when the turn is complete.
 func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done bool) {
-	// The interrupt may have landed between rounds. Ending here says
-	// "interrupted", which is true; falling through would call the provider
-	// with a dead context and end the turn as "error: context canceled",
-	// which is the same event wearing a fault's clothes.
+	// An interrupt between rounds ends as "interrupted", not as a dead-context provider error.
 	if a.isInterrupted() {
 		if repaired, err := a.repairTurnTail(); err != nil {
 			a.reconcileAriaServer()
@@ -360,9 +285,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	if a.turn == nil {
 		a.turn = newTurnState()
 	}
-	// The form is authoritative: re-resolve the provider now, after
-	// this round's queued `set`s have been serviced, so a provider switch
-	// lands on the very next round instead of waiting for a restart.
+	// Re-resolve the provider after this round's sets, so a switch lands on the next round.
 	if err := a.syncProvider(); err != nil {
 		a.endTurn("error: " + err.Error())
 		return true
@@ -373,9 +296,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 	bus := newTurnBus(turnCtx)
-	// THINKING: a provider round is in flight. This is the only state the
-	// client's thinking spinner is allowed to animate on, and it is now a fact
-	// the daemon reports rather than one the client assumed at submit time.
+	// Thinking is the only state the client's spinner animates on.
 	a.publishRuntime(rpc.RuntimeThinking, "")
 	in := provider.SendInput{
 		AriaID:    a.id,
@@ -404,14 +325,11 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		sendDone <- err
 	}()
 
-	// Provisional index for the assistant message. The provider's log facade
-	// reserves this LT; the drain loop performs the canonical append.
+	// The provider's log facade reserves this LT; the drain loop performs the append.
 	assistantIdx := a.nextIndex()
 
-	// Speculative tool dispatcher: PushToolReady kicks each tool off
-	// immediately, in parallel with the LLM stream. Tool lifecycle events
-	// flow back on toolEvents for IR assembly only: not the wire; the
-	// running spinner animates locally on the consumer (zero traffic).
+	// Speculative dispatch: tools start in parallel with the stream. Lifecycle
+	// events feed IR assembly only, not the wire.
 	toolEvents := make(chan toolEvent, 64)
 	spec := newSpecDispatcher(toolEvents)
 	specDone := make(chan struct{})
@@ -425,11 +343,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 	}()
 
-	// Phase 1: fold the assistant stream into an in-flight message,
-	// recompose the turn blob on each change, and emit a splice. Once the
-	// provider completes (evFigaro), checkpoint and append the assistant on the
-	// drain loop, then drop the in-flight copy so compose reads it from the log
-	// instead: otherwise it would be counted twice.
+	// Fold the stream into an in-flight message; once the provider completes,
+	// append it and drop the in-flight copy so compose does not count it twice.
 	asmMsg := newAsm(message.RoleOutput)
 	if a.turn != nil {
 		a.turn.asm = asmMsg
@@ -454,10 +369,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				a.refreshMetrics()
 				metricsReady = true
 			}
-			// Structural changes (a tool opens, its args decode, the turn
-			// completes) emit immediately; high-frequency text/arg streaming is
-			// coalesced to ~11fps by emitLive so 1000 token deltas don't
-			// trigger 1000 full recompose+socket frames.
+			// Structural changes emit immediately; text/arg deltas are coalesced by emitLive.
 			force := false
 			switch ev.kind {
 			case evDelta:
@@ -471,9 +383,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				a.openToolTiming(ev.id, time.Now().UnixMilli())
 				force = true
 			case evToolArgs:
-				// Streamed unconditionally, though a collapsed tool block never
-				// draws them. If the bytes ever matter, drop them here for
-				// unexpanded nodes and catch up on demand when one is opened.
 				a.argPartials[ev.id] += ev.partial
 			case evToolReady:
 				asmMsg.toolReady(ev.id, ev.name, ev.args)
@@ -482,16 +391,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				force = true
 			}
 			var ackErr error
-			// AN Interrupted turn still accepts the provider'S MESSAGE. A
-			// provider that closes early hands over what its OWN accumulator
-			// holds, with its native payload; figaro's repair can only
-			// synthesise the text, so the translation of a partial message had
-			// to be re-encoded and lost every provider-native block --
-			// thinking signatures, encrypted reasoning. Taking the provider's
-			// message here means the interrupt path and the normal path
-			// produce a message the same way, differing only in the stop
-			// reason. A provider that pushes nothing on cancellation is
-			// unaffected: repairTurnTail still synthesises for it.
+			// An interrupted turn still takes the provider's message: it carries native
+			// blocks (thinking signatures) that repair can only synthesise as text.
 			if ev.kind == evFigaro && roundErr == nil {
 				staged := store.Entry[message.Message]{Payload: ev.msg}
 				a.stageAssistant(&staged)
@@ -503,10 +404,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 					if a.turn != nil {
 						a.turn.committed = true
 					}
-					// PREDICTED before the provider ran -- the provider's
-					// checked the guess -- and a prediction that can be wrong
-					// is a prediction somebody has to check. There is nothing
-					// left to disagree with.
 					assistantIdx = appendedEntry.LT
 					if err := a.commitAssistantCache(assistantIdx, ev.cache); err != nil {
 						roundErr = err
@@ -552,8 +449,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			}
 		case te := <-toolEvents:
 			toolBuf = append(toolBuf, te)
-			// Stream speculative tool output live (bounded tail via the
-			// governor) under its still-in-flight heading, coalesced.
 			switch te.kind {
 			case toolBegin:
 				a.startToolTiming(te.id, te.at)
@@ -619,7 +514,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 
-	// Durable tail: the drain loop appended the provider's assistant message.
 	// Recompose from the durable tail.
 	var lastFig message.Message
 	appendedEntry, appended := a.appendedTail(assistantIdx, message.RoleOutput)
@@ -701,10 +595,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 	a.waitWithForks(specDone)
 
-	// Phase 2: run the tools (IR assembly), append the tool_result turn,
-	// and recompose so completed tools show their clamped output. The
-	// spinner animates locally between here and the append: no wire
-	// traffic until the result lands.
+	// Run the tools, append the tool_result turn, recompose.
 	a.publishRuntime(rpc.RuntimeTooling, "")
 	resultTic, collectErr := a.collectToolResults(turnCtx, calls, spec, toolEvents, toolBuf)
 	if collectErr != nil {
@@ -765,16 +656,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	return false
 }
 
-// appendSteeringPrompts closes the completed tool round, persists each queued
-// prompt as its own user message, and opens a fresh assistant unit for the
-// next provider round.
+// appendSteeringPrompts persists queued prompts as one user message and opens a fresh assistant unit.
 func (a *Agent) appendSteeringPrompts() error {
-	// AN Interrupted turn does not take the queue with IT. Draining here after
-	// the cancel is how queued messages got "received", appended to the log,
-	// visible on screen, and then never answered: the round that absorbed
-	// them opened with an already-cancelled context, so it died immediately
-	// and took them down with it. They stay queued instead, and the next turn
-	// (a fresh one, opened by the drain loop) asks them properly.
+	// An interrupted turn does not take the queue with it: a round opened on a
+	// cancelled context dies and the prompts go unanswered. The next turn asks them.
 	if a.isInterrupted() {
 		return nil
 	}
@@ -792,29 +677,14 @@ func (a *Agent) appendSteeringPrompts() error {
 	}
 	if split {
 		a.startAssistantUnit()
-		// SAY IT NOW. A steer is a STRUCTURAL change -- a durable record
-		// appeared -- and the rule for those is that they emit immediately.
-		// This one did not: appendUserPrompt deliberately builds no node for a
-		// steer (the projection owns that), so the steering node reached the
-		// client only when something ELSE triggered a recompose, which is the
-		// next provider round's first streamed chunk.
-		//
-		// So the message was durably in the conversation and invisible for the
-		// length of a provider's time-to-first-token. Measured by a reader: the
-		// queue row clears and the text lands seconds later.
-		//
-		// It costs nothing that is not already computed. The steer is in the
-		// window the instant it is appended; composing is a pure function of
-		// that window, and streaming recomposes far more often on chunks.
-		// inflight is nil here, which is the branch that cannot double-render.
+		// A steer is structural: emit now, or the node waits for the next round's first chunk.
 		a.emitDelta(a.composeTurn(nil))
 	}
 	return nil
 }
 
 func (a *Agent) prepareProviderRound() error {
-	// Same rule as appendSteeringPrompts, at the other drain site: a cancelled
-	// turn must not lift prompts it cannot answer.
+	// Same rule as appendSteeringPrompts: a cancelled turn must not lift prompts.
 	if a.isInterrupted() {
 		return nil
 	}
@@ -822,8 +692,7 @@ func (a *Agent) prepareProviderRound() error {
 		progressed := a.serviceSets()
 		prompts := a.inbox.TakeReadyUserPrompts()
 		if len(prompts) == 0 {
-			// A serviced set may have uncovered another behind it; loop again
-			// before concluding the queue is drained.
+			// A serviced set may have uncovered another prompt; loop before concluding.
 			if progressed {
 				continue
 			}
@@ -842,7 +711,7 @@ func (a *Agent) prepareProviderRound() error {
 		}
 		if split {
 			a.startAssistantUnit()
-			a.emitDelta(a.composeTurn(nil)) // structural: see appendSteeringPrompts
+			a.emitDelta(a.composeTurn(nil))
 		}
 	}
 }
@@ -856,16 +725,14 @@ func hasRenderablePrompt(prompts []event) bool {
 	return false
 }
 
-// appendPromptEvents drains queued prompts INTO A RUNNING TURN, as ONE message.
+// appendPromptEvents drains queued prompts into a running turn as one message.
 func (a *Agent) appendPromptEvents(prompts []event) error {
 	merged, ok := mergePromptEvents(prompts)
 	if !ok {
 		return nil
 	}
 	if _, err := a.appendUserPrompt(merged, true); err != nil {
-		// All-or-nothing: the form write precedes the IR append, so do not
-		// replay it when restoring. One message means one failure unit: there is
-		// no partial tail to prepend.
+		// The form write precedes the IR append; do not replay it when restoring.
 		for i := range prompts {
 			prompts[i].form = nil
 		}
@@ -874,14 +741,11 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 		}
 		return err
 	}
-	// Every id in the batch is now part of one durable message.
 	a.inbox.MarkCommitted(prompts)
 	return nil
 }
 
-// mergePromptEvents folds a drained batch into one prompt: texts joined by a
-// newline in queue order, form input merged in the same order so a later
-// prompt's value wins. Reports false when the batch is empty.
+// mergePromptEvents folds a batch into one prompt; a later prompt's form value wins.
 func mergePromptEvents(prompts []event) (event, bool) {
 	if len(prompts) == 0 {
 		return event{}, false
@@ -896,24 +760,18 @@ func mergePromptEvents(prompts []event) (event, bool) {
 			texts = append(texts, p.text)
 		}
 		out.form = mergeFormInput(out.form, p.form)
-		// Concatenated, never flattened: the fold is exactly where attribution
-		// of three attributed segments, not one anonymous paragraph.
 		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
 		}
 	}
-	// A BLANK line between them, not a single newline. Two reasons, and they
-	// point the same way. On screen, prose is rendered as markdown, where a
-	// lone newline is a SOFT break: glamour rejoins the lines and three
-	// like one garbled sentence. And for the model, a blank line is the
+	// A blank line, not a newline: markdown rejoins a soft break.
 	out.text = strings.Join(texts, "\n\n")
 	return out, true
 }
 
-// senderRuns folds attributed segments into one Content per RUN of consecutive
-// segments sharing a sender.
+// senderRuns folds consecutive segments sharing a sender into one Content.
 func senderRuns(segments []promptSegment) []message.Content {
 	var out []message.Content
 	for _, seg := range segments {
@@ -948,7 +806,6 @@ func mergeFormInput(a, b *rpc.FormInput) *rpc.FormInput {
 		}
 	}
 	if a.Patch != nil || b.Patch != nil {
-		// Two patches applied in series ARE one patch: that is Merge, and it
 		var merged form.Patch
 		for _, src := range []*rpc.FormPatch{a.Patch, b.Patch} {
 			if src == nil {
@@ -961,11 +818,8 @@ func mergeFormInput(a, b *rpc.FormInput) *rpc.FormInput {
 	return out
 }
 
-// collectToolResults dispatches every call (idempotent), waits for each
-// to finish, and assembles the tool_result turn in canonical (calls)
-// order. It emits nothing on the wire: the blob is recomposed by the
-// caller after the turn is appended. toolBuf holds events that arrived
-// during phase 1.
+// collectToolResults waits for every call and assembles the tool_result turn in
+// call order; it emits nothing on the wire. toolBuf holds phase-1 events.
 func (a *Agent) collectToolResults(
 	turnCtx context.Context,
 	calls []message.Content,
@@ -981,14 +835,11 @@ func (a *Agent) collectToolResults(
 	}
 
 	outcomes := make(map[string]toolOutcome, len(calls))
-	// terminal outcomes are needed for canonical result assembly here.
 	for _, te := range toolBuf {
 		if te.kind == toolEnd {
 			outcomes[te.id] = te.outcome
 		}
 	}
-	// Live phase-2 events: stream output under the running tool, collect
-	// outcomes.
 toolLoop:
 	for len(outcomes) < len(expect) {
 		var te toolEvent
@@ -1060,11 +911,7 @@ func (a *Agent) assembleToolResults(
 	total := a.toolImageBudget()
 	budget := total
 	for i, tc := range calls {
-		// it in the shape the API documents for exactly this case, an
-		// is_error result whose content is {"INVALID_JSON": "<what arrived>"}
-		//, and hand back the bytes rather than a description of them. That is
-		// the whole repair path: one round trip, and the model resends the
-		// call it owed us.
+		// Malformed arguments are answered in the API's documented shape so the model resends the call.
 		if raw, bad := message.MalformedArgsOf(tc); bad {
 			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName,
 				message.InvalidJSONResult(raw), true)
@@ -1089,8 +936,7 @@ func (a *Agent) assembleToolResults(
 		}
 		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr)
 	}
-	// On interrupt, any tool that never produced a result gets a
-	// synthetic error so the tool_use/tool_result pairing stays intact.
+	// Unfinished tools get a synthetic error so tool_use/tool_result pairing holds.
 	if a.isInterrupted() {
 		for i, tc := range calls {
 			if results[i].Type == "" {
@@ -1108,19 +954,11 @@ func (a *Agent) assembleToolResults(
 	return tic
 }
 
-// toolImageBudget is the base64 ceiling for ALL tool imagery on one
-// tool_result tic, derived from the configured WAL segment size.
+// toolImageBudget is the base64 ceiling for all tool imagery on one tool_result tic.
 func (a *Agent) toolImageBudget() int { return a.settings.InlineImageBudget() }
 
-// harvestToolImages pulls the image blocks out of one tool's outcome, tags
-// them with the call that produced them, and reports the budget it spent plus
-// a note for any image it had to alter or could not carry. Images ride along
-// even when the tool errored: a screenshot attached to a failure is usually
-// the whole point.
-//
-// An image is refitted when it does not fit the budget left on this message OR
-// when it is over what a provider accepts in a request carrying many images:
-// a 400 that no later turn could get past.
+// harvestToolImages keeps images even from an errored tool and refits any that
+// exceed the message budget or a provider's per-request limit.
 func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int) (kept []message.Content, notes []string, spent int) {
 	for _, c := range oc.content {
 		if c.Type != message.ContentImage || c.Data == "" {
@@ -1137,8 +975,7 @@ func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int)
 		}
 		fitted, note, ok := refitToolImage(c, left)
 		if !ok {
-			// Say WHY, precisely. "Exceeds the budget" would be a lie when the
-			// reasons from what it is told.
+			// Say which limit was hit; the model reasons from the note.
 			notes = append(notes, fmt.Sprintf(
 				"\n[image omitted: %s of base64 does not fit the %s still free in this message's %s image budget]",
 				tool.FormatSize(len(c.Data)), tool.FormatSize(maxInt(left, 0)), tool.FormatSize(total)))
@@ -1151,9 +988,7 @@ func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int)
 	return kept, notes, spent
 }
 
-// refitToolImage re-encodes one already-inlined image to fit the bytes still
-// free on this record, and returns the note that keeps the model's coordinates
-// honest.
+// refitToolImage re-encodes one image to fit limit and returns the coordinate note.
 func refitToolImage(c message.Content, limit int) (tool.FittedImage, string, bool) {
 	raw, err := base64.StdEncoding.DecodeString(c.Data)
 	if err != nil {
@@ -1181,7 +1016,6 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// nextIndex returns the LT the next appended message will occupy.
 func (a *Agent) nextIndex() uint64 {
 	if e, ok := a.figLog.PeekTail(); ok {
 		return e.LT + 1
@@ -1189,8 +1023,7 @@ func (a *Agent) nextIndex() uint64 {
 	return 1
 }
 
-// appendedTail returns the durable tail entry iff it sits at expectIdx
-// with the expected role: i.e. the provider actually appended it.
+// appendedTail reports the tail entry iff the provider appended it at expectIdx.
 func (a *Agent) appendedTail(expectIdx uint64, role message.Role) (store.Entry[message.Message], bool) {
 	e, ok := a.figLog.PeekTail()
 	if !ok || e.LT != expectIdx || e.Payload.Role != role {
@@ -1199,7 +1032,6 @@ func (a *Agent) appendedTail(expectIdx uint64, role message.Role) (store.Entry[m
 	return e, true
 }
 
-// toolEventKind tags one tool execution lifecycle event.
 type toolEventKind int
 
 const (
@@ -1208,18 +1040,16 @@ const (
 	toolEnd
 )
 
-// toolEvent carries one tool's execution lifecycle back to the drain
-// loop, which folds it into the open tool_result message.
+// toolEvent carries one tool's lifecycle back to the drain loop.
 type toolEvent struct {
 	kind    toolEventKind
 	id      string
 	name    string
 	at      int64
 	chunk   string
-	outcome toolOutcome // toolEnd: raw content for IR assembly
+	outcome toolOutcome
 }
 
-// toolOutcome holds the result of a single dispatched tool execution.
 type toolOutcome struct {
 	content []message.Content
 	isErr   bool
@@ -1235,18 +1065,14 @@ func toolOutcomeText(outcome toolOutcome) string {
 	return text.String()
 }
 
-// toolPending tracks one in-flight (or completed) speculative tool.
 type toolPending struct {
 	call    message.Content
 	done    chan struct{}
 	outcome toolOutcome // valid after done is closed
 }
 
-// specDispatcher kicks off tool executions as soon as a provider
-// signals PushToolReady, well before the LLM stream completes, and
-// reports each tool's lifecycle on events. Dispatch is idempotent per
-// tool_call_id, so the post-stream reconciliation pass can call
-// dispatch() for every call without double-launching.
+// specDispatcher starts tools as PushToolReady arrives; dispatch is idempotent
+// per tool_call_id, so the post-stream pass may call it for every call.
 type specDispatcher struct {
 	mu      sync.Mutex
 	pending map[string]*toolPending
@@ -1257,20 +1083,12 @@ func newSpecDispatcher(events chan toolEvent) *specDispatcher {
 	return &specDispatcher{pending: make(map[string]*toolPending), events: events}
 }
 
-// dispatch launches a goroutine for tc unless one is already in flight
-// for that tool_call_id. The goroutine runs the tool and reports
-// toolBegin / toolChunk / toolEnd on s.events; the drain loop folds
-// those into the open tool_result message.
+// dispatch launches tc unless already in flight for that tool_call_id.
 func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.Content) *toolPending {
 	if tc.Type != message.ContentToolInvoke || tc.ToolCallID == "" {
 		return nil
 	}
-	// A Quarantined call never runs. Its arguments did not arrive as valid
-	// JSON, so there is nothing to run it WITH: executing on a guess is how a
-	// half-parsed `edit` writes the wrong bytes into a source file. Refusing
-	// here: the one chokepoint every tool passes through: leaves the call
-	// with no outcome, and assembleToolResults turns that into an error result
-	// the model can act on.
+	// A call with malformed arguments never runs; no outcome becomes an error result.
 	if _, bad := message.MalformedArgsOf(tc); bad {
 		return nil
 	}
@@ -1351,34 +1169,19 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 	return p
 }
 
-// --- live-render node emission ---
-
-// composeTurn builds the current turn's node list: the messages appended
-// since the user prompt, plus the in-flight assistant message (nil once
-// it has appended into the log).
+// composeTurn builds the turn's node list: messages since the prompt plus the in-flight assistant.
 func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc.Node, stable int) {
 	msgs := a.regionMessages()
 	if inflight != nil {
-		// The provider appends the assistant message into the log concurrently
-		// with the drain loop's tail of buffered stream events. Once the appended
-		// copy is durable: the tail entry of this turn's window is an
-		// assistant message: composing the in-flight assembly TOO would render
-		// the message twice (under a bumped provisional LT, so the aria server
-		// folds it as a brand-new node set: the classic duplicated-thinking
-		// frame). The durable copy wins.
+		// Once the durable copy is the window's tail, composing the in-flight copy too
+		// renders the message twice under a bumped provisional LT.
 		if n := len(msgs); n > 0 && msgs[n-1].Role == message.RoleOutput {
 			inflight = nil
 		}
 	}
 	if inflight != nil {
-		// The in-flight message has no LT until it appends. Stamp its provisional
-		// LT: the next main-LT it will append at: so compose's stable node ids
-		// (LT.blockIdx) match what they@ be post-append and don't jump at the
-		// boundary. While the round is still streaming the window is EMPTY
-		// (nothing appended after turnStartLT yet), so the base must be the
-		// pre-turn tail LT, not a constant: falling back to 1 re-ids every
-		// streamed node at the append (1.0 → realLT.0), and the aria server folds
-		// the re-id as a second copy of the whole message.
+		// Stamp the provisional LT so node ids do not jump at the append. The base is
+		// the pre-turn tail, not a constant, or the aria server folds a re-id as a copy.
 		m := *inflight
 		m.LogicalTime = a.turnStartLT + 1
 		if n := len(msgs); n > 0 {
@@ -1393,9 +1196,7 @@ func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc
 	return pre, suf, stab
 }
 
-// openToolTiming stamps the start of GENERATION: the provider has opened a
-// tool block and the model is about to write its arguments. Nothing else knows
-// this moment: by the time the tool is dispatched the writing is over, which
+// openToolTiming stamps the start of generation, before the arguments are written.
 func (a *Agent) openToolTiming(id string, at int64) {
 	if a.proj == nil {
 		return
@@ -1424,9 +1225,7 @@ func (a *Agent) finishToolTiming(id string, at int64) {
 	a.proj.ToolFinished(id, at)
 }
 
-// logComposeFrame (debug, env-gated) appends one line per composed frame so we
-// can see whether a node's id churns across frames / append: the fingerprint of
-// the duplication bug.
+// logComposeFrame is an env-gated debug trace of node ids across frames.
 func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "appended=%v n=%d:", !hasInflight, len(nodes))
@@ -1448,10 +1247,7 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 	fmt.Fprintln(f, b.String())
 }
 
-// emitSnapshot opens a streaming suffix on the current turn and sets its
-// initial nodes. The suffix begins wherever the turn's committed nodes end, so
-// a multi-round turn extends rather than restarting. The aria server diffs
-// subsequent Updates against this internally.
+// emitSnapshot opens a streaming suffix where the turn's committed nodes end.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.ariaSrv.OpenTurn(a.turnID)
 	if len(nodes) > 0 {
@@ -1459,22 +1255,14 @@ func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	}
 }
 
-// The live-emit interval coalesces high-frequency streaming emits (~11fps by
-// default, `stream_emit_interval_ms`). Structural changes force an immediate
-// emit; token/output streaming is throttled so a busy turn doesn't
-// recompose+broadcast on every chunk: smoothness against CPU, which is the
-// user's call, not ours. liveOutputTail bounds the governor's per-tool live
-// tail to the same source-line cap compose renders, so the accumulator can't
-// grow unbounded on a huge tool dump; that one is NOT a knob (see the survey:
-// three paging invariants cite it).
-const liveOutputTail = 200 // matches compose's tailBound source-line cap
+// liveOutputTail bounds the governor's per-tool live tail to compose's source-line cap.
+const liveOutputTail = 200
 
 func (a *Agent) liveEmitInterval() time.Duration {
 	return time.Duration(a.settings.StreamEmitIntervalMs()) * time.Millisecond
 }
 
-// emitLive recomposes+broadcasts, throttled to the emit interval unless force is
-// set (a structural change or a final flush). Interrupted turns emit nothing.
+// emitLive is throttled to the emit interval unless force is set. Interrupted turns emit nothing.
 func (a *Agent) emitLive(inflight *message.Message, force bool) error {
 	if a.isInterrupted() {
 		return nil
@@ -1487,23 +1275,19 @@ func (a *Agent) emitLive(inflight *message.Message, force bool) error {
 	return nil
 }
 
-// emitDelta hands the current full node list to the aria server, which computes
-// the field-level delta vs the prior frame and broadcasts it (versioned).
+// emitDelta hands the full node list to the aria server, which diffs and broadcasts.
 func (a *Agent) emitDelta(prefix, suffix []livedoc.Node, stable int) {
 	a.ariaSrv.Update(prefix, suffix, stable)
 }
 
-// emitCommit closes the open unit after it becomes a committed IR message.
 func (a *Agent) emitCommit() {
 	a.ariaSrv.Close()
 }
 
-// abandonLive drops an open unit that never reached the IR.
 func (a *Agent) abandonLive() {
 	a.ariaSrv.Abandon()
 }
 
-// firstChars returns the first n runes of s's opening line (newlines folded
 func firstChars(s string, n int) string {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 	r := []rune(s)
@@ -1513,18 +1297,11 @@ func firstChars(s string, n int) string {
 	return strings.TrimSpace(string(r[:n])) + "…"
 }
 
-// asm assembles the in-flight assistant message from provider Bus events
-// so the turn blob can be recomposed mid-stream (before the fig IR side
-// appends it into the log).
-//
-// s.msg.Content[n-1].Text += text, and Go strings are immutable, so every
-// delta reallocated everything before it: measured at 36 MB of allocation to
-// accumulate 64 KB over 1,024 deltas, bytes quadratic while allocations
-// stayed linear -- which is why a run that counts allocs alone sees nothing.
-// A Builder appends amortized O(1) and its String() does not copy.
+// asm assembles the in-flight assistant message; per-block Builders keep
+// delta appends from going quadratic.
 type asm struct {
 	msg     message.Message
-	text    []*strings.Builder // per content block; nil for non-text blocks
+	text    []*strings.Builder // nil for non-text blocks
 	toolIdx map[string]int
 }
 
@@ -1569,9 +1346,7 @@ func (s *asm) toolReady(id, name string, args map[string]interface{}) {
 	}
 }
 
-// message returns the in-flight message, or nil when nothing has streamed.
-// Builder.String() hands back the accumulated buffer WITHOUT copying it, and
-// a later Write that grows the buffer leaves the returned string valid -- so
+// message returns nil when nothing has streamed. Builder.String() does not copy.
 func (s *asm) message() *message.Message {
 	if len(s.msg.Content) == 0 {
 		return nil
@@ -1612,8 +1387,7 @@ func assistantToolInvokes(m message.Message) []message.Content {
 	return out
 }
 
-// combineFormInput merges client-supplied form input
-// with the persisted snapshot.
+// combineFormInput merges client-supplied form input with the persisted snapshot.
 func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 	if a.form == nil || input == nil {
 		return form.Patch{}
@@ -1627,7 +1401,6 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 	if input.Context != nil {
 		ctxPatch = additivePatch(withoutSystemNS(form.FromMap(input.Context)), snap)
 	}
-	// Precedence: the client's passive view, then what it explicitly set.
 	out := form.Patch{}
 	for _, p := range []form.Patch{ctxPatch, clientPatch} {
 		switch {
@@ -1641,9 +1414,7 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 	return out
 }
 
-// additivePatch returns a Set-only patch with ctx entries whose values
-// differ from snap. Keys present in snap but absent from ctx are NOT
-// removed: Context is purely additive by contract.
+// additivePatch never removes keys absent from ctx: Context is additive by contract.
 func additivePatch(ctx, snap form.Snapshot) form.Patch {
 	return snap.Apply(ctx.AsPatch()).Diff(snap)
 }
@@ -1655,12 +1426,10 @@ func statusOf(err error) string {
 	return "success"
 }
 
-// regionMessages is the open turn's messages, HELD across frames and extended
-// by whatever the log appended since the last one.
+// regionMessages is the open turn's messages, held across frames.
 func (a *Agent) regionMessages() []message.Message {
 	if a.regionStart != a.turnStartLT {
-		// A new turn is a new region. A memo carried across the boundary would
-		// serve the previous turn's messages under this turn's LTs.
+		// A new turn is a new region; a memo carried across would serve the previous turn's messages.
 		a.regionStart, a.regionMsgs, a.regionLast = a.turnStartLT, nil, 0
 	}
 	from := a.turnStartLT + 1

@@ -7,36 +7,15 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// A page of HISTORY must not touch the open turn.
-//
-// Apply used openTurn/openNodesSlice as ONE staging buffer for every part it
-// walked, including sealed history. So a historical part could claim the open
-// slots (the inquiry branch and the nodes branch both did
-// `if c.openTurn != id { c.resetOpen(); c.openTurn = id }`) and then the sealed
-// branch, seeing `c.openTurn == id`, called resetOpen() and threw the LIVE turn
-// away.
-//
-// The user-visible bug: submit to an existing, not-running aria and the
-// question paints in incipit; press ^T within the first moment and it VANISHES,
-// because enterTranscript does a catch-up ReadBefore whose page is all sealed
-// history. It comes back the instant the model's first node streams, because
-// c.inquiry[id] survives and the next live frame re-opens the turn. That
-// self-heal is why it looks intermittent and why it lasts exactly as long as
-// the model thinks.
-//
-// It needs prior history to reproduce: seenClosed(historical) is false
-// precisely because this is a fresh process attaching to an existing aria.
+// A page of history must not touch the open turn.
 // ---------------------------------------------------------------------------
 
-// openInquiryPage is what Server.OpenInquiry broadcasts: the question alone, no
-// nodes, no Live, not sealed.
+// openInquiryPage is what Server.OpenInquiry broadcasts.
 func openInquiryPage(id uint64, q string) Page {
 	return Page{Parts: []TurnPart{{Turn: Turn{ID: id, Inquiry: q}}}}
 }
 
-// historyPage is what ReadBefore(recentCursor) returns for a finished aria:
-// whole sealed turns, each carrying its own inquiry and nodes.
+// historyPage is what ReadBefore returns for a finished aria.
 func historyPage(turns ...Turn) Page {
 	parts := make([]TurnPart, 0, len(turns))
 	for _, t := range turns {
@@ -49,15 +28,12 @@ func historyPage(turns ...Turn) Page {
 func TestApply_HistoryDoesNotClobberTheOpenTurn(t *testing.T) {
 	c := client.NewClient()
 
-	// Turn 1 finished in an earlier process; we have never seen it.
-	// Turn 2 is submitted now: the question commits before the model speaks.
 	c.Apply(openInquiryPage(2, "the new question"), client.Notify)
 
 	if open := c.Open(); open == nil || open.Turn != 2 || open.Inquiry != "the new question" {
 		t.Fatalf("precondition: turn 2 must be open with its question, got %+v", open)
 	}
 
-	// ^T -> enterTranscript -> ReadBefore(recentCursor) -> a page of history.
 	c.Apply(historyPage(Turn{ID: 1, Inquiry: "the old question", Nodes: []livedoc.Node{prose("the old answer")}}), client.Notify)
 
 	open := c.Open()
@@ -71,7 +47,6 @@ func TestApply_HistoryDoesNotClobberTheOpenTurn(t *testing.T) {
 		t.Fatalf("open inquiry = %q, want the new question", open.Inquiry)
 	}
 
-	// And the history itself must still have been delivered, exactly once.
 	closed := c.View().Closed
 	if len(closed) != 1 || closed[0].Turn != 1 || closed[0].Inquiry != "the old question" {
 		t.Fatalf("history was not delivered as one closed message: %+v", closed)
@@ -81,9 +56,8 @@ func TestApply_HistoryDoesNotClobberTheOpenTurn(t *testing.T) {
 	}
 }
 
-// The same hijack via the NODES branch alone: a sealed historical part with
-// nodes but no inquiry (a turn whose question was clipped away) must not claim
-// the open slots either.
+// A sealed historical part with nodes but no inquiry must not claim the open
+// slots either.
 func TestApply_HistoryWithoutInquiryDoesNotClobberTheOpenTurn(t *testing.T) {
 	c := client.NewClient()
 	c.Apply(openInquiryPage(5, "still mine"), client.Notify)
@@ -98,7 +72,7 @@ func TestApply_HistoryWithoutInquiryDoesNotClobberTheOpenTurn(t *testing.T) {
 	}
 }
 
-// A turn OLDER than the one currently open must never claim it, even unsealed.
+// A turn older than the one currently open must never claim it, even unsealed.
 func TestApply_OlderTurnNeverClaimsTheOpenSlots(t *testing.T) {
 	c := client.NewClient()
 	c.Apply(openInquiryPage(9, "current"), client.Notify)
@@ -109,15 +83,11 @@ func TestApply_OlderTurnNeverClaimsTheOpenSlots(t *testing.T) {
 	}
 }
 
-// THE GUARD THAT MUST NOT BREAK: a catch-up read that legitimately arrives
-// while a turn is streaming still has to OPEN it. That page's last part carries
-// Live: that is what entitles it to the open slots, and the sealed parts
-// before it are history.
+// A catch-up read that arrives while a turn is streaming still has to open
+// it: the last part's Live is what entitles it to the open slots.
 func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 	c := client.NewClient()
 
-	// A fresh viewer: nothing open, and a read that spans history plus the
-	// turn currently in flight.
 	c.Apply(Page{Parts: []TurnPart{
 		{Turn: Turn{ID: 1, Inquiry: "old", Sealed: true, Nodes: []livedoc.Node{prose("old answer")}}},
 		{Turn: Turn{ID: 2, Inquiry: "live one", Nodes: []livedoc.Node{prose("partial")},
@@ -134,7 +104,6 @@ func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 	if len(open.Nodes) != 1 || open.Nodes[0].Markdown != "partial" {
 		t.Fatalf("the in-flight turn lost its committed head: %+v", open.Nodes)
 	}
-	// Subsequent deltas must still fold onto it at the right positional ids.
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 2, Live: &Live{From: 0, V: 4, Nodes: []NodeDelta{
 		{ID: 1, Set: map[string]any{"type": "prose", "markdown": "second"}},
 	}}}}}}, client.Notify)
@@ -144,15 +113,12 @@ func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 	}
 }
 
-// A sealed turn delivered CLIPPED (too big for one page) must still reach the
-// renderer as slices at their true offsets. This is the case that genuinely
-// used the staging buffer, so it is the one a "history never stages" fix can
-// break.
+// A sealed turn delivered clipped must still reach the renderer as slices at
+// their true offsets.
 func TestApply_ClippedSealedHistoryKeepsItsOffsets(t *testing.T) {
 	c := client.NewClient()
 	nodes := []livedoc.Node{prose("n0"), prose("n1"), prose("n2"), prose("n3")}
 
-	// Tail half first (as a backward read delivers it), then the head.
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 7, Sealed: true, Nodes: nodes[2:]}, From: 2, ClippedHead: true,
 	}}}, client.Notify)
@@ -164,8 +130,7 @@ func TestApply_ClippedSealedHistoryKeepsItsOffsets(t *testing.T) {
 	if len(closed) == 0 {
 		t.Fatal("clipped sealed history produced no closed messages")
 	}
-	// The clipped-head slice must NOT claim to start the turn, or the renderers
-	// draw the question above a slice that does not carry one.
+	// The clipped-head slice must not claim to start the turn.
 	for _, m := range closed {
 		if m.From == 2 && m.Inquiry != "" {
 			t.Errorf("a clipped-head slice carried the inquiry: %+v", m)

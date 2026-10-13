@@ -13,8 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider/routed"
 )
 
-// Config is the copilot-specific provider config (providers/copilot.toml).
-// The copilot package owns its deserialization.
+// Config is providers/copilot.toml.
 type Config struct {
 	APIKey           string `toml:"api_key"`
 	EnterpriseDomain string `toml:"enterprise_domain,omitempty"`
@@ -22,9 +21,7 @@ type Config struct {
 	BaseURL          string `toml:"base_url,omitempty"`
 }
 
-// exchangeURL is where hush mints the session token. Direct mode returns
-// "": that installation presents the GitHub token unchanged, as the Copilot
-// CLI does, and there is nothing to exchange.
+// exchangeURL returns "" in direct mode: the GitHub token is presented unchanged.
 func exchangeURL(loaded *config.Loaded) string {
 	cfg := loadConfig(loaded)
 	if strings.EqualFold(strings.TrimSpace(cfg.TokenMode), "direct") {
@@ -56,10 +53,8 @@ func init() {
 		LoginHint:    "Copilot subscription (device code):  figaro login copilot",
 		Build:        buildFromContext,
 
-		// The Copilot API will not take a GitHub token: it must be
-		// exchanged for a session token that lives about half an hour.
-		// hush performs and owns that exchange (grant "copilot"), so
-		// one machine holds one session no matter how many arias run.
+		// hush exchanges the GitHub token for a short-lived session token,
+		// so one machine holds one session.
 		ExchangeGrant: hush.GrantCopilot,
 		ExchangeURL:   exchangeURL,
 	})

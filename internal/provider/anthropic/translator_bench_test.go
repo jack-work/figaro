@@ -26,10 +26,7 @@ func (l *copyingBenchLog[T]) Read() []store.Entry[T] {
 	return out
 }
 
-// ScanRange copies ONE ENTRY AT A TIME, because that is what this fixture is
-// for: a substrate where a read costs a copy per record, like a real one where
-// it costs a decode. Inheriting MemLog's scan would copy nothing and flatter
-// the walk into looking free.
+// ScanRange copies per entry so a read costs something, as a real decode does.
 func (l *copyingBenchLog[T]) ScanRange(from, to uint64, yield func(store.Entry[T]) bool) {
 	l.MemLog.ScanRange(from, to, func(e store.Entry[T]) bool {
 		one := make([]store.Entry[T], 1)
@@ -146,9 +143,7 @@ func BenchmarkInvalidateIfStale(b *testing.B) {
 	}
 }
 
-// drainCatchUp walks the sequence a catch-up hands back. THE WALK IS THE WORK:
-// the sequence is lazy, so a benchmark that only calls catchUp measures the
-// translation and not the read it used to pay for.
+// drainCatchUp walks the lazy sequence; the walk is the measured read.
 func drainCatchUp(seq provider.RowSeq, err error) int {
 	if err != nil || seq == nil {
 		return 0

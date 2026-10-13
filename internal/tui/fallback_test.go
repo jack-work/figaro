@@ -7,14 +7,6 @@ import (
 	"testing"
 )
 
-// The fallback prompts are the ones that run where the TUI cannot, and
-// they are also the only half of the passphrase UX a test can drive
-// without a pty. Everything asserted here about wording is asserted
-// again on the huh screens by the tmux smoke cases.
-
-// scriptedReads makes readPassword hand back the given answers in
-// order, and captures what the prompt printed. It restores the package
-// variables when the test ends.
 func scriptedReads(t *testing.T, answers ...string) *bytes.Buffer {
 	t.Helper()
 	var out bytes.Buffer
@@ -60,8 +52,6 @@ func TestCreateFallbackReasksOnMismatch(t *testing.T) {
 	}
 }
 
-// The keyring promise is the sentence that was false on the machine
-// this whole change came from.
 func TestCreateFallbackPromisesTheKeyringOnlyWhenThereIsOne(t *testing.T) {
 	out := scriptedReads(t, "hunter2", "hunter2")
 	if _, err := PromptPassphrase(PassphraseRequest{App: "figaro", Mode: PassphraseCreate, SavesToKeyring: true}); err != nil {
@@ -96,8 +86,6 @@ func TestUnlockFallbackAsksOnceAndNeverSaysChoose(t *testing.T) {
 	if string(pp) != "hunter2" {
 		t.Fatalf("got %q, want %q", pp, "hunter2")
 	}
-	// One field: no confirm, and none of the first-run wording that
-	// told a returning user to invent a new passphrase.
 	if strings.Contains(out.String(), "Confirm") {
 		t.Fatalf("unlock must not confirm:\n%s", out)
 	}
@@ -144,8 +132,6 @@ func TestUnlockFallbackGivesUpAfterThreeTries(t *testing.T) {
 	if !errors.Is(err, ErrTooManyAttempts) {
 		t.Fatalf("err = %v, want ErrTooManyAttempts", err)
 	}
-	// The user sees "incorrect passphrase" and nothing about age,
-	// wrapping, or armored files.
 	if strings.Contains(err.Error(), "age:") {
 		t.Fatalf("the crypto error leaked into the message: %v", err)
 	}
@@ -167,9 +153,7 @@ func TestUnlockFallbackHonorsTries(t *testing.T) {
 	}
 }
 
-// Verify may consume the buffer it is handed (identity.Unlock zeroes
-// the passphrase it decrypts with), so the prompt must hand it a copy
-// or return NUL bytes to the caller.
+// Verify may consume the buffer it is handed.
 func TestUnlockFallbackSurvivesADestructiveVerify(t *testing.T) {
 	scriptedReads(t, "hunter2")
 	pp, err := PromptPassphrase(PassphraseRequest{

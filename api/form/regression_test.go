@@ -10,15 +10,9 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Each test here fails against the flat implementation. They are the argument
-// for the change, stated as things that either work or do not.
-
 // A key whose own name contains a dot is addressable alongside a key that is
-// its prefix. Gluck's store holds both: skills.howto is a skill, and
-// skills.howto.md is a different skill.
+// its prefix.
 func TestCollidingKeysAreBothAddressable(t *testing.T) {
-	// succession is prose AND a namespace of sub-notes: a key that is a
-	// proper prefix of another, written deliberately.
 	s := form.FromMap(map[string]json.RawMessage{
 		"succession":           json.RawMessage(`"the protocol"`),
 		"succession.rule":      json.RawMessage(`"you are a seat"`),
@@ -35,8 +29,7 @@ func TestCollidingKeysAreBothAddressable(t *testing.T) {
 	}
 }
 
-// One field of a large value changes without rewriting the value. The credo on
-// Gluck's board is 6.5KB and was rewritten whole to change one character.
+// One field of a large value changes without rewriting the value.
 func TestOneFieldOfALargeValueIsItsOwnChange(t *testing.T) {
 	big := make([]byte, 6000)
 	for i := range big {
@@ -54,19 +47,16 @@ func TestOneFieldOfALargeValueIsItsOwnChange(t *testing.T) {
 	require.Len(t, es, 1, "one field changed, so one entry: %v", es)
 	assert.Equal(t, "system.credo.filePath", es[0].Key)
 
-	// The 6KB of content is not in the patch.
 	raw, err := json.Marshal(p)
 	require.NoError(t, err)
 	assert.Less(t, len(raw), 300, "the patch carries the untouched content")
 
-	// And it still applies.
 	got, ok := prev.Apply(p).Get("system.credo.filePath")
 	require.True(t, ok)
 	assert.JSONEq(t, `"/moved.md"`, string(got))
 }
 
-// Protection sees a write at any depth. A flat patch could only name top-level
-// keys, so a write into a protected subtree was invisible to CheckWritable.
+// Protection sees a write at any depth.
 func TestProtectionSeesANestedWrite(t *testing.T) {
 	var managed string
 	for _, k := range form.WellKnownKeys() {
@@ -110,7 +100,7 @@ func TestAPatchCarriesItsOwnUndo(t *testing.T) {
 }
 
 // Two writers touching different fields of one parent do not clobber each
-// other. This is what dropped system.credo when an outfit set system.model.
+// other.
 func TestSiblingWritesUnderOneParentCompose(t *testing.T) {
 	a := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.credo": json.RawMessage(`"largo"`)}, nil)
 	b := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"opus"`)}, nil)

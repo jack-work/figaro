@@ -6,20 +6,8 @@ import (
 	"testing"
 )
 
-// Two goroutines rendering markdown at the SAME width share one glamour
-// TermRenderer, because rendererFor caches by width and releases its mutex
-// before the caller renders. glamour accumulates table state on that renderer
-// (ctx.table.row / ctx.table.header, reset in Finish), so concurrent renders
-// interleave cells into one row. A row then has more cells than the table's
-// Alignments, and glamour's StyleFunc indexes Alignments by column:
-//
-//	panic: index out of range [3] with length 3
-//	  glamour/ansi.(*TableElement).setStyles.func2
-//	  lipgloss/table.(*Table).resize
-//
-// The panic lands in whichever goroutine is rendering, which for figaro is a
-// detached one (refreshQueued), so it takes the whole CLI down rather than
-// spoiling one frame.
+// Renders at one width share a glamour renderer that accumulates table
+// state; rendering outside the lock interleaves cells and panics in setStyles.
 func TestConcurrentProseAtSameWidthIsSafe(t *testing.T) {
 	table := "| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |\n"
 	var wg sync.WaitGroup

@@ -11,9 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// These go through the REAL handler map built by NewHandlers: the thing most
-// likely to break is the wiring, not the rule.
-
 func authzHandlers(t *testing.T, policy string, live *liveForkFigaro) *Handlers {
 	t.Helper()
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
@@ -38,14 +35,13 @@ func selfFork(t *testing.T) []byte {
 	return params
 }
 
-// A config that says nothing must behave exactly as figaro did before.
 func TestForkPolicyOffByDefault(t *testing.T) {
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
 	if err := a.Registry.Register(&liveForkFigaro{id: "aria0001", turnActive: true}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
-	// It may fail for want of that aria, but it must NOT fail with a denial.
+	// It may fail for want of the aria, but not with a denial.
 	_, ferr := hs.Map[rpc.MethodFork](context.Background(), selfFork(t))
 	if ferr != nil && strings.Contains(ferr.Error(), "deadlock") {
 		t.Fatalf("default config denied the fork: %v", ferr)
@@ -65,8 +61,7 @@ func TestForkDeniedForSelfDuringTurn(t *testing.T) {
 	}
 }
 
-// The legitimate cases must reach the handler (and then fail on the missing
-// aria, which is fine: what matters is that the failure is not a denial).
+// A failure on the missing aria is fine; a denial is not.
 func TestForkAllowedWhenNotASelfForkMidTurn(t *testing.T) {
 	cases := []struct {
 		name           string
@@ -106,7 +101,6 @@ func TestEveryServedMethodIsGuarded(t *testing.T) {
 	}
 }
 
-// A dormant or unknown aria has no turn in flight, so forking it is free.
 func TestTurnActivePredicateHandlesUnknownAria(t *testing.T) {
 	hs := authzHandlers(t, "", nil)
 	if hs.h.turnActive("nobody") {

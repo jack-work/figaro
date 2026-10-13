@@ -10,11 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// TestDefaultTemplates_LintClean runs every embedded default template
-// against representative sample data and asserts that all rendered
-// bodies pass the phrasing lint. This is the catalog requirement from
-// Stage 5 of plans/SYSTEM-REMINDERS.md: the harness's own templates
-// must not start with imperative system-command framing.
+// Every embedded default template must render bodies that pass the lint.
 func TestDefaultTemplates_LintClean(t *testing.T) {
 	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
@@ -24,9 +20,7 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 		return b
 	}
 
-	// Build a single patch that exercises every default template key.
-	// Old values are populated where the template uses {{.OldString}}
-	// (currently only model.tmpl).
+	// Old values are populated where the template uses {{.OldString}}.
 	prev := form.FromMap(map[string]json.RawMessage{
 		"model": rawString("claude-sonnet-4-6"),
 	})
@@ -50,9 +44,6 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 		}
 	}
 
-	// Also assert that every template we expected to fire actually
-	// produced a rendered entry: guards against accidentally
-	// templating to empty strings.
 	rkeys := make(map[string]bool, len(rendered))
 	for _, r := range rendered {
 		rkeys[r.Key] = true
@@ -66,11 +57,6 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	}
 }
 
-// TestDefaultTemplates_AllBodiesAreFactual checks that every body our
-// default templates produce reads as factual context (e.g. "Working
-// directory: …", "Model: …"): not as override instructions or
-// system commands. Spot-check by lint, plus an explicit assertion that
-// no body contains common imperative red flags.
 func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {
 	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)

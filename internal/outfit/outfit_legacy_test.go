@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// A file left in the pre-rename loadouts/ still resolves; outfits/ wins ties.
 func TestLoadResolvesLegacyLoadoutsDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "loadouts"), 0o755); err != nil {

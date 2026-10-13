@@ -11,7 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// fakeResolver stands in for the hush-backed credential.
 type fakeResolver struct {
 	token       string
 	endpoint    string
@@ -31,10 +30,7 @@ func (f *fakeResolver) Invalidate(tok string) error {
 
 func (f *fakeResolver) Endpoint() string { return f.endpoint }
 
-// The token source holds nothing. Every Resolve asks the resolver, which
-// asks hush: that round-trip IS how one session token is shared by every
-// aria and every figaro process. A cache here would be a regression, not an
-// optimisation.
+// The token source must not cache: hush owns the one shared session.
 func TestTokenSourceDoesNotCache(t *testing.T) {
 	r := &fakeResolver{token: "sess-1"}
 	s := newTokenSource(r, Config{})
@@ -52,7 +48,6 @@ func TestTokenSourceDoesNotCache(t *testing.T) {
 		t.Fatalf("resolver calls = %d, want 5: the token source cached a session it does not own", r.resolves)
 	}
 
-	// A rotation at hush is visible immediately, with nothing to evict.
 	r.token = "sess-2"
 	if got, _ := s.Resolve(); got != "sess-2" {
 		t.Fatalf("after rotation = %q, want sess-2", got)
@@ -70,7 +65,6 @@ func TestInvalidateDelegates(t *testing.T) {
 	}
 }
 
-// Routing is minted WITH the token, so it comes from the same place.
 func TestBaseURLPrecedence(t *testing.T) {
 	minted := "https://api.enterprise.githubcopilot.com"
 
@@ -107,9 +101,6 @@ func TestBaseURLPrecedence(t *testing.T) {
 	})
 }
 
-// exchangeURL is what tells hush where to mint. Direct mode returns "" —
-// that installation presents the GitHub token unchanged and there is
-// nothing to exchange.
 func TestExchangeURL(t *testing.T) {
 	loaded := func(cfg Config) *config.Loaded {
 		t.Helper()
@@ -127,8 +118,6 @@ func TestExchangeURL(t *testing.T) {
 	}
 }
 
-// The hush-backed resolver is what carries the routing, and a resolver that
-// carries none must not be mistaken for one that does.
 func TestUnmintedEndpointIsEmpty(t *testing.T) {
 	var carrier auth.EndpointCarrier = &auth.OAuth{}
 	if got := carrier.Endpoint(); got != "" {
@@ -136,9 +125,6 @@ func TestUnmintedEndpointIsEmpty(t *testing.T) {
 	}
 }
 
-// writeProviderConfig lays down providers/copilot.toml in a throwaway
-// config dir and loads it, so exchangeURL is exercised through the same
-// path production takes.
 func writeProviderConfig(t *testing.T, cfg Config) *config.Loaded {
 	t.Helper()
 	dir := t.TempDir()

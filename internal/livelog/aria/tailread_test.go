@@ -6,11 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// THE STATUS BAR MUST BE ABLE TO ASK FOR NOTHING. Metrics ride a page, so a
-// client that wants only the figures asks for a page that cannot carry a
-// message: forward, from past the last turn. If this read ever starts
-// returning content, the idle cost of every pager goes back up by the size of
-// whatever it returns (it was the whole last message, 3.7 KB, every 1.8s).
+// A forward read from past the last turn carries metrics and no content;
+// the status bar polls it.
 func TestServer_ForwardReadPastTheTailCarriesNothing(t *testing.T) {
 	srv := NewServer()
 	var turns []Turn
@@ -27,8 +24,6 @@ func TestServer_ForwardReadPastTheTailCarriesNothing(t *testing.T) {
 		t.Fatalf("the probe read came back with %d parts; it must carry none", len(page.Parts))
 	}
 
-	// And the ordinary tail read still does, so the probe is not just a broken
-	// server: the two differ by direction, not by the aria being empty.
 	if tail := srv.ReadBefore(Anchor{}, Anchor{}, 1); len(tail.Parts) == 0 {
 		t.Fatal("the tail read came back empty; the fixture holds nothing")
 	}

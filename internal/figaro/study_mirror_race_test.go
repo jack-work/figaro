@@ -1,32 +1,8 @@
 package figaro_test
 
-// THE INSTRUMENT FOR THE LOST STUDY.
-//
-// TestConcurrentCastsOfOneFigaro (self_cast_test.go) failed once in
-// twenty-one runs on a loaded box with "a concurrent cast lost its study",
-// and a contains-check that samples eight roles tells you only THAT one went
-// missing, never how many or on which side of the write. This is the same
-// hazard measured instead of sampled:
-//
-//   - the assertion is a COUNT of every role, on BOTH sides of the write;
-//   - failure names the missing ids and both holdings, because the shape of
-//     the loss IS the diagnosis: durable short means the version-guarded
-//     compare-and-set leaks, mirror short means the unguarded whole-set
-//     a.form.Apply in declareStudy is losing writes to last-writer-wins;
-//   - many independent ROUNDS, because one round of a probabilistic loss is
-//     a coin, and the gate must not depend on the coin.
-//
-// WHAT MADE IT RED, measured and not guessed. A sweep of N (8, 32, 64, 256)
-// under a box at loadavg 27-34 was green in forty runs. The loss does not
-// want a big N and it does not want a busy machine: it wants ONE CASTER
-// DESCHEDULED between its durable write returning and its mirror publish,
-// which is a window microseconds wide. GOMAXPROCS=1 forces exactly that, and
-// at GOMAXPROCS=1, N=8 it went red 2 times in 10 -- while GOMAXPROCS=1, N=64
-// stayed green, so a wider N is not the lever and reporting it as one would
-// have been the wrong instrument. The test therefore pins GOMAXPROCS low for
-// its own duration and pays for its confidence in rounds, not in width.
-//
-// See ~/notes/figaro/cast-lost-study-window.md. Run under -race.
+// Concurrent casts onto one figaro, counted on both sides of the write. The
+// loss wants one caster descheduled between its durable write and its mirror
+// publish, so GOMAXPROCS is pinned low and confidence comes from rounds, not width.
 
 import (
 	"context"
@@ -60,9 +36,7 @@ func mirrorRaceEnv(t *testing.T, key string, def, min int) int {
 	return n
 }
 
-// mirrorRoundLoss is one round's verdict: what each side held, and which
-// roles the side lost. Kept per round so the failure message can report the
-// RATE and the SIZE of the loss rather than the first symptom.
+// mirrorRoundLoss is one round's verdict per side.
 type mirrorRoundLoss struct {
 	round        int
 	board        int
@@ -76,8 +50,7 @@ func TestConcurrentCastsKeepEveryStudyInTheMirror(t *testing.T) {
 	rounds := mirrorRaceEnv(t, "FIG_MIRROR_RACE_ROUNDS", mirrorRaceRoundsDefault, 1)
 	procs := mirrorRaceEnv(t, "FIG_MIRROR_RACE_P", mirrorRaceProcsDefault, 1)
 
-	// Restored before the package's parallel tests run: this pin is for the
-	// window, not for the suite.
+	// Restored before the package's parallel tests run.
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(procs))
 
 	var losses []mirrorRoundLoss
@@ -104,8 +77,7 @@ func TestConcurrentCastsKeepEveryStudyInTheMirror(t *testing.T) {
 		len(losses), rounds, casts, procs, lostStudies, boardLosses, losses)
 }
 
-// mirrorRaceRound casts N roles onto one figaro at once and reports what each
-// side of the write ended up holding.
+// mirrorRaceRound casts N roles at once and reports what each side holds.
 func mirrorRaceRound(t *testing.T, round, casts int) mirrorRoundLoss {
 	t.Helper()
 	entered, gate := newGate()
@@ -119,8 +91,6 @@ func mirrorRaceRound(t *testing.T, round, casts int) mirrorRoundLoss {
 		roles[i] = id
 	}
 
-	// All N released together: they contend on ONE board (the study set) and
-	// on N distinct role forms.
 	start := make(chan struct{})
 	errs := make(chan error, casts)
 	for _, roleID := range roles {
@@ -155,9 +125,7 @@ func mirrorRaceRound(t *testing.T, round, casts int) mirrorRoundLoss {
 		}
 		return lost
 	}
-	// A side holding MORE than it was given is also a loss of a different
-	// kind, and it must not read as success: the counts are asserted, not
-	// only the membership.
+	// A side holding more than it was given is also a loss: counts, not membership.
 	require.Lenf(t, board, casts,
 		"round %d: the durable board holds %d entries for %d casts: %v", round, len(board), casts, board)
 	require.LessOrEqualf(t, len(mirror), casts,

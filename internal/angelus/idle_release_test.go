@@ -5,17 +5,11 @@ import (
 	"time"
 )
 
-// residentCount stands in for a backend's resident-aria count. The latch
-// only ever asks that one question, and store.Backend is far too large a
-// surface to implement for it.
 type residentCount struct{ n int }
 
 func (b *residentCount) EvictIdle(map[string]bool, time.Duration) int { return 0 }
 func (b *residentCount) Resident() int                                { return b.n }
 
-// Handing the arena back is a full stop-the-world collection, so the POLICY
-// is what a test can hold: once per quiet period, and any work at all resets
-// it. A daemon that released on every sweep would collect forever while idle.
 func TestIdleReleaseFiresOncePerQuietPeriod(t *testing.T) {
 	a := &Angelus{Registry: NewRegistry()}
 	be := &residentCount{}

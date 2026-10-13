@@ -16,11 +16,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// jack-work/figaro#24. A proxy that filters a completion answers 200 with a
-// healthy-looking stream: no content, or a thinking block and then a
-// stop_reason figaro had no case for. Every one of those landed in the IR as
-// a normal reply and the aria went quiet with nothing in the log to say why.
-// The turn must END IN ERROR, with the wire's own word for it in the text.
+// A filtered completion (empty stream, or an unknown stop_reason) must end
+// the turn in error carrying the wire's stop reason.
 
 type recordingBus struct {
 	msgs  []message.Message
@@ -97,14 +94,10 @@ func sendSSE(t *testing.T, body string) (*recordingBus, error) {
 
 func TestAFilteredCompletionEndsTheSendInError(t *testing.T) {
 	cases := []struct {
-		name string
-		body string
-		// What the wire said, which must appear in the error so the user
-		// learns the proxy's word for what happened.
+		name     string
+		body     string
 		wireWord string
-		// Whether a message still reaches the IR: content the model paid
-		// for is kept, marked as the error it is.
-		kept bool
+		kept     bool
 	}{
 		{"refusal, thinking only", sseBody(evStart, evThinking, evDelta("refusal"), evStop), "refusal", true},
 		{"content_filter, thinking only", sseBody(evStart, evThinking, evDelta("content_filter"), evStop), "content_filter", true},
@@ -129,8 +122,6 @@ func TestAFilteredCompletionEndsTheSendInError(t *testing.T) {
 	}
 }
 
-// The other side of the same instrument: a healthy stream still lands as a
-// healthy message, or the guard is a tautology.
 func TestAHealthyCompletionStillLands(t *testing.T) {
 	for _, stop := range []string{"end_turn", "stop_sequence"} {
 		t.Run(stop, func(t *testing.T) {
@@ -142,9 +133,6 @@ func TestAHealthyCompletionStillLands(t *testing.T) {
 	}
 }
 
-// An SSE error event already failed the send. It must keep doing so and
-// carry the event's own text, since the stop reason it sets is "error" and
-// the message would otherwise be decoded as if it had finished.
 func TestAnSSEErrorEventStillFailsTheSend(t *testing.T) {
 	bus, err := sendSSE(t, sseBody(evStart, evText,
 		"event: error\ndata: "+`{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`))

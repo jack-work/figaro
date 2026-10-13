@@ -9,9 +9,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-// A queue before a FILE buys nothing (an append is µs, no round trip to
-// amortize); a queue before a COLLECTOR is what keeps a slow one off the
-// turn goroutine. So capacity is the policy: 0 exports inline, >0 buffers.
+// capacity 0 exports inline; >0 buffers, which only a slow collector needs.
 func newLogProcessor(exp sdklog.Exporter, capacity int) sdklog.Processor {
 	if capacity <= 0 {
 		return sdklog.NewSimpleProcessor(exp)
@@ -19,15 +17,14 @@ func newLogProcessor(exp sdklog.Exporter, capacity int) sdklog.Processor {
 	return newBoundedProcessor(exp, capacity)
 }
 
-// boundedProcessor exports on its own goroutine from a fixed ring.
-// Telemetry never applies backpressure: a full ring DROPS and counts.
+// boundedProcessor never applies backpressure: a full ring drops and counts.
 type boundedProcessor struct {
 	exp sdklog.Exporter
 
 	mu   sync.Mutex
 	ring []sdklog.Record
-	head int // next write
-	n    int // occupancy
+	head int
+	n    int
 	wake chan struct{}
 
 	dropped atomic.Int64
@@ -47,12 +44,11 @@ func newBoundedProcessor(exp sdklog.Exporter, capacity int) *boundedProcessor {
 	return p
 }
 
-// OnEmit copies the record (the SDK reuses the caller's) and returns.
+// OnEmit copies the record: the SDK reuses the caller's.
 func (p *boundedProcessor) OnEmit(_ context.Context, r *sdklog.Record) error {
 	p.mu.Lock()
 	if p.n == len(p.ring) {
-		// Drop the OLDEST: the newest record is the one describing the
-		// failure someone is about to investigate.
+		// Drop the oldest.
 		p.head = (p.head + 1) % len(p.ring)
 		p.n--
 		p.dropped.Add(1)
@@ -80,8 +76,7 @@ func (p *boundedProcessor) run() {
 	}
 }
 
-// drain exports what is queued, releasing the lock across the export so a
-// slow exporter blocks nobody but itself.
+// drain releases the lock across the export.
 func (p *boundedProcessor) drain(ctx context.Context) {
 	for {
 		p.mu.Lock()
@@ -99,8 +94,6 @@ func (p *boundedProcessor) drain(ctx context.Context) {
 	}
 }
 
-// Dropped is what the ring shed, for doctor mem: a lossy structure ships
-// with its number or the loss is invisible.
 func (p *boundedProcessor) Dropped() int64 { return p.dropped.Load() }
 
 func (p *boundedProcessor) ForceFlush(ctx context.Context) error {
@@ -108,8 +101,7 @@ func (p *boundedProcessor) ForceFlush(ctx context.Context) error {
 	return p.exp.ForceFlush(ctx)
 }
 
-// Shutdown drains under a deadline: a clean stop keeps the last seconds, a
-// wedged collector does not hold exit.
+// Shutdown drains under a deadline so a wedged collector does not hold exit.
 func (p *boundedProcessor) Shutdown(ctx context.Context) error {
 	select {
 	case <-p.stop:
@@ -129,5 +121,4 @@ func (p *boundedProcessor) Shutdown(ctx context.Context) error {
 	return p.exp.Shutdown(ctx)
 }
 
-// Enabled: the ring accepts every record; the level filter runs upstream.
 func (p *boundedProcessor) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }

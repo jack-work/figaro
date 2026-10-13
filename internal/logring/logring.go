@@ -1,6 +1,4 @@
-// Package logring keeps a bounded, in-memory tail of slog records so a
-// running daemon can be asked what it has been saying, without anyone
-// grepping a file.
+// Package logring keeps a bounded in-memory tail of slog records.
 package logring
 
 import (
@@ -10,26 +8,16 @@ import (
 	"time"
 )
 
-// DefaultCapacity is how many records a ring retains. Records are small
-// (a header plus five inline attrs; larger ones spill to a slice), so this
-// is a couple of hundred kilobytes - immaterial next to the segment cache,
-// and reported by `figaro doctor mem` alongside it.
 const DefaultCapacity = 512
 
-// Keep decides whether a record is worth retaining. It runs on the logging
-// goroutine, so it must be cheap and must not block.
+// Keep runs on the logging goroutine: cheap, non-blocking.
 type Keep func(slog.Record) bool
 
-// AtLeast keeps records at or above a level. This is the default policy and
-// the reason the ring is free in normal operation: nothing is copied until
-// something goes wrong.
 func AtLeast(level slog.Level) Keep {
 	return func(r slog.Record) bool { return r.Level >= level }
 }
 
-// WithMessage keeps records whose message matches exactly, at any level. It is
-// how a subsystem opts a specific INFO-level stream into retention - provider
-// round-trips, say - without lowering the bar for everything else.
+// WithMessage keeps records whose message matches exactly, at any level.
 func WithMessage(msgs ...string) Keep {
 	set := make(map[string]struct{}, len(msgs))
 	for _, m := range msgs {
@@ -41,7 +29,6 @@ func WithMessage(msgs ...string) Keep {
 	}
 }
 
-// Any keeps a record if any of the given policies would.
 func Any(keeps ...Keep) Keep {
 	return func(r slog.Record) bool {
 		for _, k := range keeps {
@@ -53,9 +40,8 @@ func Any(keeps ...Keep) Keep {
 	}
 }
 
-// Entry is one retained record, flattened for reading. Seq is monotonic across
-// the ring's whole life, so a gap between the oldest retained Seq and the
-// newest is exactly how many records retention dropped.
+// Seq is monotonic across the ring's life, so a gap between the oldest
+// retained Seq and the newest is what retention dropped.
 type Entry struct {
 	Seq   uint64         `json:"seq"`
 	Time  time.Time      `json:"time"`
@@ -65,16 +51,13 @@ type Entry struct {
 }
 
 // Ring is a slog.Handler that forwards to inner and retains a bounded tail.
-// The zero value is not usable; call New.
 type Ring struct {
 	inner  slog.Handler
 	keep   Keep
 	prefix []slog.Attr // accumulated by WithAttrs
 	groups []string    // accumulated by WithGroup
 
-	// The buffer is shared by every derived handler (WithAttrs/WithGroup
-	// return a new Ring pointing at the same store), because a ring per
-	// derived logger would retain nothing useful.
+	// Shared by every derived handler.
 	store *store
 }
 
@@ -85,8 +68,7 @@ type store struct {
 	seq  uint64
 }
 
-// New wraps inner. keep decides what is retained; nil means AtLeast(WARN).
-// capacity <= 0 means DefaultCapacity.
+// New: nil keep means AtLeast(WARN); capacity <= 0 means DefaultCapacity.
 func New(inner slog.Handler, capacity int, keep Keep) *Ring {
 	if capacity <= 0 {
 		capacity = DefaultCapacity
@@ -105,8 +87,7 @@ func (r *Ring) Enabled(ctx context.Context, l slog.Level) bool {
 	return r.inner.Enabled(ctx, l)
 }
 
-// Handle forwards first, then retains. Forwarding first means a panic in our
-// own bookkeeping cannot cost the caller their log line.
+// Handle forwards first, so a panic in retention cannot cost the log line.
 func (r *Ring) Handle(ctx context.Context, rec slog.Record) error {
 	err := r.inner.Handle(ctx, rec)
 	if r.keep(rec) {
@@ -129,9 +110,7 @@ func (r *Ring) WithGroup(name string) slog.Handler {
 	return &next
 }
 
-// flatten copies the record's attributes out. This is the one allocation the
-// ring costs, and it is mandatory: a Handler may not retain a Record, whose
-// overflow attributes live in a slice it does not own.
+// flatten copies the attributes out: a Handler may not retain a Record.
 func (r *Ring) flatten(rec slog.Record) Entry {
 	e := Entry{
 		Time:  rec.Time,
@@ -168,9 +147,8 @@ func (s *store) add(e Entry) {
 	s.next = (s.next + 1) % cap(s.buf)
 }
 
-// Recent returns retained records oldest first and newest last,
-// filtered by match (nil keeps all) and limited to the newest n (n <= 0 for
-// everything retained).
+// Recent returns retained records oldest first, filtered by match (nil keeps
+// all) and limited to the newest n (n <= 0 for all).
 func (r *Ring) Recent(n int, match func(Entry) bool) []Entry {
 	s := r.store
 	s.mu.Lock()
@@ -197,8 +175,6 @@ func (r *Ring) Recent(n int, match func(Entry) bool) []Entry {
 	return out
 }
 
-// Stats reports what the ring is holding, for `figaro doctor mem`. Every
-// other cache in the daemon reports its footprint; this one should too.
 func (r *Ring) Stats() (retained, capacity int, seq uint64) {
 	s := r.store
 	s.mu.Lock()

@@ -5,52 +5,39 @@ import (
 	"reflect"
 )
 
-// A live unit is an ordered, append-only list of typed Nodes. Prose and
-// tool calls are distinct node types so a consumer can render a tool as a
-// native widget instead of baked-in markdown. Within a unit the list only
-// grows at the tail and existing nodes only mutate monotonically (prose
-// text grows, tool output grows, tool status flips): never reorder: so
-// nodes are addressed by a stable index and diffed positionally.
+// A live unit is an append-only list of Nodes that only grows at the tail
+// and whose nodes mutate monotonically, never reorder: nodes are addressed by
+// index and diffed positionally.
 
-// NodeType discriminates the node payload.
 type NodeType string
 
 const (
-	NodeProse    NodeType = "prose"    // a markdown span (assistant text)
-	NodeThinking NodeType = "thinking" // extended-thinking text (Markdown field)
-	NodeTool     NodeType = "tool"     // a tool invocation + its streamed result
-	NodeSteering NodeType = "steering" // a user message injected mid-turn (Markdown field)
+	NodeProse    NodeType = "prose"
+	NodeThinking NodeType = "thinking" // Markdown field
+	NodeTool     NodeType = "tool"
+	NodeSteering NodeType = "steering" // a user message injected mid-turn; Markdown field
 )
 
-// Tool status values.
 const (
 	StatusRunning = "running"
 	StatusOK      = "ok"
 	StatusError   = "error"
 )
 
-// Src is one fig-IR coordinate a node was projected from: the owning
-// message's logical time and the content block's index within it. A node
-// usually has one; a tool node has two: the invoke and its result, at
-// different block indices in different messages.
+// Src is one fig-IR coordinate a node was projected from; a tool node has
+// two, the invoke and its result.
 type Src struct {
 	LT    uint64 `json:"lt"`
 	Block int    `json:"block"`
 }
 
-// RoleInput and RoleOutput are the two voices of the UI IR, mirroring
-// message.RoleInput / message.RoleOutput. They live here because Node.Role
-// lives here, and they are constants rather than literals because the same two
-// strings were previously spelled out at twenty call sites across four
-// packages: the shape that lets a vocabulary drift.
+// RoleInput and RoleOutput mirror message.RoleInput / message.RoleOutput.
 const (
 	RoleInput  = "input"
 	RoleOutput = "output"
 )
 
-// FormKind names what kind of form a delta happened on, decided
-// server-side so three clients do not each invent the predicate: a form
-// carrying target-aria is a role.
+// FormKind is decided server-side: a form carrying target-aria is a role.
 type FormKind string
 
 const (
@@ -59,120 +46,86 @@ const (
 	FormRole    FormKind = "role"    // a studied form carrying target-aria
 )
 
-// FormEvent distinguishes a key REMOVED from the whole form DELETED,
-// because a reader needs to know the difference between "the brief was
-// cleared" and "the brief is gone".
+// FormEvent distinguishes a key removed from the whole form deleted.
 type FormEvent string
 
 const (
 	FormSet     FormEvent = "set"
 	FormRemoved FormEvent = "removed"
-	FormDeleted FormEvent = "deleted" // the SOURCE died; the copy records it
+	FormDeleted FormEvent = "deleted" // the source died; the copy records it
 )
 
-// FormDelta is one key's transition as a reader of this node would have
-// needed it: what changed, on which form, and what kind of form it was.
 type FormDelta struct {
-	Value json.RawMessage `json:"value,omitempty"` // as seen HERE; absent on removal
-	Prev  json.RawMessage `json:"prev,omitempty"`  // what it displaced; absent when the key is new
+	Value json.RawMessage `json:"value,omitempty"` // absent on removal
+	Prev  json.RawMessage `json:"prev,omitempty"`  // absent when the key is new
 	Kind  FormKind        `json:"kind"`
 	Event FormEvent       `json:"event,omitempty"`
-	Form  string          `json:"form"` // the id, unsplit, for grouping
+	Form  string          `json:"form"` // the id, unsplit
 }
 
-// Node is one element of a live unit. Only the fields for its Type are
-// meaningful; the rest are zero. The two long, streamed string fields -
-// prose Markdown and tool Output, are the splice-patchable ones.
+// Node: only the fields for its Type are meaningful. Markdown and Output are
+// the splice-patchable fields.
 type Node struct {
 	Type NodeType `json:"type"`
 
-	// Role is RoleInput for steering interjections, RoleOutput otherwise. The
-	// turn's opening question is NOT a node: it is Turn.Inquiry, plain text -
-	// so a node carrying RoleInput is always a steering interjection.
+	// Role is RoleInput only for steering interjections: the opening question
+	// is Turn.Inquiry, not a node.
 	Role string `json:"role,omitempty"`
 
-	// LTs is fig-IR provenance: metadata, never an address. UI code addresses
-	// by (turn, node); LT is the model's coordinate. Derived from Src.
+	// LTs is fig-IR provenance, never an address; derived from Src.
 	LTs []uint64 `json:"lts,omitempty"`
 
-	// Src is the precise per-source coordinate behind LTs.
 	Src []Src `json:"src,omitempty"`
 
-	// ToolCallID is the provider's handle for a tool node. It is a receipt,
-	// not an identity: ID answers "which node", ToolCallID answers "which
-	// provider call". Keeping them apart is the point of this split.
+	// ToolCallID is the provider's receipt, not the node's identity.
 	ToolCallID string `json:"tool_call_id,omitempty"`
 
-	// Version bumps on every mutation of this node while its message is open,
-	// so a UI element bound to (ID, Version) knows when to repaint and a client
-	// can detect a missed update. Meaningful only in the live section.
+	// Version bumps on every mutation while the message is open; meaningful
+	// only in the live section.
 	Version int `json:"v,omitempty"`
 
-	// At is the wall-clock time (unix millis) of the fig IR message this node
-	// came from. Carried so the UI can show when a node was written, the way it
-	// already shows tool timings; surfaced under the verbose toggle.
+	// At is the unix-millis time of the fig IR message this node came from.
 	At int64 `json:"at,omitempty"`
 
-	// prose
 	Markdown string `json:"markdown,omitempty"`
 
-	// Sender attributes an input block to whoever submitted it, already
-	// rendered (see rpc.Attribution). One user message can fold several
-	// submissions from different callers, so attribution belongs on the NODE,
-	// not on the message. Empty means unknown and draws nothing at all.
+	// Sender is already rendered (rpc.Attribution); one message can fold
+	// several submissions, so attribution lives on the node. Empty draws
+	// nothing.
 	Sender string `json:"sender,omitempty"`
 
-	// ID is legacy provenance/provider metadata: prose/thinking use an LT.block
-	// receipt and tools use the provider's tool-call id. It remains serialized
-	// in snapshots, but it is not UI identity. The aria wire addresses a node by
-	// the positional pair (turn, From+i), and NodeDelta.ID is that uint64 ordinal.
+	// ID is legacy provenance, serialized but not UI identity: the wire
+	// addresses a node by the positional pair (turn, From+i).
 	ID     string                 `json:"id,omitempty"`
-	Name   string                 `json:"name,omitempty"`   // tool name
-	Args   map[string]interface{} `json:"args,omitempty"`   // invocation arguments
+	Name   string                 `json:"name,omitempty"`
+	Args   map[string]interface{} `json:"args,omitempty"`
 	Status string                 `json:"status,omitempty"` // running | ok | error
-	// Input is the tool's arguments AS THEY ARRIVE: the raw, still-truncated
-	// JSON prefix the provider is streaming. Args is the same thing decoded,
-	// and only exists once the whole object parses, so Input is what there is
-	// to show while the model is still writing it.
+	// Input is the raw, possibly truncated JSON prefix of the arguments as
+	// streamed; Args exists only once the whole object parses.
 	Input  string `json:"input,omitempty"`
-	Output string `json:"output,omitempty"` // streamed result text
-	// OutputBase is the rune offset of Output within the source block: the
-	// producer carries only the last composeBashCap lines, and a quote of
-	// what a reader saw has to resolve against the whole block.
+	Output string `json:"output,omitempty"`
+	// OutputBase is the rune offset of Output within the source block, which
+	// the producer truncates to its last lines.
 	OutputBase int    `json:"output_base,omitempty"`
-	Summary    string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
-	// OpenedAt is when the model began WRITING this call: the moment the tool
-	// block opened on the provider stream, before a single argument byte had
-	// arrived. StartedAt is when the call began RUNNING. The gap between them
-	// is GENERATION, which for a large write is nearly all of the wall time
-	// and used to be invisible: a thirty-second write rendered [0ms], because
-	// the only clock there started after the writing was over.
+	Summary    string `json:"summary,omitempty"` // client renders verbatim
+	// OpenedAt is when the tool block opened on the provider stream;
+	// StartedAt is when the call began running.
 	OpenedAt   int64 `json:"opened_at,omitempty"`
 	StartedAt  int64 `json:"started_at,omitempty"`
 	FinishedAt int64 `json:"finished_at,omitempty"`
 
-	// FormDeltas is the form state a reader would have needed to understand
-	// this node, keyed "<formid>.<path>" so a client can group by form id
-	// without parsing a nested shape, and sort stably. EVERY node type
-	// tolerates it: a list of which nodes may carry state is a list that
-	// drifts, and an absent field costs nothing.
+	// FormDeltas is keyed "<formid>.<path>"; every node type tolerates it.
 	FormDeltas map[string]FormDelta `json:"formDeltas,omitempty"`
 }
 
-// OpKind discriminates a node mutation on the wire.
 type OpKind string
 
 const (
 	OpOpen  OpKind = "open"  // append a new node at Index
 	OpPatch OpKind = "patch" // splice a string field of an existing node
-	OpSet   OpKind = "set"   // update a tool node's scalar fields (status,
-	// name, args): e.g. when the streamed tool_use arguments arrive after
-	// the block first opened
+	OpSet   OpKind = "set"   // update a tool node's scalar fields
 )
 
-// Op is one mutation against a unit's node list, addressed by Index.
-// Open carries the full new node; Patch carries a field splice; Set
-// carries new scalar tool state.
 type Op struct {
 	Kind  OpKind `json:"kind"`
 	Index int    `json:"index"`
@@ -184,27 +137,17 @@ type Op struct {
 	Del   int    `json:"del,omitempty"`
 	Ins   string `json:"ins,omitempty"`
 
-	// set: a tool node's scalar fields.
-	Status string                 `json:"status,omitempty"`
-	Name   string                 `json:"name,omitempty"`
-	Args   map[string]interface{} `json:"args,omitempty"`
-	// OpenedAt is when the model began WRITING this call: the moment the
-	// tool block opened on the provider stream, before a single argument
-	// byte had arrived. StartedAt is when the call began RUNNING. The gap
-	// between them is generation, which for a large write is nearly all of
-	// the wall time and used to be invisible: a thirty-second write read
-	// [0ms], because the only clock started after the writing was over.
-	OpenedAt   int64 `json:"opened_at,omitempty"`
-	StartedAt  int64 `json:"started_at,omitempty"`
-	FinishedAt int64 `json:"finished_at,omitempty"`
-	OutputBase int   `json:"output_base,omitempty"`
+	// set
+	Status     string                 `json:"status,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	Args       map[string]interface{} `json:"args,omitempty"`
+	OpenedAt   int64                  `json:"opened_at,omitempty"`
+	StartedAt  int64                  `json:"started_at,omitempty"`
+	FinishedAt int64                  `json:"finished_at,omitempty"`
+	OutputBase int                    `json:"output_base,omitempty"`
 }
 
-// DiffNodes derives the minimal op sequence turning old into next. The
-// list is append-only and positionally stable, so it compares index by
-// index: appended nodes become Open ops; a prose/output text change
-// becomes a Patch (single-region splice); a tool status change becomes a
-// Set. Returns nil when nothing changed.
+// DiffNodes compares index by index; nil when nothing changed.
 func DiffNodes(old, next []Node) []Op {
 	var ops []Op
 	for i := 0; i < len(next); i++ {
@@ -223,8 +166,6 @@ func DiffNodes(old, next []Node) []Op {
 			if d, ok := Diff(o.Output, n.Output); ok {
 				ops = append(ops, Op{Kind: OpPatch, Index: i, Field: "output", At: d.At, Del: d.Del, Ins: d.Ins})
 			}
-			// Tool args/name stream in after the block opens, so a Set
-			// carries them (and status) whenever any scalar field changes.
 			if o.Status != n.Status || o.Name != n.Name || !sameArgs(o.Args, n.Args) ||
 				o.StartedAt != n.StartedAt || o.FinishedAt != n.FinishedAt ||
 				o.OutputBase != n.OutputBase {
@@ -244,16 +185,13 @@ func DiffNodes(old, next []Node) []Op {
 	return ops
 }
 
-// ApplyOp folds one op into a node list, returning the updated slice.
-// Out-of-range indices are clamped/ignored so a malformed op degrades to
-// a near-no-op rather than panicking (consumers resync via snapshot).
+// ApplyOp ignores out-of-range indices; consumers resync via snapshot.
 func ApplyOp(nodes []Node, op Op) []Node {
 	switch op.Kind {
 	case OpOpen:
 		if op.Node == nil {
 			return nodes
 		}
-		// Append (Index is advisory; the list is tail-only).
 		return append(nodes, *op.Node)
 	case OpPatch:
 		if op.Index < 0 || op.Index >= len(nodes) {
@@ -287,7 +225,6 @@ func ApplyOp(nodes []Node, op Op) []Node {
 	return nodes
 }
 
-// sameArgs reports whether two tool-argument maps are equal.
 func sameArgs(a, b map[string]interface{}) bool {
 	if len(a) != len(b) {
 		return false

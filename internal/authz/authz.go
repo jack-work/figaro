@@ -1,5 +1,4 @@
-// Package authz is the authentication and authorization seam for the figaro
-// RPC surface.
+// Package authz is the authentication and authorization seam for the RPC surface.
 package authz
 
 import (
@@ -12,8 +11,8 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// Identity is who the server says is calling. Principal is stamped from the
-// connection; FigaroID and Label are what the params asserted.
+// Principal is stamped from the connection; FigaroID and Label are what
+// the params asserted, and are not verified.
 type Identity struct {
 	Principal rpc.Principal
 	FigaroID  string
@@ -32,8 +31,7 @@ func (AriaHeader) Authenticate(peer rpc.Principal, params json.RawMessage) Ident
 
 type principalKey struct{}
 
-// Admit reads the peer's credentials off an accepted connection and returns
-// the context its handlers run under, or the reason it is refused.
+// Admit stamps the peer's credentials onto the context, or refuses the connection.
 func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 	p, err := peer(conn)
 	if err != nil {
@@ -112,7 +110,7 @@ func (rs Rules) Check(r Request) Decision {
 	return Allow()
 }
 
-// ErrCode sits in the -32000..-32099 application range JSON-RPC 2.0 reserves.
+// ErrCode is in the JSON-RPC 2.0 application range.
 const ErrCode = -32020
 
 func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Policy) map[string]jkrpc.HandlerFunc {

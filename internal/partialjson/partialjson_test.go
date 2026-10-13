@@ -89,8 +89,6 @@ func TestStringFieldNestedShadowNeverLeaks(t *testing.T) {
 }
 
 func TestStringFieldTruncatedMidEscape(t *testing.T) {
-	// Ensure that ending exactly at "\" or "\u" or "\u00" gives value that is
-	// a prefix of the fully-decoded value and never includes garbage.
 	full := `{"content":"pre\u00e9post"}`
 	data := []byte(full)
 	target, _ := StringField(data, "content")
@@ -163,10 +161,6 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// Fields is the generic walk the renderer uses to show a tool's arguments as
-// they stream, so it is held to the same two properties StringField is: it
-// agrees with encoding/json on whole input, and it never rewrites what it has
-// already shown as the input grows.
 func TestFieldsFullMatchesEncodingJSON(t *testing.T) {
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
@@ -195,9 +189,8 @@ func TestFieldsFullMatchesEncodingJSON(t *testing.T) {
 	}
 }
 
-// Monotonic over every prefix: the value shown for a field may only grow, and
-// a field once listed may not vanish. A live view that rewrites itself is
-// worse than one that lags.
+// The value shown for a field may only grow, and a listed field may not
+// vanish.
 func TestFieldsMonotonicOverEveryPrefix(t *testing.T) {
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
@@ -223,7 +216,6 @@ func TestFieldsMonotonicOverEveryPrefix(t *testing.T) {
 	}
 }
 
-// The truncation cases the renderer actually meets, mid-key and mid-value.
 func TestFieldsTruncation(t *testing.T) {
 	cases := []struct {
 		in   string

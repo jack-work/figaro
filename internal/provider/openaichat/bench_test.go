@@ -55,16 +55,8 @@ func benchProvider(b *testing.B, mode provider.MarkMode) *Provider {
 	return p
 }
 
-// BenchmarkCatchUp measures ONE SEND'S WHOLE TRANSLATION PATH on this
-// dialect: the catch-up AND the assembly read that follows it.
-//
-// IT IS NOT AN O(new) GUARD, and it stopped being one when the memo went.
-// catchUp ends in provider.Rows, which reads the whole row log: assembly is
-// O(history) per send BY DESIGN (the provider asks the log for the full
-// history and marshals it). The O(new) property now belongs to
-// provider.CatchUp alone and is asserted by count in
-// TestCatchUpVisitsOnlyWhatIsNew; what O(history) costs is measured by
-// BenchmarkTranslations.
+// BenchmarkCatchUp measures the catch-up and the O(history) assembly read
+// that follows it; it is not an O(new) guard.
 func BenchmarkCatchUp(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
 		b.Run("Cold/"+strconv.Itoa(n), func(b *testing.B) {
@@ -103,9 +95,7 @@ func BenchmarkCatchUp(b *testing.B) {
 	}
 }
 
-// BenchmarkAssemble measures the per-turn request build, which IS
-// proportional to prompt bytes (serialization always is): the invariant it
-// guards is that marking does not add a second full pass.
+// BenchmarkAssemble guards that marking does not add a second full pass.
 func BenchmarkAssemble(b *testing.B) {
 	board := form.FromMap(map[string]json.RawMessage{
 		"system.credo": json.RawMessage(`"you are figaro"`),
@@ -131,9 +121,7 @@ func BenchmarkAssemble(b *testing.B) {
 	}
 }
 
-// BenchmarkMarkRequest isolates the marking pass itself. It walks messages
-// to find the system head and the tail, so it must stay flat in prompt size
-// rather than scanning every message's parts.
+// BenchmarkMarkRequest: the marking pass must stay flat in prompt size.
 func BenchmarkMarkRequest(b *testing.B) {
 	for _, n := range []int{1_000, 10_000} {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
@@ -161,9 +149,7 @@ func BenchmarkMarkRequest(b *testing.B) {
 	}
 }
 
-// drainCatchUp walks the sequence a catch-up hands back: the sequence is lazy,
-// so a benchmark that only calls catchUp measures the translation and not the
-// read.
+// drainCatchUp walks the lazy sequence; the walk is the measured read.
 func drainCatchUp(seq provider.RowSeq, err error) int {
 	if err != nil || seq == nil {
 		return 0

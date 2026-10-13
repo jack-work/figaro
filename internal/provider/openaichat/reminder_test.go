@@ -10,10 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// Form patches must reach the model on this dialect too. The projection
-// has always attached them to the message; only the Anthropic encoders drew
-// them, so every state change (an outfit fold, a `set`) was invisible to every
-// OpenAI-compatible endpoint.
 func TestEncodeRendersFormReminders(t *testing.T) {
 	tmpls, err := form.LoadDefaultTemplates()
 	if err != nil {
@@ -45,7 +41,6 @@ func TestEncodeRendersFormReminders(t *testing.T) {
 		t.Fatalf("prompt lost: %s", joined)
 	}
 
-	// No templates configured means no reminders, not a crash.
 	p.Templates = nil
 	encoded, err = p.encode(msg, form.Snapshot{})
 	if err != nil {

@@ -11,8 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// The peek and the walk must agree on every log, or a resumed aria mints ids
-// that collide with history it cannot see. The walk is the oracle.
+// The peek and the walk must agree on every log; the walk is the oracle.
 func TestSeedTurnIDPeeksToTheSameAnswerTheWalkFinds(t *testing.T) {
 	for _, n := range []int{0, 1, 2, 7, 50, 200} {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {
@@ -27,7 +26,6 @@ func TestSeedTurnIDPeeksToTheSameAnswerTheWalkFinds(t *testing.T) {
 					m = message.Message{Role: message.RoleOutput,
 						Content: []message.Content{message.TextContent(fmt.Sprintf("a%d", i))}}
 				default:
-					// Input role, but does not open a turn.
 					m = message.Message{Role: message.RoleInput, Steering: true,
 						Content: []message.Content{message.TextContent("steer")}}
 				}
@@ -44,7 +42,6 @@ func TestSeedTurnIDPeeksToTheSameAnswerTheWalkFinds(t *testing.T) {
 	}
 }
 
-// A fork inherits its parent's numbering rather than restarting at 1.
 func TestSeedTurnIDInheritsAcrossAFork(t *testing.T) {
 	parent := store.GuardIR(store.NewMemLog[message.Message]())
 	for i := 0; i < 6; i++ {
@@ -55,7 +52,6 @@ func TestSeedTurnIDInheritsAcrossAFork(t *testing.T) {
 	}
 	require.Equal(t, uint64(6), (&Agent{figLog: parent}).seedTurnID())
 
-	// A child seeded from the same records continues, rather than restarting.
 	child := store.GuardIR(store.NewMemLog[message.Message]())
 	for _, e := range parent.Read() {
 		_, err := child.Append(store.Entry[message.Message]{Payload: e.Payload})

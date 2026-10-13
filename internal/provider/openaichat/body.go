@@ -6,7 +6,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// bodyFunc is the one encoder both framings run.
 func bodyFunc(req chatRequest) provider.BodyFunc {
 	rows := req.Messages
 	req.Messages = nil

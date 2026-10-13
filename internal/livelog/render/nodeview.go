@@ -2,14 +2,11 @@ package render
 
 import "github.com/jack-work/figaro/api/livedoc"
 
-// defaultFrames is the braille spinner used for running blocks.
 var defaultFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-// NodeText is a minimal NodeView: a header (status glyph + type + optional name)
-// and the streamed body under a gutter. Tools show output; prose/thinking show
-// markdown. Only a running tool animates; everything else gets a static marker.
+// NodeText is a minimal NodeView: a status header and the body under a gutter.
 type NodeText struct {
-	Frames []rune // spinner frames; defaultFrames if nil
+	Frames []rune // defaultFrames if nil
 }
 
 func (r NodeText) Render(n livedoc.Node, width, tick int) []string {

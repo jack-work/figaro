@@ -6,15 +6,8 @@
 //	<412.0>!               all of block 0
 //	<412>!                 all of the message
 //
-// The trailing '!' is the terminator, the same convention as an @key! form
-// reference: without it the token is literal text and no rewrite touches it.
-// Offsets are RUNE indices into the block's text, half open, so a coordinate
-// can never land inside a multibyte character. The block index is not
-// optional dressing: a message that says a paragraph and then calls a tool
-// is one lt and two blocks.
-//
-// This package depends on nothing inside figaro so that a client and the
-// daemon parse one grammar from one file.
+// Without the '!' terminator the token is literal text. Offsets are rune
+// indices, half open. This package depends on nothing inside figaro.
 package quote
 
 import (
@@ -24,26 +17,16 @@ import (
 	"strings"
 )
 
-// Coord is one end of a range: a message, a block of it, and a rune offset.
 type Coord struct {
 	LT    uint64
 	Block int
-	// Offset is a rune index into the block's text. It is meaningful only when
-	// the Range that carries this Coord has Offsets set.
+	// Offset is meaningful only when the carrying Range has Offsets set.
 	Offset int
 }
 
-// Range is what a token names.
-//
-// Three shapes, decided by two flags:
-//
-//	Offsets  Block   meaning
-//	false    false   the whole message at Start.LT
-//	false    true    the whole block Start.LT.Start.Block
-//	true     true    runes [Start.Offset, End.Offset) between the two coords
-//
-// When Offsets is set, End may name a different lt or block from Start (a
-// span). When it is not, End equals Start.
+// Range: no flags is the whole message, Block alone the whole block, Offsets
+// the runes [Start.Offset, End.Offset). End equals Start unless Offsets is
+// set.
 type Range struct {
 	Start, End Coord
 	Block      bool // a block index was written
@@ -55,8 +38,7 @@ func (r Range) Span() bool {
 	return r.Offsets && (r.Start.LT != r.End.LT || r.Start.Block != r.End.Block)
 }
 
-// Format renders r in the canonical spelling, terminator included, so that
-// Parse(Format(r)) == r.
+// Format renders the canonical spelling: Parse(Format(r)) == r.
 func Format(r Range) string {
 	var b strings.Builder
 	b.WriteByte('<')
@@ -81,21 +63,12 @@ func Format(r Range) string {
 	return b.String()
 }
 
-// ErrNone is returned by Parse when the text does not begin with a
-// terminated token at all. It is not a malformed token: it is text.
+// ErrNone means the text does not begin with a terminated token: it is text,
+// not a malformed token.
 var ErrNone = errors.New("no quote token")
 
-// Parse reads one terminated token from the START of text and returns it
-// with the rest of the text, leading whitespace trimmed.
-//
-// Three outcomes, and they are distinct on purpose:
-//
-//   - text does not start with '<', or the matching '>' is not followed by
-//     '!': ErrNone. The caller leaves the text alone.
-//   - it does, but what is between the brackets is not a coordinate: a
-//     descriptive error. The caller refuses the message, because a reader
-//     who typed the terminator meant a quote.
-//   - a Range and the rest.
+// Parse reads one terminated token from the start of text. A terminated token
+// that is not a coordinate is an error, not ErrNone: the caller refuses it.
 func Parse(text string) (Range, string, error) {
 	if !strings.HasPrefix(text, "<") {
 		return Range{}, text, ErrNone
@@ -121,7 +94,7 @@ func parseBody(body string) (Range, error) {
 		return Range{}, errors.New("a coordinate has no spaces")
 	}
 	var r Range
-	// Split off the offsets first: "lt[.block]" [":" start "-" [lt.block ":"] end]
+	// "lt[.block]" [":" start "-" [lt.block ":"] end]
 	head, tail, hasOffsets := strings.Cut(body, ":")
 	lt, block, hasBlock, err := parseCoord(head)
 	if err != nil {
@@ -146,7 +119,6 @@ func parseBody(body string) (Range, error) {
 		return Range{}, err
 	}
 	r.Start.Offset = start
-	// A span end carries its own coordinate: "lt.block:end".
 	if endHead, endOff, spanned := strings.Cut(endS, ":"); spanned {
 		elt, eblock, eHasBlock, err := parseCoord(endHead)
 		if err != nil {
@@ -172,7 +144,6 @@ func parseBody(body string) (Range, error) {
 	return r, nil
 }
 
-// parseCoord reads "lt" or "lt.block".
 func parseCoord(s string) (lt uint64, block int, hasBlock bool, err error) {
 	ltS, blockS, hasBlock := strings.Cut(s, ".")
 	if ltS == "" {

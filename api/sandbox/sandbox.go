@@ -1,7 +1,6 @@
 // Package sandbox is the contract between the tool runtime and wherever a
-// tool's side effects land: a local process, a dedicated uid, a box, or a
-// remote host. Every tool reaches the filesystem and the shell through a
-// Sandbox and nothing else; the daemon's own credentials never cross it.
+// tool's side effects land. Every tool reaches the filesystem and the shell
+// through a Sandbox and nothing else; the daemon's credentials never cross it.
 package sandbox
 
 import (
@@ -24,7 +23,6 @@ type Provider interface {
 	Open(ctx context.Context, spec Spec) (Sandbox, error)
 }
 
-// Spec is what a sandbox is asked to be.
 type Spec struct {
 	// Workspace is the one path the box sees read-write, and the root
 	// every FS path resolves against. Absolute, on the host.
@@ -62,7 +60,6 @@ type ExecRequest struct {
 	OnChunk func([]byte)
 }
 
-// Result is how a process ended.
 type Result struct {
 	ExitCode int
 	TimedOut bool

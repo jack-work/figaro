@@ -14,8 +14,6 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// hubs is the daemon's set of aria endpoints, one per aria that has been
-// addressed this lifetime. It outlives every agent in it.
 type hubs struct {
 	mu sync.Mutex
 	m  map[string]*ariaHub
@@ -53,17 +51,14 @@ func (hs *hubs) all() []*ariaHub {
 	return out
 }
 
-// closeAll tears every endpoint down. Daemon shutdown only: a hub outliving
-// its agent is the normal state, not a leak.
+// closeAll is for daemon shutdown only: a hub outliving its agent is the normal state.
 func (hs *hubs) closeAll() {
 	for _, hb := range hs.all() {
 		hb.Close()
 	}
 }
 
-// hubFor returns the aria's endpoint, creating and binding the listener on
-// first use. Idempotent, and cheap: a hub is a listener and a map, and
-// building one constructs no agent.
+// hubFor opens the endpoint on first use; it constructs no agent.
 func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
 		return hb, nil
@@ -87,9 +82,7 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	return hb, nil
 }
 
-// bindAgentToHub points the aria's endpoint at a freshly built agent. The
-// returned func unbinds; a caller tearing the agent down runs it and leaves
-// the endpoint standing, which is the entire trick.
+// bindAgentToHub returns the unbind; running it leaves the endpoint standing.
 func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), error) {
 	hb, err := h.hubFor(id)
 	if err != nil {
@@ -98,17 +91,11 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 	return hb.bind(agent), nil
 }
 
-// writeForHub applies mutations the store can absorb without an agent -
-// today exactly figaro.set. Serving it here (after read, before wake) is
-// what lets a patch land on a DORMANT aria without restoring it, and on an
-// unbound form that will never have an agent at all. It also breaks the
-// naked-figaro deadlock: `fig bind null` births a figaro whose wake fails
-// for want of provider keys, and this is the only path that can patch
-// those keys in.
+// writeForHub lands mutations on a dormant aria or an unbound form without
+// an agent; it is the only path that can patch provider keys into a naked figaro.
 func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
 	switch method {
 	case rpc.MethodSet:
-		// below
 	case rpc.MethodStudy, rpc.MethodDrop:
 		var req rpc.StudyRequest
 		if len(params) > 0 {
@@ -117,7 +104,6 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 			}
 		}
 		if req.FormID == "" && method == rpc.MethodStudy {
-			// A bare `fig study` is a LISTING, and a listing needs no agent.
 			snap, err := h.angelus.Backend.FormState(id)
 			if err != nil {
 				return nil, true, err
@@ -158,10 +144,7 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	if err != nil {
 		return nil, true, err
 	}
-	// Report and fan out what LANDED, not what was asked for. A set of a value
-	// the board already holds is not an event: the writer dropped it, so this
-	// says so, no delta goes out, and an aria observing this form derives no
-	// transition from it.
+	// Report and fan out what landed, not what was asked for: a no-op set is not an event.
 	if applied.IsIdentity() {
 		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, true, nil
 	}
@@ -185,7 +168,6 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	}, true, nil
 }
 
-// wakeForHub restores an aria on demand for a method that needs a turn loop.
 func (h *handlers) wakeForHub(ctx context.Context, id, method string) (figaro.AgentServer, error) {
 	f, err := h.restoreByID(ctx, id, method)
 	if err != nil {
@@ -194,10 +176,6 @@ func (h *handlers) wakeForHub(ctx context.Context, id, method string) (figaro.Ag
 	srv, _ := f.(figaro.AgentServer)
 	return srv, nil
 }
-
-// readForHub answers the read methods from the store. ok=false hands the
-// request back to the wake path, so an unclassified method can never be
-// silently answered from stale bytes.
 
 func removedKeys(p form.Patch) []string {
 	var out []string

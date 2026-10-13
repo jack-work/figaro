@@ -1,5 +1,4 @@
-// Package actor is the single-writer runtime: a FIFO queue, one goroutine
-// draining it, and the close semantics that go with both.
+// Package actor is the single-writer runtime: a FIFO queue and one consumer.
 package actor
 
 import (
@@ -7,14 +6,12 @@ import (
 	"sync"
 )
 
-// Coalescer folds the head of the queue into one item. It is how two users with
-// one runtime keep their own semantics: prompts concatenate with sender tags,
-// form patches merge in order.
+// Coalescer folds the head of the queue into one item.
 type Coalescer[E any] interface {
 	Coalesce(pending []E) (taken int, folded E)
 }
 
-// Queue is the runtime. The zero value is unusable; call Start.
+// Queue's zero value is unusable; call Start.
 type Queue[E any] struct {
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -24,11 +21,8 @@ type Queue[E any] struct {
 	done    chan struct{}
 }
 
-// Start returns a queue. A non-nil handle gets its own goroutine draining the
-// queue in order: the form's writer. A nil handle means the OWNER drains, by
-// calling Recv itself: the aria's turn loop does that, because what it does
-// between items (run a turn, wait on a provider) is not a handler's business.
-// Either way there is exactly one consumer, which is the whole point.
+// Start drains through handle on its own goroutine; a nil handle means the
+// owner drains by calling Recv. Either way there is exactly one consumer.
 func Start[E any](ctx context.Context, handle func(E), fold Coalescer[E]) *Queue[E] {
 	q := &Queue[E]{fold: fold, done: make(chan struct{})}
 	q.cond = sync.NewCond(&q.mu)
@@ -55,8 +49,7 @@ func Start[E any](ctx context.Context, handle func(E), fold Coalescer[E]) *Queue
 	return q
 }
 
-// Send enqueues an item. False means the queue is closed, a refusal, so a
-// caller waiting on a reply is not left waiting forever.
+// Send returns false when the queue is closed.
 func (q *Queue[E]) Send(item E) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -68,7 +61,6 @@ func (q *Queue[E]) Send(item E) bool {
 	return true
 }
 
-// Recv blocks for the next item, folding the head when a Coalescer says to.
 func (q *Queue[E]) Recv() (E, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -90,10 +82,7 @@ func (q *Queue[E]) Recv() (E, bool) {
 	return item, true
 }
 
-// Do runs fn against the pending queue under the lock, replacing it with what
-// fn returns. It is the seam a user with its own bookkeeping needs, an inbox
-// that must reorder, coalesce, or delete queued items by id: without a second
-// copy of the runtime growing around it.
+// Do replaces the pending queue with what fn returns, under the lock.
 func (q *Queue[E]) Do(fn func(pending []E) []E) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -101,16 +90,13 @@ func (q *Queue[E]) Do(fn func(pending []E) []E) {
 	q.cond.Broadcast()
 }
 
-// Read runs fn against the pending queue under the lock without changing it.
 func (q *Queue[E]) Read(fn func(pending []E)) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	fn(q.pending)
 }
 
-// TakeWhile removes and returns the longest prefix satisfying keep. It is what
-// draining "everything ready of this kind" means, and it never reorders: a
-// prefix cannot jump an item that arrived before it.
+// TakeWhile removes the longest prefix satisfying keep; it never reorders.
 func (q *Queue[E]) TakeWhile(keep func(E) bool) []E {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -126,19 +112,15 @@ func (q *Queue[E]) TakeWhile(keep func(E) bool) []E {
 	return taken
 }
 
-// Len is how many items are waiting.
 func (q *Queue[E]) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return len(q.pending)
 }
 
-// IsIdle reports an empty queue.
 func (q *Queue[E]) IsIdle() bool { return q.Len() == 0 }
 
-// Closed reports whether the queue refuses new items. It reads the done channel
-// rather than the flag, so it is safe to call from INSIDE Do or Read: where the
-// lock is already held, and where a user's own bookkeeping most wants to ask.
+// Closed reads the done channel, not the flag, so it is safe inside Do or Read.
 func (q *Queue[E]) Closed() bool {
 	select {
 	case <-q.done:
@@ -148,8 +130,7 @@ func (q *Queue[E]) Closed() bool {
 	}
 }
 
-// Close refuses future sends and unblocks the drain. What was ALREADY ACCEPTED
-// is still delivered: Recv returns false only once the queue is empty.
+// Close refuses future sends; what was already accepted is still delivered.
 func (q *Queue[E]) Close() {
 	q.mu.Lock()
 	already := q.closed
@@ -161,7 +142,6 @@ func (q *Queue[E]) Close() {
 	}
 }
 
-// Done closes when the queue does.
 func (q *Queue[E]) Done() <-chan struct{} { return q.done }
 
 func (q *Queue[E]) dropLocked(n int) {

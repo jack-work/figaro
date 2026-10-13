@@ -46,8 +46,7 @@ type liveForkBackend struct {
 	log        store.Log[message.Message]
 }
 
-// Open backs forkPointOf, which maps a turn id to a fork LT. The log holds one
-// completed exchange so turn 1 resolves.
+// The log holds one completed exchange so turn 1 resolves.
 func (f *liveForkBackend) OpenFigIR(string) (store.Log[message.Message], error) {
 	if f.log == nil {
 		l := store.NewMemLog[message.Message]()
@@ -154,7 +153,7 @@ func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
 	require.Empty(t, backend.childMeta.OutfitVersion)
 }
 
-// A fork must NOT be handed to any agent's actor.
+// A fork must not be handed to any agent's actor.
 type activeForkProvider struct {
 	started  chan struct{}
 	release  chan struct{}
@@ -483,9 +482,7 @@ func TestRegistryListDoesNotHoldRegistryLockDuringInfo(t *testing.T) {
 	<-listed
 }
 
-// selfForkTool forks the aria it is running inside, from inside the tool call,
-// and waits for the answer. That is what `figaro fork --id <me>` does: the tool
-// blocks on an RPC that targets its own aria.
+// selfForkTool forks its own aria from inside the tool call, as `figaro fork --id <me>` does.
 type selfForkTool struct {
 	h      *handlers
 	ariaID string
@@ -502,18 +499,8 @@ func (s *selfForkTool) Execute(ctx context.Context, _ map[string]any, _ tool.OnO
 	return []message.Content{message.TextContent("forked")}, nil
 }
 
-// A FIGARO MUST BE ABLE TO FORK ITSELF.
-//
-// This is the deadlock the whole trunk-index effort exists to remove, reduced
-// to its smallest shape. The fork used to be handed to the target's inbox and
-// waited on; a self-fork therefore queued behind the very turn whose tool call
-// was waiting for it. The tool could not return until the fork ran, and the
-// fork could not run until the tool returned.
-//
-// figwal already excludes a fork from concurrent appends via lockLineage, so
-// the inbox hop was a second lock over the first, and it was the second one
-// that closed the circle. This test hangs on the old code and passes on the
-// new; the timeout IS the assertion.
+// A self-fork handed to the target's inbox queues behind the turn whose tool
+// call waits on it; the timeout is the assertion.
 func TestFigaroCanForkItselfFromInsideItsOwnTurn(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)

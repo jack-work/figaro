@@ -20,7 +20,6 @@ func writeOutfit(t *testing.T, dir, name, body string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", name+".toml"), []byte(body), 0o600))
 }
 
-// Later layers win, and so does the outfit's own patch over all of them.
 func TestLayersApplyInOrderNearestWins(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "review", "[system]\nmodel = \"review-model\"\ncredo = \"review\"\n")
@@ -29,15 +28,12 @@ func TestLayersApplyInOrderNearestWins(t *testing.T) {
 
 	patch, err := outfit.New(dir).Load("top")
 	require.NoError(t, err)
-	// opus follows review, so its model wins; review's credo has no rival.
 	assert.Equal(t, `"opus-model"`, string(mustEntry(patch, "system.model")))
 	assert.Equal(t, `"review"`, string(mustEntry(patch, "system.credo")))
 	assert.Equal(t, `4096`, string(mustEntry(patch, "system.max_tokens")))
 	assert.Equal(t, `"high"`, string(mustEntry(patch, "system.thinking_effort")))
 }
 
-// A layer's own layers are folded before it contributes, so a nested outfit
-// arrives as one already-composed patch at the position it is named in.
 func TestLayersComposeRecursively(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "house", "[system]\nmodel = \"house\"\ncredo = \"house-credo\"\n")
@@ -50,16 +46,11 @@ func TestLayersComposeRecursively(t *testing.T) {
 	assert.Equal(t, `"house-credo"`, string(mustEntry(patch, "system.credo")))
 }
 
-// A shared ancestor must be applied at EVERY position it appears in, not
-// skipped after the first: the old single-parent walker marked a name visited
-// forever, which would have quietly broken "later wins" on a diamond.
 func TestSharedLayerAppliesAtEachPosition(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "house", "[system]\nmodel = \"house\"\n")
 	writeOutfit(t, dir, "left", "layers = [\"house\"]\n[system]\ncredo = \"left\"\n")
 	writeOutfit(t, dir, "right", "layers = [\"house\"]\n")
-	// left sets model via house then credo; right re-applies house, so house's
-	// model must be the winner even though left was folded first.
 	writeOutfit(t, dir, "top", "layers = [\"left\", \"right\"]\n")
 
 	patch, err := outfit.New(dir).Load("top")
@@ -68,9 +59,6 @@ func TestSharedLayerAppliesAtEachPosition(t *testing.T) {
 	assert.Equal(t, `"left"`, string(mustEntry(patch, "system.credo")))
 }
 
-// The bug this replaces: a missing layer silently discarded the whole patch,
-// so a typo looked like an empty outfit and, downstream, like a missing
-// provider: which sent the user to the first-run wizard.
 func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "top", "layers = [\"present\", \"absent\"]\n[system]\nprovider = \"anthropic\"\n")
@@ -82,7 +70,6 @@ func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	assert.Equal(t, []string{"absent"}, missing.Missing)
 	assert.False(t, missing.RootOnly)
 
-	// The closure must describe the shape the gap was found in.
 	top := missing.Closure
 	assert.Equal(t, "top", top.Name)
 	assert.True(t, top.Found)
@@ -92,8 +79,6 @@ func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	assert.Equal(t, "absent", top.Layers[1].Name)
 }
 
-// An outfit that does not exist is an absence for LoadOptional (the first-run
-// flow rides on it) and a fault for Load.
 func TestMissingOutfitIsOptionalAbsenceButLoadReportsIt(t *testing.T) {
 	dir := t.TempDir()
 	o := outfit.New(dir)
@@ -109,7 +94,6 @@ func TestMissingOutfitIsOptionalAbsenceButLoadReportsIt(t *testing.T) {
 	assert.Equal(t, []string{"nope"}, missing.Missing)
 }
 
-// A multi-name dressing must order exactly as layers do.
 func TestNamesOrderLikeLayers(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "a", "[system]\nmodel = \"a\"\ncredo = \"a\"\n")
@@ -137,9 +121,7 @@ func TestCycleInLayersIsReported(t *testing.T) {
 	assert.Equal(t, "a", cycle.At)
 }
 
-// `source` was the single-parent spelling. Ignoring it would flatten it into a
-// form key named "source": the silent kind of wrong, and an array-valued
-// `source` used to be dropped without a word.
+// `source` was the single-parent spelling; flattening it into a key would be silent.
 func TestSourceIsRejectedRatherThanIgnored(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"m\"\n")
@@ -166,8 +148,6 @@ func TestMalformedLayersIsReported(t *testing.T) {
 	}
 }
 
-// The patch's own keys beat the outfits named beside them, and no directive
-// ever reaches a board: the two axes are parsed apart and folded in one call.
 func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\ncredo = \"base\"\n")
@@ -185,9 +165,7 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	_, hasLayers := patch.Entry("layers")
 	assert.False(t, hasLayers)
 
-	// `layers` written into a PATCH is data now, not a directive: it is
-	// stored as typed and resolves nothing. The only place the key is
-	// respected is the unmarshal of an outfit FILE.
+	// `layers` in a patch is data; only an outfit file's `layers` resolves.
 	literal, err := outfit.ParseSet(`{"layers":["base"],"ttl":"2h"}`)
 	require.NoError(t, err)
 	patch, err = o.Dress(nil, literal, "")
@@ -196,13 +174,10 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	assert.False(t, hz)
 	assert.Equal(t, `["base"]`, string(mustEntry(patch, "layers")))
 
-	// A missing outfit is a broken reference, always.
 	_, err = o.Dress([]string{"nope"}, form.Patch{}, "")
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
 
-	// `default` is the one lenient name: unset folds nothing, so the first-run
-	// flow can notice a missing provider instead of a missing file.
 	patch, err = o.Dress([]string{"default"}, form.Patch{}, "")
 	require.NoError(t, err)
 	assert.True(t, patch.IsIdentity())
@@ -212,7 +187,6 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	assert.Equal(t, `"base-model"`, string(mustEntry(patch, "system.model")))
 }
 
-// The grammar refuses the other axis's terms, naming the flag that takes them.
 func TestGrammarKeepsTheAxesApart(t *testing.T) {
 	_, err := outfit.ParseNames("ttl=1h")
 	require.Error(t, err)
@@ -231,9 +205,6 @@ func TestGrammarKeepsTheAxesApart(t *testing.T) {
 	assert.Equal(t, []string{"a.b", "mantra"}, paths)
 }
 
-// One Outfitter serves every aria in the daemon, and a fold reads files and
-// caches. Materialize the same patch from many goroutines under -race, and
-// prove every answer is identical.
 func TestConcurrentFoldsAgree(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\n")
@@ -267,9 +238,6 @@ func TestConcurrentFoldsAgree(t *testing.T) {
 	wg.Wait()
 }
 
-// A layer name is resolved into the outfits directory exactly as a spec name
-// is, so it must pass the same gate: `layers = ["../../secrets"]` is refused
-// where it is declared, not silently opened.
 func TestLayerNamesObeyTheNameGrammar(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "sneaky", "layers = [\"../../secrets\"]\n")
@@ -278,11 +246,7 @@ func TestLayerNamesObeyTheNameGrammar(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot contain")
 }
 
-// A fileName/dirName reference is DATA, and the loader is what turns it into a
-// read inside the daemon. Before the spec collapse a client could send
-// `-O '{"x":{"fileName":"../../.ssh/id_ed25519"}}'` and have the contents folded
-// onto its own form and rendered to a provider. That door is closed; this keeps
-// it closed.
+// A fileName/dirName reference in a client patch must never become a read inside the daemon.
 func TestLoaderRefusesPathsOutsideTheConfigDir(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "config")
@@ -307,17 +271,13 @@ func TestLoaderRefusesPathsOutsideTheConfigDir(t *testing.T) {
 				assert.NotContains(t, string(v), "PRIVATE KEY MATERIAL", k)
 			}
 			if err == nil {
-				// An absolute path is re-rooted rather than refused, so it can
-				// only ever name something inside the config dir: which here
-				// does not exist, and the open error is the report.
 				assert.Empty(t, patch.Entries())
 			}
 		})
 	}
 }
 
-// A symlink INSIDE the config dir pointing out of it is the version of this bug
-// that survives a naive prefix test.
+// A symlink inside the config dir pointing out survives a naive prefix test.
 func TestLoaderRefusesASymlinkOutOfTheConfigDir(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "config")

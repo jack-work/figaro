@@ -16,8 +16,6 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-// installRing points the process's log ring at a fresh instance for the
-// duration of a test, exactly as otel.Init does in the daemon.
 func installRing(t *testing.T) {
 	t.Helper()
 	ring := logring.New(slog.NewJSONHandler(newDiscard(), nil), 64,
@@ -36,9 +34,6 @@ type discard struct{}
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 func newDiscard() discard                   { return discard{} }
 
-// The whole feature, end to end and through the real handler, because that is
-// the path an operator uses at three in the morning: a refusal must arrive
-// with the wait the provider asked for.
 func TestProviderLedgerHandlerReportsARefusal(t *testing.T) {
 	installRing(t)
 
@@ -94,8 +89,6 @@ func TestProviderLedgerHandlerReportsARefusal(t *testing.T) {
 	}
 }
 
-// The half a log cannot express. An outstanding request is current state, and
-// it is the request an incident is actually about.
 func TestProviderLedgerShowsOutstandingRequests(t *testing.T) {
 	installRing(t)
 
@@ -135,8 +128,6 @@ func TestProviderLedgerShowsOutstandingRequests(t *testing.T) {
 	<-done
 }
 
-// The aria filter has to actually filter, or "why is 94f0752b stuck" comes
-// back as the whole daemon's traffic.
 func TestProviderLedgerFiltersByAriaAndLimit(t *testing.T) {
 	installRing(t)
 
@@ -178,8 +169,6 @@ func TestProviderLedgerFiltersByAriaAndLimit(t *testing.T) {
 	}
 }
 
-// Telemetry is not installed in every process (the CLI does not init it). A
-// diagnostic that panics when diagnostics are off is not a diagnostic.
 func TestProviderLedgerToleratesNoRing(t *testing.T) {
 	figOtel.SetRecentForTest(nil)
 	h := &handlers{}

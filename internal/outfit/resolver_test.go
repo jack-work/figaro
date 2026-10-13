@@ -15,10 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// The snapshot's whole reason for existing: a resolution must not straddle an
-// edit. The file is rewritten AFTER the epoch has pinned it, and the fold -
-// even one rebuilt from scratch after eviction: still answers with the bytes
-// that were there when the epoch began.
+// A file rewritten after the epoch pinned it is invisible to that epoch, even after eviction.
 func TestSnapshotPinsBytesForTheEpoch(t *testing.T) {
 	dir := t.TempDir()
 	snap := t.TempDir()
@@ -30,31 +27,24 @@ func TestSnapshotPinsBytesForTheEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `"pinned"`, string(mustEntry(patch, "system.model")))
 
-	// The user saves the file mid-resolution. Nothing in this epoch may see it.
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"changed-underneath\"\n")
 
-	// Evict the materialized fold, forcing a rebuild from the snapshot rather
-	// than from the live file.
 	o.Forget("base")
 	patch, err = o.Load("base")
 	require.NoError(t, err)
 	assert.Equal(t, `"pinned"`, string(mustEntry(patch, "system.model")),
 		"a rebuild inside an epoch must come from the snapshot, not the live file")
 
-	// A new epoch is where the edit belongs.
 	o.Reload()
 	patch, err = o.Load("base")
 	require.NoError(t, err)
 	assert.Equal(t, `"changed-underneath"`, string(mustEntry(patch, "system.model")))
 
-	// And the bytes are still on disk, under their own hash: the receipt.
 	entries, err := os.ReadDir(snap)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(entries), 2, "both versions should be snapshotted")
 }
 
-// A cycle is detected lazily, named, and then TAINTED: every name on the loop
-// answers from the verdict instead of walking the graph again.
 func TestCycleIsTaintedAndNotRewalked(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "a", "layers = [\"b\"]\n[system]\na = 1\n")
@@ -67,14 +57,12 @@ func TestCycleIsTaintedAndNotRewalked(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cycle")
 
-	// Every name on the loop is tainted, not just the one that was asked for.
 	for _, name := range []string{"a", "b", "c"} {
 		_, err := o.Load(name)
 		require.Error(t, err, "%s sits on the cycle", name)
 		assert.Contains(t, err.Error(), "cycle")
 	}
 
-	// A fresh epoch clears the verdict: the loop may have been cut.
 	writeOutfit(t, dir, "c", "[system]\nc = 1\n")
 	o.Reload()
 	patch, err := o.Load("a")
@@ -82,10 +70,7 @@ func TestCycleIsTaintedAndNotRewalked(t *testing.T) {
 	assert.Equal(t, "1", string(mustEntry(patch, "system.c")))
 }
 
-// A fold that never had to be walked is the point of the epoch: the second ask
-// costs no syscall at all. Proven by deleting the file out from under a pinned
-// epoch, a stat-per-dependency cache would notice and refold; this one must
-// answer from the epoch it already proved.
+// Deleting the file under a pinned epoch must go unnoticed: the second ask costs no syscall.
 func TestEpochAnswersWithoutTouchingDisk(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"m\"\n")
@@ -105,8 +90,6 @@ func TestEpochAnswersWithoutTouchingDisk(t *testing.T) {
 	assert.Error(t, err, "and the next epoch tells the truth")
 }
 
-// Warming is background work with no error surface and no blocking: the only
-// thing a caller can observe is that the fold is there afterwards.
 func TestWarmFoldsInTheBackground(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "housed", "[system]\nmodel = \"m\"\n")
@@ -118,8 +101,6 @@ func TestWarmFoldsInTheBackground(t *testing.T) {
 	o.Warm("")
 }
 
-// One resolver serves every aria in the daemon. Fold the same enormous-ish
-// closure from many goroutines under -race and prove every answer agrees.
 func TestConcurrentDressAgrees(t *testing.T) {
 	dir := t.TempDir()
 	skills := filepath.Join(dir, "skills")

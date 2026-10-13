@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Stage 2 collapsed Patient/Selfish/Yield into a plain FIFO. Tests
-// here cover the surviving surface: enqueue, dequeue, close.
-
 func TestInbox_FIFO(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -38,8 +35,7 @@ func TestInbox_TakeReadySetContiguousPrefix(t *testing.T) {
 	b.Send(event{typ: eventUserPrompt, text: "p"})
 	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 
-	// A set behind a prompt is not taken until the prompt clears: the
-	// drain loop preserves FIFO across kinds.
+	// FIFO is preserved across kinds: a set behind a prompt waits for the prompt.
 	assert.Empty(t, b.TakeReadySet())
 	require.Len(t, b.TakeReadyUserPrompts(), 1)
 	require.Len(t, b.TakeReadySet(), 1)
@@ -161,9 +157,7 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 	defer cancel()
 	b := NewInbox(ctx)
 
-	// A pure-form prompt (empty text) is a carrier, not a message -
-	// the default snapshot omits it. Non-prompt events (Set, Fork) are also
-	// skipped.
+	// A pure-form prompt is a carrier; the default snapshot omits it.
 	b.Send(event{typ: eventUserPrompt, text: "first"})
 	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: ""}) // carrier
@@ -171,12 +165,10 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 
 	require.Equal(t, []string{"first", "second"}, promptTexts(b.SnapshotPrompts(false)))
 
-	// Read-only: the inbox is unchanged after a snapshot.
 	assert.False(t, b.IsIdle())
 	require.Equal(t, []string{"first", "second"}, promptTexts(b.SnapshotPrompts(false)))
 
-	// Opt in and the carrier appears: it is deletable, so it must be
-	// addressable. Nothing else changes.
+	// Opt in and the carrier appears: it is deletable, so it must be addressable.
 	require.Equal(t, []string{"first", "", "second"}, promptTexts(b.SnapshotPrompts(true)))
 }
 
@@ -188,9 +180,7 @@ func promptTexts(events []event) []string {
 	return out
 }
 
-// Ids are what the CRUD surface addresses, so they must be minted for every
-// prompt, dense (a `set` in between does not burn one), and never reused
-// within an inbox.
+// Ids are dense (a set between does not burn one) and never reused within an inbox.
 func TestInbox_PromptIDsAreDenseAndUnique(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -206,7 +196,6 @@ func TestInbox_PromptIDsAreDenseAndUnique(t *testing.T) {
 	assert.Equal(t, uint64(2), snap[1].id, "a control event must not consume an id")
 	assert.NotZero(t, snap[0].at, "a queued message records when it was accepted")
 
-	// Draining and re-sending does not recycle an id.
 	b.TakeReadyUserPrompts()
 	b.Send(event{typ: eventUserPrompt, text: "three"})
 	for _, e := range b.SnapshotPrompts(false) {
@@ -214,9 +203,7 @@ func TestInbox_PromptIDsAreDenseAndUnique(t *testing.T) {
 	}
 }
 
-// The epoch is what makes an id safe to mutate against: it must be stable for
-// the life of one inbox and different for the next, because a client hands it
-// back and the agent compares it for equality.
+// The epoch is stable for one inbox and different for the next.
 func TestInbox_EpochIsStablePerInboxAndFreshPerGeneration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -227,8 +214,6 @@ func TestInbox_EpochIsStablePerInboxAndFreshPerGeneration(t *testing.T) {
 	b.Send(event{typ: eventUserPrompt, text: "one"})
 	assert.Equal(t, epoch, b.Epoch(), "the epoch must not move under a live client")
 
-	// A new inbox is a new generation: the id space restarts, so the token
-	// that qualifies it must not.
 	next := NewInbox(ctx)
 	assert.NotEqual(t, epoch, next.Epoch())
 	next.Send(event{typ: eventUserPrompt, text: "one"})
@@ -236,9 +221,7 @@ func TestInbox_EpochIsStablePerInboxAndFreshPerGeneration(t *testing.T) {
 		"ids restart per inbox, which is exactly why the epoch exists")
 }
 
-// A prompt the drain loop has lifted is no longer queued, but it is not yet a
-// message either. The inbox remembers which, so a refusal can say precisely
-// how late the caller was instead of collapsing everything into "unknown".
+// A lifted prompt is neither queued nor yet a message; the refusal says which.
 func TestInbox_LiftedThenCommitted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -256,9 +239,7 @@ func TestInbox_LiftedThenCommitted(t *testing.T) {
 	assert.Equal(t, taken[0].id, b.committed[0].id)
 }
 
-// A batch that could not be persisted goes back on the queue, so it must stop
-// counting as in-flight: otherwise a delete aimed at a message that is once
-// again waiting would be refused forever.
+// A batch prepended back stops counting as in-flight.
 func TestInbox_PrependClearsInFlight(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -273,8 +254,7 @@ func TestInbox_PrependClearsInFlight(t *testing.T) {
 	require.Len(t, b.SnapshotPrompts(false), 1)
 }
 
-// The memory of answered ids is bounded: it only has to outlive a client's
-// read→mutate round trip.
+// The memory of answered ids is bounded.
 func TestInbox_CommittedRingIsBounded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

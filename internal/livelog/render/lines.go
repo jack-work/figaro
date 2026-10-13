@@ -9,8 +9,8 @@ import (
 	fig "github.com/jack-work/figaro/internal/render"
 )
 
-// Width is the display width of a styled row: escape sequences count for
-// nothing, and a wide rune counts for the cells it occupies.
+// Width is the display width of a styled row: escapes count for nothing, a
+// wide rune for its cells.
 func Width(s string) int {
 	col := 0
 	rs := []rune(s)
@@ -32,9 +32,8 @@ func Width(s string) int {
 	return col
 }
 
-// OverlayRight sets tag flush against the right edge of a row width columns
-// wide, keeping the row exactly that wide: the mark rides the line rather than
-// taking one of its own, so nothing below it moves.
+// OverlayRight sets tag flush against the right edge of a row, keeping the
+// row exactly width columns wide.
 func OverlayRight(line, tag string, width int) string {
 	if tag == "" || width <= 0 {
 		return line
@@ -48,15 +47,11 @@ func OverlayRight(line, tag string, width int) string {
 	return left + strings.Repeat(" ", room-Width(left)) + " " + tag
 }
 
-// GutterCols is the width of the RIGHT gutter: one column, held for the
-// adornment glyph a block wears, mirroring the left margin the pager's
-// selection bar stands in. Everything else drawn against the right edge
-// (the M-m coordinate mark) stops short of it.
+// GutterCols is the width of the right gutter, held for the adornment glyph;
+// everything else drawn against the right edge stops short of it.
 const GutterCols = 1
 
-// OverlayGutter puts glyph in the right gutter of a row width columns wide.
-// The row keeps its width: the glyph stands in the last column rather than
-// being appended to it, and a row shorter than the gutter is padded out.
+// OverlayGutter puts glyph in the right gutter of a row, keeping its width.
 func OverlayGutter(line, glyph string, width int) string {
 	if glyph == "" || width <= GutterCols {
 		return line
@@ -66,15 +61,9 @@ func OverlayGutter(line, glyph string, width int) string {
 	return left + strings.Repeat(" ", room-Width(left)) + glyph
 }
 
-// OverlayColumn replaces the single display column col of a styled row with
-// glyph, which must itself be one column wide. The row's own escape
-// sequences pass through untouched and uncounted, so a glamour-styled row
-// can wear a glyph in its margin without its styling moving.
-//
-// A glyph already standing in that column is left alone, and the row is
-// returned as it came. That is the common case on the frame path: the snake's
-// resting glyph is what most of its rows want, and a repaint that changes
-// nothing must not cost a copy of the row.
+// OverlayColumn replaces display column col of a styled row with glyph, which
+// must be one column wide; escapes pass through uncounted. A glyph already
+// there returns the row as it came, so a no-op repaint costs no copy.
 func OverlayColumn(line string, col int, glyph string) string {
 	if glyph == "" || col < 0 {
 		return line
@@ -95,8 +84,7 @@ func OverlayColumn(line string, col int, glyph string) string {
 			b.Grow(len(line) + len(glyph))
 			b.WriteString(line[:i])
 			b.WriteString(glyph)
-			// A wide rune cannot be half replaced: it gives up both its
-			// cells, and the second is filled so nothing after it moves.
+			// A wide rune gives up both its cells.
 			if w > 1 {
 				b.WriteString(strings.Repeat(" ", w-1))
 			}
@@ -106,19 +94,15 @@ func OverlayColumn(line string, col int, glyph string) string {
 		at += w
 		i += size
 	}
-	// The row ends before the column: pad out to it, which is how a glyph
-	// lands in the margin of a row that has none (a blank connector row).
 	if at <= col {
 		return line + strings.Repeat(" ", col-at) + glyph
 	}
 	return line
 }
 
-// clip truncates s to at most width display columns and flattens embedded
-// control characters (newline/tab/CR/<0x20) to spaces, guaranteeing every
-// emitted row is exactly one physical line: the invariant the renderer's
-// cursor math depends on. ANSI escape sequences pass through uncounted; a reset
-// is appended if the line was cut mid-style so color can't bleed.
+// clip truncates s to width display columns and flattens control characters
+// to spaces, so every emitted row is exactly one physical line, which the
+// cursor math depends on. A reset is appended if the cut was mid-style.
 func clip(s string, width int) string {
 	if width <= 0 {
 		return ""
@@ -128,7 +112,7 @@ func clip(s string, width int) string {
 	clipped := false
 	rs := []rune(s)
 	for i := 0; i < len(rs); {
-		if rs[i] == '\x1b' { // copy the whole escape sequence, uncounted
+		if rs[i] == '\x1b' {
 			j := i + 1
 			for j < len(rs) && !isLetter(rs[j]) {
 				j++
@@ -144,14 +128,7 @@ func clip(s string, width int) string {
 		if r < 0x20 || r == 0x7f {
 			r = ' '
 		}
-		// CELLS, NOT RUNES. A CJK ideograph or an emoji occupies two columns,
-		// so counting runes let a row "clipped to width" occupy width + the
-		// number of wide runes on it: measured at +12 on a 60-column pane
-		// for one line of Japanese, and at exactly +1 for a line carrying a
-		// single wide rune, which is the master's "one or two characters
-		// beyond the right edge". A row wider than the viewport wraps in the
-		// terminal (tmux: the UI breaks up) or is hidden (nvim nowrap: it
-		// obscures the right of the GUI): the two symptoms are one bug.
+		// Cells, not runes: a wide rune occupies two columns.
 		w := runewidth.RuneWidth(r)
 		if col+w > width {
 			clipped = true
@@ -167,10 +144,8 @@ func clip(s string, width int) string {
 	return b.String()
 }
 
-// hardWrap wraps each paragraph of s to at most width COLUMNS, preserving
-// explicit newlines. It used to say "width counts runes", and did, which is
-// the same defect clip carried: tool output (nodeview.go wraps bodies through
-// here) ran past the right edge by one column per wide rune.
+// hardWrap wraps each paragraph of s to at most width columns, preserving
+// explicit newlines.
 func hardWrap(s string, width int) []string {
 	if width < 1 {
 		width = 1

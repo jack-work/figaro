@@ -33,8 +33,6 @@ func TestMemStatusReportsCounters(t *testing.T) {
 	require.Empty(t, st.PprofSocket, "advertises a profiler never armed")
 }
 
-// Off by default: pprof's handlers stop the world and leak argv, and this
-// daemon is long-lived. Armed, it must be reachable and owner-only.
 func TestStartPprof(t *testing.T) {
 	t.Run("unarmed", func(t *testing.T) {
 		t.Setenv(PprofEnv, "")
@@ -69,19 +67,15 @@ func TestStartPprof(t *testing.T) {
 	})
 }
 
-// The two fields that explain RSS must actually be reported, and a forced
-// collection must report a live set, not another unswept number.
 func TestMemCollectReportsTheLiveSetAndTheOSFacing(t *testing.T) {
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
 
 	plain := a.MemStatus()
 	require.Nil(t, plain.Collected, "an ordinary status must not stop the world")
 	require.NotZero(t, plain.HeapSysBytes)
-	// HeapIdle >= HeapReleased always: released is the part of idle handed
-	// back. A build reporting the reverse has them crossed.
+	// HeapIdle >= HeapReleased: released is the part of idle handed back.
 	require.GreaterOrEqual(t, plain.HeapIdleBytes, plain.HeapReleasedBytes)
 
-	// Make garbage that nothing holds, then prove a collection sees it.
 	before := a.MemStatus().HeapAllocBytes
 	junk := make([][]byte, 0, 256)
 	for i := 0; i < 256; i++ {

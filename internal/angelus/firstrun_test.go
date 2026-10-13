@@ -21,9 +21,6 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// bootAngelus starts an angelus rooted at dir with the given config.
-// Returns a connected client and a teardown function. The factory is
-// shared with the integration tests' mockProviderForIntegration shape.
 func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*sdk.Angelus, func()) {
 	t.Helper()
 	a := angelus.New(angelus.Config{Backend: store.NewTestBackend(t), RuntimeDir: testRuntimeDir(t, dir)})
@@ -58,9 +55,6 @@ func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*sdk.Angelus,
 	return acli, teardown
 }
 
-// TestCreate_NoDefaultOutfit_ReturnsTypedError exercises the
-// first-run signal: empty req.Outfit + empty config.DefaultOutfit
-// must yield ErrNoDefaultOutfit with AvailableProviders populated.
 func TestCreate_NoDefaultOutfit_ReturnsTypedError(t *testing.T) {
 	dir := t.TempDir()
 	loaded, err := config.Load(dir) // default_outfit unset
@@ -84,12 +78,9 @@ func TestCreate_NoDefaultOutfit_ReturnsTypedError(t *testing.T) {
 	assert.ElementsMatch(t, []string{"mock", "anthropic"}, data.AvailableProviders)
 }
 
-// TestCreate_OutfitMissingProvider_ReturnsTypedError exercises the
-// case where the outfit resolves but lacks system.provider.
 func TestCreate_OutfitMissingProvider_ReturnsTypedError(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
-	// An outfit with no system.provider at all.
 	require.NoError(t, os.WriteFile(dir+"/outfits/bare.toml", []byte(`
 [system]
 model = "some-model"
@@ -117,10 +108,7 @@ model = "some-model"
 	assert.NotEmpty(t, data.AvailableProviders)
 }
 
-// TestCreate_MissingOutfitName_ReturnsTypedError: a default outfit
-// is named but no file exists. The outfit is graceful-empty so the
-// failure surfaces as ErrNoProvider (no system.provider in the empty
-// patch), not ErrOutfitNotFound.
+// A named default with no file is graceful-empty: ErrNoProvider, not ErrOutfitNotFound.
 func TestCreate_MissingOutfitName_ReturnsTypedError(t *testing.T) {
 	dir := t.TempDir()
 	loaded, err := config.Load(dir)

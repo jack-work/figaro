@@ -1,6 +1,4 @@
-// Package turns is the fig IR turn arithmetic: which message opens a turn,
-// what id each message carries, and how a turn id maps to the LT range it
-// occupies.
+// Package turns is the fig IR turn arithmetic.
 package turns
 
 import (
@@ -9,21 +7,18 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Opens reports whether m begins a new turn.
 func Opens(m message.Message) bool {
 	return m.Role == message.RoleInput && !IsSteering(m) && Text(m) != ""
 }
 
-// IsSteering reports whether m is a mid-turn direction rather than a new
-// question. Two accepted shapes for one concept: the explicit flag the drain
-// sets, and the legacy shape: prose riding on a tool_result message: which
-// real logs still contain and which must keep rendering as it always did.
+// IsSteering accepts two shapes: the explicit flag, and the legacy shape of
+// prose riding on a tool_result message, which logs on disk still carry.
 func IsSteering(m message.Message) bool {
 	return m.Steering || HasToolResult(m)
 }
 
-// StampIDs fills TurnID on every message that lacks one and returns the last
-// turn id the log implies: the seed an agent resumes minting from.
+// StampIDs fills TurnID where missing and returns the last turn id, the seed
+// an agent resumes minting from.
 func StampIDs(msgs []message.Message) uint64 {
 	var cur uint64
 	for i := range msgs {
@@ -39,8 +34,7 @@ func StampIDs(msgs []message.Message) uint64 {
 	return cur
 }
 
-// Span reports the LT range a turn occupies: first is the prompt's LT: the
-// coordinate a fork takes, and last is the turn's final message.
+// Span: first is the prompt's LT, the coordinate a fork takes.
 func Span(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
 	StampIDs(msgs)
 	for i := range msgs {
@@ -55,11 +49,7 @@ func Span(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
 	return first, last, ok
 }
 
-// At is the inverse of Span: it reports which turn owns an LT. Display
-// surfaces need this because the tree records a fork point as an LT
-// (NodeView.BranchedLT) while the user's coordinate is a turn: printing the
-// raw LT and calling it a fork argument is a lie, since `fork <id>:N` takes N
-// as a turn.
+// At reports which turn owns an LT.
 func At(msgs []message.Message, lt uint64) (uint64, bool) {
 	StampIDs(msgs)
 	for i := range msgs {
@@ -70,8 +60,7 @@ func At(msgs []message.Message, lt uint64) (uint64, bool) {
 	return 0, false
 }
 
-// Text joins a message's prose blocks. Empty blocks are skipped here because
-// this answers "does this message say anything", not "what does it render as".
+// Text joins a message's prose blocks, skipping empty ones.
 func Text(m message.Message) string {
 	var parts []string
 	for _, c := range m.Content {
@@ -82,8 +71,6 @@ func Text(m message.Message) string {
 	return strings.Join(parts, "\n")
 }
 
-// HasToolResult reports whether a message carries any tool_result block: i.e.
-// it is a tool-result tic (part of the turn) rather than a fresh user prompt.
 func HasToolResult(m message.Message) bool {
 	for _, c := range m.Content {
 		if c.Type == message.ContentToolResult {

@@ -1,8 +1,7 @@
 package figaro_test
 
-// THE QUOTE AT THE DOOR, end to end: a prompt that begins with a coordinate
-// reaches the provider carrying the passage it names, and one that names
-// nothing is refused on the reply with the log and the queue untouched.
+// A prompt beginning with a coordinate reaches the provider carrying the
+// passage; one naming nothing is refused with the log and queue untouched.
 
 import (
 	"context"
@@ -25,8 +24,7 @@ import (
 
 const quotedReply = "The retry loop backs off exponentially, but the jitter is applied before the cap."
 
-// quoteProvider answers the first turn with a known paragraph and records
-// the last user message it was shown on the second.
+// quoteProvider answers the first turn with a known paragraph and records the second's last user message.
 type quoteProvider struct {
 	mu    sync.Mutex
 	sends int
@@ -87,8 +85,7 @@ func newQuoteAgent(t *testing.T) (*figaro.Agent, *quoteProvider) {
 	return a, prov
 }
 
-// lastOutputLT finds the LT of the newest assistant message, which is what a
-// reader would read off `figaro show -v`.
+// lastOutputLT is the LT of the newest assistant message.
 func lastOutputLT(t *testing.T, a *figaro.Agent) uint64 {
 	t.Helper()
 	msgs := a.Context()
@@ -110,7 +107,6 @@ func TestQuotedPromptReachesTheProvider(t *testing.T) {
 	waitTurnDone(t, ch)
 	lt := lastOutputLT(t, a)
 
-	// The passage, a board reference, and the reader's question in one send.
 	tok := "<" + itoa(lt) + ".0:4-14>!"
 	if err := a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: tok + " is @mantra! racy here?"}, "Gluck"); err != nil {
 		t.Fatalf("a good coordinate was refused: %v", err)
@@ -132,10 +128,7 @@ func TestQuotedPromptReachesTheProvider(t *testing.T) {
 			t.Fatalf("the provider did not receive %q; it received:\n%s", want, got)
 		}
 	}
-	// The coordinate survives IN THE HEADING, where it names the passage
-	// under it and where the terminal reads it back as chrome. What must not
-	// survive is an UNRESOLVED token: one still standing where the reader
-	// typed it, with no passage beneath it.
+	// The coordinate survives in the heading; an unresolved token must not.
 	if strings.HasPrefix(strings.TrimSpace(got), tok) {
 		t.Fatalf("the raw token reached the provider unresolved: %s", got)
 	}
@@ -167,7 +160,6 @@ func TestBadQuoteIsRefusedBeforeAnythingLands(t *testing.T) {
 			t.Fatalf("%q: refused with %q, want %q", c.text, err, c.want)
 		}
 	}
-	// Nothing was appended, nothing queued, no turn started.
 	if after := len(a.Context()); after != before {
 		t.Fatalf("a refused message changed the log: %d -> %d entries", before, after)
 	}

@@ -6,7 +6,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// cursorTurns is an aria of whole turns, each with a question and three nodes.
 func cursorTurns(n int) []Turn {
 	out := make([]Turn, 0, n)
 	for i := range n {
@@ -19,9 +18,6 @@ func cursorTurns(n int) []Turn {
 	return out
 }
 
-// TestCursorsWalkTheWholeAria: a client that follows Next from the head, and
-// Prev from the tail, sees every node exactly once and never has to know how
-// long the aria is. That is the whole of paging.
 func TestCursorsWalkTheWholeAria(t *testing.T) {
 	turns := cursorTurns(40)
 	const budget = 400 // small enough to cut turns in half
@@ -65,7 +61,6 @@ func TestCursorsWalkTheWholeAria(t *testing.T) {
 		}
 	}
 
-	// And backward, from the tail, with Prev.
 	back := map[Anchor]int{}
 	at, pages = Anchor{}, 0
 	for {
@@ -97,8 +92,6 @@ func TestCursorsWalkTheWholeAria(t *testing.T) {
 	}
 }
 
-// TestReadAtACoordinateStartsThere: the cursor is an address, so a reader that
-// has never seen the aria can ask for any part of it and get that part.
 func TestReadAtACoordinateStartsThere(t *testing.T) {
 	turns := cursorTurns(200)
 	for _, want := range []Anchor{{Turn: 1}, {Turn: 7, Node: 2}, {Turn: 150}, {Turn: 200, Node: 2}} {

@@ -1,16 +1,8 @@
 package render
 
-// WHAT THIS FILE ONCE FAILED TO CATCH
-//
-// These tests assert over compose() OUTPUT: what the renderer DECIDES to
-// paint. They cannot observe the terminal scrolling a row into history before
-// the next repaint. So they were green while a completed reply never reached
-// scrollback at all, and green again while a submit-time footer was frozen and
-// then printed a second time at completion. Both shipped. Both were found by a
-// user in his own shell.
-//
-// Anything about what SURVIVES on screen belongs in the tmux smoke suite:
-// internal/cli/tmuxsmoke_cases_test.go. See the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
+// These tests assert over compose() output and cannot observe the terminal
+// scrolling a row into history; what survives on screen belongs in the tmux
+// smoke suite.
 
 import (
 	"io"
@@ -27,9 +19,7 @@ func TestIncipit_FreezeOnce_OpenLive(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
 
-	// a closed user message → scrollback once
 	in.Freeze(aria.Message{Turn: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
-	// open assistant message, streaming a tool
 	nodes := []livedoc.Node{{ID: "n0", Type: "thinking", Markdown: "thinking"}}
 	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: nodes})
 	nodes = append(nodes, livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: ""})
@@ -52,9 +42,7 @@ func TestIncipit_FreezeOnce_OpenLive(t *testing.T) {
 	}
 }
 
-// The point of the whole exercise: a resize mid-open-message repaints only the
-// open message; the already-frozen message in scrollback is never touched, so it
-// can't duplicate.
+// A resize mid-open-message repaints only the open message.
 func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 	ft := NewFakeTerminal(70, 16)
 	in := NewIncipit(ft, NodeText{})
@@ -68,11 +56,9 @@ func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 	}
 	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: nodes})
 
-	// SIGWINCH mid-open: shrink, repaint just the open message.
 	ft.Resize(70, 8)
 	in.Resize(nodes)
 
-	// finish + freeze
 	nodes[1].Status = "ok"
 	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: nodes})
 	in.Freeze(aria.Message{Turn: 2, Nodes: nodes})
@@ -90,9 +76,7 @@ func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 }
 
 func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
-	// Viewport must sit ABOVE minInlineHeight: below that floor the live region
-	// is footer-only and the body is never painted, so nothing scrolls and this
-	// path is not exercised at all. 12 rows with 10 blocks still overflows.
+	// The viewport must sit above minInlineHeight or the body is never painted.
 	ft := NewFakeTerminal(40, 12)
 	in := NewIncipit(ft, NodeText{})
 	in.Bookend = func() []string { return []string{"=== bookend ==="} }
@@ -103,19 +87,14 @@ func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: nodes})
 	top := ft.Row() // cursor parked at the region's visible top
 	in.Freeze(aria.Message{Turn: 2, Nodes: nodes})
-	// Freezing a scrolled region must move the cursor past only the VISIBLE rows
-	// (<= viewport height); using the full region height leaves the scrolled-off
-	// count as blank lines after the bookend.
+	// Freezing a scrolled region moves the cursor past only the visible rows.
 	if adv := ft.Row() - top; adv > 12 {
 		t.Fatalf("freeze advanced %d rows (> viewport 12) → trailing blank lines", adv)
 	}
 }
 
-// OpenThinking pins the FOOTER before any content, and only the footer. The
-// output header is suppressed until the inquiry comes back over the wire, so
-// submit shows rule + status and nothing else; the assistant frame that follows
-// adopts the same region in place, bringing the header with its first content
-// and orphaning neither to scrollback.
+// OpenThinking pins the footer alone; the assistant frame that follows
+// adopts the region in place, bringing the header with its first content.
 func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
@@ -137,10 +116,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 		t.Fatalf("output header must NOT appear before the inquiry returns:\n%s", scr)
 	}
 
-	// content streams in; the real assistant frame adopts the region
-	// The inquiry rides the frame that ESTABLISHES the suffix, exactly as the
-	// aria server sends it; the header follows the question, so a fixture
-	// without one would be testing a frame production never emits.
+	// The inquiry rides the frame that establishes the suffix, as the server sends it.
 	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Inquiry: "ask",
 		Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	in.Freeze(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Inquiry: "ask",
@@ -157,10 +133,8 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	}
 }
 
-// A turn that errors before any content adopts the thinking placeholder must
-// tear the footer region down (AbandonOpen) so an error hint printed straight
-// to the terminal afterward lands on clean scrollback: not glued into the
-// live footer rule. Regression for the no-provider scrollback artifact.
+// A turn that errors before any content must tear the footer region down,
+// so an error hint printed afterward lands on clean scrollback.
 func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
@@ -171,8 +145,6 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	in.OpenThinking(livedoc.RoleOutput) // footer live, no content yet
 	in.AbandonOpen("")                  // turn errors immediately -> teardown
 
-	// After teardown the region is released: a direct write (the error hint)
-	// must not overlap the footer rule on any line.
 	io.WriteString(ft, "\r\nNo provider connected\r\n")
 	for _, line := range ft.Screen() {
 		if strings.Contains(line, "aria xyz") && strings.Contains(line, "provider") {
@@ -185,10 +157,8 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	}
 }
 
-// The projection mints prose/thinking nodes even when empty, so a block that
-// fills later cannot shift the ids after it (skills/figaro/reference/turns.md,
-// invariant 6). Hiding them is the renderer's job: an empty node must occupy
-// no rows, while a tool node with no output yet still draws its header.
+// An empty prose/thinking node must occupy no rows; a tool node with no
+// output yet still draws its header.
 func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
@@ -209,7 +179,6 @@ func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {
 		t.Fatalf("a running tool draws its header even with no output:\n%s", scr)
 	}
 
-	// Filling the empty head node adds rows; it must not have consumed any before.
 	nodes[0] = livedoc.Node{ID: "n0", Type: "thinking", Markdown: "now thinking"}
 	in.Open(aria.Message{Turn: 1, Role: livedoc.RoleOutput, Nodes: nodes})
 	if in.LiveHeight() <= before {

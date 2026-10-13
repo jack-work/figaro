@@ -23,9 +23,6 @@ func rowsOf(bodies ...string) []json.RawMessage {
 	return rows
 }
 
-// The streamed body must be the SAME BYTES the marshalled one is: prompt cache
-// keys are content, and a body that differs from what shipped yesterday is a
-// change nobody asked for. Every arm here is a way the two could diverge.
 func TestStreamedBodyIsByteIdenticalToMarshal(t *testing.T) {
 	cases := []struct {
 		name string
@@ -122,8 +119,6 @@ func benchRequest(n int) nativeRequest {
 	return req
 }
 
-// The quantity is B/op: the marshalled body is a contiguous copy of the whole
-// conversation, the streamed one is a frame plus one row.
 func BenchmarkRequestBodyMarshalled(b *testing.B) {
 	for _, n := range []int{1_000, 10_000} {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
@@ -162,10 +157,7 @@ type countingWriter struct{}
 
 func (countingWriter) Write(p []byte) (int, error) { return len(p), nil }
 
-// The transient retry rebuilds the request per attempt, so a streamed body has
-// to be re-walked rather than consumed once. The canary is a body that is
-// attached before the loop instead of inside it: the second attempt then sends
-// nothing.
+// A streamed body must be re-walked per retry attempt, not consumed once.
 func TestATransientRetryResendsTheWholeStreamedBody(t *testing.T) {
 	old := retryBaseDelay
 	retryBaseDelay = time.Millisecond

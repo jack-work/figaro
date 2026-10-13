@@ -36,7 +36,6 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 
 	require.NoError(t, s.Save())
 
-	// Reopen and verify persistence.
 	s2, err := form.Open(path)
 	require.NoError(t, err)
 	defer s2.Close()
@@ -52,7 +51,6 @@ func TestState_Snapshot_ReturnsClone(t *testing.T) {
 
 	s.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil))
 	snap1 := s.Snapshot()
-	// Derive a mutated snapshot from the clone.
 	snap1 = snap1.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"mutated"`)}, nil))
 	_ = snap1
 

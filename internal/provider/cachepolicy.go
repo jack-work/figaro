@@ -7,41 +7,27 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// CacheControlKey is the form key that overrides the automatic
-// cache-marker policy. One spelling, read by every provider.
+// CacheControlKey overrides the automatic cache-marker policy.
 const CacheControlKey = "system.cache_control"
 
 const (
-	// MaxCacheBreakpoints is Anthropic's hard ceiling on explicit
-	// cache_control markers in one request. A fifth is a 400, not a
-	// warning, so every marking path asserts against it.
+	// MaxCacheBreakpoints is Anthropic's ceiling; a fifth marker is a 400.
 	MaxCacheBreakpoints = 4
 
-	// AutoCacheBreakpoints is what figaro itself emits: the last system
-	// block, the last tool, and the rolling tail. The fourth slot is
-	// deliberately left free: for a downstream gateway that tops up its
-	// own marker, and for the per-fork long-retention marker described in
-	// reference/cache-control.md.
+	// AutoCacheBreakpoints leaves the fourth slot for a gateway or the
+	// per-fork long-retention marker.
 	AutoCacheBreakpoints = 3
 )
 
-// CachePolicy is the resolved automatic cache-control setting for one turn.
-// The zero value is "no caching"; use ResolveCachePolicy to build one.
+// CachePolicy's zero value is "no caching".
 type CachePolicy struct {
-	// Type is the provider-native cache_control type. Anthropic defines
-	// exactly one ("ephemeral"); the TTL rides alongside rather than in
-	// this field.
 	Type string
-	// TTL is "" (the provider default, 5 minutes) or "1h". It is a
-	// separate wire field: {"type":"ephemeral","ttl":"1h"}. Writing the
-	// retention into Type: {"type":"1h"}: is rejected by the API.
+	// TTL is "" or "1h", a wire field of its own; {"type":"1h"} is rejected.
 	TTL string
 }
 
-// Off reports whether caching is disabled for this turn.
 func (p CachePolicy) Off() bool { return p.Type == "" }
 
-// ResolveCachePolicy decides the automatic cache_control setting for a turn.
 func ResolveCachePolicy(snap form.Snapshot) CachePolicy {
 	setting := ""
 	if cc := snap.Lookup(CacheControlKey); cc != nil {
@@ -50,8 +36,8 @@ func ResolveCachePolicy(snap form.Snapshot) CachePolicy {
 	return ParseCachePolicy(setting)
 }
 
-// ParseCachePolicy maps one form setting string to a policy. Exported
-// for the per-LT overrides in system.tags, which carry the same vocabulary.
+// ParseCachePolicy maps one setting string to a policy; system.tags shares
+// the vocabulary.
 func ParseCachePolicy(setting string) CachePolicy {
 	switch strings.ToLower(strings.TrimSpace(setting)) {
 	case "none", "off", "false", "disabled":
@@ -59,14 +45,11 @@ func ParseCachePolicy(setting string) CachePolicy {
 	case "long", "1h", "60m":
 		return CachePolicy{Type: "ephemeral", TTL: "1h"}
 	default:
-		// "", "ephemeral", "short", "5m", and anything unrecognised.
 		return CachePolicy{Type: "ephemeral"}
 	}
 }
 
-// cacheMinTokens is the minimum cacheable prompt length per model family.
-// Below it the provider ignores a breakpoint outright, so marking spends a
-// slot and buys nothing.
+// cacheMinTokens: below it the provider ignores a breakpoint.
 var cacheMinTokens = []struct {
 	fragments []string
 	min       int
@@ -77,12 +60,10 @@ var cacheMinTokens = []struct {
 	{[]string{"sonnet-4", "opus-4"}, 1024},
 }
 
-// DefaultCacheMinTokens is the floor assumed for a model we have no entry
-// for. It is the smallest published minimum, so an unknown model is marked
-// rather than silently left uncached.
+// DefaultCacheMinTokens is the smallest published minimum, so an unknown
+// model is marked rather than left uncached.
 const DefaultCacheMinTokens = 1024
 
-// CacheMinTokens returns the minimum cacheable prompt size for a model.
 func CacheMinTokens(model string) int {
 	m := strings.ToLower(model)
 	for _, row := range cacheMinTokens {
@@ -95,10 +76,7 @@ func CacheMinTokens(model string) int {
 	return DefaultCacheMinTokens
 }
 
-// EligibleForCache reports whether a prompt of estTokens is worth marking for
-// this model. A negative estTokens means "unknown" and marks optimistically:
-// an ignored breakpoint costs nothing but a slot, while skipping one on a
-// prompt that was in fact cacheable costs the whole prefix every turn.
+// EligibleForCache marks optimistically when estTokens is negative (unknown).
 func EligibleForCache(model string, estTokens int) bool {
 	if estTokens < 0 {
 		return true
@@ -106,17 +84,15 @@ func EligibleForCache(model string, estTokens int) bool {
 	return estTokens >= CacheMinTokens(model)
 }
 
-// UsageFromInclusivePrompt maps an OpenAI-family usage block into figaro's
-// four buckets.
+// UsageFromInclusivePrompt maps an OpenAI-family usage block, whose prompt
+// count includes cached tokens.
 func UsageFromInclusivePrompt(promptTokens, cachedTokens, cacheWriteTokens, outputTokens int) *message.Usage {
 	if promptTokens == 0 && outputTokens == 0 && cachedTokens == 0 && cacheWriteTokens == 0 {
 		return nil
 	}
 	input := promptTokens - cachedTokens - cacheWriteTokens
 	if input < 0 {
-		// A provider that reports an exclusive prompt count (or a bad
-		// breakdown) must not push the remainder negative and make the
-		// context figure smaller than the prompt.
+		// An exclusive prompt count must not push the remainder negative.
 		input = 0
 	}
 	return &message.Usage{

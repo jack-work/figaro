@@ -1,26 +1,8 @@
 package figaro_test
 
-// THE MIRROR AND THE LOG MUST AGREE BYTE FOR BYTE.
-//
-// This is entry (3) of the lost-study pattern list, checked rather than
-// argued. applyControlPatchVerdict writes the patch through the form channel
-// and then publishes THE REQUESTED PATCH into the agent's board -- not the
-// `applied` patch the writer handed back. That is the same sentence as the
-// lost study (publish what was written), and d921742d named the case where
-// it would bite: form.Value keeps the CALLER'S EXACT BYTES, and the writer's
-// effectivePatch STRIPS a set whose value is semantically equal to what is
-// stored. So re-set a key to an equal value spelled differently and the log
-// never hears about it -- while the mirror is handed the new spelling. If the
-// mirror took it, the two would be semantically equal and BYTE-DIFFERENT, and
-// for object- and array-valued keys the difference reaches the wire, because
-// genericBody hands non-strings over raw.
-//
-// It does not take it, and the reason is worth keeping under test rather than
-// in a comment: ptree.Set is ALSO a no-op that keeps the stored spelling when
-// the incoming Value is Equal (form/tree.go:105, value.go:143). The two sides
-// suppress the same rewrite by two different mechanisms, which is why the
-// divergence does not exist today -- and exactly why it would be silent if
-// either mechanism changed. This test is the alarm on that.
+// The board mirror and the form log must agree byte for byte: a re-set with
+// an equal value spelled differently must not leave the mirror holding bytes
+// the log never received.
 
 import (
 	"context"

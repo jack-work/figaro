@@ -1,32 +1,23 @@
-// Package livedoc is the canonical core of the live-render protocol: a
-// document is one UTF-8 markdown string ("the blob") that mutates only
-// by single-region splices ("deltas"). No rendering, no I/O.
+// Package livedoc is the core of the live-render protocol: a document is one
+// UTF-8 markdown string that mutates only by single-region splices.
 package livedoc
 
 import "unicode/utf8"
 
-// SpinnerSentinel is the reserved blob rune (Unicode PUA U+E000) the
-// producer writes to mark a running spinner. The renderer replaces it
-// with a braille frame locally, so animation never touches the wire. It
-// lives here, in the protocol core, so both the producer (which must not
-// depend on the renderer/glamour) and the renderer share one definition.
+// SpinnerSentinel is the PUA rune the producer writes for a running spinner;
+// the renderer substitutes a frame locally, so animation never hits the wire.
 const SpinnerSentinel = '\ue000'
 
-// SpinnerFrames is the braille animation set, shared with every renderer
-// (terminal and web).
 var SpinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
-// Delta is a single-region splice in byte offsets: replace [At, At+Del)
-// with Ins. At and At+Del are always rune-aligned.
+// Delta replaces bytes [At, At+Del) with Ins; both bounds are rune-aligned.
 type Delta struct {
 	At  int    `json:"at"`
 	Del int    `json:"del"`
 	Ins string `json:"ins"`
 }
 
-// Apply returns blob with d applied. Out-of-range offsets are clamped
-// rather than panicking, so a malformed delta degrades to a no-op-ish
-// splice instead of crashing a consumer (faults resync via snapshot).
+// Apply clamps out-of-range offsets; consumers resync via snapshot.
 func Apply(blob string, d Delta) string {
 	at := d.At
 	if at < 0 {
@@ -45,36 +36,28 @@ func Apply(blob string, d Delta) string {
 	return blob[:at] + d.Ins + blob[end:]
 }
 
-// Diff returns the minimal single-region delta transforming old into
-// new, and ok=false when they are already equal. The delta is
-// rune-aligned: Apply(old, Diff(old,new)) == new, and new stays valid
-// UTF-8 whenever old is.
+// Diff is the minimal rune-aligned single-region delta; ok is false when
+// old == new.
 func Diff(old, new string) (Delta, bool) {
 	if old == new {
 		return Delta{}, false
 	}
 	oLen, nLen := len(old), len(new)
 
-	// Longest common prefix (bytes).
 	a := 0
 	for a < oLen && a < nLen && old[a] == new[a] {
 		a++
 	}
-	// Longest common suffix (bytes), not overlapping the prefix.
 	z := 0
 	for z < oLen-a && z < nLen-a && old[oLen-1-z] == new[nLen-1-z] {
 		z++
 	}
 
-	// Back the prefix boundary off to a rune start. The rune structure
-	// of [0,a) is identical in old and new, so aligning on old aligns
-	// new too.
+	// Both boundaries back off to a rune start; the common regions are
+	// identical in old and new, so aligning on old aligns new.
 	for a > 0 && a < oLen && !utf8.RuneStart(old[a]) {
 		a--
 	}
-	// Back the suffix boundary off to a rune start. The common suffix is
-	// identical in both, so aligning on old aligns new too. Shrinking z
-	// only lengthens the changed middle, never re-splits.
 	for z > 0 && !utf8.RuneStart(old[oLen-z]) {
 		z--
 	}

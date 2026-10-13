@@ -22,17 +22,12 @@ func shot(w, h int) string {
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-// broken is an image whose header reads fine and whose pixels do not: the one
-// case where a picture is recognisable, unsendable and unfixable.
+// broken has a readable header and undecodable pixels.
 func broken(w, h int) string {
 	raw, _ := base64.StdEncoding.DecodeString(shot(w, h))
 	return base64.StdEncoding.EncodeToString(raw[:len(raw)/2])
 }
 
-// A RECORD WRITTEN BEFORE THE CEILING EXISTED IS STILL REPAIRED, which is why
-// this runs on the way to the encoder rather than on the way to the log.
-// Thirteen such images were in the store when this was written, and each one
-// ended every turn of the aria holding it.
 func TestSendableImagesShrinksAnOversizedRecord(t *testing.T) {
 	original := shot(2800, 640)
 	msg := message.Message{Role: message.RoleInput, Content: []message.Content{
@@ -63,8 +58,6 @@ func TestSendableImagesShrinksAnOversizedRecord(t *testing.T) {
 	}
 }
 
-// An image inside the ceiling is passed through untouched: the common case must
-// not pay for the rare one.
 func TestSendableImagesLeavesAcceptableImagesAlone(t *testing.T) {
 	fine := shot(900, 400)
 	msg := message.Message{Role: message.RoleInput, Content: []message.Content{
@@ -73,8 +66,7 @@ func TestSendableImagesLeavesAcceptableImagesAlone(t *testing.T) {
 	if out, changed := SendableImages(msg); changed || out.Content[0].Data != fine {
 		t.Error("a 900px image needs no change and must not be re-encoded")
 	}
-	// Nor does one this package cannot read at all: Go decodes png, jpeg, gif
-	// and webp, and a provider may take something it does not.
+	// An undecodable format passes through: a provider may take what Go cannot.
 	msg = message.Message{Role: message.RoleInput, Content: []message.Content{
 		message.ImageContent("image/heic", "bm90IGFuIGltYWdl"),
 	}}
@@ -83,8 +75,6 @@ func TestSendableImagesLeavesAcceptableImagesAlone(t *testing.T) {
 	}
 }
 
-// AN IMAGE THAT CANNOT BE SENT BECOMES WORDS, IN PLACE: the model is told what
-// happened instead of the turn being killed, and no provenance index moves.
 func TestSendableImagesReplacesTheUnfittableWithText(t *testing.T) {
 	msg := message.Message{Role: message.RoleInput, Content: []message.Content{
 		message.TextContent("head"),

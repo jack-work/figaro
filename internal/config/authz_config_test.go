@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// The [authz] block has to survive an actual TOML round trip through Load: a
-// typo in a tag makes the knob unreachable while every unit test stays green.
 func TestLoadParsesAuthzSection(t *testing.T) {
 	dir := t.TempDir()
 	body := "default_outfit = \"opus5\"\n\n[authz]\npolicy = \"default\"\n"

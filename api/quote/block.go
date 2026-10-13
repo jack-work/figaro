@@ -5,18 +5,13 @@ import (
 	"strings"
 )
 
-// A quote BLOCK is what a reader of the conversation sees where a reader of
-// the raw log sees a coordinate: a heading naming the passage, then the
-// passage itself under a gutter.
+// A quote block is a heading naming the passage, then the passage under a
+// gutter:
 //
 //	> quoting <412.0:23-1180>! · aria 7e151902 · turn 9 · 1157 chars
 //	> Ecco fatto. The barber works in three strokes, …
-//	>
-//	> … and the third is the one nobody runs.
 //
-// Heading writes that first line and Mentioned reads it back, in this file,
-// because the terminal has to draw a quote as chrome rather than as a
-// paragraph of markdown and the only thing it is given is the text.
+// Heading writes the first line and Mentioned reads it back.
 
 const Sep = " · "
 

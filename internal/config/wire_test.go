@@ -17,8 +17,6 @@ func loadWith(t *testing.T, toml string) (*Loaded, error) {
 	return Load(dir)
 }
 
-// An absent [wire] table must yield the documented defaults, so a store
-// upgraded into paging behaves without anyone editing config.toml.
 func TestWireDefaults(t *testing.T) {
 	l, err := loadWith(t, "")
 	if err != nil {
@@ -45,8 +43,6 @@ func TestWireExplicit(t *testing.T) {
 	}
 }
 
-// The clamp is the server's guard: a client may ask for nothing (take the
-// default) or for too much (get the ceiling), but never for unbounded work.
 func TestClampPageBudget(t *testing.T) {
 	l, err := loadWith(t, "[wire]\npage_budget = 1024\npage_budget_max = 4096\n")
 	if err != nil {

@@ -7,22 +7,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// THE IN-FLIGHT ASSEMBLY MUST NOT OUTLIVE ITS TURN.
-//
-// Gluck, 2026-08-20: "if asm is required for incremental turn streaming then
-// just leave it, but make sure it never holds more than the current turn in
-// memory then."
-//
-// asm holds a strings.Builder per content block -- the whole streamed reply.
-// A turn is a LOOP OF ROUNDS and each round replaces it, so the live bound is
-// one round. What was missing is the other end: finishTurn is the one place
-// every turn ends, and it did not drop the reference, so a finished turn kept
-// its reply resident until the next turn overwrote it. On an idle aria that is
-// indefinitely.
-//
-// The assertion is structural and deterministic rather than a heap delta,
-// because reachability is the property and a heap delta measures something
-// else on a machine that is also doing other work.
+// The in-flight assembly must not outlive its turn. Asserted structurally:
+// reachability is the property, and a heap delta measures something else.
 func TestTheInFlightAssemblyDoesNotOutliveItsTurn(t *testing.T) {
 	a := &Agent{turn: newTurnState()}
 	asm := newAsm(message.RoleOutput)
@@ -33,9 +19,7 @@ func TestTheInFlightAssemblyDoesNotOutliveItsTurn(t *testing.T) {
 		t.Fatal("fixture: the assembly should hold the streamed text")
 	}
 
-	// finishTurn goes on to seal the live unit and write metadata, which needs
-	// a whole agent; the RELEASE is its first act and is what this asserts. A
-	// panic below that point means the release ran.
+	// The release is finishTurn's first act; a panic past that point means it ran.
 	func() {
 		defer func() { _ = recover() }()
 		a.finishTurn("done")

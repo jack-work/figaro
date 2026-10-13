@@ -1,13 +1,6 @@
 package figaro
 
-// THE JOURNAL'S CONTRACT: durability precedes visibility, and visibility is
-// not optional.
-//
-// The bug this guards against is not a crash. It is a record that becomes
-// durable and stays INVISIBLE -- which looks like latency, reads like a slow
-// wire, and cannot be fixed by making the wire faster. A queued message became
-// part of the conversation, its queue row cleared, and the text appeared only
-// when the next provider round produced its first token.
+// Durability precedes visibility, and visibility is not optional.
 
 import (
 	"errors"
@@ -38,9 +31,7 @@ func TestAppendingAlwaysAnnounces(t *testing.T) {
 	}
 }
 
-// A FAILED WRITE ANNOUNCES NOTHING. Nothing became true, so there is nothing
-// to say; announcing here would put a message on screen that no restart would
-// find.
+// A failed write announces nothing.
 func TestAFailedAppendAnnouncesNothing(t *testing.T) {
 	published := 0
 	j := &journal{

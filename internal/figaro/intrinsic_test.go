@@ -1,15 +1,6 @@
 package figaro
 
-// THE INTRINSIC FORMS, ASSERTED WHERE THEY CAN FAIL.
-//
-// The defect these exist to prevent is a HOLE: between the drain loop lifting
-// a message and the turn frame carrying it, the message used to be in neither
-// the queue nor the transcript. It had ceased to exist anywhere a client could
-// see, and that interval is what a reader experiences as latency. A faster
-// wire would not have closed it.
-//
-// So the tests below are mostly about CONTINUITY rather than about values: at
-// no point may a message be nowhere.
+// The intrinsic forms: at no point may a message be nowhere.
 
 import (
 	"context"
@@ -31,9 +22,7 @@ func newTestInbox(t *testing.T) *Inbox {
 	return b
 }
 
-// newTestAgentForQueue is an agent with only the parts these tests touch: an
-// inbox and its intrinsic forms. A full NewAgent would need a provider and a store,
-// neither of which a projection has any opinion about.
+// newTestAgentForQueue is an inbox and its intrinsic forms, nothing more.
 func newTestAgentForQueue(t *testing.T) *Agent {
 	a := &Agent{id: "test", inbox: newTestInbox(t)}
 	a.runtime = newIntrinsic(IntrinsicRuntime)
@@ -42,9 +31,7 @@ func newTestAgentForQueue(t *testing.T) *Agent {
 	return a
 }
 
-// A intrinsic republishing UNCHANGED state must emit nothing. Every publisher
-// states the whole truth every time it runs, so without this the queue would
-// emit a patch on every tick of everything.
+// Republishing unchanged state must emit nothing.
 func TestIntrinsicRepublishIsSilent(t *testing.T) {
 	c := newIntrinsic("test")
 	defer c.close()
@@ -66,8 +53,7 @@ func TestIntrinsicRepublishIsSilent(t *testing.T) {
 	}
 }
 
-// The projection is TOTAL: whatever it no longer names must leave the form. A
-// partial projection would leave rows nothing ever clears.
+// Whatever the projection no longer names must leave the form.
 func TestQueueIntrinsicDropsWhatTheProjectionNoLongerNames(t *testing.T) {
 	a := newTestAgentForQueue(t)
 
@@ -100,8 +86,7 @@ func TestQueueIntrinsicDropsWhatTheProjectionNoLongerNames(t *testing.T) {
 	}
 }
 
-// THE CENTRAL PROPERTY. Walk a message from accepted through committed and
-// assert it is SOMEWHERE at every step -- never absent, never unstated.
+// A message is somewhere at every step from accepted to committed.
 func TestAMessageIsNeverNowhere(t *testing.T) {
 	inbox := newTestInbox(t)
 
@@ -114,9 +99,7 @@ func TestAMessageIsNeverNowhere(t *testing.T) {
 			}
 		}
 		if found == "" {
-			// Before the message is sent it legitimately does not exist. The
-			// property is that once it appears it never disappears again --
-			// THE HOLE IS IN THE MIDDLE, not at the start.
+			// Once it appears it never disappears; the hole is in the middle.
 			if len(states) > 0 {
 				t.Errorf("message 1 was in a state and is now in NONE: it exists "+
 					"nowhere a client could see it. States so far: %v", states)
@@ -132,7 +115,6 @@ func TestAMessageIsNeverNowhere(t *testing.T) {
 	inbox.Send(event{typ: eventUserPrompt, text: "hello"})
 	taken := inbox.TakeReadyUserPrompts()
 	if len(taken) != 1 {
-		// Recv is the other lift path; either is fine, but one must happen.
 		evt, ok := inbox.Recv()
 		if !ok {
 			t.Fatal("nothing came off the inbox")
@@ -156,8 +138,6 @@ func TestAMessageIsNeverNowhere(t *testing.T) {
 		}
 	}
 
-	// And the turn is stamped, which is how a client knows when its own
-	// transcript has adopted the message and the row may be dropped.
 	final := inbox.Project()
 	for _, it := range final.Items {
 		if it.ID == 1 && it.Turn != 42 {
@@ -168,9 +148,7 @@ func TestAMessageIsNeverNowhere(t *testing.T) {
 	}
 }
 
-// A deleted message says it was DELETED, and a drained one says it was
-// DRAINED. They look identical in a list and mean opposite things to a reader
-// watching their own work.
+// Deleted and drained are different facts.
 func TestDroppedAndDrainedAreDifferentFacts(t *testing.T) {
 	inbox := newTestInbox(t)
 	inbox.Send(event{typ: eventUserPrompt, text: "a"})
@@ -192,9 +170,7 @@ func TestDroppedAndDrainedAreDifferentFacts(t *testing.T) {
 	}
 }
 
-// An interrupt that folds a run of prompts must leave every folded id
-// RESOLVABLE, so a client holding one can follow it to the survivor instead of
-// watching its row vanish.
+// Every folded id must resolve to its survivor.
 func TestMergedIdsRemainResolvable(t *testing.T) {
 	inbox := newTestInbox(t)
 	inbox.Send(event{typ: eventUserPrompt, text: "a"})
@@ -223,9 +199,7 @@ func TestMergedIdsRemainResolvable(t *testing.T) {
 	}
 }
 
-// The read surface must agree with the CRUD surface. QueuedPrompts used to
-// stamp "queued" on every row unconditionally while the refusal messages knew
-// better -- one surface denying what the other asserted.
+// The read surface must agree with the CRUD surface.
 func TestQueuedPromptsReportsCommitting(t *testing.T) {
 	a := newTestAgentForQueue(t)
 	a.inbox.Send(event{typ: eventUserPrompt, text: "hello"})
@@ -244,21 +218,8 @@ func TestQueuedPromptsReportsCommitting(t *testing.T) {
 	}
 }
 
-// A INTRINSIC FORM MUST BE ABLE TO WRITE EVERY KEY IT PUBLISHES.
-//
-// THIS TEST EXISTS BECAUSE ITS ABSENCE SHIPPED A DEAD FEATURE. `model` is in
-// the system-managed catalog (api/form.CheckWritable), which refuses an
-// UNPRIVILEGED write so a human cannot type `figaro set model=...` into a
-// board the harness owns. A intrinsic has no user-writable path at all, so the
-// check had nothing to protect and could only refuse -- and it refused the
-// WHOLE patch, not just that key. Every publish failed, every failure was a
-// Warn nobody reads, and `fig form show <id>/runtime` answered `{}`.
-//
-// It was invisible to the unit tests because the test agent has NO MODEL:
-// currentModel() returned "", the key was skipped, and the one key that could
-// fail was never written. A fixture that is tidier than production is a
-// fixture that certifies production untested -- so this one names the model
-// explicitly, which is the only reason it can fail.
+// An intrinsic must be able to write every key it publishes, protected ones
+// included; the fixture names a model because that is the key that can fail.
 func TestRuntimeIntrinsicPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
 	a := newTestAgentForQueue(t)
 	a.form = testFormWithModel(t, "claude-test-5")
@@ -291,9 +252,7 @@ func TestRuntimeIntrinsicPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
 	}
 }
 
-// Idle carries the verdict; every other state must CLEAR it, or a reason
-// attached to a running turn describes the previous one and reads as if it
-// described this one.
+// Idle carries the verdict; every other state clears it.
 func TestRuntimeReasonIsClearedWhenTheTurnMovesOn(t *testing.T) {
 	a := newTestAgentForQueue(t)
 
@@ -311,9 +270,7 @@ func TestRuntimeReasonIsClearedWhenTheTurnMovesOn(t *testing.T) {
 	}
 }
 
-// testFormWithModel is a board carrying system.model. THE MODEL IS THE POINT:
-// it is a system-managed key, so it is the one thing in the runtime patch that
-// an unprivileged write is refused for.
+// testFormWithModel carries system.model, the one protected key in the runtime patch.
 func testFormWithModel(t *testing.T, model string) *form.State {
 	t.Helper()
 	st, err := form.Open(filepath.Join(t.TempDir(), "form.json"))
@@ -340,7 +297,6 @@ func stringOf(snap form.Snapshot, key string) (string, bool) {
 	return s, true
 }
 
-// readSources concatenates package sources for the call-site assertions.
 func readSources(t *testing.T, names ...string) string {
 	t.Helper()
 	var b strings.Builder
@@ -356,14 +312,8 @@ func readSources(t *testing.T, names ...string) string {
 
 func containsOutsideOfDecl(src, needle string) bool { return strings.Contains(src, needle) }
 
-// A COALESCED RUN LEAVES THE QUEUE WHOLE, or it leaves half of it behind.
-//
-// MEASURED: two messages queued, both acknowledged, ONE removed. A contiguous
-// run is LIFTED as N events and COMMITTED as one, so dropping only the
-// survivor's id from `lifted` stranded every folded id there forever -- still
-// reported as "committing", still drawn as in-flight, while the SAME id was
-// also reported as "merged" by the survivor. Two rows, two states, one
-// message, and nothing able to clear either.
+// A coalesced run is lifted as N events and committed as one; every folded id
+// must leave the lifted set.
 func TestACoalescedRunLeavesTheQueueEntirely(t *testing.T) {
 	inbox := newTestInbox(t)
 	inbox.Send(event{typ: eventUserPrompt, text: "a"})

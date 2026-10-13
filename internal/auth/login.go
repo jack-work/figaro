@@ -14,9 +14,8 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// Login runs the OAuth PKCE flow against the provider, exchanges the auth
-// code for tokens, and registers the result with the hush agent. The
-// agent owns refresh from that point on.
+// Login runs the PKCE flow and registers the result with the hush agent,
+// which owns refresh from then on.
 func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, error)) error {
 	if err := hushClient.Ping(); err != nil {
 		return fmt.Errorf("hush agent is not running. Start it: hush up -d")
@@ -39,9 +38,7 @@ func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, 
 	}
 	authURL := cfg.AuthorizeURL + "?" + params.Encode()
 
-	// All presentation goes to stderr, indented + dimmed to match the
-	// first-run TUI; the promptCode callback only reads (it must not print
-	// its own prompt, or the prompt doubles up).
+	// promptCode must not print its own prompt.
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "       "+term.Dim("Opening your browser to sign in. If it doesn't open, visit:"))
 	fmt.Fprintln(os.Stderr, "       "+term.Cyan(authURL))

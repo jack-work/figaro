@@ -34,18 +34,15 @@ func eq(t *testing.T, what string, got, want []uint64) {
 	}
 }
 
-// conversation is the canonical shape: a boot tic that belongs to no turn,
-// then two turns, the first of which runs a tool round and carries a steering
-// interjection riding on the tool_result message.
 func conversation() []message.Message {
 	return []message.Message{
-		{Role: message.RoleInput},                             // boot / state-only: no turn
-		userMsg(prose("quick test")),                          // opens turn 1
-		asstLT(0, think("hm"), tool("t1", "bash")),            // turn 1
-		userMsg(toolResult("t1"), prose("actually, check X")), // turn 1: steering, not a new turn
-		asstLT(0, prose("done")),                              // turn 1
-		userMsg(prose("next question")),                       // opens turn 2
-		asstLT(0, prose("answer")),                            // turn 2
+		{Role: message.RoleInput},
+		userMsg(prose("quick test")),
+		asstLT(0, think("hm"), tool("t1", "bash")),
+		userMsg(toolResult("t1"), prose("actually, check X")),
+		asstLT(0, prose("done")),
+		userMsg(prose("next question")),
+		asstLT(0, prose("answer")),
 	}
 }
 
@@ -64,27 +61,23 @@ func TestStampIDsEmpty(t *testing.T) {
 	}
 }
 
-// A legacy aria carries no turn_id at all. Deriving on read must reproduce
-// exactly what minting would have written, or `send <trunk>:<turn>` would name
-// different exchanges depending on when the aria was created.
+// Deriving on read must reproduce what minting would have written.
 func TestLegacyDerivationMatchesMinting(t *testing.T) {
 	minted := conversation()
-	StampIDs(minted) // as if written by the agent, ids now durable
+	StampIDs(minted)
 
-	legacy := conversation() // same log, never stamped
+	legacy := conversation()
 	StampIDs(legacy)
 
 	eq(t, "legacy vs minted", turnIDs(legacy), turnIDs(minted))
 }
 
-// A log that is half legacy and half stamped must agree end to end: the
-// stored ids resynchronise the counter rather than fighting it.
 func TestMixedLegacyAndStampedAgree(t *testing.T) {
 	want := conversation()
 	StampIDs(want)
 
 	mixed := conversation()
-	for i := 5; i < len(mixed); i++ { // stamp only the tail, as an upgrade would
+	for i := 5; i < len(mixed); i++ {
 		mixed[i].TurnID = want[i].TurnID
 	}
 	StampIDs(mixed)
@@ -92,9 +85,7 @@ func TestMixedLegacyAndStampedAgree(t *testing.T) {
 	eq(t, "mixed", turnIDs(mixed), turnIDs(want))
 }
 
-// Purity: the ids a message gets must not depend on whether the tail is still
-// open. Stamping a prefix yields the same ids as stamping the whole log and
-// truncating: which is what lets a live turn be addressed before it seals.
+// Stamping a prefix yields the same ids as stamping the whole log.
 func TestStampIsPureUnderOpenTail(t *testing.T) {
 	full := conversation()
 	StampIDs(full)
@@ -106,14 +97,11 @@ func TestStampIsPureUnderOpenTail(t *testing.T) {
 	}
 }
 
-// Fork seeding needs no machinery: a child shares its parent's prefix
-// verbatim, so counting reproduces the parent's ids and the child continues
-// from there. Siblings then conflict piecewise, exactly as LT already does.
 func TestForkChildContinuesParentNumbering(t *testing.T) {
 	parent := conversation()
 	seed := StampIDs(parent)
 
-	const forkAt = 5 // everything below the second prompt is shared
+	const forkAt = 5
 	child := append(conversation()[:forkAt:forkAt],
 		userMsg(prose("a different second question")),
 		asstLT(0, prose("a different answer")),
@@ -131,9 +119,6 @@ func TestForkChildContinuesParentNumbering(t *testing.T) {
 	}
 }
 
-// Steering is the one case that looks like a new turn and is not: a user
-// message bearing tool_result stays inside the turn even when it also carries
-// prose.
 func TestSteeringDoesNotOpenTurn(t *testing.T) {
 	steer := userMsg(toolResult("t1"), prose("actually, check X"))
 	if Opens(steer) {
@@ -150,8 +135,6 @@ func TestSteeringDoesNotOpenTurn(t *testing.T) {
 	}
 }
 
-// withLTs assigns sequential logical times the way the store does on read:
-// LT is the frame index, not a payload field.
 func withLTs(msgs []message.Message) []message.Message {
 	for i := range msgs {
 		msgs[i].LogicalTime = uint64(i + 1)
@@ -159,15 +142,9 @@ func withLTs(msgs []message.Message) []message.Message {
 	return msgs
 }
 
-// TurnSpan is THE resolver: it is what turns the number a human types in
-// `fig send <aria>:<turn>` into the atMainLT a fork takes. first must be the
-// PROMPT's LT, atMainLT is exclusive of the frozen prefix, so forking there
-// shares everything strictly before the question and replaces the question
-// onward.
+// first must be the prompt's LT: atMainLT is exclusive of the frozen prefix.
 func TestSpan(t *testing.T) {
 	msgs := withLTs(conversation())
-	// conversation(): [boot, prompt1, asst, toolresult+steering, asst, prompt2, asst]
-	//        LT:         1      2       3         4               5      6       7
 	for _, c := range []struct{ turn, first, last uint64 }{
 		{1, 2, 5},
 		{2, 6, 7},
@@ -179,10 +156,8 @@ func TestSpan(t *testing.T) {
 	}
 }
 
-// The span's first LT must be a user prompt for every turn. That is the whole
-// safety argument for turn addressing: a fork boundary that is always a user
-// message can never strand a tool_invoke without its result, so interrupted-
-// tool synthesis is unreachable for a user-initiated fork.
+// A fork boundary that is always a user message can never strand a
+// tool_invoke without its result.
 func TestSpanAlwaysStartsOnAPrompt(t *testing.T) {
 	msgs := withLTs(conversation())
 	last := StampIDs(msgs)
@@ -205,9 +180,6 @@ func TestSpanUnknown(t *testing.T) {
 	}
 }
 
-// Fixtures. These mirror the ones in internal/compose's tests; the turn
-// arithmetic needs only fig IR blocks, so they are declared here rather than
-// exported from there, a test helper is not worth a package boundary.
 func asstLT(lt uint64, cs ...message.Content) message.Message {
 	return message.Message{Role: message.RoleOutput, Content: cs, LogicalTime: lt}
 }

@@ -15,8 +15,6 @@ func unitPage(id uint64, nodes ...livedoc.Node) Page {
 	return Page{Parts: []TurnPart{{Turn: Turn{ID: id, Sealed: true, Nodes: nodes}}}}
 }
 
-// A turn is unbounded, so a materialized message cannot be the turn. Cutting at
-// node boundaries keeps every unit under the budget while losing nothing.
 func TestUnits_BoundedWithoutLosingNodes(t *testing.T) {
 	nodes := make([]livedoc.Node, 12)
 	for i := range nodes {
@@ -44,7 +42,6 @@ func TestUnits_BoundedWithoutLosingNodes(t *testing.T) {
 	}
 }
 
-// The smallest unit is one node: a node is never split.
 func TestUnits_NeverSplitANode(t *testing.T) {
 	got := NewClient().Apply(unitPage(1, unitNode(unitChars*3)), Quiet)
 	if len(got) != 1 || len(got[0].Nodes) != 1 {
@@ -55,7 +52,6 @@ func TestUnits_NeverSplitANode(t *testing.T) {
 	}
 }
 
-// Only the unit that starts the turn carries the question.
 func TestUnits_OnlyTheHeadCarriesTheInquiry(t *testing.T) {
 	p := unitPage(4, unitNode(unitChars/2+1), unitNode(unitChars/2+1), unitNode(8))
 	p.Parts[0].Inquiry = "the question"

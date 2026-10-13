@@ -7,7 +7,6 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// chain builds outfit -> a -> mid -> leaf.
 func chain(t *testing.T, b *store.XwalBackend) (outfitID, a, mid, leaf string) {
 	t.Helper()
 	outfit, err := b.CreateOutfit("d", patch("system.model", "m"))
@@ -38,7 +37,7 @@ func drawnUnder(t *testing.T, b *store.XwalBackend, id string) string {
 	return n.Present
 }
 
-// A promote that no listing can see is a promote that did not happen.
+// A promote no listing can see did not happen.
 func TestPromoteMovesTheDrawnRow(t *testing.T) {
 	b, _ := backend(t, true)
 	_, a, mid, leaf := chain(t, b)
@@ -52,14 +51,13 @@ func TestPromoteMovesTheDrawnRow(t *testing.T) {
 	if got := drawnUnder(t, b, mid); got != leaf {
 		t.Errorf("mid drawn under %q, want %q", got, leaf)
 	}
-	// The history edge is untouched: that is what forking reads.
+	// The history edge is untouched.
 	n, _ := b.Node(leaf)
 	if n.Parent != mid {
 		t.Errorf("history parent moved to %q", n.Parent)
 	}
 }
 
-// The vector is the listing's tree coordinate, so it has to follow the row.
 func TestPromoteMovesTheVector(t *testing.T) {
 	b, _ := backend(t, true)
 	_, _, mid, leaf := chain(t, b)
@@ -81,8 +79,7 @@ func TestPromoteMovesTheVector(t *testing.T) {
 	}
 }
 
-// An outfit stump and the genesis root are structure. Hanging one under a
-// conversation puts every aria in the store inside that aria's subtree.
+// An outfit stump and the genesis root are structure, not promotable.
 func TestPromoteStopsAtTheOutfit(t *testing.T) {
 	b, _ := backend(t, true)
 	_, a, _, _ := chain(t, b)
@@ -95,7 +92,6 @@ func TestPromoteStopsAtTheOutfit(t *testing.T) {
 	}
 }
 
-// Asking for more levels than the tree has climbs what it can and says so.
 func TestPromoteClimbsWhatItCan(t *testing.T) {
 	b, _ := backend(t, true)
 	outfit, _, _, leaf := chain(t, b)
@@ -112,8 +108,7 @@ func TestPromoteClimbsWhatItCan(t *testing.T) {
 	}
 }
 
-// A refused delete must leave the store exactly as it found it: the repair
-// it would have performed cannot be undone.
+// A refused delete leaves the store as it found it.
 func TestRefusedDeleteWritesNothing(t *testing.T) {
 	b, _ := backend(t, true)
 	_, _, mid, leaf := chain(t, b)
@@ -131,8 +126,7 @@ func TestRefusedDeleteWritesNothing(t *testing.T) {
 	}
 }
 
-// A recursive delete takes the whole drawn subtree with it, and leaves no
-// edge behind naming an aria that is gone.
+// A recursive delete leaves no edge naming a gone aria.
 func TestRecursiveDeleteTakesTheSubtree(t *testing.T) {
 	b, _ := backend(t, true)
 	_, _, mid, leaf := chain(t, b)
@@ -150,9 +144,7 @@ func TestRecursiveDeleteTakesTheSubtree(t *testing.T) {
 	}
 }
 
-// Absorbing a survivor's prefix is a storage repair. Without a re-home it
-// is also a teleport to the genesis root, which is how a store ends up
-// flat.
+// Absorbing a prefix without a re-home is a teleport to the genesis root.
 func TestDeleteKeepsASurvivorWhereItWasDrawn(t *testing.T) {
 	b, _ := backend(t, true)
 	_, a, mid, leaf := chain(t, b)
@@ -171,9 +163,7 @@ func TestDeleteKeepsASurvivorWhereItWasDrawn(t *testing.T) {
 	}
 }
 
-// A survivor whose whole drawn lineage was deleted is a top-level aria, not
-// a fossil at the genesis root: the detach empties its .from, so the only
-// record of which outfit it wore is the one the delete writes down.
+// A survivor whose drawn lineage was deleted is top-level; the delete records its outfit.
 func TestDeleteLeavesNoAriaBelowTheRoot(t *testing.T) {
 	b, _ := backend(t, true)
 	outfit, a, _, leaf := chain(t, b)

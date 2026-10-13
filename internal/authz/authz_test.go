@@ -22,8 +22,7 @@ func forkParams(t *testing.T, target, caller string) json.RawMessage {
 	return raw
 }
 
-// The params field is attribution: it lands in FigaroID and never touches the
-// principal, which only the connection can set.
+// The params field is attribution; only the connection sets the principal.
 func TestAriaHeaderNeverPromotesParamsToAPrincipal(t *testing.T) {
 	id := AriaHeader{}.Authenticate(user, forkParams(t, "aria0001", "aria0001"))
 	if id.FigaroID != "aria0001" || id.Principal != user {
@@ -48,8 +47,7 @@ func TestAriaHeaderRejectsAbsentAndMalformed(t *testing.T) {
 }
 
 func TestSelfTargetedNeedsAnIdentity(t *testing.T) {
-	// With no aria there is no self, and "" == "" would deny every anonymous
-	// call to a targetless method.
+	// With no aria there is no self, and "" == "" would deny every anonymous call.
 	anon := Request{Method: rpc.MethodFork, Params: forkParams(t, "", "")}
 	if anon.SelfTargeted() {
 		t.Fatal("anonymous request reported as self-targeted")
@@ -64,7 +62,7 @@ func TestSelfTargetedNeedsAnIdentity(t *testing.T) {
 	}
 }
 
-// Each case is a LEGITIMATE fork that must not be denied.
+// Each case is a legitimate fork that must not be denied.
 func TestNoSelfForkDuringTurn(t *testing.T) {
 	busy := func(string) bool { return true }
 	idle := func(string) bool { return false }
@@ -121,7 +119,7 @@ func TestRulesFirstDenialWins(t *testing.T) {
 	}
 }
 
-// Guard wraps the MAP so the guarded set is the served set by construction.
+// Guard wraps the map, so the guarded set is the served set by construction.
 func TestGuardAppliesToEveryMethod(t *testing.T) {
 	called := map[string]int{}
 	mk := func(name string) jkrpc.HandlerFunc {

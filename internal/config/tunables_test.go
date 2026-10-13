@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// An absent [store] table must give exactly today's geometry: the knob is
-// new, the behavior of every store already on disk is not.
 func TestStoreSegmentSizeDefault(t *testing.T) {
 	l, err := loadWith(t, "")
 	if err != nil {
@@ -31,8 +29,6 @@ func TestStoreSegmentSizeExplicit(t *testing.T) {
 	}
 }
 
-// A segment below the floor is not a slow store, it is an append that fails
-// the first time an image is inlined: so the refusal must say so.
 func TestStoreSegmentSizeFloor(t *testing.T) {
 	for _, tomlText := range []string{"[store]\nsegment_size = 4096\n", "[store]\nsegment_size = 0\n"} {
 		_, err := loadWith(t, tomlText)
@@ -45,9 +41,6 @@ func TestStoreSegmentSizeFloor(t *testing.T) {
 	}
 }
 
-// The live-emit window is smoothness policy, not correctness: 0 is legal
-// (emit every chunk), negative is not (it would read as "never throttle",
-// which 0 already means).
 func TestStreamEmitInterval(t *testing.T) {
 	l, err := loadWith(t, "")
 	if err != nil {

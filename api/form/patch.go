@@ -7,44 +7,33 @@ import (
 	"strings"
 )
 
-// A patch is a change between two values. It describes its own shape, so a
-// reader dispatches on which field is set rather than consulting a schema.
-//
-//	{Before, After}                  a scalar
-//	{Set, Delete, Update}            an object
-//	{Create, Delete, Update, Order}  a keyed list
-//
-// Each operation carries the value it displaces, so Inverse is a swap.
-//
-// Exactly one shape is non-nil. The zero Patch is Identity.
+// Patch is a change between two values; exactly one shape is non-nil and the
+// zero Patch is identity. Each operation carries the value it displaces, so
+// Inverse is a swap.
 type Patch struct {
 	Scalar *ScalarPatch `json:"scalar,omitempty"`
 	Object *ObjectPatch `json:"object,omitempty"`
 	List   *ListPatch   `json:"list,omitempty"`
 }
 
-// ScalarPatch is a whole-value swap.
 type ScalarPatch struct {
 	Before Value `json:"Before"`
 	After  Value `json:"After"`
 }
 
-// ObjectPatch changes the keys of an object. Set creates; an existing key is
-// altered through Update, which recurses to a ScalarPatch carrying Before.
+// ObjectPatch: Set creates; an existing key is altered through Update.
 type ObjectPatch struct {
 	Set    map[string]Value `json:"Set,omitempty"`
 	Delete map[string]Value `json:"Delete,omitempty"`
 	Update map[string]Patch `json:"Update,omitempty"`
 
-	// New names the Update keys that did not exist. Their leaves are
-	// described rather than the subtree, so two patches adding different
-	// fields under one parent compose; the flag is what lets Inverse remove
-	// the parent instead of leaving it empty.
+	// New names the Update keys that did not exist: their leaves are
+	// described rather than the subtree, so Inverse removes the parent
+	// instead of leaving it empty.
 	New map[string]bool `json:"New,omitempty"`
 }
 
-// ListPatch changes a keyed, ordered collection. Items are addressed by key;
-// position is Order's separate concern.
+// ListPatch addresses items by key; position is Order's separate concern.
 type ListPatch struct {
 	Create []KeyedValue     `json:"Create,omitempty"`
 	Delete []KeyedValue     `json:"Delete,omitempty"`
@@ -52,27 +41,24 @@ type ListPatch struct {
 	Order  *Order           `json:"Order,omitempty"`
 }
 
-// KeyedValue is a list item and its key. The key is supplied by whoever
-// creates the item and must be unique within the list.
+// KeyedValue.Key must be unique within the list.
 type KeyedValue struct {
 	Key   string `json:"Key"`
 	Value Value  `json:"Value"`
 }
 
 // Order is a partial window onto the new order: the keys that moved plus one
-// neighbour either side as an anchor. Undeclared keys keep their position.
-//
-// Moved indexes into Declared and names the keys that changed position.
+// neighbour either side. Undeclared keys keep their position; Moved indexes
+// into Declared.
 type Order struct {
 	Declared []string `json:"Declared"`
 	Moved    []int    `json:"Moved"`
 
-	// Prior is the same window in its source order, so Inverse is a swap.
+	// Prior is the same window in its source order.
 	Prior      []string `json:"Prior,omitempty"`
 	PriorMoved []int    `json:"PriorMoved,omitempty"`
 }
 
-// Reversed is this window as it applies to the inverse patch.
 func (o *Order) Reversed() *Order {
 	if o == nil {
 		return nil
@@ -83,7 +69,6 @@ func (o *Order) Reversed() *Order {
 	return &Order{Declared: o.Prior, Moved: o.PriorMoved, Prior: o.Declared, PriorMoved: o.Moved}
 }
 
-// IsIdentity reports whether the patch changes nothing: diff(A, A).
 func (p Patch) IsIdentity() bool {
 	switch {
 	case p.Scalar != nil:
@@ -114,9 +99,7 @@ func (p Patch) IsIdentity() bool {
 	return true
 }
 
-// Inverse is the patch that undoes this one: inverse(diff(A,B)) = diff(B,A).
-//
-// It is a swap at every level and needs nothing but the patch itself, which is
+// Inverse: inverse(diff(A,B)) = diff(B,A).
 func (p Patch) Inverse() Patch {
 	switch {
 	case p.Scalar != nil:
@@ -127,9 +110,6 @@ func (p Patch) Inverse() Patch {
 			out.Update = make(map[string]Patch, len(p.Object.Update))
 			for k, c := range p.Object.Update {
 				if p.Object.New[k] {
-					// The key was created here, so undoing it removes the
-					// key rather than emptying it. What it held is what the
-					// forward patch builds from nothing.
 					if v, err := c.Apply(NewValue(json.RawMessage(`{}`))); err == nil {
 						if out.Delete == nil {
 							out.Delete = map[string]Value{}
@@ -159,7 +139,7 @@ func (p Patch) Inverse() Patch {
 	return Patch{}
 }
 
-// Apply transforms v by this patch: apply(diff(A,B), A) = B.
+// Apply: apply(diff(A,B), A) = B.
 func (p Patch) Apply(v Value) (Value, error) {
 	switch {
 	case p.Scalar != nil:
@@ -177,16 +157,13 @@ func (p Patch) applyObject(v Value) (Value, error) {
 	if !isObj && len(v.Raw()) > 0 && string(v.Raw()) != "null" {
 		return Value{}, fmt.Errorf("object patch against a non-object")
 	}
-	// Copied because the memo behind members() is shared with every other
-	// reader of this value.
+	// members() is a shared memo; copy before mutating.
 	obj := make(map[string]Value, len(src)+len(p.Object.Set))
 	for k, val := range src {
 		obj[k] = val
 	}
 	for k, nv := range p.Object.Set {
-		// A write of an equal value keeps the bytes already stored. Providers
-		// cache on exact bytes, so a rewrite that changes only key order or
-		// spacing must not perturb the board.
+		// An equal value keeps the stored bytes: providers cache on exact bytes.
 		if cur, ok := obj[k]; ok && cur.Equal(nv) {
 			continue
 		}
@@ -198,8 +175,6 @@ func (p Patch) applyObject(v Value) (Value, error) {
 	for k, child := range p.Object.Update {
 		cur, ok := obj[k]
 		if !ok {
-			// Updating a key the board lacks creates it: that is how a patch
-			// describing new leaves under a new parent applies.
 			cur = NewValue(json.RawMessage(`{}`))
 		}
 		next, err := child.Apply(cur)
@@ -257,11 +232,8 @@ func (p Patch) applyList(v Value) (Value, error) {
 	return encodeList(out)
 }
 
-// applyOrder reconciles a partial window against the order already in hand.
-//
-// The declared keys take the positions the declaration implies; everything
-// undeclared keeps its original position. The seats are the union of the
-// positions those keys occupied, filled in declared order.
+// applyOrder fills the seats the declared keys occupied, in declared order;
+// undeclared keys keep their position.
 func applyOrder(cur []string, o *Order) []string {
 	if o == nil || len(o.Declared) == 0 {
 		return cur
@@ -290,6 +262,8 @@ func applyOrder(cur []string, o *Order) []string {
 
 // Merge composes two patches applied in series:
 // apply(merge(P,Q), A) = apply(Q, apply(P, A)).
+// Order windows are relative to the post-edit sequence, so a list whose
+// membership and order both change does not compose without the base.
 func Merge(p, q Patch) Patch {
 	switch {
 	case p.IsIdentity():
@@ -297,19 +271,14 @@ func Merge(p, q Patch) Patch {
 	case q.IsIdentity():
 		return p
 	case p.Scalar != nil && q.Scalar != nil:
-		// The pair spans both steps: what P found, what Q left.
 		return Patch{Scalar: &ScalarPatch{Before: p.Scalar.Before, After: q.Scalar.After}}
 	case p.Object != nil && q.Object != nil:
 		return Patch{Object: mergeObject(p.Object, q.Object)}
 	case p.List != nil && q.List != nil:
 		return Patch{List: mergeList(p.List, q.List)}
 	}
-	// Kinds disagree, which means the value changed shape between the two
-	// STEPS. Neither patch alone spans that, but together they do, and the
-	// bridge is invertibility.
+	// Kinds disagree: the value changed shape between the steps.
 	if p.Scalar != nil {
-		// P replaced the whole value, so what Q edits is P.After -- a
-		// complete value we hold. Run Q against it.
 		after, err := q.Apply(p.Scalar.After)
 		if err != nil {
 			return q
@@ -317,18 +286,13 @@ func Merge(p, q Patch) Patch {
 		return Patch{Scalar: &ScalarPatch{Before: p.Scalar.Before, After: after}}
 	}
 	if q.Scalar != nil {
-		// Q replaced the whole value, so the result is Q.After. The original
-		// is not in either patch -- but Q.Before is the value AFTER P, and
-		// P inverted carries it back.
+		// Q.Before is the value after P; P inverted carries it back.
 		before, err := p.Inverse().Apply(q.Scalar.Before)
 		if err != nil {
 			return q
 		}
 		return Patch{Scalar: &ScalarPatch{Before: before, After: q.Scalar.After}}
 	}
-	// An object patch cannot feed a list patch: a value is not both. Only
-	// reachable from a hand-built pair, and the later one is the honest
-	// answer.
 	return q
 }
 
@@ -349,8 +313,6 @@ func mergeObject(p, q *ObjectPatch) *ObjectPatch {
 	}
 	for k, v := range q.Set {
 		if old, wasDeleted := out.Delete[k]; wasDeleted {
-			// P removed it and Q put one back: a change, not a create, and
-			// the value P destroyed is what it changed FROM.
 			delete(out.Delete, k)
 			out.Update[k] = Patch{Scalar: &ScalarPatch{Before: old, After: v}}
 			continue
@@ -359,7 +321,6 @@ func mergeObject(p, q *ObjectPatch) *ObjectPatch {
 	}
 	for k, v := range q.Delete {
 		if _, wasSet := out.Set[k]; wasSet {
-			// P created it and Q removed it: neither happened.
 			delete(out.Set, k)
 			delete(out.Update, k)
 			continue
@@ -369,7 +330,6 @@ func mergeObject(p, q *ObjectPatch) *ObjectPatch {
 	}
 	for k, c := range q.Update {
 		if v, wasSet := out.Set[k]; wasSet {
-			// P created it and Q edited it: still a create, of the later value.
 			if next, err := c.Apply(v); err == nil {
 				out.Set[k] = next
 			}
@@ -387,9 +347,7 @@ func mergeObject(p, q *ObjectPatch) *ObjectPatch {
 func mergeList(p, q *ListPatch) *ListPatch {
 	out := &ListPatch{Update: map[string]Patch{}}
 
-	// Creates keep their order. Apply appends them in array order, so the
-	// array IS positional information: sorting it for tidiness silently
-	// reorders the list a merged patch produces.
+	// Create order is positional: Apply appends in array order.
 	created := newKeyedSeq()
 	deleted := newKeyedSeq()
 	for _, c := range p.Create {
@@ -402,13 +360,10 @@ func mergeList(p, q *ListPatch) *ListPatch {
 		out.Update[k] = c
 	}
 	for _, c := range q.Create {
-		// position: the item leaves its seat and is appended. Collapsing the
-		// no position and do collapse -- see mergeObject.
 		created.put(c)
 	}
 	for _, d := range q.Delete {
 		if _, wasCreated := created.get(d.Key); wasCreated {
-			// P created it and Q removed it: neither happened.
 			created.drop(d.Key)
 			delete(out.Update, d.Key)
 			continue
@@ -516,10 +471,7 @@ func removeKey(order []string, key string) []string {
 	return out
 }
 
-// ---- value shapes -------------------------------------------------------
-
-// encodeObject writes the members verbatim: their bytes are already JSON and
-// re-marshalling them was the cost of every apply.
+// encodeObject writes the members' bytes verbatim.
 func encodeObject(m map[string]Value) Value {
 	raw := make(map[string]json.RawMessage, len(m))
 	for k, v := range m {
@@ -528,7 +480,7 @@ func encodeObject(m map[string]Value) Value {
 	return NewValue(encodeRawObject(raw))
 }
 
-// decodeList reads a value as a keyed list: an array of {Key, Value}.
+// decodeList reads an array of {Key, Value}.
 func decodeList(v Value) ([]KeyedValue, error) {
 	if len(v.Raw()) == 0 {
 		return nil, nil
@@ -548,8 +500,6 @@ func encodeList(items []KeyedValue) (Value, error) {
 	return NewValue(b), nil
 }
 
-// IsEmpty is IsIdentity under the name call sites already use.
-// is there now. One traversal; Keys, removals and set values are views of it.
 func (p Patch) Entries() []Entry {
 	var out []Entry
 	var walk func(Patch, string)
@@ -589,8 +539,7 @@ func (p Patch) Entries() []Entry {
 	return out
 }
 
-// expand yields a set value as the leaf paths it declares, so a nested object
-// arrives addressable rather than as one blob.
+// expand yields a set value as its leaf paths.
 func expand(v Value, prefix string, out *[]Entry) {
 	obj, isObj := asObject(v)
 	if !isObj || len(obj) == 0 {
@@ -602,12 +551,8 @@ func expand(v Value, prefix string, out *[]Entry) {
 	}
 }
 
-// Entry is what the patch does at one path.
-//
-// It walks the patch rather than scanning Entries, because a value the patch
-// SETS may itself be an object: Entries expands it so a nested field is
-// visible to protection, while a lookup of the key itself must still answer
-// with the whole value that was written.
+// Entry is what the patch does at one path. A lookup of a key whose set value
+// is an object answers with the whole value, where Entries would expand it.
 func (p Patch) Entry(key string) (Entry, bool) {
 	cur, rest := p, key
 	for {
@@ -622,7 +567,6 @@ func (p Patch) Entry(key string) (Entry, bool) {
 			if remainder == "" {
 				return Entry{Key: key, New: v.Raw()}, true
 			}
-			// The patch set a whole object and the path continues inside it.
 			if inner, ok := valueAt(v, remainder); ok {
 				return Entry{Key: key, New: inner.Raw()}, true
 			}
@@ -640,9 +584,6 @@ func (p Patch) Entry(key string) (Entry, bool) {
 				return Entry{Key: key, Old: child.Scalar.Before.Raw(), New: child.Scalar.After.Raw()}, true
 			}
 			if cur.Object.New[seg] {
-				// The key is created here and its leaves are described, so
-				// the value it ends up holding is what the child builds from
-				// nothing.
 				if v, err := child.Apply(NewValue(json.RawMessage(`{}`))); err == nil {
 					return Entry{Key: key, New: v.Raw()}, true
 				}
@@ -659,8 +600,6 @@ func (p Patch) Entry(key string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// longestPatchMember picks the longest member name of the patch level that is
-// a dotted prefix of rest.
 func longestPatchMember(o *ObjectPatch, rest string) (seg, remainder string, ok bool) {
 	has := func(name string) bool {
 		if _, x := o.Set[name]; x {
@@ -703,9 +642,7 @@ func namesOf(o *ObjectPatch) map[string]bool {
 	return out
 }
 
-// Build is the only way to make a patch from intent rather than from a diff:
-// state what a board should hold and diff the result. A patch is a difference,
-// so it cannot be assembled field by field.
+// Build states what a board should hold and diffs the result.
 func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch {
 	next := base
 	keys := make([]string, 0, len(set))
@@ -721,9 +658,7 @@ func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch
 	}
 	p := next.Diff(base)
 
-	// A removal the base cannot express is still a removal. Diffing alone
-	// drops it: nothing was there to delete, so nothing changed. The patch
-	// must still say so, carrying the prior value where the base knew one.
+	// A removal of a key the base lacks still has to appear in the patch.
 	var missing []string
 	for _, k := range remove {
 		if _, ok := p.Entry(k); !ok {
@@ -744,7 +679,6 @@ func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch
 	return p
 }
 
-// valueAt walks a value by dotted path, longest member first.
 func valueAt(v Value, path string) (Value, bool) {
 	cur, rest := v, path
 	for rest != "" {
@@ -761,8 +695,6 @@ func valueAt(v Value, path string) (Value, bool) {
 	return cur, true
 }
 
-// deleteAt is a patch that removes the leaf at segs, nesting the operation so
-// it reaches the node the path names rather than a member of the root.
 func deleteAt(segs []string, old Value) Patch {
 	if len(segs) == 0 {
 		return Patch{}

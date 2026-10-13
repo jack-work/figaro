@@ -7,14 +7,8 @@ import (
 	"strings"
 )
 
-// formRefs expands `@key!` from the aria's own board. The sigil is
-// configurable ("@" or ":", cli.ref_sigil); the terminator is not. A key that
-// is not on the board refuses the message and names the key.
-//
-// This used to run on the client (internal/cli/atref.go) and leave an unknown
-// key literal. Moving it here is what lets it share a failure policy with the
-// quote, and it costs the client nothing: the daemon holds the board the
-// client had to dial for.
+// formRefs expands `@key!` from the aria's board. The sigil is configurable
+// (cli.ref_sigil); the terminator is not. An unknown key refuses the message.
 type formRefs struct{}
 
 func (formRefs) Name() string { return "ref" }
@@ -35,8 +29,7 @@ func (formRefs) Rewrite(_ context.Context, view InputView, text string) (string,
 			continue
 		}
 		key, n := readRefKey(text[i+1:])
-		// A reference is sigil, key, '!'. Anything else is text: an email
-		// address, a decorator, a bare mention.
+		// Sigil, key, '!'. Anything else is text: an email address, a decorator.
 		if key == "" || i+1+n >= len(text) || text[i+1+n] != '!' {
 			out.WriteByte(c)
 			i++
@@ -52,9 +45,7 @@ func (formRefs) Rewrite(_ context.Context, view InputView, text string) (string,
 	return out.String(), nil
 }
 
-// refSigilOf reads cli.ref_sigil, falling back to '@' on any trouble: a bad
-// sigil is refused at CLI startup already, and the daemon must not refuse
-// every message over it.
+// A bad sigil is refused at CLI startup; the daemon must not refuse every message over it.
 func refSigilOf(l interface{ RefSigil() (string, error) }) byte {
 	if l == nil {
 		return '@'
@@ -66,9 +57,7 @@ func refSigilOf(l interface{ RefSigil() (string, error) }) byte {
 	return s[0]
 }
 
-// readRefKey reads a form key off the head of s: a letter or underscore, then
-// letters, digits, underscores and dots, never ending in a dot. Returns the
-// key and the bytes consumed, or "" when the head is not a key.
+// readRefKey returns the key and bytes consumed, or "" when the head is not a key.
 func readRefKey(s string) (string, int) {
 	if s == "" {
 		return "", 0
@@ -94,8 +83,7 @@ func readRefKey(s string) (string, int) {
 func refAlpha(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') }
 func refDigit(b byte) bool { return b >= '0' && b <= '9' }
 
-// refValueString renders a board value inline: a string as itself, anything
-// else as compact JSON.
+// refValueString renders a string as itself, anything else as compact JSON.
 func refValueString(raw json.RawMessage) string {
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {

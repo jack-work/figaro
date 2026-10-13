@@ -16,10 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// prematureCloseProvider streams, then -- when the turn is cancelled -- hands
-// over WHAT IT HAS from its own accumulator, marked aborted, with its native
-// payload. That is section 3(c): the interrupt path and the normal path
-// produce a message the same way, differing only in the stop reason.
+// prematureCloseProvider hands over its own accumulator on cancel, marked aborted, with its native payload.
 type prematureCloseProvider struct {
 	started chan struct{}
 }
@@ -36,9 +33,6 @@ func (p *prematureCloseProvider) Send(ctx context.Context, _ provider.SendInput,
 	close(p.started)
 	<-ctx.Done()
 
-	// THE PREMATURE CLOSE. The accumulator is the provider's own, so the
-	// message and its native payload cannot disagree -- which is the whole
-	// point of moving this out of figaro.
 	bus.PushMessageEnd(string(message.StopAborted))
 	bus.PushFigaro(message.Message{
 		Role:       message.RoleOutput,
@@ -53,14 +47,8 @@ func (p *prematureCloseProvider) Send(ctx context.Context, _ provider.SendInput,
 	return ctx.Err()
 }
 
-// A PROVIDER THAT CLOSES EARLY OWNS ITS PARTIAL MESSAGE, AND ITS NATIVE
-// PAYLOAD SURVIVES.
-//
-// figaro used to synthesise the partial from its own accumulator, which has
-// no provider-native material in it: the fig IR entry existed but its
-// translation had to be RE-ENCODED, losing thinking signatures and encrypted
-// reasoning. When the provider hands over the same message it would have sent
-// on a normal close, the native payload comes with it.
+// A provider that closes early owns its partial message, and its native
+// payload (thinking signatures) survives instead of being re-encoded.
 func TestAProviderThatClosesEarlyKeepsItsNativePayload(t *testing.T) {
 	be, id := store.NewTestAria(t, "d", message.Patch{})
 	prov := &prematureCloseProvider{started: make(chan struct{})}
@@ -91,8 +79,7 @@ func TestAProviderThatClosesEarlyKeepsItsNativePayload(t *testing.T) {
 	require.Equal(t, message.StopAborted, last.StopReason)
 	require.Equal(t, "half a thou", last.Content[0].Text)
 
-	// THE NATIVE PAYLOAD IS THE POINT. A figaro-synthesised partial has none,
-	// so this is what distinguishes the provider-owned close from the repair.
+	// The native payload distinguishes the provider-owned close from the repair.
 	trans, err := be.OpenTranslator(id, "premature")
 	require.NoError(t, err)
 	entries := trans.Read()

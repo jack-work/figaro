@@ -9,13 +9,11 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// padNode builds a node whose serialized size is dominated by markdown of the
-// requested length, so budget arithmetic in these tests is predictable.
+// padNode builds a node whose serialized size is dominated by n bytes of markdown.
 func padNode(body int) livedoc.Node {
 	return livedoc.Node{Type: livedoc.NodeProse, Markdown: strings.Repeat("x", body)}
 }
 
-// mkTurns builds len(counts) turns; turn i+1 has counts[i] nodes.
 func mkTurns(counts ...int) []Turn {
 	out := make([]Turn, 0, len(counts))
 	for i, n := range counts {
@@ -28,8 +26,7 @@ func mkTurns(counts ...int) []Turn {
 	return out
 }
 
-// nodesOf flattens a page into (turn, id) pairs so tests can assert the exact
-// window without caring about node contents.
+// nodesOf flattens a page into (turn, id) pairs.
 func nodesOf(p Page) [][2]uint64 {
 	var out [][2]uint64
 	for _, part := range p.Parts {
@@ -61,7 +58,7 @@ func TestPaginate_ForwardFromStart(t *testing.T) {
 	}
 }
 
-// The zero anchor with Backward is the tail: what `fig show -n N` asks for.
+// The zero anchor with Backward is the tail.
 func TestPaginate_BackwardFromEndIsTheTail(t *testing.T) {
 	turns := mkTurns(3, 3)
 	one := nodeSize(padNode(10))
@@ -83,8 +80,7 @@ func TestPaginate_BackwardFromEndIsTheTail(t *testing.T) {
 	}
 }
 
-// A page always carries at least one node, even when that node alone busts the
-// budget: otherwise a huge node would be unreachable and paging would stall.
+// A page always carries at least one node, or a huge node would be unreachable.
 func TestPaginate_AlwaysEmitsAtLeastOneNode(t *testing.T) {
 	turns := []Turn{{ID: 1, Sealed: true, Nodes: []livedoc.Node{padNode(50000)}}}
 	p := Paginate(turns, Anchor{}, Forward, 1)
@@ -93,8 +89,7 @@ func TestPaginate_AlwaysEmitsAtLeastOneNode(t *testing.T) {
 	}
 }
 
-// Contiguity means only the boundary turns can be clipped. Inner turns are
-// whole, and their From is 0.
+// Only the boundary turns can be clipped.
 func TestPaginate_OnlyBoundaryTurnsAreClipped(t *testing.T) {
 	turns := mkTurns(3, 3, 3, 3)
 	p := Paginate(turns, Anchor{Turn: 1, Node: 1}, Forward, nodeSize(padNode(10))*9)
@@ -114,8 +109,7 @@ func TestPaginate_OnlyBoundaryTurnsAreClipped(t *testing.T) {
 	}
 }
 
-// Node ids inside a part are positional: Nodes[i] has id From+i. Nothing on
-// the wire needs to repeat them.
+// Node ids inside a part are positional: Nodes[i] has id From+i.
 func TestPaginate_NodeIDsArePositional(t *testing.T) {
 	turns := mkTurns(5)
 	p := Paginate(turns, Anchor{Turn: 1, Node: 2}, Forward, nodeSize(padNode(10))*10)
@@ -132,8 +126,8 @@ func TestPaginate_NodeIDsArePositional(t *testing.T) {
 	}
 }
 
-// The property the whole design rests on: a window that stops short of the
-// open suffix carries no Live, so it can never change.
+// A window that stops short of the open suffix carries no Live, so it can
+// never change.
 func TestPaginate_PageBelowSuffixIsImmutable(t *testing.T) {
 	turns := mkTurns(6)
 	turns[0].Sealed = false
@@ -158,9 +152,7 @@ func TestPaginate_PageBelowSuffixIsImmutable(t *testing.T) {
 	}
 }
 
-// At most one part per page carries Live, and it is the last: the open turn
-// is the newest and the window is contiguous, so the suffix can only ever be
-// at the very end.
+// At most one part per page carries Live, and it is the last.
 func TestPaginate_AtMostOneLiveAndItIsLast(t *testing.T) {
 	turns := mkTurns(2, 2, 4)
 	turns[2].Sealed = false
@@ -183,8 +175,7 @@ func TestPaginate_AtMostOneLiveAndItIsLast(t *testing.T) {
 	}
 }
 
-// Purity: refetching the same window yields byte-identical JSON. This is what
-// lets a client cache a backpage forever.
+// Refetching the same window yields byte-identical JSON.
 func TestPaginate_IsPureAndByteStable(t *testing.T) {
 	turns := mkTurns(4, 4)
 	turns[1].Sealed = false
@@ -204,9 +195,8 @@ func TestPaginate_IsPureAndByteStable(t *testing.T) {
 	}
 }
 
-// Bidirectionality: paging backward from an anchor and then forward from the
-// result's first node returns the same window. Scrolling either way must land
-// a client on the same content.
+// Paging backward from an anchor and then forward from the result's first
+// node returns the same window.
 func TestPaginate_BidirectionalRoundTrip(t *testing.T) {
 	turns := mkTurns(4, 4, 4)
 	budget := nodeSize(padNode(10)) * 5
@@ -226,11 +216,8 @@ func TestPaginate_BidirectionalRoundTrip(t *testing.T) {
 	}
 }
 
-// An anchor naming a turn that no longer exists clamps rather than failing -
-// a client scrolling a conversation that forked under it should land
-// somewhere sane. But "sane" is direction-aware: beyond the last turn there is
-// nothing FORWARD to give, and answering with the last turn anyway is how a
-// pager joining at the tail ended up rendering it twice.
+// An anchor naming a turn that no longer exists clamps, direction-aware:
+// beyond the last turn there is nothing forward to give.
 func TestPaginate_UnknownAnchorClamps(t *testing.T) {
 	turns := mkTurns(2, 2)
 	beyond := Anchor{Turn: 99, Node: 99}
@@ -247,9 +234,7 @@ func TestPaginate_UnknownAnchorClamps(t *testing.T) {
 	if p := Paginate(turns, before, Forward, 1000); len(p.Parts) == 0 {
 		t.Fatal("forward from before the start is the head")
 	}
-	// An anchor INSIDE the range naming a gap still clamps to a neighbour.
-	// Non-contiguous ids are real: a forked trunk inherits its parent's
-	// numbering, so turn 3 can be absent between 1 and 5.
+	// Non-contiguous ids are real: a forked trunk inherits its parent's numbering.
 	gapped := mkTurns(2, 2)
 	gapped[1].ID = 5
 	if p := Paginate(gapped, Anchor{Turn: 3}, Forward, 1000); len(p.Parts) == 0 {
@@ -263,10 +248,8 @@ func TestPaginate_UnknownAnchorClamps(t *testing.T) {
 	}
 }
 
-// The pager joins at the tail with a backward read, then asks forward from the
-// same beyond-the-end cursor for anything still streaming. Those two reads must
-// not both return the last turn, or it renders twice: the dormant-aria
-// duplication.
+// A backward tail read and a forward read from the same beyond-the-end
+// cursor must not both return the last turn.
 func TestPaginate_TailJoinDoesNotDuplicate(t *testing.T) {
 	turns := mkTurns(1, 2, 3)
 	beyond := Anchor{Turn: 1 << 60}
@@ -278,19 +261,14 @@ func TestPaginate_TailJoinDoesNotDuplicate(t *testing.T) {
 	if len(forward.Parts) != 0 {
 		t.Fatalf("forward from the same cursor must add nothing, got %d parts", len(forward.Parts))
 	}
-	// The tail window reaches the end of the last turn, so it carries the open
-	// suffix itself: the second read has nothing left to contribute.
 	lastPart := tail.Parts[len(tail.Parts)-1]
 	if lastPart.ClippedTail {
 		t.Error("the tail window must reach the last node of the last turn")
 	}
 }
 
-// Walking backward page by page must never deliver the same node twice. The
-// pager anchors each request on the oldest node it already holds, so an
-// inclusive read hands that node back and the transcript shows a duplicate at
-// EVERY page boundary. This shipped undetected because the CLI's test double
-// sliced history itself and never ran the paginator.
+// Walking backward page by page must never deliver the same node twice: the
+// pager anchors each request on the oldest node it already holds.
 func TestPaginateBefore_PagesDoNotOverlap(t *testing.T) {
 	turns := make([]Turn, 40)
 	for i := range turns {
@@ -322,7 +300,6 @@ func TestPaginateBefore_PagesDoNotOverlap(t *testing.T) {
 	}
 }
 
-// The tail request names no existing node, so it has nothing to exclude.
 func TestPaginateBefore_TailIsInclusive(t *testing.T) {
 	turns := []Turn{
 		{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "a"}}},
@@ -334,12 +311,8 @@ func TestPaginateBefore_TailIsInclusive(t *testing.T) {
 	}
 }
 
-// AN UNANSWERED QUESTION IS CONTENT. A turn with an inquiry and no nodes is
-// an ordinary state -- a prompt whose answer never arrived, or an aria whose
-// whole history is one question -- and a walk that counts only nodes cannot
-// see it: it cannot be located, cannot be stepped to, and an aria made of one
-// returns an EMPTY PAGE. Found on a real store: two arias of twelve showed
-// nothing through the paginated read and their questions through the raw one.
+// A turn with an inquiry and no nodes is content: it can be located and
+// stepped to.
 func TestAnInquiryWithNoAnswerIsStillAPage(t *testing.T) {
 	only := []Turn{{ID: 1, Inquiry: "what model are you", Sealed: true}}
 	p := Paginate(only, Anchor{}, Backward, 1<<20)
@@ -350,8 +323,6 @@ func TestAnInquiryWithNoAnswerIsStillAPage(t *testing.T) {
 		t.Fatalf("the part must carry the question and no nodes: %+v", p.Parts[0])
 	}
 
-	// And in the middle of a history: the walk must step OVER it without
-	// dropping it from the assembled page.
 	mixed := []Turn{
 		{ID: 1, Inquiry: "one", Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "a"}}},
 		{ID: 2, Inquiry: "unanswered", Sealed: true},

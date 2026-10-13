@@ -43,9 +43,6 @@ func TestParseAndFormatRoundTrip(t *testing.T) {
 	}
 }
 
-// Text that does not carry a terminated token is text, and Parse must say so
-// with ErrNone rather than with a refusal: a reader who writes "<3" or pastes
-// an HTML tag has not asked for a quote.
 func TestUnterminatedIsText(t *testing.T) {
 	for _, in := range []string{
 		"", "hello", "<412>", "<412> hello", "<412.0:23-1180> not terminated",
@@ -61,8 +58,6 @@ func TestUnterminatedIsText(t *testing.T) {
 	}
 }
 
-// A terminated token that is not a coordinate is refused, and the reason
-// names what is wrong. Every row here is a spelling somebody will type.
 func TestMalformedIsRefused(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"<>!", "empty coordinate"},

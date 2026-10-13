@@ -11,8 +11,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// decodeItems unmarshals the encoded Responses input items so a test can
-// assert on shape rather than on substring luck.
 func decodeItems(t *testing.T, raws []json.RawMessage) []map[string]any {
 	t.Helper()
 	out := make([]map[string]any, 0, len(raws))
@@ -37,10 +35,8 @@ func itemContent(t *testing.T, item map[string]any) []map[string]any {
 	return out
 }
 
-// TestResponsesToolImageTrailsTheOutput pins the shape this provider must
-// use: the Responses function_call_output takes a plain string, so a tool's
-// image cannot ride inside it. It follows in a user message instead, after
-// every function_call_output, captioned with the call it came from.
+// function_call_output takes a plain string, so a tool's image follows in a
+// user message, captioned with the call.
 func TestResponsesToolImageTrailsTheOutput(t *testing.T) {
 	msg := message.Message{
 		Role: message.RoleInput,

@@ -11,16 +11,10 @@ import (
 	"sync"
 )
 
-// Snapshot is a structural view of an aria's board: a JSON object whose
-// members are the keys, nested where the keys nest.
-//
-// convention nothing enforced and made every value below the first level
-// unreachable: changing one field of a 6.5KB credo rewrote the credo. The
-// dots address a tree now, and a patch reaches any node of it.
+// Snapshot is an aria's board: a JSON object nested where the dotted keys
+// nest. Immutable; the tree is the authority and raw memoises its bytes.
 type Snapshot struct {
-	t ptree
-	// raw memoises the serialised board. A snapshot is written once and read
-	// many times, and the tree is the authority.
+	t   ptree
 	raw *rawBox
 }
 
@@ -30,13 +24,12 @@ type rawBox struct {
 	err   error
 }
 
-// Path is a key resolved to its segments. Dots address the tree; a segment
-// resolved AGAINST a snapshot rather than parsed in isolation.
+// Path is a key resolved to its segments against a snapshot, not parsed in
+// isolation.
 type Path []string
 
-// FromMap builds a Snapshot from flat dotted keys, nesting them. A value that
-// is not valid JSON is kept verbatim so MarshalJSON can refuse it, rather than
-// disappearing here.
+// FromMap nests flat dotted keys. Invalid JSON is kept verbatim so
+// MarshalJSON can refuse it.
 func FromMap(m map[string]json.RawMessage) Snapshot {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -50,7 +43,6 @@ func FromMap(m map[string]json.RawMessage) Snapshot {
 	return Snapshot{t: t, raw: &rawBox{}}
 }
 
-// Root is the whole board as one value: what a structural patch applies to.
 func (s Snapshot) Root() Value {
 	raw, err := s.marshal()
 	if err != nil {
@@ -67,7 +59,6 @@ func (s Snapshot) marshal() (json.RawMessage, error) {
 	return s.raw.bytes, s.raw.err
 }
 
-// encodeTree writes the tree as nested JSON, members verbatim.
 func encodeTree(t ptree) (json.RawMessage, error) {
 	var b []byte
 	b = append(b, '{')
@@ -108,7 +99,6 @@ func encodeTree(t ptree) (json.RawMessage, error) {
 	return append(b, '}'), nil
 }
 
-// FromValue reads a root object as a snapshot.
 func FromValue(v Value) Snapshot {
 	var s Snapshot
 	if err := s.UnmarshalJSON(v.Raw()); err != nil {
@@ -117,9 +107,8 @@ func FromValue(v Value) Snapshot {
 	return s
 }
 
-// The key is resolved segment by segment, Longest match first at every level,
-// so a key whose own name contains a dot resolves to itself rather than to a
-// `skills.howto.md` both addressable.
+// Get resolves longest member first at every level, so a key whose own name
+// contains a dot resolves to itself.
 func (s Snapshot) Get(key string) (json.RawMessage, bool) {
 	n, ok := s.t.entry(key)
 	if !ok || n.branch {
@@ -135,8 +124,6 @@ func (s Snapshot) Get(key string) (json.RawMessage, bool) {
 	return n.value.Raw(), true
 }
 
-// longestMember finds the longest member name of obj that is a dotted prefix
-// of rest, and returns it with what is left.
 func longestMember(obj map[string]Value, rest string) (seg, remainder string, ok bool) {
 	if v, exact := obj[rest]; exact {
 		_ = v
@@ -154,10 +141,9 @@ func longestMember(obj map[string]Value, rest string) (seg, remainder string, ok
 	return best, rest[len(best)+1:], true
 }
 
-// Has reports whether key is present.
 func (s Snapshot) Has(key string) bool { _, ok := s.Get(key); return ok }
 
-// Len is the number of addressable leaves.
+// Len counts leaves.
 func (s Snapshot) Len() int {
 	n := 0
 	for range s.All() {
@@ -166,24 +152,17 @@ func (s Snapshot) Len() int {
 	return n
 }
 
-// All iterates every LEAF as its dotted path, in lexical order. Interior
-// objects are walked into rather than yielded: a caller enumerating the board
-// wants the values, and every value is a leaf of some path.
-//
-// A leaf is a scalar, an array, or an EMPTY object. A non-empty object is a
-// branch and its members are yielded instead.
+// All yields every leaf by dotted path in lexical order. A leaf is a scalar,
+// an array, or an empty object; non-empty objects are walked into.
 func (s Snapshot) All() iter.Seq2[string, json.RawMessage] {
 	return func(yield func(string, json.RawMessage) bool) {
 		s.t.leaves("", func(path string, v Value) bool { return yield(path, v.Raw()) })
 	}
 }
 
-// Clone returns a snapshot with the same contents. Snapshots are immutable,
-// so this is the identity; it is kept because call sites read better saying
-// what they mean.
 func (s Snapshot) Clone() Snapshot { return s }
 
-// Lookup is the string value at key, or nil.
+// Lookup is the string value at key, or nil when absent or not a string.
 func (s Snapshot) Lookup(key string) *string {
 	if raw, ok := s.Get(key); ok {
 		var out string
@@ -194,11 +173,8 @@ func (s Snapshot) Lookup(key string) *string {
 	return nil
 }
 
-// Diff computes the patch that transforms prev into s.
-//
-// It walks both trees and stops wherever they share a pointer: a subtree that
-// was not rebuilt cannot have changed, so an untouched credo costs one
-// comparison rather than its bytes.
+// Diff is the patch that transforms prev into s. Shared subtrees are skipped
+// by pointer.
 func (s Snapshot) Diff(prev Snapshot) Patch {
 	p := diffTrees(prev.t, s.t)
 	if p.IsIdentity() {
@@ -252,7 +228,6 @@ func diffTrees(prev, next ptree) Patch {
 				out.Update[n.key] = Patch{Scalar: &ScalarPatch{Before: old.value, After: n.value}}
 			}
 		default:
-			// The kind changed, so the whole node is replaced.
 			if out.Update == nil {
 				out.Update = map[string]Patch{}
 			}
@@ -273,7 +248,6 @@ func diffTrees(prev, next ptree) Patch {
 	return Patch{Object: out}
 }
 
-// entryValue is the value a node stands for, serialising a branch.
 func entryValue(n *node) Value {
 	if !n.branch {
 		return n.value
@@ -285,13 +259,11 @@ func entryValue(n *node) Value {
 	return NewValue(raw)
 }
 
-// AsPatch is the patch that builds this snapshot from an empty one.
 func (s Snapshot) AsPatch() Patch {
 	return Diff(NewValue(json.RawMessage(`{}`)), s.Root())
 }
 
-// Apply returns a new snapshot with the patch applied. The receiver is
-// unchanged and the result shares every subtree the patch did not touch.
+// Apply returns a new snapshot sharing every subtree the patch did not touch.
 func (s Snapshot) Apply(p Patch) Snapshot {
 	t, changed := applyToTree(s.t, p)
 	if !changed {
@@ -300,16 +272,14 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 	return Snapshot{t: t, raw: &rawBox{}}
 }
 
-// applyToTree walks the patch and the tree together. Only nodes the patch
-// names are rebuilt; the rest keep their pointers, which is what makes a diff
-// of the result cheap.
+// applyToTree rebuilds only the nodes the patch names; the rest keep their
+// pointers, which is what keeps Diff cheap.
 func applyToTree(t ptree, p Patch) (ptree, bool) {
 	if p.Object == nil {
 		if p.IsIdentity() {
 			return t, false
 		}
-		// A scalar or list patch replaces the whole board, which only a
-		// caller holding the root as one value can mean.
+		// A scalar or list patch replaces the whole board.
 		next, err := p.Apply(NewValue(mustEncode(t)))
 		if err != nil {
 			return t, false
@@ -359,10 +329,6 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 	return t, changed
 }
 
-// asNestedObject reports a value as an object to descend into. Every object is
-// a branch, so a field of one is addressable by path; a branch re-serialises
-// to exactly the object it came from, so a caller asking for the parent gets
-// what it wrote.
 func asNestedObject(v json.RawMessage) (json.RawMessage, bool) {
 	for _, c := range v {
 		switch c {
@@ -385,7 +351,6 @@ func mustEncode(t ptree) json.RawMessage {
 	return b
 }
 
-// treeFromJSON reads a nested object into the tree.
 func treeFromJSON(raw json.RawMessage) (ptree, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
@@ -423,12 +388,10 @@ func Additive(s Snapshot, p Patch) Patch {
 	return Build(s, set, nil)
 }
 
-// SetPath returns a snapshot with key set to v, creating intermediate nodes.
 func (s Snapshot) SetPath(key string, v json.RawMessage) Snapshot {
 	return Snapshot{t: s.t.setPath(strings.Split(key, "."), NewValue(v)), raw: &rawBox{}}
 }
 
-// DeletePath returns a snapshot without key.
 func (s Snapshot) DeletePath(key string) Snapshot {
 	t, found := s.t.deletePath(strings.Split(key, "."))
 	if !found {
@@ -437,15 +400,11 @@ func (s Snapshot) DeletePath(key string) Snapshot {
 	return Snapshot{t: t, raw: &rawBox{}}
 }
 
-// MarshalJSON emits the nested object the form channel holds on disk.
-//
-// A value that is not valid JSON is an error, not an omission: it reaches
-// here only if a caller wrote raw bytes that never parsed, and silently
-// dropping it loses board state with nothing to read afterwards.
+// MarshalJSON emits the nested object the form channel holds on disk; a
+// member that is not valid JSON is an error, never an omission.
 func (s Snapshot) MarshalJSON() ([]byte, error) { return s.marshal() }
 
-// -- dotted keys at the top level -- is nested on read, so an old store opens
-// without a rewrite.
+// UnmarshalJSON nests a flat board (dotted keys at the top level) on read.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
@@ -470,24 +429,20 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Entry is one key's change, as a renderer sees it.
 type Entry struct {
 	Key string
 	Old json.RawMessage
 	New json.RawMessage
 }
 
-// IsRemoval reports whether the entry describes a key that went away.
 func (e Entry) IsRemoval() bool { return e.New == nil }
 
-// NewString is the entry's new value as a string, or "".
 func (e Entry) NewString() string { return decodeStringOrRaw(e.New) }
 
-// OldString is the entry's old value as a string, or "".
 func (e Entry) OldString() string { return decodeStringOrRaw(e.Old) }
 
-// PatchEntries is the patch's entries resolved against the board it applies
-// to, so an entry that changes an existing key carries the value it replaces.
+// PatchEntries resolves the patch against prev, so a changed key carries the
+// value it replaces.
 func PatchEntries(p Patch, prev Snapshot) []Entry {
 	next := prev.Apply(p)
 	before := map[string]json.RawMessage{}
@@ -540,12 +495,8 @@ func decodeStringOrRaw(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// encodeRawObject writes {"k":<raw>,...} with the values verbatim.
-//
-// json.Marshal refuses a member that is not valid JSON and returns an error
-// most callers here cannot act on, which turned a bad value into an empty
-// board. Emitting the bytes lets MarshalJSON refuse it later, where the caller
-// is reading and can be told.
+// encodeRawObject writes values verbatim, invalid JSON included, so
+// MarshalJSON can refuse it where the caller can be told.
 func encodeRawObject(m map[string]json.RawMessage) []byte {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -572,6 +523,3 @@ func encodeRawObject(m map[string]json.RawMessage) []byte {
 	}
 	return append(b, '}')
 }
-
-// flattenUnder reads a patch that only creates leaves as the suffixes it
-// names, so they can be written beside a terminal node rather than inside it.

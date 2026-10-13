@@ -1,12 +1,5 @@
 package angelus
 
-// The errors a first-run or misconfigured store produces, written once and
-// at length: each of these is read by a human who is stuck.
-//
-// Split out of protocol.go, which had grown to 2,011 lines and answered every
-// question at once. Same package, same behaviour: only the reader's job
-// changes. plans/api-coherence.md step 5.
-
 import (
 	"encoding/json"
 	"errors"
@@ -18,8 +11,6 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// errNoDefaultOutfit builds a typed JSON-RPC error directing the
-// client to drive first-run outfit selection.
 func (h *handlers) errNoDefaultOutfit() error {
 	data, _ := json.Marshal(rpc.ErrorData{AvailableProviders: h.availableProviders})
 	return &jkrpc.Error{
@@ -29,8 +20,6 @@ func (h *handlers) errNoDefaultOutfit() error {
 	}
 }
 
-// errNoProvider builds a typed JSON-RPC error indicating the
-// resolved outfit has no system.provider key.
 func (h *handlers) errNoProvider(outfitName string) error {
 	data, _ := json.Marshal(rpc.ErrorData{
 		AvailableProviders: h.availableProviders,
@@ -43,10 +32,7 @@ func (h *handlers) errNoProvider(outfitName string) error {
 	}
 }
 
-// errOutfitNotFound builds a typed JSON-RPC error for a missing
-// named outfit. cause carries the underlying outfit error, and when that names
-// a broken layer reference the whole closure travels with it, so the caller can
-// draw where the gap is.
+// errOutfitNotFound carries the whole closure when a layer reference is broken.
 func (h *handlers) errOutfitNotFound(name string, cause error) error {
 	payload := rpc.ErrorData{
 		Name:        name,

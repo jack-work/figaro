@@ -8,10 +8,8 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// drive feeds a sequence of frames (each a full turn message set, as
-// composeTurn builds them) through the real compose→server→client pipeline as
-// one growing live unit, and returns the client's final open-unit nodes,
-// each labeled by (type, content) so a duplicated logical block is visible.
+// drive runs frames through compose, server and client and returns the
+// client's open-turn nodes labeled by (type, content).
 func drive(frames [][]message.Message) []string {
 	srv := aria.NewServer()
 	cli := client.NewClient()
@@ -25,7 +23,7 @@ func drive(frames [][]message.Message) []string {
 		for _, n := range v.Nodes {
 			label := string(n.Type) + ":" + n.Markdown
 			if n.Type == "tool" {
-				label += n.Name + "#" + n.ID // tools distinguished by their call id
+				label += n.Name + "#" + n.ID
 			}
 			out = append(out, label)
 		}
@@ -33,7 +31,6 @@ func drive(frames [][]message.Message) []string {
 	return out
 }
 
-// assertNoDup fails if any (type,content) label appears more than once.
 func assertNoDup(t *testing.T, tag string, nodes []string) {
 	t.Helper()
 	seen := map[string]int{}
@@ -48,8 +45,6 @@ func assertNoDup(t *testing.T, tag string, nodes []string) {
 	t.Logf("[%s] nodes: %v", tag, nodes)
 }
 
-// helpers: messages carry a stable LogicalTime (as composeTurn assigns from the
-// fig IR), constant across the frames that evolve the same message.
 func asstLT(lt uint64, cs ...message.Content) message.Message {
 	return message.Message{Role: message.RoleOutput, Content: cs, LogicalTime: lt}
 }
@@ -63,8 +58,6 @@ func resLT(lt uint64, id, out string) message.Message {
 		Content: []message.Content{{Type: message.ContentToolResult, ToolCallID: id, Text: out}}}
 }
 
-// Natural forward stream of a plaid-shaped 2-round turn. Must never dup
-// (regression guard both before and after the fix).
 func TestRepro_A_NaturalForward(t *testing.T) {
 	a1 := func(extra ...message.Content) message.Message {
 		return asstLT(1, append([]message.Content{think("checking the CLI"), tool("A", "transactions")}, extra...)...)
@@ -80,9 +73,7 @@ func TestRepro_A_NaturalForward(t *testing.T) {
 	assertNoDup(t, "A natural", drive(frames))
 }
 
-// An earlier block fills in after a later thinking already exists, shifting the
-// thinking's flattened position while a tool holds an explicit id. This is the
-// core positional-id duplication: FAILS before the fix, must PASS after.
+// An earlier block fills in after a later thinking already exists.
 func TestRepro_B_EmptyEarlierFills(t *testing.T) {
 	frames := [][]message.Message{
 		{asstLT(1, prose(""), tool("A", "transactions"), think("verifying read-only"))},
@@ -91,8 +82,7 @@ func TestRepro_B_EmptyEarlierFills(t *testing.T) {
 	assertNoDup(t, "B empty-fill", drive(frames))
 }
 
-// A block un-fills mid-stream, shrinking the list and orphaning a higher
-// positional id: FAILS before the fix, must PASS after.
+// A block un-fills mid-stream.
 func TestRepro_C_BlockUnfills(t *testing.T) {
 	frames := [][]message.Message{
 		{asstLT(1, think("alpha"), prose("beta"), think("gamma"))},
@@ -101,23 +91,10 @@ func TestRepro_C_BlockUnfills(t *testing.T) {
 	assertNoDup(t, "C un-fill", drive(frames))
 }
 
-// D: the seal-transition churn (SDK + summarized thinking). During streaming
-// the assembler omitted an empty summarized-thinking block while the provider
-// decode KEPT it, shifting a later thinking's block index and churning the
-// node id: which rendered as a duplicate.
-//
-// Two independent defences now close this, so BOTH decodes must be clean:
-//   - decode skips empty thinking/prose, so the sealed structure matches the
-//     assembler's (the original fix);
-//   - the projection mints a node for every block it sees, empty included, so
-//     a block that fills later cannot shift the nodes after it.
-//
-// The second is why this test no longer proves the mechanism by exhibiting it:
-// with empties minted, the old decode is no longer capable of churning. That
-// is the outcome we wanted, so the assertion is now the invariant rather than
-// the bug.
+// At seal, a decode that keeps an empty thinking block the assembler omitted
+// must not shift the node after it.
 func TestRepro_D_SealEmptyThinkingChurn(t *testing.T) {
-	inflight := asstLT(1, tool("A", "bash"), think("real reasoning")) // asm: empty think omitted
+	inflight := asstLT(1, tool("A", "bash"), think("real reasoning"))
 	sealedOldDecode := asstLT(1, think(""), tool("A", "bash"), think("real reasoning"))
 	sealedFixedDecode := asstLT(1, tool("A", "bash"), think("real reasoning"))
 

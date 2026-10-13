@@ -56,15 +56,11 @@ func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 	assert.Equal(t, json.RawMessage(`"/home/figaro"`), mustEntry(decoded.Patches[0], "cwd"))
 }
 
-// TestMessage_StateOnlyTic verifies that a user-role Message carrying
-// only Patches (no Content): e.g. the first-turn env-var seed or a
-// `figaro set`: round-trips correctly.
 func TestMessage_StateOnlyTic(t *testing.T) {
 	tic := message.Message{
 		Role:        message.RoleInput,
 		LogicalTime: 1,
 		Timestamp:   1700000000000,
-		// No Content.
 		Patches: []message.Patch{
 			form.Build(form.Snapshot{}, map[string]json.RawMessage{
 				"system.credo":             json.RawMessage(`"you are figaro"`),
@@ -86,9 +82,6 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	assert.Equal(t, json.RawMessage(`"you are figaro"`), mustEntry(decoded.Patches[0], "system.credo"))
 }
 
-// TestPatch_AliasIdentity verifies the type-alias contract, a value
-// constructed as form.Patch is assignable to message.Patch and
-// vice versa.
 func TestPatch_AliasIdentity(t *testing.T) {
 	cb := form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil)
 	var m message.Patch = cb
@@ -102,7 +95,6 @@ func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {
 	calls := []message.Content{
 		{Type: message.ContentToolInvoke, ToolCallID: "tc_a", ToolName: "bash"},
 		{Type: message.ContentToolInvoke, ToolCallID: "tc_b", ToolName: "read"},
-		// Non-tool_call blocks must be ignored.
 		message.TextContent("commentary"),
 	}
 	sentinel := message.NewInterruptSentinel(message.InterruptAgentExit, "agent exited mid-tool-use", calls)
@@ -165,9 +157,7 @@ func TestCountMessages_ExcludesCeremonial(t *testing.T) {
 	assert.True(t, message.IsCeremonial(msgs[5]))
 }
 
-// A store written before the input/output rename must keep reading. The
-// mapping lives on the type, so no decode path can forget it: the failure it
-// prevents is silent: a turn rendering under the wrong speaker.
+// A store written before the input/output rename must keep reading.
 func TestRole_LegacyVocabularyStillDecodes(t *testing.T) {
 	for _, c := range []struct{ on, want string }{
 		{`"user"`, "input"},
@@ -188,8 +178,6 @@ func TestRole_LegacyVocabularyStillDecodes(t *testing.T) {
 	}
 }
 
-// Providers speak user/assistant on their own wire; figaro speaks input/output.
-// A rename of figaro's vocabulary must never reach a provider payload.
 func TestRoleFromWire_IsTheOnlyBoundary(t *testing.T) {
 	if got := message.RoleFromWire("user"); got != message.RoleInput {
 		t.Errorf("wire user -> %q, want %q", got, message.RoleInput)
@@ -254,7 +242,6 @@ func TestToolImagesByCall(t *testing.T) {
 	}
 }
 
-// mustEntry is the value a patch sets at key, for tests that assert on one.
 func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {

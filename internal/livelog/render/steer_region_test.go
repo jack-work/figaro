@@ -8,15 +8,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// While the agent streams, the open suffix begins at the steer's own index: so
-// a one-node steering interjection and the four-node streaming region BOTH
-// report From=1. Identity by (turn, from) alone therefore let the steer claim
-// the whole region: Freeze took the "already on screen" path, dropped the
-// in-flight body into scrollback, and when the producer reopened past the steer
-// the same body was frozen a second time.
-//
-// The observable damage was not only duplication: the second pass rendered a
-// DIFFERENT node set, so the tool row vanished while its header survived.
+// A one-node steer and the streaming region can share (turn, from); identity
+// by those alone let the steer claim the whole region.
 func TestIncipit_SteerInsideTheLiveRegionDoesNotDuplicateIt(t *testing.T) {
 	steer := livedoc.Node{ID: "n1", Type: "steering", Role: livedoc.RoleInput, Markdown: "MYSTEER"}
 	body := []livedoc.Node{
@@ -29,14 +22,11 @@ func TestIncipit_SteerInsideTheLiveRegionDoesNotDuplicateIt(t *testing.T) {
 	in := NewIncipit(ft, NodeText{})
 	withChrome(in)
 
-	// The region streams from node 1 and GROWS to include the steer plus body.
 	in.Open(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleOutput, Nodes: append([]livedoc.Node{steer}, body...)})
 
-	// The steer finalizes as its own closed message: same start, smaller extent.
 	in.Freeze(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleInput,
 		Nodes: []livedoc.Node{steer}})
 
-	// The producer reopens PAST the steer, then the body finalizes normally.
 	in.Open(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput, Nodes: body})
 	in.Freeze(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput, Nodes: body})
 
@@ -47,9 +37,7 @@ func TestIncipit_SteerInsideTheLiveRegionDoesNotDuplicateIt(t *testing.T) {
 	if n := strings.Count(all, "MYSTEER"); n != 1 {
 		t.Errorf("steer appears %d times, want exactly 1:\n%s", n, all)
 	}
-	// The tool row disappearing was part of the same defect, not a separate one.
-	// A tool renders from its name/status, not from Markdown, assert the row the
-	// renderer actually produces.
+	// A tool renders from its name/status, not from Markdown.
 	if n := strings.Count(all, "tool bash"); n != 1 {
 		t.Errorf("tool row appears %d times, want exactly 1:\n%s", n, all)
 	}

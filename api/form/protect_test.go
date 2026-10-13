@@ -43,8 +43,7 @@ func TestCheckWritable(t *testing.T) {
 		t.Fatalf("system.cwd is client state (figaro cd): %v", err)
 	}
 
-	// The rule applies to what a patch WRITES. A patch touching nothing
-	// protected is fine no matter what the board already holds.
+	// The rule applies to what a patch writes, not what the board holds.
 	if err := CheckWritable(Patch{}, false); err != nil {
 		t.Fatalf("an empty patch must pass: %v", err)
 	}

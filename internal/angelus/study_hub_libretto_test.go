@@ -1,10 +1,6 @@
 package angelus
 
-// The DORMANT half of study has to mint and retain the libretto exactly as
-// the agent's half does, or a figaro studied from the hub is counted by
-// nobody: the two halves have had to agree about where the study set lives
-// since `set` was served from the hub, and the refcount is the same kind of
-// fact.
+// The dormant half of study must mint and retain the libretto exactly as the agent's half does.
 
 import (
 	"encoding/json"
@@ -76,15 +72,9 @@ func TestHubDropReleasesTheLibretto(t *testing.T) {
 	require.Zero(t, audit.Corrected, "the sweep disagreed after a hub drop: %+v", audit)
 }
 
-// IMPORT restores a study set by STUDYING, not by copying the key: each id
-// goes through the verb, which mints the libretto and retains it. Copying
-// the key would declare studies nothing counted -- and cannot, now that
-// `system.studies` is system-managed.
 func TestImportRestoresStudiesThroughTheVerb(t *testing.T) {
 	h, be, _, formID := hubStudyFixture(t)
 
-	// Stand in for the import handler's own sequence: a fresh aria, then the
-	// exported board's studies replayed through the verb.
 	outfit, err := be.CreateOutfit("imp", form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)}, nil))
 	require.NoError(t, err)
 	imported, err := be.CreateConversation(outfit)

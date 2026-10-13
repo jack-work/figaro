@@ -13,13 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// An import must be unable to collide with what is already in the store. That
-// is the whole reason it replays rather than grafts: every identity: node id,
-// fork base, LT, trunk id: is minted HERE, so there is nothing to renumber
-// and no silent way to get it wrong.
-//
-// The graft that would preserve those identities is a design, not code:
-// proposals/aria-graft.md.
+// An import replays rather than grafts: every identity is minted here, so nothing can collide.
 func importFixture(t *testing.T) (*handlers, store.Backend) {
 	t.Helper()
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
@@ -78,9 +72,7 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.Equal(t, []string{"say alpha", "alpha", "say beta", "beta"}, got,
 		"the conversation must arrive whole and in order")
 
-	// The board arrives folded, with THIS store's id stamped on it: the same
-	// re-stamp a fork does, and for the same reason: an aria that believes it
-	// is another aria cannot address itself.
+	// The board carries this store's id, re-stamped as a fork does.
 	board, err := backend.FormState(resp.FigaroID)
 	require.NoError(t, err)
 	raw, ok := board.Get("aria_id")
@@ -89,7 +81,6 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &stamped))
 	require.Equal(t, resp.FigaroID, stamped)
 
-	// And it is a first-class row in `figaro ls`, not an id with dashes.
 	meta, err := backend.Meta(resp.FigaroID)
 	require.NoError(t, err)
 	require.NotNil(t, meta)
@@ -98,9 +89,7 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.Equal(t, "a portable aria", meta.Mantra)
 }
 
-// Importing the same aria twice gives two independent conversations under ONE
-// outfit: CreateOutfit is content-addressed, so an identical outfit is
-// reused rather than duplicated, while the conversations cannot share an id.
+// CreateOutfit is content-addressed, so an identical outfit is reused.
 func TestImportTwiceSharesTheOutfitAndNothingElse(t *testing.T) {
 	h, backend := importFixture(t)
 	req := rpc.ImportRequest{Outfit: "opus5-ant", Messages: []message.Message{say(message.RoleInput, "hello")}}
@@ -118,7 +107,6 @@ func TestImportTwiceSharesTheOutfitAndNothingElse(t *testing.T) {
 	require.Len(t, stumps, 1, "an identical outfit is reused, not duplicated: %v", stumps)
 }
 
-// An import into a store that already has arias disturbs none of them.
 func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	h, backend := importFixture(t)
 	outfit, err := backend.CreateOutfit("resident", message.Patch{})
@@ -148,8 +136,6 @@ func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	require.Contains(t, texts, "I was here first")
 }
 
-// An outfit is required: without one there is no stump to spawn under, and
-// guessing would put the aria somewhere the reader did not ask for.
 func TestImportRefusesWithoutAOutfit(t *testing.T) {
 	h, _ := importFixture(t)
 	params, err := json.Marshal(rpc.ImportRequest{Messages: []message.Message{say(message.RoleInput, "x")}})

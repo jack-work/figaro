@@ -16,9 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// newQueuedAgent parks a turn in the provider so prompts pile up in the inbox
-// verifiably, which is the only state in which the interrupt-time fold means
-// anything.
+// newQueuedAgent parks a turn in the provider so prompts pile up in the inbox.
 func newQueuedAgent(t *testing.T, id string) (*figaro.Agent, *blockedProvider, func()) {
 	t.Helper()
 	release := make(chan struct{})
@@ -41,7 +39,6 @@ func newQueuedAgent(t *testing.T, id string) (*figaro.Agent, *blockedProvider, f
 	return a, prov, func() { close(release); a.Kill() }
 }
 
-// queuedTextsOf reads the display view of the queue.
 func queuedTextsOf(a *figaro.Agent) []string {
 	_, prompts := a.QueuedPrompts(false)
 	out := make([]string, 0, len(prompts))
@@ -51,8 +48,7 @@ func queuedTextsOf(a *figaro.Agent) []string {
 	return out
 }
 
-// ITEM 1. Messages typed during a long turn and then cut short are ONE
-// question, not a queue of turns to sit through.
+// Messages typed during a turn and then cut short are one question.
 func TestInterrupt_CoalescesTheWaitingQueue(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "coalesce-1")
 	defer done()
@@ -75,9 +71,7 @@ func TestInterrupt_CoalescesTheWaitingQueue(t *testing.T) {
 	assert.Equal(t, []uint64{3, 4}, prompts[0].Merged, "and names the ids it absorbed")
 }
 
-// A NORMAL SUBMIT IS UNTOUCHED. Nothing about queueing three prompts folds
-// them; only an interrupt does. This is the guarantee that the fold is on the
-// interrupt path and nowhere else.
+// Only an interrupt folds; queueing alone does not.
 func TestSubmit_DoesNotCoalesce(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "coalesce-2")
 	defer done()
@@ -88,19 +82,13 @@ func TestSubmit_DoesNotCoalesce(t *testing.T) {
 	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
 	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
 
-	// Sample repeatedly: a fold triggered by anything other than an interrupt
-	// would show up as the queue collapsing on its own.
 	for i := 0; i < 5; i++ {
 		require.Equal(t, []string{"one", "two"}, queuedTextsOf(a))
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-// An IDLE aria has no turn to interrupt, so Interrupt returns before it
-// reaches the inbox at all: the fold requires a live turn by construction
-// (Agent.Interrupt's early return), and an idle aria's queue is being drained
-// by the actor anyway. What matters at this level is that the no-op is clean:
-// the aria is not left marked interrupted, so the next turn is not poisoned.
+// Interrupt on an idle aria is a clean no-op: the aria is not left marked interrupted.
 func TestInterrupt_IdleIsACleanNoOp(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "coalesce-3")
 	defer done()
@@ -109,16 +97,12 @@ func TestInterrupt_IdleIsACleanNoOp(t *testing.T) {
 	a.Interrupt()
 	a.Interrupt()
 
-	// The aria still works: a prompt submitted after an idle interrupt opens a
-	// turn normally rather than being aborted on arrival.
 	a.SubmitPrompt(rpc.QuaRequest{Text: "after the no-op"})
 	require.Eventually(t, prov.blocked, 2*time.Second, 10*time.Millisecond,
 		"an idle interrupt must not leave the aria refusing to run")
 }
 
-// THE RACE, STATED AND PINNED. A prompt that arrives after the fold is its own
-// event and is never retroactively folded; it is classified at the drain
-// boundary like any other prompt.
+// A prompt arriving after the fold is its own event, never retroactively folded.
 func TestInterrupt_PromptArrivingAfterTheFoldStaysSeparate(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "coalesce-4")
 	defer done()
@@ -138,9 +122,7 @@ func TestInterrupt_PromptArrivingAfterTheFoldStaysSeparate(t *testing.T) {
 	assert.Equal(t, "late", texts[1])
 }
 
-// ITEM 2. A clearing hangup drops the queue and hands it back VERBATIM: one
-// entry per message as typed, each with its own id: so `figaro cut -j` is a
-// save, not a lament. Coalescing first would return one blob and defeat that.
+// A clearing hangup hands the queue back verbatim, one entry per message, so `figaro cut -j` is a save.
 func TestHangup_ClearDrainsVerbatim(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "clear-1")
 	defer done()
@@ -162,8 +144,7 @@ func TestHangup_ClearDrainsVerbatim(t *testing.T) {
 	assert.Empty(t, queuedTextsOf(a), "and the aria is left with nothing to answer")
 }
 
-// The keep path reports the queue as of the hangup: post-fold, because that
-// is what the aria will actually answer.
+// The keep path reports the queue post-fold: what the aria will answer.
 func TestHangup_KeepReportsTheFoldedQueue(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "keep-1")
 	defer done()
@@ -181,8 +162,7 @@ func TestHangup_KeepReportsTheFoldedQueue(t *testing.T) {
 	assert.Equal(t, "one\n\ntwo", resp.Queue[0].Text)
 }
 
-// Clearing is not gated on a live turn: a queue can be worth dropping between
-// turns, and refusing then would mean nothing to the person asking.
+// Clearing is not gated on a live turn.
 func TestHangup_ClearWorksWithNoTurnRunning(t *testing.T) {
 	a, _, done := newQueuedAgent(t, "clear-2")
 	defer done()

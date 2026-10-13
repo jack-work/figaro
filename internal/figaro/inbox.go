@@ -11,59 +11,40 @@ import (
 	"github.com/jack-work/figaro/internal/actor"
 )
 
-// Inbox is the per-aria user-RPC event queue.
 type Inbox struct {
-	// q is the runtime: internal/actor, the same single-writer queue a Form
-	// writes through. Everything below it is prompt bookkeeping, which is what
-	// an inbox IS beyond the queue.
+	// q is the same single-writer queue a Form writes through.
 	q    *actor.Queue[event]
-	wake chan struct{} // queue-change signal only; events remain in the FIFO
+	wake chan struct{} // signal only; events stay in the FIFO
 
-	mu     sync.Mutex // guards the bookkeeping, always taken INSIDE q's lock
+	mu     sync.Mutex // always taken inside q's lock
 	epoch  string
 	nextID uint64
 
-	// lifted holds prompts the drain loop has taken but not yet appended, and
-	// committed the last few it did append. Together they are what lets a
-	// refusal say WHICH kind of too-late it was: "committing" vs "committed"
-	// vs "never heard of it": instead of collapsing all three into unknown.
+	// lifted holds prompts the drain loop took but has not appended; committed the
+	// last few it did. They let a refusal say which kind of too-late it was.
 	lifted    []promptRef
 	committed []promptRef
-	// departed holds the recently dropped and drained. A message deleted by a
-	// user and a message cleared by a hangup are DIFFERENT FACTS, and a queue
-	// that simply stopped listing both said neither -- the row blinked away
-	// and the reader was left to infer which had happened.
+	// departed holds the recently dropped and drained: two different facts.
 	departed []promptRef
 
-	// onChange is the queue intrinsic form's publisher. See OnChange.
 	onChange func(InboxSnapshot)
 }
 
-// promptRef remembers an id after its event has left the queue. Merged travels
-// with it so an id folded away by an interrupt keeps resolving to its
-// survivor even after that survivor is itself drained.
+// promptRef remembers an id after its event has left the queue; merged keeps
+// a folded id resolving to its survivor.
 type promptRef struct {
 	id     uint64
 	merged []uint64
-	// text and at are kept so a lifted or committed message can still be
-	// SHOWN. The queue used to forget a message the instant the drain loop
-	// took it, which is exactly the window a reader perceives as latency:
-	// their message was in neither the queue nor the transcript.
+	// text and at let a lifted or committed message still be shown.
 	text   string
 	sender string
 	at     int64
-	// turn is the turn a committed message became, once known. Zero until the
-	// turn opens. It is what lets a client drop the row when its OWN
-	// transcript has adopted the turn, rather than on a timer.
-	turn uint64
-	// state distinguishes lifted from committed from folded-away without a
-	// second set of slices per outcome.
+	// turn is the turn a committed message became; zero until the turn opens.
+	turn  uint64
 	state rpc.QueueState
 }
 
-// QueueItem is one message as the queue intrinsic form publishes it: everything a
-// reader needs to show the message and to know where it is on its way from a
-// client to an inquiry.
+// QueueItem is one message as the queue intrinsic publishes it.
 type QueueItem struct {
 	ID     uint64
 	Text   string
@@ -71,42 +52,29 @@ type QueueItem struct {
 	State  rpc.QueueState
 	At     int64
 	Merged []uint64
-	// Into is the surviving id for a merged message, and Turn the turn a
-	// committed one became.
+	// Into is the surviving id for a merged message.
 	Into uint64
 	Turn uint64
 }
 
-// InboxSnapshot is the WHOLE truth about the queue at one instant: the live
-// FIFO and the recent departures, in one value. The projection is total by
-// design -- a partial one would leave the intrinsic form holding rows nothing would
-// ever clear.
+// InboxSnapshot is the whole queue at one instant: live FIFO plus recent departures.
 type InboxSnapshot struct {
 	Epoch string
 	Order []uint64
 	Items []QueueItem
 }
 
-// committedRing bounds the memory of answered ids. It only has to outlive a
-// client's read→mutate round trip; past that, "unknown" is the honest answer.
+// committedRing only has to outlive a client's read-mutate round trip.
 const committedRing = 64
 
 func NewInbox(ctx context.Context) *Inbox {
 	b := &Inbox{wake: make(chan struct{}, 1), epoch: mintEpoch()}
-	// No handler: an inbox is drained by the agent's own loop calling Recv, not
-	// by a goroutine the queue owns. Start still gives the FIFO, the wait, and
-	// the close semantics: the parts that were worth having once.
 	b.q = actor.Start[event](ctx, nil, nil)
 	return b
 }
 
-// OnChange installs the sink the queue intrinsic form is published through. THE
-// INBOX IS THE ONE PUBLISHER: every enqueue, mutation, lift, commit, coalesce
-// and drain already passes through here, and a publisher anywhere else can
-// disagree with the queue's own state -- at which point there are two answers
-// to "what is queued" and no way to tell which one is the queue.
-//
-// The sink runs on whatever goroutine moved the queue, and must not block.
+// OnChange installs the queue intrinsic's publisher. The inbox is the only
+// publisher. The sink runs on whatever goroutine moved the queue and must not block.
 func (b *Inbox) OnChange(fn func(InboxSnapshot)) {
 	b.mu.Lock()
 	b.onChange = fn
@@ -114,10 +82,8 @@ func (b *Inbox) OnChange(fn func(InboxSnapshot)) {
 	fn(b.Project())
 }
 
-// notify projects and publishes. Called at the tail of every mutator, AFTER
-// the queue's own lock has been released: the sink writes a form, the form has
-// an actor of its own, and holding the inbox's lock across that would put two
-// unrelated serialization points in one order forever.
+// notify runs after the queue's lock is released: the sink writes a form with
+// its own actor, and holding both would order two unrelated serialization points.
 func (b *Inbox) notify() {
 	b.mu.Lock()
 	fn := b.onChange
@@ -128,7 +94,6 @@ func (b *Inbox) notify() {
 	fn(b.Project())
 }
 
-// Project is the whole truth about the queue at one instant.
 func (b *Inbox) Project() InboxSnapshot {
 	var pending []event
 	b.q.Read(func(p []event) { pending = append([]event(nil), p...) })
@@ -146,9 +111,7 @@ func (b *Inbox) Project() InboxSnapshot {
 			ID: e.id, Text: e.text, Sender: senderOf(e), State: rpc.QueueStateQueued,
 			At: e.at, Merged: e.merged,
 		})
-		// A message folded INTO this one is not gone, it is absorbed. Say so
-		// with the survivor's id, so a client holding the old id can follow it
-		// instead of watching its row vanish.
+		// A folded message is absorbed, not gone: say so with the survivor's id.
 		for _, m := range e.merged {
 			snap.Items = append(snap.Items, QueueItem{
 				ID: m, State: rpc.QueueStateMerged, Into: e.id, At: e.at,
@@ -171,8 +134,7 @@ func (b *Inbox) Project() InboxSnapshot {
 	return snap
 }
 
-// InflightCount is how many messages have been accepted and not yet answered:
-// the queue plus whatever the drain loop is holding.
+// InflightCount is the queue plus whatever the drain loop is holding.
 func (b *Inbox) InflightCount() int {
 	n := 0
 	b.q.Read(func(pending []event) {
@@ -188,9 +150,7 @@ func (b *Inbox) InflightCount() int {
 	return n
 }
 
-// MarkTurn stamps the turn a committed message became. Until it is known a
-// client cannot tell when its own transcript has adopted the message, and
-// would have to drop the row on a timer instead of on the fact.
+// MarkTurn stamps the turn a committed message became.
 func (b *Inbox) MarkTurn(ids []uint64, turn uint64) {
 	if len(ids) == 0 || turn == 0 {
 		return
@@ -207,7 +167,6 @@ func (b *Inbox) MarkTurn(ids []uint64, turn uint64) {
 	b.notify()
 }
 
-// senderOf is the attribution of a prompt's first segment, which is who asked.
 func senderOf(e event) string {
 	if len(e.segments) == 0 {
 		return ""
@@ -215,10 +174,7 @@ func senderOf(e event) string {
 	return e.segments[0].sender
 }
 
-// mintEpoch returns a fresh inbox generation token. crypto/rand cannot
-// meaningfully fail here, but if it ever did, a fixed string would silently
-// make every stale id look current: so fall back to something unique enough
-// to still differ from the previous generation.
+// On a rand failure a fixed string would make every stale id look current.
 func mintEpoch() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -227,15 +183,13 @@ func mintEpoch() string {
 	return hex.EncodeToString(b[:])
 }
 
-// Epoch is the generation queued ids belong to.
 func (b *Inbox) Epoch() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.epoch
 }
 
-// signalWake nudges a waiter that the queue changed. The event stays in the
-// FIFO; this is only a "look again".
+// signalWake is only a "look again"; the event stays in the FIFO.
 func (b *Inbox) signalWake() {
 	select {
 	case b.wake <- struct{}{}:
@@ -243,11 +197,8 @@ func (b *Inbox) signalWake() {
 	}
 }
 
-// Send enqueues an event. Returns false if closed.
+// Send returns false if closed. An event arriving with an id is a restored one.
 func (b *Inbox) Send(evt event) bool {
-	// Only prompts are addressable, so only prompts consume an id: a dense
-	// sequence a human can type beats one with gaps where a `set` went by. An
-	// event arriving with an id already set is a restored one and keeps it.
 	if evt.typ == eventUserPrompt && evt.id == 0 {
 		b.mu.Lock()
 		b.nextID++
@@ -279,8 +230,7 @@ func (b *Inbox) Recv() (event, bool) {
 	return evt, true
 }
 
-// TakeReadyUserPrompts removes the contiguous user-prompt prefix. It never
-// jumps prompts over an earlier control or fork event.
+// TakeReadyUserPrompts never jumps prompts over an earlier control or fork event.
 func (b *Inbox) TakeReadyUserPrompts() []event {
 	taken := b.q.TakeWhile(func(e event) bool { return e.typ == eventUserPrompt })
 	b.mu.Lock()
@@ -294,10 +244,7 @@ func (b *Inbox) TakeReadyUserPrompts() []event {
 	return taken
 }
 
-// liftLocked records that a prompt left the queue for the drain loop. Until
-// MarkCommitted moves it on, a delete aimed at it is refused as "committing"
-// : it is becoming a message right now, and that is a different fact from
-// "already answered" or "never existed".
+// liftLocked records that a prompt left the queue; until MarkCommitted, a delete is refused as "committing".
 func (b *Inbox) liftLocked(evt event) {
 	if evt.typ != eventUserPrompt || evt.id == 0 {
 		return
@@ -308,9 +255,7 @@ func (b *Inbox) liftLocked(evt event) {
 	})
 }
 
-// MarkCommitted moves ids from in-flight to answered: the drain loop has
-// durably appended them to the IR, so a delete can no longer be honoured and
-// the refusal should say so precisely.
+// MarkCommitted moves ids from in-flight to answered.
 func (b *Inbox) MarkCommitted(events []event) {
 	if len(events) == 0 {
 		return
@@ -326,9 +271,8 @@ func (b *Inbox) markCommitted(events []event) {
 		if evt.typ != eventUserPrompt || evt.id == 0 {
 			continue
 		}
-		// EVERY ID THIS EVENT SPEAKS FOR LEAVES THE LIFTED SET, not just the
-		// survivor's: a coalesced run is lifted as N events and committed as
-		// ONE. See TestACoalescedRunLeavesTheQueueEntirely.
+		// Every id this event speaks for leaves the lifted set: a coalesced run is
+		// lifted as N events and committed as one.
 		b.dropLiftedLocked(evt.id)
 		for _, m := range evt.merged {
 			b.dropLiftedLocked(m)
@@ -352,7 +296,6 @@ func (b *Inbox) dropLiftedLocked(id uint64) {
 	}
 }
 
-// Prepend restores events that could not be durably processed.
 func (b *Inbox) Prepend(events []event) bool {
 	if len(events) == 0 {
 		return true
@@ -361,9 +304,7 @@ func (b *Inbox) Prepend(events []event) bool {
 		return false
 	}
 	b.q.Do(func(pending []event) []event {
-		// They are queued again, so they are no longer in flight: a delete
-		// aimed at one must go back to being honoured rather than refused as
-		// "committing" forever.
+		// Queued again means no longer in flight: a delete must be honoured again.
 		b.mu.Lock()
 		for _, evt := range events {
 			if evt.typ == eventUserPrompt && evt.id != 0 {
@@ -378,18 +319,14 @@ func (b *Inbox) Prepend(events []event) bool {
 	return true
 }
 
-// TakeReadySet removes the contiguous prefix of events that are applied at a
-// round boundary: form patches and study marks. It never jumps one over an
-// earlier prompt, so FIFO order across event kinds is preserved by the
-// caller's drain loop.
+// TakeReadySet removes the contiguous prefix of round-boundary events, never jumping an earlier prompt.
 func (b *Inbox) TakeReadySet() []event {
 	return b.q.TakeWhile(func(e event) bool {
 		return e.typ == eventStudyMark
 	})
 }
 
-// CoalesceUserPromptRuns folds each CONTIGUOUS RUN of queued user prompts
-// into one event, parked at that run's first position and keeping its id.
+// CoalesceUserPromptRuns folds each contiguous run of prompts into one event at the run's first position.
 func (b *Inbox) CoalesceUserPromptRuns() {
 	b.q.Do(func(pending []event) []event {
 		if len(pending) < 2 {
@@ -416,10 +353,7 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 	b.notify()
 }
 
-// DrainUserPrompts removes every queued user prompt and returns them
-// VERBATIM, in FIFO order, each with its own id: not folded. Control events
-// (sets, forks) are left in the queue: this drops the questions, it does not
-// cancel the form mutation or the fork someone else asked for.
+// DrainUserPrompts removes every queued prompt verbatim; control events stay.
 func (b *Inbox) DrainUserPrompts() []event {
 	var drained []event
 	b.q.Do(func(pending []event) []event {
@@ -437,16 +371,12 @@ func (b *Inbox) DrainUserPrompts() []event {
 		}
 		return kept
 	})
-	// A hangup that clears the queue is not the same event as a user deleting
-	// six messages, and a queue that simply stopped listing both said neither.
 	b.remember(drained, rpc.QueueStateDrained)
 	b.notify()
 	return drained
 }
 
-// remember parks departed messages so their fate is PUBLISHED rather than
-// inferred from an absence. Bounded by the same ring as committed: it only has
-// to outlive a client's round trip, past which "unknown" is honest again.
+// remember parks departed messages so their fate is published, not inferred from absence.
 func (b *Inbox) remember(events []event, state rpc.QueueState) {
 	if len(events) == 0 {
 		return
@@ -467,7 +397,7 @@ func (b *Inbox) remember(events []event, state rpc.QueueState) {
 	b.mu.Unlock()
 }
 
-// DeletePrompts drops queued messages and reports, PER ID, what happened.
+// DeletePrompts reports, per id, what happened.
 func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
 	var epochOut string
 	var results []rpc.QueueResult
@@ -482,8 +412,7 @@ func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []r
 	return epochOut, results
 }
 
-// deleteLocked runs inside the queue's lock; it takes the bookkeeping lock
-// second, and nothing takes them the other way round.
+// deleteLocked runs inside the queue's lock and takes the bookkeeping lock second; nothing takes them the other way.
 func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool) ([]event, string, []rpc.QueueResult, []event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -524,8 +453,7 @@ func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool
 	return queue, b.epoch, results, dropped
 }
 
-// UpdatePrompt replaces the text of one queued message, with the same
-// per-id outcome and the same compare-and-swap rule as DeletePrompts.
+// UpdatePrompt follows the same per-id outcome and compare-and-swap rule as DeletePrompts.
 func (b *Inbox) UpdatePrompt(epoch string, id uint64, text string) (string, rpc.QueueResult) {
 	var epochOut string
 	var result rpc.QueueResult
@@ -549,7 +477,6 @@ func (b *Inbox) UpdatePrompt(epoch string, id uint64, text string) (string, rpc.
 	return epochOut, result
 }
 
-// staleLocked reports whether a caller's epoch disqualifies its ids.
 func (b *Inbox) staleLocked(epoch string) (rpc.QueueRejection, string, bool) {
 	if b.q.Closed() {
 		return rpc.RejectClosed, "the aria is stopping", true
@@ -575,9 +502,8 @@ func indexOf(queue []event, id uint64) int {
 	return -1
 }
 
-// refuseLocked explains why an id that is not in the queue cannot be mutated.
-// The order is chronological: folded, then in flight, then answered, then
-// never heard of: so the reason is always the most specific true one.
+// refuseLocked answers in chronological order (folded, in flight, answered,
+// unknown) so the reason is the most specific true one.
 func (b *Inbox) refuseLocked(queue []event, id uint64) rpc.QueueResult {
 	reject := func(reason rpc.QueueRejection, detail string, into uint64) rpc.QueueResult {
 		return rpc.QueueResult{
@@ -623,14 +549,9 @@ func containsID(ids []uint64, id uint64) bool {
 	return false
 }
 
-// IsIdle reports whether the inbox is empty (no events queued).
 func (b *Inbox) IsIdle() bool { return b.q.IsIdle() }
 
-// SnapshotPrompts returns a copy of every queued user prompt in FIFO order,
-// WITHOUT removing them. carriers==false omits empty-text prompts (pure
-// form carriers), which is what every display surface wants and what
-// this has always returned; the CRUD surface asks for them because it must be
-// able to address what it can delete.
+// SnapshotPrompts copies queued prompts without removing them; carriers==false omits empty-text form carriers.
 func (b *Inbox) SnapshotPrompts(carriers bool) []event {
 	var out []event
 	b.q.Read(func(pending []event) {
@@ -650,9 +571,7 @@ func (b *Inbox) SnapshotPrompts(carriers bool) []event {
 
 func (b *Inbox) Close() { b.q.Close() }
 
-// pending is the queued events, for a test that asserts on order across event
-// kinds. Not for production: a caller that reads the queue to decide what to do
-// with it is racing the drain loop.
+// pending is for tests only: reading the queue to decide what to do races the drain loop.
 func (b *Inbox) pending() []event {
 	var out []event
 	b.q.Read(func(p []event) { out = append([]event(nil), p...) })

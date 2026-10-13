@@ -12,13 +12,8 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// A FORK TAKEN WHILE THE PARENT'S TOOLS ARE STILL RUNNING.
-//
-// These are aria 45c24dda's own rows, as they sit in its cache: the branch's
-// fork notice is a record of its own and lands BETWEEN the invoke and the
-// results. Coalescing merges the notice with the results into one user turn,
-// and the notice was in front, which the API refuses -- forever, because the
-// malformed pair replays on every later request.
+// A fork notice landing between an invoke and its results must not lead the
+// coalesced user turn.
 func TestForkNoticeDoesNotDisplaceTheResults(t *testing.T) {
 	rows := []json.RawMessage{
 		json.RawMessage(`{"role":"user","content":[{"type":"text","text":"please do a bunch of sleep heavy readonly bash work"}]}`),
@@ -38,8 +33,6 @@ func TestForkNoticeDoesNotDisplaceTheResults(t *testing.T) {
 	require.Equal(t, "assistant", invoked.Role)
 	require.Equal(t, "user", answered.Role)
 
-	// THE POSITIONAL RULE: every result leads, and it answers a call the
-	// message before it opened.
 	open := map[string]bool{}
 	for _, b := range invoked.Content {
 		if b.Type == "tool_use" {
@@ -56,14 +49,10 @@ func TestForkNoticeDoesNotDisplaceTheResults(t *testing.T) {
 		assert.NotEqual(t, "tool_result", b.Type, "a result trails a text block: %s", out[2])
 	}
 
-	// The fork notice is not lost, it merely stands behind the results.
 	assert.Contains(t, string(out[2]), `name=\"fork\"`)
 	assert.Contains(t, string(out[2]), "test")
 }
 
-// The door appends a closing result to the message it is handed, so a message
-// that opens with prose keeps its prose in front of the result. The renderer
-// puts the result back where the API wants it.
 func TestRenderedResultsLeadTheirTurn(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
 	snap := form.Snapshot{}
@@ -80,8 +69,6 @@ func TestRenderedResultsLeadTheirTurn(t *testing.T) {
 	assert.Equal(t, "text", msg.Content[1].Type)
 }
 
-// Hoisting is STABLE: a result set keeps its call order, and what follows
-// keeps the order it was written in.
 func TestResultsFirstIsStable(t *testing.T) {
 	got := resultsFirst([]nativeBlock{
 		{Type: "text", Text: "one"},
@@ -93,7 +80,6 @@ func TestResultsFirstIsStable(t *testing.T) {
 	assert.Equal(t, []string{"a", "b"}, []string{got[0].ToolUseID, got[1].ToolUseID})
 	assert.Equal(t, []string{"one", "two"}, []string{got[2].Text, got[3].Text})
 
-	// A turn already in order is handed back untouched.
 	already := []nativeBlock{{Type: "tool_result", ToolUseID: "a"}, {Type: "text", Text: "one"}}
 	assert.Equal(t, already, resultsFirst(already))
 }

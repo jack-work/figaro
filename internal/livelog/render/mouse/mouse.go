@@ -14,16 +14,12 @@ const (
 	WheelLeft
 	WheelRight
 	Other
-	// The physical buttons. They are classified rather than left as Other so a
-	// caller can say `ev.Button == mouse.Left` instead of remembering that a
-	// left press is base 0: the same reason the wheel is classified.
 	Left
 	Middle
 	Right
 )
 
-// The modifier bits xterm folds into the button byte. Named here because a
-// caller reading `ev.Mod&4` is one typo away from meta-vs-shift.
+// The modifier bits xterm folds into the button byte.
 const (
 	modShift = 4
 	modAlt   = 8
@@ -38,23 +34,21 @@ type Event struct {
 	Pressed bool
 }
 
-// Shift/Alt/Ctrl report the modifiers held during the report.
 func (e Event) Shift() bool { return e.Mod&modShift != 0 }
 func (e Event) Alt() bool   { return e.Mod&modAlt != 0 }
 func (e Event) Ctrl() bool  { return e.Mod&modCtrl != 0 }
 
 var prefix = []byte{0x1b, '[', '<'}
 
-// Parse consumes a single SGR mouse sequence from the front of buf.
+// Parse consumes a single SGR mouse sequence from the front of buf; need
+// reports a sequence cut short.
 func Parse(buf []byte) (ev Event, consumed int, ok bool, need bool) {
-	// Not our sequence at all.
 	if !hasPrefixUpTo(buf, prefix) {
 		return Event{}, 0, false, false
 	}
 	if len(buf) < 2 {
-		return Event{}, 0, false, false // bare Esc: not ours, and not worth waiting for
+		return Event{}, 0, false, false // bare Esc is not worth waiting for
 	}
-	// Full prefix not yet present -> need more.
 	if len(buf) < len(prefix) {
 		return Event{}, 0, false, true
 	}
@@ -130,7 +124,6 @@ func classify(base int) Button {
 	return Other
 }
 
-// hasPrefixUpTo reports whether buf matches p for min(len(buf), len(p)) bytes.
 func hasPrefixUpTo(buf, p []byte) bool {
 	n := len(buf)
 	if n > len(p) {
@@ -144,15 +137,14 @@ func hasPrefixUpTo(buf, p []byte) bool {
 	return true
 }
 
-// readInt parses a leading run of decimal digits. done=false means the number
-// runs to end-of-buffer with no terminator, so the caller must ask for more.
+// readInt parses a leading run of decimal digits; done=false means the number
+// runs to end-of-buffer.
 func readInt(b []byte) (v, n int, done bool) {
 	for n < len(b) && b[n] >= '0' && b[n] <= '9' {
 		v = v*10 + int(b[n]-'0')
 		n++
 	}
 	if n == 0 {
-		// No digits at all: treat as "done" so caller sees the malformed byte.
 		return 0, 0, true
 	}
 	if n == len(b) {

@@ -37,9 +37,6 @@ func nativeBlocks(t *testing.T, m map[string]any) []map[string]any {
 	return out
 }
 
-// TestNativeToolImageNestsInToolResult mirrors the SDK encoder: the direct
-// HTTP path must nest a tool's image inside that tool's tool_result, not
-// drop it and not float it loose.
 func TestNativeToolImageNestsInToolResult(t *testing.T) {
 	msg := message.Message{
 		Role: message.RoleInput,

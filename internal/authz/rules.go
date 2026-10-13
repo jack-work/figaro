@@ -4,7 +4,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// TurnActiveFunc reports whether the named aria has a turn in flight.
 type TurnActiveFunc func(ariaID string) bool
 
 const selfForkHelp = `cannot fork %[1]s from inside its own running turn: the fork would deadlock.
@@ -34,7 +33,8 @@ back to you and lands in the same trap.
 To brief the fork, add a send after the fork in that script:
   figaro send --id "$(jq -r .alternative /var/tmp/%[1]s/fork.json)" -f -- "<prompt>"`
 
-// NoSelfForkDuringTurn denies an aria forking ITSELF while its own turn runs.
+// NoSelfForkDuringTurn denies an aria forking itself mid-turn: the fork
+// queues behind the turn the fork's own tool call is holding open.
 func NoSelfForkDuringTurn(turnActive TurnActiveFunc) Rule {
 	return Rule{
 		Name: "no-self-fork-during-turn",

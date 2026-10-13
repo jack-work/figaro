@@ -6,35 +6,28 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// The turn cache: the sealed section of an aria's UI IR, resident in THE
-// canonical tree cache. plans/composed-layer-on-tree.md.
-
-// Composer recomposes ONE node's sealed turns for an LT bracket, deltas
-// included. It must return WHOLE turns: every turn whose OPENING record
-// falls in the bracket, complete, and no others. A bracket that cuts a
-// turn at either end is its problem, not its caller's.
+// Composer recomposes one node's sealed turns for an LT bracket. It must
+// return whole turns: every turn whose opening record falls in the bracket,
+// complete, and no others.
 type Composer func(node string, fromLT, toLT uint64) []Turn
 
-// ComposedCache is the residency of every aria's composed UI IR: one
-// tree.Cache, a node per aria, one budget and one eviction order.
+// ComposedCache holds every aria's composed UI IR: one tree.Cache, a node per
+// aria, one budget.
 type ComposedCache struct {
 	cache   *fwtree.Cache[Turn]
 	compose Composer
 
-	// lineage names a node's ancestry, root first. nil makes every aria a
-	// root.
+	// lineage names a node's ancestry, root first; nil makes every aria a root.
 	lineage func(node string) []fwtree.Ref
 }
 
-// NewComposedCache builds the process's composed cache against budget
-// (nil is unbounded). compose may be nil, which makes every miss a gap.
+// NewComposedCache: nil budget is unbounded; nil compose makes every miss a gap.
 func NewComposedCache(budget *fwtree.Budget, compose Composer, lineage func(node string) []fwtree.Ref) *ComposedCache {
 	cc := &ComposedCache{compose: compose, lineage: lineage}
 	cc.cache = fwtree.New[Turn](cc.fetch, budget, turnBytes, coordOf)
 	return cc
 }
 
-// Budget is the accountant, for doctor mem and for a test that must wait.
 func (cc *ComposedCache) Budget() *fwtree.Budget {
 	if cc == nil {
 		return nil
@@ -42,7 +35,6 @@ func (cc *ComposedCache) Budget() *fwtree.Budget {
 	return cc.cache.Budget()
 }
 
-// Recomposes counts source calls across every node.
 func (cc *ComposedCache) Recomposes() int64 {
 	if cc == nil {
 		return 0
@@ -50,7 +42,7 @@ func (cc *ComposedCache) Recomposes() int64 {
 	return cc.cache.Recomposes()
 }
 
-// fetch answers a miss, CLIPPED TO THE COORD.
+// fetch answers a miss, clipped to the coord.
 func (cc *ComposedCache) fetch(co fwtree.Coord) ([]Turn, error) {
 	if cc.compose == nil {
 		return nil, nil
@@ -65,9 +57,8 @@ func (cc *ComposedCache) fetch(co fwtree.Coord) ([]Turn, error) {
 	return out, nil
 }
 
-// coordOf is the coordinate a turn is addressed by: the LT of the record
-// that OPENED it. Turn brackets ascend and do not overlap. A turn no LT
-// bracket can recompose is keyed above phantomBase.
+// coordOf is the LT of the record that opened the turn; a turn no bracket
+// can recompose is keyed above phantomBase.
 func coordOf(t Turn) uint64 {
 	if len(t.LTs) > 0 && t.LTs[0] != 0 {
 		return t.LTs[0]
@@ -76,24 +67,17 @@ func coordOf(t Turn) uint64 {
 }
 
 // phantomBase reserves the top of the key space for turns nothing can
-// recompose: a sealed turn whose records never reached the log. They are
-// held pinned; nothing below can serve them back.
+// recompose; they are held pinned.
 const phantomBase = uint64(1) << 63
 
 func phantomCoord(id uint64) uint64 { return phantomBase | id }
 
-// DefaultUIWindowMB bounds composed UI IR, and it lives HERE because this is
-// the package that holds those bytes. 16 MiB holds the working set of several
-// large arias at once (the biggest measured composes to ~6 MB) while bounding
-// an axis that was unbounded; a miss costs one range recompose (~ms), not a
-// disk read. A caller with a configured number TUNES this; it does not supply
-// it, for the reason store.DefaultIRBudgetBytes states.
+// DefaultUIWindowMB bounds composed UI IR; a miss costs one range recompose.
 const DefaultUIWindowMB = 16
 
 // TurnCache is one aria's sealed section: an ordered key list, and the
-// payloads in the shared tree. The NEWEST turn is the staging slot --
-// mutated in place by the Server, never a published run -- and it enters
-// the cache when a newer turn displaces it.
+// payloads in the shared tree. The newest turn is the staging slot, mutated in
+// place and published only when a newer turn displaces it.
 type TurnCache struct {
 	keys []turnKey
 	tail *Turn
@@ -103,8 +87,7 @@ type TurnCache struct {
 	cache  *fwtree.Cache[Turn]
 }
 
-// turnKey is the index entry: what a page walk needs to plan without
-// materializing anything. lo is NON-DECREASING across the list, phantoms
+// turnKey is the index entry. lo is non-decreasing across the list, phantoms
 // included (a phantom borrows its predecessor's end).
 type turnKey struct {
 	id      uint64
@@ -115,7 +98,6 @@ type turnKey struct {
 	bytes   int
 }
 
-// coord is where this turn's payload lives in the cache's key space.
 func (k turnKey) coord() uint64 {
 	if k.phantom {
 		return phantomCoord(k.id)
@@ -130,8 +112,7 @@ func (k turnKey) lts() []uint64 {
 	return []uint64{k.lo, k.hi}
 }
 
-// keyOf indexes a turn. prevHi is the previous entry's bracket end, which
-// an unbracketed turn borrows so the list stays ordered.
+// keyOf indexes a turn; an unbracketed turn borrows prevHi so the list stays ordered.
 func keyOf(t Turn, prevHi uint64) turnKey {
 	k := turnKey{id: t.ID, at: t.At, sealed: t.Sealed, bytes: turnBytes(t)}
 	if len(t.LTs) > 0 && t.LTs[0] != 0 {
@@ -153,17 +134,13 @@ func (c *TurnCache) prevHi() uint64 {
 	return 0
 }
 
-// NewTurnCache returns a cache on its own private, unbounded node.
-// BindCache re-seats it on the process's shared cache.
+// NewTurnCache returns a cache on a private, unbounded node until bound.
 func NewTurnCache(shared *ComposedCache) *TurnCache {
 	c := &TurnCache{node: "local"}
 	c.attach(c.node, shared)
 	return c
 }
 
-// attach points this tenant at a cache. Unshared, it gets a private
-// unbounded node with no source: it holds what it was given and faults
-// nothing.
 func (c *TurnCache) attach(node string, shared *ComposedCache) {
 	c.node, c.shared = node, shared
 	if shared != nil {
@@ -173,7 +150,6 @@ func (c *TurnCache) attach(node string, shared *ComposedCache) {
 	c.cache = fwtree.New[Turn](nil, nil, turnBytes, coordOf)
 }
 
-// bind re-seats this tenant on the shared cache under its aria's node.
 func (c *TurnCache) bind(node string, shared *ComposedCache) {
 	held := c.materialized()
 	c.release()
@@ -182,12 +158,9 @@ func (c *TurnCache) bind(node string, shared *ComposedCache) {
 	c.seed(held)
 }
 
-// ---- the sealed-section surface the Server consumes ----
-
-// Len is the number of sealed turns known (resident or not).
+// Len is the number of turns known, resident or not.
 func (c *TurnCache) Len() int { return len(c.keys) }
 
-// LastID is the newest turn's id, 0 when none.
 func (c *TurnCache) LastID() uint64 {
 	if len(c.keys) == 0 {
 		return 0
@@ -195,12 +168,10 @@ func (c *TurnCache) LastID() uint64 {
 	return c.keys[len(c.keys)-1].id
 }
 
-// Tail returns the newest turn, or nil. It is the staging slot: always
-// resident, mutated in place by the Server, never a published run.
+// Tail is the staging slot: always resident, mutated in place; nil when none.
 func (c *TurnCache) Tail() *Turn { return c.tail }
 
-// Append adds a turn at the tail, displacing the previous one into the
-// cache.
+// Append adds a turn at the tail, displacing the previous one into the cache.
 func (c *TurnCache) Append(t Turn) {
 	c.flushTail()
 	c.keys = append(c.keys, keyOf(t, c.prevHi()))
@@ -208,7 +179,7 @@ func (c *TurnCache) Append(t Turn) {
 	c.tail = &tc
 }
 
-// ReplaceAll adopts a fully-materialized history (boot, restore).
+// ReplaceAll adopts a fully-materialized history.
 func (c *TurnCache) ReplaceAll(turns []Turn) {
 	c.release()
 	c.keys, c.tail = nil, nil
@@ -216,8 +187,7 @@ func (c *TurnCache) ReplaceAll(turns []Turn) {
 	c.seed(turns)
 }
 
-// seed puts every turn but the newest into the cache, cut at the cache's
-// own run target.
+// seed puts every turn but the newest into the cache, cut at the run target.
 func (c *TurnCache) seed(turns []Turn) {
 	if len(turns) == 0 {
 		return
@@ -263,8 +233,8 @@ func (c *TurnCache) seed(turns []Turn) {
 	}
 }
 
-// put publishes a run of this node's OWN turns. A turn below the fork
-// base belongs to an ancestor's node and is read through the lineage.
+// put publishes a run of this node's own turns; a turn below the fork base
+// belongs to an ancestor's node.
 func (c *TurnCache) put(from, to uint64, turns []Turn) {
 	base := c.ownBase()
 	for len(turns) > 0 && coordOf(turns[0]) < base {
@@ -279,15 +249,13 @@ func (c *TurnCache) put(from, to uint64, turns []Turn) {
 	c.cache.Put(fwtree.Coord{Node: c.node, From: from, To: to}, turns, false)
 }
 
-// putPinned holds a turn nothing below can recompose: counted, and
-// pinned PER TURN (S1, plans/storm-triage.md).
+// putPinned holds a turn nothing below can recompose: counted, pinned per turn.
 func (c *TurnCache) putPinned(t Turn) {
 	k := phantomCoord(t.ID)
 	c.cache.Put(fwtree.Coord{Node: c.node, From: k - 1, To: k}, []Turn{t}, true)
 }
 
-// flushTail moves the staging turn into the cache. Called when a newer
-// turn displaces it, by which time it is sealed.
+// flushTail moves the staging turn into the cache.
 func (c *TurnCache) flushTail() {
 	if c.tail == nil {
 		return
@@ -307,22 +275,13 @@ func (c *TurnCache) flushTail() {
 		c.putPinned(t)
 		return
 	}
-	// A RUN'S SPAN IS A KEY RANGE, not a record range: from the turn
-	// before it to this turn's own key. The turn's records reach further,
-	// but nothing addresses them here.
+	// A run's span is a key range, not a record range.
 	c.put(c.keys[i].lo-1, c.keys[i].lo, []Turn{t})
 }
 
-// Slice materializes turns[lo:hi+1] (indices into the sealed list),
-// faulting what is missing. A turn the source cannot return comes back as
-// its index entry alone: a gap, never a lie about content.
-//
-// THE ID COMES FROM THE KEY LIST. A composer derives ids by counting
-// openers in the records it was handed (turns.StampIDs), so a bracket
-// composed in isolation numbers from 1 -- and a third of the arias in a
-// real store carry no persisted ids to override it. The coordinate is the
-// turn's opening LT; the index knows the number and the fault does not.
-// TestAFaultDoesNotRenumberATurn.
+// Slice materializes turns[lo:hi+1], faulting what is missing; a turn the
+// source cannot return comes back as its index entry alone. Ids come from the
+// key list: a bracket composed in isolation numbers from 1.
 func (c *TurnCache) Slice(lo, hi int) []Turn {
 	if lo < 0 {
 		lo = 0
@@ -355,9 +314,8 @@ func (c *TurnCache) Slice(lo, hi int) []Turn {
 	return out
 }
 
-// rangeTurns reads keys[lo..hi] out of the cache, index-aligned: one
-// Range for the ordinary span, one lookup per phantom-keyed turn, and a
-// zero Turn wherever the source could not answer.
+// rangeTurns reads keys[lo..hi] out of the cache, index-aligned, with a zero
+// Turn wherever the source could not answer.
 func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 	if hi < lo {
 		return nil
@@ -403,10 +361,8 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 	return out
 }
 
-// lineage is this node's ancestry with every fork base SNAPPED TO A TURN
-// BOUNDARY. A base can fall inside a turn (ForkAt and ForkWith take
-// interior LTs), and that turn's content differs between the branches.
-// Asserted by TestAForkBelowATurnBoundaryServesItsOwnContent.
+// lineage is this node's ancestry with every fork base snapped to a turn
+// boundary: a base can fall inside a turn whose content differs between branches.
 func (c *TurnCache) lineage() []fwtree.Ref {
 	if c.shared == nil || c.shared.lineage == nil {
 		return []fwtree.Ref{{Node: c.node}}
@@ -423,9 +379,8 @@ func (c *TurnCache) lineage() []fwtree.Ref {
 	return out
 }
 
-// snapBase lowers a fork base to the KEY of the turn it falls inside. A
-// base is the FIRST coordinate the child owns (store's forkbase test), so
-// the straddling turn becomes the child's outright.
+// snapBase lowers a fork base to the key of the turn it falls inside, so the
+// straddling turn becomes the child's outright.
 func (c *TurnCache) snapBase(base uint64) uint64 {
 	if base == 0 || len(c.keys) == 0 {
 		return base
@@ -440,8 +395,7 @@ func (c *TurnCache) snapBase(base uint64) uint64 {
 	return base
 }
 
-// ownBase is the coordinate below which this node's turns are not its
-// own: they live in an ancestor's node and are read through the lineage.
+// ownBase is the coordinate below which turns live in an ancestor's node.
 func (c *TurnCache) ownBase() uint64 {
 	refs := c.lineage()
 	if len(refs) < 2 {
@@ -450,7 +404,6 @@ func (c *TurnCache) ownBase() uint64 {
 	return refs[len(refs)-1].Base
 }
 
-// materialized is every turn this tenant holds, for a re-seat.
 func (c *TurnCache) materialized() []Turn {
 	if len(c.keys) == 0 {
 		return nil
@@ -458,7 +411,6 @@ func (c *TurnCache) materialized() []Turn {
 	return c.Slice(0, len(c.keys)-1)
 }
 
-// IndexOf locates a turn id in the sealed list.
 func (c *TurnCache) IndexOf(id uint64) (int, bool) {
 	lo, hi := 0, len(c.keys)-1
 	for lo <= hi {
@@ -475,17 +427,14 @@ func (c *TurnCache) IndexOf(id uint64) (int, bool) {
 	return 0, false
 }
 
-// FloorIndex is the index of the first turn at or above a floor anchor: the
-// lowest index a floored backward walk can reach, so the lowest one a window
-// has to materialize. len(keys) when the floor is above every turn held.
+// FloorIndex is the index of the first turn at or above floor; len(keys) when
+// the floor is above every turn held.
 func (c *TurnCache) FloorIndex(floor Anchor) int {
 	return sort.Search(len(c.keys), func(i int) bool { return c.keys[i].id >= floor.Turn })
 }
 
-// ChunkFor picks the index range a byte-budgeted page walk needs around
-// an anchor, from the SIZES in the index -- exact, not guessed -- with
-// one extra turn of margin on each side so the page's More flags stay
-// truthful at the window's edges.
+// ChunkFor picks the index range a byte-budgeted page walk needs around an
+// anchor, with one turn of margin each side so More stays truthful.
 func (c *TurnCache) ChunkFor(at Anchor, dir Direction, budget int) (lo, hi int) {
 	n := len(c.keys)
 	if n == 0 {
@@ -523,12 +472,9 @@ func (c *TurnCache) ChunkFor(at Anchor, dir Direction, budget int) (lo, hi int) 
 	return lo, hi
 }
 
-// Recomposes reports how many source recompositions have run.
 func (c *TurnCache) Recomposes() int { return int(c.cache.Recomposes()) }
 
-// TailMutated re-tallies the staging turn's index entry after the Server
-// mutated it in place (Close folding the suffix in, Seal stamping LTs,
-// OpenInquiry).
+// TailMutated re-tallies the staging turn's index entry after an in-place edit.
 func (c *TurnCache) TailMutated() {
 	i := len(c.keys) - 1
 	if i < 0 || c.tail == nil {
@@ -541,7 +487,6 @@ func (c *TurnCache) TailMutated() {
 	c.keys[i] = keyOf(*c.tail, prev)
 }
 
-// Release hands this aria's composed bytes back.
 func (c *TurnCache) Release() { c.release() }
 
 func (c *TurnCache) release() {
@@ -554,12 +499,8 @@ func (c *TurnCache) release() {
 	}
 }
 
-// ---- sizing ----
-
-// turnBytes estimates a turn's resident cost: its node payloads plus the
-// turn-level strings. An estimate at insert, like every other window in
-// the process; do not sum reflect-walked struct sizes (that lied 3x low
-// once already) -- string lengths dominate and are what this counts.
+// turnBytes estimates a turn's resident cost by string length, which
+// dominates; a reflect-walked struct size undercounts badly.
 func turnBytes(t Turn) int {
 	n := len(t.Inquiry)
 	for _, s := range t.InquirySegments {

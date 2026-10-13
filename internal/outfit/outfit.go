@@ -16,11 +16,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Outfitter assembles forms from on-disk outfits, and is the only thing in
-// the daemon that reads an outfit file. Safe for concurrent use, and worth
-// reusing: everything it reads is snapshotted and cached per EPOCH, so a
-// repeat fold costs a map lookup rather than a syscall per dependency
-// (resolver.go holds that machinery and the reasons for it).
+// Outfitter is safe for concurrent use; reads are snapshotted and cached per epoch.
 type Outfitter struct {
 	configDir string
 	snaps     *snapStore
@@ -33,19 +29,12 @@ type Outfitter struct {
 	staleWindow time.Duration
 }
 
-// New returns an Outfitter rooted at configDir with NO snapshot store: reads
-// come from the live files, epoch-cached. A library that writes to a user's
-// disk without being asked is a library that surprises someone, so the
-// snapshot store is opt-in, and the component that has a state directory and
-// a lifecycle to hang it on is the daemon, which calls NewAt.
+// New has no snapshot store: reads come from the live files, epoch-cached.
 func New(configDir string) *Outfitter {
 	return NewAt(configDir, "")
 }
 
-// NewAt is New with the snapshot store placed by hand: what the daemon uses
-// (its own state directory) and what tests use (a temp dir). An empty snapDir
-// disables snapshotting: reads then come straight from the live files, which
-// is the pre-snapshot behaviour and still correct, just not edit-proof.
+// NewAt places the snapshot store at snapDir; empty disables snapshotting.
 func NewAt(configDir, snapDir string) *Outfitter {
 	return &Outfitter{
 		configDir:   configDir,
@@ -63,19 +52,14 @@ func NewAt(configDir, snapDir string) *Outfitter {
 	}
 }
 
-// Closure is one node of an outfit's layer graph: the outfit itself, the
-// layers it declares, and whether each was actually found on disk. It is built
-// even when layers are missing, because a broken reference is best explained by
-// showing the shape it was found in.
+// Closure is one node of an outfit's layer graph, built even around missing
+// or broken layers.
 type Closure struct {
 	Name  string
-	Path  string // "" when the outfit was not found
+	Path  string
 	Found bool
-	Cycle bool // this name is already being resolved further up the chain
-	// Err is a fault in the FILE itself: unparseable TOML, a malformed
-	// layers list. It rides on the node rather than aborting the walk, so the
-	// closure can still be drawn around the break, and closureError reports it
-	// ahead of anything else because it is the most specific thing wrong.
+	Cycle bool
+	// Err is a fault in the file itself; it rides on the node so the walk continues.
 	Err    error
 	Layers []*Closure
 }
@@ -91,15 +75,10 @@ func (c *Closure) Walk(fn func(*Closure)) {
 	}
 }
 
-// MissingError reports that something in the closure is not on disk. It
-// carries the whole closure so a caller can show where the gap is rather than
-// only name it.
 type MissingError struct {
 	Closure *Closure
 	Missing []string
-	// RootOnly is true when the only thing missing is the outfit that was
-	// asked for. That is the ordinary "no such outfit" and callers may treat
-	// it as an absence rather than a fault: the first-run flow does.
+	// RootOnly: only the outfit asked for is missing, which callers may treat as absence.
 	RootOnly bool
 }
 
@@ -120,24 +99,16 @@ func (e *CycleError) Error() string {
 	return fmt.Sprintf("outfit: cycle in layers at %q", e.At)
 }
 
-// Load resolves one named outfit and returns the form patch. A missing
-// outfit is an error: someone naming one wants to hear that it does not exist.
 func (o *Outfitter) Load(name string) (form.Patch, error) {
 	return o.load(name, true)
 }
 
-// LoadOptional is Load, except that an outfit that does not exist yields an
-// empty patch rather than an error. The first-run flow rides on that absence:
-// config names a default that is not written yet, the patch comes back empty,
-// and the missing system.provider is noticed downstream.
+// LoadOptional yields an empty patch for an outfit that does not exist.
 func (o *Outfitter) LoadOptional(name string) (form.Patch, error) {
 	return o.load(name, false)
 }
 
-// load resolves one outfit's closure and folds it. A layer referenced by an
-// outfit that DOES exist is a broken reference under either strictness, because
-// the alternative is to discard the whole patch and let a typo look like an
-// empty outfit.
+// A missing layer of an existing outfit is an error under either strictness.
 func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	if name == "" {
 		return form.Patch{}, nil
@@ -146,9 +117,6 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 		return form.Patch{}, err
 	}
 	ep := o.current()
-	// The fast path, and the whole point of the epoch: a fold already
-	// materialized in this view is returned without touching the disk or
-	// re-proving anything about the graph.
 	if keys, ok := o.getFold(ep.gen, name); ok {
 		return form.Build(form.Snapshot{}, keys, nil), nil
 	}
@@ -167,19 +135,11 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	return form.Build(form.Snapshot{}, keys, nil), nil
 }
 
-// Resolve builds the closure for one named outfit. It reads each file's
-// layer list (once per epoch, from the snapshot) and nothing else.
+// Resolve reads only each file's layer list.
 func (o *Outfitter) Resolve(name string) *Closure {
 	return o.resolveIn(o.current(), name)
 }
 
-// resolveIn is Resolve inside a known epoch. stack is the chain currently
-// being resolved, so a name that reappears on it is a cycle rather than a
-// second visit; memo holds finished nodes, which by definition are not on the
-// stack. Both the node parse and the cycle verdict are cached in the epoch,
-// which is what "never sort more than you have to" comes to in practice: the
-// memoised depth-first walk IS the topological sort, built only over the part
-// of the graph anyone asked about.
 func (o *Outfitter) resolveIn(ep *epoch, name string) *Closure {
 	return o.resolveNode(ep, name, nil, map[string]*Closure{})
 }
@@ -201,9 +161,7 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map
 	}
 	if !n.found {
 		c := &Closure{Name: name}
-		// The file is gone. Nothing downstream will consult its cached fold -
-		// resolution stops here: so this is the only moment we learn it is
-		// collectible, and the only place that can reap it.
+		// The only place a vanished file's cached fold is learned to be collectible.
 		o.Forget(name)
 		memo[name] = c
 		return c
@@ -216,7 +174,6 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map
 	return c
 }
 
-// layerNames extracts and validates the layers key.
 func layerNames(path string, raw map[string]any) ([]string, error) {
 	if _, ok := raw["source"]; ok {
 		return nil, fmt.Errorf("outfit: %s: `source` is no longer read; use `layers = [\"name\"]`", path)
@@ -243,10 +200,7 @@ func layerNames(path string, raw map[string]any) ([]string, error) {
 	return out, nil
 }
 
-// closureError reports the first structural fault in a closure: a cycle, or
-// anything not on disk. RootOnly says the only thing missing is the outfit that
-// was asked for: the ordinary "no such outfit", which a lenient caller may
-// treat as an absence.
+// closureError reports the most specific fault: a file error, then a cycle, then what is missing.
 func closureError(root *Closure) error {
 	var cycle string
 	var missing []string
@@ -275,10 +229,7 @@ func closureError(root *Closure) error {
 		RootOnly: len(missing) == 1 && missing[0] == root.Name}
 }
 
-// foldIn returns one outfit's flattened keys: its layers in order, then its
-// own, so the nearest declaration wins. Cached per name per epoch, which makes
-// a layer shared by several others cheap at each of its positions, and, since
-// an epoch is a consistent view, costs nothing to validate.
+// foldIn flattens layers in order, then the outfit's own keys: the nearest declaration wins.
 func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]json.RawMessage, error) {
 	if err := o.taintOf(ep, name); err != nil {
 		return nil, err
@@ -327,16 +278,13 @@ func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]j
 	return flat, nil
 }
 
-// taintOf answers instantly for a name already known to sit inside a cycle.
 func (o *Outfitter) taintOf(ep *epoch, name string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return ep.taints[name]
 }
 
-// taint marks every name on a cycle, so none of them is ever walked again in
-// this epoch: not the one that closed the loop, and not the ones that only
-// lead into it.
+// taint marks every name on a cycle so none is walked again this epoch.
 func (o *Outfitter) taint(ep *epoch, names []string, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -345,8 +293,6 @@ func (o *Outfitter) taint(ep *epoch, names []string, err error) {
 	}
 }
 
-// decodeTOML parses bytes that came from a snapshot rather than a path, so
-// what is parsed is exactly what was pinned.
 func decodeTOML(b []byte, path string) (map[string]any, error) {
 	raw := map[string]any{}
 	if err := toml.Unmarshal(b, &raw); err != nil {
@@ -355,11 +301,8 @@ func decodeTOML(b []byte, path string) (map[string]any, error) {
 	return raw, nil
 }
 
-// resolvePath finds an outfit file (outfits/<name>.toml). The
-// legacy providers/<name>/config.toml fallback has been removed:
-// provider directories now only carry auth credentials.
+// loadouts/ is the pre-rename directory, still read if it survived.
 func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
-	// loadouts/ is the pre-rename directory, still read if it survived.
 	canonical := filepath.Join(o.configDir, "outfits", name+".toml")
 	for _, path := range []string{canonical, filepath.Join(o.configDir, "loadouts", name+".toml")} {
 		if _, err := os.Stat(path); err == nil {
@@ -368,17 +311,14 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 			return "", fmt.Errorf("outfit: stat %s: %w", path, err)
 		}
 	}
-	// A name that resolved to NOTHING is still a fact about the disk: record
-	// the path that was missing, so creating the file later turns the epoch
-	// over instead of being invisible behind a cached absence.
+	// Record the absence so creating the file later turns the epoch over.
 	if r != nil {
 		r.stat(canonical)
 	}
 	return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 }
 
-// flatten walks a TOML tree into dotted form keys, expanding
-// fileName/dirName single-key tables.
+// flatten walks a TOML tree into dotted form keys, expanding fileName/dirName single-key tables.
 func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, r *reader) error {
 	for k, v := range in {
 		key := k
@@ -400,8 +340,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				continue
 			}
 			if dn, ok := val["dirName"].(string); ok && len(val) == 1 {
-				// The user's config dir loads first; BUNDLED (first-party,
-				// shipped with the binary) skills load second and win by name.
+				// Bundled skills load after the config dir and win by name.
 				m := map[string]ContentEnvelope{}
 				udir, uerr := assetPath(o.configDir, dn)
 				if uerr != nil {
@@ -446,8 +385,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 	return nil
 }
 
-// assetPath resolves a fileName/dirName reference against the root it is
-// allowed to read, and refuses anything that leaves it.
+// assetPath refuses a reference that resolves outside root, symlinks included.
 func assetPath(root, ref string) (string, error) {
 	if ref == "" {
 		return "", fmt.Errorf("empty path")
@@ -458,9 +396,7 @@ func assetPath(root, ref string) (string, error) {
 	joined := filepath.Join(root, filepath.Clean("/"+ref))
 	real, err := filepath.EvalSymlinks(joined)
 	if err != nil {
-		// Not there yet (or a broken link): the caller reports the open error,
-		// which is the more useful message. The clean-and-rejoin above already
-		// removed any `..`, so nothing outside root can be named here.
+		// Missing or broken link: the clean-and-rejoin already removed any `..`.
 		return joined, nil
 	}
 	realRoot, err := filepath.EvalSymlinks(root)
@@ -474,21 +410,13 @@ func assetPath(root, ref string) (string, error) {
 	return joined, nil
 }
 
-// ContentEnvelope is the form shape for fileName/dirName-loaded
-// content. Exactly one of Frontmatter or Content is non-empty: if the
-// file began with a `---` fence, the raw frontmatter text goes in
-// Frontmatter and the body is omitted; otherwise the full body goes
-// in Content. FilePath is always set so the agent can read the body
-// when it needs the elided text.
+// ContentEnvelope carries exactly one of Frontmatter or Content; FilePath is always set.
 type ContentEnvelope struct {
 	Frontmatter string `json:"frontmatter,omitempty"`
 	Content     string `json:"content,omitempty"`
 	FilePath    string `json:"filePath"`
 }
 
-// contentEnvelope builds an envelope: frontmatter-only if the body
-// begins with a `---` fence and the close fence is found; full
-// content otherwise.
 func contentEnvelope(body, path string) ContentEnvelope {
 	if fm, ok := extractFrontmatter(body); ok {
 		return ContentEnvelope{Frontmatter: fm, FilePath: path}
@@ -496,11 +424,8 @@ func contentEnvelope(body, path string) ContentEnvelope {
 	return ContentEnvelope{Content: body, FilePath: path}
 }
 
-// extractFrontmatter returns the raw text between the opening and
-// closing `---` fences, or ("", false) if no parseable frontmatter
-// block is found. The body must begin with a `---` fence on its own
-// line (BOM and leading whitespace are not tolerated: frontmatter is
-// opt-in), but the line ending may be LF or CRLF.
+// The body must begin with a `---` fence on its own line (no BOM or leading
+// whitespace); the line ending may be LF or CRLF.
 func extractFrontmatter(body string) (string, bool) {
 	rest, ok := strings.CutPrefix(body, "---\n")
 	if !ok {
@@ -512,20 +437,12 @@ func extractFrontmatter(body string) (string, bool) {
 	if end < 0 {
 		return "", false
 	}
-	// Normalise the block itself, not just the closing fence. The
-	// frontmatter string lands in the form verbatim and the outfit's
-	// content version is a hash of that patch -- so a CRLF-saved skill and
-	// an LF-saved copy of the SAME skill would otherwise mint two different
-	// outfit stumps, with two shared prefixes and two caches, on two
-	// machines editing one repository.
+	// Normalised: the content version hashes this text, so CRLF and LF copies must agree.
 	return strings.ReplaceAll(strings.TrimSuffix(rest[:end], "\r"), "\r\n", "\n"), true
 }
 
-// loadDir reads file skills and directory skills from dir. A directory skill
-// is keyed by its directory name and rooted at SKILL.md (or skill.md).
+// A directory skill is keyed by its directory name and rooted at SKILL.md (or skill.md).
 func loadDir(dir string, r *reader) (map[string]ContentEnvelope, error) {
-	// The directory's own stat comes first: adding or removing a skill changes
-	// it while leaving every surviving file untouched.
 	entries, err := r.readDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -555,10 +472,6 @@ func loadDir(dir string, r *reader) (map[string]ContentEnvelope, error) {
 			out[e.Name()] = contentEnvelope(string(body), skillPath)
 			continue
 		}
-		// A skill is a .md file. Anything else in the directory is not one,
-		// and naming it by chopping its last suffix invents a skill: a
-		// backup called howto.md.pre-bundle-20260629 loaded as "howto.md",
-		// beside the real howto.
 		name, ok := skillName(e.Name())
 		if !ok {
 			continue
@@ -583,11 +496,7 @@ func directorySkillPath(dir string) string {
 	return ""
 }
 
-// The bundled-skills root lives in bundled.go: the skills ride inside the
-// binary and are unpacked to a content-hashed directory on first use.
-
-// skillName is the skill a file declares, and whether it declares one. Only a
-// .md file does; the name is what precedes that suffix, dots and all.
+// Only a .md file is a skill; the name is everything before that suffix, dots and all.
 func skillName(file string) (string, bool) {
 	const ext = ".md"
 	if !strings.HasSuffix(file, ext) {
@@ -600,12 +509,7 @@ func skillName(file string) (string, bool) {
 	return name, true
 }
 
-// emitEnvelope writes an envelope as one key per field rather than one key
-// holding an object.
-//
-// A value the board cannot reach into is a value that must be rewritten whole
-// to change one field, and it makes the keys a caller wrote differ from the
-// paths the board holds. The fields are keys.
+// One key per field, so the board can reach into an envelope.
 func emitEnvelope(out map[string]json.RawMessage, prefix string, env ContentEnvelope) {
 	put := func(field, v string) {
 		if v == "" {

@@ -13,22 +13,16 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Each case asserts byte-for-byte parity in three directions:
-//
-//	IR → wire == fixture
-//	fixture → IR == expected
-//	fixture → IR → wire == fixture
+// Each case asserts IR → wire == fixture, fixture → IR == expected, and the
+// round trip.
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	a := &Anthropic{}
 	cases := []struct {
 		name    string
 		fixture string
 		ir      message.Message
-		// encoded names the fixture the ENCODER must produce when it
-		// differs from the decode fixture. It differs for exactly one
-		// reason: thinking blocks. Their signature lives only in the
-		// translation cache, never in the IR, so this cache-miss encoder
-		// drops them rather than emit an unsigned block the API rejects.
+		// encoded differs from the decode fixture only for thinking blocks,
+		// which the cache-miss encoder drops.
 		encoded string
 	}{
 		{
@@ -69,11 +63,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			// Regression: a tool_use with no arguments must still
-			// emit "input":{} on the wire. omitempty on Arguments
-			// drops empty maps during a WAL roundtrip, so the
-			// encoder receives Arguments=nil and previously emitted
-			// no input field at all (Anthropic 400s).
+			// Arguments=nil after a WAL roundtrip must still emit "input":{}.
 			name:    "empty_args_tool_call",
 			fixture: "empty_args_tool_call.json",
 			ir: message.Message{
@@ -110,19 +100,15 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 				wantEncoded = bytes.TrimRight(encBytes, "\n")
 			}
 
-			// Encode parity: IR → wire == fixture.
 			_, perFLT := a.projectMessages([]message.Message{tc.ir})
 			require.Len(t, perFLT, 1)
 			assert.Equal(t, string(wantEncoded), string(perFLT[0]), "encode parity")
 
-			// Decode parity: fixture → IR == expected.
 			var nm nativeMessage
 			require.NoError(t, json.Unmarshal(wire, &nm))
 			decoded := decodeNativeMessage(nm)
 			assertIRMessageEqual(t, tc.ir, decoded)
 
-			// Round trip: fixture → IR → wire == fixture (modulo the
-			// unsigned thinking the encoder must drop).
 			_, perFLT2 := a.projectMessages([]message.Message{decoded})
 			require.Len(t, perFLT2, 1)
 			assert.Equal(t, string(wantEncoded), string(perFLT2[0]), "decode→encode round trip")
@@ -130,10 +116,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 }
 
-// assertIRMessageEqual compares two IR Messages for the fields the
-// wire round-trip preserves. Skips Timestamp / LogicalTime / ToolName
-// on tool_result (encoder doesn't put it on the wire, so decode can't
-// recover it).
+// assertIRMessageEqual skips the fields the wire does not carry.
 func assertIRMessageEqual(t *testing.T, want, got message.Message) {
 	t.Helper()
 	assert.Equal(t, want.Role, got.Role)
@@ -146,8 +129,6 @@ func assertIRMessageEqual(t *testing.T, want, got message.Message) {
 		assert.Equal(t, wc.IsError, gc.IsError, "block %d is_error", i)
 		if wc.Type == message.ContentToolInvoke {
 			assert.Equal(t, wc.ToolName, gc.ToolName, "block %d tool_name", i)
-			// nil and empty map both represent zero arguments; the
-			// encoder normalizes both to "{}" on the wire.
 			wEmpty := len(wc.Arguments) == 0
 			gEmpty := len(gc.Arguments) == 0
 			if !(wEmpty && gEmpty) {
@@ -159,12 +140,6 @@ func assertIRMessageEqual(t *testing.T, want, got message.Message) {
 	}
 }
 
-// TestEncodeDropsUnsignedThinking pins the rule that makes a provider switch
-// survivable: the IR holds no thinking signature (it holds no provider
-// secrets at all), so the cache-miss encoder must drop thinking blocks
-// rather than emit unsigned ones. History produced under another provider
-// has no anthropic translation to hit, so this path runs for real whenever
-// an aria moves back to anthropic mid-conversation.
 func TestEncodeDropsUnsignedThinking(t *testing.T) {
 	a := &Anthropic{}
 	_, perFLT := a.projectMessages([]message.Message{{

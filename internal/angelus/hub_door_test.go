@@ -35,9 +35,8 @@ func policyHub(t *testing.T, policy authz.Policy) *ariaHub {
 	return hb
 }
 
-// A forged x-internal-figaro-id on the aria socket reaches the model as the
-// bare asserted id, and the policy sees it beside the connection's principal,
-// which the params cannot touch.
+// A forged x-internal-figaro-id reaches the policy as the bare asserted id,
+// beside the connection's principal the params cannot touch.
 func TestHubAttributesAForgedCallerAsAsserted(t *testing.T) {
 	seen := make(chan authz.Identity, 1)
 	hb := policyHub(t, authz.PolicyFunc(func(r authz.Request) authz.Decision {

@@ -6,20 +6,12 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// A TURN MET BY SCROLLING UP KEEPS ITS HEAD: its opening nodes and its
-// question: even though the page carrying the tail arrived first.
-//
-// Reported as "opening old arias omits inquiries entirely". It was never only
-// the question: a turn first seen by its TAIL was marked closed, and every
-// later part for it was skipped whole, so the opening nodes were dropped in
-// silence too. Only the tail of each page-boundary turn survived, and the
-// question was then unreachable for good: no amount of scrolling could bring
-// back a head the client refused to adopt.
+// A turn first seen by its tail must still adopt its head when a later page
+// delivers it.
 func TestScrollingBackCompletesATurnsHead(t *testing.T) {
 	c := NewClient()
 	c.SetClosedLimit(50)
 
-	// A backward page delivers the TAIL of an old turn: from > 0, clipped head.
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 5, Inquiry: "WHATDIDIASK", Sealed: true,
 			InquirySegments: []InquirySegment{{Sender: "aria 123456", Text: "WHATDIDIASK"}},
@@ -27,7 +19,6 @@ func TestScrollingBackCompletesATurnsHead(t *testing.T) {
 		From: 2, ClippedHead: true,
 	}}}, Notify)
 
-	// Scrolling further up delivers the head of that same turn.
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 5, Inquiry: "WHATDIDIASK", Sealed: true,
 			InquirySegments: []InquirySegment{{Sender: "aria 123456", Text: "WHATDIDIASK"}},
@@ -81,7 +72,6 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// The half of the old guard that is load-bearing and stays.
 func TestHistoryStillDoesNotClaimTheOpenSlot(t *testing.T) {
 	c := NewClient()
 	c.SetClosedLimit(50)

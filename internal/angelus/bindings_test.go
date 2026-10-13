@@ -28,7 +28,6 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 	_, err := os.Stat(path)
 	require.NoError(t, err)
 
-	// New registry with the same figaros but no PID bindings.
 	r2 := angelus.NewRegistry()
 	require.NoError(t, r2.Register(newMock("aria-one")))
 	require.NoError(t, r2.Register(newMock("aria-two")))
@@ -43,13 +42,10 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 	assert.NotNil(t, f)
 	assert.Equal(t, "aria-two", id)
 
-	// File should be consumed.
 	_, err = os.Stat(path)
 	assert.True(t, os.IsNotExist(err), "bindings file should be removed after restore")
 }
 
-// A binding to a dormant aria must survive the round trip. Nothing is
-// registered here: dormant is the point.
 func TestSaveAndRestoreBindings_DormantAria(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bindings.json")
 
@@ -68,8 +64,6 @@ func TestSaveAndRestoreBindings_DormantAria(t *testing.T) {
 	assert.Nil(t, f, "still dormant after restore: a rebind must not wake anything")
 }
 
-// The file is rewritten on every save, so identical state must produce
-// identical bytes.
 func TestSaveBindings_StableOrdering(t *testing.T) {
 	dir := t.TempDir()
 
@@ -93,7 +87,6 @@ func TestSaveBindings_StableOrdering(t *testing.T) {
 	}
 }
 
-// A v1 file (parent pids) must not be replayed into a v2 daemon.
 func TestRestoreBindings_SkipsOldVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bindings.json")
 	self := os.Getpid()
@@ -133,6 +126,5 @@ func TestRestoreBindings_MissingFile(t *testing.T) {
 	path := filepath.Join(dir, "bindings.json")
 
 	r := angelus.NewRegistry()
-	// Should not panic or log-error on a missing file.
 	angelus.RestoreBindings(r, path, nil)
 }

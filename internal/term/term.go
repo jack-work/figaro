@@ -1,5 +1,4 @@
 // Package term provides terminal color, width, and TTY detection.
-// Respects NO_COLOR and FORCE_COLOR.
 package term
 
 import (
@@ -9,13 +8,12 @@ import (
 	"golang.org/x/term"
 )
 
-// ColorMode describes whether color output is enabled.
 type ColorMode int
 
 const (
-	ColorAuto   ColorMode = iota // detect from TTY + env
-	ColorNever                   // NO_COLOR or explicit disable
-	ColorAlways                  // FORCE_COLOR or explicit enable
+	ColorAuto ColorMode = iota
+	ColorNever
+	ColorAlways
 )
 
 var (
@@ -42,15 +40,13 @@ func detect() {
 	mode = ColorAuto
 }
 
-// SetColorMode overrides the detected mode and returns the restore. For tests:
-// a colour assertion is vacuous on the non-TTY stdout a test binary has.
+// SetColorMode overrides the detected mode and returns the restore.
 func SetColorMode(m ColorMode) func() {
 	prev := mode
 	mode = m
 	return func() { mode = prev }
 }
 
-// Enabled reports whether color output should be used.
 func Enabled() bool {
 	switch mode {
 	case ColorAlways:
@@ -62,18 +58,15 @@ func Enabled() bool {
 	}
 }
 
-// IsTerminal reports whether the given fd is a terminal.
 func IsTerminal(fd int) bool {
 	return term.IsTerminal(fd)
 }
 
-// ReadPassword reads a password from the terminal without echo.
 func ReadPassword(fd int) ([]byte, error) {
 	return term.ReadPassword(fd)
 }
 
-// Width returns the terminal width, defaulting to 80 if not a TTY
-// or if detection fails.
+// Width defaults to 80 off a TTY.
 func Width() int {
 	if !isTTY {
 		return 80
@@ -84,8 +77,7 @@ func Width() int {
 	return 80
 }
 
-// Height returns the terminal height in rows, defaulting to 24 if not a
-// TTY or if detection fails.
+// Height defaults to 24 off a TTY.
 func Height() int {
 	if !isTTY {
 		return 24
@@ -96,8 +88,6 @@ func Height() int {
 	return 24
 }
 
-// sizeOr accepts any POSITIVE measurement and falls back only when the
-// terminal reported nothing usable.
 func sizeOr(measured, fallback int) int {
 	if measured > 0 {
 		return measured
@@ -107,60 +97,34 @@ func sizeOr(measured, fallback int) int {
 
 const reset = "\033[0m"
 
-// A palette is the whole theme: one SGR body per role. Roles are named for
-// MEANING, not for hue, so a second palette is a second var rather than a
-// rewrite of every call site.
+// A palette is one SGR body per role; roles are named for meaning, not hue.
 type palette struct {
 	dim   string
 	red   string
 	green string
 	cyan  string
 
-	arg   string // springBlue #7FB4CA: what NAMES a call: tool name, status word
-	body  string // fujiWhite #DCD7BA: prose, thinking, argument VALUES: one voice
-	label string // fujiGray #727169, argument NAMES, quieter than their values
+	arg   string
+	body  string
+	label string
 
-	diffAdd string // added line: autumnGreen #76946A on a winterGreen wash
-	diffDel string // removed line: autumnRed #C34043 on a winterRed wash
+	diffAdd string
+	diffDel string
 
-	present string // a thing that IS there: diffAdd's autumnGreen, no wash
-	absent  string // a thing that is NOT: diffDel's autumnRed, no wash
+	present string
+	absent  string
 
-	stateDim string // sumiInk-adjacent gray-violet: form-state furniture below a node, quieter than label
+	stateDim string
 
-	// notice is trouble reported INSIDE an already-dimmed row. It carries its
-	// own re-light (22 = not-dim) because a dim red reads as decoration; the
-	// whole point of a notice is that it does not.
-	notice string
-	// caution is notice's quieter sibling: a WARNING inside a dimmed row, in
-	// the palette's yellow, with the same re-light.
+	// notice and caution carry their own re-light (22): they are painted
+	// inside an already-dimmed row.
+	notice  string
 	caution string
-	// noticeOnWash and cautionOnWash are the same two roles ON A SELECTION
-	// WASH, which is a mid-grey: autumnRed over it is 1.9:1 and reads as mud,
-	// so each is the palette's colour one step lighter. sakuraPink #D27E99
-	// stands in for the red, and boatYellow #C0A36E lifted for the yellow.
+	// noticeOnWash and cautionOnWash are one step lighter: the palette's red
+	// over the selection wash is 1.9:1.
 	noticeOnWash, cautionOnWash string
 
-	// The two roles below are SGR BODIES WITHOUT A RESET, spliced into rows
-	// by the transcript's painter, which manages its own resets: a wash
-	// spans cells that carry their own styling and must survive it.
-	//
-	// nodeWash is the NODE selection's background: one step off the pane, not
-	// a hue, so a selected block reads as lifted rather than coloured.
-	// sumiInk2 #2A2A37 for a block in range, sumiInk3 #363646 for the focused
-	// one, which is the only thing that says where a gesture will land now
-	// that the selection wears no bar.
-	//
-	// selectWash is the visual selection's background, and only the
-	// background, so the text keeps its own foreground: waveBlue2 #2D4F67.
-	// cursor is the block cursor: sumiInk0 #16161D on fujiWhite #DCD7BA, a
-	// light block that reads on any cell, washed or not, rather than reverse
-	// video, which inverts whatever the cell already was and disappears on
-	// a dim label.
-	//
-	// Each has a 256-colour spelling for a terminal without truecolour: 23
-	// (#005f5f) is the cube's nearest to waveBlue2; 234 on 187 stand in for
-	// the inks.
+	// SGR bodies without a reset: the painter that splices them owns it.
 	selectWash, selectWash256 string
 	cursor, cursor256         string
 	nodeWash, nodeWashFocus   string
@@ -178,12 +142,12 @@ var kanagawa = palette{
 	diffDel:  "\033[38;5;167;48;5;52m",
 	present:  "\033[38;5;108m",
 	absent:   "\033[38;5;167m",
-	stateDim: "\033[38;5;60m",     // ≈ sumiInk4 #54546D: dimmer than label, still legible
-	notice:   "\033[22;38;5;167m", // autumnRed #C34043, the palette's own red
-	caution:  "\033[22;38;5;179m", // carpYellow #C0A36E
+	stateDim: "\033[38;5;60m",
+	notice:   "\033[22;38;5;167m",
+	caution:  "\033[22;38;5;179m",
 
-	noticeOnWash:  "\033[22;38;5;210m", // the red, lifted, for a washed row
-	cautionOnWash: "\033[22;38;5;222m", // the yellow, lifted, likewise
+	noticeOnWash:  "\033[22;38;5;210m",
+	cautionOnWash: "\033[22;38;5;222m",
 
 	selectWash:    "\033[48;2;45;79;103m",
 	selectWash256: "\033[48;5;23m",
@@ -193,9 +157,6 @@ var kanagawa = palette{
 	cursor256:     "\033[38;5;234;48;5;187m",
 }
 
-// TrueColor reports whether the terminal advertises 24-bit colour: COLORTERM
-// is the convention (truecolor or 24bit), and tmux forwards it when its own
-// terminal has it.
 func TrueColor() bool {
 	switch os.Getenv("COLORTERM") {
 	case "truecolor", "24bit":
@@ -204,8 +165,7 @@ func TrueColor() bool {
 	return false
 }
 
-// SelectWash is the visual selection's background as a bare SGR body, or ""
-// when colour is off. The caller owns the reset.
+// SelectWash is a bare SGR body; the caller owns the reset.
 func SelectWash() string {
 	if !Enabled() {
 		return ""
@@ -216,9 +176,7 @@ func SelectWash() string {
 	return active.selectWash256
 }
 
-// NodeWash is the node selection's background as a bare SGR body, or "" when
-// colour is off: the wash for a block in range, and the lighter one for the
-// block a gesture would act on. The caller owns the reset.
+// NodeWash is a bare SGR body; the caller owns the reset.
 func NodeWash(focused bool) string {
 	if !Enabled() {
 		return ""
@@ -229,7 +187,7 @@ func NodeWash(focused bool) string {
 	return active.nodeWash
 }
 
-// Cursor is the block cursor's SGR body, or "" when colour is off.
+// Cursor is a bare SGR body; the caller owns the reset.
 func Cursor() string {
 	if !Enabled() {
 		return ""
@@ -240,11 +198,8 @@ func Cursor() string {
 	return active.cursor256
 }
 
-// active is the palette in force. One var is the whole theme mechanism until
-// there is a second theme to choose between.
 var active = kanagawa
 
-// paint wraps s in one role's SGR, or returns it bare when colour is off.
 func paint(code, s string) string {
 	if !Enabled() {
 		return s
@@ -252,8 +207,6 @@ func paint(code, s string) string {
 	return code + s + reset
 }
 
-// One function per role. The name says what the thing IS; the palette says
-// what colour that is today.
 func Dim(s string) string     { return paint(active.dim, s) }
 func Red(s string) string     { return paint(active.red, s) }
 func Green(s string) string   { return paint(active.green, s) }
@@ -266,16 +219,8 @@ func DiffDel(s string) string { return paint(active.diffDel, s) }
 func Present(s string) string { return paint(active.present, s) }
 func Absent(s string) string  { return paint(active.absent, s) }
 
-// NoticeInDim paints trouble that lives inside a row the caller has already
-// dimmed, and hands the row back exactly as it found it: default foreground,
-// still dim. It is not Red: basic 31 is the terminal's red rather than the
-// theme's, and it was the one string in the status row painted by a literal
-// SGR instead of the palette.
-//
-// The hand-back is the reason this is a function and not a role. Every other
-// role closes with a full reset, which would drop the dim for the rest of the
-// row; this one has to close with 39;2, and a caller open-coding that pair is
-// how the literal got there the first time.
+// NoticeInDim paints inside a row the caller has dimmed and hands the row
+// back still dim (39;2), where a full reset would drop the dim.
 func NoticeInDim(s string) string {
 	if !Enabled() {
 		return s
@@ -283,8 +228,6 @@ func NoticeInDim(s string) string {
 	return active.notice + s + dimHandBack
 }
 
-// CautionInDim is NoticeInDim for a warning: yellow where a notice is red,
-// and the same hand-back to the dimmed row.
 func CautionInDim(s string) string {
 	if !Enabled() {
 		return s
@@ -292,10 +235,7 @@ func CautionInDim(s string) string {
 	return active.caution + s + dimHandBack
 }
 
-// NoticeBody and CautionBody are the notice and caution colours as bare SGR
-// bodies, for a caller that owns both the reset and what the row was in
-// before: a pit row is not dim, so NoticeInDim's hand-back (39;2) would dim
-// the rest of the pane's row on the way out.
+// NoticeBody and CautionBody are bare SGR bodies; the caller owns the reset.
 func NoticeBody() string {
 	if !Enabled() {
 		return ""
@@ -310,9 +250,8 @@ func CautionBody() string {
 	return active.caution
 }
 
-// NoticeOnWash and CautionOnWash are the two of them for text drawn over a
-// selection wash, where the palette's own red and yellow are too dark to
-// read. Bodies again: the wash and the reset belong to whoever painted it.
+// NoticeOnWash and CautionOnWash are bare SGR bodies for text over a
+// selection wash.
 func NoticeOnWash() string {
 	if !Enabled() {
 		return ""
@@ -327,18 +266,10 @@ func CautionOnWash() string {
 	return active.cautionOnWash
 }
 
-// dimHandBack restores default foreground and re-dims: the state a dimmed row
-// was in before the notice interrupted it.
 const dimHandBack = "\033[39;2m"
 
-// StateDim is the form-state furniture drawn beneath a node: dimmer than
-// the selection UI, so the eye ranks selection above state and state above
-// nothing. One name, one meaning: do not reuse the comment colour by
-// coincidence.
 func StateDim(s string) string { return paint(active.stateDim, s) }
 
-// roles indexes the palette by name, so a caller carrying a role as DATA (a
-// config value, a wire field) can paint with it without importing a func.
 var roles = map[string]func(string) string{
 	"dim":       Dim,
 	"red":       Red,
@@ -354,9 +285,7 @@ var roles = map[string]func(string) string{
 	"state-dim": StateDim,
 }
 
-// Paint applies the named role, or returns s unchanged when the name is not a
-// role. An unknown name is deliberately not an error: a colour is decoration,
-// and losing it must never be worse than the thing it decorates.
+// Paint returns s unchanged for an unknown role.
 func Paint(role, s string) string {
 	if f, ok := roles[role]; ok {
 		return f(s)
@@ -364,7 +293,7 @@ func Paint(role, s string) string {
 	return s
 }
 
-// VisibleLen returns visible columns ignoring ANSI escapes.
+// VisibleLen counts columns ignoring ANSI escapes.
 func VisibleLen(s string) int {
 	n := 0
 	inEsc := false
@@ -384,7 +313,6 @@ func VisibleLen(s string) int {
 	return n
 }
 
-// TruncateVisible truncates to maxCols visible width.
 func TruncateVisible(s string, maxCols int) string {
 	if maxCols <= 0 {
 		return ""
@@ -405,7 +333,7 @@ func TruncateVisible(s string, maxCols int) string {
 			out = append(out, r)
 			continue
 		}
-		if vis >= maxCols-1 { // -1 to leave room for "…"
+		if vis >= maxCols-1 {
 			out = append(out, '…')
 			out = append(out, []rune(reset)...)
 			return string(out)
@@ -413,5 +341,5 @@ func TruncateVisible(s string, maxCols int) string {
 		out = append(out, r)
 		vis++
 	}
-	return string(out) // no truncation needed
+	return string(out)
 }

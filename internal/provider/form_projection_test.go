@@ -11,8 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// fakeBoard is the agent's patchCursor contract, standing alone: a forward
-// walk over versioned patches answering an ABSOLUTE range.
 type fakeBoard struct {
 	versions []uint64
 	i        int
@@ -34,8 +32,6 @@ func (b *fakeBoard) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
-// stamp appends an entry carrying a form mark, the way a real IR
-// record does.
 func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uint64) {
 	t.Helper()
 	e, err := log.Append(store.Entry[message.Message]{
@@ -50,10 +46,7 @@ func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uin
 	_ = e
 }
 
-// renderedKeys records which board keys each entry was given, so a test can
-// compare two catch-ups by what the model would actually have seen. The rows
-// log is the CURSOR: a second call over the same rows is a resume, which is
-// what a warm start now means with no memo between calls.
+// renderedKeys records which board keys each entry was given.
 func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessage], board Form) ([]string, error) {
 	var seen []string
 	_, err := CatchUp(CatchUpConfig{
@@ -77,11 +70,7 @@ func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessa
 	return seen, err
 }
 
-// COLD EQUALS WARM. A catch-up resumes from the row log's tail, so the
-// patches it renders must not depend on where it resumed. They did once: a
-// fresh cursor pointed at the newest entry replayed the WHOLE board onto the
-// first new message, and the stored row made that permanent -- every
-// round-trip re-sent the aria's entire state.
+// The patches a catch-up renders must not depend on where it resumed.
 func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 	build := func() *store.MemLog[message.Message] {
 		log := store.NewMemLog[message.Message]()
@@ -96,8 +85,6 @@ func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The same log, caught up in two passes over ONE row log: the second
-	// call resumes from the first call's tail.
 	warmLog := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
 	stamp(t, warmLog, "one", 2)
@@ -121,16 +108,13 @@ func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 	}
 }
 
-// EXACTLY ONCE. Every patch reaches the model, and no patch reaches it
-// twice: the two failure modes this seam has actually had, in that order.
+// Every patch reaches the model exactly once.
 func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
 	var all []string
 
-	// Five turns, resuming each time, the way a tool loop drives it. A FRESH
-	// board cursor every pass, because that is what formAccessor() does: it
-	// is called per Send, not per turn.
+	// A fresh board cursor every pass: formAccessor() is called per Send.
 	for i, mark := range []uint64{2, 3, 4, 6, 6} {
 		stamp(t, log, fmt.Sprintf("turn%d", i), mark)
 		keys, err := renderedKeys(log, rows, newFakeBoard(2, 3, 4, 5, 6))

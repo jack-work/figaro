@@ -6,13 +6,7 @@ import (
 	"testing"
 )
 
-// tailBoundSplit is the implementation tailBound replaced: split the whole
-// text, keep the last composeBashCap lines, join them back. It is kept HERE,
-// permanently, as the oracle. The replacement is a byte-for-byte equivalence,
-// not an improvement in behaviour, and an equivalence claim needs both sides
-// present to stay checkable. A composed node is cached per LT and goes on the
-// wire; a rendering, once cached, is permanent, so "correct-looking" is not
-// the standard.
+// tailBoundSplit is the oracle: tailBound must be byte-identical to it.
 func tailBoundSplit(text string) string {
 	if text == "" {
 		return ""
@@ -24,7 +18,6 @@ func tailBoundSplit(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// tailBoundCorpus is built around the ways backward line-scanning goes wrong.
 func tailBoundCorpus() map[string]string {
 	n := func(count int, suffix string) string {
 		var b strings.Builder
@@ -50,13 +43,10 @@ func tailBoundCorpus() map[string]string {
 		"trailing blank run":      n(250, "") + "\n\n\n\n\n",
 		"crlf":                    strings.Repeat("line\r\n", 300),
 		"crlf no final":           strings.TrimSuffix(strings.Repeat("line\r\n", 300), "\r\n"),
-		// The 200th-from-last newline is the first byte: the kept region
-		// starts at index 1 and there is nothing above it.
-		"cut at first byte": "\n" + strings.TrimSuffix(strings.Repeat("x\n", 200), "\n"),
-		// One line above the cut, so the kept region must not include it.
-		"one line above the cut": "keepmeout\n" + strings.TrimSuffix(strings.Repeat("x\n", 200), "\n"),
-		"no newlines at all":     strings.Repeat("x", 10_000),
-		"unicode":                strings.Repeat("héllo wörld ✂\n", 300),
+		"cut at first byte":       "\n" + strings.TrimSuffix(strings.Repeat("x\n", 200), "\n"),
+		"one line above the cut":  "keepmeout\n" + strings.TrimSuffix(strings.Repeat("x\n", 200), "\n"),
+		"no newlines at all":      strings.Repeat("x", 10_000),
+		"unicode":                 strings.Repeat("héllo wörld ✂\n", 300),
 	}
 }
 
@@ -72,9 +62,7 @@ func TestTailBoundIsByteIdenticalToTheSplitImplementation(t *testing.T) {
 	}
 }
 
-// TestTailBoundOracleCanFail proves the equivalence test above is load-bearing:
-// a clamp that is off by one line must be caught by this corpus. If this stops
-// failing the oracle, the corpus has stopped covering the boundary.
+// An off-by-one clamp must be caught by the corpus.
 func TestTailBoundOracleCanFail(t *testing.T) {
 	offByOne := func(text string) string {
 		if text == "" {
@@ -97,10 +85,6 @@ func TestTailBoundOracleCanFail(t *testing.T) {
 	}
 }
 
-// TestTailBoundDoesNotReadWhatItDiscards states the property the fix exists
-// for: the clamp's cost is the size of what it KEEPS, not the size of what the
-// tool wrote. Asserted as allocations, which is the fact; the old
-// implementation allocated one []string of every line in the input.
 func TestTailBoundDoesNotReadWhatItDiscards(t *testing.T) {
 	big := strings.Repeat("a line of tool output\n", 100_000)
 	if got := testing.AllocsPerRun(50, func() { _ = tailBound(big) }); got != 0 {

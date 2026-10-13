@@ -18,19 +18,8 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// LEGALITY ACROSS A RELOAD.
-//
-// A turn cut short mid-tool-call is repaired in memory by the agent that was
-// running it. That is not enough to call the conversation legal: the aria goes
-// dormant, the daemon restarts, and the NEXT prompt is served by a completely
-// new Agent reading the same bytes off disk. repairInterruptedTail runs at boot
-// for exactly this reason, and a legality that only holds in a warm agent is
-// not legality at all: it is a cache.
-//
-// So this test interrupts, then throws the agent and the backend away, reopens
-// the store, and asks the fresh agent to answer. What it asserts is what the
-// user experiences: the next message is answered, and the IR it was answered
-// from has no dangling tool_use.
+// An interrupted turn must be legal after a reload: a fresh agent on the
+// same bytes answers the next prompt from an IR with no dangling tool_use.
 func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	dir := t.TempDir()
 
@@ -72,8 +61,7 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	waitFor(t, sink, rpc.MethodTurnDone, 5*time.Second)
 	unsub()
 
-	// Everything warm is now thrown away: the agent, its in-memory turn state,
-	// and the backend handle. What survives is bytes.
+	// What survives is bytes.
 	a1.Kill()
 	require.NoError(t, backend1.Close())
 
@@ -90,8 +78,6 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	})
 	defer a2.Kill()
 
-	// The claim, as the user meets it: the aria answers the next thing said to
-	// it. If the reloaded IR were illegal this is where it would die.
 	sink2 := make(chan rpc.Notification, 64)
 	unsub2 := a2.Subscribe(&reproNotifier{ch: sink2})
 	defer unsub2()
@@ -115,9 +101,8 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	assert.True(t, answered, "the reloaded aria never answered the next prompt")
 }
 
-// assertNoDanglingToolUse is invariant L1/L2: every tool_invoke is answered by
-// a tool_result with the same id in a LATER message, and the tail is not an
-// assistant message with an unanswered call.
+// assertNoDanglingToolUse: every tool_invoke is answered in a later message,
+// and the tail is not an assistant message with an unanswered call.
 func assertNoDanglingToolUse(t *testing.T, msgs []message.Message) {
 	t.Helper()
 	uses := map[string]int{}

@@ -1,8 +1,5 @@
 package angelus
 
-// What a listing says about a node's lifetime. The sweep that acts on it is
-// ttl_sweep_test.go; this covers only the fields the wire carries.
-
 import (
 	"testing"
 	"time"
@@ -18,8 +15,6 @@ type ttlListBackend struct {
 
 func (f *ttlListBackend) TTLEntries() []store.TTLEntry { return f.entries }
 
-// backendWithoutLifetimes has no TTLEntries at all, which is every backend a
-// test writes by hand.
 type backendWithoutLifetimes struct{ store.Backend }
 
 func TestFillTTLStampsTheDeadline(t *testing.T) {
@@ -40,8 +35,7 @@ func TestFillTTLStampsTheDeadline(t *testing.T) {
 	if want := created.Add(time.Hour).UnixMilli(); rows[0].ExpiresAt != want {
 		t.Errorf("expires_at = %d, want %d", rows[0].ExpiresAt, want)
 	}
-	// The row nobody gave a lifetime must stay at zero, or the client's
-	// filter would read every aria as expired at the epoch.
+	// The row nobody gave a lifetime stays at zero, or the client reads it as expired at the epoch.
 	if rows[1].TTLMS != 0 || rows[1].ExpiresAt != 0 {
 		t.Errorf("row without a lifetime = {%d, %d}, want zeroes",
 			rows[1].TTLMS, rows[1].ExpiresAt)

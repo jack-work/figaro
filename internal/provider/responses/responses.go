@@ -289,9 +289,8 @@ func (p *Provider) sendWithToken(
 	response, err := readResponseStream(ctx, frames, bus, trace)
 	terminalStatus = response.Status
 	if err != nil {
-		// Any interrupted stream hands over what it actually received. A
-		// timeout, failed response or broken socket must not erase completed
-		// calls (which may already have executed) or their native payload.
+		// An interrupted stream hands over what it received: completed calls
+		// may already have executed.
 		if len(response.Output) == 0 {
 			return err
 		}
@@ -310,9 +309,6 @@ func (p *Provider) sendWithToken(
 	}
 	logPromptCacheEconomics(response.Usage, breakpoints)
 	if len(assistant.Content) == 0 && len(response.Output) == 0 {
-		// A turn that produced nothing renders as nothing: no text, no
-		// aria, no error. Silence here is indistinguishable from a bug
-		// anywhere upstream, and it cost two agents an afternoon.
 		slog.Warn("responses: empty completion, nothing to render",
 			"model", model, "status", response.Status,
 			"input_tokens", response.Usage.InputTokens,
@@ -325,12 +321,8 @@ func (p *Provider) sendWithToken(
 	return nil
 }
 
-// handOver gives the fig IR side the message and the native output items from
-// ONE accumulator, so a partial message cannot be shaped differently from a
-// whole one.
-//
-// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT, so "the
-// entry exists before anything that names it" is a shape rather than a rule.
+// handOver is the single path to the bus for whole and partial messages;
+// the fig IR side appends, since only it has the LT.
 func (p *Provider) handOver(assistant message.Message, output []json.RawMessage, bus provider.Bus) {
 	bus.PushMessageEnd(string(assistant.StopReason))
 	var commit []provider.AssistantCache
@@ -427,11 +419,8 @@ func contextSizeForLog(log store.Log[message.Message]) (int, bool) {
 		return total, len(tail) == 0
 	}
 
-	// Cold path: no usage anywhere in the last 64 entries, so find the last
-	// one that has any. Read() rather than a zero-copy snapshot, deliberately
-	//: under a windowed cache the prefix may not be resident at all, and a
-	// rare path should pay a re-read instead of forcing the whole log to stay
-	// in memory for the common one.
+	// Cold path: Read() rather than a snapshot, so the rare path pays a
+	// re-read instead of keeping the whole log resident for the common one.
 	entries := log.Read()
 	watermark := -1
 	for i := len(entries) - 1; i >= 0; i-- {
@@ -519,8 +508,6 @@ func (p *Provider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 			if err != nil {
 				return nil, fmt.Errorf("responses: encode message %d: %w", msg.LogicalTime, err)
 			}
-			// The observed set folds in beside the board: each study
-			// reminder becomes one input_text message part.
 			for _, text := range append(provider.StudyReminderTexts(msg, snap),
 				provider.ForkReminderTexts(msg, snap)...) {
 				part, merr := json.Marshal(map[string]any{
@@ -537,14 +524,11 @@ func (p *Provider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 			slog.Error("responses write row", "aria", in.AriaID, "lt", lt, "err", err)
 		},
 	}); err != nil {
-		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
-		// would assemble is not the one on disk.
+		// A send that cannot write its rows must not proceed.
 		return nil, fmt.Errorf("responses catch up: %w", err)
 	}
 
-	// The websocket frame is a typed array, so this tenant assembles one. What
-	// it no longer does is build a [][]json.RawMessage of the whole history
-	// first and flatten it: one array, walked once.
+	// The websocket frame is a typed array: one array, walked once.
 	to, ok := provider.TranslationTail(rows)
 	if !ok {
 		return nil, nil
@@ -704,8 +688,7 @@ func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*
 	headers.Set("Origin", "https://github.com")
 	client := &http.Client{
 		Timeout: 30 * time.Second,
-		// A gateway redirect must not forward a credential to a different
-		// endpoint or disguise the original handshake rejection.
+		// A redirect must not forward the credential to another endpoint.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	conn, response, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{
@@ -718,8 +701,7 @@ func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*
 		}
 		return nil, err
 	}
-	// Match the previous transport's frame budget. The library default is
-	// only 32 KiB, smaller than an ordinary coding tool's argument payload.
+	// The library default of 32 KiB is smaller than a tool's argument payload.
 	conn.SetReadLimit(maxResponseFrame)
 	return conn, nil
 }
@@ -816,9 +798,6 @@ func encodeResponseMessage(
 	var afterMessage []json.RawMessage
 	var userContent []responseContent
 	var assistantContent []responseContent
-	// spoke: a person put something in this message. lastOutput is the last
-	// function_call_output, so a tool round nobody spoke in can carry its
-	// reminders inside it rather than in a user message of their own.
 	spoke := false
 	lastOutput, lastCall, lastText := -1, "", ""
 
@@ -834,13 +813,9 @@ func encodeResponseMessage(
 			case message.ContentImage:
 				if content.Data != "" {
 					spoke = true
-					// A tool's image trails its function_call_output in the user
-					// message this loop emits after it, captioned with the call.
-					// OpenAI has since allowed an array-shaped output that could
-					// hold the image directly, but the Copilot proxy in front of
-					// this endpoint is unverified for it and a rejected item
-					// fails the whole turn; this shape only uses items the
-					// encoder already sends today.
+					// A tool's image trails its function_call_output in a user
+					// message, captioned with the call; the Copilot proxy is
+					// unverified for array-shaped output.
 					if content.ToolCallID != "" {
 						userContent = append(userContent, responseContent{
 							Type: "input_text",
@@ -897,9 +872,8 @@ func encodeResponseMessage(
 		reminders = append(reminders, rendered...)
 		snap = snap.Apply(patch)
 	}
-	// A TOOL ROUND WITH NOBODY SPEAKING carries its reminders INSIDE the last
-	// function_call_output. As a user message of their own they read as the
-	// user sending an empty prompt. Same rule as the other dialects.
+	// In a results-only round the reminders ride inside the last
+	// function_call_output: a user message of their own reads as an empty prompt.
 	if !spoke && lastOutput >= 0 && len(userContent) == 0 && len(reminders) > 0 {
 		out := lastText
 		for _, r := range reminders {
@@ -937,14 +911,11 @@ type responseContent struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
-	// PromptCacheBreakpoint marks the end of a reusable prefix. It is
-	// stamped onto the assembled request, never onto the per-LT cached
-	// bytes: the mark moves forward as the conversation grows, and a mark
-	// baked into a cached item could never move.
+	// PromptCacheBreakpoint is stamped on the assembled request, never on
+	// the per-LT cached bytes: it moves.
 	PromptCacheBreakpoint *promptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
 }
 
-// promptCacheBreakpoint is the GPT-5.6+ explicit cache marker.
 type promptCacheBreakpoint struct {
 	Type string `json:"type"`
 }
@@ -1176,10 +1147,7 @@ func responseOptionalInt(snap form.Snapshot, key string) (int, bool, error) {
 func decodeResponseAssistant(response responseObject) (message.Message, error) {
 	out := message.Message{
 		Role: message.RoleOutput,
-		// input_tokens is INCLUSIVE of the cached/written breakdown beside
-		// it (the wire proves it: total_tokens == input_tokens +
-		// output_tokens). Copying it straight into InputTokens counted every
-		// cached token twice in tokens.ContextFromUsage.
+		// input_tokens includes the cached/written breakdown beside it.
 		Usage: provider.UsageFromInclusivePrompt(
 			response.Usage.InputTokens,
 			response.Usage.InputTokensDetails.CachedTokens,
@@ -1252,10 +1220,7 @@ func isResponseUnauthorized(err error) bool {
 	return rejected.status == http.StatusUnauthorized || rejected.code == "unauthorized" || rejected.code == "invalid_api_key"
 }
 
-// toolImageCaption names the call an image came from. The Responses shape
-// separates a tool's image from its function_call_output by a message
-// boundary, so without a caption a model facing several tool images in one
-// turn has nothing to bind them to.
+// toolImageCaption binds an image to its call across the message boundary.
 func toolImageCaption(c message.Content) string {
 	if c.ToolName != "" {
 		return fmt.Sprintf("[image output of tool %s (call %s)]", c.ToolName, c.ToolCallID)
@@ -1263,8 +1228,8 @@ func toolImageCaption(c message.Content) string {
 	return fmt.Sprintf("[image output of call %s]", c.ToolCallID)
 }
 
-// markPromptCacheBreakpoint stamps one explicit breakpoint at the end of the
-// last completed exchange, and reports how many it placed.
+// markPromptCacheBreakpoint stamps one breakpoint at the end of the last
+// completed exchange.
 func markPromptCacheBreakpoint(input []json.RawMessage) ([]json.RawMessage, int) {
 	for i := len(input) - 1; i >= 0; i-- {
 		var item responseInputItem
@@ -1296,7 +1261,6 @@ func markPromptCacheBreakpoint(input []json.RawMessage) ([]json.RawMessage, int)
 	return input, 0
 }
 
-// logPromptCacheEconomics records what the cache actually did.
 func logPromptCacheEconomics(usage responseUsage, breakpoints int) {
 	reads := usage.InputTokensDetails.CachedTokens
 	writes := usage.InputTokensDetails.CacheWriteTokens

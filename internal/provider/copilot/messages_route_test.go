@@ -17,15 +17,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// THE MESSAGES ROUTE HAD NO TEST AT ALL. Every test in this package drove the
-// RESPONSES provider or the token source; the Anthropic-dialect path -- the
-// one every Claude model on Copilot takes -- was covered by nothing, which is
-// why swapping its implementation left the suite green and proved nothing.
-//
-// It asserts what the transport is FOR: the endpoint comes from the token
-// (the proxy-ep decides the host, so it cannot be fixed at construction), the
-// Copilot headers are present, the Anthropic dialect version is the vendor's
-// and not GitHub's, and the assistant message lands in the fig IR.
+// The endpoint comes from the token, the Copilot headers are present, the
+// dialect version is the vendor's, and the assistant message lands.
 func TestTheMessagesRouteReachesTheCopilotEndpoint(t *testing.T) {
 	var (
 		gotPath   string
@@ -90,10 +83,7 @@ data: {"type":"message_stop"}`,
 		t.Fatalf("send: %v", err)
 	}
 
-	// /v1, because that is what the endpoint answers. The SDK path this
-	// replaced built "v1/messages" itself (anthropic-sdk-go message.go), so
-	// moving to a hand-rolled transport silently dropped the version segment:
-	// POST /v1/messages => 400 (alive), POST /messages => 404.
+	// POST /messages is a 404; the endpoint answers /v1/messages.
 	if gotPath != "/v1/messages" {
 		t.Errorf("path=%q, want /v1/messages", gotPath)
 	}
@@ -113,9 +103,6 @@ data: {"type":"message_stop"}`,
 	if got := gotHeader.Get("x-api-key"); got != "" {
 		t.Errorf("x-api-key=%q: this endpoint takes a bearer, and the key header must not be sent", got)
 	}
-	// THE ENDPOINT REJECTS eager_input_streaming OUTRIGHT. It used to ignore
-	// it silently, which is worse: the SDK build carried NoEagerToolStreaming
-	// for this reason and the raw provider must not reintroduce it.
 	if strings.Contains(string(gotBody), "eager_input_streaming") {
 		t.Error("the request carried eager_input_streaming, which this endpoint refuses")
 	}

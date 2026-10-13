@@ -1,9 +1,6 @@
 package term
 
-// Client abstracts the terminal operations whose implementation differs by
-// platform and emulator: raw-mode entry, size, resize notification, raw input
-// reads, and clipboard. The unix/bash implementation uses termios + SIGWINCH +
-// OSC 52. The Windows implementation uses SetConsoleMode + size polling.
+// Client is the terminal surface that differs by platform.
 type Client interface {
 	MakeRaw() (restore func(), err error)
 	Size() (w, h int)

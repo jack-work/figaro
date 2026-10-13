@@ -22,9 +22,7 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// A fat value is cut at the per-key limit, stays valid JSON, and never
-// splits a rune. A provider rejects invalid UTF-8 outright, so a
-// byte-exact cut is a 400 waiting to happen.
+// A cut value stays valid JSON and never splits a rune.
 func TestStudyBlockCutsFatValuesOnRuneBoundaries(t *testing.T) {
 	fat := strings.Repeat("é", 400) // 800 bytes, two per rune
 	msg := message.Message{
@@ -52,8 +50,6 @@ func TestStudyBlockCutsFatValuesOnRuneBoundaries(t *testing.T) {
 	}
 }
 
-// Past the TOTAL budget, keys are elided and the reader is told where
-// the rest lives -- executable advice, not a shrug.
 func TestStudyBlockElidesPastTheTotalAndSaysWhere(t *testing.T) {
 	set := map[string]json.RawMessage{}
 	for _, k := range []string{"a", "b", "c", "d", "e"} {
@@ -74,9 +70,6 @@ func TestStudyBlockElidesPastTheTotalAndSaysWhere(t *testing.T) {
 	if !strings.Contains(note, "more delta") || !strings.Contains(note, "fig form @f1 show") {
 		t.Fatalf("the elision must name the verb that shows the rest: %q", note)
 	}
-	// Deterministic: keys are spent in sorted order, so the SAME keys
-	// survive every render. The per-LT cache makes the first rendering
-	// permanent; a shuffled fold would make history disagree with itself.
 	for i := 0; i < 5; i++ {
 		again := blockJSON(t, StudyReminderTexts(msg, boardWithLimits(0, 450))[0])
 		if !sameKeys(shown, again["set"].(map[string]any)) {
@@ -85,7 +78,7 @@ func TestStudyBlockElidesPastTheTotalAndSaysWhere(t *testing.T) {
 	}
 }
 
-// A negative limit is unbounded: what figaro did before limits existed.
+// A negative limit is unbounded.
 func TestStudyBlockNegativeLimitIsUnbounded(t *testing.T) {
 	fat := strings.Repeat("x", 5000)
 	msg := message.Message{

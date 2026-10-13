@@ -57,9 +57,6 @@ func TestResolveCachePolicySettings(t *testing.T) {
 	}
 }
 
-// A retention must never be written into the type field: {"type":"1h"} is
-// rejected by the API. This is the bug that shipped before the policy was
-// centralised, so it gets a named test.
 func TestCachePolicyNeverPutsTTLInType(t *testing.T) {
 	for _, setting := range []string{"1h", "long", "5m", "ephemeral", "60m"} {
 		p := ParseCachePolicy(setting)
@@ -110,10 +107,6 @@ func TestBreakpointBudget(t *testing.T) {
 	}
 }
 
-// FuzzParseCachePolicy pins the invariants every marking path relies on:
-// the type is always empty or exactly "ephemeral", the TTL is always empty
-// or exactly "1h", parsing is idempotent, and no input ever produces a
-// TTL on a disabled policy.
 func FuzzParseCachePolicy(f *testing.F) {
 	for _, seed := range []string{"", "ephemeral", "none", "1h", "5m", "LONG", " off ", "type", "{}", "ttl=1h"} {
 		f.Add(seed)
@@ -129,9 +122,7 @@ func FuzzParseCachePolicy(f *testing.F) {
 		if p.Off() && p.TTL != "" {
 			t.Fatalf("setting %q disabled caching but kept ttl %q", setting, p.TTL)
 		}
-		// Idempotence: re-parsing the canonical spelling is a fixed point.
-		// "none" is the canonical spelling of the off policy: the empty
-		// string means "unset", which is ON by default.
+		// "none" is the canonical off spelling; "" means unset, which is on.
 		canonical := "none"
 		if !p.Off() {
 			canonical = p.Type

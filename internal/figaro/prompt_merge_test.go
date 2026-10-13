@@ -8,19 +8,8 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// A drained batch is ONE message. Three nudges typed during one tool round are
-// three lines at one LT, not three messages the model must reconcile.
-//
-// Backcompat is read-only and lives elsewhere: logs written before this carry N
-// separate user messages and keep reading exactly as they did, because nothing
-// on disk is migrated and turns.Opens / turns.IsSteering / compose.Turns are
-// unchanged. This test pins the WRITE side.
-// The separator is a BLANK LINE, and both halves of that matter. On screen,
-// prose is markdown: a lone newline is a SOFT break, so glamour rejoined three
-// messages into one sentence ("test2 test3 test4"): which is how this was
-// reported. For the model, a blank line is the unambiguous mark of separate
-// messages. One separator satisfies both, so what the reader sees and what the
-// agent reads cannot drift.
+// A drained batch is one message at one LT, separated by blank lines: a lone
+// newline is a soft break in markdown. Logs written before this read unchanged.
 func TestMergePromptEvents_JoinsWithABlankLine(t *testing.T) {
 	got, ok := mergePromptEvents([]event{
 		{typ: eventUserPrompt, text: "a"},
@@ -35,8 +24,7 @@ func TestMergePromptEvents_JoinsWithABlankLine(t *testing.T) {
 	}
 }
 
-// An empty batch merges to nothing, and a single prompt is passed through
-// untouched so the common case allocates nothing and cannot be reshaped.
+// A single prompt passes through untouched.
 func TestMergePromptEvents_EmptyAndSingle(t *testing.T) {
 	if _, ok := mergePromptEvents(nil); ok {
 		t.Error("an empty batch must not produce a message")
@@ -48,24 +36,19 @@ func TestMergePromptEvents_EmptyAndSingle(t *testing.T) {
 	}
 }
 
-// A blank prompt contributes no line: it must not leave a stray empty row in
-// the middle of the merged text.
+// A blank prompt contributes no line.
 func TestMergePromptEvents_SkipsEmptyTexts(t *testing.T) {
 	got, _ := mergePromptEvents([]event{
 		{typ: eventUserPrompt, text: "first"},
 		{typ: eventUserPrompt, text: ""},
 		{typ: eventUserPrompt, text: "second"},
 	})
-	// A BLANK line between them: a lone newline is a soft break in markdown,
-	// so the screen rejoined the messages into one sentence.
 	if got.text != "first\n\nsecond" {
 		t.Errorf("text = %q, want %q", got.text, "first\n\nsecond")
 	}
 }
 
-// PER-EVENT SIDE DATA MUST NOT BE LOST. Each queued prompt may carry form
-// input; merging N events into one message must merge N patches, in queue order,
-// so a later value wins and nothing is silently dropped.
+// Merging N events merges N form patches in queue order; a later value wins.
 func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	got, _ := mergePromptEvents([]event{
 		{typ: eventUserPrompt, text: "a", form: &rpc.FormInput{
@@ -98,8 +81,7 @@ func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	}
 }
 
-// Merging must not mutate the inputs: the batch is prepended back to the inbox
-// on failure, and a mutated event would be restored in the wrong shape.
+// Merging must not mutate the inputs: the batch is prepended back on failure.
 func TestMergePromptEvents_DoesNotMutateInputs(t *testing.T) {
 	a := &rpc.FormInput{Patch: ptrPatch(form.Build(form.Snapshot{},
 		map[string]json.RawMessage{"k": json.RawMessage(`"a"`)}, nil))}

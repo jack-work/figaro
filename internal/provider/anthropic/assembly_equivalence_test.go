@@ -12,12 +12,8 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// THE ORACLE. Every function below is a VERBATIM copy of the slice assembler
-// as it stood at 6a650ef8, renamed. It is kept so the streamed assembler can
-// be held to the only standard that matters for invariant #5 -- the prefix
-// bytes a provider caches on -- which is that the bytes did not move.
-//
-// Delete it when the sequence has outlived the doubt, not before.
+// The legacy* functions are the slice assembler, kept verbatim as the byte
+// oracle for the streamed one (invariant #5).
 
 func (a *Anthropic) legacyProject(perMessage [][]json.RawMessage, lts []uint64, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	if maxTokens == 0 {
@@ -47,20 +43,11 @@ func (a *Anthropic) legacyProject(perMessage [][]json.RawMessage, lts []uint64, 
 		}
 	}
 
-	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address messages by
-	// INDEX, so merging after them would move the marks onto other messages.
 	req.Messages = legacyDropDuplicateResults(req.Messages)
 	req.Messages, msgLTs = legacyCoalesceRows(req.Messages, msgLTs)
 
 	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
 		route := a.route()
-		// Deliberately NOT gated on the model's minimum cacheable size.
-		// Figaro spends 3 of 4 slots, so there is no scarcity to protect,
-		// and a marker below the minimum is ignored rather than charged.
-		// Gating would trade a free no-op for a false negative on any
-		// prompt a chars/4 estimate under-counts. The thresholds live in
-		// provider.CacheMinTokens for an endpoint that DOES have to ration
-		// slots and knows which model it resolved.
 		if plan := route.MarkPlan(provider.ResolveMarkMode(snapshot)); plan.Blocks {
 			legacyMarkCacheBreakpoints(&req, policy, plan, route.Caps)
 		}
@@ -70,8 +57,6 @@ func (a *Anthropic) legacyProject(perMessage [][]json.RawMessage, lts []uint64, 
 	return req, nil
 }
 
-// legacyApplyMessageTags reads system.tags and applies per-message
-// cache_control overrides keyed by logical time.
 func legacyApplyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot form.Snapshot, caps provider.CacheCaps) {
 	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
@@ -141,15 +126,6 @@ func legacyMarkCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy,
 	}
 }
 
-// legacyDropDuplicateResults removes a tool_result block whose call an EARLIER block
-// already answered. The wire pairs one result with one invoke, so a second is
-// refused with "unexpected tool_use_id found in tool_result blocks" and the
-// whole history becomes unsendable.
-//
-// The fig IR is append-only and keeps both records, which is honest: two
-// closings really were written. This is the last gate before the wire, and
-// unmatched on the wire is a hard error -- the same rule the door applies to a
-// late result. A row with no duplicate is returned untouched, bytes and all.
 func legacyDropDuplicateResults(rows []json.RawMessage) []json.RawMessage {
 	seen := map[string]bool{}
 	out := rows
@@ -199,17 +175,6 @@ func legacyDropDuplicateResults(rows []json.RawMessage) []json.RawMessage {
 	return compact
 }
 
-// legacyCoalesceRows merges adjacent same-role rows by concatenating their content,
-// so the request alternates roles as the API requires.
-//
-// THE LOG IS NOT TOUCHED. Two consecutive user records are a fact about the
-// history -- a turn that errored after committing the prompt and before any
-// reply -- and the translator log is append-only, so the repair belongs where
-// the request is assembled and nowhere else. The SDK provider has always done
-// this over its typed params; this is the same repair over stored bytes.
-//
-// It decodes ONLY the rows it merges. Adjacent same-role pairs are rare, so
-// the common case pays one role peek per row and no allocation.
 func legacyCoalesceRows(rows []json.RawMessage, lts []uint64) ([]json.RawMessage, []uint64) {
 	if len(rows) < 2 {
 		return rows, lts
@@ -239,8 +204,6 @@ func legacyCoalesceRows(rows []json.RawMessage, lts []uint64) ([]json.RawMessage
 		if n >= 0 && roles[i] != "" && roles[i] == rowRole(outRows[n]) {
 			if merged, ok := mergeRows(outRows[n], r); ok {
 				outRows[n] = merged
-				// The later LT wins: it is the one a per-LT tag would target,
-				// which is what the SDK path does with the same choice.
 				if len(outLTs) > 0 {
 					outLTs[len(outLTs)-1] = ltAt(i)
 				}
@@ -252,8 +215,6 @@ func legacyCoalesceRows(rows []json.RawMessage, lts []uint64) ([]json.RawMessage
 	}
 	return outRows, outLTs
 }
-
-// --- the equality ---------------------------------------------------------
 
 func legacyBody(t *testing.T, a *Anthropic, perMessage [][]json.RawMessage, lts []uint64,
 	snap form.Snapshot, tools []provider.Tool, model string) []byte {
@@ -289,10 +250,6 @@ func toolResult(id, text string) json.RawMessage {
 	return raw(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + id + `","content":"` + text + `"}]}`)
 }
 
-// THE BYTES DID NOT MOVE. The streamed assembler is held to the deleted one
-// over every shape the passes react to: plain rows, adjacent same-role rows
-// that coalesce, a duplicate tool_result that is rewritten out of its message,
-// per-LT tags, and the rolling tail marker.
 func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -334,11 +291,7 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 			board: map[string]json.RawMessage{"system.tags": raw(`{"2":{"cache_control":"ephemeral"}}`)},
 		},
 		{
-			// THE TWO MARKS COLLIDE HERE, and their order decides the bytes:
-			// the rolling tail breakpoint is spent first and a per-LT tag on
-			// the same row overwrites it. A fixture whose tag sits anywhere
-			// but the last row cannot see the difference -- one did not, and
-			// a swapped order survived it.
+			// The tag must sit on the last row to exercise the mark order.
 			name: "a tag on the LAST row overwrites the tail marker",
 			perMessage: [][]json.RawMessage{
 				{msg("user", "one")},
@@ -370,13 +323,8 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 	}
 }
 
-// A row emptied by the duplicate pass takes its logical time with it.
-//
-// THE SLICE VERSION DID NOT. It compacted the rows and left the LT array at
-// its old length, so after a drop every per-LT tag addressed the row one place
-// to its left -- silently, on the only pass that can move a cache breakpoint.
-// This is the one case where the streamed assembler is DELIBERATELY not
-// byte-identical to the oracle, and the oracle is the one that is wrong.
+// The one deliberate divergence from the oracle: an emptied row takes its
+// LT with it, where the oracle left the LT array unshifted.
 func TestADroppedRowTakesItsLogicalTimeWithIt(t *testing.T) {
 	perMessage := [][]json.RawMessage{
 		{toolUse("call_1")},
@@ -396,7 +344,6 @@ func TestADroppedRowTakesItsLogicalTimeWithIt(t *testing.T) {
 	require.Equal(t, len(rows), len(gotLTs), "a pair cannot desynchronize")
 	require.Equal(t, uint64(4), gotLTs[len(gotLTs)-1], "the last row still carries LT 4")
 
-	// And the tag lands on the row that carries the time it names.
 	req, seq, err := a.projectRequest(provider.PerMessageRows(perMessage, lts), snap, nil, 4096, false, "claude-opus-5")
 	require.NoError(t, err)
 	marked, _ := provider.CollectRows(seq)

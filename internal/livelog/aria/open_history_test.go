@@ -6,18 +6,8 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// A PREFIX PAGE MUST NOT DECLARE A HOLE OVER THE LIVE SUFFIX.
-//
-// More.After is a claim about what lies above a page's last node. A backward
-// read into a running turn ends below the streaming suffix, so its After is
-// true, and truthfully: there IS more above it. But we are holding that more,
-// in the open tail, which adoptMoreAfter did not count as coverage because
-// coverage came from Store.Top() and the open tail is not a range.
-//
-// So the store came to believe in a hole above a tail it already had. That is
-// the 494-read loop by another road: the pager reads to fill the hole, the
-// read returns what it holds, nothing changes, and it reads again on the next
-// frame, forever.
+// A backward read into a running turn ends below the streaming suffix with
+// More.After true; the open tail is coverage and must not become a hole.
 func TestClient_PrefixPageDoesNotOpenAHoleOverTheOpenTurn(t *testing.T) {
 	s := NewServer()
 	s.Restore([]Turn{{ID: 5, Inquiry: "earlier", Sealed: true, Nodes: longNodes(1)}})
@@ -45,8 +35,7 @@ func TestClient_PrefixPageDoesNotOpenAHoleOverTheOpenTurn(t *testing.T) {
 	}
 }
 
-// And the converse, so the coverage claim cannot simply be "always covered":
-// a page that really does stop below the tail must still be able to say so.
+// A page that really does stop below the tail must still be able to say so.
 func TestClient_AHistoryPageStillReportsMoreAbove(t *testing.T) {
 	s := NewServer()
 	turns := []Turn{{ID: 5, Inquiry: "earlier", Sealed: true, Nodes: longNodes(1)}}

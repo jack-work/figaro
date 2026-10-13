@@ -7,8 +7,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// sgrOf is the escape one of term's roles opens with, so a test can ask which
-// voice painted a row without stripping the answer away.
 func sgrOf(paint func(string) string) string {
 	s := paint("\x00")
 	return s[:strings.IndexByte(s, 0)]
@@ -22,7 +20,6 @@ func lineText(ls []FencedLine) []string {
 	return out
 }
 
-// The fence is punctuation: it declares the region and is not part of it.
 func TestFencedLinesSplitsDiffRegionsAndDropsTheFences(t *testing.T) {
 	text := "running the patch\n```figdiff\n-old\n+new\n```\ndone"
 	got := FencedLines(text)
@@ -36,8 +33,6 @@ func TestFencedLinesSplitsDiffRegionsAndDropsTheFences(t *testing.T) {
 	}
 }
 
-// A stream cut inside a block still draws as a diff: the region is open until
-// something closes it, and half a diff is still a diff.
 func TestFencedLinesUnclosedRegionStaysOpen(t *testing.T) {
 	got := FencedLines("```diff\n+added")
 	if len(got) != 1 || !got[0].Diff || got[0].Text != "+added" {
@@ -45,8 +40,6 @@ func TestFencedLinesUnclosedRegionStaysOpen(t *testing.T) {
 	}
 }
 
-// Fences this scanner has no opinion about are left where they are, text and
-// all: it is not a markdown parser.
 func TestFencedLinesLeavesOtherFencesAlone(t *testing.T) {
 	text := "```go\nfunc f() {}\n```"
 	got := lineText(FencedLines(text))
@@ -58,7 +51,6 @@ func TestFencedLinesLeavesOtherFencesAlone(t *testing.T) {
 	}
 }
 
-// The file headers are read before the +/- lines they start with.
 func TestDiffPaintReadsTheMarkers(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	same := func(a, b func(string) string) bool { return a("x") == b("x") }
@@ -80,7 +72,6 @@ func TestDiffPaintReadsTheMarkers(t *testing.T) {
 	}
 }
 
-// A wrapped continuation keeps its source line's side of the diff.
 func TestDiffRowsWrapKeepsTheSide(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	rows := DiffRows("+abcdefghij", 5)
@@ -94,8 +85,6 @@ func TestDiffRowsWrapKeepsTheSide(t *testing.T) {
 	}
 }
 
-// Prose draws a fenced diff itself, in figaro's colours, rather than handing
-// it to the highlighter.
 func TestProseDrawsFencedDiffs(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	rows := Prose("before\n\n```diff\n-old line\n+new line\n```\n\nafter", 60)

@@ -1,6 +1,5 @@
-// Package formdelta derives, for each IR record, the form state a reader
-// of a transcript would have needed to understand it: what changed on the
-// bound board, on every studied form, and the moment a role was recast.
+// Package formdelta derives, per IR record, what changed on the bound board
+// and on every studied form.
 package formdelta
 
 import (
@@ -13,26 +12,18 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// Backend is the slice of the store this package reads. Satisfied by
-// *store.XwalBackend; an ephemeral backend has neither boards on disk nor
-// librettos, and an ephemeral aria simply carries no deltas -- the field
-// is absent, not synthesized from the provider path.
 type Backend interface {
 	FormPatchesBetween(ariaID string, after, upTo uint64) ([]store.VersionedPatch, error)
 	Libretto(sourceFormID string) (*store.Libretto, error)
 }
 
-// Seed is where the cursors stood just before a window of entries: the
-// stamps of the record PRECEDING it. A walk from the head of the log seeds
-// zero; a backward page that omits it attributes everything before its
-// first record to that record, which is over-attribution in the direction
-// a reader cannot detect.
+// Seed is the stamps of the record preceding a window. A backward page that
+// omits it attributes everything before its first record to that record.
 type Seed struct {
 	Form    uint64
 	Studies map[string]uint64
 }
 
-// SeedFrom reads a seed off the record preceding a window.
 func SeedFrom(e store.Entry[message.Message]) Seed {
 	s := Seed{Form: e.FormChannelVersion}
 	if len(e.StudyVersions) > 0 {
@@ -44,13 +35,11 @@ func SeedFrom(e store.Entry[message.Message]) Seed {
 	return s
 }
 
-// PerRecord walks the IR entries in order and returns each record's
-// deltas, keyed by the record's LT and then by "<formid>.<path>".
+// PerRecord returns each record's deltas keyed by LT, then "<formid>.<path>".
 func PerRecord(b Backend, ariaID string, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	return PerRecordFrom(b, ariaID, Seed{}, entries)
 }
 
-// PerRecordFrom is PerRecord with the cursors seeded; see Seed.
 func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	if b == nil || ariaID == "" {
 		return nil
@@ -65,8 +54,6 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 
 	for _, entry := range entries {
 		if entry.Payload.Role == message.RoleGenesis {
-			// Genesis is furniture: advance the cursors (the stamp is
-			// still where the forms stood) and attribute nothing to it.
 			lastForm = maxU64(lastForm, entry.FormChannelVersion)
 			for fid, upTo := range entry.StudyVersions {
 				lastStudy[fid] = maxU64(lastStudy[fid], upTo)
@@ -76,7 +63,6 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 
 		deltas := map[string]livedoc.FormDelta{}
 
-		// The bound board: (lastForm, entry.FormChannelVersion].
 		if entry.FormChannelVersion > lastForm {
 			if ps, err := b.FormPatchesBetween(ariaID, lastForm, entry.FormChannelVersion); err == nil {
 				for _, vp := range ps {
@@ -86,11 +72,9 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 			lastForm = entry.FormChannelVersion
 		}
 
-		// The observed set: the same derivation per member, from the same
-		// stamp, read through the libretto -- the copy, which outlives its
-		// source and is the only place a dead form's transitions exist.
+		// Read through the libretto: the copy outlives its source and is the
+		// only place a dead form's transitions exist.
 		for fid, upTo := range entry.StudyVersions {
-			// ADVANCE FIRST, whatever happens below.
 			prev := lastStudy[fid]
 			lastStudy[fid] = maxU64(prev, upTo)
 			if upTo <= prev {
@@ -119,14 +103,8 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 	return out
 }
 
-// studiedForm is one observed form's read state for the walk: the
-// libretto (nil when it could not be opened) and whether the copy carries
-// target-aria, which is what makes it a role. The kind is decided here,
-// server-side, so three clients do not each invent the predicate -- and
-// it is decided ONCE per assembly, from the copy's state as it stands
-// now: a form that became a role mid-history renders as a role
-// throughout, which is what grouping wants, and the recast moment itself
-// is still visible as the target-aria delta.
+// role is decided once per assembly from the copy's current state: a form
+// that became a role mid-history renders as a role throughout.
 type studiedForm struct {
 	lib  *store.Libretto
 	role bool
@@ -144,7 +122,6 @@ func openStudied(b Backend, fid string) *studiedForm {
 	return sf
 }
 
-// foldPatch renders one bound-board patch into deltas.
 func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.FormKind, p message.Patch) {
 	for _, ent := range p.Entries() {
 		k, v := ent.Key, ent.New
@@ -166,10 +143,8 @@ func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.
 	}
 }
 
-// foldStudied renders one studied-form patch: machinery stripped except
-// the death, which arrives as FormDeleted on the form itself rather than
-// as a key -- a reader needs "the form is gone", not the name of the
-// bookkeeping key that recorded it.
+// foldStudied strips libretto machinery; the death arrives as FormDeleted on
+// the form itself rather than as a key.
 func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedForm, p message.Patch) {
 	kind := livedoc.FormStudied
 	if sf.role {
@@ -210,13 +185,8 @@ func maxU64(a, b uint64) uint64 {
 	return a
 }
 
-// Attach folds per-record deltas onto the turns they belong to. The rule,
-// chosen deliberately (plans/form-deltas-in-ui-ir.md §2): a window closes
-// on the node projected from the record that carries the stamp -- for a
-// tool round that is the tool node, which claims both the invoke and the
-// result record. A record that projects no node (the turn's opening
-// inquiry, or furniture) attaches to the TURN, exactly as Turn.At does,
-// so nothing is computed and then dropped on the floor.
+// Attach folds per-record deltas onto the node projected from the record
+// carrying the stamp; a record that projects no node attaches to the turn.
 func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 	if len(deltas) == 0 {
 		return
@@ -226,9 +196,7 @@ func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 		if len(t.LTs) < 2 {
 			continue
 		}
-		// First node to claim an LT wins: one record can project several
-		// nodes (three content blocks are three nodes), and one record's
-		// state must render once.
+		// First node to claim an LT wins: one record's state renders once.
 		claimed := map[uint64]int{}
 		for ni := range t.Nodes {
 			for _, src := range t.Nodes[ni].Src {
@@ -250,26 +218,14 @@ func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 				t.Nodes[ni].FormDeltas = merge(t.Nodes[ni].FormDeltas, d)
 				continue
 			}
-			// THE SEAM. A record that projects no node and trails every
-			// node of this turn was written after the turn had been
-			// composed, so the turn never saw its state: the first context
-			// it entered is the turn after it. A fork's birth record is
-			// exactly this, and the LT range of the PARENT's last turn
-			// swallows it -- which is how the fork banner came to draw
-			// under the wrong message (aria 5d366cc5). The turn's own
-			// opening record is never a seam, so a turn with no nodes
-			// keeps its inquiry window.
+			// A record that projects no node and trails every node of this
+			// turn (a fork's birth record) belongs to the turn after it; with
+			// no turn after it, it waits for the composition that has one
+			// (Agent.stampSealDeltas on the live path).
 			if lt > t.LTs[0] && lt > lastClaimed {
 				if ti+1 < len(turns) {
 					turns[ti+1].FormDeltas = merge(turns[ti+1].FormDeltas, d)
 				}
-				// WITH NO TURN AFTER IT, A SEAM WAITS. Attributing it
-				// backwards is the bug above; attributing it to a turn
-				// that does not exist yet is not possible; and the state
-				// has not been shown to anything, so there is no honest
-				// row for it. The next composition that HAS the turn
-				// places it (the live path widens the sealing turn's
-				// window for exactly this: Agent.stampSealDeltas).
 				continue
 			}
 			t.FormDeltas = merge(t.FormDeltas, d)
@@ -277,11 +233,7 @@ func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 	}
 }
 
-// AttachOne folds a window of per-record deltas onto ONE turn: each node
-// takes the records it projected, the turn takes the rest. No seam rule --
-// the caller chose the window, and there is no turn after this one to defer
-// to. The live seal path uses it (Agent.stampSealDeltas); Attach is for a
-// slice of turns whose boundaries are the question.
+// AttachOne is Attach for one turn, without the seam rule.
 func AttachOne(t *aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 	if t == nil || len(deltas) == 0 {
 		return
@@ -304,9 +256,7 @@ func AttachOne(t *aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 	}
 }
 
-// orderedLTs is chronological order for a fold that reads a map. The fold
-// is a collapse: the same records must produce the same deltas, so the
-// walk is never map order.
+// The fold collapses, so the walk is never map order.
 func orderedLTs(deltas map[uint64]map[string]livedoc.FormDelta) []uint64 {
 	lts := make([]uint64, 0, len(deltas))
 	for lt := range deltas {
@@ -316,9 +266,8 @@ func orderedLTs(deltas map[uint64]map[string]livedoc.FormDelta) []uint64 {
 	return lts
 }
 
-// merge collapses a later record's deltas onto an earlier fold. A key
-// touched twice in one window renders as one transition: the FIRST Prev
-// (where the key stood when the window opened) to the LAST Value.
+// merge: a key touched twice in one window renders as first Prev to last
+// Value.
 func merge(into, from map[string]livedoc.FormDelta) map[string]livedoc.FormDelta {
 	if into == nil {
 		into = make(map[string]livedoc.FormDelta, len(from))
@@ -329,8 +278,6 @@ func merge(into, from map[string]livedoc.FormDelta) map[string]livedoc.FormDelta
 	return into
 }
 
-// put records one key's transition, keeping the Prev already standing:
-// the window's old side is where the key stood when it opened.
 func put(deltas map[string]livedoc.FormDelta, key string, d livedoc.FormDelta) {
 	if prior, ok := deltas[key]; ok {
 		d.Prev = prior.Prev

@@ -19,9 +19,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// grok-4.7's catalog entry offers only "/responses"; its socket answers
-// internal_error. The SSE keeps the framing of a live capture (2026-10-09),
-// identifiers and quota data removed.
+// A catalog entry that offers only "/responses" must take the HTTP route.
 const grokTextSSE = `event: response.created
 data: {"response":{"id":"r1","status":"in_progress","output":[],"usage":null},"sequence_number":0,"type":"response.created"}
 
@@ -72,10 +70,8 @@ func (s *copilotRouteServer) snapshot() (int, int, map[string]any, http.Header) 
 	return s.sockets, s.posts, s.postBody, s.postHead
 }
 
-// newCopilotRouteServer answers /models with one catalog entry and /responses
-// over whichever transport the client chooses, counting each. The socket side
-// replies as gpt does; the POST side replies with sse, or with the status and
-// body of the first entry of rejects while any remain.
+// newCopilotRouteServer counts each transport; the POST side replies with
+// sse, or with the first of rejects while any remain.
 func newCopilotRouteServer(t *testing.T, model string, endpoints []string, sse string, rejects ...string) (*httptest.Server, *copilotRouteServer) {
 	t.Helper()
 	rec := &copilotRouteServer{}
@@ -216,8 +212,7 @@ func TestAModelOfferedOnlyOverHTTPStreamsOverHTTP(t *testing.T) {
 	}
 }
 
-// The control for the test above: a model that offers the socket still gets
-// one, so the HTTP route is a choice the catalog made and not the new default.
+// A model that offers the socket still gets one.
 func TestAModelOfferedASocketStillGetsTheSocket(t *testing.T) {
 	srv, rec := newCopilotRouteServer(t, "gpt-test", []string{"/responses", "ws:/responses"}, grokTextSSE)
 
@@ -253,8 +248,7 @@ func (r *countingResolver) Invalidate(token string) error {
 	return nil
 }
 
-// A 401 on the POST is the expired-session case the socket handshake already
-// recovers from: invalidate, mint, send once more.
+// A 401 on the POST is an expired session: invalidate, mint, send once more.
 func TestAnHTTPUnauthorizedRemintsAndRetriesOnce(t *testing.T) {
 	srv, rec := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, grokTextSSE,
 		`401 {"error":{"message":"token expired","code":"unauthorized"}}`)
@@ -279,7 +273,6 @@ func TestAnHTTPUnauthorizedRemintsAndRetriesOnce(t *testing.T) {
 	}
 }
 
-// Any other rejection is reported with its class and status, and not retried.
 func TestAnHTTPRejectionIsClassifiedNotRetried(t *testing.T) {
 	srv, rec := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, grokTextSSE,
 		`400 {"error":{"message":"model is not accessible via this endpoint","code":"unsupported_api_for_model"}}`)
@@ -299,8 +292,6 @@ func TestAnHTTPRejectionIsClassifiedNotRetried(t *testing.T) {
 	}
 }
 
-// A stream that stops before a terminal event is a broken stream, not a
-// completed one.
 func TestAnHTTPStreamThatEndsEarlyIsAnError(t *testing.T) {
 	cut := grokTextSSE[:strings.Index(grokTextSSE, "event: response.completed")]
 	srv, _ := newCopilotRouteServer(t, "grok-test", []string{"/responses"}, cut)

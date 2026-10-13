@@ -7,10 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// TestEveryNodeIsStamped: a node's time comes from the message it was written
-// in, so it survives the daemon that composed it. The live clocks a turn keeps
-// are gone once it is read back from the log, and a block with no time on it
-// cannot be placed in the conversation.
+// A node's time comes from its message, so it survives a reload.
 func TestEveryNodeIsStamped(t *testing.T) {
 	const (
 		asked  = 1788903160000

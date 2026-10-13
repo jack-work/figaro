@@ -17,21 +17,11 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// THE DENOMINATOR QUESTION.
-//
-// The live composer reports a stable node count and aria.Server skips diffing
-// that prefix. OpenTurn replaces the open frame outright, so ANY caller of it
-// resets that count to zero -- and if it fired once per ROUND, the steady state
-// the benchmarks measure (a long multi-round turn accumulating one open frame)
-// would be a state the daemon never reaches, and the speedup would be a
-// property of the fixture rather than of the product.
-//
-// Live.V is the open frame's version and OpenTurn resets it to 0, so the
-// question is answerable from the WIRE, without reaching into the agent: count
-// the V==0 frames inside one turn.
+// OpenTurn resets the open frame's stable count. If it fired once per round,
+// the accumulating steady state the benchmarks measure would be unreachable.
+// Live.V==0 marks a reopen, so the count is read from the wire.
 
-// twoRoundProvider emits a tool call on its first Send and a final answer on
-// its second, so the agent's real loop runs two rounds inside ONE turn.
+// twoRoundProvider runs two rounds inside one turn.
 type twoRoundProvider struct{ sends int }
 
 func (p *twoRoundProvider) Name() string                                             { return "mock" }
@@ -126,9 +116,7 @@ loop:
 	if len(versions) == 0 {
 		t.Fatal("no live frames arrived; nothing to conclude")
 	}
-	// ONE reopen per turn, not one per round. More than one V==0 inside a
-	// single turn means the open frame was replaced mid-turn, which resets the
-	// stable count and makes the accumulating steady state unreachable.
+	// One reopen per turn, not one per round.
 	if zeros != 1 {
 		t.Errorf("saw %d live frames at version 0 across %d rounds; want exactly 1\n"+
 			"the open frame is being replaced per round, so the stable count never accumulates\nversions: %v",
@@ -136,14 +124,7 @@ loop:
 	}
 }
 
-// TestOpenFrameIsReplacedByARenderableSteer is the canary for the test above:
-// it proves the V==0 counter can read more than one, and it names the ONE
-// thing that does replace the open frame mid-turn.
-//
-// startAssistantUnit -- the only caller of OpenTurn -- runs once when the turn
-// opens and again only when a renderable prompt arrives mid-turn and splits
-// the unit. So a steer is the case that resets the stable count, and rounds
-// are not.
+// The canary: a renderable steer is the one thing that replaces the open frame mid-turn.
 func TestOpenFrameIsReplacedByARenderableSteer(t *testing.T) {
 	cb, _ := form.Open("")
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -166,7 +147,7 @@ func TestOpenFrameIsReplacedByARenderableSteer(t *testing.T) {
 	ch, unsub := subscribeChan(a)
 	defer unsub()
 	a.SubmitPrompt(rpc.QuaRequest{Text: "do the thing"})
-	// A steer must arrive WHILE the turn runs; that is what makes it a steer.
+	// A steer must arrive while the turn runs.
 	go func() {
 		time.Sleep(15 * time.Millisecond)
 		a.SubmitPrompt(rpc.QuaRequest{Text: "actually, do it differently"})

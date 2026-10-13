@@ -10,14 +10,10 @@ import (
 
 const tailRepairNotice = "process died mid-turn; output not captured"
 
-// repairTailLookback bounds the read that finds an unanswered call. A call is
-// left open only by a process that died with it in flight, so nothing was
-// appended after it: it is at the tail, within one round of it. Reading the
-// history to find it is the whole-log walk this must never be, and it ran at
-// every open of every aria.
+// repairTailLookback bounds the read: an open call sits within one round of
+// the tail, and this runs at every open of every aria.
 const repairTailLookback = 64
 
-// repairInterruptedTail closes any tool call this aria's history left open.
 func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (store.Entry[message.Message], bool) {
 	rows := store.TailSnapshot(stream, repairTailLookback)
 	at := -1
@@ -30,10 +26,8 @@ func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (st
 	if at < 0 {
 		return store.Entry[message.Message]{}, false
 	}
-	// A PARTIAL answer is unrecoverable and must be left alone. Providers
-	// want the results in the message immediately after the call, and an
-	// append-only log cannot splice one in front of a tic that is already
-	// there. Only a call nobody answered at all can still be closed.
+	// A partial answer is left alone: an append-only log cannot splice a result
+	// in front of a tic already there. Only a wholly unanswered call can be closed.
 	for _, e := range rows[at+1:] {
 		for _, c := range e.Payload.Content {
 			if c.Type == message.ContentToolResult {

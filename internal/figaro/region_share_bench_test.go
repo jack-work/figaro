@@ -6,17 +6,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// WHAT SHARE OF A FRAME IS STILL THE REGION MATERIALIZATION?
-//
-// The read-side change was queued on the premise that composeTurn re-reads the
-// whole open region every frame -- ReadFrom copies the entries, and the loop
-// copies them again into []message.Message -- and that this is the last of the
-// frame residue. That premise deserves a number before it gets an
-// implementation, because everything around it has moved: the composer is
-// incremental and the server no longer diffs the settled prefix.
-//
-// This isolates exactly the two copies, against the same fixture the whole
-// frame is measured on, so the share is a division rather than an opinion.
+// Isolates the two copies composeTurn's region read makes, against the frame fixture.
 func BenchmarkRegionMaterializationOnly(b *testing.B) {
 	a := openRegionAgent(64, 200, true)
 	b.ReportAllocs()

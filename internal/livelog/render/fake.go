@@ -6,13 +6,8 @@ import (
 	"strings"
 )
 
-// FakeTerminal is an in-memory VT implementing Terminal. It interprets the
-// subset of ANSI the renderer emits (cursor up/down, CR/LF with scroll, erase
-// line, clear screen/scrollback, and the DECSTBM scroll region with SU/SD)
-// into a growing line grid, so tests assert on exactly what a real terminal
-// would show: deterministically, no tty. It is a public type on purpose: it's
-// the shared mock for isolation-testing the renderer and the end-to-end
-// pipeline.
+// FakeTerminal is an in-memory VT interpreting the ANSI subset the renderer
+// emits into a line grid, so tests assert on what a real terminal would show.
 type FakeTerminal struct {
 	lines    [][]rune
 	row, col int
@@ -22,22 +17,20 @@ type FakeTerminal struct {
 	autowrap bool
 
 	// Scroll region (DECSTBM), 0-based and relative to the viewport top.
-	// regSet distinguishes "the whole viewport" (the reset state) from a region
-	// that happens to cover it, so a viewport resize keeps tracking.
+	// regSet distinguishes the reset state from a region that happens to
+	// cover the viewport, so a resize keeps tracking.
 	regTop, regBot int
 	regSet         bool
 }
 
-// NewFakeTerminal creates a VT of the given size.
 func NewFakeTerminal(width, height int) *FakeTerminal {
 	return &FakeTerminal{width: width, height: height}
 }
 
 func (t *FakeTerminal) Size() (int, int) { return t.width, t.height }
 
-// Resize changes the viewport size, emulating a SIGWINCH: on a shrink the
-// cursor is kept inside the new viewport (content scrolls up), as a terminal
-// does. The renderer is expected to reconcile on the next draw.
+// Resize emulates a SIGWINCH: on a shrink the cursor is kept inside the new
+// viewport, as a terminal does.
 func (t *FakeTerminal) Resize(width, height int) {
 	t.width, t.height = width, height
 	if t.height > 0 && t.row > t.top+t.height-1 {
@@ -56,7 +49,7 @@ func (t *FakeTerminal) Write(p []byte) (int, error) {
 				i += len([]rune(m[0]))
 				continue
 			}
-			i++ // unrecognized escape: skip the ESC
+			i++
 			continue
 		}
 		switch rs[i] {
@@ -81,7 +74,7 @@ func (t *FakeTerminal) csi(params, final string) {
 		n, _ = strconv.Atoi(strings.SplitN(params, ";", 2)[0])
 	}
 	switch final {
-	case "A": // cursor up: clamps at the viewport top (can't enter scrollback)
+	case "A": // cursor up clamps at the viewport top
 		t.row -= n
 		if t.row < t.top {
 			t.row = t.top
@@ -89,13 +82,13 @@ func (t *FakeTerminal) csi(params, final string) {
 		if t.row < 0 {
 			t.row = 0
 		}
-	case "B": // cursor down: clamps at the viewport bottom (no scroll)
+	case "B": // cursor down clamps at the viewport bottom, no scroll
 		t.row += n
 		if t.height > 0 && t.row > t.top+t.height-1 {
 			t.row = t.top + t.height - 1
 		}
 		t.ensure(t.row)
-	case "H": // cursor position (CUP): 1-based row;col, default 1;1
+	case "H": // CUP: 1-based row;col, default 1;1
 		row, col := 1, 1
 		if params != "" {
 			p := strings.SplitN(params, ";", 2)
@@ -114,7 +107,7 @@ func (t *FakeTerminal) csi(params, final string) {
 			t.col = 0
 		}
 		t.ensure(t.row)
-	case "K": // erase line (0K from cursor, 2K whole line)
+	case "K":
 		t.ensure(t.row)
 		if n == 2 {
 			t.lines[t.row] = nil
@@ -122,7 +115,7 @@ func (t *FakeTerminal) csi(params, final string) {
 		} else if t.col < len(t.lines[t.row]) {
 			t.lines[t.row] = t.lines[t.row][:t.col]
 		}
-	case "r": // DECSTBM: set the scroll region (no params = reset to full screen)
+	case "r": // DECSTBM; no params resets
 		if params == "" {
 			t.regSet = false
 		} else {
@@ -139,16 +132,16 @@ func (t *FakeTerminal) csi(params, final string) {
 		// A real terminal homes the cursor on DECSTBM.
 		t.row, t.col = t.top, 0
 		t.ensure(t.row)
-	case "S": // SU: scroll the region up n lines, blanking in at the bottom
+	case "S":
 		t.scrollRegion(max(n, 1))
-	case "T": // SD: scroll the region down n lines, blanking in at the top
+	case "T":
 		t.scrollRegion(-max(n, 1))
 	case "J":
 		switch n {
-		case 2, 3: // clear screen / scrollback: full reset (the pi full-redraw)
+		case 2, 3:
 			t.lines = nil
 			t.row, t.col, t.top = 0, 0, 0
-		default: // 0J: erase from the cursor to the end of screen (scrollback above kept)
+		default: // 0J: scrollback above is kept
 			t.ensure(t.row)
 			if t.col < len(t.lines[t.row]) {
 				t.lines[t.row] = t.lines[t.row][:t.col]
@@ -158,7 +151,6 @@ func (t *FakeTerminal) csi(params, final string) {
 	}
 }
 
-// region returns the absolute row bounds of the current scroll region.
 func (t *FakeTerminal) region() (int, int) {
 	lo, hi := t.top, t.top+t.height-1
 	if t.height <= 0 {
@@ -173,10 +165,8 @@ func (t *FakeTerminal) region() (int, int) {
 	return lo, hi
 }
 
-// scrollRegion moves the scroll region's content by n rows (n>0 up, n<0 down),
-// blanking the rows that roll in. Blanked rows come in EMPTY here: the grid is
-// rune-only, so there is no background to inherit: which is exactly the case
-// the pager's painter guarantees by leaving every row in default SGR.
+// scrollRegion moves the scroll region's content by n rows (n>0 up, n<0
+// down), blanking the rows that roll in.
 func (t *FakeTerminal) scrollRegion(n int) {
 	lo, hi := t.region()
 	if hi <= lo {
@@ -230,12 +220,10 @@ func (t *FakeTerminal) put(r rune) {
 	}
 }
 
-// Row returns the current cursor row (absolute, untrimmed): lets tests assert
-// where the cursor lands, which Screen() can't show (it trims trailing blanks).
+// Row is the cursor row, absolute and untrimmed.
 func (t *FakeTerminal) Row() int { return t.row }
 
-// Screen returns the full transcript (scrollback + viewport), trailing blank
-// lines trimmed.
+// Screen is the full transcript, scrollback included, trailing blanks trimmed.
 func (t *FakeTerminal) Screen() []string {
 	out := make([]string, 0, len(t.lines))
 	for _, l := range t.lines {

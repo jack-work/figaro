@@ -9,10 +9,8 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// A flat patch no longer decodes: cmd/figaro-form-migrate rewrites the form
-// channel in place, replaying each node so every record is converted against
-// the board it lands on. That is what makes the result invertible, which a
-// decoder with no board could never be.
+// A flat patch no longer decodes; migration replays each record against the
+// board it lands on.
 
 func TestLegacyFlatSnapshotNests(t *testing.T) {
 	var s form.Snapshot
@@ -21,13 +19,11 @@ func TestLegacyFlatSnapshotNests(t *testing.T) {
 	require.Equal(t, "/tmp", *s.Lookup("system.cwd"))
 	require.Equal(t, "hi", *s.Lookup("mantra"))
 
-	// Nested for real: system is a branch with two members.
 	v, ok := s.Get("system")
 	require.True(t, ok)
 	require.JSONEq(t, `{"model":"m","cwd":"/tmp"}`, string(v))
 }
 
-// The collision that flatness could not express.
 func TestLeafAndPrefixBothAddressable(t *testing.T) {
 	s := form.FromMap(map[string]json.RawMessage{
 		"skills.howto":    json.RawMessage(`"the skill"`),

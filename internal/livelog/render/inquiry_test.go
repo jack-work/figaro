@@ -8,26 +8,20 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// THE QUESTION IS TEXT ON THE TURN, and the inline renderer draws it from
-// there. It used to be Nodes[0], which is why nothing here had to know about
-// it; now the live region has to paint it itself, at submit: before a single
-// token of the reply exists, and keep it through every repaint until the
-// exchange freezes, ONCE.
+// The live region paints the question at submit and keeps it through every
+// repaint until the exchange freezes, once.
 func TestIncipit_InquiryPaintsAtSubmitAndFreezesOnce(t *testing.T) {
 	ft := NewFakeTerminal(60, 24)
 	in := NewIncipit(ft, NodeText{})
 	withChrome(in)
 
-	// Submit: the question is all there is. The agent's header must not appear
-	// over an empty body.
+	// The agent's header must not appear over an empty body.
 	in.OpenThinking(livedoc.RoleOutput)
 	in.Open(aria.Message{Turn: 1, Inquiry: "WHATSTHEWORD", Role: livedoc.RoleInput})
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "WHATSTHEWORD") {
 		t.Fatalf("the question must paint the instant it is asked:\n%s", scr)
 	}
 
-	// The reply streams into the same region, then a tick repaints it: the
-	// question is region state, so a repaint that forgot it would drop it.
 	reply := []livedoc.Node{{ID: "a0", Type: "prose", Markdown: "REDRUM"}}
 	exchange := aria.Message{Turn: 1, Inquiry: "WHATSTHEWORD", Role: livedoc.RoleOutput, Nodes: reply}
 	in.Open(exchange)
@@ -47,8 +41,7 @@ func TestIncipit_InquiryPaintsAtSubmitAndFreezesOnce(t *testing.T) {
 	}
 }
 
-// A LATER slice of the same turn carries no inquiry (only the first does), so
-// the question must not reappear above the second half of a steered reply.
+// A later slice of the same turn carries no inquiry.
 func TestIncipit_LaterSliceDoesNotRepeatTheQuestion(t *testing.T) {
 	ft := NewFakeTerminal(60, 24)
 	in := NewIncipit(ft, NodeText{})

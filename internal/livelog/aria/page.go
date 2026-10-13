@@ -8,27 +8,17 @@ import (
 )
 
 // nodeSize is a node's cost against the page budget: its serialized length.
-// The budget exists to bound wire bytes and client memory, so measuring the
-// bytes themselves is the honest metric: node count is not a proxy for it
-// (a prose node may be 40 bytes, a tool node 40KB).
 func nodeSize(n livedoc.Node) int {
 	b, err := json.Marshal(n)
 	if err != nil {
-		// Unmarshalable nodes cannot reach the wire either; charge a nominal
-		// cost so pagination still terminates.
 		return 1
 	}
 	return len(b)
 }
 
-// cursor is a position in the flattened (turn, node) space.
 type cursor struct{ turn, node int }
 
-// units is how many positions a turn occupies. A turn with NO NODES but an
-// INQUIRY has one: the question is content -- a prompt that was never
-// answered, or one whose answer has not arrived -- and a walk that counts
-// only nodes cannot reach it, cannot anchor on it, and returns an empty
-// page for an aria whose whole history is one unanswered question.
+// units is how many positions a turn occupies; an inquiry with no nodes has one.
 func units(t Turn) int {
 	if n := len(t.Nodes); n > 0 {
 		return n
@@ -39,7 +29,6 @@ func units(t Turn) int {
 	return 0
 }
 
-// unitSize is a position's cost against the page budget.
 func unitSize(t Turn, i int) int {
 	if i < len(t.Nodes) {
 		return nodeSize(t.Nodes[i])
@@ -48,12 +37,8 @@ func unitSize(t Turn, i int) int {
 }
 
 // locate resolves an anchor to a cursor, and reports whether anything lies in
-// the direction of travel. An anchor outside the materialized range is not an
-// error: it is how a caller says "the end": a backward read from beyond the
-// last turn is the tail, and a forward read from there has nothing left to
-// give. Clamping both directions to the same cursor (as this once did) made a
-// forward read from beyond the end return the whole last turn, which a pager
-// joining at the tail then rendered a second time.
+// the direction of travel. A backward read from beyond the last turn is the
+// tail; a forward read from there has nothing to give.
 func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 	if len(turns) == 0 {
 		return cursor{}, false
@@ -81,11 +66,7 @@ func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 		}
 		return cursor{0, 0}, true
 	}
-	// Turn ids ascend, so find the anchor by bisection rather than by walking.
-	// ti is the largest index whose id is <= a.Turn (an exact hit when the turn
-	// is present, its predecessor otherwise): the same answer the linear scan
-	// gave. It matters because Paginate is called once PER PAGE, so an O(#turns)
-	// probe made walking a whole aria quadratic in the turn count.
+	// ti is the largest index whose id is <= a.Turn.
 	ti := sort.Search(len(turns), func(i int) bool { return turns[i].ID > a.Turn }) - 1
 	if ti < 0 {
 		ti = 0
@@ -100,7 +81,7 @@ func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 	return cursor{ti, ni}, true
 }
 
-// step advances a cursor one node in dir. ok is false at the ends.
+// step advances a cursor one node in dir; ok is false at the ends.
 func step(turns []Turn, c cursor, dir Direction) (cursor, bool) {
 	if dir == Backward {
 		if c.node > 0 {
@@ -124,16 +105,12 @@ func step(turns []Turn, c cursor, dir Direction) (cursor, bool) {
 	return c, false
 }
 
-// below reports whether c stands strictly earlier than f in reading order.
 func below(c, f cursor) bool {
 	return c.turn < f.turn || (c.turn == f.turn && c.node < f.node)
 }
 
-// floorAt resolves a floor anchor to the FIRST position at or above it. The
-// floor is inclusive of its own anchor, so an anchor naming a live position
-// resolves to that position; one naming a node past its turn's end, or a turn
-// that is not here, resolves up to the next position that exists. ok is false
-// when nothing in turns lies at or above the floor.
+// floorAt resolves a floor anchor to the first position at or above it; ok is
+// false when nothing lies there.
 func floorAt(turns []Turn, f Anchor) (cursor, bool) {
 	for ti := sort.Search(len(turns), func(i int) bool { return turns[i].ID >= f.Turn }); ti < len(turns); ti++ {
 		n := uint64(units(turns[ti]))
@@ -151,13 +128,12 @@ func floorAt(turns []Turn, f Anchor) (cursor, bool) {
 }
 
 // Paginate cuts one Page out of turns, walking from at in dir until budget
-// bytes are spent. It is pure: same inputs, same page, no clock, no state.
+// bytes are spent. Pure.
 func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	return paginate(turns, at, dir, budget, Anchor{})
 }
 
-// paginate is the one walk. floor applies to a BACKWARD walk and stops it at
-// the anchor, inclusive of the anchor itself; the zero anchor is no floor.
+// paginate is the one walk. floor applies backward, inclusive; zero is no floor.
 func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) Page {
 	if len(turns) == 0 || budget <= 0 {
 		return Page{}
@@ -166,7 +142,7 @@ func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) 
 	if floored {
 		var ok bool
 		if stop, ok = floorAt(turns, floor); !ok {
-			return Page{} // every position here is below the floor
+			return Page{}
 		}
 	}
 	start, ok := locate(turns, at, dir)
@@ -184,8 +160,7 @@ func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) 
 		return Page{}
 	}
 
-	// Walk, collecting positions until the budget is spent. Always take the
-	// first node so a page can never be empty.
+	// Always take the first node so a page can never be empty.
 	spent, end := 0, start
 	for c, ok := start, true; ok; c, ok = step(turns, c, dir) {
 		if floored && below(c, stop) {
@@ -205,41 +180,28 @@ func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) 
 	}
 
 	p := Page{Parts: assemble(turns, lo, hi)}
-	// More is about the whole conversation, not this window: is there any
-	// node before lo, or after hi. The cursors are the coordinates a caller
-	// reads at to get what More says is there.
 	_, hasPrev := step(turns, lo, Backward)
 	next, hasNext := step(turns, hi, Forward)
 	p.More.Before, p.More.After = hasPrev, hasNext
 	if hasPrev {
-		// Read BEFORE this page to continue backward, so the cursor is the
-		// page's own first coordinate: a backward read excludes its anchor.
+		// A backward read excludes its anchor, so Prev is the page's own first.
 		a := anchorAt(turns, lo)
 		p.Prev = &a
 	}
 	if hasNext {
-		// Read AT this to continue forward: one past what the page holds.
 		a := anchorAt(turns, next)
 		p.Next = &a
 	}
 	return p
 }
 
-// anchorAt is the UI coordinate a cursor stands on.
 func anchorAt(turns []Turn, c cursor) Anchor {
 	return Anchor{Turn: turns[c.turn].ID, Node: uint64(c.node)}
 }
 
-// PaginateBefore pages backward from an anchor, EXCLUDING the anchor node when
-// that node actually exists. "Before" means before: the caller already holds
-// the anchor: it is the oldest thing in its window and it asked for what
-// precedes it. Returning it again duplicates a message at every page boundary.
-//
-// floor stops the walk from below and is INCLUSIVE of its own anchor: a floor
-// of (t, 3) keeps nodes 3 and up of turn t and nothing of turn t-1. The zero
-// anchor is no floor. When the floor cuts the page, More.Before says so
-// exactly as a budget cut would: there is history below, the caller declined
-// to be sent it.
+// PaginateBefore pages backward from an anchor, excluding the anchor node when
+// it exists. floor is inclusive of its own anchor; the zero anchor is no floor.
+// A floor cut sets More.Before exactly as a budget cut would.
 func PaginateBefore(turns []Turn, at, floor Anchor, budget int) Page {
 	if len(turns) == 0 {
 		return Page{}
@@ -251,14 +213,13 @@ func PaginateBefore(turns []Turn, at, floor Anchor, budget int) Page {
 		}
 		prev, ok := step(turns, start, Backward)
 		if !ok {
-			return Page{} // the anchor is the oldest node; nothing precedes it
+			return Page{}
 		}
 		at = Anchor{Turn: turns[prev.turn].ID, Node: uint64(prev.node)}
 	}
 	return paginate(turns, at, Backward, budget, floor)
 }
 
-// assemble builds the parts spanning lo..hi inclusive, in reading order.
 func assemble(turns []Turn, lo, hi cursor) []TurnPart {
 	parts := make([]TurnPart, 0, hi.turn-lo.turn+1)
 	for ti := lo.turn; ti <= hi.turn; ti++ {
@@ -271,7 +232,6 @@ func assemble(turns []Turn, lo, hi cursor) []TurnPart {
 			last = hi.node
 		}
 		if len(t.Nodes) == 0 {
-			// An inquiry with no answer: one position, no nodes.
 			if units(t) == 0 {
 				continue
 			}
@@ -288,8 +248,7 @@ func assemble(turns []Turn, lo, hi cursor) []TurnPart {
 			ClippedTail: last < len(t.Nodes)-1,
 		}
 		part.Nodes = t.Nodes[first : last+1]
-		// The open suffix is only live for a window that reaches it. Below
-		// Live.From the nodes are closed and can never receive a delta.
+		// Below Live.From the nodes are closed and can never receive a delta.
 		if t.Live != nil && uint64(last) < t.Live.From {
 			part.Live = nil
 		}

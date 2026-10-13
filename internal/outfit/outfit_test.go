@@ -68,7 +68,6 @@ foo = { fileName = "foo.md" }
 func TestLoad_DirName(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "skills"), 0700))
-	// `go` has no frontmatter; `bravo` does.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "go.md"), []byte("go body"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "bravo.md"),
 		[]byte("---\nname: bravo\ndescription: B\n---\nbravo body"), 0600))
@@ -80,10 +79,6 @@ skills = { dirName = "skills" }
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 
-	// dirName fans entries out as dotted keys (skills.<base>) so each
-	// envelope is independently visible to completion pickers.
-	// Each skill is addressable at its own path rather than arriving as one
-	// blob under the parent.
 	for _, want := range []string{"skills.go", "skills.bravo"} {
 		if _, ok := patch.Entry(want); ok {
 			return
@@ -109,17 +104,12 @@ func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`x = 1`), 0600))
 
-	// Empty name no longer defaults to "config": callers must
-	// resolve the name (e.g. via config.DefaultOutfit) themselves.
 	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
 	assert.True(t, patch.IsIdentity(), "empty outfit name must yield empty patch")
 }
 
-// A subdirectory with a SKILL.md is one skill keyed by the dir name; the user's
-// skills merge under the BUNDLED ones, which win by name, an install must be
-// able to correct a skill it ships, and a config copy that outranks the binary
-// forever is a copy that silently falls behind it.
+// Bundled skills win by name over the user's copy.
 func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	bundled := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(bundled, "skills", "figaro"), 0700))
@@ -142,7 +132,6 @@ func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 
-	// Directory-as-skill: one key from SKILL.md; sections not surfaced.
 	var fig outfit.ContentEnvelope
 	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.figaro"), &fig))
 	assert.Equal(t, "name: figaro\ndescription: bundled", fig.Frontmatter)
@@ -150,8 +139,6 @@ func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	_, hasArch := patch.Entry("skills.architecture")
 	assert.False(t, hasArch, "section files must not surface as their own skills")
 
-	// Merge: a name the binary does not ship is the user's and is untouched; a
-	// name it does ship is the binary's.
 	var mine, shared outfit.ContentEnvelope
 	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.mine"), &mine))
 	assert.Equal(t, "user mine", mine.Content)

@@ -12,8 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-// A websocket never passes through http.RoundTripper, so unless the ledger
-// reads wirelog's stream attrs an aria talking over a socket reads as idle.
+// A websocket never passes through http.RoundTripper; the ledger must read wirelog's stream attrs.
 func TestProviderLedgerCarriesAFinishedStream(t *testing.T) {
 	installRing(t)
 
@@ -71,8 +70,6 @@ func TestProviderLedgerCarriesAFinishedStream(t *testing.T) {
 	}
 }
 
-// An open stream is current state; the record only exists once it is over,
-// and "it has been open two minutes with no events" is the incident.
 func TestProviderLedgerShowsARunningStream(t *testing.T) {
 	installRing(t)
 
@@ -103,8 +100,6 @@ func TestProviderLedgerShowsARunningStream(t *testing.T) {
 	}
 }
 
-// HTTP rounds must not sprout an empty stream block; the JSON for a
-// request/response call is unchanged by this feature.
 func TestProviderLedgerLeavesHTTPRoundsWithoutAStreamBlock(t *testing.T) {
 	installRing(t)
 

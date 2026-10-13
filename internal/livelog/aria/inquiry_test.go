@@ -9,18 +9,8 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// A CLIENT ALWAYS HAS THE QUESTION, AND KNOWS WHO ASKED IT.
-//
-// That is the property; "every part carries it" was one way to get it, and an
-// expensive one: on a measured tape the restated question was 38% of the
-// bytes pushed. A part is a delta against a turn the client already holds, so
-// an absent inquiry means UNCHANGED, exactly as an absent node field does.
-//
-// The bug this replaces is real and must not come back: the question used to
-// ride exactly one frame, and a client that subscribed after it held a turn
-// with content and no question until the turn ENDED. So the assertion is not
-// "the frames contain it" but "after folding any prefix of them, the client
-// can answer what was asked".
+// After folding any prefix of a turn's frames, the client can answer what
+// was asked and by whom. An absent inquiry on a part means unchanged.
 func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	const q = "WHATDIDIASK"
 	const who = "aria 123456"
@@ -43,8 +33,6 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 		t.Fatalf("fixture broken: only %d frames", len(frames))
 	}
 
-	// Fold every prefix. After each one the client must be able to say what was
-	// asked: including the very first frame that mentions the turn.
 	for n := 1; n <= len(frames); n++ {
 		c := client.NewClient()
 		for _, f := range frames[:n] {
@@ -55,11 +43,8 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 			t.Fatalf("after %d of %d frames the client cannot answer what was asked: %q",
 				n, len(frames), got)
 		}
-		// The text and its senders travel TOGETHER, always. A restatement
-		// carrying the text alone is not a harmless omission: the client holds
-		// what a part last said, so it would overwrite an attributed question
-		// with an unattributed one and the live surfaces would render a
-		// question nobody asked.
+		// The text and its senders travel together: a restatement carrying the
+		// text alone would overwrite an attributed question.
 		if sender != who {
 			t.Fatalf("after %d of %d frames the question lost its sender: %q",
 				n, len(frames), sender)
@@ -67,10 +52,7 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	}
 }
 
-// The form state a turn ENTERS with rides the frame that opens it. A fork's
-// birth patch is in that window and its banner is how a reader walks back to
-// the parent, so it must be readable while the child is still answering: it
-// used to appear only when the turn sealed, an answer later.
+// The form state a turn enters with rides the frame that opens it.
 func TestTheOpeningFrameCarriesTheFormState(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{
 		"a1.system.forked_from": {
@@ -102,7 +84,6 @@ func TestTheOpeningFrameCarriesTheFormState(t *testing.T) {
 		t.Fatalf("the fork banner is not on the open turn: %+v", fold())
 	}
 
-	// And the seal, which restates the turn, must not take it away again.
 	s.Close()
 	s.Seal(nil)
 	if _, ok := fold()["a1.system.forked_from"]; !ok {
@@ -110,8 +91,8 @@ func TestTheOpeningFrameCarriesTheFormState(t *testing.T) {
 	}
 }
 
-// A client that MISSED the opening frames: the case the whole design turns on
-// : recovers through the read it is required to issue on connect.
+// A client that missed the opening frames recovers through the read it
+// issues on connect.
 func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	const q = "WHATDIDIASK"
 	s := NewServer()
@@ -119,7 +100,6 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	s.OpenTurn(1)
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}}, 0)
 
-	// Subscribing now: everything so far was missed.
 	var late []Page
 	s.Subscribe(func(p Page) { late = append(late, p) })
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "more"}}, 0)
@@ -137,8 +117,6 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	}
 }
 
-// questionOf is what the client can say about a turn, through its own view -
-// not by reaching into the frames it was given.
 func questionOf(c *client.Client, turn int) (question, sender string) {
 	v := c.View()
 	for _, m := range append(append([]Message(nil), v.Closed...), open(v)...) {
@@ -159,9 +137,8 @@ func open(v client.View) []Message {
 	return []Message{*v.Open}
 }
 
-// The saving, asserted rather than described, and isolated, by driving the
-// SAME turn twice with questions of different lengths. The difference in bytes
-// pushed is the question's whole contribution, node traffic having cancelled.
+// Driving the same turn twice with questions of different lengths isolates
+// the question's contribution to bytes pushed.
 func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
 	drive := func(q string) (pushed, frames, carrying int) {
 		s := NewServer()
@@ -188,8 +165,7 @@ func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
 	long := strings.Repeat("a long question that costs real bytes ", 8)
 	big, _, _ := drive(long)
 
-	// Every restatement costs the whole question, so the delta divided by the
-	// question's length IS the number of times it crossed the wire.
+	// The delta divided by the question's length is how many times it crossed.
 	restatements := float64(big-short) / float64(len(long)-1)
 	if restatements > 3.5 {
 		t.Errorf("the question crossed the wire ~%.1f times over %d frames; want the establishing few",
@@ -202,9 +178,6 @@ func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
 		frames, carrying, restatements, big-short, len(long))
 }
 
-// BenchmarkTurnPushBytes measures what a streaming turn costs on the wire: the
-// bytes a subscriber is handed for one turn of forty frames, with a question of
-// realistic length. It reports B/turn so a before/after is one number.
 func BenchmarkTurnPushBytes(b *testing.B) {
 	q := "Use the write tool exactly once to write /var/tmp/x/opera.md: 25 numbered " +
 		"lines about Il barbiere di Siviglia. Then run: grep -c . /var/tmp/x/opera.md . " +

@@ -2,11 +2,6 @@ package config
 
 import "testing"
 
-// The agent is constructed without config in tests and for ephemeral arias, so
-// the accessors must answer on a nil receiver. If they did not, the agent would
-// need its own fallback constant: which is exactly the duplicated-policy bug
-// this project exists to kill: before this wiring, internal/figaro carried its
-// own defaultPageBudget AND silently dropped the ceiling.
 func TestPageBudgetPolicyIsNilSafe(t *testing.T) {
 	var l *Loaded
 
@@ -17,8 +12,6 @@ func TestPageBudgetPolicyIsNilSafe(t *testing.T) {
 		t.Errorf("nil PageBudgetMax() = %d, want %d", got, defaultPageBudgetMax)
 	}
 
-	// The ceiling is the half that used to be missing: an agent with no config
-	// must still refuse to materialize an unbounded page on a client's say-so.
 	for _, c := range []struct{ req, want int }{
 		{0, defaultPageBudget},          // unset -> server default
 		{-1, defaultPageBudget},         // nonsense -> server default

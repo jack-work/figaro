@@ -11,19 +11,8 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// A HEAD FORK SHARES EVERYTHING BUT THE LAST TURN.
-//
-// The branch is cut at the tail, so it owns no turn the parent has and a
-// reader hopping to it keeps the window. The one turn held back is the turn
-// the parent's log STOPS INSIDE, because that is the turn the two can still
-// disagree about: a fork taken while a tool is in flight leaves the child to
-// repair the hanging call with an error result, while the parent goes on to
-// complete the same call successfully. Same turn id, different content.
-//
-// It costs one turn of re-read, and it is right whether or not that turn was
-// still running, which is what a log cannot tell us. Raised by 27068b2c from a
-// tool-gated fork in a real pane; the read floor fixed the missing data, this
-// fixes the claim.
+// A head fork shares everything but the turn the parent's log stops inside: a
+// fork taken mid-tool leaves the child repairing a call the parent completes.
 func TestLineage_AHeadForkSharesAllButTheLastTurn(t *testing.T) {
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -62,16 +51,8 @@ func TestLineage_AHeadForkSharesAllButTheLastTurn(t *testing.T) {
 	}
 }
 
-// AND A RECORDED ANSWER THAT CAN STILL CHANGE IS NOT TRUSTED FOREVER. "Past
-// the end of the log" is not a coordinate, it is a statement about a log that
-// grows: the parent writes the record that coordinate names a second later and
-// the true answer moves. A head fork records the conservative answer at birth
-// (the turn the parent's log stops inside) and marks it inexact; the first
-// lineage read after the parent writes AT the base must see the new turn, and
-// must record it, so the next one reads no log.
-//
-// This used to be a test of an in-process memo that declined to cache the
-// unsealed answer. The answer is data on disk now; the property is the same.
+// A base recorded past the end is inexact; the first read after the parent
+// writes at the base must see and record the new turn.
 func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 	be, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -119,8 +100,7 @@ func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 	if got := divergence(); got != 3 {
 		t.Fatalf("a base past the end answers %d, want the turn the log stops inside", got)
 	}
-	// The parent writes the record that coordinate names. The answer is now a
-	// fact about a real record, and it must be the new one.
+	// The parent writes at the base; the answer must be the new one.
 	if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, TurnID: 4, Content: []message.Content{message.TextContent("q4")}}}); err != nil {
 		t.Fatal(err)

@@ -5,28 +5,8 @@ import (
 	"testing"
 )
 
-// The premature-break guard.
-//
-// glamour wraps a paragraph TWICE: once in ParagraphElement.Finish, once more
-// over the whole document block in BlockElement.Finish. Through v1.0.0 the
-// first pass was muesli/reflow's wordwrap, which writes a BREAKPOINT rune ('-',
-// its only default) to the buffer without adding it to lineLen: a line came
-// back ONE CELL TOO WIDE PER HYPHEN. The second pass (x/ansi.Wordwrap,
-// breakpoints " ,.;-+|") then re-wrapped that one line at the same limit and
-// pushed its last word down alone: never re-joining the line below, so the
-// tail of the paragraph came out orphaned:
-//
-//	Three hundred and forty-nine workshops. In one town. Making
-//	one
-//	thing.
-//
-// and, where the overhang landed on one of the second pass's own breakpoints,
-// as a lone comma or hyphen. It depends on the TEXT, not the width, which is
-// what made it look like a terminal bug for three rounds: every reported case
-// carried a hyphen earlier in the line.
-//
-// Measured over these four paragraphs at widths 30..100: v1.0.0 = 38 premature
-// breaks, glamour v2 (lipgloss.Wrap in the first pass) = 0.
+// glamour wraps a paragraph twice; a first pass that miscounts a breakpoint
+// rune makes the second orphan the paragraph's tail on its own row.
 
 var wrapCorpus = []string{
 	"Three hundred and forty-nine workshops. In one town. Making one thing.",
@@ -35,13 +15,8 @@ var wrapCorpus = []string{
 	"I need to respect the rate limit of one request per second, so I'll batch the queries together in a single bash command with 1.5-second delays between each request to stay safely under the limit.",
 }
 
-// prematureBreak re-wraps a block's own ink greedily at the widest row the
-// renderer itself produced, and reports the surplus rows.
-//
-// The oracle is SELF-CALIBRATING because comparing against the width we ASKED
-// for cannot work: glamour spends part of it on the document margin, so a
-// correct row is always a few cells short and a naive "was there room for the
-// next word" test fires on every line.
+// The oracle re-wraps at the widest row the renderer produced: the asked-for
+// width is spent partly on the document margin, so it cannot be the bound.
 func prematureBreak(rows []string) (int, string) {
 	var ink []string
 	budget := 0
@@ -96,13 +71,7 @@ func TestProse_NoPrematureBreak(t *testing.T) {
 	}
 }
 
-// TestProse_HyphenDoesNotWidenTheLine is the mechanism, asserted directly.
-//
-// The two texts are the SAME LENGTH: 'x' against '-' in the same slots: so
-// any difference in how they wrap is the hyphen's doing and nothing else.
-// Under reflow's miscount the hyphenated text wrapped up to three cells wider
-// (one per hyphen on the line), and that surplus is what the second pass
-// orphaned.
+// Same-length texts, 'x' against '-' in the same slots: any wrap difference is the hyphen's.
 func TestProse_HyphenDoesNotWidenTheLine(t *testing.T) {
 	plain := "aaxaa bbxbb ccxcc dddd eeee ffff gggg hhhh iiii jjjj kkkk"
 	hyphen := "aa-aa bb-bb cc-cc dddd eeee ffff gggg hhhh iiii jjjj kkkk"

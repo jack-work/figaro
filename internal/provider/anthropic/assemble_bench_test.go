@@ -16,14 +16,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// The number this change exists for.
-//
-// The source is A REAL LOG, because that is where the cost was: the slice
-// column pays for the whole conversation decoded out of the store on every
-// send, which is what the live daemon was caught doing -- 357MB of a 461MB
-// heap in one in-flight request. The streamed column pays for one row.
-//
-// Read B/op against conversation length. The slice column tracks length.
+// Read B/op against conversation length: the slice column tracks it, the
+// streamed column must not.
 func BenchmarkAssembleBody(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000} {
 		rows := benchRowLog(b, n)
@@ -35,8 +29,6 @@ func BenchmarkAssembleBody(b *testing.B) {
 		b.Run("slice/"+strconv.Itoa(n), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				// What the send path did: the whole log, materialized, then
-				// assembled.
 				perMessage, lts := provider.CollectRows(provider.TranslationRows(rows, 0))
 				req, err := a.projectMessagesWithLTs(oneRowEach(perMessage), lts, snap, nil, 4096, false, "claude-opus-5")
 				if err != nil {
@@ -62,13 +54,8 @@ func BenchmarkAssembleBody(b *testing.B) {
 	}
 }
 
-// THE ASSERTION, NOT THE BENCHMARK. A benchmark reports; this one refuses.
-//
-// It writes the body of a long conversation and asks the runtime, WHILE THE
-// WRITE IS STILL IN FLIGHT, how much is live. The slice assembler is holding
-// the conversation at that moment by construction. The streamed one is holding
-// a row, and the test fails if it ever starts holding more than a fraction of
-// the whole -- which is the regression this change is guarding against.
+// Samples the live heap mid-write: the streamed assembler must hold a row,
+// not the conversation.
 func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("allocates a conversation")
@@ -99,15 +86,8 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 		return w.live
 	}()
 
-	// NO BASELINE, AND THAT IS THE POINT. Subtracting a floor measured before
-	// the runs made this test flaky: the floor includes the fixture's own
-	// garbage, the heap falls below it once that is collected, and an
-	// unsigned subtraction then reports zero held for BOTH paths -- which
-	// passes or fails depending on the collector's mood.
-	//
-	// The two runs are measured the same way in the same process, so their
-	// DIFFERENCE is the conversation and nothing else. The slice assembler is
-	// holding a body's worth that the streamed one is not.
+	// No baseline: subtracting a pre-run floor is flaky once the fixture's
+	// garbage is collected. The two runs differ by the conversation alone.
 	body := bodyBytes(t, a, rows, snap)
 	t.Logf("live heap while writing: slice=%d KiB streamed=%d KiB (body=%d KiB)",
 		sliceLive>>10, streamedLive>>10, body>>10)
@@ -117,9 +97,7 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 		"the gap between them should be most of a body: the conversation the slice path holds")
 }
 
-// liveAtEnd samples the live heap on the last write of the body, which is the
-// moment the whole conversation would be reachable if anything were holding
-// it.
+// liveAtEnd samples the live heap on the body's last write.
 type liveAtEnd struct {
 	n    int
 	live uint64
@@ -149,8 +127,6 @@ type counter struct{ n int }
 
 func (c *counter) Write(p []byte) (int, error) { c.n += len(p); return len(p), nil }
 
-// oneRowEach restates a flat row list as the per-record shape the deleted
-// signature took.
 func oneRowEach(rows []json.RawMessage) [][]json.RawMessage {
 	out := make([][]json.RawMessage, len(rows))
 	for i, r := range rows {
@@ -159,8 +135,6 @@ func oneRowEach(rows []json.RawMessage) [][]json.RawMessage {
 	return out
 }
 
-// setPatch is the store's own test helper, restated: a form patch that sets
-// string keys.
 func setPatch(kv map[string]string) message.Patch {
 	set := make(map[string]json.RawMessage, len(kv))
 	for k, v := range kv {
@@ -170,16 +144,8 @@ func setPatch(kv map[string]string) message.Patch {
 	return form.Build(form.Snapshot{}, set, nil)
 }
 
-// benchRowLog is a translator channel in a real store, holding a plausible
-// turn shape: a user message, an assistant message with a tool call, and its
-// result.
-//
-// IT REOPENS THE BACKEND BEFORE HANDING THE LOG BACK, and that is the whole
-// difference between measuring something and measuring nothing. An append
-// SEEDS the tree cache, so a log read in the process that wrote it is served
-// resident and never decodes a single record -- which is not the case that
-// costs anything. The rows a real send pays for are the ones written before
-// the daemon started: cold, and decoded from the frame every time.
+// benchRowLog reopens the backend before returning the log: an append seeds
+// the tree cache, and a resident log decodes nothing.
 func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
 	tb.Helper()
 	root := tb.TempDir()

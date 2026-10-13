@@ -7,24 +7,15 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Model-shape rules published by OpenAI, checked before a request is built:
-// developers.openai.com/api/docs/models/gpt-6-astra and
-// .../guides/latest-model. GPT-6 Astra rejects temperature, top_p and the
-// "none" reasoning effort with HTTP 400, and the migration guide sends
-// "none"/"minimal" users to "low".
-//
-// Only models with published rules are constrained. An unknown id, including a
-// model released after this code, passes through with whatever the form asked
-// for: guessing at a future model's accepted shape breaks it on the day it
-// ships, and the server's own 400 is a better teacher than our stale table.
+// Published model-shape rules, checked before a request is built. Only
+// models with published rules are constrained; an unknown id passes through
+// and the server's own 400 is the teacher.
 type modelCapabilities struct {
 	family string
-	// reasoningEfforts is the accepted set; nil means unconstrained.
+	// nil means unconstrained.
 	reasoningEfforts []string
-	// effortAdvice maps a rejected effort to the substitution the docs name.
-	effortAdvice map[string]string
-	// rejectsSampling covers temperature and top_p together, as the docs do.
-	rejectsSampling bool
+	effortAdvice     map[string]string
+	rejectsSampling  bool
 }
 
 var astraCapabilities = modelCapabilities{
@@ -39,8 +30,6 @@ var astraCapabilities = modelCapabilities{
 
 var knownCapabilities = []modelCapabilities{astraCapabilities}
 
-// verbosityLevels is the Responses API enum for text.verbosity, which is
-// model-independent: "low", "medium", "high".
 var verbosityLevels = []string{"low", "medium", "high"}
 
 func capabilitiesFor(model string) (modelCapabilities, bool) {
@@ -49,8 +38,7 @@ func capabilitiesFor(model string) (modelCapabilities, bool) {
 		name = name[slash+1:]
 	}
 	for _, caps := range knownCapabilities {
-		// Prefix, so dated snapshots such as gpt-6-astra-2026-08-01 carry
-		// the family's rules.
+		// Dated snapshots carry the family's rules.
 		if name == caps.family || strings.HasPrefix(name, caps.family+"-") {
 			return caps, true
 		}
@@ -58,9 +46,8 @@ func capabilitiesFor(model string) (modelCapabilities, bool) {
 	return modelCapabilities{}, false
 }
 
-// validateCapabilities refuses a request the model is documented to reject,
-// naming the form key and the fix. Nothing is dropped silently: a setting the
-// user wrote either goes on the wire or produces an error.
+// validateCapabilities refuses, naming the form key and the fix; a setting
+// the user wrote either goes on the wire or errors.
 func validateCapabilities(model string, options responseRequestOptions) error {
 	var problems []string
 

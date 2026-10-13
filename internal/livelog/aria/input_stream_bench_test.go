@@ -10,12 +10,8 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// A streamed tool argument is the largest string the delta path has ever been
-// asked to carry: a 5 KB write body arrives as ~800 fragments and, at the
-// 90ms emit interval, is re-diffed on every frame. The cost that matters is
-// per FRAME, and it must stay a splice rather than a whole-value set.
-//
-// Sized from a measured turn: 4.8 KB of argument JSON, ~7 bytes per fragment.
+// A streamed tool argument is re-diffed on every frame; the per-frame cost
+// must stay a splice rather than a whole-value set.
 func benchInput(frames int) []string {
 	var b strings.Builder
 	b.WriteString(`{"path":"/var/tmp/out.md","content":"`)
@@ -41,8 +37,6 @@ func BenchmarkStreamedInputDelta(b *testing.B) {
 	}
 }
 
-// The same traffic end to end: compose's output through the server's diff
-// into a client fold: which is what the CLI actually pays.
 func BenchmarkStreamedInputServerToClient(b *testing.B) {
 	frames := benchInput(100)
 	b.ReportAllocs()
@@ -60,12 +54,8 @@ func BenchmarkStreamedInputServerToClient(b *testing.B) {
 	}
 }
 
-// The point of streaming the field rather than setting it: the bytes pushed
-// over the socket must stay proportional to what the model TYPED, not to the
-// argument size times the frame count. Without the splice, 100 frames of a
-// growing 4.7 KB argument cost ~240 KB; with it, one small patch per frame.
-//
-// This is a perf assertion, not a benchmark, because it can fail.
+// Bytes pushed must stay proportional to what the model typed, not to the
+// argument size times the frame count. A perf assertion: it can fail.
 func TestStreamedInputWireBytesStayProportional(t *testing.T) {
 	frames := benchInput(100)
 	final := frames[len(frames)-1]
@@ -87,9 +77,7 @@ func TestStreamedInputWireBytesStayProportional(t *testing.T) {
 		}}, 0)
 	}
 
-	// Every byte typed crosses once, plus per-frame envelope. Whole-value sets
-	// would cost sum(len(frame)) ~ 240 KB here; the budget is deliberately
-	// loose enough not to be a tripwire on envelope changes and tight enough
+	// The budget is loose enough to survive envelope changes and tight enough
 	// that losing the splice fails it by an order of magnitude.
 	budget := len(final) * 4
 	if pushed > budget {

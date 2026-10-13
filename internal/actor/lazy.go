@@ -1,9 +1,5 @@
 package actor
 
-// Lazy is a single-writer queue whose goroutine exists only while there is
-// work. Submit wakes it, a drained queue lingers for an affinity window, and
-// then the goroutine leaves.
-
 import (
 	"errors"
 	"sync"
@@ -21,6 +17,8 @@ const (
 	lazyLingering
 )
 
+// Lazy is a single-writer queue whose goroutine exists only while there is
+// work, lingering for an affinity window after draining.
 type Lazy[T any] struct {
 	mu     sync.Mutex
 	items  []T
@@ -32,16 +30,15 @@ type Lazy[T any] struct {
 	batch  int
 	drain  func([]T)
 
-	spawns atomic.Uint64 // observability: how often the goroutine was created
+	spawns atomic.Uint64
 }
 
-// NewLazy builds a queue. batch caps one drain (<=0 means take everything),
-// linger is how long the goroutine waits before leaving.
+// NewLazy: batch caps one drain (<=0 takes everything).
 func NewLazy[T any](batch int, linger time.Duration, drain func([]T)) *Lazy[T] {
 	return &Lazy[T]{wake: make(chan struct{}, 1), linger: linger, batch: batch, drain: drain}
 }
 
-// Submit enqueues and ensures a drainer exists. It never waits for the work.
+// Submit never waits for the work.
 func (q *Lazy[T]) Submit(v T) error {
 	q.mu.Lock()
 	if q.closed {
@@ -129,12 +126,8 @@ func (q *Lazy[T]) work() {
 			if !q.st.CompareAndSwap(uint32(lazyLingering), uint32(lazyIdle)) {
 				continue
 			}
-			// The exit race. A Submit can land between take() returning
-			// empty and this CAS; it saw lingering or running, so it did not
-			// spawn. Re-check AFTER declaring idle: anything enqueued before
-			// the CAS is visible now, anything after it spawns its own
-			// drainer. Miss this and an item sits in the queue with nobody
-			// to run it.
+			// A Submit between take() and the CAS saw a drainer and did not
+			// spawn; re-check after declaring idle or its item sits unrun.
 			if q.pending() > 0 && q.st.CompareAndSwap(uint32(lazyIdle), uint32(lazyRunning)) {
 				continue
 			}
@@ -143,7 +136,7 @@ func (q *Lazy[T]) work() {
 	}
 }
 
-// Close refuses further submissions. Work already queued still drains.
+// Close refuses further submissions; what is queued still drains.
 func (q *Lazy[T]) Close() {
 	q.mu.Lock()
 	q.closed = true
@@ -157,8 +150,6 @@ func (q *Lazy[T]) Closed() bool {
 	return q.closed
 }
 
-// Spawns counts goroutine creations. A burst should show one.
 func (q *Lazy[T]) Spawns() uint64 { return q.spawns.Load() }
 
-// Running reports whether a drainer exists right now. For tests and metrics.
 func (q *Lazy[T]) Running() bool { return lazyState(q.st.Load()) != lazyIdle }

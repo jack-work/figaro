@@ -37,13 +37,7 @@ func (b *captureBus) PushFigaro(_ message.Message, caches ...provider.AssistantC
 	b.caches = append(b.caches, caches...)
 }
 
-// A CANCELLED RESPONSES STREAM HANDS OVER WHAT IT ACCUMULATED.
-//
-// This provider's message otherwise exists only at "response.completed",
-// built from the server's own object -- so an interrupt had nothing but the
-// deltas and figaro synthesised a message with NO native payload, whose
-// translation had to be re-encoded from text. The accumulator is in the
-// provider now, and its output items are the server's own wire shape.
+// A cancelled stream hands over what it accumulated, native items included.
 func TestACancelledResponsesStreamHandsOverItsPartial(t *testing.T) {
 	srv := newResponseServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()

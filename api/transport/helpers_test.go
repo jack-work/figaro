@@ -5,10 +5,6 @@ import (
 	"net/url"
 )
 
-// URI / String / ParseEndpoint round-trip serialization between
-// Endpoint and its URI form. No production caller today; lives here
-// for the round-trip tests.
-
 func (e Endpoint) URI() string {
 	switch e.Scheme {
 	case "unix":

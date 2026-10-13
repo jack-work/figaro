@@ -27,8 +27,6 @@ func TestDormancyConfigured(t *testing.T) {
 	require.Equal(t, 30*time.Second, l.SweepInterval())
 }
 
-// Zero disables reclamation; every caller reads 0 as "never". Negative is
-// the same request written carelessly and must not become a huge duration.
 func TestDormancyDisabled(t *testing.T) {
 	for _, mins := range []int{0, -1} {
 		l := &Loaded{Config: Config{Memory: MemoryConfig{DormantAfterMinutes: &mins}}}
@@ -36,8 +34,6 @@ func TestDormancyDisabled(t *testing.T) {
 	}
 }
 
-// A sweep interval below a second would spin the ticker, so it is floored
-// rather than honoured.
 func TestSweepIntervalFloored(t *testing.T) {
 	for _, secs := range []int{0, -5} {
 		l := &Loaded{Config: Config{Memory: MemoryConfig{SweepIntervalSeconds: &secs}}}
@@ -69,8 +65,6 @@ func TestIRWindow(t *testing.T) {
 		require.Zero(t, l.IRWindow(), "ir_window=%d disables", in)
 	}
 
-	// A window too small to hold a turn thrashes against its own appends, so
-	// it is floored rather than honoured.
 	for _, in := range []int{1, 63} {
 		l := &Loaded{Config: Config{Memory: MemoryConfig{IRWindow: &in}}}
 		require.Equal(t, minIRWindow, l.IRWindow(), "ir_window=%d must be floored", in)

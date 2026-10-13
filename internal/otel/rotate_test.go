@@ -10,19 +10,18 @@ import (
 func TestRotatingWriter_RollsOverAtCap(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "traces.jsonl")
-	w, err := newRotatingWriter(path, 100) // tiny cap
+	w, err := newRotatingWriter(path, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := []byte(strings.Repeat("x", 40) + "\n") // 41 bytes
-	for i := 0; i < 5; i++ {                       // 205 bytes total > cap, must roll
+	line := []byte(strings.Repeat("x", 40) + "\n")
+	for i := 0; i < 5; i++ {
 		if _, err := w.Write(line); err != nil {
 			t.Fatal(err)
 		}
 	}
 	w.Close()
 
-	// The active file is bounded (<= cap + one line), and a ".1" backup exists.
 	fi, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("active file: %v", err)

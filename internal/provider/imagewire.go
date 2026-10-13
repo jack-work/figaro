@@ -7,20 +7,10 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// SendableImages returns msg with every image block made acceptable to a
-// provider, and reports whether anything changed.
-//
-// An image that is legal when written can be illegal when sent: Anthropic
-// accepts 8000px per image in an ordinary request and only 2000px once the
-// request carries more than twenty image or document blocks, and rejects the
-// WHOLE request rather than the image. The offending picture is by then in the
-// log, so every later turn rebuilds the same request and dies the same way.
-//
-// A picture that can be shrunk is shrunk, and says by how much, because a model
-// reading coordinates off it must be told when it is no longer the size it was;
-// one that cannot becomes text in place, so no block index moves. It runs on
-// the way to an encoder rather than to the log, so the fix reaches records
-// written before it existed.
+// SendableImages shrinks or textualizes image blocks on the way to an encoder:
+// Anthropic allows 8000px per image, 2000px once a request carries more than
+// twenty, and rejects the whole request. A shrunk image says by how much; a
+// textualized one keeps its block index.
 func SendableImages(msg message.Message) (message.Message, bool) {
 	lim := tool.DefaultImageLimits()
 	changed := false

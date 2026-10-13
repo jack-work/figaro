@@ -10,22 +10,15 @@ import (
 	"time"
 )
 
-// Cache is the on-disk memo of a Check(), so successive CLI
-// invocations don't hammer the module proxy.
 type Cache struct {
 	dir string
 }
 
-// NewCache returns a Cache rooted at dir (usually $XDG_CACHE_HOME/figaro).
-// The directory is created lazily on write; Read on a missing tree is a
-// miss, not an error.
 func NewCache(dir string) *Cache { return &Cache{dir: dir} }
 
 func (c *Cache) path() string { return filepath.Join(c.dir, "update-check.json") }
 
-// Read returns the cached Info if it exists and is younger than ttl.
-// A miss (no file, unreadable, expired, unparseable) returns nil with
-// no error: the caller should treat it as "check now".
+// Read returns nil on any miss: no file, unreadable, expired, unparseable.
 func (c *Cache) Read(ttl time.Duration) *Info {
 	if c == nil || c.dir == "" {
 		return nil
@@ -47,8 +40,6 @@ func (c *Cache) Read(ttl time.Duration) *Info {
 	return &info
 }
 
-// Write persists the Info. Errors are returned but callers typically
-// log-and-continue: a failed cache write is never fatal.
 func (c *Cache) Write(info *Info) error {
 	if c == nil || c.dir == "" {
 		return errors.New("update: nil cache")
@@ -67,13 +58,10 @@ func (c *Cache) Write(info *Info) error {
 	return os.Rename(tmp, c.path())
 }
 
-// Check returns cached Info if fresh; otherwise fetches from the
-// module proxy, writes the cache, and returns the new Info. Never
-// blocks longer than the FetchLatest client timeout (~5s) on the wire.
+// Check serves a fresh cache or fetches, writes and returns.
 func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, currentVersion string) *Info {
 	if info := cache.Read(ttl); info != nil {
-		// Recompute Available in case the running binary was upgraded
-		// out from under the cached record.
+		// The binary may have been upgraded under the cached record.
 		info.Current = currentVersion
 		info.Available = info.Latest != "" && Compare(info.Latest, currentVersion) > 0
 		return info
@@ -97,9 +85,7 @@ func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, current
 	return info
 }
 
-// Nudge returns a one-line message when a newer version is available
-// on a channel we can point at, "" otherwise. Formatted to stand out
-// briefly in stderr without dominating the CLI's real output.
+// Nudge is one line when a newer version is available, "" otherwise.
 func Nudge(info *Info, module string) string {
 	if info == nil || !info.Available || info.Latest == "" {
 		return ""

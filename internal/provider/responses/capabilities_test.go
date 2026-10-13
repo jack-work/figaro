@@ -53,8 +53,6 @@ func TestCapabilitiesLeaveOtherModelsUnconstrained(t *testing.T) {
 		_, ok := capabilitiesFor(model)
 		assert.False(t, ok, model)
 
-		// A model we know nothing about keeps every knob the form set,
-		// including ones Astra rejects.
 		require.NoError(t, validateCapabilities(model, responseRequestOptions{
 			temperature: float64Ptr(0.7),
 			topP:        float64Ptr(0.9),

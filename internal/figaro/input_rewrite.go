@@ -1,12 +1,7 @@
 package figaro
 
-// Input rewrites: what a prompt's text passes through on its way in.
-//
-//	A TERMINATED TOKEN THAT DOES NOT RESOLVE REFUSES THE MESSAGE.
-//
-// They run in SubmitPromptFrom, before the form patch is applied and before
-// anything is queued, so a refusal leaves the aria as it was and reaches the
-// caller on the reply it is already waiting for.
+// Input rewrites run in SubmitPromptFrom before anything is queued or patched:
+// a terminated token that does not resolve refuses the message.
 
 import (
 	"context"
@@ -18,8 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// InputView is what a rewrite may see: the aria's board and its log, read
-// only, plus the settings that shape the rewrite's output.
+// InputView is read-only: the board, the log, and the settings.
 type InputView struct {
 	AriaID   string
 	Form     form.Snapshot
@@ -27,29 +21,21 @@ type InputView struct {
 	Settings *config.Loaded // nil-safe: every accessor has a default
 }
 
-// LogReader is the one read a rewrite needs. Narrow on purpose: a rewrite
-// that wanted to append would be a second write path, which journal.go
-// exists to forbid.
+// LogReader is narrow on purpose: a rewrite that appended would be a second write path.
 type LogReader interface {
 	Lookup(figaroLT uint64) (store.Entry[message.Message], bool)
 }
 
-// InputRewrite is one named pass over a prompt's text.
 type InputRewrite interface {
 	Name() string
-	// Rewrite returns the text to send in place of text, or an error that is
-	// the whole of what the caller sees: one short sentence, no wrapping.
+	// Rewrite's error is the whole of what the caller sees: one short sentence.
 	Rewrite(ctx context.Context, view InputView, text string) (string, error)
 }
 
-// quaRewrites is the ordered list a figaro.qua passes through. Form references
-// first, then the quote, so a board may hold a coordinate under a key; the
-// quote runs last because it prepends text that must not itself be rewritten.
-// figaro.set and figaro.cast carry no prose and pass through none.
+// Form references run first, the quote last: it prepends text that must not itself be rewritten.
 var quaRewrites = []InputRewrite{formRefs{}, quoteRewrite{}}
 
-// rewriteInput runs the qua list over text. An empty prompt (a form-only
-// submission) is not text and is returned untouched.
+// rewriteInput returns an empty prompt untouched.
 func (a *Agent) rewriteInput(ctx context.Context, text string) (string, error) {
 	if text == "" {
 		return text, nil

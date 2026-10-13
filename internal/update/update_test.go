@@ -16,10 +16,10 @@ func TestCompare(t *testing.T) {
 		{"v0.1.3", "v0.1.4", -1},
 		{"v0.1.4", "v0.1.4", 0},
 		{"v1.0.0", "v0.9.9", +1},
-		{"v0.10.0", "v0.9.9", +1}, // numeric, not lexical
+		{"v0.10.0", "v0.9.9", +1},
 		{"v1.0.0", "v1.0.0-rc1", +1},
 		{"v1.0.0-rc2", "v1.0.0-rc1", +1},
-		{"dev-abc123", "v0.1.4", -1}, // unparseable = -inf
+		{"dev-abc123", "v0.1.4", -1},
 		{"v0.1.4", "dev-abc123", +1},
 	}
 	for _, tc := range cases {
@@ -32,7 +32,6 @@ func TestCompare(t *testing.T) {
 func TestCacheRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	c := NewCache(filepath.Join(dir, "figaro"))
-	// Miss on cold cache.
 	if got := c.Read(time.Hour); got != nil {
 		t.Fatalf("cold read = %+v, want nil", got)
 	}
@@ -53,7 +52,6 @@ func TestCacheRoundTrip(t *testing.T) {
 	if got.Latest != "v0.1.4" || !got.Available {
 		t.Errorf("round-trip mismatch: %+v", got)
 	}
-	// Expired TTL: miss.
 	if got := c.Read(1 * time.Nanosecond); got != nil {
 		time.Sleep(2 * time.Nanosecond)
 		if got := c.Read(1 * time.Nanosecond); got != nil {
@@ -63,11 +61,9 @@ func TestCacheRoundTrip(t *testing.T) {
 }
 
 func TestNudge(t *testing.T) {
-	// Nothing available: silent.
 	if got := Nudge(&Info{Current: "v0.1.4", Latest: "v0.1.4"}, "example.com/m"); got != "" {
 		t.Errorf("no-op nudge = %q", got)
 	}
-	// go-install channel: shows the exact command.
 	msg := Nudge(&Info{
 		Current: "v0.1.3", Latest: "v0.1.4",
 		Available: true, Channel: ChannelGoInstall,
@@ -75,7 +71,6 @@ func TestNudge(t *testing.T) {
 	if !contains(msg, "go install github.com/jack-work/figaro/cmd/figaro@v0.1.4") {
 		t.Errorf("go-install nudge missing command: %q", msg)
 	}
-	// Unknown channel: falls back to `figaro update`.
 	msg = Nudge(&Info{
 		Current: "v0.1.3", Latest: "v0.1.4",
 		Available: true, Channel: ChannelUnknown,
@@ -86,18 +81,12 @@ func TestNudge(t *testing.T) {
 }
 
 func TestDetectChannel_GoInstall(t *testing.T) {
-	// Fake $GOBIN and put an exe inside it via a symlink.
 	tmp := t.TempDir()
 	gobin := filepath.Join(tmp, "gobin")
 	if err := os.MkdirAll(gobin, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GOBIN", gobin)
-	// We can't override os.Executable() directly; this test just
-	// exercises DetectChannel's *env* handling for regressions -
-	// the exe path is whatever the test binary is, so the assertion
-	// is: if the test binary lives under $GOBIN, we detect go-install;
-	// otherwise the code falls through, which is also fine.
 	_ = DetectChannel()
 }
 
@@ -110,8 +99,6 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// A dev-stamped current version can't be compared to release tags -
-// the nudge must stay silent instead of claiming any tag is newer.
 func TestNudge_SilentOnDevVersion(t *testing.T) {
 	info := &Info{Current: "dev-da2abf499885", Latest: "v0.3.0", Available: true, Channel: ChannelNix}
 	if msg := Nudge(info, "example.com/mod"); msg != "" {
@@ -123,9 +110,6 @@ func TestNudge_SilentOnDevVersion(t *testing.T) {
 	}
 }
 
-// The marker an installer drops beside the binary is the only honest answer to
-// "how did this get here": ~/.local/bin is a shared drawer, and a guess there
-// prints an upgrade command that could damage the install it guessed about.
 func TestDetectChannel_Marker(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "figaro")
@@ -151,16 +135,12 @@ func TestDetectChannel_Homebrew(t *testing.T) {
 	for _, exe := range []string{
 		"/opt/homebrew/Cellar/figaro/0.24.0/bin/figaro",
 		"/home/linuxbrew/.linuxbrew/Cellar/figaro/0.24.0/bin/figaro",
-		"/opt/brew/Cellar/figaro/0.24.0/bin/figaro", // a custom prefix is still brew
+		"/opt/brew/Cellar/figaro/0.24.0/bin/figaro",
 	} {
 		if got := channelFor(exe); got != ChannelHomebrew {
 			t.Fatalf("%s: got %q", exe, got)
 		}
 	}
-	// FIGARO_DEV_ROOT is what tells a /nix/store path from a dev-shell build
-	// of one, so the test has to say which it is asking about. Without this
-	// the case passed from a bare shell and failed from inside `nix develop`:
-	// a result that depends on who ran it is not a result.
 	t.Setenv("FIGARO_DEV_ROOT", "")
 	if got := channelFor("/nix/store/abc-figaro/bin/figaro"); got != ChannelNix {
 		t.Fatalf("got %q", got)

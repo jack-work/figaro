@@ -26,8 +26,6 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// --- Mock provider ---
-
 type mockProvider struct {
 	response string
 	cache    store.Log[[]json.RawMessage] // nil = no cache (tests don't need one)
@@ -47,10 +45,7 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 	return nil
 }
 
-// streamingMockProvider emits its delta, then gives the drain loop time to
-// compose a PRE-APPEND live frame before appending: the window where
-// the in-flight assembly has no log entry behind it. The instant-append
-// mockProvider never exposes that window.
+// streamingMockProvider delays its append so a pre-append live frame can compose.
 type streamingMockProvider struct{ response string }
 
 func (m *streamingMockProvider) Name() string        { return "mock" }
@@ -122,14 +117,9 @@ func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus p
 	return nil
 }
 
-// mockEncodeFn matches the per-message encoder shape. Provider mocks
-// supply their own implementations so spies (formSpyProvider) can
-// record what they would have encoded.
 type mockEncodeFn func(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
 
-// mockCatchUp catches up the cache from the durable figLog using
-// the given encoder. Mirrors what real providers do at the top of
-// Send. Skipped when cache is nil (ephemeral tests).
+// mockCatchUp mirrors what real providers do at the top of Send; skipped when cache is nil.
 func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
 	snap := form.Snapshot{}
 	for _, e := range figLog.Read() {
@@ -154,10 +144,7 @@ func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMe
 	}
 }
 
-// mockPushAssistant simulates a streaming turn: emits the text as a
-// delta, appends a final assistant message to figLog, writes it
-// into the cache (if any), and pushes figaro so the act loop
-// dispatches.
+// mockPushAssistant simulates a streaming turn: delta, figLog append, cache write, PushFigaro.
 func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
 	if text == "" {
 		return
@@ -185,12 +172,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 	bus.PushFigaro(msg)
 }
 
-// --- Test helpers ---
-
-// chanNotifier is the test-side adapter for figaro.Notifier: pipes
-// every fanout call into a buffered channel so tests can assert on
-// notification ordering. close-once is guarded by mu so unsub is safe
-// to call from anywhere.
+// chanNotifier pipes every fanout call into a channel; close-once is guarded by mu.
 type chanNotifier struct {
 	mu     sync.Mutex
 	ch     chan rpc.Notification
@@ -219,9 +201,7 @@ func (c *chanNotifier) closeOnce() {
 	}
 }
 
-// subscribeChan registers a chanNotifier on the agent and returns the
-// receive end + an unsubscribe func that drops the registration AND
-// closes the channel.
+// subscribeChan returns the receive end and an unsubscribe func that also closes the channel.
 func subscribeChan(a *figaro.Agent) (<-chan rpc.Notification, func()) {
 	sink := &chanNotifier{ch: make(chan rpc.Notification, 128)}
 	unsub := a.Subscribe(sink)
@@ -235,15 +215,10 @@ func submitPrompt(a *figaro.Agent, text string) {
 	a.SubmitPrompt(rpc.QuaRequest{Text: text})
 }
 
-// submitSteer sends an ordinary prompt. There is no flag and no declaration:
-// what makes it a steer is that it arrives while a turn is running, and the
-// drain classifies it there. The name records the caller's intent, not a wire
-// field.
+// submitSteer sends an ordinary prompt; what makes it a steer is that a turn is running.
 func submitSteer(a *figaro.Agent, text string) {
 	a.SubmitPrompt(rpc.QuaRequest{Text: text})
 }
-
-// --- Tests ---
 
 func newTestAgent(t *testing.T, response string) *figaro.Agent {
 	t.Helper()
@@ -270,7 +245,6 @@ func newTestAgent(t *testing.T, response string) *figaro.Agent {
 
 func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
-	// system.cwd is harness-owned, so the harness path writes it.
 	_, applyErr := backend.ApplyFormPrivileged(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra":     json.RawMessage(`"initial"`),
 		"system.cwd": json.RawMessage(`"work"`),
@@ -315,10 +289,6 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
-// backedConv builds an XwalBackend, materializes an outfit + a fresh
-// conversation, and returns the backend and the minted conversation id.
-// The caller builds the agent (so it can set the response, seed the
-// form, etc.).
 func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	t.Helper()
 	b, err := store.NewXwalBackend(dir, 0)
@@ -337,7 +307,6 @@ func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	return b, conv
 }
 
-// unwrapForTest projects log entries to messages.
 func unwrapForTest(entries []store.Entry[message.Message]) []message.Message {
 	out := make([]message.Message, len(entries))
 	for i, e := range entries {
@@ -346,8 +315,7 @@ func unwrapForTest(entries []store.Entry[message.Message]) []message.Message {
 	return out
 }
 
-// nonGenesis returns the content-bearing turns (drops structural birth
-// tics and the outfit's empty-content reminder tic).
+// nonGenesis drops the structural birth tics and the outfit's reminder tic.
 func nonGenesis(msgs []message.Message) []message.Message {
 	var out []message.Message
 	for _, m := range msgs {
@@ -365,7 +333,6 @@ func nonGenesis(msgs []message.Message) []message.Message {
 func TestAgent_ID(t *testing.T) {
 	a := newTestAgent(t, "hi")
 	defer a.Kill()
-	// The id is the store's now, not the harness's: every aria is backed.
 	assert.NotEmpty(t, a.ID())
 }
 
@@ -379,12 +346,10 @@ func TestAgent_PromptAndSubscribe(t *testing.T) {
 	a := newTestAgent(t, "4")
 	defer a.Kill()
 
-	// Subscribe before prompting.
 	ch, _ := subscribeChan(a)
 
 	submitPrompt(a, "What is 2+2?")
 
-	// Collect notifications until done.
 	var notifications []rpc.Notification
 	timeout := time.After(5 * time.Second)
 loop:
@@ -401,7 +366,6 @@ loop:
 		}
 	}
 
-	// The turn streams aria reads and ends with turn.done.
 	methods := make([]string, len(notifications))
 	for i, n := range notifications {
 		methods[i] = n.Method
@@ -506,7 +470,6 @@ func TestAgent_ReadCatchUp(t *testing.T) {
 	a := newTestAgent(t, "the reply")
 	defer a.Kill()
 
-	// Idle, empty: nothing to catch up.
 	if r := a.Read(aria.Anchor{Turn: 0}, 1<<20); len(r.Parts) != 0 || r.LiveTail() != nil {
 		t.Fatalf("fresh agent: want empty read, got %+v", r)
 	}
@@ -527,14 +490,10 @@ func TestAgent_ReadCatchUp(t *testing.T) {
 	}
 done:
 
-	// After the turn settles, the prompt and reply are committed units and
-	// no unit is live.
 	r := a.Read(aria.Anchor{Turn: 0}, 1<<20)
 	if r.LiveTail() != nil {
 		t.Fatalf("idle agent should have no live unit: %+v", r.LiveTail())
 	}
-	// The prompt and the reply are ONE exchange now, not two units: the
-	// question is the turn's Inquiry, the reply its nodes.
 	if len(r.Parts) != 1 {
 		t.Fatalf("want a single turn, got %d: %+v", len(r.Parts), r.Parts)
 	}
@@ -549,7 +508,6 @@ done:
 	}
 }
 
-// nodesContain reports whether any prose node's markdown contains sub.
 func nodesContain(nodes []livedoc.Node, sub string) bool {
 	for _, n := range nodes {
 		if strings.Contains(n.Markdown, sub) || strings.Contains(n.Output, sub) {
@@ -565,15 +523,12 @@ func TestAgent_Context(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 
-	// Initially no conversation: the ceremonial records (genesis, birth) are
-	// there because every aria is backed, and they are not messages.
 	for _, m := range a.Context() {
 		assert.True(t, message.IsCeremonial(m), "unexpected message before the first prompt: %+v", m)
 	}
 
 	submitPrompt(a, "say hi")
 
-	// Wait for done.
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
@@ -587,7 +542,6 @@ func TestAgent_Context(t *testing.T) {
 	}
 done:
 
-	// Should have user + assistant messages.
 	var msgs []message.Message
 	for _, m := range a.Context() {
 		if !message.IsCeremonial(m) {
@@ -600,12 +554,7 @@ done:
 }
 
 func TestAgent_FIFOOrdering(t *testing.T) {
-	// Two prompts submitted back to back are answered IN ORDER. Whether they
-	// arrive as one turn or two is timing, not contract: the drain folds the
-	// contiguous run it finds, so a second prompt that lands before the first
-	// is lifted joins it: which is the point (four chained sends should be one
-	// question, not four turns to sit through). What must never change is the
-	// order they reach the model in.
+	// Two prompts back to back reach the model in order; whether as one turn or two is timing.
 	a := newTestAgent(t, "")
 	a.Kill() // kill the default one
 
@@ -624,7 +573,6 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	submitPrompt(a, "first")
 	submitPrompt(a, "second")
 
-	// Settle on IDLE rather than on a turn count.
 	timeout := time.After(5 * time.Second)
 	for settled := false; !settled; {
 		select {
@@ -641,8 +589,6 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 		}
 	}
 
-	// Both prompts reached the conversation, in the order they were sent -
-	// whether as one input message or two.
 	var input string
 	for _, m := range a.Context() {
 		if m.Role != message.RoleInput {
@@ -670,7 +616,6 @@ func TestAgent_MultipleSubscribers(t *testing.T) {
 
 	submitPrompt(a, "hello")
 
-	// Both should receive done.
 	timeout := time.After(5 * time.Second)
 	got1, got2 := false, false
 	for !got1 || !got2 {
@@ -696,7 +641,6 @@ func TestAgent_Unsubscribe(t *testing.T) {
 	ch, unsub := subscribeChan(a)
 	unsub()
 
-	// Channel should be closed by the unsubscribe func.
 	_, open := <-ch
 	assert.False(t, open, "unsubscribed channel should be closed")
 }
@@ -707,19 +651,15 @@ func TestAgent_Kill(t *testing.T) {
 
 	a.Kill()
 
-	// Kill clears subscribers but doesn't close test channels: they're
-	// the test's own resource. Confirm no further notifications arrive.
+	// Kill clears subscribers but does not close test channels.
 	select {
 	case n, ok := <-ch:
 		if ok {
 			t.Fatalf("unexpected notification after Kill: %+v", n)
 		}
 	case <-time.After(50 * time.Millisecond):
-		// expected: nothing else queued
 	}
 }
-
-// --- Panicking provider ---
 
 type panicProvider struct {
 	panicCount int
@@ -745,7 +685,6 @@ func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus pro
 }
 
 func TestAgent_PanicRecovery(t *testing.T) {
-	// Provider panics on the first call, succeeds on the second.
 	prov := &panicProvider{panicCount: 1, response: "recovered"}
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
@@ -760,9 +699,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 
-	// First prompt: will panic inside the agent. The new contract is
-	// that every turn (success or failure) terminates with turn.done so
-	// the CLI never hangs; an error surfaces as the done reason.
+	// Every turn terminates with turn.done; an error surfaces as the reason.
 	submitPrompt(a, "trigger panic")
 
 	timeout := time.After(5 * time.Second)
@@ -783,7 +720,6 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	}
 	assert.Contains(t, doneReason, "error", "panic should surface as an error turn.done")
 
-	// Second prompt: should work because the agent restarted.
 	submitPrompt(a, "after recovery")
 
 	gotDone = false
@@ -799,17 +735,13 @@ func TestAgent_PanicRecovery(t *testing.T) {
 		}
 	}
 
-	// Send-path panics are recovered in the spawned goroutine and
-	// surface as an Error notification: the conversation history
-	// is preserved (no full agent crash + reset). The second prompt's
-	// assistant turn should be the most recent entry.
+	// Send-path panics are recovered in the goroutine and preserve history.
 	msgs := a.Context()
 	require.NotEmpty(t, msgs)
 	assert.Equal(t, message.RoleOutput, msgs[len(msgs)-1].Role)
 }
 
 func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
-	// Provider panics on first call.
 	prov := &panicProvider{panicCount: 1, response: "ok"}
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
@@ -824,10 +756,8 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 
-	// Trigger panic.
 	submitPrompt(a, "boom")
 
-	// Wait for the error to surface as the turn.done reason.
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
@@ -841,10 +771,6 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	}
 errorReceived:
 
-	// Send-path panics no longer wipe the conversation: the user
-	// prompt that triggered the panic stays in the figaro log and
-	// the agent emits an Error notification. Token counters stay at
-	// zero because no assistant response landed.
 	msgs := a.Context()
 	require.NotEmpty(t, msgs, "user prompt is preserved across Send panics")
 	assert.Equal(t, message.RoleInput, msgs[len(msgs)-1].Role)
@@ -864,8 +790,6 @@ func TestAgent_Info(t *testing.T) {
 	assert.Equal(t, "mock-model-v1", info.Model)
 	assert.False(t, info.CreatedAt.IsZero())
 }
-
-// --- Persistence tests ---
 
 func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	storeDir := t.TempDir()
@@ -896,8 +820,6 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	}
 firstDone:
 
-	// Re-open the IR through the backend: the user + assistant turns are
-	// durable (the backend returns the same shared, persisted log).
 	log, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	turns := nonGenesis(unwrapForTest(log.Read()))
@@ -936,7 +858,6 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 firstDone:
 	a1.Kill()
 
-	// Second agent with the same conversation id + backend: restores.
 	a2 := figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
 		ID:         conv,
@@ -980,8 +901,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	}
 done:
 	a.Kill()
-	// Flusher persistence, not Close-drain, is what this test pins:
-	// kick and poll the IR segment bytes on disk before any Close.
+	// Flusher persistence, not Close-drain: poll the segment bytes before any Close.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		found := false
@@ -1002,11 +922,9 @@ done:
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	// Single-writer flock: the first backend must close (draining its
-	// flusher) before a second may open the same store.
+	// Single-writer flock: the first backend must close before a second opens the store.
 	require.NoError(t, backend.Close())
 
-	// Re-open a fresh backend on the same dir: the turn is on disk.
 	b2, err := store.NewXwalBackend(storeDir, 0)
 	require.NoError(t, err)
 	defer b2.Close()
@@ -1015,10 +933,7 @@ done:
 	assert.GreaterOrEqual(t, len(nonGenesis(unwrapForTest(log.Read()))), 2)
 }
 
-// TestAgent_BootRepairsDanglingToolUse seeds a conversation whose tail
-// is an assistant turn ending in stop_reason=tool_use with no matching
-// tool_results, opens an Agent on it, and verifies the boot path
-// appends interrupted tool-result tics.
+// Boot repair appends interrupted tool-result tics after a dangling tool_use tail.
 func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	storeDir := t.TempDir()
 	backend, conv := backedConv(t, storeDir)
@@ -1043,7 +958,6 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Boot an agent on the same conversation; NewAgent runs boot repair.
 	a := figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
 		ID:         conv,
@@ -1064,7 +978,6 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 }
 
 func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
-	// No Backend: should behave as before (no files written).
 	tmpDir := t.TempDir()
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
@@ -1074,7 +987,6 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 		ID:         testID,
 		SocketPath: "/tmp/ephemeral-test.sock",
 		Provider:   &mockProvider{response: "gone"},
-		// Backend deliberately omitted.
 	})
 
 	ch, _ := subscribeChan(a)
@@ -1094,12 +1006,9 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 done:
 	a.Kill()
 
-	// No files should appear in any random dir.
 	entries, _ := os.ReadDir(tmpDir)
 	assert.Empty(t, entries, "no files should be written without a Backend")
 }
-
-// --- Slow provider for interrupt testing ---
 
 type slowProvider struct {
 	started chan struct{} // closed once Send has been entered
@@ -1110,9 +1019,7 @@ func (s *slowProvider) Fingerprint() string                                     
 func (s *slowProvider) SetModel(model string)                                    {}
 func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 
-// Send blocks until ctx is cancelled, then returns the cancellation
-// error: mirroring what a real HTTP SSE stream does when its request
-// context is cancelled mid-flight.
+// Send blocks until ctx is cancelled, as an HTTP SSE stream does.
 func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
 	if s.started != nil {
 		close(s.started)
@@ -1122,9 +1029,6 @@ func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provi
 	return ctx.Err()
 }
 
-// TestAgent_Interrupt verifies that Interrupt cancels an in-flight
-// turn, ends it with turn.done (reason "interrupted"), and leaves the
-// agent idle and usable for a second prompt.
 func TestAgent_Interrupt(t *testing.T) {
 	started := make(chan struct{})
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
@@ -1140,8 +1044,7 @@ func TestAgent_Interrupt(t *testing.T) {
 	ch, _ := subscribeChan(a)
 	submitPrompt(a, "take forever please")
 
-	// Wait for the provider to actually be streaming before interrupting,
-	// so we're testing the mid-turn path and not a pre-start race.
+	// Interrupt only once the provider is streaming: the mid-turn path, not a pre-start race.
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
@@ -1150,9 +1053,6 @@ func TestAgent_Interrupt(t *testing.T) {
 
 	a.Interrupt()
 
-	// Collect notifications until turn.done. The interrupt surfaces as
-	// the done reason; an open tail (if one had started) is burned with
-	// a log.abort first.
 	var doneReason string
 	timeout := time.After(3 * time.Second)
 loop:
@@ -1172,12 +1072,7 @@ loop:
 
 	assert.Equal(t, "interrupted", doneReason)
 
-	// Agent should be idle and reusable after the interrupt.
-	// (Avoid reissuing a prompt with the slow provider; just assert the
-	// loop didn't die.)
-	// Eventually idle, not instantly: an aria is backed now, so a form watch
-	// can still be delivering the birth patch when turn.done lands, and
-	// Info() calls that "active" until the inbox drains.
+	// Eventually idle, not instantly: a form watch can still be delivering the birth patch.
 	var state string
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
 		if state = a.Info().State; state == "idle" {
@@ -1210,8 +1105,7 @@ func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 	a.Interrupt()
 }
 
-// TestAgent_InterruptWhenIdle is a no-op: Interrupt on an idle agent
-// must not emit spurious Done/Error notifications.
+// Interrupt on an idle agent emits nothing.
 func TestAgent_InterruptWhenIdle(t *testing.T) {
 	a := newTestAgent(t, "hi")
 	defer a.Kill()
@@ -1223,22 +1117,13 @@ func TestAgent_InterruptWhenIdle(t *testing.T) {
 	case n := <-ch:
 		t.Fatalf("unexpected notification from idle interrupt: %+v", n)
 	case <-time.After(150 * time.Millisecond):
-		// Silence is correct.
 	}
 }
 
-// Ensure unused import elision doesn't remove json (kept for future tests).
 var _ = json.RawMessage(nil)
 
-// Regression: composeTurn's window is a figaro-LT (MainLT) cursor, not an
-// entry count, and the in-flight assembly must yield to its appended copy.
-// On a BACKED aria, main LTs are trunk-global (boot patches consume them),
-// so an entry count passed to ReadFrom re-includes prior turns in every
-// live frame; and the provider appends the assistant message into the log
-// concurrently with the drain loop's buffered events, so a frame composed
-// after the append but before the completion event would render the message
-// twice under two node ids. Both bugs manifest as duplicated content in
-// the live frames.
+// composeTurn's window is a main-LT cursor, not an entry count, and the
+// in-flight assembly yields to its appended copy; both bugs duplicate content.
 func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
 	cb, _ := form.Open("")
@@ -1279,9 +1164,6 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	turn1 := runTurn("first prompt")
 	turn2 := runTurn("second prompt")
 
-	// No single live frame may carry the reply text more than once: a dup
-	// means the frame composed both the appended entry and the in-flight
-	// assembly (or a prior turn's copy) as distinct nodes.
 	checkFrames := func(label string, frames []rpc.Notification) {
 		for _, fr := range frames {
 			b, _ := json.Marshal(fr.Params)
@@ -1293,10 +1175,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	checkFrames("turn1", turn1)
 	checkFrames("turn2", turn2)
 
-	// Fold every frame through a real aria client: id churn between the
-	// in-flight and appended composition of the SAME message lands as two
-	// node ids across different frames: invisible per-frame, but the
-	// folded view shows a committed assistant message with two nodes.
+	// Fold every frame through a real client: id churn lands as two node ids across frames.
 	cl := client.NewClient()
 	for _, fr := range append(append([]rpc.Notification{}, turn1...), turn2...) {
 		if fr.Method != rpc.MethodAriaFrame {
@@ -1307,9 +1186,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		require.NoError(t, json.Unmarshal(b, &r))
 		cl.Apply(r, client.Notify)
 	}
-	// Each turn carries its question as TEXT and exactly one assistant reply -
-	// a second turn must not re-compose the first turn's nodes into itself. A
-	// turn can close as several messages, so aggregate by turn before judging.
+	// A turn can close as several messages, so aggregate by turn before judging.
 	byTurn := map[int][]livedoc.Node{}
 	inquiry := map[int]string{}
 	order := []int{}
@@ -1344,8 +1221,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, len(order))
-	// And turn 2's frames must not re-compose turn 1's prompt as a node.
-	// (The mantra metric legitimately echoes the first prompt.)
+	// The mantra metric legitimately echoes the first prompt.
 	for _, fr := range turn2 {
 		b, _ := json.Marshal(fr.Params)
 		if strings.Contains(string(b), `"markdown":"first prompt"`) {
@@ -1354,12 +1230,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	}
 }
 
-// TestAgent_UserPromptCommitsWithoutLiveFrame verifies the send-flow fix:
-// the user's message must materialize as a single already-committed frame
-// (Committed[].Full()), never as a live-then-close flicker. If a Live frame
-// with Role=="user" (or an empty-Role live frame at the user's LT) ever
-// appears, the CLI paints an intermediate state before the durable transcript
-// contains the message: the behavior we're deliberately eliminating.
+// The user's message arrives as one committed frame, never live-then-close.
 func TestAgent_UserPromptCommitsWithoutLiveFrame(t *testing.T) {
 	a := newTestAgent(t, "the reply")
 	defer a.Kill()
@@ -1386,11 +1257,6 @@ loop:
 		}
 	}
 
-	// The prompt is complete the instant it exists, so it must arrive as
-	// already-closed content and never stream. It is TEXT ON THE TURN, so what
-	// arrives is a part carrying Inquiry and no nodes at all: if it ever
-	// appeared inside a Live delta the client would render it in flight and
-	// then re-render it on commit, the flicker between send and durable commit.
 	sawInquiryCommitted := false
 	for _, f := range frames {
 		for _, part := range f.Parts {
@@ -1419,12 +1285,8 @@ loop:
 	}
 }
 
-// TestAgent_QueuedPromptsRPC verifies the read-only queued-prompts snapshot.
-// Prompts submitted after a turn starts but before it drains sit in the inbox;
-// QueuedPrompts must observe them in FIFO order without consuming them.
+// QueuedPrompts observes queued prompts in FIFO order without consuming them.
 func TestAgent_QueuedPromptsRPC(t *testing.T) {
-	// A blocked provider: never returns until we let it. This freezes the
-	// drain loop so subsequent prompts pile up in the inbox verifiably.
 	release := make(chan struct{})
 	prov := &blockedProvider{release: release}
 	cb, _ := form.Open("")
@@ -1445,7 +1307,6 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 	defer func() { close(release); a.Kill() }()
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: "kickoff"}) // drains into the running turn
-	// Give the actor a moment to pick up "kickoff" so the follow-ons queue.
 	require.Eventually(t, func() bool { return prov.blocked() }, 2*time.Second, 10*time.Millisecond)
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
@@ -1460,12 +1321,10 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 		require.Equal(t, rpc.QueueStateQueued, p.State)
 	}
 
-	// Read-only: a second snapshot returns the same list.
 	epoch2, snap2 := a.QueuedPrompts(false)
 	require.Equal(t, epoch, epoch2)
 	require.Equal(t, snap, snap2)
 
-	// The carrier is hidden from the display view and present in the CRUD one.
 	_, all := a.QueuedPrompts(true)
 	require.Equal(t, []string{"one", "two", ""}, queuedTexts(all))
 }
@@ -1478,8 +1337,7 @@ func queuedTexts(prompts []rpc.QueuedPrompt) []string {
 	return out
 }
 
-// blockedProvider is a Send that parks until release is closed, so tests can
-// pile prompts up in the inbox behind a "running" turn.
+// blockedProvider parks in Send until release is closed.
 type blockedProvider struct {
 	release chan struct{}
 	inSend  atomicBool

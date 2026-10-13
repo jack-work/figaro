@@ -2,16 +2,10 @@ package figaro
 
 import "testing"
 
-// senderRuns is the fold from attributed submissions to content blocks. It is
-// tested directly because it carries two contracts that pull against each
-// other: keep attribution, and do not regress the separator fix that stopped
-// three messages rendering as one garbled sentence.
+// senderRuns keeps attribution and the blank-line separator.
 func TestSenderRunsGroupsByRun(t *testing.T) {
 	t.Run("one sender is ONE block", func(t *testing.T) {
-		// The common case, and the one that must stay byte-identical to what
-		// the fold produced before attribution existed: a single block whose
-		// texts are separated by a BLANK line, because prose is markdown and a
-		// lone newline is a soft break glamour rejoins.
+		// A single block whose texts are separated by a blank line: a lone newline is a soft break.
 		got := senderRuns([]promptSegment{
 			{sender: "Jack", text: "one"},
 			{sender: "Jack", text: "two"},
@@ -53,8 +47,7 @@ func TestSenderRunsGroupsByRun(t *testing.T) {
 	})
 
 	t.Run("a sender returning later opens a new run", func(t *testing.T) {
-		// Runs are positional, not grouped-by-key: reordering would misreport
-		// the sequence the messages actually arrived in.
+		// Runs are positional, not grouped by key.
 		got := senderRuns([]promptSegment{
 			{sender: "A", text: "1"}, {sender: "B", text: "2"}, {sender: "A", text: "3"},
 		})
@@ -74,12 +67,5 @@ func TestSenderRunsGroupsByRun(t *testing.T) {
 	})
 }
 
-// THE openTurn CONDITION IS COVERED BY TestSecondTurnDoesNotRecomposePriorTurn.
-//
-// Recorded here because it is not obvious from that test's name. Restructuring
-// the content append into if/else-if captured a.openTurn() into the ELSE
-// branch, so an attributed prompt never opened a turn; the second turn then
-// recomposed the first and broadcast the reply twice. That test caught it
-// precisely because SubmitPrompt always populates segments, so its ordinary
-// prompts exercise the attributed path. The condition is keyed on the CONTENT
-// rather than on whichever branch produced it, so the two cannot diverge again.
+// The openTurn condition is keyed on the content, not on which branch
+// produced it; TestSecondTurnDoesNotRecomposePriorTurn covers it.

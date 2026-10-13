@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// `figaro help` used to take the unknown-command path and answer
 func TestHelpVerb(t *testing.T) {
 	build := func(out, errOut *bytes.Buffer) *Router {
 		r := NewRouter("figaro")

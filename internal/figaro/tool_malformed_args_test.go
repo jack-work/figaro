@@ -7,12 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// A CALL WHOSE ARGUMENTS NEVER ARRIVED IS REFUSED, NOT GUESSED.
-//
-// The provider quarantines a tool_use whose input is not JSON (see
-// message.MalformedArgs). Two things must follow, and they are the whole of
-// the recovery: the tool does not run, and the model is told plainly enough
-// that it resends the call on the next round trip.
+// A call whose arguments never arrived does not run, and the model is told plainly enough to resend it.
 func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 	bad := message.Content{
 		Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "edit",
@@ -23,7 +18,6 @@ func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 		Arguments: map[string]interface{}{"command": "true"},
 	}
 
-	// The dispatcher is the one chokepoint every tool passes through.
 	if p := newSpecDispatcher(make(chan toolEvent, 1)).dispatch(t.Context(), nil, bad); p != nil {
 		t.Fatal("a quarantined call was dispatched: the tool ran on arguments that never arrived")
 	}
@@ -43,9 +37,7 @@ func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 	if got.ToolCallID != "tc_1" {
 		t.Errorf("tool_call_id = %q, want tc_1", got.ToolCallID)
 	}
-	// The shape the API documents: {"INVALID_JSON": "<what arrived>"}, built
-	// with the encoder: the payload is by definition full of unescaped quotes
-	// and control characters, and this is where they must survive.
+	// The documented shape, built with the encoder: the payload is full of unescaped quotes.
 	var wrapper map[string]string
 	if err := json.Unmarshal([]byte(got.Text), &wrapper); err != nil {
 		t.Fatalf("the result content must be the documented JSON wrapper: %v (%q)", err, got.Text)

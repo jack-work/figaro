@@ -1,11 +1,6 @@
 package angelus
 
-// Waking a dormant aria is a SINGLE FLIGHT, not a lock table.
-//
-// The map this replaces handed out a *sync.Mutex per aria and never removed
-// one: it grew by an entry per aria ever restored, for the life of the
-// daemon. The entry here exists only while a wake is running, so the bound
-// is concurrent wakes rather than arias ever woken (plans/lock-audit.md).
+// A wake is a single flight: the entry exists only while it runs.
 
 import (
 	"context"
@@ -15,8 +10,7 @@ import (
 )
 
 func TestRestoreSingleFlightLeavesNothingBehind(t *testing.T) {
-	// A minimal daemon: a registry to consult and NO backend, so every wake
-	// fails. A failing wake is the case most likely to leak an entry.
+	// No backend, so every wake fails: the case most likely to leak an entry.
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry()}}
 	const arias = 64
 
@@ -41,8 +35,6 @@ func TestRestoreSingleFlightLeavesNothingBehind(t *testing.T) {
 	}
 }
 
-// A caller whose context dies while another goroutine is mid-wake must not
-// wait for it, and must not corrupt the entry the winner will delete.
 func TestRestoreSingleFlightHonoursACancelledCaller(t *testing.T) {
 	h := &handlers{
 		angelus:   &Angelus{Registry: NewRegistry()},
