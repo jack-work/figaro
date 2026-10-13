@@ -565,3 +565,25 @@ node identity and federation (§2), the cli/pager/input split (§1.1). The 22
 remaining boundary edges are listed in `scripts/boundary-allow.txt`; the
 largest group is `cli -> provider` for `figaro models` and the first-run
 wizard, which needs a `models.list` RPC to cut.
+
+### 8.1 Second pass: parity and live turns
+
+Old build (0.38.2 at `a62f412e`) and new build ran against the same
+snapshot copy, 40-aria sample. `show -j`, `state`, `doctor schema`: identical.
+`ls`/`status`: identical after the one aria the old build minted. `show`
+text: two cosmetic diffs. One was a real regression, now fixed: the input
+header rewrite in `msghead.go` was live for persisted history labelled by
+older daemons, and is restored. The other is a pre-existing run-to-run flip
+of the code-comment colour (241/242) that both builds exhibit.
+
+Live turns on the new build, all ok: fresh aria; `send` on a 1925-message
+aria (translator cache written once, read by the fork that followed); fork
+with `--stay`; a tool turn under `local`; a tool turn under `bwrap` where the
+config dir is unreadable, no provider key is in the env, and a nested
+`figaro ls`/`set`/`state` reaches the host daemon through the mounted socket
+(that needed one fix: the client now asks for hush only when it must spawn
+the daemon, not to dial one); `set` plus two queued sends.
+
+tmux smoke: 12 pass, 2 skip, 5 fail; the same 5 fail identically on `main`
+(the harness expects an `aria <id>` label on the footer rule that neither
+build paints). Captures: `/var/tmp/parity/`.
