@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-// NOTIFICATIONS: what figaro told you, still there after it stops saying it.
-// The bug this answers was that every alert retired after ten seconds and then
-// existed nowhere; each case below is one way that could come back.
-
 func TestNotificationStore(t *testing.T) {
 	t.Run("a post is kept after the bar would have retired it", func(t *testing.T) {
 		s := newNotificationStore()
@@ -59,7 +55,6 @@ func TestNotificationStore(t *testing.T) {
 		if n, _ := s.unread(); n != 0 {
 			t.Fatalf("after reading, %d unread", n)
 		}
-		// A repeat HAPPENED AGAIN: unread again.
 		s.post(alertError, "cli", "broke")
 		if n, _ := s.unread(); n != 1 {
 			t.Fatalf("a repeat after reading should be unread, got %d", n)
@@ -137,20 +132,14 @@ func TestNotificationsView(t *testing.T) {
 		if len(rows) < 4 || !strings.Contains(rows[1].text+rows[2].text, "provider said: overloaded") {
 			t.Fatalf("the whole text follows its row: %+v", rows)
 		}
-		// The state pit's Enter opens a value and nothing else; this one is the
-		// same gesture. The date and the source were what it used to show, and
-		// the row already carries the time and the aria.
 		for _, r := range rows[1:3] {
 			if strings.Contains(r.text, "from this pager") || strings.Contains(r.text, "3b7aff0a,") {
 				t.Fatalf("Enter is showing furniture instead of the text: %q", r.text)
 			}
 		}
-		// A value row is selectable, as an opened value's rows are in the form
-		// pit: a reader walks a long one, and every row yanks the whole thing.
 		if !rows[1].selectable() || rows[1].yank != rows[0].yank {
 			t.Fatalf("an opened line must be walkable and yank the whole: %+v", rows[1])
 		}
-		// Enter on one of those rows folds the notification it belongs to.
 		v.Activate(rows[1].id)
 		if len(v.Items(80)) != 3 {
 			t.Fatal("Enter on an opened line did not fold it")
@@ -165,8 +154,6 @@ func TestNotificationsView(t *testing.T) {
 		}
 	})
 
-	// A LONG SINGLE LINE IS WHY THIS EXISTS: the row clips at the pane edge,
-	// and the only way to read the rest was to yank it into a pager.
 	t.Run("Enter wraps a long single line instead of clipping it", func(t *testing.T) {
 		s := newNotificationStore()
 		long := "turn failed: " + strings.Repeat("provider said no ", 20)
@@ -190,8 +177,8 @@ func TestNotificationsView(t *testing.T) {
 		}
 	})
 
-	// THE LEVEL IS A COLOUR, not only a glyph: the picker paints the row, so
-	// the view says which tone it wears and smuggles no escape into the text.
+	// The picker paints the row: the view names a tone and smuggles no escape
+	// into the text.
 	t.Run("errors are red and warnings yellow, info plain", func(t *testing.T) {
 		rows := v.Items(80)
 		want := []pitTone{toneError, toneWarn, toneNone}
@@ -229,8 +216,6 @@ func TestNotificationsView(t *testing.T) {
 	})
 }
 
-// THE MARK: what an alert leaves behind. It is on the bar while there is
-// something unread, in the colour of the worst of it, and gone once read.
 func TestTheBarKeepsAMarkForWhatIsUnread(t *testing.T) {
 	st := newSessionStatus("aria1234", timeZero)
 	st.notes = newNotificationStore()
@@ -249,8 +234,6 @@ func TestTheBarKeepsAMarkForWhatIsUnread(t *testing.T) {
 	}
 }
 
-// EVERY NOTE IS POSTED: the verb results that went to the bar, and the long
-// ones that went to the message pit, both end up in the history.
 func TestCommandNotesArePosted(t *testing.T) {
 	tr := jumpFixture(t, 1, 4)
 	tr.setCommandNote("yanked 12 chars")
@@ -261,8 +244,7 @@ func TestCommandNotesArePosted(t *testing.T) {
 	}
 }
 
-// THE HISTORY SURVIVES A HOP. The status is replaced on every subject switch;
-// a store that lived on it would forget everything each time.
+// The status is replaced on every subject switch; the store must not live on it.
 func TestNotificationsSurviveASubjectSwitch(t *testing.T) {
 	tr := jumpFixture(t, 1, 4)
 	tr.setCommandNoteAt("broke", alertError)
@@ -272,7 +254,6 @@ func TestNotificationsSurviveASubjectSwitch(t *testing.T) {
 	}
 }
 
-// space n opens it; space then anything else is that key, not swallowed.
 func TestSpaceNOpensNotifications(t *testing.T) {
 	tr := jumpFixture(t, 1, 4)
 	tr.setCommandNoteAt("broke", alertError)
@@ -289,15 +270,13 @@ func TestSpaceNOpensNotifications(t *testing.T) {
 	if tr.showing(pitNotifications) {
 		t.Fatal("space n again closes it")
 	}
-	// n alone is still search-repeat, not notifications.
 	tr.dispatch(keyEvent{b: 'n', mode: modeTranscript})
 	if tr.showing(pitNotifications) {
 		t.Fatal("n alone must not open notifications")
 	}
 }
 
-// The CLI's own warnings reach the history; its echo of every bar alert does
-// not, or everything would be there twice.
+// The CLI's echo of a bar alert must not be posted again.
 func TestSlogWarningsAreNotifications(t *testing.T) {
 	s := newNotificationStore()
 	h := notifyHandler{inner: slog.NewTextHandler(discardWriter{}, nil), store: s}
@@ -319,8 +298,6 @@ type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
-// `[cli] notice_ttl` is applied, and to every status a hop mints after it. It
-// was documented and never applied: every alert held the bar for ten seconds.
 func TestNoticeTTLIsAppliedAndSurvivesAHop(t *testing.T) {
 	tr := jumpFixture(t, 1, 4)
 	tr.setNoticeTTL(2 * time.Second)
@@ -333,8 +310,6 @@ func TestNoticeTTLIsAppliedAndSurvivesAHop(t *testing.T) {
 	}
 }
 
-// A progress line ("…state" while a verb runs) is the bar's, never the
-// history's: the result that follows is the news.
 func TestProgressIsNotANotification(t *testing.T) {
 	tr := jumpFixture(t, 1, 4)
 	tr.setProgressNote("…state")

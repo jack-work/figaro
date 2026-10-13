@@ -27,21 +27,16 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
+const spinnerFPS = 11
 
-// recentCursor is a beyond-the-end turn id. ReadBefore from it returns the
-// newest byte-bounded node page: the pager's initial lazy window.
+// recentCursor is a beyond-the-end turn id: ReadBefore from it returns the newest page.
 const recentCursor = 1 << 60
 
-// The opening preamble: how much history a new prompt is allowed to fetch, and
-// how long it may wait for it.
 const (
 	recentContextMessages = 4
 	recentContextTimeout  = 300 * time.Millisecond
 )
 
-// Terminal control: disable auto-margin (so a full-width row never wraps) and
-// hide the cursor while the renderer owns the screen.
 const (
 	autowrapOff = "\x1b[?7l"
 	autowrapOn  = "\x1b[?7h"
@@ -49,9 +44,6 @@ const (
 	cursorShow  = "\x1b[?25h"
 )
 
-// mustPromptFigaro is the SEND entrance: one session, with a prompt in it.
-// The tape is opened here because --record is a send flag; everything else is
-// runSession's (session.go).
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings, d dressing) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
@@ -73,7 +65,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			die("record: %s", terr)
 		}
 		defer func() {
-			// To the log, not the terminal: this runs as the session ends.
+			// To the log: the shell prompt is already back.
 			if cerr := rec.Close(); cerr != nil {
 				slog.Error("tape close", "err", cerr)
 			}
@@ -86,10 +78,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	})
 }
 
-// interruptExit is the Ctrl-C rule: an interrupted TURN is 130 (128+SIGINT),
-// a Ctrl-C with nothing running is a clean 0. This path used to fall out of
-// its select and exit 0, so `send … || retry` never fired. Ctrl-D stays 0 -
-// it leaves the turn running on purpose.
+// An interrupted turn exits 130; Ctrl-C with nothing running is 0.
 func interruptExit(wasRunning bool) int {
 	if wasRunning {
 		return exitInterrupted
@@ -97,93 +86,45 @@ func interruptExit(wasRunning bool) int {
 	return 0
 }
 
-// interactiveInput is the shared control-key + pager input loop for the live
-// TTY commands: send's mustPromptFigaro and listen's tailFigaro. It owns
-// Ctrl-C/D/L/T/O and 'y' (copy id), plus the pager's scroll + mouse, so both
-// commands behave identically in incipit and transcript.
+// interactiveInput is the input loop shared by send and listen; the keymap owns
+// every key from the keyEvent on.
 type interactiveInput struct {
 	tc   term.Client
 	lt   *livelogTurn
 	fcli transcriptReadClient
-	// THE SUBJECT: the aria this pager is showing, and the machinery to change
-	// it. subject is the same connection fcli names, held concretely because a
-	// switch has to close it and `:send` has to Qua on it; acli and loaded are
-	// what a verb needs to resolve a spec into an endpoint. subjectGen fences
-	// the OLD connection's handlers off the renderer the instant a switch
-	// begins, and subjectDead reports the death of whichever connection is
-	// current. See command.go.
-	subject *sdk.Aria
-	acli    *sdk.Angelus
-	loaded  *config.Loaded
-	tap     transport.Tap
-	// seed is what the last switch decided it still owes the wire.
-	seed seedPlan
-	// parked holds the arias this session has already shown, keyed by id, with
-	// parkOrder oldest first. See subject_park.go.
-	parked    map[string]*parkedSubject
-	parkOrder []string
-	// lineageEpoch is the topology revision the last lineage answer carried.
-	// It is the handle for "the shape of the tree changed under a retained
-	// prefix"; see plans/prefix-retention.md.
+	// subject is the connection fcli names, held concretely so a switch can
+	// close it and `:send` can Qua on it.
+	subject      *sdk.Aria
+	acli         *sdk.Angelus
+	loaded       *config.Loaded
+	tap          transport.Tap
+	seed         seedPlan
+	parked       map[string]*parkedSubject
+	parkOrder    []string // oldest first
 	lineageEpoch uint64
-	// ownsSubject says whether THIS loop dialled the connection and may close
-	// it. In `figaro send` the connection belongs to the caller, which is
-	// blocked on its Done() channel: closing it there ended the session
-	// mid-turn, with the pager vanishing and the shell prompt back while the
-	// agent was still working. A switch may only close what it opened.
-	ownsSubject bool
-	subjectGen  uint64
-	subjectDead chan struct{}
-	// jumps is the jumplist: every aria this session has attended, and
-	// where the reader stands in it. ^O/^I walk it. Guarded by in.mu.
-	jumps ariaJumplist
-	// queueEpoch is the version of the queue as last READ. Every queue mutation
-	// is a compare-and-set against it -- the daemon refuses a delete with no
-	// epoch ("read the queue first, then mutate against what you read"), which
-	// is exactly right: the ids in a queue you have not re-read may have been
-	// drained, merged or renumbered under you.
-	queueEpoch string
-	// queueDebut is when each live queue row may first be DRAWN, and
-	// debutTimer is the wake-up that draws it. See queueDebutGrace: a row
-	// that arrives while the aria is idle is usually lifted again within a
-	// frame or two, and drawing it is a flicker rather than news. Guarded by
-	// in.mu.
-	queueDebut map[uint64]time.Time
-	debutTimer *time.Timer
-	// intrinsic forms are the client's LIVE COPIES of `<aria>/runtime` and
-	// `<aria>/queue`, kept current by the patch protocol. See
-	// intrinsic_mirror.go for what they replaced.
-	intrinsics *intrinsicMirrors
-	// interrupting is set by the first Ctrl-C: the turn has been asked to
-	// stop and we are waiting for turn.done to close us. A second Ctrl-C
-	// leaves immediately, because a user must never be trapped by a daemon
-	// that will not answer.
-	interrupting bool
-	// hangup is the H key's client. Nil leaves the key inert rather than
-	// crashing a session that was built without one.
-	hangup hangupClient
-	// THE SEND HALF. A session with a prompt waits for that prompt's turn to
-	// settle and then leaves; a listener has none of this. ownTurn closes when
-	// a frame carries OUR question, noTurn when the agent answers with an
-	// error instead -- state can race (Qua's `active` is sampled before the
-	// prompt is even queued), the EVENT cannot.
-	prompt string
-	// dress is the dressing that prompt asked for, held by the session that
-	// submits it rather than by the package.
-	dress      dressing
-	sendCursor int // set by Qua; a turn.done before it is not ours
-	doneCh     chan struct{}
-	// turnFailed records that the turn this send was waiting on ended with an
-	// error, so the process can say so in its exit status. Written on the
-	// notify pump under mu, read once after the session's select returns.
-	turnFailed   bool
+	ownsSubject  bool   // a switch may only close a connection this loop dialled
+	subjectGen   uint64 // fences the old connection's handlers off the renderer the instant a switch begins
+	subjectDead  chan struct{}
+	jumps        ariaJumplist         // guarded by in.mu
+	queueEpoch   string               // the daemon refuses a queue mutation without the epoch it was read at
+	queueDebut   map[uint64]time.Time // guarded by in.mu
+	debutTimer   *time.Timer
+	intrinsics   *intrinsicMirrors
+	interrupting bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user
+	hangup       hangupClient // nil leaves H inert
+	// The send half. ownTurn closes when a frame carries our question, noTurn
+	// when the agent errors instead; Qua's `active` is sampled before the
+	// prompt is queued and can race, the event cannot.
+	prompt       string
+	dress        dressing
+	sendCursor   int // set by Qua; a turn.done before it is not ours
+	doneCh       chan struct{}
+	turnFailed   bool // written on the notify pump under mu, read after the session's select returns
 	ownTurn      chan struct{}
 	noTurn       chan struct{}
 	ownOnce      sync.Once
 	noOnce       sync.Once
-	watchInquiry bool // kept OFF the steady-state frame path once answered
-	// startInline keeps an ordinary send in the incipit until something
-	// promotes it. Every other session opens the pager as it starts.
+	watchInquiry bool
 	startInline  bool
 	mu           *renderLock
 	set          *renderSettings
@@ -200,41 +141,20 @@ type interactiveInput struct {
 	searchGen    uint64
 	searchQuery  string
 	searchDone   chan struct{}
-	// pageInFlight guards the single background history fetch. Page fetches are
-	// asynchronous so that scrolling never waits on an RPC; pageDone is closed
-	// when the worker finishes (tests synchronize on it).
-	pageInFlight bool
-	pageDone     chan struct{}
-	// pageWanted defers the history-paging check to the end of the input chunk.
-	// It reads a viewport offset that render() clamps, so it belongs after the
-	// frame: once per chunk, not once per event. (B wrote this when
-	// pageTranscript still blocked on the RPC; D since made it a non-blocking
-	// single-flight launcher, so the deferral is now about asking the *settled*
-	// viewport for a cursor exactly once, instead of once per wheel report.)
-	// Only ever touched on the input goroutine.
+	pageInFlight bool          // one background history fetch at a time
+	pageDone     chan struct{} // closed when the worker finishes; tests synchronize on it
+	// pageWanted defers the paging check to the end of the input chunk: it
+	// reads a viewport offset render clamps. Input goroutine only.
 	pageWanted bool
-	// caughtUp records that this session has read the aria's tail into the store
-	// once. Guarded by mu (pagerCatchUp is called with it already held). See
-	// pagerCatchUp: a failed read clears it, because a timeout is not a floor.
-	caughtUp bool
-	// gate parks the read loop while an external program owns the terminal,
-	// and suspendTerm/resumeTerm are how the terminal is handed over. Nil
-	// outside a raw TTY session, which is the same thing as "there is nothing
-	// to hand over". See openpath.go.
+	caughtUp   bool // guarded by mu; a failed read clears it
+	// gate parks the read loop while an external program owns the terminal;
+	// nil outside a raw TTY session.
 	gate        inputGate
 	suspendTerm func()
 	resumeTerm  func()
-	// lastNL is the last CR/LF byte we delivered (0 otherwise). Windows
-	// conhost and some other terminals emit CR+LF for a single Enter press;
-	// without dedup, a toggle-style binding (Enter -> expand tools) fires
-	// twice and cancels itself out. Also covers the rare LF+CR order.
-	lastNL byte
+	lastNL      byte // Windows conhost emits CR+LF for one Enter; the pair is coalesced
 }
 
-// hangupClient is the one capability the H key needs. It is deliberately NOT
-// folded into transcriptReadClient: a stub that only serves history has no
-// business growing a method it will never call, and the ten of them in the
-// tests are evidence enough that the two roles are separate.
 type hangupClient interface {
 	Hangup(context.Context, rpc.QueueDisposition) (*rpc.InterruptResponse, error)
 }
@@ -245,25 +165,16 @@ type transcriptReadClient interface {
 	Queued(context.Context) (*rpc.QueuedResponse, error)
 }
 
-// tailReader is a read client that can stop a backward read at a floor: what a
-// client asks for when it already holds everything below it. OPTIONAL, and
-// asserted at the one call site that can use it, so the ten stubs that serve
-// history in tests do not grow a method they would never call. Without it the
-// switch reads the prefix again, which is slower and never wrong.
+// tailReader is optional: without it a switch re-reads the prefix, which is slower
+// and never wrong.
 type tailReader interface {
 	ReadBeforeFloor(ctx context.Context, at, floor aria.Anchor, budget int) (aria.Page, error)
 }
 
-// enterTranscript opens the pager on the recent window (older history pages in
-// on scroll-up); shared by Ctrl-T, Ctrl-L, and listen's auto-enter. No-op when
-// already in the pager.
 func (in *interactiveInput) enterTranscript() { in.enterPager(true) }
 
-// enterFormPager opens the pager WITHOUT reading the conversation: no
-// catch-up page, nothing fetched, nothing kept. `fig form listen` opens into
-// it, because a reader who came for the board may have no interest in the
-// output -- and may one day not be permitted to read it. Ctrl-T still opens
-// the conversation the ordinary way.
+// enterFormPager reads no conversation: a reader who came for the board may not be
+// permitted to read it.
 func (in *interactiveInput) enterFormPager() { in.enterPager(false) }
 
 func (in *interactiveInput) enterPager(history bool) {
@@ -285,10 +196,6 @@ func (in *interactiveInput) enterPager(history bool) {
 		in.mu.Unlock()
 		return
 	}
-	// Already holding the catch-up page (we joined a turn we did not open, and
-	// the inline view fetched the tail to orient with): open on it rather than
-	// blocking the input loop on a read for content we have. Scrolling up still
-	// pages older history in, asynchronously, as it always did.
 	if seeded {
 		in.mu.Lock()
 		in.caughtUp = true
@@ -304,24 +211,19 @@ func (in *interactiveInput) enterPager(history bool) {
 	read("parts", len(r.Parts), "err", rerr != nil)
 	rcancel()
 	in.mu.Lock()
-	// Claimed BEFORE the pager opens: enterPager fires the catch-up hook for a
-	// seedless pager, and this door has just done that read itself.
+	// Claimed before the pager opens, or enterPager fires the catch-up hook
+	// for a read just done.
 	in.caughtUp = rerr == nil
 	in.lt.enterTranscript()
 	in.lt.setQueuedFetch(in.refreshQueued)
 	in.lt.setHistoryFetcher(in.historyFetcher())
 	if rerr == nil {
 		in.lt.apply(r)
-		// The wire's own answer to "is there anything before this page", which
-		// is the only honest source for it: the pager reads it back as "can I
-		// still page older history" instead of latching a bit of its own.
 		in.lt.setMoreBefore(r.More.Before)
 	}
 	in.mu.Unlock()
 }
 
-// pagerCatchUp is the read the AUTOMATIC promotions owe, armed on the
-// livelogTurn and fired from enterPager.
 func (in *interactiveInput) pagerCatchUp() {
 	if in.caughtUp {
 		return
@@ -330,16 +232,12 @@ func (in *interactiveInput) pagerCatchUp() {
 	go in.readHistoryIntoPager()
 }
 
-// reseedIfEmpty is the retry a failed catch-up owes. A read that timed out
-// leaves the pager on an empty window, and nothing asked again: the reader saw
-// a conversation with no content and no way to bring it back short of leaving
-// the session. The pager's clock asks, and the caughtUp flag makes the ask free
-// once the window is there.
+// reseedIfEmpty retries a failed catch-up from the pager's clock.
 func (in *interactiveInput) reseedIfEmpty() {
 	in.mu.Lock()
 	owed := in.lt.transcriptActive() && !in.caughtUp && in.fcli != nil
 	if owed {
-		in.caughtUp = true // claimed here; the read clears it again if it fails
+		in.caughtUp = true
 	}
 	in.mu.Unlock()
 	if owed {
@@ -359,27 +257,16 @@ func (in *interactiveInput) readHistoryIntoPager() {
 		in.caughtUp = false
 		return
 	}
-	// The same fold, in the same order, as the deliberate door: apply carries the
-	// open suffix, and setMoreBefore records what the WIRE said about the
-	// beginning. Applying is safe here precisely because the pager is up: the
-	// inline branch of OnClosed (which freezes to native scrollback) is not
-	// reachable while tr.active, which is the trap this whole design is built
-	// around.
+	// Applying is safe only because the pager is up: inline, OnClosed would
+	// freeze this to scrollback.
 	in.lt.apply(r)
 	in.lt.setMoreBefore(r.More.Before)
-	// The window was derived from the tail before this page existed; re-derive it
-	// so the rows that just arrived are reachable by a scroll.
 	in.lt.invalidateTranscriptWindow()
 	in.lt.render()
 }
 
-// pageTranscript keeps the retained window fed. It never blocks the caller: the
-// input loop calls it after every key and wheel event, and a scroll-up that
-// needs older history must not stop the pager from drawing the frames the user
-// is already scrolling through. One fetch runs at a time (pageInFlight); when
-// it lands, the worker re-asks the pager whether the viewport has since moved
-// close enough to another edge and chains straight into the next page, so a
-// fast scroll pulls history continuously instead of one keypress at a time.
+// pageTranscript never blocks: one fetch runs at a time and chains into the next
+// while the pager still wants one.
 func (in *interactiveInput) pageTranscript() {
 	in.mu.Lock()
 	if query, searching := in.lt.transcriptHistorySearch(); searching {
@@ -396,7 +283,7 @@ func (in *interactiveInput) pageTranscript() {
 		in.mu.Unlock()
 		return
 	}
-	if in.pageInFlight { // the running fetch re-checks the cursor when it lands
+	if in.pageInFlight {
 		in.mu.Unlock()
 		return
 	}
@@ -412,16 +299,12 @@ func (in *interactiveInput) pageTranscript() {
 	go in.prefetchTranscriptPages(req, done)
 }
 
-// prefetchTranscriptPages fetches req and then keeps going while the pager still
-// wants a page in the direction it is being scrolled.
 func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, done chan struct{}) {
 	defer close(done)
 	for {
 		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 		var err error
 		if req.fill != nil {
-			// A HOLE, not history below the floor: Ensure keeps reading until
-			// the hole is closed, and merges into the store itself.
 			err = in.lt.fillGap(rctx, *req.fill)
 		}
 		var messages aria.Page
@@ -475,9 +358,6 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 		}
 		in.mu.Unlock()
 
-		// A hole inside the window is closed by Ensure; a page below the floor
-		// is a plain backward read. The search walks both, because the reader
-		// is going to be shown whatever it lands on.
 		rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
 		var (
 			messages aria.Page
@@ -517,14 +397,10 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 	}
 }
 
-// ownTurnDeadline bounds the wait for our own question to come back on the
-// stream. It is the answer to "how long before I conclude no inquiry is
-// coming", and it is generous by three orders of magnitude on purpose.
 const ownTurnDeadline = 300 * time.Millisecond
 
-// awaitOwnTurn reports whether the turn we are about to watch is the one our
-// prompt opened. True means: our question came back on the wire, so the screen
-// is about to show it and there is nothing to orient: print no preamble.
+// awaitOwnTurn: true means our question came back on the wire, so no preamble is
+// needed.
 func awaitOwnTurn(prompt string, own, none <-chan struct{}) bool {
 	if strings.TrimSpace(prompt) == "" {
 		return true
@@ -541,7 +417,6 @@ func awaitOwnTurn(prompt string, own, none <-chan struct{}) bool {
 	}
 }
 
-// pageCarriesInquiry reports whether a frame carries the question we sent.
 func pageCarriesInquiry(p aria.Page, prompt string) bool {
 	want := strings.TrimSpace(prompt)
 	if want == "" {
@@ -555,7 +430,6 @@ func pageCarriesInquiry(p aria.Page, prompt string) bool {
 	return false
 }
 
-// recentContext reads the tail of the conversation for the opening preamble.
 func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) aria.Page {
 	rctx, rcancel := context.WithTimeout(ctx, recentContextTimeout)
 	defer rcancel()
@@ -572,28 +446,19 @@ func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) a
 	return history
 }
 
-// wireBudget converts the pager's message-count geometry into the wire's byte
-// budget: the client counts messages to size its retained window, the wire
-// spends bytes so one enormous tool dump cannot blow a page.
+// The client counts messages; the wire spends bytes.
 const wireBytesPerMessage = 4096
 
 func wireBudget(messages int) int {
 	if messages <= 0 {
-		return 0 // let the server apply its configured default
+		return 0 // the server's default
 	}
 	return messages * wireBytesPerMessage
 }
 
-// historyFetcher is the reader Ensure closes holes with: the client's own
-// ReadBefore.
-//
-// IT IS FENCED BY THE SUBJECT GENERATION, at both ends. A hole is filled by a
-// worker that started before the switch and answers after it, on a connection
-// that is being closed underneath it, and the page it brings back carries the
-// OLD aria's coordinates: folding that into the new subject's store is the
-// fabricated-adjacency bug the range store exists to prevent, at aria scale.
-// The check before the call saves a read nobody wants; the check after is the
-// one that matters, because the switch can land while the read is in flight.
+// historyFetcher is fenced by the subject generation after the read as well as
+// before: a switch can land mid-flight, and the page carries the old aria's
+// coordinates.
 func (in *interactiveInput) historyFetcher() aria.Fetcher {
 	gen := atomic.LoadUint64(&in.subjectGen)
 	return func(ctx context.Context, before aria.Anchor, limit int) (aria.Page, error) {
@@ -611,8 +476,6 @@ func (in *interactiveInput) historyFetcher() aria.Fetcher {
 	}
 }
 
-// errSubjectChanged is what a read owed to an aria we have left answers with.
-// It is not a failure: the pager asks again against the subject it now has.
 var errSubjectChanged = errors.New("the transcript changed subject while this read was in flight")
 
 func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (aria.Page, error) {
@@ -661,24 +524,10 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 	in.mu.Unlock()
 }
 
-// startPagerClock is the pager's clock, and both hosts start one. The spinner
-// frame and the alert's TTL are functions of time, and that is now ALL it is
-// for.
-//
-// IT USED TO POLL THE QUEUE, twice a second, because -- in this comment's own
-// former words -- "THE QUEUE is a function of state nobody announces: a prompt
-// enters it with no frame emitted, so a pager that does not ask never learns."
-// That is no longer true. The queue and the runtime disposition are intrinsic forms
-// now, pushed as form patches over the connection this session already holds,
-// so the client is told rather than asking. A clock that polls a pushed value
-// is a clock that can only be stale between ticks.
-//
-// current() is read under the render lock: `send` wires its input loop after
-// starting the clock, and it returns nil until then.
+// current is read under the render lock and returns nil until the input loop is wired.
 func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiveInput) func() {
 	stop := make(chan struct{})
-	// Metrics -- the capacity figure and the mantra -- are still pulled: they
-	// are not yet intrinsic forms. See plans/reactive-queue-and-state-forms.md §5.4.
+	// Metrics are still pulled: they are not yet an intrinsic form.
 	metricsEvery := max(spinnerFPS/metricsPollHz, 1) * 4
 	go func() {
 		t := time.NewTicker(time.Second / spinnerFPS)
@@ -705,24 +554,14 @@ func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiv
 	return func() { close(stop) }
 }
 
-// refreshQueued re-reads the queue whole. IT IS NO LONGER A POLL: the queue is
-// a intrinsic form, pushed as form patches, and this is the RESYNC path -- what a
-// client does when it learns it missed a delta, or before its first one has
-// arrived. Called from the transcript when the queued panel opens (so `Q`
-// works on a connection whose seed is still in flight) and from a mirror gap.
-//
-// Safe to invoke concurrently with any prior fetch: the last completion wins,
-// which is correct for an observational panel and doubly so now that a push
-// will overwrite whatever this leaves behind.
+// refreshQueued is the resync path; the last completion wins.
 func (in *interactiveInput) refreshQueued() {
 	go in.resyncIntrinsic(intrinsicQueue)
 }
 
-// inputGate parks the read loop between reads, which is the only place it can
-// be parked without either losing bytes or waiting on a keystroke that will
-// never come. A pause is REQUESTED from the dispatch path -- the read loop's
-// own goroutine, one stack frame below the loop -- so by the time it is asked
-// for, the loop is already on its way back to the check.
+// inputGate parks the read loop between reads, the only point that neither loses
+// bytes nor waits on a keystroke. A pause is requested from the dispatch path, on
+// the loop's own goroutine.
 type inputGate struct {
 	mu     sync.Mutex
 	want   bool
@@ -730,8 +569,6 @@ type inputGate struct {
 	resume chan struct{} // closed by the suspender to let it read again
 }
 
-// request asks the read loop to park. The returned channels are the handshake:
-// wait for paused, and close resume when the terminal is figaro's again.
 func (g *inputGate) request() (paused <-chan struct{}, resume chan<- struct{}) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -741,7 +578,6 @@ func (g *inputGate) request() (paused <-chan struct{}, resume chan<- struct{}) {
 	return g.paused, g.resume
 }
 
-// park is the read loop's half, called before every Read.
 func (g *inputGate) park() {
 	g.mu.Lock()
 	if !g.want {
@@ -755,14 +591,12 @@ func (g *inputGate) park() {
 	<-resume
 }
 
-// run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
-// Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
+// run needs a MakeRaw session so Ctrl-C and Ctrl-D arrive as bytes.
 func (in *interactiveInput) run() {
 	defer in.cancelSelectionCopy()
 	defer in.cancelTranscriptSearch()
-	// The queue's debut timer draws into the pager when it fires. Input is
-	// over, so nothing may be drawn again: a wake-up outliving the session
-	// would paint onto a transcript that has already been taken down.
+	// A debut wake-up outliving the session would paint onto a torn-down
+	// transcript.
 	defer in.forgetQueueDebuts()
 	buf := make([]byte, 4096)
 	var pending []byte // a mouse/escape sequence split across reads
@@ -783,35 +617,31 @@ func (in *interactiveInput) run() {
 	}
 }
 
-// consume dispatches one chunk of input as a single frame. It returns any
-// trailing bytes of an escape sequence split across reads, and whether the
-// input loop should stop.
+// consume dispatches one chunk as a single frame and returns the tail of an escape
+// sequence split across reads.
 func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 	in.mu.Lock()
 	in.lt.beginTranscriptBatch()
 	in.mu.Unlock()
 	defer func() {
 		in.mu.Lock()
-		in.lt.endTranscriptBatch() // the settled state, painted once
+		in.lt.endTranscriptBatch()
 		in.mu.Unlock()
 		if in.pageWanted {
 			in.pageWanted = false
-			in.pageTranscript() // after the frame: it may block on an RPC
+			in.pageTranscript()
 		}
 	}()
 	i := 0
 	for i < len(data) {
 		in.mu.Lock()
 		mode := in.lt.transcriptMode()
-		// Mouse sequences are only expected when the PAGER is up: that is where
-		// mouse reporting is enabled. Ask the pager, not the mode: a non-incipit
-		// mode can be live without the pager being up, and letting ldmouse.Parse
-		// see input then swallows a bare Esc as a possible mouse prefix.
+		// Mouse reporting is enabled only with the pager up; parsing for
+		// it otherwise swallows a bare Esc as a mouse prefix.
 		active := in.lt.transcriptActive()
 		in.mu.Unlock()
-		// A PASTE IS TEXT, NOT KEYSTROKES, and only a box can take it. It is
-		// read before the mouse and before the decoder because its payload
-		// may contain anything, including the escapes both of those parse.
+		// A paste is read before the mouse and the decoder: its payload
+		// may contain the escapes both parse.
 		if active {
 			if text, consumed, ok, need := parseBracketedPaste(data[i:]); need {
 				pending = append(pending, data[i:]...)
@@ -837,9 +667,9 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				case ldmouse.WheelDown:
 					delta = 3
 				case ldmouse.Left:
-					// PRESS ONLY. The terminal reports the release of the same click
-					// too, and a toggle gesture that fired on both would flip twice per
-					// click and so appear never to fire at all.
+					// Press only: the terminal reports the
+					// release too, and a toggle would flip
+					// twice.
 					if ev.Pressed {
 						in.clickTranscript(ev)
 					}
@@ -854,9 +684,6 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				continue
 			}
 		}
-		// Decode: bytes and escape encodings become one logical chord. This
-		// is the only part of the loop that knows about terminals; from the
-		// keyEvent on, the keymap decides everything (see keymap.go).
 		var ev keyEvent
 		if key, consumed, ok, need := parseModifiedKey(data[i:]); need {
 			pending = append(pending, data[i:]...)
@@ -864,21 +691,17 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		} else if ok {
 			i += consumed
 			if letter, isCtrl := ctrlChordLetter(key); isCtrl && ctrlChordBoundIn(mode, letter) {
-				// A Ctrl+letter THIS MODE binds as a CSI-u chord, modifiers
-				// intact (Shift/Alt extend the node selection). Every other
-				// CSI-u key reduces to the byte it would have arrived as --
-				// including a Ctrl+letter some OTHER mode claims as a chord,
-				// which is what keeps ^D detaching in the pager while the ':'
-				// box has it as delete-forward.
+				// A Ctrl+letter this mode binds keeps its
+				// modifiers; every other CSI-u key reduces to the
+				// byte it would have arrived as.
 				ev = keyEvent{ctrl: letter, shift: key.shift, alt: key.alt, mode: mode}
 			} else if key.ctrl && key.code == 0x0d && metaBoundIn(mode, 0x0d) {
-				// Ctrl+Enter, which only a CSI-u terminal can report, is
-				// folded onto Alt+Enter: one row, two chords, and the
-				// portable spelling is the one the table names.
+				// Ctrl+Enter, which only a CSI-u terminal can
+				// report, folds onto Alt+Enter.
 				ev = keyEvent{meta: 0x0d, alt: true, mode: mode}
 			} else if m, isMeta := metaKey(key); isMeta && (metaBoundIn(mode, m) || metaOpens(m)) {
-				// Alt+<key>, reported with the Alt bit set. The same chord a
-				// legacy terminal spells ESC <byte>, arriving pre-delimited.
+				// Alt+<key> with the Alt bit set: what a legacy
+				// terminal spells ESC <byte>.
 				ev = keyEvent{meta: m, shift: key.shift, alt: true, mode: mode}
 			} else {
 				b, representable := key.asByte()
@@ -891,10 +714,8 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				ev = keyEvent{b: b, mode: mode}
 			}
 		} else if data[i] == 0x1b {
-			// A leading ESC we didn't recognize as CSI-u. Delimit the rest of
-			// the sequence (arrow keys, SS3 F-keys, OSC replies, generic CSI)
-			// so bare Esc can trigger its own binding without a sequence
-			// prefix spuriously firing it.
+			// Delimit the sequence (arrows, SS3, OSC replies, CSI) so
+			// a prefix does not fire bare Esc.
 			if ec, en := consumeEscapeSequence(data[i:]); en {
 				pending = append(pending, data[i:]...)
 				break
@@ -902,30 +723,24 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				seq := data[i : i+ec]
 				i += ec
 				in.lastNL = 0
-				// Delimited, now classified: the arrow cluster drives the
-				// pager. Everything else stays swallowed whole.
 				key, ok := navKeyFor(seq)
 				if !ok {
 					continue
 				}
 				if m, isMeta := metaForCtrlArrow(key); isMeta && metaBoundIn(mode, m) {
-					// Ctrl+Left / Ctrl+Right, which every distro's inputrc
-					// binds to the word motions. It is one key on the keyboard
-					// and M-b's meaning; naming it here is where terminal
-					// encodings are supposed to be named.
+					// Ctrl+Left/Right are the word motions, as
+					// every inputrc binds them.
 					ev = keyEvent{meta: m, alt: true, mode: mode}
 				} else {
 					ev = keyEvent{nav: key.nav, shift: key.shift, alt: key.alt, mode: mode}
 				}
 			} else if m, isMeta := metaEscapePrefix(data[i:], mode); isMeta {
-				// ESC <byte>: the portable spelling of Alt+<byte>. Claimed
-				// only where a row binds it (see metaBoundIn), so a bare Esc
-				// followed by an ordinary key behaves as it always has.
+				// ESC <byte> is Alt+<byte>, claimed only where a
+				// row binds it.
 				i += 2
 				in.lastNL = 0
 				ev = keyEvent{meta: m, alt: true, mode: mode}
 			} else {
-				// Bare Esc: a key in its own right.
 				b := data[i]
 				i++
 				if in.coalesceNewline(b) {
@@ -934,12 +749,6 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				ev = keyEvent{b: b, mode: mode}
 			}
 		} else {
-			// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
-			// Windows conhost, and some other terminals: emit both bytes for
-			// a single Enter keypress; without this dedup a toggle binding on
-			// Enter fires twice per press and appears stuck. parseModifiedKey
-			// handles the CSI-u path (Enter as code 13); this raw-byte
-			// fallback is the one that sees non-CSI-u terminals.
 			b := data[i]
 			i++
 			if in.coalesceNewline(b) {
@@ -947,9 +756,6 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 			ev = keyEvent{b: b, mode: mode}
 		}
-		// A key whose pager meaning is a sensible OPENING gesture yanks the
-		// pager up first, so it acts on arrival instead of looking like a dead
-		// keyboard. Which keys those are is one field on one table row.
 		if mark.Enabled() {
 			mark.Mark("key", "chord", ev.chord().String(), "mode", int(ev.mode))
 		}
@@ -959,14 +765,10 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			ev.mode = in.lt.transcriptMode()
 			in.mu.Unlock()
 		}
-		// Input-level rows first: the keys that own the process (interrupt,
-		// detach, listen, clipboard) rather than the viewport.
 		act := inputAct.input(ev.mode, ev)
 		if act == nil && ev.mode == modeFork {
-			// A HALF-TYPED GESTURE MUST NOT EAT A KEY THAT MEANS SOMETHING.
-			// 'f' arms the fork jump and the next key is read from the inFork
-			// rows; a key with no row there is the ordinary key, at this level
-			// as well as in the pager, and pressing it abandons the gesture.
+			// A key with no fork row is the ordinary key, and abandons
+			// the gesture.
 			if act = inputAct.input(modeTranscript, ev); act != nil {
 				in.mu.Lock()
 				in.lt.tr.pendF = false
@@ -979,8 +781,6 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 			continue
 		}
-		// Nothing owns it up here: hand it to the pager, a motion, a panel, or
-		// literal text in the search box.
 		if ev.mode != modeIncipit {
 			in.mu.Lock()
 			in.cancelTranscriptSearchLocked()
@@ -992,14 +792,11 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 	return pending, false
 }
 
-// ---------------------------------------------------------------------------
-// The input loop's key actions: the rows of the keymap that own the process
-// rather than the viewport (see keymap.go). They run on the read goroutine,
-// take the render lock themselves, and may end the loop.
-// ---------------------------------------------------------------------------
+// The input-level key actions run on the read goroutine and take the render lock
+// themselves.
 
-// inputInterrupt is Ctrl-C. It is a state machine over the selection and the
-// clipboard, not a single gesture, and the order matters:
+// inputInterrupt is Ctrl-C: a state machine over the selection and the clipboard,
+// in this order.
 func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 	if ev.mode != modeIncipit {
 		in.mu.Lock()
@@ -1040,7 +837,6 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 	in.cancelTranscriptSearch()
 	in.cancelSelectionCopy()
 
-	// CTRL-C STOPS THE TURN AND THEN EXITS WHEN IT STOPS.
 	if in.hangup == nil {
 		in.cancel()
 		return keyStop
@@ -1061,14 +857,11 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 		defer cancel()
 		resp, err := in.hangup.Hangup(ctx, rpc.QueueKeep)
 		if err == nil && !resp.Stopped {
-			// Nothing to wait for: leave rather than sit on a doneCh that will
-			// never close.
+			// Nothing will close doneCh.
 			in.cancel()
 			return
 		}
 		if err != nil {
-			// The turn is not stopping, so nothing will close doneCh: leave
-			// rather than hang, and say why.
 			in.mu.Lock()
 			in.lt.reportError("interrupt failed: " + err.Error())
 			in.mu.Unlock()
@@ -1078,22 +871,15 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputHangUp is 'H' in the pager: stop the turn, and STAY.
 func inputHangUp(in *interactiveInput, _ keyEvent) keyVerdict {
 	return in.hangUp(rpc.QueueKeep)
 }
 
-// inputHangUpDrop is 'X': the same, and the queue goes with it. What was
-// dropped is reported rather than swallowed: into the status notice, and
-// through the pending report, which leaveTranscript reprints to the shell. So
-// the text survives even though its place in the queue does not.
 func inputHangUpDrop(in *interactiveInput, _ keyEvent) keyVerdict {
 	return in.hangUp(rpc.QueueClear)
 }
 
-// hangUp is H and X: stop the turn and STAY. Three phrases, and no more:
-// "interrupting", "interrupted" when the daemon has answered, and "nothing to
-// interrupt" when there was no turn.
+// hangUp stops the turn and stays.
 func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict {
 	if in.hangup == nil {
 		in.mu.Lock()
@@ -1114,21 +900,16 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 		case err != nil:
 			in.lt.reportError("interrupt failed: " + err.Error())
 		case resp.Cleared && len(resp.Queue) > 0:
-			// What was dropped is shown, not summarised: its text is the only
-			// copy left, and a bar row would clip it.
 			in.lt.showDropped(resp.Queue)
 		case resp.Stopped:
 			in.lt.report("interrupted")
 		default:
-			// The daemon says so: the pager's turn state is a frame behind.
 			in.lt.report("nothing to interrupt")
 		}
 	}()
 	return keyHandled
 }
 
-// inputLeavePit is 'q': close the pit, and leave only when there is none. Esc,
-// ^[ and q are one gesture, differing in how far out they take you.
 func inputLeavePit(in *interactiveInput, ev keyEvent) keyVerdict {
 	in.mu.Lock()
 	open := in.lt.tr.pit.open()
@@ -1143,8 +924,6 @@ func inputLeavePit(in *interactiveInput, ev keyEvent) keyVerdict {
 	return inputDisconnect(in, ev)
 }
 
-// inputDisconnect is Ctrl-D, and 'q' with nothing open: leave, and let the
-// turn keep running.
 func inputDisconnect(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.cancelTranscriptSearch()
 	in.cancelSelectionCopy()
@@ -1155,16 +934,12 @@ func inputDisconnect(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyStop
 }
 
-// inputEnterTranscript is Ctrl-T / Ctrl-L: open the transcript pager. Entering
-// it: by any route: carries listen semantics: the session stays open until an
-// explicit q / Ctrl-D / Ctrl-C.
 func inputEnterTranscript(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.cancelTranscriptSearch()
 	in.enterTranscript()
 	return keyHandled
 }
 
-// inputToggleVerbose is M-m (it was Ctrl-O, which is the jumplist now).
 func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
@@ -1175,7 +950,6 @@ func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputToggleSticky is 's'.
 func inputToggleSticky(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.set.sticky = !in.set.sticky
@@ -1184,7 +958,6 @@ func inputToggleSticky(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputQuestionNext and inputQuestionPrev are Alt+n and Alt+p.
 func inputQuestionNext(in *interactiveInput, _ keyEvent) keyVerdict {
 	return in.questionKey(1)
 }
@@ -1202,16 +975,11 @@ func (in *interactiveInput) questionKey(delta int) keyVerdict {
 	return keyHandled
 }
 
-// inputYank is 'y': copy the selection if there is one, else the aria id.
+// inputYank copies, in order of precedence, the composer's mark, the pit's row,
+// the visual selection, the node selection, else the aria id.
 func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 	if ev.mode != modeIncipit {
 		in.mu.Lock()
-		// A PIT WITH A SELECTION OWNS 'y'. The row knows what it is worth
-		// copying -- a queued message's text, an aria id out of `:ls` -- and the
-		// transcript's node selection is a different question that is not being
-		// asked while a list is up.
-		// THE COMPOSE DRAWER OWNS 'y' while it is in normal mode: what the
-		// reader marked is in the draft, not in the conversation behind it.
 		if in.lt.tr.box == boxComposer && in.lt.tr.composerMode == composerNormal {
 			text, ok := in.lt.tr.composerYankText()
 			if !ok {
@@ -1232,9 +1000,7 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 			in.tc.SetClipboard(row.yank)
 			return keyHandled
 		}
-		// A VISUAL SELECTION IS WHAT IS ON SCREEN, so the yank is answered from
-		// the rows already painted: no wire, no plan, no background copy. The
-		// selection stays up, as it does in a pit; Esc drops it.
+		// A visual selection is answered from the painted rows: no wire.
 		if in.lt.tr.visual.active() {
 			text := in.lt.tr.visualText()
 			if !in.lt.tr.visual.highlighted() || text == "" {
@@ -1266,8 +1032,6 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputYankCoordinate is 'Y' in visual mode: the qualified token on the
-// clipboard, for a shell command typed somewhere else.
 func inputYankCoordinate(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	token, note, err := in.lt.tr.visualCoordinate()
@@ -1287,10 +1051,8 @@ func inputYankCoordinate(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputSelectNext/Prev are CSI-u Ctrl-N / Ctrl-P: move the node selection, or
-// extend it when a modifier rides along. They are input-level (not pager
-// rows) because only the CSI-u report carries the modifier at all; the raw
-// 0x0e/0x10 bytes go through the pager, which cannot see one.
+// Input-level because only the CSI-u report carries the modifier; the raw
+// 0x0e/0x10 bytes go through the pager.
 func inputSelectNext(in *interactiveInput, ev keyEvent) keyVerdict {
 	return in.selectNodeKey(1, ev)
 }
@@ -1312,10 +1074,8 @@ func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// clickTranscript is a left-button press in the pager: select the node under the
-// pointer, or toggle its expansion when it is already the focus.
 func (in *interactiveInput) clickTranscript(ev ldmouse.Event) {
-	row := ev.Y - 1 // the report is 1-based; screen rows are 0-based
+	row := ev.Y - 1 // the report is 1-based
 	acted := false
 	in.mu.Lock()
 	if in.lt.transcriptClickable(row) {
@@ -1324,8 +1084,6 @@ func (in *interactiveInput) clickTranscript(ev ldmouse.Event) {
 	}
 	in.mu.Unlock()
 	if acted {
-		// Same reason ^N sets it: a selection near the floor of the retained window
-		// can want older history, and the fetch must run off the render lock.
 		in.pageWanted = true
 	}
 }
@@ -1367,11 +1125,8 @@ func (in *interactiveInput) cancelSelectionCopy() {
 	in.mu.Unlock()
 }
 
-// coalesceNewline swallows the paired byte of a CR+LF (or LF+CR) sequence so
-// a single Enter keypress fires the pager binding exactly once. Windows
-// conhost is the canonical offender; some serial-console setups too. Returns
-// true when the current byte is the second half of a pair (and thus should
-// be skipped by the input loop).
+// coalesceNewline reports the second half of a CR+LF or LF+CR pair, which Windows
+// conhost emits for one Enter.
 func (in *interactiveInput) coalesceNewline(b byte) bool {
 	if (b == 0x0d || b == 0x0a) && in.lastNL != 0 && in.lastNL != b {
 		in.lastNL = 0
@@ -1385,20 +1140,14 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 	return false
 }
 
-// dimRule returns a plain dim full-width horizontal rule: the opening rule and
-// the closer after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 
-// THE LAST WRITE IS THE LAST FRAME: sessionLine is gone, report() took its
-// callers, and nothing is printed after the painter has finished.
-
-// endSession is the last write: the shell prompts where we leave the cursor,
-// so return the carriage. A lone CR adds no row.
+// endSession is the last write: the shell prompts where the cursor is left, and a
+// lone CR adds no row.
 func endSession(w io.Writer) {
 	fmt.Fprint(w, "\r"+cursorShow+autowrapOn)
 }
 
-// termWidth returns the terminal width, defaulting to 80.
 func termWidth() int {
 	if w := term.Width(); w > 0 {
 		return w
@@ -1406,21 +1155,8 @@ func termWidth() int {
 	return 80
 }
 
-// metricsPollHz is how often the capacity figure and the mantra are re-read.
-//
-// IT USED TO BE queuedPollHz, and the queue used to be polled at it -- the
-// constant's comment said "see the ticker for why it is a poll and not a
-// subscription", which was an honest description of a defect. The queue IS a
-// subscription now (a intrinsic form, pushed as form patches), so nothing polls it
-// and the name would have been a lie left in the tree. Metrics are still
-// pulled; see plans/reactive-queue-and-state-forms.md for why they are the
-// obvious next patient.
 const metricsPollHz = 2
 
-// inputToggleBarVerbose is ^V outside the command box: the STATUS BAR's
-// verbosity. Distinct from ^O (verbose tool output) because they answer
-// different questions -- "what is this session" versus "what did that tool
-// say" -- and sharing a key would make one of them a surprise.
 func inputToggleBarVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.lt.status.toggleVerbose()

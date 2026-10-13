@@ -1,16 +1,7 @@
 package cli
 
-// THE STATUS BAR, as a value.
-//
-// It used to be assembled: statusLine took a lock on a *sessionStatus,
-// formatted, shed tokens by rank and returned a string, all in one function
-// against the one session a process has. Multiplexing needs N of them — one per
-// pane — and a pane's bar must render without owning the session behind it.
-//
-// So the bar is now a VALUE and a PURE FUNCTION over it. Everything that reads
-// a clock, takes a lock or asks a daemon happens where the value is built;
-// render() does arithmetic on strings and nothing else, which is what lets it
-// be golden-tested at every width. See plans/status-bar-and-modes.md §1.
+// The status bar is a value and a pure function over it: clocks, locks and the
+// daemon are read where viewOf builds it, never in render.
 
 import (
 	"strconv"
@@ -21,45 +12,29 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// statusView is everything the bar says.
 type statusView struct {
-	Pit    pitID // what is open (pitid.go); pitNothing in the plain pager
+	Pit    pitID
 	State  turnStatus
-	Tick   uint64 // spinner frame, for the one state that animates
+	Tick   uint64
 	Aria   string
 	Mantra string
-	Ctx    string // already formatted: "9.8k/1.0m (1.0%)"
-	// Alert is the newest notification, projected into the bar. It is
-	// TRANSIENT and its expiry is evaluated by whoever builds this value --
-	// never here, or the pure renderer becomes a function of the wall clock
-	// and its goldens become flaky.
-	Alert      string
-	AlertLevel alertLevel
-	// Unread is how many warnings and errors the notification history holds
-	// that nobody has opened it to see, and UnreadLevel the worst of them.
-	// It is what stays after the alert retires: `𝄞 2`, until the pit opens.
+	Ctx    string // already formatted
+	// Alert's expiry is evaluated by whoever builds the value, never here.
+	Alert       string
+	AlertLevel  alertLevel
 	Unread      int
 	UnreadLevel alertLevel
-	// LastAt is when the conversation last moved. Verbose only, and absolute:
-	// a relative "3m ago" would be true only at the instant it was painted.
-	LastAt  time.Time
-	Model   string // verbose only
-	Hints   string // verbose only: the keys this mode answers
-	Verbose bool
+	LastAt      time.Time // verbose only; absolute, since a relative string is true only when painted
+	Model       string    // verbose only
+	Hints       string    // verbose only
+	Verbose     bool
 }
 
-// lastAtFormat is a full datetime because the question it answers -- is this
-// conversation stale? -- outlives a single day, and a bare wall clock is
-// ambiguous on a pager left open across midnight.
+// A full date: a pager left open across midnight makes a bare clock ambiguous.
 const lastAtFormat = "01/02/06 15:04:05"
 
-// render draws the bar: ONE row when both halves fit, THREE when they do not.
-//
-// Three, not two: the narrow form is left group, blank, right group, and the
-// blank is in the requirement. It is also the reason this returns rows rather
-// than a string — the caller reserves height from the same count, and a bar
-// that silently became taller than its reservation would eat a line of the
-// conversation.
+// render returns one row when both groups fit, else left, blank, right; the caller
+// reserves height from the same count.
 func (v statusView) render(w int) []string {
 	if w <= 0 {
 		return nil
@@ -67,20 +42,11 @@ func (v statusView) render(w int) []string {
 	bare, right, at := v.groups()
 	r := joinFields(right)
 
-	// A LONG ALERT CLIPS ITSELF, NOT ITS NEIGHBOURS. The alert leads the row
-	// and is never shed, and clipping the finished row from the right honoured
-	// that too well: a provider's error sentence took the whole width and the
-	// state glyph and the aria id, the two facts a reader needs to place the
-	// alert, went off the end. So the alert is cut to the room left once the
-	// fixed fields have theirs, exactly as the mantra is, but with a floor,
-	// because an alert that has been cut to nothing has been shed.
+	// The alert clips itself, never its neighbours; the mantra takes what is
+	// left and sheds first.
 	v.clipAlert(bare, w, displayWidth(r))
 	bareW := displayWidth(joinFields(bare))
 
-	// THE MANTRA TAKES WHATEVER IS LEFT. It used to be cut to 32 runes on a
-	// 200-column pane with sixty columns going spare: a fixed cap is a promise
-	// about a screen nobody is looking at. It still sheds first, because it is
-	// the only field recoverable by looking up.
 	l := joinFields(v.withMantra(bare, at, w-bareW-displayWidth(r)-mantraGap))
 
 	if r == "" {
@@ -89,8 +55,6 @@ func (v statusView) render(w int) []string {
 	if lw, rw := displayWidth(l), displayWidth(r); lw+rw+2 <= w {
 		return []string{l + strings.Repeat(" ", w-lw-rw) + r}
 	}
-	// Three rows: left, blank, right. The left row no longer shares its width
-	// with the right group, so the mantra is measured again against all of it.
 	return []string{
 		clipToWidthEllipsis(joinFields(v.withMantra(bare, at, w-bareW-mantraGap)), w),
 		"",
@@ -98,15 +62,10 @@ func (v statusView) render(w int) []string {
 	}
 }
 
-// alertMin is the width below which the alert is not cut further: past that
-// the other fields yield instead, by the row splitting in three as it always
-// has. Enough for "error: " and a few words of the reason.
+// Below alertMin the alert is not cut further; the row splits in three instead.
 const alertMin = 24
 
-// clipAlert cuts bare[0], the alert, to what remains of w after every other
-// left field, the right group and the gutter between the groups. bare is
-// edited in place; the alert keeps its colour, because the cut is made on the
-// text and the paint reapplied.
+// clipAlert cuts bare[0] in place; the paint is reapplied after the cut.
 func (v statusView) clipAlert(bare []string, w, rightW int) {
 	if v.Alert == "" || len(bare) == 0 {
 		return
@@ -117,7 +76,7 @@ func (v statusView) clipAlert(bare []string, w, rightW int) {
 	}
 	room := w - others - rightW
 	if rightW > 0 {
-		room -= 2 // the gutter a one-row bar keeps between its groups
+		room -= 2 // the gutter between the groups
 	}
 	if room < alertMin {
 		room = alertMin
@@ -135,8 +94,6 @@ func (v statusView) clipAlert(bare []string, w, rightW int) {
 	bare[0] = cut
 }
 
-// withMantra puts the mantra back into the left group, clipped to the room it
-// was given, and leaves it out when that room says nothing worth having.
 func (v statusView) withMantra(left []string, at, room int) []string {
 	m := strings.Join(strings.Fields(v.Mantra), " ")
 	if m == "" || room < mantraMin {
@@ -148,25 +105,15 @@ func (v statusView) withMantra(left []string, at, room int) []string {
 	return append(left[:at:at], append([]string{m}, left[at:]...)...)
 }
 
-// mantraGap is what the mantra must leave behind: the " · " that joins it and
-// the gutter between the groups. mantraMin is the width below which a mantra
-// says nothing worth the room.
+// mantraGap is the " · " joiner plus the gutter between the groups.
 const (
 	mantraGap = 5
 	mantraMin = 8
 )
 
-// groups is the split: the mode and the conversation on the left, facts about
-// the aria on the right. The MANTRA IS NOT INCLUDED -- render fits it into
-// what is left over -- and `at` is where it belongs when it does.
+// groups leaves the mantra out; at is where render puts it.
 func (v statusView) groups() (left, right []string, at int) {
-	// The alert leads, ahead of even the pit: news belongs where the eye lands
-	// first, and it is the only field that arrives without being asked for.
-	//
-	// ONLY TROUBLE IS RED. "sent" is a confirmation and wears the row's own
-	// gray; painting every alert red made the bar shout its successes in the
-	// colour it reserves for failures, which is how a colour stops meaning
-	// anything.
+	// Only trouble is painted; a confirmation wears the row's own gray.
 	if v.Alert != "" {
 		switch v.AlertLevel {
 		case alertError:
@@ -177,10 +124,6 @@ func (v statusView) groups() (left, right []string, at int) {
 			left = append(left, v.Alert)
 		}
 	}
-	// THE MARK: what an alert leaves behind once it has retired unread. It
-	// sits beside the alert and is coloured by the worst thing it counts, so
-	// a warning never looks like a failure and a failure never looks like
-	// news.
 	if v.Unread > 0 {
 		mark := pitNotifications.face().glyph + " " + strconv.Itoa(v.Unread)
 		switch v.UnreadLevel {
@@ -217,9 +160,6 @@ func (v statusView) groups() (left, right []string, at int) {
 	return left, right, at
 }
 
-// stateToken is the state as the bar draws it: the glyph, plus its name under
-// verbose. Idle contributes nothing — it is the catch-all, and a row that is
-// always visible has nothing to say by saying "nothing is happening".
 func (v statusView) stateToken() string {
 	if v.State == turnStatusIdle {
 		return ""
@@ -233,27 +173,17 @@ func (v statusView) stateToken() string {
 	return v.State.paint(sym)
 }
 
-// joinFields is the separator rule, and it is the reason wrapping is done by
-// GROUP rather than by column: `·` joins fields ON a row, so a group that
-// breaks across rows must not leave one dangling at the break.
+// `·` joins fields on a row, which is why wrapping is by group: no joiner may
+// dangle at a break.
 func joinFields(fields []string) string { return strings.Join(fields, " · ") }
 
-// ---------------------------------------------------------------------------
-// Building the value.
-// ---------------------------------------------------------------------------
-
-// viewOf snapshots a session into a statusView. This is where the lock is
-// taken and where the wall clock is read; render() does neither.
+// viewOf takes the lock and reads the clock; render does neither.
 func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusView {
 	if s == nil {
 		return statusView{}
 	}
-	// THE TICKER IS NOT THE ONLY CLOCK. It runs while something animates; an
-	// idle pager animates nothing, so an alert posted after the turn ended
-	// would have waited for the next keystroke to notice it had expired. Every
-	// build of the view checks too -- it is one comparison, it happens exactly
-	// where the wall clock is already being read, and it makes "the alert
-	// retires" true rather than usually true.
+	// The ticker runs only while something animates: an idle pager retires
+	// alerts here.
 	s.retireAlert(now)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -271,9 +201,8 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 	if ctx := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); ctx != "-" {
 		v.Ctx = ctx
 	}
-	// The store has its own lock; reading it under the status's read lock
-	// is ordered the same way everywhere (status, then store) and the store
-	// never takes the status's.
+	// Lock order is status, then store, everywhere; the store never takes the
+	// status's.
 	v.Unread, v.UnreadLevel = s.notes.unread()
 	if verbose {
 		v.Model = s.model
@@ -281,28 +210,10 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 	return v
 }
 
-// barWidthOf reports how tall a bar of this view will be, so a caller that
-// reserves rows and a caller that draws them cannot disagree.
 func (v statusView) height(w int) int { return len(v.render(w)) }
 
-// ---------------------------------------------------------------------------
-// THE FOOTER, AND THERE IS ONLY ONE.
-//
-// The pager and the incipit each used to build their own: footerRows() for the
-// transcript, bookendLines() for the inline stream, both stitching a rule and a
-// status row out of the same two helpers in slightly different ways. That is
-// how a change lands in one mode and not the other -- and it did: the state
-// glyphs, the aria id and the dropped clock reached the pager first and the
-// scrollback bookend only because someone remembered to look.
-//
-// One function now. Both callers pass what differs (the position label, the
-// verbosity) and neither owns a single line of layout.
-// ---------------------------------------------------------------------------
-
-// footerStanza is the bottom of the screen, in one place: the rule that closes
-// the conversation, then the bar. Dimming is applied here too, so "the footer
-// is dim" is a fact about the footer rather than a convention every caller
-// remembers.
+// footerStanza is the one footer the pager and the incipit share: the rule, then
+// the bar, dimmed here.
 func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool) []string {
 	if s == nil || w <= 0 {
 		return nil
@@ -314,5 +225,4 @@ func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool) 
 	return rows
 }
 
-// truncRunes is shared with the old renderer.
 var _ = runewidth.StringWidth

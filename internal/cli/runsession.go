@@ -1,30 +1,7 @@
 package cli
 
-// ONE SESSION, TWO ENTRANCES.
-//
-// `figaro send` and `figaro listen` were two implementations of the same
-// thing: build the livelog turn, arm autowrap and hide the cursor, defer the
-// teardown, print the opening rule, take the render lock, start the pager
-// clock, register a resize handler, MakeRaw and run the input loop, then
-// select on the ways a session ends. They differed by accident far more than
-// by design, and every one of those accidents shipped:
-//
-//   - the queue poll lived only in send's ticker, so a `listen` pager never
-//     refreshed its queue pit;
-//   - metrics ride reads and frames, and listen's cold path did neither, so
-//     the bar's capacity figure came and went;
-//   - listen never reported WHY a turn failed;
-//   - the hooks were wired at three call sites, and the file already carried
-//     the scar: "a hook that is armed on one of two doors is armed on neither".
-//
-// So there is one body. What actually differs is stated as data:
-//
-//	send    a prompt to send once the session is up, and an exit when the
-//	        turn settles (unless the pager is up: then it has listen semantics)
-//	listen  no prompt; it follows until the reader leaves
-//
-// Everything else -- the tape, the form pit, a replay's end channel, the
-// angelus door that `:listen` needs -- is a field.
+// One session body for send and listen: a send submits a prompt and exits when the
+// turn settles, unless the pager is up, in which case it has listen semantics.
 
 import (
 	"context"
@@ -47,44 +24,25 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// sessionOpts is what the two entrances differ by.
 type sessionOpts struct {
 	figaroID string
 	ep       transport.Endpoint
 	loaded   *config.Loaded
 	set      renderSettings
 
-	// prompt makes this a SEND: it is submitted once the session is up, and
-	// the session ends when the turn settles.
-	prompt string
-	// dress is the dressing THIS prompt asked for (-O, -S, -D). It rides the
-	// submission, so two sends in flight cannot wear each other's.
-	dress dressing
+	prompt string   // non-empty makes this a send
+	dress  dressing // rides the submission, so two sends in flight cannot wear each other's
 
-	// acli is the angelus door `:listen` and `:attend` need; nil leaves the
-	// subject-switching verbs inert, which is what a replay wants.
-	acli *sdk.Angelus
-	// tape records the wire (nil records nothing).
-	tape *tape.Writer
-	// end closes when the caller's stream is over -- the end of a replayed
-	// tape -- and joins the same select the turn-over path uses.
-	end <-chan struct{}
-	// startedAt overrides the session clock: a replay passes the recording's
-	// own start so the same tape paints the same pixels at any hour.
-	startedAt time.Time
-	// formPit opens the subject's form in the pit, fullscreen, and reads no
-	// history at all. It is the whole of `fig form listen`.
-	formPit bool
-	// formIntrinsic names which of the subject's forms the pit opens on.
+	acli          *sdk.Angelus    // nil leaves the subject-switching verbs inert (a replay)
+	tape          *tape.Writer    // nil records nothing
+	end           <-chan struct{} // the caller's own end of stream (a replayed tape)
+	startedAt     time.Time       // a replay passes the recording's start
+	formPit       bool            // open the form in the pit fullscreen; reads no history
 	formIntrinsic string
-	// ownsSubject says whether this loop may close the connection it holds.
-	ownsSubject bool
-	// signals wraps the context so SIGINT interrupts the turn. Only a session
-	// that did not already arrange that asks for it.
-	signals bool
+	ownsSubject   bool // may close the connection it holds
+	signals       bool // wrap the context so SIGINT interrupts the turn
 }
 
-// runSession is the whole of a live TTY session, for both entrances.
 func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts) {
 	startedAt := opt.startedAt
 	if startedAt.IsZero() {
@@ -102,11 +60,8 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	if width <= 0 {
 		width = 80
 	}
-	// The bookend is this session's status line, gated on the config. IT READS
-	// THE LIVE STATUS, not the one this function happened to build: retarget
-	// swaps in a fresh sessionStatus (every `:listen` does), and a closure over
-	// the original painted a bookend nobody was updating -- no state glyph, no
-	// mantra, no capacity figure, in the one entrance that shows a bookend.
+	// The bookend reads the live status through lt: retarget swaps in a fresh
+	// sessionStatus.
 	var lt *livelogTurn
 	var bookendFn func() []string
 	if opt.loaded.StatusLine() {
@@ -114,34 +69,28 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 	set := opt.set
 	lt = newLivelogTurn(os.Stdout, width, height, &set, opt.figaroID, startedAt, status, bookendFn, dimRule)
-	// The process's own warnings and errors go to the notification history
-	// for as long as there is a pager to show them in.
 	defer teeSlogInto(lt.tr.notes)()
 	if in := opt.loaded; in != nil {
 		lt.tr.setNoticeTTL(in.NoticeTTL())
 	}
 	tc := term.NewClient()
 
-	// The renderer owns the cursor and assumes one row per line: no auto-margin
-	// (a full-width row must not wrap), no cursor. It draws in incipit, so
-	// frozen output lands in the normal scrollback.
+	// The renderer assumes one row per line: a full-width row must not wrap.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer endSession(os.Stdout)
-	// Deferred right-edge wrap belongs to the painter, not to every command
-	// that prints a line. OnceFunc because the defer and exitNow both fire.
+	// OnceFunc: the defer and the exit hook both fire.
 	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
 	defer restoreWrap()
 	atExit(restoreWrap)
 	defer lt.leaveTranscript()
-	lt.openRule() // the renderer owns the rule AND the margin under it
+	lt.openRule()
 
 	var mu renderLock
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
 
-	// THE DEFERS ABOVE DO NOT RUN ON os.Exit, and two exits here are: die()
-	// and the Ctrl-C 130 path. Both would leave the terminal on the alternate
-	// screen with the cursor hidden.
+	// The defers above do not run on exit; without this the shell is left on
+	// the alt screen with the cursor hidden.
 	atExit(func() {
 		// TryLock: the hook must never be the reason a dying process hangs.
 		if mu.TryLock() {
@@ -152,16 +101,14 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	})
 
 	lt.setRenderLock(&mu)
-	// FREEZE FORENSICS: the watchdog dumps every goroutine when this lock has
-	// been unavailable for seconds; SIGUSR1/SIGUSR2 do it on demand. A pager
-	// that has stopped answering cannot be asked what it is doing.
+	// The watchdog dumps every goroutine when the render lock is held for
+	// seconds; SIGUSR1/SIGUSR2 on demand.
 	defer watchRenderLock(&mu)()
 	defer armFreezeSignals()()
 	defer markMemory(&mu, lt, time.Second)()
 
-	// Hold frames until the opening preamble is placed: a subscription pushes
-	// the moment it is made, and the question must be painted UNDER the
-	// history it follows. Nothing is dropped.
+	// A subscription pushes the moment it is made; the question must paint
+	// under the history it follows.
 	if opt.prompt != "" {
 		lt.holdFrames()
 	}
@@ -171,18 +118,13 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		figaroID: opt.figaroID, cancel: cancel, disconnectCh: disconnectCh,
 		acli: opt.acli, loaded: opt.loaded, tap: tapeTap(opt.tape),
 		ownsSubject: opt.ownsSubject, subjectDead: make(chan struct{}, 1),
-		// The send half: the prompt this session is waiting on, and the
-		// channels that say whether a turn of ours ever opened.
 		prompt: opt.prompt, dress: opt.dress, sendCursor: -1, doneCh: doneCh,
 		watchInquiry: opt.prompt != "",
 		ownTurn:      make(chan struct{}), noTurn: make(chan struct{}),
-		// An inline send stays inline until something promotes it; every other
-		// session opens the pager as it starts.
 		startInline: opt.prompt != "" && !set.listen,
 		intrinsics:  newIntrinsicMirrors(),
 	}
-	// THE LIST STARTS WHERE THE SESSION DOES. Without this the first `:attend B`
-	// left only B in it, and ^O had nowhere to go back to.
+	// The jumplist starts where the session does, or ^O has nowhere to go back to.
 	in.jumps.visit(opt.figaroID)
 	defer func() {
 		if in.ownsSubject && in.subject != nil {
@@ -191,10 +133,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}()
 
 	in.lt.setCatchUp(in.pagerCatchUp)
-	// THE SUBJECT COMES IN THROUGH THE SAME DOOR IT LATER SWITCHES THROUGH:
-	// retarget dials, wires the pump, the hooks and the desync handler, and
-	// seeds. `:listen` calls exactly the same function, so the startup path is
-	// the switch path.
+	// The startup path is the switch path: `:listen` calls the same retarget.
 	if err := in.retarget(ctx, opt.figaroID, opt.ep); err != nil {
 		die("%s", err)
 	}
@@ -207,25 +146,22 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		mu.Unlock()
 	})()
 
-	// MakeRaw so Ctrl-C/Ctrl-D arrive as input bytes -- portable, and identical
-	// in incipit and transcript: the input loop owns them, not a signal.
+	// Raw mode: Ctrl-C and Ctrl-D arrive as input bytes, owned by the input
+	// loop, not a signal.
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
-			// The restore must survive os.Exit, not only a normal return:
-			// measured, Ctrl-C during a turn left the shell in raw mode.
+			// The restore must survive an exit hook as well as a
+			// normal return.
 			restoreOnce := sync.OnceFunc(restore)
 			defer restoreOnce()
 			atExit(restoreOnce)
 			fmt.Fprint(os.Stdout, enableModifiedKeyReporting+enableBracketedPaste)
 			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting+disableBracketedPaste)
-			// Belt and braces: a crash mid-pager must not leave the shell
-			// spewing raw \x1b[<…M.
+			// A crash mid-pager must not leave the shell spewing mouse
+			// reports.
 			defer os.Stdout.WriteString(ldmouse.Disable)
-			// Handing the terminal to an external program and taking it back.
-			// restore (not restoreOnce) on purpose: the once is the teardown's,
-			// and spending it here would leave the shell raw at exit. The
-			// restore func puts back the mode the shell handed us, which is
-			// still the right mode to put back after any number of round trips.
+			// restore, not restoreOnce: the once is the teardown's,
+			// and spending it here leaves the shell raw at exit.
 			in.suspendTerm = func() {
 				fmt.Fprint(os.Stdout, ldmouse.Disable+disableModifiedKeyReporting+disableBracketedPaste+altScreenOff+cursorShow+autowrapOn)
 				restore()
@@ -237,15 +173,13 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 				fmt.Fprint(os.Stdout, autowrapOff+cursorHide+altScreenOn+ldmouse.Enable+enableModifiedKeyReporting+enableBracketedPaste)
 			}
 			if opt.formPit {
-				// The form, and only the form: no history is fetched, and a
-				// fullscreen pit obscures what has not been fetched. Off this
-				// goroutine, because entering takes the render lock.
+				// Off this goroutine: entering takes the render lock.
 				go func() {
 					in.enterFormPager()
 					in.openLive("form show", formAddress(opt.figaroID, opt.formIntrinsic), true)
 				}()
 			} else if set.listen && opt.prompt != "" {
-				in.enterTranscript() // --listen: open the pager immediately
+				in.enterTranscript()
 			}
 			go in.run()
 		} else {
@@ -258,28 +192,23 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 
 	locked := func(fn func()) {
-		// EVERY RENDERER ENTRY POINT UNDER mu, INCLUDING THE LAST ONE: the
-		// clock, the notify pump and the pacer's trailing render are all still
-		// live here, stopped by defers that have not fired yet.
+		// The clock, the notify pump and the pacer are still live here:
+		// every renderer entry stays under mu.
 		mu.Lock()
 		defer mu.Unlock()
 		fn()
 	}
 	select {
 	case <-doneCh:
-		// The committed bookend is the final line; nothing more to print.
 		var failed bool
 		locked(func() { failed = in.turnFailed })
 		if failed {
 			exitNow(exitTurnFailed) // through the hooks: the terminal is still raw
 		}
 	case <-opt.end:
-		locked(func() { lt.finishTurn("") }) // the tape ran out
+		locked(func() { lt.finishTurn("") })
 	case <-disconnectCh:
-		// q / Ctrl-D. A turn that already finished while the pager was up is a
-		// clean exit, not an abandonment: the completed tail reaches
-		// scrollback intact. If that turn was ours and it failed, leaving the
-		// pager does not make it a success.
+		// Leaving the pager does not make a failed turn of ours a success.
 		var failed bool
 		locked(func() { lt.abandon(turnStatusDisconnected); failed = in.turnFailed })
 		if failed {
@@ -288,8 +217,6 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	case <-in.subjectDead:
 		locked(func() { lt.abandon(turnStatusError) })
 		if opt.prompt != "" {
-			// exitNow, not os.Exit: the defers above are what put the terminal
-			// back (cooked mode, cursor, autowrap), and os.Exit runs none of them.
 			exitNow(exitTurnFailed)
 		}
 	case <-ctx.Done():
@@ -297,12 +224,8 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 }
 
-// sendPrompt is the half of a session that only a send has: submit the prompt,
-// decide whether we joined a turn already in flight, and place the preamble.
 func (in *interactiveInput) sendPrompt(ctx context.Context) {
-	// The opening preamble is for the INLINE renderer only: --listen already
-	// opened the pager (which reads its own history), and a non-TTY caller
-	// gets a stream, not a screen.
+	// The preamble is the inline renderer's only: the pager reads its own history.
 	catchUp := in.tc.IsTTY() && !in.set.listen
 
 	qua := mark.Span("submit.qua", "to", in.figaroID, "len", len(in.prompt))
@@ -316,8 +239,7 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 	in.lt.status.beginTurn()
 	in.mu.Unlock()
 
-	// Joining a turn already running: the inline renderer cannot cleanly paint
-	// a turn mid-stream, so drop into the pager on the last page.
+	// The inline renderer cannot paint a turn mid-stream: join through the pager.
 	joined := active && in.tc.IsTTY()
 	if joined {
 		in.enterTranscript()
@@ -328,14 +250,12 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 		fetched = recentContext(ctx, in.subject, cursor)
 	}
 	in.mu.Lock()
-	in.watchInquiry = false // decided; no frame need ask again
+	in.watchInquiry = false
 	in.lt.openInline(fetched)
 	in.mu.Unlock()
 }
 
-// interruptAndLeave is Ctrl-C at the session level: stop the turn in flight,
-// wait briefly for it to land, and exit 130 if there was one. With nothing
-// running it is a clean close.
+// interruptAndLeave exits 130 only if a turn was running.
 func (in *interactiveInput) interruptAndLeave(mu *renderLock, doneCh <-chan struct{}) {
 	mu.Lock()
 	wasRunning := in.lt.status.turnRunning()
@@ -364,13 +284,10 @@ func (in *interactiveInput) interruptAndLeave(mu *renderLock, doneCh <-chan stru
 	in.lt.report("interrupted")
 	mu.Unlock()
 	if code := interruptExit(true); code != 0 {
-		exitNow(code) // hooks first: the pager may still be up
+		exitNow(code)
 	}
 }
 
-// turnFrame is the notify pump's frame half, shared by both entrances: fold
-// the page, and answer the one question a send asks of the first frames --
-// did a turn of OURS open?
 func (in *interactiveInput) turnFrame(params json.RawMessage) {
 	var r aria.Page
 	if json.Unmarshal(params, &r) != nil {
@@ -393,19 +310,12 @@ func (in *interactiveInput) turnFrame(params json.RawMessage) {
 	in.lt.apply(r)
 }
 
-// turnDone is the notify pump's other half. THE REPORT IS FOR BOTH
-// ENTRANCES -- a `listen` pager used to swallow the reason a turn failed, so
-// an auth failure was a bare ✗ in neither the bar nor the log -- and the
-// SETTLING is only a send's, because a listener has nothing to settle.
 func (in *interactiveInput) turnDone(params json.RawMessage) {
 	var d rpc.DoneEntry
 	_ = json.Unmarshal(params, &d)
 
-	// THE ALERT GOES UP BEFORE THE REGION COMES DOWN. finishTurn commits the
-	// status bar to scrollback as the closer of a failed turn, so the reason
-	// has to be on the bar by then. The old order (tear down, then report) was
-	// written when report printed to the terminal and needed clean rows below
-	// the footer; report goes to the bar now, and the bar is what gets kept.
+	// Report before finishTurn: it commits the bar to scrollback, so the
+	// reason must already be on it.
 	failed := strings.HasPrefix(d.Reason, "error:")
 	if failed {
 		in.noOnce.Do(func() { close(in.noTurn) })
@@ -414,8 +324,6 @@ func (in *interactiveInput) turnDone(params json.RawMessage) {
 		} else {
 			in.lt.reportError(d.Reason)
 		}
-		// Ours to answer for only if we sent it: a listener watching someone
-		// else's turn fail has nothing to say in its exit status.
 		if in.prompt != "" && in.sendCursor >= 0 {
 			in.turnFailed = true
 		}
@@ -424,17 +332,12 @@ func (in *interactiveInput) turnDone(params json.RawMessage) {
 	if in.prompt == "" {
 		return
 	}
-	// Settle when the agent reports idle: a turn that ended with our steer
-	// still queued reports idle=false, so we wait for our own. A daemon
-	// predating the field sends nil, which is the pre-steering behaviour.
-	// Never gate on the cursor advancing: the final commit can arrive via
-	// async desync recovery AFTER this one-shot turn.done.
+	// Settle on idle, not on the cursor advancing: the final commit can arrive
+	// by desync recovery after this one-shot turn.done.
 	idle := d.Idle == nil || *d.Idle
 	if in.sendCursor < 0 || !idle {
 		return
 	}
-	// Turn-done closes the session only in incipit: once the pager is up,
-	// however it was entered, it has listen semantics.
 	if in.lt.inTranscript() {
 		return
 	}

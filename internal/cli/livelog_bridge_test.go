@@ -96,17 +96,14 @@ func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
 	}
 }
 
-// A shrink shorter than the live region is the one case inline drawing cannot
-// fix, so resize reports that the caller should escape to the pager. Any other
-// resize repaints in place, an unconditional jump would be jarring.
+// Only a shrink below the live region promotes; any other resize repaints in place.
 func TestResizePromotesOnlyOnDestructiveShrink(t *testing.T) {
 	newTurn := func() *livelogTurn {
 		var out bytes.Buffer
 		lt := newLivelogTurn(&out, 80, 40, &renderSettings{}, "aria1234", time.Now(),
 			newSessionStatus("aria1234", time.Now()), nil, nil)
-		// Tall enough to exceed minPagerHeight, short enough that openOverflows
-		// does NOT already promote at the starting geometry. This test covers the
-		// complementary trigger: the viewport shrinking onto stable content.
+		// Taller than minPagerHeight, short enough that openOverflows does
+		// not already promote.
 		md := strings.Repeat("live row\n\n", 7)
 		lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
 			ID:  0,
@@ -138,7 +135,6 @@ func TestResizePromotesOnlyOnDestructiveShrink(t *testing.T) {
 		t.Fatal("an exact fit must not promote")
 	}
 
-	// A pane too small for the pager's own chrome must neither promote nor crash.
 	lt = newTurn()
 	lt.resize(80, 3)
 	if lt.tr.active {

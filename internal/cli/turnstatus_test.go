@@ -8,15 +8,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// ---------------------------------------------------------------------------
-// The state vocabulary: a symbol, a name, and a colour, asked for separately.
-//
-// They were one fused string until this pass ("completed ✓"), which is why the
-// bar could not be succinct. These tests pin the split, and the two states
-// whose spelling carries an argument: hup is not an error, and detached is not
-// idle. See plans/status-bar-and-modes.md §3.
-// ---------------------------------------------------------------------------
-
 func TestTurnStatusVocabulary(t *testing.T) {
 	for _, tc := range []struct {
 		st     turnStatus
@@ -40,9 +31,6 @@ func TestTurnStatusVocabulary(t *testing.T) {
 	}
 }
 
-// TestThinkingAnimatesAndHasNoName: the one state that moves, and the one with
-// no word. A label beside a moving glyph reads as a caption on a machine that
-// is already talking, and the requirement says so outright.
 func TestThinkingAnimatesAndHasNoName(t *testing.T) {
 	if n := turnStatusThinking.name(); n != "" {
 		t.Fatalf("thinking is named %q; it must have no name", n)
@@ -54,8 +42,6 @@ func TestThinkingAnimatesAndHasNoName(t *testing.T) {
 	if len(seen) < 2 {
 		t.Fatalf("thinking drew %d distinct frames over 8 ticks; it must animate", len(seen))
 	}
-	// And nothing else does: a still picture of movement is the bug that made
-	// `detached` a spinner.
 	for _, st := range []turnStatus{turnStatusCompleted, turnStatusInterrupted, turnStatusError, turnStatusDisconnected, turnStatusIdle} {
 		if st.symbol(0) != st.symbol(5) {
 			t.Errorf("%s animates; only thinking may", st.name())
@@ -63,7 +49,6 @@ func TestThinkingAnimatesAndHasNoName(t *testing.T) {
 	}
 }
 
-// TestSuccinctIsTheDefault: the bar shows the glyph alone unless asked.
 func TestSuccinctIsTheDefault(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	s.finishTurn("completed")
@@ -77,8 +62,6 @@ func TestSuccinctIsTheDefault(t *testing.T) {
 	}
 }
 
-// TestIdleSaysNothingOnTheBar: idle is the catch-all, and a row that is always
-// visible has nothing to announce by saying "nothing is happening".
 func TestIdleSaysNothingOnTheBar(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	if l := s.turnLabel(false); l != "" {
@@ -87,16 +70,12 @@ func TestIdleSaysNothingOnTheBar(t *testing.T) {
 	if l := s.turnLabel(true); l != "" {
 		t.Fatalf("verbose idle labelled itself %q", l)
 	}
-	// The PANEL is the place words live, so there it says so.
 	rows := strings.Join(s.panelLines(), "\n")
 	if !strings.Contains(rows, "idle 𝄐") {
 		t.Fatalf("the status panel does not name the idle state:\n%s", rows)
 	}
 }
 
-// TestHupIsNotAnError is the argument the palette makes. A user who stopped a
-// turn on purpose has not had something go wrong, and the only thing on the row
-// that can say so is the colour.
 func TestHupIsNotAnError(t *testing.T) {
 	restore := term.SetColorMode(term.ColorAlways)
 	defer restore()
@@ -112,15 +91,11 @@ func TestHupIsNotAnError(t *testing.T) {
 	if !strings.Contains(bad, "error ✗") {
 		t.Fatalf("error lost its text: %q", bad)
 	}
-	// The states with nothing to say inherit the row rather than colouring it.
 	if got := turnStatusCompleted.paint("done ✓"); got != "done ✓" {
 		t.Fatalf("done is painted %q; it should inherit the row", got)
 	}
 }
 
-// TestDetachedIsNotIdle: the fact survived the plan that proposed deleting it,
-// because "I left and the turn continues" is exactly when the follow hint
-// applies, and idle is defined as the catch-all for what is NOT known.
 func TestDetachedIsNotIdle(t *testing.T) {
 	if turnStatusDisconnected.name() == turnStatusIdle.name() {
 		t.Fatal("detached collapsed into idle; the catch-all would then be reported as a known state")

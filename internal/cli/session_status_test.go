@@ -20,8 +20,6 @@ func TestSessionStatusRuleIncludesMantraContextAndTokenCost(t *testing.T) {
 		TokensOut:     5000,
 	})
 
-	// THE RULE NO LONGER CARRIES THE ARIA: the id is on the status bar one row
-	// below, and printing it twice spent the rule's width saying it again.
 	rule := status.ruleLine(160, "12-40/97 live")
 	for _, want := range []string{"12-40/97 live"} {
 		if !strings.Contains(rule, want) {
@@ -56,13 +54,9 @@ func TestSessionStatusRulePrefersMantraOverSecondaryDetails(t *testing.T) {
 		TokensOut:     5000,
 	})
 
-	// A rule with no position is a plain rule: the bar says which aria.
 	if rule := status.ruleLine(40, ""); strings.Contains(rule, "dac6cb6d") {
 		t.Fatalf("the rule still carries the aria id: %q", rule)
 	}
-	// THE HINTS ARE NOT ON THE BAR ANY MORE (they are `m`'s, and the help panel
-	// is a keystroke away). What a narrow bar must keep is what is always
-	// true: which aria this is, and how much room is left in it.
 	line := row(status, 40)
 	if !strings.Contains(line, "dac6cb6d") {
 		t.Fatalf("narrow status line dropped the aria: %q", line)

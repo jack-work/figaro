@@ -10,29 +10,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The whole chain, in production functions, with the production page budget.
-//
-// The other speaker-header probes start from a Page (or a Message) written by
-// hand, which proves what the renderer DOES with a mid-turn slice and not that
-// anything ever hands it one. That was the open link: if the wire never emitted
-// a part with From>0, the ghost would be unreachable and the fix inert, and
-// every one of those probes would still be green.
-//
-// This closes it from the other end:
-//
-//	livelog.PaginateBefore: the real byte-budget walk, at the real 64 KiB
-//	  -> assemble         sets ClippedHead when the window opens mid-turn
-//	  -> the fold gives that part no question
-//	  -> Composer.Message  must therefore draw no speaker header
-//
-// The turn sizes are not invented either. Measured over four of this store's
-// own arias, turns over the 64 KiB budget are ordinary, 4 of 24, 3 of 18, 9 of
-// 15, with the largest at 343 KB, five times the budget. A page walking back
-// through any of them opens mid-turn by arithmetic, not by luck.
 const productionPageBudget = 65536 // config.defaultPageBudget
 
-// realisticTurns builds turns whose node sizes are in the range this store
-// actually holds: a few small ones, then one that is comfortably over budget.
 func realisticTurns() []aria.Turn {
 	node := func(id int, size int) livedoc.Node {
 		return livedoc.Node{
@@ -49,8 +28,7 @@ func realisticTurns() []aria.Turn {
 			Nodes: []livedoc.Node{node(i*10, 4000), node(i*10+1, 4000)},
 		})
 	}
-	// The oversize turn: 40 nodes of 8 KB is 320 KB, in the measured range and
-	// five times the budget, so a backward page cannot span it.
+	// 320 KB: a backward page cannot span it.
 	big := make([]livedoc.Node, 40)
 	for i := range big {
 		big[i] = node(1000+i, 8000)
@@ -59,12 +37,10 @@ func realisticTurns() []aria.Turn {
 	return turns
 }
 
-// TestSpeakerHeader_RealPageWalkProducesTheSeam is the missing link: the wire's
-// own pagination, at the production budget, emits a mid-turn part.
+// The wire's own pagination, at the production budget, emits a mid-turn part.
 func TestSpeakerHeader_RealPageWalkProducesTheSeam(t *testing.T) {
 	turns := realisticTurns()
 	last := turns[len(turns)-1]
-	// Page backward from the tail, exactly as the pager's prefetch does.
 	page := livelog.PaginateBefore(turns,
 		aria.Anchor{Turn: last.ID, Node: uint64(len(last.Nodes) - 1)}, aria.Anchor{}, productionPageBudget)
 
@@ -86,7 +62,6 @@ func TestSpeakerHeader_RealPageWalkProducesTheSeam(t *testing.T) {
 	t.Logf("wire emitted a mid-turn part: turn %d, From=%d, ClippedHead=%v",
 		clipped.Turn.ID, clipped.From, clipped.ClippedHead)
 
-	// ...and the renderer must not announce the speaker over it.
 	msgs := pageMessages(page)
 	var seen int
 	for _, m := range msgs {

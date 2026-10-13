@@ -17,13 +17,9 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// openFormView dials an aria, subscribes to its form deltas and returns a view
-// that follows them. onChange fires when there is something new to show.
 func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formView, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// `<host>/<intrinsic>`: the host is resolved, the intrinsic selects which of
-	// its forms to follow. "" is the identity segment, which is the board.
 	spec, intrinsic := splitIntrinsic(ariaID)
 	if !knownIntrinsic(intrinsic) {
 		cancel()
@@ -43,10 +39,8 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	view := &formView{mirror: mirror, out: os.Stdout, open: map[string]bool{},
 		aria: resolvedID, intrinsic: intrinsic}
 
-	// Seed from the snapshot, then follow. Reading first and subscribing second
-	// would drop whatever landed in between; subscribing first means the seed
-	// may be older than a delta already in hand, which the mirror's version
-	// check catches and resyncs.
+	// Subscribe before seeding: a seed older than a delta in hand is caught by
+	// the version check; the other order drops deltas.
 	fcli, err := sdk.DialAria(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
 		func(method string, params json.RawMessage) {
 			if method != rpc.MethodFormDelta {
@@ -56,10 +50,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 			if json.Unmarshal(params, &d) != nil {
 				return
 			}
-			// ONE SOCKET, MANY FORMS. The board's deltas and every intrinsic's
-			// ride the same notification, distinguished only by this field, so
-			// a view that did not filter would fold a queue's patches into a
-			// board's mirror and resync forever.
+			// Every form of the host rides the same notification.
 			if d.Intrinsic != intrinsic {
 				return
 			}
@@ -92,28 +83,21 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	return view, func() { fcli.Close(); acli.Close(); cancel() }, nil
 }
 
-// runFormListen is `fig listen` with the form pit open fullscreen, and it is
-// nothing else. It used to be a second program -- its own alt screen, raw
-// mode, key loop, cursor and window -- and every one of those was a chance to
-// disagree with the pager.
 func runFormListen(loaded *config.Loaded, ariaID string) {
 	runListen(loaded, ariaID, "", "", true)
 }
 
-// formView is the model the pit drives: the rows it last built and which
-// branches are open. Every entry point takes the lock, because a delta arrives
-// on the notifier's goroutine while a keystroke is handled.
+// formView: a delta arrives on the notifier's goroutine while a key is handled, so
+// every entry takes mu.
 type formView struct {
-	mu     sync.Mutex
-	mirror *formMirror
-	out    *os.File
-	aria   string
-	// intrinsic is which of the host's forms this view follows: "" is the
-	// identity segment, the board.
-	intrinsic string
+	mu        sync.Mutex
+	mirror    *formMirror
+	out       *os.File
+	aria      string
+	intrinsic string // "" is the board
 	open      map[string]bool
 	wrapped   map[string]wrappedLines // an opened value, wrapped once
-	wraps     int                     // cold wraps, for the test that proves it
+	wraps     int
 	rows      []*formNode
 	cursor    int
 	top       int
@@ -121,18 +105,15 @@ type formView struct {
 	stopped   bool
 	refetch   func() (form.Snapshot, uint64, error)
 	closeConn func()
-	// repaint is the HOST's: the view never paints itself.
-	repaint func()
+	repaint   func() // the host's; the view never paints itself
 }
 
-// changed is what an arriving delta calls; key verbs do not (see Activate).
 func (v *formView) changed() {
 	if v.repaint != nil {
 		v.repaint()
 	}
 }
 
-// stop parks the view for a failure no retry can cure.
 func (v *formView) stop(reason string) {
 	v.mu.Lock()
 	if v.stopped {
@@ -144,7 +125,6 @@ func (v *formView) stop(reason string) {
 	v.changed()
 }
 
-// resync re-reads the snapshot when a delta does not follow the one before.
 func (v *formView) resync() {
 	v.mu.Lock()
 	stopped := v.stopped
@@ -167,8 +147,6 @@ func (v *formView) setNotice(text string) {
 	v.mu.Unlock()
 }
 
-// Items is the whole of what a form looks like; the pit does the rest. The
-// view supplies content and the verbs that are its own, and owns no list.
 func (v *formView) Items(width int) []pitRow {
 	snap, version, gaps := v.mirror.state()
 	if width <= 0 {
@@ -178,23 +156,17 @@ func (v *formView) Items(width int) []pitRow {
 	defer v.mu.Unlock()
 	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
 
-	// NO HEADER: the aria is on the bar, the key count is the list's length,
-	// the version is nobody's business until it breaks. A notice still earns a
-	// row -- a mirror that has stopped following must say so.
 	out := make([]pitRow, 0, len(v.rows)+1)
 	if v.notice != "" {
 		out = append(out, staticRow(clipLine(v.notice, width)))
 	}
 	_, _ = version, gaps
 	for _, n := range v.rows {
-		// Every row is selectable: a form is a list of things you look at.
 		yank := yankFormNode(n)
 		out = append(out, pitRow{text: renderFormRow(n, width, false), yank: yank, id: n.path})
 		if !n.leaf() || !v.open[n.path] {
 			continue
 		}
-		// An opened leaf is its value, spelled out. The rows are selectable so
-		// a reader can walk a long one; each yanks the whole value.
 		indent := strings.Repeat("  ", n.depth)
 		for i, line := range v.wrappedValue(n, width-len(indent)-2) {
 			out = append(out, pitRow{
@@ -207,14 +179,12 @@ func (v *formView) Items(width int) []pitRow {
 	return out
 }
 
-// wrappedValue is formValueLines, once: Items() runs on every paint, and
-// re-wrapping a megabyte there cost 3.5 seconds a frame under the render lock.
-// Cached against the value and the width, and BOUNDED -- a megabyte is not a
-// list anyone scrolls, it is a thing they yank.
+// Items runs on every paint under the render lock: wrap once per value and width,
+// and bound it.
 const formValueRowsMax = 500
 
 type wrappedLines struct {
-	raw []byte // compared, never copied: string(n.value) per paint is the cost
+	raw []byte // compared, never copied
 
 	width int
 	lines []string
@@ -224,7 +194,7 @@ func (v *formView) wrappedValue(n *formNode, width int) []string {
 	if c, ok := v.wrapped[n.path]; ok && c.width == width && bytes.Equal(c.raw, n.value) {
 		return c.lines
 	}
-	v.wraps++ // how many times a value was actually wrapped; the cache's proof
+	v.wraps++
 	lines := formValueLines(n.value, width)
 	if len(lines) > formValueRowsMax {
 		lines = append(lines[:formValueRowsMax:formValueRowsMax],
@@ -237,8 +207,7 @@ func (v *formView) wrappedValue(n *formNode, width int) []string {
 	return lines
 }
 
-// valuePath is the key a value row belongs to: value rows carry
-// "<path>\x00<n>" so every row has an id of its own.
+// Value rows carry "<path>\x00<n>" so every row has an id of its own.
 func valuePath(id string) string {
 	if i := strings.IndexByte(id, 0); i >= 0 {
 		return id[:i]
@@ -246,9 +215,7 @@ func valuePath(id string) string {
 	return id
 }
 
-// Activate is Enter: open a branch, or spell out a leaf's value. It does NOT
-// repaint -- it runs under the render lock, and taking that lock twice froze
-// the pager dead. The host repaints after the key it dispatched.
+// Activate runs under the render lock: it must not repaint.
 func (v *formView) Activate(id string) {
 	path := valuePath(id)
 	v.mu.Lock()
@@ -261,7 +228,6 @@ func (v *formView) Activate(id string) {
 	}
 }
 
-// Close releases the subscription and the socket.
 func (v *formView) Close() {
 	if v.closeConn != nil {
 		v.closeConn()

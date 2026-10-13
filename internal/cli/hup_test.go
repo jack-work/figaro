@@ -8,20 +8,14 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// hup and cut differ by ONE thing: what becomes of the queue. If a help line
-// does not say so, the pair is two half-documented verbs and the user finds
-// out which is which by losing something.
-
 func TestHangupVerbs_HelpNamesTheDispositionAndTheOtherVerb(t *testing.T) {
 	r := buildRouter("figaro", nil)
 
 	for _, tc := range []struct {
 		verb      string
-		says      []string // the disposition, unmissably
-		namesPeer string   // the other way of spelling it, so neither is a dead end
+		says      []string
+		namesPeer string
 	}{
-		// hup's peer is the FLAG, because that is the spelling that discards;
-		// cut's peer is hup, because cut is only its shorthand.
 		{verb: "hup", says: []string{"KEEP"}, namesPeer: "-d"},
 		{verb: "cut", says: []string{"DISCARD"}, namesPeer: "hup"},
 	} {
@@ -42,17 +36,12 @@ func TestHangupVerbs_HelpNamesTheDispositionAndTheOtherVerb(t *testing.T) {
 		if !strings.Contains(cmd.Long, tc.namesPeer) {
 			t.Errorf("%s: long help never mentions %q", tc.verb, tc.namesPeer)
 		}
-		// Both forms hand the queue back: that is what makes dropping it
-		// different from losing it.
 		if !strings.Contains(cmd.Long, "-j") {
 			t.Errorf("%s: long help must say how to get the messages back as JSON", tc.verb)
 		}
 	}
 }
 
-// Both carry -j, and it is the same contract everywhere else in the CLI: one
-// object on stdout, then exit.
-// hup carries the disposition as a NAMED flag, never a negated one.
 func TestHup_TakesTheDropFlag(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	cmd, ok := r.Command("hup")
@@ -92,9 +81,6 @@ func TestHangupVerbs_BothTakeJSON(t *testing.T) {
 	}
 }
 
-// `figaro cut -j > lost.json` has to be a SAVE. That means exactly one object,
-// and a queue that is an array even when empty, a caller doing `.queue[]`
-// must not have to special-case null.
 func TestHangupJSON_IsOneObjectWithAnArrayQueue(t *testing.T) {
 	b, err := json.Marshal(hangupJSON{
 		Aria:    "abc123",
@@ -123,7 +109,6 @@ func TestHangupJSON_IsOneObjectWithAnArrayQueue(t *testing.T) {
 	}
 }
 
-// A combined message is several lines; the manifest is one row per message.
 func TestQueueRowText_FlattensACombinedMessage(t *testing.T) {
 	if got := queueRowText("one\ntwo\nthree"); got != "one …" {
 		t.Errorf("queueRowText = %q, want %q", got, "one …")
@@ -133,8 +118,6 @@ func TestQueueRowText_FlattensACombinedMessage(t *testing.T) {
 	}
 }
 
-// "1 message kept" after queueing three is true and baffling. The fold is the
-// reason, so the count names it.
 func TestQueueCount_NamesTheFold(t *testing.T) {
 	one := []rpc.QueuedPrompt{{ID: 2, Text: "a\n\nb\n\nc", Merged: []uint64{3, 4}}}
 	if got := queueCount(one); got != "1 message (folded from 3)" {

@@ -10,7 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// Session holds the resolved connections for a CLI command.
 type Session struct {
 	Loaded   *config.Loaded
 	Angelus  *sdk.Angelus
@@ -19,7 +18,6 @@ type Session struct {
 	Endpoint transport.Endpoint
 }
 
-// WithAngelus connects to the angelus and calls fn.
 func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	ensureHush()
 	ensureAngelus()
@@ -34,8 +32,7 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	}
 }
 
-// WithAngelusIfRunning connects to a RUNNING angelus and calls fn. It starts
-// no daemon and unlocks no vault: a query must not create what it asks about.
+// WithAngelusIfRunning starts no daemon and unlocks no vault.
 func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
 	acli, err := sdk.DialAngelus(ep)
@@ -48,8 +45,7 @@ func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) erro
 	}
 }
 
-// WithSessionFor resolves the target aria (explicit id > pid binding)
-// and calls fn. When explicitID is empty, falls back to the pid binding.
+// WithSessionFor resolves explicit id, else the pid binding.
 func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session) error) {
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -9,8 +9,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The composer the pager builds (transcript.composer), minus the pager state
-// the header decision does not depend on.
 func headerComposer() ldrender.Composer {
 	return ldrender.Composer{
 		View:        pagerView(&ariaView{}),
@@ -27,9 +25,7 @@ func toolNode(id, name, out string) livedoc.Node {
 	}
 }
 
-// A header is CHROME (it belongs to no block) and reads "< figaro". Matching
-// on the substring alone is not enough: a tool node's own output may well
-// mention figaro, and one of these probes runs `figaro set` on purpose.
+// Chrome rows only: a tool's own output may mention figaro.
 func hasHeader(rows []ldrender.Row) bool {
 	for _, r := range rows {
 		if r.Block == ldrender.BlockChrome && strings.Contains(r.Text, "< figaro") {
@@ -39,8 +35,6 @@ func hasHeader(rows []ldrender.Row) bool {
 	return false
 }
 
-// A slice that STARTS a turn carries the question, and the header belongs
-// there. This is the control.
 func TestSpeakerHeader_FirstSliceIsCorrect(t *testing.T) {
 	m := aria.Message{
 		Turn: 8, From: 0, Role: livedoc.RoleOutput,
@@ -52,10 +46,7 @@ func TestSpeakerHeader_FirstSliceIsCorrect(t *testing.T) {
 	}
 }
 
-// A CONTINUATION slice of the same turn carries no question, so it must not
-// announce the speaker again: the header belongs to the inquiry seam, and a
-// continuation has no seam. This is the reported bug: a "< figaro" printed
-// between two tool nodes of one turn, at the page boundary that cut it.
+// The header belongs to the inquiry seam; a continuation slice has none.
 func TestSpeakerHeader_ContinuationCarriesNone(t *testing.T) {
 	m := aria.Message{
 		Turn: 8, From: 21, Role: livedoc.RoleOutput,
@@ -71,10 +62,6 @@ func TestSpeakerHeader_ContinuationCarriesNone(t *testing.T) {
 	}
 }
 
-// The two producers of continuation slices, proven to produce From > 0.
-
-//  1. A page window that opens mid-turn: assemble sets From=first and
-//     ClippedHead, and only the head slice carries the question.
 func TestSpeakerHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	nodes := make([]livedoc.Node, 31)
 	for i := range nodes {
@@ -97,8 +84,6 @@ func TestSpeakerHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	}
 }
 
-//  2. A turn too big for one unit, cut by the fold. Every unit after the first
-//     has From > 0 and no inquiry.
 func TestSpeakerHeader_OversizeTurnSliceProducesHeaderlessSlice(t *testing.T) {
 	big := strings.Repeat("x", 30000)
 	nodes := []livedoc.Node{

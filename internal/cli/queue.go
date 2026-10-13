@@ -28,8 +28,6 @@ type queueResultJSON struct {
 	Results []rpc.QueueResult `json:"results"`
 }
 
-// queueSession is one resolved aria plus its client, since every queue verb
-// needs both and half of them need two round trips.
 type queueSession struct {
 	id   string
 	cli  *sdk.Aria
@@ -62,7 +60,6 @@ func openQueueSession(loaded *config.Loaded, ariaID string) (*queueSession, cont
 	}, ctx, cancel
 }
 
-// runQueueList shows what the aria is going to be asked next.
 func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 	s, ctx, cancel := openQueueSession(loaded, ariaID)
 	defer cancel()
@@ -98,8 +95,6 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 	for _, p := range queue {
 		text := queueRowText(p.Text)
 		if p.Text == "" {
-			// A carrier renders as nothing; say what it is instead of
-			// printing a blank row the user cannot act on.
 			text = term.Dim("(form only)")
 		}
 		if len(text) > width {
@@ -116,7 +111,6 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 	}
 }
 
-// runQueueRemove asks the aria to drop queued messages.
 func runQueueRemove(loaded *config.Loaded, ariaID string, ids []uint64, all, asJSON bool) {
 	s, ctx, cancel := openQueueSession(loaded, ariaID)
 	defer cancel()
@@ -124,7 +118,7 @@ func runQueueRemove(loaded *config.Loaded, ariaID string, ids []uint64, all, asJ
 
 	req := rpc.QueueDeleteRequest{IDs: ids, All: all}
 	if !all {
-		// Read first: the mutation must name the generation its ids came from.
+		// The mutation must name the epoch its ids came from.
 		listed, err := s.cli.QueuedAll(ctx)
 		if err != nil {
 			die("queue rm %s: %s", s.id, err)
@@ -139,7 +133,6 @@ func runQueueRemove(loaded *config.Loaded, ariaID string, ids []uint64, all, asJ
 	reportQueueResults(s.id, resp.Epoch, resp.Results, asJSON)
 }
 
-// runQueueEdit rewrites one queued message.
 func runQueueEdit(loaded *config.Loaded, ariaID string, id uint64, text string, asJSON bool) {
 	s, ctx, cancel := openQueueSession(loaded, ariaID)
 	defer cancel()
@@ -158,8 +151,6 @@ func runQueueEdit(loaded *config.Loaded, ariaID string, id uint64, text string, 
 	reportQueueResults(s.id, resp.Epoch, []rpc.QueueResult{resp.Result}, asJSON)
 }
 
-// reportQueueResults prints one line per requested id and sets the exit code
-// from the outcomes.
 func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON bool) {
 	if asJSON {
 		out, err := json.Marshal(queueResultJSON{Aria: ariaID, Epoch: epoch, Results: results})
@@ -188,17 +179,14 @@ func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON 
 	}
 	for _, r := range results {
 		if r.Outcome == rpc.QueueRejected {
-			// Runtime outcome, not misuse: exit 1, never 2. Through exitNow,
-			// not the raw exitProcess: os.Exit runs no defers, so every abrupt
-			// exit owes the terminal-restore hooks a chance to run.
+			// exitNow, not exitProcess: the terminal-restore hooks
+			// must run.
 			exitNow(1)
 			return
 		}
 	}
 }
 
-// parseQueueIDs turns the argv tail into ids, rejecting anything that is not
-// one rather than guessing.
 func parseQueueIDs(args []string) []uint64 {
 	ids := make([]uint64, 0, len(args))
 	for _, a := range args {
@@ -211,7 +199,6 @@ func parseQueueIDs(args []string) []uint64 {
 	return ids
 }
 
-// queueEditText joins the replacement text, whether or not argv used `--`.
 func queueEditText(args []string) string {
 	for i, a := range args {
 		if a == "--" {

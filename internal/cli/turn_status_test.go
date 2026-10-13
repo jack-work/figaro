@@ -8,12 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// THE SPELLING CHANGED ON PURPOSE, and this test now pins both halves of the
-// split rather than the fused string it used to. Succinct is the default and
-// carries the glyph alone; the word is what verbose adds. See
-// plans/status-bar-and-modes.md §3.
-// bar renders the status row THE WAY THE PROGRAM DOES: through the one
-// renderer, so a test cannot pass against a spelling production no longer uses.
 func bar(s *sessionStatus, verbose bool) string {
 	return strings.Join(s.viewOf(pitNothing, verbose, time.Now()).render(100), "\n")
 }
@@ -36,18 +30,13 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 		if line := bar(status, true); !strings.Contains(line, tc.verbose) {
 			t.Fatalf("%s: %q missing from the verbose row: %q", tc.reason, tc.verbose, line)
 		}
-		// The succinct row carries no words at all.
 		if line := bar(status, false); strings.Contains(line, strings.Fields(tc.verbose)[0]) {
 			t.Fatalf("%s: the succinct row leaked the name: %q", tc.reason, line)
 		}
 	}
 
-	// A SUBMIT IS "SENDING", NOT "THINKING", and this assertion changed on
-	// purpose. beginTurn used to claim the model was working the instant a
-	// prompt was accepted -- before it had round-tripped, before the first
-	// token, and possibly while it sat in a queue behind another turn. The
-	// client may only assert facts about ITSELF; everything past the socket
-	// arrives from the runtime intrinsic form.
+	// A submit is "sending": the client asserts only facts about itself;
+	// thinking comes from the runtime form.
 	status.beginTurn()
 	if line := bar(status, false); !strings.ContainsAny(line, string(sendingFrames)) {
 		t.Fatalf("no departure frame on the row while sending: %q", line)
@@ -57,8 +46,6 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 			"not been acknowledged by anything: %q", line)
 	}
 
-	// Thinking animates and is never named, in either mode -- and it is now
-	// reached only by the daemon SAYING so.
 	if !status.setRuntime(runtimeView{State: "thinking", Known: true}) {
 		t.Fatal("a runtime patch moving the bar to thinking reported no change")
 	}
@@ -70,10 +57,7 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 	}
 }
 
-// THE THREE MOVING STATES MUST BE TELLABLE APART. A reader distinguishes
-// FAMILIES of motion at a glance and speeds never, so this asserts the glyph
-// sets are disjoint -- which is the property, rather than asserting the
-// particular glyphs, which are a taste.
+// The glyph sets of the moving states are disjoint; the glyphs themselves are a taste.
 func TestMovingStatesUseDistinctGlyphFamilies(t *testing.T) {
 	families := map[turnStatus]map[string]bool{}
 	for _, st := range []turnStatus{turnStatusSending, turnStatusAccepted, turnStatusThinking} {
@@ -102,10 +86,8 @@ func TestMovingStatesUseDistinctGlyphFamilies(t *testing.T) {
 	}
 }
 
-// Ctrl-C must interrupt for the WHOLE time a message is in flight, including
-// before any provider round has started. Otherwise the window between submit
-// and the first token is a window where the user's stop key silently means
-// something else.
+// Ctrl-C must interrupt for the whole time a message is in flight, before the
+// first token included.
 func TestSendingAndAcceptedCountAsTurnRunning(t *testing.T) {
 	for _, st := range []turnStatus{turnStatusSending, turnStatusAccepted, turnStatusThinking, turnStatusTooling} {
 		status := newSessionStatus("aria1234", time.Now())
@@ -128,12 +110,8 @@ func TestSendingAndAcceptedCountAsTurnRunning(t *testing.T) {
 	}
 }
 
-// A GUESS MAY NOT OVERWRITE A FACT.
-//
-// beginTurn runs from openInline, which happens AFTER the submit -- so on a
-// fast aria the daemon's "thinking" lands first. Setting sending there
-// unconditionally put the bar back on the departure arrows with a tool
-// visibly running above it, measured in a pty.
+// beginTurn runs after the submit, so the daemon's state may already have landed
+// and outranks it.
 func TestABeginTurnDoesNotClobberAnAuthoritativeState(t *testing.T) {
 	for _, st := range []rpc.RuntimeState{rpc.RuntimeAccepted, rpc.RuntimeThinking, rpc.RuntimeTooling} {
 		status := newSessionStatus("aria1234", time.Now())
@@ -147,7 +125,6 @@ func TestABeginTurnDoesNotClobberAnAuthoritativeState(t *testing.T) {
 		}
 	}
 
-	// But from a state the client owns, it still arms.
 	status := newSessionStatus("aria1234", time.Now())
 	status.finishTurn("end_turn")
 	status.beginTurn()
@@ -157,12 +134,6 @@ func TestABeginTurnDoesNotClobberAnAuthoritativeState(t *testing.T) {
 	}
 }
 
-// THE INQUIRY HEADER IS ON BY DEFAULT, in every entrance that has a pager.
-//
-// It is asserted over the CONSTRUCTOR rather than at each call site, because
-// the bug this guards against is a call site that forgets: five literals each
-// hand-listing the fields they cared about is how coordFormat came to be wired
-// at all five and sticky at none.
 func TestThePagerStartsWithTheInquiryHeaderOn(t *testing.T) {
 	set := pagerSettings(nil)
 	if !set.sticky {

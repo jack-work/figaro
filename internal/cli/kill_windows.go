@@ -17,8 +17,7 @@ func killPid(pid int, _ syscall.Signal) error {
 	return windows.TerminateProcess(h, 1)
 }
 
-// pidAlive reports whether pid still exists. Windows has no signal 0, so ask
-// for the exit code: a live process reports STILL_ACTIVE (259).
+// Windows has no signal 0: a live process reports exit code STILL_ACTIVE (259).
 func pidAlive(pid int) bool {
 	const stillActive = 259
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))

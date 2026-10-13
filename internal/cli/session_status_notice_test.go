@@ -10,16 +10,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The status row is the pager's only voice for trouble, and it is also the
-// row a reader parses as a sentence. Two properties, both asserted here:
-//
-//   - a notice sits at the LEFT, in red, and is the last thing shed
-//   - the row ends in an ellipsis when it does not fit, never a bare cut
-//
-// Why the notice lives in the frame buffer at all: writing it to the terminal
-// while the pager is up scrolls the alt grid out from under the painter and
-// smears a frozen status line across the transcript. See
-// transcript_screenmoved_test.go for that measurement.
+// The notice lives in the frame buffer: writing it to the terminal while the pager
+// is up scrolls the alt grid.
 
 func statusFixture(mantra string) *sessionStatus {
 	s := newSessionStatus("abc12345", time.Date(2026, 6, 1, 12, 34, 56, 0, time.UTC))
@@ -27,16 +19,11 @@ func statusFixture(mantra string) *sessionStatus {
 	return s
 }
 
-// row renders the status bar the way the PROGRAM does: one renderer, so a test
-// cannot pass against a spelling production no longer uses. (statusLine, which
-// these tests used to call, was a second implementation of this and is gone.)
 func row(s *sessionStatus, w int) string {
 	return strings.Join(s.viewOf(pitNothing, s.barVerbose(), time.Now()).render(w), "\n")
 }
 
-// rowWidth is the WIDEST row of the bar. The bar is one row or three, so a
-// width assertion must measure rows rather than the joined string -- which is
-// what made these tests report 56 columns for a 40-column bar.
+// The bar is one row or three: measure rows, not the joined string.
 func rowWidth(s *sessionStatus, w int) int {
 	widest := 0
 	for _, r := range s.viewOf(pitNothing, s.barVerbose(), time.Now()).render(w) {
@@ -46,35 +33,23 @@ func rowWidth(s *sessionStatus, w int) int {
 }
 
 func TestStatusNoticeIsRedAndLeftmost(t *testing.T) {
-	// Arm colour: a test binary's stdout is not a TTY, and the notice now
-	// honours that like every other painted token. It did not before -- the
-	// literal SGR went out even with colour off, which is the second thing
-	// routing it through the palette fixes.
 	defer term.SetColorMode(term.ColorAlways)()
 
-	// ONLY TROUBLE IS RED now, so this test posts trouble. A confirmation
-	// ("sent") wears the row's own gray -- see TestOnlyTroubleIsRed.
 	s := statusFixture("a perfectly ordinary mantra")
 	s.setNoticeAt("error: overloaded", alertError)
 	line := row(s, 200)
 
-	// Through the palette, not a literal: the assertion asks the theme what a
-	// notice looks like, so a palette change moves the test with the code
-	// instead of against it.
 	if !strings.HasPrefix(line, term.NoticeInDim("error: overloaded")) {
 		t.Fatalf("notice must open the row, re-lit against the dim wrapper: %q", line)
 	}
 	if i, j := strings.Index(line, "overloaded"), strings.Index(line, "ordinary"); i > j {
 		t.Errorf("notice must precede the mantra: %q", line)
 	}
-	// And it is only lit for its own span: what follows is dim again.
 	if strings.Count(line, "\x1b[39;2m") != 1 {
 		t.Errorf("notice must hand the row back to the dim default exactly once: %q", line)
 	}
 }
 
-// The shed order exists because narrow panes cannot hold everything. Trouble
-// is the one token that must never be what makes room.
 func TestStatusNoticeShedsLast(t *testing.T) {
 	s := statusFixture("a perfectly ordinary mantra that is quite long indeed")
 	s.setNotice("error: overloaded")
@@ -89,7 +64,6 @@ func TestStatusNoticeShedsLast(t *testing.T) {
 	}
 }
 
-// Clearing is how a notice stops being true.
 func TestStatusNoticeClears(t *testing.T) {
 	s := statusFixture("m")
 	s.setNotice("error: overloaded")
@@ -99,8 +73,6 @@ func TestStatusNoticeClears(t *testing.T) {
 	}
 }
 
-// Multi-line hints (providerSetupHint is several lines) must not break the
-// one-row contract; the full text is reprinted on leaving the pager.
 func TestStatusNoticeIsOneLine(t *testing.T) {
 	s := statusFixture("m")
 	s.setNotice("first line\nsecond line\n\tthird")
@@ -127,7 +99,6 @@ func TestStatusLineEllipsisOnOverflow(t *testing.T) {
 	}
 }
 
-// A row that fits must be left exactly alone: no ellipsis, no rewrite.
 func TestStatusLineNoEllipsisWhenItFits(t *testing.T) {
 	s := statusFixture("m")
 	line := row(s, 400)
@@ -160,9 +131,7 @@ func TestClipToWidthEllipsis(t *testing.T) {
 	}
 }
 
-// displayWidth exists because runewidth.StringWidth counts the BYTES of an SGR
-// run as columns, a dim wrapper alone measures eight columns of nothing, and
-// the footer would shed tokens that fit.
+// runewidth.StringWidth counts the bytes of an SGR run as columns.
 func TestDisplayWidthIgnoresEscapes(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 

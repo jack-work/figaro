@@ -18,12 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// runStatus prints a focused single-aria view of the target figaro.
-// Target resolution: --id flag > positional arg > pid-bound. Reads the
-// same FigaroInfoResponse the list view uses; for dormant arias the
-// angelus backfills from the meta derivation. With no live data and no
-// derivation file, fields will read "-". more surfaces the derived/extra
-// detail; jsonOut emits the whole response as JSON.
+// runStatus resolves --id, then the positional arg, then the pid binding.
 func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOut bool) {
 	var nameArg string
 	if len(args) > 0 {
@@ -49,9 +44,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			ariaID = r.FigaroID
 		}
 
-		// The GLOBAL listing, because a status target may be either species.
-		// `fig ls` is figaros only, which is why status on an attended FORM
-		// used to answer "no aria @58a57f36" while the form sat right there.
+		// The global listing: a status target may be either species.
 		resp, err := acli.ListGlobal(ctx)
 		if err != nil {
 			return fmt.Errorf("list: %w", err)
@@ -67,13 +60,8 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			die("no aria or form %q (try: figaro ls -g)", ariaID)
 		}
 
-		// An unbound form is not a conversation, and a panel of turn counts
-		// and token usage would be a panel of dashes. It gets its own.
 		if isFormRow(f) {
 			snap, version := softFormSnapshot(loaded, f.ID)
-			// A role's most useful fact after WHERE it points is what it
-			// points AT: an aria that is live, asleep, or no longer there.
-			// The listing is already in hand, so this costs nothing.
 			target := roleTargetOf(f, snap)
 			targetState := ""
 			if target != "" {
@@ -104,8 +92,8 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			enc.SetIndent("", "  ")
 			return enc.Encode(f)
 		}
-		// The tree records a fork point as an LT, but the user's coordinate is
-		// a turn: resolve it so the panel can name what `fork <id>:N` takes.
+		// The tree records a fork point as an LT; the user's coordinate is
+		// a turn.
 		var forkTurn uint64
 		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
 			if msgs, merr := ariaMessages(ctx, acli, f.Parent); merr == nil {
@@ -119,16 +107,13 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 	})
 }
 
-// isFormRow reports whether a listing row is an unbound form. The kind comes
-// from the figwal marker; the sigil is the fallback for a row that predates
-// kinds being carried in the listing.
+// The sigil is the fallback for a row that predates kinds in the listing.
 func isFormRow(f *rpc.FigaroInfoResponse) bool {
 	return f.Kind == "form" || f.Kind == "outfit" || strings.HasPrefix(f.ID, "@")
 }
 
-// softFormSnapshot reads a form's state and version. Best effort: status is a
-// read, and a form whose endpoint will not answer should still report what the
-// listing knows rather than failing the whole command.
+// softFormSnapshot is best effort: an unanswering endpoint still reports what the
+// listing knows.
 func softFormSnapshot(loaded *config.Loaded, id string) (form.Snapshot, uint64) {
 	var snap form.Snapshot
 	var version uint64
@@ -145,8 +130,6 @@ func softFormSnapshot(loaded *config.Loaded, id string) (form.Snapshot, uint64) 
 	return snap, version
 }
 
-// formStatus is the JSON shape for a form or a role: the listing row, plus
-// what only the board itself can say.
 func formStatus(f *rpc.FigaroInfoResponse, snap form.Snapshot, version uint64) map[string]any {
 	out := map[string]any{
 		"id":      f.ID,
@@ -172,9 +155,7 @@ func formStatus(f *rpc.FigaroInfoResponse, snap form.Snapshot, version uint64) m
 	return out
 }
 
-// speciesOf names what a row IS, which is the first thing status should say.
-// A role is a duck type: an unbound form carrying target-aria. Nothing
-// converts, so this is a reading of the state, not a stored kind.
+// A role is a duck type: an unbound form carrying target-aria.
 func speciesOf(f *rpc.FigaroInfoResponse) string {
 	switch {
 	case !isFormRow(f):
@@ -188,9 +169,7 @@ func speciesOf(f *rpc.FigaroInfoResponse) string {
 	}
 }
 
-// roleTargetOf reads target-aria from the listing, falling back to the board:
-// the listing is derived and can lag a cast by one refresh, and the board is
-// the truth.
+// The listing can lag a cast by one refresh; the board is the truth.
 func roleTargetOf(f *rpc.FigaroInfoResponse, snap form.Snapshot) string {
 	if f.TargetAria != "" {
 		return f.TargetAria
@@ -204,7 +183,6 @@ func roleTargetOf(f *rpc.FigaroInfoResponse, snap form.Snapshot) string {
 	return ""
 }
 
-// printFormStatusPanel is status for an unbound form, and for a role.
 func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Snapshot, version uint64, targetState string, more bool) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
@@ -224,8 +202,6 @@ func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Sna
 		}
 		row("target-aria", target)
 	} else if species == "form" {
-		// Saying it plainly is the point: the difference between a form and a
-		// role is one key, and a reader should not have to know that.
 		row("target-aria", "- (not cast: this form is not a role)")
 	}
 	row("version", fmt.Sprintf("%d", version))
@@ -265,9 +241,7 @@ func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Sna
 	w.Flush()
 }
 
-// printStatusPanel renders a key/value view of a single figaro. Empty
-// or zero fields collapse to "-" so the user can tell what's known
-// vs. unknown rather than guessing whether "0" is real or stale.
+// Empty or zero fields print "-" so unknown is tellable from zero.
 func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTurn uint64) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
@@ -320,7 +294,6 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTu
 	}
 	row("bound-pids", pids)
 
-	// Derived / extra detail (formerly the `derive` command's territory).
 	if more {
 		row("cwd", dash(f.Cwd))
 		outfit := dash(f.OutfitName)
@@ -343,8 +316,6 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTu
 	w.Flush()
 }
 
-// truncateDuration rounds to the largest unit that fits cleanly.
-// Avoids "3h4m5.123456789s"; gives "3h4m" / "12m" / "45s".
 func truncateDuration(d time.Duration) string {
 	switch {
 	case d < time.Minute:

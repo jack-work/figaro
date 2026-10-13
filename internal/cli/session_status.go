@@ -13,71 +13,27 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// turnStatus is what the last turn DID, and it carries three things a status
-// row needs separately: a symbol, a name, and a colour.
-//
-// They used to be one fused string ("completed ✓", "interrupted !"), which is
-// why the bar could not be succinct: there was no way to ask for the symbol
-// without the word. The default bar shows symbols alone and verbose adds the
-// names, so the two are now different questions with different answers.
-// See plans/status-bar-and-modes.md §3.
 type turnStatus uint8
 
 const (
-	// turnStatusIdle is THE CATCH-ALL, and it is defined as such rather than
-	// as a condition: it is what the bar says when none of the others is
-	// known to hold. Everything with a claim of its own has a state below.
-	turnStatusIdle turnStatus = iota
-	// turnStatusSending is a DEPARTURE: the client has spoken and nothing has
-	// confirmed it. Set locally at submit, before the RPC returns, and it is
-	// the only state a client is still allowed to assert about itself -- it is
-	// a fact about this process, not about the daemon.
-	turnStatusSending
-	// turnStatusAccepted: the daemon HAS the message and is not yet answering
-	// it. Either it is queued behind a running turn, or the drain loop is
-	// committing it. This is the interval the author reported as latency: the
-	// message had left the client, was not yet in the transcript, and nothing
-	// on screen said where it was.
-	turnStatusAccepted
+	turnStatusIdle     turnStatus = iota // the catch-all: none of the others is known to hold
+	turnStatusSending                    // the only state the client asserts about itself; every other arrives from the daemon
+	turnStatusAccepted                   // the daemon has the message and is not yet answering it
 	turnStatusThinking
-	// turnStatusTooling: a provider round has finished and tools are running.
 	turnStatusTooling
 	turnStatusCompleted
-	// turnStatusInterrupted is a HUP, and a hup is not an error: the user
-	// stopped the turn on purpose. Hence gray, not red -- the palette is the
-	// only thing on the row that says "this was meant".
-	turnStatusInterrupted
+	turnStatusInterrupted // a hup is not an error: gray, not red
 	turnStatusError
-	// turnStatusDisconnected: this CLI stopped watching while the turn was
-	// still running. It is NOT a failure: the user chose to detach and the
-	// turn continues on the daemon, which is exactly when the
-	// "follow: figaro listen" hint applies.
-	//
-	// ITS ANIMATION WAS THE DEFECT, NOT THE FACT. This state used to draw a
-	// spinner frame, and nothing repaints after a detach -- a still picture of
-	// a turn that is still moving. A draft of the plan proposed deleting the
-	// state; the fact is worth keeping and the movement is not, so the glyph
-	// is static and the state survives.
-	turnStatusDisconnected
+	turnStatusDisconnected // the turn continues on the daemon; the glyph is static since nothing repaints after a detach
 )
 
-// THREE MOVING STATES, THREE FAMILIES. A reader tells FAMILIES apart at a
-// glance and speeds apart never, so "sending" is not a faster spinner: it is a
-// different shape of motion.
-//
-//   - sending  -> a DEPARTURE, arrows leaving
-//   - accepted -> a HOLDING ORBIT, a dot going round
-//   - thinking -> the braille spinner, which is what it has always been
-//
-// tooling shares thinking's frames deliberately: from a reader's point of view
-// the machine is working either way, and the difference is already visible in
-// the transcript's tool rows.
+// The moving states use disjoint glyph families: a reader tells families apart,
+// speeds never.
 var (
 	sendingFrames  = []rune{'→', '⇢', '⇉', '⇶'}
 	acceptedFrames = []rune{'⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'}
 )
 
-// symbol is the state in one glyph. tick animates the states that move.
 func (st turnStatus) symbol(tick uint64) string {
 	frame := func(fs []rune) string { return string(fs[int(tick)%len(fs)]) }
 	switch st {
@@ -100,13 +56,7 @@ func (st turnStatus) symbol(tick uint64) string {
 	return "𝄐"
 }
 
-// name is the word beside the symbol under verbose. THINKING HAS NONE, by
-// requirement: the animation says it, and a word beside a moving glyph reads
-// as a label on a machine that is already talking.
-//
-// The two new states DO have names, and for the opposite reason: their whole
-// job is to distinguish "I have not been heard yet" from "you are being
-// answered", and a novel glyph alone does not teach that.
+// Thinking has no name: the animation says it.
 func (st turnStatus) name() string {
 	switch st {
 	case turnStatusThinking:
@@ -129,8 +79,6 @@ func (st turnStatus) name() string {
 	return "idle"
 }
 
-// paint colours a rendered state. Only two states have a colour: trouble is
-// red and a deliberate stop is gray, and everything else inherits the row.
 func (st turnStatus) paint(s string) string {
 	switch st {
 	case turnStatusError:
@@ -142,85 +90,40 @@ func (st turnStatus) paint(s string) string {
 }
 
 type sessionStatus struct {
-	mu        sync.RWMutex
-	figaroID  string
-	startedAt time.Time
-	metrics   aria.Metrics
-	turn      turnStatus
-	tick      uint64
-	// verbose is the BAR's verbosity (^V), not the tool-output toggle (^O).
-	// Seeded from config; see plans/status-bar-and-modes.md §5.
-	verbose bool
-	// lastAt is when this conversation last MOVED, in either direction --
-	// not when the session started, and not when the user last typed. An
-	// agent working alone for an hour is a conversation that is moving, and a
-	// bar that called that stale would be wrong in the case you are checking.
-	lastAt time.Time
-	// model is shown under verbose only.
-	model string
-	// noticeLevel is what KIND of news the alert is. "sent" and "showing
-	// abc12345" are confirmations and wear the row's own gray; only trouble is
-	// red. Painting every alert red made the bar cry wolf on its own success
-	// messages -- and it is the same severity the notification ring will sort
-	// by, so it is one field rather than two ideas.
+	mu          sync.RWMutex
+	figaroID    string
+	startedAt   time.Time
+	metrics     aria.Metrics
+	turn        turnStatus
+	tick        uint64
+	verbose     bool      // the bar's verbosity (^V), not the tool-output toggle (^O)
+	lastAt      time.Time // when the conversation last moved, in either direction
+	model       string
 	noticeLevel alertLevel
-	// noticeUntil is when the bar's alert retires; see retireAlert.
 	noticeUntil time.Time
-	// noticeTTL is how long a posted alert holds the slot. Zero: forever.
-	noticeTTL time.Duration
-	// lastError is the text of the newest error-level alert. The alert itself
-	// retires on its TTL; this does not, so a failed turn's closer can carry
-	// the reason however long the pager stayed up after it.
-	lastError string
-	// notes is the pager's notification history (notifications.go), which
-	// the bar reads for its unread mark. It belongs to the transcript and
-	// outlives this status: a subject switch mints a new status and binds the
-	// same store to it.
-	notes *notificationStore
-	// notice is trouble the user must see, an error reason, an interrupt
-	// notice: carried IN the frame buffer instead of being written straight
-	// to the terminal. While the pager is up there is no scrollback to write
-	// to, the cursor sits on the status row, and a raw write scrolls the grid
-	// out from under the painter (see transcript.screenMoved). So it lives
-	// here, is painted red at the LEFT of the status row, and sheds last.
+	noticeTTL   time.Duration      // zero: the alert holds the slot until displaced
+	lastError   string             // does not retire with the alert: a failed turn's closer carries it
+	notes       *notificationStore // the transcript's; outlives this status
+	// notice lives in the frame buffer: a raw write to the terminal while the
+	// pager is up scrolls the grid out from under the painter.
 	notice string
 }
 
-// defaultNoticeTTL is how long an alert holds the bar's first slot. It is a
-// CONSTRUCTOR DEFAULT, not a config-only value, and that distinction is the
-// whole of a bug I shipped: setNoticeTTL existed, config.NoticeTTL existed,
-// and nothing called either -- so every alert was minted with a zero TTL,
-// which means "hold the slot until something displaces you", which means an
-// error sat in the bar until the next one arrived. Forever, in practice.
-//
-// A default that has to be installed by a caller is not a default.
+// A constructor default: one a caller must install is not a default.
 const defaultNoticeTTL = 10 * time.Second
 
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
 	return &sessionStatus{figaroID: figaroID, startedAt: startedAt, noticeTTL: defaultNoticeTTL}
 }
 
-// setNotice publishes (or clears, with "") the bar's alert: the newest thing
-// that happened, in the first left-hand slot. Newlines are folded to spaces --
-// the slot is one field on one row, and the full text is reprinted to the
-// shell by leaveTranscript, so nothing is lost by flattening it here.
-//
-// IT RETIRES ON ITS OWN. An alert holds the slot for noticeTTL and then goes,
-// or a newer one displaces it, whichever is first. Nothing waits to be
-// dismissed: a bar item that must be acknowledged is a bar item that is still
-// there tomorrow. Retirement happens on the ticker (retireAlert), because a
-// clock cannot fire inside a pure renderer.
-// alertLevel sorts news by whether it is trouble.
 type alertLevel uint8
 
 const (
-	alertInfo  alertLevel = iota // a confirmation: gray, like the rest of the row
-	alertWarn                    // a warning: yellow; it counts as unread, as trouble does
-	alertError                   // trouble: red
+	alertInfo  alertLevel = iota // gray, never unread
+	alertWarn                    // yellow
+	alertError                   // red
 )
 
-// setNoticeAt posts an alert with its level. setNotice is the confirmation
-// case, which is the common one.
 func (s *sessionStatus) setNoticeAt(text string, level alertLevel) {
 	s.setNotice(text)
 	if s == nil {
@@ -234,8 +137,6 @@ func (s *sessionStatus) setNoticeAt(text string, level alertLevel) {
 	s.mu.Unlock()
 }
 
-// lastTurnFailed reports whether the bar's verdict on the last turn is an
-// error.
 func (s *sessionStatus) lastTurnFailed() bool {
 	if s == nil {
 		return false
@@ -245,7 +146,6 @@ func (s *sessionStatus) lastTurnFailed() bool {
 	return s.turn == turnStatusError
 }
 
-// failure is the newest error-level alert text, retired or not.
 func (s *sessionStatus) failure() string {
 	if s == nil {
 		return ""
@@ -273,9 +173,7 @@ func (s *sessionStatus) setNotice(text string) {
 	s.mu.Unlock()
 }
 
-// pinNotice posts an alert that does NOT retire: it holds the slot until
-// something replaces or clears it. A question on screen must not lose its
-// sentence while it is still being asked.
+// pinNotice does not retire: a question on screen must not lose its sentence.
 func (s *sessionStatus) pinNotice(text string) {
 	if s == nil {
 		return
@@ -287,7 +185,6 @@ func (s *sessionStatus) pinNotice(text string) {
 	s.mu.Unlock()
 }
 
-// noticeText is the alert the bar is holding, retired or not.
 func (s *sessionStatus) noticeText() string {
 	if s == nil {
 		return ""
@@ -297,7 +194,6 @@ func (s *sessionStatus) noticeText() string {
 	return s.notice
 }
 
-// setNoticeTTL configures how long an alert holds the slot.
 func (s *sessionStatus) setNoticeTTL(d time.Duration) {
 	if s == nil {
 		return
@@ -307,8 +203,6 @@ func (s *sessionStatus) setNoticeTTL(d time.Duration) {
 	s.mu.Unlock()
 }
 
-// update takes a metrics snapshot and reports whether it CHANGED anything the
-// bar shows. The pager polls for these, so "no news" must cost no paint.
 func (s *sessionStatus) update(metrics aria.Metrics) bool {
 	if s == nil {
 		return false
@@ -327,11 +221,8 @@ func (s *sessionStatus) beginTurn() {
 		return
 	}
 	s.mu.Lock()
-	// SENDING, not thinking: see setRuntime. This is the client asserting a
-	// fact about itself -- "I have spoken and nothing has confirmed it" -- and
-	// a guess may not overwrite a fact: beginTurn runs from openInline, AFTER
-	// the submit, so on a fast aria the daemon's "thinking" lands first. See
-	// TestABeginTurnDoesNotClobberAnAuthoritativeState.
+	// beginTurn runs after the submit, so the daemon's state may already have
+	// landed and outranks the guess.
 	if !s.turn.authoritative() {
 		s.turn = turnStatusSending
 	}
@@ -339,10 +230,6 @@ func (s *sessionStatus) beginTurn() {
 	s.mu.Unlock()
 }
 
-// touch records that the conversation MOVED. Called on every frame that
-// carries content, in either direction: what the bar answers with it is "is
-// this stale", and a turn that is producing output is not stale even though
-// nobody has typed for an hour.
 func (s *sessionStatus) touch(at time.Time) {
 	if s == nil || at.IsZero() {
 		return
@@ -354,7 +241,6 @@ func (s *sessionStatus) touch(at time.Time) {
 	s.mu.Unlock()
 }
 
-// setModel records the model for the verbose bar.
 func (s *sessionStatus) setModel(m string) {
 	if s == nil {
 		return
@@ -364,10 +250,8 @@ func (s *sessionStatus) setModel(m string) {
 	s.mu.Unlock()
 }
 
-// finishTurn classifies a reason reported BY THE SERVER on turn.done, whose
-// vocabulary is fixed. Client-side outcomes (detach, agent loss) are set
-// explicitly with setTurn instead of being inferred from English, a status is
-// a fact about the turn, not a substring of a sentence.
+// finishTurn classifies the daemon's fixed reason vocabulary; client-side outcomes
+// go through setTurn.
 func (s *sessionStatus) finishTurn(reason string) {
 	if s == nil {
 		return
@@ -386,18 +270,8 @@ func (s *sessionStatus) finishTurn(reason string) {
 	s.mu.Unlock()
 }
 
-// setRuntime folds an authoritative `<aria>/runtime` patch onto the bar.
-//
-// THIS IS WHERE THE BAR STOPPED GUESSING. armThinking used to set "thinking"
-// the instant a submit was accepted -- its own comment said so: "before the
-// prompt has round-tripped, before the model's first token" -- which claimed
-// the model was working on a message that might still be in the socket, might
-// be queued behind another turn, and might be refused. The client now asserts
-// only turnStatusSending, which is a fact about itself, and everything past
-// that arrives from the daemon.
-//
-// Reports whether anything changed, so a caller need not repaint on a patch
-// that moved a field the bar does not show.
+// setRuntime folds a `<aria>/runtime` patch onto the bar and reports whether
+// anything shown changed.
 func (s *sessionStatus) setRuntime(rt runtimeView) bool {
 	if s == nil || !rt.Known {
 		return false
@@ -411,11 +285,8 @@ func (s *sessionStatus) setRuntime(rt runtimeView) bool {
 	case rpc.RuntimeTooling:
 		st = turnStatusTooling
 	case rpc.RuntimeIdle:
-		// Idle carries the VERDICT of the turn that just ended, and the bar
-		// shows the verdict rather than the idleness: "done ✓" is what a
-		// reader wants after a turn, not a blank. finishTurn already knows how
-		// to classify the daemon's reason vocabulary; reuse it rather than
-		// growing a second parser that can disagree with the first.
+		// Idle carries the verdict of the turn that ended; the bar shows
+		// the verdict.
 		if rt.Reason != "" {
 			s.finishTurn(rt.Reason)
 			s.setModelIfKnown(rt.Model)
@@ -445,7 +316,6 @@ func (s *sessionStatus) setModelIfKnown(m string) {
 	}
 }
 
-// setTurn records an outcome the caller already knows.
 func (s *sessionStatus) setTurn(st turnStatus) {
 	if s == nil {
 		return
@@ -455,10 +325,6 @@ func (s *sessionStatus) setTurn(st turnStatus) {
 	s.mu.Unlock()
 }
 
-// advance ticks whatever is MOVING. Three states animate now, in three
-// different glyph families; a version of this that only advanced thinking left
-// the two new indicators as still pictures, which is precisely the defect
-// turnStatusDisconnected's comment warns about.
 func (s *sessionStatus) advance() bool {
 	if s == nil {
 		return false
@@ -472,7 +338,6 @@ func (s *sessionStatus) advance() bool {
 	return true
 }
 
-// moving is whether the state animates.
 func (st turnStatus) moving() bool {
 	switch st {
 	case turnStatusSending, turnStatusAccepted, turnStatusThinking, turnStatusTooling:
@@ -481,9 +346,7 @@ func (st turnStatus) moving() bool {
 	return false
 }
 
-// authoritative is whether the DAEMON put us here. Only `sending` is the
-// client's own hypothesis about a turn in flight; every other moving state
-// arrives from the runtime intrinsic, and a guess may not overwrite a fact.
+// authoritative: the daemon put us here, and a client guess may not overwrite it.
 func (st turnStatus) authoritative() bool {
 	switch st {
 	case turnStatusAccepted, turnStatusThinking, turnStatusTooling:
@@ -492,14 +355,8 @@ func (st turnStatus) authoritative() bool {
 	return false
 }
 
-// turnRunning is whether a turn is in flight: what Ctrl-C needs to know, and
-// the difference between exit 130 and a clean close.
-//
-// SENDING AND ACCEPTED COUNT. A message that has been submitted and not yet
-// answered is work in flight even though no provider round has started, and a
-// Ctrl-C there must be an interrupt rather than a clean exit -- otherwise the
-// window between submit and the first token is a window where the user's stop
-// key silently means something else.
+// turnRunning counts sending and accepted: Ctrl-C before the first token must
+// interrupt, not exit.
 func (s *sessionStatus) turnRunning() bool {
 	if s == nil {
 		return false
@@ -509,10 +366,6 @@ func (s *sessionStatus) turnRunning() bool {
 	return s.turn.moving()
 }
 
-// turnLabel is the current turn state as it goes on the status row: the symbol
-// alone, or "name symbol" under verbose. "" when idle, because the catch-all
-// has nothing to announce on a row that is always visible.
-//
 // Caller holds s.mu.
 func (s *sessionStatus) turnLabel(verbose bool) string {
 	if s.turn == turnStatusIdle {
@@ -528,12 +381,7 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 	return s.turn.paint(sym)
 }
 
-// ruleLine is the upper of the two footer rows: a full-width rule with the
-// identity right-aligned: "─────…── aria <id>[ · <pos>] ───". Undecorated
-// (the caller dims it).
-// ruleLine closes the conversation, and carries the one thing the bar does
-// not: where in it this window sits. The position ENDS the row -- a decorative
-// cap left it three cells short of the figure below it.
+// ruleLine is undecorated; the caller dims it.
 func (s *sessionStatus) ruleLine(width int, pos string) string {
 	if pos == "" {
 		return clipToWidth(strings.Repeat("─", max(width, 0)), width)
@@ -546,29 +394,16 @@ func (s *sessionStatus) ruleLine(width int, pos string) string {
 	return clipToWidth(strings.Repeat("─", fill)+right, width)
 }
 
-// THE OLD ASSEMBLED ROW IS GONE. statusLine()/statusLineVerbose() built the
-// bar by hand -- token list, rank ladder, ellipsis -- and after statusview.go
-// landed they were dead in production and alive only in tests. Two renderers,
-// one of them asserted against: that is how the pager and the incipit came to
-// disagree in the first place. The bar is statusView.render and nothing else.
-
-// panelLines is the '!' status panel: the figaro-status detail rendered from
-// the live metrics snapshot, shown above the footer while output streams.
 func (s *sessionStatus) panelLines() []string {
 	if s == nil {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	// THE PANEL IS ALWAYS VERBOSE: it is the place a reader goes to read words,
-	// and "✓" in a labelled column would be the bar's answer to a question the
-	// panel was opened to ask properly.
 	state := s.turnLabel(true)
 	if state == "" {
 		state = "idle 𝄐"
 	}
-	// NO LEADING BLANK. The panel used to open with an empty row, which read as
-	// an extra newline under the rule above it.
 	rows := []string{
 		"  aria      " + s.figaroID,
 		"  status    " + state,
@@ -587,17 +422,8 @@ func (s *sessionStatus) panelLines() []string {
 	return rows
 }
 
-// formatContextUsage is the capacity figure: what is in the window, out of
-// what the window holds, and the quotient.
-//
-// THE LIMIT DOES NOT WAIT FOR A TRANSCRIPT. It is a provider+model lookup --
-// the daemon reports it on an aria that has never taken a turn -- so a session
-// that has said nothing yet still knows it has a megabyte, and saying "0/1.0m
-// 0.0%" is both true and the thing a reader opened the bar to see. Hiding it
-// until the first turn made the figure look like it came and went.
-//
-// The tilde marks an ESTIMATE, so it is spent only on a number there is
-// something to estimate: at zero tokens there is not.
+// The limit is known before the first turn; the tilde marks an estimate and is
+// spent only on a non-zero count.
 func formatContextUsage(tokens, limit int, exact bool) string {
 	if tokens < 0 {
 		tokens = 0
@@ -634,23 +460,11 @@ func formatTokenCount(tokens int) string {
 	}
 }
 
-// bookendLines is the incipit closer / live-region bookend. It is THE SAME
-// footer the pager draws -- footerStanza -- with no position label, because a
-// stream that is not paging has no window to report.
-//
-// THE INCIPIT'S BAR IS THE PAGER'S BAR. It reads the same verbosity from the
-// same session, because "one canonical implementation" is not satisfied by one
-// FUNCTION with two callers that pass different arguments -- this caller used
-// to force verbose on the theory that scrollback cannot be asked, and the
-// result was an inline stream showing detail the pager had just been told to
-// stop showing. If `m` is off, it is off everywhere.
+// bookendLines is the pager's footer with no position label, at the same verbosity.
 func bookendLines(status *sessionStatus) []string {
 	return footerStanza(status, termWidth(), "", pitNothing, status.barVerbose())
 }
 
-// formatCtxCell renders a context size for the narrow CTX column in `list`:
-// "820", "135k", "1.0m". Whole thousands below a million keep the cell short;
-// million-scale windows would otherwise read as "1000k".
 func formatCtxCell(tokens int) string {
 	switch {
 	case tokens >= 1_000_000:
@@ -662,15 +476,7 @@ func formatCtxCell(tokens int) string {
 	}
 }
 
-// setNotice is gone; post() is how trouble reaches the bar. See notify().
-//
-// noticeUntil is when the current alert retires. Zero means it stays until
-// something displaces it, which is what a TTL of 0 configures.
-//
-// retireAlert clears an expired alert and reports whether it did, so the
-// ticker knows whether this frame needs a repaint. It is the ONLY thing in the
-// bar that is a function of the wall clock, and it deliberately lives here
-// rather than in statusView.render, which must stay pure.
+// retireAlert is the only part of the bar that reads the wall clock; render stays pure.
 func (s *sessionStatus) retireAlert(now time.Time) bool {
 	if s == nil {
 		return false
@@ -684,7 +490,6 @@ func (s *sessionStatus) retireAlert(now time.Time) bool {
 	return true
 }
 
-// toggleVerbose flips the bar's verbosity and reports the new value.
 func (s *sessionStatus) toggleVerbose() bool {
 	if s == nil {
 		return false
@@ -695,7 +500,6 @@ func (s *sessionStatus) toggleVerbose() bool {
 	return s.verbose
 }
 
-// setVerbose seeds it from config.
 func (s *sessionStatus) setVerbose(v bool) {
 	if s == nil {
 		return
@@ -705,9 +509,6 @@ func (s *sessionStatus) setVerbose(v bool) {
 	s.mu.Unlock()
 }
 
-// barVerbose reports the BAR's verbosity under the lock. It is a method rather
-// than a field read because the render path asks for it on every frame, and a
-// racy read of a bool is still a race.
 func (s *sessionStatus) barVerbose() bool {
 	if s == nil {
 		return false
@@ -717,8 +518,6 @@ func (s *sessionStatus) barVerbose() bool {
 	return s.verbose
 }
 
-// turnLabelForTest exposes the bar's state for assertions. Production reads it
-// only through the renderer.
 func (s *sessionStatus) turnLabelForTest() turnStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

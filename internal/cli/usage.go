@@ -7,7 +7,6 @@ import (
 	"strings"
 )
 
-// extractPrompt extracts the prompt after `--` in argv.
 func extractPrompt(args []string) string {
 	for i, arg := range args {
 		if arg == "--" {
@@ -21,81 +20,34 @@ func extractPrompt(args []string) string {
 	return ""
 }
 
-// exitInterrupted is the shell's convention for "killed by SIGINT"
-// (128 + SIGINT). plainPrompt has always returned it; the interactive
-// stream used to exit 0 after a Ctrl-C, which told every caller that an
-// abandoned turn had succeeded.
-const exitInterrupted = 130
+const exitInterrupted = 130 // 128 + SIGINT
 
-// exitTurnFailed is what `figaro send` returns when the turn it waited on
-// ended in an error. It used to return 0: the bookend was the final line and
-// the process fell out of its select, so `send … && next` ran next on top of
-// an auth failure, and a fan-out script had no way to tell a refused turn
-// from an answered one without parsing the screen.
 const exitTurnFailed = 1
 
-// exitProcess is os.Exit, indirected so the die helpers are testable.
-// Tests swap it for a recorder; nothing else may touch it.
-// stdout is where a command's ORDINARY OUTPUT goes -- the thing it was asked
-// to produce, as opposed to a diagnostic. It is a variable for the same reason
-// exitProcess is: a verb run in-process (command mode inside the pager) must be
-// capturable, and 156 call sites writing to os.Stdout directly were not.
-//
-// It is NOT the renderer's writer. The incipit and the pager write to os.Stdout
-// explicitly, because their output is the terminal itself rather than a result,
-// and redirecting it would capture the escape sequences that paint the screen.
+// stdout and stderrw are variables so a verb run in-process (pager command mode)
+// is capturable. The incipit and the pager write to os.Stdout directly: their
+// output is the terminal, not a result.
 var stdout io.Writer = os.Stdout
 
-// stderrw is the diagnostic twin of stdout: die(), usage and every "warning:"
-// line. Command mode captures it too, because a verb's failure text is the
-// thing the reader most needs and it was going to the terminal underneath the
-// alt screen -- i.e. nowhere.
 var stderrw io.Writer = os.Stderr
 
-// exitProcess ends the process for real. It is reached from exactly one place
-// (exitAt, below) and is a variable only so a test can watch it.
+// exitProcess is reached only from exitAt; a variable so a test can watch it.
 var exitProcess = os.Exit
 
-// exitPanic is how a verb ABORTS: die() panics with one of these and the
-// nearest boundary decides what an abort means there.
-//
-// It used to be a global swapped in and out around each in-process command,
-// which is a process-wide mutation to achieve a per-call effect -- and one that
-// a second concurrent command would have silently undone. Now the abort is
-// always a panic and the BOUNDARY differs instead:
-//
-//	cli.Run          recovers it, runs the exit hooks, and exits for real
-//	routeCaptured    recovers it and returns the code as a command's result
-//
-// die() is already the one chokepoint every verb reports failure through -- 185
-// call sites across 85 functions -- so making the chokepoint unwind costs
-// nothing at those sites, where making each of them RETURN an error would cost
-// a signature change all the way up.
-//
-// THE RISK, stated: a die() on a goroutine with no boundary above it now panics
-// the process where it used to exit cleanly. Both are fatal; this one is
-// louder, and prints a stack that names the offender.
+// exitPanic is how a verb aborts: die panics with one and the nearest boundary
+// (cli.Run exits for real, routeCaptured returns the code) decides what that means.
+// A die on a goroutine with no boundary above it panics the process.
 type exitPanic int
 
-// exitHooks are the things that MUST happen before the process goes, even on
-// the paths that never unwind: os.Exit does not run defers, and the pager's
-// `defer lt.leaveTranscript()` is exactly the kind of defer that matters. A
-// die() with the transcript up therefore left the user on the alternate
-// screen: shell invisible, cursor hidden, autowrap off: with the error
-// message painted on a buffer about to be abandoned. `figaro send -l` whose
-// Qua fails is that path today (stream.go dies after --listen has opened the
-// pager), and so is the Ctrl-C 130 exit.
+// exitHooks run before any exit: os.Exit runs no defers, and leaving the alt
+// screen is a defer.
 var exitHooks []func()
 
 func atExit(f func()) { exitHooks = append(exitHooks, f) }
 
-// exitNow runs the hooks and exits. Every exit that is not a normal return
-// goes through here; exitProcess stays the raw primitive underneath it.
+// Every exit that is not a normal return goes through exitNow.
 func exitNow(code int) { panic(exitPanic(code)) }
 
-// exitAt is the boundary: run the hooks that must happen before the process
-// goes (os.Exit runs no defers, and `defer lt.leaveTranscript()` is exactly the
-// defer that matters), then go.
 func exitAt(code int) {
 	for i := len(exitHooks) - 1; i >= 0; i-- {
 		exitHooks[i]()
@@ -104,8 +56,8 @@ func exitAt(code int) {
 	exitProcess(code)
 }
 
-// RecoverExit is the boundary's half of the abort. Deferred by cli.Run, it
-// turns a verb's die() into a real exit with the hooks run.
+// RecoverExit, deferred by cli.Run, turns a verb's die into a real exit with the
+// hooks run.
 func RecoverExit() {
 	if rec := recover(); rec != nil {
 		if code, ok := rec.(exitPanic); ok {
@@ -116,18 +68,13 @@ func RecoverExit() {
 	}
 }
 
-// die reports a RUNTIME failure (called correctly, did not succeed): exit 1.
-// dieUsage is for rejected argv: exit 2. Before the split, the same mistake
-// answered 2 from the router and 1 from the hand-rolled parsers, a seam no
-// user can see. clig.dev: 1 = general error, 2 = misuse.
+// die is a runtime failure: exit 1. dieUsage is rejected argv: exit 2, as the
+// router answers.
 func die(format string, args ...interface{}) {
 	fmt.Fprintf(stderrw, "error: "+format+"\n", args...)
 	exitNow(1)
 }
 
-// dieUsage reports that ARGV WAS REJECTED, an unknown flag, a missing or
-// malformed target, contradictory flags, a prompt in the wrong place, and
-// exits 2, matching what the router returns for the same class of mistake.
 func dieUsage(format string, args ...interface{}) {
 	fmt.Fprintf(stderrw, "error: "+format+"\n", args...)
 	exitNow(2)

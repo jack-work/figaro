@@ -11,13 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// The two hangups. They differ by ONE thing: what becomes of the messages
-// queued behind the turn, and that is why they are two verbs rather than one
-// verb with a negated flag:
-
-// hangupJSON is the one object -j prints. It is the whole answer: which aria,
-// whether a turn was actually stopped, what happened to the queue, and the
-// queue itself: verbatim for `cut`, so `figaro cut -j > lost.json` is a save.
+// hangupJSON carries the queue verbatim, so `figaro cut -j > lost.json` is a save.
 type hangupJSON struct {
 	Aria    string             `json:"aria"`
 	Cleared bool               `json:"cleared"`
@@ -25,9 +19,6 @@ type hangupJSON struct {
 	Queue   []rpc.QueuedPrompt `json:"queue"`
 }
 
-// runHangup sends figaro.interrupt with an explicit queue disposition: the
-// same RPC Ctrl-C fires inside a send stream. With no id, the pid-bound aria
-// is used.
 func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDisposition, asJSON bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -56,7 +47,6 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 		queue = []rpc.QueuedPrompt{}
 	}
 	if asJSON {
-		// Exactly one object on stdout, and nothing else.
 		out, merr := json.Marshal(hangupJSON{
 			Aria:    resolvedID,
 			Cleared: resp.Cleared,
@@ -71,9 +61,8 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 	}
 
 	fmt.Fprintf(stdout, "%s %s\n", verbFor(disposition), resolvedID)
-	// Say what happened to the queue even when it is empty: the difference
-	// between the two verbs is invisible otherwise, and a user who typed `cut`
-	// deserves to see that it had nothing to discard rather than wonder.
+	// Say what happened to the queue even when empty: it is the only visible
+	// difference between the verbs.
 	switch {
 	case resp.Cleared && len(queue) == 0:
 		fmt.Fprintln(stdout, "  queue: nothing was waiting")
@@ -100,9 +89,6 @@ func verbFor(disposition rpc.QueueDisposition) string {
 	return "hup"
 }
 
-// queueCount counts messages, and says when one of them is several folded
-// together. "1 message kept" after queueing three is true and baffling; the
-// fold is the reason, so the fold is named.
 func queueCount(queue []rpc.QueuedPrompt) string {
 	folded := 0
 	for _, p := range queue {
@@ -129,8 +115,6 @@ func theyThem(n int) string {
 	return "them"
 }
 
-// queueRowText renders a queued message on one row: a combined message is
-// several lines and the listing is a manifest, not a transcript.
 func queueRowText(s string) string {
 	for i := 0; i < len(s); i++ {
 		if s[i] == '\n' {

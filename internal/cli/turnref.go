@@ -10,10 +10,8 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// ariaMessages reads an aria's whole log and returns it as messages with their
-// logical times attached. The LT lives on the store entry, not in the payload
-// (it is the frame index, populated on read), so it has to be stitched back on
-// here: every caller that forgets produces messages that silently claim LT 0.
+// The LT lives on the store entry, not in the payload: stitch it back on or
+// messages claim LT 0.
 func ariaMessages(ctx context.Context, acli *sdk.Angelus, ariaID string) ([]message.Message, error) {
 	resp, err := acli.IRAll(ctx, ariaID, 0)
 	if err != nil {
@@ -29,7 +27,6 @@ func ariaMessages(ctx context.Context, acli *sdk.Angelus, ariaID string) ([]mess
 	return msgs, nil
 }
 
-// resolveTurn turns a user-facing turn id into the atMainLT a fork takes.
 func resolveTurn(ctx context.Context, acli *sdk.Angelus, ariaID string, turn uint64) (uint64, error) {
 	msgs, err := ariaMessages(ctx, acli, ariaID)
 	if err != nil {

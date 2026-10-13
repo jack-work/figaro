@@ -8,18 +8,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// ---------------------------------------------------------------------------
-// The bar, at every width, as a table.
-//
-// This is the test the old renderer could not have: statusLine took a lock and
-// read a session, so "what does the bar look like at 46 columns with a drawer
-// open and an alert up" was a question only a pty could answer. render() is a
-// pure function of a value, so it is a table.
-//
-// Each case is a WIDTH and a VALUE; the golden is the rows. A width regression
-// now fails here instead of being discovered in a terminal.
-// ---------------------------------------------------------------------------
-
 func barFixture() statusView {
 	return statusView{
 		State:  turnStatusCompleted,
@@ -44,8 +32,6 @@ func TestStatusViewGoldens(t *testing.T) {
 			want: []string{"✓ · 123abc · test                                               9.8k/1.0m (1.0%)"},
 		},
 		{
-			// THE NAME IS A VERBOSE EXTRA. This bar is read by someone who
-			// knows the glyphs; the word is for the reader who does not.
 			name: "a pit leads with its glyph alone", width: 80,
 			view: func(v statusView) statusView { v.Pit = pitQueue; return v },
 			want: []string{"𝄚 · ✓ · 123abc · test                                           9.8k/1.0m (1.0%)"},
@@ -56,17 +42,11 @@ func TestStatusViewGoldens(t *testing.T) {
 			want: []string{"𝄚 queue · done ✓ · 123abc · test · claude-opus              9.8k/1.0m (1.0%) · 08/28/26 12:47:31"},
 		},
 		{
-			// THE NARROW FORM IS THREE ROWS, and the blank is one of them.
-			// Note the mantra SURVIVES here: once the bar has given up on one
-			// row there is nothing to buy by dropping a field.
 			name: "narrow: left, blank, right", width: 24,
 			view: func(v statusView) statusView { return v },
 			want: []string{"✓ · 123abc · test", "", "9.8k/1.0m (1.0%)"},
 		},
 		{
-			// Between those two widths the mantra sheds to STAY on one row: a
-			// pane wide enough for the facts should not become three rows tall
-			// to keep a field that is also at the top of the screen.
 			name: "the mantra sheds before the bar grows", width: 32,
 			view: func(v statusView) statusView { return v },
 			want: []string{"✓ · 123abc      9.8k/1.0m (1.0%)"},
@@ -96,9 +76,7 @@ func TestStatusViewGoldens(t *testing.T) {
 	}
 }
 
-// TestStatusViewNeverExceedsItsWidth is the invariant behind every golden: a
-// bar wider than the pane wraps in the terminal and silently costs the
-// conversation a line.
+// A bar wider than the pane wraps and costs the conversation a line.
 func TestStatusViewNeverExceedsItsWidth(t *testing.T) {
 	base := barFixture()
 	base.Alert = "provider said no"
@@ -118,9 +96,6 @@ func TestStatusViewNeverExceedsItsWidth(t *testing.T) {
 	}
 }
 
-// TestStatusViewHeightMatchesWhatItDraws: the caller reserves rows from
-// height() and paints rows from render(), and a disagreement eats a line of
-// the conversation.
 func TestStatusViewHeightMatchesWhatItDraws(t *testing.T) {
 	v := barFixture()
 	for w := 8; w <= 200; w++ {
@@ -130,8 +105,6 @@ func TestStatusViewHeightMatchesWhatItDraws(t *testing.T) {
 	}
 }
 
-// TestAlertLeadsAndIsNeverShed: trouble arrives unasked-for, so it goes where
-// the eye lands and it is the last thing to go.
 func TestAlertLeadsAndIsNeverShed(t *testing.T) {
 	v := barFixture()
 	v.Alert = "queue rm: refused"
@@ -139,15 +112,12 @@ func TestAlertLeadsAndIsNeverShed(t *testing.T) {
 	if !strings.HasPrefix(pitText(rows[0]), "queue rm: refused") {
 		t.Fatalf("the alert does not lead the row: %q", rows[0])
 	}
-	// Even at a width where the mantra has gone.
 	narrow := strings.Join(v.render(44), "\n")
 	if !strings.Contains(pitText(narrow), "queue rm: refused") {
 		t.Fatalf("the alert was shed on a narrow bar: %q", narrow)
 	}
 }
 
-// TestRenderIsPure: no clock, no lock, no globals. The same value renders the
-// same rows forever, which is what makes the goldens above meaningful.
 func TestRenderIsPure(t *testing.T) {
 	v := barFixture()
 	first := strings.Join(v.render(80), "\n")
@@ -157,9 +127,6 @@ func TestRenderIsPure(t *testing.T) {
 	}
 }
 
-// TestVerboseCarriesTheLastInteraction: the field is a full datetime because a
-// pager left open across midnight makes a bare clock ambiguous, and absolute
-// because a relative string is true only when it is painted.
 func TestVerboseCarriesTheLastInteraction(t *testing.T) {
 	v := barFixture()
 	v.Verbose = true
@@ -173,9 +140,6 @@ func TestVerboseCarriesTheLastInteraction(t *testing.T) {
 	}
 }
 
-// TestOnlyTroubleIsRed: a confirmation wears the row's own gray. Painting
-// every alert red made the bar shout "sent" in the colour it keeps for
-// failures, which is how a colour stops meaning anything.
 func TestOnlyTroubleIsRed(t *testing.T) {
 	restore := term.SetColorMode(term.ColorAlways)
 	defer restore()
@@ -197,8 +161,6 @@ func TestOnlyTroubleIsRed(t *testing.T) {
 	}
 }
 
-// TestAlertLevelResetsOnEveryPost: a red error must not tint the confirmation
-// that follows it. setNotice is the confirmation door and clears the level.
 func TestAlertLevelResetsOnEveryPost(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	s.setNoticeAt("boom", alertError)
@@ -211,13 +173,6 @@ func TestAlertLevelResetsOnEveryPost(t *testing.T) {
 	}
 }
 
-// TestAlertRetiresOnItsOwn is the test that was missing, and its absence is
-// why an alert sat in the bar forever: setNoticeTTL existed, cli.notice_ttl
-// existed, and NOTHING CALLED EITHER -- so every alert was born with a zero
-// TTL, which means "hold the slot until displaced".
-//
-// It drives the clock rather than sleeping: the expiry is a comparison against
-// a time the caller passes, precisely so this can be tested in microseconds.
 func TestAlertRetiresOnItsOwn(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	if s.noticeTTL <= 0 {
@@ -229,19 +184,15 @@ func TestAlertRetiresOnItsOwn(t *testing.T) {
 	if v := s.viewOf(pitNothing, false, now); v.Alert != "sent" {
 		t.Fatalf("the alert did not post: %q", v.Alert)
 	}
-	// Still there a moment later.
 	if v := s.viewOf(pitNothing, false, now.Add(time.Second)); v.Alert != "sent" {
 		t.Fatalf("the alert retired early: %q", v.Alert)
 	}
-	// And gone once its span is up, WITHOUT a keystroke or a tick: an idle
-	// pager animates nothing, so the view build is the backstop.
+	// Gone without a keystroke or a tick: the view build is the backstop.
 	if v := s.viewOf(pitNothing, false, now.Add(defaultNoticeTTL+time.Second)); v.Alert != "" {
 		t.Fatalf("the alert outlived its TTL: %q", v.Alert)
 	}
 }
 
-// TestNewerAlertDisplacesOlder: the other way an alert leaves. A burst of
-// them -- ten `:send`s in a row -- must show the newest, not a stack.
 func TestNewerAlertDisplacesOlder(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	for i := 0; i < 10; i++ {
@@ -257,8 +208,6 @@ func TestNewerAlertDisplacesOlder(t *testing.T) {
 	}
 }
 
-// THE MANTRA TAKES WHATEVER IS LEFT. A fixed 32-rune cap cut it on a pane with
-// sixty columns going spare.
 func TestMantraFillsTheRoomItHas(t *testing.T) {
 	long := "ship the pit, the picker and the bar, and then go to bed"
 	v := statusView{State: turnStatusCompleted, Aria: "123abc", Mantra: long, Ctx: "9.8k/1.0m 1.0%"}
@@ -267,8 +216,7 @@ func TestMantraFillsTheRoomItHas(t *testing.T) {
 	if len(wide) != 1 || !strings.Contains(wide[0], long) {
 		t.Fatalf("a 200-column bar clipped the mantra:\n%q", wide)
 	}
-	// Every width: the bar never overflows, and the mantra is as long as the
-	// room allows -- monotonically, so a wider pane never shows less.
+	// Monotonic: a wider pane never shows less mantra.
 	prev := 0
 	for w := 20; w <= 200; w++ {
 		rows := v.render(w)
@@ -292,12 +240,7 @@ func TestMantraFillsTheRoomItHas(t *testing.T) {
 
 func plainForTest(s string) string { return pitText(s) }
 
-// TestLongAlertClipsItselfNotItsNeighbours: a provider's error sentence used
-// to take the whole row, and the finished row was clipped from the right, so
-// the state glyph and the aria id, the two facts that place the alert, went
-// off the end. Measured in a pty at 100 columns: "error: anthropic 401:
-// invalidate failed: oauth refresh for "anthropic" rejected (run: figaro login
-// …" and nothing else on the row. The alert yields; the fixed fields do not.
+// The alert yields; the fixed fields do not.
 func TestLongAlertClipsItselfNotItsNeighbours(t *testing.T) {
 	v := barFixture()
 	v.State = turnStatusError
@@ -320,8 +263,6 @@ func TestLongAlertClipsItselfNotItsNeighbours(t *testing.T) {
 	if !strings.HasPrefix(row, "error: anthropic 401") || !strings.Contains(row, "…") {
 		t.Errorf("the alert should lead, cut with an ellipsis: %q", row)
 	}
-	// The floor: a narrow bar keeps at least alertMin of the alert and lets
-	// the row split in three instead, as it always has.
 	narrow := v.render(40)
 	if !strings.HasPrefix(pitText(narrow[0]), "error: anthropic 401") {
 		t.Errorf("the alert was cut below its floor on a narrow bar: %q", narrow[0])

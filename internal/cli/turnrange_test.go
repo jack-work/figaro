@@ -6,12 +6,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// Every `figaro show` selector speaks TURN IDS. Before this there were three
-// coordinate systems in one command: --from/--to were slice indices, --before
-// was an LT, and the printed label was a third thing. This pins the collapse.
 func TestSelectTurnRangeSpeaksTurnIDs(t *testing.T) {
-	// Turn ids need not start at 1 or be contiguous: a forked trunk inherits
-	// its parent's numbering, so the resolver must scan, not index-arithmetic.
+	// A forked trunk inherits its parent's numbering: ids need not start at 1.
 	turns := []aria.Turn{{ID: 5}, {ID: 6}, {ID: 7}, {ID: 8}, {ID: 9}}
 	base := showOpts{last: 10, from: -1, to: -1, before: -1}
 
