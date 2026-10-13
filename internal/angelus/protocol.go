@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/decide"
 	"log/slog"
 	"sync"
 	"text/template"
@@ -31,6 +32,8 @@ type ServerConfig struct {
 	AvailableProviders []string
 
 	FormTemplates *template.Template // nil = skip
+
+	Decider *decide.Engine
 }
 
 type Handlers struct {
@@ -76,6 +79,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		formTmpls:          cfg.FormTemplates,
 		outfitter:          newOutfitter(cfg.Angelus, cfg.Config),
 		availableProviders: cfg.AvailableProviders,
+		decider:            cfg.Decider,
 	}
 	if cfg.Config != nil {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
@@ -109,6 +113,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodContext:        h.context,
 			rpc.MethodForm:           h.form,
 			rpc.MethodLineage:        h.lineage,
+			rpc.MethodDecide:         h.decide,
 			rpc.MethodHello:          h.hello,
 		}, authz.AriaHeader{}, h.policy()),
 		h: h,
@@ -169,6 +174,7 @@ type handlers struct {
 	formTmpls          *template.Template
 	outfitter          *outfit.Outfitter
 	availableProviders []string
+	decider            *decide.Engine
 
 	// readerInst's per-aria servers are the window; a reader per call would retain nothing.
 	readerOnce sync.Once

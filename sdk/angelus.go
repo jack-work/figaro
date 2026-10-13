@@ -277,3 +277,11 @@ func (c *Angelus) Lineage(ctx context.Context, id, against string) (*rpc.Lineage
 	}
 	return &out, nil
 }
+
+func (c *Angelus) Decide(ctx context.Context, req rpc.DecideRequest) (*rpc.DecideResponse, error) {
+	var resp rpc.DecideResponse
+	if err := c.call(ctx, rpc.MethodDecide, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

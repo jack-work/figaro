@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/decide"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -163,6 +164,14 @@ func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 	return b, nil
 }
 
+func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
+	resolver, err := boot.KeyResolver(loaded, decide.Name, decide.CredentialEnvs)
+	if err != nil {
+		return nil, err
+	}
+	return decide.New(func() (decide.Settings, error) { return decide.LoadSettings(loaded) }, resolver), nil
+}
+
 func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
 		reg := providerPkg.Lookup(providerName)
@@ -275,6 +284,11 @@ func Run() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	decider, err := buildDecider(loaded)
+	if err != nil {
+		slog.Warn("decide: no decision model", "err", err)
+	}
+
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:            a,
 		Config:             loaded,
@@ -282,6 +296,7 @@ func Run() {
 		AvailableProviders: providerPkg.Names(),
 		Ctx:                ctx,
 		FormTemplates:      formTmpls,
+		Decider:            decider,
 	})
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria

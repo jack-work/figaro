@@ -43,21 +43,7 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
 	}
 
-	strategies := EnvironmentStrategies(reg)
-	strategies = append(strategies,
-		&auth.ConfigValue{Get: func() string {
-			var pa config.ProviderAuth
-			_ = loaded.LoadProviderAuth(providerName, &pa)
-			if pa.APIKey == "" || strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
-				return ""
-			}
-			return pa.APIKey
-		}},
-		&encryptedAPIKey{
-			Hush:       hushClient,
-			ConfigPath: loaded.ProviderAuthPath(providerName),
-		},
-	)
+	strategies := append(EnvironmentStrategies(reg), storedKey(loaded, hushClient, providerName)...)
 	if hasOAuth {
 		strategies = append(strategies, &auth.OAuth{
 			Hush: hushClient,
@@ -65,6 +51,33 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		})
 	}
 	return &auth.Aggregate{Strategies: strategies}, nil
+}
+
+func KeyResolver(loaded *config.Loaded, name string, envs []string) (auth.TokenResolver, error) {
+	h, err := Hush()
+	if err != nil {
+		return nil, err
+	}
+	var strategies []auth.CredentialStrategy
+	for _, env := range envs {
+		strategies = append(strategies, &auth.EnvVar{Name: env})
+	}
+	strategies = append(strategies, storedKey(loaded, h.Client(), name)...)
+	return &auth.Aggregate{Strategies: strategies}, nil
+}
+
+func storedKey(loaded *config.Loaded, hushClient *hush.Client, name string) []auth.CredentialStrategy {
+	return []auth.CredentialStrategy{
+		&auth.ConfigValue{Get: func() string {
+			var pa config.ProviderAuth
+			_ = loaded.LoadProviderAuth(name, &pa)
+			if pa.APIKey == "" || strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
+				return ""
+			}
+			return pa.APIKey
+		}},
+		&encryptedAPIKey{Hush: hushClient, ConfigPath: loaded.ProviderAuthPath(name)},
+	}
 }
 
 func EnvironmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrategy {
