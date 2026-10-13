@@ -1,35 +1,44 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
 
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // runDoctorTTL reports every node carrying system.ttl and when its lifetime is
-// spent. It reads the sidecars directly -- no daemon, no store, no lock -- so
-// it answers while the daemon is running, which is the only time anybody wants
-// to ask. The daemon's own sweep reads the same numbers.
-func runDoctorTTL(jsonOut bool) error {
-	entries := store.ScanTTL(AriaRoot())
-	rows := make([]store.TTLEntry, 0, len(entries))
-	for _, e := range entries {
-		rows = append(rows, e)
+// spent, as the daemon's own sweep sees it.
+func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	resp, err := acli.ListGlobal(context.Background())
+	if err != nil {
+		return err
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].DeadlineMS < rows[j].DeadlineMS })
+	var rows []rpc.FigaroInfoResponse
+	for _, f := range resp.Figaros {
+		if f.TTLMS > 0 {
+			rows = append(rows, f)
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ExpiresAt < rows[j].ExpiresAt })
+	now := time.Now()
+	ttlOf := func(f rpc.FigaroInfoResponse) time.Duration { return time.Duration(f.TTLMS) * time.Millisecond }
 
 	if jsonOut {
 		out := make([]map[string]any, 0, len(rows))
-		for _, e := range rows {
+		for _, f := range rows {
 			out = append(out, map[string]any{
-				"id":            e.ID,
-				"ttl":           e.TTL.String(),
-				"created_at_ms": e.CreatedAtMS,
-				"deadline_ms":   e.DeadlineMS,
-				"expired":       e.Expired(time.Now().UnixMilli()),
+				"id":            f.ID,
+				"ttl":           ttlOf(f).String(),
+				"created_at_ms": f.CreatedAt,
+				"deadline_ms":   f.ExpiresAt,
+				"expired":       f.ExpiresAt <= now.UnixMilli(),
 			})
 		}
 		enc := json.NewEncoder(stdout)
@@ -42,19 +51,18 @@ func runDoctorTTL(jsonOut bool) error {
 			"no node states a lifetime (set one with: figaro set --id <id> system.ttl 30d)")
 		return nil
 	}
-	now := time.Now()
 	fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n", "NODE", "TTL", "CREATED", "EXPIRES", "STATUS")
 	due := 0
-	for _, e := range rows {
-		deadline := time.UnixMilli(e.DeadlineMS)
+	for _, f := range rows {
+		deadline := time.UnixMilli(f.ExpiresAt)
 		status := "in " + deadline.Sub(now).Round(time.Minute).String()
-		if e.Expired(now.UnixMilli()) {
+		if f.ExpiresAt <= now.UnixMilli() {
 			status = "DUE"
 			due++
 		}
 		fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n",
-			e.ID, e.TTL.String(),
-			time.UnixMilli(e.CreatedAtMS).Format("2006-01-02 15:04"),
+			f.ID, ttlOf(f).String(),
+			time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04"),
 			deadline.Format("2006-01-02 15:04"), status)
 	}
 	fmt.Fprintf(stderrw, "\n%d with a lifetime, %d due. The daemon's sweep takes what is due"+

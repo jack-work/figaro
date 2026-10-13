@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,10 +14,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tool"
 )
 
 // deadChannels name store channels nothing reads or writes: turn-wal (drain +
@@ -80,7 +79,7 @@ func runDoctorGC(dryRun bool) error {
 		freed += dirSize(dir)
 	}
 	if dryRun {
-		fmt.Fprintf(stdout, "would remove %d dead channel(s) (%s): %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+		fmt.Fprintf(stdout, "would remove %d dead channel(s) (%s): %s\n", len(dead), humanBytes(freed), strings.Join(dead, ", "))
 		return nil
 	}
 
@@ -109,7 +108,7 @@ func runDoctorGC(dryRun bool) error {
 			_ = os.Remove(filepath.Dir(dir)) // drop the legacy parent once empty
 		}
 	}
-	fmt.Fprintf(stdout, "removed %d dead channel(s), freed %s: %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+	fmt.Fprintf(stdout, "removed %d dead channel(s), freed %s: %s\n", len(dead), humanBytes(freed), strings.Join(dead, ", "))
 	return nil
 }
 
@@ -251,13 +250,14 @@ func runDoctorMem(asJSON, collect bool) error {
 	}
 
 	limit := "unlimited"
-	if m.MemLimitBytes != angelus.UnlimitedMemLimit {
+	// math.MaxInt64 is what debug.SetMemoryLimit reports with no ceiling.
+	if m.MemLimitBytes != math.MaxInt64 {
 		limit = humanBytes(m.MemLimitBytes)
 	}
 	fmt.Fprintf(stdout, "limit      %s (GOMEMLIMIT, soft)\n", limit)
 
 	if m.PprofSocket == "" {
-		fmt.Fprintf(stdout, "pprof      not armed: restart the daemon with %s=1\n", angelus.PprofEnv)
+		fmt.Fprintln(stdout, "pprof      not armed: restart the daemon with FIGARO_PPROF=1")
 	} else {
 		fmt.Fprintf(stdout, "pprof      %s\n", m.PprofSocket)
 		fmt.Fprintf(stdout, "           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)

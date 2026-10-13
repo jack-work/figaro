@@ -1493,7 +1493,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			case "skills":
 				return runDoctorSkills(ctx.BoolFlag("json"))
 			case "ttl":
-				return runDoctorTTL(ctx.BoolFlag("json"))
+				return runDoctorTTL(loaded, ctx.BoolFlag("json"))
 			}
 			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 		},
