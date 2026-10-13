@@ -27,5 +27,3 @@ github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/internal/pr
 github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/internal/store
 github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/internal/store/xwal
 github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/internal/tool
-github.com/jack-work/figaro/internal/tool github.com/creack/pty
-github.com/jack-work/figaro/internal/tool os/exec
