@@ -11,11 +11,16 @@ import (
 //
 // The phase exists to stop two forks of one trunk retaining the shared prefix
 // separately. This asks what "separately" actually means, by IDENTITY rather
-// than by heap: if a child's copy of a parent's record points at the same
-// string bytes, nothing is duplicated and the tree has no work to do here.
+// than by heap: if a child's copy of a parent's record is the same decoded
+// value, nothing is duplicated and the tree has no work to do here.
 //
-// Heap is the wrong ruler for this (it has misled this project before); string
-// identity is exact.
+// Heap is the wrong ruler for this (it has misled this project before). So is
+// string identity: encoding/json on the v2 engine (Go 1.27, goexperiment
+// jsonv2) keeps a string cache on its pooled decoders and hands two separate
+// Unmarshal calls the SAME bytes for equal values of 2..256 bytes, so two
+// cold decodes of one record can share their text without anything in this
+// package having shared it. No decoder reuses a slice's backing array, so the
+// Content slice is the identity of a decoded entry.
 //
 // PERMANENT, NOT MIGRATION SCAFFOLDING.
 
@@ -30,8 +35,12 @@ func textOf(e Entry[message.Message]) string {
 	return ""
 }
 
-func sameBytes(a, b string) bool {
-	return len(a) == len(b) && unsafe.StringData(a) == unsafe.StringData(b)
+// sameDecode reports whether two entries are one decoded value: they share
+// the backing array of their Content slice. Only meaningful for entries that
+// carry content; two empty slices are not a shared decode.
+func sameDecode(a, b Entry[message.Message]) bool {
+	return len(a.Payload.Content) > 0 && len(a.Payload.Content) == len(b.Payload.Content) &&
+		unsafe.SliceData(a.Payload.Content) == unsafe.SliceData(b.Payload.Content)
 }
 
 func forkedPair(t *testing.T) (b *XwalBackend, parent, childA, childB string) {
@@ -118,16 +127,16 @@ func TestOpeningAForkWithoutAResidentAncestorDecodesItsOwnCopy(t *testing.T) {
 	if pt != at {
 		t.Fatalf("the two disagree on the record's CONTENT, which is a different bug")
 	}
-	if sameBytes(pt, at) {
-		t.Fatal("a cold open shared the ancestor's bytes, which no mechanism in this " +
-			"process can do: the identity meter is reporting sharing it cannot have seen")
+	if sameDecode(pe, ae) {
+		t.Fatal("a cold open handed back the ancestor's decoded entry, which no mechanism " +
+			"in a fresh backend can do: the identity meter is reporting sharing it cannot have seen")
 	}
 	t.Logf("cold open of a fork: LT %d decoded a second copy, as expected", shared)
 }
 
-// And the claim seeding rests on: a shallow copy shares the payload strings,
-// so a seeded child costs slice headers rather than a second decode.
-func TestShallowCopyOfEntriesSharesPayloadStrings(t *testing.T) {
+// And the claim seeding rests on: a shallow copy shares the payload, so a
+// seeded child costs slice headers rather than a second decode.
+func TestShallowCopyOfEntriesSharesPayload(t *testing.T) {
 	b, parent, _, _ := forkedPair(t)
 	defer b.Close()
 
@@ -142,18 +151,17 @@ func TestShallowCopyOfEntriesSharesPayloadStrings(t *testing.T) {
 
 	compared := 0
 	for i := range rows {
-		a, s := textOf(rows[i]), textOf(seeded[i])
-		if a == "" {
+		if textOf(rows[i]) == "" {
 			continue // ceremonial records carry no text
 		}
 		compared++
-		if !sameBytes(a, s) {
-			t.Fatalf("row %d: a shallow copy did NOT share the payload string; "+
+		if !sameDecode(rows[i], seeded[i]) {
+			t.Fatalf("row %d: a shallow copy did NOT share the payload; "+
 				"seeding would cost a second copy of the prefix", i)
 		}
 	}
 	if compared == 0 {
 		t.Fatal("compared nothing; the fixture cannot prove sharing")
 	}
-	t.Logf("shallow copy: %d of %d entries compared, every payload string shared", compared, len(rows))
+	t.Logf("shallow copy: %d of %d entries compared, every payload shared", compared, len(rows))
 }

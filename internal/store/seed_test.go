@@ -140,8 +140,8 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 }
 
 // THE MEASUREMENT THE FIX EXISTS FOR, by identity: with the ancestor resident,
-// the child's shared prefix must point at the ancestor's bytes.
-func TestSeededForkSharesTheAncestorsStrings(t *testing.T) {
+// the child's shared prefix must be the ancestor's decoded entries.
+func TestSeededForkSharesTheAncestorsEntries(t *testing.T) {
 	b, parent, childA, childB := forkedPair(t)
 	defer b.Close()
 
@@ -175,7 +175,7 @@ func TestSeededForkSharesTheAncestorsStrings(t *testing.T) {
 				continue
 			}
 			compared++
-			if sameBytes(pt, textOf(ce)) {
+			if sameDecode(pe, ce) {
 				shared++
 			}
 		}
@@ -183,8 +183,8 @@ func TestSeededForkSharesTheAncestorsStrings(t *testing.T) {
 	if compared == 0 {
 		t.Fatal("compared nothing; the fixture cannot show sharing")
 	}
-	t.Logf("shared prefix, two children: %d strings compared, %d SHARED, %d MINTED", compared, shared, compared-shared)
+	t.Logf("shared prefix, two children: %d entries compared, %d SHARED, %d MINTED", compared, shared, compared-shared)
 	if shared != compared {
-		t.Errorf("%d of %d prefix strings were MINTED by a fork whose ancestor is resident; seeding did not happen", compared-shared, compared)
+		t.Errorf("%d of %d prefix entries were MINTED by a fork whose ancestor is resident; seeding did not happen", compared-shared, compared)
 	}
 }
