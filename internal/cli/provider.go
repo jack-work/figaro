@@ -14,9 +14,6 @@ import (
 	_ "github.com/jack-work/figaro/internal/provider/routed"
 )
 
-// KnownProviders returns the names of all registered providers.
-func KnownProviders() []string { return providerPkg.Names() }
-
 // defaultModelFor returns the default model for a provider.
 func defaultModelFor(providerName string) string {
 	if r := providerPkg.Lookup(providerName); r != nil {

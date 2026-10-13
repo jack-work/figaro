@@ -36,9 +36,7 @@ type showWindow struct {
 	pages  int  // backward reads issued, for the diagnostics
 
 	// fromHead marks the legacy fallback: the window was read FORWARD from
-	// LT 0 and may stop short of the tail. Without this a truncated forward
-	// read reports itself as a tail, which is the original bug wearing the
-	// new code's words.
+	// LT 0 and may stop short of the tail.
 	fromHead bool
 }
 

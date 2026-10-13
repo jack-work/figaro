@@ -296,7 +296,7 @@ func Run() {
 		Angelus:            a,
 		Config:             loaded,
 		ProviderFactory:    buildProviderFactory(loaded, formTmpls, backend),
-		AvailableProviders: cli.KnownProviders(),
+		AvailableProviders: providerPkg.Names(),
 		Ctx:                ctx,
 		FormTemplates:      formTmpls,
 	})

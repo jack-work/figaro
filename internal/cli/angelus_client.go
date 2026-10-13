@@ -131,13 +131,10 @@ func ensureAngelus() {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	// A LIVE daemon is never declared dead. The old rule was a flat five
-	// seconds, and the first open after an upgrade migrates the store
-	// layout, which takes about five seconds on a real one: so the CLI
-	// told the user his daemon had failed at the exact moment when killing
-	// it would destroy his arias. Now: while the child is alive we keep
-	// waiting and say what it is doing; only an exit, or a very long
-	// silence, is a failure.
+	// A LIVE daemon is never declared dead: the first open after an upgrade
+	// migrates the store, and killing it mid-way destroys arias. While the
+	// child is alive we wait and say what it is doing; only an exit, or a
+	// very long silence, is a failure.
 	start := time.Now()
 	var deferred time.Time // when our child stood down for an incumbent
 	var lastNotice time.Time
