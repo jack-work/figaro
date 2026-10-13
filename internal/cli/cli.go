@@ -1386,6 +1386,21 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "serve",
+		Group: "System",
+		Short: "Relay model requests to configured providers over loopback HTTP",
+		Usage: "serve [-l <addr>] [-p <provider,...>]",
+		Long:  "Runs a stateless, unauthenticated model router on a loopback address. It\ntouches no aria, store or daemon: each request is forwarded to a provider\nwith figaro's credential for it, and the response streams back unchanged.\n\n  /u/<provider>/<path>                    base URL + path, any method\n  /v1/responses, /v1/chat/completions,    model \"<provider>/<model>\" picks\n  /v1/messages                            the provider; the prefix is removed\n  /v1/models                              every provider's models, prefixed\n\nRequests whose Host is not a loopback name, or that carry a non-loopback\nOrigin, are refused.",
+		Flags: []cmdkit.FlagDef{
+			{Long: "listen", Short: "l", Description: "loopback address to listen on (default 127.0.0.1:8788)"},
+			{Long: "provider", Short: "p", Description: "comma-separated providers to serve (default: every one with a credential)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			return runServe(ctx.Extra.(*config.Loaded), ctx.Flag("listen"), ctx.Flag("provider"))
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "stop",
 		Aliases: []string{"rest"},
 		Group:   "System",
