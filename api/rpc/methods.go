@@ -126,6 +126,9 @@ const (
 // ADMINISTRATION: the daemon's own state, which a client cannot read for
 // itself -- the daemon may not even share a filesystem with the caller.
 const (
+	// MethodHello is the node door (api/rpc/door.go): version, capabilities,
+	// node id, and the server-stamped principal. First call on a connection.
+	MethodHello       = "angelus.hello"
 	MethodAngelusInfo = "angelus.info"
 	MethodStatus      = "angelus.status"
 	// MethodMemCollect forces a garbage collection and reports the live heap
