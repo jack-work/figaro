@@ -176,8 +176,7 @@ type CLIConfig struct {
 	Editor *string `toml:"editor"`
 }
 
-// AuthzConfig selects the authentication provider and the authorization
-// policy for the RPC surface (see internal/authz).
+// AuthzConfig selects the authorization policy for the RPC surface.
 type AuthzConfig struct {
 	// Policy is "default" for authz.DefaultRules; anything else gates nothing.
 	Policy string `toml:"policy"`
