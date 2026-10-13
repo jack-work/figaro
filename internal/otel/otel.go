@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -361,16 +360,11 @@ type MemSample struct {
 func SetMemProbe(fn func() MemSample) { memProbe.Store(&fn) }
 
 func rssBytes() int64 {
-	b, err := os.ReadFile("/proc/self/statm")
-	if err != nil {
-		return 0
+	var size, resident int64
+	if b, err := os.ReadFile("/proc/self/statm"); err == nil {
+		fmt.Sscan(string(b), &size, &resident)
 	}
-	f := strings.Fields(string(b))
-	if len(f) < 2 {
-		return 0
-	}
-	pages, _ := strconv.ParseInt(f[1], 10, 64)
-	return pages * int64(os.Getpagesize())
+	return resident * int64(os.Getpagesize())
 }
 
 func gauge(m otelmetric.Meter, name, unit string) otelmetric.Int64ObservableGauge {
