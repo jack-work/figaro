@@ -25,7 +25,7 @@ nix build         # flake.nix is a first-class build path
 
 - Module: `github.com/jack-work/figaro`. Go 1.25.
 - **Stamp the revision** when you build a binary to run: `go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o /tmp/figaro ./cmd/figaro`. A plain `go build` in a worktree records no VCS revision, so the CLI/daemon build handshake can only warn instead of refusing. See the **tmux-testing** skill.
-- `hush` and `largo` are local replace directives in active development. Don't pin or vendor without asking.
+- `hush` and `largo` are ordinary `go.mod` requires (no replace directives) in active development. `nix develop .#tools` is the shell for bumping them. Don't pin or vendor without asking.
 - CGO disabled in nix builds. Keep it that way.
 
 When you change deps (`go.mod` / `go.sum`), the flake's `vendorHash` will need updating: the build will tell you the right hash. Surface flake updates in your summary so the user can audit.
@@ -67,11 +67,11 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 ## Hot spots
 
 - `internal/figaro/agent.go`: drain loop, turn lifecycle, interrupt handling, panic recovery, in-progress-tic accumulation, set/outfit patch dispatch.
-- `internal/figaro/turn_seal.go`: in-memory turn state, interrupt/drain sealing, interrupted tool results.
+- `internal/figaro/turn_repair.go` + `repair.go`: in-memory turn state, interrupt/drain sealing, interrupted tool results.
 - `internal/figaro/translator.go`: `synchronize` and its three sub-passes. The bidirectional sync between figStream and the translator stream.
 - `internal/figaro/inbox.go`: selfish vs. patient semantics, routing subscriber.
 - `internal/angelus/protocol.go`: supervisor JSON-RPC handlers, dormant-aria handling, lazy restore.
-- `internal/store/file_stream.go` + `mem_stream.go`, append/condense/discard semantics. Easy to break.
+- `internal/store/xwal_backend.go` + `form.go`: the XWAL-backed store and the form log; append/condense/discard semantics. Easy to break.
 - `internal/provider/projection.go`: shared O(delta) translator watermark, form state, and input-ready cache catch-up.
 - `internal/provider/anthropic/anthropic.go`: direct HTTP+SSE, no SDK. SSE parser is hand-rolled. `Send` assembles the request body internally; `Assemble` runs the SSE accumulator. `Fingerprint()` change invalidates the translator cache.
 - `github.com/jack-work/jkrpc` (extracted from `internal/jsonrpc/`): NDJSON framing. Don't switch frame formats without updating both ends.
@@ -104,7 +104,7 @@ Take freely-reversible local actions. Pause and ask before:
 
 ## Plans and duck
 
-`plans/*.md` are intent documents: historical record once the work lands. Don't rewrite a plan to reflect what shipped; that's what the code and `ARCHITECTURE.md` are for.
+`plans/*.md` live on the `history` branch (`git show history:plans/<name>.md`); the few still on `main` are there because code or a shipped skill cites them by path. A plan is an intent document: historical record once the work lands. Don't rewrite a plan to reflect what shipped; that's what the code and `ARCHITECTURE.md` are for.
 
 `duck/*.md` is for rubber-duck brainstorms: captured thinking from design conversations, lower commitment than `plans/`. The most recent duck doc usually represents in-flight design thinking. Read it before architecturally significant work.
 
