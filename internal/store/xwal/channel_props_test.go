@@ -7,15 +7,10 @@ import (
 	"testing"
 )
 
-// A store written before a channel became unkeyed kept it keyed forever:
-// the manifest is authoritative once a store exists, and nothing
-// reconciled it. So the unkeyed design reached stores created by this
-// build and no store anyone already had.
-//
-// The symptom, which is how a fuzz worker found it from the outside: a
-// board patch written with no turn in flight is keyed ABOVE the tail, so a
-// tail fork's child does not inherit it although the parent has it. The
-// contract in channelBases says the opposite, in as many words.
+// A store written before a channel became unkeyed kept it keyed forever: the
+// manifest is authoritative once a store exists, and nothing reconciled it.
+// The symptom: a board patch written with no turn in flight is keyed above
+// the tail, so a tail fork's child does not inherit it.
 func TestAKeyedChannelBecomesUnkeyedAndATailForkInheritsAgain(t *testing.T) {
 	dir := t.TempDir()
 	// A store from before: nothing declared unkeyed.
@@ -244,13 +239,9 @@ func TestAChannelsKindIsRefusedRatherThanReinterpreted(t *testing.T) {
 	}
 }
 
-// Deleting the manifest from a store that still holds data used to be
-// TOTAL SILENT LOSS, and by the shortest possible route: the failing open
-// wrote a fresh manifest on its way out, stamped with this build's layout.
-// NeedsFlatten then answered no on a NESTED store, the migration never
-// ran, and the next open reported zero arias at exit 0 with every node
-// untouched on disk. The layout gate cannot help when the stamp is written
-// before anything inspects the shape.
+// Deleting the manifest from a store that still holds data was total silent
+// loss: the failing open wrote a fresh manifest stamped with this build's
+// layout, so the migration never ran and the next open reported zero arias.
 func TestAManifestIsNotInventedForAStoreThatHasData(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenStore(dir, testStoreOptions())
@@ -332,11 +323,9 @@ func TestAStoresMainChannelRootAlwaysHoldsASegment(t *testing.T) {
 		"hasChannelContent's dotfile exception is no longer safe", len(ents))
 }
 
-// The reducer NAME is a registry key, not a property of the records. A real
+// The reducer name is a registry key, not a property of the records: a real
 // store carries reducer "jsonmerge" while figaro registers the same fold
-// under "chalkboard"; refusing on that difference rejected a store whose
-// records are exactly what the caller expects, and it would have met every
-// existing user on their first run.
+// under "chalkboard".
 func TestAReducerRenameDoesNotRefuseAStore(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenStore(dir, testStoreOptions())

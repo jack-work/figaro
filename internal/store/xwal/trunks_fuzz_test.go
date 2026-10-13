@@ -8,12 +8,9 @@ import (
 	"testing"
 )
 
-// TestTree_FuzzSequential drives a long random sequence of trunk ops
-// (send/set/interior-fork/tail-fork) and after every op asserts global
-// invariants: every trunk's head opens, its IR reads end-to-end, and its
-// reducible map folds — no errors, no panics. Finally it reopens the
-// tree from disk and asserts every trunk's IR tail + folded state match.
-// Deterministic seed -> reproducible.
+// A long random sequence of trunk ops, asserting after every op that every
+// trunk's head opens, its IR reads end-to-end, and its reducible map folds;
+// then a reopen from disk must match. Deterministic seed.
 func TestTree_FuzzSequential(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, root := seedMapTrunk(t, dir)
@@ -74,10 +71,8 @@ func TestTree_FuzzSequential(t *testing.T) {
 		// Global invariant after every op.
 		for _, tk := range trunks {
 			assertTrunkReadable(t, f, tk)
-			// Single-leaf invariant: exactly one live (unfrozen) leaf carries
-			// each trunk id, and it is the head. (Guards against the multi-head
-			// regression where a frozen branch point was re-forked into same-id
-			// sibling continuations.)
+			// Single-leaf invariant: exactly one live leaf carries each trunk
+			// id, and it is the head.
 			n := 0
 			for k, nd := range f.idx.All() {
 				if nd.Trunk == tk {

@@ -149,11 +149,9 @@ func TestDetachIsIdempotent(t *testing.T) {
 	}
 }
 
-// The crash-safety argument, exercised rather than asserted: a Detach that
-// dies between two channels' marker flips must leave EVERY channel
-// readable. .from is written last precisely so this holds -- an unflipped
-// channel still delegates to the parent, a flipped one reads its own
-// absorbed copy, and the two are byte-identical.
+// The crash-safety argument, exercised: a Detach that dies between two
+// channels' marker flips must leave every channel readable, since an
+// unflipped channel still delegates and a flipped one reads its absorbed copy.
 func TestDetachHalfFlipIsReadable(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, parent := seedMapTrunk(t, dir)
@@ -213,10 +211,9 @@ func TestDetachHalfFlipIsReadable(t *testing.T) {
 	}
 }
 
-// A prefix longer than one segment's worth. The absorbed prefix must fold
-// to the same reducible state regardless of size: chunking it and giving
-// each chunk the INITIAL watermark would reproduce the wrong state from the
-// second chunk on, and only a prefix this long can show it.
+// A prefix longer than one segment's worth must fold to the same reducible
+// state: chunking it with the initial watermark per chunk would reproduce
+// the wrong state from the second chunk on.
 func TestDetachAbsorbsAPrefixLargerThanASegment(t *testing.T) {
 	cfg := mapTrunksCfg()
 	cfg.SegmentSize = 4096 // several rows per segment, so the prefix spans many
@@ -319,9 +316,8 @@ func TestDetachAbsorbsAPrefixLargerThanASegment(t *testing.T) {
 	}
 }
 
-// A crash mid-absorb leaves a partial prefix segment at its final name.
-// Detach must still complete on the retry: crash recovery here IS re-running
-// it, so anything that makes a second run fail makes the store unrecoverable.
+// A crash mid-absorb leaves a partial prefix segment at its final name, and
+// Detach must still complete on the retry.
 func TestDetachRecoversFromAPartialAbsorb(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, parent := seedMapTrunk(t, dir)

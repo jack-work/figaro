@@ -11,10 +11,8 @@ import (
 	"testing"
 )
 
-// The fixture is built with the real API and then UN-flattened, so the
-// nested store under test holds records a v3 store would hold rather than
-// bytes a test author imagined. What Flatten must restore is then a
-// comparison against a state that was really produced, not asserted.
+// The fixture is built with the real API and then un-flattened, so the
+// nested store under test holds records a v3 store would hold.
 
 type treeSnapshot struct {
 	trunks map[string]uint64            // trunk id -> main tail
@@ -639,12 +637,9 @@ func equalBases(a, b map[string]map[string]uint64) bool {
 	return true
 }
 
-// A v3 trunk was a CHAIN of nodes: a continuation forked a child that
-// inherited the trunk id, and the head was the deepest of them. Flat, one
-// trunk has one head, and two of them is an open error. So the migration
-// must keep the id on the deepest node and demote its ancestors -- deepest
-// because that is where a chain's newest records are, which is measured on
-// the real store (fork bases rise strictly with depth across every chain).
+// A v3 trunk was a chain of nodes with the head deepest; flat, one trunk has
+// one head. The migration keeps the id on the deepest node and demotes its
+// ancestors.
 func TestFlattenLeavesOneHeadPerTrunkChain(t *testing.T) {
 	dir, _ := buildNestedFixture(t)
 	// Turn a parent/child pair into a v3 continuation chain: the child
@@ -702,11 +697,9 @@ func TestFlattenLeavesOneHeadPerTrunkChain(t *testing.T) {
 	}
 }
 
-// An interrupted run leaves a chain MIXED: the deep node has moved to depth
-// 1 while its ancestor is still nested. Ranking those by PATH depth puts the
-// moved head first, the chain check then compares the wrong pair, and the
-// store is refused as tangled -- by that run and by every one after it. The
-// real store has 44 chains, so it is 44 chances per migration.
+// An interrupted run leaves a chain mixed: the deep node moved to depth 1
+// while its ancestor is still nested. Ranking by path depth would compare
+// the wrong pair and refuse the store as tangled forever.
 func TestFlattenResumesAChainInterruptedMidMove(t *testing.T) {
 	dir, before := buildNestedFixture(t)
 	paths, err := nodePaths(filepath.Join(dir, "ir"))
@@ -791,12 +784,10 @@ func TestOpenRefusesAStoreFromANewerBuild(t *testing.T) {
 	}
 }
 
-// The cursor fallback is migration-era, and the flag is its gate. A channel
-// born AFTER a main record leaves that record with no stamp for it, and on a
-// store this build wrote the fallback then answers with the channel's whole
-// TAIL -- unkeyed records carry main LT 0, so every one of them reads as
-// "at or below" any main LT. A fork there would inherit records written
-// after it branched.
+// The cursor fallback is migration-era, and the flag is its gate: on a store
+// this build wrote, unkeyed records carry main LT 0, so the fallback would
+// answer with the channel's whole tail and a fork would inherit records
+// written after it branched.
 func TestCursorFallbackIsUnreachableOnAStoreThisBuildCreated(t *testing.T) {
 	dir := t.TempDir()
 	opts := testStoreOptions()
@@ -876,10 +867,7 @@ func TestCursorFallbackServesAMigratedStore(t *testing.T) {
 	}
 }
 
-// A collision must be REPORTED as a collision. The lineage walk indexes
-// nodes by leaf name, so a duplicate leaf corrupts the depths and the run
-// can refuse with "not one chain" -- a true refusal for a false reason, and
-// the reason is what the user acts on.
+// A collision must be reported as a collision, not as "not one chain".
 func TestACollisionIsReportedAsACollisionNotAsATangledChain(t *testing.T) {
 	dir, _ := buildNestedFixture(t)
 	paths, err := nodePaths(filepath.Join(dir, "ir"))
@@ -921,13 +909,9 @@ func TestACollisionIsReportedAsACollisionNotAsATangledChain(t *testing.T) {
 	}
 }
 
-// A kill lands between two demotion writes, and the nodes still claiming
-// the trunk are then a grandparent and a grandchild: one line of descent,
-// with the demoted node between them, NOT adjacent. Testing immediate
-// parentage called that tangled and refused the store forever -- with every
-// byte of every aria intact on disk. A fuzz worker measured the window at
-// roughly 80% of the main phase, which makes it the ordinary case rather
-// than a race.
+// A kill between two demotion writes leaves a grandparent and a grandchild
+// claiming the trunk: one line of descent, not adjacent. Testing immediate
+// parentage called that tangled and refused the store forever.
 func TestFlattenResumesAChainWhoseMiddleWasAlreadyDemoted(t *testing.T) {
 	dir, _ := buildNestedFixture(t)
 	paths, err := nodePaths(filepath.Join(dir, "ir"))

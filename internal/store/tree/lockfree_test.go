@@ -7,17 +7,9 @@ import (
 	"time"
 )
 
-// A HIT TAKES NO LOCK, asserted the only way that cannot be argued with: hold
-// c.mu -- the writers' lock -- and serve a warm range from another goroutine.
-// If the read path touched the lock at all, this deadlocks and the test times
-// out. A benchmark can only say the read got faster; this says WHY, and it
-// goes red the moment someone reintroduces a lock on the read path for a
-// reason that looks good locally.
-//
-// The property is load-bearing rather than decorative: it is the whole reason
-// one uniform window can own the hot tail as well as the cold ranges, and a
-// mutex here is what kept a second, flat cache shape alive beside this one
-// (plans/log-cache-policy.md).
+// A hit takes no lock, asserted the only way that cannot be argued with:
+// hold c.mu and serve a warm range from another goroutine. The property is
+// what lets one uniform window own the hot tail as well as the cold ranges.
 func TestHitTakesNoLock(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
@@ -99,10 +91,8 @@ func TestRacingMissesPublishOneRun(t *testing.T) {
 }
 
 // Registering and forgetting caches must not lose a sibling: the budget's
-// owner list is published whole, and a successor built from a stale copy would
-// silently stop charging one cache -- a leak that reads as "the meter says
-// zero at peak retention", which this package's own package comment calls the
-// worst possible meter.
+// owner list is published whole, and a successor built from a stale copy
+// would silently stop charging one cache.
 func TestBudgetOwnersSurviveConcurrentRegistration(t *testing.T) {
 	b := NewBudget(0)
 	var calls int
@@ -135,11 +125,9 @@ func TestBudgetOwnersSurviveConcurrentRegistration(t *testing.T) {
 	}
 }
 
-// RANGE HANDS BACK A VIEW, NOT A COPY, when one run answers the whole span.
-// Pinned as pointer identity because it is a CONTRACT, not an optimisation: a
-// caller that mutates what it is given corrupts the cache, and a future
-// "defensive copy" would silently undo the fix that took the hot-tail read
-// from 4.24x the flat window's to 1.27x.
+// Range hands back a view, not a copy, when one run answers the whole span.
+// Pinned as pointer identity because it is a contract: a caller that
+// mutates what it is given corrupts the cache.
 func TestRangeOfOneRunAliasesTheCache(t *testing.T) {
 	var calls int
 	var mu sync.Mutex

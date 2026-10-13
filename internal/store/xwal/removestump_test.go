@@ -36,8 +36,7 @@ func TestRemoveStumpDeletesAChildlessStump(t *testing.T) {
 }
 
 // Removing a stump with a live trunk under it would strand that trunk's
-// history. Refusing is deliberate — a caller checks Stumps() first, so getting
-// here means the two raced, and a silent success would hide it.
+// history; a caller checks Stumps() first, so a refusal here is a race.
 func TestRemoveStumpRefusesWhileAChildRemains(t *testing.T) {
 	dir := t.TempDir()
 	f, id := seedTrunk(t, dir)
@@ -93,10 +92,9 @@ func TestRemoveStumpRejectsUnknownAndNonStumpNames(t *testing.T) {
 	}
 }
 
-// The trap this had to be written around: a stump's head is opened on every
-// fork beneath it, so the store can be holding a hot head for a directory that
-// RemoveStump is about to unlink. If that head is not retired, the flusher
-// writes it back and resurrects the stump — or poisons the store.
+// A stump's head is opened on every fork beneath it, so the store can hold a
+// hot head for a directory RemoveStump is about to unlink; an unretired head
+// is written back by the flusher and resurrects the stump.
 func TestRemoveStumpAfterItsHeadHasBeenOpened(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenStore(dir, testStoreOptions())

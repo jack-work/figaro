@@ -7,10 +7,8 @@ import (
 	"github.com/jack-work/figaro/internal/store/segment"
 )
 
-// Opening a log used to copy every payload of every channel into memory. It
-// was figwal's largest resident structure and nothing bounded it: a store's
-// whole history became its resident set the moment anything touched it.
-// These are the properties that replaced it.
+// Opening a log must not copy every payload into memory; these are the
+// properties that bound the resident set.
 
 func lazyFixture(t *testing.T, n int, size int) (string, Options) {
 	t.Helper()

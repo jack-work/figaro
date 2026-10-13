@@ -6,17 +6,11 @@ import (
 	"testing"
 )
 
-// An ancestor can lack a directory in a channel: one added after it
-// existed, or cleared. Opening that ancestor's log CREATES it, and an empty
-// log owns its numbering from 1 -- so the ancestor stops delegating and the
-// reader is severed from everything above it, silently, with fewer records
-// rather than an error.
-//
-// The state is constructed rather than produced through the public API:
-// creating a channel backfills a directory for every node, so no ordinary
-// sequence of calls leaves the gap. That is why this is a guard, not a
-// regression test -- the read path must not depend on backfill having
-// covered every node, because the failure it produces is invisible.
+// An ancestor can lack a directory in a channel (added after it existed, or
+// cleared). Opening that ancestor's log would create it, and an empty log
+// owns its numbering from 1, severing the reader from everything above.
+// The state is constructed: creating a channel backfills every node, so no
+// ordinary sequence of calls leaves the gap.
 func TestAMissingAncestorChannelDirIsPassedThroughNotCreated(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenStore(dir, testStoreOptions())
@@ -42,10 +36,8 @@ func TestAMissingAncestorChannelDirIsPassedThroughNotCreated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// a needs records of ITS OWN, or forking below its base forks the
-	// grandparent instead and there is no chain to sever. (That is exactly
-	// what the first version of this test did, and it made the test
-	// unfailable: the node it removed was not in b's lineage at all.)
+	// a needs records of its own, or forking below its base forks the
+	// grandparent instead and there is no chain to sever.
 	var lastA uint64
 	for i := 0; i < 3; i++ {
 		if lastA, err = s.Append(a, "ir", 0, []byte(`{"a":1}`), nil); err != nil {

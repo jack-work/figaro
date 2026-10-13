@@ -220,11 +220,8 @@ func buildLongTrunk(b *testing.B, records int) (*Trunks, Config, TrunkID, uint64
 	if err != nil {
 		b.Fatal(err)
 	}
-	// Built through the REAL append path. The hand-rolled disk writer this
-	// replaces encoded frames straight into channel dirs and drifted from
-	// the layout when fork-base continuity moved into the log layer — it
-	// failed with "write index out of order" and, worse, benchmarked a
-	// store shape no production code ever writes.
+	// Built through the real append path, so the fixture is a store shape
+	// production writes.
 	for i := 1; i <= records; i++ {
 		payload := fmt.Appendf(nil, `{"kind":"event","seq":%d,"text":"representative agent timeline payload"}`, i)
 		_, lt, err := trunks.Append(trunk, 0, payload, []byte(`{"source":"bench"}`))
@@ -297,15 +294,10 @@ func BenchmarkTrunksLongAria(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			// THE FIXTURE MUTATES UNDER THE APPEND SUBBENCHES: every append
-			// grows the tail the next append pays for, so under the
-			// framework's b.N escalation per-op cost becomes a function of
-			// b.N itself (the brief's mistake #4: history length IS b.N —
-			// observed at 584µs/op with b.N driven to 10^6, ten minutes per
-			// output line). The scratch trunk is re-forked every
-			// rebuildEvery appends with the timer stopped, pinning the tail
-			// within [size, size+rebuildEvery] regardless of benchtime, so
-			// the SLOPE comes from the 1k/10k/50k sizes and never from N.
+			// The fixture mutates under the append subbenches: every append
+			// grows the tail the next append pays for, so the scratch trunk is
+			// re-forked every rebuildEvery appends with the timer stopped,
+			// pinning the tail regardless of benchtime.
 			const rebuildEvery = 256
 			b.Run("Append", func(b *testing.B) {
 				b.ReportAllocs()
@@ -326,12 +318,9 @@ func BenchmarkTrunksLongAria(b *testing.B) {
 				}
 			})
 
-			// Interleaved appends across two lineages — the cross-trunk
-			// overhead relative to the single-trunk Append above. (This
-			// was RunParallel once, but parallel goroutines cannot pause
-			// the timer to re-pin their fixture, and unpinned fixtures are
-			// the exact b.N trap this rewrite removes; contention wants a
-			// dedicated, fixture-stable benchmark if it wants measuring.)
+			// Interleaved appends across two lineages: the cross-trunk overhead
+			// relative to the single-trunk Append above. Not RunParallel, since
+			// parallel goroutines cannot pause the timer to re-pin the fixture.
 			b.Run("AppendTwoTrunks", func(b *testing.B) {
 				b.StopTimer()
 				pair := [2]TrunkID{}

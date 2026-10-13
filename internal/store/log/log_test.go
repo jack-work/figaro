@@ -260,11 +260,9 @@ func TestCachedRangeStopsAtUntruncatedParentBoundary(t *testing.T) {
 	}
 }
 
-// A fork MOVES the parent's suffix into another directory. Payloads are no
-// longer copied into RAM at open, so a Snapshot taken before a fork can only
-// serve what the parent still owns. This is the honest statement of the
-// property the array-owning version used to give for free, and it is why a
-// topology mutation demands a private log.
+// A fork moves the parent's suffix into another directory, so a Snapshot
+// taken before a fork can only serve what the parent still owns; a topology
+// mutation demands a private log.
 func TestSnapshotAcrossAForkServesTheKeptPrefix(t *testing.T) {
 	dir := t.TempDir()
 	c, err := Open(dir, Options{Codec: segment.JSONLCodec{}})

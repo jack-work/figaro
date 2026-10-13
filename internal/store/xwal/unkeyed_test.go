@@ -153,14 +153,10 @@ func TestMainRecordCarriesTheCursor(t *testing.T) {
 	}
 }
 
-// A cursor is DATA ON DISK. Stale, repaired, or written by an older build,
-// it can name a position the parent does not have -- and a fork base above
-// the parent's own tail leaves the child numbering over a hole in its own
-// prefix, which kills the first read through the gap.
-//
-// Forged the way reality forges it: main stamps a board of three patches,
-// then the board's records are lost (a repair, a truncated tail) while the
-// stamp survives. The fork must not believe the stamp over the data.
+// A cursor is data on disk: stale, repaired, or written by an older build,
+// it can name a position the parent does not have, and a fork base above
+// the parent's tail leaves the child numbering over a hole. Forged the way
+// reality forges it: the board's records are lost while the stamp survives.
 func TestUnkeyedForkCeilingsAtTheParentTail(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedUnkeyed(t, dir)

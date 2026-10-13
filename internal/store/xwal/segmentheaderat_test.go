@@ -6,16 +6,9 @@ import (
 	"testing"
 )
 
-// SegmentHeaderAt MIRRORED UP: disk.Log -> log.Log -> XWAL -> Store.
-//
-// A mirror is exactly where a fact gets dropped -- each layer re-states the
-// call and one of them can forget the parent walk, or the sync, or the base.
-// disk/segmentheaderat_test.go proves the bottom layer; this proves the fact
-// survives all four, through a real reducible channel on a real trunk fork.
-//
-// The oracle is StateAt at the same layer: fold the header the call returns
-// with the records in [base..lt] and it must equal what the library already
-// returns for lt.
+// SegmentHeaderAt mirrored up: disk.Log -> log.Log -> XWAL -> Store. Each
+// layer re-states the call and can forget the parent walk, the sync, or the
+// base. The oracle is StateAt at the same layer.
 
 func chalkCfgSmallSegments() Config {
 	c := trunksCfg()
@@ -131,10 +124,8 @@ func TestSegmentHeaderAt_SurvivesEveryLayerAcrossATrunkFork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// SYNC FIRST, and this is not a formality: unsynced appends have no
-	// segment on disk at all, so SegmentBaseIndexes reads 0 and every
-	// segment-shaped question answers about a log older than the one that
-	// was written. It is why log.Log.SegmentHeaderAt syncs before asking.
+	// Sync first: unsynced appends have no segment on disk, so every
+	// segment-shaped question would answer about an older log.
 	if err := head.SyncCoherent(); err != nil {
 		t.Fatal(err)
 	}
@@ -173,21 +164,11 @@ func TestSegmentHeaderAt_SurvivesEveryLayerAcrossATrunkFork(t *testing.T) {
 		t.Fatalf("chalkboard tail %d is too short to cross a segment boundary", last)
 	}
 
-	// AN INDEPENDENT ORACLE FOR THE BASE, and it is here because a canary
-	// caught this test passing without it.
-	//
-	// Sabotaging disk.Log.SegmentHeaderAt to return the PARENT's header with
-	// the CHILD's base -- the exact bug the two-call API would have shipped --
-	// left this test GREEN when it checked only that folds equal StateAt. The
-	// reason is structural, not a fixture accident: jsonMerge patches are
-	// IDEMPOTENT, so a base that is too LOW merely re-applies records the
-	// header already contains, and the value is identical. A value oracle
-	// cannot see a wrong base in that direction, ever, for any idempotent
-	// reducer -- which is what figaro's form patches are.
-	//
-	// So the base is checked against a fact obtained from somewhere else
-	// entirely: the segment bases of the log that actually OWNS the index.
-	// Below the child's fork base that is the PARENT's chalkboard log.
+	// An independent oracle for the base: jsonMerge patches are idempotent,
+	// so a base that is too low re-applies records the header already
+	// contains and the value is identical. A value oracle cannot see a wrong
+	// base, so the base is checked against the segment bases of the log that
+	// owns the index, which below the child's fork base is the parent's.
 	parentHead, err := f.Head(trunk)
 	if err != nil {
 		t.Fatal(err)
@@ -252,11 +233,8 @@ func TestSegmentHeaderAt_SurvivesEveryLayerAcrossATrunkFork(t *testing.T) {
 		}
 	}
 
-	// POSITIVE ASSERTION THAT THE FIXTURE REACHED MORE THAN ONE SEGMENT: if
-	// every answer came from one base, this test proves nothing about which
-	// segment the header came from.
-	// AND THAT IT WENT BELOW THE FORK BASE, which is the only region where a
-	// dropped parent walk shows up at all.
+	// The fixture must reach more than one segment and go below the fork
+	// base, or it proves nothing about which segment the header came from.
 	if belowForkBase == 0 {
 		t.Fatalf("no answered LT fell below the child's fork base %d, so this "+
 			"fixture cannot see a dropped parent walk", childForkBase)

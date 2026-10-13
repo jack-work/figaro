@@ -17,10 +17,8 @@ func liveLeaves(t *Trunks, trunk string) []string {
 	return out
 }
 
-// TestTree_RepeatedTailForkOneHead drives the user's flow — send a turn,
-// tail-fork, send, tail-fork … — and asserts the forked trunk keeps EXACTLY
-// ONE live head/leaf throughout. The single-leaf invariant must hold for every
-// trunk after every op.
+// The user's flow (send, tail-fork, send, tail-fork) must keep exactly one
+// live head per trunk throughout.
 func TestTree_RepeatedTailForkOneHead(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, conv := seedTrunkBirth(t, dir, "L@h")
@@ -61,9 +59,8 @@ func TestOpenRejectsMultipleHeads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Forge a second node claiming the first node's trunk id. This is the
-	// shape a lost mint counter produced (bumpSeqs recovering only one of
-	// the two), and open must refuse it rather than serve two live heads.
+	// Forge a second node claiming the first node's trunk id, the shape a
+	// lost mint counter produced; open must refuse it.
 	secondBranch := f.head(second)
 	n, ok := readNodeMarker(f.irDir(secondBranch))
 	if !ok {

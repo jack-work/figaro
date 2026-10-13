@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// What a read that can MISS costs. The cache snapshot copies every payload
-// into RAM at Open; the disk layer keeps only per-record offsets and reads
-// by pread. Both paths exist today, over the same bytes, so the price of
-// going lazy is measurable before any of it is built.
+// What a read that can miss costs: the cache snapshot copies every payload
+// into RAM at Open; the disk layer keeps only per-record offsets.
 
 func benchFixture(b *testing.B, n int, size int) *Log {
 	b.Helper()
@@ -78,10 +76,8 @@ func BenchmarkPointReadCachedVsDisk(b *testing.B) {
 	})
 }
 
-// What OPENING a log costs. Every sealed segment used to be opened and
-// scanned end to end (frame walk plus CRC) before anyone asked for a record;
-// only the newest one is opened now, and the rest are opened by the read
-// that lands in them.
+// What opening a log costs: only the newest segment is opened, and the rest
+// are opened by the read that lands in them.
 func BenchmarkOpenManySegments(b *testing.B) {
 	dir := b.TempDir()
 	opts := Options{SegmentSize: 64 << 10}
@@ -136,9 +132,8 @@ func BenchmarkOpenManySegments(b *testing.B) {
 	})
 }
 
-// Every cached read stamps a global counter for the LRU. That is an atomic
-// RMW on one cache line, shared by every reader in the process: exactly the
-// shape that reads fine on one core and collapses on sixteen.
+// Every cached read stamps a global counter for the LRU: an atomic RMW on
+// one cache line shared by every reader in the process.
 func BenchmarkParallelCachedReads(b *testing.B) {
 	l := benchFixture(b, 2000, 512)
 	defer l.Close()

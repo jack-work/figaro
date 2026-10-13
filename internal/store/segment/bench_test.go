@@ -61,10 +61,8 @@ func BenchmarkReadBinaryMedium(b *testing.B) { benchRead(b, BinaryCodec{}, "medi
 func BenchmarkReadJSONLSmall(b *testing.B)   { benchRead(b, JSONLCodec{}, "small") }
 func BenchmarkReadJSONLMedium(b *testing.B)  { benchRead(b, JSONLCodec{}, "medium") }
 
-// THE CACHE HIT, WHICH IS THE HOTTEST PATH IN THE READ STACK: one call per
-// record, per read, per channel. The serial arm prices the lookup; THE
-// PARALLEL ARM IS THE ONE THAT MATTERS, because the question when runs move
-// into tree is whether readers contend.
+// The cache hit is the hottest path in the read stack: one call per record,
+// per read, per channel. The parallel arm is the one that matters.
 func benchHit(b *testing.B, parallel bool) {
 	const n = 1024
 	old := CacheBudget()
@@ -102,9 +100,8 @@ func benchHit(b *testing.B, parallel bool) {
 func BenchmarkSegmentHitSerial(b *testing.B)   { benchHit(b, false) }
 func BenchmarkSegmentHitParallel(b *testing.B) { benchHit(b, true) }
 
-// THE SEQUENTIAL SCAN, which is the traversal the fig IR encode path runs
-// EVERY TURN and the one a chunked range unit could ruin quietly: fix the
-// single-record case, break the walk, and nobody notices until a turn is slow.
+// The sequential scan is the traversal the IR encode path runs every turn,
+// and the one a chunked range unit could ruin quietly.
 func BenchmarkSegmentScan(b *testing.B) {
 	const n = 1024
 	old := CacheBudget()

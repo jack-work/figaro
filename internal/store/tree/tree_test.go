@@ -91,8 +91,7 @@ func TestIndexSurvivesEviction(t *testing.T) {
 	}
 }
 
-// A pinned run is never evicted and its bytes stay on the meter: count
-// what you pin (S1's law).
+// A pinned run is never evicted and its bytes stay on the meter.
 func TestPinsAreCountedNotEvicted(t *testing.T) {
 	var calls int
 	var mu sync.Mutex

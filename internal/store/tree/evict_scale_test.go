@@ -8,16 +8,9 @@ import (
 	"time"
 )
 
-// EVICTION VISITS EVERY RESIDENT RUN, and a full sweep therefore costs
-// O(R^2). This is a MEASUREMENT, not a fix: the cure is an eviction index
-// keyed by effective epoch, and adding a data structure is Gluck's call.
-//
-// The instrument is the Recency hook rather than new counters in the
-// production path: it is already called exactly once per candidate run per
-// scan, so counting its calls counts the scan without changing what is
-// scanned. Returning 0 leaves effEpoch's answer alone -- it takes the max of
-// the run's epoch and the oracle -- so the eviction ORDER is unchanged by
-// measuring it.
+// Eviction visits every resident run. The instrument is the Recency hook:
+// it is called exactly once per candidate run per scan, and returning 0
+// leaves the eviction order unchanged.
 func TestEvictionVisitsEveryResidentRun(t *testing.T) {
 	for _, runs := range []int{16, 64, 256} {
 		t.Run(fmt.Sprint(runs), func(t *testing.T) {
@@ -66,11 +59,8 @@ func TestEvictionVisitsEveryResidentRun(t *testing.T) {
 	}
 }
 
-// THE SWEEP VISITS EACH RUN ONCE. It used to re-scan from the top for every
-// run it dropped -- O(R^2), 180 ms at R=4096 -- because it asked "who is
-// coldest" once per victim when the cutoff was already fixed. One pass per
-// owner is the whole cure; no index, no data structure, nothing on the read
-// path. evict_cost_bench_test.go carries the wall-clock pair.
+// The sweep visits each run once: the cutoff is fixed before it starts, so
+// it never asks "who is coldest" per victim.
 func TestAFullSweepVisitsEachRunOnce(t *testing.T) {
 	const runs = 64
 	var calls int
@@ -88,10 +78,9 @@ func TestAFullSweepVisitsEachRunOnce(t *testing.T) {
 	var visits atomic.Int64
 	c.Recency = func(Coord) int64 { visits.Add(1); return 0 }
 
-	// runs-1, not runs: TrimIdle advances the epoch and drops what is OLDER
+	// runs-1, not runs: TrimIdle advances the epoch and drops what is older
 	// than the cutoff, and the newest run was stamped at the epoch the sweep
-	// starts from. Written as `runs` first, red at 63, and the survivor is the
-	// policy rather than a leak.
+	// starts from.
 	before := len(c.runs("p"))
 	dropped, _ := b.TrimIdle(0)
 	if dropped != before-1 {

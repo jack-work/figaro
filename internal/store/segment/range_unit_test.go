@@ -7,36 +7,11 @@ import (
 	"testing"
 )
 
-// A MISS ON ONE RECORD MUST NOT READ THE WHOLE SEGMENT.
-//
-// This is the hazard test for making the cache unit A RANGE OF RECORDS rather
-// than a whole file. It is written BEFORE the change and it is expected to be
-// RED: today `cachedPayloads` misses into `readAllPayloads`, which is a plain
-// loop calling `codec.ReadFrame(s.f, off, nextOff)` ONCE PER RECORD over the
-// entire segment, however few records the caller asked for.
-//
-// WHY A COUNT AND NOT A TIME. The question is "how many times", which is what
-// this campaign counts wherever it can: a count is load-immune, and Gluck is on
-// the box. A duration would answer the same question worse and would decay with
-// the machine.
-//
-// WHY THE CODEC AND NOT readAllPayloads. Counting inside readAllPayloads would
-// mean editing the function under test to observe it. The codec is INJECTED at
-// Open/Create (SegmentCodec is a parameter, not a global), so a decorator sits
-// exactly where the reads pass and PERTURBS NOTHING. c64cacf2 pointed this out
-// and it is the difference between an instrument and a modification.
-//
-// THE APPROVED COMPLEXITY CHANGE THIS PINS (plans/segment-cache-unit.md,
-// Gluck: "O(log k) is fine, totally expected"):
-//
-//	ReadIndex, MISS  O(records in segment) -> O(records in range)
-//	ReadIndex, HIT   O(1) lock-free        -> O(log K) LOCK-FREE
-//
-// NOT APPROVED, and this file must never be made to pass by it: routing the hit
-// through tree.Range under the package-wide mutex. docs/store/tree.md forbids
-// an Evicted hook that takes a lock -- it deadlocks under budget pressure with
-// concurrent readers -- so the fast structure must be an immutable value
-// republished by pointer swap, which is also what keeps the hit lock-free.
+// A miss on one record must not read the whole segment. Counted at the
+// injected codec rather than timed: a count is load-immune, and the
+// decorator sits where the reads pass without modifying the function under
+// test. The hit must stay lock-free: an immutable value republished by
+// pointer swap, never tree.Range under the package-wide mutex.
 
 // countingCodec is a pass-through that tallies ReadFrame calls and the bytes
 // those calls span. It decorates; it does not reimplement.
@@ -127,13 +102,9 @@ func TestAMissOnOneRecordDoesNotReadTheWholeSegment(t *testing.T) {
 	}
 }
 
-// AND THE OTHER HALF OF THE SAME PROPERTY: reading the WHOLE segment record by
-// record must not be worse than reading it once. A range unit that made each
-// read materialise its own overlapping range would fix the single-record case
-// and ruin the sequential scan, which is what the fig IR encode path does.
-//
-// This is here so that the fix for the test above cannot be a regression for
-// the traversal that matters most.
+// The other half of the same property: reading the whole segment record by
+// record must not be worse than reading it once, or the fix for the test
+// above ruins the sequential scan the IR encode path runs.
 func TestASequentialScanDoesNotRereadRecords(t *testing.T) {
 	const records = 200
 	old := CacheBudget()
@@ -165,14 +136,9 @@ func TestASequentialScanDoesNotRereadRecords(t *testing.T) {
 	}
 }
 
-// AN APPEND EXTENDS WHAT IS RESIDENT AND NEVER FAULTS IT IN.
-//
-// THE PROPERTY, NOT THE SYMPTOM. An append that materializes its own tail
-// turns the cache into a FIGHT WITH ITS OWN EVICTOR: the sweep drops a run,
-// the next append re-creates it, and an append loop racing a sweep livelocks
-// with each undoing the other. It cost a 25-second hang in
-// TestCacheAccountingSurvivesAppendVersusEvict to see, and the symptom there
-// was a timeout, which names nothing.
+// An append extends what is resident and never faults it in: an append
+// that materializes its own tail turns the cache into a fight with its own
+// evictor, and an append loop racing a sweep livelocks.
 func TestAnAppendNeverFaultsInItsOwnTail(t *testing.T) {
 	old := CacheBudget()
 	defer SetCacheBudget(old)

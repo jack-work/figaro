@@ -459,14 +459,8 @@ func TestTrunks_Remove(t *testing.T) {
 	}
 }
 
-// --- Version() / Refresh() ------------------------------------------------
-//
-// The topology-version cookie is the mechanism consumers use to detect
-// that markers on disk have moved. Modeled on SQLite's schema cookie: a
-// cheap monotonic uint incremented on every rebuild. In-process readers
-// don't strictly need it — every public mutation already rebuilds — but
-// exposing it makes downstream caches self-invalidating and gives a
-// future cross-process story an integration point via Refresh().
+// Version is the topology-version cookie consumers use to detect that
+// markers on disk have moved: a monotonic uint bumped on every rebuild.
 
 func TestVersion_MonotonicOnOpen(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
@@ -565,11 +559,8 @@ func TestVersion_RefreshIsCheapAndBumps(t *testing.T) {
 	}
 }
 
-// TestVersion_ExternalRewriteBumpsAfterRefresh simulates the
-// cross-process scenario: another process rewrote a .Trunk marker (or
-// mutated the tree) while we weren't watching. In-process our Version
-// counter cannot know; but calling Refresh() re-scans disk and picks up
-// the change. This locks in the contract for future multi-process work.
+// Another process rewrote a marker while we were not watching; Refresh
+// re-scans disk and picks up the change.
 func TestVersion_ExternalRewriteBumpsAfterRefresh(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, c := seedTrunkBirth(t, dir, "cfg@d880")
@@ -579,10 +570,8 @@ func TestVersion_ExternalRewriteBumpsAfterRefresh(t *testing.T) {
 	}
 	beforeVer := f.Version()
 
-	// Simulate an out-of-band write: touch a marker file's mtime by
-	// rewriting the same id. rebuild() re-scans regardless.
-	// (We rewrite the same content so the tree is functionally
-	// unchanged — the test is about Refresh always bumping.)
+	// Simulate an out-of-band write by rewriting the same id; rebuild()
+	// re-scans regardless.
 	if err := f.Refresh(); err != nil {
 		t.Fatal(err)
 	}

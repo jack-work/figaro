@@ -6,21 +6,10 @@ import (
 	"testing"
 )
 
-// Q2, MEASURED BEFORE IT IS BUILT. Gluck endorsed epoch buckets over a heap
-// for the eviction scan, with the instruction to measure bucket MAINTENANCE
-// against the scan it replaces first.
-//
-// The two costs sit on DIFFERENT PATHS and that is the whole finding:
-//
-//	THE SCAN     is on the daemon's standing sweep. A read never evicts
-//	             (charge raises pressure; Sweep lowers it), so its cost is
-//	             paid once per beat by one goroutine.
-//	THE INDEX    would be maintained on TOUCH, which is on the READ PATH,
-//	             where every reader is concurrent and nothing shared is
-//	             written today.
-//
-// So the comparison is not "R^2 versus log R". It is "one background walk per
-// beat versus a shared write per read", and this file measures both.
+// Epoch buckets versus the eviction scan, measured on the paths each lives
+// on: the scan is on the daemon's standing sweep, paid once per beat by one
+// goroutine; a bucket index would be maintained on touch, on the read path,
+// where every reader is concurrent and nothing shared is written today.
 
 func buildCache(tb testing.TB, b *Budget, runs int) *Cache[fatUnit] {
 	c := New[fatUnit](
@@ -56,10 +45,8 @@ type fatUnit struct {
 	payload []byte
 }
 
-// THE SCAN, AT PRODUCTION SIZE. The segment cache holds 32 MiB in runs cut at
-// 32 KiB, so R is in the high hundreds to low thousands; the decoded and
-// composed tenants add their own. This times a FULL SWEEP -- the compounding
-// case, one rescan per dropped run.
+// The scan at production size: R in the high hundreds to low thousands. A
+// full sweep, the compounding case.
 func BenchmarkSweepFull(b *testing.B) {
 	for _, runs := range []int{256, 1024, 4096} {
 		b.Run(sizeName(runs), func(b *testing.B) {
@@ -113,9 +100,8 @@ func BenchmarkTouchShape(b *testing.B) {
 	c := buildCache(b, bud, 256)
 	lineage := []Ref{{Node: "p"}}
 
-	// ONE UNIT PER READ. A 64-unit Range copies 64 KiB and a mutex
-	// acquisition disappears inside it -- the mistake that produced a
-	// retracted -43.8% on this very package (plans/tree-shaped-log.md).
+	// One unit per read: a 64-unit Range copies 64 KiB and a mutex
+	// acquisition disappears inside it.
 	b.Run("today_atomic_epoch", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			var i uint64
@@ -129,10 +115,8 @@ func BenchmarkTouchShape(b *testing.B) {
 		})
 	})
 
-	// The bucket arm: the same read, plus the shared write an index needs.
-	// A container/list under one mutex is the cheapest honest stand-in --
-	// UIBudget's deleted LRU was exactly this shape, and so is any bucket
-	// map that must move a run between two buckets atomically.
+	// The bucket arm: the same read, plus the shared write an index needs. A
+	// container/list under one mutex is the cheapest honest stand-in.
 	var mu sync.Mutex
 	l := list.New()
 	elems := make([]*list.Element, 256)
