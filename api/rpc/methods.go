@@ -59,6 +59,8 @@ func MethodNeedsAgent(method string) bool {
 	return true
 }
 
+const MethodDecide = "figaro.decide"
+
 // Topology: birth, fork, and removal.
 const (
 	MethodCreate = "figaro.create"
