@@ -11,12 +11,7 @@ type nopWriter struct{ n int }
 
 func (w *nopWriter) Write(p []byte) (int, error) { w.n += len(p); return len(p), nil }
 
-// The audit must fire on ink past the edge, fire on PADDING past the edge
-// (which wraps just as loudly), and stay silent on a row that fits exactly.
-//
-// It must also be free when unarmed: auditWriter returns the original writer,
-// not a wrapper, so an unset env var costs one getenv per session and nothing
-// per row.
+// Unarmed, auditWriter returns the original writer, not a wrapper.
 func TestWidthAuditReportsOnlyRealOverruns(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "audit.log")
 	t.Setenv("FIGARO_WIDTH_AUDIT", log)
@@ -46,13 +41,8 @@ func TestWidthAuditReportsOnlyRealOverruns(t *testing.T) {
 	}
 }
 
-// A row can fit on its own and still run off the edge, because it did not start
-// at column 1. Measuring the row alone is a second way to be blind: the row is
-// innocent, the width is innocent, and the screen is wrong by exactly the
-// offset: which is what "a couple of characters beyond the edge" looks like.
-//
-// CANARY (watched): ignore the start column (measure the row alone) and the
-// second write below stops being reported.
+// A row that fits on its own can still run off the edge when it did not start at
+// column 1.
 func TestWidthAuditCountsTheColumnARowStartsAt(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "audit.log")
 	t.Setenv("FIGARO_WIDTH_AUDIT", log)
@@ -74,13 +64,7 @@ func TestWidthAuditCountsTheColumnARowStartsAt(t *testing.T) {
 	}
 }
 
-// With no env var set, an overrun still leaves a receipt, and a healthy
-// session creates no file at all.
-//
-// Four reports of this bug produced one reproduction, because every route to
-// evidence went through the reporter remembering to arm something first.
-// figaro keeps the receipt itself now: the file is opened lazily, on the first
-// overrun, so the common case touches nothing.
+// With no env var set an overrun still leaves a receipt, opened lazily.
 func TestOverrunsAreRecordedWithoutBeingAsked(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("FIGARO_CACHE_DIR", dir)
@@ -103,8 +87,6 @@ func TestOverrunsAreRecordedWithoutBeingAsked(t *testing.T) {
 	}
 }
 
-// FIGARO_WIDTH_AUDIT=off must return the writer untouched: somebody who does
-// not want the measurement should not pay for it.
 func TestOverrunRecordingCanBeTurnedOff(t *testing.T) {
 	t.Setenv("FIGARO_CACHE_DIR", t.TempDir())
 	t.Setenv("FIGARO_WIDTH_AUDIT", "off")

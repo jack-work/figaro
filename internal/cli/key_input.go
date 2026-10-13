@@ -5,10 +5,7 @@ import (
 	"strings"
 )
 
-// navKey names the logical cursor-motion keys. They are the one part of the
-// keyboard a terminal cannot deliver as a byte: every one of them arrives as
-// an escape sequence: which is why they need a vocabulary of their own
-// alongside modifiedKey's byte codes.
+// Every nav key arrives as an escape sequence, never a byte.
 type navKey uint8
 
 const (
@@ -19,10 +16,7 @@ const (
 	navPageDown
 	navHome
 	navEnd
-	// Left and Right are motions the PAGER has no use for -- it has no
-	// horizontal axis -- and the ':' box cannot do without: a command line you
-	// cannot walk with the arrow keys is a command line with a hole in it.
-	// Modes that do not bind them ignore them, exactly as they ignore PgUp.
+	// Left/Right exist for the ':' box; modes that do not bind them ignore them.
 	navLeft
 	navRight
 )
@@ -46,11 +40,8 @@ func (k modifiedKey) asByte() (byte, bool) {
 		case k.code >= 'A' && k.code <= 'Z':
 			return k.code & 0x1f, true
 		}
-		// THE PUNCTUATION CONTROLS, which a CSI-u terminal reports as
-		// Ctrl+<punctuation> and a legacy one sends as the bare byte. Ctrl-[ is
-		// the one that matters: it IS Escape, and a reader who presses it to
-		// close the ':' box must not find it dead because the terminal was
-		// polite enough to say which key it was.
+		// Ctrl+punctuation: a CSI-u terminal reports it, a legacy one
+		// sends the bare byte. Ctrl-[ is Escape.
 		if b, ok := ctrlPunctuation[k.code]; ok {
 			return b, true
 		}
@@ -61,8 +52,7 @@ func (k modifiedKey) asByte() (byte, bool) {
 	return 0, false
 }
 
-// ctrlPunctuation is the ASCII table's own answer to "what byte is Ctrl+X",
-// for the X that are not letters. C0 codes 0x00 and 0x1b-0x1f, plus DEL.
+// C0 codes 0x00 and 0x1b-0x1f, plus DEL.
 var ctrlPunctuation = map[byte]byte{
 	'@':  0x00,
 	' ':  0x00, // Ctrl-Space is Ctrl-@ on every terminal that reports either
@@ -79,11 +69,8 @@ const (
 	enableModifiedKeyReporting  = "\x1b[>1u"
 	disableModifiedKeyReporting = "\x1b[<u"
 
-	// BRACKETED PASTE. Without it a terminal hands a pasted paragraph to the
-	// program as keystrokes, and every byte in it that happens to be bound
-	// acts: a tab opens the completion menu, a CR submits, and what arrives
-	// is not what was copied. With it the payload is delimited and can be
-	// taken as TEXT, which is the only way a box can accept a page of prose.
+	// Without bracketed paste every bound byte in a paste acts: Tab completes,
+	// CR submits.
 	enableBracketedPaste  = "\x1b[?2004h"
 	disableBracketedPaste = "\x1b[?2004l"
 
@@ -91,18 +78,15 @@ const (
 	pasteEnd   = "\x1b[201~"
 )
 
-// parseBracketedPaste reads one complete paste from the head of data: the
-// payload between the brackets, and how many bytes it spans. need is true
-// for a paste that has begun and not yet ended, which is the ordinary case
-// for anything large: the caller holds the bytes and asks again.
+// need is true for a paste that has begun and not ended: the caller holds the
+// bytes and asks again.
 func parseBracketedPaste(data []byte) (text string, consumed int, ok, need bool) {
 	if len(data) == 0 || data[0] != 0x1b {
 		return "", 0, false, false
 	}
 	if len(data) < len(pasteStart) {
-		// A BARE ESC IS A KEY, and holding one back waiting for a paste that
-		// may never come is how Escape comes to need a second press. Only a
-		// sequence already past the ESC can be an unfinished paste.
+		// A bare ESC is a key: only a sequence already past the ESC can be
+		// an unfinished paste.
 		if len(data) >= 2 && strings.HasPrefix(pasteStart, string(data)) {
 			return "", 0, false, true
 		}
@@ -119,9 +103,7 @@ func parseBracketedPaste(data []byte) (text string, consumed int, ok, need bool)
 	return string(rest[:end]), len(pasteStart) + end + len(pasteEnd), true, false
 }
 
-// parseModifiedKey recognizes CSI-u enhanced keyboard reports and the
-// portable Alt+Ctrl fallback. It leaves ordinary bytes to the existing input
-// path so raw-mode behavior remains unchanged on legacy terminals.
+// Ordinary bytes are left to the raw path, so legacy terminals are unchanged.
 func parseModifiedKey(buf []byte) (key modifiedKey, consumed int, ok, need bool) {
 	if len(buf) < 2 || buf[0] != 0x1b {
 		return modifiedKey{}, 0, false, false
@@ -196,13 +178,7 @@ func parseKeyNumber(buf []byte) (value, consumed int, complete bool) {
 	return value, consumed, consumed < len(buf)
 }
 
-// ---------------------------------------------------------------------------
-// Meta (Alt). Three encodings of one modifier, decoded in one place.
-// ---------------------------------------------------------------------------
-
-// metaKey pulls a Meta chord out of a CSI-u report: Alt held, Ctrl not (a
-// Ctrl+Alt report is a chord this program has no rows for, and reducing it to
-// Meta would silently drop the Ctrl the user pressed).
+// Alt held, Ctrl not: reducing a Ctrl+Alt report to Meta would drop the Ctrl.
 func metaKey(key modifiedKey) (byte, bool) {
 	if !key.alt || key.ctrl || key.nav != navNone {
 		return 0, false
@@ -213,13 +189,8 @@ func metaKey(key modifiedKey) (byte, bool) {
 	return metaFold(key.code), true
 }
 
-// metaEscapePrefix decodes the portable spelling, ESC <byte>, which is what
-// every terminal without CSI-u sends for Alt+<byte>. It claims the pair only
-// in a mode that binds Meta: see modeBindsMeta for why that gate, and not a
-// timeout, is what resolves ESC's ambiguity here.
-//
-// ESC ESC is never Meta-Escape: it is two Escapes, because the reader who
-// pressed Escape twice meant to leave twice.
+// ESC <byte> is what a terminal without CSI-u sends for Alt+<byte>; claimed only
+// in a mode that binds Meta (metaBoundIn). ESC ESC is two Escapes.
 func metaEscapePrefix(data []byte, mode keyMode) (byte, bool) {
 	if len(data) < 2 || data[0] != 0x1b {
 		return 0, false
@@ -228,12 +199,8 @@ func metaEscapePrefix(data []byte, mode keyMode) (byte, bool) {
 	if b == 0x1b || b > 0x7f {
 		return 0, false
 	}
-	// Printable keys and DEL (M-DEL is backward-kill-word). Control bytes are
-	// left alone: ESC ^C is not a chord anything wants, and swallowing it
-	// would eat an interrupt. The one exception is Enter: Alt+Enter is ESC
-	// CR on a terminal that sends Meta as an escape prefix, and ESC LF from
-	// tmux (measured: M-Enter arrives as "\x1b\n"); both are the one chord,
-	// and it is claimed only where a row binds it, like every other Meta.
+	// Control bytes are left alone (ESC ^C must not eat an interrupt), except
+	// Enter: Alt+Enter is ESC CR, or ESC LF from tmux.
 	if b == 0x0a {
 		b = 0x0d
 	}
@@ -241,18 +208,14 @@ func metaEscapePrefix(data []byte, mode keyMode) (byte, bool) {
 		return 0, false
 	}
 	folded := metaFold(b)
-	// Claimed only where a row binds it, plus the chords that open the pager:
-	// those mean something in every mode, and refusing to read one is how a
-	// binding looks like a dead keyboard.
+	// Chords that open the pager are claimed in every mode.
 	if !metaBoundIn(mode, folded) && !metaOpens(folded) {
 		return 0, false
 	}
 	return folded, true
 }
 
-// metaForCtrlArrow turns Ctrl+Left / Ctrl+Right into M-b / M-f. That mapping
-// is not an invention: it is the line every distribution ships in
-// /etc/inputrc, and the reason those keys walk words at a bash prompt at all.
+// Ctrl+Left/Right as M-b/M-f is the /etc/inputrc line every distribution ships.
 func metaForCtrlArrow(key modifiedKey) (byte, bool) {
 	if !key.ctrl {
 		return 0, false
@@ -266,12 +229,8 @@ func metaForCtrlArrow(key modifiedKey) (byte, bool) {
 	return 0, false
 }
 
-// consumeEscapeSequence eats an unhandled ANSI escape sequence starting at
-// data[0]==0x1b, so the caller can distinguish an actual Escape keypress
-// (bare 0x1b) from a prefix byte of e.g. an arrow key (\x1b[A), an SS3
-// F-key (\x1bOP), or an OSC (\x1b]…ST). CSI-u sequences we DO recognize
-// are already handled by parseModifiedKey: this is the catch-all so bare
-// Esc can drive its own binding without a spurious CSI prefix triggering it.
+// Distinguishes a bare Esc from the prefix of a CSI (\x1b[A), SS3 (\x1bOP) or OSC
+// (\x1b]…ST) sequence.
 func consumeEscapeSequence(data []byte) (consumed int, need bool) {
 	if len(data) == 0 || data[0] != 0x1b {
 		return 0, false
@@ -313,11 +272,7 @@ func consumeEscapeSequence(data []byte) (consumed int, need bool) {
 	}
 }
 
-// navKeyFor classifies a COMPLETE escape sequence: one already delimited by
-// consumeEscapeSequence, as a logical navigation key. Splitting the job in
-// two keeps the delimiter (which owns the "bare Esc vs. sequence prefix"
-// guarantee and the split-read `need`) untouched, and makes classification a
-// total function over a finished sequence.
+// Classifies a sequence consumeEscapeSequence has already delimited.
 func navKeyFor(seq []byte) (modifiedKey, bool) {
 	if len(seq) < 3 || seq[0] != 0x1b {
 		return modifiedKey{}, false
@@ -393,10 +348,8 @@ func navForTilde(code int) (navKey, bool) {
 	return navNone, false
 }
 
-// navParams reads the "<code>;<modifiers>" parameter string of a CSI
-// sequence. Absent parameters read as 0. A private-parameter introducer
-// (\x1b[<…, \x1b[?…), a non-numeric body, or more than two parameters is not
-// a navigation key.
+// Absent parameters read as 0; a private introducer, a non-numeric body or a third
+// parameter is not a nav key.
 func navParams(params []byte) (first, second int, ok bool) {
 	if len(params) == 0 {
 		return 0, 0, true
@@ -427,9 +380,7 @@ func navParams(params []byte) (first, second int, ok bool) {
 	return values[0], values[1], true
 }
 
-// navModifiers decodes the xterm 1-based modifier parameter. Modifiers do not
-// change what these keys do today; they are carried so the arrow cluster can
-// grow a Shift-extends-selection binding without a second parser.
+// navModifiers decodes the xterm 1-based modifier parameter.
 func navModifiers(param int) modifiedKey {
 	if param <= 1 {
 		return modifiedKey{}

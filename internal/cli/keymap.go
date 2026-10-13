@@ -7,10 +7,6 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// The keymap: one declarative table naming every keybinding in the live TTY.
-
-// keyMode is the input mode a keystroke lands in. The pager's sub-modes are
-// modes proper, not flags checked ad hoc inside the handler.
 type keyMode uint8
 
 const (
@@ -26,9 +22,6 @@ const (
 	numKeyModes
 )
 
-// keyModeSet is the set of modes a binding is live in. Wide enough for
-// numKeyModes: a ninth mode overflowed a uint8 and the compiler said so,
-// which is the kind of ceiling that should fail loudly.
 type keyModeSet uint16
 
 const (
@@ -42,14 +35,12 @@ const (
 	inConfirm    keyModeSet = 1 << modeConfirm
 	inComposer   keyModeSet = 1 << modeComposer
 
-	// inPager is every mode with the pager up. Note that a transcript-mode
-	// row is ALSO reachable while a panel is showing: the panel swallows only
-	// its own keys and every other key wipes it and acts (see dispatch).
+	// A transcript-mode row is also reachable with a panel up: the panel
+	// swallows only its own keys.
 	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer
 	inAnyBox = inIncipit | inPager
 )
 
-// chordKind distinguishes the four shapes a physical key arrives in.
 type chordKind uint8
 
 const (
@@ -59,8 +50,6 @@ const (
 	chordMeta                        // Alt/Meta + a byte: ESC-prefixed, or CSI-u with the Alt bit
 )
 
-// chord is the logical key a binding matches. Terminal encodings are the
-// business of key_input.go; by the time a chord exists the bytes are gone.
 type chord struct {
 	kind chordKind
 	b    byte   // chordByte: the byte. chordCtrlLetter: the lowercase letter. chordMeta: the byte Alt was held for.
@@ -71,23 +60,17 @@ func byteChord(b byte) chord      { return chord{kind: chordByte, b: b} }
 func navChord(n navKey) chord     { return chord{kind: chordNav, nav: n} }
 func ctrlChord(letter byte) chord { return chord{kind: chordCtrlLetter, b: letter} }
 
-// metaChord is Alt+<byte>: M-b, M-d, M-<, M-DEL. Only the low 128 are
-// addressable, which is every key a terminal can put Meta on.
 func metaChord(b byte) chord { return chord{kind: chordMeta, b: b} }
 
-// openPolicy says what a key does when it is pressed during inline (incipit)
-// streaming. It is deliberately a tri-state with no usable zero value: a new
-// binding must SAY which it is, so the '!' bug, a key that acted in the pager
-// but had no way to get there: cannot recur.
+// openPolicy has no usable zero value: every row must say whether it opens the pager.
 type openPolicy uint8
 
 const (
-	openUnset   openPolicy = iota // invalid; TestKeymap_EveryRowIsWellFormed rejects it
-	opensPager                    // pressing it in incipit yanks the pager up first
-	staysInline                   // it does not open the pager; `why` says so
+	openUnset   openPolicy = iota
+	opensPager             // pressing it in incipit yanks the pager up first
+	staysInline            // it does not open the pager; `why` says so
 )
 
-// keyVerdict is what an input-level action tells the read loop.
 type keyVerdict uint8
 
 const (
@@ -95,14 +78,13 @@ const (
 	keyStop                      // the input loop is finished (interrupt/detach)
 )
 
-// keyEvent is one decoded keystroke plus the mode it arrived in.
 type keyEvent struct {
 	b    byte   // chordByte value (0 for the other kinds)
 	nav  navKey // chordNav value
 	ctrl byte   // chordCtrlLetter value (lowercase letter)
 	meta byte   // chordMeta value: the byte Alt was held for
 
-	shift bool // carried for the rows that read modifiers (node-selection extend)
+	shift bool
 	alt   bool
 
 	mode keyMode
@@ -121,15 +103,14 @@ func (ev keyEvent) chord() chord {
 	}
 }
 
-// keyBinding is one row of the keymap.
 type keyBinding struct {
 	chord chord
 	modes keyModeSet
 
 	open openPolicy
-	why  string // staysInline: the reason, kept where the behaviour is
+	why  string
 
-	help helpID // helpNone marks a binding the user is not shown
+	help helpID
 
 	// Exactly one of pager/input is set. pager rows run inside the transcript
 	// under the render lock; input rows run on the read loop and may stop it.
@@ -139,36 +120,10 @@ type keyBinding struct {
 
 func (b *keyBinding) hidden() bool { return b.help == helpNone }
 
-// ---------------------------------------------------------------------------
-// The table.
-// ---------------------------------------------------------------------------
-
-// WHAT IS TAKEN, AND WHAT IS LEFT, as of 2026-09-12. A starting point for the
-// reorganisation this table is owed, not a specification: the rows below are
-// the truth, and TestKeymap_EveryRowIsWellFormed is what enforces it.
-//
-//	plain letters, pager:  a d e f g j k m n o q s t u v x y
-//	                       F G H N Q S T V X Y  (and ? ! / : Esc Enter)
-//	free plain letters:    b c h i l p r w z
-//	                       A B C D E I J K L M O P R U W Z
-//	control bytes:         ^C ^D ^L ^T ^N ^P ^O ^I(Tab) Enter Esc
-//	meta:                  M-n M-p (question travel), M-m (verbose output)
-//
-// Three chords are spoken for in ways a new row must respect: Ctrl+M IS
-// ENTER (0x0d) and cannot be bound apart from it; Tab IS ^I, so a row for one
-// is a row for the other; and every chord the ':' box uses is readline's in
-// that mode, whatever it means outside.
+// Ctrl+M is Enter (0x0d) and Tab is ^I: neither can be bound apart from the other.
 var keymap = []keyBinding{
-	// -- input level: the keys that own the process ------------------------
-	//
-	// NOTE THE HOLE IN EVERY ONE OF THEM: `&^ inBox`. A command line that
-	// answers to the pager's escape hatches is not a command line -- ^D would
-	// detach instead of deleting a character, ^C would end the session instead
-	// of abandoning the line, ^L would re-enter a pager already up, and ^T
-	// would do anything except transpose. Inside the box these keys are
-	// readline's; outside it they are unchanged. The escape hatches are not
-	// removed, only moved one press further away: ^D on an EMPTY box closes
-	// the box, and the next ^D detaches (see cmdDeleteFwd).
+	// Input level. Inside the ':' box these chords are readline's, hence `&^
+	// inBox`.
 	{
 		chord: byteChord(0x03), modes: inAnyBox &^ inBox,
 		open: staysInline, why: "interrupt; handled whether or not the pager is up",
@@ -180,12 +135,6 @@ var keymap = []keyBinding{
 		help: helpDetach, input: inputDisconnect,
 	},
 	{
-		// Not live in incipit (nothing to detach from yet, and opening the
-		// pager only to tear it down is not a gesture), nor in the search box,
-		// where it is literal text.
-		// 'q' leaves what is open, and only then the session: a pit is a thing
-		// you are IN, and quitting the process from inside one is the surprise
-		// `less` would give you by exiting your shell.
 		chord: byteChord('q'), modes: inTranscript | inPanel | inVisual,
 		open: staysInline, why: "detach: it would open the pager and immediately tear it down",
 		help: helpLeavePit, input: inputLeavePit,
@@ -201,26 +150,14 @@ var keymap = []keyBinding{
 		help: helpNone, input: inputEnterTranscript,
 	},
 	{
-		// M-m is verbose TOOL OUTPUT and the coordinate marks, which is what
-		// ^O used to be: ^O is the jumplist now, on neovim's chord. Alt+m
-		// rather than a plain letter because a plain letter cannot be live in
-		// incipit, where a printable byte composes a steer; Alt+m rather than
-		// Ctrl+M because Ctrl+M IS ENTER'S BYTE (0x0d) and cannot be bound
-		// apart from it. It shares its letter with 'm', the status bar's own
-		// verbosity: one letter, two depths, and the modifier says which.
-		// LIVE IN A BOX TOO, unlike the escape hatches above: ^C/^D/^L/^T are
-		// excluded there because a command line that answers them is not a
-		// command line, and M-m is not one of those -- it is the toggle that
-		// titles the composer, and a reader in insert mode could otherwise not
-		// reach it without leaving the mode first.
+		// Alt, not a plain letter: in incipit a printable byte composes a
+		// steer.
 		chord: metaChord('m'), modes: inAnyBox,
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
-		// Alt+n / Alt+p travel between questions: the same n and p, one
-		// granularity up from the node ^N/^P steps through. Alt because it
-		// arrives as an escape prefix on every terminal, where Ctrl+Shift
-		// needs a keyboard protocol the terminal (and tmux) must opt into.
+		// Alt arrives as an ESC prefix on every terminal; Ctrl+Shift needs
+		// a protocol tmux must opt into.
 		chord: metaChord('n'), modes: inTranscript | inPanel,
 		open: opensPager, help: helpQuestionTravel, input: inputQuestionNext,
 	},
@@ -229,43 +166,22 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpNone, input: inputQuestionPrev,
 	},
 	{
-		// 's' is the sticky question: the header that keeps the turn's inquiry
-		// on screen while the reader is inside its answer. A plain letter, in
-		// the transcript and its panels only, where scrolling happens.
 		chord: byteChord('s'), modes: inTranscript | inPanel,
 		open: opensPager, help: helpSticky, input: inputToggleSticky,
 	},
 	{
-		// 'm' is MORE: the bar's own detail -- state names, the model, the
-		// last-interaction time. A plain letter, on Gluck's instruction, and
-		// it earns the promotion: ^V could not have the job anyway, because
-		// in the ':' box that chord is PASTE, so the toggle would have been
-		// the one key that means two things in the two places you are most
-		// likely to press it.
-		//
-		// A DIFFERENT AXIS FROM M-m, which is verbose TOOL OUTPUT. "What is
-		// this session" and "what did that tool say" are different questions,
-		// so they keep the same letter and different modifiers.
 		chord: byteChord('m'), modes: inTranscript | inPanel | inVisual,
 		open: opensPager, help: helpBarVerbose, input: inputToggleBarVerbose,
 	},
 	{
-		// In incipit 'y' copies the aria id, a feature of its own, not a
-		// reason to open the pager. In the search box it is literal text.
 		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel | inVisual | inComposer,
 		open: staysInline, why: "in incipit it already copies the aria id",
 		help: helpYank, input: inputYank,
 	},
 	{
-		// CSI-u Ctrl-N/Ctrl-P: modifiers survive, so Shift (or Alt, the
-		// portable fallback) extends the selection instead of moving it.
-		// Distinct from the raw 0x0e/0x10 bytes below, which cannot carry a
-		// modifier and go through the pager.
-		// NOT IN THE COMMAND BOX. inAnyBox includes it, and these are
-		// INPUT-level rows, so they ran before the box's own ^N/^P and node
-		// selection ate the completion menu the keys were meant to walk. A box
-		// that has its own meaning for a chord must be excluded from the rows
-		// that claim it globally.
+		// CSI-u Ctrl-N/P keep their modifiers (Shift/Alt extends); the raw
+		// 0x0e/0x10 bytes cannot. Input-level rows run before the box's
+		// own, so a box that binds the chord must be excluded here.
 		chord: ctrlChord('n'), modes: inAnyBox &^ inBox,
 		open: opensPager, help: helpSelectExtend, input: inputSelectNext,
 	},
@@ -274,7 +190,6 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpSelectExtend, input: inputSelectPrev,
 	},
 
-	// -- pager level: motions ----------------------------------------------
 	{chord: byteChord('j'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineDown},
 	{chord: byteChord('k'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineUp},
 	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfDown},
@@ -282,12 +197,8 @@ var keymap = []keyBinding{
 	{chord: byteChord('G'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerTail},
 	{chord: byteChord('g'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerPendingTop},
 
-	// -- pager level: fork points ------------------------------------------
-	//
-	// 'f' is a two-key gesture like gg, but a MODE rather than a flag: with
-	// 'f' down the next key is read from the inFork rows, and anything with
-	// no row there falls through to the ordinary transcript keys. j/k and
-	// Down/Up travel between the fork banners the delta tables draw.
+	// Fork points: with 'f' down the next key is read from the inFork rows,
+	// else falls through.
 	{chord: byteChord('f'), modes: inTranscript, open: opensPager, help: helpForkJump, pager: pagerForkPending},
 	{chord: byteChord('j'), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkNext},
 	{chord: byteChord('k'), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkPrev},
@@ -299,75 +210,42 @@ var keymap = []keyBinding{
 		help: helpNone, pager: pagerForkCancel,
 	},
 
-	// -- confirm mode: a destructive verb asks first ------------------------
-	//
-	// THE QUESTION OWNS THE KEYBOARD. Every key that is not an answer is
-	// swallowed (see dispatch), because a stray letter must not be read as
-	// consent, and the notice stays on the bar for exactly as long as the
-	// question is up.
+	// Confirm mode: dispatch swallows every key that is not an answer.
 	{chord: byteChord('y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpConfirm, pager: confirmYes},
 	{chord: byteChord('Y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmYes},
 	{chord: byteChord('n'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
 	{chord: byteChord('N'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
 	{chord: byteChord(0x1b), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
 
-	// -- pager level: attending what is on screen --------------------------
-	//
-	// 'a' is ATTEND, one verb with two subjects: in the transcript it is the
-	// aria the selected fork point came from, in a pit it is the aria the
-	// selected row names. Both bind the shell and show it, which is what
-	// `:attend` does, through the same body.
 	{chord: byteChord('a'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendFork},
 	{chord: byteChord('a'), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
-	// Enter in a pit is THE PIT'S OWN ACTION: a form value opens, a listing
-	// row attends. 'a' is attend everywhere; 'e' is expand everywhere.
 	{chord: byteChord(0x0d), modes: inPanel, open: opensPager, help: helpPitEnter, pager: pagerPitActivate},
 	{chord: byteChord(0x0a), modes: inPanel, open: opensPager, help: helpPitEnter, pager: pagerPitActivate},
-	// '^' is one step up the fork tree: attend whoever this aria came from.
-	// The letter is vim's "first text on the line", which the transcript has
-	// no use for outside visual mode, where it keeps that meaning.
 	{chord: byteChord('^'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendParent},
 
-	// -- pager level: the jumplist -----------------------------------------
-	//
-	// ^O back, ^I forward, through the arias this session has attended.
-	// Verbose tool output moved to M-m. ^I is Tab, which is completion inside
-	// the ':' box: the box is a different mode and these rows do not name it.
+	// Jumplist. ^I is Tab, which is completion in the ':' box, so these rows
+	// do not name it.
 	{chord: byteChord(0x0f), modes: inTranscript, open: opensPager, help: helpAriaJump, pager: pagerAriaBack},
 	{chord: ctrlChord('o'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaBack},
 	{chord: byteChord(0x09), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
 	{chord: ctrlChord('i'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
 
-	// The arrow cluster shares the motions, as peers of the letters rather
-	// than by impersonating them.
 	{chord: navChord(navUp), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerLineUp},
 	{chord: navChord(navDown), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerLineDown},
 	{chord: navChord(navPageUp), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerHalfUp},
 	{chord: navChord(navPageDown), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerHalfDown},
-	// Home is the whole of the two-key gg gesture in one press.
 	{chord: navChord(navHome), modes: inTranscript, open: opensPager, help: helpHomeEnd, pager: pagerTop},
 	{chord: navChord(navEnd), modes: inTranscript, open: opensPager, help: helpHomeEnd, pager: pagerTail},
 
-	// -- pager level: search -----------------------------------------------
-	//
-	// '/' forward, '?' backward, as in vim and less. '?' used to open the
-	// help panel, which is 'h' now: a reader who wants the keys presses the
-	// letter, and the punctuation belongs to the motion it means everywhere
-	// else. In a pit the same box walks the ROWS (searchAccept).
+	// Search; in a pit the same box walks the rows.
 	{chord: byteChord('/'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
 	{chord: byteChord('?'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
-	// n/N LAND THE CURSOR. A repeated search is a reader looking for a
-	// place to act, and the block cursor is what acts, so the hit is entered
-	// in visual mode rather than merely scrolled to.
+	// n/N enter visual mode with the cursor on the hit.
 	{
 		chord: byteChord('n'), modes: inTranscript,
 		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
 		help: helpSearchRepeat, pager: pagerFindNextVisual,
 	},
-	// IN A PIT THEY WALK THE PIT. A search aimed at a list and a repeat aimed
-	// at the conversation behind it is the same defect as a search that moved
-	// the wrong thing: n was simply unbound there, so the query found one row
-	// and could not find the next.
 	{
 		chord: byteChord('n'), modes: inPanel,
 		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
@@ -384,85 +262,48 @@ var keymap = []keyBinding{
 		help: helpSearchRepeat, pager: pagerFindPrevVisual,
 	},
 
-	// -- pager level: the coordinate jump ----------------------------------
 	{
-		// ':' is a printable byte, and in incipit a printable byte composes a
-		// steer. It is also a gesture that addresses a VIEWPORT, and there is
-		// ':' IS THE COMMAND LINE, and it opens the pager to get one. It used to
-		// stay inline, on the grounds that "a coordinate needs a viewport to
-		// land in" -- true of `:12`, and false of every verb that came after:
-		// `:listen`, `:attend`, `:send` are things a reader means from anywhere,
-		// and the pager is where their result is shown. So the key yanks the
-		// pager up first, exactly as '?' and '!' do.
 		chord: byteChord(':'), modes: inTranscript,
 		open: opensPager,
 		help: helpJump, pager: pagerCommandBox,
 	},
 
 	{
-		// '>' IS THE DRAFT, and it opens the pager for the same reason ':'
-		// does: what it dispatches is shown there. The sigil is the key, so
-		// the box a reader opens looks like the key they pressed.
 		chord: byteChord('>'), modes: inTranscript,
 		open: opensPager,
 		help: helpDraft, pager: pagerComposerBox,
 	},
 	{
-		// With a highlight up it opens holding the range, which the submit
-		// expands into the coordinate that quotes the passage: a reply to
-		// something already said, typed where you are reading it.
+		// With a highlight up the draft opens holding the range.
 		chord: byteChord('>'), modes: inVisual,
 		open: opensPager,
 		help: helpDraft, pager: pagerVisualComposer,
 	},
 
-	// -- pager level: panels -----------------------------------------------
 	{chord: byteChord('h'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
-	// SPACE IS THE LEADER: `space n` is notifications, as `<leader>n` is in
-	// Gluck's Neovim. n alone stays search-repeat. The second key is taken in
-	// dispatch (transcript.leaderChord), before the mode's own rows.
+	// Space is the leader; dispatch (transcript.leaderChord) takes the second
+	// key before the mode's rows.
 	{chord: byteChord(' '), modes: inTranscript | inPanel, open: opensPager, help: helpNotifications, pager: pagerLeader},
-	// 'l' is the listing and 'L' is the home listing: `:ls` and `:ls -H` under
-	// a keystroke, uncapped because the pager scrolls (pagerUncapped).
 	{chord: byteChord('l'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListPit},
 	{chord: byteChord('L'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListHome},
-	// 'S' is the form: `figaro state` and `figaro form` are one command, and S
-	// is the letter a reader of the CLI already has.
 	{chord: byteChord('S'), modes: inTranscript, open: opensPager, help: helpFormPit, pager: pagerFormPit},
-	// 'T' hands the screen to the conversation without closing the pit.
 	{chord: byteChord('T'), modes: inTranscript, open: opensPager, help: helpFocus, pager: pagerFocusTranscript},
 
-	// -- input level: hang up, and stay ------------------------------------
 	{
-		// The gesture Ctrl-C could never be: stop the conversation HERE and
-		// keep watching. Ctrl-C ends the session with it (keyStop, exit 130);
-		// this one returns keyHandled, so the pager stays up and the aria
-		// stays ready for the next thing you type.
+		// keyHandled, not keyStop: the pager stays up.
 		chord: byteChord('H'), modes: inTranscript | inPanel,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUp, input: inputHangUp,
 	},
 	{
-		// The same gesture, dropping the queue. Deliberately NOT next to 'H'
-		// on the keyboard and deliberately not a modifier on it: this is the
-		// destructive one, and the two must not be neighbours. What it drops is
-		// printed into the pager's notice and reprinted to the shell on the way
-		// out, so a slip costs you the queue's PLACE, not its text.
-		// NOT IN A PIT: there 'X' is the unasked drop of the selected row
-		// (below), because a reader inside a list means the list.
+		// Not in a pit, where 'X' drops the selected row.
 		chord: byteChord('X'), modes: inTranscript | inVisual,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUpDrop, input: inputHangUpDrop,
 	},
 
-	// 'x' DROPS THE SELECTED ROW in a pit that has one -- today the queue,
-	// where it is `figaro queue rm <id>` under a keystroke. It is inert
-	// everywhere else, which is why it is a pager row rather than an input one:
-	// a key that means "delete" must not be live in a view with nothing to
-	// delete. (Note 'X' above is hang-up-and-drop-the-whole-queue, and the two
-	// being one letter apart is uncomfortable; see the plan.)
 	{
 		chord: byteChord('x'), modes: inPanel,
 		open: staysInline, why: "it acts on a row in a pit that is already open",
@@ -474,16 +315,11 @@ var keymap = []keyBinding{
 		help: helpPitDrop, pager: pagerPitDropNow,
 	},
 
-	// -- pager level: selection --------------------------------------------
 	{chord: byteChord(0x0e), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectNext},
 	{chord: byteChord(0x10), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectPrev},
 	{chord: byteChord(0x0d), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
 	{chord: byteChord(0x0a), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
-	// ENTER IS THE ONLY KEY THAT OPENS FORM DELTAS. It had a letter of its
-	// own for a while ('d'), which collided with the half-page motion every
-	// pager has had since vi, and a motion key that sometimes folds a block
-	// instead is a key the hand cannot trust. 'e' is the narrow half: tool
-	// bodies without the state beside them. It was 't' until 2026-09-17.
+	// Enter is the only key that opens form deltas; 'e' opens tool bodies alone.
 	{chord: byteChord('e'), modes: inTranscript, open: opensPager, help: helpToolBody, pager: pagerToggleBodies},
 	{
 		chord: byteChord(0x1b), modes: inTranscript,
@@ -491,11 +327,8 @@ var keymap = []keyBinding{
 		help: helpEscape, pager: pagerClearSelection,
 	},
 
-	// -- visual mode: v / V ------------------------------------------------
-	// A cursor owns the motions: the same keys move IT rather than the
-	// viewport (the viewport follows). v/V anchor and drop a highlight at
-	// it; every other key is inert, so a mark cannot be lost to a stray
-	// letter; Esc leaves the mode.
+	// Visual mode: the motions move the cursor; every unbound key is inert so
+	// a mark cannot be lost.
 	{chord: byteChord('v'), modes: inTranscript | inVisual, open: opensPager, help: helpVisual, pager: pagerVisualChar},
 	{chord: byteChord('V'), modes: inTranscript | inVisual, open: opensPager, help: helpVisual, pager: pagerVisualLine},
 	{
@@ -519,13 +352,8 @@ var keymap = []keyBinding{
 	{chord: navChord(navPageDown), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualHalfDown},
 	{chord: navChord(navHome), modes: inVisual, open: opensPager, help: helpHomeEnd, pager: pagerVisualTop},
 	{chord: navChord(navEnd), modes: inVisual, open: opensPager, help: helpHomeEnd, pager: pagerVisualEnd},
-	// The vim motions, over the cursor. staysInline: with no cursor there is
-	// nothing for a word motion to move.
 	{chord: byteChord('w'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordNext},
 	{chord: byteChord('b'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordPrev},
-	// 'e' stays vim's word-end in here: a hand that is moving a cursor
-	// means the motion. Enter points, and leaves the mode with the node
-	// under the cursor selected, so Enter e is point-then-expand.
 	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordEnd},
 	{chord: byteChord(0x0d), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
 	{chord: byteChord(0x0a), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
@@ -538,25 +366,18 @@ var keymap = []keyBinding{
 	{chord: byteChord('L'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenBot},
 	{chord: byteChord('{'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaPrev},
 	{chord: byteChord('}'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaNext},
-	// Search from the cursor: the box, and n/N, land the cursor on the hit.
 	{chord: byteChord('/'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
 	{chord: byteChord('?'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
 	{chord: byteChord('n'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindNext},
 	{chord: byteChord('N'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindPrev},
-	// ':' with a selection up opens the command line holding `<,>`: the
-	// range is the argument, as it is in vim.
 	{chord: byteChord(':'), modes: inVisual, open: opensPager, help: helpJump, pager: pagerVisualCommand},
-	// 'Y' is the coordinate itself, for a shell command about to be typed
-	// elsewhere: `fig fork <id>:12 -- '<412.0:23-1180>! why?'`.
 	{
 		chord: byteChord('Y'), modes: inVisual,
 		open: staysInline, why: "there is no selection to name until one is made",
 		help: helpVisualYankCoord, input: inputYankCoordinate,
 	},
 
-	// -- panel mode: the panel keys swallow their own keys -----------------
-	// Every OTHER key wipes the panel and then acts normally; that fallthrough
-	// lives in dispatch, not here, because it is a property of the mode.
+	// Panel mode: any other key wipes the panel and then acts (in dispatch).
 	{chord: byteChord('h'), modes: inPanel, open: opensPager, help: helpHelpPanel, pager: panelToggleHelp},
 	{chord: byteChord('!'), modes: inPanel, open: opensPager, help: helpStatusPanel, pager: panelToggleStatus},
 	{chord: byteChord('Q'), modes: inPanel, open: opensPager, help: helpQueuedPanel, pager: panelToggleQueued},
@@ -568,9 +389,7 @@ var keymap = []keyBinding{
 		help: helpEscape, pager: panelDismiss,
 	},
 
-	// -- search mode: the query line owns the keyboard ---------------------
-	// Anything with no row here and no input-level row is literal text (see
-	// dispatch); the arrow cluster is swallowed whole.
+	// Search box: anything with no row here and no input-level row is literal text.
 	{
 		chord: byteChord(0x0d), modes: inSearchBox,
 		open: staysInline, why: "only reachable with the search prompt already up",
@@ -597,10 +416,7 @@ var keymap = []keyBinding{
 		help: helpNone, pager: searchBackspace,
 	},
 
-	// -- jump mode: the coordinate line owns the keyboard ------------------
-	// Exactly the search box's shape, and for the same reason: anything with
-	// no row here is literal text, which is what makes '/' an ordinary
-	// character in here as ':' is one in there.
+	// ':' box: same shape as the search box.
 	{
 		chord: byteChord(0x0d), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
@@ -617,16 +433,7 @@ var keymap = []keyBinding{
 		help: helpJump, pager: boxCancel,
 	},
 
-	// -- compose mode: a minimal vim inside the drawer ----------------------
-	//
-	// THE SAME VOCABULARY AS THE TRANSCRIPT, pointed at the draft: the keys a
-	// reader already uses to move around a conversation move around the prompt
-	// they are writing about it. Insert mode is the readline box above; this is
-	// what Esc drops into, and i/a/I/A go back.
-	//
-	// There are no editing verbs here on purpose (no d, c, x, p): a draft is
-	// written in insert mode, and this mode is for reading one, marking part of
-	// it and searching it.
+	// Composer normal mode: motions, marks and search only; no editing verbs.
 	{chord: byteChord('i'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerNormal, pager: composerInsertHere},
 	{chord: byteChord('a'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertAfter},
 	{chord: byteChord('I'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertHome},
@@ -661,40 +468,19 @@ var keymap = []keyBinding{
 	{chord: byteChord(':'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerCommand},
 	{chord: byteChord(0x1b), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerEscape},
 	{chord: metaChord(0x0d), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpNone, pager: composerSubmit},
-	// ^S SENDS, and it is the chord to teach: Alt+Enter is claimed by the
-	// terminal itself on Windows (fullscreen), so it is the one submit that
-	// cannot be reached there. Bound twice, byte and CSI-u report, like every
-	// other chord the box takes.
+	// ^S is the submit that works on Windows, where the terminal claims Alt+Enter.
 	{chord: byteChord(0x13), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpComposerSend, pager: composerSubmit},
 	{chord: ctrlChord('s'), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpNone, pager: composerSubmit},
 	{
-		// Alt+Enter, and Ctrl+Enter on a CSI-u terminal (the input loop folds
-		// the second onto the first: a legacy terminal cannot tell Ctrl+Enter
-		// from Enter). Submit, then snap to the live tail.
+		// Also Ctrl+Enter on a CSI-u terminal: the input loop folds it
+		// onto Alt+Enter.
 		chord: metaChord(0x0d), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
 		help: helpCmdSubmitSnap, pager: boxAcceptSnap,
 	},
-	// -- the command line's EMACS BINDINGS --------------------------------
-	//
-	// bash/readline, not vim: this is a command line, and the fingers that
-	// press these keys learned them at a shell prompt. The set is readline's
-	// own emacs keymap -- the manual's four blocks: moving, history, changing
-	// text, killing and yanking -- pared to what a ONE-LINE box can honour.
-	// What is deliberately absent, and why, is the list at the end of the
-	// block. ^N/^P are HISTORY here rather than node selection: the one
-	// deliberate remap, and the reason is that a box with history and a box
-	// with a node cursor are different boxes.
-	//
-	// EVERY CHORD IS BOUND TWICE where a terminal has two ways to send it: the
-	// raw control byte, and the CSI-u report a modern terminal sends instead.
-	// figaro turns modified-key reporting on, so ^N arrives as \x1b[110;5u and
-	// never as the byte 0x0e -- a table that binds only the byte silently does
-	// nothing there. Measured in a pty: Tab built the completion menu and ^N
-	// walked past it into the void, because the row meant to catch it was
-	// keyed on an encoding that terminal never sends.
-
-	// Moving.
+	// The ':' box is readline's emacs keymap. Every chord is bound twice: the raw
+	// control byte, and the CSI-u report a terminal with modified-key reporting
+	// sends instead (^N arrives as \x1b[110;5u, never 0x0e).
 	{chord: byteChord(0x01), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdHome},
 	{chord: byteChord(0x05), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdEnd},
 	{chord: byteChord(0x02), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
@@ -703,7 +489,6 @@ var keymap = []keyBinding{
 	{chord: metaChord('f'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordRight},
 	{chord: byteChord(0x0c), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
 
-	// Changing text.
 	{chord: byteChord(0x04), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDeleteFwd},
 	{chord: byteChord(0x14), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTranspose},
 	{chord: metaChord('t'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTransposeWord},
@@ -711,8 +496,6 @@ var keymap = []keyBinding{
 	{chord: metaChord('l'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDowncase},
 	{chord: metaChord('c'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdCapitalize},
 
-	// Killing and yanking. Every kill feeds the kill ring, which is what makes
-	// ^Y paste whatever any of them cut, and M-y walk back through the rest.
 	{chord: byteChord(0x0b), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToEnd},
 	{chord: byteChord(0x15), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToStart},
 	{chord: byteChord(0x17), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWord},
@@ -722,7 +505,6 @@ var keymap = []keyBinding{
 	{chord: byteChord(0x19), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYank},
 	{chord: metaChord('y'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankPop},
 
-	// History, including the incremental search.
 	{chord: byteChord(0x10), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
 	{chord: byteChord(0x0e), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
 	{chord: metaChord('<'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistFirst},
@@ -734,22 +516,18 @@ var keymap = []keyBinding{
 	{chord: metaChord('.'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
 	{chord: metaChord('_'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
 
-	// Undo, and the two ways to abandon a line.
 	{chord: byteChord(0x1f), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUndo},
 	{chord: metaChord('r'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRevert},
 	{chord: byteChord(0x07), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
 	{chord: byteChord(0x03), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
 
-	// Completion.
 	{chord: byteChord(0x09), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
 	{chord: byteChord(0x16), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdPaste, pager: cmdPaste},
 	{chord: ctrlChord('v'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPaste},
 	{chord: metaChord('?'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdListComplete},
 	{chord: metaChord('*'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdInsertComplete},
 
-	// The same keys as CSI-u chords: see the note at the top of this block.
-	// These are the rows that actually fire on a terminal that answers
-	// \x1b[>1u, and the byte rows above are the ones that never do.
+	// The CSI-u rows.
 	{chord: ctrlChord('a'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
 	{chord: ctrlChord('e'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
 	{chord: ctrlChord('b'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
@@ -768,34 +546,6 @@ var keymap = []keyBinding{
 	{chord: ctrlChord('l'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
 	{chord: ctrlChord('h'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: boxBackspace},
 
-	// NOT BOUND, each for a reason:
-	//
-	//   ^Q (quoted-insert)      Every printable byte in this box is ALREADY
-	//                            literal text -- there is no binding to escape
-	//                            past -- and the only thing quoting could add
-	//                            is a control character the line can neither
-	//                            render nor send. (^V was on this list for the
-	//                            same reason and has been taken off it: it is
-	//                            PASTE here, which is a different verb with an
-	//                            obvious use.)
-	//   ^X <anything>            readline's second keymap: macros (^X( ^X) ^Xe),
-	//                            ^X^U (undo, which ^_ already is), ^X Del (^U),
-	//                            ^X^R (re-read inputrc, meaningless here). A
-	//                            prefix map for three aliases and a macro
-	//                            recorder is state the keymap cannot see.
-	//   M-Space / ^@ / ^X^X      The mark. Nothing in a one-line box acts on a
-	//                            region, so a mark is a coordinate with no verb.
-	//   ^] / M-^]                Character search: vim's f/F under a chord
-	//                            nobody presses, on a line 40 columns wide.
-	//   M-#                      Comment the line. There is no history file for
-	//                            a comment to be parked in.
-	//   M-<digit>, M--           Numeric arguments. Every verb here is one
-	//                            press by design; a count is a second grammar.
-	//   ^E, ^M-j (editing mode)  There is no vi mode to switch to, and ^E is
-	//                            end-of-line.
-
-	// The arrow cluster, which the box means literally: Up/Down are history,
-	// Left/Right are the cursor, Home/End are the ends of the line.
 	{chord: navChord(navUp), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
 	{chord: navChord(navDown), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
 	{chord: navChord(navHome), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
@@ -815,17 +565,11 @@ var keymap = []keyBinding{
 	},
 }
 
-// ---------------------------------------------------------------------------
-// Help rows: the '?' panel, generated.
-// ---------------------------------------------------------------------------
-
-// helpID names a row of the help panel. Every visible binding points at one;
-// a row may document several bindings (j and k share "scroll"), and the panel
-// is rendered in the order the rows are declared here.
+// helpID names a help-panel row; the panel renders in declaration order.
 type helpID uint8
 
 const (
-	helpNone helpID = iota // the binding is deliberately not shown
+	helpNone helpID = iota
 	helpScroll
 	helpArrows
 	helpHomeEnd
@@ -880,11 +624,8 @@ const (
 	helpAriaJump
 )
 
-// helpRow is one line of the panel: the key column and what it does. The key
-// column is prose ("j/k · u/d · gg/G" reads better than a mechanical join of
-// six labels); what the table enforces is the SET: every visible binding is
-// documented by exactly one row, and every row documents at least one live
-// binding, so a key cannot be added or removed behind the help panel's back.
+// Every visible binding is documented by exactly one row, and every row documents
+// a live binding.
 type helpRow struct {
 	id   helpID
 	keys string
@@ -910,11 +651,6 @@ var helpRows = []helpRow{
 	{helpComposerMark, "(in ✎) v / V · y", "mark by character / by line; y copies the mark, or the whole draft"},
 	{helpCmdHistory, "(in :) ^P/^N · ^R", "command history · search it"},
 	{helpCmdComplete, "(in :) Tab", "complete the verb, an id, or a flag"},
-	// ONE ROW FOR THIRTY BINDINGS, on purpose. The ':' box is readline's
-	// emacs keymap (keymap.go), and a panel that lists it key by key stops
-	// being the answer to "how do I scroll". The full table is in
-	// skills/figaro/reference/ui-stream.md; the promise here is the one a
-	// shell user needs, which is that their fingers already know this box.
 	{helpCmdEdit, "(in :) ^A ^E ^W ^K ^Y", "emacs/readline editing, the whole set"},
 	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
 	{helpPitDrop, "(in a list) x / X", "drop or kill the selected row, asking first / at once"},
@@ -951,13 +687,9 @@ var helpRows = []helpRow{
 	{helpHelpPanel, "h", "close help"},
 }
 
-// helpKeyColumn is the display width the key column is padded to; the help
-// text then starts at column 22, after the two-space indent.
 const helpKeyColumn = 20
 
-// helpBody renders the panel's rows: without the leading blank line, the
-// version footer, the height clamp or the dimming, which belong to the pager
-// that knows its own geometry.
+// helpBody omits the blank line, footer, clamp and dimming, which are the pager's.
 func helpBody() []string {
 	rows := make([]string, 0, len(helpRows))
 	for _, r := range helpRows {
@@ -970,12 +702,8 @@ func helpBody() []string {
 	return rows
 }
 
-// ---------------------------------------------------------------------------
-// The compiled dispatch tables. Built once, at init, from the rows above.
-
 const noBinding = int16(-1)
 
-// pagerFunc/inputFunc name the two action shapes; see keyBinding.
 type pagerFunc = func(*transcript)
 type inputFunc = func(*interactiveInput, keyEvent) keyVerdict
 
@@ -993,9 +721,6 @@ type inputActions struct {
 	byMeta [numKeyModes][128]inputFunc
 }
 
-// keyIndex maps a chord to its row in keymap, per mode. It was int8 until
-// visual mode took the table past 127 rows; int16 keeps it small and
-// buildKeyIndex still panics rather than truncate.
 type keyIndex struct {
 	byByte [numKeyModes][256]int16
 	byNav  [numKeyModes][navCount]int16
@@ -1007,22 +732,19 @@ var (
 	pagerAct pagerActions
 	inputAct inputActions
 
-	inputIndex keyIndex // rows with an input-level action
-	pagerIndex keyIndex // rows with a pager-level action
+	inputIndex keyIndex
+	pagerIndex keyIndex
 
 	openerByte [256]bool
 	openerNav  [navCount]bool
 	openerCtrl [26]bool
 	openerMeta [128]bool
 
-	// ctrlChordLetters marks the letters the table binds as CSI-u Ctrl chords.
 	ctrlChordLetters [26]bool
 
-	// metaBound marks the Meta chords each mode binds. See metaBoundIn.
 	metaBound [numKeyModes][128]bool
 )
 
-// navCount bounds the nav index; navRight is the last logical motion.
 const navCount = int(navRight) + 1
 
 func init() { buildKeyIndex() }
@@ -1099,8 +821,6 @@ func buildKeyIndex() {
 	}
 }
 
-// pager resolves the pager action bound to a chord in one mode, or nil. The
-// byte case: every keystroke that is not an arrow: is a single array load.
 func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {
 	if ev.nav != navNone {
 		if int(ev.nav) >= navCount {
@@ -1123,7 +843,6 @@ func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {
 	return a.byByte[byteSlot(mode, ev.b)]
 }
 
-// input is the same resolution at the input-loop level.
 func (a *inputActions) input(mode keyMode, ev keyEvent) inputFunc {
 	if ev.nav != navNone {
 		if int(ev.nav) >= navCount {
@@ -1146,11 +865,8 @@ func (a *inputActions) input(mode keyMode, ev keyEvent) inputFunc {
 	return a.byByte[byteSlot(mode, ev.b)]
 }
 
-// byteSlot flattens (mode, byte) into one index, so the hot path is a single
-// bounds-checked load rather than two.
 func byteSlot(mode keyMode, b byte) int { return int(mode)<<8 | int(b) }
 
-// lookup resolves the ROW behind a chord: metadata, not dispatch.
 func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 	var i int16
 	switch {
@@ -1178,31 +894,21 @@ func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 	return &keymap[i]
 }
 
-// ctrlChordLetter reports whether a CSI-u report should be treated as a
-// Ctrl+letter CHORD: modifiers and all: rather than reduced to the control
-// byte it would otherwise arrive as. The table decides: only letters some row
-// binds as a chordCtrlLetter qualify, so CSI-u Ctrl-D still detaches through
-// the 0x04 row exactly as a raw byte does.
+// ctrlChordLetter reports whether a CSI-u Ctrl report is a chord some row binds,
+// rather than one to reduce to its control byte.
 func ctrlChordLetter(key modifiedKey) (byte, bool) {
 	if !key.ctrl || key.nav != navNone {
 		return 0, false
 	}
-	letter := key.code | 0x20 // fold Ctrl-Shift-N's 'N' onto 'n'
+	letter := key.code | 0x20
 	if letter < 'a' || letter > 'z' {
 		return 0, false
 	}
 	return letter, ctrlChordLetters[letter-'a']
 }
 
-// ctrlChordBoundIn asks the same question OF ONE MODE, and it is the question
-// the input loop actually has to answer.
-//
-// A chord row in one mode used to poison the letter everywhere: the moment the
-// ':' box bound CSI-u Ctrl-N, every mode saw Ctrl-N as a chord, and a mode
-// with no chord row for it got a dead key instead of the control byte. That is
-// the same bug in the other direction as the one the comment above describes,
-// and it is why ^D can be delete-forward in the box while staying detach in
-// the pager: MODES DISAGREE ABOUT A KEY, so the reduction is per mode.
+// Per mode: a chord bound only in the ':' box must still reduce to its control
+// byte elsewhere.
 func ctrlChordBoundIn(mode keyMode, letter byte) bool {
 	if letter < 'a' || letter > 'z' {
 		return false
@@ -1211,34 +917,14 @@ func ctrlChordBoundIn(mode keyMode, letter byte) bool {
 		pagerIndex.byCtrl[mode][letter-'a'] != noBinding
 }
 
-// modeBindsMeta reports whether this mode binds Meta at all.
-//
-// THE ESC AMBIGUITY LIVES ON THIS FUNCTION. A terminal sends Alt-b as the two
-// bytes ESC 'b', which is also what "Esc, then b" looks like when a fast typist
-// produces both inside one read. Rather than a timeout, the decoder asks the
-// table -- but it asks about the MODE, not about the individual chord, and the
-// difference matters:
-//
-//   - In a mode with no Meta rows (the pager, the search box), an ESC pair is
-//     what it has always been: a bare Esc, then an ordinary key. Nothing about
-//     those modes changed.
-//   - In a mode that HAS Meta rows (the ':' box), ESC <byte> is a Meta chord
-//     whether or not that particular chord is bound, and an unbound one is
-//     swallowed. Otherwise M-x for an x nobody bound would close the box and
-//     type an x -- the two most destructive things it could have meant.
-//
-// metaBoundIn reports whether Alt+<byte> is readable in this mode. A text box
-// reads ESC as a prefix wholesale, so a stray one cannot leak into the line;
-// everywhere else the prefix is claimed per chord, and Esc then '/' outside a
-// box is still two keys.
+// Alt-b arrives as ESC 'b', indistinguishable from Esc then b in one read. The
+// ':' box reads ESC as a prefix wholesale (an unbound M-x is swallowed, not
+// "close the box, type x"); everywhere else the prefix is claimed per chord.
 func metaBoundIn(mode keyMode, b byte) bool {
 	return mode == modeBox || (b < 128 && metaBound[mode][b])
 }
 
-// metaFold is the case rule for a Meta chord: Alt+Shift+B means Alt+b, because
-// no row wants to tell them apart and a user holding Shift by accident should
-// not lose the key. Bytes that are not letters pass through untouched, which
-// is what keeps M-< and M-> (Shift-heavy by construction) addressable.
+// Alt+Shift+B folds to Alt+b; non-letters pass through so M-< and M-> stay addressable.
 func metaFold(b byte) byte {
 	if b >= 'A' && b <= 'Z' {
 		return b | 0x20
@@ -1246,10 +932,8 @@ func metaFold(b byte) byte {
 	return b
 }
 
-// opensTranscript reports whether a key pressed during inline (incipit)
-// streaming should yank the pager up first, so it acts on arrival instead of
-// looking like a dead keyboard. It is now a table lookup: a binding says so on
-// its own row, next to the action it performs.
+// opensTranscript reports whether a key pressed during incipit yanks the pager up
+// first.
 func opensTranscript(ev keyEvent) bool {
 	switch {
 	case ev.nav != navNone:
@@ -1263,10 +947,8 @@ func opensTranscript(ev keyEvent) bool {
 	}
 }
 
-// metaOpens reports whether Alt+<byte> is a binding that opens the pager.
 func metaOpens(b byte) bool { return b < 128 && openerMeta[b] }
 
-// opensTranscriptFor is the byte-shaped form of the same question.
 func opensTranscriptFor(b byte) bool { return openerByte[b] }
 
 func (c chord) String() string {

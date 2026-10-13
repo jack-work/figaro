@@ -1,21 +1,7 @@
 package cli
 
-// THE COMPOSER'S NORMAL MODE: a minimal vim inside the pit.
-//
-//	✎ what did you mean here?        ← normal: motions, v, /, :, F
-//	> what did you mean here?        ← insert: readline, as before
-//
-// The two sigils are the whole indicator. Insert mode is the box that has
-// always been there (emacs bindings, because it is a readline box); normal
-// mode is the transcript's own vocabulary pointed at the draft: hjkl, w b e,
-// 0 ^ $, gg G, { }, v/V to mark, y to copy, / ? n N to search, F to take the
-// pane, ':' for the command line, i/a/I/A back to insert.
-//
-// NO EDITING VERBS. No d, c, x, p, r. A draft is written in insert mode; this
-// mode exists to move around one, mark part of it and look at it, which is
-// what a reader of a long pasted prompt actually needs. The absence is
-// deliberate, not a stage: every one of those verbs would need an undo story
-// the kill ring already tells in insert mode.
+// The composer's normal mode: motions, marks and search over the draft; no editing
+// verbs.
 
 import "strings"
 
@@ -38,20 +24,16 @@ const (
 	composerGlyph       = "✎"
 )
 
-// composerNormalEnter is Esc in insert mode: the draft stays, the keys change.
-// Esc again closes the drawer (and keeps the draft), which is the ladder the
-// box has always had, one rung longer.
 func composerNormalEnter(t *transcript) {
 	t.composerMode = composerNormal
 	t.composerDropMark()
-	// The cursor sits ON a rune in normal mode, as vim's does, so a cursor
-	// parked past the end of the line steps back onto it.
+	// The cursor sits on a rune in normal mode, so one parked past the end
+	// steps back.
 	if t.draft.cursor > 0 && t.draft.cursor == len(t.draft.runes) {
 		t.draft.left()
 	}
 }
 
-// composeInsertAt is i / a / I / A: back to the box that types.
 func composerInsertHere(t *transcript)  { t.composerToInsert(func(e *lineEditor) {}) }
 func composerInsertAfter(t *transcript) { t.composerToInsert(func(e *lineEditor) { e.right() }) }
 func composerInsertHome(t *transcript)  { t.composerToInsert(func(e *lineEditor) { e.home() }) }
@@ -63,15 +45,13 @@ func (t *transcript) composerToInsert(move func(*lineEditor)) {
 	move(&t.draft)
 }
 
-// composerDropMark drops the highlight and leaves the cursor.
 func (t *transcript) composerDropMark() { t.composerMark, t.composerKind = -1, visualNone }
 
 func (t *transcript) composerHighlighted() bool {
 	return t.composerKind != visualNone && t.composerMark >= 0
 }
 
-// composerSpan is the marked range as rune indices, [lo, hi), or false.
-// A LINE-WISE mark covers whole lines, which is what V means everywhere else.
+// A line-wise mark covers whole lines.
 func (t *transcript) composerSpan() (int, int, bool) {
 	if !t.composerHighlighted() {
 		return 0, 0, false
@@ -86,9 +66,7 @@ func (t *transcript) composerSpan() (int, int, bool) {
 	return lo, min(hi+1, len(t.draft.runes)), true
 }
 
-// composerMarkChar and composerMarkLine are v and V: press to mark from the
-// cursor, press again to drop it. The kind switches in place, as it does in
-// the transcript.
+// The same kind again drops the mark; the other kind switches in place.
 func composerMarkChar(t *transcript) { t.composerPressMark(visualChar) }
 func composerMarkLine(t *transcript) { t.composerPressMark(visualLine) }
 
@@ -103,10 +81,7 @@ func (t *transcript) composerPressMark(kind visualKind) {
 	}
 }
 
-// composerYankText is what 'y' copies: the marked text, or the whole draft
-// when nothing is marked, which is the useful default for a box whose
-// contents are the thing you came to copy. The clipboard belongs to the input
-// loop (see inputYank), so this answers and does not act.
+// With nothing marked 'y' copies the whole draft. The input loop owns the clipboard.
 func (t *transcript) composerYankText() (string, bool) {
 	text := t.draft.String()
 	if lo, hi, ok := t.composerSpan(); ok {
@@ -119,8 +94,6 @@ func (t *transcript) composerYankText() (string, bool) {
 	return text, true
 }
 
-// The motions. Each is one of the editor's, because the editor is what holds
-// the cursor; the names are vim's, because that is what the fingers know.
 func composerLeft(t *transcript)      { t.draft.left() }
 func composerRight(t *transcript)     { t.draft.right() }
 func composerUpLine(t *transcript)    { t.draft.lineUp() }
@@ -132,8 +105,7 @@ func composerLineStart(t *transcript) { t.draft.home() }
 func composerLineEnd(t *transcript)   { t.draft.end() }
 func composerFirstText(t *transcript) { t.draft.firstNonBlank() }
 
-// composerTop is the second g of gg: dispatch arms the first, exactly as it
-// does for the transcript's own gg.
+// dispatch arms pendG on the first g.
 func composerTop(t *transcript) {
 	if t.pendG {
 		t.draft.bufferStart()
@@ -143,17 +115,13 @@ func composerBottom(t *transcript)   { t.draft.bufferEnd() }
 func composerParaNext(t *transcript) { t.draft.paragraph(1) }
 func composerParaPrev(t *transcript) { t.draft.paragraph(-1) }
 
-// composerFullscreen is F: the drawer takes the pane. One disposition, shared
-// with every pit (transcript.full), so opening a form after composing does not
-// quietly change how much screen a reader gets.
+// t.full is shared with every pit.
 func composerFullscreen(t *transcript) {
 	t.full = !t.full
 	t.focused = focusPit
 }
 
-// composerCommand is ':' from normal mode: the command line, over the drawer.
-// It behaves exactly as it does anywhere else; what is new is that closing it
-// comes back here instead of to the transcript.
+// composerHeld brings the command line back here on close.
 func composerCommand(t *transcript) {
 	t.composerHeld = true
 	t.box = boxCommand
@@ -162,8 +130,6 @@ func composerCommand(t *transcript) {
 	t.menu = nil
 }
 
-// composerEscape is Esc in normal mode: it drops a highlight if there is one,
-// then puts the drawer away, keeping the draft.
 func composerEscape(t *transcript) {
 	if t.composerHighlighted() {
 		t.composerDropMark()
@@ -172,18 +138,15 @@ func composerEscape(t *transcript) {
 	t.composerClose(false)
 }
 
-// composeSearch is / and ?: the search box, aimed at the draft. The box is
-// the pager's own (one search box, one query); what differs is what accepts
-// it, which searchAccept decides by what is open.
+// One search box; searchAccept decides by what is open.
 func composerSearchFwd(t *transcript)  { pagerSearchPrompt(t) }
 func composerSearchBack(t *transcript) { pagerSearchPromptBack(t) }
 
-// composerFindNext and composerFindPrev are n and N over the draft.
 func composerFindNext(t *transcript) { t.composerFind(t.searchStep()) }
 func composerFindPrev(t *transcript) { t.composerFind(-t.searchStep()) }
 
 func (t *transcript) composerFind(dir int) {
-	// THE BAR, NOT A NOTE PIT: a note would take the region the drawer is in.
+	// The bar, not a note pit: a note would take the drawer's region.
 	if t.matchQuery == "" {
 		t.setCommandNoteAt("no search yet", alertError)
 		return

@@ -5,18 +5,13 @@ import (
 	"testing"
 )
 
-// TestBindingDisabled_FlagsAndEnv locks down the resolution order for
-// the pid-binding: --no-bind and FIGARO_NO_BIND both disable it, --bind
-// re-enables it, and everything else falls back to interactive detection.
 func TestBindingDisabled_FlagsAndEnv(t *testing.T) {
-	// Save and restore package-level state we mutate.
 	saveFlag, saveForce, saveEnv, saveInt := noBindFlag, forceBind, noBindEnv, interactive
 	t.Cleanup(func() {
 		noBindFlag, forceBind, noBindEnv, interactive = saveFlag, saveForce, saveEnv, saveInt
 	})
-	// These cases are about the pid-binding policy only. Neutralize
-	// FIGARO_ARIA, which outranks all of it, and which is set for real
-	// when the suite is run from inside an aria's own bash tool.
+	// FIGARO_ARIA outranks the policy, and is set for real inside an aria's
+	// bash tool.
 	t.Setenv("FIGARO_ARIA", "")
 
 	cases := []struct {
@@ -57,10 +52,7 @@ func TestBindingDisabled_FlagsAndEnv(t *testing.T) {
 	}
 }
 
-// TestResolveDisabled_TTYDoesNotHideTheAnswer pins the one rung that
-// differs from bindingDisabled: reading which aria a shell attends
-// survives a missing TTY, so prompt segments and `fig status | jq` work.
-// Stated intent (--no-bind, FIGARO_NO_BIND) still hides it.
+// Reading which aria a shell attends survives a missing TTY.
 func TestResolveDisabled_TTYDoesNotHideTheAnswer(t *testing.T) {
 	saveFlag, saveForce, saveEnv, saveInt := noBindFlag, forceBind, noBindEnv, interactive
 	t.Cleanup(func() {
@@ -98,9 +90,6 @@ func TestResolveDisabled_TTYDoesNotHideTheAnswer(t *testing.T) {
 	}
 }
 
-// TestExtractNoBindFlag verifies that --no-bind / --absolute / -A are
-// stripped from args and set noBindFlag, and that --bind sets forceBind.
-// Args before and after the flag should be preserved in order.
 func TestExtractNoBindFlag(t *testing.T) {
 	saveFlag, saveForce := noBindFlag, forceBind
 	t.Cleanup(func() { noBindFlag, forceBind = saveFlag, saveForce })
@@ -123,7 +112,8 @@ func TestExtractNoBindFlag(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			noBindFlag = false
 			forceBind = false
-			// extractNoBindFlag mutates in place; copy to avoid cross-test bleed.
+			// extractNoBindFlag mutates in place; copy to avoid
+			// cross-test bleed.
 			cp := append([]string(nil), tc.in...)
 			out := extractNoBindFlag(cp)
 			if !stringSlicesEqual(out, tc.wantOut) {
@@ -139,9 +129,6 @@ func TestExtractNoBindFlag(t *testing.T) {
 	}
 }
 
-// TestEnvAriaID covers the FIGARO_ARIA identity: valid ids pass
-// through, junk is ignored rather than trusted, and surrounding
-// whitespace (a shell-export hazard) is trimmed.
 func TestEnvAriaID(t *testing.T) {
 	cases := []struct {
 		name string
@@ -164,9 +151,6 @@ func TestEnvAriaID(t *testing.T) {
 	}
 }
 
-// TestBindingDisabled_EnvAriaWins: a statically-attended shell has an
-// identity, not a binding: so bind/unbind stay off even under an
-// explicit --bind, and even on an interactive terminal.
 func TestBindingDisabled_EnvAriaWins(t *testing.T) {
 	saveFlag, saveForce, saveEnv, saveInt := noBindFlag, forceBind, noBindEnv, interactive
 	t.Cleanup(func() {
@@ -207,8 +191,6 @@ func TestEnvTruthy(t *testing.T) {
 	}
 }
 
-// TestInitBindingPolicy_EnvOverride verifies that FIGARO_NO_BIND is read
-// once at init and mapped through envTruthy.
 func TestInitBindingPolicy_EnvOverride(t *testing.T) {
 	saveEnv := noBindEnv
 	origEnv := os.Getenv("FIGARO_NO_BIND")

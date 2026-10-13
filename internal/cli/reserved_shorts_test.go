@@ -6,7 +6,6 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 )
 
-// TestFigaroClaimsNoReservedShorts asserts the rule over the REAL command
 func TestFigaroClaimsNoReservedShorts(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	if err := r.ValidateReservedShorts(); err != nil {
@@ -14,8 +13,6 @@ func TestFigaroClaimsNoReservedShorts(t *testing.T) {
 	}
 }
 
-// TestListHomeIsReachable is the user-visible half: -H reaches --home, and
-// -h still means help on that very verb.
 func TestListHomeIsReachable(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	cmd, ok := r.Command("list")
@@ -39,8 +36,6 @@ func TestListHomeIsReachable(t *testing.T) {
 	}
 }
 
-// TestLshIsListHome: `lsh` is `ls -H` and nothing else, so it parses the same
-// flags and lands on the same options.
 func TestLshIsListHome(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	lsh, ok := r.Command("lsh")

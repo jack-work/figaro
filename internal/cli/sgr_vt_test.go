@@ -11,26 +11,9 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// A terminal model, for proving that two byte strings render the same.
-//
-// This exists because a string comparison cannot check an SGR normalizer: the
-// whole point of collapseSGR is that the bytes differ. What must not differ is
-// what the terminal ends up showing, so the only honest oracle is a terminal:
-// replay both strings and compare the resulting cell grids, character *and*
-// rendition, plus the cursor, plus the rendition at the moment of every erase
-// (an erase paints with the current background, so an SGR bug that a static
-// grid would miss shows up there), plus the final rendition (the painter's
-// invariant that a row leaves the terminal in default SGR).
-//
-// It is deliberately an INDEPENDENT implementation of SGR from sgr.go's
-// sgrState: parameters are parsed with strings.Split/strconv and the rendition
-// is a canonical string, not a packed struct. A shared parser would cancel out
-// exactly the bugs this is here to catch.
-//
-// ldrender.FakeTerminal cannot serve: it strips SGR, so it is blind to this
-// entire class of bug. Axis B built a `vtScreen` in this package's tests for
-// the same reason; the names here are distinct (sgrTerm) so the two can coexist
-// through the merge and be unified deliberately afterwards.
+// An independent SGR implementation (ECMA-48 directly, string renditions): a shared
+// parser would cancel out the bugs this catches. Compares cells, cursor, the rendition
+// at every erase, and the final rendition.
 
 type sgrRendition struct {
 	fg, bg string   // SGR colour parameters, e.g. "31", "38;5;252"; "" = default
@@ -56,8 +39,7 @@ func (r sgrRendition) with(attr string, on bool) sgrRendition {
 	return out
 }
 
-// eraseRendition is what an erase (EL/ED/ECH) leaves in a cell: a blank
-// carrying the current background and nothing else.
+// An erase leaves a blank carrying the current background.
 func (r sgrRendition) eraseRendition() sgrRendition {
 	return sgrRendition{bg: r.bg}
 }
@@ -72,10 +54,8 @@ type sgrTerm struct {
 	cells map[[2]int]sgrCell
 	x, y  int
 	rend  sgrRendition
-	// events records everything that is not a plain cell write, in order: the
-	// escape sequences this model does not implement (so a normalizer cannot
-	// silently reorder or eat one) and every erase with the rendition in force
-	// when it happened.
+	// Unimplemented escapes and every erase (with its rendition) are logged in
+	// order.
 	events []string
 }
 
@@ -83,17 +63,13 @@ func newSGRTerm(w, h int) *sgrTerm {
 	return &sgrTerm{w: w, h: h, cells: map[[2]int]sgrCell{}}
 }
 
-// sgrRender replays s on a grid of the given size. Both sides of a comparison
-// must use the SAME size: an erase runs to the right edge, so sizing the grid
-// from the input length would make two strings of different length
-// incomparable, and quietly hide a difference.
+// Both sides must use the same grid size: an erase runs to the right edge.
 func sgrRender(s string, w, h int) *sgrTerm {
 	t := newSGRTerm(w, h)
 	t.write(s)
 	return t
 }
 
-// sgrGridFor picks one grid big enough for all of the given strings.
 func sgrGridFor(ss ...string) (w, h int) {
 	w, h = 8, 8
 	for _, s := range ss {
@@ -158,8 +134,6 @@ func (t *sgrTerm) put(r rune) {
 	}
 }
 
-// escape consumes one escape sequence at s[i] and applies whatever of it the
-// model implements.
 func (t *sgrTerm) escape(s string, i int) int {
 	if i+1 >= len(s) {
 		t.events = append(t.events, fmt.Sprintf("ESC@eof:%d,%d", t.y, t.x))
@@ -263,8 +237,7 @@ func (t *sgrTerm) eraseDisplay(mode int) {
 	}
 }
 
-// sgr applies one SGR parameter string. Written from ECMA-48 directly rather
-// than shared with sgr.go, on purpose.
+// Written from ECMA-48 directly rather than shared with sgr.go.
 func (t *sgrTerm) sgr(params string) {
 	if params == "" {
 		t.rend = sgrRendition{}
@@ -317,8 +290,7 @@ func (t *sgrTerm) sgr(params string) {
 		case p == 38 || p == 48:
 			col, used, ok := sgrTermExtended(ps[i+1:])
 			if !ok {
-				// Unparseable extended colour: record the rest verbatim, the
-				// same way a terminal would be left confused.
+				// Unparseable extended colour: recorded verbatim.
 				t.rend = t.rend.with("?"+strings.Join(ps[i:], ";"), true)
 				return
 			}
@@ -334,8 +306,6 @@ func (t *sgrTerm) sgr(params string) {
 	}
 }
 
-// sgrTermExtended reads a 38/48 colour selector's sub-parameters, returning the
-// canonical colour string and how many parameters it consumed.
 func sgrTermExtended(rest []string) (string, int, bool) {
 	if len(rest) == 0 {
 		return "", 0, false
@@ -385,9 +355,8 @@ func atoiOr(s string, def int) int {
 	return n
 }
 
-// diff describes the first difference between two replays, or "" if they are
-// indistinguishable: same characters, same rendition per cell, same cursor,
-// same final rendition, same event log.
+// Reports the first difference: characters, per-cell rendition, cursor, final
+// rendition, event log.
 func (t *sgrTerm) diff(o *sgrTerm) string {
 	for y := 0; y < max(t.h, o.h); y++ {
 		for x := 0; x < max(t.w, o.w); x++ {
@@ -414,22 +383,18 @@ func (t *sgrTerm) diff(o *sgrTerm) string {
 	return ""
 }
 
-// sgrCellDiff replays a and b on a shared grid and reports the first
-// difference, or "" if a terminal cannot tell them apart.
 func sgrCellDiff(a, b string) string {
 	w, h := sgrGridFor(a, b)
 	return sgrRender(a, w, h).diff(sgrRender(b, w, h))
 }
 
-// sgrFinalRendition is the rendition a string leaves the terminal in: the
-// painter's "every row ends in default SGR" invariant, observable.
 func sgrFinalRendition(s string) string {
 	w, h := sgrGridFor(s)
 	return sgrRender(s, w, h).rend.key()
 }
 
-// TestSGRTermHasTeeth checks the oracle before trusting it: a model that
-// cannot tell a tinted cell from a plain one would pass every collapse test.
+// A model that cannot tell a tinted cell from a plain one would pass every
+// collapse test.
 func TestSGRTermHasTeeth(t *testing.T) {
 	sensitive := []struct{ name, a, b string }{
 		{"colour", "\x1b[31mx", "x"},

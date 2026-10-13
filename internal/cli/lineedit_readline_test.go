@@ -2,17 +2,7 @@ package cli
 
 import "testing"
 
-// ---------------------------------------------------------------------------
-// The editor's readline behaviours, asserted against what bash does.
-//
-// Each case is written as "line, cursor -> op -> line, cursor", because a
-// motion that lands one rune off is a bug you only notice at the third
-// keystroke, and a kill that takes one rune too many is one you notice after
-// you have pressed Enter.
-// ---------------------------------------------------------------------------
-
-// ed builds an editor holding s with the cursor at `at` (a rune index; -1
-// means the end of the line).
+// at is a rune index; -1 means the end.
 func ed(s string, at int) *lineEditor {
 	e := &lineEditor{}
 	e.set(s)
@@ -32,8 +22,6 @@ func check(t *testing.T, e *lineEditor, wantLine string, wantCursor int) {
 	}
 }
 
-// TestWordMotions: M-b and M-f walk READLINE words (alphanumeric runs), which
-// is what makes `--id` two stops rather than one.
 func TestWordMotions(t *testing.T) {
 	e := ed("send --id abc12345 -- hi", -1)
 	e.wordLeft()
@@ -48,7 +36,6 @@ func TestWordMotions(t *testing.T) {
 	check(t, e, "send --id abc12345 -- hi", 18)
 }
 
-// TestKillsAndTheRing: the four kills, the accumulation rule, and ^Y.
 func TestKillsAndTheRing(t *testing.T) {
 	// ^W is whitespace-delimited: it takes the whole shell word.
 	e := ed("send --id abc12345", -1)
@@ -57,7 +44,7 @@ func TestKillsAndTheRing(t *testing.T) {
 	if got := e.kills[0]; got != "abc12345" {
 		t.Fatalf("^W put %q on the ring", got)
 	}
-	// A SECOND KILL ACCUMULATES, in reading order.
+	// A second kill accumulates, in reading order.
 	e.killWordBack()
 	check(t, e, "send ", 5)
 	if got := e.kills[0]; got != "--id abc12345" {
@@ -71,7 +58,6 @@ func TestKillsAndTheRing(t *testing.T) {
 	}
 }
 
-// TestKillRingRotation: M-y only follows a yank, and REPLACES what it put in.
 func TestKillRingRotation(t *testing.T) {
 	e := ed("alpha beta", -1)
 	e.killWordBack() // "beta"
@@ -93,7 +79,6 @@ func TestKillRingRotation(t *testing.T) {
 	}
 }
 
-// TestKillWordFlavours: M-DEL stops at the word, ^W takes the shell token.
 func TestKillWordFlavours(t *testing.T) {
 	e := ed("figaro --id", -1)
 	e.killWordBackAlpha()
@@ -104,8 +89,6 @@ func TestKillWordFlavours(t *testing.T) {
 	check(t, e, "open  tail", 5)
 }
 
-// TestTransposeChars is ^T, including its whole reason to exist: pressed at
-// the end of a line it fixes the last two characters.
 func TestTransposeChars(t *testing.T) {
 	e := ed("oepn", -1)
 	e.cursor = 2
@@ -154,8 +137,6 @@ func TestDeleteHorizontalSpace(t *testing.T) {
 	}
 }
 
-// TestUndoGroupsTyping: a run of insertions is ONE undo step, and everything
-// else is its own.
 func TestUndoGroupsTyping(t *testing.T) {
 	e := &lineEditor{}
 	e.insert("send hello")
@@ -174,7 +155,6 @@ func TestUndoGroupsTyping(t *testing.T) {
 	}
 }
 
-// TestRevertLine is M-r: back to the line as it was fetched from history.
 func TestRevertLine(t *testing.T) {
 	e := &lineEditor{}
 	e.remember("open abc12345")
@@ -187,7 +167,6 @@ func TestRevertLine(t *testing.T) {
 	check(t, e, "open abc12345", 13)
 }
 
-// TestHistoryEnds is M-< / M->.
 func TestHistoryEnds(t *testing.T) {
 	e := &lineEditor{}
 	for _, l := range []string{"one", "two", "three"} {
@@ -200,7 +179,6 @@ func TestHistoryEnds(t *testing.T) {
 	check(t, e, "part", 4) // the line being typed comes back
 }
 
-// TestHistoryPrefix is M-p: the text left of the cursor is the pattern.
 func TestHistoryPrefix(t *testing.T) {
 	e := &lineEditor{}
 	for _, l := range []string{"open alpha", "send -- hi", "open beta"} {
@@ -220,8 +198,6 @@ func TestHistoryPrefix(t *testing.T) {
 	}
 }
 
-// TestYankLastArg is M-.: the last word of the previous command, then the one
-// before that, REPLACING rather than appending.
 func TestYankLastArg(t *testing.T) {
 	e := &lineEditor{}
 	e.remember("open abc12345")
@@ -237,7 +213,6 @@ func TestYankLastArg(t *testing.T) {
 	check(t, e, "send abc12345", 13)
 }
 
-// TestIncrementalSearch is ^R: type, walk, and the two ways out.
 func TestIncrementalSearch(t *testing.T) {
 	e := &lineEditor{}
 	for _, l := range []string{"open alpha", "send -- hello", "open beta"} {
@@ -270,8 +245,6 @@ func TestIncrementalSearch(t *testing.T) {
 	}
 }
 
-// TestSearchFailureIsRecoverable: a needle that matches nothing says so and
-// backspacing out of it finds the match again.
 func TestSearchFailureIsRecoverable(t *testing.T) {
 	e := &lineEditor{}
 	e.remember("open alpha")
@@ -292,8 +265,6 @@ func TestSearchFailureIsRecoverable(t *testing.T) {
 	check(t, e, "open alpha", 0)
 }
 
-// TestSearchPromptSpellsTheMode: the box's prefix is the only thing on screen
-// that says a search is running.
 func TestSearchPromptSpellsTheMode(t *testing.T) {
 	e := &lineEditor{}
 	e.remember("open alpha")

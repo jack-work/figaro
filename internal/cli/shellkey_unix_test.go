@@ -11,8 +11,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Stable across a fork -- the point of the change. A child's parent is not
-// the shell, but its session is.
 func TestShellKeyIsStableAcrossAFork(t *testing.T) {
 	out, err := exec.Command("sh", "-c", "ps -o sid= -p $$").Output()
 	if err != nil {
@@ -27,8 +25,7 @@ func TestShellKeyIsStableAcrossAFork(t *testing.T) {
 	}
 }
 
-// The key is a live pid, so kill(pid,0) reaping and start-time reuse
-// detection keep working unmodified.
+// kill(pid,0) reaping depends on the key being a live pid.
 func TestShellKeyNamesALiveProcess(t *testing.T) {
 	key := shellKey()
 	if key <= 0 {

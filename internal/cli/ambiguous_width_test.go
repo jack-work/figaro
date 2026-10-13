@@ -8,17 +8,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// The switch must reach EVERY measurement, not just one call site.
-//
-// figaro builds rows with go-runewidth and then trusts that measurement when it
-// clips, pads and wraps. On a terminal configured ambiguous-wide, ─ and │ are
-// drawn two cells wide while the default table says one, so every rule and
-// every thinking gutter is built to half the width the terminal will use.
-// Measured on one captured frame at width 100: 0 rows over as a normal
-// terminal, 48 over as an ambiguous-wide one, worst 200 cells (+100).
-//
-// This is invisible to any test that measures figaro against figaro: which is
-// exactly what three rounds of clean sweeps were doing.
+// On an ambiguous-wide terminal ─ and │ are two cells; every measurement must see
+// the switch.
 func TestAmbiguousWideChangesEveryMeasurement(t *testing.T) {
 	const rule = "─────"  // U+2500 x5, what every rule is made of
 	const gutter = "  │ " // the thinking gutter
@@ -39,9 +30,6 @@ func TestAmbiguousWideChangesEveryMeasurement(t *testing.T) {
 	}
 }
 
-// TestAmbiguousWideReachesTheRenderer: the flag is useless if row-building does
-// not see it. A quoted node's rows must stay inside the viewport on BOTH kinds
-// of terminal: that is the whole point of believing the terminal.
 func TestAmbiguousWideReachesTheRenderer(t *testing.T) {
 	setAmbiguousWide(t, true)
 	md := "a sentence long enough to wrap a few times at these widths, plus a rule ───── inside it"

@@ -5,16 +5,8 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// Meta, Ctrl and the ':' box, through the REAL input loop.
-//
-// Everything here is a byte string a terminal actually sends, fed to
-// interactiveInput.consume. That is the layer the bugs live at: a binding can
-// be perfect in the table and dead in a pty because the encoding the terminal
-// chose has no row.
-// ---------------------------------------------------------------------------
+// Byte strings a terminal actually sends, through interactiveInput.consume.
 
-// cmdBox opens the pager and the ':' box, and types `seed` into it.
 func cmdBox(t *testing.T, seed string) (*interactiveInput, *livelogTurn) {
 	t.Helper()
 	in, lt := navInput(t, &countingWriter{}, true)
@@ -29,8 +21,6 @@ func cmdLine(lt *livelogTurn) string { return lt.tr.cmdline.String() }
 
 func cmdCursor(lt *livelogTurn) int { return lt.tr.cmdline.cursor }
 
-// TestMetaEscapePrefix: ESC <byte> is Alt+<byte> INSIDE the box, and the two
-// keystrokes it looks like everywhere else.
 func TestMetaEscapePrefix(t *testing.T) {
 	in, lt := cmdBox(t, "send --id abc12345")
 	feed(t, in, "\x1bb") // M-b: back one word
@@ -47,7 +37,6 @@ func TestMetaEscapePrefix(t *testing.T) {
 	}
 }
 
-// TestMetaCSIu: the same chords in the encoding a modern terminal sends.
 func TestMetaCSIu(t *testing.T) {
 	in, lt := cmdBox(t, "one two")
 	feed(t, in, "\x1b[98;3u") // M-b
@@ -60,7 +49,6 @@ func TestMetaCSIu(t *testing.T) {
 	}
 }
 
-// TestMetaShiftFolds: Alt+Shift+B is Alt+b, and M-< keeps its shifted byte.
 func TestMetaShiftFolds(t *testing.T) {
 	in, lt := cmdBox(t, "one two")
 	feed(t, in, "\x1bB")
@@ -69,8 +57,6 @@ func TestMetaShiftFolds(t *testing.T) {
 	}
 }
 
-// TestCtrlArrowsWalkWords: Ctrl+Left/Right are the word motions, which is what
-// every distro's inputrc makes them.
 func TestCtrlArrowsWalkWords(t *testing.T) {
 	in, lt := cmdBox(t, "one two")
 	feed(t, in, "\x1b[1;5D")
@@ -83,9 +69,6 @@ func TestCtrlArrowsWalkWords(t *testing.T) {
 	}
 }
 
-// TestPlainArrowsWalkCharacters: the hole this pass closed. Left and Right
-// used to be dropped at the decoder, so the box could not be walked with the
-// arrow keys at all.
 func TestPlainArrowsWalkCharacters(t *testing.T) {
 	in, lt := cmdBox(t, "abc")
 	feed(t, in, "\x1b[D\x1b[D")
@@ -102,19 +85,15 @@ func TestPlainArrowsWalkCharacters(t *testing.T) {
 	}
 }
 
-// TestEscOutsideTheBoxIsStillEsc: the ESC-prefix rule is gated on a binding
-// existing in the CURRENT mode, so nothing outside the ':' box changed. In the
-// pager, ESC then 'j' is a cleared selection and a line of scroll -- not M-j.
+// The ESC-prefix rule is gated per mode: in the pager ESC then 'j' is two keys.
 func TestEscOutsideTheBoxIsStillEsc(t *testing.T) {
-	// '/' opens the search box, which is a mode change anyone can see: if the
-	// pair had been eaten as "M-/", nothing would have happened at all.
+	// '/' opens the search box: a visible mode change.
 	in, lt := navInput(t, &countingWriter{}, true)
 	feed(t, in, "\x1b/")
 	if lt.transcriptMode() != modeSearch {
 		t.Fatalf("Esc then '/' did not reach the search box (mode %v)", lt.transcriptMode())
 	}
-	// And the same pair inside the box IS a chord: M-/ is unbound there, so it
-	// is swallowed whole rather than closing the box and typing a slash.
+	// Inside the box the pair is a chord: M-/ is unbound, so it is swallowed whole.
 	in2, lt2 := cmdBox(t, "ab")
 	feed(t, in2, "\x1b/")
 	if lt2.transcriptMode() != modeBox {
@@ -125,8 +104,7 @@ func TestEscOutsideTheBoxIsStillEsc(t *testing.T) {
 	}
 }
 
-// TestCtrlBracketClosesTheBox: Ctrl-[ IS Escape. A terminal that reports it as
-// a distinct key must not turn it into a dead key.
+// Ctrl-[ is Escape.
 func TestCtrlBracketClosesTheBox(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -148,9 +126,7 @@ func TestCtrlBracketClosesTheBox(t *testing.T) {
 	}
 }
 
-// TestCtrlDInTheBox is the headline of this pass: ^D edits inside the box,
-// closes it on an empty line, and detaches on the press after that. The escape
-// hatch is moved, not removed.
+// ^D edits in the box, closes it on an empty line, and detaches on the press after.
 func TestCtrlDInTheBox(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -174,7 +150,6 @@ func TestCtrlDInTheBox(t *testing.T) {
 			if lt.transcriptMode() != modeTranscript {
 				t.Fatal("^D on an empty box did not close it")
 			}
-			// And now it is the process's key again.
 			if _, stop := in.consume([]byte(tc.seq)); !stop {
 				t.Fatal("^D outside the box no longer detaches")
 			}
@@ -182,8 +157,6 @@ func TestCtrlDInTheBox(t *testing.T) {
 	}
 }
 
-// TestCtrlCInTheBoxAbandonsTheLine: ^C is readline's abort here, and the
-// session's interrupt one press later.
 func TestCtrlCInTheBoxAbandonsTheLine(t *testing.T) {
 	in, lt := cmdBox(t, "send -- oops")
 	feed(t, in, "\x03")
@@ -198,8 +171,6 @@ func TestCtrlCInTheBoxAbandonsTheLine(t *testing.T) {
 	}
 }
 
-// TestCtrlTTransposesInTheBox: ^T is the pager's "open the transcript" key
-// everywhere else, and transpose-chars in here.
 func TestCtrlTTransposesInTheBox(t *testing.T) {
 	in, lt := cmdBox(t, "oepn")
 	feed(t, in, "\x02\x02") // ^B ^B: cursor between 'e' and 'p'
@@ -209,8 +180,6 @@ func TestCtrlTTransposesInTheBox(t *testing.T) {
 	}
 }
 
-// TestKillAndYankThroughTheLoop: ^W then ^Y, in the encodings a terminal
-// sends, because the ring is only useful if both halves are reachable.
 func TestKillAndYankThroughTheLoop(t *testing.T) {
 	in, lt := cmdBox(t, "open abc12345")
 	feed(t, in, "\x17") // ^W
@@ -221,7 +190,6 @@ func TestKillAndYankThroughTheLoop(t *testing.T) {
 	if got := cmdLine(lt); got != "open abc12345" {
 		t.Fatalf("^Y gave %q", got)
 	}
-	// The CSI-u spelling of ^Y reaches the same row.
 	feed(t, in, "\x1b[121;5u")
 	if got := cmdLine(lt); got != "open abc12345abc12345" {
 		t.Fatalf("CSI-u ^Y gave %q", got)
@@ -245,7 +213,6 @@ func TestCtrlUnderscoreUndoes(t *testing.T) {
 	}
 }
 
-// TestHistorySearchThroughTheLoop: ^R, typing, and the prompt that says so.
 func TestHistorySearchThroughTheLoop(t *testing.T) {
 	in, lt := cmdBox(t, "")
 	lt.tr.cmdline.remember("open alpha")
@@ -273,8 +240,6 @@ func TestHistorySearchThroughTheLoop(t *testing.T) {
 	}
 }
 
-// TestCtrlNPStillSelectNodesInThePager: the per-mode reduction cuts both ways.
-// ^N is history in the box and node selection outside it, in both encodings.
 func TestCtrlNPStillSelectNodesInThePager(t *testing.T) {
 	in, lt := navInput(t, &countingWriter{}, true)
 	feed(t, in, "\x1b[110;5u") // CSI-u ^N

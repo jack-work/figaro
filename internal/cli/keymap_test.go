@@ -7,14 +7,6 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// The keymap as data: things you can only assert about a table.
-//
-// These are the tests the old five-inline-switches shape could not have. They
-// walk the table itself, so a binding added tomorrow is covered by every one
-// of them without anyone remembering to extend a list.
-// ---------------------------------------------------------------------------
-
 func modeName(m keyMode) string {
 	switch m {
 	case modeIncipit:
@@ -37,9 +29,7 @@ func modeName(m keyMode) string {
 	return "?"
 }
 
-// navSequence is the canonical terminal encoding of a navigation key: enough
-// to drive one through the real input loop. (key_nav_test.go covers the other
-// five encodings of each.)
+// The canonical encoding; key_nav_test.go covers the others.
 func navSequence(n navKey) string {
 	switch n {
 	case navUp:
@@ -62,11 +52,8 @@ func navSequence(n navKey) string {
 	return ""
 }
 
-// metaSequence is the portable encoding of a Meta chord: ESC then the byte.
-// (key_meta_test.go covers the CSI-u spelling and the Ctrl+arrow aliases.)
 func metaSequence(b byte) string { return "\x1b" + string(b) }
 
-// ctrlSequence is a CSI-u report for Ctrl+<letter>, optionally with Shift.
 func ctrlSequence(letter byte, shift bool) string {
 	mods := 1 + 4 // ctrl
 	if shift {
@@ -75,7 +62,6 @@ func ctrlSequence(letter byte, shift bool) string {
 	return fmt.Sprintf("\x1b[%d;%du", letter, mods)
 }
 
-// bindingInput is the byte string a terminal would send for a binding's chord.
 func bindingInput(b *keyBinding) string {
 	switch b.chord.kind {
 	case chordNav:
@@ -89,9 +75,6 @@ func bindingInput(b *keyBinding) string {
 	}
 }
 
-// TestKeymap_NoDuplicateBindingPerMode: two rows claiming the same key in the
-// same mode would mean the index silently picks one. That was exactly the old
-// failure mode across files; here it is a test.
 func TestKeymap_NoDuplicateBindingPerMode(t *testing.T) {
 	type slot struct {
 		c    chord
@@ -119,8 +102,6 @@ func TestKeymap_NoDuplicateBindingPerMode(t *testing.T) {
 	}
 }
 
-// TestKeymap_EveryRowIsWellFormed: one action, a declared open policy, a
-// reason when it stays inline, a legal chord.
 func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
@@ -147,10 +128,8 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 		if bd.chord.kind == chordNav && (bd.chord.nav == navNone || int(bd.chord.nav) >= navCount) {
 			t.Errorf("%s: not a navigation key", bd.chord)
 		}
-		// A Meta chord names a byte a terminal can put Alt on: the low 128,
-		// and not a control byte (ESC ^X is not a chord anything sends), with
-		// one exception: Alt+Enter is ESC CR on every terminal that sends
-		// Meta as an escape prefix, and CSI-u spells it 13;3u.
+		// A Meta chord is a low, non-control byte, except Alt+Enter: ESC
+		// CR, or CSI-u 13;3u.
 		if bd.chord.kind == chordMeta && (bd.chord.b >= 128 || (bd.chord.b < 0x20 && bd.chord.b != 0x7f && bd.chord.b != 0x0d)) {
 			t.Errorf("%s: not a key Meta can be held for", bd.chord)
 		}
@@ -161,8 +140,6 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 	}
 }
 
-// TestKeymap_IndexAgreesWithTheTable: every row is reachable through the
-// compiled index in every mode it declares, and nowhere else.
 func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
@@ -200,35 +177,16 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 	}
 }
 
-// TestOpensTranscript_MatchesTheHandKeptList is the migration oracle: the
-// table's opener set is byte-for-byte the list opensTranscriptFor used to
-// carry by hand (including the '!' fix that landed just before it).
-//
-// ONE DELIBERATE ADDITION SINCE: ':'. It was a coordinate box, which needs a
-// viewport to land in and so stayed inline; it is now the COMMAND LINE, and
-// :listen/:attend/:send are things a reader means from anywhere. So it yanks the
-// pager up exactly as '?' and '!' do.
-//
-// TWO MORE, 2026-08-29: 'S' opens the FORM in the pit (S for state, the verb's
-// other spelling) and it is an opener for the same reason '?' and 'Q' are --
-// the pit lives in the pager, so asking for a pit asks for the pager. 'T'
-// hands the screen to the conversation without closing the pit, which is a
-// gesture about a pager that must therefore have one.
-//
-// THREE MORE, 2026-09-12, all of them gestures about a transcript: 'f' arms
-// the fork jump (f j / f k), 'a' attends the aria a fork point or a list row
-// names, and ^O/^I walk the jumplist. Verbose tool output, which ^O used to
-// be, moved to M-m: a meta chord, so it is not in this byte-shaped list at
-// all, and Ctrl+M could not have it because that byte is Enter.
+// The opener set is pinned by hand, so a row cannot become an opener unnoticed.
 func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 	old := map[byte]bool{}
 	for _, b := range []byte{
 		'j', 'k', 'u', 'd', 'g', 'G', // scroll
 		'/',           // search prompt
-		':',           // command line (see above)
+		':',           // command line
 		'>',           // the draft: a prompt is dispatched from the pager, so it opens one
 		'?', '!', 'Q', // backward search / figaro status / queued-prompt panels
-		'h',      // the help panel, which '?' used to open
+		'h',      // the help panel
 		'l', 'L', // the listing, and the home listing
 		'^',        // attend the parent
 		'S',        // the form, in the pit
@@ -236,13 +194,13 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
 		'a',        // attend the fork point (or the selected list row)
 		'f',        // arm the fork jump: f j / f k
-		'm',        // more: the status bar's own detail, an opener exactly as 'o' is
+		'm',        // more: the status bar's own detail
 		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
 		0x0d, 0x0a, // Enter: open tool bodies, quoted passages and form deltas
-		'e',      // the tool body alone; it was 't' until 2026-09-17
+		'e',      // the tool body alone
 		'v', 'V', // visual selection: a gesture about rows, which only the pager has
-		' ', // the leader, 2026-09-30: `space n` opens notifications, a pit
+		' ', // the leader: `space n` opens notifications, a pit
 	} {
 		old[b] = true
 	}
@@ -253,9 +211,6 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 	}
 }
 
-// TestKeymap_OpenersReallyOpenThePager drives every binding marked as an
-// opener through the real input loop from incipit and insists the pager comes
-// up. Table-driven off the table itself: a new opener is covered for free.
 func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
@@ -272,10 +227,7 @@ func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 	}
 }
 
-// TestKeymap_InlineKeysStayInline is the other half: a binding that says it
-// does not open the pager must not. The two exceptions are named here because
-// the table names them too: ^L and ^T enter through their own action, which
-// is why they are not openers in the gate sense.
+// ^L and ^T enter through their own action, so they are not openers in the gate sense.
 func TestKeymap_InlineKeysStayInline(t *testing.T) {
 	entersByAction := map[byte]bool{0x0c: true, 0x14: true} // ^L, ^T
 	stopsTheLoop := map[byte]bool{0x03: true, 0x04: true, 'q': true}
@@ -301,26 +253,7 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The help panel, generated.
-// ---------------------------------------------------------------------------
-
-// TestHelpBody_MatchesTheOldHandWrittenPanel: the generated rows are, glyph
-// for glyph, the panel that used to be a hand-kept []string in helpLines. The
-// user must not see a difference: only correctness by construction.
-//
-// The 'i' row is the one deliberate addition since: the steer composer is a
-// genuinely new binding, not drift. Everything else is unchanged.
-//
-// The ':' row is the second: the coordinate jump (transcript_jump.go). It is
-// listed directly under the search rows because it is the same gesture family
-// : type something into the footer, land somewhere, and because that keeps
-// "how do I get to a place I can see the address of" adjacent to "how do I
-// find one".
-// REGENERATED 2026-08-28 for 'q'. Two rows where there was one: 'q' now closes
-// the open pit and leaves the session only when there is none (Gluck: "q should
-// only quit when no pit is open"), so ^D -- which always leaves -- gets a row of
-// its own instead of sharing q's. Nothing else moved.
+// The rendered panel is pinned glyph for glyph.
 func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	want := []string{
 		"  q                   close the pit; with none open, exit (the turn keeps running)",
@@ -387,9 +320,6 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	}
 }
 
-// TestHelp_EveryVisibleBindingIsDocumented is the anti-drift test: a binding
-// the user can press either points at a help row or is explicitly hidden, and
-// every help row documents at least one binding that is actually live.
 func TestHelp_EveryVisibleBindingIsDocumented(t *testing.T) {
 	rows := map[helpID]helpRow{}
 	for _, r := range helpRows {
@@ -417,8 +347,6 @@ func TestHelp_EveryVisibleBindingIsDocumented(t *testing.T) {
 	}
 }
 
-// TestHelp_PanelRendersTheTable: what reaches the screen is the table, in
-// table order, once the pager has dimmed and clipped it.
 func TestHelp_PanelRendersTheTable(t *testing.T) {
 	tr := &transcript{w: 200, h: 100}
 	got := tr.helpLines()
@@ -438,9 +366,7 @@ func TestHelp_PanelRendersTheTable(t *testing.T) {
 	}
 }
 
-// TestHelp_HiddenBindingsStayOffTheList: ^T is deliberately undocumented (^L
-// covers entering the pager in the panel's telling). A hidden binding must
-// not sneak into the rendered help.
+// ^T is deliberately undocumented: ^L covers entering the pager.
 func TestHelp_HiddenBindingsStayOffTheList(t *testing.T) {
 	hidden := 0
 	for i := range keymap {
@@ -457,9 +383,6 @@ func TestHelp_HiddenBindingsStayOffTheList(t *testing.T) {
 	}
 }
 
-// TestKeymap_ActionArraysAgreeWithTheIndex: dispatch reads the compiled action
-// arrays, everything else reads the row index. Both are built from the same
-// table in the same pass: this asserts they cannot have drifted anyway.
 func TestKeymap_ActionArraysAgreeWithTheIndex(t *testing.T) {
 	same := func(a, b any) bool {
 		return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()

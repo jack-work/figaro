@@ -11,8 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// applyAmbiguousWidth decides how wide ─ and │ are, and it asks the terminal
-// rather than guessing.
+// Decides whether ambiguous-width runes (─ │) are two cells, by asking the terminal.
 func applyAmbiguousWidth() {
 	if v := strings.TrimSpace(os.Getenv("FIGARO_AMBIGUOUS_WIDE")); v != "" {
 		runewidth.DefaultCondition.EastAsianWidth = envTruthy(v)
@@ -30,8 +29,7 @@ func applyAmbiguousWidth() {
 	storeAmbiguousWide(wide)
 }
 
-// ambiWidthCachePath is per-$TERM: the answer is a property of the terminal
-// program, not of this run.
+// Per-$TERM: the answer is a property of the terminal program.
 func ambiWidthCachePath() string {
 	t := strings.TrimSpace(os.Getenv("TERM"))
 	if t == "" {

@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-// The width audit: figaro tells us when it writes past the edge, in the
-// reporter's own terminal.
 type widthAudit struct {
 	inner   interface{ Write([]byte) (int, error) }
 	size    func() (int, int)
@@ -21,22 +19,15 @@ type widthAudit struct {
 	sink    *os.File
 	seen    map[string]bool
 	nreport int
-	// lazy opens the default report file on the FIRST overrun, so a healthy
-	// session never creates one.
+	// lazy opens the report on the first overrun, so a healthy session creates
+	// no file.
 	lazy func() *os.File
-	// lastW is the width the carried column belongs to. A resize moves the
-	// cursor under us, so a column carried across one is meaningless, and
-	// reporting it produced empty-ink "overruns" on every resize, which is a
-	// detector crying wolf at the exact moment the user is looking.
+	// A column carried across a resize is meaningless.
 	lastW int
-	// col is the cursor column CARRIED ACROSS WRITES. A row is not one write:
-	// the incipit appends streaming deltas, so resetting the column per call
-	// measured a long row in innocent-looking pieces and reported nothing.
+	// The column is carried across writes: a row is not one write.
 	col int
 }
 
-// auditWriter wraps out unless the audit is switched off. See the type's doc
-// for why it is on by default.
 func auditWriter(out interface{ Write([]byte) (int, error) }, size func() (int, int)) interface {
 	Write([]byte) (int, error)
 } {
@@ -47,8 +38,6 @@ func auditWriter(out interface{ Write([]byte) (int, error) }, size func() (int, 
 	var sink *os.File
 	switch {
 	case dest == "":
-		// The default: a quiet receipt beside the cache, opened lazily so an
-		// ordinary run touches no file at all.
 		return &widthAudit{inner: out, size: size, seen: map[string]bool{}, lazy: defaultOverrunLog}
 	case dest == "1" || dest == "true":
 		sink = os.Stderr
@@ -68,7 +57,6 @@ func (a *widthAudit) Write(p []byte) (int, error) {
 	return a.inner.Write(p)
 }
 
-// check splits a write into the rows it paints and measures each one.
 func (a *widthAudit) check(s string) {
 	w, _ := a.size()
 	if w <= 0 {
@@ -86,7 +74,7 @@ func (a *widthAudit) check(s string) {
 	if a.nreport > cap {
 		return // a broken frame would otherwise report forever
 	}
-	// THE COLUMN A ROW STARTS AT IS PART OF ITS WIDTH.
+	// The column a row starts at is part of its width.
 	for _, row := range splitPaintedRowsAt(s, &a.col) {
 		if row.text == "" {
 			continue
@@ -126,7 +114,6 @@ func (a *widthAudit) check(s string) {
 	}
 }
 
-// stripEsc removes ANSI escapes so what remains is what occupies columns.
 func stripEsc(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -142,10 +129,7 @@ func stripEsc(s string) string {
 	return b.String()
 }
 
-// auditRows reports rows a NON-painter surface is about to print. `figaro show`
-// writes straight to stdout rather than through the Terminal, so the writer
-// wrapper never sees it, and it renders the same nodes the pager does, which
-// makes it exactly the kind of gap an audit is supposed not to have.
+// `figaro show` writes straight to stdout, so the writer wrapper never sees it.
 func auditRows(rows []string, width int, surface string) {
 	dest := strings.TrimSpace(os.Getenv("FIGARO_WIDTH_AUDIT"))
 	if dest == "" || width <= 0 {
@@ -169,16 +153,13 @@ func auditRows(rows []string, width int, surface string) {
 	}
 }
 
-// paintedRow is a run of text plus the column it began at.
 type paintedRow struct {
 	col  int
 	text string
 }
 
-// splitPaintedRowsAt replays a write as a cursor would see it: CR returns to
-// column 0, CUP/HVP set it, a vertical move starts a new row at the current
-// column, and text advances it. *col carries the position across writes,
-// because a frame is not emitted in one call.
+// CR returns to column 0, CUP/HVP set it, a vertical move starts a row at the
+// current column; *col carries across writes.
 func splitPaintedRowsAt(s string, col *int) []paintedRow {
 	var rows []paintedRow
 	cur := paintedRow{col: *col}
@@ -253,9 +234,6 @@ func cupColumn(seq string) int {
 	return 0
 }
 
-// auditCallers names who emitted the row. Reading the renderer to guess which
-// surface produced an over-wide row went three rounds and found nothing; the
-// stack answers it outright.
 func auditCallers() string {
 	pcs := make([]uintptr, 12)
 	n := runtime.Callers(3, pcs)
@@ -277,9 +255,6 @@ func auditCallers() string {
 	return strings.Join(out, " <- ")
 }
 
-// defaultOverrunLog is where figaro leaves the receipt when nobody asked: a
-// single file beside the cache, named so it is obvious what it is and safe to
-// delete.
 func defaultOverrunLog() *os.File {
 	dir := cacheDir()
 	if dir == "" {

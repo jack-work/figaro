@@ -14,9 +14,8 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// runPrompt resolves the shell-bound figaro and prompts it. spec dresses the
-// aria: it is the birth outfit when this call mints one, and rides the prompt
-// as a form patch when the shell is already bound (see promptOutfit).
+// d is the birth outfit when this mints an aria, and rides the prompt as a form
+// patch when the shell is already bound.
 func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -35,16 +34,15 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 	var figaroEP transport.Endpoint
 
 	if resp.Found {
-		// Bound at a pending fork-point (attend <id>:<LT>): this prompt forks
-		// there and moves to the new branch (one-shot: the rebind clears it).
+		// A pending fork-point binding (attend <id>:<LT>) is one-shot: the
+		// rebind clears it.
 		if resp.AtMainLT > 0 {
 			runSendForkAt(loaded, resp.FigaroID, forkPoint{lt: resp.AtMainLT}, false, false, prompt, set, d)
 			return
 		}
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-		// Attending a ROLE: the prompt reaches whoever holds it, resolved
-		// per call. Attending a plain form refuses by name (redirectRole).
+		// Attending a role resolves the holder per call.
 		var rerr error
 		figaroID, figaroEP, rerr = redirectRole(ctx, loaded, acli, figaroID, figaroEP)
 		if rerr != nil {
@@ -57,9 +55,8 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set, d)
 }
 
-// runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
-// the streaming render is skipped: the aria is created, prompted via a
-// fire-and-forget Qua, and a single JSON line is emitted on stdout.
+// Under jsonMode the aria is created, prompted fire-and-forget, and one JSON line
+// is printed.
 func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -93,17 +90,14 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 		return
 	}
 
-	// In no-bind mode nothing was bound to the shell, so print the id
-	// to stderr so callers can capture it (mirrors `send -f`'s notice).
+	// Nothing was bound, so the id goes to stderr for callers to capture.
 	if bindingDisabled() {
 		fmt.Fprintf(stderrw, "created %s\n", figaroID)
 	}
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set, d)
 }
 
-// submitAndExit queues a prompt on an existing aria and returns without
-// attaching to the stream: the tail of every --json path. Kept in one
-// place so "what --json does" cannot drift between send, new and fork.
+// submitAndExit is the tail of every --json path.
 func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt string, d dressing) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -126,11 +120,8 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 	}
 }
 
-// runSendForkAt implements `send <trunk>:<turn>`: fork the trunk at the turn's
-// first LT (imperative interior fork, empty alternative), then send the prompt
-// to the trunk we end up attended to. By default we rebind this shell to the
-// new alternative and send there; with stay (--attend=false) we leave the shell
-// on the original trunk and send there (the alternative is parked at the turn).
+// Forks the trunk at the turn, then sends to the alternative (rebinding the shell)
+// or, with stay, to the original trunk.
 func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, asJSON bool, prompt string, set renderSettings, d dressing) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -147,11 +138,8 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 		trunkID = r.FigaroID
 	}
 
-	// The coordinate goes on the wire AS NAMED. This used to resolve the
-	// turn to an LT here and then send that LT in the turn field, so the
-	// server read a logical time as a turn number -- and since an LT is far
-	// larger than the turn count, `send <id>:<turn>` failed every time with
-	// "aria has no turn N". The server owns the translation.
+	// The coordinate goes on the wire as named; the server owns the turn-to-LT
+	// translation.
 	fr, err := waitForFork(ctx, acli, trunkID, at, dressing{}, prompt)
 	if err != nil {
 		die("send: fork %s at %s: %s", trunkID, at, err)
@@ -162,7 +150,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 
 	target := fr.Alternative
 	if stay {
-		target = trunkID // parked alternative; shell stays on the original
+		target = trunkID
 		if !asJSON {
 			fmt.Fprintf(stderrw, "forked %s at %s -> %s (parked; staying on %s)\n", trunkID, at, fr.Alternative, trunkID)
 		}
@@ -195,9 +183,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			Node:         at.nodeJSON(),
 			Mode:         "fork-send",
 		})
-		// --json submits and exits. This used to print the object and then
-		// stream the rendered turn to the SAME stdout, so `| jq` got one
-		// object followed by rendered prose. The object is the whole output.
+		// --json prints the object and nothing else.
 		submitAndExit(ctx, loaded, target, prompt, d)
 		return
 	}
@@ -209,7 +195,6 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	mustPromptFigaro(ctx, ep, target, prompt, loaded, set, d)
 }
 
-// promptAria sends a prompt to a named aria.
 func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings, d dressing) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -224,9 +209,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set, d)
 }
 
-// resolveAria attaches to an existing named aria. Aria ids are
-// system-minted, so an unknown id is an error, a new conversation
-// comes from the no-id flow (`figaro`), not by naming one here.
+// Aria ids are system-minted: an unknown id is an error, not a new conversation.
 func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (transport.Endpoint, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, ariaID)
@@ -247,9 +230,7 @@ func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (transpo
 	return transport.Endpoint{}, fmt.Errorf("attach %q: %w", ariaID, err)
 }
 
-// waitForSocket waits until the socket accepts a connection. Checking only
-// for a path races a restored agent when a stale socket file survived a
-// daemon restart.
+// A stale socket file can survive a daemon restart, so dial rather than stat.
 func waitForSocket(path string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
@@ -268,9 +249,7 @@ func waitForSocket(path string, timeout time.Duration) error {
 	return fmt.Errorf("figaro socket %s did not accept connections within %s: %w", path, timeout, lastErr)
 }
 
-// runNewFromOutfit mints a fresh aria under d, binds it, and returns
-// without prompting (`figaro new [-O X]`). An empty spec is the configured
-// default_outfit, resolved server-side. A prompt needs the `--` boundary.
+// An empty dressing is the configured default_outfit, resolved server-side.
 func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

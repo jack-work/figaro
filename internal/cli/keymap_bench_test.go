@@ -8,17 +8,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// The per-keystroke cost of dispatch.
-//
-// The transcript's input path is coalesced and frame-paced; the one thing a
-// table lookup could plausibly cost is per-key time and per-key allocation.
-// These two benchmarks measure exactly that, with the paint held off by a
-// batch, so a regression cannot hide behind the painter.
-// ---------------------------------------------------------------------------
-
-// BenchmarkKeyDispatchPager: one motion key through the pager's dispatcher,
-// inside a batch so no frame is painted.
 func BenchmarkKeyDispatchPager(b *testing.B) {
 	var w countingWriter
 	committed := make([]aria.TurnPart, 40)
@@ -46,9 +35,7 @@ func BenchmarkKeyDispatchPager(b *testing.B) {
 	}
 }
 
-// BenchmarkKeyDispatchInput: a whole read chunk of keystrokes through the
-// input loop: decode, opener gate, lookup, act, as one frame. 256 keys per
-// chunk, so the per-key cost dominates the single paint at the end.
+// 256 keys per chunk, so the per-key cost dominates the single paint.
 func BenchmarkKeyDispatchInput(b *testing.B) {
 	var w countingWriter
 	in, _ := coalesceInput(b, &w)
@@ -64,8 +51,6 @@ func BenchmarkKeyDispatchInput(b *testing.B) {
 	}
 }
 
-// BenchmarkKeyDispatchArrows: the same chunk as escape sequences, which take
-// the longer decode path (delimit, classify, nav lookup).
 func BenchmarkKeyDispatchArrows(b *testing.B) {
 	var w countingWriter
 	in, _ := coalesceInput(b, &w)

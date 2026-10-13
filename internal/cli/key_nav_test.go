@@ -10,22 +10,11 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// The arrow cluster, end to end through the input loop.
-//
-// Up/Down, PageUp/PageDown and Home/End reach the CLI as escape sequences, not
-// bytes, so the input loop used to delimit them and throw them away: pressing
-// Up during a streaming turn did nothing at all, which reads as a hung
-// terminal. navKeyFor (see key_input_test.go) names them; these tests pin the
-// routing: every arrow lands exactly where its letter-key equivalent lands,
-// whether the pager is already up or has to be opened first.
-// ---------------------------------------------------------------------------
+// Every arrow lands where its letter-key equivalent lands, whether the pager is up
+// or has to be opened.
 
-// stubHistoryClient serves the same history to enterTranscript that the pager
-// is pre-seeded with, so a pager opened by a keypress holds real content to
-// scroll through. Only the entry read is served: subsequent page fetches come
-// back empty, which is how the pager learns it has reached the end of history
-// and stops prefetching.
+// Only the entry read is served; later page fetches come back empty, so the pager
+// stops prefetching.
 type stubHistoryClient struct{ committed []aria.TurnPart }
 
 func (c stubHistoryClient) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
@@ -44,8 +33,7 @@ func (c stubHistoryClient) Queued(context.Context) (*rpc.QueuedResponse, error) 
 	return &rpc.QueuedResponse{}, nil
 }
 
-// settle waits out any background history fetch the last keypress kicked off,
-// so the test body can read the pager's state without racing the prefetcher.
+// Waits out the background fetch the last keypress kicked off.
 func settle(tb testing.TB, in *interactiveInput) {
 	tb.Helper()
 	for {
@@ -63,8 +51,6 @@ func settle(tb testing.TB, in *interactiveInput) {
 	}
 }
 
-// feed drives one read through the input loop and waits for the paging it
-// triggers, returning the bytes held back for the next read.
 func feed(tb testing.TB, in *interactiveInput, data string) []byte {
 	tb.Helper()
 	rest, stop := in.consume([]byte(data))
@@ -83,8 +69,7 @@ func navHistory() []aria.TurnPart {
 	return committed
 }
 
-// navInput builds an input loop sitting in incipit: the pager is NOT up, so a
-// key has to open it. Pass open=true for the already-paging case.
+// open=true for the already-paging case.
 func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput, *livelogTurn) {
 	tb.Helper()
 	committed := navHistory()
@@ -102,10 +87,6 @@ func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput,
 	}, lt
 }
 
-// TestInputConsume_NavKeysMatchLetterMotions is the headline oracle: every
-// encoding of every navigation key lands exactly where the letter motion it is
-// an alias for lands: both when it has to open the pager from incipit, and
-// when the pager is already up.
 func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -119,13 +100,8 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 		{"home", []string{"\x1b[H", "\x1bOH", "\x1b[1~", "\x1b[7~"}, "gg"},
 		{"end", []string{"\x1b[F", "\x1bOF", "\x1b[4~", "\x1b[8~"}, "G"},
 	}
-	// The letter aliases are equivalent to the arrow cluster only INSIDE the
-	// pager. In incipit a printable character starts composing a steer: the
-	// arrows still open the pager (they are gestures, not text), but 'j' is a
-	// letter someone is trying to type. Comparing them from incipit would assert
-	// the behaviour we deliberately removed, so the equivalence is pager-only and
-	// the incipit half of the contract is covered by
-	// TestNavArrowsStillOpenThePagerFromIncipit below.
+	// Pager-only: in incipit a printable letter composes a steer while an
+	// arrow opens the pager.
 	for _, open := range []bool{true} {
 		mode := "in the pager"
 		for _, tc := range cases {
@@ -164,25 +140,8 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 	}
 }
 
-// TestInputConsume_NavKeySplitAcrossReads: a sequence chopped by the tty must
-// be stitched, must not fire a bare-Esc binding on the prefix, and must act
-// exactly once when it completes.
-//
-// The cut starts at 2, AFTER the introducer: because a buffer holding only
-// `\x1b` is genuinely ambiguous: nothing in the bytes distinguishes an Escape
-// keypress from the head of a sequence whose tail has not been read yet. Only
-// a timer can, and the input loop has none. The codebase resolves that
-// ambiguity in favour of the keypress, in every decoder
-// (parseModifiedKey, consumeEscapeSequence, and now mouse.Parse).
-//
-// This loop used to start at 1 and pass, but not by design: it runs with the
-// pager UP, where mouse reporting is on, and the mouse parser alone held the
-// lone `\x1b` as a possible `\x1b[<…M`. With the pager DOWN the same cut
-// already resolved to bare Esc on 45bee38: so cut=1 was never a guarantee,
-// it was an inconsistency between the two modes, and the one that held the
-// byte is the one that made Escape dead in the pager. Everything from the
-// introducer onward is still stitched, which is what a split read actually
-// looks like.
+// The cut starts after the introducer: a lone ESC is resolved as a keypress by
+// every decoder, since the input loop has no timer.
 func TestInputConsume_NavKeySplitAcrossReads(t *testing.T) {
 	for _, seq := range []string{"\x1b[A", "\x1bOB", "\x1b[5~", "\x1b[6~", "\x1b[1~", "\x1b[F"} {
 		for cut := 2; cut < len(seq); cut++ {
@@ -222,9 +181,6 @@ func TestInputConsume_NavKeySplitAcrossReads(t *testing.T) {
 	}
 }
 
-// TestInputConsume_UnknownSequenceStillSwallowed: the keys we did NOT claim
-// keep their old behaviour: eaten whole, no pager, no stray bytes reaching the
-// key handler.
 func TestInputConsume_UnknownSequenceStillSwallowed(t *testing.T) {
 	for _, seq := range []string{"\x1bOP", "\x1b[3~", "\x1b[15~", "\x1b[D", "\x1b[C", "\x1b]0;title\x07"} {
 		var out countingWriter
@@ -236,8 +192,7 @@ func TestInputConsume_UnknownSequenceStillSwallowed(t *testing.T) {
 			t.Fatalf("%q must not open the transcript pager", seq)
 		}
 	}
-	// And in the pager the same sequences are inert rather than being read as
-	// their trailing letter.
+	// In the pager the same sequences are inert, not read as their trailing letter.
 	var out countingWriter
 	in, lt := navInput(t, &out, true)
 	before := lt.tr.offset
@@ -249,9 +204,7 @@ func TestInputConsume_UnknownSequenceStillSwallowed(t *testing.T) {
 	}
 }
 
-// TestInputConsume_ArrowBurstPaintsOneFrame: a held Up arrow autorepeats into
-// one read as a run of escape sequences. It must go through the same batch as
-// the letter keys: one frame, not one per press.
+// A held arrow autorepeats into one read: one frame, not one per press.
 func TestInputConsume_ArrowBurstPaintsOneFrame(t *testing.T) {
 	const presses = 12
 	var w countingWriter
@@ -271,8 +224,6 @@ func TestInputConsume_ArrowBurstPaintsOneFrame(t *testing.T) {
 	}
 }
 
-// TestTranscriptNav_SearchPromptOwnsTheKeyboard: while '/' is being typed into,
-// an arrow must not scroll and must certainly not type a literal 'k'.
 func TestTranscriptNav_SearchPromptOwnsTheKeyboard(t *testing.T) {
 	var w countingWriter
 	in, lt := coalesceInput(t, &w)
@@ -294,8 +245,6 @@ func TestTranscriptNav_SearchPromptOwnsTheKeyboard(t *testing.T) {
 	}
 }
 
-// In incipit both the arrow cluster and its letter aliases open the pager, so a
-// motion acts on arrival instead of looking like a dead keyboard.
 func TestNavArrowsStillOpenThePagerFromIncipit(t *testing.T) {
 	for _, seq := range []string{"\x1b[A", "\x1b[B", "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"} {
 		var out countingWriter
@@ -305,8 +254,7 @@ func TestNavArrowsStillOpenThePagerFromIncipit(t *testing.T) {
 			t.Errorf("%q no longer opens the pager from incipit", seq)
 		}
 	}
-	// ...and so does the letter alias. Nothing in incipit swallows a keystroke
-	// as text: there is no composer, and typing is not an input surface here.
+	// Nothing in incipit swallows a keystroke as text.
 	var out countingWriter
 	in, lt := navInput(t, &out, false)
 	feed(t, in, "j")

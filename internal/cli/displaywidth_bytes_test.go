@@ -6,16 +6,8 @@ import (
 	"testing"
 )
 
-// displayWidth and displayWidthBytes are one rule with two implementations,
-// which exists only because the painter measures a row it has just built in a
-// byte buffer and may not allocate a string to do it. Two implementations of
-// one rule drift, and the drift is silent: a column count that is one too small
-// erases a character the reader was reading.
-//
-// So the string version is kept as the ORACLE, permanently, and the two must
-// agree byte for byte over a corpus. The corpus is not scaffolding to be
-// deleted once this passes: an equivalence claim is a fact about every day
-// after the change, and it stays checkable only while both sides are present.
+// displayWidthBytes exists because the painter measures a byte buffer without
+// allocating; the string version is the oracle and the two must agree over the corpus.
 func displayWidthCorpus() []string {
 	return []string{
 		"",
@@ -52,8 +44,8 @@ func TestDisplayWidthBytesAgreesWithDisplayWidth(t *testing.T) {
 		if got := displayWidthBytes([]byte(s)); got != want {
 			t.Errorf("case %d %q: displayWidthBytes=%d, displayWidth=%d", i, s, got, want)
 		}
-		// Every prefix too: the interesting failures are at a boundary, and a
-		// truncated escape or a split rune is exactly what a prefix produces.
+		// Every prefix too: a truncated escape or a split rune is what a
+		// prefix produces.
 		for cut := 0; cut < len(s); cut++ {
 			p := s[:cut]
 			if got, want := displayWidthBytes([]byte(p)), displayWidth(p); got != want {
@@ -64,14 +56,9 @@ func TestDisplayWidthBytesAgreesWithDisplayWidth(t *testing.T) {
 	}
 }
 
-// TestDisplayWidthCorpusCatchesADifference proves the corpus can fail. Without
-// this, "the two agree" is indistinguishable from "the corpus cannot tell them
-// apart", and a corpus of nothing but ASCII would pass forever while the wide
-// and combining cases rotted.
+// Proves the corpus can fail.
 func TestDisplayWidthCorpusCatchesADifference(t *testing.T) {
-	// A plausible wrong implementation: one column per rune, which is what the
-	// VT model did before tmux settled the question, and what anyone writing
-	// this in a hurry produces.
+	// A plausible wrong implementation: one column per rune.
 	naive := func(b []byte) int {
 		col := 0
 		for i := 0; i < len(b); {
@@ -98,8 +85,7 @@ func TestDisplayWidthCorpusCatchesADifference(t *testing.T) {
 	}
 }
 
-// TestDisplayWidthBytesStopsAtTheMargin pins the early exit that the painter
-// relies on: past the stop it must report the stop, and never more.
+// Past the stop it must report the stop, never more.
 func TestDisplayWidthBytesStopsAtTheMargin(t *testing.T) {
 	for _, s := range displayWidthCorpus() {
 		full := displayWidth(s)

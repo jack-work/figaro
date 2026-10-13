@@ -8,20 +8,11 @@ import (
 	"testing"
 )
 
-// Regenerates the two frozen oracles against the CURRENT signature format.
-//
-// Run on a GREEN tree only: it records what the code does, so regenerating
-// over a change installs that change as the definition of correct. The safe
-// sequence is regenerate, confirm the suite still passes, THEN make the change.
+// Regenerates the frozen oracles. Run on a green tree only: it records what the
+// code does.
 //
 //	ORACLE_REGEN=1 go test ./internal/cli/ -run TestOracleRegen
-//
-// Both regenerators press their keys through the same sweep the verifier uses
-// (sweepPager, sweepInput), a second copy of the sweep could record cells the
-// verifier never reads, so all that is left here is the formatting.
 
-// oracleRows renders one row of a frozen table: the inert signature, then
-// every cell that differs from it, sorted so a regeneration diffs cleanly.
 func oracleRow(b *strings.Builder, state string, cells map[string]string, bound map[string]string, names []string) {
 	inert := ""
 	for _, n := range names {
@@ -68,7 +59,7 @@ func TestOracleRegen(t *testing.T) {
 	writeOracle(t, "/tmp/pager_oracle.gen", &b)
 }
 
-// The input loop's half. Same rules: green tree only.
+// Green tree only.
 func TestOracleRegenInput(t *testing.T) {
 	if os.Getenv("ORACLE_REGEN") == "" {
 		t.Skip("set ORACLE_REGEN=1")

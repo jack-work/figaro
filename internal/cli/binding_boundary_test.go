@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// A prompt is not argv: the pre-verb binding flags stop at the first bare
-// `--`. Before this, `figaro send -- explain --no-bind` deleted the token
-// from the PROMPT and flipped the binding policy on the way past.
 func TestExtractNoBindStopsAtTheBoundary(t *testing.T) {
 	cases := []struct {
 		name     string

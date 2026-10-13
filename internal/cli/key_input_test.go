@@ -22,8 +22,6 @@ func TestParseModifiedKeyAltCtrlFallback(t *testing.T) {
 	}
 }
 
-// The keys that open the pager from incipit, so a motion acts on arrival
-// instead of looking like a dead keyboard.
 func TestOpensTranscriptForOutputHotkeys(t *testing.T) {
 	for _, key := range []byte{0x0e, 0x10, 0x0d} {
 		if !opensTranscriptFor(key) {
@@ -70,8 +68,7 @@ func TestConsumeEscapeSequence(t *testing.T) {
 
 func TestCoalesceNewlineCRLF(t *testing.T) {
 	in := &interactiveInput{}
-	// Single Enter as raw CR then raw LF (Windows conhost style): the LF
-	// following a CR must be swallowed so a toggle binding fires ONCE.
+	// CR then LF (Windows conhost) is one Enter: the LF is swallowed.
 	if in.coalesceNewline(0x0d) {
 		t.Fatal("first CR must not be skipped")
 	}
@@ -115,8 +112,8 @@ func TestNavKeyFor(t *testing.T) {
 		{"csi down", "\x1b[B", navDown},
 		{"csi home", "\x1b[H", navHome},
 		{"csi end", "\x1b[F", navEnd},
-		// SS3, application cursor mode (DECCKM), which many terminals switch
-		// to the moment a full-screen app takes the alt screen.
+		// SS3: application cursor mode (DECCKM), which many terminals
+		// enter on the alt screen.
 		{"ss3 up", "\x1bOA", navUp},
 		{"ss3 down", "\x1bOB", navDown},
 		{"ss3 home", "\x1bOH", navHome},
@@ -131,9 +128,7 @@ func TestNavKeyFor(t *testing.T) {
 		// Modified arrows still name the same key.
 		{"ctrl up", "\x1b[1;5A", navUp},
 		{"shift pagedown", "\x1b[6;2~", navPageDown},
-		// Left and Right ARE navigation keys now: the pager still has no use
-		// for them (no row binds them there, so they stay inert), and the ':'
-		// box walks its line with them.
+		// Left/Right are nav keys: inert in the pager, walked by the ':' box.
 		{"left", "\x1b[D", navLeft},
 		{"right", "\x1b[C", navRight},
 		{"ctrl left", "\x1b[1;5D", navLeft},

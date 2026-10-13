@@ -1,21 +1,13 @@
 package cli
 
-// Reading the system clipboard, for `^V` in the command box.
-//
-// Writing is OSC 52 (term.SetClipboard): the terminal takes a string and the
-// program never touches a selection. READING has no equivalent worth using --
-// OSC 52 queries are refused by most terminals by default, precisely because a
-// program that can read your clipboard can read whatever you last copied
-// anywhere. So this shells out, and says so when it cannot.
+// Reading is a shell-out: most terminals refuse OSC 52 queries by default.
 
 import (
 	"os/exec"
 	"strings"
 )
 
-// clipboardReaders are tried in order. Wayland first, then X, then macOS: the
-// first that EXISTS wins, whether or not it returns anything, because a
-// present-but-empty clipboard is an answer and a missing tool is not.
+// The first tool that exists wins: a present-but-empty clipboard is an answer.
 var clipboardReaders = [][]string{
 	{"wl-paste", "--no-newline"},
 	{"xclip", "-selection", "clipboard", "-o"},
@@ -24,13 +16,9 @@ var clipboardReaders = [][]string{
 	{"powershell.exe", "-NoProfile", "-Command", "Get-Clipboard"},
 }
 
-// clipboardRead is the seam. A test that shells out to wl-paste reads the
-// DEVELOPER'S clipboard: measured, and it is how a keymap oracle came back
-// carrying a directory listing that happened to be on mine. The package's
-// tests stub this (see clipboard_stub_test.go); production never touches it.
+// Tests stub this: a real shell-out reads the developer's clipboard.
 var clipboardRead = clipboardText
 
-// clipboardText returns the clipboard's contents, or a reason it could not.
 func clipboardText() (string, error) {
 	var missing []string
 	for _, argv := range clipboardReaders {
@@ -57,10 +45,7 @@ func (e errNoClipboardTool) Error() string {
 	return "no clipboard tool: install one of " + strings.Join(e.tried, ", ")
 }
 
-// pasteIntoLine folds pasted text into something a ONE-LINE editor can hold.
-// Newlines become spaces rather than being dropped: a multi-line paste into a
-// command line is nearly always a prompt that wants to arrive whole, and
-// silently truncating at the first newline would send half of it.
+// Newlines become spaces: truncating at the first would send half a prompt.
 func pasteIntoLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }

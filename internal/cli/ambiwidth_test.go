@@ -8,12 +8,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// The explicit answer always wins, and the cache is consulted before the probe.
-//
-// The probe costs a round trip to the terminal; the answer is a property of the
-// terminal PROGRAM, so it is cached per $TERM. Without that, every `figaro
-// list` would put an escape sequence and a blocking read in front of itself
-// forever.
+// Explicit answer first, then the per-$TERM cache, then the probe.
 func TestAmbiguousWidthPrecedence(t *testing.T) {
 	restore := runewidth.DefaultCondition.EastAsianWidth
 	t.Cleanup(func() { runewidth.DefaultCondition.EastAsianWidth = restore })
@@ -49,8 +44,6 @@ func TestAmbiguousWidthPrecedence(t *testing.T) {
 	}
 }
 
-// No tty, no answer: keep the default. A guess would be wrong on every terminal
-// instead of on the unusual one, and `go test` is exactly that case.
 func TestAmbiguousWidthWithoutATTYKeepsTheDefault(t *testing.T) {
 	restore := runewidth.DefaultCondition.EastAsianWidth
 	t.Cleanup(func() { runewidth.DefaultCondition.EastAsianWidth = restore })
