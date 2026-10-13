@@ -1,44 +1,7 @@
 package cli
 
-// ---------------------------------------------------------------------------
-// TMUX SMOKE HARNESS: the tests a unit test provably cannot write.
-//
-// WHY THIS FILE EXISTS. On 2026-07-25, EIGHT separate times, a green test
-// certified broken code. Every one was caught by a human or an agent driving a
-// real terminal, never by the suite. The diagnosis, from the aria that found
-// the worst of them:
-//
-//	"Every test double that diverged from production diverged by being
-//	 TIDIER THAN REALITY."
-//
-//   - the paging double treated `limit` as a COUNT of parts; production used a
-//     BYTE budget. ~30 tests green while the pager rendered ONE node for an
-//     800-node aria.
-//   - a renderer test asserted over compose() OUTPUT: what figaro DECIDES to
-//     paint, and so could not observe rows scrolling away. Green while the
-//     user's reply was lost.
-//   - composer tests fed WHOLE STRINGS through consume(); a real user types one
-//     byte per read. That hid a byte-vs-rune bug that mojibaked all non-ASCII.
-//   - and two bugs shipped that NO in-process test could have caught at all:
-//     the process failing to EXIT after a turn, and a footer duplicated into
-//     scrollback.
-//
-// Those last two are the point. A model of a terminal only knows the bugs its
-// author imagined. This harness drives the REAL binary in a REAL pty and reads
-// back what a REAL user would see.
-//
-// DELIBERATELY NOT HERMETIC. These tests use a real provider. A fake provider
-// would be one more double free to drift from production: the exact failure
-// this file exists to prevent. The cost is tokens and seconds; the benefit is
-// that a passing run means something.
-//
-// RUN THEM:
-//
-//	FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v
-//
-// Skipped by default, so `go test ./...` stays fast and hermetic.
-// Full method and traps: the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md): read it before adding a case.
-// ---------------------------------------------------------------------------
+// Smoke harness: the real binary in a real pty against a real provider. Run with
+// FIGARO_TMUX_SMOKE=1 and -count=1; method and traps in skills/tmux-testing.md.
 
 import (
 	"fmt"
@@ -53,58 +16,19 @@ import (
 	"time"
 )
 
-// ---------------------------------------------------------------------------
-// THE PARTICIPATION LEDGER: what a green run actually proves.
-//
-// `go test` prints NOTHING for a skip without -v, and this suite declines on
-// live-model weather -- the turn ended before the key landed, the model did not
-// run the command, a long reply promoted the pager. So a green smoke run and a
-// run in which eight of ten cases declined produce THE SAME BYTES. That is this
-// project's standing failure ("no output" is both success and never-ran) in a
-// terminal's clothes, and eight of the ten cases carry at least one such site.
-//
-// TWO MECHANISMS, AND ONLY THE FIRST IS THE GUARANTEE:
-//
-//	smokeCase(t)   records RAN vs DECLINED from testing's OWN knowledge, in a
-//	               Cleanup that runs after the case ends. A case added later is
-//	               counted without its author knowing this exists, and a raw
-//	               t.Skip cannot hide it. IT DOES NOT DEPEND ON DISCIPLINE AT
-//	               FOURTEEN SKIP SITES.
-//	decline(t, …)  records the REASON and then skips. If someone bypasses it the
-//	               count is still right; only the reason is lost.
-//
-// smokeCase is called AFTER smokeEnabled, so a switched-off suite registers
-// nothing and prints nothing: the ledger speaks only about runs that were
-// actually attempted.
-//
-// WHAT IS DELIBERATELY NOT DONE: the fourteen model-weather skips are NOT
-// converted into failures. They decline for reasons that are not defects, and a
-// suite that cries wolf is muted, then skipped, then deleted. The fix for an
-// invisible abstention is DISCLOSURE, not strictness. See
-// plans/smoke-skip-profile.md.
+// Participation ledger: a skip prints nothing without -v, so a run in which
+// every case declined on model weather is otherwise indistinguishable from a pass.
 var (
 	smokeLedgerMu sync.Mutex
 	smokeRan      []string
 	smokeDeclined []string
 	smokeReasons  = map[string]string{}
-	// smokeFloor is read inside smokeCase, never in the summary: see the
-	// comment there for the caching trap that decides where this is read.
-	smokeFloor int
+	smokeFloor    int
 )
 
-// smokeStart is when THIS BINARY started, stamped into the participation
-// summary so that a CACHED transcript confesses instead of impersonating a
-// live run.
-//
-// It does not prevent the cache and is not meant to: go test replays a
-// previous run's output byte for byte, so the only defence available from
-// inside the binary is to print something a replay cannot refresh. A reader
-// who sees a start time from an hour ago knows no terminal was driven. Same
-// move as stamping the commit and the instrument hash into every measurement
-// file: provenance that is absent reads exactly like provenance that is right.
+// Stamped into the summary so a transcript replayed from the go test cache confesses.
 var smokeStart = time.Now()
 
-// envFloor is FIGARO_TMUX_SMOKE_MIN_RAN, or zero.
 func envFloor() int {
 	if v := os.Getenv("FIGARO_TMUX_SMOKE_MIN_RAN"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -116,21 +40,8 @@ func envFloor() int {
 
 func smokeCase(t *testing.T) {
 	t.Helper()
-	// READ THE FLOOR HERE, INSIDE A TEST, AND NOT IN smokeParticipation.
-	//
-	// go test CACHES a package result and REPLAYS ITS OUTPUT, and the replay is
-	// byte-identical to a live run -- including the participation summary
-	// below, which then describes a run that did not happen. Worse, the cache
-	// key is built from what the test binary consults WHILE TESTS ARE RUNNING;
-	// an os.Getenv in TestMain after m.Run() is not in that window, so changing
-	// the floor did not invalidate the cache and the floor never evaluated.
-	// Measured: with FIGARO_TMUX_SMOKE_MIN_RAN=2 and one case, `ok (cached)`,
-	// EXIT=0, and a summary printed from the previous run.
-	//
-	// Reading it here puts it in the cache key, so a changed floor forces a
-	// real run. It does NOT make a live-provider suite hermetic: RUN THIS SUITE
-	// WITH -count=1. A cached pass for a suite whose whole purpose is to drive a
-	// real terminal and a real provider is a green tick for work nobody did.
+	// Read inside a test, not in TestMain: only env consulted while tests run
+	// enters the go test cache key, so a changed floor forces a real run.
 	smokeLedgerMu.Lock()
 	smokeFloor = envFloor()
 	smokeLedgerMu.Unlock()
@@ -149,7 +60,6 @@ func smokeCase(t *testing.T) {
 	})
 }
 
-// decline is t.Skipf with the reason recorded for the ledger.
 func decline(t *testing.T, format string, args ...any) {
 	t.Helper()
 	smokeLedgerMu.Lock()
@@ -158,19 +68,12 @@ func decline(t *testing.T, format string, args ...any) {
 	t.Skipf(format, args...)
 }
 
-// smokeParticipation prints the ledger and reports whether the floor was met.
-// TestMain calls it AFTER m.Run(), because the last case's Cleanup has not run
-// until then.
-//
-// FIGARO_TMUX_SMOKE_MIN_RAN is the floor and it DEFAULTS TO ZERO: this reports,
-// it does not newly fail anyone. Whoever runs the suite deliberately sets a
-// number, and from then on a run the weather ate is a FAILURE rather than a
-// green tick.
+// Called after m.Run(): the last case's Cleanup has not run before then.
 func smokeParticipation() bool {
 	smokeLedgerMu.Lock()
 	defer smokeLedgerMu.Unlock()
 	if len(smokeRan)+len(smokeDeclined) == 0 {
-		return true // the suite never ran; it has nothing to say
+		return true
 	}
 	fmt.Fprintf(os.Stderr, "\nsmoke participation: %d ran, %d declined\n",
 		len(smokeRan), len(smokeDeclined))
@@ -194,9 +97,6 @@ func smokeParticipation() bool {
 	return true
 }
 
-// smokeEnabled gates the suite. Two doors, both explicit: the env var, and the
-// presence of tmux. Never auto-enable, a test that silently costs tokens is a
-// test people learn to distrust.
 func smokeEnabled(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
@@ -210,17 +110,7 @@ func smokeEnabled(t *testing.T) {
 	}
 }
 
-// smokeBinary returns a figaro built FROM THIS WORKTREE.
-//
-// Building from source is strictly stronger than the usual "nix build, then
-// assert --version matches HEAD" dance: identity with the tree under test is
-// guaranteed by construction rather than checked after the fact, and it picks
-// up uncommitted edits, which is what you actually want while iterating.
-//
-// FIGARO_SMOKE_BIN overrides it when you deliberately want to smoke a specific
-// build (a nix store path, say). In that case identity is NOT guaranteed, so we
-// print what we are testing, a stale binary replaying already-fixed bugs cost
-// this project an entire debugging session.
+// smokeBinary builds figaro from this worktree; FIGARO_SMOKE_BIN overrides it.
 func smokeBinary(t *testing.T) string {
 	t.Helper()
 	if bin := os.Getenv("FIGARO_SMOKE_BIN"); bin != "" {
@@ -257,8 +147,7 @@ func firstLine(s string) string {
 	return s
 }
 
-// smokeStore builds an isolated state/runtime/config trio and returns the env.
-// NEVER the real store: these tests start daemons, write arias and kill things.
+// smokeStore returns an env over an isolated state/runtime/config trio.
 func smokeStore(t *testing.T) []string {
 	t.Helper()
 	dir := t.TempDir()
@@ -267,19 +156,9 @@ func smokeStore(t *testing.T) []string {
 			t.Fatal(err)
 		}
 	}
-	// Provider credentials and outfits come from the real config, copied. We
-	// read it; we never write it.
-	//
-	// THE COPY CARRIES CREDENTIALS, SO IT IS HARDENED EXPLICITLY. `cp` without
-	// -p gives the destination the source mode masked by the umask, and the real
-	// providers/anthropic.toml is mode 644 inside a 755 providers/: safe at rest
-	// ONLY because ~/.config/figaro is 700. Copying it moves it out from under the
-	// one thing defending it. The config dir above is created 0700, which contains
-	// it today, but relying on a single parent directory is precisely the pattern
-	// that leaked a sibling harness's copy into world-traversable /var/tmp. So
-	// re-assert the boundary AND tighten the secrets themselves, belt and braces:
-	// a later refactor that recreates this directory differently must not silently
-	// re-open the hole.
+	// The copied config carries credentials that are 644 at rest, safe only
+	// because ~/.config/figaro is 700: re-assert the boundary and tighten the
+	// files.
 	if home, err := os.UserHomeDir(); err == nil {
 		src := filepath.Join(home, ".config", "figaro")
 		cfg := filepath.Join(dir, "config")
@@ -290,7 +169,7 @@ func smokeStore(t *testing.T) []string {
 		for _, secret := range []string{"providers", "hush"} {
 			_ = filepath.WalkDir(filepath.Join(cfg, secret), func(path string, d fs.DirEntry, err error) error {
 				if err != nil {
-					return nil // absent is fine: not every config has both
+					return nil
 				}
 				mode := fs.FileMode(0o600)
 				if d.IsDir() {
@@ -301,12 +180,7 @@ func smokeStore(t *testing.T) []string {
 			})
 		}
 	}
-	// THE PANE IS A FRESH SHELL, NOT AN ARIA'S TOOL. When this suite runs
-	// inside a figaro (an agent driving it), the process carries FIGARO_ARIA,
-	// which statically attends every shell under it and DISABLES BINDING: a
-	// pane inheriting it can never attend anything, and a case that asserts
-	// what `figaro status` resolves to after a fork reads "no figaro bound"
-	// for a reason that has nothing to do with the code under test.
+	// An inherited FIGARO_ARIA statically attends the pane and disables binding.
 	var env []string
 	for _, kv := range os.Environ() {
 		switch {
@@ -322,49 +196,32 @@ func smokeStore(t *testing.T) []string {
 	)
 }
 
-// pane is one tmux window on a PRIVATE server. Private because a shared server
-// leaks sessions between runs, and because killing the user's tmux would be
-// unforgivable.
+// pane is one window on a private tmux server, never the user's.
 type pane struct {
 	t      *testing.T
 	socket string
 	env    []string
 	bin    string
-	height int // the REAL pane height, not the -y you asked for
+	height int // read back from tmux, not the -y asked for
 }
 
-// newPane opens a pane of exactly h usable rows.
-//
-// TRAP, and it invalidated an entire night of measurements: `tmux new-session
-// -y N` yields pane_height N-1, because the status bar takes a row. Three
-// separate investigators reported "h=1 loses the reply" while measuring at pane
-// height ZERO, a state no user can reach. We turn the status bar OFF and then
-// READ BACK #{pane_height}, so the number in a failure message is the number
-// figaro actually saw.
 func newPane(t *testing.T, env []string, bin string, w, h int) *pane {
 	t.Helper()
 	p := &pane{t: t, socket: filepath.Join(t.TempDir(), "tmux.sock"), env: env, bin: bin}
-	// -y h+1, MEASURED not guessed: tmux subtracts the status row at CREATION,
-	// and turning the status bar off afterwards does not give it back to a
-	// detached session (nor does resize-window). Probed: -y 30 -> 29 whether
-	// status is turned off before or after; -y 31 -> 30. So ask for one more.
+	// `-y N` gives pane height N-1: the status row is taken at creation and
+	// turning status off afterwards does not give it back. Read the height back.
 	p.tmux("new-session", "-d", "-s", "smoke", "-x", smokeItoa(w), "-y", smokeItoa(h+1), "bash", "--norc")
 	p.tmux("set", "-g", "status", "off")
 	got := strings.TrimSpace(p.tmuxOut("display", "-p", "-t", "smoke:0", "#{pane_height}"))
 	p.height = smokeAtoi(got)
 	if p.height != h {
-		// Never silently proceed on a height you did not ask for: an entire
-		// night of "h=1 loses the reply" reports were measured at pane height 0.
 		t.Logf("pane height is %d (asked for %d), assertions use %d", p.height, h, p.height)
 	}
 	t.Cleanup(p.close)
 	return p
 }
 
-// A TMUX COMMAND THAT FAILS IS A BROKEN FIXTURE, NOT A CASE THAT DECLINED.
-// These two sites used to Skipf, so a harness that could not drive the terminal
-// reported as an abstention -- indistinguishable from the model being fast. A
-// guard that cannot report on the day it matters is not a guard.
+// A tmux command that fails is a broken fixture, never a declined case.
 func (p *pane) tmux(args ...string) {
 	p.t.Helper()
 	if out, err := p.run(args...); err != nil {
@@ -385,25 +242,17 @@ func (p *pane) tmuxOut(args ...string) string {
 
 func (p *pane) run(args ...string) (string, error) {
 	cmd := exec.Command("tmux", append([]string{"-S", p.socket}, args...)...)
-	cmd.Env = append(p.env, "TMUX=") // never inherit an outer session
+	cmd.Env = append(p.env, "TMUX=")
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// send types a literal string as ONE read. Use typeSlowly for anything a human
-// would type: see the comment there.
+// send arrives as one read; use typeSlowly for anything a human would type.
 func (p *pane) send(s string) { p.tmux("send-keys", "-l", s) }
 
-// key sends a named key (Enter, C-c, C-d, Escape...).
 func (p *pane) key(k string) { p.tmux("send-keys", k) }
 
-// typeSlowly types one character per tmux call, with a gap.
-//
-// THIS DISTINCTION IS NOT PEDANTRY. Every composer test in this repo once fed
-// whole strings through the input path and passed, while a real user typing one
-// byte per read hit a byte-vs-rune bug that corrupted every non-ASCII character.
-// A whole-string send is a DIFFERENT INPUT PATTERN from typing. If the thing
-// under test is input, type slowly.
+// typeSlowly sends one character per read, the way a human types.
 func (p *pane) typeSlowly(s string) {
 	for _, r := range s {
 		p.send(string(r))
@@ -411,14 +260,11 @@ func (p *pane) typeSlowly(s string) {
 	}
 }
 
-// visible is the pane as shown. scrollback is everything, including frames that
-// existed for milliseconds before scrolling away: which is the ONLY way to see
-// a duplicated footer or a submit-time frame.
+// scrollback keeps frames that existed for milliseconds before scrolling away.
 func (p *pane) visible() string    { return p.tmuxOut("capture-pane", "-p") }
 func (p *pane) scrollback() string { return p.tmuxOut("capture-pane", "-p", "-S", "-") }
 
-// waitIdle polls until the pane stops changing. Never sleep a fixed guess: a
-// model's first token can take five seconds or fifty.
+// waitIdle polls until the pane stops changing; a fixed sleep is a guess.
 func (p *pane) waitIdle(d time.Duration) {
 	p.t.Helper()
 	var last string
@@ -437,19 +283,13 @@ func (p *pane) waitIdle(d time.Duration) {
 	}
 }
 
-// alive reports whether the pane's foreground command is still figaro. This is
-// how you catch a process that will not exit: no in-process test can.
+// alive reports whether the pane's foreground command is still figaro.
 func (p *pane) alive() bool {
 	out := strings.TrimSpace(p.tmuxOut("display", "-p", "#{pane_current_command}"))
 	return strings.Contains(out, "figaro")
 }
 
-// pagerChrome counts markers that mean the transcript pager is up.
-//
-// GATE EVERY ABSENCE ON THIS. Twice on the night this file was written, an aria
-// reported content "missing" when the view had merely auto-promoted to the
-// pager and the content sat above the tail window. An absence inside a pager is
-// not an absence.
+// pagerChrome counts pager markers: an absence inside a pager is not an absence.
 func pagerChrome(capture string) int {
 	n := 0
 	for _, marker := range []string{"? help", "! status"} {
@@ -458,12 +298,8 @@ func pagerChrome(capture string) int {
 	return n
 }
 
-// bodyLines counts occurrences of tok as a RENDERED BODY LINE.
-//
-// TRAP: counting a token across the whole capture is UNSOUND. The footer mantra
-// echoes the prompt, the prompt usually contains your token, and an 80-column
-// shell echo wraps so its tail fragment matches too. Every trial inflates by
-// two, which once made a live bug look fixed. Only the body line is sound.
+// bodyLines counts tok as a whole rendered line: the footer mantra and the
+// wrapped shell echo both contain it, so a substring count is unsound.
 func bodyLines(capture, tok string) int {
 	n := 0
 	for _, ln := range strings.Split(capture, "\n") {
@@ -474,8 +310,7 @@ func bodyLines(capture, tok string) int {
 	return n
 }
 
-// footers counts rendered status/bookend rows. Exactly one turn should leave
-// exactly one behind.
+// footers counts rendered bookend rows; one turn leaves exactly one.
 func footers(capture string) int {
 	n := 0
 	for _, ln := range strings.Split(capture, "\n") {
@@ -486,18 +321,8 @@ func footers(capture string) int {
 	return n
 }
 
-// statusRows counts RENDERED PAGER STATUS ROWS: rows, not substring hits.
-//
-// pagerChrome above answers "are we in the pager"; this answers "how many
-// status rows are on the grid", which is a different and sharper question. A
-// healthy pager paints exactly ONE, at screen[t.h-1]. Two means the terminal's
-// grid scrolled under the painter (something wrote outside the frame buffer)
-// and the painter then repainted the footer at h-1 while the old copy was
-// still on screen: i.e. t.prev no longer describes the terminal.
-//
-// This is deliberately fix-shape-agnostic: whether the eventual fix leaves the
-// pager before printing (0 status rows), routes the text through the frame
-// buffer, or suppresses it (1 status row), the count is never 2.
+// statusRows counts pager status rows on the grid: two means something wrote
+// outside the frame buffer and the grid scrolled under the painter.
 func statusRows(capture string) int {
 	n := 0
 	for _, ln := range strings.Split(capture, "\n") {
@@ -508,18 +333,12 @@ func statusRows(capture string) int {
 	return n
 }
 
-// rawVisible is the pane WITH escape sequences retained (-e). Needed to prove a
-// row did NOT come from the renderer: every footer row that goes through
-// footerRows is wrapped in "\x1b[2m" ... "\x1b[0m", so an unstyled row sitting
-// among them was written straight to the terminal, bypassing the frame buffer.
+// rawVisible keeps escape sequences: a footer row from footerRows is wrapped in
+// \x1b[2m...\x1b[0m, so an unstyled row among them bypassed the frame buffer.
 func (p *pane) rawVisible() string { return p.tmuxOut("capture-pane", "-p", "-e") }
 
-// close kills the tmux server AND stops the scratch daemon.
-//
-// The daemon half is not optional. On the night this was written, seventeen
-// agents each left an isolated daemon running: 230 orphaned processes, 1.2 GB
-// of tmpfs, and a memory-pressure alert with processes already stalling. Every
-// one of them had been told to stop the daemon BEFORE testing and never after.
+// close stops the scratch daemon as well as the tmux server; kill-server alone
+// orphans it.
 func (p *pane) close() {
 	stop := exec.Command(p.bin, "stop", "--force")
 	stop.Env = p.env
@@ -539,7 +358,6 @@ func smokeAtoi(s string) int {
 	return n
 }
 
-// startTurn launches `figaro send` in the pane and returns once it is streaming.
 func (p *pane) startTurn(prompt string) {
 	p.t.Helper()
 	p.send(p.bin + " send -- '" + prompt + "'")

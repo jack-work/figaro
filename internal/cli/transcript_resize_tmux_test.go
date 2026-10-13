@@ -11,34 +11,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// THE RESIZE THAT A REAL TERMINAL PERFORMS.
-//
-// transcript_paint_tmux_test.go already replays the pager's escape stream into
-// tmux and compares what tmux draws against what the pager believes it drew.
-// That test is the reason the suffix-update erase-order bug was found, and its
-// premise is exactly right. The one thing it never did was span a RESIZE, and
-// a resize is the only event where the terminal changes its own grid without the
-// application being involved. So the painter's belief and the screen can part
-// company there, and no test in the repo could see it.
-//
-// The bug (user's words): "The gaps in between nodes are populated with text
-// that shouldn't be there from some other line. It can only be cleared by moving
-// the viewport such that the corrupt region is no longer visible, and then
-// moving back to that area."
-//
-// This test differs from the VT case (transcript_resize_paint_test.go) in the
-// one way that matters: THERE, I model what a terminal does to its grid on a
-// width change; HERE, tmux does it, and I model nothing. If the two disagree,
-// believe this one, a model only knows the bugs its author imagined.
-//
-// The escape stream is split in two and the resize happens BETWEEN the halves,
-// in the real order a user produces: the terminal's grid changes first (it has
-// already happened by the time SIGWINCH is delivered), and only then does the
-// application repaint. Two marker files synchronize the replay with the resize,
-// because a fixed sleep is a guess and this is the one instant that must be
-// ordered correctly.
-// ---------------------------------------------------------------------------
+// A resize is the one event where the terminal reshapes its grid without the
+// application: the grid changes before SIGWINCH is delivered, so the stream is
+// split and tmux resizes between the halves, synchronized by marker files.
 
 func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 	if testing.Short() {
@@ -57,9 +32,7 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 			transcriptScrollRegions = regions
 
 			const w0, h0 = 100, 40
-			const w1, h1 = 72, 40 // WIDTH ONLY: no row moves, so nothing but the
-			// paint diff can explain a difference. Measured
-			// as sufficient in a real pane (skills/figaro/contributing/paint-repro.md §8.1).
+			const w1, h1 = 72, 40 // width only: no row moves
 
 			dir := t.TempDir()
 			preFile := filepath.Join(dir, "pre.bin")
@@ -79,8 +52,8 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 			}
 			client.Apply(aria.Page{Parts: committed}, aria.Notify)
 
-			// --- first half: come up at w0xh0 and scroll into history, so the
-			// viewport is full of message separators (a blank row, then a rule).
+			// Scroll into history so the viewport holds blank
+			// separator rows.
 			tr := newTranscript(pre, w0, h0, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
 			tr.enter()
 			for range 30 {
@@ -95,15 +68,10 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 			if err := pre.Close(); err != nil {
 				t.Fatal(err)
 			}
-			// If the viewport holds no blank rows the test has stopped
-			// exercising its own stated reason and can no longer fail for it.
 			if blanks == 0 {
 				t.Fatal("fixture no longer exercises its reason: no blank rows in the viewport before the resize")
 			}
 
-			// --- second half: the application is told about the new size and
-			// repaints. Everything it emits from here lands after tmux has
-			// already reshaped the grid.
 			post, err := os.Create(postFile)
 			if err != nil {
 				t.Fatal(err)
@@ -148,13 +116,8 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 	}
 }
 
-// tmuxReplayResize replays pre, lets tmux resize the pane for real, replays
-// post, and returns what the pane shows.
-//
-// Synchronization is by marker file, not by sleeping: the whole point is that
-// the resize lands strictly between the two halves. `ready` says the first half
-// has been written; `go` says the resize is complete and the second half may
-// proceed.
+// tmuxReplayResize replays pre, resizes the pane, replays post: `ready` marks
+// the first half written, `go` the resize complete.
 func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) []string {
 	t.Helper()
 	socket := filepath.Join(dir, "tmux.sock")
@@ -163,32 +126,27 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command("tmux", append([]string{"-S", socket}, args...)...)
-		cmd.Env = append(os.Environ(), "TMUX=") // never inherit an outer session
+		cmd.Env = append(os.Environ(), "TMUX=")
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	// kill-server leaves the socket INODE behind, so a later `[ -S sock ]` would
-	// call a dead server alive. Remove the file too: the artifact outliving the
-	// process is the same family of trap as a scratch daemon outliving its pane.
+	// kill-server leaves the socket inode behind.
 	defer func() {
 		_, _ = run("kill-server")
 		_ = os.Remove(socket)
 	}()
 
-	// `sleep` keeps the pane alive after the replay: once the shell prompt
-	// returns it lands on top of the final row and corrupts the comparison.
+	// A returning shell prompt would land on the final row.
 	script := "cat " + pre + "; touch " + readyFile +
 		"; while [ ! -e " + goFile + " ]; do sleep 0.02; done; cat " + post + "; sleep 60"
-	// -y h+1: tmux subtracts the status row AT CREATION and turning the status
-	// bar off afterwards does not give it back to a detached session.
+	// `-y N` gives N-1 rows: the status row is taken at creation and turning
+	// it off afterwards does not give it back.
 	if out, err := run("new-session", "-d", "-x", itoaTest(w0), "-y", itoaTest(h0+1), "sh", "-c", script); err != nil {
 		t.Skipf("tmux new-session failed (%v): %s", err, out)
 	}
 	if out, err := run("set", "-g", "status", "off"); err != nil {
 		t.Skipf("tmux set status off failed (%v): %s", err, out)
 	}
-	// Read the height back and assert it, rather than trusting the +1. An entire
-	// investigation was once conducted at pane height zero.
 	if got := strings.TrimSpace(mustOut(t, run, "display", "-p", "#{pane_height}")); got != itoaTest(h0) {
 		t.Skipf("pane height is %s, wanted %d: cannot assert against a geometry we did not get", got, h0)
 	}
@@ -206,8 +164,6 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 	}
 	waitFor(readyFile, "the pre-resize stream to finish replaying")
 
-	// THE REAL RESIZE. tmux reshapes its own grid here; nothing figaro wrote is
-	// involved, and no model of terminal behaviour is being trusted.
 	if out, err := run("resize-window", "-x", itoaTest(w1), "-y", itoaTest(h1+1)); err != nil {
 		t.Skipf("tmux resize-window failed (%v): %s", err, out)
 	}
@@ -227,7 +183,6 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 		t.Fatal(err)
 	}
 
-	// Poll until the pane stops changing; replay is asynchronous.
 	var last string
 	stable := 0
 	deadline = time.Now().Add(20 * time.Second)

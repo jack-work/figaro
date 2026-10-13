@@ -7,9 +7,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 )
 
-// Exit-code contract: 1 = it ran and failed, 2 = argv was rejected. The
-
-// captureExit swaps the process-exit hook and returns the code die/dieUsage
+// Exit codes: 1 ran and failed, 2 argv rejected.
 
 func captureExit(t *testing.T, fn func()) (code int, ok bool) {
 	t.Helper()
@@ -38,7 +36,6 @@ func TestDieCodes(t *testing.T) {
 	}
 }
 
-// Proves the WIRING (rejected argv -> exit 2) with shapes that die inside
 func TestSendArgvRejectionExitsTwo(t *testing.T) {
 	cases := []struct {
 		name string
@@ -63,7 +60,6 @@ func TestSendArgvRejectionExitsTwo(t *testing.T) {
 	}
 }
 
-// TestUnknownBareCommandExitsTwo covers the other door onto the same
 func TestUnknownBareCommandExitsTwo(t *testing.T) {
 	router := buildRouter("figaro", nil)
 	code, exited := captureExit(t, func() { unknownBareCommand("figaro", router, "shwo") })
@@ -72,8 +68,6 @@ func TestUnknownBareCommandExitsTwo(t *testing.T) {
 	}
 }
 
-// TestRouterMisuseIsTwo is the other half of the contract, so the two
-// halves cannot drift apart again: the router's own rejections stay at 2.
 func TestRouterMisuseIsTwo(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	r.Stdout, r.Stderr = &strings.Builder{}, &strings.Builder{}

@@ -8,8 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// Synthetic replay exercises the production renderer in a private terminal
-// without a provider, credentials, or a daemon on the user's store.
 func TestGutterJunctionPTY(t *testing.T) {
 	if testing.Short() {
 		t.Skip("drives replay through tmux")
@@ -26,8 +24,8 @@ func TestGutterJunctionPTY(t *testing.T) {
 		if !strings.HasPrefix(rows[heading], "> Gluck ⑂ e87bb154") || !strings.HasSuffix(rows[heading], "Δ") {
 			t.Fatalf("inquiry heading lost metadata: %s", p.dump())
 		}
-		p.key("C-n") // question
-		p.key("C-n") // thinking
+		p.key("C-n")
+		p.key("C-n")
 		p.key("Enter")
 		p.key("Escape")
 
@@ -48,9 +46,9 @@ func TestGutterJunctionPTY(t *testing.T) {
 		}
 		assertThinkingConnector("Δ─╯")
 		t.Logf("parked:\n%s", p.capture(true))
-		p.key("C-n") // question
-		p.key("C-n") // thinking
-		p.key("C-n") // delta
+		p.key("C-n")
+		p.key("C-n")
+		p.key("C-n")
 		assertThinkingConnector("╭─╯")
 		rows = p.rows()
 		delta := p.only(t, rows, "mantra")
@@ -58,7 +56,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 			t.Fatalf("head did not follow the delta selection: %s", p.dump())
 		}
 		t.Logf("delta selected:\n%s", p.capture(true))
-		p.key("Enter") // collapse
+		p.key("Enter")
 		if hasRow(p.rows(), "mantra") || hasRow(p.rows(), "╯") {
 			t.Fatalf("closed list left a connector or delta behind: %s", p.dump())
 		}
@@ -77,7 +75,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 		p.key("Escape")
 		p.key("g")
 		p.key("g")
-		p.key("d") // page into the thinking, away from the question
+		p.key("d")
 		check := func() {
 			t.Helper()
 			rows := p.rows()
@@ -105,9 +103,8 @@ func TestGutterJunctionPTY(t *testing.T) {
 	})
 }
 
-// THE TERMINAL IS THE WITNESS for two claims a screen model cannot make: that
-// a fenced region of a tool's output arrives painted as a diff, and that the
-// rule above the status bar is cut by the gutter that runs past it.
+// A fenced diff in tool output arrives painted, and the floor rule is cut by
+// a gutter that runs past it.
 func TestFencedDiffAndFloorJunctionPTY(t *testing.T) {
 	if testing.Short() {
 		t.Skip("drives replay through tmux")
@@ -124,7 +121,6 @@ func TestFencedDiffAndFloorJunctionPTY(t *testing.T) {
 		},
 	}}}}, "The retry loop was off by one")
 
-	// The head of the conversation, where the tool block is.
 	p.key("g")
 	p.key("g")
 	for _, r := range p.rows() {
@@ -141,19 +137,16 @@ func TestFencedDiffAndFloorJunctionPTY(t *testing.T) {
 	if styled[del] == styled[add] {
 		t.Fatalf("both sides of the diff painted the same: %q", styled[del])
 	}
-	// From the top the thinking block runs past the floor, which is cut by it.
 	if rule := floorRuleRow(t, p); !strings.Contains(rule, "┴") {
 		t.Fatalf("a block that outruns the pane must be cut by the floor: %q\n%s", rule, p.dump())
 	}
-	// At the tail the conversation ends against the rule, which joins nothing.
 	p.key("G")
 	if rule := floorRuleRow(t, p); strings.Contains(rule, "┴") {
 		t.Fatalf("the last row of a block joined the floor: %q\n%s", rule, p.dump())
 	}
 }
 
-// floorRuleRow is the rule that closes the conversation: the lowest row on the
-// pane that is one, since the status bar sits under it.
+// floorRuleRow is the lowest rule on the pane; the status bar sits under it.
 func floorRuleRow(t *testing.T, p *adornPane) string {
 	t.Helper()
 	rows := p.rows()

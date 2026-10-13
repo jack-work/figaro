@@ -9,20 +9,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A DISCONNECT PAINTS AGAINST WHATEVER IS STILL PAINTING.
-//
-// listen and stream both end in a select whose arms tear the renderer down --
-// abandon, finishTurn -- while the spinner goroutine, the notification handler
-// and the pacer's trailing render are all still live: they are stopped by
-// defers that have not fired yet. mu is documented as serializing EVERY
-// renderer entry point, and those last calls were the ones outside it.
-//
-// Run with -race. CANARY: drop the mu around abandon below and this reports
-// DATA RACE on every run. The prober calls apply() -- the notification
-// handler's entry point, which always paints -- because tick() alone
-// early-returns when nothing is animating, and a tick-only prober sees
-// nothing. That first version passed with the lock removed, which is a test
-// that proves nothing.
+// Teardown runs while the spinner, the notification handler and the pacer's
+// trailing render are still live, so it must hold the render lock. Run with -race.
 func TestTeardownDoesNotRaceTheRenderer(t *testing.T) {
 	set := renderSettings{listen: true}
 	status := newSessionStatus("aria", time.Now())
@@ -46,9 +34,8 @@ func TestTeardownDoesNotRaceTheRenderer(t *testing.T) {
 				return
 			default:
 			}
-			// apply() is the notification handler's entry point and always
-			// paints; tick() early-returns when nothing is animating, which
-			// is why a tick-only prober cannot see this.
+			// tick() early-returns when nothing animates; apply()
+			// always paints.
 			mu.Lock()
 			lt.apply(readBefore(transcriptHistory(20), recentCursor, transcriptPageSize))
 			lt.tick()
@@ -56,7 +43,6 @@ func TestTeardownDoesNotRaceTheRenderer(t *testing.T) {
 		}
 	}()
 
-	// The teardown, exactly as the select arm runs it.
 	mu.Lock()
 	lt.abandon(turnStatusDisconnected)
 	mu.Unlock()

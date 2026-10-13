@@ -1,44 +1,8 @@
 //go:build tmux
 
-// Package cli: END-TO-END TERMINAL TESTS.
-//
-// # WHY THIS FILE EXISTS
-//
-// Every unit test in this package drives figaro's *model*. None of them drive a
-// *terminal*. On 2026-07-25 that gap shipped eight separate defects that a
-// passing suite certified as working, including two the user hit on the very
-// first command he ran:
-//
-//   - the status footer printed TWICE per exchange;
-//   - the process never exited, and Ctrl-C, Ctrl-D, q and Esc were all dead
-//     keys (a non-reentrant mutex was locked twice on the turn-done path,
-//     wedging the notify pump *and* the input loop).
-//
-// A model test cannot see either. The first is a property of what reaches
-// scrollback; the second is a property of a real process with a real PTY.
-//
-// THE STANDING RULE, learned the expensive way:
-//
-//	EVERY TEST DOUBLE THAT DIVERGED FROM PRODUCTION DIVERGED BY BEING TIDIER
-//	THAN REALITY.
-//
-// Whole strings instead of keystrokes. Counts instead of byte budgets. Unique
-// LTs instead of shared turn ids. A fake paginator instead of the real one.
-// Freeze without a preceding Open. If your harness cannot express the failure,
-// it will certify its absence.
-//
-// RUNNING
+// End-to-end terminal tests against a real provider; FIGARO_E2E_BIN reuses a build.
 //
 //	go test -tags tmux ./internal/cli/ -run TestE2E -v
-//
-// Requires: tmux on PATH, a working provider credential, and a binary. By
-// default the test builds one; set FIGARO_E2E_BIN to reuse a nix build:
-//
-//	P=$(nix build .#default --no-link --print-out-paths)
-//	FIGARO_E2E_BIN=$P/bin/figaro go test -tags tmux ./internal/cli/ -run TestE2E -v
-//
-// The tag keeps it out of the default suite: it costs real provider calls and
-// wall-clock. It is not optional for UI changes: see the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
 package cli
 
 import (
@@ -50,8 +14,6 @@ import (
 	"testing"
 	"time"
 )
-
-// ---------------------------------------------------------------- harness ---
 
 type pane struct {
 	t    *testing.T
@@ -69,13 +31,7 @@ func tmuxRun(t *testing.T, args ...string) string {
 	return string(out)
 }
 
-// newPane starts an isolated figaro in a real PTY of a known size.
-//
-// GEOMETRY TRAP, and it cost this project a night: `tmux new-session -y N`
-// yields pane_height N-1, because the status bar takes a row. Every "height 1"
-// measurement in the original bug hunt was actually taken at height ZERO, a
-// state no user can reach, and produced a bug report for a defect that did not
-// exist at any reachable size. ALWAYS assert pane_height, never assume -y.
+// `tmux new-session -y N` gives pane height N-1: assert pane_height, never assume -y.
 func newPane(t *testing.T, cols, rows int) *pane {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -89,7 +45,6 @@ func newPane(t *testing.T, cols, rows int) *pane {
 			t.Fatalf("build figaro: %v: %s", err, out)
 		}
 	}
-	// Isolated store; never the user's real one.
 	dir := t.TempDir()
 	for _, s := range []string{"state", "run", "config"} {
 		if err := os.MkdirAll(filepath.Join(dir, s), 0o700); err != nil {
@@ -107,8 +62,7 @@ func newPane(t *testing.T, cols, rows int) *pane {
 	tmuxRun(t, "new-session", "-d", "-s", p.sess, "-x", fmt.Sprint(cols), "-y", fmt.Sprint(rows), env)
 	t.Cleanup(func() {
 		tmuxRun(t, "kill-session", "-t", p.sess)
-		// Reap the isolated daemon: an e2e that leaves one running is how 230
-		// orphaned figaros accumulated and put the machine into memory stall.
+		// kill-session leaves the isolated daemon running.
 		_ = exec.Command(p.bin, "stop").Run()
 	})
 	time.Sleep(500 * time.Millisecond)
@@ -127,10 +81,7 @@ func (p *pane) send(keys ...string) {
 	tmuxRun(p.t, append([]string{"send-keys", "-t", p.sess}, keys...)...)
 }
 
-// typeText sends ONE CHARACTER PER CALL, with a gap. A single send-keys with a
-// whole string arrives as one read and appends fine: it is the one input
-// pattern a real user never produces, and testing that way hid a composer that
-// discarded every character typed before its trigger key.
+// typeText sends one character per read, the way a human types.
 func (p *pane) typeText(s string) {
 	p.t.Helper()
 	for _, r := range s {
@@ -144,8 +95,7 @@ func (p *pane) run(prompt string) {
 	p.send(fmt.Sprintf("%s send -- %q", p.bin, prompt), "Enter")
 }
 
-// scrollback returns the FULL history, not the visible pane. Frames that scroll
-// off are preserved verbatim, which is how a sub-second race gets photographed.
+// scrollback keeps frames that scrolled off the pane.
 func (p *pane) scrollback() string {
 	return tmuxRun(p.t, "capture-pane", "-t", p.sess, "-p", "-S", "-")
 }
@@ -154,12 +104,10 @@ func (p *pane) visible() string {
 	return tmuxRun(p.t, "capture-pane", "-t", p.sess, "-p")
 }
 
-// command reports what the pane is running: "bash" once figaro has exited.
 func (p *pane) command() string {
 	return strings.TrimSpace(tmuxRun(p.t, "list-panes", "-t", p.sess, "-F", "#{pane_current_command}"))
 }
 
-// waitExit polls for figaro to exit ON ITS OWN. No keypress.
 func (p *pane) waitExit(d time.Duration) bool {
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
@@ -171,17 +119,12 @@ func (p *pane) waitExit(d time.Duration) bool {
 	return false
 }
 
-// inPager reports whether the view auto-promoted to the transcript. GATE EVERY
-// ABSENCE ON THIS: content missing from a pager tail window is not content
-// missing from the render, and that confusion produced two false bug reports.
+// inPager: an absence inside a pager is not an absence.
 func (p *pane) inPager() bool {
 	v := p.visible()
 	return strings.Contains(v, "? help") || strings.Contains(v, "! status")
 }
 
-// ------------------------------------------------------------------ tests ---
-
-// The first command anyone runs. Guards the two defects the user hit.
 func TestE2E_SimpleTurnExitsWithOneFooter(t *testing.T) {
 	p := newPane(t, 100, 30)
 	if h := p.height(); h != 29 {
@@ -204,8 +147,6 @@ func TestE2E_SimpleTurnExitsWithOneFooter(t *testing.T) {
 	}
 }
 
-// Ctrl-C, Ctrl-D and q must all end the process. Each was dead under the
-// deadlock, and no unit test could observe it.
 func TestE2E_ExitKeysWork(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -232,9 +173,7 @@ func TestE2E_ExitKeysWork(t *testing.T) {
 	}
 }
 
-// The naive user types without knowing any trigger key. Every printable
-// character must compose: including j/d/i/q/u/k/g, which were pager openers
-// and silently swallowed the beginning of the sentence.
+// Typing without a trigger key composes; pager letters must not swallow it.
 func TestE2E_NaiveTypingComposesASteer(t *testing.T) {
 	p := newPane(t, 100, 40)
 	p.run("use bash to sleep 30 then say NAIVE")

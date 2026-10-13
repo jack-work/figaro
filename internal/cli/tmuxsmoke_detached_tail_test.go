@@ -1,39 +1,8 @@
 package cli
 
-// ---------------------------------------------------------------------------
-// BUG B in a real terminal: the frozen detached tail.
-//
-// The bug, as the user measured it: with a tool streaming, scroll ONE notch
-// away from the live tail and the bottom block stops moving: detached at
-// tick-10, still tick-10 eight seconds later; `G` jumps to tick-34.
-//
-// It is a two-halved property and a fix that gets only one half is not a fix:
-//
-//  1. the bottom block must ADVANCE while detached, and
-//  2. THE SCREEN ABOVE MUST NOT MOVE while it advances.
-//
-// The careless fix: re-derive the whole window every frame while detached -
-// passes (1) and fails (2): the tail window slides, and the reader's page
-// scrolls under them. So this case hashes the rows above the viewport's last
-// content row and requires them BYTE-IDENTICAL across the same interval.
-//
-// WHY IT CANNOT BE A UNIT TEST. It can, and there is one
-// (TestDetachedTailAdvancesAndScreenHoldsStill). What that one cannot do is
-// drive the real key path, the real frame pacer, the real daemon's streaming
-// tool output and the real pty's scroll region: which is where every
-// "certified green, broken in the user's shell" bug in this repo has lived.
-//
-// A/B IT: the numbers only mean something as a pair:
-//
-//	FIGARO_TMUX_SMOKE=1 FIGARO_SMOKE_BIN=/tmp/<id>/control \
-//	  go test ./internal/cli -run TestSmoke_DetachedTail -v   # must FAIL
-//	FIGARO_TMUX_SMOKE=1 FIGARO_SMOKE_BIN=/tmp/<id>/head \
-//	  go test ./internal/cli -run TestSmoke_DetachedTail -v   # must PASS
-//
-// Trap 11: build both by ABSOLUTE PATH and quote each md5: `tmux
-// new-session -e PATH=…` is silently ignored, so an A/B that relies on PATH
-// runs the same binary twice and reports a fix as having no effect.
-// ---------------------------------------------------------------------------
+// Detached one notch from a streaming tool, the bottom block advances and the
+// rows above it stay byte-identical. For an A/B, pass each binary by absolute
+// path in FIGARO_SMOKE_BIN: `tmux new-session -e PATH=` is silently ignored.
 
 import (
 	"crypto/md5"
@@ -47,9 +16,7 @@ import (
 	"time"
 )
 
-// tickRe finds the highest tick-NNN the streaming tool has printed. The tool
-// prints one per second, so the number IS the clock: which is what makes
-// "did the bottom advance" a measurement rather than an impression.
+// The tool prints one tick per second, so the highest tick is the clock.
 var tickRe = regexp.MustCompile(`tick-(\d+)`)
 
 func highestTick(capture string) int {
@@ -62,10 +29,7 @@ func highestTick(capture string) int {
 	return best
 }
 
-// liveBlockRow is the pane row the streaming tool block starts on: the
-// boundary between "the screen above", which must hold still, and the live
-// region, which must move. -1 when the block is not on screen at all, which is
-// the vacuous measurement this case must never make.
+// liveBlockRow is -1 when the block is off screen, which makes the measurement vacuous.
 func liveBlockRow(capture string) int {
 	for i, ln := range strings.Split(strings.TrimRight(capture, "\n"), "\n") {
 		if strings.Contains(ln, "bash for i in") {
@@ -75,9 +39,6 @@ func liveBlockRow(capture string) int {
 	return -1
 }
 
-// contentHash fingerprints every row above the live block: the part of the
-// screen that must be byte-identical across the interval. The footer is below
-// it (it carries a clock), and so is every tick.
 func contentHash(capture string, boundary int) (string, string) {
 	rows := strings.Split(strings.TrimRight(capture, "\n"), "\n")
 	if boundary < 0 || boundary > len(rows) {
@@ -87,12 +48,8 @@ func contentHash(capture string, boundary int) (string, string) {
 	return fmt.Sprintf("%x", md5.Sum([]byte(body))), body
 }
 
-// useCopilotTerra points the ISOLATED config at copilot/gpt-5.6-terra. It
-// writes only inside the smoke store's own config copy: the real config is
-// read, never written (smokeStore's rule).
-//
-// The choice is deliberate rather than incidental: this case needs a model that
-// will run one bash command verbatim and then stop, for a minute, cheaply.
+// useCopilotTerra edits only the smoke store's config copy; the case needs a
+// model that runs one bash command verbatim and then stops.
 func useCopilotTerra(t *testing.T, env []string) {
 	t.Helper()
 	dir := ""
@@ -126,20 +83,14 @@ func TestSmoke_DetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 	t.Logf("binary under test: %s", strings.TrimSpace(string(sum)))
 
 	p := newPane(t, env, bin, 100, 30)
-	// Print the identity IN THE PANE too: the report quotes what the terminal
-	// saw, not what the test process believed it launched.
 	p.send("md5sum " + bin)
 	p.key("Enter")
 
-	// A tool that streams for a minute, one line per second. `figaro send`
-	// auto-promotes to the pager when the live region overflows the viewport,
-	// which this does within a few seconds.
 	p.startTurn("run exactly this bash command and nothing else, then say TICKSDONE: " +
 		"for i in $(seq 1 90); do echo tick-$i; sleep 1; done")
 
-	// Wait for the ticks to be flowing, then open the pager by hand. (The
-	// auto-promotion does not fire here: a tool block is clipped to its last
-	// ten lines, so a streaming tool never overflows the viewport on its own.)
+	// A tool block is clipped to its last ten lines, so a streaming tool never
+	// promotes the pager on its own.
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(time.Second)
@@ -157,9 +108,7 @@ func TestSmoke_DetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 		decline(t, "Ctrl-T did not open the pager:\n%s", vis)
 	}
 
-	// DETACH BY ONE NOTCH. One is the whole point: the tail stays visible, so
-	// there is something to watch. Scroll far away and the ticks leave the
-	// screen entirely, and comparing nothing to nothing PASSES.
+	// One notch keeps the tail visible; further and nothing is compared to nothing.
 	p.key("Up")
 	time.Sleep(1500 * time.Millisecond)
 
@@ -200,8 +149,6 @@ func TestSmoke_DetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 			body0, body1)
 	}
 
-	// And re-attaching must not jump: the reader was already seeing the truth.
-	// (On the frozen build `G` leaps forward: that leap IS the bug's signature.)
 	p.key("G")
 	time.Sleep(1500 * time.Millisecond)
 	tick2 := highestTick(p.visible())

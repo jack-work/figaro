@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The fork bomb, and its seatbelt. ensureAngelus re-execs os.Executable(),
+// ensureAngelus re-execs os.Executable(); from a test binary that is a fork bomb.
 
 func TestIsTestBinary(t *testing.T) {
 	cases := []struct {
@@ -20,8 +20,6 @@ func TestIsTestBinary(t *testing.T) {
 		{"/nix/store/abc-figaro-0.15.4/bin/figaro", false},
 		{"/home/gluck/.nix-profile/bin/fig", false},
 		{"/var/tmp/x/figaro", false},
-		// Not a suffix match on the whole path: a figaro living under a
-		// directory called something.test is still figaro.
 		{"/home/gluck/some.test/figaro", false},
 	}
 	for _, tc := range cases {
@@ -31,10 +29,7 @@ func TestIsTestBinary(t *testing.T) {
 	}
 }
 
-// TestRefuseSelfSpawnFromTestBinary is the canary for the guard itself: the
-// running binary IS a test binary, so the real os.Executable() must trip it.
 func TestRefuseSelfSpawnFromTestBinary(t *testing.T) {
-	// Isolate the test-binary branch from the env branch: the standing test
 	t.Setenv("FIGARO_NO_SELF_SPAWN", "")
 	exe, err := os.Executable()
 	if err != nil {
@@ -68,8 +63,6 @@ func TestRefuseSelfSpawnFromTestBinary(t *testing.T) {
 	}
 }
 
-// TestRefuseSelfSpawnHonoursTheEnvSwitch covers harnesses whose binary is
-// not named *.test: benchmarks under a scope, fuzzers, CI runners.
 func TestRefuseSelfSpawnHonoursTheEnvSwitch(t *testing.T) {
 	t.Setenv("FIGARO_NO_SELF_SPAWN", "1")
 	var exited bool
@@ -84,18 +77,13 @@ func TestRefuseSelfSpawnHonoursTheEnvSwitch(t *testing.T) {
 	}
 }
 
-// TestRealBinaryStillSpawns guards the other direction: the guard must not
-// break the actual product. A figaro on a normal path passes through.
 func TestRealBinaryStillSpawns(t *testing.T) {
-	// Hermetic against the harness: the standing test recipe exports
-	// FIGARO_NO_SELF_SPAWN=1, which would refuse every path by design.
 	t.Setenv("FIGARO_NO_SELF_SPAWN", "")
 	if _, exited := captureExit(t, func() { refuseSelfSpawn("/nix/store/abc-figaro/bin/figaro") }); exited {
 		t.Error("a real figaro path must not be refused")
 	}
 }
 
-// captureStderr runs fn with os.Stderr redirected to a pipe and returns
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -113,7 +101,7 @@ func captureStderr(t *testing.T, fn func()) string {
 		done <- string(b)
 	}()
 
-	fn() // captureExit recovers inside, so this returns normally
+	fn()
 
 	os.Stderr = prev
 	stderrw = prevStderrw
@@ -123,7 +111,6 @@ func captureStderr(t *testing.T, fn func()) string {
 	return out
 }
 
-// TestMain is the second cut of the same wire, and it is deliberate
 func TestMain(m *testing.M) {
 	if os.Getenv("_FIGARO_DAEMON") == "1" {
 		os.Stderr.WriteString(
@@ -133,9 +120,7 @@ func TestMain(m *testing.M) {
 		os.Exit(3)
 	}
 	code := m.Run()
-	// The smoke ledger is read HERE because a case's Cleanup has not run until
-	// m.Run returns. It prints what participated and enforces
-	// FIGARO_TMUX_SMOKE_MIN_RAN; with no suite attempted it says nothing.
+	// A case's Cleanup has not run until m.Run returns.
 	if !smokeParticipation() && code == 0 {
 		code = 1
 	}

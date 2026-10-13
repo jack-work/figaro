@@ -8,15 +8,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// THE SEAM, MEASURED IN A TERMINAL.
-//
-// The pinned header is the block's own first two rows, so the row where it
-// takes over and the row where it lets go must paint the same two lines. The
-// shipped bug this pins: the header held the question's TEXT only, released
-// while the heading was still above the pane, and a multi-line question spent
-// its first rows of scroll with nobody's name on screen -- then the heading
-// jumped back in. A unit test on the composed rows had certified both states
-// as correct; the defect was that one followed the other.
+// The pinned header is the block's own first two rows, so taking over and
+// letting go paint the same two lines.
 func TestStickySeamPTY(t *testing.T) {
 	if testing.Short() {
 		t.Skip("drives replay through tmux")
@@ -42,7 +35,6 @@ func TestStickySeamPTY(t *testing.T) {
 	if !strings.HasPrefix(top[0], "> Gluck") || !strings.Contains(top[1], "REMINDER (figla)") {
 		t.Fatalf("the question does not open the turn: %s", p.dump())
 	}
-	// Its own heading, and the first line under it with nothing between.
 	want := strings.TrimRight(top[1], " ")
 
 	for step := 1; step <= 6; step++ {

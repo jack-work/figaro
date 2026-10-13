@@ -11,22 +11,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Replay into a real terminal.
-//
-// vtScreen is a model, and a model only knows the bugs its author thought of.
-// This test replays the pager's actual escape stream into tmux, a real,
-// conservative VT implementation, and compares what it draws against what the
-// pager believes it drew.
-//
-// It has already earned its place. The suffix-update path originally emitted
-// the tail and THEN erased to end of line; because the pager runs with autowrap
-// off, writing the last column leaves the cursor ON it, so that erase wiped the
-// character just written. The model at the time let the cursor run past the
-// margin and saw nothing wrong. tmux disagreed, and was right.
-//
-// Skipped when tmux is unavailable or under -short.
-// ---------------------------------------------------------------------------
+// The pager's escape stream replayed into tmux must draw what the pager
+// believes it drew. With autowrap off, writing the last column leaves the
+// cursor on it, so an erase-to-end-of-line after the write wipes that cell.
 
 func TestTranscriptPaint_RealTerminalReplay(t *testing.T) {
 	if testing.Short() {
@@ -62,8 +49,7 @@ func TestTranscriptPaint_RealTerminalReplay(t *testing.T) {
 	}
 }
 
-// recordScrollSession writes a scripted pager session's escape stream to path
-// and returns the screen the pager believes it left, plus the byte count.
+// recordScrollSession returns the screen the pager believes it left and the byte count.
 func recordScrollSession(t *testing.T, path string) ([]string, int) {
 	t.Helper()
 	f, err := os.Create(path)
@@ -79,15 +65,15 @@ func recordScrollSession(t *testing.T, path string) ([]string, int) {
 	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(f, 100, 40, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
 	tr.enter()
-	for range 37 { // long climb: every step is a one-row shift
+	for range 37 {
 		tr.scrollBy(-1)
 	}
-	for range 9 { // back down in twos
+	for range 9 {
 		tr.scrollBy(2)
 	}
-	tr.scrollBy(-13) // a jump too big to shift: exercises the fallback
+	tr.scrollBy(-13) // too big to shift: the full-repaint fallback
 	tr.matchQuery = "transcript"
-	tr.render() // reverse-video highlights
+	tr.render()
 	tr.scrollBy(-1)
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
@@ -103,7 +89,6 @@ func recordScrollSession(t *testing.T, path string) ([]string, int) {
 	return rows, int(info.Size())
 }
 
-// visibleText strips ANSI escapes, leaving the characters a viewer sees.
 func visibleText(row string) string {
 	var b strings.Builder
 	for i := 0; i < len(row); {
@@ -117,22 +102,19 @@ func visibleText(row string) string {
 	return b.String()
 }
 
-// tmuxReplay cats path inside a tmux pane of the given size and returns what
-// the pane shows. The pane is one row taller than requested and the status line
-// is switched off, which is how tmux ends up with exactly h usable rows.
+// tmuxReplay asks for h+1 rows with the status line off, which gives h usable rows.
 func tmuxReplay(t *testing.T, dir, path string, w, h int) []string {
 	t.Helper()
 	socket := filepath.Join(dir, "tmux.sock")
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command("tmux", append([]string{"-S", socket}, args...)...)
-		cmd.Env = append(os.Environ(), "TMUX=") // never inherit an outer session
+		cmd.Env = append(os.Environ(), "TMUX=")
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
 	defer run("kill-server")
 
-	// `sleep` keeps the pane alive after the replay: once the shell prompt
-	// returns it lands on top of the final row and corrupts the comparison.
+	// A returning shell prompt would land on the final row.
 	if out, err := run("new-session", "-d", "-x", itoaTest(w), "-y", itoaTest(h+1),
 		"sh", "-c", "cat "+path+"; sleep 60"); err != nil {
 		t.Skipf("tmux new-session failed (%v): %s", err, out)
@@ -141,7 +123,6 @@ func tmuxReplay(t *testing.T, dir, path string, w, h int) []string {
 		t.Skipf("tmux set status off failed (%v): %s", err, out)
 	}
 
-	// Poll until the pane stops changing: replay is asynchronous.
 	var last string
 	stable := 0
 	deadline := time.Now().Add(15 * time.Second)

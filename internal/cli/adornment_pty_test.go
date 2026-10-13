@@ -18,17 +18,8 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// THE ADORNMENT, IN A REAL TERMINAL.
-//
-// Everything else that tests the form-delta adornment tests the pager's
-// model: what it decided to paint. The adornment is a paint. Its glyphs sit
-// in the last column, in the margin the selection bar wants, and under a
-// wash that re-emits itself after every reset the row carries, so the only
-// instrument that can settle a claim about them is a terminal.
-//
-// The binary is driven from a synthetic tape (`figaro replay`), which means
-// no daemon, no provider and no store: the aria is a fixture, and the same
-// keystrokes paint the same screen every run.
+// The form-delta adornment in a real pty, driven from a synthetic tape:
+// no daemon, provider or store.
 
 const (
 	adornCols = 100
@@ -38,22 +29,17 @@ const (
 	adornAsk  = "how does the hall sound"
 	adornCmd  = "measure"
 
-	// The prose is long enough to WRAP, because prose is the one layout
-	// that tacks its marker onto its last row rather than its first, and a
-	// one-row block cannot tell the two apart.
+	// Long enough to wrap: prose marks its last row, and a one-row block
+	// cannot tell.
 	adornProse     = "the hall sounds square, which is what a measurement says about a room whose four walls agree with one another about the length of a second"
 	adornProseHead = "the hall sounds square"
 	adornProseTail = "length of a second"
 )
 
-// adornKeep is the offset of a frame that never plays. The replay's pusher
-// waits for it, which is what keeps the session up and taking keys; without
-// it the tape runs out and the renderer leaves through its end-of-stream
-// door mid-test.
+// adornKeep is a frame that never plays; the replay waits for it and stays up.
 const adornKeep = 3600.0
 
-// The keys each block's deltas carry. They are distinct words, and none of
-// them occurs in the aria's prose: a row is located on screen by its text.
+// None of these words occurs in the prose: rows are located by their text.
 var (
 	adornAskKeys   = []string{"mantra", "mode"}
 	adornProseKeys = []string{"gain", "tone"}
@@ -73,9 +59,7 @@ func TestAdornmentPTY(t *testing.T) {
 	}
 	p := newAdornPane(t)
 
-	// The pager owns the selection, and a pager key is what promotes to it.
-	// Esc then leaves it up with nothing selected, which is the state the
-	// collapsed claim is about.
+	// A pager key promotes; Esc leaves the pager up with nothing selected.
 	p.key("C-n")
 	p.key("Escape")
 
@@ -88,15 +72,10 @@ func TestAdornmentPTY(t *testing.T) {
 	t.Run("selected-block-keeps-its-marker", func(t *testing.T) { adornSelectedMarker(t, p) })
 }
 
-// A SELECTED BLOCK STILL WEARS ITS MARKER. This is the claim a terminal model
-// cannot make: the wash used to close with an erase-to-end-of-line, and with
-// autowrap off the cursor still stands on the last column it wrote, so the
-// erase cleared the glyph it had just put there. Only a real pane shows it.
+// A selected block keeps its marker: with autowrap off the cursor stands on
+// the last column it wrote, so an erase-to-end-of-line there clears the glyph.
 func adornSelectedMarker(t *testing.T, p *adornPane) {
-	// Back to the collapsed state, with the prose block selected: its marker
-	// rides its last row, which is the row the selection washes. The tool is
-	// the last block, so prose is one step BACK from it.
-	p.key("Enter") // close what the previous case opened
+	p.key("Enter")
 	p.key("C-p")
 	rows, wash := p.rows(), p.paneWashed()
 	i := p.only(t, rows, adornProseTail)
@@ -108,9 +87,8 @@ func adornSelectedMarker(t *testing.T, p *adornPane) {
 	}
 }
 
-// Collapsed, every adorned block wears one Δ and it stands in the LAST
-// column: a block that carries state says so in one column until it is
-// asked. Prose wears it on its last row, the other two on their first.
+// Collapsed, every adorned block wears one Δ in the last column; prose on its
+// last row, the others on their first.
 func adornCollapsedGutter(t *testing.T, p *adornPane) {
 	rows := p.rows()
 	for _, want := range []string{"> input", adornProseTail, "$ " + adornCmd} {
@@ -127,9 +105,7 @@ func adornCollapsedGutter(t *testing.T, p *adornPane) {
 	if head := p.only(t, rows, adornProseHead); strings.HasSuffix(rows[head], deltaGlyph) {
 		t.Errorf("prose wears its marker on row %d, its FIRST: %q", head, rows[head])
 	}
-	// An absence is only an absence when the whole aria is on screen: the
-	// question and the tool's last output line are both in the capture, so
-	// nothing is hiding above or below the window.
+	// An absence counts only with the whole aria on screen.
 	p.only(t, rows, adornAsk)
 	p.only(t, rows, "six")
 	for _, key := range adornEveryKey() {
@@ -139,11 +115,10 @@ func adornCollapsedGutter(t *testing.T, p *adornPane) {
 	}
 }
 
-// Enter on a selected block opens one row per delta key, and the snake
-// appears: the head parks at the anchor while the selection is on the block
-// itself.
+// Enter opens one row per delta key; the head parks at the anchor while the
+// selection is on the block.
 func adornInquiryOpens(t *testing.T, p *adornPane) {
-	p.key("C-n") // the question is the first block
+	p.key("C-n")
 	p.key("Enter")
 
 	rows := p.rows()
@@ -153,8 +128,6 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 			t.Errorf("delta row %q shows no transition: %q", key, rows[i])
 		}
 	}
-	// The anchor is the blank row between the question and its rows, and it
-	// holds the parked head.
 	anchor := p.onlyBare(t, rows, deltaGlyph)
 	if first := p.only(t, rows, adornAskKeys[0]); first != anchor+1 {
 		t.Errorf("the first delta row is at %d, want %d (right under the anchor)\n%s",
@@ -167,15 +140,11 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 				key, col, snakeBody)
 		}
 	}
-	// The question ENCLOSES its deltas: the rule that closes the seam is the
-	// corner the snake runs down to.
 	last := p.only(t, rows, adornAskKeys[len(adornAskKeys)-1])
 	if !strings.HasPrefix(clean(rows[last+1]), snakeClose) {
 		t.Errorf("the rule under the list does not close on %q: %q", snakeClose, clean(rows[last+1]))
 	}
 
-	// The wash covers the whole selected block, chrome included, and the
-	// parked head stays visible on it.
 	wash := p.paneWashed()
 	if !wash[p.only(t, rows, adornAsk)] {
 		t.Errorf("the selected question is not washed\n%s", p.dump())
@@ -188,16 +157,13 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 	}
 }
 
-// ^N and ^P walk the rows ONE AT A TIME. Entering from above lands on the
-// first row, from below on the last, and stepping up past the first row
-// selects the block the rows explain.
+// ^N and ^P walk the rows one at a time and leave onto the adjacent block.
 func adornRowsWalk(t *testing.T, p *adornPane) {
 	p.key("C-n")
 	adornFocus(t, p, adornAskKeys[0], "entering the list from above")
 	p.key("C-n")
 	adornFocus(t, p, adornAskKeys[1], "the second step")
 
-	// Out of the list, onto the block below it, then back in from below.
 	p.key("C-n")
 	wash := p.paneWashed()
 	if !wash[p.only(t, p.rows(), adornProseHead)] {
@@ -206,7 +172,6 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	p.key("C-p")
 	adornFocus(t, p, adornAskKeys[1], "entering the list from below")
 
-	// Up through the rows and out of the top, onto the parent.
 	p.key("C-p")
 	adornFocus(t, p, adornAskKeys[0], "stepping up inside the list")
 	p.key("C-p")
@@ -214,9 +179,7 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	if !wash[p.only(t, rows, adornAsk)] {
 		t.Errorf("^P past the first row did not select the parent block\n%s", p.dump())
 	}
-	// THE ADORNMENT IS PART OF THE BLOCK, so the block's wash covers its rows
-	// whether the cursor is on the block or inside its list. What changes is
-	// where the head sits, and nothing else.
+	// The block's wash covers its delta rows wherever the head sits.
 	for _, key := range adornAskKeys {
 		i := p.only(t, rows, key)
 		if !wash[i] {
@@ -228,10 +191,9 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	}
 }
 
-// Enter again closes the list, and the selection lands back on the block: the
-// gesture acts on the block wherever the cursor stands inside its list.
+// Enter closes the list from any row in it and selects the block.
 func adornCloseLands(t *testing.T, p *adornPane) {
-	p.key("C-n") // into the list, so the close has somewhere to land FROM
+	p.key("C-n")
 	adornFocus(t, p, adornAskKeys[0], "before closing")
 	p.key("Enter")
 	rows := p.rows()
@@ -245,12 +207,11 @@ func adornCloseLands(t *testing.T, p *adornPane) {
 	}
 }
 
-// A tool hangs its snake off a connector row under its output: Δ at the
-// anchor while the selection is on the block, ╭ once the cursor is in the
-// list, and the elbow turns out of the gutter the tool widget draws.
+// A tool's connector row reads Δ with the block selected and ╭ with the cursor in
+// the list.
 func adornToolSnake(t *testing.T, p *adornPane) {
-	p.key("C-n") // prose
-	p.key("C-n") // tool
+	p.key("C-n")
+	p.key("C-n")
 	p.key("Enter")
 
 	rows := p.rows()
@@ -273,18 +234,17 @@ func adornToolSnake(t *testing.T, p *adornPane) {
 	}
 	adornFocus(t, p, adornToolKeys[0], "the tool's first row")
 
-	// The head is drawn INTO the washed row, and the wash does not eat it.
 	rows = p.rows()
 	i := p.only(t, rows, adornToolKeys[0])
 	if !p.paneWashed()[i] || !strings.Contains(rows[i], deltaGlyph) {
 		t.Errorf("the focused row lost its head or its wash: %q", rows[i])
 	}
 
-	p.key("C-p")   // back to the block
-	p.key("Enter") // and closed
+	p.key("C-p")
+	p.key("Enter")
 }
 
-// e is the tool's body and NOTHING else; Enter is both halves at once.
+// e opens only the tool's body; Enter opens body and list.
 func adornBodyAndList(t *testing.T, p *adornPane) {
 	p.key("e")
 	rows := p.rows()
@@ -297,7 +257,7 @@ func adornBodyAndList(t *testing.T, p *adornPane) {
 		}
 	}
 
-	p.key("e") // closed again, so Enter opens both from the same place
+	p.key("e")
 	p.key("Enter")
 	rows = p.rows()
 	if !hasRow(rows, "bash") {
@@ -310,12 +270,7 @@ func adornBodyAndList(t *testing.T, p *adornPane) {
 	}
 }
 
-// adornFocus asserts the cursor stands on the row holding key: washed, with
-// the snake's head in its spine column, and alone in both.
-// adornFocus: the cursor stands on key's row. THE HEAD SAYS WHICH ROW, THE
-// WASH SAYS WHICH BLOCK: a delta row is part of the block it explains, so the
-// block stays lifted whole and only the Δ moves (Gluck, 2026-09-16: "the
-// background highlight of the parent should be retained").
+// adornFocus: the head says which row, the wash says which block.
 func adornFocus(t *testing.T, p *adornPane, key, what string) {
 	t.Helper()
 	wash, plain := p.paneWashed(), p.rows()
@@ -334,12 +289,7 @@ func adornFocus(t *testing.T, p *adornPane, key, what string) {
 	}
 }
 
-// ------------------------------------------------------------------ pane ---
-
-// adornPane is a figaro replaying the fixture tape in a pty of its own, on a
-// PRIVATE tmux server: its own socket, its own config, killed on the way out.
-// A test that reaches the user's tmux server is a test that can lose his
-// session to a cleanup.
+// adornPane replays the fixture tape on a private tmux server, never the user's.
 type adornPane struct {
 	t    *testing.T
 	sock string
@@ -361,9 +311,7 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 	tapePath := filepath.Join(dir, "adorn.tape")
 	writeAdornPageTape(t, tapePath, page)
 
-	// A plain `go build` in a worktree records no revision (a worktree's
-	// .git is a file, and Go's VCS autodetection wants a directory), so the
-	// build handshake has nothing to compare. Stamp it.
+	// A worktree's .git is a file, so `go build` records no revision; stamp it.
 	bin := os.Getenv("FIGARO_E2E_BIN")
 	if bin == "" {
 		bin = filepath.Join(dir, "figaro")
@@ -392,8 +340,7 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 	p := &adornPane{t: t, sock: filepath.Join(dir, "tmux.sock"), w: adornCols, h: adornRows}
 	t.Cleanup(func() { _ = exec.Command("tmux", "-S", p.sock, "kill-server").Run() })
 
-	// -y h+1: tmux gives back h, because the status bar takes a row whether
-	// or not it is drawn. The height is read back below rather than assumed.
+	// `-y N` gives pane height N-1; the status row is taken whether or not drawn.
 	cmd := fmt.Sprintf("env FIGARO_STATE_DIR=%s/state FIGARO_RUNTIME_DIR=%s/run FIGARO_CONFIG_DIR=%s/config %s replay %s",
 		dir, dir, dir, bin, tapePath)
 	out, err := exec.Command("tmux", "-S", p.sock, "-f", conf, "new-session", "-d",
@@ -414,7 +361,7 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 func (p *adornPane) tmux(args ...string) string {
 	p.t.Helper()
 	cmd := exec.Command("tmux", append([]string{"-S", p.sock}, args...)...)
-	cmd.Env = append(os.Environ(), "TMUX=") // never speak to an outer session
+	cmd.Env = append(os.Environ(), "TMUX=")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		p.t.Fatalf("tmux %v: %v: %s", args, err, out)
@@ -428,9 +375,7 @@ func (p *adornPane) height() int {
 	return h
 }
 
-// key sends one keystroke and waits for the pane to stop moving. One key per
-// call: a whole string arrives as a single read, which is the one input
-// pattern no reader ever produces.
+// key sends one keystroke and settles; a whole string arrives as a single read.
 func (p *adornPane) key(k string) {
 	p.t.Helper()
 	if len(k) == 1 {
@@ -441,8 +386,6 @@ func (p *adornPane) key(k string) {
 	p.settle()
 }
 
-// settle polls until two captures agree. A fixed sleep is a guess about a
-// repaint, and the wrong guess reads as a bug that is not there.
 func (p *adornPane) settle() {
 	p.t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
@@ -472,8 +415,6 @@ func (p *adornPane) capture(escapes bool) string {
 	return p.tmux(args...)
 }
 
-// rows is the pane as a reader sees it; styled is the same pane with the
-// renditions left in, which is the only capture a colour claim may rest on.
 func (p *adornPane) rows() []string   { return splitPane(p.capture(false)) }
 func (p *adornPane) styled() []string { return splitPane(p.last) }
 
@@ -481,9 +422,7 @@ func splitPane(capture string) []string {
 	return strings.Split(strings.TrimRight(capture, "\n"), "\n")
 }
 
-// only is the index of the one row holding want, and a fatal error when the
-// screen holds none or several: an assertion aimed at an ambiguous row is an
-// assertion about whichever row the layout happens to put first.
+// only fails on none or several rows: an ambiguous row asserts whichever came first.
 func (p *adornPane) only(t *testing.T, rows []string, want string) int {
 	t.Helper()
 	found := -1
@@ -505,9 +444,8 @@ func (p *adornPane) dump() string {
 	return "--- pane ---\n" + p.capture(false) + "------------"
 }
 
-// onlyBare is the index of the one row whose whole content is want. The
-// collapsed marker and the parked head are the same glyph, so a row holding
-// nothing else is how the chrome row is named.
+// The collapsed marker and the parked head are the same glyph; a bare row names
+// the chrome row.
 func (p *adornPane) onlyBare(t *testing.T, rows []string, want string) int {
 	t.Helper()
 	found := -1
@@ -543,27 +481,21 @@ func countGlyph(rows []string, glyph string) int {
 	return n
 }
 
-// nodeWashes are the two selection washes as the palette spells them, read
-// once with colour forced: a test process is not a terminal, so asking term
-// in the moment would answer "" and match every row ever painted.
+// Read once with colour forced: a test process is not a terminal, and an
+// empty wash would match every row.
 var nodeWashes = func() []string {
 	defer term.SetColorMode(term.ColorAlways)()
 	return []string{term.NodeWash(false), term.NodeWash(true)}
 }()
 
-// washed reports the selection lift on a row the PAINTER produced, which
-// carries its own renditions from column zero.
+// washed is for rows the painter produced, which carry renditions from column zero.
 func washed(row string) bool {
 	return strings.Contains(row, nodeWashes[0]) || strings.Contains(row, nodeWashes[1])
 }
 
-// A TMUX CAPTURE IS A RUNNING STATE, NOT A ROW AT A TIME RENDERING.
-// `capture-pane -e` emits an escape only where the attributes CHANGE, and it
-// carries them ACROSS line boundaries: two washed rows in a row share one
-// sequence, and the second, read on its own, looks unwashed. That is how a
-// correct frame was read as a bug for half an hour. Every per-row colour claim
-// against a capture goes through paneWashed, which tracks the background in
-// force at each row's first cell from the top of the capture.
+// `capture-pane -e` emits an escape only where attributes change and carries
+// them across lines, so a row read alone can look unwashed: track the
+// background in force from the top of the capture.
 func (p *adornPane) paneWashed() []bool { return capturedWashes(p.last) }
 
 func capturedWashes(capture string) []bool {
@@ -597,8 +529,7 @@ func capturedWashes(capture string) []bool {
 	return out
 }
 
-// applyBackground folds one escape into the background in force, spelling it
-// the way the palette does so the two can be compared.
+// applyBackground spells the background the way the palette does.
 func applyBackground(bg, esc string) string {
 	if !strings.HasSuffix(esc, "m") {
 		return bg
@@ -621,10 +552,8 @@ func applyBackground(bg, esc string) string {
 	return bg
 }
 
-// clean is a captured row with its renditions dropped.
 func clean(row string) string { return visibleText(row) }
 
-// column is the display column col of a plain row.
 func column(row string, col int) string {
 	rs := []rune(row)
 	if col >= len(rs) {
@@ -632,8 +561,6 @@ func column(row string, col int) string {
 	}
 	return string(rs[col])
 }
-
-// ----------------------------------------------------------------- fixture ---
 
 func adornDelta(form, kind, value, prev string) livedoc.FormDelta {
 	d := livedoc.FormDelta{Kind: livedoc.FormKind(kind), Event: livedoc.FormSet, Form: form}
@@ -644,8 +571,7 @@ func adornDelta(form, kind, value, prev string) livedoc.FormDelta {
 	return d
 }
 
-// adornPage is the fixture: one sealed turn whose question, whose prose and
-// whose tool each carry two form deltas. Three blocks, three layouts.
+// adornPage: one sealed turn whose question, prose and tool each carry two deltas.
 func adornPage() aria.Page {
 	turn := aria.Turn{
 		ID: 1, Sealed: true, Inquiry: adornAsk,
@@ -675,10 +601,8 @@ func adornPage() aria.Page {
 	return aria.Page{Parts: []aria.TurnPart{{Turn: turn}}}
 }
 
-// writeAdornTape hand-writes the tape instead of recording one, because the
-// frame OFFSETS are the fixture: the page lands at once, and the last frame
-// is an hour out so the replay stays on screen for as long as a test drives
-// it.
+// The frame offsets are the fixture: the page lands at once and the last
+// frame is an hour out.
 func writeAdornTape(t *testing.T, path string) {
 	t.Helper()
 	writeAdornPageTape(t, path, adornPage())

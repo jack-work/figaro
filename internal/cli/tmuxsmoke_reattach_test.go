@@ -8,22 +8,6 @@ import (
 	"time"
 )
 
-// SCENARIO 4: a client that arrives while the suffix is still moving.
-//
-// The composer hands the server a settled PREFIX by reference plus a stable
-// count, and the server trusts that count instead of diffing. A reattaching
-// client is the case where that trust is most dangerous: it is served from the
-// same open frame the live client was streaming, so an over-claimed stable
-// boundary can hand it a frame the live client never saw. Nothing in the unit
-// suite can see this -- the server's node list stays correct either way.
-//
-// Three assertions, because they fail differently:
-//   a) the reattached transcript's ticks equal `figaro show`'s ticks;
-//   b) no desync recovery fired -- a desync that "recovers" would re-read the
-//      divergence away and hide it;
-//   c) the reattach happens MID-STREAM, while the boundary is being asserted
-//      rather than settled.
-
 // figCmd runs the binary under test outside the pane, against the same store.
 func figCmd(t *testing.T, env []string, bin string, args ...string) string {
 	t.Helper()
@@ -33,6 +17,9 @@ func figCmd(t *testing.T, env []string, bin string, args ...string) string {
 	return string(out)
 }
 
+// A client reattached mid-stream is served the settled prefix the server
+// trusts by count, so an over-claimed boundary hands it a frame the live
+// client never saw; the transcript must match `figaro show` with no desync.
 func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	smokeEnabled(t)
 	smokeCase(t)
@@ -42,7 +29,6 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	p.startTurn("run exactly this bash command and nothing else, then say TICKSDONE: " +
 		"for i in $(seq 1 90); do echo tick-$i; sleep 1; done")
 
-	// Wait until the suffix is genuinely moving.
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(time.Second)
@@ -55,14 +41,8 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 		decline(t, "no ticks on screen; the model did not run the command:\n%s", p.visible())
 	}
 
-	// THE LIVE VIEW MUST ADVANCE.
-	//
-	// Comparing final states cannot catch a broken changed-set: the seal path
-	// re-materializes the turn from the log, so a composer that emits nothing
-	// at all still converges to a correct transcript. Proven, not assumed --
-	// a mutant that claims every node is settled passed this test until this
-	// assertion existed. What only a live sample can see is a node that
-	// stopped moving while the tool kept writing.
+	// The seal re-materializes the turn from the log, so only a live sample can
+	// see a node that stopped moving while the tool kept writing.
 	if live >= 90 || !p.alive() {
 		decline(t, "the tool finished before a live sample could be taken (tick-%d); nothing to observe", live)
 	}
@@ -75,10 +55,7 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	}
 	live = advanced
 
-	// The aria the daemon is running this turn for.
-	// ls --json is the global escape hatch and takes no other flags; it lists
-	// the whole store, anchors included, so pick the conversation that is
-	// actually running this turn.
+	// list -j includes anchors; the conversation is the one with messages.
 	var arias []struct {
 		ID       string `json:"id"`
 		State    string `json:"state"`
@@ -99,12 +76,10 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 		decline(t, "no aria with messages in the scratch store:\n%s", raw)
 	}
 
-	// KILL THE CLIENT MID-STREAM. The daemon keeps running the turn; this is a
-	// reattach, not an interrupt, so the turn must not be cancelled.
+	// A killed client is a reattach, not an interrupt: the turn must keep running.
 	_ = exec.Command("pkill", "-9", "-f", bin+" send").Run()
 	time.Sleep(2 * time.Second)
 
-	// REATTACH while the suffix is still moving.
 	p.send(bin + " listen " + id)
 	p.key("Enter")
 	time.Sleep(3 * time.Second)
@@ -117,13 +92,11 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	p.waitIdle(120 * time.Second)
 	final := p.scrollback()
 
-	// (b) a desync recovery would re-read the divergence away.
+	// A desync recovery would re-read the divergence away.
 	if strings.Contains(strings.ToLower(final), "desync") {
 		t.Errorf("a desync recovery fired during a clean reattach; it would mask exactly the divergence this test looks for:\n%s", final)
 	}
 
-	// (a) live-vs-committed: what the reattached client rendered must be what
-	// the durable log says.
 	shown := figCmd(t, env, bin, "show", id)
 	liveTick, showTick := highestTick(final), highestTick(shown)
 	if showTick < 0 {
