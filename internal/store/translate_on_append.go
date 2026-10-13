@@ -14,9 +14,10 @@ import (
 // entry it is handed is already stamped and repaired.
 type TranslatorEncoder interface {
 	Provider() string
-	// EncodeEntry returns the wire messages and the encoder fingerprint; an
-	// entry translating to nothing returns none. source lets an encoder seed a
-	// cursor from an earlier entry.
+	// EncodeEntry returns the wire messages and the encoder fingerprint. An
+	// entry that translates to nothing returns no messages and still owns a
+	// row; one that owes no row returns no fingerprint. source lets an
+	// encoder seed a cursor from an earlier entry.
 	EncodeEntry(ariaID string, source Log[message.Message], e Entry[message.Message]) ([]json.RawMessage, string, error)
 }
 
@@ -105,8 +106,11 @@ func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Messag
 			slog.Warn("translate on append: encode", "aria", ariaID, "provider", provider, "flt", e.LT, "err", err)
 			continue
 		}
-		if len(encoded) == 0 {
+		if fingerprint == "" {
 			continue
+		}
+		if encoded == nil {
+			encoded = []json.RawMessage{}
 		}
 		hash, err := FigaroHash(e.Payload)
 		if err != nil {

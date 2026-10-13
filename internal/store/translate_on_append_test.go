@@ -298,3 +298,49 @@ func (f fakeEncoder) Provider() string { return f.name }
 func (f fakeEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) ([]json.RawMessage, string, error) {
 	return nil, "", nil
 }
+
+// emptyEncoder owes a row for every entry and fills none of them.
+type emptyEncoder struct{ owed bool }
+
+func (e emptyEncoder) Provider() string { return "anthropic" }
+func (e emptyEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) ([]json.RawMessage, string, error) {
+	if e.owed {
+		return nil, "anthropic/v1", nil
+	}
+	return nil, "", nil
+}
+
+// An entry that translates to nothing still owns a row, so coverage below the
+// watermark stays a count; one that owes no row writes none.
+func TestAnEmptyTranslationStillOwnsARow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		owed bool
+		rows int
+	}{{"owed", true, 1}, {"not owed", false, 0}} {
+		t.Run(tc.name, func(t *testing.T) {
+			be, aria := NewTestAria(t, "d", message.Patch{})
+			be.AddTranslatorEncoders(emptyEncoder{owed: tc.owed})
+			trans, err := be.OpenTranslator(aria, "anthropic")
+			if err != nil {
+				t.Fatal(err)
+			}
+			log, err := be.OpenFigIR(aria)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e := writeFigIR(t, log, "nothing on the wire")
+			got := trans.Read()
+			if len(got) != tc.rows {
+				t.Fatalf("rows=%d, want %d", len(got), tc.rows)
+			}
+			if tc.rows == 0 {
+				return
+			}
+			want, _ := FigaroHash(e.Payload)
+			if got[0].FigaroLT != e.LT || len(got[0].Payload) != 0 || got[0].Fingerprint != "anthropic/v1" || got[0].FigaroHash != want {
+				t.Fatalf("row=%+v, want an empty row stamped for %d", got[0], e.LT)
+			}
+		})
+	}
+}

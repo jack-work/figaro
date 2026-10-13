@@ -53,7 +53,9 @@ var channelSchemas = map[string]channelSchema{
 	// projection regenerates it.
 	// v3: rows carry the content hash of the IR record they translate; v2
 	// rows cannot grow one and are re-derived.
-	"translations-v2/": {version: 3, class: classDerived},
+	// v4: a record that translates to nothing owns an empty row, so coverage
+	// below the watermark is a count; v3 channels have holes by construction.
+	"translations-v2/": {version: 4, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},
 }
 

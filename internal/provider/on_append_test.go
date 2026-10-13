@@ -63,7 +63,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(encoded) == 0 {
+		if fp == "" {
 			continue
 		}
 		if _, err := appendTrans.Append(store.Entry[[]json.RawMessage]{

@@ -22,8 +22,8 @@ func NewDeriver(board Form, studies map[string]Form) *Deriver {
 	return &Deriver{form: board, studies: studies, lastStudy: map[string]uint64{}, snap: form.Snapshot{}}
 }
 
-// SeedAt positions the cursor at the newest translated entry, whose record
-// carries the cursors.
+// SeedAt positions the cursor at the newest entry whose row carries bytes
+// (SeedLT); its record carries the cursors.
 func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
@@ -59,7 +59,7 @@ func (d *Deriver) At() uint64 { return d.lastForm }
 // Next returns the message with its patches and study blocks, and the board
 // before it. Call in log order, once per entry. It does not advance the
 // cursors: an entry can encode to nothing, and its window must then ride the
-// next entry that writes a row (Commit).
+// next entry that carries bytes (Commit).
 func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message, snap form.Snapshot, translatable bool) {
 	msg = entry.Payload
 	msg.LogicalTime = entry.LT

@@ -59,7 +59,7 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(encoded) == 0 {
+		if fp == "" {
 			continue // the store writes nothing, and neither do we
 		}
 		if _, err := trans.Append(store.Entry[[]json.RawMessage]{

@@ -35,7 +35,7 @@ type CatchUpStats struct {
 	Entries   int // fig IR records in the log
 	Visited   int // records at or after the watermark
 	Encoded   int // records translated and written
-	Unwritten int // records that encoded to nothing (genesis, empty)
+	Unwritten int // records that encoded to nothing; each owns an empty row
 	// RepairedAt is the LT of a hole found below the watermark; zero when none.
 	RepairedAt uint64
 }
@@ -69,9 +69,10 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 		}
 	}
-	if watermark > 0 {
-		if store.VerifyOnce(cfg.Translator) {
-			if gap, found := firstGap(cfg, watermark); found {
+	entries, total := store.TailAfter(cfg.Log, watermark)
+	if watermark > 0 && store.VerifyOnce(cfg.Translator) {
+		if owed := total - len(entries) - genesisBelow(cfg.Log, watermark); cfg.Translator.Len() != owed {
+			if gap, _, found := firstGap(cfg, watermark); found {
 				slog.Warn("translator rows have a hole; re-deriving from the fig IR",
 					"figaro_lt", gap, "watermark", watermark)
 				if cerr := cfg.Translator.Clear(); cerr != nil {
@@ -79,11 +80,10 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 				}
 				stats.RepairedAt = gap
 				watermark = 0
+				entries, total = store.TailAfter(cfg.Log, watermark)
 			}
 		}
 	}
-
-	entries, total := store.TailAfter(cfg.Log, watermark)
 	stats.Entries = total
 	stats.Visited = len(entries)
 	if len(entries) == 0 {
@@ -91,7 +91,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	}
 
 	d := NewDeriver(cfg.Form, cfg.Studies)
-	d.SeedAt(cfg.Log, watermark)
+	d.SeedAt(cfg.Log, SeedLT(cfg.Translator))
 
 	for _, entry := range entries {
 		msg, snap, translatable := d.Next(entry)
@@ -107,10 +107,12 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 			return stats, fmt.Errorf("encode at %d: %w", entry.LT, err)
 		}
-		if len(encoded) == 0 {
-			// No row, no commit: the patches ride the next entry that writes one.
+		// An empty row commits no cursor: its window rides the next entry
+		// that carries bytes, and SeedLT resumes from there.
+		empty := len(encoded) == 0
+		if empty {
 			stats.Unwritten++
-			continue
+			encoded = []json.RawMessage{}
 		}
 		hash, herr := store.FigaroHash(entry.Payload)
 		if herr != nil {
@@ -127,49 +129,85 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 			return stats, fmt.Errorf("write row at %d: %w", entry.LT, werr)
 		}
+		if empty {
+			continue
+		}
 		d.Commit(entry, msg)
 		stats.Encoded++
 	}
 	return stats, nil
 }
 
-// The hole check runs once per log handle; the flag lives on the handle so
-// an evicted handle is not pinned by it.
+// SeedLT is the FigaroLT the deriver resumes from: the newest row that
+// carries bytes, zero when none does.
+func SeedLT(rows store.Log[[]json.RawMessage]) uint64 {
+	tail, ok := rows.PeekTail()
+	if !ok {
+		return 0
+	}
+	if len(tail.Payload) > 0 {
+		return tail.FigaroLT
+	}
+	before := tail.LT
+	for {
+		page, _ := rows.ReadPage(0, before, 32)
+		if len(page) == 0 {
+			return 0
+		}
+		for i := len(page) - 1; i >= 0; i-- {
+			if len(page[i].Payload) > 0 {
+				return page[i].FigaroLT
+			}
+		}
+		before = page[0].LT
+	}
+}
 
-// firstGap is the earliest record at or below the watermark that owed a row
-// and has none. It walks both logs and materializes neither.
-func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
-	have := make(map[uint64]struct{})
+// genesisBelow counts the untranslatable records at or below the watermark.
+// Genesis is written once, at LT 1 of the root, so the count is a lookup.
+func genesisBelow(log store.Log[message.Message], watermark uint64) int {
+	if watermark < 1 {
+		return 0
+	}
+	if at, ok := log.Lookup(1); ok && at.Payload.Role == message.RoleGenesis {
+		return 1
+	}
+	return 0
+}
+
+// firstGap is the earliest translatable record at or below the watermark
+// with no row, and the channel LT of the first row at or after it. It
+// decodes both logs once, in order, and stops at the gap.
+func firstGap(cfg CatchUpConfig, watermark uint64) (gap, cut uint64, found bool) {
+	type rowKey struct{ lt, figaroLT uint64 }
+	var rows []rowKey
 	store.ScanAll(cfg.Translator, func(r store.Entry[[]json.RawMessage]) bool {
-		have[r.FigaroLT] = struct{}{}
+		rows = append(rows, rowKey{r.LT, r.FigaroLT})
 		return true
 	})
-	d := NewDeriver(cfg.Form, cfg.Studies)
-	var (
-		gap   uint64
-		found bool
-	)
+	i := 0
 	store.ScanAll(cfg.Log, func(entry store.Entry[message.Message]) bool {
 		if entry.LT > watermark {
 			return false
 		}
-		msg, snap, translatable := d.Next(entry)
-		if !translatable {
+		if entry.Payload.Role == message.RoleGenesis {
 			return true
 		}
-		if _, ok := have[entry.LT]; ok {
-			d.Commit(entry, msg)
+		for i < len(rows) && rows[i].figaroLT < entry.LT {
+			i++
+		}
+		if i < len(rows) && rows[i].figaroLT == entry.LT {
 			return true
 		}
-		// A missing row is a hole only where one was owed.
-		sendable, _ := SendableImages(msg)
-		if encoded, err := cfg.Encode(sendable, snap); err == nil && len(encoded) > 0 {
-			gap, found = entry.LT, true
-			return false
+		gap, found = entry.LT, true
+		if i < len(rows) {
+			cut = rows[i].lt
+		} else if len(rows) > 0 {
+			cut = rows[len(rows)-1].lt + 1
 		}
-		return true
+		return false
 	})
-	return gap, found
+	return gap, cut, found
 }
 
 // TranslationRows streams the translator log one row resident at a time; a

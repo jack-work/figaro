@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -33,6 +34,31 @@ func (l *copyingBenchLog[T]) ScanRange(from, to uint64, yield func(store.Entry[T
 		one[0] = e
 		return yield(one[0])
 	})
+}
+
+// freshHandle stands in for a reopened log: the once-per-handle hole check
+// fires again while the rows underneath are shared.
+type freshHandle[T any] struct {
+	*copyingBenchLog[T]
+	verified atomic.Bool
+}
+
+func (l *freshHandle[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
+
+func copyRows(b *testing.B, from store.Log[[]json.RawMessage], skip uint64) *copyingBenchLog[[]json.RawMessage] {
+	b.Helper()
+	out := newCopyingBenchLog[[]json.RawMessage]()
+	for _, r := range from.Read() {
+		if r.FigaroLT == skip {
+			continue
+		}
+		if _, err := out.Append(store.Entry[[]json.RawMessage]{
+			FigaroLT: r.FigaroLT, Payload: r.Payload, Fingerprint: r.Fingerprint, FigaroHash: r.FigaroHash,
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	return out
 }
 
 func directBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
@@ -103,6 +129,31 @@ func BenchmarkCatchUp(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				drainCatchUp(a.catchUp(log, cache, nil, nil))
+			}
+		})
+		b.Run("ColdHandle/"+strconv.Itoa(n), func(b *testing.B) {
+			log := directBenchLog(b, n)
+			cache := newCopyingBenchLog[[]json.RawMessage]()
+			a := &Anthropic{ReminderRenderer: "tag"}
+			drainCatchUp(a.catchUp(log, cache, nil, nil))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				drainCatchUp(a.catchUp(log, &freshHandle[[]json.RawMessage]{copyingBenchLog: cache}, nil, nil))
+			}
+		})
+		b.Run("HoleNearTail/"+strconv.Itoa(n), func(b *testing.B) {
+			log := directBenchLog(b, n)
+			full := newCopyingBenchLog[[]json.RawMessage]()
+			a := &Anthropic{ReminderRenderer: "tag"}
+			drainCatchUp(a.catchUp(log, full, nil, nil))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				holed := copyRows(b, full, uint64(n-10))
+				b.StartTimer()
+				drainCatchUp(a.catchUp(log, holed, nil, nil))
 			}
 		})
 	}

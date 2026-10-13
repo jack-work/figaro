@@ -43,9 +43,10 @@ func NewOnAppend(
 
 func (o *OnAppend) Provider() string { return o.name }
 
-// EncodeEntry returns no bytes for an entry that translates to nothing. The
-// cursor is seeded from the translator's tail, never assumed, so a restart,
-// fork or catch-up in between cannot render patches twice or not at all.
+// EncodeEntry returns an empty row for an entry that translates to nothing
+// and no fingerprint for one that owes no row. The cursor is seeded from the
+// translator's tail, never assumed, so a restart, fork or catch-up in between
+// cannot render patches twice or not at all.
 func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message], e store.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	o.mu.Lock()
 	d, ok := o.at[ariaID]
@@ -58,9 +59,7 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 				o.mu.Unlock()
 				return nil, "", fmt.Errorf("seed %s cursor: %w", o.name, err)
 			}
-			if tail, ok := trans.PeekTail(); ok {
-				watermark = tail.FigaroLT
-			}
+			watermark = SeedLT(trans)
 		}
 		// The watermark names an earlier entry, so seeding needs the log.
 		d.SeedAt(source, watermark)
@@ -77,9 +76,10 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 		return nil, "", err
 	}
 	if len(encoded) == 0 {
-		// No row, no commit: a window must not close on nothing.
+		// An empty row commits no cursor: the window rides the next entry
+		// that carries bytes.
 		o.mu.Unlock()
-		return nil, "", nil
+		return []json.RawMessage{}, o.fingerprint(), nil
 	}
 	d.Commit(e, msg)
 	o.mu.Unlock()
