@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -20,6 +23,9 @@ func messageHeader(role string) string {
 func inputHeader(sender string) string {
 	if sender == "" {
 		return messageHeader(livedoc.RoleInput)
+	}
+	if id, ok := strings.CutPrefix(sender, rpc.AriaLabelPrefix); ok {
+		sender = "figaro " + id
 	}
 	return term.Dim("> " + sender)
 }

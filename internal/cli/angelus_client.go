@@ -71,6 +71,7 @@ func ensureAngelus() {
 		return
 	}
 
+	ensureHush()
 	exe, err := os.Executable()
 	if err != nil {
 		die("find executable: %s", err)
@@ -161,7 +162,6 @@ const (
 
 func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	_ = loaded
-	ensureHush()
 	ensureAngelus()
 	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
 	cli, err := sdk.DialAngelus(ep)
