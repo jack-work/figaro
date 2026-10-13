@@ -75,7 +75,7 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 - `internal/provider/projection.go`: shared O(delta) translator watermark, form state, and input-ready cache catch-up.
 - `internal/provider/anthropic/anthropic.go`: direct HTTP+SSE, no SDK. SSE parser is hand-rolled. `Send` assembles the request body internally; `Assemble` runs the SSE accumulator. `Fingerprint()` change invalidates the translator cache.
 - `github.com/jack-work/jkrpc` (extracted from `internal/jsonrpc/`): NDJSON framing. Don't switch frame formats without updating both ends.
-- `cmd/figaro/main.go`: multi-call dispatch, daemon fork, signal handling. The `q` and `l` symlinks are part of the contract (provided by `flake.nix` `postInstall`).
+- `cmd/figaro/main.go`: multi-call dispatch, daemon fork, signal handling. The `fig` and `figarod` symlinks are part of the contract (provided by `flake.nix` `postInstall`).
 
 ## Disclosure rules
 
