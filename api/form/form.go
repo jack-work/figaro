@@ -437,20 +437,6 @@ func (s Snapshot) DeletePath(key string) Snapshot {
 	return Snapshot{t: t, raw: &rawBox{}}
 }
 
-func decodeRawObject(v Value) (map[string]json.RawMessage, bool) {
-	out := map[string]json.RawMessage{}
-	if len(v.Raw()) == 0 {
-		return out, true
-	}
-	if json.Unmarshal(v.Raw(), &out) != nil {
-		return map[string]json.RawMessage{}, false
-	}
-	if out == nil {
-		out = map[string]json.RawMessage{}
-	}
-	return out, true
-}
-
 // MarshalJSON emits the nested object the form channel holds on disk.
 //
 // A value that is not valid JSON is an error, not an omission: it reaches
@@ -585,38 +571,6 @@ func encodeRawObject(m map[string]json.RawMessage) []byte {
 		b = append(b, v...)
 	}
 	return append(b, '}')
-}
-
-// setIn rebuilds only the path to the leaf, sharing every subtree it does not
-// touch. Where a segment lands on a leaf, the rest of the path stays whole:
-// the key names one thing whose own name contains a dot.
-func setIn(node Value, segs []string, v Value) Value {
-	if len(segs) == 0 {
-		return v
-	}
-	members, isObj := node.members()
-	next := make(map[string]json.RawMessage, len(members)+1)
-	for k, m := range members {
-		next[k] = m.Raw()
-	}
-	if !isObj {
-		next = map[string]json.RawMessage{}
-	}
-	if len(segs) == 1 {
-		next[segs[0]] = v.Raw()
-		return NewValue(encodeRawObject(next))
-	}
-	child, exists := members[segs[0]]
-	if exists {
-		if _, childIsObj := child.members(); !childIsObj {
-			next[strings.Join(segs, ".")] = v.Raw()
-			return NewValue(encodeRawObject(next))
-		}
-	} else {
-		child = NewValue(json.RawMessage(`{}`))
-	}
-	next[segs[0]] = setIn(child, segs[1:], v).Raw()
-	return NewValue(encodeRawObject(next))
 }
 
 // flattenUnder reads a patch that only creates leaves as the suffixes it

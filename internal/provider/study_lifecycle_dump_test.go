@@ -128,12 +128,3 @@ func (a *memAccessor) PatchesBetween(after, upTo uint64) []message.Patch {
 	}
 	return out
 }
-
-// mustEntry is the value a patch sets at key, for tests that assert on one.
-func mustEntry(p form.Patch, key string) json.RawMessage {
-	e, ok := p.Entry(key)
-	if !ok {
-		return nil
-	}
-	return e.New
-}

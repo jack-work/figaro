@@ -25,9 +25,9 @@ import (
 // Two of them under one factory is all it takes to observe which instance a
 // turn actually reached.
 type namedProvider struct {
-	name  string
+	name     string
 	renderer string
-	sends atomic.Int32
+	sends    atomic.Int32
 
 	mu     sync.Mutex
 	models []string
