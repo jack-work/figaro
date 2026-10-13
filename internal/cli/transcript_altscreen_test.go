@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // newTestTranscript is a pager wired to a plain writer, so the test reads the

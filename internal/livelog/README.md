@@ -92,12 +92,12 @@ turn. `Turn.Sealed` is the final immutability signal.
 
 ## In Figaro
 
-`internal/figaro` owns an `aria.Server`, projects canonical `message.Message`
+`internal/figaro` owns an `aria.Server` (`internal/livelog/aria`), projects canonical `message.Message`
 IR through `internal/uiir`, and fans every resulting page out as
 `figaro.aria`. `internal/figaro/read.go` serves the same server state through
 `figaro.read`, hydrating a dormant aria from canonical IR on its first read.
 
-`internal/cli/livelog_bridge.go` owns an `aria.Client`; both rich `send` and
+`internal/cli/livelog_bridge.go` owns an `aria.Client` (`sdk/aria`); both rich `send` and
 `listen` apply pages to it. `listen` performs no prompt call: it reads a recent
 window and follows pushes indefinitely.
 

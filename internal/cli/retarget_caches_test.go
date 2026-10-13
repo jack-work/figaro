@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A SWITCH CHANGES WHAT EVERY (turn, node) KEY MEANS. Two arias that share a

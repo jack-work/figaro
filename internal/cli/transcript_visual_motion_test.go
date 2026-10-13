@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // motionFixture: three nodes, prose with several words per row, so the word

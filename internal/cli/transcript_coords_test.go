@@ -9,9 +9,9 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // coordFixture is a two-turn aria with stamped nodes, rendered through the

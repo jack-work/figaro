@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // A CLIENT ALWAYS HAS THE QUESTION, AND KNOWS WHO ASKED IT.
@@ -45,9 +46,9 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	// Fold every prefix. After each one the client must be able to say what was
 	// asked: including the very first frame that mentions the turn.
 	for n := 1; n <= len(frames); n++ {
-		c := NewClient()
+		c := client.NewClient()
 		for _, f := range frames[:n] {
-			c.Apply(f, Notify)
+			c.Apply(f, client.Notify)
 		}
 		got, sender := questionOf(c, 1)
 		if got != q {
@@ -84,10 +85,10 @@ func TestTheOpeningFrameCarriesTheFormState(t *testing.T) {
 	s.OpenTurn(1)
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "still answering"}}, 0)
 
-	c := NewClient()
+	c := client.NewClient()
 	fold := func() map[string]livedoc.FormDelta {
 		for _, f := range frames {
-			c.Apply(f, Notify)
+			c.Apply(f, client.Notify)
 		}
 		v := c.View()
 		for _, m := range append(append([]Message(nil), v.Closed...), open(v)...) {
@@ -123,14 +124,14 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	s.Subscribe(func(p Page) { late = append(late, p) })
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "more"}}, 0)
 
-	c := NewClient()
+	c := client.NewClient()
 	for _, f := range late {
-		c.Apply(f, Notify)
+		c.Apply(f, client.Notify)
 	}
 	if got, _ := questionOf(c, 1); got == q {
 		t.Fatal("fixture broken: the late joiner was supposed to miss the question")
 	}
-	c.Apply(s.Read(Anchor{}, 1<<20), Notify)
+	c.Apply(s.Read(Anchor{}, 1<<20), client.Notify)
 	if got, _ := questionOf(c, 1); got != q {
 		t.Errorf("a read must re-supply the question, got %q", got)
 	}
@@ -138,7 +139,7 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 
 // questionOf is what the client can say about a turn, through its own view -
 // not by reaching into the frames it was given.
-func questionOf(c *Client, turn int) (question, sender string) {
+func questionOf(c *client.Client, turn int) (question, sender string) {
 	v := c.View()
 	for _, m := range append(append([]Message(nil), v.Closed...), open(v)...) {
 		if m.Turn == turn && m.Inquiry != "" {
@@ -151,7 +152,7 @@ func questionOf(c *Client, turn int) (question, sender string) {
 	return "", ""
 }
 
-func open(v View) []Message {
+func open(v client.View) []Message {
 	if v.Open == nil {
 		return nil
 	}

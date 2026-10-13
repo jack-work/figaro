@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The status row is the pager's only voice for trouble, and it is also the

@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // AFTER A RETAINED SWITCH THERE MUST BE NO HOLE AT THE SEAM. The prefix is

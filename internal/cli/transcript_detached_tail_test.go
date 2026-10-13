@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // THE PAGE DESCRIPTORS ARE GONE. This file used to pin pageDesc (the hash that

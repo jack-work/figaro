@@ -960,7 +960,7 @@ func (s *Store) FoldAt(nd NodeDelta) {
 	for uint64(len(s.open.nodes)) <= nd.ID {
 		s.open.nodes = append(s.open.nodes, livedoc.Node{})
 	}
-	s.open.nodes[nd.ID] = foldDelta(s.open.nodes[nd.ID], nd)
+	s.open.nodes[nd.ID] = FoldDelta(s.open.nodes[nd.ID], nd)
 	s.noteHeld(nd.ID, nd.ID+1)
 }
 

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // A DISCONNECT PAINTS AGAINST WHATEVER IS STILL PAINTING.

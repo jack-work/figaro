@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // A streamed tool argument is the largest string the delta path has ever been
@@ -47,8 +48,8 @@ func BenchmarkStreamedInputServerToClient(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		srv := NewServer()
-		cli := NewClient()
-		srv.Subscribe(func(p Page) { cli.Apply(p, Notify) })
+		cli := client.NewClient()
+		srv.Subscribe(func(p Page) { cli.Apply(p, client.Notify) })
 		srv.OpenTurn(1)
 		for _, f := range frames {
 			srv.Update(nil, []livedoc.Node{{

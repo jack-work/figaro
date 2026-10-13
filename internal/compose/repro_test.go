@@ -5,6 +5,7 @@ import (
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // drive feeds a sequence of frames (each a full turn message set, as
@@ -13,8 +14,8 @@ import (
 // each labeled by (type, content) so a duplicated logical block is visible.
 func drive(frames [][]message.Message) []string {
 	srv := aria.NewServer()
-	cli := aria.NewClient()
-	srv.Subscribe(func(r aria.Page) { cli.Apply(r, aria.Notify) })
+	cli := client.NewClient()
+	srv.Subscribe(func(r aria.Page) { cli.Apply(r, client.Notify) })
 	srv.OpenTurn(uint64(1))
 	for _, msgs := range frames {
 		srv.Update(nil, Nodes(msgs, nil, nil, nil), 0)

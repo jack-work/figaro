@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap replaces

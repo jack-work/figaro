@@ -6,7 +6,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // THE POINTER, as a first-class way to address a node.

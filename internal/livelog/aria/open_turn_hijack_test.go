@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // ---------------------------------------------------------------------------
@@ -46,18 +47,18 @@ func historyPage(turns ...Turn) Page {
 }
 
 func TestApply_HistoryDoesNotClobberTheOpenTurn(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 
 	// Turn 1 finished in an earlier process; we have never seen it.
 	// Turn 2 is submitted now: the question commits before the model speaks.
-	c.Apply(openInquiryPage(2, "the new question"), Notify)
+	c.Apply(openInquiryPage(2, "the new question"), client.Notify)
 
 	if open := c.Open(); open == nil || open.Turn != 2 || open.Inquiry != "the new question" {
 		t.Fatalf("precondition: turn 2 must be open with its question, got %+v", open)
 	}
 
 	// ^T -> enterTranscript -> ReadBefore(recentCursor) -> a page of history.
-	c.Apply(historyPage(Turn{ID: 1, Inquiry: "the old question", Nodes: []livedoc.Node{prose("the old answer")}}), Notify)
+	c.Apply(historyPage(Turn{ID: 1, Inquiry: "the old question", Nodes: []livedoc.Node{prose("the old answer")}}), client.Notify)
 
 	open := c.Open()
 	if open == nil {
@@ -84,12 +85,12 @@ func TestApply_HistoryDoesNotClobberTheOpenTurn(t *testing.T) {
 // nodes but no inquiry (a turn whose question was clipped away) must not claim
 // the open slots either.
 func TestApply_HistoryWithoutInquiryDoesNotClobberTheOpenTurn(t *testing.T) {
-	c := NewClient()
-	c.Apply(openInquiryPage(5, "still mine"), Notify)
+	c := client.NewClient()
+	c.Apply(openInquiryPage(5, "still mine"), client.Notify)
 
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 3, Sealed: true, Nodes: []livedoc.Node{prose("older")}},
-	}}}, Notify)
+	}}}, client.Notify)
 
 	open := c.Open()
 	if open == nil || open.Turn != 5 || open.Inquiry != "still mine" {
@@ -99,9 +100,9 @@ func TestApply_HistoryWithoutInquiryDoesNotClobberTheOpenTurn(t *testing.T) {
 
 // A turn OLDER than the one currently open must never claim it, even unsealed.
 func TestApply_OlderTurnNeverClaimsTheOpenSlots(t *testing.T) {
-	c := NewClient()
-	c.Apply(openInquiryPage(9, "current"), Notify)
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 4, Inquiry: "stale"}}}}, Notify)
+	c := client.NewClient()
+	c.Apply(openInquiryPage(9, "current"), client.Notify)
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 4, Inquiry: "stale"}}}}, client.Notify)
 
 	if open := c.Open(); open == nil || open.Turn != 9 {
 		t.Fatalf("an older turn claimed the open slots: %+v", open)
@@ -113,7 +114,7 @@ func TestApply_OlderTurnNeverClaimsTheOpenSlots(t *testing.T) {
 // Live: that is what entitles it to the open slots, and the sealed parts
 // before it are history.
 func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 
 	// A fresh viewer: nothing open, and a read that spans history plus the
 	// turn currently in flight.
@@ -121,7 +122,7 @@ func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 		{Turn: Turn{ID: 1, Inquiry: "old", Sealed: true, Nodes: []livedoc.Node{prose("old answer")}}},
 		{Turn: Turn{ID: 2, Inquiry: "live one", Nodes: []livedoc.Node{prose("partial")},
 			Live: &Live{From: 0, V: 3}}},
-	}}, Notify)
+	}}, client.Notify)
 
 	open := c.Open()
 	if open == nil {
@@ -136,7 +137,7 @@ func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 	// Subsequent deltas must still fold onto it at the right positional ids.
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 2, Live: &Live{From: 0, V: 4, Nodes: []NodeDelta{
 		{ID: 1, Set: map[string]any{"type": "prose", "markdown": "second"}},
-	}}}}}}, Notify)
+	}}}}}}, client.Notify)
 	open = c.Open()
 	if len(open.Nodes) != 2 || open.Nodes[1].Markdown != "second" {
 		t.Fatalf("a delta after the catch-up did not fold: %+v", open.Nodes)
@@ -148,16 +149,16 @@ func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 // used the staging buffer, so it is the one a "history never stages" fix can
 // break.
 func TestApply_ClippedSealedHistoryKeepsItsOffsets(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 	nodes := []livedoc.Node{prose("n0"), prose("n1"), prose("n2"), prose("n3")}
 
 	// Tail half first (as a backward read delivers it), then the head.
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 7, Sealed: true, Nodes: nodes[2:]}, From: 2, ClippedHead: true,
-	}}}, Notify)
+	}}}, client.Notify)
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 7, Inquiry: "q7", Sealed: true, Nodes: nodes[:2]}, From: 0, ClippedTail: true,
-	}}}, Notify)
+	}}}, client.Notify)
 
 	closed := c.View().Closed
 	if len(closed) == 0 {

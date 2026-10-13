@@ -3,8 +3,8 @@ package cli
 import (
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/mark"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // Hot trees: the arias this session has already shown, kept warm.

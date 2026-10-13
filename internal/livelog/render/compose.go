@@ -3,9 +3,9 @@ package render
 import (
 	"strings"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	fig "github.com/jack-work/figaro/internal/render"
 )
 

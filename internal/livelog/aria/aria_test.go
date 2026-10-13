@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 func tool(status, out string) livedoc.Node {
@@ -185,18 +186,18 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 // immediately rather than ride the redrawable region until the turn seals, and
 // the agent's reply follows at seal.
 func TestClient_FoldAndPromote(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 	var closed []Message
 	c.OnClosed = func(m Message) { closed = append(closed, m) }
 
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Nodes: []livedoc.Node{prose("q")}}}}}, Notify)
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Nodes: []livedoc.Node{prose("q")}}}}}, client.Notify)
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 1, Live: &Live{From: 1, V: 0, Nodes: []NodeDelta{
 			{ID: 1, Set: map[string]any{"type": "prose", "markdown": "hi"}},
 		}}},
 		From: 1,
-	}}}, Notify)
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Sealed: true}}}}, Notify)
+	}}}, client.Notify)
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Sealed: true}}}}, client.Notify)
 
 	if len(closed) != 2 {
 		t.Fatalf("want head released then tail sealed, got %d messages", len(closed))
@@ -224,7 +225,7 @@ func TestClient_FoldAndPromote(t *testing.T) {
 // stood here: one for the run split, one for run contiguity; they assert the
 // same single fact now.)
 func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 	var closed []Message
 	c.OnClosed = func(m Message) { closed = append(closed, m) }
 
@@ -233,7 +234,7 @@ func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 	steer.Role = livedoc.RoleInput
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 7, Inquiry: "ask", Sealed: true, Nodes: []livedoc.Node{
 		prose("answer"), steer, prose("revised"),
-	}}}}}, Notify)
+	}}}}}, client.Notify)
 
 	if len(closed) != 1 {
 		t.Fatalf("want one message for the turn, got %d", len(closed))
@@ -253,7 +254,7 @@ func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 // Metrics reach the caller before the turn is announced closed, so a status
 // line never renders stale numbers alongside fresh content.
 func TestClient_AppliesMetricsBeforeClosing(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 	var order []string
 	c.OnMetrics = func(Metrics) { order = append(order, "metrics") }
 	c.OnClosed = func(Message) { order = append(order, "closed") }
@@ -261,7 +262,7 @@ func TestClient_AppliesMetricsBeforeClosing(t *testing.T) {
 	c.Apply(Page{
 		Parts:   []TurnPart{{Turn: sealedTurn(1, prose("q"))}},
 		Metrics: &Metrics{ContextTokens: 5},
-	}, Notify)
+	}, client.Notify)
 
 	if len(order) != 2 || order[0] != "metrics" || order[1] != "closed" {
 		t.Fatalf("want metrics then closed, got %v", order)
@@ -313,10 +314,10 @@ func TestServer_ReadSnapshotCarriesLiveOnlyAtTheTail(t *testing.T) {
 
 // Retention trims the oldest materialized turns without disturbing the cursor.
 func TestClient_ClosedLimitKeepsTail(t *testing.T) {
-	c := NewClient()
+	c := client.NewClient()
 	c.SetClosedLimit(3)
 	for i := 1; i <= 6; i++ {
-		c.Apply(Page{Parts: []TurnPart{{Turn: sealedTurn(uint64(i), prose("m"))}}}, Notify)
+		c.Apply(Page{Parts: []TurnPart{{Turn: sealedTurn(uint64(i), prose("m"))}}}, client.Notify)
 	}
 	v := c.View()
 	if len(v.Closed) != 3 {

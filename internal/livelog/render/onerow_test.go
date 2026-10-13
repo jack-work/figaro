@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	aria "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // At h=1 there is exactly one row. The suppressed (footer-only) region is still

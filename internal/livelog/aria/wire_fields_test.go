@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	client "github.com/jack-work/figaro/sdk/aria"
 )
 
 // notOnTheWire are Node fields the live delta deliberately does not carry, each
@@ -69,7 +70,7 @@ func TestLiveDeltaCarriesEveryNodeField(t *testing.T) {
 	if err := json.Unmarshal(raw, &nd); err != nil {
 		t.Fatal(err)
 	}
-	got := foldDelta(livedoc.Node{}, nd)
+	got := client.FoldDelta(livedoc.Node{}, nd)
 
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
@@ -101,7 +102,7 @@ func TestLiveDiffCarriesLateArrivingFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &nd); err != nil {
 		t.Fatal(err)
 	}
-	got := foldDelta(old, nd)
+	got := client.FoldDelta(old, nd)
 
 	if got.Role != n.Role || got.At != n.At || got.ToolCallID != n.ToolCallID {
 		t.Errorf("scalar lost in diff: role=%q at=%d tool=%q", got.Role, got.At, got.ToolCallID)
@@ -133,7 +134,7 @@ func TestStreamedInputSplicesAndShrinks(t *testing.T) {
 	}
 	var prev livedoc.Node
 	prev.Type = livedoc.NodeTool
-	client := livedoc.Node{Type: livedoc.NodeTool}
+	node := livedoc.Node{Type: livedoc.NodeTool}
 	for _, st := range steps {
 		next := prev
 		next.Input = st.input
@@ -154,9 +155,9 @@ func TestStreamedInputSplicesAndShrinks(t *testing.T) {
 		if kind != st.wantKind {
 			t.Errorf("%s: got %q delta, want %q (%+v)", st.name, kind, st.wantKind, d)
 		}
-		client = foldDelta(client, d)
-		if client.Input != st.input {
-			t.Fatalf("%s: client folded to %q, want %q", st.name, client.Input, st.input)
+		node = client.FoldDelta(node, d)
+		if node.Input != st.input {
+			t.Fatalf("%s: node folded to %q, want %q", st.name, node.Input, st.input)
 		}
 		prev = next
 	}

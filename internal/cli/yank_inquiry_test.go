@@ -7,7 +7,7 @@ import (
 
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // TestYankTheQuestion: selecting a turn's question and pressing y must put the

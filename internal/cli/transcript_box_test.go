@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // composerPager is a pager with a send hook that records rather than dials.

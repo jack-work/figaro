@@ -11,8 +11,8 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // showPage is how many IR entries one backward step asks for. It matches the

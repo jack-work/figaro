@@ -38,8 +38,8 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/figaro/sdk/aria"
 	"github.com/jack-work/jkrpc"
 )
 

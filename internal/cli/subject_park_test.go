@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The shelf: what a session keeps of the arias it has already shown.

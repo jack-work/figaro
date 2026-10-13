@@ -9,7 +9,8 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	livelog "github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 type travelRead struct {
@@ -25,12 +26,12 @@ type travelReader struct {
 
 func (r *travelReader) Read(_ context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	r.calls = append(r.calls, travelRead{at: at, budget: budget})
-	return aria.Paginate(r.turns, at, aria.Forward, 8192), nil
+	return livelog.Paginate(r.turns, at, aria.Forward, 8192), nil
 }
 
 func (r *travelReader) ReadBefore(_ context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	r.calls = append(r.calls, travelRead{at: at, backward: true, budget: budget})
-	return aria.PaginateBefore(r.turns, at, aria.Anchor{}, 8192), nil
+	return livelog.PaginateBefore(r.turns, at, aria.Anchor{}, 8192), nil
 }
 
 func (*travelReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
@@ -51,7 +52,7 @@ func travelFixture(tb testing.TB, count, nodes int) (*interactiveInput, *travelR
 	set := &renderSettings{}
 	lt := newLivelogTurn(&countingWriter{}, 72, 18, set, "travel", time.Time{}, newSessionStatus("travel", time.Time{}), nil, nil)
 	lt.enterTranscript()
-	lt.apply(aria.PaginateBefore(r.turns, aria.Anchor{}, aria.Anchor{}, 8192))
+	lt.apply(livelog.PaginateBefore(r.turns, aria.Anchor{}, aria.Anchor{}, 8192))
 	lt.client.SetMoreBefore(true)
 	in := &interactiveInput{lt: lt, fcli: r, mu: new(renderLock), set: set, figaroID: "travel", cancel: func() {}, disconnectCh: make(chan struct{}, 1)}
 	lt.setHistoryFetcher(in.historyFetcher())
@@ -183,7 +184,7 @@ func TestNextTurnDoesNotSkipUnloadedTurns(t *testing.T) {
 	in, reader := travelFixture(t, 8, 64)
 	tr := in.lt.tr
 	for _, turn := range []uint64{1, 7} {
-		tr.client.Apply(aria.Paginate(reader.turns, aria.Anchor{Turn: turn}, aria.Forward, 8192), aria.Quiet)
+		tr.client.Apply(livelog.Paginate(reader.turns, aria.Anchor{Turn: turn}, aria.Forward, 8192), aria.Quiet)
 	}
 	tr.follow = false
 	tr.from = aria.Anchor{Turn: 1}

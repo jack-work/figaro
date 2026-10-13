@@ -10,7 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 func benchmarkTranscript(b *testing.B, messages int, nodes []livedoc.Node) (*transcript, *aria.Client) {

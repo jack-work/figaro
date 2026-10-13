@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The header is the question's own rows, pinned as they leave the top of the

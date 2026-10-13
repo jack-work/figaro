@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // Every `figaro show` selector speaks TURN IDS. Before this there were three

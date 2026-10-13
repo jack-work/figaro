@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
+	client "github.com/jack-work/figaro/sdk/aria"
 	"github.com/stretchr/testify/require"
 	"path/filepath"
 )
@@ -94,10 +95,10 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	// And through the CLIENT fold, which is what `listen` renders from. The
 	// fold rebuilds messages field by field; the turn-level deltas were
 	// dropped there once, invisibly, while the wire carried them fine.
-	cl := aria.NewClient()
+	cl := client.NewClient()
 	var folded []aria.Message
 	cl.OnClosed = func(m aria.Message) { folded = append(folded, m) }
-	cl.Apply(page, aria.Notify)
+	cl.Apply(page, client.Notify)
 	foldedHasDelta := false
 	for _, m := range folded {
 		if _, ok := m.FormDeltas[src+".phase"]; ok {

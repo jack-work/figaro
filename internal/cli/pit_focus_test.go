@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // S OPENS THE FORM AND T MOVES THE FOCUS. The hook itself is the interesting
