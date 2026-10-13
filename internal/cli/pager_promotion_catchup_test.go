@@ -14,29 +14,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// THE PAGER OPENS BY ITSELF, AND USED TO OPEN ON NOTHING.
-//
-// Reported from Windows: "when incipit mode is automatically activated the
-// transcript makes it appear as though the message that spawned incipit mode
-// and started the cli is the first message, even if there was prior history."
-//
-// Ctrl-T and `figaro listen` read the aria's tail before they open the pager.
-// The pager also opens WITHOUT being asked, an open turn taller than the
-// viewport (OnLive -> openOverflows) or a resize that shrinks the viewport
-// under the live region, and those two doors read nothing at all. The store
-// then held one turn, MoreBefore was never set by any wire answer, and
-// atAriaFloor declared the running question the beginning of the aria: no
-// history above it, and no page ever requested, so scrolling up found nothing.
-//
-// Reproduced in a real terminal at 100x24 before the fix: an aria with five
-// prior turns, promoted by an overflowing reply, sat at `1-22/37`: 37 rows
-// being that one turn, and six half-page-ups moved nothing. The same aria,
-// same binary, entered with Ctrl-T instead: `133-153/153`.
-// ---------------------------------------------------------------------------
-
-// promotionFixture is a livelogTurn whose viewport is too short for the turn it
-// is about to be handed: i.e. one that will promote itself.
+// The pager's automatic doors (an overflowing open turn, a shrinking resize)
+// owe the same catch-up read Ctrl-T pays, or atAriaFloor calls the running
+// question the beginning of the aria.
 func promotionFixture(tb testing.TB, w, h int) *livelogTurn {
 	tb.Helper()
 	var out bytes.Buffer
@@ -44,7 +24,6 @@ func promotionFixture(tb testing.TB, w, h int) *livelogTurn {
 		newSessionStatus("aria1234", time.Unix(0, 0)), nil, dimRule)
 }
 
-// tallTurn is a page whose open turn is taller than any viewport we test with.
 func tallTurn(turn uint64, rows int) aria.Page {
 	nodes := make([]livedoc.Node, 0, rows)
 	for i := range rows {
@@ -57,15 +36,12 @@ func tallTurn(turn uint64, rows int) aria.Page {
 	}}}}
 }
 
-// TestOverflowPromotionAsksForHistory: the auto-promotion door owes a read, and
-// pays it. Canary: delete the catchUp call in enterPager and this fails with
-// "the pager opened on its own and asked for no history".
 func TestOverflowPromotionAsksForHistory(t *testing.T) {
 	lt := promotionFixture(t, 60, 12)
 	asked := 0
 	lt.setCatchUp(func() { asked++ })
 
-	lt.apply(tallTurn(7, 40)) // taller than 12 rows: promotes on the frame path
+	lt.apply(tallTurn(7, 40))
 
 	if !lt.transcriptActive() {
 		t.Fatal("fixture: the turn did not overflow into the pager")
@@ -75,18 +51,16 @@ func TestOverflowPromotionAsksForHistory(t *testing.T) {
 	}
 }
 
-// TestResizePromotionAsksForHistory: the OTHER automatic door: the viewport
-// shrinking under a live region: owes the same read.
 func TestResizePromotionAsksForHistory(t *testing.T) {
 	lt := promotionFixture(t, 60, 40)
 	asked := 0
 	lt.setCatchUp(func() { asked++ })
 
-	lt.apply(tallTurn(7, 12)) // fits 40 rows: stays inline
+	lt.apply(tallTurn(7, 12))
 	if lt.transcriptActive() {
 		t.Fatal("fixture: the turn promoted before the resize, so the resize proves nothing")
 	}
-	lt.resize(60, 12) // now it cannot be painted inline
+	lt.resize(60, 12)
 
 	if !lt.transcriptActive() {
 		t.Fatal("fixture: the destructive resize did not promote")
@@ -96,9 +70,6 @@ func TestResizePromotionAsksForHistory(t *testing.T) {
 	}
 }
 
-// TestSeededPromotionDoesNotReRead: a session that already fetched a catch-up
-// page (it joined a turn it did not open) opens the pager on that page. Asking
-// the wire again would be a second round trip for content in hand.
 func TestSeededPromotionDoesNotReRead(t *testing.T) {
 	lt := promotionFixture(t, 60, 12)
 	asked := 0
@@ -122,15 +93,9 @@ func TestSeededPromotionDoesNotReRead(t *testing.T) {
 	}
 }
 
-// TestPromotedPagerBelievesNothingAboutTheBeginning is the assertion closest to
-// what the user SAW. Without a catch-up, a promoted pager holds one turn and
-// MoreBefore false, and atAriaFloor then reports that the live question is the
-// first message in the aria. The hook is what makes that answer arrive from the
-// wire instead of from a zero value.
+// atAriaFloor must answer from the wire, not from a zero MoreBefore.
 func TestPromotedPagerBelievesNothingAboutTheBeginning(t *testing.T) {
 	lt := promotionFixture(t, 60, 12)
-	// No catch-up armed: this is the OLD behaviour, pinned so the claim in the
-	// commit message is checkable rather than asserted.
 	lt.apply(tallTurn(7, 40))
 	if !lt.tr.atAriaFloor() {
 		t.Fatal("fixture: without a catch-up the pager should stand on a false floor")
@@ -139,8 +104,6 @@ func TestPromotedPagerBelievesNothingAboutTheBeginning(t *testing.T) {
 		t.Fatal("fixture: a pager that believes it is at the floor asks for no page")
 	}
 
-	// With the read paid: the same fold the deliberate door uses: the floor is
-	// the wire's answer, and the window can walk backwards again.
 	lt2 := promotionFixture(t, 60, 12)
 	lt2.setCatchUp(func() {
 		lt2.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
@@ -164,7 +127,6 @@ func TestPromotedPagerBelievesNothingAboutTheBeginning(t *testing.T) {
 	}
 }
 
-// failingOnceReader fails the first catch-up read and serves history after.
 type failingOnceReader struct {
 	mu      sync.Mutex
 	calls   int
@@ -191,10 +153,7 @@ func (r *failingOnceReader) Queued(context.Context) (*rpc.QueuedResponse, error)
 	return &rpc.QueuedResponse{}, nil
 }
 
-// A TIMEOUT IS NOT A FLOOR. The catch-up read that a subject switch owes can
-// fail, and when it did the pager kept an empty window with nothing to ask
-// again: the reader saw a conversation with no content in it and could only
-// leave the session. The clock asks again.
+// A failed catch-up read is not a floor: the clock asks again.
 func TestFailedCatchUpIsRetried(t *testing.T) {
 	reader := &failingOnceReader{failFor: 1, history: transcriptHistory(40)}
 	out := ldrender.NewFakeTerminal(80, 12)
@@ -206,7 +165,7 @@ func TestFailedCatchUpIsRetried(t *testing.T) {
 		cancel: func() {}, disconnectCh: make(chan struct{}, 1),
 	}
 
-	in.readHistoryIntoPager() // the seed a switch performs: it fails
+	in.readHistoryIntoPager()
 	if in.caughtUp {
 		t.Fatal("a failed read claimed the window")
 	}
@@ -214,7 +173,7 @@ func TestFailedCatchUpIsRetried(t *testing.T) {
 		t.Fatal("fixture: the failed read left content behind")
 	}
 
-	in.reseedIfEmpty() // what the pager's clock does
+	in.reseedIfEmpty()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		in.mu.Lock()

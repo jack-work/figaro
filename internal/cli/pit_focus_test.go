@@ -8,12 +8,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// S OPENS THE FORM AND T MOVES THE FOCUS. The hook itself is the interesting
-// part: it is called from dispatch, which holds the render lock, so an
-// implementation that takes that lock freezes the pager -- measured in a pty,
-// where `S` looked like a dead key and every key after it was dead too. The
-// hook here is a counter, so what this test pins is the KEYMAP; the pty script
-// pins the hand-off (S opens the pit, and the pager still answers afterwards).
+// The hook is called from dispatch under the render lock; this pins the
+// keymap, the pty script pins the hand-off.
 func TestSKeyOpensForm(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(60, 20)
 	tr := newTranscript(ft, 60, 20, ldrender.NodeText{}, aria.NewClient(), "aria1234", time.Unix(0, 0))
@@ -24,7 +20,6 @@ func TestSKeyOpensForm(t *testing.T) {
 	if called != 1 {
 		t.Fatalf("S called openForm %d times (mode=%v)", called, tr.mode())
 	}
-	// and T with a pit open moves the focus
 	tr.pit.showList(pitHelp, "", []pitRow{staticRow("a"), staticRow("b")})
 	tr.focused = focusPit
 	tr.full = true

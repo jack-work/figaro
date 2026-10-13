@@ -10,13 +10,10 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// Retention across a subject switch. The law it rests on: a fork point is
-// sealed, so the turns below it are the same turns in both arias, with the
-// same ids and the same bytes. These pin what that buys and what it must never
-// cost.
+// A fork point is sealed, so the turns below it are the same turns in both
+// arias: same ids, same bytes.
 
-// forkPager is a pager on an aria of `turns` turns, about to be pointed at a
-// relative that shares everything below `base`.
+// forkPager is about to be pointed at a relative sharing everything below base.
 func forkPager(t testing.TB, turns, base, h int) *transcript {
 	t.Helper()
 	client := aria.NewClient()
@@ -40,8 +37,7 @@ func partsFor(first, n int, tag string) []aria.TurnPart {
 	return parts
 }
 
-// TestRetain_KeepsThePrefixAndDropsTheRest is the whole of the client rule:
-// keep turn < base, drop at or above, into a client of its own.
+// Keep turn < base, drop at or above, into a client of its own.
 func TestRetain_KeepsThePrefixAndDropsTheRest(t *testing.T) {
 	c := aria.NewClient()
 	c.Apply(aria.Page{Parts: partsFor(1, 40, "A")}, aria.Notify)
@@ -70,8 +66,6 @@ func TestRetain_KeepsThePrefixAndDropsTheRest(t *testing.T) {
 	}
 }
 
-// TestRetain_ZeroKeepsNothing: an unrelated aria is not a special case, it is
-// the zero of the same rule.
 func TestRetain_ZeroKeepsNothing(t *testing.T) {
 	c := aria.NewClient()
 	c.Apply(aria.Page{Parts: partsFor(1, 10, "A")}, aria.Notify)
@@ -80,9 +74,7 @@ func TestRetain_ZeroKeepsNothing(t *testing.T) {
 	}
 }
 
-// TestRetain_TheNewSubjectsTurnsLandOverTheOldOnes is the fabricated-adjacency
-// guard: after the truncation the suffix of the OTHER aria folds in, and no
-// turn of the aria we left is left underneath it.
+// No turn of the aria we left may remain under the new subject's suffix.
 func TestRetain_TheNewSubjectsTurnsLandOverTheOldOnes(t *testing.T) {
 	old := aria.NewClient()
 	old.Apply(aria.Page{Parts: partsFor(1, 40, "A")}, aria.Notify)
@@ -108,8 +100,6 @@ func TestRetain_TheNewSubjectsTurnsLandOverTheOldOnes(t *testing.T) {
 	}
 }
 
-// TestRetarget_ParkedOnThePrefixKeepsTheScroll and its twin below are the two
-// screen states. Parked inside the shared prefix, nothing moves.
 func TestRetarget_ParkedOnThePrefixKeepsTheScroll(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	tr.follow = false
@@ -132,8 +122,6 @@ func TestRetarget_ParkedOnThePrefixKeepsTheScroll(t *testing.T) {
 	}
 }
 
-// Following the tail is a position too, and it is the one position that must
-// not be kept: the live edge of the new subject is somewhere else.
 func TestRetarget_FollowingTheTailJumpsToTheNewTail(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	tr.follow = true
@@ -151,8 +139,6 @@ func TestRetarget_FollowingTheTailJumpsToTheNewTail(t *testing.T) {
 	}
 }
 
-// A window ABOVE the divergence shows only what the two arias do not share.
-// There is nowhere to stand, so it goes to the tail.
 func TestRetarget_ParkedAboveTheDivergenceJumpsToTheTail(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	tr.follow = false
@@ -167,14 +153,12 @@ func TestRetarget_ParkedAboveTheDivergenceJumpsToTheTail(t *testing.T) {
 	}
 }
 
-// TestRetarget_RowCacheKeepsThePrefixAndDropsTheRest: the rows are the
-// expensive half of a switch once the read is free.
 func TestRetarget_RowCacheKeepsThePrefixAndDropsTheRest(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	tr.follow = false
 	tr.from = aria.Anchor{Turn: 1}
 	tr.buildIndex()
-	tr.lines() // materialize rows for the whole window
+	tr.lines()
 	if len(tr.rowCache) == 0 {
 		t.Fatal("fixture: nothing was cached to keep")
 	}
@@ -204,11 +188,8 @@ func TestRetarget_RowCacheKeepsThePrefixAndDropsTheRest(t *testing.T) {
 	}
 }
 
-// EVERY FOLD STATE OBEYS THE RETENTION RULE. A block left open in the aria we
-// are leaving must not be open in the one we arrive at, unless it is a block
-// the two of them share. The adornment fold arrived with the delta work and
-// was clearable in one place and not in the other, which is how the sticky
-// header defect happened; this is the canary for the whole class.
+// Every fold state obeys the retention rule: open only where the two arias share
+// the block.
 func TestRetarget_FoldStatesFollowTheDivergence(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	below := nodeRef{turn: 5, index: 0}
@@ -232,7 +213,6 @@ func TestRetarget_FoldStatesFollowTheDivergence(t *testing.T) {
 	}
 }
 
-// And a switch to a stranger keeps none of them.
 func TestRetarget_AStrangerKeepsNoFolds(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	tr.expanded[nodeRef{turn: 5}] = true
@@ -247,14 +227,11 @@ func TestRetarget_AStrangerKeepsNoFolds(t *testing.T) {
 	}
 }
 
-// A HEAD FORK KEEPS EVERYTHING AND OWES THE WIRE NOTHING BELOW ITS OWN FIRST
-// TURN. The store must not come out of it claiming there is content above what
-// it holds: the pager believes that claim, and it is what draws a hole under a
-// conversation that is whole.
+// A head fork keeps everything and must not claim content above what it holds.
 func TestRetain_AHeadForkKeepsTheWholeWindow(t *testing.T) {
 	c := aria.NewClient()
 	c.Apply(aria.Page{Parts: partsFor(1, 12, "A")}, aria.Notify)
-	next := c.CloneBelow(13) // the branch's first own turn is 13: nothing is dropped
+	next := c.CloneBelow(13)
 
 	if next.Count() != 12 {
 		t.Fatalf("a head fork kept %d of 12 messages", next.Count())
@@ -263,8 +240,7 @@ func TestRetain_AHeadForkKeepsTheWholeWindow(t *testing.T) {
 		t.Fatal("the store claims there is more above a window that lost nothing")
 	}
 
-	// And a fork that DOES drop turns says so, because there really is more
-	// above what it kept.
+	// A fork that drops turns says so.
 	cut := c.CloneBelow(6)
 	if !cut.Store().More().After {
 		t.Fatal("the store dropped turns and does not say anything is above what it kept")

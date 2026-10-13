@@ -1,18 +1,5 @@
 package cli
 
-// THE REVIEWERS' CANARIES, kept verbatim.
-//
-// Five arias reviewed this branch in their own worktrees against their own
-// builds; pitrev2 (the form pit) wrote these before it wrote its findings, and
-// each one was watched to FAIL on b68edea2 before anything was fixed. They are
-// kept as they were written rather than folded into pit_selection_test.go: a
-// test whose author was trying to break the code is worth more than one whose
-// author was trying to describe it, and the difference in voice is the point.
-//
-// F2 and F5 were still failing after my own pass -- I had put the escape gate
-// at the paint boundary but not at the source, and I had not found the pendG
-// arming at all.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -26,7 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// F1: a row is clipped by columns, not bytes, and never mid-rune.
+// A row is clipped by columns, never mid-rune.
 func TestCanaryF1FormRowClipsByColumns(t *testing.T) {
 	v, _ := json.Marshal(strings.Repeat("日本語テキスト ", 40))
 	n := &formNode{path: "uni", label: "uni", depth: 1, value: json.RawMessage(v)}
@@ -39,7 +26,6 @@ func TestCanaryF1FormRowClipsByColumns(t *testing.T) {
 	}
 }
 
-// F2: an opened value may not carry control sequences into the pit.
 func TestCanaryF2ValueLinesStripControls(t *testing.T) {
 	raw, _ := json.Marshal("a\x1b[2J\x1b[10Ab\rc\x07")
 	for _, l := range formValueLines(raw, 40) {
@@ -49,7 +35,6 @@ func TestCanaryF2ValueLinesStripControls(t *testing.T) {
 	}
 }
 
-// F3: wrapping one long line is linear in its length.
 func TestCanaryF3WrapPlainIsLinear(t *testing.T) {
 	s := strings.Repeat("x", 120000)
 	start := time.Now()
@@ -59,8 +44,6 @@ func TestCanaryF3WrapPlainIsLinear(t *testing.T) {
 	}
 }
 
-// F4: when the selected row vanishes the cursor lands where it was, not at
-// the top of the list.
 func TestCanaryF4SetRowsKeepsThePlace(t *testing.T) {
 	rows := func(ids ...string) []pitRow {
 		out := make([]pitRow, 0, len(ids))
@@ -80,7 +63,6 @@ func TestCanaryF4SetRowsKeepsThePlace(t *testing.T) {
 	}
 }
 
-// F5: gg reaches the top of a LIVE pit, exactly as it does in help.
 func TestCanaryF5GGInALivePit(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(60, 20)
 	tr := newTranscript(ft, 60, 20, ldrender.NodeText{}, aria.NewClient(), "aria1234", time.Unix(0, 0))

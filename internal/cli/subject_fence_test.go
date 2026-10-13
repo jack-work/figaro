@@ -8,15 +8,8 @@ import (
 	"time"
 )
 
-// TWO SWITCHES CAN BE IN FLIGHT AT ONCE, and the one that finishes dialling
-// first is not necessarily the one the reader asked for last. Each takes a
-// generation before it dials; the fence under the lock is what decides which
-// of them may install.
-//
-// Found by the reviewer (27068b2c): the generation was taken at the top and
-// never looked at again, so a slow hop started first could install AFTER a
-// fast hop started second, leaving the session showing an aria nobody had
-// named, with the other one's seed reads landing in its store.
+// Two switches can be in flight at once; each takes a generation before it
+// dials, and the fence under the lock decides which may install.
 
 func fenceSession(t testing.TB) *interactiveInput {
 	t.Helper()
@@ -43,10 +36,7 @@ func TestSubjectFence_ASupersededSwitchDoesNotInstall(t *testing.T) {
 	}
 }
 
-// The race, driven: many switches at once, each taking its generation and then
-// claiming. Whatever the interleaving, a claim may only be granted to a
-// generation higher than every claim granted before it, and the subject left
-// standing is the one that claimed last. Run with -race.
+// A claim may only be granted to a generation higher than every claim before it.
 func TestSubjectFence_ConcurrentSwitchesInstallInOrder(t *testing.T) {
 	in := fenceSession(t)
 	const n = 64
@@ -72,9 +62,7 @@ func TestSubjectFence_ConcurrentSwitchesInstallInOrder(t *testing.T) {
 	if len(granted) == 0 {
 		t.Fatal("no switch installed at all")
 	}
-	// The claims are appended in the order the lock granted them, so this is
-	// the order the subject changed in. Nothing older may follow anything
-	// newer.
+	// Claims are appended in the order the lock granted them.
 	for i := 1; i < len(granted); i++ {
 		if granted[i] <= granted[i-1] {
 			t.Fatalf("generation %d installed after %d", granted[i], granted[i-1])

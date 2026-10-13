@@ -10,10 +10,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// farmerTranscript builds a transcript over thinking-heavy content: the frame
-// is the thing the owner actually looks at, and node rows are only half of it
-// (the transcript renders nodes at t.w-2 and re-clips at t.w-1 through
-// plainNodeRow, so a node-level invariant is not a frame-level one).
+// The transcript renders nodes at t.w-2 and re-clips at t.w-1, so a
+// node-level invariant is not a frame-level one.
 func farmerTranscript(t *testing.T, w, h int) *transcript {
 	t.Helper()
 	long := "I'll need to read through the plan document and review the diffs to give a " +
@@ -37,8 +35,6 @@ func farmerTranscript(t *testing.T, w, h int) *transcript {
 	return tr
 }
 
-// TestFarmerFrameRowsFitEveryWidth: no painted row may exceed the viewport, at
-// any width, in a frame: plain, selected, and search-highlighted.
 func TestFarmerFrameRowsFitEveryWidth(t *testing.T) {
 	seen := map[string]bool{}
 	for w := 20; w <= 200; w++ {
@@ -64,10 +60,8 @@ func TestFarmerFrameRowsFitEveryWidth(t *testing.T) {
 	}
 }
 
-// TestFarmerResizeStable: a transcript resized DOWN then back must paint
-// the same frame as one born at that width. A fuzzer whose own driving heals
-// the defect reports clean against broken code, so this compares the resized
-// frame against a freshly built one rather than merely re-checking invariants.
+// Compares the resized frame against one born at that width, since re-checking
+// invariants alone passes when the driving itself heals the defect.
 func TestFarmerResizeStable(t *testing.T) {
 	for _, path := range [][]int{
 		{80, 40, 80}, {80, 200, 80}, {61, 62, 61}, {100, 20, 100}, {73, 74, 73},
@@ -93,9 +87,7 @@ func TestFarmerResizeStable(t *testing.T) {
 	}
 }
 
-// TestFarmerFrameRuleColumn: in the FRAME, every rule of one thinking block
-// must still sit in one column. The node-level test cannot see the transcript's
-// own gutter column or its second clip.
+// In the frame, every rule of one thinking block sits in one column.
 func TestFarmerFrameRuleColumn(t *testing.T) {
 	seen := false
 	for w := 20; w <= 200; w++ {
@@ -104,15 +96,13 @@ func TestFarmerFrameRuleColumn(t *testing.T) {
 		for i, r := range tr.lines() {
 			plain := strings.TrimRight(stripANSI(r), " ")
 			if strings.TrimSpace(plain) == "" {
-				col, blockOpen = -1, false // a blank row ends the block
+				col, blockOpen = -1, false
 				continue
 			}
 			at := strings.Index(plain, "│")
 			if at < 0 {
-				// Inside an OPEN block a row with no rule IS the original
-				// defect, and skipping it was this test's own bug: with the
-				// repair neutered entirely the test still passed, because a
-				// gutterless row merely closed the block.
+				// Inside an open block a row with no rule is the
+				// defect; it must not merely close the block.
 				if blockOpen && !seen {
 					seen = true
 					t.Errorf("w=%d row %d: no rule inside an open block: %q", w, i, plain)
@@ -120,7 +110,6 @@ func TestFarmerFrameRuleColumn(t *testing.T) {
 				col, blockOpen = -1, false
 				continue
 			}
-			// count columns, not bytes, up to the rule
 			c := displayWidth(plain[:at])
 			if !blockOpen {
 				col, blockOpen = c, true

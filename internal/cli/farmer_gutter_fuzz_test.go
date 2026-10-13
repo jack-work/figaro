@@ -8,11 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// FuzzThinkingGutter drives arbitrary markdown at arbitrary widths through the
-// quoted renderer and asserts the three invariants the branch claims: a rule on
-// every non-blank row of a block, every rule in the same column, every row
-// inside the viewport. Seeded with the shapes the corpus already knows break
-// wrapping, so the fuzzer starts from the interesting part of the space.
 func FuzzThinkingGutter(f *testing.F) {
 	for _, md := range farmerCorpus() {
 		f.Add(md, 80)
@@ -23,13 +18,12 @@ func FuzzThinkingGutter(f *testing.F) {
 		if !utf8.ValidString(md) || len(md) > 4000 {
 			t.Skip()
 		}
-		w = 20 + (w%181+181)%181 // 20..200
+		w = 20 + (w%181+181)%181
 		rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w)
 		col := -1
 		for i, r := range rows {
-			// Overflow must be INHERITED, never added: glamour overruns the
-			// width it is given (an unbreakable token, an unclosed fence), and
-			// re-reporting that every run is noise. The contract is the delta.
+			// A row may exceed the viewport only where glamour's own
+			// row already did.
 			if d := displayWidth(r); d > w && !glamourOverranAt(md, w) {
 				t.Fatalf("w=%d row %d is %d cells, and glamour stayed inside its own budget: %q", w, i, d, stripANSI(r))
 			}

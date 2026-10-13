@@ -6,12 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// treeFixture is a shape with everything the walkers have to get right: a
-// root with three children, a middle child that itself branches, a second
-// top-level tree, and recency ordering that differs from vector ordering.
-// LastActive values are negative on purpose: recency is decided by comparison,
-// which negatives preserve, while relAge prints "-" for anything <= 0: so the
-// golden below does not change with the calendar.
+// LastActive values are negative on purpose: comparison still orders them,
+// and relAge prints "-" for anything <= 0, so the golden does not age.
 func treeFixture() []rpc.FigaroInfoResponse {
 	return []rpc.FigaroInfoResponse{
 		{ID: "aaaa1111", Vector: []int{0}, Mantra: "the first tree", LastActive: -400,
@@ -35,9 +31,6 @@ func globalFixture() []rpc.FigaroInfoResponse {
 	)
 }
 
-// renderFixture is the whole pipeline for a fixed tree at a fixed width:
-// walk, then lay out. It is the user-visible contract, so it is what the
-// refactor onto figtree must hold constant.
 func renderFixture(t *testing.T, width int, global bool) string {
 	t.Helper()
 	if global {

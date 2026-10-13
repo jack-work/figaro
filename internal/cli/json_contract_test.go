@@ -5,11 +5,7 @@ import (
 	"testing"
 )
 
-// One contract for -j: submit, print one object, exit. It used to mean four
-
 func TestJSONImpliesSubmitAndExit(t *testing.T) {
-	// The rule, at the level it is decided: -j turns a send into a
-	// submit-and-exit, which is exactly what --forget already does.
 	opts := sendOpts{json: true}
 	if bad := jsonIncompatible(opts); bad != "" {
 		t.Fatalf("a bare -j must be honourable, got %q", bad)
@@ -39,7 +35,7 @@ func TestJSONIncompatibleNamesTheOffender(t *testing.T) {
 	}
 }
 
-// Every combination that cannot honour -j must be REJECTED, not dropped.
+// A combination that cannot honour -j is rejected, not dropped.
 func TestJSONArgvIsRejectedNotIgnored(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -64,8 +60,6 @@ func TestJSONArgvIsRejectedNotIgnored(t *testing.T) {
 	}
 }
 
-// TestValidateSendOptsAcceptsTheHonourableForms is the other direction: the
-// combinations that DO work must not start erroring.
 func TestValidateSendOptsAcceptsTheHonourableForms(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -88,8 +82,6 @@ func TestValidateSendOptsAcceptsTheHonourableForms(t *testing.T) {
 	}
 }
 
-// TestValidateSendOptsRejectsTheRest covers the contradictions that predate
-// --json, so the extraction into a pure function did not lose any of them.
 func TestValidateSendOptsRejectsTheRest(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

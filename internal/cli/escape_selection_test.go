@@ -6,30 +6,11 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// ---------------------------------------------------------------------------
-// Escape clears the selection cue on the VERY NEXT FRAME.
-//
-// The shipped bug: Esc dropped the selection but the highlight stayed painted
-// until the user scrolled. The cause was not in the pager at all: dispatch()
-// always renders, and the cue is applied at paint time (entryLine ->
-// decorateNodeRow), so a composed frame would have dropped it. The Esc BYTE
-// never reached dispatch.
-//
-// With the pager up, mouse reporting is enabled and consume() runs
-// ldmouse.Parse first. `\x1b` is a prefix of the SGR mouse introducer
-// `\x1b[<`, so Parse claimed the read was incomplete; consume stashed the byte
-// in `pending` and ended the frame. A bare Escape is always exactly one byte
-// at the end of a read, so Esc NEVER dispatched on its own frame: it
-// dispatched on whatever key came next, which is why "navigate the page" was
-// the thing that appeared to clear the cue.
-//
-// These tests pin the byte-level guarantee (nothing held back) AND the pixel
-// the user complained about (no cue in the painted frame).
-// ---------------------------------------------------------------------------
+// A bare Escape is one byte alone at the end of a read, and `\x1b` is a prefix
+// of the SGR mouse introducer `\x1b[<`: with mouse reporting on, consume must
+// not hold it back as an incomplete report.
 
-// cueRows counts painted rows carrying the selection wash. It reads the frame
-// the terminal is actually holding (t.prev), not the model, because the bug
-// was invisible in the model: t.selection was already empty.
+// cueRows reads the frame the terminal holds (t.prev), not the model.
 func cueRows(rows []string) int {
 	n := 0
 	for _, r := range rows {
@@ -41,10 +22,9 @@ func cueRows(rows []string) int {
 }
 
 func TestEscapeClearsSelectionCueOnNextFrame(t *testing.T) {
-	defer term.SetColorMode(term.ColorAlways)() // the cue IS the wash
-	p := newInputProbe(t, true)                 // pager up: mouse reporting on, Esc bound
+	defer term.SetColorMode(term.ColorAlways)()
+	p := newInputProbe(t, true)
 
-	// Ctrl-N selects the first node.
 	feed(t, p.in, "\x0e")
 	if !p.lt.tr.selection.active {
 		t.Fatal("Ctrl-N did not select a node; the fixture cannot show the bug")
@@ -53,8 +33,6 @@ func TestEscapeClearsSelectionCueOnNextFrame(t *testing.T) {
 		t.Fatal("no selection cue painted after Ctrl-N; the fixture cannot show the bug")
 	}
 
-	// A bare Escape, delivered the way a terminal delivers one: a single byte,
-	// alone, at the end of a read.
 	rest, stop := p.in.consume([]byte{0x1b})
 	if stop {
 		t.Fatal("bare Esc stopped the input loop")
@@ -71,10 +49,7 @@ func TestEscapeClearsSelectionCueOnNextFrame(t *testing.T) {
 	}
 }
 
-// TestEscapeDispatchesWithoutASecondKey is the same guarantee stated at the
-// byte level, in both pager states. The incipit case never regressed (mouse
-// reporting is off there, so ldmouse.Parse was not consulted) and is kept as
-// the control: it is what the pager case is supposed to match.
+// The incipit case (mouse reporting off) is the control the pager case must match.
 func TestEscapeDispatchesWithoutASecondKey(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -96,9 +71,8 @@ func TestEscapeDispatchesWithoutASecondKey(t *testing.T) {
 	}
 }
 
-// TestMouseReportStillParsesWhenSplitAfterIntroducer guards the trade the fix
-// makes: refusing to wait on a lone `\x1b` must not break a genuine mouse
-// report that arrives split anywhere from the introducer onward.
+// Refusing to wait on a lone `\x1b` must not break a mouse report split after
+// the introducer.
 func TestMouseReportStillParsesWhenSplitAfterIntroducer(t *testing.T) {
 	const report = "\x1b[<64;10;3M"
 	for cut := 2; cut < len(report); cut++ {

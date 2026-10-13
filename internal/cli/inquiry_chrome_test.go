@@ -10,22 +10,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE CHROME AROUND THE QUESTION IS PART OF THE QUESTION.
-//
-// When the inquiry was a NODE it travelled as its own message and got the
-// blank lines and the closing rule for free: the rule was that message's
-// closer. As TEXT it is drawn by hand at three sites (inline incipit, the
-// pager, `fig show`), and the first cut of that drew the header and the text
-// and nothing else: the reply ran straight into the question with no rule
-// between the voices.
-//
-// The block is: "> input" / indented text / blank / RULE / "< figaro". The
-// heading sits ON the first line it introduces, because those two rows are
-// what the pager's sticky header pins, and a gap between them would mean the
-// header pinned a blank. The question's breathing room went to the bottom,
-// where a form-delta list takes its place when one is open.
-// All three surfaces must agree on it, because a live-vs-committed difference
-// here is not cosmetics: it is the same exchange telling two stories.
+// The block is "> input" / text / blank / rule / "< figaro", drawn by hand at
+// three sites; the heading sits on its first line because the sticky header
+// pins those two rows.
 func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	const question = "THEQUESTION"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
@@ -60,9 +47,7 @@ func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	})
 }
 
-// assertChrome checks that want appears in rows in order, with the blanks
-// exactly where want says, a row is "blank" iff it holds no printable text,
-// and "─" matches a rule row (a run of box-drawing dashes and nothing else).
+// In want, "" is a blank row and "─" a rule row.
 func assertChrome(t *testing.T, rows []string, want []string) {
 	t.Helper()
 	var shape []string
@@ -89,8 +74,6 @@ func assertChrome(t *testing.T, rows []string, want []string) {
 	}
 }
 
-// classifyChromeRow reduces a rendered row to the token the shape speaks in:
-// "" for blank, "─" for a rule, the header verbatim, otherwise the row's text.
 func classifyChromeRow(row string) string {
 	s := strings.TrimSpace(stripANSI(row))
 	switch {
@@ -106,24 +89,9 @@ func classifyChromeRow(row string) string {
 	return s
 }
 
-// THE RULE IS THE OVERLINE OF THE HEADER BENEATH IT, EVERYWHERE.
-//
-// TestInquiryChromeAgreesAcrossViews above pins the seam INSIDE a message -
-// question, blank, rule, "< figaro" hard against it. Nothing pinned the same
-// seam at a message BOUNDARY, and that is exactly where it drifted: the pager
-// separated two units with a blank/rule/blank triple and the inline renderer
-// printed a static opening rule and then let the first message add its own
-// leading blank, so "> input" sat one row lower than "< figaro" in both views.
-//
-// The asymmetry was a residue of e7fb039. When the inquiry was its own message,
-// both of its seams were message boundaries and both were loose; once it became
-// text on the turn, the seam below it moved inside a message and tightened
-// while the seam above it stayed behind.
-//
-// So this asserts the invariant rather than one shape: no rendered surface may
-// put a blank row between a bare rule and the voice header it introduces. The
-// assistant bookend is untouched by it: that closer ends in status TEXT, not a
-// rule, so the blank under it is not this pattern and stays.
+// No surface may put a blank row between a bare rule and the voice header it
+// introduces; the assistant bookend ends in status text, not a rule, so its
+// trailing blank stays.
 func TestVoiceHeaderHugsItsRule(t *testing.T) {
 	nodes1 := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "FIRSTANSWER"}}
 	nodes2 := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "SECONDANSWER"}}
@@ -146,8 +114,7 @@ func TestVoiceHeaderHugsItsRule(t *testing.T) {
 		assertNoGapBelowRule(t, "transcript", tr.lines())
 	})
 
-	// Inline: the opening rule then a turn, then a SECOND turn so the boundary
-	// after an assistant bookend is covered too (that one keeps its blank).
+	// A second turn covers the boundary after an assistant bookend.
 	t.Run("inline", func(t *testing.T) {
 		ft, in := chromeIncipit(48, 40)
 		in.OpenRule()
@@ -159,9 +126,7 @@ func TestVoiceHeaderHugsItsRule(t *testing.T) {
 		assertNoGapBelowRule(t, "incipit", ft.Screen())
 	})
 
-	// Resume is the pager-exit path: it reprints closed messages to scrollback
-	// and must reproduce the same seams, or leaving the pager would reintroduce
-	// the gap the inline path just removed.
+	// The pager-exit path reprints closed messages and must reproduce the seams.
 	t.Run("inline-resume", func(t *testing.T) {
 		ft, in := chromeIncipit(48, 40)
 		in.OpenRule()
@@ -173,9 +138,8 @@ func TestVoiceHeaderHugsItsRule(t *testing.T) {
 	})
 }
 
-// chromeIncipit builds an inline renderer with the real chrome hooks: the
-// bookend matters, because its trailing status row is what makes the blank
-// after an assistant message correct rather than a violation.
+// The real bookend matters: its trailing status row is what makes the blank
+// after an assistant message correct.
 func chromeIncipit(w, h int) (*ldrender.FakeTerminal, *ldrender.Incipit) {
 	ft := ldrender.NewFakeTerminal(w, h)
 	in := ldrender.NewIncipit(ft, &ariaView{settings: &renderSettings{}})
@@ -185,8 +149,6 @@ func chromeIncipit(w, h int) (*ldrender.FakeTerminal, *ldrender.Incipit) {
 	return ft, in
 }
 
-// assertNoGapBelowRule fails if any bare rule is separated from the voice
-// header it introduces by one or more blank rows.
 func assertNoGapBelowRule(t *testing.T, where string, rows []string) {
 	t.Helper()
 	shape := make([]string, 0, len(rows))
@@ -202,7 +164,7 @@ func assertNoGapBelowRule(t *testing.T, where string, rows []string) {
 			j++
 		}
 		if j == i+1 || j >= len(shape) {
-			continue // hugged already, or nothing below
+			continue
 		}
 		if shape[j] == "> input" || shape[j] == "< figaro" {
 			t.Fatalf("%s: %d blank row(s) between the rule at line %d and %q at line %d;\n"+

@@ -10,8 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// farmerCorpus is the adversarial content set: every node shape a thinking
-// block can actually hold, plus the character classes that break column math.
 func farmerCorpus() map[string]string {
 	long := "I'll need to read through the plan document and review the diffs to give a " +
 		"comprehensive response about the repository, the worktree setup, console issues on " +
@@ -57,13 +55,6 @@ func tableFixture(n int) string {
 	return b.String()
 }
 
-// stripSGR is stripSGRForTest with a byte scan that cannot eat a multi-byte
-// rune (the rune-wise one in thinking_gutter_test.go walks runes, which is
-// fine, but this one shares escapeEnd with production so the test and the code
-// agree on where an escape ends).
-
-// TestFarmerQuoteInvariants sweeps every width 20..200 over the corpus and
-// asserts the three claimed invariants.
 func TestFarmerQuoteInvariants(t *testing.T) {
 	type fail struct {
 		name  string
@@ -72,7 +63,7 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 		row   int
 		text  string
 	}
-	seen := map[string]fail{} // one exemplar per (fixture, kind)
+	seen := map[string]fail{}
 	for name, md := range farmerCorpus() {
 		for _, typ := range []livedoc.NodeType{livedoc.NodeThinking, livedoc.NodeSteering} {
 			for w := 20; w <= 200; w++ {
@@ -84,15 +75,10 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 						continue
 					}
 					key := func(k string) string { return name + "/" + k }
-					// OVERFLOW MUST BE INHERITED, NEVER ADDED. glamour overruns
-					// the width it is GIVEN (an unclosed fence at 12 of these
-					// 181 widths, by up to 11 cells at w=20), so a blunt
-					// row<=width here just re-reports glamour every run, and a
-					// blunt row<=width guarded by "prose fits" fires on the
-					// boundary width where prose fits and the two-column-tighter
-					// quoted render does not. The contract is the delta: a
-					// quoted row may exceed the viewport only where glamour's
-					// own row already exceeded the width it was rendered at.
+					// glamour overruns the width it is given;
+					// a quoted row may exceed the viewport
+					// only where glamour's own row already
+					// did.
 					if got := displayWidth(r); got > w && !glamourOverranAt(md, w) {
 						if _, ok := seen[key("overwide")]; !ok {
 							seen[key("overwide")] = fail{name, w, fmt.Sprintf("row is %d cells > width, and glamour stayed inside its own budget", got), i, plain}
@@ -123,11 +109,8 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 	}
 }
 
-// TestFarmerRowsAreGlamourPlusGutter is the strongest form of "the words
-// survive": a quoted row must be the gutter and then glamour's own row, byte
-// for byte, at the reserved width, with the two-column margin the rule stands
-// in removed and nothing else touched. Anything weaker (words compare, prefix
-// check) is satisfiable by output that has been re-padded or clipped.
+// A quoted row is the gutter then glamour's own row at the reserved width,
+// byte for byte; anything weaker is satisfiable by re-padded or clipped output.
 func TestFarmerRowsAreGlamourPlusGutter(t *testing.T) {
 	bad := 0
 	for name, md := range farmerCorpus() {
@@ -155,8 +138,6 @@ func TestFarmerRowsAreGlamourPlusGutter(t *testing.T) {
 	}
 }
 
-// TestFarmerEscapesIntact: clipping must not sever an escape sequence, and a
-// row that opens a colour must close it.
 func TestFarmerEscapesIntact(t *testing.T) {
 	seen := map[string]bool{}
 	for name, md := range farmerCorpus() {
@@ -194,10 +175,7 @@ func isFinalByte(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
-// glamourOverranAt reports whether the markdown, rendered at the RESERVED
-// width, already exceeds it: i.e. whether glamour, not the gutter, is the one
-// that cannot fit it. (The doc comment used to name proseOverflowsAt, a second
-// helper that no test called.)
+// glamourOverranAt reports whether glamour itself, at the reserved width, overran it.
 func glamourOverranAt(md string, w int) bool {
 	n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
 	pw := proseWidth(n, w)

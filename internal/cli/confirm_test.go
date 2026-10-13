@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// x on a row that names an aria asks before it kills, and holds the keyboard
-// until it is answered: a stray letter is not consent. X asks nothing.
+// x holds the keyboard until answered; a stray letter is not consent.
 func TestConfirm_XAsksAndCapitalXDoesNot(t *testing.T) {
 	for _, tc := range []struct {
 		key     byte
@@ -36,12 +35,10 @@ func TestConfirm_XAsksAndCapitalXDoesNot(t *testing.T) {
 		if got := tr.status.noticeText(); !strings.Contains(got, "kill aria1234?") {
 			t.Fatalf("the bar does not carry the question: %q", got)
 		}
-		// A key that is not an answer changes nothing.
 		tr.key('j')
 		if tr.mode() != modeConfirm || len(killed) != 0 {
 			t.Fatalf("a stray key answered the question: mode=%v killed=%v", tr.mode(), killed)
 		}
-		// n leaves it alone and takes the sentence off the bar with it.
 		tr.key('n')
 		if tr.mode() == modeConfirm || len(killed) != 0 {
 			t.Fatalf("n did not dismiss: mode=%v killed=%v", tr.mode(), killed)
@@ -52,8 +49,7 @@ func TestConfirm_XAsksAndCapitalXDoesNot(t *testing.T) {
 	}
 }
 
-// The question pins its sentence to the bar for as long as it is up: a notice
-// that retires mid-question leaves a dialog nobody can read.
+// The question's sentence outlives the notice TTL while the question is up.
 func TestConfirm_TheNoticeStandsWhileTheQuestionDoes(t *testing.T) {
 	tr, _ := visualFixture(t)
 	done := false
@@ -70,8 +66,7 @@ func TestConfirm_TheNoticeStandsWhileTheQuestionDoes(t *testing.T) {
 	}
 }
 
-// THE QUESTION COSTS NO HEIGHT and takes nothing away: the list it was asked
-// from is untouched, cursor and all, and the bar carries both halves of it.
+// The question costs no height: the list and its cursor are untouched.
 func TestConfirm_TheListSurvivesTheQuestion(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.dropRow = func(pit, id, next string) {}
@@ -80,7 +75,7 @@ func TestConfirm_TheListSurvivesTheQuestion(t *testing.T) {
 		{text: "  aria5678", id: "aria5678", yank: "aria5678"},
 	})
 	tr.focused = focusPit
-	tr.pit.moveSelection(1) // stand on the second row
+	tr.pit.moveSelection(1)
 	before := len(tr.pit.lines(tr.w, 12))
 	tr.key('x')
 	if got := len(tr.pit.lines(tr.w, 12)); got != before {

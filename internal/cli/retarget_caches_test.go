@@ -10,22 +10,15 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A SWITCH CHANGES WHAT EVERY (turn, node) KEY MEANS. Two arias that share a
-// prefix carry the same turn ids over different questions above their fork
-// point, so any cache keyed by that coordinate and not cleared on retarget
-// paints one conversation's chrome over another's body.
-//
-// Seen in a pane on b04f2120: hopping parent -> branch -> parent -> cousin
-// left the header reading "branch turn 1" while the footer named the cousin
-// and the wire had delivered "cousin turn 1".
+// Two arias sharing a prefix carry the same turn ids over different questions
+// above the fork point, so a cache keyed by (turn, node) must clear on retarget.
 
-// switchedPager is a pager holding aria A, retargeted at aria B, where both
-// have a turn 2 and they ask different questions in it.
+// switchedPager holds aria A, retargeted at aria B; both have a turn 2 with
+// different questions.
 func switchedPager(t testing.TB, h int) *transcript {
 	t.Helper()
 	tr := stickyPager(t, 1, 3, 12, h)
-	// PIN TURN 2 IN ARIA A FIRST. The cache is filled by drawing the header, so
-	// a switch tested from a pager that never pinned anything cannot fail.
+	// The cache is filled by drawing the header, so pin turn 2 in A first.
 	head, ok := headEntryOf(tr, 2)
 	if !ok {
 		t.Fatal("fixture: turn 2 is not held")
@@ -55,8 +48,6 @@ func switchedPager(t testing.TB, h int) *transcript {
 	return tr
 }
 
-// TestRetarget_StickyHeaderFollowsTheSubject is the canary for the defect
-// above: pin a question in aria A, switch to aria B, and read the header.
 func TestRetarget_StickyHeaderFollowsTheSubject(t *testing.T) {
 	tr := switchedPager(t, 24)
 	head, ok := headEntryOf(tr, 2)

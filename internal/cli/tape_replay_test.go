@@ -18,9 +18,6 @@ var (
 	mintTape = flag.String("mint-tape", "", "write a synthetic tape to this path and exit")
 )
 
-// The headless half of `figaro replay`: same pages, same renderer, a fake
-// terminal instead of a pty. The pty half is for eyes; this is for CI.
-
 // tapePaths: the tape under -tape, or every committed fixture.
 func tapePaths(t *testing.T) []string {
 	t.Helper()
@@ -34,8 +31,7 @@ func tapePaths(t *testing.T) []string {
 	return paths
 }
 
-// tapePages: the live-render pages in wire order: the catch-up read's
-// response (the seed the pager opens on), then every push.
+// tapePages: the catch-up read's response, then every push, in wire order.
 func tapePages(t *testing.T, path string) (tape.Header, []aria.Page) {
 	t.Helper()
 	h, frames, err := tape.Read(path)
@@ -64,11 +60,10 @@ func tapePages(t *testing.T, path string) (tape.Header, []aria.Page) {
 	if len(pages) == 0 {
 		t.Skipf("%s carries no aria pages", filepath.Base(path))
 	}
-	return h, pages // a rotten tape fatals above rather than skipping silently
+	return h, pages
 }
 
-// replayTape renders every page at the recorded geometry, calling frame after
-// each: the fixture the assertions share.
+// replayTape renders every page at the recorded geometry, calling frame after each.
 func replayTape(t *testing.T, path string, frame func(tr *transcript, i int)) {
 	t.Helper()
 	h, pages := tapePages(t, path)
@@ -88,15 +83,8 @@ func replayTape(t *testing.T, path string, frame func(tr *transcript, i int)) {
 	}
 }
 
-// TestTapeReplayKeepsTheWindowHonest: while following, the retained row total
-// may only GROW. The window is anchored at the newest message and history is
-// only added behind it, so a total that falls has dropped rows the reader can
-// still scroll to, and one that falls and rises is the pager arguing with
-// itself, which is the range row that wavered between 1043-1072/1072+ and
-// 546-575/575+ for a whole turn on 2026-08-01.
-//
-// Asserted from a tape because the defect needs a real aria's shape: one
-// message taller than the old tuner's hysteresis band.
+// While following, the retained row total may only grow: history is only
+// added behind the anchored window.
 func TestTapeReplayKeepsTheWindowHonest(t *testing.T) {
 	for _, path := range tapePaths(t) {
 		t.Run(filepath.Base(path), func(t *testing.T) {
@@ -113,8 +101,7 @@ func TestTapeReplayKeepsTheWindowHonest(t *testing.T) {
 	}
 }
 
-// Same tape, same rows. Without this the invariant above is worth nothing: the
-// renderer reads a clock in three places.
+// The renderer reads a clock in three places; same tape must give same rows.
 func TestTapeReplayIsDeterministic(t *testing.T) {
 	rules := func(path string) []string {
 		var out []string
@@ -137,19 +124,14 @@ func TestTapeReplayIsDeterministic(t *testing.T) {
 	}
 }
 
-// spikeHistory is tallHistory with ONE giant message (a tool dump) `depth`
-// back from the tail. The old tuner sized the window from its own average
-// height, so a message taller than its hysteresis band left the loop no fixed
-// point.
+// spikeHistory is tallHistory with one giant message `depth` back from the tail.
 func spikeHistory(n, shortLines, giantLines, depth int) []aria.TurnPart {
 	out, tall := tallHistory(n, shortLines), tallHistory(n, giantLines)
 	out[n-depth] = tall[n-depth]
 	return out
 }
 
-// Minting is the other direction of the road: a recording turns a bug someone
-// saw into a test, minting turns one someone reasoned about into something a
-// human can watch. Inert without -mint-tape.
+// Inert without -mint-tape.
 func TestMintTapeFromFixture(t *testing.T) {
 	if *mintTape == "" {
 		t.Skip("pass -mint-tape <path> to write one")
@@ -184,7 +166,7 @@ func TestMintTapeFromFixture(t *testing.T) {
 			From: 0, V: f,
 			Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "thinking", "markdown": stream}}},
 		}}}}})
-		time.Sleep(12 * time.Millisecond) // real intervals: the tape is a schedule
+		time.Sleep(12 * time.Millisecond)
 	}
 	t.Logf("wrote %s", *mintTape)
 }

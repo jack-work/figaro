@@ -1,9 +1,7 @@
 package cli
 
-// THE FLICKER THIS SUPPRESSES, stated as a law: a prompt sent into an idle
-// figaro is queued and lifted again in the same breath, and a drawer that
-// opens for those few milliseconds shows the reader nothing they can read.
-// The bench (scripts/jitterbench.sh) measured the window at 8 to 66 ms.
+// A prompt sent into an idle figaro is queued and lifted within milliseconds;
+// the grace keeps the drawer from opening for that.
 
 import (
 	"testing"
@@ -29,8 +27,7 @@ func TestAnIdleAriasRowWaitsForItsDebut(t *testing.T) {
 		t.Fatalf("wake-up at %v, wanted %v", next, want)
 	}
 
-	// It is still there after the grace: it will really sit there, so it is
-	// drawn, and nothing further is owed.
+	// Still there after the grace: drawn, nothing further owed.
 	items, next = queueDebut(rows, false, now.Add(queueDebutGrace), debut)
 	if len(items) != 1 || items[0].id != 1 {
 		t.Fatalf("the row that survived the grace was not drawn: %+v", items)
@@ -46,14 +43,12 @@ func TestALiftedRowIsNeverDrawnAtAll(t *testing.T) {
 	if items, _ := queueDebut([]queueRow{queuedRow(1, "hello")}, false, now, debut); len(items) != 0 {
 		t.Fatalf("drawn on arrival: %+v", items)
 	}
-	// The drain loop lifted it: committing is still live, and the row keeps
-	// the deadline it was given rather than starting a new grace.
+	// Committing is still live and keeps its deadline.
 	committing := []queueRow{{ID: 1, Text: "hello", State: rpc.QueueStateCommitting}}
 	if items, _ := queueDebut(committing, false, now.Add(10*time.Millisecond), debut); len(items) != 0 {
 		t.Fatalf("committing restarted nothing but was drawn: %+v", items)
 	}
-	// Then it became a message. By the time the wake-up fires there is no live
-	// row, so no frame is spent and the id is forgotten.
+	// Committed: no live row, no frame, the id is forgotten.
 	gone := []queueRow{{ID: 1, Text: "hello", State: rpc.QueueStateCommitted}}
 	items, next := queueDebut(gone, false, now.Add(queueDebutGrace), debut)
 	if len(items) != 0 || !next.IsZero() {
@@ -76,9 +71,7 @@ func TestABusyAriasRowIsDrawnImmediately(t *testing.T) {
 	}
 }
 
-// A row that arrived against an idle aria keeps its grace even if the aria
-// starts working inside it: promoting it would put the row on screen for the
-// last few milliseconds of its life, which is the flicker again.
+// A row keeps its grace even if the aria gets busy inside it.
 func TestTheDeadlineSurvivesTheAriaGettingBusy(t *testing.T) {
 	debut := map[uint64]time.Time{}
 	now := time.Now()
@@ -89,8 +82,6 @@ func TestTheDeadlineSurvivesTheAriaGettingBusy(t *testing.T) {
 	}
 }
 
-// The second prompt of a burst is its own row with its own deadline, and the
-// earliest one is what the caller is told to wake for.
 func TestTheWakeUpIsTheEarliestDeadline(t *testing.T) {
 	debut := map[uint64]time.Time{}
 	now := time.Now()

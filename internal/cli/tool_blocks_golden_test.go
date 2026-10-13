@@ -15,21 +15,7 @@ import (
 
 var updateToolBlocks = flag.Bool("update-tool-blocks", false, "rewrite testdata/tool_blocks.golden")
 
-// The tool block's SHAPE lives in one golden rather than in a dozen imperative
-// assertions. Every round of layout feedback used to mean rewriting each
-// expectation by hand; now it means reading a diff and running:
-//
-//	go test ./internal/cli -run ToolBlockGolden -update-tool-blocks
-//
-// A golden is the right instrument here because the property under test is
-// "does this look right", which a human reads and a predicate does not. What
-// stays imperative is what a snapshot cannot say: the width INVARIANT (every
-// width from 20 to 200), the fold BEHAVIOUR under a gesture, and the colour
-// contract: those are in nodes_test.go and transcript_expand_test.go.
-//
-// The cases are the states the owner reviewed, in the order he reviewed them.
-// The cases are the states the owner reviewed, across the tool styles the
-// table knows: a shell, a file write, a read, and one it has never heard of.
+// Regenerate with: go test ./internal/cli -run ToolBlockGolden -update-tool-blocks
 func toolBlockCases() []struct {
 	name              string
 	node              livedoc.Node
@@ -72,8 +58,6 @@ func toolBlockCases() []struct {
 		Args:     map[string]any{"path": "/var/tmp/x/retry.py", "old_text": oldText, "new_text": newText},
 		Output:   diff.Diff,
 		OpenedAt: o, StartedAt: o + 7300, FinishedAt: o + 7312}
-	// A shell that fences a region of its output as a diff gets the edit
-	// tool's picture for that region, and its own voice for the rest.
 	fenced := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Args:     map[string]any{"command": "git diff --unified=1 retry.py"},
 		Output:   "```diff\n--- a/retry.py\n+++ b/retry.py\n@@ -1,3 +1,3 @@\n def retry(fn, retries=3):\n-    for i in range(retries):\n+    for i in range(retries + 1):\n```\n1 file changed, 1 insertion(+), 1 deletion(-)",
@@ -107,19 +91,11 @@ func toolBlockCases() []struct {
 }
 
 func TestToolBlockGolden(t *testing.T) {
-	// A running call's duration is `now - opened`, so the clock is frozen at a
-	// fixed point past the fixture's timestamps. Without this the snapshot
-	// changes every second and the golden is worthless.
-	// A running call's elapsed time is `now - opened`, so the clock is frozen
-	// past the fixtures' timestamps. Without this the snapshot changes every
-	// second and the golden is worthless.
+	// A running call's elapsed time is `now - opened`: freeze the clock.
 	defer func(prev func() time.Time) { timeNow = prev }(timeNow)
 	timeNow = func() time.Time { return time.UnixMilli(1785862030000 + 17_200) }
 
-	// And the ZONE, for the same reason: the block prints a wall clock, so an
-	// unpinned golden asserts the owner's timezone. This one was recorded in
-	// EDT and passed for months on his machine alone; the first CI run on a
-	// UTC runner failed it, on a commit that had touched none of this.
+	// The block prints a wall clock, so pin the zone too.
 	defer func(prev func() *time.Location) { timeLocation = prev }(timeLocation)
 	timeLocation = func() *time.Location { return time.FixedZone("EDT", -4*60*60) }
 

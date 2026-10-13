@@ -12,21 +12,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// PHASE 4, ASKED BEFORE IT IS DESIGNED: what would tree buy the COMPOSED
-// layer that the turn cache does not already provide?
-//
-// There is one candidate and Gluck named it generational: forks do not share
-// composed prefixes -- two branches of one trunk each compose the same history
-// into separate node structs. Measured by IDENTITY, as phase 3 was, because
-// heap is the wrong ruler and S3's acquittal already turned on this exact
-// distinction (nodes COPY, they do not alias).
-//
-// PERMANENT, NOT MIGRATION SCAFFOLDING.
-
-// The fixture must carry BOTH node kinds. S3 established that compose
-// rebuilds a tool node's text (Split -> Join, and a tailBound) while prose
-// passes through, so a fixture of prose alone measures the easy case and
-// reports sharing that most composed bytes do not get.
+// The fixture carries both node kinds: compose rebuilds a tool node's text
+// while prose passes through, so prose alone would overstate sharing.
 func composeFixture(n int) []store.Entry[message.Message] {
 	long := ""
 	for i := 0; i < 400; i++ {
@@ -44,9 +31,7 @@ func composeFixture(n int) []store.Entry[message.Message] {
 	for i := 1; i <= n; i++ {
 		turn := uint64(i)
 		add(message.RoleInput, turn, message.TextContent(fmt.Sprintf("question %d, long enough to be worth sharing between branches", i)))
-		// A tool node needs the INVOCATION as well as the result; a result
-		// alone composes to nothing, which is how this fixture measured only
-		// prose the first time.
+		// A result without its invocation composes to nothing.
 		call := fmt.Sprintf("call-%d", i)
 		add(message.RoleOutput, turn,
 			message.TextContent(fmt.Sprintf("answer %d, also long enough to be worth sharing", i)),
@@ -57,10 +42,6 @@ func composeFixture(n int) []store.Entry[message.Message] {
 	return out
 }
 
-// composeTurns is the projection the DAEMON runs (compose.Turns). The CLI
-// no longer composes anything -- it renders what the api hands it -- so
-// this measurement calls the composer directly rather than through a CLI
-// helper that no longer exists.
 func composeTurns(entries []store.Entry[message.Message]) []aria.Turn {
 	msgs := make([]message.Message, len(entries))
 	for i, e := range entries {
@@ -70,8 +51,6 @@ func composeTurns(entries []store.Entry[message.Message]) []aria.Turn {
 	return compose.Turns(msgs)
 }
 
-// nodeTexts returns every non-empty string a node carries, since a tool node
-// keeps its text somewhere other than Markdown.
 func nodeTexts(n livedoc.Node) []string {
 	var out []string
 	for _, s := range []string{n.Markdown, n.Input, n.Output, n.Summary} {
@@ -86,24 +65,17 @@ func sameString(a, b string) bool {
 	return len(a) == len(b) && unsafe.StringData(a) == unsafe.StringData(b)
 }
 
-// Two branches composing the same prefix: does the composition MINT strings,
-// or share the decoded IR's?
+// Measured by string identity: does composing mint strings or share the IR's?
 func TestTwoBranchesComposingOneHistoryDuplicateTheNodes(t *testing.T) {
 	entries := composeFixture(40)
 
-	// Both branches read the SAME decoded entries -- the best case for
-	// sharing, since after a seed-at-open they genuinely would.
 	a := composeTurns(entries)
 	b := composeTurns(entries)
 	if len(a) == 0 || len(b) == 0 {
 		t.Fatal("composed nothing; the fixture cannot show duplication")
 	}
 
-	// PROVE THE FIXTURE CAN FAIL. Prose passes through compose and aliases;
-	// a tool node is REBUILT (S3: nodes copy, they do not alias). A fixture
-	// of prose alone reports sharing that most composed bytes never get, and
-	// this test produced exactly that answer twice before the invocation was
-	// added -- a tool_result with no tool_use composes to nothing.
+	// The fixture must carry tool nodes, or the test cannot fail.
 	kinds := map[string]int{}
 	for _, tn := range a {
 		for _, n := range tn.Nodes {
@@ -146,8 +118,6 @@ func TestTwoBranchesComposingOneHistoryDuplicateTheNodes(t *testing.T) {
 	}
 }
 
-// The seeding question, one layer up: does a shallow copy of a Turn share its
-// nodes' strings, the way []Entry did downstairs?
 func TestShallowCopyOfTurnsSharesNodeStrings(t *testing.T) {
 	turns := composeTurns(composeFixture(40))
 	if len(turns) == 0 {

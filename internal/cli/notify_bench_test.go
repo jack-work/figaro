@@ -9,15 +9,10 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE FENCE IS ON THE HOTTEST PATH A PAGER HAS: every frame of every stream
-// passes through notifyHandler. This measures one frame through it on a
-// claimed subject: an aria page (the identity check is a string compare under
-// a lock the handler already takes) and an intrinsic form delta (where the
-// check takes the lock once more). And the dropped case, which is what a frame
-// costs when it arrives during a hop.
+// Every frame of every stream passes through notifyHandler.
 func BenchmarkNotifyFrame(b *testing.B) {
 	in := fenceSession(b)
-	in.intrinsics = newIntrinsicMirrors() // as runsession wires a real session
+	in.intrinsics = newIntrinsicMirrors()
 	const id = "ariaAAAA"
 	gen := atomic.AddUint64(&in.subjectGen, 1)
 	if _, _, ok := in.claimSubject(gen, id, "", nil, 0); !ok {

@@ -10,13 +10,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A steer SPLITS the agent's run, so one turn closes SEVERAL output regions.
-// The bridge held exactly one in t.pending and overwrote it, so every region
-// but the last was discarded without ever being frozen.
-//
-// Observed against a real model: a turn with four bash calls and a steer landing
-// mid-sequence rendered ONE tool row while show --json listed FOUR. The work was
-// done, recorded in the IR, and invisible to the user.
+// A steer splits the agent's run, so one turn closes several output regions.
 func TestBridge_EveryOutputRegionOfASteeredTurnReachesScrollback(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
@@ -30,9 +24,7 @@ func TestBridge_EveryOutputRegionOfASteeredTurnReachesScrollback(t *testing.T) {
 		{Type: "tool", Name: "bash", Status: "ok", Output: "POSTTOOL"},
 	}
 
-	// The pre-steer output region closes...
 	lt.client.OnClosed(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleOutput, Nodes: pre})
-	// ...then the steer, then a SECOND output region closes.
 	lt.client.OnClosed(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleInput,
 		Nodes: []livedoc.Node{{Type: "steering", Role: livedoc.RoleInput, Markdown: "STEERTEXT"}}})
 	lt.client.OnClosed(aria.Message{Turn: 2, From: 3, Role: livedoc.RoleOutput, Nodes: post})
@@ -46,11 +38,8 @@ func TestBridge_EveryOutputRegionOfASteeredTurnReachesScrollback(t *testing.T) {
 	}
 }
 
-// The live path must not REORDER what the projection fixed. Output is deferred
-// in pending while input freezes immediately, so a steer arriving mid-turn used
-// to overtake the output region that preceded it: incipit hoisted the steer
-// above the tool calls, while `fig show` and the pager placed it after them.
-// The same turn read two ways must not tell two stories.
+// Output is deferred in pending while input freezes immediately, so a steer
+// must not overtake the output region that preceded it.
 func TestBridge_SteerDoesNotOvertakeThePendingOutputRegion(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())

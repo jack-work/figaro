@@ -10,9 +10,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// TestYankTheQuestion: selecting a turn's question and pressing y must put the
-// question on the clipboard. It is text on the turn rather than a node, and it
-// is the thing on screen a reader is most likely to want a copy of.
+// The question is text on the turn, not a node, and y must still copy it.
 func TestYankTheQuestion(t *testing.T) {
 	var parts []aria.TurnPart
 	for i := range 6 {
@@ -54,9 +52,8 @@ func TestYankTheQuestion(t *testing.T) {
 	}
 }
 
-// TestYankTheQuestionOfAnUnheldTurn: a selection dragged past what the window
-// retains still copies, by reading the pages it needs. The question is the
-// case that proves it: only the slice that starts a turn carries one.
+// A selection past what the window retains copies by reading the pages it
+// needs; only the slice that starts a turn carries the question.
 func TestYankTheQuestionOfAnUnheldTurn(t *testing.T) {
 	var parts []aria.TurnPart
 	for i := range 12 {
@@ -78,8 +75,6 @@ func TestYankTheQuestionOfAnUnheldTurn(t *testing.T) {
 	if !ok {
 		t.Fatal("no copy plan")
 	}
-	// Forget it: the selection now names a turn the window no longer holds,
-	// which is what a long scroll does.
 	client.EvictBefore(aria.Anchor{Turn: 8})
 	tr.from = aria.Anchor{Turn: 8}
 	tr.invalidateWindow()

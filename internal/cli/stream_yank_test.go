@@ -11,10 +11,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// recordingTerminal is a searchInputTerminal that also records clipboard writes.
 type recordingTerminal struct {
 	*searchInputTerminal
-	clipboard atomic.Value // string
+	clipboard atomic.Value
 }
 
 func newRecordingTerminal() *recordingTerminal {
@@ -25,8 +24,6 @@ func newRecordingTerminal() *recordingTerminal {
 
 func (t *recordingTerminal) SetClipboard(s string) { t.clipboard.Store(s) }
 
-// stubHistoryReader satisfies transcriptReadClient with a fixed 120-message
-// history so copySelection has something to walk.
 type stubHistoryReader struct{ history []aria.TurnPart }
 
 func (r *stubHistoryReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
@@ -42,8 +39,7 @@ func (r *stubHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error)
 	return &rpc.QueuedResponse{}, nil
 }
 
-// With a selection active, 'y' should fire the selection copy (populating
-// copyPlan or completing to the clipboard): NOT the aria id shortcut.
+// With a selection, 'y' copies the selection, not the aria id.
 func TestYankKey_WithSelectionCopiesSelection(t *testing.T) {
 	reader := &stubHistoryReader{history: transcriptHistory(120)}
 	tc := newRecordingTerminal()
@@ -63,7 +59,6 @@ func TestYankKey_WithSelectionCopiesSelection(t *testing.T) {
 	go func() { in.run(); close(done) }()
 	tc.send([]byte{'y'})
 
-	// Wait for the copy goroutine to land text in the clipboard.
 	deadline := time.After(2 * time.Second)
 	for {
 		if s, _ := tc.clipboard.Load().(string); s != "" && s != "aria-99" {
@@ -81,7 +76,6 @@ func TestYankKey_WithSelectionCopiesSelection(t *testing.T) {
 	waitSignal(t, done, "input loop exit")
 }
 
-// Without a selection, 'y' must still copy the aria id (the incipit fallback).
 func TestYankKey_NoSelectionCopiesAriaID(t *testing.T) {
 	reader := &stubHistoryReader{history: transcriptHistory(120)}
 	tc := newRecordingTerminal()
@@ -109,5 +103,4 @@ func TestYankKey_NoSelectionCopiesAriaID(t *testing.T) {
 	waitSignal(t, done, "input loop exit")
 }
 
-// Sanity: guard against a data race in the two shims we swap in.
 var _ sync.Locker = (*sync.Mutex)(nil)

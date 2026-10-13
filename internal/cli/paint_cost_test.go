@@ -27,9 +27,7 @@ func benchTranscript(b *testing.B, h int) (*transcript, func(time.Duration)) {
 	return tr, func(d time.Duration) { clock = clock.Add(d) }
 }
 
-// WHAT AN IDLE PAINT COSTS. The frame is identical and the resync is due, so
-// this is the worst quiet case: every row compared, a buffer built and thrown
-// away, nothing written.
+// The worst quiet case: every row compared, a buffer built, nothing written.
 func BenchmarkPaintUnchangedResyncDue(b *testing.B) {
 	tr, advance := benchTranscript(b, 60)
 	s := benchScreen(60)
@@ -41,8 +39,6 @@ func BenchmarkPaintUnchangedResyncDue(b *testing.B) {
 	}
 }
 
-// The same frame with the resync NOT due: the ordinary quiet paint, which is
-// what most of an idle session is.
 func BenchmarkPaintUnchanged(b *testing.B) {
 	tr, _ := benchTranscript(b, 60)
 	s := benchScreen(60)
@@ -53,7 +49,6 @@ func BenchmarkPaintUnchanged(b *testing.B) {
 	}
 }
 
-// And the frame a stream actually sends: one row different.
 func BenchmarkPaintOneRowChanged(b *testing.B) {
 	tr, _ := benchTranscript(b, 60)
 	s := benchScreen(60)

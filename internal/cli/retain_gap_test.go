@@ -6,10 +6,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// AFTER A RETAINED SWITCH THERE MUST BE NO HOLE AT THE SEAM. The prefix is
-// held, the suffix arrives, and if the store cannot see that they touch, the
-// pager draws a gap sentinel and fills it from the wire: the whole saving,
-// spent twice, plus a row that says history is missing when it is not.
+// The held prefix and the arriving suffix must touch, or the pager draws a
+// gap sentinel and refills from the wire.
 func TestRetain_NoHoleAtTheSeam(t *testing.T) {
 	old := aria.NewClient()
 	old.Apply(aria.Page{Parts: partsFor(1, 40, "A")}, aria.Notify)

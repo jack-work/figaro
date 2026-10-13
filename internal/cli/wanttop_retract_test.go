@@ -11,11 +11,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// wantTop's contract is "any deliberate move elsewhere retracts it"
-// (transcript.go). scroll, landJump and resetToTail honour that; these probe
-// the two deliberate moves that write t.offset WITHOUT going through them,
-// a search landing and a selection reveal, with a page already in flight,
-// which is exactly when a stale intent yanks the reader back to line 0.
+// A search landing and a selection reveal write t.offset without going
+// through scroll, and must still retract wantTop.
 
 func wantTopFixture(t *testing.T) (*transcript, *ldrender.FakeTerminal) {
 	t.Helper()
@@ -32,7 +29,7 @@ func wantTopFixture(t *testing.T) (*transcript, *ldrender.FakeTerminal) {
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('g')
-	tr.key('g') // arm the standing Home; history exists below, so it stands
+	tr.key('g')
 	if !tr.wantTop {
 		t.Fatal("fixture: gg over history should arm wantTop")
 	}
@@ -48,11 +45,9 @@ func olderPage() aria.Page {
 	return aria.Page{Parts: parts}
 }
 
-// A search that lands in-window is a deliberate move: the fetch gg armed must
-// not drag the reader back to the top when it lands.
 func TestWantTop_SearchLandingRetractsIt(t *testing.T) {
 	tr, ft := wantTopFixture(t)
-	req, ok := tr.pageCursor() // the fetch gg armed, now in flight
+	req, ok := tr.pageCursor()
 	if !ok {
 		t.Fatal("fixture: gg should arm a backward fetch")
 	}
@@ -66,8 +61,6 @@ func TestWantTop_SearchLandingRetractsIt(t *testing.T) {
 	}
 }
 
-// Entering a selection is a deliberate move too, the reader is reading nodes,
-// not still asking for the beginning.
 func TestWantTop_SelectionRetractsIt(t *testing.T) {
 	tr, _ := wantTopFixture(t)
 	tr.selectNode(1, false)

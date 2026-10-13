@@ -265,7 +265,7 @@ func newSearchInteractiveInput(reader transcriptReadClient, tc *searchInputTermi
 	lt.enterTranscript()
 	tail := readBefore(transcriptHistory(120), recentCursor, transcriptPageSize)
 	lt.apply(tail)
-	lt.setMoreBefore(tail.More.Before) // the wire's answer: there IS older history
+	lt.setMoreBefore(tail.More.Before)
 	return &interactiveInput{
 		tc: tc, lt: lt, fcli: reader, mu: new(renderLock), set: settings,
 		cancel: func() {}, disconnectCh: make(chan struct{}, 1),

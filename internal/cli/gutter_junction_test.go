@@ -25,8 +25,6 @@ func gutterPager(t testing.TB, n livedoc.Node) *transcript {
 	return tr
 }
 
-// gutterPagerOn is gutterPager with the terminal it paints to, for the tests
-// that read the FRAME (chrome included) rather than the body rows.
 func gutterPagerOn(t testing.TB, n livedoc.Node) (*transcript, *ldrender.FakeTerminal) {
 	t.Helper()
 	client := aria.NewClient()
@@ -120,8 +118,8 @@ func TestStickyRuleJoinsOnlyTheNextRowsGutter(t *testing.T) {
 		if len(head) != stickyText+1 {
 			t.Fatalf("expected a sticky question and rule, got %q", head)
 		}
-		// The header covers body rows: the junction must follow the first
-		// uncovered row, not the first row hidden behind the question.
+		// The junction follows the first uncovered row, not one hidden
+		// behind the header.
 		below := stripANSI(tr.lineAt(tr.offset + len(head)))
 		if !strings.HasPrefix(below, "  │") {
 			t.Fatalf("fixture has no gutter below the rule: %q", below)
@@ -130,9 +128,7 @@ func TestStickyRuleJoinsOnlyTheNextRowsGutter(t *testing.T) {
 		if !strings.HasPrefix(rule, "──┬─") || displayWidth(rule) != width {
 			t.Fatalf("width %d: rule above %q is %q", width, below, rule)
 		}
-		// AND ONLY WHEN THE RULE CUTS IT. One row higher and the block's first
-		// row sits directly under the rule: the gutter starts there, so there
-		// is nothing above for it to join.
+		// One row higher the block starts under the rule: nothing to join.
 		tr.offset = span.first - len(head)
 		tr.render()
 		head = headRowsOf(tr)
@@ -144,9 +140,7 @@ func TestStickyRuleJoinsOnlyTheNextRowsGutter(t *testing.T) {
 }
 
 func TestJoinRule(t *testing.T) {
-	// A stroke says the line GOES ON past the rule on that side. The row a
-	// reader sees carries the gutter; what the chrome hides beyond it says
-	// whether the line is cut there or simply begins (or ends) against it.
+	// A stroke says the line goes on past the rule on that side.
 	gutter := "  │ x"
 	for _, tc := range []struct {
 		name         string
@@ -162,8 +156,7 @@ func TestJoinRule(t *testing.T) {
 			gutterCut{row: gutter, hidden: gutter}, "──┼─────"},
 		{"two lines, two columns", gutterCut{row: gutter, hidden: gutter},
 			gutterCut{row: "   │ x", hidden: "   │ y"}, "──┴┬────"},
-		// A tool's header carries no gutter and its body is the same block, so
-		// a rule between them cuts ONE line.
+		// A tool's header carries no gutter, so a rule under it cuts one line.
 		{"a tool cut under its header", gutterCut{},
 			gutterCut{row: gutter, hidden: "✓ $ ls", sameBlock: true}, "──┬─────"},
 		{"left spine", gutterCut{}, gutterCut{row: "│ mantra", hidden: "│ mode"}, "┬───────"},
@@ -226,10 +219,7 @@ func TestShowThinkingUsesTheSameConnector(t *testing.T) {
 	t.Fatalf("show lost the thinking text: %q", rows)
 }
 
-// THE FLOOR JOINS TOO. The rule above the status bar had no junctions at all,
-// while the sticky header's rule drew one unconditionally; both now say the
-// same thing, and say it only when the gutter is CUT by the rule rather than
-// ending against it.
+// The footer rule joins a gutter only where it cuts one, like the header's.
 func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
 	tr, ft := gutterPagerOn(t, livedoc.Node{Type: livedoc.NodeThinking,
 		Markdown: strings.Repeat("The answer needs a careful check before we change it.\n\n", 16)})
@@ -254,22 +244,18 @@ func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
 	if rule := floorRule(); !strings.HasPrefix(rule, "──┴─") {
 		t.Fatalf("a block that runs past the rule must be cut by it, got %q", rule)
 	}
-	// The tail: the block's last row sits against the rule, and a junction
-	// there would branch to a conversation that is not there.
+	// At the tail the block ends against the rule: no junction.
 	tr.offset = maxOff
 	if rule := floorRule(); strings.Contains(rule, "┴") {
 		t.Fatalf("the last row of a block joins nothing, got %q", rule)
 	}
 }
 
-// quotedPager is a turn whose question is a QUOTE (a markdown blockquote, as
-// the quoting gesture writes one), so the question itself has a gutter that
-// can meet the header's rule from above. n says how many lines of it.
+// quotedPager's question is a blockquote, so it has a gutter that can meet
+// the header's rule from above.
 func quotedPager(t testing.TB, lines int) *transcript {
 	t.Helper()
-	// A heading in the shape written BEFORE api/quote stamped a canonical
-	// coordinate, deliberately: the card has to draw for the arias already on
-	// disk, and this fixture is the only place that is checked.
+	// The pre-canonical heading shape, still on disk in old arias.
 	quote := "> quoting aria bd0cf2bd · turn 3 · lt 63.1 · chars 3033-3067 (34 chars)"
 	for range lines - 1 {
 		quote += "\n> and another line of the passage, long enough to stand on its own row"
@@ -293,8 +279,6 @@ func quotedPager(t testing.TB, lines int) *transcript {
 	return tr
 }
 
-// stickyRuleOver scrolls until the row under the header's rule holds want, and
-// answers the rule as painted.
 func stickyRuleOver(t *testing.T, tr *transcript, want string) string {
 	t.Helper()
 	_, maxOff := tr.layoutNow()
@@ -313,12 +297,9 @@ func stickyRuleOver(t *testing.T, tr *transcript, want string) string {
 	return ""
 }
 
-// A NODE IS THE BOUNDARY, NOT ITS GUTTER. A tool's body carries the gutter and
-// its header row does not, so a rule between the two cuts ONE block and says
-// so, where a rule above a block that starts there says nothing.
+// A rule between a tool's header and its body cuts one block; a rule above a
+// block that starts there says nothing.
 func TestStickyRuleReadsBothSidesOfTheCut(t *testing.T) {
-	// One line of question: nothing of it is left under the rule, so the only
-	// stroke is the tool's body, cut from its header above.
 	one := quotedPager(t, 1)
 	if rule := stickyRuleOver(t, one, "(no output)"); !strings.HasPrefix(rule, "──┬─") {
 		t.Errorf("a tool cut under its own header: %q", rule)
@@ -327,8 +308,6 @@ func TestStickyRuleReadsBothSidesOfTheCut(t *testing.T) {
 		t.Errorf("a tool that begins under the rule joins nothing: %q", rule)
 	}
 
-	// Several lines of question: its own gutter runs under the header too, so
-	// the rule carries the stroke for it as well.
 	many := quotedPager(t, 3)
 	if rule := stickyRuleOver(t, many, "(no output)"); !strings.HasPrefix(rule, "──┼─") {
 		t.Errorf("two cut lines make a crossing: %q", rule)

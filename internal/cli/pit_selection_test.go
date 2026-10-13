@@ -13,11 +13,8 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// The pit's list behaviour, and the bugs each test was written against.
-
 func idRow(text, id string) pitRow { return pitRow{text: text, yank: text, id: id} }
 
-// A picker born empty must still learn to choose.
 func TestPickerCursorIsDerivedFromRowsNotFromBirth(t *testing.T) {
 	p := newPicker([]pitRow{staticRow("  a header, which is chrome")})
 	if p.hasCursor() {
@@ -35,14 +32,12 @@ func TestPickerCursorIsDerivedFromRowsNotFromBirth(t *testing.T) {
 	if row, _ := p.selected(); row.id != "2" {
 		t.Fatalf("^N did not move: %+v", row)
 	}
-	// And it leaves again when the rows do.
 	p.setRows([]pitRow{staticRow("  a header, which is chrome")}, "")
 	if p.hasCursor() {
 		t.Fatalf("the rows went back to chrome and the cursor stayed: %d", p.cursor)
 	}
 }
 
-// A refresh keeps the selection and the window: both are the reader's.
 func TestPickerSetRowsKeepsSelectionAcrossReorder(t *testing.T) {
 	rows := []pitRow{idRow("a", "1"), idRow("b", "2"), idRow("c", "3")}
 	p := newPicker(rows)
@@ -54,13 +49,9 @@ func TestPickerSetRowsKeepsSelectionAcrossReorder(t *testing.T) {
 	if row, _ := p.selected(); row.id != "3" {
 		t.Fatalf("the reorder dragged the cursor off row 3: %+v", row)
 	}
-	// A ROW THAT VANISHES LEAVES THE CURSOR WHERE IT WAS STANDING, not at the
-	// head -- and the case has to be built so those two are DIFFERENT rows.
-	// (pitrev2 on the first draft of this test: its shrink case left one row
-	// and "cannot tell 'top of list' from 'the neighbour' -- that test
-	// documents the fallback but does not defend it; give it a fourth row.")
+	// Four rows, so "top of list" and "the neighbour" are different rows.
 	p = newPicker([]pitRow{idRow("a", "1"), idRow("b", "2"), idRow("c", "3"), idRow("d", "4")})
-	p.pick(2) // standing on c
+	p.pick(2)
 	p.setRows([]pitRow{idRow("a", "1"), idRow("b", "2"), idRow("d", "4")}, "")
 	row, ok := p.selected()
 	if !ok || row.id == "1" {
@@ -71,11 +62,9 @@ func TestPickerSetRowsKeepsSelectionAcrossReorder(t *testing.T) {
 	}
 }
 
-// BUG 1 END TO END, at the drawer: `:send` opens the queue empty, the fetch
-// lands, and ^N must work without closing the pit.
 func TestQueuePitGainsCursorWhenTheFetchLands(t *testing.T) {
 	var d pit
-	d.showList(pitQueue, "", nil) // an empty queue draws nothing at all
+	d.showList(pitQueue, "", nil)
 	if _, ok := d.selected(); ok {
 		t.Fatal("an empty queue has a selection")
 	}
@@ -90,7 +79,6 @@ func TestQueuePitGainsCursorWhenTheFetchLands(t *testing.T) {
 	}
 }
 
-// fakeItemView is a hosted live view with a LIST, like a form.
 type fakeItemView struct {
 	rows      []pitRow
 	activated string
@@ -100,7 +88,6 @@ func (v *fakeItemView) Items(width int) []pitRow { return v.rows }
 func (v *fakeItemView) Activate(path string)     { v.activated = path }
 func (v *fakeItemView) Close()                   {}
 
-// A hosted pit's highlight must be visible to its verbs.
 func TestLivePitHasASelectionTheVerbsCanSee(t *testing.T) {
 	v := &fakeItemView{rows: []pitRow{
 		staticRow("form abc · v1"),
@@ -117,13 +104,11 @@ func TestLivePitHasASelectionTheVerbsCanSee(t *testing.T) {
 	if row, _ := d.selected(); row.id != "skills" {
 		t.Fatalf("^N in a hosted list: %+v", row)
 	}
-	// A REPAINT MUST NOT MOVE THE SELECTION. refreshLive runs on every paint;
-	// before setRows kept the cursor by id it snapped back to the first row.
+	// refreshLive runs on every paint and must not move the selection.
 	d.refreshLive(80)
 	if row, _ := d.selected(); row.id != "skills" {
 		t.Fatalf("a repaint moved the selection: %+v", row)
 	}
-	// And the rows may change under it without taking it away.
 	v.rows = append([]pitRow{staticRow("form abc · v2"), idRow("aria_id: y", "aria_id")}, v.rows[1:]...)
 	d.refreshLive(80)
 	if row, _ := d.selected(); row.id != "skills" {
@@ -131,7 +116,7 @@ func TestLivePitHasASelectionTheVerbsCanSee(t *testing.T) {
 	}
 }
 
-// Every form READ takes the live road; the verbs that write still route.
+// Form reads take the live road; writes still route.
 func TestLiveFormRouting(t *testing.T) {
 	for _, tc := range []struct {
 		line       string
@@ -148,9 +133,9 @@ func TestLiveFormRouting(t *testing.T) {
 		{"form listen @2bfb9ad2", "form listen", "@2bfb9ad2", true},
 		{"form show --id abc12345", "form show", "abc12345", true},
 		{"state show --id=abc12345", "form show", "abc12345", true},
-		{"form show -j", "", "", false}, // JSON wants a stdout the pit has not got
-		{"form set a b", "", "", false}, // a write is a command
-		{"form ls", "", "", false},      // a listing of forms is not a form
+		{"form show -j", "", "", false},
+		{"form set a b", "", "", false},
+		{"form ls", "", "", false},
 		{"form new -S a=1", "", "", false},
 		{"ls", "", "", false},
 		{"", "", "", false},
@@ -163,8 +148,7 @@ func TestLiveFormRouting(t *testing.T) {
 	}
 }
 
-// In the pager `:ls` is uncapped: the panel scrolls, so the shell's ten-row
-// cap answers a question nobody asked there. A cap the reader typed stands.
+// The panel scrolls, so the shell's ten-row cap does not apply; a typed cap stands.
 func TestPagerLsIsUncapped(t *testing.T) {
 	for _, tc := range []struct{ line, want string }{
 		{"ls", "ls --all"},
@@ -184,7 +168,6 @@ func TestPagerLsIsUncapped(t *testing.T) {
 	}
 }
 
-// The page position is the last thing on the rule.
 func TestRuleLineEndsWithThePosition(t *testing.T) {
 	s := newSessionStatus("dac6cb6d", time.Now())
 	const pos = "12-40/97 live"
@@ -200,8 +183,6 @@ func TestRuleLineEndsWithThePosition(t *testing.T) {
 	}
 }
 
-// The itemView contract itself, so a live view that stops conforming is a test
-// failure rather than a pit that quietly loses its list.
 func TestFormViewIsAnItemView(t *testing.T) {
 	var v any = &formView{}
 	if _, ok := v.(itemView); !ok {
@@ -209,7 +190,7 @@ func TestFormViewIsAnItemView(t *testing.T) {
 	}
 }
 
-// A hosted view may not repaint from a key: the render lock is already held.
+// A key verb runs under the render lock, so it may not repaint.
 func TestFormViewKeyVerbsDoNotRepaint(t *testing.T) {
 	repaints := 0
 	v := &formView{mirror: &formMirror{}, open: map[string]bool{}}
@@ -225,7 +206,6 @@ func TestFormViewKeyVerbsDoNotRepaint(t *testing.T) {
 	}
 }
 
-// closingView records that the pit released what it was hosting.
 type closingView struct {
 	fakeItemView
 	closed int
@@ -233,7 +213,7 @@ type closingView struct {
 
 func (v *closingView) Close() { v.closed++ }
 
-// A pit that closes releases its view: a live form holds a socket.
+// A live form holds a socket, so closing the pit must release it.
 func TestPitClosingReleasesTheHostedView(t *testing.T) {
 	v := &closingView{fakeItemView: fakeItemView{rows: []pitRow{idRow("mantra: x", "mantra")}}}
 	var d pit
@@ -242,7 +222,6 @@ func TestPitClosingReleasesTheHostedView(t *testing.T) {
 	if v.closed != 1 {
 		t.Fatalf("Esc closed the pit and the view was closed %d times", v.closed)
 	}
-	// Replacing one hosted view with another closes the first, too.
 	w := &closingView{fakeItemView: fakeItemView{rows: []pitRow{idRow("a", "a")}}}
 	d.showLive(pitID("form show"), w)
 	d.showLive(pitID("form listen"), &closingView{})
@@ -251,8 +230,7 @@ func TestPitClosingReleasesTheHostedView(t *testing.T) {
 	}
 }
 
-// THE CURSOR IS ALWAYS ON THE SCREEN THAT WAS PAINTED -- k on the last row
-// used to move the selection outside the window the picker actually drew.
+// The cursor stays inside the window the picker actually drew.
 func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 	rows := make([]pitRow, 0, 30)
 	for i := range 30 {
@@ -261,11 +239,10 @@ func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 	var d pit
 	d.showList(pitQueue, "", rows)
 
-	// The selected row is the one carrying the pit's selection glyph: the wash
-	// behind it is an SGR, and SGR is off in a test.
+	// SGR is off in a test, so the glyph marks the selected row.
 	mark := pitQueue.selectionGlyph()
 	painted := func() (string, []string) {
-		out := d.lines(80, 25) // a 25-row pane: visible() gives the fixed page
+		out := d.lines(80, 25)
 		var sel string
 		for i, l := range out {
 			l = pitText(l)
@@ -282,8 +259,6 @@ func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 	if !strings.Contains(sel, "row 29") {
 		t.Fatalf("G did not select the last row: %q", sel)
 	}
-	// Walk back up: every step must move the highlight by exactly one row, and
-	// the row we just left must still be on screen.
 	for i := 28; i >= 0; i-- {
 		prev := sel
 		d.moveSelection(-1)
@@ -299,7 +274,6 @@ func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 	}
 }
 
-// Enter on a leaf opens the value, indented when it parses as JSON.
 func TestFormValueLinesAreReadable(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -319,8 +293,7 @@ func TestFormValueLinesAreReadable(t *testing.T) {
 			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
 		}
 	}
-	// AND IT WRAPS RATHER THAN CLIPS: the point of opening a value is to read
-	// all of it.
+	// An opened value wraps rather than clips.
 	long := `"` + strings.Repeat("word ", 40) + `"`
 	rows := formValueLines(json.RawMessage(long), 30)
 	if len(rows) < 5 {
@@ -336,7 +309,6 @@ func TestFormValueLinesAreReadable(t *testing.T) {
 	}
 }
 
-// A branch carries no arrow: the indent and the "(2)" already say it.
 func TestFormRowsHaveNoBranchArrow(t *testing.T) {
 	branch := &formNode{path: "skills", label: "skills", depth: 1,
 		children: []*formNode{{path: "skills.a", label: "a", depth: 2}}}
@@ -356,7 +328,6 @@ func TestFormRowsHaveNoBranchArrow(t *testing.T) {
 	}
 }
 
-// Enter opens a LEAF as well as a branch: openBranch used to refuse one.
 func TestEnterOpensALeaf(t *testing.T) {
 	open := map[string]bool{}
 	leaf := &formNode{path: "mantra", label: "mantra", depth: 1, value: json.RawMessage(`"x"`)}
@@ -368,7 +339,7 @@ func TestEnterOpensALeaf(t *testing.T) {
 	if open["mantra"] {
 		t.Fatal("Enter did not close the value again")
 	}
-	// A value row addresses the key it came from, so Enter on one closes it.
+	// A value row addresses the key it came from.
 	if got := valuePath("skills.howto\x0012"); got != "skills.howto" {
 		t.Fatalf("valuePath = %q", got)
 	}
@@ -377,15 +348,14 @@ func TestEnterOpensALeaf(t *testing.T) {
 	}
 }
 
-// THE PIT PAINTS TEXT, NEVER CONTROL: a value carrying "\x1b[2J" blanked the
-// pane until every row went through the gate.
+// A value carrying "\x1b[2J" must not reach the pane.
 func TestPitRowsCarryNoControlSequences(t *testing.T) {
 	nasty := "plain \x1b[31mRED\x1b[0m mid \x1b[2J\x1b[10Aoops\ttail\x07 and\x1b]0;title\x07 more"
 	var d pit
 	d.showList(pitQueue, "a \x1b[2Jtitle", []pitRow{idRow(nasty, "1"), staticRow(nasty)})
 	for _, row := range d.lines(200, 25) {
 		body := row
-		// The pit's OWN colour is applied outside the gate and is allowed.
+		// The pit's own colour is applied outside the gate.
 		for _, own := range []string{"\x1b[48;5;237m", "\x1b[49m"} {
 			body = strings.ReplaceAll(body, own, "")
 		}
@@ -393,7 +363,6 @@ func TestPitRowsCarryNoControlSequences(t *testing.T) {
 			t.Fatalf("a pit row carries control bytes: %q", row)
 		}
 	}
-	// And the text survives, minus the escapes.
 	got := pitText(nasty)
 	for _, want := range []string{"plain", "RED", "mid", "oops tail", "and", "more"} {
 		if !strings.Contains(got, want) {
@@ -405,9 +374,8 @@ func TestPitRowsCarryNoControlSequences(t *testing.T) {
 	}
 }
 
-// A ROW MAY WEAR A LEVEL. The picker paints it, because pitText strips every
-// escape out of a row's text, so colour cannot ride in the text -- and a pit
-// that sets no tone must come out byte for byte as it did before.
+// pitText strips every escape, so a tone is painted by the picker, not carried in
+// the text.
 func TestPitRowToneIsPaintedByThePicker(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 
@@ -422,12 +390,10 @@ func TestPitRowToneIsPaintedByThePicker(t *testing.T) {
 	if len(after) != 3 {
 		t.Fatalf("%d rows drawn: %q", len(after), after)
 	}
-	// The cursor is on the first row, so the error is painted UNDER the
-	// selection wash: the lifted red and the wash must both be there.
+	// Under the selection wash the lifted red and the wash are both present.
 	if !strings.Contains(after[0], term.NoticeOnWash()) || !strings.Contains(after[0], "48;5;240") {
 		t.Fatalf("the selected error row lost its red or its wash: %q", after[0])
 	}
-	// An unselected row wears the palette's own red and yellow.
 	if !strings.Contains(after[1], "38;5;179") {
 		t.Fatalf("a warning row is not yellow: %q", after[1])
 	}
@@ -437,14 +403,12 @@ func TestPitRowToneIsPaintedByThePicker(t *testing.T) {
 	if after[2] != before[2] {
 		t.Fatalf("an untoned row changed:\n got %q\nwant %q", after[2], before[2])
 	}
-	// Every painted row still ends in its own state, or the colour bleeds
-	// down the pane.
+	// A row that does not reset bleeds its colour down the pane.
 	for i, l := range after[:2] {
 		if strings.ContainsRune(l, 0x1b) && !strings.HasSuffix(l, "\x1b[49m") && !strings.HasSuffix(l, "\x1b[0m") {
 			t.Fatalf("row %d does not close what it opened: %q", i, l)
 		}
 	}
-	// With colour off, a tone is nothing at all.
 	restore := term.SetColorMode(term.ColorNever)
 	off := newPicker(toned).lines(pitQueue, 40, 12)
 	restore()
@@ -455,7 +419,7 @@ func TestPitRowToneIsPaintedByThePicker(t *testing.T) {
 	}
 }
 
-// A row is clipped in COLUMNS: len() gave Japanese 75 of 100 columns.
+// Clipped in columns, not bytes.
 func TestFormRowClipsByColumnsNotBytes(t *testing.T) {
 	n := &formNode{path: "uni", label: "uni", depth: 1,
 		value: json.RawMessage(`"` + strings.Repeat("日本語テキスト ", 30) + `"`)}
@@ -471,9 +435,9 @@ func TestFormRowClipsByColumnsNotBytes(t *testing.T) {
 	}
 }
 
-// Wrapping is linear and happens once: 3.5s per render is a hung pager.
+// Wrapping is linear and happens once per value and width.
 func TestValueWrappingIsCheapAndBounded(t *testing.T) {
-	big := strings.Repeat("word ", 40000) // ~200KB
+	big := strings.Repeat("word ", 40000)
 	n := &formNode{path: "big", label: "big", depth: 1,
 		value: json.RawMessage(`"` + big + `"`)}
 	v := &formView{mirror: &formMirror{}, open: map[string]bool{"big": true}}
@@ -490,7 +454,7 @@ func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	if !strings.Contains(first[len(first)-1], "more") {
 		t.Fatalf("the cap says nothing about what it dropped: %q", first[len(first)-1])
 	}
-	// Counted, not timed: the wall-clock version failed on noise.
+	// Counted, not timed.
 	if v.wraps != 1 {
 		t.Fatalf("the first wrap ran %d times", v.wraps)
 	}
@@ -500,14 +464,13 @@ func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	if v.wraps != 1 {
 		t.Fatalf("50 repaints wrapped %d times; the cache is not holding", v.wraps)
 	}
-	// A width change re-wraps; the same width does not.
 	if narrow := v.wrappedValue(n, 40); len(narrow) == 0 {
 		t.Fatal("re-wrapping at a new width produced nothing")
 	}
 	if v.wraps != 2 {
 		t.Fatalf("a resize wrapped %d times, want one more", v.wraps)
 	}
-	// And a CHANGED value re-wraps: the cache is keyed on the value itself.
+	// The cache is keyed on the value itself.
 	n.value = json.RawMessage(`"` + big + `x"`)
 	v.wrappedValue(n, 40)
 	if v.wraps != 3 {
@@ -515,8 +478,7 @@ func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	}
 }
 
-// Enter-to-close must not send you home: closing a value removes the rows the
-// cursor was standing on.
+// Closing a value removes the rows the cursor was standing on.
 func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
 	rows := func(open bool) []pitRow {
 		out := []pitRow{staticRow("form abc · v1")}
@@ -532,7 +494,6 @@ func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
 		return out
 	}
 	p := newPicker(rows(true))
-	// stand on the third line of the opened value
 	for i, r := range p.rows {
 		if r.id == "key15\x003" {
 			p.cursor = i
@@ -552,7 +513,7 @@ func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
 	}
 }
 
-// A marker never says "1 more": it costs exactly the row it describes.
+// A marker never says "1 more".
 func TestMarkerNeverHidesASingleRow(t *testing.T) {
 	for n := 1; n <= 40; n++ {
 		rows := make([]pitRow, 0, n)
@@ -573,8 +534,7 @@ func TestMarkerNeverHidesASingleRow(t *testing.T) {
 					t.Fatalf("n=%d at %s: %q -- show the row instead", n, at, strings.TrimSpace(l))
 				}
 			}
-			// And nothing may be hidden without being counted: every row is
-			// either painted or inside a marker's number.
+			// Every row is either painted or inside a marker's number.
 			shown, counted := 0, 0
 			for _, l := range out {
 				plain := strings.TrimSpace(pitText(l))
@@ -596,7 +556,6 @@ func TestMarkerNeverHidesASingleRow(t *testing.T) {
 	}
 }
 
-// The height does not move while a reader scrolls an overflowing list.
 func TestOverflowingListKeepsItsHeight(t *testing.T) {
 	rows := make([]pitRow, 0, 30)
 	for i := range 30 {

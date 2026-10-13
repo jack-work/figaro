@@ -11,13 +11,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// WHAT THE SHELF COSTS, measured rather than asserted. The claim in
-// plans/prefix-retention.md is that a parked aria costs its bookkeeping and
-// the prose it is the last holder of, and that the bound is a count of arias.
-// A heap sampled once a second cannot tell that story; this can.
-
-// parkFixture is one aria of the size the measurement fixture uses: 40 turns
-// of roughly 3.2 KB each.
+// parkFixture is 40 turns of roughly 3.2 KB each.
 func parkFixture(tag string) *aria.Client {
 	c := aria.NewClient()
 	body := make([]byte, 3200)
@@ -43,9 +37,7 @@ func heapNow() uint64 {
 	return m.HeapAlloc
 }
 
-// TestPark_TheShelfCostsWhatItHolds reports the heap a full shelf occupies and
-// fails if one parked aria of this size costs more than a megabyte. The number
-// to watch is the PER ARIA one: it is what multiplies by parkedSubjects.
+// The per-aria figure is what multiplies by parkedSubjects.
 func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
 	in := &interactiveInput{}
 	tr, _ := parkPager(t, 2, "seed", "seed")
@@ -60,7 +52,7 @@ func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
 		tr.from = aria.Anchor{}
 		tr.follow = false
 		tr.buildIndex()
-		tr.lines() // draw it, so the rows are on the shelf too
+		tr.lines()
 		in.parkSubject(id)
 	}
 	held := heapNow()
@@ -73,7 +65,6 @@ func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
 		t.Fatalf("a parked aria costs %.2f MB, which is more than the conversation in it", float64(perAria)/1e6)
 	}
 
-	// And the shelf is what holds it: let go and the heap comes back.
 	in.dropParked()
 	tr.client = aria.NewClient()
 	tr.rowCache = map[sliceKey]cachedMessage{}
@@ -89,8 +80,6 @@ func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
 	}
 }
 
-// BenchmarkPark_AdoptIsNotARead is the hop-back cost with the store already in
-// hand: what the reader pays when the aria they are returning to is warm.
 func BenchmarkPark_AdoptIsNotARead(b *testing.B) {
 	view := &ariaView{settings: &renderSettings{}}
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 24), 60, 24, view, parkFixture("a"), "a", time.Time{})

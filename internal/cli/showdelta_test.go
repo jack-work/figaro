@@ -9,9 +9,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// `show` draws the same table the pager does, collapsed, and `-o` opens it.
-// THE FLAG IS `-o`: `-v` takes show's raw-IR path and never reaches this
-// composer, which the older version of this test claimed it did.
+// -v takes show's raw-IR path and never reaches this composer; -o does.
 func TestShowDrawsTheDeltaTable(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{
 		"a1.system.forked_from": {Value: json.RawMessage(`"aaaa1111"`), Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"},
@@ -28,7 +26,6 @@ func TestShowDrawsTheDeltaTable(t *testing.T) {
 	if strings.Contains(stripANSI(collapsed), strings.Repeat("m", 60)) {
 		t.Fatalf("show collapses the values:\n%s", collapsed)
 	}
-	// The door: `show -o` is what sets the field this composer reads.
 	opts := parseShowArgs([]string{"-o"})
 	if !opts.details {
 		t.Fatal("show -o does not set details, which is the field the composer reads")

@@ -19,7 +19,6 @@ func forkDeltas(form, parent string) map[string]livedoc.FormDelta {
 	}
 }
 
-// A transcript of `turns` turns, with fork banners on the turns named.
 func forkedTranscript(t *testing.T, turns int, forks map[int]string) *transcript {
 	t.Helper()
 	tr, _ := forkedTranscriptOn(t, turns, forks)
@@ -45,8 +44,6 @@ func forkedTranscriptOn(t *testing.T, turns int, forks map[int]string) (*transcr
 	return tr, ft
 }
 
-// f k walks back through the fork points, f j forward, and each landing
-// selects the table it landed on.
 func TestForkJumpTravelsBetweenForkPoints(t *testing.T) {
 	tr := forkedTranscript(t, 8, map[int]string{2: "aaaa1111", 6: "bbbb2222"})
 	if got := len(tr.forkPoints()); got != 2 {
@@ -56,7 +53,7 @@ func TestForkJumpTravelsBetweenForkPoints(t *testing.T) {
 	if tr.mode() != modeFork {
 		t.Fatalf("f must arm the fork mode, got %v", tr.mode())
 	}
-	tr.key('k') // backwards from the tail: the later fork first
+	tr.key('k')
 	first := tr.selection.focus.nodeRef
 	if first.delta != 0 || first.index != inquiryNode || first.turn != 6 {
 		t.Fatalf("f k should land on turn 6's question, got %+v", first)
@@ -73,7 +70,6 @@ func TestForkJumpTravelsBetweenForkPoints(t *testing.T) {
 	}
 }
 
-// An 'f' followed by anything else is that key, not a swallowed one.
 func TestForkModeReleasesAnUnclaimedKey(t *testing.T) {
 	tr := forkedTranscript(t, 8, map[int]string{2: "aaaa1111"})
 	tr.key('f')
@@ -86,7 +82,6 @@ func TestForkModeReleasesAnUnclaimedKey(t *testing.T) {
 	}
 }
 
-// 'a' on a fork point hands the parent id to the session's attend.
 func TestAttendFromAForkPoint(t *testing.T) {
 	tr := forkedTranscript(t, 4, map[int]string{3: "aaaa1111"})
 	var attended string
@@ -99,9 +94,7 @@ func TestAttendFromAForkPoint(t *testing.T) {
 	}
 }
 
-// The jumplist is the browser's: back, forward, and a new destination drops
-// whatever was ahead of the cursor. A hop ASKS first (peek) and the move is
-// recorded when the switch lands (arrive), so a refused hop moves nothing.
+// A hop asks first (peek) and is recorded when the switch lands (arrive).
 func TestAriaJumplist(t *testing.T) {
 	var j ariaJumplist
 	j.visit("a")
@@ -113,9 +106,7 @@ func TestAriaJumplist(t *testing.T) {
 		if !ok {
 			return ""
 		}
-		// What a landed ^O/^I records: the cursor moves, the path does not
-		// grow. A deliberate attend takes the other verb (arrive), and the
-		// difference between them is the subject of the test below.
+		// A landed hop moves the cursor; the path does not grow.
 		j.visit(j.ids[j.pos])
 		j.stepTo(id)
 		return id
@@ -135,14 +126,12 @@ func TestAriaJumplist(t *testing.T) {
 	if pos, total := j.where(); pos != 2 || total != 3 {
 		t.Fatalf("hopping must not grow the list: %d/%d", pos, total)
 	}
-	// A hop that is ASKED for and never lands leaves the cursor alone.
 	if id, ok := j.peek(-1); !ok || id != "a" {
 		t.Fatalf("peek back = %q %v", id, ok)
 	}
 	if pos, _ := j.where(); pos != 2 {
 		t.Fatalf("peek moved the cursor to %d", pos)
 	}
-	// A new destination from the middle drops what was ahead.
 	j.arrive("b", "d")
 	if pos, total := j.where(); pos != 3 || total != 3 {
 		t.Fatalf("a visit from the middle drops what was ahead: %d/%d", pos, total)
@@ -150,9 +139,7 @@ func TestAriaJumplist(t *testing.T) {
 	if id, ok := j.peek(1); ok {
 		t.Fatalf("nothing is newer than the aria just visited, got %q", id)
 	}
-	// AND THE DEPARTURE IS RECORDED BY THE SAME CALL. A transition from an
-	// aria the list has never heard of puts both ends in it, which is what
-	// the first `:attend` from a fresh session is.
+	// A transition from an unknown aria records both ends.
 	var k ariaJumplist
 	k.arrive("A", "B")
 	if pos, total := k.where(); pos != 2 || total != 2 {
@@ -171,8 +158,6 @@ func stripANSIAll(lines []string) []string {
 	return out
 }
 
-// `a` with no selection takes the fork point on screen, which is where the
-// reader is looking after a fork retargets the pager.
 func TestAttendFromTheForkPointOnScreen(t *testing.T) {
 	tr := forkedTranscript(t, 3, map[int]string{2: "aaaa1111"})
 	var attended string
@@ -183,12 +168,10 @@ func TestAttendFromTheForkPointOnScreen(t *testing.T) {
 	}
 }
 
-// A report from a pager row must reach the reader. It goes to the bar's
-// notice, not to jumpNote, which the dispatcher's epilogue wipes on the
-// very key that wrote it: that is why `a` on a fork point looked like a
-// dead key in a pty.
+// A row's report goes to the bar's notice, not jumpNote, which the dispatcher
+// wipes on the key that wrote it.
 func TestAPagerRowsNoteReachesTheBar(t *testing.T) {
-	tr, ft := forkedTranscriptOn(t, 3, nil) // no fork points: `a` has something to say
+	tr, ft := forkedTranscriptOn(t, 3, nil)
 	tr.attendAria = func(string) {}
 	tr.key('a')
 	tr.render()
@@ -198,17 +181,14 @@ func TestAPagerRowsNoteReachesTheBar(t *testing.T) {
 	}
 }
 
-// A DELIBERATE ATTEND IS ALWAYS A NEW ARRIVAL, even onto the aria the cursor
-// is standing next to. It used to be folded into a cursor step, so attending
-// the aria behind you was recorded as the back step you had not taken, and ^O
-// then had nothing older to reverse it with: the reader could not get back to
-// where they had just been.
+// A deliberate attend is a new arrival even onto the aria the cursor stands
+// next to; folding it into a cursor step leaves ^O nothing to reverse.
 func TestAriaJumplist_ADeliberateAttendIsNotAStep(t *testing.T) {
 	var j ariaJumplist
 	j.visit("a")
-	j.arrive("a", "b") // [a b], on b
+	j.arrive("a", "b")
 
-	j.arrive("b", "a") // the reader NAMES a, from b
+	j.arrive("b", "a")
 	if pos, total := j.where(); pos != 3 || total != 3 {
 		t.Fatalf("a deliberate attend onto the previous aria gave %d/%d, want 3/3", pos, total)
 	}
@@ -216,8 +196,6 @@ func TestAriaJumplist_ADeliberateAttendIsNotAStep(t *testing.T) {
 		t.Fatalf("back from there is %q (%v), want the b we came from", id, ok)
 	}
 
-	// And the hop that follows is still a hop: the cursor moves, the path does
-	// not grow.
 	j.visit(j.ids[j.pos])
 	j.stepTo("b")
 	if pos, total := j.where(); pos != 2 || total != 3 {

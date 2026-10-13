@@ -8,11 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// `figaro queue` is CRUD minus the C: create is `send`, because a queued
-// message is just a prompt that arrived while the aria was busy. These pin
-// the argv contract and the exit-code rule; the outcomes themselves are the
-// agent's, tested there and over the wire in internal/angelus.
-
 func TestQueueVerb_IsRegisteredWithItsFlags(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	cmd, ok := r.Command("queue")
@@ -30,20 +25,16 @@ func TestQueueVerb_IsRegisteredWithItsFlags(t *testing.T) {
 			t.Errorf("queue has no --%s flag", name)
 		}
 	}
-	// The sub-verb owns the positional slot, so the aria must be reachable by
-	// flag: otherwise `figaro queue rm 3` is ambiguous between an aria and an
-	// id, which is exactly the kind of guess the CLI does not make.
+	// The sub-verb owns the positional slot, so the aria must be reachable by flag.
 	if !strings.Contains(cmd.Long, "--id") {
 		t.Error("queue's help must say how to address another aria")
 	}
-	// Create is deliberately absent: say so where someone will look for it.
 	if !strings.Contains(cmd.Long, "send") {
 		t.Error("queue's help must point at `send` as the way to add to the queue")
 	}
 }
 
-// Ids are numbers from the listing. Anything else is misuse (exit 2), not a
-// silently-skipped argument.
+// A non-id is misuse (exit 2), not a skipped argument.
 func TestParseQueueIDs_RejectsNonIDs(t *testing.T) {
 	got := parseQueueIDs([]string{"3", "12"})
 	if len(got) != 2 || got[0] != 3 || got[1] != 12 {
@@ -58,8 +49,7 @@ func TestParseQueueIDs_RejectsNonIDs(t *testing.T) {
 	}
 }
 
-// A refusal leaves a non-zero status so a script notices, but it is a RUNTIME
-// outcome (1), never misuse (2): the caller asked correctly and was declined.
+// A refusal is a runtime outcome (1), never misuse (2).
 func TestReportQueueResults_ExitCodes(t *testing.T) {
 	applied := []rpc.QueueResult{
 		{ID: 1, Outcome: rpc.QueueDeleted},
@@ -78,10 +68,7 @@ func TestReportQueueResults_ExitCodes(t *testing.T) {
 	}
 }
 
-// A refusal leaves through exitNow, so whatever a TTY command registered to
-// put the terminal back still runs. os.Exit runs no defers; that is the whole
-// reason exitNow exists, and a path that calls the raw primitive silently
-// opts out of it.
+// A refusal leaves through exitNow so the terminal-restore hooks run.
 func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
 	prevExit, prevHooks := exitProcess, exitHooks
 	defer func() { exitProcess, exitHooks = prevExit, prevHooks }()
@@ -90,8 +77,7 @@ func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
 	exitProcess = func(c int) { code = c }
 	atExit(func() { restored = true })
 
-	// The abort unwinds to a boundary, which is what runs the hooks; see
-	// exitPanic and TestExitHooksRunBeforeTheProcessGoes.
+	// The abort unwinds to a boundary, which is what runs the hooks.
 	func() {
 		defer RecoverExit()
 		reportQueueResults("a", "e", []rpc.QueueResult{
@@ -107,8 +93,7 @@ func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
 	}
 }
 
-// -j is one object, and results is an array even when the server refused
-// everything, a consumer doing .results[] must not special-case null.
+// results is an array even when everything was refused: .results[] must not see null.
 func TestQueueResultJSON_IsOneObject(t *testing.T) {
 	b, err := json.Marshal(queueResultJSON{
 		Aria:  "abc123",

@@ -10,19 +10,13 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A tall turn reaches scrollback as SEVERAL closed messages sharing one turn
-// id: the head closes when the live suffix advances past it ({1,0}), the tail
-// when the turn seals ({1,1}). Freezing the head inline therefore records turn 1
-// as "flushed", and a turn-granular boundary (from = lastFrozenLT+1 = 2) then
-// excludes the REST OF TURN 1, so a reply watched in the pager never reached
-// scrollback. The boundary must be a (turn, node-offset) cursor.
+// A tall turn closes as several messages sharing one turn id, so the flush
+// boundary must be a (turn, node-offset) cursor, not a turn.
 func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, nil, nil)
 
-	// The question opens the turn (text, not a node), the agent's first block
-	// streams, and the head closes when the live suffix advances past it.
 	lt.apply(inquiryPage(1, "the question"))
 	lt.apply(page(1, 0, delta(0, livedoc.RoleOutput, "thinking about it")))
 	lt.apply(page(1, 1, delta(1, livedoc.RoleOutput, "FINALANSWER")))
@@ -31,9 +25,8 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 		t.Fatalf("the turn head should have frozen at {1,0}, got %+v", lt.lastFrozen)
 	}
 
-	// Into the pager, where the reply completes and the turn SEALS. Sealing
-	// resets the open region, so the reply can only reach scrollback through the
-	// closed set: which is exactly what the flush boundary governs.
+	// Sealing resets the open region, so the reply can only reach scrollback
+	// through the closed set.
 	lt.enterTranscript()
 	lt.apply(page(1, 3))
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 1, Sealed: true}}}})
@@ -48,18 +41,13 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	if strings.Contains(got, "turn continues") || strings.Contains(got, "follow: figaro listen") {
 		t.Fatalf("the exit wrote chrome past the status bookend:\n%s", got)
 	}
-	// The footer describes the TURN, and a finished turn is finished whether or
-	// not this CLI is still watching. Reporting "disconnected" over a sealed
-	// turn would hide the outcome the user just watched arrive.
+	// A sealed turn is done whether or not this CLI is still watching.
 	if l := status.turnLabel(true); l != "done ✓" {
 		t.Fatalf("sealed turn left the pager as %q, want done ✓", l)
 	}
 }
 
-// A turn genuinely still running must still say so: the fix must not silence
-// the honest case, and detaching from it is NOT a failure. A user choosing to
-// stop watching is a decision, not an error; calling it one erodes trust in
-// every other status we show. It says so in one place: the status bookend.
+// Detaching from a running turn is not a failure, and is said once, in the bookend.
 func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
@@ -78,9 +66,7 @@ func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	}
 }
 
-// The server's turn.done vocabulary is fixed, so finishTurn may classify it -
-// but it must not read a client-side outcome out of an English sentence. Before
-// this, any reason containing "disconnect" was reported as a failure.
+// finishTurn classifies the fixed turn.done vocabulary, never an English sentence.
 func TestDetachIsNotAnError(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	s.finishTurn("disconnected: turn continues")
@@ -99,8 +85,7 @@ func delta(id uint64, role, md string) aria.NodeDelta {
 	}}
 }
 
-// inquiryPage is the frame the server pushes when a turn opens: the question as
-// TEXT on the turn, carrying no nodes at all.
+// inquiryPage is the turn-open frame: the question as text, no nodes.
 func inquiryPage(turn uint64, text string) aria.Page {
 	return aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: turn, Inquiry: text}}}}
 }
@@ -112,8 +97,8 @@ func page(turn uint64, liveFrom uint64, ds ...aria.NodeDelta) aria.Page {
 	}}}}
 }
 
-// Every newline a painted session emits must be CRLF: with
-// DISABLE_NEWLINE_AUTO_RETURN armed a bare LF staircases (microsoft/WSL#1273).
+// With DISABLE_NEWLINE_AUTO_RETURN armed a bare LF staircases, so every
+// newline must be CRLF.
 func TestPainterSessionWritesOnlyCRLF(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
@@ -132,10 +117,6 @@ func TestPainterSessionWritesOnlyCRLF(t *testing.T) {
 	}
 }
 
-// THE SESSION ENDS WITHOUT A WORD. endSession hands the terminal back and says
-// nothing; sessionLine -- which put a bare line on the screen from wherever
-// trouble was found, after the painter had finished -- is gone, and with it the
-// duplicate "hung up" a hangup-then-disconnect used to print.
 func TestEndSessionSaysNothing(t *testing.T) {
 	var b bytes.Buffer
 	endSession(&b)
@@ -157,11 +138,7 @@ func TestEndSessionSaysNothing(t *testing.T) {
 	}
 }
 
-// A SESSION'S FRAME HOLD SURVIVES RETARGET. The hold says "this session has
-// not placed its opening yet", which is a fact about the session and not about
-// which aria it watches -- and clearing it in retarget is what painted a
-// send's question twice: once from the frame that arrived while the hold was
-// silently off, and once from the opening that thought it was first.
+// The frame hold is a fact about the session, not the aria it watches.
 func TestRetargetKeepsTheFrameHold(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
@@ -178,7 +155,6 @@ func TestRetargetKeepsTheFrameHold(t *testing.T) {
 	if len(lt.held) != 0 {
 		t.Fatalf("retarget kept %d pages of the OLD subject", len(lt.held))
 	}
-	// And the opening still releases it.
 	lt.apply(inquiryPage(1, "the new question"))
 	lt.openInline(aria.Page{})
 	if lt.hold || len(lt.held) != 0 {

@@ -9,16 +9,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The opening-preamble work sits on two paths that run more than once, so both
-// are measured here rather than argued about.
-//
-//   - withSeed is on the PER-FRAME path: buildIndex calls resetToTail on every
-//     frame while the pager follows, and resetToTail is where the seed is
-//     merged. The default (no seed: every session that opened its own turn,
-//     and every `figaro listen`) must cost nothing measurable.
-//   - pageCarriesInquiry was on the per-notify-frame path until it was gated;
-//     the benchmark is what says how much that gate is worth.
-
 func benchSeedMessages(n int) []aria.Message {
 	msgs := make([]aria.Message, 0, n)
 	for k := range n {
@@ -30,8 +20,6 @@ func benchSeedMessages(n int) []aria.Message {
 	return msgs
 }
 
-// benchSeedTranscript builds a pager over a client holding `held` committed
-// messages, seeded with `seed` catch-up messages.
 func benchSeedTranscript(b *testing.B, held, seed int) *transcript {
 	b.Helper()
 	client := aria.NewClient()
@@ -42,7 +30,6 @@ func benchSeedTranscript(b *testing.B, held, seed int) *transcript {
 	}
 	tr := newTranscript(&nullWriter{}, 100, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 	if seed > 0 {
-		// The seed is older history: turns below everything the client holds.
 		var p aria.Page
 		for k, m := range benchSeedMessages(seed) {
 			p.Parts = append(p.Parts, aria.TurnPart{Turn: aria.Turn{
@@ -59,13 +46,7 @@ type nullWriter struct{}
 
 func (nullWriter) Write(p []byte) (int, error) { return len(p), nil }
 
-// BenchmarkTranscriptResetToTail is the window rebuild, with and without a seed
-// to merge. "seed=0" is the one that must not regress: it is every session that
-// opened its own turn, plus every `figaro listen`.
-//
-// The rebuild runs when the client's closed revision moves, a newly committed
-// message: NOT on every frame; BenchmarkTranscriptResetToTailSteady is what a
-// frame actually pays, and it is the early return.
+// seed=0 is the path every session that opened its own turn pays.
 func BenchmarkTranscriptResetToTail(b *testing.B) {
 	for _, c := range []struct{ held, seed int }{{40, 0}, {40, 4}, {400, 0}, {400, 4}} {
 		b.Run(fmt.Sprintf("held=%d/seed=%d", c.held, c.seed), func(b *testing.B) {
@@ -73,15 +54,14 @@ func BenchmarkTranscriptResetToTail(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				tr.from = aria.Anchor{} // force the rebuild a newly committed message causes
+				tr.from = aria.Anchor{}
 				tr.resetToTail()
 			}
 		})
 	}
 }
 
-// BenchmarkTranscriptResetToTailSteady is the same call on the FRAME path: the
-// revision has not moved, so the window already is the tail.
+// The per-frame path: the revision has not moved.
 func BenchmarkTranscriptResetToTailSteady(b *testing.B) {
 	for _, c := range []struct{ held, seed int }{{400, 0}, {400, 4}} {
 		b.Run(fmt.Sprintf("held=%d/seed=%d", c.held, c.seed), func(b *testing.B) {
@@ -96,9 +76,6 @@ func BenchmarkTranscriptResetToTailSteady(b *testing.B) {
 	}
 }
 
-// BenchmarkPageCarriesInquiry is the discriminator's cost per aria frame. It is
-// gated to the opening of the session (watchInquiry), so this is what the gate
-// saves on every frame after the first: measured rather than assumed.
 func BenchmarkPageCarriesInquiry(b *testing.B) {
 	prompt := "Run a bash sleep of 6 seconds, then reply with exactly one word: DATE"
 	frames := map[string]aria.Page{

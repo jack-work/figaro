@@ -10,13 +10,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// AN EMPTY QUEUE IS A SENTENCE, NOT A PIT.
-//
-// These assert the bar, which is the one thing the frozen keymap oracles
-// cannot see: their signature has no column for the notice, so `Q` on an
-// empty queue reads as inert there and is measured here instead.
-
-// queuePager is a pager with a status bar, which is where the notice lands.
+// An empty queue is a sentence on the bar, not a pit; the keymap oracles have
+// no column for the notice, so it is measured here.
 func queuePager(t *testing.T, queued ...queuedItem) *transcript {
 	t.Helper()
 	client := aria.NewClient()
@@ -45,14 +40,12 @@ func TestQueuePit_EmptyQueueIsANoticeNotAPit(t *testing.T) {
 	if got := tr.status.noticeText(); got != queueEmptyNote {
 		t.Fatalf("the bar says %q, want %q", got, queueEmptyNote)
 	}
-	// It costs the conversation nothing: no drawer, so no rows.
 	if rows := tr.pit.lines(tr.w, tr.pitRoom()); len(rows) != 0 {
 		t.Fatalf("the refusal drew %d rows:\n%s", len(rows), strings.Join(rows, "\n"))
 	}
 }
 
-// A queue with something in it still opens, which is the half that must not
-// break: without this the test above passes on a pit that never opens at all.
+// Without this the test above passes on a pit that never opens at all.
 func TestQueuePit_AQueueWithSomethingInItOpens(t *testing.T) {
 	tr := queuePager(t, queuedItem{id: 1, text: "a queued prompt"})
 	tr.key('Q')
@@ -68,10 +61,7 @@ func TestQueuePit_AQueueWithSomethingInItOpens(t *testing.T) {
 	}
 }
 
-// A DRAINED QUEUE CLOSES ITS PIT and says why, whether the reader opened it by
-// hand or the queue opened it. The old rule refreshed the rows instead, which
-// for a queue means an empty list: a pit left open over the conversation,
-// showing nothing.
+// A drained queue closes its pit and says why, however it was opened.
 func TestQueuePit_DrainingClosesItAndSaysSo(t *testing.T) {
 	for _, byHand := range []bool{true, false} {
 		name := "auto-opened"
@@ -88,7 +78,6 @@ func TestQueuePit_DrainingClosesItAndSaysSo(t *testing.T) {
 			if !tr.showing(pitQueue) {
 				t.Fatal("the fixture opened no queue pit")
 			}
-			// The queue drains: the snapshot empties, then the fold fires.
 			tr.queued = nil
 			tr.showQueuedAuto(false)
 			if tr.showing(pitQueue) {
@@ -101,8 +90,7 @@ func TestQueuePit_DrainingClosesItAndSaysSo(t *testing.T) {
 	}
 }
 
-// An UNREADABLE queue is not an empty one. Reporting a failure as emptiness is
-// the worst of the three answers, so queuedErr is part of the test.
+// An unreadable queue is not an empty one.
 func TestQueuePit_AnUnreadableQueueIsNotEmpty(t *testing.T) {
 	tr := queuePager(t)
 	tr.queuedErr = "queue: dial angelus: connection refused"
@@ -115,18 +103,16 @@ func TestQueuePit_AnUnreadableQueueIsNotEmpty(t *testing.T) {
 	}
 }
 
-// Asking for the queue revokes an earlier dismissal, so a queue that arrives
-// after the refusal opens the panel by itself rather than being suppressed by
-// a no the reader has since taken back.
+// Asking for the queue revokes an earlier dismissal.
 func TestQueuePit_AskingRevokesTheDismissal(t *testing.T) {
 	tr := queuePager(t, queuedItem{id: 1, text: "a queued prompt"})
 	tr.key('Q')
-	tr.key(0x1b) // Esc: the deliberate dismissal
+	tr.key(0x1b)
 	if !tr.queueDismissed {
 		t.Fatal("Esc did not latch the dismissal")
 	}
 	tr.queued = nil
-	tr.key('Q') // asking again, on an empty queue
+	tr.key('Q')
 	if tr.queueDismissed {
 		t.Fatal("asking for the queue left the dismissal latched")
 	}
