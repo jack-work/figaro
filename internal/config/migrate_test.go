@@ -54,8 +54,6 @@ func TestMigrateMovesLoadoutsDirAndRenamesKey(t *testing.T) {
 	}
 }
 
-// Clobbering a real outfits/ or default_outfit is worse than leaving a stale
-// legacy name the read paths already tolerate.
 func TestMigrateDeclinesWhenBothSpellingsExist(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "loadouts"), 0o755); err != nil {

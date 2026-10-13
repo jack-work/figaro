@@ -6,11 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// TestFarmerSplitToWidthKeepsEverything: the whole point of hard-wrapping
-// rather than clipping is that the text survives. Concatenating the chunks must
-// reproduce the row's visible text exactly, every chunk must fit, and no chunk
-// may be pure escapes (a phantom row costs a line of the viewport and shows
-// nothing).
+// No chunk may be pure escapes: a phantom row costs a viewport line and shows nothing.
 func TestFarmerSplitToWidthKeepsEverything(t *testing.T) {
 	rows := map[string]string{
 		"ascii":     strings.Repeat("A", 200),
@@ -53,9 +49,7 @@ func TestFarmerSplitToWidthKeepsEverything(t *testing.T) {
 	}
 }
 
-// A chunk that opens a colour and never closes it leaves the rendition live for
-// whatever the painter draws next: including an erase-to-EOL, which paints the
-// background across the rest of the line.
+// An unclosed colour leaks into the next erase-to-EOL, painting the background across the line.
 func TestFarmerSplitToWidthClosesItsStyle(t *testing.T) {
 	row := "\x1b[38;5;252m" + strings.Repeat("styled ", 30) + "\x1b[0m"
 	chunks := splitToWidth(row, 20)
@@ -66,10 +60,6 @@ func TestFarmerSplitToWidthClosesItsStyle(t *testing.T) {
 	}
 }
 
-// FuzzSplitToWidth: the hard wrap is the newest surface and the one that can
-// lose text, so it gets a fuzzer of its own. Properties: the visible text is
-// preserved exactly, every chunk fits, no chunk is escapes only, and the output
-// stays valid UTF-8.
 func FuzzSplitToWidth(f *testing.F) {
 	for _, s := range []string{
 		strings.Repeat("A", 90), strings.Repeat("日本語", 12), "\x1b[31m" + strings.Repeat("x", 40) + "\x1b[0m",
@@ -87,11 +77,7 @@ func FuzzSplitToWidth(f *testing.F) {
 			if got := cells(c); got > w {
 				t.Fatalf("w=%d chunk %d is %d cells: %q", w, i, got, c)
 			}
-			// Only meaningful when the row HAD visible text: hardWrapOverlong
-			// never calls this on a row of pure escapes (such a row measures 0
-			// cells and is returned untouched), so asserting it here would be
-			// stricter than the call site and would report a defect that cannot
-			// occur.
+			// hardWrapOverlong never splits a row of pure escapes, so the check only applies when there was visible text.
 			if stripANSI(row) != "" && stripANSI(c) == "" {
 				t.Fatalf("w=%d chunk %d is escapes only: %q", w, i, c)
 			}

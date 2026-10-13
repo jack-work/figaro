@@ -12,7 +12,6 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// A skill reaches the board as keys, not as one value holding an object.
 func TestSkillsArriveStructural(t *testing.T) {
 	dir := t.TempDir()
 	skills := filepath.Join(dir, "skills")

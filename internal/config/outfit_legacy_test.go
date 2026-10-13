@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// config.toml files written before the outfit rename say default_loadout.
 func TestLoadAcceptsLegacyDefaultLoadoutKey(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"legacy only", "default_loadout = \"legacy\"\n", "legacy"},
@@ -28,7 +27,6 @@ func TestLoadAcceptsLegacyDefaultLoadoutKey(t *testing.T) {
 	}
 }
 
-// Both directories are read, so a half-migrated config dir still works.
 func TestOutfitDirsUnionBothLegacyAndCanonical(t *testing.T) {
 	dir := t.TempDir()
 	for sub, names := range map[string][]string{

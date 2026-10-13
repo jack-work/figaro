@@ -143,10 +143,6 @@ func TestUnknownCommand(t *testing.T) {
 }
 
 func TestHelpFlag(t *testing.T) {
-	// Requested help is primary output: it goes to STDOUT (see
-	// help_streams_test.go for the full rule). This test asserted Stderr
-	// until the two writers were split, which is exactly the contract the
-	// defect had baked in.
 	buf := &bytes.Buffer{}
 	r := NewRouter("test")
 	r.Stdout = buf

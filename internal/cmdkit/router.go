@@ -10,54 +10,36 @@ import (
 	"unicode/utf8"
 )
 
-// Router dispatches CLI invocations to registered commands.
 type Router struct {
 	commands []*Command
-	index    map[string]*Command // name + aliases → command
+	index    map[string]*Command
 
-	// Name is the binary name shown in help (e.g. "figaro").
 	Name string
 
-	// Version is printed by --version. Empty disables the flag.
+	// Version empty disables --version.
 	Version string
 
-	// Extra is passed to every RunContext.Extra.
 	Extra interface{}
 
-	// AlsoCalled are other names the same binary is installed under (figaro
-	// ships a `fig`). Every generated completion script registers them
-	// beside Name; only powershell used to, by hardcoding one.
+	// AlsoCalled are other names the binary is installed under; completion scripts register them too.
 	AlsoCalled []string
 
-	// Fallback is called when no subcommand matches and the args
-	// are non-empty. If nil, the router prints usage and exits 2.
+	// Fallback runs when no subcommand matches; nil prints usage and exits 2.
 	Fallback func(args []string, extra interface{}) error
 
-	// Stdout takes REQUESTED output: --help, help <cmd>, --version. The
-	// split is about who asked: help you asked for must be pipeable;
-	// usage printed because argv was wrong is a diagnostic (Stderr).
+	// Stdout takes requested output (--help, --version); usage printed for bad argv goes to Stderr.
 	Stdout io.Writer
-
-	// Stderr is the output for errors and for usage printed as part of an
-	// error. Defaults to os.Stderr.
 	Stderr io.Writer
 
-	// Synopsis is extra usage lines printed under the Usage header -
-	// for forms the router itself does not dispatch (e.g. figaro's bare
-	// `figaro [flags] -- <prompt>`).
+	// Synopsis is extra usage lines for forms the router does not dispatch.
 	Synopsis []string
 
-	// GlobalFlags are flags the caller consumes before dispatch, so no
-	// Command declares them and nothing else would ever print them.
+	// GlobalFlags are consumed by the caller before dispatch; listed here only for help.
 	GlobalFlags []FlagDef
 
-	// barePromptComplete is the CompleteArgs callback invoked when
-	// the user is in the bare-prompt form (`<prog> -- <body>`, or an
-	// alias thereof). See SetBarePromptComplete.
 	barePromptComplete func(*CompleteContext) []string
 }
 
-// NewRouter creates a router with the given binary name.
 func NewRouter(name string) *Router {
 	r := &Router{
 		Name:   name,
@@ -75,10 +57,6 @@ func NewRouter(name string) *Router {
 	return r
 }
 
-// registerHelp installs `help [<command>]`. It lives here, not in each
-// consumer's table, because help is the router's own knowledge, and
-// because without it `figaro help` answered `unknown command "help", did
-// you mean: figaro hup`: the most-guessed verb, pointed at the daemon.
 func (r *Router) registerHelp() {
 	r.Register(&Command{
 		Name:    "help",
@@ -94,9 +72,6 @@ func (r *Router) registerHelp() {
 			name := ctx.Args[0]
 			cmd, ok := r.index[name]
 			if !ok {
-				// Same courtesy the dispatcher extends, and the same exit
-				// code: this is misuse, so it must not print help to stdout
-				// and claim success.
 				fmt.Fprintf(r.errw(), "error: unknown command %q\n", name)
 				if s := r.suggest(name); s != "" {
 					fmt.Fprintf(r.errw(), "  did you mean: %s help %s\n\n", r.Name, s)
@@ -111,7 +86,6 @@ func (r *Router) registerHelp() {
 	})
 }
 
-// CommandNames lists the visible command names, for completion.
 func (r *Router) CommandNames() []string {
 	names := make([]string, 0, len(r.commands))
 	for _, cmd := range r.commands {
@@ -122,8 +96,7 @@ func (r *Router) CommandNames() []string {
 	return names
 }
 
-// CommandCandidates is CommandNames with each command's one-line summary, in
-// the completion protocol's "value<TAB>description" shape.
+// CommandCandidates is CommandNames in the completion protocol's "value<TAB>description" shape.
 func (r *Router) CommandCandidates() []string {
 	out := make([]string, 0, len(r.commands))
 	for _, cmd := range r.commands {
@@ -134,31 +107,23 @@ func (r *Router) CommandCandidates() []string {
 	return out
 }
 
-// HasCommand reports whether name matches a registered command or alias.
 func (r *Router) HasCommand(name string) bool {
 	_, ok := r.index[name]
 	return ok
 }
 
-// Command looks up a registered command by name or alias.
 func (r *Router) Command(name string) (*Command, bool) {
 	cmd, ok := r.index[name]
 	return cmd, ok
 }
 
-// ReservedShorts are single-letter flags the ROUTER answers before any
-// command sees them, so a command declaring one can never receive it.
-// `ls` declared -h for --home and advertised it in the help text that -h
-// itself printed; `ls -h` gave help while `ls -ha` gave home. Making the
-// collision impossible to write beats adjudicating it per command.
+// ReservedShorts are answered by the router before any command sees them.
 var ReservedShorts = map[string]string{
 	"h": "help",
 	"V": "version",
 }
 
-// Register adds a command to the router. It panics if the command claims a
-// reserved short: tables are built from literals at startup, so this fires
-// on the developer at first construction, never silently on the user.
+// Register panics on a reserved short.
 func (r *Router) Register(cmd *Command) {
 	for _, f := range cmd.Flags {
 		if owner, taken := ReservedShorts[f.Short]; taken {
@@ -175,9 +140,7 @@ func (r *Router) Register(cmd *Command) {
 	}
 }
 
-// ValidateReservedShorts reports every registered flag that claims a
-// reserved short. Register panics on the same condition; this is the
-// non-fatal form, for a test that wants all offenders named at once.
+// ValidateReservedShorts is the non-fatal form of Register's check, naming every offender.
 func (r *Router) ValidateReservedShorts() error {
 	var bad []string
 	for _, cmd := range r.commands {
@@ -193,15 +156,13 @@ func (r *Router) ValidateReservedShorts() error {
 	return nil
 }
 
-// Run dispatches args (without argv[0]). Returns the exit code.
+// Run dispatches args (without argv[0]) and returns the exit code.
 func (r *Router) Run(args []string) int {
 	if len(args) == 0 {
-		// Nobody asked for this: it is a misuse diagnostic. Stderr, exit 2.
 		r.printUsageTo(r.errw())
 		return 2
 	}
 
-	// Global flags handled before dispatch.
 	first := args[0]
 	if first == "--help" || first == "-h" {
 		r.PrintUsage()
@@ -212,10 +173,8 @@ func (r *Router) Run(args []string) int {
 		return 0
 	}
 
-	// Lookup command.
 	cmd, ok := r.index[first]
 	if !ok {
-		// Try fallback.
 		if r.Fallback != nil {
 			if err := r.Fallback(args, r.Extra); err != nil {
 				fmt.Fprintf(r.Stderr, "error: %s\n", err)
@@ -223,7 +182,6 @@ func (r *Router) Run(args []string) int {
 			}
 			return 0
 		}
-		// Did-you-mean suggestion.
 		if suggestion := r.suggest(first); suggestion != "" {
 			fmt.Fprintf(r.errw(), "error: unknown command %q\n", first)
 			fmt.Fprintf(r.errw(), "  did you mean: %s %s\n\n", r.Name, suggestion)
@@ -236,7 +194,6 @@ func (r *Router) Run(args []string) int {
 
 	tail := args[1:]
 
-	// Per-command --help.
 	for _, a := range tail {
 		if a == "--help" || a == "-h" {
 			r.PrintCommandHelp(cmd)
@@ -247,7 +204,6 @@ func (r *Router) Run(args []string) int {
 		}
 	}
 
-	// Parse flags + args.
 	ctx, err := r.parse(cmd, first, tail)
 	if err != nil {
 		fmt.Fprintf(r.Stderr, "error: %s %s: %s\n", r.Name, first, err)
@@ -255,11 +211,8 @@ func (r *Router) Run(args []string) int {
 	}
 	ctx.Extra = r.Extra
 
-	// Run the command.
 	if err := cmd.Run(ctx); err != nil {
 		if errors.Is(err, errUsage) {
-			// The command already printed its own diagnostic; this is
-			// misuse, so it exits 2 like every other rejected argv.
 			return 2
 		}
 		fmt.Fprintf(r.errw(), "error: %s\n", err)
@@ -268,14 +221,10 @@ func (r *Router) Run(args []string) int {
 	return 0
 }
 
-// errUsage lets a command report "argv was rejected, and I have already
-// said why": the router turns it into exit 2 with no second message.
+// errUsage: the command already printed its diagnostic; the router exits 2 silently.
 var errUsage = errors.New("usage")
 
-// parse processes flags and positional args for a command.
-// parse reads flags and positionals. verb is the name as TYPED, which may be
-// an alias: a message about `fig form -O` must say `form`, not the canonical
-// `state` the user never wrote.
+// verb is the name as typed (possibly an alias), so messages echo what the user wrote.
 func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, error) {
 	if verb == "" {
 		verb = cmd.Name
@@ -291,30 +240,24 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 		return ctx, nil
 	}
 
-	// Apply defaults.
 	for _, f := range cmd.Flags {
 		if f.Default != "" {
 			ctx.Flags[f.Long] = f.Default
 		}
 	}
 
-	// Expand bundled short flags: -avl → -a -v -l
 	expanded := expandBundled(args, cmd.Flags)
 
 	i := 0
 	for i < len(expanded) {
 		arg := expanded[i]
 
-		// End of flags.
 		if arg == "--" {
 			ctx.Args = append(ctx.Args, expanded[i+1:]...)
 			break
 		}
 
-		// Long flag.
 		if strings.HasPrefix(arg, "--") {
-			// `--name=value`: the whole token used to be looked up, so
-			// `--limit=5` was "unknown flag" while send.go took `--id=x`.
 			name := arg[2:]
 			inline, hasInline := "", false
 			if eq := strings.IndexByte(name, '='); eq >= 0 {
@@ -325,8 +268,6 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 				return nil, fmt.Errorf("unknown flag: --%s", name)
 			}
 			if fd.IsBool {
-				// A bool may carry an explicit truth value: `--attend=false`
-				// is a form send.go already honours: but nothing else.
 				val := "true"
 				if hasInline {
 					switch inline {
@@ -355,7 +296,6 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 			continue
 		}
 
-		// Short flag.
 		if len(arg) == 2 && arg[0] == '-' && arg[1] != '-' {
 			ch := string(arg[1])
 			fd := findFlag(cmd.Flags, "", ch)
@@ -375,23 +315,17 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 			continue
 		}
 
-		// A '-' token that survived both flag branches and bundle expansion
-		// is argv nobody consumed. Treating it as a positional is how
-		// `ls -hz` meant "the aria named -hz" and `kill -rx` aimed a
-		// destructive verb at a typo. A bare "-" is exempt (stdin).
+		// An unconsumed '-' token is never a positional; a bare "-" (stdin) is exempt.
 		if len(arg) > 1 && arg[0] == '-' {
 			return nil, unconsumedFlagError(cmd.Flags, arg)
 		}
 
-		// Positional arg.
 		ctx.Args = append(ctx.Args, arg)
 		i++
 		continue
 	}
 
-	// Validate flag/subword agreement before anything runs. A flag that
-	// belongs to a sub-verb the caller did not type is refused here rather
-	// than silently ignored by a Run function that never reads it.
+	// A flag belonging to a sub-verb the caller did not type is refused, not ignored.
 	for _, fd := range cmd.Flags {
 		if len(fd.Subwords) == 0 {
 			continue
@@ -408,7 +342,6 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 		}
 	}
 
-	// Validate arg count.
 	if cmd.ArgsMin > 0 && len(ctx.Args) < cmd.ArgsMin {
 		return nil, fmt.Errorf("requires at least %d argument(s)", cmd.ArgsMin)
 	}
@@ -419,8 +352,6 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 	return ctx, nil
 }
 
-// containsString is the membership test the subword check needs; the table is
-// two or three entries, so a loop is the whole implementation.
 func containsString(list []string, want string) bool {
 	for _, s := range list {
 		if s == want {
@@ -430,7 +361,6 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// subwordFlagError names where a flag belongs, in the grammar the user typed.
 func subwordFlagError(cmd string, fd FlagDef, sub string) error {
 	where := make([]string, 0, len(fd.Subwords))
 	for _, w := range fd.Subwords {
@@ -443,11 +373,7 @@ func subwordFlagError(cmd string, fd FlagDef, sub string) error {
 	return fmt.Errorf("--%s belongs to %s, not %s", fd.Long, strings.Join(where, ", "), got)
 }
 
-// unconsumedFlagError explains a dash-token that survived both the flag
-// branches and bundle expansion, naming the exact letters at fault. A bundle
-// reaches here only when one of its letters is unknown: a value-taking short
-// ends the bundle and consumes the rest as its value, so `-an5` and `-an 5`
-// are both `--limit 5`.
+// A bundle reaches here only when one of its letters is unknown.
 func unconsumedFlagError(flags []FlagDef, tok string) error {
 	var unknown []string
 	for _, r := range tok[1:] {
@@ -456,26 +382,17 @@ func unconsumedFlagError(flags []FlagDef, tok string) error {
 		}
 	}
 	if len(unknown) == 0 {
-		// Unreachable while expandBundled takes every known bundle; report
-		// rather than swallow.
 		return fmt.Errorf("unparsed flag %q", tok)
 	}
-	// Teach the escape hatch in the same breath: a legitimate value that
-	// happens to start with '-' (`set mantra -x`) is rejected here, and `--`
-	// is how it gets through.
 	return fmt.Errorf("unknown flag %q (unrecognized in the bundle: %s); if it is a value, put it after `--`",
 		tok, strings.Join(unknown, ", "))
 }
 
-// ExpandBundled expands short-flag gangs (-ex -> -e -x) against a flag
-// table. Exported so the PassRaw parsers expand from the same table the
-// router does: two expanders is how `-fj` came to fail while `-f -j` worked.
+// ExpandBundled is the one expander; PassRaw parsers must use it too.
 func ExpandBundled(args []string, flags []FlagDef) []string { return expandBundled(args, flags) }
 
-// expandBundled splits `-abc` into `-a -b -c`. A short that takes a VALUE ends
-// the bundle, getopt-style: the rest of the token is its value (`-eOsonn5`),
-// or the next argv token is (`-eO sonn5`). A bundle with an unknown letter is
-// left as typed, so the caller names it rather than this inventing flags.
+// A value-taking short ends the bundle getopt-style (`-eOsonn5`, `-eO sonn5`);
+// a bundle with an unknown letter is left as typed.
 func expandBundled(args []string, flags []FlagDef) []string {
 	out := make([]string, 0, len(args))
 	for _, a := range args {
@@ -521,16 +438,12 @@ func findFlag(flags []FlagDef, long, short string) *FlagDef {
 	return nil
 }
 
-// Suggest returns the registered command name closest to input by
-// Levenshtein distance, or "" when nothing is close enough. Exported so
-// callers that dispatch outside Run (the bare `figaro -- <prompt>` form)
-// can offer the same did-you-mean hint.
+// Suggest returns the closest command name by Levenshtein distance, or "".
 func (r *Router) Suggest(input string) string { return r.suggest(input) }
 
-// suggest finds the closest command name by Levenshtein distance.
 func (r *Router) suggest(input string) string {
 	best := ""
-	bestDist := 4 // threshold
+	bestDist := 4
 	for _, cmd := range r.commands {
 		if cmd.Hidden {
 			continue
@@ -579,10 +492,6 @@ func levenshtein(a, b string) int {
 	return prev[lb]
 }
 
-// --- Help output ---
-
-// outw/errw resolve the writers, tolerating a zero-value Router (a Router
-// built as a struct literal rather than through NewRouter still prints).
 func (r *Router) outw() io.Writer {
 	if r.Stdout == nil {
 		return os.Stdout
@@ -597,8 +506,6 @@ func (r *Router) errw() io.Writer {
 	return r.Stderr
 }
 
-// PrintUsage writes the top-level help to Stdout. Exported so a `help`
-// verb (and figaro's bare-prompt dispatcher) can reach it.
 func (r *Router) PrintUsage() { r.printUsageTo(r.outw()) }
 
 func (r *Router) printUsageTo(w io.Writer) {
@@ -608,7 +515,6 @@ func (r *Router) printUsageTo(w io.Writer) {
 	}
 	fmt.Fprintln(w)
 
-	// Group commands.
 	groups := r.groupedCommands()
 	for _, g := range groups {
 		fmt.Fprintf(w, "%s:\n", g.name)
@@ -637,7 +543,6 @@ func (r *Router) printUsageTo(w io.Writer) {
 	fmt.Fprintf(w, "Run '%s <command> --help' for details on a command.\n", r.Name)
 }
 
-// PrintCommandHelp writes one command's help to Stdout.
 func (r *Router) PrintCommandHelp(cmd *Command) { r.printCommandHelpTo(r.outw(), cmd) }
 
 func (r *Router) printCommandHelpTo(w io.Writer, cmd *Command) {
@@ -693,7 +598,6 @@ func (r *Router) groupedCommands() []commandGroup {
 		}
 		gmap[g] = append(gmap[g], cmd)
 	}
-	// Sort commands within each group by name.
 	for _, cmds := range gmap {
 		sort.Slice(cmds, func(i, j int) bool {
 			return cmds[i].Name < cmds[j].Name

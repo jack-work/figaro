@@ -8,16 +8,8 @@ import (
 	"testing"
 )
 
-// The skill tree ships inside the binary (flake.nix copies $src/skills to
-// $out/share/figaro/skills), so a reader on a machine with no checkout follows
-// its links with nothing to fall back on. A broken one is not a typo there, it
-// is a dead end.
-//
-// This is the loader's package because the loader is what puts these files in
-// front of an agent; if the tree is malformed, this is where it is noticed.
+// The skill tree ships in the binary without the repository around it, so links must resolve inside it.
 
-// skillsDir is the tree under test, resolved from this package's location so
-// the test does not care where it is run from.
 func skillsDir(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.Abs(filepath.Join("..", "..", "skills"))
@@ -30,7 +22,6 @@ func skillsDir(t *testing.T) string {
 	return dir
 }
 
-// mdLink matches an inline markdown link target, minus any #fragment.
 var mdLink = regexp.MustCompile(`\]\(([^)\s]+?)(#[^)]*)?\)`)
 
 func eachSkillLink(t *testing.T, fn func(src, target string)) {
@@ -61,8 +52,6 @@ func eachSkillLink(t *testing.T, fn func(src, target string)) {
 	}
 }
 
-// TestSkillLinksResolve: every relative link in the tree points at something
-// that exists. A restructure that moves a file is the thing this catches.
 func TestSkillLinksResolve(t *testing.T) {
 	n := 0
 	eachSkillLink(t, func(src, target string) {
@@ -77,17 +66,10 @@ func TestSkillLinksResolve(t *testing.T) {
 	t.Logf("checked %d links", n)
 }
 
-// TestSkillLinksStayInTheTree: a link must not escape skills/.
-//
-// The tree ships in the binary WITHOUT the repository around it, so a link out
-// to a sibling directory resolves for the author and is a dead end for every
-// reader who installed figaro rather than cloned it. escapes lists the ones
-// that exist on purpose; each needs a reason, and "it works on my checkout" is
-// not one.
+// escapes lists the links out of skills/ that exist on purpose.
 func TestSkillLinksStayInTheTree(t *testing.T) {
 	escapes := map[string]string{
-		// cli.md cites the graft design, which is a repo proposal and has
-		// deliberately not been folded into the shipped tree.
+		// The graft design is a repo proposal, deliberately not in the shipped tree.
 		"../../proposals/aria-graft.md": "repo-only proposal, cited as provenance",
 	}
 	root := skillsDir(t)
@@ -108,14 +90,8 @@ func TestSkillLinksStayInTheTree(t *testing.T) {
 	})
 }
 
-// TestSkillLinkLabelsMatchTargets: a label that names a FILE must name the file
-// it links to. Four labels once read turn-addressing.md, a name that had not
-// existed for months, because a rename fixed the targets and left the text.
 func TestSkillLinkLabelsMatchTargets(t *testing.T) {
-	// A LABEL IS ONE LINE. Without \n in the excluded class the label class
-	// crosses paragraphs, so an unmatched '[' anywhere above (a half-open
-	// interval inside a code fence, say) pairs with the next real link and the
-	// failure names a page of prose as the label.
+	// No \n in the label class, or an unmatched '[' above pairs with the next link.
 	labelled := regexp.MustCompile(`\[([^\]\n]+\.md)\]\(([^)\s]+?)(#[^)]*)?\)`)
 	root := skillsDir(t)
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -140,20 +116,7 @@ func TestSkillLinkLabelsMatchTargets(t *testing.T) {
 	}
 }
 
-// TestSkillPathsCitedFromOutsideResolve: a path into the doc tree written in a
-// Go comment or a README ELSEWHERE in the repo must still name a file.
-//
-// The three tests above walk the tree and cannot see a citation from outside
-// it, which is where the last two restructures left twenty-three dead ones:
-// internal/tape/tape.go and internal/cli/testdata/tapes/README.md still said
-// contributing/tapes.md after tapes.md moved to debugging/, and twenty-one
-// comments still said docs/<x>.md years after docs/ stopped holding any of
-// them, including four naming turn-addressing.md, the same vanished file the
-// label test caught inside the tree. A reader following any of them landed
-// nowhere, and the whole suite was green.
-//
-// docs/ is matched as well as skills/ because that is where these files USED
-// to live: a citation that still says docs/ is the exact shape of the mistake.
+// A skills/ path cited from outside the tree must name a file; docs/ is matched because stale citations still say it.
 func TestSkillPathsCitedFromOutsideResolve(t *testing.T) {
 	root := skillsDir(t)
 	repo := filepath.Dir(root)

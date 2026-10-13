@@ -5,13 +5,7 @@ import (
 	"time"
 )
 
-// The resident-IR budget is the largest single lever on a live daemon's
-// memory, and CONFIG NO LONGER OWNS IT: the store bounds itself
-// (store.DefaultIRBudgetBytes) and this reports only what a config file said.
-// The three answers pinned here are the ones a caller must be able to tell
-// apart -- nothing configured, an explicit unbounded, and a value below the
-// floor -- because conflating the first two is what let a bare backend run
-// unbounded.
+// Unset, explicit unbounded, and below-floor must stay distinguishable.
 func TestIRWindowBytesConfigured(t *testing.T) {
 	if got, set := (*Loaded)(nil).IRWindowBytes(); set || got != 0 {
 		t.Fatalf("nil config must configure nothing, got %d set=%v", got, set)
@@ -118,8 +112,6 @@ func TestFormPatchWindow(t *testing.T) {
 	}
 }
 
-// The translation cache carries the same unset/explicit-zero contract as the
-// IR's, because a reader who learns one should not have to learn the other.
 func TestTranslationWindowBytesConfigured(t *testing.T) {
 	if got, set := (*Loaded)(nil).TranslationWindowBytes(); set || got != 0 {
 		t.Fatalf("nil config must configure nothing, got %d set=%v", got, set)

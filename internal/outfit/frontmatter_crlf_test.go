@@ -2,11 +2,7 @@ package outfit
 
 import "testing"
 
-// A skill saved with Windows line endings must produce the SAME frontmatter
-// as its LF twin. Not cosmetic: the frontmatter lands in the form
-// verbatim and the outfit's content version is a hash of that patch, so a
-// stray \r mints a second outfit stump: two shared prefixes and two caches
-// for one logical outfit, across two machines editing one repository.
+// The content version hashes the frontmatter, so CRLF and LF copies must agree.
 func TestCRLFFrontmatterMatchesItsLFTwin(t *testing.T) {
 	lf := "---\nname: golang\ndescription: Go patterns.\n---\nbody\n"
 	crlf := "---\r\nname: golang\r\ndescription: Go patterns.\r\n---\r\nbody\r\n"

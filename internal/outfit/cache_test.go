@@ -16,17 +16,12 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// A cache that never goes stale is the whole point; a cache that never
-// invalidates is a bug that looks like a feature until someone edits a skill.
 func TestCacheSeesAnEditedOutfit(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"first\"\n")
 	writeOutfit(t, dir, "top", "layers = [\"base\"]\n")
 	o := outfit.New(dir)
-	// Zero window: check the disk on every ask. That is what a test asserting
-	// INSTANTANEOUS invalidation is really asking for: the shipped default
-	// coalesces a burst of folds into one check per 100ms, which no human can
-	// type inside but a test certainly can.
+	// Zero window: check the disk on every ask.
 	o.SetStaleWindow(0)
 
 	patch, err := o.Load("top")
@@ -59,8 +54,6 @@ func TestCacheSeesAnEditedContentFile(t *testing.T) {
 		"a fileName dependency must invalidate the outfit that names it")
 }
 
-// Adding or removing a skill leaves every surviving file untouched, so the
-// directory's own stat is what catches it.
 func TestCacheSeesSkillsAddedAndRemoved(t *testing.T) {
 	dir := t.TempDir()
 	skills := filepath.Join(dir, "skills")
@@ -90,8 +83,6 @@ func TestCacheSeesSkillsAddedAndRemoved(t *testing.T) {
 	assert.False(t, stillAlpha, "a REMOVED skill must invalidate the outfit")
 }
 
-// A layer that did not exist and then does must be picked up: the failure is
-// cached as an absence, not as a fact about the parent.
 func TestCacheSeesALayerAppear(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "top", "layers = [\"later\"]\n[system]\nmodel = \"own\"\n")
@@ -107,8 +98,6 @@ func TestCacheSeesALayerAppear(t *testing.T) {
 	assert.Equal(t, `"arrived"`, string(mustEntry(patch, "system.credo")))
 }
 
-// bigConfig writes a realistic composition: a shared base, a diamond over it,
-// and a skills directory of the size a real config carries.
 func bigConfig(t testing.TB, skillCount, skillBytes int) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -134,8 +123,6 @@ func bigConfig(t testing.TB, skillCount, skillBytes int) string {
 	return dir
 }
 
-// BenchmarkFoldCold is a fresh Outfitter every iteration: every file parsed and
-// every skill read, which is what the old code did on EVERY fold.
 func BenchmarkFoldCold(b *testing.B) {
 	dir := bigConfig(b, 40, 3000)
 	b.ReportAllocs()
@@ -146,7 +133,6 @@ func BenchmarkFoldCold(b *testing.B) {
 	}
 }
 
-// BenchmarkFoldWarm reuses the Outfitter: the cost is a stat per dependency.
 func BenchmarkFoldWarm(b *testing.B) {
 	dir := bigConfig(b, 40, 3000)
 	o := outfit.New(dir)
@@ -162,8 +148,6 @@ func BenchmarkFoldWarm(b *testing.B) {
 	}
 }
 
-// BenchmarkFoldWarmEightArias is the shape that made `figaro ls` slow: one fold
-// per listed aria, all naming the same outfit.
 func BenchmarkFoldWarmEightArias(b *testing.B) {
 	dir := bigConfig(b, 40, 3000)
 	o := outfit.New(dir)
@@ -181,8 +165,6 @@ func BenchmarkFoldWarmEightArias(b *testing.B) {
 	}
 }
 
-// BenchmarkResolveClosure is what `figaro outfit --tree` costs: the graph only,
-// no content.
 func BenchmarkResolveClosure(b *testing.B) {
 	dir := bigConfig(b, 40, 3000)
 	o := outfit.New(dir)
@@ -196,9 +178,7 @@ func BenchmarkResolveClosure(b *testing.B) {
 	}
 }
 
-// A deleted outfit must not sit in the cache forever. Nothing sweeps on a
-// timer: a stale entry is dropped the next time it is touched, and the sweep
-// on insert bounds the map for a caller minting many short-lived names.
+// Nothing sweeps on a timer: a stale entry drops when touched, or on the next insert.
 func TestDeletedOutfitIsEvictedFromTheCache(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "doomed", "[system]\nmodel = \"m\"\n")
@@ -215,9 +195,6 @@ func TestDeletedOutfitIsEvictedFromTheCache(t *testing.T) {
 	assert.Equal(t, 0, o.CachedFolds(), "the entry for a deleted outfit must be dropped")
 }
 
-// The cache is bounded in BYTES now, not entries: large outfits are the
-// anticipated case, so what matters is how much memory the folds hold, and
-// eviction is least-recently-used against a budget.
 func TestCacheStaysUnderItsByteBudget(t *testing.T) {
 	dir := t.TempDir()
 	o := outfit.New(dir)
@@ -235,7 +212,6 @@ func TestCacheStaysUnderItsByteBudget(t *testing.T) {
 	assert.Greater(t, o.CachedFolds(), 0, "and must not evict itself to nothing")
 }
 
-// mustEntry is the value a patch sets at key.
 func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {

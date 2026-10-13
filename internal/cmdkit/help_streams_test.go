@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// The rule that separates the two writers: who asked. Help used to open
 func TestHelpStreams(t *testing.T) {
 	newRouter := func(out, errOut *bytes.Buffer) *Router {
 		r := NewRouter("figaro")
@@ -28,14 +27,12 @@ func TestHelpStreams(t *testing.T) {
 		wantOut  string // substring required on stdout ("" = stdout must be empty)
 		wantErr  string // substring required on stderr ("" = stderr must be empty)
 	}{
-		// Asked for it: stdout, exit 0.
 		{"top-level --help", []string{"--help"}, 0, "Usage: figaro", ""},
 		{"top-level -h", []string{"-h"}, 0, "Usage: figaro", ""},
 		{"command --help", []string{"send", "--help"}, 0, "Usage: figaro send", ""},
 		{"version", []string{"--version"}, 0, "figaro 9.9.9", ""},
 		{"version short", []string{"-V"}, 0, "figaro 9.9.9", ""},
 
-		// Did not ask for it: stderr, non-zero, stdout untouched.
 		{"no args", nil, 2, "", "Usage: figaro"},
 		{"unknown command", []string{"snd"}, 2, "", `unknown command "snd"`},
 		{"parse error", []string{"send", "--bogus"}, 2, "", "unknown flag"},
@@ -67,8 +64,6 @@ func checkStream(t *testing.T, name, got, want string) {
 	}
 }
 
-// TestHelpStreamsNilWriters guards the zero-value Router: a struct literal
-// (no NewRouter) must still print rather than panic on a nil io.Writer.
 func TestHelpStreamsNilWriters(t *testing.T) {
 	r := &Router{Name: "figaro", index: map[string]*Command{}}
 	if r.outw() == nil || r.errw() == nil {

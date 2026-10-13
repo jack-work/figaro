@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// Argv is never silently swallowed. A 3+-char dash token that expandBundled
 func TestUnconsumedDashTokens(t *testing.T) {
 	build := func() (*Router, *[]string) {
 		var gotArgs []string
@@ -46,7 +45,6 @@ func TestUnconsumedDashTokens(t *testing.T) {
 			args: []string{"ls", "-azq"}, wantCode: 2,
 			wantErr: "-z, -q",
 		},
-		// The forms that must keep working, unchanged.
 		{
 			name: "a real bundle still expands",
 			args: []string{"ls", "-ao"}, wantCode: 0, wantArgs: nil,

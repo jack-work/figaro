@@ -6,10 +6,7 @@ import (
 	"testing"
 )
 
-// proseUncached mirrors Prose without the cache. It must mirror EVERY step, or
-// the transparency test starts measuring the mirror instead of the cache: it
-// caught exactly that when Prose gained StripEscapes and hardWrapOverlong and
-// this did not.
+// proseUncached must mirror every step of Prose, or the transparency test measures the mirror.
 func proseUncached(md string, width int) []string {
 	md = StripEscapes(md)
 	if strings.Count(md, "```")%2 == 1 {
@@ -32,9 +29,6 @@ var proseCorpus = []string{
 	"text with **bold** and `code` and a [link](https://example.com)",
 }
 
-// TestProseCacheIsTransparent is the correctness claim: a cached Prose call
-// returns exactly what an uncached one does, for every input and width, on
-// both the cold and the warm call.
 func TestProseCacheIsTransparent(t *testing.T) {
 	for _, md := range proseCorpus {
 		for _, w := range []int{1, 10, 40, 80, 120} {
@@ -56,8 +50,6 @@ func TestProseCacheIsTransparent(t *testing.T) {
 	}
 }
 
-// TestProseCacheHandsOutPrivateSlices pins that a caller may rewrite the rows
-// it gets back (renderNodeList clips in place) without poisoning the cache.
 func TestProseCacheHandsOutPrivateSlices(t *testing.T) {
 	resetProseCache()
 	md := "some prose that renders to at least one row"
@@ -86,9 +78,6 @@ func TestProseCacheHandsOutPrivateSlices(t *testing.T) {
 	}
 }
 
-// TestProseCacheRotationIsBounded pins the eviction: pushing far more than the
-// budget through the cache must not grow it without limit, and the recently
-// used entries must still be there.
 func TestProseCacheRotationIsBounded(t *testing.T) {
 	resetProseCache()
 	body := strings.Repeat("filler words that render to a fat row. ", 200)
@@ -124,9 +113,6 @@ func BenchmarkProseUncached(b *testing.B) {
 	}
 }
 
-// TestProseCacheStreamingLeavesOneEntry pins the streaming eviction: a
-// node that grows by append must occupy one entry, not one per tick, so it
-// cannot bury the entries worth keeping.
 func TestProseCacheStreamingLeavesOneEntry(t *testing.T) {
 	resetProseCache()
 	keep := "a stable block that must survive the stream"
@@ -140,7 +126,6 @@ func TestProseCacheStreamingLeavesOneEntry(t *testing.T) {
 	if hot+cold > 3 { // the stable block, the current partial, +1 slack
 		t.Errorf("cache holds %d entries after a 50-tick stream, want <= 3", hot+cold)
 	}
-	// and the stable entry is still a hit
 	before := Prose(keep, 80)
 	hitAllocs := testing.AllocsPerRun(20, func() { _ = Prose(keep, 80) })
 	if hitAllocs > 1 {

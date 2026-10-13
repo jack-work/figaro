@@ -1,8 +1,5 @@
-// Package render turns a markdown string into ANSI terminal rows via
-// glamour (tables, code blocks, syntax highlighting). It is a pure,
-// deterministic function of (markdown, width): identical inputs yield
-// identical rows, no retained state, no I/O. The CLI consumer holds the
-// rows and line-diffs them; the web consumer ignores this package.
+// Package render turns markdown into ANSI terminal rows: a pure function of
+// (markdown, width), no I/O.
 package render
 
 import (
@@ -15,19 +12,9 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// Prose renders a full markdown string through glamour: prose, lists,
-// tables, and fenced code blocks all get glamour's styling (indent,
-// surrounding blank lines, chroma syntax highlighting). A trailing
-// unclosed fence (mid-stream) is synth-closed so a code block renders with
-// a stable structure as it streams in.
+// Prose synth-closes a trailing unclosed fence so a streaming code block keeps a stable shape.
 func Prose(md string, width int) []string {
-	// Sanitize on the way IN. glamour drops the ESC byte of an escape it does
-	// not understand and keeps the parameter bytes as visible text: while
-	// having wrapped as though the whole sequence were zero-width: so
-	// `\x1b[31mred` came back as a row four cells wider than asked for, at every
-	// width, with "[31m" printed. Models paste ANSI out of tool output
-	// constantly, so this is a live path, and a bare ESC could also shift a
-	// gutter's column by riding along in the row prefix.
+	// glamour drops the ESC of an unknown escape and prints its parameter bytes.
 	md = StripEscapes(md)
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
@@ -40,17 +27,10 @@ func Prose(md string, width int) []string {
 	return append([]string(nil), rows...)
 }
 
-// diffIndent insets a diff block from the prose around it, by as much as
-// glamour insets a fenced code block: the diff STANDS IN a code block's place,
-// so it stands where one would.
+// diffIndent matches glamour's inset for a fenced code block.
 const diffIndent = "    "
 
-// proseRows renders the markdown, drawing every fenced DIFF region itself and
-// leaving the rest to glamour. A diff is figaro's own picture (see diff.go),
-// not a highlighter's: the one a reader already knows from the `edit` tool.
-//
-// Rows for a diff region carry term's colours, so a caller that has turned
-// colour off gets the text and no SGR, exactly as it does from a tool block.
+// proseRows draws fenced diff regions itself and leaves the rest to glamour.
 func proseRows(md string, width int) []string {
 	if !HasDiff(md) {
 		return renderMarkdown(md, width)
@@ -83,10 +63,7 @@ func proseRows(md string, width int) []string {
 	return trimBlankEdges(out)
 }
 
-// renderMarkdown renders markdown via glamour. Output rows are glamour's
-// word-wrapped lines with surrounding blank padding trimmed; on a glamour
-// failure it falls back to plain wrapped text so the live region never
-// blanks.
+// renderMarkdown falls back to plain wrapped text on a glamour error or panic.
 func renderMarkdown(text string, width int) (rows []string) {
 	if strings.TrimSpace(text) == "" {
 		return nil
@@ -98,10 +75,6 @@ func renderMarkdown(text string, width int) (rows []string) {
 		}
 		return trimBlankEdges(out)
 	}
-	// A glamour PANIC must not reach the caller. renderMarkdown already falls
-	// back to plain text when Render returns an error, but a panic blew straight
-	// through that, and figaro renders from detached goroutines (refreshQueued),
-	// so it took the whole CLI down instead of spoiling one frame.
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Warn("markdown render panicked; falling back to plain text",
@@ -116,65 +89,42 @@ func renderMarkdown(text string, width int) (rows []string) {
 	return trimBlankEdges(strings.Split(strings.TrimRight(out, "\n"), "\n"))
 }
 
-// renderLocked renders under the renderer lock.
 func renderLocked(text string, width int) (string, error) {
 	rendererMu.Lock()
 	defer rendererMu.Unlock()
 	return rendererForLocked(width).Render(text)
 }
 
-// rendererCache memoizes one glamour renderer per width. Construction
-// parses the style; output stays a pure function of (text, width).
 var (
 	rendererMu    sync.Mutex
 	rendererCache = map[int]*glamour.TermRenderer{}
 )
 
-// rendererForLocked returns the memoized renderer for width. CALLER HOLDS
-// rendererMu, and must keep holding it across Render: see renderLocked.
+// Caller holds rendererMu, and keeps holding it across Render.
 func rendererForLocked(width int) *glamour.TermRenderer {
 	if r, ok := rendererCache[width]; ok {
 		return r
 	}
-	// glamour counts the dark style's 2-column document margin INSIDE the
-	// word-wrap budget: WithWordWrap(n) yields rows n-2 columns wide.
-	// (Through glamour v0.8.0 the margin was added ON TOP, so the same call
-	// yielded rows n+2 wide and this compensation was width-2.) Asking for
-	// width+2 therefore lands rows at exactly width, which is the ceiling -
-	// a row that overflows the viewport auto-wraps in the terminal and
-	// desyncs the live painter's one-row-per-line cursor math.
+	// glamour v2 counts the dark style's 2-column margin inside the word-wrap
+	// budget, so WithWordWrap(width+2) lands rows at exactly width.
 	wrap := width + 2
 	if wrap < 1 {
 		wrap = 1
 	}
 	opts := []glamour.TermRendererOption{
 		glamour.WithStandardStyle("dark"),
-		// NO WithColorProfile. v1 had one and it was pinned to TrueColor for
-		// determinism; v2 has no such option, because lipgloss emits the style's
-		// own colour verbatim ("252" still comes out as ESC[38;5;252m) and any
-		// downgrade happens at the writer, not here. So the output is as
-		// deterministic as it was, by construction rather than by a pin.
 		glamour.WithWordWrap(wrap),
-		// THE TABLE FIX, stated explicitly rather than left to the default.
-		// glamour's table renderer used to give every cell a lipgloss style
-		// with Inline(true), which disables word wrap in the cell render,
-		// while lipgloss/table sized each row to the WRAPPED height of its
-		// content: a cell needing two lines got two lines of space, its
-		// first line of text, and a blank: the remainder discarded by the
-		// cell's MaxWidth. Table text was destroyed here, upstream of
-		// anything a view could do about it.
+		// Without it a cell taller than one line keeps its first line and loses the rest.
 		glamour.WithTableWrap(true),
 	}
 	r, err := glamour.NewTermRenderer(opts...)
 	if err != nil {
-		// Width-only fallback; should not happen with a standard style.
 		r, _ = glamour.NewTermRenderer(glamour.WithWordWrap(wrap))
 	}
 	rendererCache[width] = r
 	return r
 }
 
-// wrapPlain hard-wraps a plain (no-ANSI) line to width display columns.
 func wrapPlain(line string, width int) []string {
 	if width <= 0 || runewidth.StringWidth(line) <= width {
 		return []string{line}
@@ -208,15 +158,10 @@ func trimBlankEdges(rows []string) []string {
 	return rows
 }
 
-// visiblyBlank reports whether a row paints nothing: whitespace once ANSI
-// escapes are discounted. A TrimSpace test is not enough: glamour pads a
-// block_quote with a leading row of STYLED spaces, and that row survived the
-// edge trim, so a thinking block (a blockquote) carried its own blank on top
-// of the separator the node renderers already put between blocks: two blank
-// rows where prose gets one, in every surface at once.
+// visiblyBlank discounts escapes: glamour pads a block_quote with a row of styled spaces.
 func visiblyBlank(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if c := s[i]; c == 0x1b { // escape sequence: skip through its final letter
+		if c := s[i]; c == 0x1b {
 			for i++; i < len(s) && !((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z')); i++ {
 			}
 		} else if c > ' ' {
@@ -226,7 +171,6 @@ func visiblyBlank(s string) bool {
 	return true
 }
 
-// cells is a row's width on screen: escapes cost nothing, wide runes cost two.
 func cells(s string) int {
 	n := 0
 	for i := 0; i < len(s); {
@@ -241,7 +185,7 @@ func cells(s string) int {
 	return n
 }
 
-// hardWrapOverlong is the fallback for content glamour will not break.
+// hardWrapOverlong breaks the rows glamour will not.
 func hardWrapOverlong(rows []string, width int) []string {
 	if width <= 0 {
 		return rows
@@ -254,7 +198,7 @@ func hardWrapOverlong(rows []string, width int) []string {
 		}
 	}
 	if !over {
-		return rows // same backing array, no allocation
+		return rows
 	}
 	out := make([]string, 0, len(rows)+2)
 	for _, r := range rows {
@@ -267,12 +211,11 @@ func hardWrapOverlong(rows []string, width int) []string {
 	return out
 }
 
-// splitToWidth cuts one row into chunks of at most width cells, carrying the
-// active SGR run onto each continuation so a colour does not bleed or vanish.
+// splitToWidth carries the active SGR run onto each continuation.
 func splitToWidth(row string, width int) []string {
 	var out []string
 	var chunk strings.Builder
-	var style strings.Builder // SGR seen since the last reset
+	var style strings.Builder
 	col := 0
 	flush := func() {
 		if chunk.Len() > 0 {

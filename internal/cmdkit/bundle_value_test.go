@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// A short that takes a value ends the bundle and swallows the rest of the
-// token as its value; bools before it still expand. Unknown letters leave the
-// token untouched so the parser can name them.
 func TestExpandBundledValueShorts(t *testing.T) {
 	flags := []FlagDef{
 		{Long: "ephemeral", Short: "e", IsBool: true},

@@ -1,16 +1,6 @@
 package config
 
-// EVERY ACCESSOR ON A NIL *Loaded MUST ANSWER, NOT PANIC.
-//
-// A *Loaded is nil in tests, in tools, and anywhere the daemon has not read a
-// config yet. Individual accessors have carried "Nil-safe" in their doc
-// comments for a long time, and the property was true only where somebody
-// happened to write the check: of 42 accessors, 20 dereferenced l directly,
-// and the one that caught it sat between two that did not.
-//
-// Asserting it per-method would be the same mistake at test scale, so this
-// walks the METHOD SET. A new accessor is covered the moment it is declared,
-// which is the only way a rule like this stays true.
+// Walks the method set so a new accessor is covered the moment it is declared.
 
 import (
 	"reflect"
@@ -27,7 +17,6 @@ func TestEveryLoadedAccessorIsNilSafe(t *testing.T) {
 		m := rt.Method(i)
 		mt := m.Type
 
-		// Build zero arguments for whatever it takes. Receiver is arg 0.
 		args := make([]reflect.Value, 0, mt.NumIn()-1)
 		skip := false
 		for a := 1; a < mt.NumIn(); a++ {

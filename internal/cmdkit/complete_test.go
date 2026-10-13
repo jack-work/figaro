@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// captureStdout swaps os.Stdout for the duration of fn and returns
-// what was written. Needed because runComplete prints with fmt.Println.
-// captureRouter runs fn with the router's Stdout on a buffer and returns what
-// it wrote. It used to swap os.Stdout, which only worked while __complete
-// printed round the router; see TestCompleteWritesToTheRoutersStdout.
 func captureRouter(t *testing.T, r *Router, fn func()) string {
 	t.Helper()
 	var buf bytes.Buffer
@@ -115,8 +110,6 @@ func TestCompleteContextCurrent(t *testing.T) {
 		},
 	})
 
-	// With --current present: dispatcher must pop it off and surface
-	// it in Current; Args must not contain it.
 	captureRouter(t, r, func() {
 		r.Run([]string{"__complete", "send", "--current", "@mod", "--", "hello"})
 	})
@@ -127,7 +120,6 @@ func TestCompleteContextCurrent(t *testing.T) {
 		t.Errorf("Args = %v, want [hello]", sawArgs)
 	}
 
-	// Without --current: backward-compatible; Current is empty.
 	sawCurrent = "sentinel"
 	captureRouter(t, r, func() {
 		r.Run([]string{"__complete", "send", "--", "hello"})
@@ -152,9 +144,7 @@ func TestCompleteContextPastSeparator(t *testing.T) {
 		},
 	})
 
-	// Without a user "--": PastSeparator must be false. The leading
-	// "--" here is the dispatcher's own boundary marker and must NOT
-	// count as a user separator.
+	// The leading "--" is the dispatcher's own boundary marker, not a user separator.
 	captureRouter(t, r, func() {
 		r.Run([]string{"__complete", "send", "--", "--id", "myid"})
 	})
@@ -162,9 +152,6 @@ func TestCompleteContextPastSeparator(t *testing.T) {
 		t.Errorf("PastSeparator true with no user --; args=%v", sawArgs)
 	}
 
-	// With a user "--" in the tail: PastSeparator must be true and
-	// the "--" must be preserved in Args so downstream logic can
-	// locate it.
 	captureRouter(t, r, func() {
 		r.Run([]string{"__complete", "send", "--", "--id", "myid", "--", "hello"})
 	})
@@ -175,11 +162,7 @@ func TestCompleteContextPastSeparator(t *testing.T) {
 		t.Errorf("Args = %v (expected the user -- preserved)", sawArgs)
 	}
 
-	// Regression: a user "--" immediately following the dispatcher's
-	// own boundary marker (i.e. `figaro send -- <cursor>`, which the
-	// shell turns into `__complete send -- --`) must NOT be eaten by
-	// the leading-strip. The dispatcher inserts exactly one boundary
-	// "--"; any additional ones are user-typed.
+	// A user "--" right after the dispatcher's marker (`figaro send -- <cursor>`) must survive the strip.
 	sawPast = false
 	sawArgs = nil
 	captureRouter(t, r, func() {
@@ -205,9 +188,6 @@ func TestCompleteBarePromptSentinel(t *testing.T) {
 	})
 
 	out := captureRouter(t, r, func() {
-		// Shell-side substitution: the user typed `figaro -- <cursor>`
-		// (or an alias of it), the script swaps the verb position from
-		// "--" to the sentinel before calling __complete.
 		r.Run([]string{"__complete", "__bare_prompt"})
 	})
 	if !called {
@@ -236,8 +216,6 @@ func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 				t.Errorf("%s script missing __complete dispatch:\n%s", shell, body)
 			}
 			if strings.Contains(body, "__complete") {
-				// Hidden command must not appear as a user-visible
-				// suggestion at the top level.
 				lines := strings.Split(body, "\n")
 				for _, line := range lines {
 					if strings.Contains(line, "__fish_use_subcommand") &&
@@ -250,15 +228,7 @@ func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 	}
 }
 
-// TestBarePromptDetectorSurvivesAMovedBoundary pins the shell-side rule against
-// cli.isBareForm: a "--" boundary ANYWHERE after the program name, with a
-// non-command in the verb slot.
-//
-// Both generated scripts used to test position alone: fish `$tokens[2] = "--"`
-// and bash `COMP_WORDS[1] = "--"`. That was correct while the bare prompt form
-// took no flags. Once `figaro --id A -- <prompt>` became legal the boundary
-// moved to word 3, the detector stopped firing, and completion offered the VERB
-// list in the middle of a prompt.
+// The bare-prompt detector must scan for "--" anywhere after the program name, not at word 2 only.
 func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
 	r := NewRouter("figaro")
 	r.Register(&Command{Name: "send", Short: "s", Run: func(*RunContext) error { return nil }})
@@ -266,17 +236,10 @@ func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		shell string
 		gen   func(io.Writer) error
-		// stale is the position-only test that must NOT survive.
 		stale string
-		// want are fragments proving the boundary is SCANNED for, and that a
-		// real command in the verb slot still wins.
-		want []string
+		want  []string
 	}{
 		{"fish", r.writeFishCompletion, `test $tokens[2] = "--"`,
-			// The verb list is not asserted verbatim: it is every registered
-			// command, and cmdkit now registers a built-in `help`, so pinning
-			// the exact string would make this test a census of the command
-			// table rather than a check of the boundary detector.
 			[]string{`contains -- "--" $tokens[2..-1]`, `contains -- $tokens[2] `, `send`}},
 		{"bash", r.writeBashCompletion, `if [ "$verb" = "--" ]; then`,
 			[]string{`for w in "${toks[@]:1}"`, `case " $commands " in *" $verb "*)`}},
@@ -300,9 +263,7 @@ func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
 	}
 }
 
-// __complete answers on the ROUTER's writer. The pager runs this router
-// in-process with Stdout on a buffer; printing to the process's stdout instead
-// painted every candidate over the terminal and left the menu empty.
+// The pager runs this router in-process with Stdout on a buffer.
 func TestCompleteWritesToTheRoutersStdout(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRouter("prog")
@@ -334,8 +295,6 @@ func describedRouter() *Router {
 	return r
 }
 
-// Descriptions are for a caller that asks. Bash feeds the lines to compgen
-// -W, which would offer every word of a description as a completion.
 func TestCompleteStripsDescriptionsUnlessAsked(t *testing.T) {
 	r := describedRouter()
 	plain := captureRouter(t, r, func() { r.Run([]string{"__complete", "pick", "--current", "", "--"}) })
@@ -350,8 +309,6 @@ func TestCompleteStripsDescriptionsUnlessAsked(t *testing.T) {
 	}
 }
 
-// A word that begins with a dash is a flag, for every command, from the flags
-// the command already declares.
 func TestCompleteOffersFlagsForADash(t *testing.T) {
 	r := describedRouter()
 	long := captureRouter(t, r, func() {
@@ -373,7 +330,6 @@ func TestCompleteOffersFlagsForADash(t *testing.T) {
 	}
 }
 
-// `--id=<TAB>` completes the value of --id, keeping the flag on the front.
 func TestCompleteInlineFlagValue(t *testing.T) {
 	r := NewRouter("prog")
 	r.Register(&Command{
@@ -393,8 +349,6 @@ func TestCompleteInlineFlagValue(t *testing.T) {
 	}
 }
 
-// A PassRaw command parses its own flags and documents them in its own help:
-// CompleteFlags are offered by completion and never printed by help.
 func TestCompleteFlagsAreForCompletionOnly(t *testing.T) {
 	r := NewRouter("prog")
 	r.Register(&Command{

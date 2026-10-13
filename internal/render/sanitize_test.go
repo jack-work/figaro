@@ -79,7 +79,6 @@ func TestSanitize_KeepsSGR(t *testing.T) {
 }
 
 func TestSanitize_KeepsCursorMoves(t *testing.T) {
-	// Painter uses these: leave them alone.
 	in := "row1\x1b[Krow2\x1b[1Brow3"
 	got := SanitizeForTerminal(in)
 	if got != in {
@@ -104,7 +103,6 @@ func TestSanitize_EmptyAndNoEscapes(t *testing.T) {
 }
 
 func TestSanitize_TruncatedEscape(t *testing.T) {
-	// Defensively drop trailing partial escape rather than embed it.
 	got := SanitizeForTerminal("hello\x1b[")
 	if got != "hello" {
 		t.Fatalf("got %q", got)
@@ -112,16 +110,11 @@ func TestSanitize_TruncatedEscape(t *testing.T) {
 }
 
 func TestSanitize_HuhAltScreenEnterExitRoundTrip(t *testing.T) {
-	// Concrete: a captured huh smoke-test output. Should produce
-	// only the visible text it would have shown, minus all state
-	// changes.
 	in := "\x1b[?1049h\x1b[?25l\x1b[?7l" +
 		"\x1b[1;1H\x1b[2J" +
 		"Welcome to figaro" +
 		"\x1b[?25h\x1b[?7h\x1b[?1049l"
 	got := SanitizeForTerminal(in)
-	// Keep cursor-positioning + erase-display (painter-class), drop
-	// the dangerous private modes.
 	if strings.Contains(got, "\x1b[?") {
 		t.Fatalf("got contains private mode: %q", got)
 	}

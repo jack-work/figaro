@@ -1,15 +1,10 @@
-// SanitizeForTerminal: strips terminal-state-mutating ANSI sequences
-// from text destined for figaro's live region.
-
 package render
 
 import (
 	"strings"
 )
 
-// SanitizeForTerminal returns s with terminal-state-mutating ANSI
-// sequences removed. Pure function; preserves SGR and cursor/erase
-// primitives. Safe to call repeatedly.
+// SanitizeForTerminal removes terminal-state-mutating sequences, keeping SGR and cursor/erase.
 func SanitizeForTerminal(s string) string {
 	if s == "" || !strings.ContainsRune(s, 0x1b) {
 		return s
@@ -24,7 +19,6 @@ func SanitizeForTerminal(s string) string {
 			i++
 			continue
 		}
-		// ESC at end-of-string: drop.
 		if i+1 >= len(s) {
 			return b.String()
 		}
@@ -32,7 +26,6 @@ func SanitizeForTerminal(s string) string {
 
 		switch next {
 		case '[':
-			// CSI sequence: parameter bytes then a final byte in 0x40..0x7e.
 			j := i + 2
 			privateMode := false
 			if j < len(s) && s[j] == '?' {
@@ -43,27 +36,21 @@ func SanitizeForTerminal(s string) string {
 				j++
 			}
 			if j >= len(s) {
-				return b.String() // incomplete
+				return b.String()
 			}
 			final := s[j]
 			full := s[i : j+1]
 			switch {
 			case privateMode:
-				// Always dangerous: drop.
 			case final == 'm':
-				// SGR: keep verbatim.
 				b.WriteString(full)
 			case isCursorOrEraseFinal(final):
-				// Cursor / erase: keep.
 				b.WriteString(full)
 			default:
-				// Other CSIs (DECSTBM 'r', save/restore 's'/'u',
-				// device attributes 'c', etc.): drop.
 			}
 			i = j + 1
 
 		case ']':
-			// OSC: ESC ] ... terminator (BEL or ST).
 			j := i + 2
 			for j < len(s) {
 				if s[j] == 0x07 {
@@ -89,14 +76,12 @@ func SanitizeForTerminal(s string) string {
 			}
 
 		default:
-			// Unknown ESC <byte>: drop two bytes.
 			i += 2
 		}
 	}
 	return b.String()
 }
 
-// SanitizeRows applies SanitizeForTerminal to each row in place.
 func SanitizeRows(rows []string) []string {
 	for i, r := range rows {
 		rows[i] = SanitizeForTerminal(r)
@@ -112,7 +97,7 @@ func isCSIParamByte(b byte) bool {
 		return true
 	case b == '<' || b == '=' || b == '>':
 		return true
-	case b == '?': // a PARAMETER byte. Omitting it leaked "\x1b[?25l" as "25l".
+	case b == '?':
 		return true
 	case b == ' ' || b == '!':
 		return true
@@ -131,11 +116,10 @@ func isCursorOrEraseFinal(b byte) bool {
 	return false
 }
 
-// StripEscapes removes every ESC-introduced sequence, and any stray ESC, from
-// text that is about to be RENDERED AS MARKDOWN.
+// StripEscapes removes every ESC-introduced sequence and any stray ESC.
 func StripEscapes(s string) string {
 	if !strings.ContainsRune(s, 0x1b) {
-		return s // the overwhelmingly common case, untouched and unallocated
+		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
@@ -150,24 +134,16 @@ func StripEscapes(s string) string {
 	return b.String()
 }
 
-// SkipEscape is skipEscape, exported so every package measures escapes with
-// ONE grammar. internal/cli had its own, which scanned to the first ASCII
-// LETTER: a bare ESC therefore swallowed the character after it, displayWidth
-// undercounted by one, and clipToWidth let a row through one cell PAST THE
-// EDGE: the reported "one or two characters beyond the right side". An OSC
-// title ended it early instead, which clips a row short and loses text.
+// SkipEscape is the one escape grammar every package measures with.
 func SkipEscape(s string, i int) int { return skipEscape(s, i) }
 
-// runeLen is the byte length of the rune at s[i], over either representation.
-// utf8 has one decoder per representation and a generic body can call neither
-// for both; this reads the length out of the lead byte, which is the only part
-// of the decode that matters here.
+// runeLen reads the length from the lead byte: utf8 has no decoder generic over both representations.
 func runeLen[T ~string | ~[]byte](s T, i int) int {
 	c := s[i]
 	switch {
 	case c < 0x80:
 		return 1
-	case c < 0xC0: // continuation byte: not a lead, treat as one
+	case c < 0xC0:
 		return 1
 	case c < 0xE0:
 		return min(2, len(s)-i)
@@ -178,43 +154,31 @@ func runeLen[T ~string | ~[]byte](s T, i int) int {
 	}
 }
 
-// SkipEscapeBytes is SkipEscape over a buffer. The painter measures rows it has
-// just built in a byte buffer and must not allocate a string to do it, and the
-// grammar below is the one an escape has: sharing it is the point. Both call
-// the same body.
 func SkipEscapeBytes(b []byte, i int) int { return skipEscape(b, i) }
 
-// skipEscape returns the index just past the escape sequence beginning at i
-// (s[i] == ESC), consuming the WHOLE sequence for every form the terminal
-// grammar defines. Each arm below is a leak that was measured, not imagined:
+// skipEscape returns the index just past the escape sequence at s[i] == ESC.
 func skipEscape[T ~string | ~[]byte](s T, i int) int {
-	i++ // ESC
+	i++
 	if i >= len(s) {
 		return i
 	}
 	switch c := s[i]; {
 	case c == '[':
-		// CSI: scan to a FINAL byte (0x40..0x7e), the way a terminal does: so
-		// "\x1b[\xff\xfem" is consumed through its 'm' rather than leaking two
-		// replacement characters. But abort at a space or a control byte and
-		// consume only what was scanned: a real CSI does not contain them, and
-		// treating them as part of the sequence is what let a TRUNCATED escape
-		// eat the next word ("trunc \x1b[38;5; and text" -> "trunc nd text").
-		// Malformed prefix dropped, following text untouched.
+		// CSI: scan to a final byte, but a space or control byte means a
+		// truncated escape, and the text after it must survive.
 		i++
 		for i < len(s) {
 			c := s[i]
-			if c >= 0x40 && c <= 0x7e { // final byte
+			if c >= 0x40 && c <= 0x7e {
 				i++
 				break
 			}
-			if c == 0x20 || c < 0x20 { // malformed: stop, keep the text
+			if c == 0x20 || c < 0x20 {
 				break
 			}
 			i++
 		}
 	case c == ']' || c == 'P' || c == '_' || c == '^' || c == 'X':
-		// String-payload sequences: run to BEL or ST.
 		i++
 		for i < len(s) {
 			if s[i] == 0x07 {
@@ -225,16 +189,12 @@ func skipEscape[T ~string | ~[]byte](s T, i int) int {
 			}
 			i++
 		}
-	case c == 'N' || c == 'O': // single shifts: one byte follows
+	case c == 'N' || c == 'O':
 		i += 2
 	case c == '(' || c == ')' || c == '*' || c == '+' || c == '-' || c == '.' || c == '/':
-		i += 2 // charset designator: one byte follows
+		i += 2
 	default:
-		// One RUNE, not one byte. A bare ESC before ordinary text is not a
-		// sequence at all, and advancing a single byte cut a multi-byte rune in
-		// half: "\x1b\u0631" came back as invalid UTF-8. Only reachable from
-		// splitToWidth, and only because that used to carry its own second copy
-		// of this scanner; there is one now.
+		// A bare ESC before text: step one rune, not one byte.
 		sz := runeLen(s, i)
 		i += sz
 	}

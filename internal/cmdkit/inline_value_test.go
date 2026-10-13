@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// `--name=value`, the GNU form: the long-flag branch used to look up the
 func TestInlineFlagValues(t *testing.T) {
 	run := func(args ...string) (*RunContext, int, string) {
 		var got *RunContext
