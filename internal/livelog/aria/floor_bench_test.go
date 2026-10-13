@@ -6,12 +6,8 @@ import (
 	"testing"
 )
 
-// What a floor is FOR: the client holds the sealed prefix, so the read that
-// follows a fork hop should cost neither the bytes of it nor the composition
-// of it. Both cases page backward from the tail with the same byte budget;
-// the floored one declines everything the client already has.
-//
-// go test -count=1 -bench BenchmarkReadBeforeFloor -run '^$' ./internal/livelog/aria
+// A floored read after a fork hop should cost neither the bytes nor the
+// composition of the prefix the client already holds.
 func BenchmarkReadBeforeFloor(b *testing.B) {
 	const turnCount = 2000
 	turns := floorTurns(turnCount)
@@ -25,9 +21,7 @@ func BenchmarkReadBeforeFloor(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			s, recomposed := floorServer(b, turns, 64<<10)
-			// The first read is the COLD one: the sealed turns were swept out
-			// of the composed cache, so this is the dormant-aria hop, and what
-			// it recomposes is the work the floor is meant to remove.
+			// The first read is the cold one: the dormant-aria hop.
 			page := s.ReadBefore(Anchor{}, c.floor, 1<<20)
 			cold := *recomposed
 			wire, err := json.Marshal(page)

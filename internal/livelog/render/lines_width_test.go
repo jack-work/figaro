@@ -7,26 +7,9 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// THE COMPLAINT: markdown thinking content, and bash tool output: rendered
-// "one or two characters beyond the right edge". In nvim's terminal with
-// nowrap the overflow is hidden and obscures the GUI; in tmux it wraps and
-// breaks up the UI. Two terminal policies, one defect.
-//
-// MEASURED before the fix, in this package and then end to end in a real pty:
-//
-//	clip(width=40) on one line of Japanese ....... 56 cells  (+16)
-//	clip(width=40) on a line with ONE wide rune .. 41 cells  (+1)
-//	clip(width=20) on one line of Japanese ....... 40 cells  (+20)
-//	inline stream, 60-column tmux pane ........... 72 cells  (+12)
-//
-// "One or two characters" is one or two WIDE RUNES: clip and hardWrap counted
-// runes, and a CJK ideograph or emoji occupies two columns.
-//
-// NOTE ON MEASUREMENT, because it cost a wrong answer here first: measure the
-// output with the ANSI stripped. runewidth.StringWidth counts the BYTES of an
-// SGR run as columns, so measuring clip()'s return directly reports +3 on
-// pure ASCII: the reset escape clip appends when it cuts. That is the
-// instrument lying, not the code; the same trap the footer path hit.
+// clip and hardWrap count cells, not runes: a wide rune occupies two columns.
+// Measure with the ANSI stripped: runewidth.StringWidth counts the bytes of
+// an SGR run as columns.
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;:?]*[ -/]*[@-~]`)
 
 func cellsOf(s string) int { return runewidth.StringWidth(ansiRe.ReplaceAllString(s, "")) }
@@ -48,10 +31,8 @@ func TestClipCountsCellsNotRunes(t *testing.T) {
 				t.Errorf("clip(%s, %d) emitted %d cells (+%d): it must never exceed the viewport",
 					c.name, w, got, got-w)
 			}
-			// And it must still fill the row when there is content for it: a
-			// clip that under-fills would be the opposite bug (wrapping early),
-			// which is what counting escape bytes as columns would cause.
-			// A wide rune straddling the boundary legitimately leaves one cell.
+			// It must still fill the row; a wide rune straddling the boundary
+			// legitimately leaves one cell.
 			if full := cellsOf(c.s); full >= w && got < w-1 {
 				t.Errorf("clip(%s, %d) emitted only %d cells: clipping too early", c.name, w, got)
 			}
@@ -76,7 +57,7 @@ func TestHardWrapCountsCellsNotRunes(t *testing.T) {
 	}
 }
 
-// Explicit newlines are paragraph boundaries and must survive the change.
+// Explicit newlines are paragraph boundaries.
 func TestHardWrapKeepsExplicitNewlines(t *testing.T) {
 	rows := hardWrap("alpha\n\nbeta", 40)
 	if len(rows) != 3 || rows[0] != "alpha" || rows[1] != "" || rows[2] != "beta" {
@@ -84,10 +65,8 @@ func TestHardWrapKeepsExplicitNewlines(t *testing.T) {
 	}
 }
 
-// A zero-width combining mark must not consume a column, or accented text
-// would clip early: the mirror of the bug being fixed.
+// A zero-width combining mark must not consume a column.
 func TestClipCombiningMarksCostNothing(t *testing.T) {
-	// "e" + combining acute, ten times: ten columns, twenty runes.
 	s := ""
 	for range 10 {
 		s += "e\u0301"

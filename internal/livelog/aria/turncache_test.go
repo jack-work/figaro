@@ -9,8 +9,7 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// fatTurn builds a sealed turn of roughly kb kilobytes with an LT
-// bracket, so it is evictable and recomposable.
+// fatTurn builds a sealed, bracketed turn of roughly kb kilobytes.
 func fatTurn(id uint64, kb int) Turn {
 	return Turn{
 		ID:     id,
@@ -25,10 +24,8 @@ func fatTurn(id uint64, kb int) Turn {
 	}
 }
 
-// composerFor answers a miss from a fixed history, counting the calls. It
-// models the production composer's contract: it is handed an LT bracket
-// that may cut turns at either end, and it returns WHOLE turns -- every
-// turn whose OPENING record falls inside the bracket.
+// composerFor answers a miss from a fixed history, counting the calls, and
+// returns whole turns as the production composer does.
 func composerFor(history map[uint64]Turn, count *int) Composer {
 	return func(node string, fromLT, toLT uint64) []Turn {
 		*count++
@@ -46,15 +43,13 @@ func composerFor(history map[uint64]Turn, count *int) Composer {
 	}
 }
 
-// boundTo is a server on its own node of a shared composed cache.
 func boundTo(cc *ComposedCache, node string) *Server {
 	s := NewServer()
 	s.BindCache(node, cc)
 	return s
 }
 
-// residentTurns counts what the cache actually holds for a node. At is
-// the residency probe: it never faults and never allocates.
+// residentTurns counts what the cache holds for a node without faulting.
 func residentTurns(c *TurnCache) (resident int) {
 	for i := range c.keys {
 		if _, ok := c.cache.At(c.node, c.keys[i].coord()); ok {
@@ -64,9 +59,7 @@ func residentTurns(c *TurnCache) (resident int) {
 	return resident
 }
 
-// Over budget, old turns hollow -- the key list survives, the payloads
-// go -- and a read that lands in them recomposes exactly that range from
-// the source.
+// Over budget, old turns hollow: the key list survives, the payloads go.
 func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 	history := map[uint64]Turn{}
 	var recomposed int
@@ -80,7 +73,6 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 		history[id] = tn
 		c.Append(tn)
 	}
-	// A charge raises pressure; the daemon's standing sweep lowers it.
 	if !budget.Settle(2e9) {
 		t.Fatal("the budget never settled")
 	}
@@ -94,8 +86,6 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 		t.Fatalf("resident bytes %d far exceed the 1MiB budget", got)
 	}
 
-	// A hollow turn still answers by id, and a slice through it comes
-	// back whole via the source.
 	i, ok := c.IndexOf(3)
 	if !ok {
 		t.Fatal("the index must survive eviction")
@@ -110,11 +100,7 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 	}
 }
 
-// A turn with no LT bracket cannot be recomposed; it is held pinned and
-// COUNTED, and it pins ONLY itself. v1 latched the whole cache off one
-// such turn, which disabled eviction and blinded the meter for every
-// aria after its first live turn: the convicted cause of the >1GB
-// session (S1, plans/storm-triage.md).
+// A turn with no LT bracket is held pinned and counted, and pins only itself.
 func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
 	budget := fwtree.NewBudget(1 << 20)
 	history := map[uint64]Turn{}
@@ -153,9 +139,7 @@ func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
 	}
 }
 
-// The live path end to end: OpenTurn (bracket-less tail), stream, Close,
-// then Seal WITH a bracket -- and the sealed turn, once a newer one
-// displaces it, is an ordinary evictable run rather than a pin.
+// A turn sealed with a bracket becomes an ordinary evictable run once displaced.
 func TestSealWithBracketLeavesAnEvictableTurn(t *testing.T) {
 	cc := NewComposedCache(fwtree.NewBudget(1<<20), nil, nil)
 	s := boundTo(cc, "aria")
@@ -179,8 +163,6 @@ func TestSealWithBracketLeavesAnEvictableTurn(t *testing.T) {
 	}
 }
 
-// ChunkFor picks a byte-exact range from the index, with one turn of
-// margin, whatever the residency.
 func TestTurnCacheChunkForUsesTheIndex(t *testing.T) {
 	c := NewTurnCache(nil)
 	for id := uint64(1); id <= 10; id++ {
@@ -199,8 +181,7 @@ func TestTurnCacheChunkForUsesTheIndex(t *testing.T) {
 	}
 }
 
-// The server's windowed page equals the full walk's page: the window is
-// an optimization, not a different answer.
+// The server's windowed page equals the full walk's page.
 func TestWindowedPageEqualsFullWalk(t *testing.T) {
 	history := map[uint64]Turn{}
 	var recomposed int
@@ -239,16 +220,8 @@ func TestWindowedPageEqualsFullWalk(t *testing.T) {
 	}
 }
 
-// EVERY TURN COMES BACK WHOLE ACROSS A RUN BOUNDARY. The cache cuts runs
-// where its byte target falls, which is nowhere near a turn boundary, and
-// it asks the source for the coordinate span it is filling. A source
-// handed a bracket that starts mid-turn composes a turn whose opening
-// records are missing -- so the tenant snaps the bracket to whole turns
-// and clips the answer back to the coord.
-//
-// The assertion is on CONTENT, one turn at a time, after everything has
-// been evicted: a page that steps over a gap looks exactly like a page
-// that had nothing to show.
+// Every turn comes back whole across a run boundary: the tenant snaps the
+// source bracket to whole turns and clips the answer back to the coord.
 func TestEveryTurnFaultsBackWholeAcrossRunBoundaries(t *testing.T) {
 	history := map[uint64]Turn{}
 	var rec int
@@ -281,16 +254,10 @@ func TestEveryTurnFaultsBackWholeAcrossRunBoundaries(t *testing.T) {
 	}
 }
 
-// AND THE SAME PROPERTY WHERE THE CACHE CUTS THE SPAN ITSELF. Above, one
-// run holds one turn and its coordinate happens to be the turn's own
-// bracket. Here the node's runs are dropped and the whole history faults
-// back through the cache's own gap chunking, which lands wherever the
-// chunk size falls -- squarely inside turns. THAT is what the snap is
-// for, and this is the fixture that can see it.
+// The same property where the cache's own gap chunking cuts inside turns.
 func TestAFaultedGapStillReturnsWholeTurns(t *testing.T) {
 	history := map[uint64]Turn{}
 	var rec int
-	// unbinding budget: nothing evicts here, the gap comes from the drop
 	cc := NewComposedCache(fwtree.NewBudget(64<<20), composerFor(history, &rec), nil)
 	c := NewTurnCache(nil)
 	c.bind("aria", cc)
@@ -315,16 +282,11 @@ func TestAFaultedGapStillReturnsWholeTurns(t *testing.T) {
 	}
 }
 
-// A LEGACY ARIA CARRIES NO TURN IDS, so a composer counting openers in one
-// bracket numbers that bracket from 1. Census on a real store, 2026-08-19:
-// 212 of 672 non-empty arias are fully unstamped and 1687 of 8533 opening
-// records carry no id. The cache must not renumber them on a fault -- the
-// coordinate is the turn's opening LT and the key list holds the number.
+// An unstamped aria's composer numbers each bracket from 1; the cache must
+// not renumber a turn on a fault.
 func TestAFaultDoesNotRenumberATurn(t *testing.T) {
 	history := map[uint64]Turn{}
 	var rec int
-	// The composer numbers from 1 within whatever bracket it is asked for,
-	// which is exactly what turns.StampIDs does to unstamped records.
 	renumbering := Composer(func(node string, fromLT, toLT uint64) []Turn {
 		rec++
 		var out []Turn

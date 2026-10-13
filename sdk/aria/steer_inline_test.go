@@ -6,21 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// A steer is an INLINE ANNOTATION, not a voice change.
-//
-// The user reported: "steering turns seems to wind up double printed, and they
-// all get entire rows." A steering node carries Role input, so the fold used to
-// see a voice change there, close the agent's run and open an input run around
-// the steer: giving it its own "> input" header AND its own pair of full-width
-// rules, and cutting the agent's output into two blocks.
-//
-// There is no voice split left to get wrong: the inquiry is text on the turn,
-// so every node in a turn is agent output and a turn folds into ONE message.
-// This pins that at the fold, which is what every surface renders from.
+// A steer is an inline annotation, not a voice change: a turn folds into one message.
 func TestClient_SteerDoesNotSplitTheTurnsRun(t *testing.T) {
-	// The canonical shape from the user's own reference (/tmp/test): one agent
-	// run containing a tool, a steer, another tool and the closing prose,
-	// under a turn whose inquiry is text.
 	nodes := []livedoc.Node{
 		{Type: livedoc.NodeThinking, Markdown: "thinking"},
 		{Type: livedoc.NodeTool, Name: "bash"},
@@ -52,8 +39,7 @@ func TestClient_SteerDoesNotSplitTheTurnsRun(t *testing.T) {
 	}
 }
 
-// A turn that produced nothing: interrupted before its first block: still
-// closes one message, so the question the user asked reaches scrollback.
+// A turn that produced nothing still closes one message.
 func TestClient_InquiryOnlyTurnStillCloses(t *testing.T) {
 	c := NewClient()
 	var got []Message

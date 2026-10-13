@@ -6,13 +6,7 @@ import (
 	"testing"
 )
 
-// RANGE ALGEBRA BENCHMARKS: insert/merge/Query at 100/1k/10k messages, so
-// phase 2 has a baseline to regress against when the transcript starts reading
-// from the store instead of from a flat list.
-
-// benchStore builds a store holding n single-node messages, one per turn, with
-// every turn's extent known: so they coalesce into ONE range, which is the
-// degenerate case the doc promises for an aria nobody has jumped around in.
+// benchStore holds n single-node turns with every extent known: one range.
 func benchStore(n int) *Store {
 	s := NewStore()
 	for i := 1; i <= n; i++ {
@@ -22,9 +16,7 @@ func benchStore(n int) *Store {
 	return s
 }
 
-// benchStoreFragmented holds the same n messages as ~n/8 separate ranges: every
-// eighth turn's extent is withheld, so a hole opens there. This is the shape
-// after mid-history eviction or a scatter of jumps.
+// benchStoreFragmented withholds every eighth turn's extent: ~n/8 ranges.
 func benchStoreFragmented(n int) *Store {
 	s := NewStore()
 	for i := 1; i <= n; i++ {
@@ -60,8 +52,6 @@ func BenchmarkStoreInsertFragmented(b *testing.B) {
 	}
 }
 
-// BenchmarkStoreMergeCoalesce measures the cost of learning the extent that
-// fuses two neighbouring ranges: the merge path proper.
 func BenchmarkStoreMergeCoalesce(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000} {
 		b.Run(fmt.Sprintf("msgs=%d", n), func(b *testing.B) {
@@ -96,7 +86,6 @@ func BenchmarkStoreQueryWhole(b *testing.B) {
 	}
 }
 
-// BenchmarkStoreQueryWindow is the shape a pager asks for: a screenful.
 func BenchmarkStoreQueryWindow(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000} {
 		b.Run(fmt.Sprintf("msgs=%d", n), func(b *testing.B) {

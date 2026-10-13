@@ -8,7 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// bookend/rule stand-ins so the footer is identifiable in a capture.
 func withChrome(in *Incipit) {
 	in.Header = func(role string) string {
 		switch role {
@@ -23,9 +22,7 @@ func withChrome(in *Incipit) {
 	in.Rule = func() string { return "--------" }
 }
 
-// The footer is pinned at submit, before the prompt has round-tripped. When the
-// prompt then arrives it must land ABOVE the footer, not below it: a status bar
-// stranded above the very message it describes is the regression this guards.
+// The footer is pinned at submit; the prompt must land above it when it arrives.
 func TestIncipit_PromptLandsAboveThePinnedFooter(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
@@ -61,9 +58,7 @@ func TestIncipit_PromptLandsAboveThePinnedFooter(t *testing.T) {
 	}
 }
 
-// A viewport too short for header+body+footer shows the footer alone: it is the
-// permanent fixture of the view, and thrashing a header into two rows is worse
-// than showing nothing else.
+// A viewport too short for header+body+footer shows the footer alone.
 func TestIncipit_TinyViewportShowsOnlyTheFooter(t *testing.T) {
 	ft := NewFakeTerminal(60, 2)
 	in := NewIncipit(ft, NodeText{})
@@ -83,13 +78,8 @@ func TestIncipit_TinyViewportShowsOnlyTheFooter(t *testing.T) {
 	}
 }
 
-// CONTENT LOSS GUARD. Below the pager floor the live region draws the footer
-// alone, so the body is never painted: which means Freeze must print the
-// message in full instead of assuming its rows are already on screen. Without
-// that, the reply vanishes from scrollback entirely: measured at h=2 and h=3,
-// where only the first streamed character survived, and at h=4, where a stale
-// "T" sat above the real text forever because a row that has scrolled into
-// history can never be repainted.
+// Below the pager floor the body is never painted, so Freeze must print the
+// message in full rather than assume its rows are on screen.
 func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 	for _, h := range []int{2, 3, 4, 6, 9} {
 		ft := NewFakeTerminal(60, h)
@@ -97,7 +87,6 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 		withChrome(in)
 
 		in.OpenThinking(livedoc.RoleOutput)
-		// stream a partial, then the full text: the exact shape that stranded "T"
 		in.Open(aria.Message{Turn: 7, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "T"}}})
 		in.Open(aria.Message{Turn: 7, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}}})
 		in.Freeze(aria.Message{Turn: 7, Role: livedoc.RoleOutput,
@@ -107,7 +96,6 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 		if n := strings.Count(all, "TINYREPLY"); n != 1 {
 			t.Errorf("h=%d: reply appears %d times, want exactly 1:\n%s", h, n, all)
 		}
-		// the stale partial must not survive as its own row
 		for _, l := range ft.Screen() {
 			if strings.TrimSpace(l) == "T" {
 				t.Errorf("h=%d: orphaned partial frame %q left in scrollback:\n%s", h, "T", all)
@@ -117,20 +105,15 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 	}
 }
 
-// A slice of a turn is routinely invisible: thinking is hidden by default, a
-// tool may already be drawn, prose is minted empty so ids cannot shift. A header
-// over such a run showed as a bare "< figaro" labelling nothing, directly above
-// the next block's own header.
+// A slice whose nodes all render to nothing must not draw a bare header.
 func TestIncipit_NoHeaderOverAnEmptyRun(t *testing.T) {
 	ft := NewFakeTerminal(60, 24)
 	in := NewIncipit(ft, NodeText{})
 	withChrome(in)
 
-	// a slice whose only node renders to nothing
 	in.Freeze(aria.Message{Turn: 3, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{{ID: "n0", Type: livedoc.NodeProse, Markdown: "   "}}})
-	// then a continuation carrying the steer. A steer rides INSIDE the agent's
-	// run and is not a question, so it earns no header of its own either.
+	// A steer rides inside the agent's run and earns no header of its own.
 	in.Freeze(aria.Message{Turn: 3, From: 1, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{{ID: "n1", Type: livedoc.NodeSteering, Markdown: "steer me"}}})
 

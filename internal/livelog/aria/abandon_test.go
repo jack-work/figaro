@@ -6,8 +6,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// contentParts counts parts that actually carry nodes, i.e. content rather
-// than a bare live marker.
 func contentParts(frames []Page) int {
 	n := 0
 	for _, f := range frames {
@@ -20,9 +18,6 @@ func contentParts(frames []Page) int {
 	return n
 }
 
-// TestAbandon_DropsOpenWithoutFolding: a partial streaming suffix that is
-// abandoned must not fold into its turn (no duplication next round) and must
-// broadcast nothing; a subsequent Read must not resurrect it.
 func TestAbandon_DropsOpenWithoutFolding(t *testing.T) {
 	s := NewServer()
 	var frames []Page
@@ -37,7 +32,6 @@ func TestAbandon_DropsOpenWithoutFolding(t *testing.T) {
 		t.Fatalf("Abandon broadcast content (%d -> %d)", before, after)
 	}
 
-	// The turn exists but holds nothing, and nothing is live.
 	r := s.Read(Anchor{}, 1<<20)
 	for _, part := range r.Parts {
 		if len(part.Nodes) > 0 {
@@ -48,7 +42,6 @@ func TestAbandon_DropsOpenWithoutFolding(t *testing.T) {
 		}
 	}
 
-	// A fresh turn still folds and seals normally.
 	s.OpenTurn(2)
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "real answer"}}, 0)
 	s.Close()

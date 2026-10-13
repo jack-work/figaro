@@ -6,20 +6,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// A catch-up read of a turn TOO BIG FOR ONE PAGE comes back clipped at the
-// head: the part starts at node From>0 and: correctly: carries no inquiry,
-// because the slice that STARTS the turn is the only one that may.
-//
-// The client used to promote such a part as a message starting at node ZERO.
-// absorb pads the slots below From so the ids stay positional, and the seal
-// path then handed those padding slots out as a HEAD SLICE. A head slice is
-// where every renderer draws the question, and this one had none. That is the
-// whole of the user's report: "the inquiry doesn't always appear, even past
-// inquiries", where the something-he-could-not-put-his-finger-on was the page
-// budget, i.e. how big the turn happened to be.
-//
-// What the reader is owed instead is the head itself, and it arrives by paging
-// up: see TestScrollingBackCompletesATurnsHead.
+// A part clipped at the head starts at From>0 and carries no inquiry; the
+// padding slots below From must never be handed out as a head slice.
 func TestClient_ClippedPartDoesNotFabricateAHeadSlice(t *testing.T) {
 	c := NewClient()
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "the tail of a long turn"}}
@@ -58,9 +46,7 @@ func TestClient_HeadPartCarriesTheInquiry(t *testing.T) {
 	}
 }
 
-// A clipped catch-up read of the turn STILL STREAMING must not put the padding
-// slots into the live region either: the open message is the part of the turn
-// we actually hold, and it does not start the turn, so it draws no question.
+// The same holds for the live region of a turn still streaming.
 func TestClient_ClippedCatchUpKeepsTheOpenRegionHonest(t *testing.T) {
 	c := NewClient()
 	c.Apply(Page{Parts: []TurnPart{{
@@ -86,14 +72,8 @@ func TestClient_ClippedCatchUpKeepsTheOpenRegionHonest(t *testing.T) {
 	}
 }
 
-// THE LIVE SUFFIX OF A LONG TURN MUST NOT RE-ASK THE TURN'S OWN QUESTION.
-//
-// Once a streaming turn's head is released to scrollback the open region sits
-// at From>0. A rule that let any slice but the head speak therefore drew
-// "> input" and the whole question again, mid-answer, immediately under the
-// output above it and with no rule between them (the separator is a TURN
-// boundary, and this is the same turn). Reported from a live session: a test
-// run printed FAIL and the question reappeared on the next row.
+// Once a streaming turn's head is released, the open region sits at From>0
+// and must not carry the question again.
 func TestClient_LiveSuffixDoesNotRepeatTheQuestion(t *testing.T) {
 	c := NewClient()
 	c.SetClosedLimit(50)
@@ -102,7 +82,6 @@ func TestClient_LiveSuffixDoesNotRepeatTheQuestion(t *testing.T) {
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "first"}}},
 		From: 0,
 	}}}, Notify)
-	// The head closes and reaches scrollback; the turn keeps streaming.
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 7, Live: &Live{From: 1, V: 2},
 			Nodes: []livedoc.Node{

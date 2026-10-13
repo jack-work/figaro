@@ -7,20 +7,11 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// THE HAZARD.
-//
-// Update no longer diffs the leading `stable` nodes; it trusts the producer's
-// word that they did not change. That word is now THE SOURCE OF TRUTH FOR WHAT
-// THE CLIENT IS TOLD. Under-report one changed node and the client is never
-// informed of the change: a silently stale render, which is a LIE, not a miss.
-//
-// No test of the server's node list can see it — the list is still correct in
-// the server. Only the EMITTED DELTAS can. So the full diff is kept as the
-// oracle, exactly as the replaced tailBound is: run both paths over the same
-// frame sequence and require the deltas to be equal.
+// Update trusts the producer's `stable` count instead of diffing those
+// nodes, so an under-report leaves the client silently stale. The full
+// diff is kept as the oracle and both paths must emit equal deltas.
 
-// fullDiff is Update's delta computation with no stable prefix: the behaviour
-// before the producer was allowed to speak. It is the oracle, and it stays.
+// fullDiff is Update's delta computation with no stable prefix: the oracle.
 func fullDiff(from uint64, prev, next []livedoc.Node) []NodeDelta {
 	var deltas []NodeDelta
 	for i, n := range next {
@@ -36,8 +27,6 @@ func fullDiff(from uint64, prev, next []livedoc.Node) []NodeDelta {
 	return deltas
 }
 
-// frameSeq is a run of frames over one open suffix, each with the stable count
-// its producer would report.
 func frameSeq() []struct {
 	what   string
 	nodes  []livedoc.Node
@@ -101,10 +90,7 @@ func TestStableCountEmitsTheSameDeltasAsAFullDiff(t *testing.T) {
 	}
 }
 
-// TestTheOracleCatchesAnUnderReportedChange proves the test above is
-// load-bearing: a producer that claims one node too many is stable must be
-// caught. If this ever stops failing the oracle, the sequence has stopped
-// covering the case the whole guard exists for.
+// A producer that claims one node too many is stable must be caught.
 func TestTheOracleCatchesAnUnderReportedChange(t *testing.T) {
 	var caught bool
 	for _, f := range frameSeq() {
@@ -118,7 +104,6 @@ func TestTheOracleCatchesAnUnderReportedChange(t *testing.T) {
 				}
 			}
 		})
-		// Prime with a prior frame, then over-claim stability by one.
 		var prev []livedoc.Node
 		for _, g := range frameSeq() {
 			if g.what == f.what {
@@ -145,9 +130,7 @@ func TestTheOracleCatchesAnUnderReportedChange(t *testing.T) {
 	}
 }
 
-// TestAnOverLargeStableCountCostsReuseNotTruth pins the clamp: the producer's
-// claim is bounded by the prior frame's length, so a wild value degrades to a
-// full diff rather than to silence.
+// A stable count beyond the prior frame's length degrades to a full diff.
 func TestAnOverLargeStableCountCostsReuseNotTruth(t *testing.T) {
 	s := NewServer()
 	s.OpenTurn(1)

@@ -6,8 +6,7 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// floorServer is a bounded server over history it must recompose to read: the
-// shape the widen-and-recut loop exists for.
+// floorServer is a bounded server over history it must recompose to read.
 func floorServer(t testing.TB, turns []Turn, budget int64) (*Server, *int) {
 	t.Helper()
 	history := map[uint64]Turn{}
@@ -23,10 +22,8 @@ func floorServer(t testing.TB, turns []Turn, budget int64) (*Server, *int) {
 	return s, recomposed
 }
 
-// The window is an optimization, not a different answer: a floored read off a
-// bounded server is the floored read off history entire. This is the widen-and
-// -recut loop's canary. A page the FLOOR cut is not a page the WINDOW cut, and
-// a loop that confuses the two either spins or reports More wrongly.
+// A floored read off a bounded server equals the floored read off history
+// entire: a page the floor cut is not a page the window cut.
 func TestFloor_WindowedReadMatchesTheFullWalk(t *testing.T) {
 	turns := floorTurns(40)
 	bounded, recomposed := floorServer(t, turns, 32<<10)
@@ -66,9 +63,7 @@ func TestFloor_WindowedReadMatchesTheFullWalk(t *testing.T) {
 	}
 }
 
-// The floor bounds the WINDOW as well as the page: turns below it are never
-// composed. Without that, a floored read saves wire bytes and pays the same
-// composition cost, which is most of what a hop costs on a cold aria.
+// The floor bounds the window as well as the page: turns below it are never composed.
 func TestFloor_ComposesNothingBelowIt(t *testing.T) {
 	turns := floorTurns(40)
 

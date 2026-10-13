@@ -10,24 +10,18 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// NotifyHandler handles server-pushed notifications (wire order).
+// NotifyHandler receives server-pushed notifications in wire order.
 type NotifyHandler func(method string, params json.RawMessage)
 
-// Client is a typed JSON-RPC client for talking to a figaro agent socket.
+// Aria is a typed JSON-RPC client for a figaro agent socket.
 type Aria struct {
 	cli *jkrpc.Client
-	// caller is the aria this process belongs to; see angelus.Client.caller.
-	// The identity must survive BOTH hops (CLI -> angelus, angelus -> agent),
-	// and these are separate clients over separate sockets, so each presents
-	// it independently.
+	// caller is presented on this hop independently of the angelus hop.
 	caller string
-	// ref is the ASSERTED caller reference (the duke placeholder, or an
-	// explicit FIGARO_CALLER label). Attribution only, never a credential.
+	// ref is the asserted caller reference: attribution only, never a credential.
 	ref *rpc.CallerRef
 }
 
-// call is the single point every request passes through; see
-// angelus.(*Aria).call.
 func (c *Aria) call(ctx context.Context, method string, params, result any) error {
 	raw, err := rpc.WithCaller(params, c.caller, c.ref)
 	if err != nil {
@@ -36,13 +30,11 @@ func (c *Aria) call(ctx context.Context, method string, params, result any) erro
 	return c.cli.Call(ctx, method, raw, result)
 }
 
-// DialClient connects to a figaro agent.
 func DialAria(ep transport.Endpoint, onNotify NotifyHandler) (*Aria, error) {
 	return DialAriaWith(ep, onNotify, nil)
 }
 
-// DialClientWith is DialClient with connection middleware: the seam the wire
-// recorder hangs on. Passing nil is DialClient exactly.
+// DialAriaWith is DialAria with connection middleware; nil tap is DialAria exactly.
 func DialAriaWith(ep transport.Endpoint, onNotify NotifyHandler, tap transport.Tap) (*Aria, error) {
 	conn, err := transport.DialWith(ep, tap)
 	if err != nil {
@@ -53,34 +45,29 @@ func DialAriaWith(ep transport.Endpoint, onNotify NotifyHandler, tap transport.T
 }
 
 // Qua sends a prompt and returns the newest materialized turn id at accept
-// time, an idempotent resume cursor. The reply streams as figaro.aria pages.
-// A prompt accepted while a turn is active becomes steering; one accepted
-// while idle opens a new turn. The server classifies it at the drain boundary.
+// time. A prompt accepted while a turn is active becomes steering; one
+// accepted while idle opens a new turn.
 func (c *Aria) Qua(ctx context.Context, text string, cb *rpc.FormInput) (int, bool, error) {
 	var resp rpc.QuaResponse
 	err := c.call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Form: cb}, &resp)
 	return resp.Cursor, resp.Active, err
 }
 
-// Read pulls one aria.Page forward from a coordinate: the catch-up half of the
-// figaro.aria stream, and the way to page an aria of any length. A zero anchor
-// is the head; the answer's Next is where to read for the page after it.
+// Read pulls one aria.Page forward from a coordinate. A zero anchor is the head.
 func (c *Aria) Read(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
 	err := c.call(ctx, rpc.MethodRead, rpc.ReadRequest{At: at, Limit: budget}, &r)
 	return r, err
 }
 
-// ReadBefore pages backward from a coordinate, excluding it. A zero anchor
-// means the live tail, and the anchor's Node matters: a window whose oldest
-// slice starts mid-turn must ask for what precedes that node, not that turn.
+// ReadBefore pages backward from a coordinate, excluding it. A zero anchor is
+// the live tail; the anchor's Node matters.
 func (c *Aria) ReadBefore(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	return c.ReadBeforeFloor(ctx, at, aria.Anchor{}, budget)
 }
 
-// ReadBeforeFloor is ReadBefore stopped from below: no part below floor, which
-// is inclusive of its own anchor, and More.Before instead. A client holding a
-// fork's sealed prefix asks this way for the suffix alone.
+// ReadBeforeFloor is ReadBefore stopped from below: no part below floor
+// (inclusive), More.Before instead.
 func (c *Aria) ReadBeforeFloor(ctx context.Context, at, floor aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
 	req := rpc.ReadRequest{At: at, Backward: true, Limit: budget, Floor: floor}
@@ -88,18 +75,11 @@ func (c *Aria) ReadBeforeFloor(ctx context.Context, at, floor aria.Anchor, budge
 	return r, err
 }
 
-// metricsProbe is an anchor past the last turn any aria can hold, so a FORWARD
-// read from it has nothing to give. Metrics ride every read, which makes this
-// the cheapest honest way to ask for them alone.
+// metricsProbe is past the last turn any aria can hold, so a forward read
+// from it carries metrics and nothing else.
 var metricsProbe = aria.Anchor{Turn: ^uint64(0)}
 
-// Metrics asks for what the status bar says (the capacity figure and the
-// mantra) and for nothing else.
-//
-// A BUDGET IS BYTES, NOT MESSAGES. The status clock used to ask for "one
-// message" backward and got the whole of the last one, which it then threw
-// away: 3.7 KB on the wire every 1.8 seconds for the life of a session, on a
-// pane that was doing nothing.
+// Metrics asks for the status-bar figures alone; a budget is bytes, not messages.
 func (c *Aria) Metrics(ctx context.Context) (*aria.Metrics, error) {
 	var r aria.Page
 	req := rpc.ReadRequest{At: metricsProbe, Limit: 1}
@@ -109,7 +89,6 @@ func (c *Aria) Metrics(ctx context.Context) (*aria.Metrics, error) {
 	return r.Metrics, nil
 }
 
-// Context returns all messages in the figaro's chat history.
 func (c *Aria) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	var resp rpc.ContextResponse
 	if err := c.call(ctx, rpc.MethodContext, nil, &resp); err != nil {
@@ -118,17 +97,14 @@ func (c *Aria) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	return &resp, nil
 }
 
-// Interrupt asks the figaro to abort its current turn, keeping whatever is
-// queued behind it. The queued messages coalesce into one combined message,
-// which is what the aria answers next.
+// Interrupt aborts the current turn, keeping the queue; queued messages
+// coalesce into one.
 func (c *Aria) Interrupt(ctx context.Context) error {
 	return c.call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
 }
 
-// Hangup is Interrupt with an explicit disposition for the queue, and the
-// queue itself comes back: what survived (keep) or what was dropped (clear).
-// A cleared queue is returned VERBATIM: one entry per message as typed: so
-// the caller can persist it instead of losing it.
+// Hangup is Interrupt with an explicit queue disposition; the queue comes back
+// verbatim, one entry per message as typed.
 func (c *Aria) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*rpc.InterruptResponse, error) {
 	var resp rpc.InterruptResponse
 	req := rpc.InterruptRequest{Queue: disposition}
@@ -138,29 +114,23 @@ func (c *Aria) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*r
 	return &resp, nil
 }
 
-// Set applies a form patch directly. No LLM round-trip.
+// Set applies a form patch directly, with no LLM round-trip.
 func (c *Aria) Set(ctx context.Context, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	return c.SetDressed(ctx, nil, patch, ifVersion)
 }
 
-// SetDressed is Set with outfit NAMES beside the patch: the names are folded
-// into keys at the daemon's API boundary, under the patch's own, and what
-// reaches the writer is data. It is how `state outfit <names>` applies: the
-// same call every other dressing surface makes.
+// SetDressed is Set with outfit names folded into keys under the patch's own.
 func (c *Aria) SetDressed(ctx context.Context, outfits []string, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	return c.setWith(ctx, rpc.SetRequest{Outfits: outfits, Patch: patch, IfVersion: ifVersion})
 }
 
-// SetAsserting is Set for a caller who believes the keys it removes are
-// there: a removal of one that is not is refused rather than agreed with.
+// SetAsserting refuses a removal of a key that is not there.
 func (c *Aria) SetAsserting(ctx context.Context, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: true})
 }
 
-// SetWaiting asks a LIVE aria for the writer's verdict rather than an
-// acknowledgement that the patch was queued. It blocks until the next round
-// boundary, so the caller must have chosen it: the ctx it carries is the
-// only bound on how long that is.
+// SetWaiting returns the writer's verdict rather than a queued ack; it blocks
+// until the next round boundary, bounded only by ctx.
 func (c *Aria) SetWaiting(ctx context.Context, patch rpc.FormPatch, ifVersion uint64, assert bool) (*rpc.SetResponse, error) {
 	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: assert, Wait: true})
 }
@@ -173,14 +143,13 @@ func (c *Aria) setWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetRespons
 	return &resp, nil
 }
 
-// Form returns the agent's current form snapshot: the host's own form, which
-// is the identity segment `state`.
+// Form returns the host's own form snapshot.
 func (c *Aria) Form(ctx context.Context) (*rpc.FormResponse, error) {
 	return c.FormOf(ctx, "")
 }
 
-// FormOf returns one named form of the host. "" and "state" are the host's own
-// form; "queue" and "runtime" are its intrinsic forms. See `<host>/<intrinsic>`.
+// FormOf returns one named form: "" and "state" are the host's own; "queue"
+// and "runtime" are its intrinsic forms.
 func (c *Aria) FormOf(ctx context.Context, intrinsic string) (*rpc.FormResponse, error) {
 	var resp rpc.FormResponse
 	var params any
@@ -193,9 +162,8 @@ func (c *Aria) FormOf(ctx context.Context, intrinsic string) (*rpc.FormResponse,
 	return &resp, nil
 }
 
-// Queued returns the aria's queued messages for DISPLAY: the prompts a human
-// would recognise as waiting, with pure form carriers omitted. The
-// response's Epoch names the generation those ids belong to.
+// Queued returns the queued messages for display, pure form carriers omitted.
+// Epoch names the generation the ids belong to.
 func (c *Aria) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse
 	if err := c.call(ctx, rpc.MethodQueued, rpc.QueuedRequest{}, &resp); err != nil {
@@ -204,8 +172,7 @@ func (c *Aria) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 	return &resp, nil
 }
 
-// QueuedAll is the CRUD view: every queued message, carriers included, because
-// anything that can be deleted has to be addressable.
+// QueuedAll is every queued message, carriers included.
 func (c *Aria) QueuedAll(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse
 	req := rpc.QueuedRequest{IncludeCarriers: true}
@@ -215,19 +182,17 @@ func (c *Aria) QueuedAll(ctx context.Context) (*rpc.QueuedResponse, error) {
 	return &resp, nil
 }
 
-// Close closes the connection.
 func (c *Aria) Close() error {
 	return c.cli.Close()
 }
 
-// Done returns a channel closed when the connection dies.
+// Done is closed when the connection dies.
 func (c *Aria) Done() <-chan struct{} {
 	return c.cli.Done()
 }
 
-// DeleteQueued asks the aria to drop queued messages. The error return is for
-// TRANSPORT failures only; whether each id was actually dropped is in the
-// results, one per requested id, and a refusal there is a normal answer.
+// DeleteQueued drops queued messages. The error is transport only; per-id
+// outcomes are in the results.
 func (c *Aria) DeleteQueued(ctx context.Context, req rpc.QueueDeleteRequest) (*rpc.QueueDeleteResponse, error) {
 	var resp rpc.QueueDeleteResponse
 	if err := c.cli.Call(ctx, rpc.MethodQueueDelete, req, &resp); err != nil {
@@ -236,8 +201,7 @@ func (c *Aria) DeleteQueued(ctx context.Context, req rpc.QueueDeleteRequest) (*r
 	return &resp, nil
 }
 
-// UpdateQueued rewrites one queued message's text. Same split: error is
-// transport, the outcome is in the result.
+// UpdateQueued rewrites one queued message's text; error is transport only.
 func (c *Aria) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (*rpc.QueueUpdateResponse, error) {
 	var resp rpc.QueueUpdateResponse
 	if err := c.cli.Call(ctx, rpc.MethodQueueUpdate, req, &resp); err != nil {
@@ -246,8 +210,8 @@ func (c *Aria) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (*r
 	return &resp, nil
 }
 
-// Study subscribes the aria to an unbound form ("" lists), Drop
-// unsubscribes, Cast runs one casting call (see rpc.CastRequest).
+// Study subscribes the aria to an unbound form ("" lists); Drop unsubscribes;
+// Cast runs one casting call.
 func (c *Aria) Study(ctx context.Context, formID string) (*rpc.StudyResponse, error) {
 	var resp rpc.StudyResponse
 	if err := c.call(ctx, rpc.MethodStudy, rpc.StudyRequest{FormID: formID}, &resp); err != nil {

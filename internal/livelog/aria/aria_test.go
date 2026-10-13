@@ -21,12 +21,10 @@ type rec struct{ pages []Page }
 
 func (r *rec) push(a Page) { r.pages = append(r.pages, a) }
 
-// sealedTurn builds a complete turn for Commit.
 func sealedTurn(id uint64, nodes ...livedoc.Node) Turn {
 	return Turn{ID: id, Sealed: true, Nodes: nodes}
 }
 
-// turnIDs lists the ids of the parts on a page that carry content.
 func turnIDs(p Page) []uint64 {
 	var out []uint64
 	for _, part := range p.Parts {
@@ -49,8 +47,6 @@ func eqIDs(t *testing.T, label string, got, want []uint64) {
 	}
 }
 
-// A streaming suffix emits one frame per change, versioned, with the node
-// addressed by its positional id: no separate key.
 func TestServer_DeltasVersionAndFold(t *testing.T) {
 	s := NewServer()
 	rc := &rec{}
@@ -97,7 +93,6 @@ func TestServer_DeltasVersionAndFold(t *testing.T) {
 	}
 }
 
-// A field that empties must unset rather than silently persist.
 func TestServer_Unset(t *testing.T) {
 	s := NewServer()
 	rc := &rec{}
@@ -122,7 +117,6 @@ func TestServer_Unset(t *testing.T) {
 	}
 }
 
-// Growth of a streamed string splices rather than resending the whole value.
 func TestServer_PatchOnGrowth(t *testing.T) {
 	s := NewServer()
 	rc := &rec{}
@@ -141,8 +135,6 @@ func TestServer_PatchOnGrowth(t *testing.T) {
 	}
 }
 
-// Close folds the suffix into its turn but does NOT seal it, a turn spans
-// many messages, and only finishTurn ends it.
 func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	s := NewServer()
 	s.OpenInquiry(1, "q", nil)
@@ -158,9 +150,7 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 		t.Error("close ends a message, not a turn")
 	}
 
-	// A second round reopens at the SAME boundary and resends the whole
-	// streaming region, because that is what the producer recomposes. The
-	// region replaces rather than appends, so the tool is not duplicated.
+	// A second round reopens at the same boundary; the region replaces, not appends.
 	s.OpenTurn(1)
 	s.Update(nil, []livedoc.Node{tool("ok", "out"), prose("answer")}, 0)
 	s.Close()
@@ -181,10 +171,7 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	}
 }
 
-// The client folds a page into materialized turns. The committed head is
-// released as soon as the live suffix opens: the prompt must reach scrollback
-// immediately rather than ride the redrawable region until the turn seals, and
-// the agent's reply follows at seal.
+// The committed head is released as soon as the live suffix opens.
 func TestClient_FoldAndPromote(t *testing.T) {
 	c := client.NewClient()
 	var closed []Message
@@ -211,7 +198,6 @@ func TestClient_FoldAndPromote(t *testing.T) {
 	if closed[1].Nodes[0].Markdown != "hi" {
 		t.Errorf("streamed node did not fold: %+v", closed[1].Nodes[0])
 	}
-	// Nothing is emitted twice: the head is not repeated at seal.
 	for _, m := range closed[1:] {
 		if m.From == 0 {
 			t.Errorf("head re-emitted at seal: %+v", m)
@@ -219,11 +205,7 @@ func TestClient_FoldAndPromote(t *testing.T) {
 	}
 }
 
-// A turn closes as ONE message. It used to close as one per voice run, because
-// the prompt was node 0 and spoke in the user's voice; with the inquiry off the
-// node list every node is the agent's, so there is no run to cut. (Two tests
-// stood here: one for the run split, one for run contiguity; they assert the
-// same single fact now.)
+// A turn closes as one message.
 func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 	c := client.NewClient()
 	var closed []Message
@@ -251,8 +233,7 @@ func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 	}
 }
 
-// Metrics reach the caller before the turn is announced closed, so a status
-// line never renders stale numbers alongside fresh content.
+// Metrics reach the caller before the turn is announced closed.
 func TestClient_AppliesMetricsBeforeClosing(t *testing.T) {
 	c := client.NewClient()
 	var order []string
@@ -269,8 +250,6 @@ func TestClient_AppliesMetricsBeforeClosing(t *testing.T) {
 	}
 }
 
-// Read pages forward from a turn cursor; ReadBefore walks the other way. The
-// zero anchor with Backward is the tail.
 func TestServer_ReadBothDirections(t *testing.T) {
 	s := NewServer()
 	for i := uint64(1); i <= 10; i++ {
@@ -290,8 +269,6 @@ func TestServer_ReadBothDirections(t *testing.T) {
 	}
 }
 
-// A read that reaches the open suffix carries Live; the same conversation read
-// below it does not.
 func TestServer_ReadSnapshotCarriesLiveOnlyAtTheTail(t *testing.T) {
 	s := NewServer()
 	s.Commit(sealedTurn(1, prose("old")))
@@ -305,14 +282,12 @@ func TestServer_ReadSnapshotCarriesLiveOnlyAtTheTail(t *testing.T) {
 		t.Fatalf("a full read must expose the suffix boundary: %+v", live)
 	}
 
-	// A page budgeted to stop inside turn 1 never sees the suffix.
 	short := s.Read(Anchor{}, nodeSize(prose("old")))
 	if short.LiveTail() != nil {
 		t.Fatalf("a page below the suffix must be immutable: %+v", short.LiveTail())
 	}
 }
 
-// Retention trims the oldest materialized turns without disturbing the cursor.
 func TestClient_ClosedLimitKeepsTail(t *testing.T) {
 	c := client.NewClient()
 	c.SetClosedLimit(3)
@@ -331,7 +306,6 @@ func TestClient_ClosedLimitKeepsTail(t *testing.T) {
 	}
 }
 
-// mustEntry is the value a patch sets at key, for tests that assert on one.
 func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {

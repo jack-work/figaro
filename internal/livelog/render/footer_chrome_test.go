@@ -8,35 +8,9 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// THE FOOTER IS CHROME, NOT CONTENT.
-//
-// The live region always trails the pinned status footer, so it is visible from
-// the instant of submit. But a region being FROZEN must trail its ROLE'S CLOSER
-// instead, a plain rule for input, the bookend for output. Freezing the footer
-// verbatim stranded one copy in scrollback per message, so a single exchange
-// showed TWO status bars:
-//
-//	> input
-//	  test
-//	──── aria abc ───        <- stranded: the prompt's own live region carried it
-//	test · thinking ⠙ …
-//	< figaro
-//	  …reply…
-//	──── aria abc ───        <- the real one
-//	test · completed ✓ …
-//
-// The user hit this on the FIRST COMMAND he ran, and no unit test caught it,
-// because every existing one called Freeze WITHOUT a preceding Open. Production
-// never does that: the exchange arrives as a LIVE region (Open) and is then
-// sealed (Freeze), which is the only path on which the footer can be committed.
-// The real render-call sequence, traced from a live binary:
-//
-//	OPENTHINKING role=output
-//	OPEN   turn=1 from=0 inquiry="test"  <- the question paints at submit
-//	OPEN   turn=1 from=0 role=output     <- the reply streams in under it
-//	FREEZE turn=1 from=0 role=output     <- dropBelow commits [exchange + FOOTER]
-//
-// Drive Open before Freeze or this test proves nothing.
+// A region being frozen trails its role's closer, not the pinned footer, or
+// one status bar is stranded in scrollback per message. Open must precede
+// Freeze here, as it does in production.
 func TestIncipit_FrozenExchangeDoesNotStrandTheFooter(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})

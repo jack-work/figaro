@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// An empty branch answered {"more":{}}: no parts key at all, so every
-// consumer that indexed it got a nil.
+// An empty page must still carry a parts key.
 func TestEmptyPageCarriesAnEmptyPartsArray(t *testing.T) {
 	b, err := json.Marshal(Page{})
 	if err != nil {

@@ -11,48 +11,11 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// PROPERTY TESTS ON THE RANGE ALGEBRA.
-//
-// These are the contract's non-negotiable half (skills/figaro/contributing/range-store.md, "Testing
-// standard"). They are randomized with a FIXED SEED so a failure reproduces,
-// and every failure shrinks its input before reporting, because "some sequence
-// of 40 inserts broke it" is not a bug report.
-//
-// EACH HAS BEEN MADE TO FAIL ON PURPOSE. An assertion that has never failed is
-// not evidence, so the canaries are recorded here, with the failure each one
-// produced against the code as it stands:
-//
-//   1. insertRange stops coalescing adjacent ranges (both the fast path and the
-//      neighbour merge disabled):
-//        TestPropertyNoOverlappingOrAdjacentRanges
-//          "ranges 0 and 1 are ADJACENT ({3 0} then {3 1}) and did not coalesce"
-//        TestPropertyMergeIsCommutativeAndAssociative
-//          "minimal input: (2,1) (2,3) (2,4)"   <- shrunk from ~25 messages
-//        TestPropertyInsertIsIdempotent
-//
-//   2. Query concatenates every segment into ONE flat []Message with no Gap -
-//      the fabricated-adjacency bug itself:
-//        TestPropertyQuerySegmentsNeverSpanAHole, at iteration 1
-//          "segment 0 crosses turn 1->2 with no known extent"
-//
-//   3. Insert stops subtracting what it already holds:
-//        TestPropertyInsertIsIdempotent
-//          "re-insert changed the store: 20 msgs -> 60"
-//
-//   4. adjacent() guesses across a turn boundary when the extent is unknown:
-//        TestPropertyNoOverlappingOrAdjacentRanges
-//          "range 0: messages 0/1 cross turns 2->3 with no known extent"
-//        TestGapNeedsATurnExtent
-//          "without turn 1's extent these are two ranges, got 1"
-
-// ---------------------------------------------------------------- helpers --
-
-// node builds a distinguishable node.
+// Property tests on the range algebra: fixed seed, shrunk before reporting.
 func pnode(tag string) livedoc.Node {
 	return livedoc.Node{Type: livedoc.NodeProse, Markdown: tag, Role: livedoc.RoleOutput}
 }
 
-// msg builds a message covering nodes [from, from+n) of turn t.
 func pmsg(turn int, from uint64, n int) Message {
 	m := Message{Turn: turn, From: from, Role: livedoc.RoleOutput}
 	for i := 0; i < n; i++ {
@@ -64,15 +27,12 @@ func pmsg(turn int, from uint64, n int) Message {
 	return m
 }
 
-// unit is one single-node message: the finest grain the algebra deals in, so
-// that a random set of them is trivially disjoint and every insertion order is
-// legal.
+// unit is one single-node message, so a random set is trivially disjoint.
 func unit(turn int, node uint64) Message {
 	return Message{Turn: turn, From: node, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{pnode(fmt.Sprintf("t%d.n%d", turn, node))}}
 }
 
-// anchorsOf lists every anchor a store covers, in order.
 func anchorsOf(s *Store) []Anchor {
 	var out []Anchor
 	for _, r := range s.ranges {
@@ -86,21 +46,15 @@ func anchorsOf(s *Store) []Anchor {
 	return out
 }
 
-// checkInvariants asserts 1, 2 and 3 of skills/figaro/contributing/range-store.md over a whole store.
-//
-// truth is the GENERATOR's model of how many anchors each turn really has -
-// deliberately not the store's own `ends`, which is bookkeeping the store
-// prunes once a merge has consumed it. Checking a structure against its own
-// bookkeeping proves only that it is self-consistent; checking it against the
-// data that was actually inserted is what catches a fabricated merge.
+// checkInvariants asserts the range-store invariants. truth is the generator's
+// turn extents, not the store's own pruned `ends`: checking a structure against
+// its own bookkeeping cannot catch a fabricated merge.
 func checkInvariants(t *testing.T, s *Store, truth map[uint64]uint64) {
 	t.Helper()
 	for i, r := range s.ranges {
 		if len(r.Msgs) == 0 {
 			t.Fatalf("range %d is empty", i)
 		}
-		// Invariant 3: Msgs is contiguous with no holes, and From/To describe
-		// the coverage rather than the endpoints.
 		want, _ := msgSpan(r.Msgs[0])
 		if r.From != want {
 			t.Fatalf("range %d: From %v but first message starts at %v", i, r.From, want)
@@ -115,9 +69,6 @@ func checkInvariants(t *testing.T, s *Store, truth map[uint64]uint64) {
 			if j+1 < len(r.Msgs) {
 				nf, _ := msgSpan(r.Msgs[j+1])
 				if nf.Turn != to.Turn {
-					// Crossing a turn boundary inside a range asserts that
-					// nothing lies between: the left side must really end its
-					// turn, and no turn may sit in the middle.
 					if n, ok := truth[to.Turn]; !ok || to.Node+1 != n {
 						t.Fatalf("range %d: messages %d/%d cross turns %d->%d but turn %d has %v anchors: FABRICATED ADJACENCY",
 							i, j, j+1, to.Turn, nf.Turn, to.Turn, truth[to.Turn])
@@ -141,20 +92,16 @@ func checkInvariants(t *testing.T, s *Store, truth map[uint64]uint64) {
 			continue
 		}
 		prev := s.ranges[i-1]
-		// Invariant 1: sorted, strictly non-overlapping.
 		if !prev.To.Less(r.From) {
 			t.Fatalf("ranges %d and %d OVERLAP or are misordered: %v..%v then %v..%v",
 				i-1, i, prev.From, prev.To, r.From, r.To)
 		}
-		// Invariant 2: never adjacent.
 		if s.adjacent(prev.To, r.From) {
 			t.Fatalf("ranges %d and %d are ADJACENT (%v then %v) and did not coalesce",
 				i-1, i, prev.To, r.From)
 		}
 	}
 }
-
-// ------------------------------------------------------- generated inputs --
 
 // scatter draws a random disjoint set of single-node messages, plus the turn
 // extents that make the coordinate space decidable.
@@ -184,8 +131,7 @@ func loaded(msgs []Message, ends map[uint64]uint64) *Store {
 	return s
 }
 
-// shrink finds a minimal sub-multiset of msgs that still fails pred, by
-// repeatedly trying to drop one element.
+// shrink finds a minimal sub-multiset of msgs that still fails pred.
 func shrink(msgs []Message, fails func([]Message) bool) []Message {
 	cur := append([]Message(nil), msgs...)
 	for progress := true; progress; {
@@ -209,19 +155,11 @@ func names(msgs []Message) string {
 	return out
 }
 
-// ------------------------------------------------------------ properties --
-
-// TestPropertyNoOverlappingOrAdjacentRanges: NO OPERATION may leave the store
-// with overlapping or adjacent ranges. Insert, evict, trim, and learning a
-// turn's extent are all exercised against the same assertion.
 func TestPropertyNoOverlappingOrAdjacentRanges(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x5EED))
 	for iter := 0; iter < 300; iter++ {
 		msgs, ends := scatter(rng, 1+rng.Intn(30))
 		s := NewStore()
-		// Extents arrive interleaved with the data, as they do in Apply: a
-		// turn's length is learned when it seals, which may be long after some
-		// of its nodes landed.
 		for i, m := range msgs {
 			s.Insert(m)
 			if i%3 == 0 {
@@ -249,9 +187,6 @@ func TestPropertyNoOverlappingOrAdjacentRanges(t *testing.T) {
 	}
 }
 
-// TestPropertyMergeIsCommutativeAndAssociative: over disjoint inputs the order
-// and grouping of insertion cannot matter. If it does, the store is carrying
-// history it should not have.
 func TestPropertyMergeIsCommutativeAndAssociative(t *testing.T) {
 	rng := rand.New(rand.NewSource(0xC0FFEE))
 	sameShape := func(a, b *Store) bool {
@@ -274,13 +209,11 @@ func TestPropertyMergeIsCommutativeAndAssociative(t *testing.T) {
 
 		fails := func(cand []Message) bool {
 			r := loaded(cand, ends)
-			// commutativity: any permutation
 			p := append([]Message(nil), cand...)
 			rand.New(rand.NewSource(1)).Shuffle(len(p), func(i, j int) { p[i], p[j] = p[j], p[i] })
 			if !sameShape(r, loaded(p, ends)) {
 				return true
 			}
-			// associativity: fold in two groups, then merge the groups
 			for k := 1; k < len(cand); k++ {
 				right := NewStore()
 				for tn, n := range ends {
@@ -305,8 +238,6 @@ func TestPropertyMergeIsCommutativeAndAssociative(t *testing.T) {
 	}
 }
 
-// TestPropertyQuerySegmentsNeverSpanAHole is THE property. A Segment's Msgs
-// must be contiguous; a hole must be reported as a Gap and never papered over.
 func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 	rng := rand.New(rand.NewSource(0xBEEF))
 	for iter := 0; iter < 400; iter++ {
@@ -339,8 +270,6 @@ func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 				prev = to.Next()
 				if mi+1 < len(seg.Msgs) {
 					if nf, _ := msgSpan(seg.Msgs[mi+1]); nf.Turn != to.Turn {
-						// Checked against the GENERATOR's extents, not the
-						// store's: see checkInvariants.
 						if n, ok := ends[to.Turn]; !ok || to.Node+1 != n || nf.Turn != to.Turn+1 || nf.Node != 0 {
 							t.Fatalf("iter %d: segment %d crosses %v -> %v but turn %d has %v anchors: FABRICATED ADJACENCY",
 								iter, si, to, nf, to.Turn, ends[to.Turn])
@@ -349,7 +278,6 @@ func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 					}
 				}
 			}
-			// A gap must actually be a hole: nothing inside it is held.
 			if seg.Gap != nil {
 				for a := seg.Gap.From; !seg.Gap.To.Less(a) && a.Turn <= seg.Gap.To.Turn+1; a = a.Next() {
 					if held[a] {
@@ -361,7 +289,6 @@ func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 				}
 			}
 		}
-		// Every held anchor inside the query interval is reported exactly once.
 		seen := map[Anchor]int{}
 		for _, seg := range segs {
 			for _, m := range seg.Msgs {
@@ -382,8 +309,6 @@ func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 	}
 }
 
-// TestPropertyInsertIsIdempotent: re-applying anything already held changes
-// nothing. A catch-up read that overlaps the live stream must not double-apply.
 func TestPropertyInsertIsIdempotent(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x1DEA))
 	for iter := 0; iter < 200; iter++ {
@@ -391,7 +316,6 @@ func TestPropertyInsertIsIdempotent(t *testing.T) {
 		s := loaded(msgs, ends)
 		before := append([]Message(nil), s.All()...)
 		s.Insert(msgs...)
-		// and again, in a different order, and in fatter slices
 		rng.Shuffle(len(msgs), func(i, j int) { msgs[i], msgs[j] = msgs[j], msgs[i] })
 		s.Insert(msgs...)
 		if got := s.All(); !reflect.DeepEqual(before, got) {
@@ -399,8 +323,6 @@ func TestPropertyInsertIsIdempotent(t *testing.T) {
 		}
 		checkInvariants(t, s, ends)
 
-		// A FATTER message overlapping what we hold must contribute only its
-		// novel part: never a second copy of a node we already have.
 		held := map[Anchor]bool{}
 		for _, a := range anchorsOf(s) {
 			held[a] = true
@@ -422,8 +344,6 @@ func TestPropertyInsertIsIdempotent(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------- worked examples --
-
 func TestAnchorOrdering(t *testing.T) {
 	a := Anchor{Turn: 3, Node: 4}
 	if !(Anchor{Turn: 3, Node: 3}).Less(a) || a.Less(Anchor{Turn: 3, Node: 3}) {
@@ -443,9 +363,6 @@ func TestAnchorOrdering(t *testing.T) {
 	}
 }
 
-// TestGapNeedsATurnExtent pins the one place adjacency is not arithmetic: the
-// store may not assume (t, last) and (t+1, 0) are neighbours until it knows
-// how long turn t is. Guessing would fabricate adjacency.
 func TestGapNeedsATurnExtent(t *testing.T) {
 	s := NewStore()
 	s.Insert(pmsg(1, 0, 3), pmsg(2, 0, 2))
@@ -466,7 +383,6 @@ func TestGapNeedsATurnExtent(t *testing.T) {
 	}
 }
 
-// TestEvictionOpensAGap: eviction and never-fetched are the same state.
 func TestEvictionOpensAGap(t *testing.T) {
 	s := NewStore()
 	s.SetTurnLen(1, 9)
@@ -496,8 +412,6 @@ func TestEvictionOpensAGap(t *testing.T) {
 	}
 }
 
-// TestEnsureNeedsAFetcher: a whole interval needs no fetch, a hole with no
-// fetcher installed is an error, and a cancelled context is reported.
 func TestEnsureNeedsAFetcher(t *testing.T) {
 	c := NewClient()
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{pnode("a"), pnode("b"), pnode("c")}}}}}, Quiet)
@@ -515,8 +429,6 @@ func TestEnsureNeedsAFetcher(t *testing.T) {
 	}
 }
 
-// TestPhantomMessageOccupiesOneAnchor, an inquiry whose turn produced nothing
-// is a real element and a range must be able to say it holds it.
 func TestPhantomMessageOccupiesOneAnchor(t *testing.T) {
 	s := NewStore()
 	m := Message{Turn: 4, From: 0, Role: livedoc.RoleInput, Inquiry: "why?"}
@@ -535,10 +447,7 @@ func TestPhantomMessageOccupiesOneAnchor(t *testing.T) {
 	}
 }
 
-// TestIntraTurnMergeKeepsTheExtent guards the pruning in mergeAt. An extent is
-// consumed only by a merge that CROSSES the turn it describes; a merge inside
-// that turn still needs it afterwards, and dropping it there would open a
-// false gap at the next turn boundary.
+// An extent is consumed only by a merge that crosses the turn it describes.
 func TestIntraTurnMergeKeepsTheExtent(t *testing.T) {
 	s := NewStore()
 	s.Insert(pmsg(5, 0, 3)) // 0..2

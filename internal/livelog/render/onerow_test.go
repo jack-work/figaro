@@ -8,13 +8,8 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// At h=1 there is exactly one row. The suppressed (footer-only) region is still
-// two rows: rule + status: so painting it overflows the viewport, scrolls the
-// partial into history, and the completed reply never lands.
-//
-// This height only became reachable once term.Size stopped fabricating 80x24
-// for terminals it considered too small; before that, h<=2 was reported as 24
-// and this row was invisible.
+// At h=1 the two-row footer-only region would overflow the viewport and
+// scroll the partial into history.
 func TestIncipit_SingleRowViewportKeepsTheReply(t *testing.T) {
 	const full = "ONEROW"
 	for _, h := range []int{1, 2, 3, 4, 5, 24} {
@@ -41,9 +36,8 @@ func TestIncipit_SingleRowViewportKeepsTheReply(t *testing.T) {
 	}
 }
 
-// The suppressed region must never be taller than the terminal. Whatever
-// survives clipping must be the STATUS line: the row the user actually needs -
-// not the rule above it.
+// The suppressed region must never be taller than the terminal, and what
+// survives clipping must be the status line.
 func TestIncipit_SuppressedRegionFitsTheViewport(t *testing.T) {
 	for _, h := range []int{1, 2, 3} {
 		ft := NewFakeTerminal(40, h)

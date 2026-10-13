@@ -6,11 +6,6 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
-// These assert the shim's side of the phase-1 contract: the store beneath
-// Client holds what the doc says it holds, for the page sequences the client
-// actually sees. The rest of this package's tests: untouched by the swap -
-// assert that the OUTSIDE of the client is unchanged.
-
 func liveDelta(turn uint64, from uint64, v int, id uint64, text string) Page {
 	return Page{Parts: []TurnPart{{Turn: Turn{ID: turn, Live: &Live{
 		From: from, V: v,
@@ -28,9 +23,6 @@ func sealed(turn uint64, inquiry string, n int) Page {
 	return Page{Parts: []TurnPart{{Turn: t, From: 0}}}
 }
 
-// TestOrdinaryAriaIsOneRange is the migration's central claim: "If nobody
-// jumps and nothing is evicted, there is exactly one range forever and no gap
-// ever renders. The model degenerates to today's behaviour."
 func TestOrdinaryAriaIsOneRange(t *testing.T) {
 	c := NewClient()
 	for turn := uint64(1); turn <= 20; turn++ {
@@ -53,13 +45,10 @@ func TestOrdinaryAriaIsOneRange(t *testing.T) {
 	}
 }
 
-// TestReleasedHeadLandsInTheHeadRange is invariant 4: nodes below Live.From
-// are RELEASED INTO the ranges, not held in both places.
 func TestReleasedHeadLandsInTheHeadRange(t *testing.T) {
 	c := NewClient()
 	c.Apply(liveDelta(1, 0, 1, 0, "first"), Notify)
 	c.Apply(liveDelta(1, 0, 2, 1, "second"), Notify)
-	// The suffix boundary advances: node 0 is closed for good.
 	c.Apply(liveDelta(1, 1, 3, 1, "second again"), Notify)
 
 	s := c.Store()
@@ -78,15 +67,12 @@ func TestReleasedHeadLandsInTheHeadRange(t *testing.T) {
 	}
 }
 
-// TestCatchUpOverlapDoesNotDoubleApply: the same turn arriving twice, once
-// live and once as history, must not be held twice.
 func TestCatchUpOverlapDoesNotDoubleApply(t *testing.T) {
 	c := NewClient()
 	c.Apply(liveDelta(1, 0, 1, 0, "hello"), Notify)
 	c.Apply(sealed(1, "q", 1), Notify)
 	before := len(c.View().Closed)
 
-	// A catch-up read restating the same turn.
 	c.Apply(sealed(1, "q", 1), Notify)
 	if got := len(c.View().Closed); got != before {
 		t.Fatalf("re-applying a sealed turn changed the view: %d -> %d", before, got)
@@ -106,8 +92,6 @@ func TestCatchUpOverlapDoesNotDoubleApply(t *testing.T) {
 	}
 }
 
-// TestRetentionTrimsFromTheBottomOnly pins today's semantics: trimming is a
-// prefix drop, so it cannot open a hole, and the held questions go with it.
 func TestRetentionTrimsFromTheBottomOnly(t *testing.T) {
 	c := NewClient()
 	c.SetClosedLimit(5)

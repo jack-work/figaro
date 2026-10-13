@@ -10,8 +10,8 @@ import (
 	client "github.com/jack-work/figaro/sdk/aria"
 )
 
-// A cold reader meets a long turn at its tail, then pages backward.
-// Every returned node must remain visible whether the turn is sealed or live.
+// A cold reader meets a long turn at its tail, then pages backward; every
+// returned node must remain visible whether the turn is sealed or live.
 func TestClientBackfillsClippedTurn(t *testing.T) {
 	for _, mode := range []string{"sealed", "live"} {
 		t.Run(mode, func(t *testing.T) {
@@ -24,7 +24,6 @@ func TestClientBackfillsClippedTurn(t *testing.T) {
 			for i := range nodes {
 				nodes[i] = livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("node %02d: %s", i, strings.Repeat("x", 300))}
 			}
-			// The real server reopens the same turn across model/tool rounds.
 			s.OpenTurn(6)
 			s.Update(nil, nodes[:6], 0)
 			s.Close()
@@ -79,8 +78,7 @@ func TestClientBackfillsClippedTurn(t *testing.T) {
 	}
 }
 
-// longNodes builds n distinguishable nodes, each too big for several to share
-// a page, so the server really does clip.
+// longNodes builds n nodes each too big for several to share a page.
 func longNodes(n int) []livedoc.Node {
 	out := make([]livedoc.Node, n)
 	for i := range out {
@@ -90,17 +88,9 @@ func longNodes(n int) []livedoc.Node {
 	return out
 }
 
-// A NODE REACHES THE PAGER ONCE, whatever order the pages arrive in: page
-// backward into a live turn, page forward again over the same ground, keep
-// streaming, then seal. A pager handed the same ordinal twice draws it twice,
-// and the two copies are not even equal once a delta has edited the node.
-//
-// THIS IS A FACT TEST, NOT A CURSOR TEST, and the distinction cost an hour:
-// Store.Insert subtracts what is already held, so it would hold this line
-// green even if the fold offered every node three times. What the cursor
-// itself does is measured by TestFoldOffersEachNodeOnceAcrossTheLiveBoundary
-// below. Both are worth having: this one says the user is safe, that one says
-// we are not paying for it with redundant work.
+// A node reaches the pager once, whatever order the pages arrive in. This
+// checks the view; TestFoldOffersEachNodeOnceAcrossTheLiveBoundary checks
+// that the fold did not offer it twice.
 func TestClientBackfillThenForwardHandsNoNodeTwice(t *testing.T) {
 	s := NewServer()
 	s.Restore([]Turn{{ID: 5, Inquiry: "earlier", Sealed: true,
@@ -129,10 +119,8 @@ func TestClientBackfillThenForwardHandsNoNodeTwice(t *testing.T) {
 	c.Apply(tail, client.Notify)
 	at, _ := tail.Span()
 	c.Apply(s.ReadBefore(at, Anchor{}, budget), client.Notify)
-	// Forward again over ground already walked: the same nodes, re-offered.
 	c.Apply(s.Read(at, budget), client.Notify)
 
-	// The turn keeps running, then seals.
 	s.Update(nil, nodes, 0)
 	s.Close()
 	s.Seal(nil)
@@ -143,7 +131,6 @@ func TestClientBackfillThenForwardHandsNoNodeTwice(t *testing.T) {
 			t.Errorf("node %v delivered %d times; the release cursor moved backward", a, n)
 		}
 	}
-	// And the whole turn is there, once, in order.
 	var got []string
 	for _, m := range c.View().Closed {
 		if m.Turn != 6 {
@@ -163,14 +150,8 @@ func TestClientBackfillThenForwardHandsNoNodeTwice(t *testing.T) {
 	}
 }
 
-// THE OTHER HALF OF THE SAME BUG: a backward read can land BELOW Live.From,
-// on nodes the server has already finished with. Those are closed, so they
-// belong in the ranges; the open region starts at Live.From and will never
-// reach down to them. Before the held floor existed they stayed in the open
-// buffer with nothing addressing them at all.
-//
-// A resumed turn is what puts Live.From above zero: the turn already has nodes
-// when it is reopened, so the streaming suffix starts above them.
+// A backward read can land below Live.From, on nodes the server has already
+// closed; those belong in the ranges, not the open buffer.
 func TestClientBackfillBelowTheLiveBoundary(t *testing.T) {
 	nodes := longNodes(12)
 	s := NewServer()
@@ -201,8 +182,6 @@ func TestClientBackfillBelowTheLiveBoundary(t *testing.T) {
 	c.Apply(tail, client.Quiet)
 	c.Apply(older, client.Quiet)
 
-	// Everything the backward read handed back that sits below Live.From must
-	// now be in the CLOSED view, not stranded in the open buffer.
 	held := map[uint64]string{}
 	for _, m := range c.View().Closed {
 		if m.Turn != 6 {
@@ -226,19 +205,8 @@ func TestClientBackfillBelowTheLiveBoundary(t *testing.T) {
 	}
 }
 
-// THE SEAL OFFERS EACH NODE ONCE, after the turn has been paged backward and
-// then forward again. Live.From is 0 for this turn's whole life, so nothing is
-// released until it seals, and the seal is the single release this pins.
-//
-// IT IS NAMED FOR THAT AND NOT FOR THE CURSORS, because it cannot see them.
-// Three sabotages of the cursor arithmetic were run against it and it stayed
-// green through all three: openStart ignoring the release cursor, the reclaim
-// release not advancing it, and openStart ignoring the held floor, which is
-// the original bug. With no upward release there is nothing for the two
-// cursors to disagree about, so openStart is barely consulted. A name that
-// promised "each node once" in general would outlive this paragraph and be
-// believed. The fixture that BITES is
-// TestFoldOffersEachNodeOnceAcrossTheLiveBoundary below.
+// The seal offers each node once after the turn has been paged backward and
+// forward. Live.From stays 0 here, so the seal is the single release.
 func TestSealOffersEachNodeOnceAfterABackfill(t *testing.T) {
 	s := NewServer()
 	s.Restore([]Turn{{ID: 5, Inquiry: "earlier", Sealed: true,
@@ -263,28 +231,15 @@ func TestSealOffersEachNodeOnceAfterABackfill(t *testing.T) {
 	s.Seal(nil)
 	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), client.Quiet)
 
-	// Turn 5's single node plus all 14 of turn 6, each offered once.
 	if want := 1 + len(nodes); c.Offered() != want {
 		t.Errorf("the fold offered %d nodes for release, want %d: a node was released twice "+
 			"and Insert hid it", c.Offered(), want)
 	}
 }
 
-// The same count, over the shape where the two releases MEET: a resumed turn
-// puts Live.From above zero, a backward read lands below it, and the live
-// frames that follow want to release the very run the backfill just released.
-//
-// This is the fixture that caught the first draft of the fix. It released the
-// reclaimed run without advancing the cursor over it, so the next live frame
-// offered [6,8) a second time: correct on screen, because Insert clipped it,
-// and wrong in the only place that could tell.
-//
-// Proved able to fail, three ways, numbers measured on this fixture against 13
-// nodes of legitimate work:
-//
-//	openStart ignores the release cursor ............ 24 offers
-//	openStart ignores the held floor (the bug) ...... 21 offers
-//	the reclaim release does not advance the cursor . 16 offers
+// The same count where the two releases meet: a resumed turn puts Live.From
+// above zero, a backward read lands below it, and the live frames that
+// follow must not re-offer the run the backfill released.
 func TestFoldOffersEachNodeOnceAcrossTheLiveBoundary(t *testing.T) {
 	nodes := longNodes(12)
 	s := NewServer()
@@ -312,7 +267,6 @@ func TestFoldOffersEachNodeOnceAcrossTheLiveBoundary(t *testing.T) {
 
 	c.Apply(tail, client.Quiet)
 	c.Apply(older, client.Quiet)
-	// A live frame over the same turn, after the backfill.
 	s.Update(nil, nodes[8:], 0)
 	if len(live) == 0 {
 		t.Fatal("fixture: no live frame was pushed, so the second release is not being tested")
@@ -324,9 +278,8 @@ func TestFoldOffersEachNodeOnceAcrossTheLiveBoundary(t *testing.T) {
 	s.Seal(nil)
 	c.Apply(s.ReadBefore(Anchor{}, Anchor{}, 1<<20), client.Quiet)
 
-	// Turn 5's node and all of turn 6's, each offered once. The final full
-	// read legitimately backfills the nodes below the backward read's floor,
-	// which is the first time anything has held them.
+	// The final full read legitimately backfills the nodes below the backward
+	// read's floor.
 	if want := 1 + len(nodes); c.Offered() != want {
 		t.Errorf("the fold offered %d nodes for release, want %d: the reclaimed run was "+
 			"released and then offered again by the next live frame", c.Offered(), want)
