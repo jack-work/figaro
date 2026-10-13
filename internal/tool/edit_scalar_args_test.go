@@ -8,13 +8,10 @@ import (
 	"testing"
 )
 
-// THE TOOL'S ARGUMENTS ARE SCALARS, ALL THE WAY DOWN.
-//
-// Not taste: under Claude's tool-call format a scalar is handed over verbatim
-// and the server encodes it, while a list or object is JSON the model must
-// author and escape by hand. This tool's array-of-objects was the only place
-// figaro ever asked for that, and the only place malformed arguments were ever
-// measured. A schema that grows one back would bring the failure with it.
+// The tool's arguments are scalars all the way down: under Claude's tool-call
+// format a scalar is handed over verbatim, while a list or object is JSON the
+// model must author and escape by hand, the only place malformed arguments
+// were ever seen.
 func TestEditParametersAreAllScalarStrings(t *testing.T) {
 	params, ok := (&EditTool{}).Parameters().(map[string]interface{})
 	if !ok {
