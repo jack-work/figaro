@@ -90,10 +90,19 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	seq := depart(logCfg.aria, req.Method, req.URL.String(), reqBytes)
 
+	var counted countingBody
+	if req.Body != nil && req.Body != http.NoBody {
+		counted.ReadCloser = req.Body
+		req.Body = &counted
+	}
 	resp, err := inner.RoundTrip(req)
 	duration := time.Since(start)
+	if reqBytes <= 0 {
+		reqBytes = counted.n
+	}
 
 	if f, ok := arrive(seq); ok {
+		f.ReqBytes = reqBytes
 		logRound(req.Context(), f, resp, duration, err)
 	}
 	emitMeta(req, resp, duration, reqBytes, logBase, err)
@@ -148,6 +157,18 @@ func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, re
 		attrs = append(attrs, attribute.String("wirelog.path", logBase))
 	}
 	figOtel.Event(req.Context(), "http.request", attrs...)
+	figOtel.RecordRequestBytes(req.Context(), reqBytes, attribute.String("host", req.URL.Host))
+}
+
+type countingBody struct {
+	io.ReadCloser
+	n int64
+}
+
+func (c *countingBody) Read(p []byte) (int, error) {
+	n, err := c.ReadCloser.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func writeReqLog(path string, req *http.Request, body []byte) {
