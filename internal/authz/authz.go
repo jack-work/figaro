@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/jkrpc"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Principal is stamped from the connection; FigaroID and Label are what
@@ -126,7 +129,14 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 			if d := policy.Check(req); !d.Allow {
 				return nil, &jkrpc.Error{Code: ErrCode, Message: d.Reason}
 			}
-			return next(ctx, params)
+			start := time.Now()
+			res, err := next(ctx, params)
+			status := "success"
+			if err != nil {
+				status = "failure"
+			}
+			figOtel.RecordRPC(ctx, time.Since(start), attribute.String("method", method), attribute.String("status", status))
+			return res, err
 		}
 	}
 	return out

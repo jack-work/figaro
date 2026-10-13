@@ -110,6 +110,8 @@ var (
 
 	tokens otelmetric.Int64Counter
 
+	rpcDuration otelmetric.Float64Histogram
+
 	instrumentsOnce sync.Once
 
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
@@ -313,6 +315,7 @@ func initInstruments(m otelmetric.Meter) {
 		catchUpDuration = histogram(m, "figaro.translator.catchup", "One translator catch-up before a send", subMS)
 		catchUpVisited = counts(m, "figaro.translator.catchup.visited", "{record}", "Fig IR records at or after the watermark")
 		catchUpEncoded = counts(m, "figaro.translator.catchup.encoded", "{record}", "Records translated and written; visited far above this is the O(delta) alarm")
+		rpcDuration = histogram(m, "figaro.rpc.duration", "One daemon-side RPC handler, by method", subMS)
 		tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
 			otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
 		if err != nil {
@@ -376,6 +379,10 @@ func AddTokens(ctx context.Context, in, out, cacheRead, cacheWrite int, attrs ..
 	for kind, n := range map[string]int{"input": in, "output": out, "cache_read": cacheRead, "cache_write": cacheWrite} {
 		tokens.Add(ctx, int64(n), otelmetric.WithAttributes(append(attrs, attribute.String("kind", kind))...))
 	}
+}
+
+func RecordRPC(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, rpcDuration, d, attrs...)
 }
 
 func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {
