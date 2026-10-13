@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/api/decide"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -73,7 +74,29 @@ func (a *Agent) SetAwaiting(_ context.Context, patch form.Patch, ifVersion uint6
 	if err := form.CheckWritable(patch, false); err != nil {
 		return 0, form.Patch{}, err
 	}
+	if err := refuseDecisionModel(patch); err != nil {
+		return 0, form.Patch{}, err
+	}
 	return a.applyFormPatch(patch, ifVersion, assert, "set")
+}
+
+func refuseDecisionModel(patch form.Patch) error {
+	for _, e := range patch.Entries() {
+		if e.Key == "system.model" && !e.IsRemoval() {
+			if err := decisionModelError(e.NewString()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func decisionModelError(model string) error {
+	if !decide.IsModel(model) {
+		return nil
+	}
+	return fmt.Errorf("%s answers typed questions and does not converse, so it cannot be system.model: "+
+		"ask it with `figaro decide`, and set system.decide.model to choose which one", model)
 }
 
 func withoutSystemNS(s form.Snapshot) form.Snapshot {

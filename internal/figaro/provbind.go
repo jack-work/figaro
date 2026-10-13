@@ -75,6 +75,9 @@ func (a *Agent) syncProvider() error {
 		return nil
 	}
 	knobs := providerKnobs(snap)
+	if err := decisionModelError(knobs.Model); err != nil {
+		return err
+	}
 	cur := a.provBind.Load()
 	if cur != nil && cur.name == name && sameBuild(cur.knobs, knobs) {
 		return nil
