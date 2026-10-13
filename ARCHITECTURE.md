@@ -22,20 +22,50 @@ ephemeral          1 per user            N per user
 
 ```
 cmd/figaro/                multi-call entry: figaro / q / l + --angelus daemon
+cmd/form-test/             form test harness
+sdk/                       Go client: angelus + aria connections
+skills.go                  embeds skills/figaro into the binary
+
+api/aria/                  wire types of the paginated read API (Page, TurnPart, deltas)
+api/form/                  per-aria structured state + system-reminder templates
+api/livedoc/               live-render protocol core: one markdown blob, splice deltas
+api/message/               provider-agnostic IR (Message, Content, Patch)
+api/quote/                 quoted-coordinate grammar at the head of a prompt
+api/rpc/                   JSON-RPC types + method constants; methods.go is the whole surface
+api/transport/             unix/tcp endpoint abstraction
+
+internal/actor/            single-writer runtime: FIFO queue, one drain goroutine
 internal/angelus/          supervisor, PID monitor, JSON-RPC handlers
-internal/auth/             OAuth + PKCE, hush-encrypted token storage
-internal/form/       per-aria structured state + system-reminder rendering
+internal/auth/             provider credentials; OAuth + PKCE, hush-encrypted tokens
+internal/authz/            authn/authz seam for the RPC surface
+internal/cli/              the CLI: commands, transcript pager, line editor, keymap; figtree/ tree tables
+internal/cmdkit/           CLI command routing
+internal/compose/          IR turn -> live-render unit of typed nodes
 internal/config/           TOML config loader
-internal/credo/            personality body + skill catalog
-internal/figaro/           actor: agent loop, inbox, translator orchestration
-internal/message/          provider-agnostic IR (Message, Content, Patch)
+internal/figaro/           actor: agent loop, inbox, translator orchestration; wire/ trunk capability
+internal/formdelta/        per-record form state a transcript reader needs
+internal/livelog/          aria/ page server + field deltas; render/ terminal differential renderer
+internal/logring/          bounded in-memory slog tail
+internal/mark/             timing sink for transcript benchmarks
 internal/otel/             OpenTelemetry init + span helpers
-internal/provider/         Provider interface + anthropic implementation
-internal/rpc/              shared notification types + method constants
-internal/store/            generic Log[T]; XWAL backend, turn journal, fork tree
+internal/outfit/           assembles an aria's form from on-disk config; unpacks bundled skills
+internal/partialjson/      string field from a truncated JSON prefix
+internal/provider/         Provider interface; anthropic (direct HTTP+SSE), anthropicsdk,
+                           anthropicmodels, copilot, openaichat, responses, routed
+internal/render/           markdown -> ANSI rows (glamour)
+internal/store/            generic Log[T]; XWAL backend, forms, libretto, fork tree;
+                           disk/ log/ segment/ tree/ xwal/ layers
+internal/tape/             record/replay of the aria wire
+internal/term/             terminal color, width, TTY detection
 internal/tokens/           context-window accounting
-internal/tool/             tool interface + bash/read/write/edit
-internal/transport/        unix/tcp endpoint abstraction
+internal/tool/             tool interface + bash/read/write/edit, image fitting
+internal/toolout/          bounds and coalesces streamed tool text
+internal/topo/             aria hierarchy for rendering and deletion
+internal/tui/              bubbletea first-run components
+internal/turns/            fig IR turn arithmetic
+internal/uiir/             UI IR projection
+internal/update/           release discovery and upgrade
+internal/wirelog/          RoundTripper tracing + optional raw dumps
 ```
 
 ## Streams
@@ -88,49 +118,27 @@ most the flush lag plus the in-flight partial stream.
 
 ## In-progress turn durability
 
-In-progress turn state is memory-only (`turnState` in turn_seal.go): the IR
-already gets per-message appends, interrupt/SIGTERM/panic seal the in-memory
-partial as an interrupted turn, and open-time tail repair appends interrupted
-tool results for unresolved tool calls. Checkpoint cadence no longer exists
-per second for streamed prose/tool output; periodic checkpoints sync, and
-interrupt/error paths force a final sync. The payload records turn
-identity/generation, target next IR LT, assistant/tools phase, the partial
-assistant with only args-ready tool calls, ordered call identities, bounded
-tool-output tails/status, and timestamp.
-
-Recovery reads only the newest journal record at `IR tail + 1`. A canonical IR
-append retires its checkpoint by advancing the tail; stale records need no
-rewrite or scan. Assistant-phase recovery appends the partial assistant with
-`stop_reason=aborted`, then interrupted user-role tool results for any ready
-calls. Tools-phase recovery appends one ordered interrupted tool-result
-message. Terminal `ok` and `error` tool results retain their persisted output;
-only pending/running calls receive synthetic interruption errors. A tools
-checkpoint is reserved at the following LT immediately before the assistant
-append; if recovery still sees the preceding tail, it seals that same payload
-as assistant-phase work instead. Recovery runs before rendered history
-construction and after actor panic, never resumes a remote stream, never calls
-the provider, and is idempotent because the recovery append advances the IR
-tail. Successful turn completion or recovery clears the branch-local journal
-head, bounding retained checkpoint history without clearing forked lineages.
-After panic or seal failure, the live aria server is rebuilt from canonical IR
-so it neither commits a speculative-only unit nor hides a durable assistant.
-
-Manual sync intentionally permits live frames after the last periodic
-checkpoint to rewind by less than one second after process death. Journal
-append/sync failure suppresses the corresponding frame and ends the turn as an
-explicit error; it never emits a success-shaped fallback.
+In-progress turn state is memory-only (`turnState` in `turn_repair.go`): the IR
+gets per-message appends (assistant at seal, tool-result tics at completion);
+interrupt/SIGTERM/panic seal the in-memory partial as an interrupted turn, and
+open-time `repairInterruptedTail` (`repair.go`) appends honest interrupted
+tool results when the IR tail has unresolved tool calls. There is no turn
+journal and no checkpoint record. `journal.go` is the agent's one append door
+to the IR (append, then announce), not a recovery log. Recovery never resumes
+a remote stream and never calls the provider. After panic or seal failure, the
+live aria server is rebuilt from canonical IR so it neither commits a
+speculative-only unit nor hides a durable assistant.
 
 `PushFigaro` carries the canonical assistant candidate plus its exact
 input-ready provider cache payload, namespace, and fingerprint. The actor
 appends canonical IR at the predicted LT, appends and syncs the opaque
-translation entry on the same continuation best-effort, then acknowledges.
+translation entry on the same continuation best-effort (a cache failure
+degrades to re-encoding; it never blocks the turn), then acknowledges.
 Providers never append the assistant cache entry themselves.
 Direct Anthropic supplies the sanitized accumulated native response with signed
 and redacted thinking intact, the SDK supplies `Message.ToParam()`, and
-Responses supplies the original encrypted output items. Process death between
-any of these writes is reconciled idempotently from the journal without
-recalling the provider. Forks cannot enter the commit window, and the journal
-is retired only after both IR and cache are durable.
+Responses supplies the original encrypted output items. Forks cannot enter the
+commit window.
 
 ## Provider interface
 
@@ -179,7 +187,7 @@ Providers read `system.credo` from the form and inject it as the API's system pr
 
 ## Form
 
-Structured per-aria state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `form.json`. Each key has a body template (`internal/form/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
+Structured per-aria state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `form.json`. Each key has a body template (`api/form/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
 
 The `system.*` namespace is harness-reserved. Clients write under any other key.
 
@@ -187,14 +195,24 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
 
-**Angelus socket:** `figaro.create`, `figaro.attach`, `figaro.fork`,
-`figaro.promote`, `figaro.kill`, `figaro.list`, `aria.read`, `pid.bind`,
-`pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
-`figaro.attach` lazily restores a dormant aria and returns its endpoint.
+**Angelus socket:** `figaro.create`, `form.create`, `form.bind`,
+`figaro.fork`, `figaro.promote`, `figaro.import`, `figaro.normalize`,
+`figaro.gc`, `figaro.kill`, `figaro.list`, `figaro.attach`, `pid.bind`,
+`pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.mem.collect`,
+`angelus.outfits`, `outfit.reload`, `angelus.configure`,
+`angelus.save_bindings`, `angelus.provider_ledger`, and the reads
+`figaro.read`, `figaro.context`, `figaro.form`, `figaro.ir`,
+`figaro.lineage` (`ReadRequest.FigaroID` names the aria; a read is
+forwarded to the live agent when there is one and served from the store when
+there is not). `figaro.attach` lazily restores a dormant aria and returns its
+endpoint.
 
 **Figaro socket (requests):** `figaro.qua` (prompt; optional `form`),
-`figaro.read`, `figaro.interrupt`, `figaro.context`, `figaro.set`,
-`figaro.outfit`, `figaro.form`, `figaro.queued`.
+`figaro.interrupt`, `figaro.set`, `figaro.queued`, `figaro.queue.update`,
+`figaro.queue.delete`, `figaro.study`, `figaro.drop`, `figaro.cast`, and the
+reads `figaro.read`, `figaro.context`, `figaro.form`.
+
+`api/rpc/methods.go` is the list of record.
 
 Every accepted aria connection is automatically subscribed to subsequent
 notifications. A frontend calls `figaro.read` on that same connection for
@@ -232,7 +250,8 @@ Notifications:
 - `figaro.aria`: one `Page`, either a snapshot/catch-up-compatible part, a
   live delta, a live-suffix close marker, or a sealed turn;
 - `turn.done` `{reason,idle}`: control state saying the turn ended and whether
-  queued work remains.
+  queued work remains;
+- `form.delta`: one committed form patch, in the shape a client sends one.
 
 `figaro.read` is the pull half. Its current request retains pre-turn field
 names: `sinceLT` is a forward **turn** cursor; `before` and `before_node` form a
