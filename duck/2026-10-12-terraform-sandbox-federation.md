@@ -587,3 +587,14 @@ the daemon, not to dial one); `set` plus two queued sends.
 tmux smoke: 12 pass, 2 skip, 5 fail; the same 5 fail identically on `main`
 (the harness expects an `aria <id>` label on the footer rule that neither
 build paints). Captures: `/var/tmp/parity/`.
+
+### 8.2 Performance
+
+`docs/perf-baseline.md` holds the metric set, the real-usage profile, and
+OLD vs NEW numbers. Verdict: parity within noise on daemon, CLI, live turns
+and cold first touch; bwrap adds ~71 ms per tool call. The instrumentation
+gaps the baseline exposed are closed on this branch (ttft, turn, tool,
+catch-up, tokens, rpc, store open, sweep, request bytes, memory gauges,
+boot marks; fanout span-event flood removed). The one real cost found is
+the cold translator catch-up in `provider/catchup.go`, pre-existing on both
+builds; the fix is described in the baseline doc and is not built.
