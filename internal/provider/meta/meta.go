@@ -21,10 +21,11 @@ func init() {
 func Spec() routed.Spec {
 	base := auth.MetaAPIBase + "/v1"
 	return routed.Spec{
-		Name:    providerName,
-		BaseURL: func() string { return base },
-		Catalog: "/models",
-		Default: routed.Responses,
+		Name:         providerName,
+		BaseURL:      func() string { return base },
+		Catalog:      "/models",
+		Default:      routed.Responses,
+		MessagesPath: "/messages",
 	}
 }
 
