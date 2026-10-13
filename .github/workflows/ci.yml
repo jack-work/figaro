@@ -38,3 +38,20 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go test ./...
+
+      - name: boundary
+        # The import-boundary ratchet (duck/2026-10-12 §1): a new forbidden
+        # edge fails; an allowed edge that stopped occurring fails as stale.
+        run: sh scripts/check-boundary.sh
+
+  # The hermetic T0 gate: the same checks as above plus the boundary, under
+  # the flake's toolchain and vendor hash, so CI and every worktree agree.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+
+      - name: flake check
+        run: nix flake check -L
