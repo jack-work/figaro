@@ -138,16 +138,11 @@
             chmod -R u+w vendor && rm -rf vendor
             ln -s ${figaro.goModules} vendor
           '';
-          # The skipped tests scratch on a hardcoded /var/tmp (short unix
-          # socket paths); the sandbox has no /var and refuses to make one.
-          # They run on the host and in the CI build job. Nothing else is
-          # skipped: a failure here is a failure.
           checkPhase = ''
             runHook preCheck
             export HOME=$TMPDIR
             go vet ./...
-            go test -short ./... \
-              -skip '^(TestAngelusClientPresentsCallerOnBothParamShapes|TestAngelusClientOmitsCallerWhenUnset|TestAgentClientPresentsCallerAcrossTheSecondHop|TestExportMessagesReadsPastTheReadCap|TestAriaMessagesReadsPastTheReadCap)$'
+            go test -short ./...
             runHook postCheck
           '';
         });
