@@ -1,18 +1,9 @@
 package figaro_test
 
-// THE GUARD THAT LIVES HERE, ASSERTED HERE.
-//
-// internal/compose memoizes the settled prefix of the open region and keys the
-// memo on MESSAGE CONTENT only. A tool node's timings come from a map the key
-// cannot see, so a timing stamped AFTER its result message became durable
-// would be invisible: the memo would keep serving FinishedAt:0 for the rest of
-// the turn. compose asserts that blindness as a fact
-// (TestPrefixIsBlindToATimingStampedAfterDurability); what makes it harmless
-// is an ordering that lives HERE and knows nothing about the memo -- toolEnd
-// stamps finishToolTiming, and the tool_result tic is assembled and appended
-// afterwards, in the same goroutine.
-//
-// Nothing failed the day that ordering could have moved. Now something does.
+// compose memoizes the settled prefix on message content only, so a timing
+// stamped after its result became durable would be invisible. The ordering
+// that makes that harmless lives here: toolEnd stamps the timing before the
+// tool_result tic is appended, in the same goroutine.
 
 import (
 	"context"
@@ -30,8 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// streamingTool writes a few chunks and then returns, so the node exists,
-// streams, and finishes -- the shape whose timing the memo cannot see.
+// streamingTool writes a few chunks and returns: the shape whose timing the memo cannot see.
 type streamingTool struct{}
 
 func (streamingTool) Name() string        { return "bash" }
@@ -48,10 +38,7 @@ func (streamingTool) Execute(_ context.Context, _ map[string]any, onOutput tool.
 	return []message.Content{{Type: message.ContentProse, Text: "tool done"}}, nil
 }
 
-// TestToolTimingIsStampedNoLaterThanItsDurableResult reads the WIRE, not the
-// agent: the frame that turns the tool node's status to "ok" is the frame in
-// which its result became durable. finished_at must have been set by then --
-// in that same delta or an earlier one.
+// Read from the wire: finished_at must be set no later than the frame that turns the node "ok".
 func TestToolTimingIsStampedNoLaterThanItsDurableResult(t *testing.T) {
 	cb, _ := form.Open("")
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -98,8 +85,7 @@ loop:
 
 	firstOK, firstFinished, seen := scanTimingOrder(frames)
 
-	// VACUITY GUARD. A run in which the tool never reported at all would
-	// satisfy every assertion below by having nothing to check.
+	// Vacuity guard: a run in which the tool never reported would pass by having nothing to check.
 	if seen == 0 || firstOK < 0 {
 		t.Fatalf("no tool node ever reached status ok across %d frames (%d status deltas); this measurement would be vacuous", len(frames), seen)
 	}
@@ -115,9 +101,7 @@ loop:
 	}
 }
 
-// scanTimingOrder reports the first frame that set a tool node's status to
-// "ok", the first that set finished_at, and how many status deltas were seen
-// at all (the vacuity meter).
+// scanTimingOrder reports the first "ok" frame, the first finished_at frame, and the status-delta count.
 func scanTimingOrder(frames []aria.Page) (firstOK, firstFinished, seen int) {
 	firstOK, firstFinished = -1, -1
 	for i, f := range frames {
@@ -144,13 +128,8 @@ func scanTimingOrder(frames []aria.Page) (firstOK, firstFinished, seen int) {
 	return firstOK, firstFinished, seen
 }
 
-// THE CANARY FOR THE ORDERING ARM.
-//
-// Mutating turn.go to stamp the timing late does NOT exercise
-// `firstFinished > firstOK`: a stamp delayed even 8 ms lands after the whole
-// mock turn is over, so the "never arrived" arm fires instead. Proven by
-// running it. So the ordering comparison is canaried HERE, against hand-built
-// frames, or it would be an assertion no observation has ever reached.
+// The ordering arm is canaried against hand-built frames: a late stamp in
+// turn.go lands after the whole mock turn and fires the "never arrived" arm instead.
 func TestTimingOrderScanCatchesAnInversion(t *testing.T) {
 	frame := func(set map[string]any) aria.Page {
 		return aria.Page{Parts: []aria.TurnPart{{

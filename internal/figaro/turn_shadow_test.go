@@ -8,26 +8,17 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// THE EQUIVALENCE ORACLE FOR THE TURN SHADOW.
-//
-// Before stage 5 the agent kept the in-flight turn in two places: `asm`
-// (local to driveOneRound) and `turnState.assistant` + `.tools`, refreshed by
-// a whole-message copy on EVERY bus event. The copy existed only because
-// repairTurnTail runs at 8 sites, including panic recovery, where the local
-// asm is out of scope.
-//
-// Stage 5 hoists the assembly onto the turn and materializes the repair view
-// once, on failure. These are the old derivations, kept permanently: the
-// claim is that the merged structure produces the same repair input for the
-// same event sequence, and that is a fact about every day after the change.
+// The old whole-message-copy derivations of the repair view, kept as an
+// oracle: the hoisted assembly must produce the same repair input for the
+// same event sequence.
 
-// oldNoteAssistant is turn_repair.go's noteAssistant before stage 5.
+// oldNoteAssistant is the former noteAssistant.
 func oldNoteAssistant(t *turnState, m *message.Message) {
 	t.assistantOracle = partialAssistant(m)
 	t.toolsOracle = oldMergeTurnTools(toolsFromAssistant(t.assistantOracle), t.toolsOracle, t.states)
 }
 
-// oldMergeTurnTools is mergeTurnTools before stage 5.
+// oldMergeTurnTools is the former mergeTurnTools.
 func oldMergeTurnTools(current, previous []turnTool, states map[string]turnTool) []turnTool {
 	byID := make(map[string]turnTool, len(previous))
 	for _, tool := range previous {
@@ -44,8 +35,7 @@ func oldMergeTurnTools(current, previous []turnTool, states map[string]turnTool)
 	return current
 }
 
-// busScript is one turn's worth of events, in the order the drain loop sees
-// them. It carries the shapes that actually move the shadow.
+// busScript is one turn's events in drain-loop order.
 type busScript struct {
 	name  string
 	steps []func(a *Agent, s *asm)
@@ -114,9 +104,7 @@ func busScripts() []busScript {
 	}
 }
 
-// TestTurnShadowEqualsTheDoubledStructure drives each script through BOTH
-// paths and requires the repair input to match: the aborted assistant message
-// and the tool list interruptedToolResults consumes.
+// Each script runs through both paths; the aborted assistant and the tool list must match.
 func TestTurnShadowEqualsTheDoubledStructure(t *testing.T) {
 	for _, sc := range busScripts() {
 		t.Run(sc.name, func(t *testing.T) {
@@ -124,7 +112,6 @@ func TestTurnShadowEqualsTheDoubledStructure(t *testing.T) {
 			s := newAsm(message.RoleOutput)
 			for _, step := range sc.steps {
 				step(a, s)
-				// The old path refreshed the shadow on EVERY event.
 				oldNoteAssistant(a.turn, s.message())
 			}
 			a.turn.asm = s
@@ -138,7 +125,6 @@ func TestTurnShadowEqualsTheDoubledStructure(t *testing.T) {
 			if !reflect.DeepEqual(wantTools, gotTools) {
 				t.Fatalf("tools diverged\n want %+v\n got  %+v", wantTools, gotTools)
 			}
-			// And what the repair actually writes.
 			if w, g := interruptedToolResults(wantTools), interruptedToolResults(gotTools); !reflect.DeepEqual(w, g) {
 				t.Fatalf("interrupted results diverged\n want %+v\n got  %+v", w, g)
 			}
@@ -146,17 +132,14 @@ func TestTurnShadowEqualsTheDoubledStructure(t *testing.T) {
 	}
 }
 
-// The durable payload overrides the assembly: on evFigaro the drain notes the
-// STAGED message, and that is what a failed append must preserve.
+// On evFigaro the drain notes the staged message, and that is what a failed append must preserve.
 func TestTurnShadowPrefersTheDurablePayload(t *testing.T) {
 	a := &Agent{turn: newTurnState()}
 	s := newAsm(message.RoleOutput)
 	s.addText(message.ContentProse, "streamed")
 	a.turn.asm = s
 
-	// Through the seam the drain loop uses, not by setting the field: a test
-	// that assigns turn.final directly cannot see the wiring go missing, and
-	// a canary that removed it PASSED against exactly that version.
+	// Through the seam the drain loop uses: setting the field directly cannot see the wiring go missing.
 	staged := store.Entry[message.Message]{Payload: message.Message{
 		Role:       message.RoleOutput,
 		Content:    []message.Content{{Type: message.ContentProse, Text: "durable"}},
@@ -169,8 +152,7 @@ func TestTurnShadowPrefersTheDurablePayload(t *testing.T) {
 	}
 }
 
-// The shadow must survive having no assembly at all -- repairTurnTail runs
-// from panic recovery, where nothing streamed.
+// repairTurnTail runs from panic recovery, where nothing streamed.
 func TestTurnShadowWithNoAssembly(t *testing.T) {
 	ts := newTurnState()
 	msg, tools := ts.repairView()

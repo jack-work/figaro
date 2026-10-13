@@ -24,10 +24,8 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	// Production bounds the decoded IR (ir_window_mb); an unbounded log
-	// retains every payload the composed turns alias, and UI eviction
-	// then frees nothing. The first run of this test proved exactly
-	// that coupling, with saved=0.0 MiB.
+	// Production bounds the decoded IR (ir_window_mb); unbounded, the composed
+	// turns alias every payload and UI eviction frees nothing.
 	be.SetIRWindow(32)
 	id, _, err := be.ForkWith("", 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{"aria_id": json.RawMessage(`"a1"`)}, nil))
 	if err != nil {
@@ -59,10 +57,7 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 		})
 		a.Read(aria.Anchor{}, 64*1024) // one tail page, as a client would
 		if cache != nil {
-			// A read never evicts: charge raises pressure and the
-			// daemon's standing sweep lowers it. A test is the one
-			// caller that waits -- and it must read the meter BEFORE
-			// Kill hands the aria's bytes back.
+			// A read never evicts; read the meter before Kill hands the bytes back.
 			cache.Budget().Settle(2 * time.Second)
 			res, lim, ev = cache.Budget().Stats()
 		}
@@ -77,13 +72,8 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 	unbounded := measure(nil)
 	bounded := measure(aria.NewComposedCache(fwtree.NewBudget(2<<20), nil, nil)) // 2 MiB window
 	t.Logf("budget: resident=%d limit=%d evictions=%d", res, lim, ev)
-	// The heap numbers are DIAGNOSTIC, not asserted: composed strings
-	// alias the decoded IR (compose TrimRight shares the backing array),
-	// so in this harness -- where the boot Read leaves the decoded rows
-	// resident -- hollowing frees almost nothing. In production the
-	// decoded window is bounded, and beyond it the composed turns are the
-	// bytes' SOLE owner, which is exactly the mass the window reclaims.
-	// Asserting a heap delta here would pin the harness, not the product.
+	// Heap numbers are diagnostic, not asserted: here the boot Read keeps the
+	// decoded rows resident, so hollowing frees almost nothing.
 	t.Logf("heap inuse (diagnostic): unbounded=%.1f MiB  bounded(2MiB)=%.1f MiB",
 		float64(unbounded)/(1<<20), float64(bounded)/(1<<20))
 	if ev == 0 {

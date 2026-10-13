@@ -13,12 +13,10 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// AgentServer is the figaro-side JSON-RPC contract.
 type AgentServer interface {
 	Handle(ctx context.Context, method string, params json.RawMessage) (any, error)
 }
 
-// agentMethods is the set of methods the figaro socket exposes.
 var agentMethods = []string{
 	rpc.MethodQua,
 	rpc.MethodStudy,
@@ -34,16 +32,13 @@ var agentMethods = []string{
 	rpc.MethodRead,
 }
 
-// AgentMethods is the method set an aria endpoint exposes. Exported because
-// the angelus now owns that endpoint (see angelus.ariaHub) and must serve
-// exactly this set whether or not an agent is resident behind it.
+// AgentMethods is served by the angelus's aria endpoint whether or not an agent is resident.
 func AgentMethods() []string {
 	out := make([]string, len(agentMethods))
 	copy(out, agentMethods)
 	return out
 }
 
-// Handle dispatches RPC methods.
 func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
 	case rpc.MethodStudy:
@@ -78,8 +73,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		res, err := a.Cast(ctx, req.FormID, req.RolePatch)
 		if err != nil {
-			// A partial verdict still describes itself: the response
-			// carries what landed before the step that failed.
+			// A partial verdict carries what landed before the failing step.
 			return nil, err
 		}
 		return rpc.CastResponse{RoleID: res.roleID, Studied: res.studied, Patched: res.patched}, nil
@@ -89,15 +83,10 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// The prompt's dressing was resolved before this call was routed -
-		// the hub dresses on the way in (angelus.dressParams), so a spec
-		// that does not exist failed the qua before anything was queued and
-		// what arrives here is data.
+		// The hub dresses on the way in; a missing spec already failed the qua.
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
 		if err := a.SubmitPromptFrom(ctx, req, rpc.SenderFrom(params, a.dukeTitle)); err != nil {
-			// A refused form write is the caller's to see: it is synchronous
-			// now, so it reaches the reply the caller is already waiting on.
 			return nil, err
 		}
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
@@ -117,9 +106,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 				return nil, err
 			}
 		}
-		// An unknown disposition is refused rather than guessed: the two verbs
-		// differ by whether the caller's queued messages survive, and a typo
-		// must not be resolved into the destructive one.
+		// An unknown disposition is refused, not guessed: a typo must not become the destructive verb.
 		switch req.Queue {
 		case "", rpc.QueueKeep, rpc.QueueClear:
 		default:
@@ -133,13 +120,10 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// EVERY SET IS APPLIED BEFORE THIS RETURNS. A bound form has its own
-		// actor; the figaro's turn loop is not between a caller and it any
-		// more, so there is no queued outcome and req.Wait names nothing.
+		// A bound form has its own actor; nothing is queued and req.Wait names nothing.
 		version, applied, err := a.SetAwaiting(ctx, req.Patch, req.IfVersion, req.Assert)
 		if err != nil {
-			// A patch may name layers, so a set can fail the way a dressing
-			// fails: with a closure the caller can draw.
+			// A patch may name layers, so a set can fail with a closure the caller can draw.
 			return nil, outfitError(err)
 		}
 		if applied.IsIdentity() {
@@ -161,8 +145,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 	case rpc.MethodForm:
 		var req rpc.FormRequest
 		if len(params) > 0 {
-			// A bare form read historically sent no params at all, and some
-			// callers send `null`. Neither is an error: both mean the board.
+			// No params and `null` both mean the board.
 			_ = json.Unmarshal(params, &req)
 		}
 		if name := req.Intrinsic; name != "" && name != IntrinsicState {
@@ -191,10 +174,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// A request that names nothing is malformed, not a refusal: there is
-		// no id whose fate could be reported, so it belongs on the error
-		// channel rather than in an empty result list a caller might read as
-		// success.
+		// A request naming nothing is malformed: there is no id whose fate could be reported.
 		if len(req.IDs) == 0 && !req.All {
 			return nil, fmt.Errorf("queue delete: name ids or pass all")
 		}
@@ -212,9 +192,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if req.ID == 0 {
 			return nil, fmt.Errorf("queue update: name the message id")
 		}
-		// Empty text would silently turn a question into a form carrier
-		//, a shape the caller almost certainly did not mean and cannot see.
-		// Malformed input, so: error, not a rejection reason.
+		// Empty text would silently turn a question into a form carrier: malformed, not a rejection.
 		if req.Text == "" {
 			return nil, fmt.Errorf("queue update: text is empty (delete it instead)")
 		}
@@ -236,9 +214,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 	return nil, fmt.Errorf("unknown method: %s", method)
 }
 
-// outfitError types a failed outfit resolution for the wire. A missing layer
-// carries its closure, because "which layer, and where in the graph" is the
-// question the caller actually has; anything else travels as-is.
+// outfitError types a failed outfit resolution for the wire; a missing layer carries its closure.
 func outfitError(err error) error {
 	var missing *outfit.MissingError
 	if !errors.As(err, &missing) {
@@ -254,9 +230,8 @@ func outfitError(err error) error {
 	return &jkrpc.Error{Code: rpc.ErrOutfitNotFound, Message: err.Error(), Data: data}
 }
 
-// OutfitClosureWire converts a resolved layer closure to its wire shape. It
-// lives here because internal/outfit is a domain package and does not know
-// about the wire, and angelus needs the same conversion for its mint path.
+// OutfitClosureWire lives here because internal/outfit does not know the wire
+// and angelus needs the same conversion.
 func OutfitClosureWire(c *outfit.Closure) *rpc.OutfitLayer {
 	if c == nil {
 		return nil

@@ -10,8 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// buildStream constructs an in-memory stream pre-populated with the
-// given messages. LTs are assigned by Append in order.
+// buildStream pre-populates an in-memory stream; LTs are assigned by Append in order.
 func buildStream(t *testing.T, msgs ...message.Message) store.Log[message.Message] {
 	t.Helper()
 	s := store.NewMemLog[message.Message]()
@@ -49,7 +48,6 @@ func TestTailRepair_EmptyStreamNoOp(t *testing.T) {
 }
 
 func TestTailRepair_NonDanglingNoOp(t *testing.T) {
-	// Plain user/assistant text turn: no tool_use.
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}},
 		message.Message{Role: message.RoleOutput, Content: []message.Content{message.TextContent("salve")}, StopReason: message.StopEnd},
@@ -60,7 +58,6 @@ func TestTailRepair_NonDanglingNoOp(t *testing.T) {
 }
 
 func TestTailRepair_DanglingToolUseAtTail(t *testing.T) {
-	// Assistant ended with tool_use; tool_result tic never landed.
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
@@ -76,7 +73,6 @@ func TestTailRepair_DanglingToolUseAtTail(t *testing.T) {
 }
 
 func TestTailRepair_AbortedPartialAtTail(t *testing.T) {
-	// An appended partial (drain crashed between assistant and tics).
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
@@ -102,14 +98,12 @@ func TestTailRepair_Idempotent(t *testing.T) {
 	)
 	repairInterruptedTail(s, "aria")
 	repairInterruptedTail(s, "aria")
-	// Exactly one tic appended; the second call is a no-op.
 	entries := s.Read()
 	require.Len(t, entries, 3)
 	requireRepairTic(t, entries[2].Payload, "tc_a")
 }
 
 func TestTailRepair_WellFormedToolResultNoOp(t *testing.T) {
-	// Assistant tool_use followed by complete tool_result tic; nothing to do.
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
@@ -128,10 +122,7 @@ func TestTailRepair_WellFormedToolResultNoOp(t *testing.T) {
 }
 
 func TestTailRepair_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
-	// Assistant emitted two tool_use blocks; the follow-up tic covers
-	// only one of them. Under append-only this is unrecoverable: we
-	// cannot splice a tic between the assistant and the partial tic.
-	// The function leaves the stream alone.
+	// A tic covering one of two tool_use blocks is unrecoverable under append-only; left alone.
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run both")}},
 		message.Message{
@@ -147,8 +138,7 @@ func TestTailRepair_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
 }
 
 func TestTailRepair_NoToolCallsNoOp(t *testing.T) {
-	// stop_reason=tool_use but the assistant has no tool_call content
-	// blocks. Treat as well-formed; nothing to repair.
+	// stop_reason=tool_use with no tool_call blocks is well-formed.
 	s := buildStream(t,
 		message.Message{
 			Role:       message.RoleOutput,
@@ -161,10 +151,7 @@ func TestTailRepair_NoToolCallsNoOp(t *testing.T) {
 	assert.Len(t, s.Read(), before)
 }
 
-// TestTailRepair_FileBackedPersists drives the same flow against a
-// real figwal-backed conversation. The dangling state is written to
-// disk; the function appends the repair tic; reopening the backend
-// sees it on reload (the cachedLog re-materializes from the segments).
+// The repair tic survives a backend reopen.
 func TestTailRepair_FileBackedPersists(t *testing.T) {
 	dir := t.TempDir()
 
@@ -190,7 +177,6 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, b1.Close())
 
-	// Reopen, run repair, close.
 	b2, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	log2, err := b2.OpenFigIR(conv)
@@ -198,7 +184,6 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	repairInterruptedTail(log2, conv)
 	require.NoError(t, b2.Close())
 
-	// Final reopen sees the repair tic as the tail.
 	b3, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	defer b3.Close()
@@ -209,10 +194,8 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	requireRepairTic(t, entries[len(entries)-1].Payload, "tc_disk")
 }
 
-// A head fork taken mid-turn inherits the assistant's tool_use and then
-// writes the branch's own birth record after it. The old peek-at-the-tail
-// check saw an input record, concluded there was nothing to repair, and the
-// branch's next prompt died on a provider 400.
+// A head fork taken mid-turn writes its birth record after the inherited
+// tool_use; peeking at the tail alone misses the repair.
 func TestTailRepair_DanglingCallBehindABirthRecord(t *testing.T) {
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},

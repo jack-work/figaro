@@ -29,21 +29,13 @@ import (
 
 type eventType int
 
-// Inbox event types (user-RPC only).
 const (
 	eventUserPrompt eventType = iota
-	// eventStudyMark narrates a study/drop transition in the IR. It is an
-	// EVENT rather than a direct append because of what a direct append did:
-	// written from the RPC goroutine, it landed between an assistant
-	// tool_use and its tool_result, and every provider refuses that shape
-	// real arias. Riding the inbox makes the record land where the loop is
-	// between rounds, which is the only place a user record is legal.
+	// A study mark rides the inbox so it lands between rounds; a direct append
+	// from the RPC goroutine can split a tool_use from its tool_result.
 	eventStudyMark
 )
 
-// promptSegment is one submission inside a (possibly folded) user message:
-// the text and who sent it. Sender is already rendered (rpc.Attribution), so
-// no consumer re-derives it and none can disagree about the spelling.
 type promptSegment struct {
 	sender string
 	text   string
@@ -52,146 +44,101 @@ type promptSegment struct {
 type event struct {
 	typ eventType
 
-	// Identity, eventUserPrompt only. id is minted by Inbox.Send and is unique
-	// within the inbox's epoch; merged names the ids folded INTO this event by
-	// still be resolved to the message that absorbed it.
+	// id is unique within the inbox epoch; merged names the ids folded into this event.
 	id     uint64
 	at     int64
 	merged []uint64
 
-	// eventStudyMark
 	studyMark *message.StudyMark
 
-	// eventUserPrompt
 	text string
 	form *rpc.FormInput
-	// segments is this event's attributed payloads, in submission order.
-	// A fresh submit has exactly one; mergePromptEvents concatenates them, so
-	// a folded message keeps Who said what instead of flattening it into one
-	// anonymous blob. text stays the joined display/mantra form.
+	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
 }
 
-// setVerdict is what the writer decided: the version it landed at, what
 type setVerdict struct {
 	version uint64
 	applied message.Patch
 	err     error
 }
 
-// Config is the constructor input for NewAgent. Configured values
-// (model, cwd, etc.) live on the form under system.* keys.
+// Config is the constructor input for NewAgent.
 type Config struct {
 	ID         string
 	SocketPath string
 	Provider   provider.Provider
-	// ProviderFactory lets the agent REBIND its provider mid-conversation
-	// when system.provider (or a build-time knob) changes on the
-	// form. Nil pins the agent to Provider for life: fine for
-	// tests, wrong for a live aria, because the board is authoritative.
+	// ProviderFactory rebinds the provider when system.provider changes; nil pins it.
 	ProviderFactory ProviderFactory
 	Tools           *tool.Registry
-	// Projector renders fig IR as UI IR. nil ships an engine with no display.
-	Projector  Projector
-	Backend    store.Backend // nil = ephemeral
-	CreatedAt  time.Time
-	LastActive time.Time
-	// WokeBy names the RPC method that is restoring this aria from dormancy.
-	// Empty for a birth. Reported on FigaroInfo; see there.
+	Projector       Projector
+	Backend         store.Backend // nil = ephemeral
+	CreatedAt       time.Time
+	LastActive      time.Time
+	// WokeBy names the RPC method restoring this aria from dormancy; empty for a birth.
 	WokeBy string
 
-	// Form carries the aria's state, pre-seeded from the
-	// reducible form channel (backed) or empty (ephemeral). The
-	// channel is the durable truth; State is the in-memory hot view the
-	// agent reads (model/max_tokens/cwd) and write-throughs on set.
-	// Nil creates an empty in-memory one. Closed by Kill.
+	// Form is the in-memory view of the form channel, which is the durable truth. Closed by Kill.
 	Form *form.State
 
-	// Settings is the loaded user configuration. Today the agent reads only
-	// the wire page budget from it, via ClampPageBudget: which is the SINGLE
-	// policy point deciding how many bytes a paginated read may cost. Nil is
-	// safe (the accessors are nil-safe and return the built-in defaults,
-	// ceiling included), so tests and ephemeral agents need not supply one.
+	// Settings is nil-safe: accessors return built-in defaults.
 	Settings *config.Loaded
 
-	// UICache is the process-wide composed UI IR cache -- THE canonical
-	// tree, a node per aria, shared with every other agent and with the
-	// reader. Nil gives this agent a private unbounded node (the test
-	// default).
+	// UICache is the process-wide composed UI IR cache; nil gives a private unbounded node.
 	UICache *aria.ComposedCache
 }
 
-// Agent is the Figaro implementation.
 type Agent struct {
 	id         string
 	socketPath string
-	// provBind is the live provider binding (instance + the form
-	// coordinates that produced it). Written by the drain loop via
-	// syncProvider, read lock-free by status/metrics on RPC goroutines.
+	// provBind is written by the drain loop, read lock-free on RPC goroutines.
 	provBind    atomic.Pointer[providerBinding]
 	provFactory ProviderFactory
 	tools       *tool.Registry
-	// proj converts fig IR to UI IR. nil in a core-only build.
-	proj Projector
-	// figLog is the conversation's IR. IT IS READ THROUGH DIRECTLY AND WRITTEN
-	// THROUGH journal ONLY -- see journal.go. Appending here instead is the
-	// mistake the journal exists to make impossible; if you find yourself
-	// reaching for figLog.Append, that is the bug, not the inconvenience.
+	proj        Projector
+	// figLog is read directly and written through journal only; see journal.go.
 	figLog  store.Log[message.Message]
 	journal *journal
-	// turnFirstLT is the IR coordinate of the record that opened the
-	// current turn, for the seal-time bracket. Zero between turns.
+	// turnFirstLT is the LT of the record that opened the current turn; zero between turns.
 	turnFirstLT uint64
 	backend     store.Backend // nil = ephemeral
 	form        *form.State
 	settings    *config.Loaded // wire budget policy; nil-safe
 
-	// The study mirror's order. A cast runs on the CALLER's goroutine (see
-	// castOp), so N concurrent casts publish N whole study sets into a board
-	// that has no idea which durable write won. studiesVersion is the board
-	// version the mirrored set landed at, and publishStudies refuses anything
-	// not newer: the mirror follows the durable order, not the arrival order.
+	// Casts run on the caller's goroutine, so publishStudies refuses any set not
+	// newer than studiesVersion: the mirror follows durable order, not arrival order.
 	studiesMu      sync.Mutex
 	studiesVersion uint64
 
 	inbox *Inbox
 
-	// The INTRINSIC FORMS: non-persistent builtin forms bound to this aria's board,
-	// addressed as `<id>/runtime` and `<id>/queue`. See intrinsic.go.
+	// Intrinsic forms, addressed as `<id>/runtime` and `<id>/queue`.
 	runtime *intrinsic
 	queue   *intrinsic
 
-	// Turn state. Guarded by mu for Interrupt().
+	// Turn state, guarded by mu for Interrupt().
 	turnCtx     context.Context
 	turnCancel  context.CancelFunc
-	turnRunning atomic.Bool // mirrors turnCancel != nil; lock-free point-in-time read
+	turnRunning atomic.Bool // mirrors turnCancel != nil
 	interrupted bool
 
 	mu   sync.RWMutex
-	subs map[Notifier]struct{} // normally exactly one: the aria's hub
-	// teardown runs after the drain loop exits. Holds the hub unbind, so
-	// the endpoint outlives the agent.
+	subs map[Notifier]struct{}
+	// teardown runs after the drain loop exits; the hub unbind lives here.
 	teardown []func()
 
-	// Live-render state, owned by the drain loop. turnStartLT is the FigaroLT
-	// (main LT) of the last figLog entry before this turn's agent messages -
-	// composeTurn reads strictly after it. It must be an LT, not an entry
-	// count: main LTs are trunk-global (patches/transitions consume them too),
-	// so they run far ahead of the message channel's entry count, and passing
-	// a count to ReadFrom re-includes prior turns in every live frame.
+	// turnStartLT is the main LT of the last figLog entry before this turn.
+	// It must be an LT, not an entry count: main LTs are trunk-global.
 	turnStartLT   uint64
-	turnStartTurn uint64            // turn the window was pinned for; the region base moves only with the turn
-	turnID        uint64            // in-flight turn id, stamped onto every append
-	gov           *toolout.Governor // bounded live tool-output tails (coalesced emits)
-	lastEmit      time.Time         // throttle for live streaming emits
+	turnStartTurn uint64
+	turnID        uint64
+	gov           *toolout.Governor
+	lastEmit      time.Time
 	argPartials   map[string]string
 	turn          *turnState
 
-	// ariaSrv materializes turn-shaped UI IR plus the newest mutable suffix. It
-	// is the single source of both figaro.aria pushes and figaro.read pulls.
-	// regionMsgs is the open turn's decoded messages, held across frames; see
-	// regionMessages. regionStart is the turnStartLT it belongs to and
-	// regionLast the highest LT folded into it.
+	// regionMsgs is the open turn's decoded messages held across frames;
+	// regionStart is the turnStartLT it belongs to, regionLast the highest LT folded in.
 	regionMsgs  []message.Message
 	regionStart uint64
 	regionLast  uint64
@@ -222,7 +169,6 @@ type Agent struct {
 	done   chan struct{}
 }
 
-// NewAgent creates and starts a figaro agent.
 func NewAgent(cfg Config) *Agent {
 	if cfg.Backend == nil {
 		panic("figaro.NewAgent: Backend is required -- there is no ephemeral aria (store.NewTestBackend in tests)")
@@ -261,25 +207,16 @@ func NewAgent(cfg Config) *Agent {
 	if a.form == nil {
 		a.form, _ = form.Open("")
 	}
-	// The caller built cfg.Provider from this very board, so pairing the
-	// instance with the board's current knobs makes the first syncProvider
-	// a no-op, and any later divergence a genuine rebind.
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
 	entries := a.figLog.Read()
 	messages := unwrapMessages(entries)
-	// Metrics come off the _meta sidecar when it is current, which after
-	// Backend.Open it always is: healMeta folds any suffix past the watermark
-	// on the read path. That turns construction's metric pass from a walk of
-	// every message into a struct copy, and, more importantly, removes one of
-	// the reasons the whole decoded log had to be materialized here at all.
+	// The _meta sidecar is current after Backend.Open (healMeta folds the suffix).
 	if !a.seedMetricsFromMeta() {
 		a.refreshMetricsFrom(messages)
 	}
 
-	// Build sealed UI turns from canonical IR, then broadcast every aria-server
-	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
 	a.ariaSrv.BindCache(a.id, cfg.UICache)
 	for _, t := range a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries) {
@@ -290,10 +227,7 @@ func NewAgent(cfg Config) *Agent {
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: p})
 	})
 
-	// Form transitions ride the SAME fanout as the aria's frames, so a form
-	// listener is an ordinary subscriber on the same socket and there is no
-	// second transport to keep honest. The sink runs on the form's writer, so
-	// it does exactly one thing and returns.
+	// Form transitions ride the same fanout as frames. The sink runs on the form's writer.
 	if a.backend != nil {
 		if err := a.backend.WatchForm(a.id, func(version uint64, patch message.Patch) {
 			a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodFormDelta,
@@ -313,19 +247,11 @@ func NewAgent(cfg Config) *Agent {
 	return a
 }
 
-// newLog opens the figaro IR log. The backend owns and memoizes one
-// shared instance per aria (so a concurrent aria.read RPC sees the same
-// rows, lock-free), and closes it on Fork/Remove/Close: the agent never
-// closes what Open returns.
+// The backend owns the log instance and closes it; the agent never does.
 func (a *Agent) newLog() store.Log[message.Message] {
 	log, err := a.backend.OpenFigIR(a.id)
 	if err != nil {
-		// Falling back to memory here would silently orphan the on-disk
-		// content: subsequent Reads return 0 units and any live-subscribe
-		// stream goes silent (nothing to fan out) until the process is
-		// restarted. That is the exact head/fork-ancestry-resolution
-		// symptom of the interrupted-mid-turn bug. Surface it loudly and
-		// keep the previous log (if any) so we do not wipe state.
+		// Falling back to memory would silently orphan the on-disk content.
 		slog.Error("backend open failed: keeping previous log", "aria", a.id, "err", err)
 		if a.figLog != nil {
 			return a.figLog
@@ -339,11 +265,7 @@ func (a *Agent) ID() string { return a.id }
 
 func (a *Agent) SocketPath() string { return a.socketPath }
 
-// formString reads a system.* string key. Empty when missing.
-// dukeTitle is what THIS aria calls its end user, from its form, or the
-// generic default when it does not say. Passed to rpc.SenderFrom so the duke
-// placeholder an interactive CLI sends resolves against the aria being
-// addressed rather than against the shell that sent it.
+// dukeTitle is what this aria calls its end user.
 func (a *Agent) dukeTitle() string {
 	if t := a.formString(rpc.DukeTitleKey); t != "" {
 		return t
@@ -364,7 +286,6 @@ func (a *Agent) formString(key string) string {
 	return s
 }
 
-// formInt reads a numeric system.* key.
 func (a *Agent) formInt(key string) int {
 	if a.form == nil {
 		return 0
@@ -390,8 +311,7 @@ func snapshotString(snapshot form.Snapshot, key string) string {
 	return value
 }
 
-// snapshotOutfit reads the outfit stamp, falling back to the pre-rename keys
-// that arias minted before the rename carry.
+// snapshotOutfit falls back to the pre-rename loadout keys.
 func snapshotOutfit(snapshot form.Snapshot) (name, version string) {
 	name = snapshotString(snapshot, "system.outfit_name")
 	if name == "" {
@@ -404,7 +324,6 @@ func snapshotOutfit(snapshot form.Snapshot) (name, version string) {
 	return name, version
 }
 
-// resolveContextLimit reports the effective prompt cap for the current model.
 func resolveContextLimit(prov provider.Provider, model string, snapshot form.Snapshot) int {
 	if limit, ok := provider.ContextLimitOverride(snapshot); ok {
 		return limit
@@ -415,9 +334,7 @@ func resolveContextLimit(prov provider.Provider, model string, snapshot form.Sna
 	return 0
 }
 
-// refreshMetrics runs at durable message boundaries, never on streaming
-// deltas. That keeps the status path current without making live rendering
-// repeatedly rescan the full conversation.
+// refreshMetrics runs at durable message boundaries, never on streaming deltas.
 func (a *Agent) refreshMetrics() {
 	a.mu.RLock()
 	metricsLT := a.metricsLT
@@ -476,9 +393,7 @@ func (a *Agent) refreshMetrics() {
 	a.mu.Unlock()
 }
 
-// seedMetricsFromMeta loads the checkpointed counters instead of recomputing
-// them. Returns false when the sidecar cannot be trusted, in which case the
-// caller must fall back to the full fold.
+// seedMetricsFromMeta reports false when the sidecar cannot be trusted.
 func (a *Agent) seedMetricsFromMeta() bool {
 	meta, err := a.backend.Meta(a.id)
 	if err != nil || meta == nil || meta.LastFigaroLT == 0 {
@@ -502,12 +417,9 @@ func (a *Agent) seedMetricsFromMeta() bool {
 	a.metricsLT = meta.LastFigaroLT
 	a.contextTokens = meta.ContextTokens
 	a.contextExact = meta.ContextExact
-	// The limit is a live provider+model lookup, never a checkpointed number:
-	// a model swap between runs must not be reported from a stale sidecar.
+	// The limit is a live lookup: a model swap must not be reported from a stale sidecar.
 	a.contextLimit = resolveContextLimit(a.provider(), model, snapshot)
-	// Form-owned fields come from the board, which is authoritative and
-	// already open. Taking them from the sidecar would let a stale mantra
-	// survive a `figaro set`.
+	// Form-owned fields come from the board, not the sidecar.
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
@@ -551,22 +463,13 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	a.mu.Unlock()
 }
 
-// SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
 func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	_ = a.SubmitPromptFrom(context.Background(), req, "")
 }
 
-// SubmitPromptFrom is SubmitPrompt with the caller's rendered attribution.
-// the way down rather than becoming "unknown".
-// FORM INPUT IS Applied here, synchronously, and the caller learns IF IT IS
-// which is why a refusal -- a harness-owned key, say -- could only be logged:
-// the RPC had returned long before. A patch is data about the board, not about
-// the turn, so it lands when it is submitted.
+// SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
-	// REWRITE BEFORE ANYTHING LANDS. A refused token (an @key! not on the
-	// board, a quote naming no passage) leaves the form unpatched and the
-	// inbox untouched, and the caller learns why on this reply. See
-	// input_rewrite.go.
+	// A refused token leaves the form unpatched and the inbox untouched.
 	text, err := a.rewriteInput(ctx, req.Text)
 	if err != nil {
 		return err
@@ -586,19 +489,13 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
 	}
 	a.inbox.Send(evt)
-	// ACCEPTED: the daemon has the message. Between here and the turn lifting
-	// it, a client that showed nothing was the original complaint. The queue
-	// intrinsic carries the message itself; this carries the disposition, so a
-	// status indicator can be honest without reading the queue.
 	if !a.turnActive() {
 		a.publishRuntime(rpc.RuntimeAccepted, "")
 	}
 	return nil
 }
 
-// promptIDs is a prompt's own id plus every id folded into it, which is the
-// set a turn stamp must cover: a client holding a merged id must still learn
-// which turn its message became.
+// promptIDs is the id plus every id folded into it: the set a turn stamp must cover.
 func promptIDs(e event) []uint64 {
 	if e.id == 0 {
 		return nil
@@ -606,24 +503,11 @@ func promptIDs(e event) []uint64 {
 	return append([]uint64{e.id}, e.merged...)
 }
 
-// QueuedPrompts returns a read-only snapshot of the messages this aria has
-// accepted but not yet answered, in FIFO order, plus the epoch those ids
-// belong to. The inbox is untouched.
-//
-// It reports STATE HONESTLY now. It used to stamp "queued" on every row
-// unconditionally -- QueueStateCommitting existed in the vocabulary and was
-// never written by anything -- so a message the drain loop had lifted simply
-// vanished from the listing while remaining un-deletable, and the CRUD
-// surface's own refusal messages knew a truth the read surface denied.
+// QueuedPrompts reports what is still in flight; the departed live in the queue intrinsic.
 func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 	snap := a.inbox.Project()
 	out := make([]rpc.QueuedPrompt, 0, len(snap.Items))
 	for _, it := range snap.Items {
-		// Only what is still IN FLIGHT belongs on this surface: the queue is
-		// what can still be acted on, plus what is on its way out of reach.
-		// The departed live in the intrinsic, where a client watching a message
-		// travel needs them, and not here, where they would read as a queue
-		// that never drains.
 		if it.State != rpc.QueueStateQueued && it.State != rpc.QueueStateCommitting {
 			continue
 		}
@@ -641,23 +525,17 @@ func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 	return snap.Epoch, out
 }
 
-// turnActive reports whether a turn is in flight (a prompt submitted now would
-// queue/steer rather than start fresh). Lock-free: it's a point-in-time read
-// needing no consistency with other a.mu-guarded state.
+// turnActive is a lock-free point-in-time read.
 func (a *Agent) turnActive() bool {
 	return a.turnRunning.Load()
 }
 
-// TurnActive implements Figaro. Lock-free by design; see the interface doc.
 func (a *Agent) TurnActive() bool { return a.turnActive() }
 
-// Interrupt aborts the current turn, keeping the queue. It is the shape the
-// Figaro interface uses (and the angelus's graceful shutdown, where dropping
-// what someone queued would be exactly the wrong courtesy).
+// Interrupt aborts the current turn and keeps the queue.
 func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 
-// Hangup aborts the current turn and says what became of the messages waiting
-// behind it.
+// Hangup aborts the current turn and reports what became of the queue.
 func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	resp := rpc.InterruptResponse{OK: true, Epoch: a.inbox.Epoch()}
 
@@ -684,7 +562,7 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 		return resp
 	}
 	a.interrupted = true
-	resp.Stopped = true // there was a turn, and this is what stopped it
+	resp.Stopped = true
 	cancel := a.turnCancel
 	a.mu.Unlock()
 	if !resp.Cleared {
@@ -699,20 +577,13 @@ func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figLog.Read())
 }
 
-// appendMsg stamps the in-flight turn id onto m and appends it. Every durable
-// write of a conversation message goes through here, so the turn id can never
-// drift from the log.
+// appendMsg stamps the in-flight turn id; every durable message write goes through here.
 func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], error) {
 	m.TurnID = a.turnID
-	// THROUGH THE JOURNAL, which announces what it writes. See journal.go: the
-	// point is that there is no other way to append, so a record cannot become
-	// durable and stay invisible.
 	return a.writer().Append(store.Entry[message.Message]{Payload: m})
 }
 
-// openTurn mints the next turn id. The seed comes from the log on first use,
-// which is what makes a forked child continue its parent's numbering without
-// any explicit hand-off.
+// openTurn seeds from the log on first use, so a forked child continues its parent's numbering.
 func (a *Agent) openTurn() {
 	if a.turnID == 0 {
 		a.turnID = a.seedTurnID()
@@ -720,12 +591,7 @@ func (a *Agent) openTurn() {
 	a.turnID++
 }
 
-// seedTurnID is the last turn the log knows about: the tail's id, at the cost
-// of one record. Every record carries its own (enforced by the IR door), so
-//
-// The walk remains the fallback and is cheap where it is taken: a tail with no
-// id means a log holding nothing but pre-prompt records, since any prompt
-// opens a turn and everything after it inherits.
+// seedTurnID walks the log only when the tail carries no id (pre-prompt records only).
 func (a *Agent) seedTurnID() uint64 {
 	if tail, ok := a.figLog.PeekTail(); ok && tail.Payload.TurnID != 0 {
 		return tail.Payload.TurnID
@@ -733,9 +599,7 @@ func (a *Agent) seedTurnID() uint64 {
 	return turns.StampIDs(unwrapMessages(a.figLog.Read()))
 }
 
-// unwrapMessages projects entries to a flat []Message, stamping the two
-// coordinates that live outside the payload: LT (the WAL frame index) and,
-// for legacy entries written before turn ids existed, TurnID (derived).
+// unwrapMessages stamps LT and, for entries predating turn ids, a derived TurnID.
 func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	if len(entries) == 0 {
 		return nil
@@ -749,13 +613,11 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	return out
 }
 
-// Notifier is a sink for fanout notifications.
 type Notifier interface {
 	Notify(method string, params any) error
 }
 
-// Subscribe registers a Notifier for the live-render frame stream.
-// Returns an unsubscribe func.
+// Subscribe returns an unsubscribe func.
 func (a *Agent) Subscribe(n Notifier) func() {
 	a.mu.Lock()
 	if a.subs == nil {
@@ -820,10 +682,7 @@ func (a *Agent) sessionMetrics() *aria.Metrics {
 	}
 }
 
-// OnTeardown registers a func to run when the agent is torn down, after the
-// drain loop has exited. The angelus uses it to unbind from the aria's hub:
-// the endpoint must survive the agent, so the agent cannot own that cleanup
-// and cannot be trusted to know the endpoint exists.
+// OnTeardown runs fn after the drain loop exits; the hub endpoint must outlive the agent.
 func (a *Agent) OnTeardown(fn func()) {
 	if fn == nil {
 		return
@@ -835,7 +694,7 @@ func (a *Agent) OnTeardown(fn func()) {
 
 func (a *Agent) Kill() {
 	a.cancel()
-	<-a.done // wait for drain loop to exit
+	<-a.done
 
 	a.mu.Lock()
 	a.subs = nil
@@ -843,9 +702,7 @@ func (a *Agent) Kill() {
 	a.teardown = nil
 	a.mu.Unlock()
 
-	// Hand the sealed section's bytes back to the shared UI budget: a
-	// reclaimed agent that kept its refs would squeeze every live cache
-	// against ghosts, forever.
+	// Release the sealed section's bytes to the shared UI budget.
 	if a.ariaSrv != nil {
 		a.ariaSrv.ReleaseCache()
 	}
@@ -862,7 +719,6 @@ func (a *Agent) Kill() {
 
 }
 
-// runWithRecovery drives the drain loop and restarts on panic.
 func (a *Agent) runWithRecovery(ctx context.Context) {
 	defer close(a.done)
 
@@ -909,13 +765,8 @@ func (a *Agent) reconcileAriaServer() {
 	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
 	history := a.materializeTurns()
-	// Defensive: never wipe already-materialized state with a shorter history.
-	// reconcileAriaServer runs on mid-turn error paths whose only source of
-	// truth is a.Context() (the durable figLog). If that read returns fewer
-	// turns than the server already holds, a backend that transiently failed
-	// to open and fell back to a memory log, a cachedLog built on stale fork
-	// ancestry: replacing the good state with the short one makes Read return
-	// nothing and the live stream go silent. Keep what we have and log loudly.
+	// Never shrink materialized state: this runs on error paths whose only truth
+	// is figLog, which may be a transient fallback.
 	shorter := len(history) == 0 || history[len(history)-1].ID < oldLast
 	if oldLast > 0 && shorter {
 		newLast := uint64(0)
@@ -945,7 +796,6 @@ func (a *Agent) reconcileAriaServer() {
 	}
 }
 
-// actProtected runs the drain loop under recover.
 func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -961,7 +811,6 @@ func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	return false
 }
 
-// act is the inbox drain loop.
 func (a *Agent) act(ctx context.Context) {
 	for {
 		evt, ok := a.inbox.Recv()
@@ -970,9 +819,6 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
-			// Coalesce the waiting run. Everything queued behind this prompt
-			// with no control event in between is part of the same ask: three
-			// question, not three turns to sit through, and that is true
 			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
@@ -987,35 +833,17 @@ func (a *Agent) act(ctx context.Context) {
 	}
 }
 
-// serviceSets applies any queued form patches at a round boundary, the
-// same points steering prompts drain. Each patch lands on the in-memory
-// form (so the next provider round reads it via the snapshot) and rides
-// the next IR LT as a transition. Returns true when it serviced at least one.
+// serviceSets drains study marks at a round boundary, where a user record is legal.
 func (a *Agent) serviceSets() bool {
 	evts := a.inbox.TakeReadySet()
 	for _, evt := range evts {
-		// A ROUND BOUNDARY, which is the whole point: every tool_result of
-		// the round just finished is already appended, so a user record here
-		// is exactly a steering prompt's position and no provider can object
-		// to the form's own actor -- so a study mark is all this drains.
 		a.writeStudyMark(evt.studyMark)
 	}
 	return len(evts) > 0
 }
 
-// applyControlPatchVerdict persists a state-only patch. No LLM round-trip.
-// Backed arias append it to the reducible form channel (keyed to
-// the next IR LT, so it rides the next turn as a transition); ephemeral
-// arias fold it onto an IR control-turn (no channel to hold it).
-// It reports what the writer decided to a caller that asked to wait.
-// done may be nil, which is every path but `--wait`.
-// applyFormPatch writes a bound-form patch through the FORM's actor and
-// answers with what actually landed. It is called from whatever goroutine
-//
-// Safe off the loop because both structures it touches publish rather than
-// mutate: the durable write is serialized by store.Form's actor, and the
-// in-memory board is a form.State whose Apply is a CAS over an immutable
-// snapshot ("publish only against the board we computed from").
+// applyFormPatch is safe off the drain loop: the durable write is serialized by
+// the form's actor and the in-memory board applies by CAS over an immutable snapshot.
 func (a *Agent) applyFormPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) (uint64, message.Patch, error) {
 	v := a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
 	return v.version, v.applied, v.err
@@ -1027,7 +855,7 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 		defer func() {
 			select {
 			case done <- verdict:
-			default: // nobody is listening any more; the write still happened
+			default:
 			}
 		}()
 	}
@@ -1043,17 +871,7 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return verdict
 		}
-		// state it appends to (effectivePatch, atomic with the append) and
-		// hands back what it actually wrote; publishing the REQUESTED patch
-		// instead puts the caller's bytes on the board for a write the log
-		// never received. Today the divergence is masked -- ptree.Set is
-		// also a no-op that keeps the stored spelling for a semantically
-		// equal value -- so a re-set of {"k":[1,2]} as {"k":[ 1 , 2 ]} agrees
-		// by coincidence of two suppressions. Removing the tree's, as a
-		// canary, made the mirror hold [ 1 , 2 ] while the log held [1,2]:
-		// semantically equal, byte-different, and for array- and
-		// object-valued keys that reaches the wire. Same sentence as the
-		// lost study and as 6b2e597a; this is its third instance.
+		// Publish what the writer actually wrote, not the requested bytes.
 		patch = applied
 	} else {
 		msg := message.Message{
@@ -1074,12 +892,8 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 	return verdict
 }
 
-// formAccessor returns the per-LT transition source for the provider:
-// for backed arias, the form's patches in version order; nil for
-// ephemeral (the provider falls back to inline IR patches).
+// formAccessor is nil for an unopenable form; the provider then falls back to inline IR patches.
 func (a *Agent) formAccessor() provider.Form {
-	// Probe once: a form that cannot be opened disables transitions for the
-	// turn, exactly as the copying version did when its read failed.
 	if _, err := a.backend.FormVersion(a.id); err != nil {
 		slog.Warn("form patches (transitions disabled this turn)", "aria", a.id, "err", err)
 		return nil
@@ -1087,10 +901,8 @@ func (a *Agent) formAccessor() provider.Form {
 	return formView{backend: a.backend, id: a.id}
 }
 
-// studyAccessors is formAccessor for the observed set: one absolute accessor
-// per studied form, read from that form's LIBRETTO. The source is never
-// touched at render time, so a deleted source needs no special case -- its
-// libretto carries the death as a key and outlives it.
+// studyAccessors reads each studied form's libretto, never the source, so a
+// deleted source needs no special case.
 func (a *Agent) studyAccessors() map[string]provider.Form {
 	lb, ok := a.backend.(librettoBackend)
 	if !ok {
@@ -1111,16 +923,12 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 	return out
 }
 
-// librettoBackend is the store's libretto registry, as an optional
-// interface: an ephemeral backend has none and must not pretend.
+// librettoBackend is optional: an ephemeral backend has none.
 type librettoBackend interface {
 	Libretto(sourceFormID string) (*store.Libretto, error)
 }
 
-// librettoView is the libretto's patch view with its own bookkeeping
-// stripped: the document holds machinery beside the mirrored keys, and only
-// back empty and the projection skips it, so a fold nobody can see costs no
-// block.
+// librettoView strips the libretto's bookkeeping keys.
 type librettoView struct{ lib *store.Libretto }
 
 func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
@@ -1134,15 +942,9 @@ func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
-// withoutBookkeeping strips the libretto's machinery, COPYING only when there
-// is something to strip. The patch handed in is the store's own published
-// value, shared by every reader of that log: editing it in place edits
-// history.
+// withoutBookkeeping rebuilds the patch rather than editing it: the input is the
+// store's published value, shared by every reader.
 func withoutBookkeeping(p message.Patch) message.Patch {
-	// A patch is a difference, so bookkeeping is dropped by REBUILDING the
-	// difference without it rather than by editing fields. The patch handed
-	// in is the store's own published value, shared by every reader of that
-	// log: editing it in place edits history.
 	keep := map[string]json.RawMessage{}
 	hidden := false
 	for _, ent := range p.Entries() {
@@ -1174,8 +976,7 @@ func withoutBookkeeping(p message.Patch) message.Patch {
 	return form.Build(form.Snapshot{}, keep, drops)
 }
 
-// formView answers an absolute patch range from the store, per call, holding
-// no position of its own.
+// formView answers absolute patch ranges from the store, holding no position.
 type formView struct {
 	backend store.Backend
 	id      string
@@ -1197,20 +998,15 @@ func (v formView) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
-// endTurn fans out turn.done and persists form + meta.
-// endTurn commits the live unit (it became a real IR message) and signals idle.
+// endTurn commits the live unit and signals idle.
 func (a *Agent) endTurn(reason string) {
 	a.refreshMetrics()
-	a.emitCommit() // freeze the live unit before signaling the turn idle
+	a.emitCommit()
 	a.finishTurn(reason)
 }
 
-// endTurnDiscarding ends a turn WITHOUT committing the live unit: for a
-// mid-turn failure where the assistant message never reached figLog. Committing
-// it would leave a UI message the model log doesn't have, so the next turn
-// regenerates equivalent content and the aria shows it twice. Discarding drops
-// the partial; the client resets its single open unit when the next turn opens
-// at a new LT, so nothing duplicates.
+// endTurnDiscarding drops the live unit: the assistant message never reached figLog,
+// and committing it would show content the next turn regenerates.
 func (a *Agent) endTurnDiscarding(reason string) {
 	a.refreshMetrics()
 	a.abandonLive()
@@ -1218,21 +1014,13 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
-	// THE IN-Flight assembly dies with its turn. asm holds a strings.Builder
-	// per content block, so a finished turn that keeps it keeps the whole
-	// streamed reply resident until the NEXT turn happens to overwrite it --
-	// on an idle aria, indefinitely. Only the round currently streaming needs
-	// it; every reader of it (the live compose, the repair view) has run by
-	// the time a turn is finishing.
+	// asm holds the whole streamed reply; an idle aria must not keep it.
 	if a.turn != nil {
 		a.turn.asm = nil
 	}
 
-	// THE HISTORY IS WELL-Formed before the turn IS ANNOUNCED OVER. An
-	// interrupted turn can leave an invoke with no result, and a fork or a read
-	// taken between the announcement and the next message would see it. Doing
-	// this after the announcement instead makes the aria look active again to
-	// anyone who asks the moment they hear turn.done.
+	// Close open tool calls before announcing turn.done, or a fork or read between
+	// the announcement and the next message sees an invoke with no result.
 	if a.backend != nil {
 		if n, err := a.backend.CloseOpenToolCalls(a.id); err != nil {
 			slog.Error("close open tool calls at turn end", "aria", a.id, "err", err)
@@ -1240,16 +1028,10 @@ func (a *Agent) finishTurn(reason string) {
 			slog.Info("closed open tool calls at turn end", "aria", a.id, "calls", n)
 		}
 	}
-	// A Failed turn belongs IN THE RECORD, not only on the terminal that
-	// happened to be watching. The reason already reaches the client (the
-	// status bar notice and the inline hint); logging it at ERROR puts it
-	// in the durable sink too, so a failure survives the scrollback that
-	// one frame and absent from logs.jsonl, which held only INFO.
+	// A failed turn belongs in the durable log, not only on the watching terminal.
 	if strings.HasPrefix(reason, "error:") {
 		slog.Error("turn failed", "aria", a.id, "reason", strings.TrimSpace(strings.TrimPrefix(reason, "error:")))
 	}
-	// anything now: every node in the turn is immutable from here, and it is
-	// the moment a persisted UI-IR channel would write it (Phase 4).
 	var lts []uint64
 	if a.turnFirstLT > 0 && a.figLog != nil {
 		if last, _ := a.figLog.ReadPage(0, ^uint64(0), 1); len(last) > 0 {
@@ -1267,15 +1049,12 @@ func (a *Agent) finishTurn(reason string) {
 		Method:  rpc.MethodTurnDone,
 		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
-	// IDLE, and the verdict with it. turn.done keeps its exact shape and its
-	// exact meaning; the intrinsic carries the same fact in a form a client can
-	// resync to rather than having to have been listening at the moment.
+	// The runtime intrinsic carries the same fact as turn.done in a resyncable form.
 	a.publishRuntime(rpc.RuntimeIdle, reason)
 
 	a.publishMetadata()
 }
 
-// publishMetadata persists and fans out one actor-owned metrics snapshot.
 func (a *Agent) publishMetadata() {
 	a.mu.RLock()
 	mine := store.AriaMeta{
@@ -1298,8 +1077,7 @@ func (a *Agent) publishMetadata() {
 		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
-	// Read-modify-write: the agent owns the counts and the identity fields,
-	// and NOT the whole record. system.ttl is mirrored here by a board commit,
+	// The agent owns the counts and identity fields, not TTLMS.
 	if err := a.backend.UpdateMeta(a.id, func(m *store.AriaMeta) {
 		ttl := m.TTLMS
 		*m = mine
@@ -1353,7 +1131,6 @@ func truncLog(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// sumUsage totals tokens across messages.
 func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
 	for _, m := range msgs {
 		if m.Usage != nil {
@@ -1366,27 +1143,19 @@ func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
 	return in, out, cacheRead, cacheWrite
 }
 
-// DeleteQueued asks the aria to drop queued messages, and reports what became
-// of each requested id. Rejections are results, not errors: asking to delete
-// something the agent has already committed is a legitimate request and a
-// legitimate refusal, and the caller is told which of the two it got.
+// DeleteQueued reports rejections as results, not errors.
 func (a *Agent) DeleteQueued(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
 	return a.inbox.DeletePrompts(epoch, ids, all)
 }
 
-// UpdateQueued rewrites one queued message's text, under the same rules.
+// UpdateQueued rewrites one queued message's text.
 func (a *Agent) UpdateQueued(epoch string, id uint64, text string) (string, rpc.QueueResult) {
 	return a.inbox.UpdatePrompt(epoch, id, text)
 }
 
-// BoardAccessorFor and StudyAccessorsFor are the agent's own derivations,
-// exposed for the fig IR write path: the encoder that runs when an entry
-// LANDS needs exactly what the encoder that runs on a SEND needs, and two
-// derivations of "which patches belong to this entry" would be two answers.
-//
-// They take a backend and an aria rather than an agent because the write path
-// has no agent -- an entry can land through a daemon, a repair or a study
-// sweep, and it must translate the same way in all of them.
+// BoardAccessorFor and StudyAccessorsFor serve the fig IR write path, which has
+// no agent; an entry must translate the same way whether it lands through a
+// daemon, a repair, or a study sweep.
 func BoardAccessorFor(backend store.Backend, ariaID string) provider.Form {
 	if backend == nil {
 		return nil

@@ -1,14 +1,6 @@
 package figaro_test
 
-// THE SELF-CAST DEADLOCK, which the notes have carried since session 1:
-// "fig cast on your own aria from inside a turn hangs, because the cast
-// rides the inbox and the inbox is running the turn that issued it."
-//
-// It is the same bug as the displaced tool_result from the other end: one
-// hangs because it NEEDS the loop, one corrupted because it went AROUND the
-// loop. durable-forms' phase 9 says making study an ordinary patch on a
-// separate node should fix both, and that it should be CHECKED against both.
-// This is that check.
+// A cast from inside this aria's own turn must not wait on the loop running that turn.
 
 import (
 	"context"
@@ -34,8 +26,7 @@ func TestCastDuringOwnTurnDoesNotDeadlock(t *testing.T) {
 	submitPrompt(a, "a long turn")
 	awaitEntered(t, entered) // the loop is now busy running the turn
 
-	// A cast issued while the loop is occupied -- which is exactly what a
-	// tool call doing `fig cast` produces. It must NOT wait for the turn.
+	// A cast issued while the loop is occupied must not wait for the turn.
 	done := make(chan error, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -51,7 +42,6 @@ func TestCastDuringOwnTurnDoesNotDeadlock(t *testing.T) {
 		t.Fatal("cast blocked on a turn that had not finished: the self-cast deadlock")
 	}
 
-	// And it really cast: the role points here and the board studies it.
 	snap, err := backend.FormState(roleID)
 	require.NoError(t, err)
 	target, ok := snap.Get("target-aria")
@@ -63,13 +53,8 @@ func TestCastDuringOwnTurnDoesNotDeadlock(t *testing.T) {
 	awaitTurnDone(t, ch)
 }
 
-// Cast lost its actor-loop serialization, so the case it protected must hold
-// without it: EIGHT CASTS OF ONE FIGARO AT ONCE, into eight different roles.
-//
-// Each cast does a version-guarded read-modify-write of the same board (the
-// study set) and a patch on its own role. If the retry were wrong, studies
-// would be lost silently -- the board would name fewer roles than were cast,
-// and each missing one is a role pointing at a figaro that does not know it.
+// Eight concurrent casts of one figaro: each is a version-guarded
+// read-modify-write of the study set, and a wrong retry loses studies silently.
 func TestConcurrentCastsOfOneFigaro(t *testing.T) {
 	entered, gate := newGate()
 	prov := &gateProvider{name: "gate", entered: entered, gate: gate}
@@ -107,7 +92,7 @@ func TestConcurrentCastsOfOneFigaro(t *testing.T) {
 	}
 	require.Len(t, studies, casts, "the study set gained or lost entries: %v", studies)
 
-	// The refcounts must agree with the board, which is what the sweep checks.
+	// The refcounts must agree with the board.
 	if rec, ok := backend.(interface {
 		ReconcileLibrettos() (store.LibrettoAudit, error)
 	}); ok {

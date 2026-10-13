@@ -1,12 +1,6 @@
 package figaro
 
-// DOES THE RUNTIME INTRINSIC FORM ACTUALLY MOVE?
-//
-// Gluck reported `<id>/runtime` reading "idle" while the model was streaming
-// and while a tool was running. There are two candidate causes and they need
-// separating before anything is fixed: the states are not PUBLISHED, or they
-// are published and not READ. This test owns the publish half, deterministically
-// and for free -- no daemon, no provider, no terminal.
+// The runtime intrinsic's publish half, with no daemon, provider, or terminal.
 
 import (
 	"strings"
@@ -16,8 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// recordRuntime subscribes to the runtime intrinsic form and returns a
-// function yielding the ORDERED, DEDUPED sequence of turn states it published.
+// recordRuntime returns the ordered, deduped sequence of turn states published.
 func recordRuntime(t *testing.T, a *Agent) func() []string {
 	t.Helper()
 	var seq []string
@@ -42,9 +35,8 @@ func TestRuntimePublishesEveryTransitionOfATurn(t *testing.T) {
 	a.form = testFormWithModel(t, "mock-model-v1")
 	seq := recordRuntime(t, a)
 
-	// Drive the transitions the turn loop drives, in the order it drives them.
-	// This is a unit of the PUBLISHER, not of the loop: the loop's call sites
-	// are asserted separately by TestEveryRuntimeStateHasACallSite below.
+	// The transitions the turn loop drives, in its order; the loop's call sites
+	// are asserted separately below.
 	a.publishRuntime(rpc.RuntimeAccepted, "")
 	a.publishRuntime(rpc.RuntimeCommitting, "")
 	a.publishRuntime(rpc.RuntimeThinking, "")
@@ -66,13 +58,8 @@ func TestRuntimePublishesEveryTransitionOfATurn(t *testing.T) {
 	}
 }
 
-// EVERY STATE MUST HAVE A CALL SITE. The publisher working is worth nothing if
-// the turn loop never invokes it for a given state -- which is exactly the
-// shape of "idle while a tool runs": tooling is publishable and unpublished.
-//
-// Asserted against the SOURCE, because the alternative is driving a real
-// provider through a real tool round, and a test that cannot run in CI is a
-// test that does not run.
+// Every state must have a call site in the turn loop; asserted against the
+// source because a real tool round cannot run in CI.
 func TestEveryRuntimeStateHasACallSite(t *testing.T) {
 	src := readSources(t, "turn.go", "agent.go", "intrinsic.go")
 	for _, state := range []string{
@@ -88,16 +75,8 @@ func TestEveryRuntimeStateHasACallSite(t *testing.T) {
 	}
 }
 
-// NO KEY MAY BE BOTH A LEAF AND A BRANCH PREFIX.
-//
-// This is the general form of the bug above, and it is invisible at the call
-// site: form.Build produces an IDENTITY patch for the losing write, an identity
-// patch is legitimately not news, and nothing anywhere raises an error. The
-// symptom is a field frozen at its first value while its siblings update
-// normally -- which reads as "the feature half works" rather than as a bug.
-//
-// Asserted over every key an intrinsic form publishes, so the next key added
-// cannot reintroduce it.
+// No key may be both a leaf and a branch prefix: form.Build yields an identity
+// patch for the losing write and nothing raises. Asserted over every published key.
 func TestNoIntrinsicKeyShadowsAnother(t *testing.T) {
 	a := newTestAgentForQueue(t)
 	a.form = testFormWithModel(t, "mock-model-v1")

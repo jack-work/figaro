@@ -7,8 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Arias minted before the rename carry system.loadout_* on their form,
-// which is immutable history.
+// Arias minted before the rename carry system.loadout_*, which is immutable history.
 func TestSnapshotOutfitFallsBackToLegacyFormKeys(t *testing.T) {
 	s := form.FromMap(map[string]json.RawMessage{
 		"system.loadout_name":    json.RawMessage(`"legacy"`),

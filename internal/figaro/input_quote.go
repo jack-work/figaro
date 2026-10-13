@@ -12,13 +12,8 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// quoteRewrite resolves a leading `<lt.block:start-end>!` against the log and
-// replaces it with a short quote of the passage it names. The agent already
-// holds the passage in its context; what it needs is enough to recognise it.
-//
-// The rewrite happens ONCE, at the door, and the log holds the resolved text.
-// A replay, a re-read and a fork all see what the model saw, and the
-// coordinate never has to be re-resolvable.
+// quoteRewrite replaces a leading `<lt.block:start-end>!` with a short quote of
+// the passage. It runs once, at the door; the log holds the resolved text.
 type quoteRewrite struct{}
 
 func (quoteRewrite) Name() string { return "quote" }
@@ -29,8 +24,7 @@ func (q quoteRewrite) Rewrite(ctx context.Context, view InputView, text string) 
 		return text, nil
 	}
 	if err != nil {
-		// quote.Parse says "quote: <token>: why"; the list adds its own
-		// name, so hand back the part after it.
+		// quote.Parse's own prefix is stripped; the list adds its name.
 		return "", errors.New(strings.TrimPrefix(err.Error(), "quote: "))
 	}
 	b, err := quoteBudget(view.Settings)
@@ -39,22 +33,15 @@ func (q quoteRewrite) Rewrite(ctx context.Context, view InputView, text string) 
 	}
 	passage, err := resolveQuote(ctx, view.Log, r, b)
 	if err != nil {
-		// The refusal names the token it refuses, so a reader who typed two
-		// can tell which.
 		return "", fmt.Errorf("<%s>: %w", text[1:strings.IndexByte(text, '>')], err)
 	}
 	return renderQuote(view, r, passage) + rest, nil
 }
 
-// budget is how much of a passage the quote may COPY: runes from the front,
-// runes from the back. It is the bound on everything below: the passage itself
-// is walked, never materialized.
+// budget bounds the runes copied from each end; the passage is walked, never materialized.
 type budget struct{ head, tail int }
 
-// quoteBudget reads [quote] and refuses a budget that cannot quote anything.
-// Zero is a real value on either end (head=0 quotes only the tail), but zero on
-// BOTH ends used to mean "send the whole passage", which is an unbounded
-// default arrived at by accident. Negative is an error, not a clamp.
+// quoteBudget refuses zero on both ends (an unbounded quote) and any negative.
 func quoteBudget(l *config.Loaded) (budget, error) {
 	b := budget{head: config.QuoteHeadDefault, tail: config.QuoteTailDefault}
 	if l != nil {
@@ -69,17 +56,14 @@ func quoteBudget(l *config.Loaded) (budget, error) {
 	return b, nil
 }
 
-// passage is what the reader will see and how much was behind it: the two ends
-// the budget allowed, and nothing of the middle.
+// passage is the two ends the budget allowed and a count of the middle.
 type passage struct {
 	head, tail string
 	total      int  // runes in the passage, whether or not they were copied
 	truncated  bool // there is a middle, and it was dropped
 }
 
-// resolveQuote is LT -> message -> block -> a window of runes, with a refusal
-// at every step that names what it found instead. Text is streamed through the
-// clip a block at a time and the middle is never held.
+// resolveQuote streams text through the clip a block at a time; the middle is never held.
 func resolveQuote(ctx context.Context, log LogReader, r quote.Range, b budget) (passage, error) {
 	if log == nil {
 		return passage{}, errors.New("no log to resolve against")
@@ -126,9 +110,7 @@ func resolveQuote(ctx context.Context, log LogReader, r quote.Range, b budget) (
 	return c.passage(), nil
 }
 
-// writeSpan walks the span a block at a time: the head of the first block from
-// its offset, every text block between, and the tail of the last to its offset.
-// It STOPS at the end coordinate, and the clip keeps only the two ends.
+// writeSpan walks the span a block at a time and stops at the end coordinate.
 func writeSpan(ctx context.Context, c *clip, log LogReader, r quote.Range) error {
 	first, err := quoteMessage(log, r.Start.LT)
 	if err != nil {
@@ -142,8 +124,7 @@ func writeSpan(ctx context.Context, c *clip, log LogReader, r quote.Range) error
 	if err != nil {
 		return err
 	}
-	// The last block is resolved FIRST, so a span that names a block with no
-	// text refuses before a million intervening runes are walked.
+	// The last block is resolved first, so a bad end refuses before the walk.
 	last, err := quoteMessage(log, r.End.LT)
 	if err != nil {
 		return err
@@ -157,9 +138,7 @@ func writeSpan(ctx context.Context, c *clip, log LogReader, r quote.Range) error
 		return err
 	}
 	c.write(head)
-	// Whole blocks between the two ends, walking messages by LT. Blocks
-	// without text (a tool call) are skipped rather than refused: the reader
-	// selected across them, they did not name them.
+	// Blocks without text (a tool call) are skipped, not refused: the reader selected across them.
 	for lt := r.Start.LT; lt <= r.End.LT; lt++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -231,7 +210,6 @@ func blockCount(n int) string {
 	return fmt.Sprintf("%d blocks", n)
 }
 
-// writeMessage streams every text block of a message through the clip.
 func writeMessage(c *clip, msg message.Message, lt uint64) error {
 	had := false
 	for _, blk := range msg.Content {
@@ -246,10 +224,7 @@ func writeMessage(c *clip, msg message.Message, lt uint64) error {
 	return nil
 }
 
-// runeWindow is s[start:end) counted in RUNES, returned as a substring: it
-// shares the block's bytes and copies nothing. end < 0 means to the end.
-// Offsets are checked against the block's rune count, and the refusal says the
-// count.
+// runeWindow is s[start:end) in runes, as a substring sharing the block's bytes. end < 0 means to the end.
 func runeWindow(s string, at quote.Coord, end int) (string, error) {
 	n := utf8.RuneCountInString(s)
 	if end < 0 {
@@ -262,7 +237,6 @@ func runeWindow(s string, at quote.Coord, end int) (string, error) {
 	return s[from : from+byteAt(s[from:], end-at.Offset)], nil
 }
 
-// byteAt is the byte index k runes into s.
 func byteAt(s string, k int) int {
 	i := 0
 	for ; k > 0 && i < len(s); k-- {
@@ -272,9 +246,7 @@ func byteAt(s string, k int) int {
 	return i
 }
 
-// lastRunesAt is the byte index where the last k runes of s begin. It walks
-// back from the end, so a block far longer than the budget is not scanned
-// twice.
+// lastRunesAt walks back from the end, so a long block is not scanned twice.
 func lastRunesAt(s string, k int) int {
 	i := len(s)
 	for ; k > 0 && i > 0; k-- {
@@ -284,7 +256,6 @@ func lastRunesAt(s string, k int) int {
 	return i
 }
 
-// byteFromEnd is the byte index where the last k runes of b begin.
 func byteFromEnd(b []byte, k int) int {
 	i := len(b)
 	for ; k > 0 && i > 0; k-- {
@@ -294,9 +265,7 @@ func byteFromEnd(b []byte, k int) int {
 	return i
 }
 
-// clip keeps the head and the tail of a passage and counts the rest. THE COST
-// OF A QUOTE IS ITS OUTPUT: a four-megabyte selection is walked once, block by
-// block, and what is held is head+tail runes plus two integers.
+// clip holds head+tail runes plus two counters; the passage is walked once.
 type clip struct {
 	budget
 	headBuf   []byte
@@ -307,7 +276,6 @@ type clip struct {
 	blocks    int
 }
 
-// write folds one block (or one separator) into the two ends.
 func (c *clip) write(s string) {
 	if c.blocks > 0 {
 		c.fold(blockSep)
@@ -316,7 +284,6 @@ func (c *clip) write(s string) {
 	c.fold(s)
 }
 
-// blockSep is what the reader sees between two blocks of one quote.
 const blockSep = "\n\n"
 
 func (c *clip) fold(s string) {
@@ -337,9 +304,7 @@ func (c *clip) fold(s string) {
 		return
 	}
 	if n >= c.tail {
-		// This block alone fills the tail: drop what came before it and keep
-		// its last runes, found by walking back from the end rather than
-		// forward from the start. Nothing longer than the budget is copied.
+		// This block alone fills the tail: keep its last runes, walking back from the end.
 		c.tailBuf = append(c.tailBuf[:0], s[lastRunesAt(s, c.tail):]...)
 		c.tailRunes = c.tail
 		return
@@ -353,8 +318,7 @@ func (c *clip) fold(s string) {
 	}
 }
 
-// passage assembles what was kept. When nothing was dropped the two ends
-// overlap, and the tail supplies exactly the runes the head did not take.
+// When nothing was dropped the two ends overlap and the tail supplies what the head did not take.
 func (c *clip) passage() passage {
 	if c.total > c.head+c.tail {
 		return passage{head: string(c.headBuf), tail: string(c.tailBuf), total: c.total, truncated: true}
@@ -363,8 +327,7 @@ func (c *clip) passage() passage {
 	return passage{head: string(c.headBuf), tail: string(rest), total: c.total}
 }
 
-// renderQuote is the block the agent receives, and the one the terminal
-// reads back as chrome: see api/quote.Block.
+// renderQuote is the block the agent receives; see api/quote.Block.
 func renderQuote(view InputView, r quote.Range, p passage) string {
 	ellipsis, gutter, header := config.QuoteEllipsisDefault, config.QuoteGutterDefault, true
 	if l := view.Settings; l != nil {

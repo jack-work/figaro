@@ -14,13 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The fold is a property of DRAINING, not of interrupting. These pin the two
-// rules that were wrong: what the idle drain takes, and what a cancelled turn
-// is allowed to take.
+// The fold is a property of draining, not of interrupting.
 
-// Messages queued behind a turn that has FINISHED are one question, not one
-// turn each. This is the reported case: four sends chained with && against an
-// idle aria: the first opens a turn, the rest pile up behind it.
+// Messages queued behind a finished turn are one question.
 func TestDrain_QueuedRunBecomesOneInquiry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -30,7 +26,6 @@ func TestDrain_QueuedRunBecomesOneInquiry(t *testing.T) {
 	b.Send(event{typ: eventUserPrompt, text: "test3"})
 	b.Send(event{typ: eventUserPrompt, text: "test4"})
 
-	// What act() does: take one, then the contiguous run behind it.
 	first, ok := b.Recv()
 	require.True(t, ok)
 	batch := append([]event{first}, b.TakeReadyUserPrompts()...)
@@ -41,7 +36,7 @@ func TestDrain_QueuedRunBecomesOneInquiry(t *testing.T) {
 	assert.True(t, b.IsIdle(), "the whole run is drained, not one message of it")
 }
 
-// A LONE submit is still exactly itself: one message, its own id, no folding.
+// A lone submit is exactly itself.
 func TestDrain_LoneSubmitIsUntouched(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -59,8 +54,7 @@ func TestDrain_LoneSubmitIsUntouched(t *testing.T) {
 	assert.Empty(t, merged.merged)
 }
 
-// The barrier survives at this drain site too: a queued set still splits the
-// run, so a prompt is never answered against a form it never saw.
+// A queued set still splits the run, so a prompt is never answered against a form it never saw.
 func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -80,15 +74,8 @@ func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 	assert.Equal(t, eventStudyMark, b.pending()[0].typ)
 }
 
-// THE BUG BEHIND "the messages were received, but the turn ended abruptly".
-//
-// A drain that runs after the cancel appends the queued messages to the log -
-// so they appear on screen, "received", and hands them to a round that opens
-// with an already-dead context. That round dies at once and the messages go
-// with it: committed to the conversation, never answered, and gone from the
-// queue that would have re-asked them.
-//
-// The rule is that a cancelled turn takes nothing with it.
+// A drain after the cancel hands queued messages to a round with a dead
+// context: committed, never answered, gone from the queue. A cancelled turn takes nothing.
 func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 	for _, drain := range []struct {
 		name string
@@ -106,12 +93,10 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 			a.inbox.Send(event{typ: eventUserPrompt, text: "one"})
 			a.inbox.Send(event{typ: eventUserPrompt, text: "two"})
 
-			// Not interrupted: the drain does its job, as it always has.
 			require.NoError(t, drain.call(a))
 			require.True(t, a.inbox.IsIdle(), "an uninterrupted drain takes the batch")
 			require.Equal(t, base+1, a.figLog.Len(), "and appends it as ONE message")
 
-			// Interrupted: it takes nothing.
 			a.inbox.Send(event{typ: eventUserPrompt, text: "three"})
 			a.inbox.Send(event{typ: eventUserPrompt, text: "four"})
 			a.mu.Lock()
@@ -129,9 +114,7 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 	}
 }
 
-// newDrainTestAgent builds the smallest Agent the drain paths touch, WITHOUT
-// starting the actor: the point is to call the drain deliberately, and a
-// running drain loop would race the test for its own queue.
+// newDrainTestAgent does not start the actor: a running drain loop would race the test for its queue.
 func newDrainTestAgent(t *testing.T, ctx context.Context) *Agent {
 	t.Helper()
 	board, _ := form.Open("")

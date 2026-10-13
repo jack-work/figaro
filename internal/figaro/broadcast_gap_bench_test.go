@@ -13,15 +13,8 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// The window under measurement is appendUserPrompt's tail: everything that
-// runs between the durable append and OpenInquiry (the broadcast). Today
-// that is Kick + refreshMetrics; the question is what it costs on a large
-// aria, since a watching client cannot see the question until it clears.
-//
-// realisticLog builds a conversation shaped like a real one: prose in,
-// tool output back, usage stamped on every assistant message: because the
-// cost of the full fold is dominated by content bytes and by whether
-// tokens.ContextSize can take its usage watermark shortcut.
+// The window between the durable append and OpenInquiry. realisticLog stamps
+// usage on every assistant message so tokens.ContextSize can take its shortcut.
 func realisticLog(tb testing.TB, n int, withUsage bool) store.Log[message.Message] {
 	tb.Helper()
 	log := store.NewMemLog[message.Message]()
@@ -69,14 +62,8 @@ func gapAgent(tb testing.TB, n int, withUsage bool) *Agent {
 	return a
 }
 
-// BenchmarkPromptBroadcastGap measures the two regimes refreshMetrics can be
-// in when appendUserPrompt calls it, right after the user message landed:
-//
-//	incremental: the production case. metricsLT is one row behind the tail,
-//	              so the fold reads exactly the row just appended.
-//	fallback: refreshMetricsFrom(a.Context()): full log copy, full
-//	              re-estimate, full recount. Only reachable when the log
-//	              REWOUND under the agent (tail.LT < metricsLT).
+// Two regimes of refreshMetrics after a prompt lands: incremental (one row
+// behind the tail) and the full fallback (tail.LT < metricsLT).
 func BenchmarkPromptBroadcastGap(b *testing.B) {
 	for _, n := range []int{100, 1_000, 5_000} {
 		for _, usage := range []bool{true, false} {
@@ -90,8 +77,7 @@ func BenchmarkPromptBroadcastGap(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Put the agent back one row behind the tail, which is
-					// exactly where an append leaves it, then do the work.
+					// One row behind the tail, where an append leaves it.
 					a.mu.Lock()
 					a.metricsLT = tail.LT - 1
 					a.mu.Unlock()
@@ -110,8 +96,7 @@ func BenchmarkPromptBroadcastGap(b *testing.B) {
 	}
 }
 
-// BenchmarkPromptBroadcastControl isolates the two non-metrics costs in the
-// same window, so the metrics number can be read against something.
+// The two non-metrics costs in the same window.
 func BenchmarkPromptBroadcastControl(b *testing.B) {
 	for _, n := range []int{100, 1_000, 5_000} {
 		b.Run(fmt.Sprintf("messages=%d/open-inquiry", n), func(b *testing.B) {

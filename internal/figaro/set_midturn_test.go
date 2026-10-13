@@ -16,8 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// snapshotWatchProvider records the board each send was given and blocks in
-// the middle of one, so a set can land while a turn is in flight.
+// snapshotWatchProvider records the board each send was given and blocks mid-send.
 type snapshotWatchProvider struct {
 	mu      sync.Mutex
 	seen    []string
@@ -42,7 +41,6 @@ func (p *snapshotWatchProvider) Send(_ context.Context, in provider.SendInput, b
 	p.seen = append(p.seen, got)
 	p.mu.Unlock()
 
-	// Hold the FIRST send open, so the set below lands mid-turn.
 	p.once.Do(func() {
 		close(p.entered)
 		<-p.release
@@ -53,17 +51,8 @@ func (p *snapshotWatchProvider) Send(_ context.Context, in provider.SendInput, b
 	return nil
 }
 
-// A SET THAT LANDS MID-TURN DOES NOT CHANGE THE REQUEST IN FLIGHT, AND THE
-// NEXT TURN SEES IT.
-//
-// This is the ONE property the queue hop bought: bound-form sets rode the
-// figaro's own inbox and were applied at a round boundary, so a set could not
-// move the board under a running turn. Sending them straight to the form's
-// actor removes that serialization, so the property has to be true for a
-// different reason -- the turn samples the board ONCE, at send.
-//
-// If this goes red, the board is being re-read mid-turn and unqueueing a set
-// is a correctness change rather than a scheduling one.
+// A set landing mid-turn does not change the request in flight, and the
+// next turn sees it: the turn samples the board once, at send.
 func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	p := &snapshotWatchProvider{entered: make(chan struct{}), release: make(chan struct{})}
 	cb, _ := form.Open("")
@@ -97,7 +86,6 @@ func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 		t.Fatal("the provider never entered Send")
 	}
 
-	// THE TURN IS RUNNING. Move the board.
 	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"probe": json.RawMessage(`"during"`),
 	}, nil), 0)

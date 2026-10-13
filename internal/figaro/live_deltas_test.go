@@ -16,9 +16,7 @@ import (
 	"path/filepath"
 )
 
-// A LIVE aria's pages must carry the same form deltas a dormant read
-// shows: the transcript telling two stories keyed on liveness is the bug
-// this exists to keep dead ('saw it once, then never', 2026-08-13).
+// A live aria's pages carry the same form deltas a dormant read shows.
 func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
@@ -38,7 +36,6 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	lib, err := backend.Libretto(src)
 	require.NoError(t, err)
 
-	// Two records with a studied-form change folded between their stamps.
 	log, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
@@ -60,7 +57,6 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 		Content: []message.Content{message.TextContent("ONE.")}}})
 	require.NoError(t, err)
 
-	// A LIVE agent over that history, exactly as restore builds one.
 	snap, err := backend.FormState(id)
 	require.NoError(t, err)
 	cb, err := form.Open("")
@@ -92,9 +88,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 		t.Fatalf("the live agent's page carries no delta for %s.phase: %+v", src, page.Parts)
 	}
 
-	// And through the CLIENT fold, which is what `listen` renders from. The
-	// fold rebuilds messages field by field; the turn-level deltas were
-	// dropped there once, invisibly, while the wire carried them fine.
+	// And through the client fold, which rebuilds messages field by field and once dropped turn-level deltas.
 	cl := client.NewClient()
 	var folded []aria.Message
 	cl.OnClosed = func(m aria.Message) { folded = append(folded, m) }

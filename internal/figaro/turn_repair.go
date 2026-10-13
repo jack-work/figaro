@@ -11,10 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// InterruptedToolNotice is the text a tool_result carries when its tool never
-// finished because the turn was interrupted. It is EXPORTED because it is the
-// only DURABLE mark an interrupt leaves: repairTurnTail runs when the agent
-// knows it was interrupted, and a client that merely dies never makes it run.
+// InterruptedToolNotice is the only durable mark an interrupt leaves.
 const InterruptedToolNotice = "interrupted: tool execution did not complete"
 
 type turnTool struct {
@@ -32,8 +29,7 @@ type turnState struct {
 	states    map[string]turnTool
 	committed bool
 
-	// assistantOracle/toolsOracle are written only by the equivalence oracle
-	// in turn_shadow_test.go.
+	// assistantOracle/toolsOracle are written only by the test oracle.
 	assistantOracle message.Message
 	toolsOracle     []turnTool
 }
@@ -42,9 +38,7 @@ func newTurnState() *turnState {
 	return &turnState{states: map[string]turnTool{}}
 }
 
-// repairView materializes what the repair needs: the aborted assistant
-// message and its tools, with outcomes folded in. Called on failure, not per
-// event.
+// repairView materializes the aborted assistant message and its tools, on failure only.
 func (t *turnState) repairView() (message.Message, []turnTool) {
 	var src *message.Message
 	switch {
@@ -63,8 +57,7 @@ func (t *turnState) repairView() (message.Message, []turnTool) {
 	return assistant, tools
 }
 
-// stageAssistant records the durable candidate. A failed append must preserve
-// what the provider produced, not what the drain assembled.
+// stageAssistant keeps what the provider produced, not what the drain assembled.
 func (a *Agent) stageAssistant(e *store.Entry[message.Message]) {
 	if a.turn == nil || e == nil {
 		return

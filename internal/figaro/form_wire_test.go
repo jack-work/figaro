@@ -21,9 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// formSpyProvider captures the IR messages EncodeMessage is called
-// with so tests can inspect the per-message Patches the agent
-// attached during catchUpTranslation.
+// formSpyProvider captures the IR messages EncodeMessage is called with.
 type formSpyProvider struct {
 	mu       sync.Mutex
 	encoded  []message.Message
@@ -36,8 +34,7 @@ func (p *formSpyProvider) Fingerprint() string                                  
 func (p *formSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *formSpyProvider) SetModel(string)                                        {}
 
-// encode records every message it's asked to encode. Returns a stub
-// payload so the cache lookup hits next turn.
+// encode returns a stub payload so the cache lookup hits next turn.
 func (p *formSpyProvider) encode(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 	p.mu.Lock()
 	p.encoded = append(p.encoded, msg)
@@ -60,8 +57,7 @@ func (p *formSpyProvider) sendCount() int {
 	return p.sentRuns
 }
 
-// lastTurnPatches returns the patches attached to the most recent
-// user-role message handed to EncodeMessage. Empty if none.
+// lastTurnPatches is the patches on the most recent user-role message encoded.
 func (p *formSpyProvider) lastTurnPatches() []message.Patch {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -73,8 +69,6 @@ func (p *formSpyProvider) lastTurnPatches() []message.Patch {
 	return nil
 }
 
-// runOneTurn submits a prompt with the given form input and waits
-// for the turn to complete (via turn.done).
 func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.FormInput) {
 	t.Helper()
 	sub, unsub := subscribeChan(a)
@@ -95,8 +89,6 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.FormInput) {
 	}
 }
 
-// newAgentWithForm builds an Agent wired with a per-aria
-// *form.State and the embedded default templates.
 func newAgentWithForm(t *testing.T) (*figaro.Agent, *formSpyProvider, *form.State) {
 	t.Helper()
 	dir := t.TempDir()
@@ -118,18 +110,10 @@ func newAgentWithForm(t *testing.T) (*figaro.Agent, *formSpyProvider, *form.Stat
 	return a, prov, cb
 }
 
-// --- Wire-protocol coverage ---
-//
-// With log unification, the agent attaches one combined patch to the
-// in-progress tic per user-prompt event. We assert patch presence and
-// keys; rendering is the provider's job (covered in
-// internal/provider/anthropic).
-
 func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	a, prov, _ := newAgentWithForm(t)
 
-	// First turn always carries the bootstrap patch: burn it off
-	// so the assertions test steady-state Context/Patch semantics.
+	// Burn off the bootstrap patch the first turn carries.
 	runOneTurn(t, a, "boot", nil)
 
 	cb1 := &rpc.FormInput{
@@ -139,8 +123,6 @@ func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	}
 	runOneTurn(t, a, "first", cb1)
 	require.Equal(t, 2, prov.sendCount())
-	// The patch lands in the FORM CHANNEL, not on the message: an aria is
-	// always backed, so there is no inline-patch path any more.
 	cwd, _ := a.Snapshot().Get("cwd")
 	assert.Equal(t, `"/home/alpha"`, string(cwd))
 }
@@ -184,10 +166,7 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
 		Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{
-			// NOT "model": that key is harness-owned, and an unprivileged
-			// write to it is refused -- which takes the whole patch down
-			// with it. The ephemeral path used to hide that by stapling the
-			// patch to the message instead of applying it.
+			// Not "model": a harness-owned key refuses the whole patch.
 			"note": json.RawMessage(`"combined"`),
 		}, nil)),
 	}
@@ -210,10 +189,7 @@ func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
 }
 
 func TestWire_Context_IsAdditive(t *testing.T) {
-	// Context is purely additive: keys present in the snapshot but
-	// absent from a subsequent Context are NOT removed. This lets
-	// clients ship a partial view (just the keys they own: cwd,
-	// datetime, env) without racing concurrent set/unset.
+	// Context is additive: a partial view must not race concurrent set/unset.
 	a, prov, _ := newAgentWithForm(t)
 
 	runOneTurn(t, a, "first", &rpc.FormInput{
@@ -230,13 +206,8 @@ func TestWire_Context_IsAdditive(t *testing.T) {
 }
 
 func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
-	// A loaded form may contain keys (skills, outfit
-	// values, etc.) the client never carries in Context. Sending a
-	// Context turn whose contents differ from those keys must not
-	// remove them: only set the keys the client explicitly named.
 	a, prov, cb := newAgentWithForm(t)
 
-	// Seed something the client does NOT carry in Context.
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.go": json.RawMessage(`{"description":"go body"}`),
 	}, nil))
@@ -255,17 +226,12 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 		_, hadSkills := p.Entry("skills.go")
 		assert.False(t, hadSkills, "Context must not republish snapshot-only keys")
 	}
-	// Snapshot key survives.
 	snap := cb.Snapshot()
 	ok := snap.Has("skills.go")
 	assert.True(t, ok, "skills.go must remain on the form")
 }
 
-// A conditional set is the guard a read-modify-write needs: `fig set x[0]` reads
-// the value, edits it in the client, and writes the whole key back, so a second
-// shell doing the same thing must not silently win. The check happens in the
-// form's writer, atomically with the append: checking at accept would answer
-// about a version the patch never met.
+// A conditional set is checked in the form's writer, atomically with the append.
 func TestSetRefusesAStaleVersion(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
@@ -284,16 +250,12 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 		return ok && string(v) == `1` && read > 0
 	}, time.Second, 5*time.Millisecond)
 
-	// Someone else writes in between: `read` is stale by the time this lands.
 	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{"b": json.RawMessage(`2`)}, nil), 0)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return a.Version() > read }, time.Second, 5*time.Millisecond)
 	moved := a.Version()
 
-	// THE REFUSAL REACHES THE CALLER NOW. It used to happen at the writer, a
-	// round boundary later, and reach nobody but the daemon log -- a
-	// conditional write that vanished. The set is applied by the form's own
-	// actor before this returns, so the stale version is answered here.
+	// The refusal reaches the caller: the form's actor applies before this returns.
 	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{"a": json.RawMessage(`3`)}, nil), read)
 	require.Error(t, err, "a stale conditional set must be refused to the caller")
 	v, _ := a.Snapshot().Get("a")
@@ -308,10 +270,7 @@ func mustForm(t *testing.T) *form.State {
 	return st
 }
 
-// A REFUSED KEY REACHES THE CALLER. The form input is applied when the prompt
-// is submitted, so a harness-owned key comes back as an error on the reply the
-// caller is already waiting for -- where it used to be applied inside the turn,
-// long after the RPC returned, and could only be logged.
+// A refused key reaches the caller on the reply it is waiting for.
 func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
 	a, _, _ := newAgentWithForm(t)
 
@@ -324,7 +283,6 @@ func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
 	require.Error(t, err, "a harness-owned key must be refused to the caller's face")
 	require.Contains(t, err.Error(), "model")
 
-	// And the refusal is atomic: nothing from that patch landed.
 	_, ok := a.Snapshot().Get("model")
 	require.False(t, ok)
 }

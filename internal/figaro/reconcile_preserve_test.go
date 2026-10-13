@@ -38,30 +38,17 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 		figLog:  log,
 		ariaSrv: aria.NewServer(),
 		inbox:   NewInbox(context.Background()),
-		// These tests assert PROJECTION behaviour, so they must supply a
-		// projector. The engine itself may not import internal/compose: see
-		// projector_boundary_test.go: but a test binary may, which is exactly
-		// the separation the Projector interface buys.
+		// The engine may not import internal/compose; a test binary may.
 		proj: uiir.New(nil),
 	}
 	a.bindProvider(reconcileNoopProvider{})
 	return a
 }
 
-// TestReconcileAriaServer_PreservesStateOnShorterHistory pins the fix
-// for the interrupted-mid-turn bug: when reconcileAriaServer runs on a
-// broken/empty figLog it must NOT wipe already-committed ariaSrv state.
-// Without this guard, a mid-turn error path that reads back fewer units
-// than the ariaSrv already holds (because Open failed silently, cachedLog
-// was constructed on a stale head/fork ancestry, or the log was replaced
-// with an empty ephemeral fallback) causes Read to return 0 units and
-// the live-subscribe stream to go silent. Cleanly-idle arias are
-// unaffected because they never enter this code path: matches the
-// reported symptom.
+// reconcileAriaServer on a broken or empty figLog must not wipe committed state.
 func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 	a := newBareAgent(t, store.NewMemLog[message.Message]()) // empty log
 	a.id = "recon-001"
-	// Seed ariaSrv with three sealed turns: imagine a healthy aria.
 	for i := uint64(1); i <= 3; i++ {
 		a.ariaSrv.Commit(aria.Turn{
 			ID:     i,
@@ -73,8 +60,6 @@ func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 	require.Equal(t, uint64(3), a.ariaSrv.LastTurn())
 	require.False(t, a.ariaSrv.HasOpen())
 
-	// figLog is empty -> compose.Turns returns nothing. Prior behavior:
-	// Restore(nil) would wipe history. Fix: state preserved.
 	a.reconcileAriaServer()
 
 	assert.Equal(t, uint64(3), a.ariaSrv.LastTurn(),
@@ -85,12 +70,9 @@ func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 		"a read after reconcile must still return the three original turns")
 }
 
-// TestReconcileAriaServer_AllowsGrow verifies the guard doesn't block
-// the intended path: when history >= current closed, Restore proceeds
-// normally and the ariaSrv gets refreshed.
+// When history covers the current state, Restore proceeds.
 func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 	logMem := store.NewMemLog[message.Message]()
-	// Two durable messages that produce two compose.Units.
 	_, err := logMem.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")},
 	}})
@@ -100,8 +82,7 @@ func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Ensure the log actually yields one turn under compose (a prompt and its
-	// reply are ONE exchange now, not two units).
+	// A prompt and its reply are one exchange, not two units.
 	turns := compose.Turns(unwrapMessages(logMem.Read()))
 	require.Len(t, turns, 1)
 

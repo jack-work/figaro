@@ -1,12 +1,10 @@
-// Package figaro implements the agent: a long-lived process owning
-// a chat context, provider, model, and form.
+// Package figaro implements the agent: a long-lived actor owning a chat context, provider, model, and form.
 package figaro
 
 import (
 	"time"
 )
 
-// Figaro is a single agent instance.
 type Figaro interface {
 	ID() string
 	SocketPath() string
@@ -14,15 +12,11 @@ type Figaro interface {
 	Info() FigaroInfo
 	Kill()
 
-	// TurnActive reports whether a turn is in flight. Separate from Info()
-	// on purpose: Info takes the agent's lock and can block (see
-	// TestRegistryListDoesNotHoldRegistryLockDuringInfo), and this is asked
-	// on the authorization path of every fork request. It is a lock-free
-	// atomic load, so a policy check can never stall the caller it guards.
+	// TurnActive is a lock-free atomic load: it is asked on the authorization
+	// path of every fork request, and Info takes the agent's lock.
 	TurnActive() bool
 }
 
-// FigaroInfo holds metadata about a figaro.
 type FigaroInfo struct {
 	ID               string    `json:"id"`
 	State            string    `json:"state"` // "active", "idle"
@@ -38,16 +32,11 @@ type FigaroInfo struct {
 	ContextExact     bool      `json:"context_exact"`      // true if from Usage watermark
 	CreatedAt        time.Time `json:"created_at"`
 	LastActive       time.Time `json:"last_active"`
-	// AgentSince is when THIS agent was constructed: birth for a created
-	// aria, the wake for a restored one. LastActive is the last turn, which a
-	// wake by a non-turn method (figaro.queued, figaro.study) does not move.
-	// Reclamation clocks read the later of the two, so a wake buys a full
-	// dormant window instead of being undone on the next sweep.
+	// AgentSince is this agent's construction (birth or wake); LastActive is the
+	// last turn. Reclamation reads the later of the two.
 	AgentSince time.Time `json:"agent_since"`
-	// WokeBy is the RPC method that restored a dormant aria, empty when the
-	// agent was born with the aria. A sweep that reclaims a woken aria which
-	// never took a turn reports it, so a poller that keeps waking arias is
-	// named in the log instead of showing up as CPU (issue #22).
+	// WokeBy names the RPC method that restored a dormant aria, so a poller that
+	// keeps waking arias is named in the log.
 	WokeBy        string `json:"woke_by,omitempty"`
 	Mantra        string `json:"mantra"`
 	Cwd           string `json:"cwd"`

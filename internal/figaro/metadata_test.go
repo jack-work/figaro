@@ -17,9 +17,7 @@ func (b *metadataCaptureBackend) SetMeta(_ string, meta *store.AriaMeta) error {
 	return nil
 }
 
-// UpdateMeta is how the agent publishes: read-modify-write, because the
-// sidecar has a second writer (a board commit mirroring system.ttl) whose
-// field a whole-record write would erase.
+// UpdateMeta is read-modify-write: a board commit mirroring system.ttl is a second writer.
 func (b *metadataCaptureBackend) UpdateMeta(_ string, mutate func(*store.AriaMeta)) error {
 	cur := &store.AriaMeta{}
 	if b.meta != nil {
@@ -53,8 +51,7 @@ func TestPublishMetadataUsesIncrementalActorState(t *testing.T) {
 	}
 }
 
-// The agent owns its counts and NOT the whole record: a lifetime mirrored
-// from the board must survive every turn the aria takes.
+// The agent owns its counts, not the whole record.
 func TestPublishMetadataPreservesTheLifetime(t *testing.T) {
 	backend := &metadataCaptureBackend{meta: &store.AriaMeta{TTLMS: 3600_000, CreatedAtMS: 42}}
 	a := &Agent{id: "aria", backend: backend, messageCount: 7}

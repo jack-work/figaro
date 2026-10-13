@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// limitProvider is a perfProvider that also reports a context limit.
 type limitProvider struct {
 	perfProvider
 	limit int
@@ -23,19 +22,17 @@ func TestResolveContextLimitPrecedence(t *testing.T) {
 	pinned := form.FromMap(map[string]json.RawMessage{"system.max_context_tokens": json.RawMessage(`200000`)})
 	bogus := form.FromMap(map[string]json.RawMessage{"system.max_context_tokens": json.RawMessage(`"big"`)})
 
-	// The form pin is an override: it beats the provider both ways.
+	// The form pin beats the provider both ways.
 	assert.Equal(t, 200_000,
 		resolveContextLimit(limitProvider{limit: 1_000_000}, "claude-opus-5", pinned))
 	assert.Equal(t, 200_000,
 		resolveContextLimit(limitProvider{limit: 100_000}, "claude-opus-5", pinned))
 
-	// Unset (or unusable): the provider answers.
 	assert.Equal(t, 1_000_000,
 		resolveContextLimit(limitProvider{limit: 1_000_000}, "claude-opus-5", form.Snapshot{}))
 	assert.Equal(t, 1_000_000,
 		resolveContextLimit(limitProvider{limit: 1_000_000}, "claude-opus-5", bogus))
 
-	// A provider with no opinion still honors the pin, and reports 0 without.
 	assert.Equal(t, 200_000, resolveContextLimit(perfProvider{}, "claude-opus-5", pinned))
 	assert.Equal(t, 0, resolveContextLimit(perfProvider{}, "claude-opus-5", form.Snapshot{}))
 	assert.Equal(t, 0, resolveContextLimit(limitProvider{limit: 0}, "who-knows", form.Snapshot{}))

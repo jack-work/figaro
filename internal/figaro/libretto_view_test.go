@@ -10,14 +10,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// The translator reads the LIBRETTO, and a libretto holds its own machinery
-// beside the mirror. None of that is the model's business: system.libretto.at
-// moves on every fold, and refs moves whenever some OTHER aria studies the
-// same form, which would put cross-aria bookkeeping in this aria's context.
-//
-// alive is the exception, deliberately: a dead source is reported in band, as
-// an ordinary key transition, which is what keeps liveness out of the
-// projection entirely.
+// The libretto's bookkeeping keys stay out of the model's context; alive is
+// the exception, so a dead source is reported in band.
 func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
 
@@ -44,15 +38,12 @@ func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 		t.Errorf("the death was hidden: %v", alive.Entries())
 	}
 
-	// A fold that moved nothing but bookkeeping renders no block at all.
 	if p := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyLibrettoAt: raw(`42`)}, []string{store.KeyLibrettoRefs})); !p.IsIdentity() {
 		t.Errorf("pure bookkeeping rendered %v", p)
 	}
 }
 
-// The patch handed to the view is the STORE's published value, shared by
-// every reader of that log. Stripping in place would edit history, and the
-// per-LT cache would make whichever render ran first permanent.
+// The patch is the store's published value; stripping in place edits history.
 func TestStrippingDoesNotEditHistory(t *testing.T) {
 	original := form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"status":            json.RawMessage(`"merged"`),
@@ -69,11 +60,7 @@ func TestStrippingDoesNotEditHistory(t *testing.T) {
 	}
 }
 
-// An OUTFIT is a seed, not a subject. It used to be study-able, which
-// contradicted durable-forms §12 ("derivations may subscribe only to primary
-// forms") in the direction nobody had noticed: an outfit stump is the named
-// file a primary form is seeded FROM, and mirroring one would put a template
-// under a refcount.
+// An outfit stump is a seed, not a subject: it may not be studied.
 func TestStudyRefusesAnOutfitByName(t *testing.T) {
 	a := &Agent{backend: kindBackend{kind: "outfit"}, id: "a1"}
 	err := a.requireStudyTarget("@seed")
@@ -88,8 +75,7 @@ func TestStudyRefusesAnOutfitByName(t *testing.T) {
 	}
 }
 
-// kindBackend answers Node() with one kind and panics on anything else, so
-// the test cannot accidentally exercise a path it did not mean to.
+// kindBackend panics on anything but Node(), so the test cannot exercise another path by accident.
 type kindBackend struct {
 	store.Backend
 	kind string

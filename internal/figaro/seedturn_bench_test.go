@@ -14,11 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
-// One activation of one aria: the fold openTurn used to run, against the tail
-// it can read instead.
-//
-// The log is cold, reopened from disk, because that is what an activation is:
-// an append seeds the cache, so a warm read decodes nothing.
+// One activation: the log is cold, reopened from disk, so the read decodes.
 func BenchmarkSeedTurnID(b *testing.B) {
 	for _, n := range []int{100, 1_000, 5_000} {
 		lg := coldTurnLog(b, n)
@@ -73,7 +69,6 @@ func coldTurnLog(tb testing.TB, n int) store.Log[message.Message] {
 	}
 	require.NoError(tb, be.Close())
 
-	// Cold: a fresh backend, so the read decodes from disk.
 	cold, err := store.NewXwalBackend(root, 0)
 	require.NoError(tb, err)
 	tb.Cleanup(func() { cold.Close() })

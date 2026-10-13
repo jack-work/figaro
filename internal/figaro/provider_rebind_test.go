@@ -21,9 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// namedProvider is a one-round provider that records every Send it serves.
-// Two of them under one factory is all it takes to observe which instance a
-// turn actually reached.
+// namedProvider records every Send it serves.
 type namedProvider struct {
 	name     string
 	renderer string
@@ -57,8 +55,7 @@ func (p *namedProvider) Send(_ context.Context, in provider.SendInput, bus provi
 	return nil
 }
 
-// rebindFactory hands out one namedProvider per (name, renderer-knob) pair and
-// records the build requests, so a test can tell a rebuild from a reuse.
+// rebindFactory records build requests, so a rebuild is distinguishable from a reuse.
 type rebindFactory struct {
 	mu    sync.Mutex
 	built []string // "name/renderer" per call, in order
@@ -108,8 +105,7 @@ func (f *rebindFactory) setFail(name string, fail bool) {
 	f.fail[name] = fail
 }
 
-// runTurn submits a prompt, waits for turn.done, and returns its reason -
-// which is where a failed round reports itself.
+// runTurn returns the turn.done reason.
 func runTurn(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, text string) string {
 	t.Helper()
 	submitPrompt(a, text)
@@ -156,11 +152,7 @@ func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage
 	return a, ch
 }
 
-// TestProviderRebindsMidConversation is the regression test for the bug that
-// stranded a live aria on a wedged provider: `system.provider` changed on the
-// form (by `figaro set` or a re-applied outfit) but the agent kept the
-// instance it was constructed with, so the switch only took effect if the
-// whole agent was re-created. It must take effect on the next round.
+// A system.provider change takes effect on the next round, not on agent re-creation.
 func TestProviderRebindsMidConversation(t *testing.T) {
 	f := newRebindFactory()
 	a, ch := rebindAgent(t, f, map[string]json.RawMessage{
@@ -186,9 +178,7 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 	assert.Equal(t, "beta", a.Info().Provider, "status must report the live provider")
 }
 
-// A model change is NOT a rebuild: providers resolve system.model from the
-// per-turn snapshot, and rebuilding would drop the in-memory wire projection
-// for nothing.
+// A model change is not a rebuild: providers resolve system.model per turn.
 func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 	f := newRebindFactory()
 	a, ch := rebindAgent(t, f, map[string]json.RawMessage{
@@ -211,8 +201,7 @@ func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 	assert.Equal(t, []string{"m-1", "m-2"}, p.models, "the live model rides the snapshot")
 }
 
-// A build-time knob (here system.reminder_renderer) selects a different
-// implementation behind the same provider name, so changing it must rebuild.
+// A build-time knob selects a different implementation, so changing it rebuilds.
 func TestProviderKnobChangeRebuilds(t *testing.T) {
 	f := newRebindFactory()
 	a, ch := rebindAgent(t, f, map[string]json.RawMessage{
@@ -232,10 +221,7 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	assert.EqualValues(t, 1, f.inst("alpha", "tool").sends.Load())
 }
 
-// A provider that cannot be built must fail the turn loudly, and must not
-// silently keep talking to the old one, which is exactly the confusion the
-// original bug produced. The aria stays alive and recovers when the board is
-// corrected.
+// A provider that cannot be built fails the turn loudly; the aria recovers once the board is corrected.
 func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	f := newRebindFactory()
 	a, ch := rebindAgent(t, f, map[string]json.RawMessage{
@@ -254,7 +240,6 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	assert.EqualValues(t, 1, f.inst("alpha", "").sends.Load(), "the wedged provider must not serve a round meant for gamma")
 	assert.Contains(t, reason, `provider "gamma"`, "the failure must name the provider that could not be built")
 
-	// Correct the board: the aria is still usable.
 	f.setFail("gamma", false)
 	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),

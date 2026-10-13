@@ -8,12 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
-// BenchmarkEmitFrame measures what a live frame actually costs.
-//
-// BenchmarkComposeTurnOpenRegion stops at composeTurn. The agent's frame does
-// not: emitDelta hands the node list to aria.Server.Update, which diffs it
-// against the previous frame and retains a copy. Everything measured about S6
-// so far has excluded that half.
+// BenchmarkEmitFrame includes aria.Server.Update's diff, which BenchmarkComposeTurnOpenRegion stops short of.
 func BenchmarkEmitFrame(b *testing.B) {
 	for _, r := range []int{4, 16, 64} {
 		b.Run(fmt.Sprintf("rounds=%d", r), func(b *testing.B) {
@@ -21,8 +16,7 @@ func BenchmarkEmitFrame(b *testing.B) {
 			a.ariaSrv = aria.NewServer()
 			a.turnID = 1
 			a.ariaSrv.OpenTurn(a.turnID)
-			// One frame before the timer so the server holds a prior frame to
-			// diff against: the steady state is diffing, not creating.
+			// One frame before the timer: the steady state is diffing, not creating.
 			a.emitDelta(a.composeTurn(nil))
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -34,9 +28,7 @@ func BenchmarkEmitFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkServerUpdateOnly isolates the server's half against an unchanged
-// node list, which is the common case: a frame in which almost nothing moved
-// still pays whatever Update costs to discover that.
+// BenchmarkServerUpdateOnly isolates the server's half against an unchanged node list.
 func BenchmarkServerUpdateOnly(b *testing.B) {
 	for _, r := range []int{4, 16, 64} {
 		b.Run(fmt.Sprintf("rounds=%d", r), func(b *testing.B) {

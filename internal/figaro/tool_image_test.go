@@ -22,8 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// imageTool returns whatever content blocks it is handed, standing in for
-// read (an image file) or the screenshot skill.
+// imageTool returns whatever content blocks it is handed.
 type imageTool struct {
 	name    string
 	content []message.Content
@@ -41,9 +40,7 @@ func (it *imageTool) Execute(context.Context, map[string]any, tool.OnOutput) ([]
 	return it.content, nil
 }
 
-// oneRoundProvider calls one tool, then on its second Send captures the IR
-// the agent has assembled: which is exactly the history any real provider
-// would encode onto the wire.
+// oneRoundProvider calls one tool, then captures the IR on its second Send.
 type oneRoundProvider struct {
 	calls    []message.Content
 	sends    atomic.Int32
@@ -173,10 +170,7 @@ func call(id, name string) message.Content {
 	}
 }
 
-// TestToolImageReachesProvider is the regression this whole change exists
-// for: a tool returning an image block used to have it silently discarded
-// while assembling the tool_result, so the model saw only the placeholder
-// text. The image must survive into the IR the provider encodes.
+// An image block survives into the IR the provider encodes.
 func TestToolImageReachesProvider(t *testing.T) {
 	const pixel = "iVBORw0KGgoAAAANSUhEUg=="
 
@@ -201,7 +195,6 @@ func TestToolImageReachesProvider(t *testing.T) {
 	assert.Equal(t, "tc_1", imgs[0].ToolCallID, "image must name the call that produced it")
 	assert.Equal(t, "shot", imgs[0].ToolName)
 
-	// The prose note still rides in the tool_result text, unchanged.
 	var result message.Content
 	for _, c := range tic.Content {
 		if c.Type == message.ContentToolResult {
@@ -212,8 +205,7 @@ func TestToolImageReachesProvider(t *testing.T) {
 	assert.False(t, result.IsError)
 }
 
-// TestToolTextOnlyUnchanged pins the no-image path: a tool that returns
-// prose produces exactly the tic it always did, with no stray blocks.
+// A prose-only tool produces a text-only tic.
 func TestToolTextOnlyUnchanged(t *testing.T) {
 	reg := tool.NewRegistry()
 	require.NoError(t, reg.Register(&imageTool{
@@ -231,8 +223,7 @@ func TestToolTextOnlyUnchanged(t *testing.T) {
 	assert.Empty(t, imagesOf(tic))
 }
 
-// TestToolImagesFromSeveralTools guards the multi-tool case: every image is
-// carried, in call order, each still bound to its own call.
+// Every image is carried, in call order, bound to its own call.
 func TestToolImagesFromSeveralTools(t *testing.T) {
 	reg := tool.NewRegistry()
 	require.NoError(t, reg.Register(&imageTool{
@@ -266,16 +257,13 @@ func TestToolImagesFromSeveralTools(t *testing.T) {
 	})
 	assert.Equal(t, "image/gif", imgs[2].MimeType)
 
-	// Tool results keep their canonical call order, ahead of the images.
 	assert.Equal(t, message.ContentToolResult, tic.Content[0].Type)
 	assert.Equal(t, message.ContentToolResult, tic.Content[1].Type)
 	assert.Equal(t, "tc_l", tic.Content[0].ToolCallID)
 	assert.Equal(t, "tc_r", tic.Content[1].ToolCallID)
 }
 
-// TestFailedToolCarriesNoImage records the shape of the error path: when
-// Execute returns an error the outcome is synthesized error text, so there
-// is no image to carry and the tic is text-only.
+// An Execute error yields synthesized error text and no image.
 func TestFailedToolCarriesNoImage(t *testing.T) {
 	reg := tool.NewRegistry()
 	require.NoError(t, reg.Register(&imageTool{

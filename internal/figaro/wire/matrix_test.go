@@ -34,8 +34,7 @@ func backend(t *testing.T, trunks bool) (*store.XwalBackend, string) {
 	return b, root
 }
 
-// The matrix. Everything below runs with the capability on AND off, because
-// "the dependency is optional" is only true if the off case is exercised.
+// Everything below runs with the capability on and off.
 func eachCapability(t *testing.T, fn func(t *testing.T, b *store.XwalBackend, trunks bool)) {
 	t.Helper()
 	for _, trunks := range []bool{false, true} {
@@ -50,7 +49,6 @@ func eachCapability(t *testing.T, fn func(t *testing.T, b *store.XwalBackend, tr
 	}
 }
 
-// Forking, reading and listing must not care whether the capability exists.
 func TestAriasWorkEitherWay(t *testing.T) {
 	eachCapability(t, func(t *testing.T, b *store.XwalBackend, trunks bool) {
 		l, err := b.CreateOutfit("d", patch("system.model", "m"))
@@ -74,8 +72,7 @@ func TestAriasWorkEitherWay(t *testing.T) {
 	})
 }
 
-// Without the capability there is no presentation hierarchy to edit, and
-// the store says so rather than pretending to succeed.
+// Without the capability there is no hierarchy to edit, and the store says so.
 func TestPromoteOnlyWithTheCapability(t *testing.T) {
 	eachCapability(t, func(t *testing.T, b *store.XwalBackend, trunks bool) {
 		l, _ := b.CreateOutfit("d", patch("system.model", "m"))
@@ -94,8 +91,7 @@ func TestPromoteOnlyWithTheCapability(t *testing.T) {
 	})
 }
 
-// A trunkless figaro writes NO presentation state, ever. This is the
-// concrete form of "the capability is optional": not merely unused, absent.
+// A trunkless figaro writes no presentation state.
 func TestTrunklessWritesNoPstate(t *testing.T) {
 	b, root := backend(t, false)
 	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
@@ -108,8 +104,7 @@ func TestTrunklessWritesNoPstate(t *testing.T) {
 	}
 }
 
-// A trunkless figaro is always normalized: the two hierarchies are one, so
-// a delete can never orphan a survivor and no boundary repair can be owed.
+// A trunkless figaro is always normalized: a delete can never orphan a survivor.
 func TestTrunklessIsAlwaysNormalized(t *testing.T) {
 	b, _ := backend(t, false)
 	if !b.Store().Tree().Normalized() {
@@ -126,8 +121,7 @@ func TestTrunklessIsAlwaysNormalized(t *testing.T) {
 	}
 }
 
-// Promotion is what opens a boundary, so it must be visible as a loss of
-// normalization -- that flag is what a delete consults before unlinking.
+// Promotion opens a boundary and must show as a loss of normalization.
 func TestPromotionBreaksNormalization(t *testing.T) {
 	b, _ := backend(t, true)
 	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
@@ -149,9 +143,7 @@ func TestPromotionBreaksNormalization(t *testing.T) {
 	var _ topo.Tree = tree
 }
 
-// A promoted forest can produce a delete that takes a directory some
-// survivor still reads through. The survivor absorbs that prefix first,
-// then the delete proceeds and it is unharmed.
+// A survivor absorbs a prefix it reads through before the delete proceeds.
 func TestDeleteRepairsTheBoundary(t *testing.T) {
 	b, _ := backend(t, true)
 	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
@@ -160,13 +152,9 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// alt takes conv's place; conv comes to sit under alt. alt still reads
-	// its history through conv, so deleting conv's subtree would strand it.
 	if _, err := b.Store().Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
-	// The boundary is repaired first: alt absorbs the prefix it borrows,
-	// then conv's subtree goes. alt must survive with its history intact.
 	before, err := b.FormState(alt)
 	if err != nil {
 		t.Fatal(err)
@@ -185,8 +173,7 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 	}
 }
 
-// Normalize is the deferred work made immediate: after it, no delete can
-// owe a boundary repair, whatever the presentation hierarchy says.
+// After Normalize no delete can owe a boundary repair.
 func TestNormalizeMakesDeletesFree(t *testing.T) {
 	b, _ := backend(t, true)
 	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
@@ -208,7 +195,6 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 	if n == 0 {
 		t.Fatal("normalize absorbed nothing, but an aria was promoted")
 	}
-	// The survivor now owns its history, so the delete owes no repair.
 	before, _ := b.FormState(alt)
 	if err := b.Remove(conv, true); err != nil {
 		t.Fatalf("delete after normalize: %v", err)
@@ -224,8 +210,7 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 	}
 }
 
-// A trunkless figaro is normalized by construction, so normalize is a
-// no-op rather than an error.
+// Normalize on a trunkless figaro is a no-op, not an error.
 func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
 	b, _ := backend(t, false)
 	n, err := b.Normalize()
@@ -237,11 +222,8 @@ func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
 	}
 }
 
-// Normalize must be idempotent IN EFFECT: once an aria has absorbed its
-// history it can never be orphaned again, so the operation that made that
-// true has to report itself done. Otherwise every run re-absorbs every
-// promoted aria (O(bytes) each) and the "boundary is empty" invariant that
-// delete relies on never becomes true.
+// Normalize must report itself done once an aria has absorbed its history,
+// or every run re-absorbs every promoted aria.
 func TestNormalizeIsIdempotent(t *testing.T) {
 	b, _ := backend(t, true)
 	l, _ := b.CreateOutfit("d", patch("system.model", "m"))

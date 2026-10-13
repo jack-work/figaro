@@ -16,8 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// benchConfig writes a composition of the size a real config carries: a shared
-// base under a diamond, plus a skills directory.
+// benchConfig: a shared base under a diamond, plus a skills directory.
 func benchConfig(b *testing.B, skillCount, skillBytes int) string {
 	b.Helper()
 	dir := b.TempDir()
@@ -70,8 +69,7 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 	return a
 }
 
-// BenchmarkDressFirstTime is materializing a composition onto a FRESH board:
-// the full cost: the closure fold plus the patch append.
+// BenchmarkDressFirstTime materializes onto a fresh board: closure fold plus append.
 func BenchmarkDressFirstTime(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
 	a := benchAgent(b, dir, form.Patch{})
@@ -84,9 +82,7 @@ func BenchmarkDressFirstTime(b *testing.B) {
 	}
 }
 
-// benchDress is what the API boundary hands the agent now: MATERIALIZED keys.
-// The fold that produced them is benchmarked where it lives, in internal/outfit
-// (BenchmarkDressWarm / BenchmarkDressCold): the agent's price is the append.
+// benchDress hands the agent materialized keys; the fold is benchmarked in internal/outfit.
 func benchDress(b *testing.B, configDir string, names ...string) form.Patch {
 	patch, err := outfit.New(configDir).Dress(names, form.Patch{}, "")
 	if err != nil {
