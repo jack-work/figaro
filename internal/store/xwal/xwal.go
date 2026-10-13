@@ -45,19 +45,16 @@ func (k Kind) String() string {
 	return "log"
 }
 
-// ReduceFunc applies one patch to a state, returning the new state. Used
-// both to fold watermarks on rotation/fork and to answer StateAt.
+// ReduceFunc applies one patch to a state.
 type ReduceFunc func(state, patch []byte) ([]byte, error)
 
-// Reducer is a reducible channel's fold plus its initial (empty) state.
-// Initial must be a valid value for the codec — a JSON object such as
-// `{}` under the JSONL codec, since it seeds the very first watermark.
+// Reducer.Initial must be a valid value for the codec (a JSON object under
+// JSONL), since it seeds the very first watermark.
 type Reducer struct {
 	Reduce  ReduceFunc
 	Initial []byte
 }
 
-// ChannelSpec declares one channel's persisted shape.
 type ChannelSpec struct {
 	Name    string
 	Kind    Kind
@@ -70,11 +67,9 @@ type ChannelSpec struct {
 	Unkeyed bool
 }
 
-// Config opens or creates an xwal. On first open the manifest is written
-// from Main+Channels; afterwards the manifest is authoritative for channel
-// shape, while Channels still supplies runtime sync policy by name. Registry
-// resolves reducer names to functions on every open (functions and sync modes
-// are not persisted).
+// Config: on first open the manifest is written from Main+Channels;
+// afterwards the manifest is authoritative for channel shape. Registry
+// resolves reducer names on every open; functions are not persisted.
 type Config struct {
 	Main              string
 	Channels          []ChannelSpec
@@ -82,30 +77,20 @@ type Config struct {
 	Codec             string // "jsonl" (default) | "binary"; persisted in the manifest
 	SegmentSize       int64
 	MaxUnflushedBytes int64
-	// Genesis is the main-channel genesis payload written by CreateTrunks
-	// (the root trunk's first entry, which every trunk inherits). Lets the
-	// caller use its own genesis encoding instead of the default marker.
-	// Used only at creation; ignored on open.
+	// Genesis is the root trunk's first main entry; used only at creation.
 	Genesis []byte
-	// MintTrunkID, if set, generates trunk ids instead of the default
-	// sequential "t<N>" (the Trunks layer retries on collision). Lets a
-	// consumer use opaque ids; not persisted directly — the ids land in
-	// the .trunk markers. The node KIND being minted is passed in, so a
-	// consumer can give different species different id shapes (figaro
-	// mints unbound forms as "@<hex>" — the sigil that makes a form id
-	// unmistakably not an aria id — and conversations as bare hex).
+	// MintTrunkID generates trunk ids per node kind; the ids land in the
+	// .trunk markers. Default is sequential "t<N>".
 	MintTrunkID func(kind string) string
 	// ParentOf resolves a flat node's logical parent. Empty means none.
 	ParentOf func(node string) string
-	// probeTS reads a node's newest record timestamp from its segment FILES,
+	// probeTS reads a node's newest record timestamp from its segment files
 	// without opening a channel. Set by the owning Trunks.
 	probeTS func(node string) int64
-	// ltsReg, when set by the owning Trunks, retains each node's lastTS
-	// counter across open/close/evict cycles. Package-private on purpose.
+	// ltsReg retains each node's lastTS counter across open/close/evict cycles.
 	ltsReg *lastTSRegistry
-	// Now is the wall clock, a TEST SEAM ONLY. Every record xwal writes
-	// carries a server timestamp stamped at append time — mandatory,
-	// supplied by xwal itself, never by the caller. Defaults to time.Now.
+	// Now is a test seam; every record carries a server timestamp stamped by
+	// xwal at append, never by the caller.
 	Now func() time.Time
 }
 
@@ -115,17 +100,14 @@ var errStopRange = errors.New("xwal: stop range")
 // does not exist (yet). Store.Append reacts by auto-creating it.
 var ErrNoChannel = errors.New("xwal: no channel")
 
-// ErrLegacyLayout is returned by an open when the store predates the flat
-// layout. It is not a warning and there is no degraded mode behind it: the
-// caller migrates with Flatten, or does not get a store.
+// ErrLegacyLayout: there is no degraded mode behind it; the caller migrates
+// with Flatten or does not get a store.
 var ErrLegacyLayout = errors.New("xwal: store predates the flat layout; run Flatten to migrate it")
 
-// ErrFutureLayout is the other direction: a store written by a NEWER build.
-// No migration can help; only a newer binary can. Kept distinct so a caller
-// does not "migrate" a store forward into the past.
+// ErrFutureLayout: a store written by a newer build. Distinct so a caller
+// does not "migrate" it backward.
 var ErrFutureLayout = errors.New("xwal: store was written by a newer build")
 
-// XWAL is an opened branch of a multi-channel log.
 type XWAL struct {
 	root   string // dir holding the manifest and the per-channel trees
 	branch []string
@@ -134,23 +116,18 @@ type XWAL struct {
 	chans  map[string]*channel
 	cfg    Config
 	codec  segment.SegmentCodec
-	// nowMS is the record clock in unix milliseconds (Config.Now or
-	// time.Now). Every append stamps its record with it.
+	// nowMS is the record clock in unix milliseconds.
 	nowMS func() int64
-	// lastTS is the newest record timestamp this node has seen — hydrated
-	// from channel tails at open, advanced (monotonically) on every append.
-	// A lock-free primitive on purpose: "when was this node last written"
-	// must be answerable without touching a segment or waiting on a writer.
-	// A POINTER because sharedView hands out copies of this struct and
-	// every view must advance the one counter the hot handle hydrated.
+	// lastTS is lock-free and a pointer: sharedView hands out copies of this
+	// struct and every view must advance the one counter.
 	lastTS *atomic.Int64
-	// hydrated guards the one-time seed of lastTS. Deferred to the first
-	// STAMP: a read of one channel must not read every channel's tail.
+	// hydrated guards the one-time seed of lastTS, deferred to the first
+	// stamp: a read of one channel must not read every channel's tail.
 	hydrated *atomic.Bool
 	// key is this node's registry key (its branch, or "").
 	key string
-	// unstampedRecords: this store came through Flatten, so its main
-	// records predate the cursor stamp. Gates the fallback in CursorAt.
+	// unstampedRecords: the store came through Flatten, so its main records
+	// predate the cursor stamp. Gates the fallback in CursorAt.
 	unstampedRecords bool
 	shared           bool
 	// flatParents are ancestor logs this XWAL opened and must close.
@@ -172,9 +149,8 @@ type channel struct {
 	kind  Kind
 	rname string
 	dir   string
-	// log is nil until the channel is first USED. opener holds everything
-	// its open needs; openErr remembers a failure so a broken channel is
-	// not retried on every touch.
+	// log is nil until first use; openErr remembers a failure so a broken
+	// channel is not retried on every touch.
 	openMu  sync.Mutex
 	opener  func() (*log.Log, error)
 	openErr error
@@ -192,7 +168,6 @@ type channel struct {
 	fkScan  bool
 }
 
-// Log opens this channel's log on first use.
 func (ch *channel) Log() (*log.Log, error) {
 	ch.openMu.Lock()
 	defer ch.openMu.Unlock()
@@ -208,14 +183,12 @@ func (ch *channel) Log() (*log.Log, error) {
 	return l, nil
 }
 
-// setLog publishes a log opened by a path that rebuilds the channel.
 func (ch *channel) setLog(l *log.Log) {
 	ch.openMu.Lock()
 	defer ch.openMu.Unlock()
 	ch.lg, ch.openErr = l, nil
 }
 
-// opened is the log if this channel has one, without opening it.
 func (ch *channel) opened() *log.Log {
 	ch.openMu.Lock()
 	defer ch.openMu.Unlock()
@@ -293,11 +266,9 @@ func (ch *channel) lookup(mainLT uint64) (uint64, bool, error) {
 	return lt, ok, nil
 }
 
-// The manifest is kept (rather than deriving channels from directories)
-// because it is the only crash-safe enumeration of channels: names may be
-// nested paths ("translations/anthropic"), so directory position alone
-// cannot distinguish a channel dir from a grouping dir, and Remove/repair
-// must reliably visit every channel.
+// The manifest is the only crash-safe enumeration of channels: names may be
+// nested paths, so directory position alone cannot tell a channel dir from a
+// grouping dir.
 const manifestName = "xwal.json"
 const channelPendingName = ".xwal-channel-pending"
 
@@ -323,9 +294,7 @@ type manifestChannel struct {
 	Unkeyed bool   `json:"unkeyed,omitempty"`
 }
 
-// manifest is the on-disk form of a spec. ONE place, so the next field
-// lands once instead of in the three call sites that built this by hand
-// (which is how Unkeyed came to be written out three times).
+// manifest is the one place a spec becomes its on-disk form.
 func (c ChannelSpec) manifest() manifestChannel {
 	return manifestChannel{
 		Name:    c.Name,
@@ -424,8 +393,7 @@ func open(dir string, cfg Config, store *log.Store, branch ...string) (*XWAL, er
 			return l, nil
 		}
 		ch.dir = cdir
-		// Lookup indexes related channels lazily from the tail. Most opens
-		// never need a foreign-key index at all.
+		// Related channels index lazily from the tail; most opens never need one.
 		ch.fk = map[uint64]uint64{}
 		x.chans[mc.Name] = ch
 		x.order = append(x.order, mc.Name)
@@ -446,8 +414,6 @@ func open(dir string, cfg Config, store *log.Store, branch ...string) (*XWAL, er
 	return x, nil
 }
 
-// unixMilliClock adapts the Config.Now test seam (or the real clock) to
-// the record timestamp unit.
 func unixMilliClock(now func() time.Time) func() int64 {
 	if now == nil {
 		return func() int64 { return time.Now().UnixMilli() }
@@ -455,9 +421,8 @@ func unixMilliClock(now func() time.Time) func() int64 {
 	return func() int64 { return now().UnixMilli() }
 }
 
-// stampTS reads the clock and advances lastTS monotonically. Called on
-// every append path; the CAS loop is for cross-channel concurrency (each
-// channel serializes its own appends, but two channels may append at once).
+// stampTS advances lastTS monotonically; the CAS loop is for cross-channel
+// concurrency, since each channel serializes only its own appends.
 func (x *XWAL) stampTS() int64 {
 	x.ensureHydrated()
 	ts := x.nowMS()
@@ -469,17 +434,14 @@ func (x *XWAL) stampTS() int64 {
 	}
 }
 
-// LastTS returns the newest record timestamp this node has seen, in unix
-// milliseconds — hydrated from channel tails at open, advanced on every
-// append. Zero when the node has no timestamped records (empty, or written
-// entirely before timestamps existed). Lock-free.
+// LastTS is zero when the node has no timestamped records. Lock-free.
 func (x *XWAL) LastTS() int64 {
 	x.ensureHydrated()
 	return x.lastTS.Load()
 }
 
-// ensureHydrated seeds lastTS once, on the first append. The file probe is
-// preferred: it reads a tail frame per channel DIRECTORY and opens no log.
+// ensureHydrated prefers the file probe: a tail frame per channel directory,
+// no log opened.
 func (x *XWAL) ensureHydrated() {
 	if x.hydrated.Load() || !x.hydrated.CompareAndSwap(false, true) {
 		return
@@ -491,9 +453,8 @@ func (x *XWAL) ensureHydrated() {
 	x.hydrateLastTS()
 }
 
-// hydrateLastTS seeds lastTS from the tail record of every channel. One
-// frame read per non-empty channel, at open only. Legacy tails without a
-// timestamp contribute zero — "we can tolerate without them".
+// hydrateLastTS: one frame read per non-empty channel. Legacy tails without
+// a timestamp contribute zero.
 func (x *XWAL) hydrateLastTS() {
 	var max int64
 	for _, name := range x.order {
@@ -521,10 +482,9 @@ func (x *XWAL) hydrateLastTS() {
 	mergeMax(x.lastTS, max)
 }
 
-// channelDir resolves a channel's directory for this branch, falling
-// back to the deepest existing ancestor. A branch component absent for a
-// given channel — e.g. an old-future that was a tail fork, so no subdir
-// was created — resolves to the parent that actually holds the content.
+// channelDir falls back to the deepest existing ancestor: a branch component
+// absent for a channel (a tail fork created no subdir) resolves to the parent
+// that holds the content.
 func (x *XWAL) channelDir(name string) string {
 	base := filepath.Join(x.root, name)
 	dir := base
@@ -551,9 +511,7 @@ func pathExists(p string) bool {
 }
 
 // reducibleFold adapts a Reducer into figwal's OnSegmentOpen: the new
-// watermark is the previous one (or the initial state, for the very
-// first segment) with every sealed entry's patch folded in. Each sealed
-// frame is the channel's JSON envelope; the fold pulls out the patch.
+// watermark is the previous one (or Initial) with every sealed patch folded in.
 func reducibleFold(reduce ReduceFunc, initial []byte) func(prevHeader []byte, sealed [][]byte) ([]byte, error) {
 	return func(prevHeader []byte, sealed [][]byte) ([]byte, error) {
 		state := prevHeader
@@ -601,15 +559,12 @@ func loadOrCreateManifest(dir string, cfg Config) (manifest, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return manifest{}, err
 	}
-	// Create from cfg.
 	if cfg.Main == "" || len(cfg.Channels) == 0 {
 		return manifest{}, fmt.Errorf("xwal: no manifest at %s and no Config to create one", dir)
 	}
-	// REFUSE TO INVENT A MANIFEST FOR A STORE THAT ALREADY EXISTS. The
-	// manifest is the only record of which channels a store has and what
-	// they are; writing a fresh one over live data silently drops every
-	// channel the caller does not currently declare, and stamps the store
-	// as this build's layout without anything having looked at its shape.
+	// Refuse to invent a manifest for a store that already exists: a fresh
+	// one would drop every channel the caller does not declare and claim a
+	// layout nothing has verified.
 	if hasChannelContent(filepath.Join(dir, cfg.Main)) {
 		return manifest{}, fmt.Errorf(
 			"xwal: %s holds data in %q but no %s; refusing to invent one, because a fresh "+
@@ -870,16 +825,10 @@ func channelFromManifest(cfg Config, mc manifestChannel) (*channel, error) {
 	return ch, nil
 }
 
-// materializeManifestChannels backfills a channel the manifest declares but
-// disk never got: a store written before the channel existed, or a crash
-// between the manifest write and the backfill with no sentinel left behind.
-// A partial backfill is the sentinel's job, so the root dir is the whole
-// test — no tree walk.
-// reconcileChannelProps brings an existing manifest's per-channel
-// properties up to what the caller now declares. The manifest is
-// authoritative for a store that exists, and materializeManifestChannels
-// only ever added MISSING directories -- so a property introduced after a
-// store was created never reached it.
+// reconcileChannelProps brings an existing manifest's per-channel properties
+// up to what the caller declares: materializeManifestChannels only adds
+// missing directories, so a property introduced after a store was created
+// never reached it.
 func reconcileChannelProps(dir string, cfg Config, man manifest) (manifest, error) {
 	declared := make(map[string]ChannelSpec, len(cfg.Channels))
 	for _, c := range cfg.Channels {
@@ -905,13 +854,9 @@ func reconcileChannelProps(dir string, cfg Config, man manifest) (manifest, erro
 			man.Channels[i].Opaque = want.Opaque
 			changed = true
 		}
-		// KIND is refused, not adopted, and the asymmetry is the point.
-		// Unkeyed and Opaque describe how a record is WRITTEN, and mixed
-		// records read back correctly. Kind describes what the records
-		// ARE: folding a log's entries as if they had been patches is not
-		// a reconciliation, and dropping a fold abandons state readers
-		// depend on. Neither direction has a converter, so neither is
-		// guessed.
+		// Kind is refused, not adopted: Unkeyed and Opaque describe how a
+		// record is written and mixed records read back correctly; Kind
+		// describes what the records are, and neither direction has a converter.
 		if want.Kind.String() != mc.Kind {
 			return man, fmt.Errorf(
 				"xwal: channel %q is %q on disk but the caller declares %q; "+
@@ -928,8 +873,7 @@ func reconcileChannelProps(dir string, cfg Config, man manifest) (manifest, erro
 	return man, nil
 }
 
-// hasChannelContent reports whether a channel directory holds anything a
-// store would own: a node directory or a segment.
+// hasChannelContent: a node directory or a segment.
 func hasChannelContent(dir string) bool {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -943,6 +887,8 @@ func hasChannelContent(dir string) bool {
 	return false
 }
 
+// materializeManifestChannels backfills a channel the manifest declares but
+// disk never got; a partial backfill is the sentinel's job.
 func materializeManifestChannels(root string, cfg Config, man manifest) (manifest, error) {
 	for _, mc := range man.Channels {
 		if mc.Name == man.Main || pathExists(filepath.Join(root, mc.Name)) {
@@ -969,13 +915,9 @@ func (x *XWAL) channelOpts(ch *channel) disk.Options {
 	return opts
 }
 
-// Clear wipes a channel's own data and reopens it empty, resetting its
-// index — for caches that invalidate wholesale (translation fingerprint
-// drift). NOTE: on a forked branch this also drops the branch's link to
-// its parent for that channel; intended for trunk-level cache resets.
-// FLUSHER-UNAWARE: on a raw handle nothing stops a concurrent store
-// flush from writing into the wiped dir — use Store.Clear instead when
-// the store's flusher is running.
+// Clear wipes a channel and reopens it empty; on a forked branch it also
+// drops the branch's link to its parent for that channel. Flusher-unaware:
+// use Store.Clear when the store's flusher is running.
 func (x *XWAL) Clear(channelName string) error {
 	if err := x.ensurePrivate(); err != nil {
 		return err
@@ -1012,13 +954,10 @@ func (x *XWAL) Clear(channelName string) error {
 	return nil
 }
 
-// AddChannel adds a channel to an existing xwal (e.g. a translation stream
-// for a newly-seen provider), updating the manifest, then ROOTING and
-// BACKFILLING it: the channel is born at the channel root and its node tree
-// is mirrored from the main channel's tree so every existing node (stumps +
-// trunks) has a matching, empty, correctly-rooted node. Without this a
-// lazily-added channel would exist only on the branch it was added from, and
-// forks could not propagate it. The handle is then opened at THIS branch.
+// addChannel updates the manifest, then roots and backfills the channel: its
+// node tree is mirrored from the main channel's so every existing node has a
+// matching empty node, without which forks could not propagate it. The
+// handle is then opened at this branch.
 func (x *XWAL) addChannel(spec ChannelSpec) error {
 	if err := x.ensurePrivate(); err != nil {
 		return err
@@ -1073,11 +1012,9 @@ func (x *XWAL) addChannel(spec ChannelSpec) error {
 	return nil
 }
 
-// backfillChannel materializes a newly-added channel's node tree to mirror
-// the main channel's directory tree: for every main-channel node dir it
-// creates the corresponding channel dir. Existing fork markers keep their
-// base; missing nodes inherit the parent's visible tail. Reducible watermarks
-// are repaired from parent state. No payload entries are written.
+// backfillChannel mirrors the main channel's node tree. Existing fork markers
+// keep their base; missing nodes inherit the parent's visible tail; reducible
+// watermarks are repaired from parent state. No payload entries are written.
 func (x *XWAL) backfillChannel(ch *channel) error {
 	mainBase := filepath.Join(x.root, x.main)
 	chBase := filepath.Join(x.root, ch.name)
@@ -1465,9 +1402,8 @@ func rewriteWatermark(
 	return disk.SyncDir(chDir)
 }
 
-// seedWatermark writes a header-only segment at baseIndex carrying the
-// reducible Initial state, so an empty reducible node folds from a defined
-// watermark (mirrors disk.Fork's writeWatermarkSeg).
+// seedWatermark writes a header-only segment carrying Initial, so an empty
+// reducible node folds from a defined watermark.
 func seedWatermark(chDir string, baseIndex uint64, codec segment.SegmentCodec, initial []byte) error {
 	final := watermarkPath(chDir, baseIndex, codec)
 	tmp := final + ".tmp"
@@ -1558,9 +1494,8 @@ func recoverAtomicReplacement(final string) error {
 // writeSyncedFile replaces path atomically: a reader sees the whole old
 // content or the whole new content, never a torn or empty file.
 func writeSyncedFile(path string, body []byte) error {
-	// A UNIQUE temp: a fixed path+".tmp" lets two writers of the same marker
-	// clobber each other's scratch, and leaves a stale one beside the marker
-	// forever after a crash.
+	// A unique temp: a fixed path+".tmp" lets two writers of the same marker
+	// clobber each other's scratch.
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
@@ -1588,9 +1523,8 @@ func writeSyncedFile(path string, body []byte) error {
 	return disk.SyncDir(filepath.Dir(path))
 }
 
-// unkeyedCursors is where every unkeyed channel stands right now, for
-// stamping onto a main record. Nil when there are none, so a store without
-// unkeyed channels writes byte-identical frames to before.
+// unkeyedCursors is nil when there are none, so a store without unkeyed
+// channels writes byte-identical frames.
 func (x *XWAL) unkeyedCursors() map[string]uint64 {
 	var out map[string]uint64
 	for _, name := range x.order {
@@ -1618,17 +1552,9 @@ func (x *XWAL) AppendMain(payload, meta []byte) (uint64, error) {
 	return lt, err
 }
 
-// AppendMainCursors is AppendMain with caller-supplied EXTRA cursor
-// entries merged into the record's cursor stamp. The stamp already says
-// where every unkeyed channel of THIS node stood; the extra entries let
-// a consumer record positions xwal cannot know — figaro stamps each
-// observed (studied) form's version under a "study:"-prefixed key, so
-// one map carries the whole observed set. Extra keys must not collide
-// with channel names; the caller owns its namespace.
-// It RETURNS THE STAMP IT WROTE. The cursor map is computed here, under the
-// main channel's lock, and a caller that needs it was previously obliged to
-// read the record back out of the log to recover what this frame already
-// held.
+// AppendMainCursors merges caller-supplied extra cursor entries into the
+// stamp (keys must not collide with channel names) and returns the stamp it
+// wrote, computed under the main channel's lock.
 func (x *XWAL) AppendMainCursors(payload, meta []byte, extra map[string]uint64) (uint64, map[string]uint64, error) {
 	ch := x.chans[x.main]
 	ch.mu.Lock()
@@ -1670,11 +1596,8 @@ func (x *XWAL) Append(channelName string, mainLT uint64, payload, meta []byte) (
 	}
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
-	// An UNKEYED channel never reads main. No tail to compare against, no
-	// key to stamp, nothing to serialize with the timeline -- which is the
-	// entire point: a caller can append here while a turn is in flight, and
-	// the record is durable on its own terms. Its fork boundary comes from
-	// the cursor main stamps, not from a key stored here.
+	// An unkeyed channel never reads main: a caller can append while a turn
+	// is in flight, and its fork boundary comes from the cursor main stamps.
 	l, oerr := ch.Log()
 	if oerr != nil {
 		return 0, oerr
@@ -1725,10 +1648,9 @@ func (x *XWAL) syncAll() error {
 	return nil
 }
 
-// SyncCoherent synchronously persists this handle's channels as one
-// lineage-coherent cut. It is the ONLY sanctioned durability call for
-// raw XWAL handles (StumpHead birth writes and other ceremonial appends
-// are invisible to the store flusher until Close without it).
+// SyncCoherent is the only sanctioned durability call for raw XWAL handles:
+// birth writes and other ceremonial appends are invisible to the store
+// flusher until Close without it.
 func (x *XWAL) SyncCoherent() error { return x.syncCoherent() }
 
 // syncCoherent persists this lineage's channels as one cut: the main
@@ -1746,9 +1668,9 @@ func (x *XWAL) syncCoherent() error {
 	if err := mainLog.Sync(); err != nil {
 		return err
 	}
-	// The cut is bounded by the DURABLE main tail: an append racing this
-	// pass may already sit in the memory snapshot, and admitting it would
-	// let related records reach disk ahead of their referent.
+	// The cut is bounded by the durable main tail: a racing append may
+	// already sit in the memory snapshot, and admitting it would let related
+	// records reach disk ahead of their referent.
 	mainTail := mainLog.Disk().LastIndex()
 	for _, name := range x.order {
 		if name == x.main {
@@ -1769,12 +1691,10 @@ func (x *XWAL) syncCoherent() error {
 	return nil
 }
 
-// coherentTarget is the highest pending index whose record may persist
-// under the lineage cut: main-LT at or below mainTail, plus exactly one
-// ahead for reducible channels (the one-ahead patch convention — a
-// patch for the upcoming turn is durable within the flush bound and the
-// open-time trim preserves the same slack). Records are main-LT-non-
-// decreasing, so everything at or below the target is safe.
+// coherentTarget: the highest pending index with main-LT at or below
+// mainTail, plus one ahead for reducible channels (a patch for the upcoming
+// turn is durable within the flush bound). Records are main-LT-non-decreasing,
+// so everything at or below the target is safe.
 func coherentTarget(ch *channel, mainTail uint64) (uint64, error) {
 	first, last, ok := ch.opened().PendingBounds()
 	if !ok {
@@ -1812,7 +1732,6 @@ func (x *XWAL) Read(channelName string, channelLT uint64) (uint64, []byte, error
 	return r.MainLT, r.Payload, nil
 }
 
-// ReadAt returns the full record (incl. meta) at channelLT in a channel.
 func (x *XWAL) ReadAt(channelName string, channelLT uint64) (Record, error) {
 	ch := x.chans[channelName]
 	if ch == nil {
@@ -1829,15 +1748,13 @@ func (x *XWAL) ReadAt(channelName string, channelLT uint64) (Record, error) {
 	return decodeRecordFrom(channelLT, f, channelName == x.main)
 }
 
-// Lookup finds the entry referencing a given main LT in a channel (the
-// foreign-key view; last entry wins if several share the main LT).
+// Lookup is the foreign-key view; the last entry wins if several share the main LT.
 func (x *XWAL) Lookup(channelName string, mainLT uint64) (Record, bool, error) {
 	ch := x.chans[channelName]
 	if ch == nil {
 		return Record{}, false, fmt.Errorf("xwal: no channel %q", channelName)
 	}
-	// The main channel is identity (main-LT == channel-LT), so it needs no fk
-	// index: read directly at mainLT, treating out-of-range as "not found".
+	// The main channel is identity (main-LT == channel-LT), so it needs no fk index.
 	if channelName == x.main {
 		l, err := ch.Log()
 		if err != nil {
@@ -1867,11 +1784,9 @@ func (x *XWAL) Lookup(channelName string, mainLT uint64) (Record, bool, error) {
 	return r, true, nil
 }
 
-// RecordsFrom returns channel records whose main timeline LT is at least
-// fromMainLT, ordered by channel LT. A non-zero limit caps the returned
-// prefix; zero returns every matching record. It walks the immutable channel
-// snapshot backward only to locate the boundary, then reads the requested
-// ascending delta without constructing a total-history foreign-key index.
+// RecordsFrom walks the snapshot backward only to locate the boundary, then
+// reads the ascending delta without building a total-history index. limit 0
+// returns every matching record.
 func (x *XWAL) RecordsFrom(channelName string, fromMainLT uint64, limit int) ([]Record, error) {
 	if limit < 0 {
 		return nil, fmt.Errorf("xwal: negative record limit %d", limit)
@@ -1926,8 +1841,7 @@ func (x *XWAL) RecordsFrom(channelName string, fromMainLT uint64, limit int) ([]
 	return records, nil
 }
 
-// LatestChannelRecord returns the newest record from one immutable channel
-// snapshot when its main LT meets the requested recovery watermark.
+// LatestChannelRecord is the newest record when its main LT meets minMainLT.
 func (x *XWAL) LatestChannelRecord(channelName string, minMainLT uint64) (Record, bool, error) {
 	ch := x.chans[channelName]
 	if ch == nil {
@@ -1972,10 +1886,8 @@ func (x *XWAL) StateAt(channelName string, channelLT uint64) ([]byte, error) {
 	return l.StateAt(channelLT)
 }
 
-// SegmentHeaderAt returns the opaque block-0 header of the segment holding
-// channelLT TOGETHER WITH THAT SEGMENT'S BASE INDEX, for a reducible
-// channel. Both facts come from the same segment under one lock, and the
-// parent chain is walked exactly as StateAt walks it.
+// SegmentHeaderAt returns the header and the segment's base index from one
+// segment under one lock, walking the parent chain as StateAt does.
 func (x *XWAL) SegmentHeaderAt(channelName string, channelLT uint64) ([]byte, uint64, error) {
 	ch := x.chans[channelName]
 	if ch == nil {
@@ -2007,7 +1919,6 @@ func (x *XWAL) SyncChannelThrough(channelName string, idx uint64) error {
 	return l.SyncThrough(idx)
 }
 
-// tailMain returns the main LT of the channel's last entry.
 func (x *XWAL) tailMain(ch *channel) (uint64, bool, error) {
 	l, err := ch.Log()
 	if err != nil {
@@ -2026,7 +1937,6 @@ func (x *XWAL) tailMain(ch *channel) (uint64, bool, error) {
 	return m, true, err
 }
 
-// ChannelInfo is a read-only snapshot of a channel's bounds.
 type ChannelInfo struct {
 	Name    string
 	Kind    Kind
@@ -2034,9 +1944,8 @@ type ChannelInfo struct {
 	Opaque  bool
 	First   uint64
 	Last    uint64
-	// ForkBase is the first index THIS node owns of this channel; 0 on a log
-	// with no parent to inherit from. It is the fork base IN THE CHANNEL'S OWN
-	// COORDINATES, which is not the main channel's.
+	// ForkBase is the first index this node owns, in the channel's own
+	// coordinates, not the main channel's; 0 with no parent to inherit from.
 	ForkBase uint64
 	// Err is why this channel could not be opened. The bounds are then
 	// meaningless and must not be read as an empty channel.
@@ -2044,11 +1953,8 @@ type ChannelInfo struct {
 	Segments int
 }
 
-// DurableThrough is the highest index in a channel that has reached the disk:
-// everything at or below it survives a kill. Zero when nothing has. It is the
-// receipt a durability test needs -- the alternative is inferring durability
-// from a wall clock, which measures the machine's load and calls it the
-// store's promise.
+// DurableThrough: everything at or below it survives a kill; zero when
+// nothing has.
 func (x *XWAL) DurableThrough(name string) uint64 {
 	ch := x.chans[name]
 	if ch == nil {
@@ -2096,8 +2002,8 @@ func (x *XWAL) ChannelForkBase(name string) (uint64, bool) {
 // channel is opened.
 func (x *XWAL) ChannelNames() []string { return append([]string(nil), x.order...) }
 
-// Channels reports each channel's current bounds, in declared order. It OPENS
-// every channel to read them; ChannelBounds is the one-channel question.
+// Channels opens every channel to read bounds; ChannelBounds is the
+// one-channel question.
 func (x *XWAL) Channels() []ChannelInfo {
 	out := make([]ChannelInfo, 0, len(x.order))
 	for _, name := range x.order {
@@ -2105,10 +2011,8 @@ func (x *XWAL) Channels() []ChannelInfo {
 		info := ChannelInfo{Name: name, Kind: ch.kind, Reducer: ch.rname, Opaque: ch.opaque}
 		l, err := ch.Log()
 		if err != nil {
-			// A CHANNEL THAT WILL NOT OPEN IS NOT AN EMPTY CHANNEL. Before
-			// channels opened lazily this was an error from xwal.open and
-			// nothing downstream could mistake it; reporting zero bounds
-			// here would tell a caller the history is gone.
+			// A channel that will not open is not an empty channel: zero bounds
+			// would tell a caller the history is gone.
 			info.Err = err
 			out = append(out, info)
 			continue
@@ -2122,7 +2026,6 @@ func (x *XWAL) Channels() []ChannelInfo {
 	return out
 }
 
-// Main returns the main channel name.
 func (x *XWAL) Main() string { return x.main }
 
 // Branch returns this branch's fork chain (empty for the trunk).
@@ -2138,16 +2041,10 @@ func (x *XWAL) sharedView(release func() error, releaseRoot func(), retire func(
 		cfg:    x.cfg,
 		codec:  x.codec,
 		shared: true,
-		// A hand-rolled copy: every field added to XWAL has to be added
-		// here too. Forgetting this one silenced the migration-era cursor
-		// path on the ONLY route that opens a head.
+		// A hand-rolled copy: every field added to XWAL must be added here too.
 		unstampedRecords: x.unstampedRecords,
-		// The clock and the lastTS COUNTER are shared, not copied: an
-		// append through any view must advance the counter every other
-		// view reads. (This comment exists because the field above's
-		// warning was proven right the very first time a field was added
-		// after it — LastTS read zero through Head until the view carried
-		// these two.)
+		// The clock and the lastTS counter are shared, not copied: an append
+		// through any view advances the counter every view reads.
 		nowMS:       x.nowMS,
 		lastTS:      x.lastTS,
 		hydrated:    x.hydrated,
@@ -2158,7 +2055,6 @@ func (x *XWAL) sharedView(release func() error, releaseRoot func(), retire func(
 	}
 }
 
-// Close closes every channel.
 func (x *XWAL) Close() error {
 	x.closeOnce.Do(func() {
 		if x.release != nil {
@@ -2243,10 +2139,8 @@ type frameObj struct {
 	M   uint64          `json:"m"`
 	P   json.RawMessage `json:"p,omitempty"`
 	P64 *string         `json:"p64,omitempty"`
-	// T is the record's server timestamp in unix milliseconds, stamped by
-	// xwal at append time — mandatory on every new record, never supplied
-	// by the caller. Legacy records simply lack it and read back as zero
-	// ("we can tolerate without them").
+	// T is the server timestamp in unix milliseconds, stamped by xwal, never
+	// by the caller. Legacy records read back zero.
 	T int64           `json:"t,omitempty"`
 	X json.RawMessage `json:"x,omitempty"`
 	// C is the cursor stamp, present only on MAIN records: the tail of every
@@ -2254,20 +2148,16 @@ type frameObj struct {
 	C map[string]uint64 `json:"c,omitempty"`
 }
 
-// Record is a decoded channel entry.
 type Record struct {
 	ChannelLT uint64
 	MainLT    uint64
 	Payload   []byte
 	Meta      []byte
-	// TS is the record's server timestamp in unix milliseconds, stamped
-	// by xwal at append. Zero on records written before timestamps
-	// existed.
+	// TS is zero on records written before timestamps existed.
 	TS int64
-	// Cursors, on MAIN records only: where each unkeyed channel stood when
-	// this record was written. A reader walking the timeline already holds
-	// this, so it can attribute an unkeyed channel's records to turns
-	// without a single extra read.
+	// Cursors, main records only: where each unkeyed channel stood when this
+	// record was written, so a reader can attribute an unkeyed channel's
+	// records to turns without an extra read.
 	Cursors map[string]uint64
 }
 
@@ -2306,8 +2196,7 @@ func encodeStampedFrame(mainLT uint64, payload, meta []byte, opaque bool, cursor
 	return b
 }
 
-// decodeFrame returns the main-LT and payload, ignoring meta. Used by the
-// fold and fork-boundary paths that don't care about meta.
+// decodeFrame ignores meta.
 func decodeFrame(f []byte) (uint64, []byte, error) {
 	if m, p, _, _, ok := fastDecodeFrame(f); ok {
 		return m, p, nil
@@ -2323,13 +2212,12 @@ func decodeFrame(f []byte) (uint64, []byte, error) {
 	return o.M, payload, nil
 }
 
-// decodeRecord decodes a related-channel frame. isMain selects the slow
-// path, because only a MAIN record carries a cursor stamp and the fast
-// decode does not look for one.
 func decodeRecord(channelLT uint64, f []byte) (Record, error) {
 	return decodeRecordFrom(channelLT, f, false)
 }
 
+// isMain selects the slow path: only a main record carries a cursor stamp and
+// the fast decode does not look for one.
 func decodeRecordFrom(channelLT uint64, f []byte, isMain bool) (Record, error) {
 	if m, p, x, ts, ok := fastDecodeFrame(f); ok && !isMain {
 		return Record{ChannelLT: channelLT, MainLT: m, Payload: p, Meta: x, TS: ts}, nil
@@ -2475,9 +2363,8 @@ func fastDecodeFrame(f []byte) (uint64, []byte, []byte, int64, bool) {
 	return mainLT, payload, f[i:end], ts, true
 }
 
-// JSONValueEnd is exported so the store's row splitter uses THIS scanner
-// rather than growing a second one. A JSON grammar implemented twice is a
-// JSON grammar that disagrees with itself on the row that matters.
+// JSONValueEnd is exported so the store's row splitter shares this scanner: a
+// JSON grammar implemented twice disagrees with itself on the row that matters.
 func JSONValueEnd(b []byte, start int) (int, bool) { return jsonValueEnd(b, start) }
 
 func jsonValueEnd(b []byte, start int) (int, bool) {
@@ -2554,11 +2441,9 @@ func (x *XWAL) openFlatParent(chName, node string, opts disk.Options, store *log
 		}
 	}
 	dir := filepath.Join(x.root, chName, fsName(node))
-	// An ancestor with no directory in this channel is PASSED THROUGH, not
-	// created. log.Open would MkdirAll an empty log, and an empty log owns
-	// its numbering from 1 -- so this node would stop delegating and sever
-	// the reader from everything above it. Detach stats and skips for the
-	// same reason; now the two agree.
+	// An ancestor with no directory in this channel is passed through, not
+	// created: log.Open would MkdirAll an empty log owning its numbering from
+	// 1, severing the reader from everything above. Detach skips the same way.
 	if _, serr := os.Stat(dir); errors.Is(serr, os.ErrNotExist) {
 		return above, nil
 	} else if serr != nil {
@@ -2601,12 +2486,10 @@ func (x *XWAL) CursorAt(at uint64, channel string) (uint64, error) {
 	if v, ok := o.C[channel]; ok {
 		return v, nil
 	}
-	// MIGRATION-ERA ONLY. A store written before the cursor stamp has main
-	// records with no stamp at all, and its related records still carry the
-	// main LT they were keyed by, so the boundary is recoverable by lookup.
-	// A store this build created cannot want that: its unkeyed records carry
-	// main LT 0, so the lookup would answer "every record so far" for any
-	// `at` -- a fork would inherit records written after it branched.
+	// Migration-era only: a store written before the cursor stamp still keys
+	// its related records by main LT, so the boundary is recoverable by
+	// lookup. A store this build created writes main LT 0 on unkeyed
+	// records, so the lookup would hand a fork records written after it branched.
 	if !x.unstampedRecords {
 		return 0, nil
 	}

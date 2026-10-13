@@ -57,12 +57,11 @@ func (t *Trunks) Detach(node string) error {
 	}
 	x.Close()
 
-	// Publish: .fork per channel, then .from LAST. That order is
-	// load-bearing. A crash between two channels' .fork writes leaves each
-	// channel individually correct, because .from still names the parent: a
-	// flipped channel reads its own absorbed copy, an unflipped one still
-	// delegates, and the two are byte-identical. Clearing .from first would
-	// strand every channel not yet flipped, which is a hole.
+	// Publish .fork per channel, then .from last. A crash between two
+	// channels' .fork writes leaves each channel correct because .from still
+	// names the parent: a flipped channel reads its absorbed copy, an
+	// unflipped one delegates, and the two are byte-identical. Clearing .from
+	// first would strand every channel not yet flipped.
 	for _, dir := range dirs {
 		if err := writeSyncedFile(filepath.Join(dir, ".fork"), []byte("base=1\n")); err != nil {
 			return err
@@ -87,11 +86,9 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	if base <= 1 {
 		return nil
 	}
-	// Build under a scratch name and rename into place. segment.Create is
-	// O_EXCL, so a crash that left a partial file at the FINAL name would
-	// make every retry fail with EEXIST -- and crash recovery here IS
-	// re-running Detach, so that would leave the store unrecoverable by the
-	// one mechanism meant to recover it.
+	// Build under a scratch name and rename: segment.Create is O_EXCL, so a
+	// partial file at the final name would make every retry fail with EEXIST,
+	// and crash recovery here is re-running Detach.
 	tmpName := filepath.Join(dir, fmt.Sprintf(".absorb-%d", os.Getpid()))
 	if err := os.Remove(tmpName); err != nil && !os.IsNotExist(err) {
 		return err

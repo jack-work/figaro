@@ -1,4 +1,3 @@
-// index.go: the node/trunk index.
 package xwal
 
 import (
@@ -21,9 +20,7 @@ type Index struct {
 	nodeSeq  int
 	trunkSeq int
 	version  atomic.Uint64
-	// rebuilds counts full marker walks. A spawn must cause none; the test
-	// asserts on the count because the cost is syscalls, which a wall-clock
-	// assertion only catches on a slow filesystem.
+	// rebuilds counts full marker walks; a spawn must cause none.
 	rebuilds atomic.Uint64
 	mintID   func(kind string) string
 }
@@ -46,8 +43,7 @@ func (x *Index) Head(trunk string) (string, bool) {
 	return k, ok
 }
 
-// All is a point-in-time copy, for the cold paths that iterate the tree
-// (promote, remove, lineage). Hot paths use Node/Head.
+// All is a point-in-time copy for the cold paths; hot paths use Node/Head.
 func (x *Index) All() map[string]*NodeInfo {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
@@ -79,9 +75,8 @@ func (x *Index) LiveTrunks() []string {
 	return ids
 }
 
-// Version increases on every change AND on every rebuild. Consumers cache
-// derived state against it; Refresh means "I re-read the disk", so it must
-// invalidate even when the tree came back identical.
+// Version increases on every change and on every rebuild: Refresh means "I
+// re-read the disk" and must invalidate even when the tree came back identical.
 func (x *Index) Version() uint64 { return x.version.Load() }
 
 // SpawnFlat records a sibling node forked from parent at LT. The parent is
@@ -112,8 +107,7 @@ func (x *Index) ChildrenOf(key string) []string {
 	return out
 }
 
-// ChildIndex is the whole from -> children adjacency in one pass under one
-// lock, for callers that would otherwise ask per node.
+// ChildIndex is the whole from -> children adjacency under one lock.
 func (x *Index) ChildIndex() map[string][]string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
@@ -230,21 +224,18 @@ func (x *Index) bumpSeqsLocked(key, trunkID string) {
 			x.nodeSeq = n + 1
 		}
 	}
-	// Recovering the TRUNK counter matters as much as the node one: dropping
-	// it reissued t0 after a restart, two nodes claimed one trunk, and every
-	// open failed with "multiple live heads". The crash harness caught it.
+	// Recovering the trunk counter matters as much: dropping it reissued t0
+	// after a restart and every open failed with "multiple live heads".
 	if n := numSuffix(trunkID, 't'); n+1 > x.trunkSeq {
 		x.trunkSeq = n + 1
 	}
 }
 
-// A node's identity lives in ONE file, .node:
+// A node's identity lives in one file, .node.
 const nodeMarkerName = ".node"
 
-// Legacy names. The reader below no longer knows them: old-format
-// knowledge lives in the MIGRATION (flatten.go), so that a build either
-// understands a store or refuses it, with no third path that half-reads an
-// older one.
+// Legacy names. Old-format knowledge lives in the migration (flatten.go), so
+// a build either understands a store or refuses it.
 const (
 	legacyFromName  = ".from"
 	legacyTrunkName = ".trunk"

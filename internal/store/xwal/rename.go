@@ -9,11 +9,8 @@ import (
 	"github.com/jack-work/figaro/internal/store/disk"
 )
 
-// RenameChannel renames a channel on disk: its directory under root, and its
-// entry in the manifest. It is for a CONSUMER's migration — figaro renaming its
-// form channel — and it is here rather than there because the manifest is
-// figwal's private format, and old-format knowledge belongs in the code that
-// owns the format.
+// RenameChannel is for a consumer's migration; it lives here because the
+// manifest is figwal's private format.
 func RenameChannel(root, from, to string) error {
 	if err := validChannelName(from); err != nil {
 		return fmt.Errorf("xwal: rename channel: from: %w", err)
