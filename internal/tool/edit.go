@@ -3,39 +3,28 @@ package tool
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/sandbox"
 )
 
-// EditRequest is the typed input to the edit tool.
 type EditRequest struct {
 	Path  string
 	Edits []EditOp
 }
 
-// EditResult reports what the edit tool did.
 type EditResult struct {
-	Path             string // absolute path actually written
+	Path             string
 	EditsApplied     int
 	Diff             string
 	FirstChangedLine int
 }
 
-// Editor is the Go-level interface.
-type Editor interface {
-	Edit(ctx context.Context, req EditRequest) (EditResult, error)
-}
-
-// EditTool implements Editor and Tool. Serialized per path.
 type EditTool struct {
+	Box   sandbox.Sandbox
 	CwdFn func() string
 }
-
-// NewEditTool constructs an EditTool bound to cwd.
-func NewEditTool(cwd string) *EditTool { return &EditTool{CwdFn: staticCwd(cwd)} }
 
 func (e *EditTool) Name() string { return "edit" }
 
@@ -49,7 +38,6 @@ func (e *EditTool) Description() string {
 		"one call with a wider old_text instead."
 }
 
-// Parameters: EVERY VALUE IS A SCALAR STRING, AND THAT IS THE POINT.
 func (e *EditTool) Parameters() interface{} {
 	return map[string]interface{}{
 		"type": "object",
@@ -82,7 +70,6 @@ func (e *EditTool) Execute(ctx context.Context, args map[string]interface{}, onO
 		return nil, err
 	}
 
-	// The diff is the result; success and path are already known to the caller.
 	msg := res.Diff
 	if strings.TrimSpace(msg) == "" {
 		msg = res.Path
@@ -93,7 +80,6 @@ func (e *EditTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	return []message.Content{message.TextContent(msg)}, nil
 }
 
-// Edit is the typed Go API.
 func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error) {
 	if req.Path == "" {
 		return EditResult{}, fmt.Errorf("path is required")
@@ -101,34 +87,15 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 	if len(req.Edits) == 0 {
 		return EditResult{}, fmt.Errorf("edits must contain at least one replacement")
 	}
-
-	path := req.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwdOf(e.CwdFn), path)
-	}
-
+	path := resolve(e.CwdFn, req.Path)
 	var result EditResult
-	err := WithFileMutex(path, func() error {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		rawContent := string(raw)
-
-		bom, stripped := StripBOM(rawContent)
+	err := e.Box.FS().Update(path, func(raw []byte) ([]byte, error) {
+		bom, stripped := StripBOM(string(raw))
 		ending := DetectLineEnding(stripped)
-		normalized := NormalizeToLF(stripped)
-
-		applied, err := applyEditsToNormalized(normalized, req.Edits, req.Path)
+		applied, err := applyEditsToNormalized(NormalizeToLF(stripped), req.Edits, req.Path)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		final := bom + RestoreLineEndings(applied.newContent, ending)
-		if err := os.WriteFile(path, []byte(final), 0o644); err != nil {
-			return err
-		}
-
 		diff := GenerateDiff(applied.baseContent, applied.newContent, 4)
 		result = EditResult{
 			Path:             path,
@@ -136,7 +103,7 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 			Diff:             diff.Diff,
 			FirstChangedLine: diff.FirstChangedLine,
 		}
-		return nil
+		return []byte(bom + RestoreLineEndings(applied.newContent, ending)), nil
 	})
 	if err != nil {
 		return EditResult{}, err
@@ -144,7 +111,6 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 	return result, nil
 }
 
-// parseEditArgs lifts the arg map into EditRequest.
 func parseEditArgs(args map[string]interface{}) (EditRequest, error) {
 	path, _ := args["path"].(string)
 	if path == "" {

@@ -9,12 +9,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/sandbox"
+	"github.com/jack-work/figaro/internal/sandbox/local"
 	"github.com/jack-work/figaro/internal/store"
 )
 
 func TestMemStatusReportsCounters(t *testing.T) {
 	a := New(Config{RuntimeDir: t.TempDir()})
-	a.Sessions.Create("aria-a", "sleep 30")
+	box, err := local.Provider{Host: a.Sessions, Scope: "aria-a"}.Open(context.Background(), sandbox.Spec{Workspace: t.TempDir()})
+	require.NoError(t, err)
+	_, err = box.Sessions().Start(sandbox.ExecRequest{Command: "sleep 30"})
+	require.NoError(t, err)
 	t.Cleanup(func() { a.Sessions.KillScope("aria-a") })
 
 	st := a.MemStatus()

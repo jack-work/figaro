@@ -12,13 +12,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/figaro"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -136,9 +136,12 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		lastActive = time.UnixMilli(ts)
 	}
 	loaded, _ := h.settings()
-	reg := tool.DefaultRegistryForAria(ariaID, cwdFromForm(cb),
-		tool.WithImageBudget(loaded.InlineImageBudget()),
-		tool.WithSessions(h.angelus.Sessions))
+	box, err := sandbox.Open(ctx, h.angelus.Sessions, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"), h.angelus.RuntimeDir)
+	if err != nil {
+		return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
+	}
+	reg := tool.DefaultRegistry(box, cwdFromForm(cb, box),
+		tool.WithImageBudget(loaded.InlineImageBudget()))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
 		SocketPath:      sockPath,
@@ -172,19 +175,16 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 	return agent, nil
 }
 
-// cwdFromForm returns a closure that reads system.cwd from cbState at call
-// time. A missing or unusable directory falls back to the daemon's own.
-func cwdFromForm(cbState *form.State) func() string {
+func cwdFromForm(cbState *form.State, box sandbox.Opened) func() string {
 	return func() string {
 		if cbState != nil {
 			if s := cbState.Snapshot().Lookup("system.cwd"); s != nil && *s != "" {
-				if isDir(*s) {
+				if info, err := box.FS().Stat(*s); err == nil && info.IsDir() {
 					return *s
 				}
-				slog.Error("system.cwd is not a usable directory, falling back to the daemon's", "cwd", *s)
+				slog.Error("system.cwd is not usable in the sandbox, falling back to the workspace", "cwd", *s)
 			}
 		}
-		dir, _ := os.Getwd()
-		return dir
+		return box.Workspace
 	}
 }

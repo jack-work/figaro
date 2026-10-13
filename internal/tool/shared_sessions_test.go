@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/sandbox/local"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -36,10 +37,11 @@ func procCall(t *testing.T, r *tool.Registry, args map[string]any) string {
 // it: ScopeFn was nil, so every aria filed under "default" and only the
 // privacy of each agent's own map hid it.
 func TestSharedSessionsAreScopedPerAria(t *testing.T) {
-	shared := tool.NewSessionRegistry(tool.DefaultSessionTTL)
-	cwd := func() string { return t.TempDir() }
-	a := tool.DefaultRegistryForAria("aria-a", cwd, tool.WithSessions(shared))
-	b := tool.DefaultRegistryForAria("aria-b", cwd, tool.WithSessions(shared))
+	shared := local.NewHost(local.DefaultTTL)
+	dir := t.TempDir()
+	cwd := func() string { return dir }
+	a := tool.DefaultRegistry(openScoped(t, shared, "aria-a", dir), cwd)
+	b := tool.DefaultRegistry(openScoped(t, shared, "aria-b", dir), cwd)
 	t.Cleanup(func() { shared.KillScope("aria-a"); shared.KillScope("aria-b") })
 
 	// Interleaved, and each aria's registry used twice: a per-agent map
@@ -53,30 +55,29 @@ func TestSharedSessionsAreScopedPerAria(t *testing.T) {
 		ids[id] = true
 	}
 
-	require.Len(t, shared.List("aria-a"), 2)
-	require.Len(t, shared.List("aria-b"), 2)
+	require.Equal(t, 4, shared.Count())
 	listA := procCall(t, a, map[string]any{"action": "list"})
 	require.Equal(t, 2, strings.Count(listA, "bg-"), "scope leaked:\n%s", listA)
 
 	// Kill is a deletion and takes its own children only.
 	require.Equal(t, 2, shared.KillScope("aria-a"))
-	require.Empty(t, shared.List("aria-a"))
-	require.Len(t, shared.List("aria-b"), 2, "neighbour lost sessions to a kill")
+	require.Equal(t, "No background sessions.", procCall(t, a, map[string]any{"action": "list"}))
+	require.Equal(t, 2, strings.Count(procCall(t, b, map[string]any{"action": "list"}), "bg-"), "neighbour lost sessions to a kill")
 }
 
 // Hibernation in miniature: discard the agent's whole tool registry and
 // the job is still running, still under its old id, still readable.
 func TestSessionsSurviveToolRegistryRebuild(t *testing.T) {
-	shared := tool.NewSessionRegistry(tool.DefaultSessionTTL)
+	shared := local.NewHost(local.DefaultTTL)
 	dir := t.TempDir()
 	cwd := func() string { return dir }
 	t.Cleanup(func() { shared.KillScope("aria-a") })
 
-	before := tool.DefaultRegistryForAria("aria-a", cwd, tool.WithSessions(shared))
+	before := tool.DefaultRegistry(openScoped(t, shared, "aria-a", dir), cwd)
 	id := sessionID(bgCall(t, before, "for i in 1 2 3; do echo tick-$i; sleep 0.1; done; sleep 30"))
 	require.NotEmpty(t, id)
 
-	after := tool.DefaultRegistryForAria("aria-a", cwd, tool.WithSessions(shared))
+	after := tool.DefaultRegistry(openScoped(t, shared, "aria-a", dir), cwd)
 	var log string
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
 		log = procCall(t, after, map[string]any{"action": "log", "session": id})

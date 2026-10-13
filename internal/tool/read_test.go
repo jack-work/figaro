@@ -22,50 +22,39 @@ func writeTestFile(t *testing.T, dir, name, content string) string {
 	return path
 }
 
-// readResultText extracts concatenated text from a read tool result.
-func readResultText(content []message.Content) string {
-	var sb strings.Builder
-	for _, c := range content {
-		if c.Type == message.ContentProse {
-			sb.WriteString(c.Text)
-		}
-	}
-	return sb.String()
-}
-
 func TestRead_Basic(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "hello.txt", "hello world")
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "hello.txt",
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, readResultText(result), "hello world")
+	assert.Contains(t, resultText(result), "hello world")
 }
 
 func TestRead_AbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "abs.txt", "absolute")
 
-	r := tool.NewReadTool("/tmp")
+	r := newRead(t, "/tmp")
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": path,
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, readResultText(result), "absolute")
+	assert.Contains(t, resultText(result), "absolute")
 }
 
 func TestRead_NoPath(t *testing.T) {
-	r := tool.NewReadTool(t.TempDir())
+	r := newRead(t, t.TempDir())
 	_, err := r.Execute(context.Background(), map[string]interface{}{}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path is required")
 }
 
 func TestRead_FileNotFound(t *testing.T) {
-	r := tool.NewReadTool(t.TempDir())
+	r := newRead(t, t.TempDir())
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "nonexistent.txt",
 	}, nil)
@@ -76,13 +65,13 @@ func TestRead_Offset(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "lines.txt", "line1\nline2\nline3\nline4\nline5")
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":   "lines.txt",
 		"offset": float64(3),
 	}, nil)
 	require.NoError(t, err)
-	text := readResultText(result)
+	text := resultText(result)
 	assert.Contains(t, text, "line3")
 	assert.Contains(t, text, "line4")
 	assert.Contains(t, text, "line5")
@@ -94,13 +83,13 @@ func TestRead_Limit(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "lines.txt", "line1\nline2\nline3\nline4\nline5")
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":  "lines.txt",
 		"limit": float64(2),
 	}, nil)
 	require.NoError(t, err)
-	text := readResultText(result)
+	text := resultText(result)
 	assert.Contains(t, text, "line1")
 	assert.Contains(t, text, "line2")
 	assert.Contains(t, text, "more lines in file")
@@ -111,14 +100,14 @@ func TestRead_OffsetAndLimit(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "lines.txt", "line1\nline2\nline3\nline4\nline5")
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":   "lines.txt",
 		"offset": float64(2),
 		"limit":  float64(2),
 	}, nil)
 	require.NoError(t, err)
-	text := readResultText(result)
+	text := resultText(result)
 	assert.Contains(t, text, "line2")
 	assert.Contains(t, text, "line3")
 	assert.Contains(t, text, "more lines in file")
@@ -129,7 +118,7 @@ func TestRead_OffsetBeyondEnd(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "short.txt", "one\ntwo")
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":   "short.txt",
 		"offset": float64(100),
@@ -147,12 +136,12 @@ func TestRead_LineTruncation(t *testing.T) {
 	}
 	writeTestFile(t, dir, "big.txt", strings.Join(lines, "\n"))
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "big.txt",
 	}, nil)
 	require.NoError(t, err)
-	text := readResultText(result)
+	text := resultText(result)
 	assert.Contains(t, text, "line1\n")       // head preserved
 	assert.NotContains(t, text, "line3000\n") // tail truncated
 	assert.Contains(t, text, "Use offset=")
@@ -168,12 +157,12 @@ func TestRead_ByteTruncation(t *testing.T) {
 	}
 	writeTestFile(t, dir, "wide.txt", strings.Join(lines, "\n"))
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "wide.txt",
 	}, nil)
 	require.NoError(t, err)
-	text := readResultText(result)
+	text := resultText(result)
 	assert.LessOrEqual(t, len(text), tool.MaxOutputBytes+200) // allow slack for continuation message
 	assert.Contains(t, text, "Use offset=")
 }
@@ -186,12 +175,12 @@ func TestRead_FirstLineExceedsLimit(t *testing.T) {
 	bigLine := strings.Repeat("x", 60*1024)
 	writeTestFile(t, dir, "huge.txt", bigLine)
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "huge.txt",
 	}, nil)
 	require.NoError(t, err)
-	text := readResultText(result)
+	text := resultText(result)
 	assert.Contains(t, text, "exceeds")
 	assert.Contains(t, text, "sed -n '1p'")
 	assert.Contains(t, text, "huge.txt")
@@ -200,12 +189,12 @@ func TestRead_FirstLineExceedsLimit(t *testing.T) {
 }
 
 func TestRead_Name(t *testing.T) {
-	r := tool.NewReadTool("")
+	r := newRead(t, "")
 	assert.Equal(t, "read", r.Name())
 }
 
 func TestRead_Description(t *testing.T) {
-	r := tool.NewReadTool("")
+	r := newRead(t, "")
 	assert.Contains(t, r.Description(), "2000 lines")
 	assert.Contains(t, r.Description(), "offset")
 }
@@ -227,7 +216,7 @@ func TestRead_Image(t *testing.T) {
 	path := filepath.Join(dir, "test.png")
 	require.NoError(t, os.WriteFile(path, png, 0644))
 
-	r := tool.NewReadTool(dir)
+	r := newRead(t, dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "test.png",
 	}, nil)

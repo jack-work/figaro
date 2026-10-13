@@ -9,23 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// resultText extracts the concatenated text from a tool result.
-func resultText(content []message.Content) string {
-	var sb strings.Builder
-	for _, c := range content {
-		if c.Type == message.ContentProse {
-			sb.WriteString(c.Text)
-		}
-	}
-	return sb.String()
-}
-
 func TestBash_Basic(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo hello",
 	}, nil)
@@ -34,14 +22,14 @@ func TestBash_Basic(t *testing.T) {
 }
 
 func TestBash_NoCommand(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	_, err := b.Execute(context.Background(), map[string]interface{}{}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "command is required")
 }
 
 func TestBash_NonZeroExit(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "exit 42",
 	}, nil)
@@ -51,7 +39,7 @@ func TestBash_NonZeroExit(t *testing.T) {
 }
 
 func TestBash_Stderr(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo error >&2",
 	}, nil)
@@ -60,7 +48,7 @@ func TestBash_Stderr(t *testing.T) {
 }
 
 func TestBash_Timeout(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "sleep 60",
 		"timeout": float64(1),
@@ -71,7 +59,7 @@ func TestBash_Timeout(t *testing.T) {
 
 func TestBash_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 
 	// Cancel immediately.
 	cancel()
@@ -89,7 +77,7 @@ func TestBash_ContextCancel(t *testing.T) {
 
 func TestBash_Cwd(t *testing.T) {
 	dir := t.TempDir()
-	b := tool.NewBashTool(dir)
+	b := newBash(t, dir)
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "pwd",
 	}, nil)
@@ -104,7 +92,7 @@ func TestBash_Cwd(t *testing.T) {
 }
 
 func TestBash_NoOutput(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "true",
 	}, nil)
@@ -113,7 +101,7 @@ func TestBash_NoOutput(t *testing.T) {
 }
 
 func TestBash_OutputTruncation(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	// Generate more than MaxOutputLines.
 	cmd := "for i in $(seq 1 3000); do echo line$i; done"
 	result, err := b.Execute(context.Background(), map[string]interface{}{
@@ -128,7 +116,7 @@ func TestBash_OutputTruncation(t *testing.T) {
 }
 
 func TestBash_LargeOutputByteTruncation(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	// Generate more than MaxOutputBytes using Bash built-ins only. This keeps
 	// the test from spawning a large MSYS helper-process tree on Windows.
 	cmd := "for i in {1..2000}; do printf '%080d\\n' \"$i\"; done"
@@ -147,7 +135,7 @@ func TestBash_LargeOutputByteTruncation(t *testing.T) {
 
 func TestBash_MiddleTruncationCharCap(t *testing.T) {
 	t.Setenv("FIGARO_BASH_MAX_OUTPUT_CHARS", "200")
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo START; head -c 5000 /dev/zero | tr '\\0' x; echo; echo END",
 	}, nil)
@@ -160,7 +148,7 @@ func TestBash_MiddleTruncationCharCap(t *testing.T) {
 }
 
 func TestBash_ProcessTreeKill(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	// Spawn a child that spawns a grandchild. Timeout should kill both.
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "bash -c 'sleep 60' & sleep 60",
@@ -171,7 +159,7 @@ func TestBash_ProcessTreeKill(t *testing.T) {
 }
 
 func TestBash_StreamingOutput(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 
 	var chunks []string
 	onOutput := func(chunk []byte) {
@@ -197,7 +185,7 @@ func TestBash_StreamingOutput(t *testing.T) {
 }
 
 func TestBash_StreamingNil(t *testing.T) {
-	b := tool.NewBashTool(t.TempDir())
+	b := newBash(t, t.TempDir())
 	// nil onOutput should not panic.
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo ok",
@@ -207,12 +195,28 @@ func TestBash_StreamingNil(t *testing.T) {
 }
 
 func TestBash_Name(t *testing.T) {
-	b := tool.NewBashTool("")
+	b := newBash(t, "")
 	assert.Equal(t, "bash", b.Name())
 }
 
 func TestBash_Description(t *testing.T) {
-	b := tool.NewBashTool("")
+	b := newBash(t, "")
 	assert.Contains(t, b.Description(), "2000 lines")
 	assert.Contains(t, b.Description(), "50KB")
+}
+
+// The cwd is read on every call, so `figaro set system.cwd` takes effect
+// without rebuilding the tool.
+func TestBash_CwdReadPerCall(t *testing.T) {
+	dir1, dir2 := t.TempDir(), t.TempDir()
+	current := dir1
+	b := &tool.BashTool{Box: openBox(t, dir1), CwdFn: func() string { return current }}
+	pwd := func() string {
+		result, err := b.Execute(context.Background(), map[string]interface{}{"command": "pwd"}, nil)
+		require.NoError(t, err)
+		return strings.TrimSpace(resultText(result))
+	}
+	assert.Equal(t, filepath.Base(dir1), filepath.Base(pwd()))
+	current = dir2
+	assert.Equal(t, filepath.Base(dir2), filepath.Base(pwd()))
 }

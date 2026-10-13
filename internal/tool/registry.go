@@ -2,22 +2,24 @@ package tool
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"sync"
+	"time"
+
+	"github.com/jack-work/figaro/api/sandbox"
+	"github.com/jack-work/figaro/internal/sandbox/local"
 )
 
-// Registry is a name-keyed collection of Tools.
 type Registry struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
 }
 
-// NewRegistry returns an empty Registry.
 func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
 }
 
-// Register adds a tool. Error on duplicate name.
 func (r *Registry) Register(t Tool) error {
 	if t == nil {
 		return fmt.Errorf("cannot register nil tool")
@@ -35,7 +37,6 @@ func (r *Registry) Register(t Tool) error {
 	return nil
 }
 
-// MustRegister adds tools, panicking on error.
 func (r *Registry) MustRegister(tools ...Tool) {
 	for _, t := range tools {
 		if err := r.Register(t); err != nil {
@@ -44,7 +45,6 @@ func (r *Registry) MustRegister(tools ...Tool) {
 	}
 }
 
-// Get returns the tool registered under name, or nil, false if absent.
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -52,7 +52,6 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return t, ok
 }
 
-// List returns all tools sorted by name.
 func (r *Registry) List() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -64,7 +63,6 @@ func (r *Registry) List() []Tool {
 	return out
 }
 
-// Names returns all tool names sorted.
 func (r *Registry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -76,41 +74,18 @@ func (r *Registry) Names() []string {
 	return names
 }
 
-// Len returns the number of registered tools.
 func (r *Registry) Len() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.tools)
 }
 
-// RegistryOption tunes the default registry. Variadic so every existing call
-// site keeps compiling and only the callers that HAVE a configuration need to
-// know one exists.
 type RegistryOption func(*registryOpts)
 
 type registryOpts struct {
 	imageLimits ImageLimits
-	sessions    *SessionRegistry
 }
 
-// WithSessions shares a caller-owned SessionRegistry instead of minting a
-// private one. The daemon passes one instance for every aria, which is
-// what lets a backgrounded job outlive its agent: sessions are keyed by
-// scope, so an agent can be torn down and rebuilt while its children keep
-// running under ids that stay stable. It also makes seq daemon-global, so
-// a wake cannot mint a bg-1 that an orphan still answers to.
-func WithSessions(sessions *SessionRegistry) RegistryOption {
-	return func(o *registryOpts) {
-		if sessions != nil {
-			o.sessions = sessions
-		}
-	}
-}
-
-// WithImageBudget caps the base64 payload of one inlined image. The agent
-// passes config.InlineImageBudget() so the tool that PRODUCES the image is
-// bounded by the same number the store can actually append, an image fitted
-// at ingest never has to be dropped downstream.
 func WithImageBudget(maxBase64 int) RegistryOption {
 	return func(o *registryOpts) {
 		if maxBase64 > 0 {
@@ -119,59 +94,20 @@ func WithImageBudget(maxBase64 int) RegistryOption {
 	}
 }
 
-// DefaultRegistry returns a registry with bash, read, write, edit.
-func DefaultRegistry(cwd string, opts ...RegistryOption) *Registry {
-	return DefaultRegistryFn(func() string { return cwd }, opts...)
-}
-
-// DefaultRegistryFn is like DefaultRegistry but reads cwd at call time
-// via cwdFn. Agent wiring should pass a closure that pulls system.cwd
-// from the form.
-func DefaultRegistryFn(cwdFn func() string, opts ...RegistryOption) *Registry {
-	return DefaultRegistryForAria("", cwdFn, opts...)
-}
-
-// DefaultRegistryForAria is DefaultRegistryFn for a named aria: the
-// bash tool exports FIGARO_ARIA=<ariaID> to its children, so nested
-// `figaro` calls are statically attended to the aria that spawned
-// them. Pass "" when there is no aria (tests, one-off registries).
-func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...RegistryOption) *Registry {
+func DefaultRegistry(box sandbox.Sandbox, cwdFn func() string, opts ...RegistryOption) *Registry {
 	settings := registryOpts{imageLimits: DefaultImageLimits()}
 	for _, opt := range opts {
 		opt(&settings)
 	}
 	r := NewRegistry()
-	executor := NewLocalExecutor(
-		NewDefaultEnvSanitizer(),
-		CwdResolver{Fn: cwdFn},
-	)
-	// bash and process share one session registry so backgrounded
-	// commands are reachable across both tools. Shared when the caller
-	// supplied one (the daemon does), private otherwise.
-	sessions := settings.sessions
-	if sessions == nil {
-		sessions = NewSessionRegistry(DefaultSessionTTL)
-	}
-	// Both tools must agree on the scope or process cannot see what bash
-	// spawned. Empty ariaID falls through to defaultScope.
-	var scopeFn func() string
-	if ariaID != "" {
-		scopeFn = func() string { return ariaID }
-	}
-	bash := NewBashToolForAria(ariaID, cwdFn, executor, sessions)
-	bash.ScopeFn = scopeFn
 	r.MustRegister(
-		bash,
-		NewProcessTool(sessions, scopeFn),
-		&ReadTool{CwdFn: cwdFn, ImageLimits: settings.imageLimits},
-		&WriteTool{CwdFn: cwdFn},
-		&EditTool{CwdFn: cwdFn},
+		&BashTool{Box: box, CwdFn: cwdFn},
+		&ProcessTool{Sessions: box.Sessions()},
+		&ReadTool{Box: box, CwdFn: cwdFn, ImageLimits: settings.imageLimits},
+		&WriteTool{Box: box, CwdFn: cwdFn},
+		&EditTool{Box: box, CwdFn: cwdFn},
 	)
 	return r
-}
-
-func staticCwd(dir string) func() string {
-	return func() string { return dir }
 }
 
 func cwdOf(fn func() string) string {
@@ -180,3 +116,16 @@ func cwdOf(fn func() string) string {
 	}
 	return fn()
 }
+
+func resolve(cwdFn func() string, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(cwdOf(cwdFn), path)
+}
+
+type SessionRegistry = local.Host
+
+func NewSessionRegistry(ttl time.Duration) *SessionRegistry { return local.NewHost(ttl) }
+
+const DefaultSessionTTL = local.DefaultTTL

@@ -53,7 +53,7 @@ func TestEditAppliesOneScalarReplacement(t *testing.T) {
 	if err := os.WriteFile(path, []byte("func a() {\n\treturn\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tool := NewEditTool(dir)
+	tool := &EditTool{Box: localBox(t, dir), CwdFn: staticCwd(dir)}
 	if _, err := tool.Execute(context.Background(), map[string]interface{}{
 		"path":     "x.go",
 		"old_text": "func a() {\n\treturn\n}",
@@ -75,7 +75,7 @@ func TestLegacyNestedShapeStillApplies(t *testing.T) {
 	if err := os.WriteFile(path, []byte("alpha\nbeta\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewEditTool(dir).Execute(context.Background(), map[string]interface{}{
+	if _, err := (&EditTool{Box: localBox(t, dir), CwdFn: staticCwd(dir)}).Execute(context.Background(), map[string]interface{}{
 		"path": "x.txt",
 		"edits": []interface{}{
 			map[string]interface{}{"old_text": "alpha", "new_text": "ALPHA"},

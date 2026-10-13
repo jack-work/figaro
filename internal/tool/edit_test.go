@@ -31,7 +31,7 @@ func TestEdit_SingleReplacement(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "a.go", "package main\n\nfunc main() { println(\"hi\") }\n")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	res, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "a.go",
 		Edits: []tool.EditOp{{OldText: `println("hi")`, NewText: `println("bye")`}},
@@ -48,7 +48,7 @@ func TestEdit_MultiEditHappyPath(t *testing.T) {
 	content := "alpha\nbeta\ngamma\ndelta\nepsilon\n"
 	writeFile(t, dir, "f.txt", content)
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path: "f.txt",
 		Edits: []tool.EditOp{
@@ -66,7 +66,7 @@ func TestEdit_OverlapRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "the quick brown fox")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path: "f.txt",
 		Edits: []tool.EditOp{
@@ -82,7 +82,7 @@ func TestEdit_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "hello")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: "missing", NewText: "x"}},
@@ -95,7 +95,7 @@ func TestEdit_DuplicateMatchRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "foo foo foo")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: "foo", NewText: "bar"}},
@@ -109,7 +109,7 @@ func TestEdit_FuzzyFallbackSmartQuotes(t *testing.T) {
 	// File has smart quotes; model supplies ASCII quotes.
 	writeFile(t, dir, "f.txt", "title = \u201cFoo\u201d;\nother\n")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: `title = "Foo";`, NewText: `title = "Bar";`}},
@@ -126,7 +126,7 @@ func TestEdit_CRLFPreservation(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "line1\r\nline2\r\nline3\r\n")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: "line2", NewText: "LINE2"}},
@@ -140,7 +140,7 @@ func TestEdit_BOMPreservation(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "\uFEFFhello\nworld\n")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: "hello", NewText: "HELLO"}},
@@ -155,7 +155,7 @@ func TestEdit_EmptyOldText(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "hello")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: "", NewText: "x"}},
@@ -167,7 +167,7 @@ func TestEdit_UnchangedContentRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "hello world")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	_, err := e.Edit(context.Background(), tool.EditRequest{
 		Path:  "f.txt",
 		Edits: []tool.EditOp{{OldText: "hello", NewText: "hello"}},
@@ -180,7 +180,7 @@ func TestEdit_JSONArgs(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "foo\nbar\n")
 
-	e := tool.NewEditTool(dir)
+	e := newEdit(t, dir)
 	res, err := e.Execute(context.Background(), map[string]interface{}{
 		"path": "f.txt",
 		"edits": []interface{}{

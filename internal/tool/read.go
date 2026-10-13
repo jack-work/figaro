@@ -4,44 +4,29 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/sandbox"
 )
 
-// ReadRequest is the typed input to the read tool.
 type ReadRequest struct {
-	Path string
-
+	Path   string
 	Offset int
-
-	Limit int
+	Limit  int
 }
 
-// ReadResult is the output with optional truncation metadata.
 type ReadResult struct {
 	Content    string
 	Truncation *TruncationResult
 }
 
-// Reader is the Go-level interface other programs can depend on.
-type Reader interface {
-	Read(ctx context.Context, req ReadRequest) (ReadResult, error)
-}
-
-// ReadTool implements both Reader and the generic Tool interface.
 type ReadTool struct {
-	CwdFn func() string
-	// ImageLimits bounds an inlined image. The zero value takes
-	// DefaultImageLimits; the agent overrides MaxBase64 with the store's
-	// segment-derived budget, which is usually the stricter of the two.
+	Box         sandbox.Sandbox
+	CwdFn       func() string
 	ImageLimits ImageLimits
 }
-
-// NewReadTool constructs a ReadTool bound to cwd.
-func NewReadTool(cwd string) *ReadTool { return &ReadTool{CwdFn: staticCwd(cwd)} }
 
 func (r *ReadTool) Name() string { return "read" }
 
@@ -70,20 +55,17 @@ func (r *ReadTool) Parameters() interface{} {
 	}
 }
 
-// Execute decodes args and delegates to Read or returns image content.
 func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return nil, fmt.Errorf("path is required")
 	}
-
-	absPath := path
-	if !filepath.IsAbs(absPath) {
-		absPath = filepath.Join(cwdOf(r.CwdFn), absPath)
+	data, err := r.Box.FS().ReadFile(resolve(r.CwdFn, path))
+	if err != nil {
+		return nil, err
 	}
-
-	if mimeType, ok := detectImageMIME(absPath); ok {
-		return r.readImage(absPath, mimeType, onOutput)
+	if mimeType, ok := imageMIME(data); ok {
+		return r.readImage(path, data, mimeType, onOutput)
 	}
 
 	req := ReadRequest{Path: path}
@@ -93,8 +75,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	if lim, ok := args["limit"].(float64); ok && lim > 0 {
 		req.Limit = int(lim)
 	}
-
-	res, err := r.Read(ctx, req)
+	res, err := r.read(req, data)
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +85,8 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	return []message.Content{message.TextContent(res.Content)}, nil
 }
 
-// readImage inlines an image file, made to fit the configured ceiling.
-func (r *ReadTool) readImage(absPath, mimeType string, onOutput OnOutput) ([]message.Content, error) {
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, err
-	}
-
-	name := filepath.Base(absPath)
+func (r *ReadTool) readImage(path string, data []byte, mimeType string, onOutput OnOutput) ([]message.Content, error) {
+	name := filepath.Base(path)
 	fitted, ferr := FitImage(data, mimeType, r.ImageLimits)
 	if ferr != nil {
 		note := fmt.Sprintf("[Image: %s (%s, %s)]\n[image omitted: %s. Ask for a cropped or smaller copy.]",
@@ -135,22 +110,11 @@ func (r *ReadTool) readImage(absPath, mimeType string, onOutput OnOutput) ([]mes
 	}, nil
 }
 
-// detectImageMIME checks if a file is a supported image type.
-func detectImageMIME(path string) (string, bool) {
-	f, err := os.Open(path)
-	if err != nil {
+func imageMIME(data []byte) (string, bool) {
+	if len(data) == 0 {
 		return "", false
 	}
-	defer f.Close()
-
-	buf := make([]byte, 512)
-	n, err := f.Read(buf)
-	if err != nil || n == 0 {
-		return "", false
-	}
-
-	mimeType := http.DetectContentType(buf[:n])
-	switch mimeType {
+	switch mimeType := http.DetectContentType(data); mimeType {
 	case "image/jpeg", "image/png", "image/gif", "image/webp":
 		return mimeType, true
 	default:
@@ -158,21 +122,18 @@ func detectImageMIME(path string) (string, bool) {
 	}
 }
 
-// Read is the typed Go API.
 func (r *ReadTool) Read(ctx context.Context, req ReadRequest) (ReadResult, error) {
 	if req.Path == "" {
 		return ReadResult{}, fmt.Errorf("path is required")
 	}
-	path := req.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwdOf(r.CwdFn), path)
-	}
-
-	data, err := os.ReadFile(path)
+	data, err := r.Box.FS().ReadFile(resolve(r.CwdFn, req.Path))
 	if err != nil {
 		return ReadResult{}, err
 	}
+	return r.read(req, data)
+}
 
+func (r *ReadTool) read(req ReadRequest, data []byte) (ReadResult, error) {
 	content := string(data)
 	allLines := strings.Split(content, "\n")
 	totalLines := len(allLines)
@@ -201,7 +162,6 @@ func (r *ReadTool) Read(ctx context.Context, req ReadRequest) (ReadResult, error
 	trunc := TruncateHead(selected, TruncationOptions{})
 	startDisplay := startLine + 1
 
-	// First-line-too-big fallback.
 	if trunc.FirstLineExceedsLimit {
 		lineBytes := len(allLines[startLine])
 		output := fmt.Sprintf(

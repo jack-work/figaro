@@ -10,18 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/sandbox/local"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// bgPair builds a bash tool and a process tool sharing one session
-// registry, the way DefaultRegistry wires them.
 func bgPair(t *testing.T) (*tool.BashTool, *tool.ProcessTool) {
 	t.Helper()
-	dir := t.TempDir()
-	reg := tool.NewSessionRegistry(tool.DefaultSessionTTL)
-	b := tool.NewBashToolWith(func() string { return dir }, tool.NewLocalExecutor(), reg)
-	p := tool.NewProcessTool(reg, nil)
-	return b, p
+	b := newBash(t, t.TempDir())
+	return b, &tool.ProcessTool{Sessions: b.Box.Sessions()}
 }
 
 var sessionRe = regexp.MustCompile(`session (bg-\d+)`)
@@ -205,9 +201,8 @@ func TestBash_HardTimeoutKillsBackground(t *testing.T) {
 
 func TestProcess_ScopeIsolation(t *testing.T) {
 	dir := t.TempDir()
-	reg := tool.NewSessionRegistry(tool.DefaultSessionTTL)
-	b := tool.NewBashToolWith(func() string { return dir }, tool.NewLocalExecutor(), reg)
-	b.ScopeFn = func() string { return "agent-a" }
+	host := local.NewHost(local.DefaultTTL)
+	b := &tool.BashTool{Box: openScoped(t, host, "agent-a", dir), CwdFn: func() string { return dir }}
 
 	res, err := b.Execute(context.Background(), map[string]any{
 		"command": "sleep 5",
@@ -216,11 +211,11 @@ func TestProcess_ScopeIsolation(t *testing.T) {
 	require.NoError(t, err)
 	id := extractSession(t, resultText(res))
 
-	other := tool.NewProcessTool(reg, func() string { return "agent-b" })
+	other := &tool.ProcessTool{Sessions: openScoped(t, host, "agent-b", dir).Sessions()}
 	_, err = other.Execute(context.Background(), map[string]any{"action": "poll", "session": id}, nil)
 	assert.Error(t, err, "session must be invisible from another scope")
 
-	owner := tool.NewProcessTool(reg, func() string { return "agent-a" })
+	owner := &tool.ProcessTool{Sessions: b.Box.Sessions()}
 	_, err = owner.Execute(context.Background(), map[string]any{"action": "poll", "session": id}, nil)
 	require.NoError(t, err)
 	owner.Execute(context.Background(), map[string]any{"action": "kill", "session": id}, nil)
