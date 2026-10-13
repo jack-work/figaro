@@ -11,11 +11,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
@@ -354,6 +357,9 @@ func (a *Agent) refreshMetrics() {
 			out += m.Usage.OutputTokens
 			cacheRead += m.Usage.CacheReadTokens
 			cacheWrite += m.Usage.CacheWriteTokens
+			figOtel.AddTokens(context.Background(), m.Usage.InputTokens, m.Usage.OutputTokens,
+				m.Usage.CacheReadTokens, m.Usage.CacheWriteTokens,
+				attribute.String("provider", a.providerName()), attribute.String("model", a.currentModel()))
 			contextTokens = tokens.ContextFromUsage(m.Usage)
 			contextExact = true
 		} else {
