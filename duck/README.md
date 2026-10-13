@@ -2,7 +2,8 @@
 
 Rubber-duck brainstorms: captured thinking from design conversations,
 preserved before the ideas are reduced to a plan or code. Lower commitment
-than `plans/`, higher commitment than scratch notes.
+than `plans/` (archived on the `history` branch), higher commitment than
+scratch notes.
 
 ## Convention
 
