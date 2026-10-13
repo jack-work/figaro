@@ -5,7 +5,7 @@ go 1.25.8
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/google/uuid v1.6.0
-	github.com/jack-work/hush v0.12.0
+	github.com/jack-work/hush v0.13.0
 	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1

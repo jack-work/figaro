@@ -18,7 +18,7 @@ import (
 
 const (
 	azureProvider = "azure"
-	entraGrant    = "entra"
+	entraGrant    = hush.GrantEntra
 )
 
 type azureFile struct {
