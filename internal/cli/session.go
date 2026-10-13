@@ -19,7 +19,6 @@ type Session struct {
 }
 
 func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
-	ensureHush()
 	ensureAngelus()
 	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
 	acli, err := sdk.DialAngelus(ep)
