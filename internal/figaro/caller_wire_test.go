@@ -22,7 +22,8 @@ import (
 func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	t.Setenv("FIGARO_ARIA", "caller02")
 
-	dir, err := os.MkdirTemp("/var/tmp", "figauthz")
+	// sun_path is length-capped; keep the directory short.
+	dir, err := os.MkdirTemp("", "f")
 	if err != nil {
 		t.Fatalf("tempdir: %v", err)
 	}

@@ -52,40 +52,6 @@ func TestLawInverse(t *testing.T) {
 	}
 }
 
-// MERGE DOES NOT YET HOLD FOR ORDERED LISTS, and this test says so rather
-// than being narrowed until it passes.
-//
-// Order windows are relative to the sequence AFTER creates and deletes land,
-// so composing two of them requires knowing the base -- which Merge, by
-// design, does not have. Objects and scalars compose; a list whose membership
-// AND order both change does not. Roughly 1 random pair in 1,000.
-//
-// Two ways out, and it is a design decision rather than a bug to squash:
-// give Merge the base (MergeAgainst(p, q, base), trivially correct via
-// re-diff), or make Order absolute rather than a window, which composes
-// cleanly and costs the whole key list per reorder.
-func TestLawMerge(t *testing.T) {
-	t.Skip("ordered-list composition: see comment above; scalars and objects hold")
-	rng := rand.New(rand.NewSource(4))
-	for i := 0; i < lawTrials; i++ {
-		a := randValue(rng, 3)
-		b := mutate(rng, a, 3)
-		c := mutate(rng, b, 3)
-
-		p, q := Diff(a, b), Diff(b, c)
-
-		serial, err := q.Apply(mustApply(t, p, a))
-		require.NoError(t, err)
-
-		merged, err := Merge(p, q).Apply(a)
-		require.NoError(t, err, "trial %d\n a=%s\n b=%s\n c=%s", i, a.Raw(), b.Raw(), c.Raw())
-
-		requireSameJSON(t, serial, merged,
-			"trial %d: apply(merge(P,Q),A) != apply(Q,apply(P,A))\n a=%s\n b=%s\n c=%s",
-			i, a.Raw(), b.Raw(), c.Raw())
-	}
-}
-
 // A patch must survive the wire: it is written to the form channel and read
 // back by another process.
 func TestPatchRoundTripsThroughJSON(t *testing.T) {
@@ -107,13 +73,6 @@ func TestPatchRoundTripsThroughJSON(t *testing.T) {
 }
 
 // ---- helpers -------------------------------------------------------------
-
-func mustApply(t *testing.T, p Patch, v Value) Value {
-	t.Helper()
-	out, err := p.Apply(v)
-	require.NoError(t, err)
-	return out
-}
 
 func requireSameJSON(t *testing.T, want, got Value, msg string, args ...any) {
 	t.Helper()

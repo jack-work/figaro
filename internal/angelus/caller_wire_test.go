@@ -30,9 +30,8 @@ type recordingServer struct {
 
 func startRecordingServer(t *testing.T, methods ...string) *recordingServer {
 	t.Helper()
-	// Scratch on /var/tmp: /tmp is tmpfs here, and a unix socket path is
-	// length-capped (sun_path), so keep the directory short.
-	dir, err := os.MkdirTemp("/var/tmp", "figauthz")
+	// sun_path is length-capped; keep the directory short.
+	dir, err := os.MkdirTemp("", "f")
 	if err != nil {
 		t.Fatalf("tempdir: %v", err)
 	}

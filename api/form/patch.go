@@ -290,6 +290,8 @@ func applyOrder(cur []string, o *Order) []string {
 
 // Merge composes two patches applied in series:
 // apply(merge(P,Q), A) = apply(Q, apply(P, A)).
+// Order windows are relative to the post-edit sequence, so a list whose
+// membership and order both change does not compose without the base.
 func Merge(p, q Patch) Patch {
 	switch {
 	case p.IsIdentity():
