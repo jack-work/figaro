@@ -42,7 +42,7 @@ func TestLiveCopilotResponses(t *testing.T) {
 		t.Skip("set FIGARO_LIVE_COPILOT_TEST=1 to run against the local Copilot credential")
 	}
 
-	loaded := mustLoadConfig()
+	loaded := MustLoadConfig()
 	p, _ := buildProvider(loaded, "copilot")
 	require.NotNil(t, p, "configure Copilot before running the live test")
 	p.SetModel("gpt-5.6-terra")
@@ -82,7 +82,7 @@ func TestLiveCopilotResponsesToolRoundTrip(t *testing.T) {
 		t.Skip("set FIGARO_LIVE_COPILOT_TEST=1 to run against the local Copilot credential")
 	}
 
-	loaded := mustLoadConfig()
+	loaded := MustLoadConfig()
 	p, _ := buildProvider(loaded, "copilot")
 	require.NotNil(t, p, "configure Copilot before running the live test")
 	p.SetModel("gpt-5.6-terra")
@@ -147,7 +147,7 @@ func TestLiveCopilotResponsesLongContext(t *testing.T) {
 		t.Skip("set FIGARO_LIVE_COPILOT_TEST=1 to run against the local Copilot credential")
 	}
 
-	loaded := mustLoadConfig()
+	loaded := MustLoadConfig()
 	p, _ := buildProvider(loaded, "copilot")
 	require.NotNil(t, p, "configure Copilot before running the live test")
 	p.SetModel("gpt-5.6-terra")

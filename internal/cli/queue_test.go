@@ -93,7 +93,7 @@ func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
 	// The abort unwinds to a boundary, which is what runs the hooks; see
 	// exitPanic and TestExitHooksRunBeforeTheProcessGoes.
 	func() {
-		defer recoverExit()
+		defer RecoverExit()
 		reportQueueResults("a", "e", []rpc.QueueResult{
 			{ID: 1, Outcome: rpc.QueueRejected, Reason: rpc.RejectCommitted},
 		}, false)

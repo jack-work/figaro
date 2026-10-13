@@ -26,7 +26,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		limit = n
 	}
 
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}

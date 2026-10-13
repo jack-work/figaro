@@ -49,7 +49,7 @@ import (
 // has nothing to act on, which is the correct answer rather than a check
 // somebody has to remember to write.
 func hushClaimPath() string {
-	return filepath.Join(angelusRuntimeDir(), "hush-agent")
+	return filepath.Join(AngelusRuntimeDir(), "hush-agent")
 }
 
 // ONE AGENT CAN HAVE SEVERAL DAEMONS, and a claim alone cannot see them.
@@ -91,7 +91,7 @@ func hushUserKey(runtimeDir string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// claimHushAgent records the socket of the embedded agent this daemon owns,
+// ClaimHushAgent records the socket of the embedded agent this daemon owns,
 // and registers this daemon as one of that agent's users.
 //
 // It takes the mode and the runtime dir rather than a *managed.Hush so the
@@ -99,7 +99,7 @@ func hushUserKey(runtimeDir string) string {
 // external mode requires a live external agent, which a test may not have,
 // and the one branch that must never be wrong is exactly the one that would
 // then go unexercised.
-func claimHushAgent(mode managed.Mode, hushRuntimeDir string) error {
+func ClaimHushAgent(mode managed.Mode, hushRuntimeDir string) error {
 	if mode != managed.ModeEmbedded {
 		// An external agent belongs to the user or to a service manager.
 		// Killing it is not ours to do.
@@ -109,7 +109,7 @@ func claimHushAgent(mode managed.Mode, hushRuntimeDir string) error {
 		return errors.New("hush claim: empty runtime dir")
 	}
 	sock := hushAgentSocket(hushRuntimeDir)
-	mine := angelusRuntimeDir()
+	mine := AngelusRuntimeDir()
 	if err := os.MkdirAll(mine, 0o700); err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func retireHushAgent() (sock string, stopped bool, heldBy []string, err error) {
 	}
 
 	// Deregister first, so the question below is "is anyone ELSE using it".
-	os.Remove(filepath.Join(hushUsersDir(sock), hushUserKey(angelusRuntimeDir())))
+	os.Remove(filepath.Join(hushUsersDir(sock), hushUserKey(AngelusRuntimeDir())))
 	// The claim is spent whatever the answer turns out to be.
 	defer os.Remove(hushClaimPath())
 

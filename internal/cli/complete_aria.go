@@ -17,7 +17,7 @@ import (
 // user, or block long. CLI stays backend-agnostic: the daemon is
 // the source of truth, the CLI never touches the on-disk aria dir.
 func softFetchAriaIDs() []string {
-	ep := transport.UnixEndpoint(angelusSocketPath())
+	ep := transport.UnixEndpoint(AngelusSocketPath())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)

@@ -14,7 +14,7 @@ import (
 // it answers while the daemon is running, which is the only time anybody wants
 // to ask. The daemon's own sweep reads the same numbers.
 func runDoctorTTL(jsonOut bool) error {
-	entries := store.ScanTTL(ariaRoot())
+	entries := store.ScanTTL(AriaRoot())
 	rows := make([]store.TTLEntry, 0, len(entries))
 	for _, e := range entries {
 		rows = append(rows, e)

@@ -49,7 +49,7 @@ func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, 
 			Cols:    term.Width(),
 			Rows:    term.Height(),
 			Term:    os.Getenv("TERM"),
-			Binary:  buildRevision(),
+			Binary:  BuildRevision(),
 			Command: strings.Join(os.Args, " "),
 			Note:    note,
 		})

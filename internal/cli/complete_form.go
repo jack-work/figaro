@@ -135,7 +135,7 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 // mixed-version daemon ("method not found") is distinguishable from a dead
 // aria socket at the one place anyone will ever look.
 func softFetchLiveSnapshot() (form.Snapshot, liveKeysStatus, error) {
-	ep := transport.UnixEndpoint(angelusSocketPath())
+	ep := transport.UnixEndpoint(AngelusSocketPath())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)

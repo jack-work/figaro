@@ -31,11 +31,11 @@ func deadChannel(name string) bool {
 }
 
 func runDoctorGC(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	root := ariaRoot()
+	root := AriaRoot()
 	manPath := filepath.Join(root, "xwal.json")
 	raw, err := os.ReadFile(manPath)
 	if err != nil {
@@ -131,7 +131,7 @@ func dirSize(dir string) int64 {
 // binary understands. It reads the sidecar directly, so it still answers when
 // the schema gate is exactly what refused to open the store.
 func runDoctorSchema() error {
-	root := ariaRoot()
+	root := AriaRoot()
 	reports, err := store.SchemaStatus(root)
 	if err != nil {
 		return err
@@ -168,7 +168,7 @@ func runDoctorSchema() error {
 // sessions or goroutines the number is attached to. It reports the
 // daemon's accounting, never this process's.
 func runDoctorMem(asJSON, collect bool) error {
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -332,11 +332,11 @@ func runDoctorSkills(asJSON bool) error {
 
 // runDoctorLibrettos recounts every libretto from the boards that name it.
 func runDoctorLibrettos(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	be, err := store.NewXwalBackend(ariaRoot(), 0)
+	be, err := store.NewXwalBackend(AriaRoot(), 0)
 	if err != nil {
 		return err
 	}
@@ -381,11 +381,11 @@ func runDoctorLibrettos(dryRun bool) error {
 // refused by every provider on every send -- "tool_use ids were found without
 // tool_result blocks" -- and cannot be used again until it is closed.
 func runDoctorToolCalls(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	be, err := store.NewXwalBackend(ariaRoot(), 0)
+	be, err := store.NewXwalBackend(AriaRoot(), 0)
 	if err != nil {
 		return err
 	}

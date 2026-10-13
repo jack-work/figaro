@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/hush/managed"
 
 	"github.com/jack-work/figaro/internal/cli"
+	"github.com/jack-work/figaro/internal/daemon"
 )
 
 func main() {
@@ -20,8 +21,13 @@ func main() {
 		return
 	}
 
-	// argv[0] basename is the invocation name. Symlinks like `fig`
-	// (see flake.nix postInstall) flow through here so help/usage/
+	// argv[0] basename is the invocation name. Symlinks like `fig` and
+	// `figarod` (flake.nix postInstall) flow through here so help/usage/
 	// completion output the name the user actually typed.
-	cli.Run(filepath.Base(os.Args[0]), os.Args[1:])
+	name := filepath.Base(os.Args[0])
+	if name == "figarod" || os.Getenv("_FIGARO_DAEMON") == "1" || (len(os.Args) > 1 && os.Args[1] == "--angelus") {
+		daemon.Run()
+		return
+	}
+	cli.Run(name, os.Args[1:])
 }

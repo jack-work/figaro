@@ -41,7 +41,7 @@ func ensureExchangeCredential(loaded *config.Loaded, h *hush.Client, reg *provid
 	// The agent may predate this figaro: it is figaro's own re-exec and
 	// outlives the binary that spawned it. hush knows how to replace its
 	// own child.
-	if err := mustHush().EnsureGrant(reg.ExchangeGrant); err != nil {
+	if err := MustHush().EnsureGrant(reg.ExchangeGrant); err != nil {
 		return err
 	}
 

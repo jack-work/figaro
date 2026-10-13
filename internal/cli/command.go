@@ -667,7 +667,7 @@ func (in *interactiveInput) angelus() (*sdk.Angelus, error) {
 	if in.loaded == nil {
 		return nil, fmt.Errorf("this session has no daemon connection")
 	}
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		return nil, fmt.Errorf("connect angelus: %w", err)
 	}

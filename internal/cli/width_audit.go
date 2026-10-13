@@ -111,7 +111,7 @@ func (a *widthAudit) check(s string) {
 				return
 			}
 			a.sink = f
-			fmt.Fprintf(a.sink, "\n=== figaro %s, %s ===\n", buildRevision(), time.Now().Format(time.RFC3339))
+			fmt.Fprintf(a.sink, "\n=== figaro %s, %s ===\n", BuildRevision(), time.Now().Format(time.RFC3339))
 		}
 		a.seen[key] = true
 		a.nreport++

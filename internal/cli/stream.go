@@ -65,7 +65,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			Cols:    term.Width(),
 			Rows:    term.Height(),
 			Term:    os.Getenv("TERM"),
-			Binary:  buildRevision(),
+			Binary:  BuildRevision(),
 			Command: strings.Join(os.Args, " "),
 		})
 		if terr != nil {

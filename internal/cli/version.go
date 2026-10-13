@@ -30,11 +30,11 @@ func runVersion() {
 	printVersion(os.Stdout)
 }
 
-// buildRevision is this binary's VCS revision, from -ldflags when set and
+// BuildRevision is this binary's VCS revision, from -ldflags when set and
 // debug.ReadBuildInfo otherwise. Empty when neither knows (a bare `go build`
 // outside a repo), in which case callers must skip build comparisons rather
 // than treat unknown as mismatched.
-func buildRevision() string {
+func BuildRevision() string {
 	if commit != "" {
 		return commit
 	}

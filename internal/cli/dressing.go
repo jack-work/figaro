@@ -119,7 +119,7 @@ func parseNames(text string) ([]string, error) {
 func softFetchOutfitNames() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(AngelusSocketPath()))
 	if err != nil {
 		// NO DAEMON IS NOT NO OUTFITS. They are files in the config dir,
 		// which is readable without one, and the first run -- before any

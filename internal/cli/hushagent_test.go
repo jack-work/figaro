@@ -72,13 +72,13 @@ func (a *fakeHushAgent) received() []string {
 	return append([]string(nil), a.ops...)
 }
 
-// isolateRuntime points angelusRuntimeDir at a scratch dir for one test, so
+// isolateRuntime points AngelusRuntimeDir at a scratch dir for one test, so
 // the claim file can never be the user's.
 func isolateRuntime(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("FIGARO_RUNTIME_DIR", dir)
-	require.Equal(t, dir, angelusRuntimeDir())
+	require.Equal(t, dir, AngelusRuntimeDir())
 	return dir
 }
 
@@ -86,7 +86,7 @@ func TestClaimHushAgentRecordsTheSocketItOwns(t *testing.T) {
 	isolateRuntime(t)
 	hushRun := filepath.Join(t.TempDir(), "run")
 
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRun))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRun))
 
 	claimed, err := os.ReadFile(hushClaimPath())
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestClaimHushAgentRefusesToClaimAnExternalHush(t *testing.T) {
 	isolateRuntime(t)
 	hushRun := filepath.Join(t.TempDir(), "run")
 
-	require.NoError(t, claimHushAgent(managed.ModeExternal, hushRun))
+	require.NoError(t, ClaimHushAgent(managed.ModeExternal, hushRun))
 
 	_, err := os.Stat(hushClaimPath())
 	require.ErrorIs(t, err, os.ErrNotExist,
@@ -115,7 +115,7 @@ func TestClaimHushAgentRefusesToClaimAnExternalHush(t *testing.T) {
 func TestRetireHushAgentShutsDownTheClaimedAgent(t *testing.T) {
 	isolateRuntime(t)
 	agent := newFakeHushAgent(t, filepath.Join(t.TempDir(), "run"))
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, filepath.Dir(agent.sock)))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, filepath.Dir(agent.sock)))
 
 	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestRetireHushAgentTouchesOnlyTheClaimedSocket(t *testing.T) {
 	isolateRuntime(t)
 	mine := newFakeHushAgent(t, filepath.Join(t.TempDir(), "mine"))
 	theirs := newFakeHushAgent(t, filepath.Join(t.TempDir(), "theirs"))
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, filepath.Dir(mine.sock)))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, filepath.Dir(mine.sock)))
 
 	_, stopped, _, err := retireHushAgent()
 	require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestRetireHushAgentWithoutAClaimDoesNothing(t *testing.T) {
 func TestRetireHushAgentClearsAClaimOnADeadSocket(t *testing.T) {
 	dir := isolateRuntime(t)
 	dead := filepath.Join(t.TempDir(), "run")
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, dead))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, dead))
 
 	sock, stopped, _, err := retireHushAgent()
 	require.NoError(t, err, "a socket nobody answers is the outcome we wanted")
@@ -205,7 +205,7 @@ func deadPID(t *testing.T) int {
 func claimAs(t *testing.T, runtimeDir, hushRuntimeDir string) {
 	t.Helper()
 	t.Setenv("FIGARO_RUNTIME_DIR", runtimeDir)
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRuntimeDir))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRuntimeDir))
 }
 
 // One agent, two daemons. `.#share-hush`, `.#snapshot` and `.#sandbox` all
@@ -222,7 +222,7 @@ func TestRetireHushAgentLeavesAnAgentAnotherLiveDaemonIsUsing(t *testing.T) {
 	claimAs(t, theirRuntime, hushRun)
 
 	myRuntime := isolateRuntime(t)
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRun))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRun))
 
 	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
@@ -253,7 +253,7 @@ func TestRetireHushAgentPrunesADeadDaemonAndRetires(t *testing.T) {
 	claimAs(t, goneRuntime, hushRun)
 
 	isolateRuntime(t)
-	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRun))
+	require.NoError(t, ClaimHushAgent(managed.ModeEmbedded, hushRun))
 
 	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
@@ -299,7 +299,7 @@ func TestAStaleClaimCannotAdoptTheAgentOfALiveDaemon(t *testing.T) {
 func asDaemon(t *testing.T, runtimeDir string) {
 	t.Helper()
 	t.Setenv("FIGARO_RUNTIME_DIR", runtimeDir)
-	require.Equal(t, runtimeDir, angelusRuntimeDir())
+	require.Equal(t, runtimeDir, AngelusRuntimeDir())
 }
 
 // The rule, in one sequence: a shared agent lives until its LAST daemon
