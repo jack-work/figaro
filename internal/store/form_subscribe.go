@@ -1,8 +1,5 @@
 package store
 
-// Subscription: a snapshot and the stream that continues it, with no gap
-// between them.
-
 import (
 	"sync/atomic"
 
@@ -10,14 +7,11 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Event is one committed patch, as a subscriber sees it.
 type Event struct {
 	Version uint64
 	Applied message.Patch
-	// Missed is non-zero on a RESYNC marker: the subscriber fell behind, the
-	// writer refused to block on it, and this many events were dropped. Read
-	// the snapshot again. A silent drop is not an option, because a mirror
-	// that misses one patch is wrong forever without knowing it.
+	// Missed non-zero marks a resync: this many events were dropped, read the
+	// snapshot again.
 	Missed int
 }
 
@@ -30,21 +24,15 @@ type Subscription struct {
 
 	form *Form
 	ch   chan Event
-	// missed is incremented by the drainer when the buffer is full. An
-	// in-band marker is delivered when space appears, but the counter is the
-	// truthful answer: a reader that has stopped and come back may never see
-	// another event to carry a marker on.
+	// missed is the truthful count: a reader that stopped and came back may
+	// never see another event to carry a marker on.
 	missed atomic.Int64
 }
 
-// Source is the form this subscription reads, or nil once closed. A
-// subscriber told to resync needs to re-read the very form it is following,
-// and making it carry that pointer separately is how mirrors end up
-// resyncing from the wrong one.
+// Source is the form this subscription reads, or nil once closed.
 func (s *Subscription) Source() *Form { return s.form }
 
-// Missed reports how many events were dropped because this subscriber could
-// not keep up. Non-zero means the snapshot must be read again.
+// Missed non-zero means the snapshot must be read again.
 func (s *Subscription) Missed() int64 { return s.missed.Load() }
 
 // SubscribeFrom registers, then reads. buffer bounds how far behind the
@@ -65,8 +53,8 @@ func (f *Form) SubscribeFrom(buffer int) *Subscription {
 			break
 		}
 	}
-	// AFTER registering. Anything committed between the two is on the
-	// channel and in the snapshot; nothing can be in neither.
+	// After registering: anything committed between the two is on the channel
+	// and in the snapshot; nothing can be in neither.
 	st := f.state.Load()
 	s.Snap, s.At = st.snap, st.version
 	return s
@@ -93,8 +81,7 @@ func (s *Subscription) Close() {
 	}
 }
 
-// publish hands one batch to every subscriber. Called on the drainer, after
-// the state is published and never before.
+// publish runs on the drainer, after the state is published and never before.
 func (f *Form) publish(events []versionedApplied) {
 	subs := f.subs.Load()
 	if len(*subs) == 0 {
@@ -120,7 +107,6 @@ func (f *Form) publish(events []versionedApplied) {
 	}
 }
 
-// subsInit gives a Form its empty subscriber set.
 func subsInit(p *atomic.Pointer[[]*Subscription]) {
 	empty := []*Subscription{}
 	p.Store(&empty)

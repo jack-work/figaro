@@ -6,14 +6,12 @@ import (
 	"sync/atomic"
 )
 
-// MemLog[T] is an in-memory Log[T] with no persistence.
 type MemLog[T any] struct {
-	mu       sync.Mutex // WRITERS ONLY
+	mu       sync.Mutex // writers only
 	state    atomic.Pointer[memState[T]]
 	verified atomic.Bool
 }
 
-// VerifyOnce is the once-per-handle flag: see store.VerifyOnce.
 func (l *MemLog[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
 // memState is the whole of a MemLog, immutable once published.
@@ -37,11 +35,8 @@ func (s *MemLog[T]) Read() []Entry[T] { return s.load().entries }
 
 func (s *MemLog[T]) Snapshot() []Entry[T] { return s.load().entries }
 
-// ScanRange walks (from..to] off the published state. THE FALLBACK IN
-// store.Scan IS Read(), which is correct for this type -- MemLog hands back
-// its own slice and copies nothing -- but a Log that WRAPS one and pays per
-// record on Read would be materialized whole by that fallback without ever
-// saying so. A log that can be walked says so.
+// ScanRange is declared so store.Scan's Read fallback never materializes a
+// wrapper of this log whole.
 func (s *MemLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 	for _, e := range s.load().entries {
 		if e.LT <= from {
@@ -113,15 +108,14 @@ func (s *MemLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return s.appendLocked(e), nil
 }
 
-// appendLocked publishes a successor. Caller holds s.mu.
+// Caller holds s.mu.
 func (s *MemLog[T]) appendLocked(e Entry[T]) Entry[T] {
 	cur := s.load()
 	e.LT = cur.nextLT
 	if e.FigaroLT == 0 {
 		e.FigaroLT = e.LT
 	}
-	// The entries slice grows by copy-on-append: a reader holding the old
-	// header keeps its own length, so it can never see a half-written tail.
+	// Copy-on-append: a reader holding the old header never sees a half-written tail.
 	entries := make([]Entry[T], len(cur.entries), len(cur.entries)+1)
 	copy(entries, cur.entries)
 	entries = append(entries, e)

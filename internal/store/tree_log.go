@@ -7,29 +7,15 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// treeLog is a Log[T] whose residency IS the canonical tree cache: one node per
-// lineage step, one run per entry, keyed by FigaroLT, with the budget, the
-// eviction order and the index-that-survives-eviction all tree's.
-//
-// It replaces cachedLog's private window: a rows slice, a byte accountant, a
-// trim path, and -- once the lineage is wired -- the one-shot fork donation and
-// the seam probe that guarded it.
-//
-// THE KEY IS FigaroLT, WHICH IS WHY THE MAPPING IS EXACT. tree addresses
-// (from..to] over a key space the tenant chooses; every read on this interface
-// is already an LT bracket, so nothing has to be translated and no second index
-// is needed to find a record.
+// treeLog is a Log[T] whose residency is the shared tree cache: one node per
+// lineage step, one run per entry, keyed by l.key. Every read on this
+// interface is already a key bracket, so nothing is translated.
 type treeLog[T any] struct {
 	inner Log[T]
-	// key is the coordinate this channel is ADDRESSED BY: FigaroLT on both
-	// channels, because that is what every reader passes.
-	//
-	// ON THE TRANSLATION CHANNEL IT IS NOT UNIQUE -- FigaroLT there is a
-	// FOREIGN KEY naming the IR record a row translates, so a turn's rows all
-	// carry the same value and one coordinate holds several units. The tree
-	// allows that (a run is a bracket, not a row); what it forbids is seeding
-	// ONE row as if it were the whole coordinate, which is why seedOnAppend
-	// exists.
+	// key: on the translation channel FigaroLT is a foreign key, so a
+	// coordinate may hold several units. The tree allows that but forbids
+	// seeding one row as if it were the whole coordinate, which is why
+	// seedOnAppend exists.
 	key func(Entry[T]) uint64
 
 	// seedOnAppend is true only where a coordinate holds exactly one entry.
@@ -40,21 +26,15 @@ type treeLog[T any] struct {
 	node         string
 	sizeOf       func(Entry[T]) int
 
-	// openNode resolves an ANCESTOR's node to its substrate, for the peek path
-	// that must read a prefix nobody holds without materializing it.
+	// openNode resolves an ancestor's node to its substrate, for the peek path.
 	openNode func(node string) Log[T]
 }
 
 var _ Log[any] = (*treeLog[any])(nil)
 
-// NewIRCache builds THE decoded-IR cache: one instance for the whole process,
-// with a node per aria. One cache is what makes fork sharing structural -- a
+// NewIRCache is one instance for the whole process with a node per aria: a
 // child's lineage names its ancestor's node, and the prefix it reads is the
-// ancestor's own runs. A cache per log would give each aria its own nodes map
-// and share nothing.
-//
-// open resolves a node to its substrate; the Source asks that substrate for
-// exactly the bracket the coord names.
+// ancestor's own runs. open resolves a node to its substrate.
 func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], sizeOf func(Entry[T]) int, key func(Entry[T]) uint64) *fwtree.Cache[Entry[T]] {
 	return fwtree.New[Entry[T]](
 		func(co fwtree.Coord) ([]Entry[T], error) {
@@ -66,10 +46,9 @@ func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], siz
 			if sub == nil {
 				return nil, nil
 			}
-			// CLIPPED TO THE BRACKET. ReadFrom counts entries, and the key
-			// space is not dense -- FigaroLT skips wherever a record was
-			// filtered or rewritten -- so a count can walk past To and the
-			// cache would hold units outside the run it charged them to.
+			// Clipped to the bracket: the key space is not dense, so a count can
+			// walk past To and the cache would hold units outside the run it
+			// charged them to.
 			return clipToBracket(sub.ReadFrom(co.From+1, n), co.From, co.To, key), nil
 		},
 		budget,
@@ -83,9 +62,8 @@ func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], siz
 	)
 }
 
-// newTreeLog binds one node of the shared cache to its substrate. lineage
-// reports the node chain, root-first, so a fork reads its prefix out of its
-// ancestor's node.
+// lineage reports the node chain root-first, so a fork reads its prefix out
+// of its ancestor's node.
 func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]], sizeOf func(Entry[T]) int, key func(Entry[T]) uint64, lineage func() []fwtree.Ref) *treeLog[T] {
 	return &treeLog[T]{inner: inner, node: node, cache: cache, sizeOf: sizeOf, key: key, lineage: lineage}
 }
@@ -93,26 +71,17 @@ func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]],
 // irKey addresses a channel whose FigaroLT is unique per record: the fig IR.
 func irKey[T any](e Entry[T]) uint64 { return e.FigaroLT }
 
-// transKey addresses the translation channel BY ITS OWN CHANNEL LT.
-//
-// IT USED TO BE FigaroLT, WHICH IS A FOREIGN KEY. An index may be keyed only
-// by something the channel guarantees unique, and FigaroLT there names an
-// entry in ANOTHER channel: nothing stops two entries carrying the same one,
-// and when that happened the index held one while the segments held both --
-// a warm read served one entry and a cold read served two.
-//
-// The channel's own LT is unique and DENSE by construction, which also makes
-// a coordinate hold exactly one entry (so the writer can seed its own append)
-// and puts the arithmetic fast path within reach. FigaroLT stays on the entry
-// as the field that names what a row translates; it is no longer the address.
+// transKey addresses the translation channel by its own LT: unique and dense
+// by construction, so a coordinate holds exactly one entry and the writer can
+// seed its own append. FigaroLT there is a foreign key naming another
+// channel's entry and may repeat.
 func transKey[T any](e Entry[T]) uint64 { return e.LT }
 
-// seedingTail marks a channel whose coordinate holds exactly one entry, so the
-// writer's own append can be published without replacing anything.
+// seedingTail marks a channel whose coordinate holds exactly one entry, so
+// the writer's own append can be published without replacing anything.
 func (l *treeLog[T]) seedingTail() *treeLog[T] { l.seedOnAppend = true; return l }
 
-// withNodeOpener gives the log a way to read an ancestor's substrate directly,
-// which the peek path needs and the materializing path gets from the Source.
+// withNodeOpener lets the peek path read an ancestor's substrate directly.
 func (l *treeLog[T]) withNodeOpener(open func(node string) Log[T]) *treeLog[T] {
 	l.openNode = open
 	return l
@@ -139,18 +108,10 @@ func (l *treeLog[T]) span(from, to uint64) []Entry[T] {
 	return out
 }
 
-// Read is the whole channel, SERVED FROM WHAT IS ALREADY RESIDENT AND READ
-// FROM THE SUBSTRATE FOR THE REST -- and it inserts nothing.
-//
-// TWO POLICIES MEET HERE AND BOTH SURVIVE. A fork's first projection calls
-// Read, so passing it straight to the substrate would mint a fresh copy of
-// every string its ancestor already holds (measured: 296 of 296). But routing
-// it INTO the cache would make one whole-history read evict every other aria's
-// ranges, which is the pass-through scan_policy_test.go was written to guard --
-// "green before the re-seat and green after, or the policy did not survive".
-//
-// Peeking gives both: the resident prefix is the ancestor's own units, and a
-// scan of what nobody holds costs the neighbours nothing.
+// Read serves the resident prefix (the ancestor's own units) and reads the
+// substrate for the rest, inserting nothing: passing straight to the
+// substrate would re-decode every string the ancestor holds, and routing into
+// the cache would let one whole-history read evict every other aria's ranges.
 func (l *treeLog[T]) Read() []Entry[T] {
 	tail, ok := l.inner.PeekTail()
 	if !ok {
@@ -160,7 +121,7 @@ func (l *treeLog[T]) Read() []Entry[T] {
 }
 
 // peek serves (from..to] from resident runs where they exist and from the
-// substrate where they do not, WITHOUT materializing anything into the cache.
+// substrate where they do not, without materializing anything into the cache.
 func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
 	if to <= from {
 		return nil
@@ -198,11 +159,8 @@ func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
 	return out
 }
 
-// ScanRange is peek without the array: (from..to] streamed, resident runs
-// handed over as the ancestor's own units and everything else read from the
-// substrate one record at a time. THE POLICY IS PEEK'S, UNCHANGED -- it
-// materializes nothing into the cache, so a whole-history walk still costs
-// the neighbours nothing.
+// ScanRange is peek without the array; it materializes nothing into the
+// cache, so a whole-history walk costs the neighbours nothing.
 func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 	if to == 0 {
 		tail, ok := l.inner.PeekTail()
@@ -262,16 +220,9 @@ func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 	}
 }
 
-// substrateScan streams a bracket from the durable log of ONE node, never the
-// cache: substrate's walk, clipped the same way.
-//
-// THE CLIP IS A COORDINATE CONVERSION, NOT A BELT. Scan brackets in the
-// SUBSTRATE'S own space, which is its channel LT; this log brackets in
-// l.key(), which is FigaroLT on the fig IR. figwal guarantees the two are the
-// same number on the main channel, so today the clip removes nothing and a
-// mutation that deletes it passes every test in this package. It stays because
-// the guarantee is the main channel's alone: a log keyed by anything else
-// would be handed its neighbours' records without it.
+// substrateScan streams a bracket from one node's durable log, never the
+// cache. The clip is a coordinate conversion: Scan brackets in the substrate's
+// channel LT, this log in l.key(), and the two coincide on the main channel only.
 func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(Entry[T]) bool) {
 	if to <= from {
 		return
@@ -291,18 +242,11 @@ func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(Entr
 // channelForkBase reports a node's first OWN coordinate of this channel.
 type channelForkBase interface{ ForkBase() (uint64, bool) }
 
-// rebase restates the lineage's fork bases in this channel's coordinates.
-//
-// A Ref.Base is a MAIN-channel LT. A channel addressed by its own LT is a
-// DIFFERENT KEY SPACE, and cutting one by the other hands a child's rows to an
-// ancestor that does not have them: measured on a real aria, a fork base of 3
-// with one row at channel LT 1 read as an EMPTY channel and every send failed
-// with "empty context". Cutting at the ancestor's TAIL instead is wrong in the
-// other direction -- the ancestor then serves coordinates the child has
-// written for itself.
-//
-// The number that is neither is the channel's OWN fork base, which figwal
-// keeps per log: the first index this node owns.
+// rebase restates the lineage's fork bases in this channel's coordinates. A
+// Ref.Base is a main-channel LT, a different key space: cutting by it hands a
+// child's rows to an ancestor, and cutting at the ancestor's tail lets it serve
+// coordinates the child wrote. The channel's own fork base, which figwal keeps
+// per log, is the right cut.
 func (l *treeLog[T]) rebase(refs []fwtree.Ref) []fwtree.Ref {
 	out := make([]fwtree.Ref, len(refs))
 	copy(out, refs)
@@ -379,7 +323,6 @@ func (l *treeLog[T]) substrate(node string, from, to uint64) []Entry[T] {
 	return clipToBracket(sub.ReadFrom(from+1, n), from, to, l.key)
 }
 
-// clipToBracket keeps the entries whose key lies in (from..to].
 func clipToBracket[T any](rows []Entry[T], from, to uint64, key func(Entry[T]) uint64) []Entry[T] {
 	out := rows[:0:0]
 	for _, e := range rows {
@@ -392,8 +335,7 @@ func clipToBracket[T any](rows []Entry[T], from, to uint64, key func(Entry[T]) u
 
 func (l *treeLog[T]) Len() int { return l.inner.Len() }
 
-// VerifyOnce is the once-per-handle flag: see store.VerifyOnce. It lives on
-// the log so it is collected with it.
+// VerifyOnce lives on the log so it is collected with it.
 func (l *treeLog[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
 func (l *treeLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
@@ -414,10 +356,9 @@ func (l *treeLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 	return rows, total
 }
 
-// Lookup addresses by FigaroLT, which is this cache's coordinate ONLY on the
-// fig IR. Where the channel is addressed by its own LT, FigaroLT is a foreign
-// key and a span over it names unrelated rows, so the substrate answers --
-// it owns that addressing and the cache does not.
+// Lookup by FigaroLT is this cache's coordinate only on the IR; where the
+// channel is keyed by its own LT a span over FigaroLT names unrelated rows, so
+// the substrate answers.
 func (l *treeLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	if l.seedOnAppend {
 		return l.inner.Lookup(figaroLT)
@@ -450,13 +391,9 @@ func (l *treeLog[T]) Clear() error {
 	return l.inner.Clear()
 }
 
-// TailAfter is the projection's read: everything after the WAL coordinate lt,
-// plus the channel's total.
-//
-// ITS WATERMARK IS AN LT, NOT A FigaroLT, and the cache is keyed by FigaroLT.
-// The two agree on an unforked lineage and diverge after a rewrite, so the
-// boundary is resolved through the substrate rather than assumed -- assuming
-// they are the same number is how a fork would serve the wrong suffix.
+// TailAfter's watermark is an LT, not a FigaroLT; the two agree on an unforked
+// lineage and diverge after a rewrite, so the boundary is resolved through the
+// substrate.
 func (l *treeLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 	total := l.inner.Len()
 	suffix, _ := TailAfter[T](l.inner, lt)
@@ -468,9 +405,8 @@ func (l *treeLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 	return l.span(from, to), total
 }
 
-// TailSnapshot is the last n ENTRIES, ascending -- a count, not a coordinate
-// span. The key space is sparse, so the bracket is resolved through the
-// substrate rather than by subtracting n from the tail's key.
+// TailSnapshot is a count, not a coordinate span: the key space is sparse, so
+// the bracket is resolved through the substrate.
 func (l *treeLog[T]) TailSnapshot(n int) []Entry[T] {
 	if n <= 0 {
 		return nil
@@ -482,8 +418,6 @@ func (l *treeLog[T]) TailSnapshot(n int) []Entry[T] {
 	return l.span(l.key(rows[0])-1, l.key(rows[len(rows)-1]))
 }
 
-// ResidentBytes and Resident report what the tree holds for this node, so
-// doctor and the reaper see one number from one place.
 func (l *treeLog[T]) ResidentBytes() int {
 	var n int64
 	for _, r := range l.cache.Index(l.node) {
@@ -504,11 +438,8 @@ func (l *treeLog[T]) Resident() int {
 	return n
 }
 
-// Trim drops this node's runs down to AT MOST keep entries -- run granularity,
-// not row granularity, because a run is the unit the tree evicts. It is the
-// reaper's
-// control surface. The budget does the ordinary work; this is the lifecycle
-// half, for an aria nobody is talking to.
+// Trim drops runs, not rows, down to at most keep entries: a run is the unit
+// the tree evicts.
 func (l *treeLog[T]) Trim(keep int) int {
 	idx := l.cache.Index(l.node)
 	if keep < 0 {
@@ -534,9 +465,7 @@ func (l *treeLog[T]) Trim(keep int) int {
 	return released
 }
 
-// residentBelow is the fork donation's old shape, kept only while both caches
-// coexist: with the lineage wired, a child reads its ancestor's node directly
-// and nothing is donated.
+// residentBelow is kept while both caches coexist; nothing is donated now.
 func (l *treeLog[T]) residentBelow(figaroLT uint64) []Entry[T] {
 	if figaroLT == 0 {
 		return nil

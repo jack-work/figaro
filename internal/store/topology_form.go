@@ -1,8 +1,5 @@
 package store
 
-// The topology form: the presentation hierarchy as a FORM rather than as a
-// hand-rolled file.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -14,13 +11,9 @@ import (
 	"github.com/jack-work/figaro/internal/topo"
 )
 
-// topologyStump is the reserved name. Outfit stumps are "@" + a hex content
-// hash, so a name with a non-hex tail cannot collide with one.
+// topologyStump cannot collide with an outfit stump: those are "@" + a hex hash.
 const topologyStump = "@topology"
 
-// stumpFormLog is a FormLog over a stump's form channel. The same channel,
-// the same reducer and the same durability as an aria's board; only the node
-// it hangs on differs.
 type stumpFormLog struct {
 	store *XwalStore
 	stump string
@@ -72,15 +65,13 @@ func (l *stumpFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) e
 	return nil
 }
 
-// TopologyTree is topo.Tree over a form. Every mutator is one patch, so a
-// promote's two edges land together or not at all.
+// TopologyTree: every mutator is one patch, so a promote's two edges land
+// together or not at all.
 type TopologyTree struct {
 	form *Form
 	topo topo.Topology
 }
 
-// OpenTopologyTree mints the reserved stump if it is not there, replays the
-// form, and folds a legacy trunks.json in on the way past.
 func OpenTopologyTree(s *XwalStore, dir string) (*TopologyTree, error) {
 	if err := s.ensureTopologyStump(); err != nil {
 		return nil, err
@@ -98,9 +89,8 @@ func OpenTopologyTree(s *XwalStore, dir string) (*TopologyTree, error) {
 
 func (s *XwalStore) ensureTopologyStump() error { return s.ensureStump(topologyStump) }
 
-// ensureStump mints a reserved stump if it is not there. Reserved stumps are
-// how this store gives a form a WELL-KNOWN id: figwal names a stump by a
-// string the caller chooses, where every other node gets a system id.
+// Reserved stumps give a form a well-known id: figwal names a stump by a
+// caller-chosen string, where every other node gets a system id.
 func (s *XwalStore) ensureStump(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -115,7 +105,6 @@ func (s *XwalStore) ensureStump(name string) error {
 	return nil
 }
 
-// migrate folds a legacy trunks.json into the form, ONCE, and renames it.
 func (t *TopologyTree) migrate(path string) error {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -149,7 +138,6 @@ func (t *TopologyTree) migrate(path string) error {
 
 func (t *TopologyTree) Close() { t.form.Close() }
 
-// Edges is the override map, decoded from the published snapshot.
 func (t *TopologyTree) Edges() map[string]string {
 	snap, _ := t.form.Snapshot()
 	out := map[string]string{}
@@ -161,8 +149,7 @@ func (t *TopologyTree) Edges() map[string]string {
 	return out
 }
 
-// Rev is the form's version: it moves on every landed edit, which is exactly
-// what a listing's snapshot check wants.
+// Rev is the form's version: it moves on every landed edit.
 func (t *TopologyTree) Rev() uint64 { return t.form.Read().Version }
 
 func (t *TopologyTree) Parent(id string) (string, bool) {
@@ -232,9 +219,8 @@ func (t *TopologyTree) Overridden() []string {
 	return out
 }
 
-// Promote raises id one level, as ONE patch. Two keys in one record is what
-// makes it atomic; the file it replaces rewrote the whole document and could
-// land half of it.
+// Promote raises id one level as one patch: two keys in one record is what
+// makes it atomic.
 func (t *TopologyTree) Promote(id string) error {
 	parent, ok := t.Parent(id)
 	if !ok || parent == "" {
@@ -253,13 +239,8 @@ func (t *TopologyTree) Promote(id string) error {
 	return t.apply(patch)
 }
 
-// edge records a presentation edge, REMOVING the override when it agrees
-// with the topology. One rule, so an aria promoted back to where its history
-// puts it leaves no trace; otherwise Normalized() stays false forever and
-// every later delete repairs an empty boundary.
-// edgeIntent is what a patch is being ASKED to do, before it becomes one.
-// A structural patch is a difference and cannot be assembled field by field;
-// the intent is collected and diffed once, against the board it applies to.
+// edgeIntent is collected and diffed once against the board it applies to: a
+// structural patch is a difference and cannot be assembled field by field.
 type edgeIntent struct {
 	set    map[string]json.RawMessage
 	remove []string
@@ -269,6 +250,9 @@ func newEdgeIntent() *edgeIntent {
 	return &edgeIntent{set: map[string]json.RawMessage{}}
 }
 
+// edge removes the override when it agrees with the topology, so an aria
+// promoted back to where its history puts it leaves no trace; otherwise
+// Normalized() stays false forever and every later delete repairs an empty boundary.
 func edge(p *edgeIntent, id, parent, topoParent string) {
 	if parent == topoParent {
 		p.remove = append(p.remove, id)
@@ -285,9 +269,8 @@ func (t *TopologyTree) Reparent(id, parent string) error {
 	return t.apply(patch)
 }
 
-// Forget drops every edge that names one of these arias, in either
-// direction: for use once they are deleted. An edge POINTING at a deleted
-// aria goes too, so the survivor falls back to its history rather than
+// Forget drops every edge naming one of these arias, in either direction: an
+// edge pointing at a deleted aria goes too, so the survivor falls back to its history.
 func (t *TopologyTree) Forget(ids ...string) error {
 	gone := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -306,10 +289,9 @@ func (t *TopologyTree) Forget(ids ...string) error {
 	return t.apply(&edgeIntent{remove: remove})
 }
 
-// apply writes through the form's privileged path: presentation is harness
-// state, and Ensure because a Forget may name an edge already gone.
+// apply uses the privileged path (presentation is harness state), with Ensure
+// because a Forget may name an edge already gone.
 func (t *TopologyTree) apply(in *edgeIntent) error {
-	// The intent becomes a patch HERE, where the board it applies to is in
 	base, _ := t.form.Snapshot()
 	_, _, err := t.form.applyEffect(form.Build(base, in.set, in.remove), 0, Ensure, true)
 	return err

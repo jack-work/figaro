@@ -4,15 +4,9 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// Link is one node of an ancestry walk: which node, what kind it is, and the
-// first LT it owns. Kind is what tells a conversation from the outfit stump
-// and the genesis root above it, which matters to anyone who wants the part of
-// a lineage that has readable turns in it.
-//
-// BaseTurn is BaseLT as a turn of the PARENT, when one was recorded (see
-// RecordBaseTurn). BaseTurnKnown is false for a fork made before turns were
-// recorded, or whose record was lost; the caller computes it then, and should
-// record what it computed.
+// Link is one node of an ancestry walk. BaseTurn is BaseLT as a turn of the
+// parent when one was recorded; BaseTurnKnown false means the caller computes
+// it and should record what it computed.
 type Link struct {
 	Node          string
 	Kind          string
@@ -22,21 +16,16 @@ type Link struct {
 	BaseTurnExact bool
 }
 
-// LineageLinks walks a trunk's ancestry root first. The root owns from the
-// beginning, so its base is zero whatever the tree recorded.
-//
-// ONE LOOKUP PER LINK. This used to list every trunk in the store to build a
-// map and then walk a handful of entries of it: a full walk of the index, and
-// a marker read per trunk, on every hop between two arias. The walk is
-// proportional to the depth of the ancestry now, not to the size of the store.
+// LineageLinks walks a trunk's ancestry root first; the root's base is zero
+// whatever the tree recorded. One lookup per link: the walk is proportional to
+// ancestry depth, not store size.
 func (s *XwalStore) LineageLinks(id string) []Link {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var links []Link
 	seen := map[string]struct{}{}
 	for cur := id; cur != ""; {
-		// A cycle would loop forever; topology should not have one, and a
-		// partial lineage degrades to a miss rather than a lie.
+		// A cycle degrades to a partial lineage rather than a loop.
 		if _, dup := seen[cur]; dup {
 			break
 		}
@@ -62,8 +51,6 @@ func (s *XwalStore) LineageLinks(id string) []Link {
 	return links
 }
 
-// Lineage renders a trunk's ancestry as forest refs, root first, so a cache
-// read below the window resolves through the ancestors that own it.
 func (s *XwalStore) Lineage(id string) []fwtree.Ref {
 	links := s.LineageLinks(id)
 	if len(links) == 0 {
@@ -76,27 +63,19 @@ func (s *XwalStore) Lineage(id string) []fwtree.Ref {
 	return refs
 }
 
-// Lineage on the backend is the same walk, exposed where a caller that holds a
-// Backend (the angelus) can reach it. It is an OPTIONAL interface, asserted by
-// the caller, so a backend that has no notion of ancestry needs no stub:
 func (b *XwalBackend) Lineage(id string) []fwtree.Ref { return b.store.Lineage(id) }
 
-// LineageLinks is the same walk with the kinds kept.
 func (b *XwalBackend) LineageLinks(id string) []Link { return b.store.LineageLinks(id) }
 
-// TopologyRev is the presentation clock: the topology form's version. It is
-// the epoch a client compares when it is holding anything derived from the
-// shape of the tree.
+// TopologyRev is the topology form's version: the epoch a client compares when
+// holding anything derived from the shape of the tree.
 func (b *XwalBackend) TopologyRev() uint64 { return b.store.presentRev() }
 
-// LineageBackend is implemented by backends that can name an aria's ancestry.
-// The composed-turn seed asks for it and does nothing when it is absent.
+// LineageBackend is optional; a caller asserts it and does nothing when absent.
 type LineageBackend interface {
 	Lineage(id string) []fwtree.Ref
 }
 
-// ChainBackend is implemented by backends that can name an ancestry with the
-// kinds and the topology clock: what the lineage read answers from.
 type ChainBackend interface {
 	LineageLinks(id string) []Link
 	TopologyRev() uint64

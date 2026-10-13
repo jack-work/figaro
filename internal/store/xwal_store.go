@@ -1,8 +1,7 @@
 package store
 
-// XwalStore is figaro's aria tree, a thin policy layer over figwal's
-// xwal.Trunks (which owns the fork/trunk mechanics on disk). figaro keeps
-// only policy:
+// XwalStore is figaro's policy layer over xwal.Trunks, which owns the
+// fork/trunk mechanics on disk.
 
 import (
 	"crypto/rand"
@@ -27,30 +26,22 @@ import (
 	"github.com/jack-work/figaro/internal/topo"
 )
 
-// trunkScanCount counts calls into figwal's trunk-listing accessors
-// (Trunks.ListLight + Trunks.Stumps). It is the proxy the benchmark asserts
-// on to catch a fan-out regression (a listing that rescans the tree N times
+// trunkScanCount counts figwal trunk-listing scans.
 var trunkScanCount atomic.Int64
 
-// listTrunks / listStumps wrap the figwal accessors so every tree scan is
-// counted. Always go through these inside the store.
+// Always go through these inside the store so every tree scan is counted.
 func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	trunkScanCount.Add(1)
-	// ListLight, not List: figaro never uses TrunkInfo.Tip, and List opens
-	// every trunk's head (a segment scan) just to compute it. ListLight is
-	// all in-memory + a cheap .fork read: the difference is `fig ls` at
-	// ~300ms vs ~tens of ms on a store with many/large arias.
+	// ListLight, not List: List opens every trunk's head (a segment scan) to
+	// compute Tip, which figaro never uses.
 	return s.trunks.ListLight()
 }
 
 func (s *XwalStore) listStumps() []xwal.StumpInfo {
 	trunkScanCount.Add(1)
 	all := s.trunks.Stumps()
-	// Reserved stumps carry MACHINERY, not conversations, and none of them
-	// belong in a listing: the topology form describes the very tree this
-	// list builds (left in, the hierarchy grows a row about itself), and a
-	// libretto is a derived copy of a form the user already sees. Both are
-	// "never listed, never forked, never bound" (durable-forms §11, §12.2).
+	// Reserved stumps carry machinery, not conversations: never listed, never
+	// forked, never bound.
 	out := all[:0:0]
 	for _, st := range all {
 		if isReservedStump(st.Name) {
@@ -61,20 +52,14 @@ func (s *XwalStore) listStumps() []xwal.StumpInfo {
 	return out
 }
 
-// hexTrunkID mints an opaque aria/trunk id (the same 4-byte hex form figaro
-// has always used for aria handles), so conversation ids read like real
-// handles rather than sequential "t<N>".
 func hexTrunkID() string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-// mintTrunkID gives each species its id shape: unbound forms mint as
-// "@<hex>": the sigil that makes a form id unmistakably not an aria id
-// (the same convention retired stump ids established, so a legacy stump
-// id already reads as what it now is: a form). Everything else mints
-// bare hex, exactly as arias always have.
+// mintTrunkID: unbound forms mint as "@<hex>", the sigil that makes a form id
+// unmistakably not an aria id; everything else mints bare hex.
 func mintTrunkID(kind string) string {
 	if kind == string(kindForm) {
 		return formSigil + hexTrunkID()
@@ -82,32 +67,25 @@ func mintTrunkID(kind string) string {
 	return hexTrunkID()
 }
 
-// formSigil prefixes every unbound form id.
 const formSigil = "@"
 
 const (
 	chanIR = "ir"
-	// disk through store generation 1; generation 2 renamed the directory with
-	// the concept, and the version gate refuses a generation-1 store rather
-	// than reading it as a board with no keys.
+	// chanForm was "chalkboard" through store generation 1; the version gate
+	// refuses a generation-1 store rather than reading it as a board with no keys.
 	chanForm = "form"
-	// chanUI is the derived turn-shaped UI IR cache (Phase 4). Declared here
-	// so the schema registry can version it before it carries data.
+	// chanUI is declared so the schema registry can version it before it carries data.
 	chanUI = "ui"
 
 	keyOutfitName = "system.outfit_name"
 	keyOutfitVer  = "system.outfit_version"
-	// The pre-rename spelling. A stump minted before the loadout->outfit rename
-	// states its name under these, and its birth record is canonical: it is
-	// read tolerantly, never rewritten. Without this every aria minted before
-	// that rename listed with a blank OUTFIT column: 463 of them in this
-	// author's store, silently, since the rename shipped.
+	// The pre-rename spelling: a stump minted before loadout->outfit states
+	// its name under these, and its birth record is canonical, read
+	// tolerantly and never rewritten.
 	keyLegacyName = "system.loadout_name"
 	keyLegacyVer  = "system.loadout_version"
 
-	// rootID is the ceremonial "null" anchor's display id. The root is the
-	// channel dir itself: it carries no trunk id on disk: so figaro names
-	// it with a stable sentinel for listing/lineage.
+	// rootID: the root is the channel dir itself and carries no trunk id on disk.
 	rootID = "null"
 )
 
@@ -117,14 +95,11 @@ const (
 	kindNull         nodeKind = "null"
 	kindOutfit       nodeKind = "outfit"
 	kindConversation nodeKind = "conversation"
-	// kindForm is an unbound form: a live, patchable forking point.
-	// Recorded in the figwal node marker at mint, immutable from then on -
-	// binding forks, nothing converts.
+	// kindForm is recorded in the figwal node marker at mint and immutable
+	// from then on: binding forks, nothing converts.
 	kindForm nodeKind = "form"
 )
 
-// formReduce folds a message.Patch (JSON) onto a form
-// snapshot (JSON state): figaro's reducer for the form channel.
 func formReduce(state, patch []byte) ([]byte, error) {
 	snap := form.Snapshot{}
 	if len(state) > 0 {
@@ -140,39 +115,25 @@ func formReduce(state, patch []byte) ([]byte, error) {
 	return next.MarshalJSON()
 }
 
-// segmentSize bounds one WAL segment file. figwal's 64MB default is a
-// server-log figure: MEASURED on the author's store (300 segments, 18262 IR
-// entries, 29MB: 1.6KB/entry; biggest single segment 1.78MB/1624 entries),
-// nothing has ever rolled and nothing ever would, which makes
-// SegmentBaseIndexes: the coarse "which file holds LT N" index a lazy read
-// wants, a constant function.
 var handleIdle atomic.Int64
 
-// SetHandleIdle sets figwal's head-unload window. Call before opening the
-// store; zero leaves figwal's own default.
+// SetHandleIdle: call before opening the store; zero leaves figwal's default.
 func SetHandleIdle(d time.Duration) { handleIdle.Store(int64(d)) }
 
-// SetSegmentCacheBudget bounds the raw segment payloads figwal holds across
-// every open channel. This is the bound every other cache in figaro sits on
-// top of: the IR window, the translation window and the patch window all cap
-// DECODED copies of these bytes.
+// SetSegmentCacheBudget bounds the raw payloads every other cache sits on top
+// of: the IR, translation and patch windows cap decoded copies of these bytes.
 func SetSegmentCacheBudget(bytes int64) { fwlog.SetPayloadCacheBudget(bytes) }
 
 // SweepSegmentBudget is the payload cache's half of the standing sweep.
 func SweepSegmentBudget() (int, int64) { return fwlog.SweepPayloadCache() }
 
-// SegmentCacheBytes reports what figwal currently holds against that budget,
-// and SegmentCacheBudget the budget itself.
 func SegmentCacheBytes() int64  { return fwlog.PayloadCacheBytes() }
 func SegmentCacheBudget() int64 { return segment.CacheBudget() }
 
-// SweepSegmentCache drops payload blocks unread for `keep` sweeps; see
-// segment.SweepIdle.
 func SweepSegmentCache(keep int64) (int, int64) { return segment.SweepIdle(keep) }
 
-// SegmentCacheLoads counts whole-segment loads. Climbing with READS rather
-// than with distinct segments means blocks are being dropped as fast as they
-// are built, and every read is paying for a segment.
+// SegmentCacheLoads climbing with reads rather than with distinct segments
+// means blocks are dropped as fast as they are built.
 func SegmentCacheLoads() int64 { return segment.CacheLoads() }
 
 func storeOptions(segmentSize int) xwal.StoreOptions {
@@ -180,15 +141,14 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		var noConfig *config.Loaded // the accessor is nil-safe on purpose
 		segmentSize = noConfig.SegmentSize()
 	}
-	// The root genesis is a figaro RoleGenesis message (filtered from
-	// rendering/context): not figwal's generic marker, which would read back
-	// as an empty-role message in the IR.
+	// The root genesis is a RoleGenesis message, not figwal's generic marker,
+	// which would read back as an empty-role message in the IR.
 	genesis, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
 	return xwal.StoreOptions{
 		Main: chanIR,
-		// figaro owns its own durability: every append syncs before anything
-		// reaches memory, so a later background pass has no opinion left to
-		// offer and could only turn a rejected write durable after the fact.
+		// figaro owns durability: every append syncs before anything reaches
+		// memory, so a background pass could only turn a rejected write
+		// durable after the fact.
 		NoBackgroundFlush: true,
 		IdleUnload:        time.Duration(handleIdle.Load()),
 		Codec:             "jsonl",
@@ -203,38 +163,31 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 			transChannel("copilot-messages"),
 			transChannel("copilot-responses"),
 		},
-		// The form is UNKEYED: a patch is a declaration of intent, not
-		// a fact about a turn, so it should not have to read the timeline to
+		// The form is unkeyed: a patch is a declaration of intent, not a fact
+		// about a turn.
 		Unkeyed: []string{chanForm},
 	}
 }
 
-// XwalStore owns the aria tree (policy over xwal.Store, whose flusher
-// owns all durability: every append syncs before it is visible, and the
-// background flush is off).
 type XwalStore struct {
 	root     string
 	mu       sync.Mutex
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
 
-	// observed: ariaID → the form ids its IR appends stamp (study
-	// subscriptions). In-memory; the aria's board is the durable truth.
-	observedMu sync.Mutex // WRITERS ONLY
+	// observed is in-memory; the aria's board is the durable truth.
+	observedMu sync.Mutex // writers only
 	observed   atomic.Pointer[map[string][]string]
 	now        func() int64
-	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
-	// delete takes. Never consulted for forking: that reads .from.
+	// tree is the presentation hierarchy: what fig ls draws and what a delete
+	// takes. Never consulted for forking: that reads .from.
 	tree topo.Tree
-	// deleting serializes whole deletes. A delete reads where the
-	// survivors are drawn, unlinks, and writes them somewhere that
-	// outlived it; two of those interleaved re-home an aria under a
-	// parent the other one is in the middle of taking.
+	// deleting serializes whole deletes: two interleaved would re-home an aria
+	// under a parent the other is in the middle of taking.
 	deleting sync.Mutex
 }
 
-// Topology exposes the .from adjacency for topo.Tree and boundary
-// computation. It is the only lineage figwal considers authoritative.
+// xwalTopology is the .from adjacency, the only lineage figwal considers authoritative.
 type xwalTopology struct{ s *XwalStore }
 
 func (t xwalTopology) From(id string) (string, bool) {
@@ -246,9 +199,7 @@ func (t xwalTopology) From(id string) (string, bool) {
 }
 
 func (t xwalTopology) Nodes() []string {
-	// THROUGH topologySnapshot, not the raw pointer. From() resolves via
-	// s.Node, which refreshes; reading s.topology directly here answered
-	// two loads and a compare when nothing has moved.
+	// Through topologySnapshot, not the raw pointer, so this refreshes as From() does.
 	snap := t.s.topologySnapshot()
 	if snap == nil {
 		return nil
@@ -271,22 +222,16 @@ func (t xwalTopology) ChildrenOf(id string) []string {
 	return out
 }
 
-// LoadedHeads is how many lineage heads figwal holds in memory. Each one is
-// a whole channel's raw payloads (log.buildOwnSnapshot copies every record),
-// so this is the largest resident thing in the daemon and nothing reported
-// it. A listing touches every node for recency, so it climbs to the size of
-// the store and comes back down on figwal's idle unload.
+// LoadedHeads: each head is a whole channel's raw payloads, the largest
+// resident thing in the daemon. A listing climbs it to the size of the store;
+// figwal's idle unload brings it down.
 func (s *XwalStore) LoadedHeads() int { return s.trunks.LoadedHeads() }
 
-// Tree is the presentation hierarchy in force.
 func (s *XwalStore) Tree() topo.Tree { return s.tree }
 
-// TopologyAdjacency is the .from lineage, for building a presentation tree
-// on top of it.
 func (s *XwalStore) TopologyAdjacency() topo.Topology { return xwalTopology{s} }
 
-// SetTree installs a presentation hierarchy. The wiring calls this with a
-// trunk capability; without one the store keeps the topology tree.
+// SetTree: without a trunk capability the store keeps the topology tree.
 func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
@@ -311,8 +256,6 @@ func (s *XwalStore) presentRev() uint64 {
 	return s.tree.Rev()
 }
 
-// OpenXwalStore opens the aria tree at root, creating it when absent.
-// segmentSize <= 0 takes the configured default (see storeOptions).
 func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if root == "" {
 		return nil, fmt.Errorf("xwal store: empty root")
@@ -320,16 +263,13 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	// Before the store opens, because an unmigrated store does not open at
-	// none of its arias. The single writer (the daemon) owns this; the
-	// migration takes the store lock itself, so a second process waits for
-	// a store rather than half-reading one.
+	// Before the store opens: an unmigrated store does not open. The migration
+	// takes the store lock itself, so a second process waits rather than
+	// half-reading.
 	if err := migrateLayout(root); err != nil {
 		return nil, err
 	}
-	// The generation gate speaks BEFORE figwal does. A store from an older
-	// generation names its channels differently, and figwal would refuse it
-	// first with a message about a missing reducer.
+	// The generation gate speaks before figwal does.
 	if err := CheckStoreGeneration(root); err != nil {
 		return nil, err
 	}
@@ -337,7 +277,6 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Single writer (the daemon) owns migration; the CLI never sees it.
 	if err := ensureSchema(root, st); err != nil {
 		return nil, err
 	}
@@ -351,14 +290,11 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	return x, nil
 }
 
-// Close releases the tree.
 func (s *XwalStore) Close() error { return s.trunks.Close() }
 
-// migrateLayout brings a store written by an older figaro up to the layout
-// this build reads: every node at depth 1, lineage in its own marker. It is
-// automatic because the alternative is a daemon that refuses to start until
-// the user runs a command he has not heard of -- but it is not silent, and
-// it is not partial. Either it finishes or the open fails.
+// migrateLayout brings an older layout up to this build's: every node at
+// depth 1, lineage in its own marker. Automatic, not silent, not partial:
+// either it finishes or the open fails.
 func migrateLayout(root string) error {
 	need, err := xwal.NeedsFlatten(root)
 	if err != nil || !need {
@@ -375,8 +311,7 @@ func migrateLayout(root string) error {
 	return nil
 }
 
-// openNode opens the xwal for an aria id (the trunk's live head). Caller
-// closes it.
+// Caller closes.
 func (s *XwalStore) openNode(id string) (*xwal.XWAL, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -384,23 +319,18 @@ func (s *XwalStore) openNode(id string) (*xwal.XWAL, error) {
 	if err == nil {
 		return x, nil
 	}
-	// A stump is not a trunk, and its branch has its own accessor. It is
-	// openable for the same reason it is worth opening: it holds the birth
-	// record that states the outfit's name.
+	// A stump is not a trunk; it is openable because it holds the birth record
+	// that states the outfit's name.
 	if sx, serr := s.trunks.StumpHead(id); serr == nil {
 		return sx, nil
 	}
 	return nil, err
 }
 
-// outfitStump is a stump's id: its content version, and nothing else. The
-// name is already inside the hash (see OutfitVersion) and inside the birth
-// record the stump writes, so putting it in the id too would be a compound key
-// for something with one key. The "@" makes it unmistakably not an aria id.
+// outfitStump is the content version alone: the name is already inside the
+// hash and the birth record. The "@" makes it unmistakably not an aria id.
 func outfitStump(ver string) string { return "@" + ver }
 
-// CreateOutfit returns the outfit id for this outfit, materializing it as a
-// markerless stump under the root if it does not exist yet.
 func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -414,11 +344,8 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 		if st.Name != stump {
 			continue
 		}
-		// Reuse it only if it MINTED. A stump whose directory exists and whose
-		// birth record never landed is indistinguishable from a finished one by
-		// name alone, and reusing it hands every aria beneath an empty prefix -
-		// no skills, no credo: for as long as the store lives. Existence is
-		// not completeness.
+		// Reuse it only if it minted: a stump whose birth record never landed
+		// hands every aria beneath an empty prefix. Existence is not completeness.
 		if s.stumpBorn(stump) {
 			return stump, nil
 		}
@@ -430,9 +357,9 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 	if err := s.trunks.CreateStump(stump); err != nil {
 		return "", fmt.Errorf("xwal store: create outfit stump: %w", err)
 	}
-	// The outfit's birth message is renderable (RoleInput, empty content): its
-	// form patch renders as the outfit's <system-reminder> blocks ONCE
-	// in this shared prefix, inherited (cached) by every conversation.
+	// The birth message renders the form patch as the outfit's
+	// <system-reminder> blocks once in this shared prefix, inherited by every
+	// conversation.
 	stamped := withOutfitVersion(named, ver)
 	if err := s.writeStumpBirth(stump, &stamped); err != nil {
 		return "", err
@@ -440,18 +367,15 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 	return stump, nil
 }
 
-// ForkWith is the ONE birth verb: fork a node and land a patch on the child, in
-// one critical section.
+// ForkWith forks a node and lands a patch on the child in one critical section.
 func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error) {
 	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation))
 }
 
-// CreateForm mints an UNBOUND FORM: parent "" forks the null root, a form
-// parent duplicates that form's state into a fresh @id. Forms have no
-// interior points to fork at: their timeline is one ceremonial record -
-// so there is no atMainLT here. Only forms fork independently: a
-// conversation parent is refused, because a bound form's fork is the
-// aria's fork and it goes through ForkWith.
+// CreateForm: parent "" forks the null root, a form parent duplicates its
+// state into a fresh @id. No atMainLT: a form's timeline is one ceremonial
+// record. A conversation parent is refused; a bound form's fork is the aria's
+// fork, through ForkWith.
 func (s *XwalStore) CreateForm(parent string, patch message.Patch) (id string, version uint64, err error) {
 	if parent != "" {
 		s.mu.Lock()
@@ -465,9 +389,8 @@ func (s *XwalStore) CreateForm(parent string, patch message.Patch) (id string, v
 	return s.forkWithKind(parent, 0, patch, string(kindForm))
 }
 
-// forkWithKind is the shared birth mechanics: pick the spawn shape from
-// the parent's species, then land the birth patch and its cursor-stamped
-// record in order. Caller chooses what species the CHILD is.
+// forkWithKind picks the spawn shape from the parent's species, then lands
+// the birth patch and its cursor-stamped record in order.
 func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string) (child string, version uint64, err error) {
 	if patch.IsIdentity() {
 		return "", 0, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
@@ -479,14 +402,12 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 	case parent == "":
 		child, err = s.trunks.SpawnUnderRootKind(kind)
 	case s.isStumpLocked(parent):
-		// A stump is not a trunk and has no tail to fork: spawning beneath it
-		// is what "fork the outfit" means, and the child inherits the birth
-		// record every sibling reads. Legacy stumps remain bindable: they
+		// A stump has no tail to fork: spawning beneath it is what "fork the
+		// outfit" means, and the child inherits the birth record every sibling reads.
 		child, err = s.trunks.SpawnUnderStumpKind(parent, kind)
 	case s.isFormLocked(parent):
-		// A live, patchable forking point: spawn a NEW trunk beneath it.
-		// The form is not written, not frozen, and later patches to it
-		// belong to the form alone (proved in figwal's spawnkind tests).
+		// A live, patchable forking point: a new trunk beneath it. The form is
+		// not written or frozen; later patches belong to the form alone.
 		child, err = s.trunks.SpawnChildKind(parent, kind)
 	case atMainLT == 0:
 		child, err = s.trunks.ForkTail(parent)
@@ -503,7 +424,7 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 	return child, version, nil
 }
 
-// isFormLocked reports whether an id names an unbound form. Caller holds s.mu.
+// Caller holds s.mu.
 func (s *XwalStore) isFormLocked(id string) bool {
 	kind, ok := s.trunks.Kind(id)
 	return ok && kind == string(kindForm)
@@ -560,7 +481,6 @@ func (s *XwalStore) stumpBorn(stump string) bool {
 	return mainTailOf(x) > 0
 }
 
-// CreateConversation spawns a conversation from an outfit stump.
 func (s *XwalStore) CreateConversation(outfitID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -573,9 +493,7 @@ func (s *XwalStore) CreateConversation(outfitID string) (string, error) {
 	return id, nil
 }
 
-// Fork branches a conversation at its head. The aria id is STABLE: the trunk
-// continues under the same id (cont == id); only the alternative is new.
-// (bind-to-trunk: forking your trunk doesn't move you.)
+// Fork: the aria id is stable (cont == id); only the alternative is new.
 func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -586,9 +504,8 @@ func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 	return id, alt, nil
 }
 
-// ForkAt branches at an interior main-LT (imperative: no message): shares
-// [1..atMainLT], mints an empty alternative diverging at atMainLT+1; the id is
-// stable (cont == id). At/past the tail it degenerates to a tail fork.
+// ForkAt shares [1..atMainLT] and mints an empty alternative diverging at
+// atMainLT+1; cont == id. At or past the tail it degenerates to a tail fork.
 func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -599,7 +516,7 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 	return id, alt, nil
 }
 
-// forkAtLocked is ForkAt's decision, shared with ForkWith. Caller holds s.mu.
+// Caller holds s.mu.
 func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
 	var alt string
 	var err error
@@ -621,14 +538,11 @@ func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
 	return alt, nil
 }
 
-// Promote raises an aria in the PRESENTATION hierarchy. It edits the trunk
-// pstate and writes nothing to any aria's history, so it is O(1) in history
-// length. ErrAtStump means there is nothing above to promote into, or the
-// build has no trunk capability at all.
+// Promote edits the presentation hierarchy only, O(1) in history length.
+// ErrAtStump: nothing above to promote into.
 func (s *XwalStore) Promote(id string, levels int) (int, error) {
-	// NO s.mu here: the tree resolves lineage through Node, which refreshes
-	// the topology snapshot under s.mu. Holding it across the tree call
-	// deadlocks. The tree carries its own lock and its write is atomic.
+	// No s.mu here: the tree resolves lineage through Node, which refreshes
+	// the topology snapshot under s.mu. The tree carries its own lock.
 	if s.tree == nil {
 		return 0, ErrNoTrunkCapability
 	}
@@ -652,7 +566,6 @@ func (s *XwalStore) Promote(id string, levels int) (int, error) {
 	return levels, nil
 }
 
-// promotableInto reports whether id currently sits under a conversation.
 func (s *XwalStore) promotableInto(id string) bool {
 	parent, ok := s.tree.Parent(id)
 	if !ok || parent == "" {
@@ -662,16 +575,13 @@ func (s *XwalStore) promotableInto(id string) bool {
 	return ok && node.Kind == string(kindConversation)
 }
 
-// OwnerOf resolves which node owns atMainLT along a trunk's lineage (a trunk,
-// an outfit stump, or the root): for the <trunk>:<LT> addressing announcement.
 func (s *XwalStore) OwnerOf(id string, atMainLT uint64) (xwal.Owner, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.trunks.Owner(id, atMainLT)
 }
 
-// writeStumpBirth appends an outfit stump's renderable birth message (IR +
-// form stamp). Caller holds s.mu.
+// Caller holds s.mu.
 func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error {
 	x, err := s.trunks.StumpHead(stump)
 	if err != nil {
@@ -695,21 +605,17 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 		return err
 	}
 	if glt != next {
-		// Nothing else may write to a stump: CreateOutfit holds s.mu and the
-		// stump is minted here. If this ever fires, the patch is keyed to a
-		// record that does not exist and the reminders would render against
-		// the wrong turn.
+		// Nothing else may write to a stump; if this fires, the patch is keyed
+		// to a record that does not exist.
 		return fmt.Errorf("xwal store: stump %s birth record landed at %d, board patch keyed to %d",
 			stump, glt, next)
 	}
-	// Birth records must be durable before conversations spawn under the
-	// stump, a crash between spawn and the next flush would orphan the
-	// children's fork base.
+	// Durable before conversations spawn under the stump: a crash between
+	// spawn and the next flush would orphan the children's fork base.
 	return x.SyncCoherent()
 }
 
-// mainTailOf is the stump's main channel tail, for keying a record to the
-// LT the next append will take.
+// mainTailOf keys a record to the LT the next append will take.
 func mainTailOf(x *xwal.XWAL) uint64 {
 	for _, ch := range x.Channels() {
 		if ch.Name == chanIR {
@@ -725,16 +631,15 @@ func OutfitVersion(name string, patch message.Patch) (string, error) {
 	return contentVersion(withOutfitName(patch, name))
 }
 
-// hash. It exists so a listing does not call every aria minted by an older
-// build stale; delete it when no store in use still holds a stump from one.
+// LegacyOutfitVersion is the pre-name hash; delete it when no store in use
+// still holds a stump from an older build.
 func LegacyOutfitVersion(patch message.Patch) (string, error) {
 	return contentVersion(patch)
 }
 
-// ContentVersion is the value-stable content hash of a patch: an aria's identity
+// ContentVersion is the value-stable content hash of a patch.
 func ContentVersion(patch message.Patch) (string, error) { return contentVersion(patch) }
 
-// contentVersion is the value-stable content hash of a patch.
 func contentVersion(patch message.Patch) (string, error) {
 	body, err := json.Marshal(patch)
 	if err != nil {
@@ -757,13 +662,12 @@ func withKey(p message.Patch, key, value string) message.Patch {
 		map[string]json.RawMessage{key: b}, nil))
 }
 
-// NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
 type NodeView struct {
 	ID     string
 	Parent string
 	Kind   string
-	// the lineage by the topology walk. Not the presentation parent: a promote
-	// moves where a row appears, never where its data came from.
+	// Stump is where the node's data came from, by the topology walk; a
+	// promote moves where a row appears, never this.
 	Stump      string
 	Outfit     string // the stump's label; filled by the backend
 	Version    string // the stump's content version; same
@@ -775,9 +679,8 @@ type NodeView struct {
 	Present string
 }
 
-// view renders a live (conversation) trunk. Its parent for the global
-// hierarchy is its outfit stump (top-level) or its parent conversation trunk
-// (a branch); an outfitless top-level trunk hangs off the root.
+// view: a top-level conversation's parent is its outfit stump, or the root
+// when outfitless.
 func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	parent := t.Parent
 	if parent == "" {
@@ -788,10 +691,8 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 		}
 	}
 	p := at[t.ID]
-	// The trunk's OWN kind, from its figwal marker: form trunks joined
-	// conversations in the tree, and hardcoding conversation here is how
-	// a form once got an agent woken for it. Legacy markers all say
-	// conversation already; empty (never written) falls back to it.
+	// The trunk's own kind from its figwal marker; empty (never written) means
+	// conversation.
 	kind := t.Kind
 	if kind == "" {
 		kind = string(kindConversation)
@@ -802,13 +703,9 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	}
 }
 
-// vectorsLocked assigns each conversation trunk its fork-tree vector: the
-// child-index path among conversation trunks: roots are [0],[1],…, a branch
-// is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
-// recency). The trunk list is passed in so callers compute it once per
-// request (it costs a full disk scan). Caller holds mu.
-// born under. One map for both, because they are found by the same walk and
-// a second map of the same keys is a second allocation per node.
+// place is a conversation trunk's fork-tree vector (child-index path,
+// siblings ordered by id) and the stump it was born under; one map because
+// both are found by the same walk.
 type place struct {
 	vec   []int
 	stump string
@@ -817,11 +714,8 @@ type place struct {
 func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	live := make(map[string]bool, len(infos))
 	for _, ti := range infos {
-		// Forms are not part of the conversation fork-tree: a form-born
-		// aria is a TOP-LEVEL conversation (its born-of shows in the
-		// listing's OUTFIT column), not a branch of an invisible parent -
-		// which is exactly how a vector under a never-listed node made
-		// bound figaros vanish from `fig ls`.
+		// Forms are not part of the conversation fork-tree: a form-born aria is
+		// a top-level conversation, not a branch of an invisible parent.
 		if ti.Kind == string(kindForm) {
 			continue
 		}
@@ -844,9 +738,8 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	for k := range kids {
 		sort.Strings(kids[k])
 	}
-	// One walk, one map. The stump rides alongside the vector: figwal names it
-	// only for a trunk rooted directly at one, so a branch inherits it from the
-	// only edge allowed to decide where an aria's data came from (internal/topo).
+	// The stump rides alongside the vector: figwal names it only for a trunk
+	// rooted directly at one, so a branch inherits it.
 	at := make(map[string]place, len(infos))
 	var assign func(id string, prefix []int, from string)
 	assign = func(id string, prefix []int, from string) {
@@ -861,7 +754,7 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	return at
 }
 
-// presentLocked stamps every node's display parent, and the vectors that
+// presentLocked stamps every node's display parent and the vectors that
 // follow from it, returning the presentation revision it read.
 func (s *XwalStore) presentLocked(nodes []NodeView) uint64 {
 	var edges map[string]string
@@ -889,9 +782,7 @@ func (s *XwalStore) presentLocked(nodes []NodeView) uint64 {
 	return rev
 }
 
-// presentVectors is vectorsLocked over the display edges: the same rule
-// (a conversation under a conversation is a branch, anything else is a
-// root), walked once.
+// presentVectors is vectorsLocked over the display edges.
 func presentVectors(nodes []NodeView, pres map[string]string) map[string][]int {
 	live := make(map[string]bool, len(nodes))
 	for _, n := range nodes {
@@ -933,7 +824,7 @@ func presentVectors(nodes []NodeView, pres map[string]string) map[string][]int {
 }
 
 func (s *XwalStore) topologySnapshot() *topologySnapshot {
-	// Keyed on BOTH clocks: figwal's topology version and the presentation
+	// Keyed on both clocks: figwal's topology version and the presentation
 	// revision. A promote moves no bytes, so the first one does not move.
 	version, rev := s.trunks.Version(), s.presentRev()
 	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(version, rev) {
@@ -964,10 +855,8 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	ids := make([]string, 0, len(nodes))
 	byID := make(map[string]NodeView, len(nodes))
 	for _, node := range nodes {
-		// Split the tree by species: `fig ls` lists conversations, and a
-		// form leaking in would be an aria-shaped row for a thing with no
-		// turns. Forms get their own accessor and the global view carries
-		// both.
+		// Split by species: `fig ls` lists conversations, and a form would be
+		// an aria-shaped row for a thing with no turns.
 		switch node.Kind {
 		case string(kindForm):
 			forms = append(forms, node)
@@ -990,43 +879,32 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	return snapshot
 }
 
-// Conversations returns a view of every conversation trunk, including
-// fork-tree vectors but excluding ceremonial anchors.
 func (s *XwalStore) Conversations() []NodeView {
 	return append([]NodeView(nil), s.topologySnapshot().conversations...)
 }
 
-// Forms returns every unbound form trunk.
 func (s *XwalStore) Forms() []NodeView {
 	return append([]NodeView(nil), s.topologySnapshot().forms...)
 }
 
-// ConversationIDs returns persisted conversation ids without computing
-// vectors or reading ceremonial outfit anchors.
 func (s *XwalStore) ConversationIDs() []string {
 	return append([]string(nil), s.topologySnapshot().conversationIDs...)
 }
 
-// Nodes returns a view of every conversation trunk plus the ceremonial
-// anchors (the root + every outfit stump).
+// Nodes is every trunk plus the root and every outfit stump.
 func (s *XwalStore) Nodes() []NodeView {
 	return append([]NodeView(nil), s.topologySnapshot().nodes...)
 }
 
-// Node returns a single trunk view (incl. the root + outfit stumps).
 func (s *XwalStore) Node(id string) (NodeView, bool) {
 	node, ok := s.topologySnapshot().byID[id]
 	return node, ok
 }
 
-// RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
-// with live branches unless recursive.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
-	// Refuse before touching anything. The boundary repair below rewrites
-	// surviving arias, so a delete that is going to be refused must be
-	// refused while the store still looks the way the caller found it.
+	// Refuse before touching anything: the boundary repair rewrites surviving arias.
 	taken := s.tree.DeleteSet(id)
 	if !recursive && len(taken) > 1 {
 		return fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
@@ -1034,15 +912,13 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) e
 	if bury != nil {
 		bury(taken)
 	}
-	// Repair the boundary FIRST: every survivor that reads its history
-	// through this delete set absorbs that prefix and stops pointing at it.
-	// Only then does anything get unlinked, so a crash between the two
-	// leaves survivors that still read through directories still present.
+	// Repair the boundary first: every survivor reading its history through
+	// the delete set absorbs that prefix. Only then unlink, so a crash between
+	// the two leaves survivors reading through directories still present.
 	homes := map[string]string{}
-	// Anything DRAWN under something this delete takes has to be re-drawn
-	// somewhere that survives. Its edge is about to be forgotten, and
-	// falling back to the topology puts it under the genesis root with no
-	// outfit, which is the fossil this whole path exists to stop making.
+	// Anything drawn under something this delete takes is re-drawn somewhere
+	// that survives; falling back to the topology would put it under the
+	// genesis root with no outfit.
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {
 		doomed[t] = true
@@ -1054,9 +930,7 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) e
 		homes[child] = s.survivingHome(child, taken)
 	}
 	for _, orphan := range s.deleteOrphans(id) {
-		// Where it is DRAWN today, remembered before the detach empties its
-		// .from. Absorbing a prefix is a storage repair; without this it
-		// also teleports an untouched aria to the genesis root.
+		// Where it is drawn today, remembered before the detach empties its .from.
 		homes[orphan] = s.survivingHome(orphan, taken)
 		// Boundary speaks in aria ids; Detach addresses the node directory.
 		node, ok := s.trunks.HeadNode(orphan)
@@ -1067,13 +941,12 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) e
 			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
 		}
 	}
-	// Which stump hosts it must be read BEFORE the removal (afterwards the
-	// topologySnapshot takes s.mu itself.
+	// The hosting stump is read before the removal.
 	stump := s.topologySnapshot().byID[id].Stump
 	if err := s.removeLocked(id, recursive); err != nil {
 		return err
 	}
-	// Presentation is repaired with s.mu RELEASED: an edge resolves through
+	// Presentation is repaired with s.mu released: an edge resolves through
 	// the topology snapshot, which takes that lock itself.
 	if err := s.tree.Forget(taken...); err != nil {
 		slog.Warn("forget presentation edges", "aria", id, "err", err)
@@ -1090,18 +963,15 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) e
 			slog.Warn("rehome detached aria", "aria", orphan, "under", home, "err", err)
 		}
 	}
-	// The stump goes only if nothing is left wearing it. A detached
-	// on that count alone took the outfit out from under an aria that is
-	// still drawn beneath it.
+	// The stump goes only if nothing is left drawn beneath it.
 	if !keep {
 		s.collectStumpAfterDelete(stump)
 	}
 	return nil
 }
 
-// removeLocked is the unlink, the only part of a delete that touches the
-// store. Stump collection is deferred: it depends on where the survivors
-// end up.
+// removeLocked is the unlink; stump collection is deferred because it depends
+// on where the survivors end up.
 func (s *XwalStore) removeLocked(id string, recursive bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1114,8 +984,8 @@ func (s *XwalStore) collectStumpAfterDelete(stump string) {
 	s.collectStump(stump)
 }
 
-// survivingHome is the nearest place above id that outlives this delete: the
-// born under.
+// survivingHome is the nearest place above id that outlives this delete, else
+// the stump it was born under.
 func (s *XwalStore) survivingHome(id string, taken []string) string {
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {
@@ -1137,15 +1007,14 @@ func (s *XwalStore) survivingHome(id string, taken []string) string {
 	return ""
 }
 
-// CollectStump removes a childless outfit stump. Refuses one still hosting
-// arias: the caller is expected to have checked, so a refusal is a race.
+// CollectStump refuses one still hosting arias; the caller is expected to
+// have checked, so a refusal is a race.
 func (s *XwalStore) CollectStump(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.trunks.RemoveStump(id)
 }
 
-// collectStump removes a stump that has just lost its last child.
 func (s *XwalStore) collectStump(name string) {
 	if name == "" {
 		return
@@ -1164,9 +1033,9 @@ func (s *XwalStore) collectStump(name string) {
 	}
 }
 
-// presented under: each one absorbs the history prefix it reads through an
-// ancestor. After it, a delete's boundary is empty whatever the
-// presentation hierarchy says, so nothing is ever owed at delete time.
+// Normalize detaches every aria presented under something it was not born
+// under: each absorbs the prefix it reads through an ancestor, so a delete's
+// boundary is empty afterwards whatever the presentation hierarchy says.
 func (s *XwalStore) Normalize() (int, error) {
 	done := 0
 	for _, id := range s.tree.Overridden() {
@@ -1192,40 +1061,24 @@ func (s *XwalStore) deleteOrphans(id string) []string {
 	return topo.Boundary(s.TopologyAdjacency(), s.tree.DeleteSet(id))
 }
 
-// LastTS is the newest figwal record timestamp anywhere in a node, unix
-// millis: recency for listings. figwal serves it from the open handle's
-// lock-free counter (one head open hydrates a cold node, and the trunks
-// layer keeps it warm). This NEVER wakes an agent: it opens a store
-// handle, not a figaro. Zero for pre-timestamp history: "we can
-// tolerate without them".
+// LastTS never wakes an agent: it opens a store handle, not a figaro. Zero
+// for pre-timestamp history.
 func (s *XwalStore) LastTS(id string) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Trunk first, BY MAP LOOKUP: the first draft asked isStumpLocked
-	// before anything, and that is a full stump scan: per row, so a
-	// 300-aria listing went O(n²) and the -count=6 battery caught it at
-	// +6784% (18ms where 262µs stood). Kind() is an index map hit; the
-	// stump fallback (StumpLastTS guards with a node map hit) only runs
-	// for ids that are not trunks at all.
+	// Trunk first, by map lookup: a stump scan per row made a listing O(n²).
 	if _, ok := s.trunks.Kind(id); ok {
 		return s.trunks.LastTS(id)
 	}
 	return s.trunks.StumpLastTS(id)
 }
 
-// KindForm is the public name of the unbound-form node kind, for
-// consumers that discriminate rows by species.
 const KindForm = string(kindForm)
 
-// ---- the observed set (study subscriptions, pull-at-the-stamp) ----
-
-// librettoCursorPrefix namespaces observed-form positions inside the main
-// record's cursor map, beside the node's own channel entries. The value is
-// the LIBRETTO's version, never the source's.
+// librettoCursorPrefix namespaces observed-form positions in the main
+// record's cursor map; the value is the libretto's version, never the source's.
 const librettoCursorPrefix = "libretto:"
 
-// studyCursors extracts the observed-form half of a cursor stamp,
-// keyed by bare form id.
 func studyCursors(cursors map[string]uint64) map[string]uint64 {
 	var out map[string]uint64
 	for k, v := range cursors {
@@ -1239,11 +1092,9 @@ func studyCursors(cursors map[string]uint64) map[string]uint64 {
 	return out
 }
 
-// SetObservedForms declares which forms an aria observes; every
-// subsequent IR append stamps their positions. The list is the AGENT's
-// declaration (mirroring its board's system.studies): the store holds
-// it in memory only, because the board is the durable truth and the
-// agent re-declares on boot.
+// SetObservedForms: the list mirrors the agent's board; the store holds it in
+// memory only, since the board is the durable truth and the agent re-declares
+// on boot.
 func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 	s.observedMu.Lock()
 	cur := *s.observed.Load()
@@ -1260,9 +1111,8 @@ func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 	s.observedMu.Unlock()
 }
 
-// observedCursors reads each observed form's LIBRETTO version at the stamp
-// moment. The source form is never touched: the libretto is the copy the
-// translator renders from, and it outlives its source.
+// observedCursors reads the libretto's version, never the source's: the
+// libretto is the copy the translator renders from, and it outlives its source.
 func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
 	ids := (*s.observed.Load())[ariaID]
 	if len(ids) == 0 {
@@ -1277,9 +1127,7 @@ func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
 	return out
 }
 
-// formTail is the form channel's last index for any node: the version
-// a conditional Set quotes, read from the hot handle without a Form
-// replay.
+// formTail reads the hot handle without a Form replay.
 func (s *XwalStore) formTail(id string) (uint64, bool) {
 	x, err := s.openNode(id)
 	if err != nil {
@@ -1294,9 +1142,6 @@ func (s *XwalStore) formTail(id string) (uint64, bool) {
 	return 0, false
 }
 
-// HandleIdleForTest and the two beside it expose the ENFORCEMENT POINTS to
-// the settings test in internal/cli. They read the package variables the
-// store consults when it opens a handle, builds a form, or trims one, which
-// is the whole point: a config test that stops at the accessor cannot tell a
-// wired knob from an unwired one.
+// HandleIdleForTest reads the variable the store consults, so a config test
+// can tell a wired knob from an unwired one.
 func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load()) }

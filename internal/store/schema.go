@@ -13,11 +13,9 @@ import (
 	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
-// schemaFileName is figaro's channel-schema sidecar, kept next to figwal's
-// xwal.json rather than inside it. It cannot live in the manifest: figwal
-// owns that file, and its manifestChannel struct is {name,kind,reducer,opaque}
-// re-marshalled on every channel add, any field we wrote there would be
-// silently dropped on the next rewrite.
+// schemaFileName sits beside figwal's xwal.json, not inside it: figwal
+// re-marshals the manifest on every channel add and would drop any field
+// written there.
 const schemaFileName = "schema.json"
 
 // schemaClass decides what a version bump costs.
@@ -34,58 +32,33 @@ type channelSchema struct {
 	class   schemaClass
 }
 
-// channelSchemas is what THIS binary understands. A key ending in "/" matches
-// by prefix, so one entry covers translations-v2/anthropic and its siblings.
-// Bump a version when a channel's on-disk payload shape changes.
+// channelSchemas: a key ending in "/" matches by prefix. Bump a version when
+// a channel's on-disk payload shape changes.
 var channelSchemas = map[string]channelSchema{
-	// v2: the role vocabulary became input/output (was user/assistant). Reading
-	// old entries is transparent: message.Role.UnmarshalJSON normalises via
-	// RoleFromWire: so canonical data needs no migration. The bump exists for
-	// the OTHER direction: an older binary has no such mapping and would read
-	// "input" as an unknown voice, rendering turns under the wrong speaker. The
-	// forward-incompatibility gate turns that silent corruption into a refusal.
-	// v3: input messages carry a `steering` flag distinguishing a mid-turn
-	// direction from a new question. Reading old entries is transparent (the
-	// flag is absent, and the legacy prose-on-a-tool_result shape is still
-	// recognised as steering), so canonical data needs no migration. The bump
-	// is again for the OTHER direction: an older binary ignores the flag, so a
-	// steer would open a spurious turn and truncate the exchange it belongs
-	// to: shifting every turn id after it, which is the coordinate
-	// `send`/`fork <trunk>:<turn>` addresses. The gate makes that a refusal.
-	// v4: a main record carries a CURSOR STAMP -- where each unkeyed channel
-	// stood when the record was written -- and the form became unkeyed
-	// in the same release, so its records now carry main LT 0 instead of a
-	// real one. Reading an old store is transparent: a record with no stamp
-	// falls back to deriving the boundary from the form's old main-LT
-	// key, so nothing is rewritten and no converter is needed.
-	// v5: every record carries turn_id explicitly. It was omitempty, so a zero
-	// was indistinguishable from a field never written and every reader
-	// re-derived the whole log to tell them apart.
+	// v2: roles became input/output; old entries read transparently, the bump
+	// refuses an older binary that would read "input" as an unknown voice.
+	// v3: input messages carry `steering`; an older binary would open a
+	// spurious turn and shift every turn id after it.
+	// v4: a main record carries a cursor stamp and the form became unkeyed
+	// (main LT 0); a record with no stamp derives the boundary from the
+	// form's old main-LT key.
+	// v5: turn_id is explicit; omitempty made zero indistinguishable from
+	// never written.
 	chanIR: {version: 5, class: classCanonical},
-	// v2: patches are STRUCTURAL. A flat one names dotted keys and records
-	// nothing of what it replaced, so it can neither reach a nested field nor
-	// be inverted. MigrateFormToStructural replays each node in order, which
-	// is what lets it convert against the board a record lands on.
+	// v2: patches are structural; a flat one can neither reach a nested field
+	// nor be inverted. MigrateFormToStructural converts.
 	chanForm: {version: 2, class: classReducible},
-	// v2: not a shape change -- a POISON sweep. A projection bug rendered the
-	// whole form onto one message per provider round-trip instead of the
-	// delta, and the encoder wrote that into these per-LT caches, so the
-	// duplication is durable and re-reading does not undo it. Measured on real
-	// arias: 31-60% of a conversation's cached bytes were repeated board, and
-	// six seats sat at 95-101% of their context limit because of it.
-	// Bumping a derived channel drops it; the projection regenerates it lazily
-	// and correctly. Nothing canonical moves.
-	// v3: a row's sidecar carries the CONTENT HASH of the fig IR record it
-	// translates, beside the fingerprint. v2 rows have no hash and cannot
-	// grow one, so they are dropped and re-derived -- which is what the
-	// derived class is for.
+	// v2: a poison sweep, not a shape change: a projection bug wrote the whole
+	// form into these caches. Bumping a derived channel drops it and the
+	// projection regenerates it.
+	// v3: rows carry the content hash of the IR record they translate; v2
+	// rows cannot grow one and are re-derived.
 	"translations-v2/": {version: 3, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},
 }
 
-// schemaFor resolves a concrete channel name to its schema, returning the
-// registry key that matched (the key, not the name, is what the sidecar
-// records, so prefix families version as a unit).
+// schemaFor returns the registry key that matched: the key, not the name, is
+// what the sidecar records, so prefix families version as a unit.
 func schemaFor(name string) (channelSchema, string, bool) {
 	if s, ok := channelSchemas[name]; ok {
 		return s, name, true
@@ -98,9 +71,8 @@ func schemaFor(name string) (channelSchema, string, bool) {
 	return channelSchema{}, "", false
 }
 
-// storeVersion is the generation of MEANING this build writes: not the shape
-// of a record (that is a channel schema) and not the arrangement on disk (that
-// is figwal's layout), but what correctly-shaped data is taken to mean.
+// storeVersion is the generation of meaning this build writes: not a record's
+// shape (channel schema) nor the arrangement on disk (figwal's layout).
 const storeVersion = 2
 
 type schemaFile struct {
@@ -138,7 +110,6 @@ func writeSchema(root string, f schemaFile) error {
 	return os.Rename(tmp, filepath.Join(root, schemaFileName))
 }
 
-// ensureSchema gates opening the store on the on-disk channel schemas.
 func ensureSchema(root string, trunks *xwal.Store) error {
 	f, err := readSchema(root)
 	if err != nil {
@@ -147,12 +118,9 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 	return checkGeneration(f, root, trunks)
 }
 
-// checkGeneration is the version half, split out so it can run BEFORE figwal
-// opens the store. A generation-1 store names its form channel
-// chanFormLegacy, and figwal's manifest is authoritative for channel shape:
-// so it refuses the open itself, with "no reducer \"jsonmerge\" registered
-// for channel \"chalkboard\"", which explains nothing to the person holding
-// the store. This must speak first.
+// checkGeneration is split out so it can run before figwal opens the store: a
+// generation-1 store names its form channel chanFormLegacy, and figwal would
+// refuse first with a message about a missing reducer.
 func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	if f.StoreVersion > storeVersion {
 		return fmt.Errorf(
@@ -180,9 +148,8 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 		case want.class == classCanonical:
 			// Derived on read; the record is never rewritten here.
 		case len(channelMigrations[key]) > 0:
-			// migrateChannels ran before the open and stamps the sidecar
-			// below; reaching here means it did not raise the version, which
-			// is a bug in the migration rather than a bad store.
+			// migrateChannels ran before the open; reaching here means it did
+			// not raise the version, a bug in the migration.
 			return fmt.Errorf("store channel %q is still v%d after migrating to v%d",
 				strings.TrimSuffix(key, "/"), have, want.version)
 		default:
@@ -200,9 +167,7 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	return writeSchema(root, f)
 }
 
-// clearDerived drops every derived-cache channel belonging to one of keys,
-// across every trunk. Clearing is a directory removal and regeneration is
-// lazy, so a bump stays cheap even on a store with hundreds of arias.
+// clearDerived is a directory removal and regeneration is lazy, so a bump stays cheap.
 func clearDerived(trunks *xwal.Store, keys []string) error {
 	for _, ti := range trunks.List() {
 		x, err := trunks.Head(ti.ID)
@@ -227,8 +192,7 @@ func clearDerived(trunks *xwal.Store, keys []string) error {
 	return nil
 }
 
-// SchemaReport pairs a channel's on-disk schema with what this binary knows.
-// Status is "ok", "behind" (migrates on next open) or "ahead" (refuses).
+// SchemaReport.Status is "ok", "behind" (migrates on next open) or "ahead" (refuses).
 type SchemaReport struct {
 	Channel string
 	OnDisk  int // 0 when the sidecar has no entry yet
@@ -236,18 +200,15 @@ type SchemaReport struct {
 	Status  string
 }
 
-// StoreGeneration reports the store's recorded generation and this build's,
-// read straight from the sidecar so it answers even when the gate refused.
+// StoreGeneration reads the sidecar directly, so it answers even when the gate refused.
 func StoreGeneration(root string) (onDisk, known int, err error) {
 	f, err := readSchema(root)
 	return f.StoreVersion, storeVersion, err
 }
 
-// CheckStoreGeneration refuses a store this build cannot read, and migrates one
-// it can. It runs before anything OPENS the store, which is not a nicety: a
-// generation whose channels are named differently makes figwal refuse first,
-// with a message about a missing reducer, and a migration cannot run against an
-// open store anyway.
+// CheckStoreGeneration runs before anything opens the store: figwal would
+// refuse a differently-named channel first, and a migration cannot run
+// against an open store.
 func CheckStoreGeneration(root string) error {
 	f, err := readSchema(root)
 	if err != nil {
@@ -262,42 +223,32 @@ func CheckStoreGeneration(root string) error {
 	return migrateChannels(root, f.Channels)
 }
 
-// isNoSuchChannel is the one refusal a re-run may ignore: the channel is gone
-// because this migration already moved it.
+// isNoSuchChannel is the one refusal a re-run may ignore: this migration
+// already moved the channel.
 func isNoSuchChannel(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "no such channel")
 }
 
-// generationMigration turns a store of generation N-1 into one of generation N.
-// It runs with the store closed, and must be idempotent: the sidecar is stamped
-// only after every step has succeeded, so a crash re-runs the whole chain.
+// generationMigration runs with the store closed and must be idempotent: the
+// sidecar is stamped only after every step, so a crash re-runs the chain.
 type generationMigration struct {
 	to  int
 	run func(root string) error
 }
 
-// generationMigrations is the registry the storeVersion comment promised -
-// keyed on the number, not on a probe. Absence is meaningful: generation 1
-// changed no bytes, so nothing runs for it.
+// Absence is meaningful: generation 1 changed no bytes.
 var generationMigrations = []generationMigration{
 	{to: 2, run: migrateFormChannel},
 }
 
-// channelMigration turns a channel of version N-1 into one of version N. Same
-// contract as generationMigration: the store is closed, and it must be
-// idempotent, because the sidecar is stamped only once the whole chain has
-// succeeded and a crash re-runs it from the version on disk.
+// channelMigration: same contract as generationMigration.
 type channelMigration struct {
 	to  int
 	run func(root string) error
 }
 
-// channelMigrations is what turns a channel this binary can no longer read
-// into one it can. Keyed by the same registry key as channelSchemas, and
-// ordered: a store several versions behind runs each step in turn.
-//
-// A classReducible channel used to refuse the open with "no converter
-// registered". This is the converter.
+// channelMigrations is keyed like channelSchemas and ordered: a store several
+// versions behind runs each step in turn.
 var channelMigrations = map[string][]channelMigration{
 	chanForm: {
 		{to: 2, run: MigrateFormToStructural},
@@ -307,8 +258,7 @@ var channelMigrations = map[string][]channelMigration{
 	},
 }
 
-// migrateChannels runs every channel behind its known version up to it, in
-// order, before anything opens the store.
+// migrateChannels runs before anything opens the store.
 func migrateChannels(root string, stored map[string]int) error {
 	if _, err := os.Stat(filepath.Join(root, "xwal.json")); err != nil {
 		if os.IsNotExist(err) {
@@ -324,9 +274,8 @@ func migrateChannels(root string, stored map[string]int) error {
 	for _, key := range keys {
 		from, seen := stored[key]
 		if !seen {
-			// No sidecar entry: either a fresh store, in which case every
-			// migration is a no-op, or one predating the sidecar, which is
-			// the oldest version by construction.
+			// No sidecar entry: a fresh store (every migration a no-op) or one
+			// predating the sidecar, the oldest version by construction.
 			from = 0
 		}
 		for _, m := range channelMigrations[key] {
@@ -352,7 +301,6 @@ func migrateChannels(root string, stored map[string]int) error {
 	return nil
 }
 
-// stampChannel records that a channel has reached a version.
 func stampChannel(root, key string, to int) error {
 	f, err := readSchema(root)
 	if err != nil {
@@ -366,9 +314,7 @@ func stampChannel(root, key string, to int) error {
 }
 
 func migrateGenerations(root string, from int) error {
-	// No manifest, no store: a directory becomes one when figwal creates it,
-	// with today's channel names. Nothing to move, and reading a manifest that
-	// is not there would fail every first open.
+	// No manifest, no store: figwal creates one with today's channel names.
 	if _, err := os.Stat(filepath.Join(root, "xwal.json")); err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -376,9 +322,7 @@ func migrateGenerations(root string, from int) error {
 		return err
 	}
 	if from == 0 {
-		// A store with a manifest and no sidecar predates the sidecar, which
-		// makes it generation 1 by construction. Each migration is a no-op when
-		// its subject is already absent, so starting the chain costs nothing.
+		// A manifest with no sidecar is generation 1 by construction.
 		from = 1
 	}
 	for _, m := range generationMigrations {
@@ -395,22 +339,19 @@ func migrateGenerations(root string, from int) error {
 	return nil
 }
 
-// chanFormLegacy is the generation-1 name of the form channel. It is a
-// constant so that renaming chanForm cannot silently rewrite the old name a
-// migration exists to recognise.
+// chanFormLegacy is a constant so renaming chanForm cannot silently rewrite
+// the old name a migration exists to recognise.
 const chanFormLegacy = "chalkboard"
 
-// migrateFormChannel is generation 1 -> 2: the form's channel directory was
-// called chanFormLegacy. Renaming it is figwal's job (the manifest is its
-// format); the sidecar's channel key is ours.
+// migrateFormChannel is generation 1 -> 2. Renaming the directory is figwal's
+// job (the manifest is its format); the sidecar key is ours.
 func migrateFormChannel(root string) error {
 	if _, err := os.Stat(filepath.Join(root, chanFormLegacy)); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		// Nothing under the old name. Either this store never had one, or a
-		// previous run moved it and died before the sidecar was stamped, and
-		// RenameChannel repairs the manifest for that second case.
+		// Nothing under the old name: never had one, or a previous run moved it
+		// and died before the stamp; RenameChannel repairs the manifest then.
 		if rerr := xwal.RenameChannel(root, chanFormLegacy, chanForm); rerr != nil && !isNoSuchChannel(rerr) {
 			return rerr
 		}
@@ -434,8 +375,8 @@ func migrateFormChannel(root string) error {
 	return nil
 }
 
-// SchemaStatus reads the sidecar directly, without opening the store: so it
-// still answers when ensureSchema is precisely what refused the open.
+// SchemaStatus reads the sidecar without opening the store, so it answers
+// when ensureSchema is what refused.
 func SchemaStatus(root string) ([]SchemaReport, error) {
 	f, err := readSchema(root)
 	if err != nil {

@@ -4,31 +4,15 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// TurnAtLT is the turn that owns lt in log: the turn of the record AT lt or,
-// when the log has no record there (lt is past its end), the turn of its last
-// record. exact reports which of the two it was.
+// TurnAtLT is the turn owning lt: the turn of the record at lt or, past the
+// end, of the last record; exact reports which.
 //
-// THE ANSWER IS LOCAL, and it is local because of an invariant, not a hope.
-// The IR door stamps every record it writes with its turn (turnIDFor), and
-// MigrateStampTurnIDs (fig IR channel v5) stamped every record written before
-// it, so every question in a store that opens carries its own turn id. The
-// only records that say 0 are the ones written around the door: a birth record
-// at a fork base, the records before an aria's first question. Under
-// turns.StampIDs those belong to the turn of the record before them (or to no
-// turn, before the first question), so the owner of lt is the nearest
-// NON-ZERO stamp at or below it. That is one record in the common case and a
-// short backward read across a birth record in the worst.
-//
-// It used to be a walk from LT 1 whenever the base was past the end of the
-// parent's log, which is every head fork, on every hop between two arias.
-//
-// ONLY POSITIONAL READS: PeekTail and ReadFrom windows, each of which reads
-// the records it returns and nothing else.
-//
-// Were the invariant ever broken (an unstamped question below lt), the answer
-// would be the stamp BELOW that question: a smaller turn than the truth. For
-// the one caller that matters, the fork base, smaller means keeping fewer
-// turns across a hop, which costs a re-read and is never wrong.
+// The answer is local. The IR door stamps every record with its turn and
+// MigrateStampTurnIDs (channel v5) stamped the rest, so the only zero stamps
+// are records written around the door: a birth record at a fork base, the
+// records before the first question. Those belong to the nearest non-zero
+// stamp at or below, so the read is one record in the common case and a short
+// backward window otherwise. Positional reads only, never a walk from LT 1.
 func TurnAtLT(log Log[message.Message], lt uint64) (turn uint64, exact bool) {
 	if log == nil || lt == 0 {
 		return 0, false
@@ -45,8 +29,7 @@ func TurnAtLT(log Log[message.Message], lt uint64) (turn uint64, exact bool) {
 		exact, top = tail.LT == lt, tail.LT
 	}
 	first := tail.LT > lt
-	// One record first: it is the answer almost every time. Then windows, for
-	// a run of zero-stamped records between lt and the turn they belong to.
+	// One record first, then windows for a run of zero-stamped records.
 	for size := uint64(1); ; size = turnScanPage {
 		start := uint64(1)
 		if top > size {
@@ -72,7 +55,6 @@ func TurnAtLT(log Log[message.Message], lt uint64) (turn uint64, exact bool) {
 	}
 }
 
-// turnScanPage is how many records one step of the backward read takes once
-// the first record was not enough. Small: a record can carry a whole tool
-// output, and the stamped record is almost always the next one down.
+// turnScanPage is small: a record can carry a whole tool output, and the
+// stamped record is almost always the next one down.
 const turnScanPage = 16

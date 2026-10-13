@@ -1,8 +1,5 @@
 package store
 
-// The libretto: a studied form's state, materialized, shared by every figaro
-// observing it.
-
 import (
 	"encoding/json"
 	"errors"
@@ -15,30 +12,24 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// librettoPrefix names the reserved stump. An outfit stump is "@" plus a hex
-// content hash, so a name carrying "::" cannot collide with one.
+// librettoPrefix carries "::", which an outfit stump ("@" + a hex hash) cannot.
 const librettoPrefix = "@libretto::"
 
-// Bookkeeping keys. They are under system. because a whole-form mirror
-// copies the source's keys verbatim into this document, and the source is a
-// board whose ordinary keys are arbitrary strings. system.libretto.* is the
-// one namespace a board cannot write (CheckWritable refuses it), which is
-// what makes the collision impossible rather than unlikely.
+// Under system. because a whole-form mirror copies the source's keys verbatim;
+// system.libretto.* is the one namespace a board cannot write (CheckWritable
+// refuses it), which makes a collision impossible rather than unlikely.
 const (
 	KeyLibrettoRefs  = "system.libretto.refs"
 	KeyLibrettoAlive = "system.libretto.alive"
 	KeyLibrettoAt    = "system.libretto.at"
 )
 
-// LibrettoID is the reserved stump name for a studied form. Deterministic
-// from the source id, which is the whole point: nothing has to be looked up
-// and nothing has to be stored to find it.
+// LibrettoID is deterministic from the source id: nothing is looked up or
+// stored to find it.
 func LibrettoID(sourceFormID string) string {
 	return librettoPrefix + strings.TrimPrefix(sourceFormID, "@")
 }
 
-// SourceOfLibretto is the inverse, for the reconciliation sweep and for any
-// listing that wants to explain a stump it did not create.
 func SourceOfLibretto(librettoID string) (string, bool) {
 	rest, ok := strings.CutPrefix(librettoID, librettoPrefix)
 	if !ok || rest == "" {
@@ -47,11 +38,9 @@ func SourceOfLibretto(librettoID string) (string, bool) {
 	return rest, true
 }
 
-// Libretto is a derived form with exactly one source.
 type Libretto struct {
 	form *Form
-	// source is the bare id, which names the stump (an unbound form's
-	// sigil is stripped at open).
+	// source is the bare id (sigil stripped), which names the stump.
 	source string
 
 	mu   sync.Mutex
@@ -60,8 +49,7 @@ type Libretto struct {
 	done chan struct{}
 }
 
-// OpenLibretto mints the reserved stump if it is absent and replays the form.
-// It does not begin following the source; see Follow.
+// OpenLibretto does not begin following the source; see Follow.
 func OpenLibretto(s *XwalStore, sourceFormID string) (*Libretto, error) {
 	stump := LibrettoID(sourceFormID)
 	if err := s.ensureStump(stump); err != nil {
@@ -72,9 +60,8 @@ func OpenLibretto(s *XwalStore, sourceFormID string) (*Libretto, error) {
 		return nil, err
 	}
 	l := &Libretto{form: f, source: strings.TrimPrefix(sourceFormID, "@")}
-	// A fresh libretto is alive and unobserved. Written once, so a reader can
-	// tell "never studied" from "studied and dropped" without inferring it
-	// from an absence.
+	// Written once, so a reader can tell never-studied from studied-and-dropped
+	// without inferring it from an absence.
 	if _, ok := l.formState().Get(KeyLibrettoAlive); !ok {
 		if _, _, err := l.form.ApplyEffectPrivileged(librettoPatch(map[string]any{
 			KeyLibrettoAlive: true,
@@ -87,56 +74,44 @@ func OpenLibretto(s *XwalStore, sourceFormID string) (*Libretto, error) {
 	return l, nil
 }
 
-// formState is the published snapshot without its version.
 func (l *Libretto) formState() form.Snapshot {
 	snap, _ := l.form.Snapshot()
 	return snap
 }
 
-// ID is the libretto's own form id (its stump name).
 func (l *Libretto) ID() string { return LibrettoID(l.source) }
 
-// Following reports whether this libretto is subscribed to its source. False
-// means the source could not be opened -- deleted, most often -- and the copy
-// is standing still, which is exactly what it should do.
+// Following false means the source could not be opened (deleted, most often)
+// and the copy stands still.
 func (l *Libretto) Following() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.sub != nil
 }
 
-// State is the materialized copy, bookkeeping included.
 func (l *Libretto) State() form.Snapshot { return l.formState() }
 
-// Version is the libretto's own form version: the cursor an IR record
-// stamps (durable-forms §12.5).
+// Version is the cursor an IR record stamps.
 func (l *Libretto) Version() uint64 { return l.form.Read().Version }
 
-// PatchesBetween is the copy's own patch view, (after, upTo], for the
-// translator. It must come from THIS instance: a second Form over the same
-// stump replays once and never hears the fold again, so its reader is
-// orphaned at the version it opened at -- silently, and forever, because the
-// per-LT cache makes whichever rendering ran first permanent.
+// PatchesBetween must come from this instance: a second Form over the same
+// stump replays once and never hears the fold again, and the per-LT cache
+// makes whichever rendering ran first permanent.
 func (l *Libretto) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	return l.form.PatchesBetween(after, upTo)
 }
 
-// Refs is how many figaros are studying the source.
 // At is the source version last folded in.
 func (l *Libretto) At() uint64 { return uint64(intOf(l.formState(), KeyLibrettoAt)) }
 
-// Retain and Release move the backref set: the ids of the boards that
-// declare a study of this libretto's source. Idempotent, so a repeated retain
-// or a lost release cannot drift the way an increment could. They are
-// privileged patches on this form's own actor, so they serialize against the
-// fold rather than racing it.
+// Retain and Release move the backref set idempotently, so a repeated retain
+// or a lost release cannot drift the way an increment could. Privileged
+// patches on this form's own actor, so they serialize against the fold.
 func (l *Libretto) Retain(observer string) (int, error)  { return l.moveRef(observer, true) }
 func (l *Libretto) Release(observer string) (int, error) { return l.moveRef(observer, false) }
 
-// Refs is how many boards declare this study.
 func (l *Libretto) Refs() int { return len(refsOf(l.formState())) }
 
-// RefSet is WHICH boards declare it, sorted.
 func (l *Libretto) RefSet() []string { return refsOf(l.formState()) }
 
 func (l *Libretto) moveRef(observer string, add bool) (int, error) {
@@ -162,9 +137,7 @@ func (l *Libretto) moveRef(observer string, add bool) (int, error) {
 	}
 }
 
-// withRef returns the set with observer added or removed, and whether it
-// moved. Sorted, so the durable value of a set does not depend on the order
-// its members arrived in.
+// withRef keeps the set sorted so the durable value does not depend on arrival order.
 func withRef(set []string, observer string, add bool) ([]string, bool) {
 	i, found := slices.BinarySearch(set, observer)
 	switch {
@@ -177,8 +150,8 @@ func withRef(set []string, observer string, add bool) ([]string, bool) {
 	}
 }
 
-// SetRefs replaces the whole set. The reconciliation pass knows better than
-// the value it replaces, and it is the only caller.
+// SetRefs replaces the whole set: the reconciliation pass knows better than
+// the value it replaces.
 func (l *Libretto) SetRefs(observers []string) error {
 	next := slices.Clone(observers)
 	for i := range next {
@@ -191,13 +164,10 @@ func (l *Libretto) SetRefs(observers []string) error {
 	return err
 }
 
-// Reclaimable reports that nobody is STUDYING this any more. It is necessary
-// for reclamation and it is NOT sufficient, which is worth stating where the
-// method is rather than where the sweep is:
+// Reclaimable is necessary for reclamation, not sufficient.
 func (l *Libretto) Reclaimable() bool { return l.Refs() == 0 }
 
-// Follow subscribes to the source and folds its patches in, forever, until
-// registered at, so nothing between the two is missed.
+// Follow subscribes to the source and folds its patches in until Close.
 func (l *Libretto) Follow(src *Form) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -205,10 +175,9 @@ func (l *Libretto) Follow(src *Form) error {
 		return nil // already following
 	}
 	sub := src.SubscribeFrom(256)
-	// Seed only when the copy is BEHIND. Re-attaching an already-current
-	// libretto -- after a restart, or after a source came back -- must not
-	// write the whole state again, or every boot appends a seed record per
-	// libretto forever.
+	// Seed only when the copy is behind: re-attaching a current libretto after
+	// a restart must not write the whole state again, or every boot appends a
+	// seed record per libretto.
 	if l.At() < sub.At {
 		if err := l.seed(sub.Snap, sub.At); err != nil {
 			sub.Close()
@@ -222,7 +191,6 @@ func (l *Libretto) Follow(src *Form) error {
 	return nil
 }
 
-// seed writes the source's whole state as one patch, plus the cursor.
 func (l *Libretto) seed(snap form.Snapshot, at uint64) error {
 	entries := snap.AsPatch().Entries()
 	set := make(map[string]json.RawMessage, len(entries)+1)
@@ -242,10 +210,8 @@ func (l *Libretto) seed(snap form.Snapshot, at uint64) error {
 	return err
 }
 
-// fold is the libretto's own consumer. It never blocks the source's writer:
-// the subscription drops events for a reader that falls behind and says so,
-// and the answer to a drop is to read the snapshot again rather than to make
-// the writer wait.
+// fold never blocks the source's writer: the subscription drops events for a
+// reader that falls behind, and the answer to a drop is to re-read the snapshot.
 func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	for {
@@ -256,12 +222,9 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 			if !ok {
 				return
 			}
-			// COALESCE. The copy is durable, so every fold is an fsync, and a
-			// studied form under a burst would otherwise pay one per source
-			// patch on top of its own. Whatever is already queued is applied
-			// as ONE patch: the mirror's contract is the STATE, not the
-			// number of records it took to get there, and the cursor is the
-			// last version folded either way.
+			// Coalesce: every fold is an fsync, so whatever is queued is applied
+			// as one patch. The mirror's contract is the state, not the record
+			// count; the cursor is the last version folded either way.
 			batch := append(make([]Event, 0, 8), ev)
 			for draining := true; draining; {
 				select {
@@ -276,11 +239,9 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 				}
 			}
 			if dead := l.applyBatch(sub, batch); dead {
-				// The source died, so stop listening -- wym.md:21, and the
-				// its source pins that Form resident forever: the idle sweep
-				// refuses to evict anything subscribed, correctly, so the
-				// corpse of every studied-and-deleted form would be held for
-				// the daemon's life.
+				// The source died: stop listening, or the subscription pins that
+				// Form resident forever (the idle sweep refuses to evict anything
+				// subscribed).
 				l.detach(sub)
 				return
 			}
@@ -288,9 +249,8 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 	}
 }
 
-// detach ends the subscription from inside the fold. Following() reports
-// false afterwards, which is what lets a later verb re-attach if a form with
-// this id ever comes back.
+// detach: Following() reports false afterwards, so a later verb can re-attach
+// if a form with this id comes back.
 func (l *Libretto) detach(sub *Subscription) {
 	l.mu.Lock()
 	if l.sub == sub {
@@ -300,7 +260,7 @@ func (l *Libretto) detach(sub *Subscription) {
 	sub.Close()
 }
 
-// applyBatch folds a run of source events into ONE patch on the copy.
+// applyBatch folds the batch into one patch; reports whether the source died.
 func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
@@ -308,9 +268,8 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	dead := false
 	for _, ev := range batch {
 		if ev.Missed > 0 {
-			// The truthful recovery: re-seed from the source's current state.
-			// A mirror that skips a patch is wrong forever and does not know
-			// it, so the whole batch is abandoned for a fresh copy.
+			// Re-seed from the source's current state: a mirror that skips a
+			// patch is wrong forever and does not know it.
 			if src := sub.Source(); src != nil {
 				snap, at := src.Snapshot()
 				_ = l.seed(snap, at)
@@ -365,14 +324,12 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	for k := range removed {
 		remove = append(remove, k)
 	}
-	// Built against the copy's own board, so the patch carries the values it
-	// replaces and can be inverted like any other.
+	// Built against the copy's own board so the patch carries what it replaces.
 	base, _ := l.form.Snapshot()
 	if _, _, err := l.form.ApplyEffectPrivileged(
 		form.Build(base, set, remove), 0); err != nil {
-		// The death is not recorded, so do not stop listening on it: a
-		// libretto that unsubscribed without writing alive=false would be
-		// silently stale rather than truthfully dead.
+		// The death is not recorded, so keep listening: unsubscribing without
+		// alive=false would be silently stale rather than truthfully dead.
 		return false
 	}
 	return dead
@@ -385,7 +342,7 @@ func maxVersion(a, b uint64) uint64 {
 	return a
 }
 
-// Close stops following and releases the form. The copy stays on disk.
+// Close stops following; the copy stays on disk.
 func (l *Libretto) Close() {
 	l.mu.Lock()
 	sub, stop, done := l.sub, l.stop, l.done
@@ -406,11 +363,9 @@ func isLibrettoKey(k string) bool {
 	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey
 }
 
-// HiddenLibrettoKey names the bookkeeping the MODEL must never see. The
-// translator reads the libretto rather than the source, so the document's own
-// machinery would otherwise fold into the studied block: system.libretto.at
-// moves on every fold, and refs moves whenever some OTHER aria studies or
-// drops the same form, which is cross-aria noise inside one aria's context.
+// HiddenLibrettoKey is bookkeeping the model must never see: at moves on every
+// fold, and refs moves whenever another aria studies or drops the same form,
+// cross-aria noise inside one aria's context.
 func HiddenLibrettoKey(k string) bool {
 	return strings.HasPrefix(k, "system.libretto.") && k != KeyLibrettoAlive
 }
@@ -427,9 +382,8 @@ func librettoPatch(kv map[string]any) message.Patch {
 	return form.Build(form.Snapshot{}, set, nil)
 }
 
-// refsOf reads the backref set. A libretto written before the set existed
-// carries a NUMBER here; it reads as empty, and the migration pass rebuilds
-// it from the boards. The array is its own version stamp.
+// refsOf: a libretto written before the set existed carries a number here; it
+// reads as empty and the migration pass rebuilds it from the boards.
 func refsOf(s form.Snapshot) []string {
 	raw, ok := s.Get(KeyLibrettoRefs)
 	if !ok {
@@ -453,7 +407,6 @@ func refsMigrated(s form.Snapshot) bool {
 	return json.Unmarshal(raw, &ids) == nil
 }
 
-// RefsMigrated reports whether this libretto carries a backref set.
 func (l *Libretto) RefsMigrated() bool { return refsMigrated(l.formState()) }
 
 func intOf(s form.Snapshot, key string) int {

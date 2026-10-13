@@ -6,30 +6,19 @@ import (
 	"path/filepath"
 )
 
-// DefaultFormRecord is the daemon's pointer to the CURRENT default form -
-// the unbound form `fig new` binds from. Where the stump was
-// content-addressed and deduped, the default form is a plain
-// form plus this record of what it was born from, so the reload lifecycle
-// can decide when a fresh one is due (plans/forms-and-roles-v2.md §6).
+// DefaultFormRecord points at the unbound form `fig new` binds from, with what
+// it was born from so the reload lifecycle can decide when a fresh one is due.
 type DefaultFormRecord struct {
 	FormID string `json:"form_id"`
-	// BirthHash is the content version of the materialized outfit the form
-	// was minted from. Compared against the outfit files ONLY when Dirty -
-	// `fig outfit reload` is a cheap flag, the compute happens on the next
-	// `fig new`.
+	// BirthHash is compared against the outfit files only when Dirty: reload
+	// sets the flag, the compute happens on the next `fig new`.
 	BirthHash string `json:"birth_hash"`
-	// BirthVersion is the form's version at mint. If the live version has
-	// moved past it, the default form was patched by hand; the next
-	// reload-compute remints rather than propagating the ad-hoc patch to
-	// every future aria.
+	// BirthVersion: a live version past it means the form was patched by hand;
+	// the next reload remints rather than propagating the patch to every aria.
 	BirthVersion uint64 `json:"birth_version"`
 	Dirty        bool   `json:"dirty,omitempty"`
-	// BundledRoot is where the BINARY's own first-party skills lived when
-	// this form was minted. It is the upgrade trigger, and it exists because
-	// the cheap path above is too cheap on its own: a clean pointer is reused
-	// with no comparison at all, so `nix profile upgrade` would replace the
-	// shipped skills on disk and every future `fig new` would go on wearing
-	// the old ones until somebody happened to run `fig outfit reload`.
+	// BundledRoot is the upgrade trigger: a clean pointer is reused without any
+	// comparison, so a binary upgrade replacing the shipped skills must be seen here.
 	BundledRoot string `json:"bundled_root,omitempty"`
 }
 
@@ -53,7 +42,6 @@ func (b *XwalBackend) LoadDefaultForm() (*DefaultFormRecord, error) {
 	return &rec, nil
 }
 
-// SaveDefaultForm writes the pointer durably (rename over temp).
 func (b *XwalBackend) SaveDefaultForm(rec *DefaultFormRecord) error {
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {

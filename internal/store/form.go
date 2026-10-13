@@ -21,36 +21,30 @@ type Form struct {
 	q     *actor.Lazy[*formWrite]
 	state atomic.Pointer[formState]
 
-	// tick is the broadcast: closed and replaced after every batch, so a
-	// waiter parks on it rather than on a channel of its own. Completion is
-	// per submission (formWrite.done), never a watermark: tickets are handed
-	// out before the queue is entered, so a high ticket can land in an
-	// earlier batch than a low one and a watermark would release a waiter
-	// whose result had not been written yet.
+	// tick is the broadcast, closed and replaced after every batch. Completion
+	// is per submission (formWrite.done), never a watermark: tickets are handed
+	// out before the queue is entered, so a high ticket can land in an earlier
+	// batch than a low one.
 	tick atomic.Pointer[chan struct{}]
 
-	// sinks and closed are drainer-owned except for the CAS in OnCommit:
-	// an immutable slice behind a pointer, so emitting takes no lock.
+	// sinks is an immutable slice behind a pointer, so emitting takes no lock.
 	sinks atomic.Pointer[[]func(uint64, message.Patch)]
-	// sealed is set by a tombstone and rebuilt from the published state at
-	// open, so a dead form stays dead across a restart without anyone
-	// re-declaring it.
+	// sealed is rebuilt from the published state at open, so a dead form stays
+	// dead across a restart.
 	sealed atomic.Bool
 	subs   atomic.Pointer[[]*Subscription]
 	closed atomic.Bool
 }
 
-// formState is one published version: the tree, the durable index it stands
-// at, and the patches that built it (the projection renders each at the record
-// it landed on, which a folded snapshot cannot say).
+// formState is one published version. patches are kept because the projection
+// renders each at the record it landed on, which a folded snapshot cannot say.
 type formState struct {
 	snap    form.Snapshot
 	version uint64
 	patches []VersionedPatch
-	// trimmed is the highest version dropped from patches, or 0 if nothing
-	// appends no record, so a form whose first records changed nothing
-	// legitimately starts at a version above 1, and reading the gap as a
-	// trim sent every cold read to the log.
+	// trimmed is the highest version dropped from patches, 0 if none. It is
+	// explicit because an identity patch appends no record, so a gap below the
+	// first kept patch is not a trim.
 	trimmed uint64
 }
 
@@ -63,67 +57,54 @@ type formWrite struct {
 	done      atomic.Bool
 }
 
-// Intent says what a REMOVAL means, which is the one place a command and its
-// event are allowed to disagree about legality.
+// Intent says what a removal means: the one place a command and its event may
+// disagree about legality.
 type Intent uint8
 
 const (
-	// Ensure: the caller wants the key absent and does not care whether it
-	// closure never held.
+	// Ensure: the caller wants the key absent, whether or not it was there.
 	Ensure Intent = iota
-	// Assert: the caller believes the key is there. Removing one that is not
-	// is a refusal, because the caller's model of the world is wrong and
-	// telling it so is more useful than silently agreeing.
+	// Assert: removing a key that is not there is a refusal; the caller's model
+	// of the world is wrong and telling it so is more useful than agreeing.
 	Assert
 )
 
 type formResult struct {
 	version uint64
-	// applied is what the writer actually committed after reducing the
-	// caller's patch against the published state: the keys that really
-	// changed, and the removals that really removed something.
+	// applied is what the writer committed after reducing against the
+	// published state: the keys that really changed.
 	applied message.Patch
 	err     error
 }
 
-// FormLog is the durable half: an append-only sequence of patch payloads,
-// indexed from 1. The xwal-backed implementation is the real one; a memory
-// implementation is enough to hold a form on its own.
+// FormLog is the durable half: append-only patch payloads indexed from 1.
 type FormLog interface {
 	// AppendPatch returns the index the payload landed at.
 	AppendPatch(payload []byte) (uint64, error)
-	// SyncThrough makes every record up to index durable. It runs between a
-	// batch's appends and its publish, which is the whole of "durable before
-	// visible": one sync covers the batch.
+	// SyncThrough runs between a batch's appends and its publish: one sync
+	// covers the batch, durable before visible.
 	SyncThrough(index uint64) error
-	// RangePatches visits records in index order, from `from` (1 or 0 is the
-	// beginning) through `upTo` (0 is the end). The BOUNDS are the point: a
-	// at record 1 and read its way up to the range, so a retranslate of an
+	// RangePatches visits records in index order from `from` (1 or 0 is the
+	// beginning) through `upTo` (0 is the end), starting at the range rather
+	// than at record 1.
 	RangePatches(from, upTo uint64, fn func(index uint64, payload []byte) error) error
 }
 
-// FormBaseLog is a FormLog whose history has a FLOOR and a base to start from
-// below it. A paged log (MemFormLog) implements it; a durable one does not
-// need to, because its beginning of time is still on disk.
-//
-// The pair is the point: Floor says where answering stops, Base says what to
-// start from instead. A log that could only say "no" would force every reader
-// below the floor back over the wire for a snapshot this one already holds.
+// FormBaseLog has a floor and a base to start from below it: Floor says where
+// answering stops, Base what to start from instead, so a reader below the
+// floor is reseeded from memory rather than sent over the wire.
 type FormBaseLog interface {
 	FormLog
 	Base() (form.Snapshot, uint64)
 	Floor() uint64
 }
 
-// OpenForm replays the log and starts the writer. The replay is the cold cost;
-// afterwards every read is an atomic load.
+// OpenForm replays the log (the cold cost); afterwards every read is an atomic load.
 func OpenForm(log FormLog) (*Form, error) {
 	f := &Form{log: log}
 	st := &formState{}
-	// A PAGED LOG IS OPENED FROM ITS BASE, not from record 1: record 1 may no
-	// longer exist. The base carries the state those dropped records built,
-	// so the replay below picks up exactly where they left off, and `trimmed`
-	// records that a read under the base has to be told no rather than
+	// A paged log is opened from its base, not record 1, which may no longer
+	// exist; trimmed records that a read under the base is told no rather than
 	// answered short.
 	if bl, ok := log.(FormBaseLog); ok {
 		st.snap, st.version = bl.Base()
@@ -169,20 +150,16 @@ var (
 
 func init() { patchWindow.Store(2048) }
 
-// SetPatchWindow bounds resident decoded patches per form. Zero or negative
-// retains everything, which is what figaro did before this existed.
+// SetPatchWindow: zero or negative retains everything.
 func SetPatchWindow(n int) { patchWindow.Store(int64(n)) }
 
-// formLinger is how long a drained writer waits before leaving. Package
-// level so the daemon can set it once from config before any form opens;
-// changing it later would leave already-open forms on the old value, which
-// is not worth the coordination.
+// formLinger is package level so the daemon sets it once before any form
+// opens; already-open forms keep the old value.
 var formLinger atomic.Int64
 
 func init() { formLinger.Store(int64(2 * time.Second)) }
 
-// SetFormLinger sets the writer's affinity window. Call before opening
-// forms.
+// SetFormLinger: call before opening forms.
 func SetFormLinger(d time.Duration) {
 	if d < 0 {
 		d = 0
@@ -190,55 +167,45 @@ func SetFormLinger(d time.Duration) {
 	formLinger.Store(int64(d))
 }
 
-// Snapshot is the published state and the version it stands at. Lock-free.
+// Snapshot is lock-free.
 func (f *Form) Snapshot() (form.Snapshot, uint64) {
 	st := f.state.Load()
 	return st.snap, st.version
 }
 
-// from one atomic load, as one value.
 func (f *Form) Read() FormAt {
 	st := f.state.Load()
 	return FormAt{Snapshot: st.snap, Version: st.version}
 }
 
-// The zero value is an empty form at version 0.
 type FormAt struct {
 	Snapshot form.Snapshot
 	Version  uint64
 }
 
-// PatchesBetween returns the published patches in the absolute range
-// (after, upTo], as a VIEW on the published state's array: no copy.
+// PatchesBetween returns (after, upTo] as a view on the published array: no copy.
 func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	st := f.state.Load()
 	ps := st.patches
-	// Only a TRIM sends a read to disk. A cold retranslate of history the
+	// Only a trim sends a read to disk.
 	if upTo > after && st.trimmed > 0 && after < st.trimmed {
 		if fromLog, ok := f.patchesFromLog(after, upTo); ok {
 			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
 			return fromLog
 		}
-		// THE LOG COULD NOT ANSWER, so neither can this. Falling through to
-		// the resident array would hand back a SHORT PREFIX, and a short
-		// prefix is indistinguishable from a complete answer at the call
-		// site -- it reads as "these are the patches since your version",
-		// which is a lie that surfaces later as a phantom gap. Nil is the
-		// only honest shape the signature can carry; PatchFloor is how a
-		// caller finds out why and what to do instead.
+		// The log could not answer, so neither can this: a short prefix from the
+		// resident array reads as a complete answer at the call site and
+		// surfaces later as a phantom gap. PatchFloor tells the caller why.
 		return nil
 	}
 	out := patchRange(ps, after, upTo)
-	// The pair the old API could not report: what this read answered with,
-	// and it is the only place that knows both.
 	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
 	return out
 }
 
-// PatchFloor is the version below which this form cannot supply patches: a
-// read at or under it is answered with nil by PatchesBetween, and the caller
-// must reseed from Snapshot() instead of replaying. Zero means the whole
-// history is available, which is every durable form.
+// PatchFloor: a read at or under it is answered nil by PatchesBetween and the
+// caller must reseed from Snapshot(). Zero means the whole history is
+// available, which is every durable form.
 func (f *Form) PatchFloor() uint64 {
 	if bl, ok := f.log.(FormBaseLog); ok {
 		return bl.Floor()
@@ -246,9 +213,8 @@ func (f *Form) PatchFloor() uint64 {
 	return 0
 }
 
-// Base is the oldest state this form can be reseeded from without going to
-// the wire, and the version it stands at. For a durable form it is the zero
-// snapshot at version 0 -- the beginning, which is still on disk.
+// Base is the oldest state this form can be reseeded from without the wire;
+// for a durable form, the zero snapshot at version 0.
 func (f *Form) Base() (form.Snapshot, uint64) {
 	if bl, ok := f.log.(FormBaseLog); ok {
 		return bl.Base()
@@ -256,7 +222,7 @@ func (f *Form) Base() (form.Snapshot, uint64) {
 	return form.Snapshot{}, 0
 }
 
-// Allocates, and is meant to: it is the cold path.
+// The cold path; allocates.
 func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	var out []VersionedPatch
 	err := f.log.RangePatches(after+1, upTo, func(index uint64, payload []byte) error {
@@ -276,8 +242,6 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	return out, true
 }
 
-// patchRange is the range itself: binary search on both ends of a
-// version-ordered, immutable array.
 func trimPatches(ps []VersionedPatch, trimmed uint64) ([]VersionedPatch, uint64) {
 	w := int(patchWindow.Load())
 	if w <= 0 || len(ps) <= w+patchSlack {
@@ -301,30 +265,25 @@ func patchRange(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
 	return ps[lo:hi:hi]
 }
 
-// Apply appends a patch and publishes it, returning its durable version.
 func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 	version, _, err := f.ApplyEffect(patch, ifVersion)
 	return version, err
 }
 
-// ApplyEffect is Apply, and also says what actually landed: the patch after
-// the writer reduced it against the published state. A caller that reports to
-// a human ("set 3 keys") or fans a delta out to listeners wants THAT, not what
-// it asked for.
+// ApplyEffect also returns what actually landed after the writer reduced the
+// patch against the published state.
 func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
 	return f.ApplyEffectIntent(patch, ifVersion, Ensure)
 }
 
-// ApplyEffectIntent is ApplyEffect with the removal rule named. Under Assert
-// a removal of a key that is not there is refused rather than reduced away.
+// ApplyEffectIntent: under Assert a removal of a missing key is refused rather
+// than reduced away.
 func (f *Form) ApplyEffectIntent(patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error) {
 	return f.applyEffect(patch, ifVersion, intent, false)
 }
 
-// ApplyEffectPrivileged is the harness's own write: it may touch keys the
-// catalog marks system-managed. There is no wire field for this and there
-// must never be one. Privilege is a property of the CALL SITE, checkable by
-// grep and by the compiler.
+// ApplyEffectPrivileged may touch system-managed keys. There is no wire field
+// for this and there must never be one: privilege is a property of the call site.
 func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
 	return f.applyEffect(patch, ifVersion, Ensure, true)
 }
@@ -337,20 +296,17 @@ func (f *Form) applyEffect(patch message.Patch, ifVersion uint64, intent Intent,
 	return f.Await(context.Background(), t)
 }
 
-// Ticket is a submitted write. Hold it to Await the verdict, or drop it and
-// never wait: the write lands either way.
+// Ticket: Await it or drop it, the write lands either way.
 type Ticket struct{ w *formWrite }
 
-// Submit queues a write and returns without waiting for it. The caller that
-// does not need the version (a cursor, a derived fold) never waits at all,
-// which is the only thing that removes a parked goroutine per writer.
+// Submit queues without waiting: a caller that does not need the version
+// never parks a goroutine.
 func (f *Form) Submit(patch message.Patch, ifVersion uint64, intent Intent) (Ticket, error) {
 	return f.submit(&formWrite{patch: patch, ifVersion: ifVersion, intent: intent})
 }
 
-// submit is the one place a write enters the queue. Privilege never reaches
-// the public Submit: a caller that may write harness keys says so by using
-// the privileged entry point, which is a call site rather than an argument.
+// submit: privilege never reaches the public Submit; a caller that may write
+// harness keys says so by call site, not by argument.
 func (f *Form) submit(w *formWrite) (Ticket, error) {
 	if err := f.q.Submit(w); err != nil {
 		return Ticket{}, ErrFormClosed
@@ -358,8 +314,8 @@ func (f *Form) submit(w *formWrite) (Ticket, error) {
 	return Ticket{w: w}, nil
 }
 
-// Await parks the CALLER'S own goroutine until the write has been answered.
-// One broadcast serves every waiter: no goroutine and no channel per call.
+// Await parks the caller's own goroutine; one broadcast serves every waiter,
+// no goroutine or channel per call.
 func (f *Form) Await(ctx context.Context, t Ticket) (uint64, message.Patch, error) {
 	if t.w == nil {
 		return 0, message.Patch{}, fmt.Errorf("await: no ticket")
@@ -377,9 +333,8 @@ func (f *Form) Await(ctx context.Context, t Ticket) (uint64, message.Patch, erro
 	}
 }
 
-// OnCommit registers a sink for committed patches, called AFTER the append and
-// the publish: never before, so an observer can never see state that would not
-// survive a restart.
+// OnCommit sinks run after the append and the publish, never before, so an
+// observer never sees state that would not survive a restart.
 func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
 	for {
 		old := f.sinks.Load()
@@ -392,16 +347,15 @@ func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
 	}
 }
 
-// Close stops the writer. Further writes are refused rather than dropped.
-// Idempotent: eviction and a delete can both reach the same form.
+// Close refuses further writes rather than dropping them. Idempotent:
+// eviction and a delete can both reach the same form.
 func (f *Form) Close() {
 	f.closed.Store(true)
 	f.q.Close()
 }
 
-// runBatch is the whole protocol: reduce each submission in turn against a
-// RUNNING state, append, ONE sync for the batch, publish, then answer and
-// emit.
+// runBatch: reduce each submission against a running state, append, one sync
+// for the batch, publish, then answer and emit.
 func (f *Form) runBatch(batch []*formWrite) {
 	published := f.state.Load()
 	var lastRecord uint64
@@ -420,16 +374,12 @@ func (f *Form) runBatch(batch []*formWrite) {
 	if lastRecord != 0 {
 		started := time.Now()
 		err := f.log.SyncThrough(lastRecord)
-		// RECORDS, not writes. A batch of 64 in which one patch changed
-		// anything writes one record, and reporting the batch size there
-		// would say group commit is working when it is not. The alarm this
-		// instrument exists to raise is the reverse case, so it must count
-		// what the sync actually covered.
+		// Records, not writes: a batch in which one patch changed anything
+		// writes one record, and the instrument must count what the sync covered.
 		figOtel.RecordSync(context.Background(), time.Since(started), len(events))
 		if err != nil {
-			// durability, so the honest answer is that they did not happen:
-			// every write in this batch is rejected and the state stands
-			// where it stood.
+			// Without durability the writes did not happen: every write in the
+			// batch is rejected and the state stands.
 			for _, w := range batch {
 				if w.result.err == nil {
 					w.result = formResult{err: fmt.Errorf("form sync: %w", err)}
@@ -440,10 +390,8 @@ func (f *Form) runBatch(batch []*formWrite) {
 		}
 		f.state.Store(published)
 	}
-	// Emit BEFORE answering. A caller that returns from Apply has always been
-	// able to assume the delta reached the sinks, and moving the fanout off
-	// its goroutine would silently withdraw that. The exposure is the one the
-	// write lock already had: a sink must hand off and return.
+	// Emit before answering: a caller returning from Apply may assume the delta
+	// reached the sinks. A sink must hand off and return.
 	f.emit(events)
 	f.publish(events)
 	f.answer(batch)
@@ -482,9 +430,8 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 			}
 		}
 	}
-	// REDUCE FIRST, and purely. A patch is only an event if it changes
-	// something, and the reduce touches nothing, which is why a failure
-	// is nothing to roll back.
+	// Reduce first, purely: a patch is only an event if it changes something,
+	// and a failure has nothing to roll back.
 	applied := effectivePatch(st.snap, w.patch)
 	if applied.IsIdentity() {
 		return nil, formResult{version: st.version, applied: applied}
@@ -498,15 +445,13 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 		return nil, formResult{err: err}
 	}
 	next := &formState{snap: st.snap.Apply(applied), version: version}
-	// Append to the SHARED backing array rather than copying the history.
-	// Safe because there is exactly one drainer: a published state holds a
-	// slice header with its own length, so a later append either writes past
-	// that length (which no reader reads) or reallocates.
+	// Append to the shared backing array: safe with exactly one drainer, since
+	// a published state holds its own slice length and a later append either
+	// writes past it or reallocates.
 	next.patches, next.trimmed = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: applied}), st.trimmed)
 	return next, formResult{version: version, applied: applied}
 }
 
-// answer releases the batch's results and wakes every waiter once.
 func (f *Form) answer(batch []*formWrite) {
 	for _, w := range batch {
 		w.done.Store(true)
@@ -516,8 +461,8 @@ func (f *Form) answer(batch []*formWrite) {
 	close(*old)
 }
 
-// emit hands committed patches to the sinks, after the publish, never
-// before. A sink that panics must not take the drainer with it.
+// emit runs after the publish, never before; a sink that panics must not take
+// the drainer with it.
 func (f *Form) emit(events []versionedApplied) {
 	if len(events) == 0 {
 		return
@@ -537,34 +482,25 @@ func (f *Form) emit(events []versionedApplied) {
 	}
 }
 
-// effectivePatch is what a patch actually does to a state: the keys it
-// changes, and the removals that remove something. form.Additive is the one
-// implementation of the first half: every place that dresses a board must
-// agree about what "already wearing it" means, and the second half is the
-// same question asked of Remove.
+// effectivePatch: the keys a patch changes and the removals that remove
+// something. Every place that dresses a board must agree about what "already
+// wearing it" means.
 func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
-	// Both halves at once: applying the patch and re-diffing keeps exactly
-	// what it changed, and a removal of something absent changes nothing so
-	// it falls out on its own.
+	// Apply and re-diff keeps exactly what changed; a removal of something
+	// absent falls out on its own.
 	return snap.Apply(p).Diff(snap)
 }
 
-// memFormPage is the FLOOR, in records: how much patch history a mem log
-// guarantees a reader can still be answered from. It is the same idea as
-// memory.form_patch_window (config.go) one tier down -- that bounds the
-// DECODED window a Form keeps resident, this bounds the RAW records under it
-// -- and the two should be read together.
+// memFormPage is the floor in raw records, one tier under the decoded window
+// patchWindow bounds; read the two together.
 var memFormPage atomic.Int64
 
 func init() { memFormPage.Store(512) }
 
-// SetMemFormPage sets the mem log's floor. Zero or negative retains
-// everything, which is what a mem log did before it was paged.
+// SetMemFormPage: zero or negative retains everything.
 func SetMemFormPage(n int) { memFormPage.Store(int64(n)) }
 
-// memPage is a base and the patches applied since it. A page can answer for
-// any version above its base without consulting anything else, which is the
-// whole reason the base is carried rather than the records alone.
+// memPage answers for any version above its base without consulting anything else.
 type memPage struct {
 	base        form.Snapshot // the state as of baseVersion
 	baseVersion uint64
@@ -573,17 +509,15 @@ type memPage struct {
 
 func (p *memPage) top() uint64 { return p.baseVersion + uint64(len(p.patches)) }
 
-// memLogState is the pair of pages, published as one immutable value so a
-// reader takes no lock and never sees a half-rotated log.
+// memLogState is published as one immutable value so a reader takes no lock
+// and never sees a half-rotated log.
 type memLogState struct {
-	// sealed is the PREDECESSOR, kept only until live alone satisfies the
-	// floor. Nil once subsumed.
+	// sealed is the predecessor, kept until live alone satisfies the floor.
 	sealed *memPage
 	live   *memPage
 }
 
-// floorVersion is the oldest version this log can still hand back a patch
-// for. A read at or below it is answered from a base snapshot instead.
+// floorVersion: a read at or below it is answered from a base snapshot instead.
 func (s *memLogState) floorVersion() uint64 {
 	if s.sealed != nil {
 		return s.sealed.baseVersion
@@ -591,46 +525,29 @@ func (s *memLogState) floorVersion() uint64 {
 	return s.live.baseVersion
 }
 
-// MemFormLog holds a form's records in memory. It is what "a form without an
-// aria" means in practice: the algebra and the MVCC state with no store under
-// them, for a test, a tool, or a form that never needed to be durable -- a
-// INTRINSIC FORM above all, which is a form that is never durable by design.
+// MemFormLog holds a form's records in memory and is paged: appends land on
+// the live page; when it fills, the state is snapshot and a fresh page opens
+// on it; the predecessor is held until the live page alone satisfies the
+// floor. Resident history is always in [page, 2*page) records plus two
+// snapshots, and a reader that falls off the end is reseeded from the base
+// rather than sent over the wire.
 //
-// IT IS PAGED, and that is the difference between a mem log and a leak. An
-// append-only slice under a form that is patched per turn grows without bound
-// for as long as the daemon lives. So: appends land on the live page; when it
-// fills, the state is SNAPSHOT and a fresh page opens on that snapshot; the
-// predecessor is held until the live page alone satisfies the floor, and is
-// then dropped. Resident history is therefore always in [page, 2*page)
-// records plus two snapshots.
-//
-// A ring buffer would also have been bounded and would have been worse: it
-// throws away the ability to ANSWER. A page keeps a base to answer from, so a
-// reader that falls off the end is reseeded from memory rather than sent back
-// over the wire for a snapshot it could have been handed.
-//
-// MemFormLog's writer is SINGLE BY CONSTRUCTION and its readers are not.
-// AppendPatch is reached only from reduceOne, which is reached only from
-// runBatch, which is the actor's ONE DRAINER. RangePatches is reached from
-// patchesFromLog on whatever goroutine asks for a range.
+// Single writer by construction (AppendPatch is reached only from runBatch,
+// the actor's one drainer); readers are not.
 type MemFormLog struct {
 	state atomic.Pointer[memLogState]
 
-	// writing detects a Second concurrent writer. The lock removal rests on
-	// the single-writer contract, so the contract breaking must be REPORTED
-	// rather than silently tolerated -- otherwise the removal is an assumption
-	// instead of a design.
+	// writing detects a second concurrent writer: the lock removal rests on
+	// the single-writer contract, so a break must be reported.
 	writing atomic.Bool
 
-	// testHold parks a writer inside the critical region so a test can
-	// overlap two appends. nil in production.
+	// testHold parks a writer inside the critical region so a test can overlap
+	// two appends; nil in production.
 	testHold func()
 }
 
-// ErrBelowFloor is what a mem log says instead of answering short. A range
-// that starts under the floor cannot be served from patches, and a SHORT
-// ANSWER would read as a legitimate gap to every caller -- so it is an error,
-// and Base() is the cure the caller is expected to reach for.
+// ErrBelowFloor: a range starting under the floor cannot be served from
+// patches, and a short answer would read as a legitimate gap. Base() is the cure.
 var ErrBelowFloor = fmt.Errorf("form log: the requested range starts below the retained floor")
 
 func (m *MemFormLog) load() *memLogState {
@@ -640,9 +557,7 @@ func (m *MemFormLog) load() *memLogState {
 	return &memLogState{live: &memPage{}}
 }
 
-// Base is the oldest state this log can reseed from: the retained base
-// snapshot and the version it stands at. A reader whose position is below
-// Floor() starts here and replays forward.
+// Base: a reader below Floor() starts here and replays forward.
 func (m *MemFormLog) Base() (form.Snapshot, uint64) {
 	st := m.load()
 	if st.sealed != nil {
@@ -674,9 +589,8 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	}
 	next := &memLogState{sealed: old.sealed, live: live}
 
-	// ROTATE. The order matters and is the whole of the retention rule: the
-	// predecessor is dropped only when the page that replaced it can carry
-	// the floor on its own.
+	// Rotate: the predecessor is dropped only when the page replacing it can
+	// carry the floor on its own.
 	if page := int(memFormPage.Load()); page > 0 && len(live.patches) >= page {
 		snap, err := replayPage(live)
 		if err != nil {
@@ -691,8 +605,7 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	return live.top(), nil
 }
 
-// replayPage folds a page onto its base. Called once per rotation, which is
-// once per page of appends: the amortized cost of the bound.
+// replayPage runs once per rotation: the amortized cost of the bound.
 func replayPage(p *memPage) (form.Snapshot, error) {
 	snap := p.base
 	for _, payload := range p.patches {
@@ -708,13 +621,10 @@ func replayPage(p *memPage) (form.Snapshot, error) {
 // SyncThrough is a no-op: memory is as durable as this log gets.
 func (m *MemFormLog) SyncThrough(uint64) error { return nil }
 
-// RangePatches TAKES NO LOCK. It loads one published state and walks it; a
-// writer appending concurrently publishes a successor that this call simply
-// does not see, which is a consistent older history rather than a torn newer
-// one.
-//
-// A range starting below the floor returns ErrBelowFloor rather than
-// answering with what it happens to still hold. See ErrBelowFloor.
+// RangePatches takes no lock: it walks one published state, and a concurrent
+// append publishes a successor this call does not see, a consistent older
+// history rather than a torn newer one. Below the floor it returns
+// ErrBelowFloor rather than answering short.
 func (m *MemFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
 	st := m.load()
 	floor := st.floorVersion()
@@ -744,7 +654,6 @@ func (m *MemFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) err
 	return nil
 }
 
-// NewMemForm is a standalone form: no store, no aria, no daemon.
 func NewMemForm() *Form {
 	f, err := OpenForm(&MemFormLog{})
 	if err != nil {
@@ -753,7 +662,6 @@ func NewMemForm() *Form {
 	return f
 }
 
-// xwalFormLog is the durable half of a backed Form: the aria's form channel.
 type xwalFormLog struct {
 	backend *XwalBackend
 	ariaID  string
@@ -795,8 +703,6 @@ func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) er
 	return nil
 }
 
-// FormLingerForTest and PatchWindowForTest: see HandleIdleForTest.
 func FormLingerForTest() time.Duration { return time.Duration(formLinger.Load()) }
 
-// PatchWindowForTest is the resident patch bound the writer trims against.
 func PatchWindowForTest() int { return int(patchWindow.Load()) }

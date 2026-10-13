@@ -10,38 +10,24 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// TranslatorEncoder turns ONE fig IR entry into the wire messages of ONE
-// provider. It is injected: the store never learns what a provider is, and an
-// encoder never learns what a log is.
-//
-// The entry it is handed is already stamped and already repaired: its LT, its
-// form-channel version and its study versions are set, and its payload is the
-// post-repair one.
+// TranslatorEncoder turns one IR entry into one provider's wire messages. The
+// entry it is handed is already stamped and repaired.
 type TranslatorEncoder interface {
-	// Provider names the translator channel: "anthropic" writes to
-	// translations-v2/anthropic.
 	Provider() string
-	// EncodeEntry returns the wire messages for this entry and the
-	// fingerprint of the encoder that produced them; an entry that
-	// translates to nothing returns none. source is the fig IR the entry
-	// came from, for an encoder that must seed a cursor from an earlier one.
+	// EncodeEntry returns the wire messages and the encoder fingerprint; an
+	// entry translating to nothing returns none. source lets an encoder seed a
+	// cursor from an earlier entry.
 	EncodeEntry(ariaID string, source Log[message.Message], e Entry[message.Message]) ([]json.RawMessage, string, error)
 }
 
-// translatorEncoders is the injected set, keyed by provider name.
-//
-// PUBLISHED, NOT LOCKED. It is written when a provider is built -- rarely,
-// once per provider -- and read on EVERY fig IR append. A reader takes no
-// lock: it loads one immutable map. Writers still exclude each other, because
-// add is read-modify-write and there is more than one of them.
+// translatorEncoders is published, not locked: read on every IR append,
+// written once per provider. writeMu serializes add's read-modify-write.
 type translatorEncoders struct {
 	writeMu sync.Mutex
 	by      atomic.Pointer[map[string]TranslatorEncoder]
 }
 
-// add registers encoders WITHOUT dropping the ones already there: providers
-// are built one at a time, as arias open. It builds a successor and publishes
-// it, so a reader mid-flight keeps the map it loaded.
+// add publishes a successor map so a reader mid-flight keeps the one it loaded.
 func (t *translatorEncoders) add(encs []TranslatorEncoder) {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
@@ -73,27 +59,22 @@ func (t *translatorEncoders) empty() bool {
 	return cur == nil || len(*cur) == 0
 }
 
-// AddTranslatorEncoders registers encoders the fig IR write path uses to
-// translate each entry as it lands. A backend with none writes no
-// translations, and every provider catches up on its next send.
+// A backend with no encoders writes no translations; every provider catches
+// up on its next send.
 func (b *XwalBackend) AddTranslatorEncoders(encs ...TranslatorEncoder) {
 	b.encoders.add(encs)
 }
 
-// translateOnAppend writes one translator entry per channel the aria ALREADY
-// HAS. A channel it does not have is not created here; the first send through
-// a new provider catches up.
-//
-// A failure here does not fail the append: the fig IR entry is canonical, and
-// a translation that did not land is derived, missing, and rebuilt by the next
-// catch-up. Rationale and census: plans/delta-seam-rebased.md.
+// translateOnAppend writes one translator entry per channel the aria already
+// has; a missing channel is created by the first send through that provider.
+// A failure here never fails the append: the translation is derived and
+// rebuilt by the next catch-up.
 func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Message], e Entry[message.Message]) {
 	if b == nil || b.encoders.empty() {
 		return
 	}
 	// An assistant entry is translated by the provider that produced it, from
-	// its own wire bytes; one written here would be a second entry at one
-	// FigaroLT. Asserted by TestAnAssistantEntryIsNotTranslatedOnAppend.
+	// its own wire bytes; one written here would be a second entry at one FigaroLT.
 	if e.Payload.Role == message.RoleOutput {
 		return
 	}
