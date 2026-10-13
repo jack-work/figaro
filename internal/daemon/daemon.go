@@ -222,6 +222,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 
 func Run() {
 	mark.Init("angelus")
+	mark.Mark("boot.begin")
 	loaded, err := boot.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)

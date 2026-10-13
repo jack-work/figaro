@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/mark"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -105,6 +106,7 @@ func listColumns(width int, global bool) []figtree.Column {
 }
 
 func runList(loaded *config.Loaded, o lsOpts) {
+	defer mark.Span("ls", "json", o.jsonOut)()
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

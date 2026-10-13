@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/mark"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
@@ -157,6 +158,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	// "shutdown complete", and Run returns before the drain does.
 
 	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
+	mark.Mark("boot.ready")
 
 	_ = a.StartPprof(ctx)
 

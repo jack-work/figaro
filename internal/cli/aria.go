@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/mark"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -39,6 +40,7 @@ type showOpts struct {
 // emits them verbatim; --verbose and --literal use the raw IR path.
 func renderAria(loaded *config.Loaded, id string, args []string) {
 	opts := parseShowArgs(args)
+	defer mark.Span("show", "n", opts.last)()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
