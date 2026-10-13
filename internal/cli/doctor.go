@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -288,7 +289,8 @@ func humanBytes(n int64) string {
 
 // runDoctorSkills prints the first-party skill the binary carries: where it
 // unpacked to, and every file in it.
-func runDoctorSkills(asJSON bool) error {
+func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
+	outfit.SetBundledSkills(loaded.BundledSkills())
 	root := outfit.BundledSkillsRoot()
 	if root == "" {
 		if asJSON {

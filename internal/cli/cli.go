@@ -1491,7 +1491,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			case "toolcalls":
 				return runDoctorToolCalls(ctx.BoolFlag("dry-run"))
 			case "skills":
-				return runDoctorSkills(ctx.BoolFlag("json"))
+				return runDoctorSkills(loaded, ctx.BoolFlag("json"))
 			case "ttl":
 				return runDoctorTTL(loaded, ctx.BoolFlag("json"))
 			}
