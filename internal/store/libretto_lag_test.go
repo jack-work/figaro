@@ -69,9 +69,7 @@ func TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped(t *testing.T) {
 			"one-turn lag: no delta exists yet when the entry is written, so the " +
 			"change rides the next entry.")
 	} else {
-		t.Logf("THE FOLD IS NOT BEHIND HERE. The hypothesis in " +
-			"the restart lag is not explained by the fold, and the " +
-			"cause is elsewhere -- which is what a previous bearer already suspected.")
+		t.Logf("the fold is not behind here; the restart lag has another cause")
 	}
 }
 
