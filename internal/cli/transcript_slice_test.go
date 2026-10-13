@@ -20,8 +20,7 @@ func sealedTurnPage(id uint64, from uint64, nodes []livedoc.Node) aria.Page {
 	}}}
 }
 
-// The immutable-backpage property: a page below the live suffix can never
-// receive a delta, so re-fetching it must reproduce it exactly.
+// A page below the live suffix never receives a delta.
 func TestPageMessages_RefetchIsIdentical(t *testing.T) {
 	page := sealedTurnPage(3, 0, []livedoc.Node{bigNode(40000), bigNode(40000), bigNode(10)})
 	a, err := json.Marshal(pageMessages(page))
@@ -37,8 +36,7 @@ func TestPageMessages_RefetchIsIdentical(t *testing.T) {
 	}
 }
 
-// A part that is itself a slice of a turn keeps its wire offset, so a unit's
-// From is its true coordinate in the turn and not merely its index in the page.
+// A unit's From is its coordinate in the turn, not its index in the page.
 func TestPageMessages_HonoursPartOffset(t *testing.T) {
 	got := pageMessages(sealedTurnPage(9, 5, []livedoc.Node{bigNode(4), bigNode(4)}))
 	if len(got) != 1 || got[0].From != 5 {

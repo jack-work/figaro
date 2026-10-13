@@ -9,13 +9,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE INDEX IS ASKED ON EVERY FRAME AND BY THIRTY CALL SITES, so the only
-// honest thing for it to do on a frame where nothing moved is nothing. These
-// tests pin the three outcomes: no work, the live entry only, and the full
-// walk.
+// On a frame where nothing moved the index does nothing.
 
-// stampTranscript is a settled pager over sealed history, plus a live turn
-// when live is true.
 func stampTranscript(t *testing.T, live bool) (*transcript, *aria.Client) {
 	t.Helper()
 	client := aria.NewClient()
@@ -41,9 +36,7 @@ func stampTranscript(t *testing.T, live bool) (*transcript, *aria.Client) {
 	return tr, client
 }
 
-// trapRowCache empties the row cache WITHOUT bumping rowRev. Any walk of the
-// window refills it, so a cache that is still empty afterwards proves the walk
-// did not happen.
+// trapRowCache empties the cache without bumping rowRev: a walk would refill it.
 func trapRowCache(tr *transcript) {
 	tr.rowCache = map[sliceKey]cachedMessage{}
 }
@@ -53,7 +46,7 @@ func TestBuildIndexDoesNothingWhenNothingMoved(t *testing.T) {
 	total, entries := tr.index.total, len(tr.index.entries)
 	trapRowCache(tr)
 
-	for range 20 { // twenty clock ticks' worth of asking
+	for range 20 {
 		tr.buildIndex()
 	}
 	if n := len(tr.rowCache); n != 0 {
@@ -65,8 +58,6 @@ func TestBuildIndexDoesNothingWhenNothingMoved(t *testing.T) {
 	}
 }
 
-// settle is the frame path's entry, and it used to rebuild up to four times
-// per frame on its own.
 func TestSettleDoesNothingWhenNothingMoved(t *testing.T) {
 	tr, _ := stampTranscript(t, false)
 	tr.settle()
@@ -77,8 +68,7 @@ func TestSettleDoesNothingWhenNothingMoved(t *testing.T) {
 	}
 }
 
-// A SPINNER IS NOT A NEW WINDOW. While a tool runs, the clock must recompose
-// the live message and nothing else.
+// A tick recomposes the live message and nothing else.
 func TestTickRefreshesOnlyTheLiveEntry(t *testing.T) {
 	tr, _ := stampTranscript(t, true)
 	last := tr.index.entries[len(tr.index.entries)-1]
@@ -96,10 +86,8 @@ func TestTickRefreshesOnlyTheLiveEntry(t *testing.T) {
 	}
 }
 
-// And with nothing animating, the tick is not even that much.
 func TestTickIsFreeWithNothingAnimating(t *testing.T) {
 	tr, client := stampTranscript(t, true)
-	// Seal the tool: nothing under the open message animates now.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 9, Inquiry: "the live question",
 		Nodes: []livedoc.Node{{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Output: "done"}},
@@ -113,7 +101,6 @@ func TestTickIsFreeWithNothingAnimating(t *testing.T) {
 	}
 }
 
-// Content, width and folds all still land.
 func TestBuildIndexRebuildsWhenSomethingMoved(t *testing.T) {
 	for _, tc := range []struct {
 		name string

@@ -14,8 +14,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// coordFixture is a two-turn aria with stamped nodes, rendered through the
-// pager at a width wide enough that nothing clips.
 func coordFixture(tb testing.TB, verbose bool) *transcript {
 	tb.Helper()
 	at := time.Date(2026, 7, 27, 1, 23, 45, 0, time.Local).UnixMilli()
@@ -47,9 +45,6 @@ func plainRows(rows []string) []string {
 	return out
 }
 
-// TestAddressesAppearOnlyUnderVerbose is the headline: ^O off, the transcript
-// is what it always was; ^O on, every block states its address against the
-// right edge, and not one row moves.
 func TestAddressesAppearOnlyUnderVerbose(t *testing.T) {
 	off := plainRows(coordFixture(t, false).lines())
 	for _, r := range off {
@@ -63,11 +58,11 @@ func TestAddressesAppearOnlyUnderVerbose(t *testing.T) {
 		t.Fatalf("^O moved the conversation: %d rows on, %d off", len(on), len(off))
 	}
 	want := []string{
-		"7",              // turn 7's question, named by its turn
-		"7.0 · 01:23:45", // its one prose node
-		"8",              // turn 8's question
-		"8.0 · 01:24:46", // prose
-		"8.1 · 01:25:47", // the tool, stamped from StartedAt
+		"7",
+		"7.0 · 01:23:45",
+		"8",
+		"8.0 · 01:24:46",
+		"8.1 · 01:25:47",
 	}
 	var got []string
 	for i, r := range on {
@@ -84,13 +79,9 @@ func TestAddressesAppearOnlyUnderVerbose(t *testing.T) {
 	}
 }
 
-// addressRE matches a rendered address at the end of a row: the turn, the node
-// when there is one, and the time it was written.
 var addressRE = regexp.MustCompile(`\d+(\.\d+)?( · \d\d:\d\d:\d\d)?$`)
 
-// TestAddressedRowIsOnePhysicalRow: an address must survive a pane too narrow
-// to hold it by being clipped, never by wrapping, and it may never widen the
-// row it rides.
+// An address is clipped, never wrapped, and never widens its row.
 func TestAddressedRowIsOnePhysicalRow(t *testing.T) {
 	for _, w := range []int{4, 8, 12, 60} {
 		tr := coordFixture(t, true)
@@ -100,7 +91,7 @@ func TestAddressedRowIsOnePhysicalRow(t *testing.T) {
 				t.Fatalf("w=%d row %d contains a control character: %q", w, i, r)
 			}
 			if !addressRE.MatchString(strings.TrimSpace(stripANSI(r))) {
-				continue // only addressed rows are this test's business
+				continue
 			}
 			if got := runewidth.StringWidth(stripANSI(r)); got > w {
 				t.Fatalf("w=%d row %d is %d columns wide: %q", w, i, got, r)
@@ -109,15 +100,13 @@ func TestAddressedRowIsOnePhysicalRow(t *testing.T) {
 	}
 }
 
-// TestAddressRidesTheNodesOwnRow: the address is drawn on the node's first row,
-// so a node's span is what it was without ^O and scroll-into-view cannot land
-// one row off.
+// The address rides the node's first row, so its span is unchanged under ^O.
 func TestAddressRidesTheNodesOwnRow(t *testing.T) {
-	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
+	defer term.SetColorMode(term.ColorAlways)()
 	on, off := coordFixture(t, true), coordFixture(t, false)
 	on.buildIndex()
 	off.buildIndex()
-	ref := nodeRef{turn: 8, index: 1} // the tool
+	ref := nodeRef{turn: 8, index: 1}
 	span, ok := on.nodeSpanOf(ref)
 	if !ok {
 		t.Fatal("no span for 8.1")
@@ -130,7 +119,6 @@ func TestAddressRidesTheNodesOwnRow(t *testing.T) {
 	if !strings.HasSuffix(first, "8.1 · 01:25:47") {
 		t.Fatalf("the node's first row does not carry its address: %q", first)
 	}
-	// And it is genuinely part of the node: the row takes the selection cue.
 	on.selection = nodeSelection{active: true,
 		anchor: selectionPoint{nodeRef: ref}, focus: selectionPoint{nodeRef: ref}}
 	if !washed(on.lines()[span.first]) {
@@ -138,8 +126,6 @@ func TestAddressRidesTheNodesOwnRow(t *testing.T) {
 	}
 }
 
-// TestAddressesLeaveTheChromeAlone: no row is inserted, so the rule stays the
-// overline of the header beneath it under ^O as well.
 func TestAddressesLeaveTheChromeAlone(t *testing.T) {
 	assertNoGapBelowRule(t, "transcript verbose", coordFixture(t, true).lines())
 
@@ -162,9 +148,7 @@ func TestAddressesLeaveTheChromeAlone(t *testing.T) {
 	}
 }
 
-// TestCoordinateLabelShapes pins the formatter directly, including the two
-// edges: the question, named by its turn alone, and an unstamped node, which
-// prints no time rather than 1970.
+// An unstamped node prints no time rather than 1970.
 func TestCoordinateLabelShapes(t *testing.T) {
 	at := time.Date(2026, 7, 27, 1, 23, 45, 0, time.Local).UnixMilli()
 	cases := []struct {
@@ -185,9 +169,8 @@ func TestCoordinateLabelShapes(t *testing.T) {
 	}
 }
 
-// TestAddressesSurviveToggling: the address is composed with the row and drawn
-// only when asked, so flipping ^O cannot leave half a screen in one mode and
-// half in the other, whatever the row cache is holding.
+// Flipping ^O must not leave half a screen in each mode, whatever the row
+// cache holds.
 func TestAddressesSurviveToggling(t *testing.T) {
 	tr := coordFixture(t, false)
 	set := tr.view.(*ariaView).settings

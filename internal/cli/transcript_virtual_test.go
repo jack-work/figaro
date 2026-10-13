@@ -12,28 +12,11 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Virtualization equivalence.
-//
-// render() no longer materializes the whole retained window; it indexes it and
-// paints only the visible slice. legacyLines below is a verbatim copy of the
-// pre-virtualization pass (whole-window materialization, selection decoration
-// and search highlighting applied to every row, nodeRows accumulated as it
-// goes). It is the oracle: every window the new code paints must be
-// byte-identical to the corresponding slice of it, in every state.
-// ---------------------------------------------------------------------------
+// legacyLines is the whole-window materialization pass; every window the
+// virtualized render paints must be byte-identical to its slice.
 
-// legacyLines is the oracle: the whole-window materialization pass, written out
-// longhand, with its own buffers so a result can be held across calls.
-//
-// It tracks the pass it is a copy of. Axis C moved the clip + gutter column
-// into the row cache (plainNodeRow) and dropped decorateNodeRow's width
-// argument; this copy therefore calls the two-argument form on the cached
-// plain row, exactly as the pass did on the eve of virtualization. Everything
-// else is untouched: whole-window materialization, decoration and highlighting
-// applied to every row, nodeRows accumulated one row at a time (deliberately
-// not C's one-write-per-node shortcut, so a non-contiguous node's rows would
-// show up as a divergence rather than being assumed away).
+// nodeRows is accumulated one row at a time so a non-contiguous node shows
+// up as a divergence.
 func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 	if t.follow {
 		t.resetToTail()
@@ -49,15 +32,8 @@ func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 	nodeRows := map[nodeRef]nodeSpan{}
 	appendMsg := func(rows []transcriptRow, lt sliceKey) {
 		if len(out) > 0 {
-			// The separator is a PAIR, a blank and the rule: because the rule
-			// is the OVERLINE of the voice header on the next line (see sepRows).
-			// It was a triple, with a trailing blank, until that trailing blank
-			// was found to be the reason "> input" sat one row lower than
-			// "< figaro". This oracle is an INDEPENDENT reimplementation of the
-			// line space, so it has to restate the shape rather than import it;
-			// what it still proves is that buildIndex + window agree with a
-			// straight-line materialization, which is the divergence it exists
-			// to catch.
+			// The oracle restates the separator shape rather than
+			// importing it.
 			out = append(out, "", dimTransRule(t.w))
 			lts = append(lts, lt, lt)
 		}
@@ -93,9 +69,6 @@ func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 	return out, lts, nodeRows
 }
 
-// mixedNodes exercises every row shape the pager can emit: header rows with no
-// ref, thinking, wrapped prose, a tool with captured output, blank separators
-// between nodes.
 func mixedNodes(seed int) []livedoc.Node {
 	var prose strings.Builder
 	for p := range 2 {
@@ -135,10 +108,6 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 	return tr, client
 }
 
-// assertWindowMatchesLegacy sweeps every viewport position and asserts the
-// virtualized window is byte-identical to the oracle's slice, that lines() and
-// lineKey still agree with it, and that node spans survived the move off the
-// materialization pass.
 func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	t.Helper()
 	want, wantLT, wantSpans := legacyLines(tr)
@@ -170,7 +139,6 @@ func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 			t.Fatalf("window(%d,%d) diverged at %s", off, off+body, firstDiff(buf, want[off:off+body]))
 		}
 	}
-	// Clamping at both ends.
 	buf = tr.window(-5, 4, buf)
 	if !equalStrings(buf, want[:4]) {
 		t.Fatalf("window clamped low diverged")
@@ -236,7 +204,6 @@ func TestTranscriptVirtualWindow_SearchHighlight(t *testing.T) {
 	tr.matchQuery = "needle"
 	assertWindowMatchesLegacy(t, tr, 21)
 
-	// Live typing highlights the in-progress query instead.
 	tr.inSearch, tr.query = true, "fox"
 	assertWindowMatchesLegacy(t, tr, 21)
 }
@@ -252,11 +219,9 @@ func TestTranscriptVirtualWindow_NodeSelection(t *testing.T) {
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
 
-	// A single-node selection: the focused node also carries the bright gutter.
 	tr.selection.anchor = tr.selection.focus
 	assertWindowMatchesLegacy(t, tr, 21)
 
-	// Selection plus an active highlight, both applied to the same rows.
 	tr.matchQuery = "needle"
 	tr.selection.anchor = testSelectionPoint(messages[1].Turn, 1, messages[1].Nodes[1])
 	assertWindowMatchesLegacy(t, tr, 21)
@@ -283,7 +248,6 @@ func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
 
-	// Growing the open message must move the index, not stale it.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(5), Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{
 		{ID: 0, Set: map[string]any{"markdown": "streaming needle prose, now rather longer"}},
 		{ID: 1, Set: map[string]any{
@@ -304,9 +268,6 @@ func TestTranscriptVirtualWindow_WidthChangeInvalidates(t *testing.T) {
 	assertWindowMatchesLegacy(t, tr, 27)
 }
 
-// TestTranscriptVirtualFrames_ScrollIsPure pins the headline invariant: moving
-// the viewport and coming back paints exactly the same frame, and each frame
-// equals the legacy materialization at that offset.
 func TestTranscriptVirtualFrames_ScrollIsPure(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
@@ -326,7 +287,6 @@ func TestTranscriptVirtualFrames_ScrollIsPure(t *testing.T) {
 			}
 		}
 	}
-	// gg / G land on the extremes and still agree with the oracle.
 	tr.key('g')
 	tr.key('g')
 	if tr.offset != 0 {
@@ -337,8 +297,6 @@ func TestTranscriptVirtualFrames_ScrollIsPure(t *testing.T) {
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 
-// TestTranscriptVirtualFrames_ResizeAnchor pins that the anchoring path still
-// sees a current lineKey after the index took over its maintenance.
 func TestTranscriptVirtualFrames_ResizeAnchor(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
@@ -352,8 +310,6 @@ func TestTranscriptVirtualFrames_ResizeAnchor(t *testing.T) {
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 
-// TestTranscriptVirtualSelectionVisible pins that ensureSelectionVisible still
-// scrolls to the focused node now that spans come from the index.
 func TestTranscriptVirtualSelectionVisible(t *testing.T) {
 	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)
 	tr.scrollBy(-1)
@@ -370,8 +326,6 @@ func TestTranscriptVirtualSelectionVisible(t *testing.T) {
 	}
 }
 
-// legacyFind is the pre-virtualization '/' scan: materialize everything, walk
-// it from the cursor, wrap. The virtualized find must land on the same line.
 func legacyFind(tr *transcript, q string) (int, bool) {
 	all, _, _ := legacyLines(tr)
 	if len(all) == 0 {
@@ -439,9 +393,8 @@ func TestTranscriptVirtualSearch_RepeatMatchesLegacy(t *testing.T) {
 	}
 }
 
-// A selection clips rows to width-1, so a match hiding past the right edge is
-// invisible to search. That quirk is load-bearing for equivalence: lineAt must
-// decorate exactly as the materialization pass did before matching.
+// A selection clips rows to width-1, hiding a match past the right edge;
+// lineAt must decorate before matching.
 func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
 	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)
 	tr.scrollBy(-1)
@@ -465,7 +418,6 @@ func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
 }
 
 func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
-	// Empty aria: the index must be well-formed, not just non-crashing.
 	client := aria.NewClient()
 	ft := ldrender.NewFakeTerminal(40, 6)
 	tr := newTranscript(ft, 40, 6, ldrender.NodeText{}, client, "empty123", time.Unix(0, 0))
@@ -486,7 +438,6 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	tr.key('k')
 	tr.key('G')
 
-	// A single message: no separator triple, so entry 0 starts at line 0.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: uint64(1), Sealed: true, Inquiry: "q",
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
@@ -497,15 +448,11 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	}
 	assertWindowMatchesLegacy(t, tr, 3)
 
-	// A terminal too small to hold a body row still paints without panicking.
 	tr.resize(4, 4)
 	assertWindowMatchesLegacy(t, tr, 1)
 
-	// ...and so does one too small to hold the FOOTER. renderFrame writes a
-	// fixed three-row footer at screen[h-3:], so h<4 indexed screen[-2] and
-	// panicked: dragging a pane to 1-3 rows crashed the pager. The guard
-	// skips the frame instead; every height must survive, in both orders, and
-	// the pager must still paint once the pane is restored.
+	// renderFrame writes a three-row footer at screen[h-3:], so h<4 must skip
+	// the frame and recover once the pane is restored.
 	for _, h := range []int{3, 2, 1, 2, 3, 1} {
 		tr.resize(40, h)
 		tr.render()

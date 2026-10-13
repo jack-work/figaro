@@ -11,17 +11,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// GAPS: one row, and the fetch that means it usually never paints.
-//
-// THE DEGENERATE CASE IS THE ACCEPTANCE TEST. An ordinary aria: no jumps, no
-// eviction: must have ONE range and render NO gap, ever. If a gap appears in
-// normal scroll-up the extent bookkeeping is wrong, and no rendering rule may
-// paper over it. That is TestOrdinaryScrollUpNeverRendersAGap, and its canary
-// is TestAFalseAdjacencyFailsTheDegenerateCase.
-// ---------------------------------------------------------------------------
+// An ordinary aria has one range and renders no gap, ever; no rendering rule
+// may paper over extent bookkeeping.
 
-// gapRows is every sentinel row currently in line space.
 func gapRows(tr *transcript) []string {
 	var out []string
 	tr.buildIndex()
@@ -33,10 +25,6 @@ func gapRows(tr *transcript) []string {
 	return out
 }
 
-// TestOrdinaryScrollUpNeverRendersAGap: the whole point. Page an aria in from
-// the tail to the beginning, one screen at a time, and no hole may ever
-// render: because the store must be able to say that the last node of turn t
-// and the first of turn t+1 are neighbours (the extents the wire states).
 func TestOrdinaryScrollUpNeverRendersAGap(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()
@@ -60,16 +48,12 @@ func TestOrdinaryScrollUpNeverRendersAGap(t *testing.T) {
 	if got := tr.messages()[0].Turn; got != 1 {
 		t.Fatalf("the walk stopped at turn %d, not the beginning", got)
 	}
-	// And the footer tells the truth about it: nothing is missing any more.
 	if !tr.whole() {
 		t.Fatal("the whole aria is loaded and the footer still marks the total")
 	}
 }
 
-// TestAFalseAdjacencyFailsTheDegenerateCase is the canary for the test above:
-// force a hole the store cannot know about (evict the middle) and the
-// one-range assertion, and the no-gap assertion: must both fail. An
-// assertion that has never failed is not evidence.
+// The canary for the test above: a forced hole must fail both assertions.
 func TestAFalseAdjacencyFailsTheDegenerateCase(t *testing.T) {
 	history := transcriptHistory(60)
 	client := aria.NewClient()
@@ -82,7 +66,6 @@ func TestAFalseAdjacencyFailsTheDegenerateCase(t *testing.T) {
 	if got := len(client.Store().Ranges()); got != 1 {
 		t.Fatalf("fixture: expected one range before the eviction, got %d", got)
 	}
-	// The hole a jump or a mid-history eviction makes.
 	client.Store().Evict(aria.Anchor{Turn: 40}, aria.Anchor{Turn: 44})
 	tr.invalidateWindow()
 	if got := len(client.Store().Ranges()); got != 2 {
@@ -97,9 +80,7 @@ func TestAFalseAdjacencyFailsTheDegenerateCase(t *testing.T) {
 	}
 }
 
-// TestGapIsExactlyOneRowWhateverItHides: two holes of wildly different size
-// occupy the same number of lines. Row height is only knowable by rendering,
-// so a proportional placeholder would be a number we invented.
+// Row height is only knowable by rendering, so a hole is one row whatever it hides.
 func TestGapIsExactlyOneRowWhateverItHides(t *testing.T) {
 	measure := func(from, to uint64) (int, string) {
 		history := transcriptHistory(120)
@@ -124,8 +105,6 @@ func TestGapIsExactlyOneRowWhateverItHides(t *testing.T) {
 	}
 	small, smallRow := measure(100, 100)
 	big, bigRow := measure(80, 100)
-	// Both holes cost their content minus ONE row. The difference between them
-	// is entirely the content they swallowed, never the sentinel.
 	if smallRow == bigRow {
 		t.Fatalf("the two sentinels are identical (%q); the count is not being read", smallRow)
 	}
@@ -140,11 +119,7 @@ func TestGapIsExactlyOneRowWhateverItHides(t *testing.T) {
 	}
 }
 
-// TestGapDoesNotCorruptTheCoordinates: `:` jump and Ctrl-O read nodeSpanOf and
-// the line index. A gap row carries no node, and must therefore be invisible
-// to both: the coordinates of every real node must be exactly what they were
-// before the hole appeared, shifted only by the rows the hole actually
-// replaced.
+// A gap row carries no node, so nodeSpanOf and the jump must not see it.
 func TestGapDoesNotCorruptTheCoordinates(t *testing.T) {
 	history := transcriptHistory(60)
 	client := aria.NewClient()
@@ -172,27 +147,22 @@ func TestGapDoesNotCorruptTheCoordinates(t *testing.T) {
 	if got.last-got.first != want.last-want.first {
 		t.Fatalf("the node's span changed height: %v -> %v", want, got)
 	}
-	// The line the span names really is that node's row, gap row and all.
 	if line := plainBody(tr.lineAt(got.first)); strings.Contains(line, "not loaded") {
 		t.Fatalf("nodeSpanOf pointed at the sentinel: %q", line)
 	}
-	// And the jump lands on it rather than on the hole.
 	tr.startJump(jumpTarget{turn: 55})
 	if tr.jump != nil || tr.jumpNote != "" {
 		t.Fatalf(":55 did not land across the hole: %v %q", tr.jump, tr.jumpNote)
 	}
 	if tr.offset != got.first-tr.index.entries[tr.index.entryAt(got.first)].sepHeight() {
-		// The landing snaps the ENTRY's first row to the top, which is the
-		// separator when it has one; either is fine, the hole is not.
+		// The landing may snap to the entry's separator; either is fine.
 		if line := plainBody(tr.lineAt(tr.offset)); strings.Contains(line, "not loaded") {
 			t.Fatalf(":55 landed on the sentinel row")
 		}
 	}
 }
 
-// TestFooterMarksAnIncompleteBuffer: the total is ROWS WE HOLD. With anything
-// missing it is marked, so the number is never read as the size of the
-// conversation.
+// The footer total is rows held, marked while anything is missing.
 func TestFooterMarksAnIncompleteBuffer(t *testing.T) {
 	history := transcriptHistory(60)
 	client := aria.NewClient()
@@ -205,7 +175,6 @@ func TestFooterMarksAnIncompleteBuffer(t *testing.T) {
 	if !strings.Contains(stripANSI(rule), "+") {
 		t.Fatalf("history exists below the floor and the footer does not say so: %q", stripANSI(rule))
 	}
-	// Load the whole thing and the mark goes away.
 	for range 200 {
 		tr.offset = 0
 		if !pageOnce(tr, history) {
@@ -219,10 +188,8 @@ func TestFooterMarksAnIncompleteBuffer(t *testing.T) {
 	}
 }
 
-// TestEnsureOnBindClosesTheHole is the fetch trigger: a hole within the
-// prefetch distance of the viewport produces a FILL request, and serving it
-// through the real Client.Ensure: with ReadBefore as the fetcher: closes the
-// hole and the sentinel stops being drawn.
+// A hole within prefetch distance produces a fill request; Client.Ensure
+// closes it.
 func TestEnsureOnBindClosesTheHole(t *testing.T) {
 	history := transcriptHistory(60)
 	client := aria.NewClient()
@@ -246,7 +213,7 @@ func TestEnsureOnBindClosesTheHole(t *testing.T) {
 		t.Fatal("fixture: no hole to fill")
 	}
 
-	// Park the viewport on the sentinel: BINDING IT is the fetch trigger.
+	// Binding the sentinel is the fetch trigger.
 	for k := range tr.index.entries {
 		if e := &tr.index.entries[k]; e.isGap() {
 			tr.offset = e.start
@@ -271,8 +238,6 @@ func TestEnsureOnBindClosesTheHole(t *testing.T) {
 	}
 }
 
-// TestPrefetchDistanceMeansTheSentinelUsuallyNeverPaints: a hole two screens
-// below the viewport is already being fetched; one far away is not.
 func TestPrefetchDistanceMeansTheSentinelUsuallyNeverPaints(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
@@ -296,13 +261,11 @@ func TestPrefetchDistanceMeansTheSentinelUsuallyNeverPaints(t *testing.T) {
 	if gapAt == 0 {
 		t.Fatal("fixture: no hole")
 	}
-	// Parked far above it: no fill, and the row is not on screen either.
 	tr.offset = gapAt + 4*transcriptPrefetchScreens*tr.h
 	if req, ok := tr.pageCursor(); ok && req.fill != nil {
 		t.Fatalf("filled a hole %d rows away", tr.offset-gapAt)
 	}
-	// Coming within the prefetch distance: still a screen and a half ABOVE
-	// the viewport's top, so it cannot be on screen, arms the fill.
+	// Within prefetch distance but still a screen and a half above the top.
 	tr.offset = gapAt + transcriptPrefetchScreens*tr.h - 1
 	if tr.offset <= gapAt {
 		t.Fatal("fixture: the viewport already shows the hole; this proves nothing")
@@ -313,9 +276,7 @@ func TestPrefetchDistanceMeansTheSentinelUsuallyNeverPaints(t *testing.T) {
 	}
 }
 
-// TestGapSurvivesAResizeWithoutMovingTheReader: the sentinel is one row at
-// every width, and the viewport anchor can name it (its key is its own first
-// missing anchor), so a resize with the hole at the top does not jump.
+// The viewport anchor can name the sentinel: its key is its first missing anchor.
 func TestGapSurvivesAResizeWithoutMovingTheReader(t *testing.T) {
 	history := transcriptHistory(60)
 	client := aria.NewClient()
@@ -347,9 +308,6 @@ func TestGapSurvivesAResizeWithoutMovingTheReader(t *testing.T) {
 	}
 }
 
-// TestLiveTailStillArrivesBesideAGap: a hole in the middle of the window must
-// not take the window off the tail: the open turn is still the last thing in
-// it. (The 2a-part-2 property, re-asserted with a hole present.)
 func TestLiveTailStillArrivesBesideAGap(t *testing.T) {
 	history := transcriptHistory(60)
 	client := aria.NewClient()

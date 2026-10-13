@@ -11,20 +11,13 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Geometry sweep: what does the retained-window row budget actually buy?
-//
-// The window is the thing every frame re-materializes, and the thing that
-// decides how often we must fetch. These two benchmarks measure both ends of
-// that tradeoff across budgets, so transcriptWindowRows is a number with data
-// behind it rather than a guess. Run:
+// Geometry sweep: both ends of the retained-window tradeoff across budgets, so
+// transcriptWindowRows is a number with data behind it.
 //
 //	go test ./internal/cli/ -run XXX -bench Geometry -benchtime 20x -benchmem
-// ---------------------------------------------------------------------------
 
-// 300 is retained deliberately: transcriptMinPageSize floors a page at 6
-// messages, so on a heavy aria every budget below ~800 rows produces the same
-// window as 600 and the sweep should show that rather than hide it.
+// transcriptMinPageSize floors a page at 6 messages, so budgets below ~800
+// rows produce the same window as 600.
 var geometryBudgets = []int{300, 600, 1200, 1800, 2400, 4800}
 
 func withWindowRows(rows int, fn func()) {
@@ -34,8 +27,6 @@ func withWindowRows(rows int, fn func()) {
 	fn()
 }
 
-// BenchmarkTranscriptGeometryFrame is the cost side: one scroll frame with a
-// heavy retained window, per budget.
 func BenchmarkTranscriptGeometryFrame(b *testing.B) {
 	for _, rows := range geometryBudgets {
 		b.Run(fmt.Sprintf("rows%d", rows), func(b *testing.B) {
@@ -57,10 +48,6 @@ func BenchmarkTranscriptGeometryFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptGeometryJourney is the churn side: the same round trip
-// through history at each budget, reporting fetches and re-renders. A smaller
-// window is cheaper per frame but pages more often; this is where the two
-// curves cross.
 func BenchmarkTranscriptGeometryJourney(b *testing.B) {
 	for _, rows := range geometryBudgets {
 		b.Run(fmt.Sprintf("rows%d", rows), func(b *testing.B) {
@@ -92,9 +79,6 @@ func BenchmarkTranscriptGeometryJourney(b *testing.B) {
 				b.ReportMetric(float64(evictions)/n, "evicted-msgs/op")
 				b.ReportMetric(float64(renders)/n, "noderenders/op")
 				b.ReportMetric(float64(keys)/n, "keys/op")
-				// The memory half of the tradeoff, which is the half that still
-				// discriminates once the frame is O(viewport): peak RETAINED row
-				// bytes (window + payload LRU), not per-op churn.
 				b.ReportMetric(float64(peak)/n/1024, "peak-retained-KB")
 				b.ReportMetric(float64(peakRows)/n, "peak-retained-rows")
 			})
@@ -102,12 +86,7 @@ func BenchmarkTranscriptGeometryJourney(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptGeometryEnter is the cold-start side of the budget. The
-// tail window converges on one page's worth of rows (transcriptWindowRows /
-// transcriptPageLimit), and entering the pager has to render every one of them
-// once. This is the cost that grows with the budget on the MERGED stack, where
-// steady-state frame cost no longer does: so it belongs in the sweep that
-// picks the number.
+// Entering the pager renders one page's worth of rows, which grows with the budget.
 func BenchmarkTranscriptGeometryEnter(b *testing.B) {
 	for _, rows := range geometryBudgets {
 		b.Run(fmt.Sprintf("rows%d", rows), func(b *testing.B) {
@@ -126,12 +105,8 @@ func BenchmarkTranscriptGeometryEnter(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptGeometryFollow is the live-tail side of the budget. Axis A
-// left exactly one O(retained rows) step on the frame path: rebuildLineLT,
-// which refills the LT-per-line map whenever the index shape moves, and a
-// streaming open message moves it on every single frame. So unlike a scroll
-// frame, a follow frame IS sensitive to the window size, and the sweep has to
-// say by how much before the budget is raised.
+// rebuildLineLT is O(retained rows) and a streaming open message triggers it
+// every frame, so a follow frame is sensitive to the window size.
 func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 	for _, rows := range geometryBudgets {
 		b.Run(fmt.Sprintf("rows%d", rows), func(b *testing.B) {
@@ -153,16 +128,7 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 	}
 }
 
-// TestTranscriptGeometryDepthReport asks the question the merged stack forces
-// and D's solo sweep could not: now that frame cost is flat in the window size,
-// the only remaining benefit of a bigger window is less paging churn: so is the
-// churn threshold a property of the BUDGET, or of how far the user scrolls?
-//
-// It sweeps budget x journey depth and prints fetches / refetched messages /
-// node re-renders / peak retained bytes. A report, not an assertion (the
-// numbers are machine- and fixture-dependent); the conclusion it supports is
-// written up in skills/figaro/contributing/notes/transcript-paging.md. Enable with
-// FIGARO_PAGING_REPORT=1 go test ./internal/cli/ -run GeometryDepth -v.
+// A report, not an assertion: FIGARO_PAGING_REPORT=1 go test -run GeometryDepth -v.
 func TestTranscriptGeometryDepthReport(t *testing.T) {
 	if os.Getenv("FIGARO_PAGING_REPORT") == "" {
 		t.Skip("set FIGARO_PAGING_REPORT=1 for the geometry depth report")
@@ -180,11 +146,7 @@ func TestTranscriptGeometryDepthReport(t *testing.T) {
 	}
 }
 
-// BenchmarkTranscriptIdleIndex is the clock's own cost: what asking for a
-// current line index costs on a frame where NOTHING about the conversation
-// moved. The pager asks eleven times a second for the spinner alone, and
-// before the index carried a stamp every one of those asks re-walked the
-// retained window and recomposed the live message.
+// The pager asks for the index eleven times a second for the spinner alone.
 func BenchmarkTranscriptIdleIndex(b *testing.B) {
 	tr, _ := heavyTranscript(b, 200, 60)
 	tr.settle()
@@ -195,11 +157,8 @@ func BenchmarkTranscriptIdleIndex(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptLiveTickFrame is the frame the goroutine dumps caught: a
-// long question carrying a board's worth of form deltas, a tool spinning under
-// it, and the clock asking for a frame eleven times a second. Only the live
-// entry may be recomposed, and its adornment must not be rebuilt from scratch
-// to decide whether to draw one glyph.
+// Only the live entry may be recomposed on a tick, and its adornment must
+// not be rebuilt to decide whether to draw one glyph.
 func BenchmarkTranscriptLiveTickFrame(b *testing.B) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)

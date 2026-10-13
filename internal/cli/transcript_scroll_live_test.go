@@ -7,15 +7,11 @@ import (
 	"time"
 )
 
-// The pager is either FOLLOWING the live tail or PINNED where you left it, and
-// the screen has to say which. Every rule below was a bug a human found in his
-// own terminal while the suite was green, so each one names the screen it
-// stands in for. See the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md): this file is the cheap half of
-// that proof, not the whole of it.
+// The screen must say whether the pager is following the live tail or pinned.
 func TestTranscriptScrollLiveContract(t *testing.T) {
 	tr := scrollTranscript(t, io.Discard, 100, 40, 12)
 
-	// LIVE: one blank row of padding above the rule, and the marker says live.
+	// Live: one padding row above the rule.
 	if got := tr.prev[tr.h-3]; got != "" {
 		t.Errorf("live frame has no padding above the rule: %q", got)
 	}
@@ -23,14 +19,8 @@ func TestTranscriptScrollLiveContract(t *testing.T) {
 		t.Errorf("live frame does not say live: %q", tr.prev[tr.h-2])
 	}
 
-	// SCROLLED: the padding row is given back to content: the last line sits
-	// flush against the rule, and the marker is gone. Counted rather than read
-	// off the screen because a content row is allowed to be blank itself.
-	//
-	// And that reclaimed row IS the notch: the first k out of live spends its
-	// travel on the padding, so nothing scrolls. The window still ENDS on the
-	// same line it did while live; it merely starts one line earlier. A press
-	// that both detached and scrolled read as a two-row jump.
+	// The first notch out of live spends its travel on the padding row: the
+	// window still ends on the same line, it starts one earlier.
 	live, end := len(tr.rowBuf), tr.offset+len(tr.rowBuf)
 	tr.scrollBy(-1)
 	if len(tr.rowBuf) != live+1 {
@@ -44,13 +34,11 @@ func TestTranscriptScrollLiveContract(t *testing.T) {
 		t.Errorf("scrolled frame still says live: %q", tr.prev[tr.h-2])
 	}
 
-	// The SECOND notch is an ordinary one-line scroll.
 	tr.scrollBy(-1)
 	if got := tr.offset + len(tr.rowBuf); got != end-1 {
 		t.Errorf("the second notch ended the window on line %d, want %d (exactly one row)", got, end-1)
 	}
 
-	// RE-ATTACH: reaching the last row is not enough; one row PAST it is.
 	tr.scrollBy(1)
 	if tr.follow {
 		t.Error("reaching the last row must not re-attach to live")
@@ -60,11 +48,8 @@ func TestTranscriptScrollLiveContract(t *testing.T) {
 		t.Error("scrolling past the last row must re-attach to live")
 	}
 
-	// PROMOTED BY THE SCROLL KEY: enter() and the keystroke arrive in one input
-	// chunk and the frame-rate gate defers the frame between them, so follow
-	// drops before anything has painted. The window must still be the settled
-	// tail: this is 'k' from the inline view, which used to open on the cold
-	// window the pager was constructed with: a screen of history erased.
+	// enter() and the keystroke arrive in one chunk with the frame deferred,
+	// so follow drops before anything painted; the window must still be the tail.
 	fresh := newTranscript(io.Discard, tr.w, tr.h, tr.view, tr.client, "aria0001", time.Unix(0, 0))
 	fresh.gate = func() bool { return false }
 	fresh.enter()

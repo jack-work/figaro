@@ -17,10 +17,6 @@ import (
 
 var updateGolden = flag.Bool("update-frames", false, "rewrite testdata/transcript_frames.golden")
 
-// frameFixture is a transcript over content chosen to exercise the row
-// primitives: markdown prose that wraps, a tool node with captured output
-// (dim gutter escapes), wide CJK runes, an over-width line that must be
-// clipped, and embedded control characters that must be flattened.
 func frameFixture(t *testing.T) *transcript {
 	t.Helper()
 	nodes := []livedoc.Node{
@@ -48,16 +44,11 @@ func frameFixture(t *testing.T) *transcript {
 	return tr
 }
 
-// TestTranscriptFramesGolden pins the exact bytes of the materialized rows in
-// three states: plain, with a node selection (gutter + background wash), and
-// with a search highlight. This is the end-to-end guard for the allocation
-// surgery in clipToWidth / decorateNodeRow: the frames must not move.
 func TestTranscriptFramesGolden(t *testing.T) {
 	got := buildGoldenFrames(t)
 
-	// The pre-collapse companion is regenerated in the same pass, so the
-	// cell-level proof beside these frames survives a content change instead
-	// of silently becoming a comparison of two different fixtures.
+	// The pre-collapse companion is regenerated in the same pass so the
+	// cell-level proof beside it survives a content change.
 	if *updateGolden {
 		prev := sgrCollapse
 		sgrCollapse = func(s string) string { return s }
@@ -88,22 +79,14 @@ func buildGoldenFrames(t *testing.T) string {
 	tr := frameFixture(t)
 	section("plain", tr.lines())
 
-	// The first two selectable points are the two turns' INQUIRIES (a question
-	// selects and copies exactly like a node: see inquiryNode); step past them
-	// so this fixture keeps pinning the same three NODE rows it always did, and
-	// the pre-sgr cell-level proof beside it stays a proof.
-	//
-	// The viewport is parked at the top first. ^N seeds from the VIEWPORT now -
-	// the topmost block on screen, and frameFixture leaves the offset at the
-	// bottom, so without this the walk starts further down and this golden would
-	// pin different rows. Stating the precondition keeps the golden about row
-	// BYTES, which is what it is for.
+	// The first two selectable points are the inquiries; park at the top first
+	// because ^N seeds from the viewport.
 	tr.offset = 0
 	tr.selectNode(1, false)
 	tr.selectNode(1, false)
-	tr.selectNode(1, false) // turn 2's first node
-	tr.selectNode(1, true)  // extend across the message boundary
-	tr.selectNode(1, true)  //
+	tr.selectNode(1, false)
+	tr.selectNode(1, true)
+	tr.selectNode(1, true)
 	section("selected", tr.lines())
 
 	tr.clearSelection()
@@ -111,17 +94,15 @@ func buildGoldenFrames(t *testing.T) string {
 	section("highlighted", tr.lines())
 
 	tr.matchQuery = ""
-	tr.toggleSelectedNodes() // no selection: inert
+	tr.toggleSelectedNodes()
 	tr.selection = nodeSelection{}
 	section("plain-again", tr.lines())
 
 	return b.String()
 }
 
-// writeOrCompareGolden writes the frames under -update-frames, else diffs them.
-// Selection decoration branches on term.Enabled(), so both branches get a
-// golden; run the package a second time with FORCE_COLOR=1 to cover the
-// styled one.
+// Selection decoration branches on term.Enabled(), so both branches have a
+// golden; run again with FORCE_COLOR=1 for the styled one.
 func writeOrCompareGolden(t *testing.T, got string) {
 	t.Helper()
 	name := "transcript_frames.golden"

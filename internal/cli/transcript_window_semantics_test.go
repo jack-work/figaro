@@ -10,12 +10,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// TestTranscript_ForwardSelectionRequestsEvictedPage is GONE. It pinned that
-// dragging a selection past the bottom of the retained window asked for a
-// FORWARD page, a direction that only existed because history lived in a
-// second copy the window could slide off the tail. The window reaches the live
-// tail by construction now, so there is nothing newer to request.
-
 func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	client := aria.NewClient()
 	history := transcriptHistory(2)
@@ -26,9 +20,7 @@ func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.key('k')
-	// PINNED, NOT FROZEN. Scrolling away keeps the open message in the window -
-	// it is the last thing in the store's tail interval, and it keeps arriving
-	// from the client rather than from a snapshot taken at the detach.
+	// Pinned, not frozen: the open message keeps arriving from the client.
 	open := tr.openMessage()
 	if open == nil {
 		t.Fatal("scrolling dropped the open message")
@@ -38,14 +30,7 @@ func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	}
 }
 
-// TestTranscript_LongRangeRehydratesEvictedPages: a selection whose two ends
-// are pages apart still copies, by re-reading the range from the server.
-//
-// It used to anchor the far end on the OPEN message, which the pager kept
-// beside its frozen window as heldOpen; phase 2a then narrowed it further,
-// because the first page of older history took the window off the tail. With
-// the whole window an interval into the store both ends are in the same
-// structure again, and the far end can be anything the store still holds.
+// A selection whose ends are pages apart copies by re-reading the range.
 func TestTranscript_LongRangeRehydratesEvictedPages(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()

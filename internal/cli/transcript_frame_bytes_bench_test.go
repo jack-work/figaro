@@ -9,27 +9,14 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The wire: how many bytes a frame actually costs the terminal. On a local
-// terminal this is nearly free; over ssh or through tmux it is the whole
-// latency budget, which is why it deserves its own number alongside ns/op.
-//
-// E and B arrived with a countingWriter each. B's (transcript_paint_bench_test
-// .go) won the merge: identical job, but atomic, which its coalescing tests
-// need because frames also arrive from the pacer's timer goroutine. Likewise
-// countingTranscript is now a thin alias for B's heavyTranscriptOn.
+// Bytes per frame are the whole latency budget over ssh or tmux.
 func countingTranscript(b *testing.B, messages, outputLines int) (*transcript, *countingWriter) {
 	b.Helper()
 	cw := &countingWriter{}
 	return heavyTranscriptOn(b, cw, messages, outputLines), cw
 }
 
-// BenchmarkTranscriptFrameBytes reports the bytes written per painted frame for
-// a scroll step, which dirties every row of the viewport.
-//
-//	B/frame     bytes handed to the terminal per rendered frame
-//	writes      Write calls per frame (the painter buffers, so this is 1)
-//
-// Run with -benchtime 200x; ns/op is the scroll benchmarks' job.
+// Run with -benchtime 200x.
 func BenchmarkTranscriptFrameBytes(b *testing.B) {
 	for _, outputLines := range []int{20, 200} {
 		b.Run(fmt.Sprintf("out%d", outputLines), func(b *testing.B) {
@@ -53,8 +40,6 @@ func BenchmarkTranscriptFrameBytes(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptEnterBytes covers the other shape: the first full paint,
-// where every row of the screen is new.
 func BenchmarkTranscriptEnterBytes(b *testing.B) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)

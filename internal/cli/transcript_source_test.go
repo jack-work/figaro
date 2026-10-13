@@ -16,9 +16,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The corpus: the shapes agent output actually takes. For each, every
-// rendered row that carries text must align, and the runes the rows claim
-// must be the runes the source holds at those offsets, in order.
 var alignCorpus = []struct {
 	name, source string
 }{
@@ -44,7 +41,7 @@ func TestAlignRows_CorpusEveryTextRowAligns(t *testing.T) {
 		for i, r := range got {
 			plain := strings.TrimSpace(render.StripEscapes(rows[i]))
 			if strings.IndexFunc(plain, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) < 0 {
-				continue // chrome glamour draws: rules, table borders
+				continue
 			}
 			if !r.aligned {
 				t.Errorf("%s: row %d %q did not align", c.name, i, plain)
@@ -54,7 +51,6 @@ func TestAlignRows_CorpusEveryTextRowAligns(t *testing.T) {
 				t.Errorf("%s: row %d starts at %d, before the previous row's end %d", c.name, i, r.start, lastEnd)
 			}
 			lastEnd = r.end
-			// Every matched column stands for the rune it claims.
 			pr := []rune(render.StripEscapes(rows[i]))
 			col := 0
 			for _, rr := range pr {
@@ -68,8 +64,7 @@ func TestAlignRows_CorpusEveryTextRowAligns(t *testing.T) {
 	}
 }
 
-// A row the renderer made up entirely (a rule, a table border) must NOT
-// align: widening depends on it saying so.
+// Widening depends on a chrome row saying it does not align.
 func TestAlignRows_ChromeRowsDoNotAlign(t *testing.T) {
 	got := alignRows("some text", []string{"────────────", "some text"})
 	if got[0].aligned {
@@ -80,8 +75,6 @@ func TestAlignRows_ChromeRowsDoNotAlign(t *testing.T) {
 	}
 }
 
-// stepTo walks the cursor to the top of the window and then down until its
-// row contains needle.
 func stepTo(t *testing.T, tr *transcript, needle string) {
 	t.Helper()
 	tr.key('g')
@@ -113,13 +106,11 @@ func sourceFixture(t *testing.T) (*transcript, string) {
 	return tr, body
 }
 
-// V over the first two rows of a wrapped paragraph names the source runes
-// those rows were rendered from, at the node's Src coordinate.
 func TestVisualRange_LineModeOverWrappedProse(t *testing.T) {
 	tr, body := sourceFixture(t)
 	tr.key('V')
 	stepTo(t, tr, "The retry")
-	tr.key('V') // anchor the line-wise highlight here
+	tr.key('V')
 	tr.key('j')
 	r, note, err := tr.visualRange()
 	if err != "" {
@@ -144,7 +135,6 @@ func TestVisualRange_LineModeOverWrappedProse(t *testing.T) {
 	}
 }
 
-// v over a few columns names exactly those runes.
 func TestVisualRange_CharModeNamesTheColumns(t *testing.T) {
 	tr, body := sourceFixture(t)
 	tr.key('v')
@@ -155,10 +145,10 @@ func TestVisualRange_CharModeNamesTheColumns(t *testing.T) {
 	for first < len(plain) && plain[first] == ' ' {
 		first++
 	}
-	for range first + 4 { // onto "retry"
+	for range first + 4 {
 		tr.key('l')
 	}
-	tr.key('v') // anchor
+	tr.key('v')
 	for range 4 {
 		tr.key('l')
 	}
@@ -172,11 +162,10 @@ func TestVisualRange_CharModeNamesTheColumns(t *testing.T) {
 	}
 }
 
-// The question is quotable at the turn's opening LT once the turn is sealed.
 func TestVisualRange_InquiryUsesTheTurnsFirstLT(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	tr.key('V')
-	stepTo(t, tr, "stampede?") // the question's row
+	stepTo(t, tr, "stampede?")
 	tr.key('V')
 	r, _, err := tr.visualRange()
 	if err != "" {
@@ -187,8 +176,6 @@ func TestVisualRange_InquiryUsesTheTurnsFirstLT(t *testing.T) {
 	}
 }
 
-// A folded tool shows its output's tail; the coordinate is offset back into
-// the whole block.
 func TestVisualRange_ToolTailIsOffsetIntoTheBlock(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	tr.key('V')
@@ -207,10 +194,7 @@ func TestVisualRange_ToolTailIsOffsetIntoTheBlock(t *testing.T) {
 	}
 }
 
-// A tool result longer than the producer's cap is shown as its tail, and
-// the coordinate has to carry BOTH cuts: the producer's and the pager's.
-// The visible L291 of a 300-line result used to resolve to L191, silently,
-// because the coordinate was still valid.
+// The coordinate carries both cuts, the producer's cap and the pager's tail.
 func TestVisualRange_ToolTailCrossesTheProducerCap(t *testing.T) {
 	var lines []string
 	for i := 1; i <= 300; i++ {
@@ -242,7 +226,7 @@ func TestVisualRange_ToolTailCrossesTheProducerCap(t *testing.T) {
 	tr.render()
 
 	tr.key('V')
-	stepTo(t, tr, "L291") // the first line the pager kept, 190 past the producer's cut
+	stepTo(t, tr, "L291")
 	tr.key('V')
 	r, _, err := tr.visualRange()
 	if err != "" {
@@ -254,8 +238,6 @@ func TestVisualRange_ToolTailCrossesTheProducerCap(t *testing.T) {
 	}
 }
 
-// `:<,>send -- text` reaches the runner as `send -- <lt.block:a-b>! text`: the
-// range moves from before the verb to the head of the prompt.
 func TestVisual_ColonRangeExpandsIntoThePrompt(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	var got string
@@ -271,7 +253,6 @@ func TestVisual_ColonRangeExpandsIntoThePrompt(t *testing.T) {
 	if !strings.HasPrefix(got, "send -- <412.0:0-") || !strings.HasSuffix(got, ">! what about this?") {
 		t.Fatalf("runner received %q", got)
 	}
-	// Submitting leaves visual mode entirely and keeps the place.
 	if tr.visual.active() {
 		t.Fatal("the mode outlived the command it was spent on")
 	}
@@ -284,7 +265,6 @@ func TestVisual_ColonRangeRefusals(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	ran := false
 	tr.command = func(string) { ran = true }
-	// No highlight at all.
 	tr.key(':')
 	for _, r := range "<,>send -- x" {
 		tr.key(byte(r))
@@ -293,8 +273,6 @@ func TestVisual_ColonRangeRefusals(t *testing.T) {
 	if ran || !strings.Contains(tr.jumpNote, "no highlight") {
 		t.Fatalf("ran=%v note=%q", ran, tr.jumpNote)
 	}
-	// A cursor but no highlight: ':' is the plain box, and a typed range
-	// still refuses.
 	tr.key('V')
 	stepTo(t, tr, "The retry")
 	tr.key(':')
@@ -308,7 +286,6 @@ func TestVisual_ColonRangeRefusals(t *testing.T) {
 	if ran || !strings.Contains(tr.jumpNote, "no highlight") {
 		t.Fatalf("ran=%v note=%q", ran, tr.jumpNote)
 	}
-	// A highlight, but no prompt after --.
 	tr.key('V')
 	tr.key(':')
 	for _, r := range "send" {
@@ -320,8 +297,6 @@ func TestVisual_ColonRangeRefusals(t *testing.T) {
 	}
 }
 
-// A qualified token typed by hand in the range's position is moved the same
-// way the placeholder is.
 func TestExpandRange_HandTypedToken(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	got, _, err := tr.expandRange("<412.0:3-9>!send -- hello")
@@ -333,9 +308,7 @@ func TestExpandRange_HandTypedToken(t *testing.T) {
 	}
 }
 
-// THE PROMPT AFTER `--` IS THE READER'S BYTES. Expansion used to split the
-// line into fields and join them again, so every run of spaces inside a
-// quoted argument was collapsed on the way to the verb.
+// The prompt after `--` is the reader's bytes: no field splitting.
 func TestExpandRange_PromptIsVerbatim(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	for _, c := range []struct{ in, want string }{
@@ -348,7 +321,6 @@ func TestExpandRange_PromptIsVerbatim(t *testing.T) {
 			t.Fatalf("%q: got %q, want %q (err %q)", c.in, got, c.want, err)
 		}
 	}
-	// A verb with no boundary still refuses, and names it.
 	if _, _, err := tr.expandRange("<412.0:3-9>!send hello"); err == "" || !strings.Contains(err, "--") {
 		t.Fatalf("a missing boundary was accepted: %q", err)
 	}

@@ -10,19 +10,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap replaces
-// TestTranscript_OpenSelectionLoadsGapBeforeExtending, which is deleted.
-//
-// The old test pinned a hazard that no longer exists: the pager held a frozen
-// copy of the closed tail (t.pages) plus a frozen open message (heldOpen), and
-// between them was a GAP: the messages that had closed since the detach, held
-// by the client and by nobody else the pager could see. ^P from the open
-// message therefore had to refuse to move and ask for a forward page first.
-//
-// With one owner there is no gap to load: the open turn is the last thing in
-// the store's tail interval and the message before it is the one immediately
-// before it. So the assertion inverts: ^P from the open message MOVES, at
-// once, and asks for nothing.
+// The open turn is the last thing in the store's tail interval, so ^P from it
+// moves at once and asks for nothing.
 func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
@@ -32,9 +21,8 @@ func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	}}}}}}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
-	tr.key('k') // detach: the window keeps its floor, and keeps the live turn
+	tr.key('k')
 
-	// Park the viewport on the OPEN message and select it.
 	tr.buildIndex()
 	_, maxOff := tr.layout(len(tr.footLines()))
 	tr.offset = maxOff
@@ -43,8 +31,6 @@ func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	if focus.turn != 201 {
 		t.Fatalf("^P did not seed on the open turn: %+v", focus)
 	}
-	// While a fresh live message arrives underneath, no less: the released head
-	// lands in the same interval, so nothing the selection can see moves.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{{
 		ID: 1, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201-more"},
 	}}}}}}}, aria.Notify)
@@ -56,10 +42,6 @@ func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	}
 }
 
-// TestTranscript_ClearSelectionKeepsTheWindow: clearing a selection that
-// spanned the whole window must not move the window. It used to TRIM the
-// retained page set in the direction the selection had been dragged; there are
-// no pages to trim, and the window is the store's own interval.
 func TestTranscript_ClearSelectionKeepsTheWindow(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()

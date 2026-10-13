@@ -10,39 +10,16 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// The flicker oracle: what the screen looks like BETWEEN the first byte of a
-// frame and the last.
-//
-// Every other paint test here compares the grid AFTER a frame against a naive
-// repaint, and every one of them passes while the screen is flashing, because
-// the intermediate states are exactly what they do not look at. A frame that
-// erases a row and then rewrites the same text is invisible on a terminal that
-// honours synchronized output and a visible blink on one that does not.
-//
-// We cannot decide whether the bracket survives. A trace through tmux showed a
-// synchronized-update END at byte 4,686 of a 7,418-byte write with fourteen row
-// erases after it: tmux parses ?2026 itself and re-emits its own brackets
-// around its own redraw, so OUR bracket is a request, not a guarantee, and
-// counting balanced starts and ends proves nothing about what the outer
-// terminal received. The property that does not depend on anyone else's
-// cooperation is this one:
-//
-//	NO CELL MAY PASS THROUGH BLANK ON ITS WAY FROM ONE GLYPH TO ANOTHER.
-//
-// A cell whose content is leaving may be erased; that erase is the final state
-// and nobody sees a flash. A cell that is blanked and then rewritten within the
-// same frame is a flash, bracket or no bracket.
-// ---------------------------------------------------------------------------
+// No cell may pass through blank on its way from one glyph to another within
+// a frame. tmux parses ?2026 and re-emits its own brackets, so the bracket is a
+// request, not a guarantee.
 
-// flickerVT is a vtScreen that remembers which cells were blanked mid-frame.
-// blanked[r][c] is set when an erase turns a cell that held something into
-// one that holds nothing, and cleared when the cell is written again -- so at
-// the end of a frame, a set bit over a non-blank cell is a cell that blinked.
+// flickerVT marks cells blanked mid-frame; a mark over a non-blank cell at
+// frame end is a blink.
 type flickerVT struct {
 	*vtScreen
 	blanked  [][]bool
-	was      [][]vtCell // content at the moment the cell was blanked
+	was      [][]vtCell
 	flickers []flickerCell
 	raw      []byte
 }
@@ -64,22 +41,15 @@ func newFlickerVT(w, h int) *flickerVT {
 	return f
 }
 
-// note is the vtScreen cell hook: before is what the cell holds, after is what
-// is about to replace it.
 func (f *flickerVT) note(r, c int, before, after vtCell) {
 	if r < 0 || r >= len(f.blanked) || c < 0 || c >= len(f.blanked[r]) {
 		return
 	}
 	switch {
 	case f.vtScreen.scrolling:
-		// A scroll-region shift. The blank row that rolls in is the content
-		// moving, not a repaint erasing itself, and there is no way to emit a
-		// scroll without it. Clear any mark so the row update that fills the
-		// row afterwards is not charged for it.
+		// A row rolling in on a scroll is content moving, not an erase.
 		f.blanked[r][c] = false
 	case !vtBlank(before) && vtBlank(after):
-		// Content is leaving. Remember it: if this same frame writes the cell
-		// again, that was a flash and the report can name the glyph.
 		if !f.blanked[r][c] {
 			f.blanked[r][c], f.was[r][c] = true, before
 		}
@@ -96,9 +66,7 @@ func (f *flickerVT) Write(p []byte) (int, error) {
 	return f.vtScreen.Write(p)
 }
 
-// beginFrame forgets the previous frame's bookkeeping. Flicker is a property
-// WITHIN one frame; a cell erased in frame 3 and written in frame 5 is two
-// separate, legitimate screens.
+// Flicker is a property within one frame.
 func (f *flickerVT) beginFrame() {
 	for r := range f.blanked {
 		for c := range f.blanked[r] {
@@ -129,14 +97,11 @@ func runeOf(c vtCell) []rune {
 	return []rune{c.r}
 }
 
-// vtBlank reports whether a cell shows nothing at all: a space on the default
-// background, with none of the attributes that draw on emptiness.
 func vtBlank(c vtCell) bool {
 	a := c.appearance()
 	return a.r == ' ' && a.s == vtStyle{}
 }
 
-// assertNoFlicker fails with the cells that blinked.
 func assertNoFlicker(t *testing.T, f *flickerVT, what string) {
 	t.Helper()
 	if len(f.flickers) == 0 {
@@ -147,12 +112,7 @@ func assertNoFlicker(t *testing.T, f *flickerVT, what string) {
 		what, len(f.flickers), f.report(8))
 }
 
-// TestFlickerOracleCanSayClean is the control. An oracle that only ever
-// reports flashes is indistinguishable from one that is stuck, and the three
-// tests below are useless the day it starts reporting one unconditionally. So:
-// hand it a frame written the way the painter SHOULD write one (overwrite the
-// glyph, erase only past the end) and one written the way it must not, and
-// require it to tell them apart.
+// The control: the oracle must tell a clean frame from a flashing one.
 func TestFlickerOracleCanSayClean(t *testing.T) {
 	const w, h = 20, 2
 	for _, tc := range []struct {
@@ -176,10 +136,7 @@ func TestFlickerOracleCanSayClean(t *testing.T) {
 	}
 }
 
-// TestPaintDoesNotBlankCellsItRewrites is the reproduction. A footer-only
-// change every frame, run past the two-second resync boundary, which is the
-// reported symptom: a spinner ticking in the footer while the body is still,
-// flashing the whole screen on a two-second beat.
+// A footer-only tick across the resync boundary must not flash the body.
 func TestPaintDoesNotBlankCellsItRewrites(t *testing.T) {
 	const w, h = 80, 24
 	out := newFlickerVT(w, h)
@@ -196,23 +153,18 @@ func TestPaintDoesNotBlankCellsItRewrites(t *testing.T) {
 		return s
 	}
 
-	// Frame 0 paints the whole screen from nothing: every cell goes blank ->
-	// glyph, which is not a flash.
 	tr.paint(frame("|"))
 
 	for i, spin := range []string{"/", "-", "\\", "|", "/", "-"} {
-		clock = clock.Add(900 * time.Millisecond) // crosses the 2s resync twice
+		clock = clock.Add(900 * time.Millisecond)
 		out.beginFrame()
 		tr.paint(frame(spin))
 		assertNoFlicker(t, out, fmt.Sprintf("footer tick %d (spinner %q)", i, spin))
 	}
 }
 
-// TestPaintDoesNotBlankCellsItRewrites_Scrolling is the same property over the
-// ordinary streaming frame: the viewport moves and the content under it
-// changes. The scroll-region planner is off, because a row that genuinely
-// scrolls in IS blank before it is written and there is no way to avoid that;
-// this test is about the rows the diff repaints.
+// Scroll regions off: a row that genuinely scrolls in is blank before it is
+// written; this is about the rows the diff repaints.
 func TestPaintDoesNotBlankCellsItRewrites_Scrolling(t *testing.T) {
 	defer func(v bool) { transcriptScrollRegions = v }(transcriptScrollRegions)
 	transcriptScrollRegions = false
@@ -229,9 +181,6 @@ func TestPaintDoesNotBlankCellsItRewrites_Scrolling(t *testing.T) {
 	}
 }
 
-// TestPaintDoesNotBlankCellsItRewrites_Live drives the real composer over a
-// growing open turn: the case the synthetic frames above cannot produce, where
-// rows change width, styles and wide glyphs all at once.
 func TestPaintDoesNotBlankCellsItRewrites_Live(t *testing.T) {
 	const w, h = 100, 30
 	out := newFlickerVT(w, h)
@@ -267,23 +216,13 @@ func TestPaintDoesNotBlankCellsItRewrites_Live(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The tail erase, case by case.
-//
-// appendRowTailErase is four lines and every one of them is a trap someone
-// already fell into. These drive it directly rather than through a transcript,
-// because the interesting inputs (a row that exactly fills the line, a row
-// ending in a double-width glyph, a row whose padding compacted away) are
-// awkward to arrange from the composer and trivial to state here.
-// ---------------------------------------------------------------------------
-
 func TestRowTailErase(t *testing.T) {
 	const w = 20
 	for _, tc := range []struct {
 		name          string
 		old, row      string
 		wantErase     bool
-		wantAddressed bool // an erase preceded by its own cursor address
+		wantAddressed bool
 	}{
 		{
 			name: "shrinking row clears the tail",
@@ -291,11 +230,8 @@ func TestRowTailErase(t *testing.T) {
 			wantErase: true,
 		},
 		{
-			// Not free, and deliberately so: three bytes to guarantee that
-			// nothing of the old row can survive to the right of the new one.
-			// The alternative is measuring the old row's emitted width on every
-			// changed row, which cost +80% on a half-page jump to save 4% of
-			// the bytes, and can under-erase if the measurement is ever wrong.
+			// Three bytes guarantee nothing of the old row survives to
+			// the right.
 			name: "growing row still clears behind itself",
 			old:  "short", row: "a longer line",
 			wantErase: true,
@@ -306,46 +242,35 @@ func TestRowTailErase(t *testing.T) {
 			wantErase: true,
 		},
 		{
-			// THE RIGHT MARGIN. Autowrap is off, so after writing column 20 the
-			// cursor sits ON column 20; an erase from there would delete the
-			// character just written. There is nothing beyond the margin, so
-			// there must be no erase at all.
+			// Autowrap is off, so after column w the cursor sits on
+			// column w and an erase there would delete the glyph just
+			// written.
 			name: "row that fills the line never erases",
 			old:  strings.Repeat("o", w), row: strings.Repeat("n", w),
 			wantErase: false,
 		},
 		{
-			// The same, reached by a wide glyph rather than by counting: two
-			// columns landing exactly on the margin.
-			// Eighteen bytes of 'x' plus a three-byte glyph is 21 bytes, over
-			// the bound, so the exact count runs and reports 20: the margin.
+			// Over the byte bound, so the exact count runs and reports
+			// the margin.
 			name: "wide glyph ending on the margin never erases",
 			old:  strings.Repeat("o", w), row: strings.Repeat("x", w-2) + "\u65e5",
 			wantErase: false,
 		},
 		{
-			// Emitted BYTES are the cheap upper bound on emitted COLUMNS, and
-			// three wide glyphs are nine bytes for six columns. Nine is short
-			// of the margin, so the bound answers and no exact count is needed.
+			// Emitted bytes bound emitted columns; nine bytes is short
+			// of the margin.
 			name: "wide glyphs clear from where the cursor stopped",
 			old:  strings.Repeat("o", w), row: "\u65e5\u672c\u8a9e",
 			wantErase: true, wantAddressed: false,
 		},
 		{
-			// Ninety padding cells wrapped in SGR are hundreds of source bytes
-			// for two columns. Compaction throws all of it away, so the EMITTED
-			// bytes are "hi" and the cheap bound answers: a count over the
-			// source row would have said 92 and put the cursor past the margin.
+			// Width is measured after compaction, not over the source row.
 			name: "trimmed padding is measured after compaction",
 			old:  strings.Repeat("o", w), row: "hi" + strings.Repeat("\x1b[38;5;252m \x1b[0m", 90),
 			wantErase: true, wantAddressed: false,
 		},
 		{
-			// The case the byte bound CANNOT answer, and the reason the exact
-			// count exists: styling that survives compaction. Ten one-character
-			// segments in ten different colours are ten columns and about sixty
-			// bytes, so the bound says "might have reached the margin" and is
-			// wrong. The exact count over the emitted bytes says ten.
+			// Styling survives compaction, so the byte bound cannot answer.
 			name: "heavily styled short row falls back to an exact count",
 			old:  strings.Repeat("o", w),
 			row: strings.Join([]string{
@@ -355,8 +280,6 @@ func TestRowTailErase(t *testing.T) {
 			wantErase: true, wantAddressed: true,
 		},
 		{
-			// Nothing is written, so the row address and the erase address are
-			// the same cursor move, and "addressed" is vacuously true.
 			name: "a row that empties clears from column one",
 			old:  "was here", row: "",
 			wantErase: true, wantAddressed: true,
@@ -381,12 +304,9 @@ func TestRowTailErase(t *testing.T) {
 			if !strings.HasSuffix(got, "\x1b[K") {
 				t.Fatalf("the erase is not the last thing the row does: %q", got)
 			}
-			// An addressed erase carries its own cursor move; a bare one relies
-			// on the terminal having left the cursor at the end of the text.
 			if addressed := strings.HasSuffix(got, "H\x1b[K"); addressed != tc.wantAddressed {
 				t.Fatalf("addressed=%v, want %v: %q", addressed, tc.wantAddressed, got)
 			}
-			// Whatever the route, the erase must land where the text stopped.
 			vt := newVT(w, 1)
 			_, _ = vt.Write([]byte("\x1b[1;1H" + strings.Repeat("\u00a4", w)))
 			_, _ = vt.Write([]byte(got))
@@ -397,11 +317,7 @@ func TestRowTailErase(t *testing.T) {
 	}
 }
 
-// TestRowTailErase_LastColumnSurvives is the trap stated as a fact about the
-// screen rather than about the bytes. A row whose text reaches the final column
-// must still have that column on screen afterwards. The bug this guards against
-// is subtle enough that the byte-level test above could be satisfied by an
-// erase emitted in the right place with the cursor in the wrong one.
+// A row reaching the final column must still show that column afterwards.
 func TestRowTailErase_LastColumnSurvives(t *testing.T) {
 	for _, w := range []int{4, 20, 80} {
 		for _, tail := range []string{"Z", "\u65e5", "\x1b[1mZ\x1b[0m"} {
@@ -417,21 +333,8 @@ func TestRowTailErase_LastColumnSurvives(t *testing.T) {
 	}
 }
 
-// TestResyncRecoversWithoutBlanking is the fact, and the first version of this
-// test asserted a wish instead, so the difference is worth stating.
-//
-// The wish was that a resync of unchanged rows emit no erases at all: measure
-// the stale columns from t.prev, see that nothing shrank, emit nothing. That
-// would have quietly cost the safety net its reason to exist. A resync is not a
-// repaint of rows we believe changed; it is the recovery for a desync NOBODY
-// DETECTED, and the desync it cannot otherwise see is a foreign write that made
-// a row WIDER than the painter believes. Trusting t.prev for the width during
-// the very frame whose job is to stop trusting t.prev gives up exactly that.
-//
-// So a resync still clears every row to the right margin. What changed is WHEN:
-// the erase follows the text instead of preceding it, which costs one cursor
-// address per row (eight bytes) and no longer flashes. That is the whole trade,
-// and it is why the fix did not have to touch the cadence.
+// A resync recovers from an undetected foreign write that widened a row, so
+// it must still clear every row to the margin; the erase follows the text.
 func TestResyncRecoversWithoutBlanking(t *testing.T) {
 	const w, h = 80, 24
 	out := newTeeVT(w, h)
@@ -449,7 +352,7 @@ func TestResyncRecoversWithoutBlanking(t *testing.T) {
 	}
 	tr.paint(frame("status |"))
 
-	clock = clock.Add(3 * time.Second) // past the resync interval
+	clock = clock.Add(3 * time.Second)
 	out.reset()
 	tr.paint(frame("status /"))
 	got := out.lastFrame()
@@ -457,13 +360,10 @@ func TestResyncRecoversWithoutBlanking(t *testing.T) {
 	if !strings.Contains(got, "status /") {
 		t.Fatalf("the frame did not repaint the footer: %q", got)
 	}
-	// Every row is re-earned, so every row clears its own tail.
 	if n := strings.Count(got, "\x1b[K"); n != h {
 		t.Fatalf("a resync cleared %d row tails, want %d (one per row): %q", n, h, got)
 	}
-	// And the clearing is the LAST thing each row does. This is the property
-	// that stopped the flashing; the count above would be satisfied just as
-	// well by the erase-first painter that caused it.
+	// The erase must be the last thing each row does.
 	if strings.Contains(got, "\x1b[2K") {
 		t.Fatalf("a row was cleared from column one, which blanks text that is"+
 			" about to be rewritten: %q", got)
@@ -480,7 +380,7 @@ func TestResyncRecoversWithoutBlanking(t *testing.T) {
 		}
 		erase := strings.Index(rest, "\x1b[K")
 		if erase < 0 {
-			continue // a row whose text reaches the margin has no tail
+			continue
 		}
 		if text := strings.TrimSpace(visibleText(rest[:erase])); text == "" {
 			t.Fatalf("row %d erased before it wrote anything: %q", r, rest)
@@ -488,8 +388,6 @@ func TestResyncRecoversWithoutBlanking(t *testing.T) {
 	}
 }
 
-// TestOrdinaryFrameErasesOnlyWhatChanged pins the byte economy the other way
-// round: between resyncs, a footer tick must not touch the body at all.
 func TestOrdinaryFrameErasesOnlyWhatChanged(t *testing.T) {
 	const w, h = 80, 24
 	out := newTeeVT(w, h)
@@ -506,7 +404,7 @@ func TestOrdinaryFrameErasesOnlyWhatChanged(t *testing.T) {
 		return s
 	}
 	tr.paint(frame("status |"))
-	clock = clock.Add(100 * time.Millisecond) // well inside the resync window
+	clock = clock.Add(100 * time.Millisecond)
 	out.reset()
 	tr.paint(frame("status /"))
 
@@ -514,8 +412,6 @@ func TestOrdinaryFrameErasesOnlyWhatChanged(t *testing.T) {
 	if strings.Contains(got, "row 0") {
 		t.Fatalf("a footer tick repainted the body: %q", got)
 	}
-	// One row changed, so exactly one row is addressed and exactly one tail is
-	// cleared. The whole frame is under thirty bytes.
 	if n := strings.Count(got, "\x1b[K"); n != 1 {
 		t.Fatalf("a footer tick emitted %d erase(s), want 1 (its own row): %q", n, got)
 	}

@@ -9,8 +9,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// tallHistory builds committed messages whose rendered height is large, so the
-// retained window is bounded by rows rather than by message count.
 func tallHistory(n, lines int) []aria.TurnPart {
 	out := make([]aria.TurnPart, n)
 	for i := range out {
@@ -48,10 +46,7 @@ func newTallTranscript(t *testing.T, budget int) *transcript {
 	return tr
 }
 
-// TestTranscriptRowBudgetShowsIdenticalFrame pins the correctness half of the
-// rows-based geometry: bounding the retained window changes what is HELD, never
-// what is SHOWN. The visible rows at the live tail must be byte-identical to
-// those of a pager holding the whole 30-message page.
+// Bounding the retained window changes what is held, never what is shown.
 func TestTranscriptRowBudgetShowsIdenticalFrame(t *testing.T) {
 	small := newTallTranscript(t, 600)
 	big := newTallTranscript(t, 1_000_000)
@@ -73,9 +68,7 @@ func TestTranscriptRowBudgetShowsIdenticalFrame(t *testing.T) {
 	}
 }
 
-// TestTranscriptRowBudgetBoundsTheWindow pins that the window converges to the
-// budget within one message, and that a light aria (where the budget is never
-// reached) keeps the full message-count page: i.e. the old geometry.
+// A light aria never reaches the budget and keeps the full message-count page.
 func TestTranscriptRowBudgetBoundsTheWindow(t *testing.T) {
 	tr := newTallTranscript(t, 600)
 	tr.render()
@@ -94,7 +87,7 @@ func TestTranscriptRowBudgetBoundsTheWindow(t *testing.T) {
 	client.SetClosedLimit(transcriptTailLimit)
 	applyTail(client, readBefore(transcriptHistory(120), recentCursor, transcriptPageSize))
 	light := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20, ldrender.NodeText{}, client, "aria", time.Time{})
-	transcriptWindowRows = 1200 // the shipped budget; restored by the Cleanup above
+	transcriptWindowRows = 1200
 	light.enter()
 	light.render()
 	if got := len(light.messages()); got != transcriptPageSize {
@@ -105,9 +98,7 @@ func TestTranscriptRowBudgetBoundsTheWindow(t *testing.T) {
 	}
 }
 
-// TestTranscriptColdStartRendersOnePage pins the cold-start policy: opening the
-// pager on an aria of very tall messages must not render thirty of them to fill
-// one screen. The window starts at the floor and grows into the row budget.
+// The window starts at the floor and grows into the row budget.
 func TestTranscriptColdStartRendersOnePage(t *testing.T) {
 	prev := transcriptWindowRows
 	transcriptWindowRows = 1200
@@ -137,8 +128,6 @@ func (v *countingNodeView) Render(n livedoc.Node, width, tick int) []string {
 	return v.inner.Render(n, width, tick)
 }
 
-// TestTranscriptRetuneIsIdempotent pins that the one-shot retune settles: it
-// must not keep re-cutting (and thus re-rendering) the window frame after frame.
 func TestTranscriptRetuneIsIdempotent(t *testing.T) {
 	tr := newTallTranscript(t, 600)
 	tr.render()

@@ -7,36 +7,17 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// JUMPING ACROSS A HOLE.
-//
-// A gap entry stands in line space beside messages and carries turn 0
-// (buildIndex), an id no aria ever issues. jumpReachOf read those zeros as
-// addresses:
-//
-//   - a coordinate inside the hole is between the window's oldest and newest
-//     turn but in no entry, and the resolver answered jumpAbsent: "no turn 3 in
-//     this aria", a DENIAL about a conversation it had merely not loaded. That
-//     is the common `:` failure, because the hole is exactly where a reader who
-//     has been jumping around ends up pointing.
-//   - with a hole at the top of the window (the floor not yet proven), `:0`
-//     resolved to entries[0]: the sentinel, and landed ON the "N turns not
-//     loaded" rule with no selection, because firstRefOfTurn(0) matches
-//     nothing.
-//
-// The rule now: a hole is not a turn. Bounds come from message entries, a
-// target that could be inside a hole means "not yet", and the walk drives its
-// own fill until the entry is ungapped: then it snaps to the real turn.
-// ---------------------------------------------------------------------------
+// A gap entry carries turn 0. A hole is not a turn: bounds come from message
+// entries, a target that could be inside a hole means "not yet", and the walk
+// drives its own fill.
 
-// holed is a jumpFixture with a hole in the MIDDLE of the window and the floor
-// proven: the shape a reader reaches by jumping around a long aria.
+// holed: a hole in the middle of the window, floor proven.
 func holed(t *testing.T, from, to uint64) *transcript {
 	t.Helper()
 	tr := jumpFixture(t, 1, 8)
 	tr.follow = false
 	tr.client.Store().Evict(aria.Anchor{Turn: from}, aria.Anchor{Turn: to})
-	tr.client.SetMoreBefore(false) // the wire has proven the beginning
+	tr.client.SetMoreBefore(false)
 	tr.invalidateWindow()
 	tr.settle()
 	if !tr.hasGap() {
@@ -45,8 +26,6 @@ func holed(t *testing.T, from, to uint64) *transcript {
 	return tr
 }
 
-// TestJumpIntoAHoleIsNotADenial: the turn is in the aria, just not in the
-// window. Saying it does not exist is the bug.
 func TestJumpIntoAHoleIsNotADenial(t *testing.T) {
 	tr := holed(t, 3, 4)
 	if _, _, reach := tr.jumpReachOf(jumpTarget{turn: 3}); reach == jumpAbsent {
@@ -61,8 +40,6 @@ func TestJumpIntoAHoleIsNotADenial(t *testing.T) {
 	}
 }
 
-// TestJumpIntoAHoleSnapsWhenItCloses: the delay is not a refusal. Close the
-// hole the way a fill does, and the walk lands on the real turn.
 func TestJumpIntoAHoleSnapsWhenItCloses(t *testing.T) {
 	tr := holed(t, 3, 4)
 	typeJump(tr, "3")
@@ -85,7 +62,6 @@ func TestJumpIntoAHoleSnapsWhenItCloses(t *testing.T) {
 	}
 }
 
-// TestJumpNodeInsideAHoleWaitsToo: the same for a node coordinate.
 func TestJumpNodeInsideAHoleWaitsToo(t *testing.T) {
 	tr := holed(t, 3, 4)
 	if _, _, reach := tr.jumpReachOf(jumpTarget{turn: 3, node: 1, hasNode: true}); reach == jumpAbsent {
@@ -93,11 +69,9 @@ func TestJumpNodeInsideAHoleWaitsToo(t *testing.T) {
 	}
 }
 
-// TestJumpToStartDoesNotLandOnAHole: while the floor is UNPROVEN a hole can
-// stand at the top of the window; `:0` must not resolve to the sentinel
-// standing where the beginning will be.
+// With the floor unproven a hole can stand at the top of the window.
 func TestJumpToStartDoesNotLandOnAHole(t *testing.T) {
-	tr := jumpFixture(t, 1, 8) // MoreBefore true: the beginning is not proven
+	tr := jumpFixture(t, 1, 8)
 	tr.follow = false
 	tr.client.Store().Evict(aria.Anchor{Turn: 1}, aria.Anchor{Turn: 2})
 	tr.invalidateWindow()
@@ -114,10 +88,8 @@ func TestJumpToStartDoesNotLandOnAHole(t *testing.T) {
 	}
 }
 
-// TestJumpToStartStillFindsTheBeginning is the no-regression half: with the
-// floor proven and a real turn oldest, `:0` lands exactly as it always did.
 func TestJumpToStartStillFindsTheBeginning(t *testing.T) {
-	tr := holed(t, 4, 5) // a hole, but not at the top
+	tr := holed(t, 4, 5)
 	typeJump(tr, "0")
 	if tr.jump != nil {
 		t.Fatal("`:0` started a walk on a window that already stands on the beginning")
@@ -127,8 +99,6 @@ func TestJumpToStartStillFindsTheBeginning(t *testing.T) {
 	}
 }
 
-// TestJumpStillDeniesWhatCannotExist: widening "not yet" must not swallow the
-// honest "no". No hole, floor proven, coordinate past the live tail.
 func TestJumpStillDeniesWhatCannotExist(t *testing.T) {
 	tr := jumpFixture(t, 1, 8)
 	tr.follow = false
@@ -148,12 +118,11 @@ func TestJumpStillDeniesWhatCannotExist(t *testing.T) {
 	}
 }
 
-// TestJumpReadsWhereItIsGoing: gapNear reports only the hole the viewport is
-// about to paint, so a jump toward a coordinate it cannot see has to ask for
-// that coordinate itself, or it stands at "jumping to turn 3…" forever.
+// gapNear reports only the hole the viewport is about to paint, so the jump
+// must read at the coordinate itself.
 func TestJumpReadsWhereItIsGoing(t *testing.T) {
 	tr := holed(t, 3, 4)
-	tr.offset = tr.index.total + 10*tr.h // park the eye far below the hole
+	tr.offset = tr.index.total + 10*tr.h
 	if tr.gapNear() != nil {
 		t.Skip("fixture: the window is too short for the hole to be out of prefetch range")
 	}
@@ -162,8 +131,6 @@ func TestJumpReadsWhereItIsGoing(t *testing.T) {
 	if !want || req.seek == 0 {
 		t.Fatalf("the jump asked for %+v (want=%v); it must read at the coordinate", req, want)
 	}
-	// At the target itself, not at the near edge of the hole between here and
-	// there: reading anywhere else is a walk.
 	if want := (aria.Anchor{Turn: 3}); req.at != want {
 		t.Fatalf("the jump read at %v, want the coordinate it was given, %v", req.at, want)
 	}

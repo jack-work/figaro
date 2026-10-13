@@ -11,16 +11,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// BROAD RANGES. A highlight over hundreds of nodes and thousands of rows must
-// not make painting, motion or the coordinate quadratic. Three costs:
-//
-//	paint   one frame of the viewport with the wash over N rows
-//	extend  one j when the range is already N rows
-//	resolve the coordinate of a range over N nodes
-//
-// The frame is the viewport, not the range, so paint must be flat in N; the
-// motion touches one line and the index; and the rune matcher runs over the
-// two endpoint nodes only, never the nodes between.
+// Paint is flat in the range size, motion touches one line, and the rune
+// matcher runs over the two endpoint nodes only.
 
 func benchFixture(b *testing.B, nodes int) *transcript {
 	b.Helper()
@@ -41,14 +33,12 @@ func benchFixture(b *testing.B, nodes int) *transcript {
 	tr := newTranscript(ldrender.NewFakeTerminal(80, 40), 80, 40, ldrender.NodeText{}, client, "aria1234", time.Time{})
 	tr.enter()
 	tr.follow = false
-	pageToFloor(tr, parts) // hold the whole conversation, not the tail window
+	pageToFloor(tr, parts)
 	tr.buildIndex()
 	tr.render()
 	return tr
 }
 
-// spanAll anchors a highlight on the first node row and puts the cursor on
-// the last.
 func spanAll(tr *transcript) {
 	tr.key('v')
 	tr.key('g')
@@ -77,7 +67,7 @@ func BenchmarkVisual_ExtendByOneRow(b *testing.B) {
 	for _, n := range []int{10, 100, 400} {
 		tr := benchFixture(b, n)
 		spanAll(tr)
-		tr.key('k') // room to go both ways
+		tr.key('k')
 		b.Run(fmt.Sprintf("nodes=%d/rows=%d", n, tr.index.total), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -109,9 +99,6 @@ func BenchmarkVisual_ResolveCoordinate(b *testing.B) {
 	}
 }
 
-// BenchmarkVisual_ScrollBaseline is j with no visual mode up: the cost the
-// pager already pays per keystroke (index rebuild, frame), so ExtendByOneRow
-// can be read as a delta over it.
 func BenchmarkVisual_ScrollBaseline(b *testing.B) {
 	defer term.SetColorMode(term.ColorAlways)()
 	for _, n := range []int{10, 100, 400} {

@@ -9,25 +9,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Paint-bandwidth rig (axis B).
-//
-// The shared scroll rig writes to io.Discard, which makes the terminal look
-// free. On a real tty, and especially over ssh or a tmux pipe: the bytes the
-// pager pushes per scroll step are the thing you feel. `paint` diffs against
-// t.prev, but a one-line scroll changes EVERY body row, so the old full-diff
-// path re-transmits the whole screen every step.
-//
-// These benchmarks report two metrics the shared rig cannot:
-//
-//	B/frame      bytes written per painted frame
-//	frames/op    how many frames one logical gesture produces
-//
-// Both are "lower is better" and neither shows up in ns/op.
-// ---------------------------------------------------------------------------
+// Bytes per painted frame and frames per gesture: neither shows in ns/op.
 
-// countingWriter is a sink that records volume rather than content: how many
-// bytes were pushed and how many Write calls it took (one per painted frame).
 type countingWriter struct {
 	bytes  atomic.Int64
 	writes atomic.Int64
@@ -44,9 +27,6 @@ func (c *countingWriter) reset() {
 	c.writes.Store(0)
 }
 
-// heavyTranscriptOn is heavyTranscript with a caller-supplied sink, so paint
-// volume can be measured. Kept separate from the shared rig on purpose: the
-// shared file is the cross-axis yardstick and must not move.
 func heavyTranscriptOn(tb testing.TB, out io.Writer, messages, outputLines int) *transcript {
 	tb.Helper()
 	client := aria.NewClient()
@@ -61,8 +41,6 @@ func heavyTranscriptOn(tb testing.TB, out io.Writer, messages, outputLines int) 
 	return tr
 }
 
-// BenchmarkTranscriptPaintBytes is the headline bandwidth number: bytes and
-// terminal writes per one-line scroll step, at a realistic 100x40 viewport.
 func BenchmarkTranscriptPaintBytes(b *testing.B) {
 	for _, dir := range []struct {
 		name  string
@@ -71,7 +49,7 @@ func BenchmarkTranscriptPaintBytes(b *testing.B) {
 		b.Run(dir.name, func(b *testing.B) {
 			var w countingWriter
 			tr := heavyTranscriptOn(b, &w, 200, 200)
-			tr.scrollBy(-200) // park mid-history so both directions have room
+			tr.scrollBy(-200)
 			w.reset()
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -85,8 +63,6 @@ func BenchmarkTranscriptPaintBytes(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptPaintHalfPage measures a half-page jump (u/d), where the
-// shifted region is smaller and the fallback path matters more.
 func BenchmarkTranscriptPaintHalfPage(b *testing.B) {
 	var w countingWriter
 	tr := heavyTranscriptOn(b, &w, 200, 200)
@@ -105,9 +81,6 @@ func BenchmarkTranscriptPaintHalfPage(b *testing.B) {
 	b.ReportMetric(float64(w.bytes.Load())/float64(b.N), "B/step")
 }
 
-// BenchmarkTranscriptPaintTick measures a spinner tick: the content is
-// identical except for one animating glyph, so an ideal frame is a handful of
-// bytes.
 func BenchmarkTranscriptPaintTick(b *testing.B) {
 	var w countingWriter
 	tr := heavyTranscriptOn(b, &w, 200, 200)
@@ -123,10 +96,7 @@ func BenchmarkTranscriptPaintTick(b *testing.B) {
 	b.ReportMetric(float64(w.bytes.Load())/float64(b.N), "B/frame")
 }
 
-// BenchmarkTranscriptPaintOnly isolates paint from row materialization: the
-// same two screens are painted alternately, so the only cost is the diff and
-// the escape stream. (t.prev is by definition the last painted screen, so no
-// extra hook is needed to capture one.)
+// The same two screens painted alternately: only the diff and the escape stream.
 func BenchmarkTranscriptPaintOnly(b *testing.B) {
 	var w countingWriter
 	tr := heavyTranscriptOn(b, &w, 200, 200)

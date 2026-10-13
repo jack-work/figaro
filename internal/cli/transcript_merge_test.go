@@ -14,22 +14,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// The invariants this merge creates.
-//
-// Axis A made the frame O(viewport); axis C made the per-row cost ~free and
-// moved the clip + gutter column into the row cache. Neither branch could pin
-// the two properties that only hold once both are in:
-//
-//  1. a frame's cost does not grow with the retained window (A's structure),
-//     even though each row it emits is C's zero-alloc cached row;
-//  2. the row cache is selection-independent (C's cache shape + A's
-//     decorate-at-paint-time), so moving or clearing a selection re-renders no
-//     prose at all.
-// ---------------------------------------------------------------------------
+// A frame's cost does not grow with the retained window, and the row cache is
+// selection-independent.
 
-// countingView wraps ariaView and counts node renders, which is how a
-// re-materialization of a cached message shows up from the outside.
 type countingView struct {
 	inner   *ariaView
 	renders int
@@ -45,20 +32,16 @@ func (v *countingView) RenderExpanded(n livedoc.Node, width, tick int, full bool
 	return v.inner.RenderExpanded(n, width, tick, full)
 }
 
-// TestMergedFrameCostIsViewportBounded is the headline: a frame materializes
-// the viewport and nothing else, no matter how many rows are retained. The
-// count is exact (len(rowBuf) is what render composed the screen from), so this
-// pins the structure rather than a timing; the allocation comparison alongside
-// it catches a regression that materializes lazily but still churns per
-// retained row.
+// len(rowBuf) is what render composed the screen from, so this pins the
+// structure rather than a timing.
 func TestMergedFrameCostIsViewportBounded(t *testing.T) {
 	measure := func(messages int) (rows, total int, allocs float64) {
 		tr, _ := mixedTranscript(t, io.Discard, 100, 24, messages)
 		tr.scrollBy(-1)
-		tr.lines() // warm the row cache and the index
+		tr.lines()
 		tr.offset = tr.index.total / 2
 		tr.render()
-		body := tr.h - 2 // scrolled away from live, so no padding row (see layout)
+		body := tr.h - 2
 		if len(tr.rowBuf) != body {
 			t.Fatalf("%d messages: frame materialized %d rows, want exactly the %d-row body",
 				messages, len(tr.rowBuf), body)
@@ -87,27 +70,22 @@ func TestMergedFrameCostIsViewportBounded(t *testing.T) {
 		t.Errorf("viewport (%d/%d rows) is not a small fraction of the window; the test proves nothing",
 			bigRows, bigTotal)
 	}
-	// Generous slack: what must not happen is growth proportional to the
-	// retained window (which would be ~6x here).
 	if bigAllocs > smallAllocs+8 {
 		t.Errorf("scroll allocations grew with the retained window: %v allocs over %d lines vs %v over %d",
 			bigAllocs, bigTotal, smallAllocs, smallTotal)
 	}
 }
 
-// TestMergedSelectionDoesNotInvalidateRowCache pins the decoration decision: the
-// cue is applied to painted rows, never baked into rowCache, so selecting,
-// extending and clearing a selection re-renders no nodes and leaves the cached
-// row slices byte-identical (same backing array, same contents).
+// The cue is applied to painted rows, never baked into rowCache.
 func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
-	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
+	defer term.SetColorMode(term.ColorAlways)()
 	view := &countingView{inner: &ariaView{settings: &renderSettings{}}}
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
 	tr.view = view
 	tr.invalidateRows()
 	tr.scrollBy(-1)
-	tr.render() // warm every retained message through the counting view
+	tr.render()
 
 	type snap struct {
 		ptr  uintptr
@@ -129,8 +107,6 @@ func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
 	}
 	warm := view.renders
 
-	// Walk a selection across message boundaries, extend it, expand nothing,
-	// then clear it. None of that may re-render a node.
 	for range 5 {
 		tr.selectNode(1, false)
 	}
@@ -148,7 +124,7 @@ func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
 	for lt, s := range before {
 		cached, ok := tr.rowCache[lt]
 		if !ok {
-			continue // legitimately dropped by clearSelection's trimPages
+			continue
 		}
 		if len(cached.rows) > 0 && s.ptr != 0 && uintptr(unsafe.Pointer(&cached.rows[0])) != s.ptr {
 			t.Errorf("LT %d: cached rows were reallocated", lt)
@@ -162,15 +138,12 @@ func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
 			}
 		}
 	}
-	// ... and the cue really was painted, so the above is not vacuous.
 	if !washed(painted) {
 		t.Error("no selection cue in the painted rows")
 	}
 }
 
-// TestMergedLinesBufferIsReused keeps C's contract explicit now that lines() is
-// implemented on top of A's window: the whole-window materialization reuses its
-// buffer (valid until the next call) and steady-state allocates nothing.
+// lines() reuses its buffer, valid until the next call.
 func TestMergedLinesBufferIsReused(t *testing.T) {
 	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)
 	tr.scrollBy(-1)
@@ -183,8 +156,6 @@ func TestMergedLinesBufferIsReused(t *testing.T) {
 	if got := testing.AllocsPerRun(20, func() { tr.lines() }); got != 0 {
 		t.Errorf("steady-state lines() allocated %v times, want 0", got)
 	}
-	// The render path must not share that buffer: a frame composed after
-	// lines() may not disturb the rows lines() handed back.
 	rows := append([]string(nil), tr.lines()...)
 	tr.render()
 	current := tr.lines()
@@ -195,10 +166,8 @@ func TestMergedLinesBufferIsReused(t *testing.T) {
 	}
 }
 
-// A LIVE FRAME COSTS WHAT THE STREAM CHANGED. The open message is recomposed
-// on every frame, so a turn with a hundred blocks used to lay out all hundred
-// ten times a second: the render lock was never free, the pane was dead, and
-// the watchdog dumped (freeze/stacks-20260912-125749).
+// The open message is recomposed every frame; only the block that moved may
+// be laid out again.
 func TestLiveFrameComposesOnlyTheBlockThatMoved(t *testing.T) {
 	const blocks = 20
 	client := aria.NewClient()
@@ -220,7 +189,6 @@ func TestLiveFrameComposesOnlyTheBlockThatMoved(t *testing.T) {
 		t.Fatalf("the first frame drew %d of %d blocks", view.renders, blocks)
 	}
 
-	// One more token on the last block: every other block is the one it was.
 	view.renders = 0
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 0, V: 2, Nodes: []aria.NodeDelta{{
 		ID: blocks - 1, Set: map[string]any{"markdown": "block 19, and one more token"},
@@ -230,7 +198,6 @@ func TestLiveFrameComposesOnlyTheBlockThatMoved(t *testing.T) {
 		t.Fatalf("a frame that moved one block drew %d", view.renders)
 	}
 
-	// And a frame that moved nothing draws nothing.
 	view.renders = 0
 	tr.tick++
 	tr.lines()

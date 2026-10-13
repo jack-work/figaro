@@ -24,7 +24,7 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 		}}}}, aria.Notify)
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
-	tr.enter() // follows → bottom
+	tr.enter()
 
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg08") {
 		t.Fatalf("entering should follow to the bottom (msg08):\n%s", scr)
@@ -34,17 +34,15 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg01") {
 		t.Fatalf("gg should jump to the top (msg01):\n%s", scr)
 	}
-	// search for msg05
 	tr.key('/')
 	for _, c := range []byte("msg05") {
 		tr.key(c)
 	}
-	tr.key(0x0d) // Enter → jump to first match
+	tr.key(0x0d)
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg05") {
 		t.Fatalf("search should jump to msg05:\n%s", scr)
 	}
-	// Transcript is locked: q and Esc are inert (exit is Ctrl-D/Ctrl-C at the
-	// input loop), so the pager stays put and keeps rendering.
+	// q and Esc are inert; exit is Ctrl-D/Ctrl-C at the input loop.
 	tr.key('q')
 	tr.key(0x1b)
 	if !tr.active {
@@ -52,8 +50,6 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 	}
 }
 
-// Live updates while scrolled up must not move the viewport (no follow); at the
-// bottom they should follow.
 func TestTranscript_FollowVsHold(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
@@ -69,14 +65,14 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('g')
-	tr.key('g') // scrolled to top, follow=false
+	tr.key('g')
 	off := tr.offset
 	add(7)
-	tr.render() // a live update arrives
+	tr.render()
 	if tr.offset != off {
 		t.Fatalf("scrolled-up viewport moved on live update: %d -> %d", off, tr.offset)
 	}
-	tr.key('G') // jump to bottom → follow
+	tr.key('G')
 	add(8)
 	tr.render()
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg08") {
@@ -84,25 +80,21 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 	}
 }
 
-// Lazy paging: the pager opens on the recent window and pulls older history via
-// ReadBefore only when you scroll near the top, anchoring the viewport.
 func TestTranscript_LazyOlderPaging(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
 	msg := func(i int) aria.TurnPart {
 		return aria.TurnPart{Turn: aria.Turn{ID: uint64(i), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}}}}
 	}
-	for i := 5; i <= 8; i++ { // recent window only (as the lazy initial load gives)
+	for i := 5; i <= 8; i++ {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}}, aria.Notify)
 	}
-	client.SetMoreBefore(true) // the wire's answer: history exists below LT 5
+	client.SetMoreBefore(true)
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	if strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
 		t.Fatalf("older history must not load on enter")
 	}
-	// Scroll to the top (arms paging); the cursor points before the oldest
-	// loaded message (LT 5).
 	tr.key('g')
 	tr.key('g')
 	off0 := tr.offset
@@ -110,15 +102,8 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	if !ok || req.at.Turn != 5 {
 		t.Fatalf("pageCursor = (%d,%v), want (5,true)", req.at.Turn, ok)
 	}
-	// Page in the older window. The reader asked for the TOP and has asked for
-	// nothing since, so the standing request wins over the viewport anchor: they
-	// stay at the top of what is now held, and see the history they went there
-	// for without pressing anything again.
-	//
-	// Anchoring is still right for an ordinary scroll, a page landing must not
-	// yank the rows you are reading, and that is asserted separately. It was
-	// asserted HERE too, which made the anchor look like the rule rather than
-	// the default, and hid the reason Home never converged.
+	// A standing Home wins over the viewport anchor: the reader stays at the
+	// top of what is now held.
 	tr.applyPage(req, aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}})
 	if tr.offset != 0 {
 		t.Fatalf("a standing Home should hold the top after a prepend (was %d, now %d)", off0, tr.offset)
@@ -126,16 +111,13 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	if !strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
 		t.Fatalf("after paging, the top should show msg01 with no second gg")
 	}
-	// Oldest is now LT 1: nothing older; paging stops.
 	req, ok = tr.pageCursor()
 	if ok {
 		t.Fatalf("no history should remain below LT 1 (got cursor %d)", req.at.Turn)
 	}
 }
 
-// The footer must render at exactly the viewport width (display columns: the
-// box-drawing/"·" glyphs are multi-byte, and byte-length math shortened these
-// rules), and the last content line above it must not be a blank separator.
+// Width is display columns: the box-drawing glyphs are multi-byte.
 func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
@@ -163,10 +145,7 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	if !strings.Contains(rule, "live") {
 		t.Fatalf("rule row missing scroll position: %q", rule)
 	}
-	// THE HINTS MOVED TO VERBOSE, by the requirement's own worked examples: the
-	// default row is `✓ · 123abc · test` and the shortcuts appear beside the
-	// state names under ^V. The box-specific hints are unaffected -- they live
-	// on the drawer's closing rule (drawerHint), not on this row.
+	// Key hints appear only under ^V; box hints live on the drawer rule.
 	if strings.Contains(statusRow, "? help") {
 		t.Fatalf("the default status row carries key hints: %q", statusRow)
 	}
@@ -178,7 +157,6 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	}
 }
 
-// '?' opens the help panel; any key wipes it; the pager never exits.
 func TestTranscript_HelpPanel(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(60, 14)
 	client := aria.NewClient()
@@ -192,11 +170,8 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if !tr.showing("help") {
 		t.Fatalf("h should open the help panel")
 	}
-	// A row from the TOP of the panel: helpLines clamps to the pane height and
-	// keeps the head (t.h-4 rows), so in a deliberately tiny 14-row fixture the
-	// tail of the list is not on screen. This asserts the panel rendered real
-	// generated content; that every binding has a row is TestHelpBody's job,
-	// where the whole list is compared without a viewport in the way.
+	// helpLines keeps the head of the list, so in a 14-row pane the tail is
+	// off screen.
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "scroll · half-page") {
 		t.Fatalf("help panel content missing:\n%s", scr)
 	}
@@ -204,19 +179,13 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if tr.showing("help") {
 		t.Fatalf("h should close the help panel")
 	}
-	// THE HELP PANEL SCROLLS NOW, and that is the point: it is the list that
-	// tells you how to scroll, and it used to be the one list you could not --
-	// taller than the pane, it lost its bottom with no way to reach it. `j`
-	// therefore moves it and does NOT wipe it, which reverses the old
-	// any-key-dismisses rule for drawers that have something to move.
+	// j scrolls the panel rather than wiping it.
 	tr.key('h')
 	tr.key('j')
 	if !tr.showing("help") {
 		t.Fatalf("j should scroll the help panel, not wipe it")
 	}
-	// Something with nothing to move still goes away on any key. NOT 'n' any
-	// more: in a pit n repeats the pit's own search, so it is a key the drawer
-	// owns. 'z' is bound nowhere, which is what this rule is about.
+	// z is bound nowhere, so it wipes the panel; n is a key the pit owns.
 	tr.key('z')
 	if tr.showing("help") {
 		t.Fatalf("a key the drawer does not own (z) should still wipe it")

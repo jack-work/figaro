@@ -11,10 +11,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// jumpFixture is an aria whose turn ids START AT firstTurn: the fork case,
-// where StampIDs adopts the parent's numbering and the first turn is emphatically
-// not 1. Pass firstTurn=1 for the ordinary case.
-// jumpPage is a run of sealed three-node turns, each with its question.
 func jumpPage(firstTurn, turns int) aria.Page {
 	parts := make([]aria.TurnPart, 0, turns)
 	for i := range turns {
@@ -36,9 +32,7 @@ func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
 	client.Apply(jumpPage(firstTurn, turns), aria.Notify)
-	// The wire has not said the aria begins here, so the pager may still walk
-	// backward: which is the interesting case for a FORK, whose first turn id
-	// is not 1 and whose floor can only be found by an empty read.
+	// A fork's first turn id is not 1 and its floor is found only by an empty read.
 	client.SetMoreBefore(true)
 	ft := ldrender.NewFakeTerminal(60, 20)
 	tr := newTranscript(ft, 60, 20, &ariaView{settings: &renderSettings{}},
@@ -47,9 +41,7 @@ func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
 	return tr
 }
 
-// typeJump drives the ':' box one byte at a time, through the real dispatcher,
-// the way a human types. Whole-string feeds have certified byte-vs-rune bugs
-// on this codebase before.
+// typeJump types one byte at a time through the real dispatcher.
 func typeJump(tr *transcript, text string) {
 	tr.key(':')
 	for i := 0; i < len(text); i++ {
@@ -58,14 +50,11 @@ func typeJump(tr *transcript, text string) {
 	tr.key(0x0d)
 }
 
-// topRow is the first body row of the current viewport, stripped.
 func topRow(tr *transcript) string {
 	tr.settle()
 	return plainBody(tr.lineAt(tr.offset))
 }
 
-// TestJumpSnapsToATurn: `:N` puts the head of turn N at the top of the
-// viewport and selects its question, so the landing names itself.
 func TestJumpSnapsToATurn(t *testing.T) {
 	tr := jumpFixture(t, 1, 8)
 	typeJump(tr, "3")
@@ -75,7 +64,6 @@ func TestJumpSnapsToATurn(t *testing.T) {
 	if tr.follow {
 		t.Fatal("a jump must detach from the live tail")
 	}
-	// The viewport's first rows are turn 3's chrome; the question follows.
 	rows := viewportRows(tr, 8)
 	if !containsRow(rows, "QUESTION3") {
 		t.Fatalf(":3 did not put turn 3 at the top:\n%s", strings.Join(rows, "\n"))
@@ -85,7 +73,6 @@ func TestJumpSnapsToATurn(t *testing.T) {
 	}
 }
 
-// TestJumpSnapsToANode: `:N.k` snaps to the node, not merely to the turn.
 func TestJumpSnapsToANode(t *testing.T) {
 	tr := jumpFixture(t, 1, 8)
 	typeJump(tr, "3.2")
@@ -97,8 +84,6 @@ func TestJumpSnapsToANode(t *testing.T) {
 	}
 }
 
-// TestJumpToTheInquirySentinel: the question is addressable exactly like a
-// node, at the -1 the coordinate row prints.
 func TestJumpToTheInquirySentinel(t *testing.T) {
 	tr := jumpFixture(t, 1, 8)
 	typeJump(tr, "5.-1")
@@ -110,21 +95,12 @@ func TestJumpToTheInquirySentinel(t *testing.T) {
 	}
 }
 
-// TestJumpZeroReachesTheFirstExistingTurn, on a normal aria AND on a fork
-// whose first turn id is not 1.
-//
-// THE FORK CASE IS THE POINT. `:0` is not "turn 1": StampIDs adopts an
-// already-stamped id, so a forked child continues its parent's numbering.
-// Resolving `:0` by constructing an anchor would either miss (turn 1 does not
-// exist there) or, worse, hand a backward read Anchor{Turn:0}: which means
-// UNSET on the wire and returns the TAIL.
+// A forked child continues its parent's numbering, and Anchor{Turn:0} means
+// unset on the wire, so `:0` cannot be resolved by constructing an anchor.
 func TestJumpZeroReachesTheFirstExistingTurn(t *testing.T) {
 	for _, first := range []int{1, 7} {
 		t.Run(fmt.Sprintf("first-turn-%d", first), func(t *testing.T) {
 			tr := jumpFixture(t, first, 8)
-			// The whole aria is loaded, so the floor is known without paging
-			// when it starts at 1; when it starts at 7 it is not, and the walk
-			// has to discover it. Simulate the store's answer either way.
 			typeJump(tr, "0")
 			drainJump(t, tr)
 			if tr.jump != nil {
@@ -145,10 +121,7 @@ func TestJumpZeroReachesTheFirstExistingTurn(t *testing.T) {
 	}
 }
 
-// drainJump plays the role of prefetchTranscriptPages for a fixture whose
-// whole aria is already in the client: it answers every page request the pager
-// makes with the empty page a store returns when there is nothing older. That
-// is exactly the wire behaviour that latches the floor on a fork.
+// drainJump answers every page request with the empty page that latches the floor.
 func drainJump(t *testing.T, tr *transcript) {
 	t.Helper()
 	for range 32 {
@@ -161,8 +134,6 @@ func drainJump(t *testing.T, tr *transcript) {
 	t.Fatal("the page cursor never stopped asking")
 }
 
-// TestJumpToAnUnreachableTargetReports: it must say so in the footer, not hang
-// and not land somewhere else pretending it worked.
 func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	tr := jumpFixture(t, 1, 8)
 	before := tr.offset
@@ -177,10 +148,8 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	if !strings.Contains(tr.jumpNote, "999") {
 		t.Fatalf("the note does not name the target: %q", tr.jumpNote)
 	}
-	// STILL WHERE THEY WERE, which while FOLLOWING means still at the tail. The
-	// raw offset is no longer the right comparison: reporting the failure opens
-	// a message drawer, the drawer costs the body two rows, and a follower's
-	// offset therefore lands at the new bottom. Same place, different number.
+	// The failure drawer costs the body two rows, so a follower's offset moves;
+	// compare against the tail, not the raw offset.
 	if !tr.follow {
 		t.Fatalf("a failed jump detached the reader from the tail (offset %d->%d)", before, tr.offset)
 	}
@@ -190,8 +159,7 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	if !tr.showing("message") {
 		t.Fatal("the failure is not in the drawer")
 	}
-	// And the report is TRANSIENT: the next key closes the drawer.
-	// A sticky note would eat the mantra/ctx/cost line for the whole session.
+	// The report is transient: the next key closes the drawer.
 	tr.key('j')
 	if tr.jumpNote != "" {
 		t.Fatalf("the note survived a keystroke: %q", tr.jumpNote)
@@ -201,12 +169,11 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	}
 }
 
-// TestJumpAsksOnceAndStops: a daemon that answers a seek with a page that does
-// not hold the target has said all it can. Asking the same coordinate again
-// would be no progress, so the jump ends and says so rather than spinning.
+// A page that does not hold the target is all the daemon can say; asking
+// again is no progress.
 func TestJumpAsksOnceAndStops(t *testing.T) {
 	tr := jumpFixture(t, 100, 8)
-	typeJump(tr, "3") // older than anything the daemon will admit to
+	typeJump(tr, "3")
 	seeks := 0
 	for range 32 {
 		req, need := tr.pageCursor()
@@ -231,8 +198,6 @@ func TestJumpAsksOnceAndStops(t *testing.T) {
 	}
 }
 
-// TestJumpBoxTakesSlashAsText is the mirror of the rule the pager oracle pins
-// for ':' inside the search box: each box's text is the other's trigger.
 func TestJumpBoxTakesSlashAsText(t *testing.T) {
 	tr := jumpFixture(t, 1, 4)
 	tr.key(':')
@@ -245,14 +210,13 @@ func TestJumpBoxTakesSlashAsText(t *testing.T) {
 	if tr.inSearch {
 		t.Fatal("'/' opened the search box from inside the jump box")
 	}
-	tr.key(0x1b) // Esc cancels the typing
+	tr.key(0x1b)
 	if tr.boxOpen() || tr.cmdline.String() != "" {
 		t.Fatalf("Esc left the box open: inJump=%v q=%q", tr.boxOpen(), tr.cmdline.String())
 	}
 }
 
-// TestJumpParser covers the grammar, including the two edges that matter:
-// turn 0 is a SENTINEL and never an address, and the inquiry's -1 is legal.
+// Turn 0 is a sentinel, never an address; the inquiry's -1 is legal.
 func TestJumpParser(t *testing.T) {
 	ok := []struct {
 		in   string
@@ -278,8 +242,7 @@ func TestJumpParser(t *testing.T) {
 	}
 }
 
-// TestGGStillMeansTopOfTheBuffer: the jump is an addition, not a replacement.
-// `gg` remains the cheap gesture: top of what is HELD, no paging, no walk.
+// gg is top of what is held: no paging, no walk.
 func TestGGStillMeansTopOfTheBuffer(t *testing.T) {
 	tr := jumpFixture(t, 5, 8)
 	tr.key('g')
@@ -304,7 +267,6 @@ func viewportRows(tr *transcript, n int) []string {
 	return out
 }
 
-// plainBody is a rendered row reduced to its text.
 func plainBody(row string) string {
 	return strings.TrimSpace(stripANSI(row))
 }

@@ -12,23 +12,14 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Input coalescing and the frame-rate ceiling.
-//
-// A mouse-wheel flick delivers a burst of scroll reports. The pager used to
-// paint one frame per report, so a 24-event flick meant 24 full frames, 23 of
-// which nobody wanted to see, and each of which delayed the one they did.
-// These tests pin both halves of the fix: a burst produces exactly one frame
-// at the settled offset, and no rate limiter ever swallows the final frame.
-// ---------------------------------------------------------------------------
+// A burst of input paints one frame at the settled offset, and no rate
+// limiter swallows the final frame.
 
 func coalesceTranscript(tb testing.TB, out *countingWriter) *transcript {
 	tb.Helper()
 	return heavyTranscriptOn(tb, out, 40, 20)
 }
 
-// TestTranscriptBatch_ManyScrollsOneFrame is the headline guarantee: N queued
-// scroll events paint once and land exactly where N sequential scrolls would.
 func TestTranscriptBatch_ManyScrollsOneFrame(t *testing.T) {
 	var sequential, batched countingWriter
 	seq := coalesceTranscript(t, &sequential)
@@ -64,9 +55,6 @@ func TestTranscriptBatch_ManyScrollsOneFrame(t *testing.T) {
 	}
 }
 
-// TestTranscriptBatch_NestingAndEmptyBatch checks the bookkeeping: nested
-// brackets paint once at the outermost close, and a batch with no state change
-// paints nothing at all.
 func TestTranscriptBatch_NestingAndEmptyBatch(t *testing.T) {
 	var w countingWriter
 	tr := coalesceTranscript(t, &w)
@@ -92,9 +80,6 @@ func TestTranscriptBatch_NestingAndEmptyBatch(t *testing.T) {
 	}
 }
 
-// TestTranscriptGate_TrailingFlushIsOwed proves the invariant a rate limiter
-// lives or dies by: a refused frame is remembered, and flush draws it. It also
-// checks that flush is a no-op when nothing is pending, and after leave().
 func TestTranscriptGate_TrailingFlushIsOwed(t *testing.T) {
 	var w countingWriter
 	tr := coalesceTranscript(t, &w)
@@ -136,8 +121,6 @@ func TestTranscriptGate_TrailingFlushIsOwed(t *testing.T) {
 	}
 }
 
-// TestFramePacer_CeilingAndTrailingRender drives the pacer on a fake clock:
-// one frame per interval, and the burst's final state always painted.
 func TestFramePacer_CeilingAndTrailingRender(t *testing.T) {
 	var mu sync.Mutex
 	now := time.Unix(1000, 0)
@@ -155,7 +138,7 @@ func TestFramePacer_CeilingAndTrailingRender(t *testing.T) {
 		t.Fatal("the first frame must never be delayed")
 	}
 	p.painted()
-	for i := range 20 { // a burst inside one frame interval
+	for i := range 20 {
 		now = now.Add(200 * time.Microsecond)
 		if p.allow() {
 			t.Fatalf("event %d was allowed to paint inside the frame interval", i)
@@ -169,7 +152,6 @@ func TestFramePacer_CeilingAndTrailingRender(t *testing.T) {
 	if flushes != 1 {
 		t.Fatalf("trailing render flushed %d times, want 1", flushes)
 	}
-	// The budget has elapsed; the next event paints immediately again.
 	p.painted()
 	now = now.Add(50 * time.Millisecond)
 	if !p.allow() {
@@ -177,8 +159,6 @@ func TestFramePacer_CeilingAndTrailingRender(t *testing.T) {
 	}
 }
 
-// TestFramePacer_ZeroIntervalIsTransparent: without setRenderLock the pager
-// must behave exactly as before.
 func TestFramePacer_ZeroIntervalIsTransparent(t *testing.T) {
 	p := &framePacer{now: time.Now}
 	for range 5 {
@@ -187,10 +167,6 @@ func TestFramePacer_ZeroIntervalIsTransparent(t *testing.T) {
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// The input loop.
-// ---------------------------------------------------------------------------
 
 type stubReadClient struct{}
 
@@ -214,8 +190,7 @@ func coalesceInput(tb testing.TB, out *countingWriter) (*interactiveInput, *live
 	settings := &renderSettings{}
 	status := newSessionStatus("aria0001", time.Unix(0, 0))
 	lt := newLivelogTurn(out, 100, 40, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
-	// Enter the pager BEFORE feeding history, as the real flow does: the aria
-	// callbacks route to the transcript only while it is up.
+	// The aria callbacks route to the transcript only while it is up.
 	lt.enterTranscript()
 	lt.apply(aria.Page{Parts: committed})
 	return &interactiveInput{
@@ -243,9 +218,6 @@ func wheelReports(n int, up bool) []byte {
 
 func itoaTest(n int) string { return string(appendUint(nil, n)) }
 
-// TestInputConsume_WheelBurstPaintsOneFrame is the end-to-end coalescing test:
-// a flick's worth of wheel reports delivered in one read must produce one frame
-// and land at the same offset as the same reports delivered one at a time.
 func TestInputConsume_WheelBurstPaintsOneFrame(t *testing.T) {
 	const events = 24
 	burst := wheelReports(events, true)
@@ -276,20 +248,16 @@ func TestInputConsume_WheelBurstPaintsOneFrame(t *testing.T) {
 	if lt.tr.offset != drip.lt.tr.offset {
 		t.Fatalf("coalesced flick landed at offset %d, dripped at %d", lt.tr.offset, drip.lt.tr.offset)
 	}
-	// The flick's total travel (72 rows) exceeds the viewport, so the single
-	// frame is a genuine full repaint, and still costs well under half of what
-	// the 24 intermediate frames did.
+	// The travel exceeds the viewport, so the single frame is a full repaint.
 	if b := coalesced.bytes.Load(); b*2 >= drippedBytes {
 		t.Fatalf("coalesced flick emitted %d bytes vs %d dripped; want less than half", b, drippedBytes)
 	}
 }
 
-// TestInputConsume_KeyBurstPaintsOneFrame: a held-down j (autorepeat) arrives
-// as a run of bytes in one read and must also collapse to one frame.
 func TestInputConsume_KeyBurstPaintsOneFrame(t *testing.T) {
 	var w countingWriter
 	in, lt := coalesceInput(t, &w)
-	lt.tr.stopFollowing() // measure pure motion: leaving live also reclaims the padding row
+	lt.tr.stopFollowing()
 	before := lt.tr.offset
 	w.reset()
 	if rest, stop := in.consume([]byte(strings.Repeat("k", 12))); stop || len(rest) != 0 {
@@ -303,14 +271,12 @@ func TestInputConsume_KeyBurstPaintsOneFrame(t *testing.T) {
 	}
 }
 
-// TestInputConsume_SplitEscapeStillCoalesces: an escape sequence chopped across
-// two reads must be stitched, not dropped, and must not cost extra frames.
 func TestInputConsume_SplitEscapeStillCoalesces(t *testing.T) {
 	var w countingWriter
 	in, lt := coalesceInput(t, &w)
 	burst := wheelReports(6, true)
 	cut := len(burst) - 3
-	lt.tr.stopFollowing() // as above: the first motion out of live reclaims the padding row
+	lt.tr.stopFollowing()
 	before := lt.tr.offset
 
 	w.reset()
@@ -330,12 +296,11 @@ func TestInputConsume_SplitEscapeStillCoalesces(t *testing.T) {
 	if got := w.writes.Load(); got != 2 {
 		t.Fatalf("two reads painted %d frames, want 2", got)
 	}
-	if lt.tr.offset != before-18 { // 6 reports x 3 lines up
+	if lt.tr.offset != before-18 {
 		t.Fatalf("offset moved to %d, want %d", lt.tr.offset, before-18)
 	}
 }
 
-// splitReports chops a burst into individual SGR mouse reports.
 func splitReports(burst []byte) [][]byte {
 	var out [][]byte
 	for i := 0; i < len(burst); {
@@ -349,10 +314,6 @@ func splitReports(burst []byte) [][]byte {
 	return out
 }
 
-// BenchmarkTranscriptBurstFrames is the coalescing counterpart to the shared
-// rig's BenchmarkTranscriptScrollBurst: a 24-event flick drained as one batch.
-// The flick nets out somewhere new (18 up, 6 down) so the single frame has real
-// work to do. frames/op is the metric the shared rig cannot show.
 func BenchmarkTranscriptBurstFrames(b *testing.B) {
 	var w countingWriter
 	tr := heavyTranscriptOn(b, &w, 200, 200)
@@ -379,10 +340,7 @@ func BenchmarkTranscriptBurstFrames(b *testing.B) {
 	b.ReportMetric(float64(w.bytes.Load())/float64(b.N), "B/op")
 }
 
-// TestLivelogTurn_StreamDeltasArePaced is the wiring test: live aria frames go
-// through the same dirty-flag path as input, so a burst of stream deltas paints
-// once per frame interval and the settled state is always painted by the
-// trailing render.
+// Live aria frames go through the same dirty-flag path as input.
 func TestLivelogTurn_StreamDeltasArePaced(t *testing.T) {
 	var w countingWriter
 	var mu sync.Mutex
@@ -400,15 +358,14 @@ func TestLivelogTurn_StreamDeltasArePaced(t *testing.T) {
 		{Turn: aria.Turn{ID: uint64(1), Sealed: true, Nodes: heavyNodes(1, 10)}},
 	}})
 
-	// Settle: entering the pager already armed a trailing render, and the pacer
-	// keeps only one in flight at a time.
+	// Entering the pager already armed a trailing render.
 	now = now.Add(transcriptFrameInterval)
 	for _, fn := range timers {
 		fn()
 	}
 	timers = nil
 	w.reset()
-	for i := range 40 { // a streaming tool pushing deltas far faster than 120 fps
+	for i := range 40 {
 		now = now.Add(200 * time.Microsecond)
 		mu.Lock()
 		lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(100), Live: &aria.Live{From: 0, V: i + 1, Nodes: []aria.NodeDelta{{ID: 1, Set: map[string]any{

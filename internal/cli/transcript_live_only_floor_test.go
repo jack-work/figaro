@@ -11,14 +11,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A PAGER HOLDING ONLY A LIVE TURN MUST NOT ANCHOR ITS READ AT THE ZERO
-// ANCHOR, because on this wire the zero anchor MEANS the tail: the read that
-// was supposed to fetch the turn's missing head fetches the tail it already
-// has, changes nothing, and is asked for again on the next frame.
-//
-// It is reachable the moment a cold join meets a turn too big for one page:
-// every node belongs to the open turn, so the client retains no CLOSED
-// message, so TailFrom has nothing to answer with.
+// The zero anchor means the tail on this wire, so a pager holding only a
+// live turn (no closed message for TailFrom) must anchor on the open message.
 func TestResetToTailAnchorsOnTheOpenMessage(t *testing.T) {
 	s := livelog.NewServer()
 	s.OpenInquiry(1, "the long one", nil)

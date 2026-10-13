@@ -10,10 +10,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The shared scroll rig covers the "held" viewport (follow == false). This file
-// covers the other per-frame path: following the live tail in a heavy aria,
-// where every frame re-derives the retained window from the client view before
-// it can draw anything.
+// Per-frame cost while following the live tail in a heavy aria.
 
 func heavyFollowTranscript(b *testing.B, messages, outputLines int) (*transcript, *aria.Client) {
 	b.Helper()
@@ -29,9 +26,6 @@ func heavyFollowTranscript(b *testing.B, messages, outputLines int) (*transcript
 	return tr, client
 }
 
-// BenchmarkTranscriptFollowHeavy is a frame drawn while pinned to the live
-// tail with nothing at all changing: the pure cost of re-deriving the retained
-// window every frame.
 func BenchmarkTranscriptFollowHeavy(b *testing.B) {
 	tr, _ := heavyFollowTranscript(b, 200, 200)
 	if !tr.follow {
@@ -44,8 +38,6 @@ func BenchmarkTranscriptFollowHeavy(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptLiveHeavy is a streaming frame in a heavy aria: one live
-// delta applied to the open message, then a repaint.
 func BenchmarkTranscriptLiveHeavy(b *testing.B) {
 	tr, client := heavyFollowTranscript(b, 200, 200)
 	b.ReportAllocs()
@@ -59,9 +51,6 @@ func BenchmarkTranscriptLiveHeavy(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptFindHeavy is a '/' jump to a match a few lines below the
-// cursor in a heavy aria. The match is near, so the cost should be the cost of
-// the lines actually inspected: not of the whole retained window.
 func BenchmarkTranscriptFindHeavy(b *testing.B) {
 	tr, _ := heavyFollowTranscript(b, 200, 200)
 	tr.scrollBy(-1)
@@ -74,7 +63,6 @@ func BenchmarkTranscriptFindHeavy(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptFindRepeatHeavy is n/N through the same window.
 func BenchmarkTranscriptFindRepeatHeavy(b *testing.B) {
 	tr, _ := heavyFollowTranscript(b, 200, 200)
 	tr.scrollBy(-1)

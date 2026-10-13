@@ -10,24 +10,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE PAGE DESCRIPTORS ARE GONE. This file used to pin pageDesc (the hash that
-// let an evicted page be replayed and verified), readNextPage's sparse forward
-// probe, and the bounded descriptor chain. All three existed to serve a SECOND
-// COPY of history the pager kept beside the client; with one owner there is no
-// page to evict, replay or verify, and no forward direction to page in.
-//
-// What survives is the behaviour that machinery was hiding: bug B.
-
-// TestDetachedTailAdvancesAndScreenHoldsStill is BUG B's canary, at unit
-// scale: the pager, detached by one notch, must keep drawing the live turn as
-// it arrives AND must not move a single row above the viewport while it does.
-//
-// It replaces TestTranscript_CommittedWatermarkReconcilesHeldOpen, which
-// pinned the opposite: that the frozen snapshot (heldOpen) was kept in sync
-// with what committed. There is no snapshot now: the window is the store's
-// tail interval and the open turn is the last thing in it: so both halves are
-// asserted directly. Restore heldOpen and the first half fails; make the
-// window re-derive its floor while detached and the second half fails.
+// Detached by one notch, the pager keeps drawing the live turn and moves no
+// row above the viewport.
 func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 	client := aria.NewClient()
 	applyTail(client, readBefore(transcriptHistory(12), recentCursor, transcriptPageSize))
@@ -42,7 +26,7 @@ func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 12), 50, 12, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
-	tr.key('k') // detach by ONE notch: the tail is still on screen
+	tr.key('k')
 	if tr.follow {
 		t.Fatal("k did not detach")
 	}
@@ -52,9 +36,7 @@ func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 	}
 	offset := tr.offset
 
-	// The turn goes on: one more streamed node, and then the head is RELEASED
-	// (Live.From advances past node 0), which is the move that used to make
-	// content vanish if the open message were drawn live.
+	// Releasing the head (Live.From past node 0) must not make content vanish.
 	client.Apply(live(0, 2, 1, "TICKTWO"), aria.Notify)
 	client.Apply(live(1, 3, 1, "TICKTWO"), aria.Notify)
 	tr.render()
@@ -68,8 +50,7 @@ func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 		t.Fatalf("the released node vanished or doubled (%d copies):\n%s",
 			strings.Count(joined, "TICKONE"), joined)
 	}
-	// THE OTHER HALF: nothing above the viewport moved. Growth appends at the
-	// end of line space, so every line the reader can see is where it was.
+	// Growth appends at the end of line space.
 	if tr.offset != offset {
 		t.Fatalf("the viewport moved: offset %d -> %d", offset, tr.offset)
 	}

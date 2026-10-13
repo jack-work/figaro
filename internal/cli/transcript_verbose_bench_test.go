@@ -9,15 +9,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The VERBOSE render path had no benchmark. Ctrl-O now adds a row per node
-// (transcript_coords.go), and a path that cannot be measured cannot be
-// defended: so here it is, in both arms of the A/B: cold entry (which fills
-// the row cache, where the coordinate row is minted) and a steady frame (which
-// only reads it back).
-//
-// The verbose-OFF twins are here on purpose too. They are the DEFAULT view,
-// and the claim being made is that the default pays nothing at all; a
-// benchmark that only measures the arm that changed cannot support it.
+// Both arms: the verbose-off twins prove the default view pays nothing.
 
 func verboseTranscript(b *testing.B, messages, outputLines int, verbose bool) *transcript {
 	b.Helper()
@@ -37,8 +29,6 @@ func verboseTranscript(b *testing.B, messages, outputLines int, verbose bool) *t
 	return tr
 }
 
-// BenchmarkTranscriptVerboseEnter is the cold path: every message rendered
-// into the row cache, which is where a coordinate row costs anything at all.
 func BenchmarkTranscriptVerboseEnter(b *testing.B) {
 	for _, verbose := range []bool{false, true} {
 		b.Run(fmt.Sprintf("verbose=%v", verbose), func(b *testing.B) {
@@ -63,9 +53,6 @@ func BenchmarkTranscriptVerboseEnter(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptVerboseFrame is the per-frame path with the cache warm:
-// composition only. The coordinate rows are already materialized, so this is
-// where a "one more row per node" claim is actually cashed out.
 func BenchmarkTranscriptVerboseFrame(b *testing.B) {
 	for _, verbose := range []bool{false, true} {
 		b.Run(fmt.Sprintf("verbose=%v", verbose), func(b *testing.B) {
@@ -84,9 +71,6 @@ func BenchmarkTranscriptVerboseFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptVerboseIndex isolates buildIndex: the O(#messages) pass
-// every frame makes: because that is the one whose input size the extra rows
-// change (taller entries, same entry count).
 func BenchmarkTranscriptVerboseIndex(b *testing.B) {
 	for _, verbose := range []bool{false, true} {
 		b.Run(fmt.Sprintf("verbose=%v", verbose), func(b *testing.B) {

@@ -8,22 +8,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE CACHE LIFECYCLE, AFTER THE SECOND COPY WENT AWAY.
-//
-// This file used to pin the payload LRU: a page evicted from the render window
-// kept its payload (and so its rendered rows) so the return trip cost neither
-// I/O nor a re-render. There is no page cache any more: the STORE holds the
-// messages and the window is an interval into it: so the same two claims are
-// made against the store instead:
-//
-//  1. turning around costs NO READ and NO RE-RENDER, because the window grows
-//     back over messages the one owner still holds;
-//  2. the row cache never outlives the store's own retention.
+// Turning around costs no read and no re-render, and the row cache never
+// outlives the store's retention.
 
-// TestTurningAroundCostsNoReadAndNoRerender: page history in, go back to the
-// tail (G, which raises the floor), then scroll up again. The second trip up
-// must be served entirely out of the store: pageCursor returns no request at
-// all, and every message it brings back must still have its rows.
 func TestTurningAroundCostsNoReadAndNoRerender(t *testing.T) {
 	history := transcriptHistory(300)
 	client := aria.NewClient()
@@ -44,14 +31,12 @@ func TestTurningAroundCostsNoReadAndNoRerender(t *testing.T) {
 	deep := tr.messages()
 	oldest := deep[0].Turn
 
-	tr.key('G') // back to the tail: the floor rises, the store keeps the history
+	tr.key('G')
 	tr.lines()
 	if got := tr.messages()[0].Turn; got <= oldest {
 		t.Fatalf("G did not shrink the window back to the tail (oldest %d)", got)
 	}
 
-	// Now turn around. Every page of this trip is already in the store, so the
-	// pager must ask the WIRE for nothing.
 	tr.follow = false
 	for range transcriptPageLimit {
 		tr.offset = 0
@@ -74,8 +59,6 @@ func TestTurningAroundCostsNoReadAndNoRerender(t *testing.T) {
 	}
 }
 
-// TestRowCacheNeverOutlivesTheStore: rows follow the one owner, so the cache
-// cannot hold a message the store has forgotten.
 func TestRowCacheNeverOutlivesTheStore(t *testing.T) {
 	history := transcriptHistory(600)
 	client := aria.NewClient()
@@ -91,7 +74,7 @@ func TestRowCacheNeverOutlivesTheStore(t *testing.T) {
 		}
 		tr.lines()
 	}
-	tr.key('G') // re-attach: evictStale prunes what fell far behind the window
+	tr.key('G')
 	tr.lines()
 
 	retained := map[int]bool{}

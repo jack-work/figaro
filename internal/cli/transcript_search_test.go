@@ -11,14 +11,11 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// hl* mirror the reverse-video pair emitted by highlightMatches.
 const (
 	hlOn  = "\x1b[7m"
 	hlOff = "\x1b[27m"
 )
 
-// After Enter, every visible occurrence of the query wears reverse-video and
-// stays lit even when the pager scrolls off the initial match.
 func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 12)
 	client := aria.NewClient()
@@ -34,11 +31,10 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 	for _, c := range []byte("apple") {
 		tr.key(c)
 	}
-	tr.key(0x0d) // Enter → jump to first match, arm matchQuery
+	tr.key(0x0d)
 	if tr.matchQuery != "apple" {
 		t.Fatalf("matchQuery = %q, want %q", tr.matchQuery, "apple")
 	}
-	// Every row containing "apple" should carry the reverse-video wrapper.
 	lines := tr.lines()
 	hits, wrapped := 0, 0
 	for _, line := range lines {
@@ -55,7 +51,6 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 	if wrapped != hits {
 		t.Fatalf("expected all %d 'apple' lines to be highlighted, got %d", hits, wrapped)
 	}
-	// The Esc-during-typing branch must not drop the highlights.
 	tr.key('/')
 	tr.key(0x1b)
 	if tr.matchQuery != "apple" {
@@ -63,7 +58,6 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 	}
 }
 
-// n and N iterate matches forward and backward from the current viewport.
 func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
@@ -79,7 +73,6 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
-	// Prime the persistent query and land on the first match at/after cursor.
 	tr.key('g')
 	tr.key('g')
 	tr.key('/')
@@ -103,21 +96,17 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 	if firstMatch == 0 {
 		t.Fatalf("first match offset landed on a rule row: lineKey=%v", tr.lineKey)
 	}
-	// n advances to the next match (higher LT).
 	tr.key('n')
 	nextMatch := tr.lineKey[tr.offset].turn()
 	if nextMatch <= firstMatch {
 		t.Fatalf("n did not advance: %d -> %d (visible needles: %v)", firstMatch, nextMatch, visibleLTs())
 	}
-	// N returns to the previous match.
 	tr.key('N')
 	if got := tr.lineKey[tr.offset].turn(); got != firstMatch {
 		t.Fatalf("N did not restore previous match: got %d, want %d", got, firstMatch)
 	}
 }
 
-// highlightMatches preserves interleaved ANSI escapes and wraps each
-// occurrence in reverse-video.
 func TestHighlightMatches(t *testing.T) {
 	cases := []struct {
 		name, row, q, want string
@@ -154,8 +143,6 @@ func sortedKeys(m map[int]bool) []int {
 	return out
 }
 
-// The box says which way it walks: '/' forward, '?' backward. A reader who
-// cannot see the direction cannot know what Enter will do.
 func TestSearchBoxShowsItsDirection(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('/')

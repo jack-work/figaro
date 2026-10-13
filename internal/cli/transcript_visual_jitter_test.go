@@ -13,14 +13,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// FRAME JITTER. A highlight is a claim about SOURCE TEXT, and the rows that
-// text is painted on are rebuilt on every live frame, every resize, and every
-// page landing. These tests hold a highlight still and shake everything
-// around it, asserting that the wash and the cursor stay on the same source
-// runes and that no frame paints a stale wash or a second cursor.
+// A highlight is a claim about source text; rows are rebuilt on every live
+// frame, resize and page landing, and the wash and cursor must not move.
 
-// jitterHistory is a sealed conversation with real Src coordinates, so a
-// highlight can be resolved to a coordinate and compared across frames.
 func jitterHistory(n int) []aria.TurnPart {
 	out := make([]aria.TurnPart, n)
 	for i := range out {
@@ -48,8 +43,6 @@ func jitterFixture(t *testing.T, n, w, h int) (*transcript, *aria.Client, []aria
 	return tr, client, history
 }
 
-// paintCounts is what one frame carries: how many cursor cells and how many
-// rows with a wash.
 func paintCounts(tr *transcript) (cursors, washed int) {
 	wash, cur := term.SelectWash(), term.Cursor()
 	for _, row := range tr.window(0, tr.index.total, nil) {
@@ -70,9 +63,6 @@ func mustRange(t *testing.T, tr *transcript) quote.Range {
 	return r
 }
 
-// (a) A highlight held while the aria streams: live frames land on an open
-// turn below it, rows are re-rendered, and the wash must name the same
-// source runes on every frame, with exactly one cursor.
 func TestVisualJitter_HighlightHoldsWhileStreaming(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, client, _ := jitterFixture(t, 30, 60, 20)
@@ -109,8 +99,6 @@ func TestVisualJitter_HighlightHoldsWhileStreaming(t *testing.T) {
 	}
 }
 
-// (b) Resize mid-selection: rows reflow at the new width, and the wash
-// follows the text.
 func TestVisualJitter_ResizeReflowsUnderTheHighlight(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, _, _ := jitterFixture(t, 12, 80, 24)
@@ -139,10 +127,7 @@ func TestVisualJitter_ResizeReflowsUnderTheHighlight(t *testing.T) {
 	}
 }
 
-// (c) The cursor on the open (live) message while it grows: the point is
-// (node, row, col) and the node's rows are re-rendered on every frame; the
-// cursor stays on its row and column, and the wash below it grows with the
-// text only when the cursor is the lower end.
+// The point is (node, row, col); the open node's rows are re-rendered every frame.
 func TestVisualJitter_CursorOnTheOpenMessage(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, client, _ := jitterFixture(t, 5, 60, 20)
@@ -176,9 +161,7 @@ func TestVisualJitter_CursorOnTheOpenMessage(t *testing.T) {
 	}
 }
 
-// (d) The start of the selection phases out of the retained window: the
-// wash keeps painting to the window's edge, and spending the highlight is
-// refused with the memory sentence.
+// A phased-out start washes to the window's edge and refuses to be spent.
 func TestVisualJitter_StartPhasedOutRefusesToSpend(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, client, _ := jitterFixture(t, 40, 60, 12)
@@ -186,13 +169,11 @@ func TestVisualJitter_StartPhasedOutRefusesToSpend(t *testing.T) {
 	for range 30 {
 		tr.key('k')
 	}
-	tr.key('v') // anchor high up
-	tr.key('G') // cursor at the tail
+	tr.key('v')
+	tr.key('G')
 	if _, _, err := tr.visualRange(); err != "" {
 		t.Fatalf("precondition: %s", err)
 	}
-	// Evict everything before the cursor's turn: what the pager does to
-	// messages far behind the viewport.
 	client.EvictBefore(aria.Anchor{Turn: uint64(tr.visual.cursor.ref.turn - 2)})
 	tr.invalidateWindow()
 	tr.buildIndex()
@@ -213,8 +194,7 @@ func TestVisualJitter_StartPhasedOutRefusesToSpend(t *testing.T) {
 	}
 }
 
-// THE HEADER COVERS ROWS, for the block cursor as for the selection: k up a
-// long answer under a pinned question must not park the cursor beneath it.
+// k up a long answer under a pinned question must not park the cursor under it.
 func TestVisual_CursorClearsTheStickyHeader(t *testing.T) {
 	tr, _ := stickyAdorned(t)
 	tr.key('v')

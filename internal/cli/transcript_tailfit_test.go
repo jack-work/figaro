@@ -9,9 +9,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// streamOnto opens a pager over history, streams n live frames, and reports
-// how many times the row total FELL: following only adds history behind the
-// tail, so a fall is the window arguing with itself.
+// Following only adds history behind the tail, so a fall in the row total
+// is the window arguing with itself.
 func streamOnto(t *testing.T, history []aria.TurnPart, n int) (drops int, tr *transcript) {
 	t.Helper()
 	client := aria.NewClient()
@@ -37,26 +36,24 @@ func streamOnto(t *testing.T, history []aria.TurnPart, n int) (drops int, tr *tr
 	return drops, tr
 }
 
-// The property behind the spike tape: the tape proves one shape, this the
-// family. Each case is one dump taller than any band a controller could have
-// used, at a different depth and height, while a turn streams.
+// Each case is one dump taller than any band a controller could have used.
 func TestTailWindowHasAFixedPoint(t *testing.T) {
 	for _, c := range []struct{ short, giant, depth int }{
-		{2, 500, 11},  // the shape the tape was minted from
-		{1, 600, 8},   // taller dump, closer to the tail
-		{2, 400, 11},  // just over the old shrink threshold
-		{3, 300, 12},  // inside the old band
-		{4, 250, 14},  // under it
-		{1, 2000, 20}, // a dump taller than the whole budget
-		{6, 120, 5},   // several similar messages, no single spike
+		{2, 500, 11},
+		{1, 600, 8},
+		{2, 400, 11},
+		{3, 300, 12},
+		{4, 250, 14},
+		{1, 2000, 20},
+		{6, 120, 5},
 	} {
 		t.Run(fmt.Sprintf("short%d_giant%d_depth%d", c.short, c.giant, c.depth), func(t *testing.T) {
 			drops, tr := streamOnto(t, spikeHistory(120, c.short, c.giant, c.depth), 24)
 			if drops > 0 {
 				t.Errorf("the row total fell %d times while following: no fixed point", drops)
 			}
-			// It must SETTLE, not merely stop falling: a window still being
-			// re-tuned on the last frame is one frame from the same bug.
+			// A window still being re-tuned on the last frame has not
+			// settled.
 			if !tr.tailTuned {
 				t.Errorf("the tail window never latched (want %d messages)", tr.tailWant)
 			}
@@ -64,9 +61,8 @@ func TestTailWindowHasAFixedPoint(t *testing.T) {
 	}
 }
 
-// The mechanism: the cut is the largest suffix of the window that fits the
-// budget, from heights the index holds: never an average, never fewer than
-// one message however tall.
+// The cut is the largest suffix that fits the budget, from measured heights,
+// never fewer than one message.
 func TestTailFitCutsOnMeasuredHeights(t *testing.T) {
 	budget := pageRowBudget()
 	_, tr := streamOnto(t, spikeHistory(60, 2, 500, 6), 1)
@@ -83,8 +79,6 @@ func TestTailFitCutsOnMeasuredHeights(t *testing.T) {
 		t.Fatalf("tailFit is not a function of the window: %d then %d", fits, again)
 	}
 
-	// A single message taller than the whole budget is still kept: the
-	// alternative is a window with nothing in it.
 	_, tall := streamOnto(t, spikeHistory(3, 2, 4000, 1), 1)
 	tall.buildIndex()
 	if n, _ := tall.tailFit(budget); n < 1 {

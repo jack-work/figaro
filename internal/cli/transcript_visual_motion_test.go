@@ -11,8 +11,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// motionFixture: three nodes, prose with several words per row, so the word
-// motions have something to walk.
 func motionFixture(t *testing.T) *transcript { return motionFixtureH(t, 20) }
 
 func motionFixtureH(t *testing.T, h int) *transcript {
@@ -70,24 +68,24 @@ func TestVisualMotion_WordsWalkTheRowAndCrossRows(t *testing.T) {
 	if got := cursorWord(t, tr); got != "bravo" {
 		t.Fatalf("w from alpha landed on %q", got)
 	}
-	tr.key('w') // the hyphen is its own word, as in vim
+	tr.key('w')
 	if got := cursorWord(t, tr); got != "-" {
 		t.Fatalf("w from bravo landed on %q, want the hyphen", got)
 	}
 	tr.key('g')
-	tr.key('e')                               // ge: word-end, since a bare e points at the node
-	if got := cursorWord(t, tr); got != "e" { // lands on the last rune of charlie
+	tr.key('e')
+	if got := cursorWord(t, tr); got != "e" {
 		t.Fatalf("e landed on %q", got)
 	}
 	tr.key('$')
-	if got := cursorWord(t, tr); got != "a" { // last rune of delta
+	if got := cursorWord(t, tr); got != "a" {
 		t.Fatalf("$ landed on %q", got)
 	}
-	tr.key('w') // off the row's end: next row's first word
+	tr.key('w')
 	if got := cursorWord(t, tr); got != "echo" {
 		t.Fatalf("w past the row's end landed on %q", got)
 	}
-	tr.key('b') // back across the row boundary: delta
+	tr.key('b')
 	if got := cursorWord(t, tr); got != "delta" {
 		t.Fatalf("b at a row's start landed on %q", got)
 	}
@@ -121,22 +119,18 @@ func TestVisualMotion_ParagraphsAreNodesAndScreenRowsAreHML(t *testing.T) {
 	}
 }
 
-// / in visual mode lands the cursor on the match, at its column; n and N
-// walk from the cursor; with a highlight up the wash extends to the hit.
 func TestVisualMotion_SearchLandsTheCursor(t *testing.T) {
 	tr := motionFixture(t)
 	tr.key('v')
 	stepTo(t, tr, "alpha")
-	tr.key('v') // anchor
+	tr.key('v')
 	for _, b := range []byte("/t\r") {
 		tr.key(b)
 	}
-	// The next row with a t after alpha's is "echo foxtrot"; the cursor
-	// stands on that t.
 	if row := cursorRow(t, tr); !strings.Contains(row, "foxtrot") {
 		t.Fatalf("/t left the cursor on %q", row)
 	}
-	if got := cursorWord(t, tr); got != "trot" { // from the first t of foxtrot
+	if got := cursorWord(t, tr); got != "trot" {
 		t.Fatalf("the cursor is not on the match's column: %q", got)
 	}
 	if !tr.visual.highlighted() {
@@ -155,11 +149,8 @@ func TestVisualMotion_SearchLandsTheCursor(t *testing.T) {
 	}
 }
 
-// Submitting from the box leaves visual mode and keeps the place: the
-// viewport stays and the last search survives. M-Enter also snaps to the
-// live tail.
 func TestVisualMotion_SubmitLeavesAndKeepsPlace_SnapFollows(t *testing.T) {
-	tr := motionFixtureH(t, 8) // shorter than the content, so the offset means something
+	tr := motionFixtureH(t, 8)
 	tr.command = func(string) {}
 	tr.key('v')
 	for _, b := range []byte("/india\r") {
@@ -191,8 +182,6 @@ func TestVisualMotion_SubmitLeavesAndKeepsPlace_SnapFollows(t *testing.T) {
 	}
 }
 
-// The plain row text the motions see is the row as painted, minus escapes
-// and padding.
 func TestVisualRowPlain(t *testing.T) {
 	tr := motionFixture(t)
 	tr.key('v')

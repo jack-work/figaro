@@ -8,16 +8,9 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// The selection cue's contract, stated as properties rather than as a second
-// copy of the implementation.
-//
-//  1. an unselected row is the stored row, untouched;
-//  2. a selected row paints the same CELLS: the wash is background only, so
-//     selecting a row never moves its text or grows it past the pane, which
-//     would soft-wrap and desync the painter's one-row-per-line cursor math;
-//  3. the wash is always drawn: selection is never silent;
-//  4. the focused block is washed differently from the rest of the range,
-//     since the wash is now the only thing that says where a gesture lands.
+// The wash is background only: a selected row paints the same cells, never
+// grows past the pane (which would soft-wrap and desync the cursor math),
+// and the focused block is washed apart from the range.
 func TestDecorateNodeRowContract(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	marks := []selectionMark{
@@ -34,11 +27,8 @@ func TestDecorateNodeRowContract(t *testing.T) {
 	}, clipCorpus...)
 	for _, row := range rows {
 		if !closedEscapes(row) {
-			// A row that ENDS inside an escape sequence paints nothing and eats
-			// whatever follows it. Node rows cannot carry one - render.Prose
-			// strips escapes on the way in and sanitizes on the way out, and
-			// clipToWidth's own corpus (nodes_clip_test.go) is where that
-			// robustness is pinned.
+			// A row ending inside an escape eats what follows; node
+			// rows cannot carry one.
 			continue
 		}
 		for _, w := range []int{-3, 0, 1, 2, 3, 10, 40, 100} {
@@ -65,7 +55,6 @@ func TestDecorateNodeRowContract(t *testing.T) {
 	}
 }
 
-// closedEscapes reports whether every escape sequence in s is terminated.
 func closedEscapes(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] != 0x1b {
@@ -84,11 +73,7 @@ func isEscapeFinal(b byte) bool {
 	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
 }
 
-// WITHOUT COLOUR THERE IS NO CUE, and that is the deliberate end of it: the
-// wash is the whole selection UI, and a terminal that cannot paint a
-// background cannot show it. (Reverse video would be the fallback if anyone
-// ever reads a transcript that way; nothing else in the pager is legible
-// without colour either.)
+// The wash is the whole selection UI; without colour there is no cue.
 func TestDecorateNodeRowIsWashOnly(t *testing.T) {
 	defer term.SetColorMode(term.ColorNever)()
 	for _, row := range []string{"  margin row", "✓ bash [1ms]", ""} {
@@ -99,8 +84,6 @@ func TestDecorateNodeRowIsWashOnly(t *testing.T) {
 	}
 }
 
-// TestDecorateNodeRowNoAllocUnmarked is the point: an undecorated row is
-// returned as-is, so a frame with no selection allocates nothing per row.
 func TestDecorateNodeRowNoAllocUnmarked(t *testing.T) {
 	plain := plainNodeRow("\x1b[2m  │ \x1b[0m a perfectly ordinary tool output row", 100)
 	if got := testing.AllocsPerRun(100, func() {
@@ -110,7 +93,6 @@ func TestDecorateNodeRowNoAllocUnmarked(t *testing.T) {
 	}
 }
 
-// TestTranscriptRowSearchText pins that history search sees the row as stored.
 func TestTranscriptRowSearchText(t *testing.T) {
 	node := transcriptRow{text: plainNodeRow("hello world", 40), ref: nodeRef{turn: 3, index: 0}}
 	if got := node.searchText(); got != "hello world" {

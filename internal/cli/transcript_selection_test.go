@@ -13,7 +13,7 @@ import (
 )
 
 func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
-	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
+	defer term.SetColorMode(term.ColorAlways)()
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
 	history := []aria.TurnPart{{Turn: aria.Turn{
@@ -27,7 +27,7 @@ func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 
-	tr.key(0x0e) // Ctrl-N
+	tr.key(0x0e)
 	if !tr.selection.active || tr.selection.focus.nodeRef != (nodeRef{turn: 1, index: 0}) {
 		t.Fatalf("first selection = %+v", tr.selection)
 	}
@@ -64,12 +64,12 @@ func TestTranscriptEnterExpandsSelectedToolOutput(t *testing.T) {
 	client.Apply(aria.Page{Parts: history}, aria.Notify)
 	tr := newTranscript(ft, 80, 30, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
 	tr.enter()
-	tr.key(0x0e) // Ctrl-N
+	tr.key(0x0e)
 	if got := stripANSI(strings.Join(tr.lines(), "\n")); strings.Contains(got, "line-00") {
 		t.Fatalf("collapsed tool leaked first output line:\n%s", got)
 	}
 
-	tr.key(0x0d) // Enter
+	tr.key(0x0d)
 	if got := stripANSI(strings.Join(tr.lines(), "\n")); !strings.Contains(got, "line-00") {
 		t.Fatalf("expanded tool omitted full output:\n%s", got)
 	}
@@ -89,11 +89,11 @@ func TestTranscriptEscClearsSelection(t *testing.T) {
 	}}}}, aria.Notify)
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
-	tr.key(0x0e) // Ctrl-N
+	tr.key(0x0e)
 	if !tr.selection.active {
 		t.Fatal("Ctrl-N did not activate selection")
 	}
-	tr.key(0x1b) // Esc
+	tr.key(0x1b)
 	if tr.selection.active {
 		t.Fatal("Esc did not clear the selection")
 	}

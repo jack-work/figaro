@@ -9,26 +9,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// A cold Ctrl-N/Ctrl-P seeds from the VIEWPORT and does not scroll.
-//
-// It used to seed from the ends of the RETAINED WINDOW: len(refs)-1 for ^P,
-// 0 for ^N: which is a different thing entirely: the window holds far more
-// than the screen shows. ensureSelectionVisible then dragged the page to
-// wherever that landed.
-//
-// Measured on the shipped binary (tmux 100x40, aria b4222044, 70 lines of line
-// space, body 38, pager chrome asserted present):
-//
-//	^P parked at the TOP  (1-38/70): jumped to 32-69/70, cue nowhere on screen
-//	^N parked at the TAIL (34-70/70): jumped to 3-40/70, cue on the FIRST node
-//	^N parked at the TOP  (1-38/70): correct, and this is the trap. At the top
-//	  of the window "first in window" and "topmost visible" are the same node,
-//	  so it is the one starting position where the defect is invisible.
-//
-// The no-scroll assertion is the load-bearing one; which block gets the cue
-// follows from it.
-// ---------------------------------------------------------------------------
+// A cold ^N/^P seeds from the viewport, not the retained window, and does not
+// scroll. At the top of the window the two coincide, so that case proves nothing.
 
 func seedFixture(t *testing.T) *transcript {
 	t.Helper()
@@ -51,7 +33,6 @@ func seedFixture(t *testing.T) *transcript {
 	return tr
 }
 
-// seededRow is the focus's screen row, or -1 when it is not on screen.
 func seededRow(tr *transcript) int {
 	tr.buildIndex()
 	span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
@@ -69,7 +50,7 @@ func TestColdSelectSeedsFromViewportWithoutScrolling(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		delta int
-		park  func(*transcript) // where the reader is looking
+		park  func(*transcript)
 		want  func(tr *transcript, body int) int
 	}{
 		{
@@ -93,9 +74,8 @@ func TestColdSelectSeedsFromViewportWithoutScrolling(t *testing.T) {
 			tr := seedFixture(t)
 			tc.park(tr)
 			tr.buildIndex()
-			// The viewport as the reader sees it, in CONTENT terms: follow mode
-			// re-derives the offset on detach, so compare lines, not the raw
-			// offset (see stopFollowing).
+			// Detaching from follow re-derives the offset, so compare
+			// lines.
 			beforeLines := append([]string(nil), tr.window(tr.offset, tr.offset+mustBody(tr), nil)...)
 
 			tr.selectNode(tc.delta, false)
@@ -108,13 +88,9 @@ func TestColdSelectSeedsFromViewportWithoutScrolling(t *testing.T) {
 				t.Fatal("the seeded node is not on screen: the cue would be invisible")
 			}
 			afterLines := tr.window(tr.offset, tr.offset+mustBody(tr), nil)
-			// COMPARE BOTTOM-ALIGNED. Detaching from follow hands back the live
-			// padding row: the body grows by one and the offset drops by one, so
-			// the window gains a line at the TOP and keeps the same last line (see
-			// stopFollowing). Nothing the reader was looking at moved away from the
-			// bottom edge, which is the property that matters and the one a real
-			// scroll would break. Top-aligning would score that one-row hand-back
-			// as a scroll and mark a correct frame wrong.
+			// Bottom-aligned: detaching hands back the live padding
+			// row, so the window gains a line at the top and keeps its
+			// last line.
 			n := min(len(beforeLines), len(afterLines))
 			for i := range n {
 				b := beforeLines[len(beforeLines)-1-i]
@@ -128,8 +104,6 @@ func TestColdSelectSeedsFromViewportWithoutScrolling(t *testing.T) {
 				t.Fatalf("viewport lost rows: %d -> %d", len(beforeLines), len(afterLines))
 			}
 
-			// Direction: ^P must land at or below where ^N would, since one
-			// seeds the bottommost visible block and the other the topmost.
 			other := seedFixture(t)
 			tc.park(other)
 			other.buildIndex()
@@ -150,9 +124,5 @@ func mustBody(tr *transcript) int {
 	return body
 }
 
-// stripCue reduces a rendered row to the thing this test is about: WHERE
-// ITS TEXT IS. A selection legitimately changes how the row is drawn -- the
-// selection cue wraps the row in a wash -- and that is not movement. Only a
-// row whose TEXT differs has moved, and the wash is renditions alone, so
-// dropping them is the whole of it.
+// The selection cue is renditions alone; only a row whose text differs moved.
 func stripCue(s string) string { return stripSGRForTest(s) }

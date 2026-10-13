@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// searchContainsReference is the pre-optimization implementation: it built the
-// ANSI-stripped row and ran strings.Contains over it.
+// searchContainsReference is the pre-optimization implementation.
 func searchContainsReference(row, q string) bool {
 	if !strings.ContainsRune(row, '\x1b') {
 		return strings.Contains(row, q)
@@ -43,13 +42,13 @@ var searchRows = append([]string{
 	"plain row",
 	"\x1b[2mdim row\x1b[0m",
 	"\x1b[2m  │ \x1b[0m   12  internal/cli/transcript.go:7: captured output",
-	"tr\x1b[0manscript",            // match split by an escape
-	"\x1b[7m",                      // escape only
-	"\x1b[7",                       // truncated CSI
-	"\x1b",                         // lone ESC
-	"a\x1bZb",                      // two-byte escape
-	"7m and \x1b[7m",               // the query may look like escape bytes
-	"\x1b[38;5;238m日本語\x1b[0mtail", // wide runes around escapes
+	"tr\x1b[0manscript",
+	"\x1b[7m",
+	"\x1b[7",
+	"\x1b",
+	"a\x1bZb",
+	"7m and \x1b[7m",
+	"\x1b[38;5;238m日本語\x1b[0mtail",
 	"aaa\x1b[0maaab",
 }, clipCorpus...)
 
@@ -68,9 +67,6 @@ func TestSearchContainsMatchesReference(t *testing.T) {
 	}
 }
 
-// TestVisibleIndexAgreesWithHighlight pins the prefilter against the
-// highlighter it guards: if the scan says "no match", the slow path must
-// agree that the row is unchanged, and vice versa.
 func TestVisibleIndexAgreesWithHighlight(t *testing.T) {
 	for _, row := range searchRows {
 		for _, q := range searchQueries {
@@ -96,8 +92,7 @@ func TestHighlightMatchesMatchesReference(t *testing.T) {
 	}
 }
 
-// highlightMatchesReference is the pre-optimization implementation (no
-// allocation-free prefilter).
+// highlightMatchesReference is the pre-optimization implementation.
 func highlightMatchesReference(row, q string) string {
 	if q == "" || row == "" {
 		return row
@@ -156,8 +151,7 @@ func highlightMatchesReference(row, q string) string {
 	return b.String()
 }
 
-// TestSearchContainsNoAllocOnMiss is the point: with a search active every
-// retained row is scanned every frame, and misses must be free.
+// With a search active every retained row is scanned every frame.
 func TestSearchContainsNoAllocOnMiss(t *testing.T) {
 	row := "\x1b[2m  │ \x1b[0m   12  internal/cli/transcript.go:7: captured output"
 	if got := testing.AllocsPerRun(100, func() { _ = searchContains(row, "nomatchhere") }); got != 0 {

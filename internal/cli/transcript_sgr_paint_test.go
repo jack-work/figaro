@@ -7,56 +7,12 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// Where E's collapse meets B's painter.
-//
-// The two axes touch SGR from opposite ends and neither could see the other:
-//
-//   - E shrinks the row TEXT on the way into the row cache, subtractively. It
-//     models the entry rendition as unknown, so a row's leading reset is never
-//     dropped, and it preserves the final rendition exactly.
-//   - B rewrites the row on the way OUT to the terminal: compacting SGR,
-//     addressing from the first differing column, and moving whole runs of rows
-//     with DECSTBM + SU/SD. It requires every painted row to start and end in
-//     default SGR, because SU/SD blank the rolled-in rows with the *current*
-//     background.
-//
-// E's guarantee is strict (same rendition per cell); B's is looser by licence
-// (same appearance: it may drop invisible styling on blank cells). Composed,
-// the claim is B's: a viewer cannot tell. This file proves that composition
-// rather than assuming it, over real glamour rows, through the real painter,
-// on all three paths at once.
-//
-// ---------------------------------------------------------------------------
-// On the two VT models, which the merge leaves side by side.
-//
-// E recommended unifying them with sgrTerm as the base. Not done, and the
-// reason is not effort: they are not two implementations of one thing, they
-// are two different EQUIVALENCE RELATIONS, and each axis's proof depends on
-// its own being the strict one.
-//
-//   - sgrTerm (sgr_vt_test.go) compares exact rendition per cell, plus the
-//     erase-time background, the cursor and an opaque-escape event log. That
-//     strictness is what makes collapseSGR's subtractive argument checkable.
-//     Run compactRow's tests through it and they all fail: correctly, because
-//     compactRow really does change the rendition of blank cells.
-//   - vtScreen (transcript_paint_test.go) compares appearance: a space with no
-//     reverse, underline or strike is the same cell whatever its foreground.
-//     That is precisely the licence compactRow takes, and a model without it
-//     cannot express what B is claiming.
-//
-// Unifying would mean parameterizing sgrTerm by the relation AND teaching it
-// DECSTBM/SU/SD (which only vtScreen has) AND teaching vtScreen ECH/ED and the
-// escape log (which only sgrTerm has), a rewrite of the two things that judge
-// everything else, for no new coverage. Both are anchored to the same external
-// oracle instead: TestTranscriptPaint_RealTerminalReplay replays the pager's
-// actual stream through tmux, and on this stack those rows are E-collapsed, so
-// the composition is checked against a real terminal and not only two models.
-// ---------------------------------------------------------------------------
+// collapseSGR shrinks row text into the cache preserving rendition; compactRow
+// rewrites it for the terminal preserving appearance, and needs every row to
+// start and end in default SGR because SU/SD blank with the current background.
+// sgrTerm compares rendition and vtScreen appearance: two relations, kept apart.
 
-// sgrPaintFrames builds a scrolling frame sequence out of the real glamour
-// corpus: a sliding window over the corpus rows plus a footer that changes
-// every frame (which is what drives the shared-prefix suffix update).
+// The footer changes every frame to drive the shared-prefix suffix update.
 func sgrPaintFrames(t testing.TB, w, h, frames int) [][]string {
 	t.Helper()
 	rows := sgrCorpusRows(t)
@@ -76,9 +32,6 @@ func sgrPaintFrames(t testing.TB, w, h, frames int) [][]string {
 	return out
 }
 
-// paintFrames drives the real painter over a frame sequence and returns the
-// terminal it drew on. collapse applies E's transform to every row (as the row
-// cache does); regions switches B's scroll-region path on or off.
 func paintFrames(t testing.TB, frames [][]string, w, h int, collapse, regions bool) *vtScreen {
 	t.Helper()
 	saved := transcriptScrollRegions
@@ -95,28 +48,17 @@ func paintFrames(t testing.TB, frames [][]string, w, h int, collapse, regions bo
 			}
 			row[i] = r
 		}
-		tr.paint(row) // paint takes ownership of the slice
+		tr.paint(row)
 	}
-	// Teeth: if the scroll-region path never engaged, the "scrolled" stream is
-	// just the flat one and the comparison proves nothing.
 	if regions && len(frames) > 4 && !decstbmRE.Match(screen.raw) {
 		t.Fatalf("the scroll-region path never engaged over %d frames; this test is vacuous", len(frames))
 	}
 	return screen.vtScreen
 }
 
-// decstbmRE matches a scroll-region set, which is the mechanism under test.
 var decstbmRE = regexp.MustCompile(`\x1b\[\d+;\d+r`)
 
-// TestSGRCollapsePaintsIdenticallyThroughTheScrollPainter is the composition
-// test. Three ways of putting the same frames on a terminal: the rows as the
-// renderers produced them, E's collapsed rows through the full-frame diff, and
-// E's collapsed rows through B's scroll-region painter: must be
-// indistinguishable to a viewer.
-//
-// The middle one is the control: if it also failed, the bug would be E's alone.
-// Only the third failing would be the composition bug, which is the one neither
-// axis could have caught.
+// The full-frame diff over collapsed rows is the control.
 func TestSGRCollapsePaintsIdenticallyThroughTheScrollPainter(t *testing.T) {
 	const w, h, frames = 100, 24, 60
 	seq := sgrPaintFrames(t, w, h, frames)
@@ -129,11 +71,8 @@ func TestSGRCollapsePaintsIdenticallyThroughTheScrollPainter(t *testing.T) {
 	assertSameGrid(t, plain, scrolled, "collapsed rows, scroll-region painter")
 }
 
-// TestSGRCollapsePaintsIdenticallyFrameByFrame is the same claim, but checked
-// after EVERY frame rather than at the end. A scroll-region path that drifts
-// and self-corrects (a mis-predicted shift repaired by the next full row
-// update) would pass the end-state check and fail this one; what the user sees
-// is every frame, not the last.
+// A mis-predicted shift repaired by the next row update passes the end-state
+// check and fails this one.
 func TestSGRCollapsePaintsIdenticallyFrameByFrame(t *testing.T) {
 	const w, h, frames = 100, 24, 40
 	seq := sgrPaintFrames(t, w, h, frames)
@@ -146,22 +85,10 @@ func TestSGRCollapsePaintsIdenticallyFrameByFrame(t *testing.T) {
 	}
 }
 
-// TestSGRCollapsedRowsKeepThePainterInDefaultSGR is B's invariant, checked
-// against E's output with E's stricter model. Two separate things have to hold
-// for the scroll region to be safe:
-//
-//   - compactRow's output for a collapsed row must leave the terminal in the
-//     default rendition, so SU/SD blank the rolled-in rows with the default
-//     background rather than whatever the last row was tinted with.
-//   - a collapsed row must not depend on the rendition the row above left, so
-//     the painter may skip the row above entirely.
-//
-// E already proves the second for the cache; this checks it survives the
-// painter, which is the layer that actually decides what gets skipped.
+// A collapsed row must leave the default rendition and must not depend on the
+// row above, which the painter may skip.
 func TestSGRCollapsedRowsKeepThePainterInDefaultSGR(t *testing.T) {
 	rows := sgrCorpusRows(t)
-	// Rows that end mid-style are the interesting ones, so add some by hand:
-	// the corpus is well-behaved, and glamour is not the only producer.
 	rows = append(rows,
 		"\x1b[41mbackground, never reset",
 		"\x1b[4munderline, never reset",
@@ -178,10 +105,7 @@ func TestSGRCollapsedRowsKeepThePainterInDefaultSGR(t *testing.T) {
 	}
 }
 
-// TestSGRCollapseNoBackgroundBleedUnderScroll is B's NoBackgroundBleed test
-// with E's collapse in front of it, and a scroll on top: the case where an
-// unreset row would tint not just the next row's erase but every row the
-// scroll region rolls in.
+// An unreset row would tint every row the scroll region rolls in.
 func TestSGRCollapseNoBackgroundBleedUnderScroll(t *testing.T) {
 	const w, h = 40, 12
 	saved := transcriptScrollRegions

@@ -10,15 +10,13 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// composerPager is a pager with a send hook that records rather than dials.
 func composerPager(t *testing.T, width, height int) (*transcript, *string) {
 	t.Helper()
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Inquiry: "a question", Sealed: true,
-		// Src is what makes a selection quotable: a coordinate names a
-		// passage of the IR, and a node with no provenance has none.
+		// A node with no Src is not quotable.
 		Nodes: []livedoc.Node{{
 			Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 412, Block: 0}},
 			Markdown: "AN ANSWER, long enough to have a second line of its own prose",
@@ -34,8 +32,6 @@ func composerPager(t *testing.T, width, height int) (*transcript, *string) {
 	return tr, &sent
 }
 
-// '>' OPENS THE DRAFT, and the drawer says so. The sigil is the key that
-// opened it, so a reader can tell the two boxes apart at a glance.
 func TestComposerOpensOnAngleBracket(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key('>')
@@ -50,14 +46,11 @@ func TestComposerOpensOnAngleBracket(t *testing.T) {
 	if _, ok := rowContaining(rows, "> hello"); !ok {
 		t.Fatalf("the drawer does not show what was typed:\n%s", strings.Join(rows, "\n"))
 	}
-	// THE SIGIL IS THE WHOLE INDICATOR. No hint row, no title: a reader who
-	// wants words presses M-m (see TestComposerTitleOnlyUnderVerbose).
 	if len(rows) != 1 {
 		t.Fatalf("the drawer costs %d rows for one line of draft:\n%s", len(rows), strings.Join(rows, "\n"))
 	}
 }
 
-// The words live under M-m, which is where every other "spell it out" lives.
 func TestComposerTitleOnlyUnderVerbose(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key('>')
@@ -65,24 +58,18 @@ func TestComposerTitleOnlyUnderVerbose(t *testing.T) {
 	if _, found := rowContaining(plainRows(tr.inputDrawerLines()), "composer"); found {
 		t.Fatal("the drawer named itself without being asked")
 	}
-	// THROUGH THE KEY, not through the field: a title a reader cannot reach is
-	// not a feature. M-m is an input-level chord, so the fixture flips the
-	// setting the input loop would flip and asserts the row follows.
+	// M-m is an input-level chord, so the fixture flips the setting itself.
 	tr.view.(*ariaView).settings.verbose = true
 	rows := plainRows(tr.inputDrawerLines())
 	if _, ok := rowContaining(rows, composerGlyph+" composer"); !ok {
 		t.Fatalf("M-m must title the drawer:\n%s", strings.Join(rows, "\n"))
 	}
-	// THE PORTABLE CHORD IS THE ONE TAUGHT. Alt+Enter also sends, where the
-	// terminal lets it through; Windows does not, so the title names ^S.
+	// Windows claims Alt+Enter, so the title names ^S.
 	if _, ok := rowContaining(rows, "^S send"); !ok {
 		t.Fatalf("the title is where the gesture is spelled out:\n%s", strings.Join(rows, "\n"))
 	}
 }
 
-// ENTER IS A NEWLINE IN A DRAFT. This is the whole reason the draft is not
-// the ':' box: a prompt has lines in it, and a box whose Enter submits can
-// only ever carry the first of them.
 func TestComposerEnterIsANewline(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
 	tr.key('>')
@@ -98,7 +85,6 @@ func TestComposerEnterIsANewline(t *testing.T) {
 	if tr.box != boxComposer {
 		t.Fatal("Enter closed the draft")
 	}
-	// The drawer draws one row per line, which is what the painter counts.
 	rows := plainRows(tr.inputDrawerLines())
 	if _, ok := rowContaining(rows, "> first"); !ok {
 		t.Fatalf("no first line:\n%s", strings.Join(rows, "\n"))
@@ -111,9 +97,7 @@ func TestComposerEnterIsANewline(t *testing.T) {
 	}
 }
 
-// M-Enter sends the bytes AS TYPED: no tokenizer, so a newline and a quote
-// mean themselves. `:send -- ` cannot carry either, which is the defect this
-// box exists to fix.
+// No tokenizer: a newline and a quote mean themselves.
 func TestComposerSendsItsBytesWhole(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
 	tr.key('>')
@@ -131,8 +115,7 @@ func TestComposerSendsItsBytesWhole(t *testing.T) {
 	}
 }
 
-// ESC IS A LADDER: insert to normal, normal to closed, and the draft survives
-// both rungs. ^C is the key that spends it, as it is at a shell prompt.
+// Esc: insert to normal, normal to closed, draft kept. ^C spends it.
 func TestEscapeKeepsTheDraftAndCtrlCSpendsIt(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key('>')
@@ -161,8 +144,6 @@ func TestEscapeKeepsTheDraftAndCtrlCSpendsIt(t *testing.T) {
 	}
 }
 
-// A paste arrives as TEXT, tabs and newlines and all, and with no box open it
-// opens the draft: pasting into a pager is a prompt being written.
 func TestPasteOpensTheComposerAndKeepsItsLines(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.pasteText("first line\r\nsecond\tline\n\x1b[31mthird\n")
@@ -175,8 +156,6 @@ func TestPasteOpensTheComposerAndKeepsItsLines(t *testing.T) {
 	}
 }
 
-// The command box still folds a paste onto its one line: a newline it cannot
-// represent must not become a newline it draws.
 func TestPasteIntoTheCommandBoxStaysOneLine(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key(':')
@@ -189,13 +168,9 @@ func TestPasteIntoTheCommandBoxStaysOneLine(t *testing.T) {
 	}
 }
 
-// '>' WITH A HIGHLIGHT UP QUOTES IT: the draft opens holding the range, and
-// the submit expands it into the coordinate the daemon resolves. The same
-// placeholder the ':' box uses, so there is one grammar for one idea.
 func TestComposerFromASelectionCarriesTheCoordinate(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
-	// v puts a cursor up; the second press anchors a highlight, which is what
-	// there has to be for '>' to have anything to quote.
+	// The second v anchors a highlight.
 	tr.key('v')
 	tr.key('v')
 	tr.key('w')
@@ -219,8 +194,6 @@ func TestComposerFromASelectionCarriesTheCoordinate(t *testing.T) {
 	}
 }
 
-// Tab in a draft completes what belongs in a PROMPT. The command box's pool
-// would offer verbs and flags to a reader typing a sentence.
 func TestComposerCompletesPromptThingsNotVerbs(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	asked := ""
@@ -243,8 +216,6 @@ func TestComposerCompletesPromptThingsNotVerbs(t *testing.T) {
 	}
 }
 
-// An empty draft sends nothing: M-Enter on it is a key that puts the drawer
-// away, not a prompt made of whitespace.
 func TestEmptyComposerSendsNothing(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
 	tr.key('>')
@@ -259,8 +230,6 @@ func TestEmptyComposerSendsNothing(t *testing.T) {
 	}
 }
 
-// The two boxes do not share a buffer: a draft left open must not appear in
-// the command line, which runs what it holds.
 func TestTheTwoBoxesKeepSeparateBuffers(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key('>')
@@ -279,8 +248,6 @@ func TestTheTwoBoxesKeepSeparateBuffers(t *testing.T) {
 	}
 }
 
-// ^A/^E and ^P/^N are the LINE's in a draft, which is emacs: a box with lines
-// in it has a line to move along, and the command box has a history instead.
 func TestComposerMotionsAreLineLocal(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key('>')
@@ -308,24 +275,13 @@ func TestComposerMotionsAreLineLocal(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The composer's normal mode: the transcript's own vocabulary, over the
-// draft. Every case here watches the CURSOR or the MARK, which is the thing
-// the keymap oracle's signature cannot see.
-// ---------------------------------------------------------------------------
-
-// pressKeys drives bytes through DISPATCH rather than into the editor, which
-// is the difference between typing and pressing: in insert mode Enter makes a
-// newline, in normal mode it is a binding. typeInto writes into the box and
-// cannot reach either.
+// pressKeys goes through dispatch: in normal mode Enter is a binding.
 func pressKeys(tr *transcript, s string) {
 	for i := 0; i < len(s); i++ {
 		tr.key(s[i])
 	}
 }
 
-// composerAt opens the drawer on text and drops into normal mode with the
-// cursor at a known rune.
 func composerAt(t *testing.T, text string, cursor int) *transcript {
 	t.Helper()
 	tr, _ := composerPager(t, 72, 24)
@@ -341,8 +297,6 @@ func composerAt(t *testing.T, text string, cursor int) *transcript {
 
 func TestComposerNormalMotions(t *testing.T) {
 	const text = "alpha bravo\n  charlie delta\nend"
-	// "alpha bravo\n  charlie delta\nend": the cursor starts on the 'c' of
-	// charlie, rune 14.
 	cases := []struct {
 		name string
 		keys string
@@ -351,9 +305,9 @@ func TestComposerNormalMotions(t *testing.T) {
 		{"line start", "0", 12},
 		{"first text", "^", 14},
 		{"line end", "$", 27},
-		{"word forward", "w", 21}, // readline's forward-word: the end of charlie
-		{"word back", "b", 6},     // already at a word start, so the one before
-		{"down a line", "j", 30},  // the column is kept
+		{"word forward", "w", 21},
+		{"word back", "b", 6},
+		{"down a line", "j", 30},
 		{"up a line", "k", 2},
 		{"buffer end", "G", len([]rune(text))},
 		{"buffer top", "gg", 0},
@@ -362,7 +316,7 @@ func TestComposerNormalMotions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tr := composerAt(t, text, 14) // on 'c' of charlie
+			tr := composerAt(t, text, 14)
 			pressKeys(tr, c.keys)
 			if tr.draft.cursor != c.want {
 				t.Fatalf("%q left the cursor at %d, want %d", c.keys, tr.draft.cursor, c.want)
@@ -374,9 +328,7 @@ func TestComposerNormalMotions(t *testing.T) {
 	}
 }
 
-// NO EDITING VERBS. d, c, x, p and r are inert, deliberately: this mode is for
-// reading a draft, and a key that half-implemented an edit would be worse than
-// one that does nothing.
+// d, c, x, p and r are inert: a half-implemented edit is worse than none.
 func TestComposerNormalHasNoEditingVerbs(t *testing.T) {
 	const text = "alpha bravo"
 	for _, k := range []byte{'d', 'c', 'x', 'p', 'r', 'D', 'C', 'X', 'P', 'u'} {
@@ -391,8 +343,6 @@ func TestComposerNormalHasNoEditingVerbs(t *testing.T) {
 	}
 }
 
-// v and V mark from the cursor; y copies what is marked. The span is what the
-// drawer washes, so the test reads the span rather than the paint.
 func TestComposerMarkAndSpan(t *testing.T) {
 	tr := composerAt(t, "alpha bravo\ncharlie", 0)
 	tr.key('v')
@@ -401,13 +351,10 @@ func TestComposerMarkAndSpan(t *testing.T) {
 	if !ok {
 		t.Fatal("v marked nothing")
 	}
-	// Two forward-words from 0 land on the newline that ends the first line,
-	// and the mark covers the cursor's own rune, as vim's does.
+	// The mark covers the cursor's own rune, as vim's does.
 	if got := tr.draft.selectionText(lo, hi); got != "alpha bravo\n" {
 		t.Fatalf("char mark covers %q", got)
 	}
-	// V takes whole lines, wherever the cursor stands in them: with the cursor
-	// moved into the second line, the mark covers both.
 	pressKeys(tr, "j")
 	tr.key('V')
 	lo, hi, _ = tr.composerSpan()
@@ -417,18 +364,14 @@ func TestComposerMarkAndSpan(t *testing.T) {
 	if text, ok := tr.composerYankText(); !ok || text != "alpha bravo\ncharlie" {
 		t.Fatalf("y would copy %q (ok=%v)", text, ok)
 	}
-	// Yanking drops the mark, as it does in a pit.
 	if tr.composerHighlighted() {
 		t.Fatal("the mark survived the yank")
 	}
-	// With nothing marked, y takes the whole draft: the useful default for a
-	// box whose contents are what you came to copy.
 	if text, ok := tr.composerYankText(); !ok || text != "alpha bravo\ncharlie" {
 		t.Fatalf("an unmarked yank copies %q (ok=%v)", text, ok)
 	}
 }
 
-// i a I A go back to the box that types, each at its own place.
 func TestComposerReturnsToInsert(t *testing.T) {
 	cases := map[byte]int{'i': 3, 'a': 4, 'I': 0, 'A': 11}
 	for k, want := range cases {
@@ -447,8 +390,6 @@ func TestComposerReturnsToInsert(t *testing.T) {
 	}
 }
 
-// THE SEARCH TARGETS THE DRAWER. A query typed with the composer open must
-// move the draft's cursor, not the conversation behind it.
 func TestSearchTargetsTheComposerDraft(t *testing.T) {
 	tr := composerAt(t, "alpha bravo\ncharlie delta", 0)
 	before := tr.offset
@@ -461,12 +402,10 @@ func TestSearchTargetsTheComposerDraft(t *testing.T) {
 	if tr.offset != before {
 		t.Fatalf("the search moved the conversation (offset %d -> %d)", before, tr.offset)
 	}
-	// n and N repeat it over the draft, wrapping.
 	tr.key('n')
 	if tr.draft.cursor != 20 {
 		t.Fatalf("one match, so n wraps onto it: cursor %d", tr.draft.cursor)
 	}
-	// A query the draft does not hold reports, and moves nothing.
 	tr.key('/')
 	pressKeys(tr, "zebra")
 	tr.key('\r')
@@ -475,8 +414,6 @@ func TestSearchTargetsTheComposerDraft(t *testing.T) {
 	}
 }
 
-// The search box says what it is aimed at with one glyph, which is all the
-// room a box being typed into can spare.
 func TestSearchBoxNamesItsTarget(t *testing.T) {
 	tr := composerAt(t, "alpha", 0)
 	tr.key('/')
@@ -487,9 +424,6 @@ func TestSearchBoxNamesItsTarget(t *testing.T) {
 	}
 }
 
-// ':' FROM NORMAL MODE IS A DETOUR, not a dismissal: the command line opens
-// over the drawer and closing it comes back to the draft, in the mode it was
-// left in.
 func TestCommandLineOverTheDrawerComesBack(t *testing.T) {
 	tr := composerAt(t, "a draft worth keeping", 0)
 	tr.key(':')
@@ -497,15 +431,13 @@ func TestCommandLineOverTheDrawerComesBack(t *testing.T) {
 		t.Fatalf("':' did not open the command line: box=%v", tr.box)
 	}
 	typeInto(tr, "ls")
-	tr.key(0x1b) // Esc closes the command line
+	tr.key(0x1b)
 	if tr.box != boxComposer || tr.composerMode != composerNormal {
 		t.Fatalf("Esc did not come back to the drawer: box=%v mode=%v", tr.box, tr.composerMode)
 	}
 	if tr.draft.String() != "a draft worth keeping" {
 		t.Fatalf("the detour spent the draft: %q", tr.draft.String())
 	}
-	// And a line that RUNS also comes back: the draft is still what the reader
-	// is writing.
 	ran := ""
 	tr.command = func(line string) { ran = line }
 	tr.key(':')
@@ -519,7 +451,6 @@ func TestCommandLineOverTheDrawerComesBack(t *testing.T) {
 	}
 }
 
-// F hands the pane to the drawer, the same disposition every pit shares.
 func TestComposerFullscreenTakesThePane(t *testing.T) {
 	tr := composerAt(t, strings.Repeat("a line of the draft\n", 30), 0)
 	small := len(tr.inputDrawerLines())
@@ -537,8 +468,6 @@ func TestComposerFullscreenTakesThePane(t *testing.T) {
 	}
 }
 
-// M-Enter still sends from normal mode: the gesture is about the draft, not
-// about which keymap is holding the keyboard.
 func TestComposerSendsFromNormalMode(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
 	tr.key('>')
@@ -553,9 +482,7 @@ func TestComposerSendsFromNormalMode(t *testing.T) {
 	}
 }
 
-// ^S SENDS, FROM EITHER MODE, and it is the chord that has to work: Windows
-// Terminal and conhost both claim Alt+Enter for their own fullscreen toggle,
-// so the draft would have no reachable submit on that platform.
+// Windows Terminal and conhost claim Alt+Enter, so ^S must send.
 func TestComposerSendsOnCtrlS(t *testing.T) {
 	for _, mode := range []string{"insert", "normal"} {
 		t.Run(mode, func(t *testing.T) {
@@ -576,8 +503,6 @@ func TestComposerSendsOnCtrlS(t *testing.T) {
 	}
 }
 
-// The CSI-u spelling of the same chord, which is what a terminal with
-// modified-key reporting sends instead of the byte.
 func TestComposerSendsOnCtrlSReportedAsCSIu(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
 	tr.key('>')
@@ -588,14 +513,13 @@ func TestComposerSendsOnCtrlSReportedAsCSIu(t *testing.T) {
 	}
 }
 
-// AND THE COMMAND LINE KEEPS ITS SEARCH. ^S costs the composer readline's
-// forward i-search; it must not cost the box whose history is worth walking.
+// ^S must still walk the command line's history search forward.
 func TestCtrlSStillSearchesTheCommandHistory(t *testing.T) {
 	tr, sent := composerPager(t, 72, 24)
 	tr.cmdline.remember("send -- older")
 	tr.cmdline.remember("ls -H")
 	tr.key(':')
-	tr.key(0x12) // ^R: start a reverse search, which ^S then walks forward
+	tr.key(0x12)
 	if !tr.cmdline.searching() {
 		t.Fatal("^R did not start a history search")
 	}

@@ -12,26 +12,10 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Axis D rig: paging POLICY, not per-frame rendering.
-//
-// The shared scroll rig (transcript_scroll_bench_test.go) measures the cost of
-// one frame with the window held still. This file measures the things the
-// window itself does:
-//
-//   - follow-mode frames, which currently rebuild the whole page window per
-//     frame via resetToTail (BenchmarkTranscriptFollowFrame / LiveStream)
-//   - a long journey: scroll from the tail back over several page boundaries
-//     and return, counting fetches, evictions, and node re-renders
-//     (BenchmarkTranscriptJourney + TestTranscriptJourneyCost, which prints
-//     the policy counters)
-// ---------------------------------------------------------------------------
+// Paging policy: follow-mode frames and a long journey through history,
+// counting fetches, evictions and node re-renders.
 
-// pagingView wraps a NodeView and counts Render calls, so a test can measure
-// how much prose the paging POLICY forces us to re-render. (The merge oracle in
-// transcript_merge_test.go has its own countingView for the frame path; the two
-// count the same thing but are kept separate so neither axis's assertions move
-// when the other's rig changes.)
+// pagingView counts Render calls.
 type pagingView struct {
 	inner  *ariaView
 	render int
@@ -46,9 +30,8 @@ func (v *pagingView) RenderExpanded(n livedoc.Node, width, tick int, full bool) 
 	return v.inner.RenderExpanded(n, width, tick, full)
 }
 
-// pagingHarness drives a transcript exactly the way the input loop does:
-// key/scroll, then pageCursor -> read -> applyPage, and serves ReadBefore out
-// of an in-memory history (optionally with injected latency).
+// pagingHarness drives key, then pageCursor -> read -> applyPage, as the
+// input loop does.
 type pagingHarness struct {
 	tr      *transcript
 	client  *aria.Client
@@ -59,19 +42,15 @@ type pagingHarness struct {
 	fetchedMsgs int
 	keys        int
 	latency     time.Duration
-	blocked     time.Duration // wall time spent inside synchronous fetches
+	blocked     time.Duration
 
-	// eviction accounting, derived from the retained page set
-	held      map[int]bool // LT -> retained right now
+	held      map[int]bool
 	evictions int
 	refetches int
-	seen      map[int]bool // LT -> has been fetched at least once
+	seen      map[int]bool
 
-	// peakBytes is the high-water mark of RETAINED row memory over the trip
-	// (row cache struct + text bytes, i.e. rowCacheFootprint). Once the frame is
-	// O(viewport) this, not frame CPU, is what a bigger window costs: so the
-	// geometry sweep has to be able to see it. Sampled after every applyPage,
-	// which is when the window and the payload LRU change.
+	// peakBytes is sampled after every applyPage: retained row memory is what a
+	// bigger window costs once the frame is O(viewport).
 	peakBytes int
 	peakRows  int
 }
@@ -95,10 +74,8 @@ func newPagingHarness(messages, outputLines, w, h int) *pagingHarness {
 	return h0
 }
 
-// sync mirrors the input loop's post-key `pageTranscript()` call, including the
-// synchronous ReadBefore that currently sits on the critical path.
 func (h *pagingHarness) sync() {
-	for range 8 { // a single key can chain at most a couple of pages
+	for range 8 {
 		req, need := h.tr.pageCursor()
 		if !need {
 			return
@@ -132,8 +109,6 @@ func (h *pagingHarness) read(req transcriptPageRequest) aria.Page {
 	return page
 }
 
-// account diffs the retained window against the previous one to count evictions,
-// and samples retained row memory.
 func (h *pagingHarness) account() {
 	now := map[int]bool{}
 	for _, m := range h.tr.messages() {
@@ -160,11 +135,8 @@ func (h *pagingHarness) key(b byte) {
 	h.sync()
 }
 
-// journey scrolls back (half-page at a time, like 'u') until `back` older
-// messages have been pulled into view, then scrolls all the way down to the
-// tail again. This is "go find that thing 120 messages ago, then come back".
-// Measured in MESSAGES, not pages, so the trip is the same trip at every page
-// geometry.
+// journey is measured in messages, not pages, so the trip is the same at
+// every page geometry.
 func (h *pagingHarness) journey(back int) {
 	target := int(h.tr.from.Turn) - back
 	for range 20000 {
@@ -184,10 +156,6 @@ func (h *pagingHarness) journey(back int) {
 	}
 }
 
-// BenchmarkTranscriptJourney is the artifact for axis D: scroll well back into
-// history and come back. It exercises fetch, eviction, refetch and re-render
-// churn rather than steady-state frame cost, and reports the policy counters
-// (fetches, evicted messages, refetched messages, node re-renders) per trip.
 func BenchmarkTranscriptJourney(b *testing.B) {
 	for _, out := range []int{20, 200} {
 		b.Run(fmt.Sprintf("out%d", out), func(b *testing.B) {
@@ -218,9 +186,7 @@ func BenchmarkTranscriptJourney(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptFollowFrame is a live-streaming frame: the pager is at the
-// bottom following the tail, and something (a token, a spinner tick) forces a
-// repaint. Nothing about the retained window changed.
+// A follow frame: nothing about the retained window changed.
 func BenchmarkTranscriptFollowFrame(b *testing.B) {
 	tr, _ := heavyTranscript(b, 200, 200)
 	tr.follow = true
@@ -232,9 +198,6 @@ func BenchmarkTranscriptFollowFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptLiveStream is the honest version: a spinner tick arrives,
-// then a token appends to the open message, over and over. This is what the
-// pager does for the whole duration of a turn.
 func BenchmarkTranscriptLiveStream(b *testing.B) {
 	tr, client := heavyTranscript(b, 200, 200)
 	tr.follow = true
@@ -252,10 +215,7 @@ func BenchmarkTranscriptLiveStream(b *testing.B) {
 	}
 }
 
-// TestTranscriptJourneyCost is not an assertion, it is a report: it prints the
-// policy counters for a round trip through history so the geometry choice has
-// numbers behind it. Off by default (it is a slow, whole-journey run); enable
-// with FIGARO_PAGING_REPORT=1 go test -run JourneyCost -v.
+// A report, not an assertion: FIGARO_PAGING_REPORT=1 go test -run JourneyCost -v.
 func TestTranscriptJourneyCost(t *testing.T) {
 	if os.Getenv("FIGARO_PAGING_REPORT") == "" {
 		t.Skip("set FIGARO_PAGING_REPORT=1 for the paging cost report")
@@ -269,5 +229,4 @@ func TestTranscriptJourneyCost(t *testing.T) {
 		h.keys, h.fetches, h.fetchedMsgs, h.refetches, h.evictions, h.view.render, time.Since(start).Round(time.Millisecond))
 }
 
-// sanity: readBefore in the shared test helper is ascending and exclusive.
 var _ = sort.Search

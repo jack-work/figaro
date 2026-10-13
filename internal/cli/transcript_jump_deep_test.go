@@ -11,18 +11,12 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// A store that HOLDS history and hands it over a page at a time.
-//
-// Every other jump fixture in this package answers a page request with the
-// empty page (the floor), so the walk terminates on the first fetch and the
-// only paths exercised are "already here" and "does not exist". The reported
-// failure is neither: `:5` on a large aria showed "jumping to turn 5…", pulled
-// one round of history, and then stopped, silently, at the tail. That needs a
-// wire with something on it.
+// jumpWire holds history and hands it over a page at a time, so the walk
+// does not terminate on the first fetch.
 type jumpWire struct {
-	turns []aria.Turn // oldest first; the whole aria as the daemon holds it
-	page  int         // turns per fetch
-	clip  bool        // cut the oldest part mid-turn, as a byte budget does
+	turns []aria.Turn
+	page  int
+	clip  bool
 	reads int
 }
 
@@ -35,7 +29,7 @@ func (w *jumpWire) before(turn, node int) aria.Page {
 		}
 	}
 	if end < 0 {
-		return aria.Page{} // nothing older: the empty read that proves the floor
+		return aria.Page{}
 	}
 	start := end - w.page + 1
 	if start < 0 {
@@ -43,9 +37,7 @@ func (w *jumpWire) before(turn, node int) aria.Page {
 	}
 	parts := make([]aria.TurnPart, 0, end-start+1)
 	for i, t := range w.turns[start : end+1] {
-		// A real page is a BYTE window, so its oldest part can open mid-turn.
-		// That is the shape that produced the ghost header, and it reaches
-		// jumpReachOf through a different branch than a whole turn does.
+		// A byte-budgeted page can open mid-turn.
 		if w.clip && i == 0 && start > 0 && len(t.Nodes) > 1 {
 			cut := aria.TurnPart{Turn: t, From: 1, ClippedHead: true}
 			cut.Turn.Nodes = t.Nodes[1:]
@@ -57,7 +49,6 @@ func (w *jumpWire) before(turn, node int) aria.Page {
 	return aria.Page{Parts: parts, More: aria.More{Before: start > 0}}
 }
 
-// from is a forward read at a coordinate: the page a seek asks for.
 func (w *jumpWire) from(turn, node int) aria.Page {
 	w.reads++
 	start := -1
@@ -100,7 +91,6 @@ func jumpTurns(first, n int) []aria.Turn {
 	return out
 }
 
-// deepJumpFixture loads only the newest tail turns, with the rest on the wire.
 func deepJumpFixture(tb testing.TB, all []aria.Turn, held int) (*transcript, *jumpWire) {
 	tb.Helper()
 	client := aria.NewClient()
@@ -118,8 +108,6 @@ func deepJumpFixture(tb testing.TB, all []aria.Turn, held int) (*transcript, *ju
 	return tr, &jumpWire{turns: all, page: 3}
 }
 
-// serve plays prefetchTranscriptPages against the wire until the pager stops
-// asking, bounded so a spin fails instead of hanging.
 func serve(t *testing.T, tr *transcript, w *jumpWire) {
 	t.Helper()
 	for range 96 {
@@ -128,8 +116,6 @@ func serve(t *testing.T, tr *transcript, w *jumpWire) {
 			return
 		}
 		if req.fill != nil {
-			// A hole inside the window: what a seek leaves behind it. Ensure
-			// closes it in production; here the wire answers directly.
 			tr.client.Apply(w.from(int(req.fill.From.Turn), int(req.fill.From.Node)), aria.Quiet)
 			tr.invalidateWindow()
 			tr.settle()
@@ -137,7 +123,6 @@ func serve(t *testing.T, tr *transcript, w *jumpWire) {
 			continue
 		}
 		if req.seek == seekForward {
-			// A jump reads where it is going: forward, at the coordinate.
 			tr.applyPage(req, w.from(int(req.at.Turn), int(req.at.Node)))
 			continue
 		}
@@ -146,11 +131,9 @@ func serve(t *testing.T, tr *transcript, w *jumpWire) {
 	t.Fatal("the page cursor never stopped asking")
 }
 
-// TestJumpWalksThroughRealHistory is the reported failure, as a unit:
-// a target several pages below the window, with a store that actually has it.
 func TestJumpWalksThroughRealHistory(t *testing.T) {
 	all := jumpTurns(1, 30)
-	tr, w := deepJumpFixture(t, all, 4) // holding turns 27..30
+	tr, w := deepJumpFixture(t, all, 4)
 	typeJump(tr, "5")
 	serve(t, tr, w)
 
@@ -169,7 +152,6 @@ func TestJumpWalksThroughRealHistory(t *testing.T) {
 	}
 }
 
-// The same, addressed to a node: `:5.2`.
 func TestJumpToANodeThroughRealHistory(t *testing.T) {
 	all := jumpTurns(1, 30)
 	tr, w := deepJumpFixture(t, all, 4)
@@ -184,8 +166,6 @@ func TestJumpToANodeThroughRealHistory(t *testing.T) {
 	}
 }
 
-// And `:0` over the same wire, so the sentinel and an ordinary target are
-// proven against one fixture rather than two.
 func TestJumpZeroThroughRealHistory(t *testing.T) {
 	all := jumpTurns(1, 30)
 	tr, w := deepJumpFixture(t, all, 4)
@@ -200,8 +180,7 @@ func TestJumpZeroThroughRealHistory(t *testing.T) {
 	}
 }
 
-// The same walk over a wire whose pages open MID-TURN, which is what a byte
-// budget produces and what the whole-turn fixtures above never exercise.
+// Pages opening mid-turn, as a byte budget produces.
 func TestJumpWalksThroughClippedHistory(t *testing.T) {
 	for _, target := range []string{"5", "0"} {
 		t.Run(":"+target, func(t *testing.T) {

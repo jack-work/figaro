@@ -11,28 +11,10 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// Where B's pacer meets D's prefetch worker.
-//
-// D made history paging asynchronous: the fetch runs on its own goroutine and
-// calls applyPage, and so render(): under the shared render mutex, off the
-// input goroutine. B then put a 120 fps gate in front of render(). The two
-// compose by design (a landing page should be paced like any other frame), but
-// the composition has a failure mode neither axis could see alone: a page that
-// lands inside the frame interval is *refused*, and nothing on the input
-// goroutine is going to come along and redraw it. The user scrolled, stopped,
-// and is now looking at a screen that does not contain the history they were
-// waiting for.
-//
-// The invariant, therefore: a refused page landing must always be redeemed by
-// the trailing render. These tests pin it on a fake clock (exactly), on a real
-// clock end-to-end (through the actual prefetch worker), and under -race with
-// the timer goroutine and the prefetch worker contending for the same mutex.
-// ---------------------------------------------------------------------------
+// A page lands from the prefetch goroutine under the render mutex; the frame
+// gate may refuse it, and nothing on the input goroutine will redraw it, so a
+// refused landing must always be redeemed by the trailing render.
 
-// pagedPacerTurn builds a pager on a fake clock with the pacer armed, plus a
-// settle() that drains any owed trailing render so a test starts from a screen
-// that is genuinely up to date.
 func pagedPacerTurn(t *testing.T, w *countingWriter) (lt *livelogTurn, mu *renderLock, now *time.Time, timers *[]func(), settle func()) {
 	t.Helper()
 	var lock renderLock
@@ -45,11 +27,9 @@ func pagedPacerTurn(t *testing.T, w *countingWriter) (lt *livelogTurn, mu *rende
 	lt.enterTranscript()
 	tail := readBefore(transcriptHistory(120), recentCursor, transcriptPageSize)
 	lt.apply(tail)
-	lt.setMoreBefore(tail.More.Before) // the wire's answer: there IS older history
+	lt.setMoreBefore(tail.More.Before)
 
-	// settle drains any owed trailing render. Call it WITHOUT the render lock
-	// held: the trailing render takes it, exactly as the real timer goroutine
-	// does.
+	// settle takes the render lock itself: call it without the lock held.
 	settle = func() {
 		t.Helper()
 		for range 10 {
@@ -79,10 +59,7 @@ func pagedPacerTurn(t *testing.T, w *countingWriter) (lt *livelogTurn, mu *rende
 	return lt, &lock, &clock, &armed, settle
 }
 
-// assertFrameIsFresh is the anti-staleness oracle: what the terminal is holding
-// must equal what composing the current state right now would produce. It is
-// the property a dropped repaint violates, and unlike "did a write happen" it
-// does not care how many frames it took to get there.
+// The terminal must hold what composing the current state would produce.
 func assertFrameIsFresh(t *testing.T, tr *transcript, what string) {
 	t.Helper()
 	shown := append([]string(nil), tr.prev...)
@@ -92,15 +69,11 @@ func assertFrameIsFresh(t *testing.T, tr *transcript, what string) {
 	}
 }
 
-// TestPacedPageLanding_IsNeverSwallowed is the invariant, stated exactly. A
-// page that lands inside the frame interval is refused, and then painted by
-// the trailing render, leaving the screen up to date.
 func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	var w countingWriter
 	lt, mu, now, timers, settle := pagedPacerTurn(t, &w)
 
-	// Scroll to the top, which arms an older fetch; settle so the pacer owes
-	// nothing and the next refusal is unambiguously the page's.
+	// Settle so the next refusal is unambiguously the page's.
 	mu.Lock()
 	lt.transcriptDispatch(keyEvent{b: 'g'})
 	lt.transcriptDispatch(keyEvent{b: 'g'})
@@ -111,8 +84,7 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 		t.Fatal("gg at the top of the retained window did not ask for older history")
 	}
 
-	// The page lands 200 µs later: well inside the 1/120 s frame interval, so
-	// the gate refuses it.
+	// 200 µs is inside the 1/120 s frame interval.
 	*now = now.Add(200 * time.Microsecond)
 	w.reset()
 	mu.Lock()
@@ -136,7 +108,6 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 		t.Fatalf("a refused page landing armed %d trailing renders, want exactly 1", len(*timers))
 	}
 
-	// Redeem it.
 	*now = now.Add(transcriptFrameInterval)
 	(*timers)[0]()
 	if got := w.writes.Load(); got != 1 {
@@ -150,16 +121,14 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	assertFrameIsFresh(t, lt.tr, "after a paced page landing")
 }
 
-// TestPacedPageLanding_NoFurtherInputRequired is the same invariant end to end,
-// on a real clock and through D's actual prefetch worker: nothing touches the
-// input loop after the scroll, and the screen still has to catch up.
+// Real clock, real prefetch worker, nothing touches the input loop after gg.
 func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 	reader := &slowHistoryReader{history: transcriptHistory(300), delay: 20 * time.Millisecond}
 	tc := newSearchInputTerminal()
 	in := newSearchInteractiveInput(reader, tc)
 	var mu renderLock
 	in.mu = &mu
-	in.lt.setRenderLock(&mu) // real time.AfterFunc, real 120 fps ceiling
+	in.lt.setRenderLock(&mu)
 
 	done := make(chan struct{})
 	go func() { in.run(); close(done) }()
@@ -172,7 +141,7 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 	before := in.lt.tr.from.Turn
 	mu.Unlock()
 
-	tc.send([]byte("gg")) // one burst, then silence
+	tc.send([]byte("gg"))
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -188,16 +157,12 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	// Nothing has been sent since "gg"; whatever is on the glass is what the
-	// trailing render left there.
 	mu.Lock()
 	defer mu.Unlock()
 	assertFrameIsFresh(t, in.lt.tr, "after an unattended page landing")
 }
 
-// blockingHistoryReader answers every ReadBefore, holding the caller for a
-// jittered spell so the prefetch worker and the pacer's timer goroutine are
-// genuinely interleaved rather than politely taking turns.
+// A jittered delay interleaves the prefetch worker and the timer goroutine.
 type blockingHistoryReader struct {
 	history []aria.TurnPart
 	mu      sync.Mutex
@@ -226,14 +191,8 @@ func (r *blockingHistoryReader) ReadBefore(ctx context.Context, at aria.Anchor, 
 	return readBefore(r.history, before, limit), nil
 }
 
-// TestPacerAndPrefetchDoNotDeadlock is the lock-order check, and is meant to be
-// run under -race. Three parties take in.mu: the input goroutine (draining a
-// batch), the prefetch worker (applying a landed page), and the pacer's timer
-// goroutine (the trailing flush). There is exactly one mutex and no other lock
-// in the graph: the pacer deliberately reuses the caller's: so this cannot
-// deadlock by construction; the test is here because "by construction" is a
-// claim, and because the race detector has opinions about who touches
-// framePacer's fields.
+// Run under -race: input goroutine, prefetch worker and the pacer's timer
+// goroutine all take the one mutex.
 func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 	reader := &blockingHistoryReader{history: transcriptHistory(400)}
 	tc := newSearchInputTerminal()
@@ -245,8 +204,6 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 	done := make(chan struct{})
 	go func() { in.run(); close(done) }()
 
-	// Hammer the pager for a while: scroll bursts up and down, each one racing
-	// a landing page and a pending trailing render.
 	deadline := time.Now().Add(2 * time.Second)
 	for i := 0; time.Now().Before(deadline); i++ {
 		if i%2 == 0 {
@@ -264,8 +221,7 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 		t.Fatal("the input loop never returned: pacer/prefetch deadlock")
 	}
 
-	// Let any armed trailing render fire and take the lock after the loop is
-	// gone; it must not panic, block, or paint a torn frame.
+	// A trailing render firing after the loop is gone must not panic or block.
 	time.Sleep(4 * transcriptFrameInterval)
 	locked := make(chan struct{})
 	go func() {
@@ -284,33 +240,24 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 	}
 }
 
-// TestDeferredFrameStillClampsTheViewport is the regression for the bug this
-// merge actually introduced (and the -race run above actually caught): a
-// negative viewport offset.
-//
-// A/D let scrollBy overshoot and relied on render() clamping. B's gate made
-// render() skippable, so a scroll burst past the top left offset negative, and
-// the next off-frame reader: viewportAnchor, when a prefetched page lands -
-// indexed t.lineTurn with it and panicked. The clamp now happens in front of the
-// gate, so it survives batching and rate limiting alike.
+// scrollBy may overshoot and render() is skippable, so the clamp must sit in
+// front of the gate: viewportAnchor indexes t.lineTurn with the offset.
 func TestDeferredFrameStillClampsTheViewport(t *testing.T) {
 	check := func(t *testing.T, tr *transcript, what string) {
 		t.Helper()
 		if tr.offset < 0 {
 			t.Fatalf("%s: viewport offset is %d; every off-frame reader indexes with this", what, tr.offset)
 		}
-		// The reader that crashed. It must be callable at any moment, not only
-		// just after a painted frame.
 		tr.viewportAnchor()
 	}
 
 	t.Run("batched", func(t *testing.T) {
 		tr := coalesceTranscript(t, &countingWriter{})
 		tr.key('g')
-		tr.key('g') // start at the top, so the flick has somewhere to overshoot
+		tr.key('g')
 		tr.beginBatch()
 		for range 50 {
-			tr.scrollBy(-10) // a flick that runs off the top of the window
+			tr.scrollBy(-10)
 		}
 		check(t, tr, "inside an open batch")
 		tr.endBatch()
@@ -319,9 +266,9 @@ func TestDeferredFrameStillClampsTheViewport(t *testing.T) {
 
 	t.Run("gated", func(t *testing.T) {
 		tr := coalesceTranscript(t, &countingWriter{})
-		tr.gate = func() bool { return false } // every frame refused
+		tr.gate = func() bool { return false }
 		for range 50 {
-			tr.key('u') // half-page up
+			tr.key('u')
 		}
 		check(t, tr, "with every frame refused")
 		tr.gate = nil

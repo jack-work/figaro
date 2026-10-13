@@ -17,21 +17,8 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// A cell-accurate VT for proving paint-layer rewrites are invisible.
-//
-// ldrender.FakeTerminal models the grid but drops SGR entirely, so it cannot
-// tell a coloured cell from a plain one: useless for checking a transform
-// whose whole job is rewriting colour. vtScreen is the smaller, sharper tool:
-// it keeps (rune, style) per cell for the subset of ANSI paint emits, plus the
-// scroll-region operations the shifted-frame path uses.
-//
-// The contract every test here asserts: replaying the optimized escape stream
-// must leave the same *appearance* grid as replaying the naive full-repaint
-// stream. Appearance, not bytes: a blank cell is defined by its background and
-// the attributes that draw on emptiness, which is exactly the licence
-// compactRow takes.
-// ---------------------------------------------------------------------------
+// vtScreen keeps (rune, style) per cell; FakeTerminal drops SGR. Tests compare
+// the appearance grid of the optimized stream against a naive full repaint.
 
 type vtStyle struct {
 	fg, bg                            string
@@ -41,14 +28,11 @@ type vtStyle struct {
 
 type vtCell struct {
 	r rune
-	// comb holds the zero-width runes composed onto this cell. A combining
-	// mark does not occupy a column of its own, so it cannot have a cell of
-	// its own either: see put.
+	// comb holds zero-width runes composed onto this cell.
 	comb string
 	s    vtStyle
 }
 
-// appearance normalizes a cell to what a viewer can actually distinguish.
 func (c vtCell) appearance() vtCell {
 	if c.r == 0 {
 		c.r = ' '
@@ -67,22 +51,13 @@ type vtScreen struct {
 	top, bot int // scroll region, 0-based inclusive
 	pend     []byte
 
-	// watch, when set, is called for every cell this screen is about to
-	// change, with the content it holds and the content replacing it. It is
-	// how the flicker oracle sees INTERMEDIATE states: the grid after a frame
-	// cannot tell an erase-then-rewrite from a rewrite. See
-	// transcript_flicker_test.go.
+	// watch sees intermediate states the post-frame grid cannot.
 	watch func(row, col int, before, after vtCell)
 
-	// scrolling is true while a scroll-region shift is moving cells. A row
-	// that rolls in under SU/SD is blank because the CONTENT MOVED, which no
-	// painter can avoid and which the flicker oracle must not blame on the
-	// row update that fills it afterwards.
+	// scrolling: a row rolling in under SU/SD is content moving, not an erase.
 	scrolling bool
 }
 
-// set is the one door every cell change goes through, so the watch hook cannot
-// be bypassed by a new escape handler.
 func (v *vtScreen) set(r, c int, cell vtCell) {
 	if r < 0 || r >= v.h || c < 0 || c >= v.w {
 		return
@@ -108,9 +83,6 @@ func (v *vtScreen) Write(p []byte) (int, error) {
 	i := 0
 	for i < len(data) {
 		if data[i] != 0x1b {
-			// Columns are display cells, not bytes: a box-drawing rule is three
-			// bytes and one column, and the painter's cursor arithmetic has to
-			// agree with that or a suffix update lands in the wrong place.
 			r, size := utf8.DecodeRune(data[i:])
 			if r == utf8.RuneError && size == 1 && !utf8.FullRune(data[i:]) {
 				v.pend = append(v.pend, data[i:]...) // truncated rune
@@ -138,19 +110,15 @@ func (v *vtScreen) put(r rune) {
 	v.set(v.row, v.col, vtCell{r: r, s: v.cur})
 	v.col++
 	for w := runewidth.RuneWidth(r); w > 1 && v.col < v.w; w-- {
-		v.set(v.row, v.col, vtCell{r: vtWideTail, s: v.cur}) // wide-glyph tail cell
+		v.set(v.row, v.col, vtCell{r: vtWideTail, s: v.cur})
 		v.col++
 	}
 	if v.col >= v.w {
-		// The pager runs with autowrap off (see transcript.enter), so the cursor
-		// sticks on the last column instead of moving past it. Modelling this
-		// matters: an erase-to-end-of-line issued afterwards would wipe the
-		// column just written.
+		// Autowrap is off: the cursor sticks on the last column.
 		v.col = v.w - 1
 	}
 }
 
-// vtWideTail marks the second column of a double-width glyph.
 const vtWideTail = '\u0000' + 1
 
 func (v *vtScreen) csi(seq string) {
@@ -197,7 +165,7 @@ func (v *vtScreen) csi(seq string) {
 			from, to = 0, v.w
 		}
 		for c := from; c < to && c < v.w; c++ {
-			// EL paints with the current background, not the full style.
+			// EL paints with the current background only.
 			v.set(v.row, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
 		}
 	case 'J':
@@ -236,8 +204,6 @@ func (v *vtScreen) csi(seq string) {
 	}
 }
 
-// scroll moves the scroll-region content by n rows (n>0 up, n<0 down),
-// blanking what rolls in, exactly as SU/SD do.
 func (v *vtScreen) scroll(n int) {
 	if n == 0 || v.top < 0 || v.bot >= v.h || v.top > v.bot {
 		return
@@ -356,7 +322,6 @@ func vtExtendedColor(rest []string) (string, int) {
 	return "", 1
 }
 
-// grid renders the appearance of every cell, for diffing two replays.
 func (v *vtScreen) grid() []string {
 	out := make([]string, v.h)
 	for r := 0; r < v.h; r++ {
@@ -371,7 +336,6 @@ func (v *vtScreen) grid() []string {
 	return out
 }
 
-// text is the human-readable form, for failure messages.
 func (v *vtScreen) text() []string {
 	out := make([]string, v.h)
 	for r := 0; r < v.h; r++ {
@@ -390,7 +354,7 @@ func (v *vtScreen) text() []string {
 	return out
 }
 
-// naivePaint is the pre-optimization painter, kept as the reference oracle.
+// naivePaint is the reference oracle.
 func naivePaint(w io.Writer, screen, prev []string) {
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
@@ -418,8 +382,6 @@ func assertSameGrid(t *testing.T, want, got *vtScreen, what string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-
 func TestCompactRow_PreservesAppearance(t *testing.T) {
 	dim := "\x1b[38;5;252m"
 	rows := []string{
@@ -442,10 +404,8 @@ func TestCompactRow_PreservesAppearance(t *testing.T) {
 		"\x1b[1;38;5;99mmulti param\x1b[0m  ",
 		"\x1b[38;5;252m \x1b[0m\x1b[7m \x1b[27m\x1b[38;5;252m \x1b[0m",
 		"reset-prefixed \x1b[0;31mred\x1b[0m ",
-		// A background on ONE cell followed by a blank under the default
-		// style: the reset between them may not be deferred, or the
-		// background leaks onto the blank. The visual cursor on a leading
-		// space is exactly this row.
+		// The reset between a one-cell background and a default blank may not
+		// be deferred.
 		"\x1b[48;2;220;215;186m \x1b[0m \x1b[38;5;252mVISOK\x1b[39m",
 		"\x1b[48;5;187m \x1b[0m   text",
 	}
@@ -460,9 +420,6 @@ func TestCompactRow_PreservesAppearance(t *testing.T) {
 	}
 }
 
-// TestCompactRow_ShrinksRendererChurn pins the actual win: the renderers emit
-// a styled escape pair per padding cell, and a full-width blank row must not
-// cost 1.5 KB.
 func TestCompactRow_ShrinksRendererChurn(t *testing.T) {
 	row := strings.Repeat("\x1b[38;5;252m \x1b[0m", 96)
 	got := string(compactRow(nil, row))
@@ -476,9 +433,6 @@ func TestCompactRow_ShrinksRendererChurn(t *testing.T) {
 	}
 }
 
-// TestTranscriptPaint_MatchesNaiveRepaint is the end-to-end guarantee: over a
-// long scroll of a real transcript, the optimized escape stream and the naive
-// one leave identical screens.
 func TestTranscriptPaint_MatchesNaiveRepaint(t *testing.T) {
 	const w, h = 100, 24
 	client := aria.NewClient()
@@ -512,7 +466,7 @@ func TestTranscriptPaint_MatchesNaiveRepaint(t *testing.T) {
 		tr.scrollBy(3)
 		step(fmt.Sprintf("scroll down %d", i))
 	}
-	tr.matchQuery = "transcript" // reverse-video highlights on every match
+	tr.matchQuery = "transcript"
 	tr.render()
 	step("search highlight")
 	for i := range 20 {
@@ -538,12 +492,6 @@ func BenchmarkCompactRow(b *testing.B) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Shifted-frame (scroll region) painting.
-// ---------------------------------------------------------------------------
-
-// teeVT records the raw escape stream while replaying it, so a test can assert
-// both what was emitted and what it drew.
 type teeVT struct {
 	*vtScreen
 	raw []byte
@@ -580,8 +528,6 @@ func scrollTranscript(tb testing.TB, out io.Writer, w, h, messages int) *transcr
 	return tr
 }
 
-// TestTranscriptPaint_UsesScrollRegion pins the mechanism: a one-line scroll
-// must move the rows rather than retransmit them.
 func TestTranscriptPaint_UsesScrollRegion(t *testing.T) {
 	out := newTeeVT(100, 40)
 	tr := scrollTranscript(t, out, 100, 40, 12)
@@ -590,8 +536,7 @@ func TestTranscriptPaint_UsesScrollRegion(t *testing.T) {
 	tr.scrollBy(-1)
 
 	frame := out.lastFrame()
-	// 1;38: the body runs to the rule while detached: the padding row above it
-	// belongs to live mode alone (see layout).
+	// Detached, the body runs to the rule; the padding row is live mode only.
 	if !strings.Contains(frame, "\x1b[1;38r") {
 		t.Fatalf("no scroll region in frame: %q", frame)
 	}
@@ -609,8 +554,6 @@ func TestTranscriptPaint_UsesScrollRegion(t *testing.T) {
 	}
 }
 
-// TestTranscriptPaint_ScrollRegionOptOut proves the escape hatch really falls
-// back to the full-frame diff, and that the fallback still draws correctly.
 func TestTranscriptPaint_ScrollRegionOptOut(t *testing.T) {
 	defer func(v bool) { transcriptScrollRegions = v }(transcriptScrollRegions)
 	transcriptScrollRegions = false
@@ -632,13 +575,7 @@ func TestTranscriptPaint_ScrollRegionOptOut(t *testing.T) {
 	assertSameGrid(t, want, out.vtScreen, "opt-out fallback")
 }
 
-// TestTranscriptPaint_ScrollWithLiveContent is the case a naive "shift by the
-// offset delta" implementation gets wrong: the viewport moves AND the content
-// under it changes in the same frame. That is the ordinary streaming frame -
-// following the tail while a message grows scrolls the body up by however many
-// rows the new text wrapped to, and the last row is new. Detection is from the
-// frames themselves and the diff runs against the predicted post-scroll grid,
-// so the changed rows are still repainted.
+// The viewport moves and the content under it changes in the same frame.
 func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
@@ -675,8 +612,6 @@ func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
 	if !strings.Contains(strings.Join(tr.prev, "\n"), "streaming chunk") {
 		t.Fatal("fixture never rendered the live message; the test would prove nothing")
 	}
-	// Now leave follow mode mid-stream and scroll against a frozen open
-	// message: viewport motion and content motion decoupled.
 	for i := range 20 {
 		grow(30 + i)
 		tr.scrollBy(-1)
@@ -689,10 +624,6 @@ func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
 	}
 }
 
-// TestTranscriptPaint_ShiftedFrameProperty drives paint directly with
-// synthetic frames: pure shifts, shifts with edits, unrelated screens, and
-// asserts the optimized stream and the naive full-repaint stream always agree.
-// This is the safety net for the shift detector's heuristics.
 func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
 	const w, h = 60, 20
 	rnd := rand.New(rand.NewSource(20260724))
@@ -761,12 +692,8 @@ func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
 	}
 }
 
-// tailEdit produces a row sharing a long, well-formed prefix with a template -
-// the shape of the footer rule (a hundred dashes plus a changing counter) and of
-// a streaming line of prose. Rows always close their style: the property oracle
-// is the literal old painter, whose erase-line inherits a leaked background
-// (see TestTranscriptPaint_NoBackgroundBleed), so comparing against it is only
-// meaningful for rows the renderers could actually emit.
+// Rows always close their style: the naive oracle inherits a leaked
+// background into its erase.
 func tailEdit(rnd *rand.Rand, row string) string {
 	if len(row)%2 == 0 {
 		return "\x1b[2m" + strings.Repeat("\u2500", 30) + " " + fmt.Sprint(rnd.Intn(100000)) + "\x1b[0m"
@@ -774,9 +701,6 @@ func tailEdit(rnd *rand.Rand, row string) string {
 	return strings.Repeat("prefix ", 6) + fmt.Sprint(rnd.Intn(100000))
 }
 
-// TestTranscriptPaint_UsesSuffixUpdate pins the mechanism on the row that
-// motivated it: the footer rule, a hundred columns of box drawing whose only
-// changing part is the position counter at the right margin.
 func TestTranscriptPaint_UsesSuffixUpdate(t *testing.T) {
 	out := newTeeVT(100, 40)
 	tr := scrollTranscript(t, out, 100, 40, 12)
@@ -798,9 +722,8 @@ func TestTranscriptPaint_UsesSuffixUpdate(t *testing.T) {
 
 var regexpColumnAddress = regexp.MustCompile(`\x1b\[[0-9]+;[2-9][0-9]*H`)
 
-// TestCommonRowPrefix_Guards: the suffix path must decline anything whose
-// column count it cannot be sure of, because a miscount is corruption rather
-// than waste.
+// A miscounted column is corruption, so the suffix path declines what it
+// cannot measure.
 func TestCommonRowPrefix_Guards(t *testing.T) {
 	long := strings.Repeat("\u2500", 40)
 	cases := []struct {
@@ -829,8 +752,6 @@ func TestCommonRowPrefix_Guards(t *testing.T) {
 	}
 }
 
-// TestTranscriptPaint_WideGlyphsFallBack replays rows full of double-width and
-// combining characters: the guards must keep the screen correct.
 func TestTranscriptPaint_WideGlyphsFallBack(t *testing.T) {
 	const w, h = 40, 8
 	got := newVT(w, h)
@@ -850,11 +771,8 @@ func TestTranscriptPaint_WideGlyphsFallBack(t *testing.T) {
 	}
 }
 
-// TestTranscriptPaint_NoBackgroundBleed pins a behaviour change that is a fix.
-// The old painter emitted CSI 2K with whatever SGR the previous row left
-// active, so a row that set a background and never reset it painted the NEXT
-// row's erase in that colour. compactRow's "every row ends in default SGR"
-// invariant removes the hazard.
+// CSI 2K paints with the active background, so every row must end in
+// default SGR.
 func TestTranscriptPaint_NoBackgroundBleed(t *testing.T) {
 	const w, h = 20, 3
 	got := newVT(w, h)
@@ -866,28 +784,13 @@ func TestTranscriptPaint_NoBackgroundBleed(t *testing.T) {
 			t.Fatalf("row 1 column %d inherited background %q from the row above", c, cell.s.bg)
 		}
 	}
-	// And the row that did set it still shows it where it painted.
 	if got.cells[0][0].s.bg != "41" {
 		t.Fatalf("row 0 lost its own background: %+v", got.cells[0][0])
 	}
 }
 
-// ---------------------------------------------------------------------------
-// C's painter oracles, carried forward.
-//
-// C asserted byte-identity with paintReference (the pre-optimization painter)
-// because C's change to paint() was pure buffer recycling: same escapes, fewer
-// allocations. B's painter deliberately emits *different* bytes: compacted
-// SGR, suffix updates, scroll regions: so byte-identity is no longer the
-// intent and the assertion is re-stated at the level that still holds: the
-// cells. paintReference is dropped as a duplicate of naivePaint.
-//
-// The frame sequence is C's, verbatim, because it was chosen to catch the
-// aliasing bug the buffer recycling could introduce (frame N-1's buffer being
-// handed back while frame N still refers to it), and B's painter inherits that
-// hazard along with the recycling.
-// ---------------------------------------------------------------------------
-
+// The frame sequence catches a recycled buffer handed back while the next
+// frame still refers to it.
 func TestPaintMatchesReferenceAtTheCellLevel(t *testing.T) {
 	frames := [][]string{
 		{"one", "two", "three"},
@@ -900,14 +803,11 @@ func TestPaintMatchesReferenceAtTheCellLevel(t *testing.T) {
 	}
 	const w, h = 200, 3
 	got, want := newVT(w, h), newVT(w, h)
-	// w matters now: the painter erases from the new row's last column to the
-	// screen's right margin, so it has to be told where that margin is.
 	tr := &transcript{out: got, active: true, w: w, h: h}
 	var prev []string
 	for i, f := range frames {
 		screen := append([]string(nil), f...)
-		// paint() takes ownership of the slice it is handed (it becomes t.prev),
-		// so the reference gets its own copy.
+		// paint() takes ownership of the slice it is handed.
 		tr.paint(append([]string(nil), f...))
 		naivePaint(want, screen, prev)
 		prev = screen
@@ -915,11 +815,7 @@ func TestPaintMatchesReferenceAtTheCellLevel(t *testing.T) {
 	}
 }
 
-// TestPaintReusesBuffers pins the recycling: a steady stream of frames must
-// not allocate a new output buffer or frame slice every time. Unchanged from
-// C except for the screen height, which is now above minScrollRun*2 so the
-// scroll-region planner actually runs and its scratch buffers (predBuf,
-// keysNew, keysOld) are held to the same zero-allocation standard.
+// h is above minScrollRun*2 so the scroll-region planner runs too.
 func TestPaintReusesBuffers(t *testing.T) {
 	tr := &transcript{out: io.Discard, active: true, h: 4}
 	frames := [][]string{
@@ -938,8 +834,6 @@ func TestPaintReusesBuffers(t *testing.T) {
 	}
 }
 
-// TestPaintReusesBuffersUnderScroll is the same oracle on a screen tall enough
-// for planScroll to engage on every frame.
 func TestPaintReusesBuffersUnderScroll(t *testing.T) {
 	const h = 24
 	tr := &transcript{out: io.Discard, active: true, h: h}

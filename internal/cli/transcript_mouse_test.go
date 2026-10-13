@@ -12,17 +12,9 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// THE POINTER'S TESTS.
-//
-// Every one of these asserts through frameRefs: the map renderFrame records -
-// because that is the property under test: a click resolves against the frame
-// that was PAINTED. A test that computed the expected row from t.offset itself
-// would agree with a broken implementation that did the same thing, which is
-// trap #11 of the tmux-testing skill in miniature: two arms, one binary.
+// A click resolves against the frame that was painted, so every case asserts
+// through frameRefs rather than recomputing rows from t.offset.
 
-// clickRowOf finds the first painted body row belonging to ref. It fails the
-// test rather than returning a sentinel: "no row for that node" means the
-// fixture, not the assertion, is wrong.
 func clickRowOf(t *testing.T, tr *transcript, ref nodeRef) int {
 	t.Helper()
 	for row, r := range tr.frameRefs {
@@ -34,8 +26,6 @@ func clickRowOf(t *testing.T, tr *transcript, ref nodeRef) int {
 	return -1
 }
 
-// chromeRow finds a painted body row that belongs to no node, a separator, a
-// voice header, or a blank between two blocks.
 func chromeRow(t *testing.T, tr *transcript) int {
 	t.Helper()
 	for row, r := range tr.frameRefs {
@@ -69,11 +59,10 @@ func mouseFixture(t *testing.T, h int) (*transcript, *ldrender.FakeTerminal, []a
 	return tr, ft, history
 }
 
-// TestClickSelectsNodeUnderPointer is the first rule of the gesture.
 func TestClickSelectsNodeUnderPointer(t *testing.T) {
-	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
+	defer term.SetColorMode(term.ColorAlways)()
 	tr, ft, _ := mouseFixture(t, 30)
-	want := nodeRef{turn: 1, index: 1} // the SECOND node: an off-by-one lands on the first
+	want := nodeRef{turn: 1, index: 1}
 	row := clickRowOf(t, tr, want)
 
 	if !tr.clickAt(row, false) {
@@ -85,22 +74,17 @@ func TestClickSelectsNodeUnderPointer(t *testing.T) {
 	if tr.selection.anchor.nodeRef != want {
 		t.Fatalf("a plain click must collapse the range onto one node: anchor = %+v", tr.selection.anchor)
 	}
-	// The hash is what makes a clicked selection yankable. A bare point would
-	// pass every assertion above and then fail at paste time with "selection
-	// start changed".
+	// A bare point without the hash fails at paste time.
 	if tr.selection.focus.hash == 0 {
 		t.Fatal("clicked endpoint carries no node hash: copy would reject it")
 	}
 	tr.render()
-	// The fake terminal holds cells, not renditions, so the wash is read off
-	// the painted rows rather than off the screen.
+	// The fake terminal holds cells, not renditions.
 	if !washed(strings.Join(tr.lines(), "\n")) {
 		t.Fatalf("no selection cue painted after a click:\n%s", strings.Join(ft.Screen(), "\n"))
 	}
 }
 
-// TestClickOnFocusTogglesExpansion is the second rule: click again to expand,
-// once more to collapse.
 func TestClickOnFocusTogglesExpansion(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 30)
 	tool := nodeRef{turn: 1, index: 2}
@@ -114,7 +98,6 @@ func TestClickOnFocusTogglesExpansion(t *testing.T) {
 	}
 	tr.render()
 
-	// Second click on the same node: expand.
 	row = clickRowOf(t, tr, tool)
 	if !tr.clickAt(row, false) {
 		t.Fatal("second click on the focused node did nothing")
@@ -127,8 +110,7 @@ func TestClickOnFocusTogglesExpansion(t *testing.T) {
 	}
 	tr.render()
 
-	// Third click: collapse again. The row is re-derived because expansion moved
-	// the rows under the pointer.
+	// Expansion moved the rows under the pointer.
 	row = clickRowOf(t, tr, tool)
 	if !tr.clickAt(row, false) {
 		t.Fatal("third click did not collapse")
@@ -141,9 +123,7 @@ func TestClickOnFocusTogglesExpansion(t *testing.T) {
 	}
 }
 
-// TestClickOnFocusedProseIsInert pins the seam: a node with no collapsed form is
-// not flipped invisibly. When prose grows one (feat/table-wrap widens
-// nodeExpandable) this test is the one that must be updated deliberately.
+// A node with no collapsed form is not flipped invisibly.
 func TestClickOnFocusedProseIsInert(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 30)
 	prose := nodeRef{turn: 1, index: 0}
@@ -164,8 +144,6 @@ func TestClickOnFocusedProseIsInert(t *testing.T) {
 	}
 }
 
-// TestClickOnChromeIsNoOp: the rows between nodes are half the screen, and a
-// stray click must not cost a selection.
 func TestClickOnChromeIsNoOp(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 30)
 	sel := nodeRef{turn: 1, index: 1}
@@ -184,8 +162,7 @@ func TestClickOnChromeIsNoOp(t *testing.T) {
 	}
 }
 
-// TestClickOutsideBodyIsNoOp covers the footer rows and a row below the frame:
-// frameRefs is exactly the BODY, so anything past it must miss.
+// frameRefs is exactly the body.
 func TestClickOutsideBodyIsNoOp(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 30)
 	for _, row := range []int{-1, len(tr.frameRefs), len(tr.frameRefs) + 1, 1 << 20} {
@@ -198,8 +175,6 @@ func TestClickOutsideBodyIsNoOp(t *testing.T) {
 	}
 }
 
-// TestShiftClickExtendsRange: pointing at the far end of a range must build the
-// same selection as walking to it with Shift+^N.
 func TestShiftClickExtendsRange(t *testing.T) {
 	tr, _, history := mouseFixture(t, 30)
 	first, third := nodeRef{turn: 1, index: 0}, nodeRef{turn: 1, index: 2}
@@ -213,7 +188,6 @@ func TestShiftClickExtendsRange(t *testing.T) {
 		t.Fatalf("range = %+v..%+v, want %+v..%+v",
 			tr.selection.anchor.nodeRef, tr.selection.focus.nodeRef, first, third)
 	}
-	// The range must be COPYABLE, which is the whole point of carrying hashes.
 	text, err := selectedTextForTest(tr, history)
 	if err != nil {
 		t.Fatalf("copy of a shift-clicked range failed: %v", err)
@@ -225,13 +199,10 @@ func TestShiftClickExtendsRange(t *testing.T) {
 	}
 }
 
-// TestClickAgreesWithCtrlNSelection is the equivalence proof: the pointer and
-// the keyboard must produce the SAME selection for the same node, hash included.
-// Two ways to name a node that disagree is the defect class the coordinate row
-// and the ref list were unified to remove.
+// The pointer and the keyboard must produce the same selection, hash included.
 func TestClickAgreesWithCtrlNSelection(t *testing.T) {
 	trA, _, _ := mouseFixture(t, 30)
-	trA.key(0x0e) // ^N: cold entry selects a node
+	trA.key(0x0e)
 	keyboard := trA.selection
 
 	trB, _, _ := mouseFixture(t, 30)
@@ -243,22 +214,16 @@ func TestClickAgreesWithCtrlNSelection(t *testing.T) {
 	}
 }
 
-// TestClickDoesNotMoveTheViewport is property 2 of the gesture. The clicked row
-// is on screen by construction, so scrolling is never justified, and a tall
-// node whose tail runs off the bottom is exactly where ensureSelectionVisible
-// would drag the page down, which is the jump selectNode's cold path was fixed
-// to stop making.
+// The clicked row is on screen by construction, so scrolling is never justified.
 func TestClickDoesNotMoveTheViewport(t *testing.T) {
-	tr, _, _ := mouseFixture(t, 12) // short pane: the tool node overflows it
+	tr, _, _ := mouseFixture(t, 12)
 	tr.follow = false
 	tr.offset = 2
 	tr.render()
 
 	before := tr.offset
-	// The LAST node row on the frame, not literally the bottom row: whether the
-	// bottom row is chrome is a geometry accident, and skipping on it is how a
-	// test quietly stops testing. The property under test is "a click on the
-	// furthest-down node does not scroll".
+	// The last node row, not the bottom row: whether that is chrome is a
+	// geometry accident.
 	row := -1
 	for i := len(tr.frameRefs) - 1; i >= 0; i-- {
 		if tr.frameRefs[i].valid() {
@@ -277,11 +242,7 @@ func TestClickDoesNotMoveTheViewport(t *testing.T) {
 	}
 }
 
-// TestClickResolvesAgainstThePaintedFrame is the anti-staleness test. After a
-// scroll, screen row 0 holds a DIFFERENT node than it did before; a click on it
-// must name the node now painted there. An implementation that cached refs at
-// pager entry, or that recomputed them from a stale offset, passes every other
-// test in this file and fails this one.
+// After a scroll, a click on row 0 must name the node now painted there.
 func TestClickResolvesAgainstThePaintedFrame(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 12)
 	tr.follow = false
@@ -291,10 +252,7 @@ func TestClickResolvesAgainstThePaintedFrame(t *testing.T) {
 
 	tr.scrollBy(6)
 	tr.render()
-	// NOT A SKIP. If the visible refs did not change after a six-line scroll, the
-	// click map is stale: which is precisely the bug this test exists to catch.
-	// Skipping here is how the canary run came back green with frameRefs cached
-	// once at pager entry ("does the fixture still exercise its own path?").
+	// Unchanged refs after a scroll are the bug, not a reason to skip.
 	if sameRefs(firstRefs, tr.frameRefs) {
 		t.Fatalf("frameRefs unchanged after scrolling %d lines: the row->node map is stale\n before %+v\n after  %+v",
 			6, firstRefs, tr.frameRefs)
@@ -330,11 +288,7 @@ func sameRefs(a, b []nodeRef) bool {
 	return true
 }
 
-// TestFrameRefsAlignWithPaintedRows is the invariant the whole gesture rests on:
-// frameRefs[i] describes the same row as the i'th painted body row. It is
-// checked against the row TEXT, so a drift of one (the separator-height bug this
-// arithmetic is most likely to grow) shows up as a node whose ref points at a
-// row that does not contain its content.
+// frameRefs[i] describes the i'th painted body row, checked by text.
 func TestFrameRefsAlignWithPaintedRows(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 30)
 	tr.follow = false
@@ -349,8 +303,6 @@ func TestFrameRefsAlignWithPaintedRows(t *testing.T) {
 	if len(rows) != len(tr.frameRefs) {
 		t.Fatalf("painted %d rows but recorded %d refs", len(rows), len(tr.frameRefs))
 	}
-	// Spot-check the mapping semantically: the row a prose node's ref points at
-	// must contain that node's text.
 	want := map[nodeRef]string{
 		{turn: 1, index: 0}: "first node",
 		{turn: 1, index: 1}: "second node",
@@ -369,15 +321,13 @@ func TestFrameRefsAlignWithPaintedRows(t *testing.T) {
 	}
 }
 
-// TestRowRefsSkipSeparatorsAndGaps pins refAt's arithmetic directly, including
-// the gap sentinel: which has no rows at all and whose entry is exactly where a
-// naive `rel < len(e.rows)` check reads out of a nil slice.
+// The gap sentinel has no rows at all.
 func TestRowRefsSkipSeparatorsAndGaps(t *testing.T) {
 	e := &lineEntry{
 		turn: 3, sep: true, start: 10,
 		rows: []transcriptRow{
-			{text: "header"}, // no ref: chrome
-			{text: "body", ref: nodeRef{turn: 3, index: 0}}, // a node row
+			{text: "header"},
+			{text: "body", ref: nodeRef{turn: 3, index: 0}},
 		},
 	}
 	if got := e.refAt(0); got.valid() {
@@ -402,15 +352,8 @@ func TestRowRefsSkipSeparatorsAndGaps(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The byte level. Everything above drives clickAt directly; these two drive the
-// INPUT LOOP with the bytes a terminal actually sends, because that is the only
-// place two properties are visible: that a report is decoded at all, and that a
-// click acts ONCE despite arriving as two reports.
-// ---------------------------------------------------------------------------
-
-// clickBytes is the pair of SGR reports a real left click produces: press, then
-// release, at 1-based (col, row).
+// Through the input loop with real bytes: decoded at all, and acting once
+// despite arriving as press and release.
 func clickBytes(col, row int, shift bool) []byte {
 	base := 0
 	if shift {
@@ -421,8 +364,6 @@ func clickBytes(col, row int, shift bool) []byte {
 	return []byte(press + release)
 }
 
-// firstToolRow finds a painted row belonging to a tool node with output: the
-// one node kind that currently has a collapsed form to toggle.
 func firstToolRow(t *testing.T, tr *transcript) (int, nodeRef) {
 	t.Helper()
 	for row, ref := range tr.frameRefs {
@@ -437,10 +378,7 @@ func firstToolRow(t *testing.T, tr *transcript) (int, nodeRef) {
 	return -1, nodeRef{}
 }
 
-// TestClickReportsActOncePerClick is the press/release rule. A gesture that
-// fired on both reports would toggle twice per click and so appear never to fire
-// at all: the failure is INVISIBLE to any test that calls clickAt directly,
-// which is exactly why this one goes through the bytes.
+// A gesture firing on both reports toggles twice and appears never to fire.
 func TestClickReportsActOncePerClick(t *testing.T) {
 	out := &countingWriter{}
 	in, lt := coalesceInput(t, out)
@@ -458,7 +396,6 @@ func TestClickReportsActOncePerClick(t *testing.T) {
 		t.Fatal("the FIRST click expanded: selection and expansion collapsed into one gesture")
 	}
 
-	// Second click on the same node: exactly one toggle, not two.
 	tr.render()
 	row, ref2 := firstToolRow(t, tr)
 	if ref2 != ref {
@@ -472,8 +409,6 @@ func TestClickReportsActOncePerClick(t *testing.T) {
 	}
 }
 
-// TestWheelReportsStillScroll guards the gesture that already existed: adding a
-// button case to the mouse switch must not swallow the wheel.
 func TestWheelReportsStillScroll(t *testing.T) {
 	out := &countingWriter{}
 	in, lt := coalesceInput(t, out)

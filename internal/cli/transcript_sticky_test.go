@@ -13,9 +13,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The header is the question's own rows, pinned as they leave the top of the
-// body. These pin the seam: what the header shows must be exactly what the
-// body no longer does, at every position of a scroll through a turn boundary.
+// The header shows exactly what the body no longer does, at every offset.
 
 func stickyPager(t testing.TB, firstTurn, turns, nodes, h int) *transcript {
 	t.Helper()
@@ -40,7 +38,6 @@ func stickyPager(t testing.TB, firstTurn, turns, nodes, h int) *transcript {
 	return tr
 }
 
-// headEntryOf is the entry that starts a turn: the one that draws its question.
 func headEntryOf(tr *transcript, turn int) (*lineEntry, bool) {
 	for k := range tr.index.entries {
 		e := &tr.index.entries[k]
@@ -51,15 +48,12 @@ func headEntryOf(tr *transcript, turn int) (*lineEntry, bool) {
 	return nil, false
 }
 
-// bodyRows is the conversation the frame paints, the header's rows included:
-// the header stands on them rather than pushing them down.
+// The header stands on the body rows rather than pushing them down.
 func bodyRows(tr *transcript) []string {
 	body, _ := tr.layout(len(tr.footLines()))
 	return tr.window(tr.offset, tr.offset+body, nil)
 }
 
-// screenRows is what the reader actually sees: the header, then the
-// conversation from under it down.
 func screenRows(tr *transcript) []string {
 	head, body := headRowsOf(tr), bodyRows(tr)
 	if len(head) > len(body) {
@@ -72,7 +66,6 @@ func headRowsOf(tr *transcript) []string {
 	return tr.stickyLines(tr.activeHighlight(), tr.selectionSpan())
 }
 
-// headTextOf is the header without the rule that closes it, when it has one.
 func headTextOf(tr *transcript) []string {
 	rows := plain(headRowsOf(tr))
 	if n := len(rows); n > 0 && strings.Contains(rows[n-1], "─") {
@@ -89,8 +82,6 @@ func plain(rows []string) []string {
 	return out
 }
 
-// TestSticky_NothingPinnedAtTheHeadOfATurn: with the question on screen there
-// is nothing to stand in for it.
 func TestSticky_NothingPinnedAtTheHeadOfATurn(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 4, 24)
 	tr.offset = 0
@@ -102,8 +93,6 @@ func TestSticky_NothingPinnedAtTheHeadOfATurn(t *testing.T) {
 	}
 }
 
-// TestSticky_PinsTheQuestionOnceItLeavesTheBody is the property the header
-// exists for: inside a turn's answer, its question is still on screen.
 func TestSticky_PinsTheQuestionOnceItLeavesTheBody(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 12, 24)
 	head, ok := headEntryOf(tr, 2)
@@ -111,7 +100,7 @@ func TestSticky_PinsTheQuestionOnceItLeavesTheBody(t *testing.T) {
 		t.Fatal("fixture: turn 2 is not held")
 	}
 	block := len(tr.stickyBlockOf(2).rows)
-	tr.offset = entryRowsStart(head) + block + 2 // inside turn 2's answer
+	tr.offset = entryRowsStart(head) + block + 2
 	tr.buildIndex()
 
 	if turn, above := tr.stickyTurn(); turn != 2 || above != block {
@@ -127,9 +116,6 @@ func TestSticky_PinsTheQuestionOnceItLeavesTheBody(t *testing.T) {
 	}
 }
 
-// TestSticky_HandsRowsBackAcrossATurnBoundary walks one line at a time through
-// a boundary and pins the seam: what the header shows has left the body, the
-// body picks up exactly where the block left off, and nothing stands twice.
 func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 8, 24)
 	head, ok := headEntryOf(tr, 2)
@@ -154,9 +140,8 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 			}
 		}
 		pinned := headTextOf(tr)
-		// Every pinned row is one of the block's own HEAD rows, in order,
-		// which is why the release changes nothing on screen. The first
-		// wears the heading's glyph and the turn's address.
+		// Pinned rows are the block's own head rows, in order; the first wears
+		// the heading glyph and the turn address.
 		for i, row := range pinned {
 			want := strings.TrimRight(stripANSI(q.rows[i].text), " ")
 			if i == 0 {
@@ -171,8 +156,6 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 					tr.offset, row, i, want)
 			}
 		}
-		// Nothing stands twice: the header covers the rows it stands on, so
-		// a pinned row may not ALSO be visible below the header.
 		for _, row := range pinned[min(1, len(pinned)):] {
 			if strings.TrimSpace(row) == "" {
 				continue
@@ -186,9 +169,7 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 	}
 }
 
-// TestSticky_ReleasesAtTheNextQuestion: the header lets go the moment the top
-// row belongs to the next turn. The separator is that turn's own overline, so
-// the release happens there, one pair of rows before its question.
+// The separator is the next turn's own overline, so the release happens there.
 func TestSticky_ReleasesAtTheNextQuestion(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 8, 24)
 	next, ok := headEntryOf(tr, 3)
@@ -197,7 +178,7 @@ func TestSticky_ReleasesAtTheNextQuestion(t *testing.T) {
 	}
 	base := entryRowsStart(next)
 
-	tr.offset = next.start - 1 // the last row of turn 2
+	tr.offset = next.start - 1
 	tr.buildIndex()
 	if turn, above := tr.stickyTurn(); turn != 2 || above == 0 {
 		t.Fatalf("inside turn 2: stickyTurn = (%d, %d), want turn 2 pinned", turn, above)
@@ -211,17 +192,14 @@ func TestSticky_ReleasesAtTheNextQuestion(t *testing.T) {
 	}
 }
 
-// TestSticky_PinsAQuestionWhoseHeadIsNotHeld is the case the pager could not
-// answer before the fold was unified: paging into the middle of a tall turn
-// holds no slice carrying the question, and the header must still name it.
+// Paging into the middle of a tall turn holds no slice carrying the question.
 func TestSticky_PinsAQuestionWhoseHeadIsNotHeld(t *testing.T) {
 	client := aria.NewClient()
 	var nodes []livedoc.Node
 	for n := range 30 {
 		nodes = append(nodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("NODE%d", n)})
 	}
-	// A backward page that opens mid-turn: the wire states the question on
-	// every part of the turn, and only the head slice draws it.
+	// The wire states the question on every part; only the head slice draws it.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{
 		Turn:        aria.Turn{ID: 4, Inquiry: "DEEPQUESTION", Sealed: true, Nodes: nodes[20:]},
 		From:        20,
@@ -251,8 +229,6 @@ func TestSticky_PinsAQuestionWhoseHeadIsNotHeld(t *testing.T) {
 	}
 }
 
-// TestSticky_HeaderIsTheSameComponentAsTheBody: the pinned rows are composed
-// by the path that draws the block inline, so the two cannot drift.
 func TestSticky_HeaderIsTheSameComponentAsTheBody(t *testing.T) {
 	tr := stickyPager(t, 1, 2, 4, 24)
 	head, ok := headEntryOf(tr, 2)
@@ -274,9 +250,6 @@ func TestSticky_HeaderIsTheSameComponentAsTheBody(t *testing.T) {
 	}
 }
 
-// TestSticky_DoesNotShortenTheConversation: the header floats, so the pane
-// holds the same number of conversation rows whether it is up or not, and the
-// geometry cannot change under the reader as they scroll.
 func TestSticky_DoesNotShortenTheConversation(t *testing.T) {
 	tr := stickyPager(t, 1, 4, 6, 24)
 	tr.view.(*ariaView).settings.sticky = false
@@ -302,8 +275,6 @@ func TestSticky_DoesNotShortenTheConversation(t *testing.T) {
 	}
 }
 
-// TestSticky_OffCostsNothing: with the mode off no rows are reserved and none
-// are painted.
 func TestSticky_OffCostsNothing(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 6, 24)
 	on, _ := tr.layout(len(tr.footLines()))
@@ -317,8 +288,6 @@ func TestSticky_OffCostsNothing(t *testing.T) {
 	}
 }
 
-// TestSticky_ClickLandsOnTheNodeUnderThePointer: the header displaces the body,
-// so a screen row addresses a node only after the reservation is accounted for.
 func TestSticky_ClickLandsOnTheNodeUnderThePointer(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 6, 24)
 	tr.offset = 0
@@ -338,8 +307,6 @@ func TestSticky_ClickLandsOnTheNodeUnderThePointer(t *testing.T) {
 	}
 }
 
-// stickyHistory is a wire of tall turns, each with its question: the shape a
-// scroll-up walks back through.
 func stickyHistory(turns, nodes int) []aria.TurnPart {
 	out := make([]aria.TurnPart, 0, turns)
 	for i := range turns {
@@ -355,9 +322,6 @@ func stickyHistory(turns, nodes int) []aria.TurnPart {
 	return out
 }
 
-// TestSticky_FollowsAWalkIntoHistory: paging older turns in and scrolling up
-// through them, the header names the turn the reader is inside at every step,
-// and never a turn whose question is on screen.
 func TestSticky_FollowsAWalkIntoHistory(t *testing.T) {
 	history := stickyHistory(40, 6)
 	client := aria.NewClient()
@@ -384,7 +348,7 @@ func TestSticky_FollowsAWalkIntoHistory(t *testing.T) {
 		tr.buildIndex()
 		turn, above := tr.stickyTurn()
 		if turn == 0 {
-			continue // a hole carries no turn
+			continue
 		}
 		k := tr.index.entryAt(off)
 		if k < 0 || tr.index.entries[k].isGap() {
@@ -393,14 +357,11 @@ func TestSticky_FollowsAWalkIntoHistory(t *testing.T) {
 		if got := tr.index.entries[k].turn; got != turn {
 			t.Fatalf("at offset %d the header names turn %d, the top row belongs to %d", off, turn, got)
 		}
-		// The promise: while the reader is inside a turn, its question is on
-		// SCREEN exactly once. The header covers the body rows it stands on,
-		// so the body may still hold a copy underneath it -- the reader must
-		// not see two.
+		// The body may hold a copy under the header; the reader must see one.
 		want := fmt.Sprintf("QUESTION%d", turn)
 		screen := plain(screenRows(tr))
 		if len(screen) < stickyText {
-			continue // the last rows of the document: no room for a head
+			continue
 		}
 		seen := 0
 		for _, row := range screen {
@@ -415,8 +376,6 @@ func TestSticky_FollowsAWalkIntoHistory(t *testing.T) {
 	}
 }
 
-// richTurn is the shape a real exchange has: an attributed question, the form
-// state that arrived with it, and a tall answer.
 func richTurn(id uint64, nodes int) aria.TurnPart {
 	var ns []livedoc.Node
 	for n := range nodes {
@@ -451,17 +410,13 @@ func richPager(t testing.TB, turns, nodes, h int) *transcript {
 	return tr
 }
 
-// TestSticky_PinsTheQuestionNotTheFormDeltas: the state that arrived with a
-// question is not the question. Scrolled past the block, the header names the
-// exchange.
 func TestSticky_PinsTheQuestionNotTheFormDeltas(t *testing.T) {
 	tr := richPager(t, 3, 8, 24)
 	head, ok := headEntryOf(tr, 2)
 	if !ok {
 		t.Fatal("fixture: turn 2 is not held")
 	}
-	// Open the question's delta list: collapsed it draws no rows at all, so
-	// the header's discipline is only testable with rows there to leave out.
+	// Collapsed, the delta list draws no rows at all.
 	inq := nodeRef{turn: 2, index: inquiryNode}
 	tr.adorned[inq] = true
 	tr.dropTurnsRows(map[int]struct{}{2: {}})
@@ -482,9 +437,6 @@ func TestSticky_PinsTheQuestionNotTheFormDeltas(t *testing.T) {
 	}
 }
 
-// TestSticky_NamesTheTurn: a question pinned out of its place in the
-// conversation carries its address, against the right edge as ^O draws every
-// other one.
 func TestSticky_NamesTheTurn(t *testing.T) {
 	tr := richPager(t, 3, 8, 24)
 	head, _ := headEntryOf(tr, 2)
@@ -505,13 +457,11 @@ func TestSticky_NamesTheTurn(t *testing.T) {
 	}
 }
 
-// TestSticky_LiveTurnDoesNotStandTwice is the defect a shadowing open turn
-// produced: the header counted rows against the turn's first entry while the
-// body was painting its open copy, so the question was drawn in both.
+// A shadowing open turn must not let the header count rows against the
+// turn's first entry while the body paints its open copy.
 func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{richTurn(1, 6)}}, aria.Notify)
-	// Turn 2 opens: its question commits, then its answer streams.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 2, Inquiry: "please commit", InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "please commit"}},
 	}}}}, aria.Notify)
@@ -545,7 +495,6 @@ func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
 	}
 }
 
-// TestSticky_EllipsisMarksAQuestionTooTallToPin.
 func TestSticky_EllipsisMarksAQuestionTooTallToPin(t *testing.T) {
 	client := aria.NewClient()
 	long := strings.TrimSpace(strings.Repeat("a very long question that will wrap across several rows ", 6))
@@ -576,9 +525,6 @@ func TestSticky_EllipsisMarksAQuestionTooTallToPin(t *testing.T) {
 	}
 }
 
-// TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk is the defect a reader
-// sees as two broken paragraphs: the header showed the rows nearest the body,
-// so a tall question was cut at an arbitrary row and continued under the rule.
 func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	client := aria.NewClient()
 	var text []string
@@ -606,7 +552,6 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	}
 	head := strings.TrimRight(stripANSI(q.rows[q.textLo].text), " ")
 
-	// Walk the whole question through the top of the body.
 	shown := 0
 	for above := 1; above <= len(q.rows); above++ {
 		tr.offset = above
@@ -619,7 +564,6 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 		if !strings.HasPrefix(rows[0], "∨ Gluck") || !strings.HasPrefix(rows[1], head[:20]) {
 			t.Fatalf("at offset %d the header shows a middle chunk: got %q, want metadata then %q", tr.offset, rows, head)
 		}
-		// The mark means "this question goes on past what the header holds".
 		taller := q.textLo+len(rows)-1 < q.textHigh
 		if marked := strings.Contains(rows[len(rows)-1], strings.TrimSpace(stickyEllipsis)); marked != taller {
 			t.Fatalf("at offset %d the question is taller=%v but the header marked=%v: %q",
@@ -638,11 +582,7 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	}
 }
 
-// TestSticky_EveryKeystrokeMovesOneRow is the defect a reader feels as a dead
-// keyboard: the header used to give a row back for every row the body gained,
-// so three keystrokes running the block back into place moved nothing at all.
-// The conversation now scrolls underneath it, one row per keystroke, whatever
-// the header is doing.
+// The conversation scrolls under the header, one row per keystroke.
 func TestSticky_EveryKeystrokeMovesOneRow(t *testing.T) {
 	tr := richPager(t, 3, 10, 20)
 	tr.follow = false
@@ -652,7 +592,7 @@ func TestSticky_EveryKeystrokeMovesOneRow(t *testing.T) {
 	held := 0
 	for range tr.index.total - 1 {
 		if tr.offset == 0 {
-			break // the beginning: there is nothing left to move
+			break
 		}
 		before := plain(screenRows(tr))
 		beforeHead := len(headRowsOf(tr))
@@ -668,11 +608,9 @@ func TestSticky_EveryKeystrokeMovesOneRow(t *testing.T) {
 			t.Fatalf("at offset %d a keystroke changed nothing (header held %d rows):\n%s",
 				tr.offset, beforeHead, strings.Join(after, "\n"))
 		}
-		// One row, not two: the screen after is the screen before, shifted.
 		if n := min(len(before), len(after)) - 1; n > 2 &&
 			strings.Join(before[:n-1], "\n") != strings.Join(after[1:n], "\n") {
-			// The header covers what it stands on, so only the rows below it
-			// have to line up.
+			// Only the rows below the header have to line up.
 			h := max(beforeHead, len(headRowsOf(tr)))
 			if h+2 < n && strings.Join(before[h:n-1], "\n") != strings.Join(after[h+1:n], "\n") {
 				t.Fatalf("at offset %d the screen moved by more than a row:\n before %q\n after  %q",
@@ -685,10 +623,6 @@ func TestSticky_EveryKeystrokeMovesOneRow(t *testing.T) {
 	}
 }
 
-// TestSticky_MergesIntoTheBlockWithoutASeam is the shape the header is for:
-// no rule between it and the conversation, and as the reader scrolls back up
-// each real line of the question takes the place of the header line above it,
-// until the block stands whole and the header is gone.
 func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 	tr := richPager(t, 3, 8, 24)
 	head, ok := headEntryOf(tr, 2)
@@ -705,17 +639,13 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 		rows := headTextOf(tr)
 		heights = append(heights, len(rows))
 
-		// The rule closes the header off from the conversation, except while
-		// the block itself is still on screen, where it would cut one question
-		// in two.
+		// No rule while the block itself is still on screen.
 		full := plain(headRowsOf(tr))
 		ruled := len(full) > 0 && strings.Contains(full[len(full)-1], "─")
 		if want := above >= len(q.rows); ruled != want && len(rows) > 0 {
 			t.Fatalf("at %d rows above (block is %d rows) the header ruled=%v, want %v",
 				above, len(q.rows), ruled, want)
 		}
-		// Header then body is the block, in order, with nothing repeated and
-		// nothing but the question's own rows above.
 		var want []transcriptRow
 		if len(rows) > 0 {
 			if !strings.HasPrefix(rows[0], "∨ Gluck") {
@@ -736,7 +666,6 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 			}
 		}
 	}
-	// Walking back up, the header only ever gives rows back.
 	for i := 1; i < len(heights); i++ {
 		if heights[i] > heights[i-1] {
 			t.Fatalf("scrolling up grew the header: %v", heights)
@@ -747,13 +676,8 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 	}
 }
 
-// TestSticky_HeadingIsPinnedFromTheFirstRowScrolled is the bug this shape was
-// cut for. The header used to hold the question's TEXT alone and let go while
-// any of that text was still on screen, so a multi-line question spent its
-// first rows of scroll with its heading -- who asked, the fork it came from,
-// the state that arrived with it -- gone from the pane, and the heading popped
-// back in several keystrokes later. Now the header holds the block's own first
-// two rows, so it can let go the moment nothing of the block is above.
+// The header holds the block's own first two rows, heading included, so it
+// lets go only when nothing of the block is above.
 func TestSticky_HeadingIsPinnedFromTheFirstRowScrolled(t *testing.T) {
 	question := "REMINDER (figla): the baseline rebuild is due now, and this " +
 		"first line is long enough to wrap more than once at sixty columns.\n\n" +

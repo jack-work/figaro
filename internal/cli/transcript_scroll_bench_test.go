@@ -11,27 +11,11 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// ---------------------------------------------------------------------------
-// A realistic "big aria" scroll rig.
-//
-// The pre-existing BenchmarkTranscript* set uses one-line prose messages, which
-// hides the actual complaint: real arias are dominated by tool nodes carrying
-// hundreds of output lines and multi-paragraph prose. Retained pages then hold
-// tens of thousands of physical rows, and every frame re-materializes all of
-// them even though only ~40 are visible.
-//
-// heavyMessages builds a message mix close to a working session:
-//   - assistant prose, several wrapped paragraphs
-//   - a thinking block
-//   - two tool nodes, one with a large captured output
-// ---------------------------------------------------------------------------
+// A big-aria rig: tool nodes with hundreds of output lines and multi-paragraph
+// prose, the shape one-line fixtures hide.
 
-// Every turn in the rig carries the question that provoked it, because every
-// turn in production does. Without one the renderer takes a different branch,
-// no inquiry seam, and since the speaker header closes that seam, no header
-// either, so the rig would measure a shape no reader ever sees, and its
-// rows-per-message (which is the budget the retained window is spent in)
-// would be wrong by two rows per turn.
+// Without a question the renderer draws no inquiry seam and no speaker
+// header, which is two rows per turn off the window budget.
 func heavyInquiry(seed int) string {
 	return fmt.Sprintf("Question %d: what does the transcript do with a heavy turn?", seed)
 }
@@ -63,8 +47,6 @@ func heavyNodes(seed int, outputLines int) []livedoc.Node {
 	}
 }
 
-// heavyTranscript builds a transcript whose retained window is full of large
-// messages, entered and ready to scroll.
 func heavyTranscript(b *testing.B, messages, outputLines int) (*transcript, *aria.Client) {
 	b.Helper()
 	client := aria.NewClient()
@@ -79,10 +61,6 @@ func heavyTranscript(b *testing.B, messages, outputLines int) (*transcript, *ari
 	return tr, client
 }
 
-// BenchmarkTranscriptScrollHeavy is the headline number: one j/k scroll step in
-// a transcript whose retained pages are heavy. Nothing about the content
-// changed: only the viewport offset: so an ideal implementation costs
-// O(viewport), not O(retained rows).
 func BenchmarkTranscriptScrollHeavy(b *testing.B) {
 	for _, outputLines := range []int{20, 200} {
 		b.Run(fmt.Sprintf("out%d", outputLines), func(b *testing.B) {
@@ -101,8 +79,6 @@ func BenchmarkTranscriptScrollHeavy(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptScrollBurst models a mouse-wheel flick: many scroll events
-// arriving back to back. This is what feels laggy in practice.
 func BenchmarkTranscriptScrollBurst(b *testing.B) {
 	tr, _ := heavyTranscript(b, 200, 200)
 	tr.scrollBy(-1)
@@ -118,7 +94,6 @@ func BenchmarkTranscriptScrollBurst(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptRenderHeavy isolates a single frame with no state change.
 func BenchmarkTranscriptRenderHeavy(b *testing.B) {
 	for _, outputLines := range []int{20, 200} {
 		b.Run(fmt.Sprintf("out%d", outputLines), func(b *testing.B) {
@@ -133,7 +108,6 @@ func BenchmarkTranscriptRenderHeavy(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptLinesHeavy isolates the row-materialization pass.
 func BenchmarkTranscriptLinesHeavy(b *testing.B) {
 	tr, _ := heavyTranscript(b, 200, 200)
 	tr.scrollBy(-1)
@@ -144,8 +118,6 @@ func BenchmarkTranscriptLinesHeavy(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptScrollHeavySearch scrolls with an active search
-// highlight, which currently re-highlights every retained row per frame.
 func BenchmarkTranscriptScrollHeavySearch(b *testing.B) {
 	tr, _ := heavyTranscript(b, 200, 200)
 	tr.matchQuery = "transcript"
@@ -161,8 +133,6 @@ func BenchmarkTranscriptScrollHeavySearch(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptHeavyEnter reports steady-state retained bytes rather
-// than per-op cost: enter, scroll a while, and let -benchmem show the churn.
 func BenchmarkTranscriptHeavyEnter(b *testing.B) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)

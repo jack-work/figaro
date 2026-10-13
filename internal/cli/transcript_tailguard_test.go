@@ -9,10 +9,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The window is an INTERVAL into the store now, so "did the pager re-derive
-// its window" is asked of windowRev: the one authority on "the retained
-// window changed", and of the interval's own floor. A live frame must move
-// neither once the window is up to date.
+// A live frame must move neither windowRev nor the interval's floor.
 func transcriptTailRev(tr *transcript) uint64 { return tr.windowRev }
 
 func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
@@ -32,7 +29,7 @@ func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 		t.Fatal("the window has no floor")
 	}
 	for range 20 {
-		tr.render() // live frames: spinner ticks, open-message tokens
+		tr.render()
 	}
 	if got := transcriptTailRev(tr); got != rev {
 		t.Fatalf("live frames rebuilt the window: rev %d -> %d", rev, got)
@@ -41,7 +38,6 @@ func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 		t.Fatalf("live frames moved the window floor: %v -> %v", floor, tr.from)
 	}
 
-	// A newly committed message must still refresh the window.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: uint64(41), Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-041"}},
@@ -56,9 +52,6 @@ func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 	}
 }
 
-// TestTranscriptFollowFrameMatchesRebuild pins that the fast path renders the
-// exact same frame a full rebuild does: the guard is an optimization, not a
-// behaviour change.
 func TestTranscriptFollowFrameMatchesRebuild(t *testing.T) {
 	build := func() *transcript {
 		client := aria.NewClient()
@@ -74,7 +67,7 @@ func TestTranscriptFollowFrameMatchesRebuild(t *testing.T) {
 	slow := build()
 	for range 5 {
 		fast.render()
-		slow.invalidateWindow() // force the pre-optimization behaviour
+		slow.invalidateWindow()
 		slow.render()
 	}
 	want := slow.lines()

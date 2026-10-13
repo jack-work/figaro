@@ -29,8 +29,6 @@ func visualFixture(t *testing.T) (*transcript, *ldrender.FakeTerminal) {
 	return tr, ft
 }
 
-// The first v puts a cursor up and nothing else; motions move it and the
-// mode owns the keyboard. Esc leaves.
 func TestVisual_FirstPressIsACursorWithNoHighlight(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('v')
@@ -47,7 +45,7 @@ func TestVisual_FirstPressIsACursorWithNoHighlight(t *testing.T) {
 	if line1 >= line0 {
 		t.Fatalf("two k did not move the cursor up: %d -> %d", line0, line1)
 	}
-	tr.key('z') // unbound: inert
+	tr.key('z')
 	if tr.mode() != modeVisual {
 		t.Fatal("an unbound letter left visual mode")
 	}
@@ -57,8 +55,6 @@ func TestVisual_FirstPressIsACursorWithNoHighlight(t *testing.T) {
 	}
 }
 
-// The cursor starts on the first row of the node selection when there is
-// one, else on the top row of the bottommost node on screen.
 func TestVisual_CursorSeed(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('v')
@@ -69,7 +65,7 @@ func TestVisual_CursorSeed(t *testing.T) {
 		t.Fatalf("seeded on row %d of the node, want its first", tr.visual.cursor.row)
 	}
 	tr.key(0x1b)
-	tr.key(0x0e) // ^N selects a node
+	tr.key(0x0e)
 	tr.key(0x0e)
 	want := tr.selection.focus.nodeRef
 	tr.key('v')
@@ -81,9 +77,6 @@ func TestVisual_CursorSeed(t *testing.T) {
 	}
 }
 
-// v again anchors a character-wise highlight at the cursor; moving extends
-// it; v a third time drops it and keeps the cursor. V does the same
-// line-wise, and either key switches the kind of a highlight already up.
 func TestVisual_SecondPressAnchorsThirdDrops(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('v')
@@ -114,7 +107,6 @@ func TestVisual_SecondPressAnchorsThirdDrops(t *testing.T) {
 	}
 }
 
-// Motions cross node and message boundaries, stepping over chrome rows.
 func TestVisual_CursorCrossesBoundaries(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('v')
@@ -130,7 +122,6 @@ func TestVisual_CursorCrossesBoundaries(t *testing.T) {
 	if len(seen) < 3 {
 		t.Fatalf("k walked through %d nodes, want the prose, the tool and the question", len(seen))
 	}
-	// And the column clamps to the row it lands on.
 	tr.key('g')
 	tr.key('g')
 	for range 200 {
@@ -143,8 +134,7 @@ func TestVisual_CursorCrossesBoundaries(t *testing.T) {
 	}
 }
 
-// The cursor cell and the wash are painted at decoration time over cached
-// rows, the cursor on top of the wash, and only over the cells they cover.
+// Paint happens at decoration time over cached rows, cursor on top of wash.
 func TestVisual_PaintCursorAndWash(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	t.Setenv("COLORTERM", "truecolor")
@@ -175,8 +165,7 @@ func TestVisual_PaintCursorAndWash(t *testing.T) {
 			rowsWashed++
 		}
 	}
-	// k stepped over the blank between two nodes; a line-wise highlight
-	// washes the blank inside it too, as vim does.
+	// A line-wise highlight washes the blank between nodes too, as vim does.
 	span := tr.visualSpan()
 	if want := span.hiLine - span.loLine + 1; rowsWashed != want || want < 2 {
 		t.Fatalf("line highlight over lines %d..%d washed %d rows", span.loLine, span.hiLine, rowsWashed)
@@ -194,7 +183,6 @@ func TestVisual_PaintCursorAndWash(t *testing.T) {
 	}
 }
 
-// Node selection and visual mode cannot both be active.
 func TestVisual_DropsNodeSelectionAndViceVersa(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key(0x0e)
@@ -207,8 +195,6 @@ func TestVisual_DropsNodeSelectionAndViceVersa(t *testing.T) {
 	}
 }
 
-// ':' with a highlight up opens the command line already holding the range
-// placeholder; with only the cursor it is the plain box.
 func TestVisual_ColonPreloadsTheRangeOnlyWhenHighlighted(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('V')
@@ -236,10 +222,11 @@ func TestWashColumns(t *testing.T) {
 		from, to  int
 	}{
 		{"abcdef", "ab" + bg + "cd" + reset + "ef", 2, 4},
-		{"ab", bg + "ab  " + reset, 0, 4},                                                 // shorter than the range: padded
-		{"a\x1b[1mb\x1b[0mc", bg + "a\x1b[1m" + bg + "b\x1b[0m" + bg + "c" + reset, 0, 3}, // every escape inside re-arms the wash
-		{"abc", "abc", 3, 3},                 // empty range: untouched
-		{"日本", bg + "日" + reset + "本", 0, 2}, // wide runes count two columns
+		{"ab", bg + "ab  " + reset, 0, 4},
+		// every escape inside re-arms the wash
+		{"a\x1b[1mb\x1b[0mc", bg + "a\x1b[1m" + bg + "b\x1b[0m" + bg + "c" + reset, 0, 3},
+		{"abc", "abc", 3, 3},
+		{"日本", bg + "日" + reset + "本", 0, 2},
 	}
 	for _, c := range cases {
 		if got := washColumns(c.row, c.from, c.to); got != c.want {
@@ -265,12 +252,10 @@ func TestSliceColumns(t *testing.T) {
 	}
 }
 
-// y in visual mode copies what is on screen, at once, and leaves the
-// selection up.
 func TestVisual_YankCopiesTheVisibleText(t *testing.T) {
 	p := newInputProbe(t, true)
 	p.in.consume([]byte("V"))
-	p.in.consume([]byte("y")) // a bare cursor: refused, nothing copied
+	p.in.consume([]byte("y"))
 	settleProbe(t, p)
 	if clip, _ := p.tc.clipboard.Load().(string); clip != "" {
 		t.Fatalf("y with no highlight put %q on the clipboard", clip)
@@ -295,8 +280,7 @@ func TestVisual_YankCoordinate(t *testing.T) {
 	p.in.consume([]byte("Y"))
 	settleProbe(t, p)
 	clip, _ := p.tc.clipboard.Load().(string)
-	// The equivalence fixture's nodes carry no Src, so the honest answer is a
-	// refusal in the status row and nothing on the clipboard.
+	// The fixture's nodes carry no Src, so Y must refuse.
 	if clip != "" {
 		t.Fatalf("Y over a node with no coordinate put %q on the clipboard", clip)
 	}
@@ -308,8 +292,6 @@ func TestVisual_YankCoordinate(t *testing.T) {
 	}
 }
 
-// A cursor inside the wash closes its cell by re-arming the wash, so the rest
-// of the row stays highlighted.
 func TestVisual_CursorInsideWashRestoresIt(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	t.Setenv("COLORTERM", "truecolor")
@@ -321,9 +303,7 @@ func TestVisual_CursorInsideWashRestoresIt(t *testing.T) {
 	}
 }
 
-// THE PAINT RESTORES WHAT IT COVERED. Closing a wash or a cursor emitted a
-// bare reset, so a row that was red before the selection began came out of it
-// default-coloured: the reader saw the highlight repaint the line under it.
+// Closing a wash or cursor must restore the row's own rendition, not reset.
 func TestVisual_PaintRestoresTheRowsOwnRendition(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	t.Setenv("COLORTERM", "truecolor")
@@ -340,14 +320,13 @@ func TestVisual_PaintRestoresTheRowsOwnRendition(t *testing.T) {
 	got := cells(washColumns(row, 1, 3))
 	for c := range 6 {
 		if c >= 1 && c < 3 {
-			continue // washed: the background is the point of it
+			continue
 		}
 		if got[c].s.fg != base[c].s.fg {
 			t.Fatalf("col %d outside the wash lost its colour: %q, want %q\n%q",
 				c, got[c].s.fg, base[c].s.fg, washColumns(row, 1, 3))
 		}
 	}
-	// The same for the cursor, which closes with a reset of its own.
 	got = cells(cursorCell(row, 2, "", 0))
 	for c := range 6 {
 		if c == 2 {
@@ -360,12 +339,10 @@ func TestVisual_PaintRestoresTheRowsOwnRendition(t *testing.T) {
 	}
 }
 
-// Enter in visual mode points: the mode ends with the node under the cursor
-// selected, and e then expands it. e itself stays the word-end motion.
 func TestVisual_EnterPointsThenEExpands(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('v')
-	stepTo(t, tr, "one") // the tool's first output row
+	stepTo(t, tr, "one")
 	want := tr.visual.cursor.ref
 	tr.key('e')
 	if !tr.visual.active() {
@@ -384,9 +361,6 @@ func TestVisual_EnterPointsThenEExpands(t *testing.T) {
 	}
 }
 
-// a in visual mode reads what the cursor is on: a highlight's text, else
-// the word under the cursor. An aria id attends; anything else goes to the
-// path hook, and with none armed the reader is told it is not an id.
 func TestVisual_AttendsTheWordUnderTheCursor(t *testing.T) {
 	tr, _ := visualFixture(t)
 	var attended, opened []string
@@ -394,7 +368,7 @@ func TestVisual_AttendsTheWordUnderTheCursor(t *testing.T) {
 	tr.openPath = func(p string) { opened = append(opened, p) }
 	tr.key('v')
 	stepTo(t, tr, "alpha")
-	tr.key('^') // onto the first word; the row's indent is not a word
+	tr.key('^')
 	tr.key('a')
 	if len(attended) != 0 || len(opened) != 1 || opened[0] != "alpha" {
 		t.Fatalf("a on a plain word: attended %v, opened %v", attended, opened)
@@ -406,7 +380,6 @@ func TestVisual_AttendsTheWordUnderTheCursor(t *testing.T) {
 	}
 }
 
-// n from the transcript lands the block cursor on the hit.
 func TestVisual_RepeatSearchLandsTheCursor(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.matchQuery = "hotel"

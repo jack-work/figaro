@@ -12,7 +12,6 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// inquiryHistory is one turn whose question opens it and whose nodes follow.
 func inquiryHistory() []aria.TurnPart {
 	return []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Inquiry: "what did you find?", Sealed: true, Nodes: []livedoc.Node{
@@ -22,13 +21,10 @@ func inquiryHistory() []aria.TurnPart {
 	}}}
 }
 
-// The question was a NODE once, and selectable for it. Made text on the turn,
-// it kept its rows but lost its ref: so Ctrl-N walked straight past it and y
-// could not copy it. It has one again (inquiryNode), and this pins the three
-// things a ref buys: the walk stops on it, the rows carry the selection cue,
-// and the copy path yields the question itself.
+// The question has a ref (inquiryNode): the walk stops on it, its rows carry
+// the cue, and the copy path yields it.
 func TestTranscriptInquiryIsSelectableAndCopyable(t *testing.T) {
-	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
+	defer term.SetColorMode(term.ColorAlways)()
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
 	history := inquiryHistory()
@@ -36,7 +32,7 @@ func TestTranscriptInquiryIsSelectableAndCopyable(t *testing.T) {
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 
-	tr.key(0x0e) // Ctrl-N: the first selectable point of the turn
+	tr.key(0x0e)
 	want := nodeRef{turn: 1, index: inquiryNode}
 	if !tr.selection.active || tr.selection.focus.nodeRef != want {
 		t.Fatalf("first selection = %+v, want the inquiry %+v", tr.selection, want)
@@ -53,23 +49,18 @@ func TestTranscriptInquiryIsSelectableAndCopyable(t *testing.T) {
 		t.Fatalf("copied inquiry = %q, %v", text, err)
 	}
 
-	// And it is ordered ahead of the turn's nodes, which is where it is drawn.
 	tr.selectNode(1, true)
 	if got, err := selectedTextForTest(tr, history); err != nil ||
 		got != "what did you find?\n\nfirst node" {
 		t.Fatalf("extended selection = %q, %v", got, err)
 	}
-	// The sentinel cannot collide with a node: node indices are From+i >= 0.
 	if inquiryNode >= 0 {
 		t.Fatalf("inquiryNode = %d must be negative to stay out of node space", inquiryNode)
 	}
 }
 
-// A turn too big for one page reaches the pager as slices, and the oldest one
-// retained can start MID-TURN. The backward fetch is anchored on (turn, node)
-// for exactly that case: anchored on the turn alone it asks for what precedes
-// the WHOLE turn, so the head slice: the only one carrying the question: is
-// behind a cursor no scroll can reach, and the question is gone for good.
+// The oldest retained slice can start mid-turn, so the backward fetch is
+// anchored on (turn, node) or the head slice is behind a cursor no scroll reaches.
 func TestTranscriptOlderFetchAnchorsOnTheNode(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
@@ -80,7 +71,7 @@ func TestTranscriptOlderFetchAnchorsOnTheNode(t *testing.T) {
 		From:        2,
 		ClippedHead: true,
 	}}}, aria.Notify)
-	client.SetMoreBefore(true) // the wire: the clipped head is still out there
+	client.SetMoreBefore(true)
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.follow = false
@@ -96,9 +87,7 @@ func TestTranscriptOlderFetchAnchorsOnTheNode(t *testing.T) {
 	}
 }
 
-// The same rule at the very first turn: a window holding only the tail of turn
-// 1 still has history to fetch (turn 1's own head), so the "nothing older"
-// latch must not fire on the turn id alone.
+// A window holding only the tail of turn 1 still has turn 1's head to fetch.
 func TestTranscriptFirstTurnClippedStillPagesOlder(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
@@ -109,7 +98,7 @@ func TestTranscriptFirstTurnClippedStillPagesOlder(t *testing.T) {
 		From:        3,
 		ClippedHead: true,
 	}}}, aria.Notify)
-	client.SetMoreBefore(true) // the wire: turn 1's own head is still out there
+	client.SetMoreBefore(true)
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.follow = false
@@ -124,25 +113,18 @@ func TestTranscriptFirstTurnClippedStillPagesOlder(t *testing.T) {
 	}
 }
 
-// When the head slice finally lands, it lands ABOVE a tail slice of the SAME
-// turn that the reader is already looking at. The viewport anchor therefore has
-// to name the SLICE: named by turn alone it restores to the first line of the
-// turn, which snaps the reader to the top of the block they were inside: the
-// jump that a 'k' promotion into a clipped turn produced.
+// A head slice lands above a tail slice of the same turn the reader is in,
+// so the viewport anchor must name the slice, not the turn.
 func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
-	// A viewport far shorter than the window, or the offset is clamped and the
-	// anchor never gets a chance to be wrong.
+	// A viewport shorter than the window, or the offset is clamped.
 	ft := ldrender.NewFakeTerminal(80, 10)
 	client := aria.NewClient()
 	var tail, headNodes []livedoc.Node
 	for i := range 4 {
 		tail = append(tail, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("tail node %d", i)})
 	}
-	// The head slice is the turn's nodes 0 and 1: exactly what the tail slice
-	// (From: 2) does not hold. It used to be four nodes, overlapping the tail;
-	// the pager simply prepended a page, so nobody noticed. The store does: it
-	// clips a merged run to its novel part, which is the coverage invariant
-	// doing its job, and the fixture was the thing that was wrong.
+	// The head slice must not overlap the tail: the store clips a merged run
+	// to its novel part.
 	for i := range 2 {
 		headNodes = append(headNodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("head node %d", i)})
 	}
@@ -166,10 +148,6 @@ func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
 	}
 	tr.applyPage(transcriptPageRequest{at: aria.Anchor{Turn: 5, Node: 2}}, head)
 
-	// The landing shifts the tail slice down by the separator it now needs;
-	// what must NOT happen is the viewport ending up ABOVE the newly prepended
-	// head, which is what a turn-granular anchor does: it restores to the
-	// turn's first line, i.e. the top of the block the reader was inside.
 	lines := tr.lines()
 	lastHead := -1
 	for i, l := range lines {
