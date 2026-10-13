@@ -383,7 +383,7 @@ func richTurn(id uint64, nodes int) aria.TurnPart {
 	}
 	return aria.TurnPart{Turn: aria.Turn{
 		ID: id, Inquiry: fmt.Sprintf("please commit %d", id), Sealed: true,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: fmt.Sprintf("please commit %d", id)}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: fmt.Sprintf("please commit %d", id)}},
 		FormDeltas: map[string]livedoc.FormDelta{
 			"@f.datetime": {
 				Value: json.RawMessage(`"Tuesday, September 8, 2026"`),
@@ -452,7 +452,7 @@ func TestSticky_NamesTheTurn(t *testing.T) {
 	if !strings.HasSuffix(rows[0], "2 Δ") {
 		t.Fatalf("the pinned question does not carry its turn at the right edge:\n%s", strings.Join(rows, "\n"))
 	}
-	if strings.Contains(rows[0], "2 Gluck") {
+	if strings.Contains(rows[0], "2 Duke") {
 		t.Fatalf("the address was written into the attribution instead of the edge: %q", rows[0])
 	}
 }
@@ -463,7 +463,7 @@ func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{richTurn(1, 6)}}, aria.Notify)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
-		ID: 2, Inquiry: "please commit", InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "please commit"}},
+		ID: 2, Inquiry: "please commit", InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "please commit"}},
 	}}}}, aria.Notify)
 	for i := range 8 {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 2, Live: &aria.Live{
@@ -500,7 +500,7 @@ func TestSticky_EllipsisMarksAQuestionTooTallToPin(t *testing.T) {
 	long := strings.TrimSpace(strings.Repeat("a very long question that will wrap across several rows ", 6))
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Inquiry: long, Sealed: true,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: long}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: long}},
 		Nodes: []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: "NODE1-0"},
 			{Type: livedoc.NodeProse, Markdown: "NODE1-1"},
@@ -534,7 +534,7 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	long := strings.Join(text, " ")
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 6, Inquiry: long, Sealed: true,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: long}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: long}},
 		Nodes: []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: "ANSWER-0"},
 			{Type: livedoc.NodeProse, Markdown: "ANSWER-1"},
@@ -561,7 +561,7 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 			continue
 		}
 		shown++
-		if !strings.HasPrefix(rows[0], "∨ Gluck") || !strings.HasPrefix(rows[1], head[:20]) {
+		if !strings.HasPrefix(rows[0], "∨ Duke") || !strings.HasPrefix(rows[1], head[:20]) {
 			t.Fatalf("at offset %d the header shows a middle chunk: got %q, want metadata then %q", tr.offset, rows, head)
 		}
 		taller := q.textLo+len(rows)-1 < q.textHigh
@@ -648,7 +648,7 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 		}
 		var want []transcriptRow
 		if len(rows) > 0 {
-			if !strings.HasPrefix(rows[0], "∨ Gluck") {
+			if !strings.HasPrefix(rows[0], "∨ Duke") {
 				t.Fatalf("missing sticky metadata: %q", rows[0])
 			}
 			want = q.rows[q.textLo : q.textLo+len(rows)-1]
@@ -689,7 +689,7 @@ func TestSticky_HeadingIsPinnedFromTheFirstRowScrolled(t *testing.T) {
 	}
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: question, Nodes: nodes,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: question}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: question}},
 	}}}}, aria.Notify)
 	view := &ariaView{settings: &renderSettings{sticky: true}}
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, view, client, "aria1234", time.Time{})
@@ -706,7 +706,7 @@ func TestSticky_HeadingIsPinnedFromTheFirstRowScrolled(t *testing.T) {
 		tr.offset = above
 		tr.buildIndex()
 		screen := plain(screenRows(tr))
-		if !strings.Contains(screen[0], "Gluck") {
+		if !strings.Contains(screen[0], "Duke") {
 			t.Fatalf("%d rows scrolled: the heading is gone:\n%s", above, strings.Join(screen[:3], "\n"))
 		}
 		if got := strings.TrimRight(strings.TrimSuffix(screen[1], ".."), " "); !strings.HasPrefix(first, got) {

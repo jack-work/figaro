@@ -15,13 +15,13 @@ func TestGutterJunctionPTY(t *testing.T) {
 	t.Run("thinking-delta", func(t *testing.T) {
 		p := newAdornPaneFor(t, aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: 1, Sealed: true, Inquiry: "what should happen here?",
-			InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "what should happen here?"}},
+			InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "what should happen here?"}},
 			FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mode", "", "testing"),
 			Nodes:           []livedoc.Node{gutterThinking()},
 		}}}}, "Then check the tests")
 		rows := p.rows()
-		heading := p.only(t, rows, "Gluck")
-		if !strings.HasPrefix(rows[heading], "> Gluck ⑂ e87bb154") || !strings.HasSuffix(rows[heading], "Δ") {
+		heading := p.only(t, rows, "Duke")
+		if !strings.HasPrefix(rows[heading], "> Duke ⑂ e87bb154") || !strings.HasSuffix(rows[heading], "Δ") {
 			t.Fatalf("inquiry heading lost metadata: %s", p.dump())
 		}
 		p.key("C-n")
@@ -67,7 +67,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 			Markdown: strings.Repeat("The gutter should meet the rule above it.\n\n", 40) + "GUTTERLAST"}
 		p := newAdornPaneFor(t, aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: 1, Sealed: true, Inquiry: "keep the question above the scrolling text",
-			InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "keep the question above the scrolling text"}},
+			InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "keep the question above the scrolling text"}},
 			FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mode", "", "testing"),
 			Nodes:           []livedoc.Node{n},
 		}}}}, "GUTTERLAST")
@@ -79,7 +79,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 		check := func() {
 			t.Helper()
 			rows := p.rows()
-			if !strings.HasPrefix(rows[0], "∨ Gluck ⑂ e87bb154") || !strings.HasSuffix(rows[0], "1 Δ") || !strings.Contains(rows[1], "keep the question") {
+			if !strings.HasPrefix(rows[0], "∨ Duke ⑂ e87bb154") || !strings.HasSuffix(rows[0], "1 Δ") || !strings.Contains(rows[1], "keep the question") {
 				t.Fatalf("fixture has no pinned question: %s", p.dump())
 			}
 			if !strings.HasPrefix(rows[2], "──┬─") || !strings.HasPrefix(rows[3], "  │") {
@@ -112,7 +112,7 @@ func TestFencedDiffAndFloorJunctionPTY(t *testing.T) {
 	diff := "$ git diff retry.py\n```diff\n--- a/retry.py\n+++ b/retry.py\n@@ -1,2 +1,2 @@\n-    for i in range(retries):\n+    for i in range(retries + 1):\n```\n1 file changed"
 	p := newAdornPaneFor(t, aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: "what changed?",
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "what changed?"}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "what changed?"}},
 		Nodes: []livedoc.Node{
 			{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 				Args: map[string]any{"command": "git diff retry.py"}, Output: diff},

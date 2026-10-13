@@ -72,8 +72,7 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 	if len(sawStudyOn) == 0 {
 		t.Fatal("THE STUDY CHANGE WAS LOST: the contentless record consumed the window " +
 			"at version 7 and wrote no row, so the prompt that followed carried nothing. " +
-			"This is the shape of Gluck's vanished role-purpose, and the cure is that a " +
-			"cursor advances only when a row is written.")
+			"A cursor advances only when a row is written.")
 	}
 }
 
@@ -124,7 +123,7 @@ func TestTheDeltaSpansEveryUntranslatedMessageBetween(t *testing.T) {
 	got := m.StudyPatches[fid]
 	if len(got) != 9 {
 		t.Fatalf("the delta spans %d patches, want 9 -- libretto 6 to 15, across "+
-			"both untranslated messages. Gluck's example is the specification.", len(got))
+			"both untranslated messages.", len(got))
 	}
 	if at := m.StudyAt[fid]; at != 15 {
 		t.Fatalf("the block names libretto version %d, want 15", at)

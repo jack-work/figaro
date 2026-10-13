@@ -11,7 +11,7 @@ import (
 
 func TestInquiryHeadingNamesTheSender(t *testing.T) {
 	for _, tc := range []struct{ sender, heading string }{
-		{"Gluck", "> Gluck"},
+		{"Duke", "> Duke"},
 		{"", "> input"},
 	} {
 		t.Run(tc.heading, func(t *testing.T) {
@@ -35,7 +35,7 @@ func TestStickyHeadingKeepsSenderForkTurnAndDelta(t *testing.T) {
 	tr := gutterPager(t, livedoc.Node{Type: livedoc.NodeThinking,
 		Markdown: strings.Repeat("Thinking below the question.\n\n", 20)})
 	m := aria.Turn{ID: 1, Inquiry: "what should happen here?", Sealed: true,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "what should happen here?"}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "what should happen here?"}},
 		FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mantra", "", "test the heading"),
 		Nodes:           []livedoc.Node{{Type: livedoc.NodeThinking, Markdown: strings.Repeat("Thinking below the question.\n\n", 20)}},
 	}
@@ -52,7 +52,7 @@ func TestStickyHeadingKeepsSenderForkTurnAndDelta(t *testing.T) {
 			t.Fatalf("width %d: want metadata, text, rule; got %q", width, rows)
 		}
 		header := stripANSI(rows[0])
-		if !strings.HasPrefix(header, "∨ Gluck ⑂ e87bb154") || !strings.HasSuffix(header, "1 Δ") {
+		if !strings.HasPrefix(header, "∨ Duke ⑂ e87bb154") || !strings.HasSuffix(header, "1 Δ") {
 			t.Fatalf("width %d: sticky metadata incomplete: %q", width, header)
 		}
 		for _, row := range rows {

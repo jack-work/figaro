@@ -35,7 +35,7 @@ func main() {
 		sink     = flag.String("sink", "", "sink symbol substring, e.g. json.Marshal")
 		algo     = flag.String("algo", "vta", "vta|cha")
 		maxPaths = flag.Int("max", 40, "maximum paths to print (path mode)")
-		treeMode = flag.Bool("tree", false, "emit an ORDERED, INDENTED CALL TREE from -entry (Gluck's form) instead of paths")
+		treeMode = flag.Bool("tree", false, "emit an ORDERED, INDENTED CALL TREE from -entry instead of paths")
 		treeDep  = flag.Int("treedepth", 12, "maximum tree depth")
 		deep     = flag.Bool("deep", false, "walk INTO dependencies and the runtime; without it, frames outside the main module are cut and marked OPAQUE")
 		modPath  = flag.String("in", "github.com/jack-work/figaro,github.com/jack-work/figwal", "comma-separated package prefixes considered INSIDE the walk; everything else is cut and marked OPAQUE unless -deep")
@@ -74,19 +74,15 @@ func main() {
 	fmt.Printf("## callpath\n")
 	fmt.Printf("# ALGORITHM: %s   (vta = value-flow narrowed; cha = every implementation of the interface method)\n", strings.ToUpper(*algo))
 	fmt.Printf("# PRECISION: an edge at an INVOKE site is a CANDIDATE SET, not a static fact. Marked DISPATCH below.\n")
-	// THE SHAPE OF THE QUESTION IS NOT THE SHAPE OF A CALLGRAPH. 6ec565b5's
-	// correction, and it belongs in the header where every reader meets it
-	// rather than in three separate heads.
-	fmt.Printf("# THIS TOOL ANSWERS CALL PATHS. GLUCK ASKED FOR A DATA PATH. They coincide\n")
+	fmt.Printf("# THIS TOOL ANSWERS CALL PATHS, NOT DATA PATHS. The two coincide\n")
 	fmt.Printf("# only where bytes move by call and return. AN ABSENT PATH MAY MEAN THE BYTES\n")
 	fmt.Printf("# CROSSED BY VALUE RATHER THAN BY CALL -- a Log RETURNED by Open and invoked\n")
 	fmt.Printf("# later from another stack has NO call path from Open, and is not unrelated.\n")
 	fmt.Printf("# So: an empty result means ONE of -- no call path; the bytes crossed by value;\n")
 	fmt.Printf("# or the symbol is outside the cut. It NEVER means the two are unconnected.\n")
-	// THE CUT, printed because a callgraph over ./internal/... and one over
+	// The cut is printed because a callgraph over ./internal/... and one over
 	// ./... answer different questions, and a path that leaves through cmd/ or
-	// through a TEST-ONLY implementation looks identical in the output
-	// otherwise. 6ec565b5 asked for this unprompted and is right.
+	// through a test-only implementation looks identical in the output otherwise.
 	fmt.Printf("# THE CUT: pattern %q, tests=%v, packages loaded=%d, load errors=%d\n", *pkgPat, cfg.Tests, len(pkgs), nerr)
 	var loaded []string
 	for _, p := range pkgs {
@@ -252,7 +248,7 @@ var (
 // conditional says whether a call site is reached on SOME paths through its
 // caller rather than on all of them -- derived from the SSA CFG, not guessed.
 //
-// 6ec565b5's requirement, and it is a correctness matter rather than a nicety:
+// A correctness matter rather than a nicety:
 // segment.ReadIndex returns a resident payload on a HIT and only reaches
 // codec.ReadFrame -> os.File.ReadAt -> pread on a MISS. A tree printing the
 // syscall as the unconditional bottom ASSERTS A SYSCALL THAT MOST READS NEVER
@@ -400,9 +396,8 @@ func printPath(prog *ssa.Program, path []*callgraph.Edge, n int, wantLogs bool) 
 	}
 }
 
-// logCalls lists log/slog statements inside a function, because Gluck asked for
-// them and because tonight one slog.Warn was a THIRD of a benchmark and another
-// made a fixture unparseable by landing on the result line.
+// logCalls lists log/slog statements inside a function: one slog.Warn can be a
+// third of a benchmark, or land on the result line and make a fixture unparseable.
 func logCalls(fn *ssa.Function) []string {
 	var out []string
 	if fn == nil || fn.Blocks == nil {

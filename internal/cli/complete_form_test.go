@@ -155,7 +155,7 @@ func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 	fakeRPCServer(t, ariaSock, map[string]jkrpc.HandlerFunc{
 		rpc.MethodForm: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 			var snap form.Snapshot
-			if err := json.Unmarshal([]byte(`{"skills.foo":"bar","duke-title":"Gluck"}`), &snap); err != nil {
+			if err := json.Unmarshal([]byte(`{"skills.foo":"bar","duke-title":"Duke"}`), &snap); err != nil {
 				return nil, err
 			}
 			return rpc.FormResponse{Snapshot: snap, Version: 1}, nil

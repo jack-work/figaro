@@ -8,7 +8,7 @@ import (
 // A quote block is a heading naming the passage, then the passage under a
 // gutter:
 //
-//	> quoting <412.0:23-1180>! · aria 7e151902 · turn 9 · 1157 chars
+//	> quoting <412.0:23-1180>! · aria aaaaaaaa · turn 9 · 1157 chars
 //	> Ecco fatto. The barber works in three strokes, …
 //
 // Heading writes the first line and Mentioned reads it back.

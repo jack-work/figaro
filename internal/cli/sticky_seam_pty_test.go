@@ -23,7 +23,7 @@ func TestStickySeamPTY(t *testing.T) {
 		Markdown: strings.Repeat("The answer runs on below the question.\n\n", 40) + "ANSWERLAST"}
 	p := newAdornPaneFor(t, aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: question,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: question}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: question}},
 		Nodes:           []livedoc.Node{n},
 	}}}}, "ANSWERLAST")
 	p.key("C-n")
@@ -32,7 +32,7 @@ func TestStickySeamPTY(t *testing.T) {
 	p.key("g")
 
 	top := p.rows()
-	if !strings.HasPrefix(top[0], "> Gluck") || !strings.Contains(top[1], "REMINDER (figla)") {
+	if !strings.HasPrefix(top[0], "> Duke") || !strings.Contains(top[1], "REMINDER (figla)") {
 		t.Fatalf("the question does not open the turn: %s", p.dump())
 	}
 	want := strings.TrimRight(top[1], " ")
@@ -40,7 +40,7 @@ func TestStickySeamPTY(t *testing.T) {
 	for step := 1; step <= 6; step++ {
 		p.key("j")
 		rows := p.rows()
-		if !strings.HasPrefix(rows[0], "∨ Gluck") {
+		if !strings.HasPrefix(rows[0], "∨ Duke") {
 			t.Fatalf("%d rows scrolled: the heading left the pane: %s", step, p.dump())
 		}
 		got := strings.TrimRight(strings.TrimSuffix(strings.TrimRight(rows[1], " "), ".."), " ")

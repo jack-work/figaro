@@ -30,7 +30,7 @@ func gutterPagerOn(t testing.TB, n livedoc.Node) (*transcript, *ldrender.FakeTer
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: "what should happen here?",
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "what should happen here?"}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "what should happen here?"}},
 		Nodes:           []livedoc.Node{n},
 	}}}}, aria.Notify)
 	view := &ariaView{settings: &renderSettings{sticky: true}}
@@ -263,7 +263,7 @@ func quotedPager(t testing.TB, lines int) *transcript {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: quote,
-		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: quote}},
+		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: quote}},
 		Nodes: []livedoc.Node{
 			{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 				Args:   map[string]any{"command": "grep -rn federate ."},
