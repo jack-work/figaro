@@ -154,42 +154,8 @@ func runForm(loaded *config.Loaded, ariaID string) {
 		}
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(nestSnapshot(resp.Snapshot))
+		return enc.Encode(resp.Snapshot)
 	})
-}
-
-// Flat is how the form is stored, not what it is.
-func nestSnapshot(snap form.Snapshot) map[string]any {
-	root := map[string]any{}
-	for k, v := range snap.All() {
-		segments := strings.Split(k, ".")
-		node := root
-		ok := true
-		for _, seg := range segments[:len(segments)-1] {
-			child, seen := node[seg]
-			if !seen {
-				child = map[string]any{}
-				node[seg] = child
-			}
-			branch, isBranch := child.(map[string]any)
-			if !isBranch {
-				ok = false
-				break
-			}
-			node = branch
-		}
-		if !ok {
-			root[k] = json.RawMessage(v)
-			continue
-		}
-		leaf := segments[len(segments)-1]
-		if _, taken := node[leaf].(map[string]any); taken {
-			root[k] = json.RawMessage(v)
-			continue
-		}
-		node[leaf] = json.RawMessage(v)
-	}
-	return root
 }
 
 func parseFormPath(s string) (string, []string, error) {

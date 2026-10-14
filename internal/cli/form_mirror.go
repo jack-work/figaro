@@ -78,48 +78,36 @@ type formNode struct {
 
 func (n *formNode) leaf() bool { return len(n.children) == 0 }
 
-// A key whose prefix is already a leaf keeps its dotted name, as in `fig state`.
 func buildFormTree(snap form.Snapshot) *formNode {
 	root := &formNode{path: "", label: "form"}
-	index := map[string]*formNode{"": root}
-	for key, raw := range snap.All() {
-		segments := strings.Split(key, ".")
-		parent, prefix, ok := root, "", true
-		for _, seg := range segments[:len(segments)-1] {
-			if prefix == "" {
-				prefix = seg
-			} else {
-				prefix += "." + seg
-			}
-			child, seen := index[prefix]
-			if seen && child.leaf() && child.value != nil {
-				ok = false
-				break
-			}
-			if !seen {
-				child = &formNode{path: prefix, label: seg, depth: parent.depth + 1}
-				index[prefix] = child
-				parent.children = append(parent.children, child)
-			}
-			parent = child
-		}
-		if !ok {
-			root.children = append(root.children,
-				&formNode{path: key, label: key, value: raw, depth: 1})
-			continue
-		}
-		leafLabel := segments[len(segments)-1]
-		if existing, seen := index[key]; seen && !existing.leaf() {
-			root.children = append(root.children,
-				&formNode{path: key, label: key, value: raw, depth: 1})
-			continue
-		}
-		node := &formNode{path: key, label: leafLabel, value: raw, depth: parent.depth + 1}
-		index[key] = node
-		parent.children = append(parent.children, node)
+	raw, err := snap.MarshalJSON()
+	if err != nil {
+		return root
 	}
+	addFormChildren(root, raw)
 	sortFormTree(root)
 	return root
+}
+
+func addFormChildren(parent *formNode, raw json.RawMessage) {
+	var members map[string]json.RawMessage
+	if json.Unmarshal(raw, &members) != nil {
+		return
+	}
+	for key, value := range members {
+		path := key
+		if parent.path != "" {
+			path = parent.path + "." + key
+		}
+		n := &formNode{path: path, label: key, depth: parent.depth + 1}
+		var inner map[string]json.RawMessage
+		if json.Unmarshal(value, &inner) == nil && len(inner) > 0 {
+			addFormChildren(n, value)
+		} else {
+			n.value = value
+		}
+		parent.children = append(parent.children, n)
+	}
 }
 
 func sortFormTree(n *formNode) {

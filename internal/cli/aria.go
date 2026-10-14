@@ -332,7 +332,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 	fmt.Fprintln(stdout)
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(nestSnapshot(snap))
+	_ = enc.Encode(snap)
 }
 
 func printTransitions(w io.Writer, entries []irEntry) {
