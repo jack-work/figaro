@@ -82,9 +82,6 @@ type SetRequest struct {
 	IfVersion uint64 `json:"if_version,omitempty"`
 	// Assert makes a removal of an absent key a refusal rather than a no-op.
 	Assert bool `json:"assert,omitempty"`
-	// Wait asks a live aria for the writer's verdict; it blocks until the
-	// next round boundary. A dormant aria is always synchronous.
-	Wait bool `json:"wait,omitempty"`
 }
 
 type SetResponse struct {

@@ -129,12 +129,6 @@ func (c *Aria) SetAsserting(ctx context.Context, patch rpc.FormPatch, ifVersion 
 	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: true})
 }
 
-// SetWaiting returns the writer's verdict rather than a queued ack; it blocks
-// until the next round boundary, bounded only by ctx.
-func (c *Aria) SetWaiting(ctx context.Context, patch rpc.FormPatch, ifVersion uint64, assert bool) (*rpc.SetResponse, error) {
-	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: assert, Wait: true})
-}
-
 func (c *Aria) setWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
 	if err := c.call(ctx, rpc.MethodSet, req, &resp); err != nil {

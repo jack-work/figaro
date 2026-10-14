@@ -120,7 +120,6 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// A bound form has its own actor; nothing is queued and req.Wait names nothing.
 		version, applied, err := a.SetAwaiting(ctx, req.Patch, req.IfVersion, req.Assert)
 		if err != nil {
 			// A patch may name layers, so a set can fail with a closure the caller can draw.

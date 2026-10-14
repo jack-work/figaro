@@ -14,10 +14,6 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// setWait is `--wait`: the writer's verdict instead of the queued
-// acknowledgement. Set once by the flag before any entry point runs.
-var setWait bool
-
 func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 	value := json.RawMessage(raw)
@@ -400,22 +396,11 @@ func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVe
 func callSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64, assert bool) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		// An aria mid-turn answers when the round ends, so --wait's
-		// timeout is longer.
-		timeout := 10 * time.Second
-		if setWait {
-			timeout = 5 * time.Minute
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		set := s.Figaro.Set
 		if assert {
 			set = s.Figaro.SetAsserting
-		}
-		if setWait {
-			set = func(ctx context.Context, p rpc.FormPatch, v uint64) (*rpc.SetResponse, error) {
-				return s.Figaro.SetWaiting(ctx, p, v, assert)
-			}
 		}
 		resp, err := set(ctx, patch, ifVersion)
 		if err != nil {
