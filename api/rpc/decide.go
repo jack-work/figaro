@@ -4,6 +4,7 @@ type DecideRequest struct {
 	FigaroID string   `json:"figaro_id,omitempty"`
 	Question string   `json:"question"`
 	Choices  []string `json:"choices,omitempty"`
+	Provider string   `json:"provider,omitempty"`
 	Model    string   `json:"model,omitempty"`
 	API      string   `json:"api,omitempty"`
 	Context  string   `json:"context,omitempty"`
@@ -33,6 +34,7 @@ type DecideWindow struct {
 }
 
 type DecideResponse struct {
+	Provider   string       `json:"provider"`
 	Model      string       `json:"model"`
 	API        string       `json:"api"`
 	Kind       DecideKind   `json:"kind"`

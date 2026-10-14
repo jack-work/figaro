@@ -18,8 +18,10 @@ import (
 )
 
 const (
+	ProviderKey   = "system.decide.provider"
 	ModelKey      = "system.decide.model"
 	APIKey        = "system.decide.api"
+	BaseURLKey    = "system.decide.base_url"
 	StateLimit    = systemOneLimit
 	usableShare   = 9
 	usableOf      = 10
@@ -33,29 +35,51 @@ const (
 )
 
 type Source struct {
-	Log     store.Log[message.Message]
-	Board   form.Snapshot
-	Context string
+	Log      store.Log[message.Message]
+	Board    form.Snapshot
+	Defaults form.Snapshot
+	Context  string
 }
+
+type Target struct {
+	BaseURL string
+	Auth    auth.TokenResolver
+}
+
+type Targets func(provider string) (Target, error)
 
 type Engine struct {
-	settings    func() (Settings, error)
-	credentials Credentials
+	targets Targets
 }
 
-type Credentials func(Settings) (auth.TokenResolver, error)
+func New(targets Targets) *Engine { return &Engine{targets: targets} }
 
-func New(settings func() (Settings, error), credentials Credentials) *Engine {
-	return &Engine{settings: settings, credentials: credentials}
+type settings struct {
+	provider, model, api, baseURL string
 }
 
-func Fixed(baseURL, model string) func() (Settings, error) {
-	return func() (Settings, error) {
-		if model == "" {
-			model = DefaultModel
-		}
-		return Settings{BaseURL: baseURL, Model: model}, nil
+func (src Source) settings(req rpc.DecideRequest) (settings, error) {
+	pick := func(asked, key string) string {
+		return firstOf(asked, boardString(src.Board, key), boardString(src.Defaults, key))
 	}
+	s := settings{
+		provider: pick(req.Provider, ProviderKey),
+		model:    pick(req.Model, ModelKey),
+		api:      pick(req.API, APIKey),
+		baseURL:  pick("", BaseURLKey),
+	}
+	var missing []string
+	if s.provider == "" {
+		missing = append(missing, "provider")
+	}
+	if s.model == "" {
+		missing = append(missing, "model")
+	}
+	if len(missing) > 0 {
+		return s, fmt.Errorf("no decision %s: set them under [system.decide] in an outfit (core.toml reaches every aria), or pass --provider and -m",
+			strings.Join(missing, " or "))
+	}
+	return s, nil
 }
 
 type plan struct {
@@ -112,12 +136,11 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if err != nil {
 		return out, err
 	}
-	settings, err := e.settings()
+	set, err := src.settings(req)
 	if err != nil {
 		return out, err
 	}
-	model := firstOf(req.Model, boardString(src.Board, ModelKey), settings.Model)
-	api := firstOf(req.API, boardString(src.Board, APIKey), settings.API)
+	model, api := set.model, set.api
 	if api == "" {
 		api = apidecide.APIFor(model)
 	} else if api, err = apidecide.ParseAPI(api); err != nil {
@@ -138,13 +161,11 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if req.Budget > 0 && req.Budget < avail {
 		avail = req.Budget
 	}
-	var resolver auth.TokenResolver
-	if e.credentials != nil {
-		if resolver, err = e.credentials(settings); err != nil {
-			return out, err
-		}
+	target, err := e.targets(set.provider)
+	if err != nil {
+		return out, fmt.Errorf("decision provider %q: %w", set.provider, err)
 	}
-	client := NewClient(settings.BaseURL, resolver)
+	client := NewClient(firstOf(set.baseURL, target.BaseURL), target.Auth)
 
 	var resp response
 	var w built
@@ -177,6 +198,7 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	}
 	out.Model = firstOf(resp.Model, model)
 	out.API = api
+	out.Provider = set.provider
 	out.Kind, out.Question = p.kind, p.ask
 	out.Rows = rank(p, a)
 	out.Confidence = a.Confidence

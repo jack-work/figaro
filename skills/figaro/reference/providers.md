@@ -124,9 +124,10 @@ variable `api_key_env` names, and may run keyless, as `gateway` does.
 
 ## Not a provider: decision models
 
-A decision model (jev) is never an aria's `system.model`; setting one is
-refused. It is asked with `figaro decide`, configured by
-`providers/decisions.toml`. See [decisions.md](decisions.md).
+A decision model (jev, decision-1) is never an aria's `system.model`; setting
+one is refused. It is asked with `figaro decide`, which sends through an
+ordinary provider named by `system.decide.provider`. See
+[decisions.md](decisions.md).
 
 ## Translation channels
 

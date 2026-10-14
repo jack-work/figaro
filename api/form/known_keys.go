@@ -45,7 +45,9 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},
 		{Key: "system.study_incantation", Short: `What to SAY at a study lifecycle event: {"onstudy":…,"onupdate":…,"ondrop":…}, any subset, strings`, Mode: KeyUserSettable},
 		{Key: "system.fork_incantation", Short: `What to say to a branch at birth: a string, or {"onfork":…}. Unset means silence, which is the historical behaviour`, Mode: KeyUserSettable},
-		{Key: "system.decide.model", Short: "The decision model `figaro decide` asks over this aria (default: providers/decisions.toml, then jev-latest); never a conversation model", Mode: KeyUserSettable},
+		{Key: "system.decide.provider", Short: "The provider `figaro decide` sends through: its base_url and credential (rou2, azure, ...); set in an outfit, core.toml for every aria", Mode: KeyUserSettable},
+		{Key: "system.decide.model", Short: "The decision model `figaro decide` asks (openai/gpt-6-luna, explabs/jev-latest, decision-1); never a conversation model", Mode: KeyUserSettable},
+		{Key: "system.decide.base_url", Short: "Where decisions go when the provider's base_url serves turns elsewhere (Azure's decision-1 at .../providers/microsoft/v1); the credential stays the provider's", Mode: KeyUserSettable},
 		{Key: "system.decide.api", Short: "The decision API `figaro decide` speaks for this aria: systemone (jev, decision-1) or openai (luna); default inferred from the model", Mode: KeyUserSettable},
 		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
 

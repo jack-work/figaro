@@ -42,7 +42,7 @@ internal/cli/              the CLI: commands, transcript pager, line editor, key
 internal/cmdkit/           CLI command routing
 internal/compose/          IR turn -> live-render unit of typed nodes
 internal/config/           TOML config loader
-internal/decide/           figaro.decide: window, focus, @refs, budget; the System One client
+internal/decide/           figaro.decide: window, focus, @refs, budget; System One and OpenAI wires, through a provider
 internal/figaro/           actor: agent loop, inbox, translator orchestration; wire/ trunk capability
 internal/formdelta/        per-record form state a transcript reader needs
 internal/livelog/          aria/ page server + field deltas; render/ terminal differential renderer

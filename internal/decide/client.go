@@ -7,61 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-const (
-	Name           = "decisions"
-	DefaultModel   = "jev-latest"
-	DefaultBaseURL = "https://api.typesafe.ai/v1"
-	BaseURLEnv     = "DECISIONS_BASE_URL"
-)
-
-var CredentialEnvs = []string{"TYPESAFE_API_KEY", "EXPLABS_API_KEY"}
-
-type Settings struct {
-	APIKey   string `toml:"api_key"`
-	BaseURL  string `toml:"base_url,omitempty"`
-	Model    string `toml:"model,omitempty"`
-	Provider string `toml:"provider,omitempty"`
-	API      string `toml:"api,omitempty"`
-}
-
-func LoadSettings(loaded *config.Loaded) (Settings, error) {
-	var s Settings
-	if loaded != nil {
-		path := loaded.ProviderAuthPath(Name)
-		data, err := os.ReadFile(path)
-		switch {
-		case os.IsNotExist(err):
-		case err != nil:
-			return s, err
-		default:
-			if _, err := toml.Decode(string(data), &s); err != nil {
-				return s, fmt.Errorf("%s: %w", path, err)
-			}
-		}
-	}
-	if v := strings.TrimSpace(os.Getenv(BaseURLEnv)); v != "" {
-		s.BaseURL = v
-	}
-	s.BaseURL = strings.TrimRight(strings.TrimSpace(s.BaseURL), "/")
-	if s.BaseURL == "" {
-		s.BaseURL = DefaultBaseURL
-	}
-	if s.Model == "" {
-		s.Model = DefaultModel
-	}
-	return s, nil
-}
+const Name = "decide"
 
 type httpError struct {
 	status int

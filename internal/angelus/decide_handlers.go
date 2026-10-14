@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/decide"
 )
@@ -19,6 +20,9 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 		return nil, errors.New("decide: this daemon has no decision model configured")
 	}
 	src := decide.Source{Context: req.Context}
+	if patch, err := h.dressDefault(); err == nil {
+		src.Defaults = form.Snapshot{}.Apply(patch)
+	}
 	if req.FigaroID != "" {
 		if err := h.requireAria(req.FigaroID); err != nil {
 			return nil, err

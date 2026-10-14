@@ -53,29 +53,6 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	return &auth.Aggregate{Strategies: strategies}, nil
 }
 
-func BorrowedResolver(loaded *config.Loaded, provider, name string, envs []string) (auth.TokenResolver, error) {
-	if provider == "" {
-		return KeyResolver(loaded, name, envs)
-	}
-	if providerPkg.Lookup(provider) == nil {
-		return nil, fmt.Errorf("%s: provider = %q is not a provider (have: %s)", name, provider, strings.Join(providerPkg.Names(), ", "))
-	}
-	return BuildResolver(loaded, provider)
-}
-
-func KeyResolver(loaded *config.Loaded, name string, envs []string) (auth.TokenResolver, error) {
-	h, err := Hush()
-	if err != nil {
-		return nil, err
-	}
-	var strategies []auth.CredentialStrategy
-	for _, env := range envs {
-		strategies = append(strategies, &auth.EnvVar{Name: env})
-	}
-	strategies = append(strategies, storedKey(loaded, h.Client(), name)...)
-	return &auth.Aggregate{Strategies: strategies}, nil
-}
-
 func storedKey(loaded *config.Loaded, hushClient *hush.Client, name string) []auth.CredentialStrategy {
 	return []auth.CredentialStrategy{
 		&auth.ConfigValue{Get: func() string {

@@ -28,9 +28,11 @@ S1_LOG="$DP_DIR/systemone.jsonl"
 python3 "$ROOT/scripts/fake-systemone.py" "$S1_PORT" "$S1_LOG" &
 S1_PID=$!
 trap 'kill $S1_PID 2>/dev/null; [ -n "${KEEP:-}" ] || dp_down' EXIT
-cat > "$DP_DIR/config/providers/decisions.toml" <<EOF
+cat > "$DP_DIR/config/providers/fake1.toml" <<EOF
+preset   = "gateway"
 base_url = "http://127.0.0.1:$S1_PORT/v1"
 EOF
+printf 'decide = { provider = "fake1", model = "jev-latest" }\n' >> "$DP_DIR/config/outfits/pane.toml"
 echo "decide-pty: systemone :$S1_PORT (pid $S1_PID)"
 
 turns() { wc -l < "$DP_DIR/requests.jsonl" 2>/dev/null | tr -d ' '; }

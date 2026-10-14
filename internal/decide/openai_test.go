@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	apidecide "github.com/jack-work/figaro/api/decide"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 )
@@ -44,12 +45,12 @@ func openAIReplying(t *testing.T, reply string) (*Engine, *openAISeen) {
 		io.WriteString(w, reply)
 	}))
 	t.Cleanup(srv.Close)
-	return New(Fixed(srv.URL, "explabs/gpt-6-luna-decisions"), nil), got
+	return at(srv.URL), got
 }
 
 func TestALunaModelSpeaksTheOpenAIWire(t *testing.T) {
 	e, got := openAIReplying(t, predicateReply)
-	out := decide(t, e, Source{Log: logOf(t, chatter(4)...)}, rpc.DecideRequest{Question: "is the customer upset?"})
+	out := decide(t, e, Source{Defaults: lunaDefaults, Log: logOf(t, chatter(4)...)}, rpc.DecideRequest{Question: "is the customer upset?"})
 	if got.path != "/decisions" {
 		t.Fatalf("path = %q", got.path)
 	}
@@ -95,7 +96,7 @@ func TestAChoiceSendsValuesAndDescriptions(t *testing.T) {
 		"skills.weather.frontmatter": `"name: weather"`,
 	})
 	e, got := openAIReplying(t, `{"model":"gpt-6-luna","answers":[{"type":"choice","name":"decision","choice":"printer","probabilities":[{"value":"printer","probability":0.9},{"value":"weather","probability":0.1}],"confidence":0.8}]}`)
-	out := decide(t, e, Source{Board: board}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
+	out := decide(t, e, Source{Defaults: lunaDefaults, Board: board}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
 	q := got.body.Questions[0]
 	if q.Type != "choice" || len(q.Choices) != 2 {
 		t.Fatalf("question = %+v", q)
@@ -111,7 +112,7 @@ func TestAChoiceSendsValuesAndDescriptions(t *testing.T) {
 
 func TestALiteralOptionIsAValueWithNoDescription(t *testing.T) {
 	e, got := openAIReplying(t, choiceReply)
-	out := decide(t, e, Source{}, rpc.DecideRequest{Question: "which department?", Choices: []string{"billing", "technical", "other"}})
+	out := decide(t, e, Source{Defaults: lunaDefaults}, rpc.DecideRequest{Question: "which department?", Choices: []string{"billing", "technical", "other"}})
 	for _, c := range got.body.Questions[0].Choices {
 		if c.Description != "" {
 			t.Errorf("%q carries a description that only repeats it", c.Value)
@@ -125,7 +126,7 @@ func TestALiteralOptionIsAValueWithNoDescription(t *testing.T) {
 func TestTheInputIsTextTheModelCanRead(t *testing.T) {
 	msgs := append(chatter(3), say(message.RoleOutput, "the handler has no idempotency key"))
 	e, got := openAIReplying(t, predicateReply)
-	decide(t, e, Source{Log: logOf(t, msgs...), Context: "a deploy log"}, rpc.DecideRequest{Question: "<4>! is a retry safe?"})
+	decide(t, e, Source{Defaults: lunaDefaults, Log: logOf(t, msgs...), Context: "a deploy log"}, rpc.DecideRequest{Question: "<4>! is a retry safe?"})
 	in := got.body.Input
 	for _, want := range []string{"Focus", "the handler has no idempotency key", "Context:\na deploy log", "Conversation, oldest first:", "you: line 00"} {
 		if !strings.Contains(in, want) {
@@ -139,7 +140,7 @@ func TestTheInputIsTextTheModelCanRead(t *testing.T) {
 
 func TestARefusalIsAnError(t *testing.T) {
 	e, _ := openAIReplying(t, `{"model":"gpt-6-luna","answers":[{"type":"refusal","name":"decision"}]}`)
-	_, err := e.Decide(context.Background(), Source{}, rpc.DecideRequest{Question: "q?"})
+	_, err := e.Decide(context.Background(), Source{Defaults: lunaDefaults}, rpc.DecideRequest{Question: "q?"})
 	if err == nil || !strings.Contains(err.Error(), "declined") {
 		t.Fatalf("err = %v", err)
 	}
@@ -151,12 +152,12 @@ func TestLunaGetsItsOwnBudget(t *testing.T) {
 	// jev's 32k is jev's; luna must not inherit it.
 	huge := strings.Repeat("why does the retry loop charge twice? ", 4000)
 	e, _ := openAIReplying(t, predicateReply)
-	out := decide(t, e, Source{}, rpc.DecideRequest{Question: huge})
+	out := decide(t, e, Source{Defaults: lunaDefaults}, rpc.DecideRequest{Question: huge})
 	if out.Window.Budget < 500000 {
 		t.Fatalf("luna's budget = %d, still jev-sized", out.Window.Budget)
 	}
 	jev, _ := engineReplying(t, liveNoul)
-	if _, err := jev.Decide(context.Background(), Source{}, rpc.DecideRequest{Question: huge}); err == nil {
+	if _, err := jev.Decide(context.Background(), Source{Defaults: jevDefaults}, rpc.DecideRequest{Question: huge}); err == nil {
 		t.Fatal("the same question fit jev's 32k; the fixture proves nothing")
 	}
 }
@@ -178,8 +179,8 @@ func TestTheOpenAITokenLimitRejectionIsRetriedSmaller(t *testing.T) {
 	for i := 0; i < 300; i++ {
 		long = append(long, say(message.RoleOutput, strings.Repeat("tool output ", 4000)))
 	}
-	e := New(Fixed(srv.URL, "gpt-6-luna"), nil)
-	if _, err := e.Decide(context.Background(), Source{Log: logOf(t, long...)}, rpc.DecideRequest{Question: "q?"}); err != nil {
+	e := at(srv.URL)
+	if _, err := e.Decide(context.Background(), Source{Defaults: lunaDefaults, Log: logOf(t, long...)}, rpc.DecideRequest{Question: "q?"}); err != nil {
 		t.Fatalf("no retry: %v", err)
 	}
 	if len(sizes) != 2 || sizes[1] >= sizes[0] {
@@ -187,7 +188,7 @@ func TestTheOpenAITokenLimitRejectionIsRetriedSmaller(t *testing.T) {
 	}
 }
 
-func TestTheAPIComesFromTheRequestThenTheBoardThenTheFileThenTheModel(t *testing.T) {
+func TestTheAPIComesFromTheRequestThenTheBoardThenTheDefaultOutfitThenTheModel(t *testing.T) {
 	board := boardOf(t, map[string]string{APIKey: `"openai"`})
 	cases := []struct {
 		name  string
@@ -199,8 +200,8 @@ func TestTheAPIComesFromTheRequestThenTheBoardThenTheFileThenTheModel(t *testing
 	}{
 		{"model infers jev", false, "", "", "jev-latest", "/systemone"},
 		{"model infers luna", false, "", "", "gpt-6-luna", "/decisions"},
-		{"the file beats the model", false, "", "openai", "jev-latest", "/decisions"},
-		{"the board beats the file", true, "", "systemone", "jev-latest", "/decisions"},
+		{"the default outfit beats the model", false, "", "openai", "jev-latest", "/decisions"},
+		{"the board beats the default outfit", true, "", "systemone", "jev-latest", "/decisions"},
 		{"the request beats the board", true, "systemone", "", "gpt-6-luna", "/systemone"},
 	}
 	for _, c := range cases {
@@ -214,8 +215,12 @@ func TestTheAPIComesFromTheRequestThenTheBoardThenTheFileThenTheModel(t *testing
 			io.WriteString(w, liveNoul)
 		}))
 		file, model := c.file, c.model
-		e := New(func() (Settings, error) { return Settings{BaseURL: srv.URL, Model: model, API: file}, nil }, nil)
-		src := Source{}
+		e := at(srv.URL)
+		set := map[string]json.RawMessage{ProviderKey: json.RawMessage(`"test"`), ModelKey: json.RawMessage(`"` + model + `"`)}
+		if file != "" {
+			set[APIKey] = json.RawMessage(`"` + file + `"`)
+		}
+		src := Source{Defaults: form.Snapshot{}.Apply(form.Build(form.Snapshot{}, set, nil))}
 		if c.board {
 			src.Board = board
 		}
@@ -231,7 +236,7 @@ func TestTheAPIComesFromTheRequestThenTheBoardThenTheFileThenTheModel(t *testing
 
 func TestAnUnknownAPIIsRefusedByName(t *testing.T) {
 	e, _ := engineReplying(t, liveNoul)
-	_, err := e.Decide(context.Background(), Source{}, rpc.DecideRequest{Question: "q?", API: "grpc"})
+	_, err := e.Decide(context.Background(), Source{Defaults: lunaDefaults}, rpc.DecideRequest{Question: "q?", API: "grpc"})
 	if err == nil || !strings.Contains(err.Error(), "grpc") {
 		t.Fatalf("err = %v", err)
 	}

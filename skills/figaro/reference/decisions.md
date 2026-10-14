@@ -112,30 +112,44 @@ the cursor, `T` hands the keys to the conversation and back. The pit holds one d
 the next one replaces it. Nothing is written anywhere, so it works the same
 whether or not a turn is running. A `??` line meant literally is `\??`.
 
-## Where the model comes from
+## Where the decision goes
 
-`-m`, else the aria's `system.decide.model`, else `model` in
-`providers/decisions.toml`, else `jev-latest`. The file also holds `base_url`,
-`api_key`, `provider` and `api`; `DECISIONS_BASE_URL` overrides the URL. All
-of it is read per call.
+Decisions go through a provider: its `base_url` with `/systemone` or
+`/decisions` appended, and its credential, so `figaro login <provider>`
+covers decide too. There is no decisions provider of its own. Set it once in
+an outfit, `core.toml` to reach every aria:
 
-The API is `--api`, else the aria's `system.decide.api`, else `api` in the
-file, else the model's name: `gpt-*` and `*luna*` speak `openai`, everything
-else `systemone`. Name it outright where a model's name does not say.
+```toml
+[system.decide]
+provider = "rou2"
+model    = "openai/gpt-6-luna"
+```
 
-`provider = "<name>"` borrows that provider's whole credential chain instead
-of the keys below: its env var, its stored key, and the OAuth token hush
-holds for it. It is how a host that takes no key is reached.
+Each setting is the flag, else the aria's form, else the default outfit's, so
+an aria minted before the outfit changed still follows it:
 
-| Host | base_url | Credential |
+| Flag | Key | Is |
 |---|---|---|
-| TypeSafe | `https://api.typesafe.ai/v1` (default) | `TYPESAFE_API_KEY` |
-| Experiential Labs | `https://api.experientiallabs.ai/v1` | `EXPLABS_API_KEY` |
-| a broker holding the key | `http://127.0.0.1:8787/v1` | none; model `explabs/jev-latest` |
-| an OAuth gateway declared in `providers/<name>.toml` | its `base_url` | `provider = "<name>"` (`figaro login <name>`) |
-| OpenAI luna through a broker | `http://127.0.0.1:8787/v1` | none; model `explabs/gpt-6-luna-decisions` (rou2's `openai/gpt-6-luna` on spain) |
-| OpenAI direct | `https://api.openai.com/v1` | `api_key`, or `provider` naming one that holds an OpenAI key; model `gpt-6-luna` |
-| Microsoft `decision-1` on Azure Foundry | `https://<resource>.cognitiveservices.azure.com/providers/microsoft/v1` | `provider = "azure"` (Entra, `figaro login azure`); model is the deployment name |
+| `--provider` | `system.decide.provider` | which provider; required |
+| `-m` | `system.decide.model` | which model; required |
+| `--api` | `system.decide.api` | `systemone` or `openai`; else `gpt-*` and `*luna*` are `openai`, the rest `systemone` |
+| | `system.decide.base_url` | where decisions go when the provider's `base_url` serves turns elsewhere; the credential stays the provider's |
+
+| Host | Provider | Model |
+|---|---|---|
+| rou2, OpenAI's luna | `rou2` (declared, `figaro login rou2`) | `openai/gpt-6-luna` |
+| rou2, Experiential Labs' jev | `rou2` | `explabs/jev-latest` |
+| TypeSafe direct | a declared `providers/typesafe.toml` with `api_key_env = "TYPESAFE_API_KEY"` | `jev-latest` |
+| Microsoft `decision-1` on Azure Foundry | `azure` (Entra), with `base_url = "https://<resource>.cognitiveservices.azure.com/providers/microsoft/v1"` | the deployment name |
+
+A provider for a host that only serves decisions is declared like any other:
+
+```toml
+# providers/typesafe.toml
+preset      = "gateway"
+base_url    = "https://api.typesafe.ai/v1"
+api_key_env = "TYPESAFE_API_KEY"
+```
 
 The System One body is closed on the far side: `model`, `state`,
 `questions`, nothing else, and a broker that stamps request bodies has to
@@ -144,17 +158,11 @@ leave that path alone. OpenAI's endpoint accepted rou2's stamped
 
 ## Over `figaro serve`
 
-`figaro serve` relays the same wire to anything on loopback that wants it,
-with figaro's credentials:
+`figaro serve` relays both wires by provider prefix, like every `/v1` route:
 
 | Request | Goes to |
 |---|---|
-| `POST /v1/systemone`, model `decisions/jev-latest` | the decisions host above, prefix removed |
-| `POST /v1/systemone`, model `gateway/explabs/jev-latest` | the gateway provider's base URL + `/systemone` |
-| `POST /v1/decisions`, model `<provider>/gpt-6-luna` | that provider's base URL + `/decisions` (OpenAI's wire) |
-| `POST /u/decisions/systemone` | the decisions host, body untouched |
+| `POST /v1/systemone`, model `rou2/explabs/jev-latest` | rou2's base URL + `/systemone` |
+| `POST /v1/decisions`, model `rou2/openai/gpt-6-luna` | rou2's base URL + `/decisions` |
 
-The relay rewrites the model and nothing else, so a closed body stays closed. The
-decisions host is served when it has a key, or keyless when its `base_url` is
-a broker. Point `figaro decide` at a serve with
-`DECISIONS_BASE_URL=http://127.0.0.1:8788/u/decisions`.
+The relay rewrites the model and nothing else, so a closed body stays closed.

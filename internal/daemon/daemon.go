@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/decide"
+	"github.com/jack-work/figaro/internal/relay"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -166,12 +166,13 @@ func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 }
 
 func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
-	return decide.New(
-		func() (decide.Settings, error) { return decide.LoadSettings(loaded) },
-		func(s decide.Settings) (auth.TokenResolver, error) {
-			return boot.BorrowedResolver(loaded, s.Provider, decide.Name, decide.CredentialEnvs)
-		},
-	), nil
+	return decide.New(func(provider string) (decide.Target, error) {
+		up, err := relay.Resolve(loaded, provider)
+		if err != nil {
+			return decide.Target{}, err
+		}
+		return decide.Target{BaseURL: up.Base(), Auth: up.Credential()}, nil
+	}), nil
 }
 
 func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {

@@ -46,3 +46,14 @@ func TestDecideAPIFlag(t *testing.T) {
 		t.Fatal("an unknown API was accepted")
 	}
 }
+
+func TestDecideProviderFlag(t *testing.T) {
+	p, err := parseDecideArgs([]string{"--provider", "rou2", "-m", "openai/gpt-6-luna", "--", "q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := p.request("")
+	if req.Provider != "rou2" || req.Model != "openai/gpt-6-luna" {
+		t.Fatalf("request = %+v", req)
+	}
+}

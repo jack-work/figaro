@@ -22,6 +22,7 @@ const decideTimeout = 2 * time.Minute
 type decidePlan struct {
 	id       string
 	choices  []string
+	provider string
 	model    string
 	api      string
 	context  string
@@ -33,7 +34,8 @@ type decidePlan struct {
 var decideFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Read this aria's conversation and form (default: the one bound to this shell)"},
 	{Long: "choices", Short: "C", Description: "Options, comma separated: -C=\"option 1\",\"option 2\"; @key names a form key"},
-	{Long: "model", Short: "m", Description: "Decision model for this call (default: system.decide.model, then providers/decisions.toml)"},
+	{Long: "provider", Description: "Provider to send the decision through, for this call (default: system.decide.provider)"},
+	{Long: "model", Short: "m", Description: "Decision model for this call (default: system.decide.model)"},
 	{Long: "api", Description: "Decision API: systemone (jev, decision-1) or openai (luna); default inferred from the model"},
 	{Long: "context", Description: "Text to decide over; - reads stdin"},
 	{Long: "budget", Description: "Cap the context tokens sent"},
@@ -73,6 +75,12 @@ func parseDecideArgs(args []string) (decidePlan, error) {
 			p.choices = append(p.choices, apidecide.Choices(v)...)
 		case strings.HasPrefix(a, "-C") && len(a) > 2:
 			p.choices = append(p.choices, apidecide.Choices(a[2:])...)
+		case a == "--provider" || strings.HasPrefix(a, "--provider="):
+			v, err := value(&i, a, "--provider")
+			if err != nil {
+				return p, err
+			}
+			p.provider = v
 		case a == "-m" || a == "--model" || strings.HasPrefix(a, "--model="):
 			v, err := value(&i, a, "--model")
 			if err != nil {
@@ -124,6 +132,7 @@ func (p decidePlan) request(aria string) rpc.DecideRequest {
 		FigaroID: aria,
 		Question: p.question,
 		Choices:  p.choices,
+		Provider: p.provider,
 		Model:    p.model,
 		API:      p.api,
 		Context:  p.context,
@@ -182,7 +191,7 @@ func registerDecide(r *cmdkit.Router) {
 		Name:  "decide",
 		Group: "Prompt",
 		Short: "Ask a decision model a yes/no or multiple-choice question",
-		Usage: "decide [--id <id>] [-C <a,b,...>] [-m <model>] [--api systemone|openai] [--context <text|->] [-j] -- <question>",
+		Usage: "decide [--id <id>] [-C <a,b,...>] [--provider <name>] [-m <model>] [--api systemone|openai] [--context <text|->] [-j] -- <question>",
 		Long: `Asks a System One decision model (jev) one typed question and prints its
 scored answer. Nothing is written to any aria: bound to one, decide only READS
 its conversation and form, and never waits on a running turn.
@@ -207,11 +216,23 @@ keys the options name are sent.
 Unbound (or under -A, which ignores the binding) it is stateless: the
 question, --context and the model's own training are all it has.
 
-The model is -m, else the aria's system.decide.model, else model in
-providers/decisions.toml, else jev-latest. Two wires are spoken: System One
-(jev, decision-1; POST /systemone) and OpenAI's Decisions API (luna; POST
-/decisions). --api picks one, else system.decide.api, else api in the file,
-else the model's name: gpt-* and *luna* are OpenAI, the rest System One.`,
+Where it goes is a provider: its base_url, with /systemone or /decisions
+appended, and its credential, so figaro login <provider> covers decide too.
+Each setting is the flag, else the aria's form, else the default outfit's:
+
+  --provider   system.decide.provider   which provider (rou2, azure, ...)
+  -m           system.decide.model      which model; required
+  --api        system.decide.api        systemone (jev, decision-1) or openai
+                                         (luna); else gpt-* and *luna* are
+                                         openai and the rest systemone
+               system.decide.base_url   where decisions go when the provider's
+                                         base_url serves turns elsewhere (Azure)
+
+Set them once in an outfit, core.toml to reach every aria:
+
+  [system.decide]
+  provider = "rou2"
+  model    = "openai/gpt-6-luna"`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
