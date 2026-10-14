@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/formdelta"
@@ -48,11 +49,11 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 					"never written to disk. Wake it (send it something) or read its board instead",
 				id, name)
 		}
-		snap, version, err := r.Form(id)
+		since, err := r.FormSince(id, req.Since)
 		if err != nil {
 			return nil, true, err
 		}
-		return rpc.FormResponse{Snapshot: snap, Version: version}, true, nil
+		return figaro.FormResponseOf(since, ""), true, nil
 
 	case rpc.MethodContext:
 		msgs, metrics, err := r.Context(id)

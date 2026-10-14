@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
 	"strings"
+
+	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -153,10 +155,13 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 				return nil, fmt.Errorf("no intrinsic %q on %s (have: %s, %s; %q is the host's own form)",
 					name, a.id, IntrinsicRuntime, IntrinsicQueue, IntrinsicState)
 			}
-			snap, version := c.Snapshot()
-			return rpc.FormResponse{Snapshot: snap, Version: version, Intrinsic: name}, nil
+			return FormResponseOf(c.Since(req.Since), name), nil
 		}
-		return rpc.FormResponse{Snapshot: a.Snapshot(), Version: a.Version()}, nil
+		since, err := a.backend.FormSince(a.id, req.Since)
+		if err != nil {
+			return nil, err
+		}
+		return FormResponseOf(since, ""), nil
 
 	case rpc.MethodQueued:
 		var req rpc.QueuedRequest
@@ -247,6 +252,21 @@ func removedKeys(p form.Patch) []string {
 	for _, e := range p.Entries() {
 		if e.IsRemoval() {
 			out = append(out, e.Key)
+		}
+	}
+	return out
+}
+
+func FormResponseOf(s store.FormSince, intrinsic string) rpc.FormResponse {
+	out := rpc.FormResponse{Version: s.Version, Intrinsic: intrinsic, Delta: s.Delta}
+	if !s.Delta {
+		out.Snapshot = s.Snapshot
+		return out
+	}
+	if len(s.Patches) > 0 {
+		out.Patches = make([]rpc.FormVersionedPatch, len(s.Patches))
+		for i, p := range s.Patches {
+			out.Patches[i] = rpc.FormVersionedPatch{Version: p.Version, Patch: p.Patch}
 		}
 	}
 	return out

@@ -290,6 +290,14 @@ func (b *XwalBackend) FormAt(ariaID string) (FormAt, error) {
 	return f.Read(), nil
 }
 
+func (b *XwalBackend) FormSince(ariaID string, since uint64) (FormSince, error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return FormSince{}, err
+	}
+	return f.Since(since), nil
+}
+
 func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	// A libretto is not a node: its Form lives in the libretto registry and is
 	// the writer the fold appends through; a second Form over the same stump

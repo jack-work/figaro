@@ -157,6 +157,8 @@ type Backend interface {
 	// FormPatchesBetween returns the patches in (after, upTo] by durable version.
 	FormPatchesBetween(ariaID string, after, upTo uint64) ([]VersionedPatch, error)
 
+	FormSince(ariaID string, since uint64) (FormSince, error)
+
 	// CreateOutfit materializes or reuses the node for (name, content version of patch).
 	CreateOutfit(name string, patch message.Patch) (string, error)
 

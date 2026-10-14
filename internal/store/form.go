@@ -203,6 +203,32 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	return out
 }
 
+type FormSince struct {
+	Snapshot form.Snapshot
+	Version  uint64
+	Delta    bool
+	Patches  []VersionedPatch
+}
+
+func (f *Form) Since(since uint64) FormSince {
+	st := f.state.Load()
+	full := FormSince{Snapshot: st.snap, Version: st.version}
+	switch {
+	case since == 0 || since > st.version:
+		return full
+	case since == st.version:
+		return FormSince{Version: st.version, Delta: true}
+	}
+	if st.trimmed > 0 && since < st.trimmed {
+		fromLog, ok := f.patchesFromLog(since, st.version)
+		if !ok {
+			return full
+		}
+		return FormSince{Version: st.version, Delta: true, Patches: fromLog}
+	}
+	return FormSince{Version: st.version, Delta: true, Patches: patchRange(st.patches, since, st.version)}
+}
+
 // PatchFloor: a read at or under it is answered nil by PatchesBetween and the
 // caller must reseed from Snapshot(). Zero means the whole history is
 // available, which is every durable form.

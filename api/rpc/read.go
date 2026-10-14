@@ -18,13 +18,21 @@ type ContextResponse struct {
 // `<host>/state`.
 type FormRequest struct {
 	Intrinsic string `json:"intrinsic,omitempty"`
+	Since     uint64 `json:"since,omitempty"`
+}
+
+type FormVersionedPatch struct {
+	Version uint64    `json:"version"`
+	Patch   FormPatch `json:"patch"`
 }
 
 type FormResponse struct {
 	Snapshot form.Snapshot `json:"snapshot"`
 	Version  uint64        `json:"version,omitempty"`
 	// Intrinsic echoes which form answered.
-	Intrinsic string `json:"intrinsic,omitempty"`
+	Intrinsic string               `json:"intrinsic,omitempty"`
+	Delta     bool                 `json:"delta,omitempty"`
+	Patches   []FormVersionedPatch `json:"patches,omitempty"`
 }
 
 // ReadRequest is a keyset read; the answer carries the coordinate to continue

@@ -139,6 +139,17 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	return ra, nil
 }
 
+func (r *AriaReader) FormSince(id string, since uint64) (store.FormSince, error) {
+	if r == nil || r.backend == nil {
+		return store.FormSince{}, errors.New("no backend")
+	}
+	out, err := r.backend.FormSince(id, since)
+	if err != nil {
+		return store.FormSince{}, fmt.Errorf("form %s: %w", id, err)
+	}
+	return out, nil
+}
+
 // Form returns the version too: a mirroring client needs it to order deltas.
 func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 	if r == nil || r.backend == nil {

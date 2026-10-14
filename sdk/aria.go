@@ -142,6 +142,14 @@ func (c *Aria) Form(ctx context.Context) (*rpc.FormResponse, error) {
 	return c.FormOf(ctx, "")
 }
 
+func (c *Aria) FormSince(ctx context.Context, since uint64) (*rpc.FormResponse, error) {
+	var resp rpc.FormResponse
+	if err := c.call(ctx, rpc.MethodForm, rpc.FormRequest{Since: since}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // FormOf returns one named form: "" and "state" are the host's own; "queue"
 // and "runtime" are its intrinsic forms.
 func (c *Aria) FormOf(ctx context.Context, intrinsic string) (*rpc.FormResponse, error) {
