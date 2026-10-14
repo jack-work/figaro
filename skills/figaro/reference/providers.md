@@ -1,7 +1,7 @@
 # Providers: routing a model to a transport
 
-`copilot`, `gateway`, `openrouter` and `azure` are one provider,
-`internal/provider/routed`, given four different specs. A spec names a host, the headers to send, and how
+`copilot`, `gateway`, `openrouter`, `azure` and `rou2` are one provider,
+`internal/provider/routed`, given five different specs. A spec names a host, the headers to send, and how
 to choose a transport for each model. `anthropic` (native OAuth) is separate.
 
 ## Transports
@@ -54,6 +54,7 @@ with no transport, a bad glob, or a spec with no way to route at all.
 | `gateway` | default `chat`; credential optional | everything. `base_url` is required; `FIGARO_GATEWAY_BASE_URL` wins over the file. |
 | `openrouter` | default `chat`; OpenRouter host; `anthropic/` model prefix | everything. |
 | `azure` | default `chat`; credential from `AZURE_OPENAI_API_KEY`, a stored key, or a Microsoft Entra login | everything. `base_url` is required; `AZURE_BASE_URL` wins over the file. |
+| `rou2` | default `chat`; per-block cache markers, no top-level directive; credential from an Authelia login | everything. `base_url` is required and the login writes it; `ROU2_BASE_URL` wins over the file. |
 
 ## Azure AI Foundry, signed in with Microsoft Entra
 
@@ -83,6 +84,24 @@ The account needs the Cognitive Services OpenAI User role on the resource. A
 tenant whose policy blocks the Azure CLI's client needs an app registration of
 its own (a public client with the Cognitive Services delegated permission),
 named by `client_id`.
+
+## rou2, the house gateway, signed in with Authelia
+
+```sh
+ROU2_BASE_URL=http://100.103.40.20:9110 figaro login rou2   # or answer the prompt
+figaro set system.provider rou2
+figaro set system.model explabs/<model>   # qualified: the routed door picks the upstream
+```
+
+The login reads `/.well-known/rou2` for the issuer, client id and scopes, then
+the issuer's own OpenID discovery for the device and token endpoints; nothing
+about Authelia is compiled in. Endpoints off the issuer's origin are refused.
+hush holds the tokens and refreshes them with its default `refresh_token`
+grant. The login writes `base_url = "<rou2>/v1"` to `providers/rou2.toml`.
+
+`figaro decide` reaches jev through it with `provider = "rou2"`,
+`base_url = "<rou2>/v1"` and `model = "explabs/jev-latest"` in
+`providers/decisions.toml`.
 
 ## Not a provider: decision models
 
