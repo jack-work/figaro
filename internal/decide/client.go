@@ -14,7 +14,10 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-const Name = "decide"
+const (
+	Name              = "decide"
+	statusEdgeTimeout = 524
+)
 
 type httpError struct {
 	status int
@@ -24,6 +27,9 @@ type httpError struct {
 func (e *httpError) Error() string { return fmt.Sprintf("%s: HTTP %d: %s", Name, e.status, e.body) }
 
 func (e *httpError) tooBig() bool {
+	if e.status == statusEdgeTimeout {
+		return true
+	}
 	if e.status != http.StatusBadRequest {
 		return false
 	}

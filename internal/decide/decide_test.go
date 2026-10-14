@@ -576,3 +576,32 @@ var (
 	jevDefaults  = form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{ProviderKey: json.RawMessage(`"test"`), ModelKey: json.RawMessage(`"jev-latest"`)}, nil))
 	lunaDefaults = form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{ProviderKey: json.RawMessage(`"test"`), ModelKey: json.RawMessage(`"explabs/gpt-6-luna-decisions"`)}, nil))
 )
+
+// Cloudflare answers 524 when the origin sends no headers within 100 s
+// (Spanyard, 2026-10-14, for rou2.kelliher.info), and a decision does not
+// stream, so the one lever is a smaller window: the same retry a size refusal
+// gets.
+func TestATimeoutAtTheEdgeIsRetriedSmaller(t *testing.T) {
+	var sizes []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		sizes = append(sizes, len(body))
+		if len(sizes) == 1 {
+			w.WriteHeader(524)
+			io.WriteString(w, "error code: 524")
+			return
+		}
+		io.WriteString(w, liveNoul)
+	}))
+	defer srv.Close()
+	long := make([]message.Message, 0, 200)
+	for i := 0; i < 200; i++ {
+		long = append(long, say(message.RoleOutput, fmt.Sprintf("%03d %s", i, strings.Repeat("tool output ", 200))))
+	}
+	if _, err := at(srv.URL).Decide(context.Background(), Source{Log: logOf(t, long...), Defaults: jevDefaults}, rpc.DecideRequest{Question: "q?"}); err != nil {
+		t.Fatalf("no retry after a 524: %v", err)
+	}
+	if len(sizes) != 2 || sizes[1] >= sizes[0] {
+		t.Fatalf("sizes = %v", sizes)
+	}
+}

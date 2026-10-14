@@ -96,6 +96,11 @@ OpenAI a full window is a large bill ($0.10 per million input tokens).
 System One is sent the state as JSON (`focus`, `context`, `conversation`);
 OpenAI is sent the same parts as labelled text, since `input` is text.
 
+The count is an estimate, so a host can still refuse the window as too large;
+and a decision does not stream, so behind Cloudflare (rou2.kelliher.info) a
+call with no response headers in 100 s comes back as a 524. Either is retried
+once with 60% of the window. Any other error is reported as the host wrote it.
+
 ## In the pager
 
 | Gesture | Does |
