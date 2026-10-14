@@ -8,8 +8,10 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
 )
@@ -19,6 +21,7 @@ type AriaReader struct {
 	backend store.Backend
 	proj    Projector
 	uiCache *aria.ComposedCache
+	models  *modelcat.Catalog
 
 	// servers share the agents' TurnCache and budget; one read path, not two.
 	mu      sync.Mutex
@@ -180,6 +183,7 @@ func (r *AriaReader) metrics(id string, msgs []message.Message) *aria.Metrics {
 	}
 	if snap, _, err := r.Form(id); err == nil {
 		m.Mantra = snapString(snap, "mantra")
+		r.models.Want(models.Subject(snap))
 	}
 	return m
 }

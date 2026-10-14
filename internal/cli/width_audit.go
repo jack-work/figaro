@@ -256,7 +256,7 @@ func auditCallers() string {
 }
 
 func defaultOverrunLog() *os.File {
-	dir := cacheDir()
+	dir := boot.CacheDir()
 	if dir == "" {
 		return nil
 	}

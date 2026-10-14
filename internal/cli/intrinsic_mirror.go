@@ -185,13 +185,14 @@ func lookupInt(snap form.Snapshot, key string) (int, bool) {
 }
 
 // A delta for an intrinsic this build does not follow is ignored, not an error.
-func (in *interactiveInput) applyIntrinsicDelta(params json.RawMessage) {
+func (in *interactiveInput) applyFormDelta(gen uint64, params json.RawMessage) {
 	var d rpc.FormDelta
 	if json.Unmarshal(params, &d) != nil {
 		return
 	}
 	if d.Intrinsic == "" {
-		return // the board has its own path
+		in.applyBoardDelta(gen, d)
+		return
 	}
 	mirror := in.intrinsics.of(d.Intrinsic)
 	if mirror == nil {

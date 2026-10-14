@@ -131,6 +131,17 @@ func StateDir() string {
 	return filepath.Join(home, ".local", "state", "figaro")
 }
 
+func CacheDir() string {
+	if d := os.Getenv("FIGARO_CACHE_DIR"); d != "" {
+		return d
+	}
+	if d := os.Getenv("XDG_CACHE_HOME"); d != "" {
+		return filepath.Join(d, "figaro")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cache", "figaro")
+}
+
 // AriaRoot is the one spelling of the store directory; the startup notice silently
 // degrades if a caller drifts.
 func AriaRoot() string { return filepath.Join(StateDir(), "arias") }

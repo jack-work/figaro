@@ -77,3 +77,12 @@ type IRResponse struct {
 	Total    int       `json:"total"`
 	NextFrom uint64    `json:"next_from,omitempty"` // 0 when no more
 }
+
+type ModelsWantRequest struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+type ModelsWantResponse struct {
+	OK bool `json:"ok"`
+}

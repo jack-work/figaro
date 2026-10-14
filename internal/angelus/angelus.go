@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/mark"
+	"github.com/jack-work/figaro/internal/modelcat"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
@@ -55,6 +56,8 @@ type Angelus struct {
 	// eviction order for every agent's turn cache and the reader.
 	UICache *aria.ComposedCache
 
+	Models *modelcat.Catalog
+
 	uiProj Projector
 
 	// Hubs outlive the agents behind them, so reclaiming an agent disconnects nobody.
@@ -82,6 +85,7 @@ type Config struct {
 	RuntimeDir string
 	Backend    store.Backend
 	Settings   *config.Loaded // nil = defaults
+	Models     *modelcat.Catalog
 }
 
 // New creates an Angelus; set Handlers before Run.
@@ -94,6 +98,7 @@ func New(cfg Config) *Angelus {
 		StartedAt:  time.Now(),
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
+		Models:     cfg.Models,
 		uiProj:     uiir.New(nil),
 		Hubs:       newHubs(),
 	}

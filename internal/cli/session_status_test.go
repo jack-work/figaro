@@ -14,11 +14,11 @@ func TestSessionStatusRuleIncludesMantraContextAndTokenCost(t *testing.T) {
 	status.update(aria.Metrics{
 		Mantra:        "ship a polished app studio",
 		ContextTokens: 12000,
-		ContextLimit:  128000,
 		ContextExact:  true,
 		TokensIn:      10000,
 		TokensOut:     5000,
 	})
+	status.setLimit(128000)
 
 	rule := status.ruleLine(160, "12-40/97 live")
 	for _, want := range []string{"12-40/97 live"} {
@@ -48,11 +48,11 @@ func TestSessionStatusRulePrefersMantraOverSecondaryDetails(t *testing.T) {
 	status.update(aria.Metrics{
 		Mantra:        "ship a polished app studio",
 		ContextTokens: 12000,
-		ContextLimit:  128000,
 		ContextExact:  true,
 		TokensIn:      10000,
 		TokensOut:     5000,
 	})
+	status.setLimit(128000)
 
 	if rule := status.ruleLine(40, ""); strings.Contains(rule, "dac6cb6d") {
 		t.Fatalf("the rule still carries the aria id: %q", rule)

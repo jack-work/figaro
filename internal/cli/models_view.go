@@ -113,7 +113,7 @@ func fetchModels(loaded *config.Loaded) ([]provider.ModelInfo, []string) {
 			warnings = append(warnings, name+": "+err.Error())
 			continue
 		}
-		out = append(out, models...)
+		out = append(out, provider.Pickable(models)...)
 	}
 	return out, warnings
 }

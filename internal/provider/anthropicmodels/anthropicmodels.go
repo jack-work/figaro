@@ -5,10 +5,6 @@ package anthropicmodels
 import (
 	"strconv"
 	"strings"
-	"sync"
-
-	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/provider"
 )
 
 // windowTable is keyed by normalized model-id prefix; longest match wins.
@@ -54,46 +50,6 @@ func ContextWindow(model string) int {
 		best, window = len(prefix), w
 	}
 	return window
-}
-
-// Catalog's zero value is ready to use and safe for concurrent access.
-type Catalog struct {
-	mu      sync.RWMutex
-	windows map[string]int
-}
-
-// Learn ignores non-positive windows.
-func (c *Catalog) Learn(model string, window int) {
-	if model == "" || window <= 0 {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.windows == nil {
-		c.windows = map[string]int{}
-	}
-	c.windows[normalize(model)] = window
-}
-
-// Window prefers the learned window, then the table, then 0.
-func (c *Catalog) Window(model string) int {
-	if c != nil {
-		c.mu.RLock()
-		w, ok := c.windows[normalize(model)]
-		c.mu.RUnlock()
-		if ok {
-			return w
-		}
-	}
-	return ContextWindow(model)
-}
-
-// ContextLimit lets system.max_context_tokens win outright. No network I/O.
-func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
-	if override, ok := provider.ContextLimitOverride(snapshot); ok {
-		return override
-	}
-	return c.Window(model)
 }
 
 // ClaudeCodeVersion is the client version presented to the API, which gates

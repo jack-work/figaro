@@ -208,7 +208,7 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 	for _, n := range s.notices {
 		v.Alerts = append(v.Alerts, barAlert{Text: n.text, Level: n.level})
 	}
-	if ctx := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); ctx != "-" {
+	if ctx := formatContextUsage(s.metrics.ContextTokens, s.limit, s.metrics.ContextExact); ctx != "-" {
 		v.Ctx = ctx
 	}
 	// Lock order is status, then store, everywhere; the store never takes the

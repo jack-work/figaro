@@ -85,6 +85,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
 	h.noticeUpgrade()
+	h.publishModels()
 	return &Handlers{
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:         h.create,
@@ -107,6 +108,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodStatus:         h.status,
 			rpc.MethodMemCollect:     h.memCollect,
 			rpc.MethodProviderLedger: h.providerLedger,
+			rpc.MethodModelsWant:     h.modelsWant,
 			rpc.MethodSaveBindings:   h.saveBindings,
 			rpc.MethodIR:             h.ariaRead,
 			rpc.MethodRead:           h.read,

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/store"
 
@@ -20,6 +22,7 @@ import (
 func (h *handlers) reader() *AriaReader {
 	h.readerOnce.Do(func() {
 		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil), h.angelus.UICache)
+		h.readerInst.models = h.angelus.Models
 	})
 	return h.readerInst
 }
@@ -35,6 +38,9 @@ func (h *handlers) liveAgent(id string) figaro.AgentServer {
 
 // readFromStore is the one agentless read path for both doors.
 func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any, bool, error) {
+	if id == models.FormID {
+		return h.readModels(method, params)
+	}
 	r := h.reader()
 	switch method {
 	case rpc.MethodForm:
@@ -211,4 +217,47 @@ func (h *handlers) ariaReadDeltas(log store.Log[message.Message], figaroID strin
 		seed = formdelta.SeedFrom(prev[len(prev)-1])
 	}
 	return formdelta.PerRecordFrom(fb, figaroID, seed, page)
+}
+
+func (h *handlers) readModels(method string, params json.RawMessage) (any, bool, error) {
+	if h.angelus.Models == nil {
+		return nil, true, fmt.Errorf("%s: this daemon keeps no model catalog", models.FormID)
+	}
+	if method != rpc.MethodForm {
+		return nil, true, fmt.Errorf("%s is a catalog: %s does not apply, read it with %s", models.FormID, method, rpc.MethodForm)
+	}
+	var req rpc.FormRequest
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &req)
+	}
+	if req.Intrinsic != "" && req.Intrinsic != figaro.IntrinsicState {
+		return nil, true, fmt.Errorf("%s has no intrinsic %q", models.FormID, req.Intrinsic)
+	}
+	return figaro.FormResponseOf(h.angelus.Models.Form().Since(req.Since), ""), true, nil
+}
+
+func (h *handlers) modelsWant(_ context.Context, params json.RawMessage) (any, error) {
+	var req rpc.ModelsWantRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodModelsWant, err)
+	}
+	h.angelus.Models.Want(req.Provider, req.Model)
+	return rpc.ModelsWantResponse{OK: true}, nil
+}
+
+func (h *handlers) publishModels() {
+	cat := h.angelus.Models
+	if cat == nil {
+		return
+	}
+	cat.Form().OnCommit(func(version uint64, patch message.Patch) {
+		hb := h.angelus.Hubs.get(models.FormID)
+		if hb == nil {
+			return
+		}
+		_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
+			Schema: rpc.FormDeltaSchema, AriaID: models.FormID, Version: version,
+			Patch: patch, At: time.Now().UnixMilli(),
+		})
+	})
 }

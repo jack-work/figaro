@@ -38,7 +38,6 @@ func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
 		Mantra:           "essence",
 		Cwd:              "work",
 		ContextTokens:    120,
-		ContextLimit:     1_000,
 		ContextExact:     true,
 		CreatedAtMS:      10,
 	}, nil
@@ -69,7 +68,7 @@ func TestDormantListUsesMetadataOnly(t *testing.T) {
 	got := figaros[0]
 	if got.MessageCount != 42 || got.Provider != "provider" || got.Model != "model" ||
 		got.Mantra != "essence" || got.Cwd != "work" || got.ContextTokens != 120 ||
-		got.ContextLimit != 1_000 || !got.ContextExact || got.CreatedAt != 10 ||
+		got.ContextLimit != 0 || !got.ContextExact || got.CreatedAt != 10 ||
 		got.LastActive != 20 {
 		t.Fatalf("metadata not projected: %#v", got)
 	}

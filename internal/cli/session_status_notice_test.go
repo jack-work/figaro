@@ -15,7 +15,8 @@ import (
 
 func statusFixture(mantra string) *sessionStatus {
 	s := newSessionStatus("abc12345", time.Date(2026, 6, 1, 12, 34, 56, 0, time.UTC))
-	s.update(aria.Metrics{Mantra: mantra, ContextTokens: 11800, ContextLimit: 1000000, TokensIn: 4000, TokensOut: 500})
+	s.update(aria.Metrics{Mantra: mantra, ContextTokens: 11800, TokensIn: 4000, TokensOut: 500})
+	s.setLimit(1000000)
 	return s
 }
 

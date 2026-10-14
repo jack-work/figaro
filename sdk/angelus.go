@@ -184,6 +184,10 @@ func (c *Angelus) ListGlobal(ctx context.Context) (*rpc.ListResponse, error) {
 	return &resp, nil
 }
 
+func (c *Angelus) ModelsWant(ctx context.Context, provider, model string) error {
+	return c.call(ctx, rpc.MethodModelsWant, rpc.ModelsWantRequest{Provider: provider, Model: model}, nil)
+}
+
 // Attach restores a dormant aria without binding a pid.
 func (c *Angelus) Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error) {
 	var resp rpc.AttachResponse

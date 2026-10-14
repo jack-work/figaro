@@ -132,6 +132,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
+		Models:          h.angelus.Models,
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         backend,
@@ -311,7 +312,6 @@ func (h *handlers) forkMetaSnapshot(parent string) *store.AriaMeta {
 		copy.OutfitName = info.OutfitName
 		copy.OutfitVersion = info.OutfitVersion
 		copy.ContextTokens = info.ContextTokens
-		copy.ContextLimit = info.ContextLimit
 		copy.ContextExact = info.ContextExact
 		copy.CreatedAtMS = info.CreatedAt.UnixMilli()
 		copy.LastFigaroLT = info.LastFigaroLT
@@ -333,7 +333,6 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 		copy.CacheReadTokens = 0
 		copy.CacheWriteTokens = 0
 		copy.ContextTokens = 0
-		copy.ContextLimit = 0
 		copy.ContextExact = false
 		copy.LastFigaroLT = atMainLT
 		copy.Provider = ""

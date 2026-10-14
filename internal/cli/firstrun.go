@@ -489,6 +489,7 @@ func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	models, err := prov.Models(ctx)
+	models = providerPkg.Pickable(models)
 	if err != nil || len(models) == 0 {
 		fmt.Fprintln(os.Stderr, dim("     (could not list models; using built-in default "+fallback+")"))
 		return fallback

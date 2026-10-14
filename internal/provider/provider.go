@@ -11,11 +11,23 @@ import (
 )
 
 type ModelInfo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Provider      string `json:"provider"`
-	ContextWindow int    `json:"context_window"`
-	MaxTokens     int    `json:"max_tokens"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Provider          string `json:"provider"`
+	ContextWindow     int    `json:"context_window"`
+	LongContextWindow int    `json:"long_context_window,omitempty"`
+	MaxTokens         int    `json:"max_tokens"`
+	Hidden            bool   `json:"hidden,omitempty"`
+}
+
+func Pickable(all []ModelInfo) []ModelInfo {
+	out := make([]ModelInfo, 0, len(all))
+	for _, m := range all {
+		if !m.Hidden {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 type Tool struct {
@@ -91,14 +103,9 @@ type Provider interface {
 	Send(ctx context.Context, in SendInput, bus Bus) error
 }
 
-// ContextLimitProvider reports the model's context cap from cached metadata;
-// no network I/O, it runs on live UI paths.
-type ContextLimitProvider interface {
-	ContextLimit(model string, snapshot form.Snapshot) int
+type ModelTable interface {
+	TableModel(model string) (ModelInfo, bool)
 }
-
-// ContextLimitOverrideKey pins a context window over the provider's report.
-const ContextLimitOverrideKey = "system.max_context_tokens"
 
 // StreamRequestBodyKey, default on; false buffers the whole conversation.
 const StreamRequestBodyKey = "system.stream_request_body"
@@ -113,16 +120,4 @@ func StreamsRequestBody(snapshot form.Snapshot) bool {
 		return true
 	}
 	return on
-}
-
-func ContextLimitOverride(snapshot form.Snapshot) (int, bool) {
-	raw, ok := snapshot.Get(ContextLimitOverrideKey)
-	if !ok {
-		return 0, false
-	}
-	var limit int
-	if json.Unmarshal(raw, &limit) != nil || limit <= 0 {
-		return 0, false
-	}
-	return limit, true
 }

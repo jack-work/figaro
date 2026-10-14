@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -73,7 +74,6 @@ func (metricsProvider) Name() string                                         { r
 func (metricsProvider) Fingerprint() string                                  { return "metrics/v1" }
 func (metricsProvider) SetModel(string)                                      {}
 func (metricsProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (metricsProvider) ContextLimit(string, form.Snapshot) int               { return 128000 }
 func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
 		Role:       message.RoleOutput,
@@ -89,32 +89,35 @@ func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provid
 	return nil
 }
 
-type lateLimitProvider struct {
-	mu    sync.RWMutex
-	limit int
+type fakeCatalog struct {
+	mu    sync.Mutex
+	snap  form.Snapshot
+	wants []string
 }
 
-func (p *lateLimitProvider) Name() string                                         { return "late-limit" }
-func (p *lateLimitProvider) Fingerprint() string                                  { return "late-limit/v1" }
-func (p *lateLimitProvider) SetModel(string)                                      {}
-func (p *lateLimitProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *lateLimitProvider) ContextLimit(string, form.Snapshot) int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.limit
+func (c *fakeCatalog) Snapshot() form.Snapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.snap
 }
-func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
-	p.mu.Lock()
-	p.limit = 128000
-	p.mu.Unlock()
-	bus.PushDelta(message.TextContent("done"))
-	msg := message.Message{
-		Role:       message.RoleOutput,
-		Content:    []message.Content{message.TextContent("done")},
-		StopReason: message.StopEnd,
-	}
-	bus.PushFigaro(msg)
-	return nil
+
+func (c *fakeCatalog) Want(provider, model string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.wants = append(c.wants, provider+"/"+model)
+}
+
+func (c *fakeCatalog) fill(provider, model string, window int) {
+	raw, _ := json.Marshal(models.Provider{Models: map[string]models.Entry{model: {Context: models.Context{Default: window}}}})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.snap = c.snap.Apply(form.Build(c.snap, map[string]json.RawMessage{provider: raw}, nil))
+}
+
+func (c *fakeCatalog) wanted() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.wants...)
 }
 
 type mockEncodeFn func(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
@@ -377,9 +380,12 @@ loop:
 func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 	cb, _ := form.Open("")
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
-		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
-		"mantra":       json.RawMessage(`"keep session accounting visible"`),
+		"system.provider": json.RawMessage(`"metrics"`),
+		"system.model":    json.RawMessage(`"gpt-5.6-terra"`),
+		"mantra":          json.RawMessage(`"keep session accounting visible"`),
 	}, nil))
+	cat := &fakeCatalog{}
+	cat.fill("metrics", "gpt-5.6-terra", 128000)
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
@@ -388,6 +394,7 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 		SocketPath: "/tmp/metrics-test.sock",
 		Provider:   metricsProvider{},
 		Form:       cb,
+		Models:     cat,
 	})
 	defer a.Kill()
 
@@ -421,49 +428,36 @@ done:
 	require.NoError(t, err)
 	contextResp := raw.(rpc.ContextResponse)
 	require.NotNil(t, contextResp.Metrics)
-	assert.Equal(t, 128000, contextResp.Metrics.ContextLimit)
+	assert.Equal(t, 15000, contextResp.Metrics.ContextTokens)
 }
 
-func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
+// The agent asks the catalog for the board's own provider x model at its
+// metrics boundary, and a fill that lands later is what Info reports: nothing
+// about the limit is captured at construction.
+func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {
 	cb, _ := form.Open("")
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
-		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
+		"system.provider": json.RawMessage(`"metrics"`),
+		"system.model":    json.RawMessage(`"gpt-5.6-terra"`),
 	}, nil))
+	cat := &fakeCatalog{}
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
 		Projector:  uiir.New(nil),
 		ID:         testID,
 		SocketPath: "/tmp/late-limit-test.sock",
-		Provider:   &lateLimitProvider{},
+		Provider:   metricsProvider{},
 		Form:       cb,
+		Models:     cat,
 	})
 	defer a.Kill()
 
-	ch, _ := subscribeChan(a)
-	submitPrompt(a, "hello")
-	var firstLive *aria.Page
-	for {
-		select {
-		case n := <-ch:
-			if n.Method == rpc.MethodAriaFrame {
-				frame := n.Params.(aria.Page)
-				if frame.LiveTail() != nil && firstLive == nil {
-					firstLive = &frame
-				}
-			}
-			if n.Method == rpc.MethodTurnDone {
-				goto done
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for turn completion")
-		}
-	}
-done:
+	assert.Equal(t, 0, a.Info().ContextLimit)
+	assert.Contains(t, cat.wanted(), "metrics/gpt-5.6-terra")
 
-	require.NotNil(t, firstLive)
-	require.NotNil(t, firstLive.Metrics)
-	assert.Equal(t, 128000, firstLive.Metrics.ContextLimit)
+	cat.fill("metrics", "gpt-5.6-terra", 128000)
+	assert.Equal(t, 128000, a.Info().ContextLimit)
 }
 
 func TestAgent_ReadCatchUp(t *testing.T) {

@@ -42,7 +42,6 @@ type AriaMeta struct {
 	OutfitName       string `json:"outfit_name,omitempty"`
 	OutfitVersion    string `json:"outfit_version,omitempty"`
 	ContextTokens    int    `json:"context_tokens,omitempty"`
-	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
 	// TTLMS mirrors the board's system.ttl so the sweep finds what is due without opening a node.

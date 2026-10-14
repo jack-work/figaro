@@ -325,3 +325,45 @@ A message never blinks out of existence on its way through:
 `committed` rows are retained briefly so a client can hold the message on
 screen until its own transcript has adopted the turn — which it knows, and
 which the daemon must not have to know per-client.
+
+## `@models`: the model catalog
+
+`@models` is the daemon's catalog of model metadata, one form for every aria.
+It lives in memory, is snapshotted to `$FIGARO_CACHE_DIR/models.json` so a
+cold daemon answers before any network, and refuses every write.
+
+```
+<provider>.models.<model>.{name, context.default, context.long, max_output, source}
+<provider>.{refreshed_at, attempted_at, error}
+```
+
+It is keyed by provider, then model: the same model id under two providers is
+two entries, and a miss under one never borrows another's. `source` is `api`
+for what the provider's model listing said and `table` for the built-in
+Anthropic window table, which answers for aliases the listing never names.
+
+| fills it | when |
+|---|---|
+| a want for a pair it lacks, or a provider older than a day | the daemon refreshes that provider in the background; a want never waits |
+| a failed refresh | records `error` and `attempted_at`, keeps the last good entries, retries after ten minutes |
+
+The daemon wants the pair on its own whenever it reads an aria's metrics, and a
+client asks (`angelus.models.want`) when its own lookup misses.
+
+```sh
+fig form show @models         # the catalog as a live tree
+```
+
+**A client derives an aria's context percentage itself:** it mirrors the
+aria's board and `@models`, and looks up the board's `system.provider` ×
+`system.model`. `system.max_context_tokens` on the board wins outright, and
+`system.context_tier = "long_context"` selects `context.long`. A model switch
+is a board delta, so the bar follows it with no round trip; a catalog fill is
+an `@models` delta, so a bar showing tokens alone gains its percentage the
+moment the fill lands. `aria.Metrics` carries the token count, never the limit.
+The lookup is `api/models.ContextLimit`, the one implementation the daemon's
+`status` and `list` use too.
+
+A client that misses deltas reads `figaro.form` with `since` set to the
+version it holds, and gets the patches since then, or a full snapshot when
+the form no longer holds them.

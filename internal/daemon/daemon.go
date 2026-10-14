@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/internal/decide"
-	"github.com/jack-work/figaro/internal/relay"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,6 +12,10 @@ import (
 	"syscall"
 	"text/template"
 	"time"
+
+	"github.com/jack-work/figaro/internal/decide"
+	"github.com/jack-work/figaro/internal/modelcat"
+	"github.com/jack-work/figaro/internal/relay"
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
@@ -176,6 +178,18 @@ func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
 }
 
 func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
+	build := buildProvider(loaded, formTmpls, backend)
+	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
+		p, err := build(providerName, knobs)
+		if err != nil {
+			return nil, err
+		}
+		registerOnAppend(backend, p)
+		return p, nil
+	}
+}
+
+func buildProvider(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
 		reg := providerPkg.Lookup(providerName)
 		if reg == nil {
@@ -202,7 +216,6 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 		if err != nil {
 			return nil, err
 		}
-		registerOnAppend(backend, p)
 		return p, nil
 	}
 }
@@ -291,6 +304,13 @@ func Run() {
 	if err != nil {
 		slog.Warn("decide: no decision model", "err", err)
 	}
+
+	build := buildProvider(loaded, formTmpls, backend)
+	a.Models = modelcat.New(modelcat.Config{
+		Build: func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
+		Path:  filepath.Join(boot.CacheDir(), "models.json"),
+	})
+	go a.Models.Run(ctx)
 
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:            a,

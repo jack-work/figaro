@@ -202,7 +202,7 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	entry.CacheReadTokens = meta.CacheReadTokens
 	entry.CacheWriteTokens = meta.CacheWriteTokens
 	entry.ContextTokens = meta.ContextTokens
-	entry.ContextLimit = meta.ContextLimit
+	entry.ContextLimit = h.angelus.Models.Limit(meta.Provider, meta.Model)
 	entry.ContextExact = meta.ContextExact
 	entry.Provider = meta.Provider
 	entry.Model = meta.Model

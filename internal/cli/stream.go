@@ -110,6 +110,8 @@ type interactiveInput struct {
 	queueDebut   map[uint64]time.Time // guarded by in.mu
 	debutTimer   *time.Timer
 	intrinsics   *intrinsicMirrors
+	board        *formMirror // the subject's form; guarded by in.mu, parked with the subject
+	models       *modelsFeed
 	interrupting bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user
 	hangup       hangupClient // nil leaves H inert
 	// The send half. ownTurn closes when a frame carries our question, noTurn

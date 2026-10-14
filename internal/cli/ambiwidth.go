@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -35,7 +36,7 @@ func ambiWidthCachePath() string {
 	if t == "" {
 		return ""
 	}
-	dir := cacheDir()
+	dir := boot.CacheDir()
 	if dir == "" {
 		return ""
 	}

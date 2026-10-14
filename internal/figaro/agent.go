@@ -15,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -86,6 +87,13 @@ type Config struct {
 
 	// UICache is the process-wide composed UI IR cache; nil gives a private unbounded node.
 	UICache *aria.ComposedCache
+
+	Models ModelCatalog
+}
+
+type ModelCatalog interface {
+	Snapshot() form.Snapshot
+	Want(provider, model string)
 }
 
 type Agent struct {
@@ -94,6 +102,7 @@ type Agent struct {
 	// provBind is written by the drain loop, read lock-free on RPC goroutines.
 	provBind    atomic.Pointer[providerBinding]
 	provFactory ProviderFactory
+	models      ModelCatalog
 	tools       *tool.Registry
 	proj        Projector
 	// figLog is read directly and written through journal only; see journal.go.
@@ -158,7 +167,6 @@ type Agent struct {
 	turnCount     int
 	metricsLT     uint64
 	contextTokens int
-	contextLimit  int
 	contextExact  bool
 	model         string
 	mantra        string
@@ -194,6 +202,7 @@ func NewAgent(cfg Config) *Agent {
 		backend:     cfg.Backend,
 		form:        cfg.Form,
 		settings:    cfg.Settings,
+		models:      cfg.Models,
 		createdAt:   createdAt,
 		lastActive:  lastActive,
 		agentSince:  now,
@@ -325,14 +334,18 @@ func snapshotOutfit(snapshot form.Snapshot) (name, version string) {
 	return name, version
 }
 
-func resolveContextLimit(prov provider.Provider, model string, snapshot form.Snapshot) int {
-	if limit, ok := provider.ContextLimitOverride(snapshot); ok {
-		return limit
+func (a *Agent) wantModel(snapshot form.Snapshot) {
+	if a.models == nil {
+		return
 	}
-	if resolver, ok := prov.(provider.ContextLimitProvider); ok {
-		return resolver.ContextLimit(model, snapshot)
+	a.models.Want(models.Subject(snapshot))
+}
+
+func (a *Agent) contextLimit() int {
+	if a.models == nil {
+		return 0
 	}
-	return 0
+	return models.ContextLimit(a.models.Snapshot(), a.Snapshot())
 }
 
 // refreshMetrics runs at durable message boundaries, never on streaming deltas.
@@ -377,7 +390,7 @@ func (a *Agent) refreshMetrics() {
 
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
-	contextLimit := resolveContextLimit(a.provider(), model, snapshot)
+	a.wantModel(snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = in
@@ -389,7 +402,6 @@ func (a *Agent) refreshMetrics() {
 	a.metricsLT = metricsLT
 	a.contextTokens = contextTokens
 	a.contextExact = contextExact
-	a.contextLimit = contextLimit
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
@@ -410,6 +422,7 @@ func (a *Agent) seedMetricsFromMeta() bool {
 
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
+	a.wantModel(snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = meta.TokensIn
@@ -421,8 +434,6 @@ func (a *Agent) seedMetricsFromMeta() bool {
 	a.metricsLT = meta.LastFigaroLT
 	a.contextTokens = meta.ContextTokens
 	a.contextExact = meta.ContextExact
-	// The limit is a live lookup: a model swap must not be reported from a stale sidecar.
-	a.contextLimit = resolveContextLimit(a.provider(), model, snapshot)
 	// Form-owned fields come from the board, not the sidecar.
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
@@ -447,7 +458,7 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	}
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
-	contextLimit := resolveContextLimit(a.provider(), model, snapshot)
+	a.wantModel(snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = in
@@ -459,7 +470,6 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	a.metricsLT = metricsLT
 	a.contextTokens = contextTokens
 	a.contextExact = contextExact
-	a.contextLimit = contextLimit
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
@@ -651,7 +661,6 @@ func (a *Agent) Info() FigaroInfo {
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
 		ContextTokens:    a.contextTokens,
-		ContextLimit:     a.contextLimit,
 		ContextExact:     a.contextExact,
 		CreatedAt:        a.createdAt,
 		LastActive:       a.lastActive,
@@ -664,23 +673,21 @@ func (a *Agent) Info() FigaroInfo {
 		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
+	info.ContextLimit = a.contextLimit()
 	return info
 }
 
 func (a *Agent) sessionMetrics() *aria.Metrics {
-	info := a.Info()
 	a.mu.RLock()
-	mantra := a.mantra
-	a.mu.RUnlock()
+	defer a.mu.RUnlock()
 	return &aria.Metrics{
-		ContextTokens:    info.ContextTokens,
-		ContextLimit:     info.ContextLimit,
-		ContextExact:     info.ContextExact,
-		TokensIn:         info.TokensIn,
-		TokensOut:        info.TokensOut,
-		CacheReadTokens:  info.CacheReadTokens,
-		CacheWriteTokens: info.CacheWriteTokens,
-		Mantra:           mantra,
+		ContextTokens:    a.contextTokens,
+		ContextExact:     a.contextExact,
+		TokensIn:         a.tokensIn,
+		TokensOut:        a.tokensOut,
+		CacheReadTokens:  a.cacheRead,
+		CacheWriteTokens: a.cacheWrite,
+		Mantra:           a.mantra,
 	}
 }
 
@@ -1074,7 +1081,6 @@ func (a *Agent) publishMetadata() {
 		OutfitName:       a.outfitName,
 		OutfitVersion:    a.outfitVer,
 		ContextTokens:    a.contextTokens,
-		ContextLimit:     a.contextLimit,
 		ContextExact:     a.contextExact,
 		CreatedAtMS:      a.createdAt.UnixMilli(),
 		LastFigaroLT:     a.metricsLT,

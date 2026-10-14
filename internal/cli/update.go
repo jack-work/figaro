@@ -17,7 +17,7 @@ import (
 const figaroModule = "github.com/jack-work/figaro"
 
 func updateCache() *update.Cache {
-	return update.NewCache(filepath.Join(cacheDir(), "figaro"))
+	return update.NewCache(filepath.Join(boot.CacheDir(), "figaro"))
 }
 
 // helpVersionLine reads the cache only, never the network: it runs inside the live

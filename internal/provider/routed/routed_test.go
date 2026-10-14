@@ -93,24 +93,44 @@ func TestOnlyStaticRoutingTranslatesOnAppend(t *testing.T) {
 	}
 }
 
-func TestCatalogContextLimits(t *testing.T) {
-	var m catalogModel
-	m.Billing.TokenPrices.Default.MaxPromptTokens = 128000
-	m.Billing.TokenPrices.LongContext.MaxPromptTokens = 1000000
-	m.Capabilities.Limits.MaxContextWindowTokens = 1000000
-	p := mustNew(t, Spec{Name: "t", BaseURL: func() string { return "" }, Catalog: "/models"})
-	p.catalog = map[string]catalogModel{"m": m}
+// The catalog form records what the gateway enforces: the per-tier prompt cap,
+// not the model's raw window, and a picker-hidden model is kept (flagged) so an
+// aria already pinned to it still has a capacity.
+func TestModelsReportPromptCapsAndKeepHiddenModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[
+			{"id":"m","name":"Em","supported_endpoints":["/responses"],
+			 "billing":{"token_prices":{"default":{"max_prompt_tokens":128000},"long_context":{"max_prompt_tokens":1000000}}},
+			 "capabilities":{"limits":{"max_context_window_tokens":1000000,"max_output_tokens":64000}}},
+			{"id":"hidden","model_picker_enabled":false,"supported_endpoints":["/chat/completions"],
+			 "capabilities":{"limits":{"max_context_window_tokens":200000}}}
+		]}`)
+	}))
+	defer srv.Close()
+	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return srv.URL }, Catalog: "/models"})
 
-	if got := p.ContextLimit("m", form.Snapshot{}); got != 128000 {
-		t.Errorf("default tier %d", got)
+	got, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
-	long := form.FromMap(map[string]json.RawMessage{"system.context_tier": json.RawMessage(`"long_context"`)})
-	if got := p.ContextLimit("m", long); got != 1000000 {
-		t.Errorf("long tier %d", got)
+	byID := map[string]provider.ModelInfo{}
+	for _, m := range got {
+		byID[m.ID] = m
 	}
-	pinned := form.FromMap(map[string]json.RawMessage{"system.max_context_tokens": json.RawMessage(`2000000`)})
-	if got := p.ContextLimit("m", pinned); got != 2000000 {
-		t.Errorf("an explicit pin wins even above the catalog, got %d", got)
+	m := byID["m"]
+	if m.ContextWindow != 128000 || m.LongContextWindow != 1000000 || m.MaxTokens != 64000 || m.Hidden {
+		t.Errorf("m: %+v", m)
+	}
+	h, ok := byID["hidden"]
+	if !ok || !h.Hidden || h.ContextWindow != 200000 {
+		t.Errorf("hidden: %+v (present %v)", h, ok)
+	}
+	if picks := provider.Pickable(got); len(picks) != 1 || picks[0].ID != "m" {
+		t.Errorf("the picker must not offer a hidden model: %+v", picks)
 	}
 }
 

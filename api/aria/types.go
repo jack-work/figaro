@@ -39,10 +39,8 @@ type InquirySegment struct {
 	Text   string `json:"text"`
 }
 
-// ContextLimit is zero when the model has no cap metadata.
 type Metrics struct {
 	ContextTokens    int    `json:"context_tokens"`
-	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact"`
 	TokensIn         int    `json:"tokens_in"`
 	TokensOut        int    `json:"tokens_out"`

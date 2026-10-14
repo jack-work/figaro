@@ -51,8 +51,6 @@ type Anthropic struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-
-	windows anthropicmodels.Catalog
 }
 
 func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
@@ -299,7 +297,6 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 	var models []provider.ModelInfo
 	for _, m := range result.Data {
-		a.windows.Learn(m.ID, m.MaxInputTokens)
 		models = append(models, provider.ModelInfo{
 			ID:            m.ID,
 			Name:          m.DisplayName,
@@ -311,15 +308,12 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return models, nil
 }
 
-// ContextLimit prefers system.max_context_tokens, then the learned window,
-// then the static table (0 when unknown). No network I/O.
-func (a *Anthropic) ContextLimit(model string, snapshot form.Snapshot) int {
-	if model == "" {
-		a.mu.Lock()
-		model = a.Model
-		a.mu.Unlock()
+func (a *Anthropic) TableModel(model string) (provider.ModelInfo, bool) {
+	window := anthropicmodels.ContextWindow(model)
+	if window <= 0 {
+		return provider.ModelInfo{}, false
 	}
-	return a.windows.ContextLimit(model, snapshot)
+	return provider.ModelInfo{ID: model, Provider: providerName, ContextWindow: window}, true
 }
 
 func isOAuthToken(key string) bool {

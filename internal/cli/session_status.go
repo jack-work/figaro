@@ -94,6 +94,7 @@ type sessionStatus struct {
 	figaroID  string
 	startedAt time.Time
 	metrics   aria.Metrics
+	limit     int
 	turn      turnStatus
 	tick      uint64
 	verbose   bool      // the bar's verbosity (^V), not the tool-output toggle (^O)
@@ -213,6 +214,19 @@ func (s *sessionStatus) setNoticeTTL(d time.Duration) {
 	s.mu.Lock()
 	s.noticeTTL = d
 	s.mu.Unlock()
+}
+
+func (s *sessionStatus) setLimit(limit int) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.limit == limit {
+		return false
+	}
+	s.limit = limit
+	return true
 }
 
 func (s *sessionStatus) update(metrics aria.Metrics) bool {
@@ -423,7 +437,7 @@ func (s *sessionStatus) panelLines() []string {
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
 		rows = append(rows, "  mantra    "+mantra)
 	}
-	if context := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); context != "-" {
+	if context := formatContextUsage(s.metrics.ContextTokens, s.limit, s.metrics.ContextExact); context != "-" {
 		rows = append(rows, "  context   "+context)
 	}
 	rows = append(rows,

@@ -3,12 +3,15 @@ package angelus
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/authz"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/internal/authz"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -74,6 +77,10 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 			hb.kind = n.Kind
 		}
 	}
+	if id == models.FormID {
+		hb.kind = kindFormNode
+		hb.wake = nil
+	}
 
 	if err := hb.listen(h.ctx); err != nil {
 		return nil, err
@@ -95,6 +102,9 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 // writeForHub lands mutations on a dormant aria or an unbound form without
 // an agent; it is the only path that can patch provider keys into a naked figaro.
 func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
+	if id == models.FormID {
+		return nil, true, fmt.Errorf("%s is the daemon's model catalog: it is read-only", id)
+	}
 	switch method {
 	case rpc.MethodSet:
 	case rpc.MethodStudy, rpc.MethodDrop:

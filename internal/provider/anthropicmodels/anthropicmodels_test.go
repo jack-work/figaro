@@ -1,10 +1,8 @@
 package anthropicmodels
 
 import (
-	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/api/form"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,59 +45,6 @@ func TestContextWindow(t *testing.T) {
 			assert.Equal(t, tc.want, ContextWindow(tc.model))
 		})
 	}
-}
-
-func TestCatalogPrefersLearnedWindow(t *testing.T) {
-	var c Catalog
-	assert.Equal(t, 0, c.Window("claude-opus-6"))
-	c.Learn("claude-opus-6", 750_000)
-	assert.Equal(t, 750_000, c.Window("claude-opus-6"))
-
-	c.Learn("claude-opus-4-5-20251101", 400_000)
-	assert.Equal(t, 400_000, c.Window("claude-opus-4-5-20251101"))
-	assert.Equal(t, 1_000_000, c.Window("claude-opus-5"))
-
-	c.Learn("claude-opus-5", 0)
-	c.Learn("", 123)
-	assert.Equal(t, 1_000_000, c.Window("claude-opus-5"))
-}
-
-func TestCatalogContextLimitOverridePrecedence(t *testing.T) {
-	var c Catalog
-
-	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", form.Snapshot{}))
-
-	assert.Equal(t, 200_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`200000`),
-	})))
-	assert.Equal(t, 2_000_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`2000000`),
-	})))
-	assert.Equal(t, 500_000, c.ContextLimit("claude-opus-6", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`500000`),
-	})))
-
-	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`"lots"`),
-	})))
-	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
-		"system.max_context_tokens": json.RawMessage(`0`),
-	})))
-}
-
-func TestCatalogConcurrentAccess(t *testing.T) {
-	var c Catalog
-	done := make(chan struct{})
-	go func() {
-		for i := 0; i < 200; i++ {
-			c.Learn("claude-opus-5", 1_000_000+i)
-		}
-		close(done)
-	}()
-	for i := 0; i < 200; i++ {
-		_ = c.Window("claude-opus-5")
-	}
-	<-done
 }
 
 func TestCompareVersions(t *testing.T) {

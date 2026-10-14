@@ -338,9 +338,6 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	}
 	models := make([]provider.ModelInfo, 0, len(catalog))
 	for _, m := range catalog {
-		if m.ModelPickerEnabled != nil && !*m.ModelPickerEnabled {
-			continue
-		}
 		if p.cachedRoute(m.ID) == "" {
 			continue
 		}
@@ -348,33 +345,18 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		if name == "" {
 			name = m.ID
 		}
+		limits := m.contextLimits()
 		models = append(models, provider.ModelInfo{
-			ID:            m.ID,
-			Name:          name,
-			Provider:      p.spec.Name,
-			ContextWindow: m.Capabilities.Limits.MaxContextWindowTokens,
-			MaxTokens:     m.Capabilities.Limits.MaxOutputTokens,
+			ID:                m.ID,
+			Name:              name,
+			Provider:          p.spec.Name,
+			ContextWindow:     limits.Default,
+			LongContextWindow: limits.Long,
+			MaxTokens:         m.Capabilities.Limits.MaxOutputTokens,
+			Hidden:            m.ModelPickerEnabled != nil && !*m.ModelPickerEnabled,
 		})
 	}
 	return models, nil
-}
-
-func (p *Provider) ContextLimit(model string, snapshot form.Snapshot) int {
-	p.mu.RLock()
-	entry, ok := p.catalog[model]
-	p.mu.RUnlock()
-	limit := 0
-	if ok {
-		limits := entry.contextLimits()
-		limit = limits.Default
-		if snapshotString(snapshot, "system.context_tier") == "long_context" && limits.Long > 0 {
-			limit = limits.Long
-		}
-	}
-	if override, ok := provider.ContextLimitOverride(snapshot); ok {
-		return override
-	}
-	return limit
 }
 
 func (p *Provider) staticEncoder() provider.EntryEncoder {

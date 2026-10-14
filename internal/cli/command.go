@@ -599,6 +599,8 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	// Both reads carry the generation: a seed owed to a superseded switch must
 	// not be applied.
 	in.seedMetrics(gen)
+	in.recomputeLimit()
+	in.seedBoard(gen)
 	in.seedSubject(gen)
 	hop()
 	return nil
@@ -622,8 +624,12 @@ func (in *interactiveInput) claimSubject(gen uint64, id, from string, fcli *sdk.
 	// The outgoing subject is shelved before the new one takes its place,
 	// because retarget drops it.
 	in.parkSubject(from)
+	in.board = &formMirror{}
 	if p := in.takeParked(id); p != nil {
 		in.seed = in.lt.adopt(id, status, p, shared)
+		if p.board != nil {
+			in.board = p.board
+		}
 	} else {
 		in.seed = in.lt.retarget(id, status, shared)
 	}
@@ -751,7 +757,7 @@ func (in *interactiveInput) notifyHandler(gen uint64, id string) sdk.NotifyHandl
 			if in.currentID() != id {
 				return
 			}
-			in.applyIntrinsicDelta(params)
+			in.applyFormDelta(gen, params)
 			return
 		}
 		in.mu.Lock()
