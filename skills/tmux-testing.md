@@ -27,8 +27,15 @@ property you care about lives in the terminal, **test it in a terminal**.
 ## Run the smoke suite
 
 ```sh
-FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v
+FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v -count=1
 ```
+
+**`-count=1` is not optional.** `go test` caches results and replays the
+previous run's output verbatim (pane heights, PASS lines, the whole transcript)
+without starting tmux, launching a daemon or spending a token. For a suite whose
+only purpose is driving the real thing, a cached pass is a green tick for work
+nobody did, and it reads exactly like a live run because it was one, replayed.
+A floor set to fail once passed this way; the log said `ok (cached)`.
 
 `internal/cli/tmuxsmoke_test.go` is the harness; `tmuxsmoke_cases_test.go` is the
 suite. Skipped by default so `go test ./...` stays fast and hermetic. Each case
@@ -257,6 +264,9 @@ divergence, which the purity invariant forbids.
 - Is it pinning current behaviour or intended behaviour? Two tests *asserted the
   bug*: one expected a tool present in the IR to render nowhere; a golden file
   literally encoded a duplicated voice marker.
+- Does it enter the program where a keyboard does? A keybinding test that calls
+  a handler, or hands the mode in as an argument, would still pass if the key
+  decoder and the mode arbiter were deleted. See **modal-input-debugging**.
 
 ## Twelve arias, one daemon, one build
 

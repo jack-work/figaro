@@ -125,6 +125,13 @@ whatever it showed at flush time: the fix is to commit a *stable*
 representation at flush, not to chase the impossible after-the-fact
 update.
 
+## When a key does the wrong thing
+
+This file is the mechanics. The diagnosis lives in
+**modal-input-debugging**: why a keystroke lands in the wrong consumer, why a
+test that sets the mode by hand cannot see it, and why a harness that can only
+press keys is the one that cannot cheat.
+
 ## Still to flesh out
 
 Send-keys recipes for arrow keys, function keys, modifiers, paste mode.
