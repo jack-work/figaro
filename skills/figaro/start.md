@@ -87,8 +87,9 @@ a list of twenty conversations stays readable. Agents maintain their own; see
 
 An **outfit** is a named patch for the form: which model, which credo
 (the standing instructions that shape voice and behaviour), and which skills
-are available. It lives in `~/.config/figaro/outfits/<name>.toml`, and
-`config.toml` names the default.
+are available. It lives in `<name>.toml` anywhere under
+`~/.config/figaro/outfits/` (subdirectories are for you; the name is the
+file's), and `config.toml` names the default.
 
 ```sh
 figaro state outfit --list        what profiles exist

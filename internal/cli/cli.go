@@ -1301,7 +1301,8 @@ Rules worth knowing:
     names the outfits that file is composed from. Written into a patch it is
     ordinary data and is stored as typed.
 
-Outfits live in the SERVER's config: ~/.config/figaro/outfits/<name>.toml, with
+Outfits live in the SERVER's config: <name>.toml anywhere under
+~/.config/figaro/outfits/ (subdirectories organize; the name is the file's), with
 default_outfit in config.toml naming what ` + "`default`" + ` stands for. The first-run
 flow writes both through the daemon, so a client never has to know the path.`,
 		Run: func(ctx *cmdkit.RunContext) error {

@@ -7,6 +7,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -128,4 +129,31 @@ func TestCreate_MissingOutfitName_ReturnsTypedError(t *testing.T) {
 	require.True(t, errors.As(err, &jerr))
 	assert.Equal(t, rpc.ErrNoProvider, jerr.Code,
 		"missing outfit file is graceful-empty; surfaced as no-provider")
+}
+
+// An outfit that resolves to two files is not missing: the name exists twice.
+// Reporting it as "not found" sent Gluck looking for a file that was there.
+func TestCreate_AmbiguousOutfitIsNotReportedAsMissing(t *testing.T) {
+	dir := t.TempDir()
+	for _, rel := range []string{"outfits/twin.toml", "outfits/old/twin.toml"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, filepath.Dir(rel)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, rel), []byte("[system]\nprovider = \"anthropic\"\n"), 0o600))
+	}
+	loaded, err := config.Load(dir)
+	require.NoError(t, err)
+
+	acli, teardown := bootAngelus(t, dir, loaded)
+	defer teardown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err = acli.Create(ctx, []string{"twin"}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ambiguous")
+	assert.NotContains(t, err.Error(), "not found")
+	var jerr *jkrpc.Error
+	if errors.As(err, &jerr) {
+		assert.NotEqual(t, rpc.ErrOutfitNotFound, jerr.Code)
+	}
 }

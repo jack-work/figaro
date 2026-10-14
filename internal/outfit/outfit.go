@@ -301,21 +301,36 @@ func decodeTOML(b []byte, path string) (map[string]any, error) {
 	return raw, nil
 }
 
-// loadouts/ is the pre-rename directory, still read if it survived.
 func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
-	canonical := filepath.Join(o.configDir, "outfits", name+".toml")
-	for _, path := range []string{canonical, filepath.Join(o.configDir, "loadouts", name+".toml")} {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("outfit: stat %s: %w", path, err)
-		}
-	}
-	// Record the absence so creating the file later turns the epoch over.
+	var files map[string][]string
+	var err error
 	if r != nil {
-		r.stat(canonical)
+		files, err = r.outfitIndex(name)
+	} else {
+		files, err = walkOutfits(o.configDir, nil)
 	}
-	return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
+	if err != nil {
+		return "", fmt.Errorf("outfit: %w", err)
+	}
+	switch paths := files[name]; len(paths) {
+	case 1:
+		return paths[0], nil
+	case 0:
+		canonical := filepath.Join(o.configDir, "outfits", name+".toml")
+		if r != nil {
+			r.stat(canonical)
+		}
+		return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
+	default:
+		rel := make([]string, len(paths))
+		for i, p := range paths {
+			rel[i] = p
+			if r, err := filepath.Rel(o.configDir, p); err == nil {
+				rel[i] = r
+			}
+		}
+		return "", fmt.Errorf("outfit %q is ambiguous: %s; an outfit is named by its file, so rename one", name, strings.Join(rel, " and "))
+	}
 }
 
 // flatten walks a TOML tree into dotted form keys, expanding fileName/dirName single-key tables.

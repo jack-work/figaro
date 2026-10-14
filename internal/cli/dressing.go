@@ -7,8 +7,6 @@ import (
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
-	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -125,16 +123,5 @@ func outfitNamesOnDisk() []string {
 	if loaded == nil {
 		return nil
 	}
-	entries, err := os.ReadDir(loaded.OutfitsDir())
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range entries {
-		if name, ok := strings.CutSuffix(e.Name(), ".toml"); ok && !e.IsDir() {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
+	return loaded.ListOutfits()
 }

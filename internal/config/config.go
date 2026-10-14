@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -620,20 +619,10 @@ func (l *Loaded) OutfitsDir() string {
 	return filepath.Join(l.dir(), "outfits")
 }
 
-// Canonical first; loadouts/ is the pre-rename name.
-func (l *Loaded) outfitDirs() []string {
-	return []string{
-		filepath.Join(l.dir(), "outfits"),
-		filepath.Join(l.dir(), "loadouts"),
-	}
-}
-
 func (l *Loaded) OutfitPath(name string) string {
-	for _, dir := range l.outfitDirs() {
-		path := filepath.Join(dir, name+".toml")
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
+	files, err := OutfitFiles(l.dir(), nil)
+	if err == nil && len(files[name]) > 0 {
+		return files[name][0]
 	}
 	return filepath.Join(l.OutfitsDir(), name+".toml")
 }
@@ -659,31 +648,11 @@ func (l *Loaded) ListProviders() []string {
 }
 
 func (l *Loaded) ListOutfits() []string {
-	seen := map[string]bool{}
-	var names []string
-	for _, dir := range l.outfitDirs() {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if !strings.HasSuffix(name, ".toml") {
-				continue
-			}
-			name = strings.TrimSuffix(name, ".toml")
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-			names = append(names, name)
-		}
+	files, err := OutfitFiles(l.dir(), nil)
+	if err != nil {
+		return nil
 	}
-	sort.Strings(names)
-	return names
+	return outfitNames(files)
 }
 
 // LoadProviderAuth returns nil, nil when the file is absent.

@@ -14,7 +14,7 @@ anything under `internal/outfit`.
 | Noun | What it is |
 |---|---|
 | form | An aria's key → JSON state, versioned alongside the conversation. Non-`system` keys the agent sees change; `system.*` is the harness's own namespace (model, credo, skills, cwd). |
-| outfit | A named patch for a form, at `~/.config/figaro/outfits/<name>.toml`. |
+| outfit | A named patch for a form, in a file `<name>.toml` anywhere under `~/.config/figaro/outfits/`. |
 | spec | What you type where an outfit is asked for: an ordered list of terms. |
 
 ## The two axes
@@ -191,6 +191,19 @@ The epoch replaced a cache that validated by stat-ing every file it was built
 from, with each parent merging each child's dependency list by linear scan.
 On a generated tree of 800 files that cost 2.72 SECONDS cold and 2.4ms warm;
 it is now 19.9ms and 61µs.
+
+## Directories
+
+Outfit files may be organized into subdirectories of `outfits/`. An outfit is
+still named by its file alone, so `outfits/decide/jev.toml` is `jev`
+everywhere: `-O jev`, `layers = ["jev"]`, `default_outfit`, completion.
+Moving a file between directories does not change its name.
+
+There is one namespace: two files with the same name anywhere under
+`outfits/` make that name an error, naming both paths, rather than one
+silently shadowing the other. Hidden files and directories (`.git`, editor
+droppings) are skipped. The pre-rename `loadouts/` directory is still read,
+flat, and loses to `outfits/`.
 
 ## Layers
 

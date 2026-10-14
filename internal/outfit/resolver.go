@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/internal/config"
 	"os"
 	"path/filepath"
 	"sort"
@@ -41,6 +43,7 @@ type epoch struct {
 	taints  map[string]error
 	touched map[string]dep
 	checked time.Time
+	index   map[string][]string
 }
 
 type node struct {
@@ -129,6 +132,27 @@ func (s *snapStore) get(id string) ([]byte, bool) {
 type reader struct {
 	o  *Outfitter
 	ep *epoch
+}
+
+func (r *reader) outfitIndex(name string) (map[string][]string, error) {
+	r.o.mu.Lock()
+	idx := r.ep.index
+	r.o.mu.Unlock()
+	if idx != nil && idx[name] != nil {
+		return idx, nil
+	}
+	idx, err := walkOutfits(r.o.configDir, r.stat)
+	if err != nil {
+		return nil, err
+	}
+	r.o.mu.Lock()
+	r.ep.index = idx
+	r.o.mu.Unlock()
+	return idx, nil
+}
+
+func walkOutfits(configDir string, visit func(dir string)) (map[string][]string, error) {
+	return config.OutfitFiles(configDir, visit)
 }
 
 // Within an epoch the same path always yields the bytes the first read pinned.
@@ -260,11 +284,14 @@ func (o *Outfitter) nodeFor(ep *epoch, name string) (*node, error) {
 	n := &node{name: name}
 	r := &reader{o: o, ep: ep}
 	path, err := o.resolvePath(name, r)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		o.mu.Lock()
 		ep.nodes[name] = n
 		o.mu.Unlock()
 		return n, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	n.path, n.found = path, true
 

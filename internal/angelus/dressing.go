@@ -2,7 +2,9 @@ package angelus
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/internal/outfit"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -28,8 +30,12 @@ func (h *handlers) dress(outfits []string, patch *rpc.FormPatch) (form.Patch, er
 		def = loaded.Config.DefaultOutfit
 	}
 	out, err := ofit.Dress(outfits, base, def)
-	if err != nil {
+	var missing *outfit.MissingError
+	if errors.As(err, &missing) {
 		return form.Patch{}, h.errOutfitNotFound(strings.Join(outfits, ","), err)
+	}
+	if err != nil {
+		return form.Patch{}, err
 	}
 	return out, nil
 }
