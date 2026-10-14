@@ -325,6 +325,7 @@
             ${mkKnob "FIGARO_RUNTIME_DIR" "run"    runtime}
             ${mkKnob "FIGARO_CONFIG_DIR"  "config" config}
             ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
+            ${mkKnob "FIGARO_CACHE_DIR"   "cache"  state}
             ${mkHushKnob hush}
 
             ${if seedConfig then ''
