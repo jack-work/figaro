@@ -1,6 +1,9 @@
 package decide
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const Sigil = "??"
 
@@ -259,4 +262,30 @@ func IsModel(model string) bool {
 	}
 	name = strings.TrimPrefix(name, "~")
 	return name == "jev" || strings.HasPrefix(name, "jev-")
+}
+
+const (
+	APISystemOne = "systemone"
+	APIOpenAI    = "openai"
+)
+
+func APIFor(model string) string {
+	name := strings.ToLower(model)
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	if strings.HasPrefix(name, "gpt-") || strings.Contains(name, "luna") {
+		return APIOpenAI
+	}
+	return APISystemOne
+}
+
+func ParseAPI(s string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "systemone", "system-one", "system_one", "jev":
+		return APISystemOne, nil
+	case "openai", "decisions":
+		return APIOpenAI, nil
+	}
+	return "", fmt.Errorf("decision API %q: want %s or %s", s, APISystemOne, APIOpenAI)
 }

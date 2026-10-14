@@ -458,3 +458,30 @@ func within(t *testing.T, got <-chan seen) seen {
 		return seen{}
 	}
 }
+
+// The OpenAI decisions wire, beside System One's: same routing, same
+// provider prefix, a different path on the upstream.
+func TestDecisionsRoutesByModelPrefix(t *testing.T) {
+	got := make(chan seen, 1)
+	up := recorder(t, got, ok)
+	fr := front(t, map[string]Upstream{"rou2": &fakeUpstream{
+		base: up.URL + "/v1",
+		cred: &rotatingToken{tokens: []string{"k"}},
+	}})
+	in := `{"model":"rou2/openai/gpt-6-luna","input":"x","questions":[{"type":"predicate","name":"q","instructions":"i"}]}`
+	resp, err := http.Post(fr.URL+"/v1/decisions", "application/json", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	s := within(t, got)
+	if s.path != "/v1/decisions" || s.auth != "Bearer k" {
+		t.Fatalf("upstream saw %s auth=%q", s.path, s.auth)
+	}
+	if !strings.Contains(string(s.body), `"model":"openai/gpt-6-luna"`) || !strings.Contains(string(s.body), `"questions":[`) {
+		t.Fatalf("body = %s", s.body)
+	}
+}

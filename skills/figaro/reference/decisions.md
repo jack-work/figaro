@@ -4,9 +4,20 @@ Read this when you want a fast yes/no or multiple-choice answer instead of
 prose, when you are choosing between form entries (`?? @skills`), or when you
 are changing the `??` grammar, `internal/decide`, or the pager's decision pit.
 
-A **decision model** (jev) takes a state and one typed question and returns
-calibrated probabilities. It does not converse, so it is never an aria's
-`system.model`: setting one there is refused. It is asked with a verb.
+A **decision model** takes context and one typed question and returns
+calibrated probabilities. Two wires are spoken, and everything below holds for
+both:
+
+| API | Models | Endpoint | Context | Yes/no | Choice answer |
+|---|---|---|---|---|---|
+| `systemone` | jev, Microsoft decision-1 | `POST /systemone` | `state`, JSON, 32k tokens | `noul`, a probability | `probabilities` map, `confidence` |
+| `openai` | gpt-6-luna | `POST /decisions` | `input`, text, ~1M tokens | `predicate`, a probability | `probabilities` array, `confidence` |
+
+A yes/no is the same quantity on both, the probability the answer is yes, so
+nothing is lost converting between them; an OpenAI predicate simply carries no
+confidence. jev does not converse, so it is never an aria's `system.model`
+(setting it there is refused). luna does converse, through the Responses API,
+so it is not refused; as a decision model it is asked with the same verb.
 
 ## The verb
 
@@ -64,8 +75,9 @@ option. Reorder once and ask again to check an answer that matters.
 
 ## What the model is shown
 
-Budgeted in this order, against the model's 32k limit for state plus question
-(with a tenth held back because the count is an estimate):
+Budgeted in this order, against the API's limit for context plus question
+(32k for System One; about 1M for OpenAI, measured 2026-10-14: 763k accepted,
+1.05M refused), with a tenth held back because the count is an estimate:
 
 1. **The question and its options**, whole. If they do not fit, the call is
    refused with the size, never clipped.
@@ -78,7 +90,11 @@ Budgeted in this order, against the model's 32k limit for state plus question
 
 Thinking and ceremonial messages are skipped; tool calls and results are
 included, each clipped to a third of the budget. A smaller `--budget` is often
-better: the model's accuracy falls as the state fills with unrelated text.
+better: jev's accuracy falls as the state fills with unrelated text, and on
+OpenAI a full window is a large bill ($0.10 per million input tokens).
+
+System One is sent the state as JSON (`focus`, `context`, `conversation`);
+OpenAI is sent the same parts as labelled text, since `input` is text.
 
 ## In the pager
 
@@ -100,8 +116,12 @@ whether or not a turn is running. A `??` line meant literally is `\??`.
 
 `-m`, else the aria's `system.decide.model`, else `model` in
 `providers/decisions.toml`, else `jev-latest`. The file also holds `base_url`,
-`api_key` and `provider`; `DECISIONS_BASE_URL` overrides the URL. All of it is
-read per call.
+`api_key`, `provider` and `api`; `DECISIONS_BASE_URL` overrides the URL. All
+of it is read per call.
+
+The API is `--api`, else the aria's `system.decide.api`, else `api` in the
+file, else the model's name: `gpt-*` and `*luna*` speak `openai`, everything
+else `systemone`. Name it outright where a model's name does not say.
 
 `provider = "<name>"` borrows that provider's whole credential chain instead
 of the keys below: its env var, its stored key, and the OAuth token hush
@@ -113,11 +133,14 @@ holds for it. It is how a host that takes no key is reached.
 | Experiential Labs | `https://api.experientiallabs.ai/v1` | `EXPLABS_API_KEY` |
 | a broker holding the key | `http://127.0.0.1:8787/v1` | none; model `explabs/jev-latest` |
 | an OAuth gateway declared in `providers/<name>.toml` | its `base_url` | `provider = "<name>"` (`figaro login <name>`) |
+| OpenAI luna through a broker | `http://127.0.0.1:8787/v1` | none; model `explabs/gpt-6-luna-decisions` (rou2's `openai/gpt-6-luna` on spain) |
+| OpenAI direct | `https://api.openai.com/v1` | `api_key`, or `provider` naming one that holds an OpenAI key; model `gpt-6-luna` |
 | Microsoft `decision-1` on Azure Foundry | `https://<resource>.cognitiveservices.azure.com/providers/microsoft/v1` | `provider = "azure"` (Entra, `figaro login azure`); model is the deployment name |
 
-The request body is closed on the far side: `model`, `state`, `questions`,
-nothing else. A broker that stamps request bodies has to leave this path
-alone.
+The System One body is closed on the far side: `model`, `state`,
+`questions`, nothing else, and a broker that stamps request bodies has to
+leave that path alone. OpenAI's endpoint accepted rou2's stamped
+`safety_identifier` and `user`.
 
 ## Over `figaro serve`
 
@@ -128,9 +151,10 @@ with figaro's credentials:
 |---|---|
 | `POST /v1/systemone`, model `decisions/jev-latest` | the decisions host above, prefix removed |
 | `POST /v1/systemone`, model `gateway/explabs/jev-latest` | the gateway provider's base URL + `/systemone` |
+| `POST /v1/decisions`, model `<provider>/gpt-6-luna` | that provider's base URL + `/decisions` (OpenAI's wire) |
 | `POST /u/decisions/systemone` | the decisions host, body untouched |
 
-The relay rewrites the model and nothing else, so the body stays closed. The
+The relay rewrites the model and nothing else, so a closed body stays closed. The
 decisions host is served when it has a key, or keyless when its `base_url` is
 a broker. Point `figaro decide` at a serve with
 `DECISIONS_BASE_URL=http://127.0.0.1:8788/u/decisions`.

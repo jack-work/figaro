@@ -5,6 +5,7 @@ type DecideRequest struct {
 	Question string   `json:"question"`
 	Choices  []string `json:"choices,omitempty"`
 	Model    string   `json:"model,omitempty"`
+	API      string   `json:"api,omitempty"`
 	Context  string   `json:"context,omitempty"`
 	Budget   int      `json:"budget,omitempty"`
 }
@@ -33,6 +34,7 @@ type DecideWindow struct {
 
 type DecideResponse struct {
 	Model      string       `json:"model"`
+	API        string       `json:"api"`
 	Kind       DecideKind   `json:"kind"`
 	Question   string       `json:"question"`
 	Rows       []DecideRow  `json:"rows"`

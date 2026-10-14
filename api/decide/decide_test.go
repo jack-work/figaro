@@ -288,3 +288,34 @@ func TestYesNoIsTheBinaryPairInEitherOrderAndCase(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIForTheModel(t *testing.T) {
+	cases := map[string]string{
+		"jev-latest":                   APISystemOne,
+		"explabs/jev-latest":           APISystemOne,
+		"decision-1":                   APISystemOne,
+		"azure/decision-1":             APISystemOne,
+		"gpt-6-luna":                   APIOpenAI,
+		"openai/gpt-6-luna":            APIOpenAI,
+		"explabs/gpt-6-luna-decisions": APIOpenAI,
+		"luna":                         APIOpenAI,
+		"":                             APISystemOne,
+	}
+	for model, want := range cases {
+		if got := APIFor(model); got != want {
+			t.Errorf("APIFor(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
+func TestParseAPI(t *testing.T) {
+	for in, want := range map[string]string{"systemone": APISystemOne, "System-One": APISystemOne, "jev": APISystemOne, "openai": APIOpenAI, "decisions": APIOpenAI, " OpenAI ": APIOpenAI} {
+		got, err := ParseAPI(in)
+		if err != nil || got != want {
+			t.Errorf("ParseAPI(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := ParseAPI("grpc"); err == nil {
+		t.Error("an unknown API was accepted")
+	}
+}

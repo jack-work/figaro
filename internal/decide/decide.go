@@ -19,7 +19,8 @@ import (
 
 const (
 	ModelKey      = "system.decide.model"
-	StateLimit    = 32768
+	APIKey        = "system.decide.api"
+	StateLimit    = systemOneLimit
 	usableShare   = 9
 	usableOf      = 10
 	envelope      = 64
@@ -58,12 +59,11 @@ func Fixed(baseURL, model string) func() (Settings, error) {
 }
 
 type plan struct {
-	ask      string
-	options  []option
-	refs     []string
-	kind     rpc.DecideKind
-	focus    *quote.Range
-	question question
+	ask     string
+	options []option
+	refs    []string
+	kind    rpc.DecideKind
+	focus   *quote.Range
 }
 
 func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
@@ -98,16 +98,10 @@ func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
 		if p.ask == "" {
 			return p, errors.New("nothing to decide: the question is empty")
 		}
-		p.question = noulQuestion(p.ask)
 	case len(opts) == 1:
 		return p, fmt.Errorf("one option (%s) is not a choice: give two or more, or none for a yes/no", opts[0].label)
 	default:
 		p.kind = rpc.DecideChoice
-		ask := p.ask
-		if ask == "" {
-			ask = choiceDefault
-		}
-		p.question = choiceQuestion(ask, opts)
 	}
 	return p, nil
 }
@@ -122,25 +116,27 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if err != nil {
 		return out, err
 	}
-	usable := StateLimit * usableShare / usableOf
-	qTokens := estimate(p.question)
+	model := firstOf(req.Model, boardString(src.Board, ModelKey), settings.Model)
+	api := firstOf(req.API, boardString(src.Board, APIKey), settings.API)
+	if api == "" {
+		api = apidecide.APIFor(model)
+	} else if api, err = apidecide.ParseAPI(api); err != nil {
+		return out, err
+	}
+	d, err := dialectFor(api)
+	if err != nil {
+		return out, err
+	}
+
+	usable := d.limit() * usableShare / usableOf
+	qTokens := estimate(d.question(p))
 	if qTokens+minimumState > usable {
-		return out, fmt.Errorf("the question and its options are ~%d tokens; %s accepts %d for the state and the question together, so there is no room left to send them whole",
-			qTokens, Name, StateLimit)
+		return out, fmt.Errorf("the question and its options are ~%d tokens; %s (%s) accepts %d for the context and the question together, so there is no room left to send them whole",
+			qTokens, model, api, d.limit())
 	}
 	avail := usable - qTokens - envelope
 	if req.Budget > 0 && req.Budget < avail {
 		avail = req.Budget
-	}
-
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		if v := src.Board.Lookup(ModelKey); v != nil {
-			model = strings.TrimSpace(*v)
-		}
-	}
-	if model == "" {
-		model = settings.Model
 	}
 	var resolver auth.TokenResolver
 	if e.credentials != nil {
@@ -152,16 +148,20 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 
 	var resp response
 	var w built
+	var stateTokens int
 	for attempt := 0; ; attempt++ {
 		w, err = build(src, p, avail)
 		if err != nil {
 			return out, err
 		}
-		resp, err = client.post(ctx, request{
-			Model:     model,
-			State:     w.state,
-			Questions: map[string]question{questionKey: p.question},
-		})
+		var body any
+		if body, stateTokens, err = d.body(model, w.state, p); err != nil {
+			return out, err
+		}
+		var raw []byte
+		if raw, err = client.post(ctx, d.path(), body); err == nil {
+			resp, err = d.decode(raw)
+		}
 		var he *httpError
 		if err == nil || attempt > 0 || !errors.As(err, &he) || !he.tooBig() {
 			break
@@ -175,15 +175,13 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if !ok {
 		return out, fmt.Errorf("%s: the response carries no answer", Name)
 	}
-	out.Model = resp.Model
-	if out.Model == "" {
-		out.Model = model
-	}
+	out.Model = firstOf(resp.Model, model)
+	out.API = api
 	out.Kind, out.Question = p.kind, p.ask
 	out.Rows = rank(p, a)
 	out.Confidence = a.Confidence
 	out.Window.Messages = w.messages
-	out.Window.Tokens = tokensOf(string(w.state))
+	out.Window.Tokens = stateTokens
 	out.Window.Budget = avail
 	out.Window.Focus = w.focus
 	out.Window.FormRefs = p.refs
@@ -195,7 +193,7 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 }
 
 type built struct {
-	state    json.RawMessage
+	state    state
 	messages int
 	focus    string
 }
@@ -222,12 +220,24 @@ func build(src Source, p plan, avail int) (built, error) {
 	for _, l := range lines {
 		s.Conversation = append(s.Conversation, l.text)
 	}
-	raw, err := encodeState(s, p.ask)
-	if err != nil {
-		return b, err
-	}
-	b.state, b.messages = raw, len(lines)
+	b.state, b.messages = s, len(lines)
 	return b, nil
+}
+
+func firstOf(vals ...string) string {
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func boardString(board form.Snapshot, key string) string {
+	if v := board.Lookup(key); v != nil {
+		return *v
+	}
+	return ""
 }
 
 func encodeState(s state, ask string) (json.RawMessage, error) {

@@ -36,3 +36,13 @@ func TestDecideArgs(t *testing.T) {
 		t.Error("an unknown flag was accepted")
 	}
 }
+
+func TestDecideAPIFlag(t *testing.T) {
+	p, err := parseDecideArgs([]string{"--api", "OpenAI", "--", "q"})
+	if err != nil || p.api != "openai" || p.request("").API != "openai" {
+		t.Fatalf("p.api = %q, %v", p.api, err)
+	}
+	if _, err := parseDecideArgs([]string{"--api=grpc", "--", "q"}); err == nil {
+		t.Fatal("an unknown API was accepted")
+	}
+}

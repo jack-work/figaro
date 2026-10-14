@@ -32,6 +32,7 @@ type Settings struct {
 	BaseURL  string `toml:"base_url,omitempty"`
 	Model    string `toml:"model,omitempty"`
 	Provider string `toml:"provider,omitempty"`
+	API      string `toml:"api,omitempty"`
 }
 
 func LoadSettings(loaded *config.Loaded) (Settings, error) {
@@ -70,7 +71,15 @@ type httpError struct {
 func (e *httpError) Error() string { return fmt.Sprintf("%s: HTTP %d: %s", Name, e.status, e.body) }
 
 func (e *httpError) tooBig() bool {
-	return e.status == http.StatusBadRequest && strings.Contains(e.body, `"invalid_request"`)
+	if e.status != http.StatusBadRequest {
+		return false
+	}
+	for _, sign := range []string{`"invalid_request"`, "exceeds the token limit", "context_length_exceeded"} {
+		if strings.Contains(e.body, sign) {
+			return true
+		}
+	}
+	return false
 }
 
 type Client struct {
@@ -87,15 +96,14 @@ func NewClient(baseURL string, resolver auth.TokenResolver) *Client {
 	}
 }
 
-func (c *Client) post(ctx context.Context, body request) (response, error) {
-	var out response
+func (c *Client) post(ctx context.Context, path string, body any) ([]byte, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/systemone", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(payload))
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.auth != nil {
@@ -105,18 +113,15 @@ func (c *Client) post(ctx context.Context, body request) (response, error) {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return out, &httpError{status: resp.StatusCode, body: strings.TrimSpace(string(raw))}
+		return nil, &httpError{status: resp.StatusCode, body: strings.TrimSpace(string(raw))}
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return out, fmt.Errorf("%s: decode response: %w", Name, err)
-	}
-	return out, nil
+	return raw, nil
 }

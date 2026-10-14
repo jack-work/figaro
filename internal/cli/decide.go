@@ -23,6 +23,7 @@ type decidePlan struct {
 	id       string
 	choices  []string
 	model    string
+	api      string
 	context  string
 	budget   int
 	json     bool
@@ -33,6 +34,7 @@ var decideFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Read this aria's conversation and form (default: the one bound to this shell)"},
 	{Long: "choices", Short: "C", Description: "Options, comma separated: -C=\"option 1\",\"option 2\"; @key names a form key"},
 	{Long: "model", Short: "m", Description: "Decision model for this call (default: system.decide.model, then providers/decisions.toml)"},
+	{Long: "api", Description: "Decision API: systemone (jev, decision-1) or openai (luna); default inferred from the model"},
 	{Long: "context", Description: "Text to decide over; - reads stdin"},
 	{Long: "budget", Description: "Cap the context tokens sent"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Emit the response as JSON"},
@@ -77,6 +79,14 @@ func parseDecideArgs(args []string) (decidePlan, error) {
 				return p, err
 			}
 			p.model = v
+		case a == "--api" || strings.HasPrefix(a, "--api="):
+			v, err := value(&i, a, "--api")
+			if err != nil {
+				return p, err
+			}
+			if p.api, err = apidecide.ParseAPI(v); err != nil {
+				return p, err
+			}
 		case a == "--context" || strings.HasPrefix(a, "--context="):
 			v, err := value(&i, a, "--context")
 			if err != nil {
@@ -115,6 +125,7 @@ func (p decidePlan) request(aria string) rpc.DecideRequest {
 		Question: p.question,
 		Choices:  p.choices,
 		Model:    p.model,
+		API:      p.api,
 		Context:  p.context,
 		Budget:   p.budget,
 	}
@@ -171,7 +182,7 @@ func registerDecide(r *cmdkit.Router) {
 		Name:  "decide",
 		Group: "Prompt",
 		Short: "Ask a decision model a yes/no or multiple-choice question",
-		Usage: "decide [--id <id>] [-C <a,b,...>] [-m <model>] [--context <text|->] [-j] -- <question>",
+		Usage: "decide [--id <id>] [-C <a,b,...>] [-m <model>] [--api systemone|openai] [--context <text|->] [-j] -- <question>",
 		Long: `Asks a System One decision model (jev) one typed question and prints its
 scored answer. Nothing is written to any aria: bound to one, decide only READS
 its conversation and form, and never waits on a running turn.
@@ -197,7 +208,10 @@ Unbound (or under -A, which ignores the binding) it is stateless: the
 question, --context and the model's own training are all it has.
 
 The model is -m, else the aria's system.decide.model, else model in
-providers/decisions.toml, else jev-latest.`,
+providers/decisions.toml, else jev-latest. Two wires are spoken: System One
+(jev, decision-1; POST /systemone) and OpenAI's Decisions API (luna; POST
+/decisions). --api picks one, else system.decide.api, else api in the file,
+else the model's name: gpt-* and *luna* are OpenAI, the rest System One.`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)

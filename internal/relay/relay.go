@@ -59,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/responses", s.routeByModel(routed.Responses))
 	mux.HandleFunc("POST /v1/messages", s.routeByModel(routed.Messages))
 	mux.HandleFunc("POST /v1/systemone", s.routeByModelTo("", systemOne))
+	mux.HandleFunc("POST /v1/decisions", s.routeByModelTo("", openAIDecisions))
 	mux.HandleFunc("/u/{provider}/{rest...}", s.passthrough)
 	return loopbackOnly(mux)
 }
@@ -140,6 +141,8 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request) {
 }
 
 func systemOne(up Upstream) string { return up.Base() + "/systemone" }
+
+func openAIDecisions(up Upstream) string { return up.Base() + "/decisions" }
 
 func (s *Server) routeByModel(t routed.Transport) http.HandlerFunc {
 	return s.routeByModelTo(t, func(up Upstream) string { return up.Endpoint(t) })
