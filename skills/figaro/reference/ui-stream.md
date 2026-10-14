@@ -459,6 +459,15 @@ Backward paging anchors on a real node coordinate, never the zero anchor: the
 wire reads that as the tail, so a pager holding nothing but a live suffix would
 fetch the page it is already showing and stop at a floor that is not one.
 
+What a command reports rides the status bar, at the left: `sent`, `forked …`,
+a refusal. The bar holds two reports, newest first; the newest keeps its width
+and the older is cut to fit beside it, or leaves the bar when there is no room.
+Each retires on its own clock, a progress report (`…deciding`) is replaced by
+the result rather than kept beside it, and a question waiting on `y`/`n`
+stands alone. Only a report of several lines, which no single row can hold,
+opens a row above the bar. All of them, whatever the bar showed, are in the
+notifications (`space n`).
+
 Alternate screen is the right tool *here specifically* because it's a deliberate,
 toggled view: it gives a guaranteed-stable, scrollable surface without occluding
 your shell history permanently: on exit, the terminal restores your normal

@@ -284,9 +284,7 @@ func TestVisual_YankCoordinate(t *testing.T) {
 	if clip != "" {
 		t.Fatalf("Y over a node with no coordinate put %q on the clipboard", clip)
 	}
-	p.lt.tr.status.mu.Lock()
-	note := p.lt.tr.status.notice
-	p.lt.tr.status.mu.Unlock()
+	note := p.lt.tr.status.noticeText()
 	if !strings.Contains(note, "coordinate") {
 		t.Fatalf("no refusal shown: %q", note)
 	}

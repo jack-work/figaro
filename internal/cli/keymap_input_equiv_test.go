@@ -490,6 +490,9 @@ var inputOracle = []struct {
 		"nav:Up":          "stop=false rest=\"\" act=true off:+740 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"jump", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"", map[string]string{
+		// 2026-10-14, notes on the bar: a one-line report (nothing to open, no
+		// parent, no fork point here) no longer opens a row of its own, so it
+		// neither displaces the pit that was up nor moves the view.
 		// M-m IS LIVE IN A BOX NOW, 2026-10-09: it is the toggle that titles the
 		// composer, and the exclusion it used to share with ^C/^D/^L/^T was
 		// about escape hatches, which it is not. verb=true is the toggle.
@@ -506,8 +509,8 @@ var inputOracle = []struct {
 		"0x1f":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
 		"csiu ^t": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"21\"",
 		"0x08":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"1\"",
-		"0x0a":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x0d":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0a":    "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0d":    "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// The command line's emacs motions; see the pager oracle for why only
 		// these two are visible to a signature that records the LINE.
 		"0x15":        "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
@@ -612,6 +615,9 @@ var inputOracle = []struct {
 		"csiu ^p+alt": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},
 	{"panel", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// 2026-10-14, notes on the bar: a one-line report (nothing to open, no
+		// parent, no fork point here) no longer opens a row of its own, so it
+		// neither displaces the pit that was up nor moves the view.
 		// 2026-10-13, for 'D': an opener like S and Q, so from the incipit it
 		// opens the pager, and inside a pit with no decision yet it keeps the
 		// pit open and says so on the bar.
@@ -713,7 +719,7 @@ var inputOracle = []struct {
 		"0x79":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"aria0001\" cpfail=false cping=false jmp=false jq=\"\"",
 		"alt ^n fallback": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"csiu ^N+shift":   "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"csiu ^N+shift":   "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^d":         "stop=true rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^l":         "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^n":         "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -838,6 +844,9 @@ var inputOracle = []struct {
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off:sel fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"transcript", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// 2026-10-14, notes on the bar: a one-line report (nothing to open, no
+		// parent, no fork point here) no longer opens a row of its own, so it
+		// neither displaces the pit that was up nor moves the view.
 		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
 		// from the inline view: what a draft dispatches is shown there. So it
 		// is no longer inert in any state a pager key can act from.
@@ -866,7 +875,7 @@ var inputOracle = []struct {
 		"0x79":            "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"aria0001\" cpfail=false cping=false jmp=false jq=\"\"",
 		"alt ^n fallback": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"csiu ^N+shift":   "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"csiu ^N+shift":   "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^d":         "stop=true rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^n":         "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^p":         "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

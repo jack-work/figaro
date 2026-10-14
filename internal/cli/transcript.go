@@ -2661,10 +2661,10 @@ func (t *transcript) setCommandNote(note string) { t.setCommandNoteAt(note, aler
 
 // The bar alone, not posted to the history: the result follows and replaces it.
 func (t *transcript) setProgressNote(note string) {
-	if note == "" || strings.Contains(note, "\n") || displayWidth(note) > t.w/2 {
+	if note == "" || strings.Contains(note, "\n") {
 		return
 	}
-	t.status.setNoticeAt(note, alertInfo)
+	t.status.setProgress(note)
 	t.render()
 }
 
@@ -2679,7 +2679,7 @@ func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 		t.render()
 		return
 	}
-	if !strings.Contains(note, "\n") && displayWidth(note) <= t.w/2 {
+	if !strings.Contains(note, "\n") {
 		t.status.setNoticeAt(note, level)
 		t.render()
 		return

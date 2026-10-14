@@ -607,13 +607,9 @@ func (t *transcript) abandonJump(note string) {
 
 func (t *transcript) noteOrClear(note string) {
 	t.jumpNote = note
-	if note == "" {
-		if t.showing("message") {
-			t.pit.close()
-		}
-		return
+	if note != "" {
+		t.setCommandNote(note)
 	}
-	t.pit.showNote(note)
 }
 
 func (t *transcript) jumpFooter() (string, bool) {

@@ -90,24 +90,29 @@ func (st turnStatus) paint(s string) string {
 }
 
 type sessionStatus struct {
-	mu          sync.RWMutex
-	figaroID    string
-	startedAt   time.Time
-	metrics     aria.Metrics
-	turn        turnStatus
-	tick        uint64
-	verbose     bool      // the bar's verbosity (^V), not the tool-output toggle (^O)
-	lastAt      time.Time // when the conversation last moved, in either direction
-	model       string
-	noticeLevel alertLevel
-	noticeUntil time.Time
-	noticeTTL   time.Duration      // zero: the alert holds the slot until displaced
-	lastError   string             // does not retire with the alert: a failed turn's closer carries it
-	notes       *notificationStore // the transcript's; outlives this status
-	// notice lives in the frame buffer: a raw write to the terminal while the
-	// pager is up scrolls the grid out from under the painter.
-	notice string
+	mu        sync.RWMutex
+	figaroID  string
+	startedAt time.Time
+	metrics   aria.Metrics
+	turn      turnStatus
+	tick      uint64
+	verbose   bool      // the bar's verbosity (^V), not the tool-output toggle (^O)
+	lastAt    time.Time // when the conversation last moved, in either direction
+	model     string
+	noticeTTL time.Duration      // zero: the alert holds the slot until displaced
+	lastError string             // does not retire with the alert: a failed turn's closer carries it
+	notes     *notificationStore // the transcript's; outlives this status
+	notices   []barNotice
 }
+
+type barNotice struct {
+	text     string
+	level    alertLevel
+	until    time.Time
+	progress bool
+}
+
+const maxBarNotices = 2
 
 // A constructor default: one a caller must install is not a default.
 const defaultNoticeTTL = 10 * time.Second
@@ -125,16 +130,39 @@ const (
 )
 
 func (s *sessionStatus) setNoticeAt(text string, level alertLevel) {
-	s.setNotice(text)
+	s.post(text, level, false)
+}
+
+func (s *sessionStatus) setProgress(text string) {
+	s.post(text, alertInfo, true)
+}
+
+func (s *sessionStatus) post(text string, level alertLevel, progress bool) {
 	if s == nil {
 		return
 	}
+	text = strings.Join(strings.Fields(text), " ")
 	s.mu.Lock()
-	s.noticeLevel = level
-	if level == alertError && s.notice != "" {
-		s.lastError = s.notice
+	defer s.mu.Unlock()
+	if text == "" {
+		s.notices = nil
+		return
 	}
-	s.mu.Unlock()
+	n := barNotice{text: text, level: level, progress: progress}
+	if s.noticeTTL > 0 {
+		n.until = time.Now().Add(s.noticeTTL)
+	}
+	if level == alertError {
+		s.lastError = text
+	}
+	kept := []barNotice{n}
+	for _, old := range s.notices {
+		if old.progress || old.text == text || len(kept) == maxBarNotices {
+			continue
+		}
+		kept = append(kept, old)
+	}
+	s.notices = kept
 }
 
 func (s *sessionStatus) lastTurnFailed() bool {
@@ -155,33 +183,14 @@ func (s *sessionStatus) failure() string {
 	return s.lastError
 }
 
-func (s *sessionStatus) setNotice(text string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.notice = strings.Join(strings.Fields(text), " ")
-	s.noticeLevel = alertInfo
-	switch {
-	case s.notice == "":
-		s.noticeUntil = time.Time{}
-	case s.noticeTTL > 0:
-		s.noticeUntil = time.Now().Add(s.noticeTTL)
-	default:
-		s.noticeUntil = time.Time{}
-	}
-	s.mu.Unlock()
-}
+func (s *sessionStatus) setNotice(text string) { s.post(text, alertInfo, false) }
 
-// pinNotice does not retire: a question on screen must not lose its sentence.
 func (s *sessionStatus) pinNotice(text string) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
-	s.notice = strings.Join(strings.Fields(text), " ")
-	s.noticeLevel = alertInfo
-	s.noticeUntil = time.Time{}
+	s.notices = []barNotice{{text: strings.Join(strings.Fields(text), " "), level: alertInfo}}
 	s.mu.Unlock()
 }
 
@@ -191,7 +200,10 @@ func (s *sessionStatus) noticeText() string {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.notice
+	if len(s.notices) == 0 {
+		return ""
+	}
+	return s.notices[0].text
 }
 
 func (s *sessionStatus) setNoticeTTL(d time.Duration) {
@@ -483,11 +495,15 @@ func (s *sessionStatus) retireAlert(now time.Time) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.notice == "" || s.noticeUntil.IsZero() || now.Before(s.noticeUntil) {
-		return false
+	kept := s.notices[:0]
+	for _, n := range s.notices {
+		if n.until.IsZero() || now.Before(n.until) {
+			kept = append(kept, n)
+		}
 	}
-	s.notice, s.noticeUntil = "", time.Time{}
-	return true
+	retired := len(kept) != len(s.notices)
+	s.notices = kept
+	return retired
 }
 
 func (s *sessionStatus) toggleVerbose() bool {

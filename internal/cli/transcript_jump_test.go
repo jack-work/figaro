@@ -148,16 +148,20 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	if !strings.Contains(tr.jumpNote, "999") {
 		t.Fatalf("the note does not name the target: %q", tr.jumpNote)
 	}
-	// The failure drawer costs the body two rows, so a follower's offset moves;
-	// compare against the tail, not the raw offset.
+	// The failure is a note on the bar now, which costs the body no rows, so
+	// the reader must be exactly where it was. (It used to open a two-row
+	// drawer, and this compared against the tail instead.)
 	if !tr.follow {
 		t.Fatalf("a failed jump detached the reader from the tail (offset %d->%d)", before, tr.offset)
 	}
-	if _, maxOff := tr.layoutNow(); tr.offset != maxOff {
-		t.Fatalf("a failed jump moved the reader off the tail: offset %d, tail %d", tr.offset, maxOff)
+	if tr.offset != before {
+		t.Fatalf("a failed jump moved the reader: offset %d -> %d", before, tr.offset)
 	}
-	if !tr.showing("message") {
-		t.Fatal("the failure is not in the drawer")
+	if tr.showing(pitNote) {
+		t.Fatal("a one-line failure opened a row of its own")
+	}
+	if got := tr.status.noticeText(); !strings.Contains(got, "999") {
+		t.Fatalf("the failure is not on the bar: %q", got)
 	}
 	// The report is transient: the next key closes the drawer.
 	tr.key('j')

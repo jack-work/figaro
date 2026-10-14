@@ -13,21 +13,34 @@ import (
 )
 
 type statusView struct {
-	Pit    pitID
-	State  turnStatus
-	Tick   uint64
-	Aria   string
-	Mantra string
-	Ctx    string // already formatted
-	// Alert's expiry is evaluated by whoever builds the value, never here.
-	Alert       string
-	AlertLevel  alertLevel
+	Pit         pitID
+	State       turnStatus
+	Tick        uint64
+	Aria        string
+	Mantra      string
+	Ctx         string // already formatted
+	Alerts      []barAlert
 	Unread      int
 	UnreadLevel alertLevel
 	LastAt      time.Time // verbose only; absolute, since a relative string is true only when painted
 	Model       string    // verbose only
 	Hints       string    // verbose only
 	Verbose     bool
+}
+
+type barAlert struct {
+	Text  string
+	Level alertLevel
+}
+
+func (a barAlert) paint(text string) string {
+	switch a.Level {
+	case alertError:
+		return term.NoticeInDim(text)
+	case alertWarn:
+		return term.CautionInDim(text)
+	}
+	return text
 }
 
 // A full date: a pager left open across midnight makes a bare clock ambiguous.
@@ -39,12 +52,12 @@ func (v statusView) render(w int) []string {
 	if w <= 0 {
 		return nil
 	}
-	bare, right, at := v.groups()
+	rest, right, at := v.groups()
 	r := joinFields(right)
 
-	// The alert clips itself, never its neighbours; the mantra takes what is
-	// left and sheds first.
-	v.clipAlert(bare, w, displayWidth(r))
+	alerts := v.fitAlerts(rest, w, displayWidth(r))
+	bare := append(alerts, rest...)
+	at += len(alerts)
 	bareW := displayWidth(joinFields(bare))
 
 	l := joinFields(v.withMantra(bare, at, w-bareW-displayWidth(r)-mantraGap))
@@ -62,36 +75,43 @@ func (v statusView) render(w int) []string {
 	}
 }
 
-// Below alertMin the alert is not cut further; the row splits in three instead.
-const alertMin = 24
+const (
+	alertMin      = 24
+	olderAlertMin = 12
+)
 
-// clipAlert cuts bare[0] in place; the paint is reapplied after the cut.
-func (v statusView) clipAlert(bare []string, w, rightW int) {
-	if v.Alert == "" || len(bare) == 0 {
-		return
+func (v statusView) fitAlerts(rest []string, w, rightW int) []string {
+	if len(v.Alerts) == 0 {
+		return nil
 	}
-	others := 0
-	for _, f := range bare[1:] {
-		others += displayWidth(f) + displayWidth(" · ")
-	}
-	room := w - others - rightW
+	sep := displayWidth(" · ")
+	room := w - rightW
 	if rightW > 0 {
 		room -= 2 // the gutter between the groups
 	}
-	if room < alertMin {
-		room = alertMin
+	for _, f := range rest {
+		room -= displayWidth(f) + sep
 	}
-	if displayWidth(v.Alert) <= room {
-		return
+	out := make([]string, 0, len(v.Alerts))
+	for i, a := range v.Alerts {
+		cut := room
+		if i > 0 {
+			room -= sep
+			if room < olderAlertMin {
+				break
+			}
+			cut = room
+		} else if cut < alertMin {
+			cut = alertMin
+		}
+		text := a.Text
+		if displayWidth(text) > cut {
+			text = clipToWidthEllipsis(text, cut)
+		}
+		room -= displayWidth(text)
+		out = append(out, a.paint(text))
 	}
-	cut := clipToWidthEllipsis(v.Alert, room)
-	switch v.AlertLevel {
-	case alertError:
-		cut = term.NoticeInDim(cut)
-	case alertWarn:
-		cut = term.CautionInDim(cut)
-	}
-	bare[0] = cut
+	return out
 }
 
 func (v statusView) withMantra(left []string, at, room int) []string {
@@ -113,17 +133,6 @@ const (
 
 // groups leaves the mantra out; at is where render puts it.
 func (v statusView) groups() (left, right []string, at int) {
-	// Only trouble is painted; a confirmation wears the row's own gray.
-	if v.Alert != "" {
-		switch v.AlertLevel {
-		case alertError:
-			left = append(left, term.NoticeInDim(v.Alert))
-		case alertWarn:
-			left = append(left, term.CautionInDim(v.Alert))
-		default:
-			left = append(left, v.Alert)
-		}
-	}
 	if v.Unread > 0 {
 		mark := pitNotifications.face().glyph + " " + strconv.Itoa(v.Unread)
 		switch v.UnreadLevel {
@@ -188,15 +197,16 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v := statusView{
-		Pit:        pit,
-		State:      s.turn,
-		Tick:       s.tick,
-		Aria:       s.figaroID,
-		Mantra:     s.metrics.Mantra,
-		Alert:      s.notice,
-		AlertLevel: s.noticeLevel,
-		LastAt:     s.lastAt,
-		Verbose:    verbose,
+		Pit:     pit,
+		State:   s.turn,
+		Tick:    s.tick,
+		Aria:    s.figaroID,
+		Mantra:  s.metrics.Mantra,
+		LastAt:  s.lastAt,
+		Verbose: verbose,
+	}
+	for _, n := range s.notices {
+		v.Alerts = append(v.Alerts, barAlert{Text: n.text, Level: n.level})
 	}
 	if ctx := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); ctx != "-" {
 		v.Ctx = ctx

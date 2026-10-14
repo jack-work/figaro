@@ -79,7 +79,7 @@ func TestStatusViewGoldens(t *testing.T) {
 // A bar wider than the pane wraps and costs the conversation a line.
 func TestStatusViewNeverExceedsItsWidth(t *testing.T) {
 	base := barFixture()
-	base.Alert = "provider said no"
+	base.Alerts = []barAlert{{Text: "provider said no"}, {Text: widened}}
 	for _, verbose := range []bool{false, true} {
 		for _, id := range []pitID{pitNothing, pitQueue, pitNotifications, pitCommand, pitSearch} {
 			for w := 8; w <= 200; w++ {
@@ -107,7 +107,7 @@ func TestStatusViewHeightMatchesWhatItDraws(t *testing.T) {
 
 func TestAlertLeadsAndIsNeverShed(t *testing.T) {
 	v := barFixture()
-	v.Alert = "queue rm: refused"
+	v.Alerts = []barAlert{{Text: "queue rm: refused"}}
 	rows := v.render(100)
 	if !strings.HasPrefix(pitText(rows[0]), "queue rm: refused") {
 		t.Fatalf("the alert does not lead the row: %q", rows[0])
@@ -145,7 +145,7 @@ func TestOnlyTroubleIsRed(t *testing.T) {
 	defer restore()
 
 	v := barFixture()
-	v.Alert = "sent"
+	v.Alerts = []barAlert{{Text: "sent"}}
 	info := strings.Join(v.render(100), "")
 	if !strings.Contains(info, "sent") {
 		t.Fatalf("the confirmation is missing: %q", info)
@@ -154,7 +154,7 @@ func TestOnlyTroubleIsRed(t *testing.T) {
 		t.Fatalf("a confirmation was painted as trouble: %q", info)
 	}
 
-	v.AlertLevel = alertError
+	v.Alerts[0].Level = alertError
 	bad := strings.Join(v.render(100), "")
 	if !strings.Contains(bad, term.NoticeInDim("sent")) {
 		t.Fatalf("trouble was not painted red: %q", bad)
@@ -164,11 +164,11 @@ func TestOnlyTroubleIsRed(t *testing.T) {
 func TestAlertLevelResetsOnEveryPost(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	s.setNoticeAt("boom", alertError)
-	if v := s.viewOf(pitNothing, false, time.Now()); v.AlertLevel != alertError {
+	if v := s.viewOf(pitNothing, false, time.Now()); v.Alerts[0].Level != alertError {
 		t.Fatal("the error did not take")
 	}
 	s.setNotice("sent")
-	if v := s.viewOf(pitNothing, false, time.Now()); v.AlertLevel != alertInfo {
+	if v := s.viewOf(pitNothing, false, time.Now()); v.Alerts[0].Level != alertInfo {
 		t.Fatal("a confirmation inherited the previous error's colour")
 	}
 }
@@ -181,30 +181,15 @@ func TestAlertRetiresOnItsOwn(t *testing.T) {
 	s.setNotice("sent")
 
 	now := time.Now()
-	if v := s.viewOf(pitNothing, false, now); v.Alert != "sent" {
-		t.Fatalf("the alert did not post: %q", v.Alert)
+	if v := s.viewOf(pitNothing, false, now); len(v.Alerts) != 1 || v.Alerts[0].Text != "sent" {
+		t.Fatalf("the alert did not post: %+v", v.Alerts)
 	}
-	if v := s.viewOf(pitNothing, false, now.Add(time.Second)); v.Alert != "sent" {
-		t.Fatalf("the alert retired early: %q", v.Alert)
+	if v := s.viewOf(pitNothing, false, now.Add(time.Second)); len(v.Alerts) != 1 {
+		t.Fatalf("the alert retired early: %+v", v.Alerts)
 	}
 	// Gone without a keystroke or a tick: the view build is the backstop.
-	if v := s.viewOf(pitNothing, false, now.Add(defaultNoticeTTL+time.Second)); v.Alert != "" {
-		t.Fatalf("the alert outlived its TTL: %q", v.Alert)
-	}
-}
-
-func TestNewerAlertDisplacesOlder(t *testing.T) {
-	s := newSessionStatus("aria1234", time.Now())
-	for i := 0; i < 10; i++ {
-		s.setNotice("sent")
-	}
-	s.setNotice("showing abc12345")
-	v := s.viewOf(pitNothing, false, time.Now())
-	if v.Alert != "showing abc12345" {
-		t.Fatalf("the newest alert did not win: %q", v.Alert)
-	}
-	if strings.Count(v.Alert, "sent") != 0 {
-		t.Fatalf("alerts stacked instead of displacing: %q", v.Alert)
+	if v := s.viewOf(pitNothing, false, now.Add(defaultNoticeTTL+time.Second)); len(v.Alerts) != 0 {
+		t.Fatalf("the alert outlived its TTL: %+v", v.Alerts)
 	}
 }
 
@@ -244,8 +229,7 @@ func plainForTest(s string) string { return pitText(s) }
 func TestLongAlertClipsItselfNotItsNeighbours(t *testing.T) {
 	v := barFixture()
 	v.State = turnStatusError
-	v.Alert = `error: anthropic 401: invalidate failed: oauth refresh for "anthropic" rejected (run: figaro login anthropic)`
-	v.AlertLevel = alertError
+	v.Alerts = []barAlert{{Text: `error: anthropic 401: invalidate failed: oauth refresh for "anthropic" rejected (run: figaro login anthropic)`, Level: alertError}}
 	rows := v.render(100)
 	if len(rows) != 1 {
 		t.Fatalf("a 100-column bar split into %d rows for a long alert:\n%s", len(rows), strings.Join(rows, "\n"))
