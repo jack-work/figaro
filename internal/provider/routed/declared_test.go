@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -46,10 +45,10 @@ func TestAProviderFileWithAPresetIsAProvider(t *testing.T) {
 		t.Fatalf("registered %v; a file without a preset (decisions.toml) must not become a provider", got)
 	}
 	house := provider.Lookup("house")
-	if house == nil || !house.Declared || !house.HasOAuth || house.Login == nil {
+	if house == nil || !house.Declared || !house.HasOAuth || house.OAuth == nil {
 		t.Fatalf("house = %+v: [oauth] must make hush's token the credential and offer a login", house)
 	}
-	if keyed := provider.Lookup("keyed"); keyed.HasOAuth || keyed.Login != nil {
+	if keyed := provider.Lookup("keyed"); keyed.HasOAuth || keyed.OAuth != nil {
 		t.Fatalf("keyed = %+v: no [oauth], no login", keyed)
 	}
 	p, err := house.Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("t")})
@@ -58,22 +57,12 @@ func TestAProviderFileWithAPresetIsAProvider(t *testing.T) {
 	}
 }
 
-func TestDeclaredLoginReceivesTheFilesOAuth(t *testing.T) {
-	loaded := declaredDir(t, map[string]string{"house": houseTOML})
-	RegisterDeclared(loaded)
-	var gotName string
-	var gotOAuth auth.OAuthSettings
-	prev := DeclaredLogin
-	DeclaredLogin = func(_ *config.Loaded, name string, s auth.OAuthSettings) error {
-		gotName, gotOAuth = name, s
-		return nil
-	}
-	t.Cleanup(func() { DeclaredLogin = prev })
-	if err := provider.Lookup("house").Login(loaded); err != nil {
-		t.Fatal(err)
-	}
-	if gotName != "house" || gotOAuth.Issuer != "https://auth.example" || gotOAuth.ClientID != "house" || gotOAuth.Flow != "device" || len(gotOAuth.Scopes) != 3 {
-		t.Fatalf("login got %q %+v", gotName, gotOAuth)
+func TestTheRegistrationCarriesTheFilesOAuth(t *testing.T) {
+	// figaro login <name> reads the [oauth] settings off the registration.
+	RegisterDeclared(declaredDir(t, map[string]string{"house": houseTOML}))
+	got := provider.Lookup("house").OAuth
+	if got == nil || got.Issuer != "https://auth.example" || got.ClientID != "house" || got.Flow != "device" || len(got.Scopes) != 3 {
+		t.Fatalf("oauth = %+v", got)
 	}
 }
 

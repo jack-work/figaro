@@ -19,6 +19,7 @@ type Registration struct {
 	HasOAuth  bool
 	LoginHint string
 	Declared  bool
+	OAuth     *auth.OAuthSettings
 
 	// Setup is set by the CLI at startup (import cycle with TUI/hush).
 	Setup func(loaded *config.Loaded) error

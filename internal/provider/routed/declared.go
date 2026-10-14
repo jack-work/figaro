@@ -7,14 +7,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
 const PresetGateway = "gateway"
-
-var DeclaredLogin func(loaded *config.Loaded, name string, oauth auth.OAuthSettings) error
 
 func RegisterDeclared(loaded *config.Loaded) []string {
 	if loaded == nil {
@@ -62,22 +59,8 @@ func declared(loaded *config.Loaded, name string) (*provider.Registration, error
 		},
 	}
 	if f.OAuth != nil {
+		reg.OAuth = f.OAuth
 		reg.LoginHint = "OAuth gateway (providers/" + name + ".toml):  figaro login " + name
-		login := func(l *config.Loaded) error {
-			if DeclaredLogin == nil {
-				return fmt.Errorf("%s: no login flow in this binary", name)
-			}
-			f, err := LoadFile(l, name)
-			if err != nil {
-				return err
-			}
-			if f.OAuth == nil {
-				return fmt.Errorf("%s: providers/%s.toml has no [oauth] section", name, name)
-			}
-			return DeclaredLogin(l, name, *f.OAuth)
-		}
-		reg.Login = login
-		reg.Setup = login
 	}
 	return reg, nil
 }

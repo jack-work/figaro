@@ -127,10 +127,18 @@ func runModels(loaded *config.Loaded) {
 
 func runLoginByName(loaded *config.Loaded, providerName string) {
 	reg := providerPkg.Lookup(providerName)
-	if reg == nil || reg.Login == nil {
+	var err error
+	switch {
+	case reg == nil:
+		die("no provider %q", providerName)
+	case reg.Login != nil:
+		err = reg.Login(loaded)
+	case reg.OAuth != nil:
+		err = runOAuthLogin(loaded, providerName, *reg.OAuth)
+	default:
 		die("no login flow for provider %q", providerName)
 	}
-	if err := reg.Login(loaded); err != nil {
+	if err != nil {
 		die("%s", err)
 	}
 }

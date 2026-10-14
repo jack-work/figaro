@@ -31,9 +31,11 @@ func LoadConfig() (*config.Loaded, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
-	routed.RegisterDeclared(loaded)
+	DeclareProviders(loaded)
 	return loaded, nil
 }
+
+func DeclareProviders(loaded *config.Loaded) { routed.RegisterDeclared(loaded) }
 
 var (
 	hushInstance *managed.Hush

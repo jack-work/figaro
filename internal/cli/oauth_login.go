@@ -8,12 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/provider/routed"
 )
-
-func init() {
-	routed.DeclaredLogin = runOAuthLogin
-}
 
 func runOAuthLogin(_ *config.Loaded, name string, s auth.OAuthSettings) error {
 	s, err := s.Discovered()

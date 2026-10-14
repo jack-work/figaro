@@ -25,7 +25,7 @@ func providerSetupHint() string {
 		if reg == nil {
 			continue
 		}
-		if reg.Login != nil && reg.LoginHint != "" {
+		if (reg.Login != nil || reg.OAuth != nil) && reg.LoginHint != "" {
 			fmt.Fprintf(&b, "  • %-10s %s\n", name, reg.LoginHint)
 		}
 		if envs := reg.CredentialEnvs(); len(envs) > 0 {
