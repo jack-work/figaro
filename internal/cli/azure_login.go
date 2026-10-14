@@ -110,21 +110,26 @@ func azureEndpoint(raw string) (string, error) {
 }
 
 func writeAzureSettings(loaded *config.Loaded, base string, s auth.AzureSettings) error {
-	path := loaded.ProviderAuthPath(azureProvider)
+	return mergeProviderFile(loaded, azureProvider, map[string]string{
+		"base_url":  base,
+		"tenant":    s.Tenant,
+		"client_id": s.ClientID,
+		"scope":     s.Scope,
+		"authority": s.Authority,
+	})
+}
+
+func mergeProviderFile(loaded *config.Loaded, provider string, kv map[string]string) error {
+	path := loaded.ProviderAuthPath(provider)
 	doc := map[string]any{}
 	if _, err := toml.DecodeFile(path, &doc); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	set := func(k, v string) {
+	for k, v := range kv {
 		if v = strings.TrimSpace(v); v != "" {
 			doc[k] = v
 		}
 	}
-	set("base_url", base)
-	set("tenant", s.Tenant)
-	set("client_id", s.ClientID)
-	set("scope", s.Scope)
-	set("authority", s.Authority)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

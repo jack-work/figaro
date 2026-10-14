@@ -47,6 +47,10 @@ func init() {
 		r.Setup = runAzureLogin
 		r.Login = runAzureLogin
 	}
+	if r := providerPkg.Lookup(rou2Provider); r != nil {
+		r.Setup = runRou2Login
+		r.Login = runRou2Login
+	}
 	if r := providerPkg.Lookup("anthropic"); r != nil {
 		login := func(loaded *config.Loaded) error {
 			return runOAuthInline("anthropic", auth.AnthropicOAuth)
