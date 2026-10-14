@@ -119,8 +119,8 @@ name: the login runs the device flow against the issuer and hands the pair to
 hush, which refreshes it with its `refresh_token` grant and stores each rotated
 refresh token. Endpoints off the issuer's origin are refused, the issuer must
 be https, and every issuer call carries a `figaro/<version>` User-Agent. No
-audience is sent. Without `[oauth]`, the provider takes `api_key` and may run
-keyless, as `gateway` does.
+audience is sent. Without `[oauth]`, the provider takes `api_key`, or the
+variable `api_key_env` names, and may run keyless, as `gateway` does.
 
 ## Not a provider: decision models
 

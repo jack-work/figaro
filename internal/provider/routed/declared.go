@@ -52,6 +52,7 @@ func declared(loaded *config.Loaded, name string) (*provider.Registration, error
 	}
 	reg := &provider.Registration{
 		Name:     name,
+		EnvVar:   f.APIKeyEnv,
 		Declared: true,
 		HasOAuth: f.OAuth != nil,
 		Build: func(ctx provider.BuildContext) (provider.Provider, error) {

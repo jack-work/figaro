@@ -36,13 +36,13 @@ flow = "device"
 
 func TestAProviderFileWithAPresetIsAProvider(t *testing.T) {
 	loaded := declaredDir(t, map[string]string{
-		"house":     houseTOML,
-		"keyed":     "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n",
-		"decisions": "base_url = \"http://127.0.0.1:8787/v1\"\n",
+		"house": houseTOML,
+		"keyed": "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n",
+		"notes": "base_url = \"http://127.0.0.1:8787/v1\"\n",
 	})
 	got := RegisterDeclared(loaded)
 	if strings.Join(got, ",") != "house,keyed" {
-		t.Fatalf("registered %v; a file without a preset (decisions.toml) must not become a provider", got)
+		t.Fatalf("registered %v; a file without a preset must not become a provider", got)
 	}
 	house := provider.Lookup("house")
 	if house == nil || !house.Declared || !house.HasOAuth || house.OAuth == nil {
@@ -93,5 +93,22 @@ func TestADeclaredOAuthGatewayNeedsItsCredential(t *testing.T) {
 	}
 	if p.(*Provider).spec.AuthOptional {
 		t.Fatal("an [oauth] gateway was built with AuthOptional")
+	}
+}
+
+// A host that takes a key from the environment (TypeSafe, Experiential Labs)
+// is a declared provider like any other; api_key_env names the variable, and
+// the resolver reads it through the registration as it does a built-in's.
+func TestAPIKeyEnvIsTheRegistrationsVariable(t *testing.T) {
+	loaded := declaredDir(t, map[string]string{
+		"typesafe": "preset = \"gateway\"\nbase_url = \"https://api.typesafe.ai/v1\"\napi_key_env = \"TYPESAFE_API_KEY\"\n",
+		"plain":    "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n",
+	})
+	RegisterDeclared(loaded)
+	if envs := provider.Lookup("typesafe").CredentialEnvs(); strings.Join(envs, ",") != "TYPESAFE_API_KEY" {
+		t.Fatalf("typesafe reads %v", envs)
+	}
+	if envs := provider.Lookup("plain").CredentialEnvs(); len(envs) != 0 {
+		t.Fatalf("plain reads %v; no api_key_env, no variable", envs)
 	}
 }
