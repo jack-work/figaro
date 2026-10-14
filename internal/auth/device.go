@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+var UserAgent = "figaro"
+
 type DeviceCodeConfig struct {
 	ProviderName string
 	ClientID     string
@@ -143,6 +145,7 @@ func postDeviceForm(cfg DeviceCodeConfig, endpoint string, form url.Values) (*ht
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", UserAgent)
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}
