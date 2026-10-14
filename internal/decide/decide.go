@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	figOtel "github.com/jack-work/figaro/internal/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"sort"
 	"strings"
+	"time"
 
 	apidecide "github.com/jack-work/figaro/api/decide"
 	"github.com/jack-work/figaro/api/form"
@@ -130,8 +133,22 @@ func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
 	return p, nil
 }
 
-func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) (rpc.DecideResponse, error) {
-	var out rpc.DecideResponse
+func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) (out rpc.DecideResponse, err error) {
+	ctx, span := figOtel.Start(ctx, "decide")
+	defer func() {
+		if err != nil {
+			figOtel.RecordError(ctx, "decide.error", err)
+		} else {
+			span.SetAttributes(
+				attribute.String("decide.answered_by", out.Model),
+				attribute.String("decide.kind", string(out.Kind)),
+				attribute.Int("decide.window.messages", out.Window.Messages),
+				attribute.Int("decide.window.tokens", out.Window.Tokens),
+				attribute.Int("decide.input_tokens", out.InputToks),
+			)
+		}
+		span.End()
+	}()
 	p, err := parse(req, src.Board)
 	if err != nil {
 		return out, err
@@ -141,11 +158,13 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 		return out, err
 	}
 	model, api := set.model, set.api
+	span.SetAttributes(attribute.String("decide.provider", set.provider), attribute.String("decide.model", model))
 	if api == "" {
 		api = apidecide.APIFor(model)
 	} else if api, err = apidecide.ParseAPI(api); err != nil {
 		return out, err
 	}
+	span.SetAttributes(attribute.String("decide.api", api))
 	d, err := dialectFor(api)
 	if err != nil {
 		return out, err
@@ -161,7 +180,9 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if req.Budget > 0 && req.Budget < avail {
 		avail = req.Budget
 	}
+	_, targetSpan := figOtel.Start(ctx, "decide.target", figOtel.WithAttributes(attribute.String("decide.provider", set.provider)))
 	target, err := e.targets(set.provider)
+	targetSpan.End()
 	if err != nil {
 		return out, fmt.Errorf("decision provider %q: %w", set.provider, err)
 	}
@@ -180,7 +201,13 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 			return out, err
 		}
 		var raw []byte
-		if raw, err = client.post(ctx, d.path(), body); err == nil {
+		postCtx, postSpan := figOtel.Start(ctx, "decide.post", figOtel.WithAttributes(
+			attribute.Int("decide.attempt", attempt+1), attribute.Int("decide.window.tokens", stateTokens)))
+		posted := time.Now()
+		raw, err = client.post(postCtx, d.path(), body)
+		figOtel.RecordDecideUpstream(ctx, time.Since(posted), attribute.String("decide.api", api), attribute.Bool("decide.ok", err == nil))
+		postSpan.End()
+		if err == nil {
 			resp, err = d.decode(raw)
 		}
 		var he *httpError
@@ -211,6 +238,7 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 	if resp.Usage != nil {
 		out.InputToks, out.OutputToks = resp.Usage.InputTokens, resp.Usage.OutputTokens
 	}
+	figOtel.RecordDecideWindow(ctx, stateTokens, attribute.String("decide.api", api))
 	return out, nil
 }
 

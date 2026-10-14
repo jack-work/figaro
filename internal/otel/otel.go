@@ -119,6 +119,12 @@ var (
 
 	requestBytes otelmetric.Int64Histogram
 
+	outfitWalk      otelmetric.Float64Histogram
+	outfitWalkFiles otelmetric.Int64Histogram
+	outfitDress     otelmetric.Float64Histogram
+	decideUpstream  otelmetric.Float64Histogram
+	decideWindow    otelmetric.Int64Histogram
+
 	memProbe atomic.Pointer[func() MemSample]
 
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
@@ -326,6 +332,11 @@ func initInstruments(m otelmetric.Meter) {
 	sweepDuration = histogram(m, "figaro.sweep.duration", "One sweep phase on the angelus ticker", subMS)
 	sweepEvicted = counts(m, "figaro.sweep.evicted", "{handle}", "Aria handles one idle sweep evicted")
 	requestBytes = counts(m, "figaro.provider.request_bytes", "By", "Serialized request body per provider round")
+	outfitWalk = histogram(m, "figaro.outfit.walk", "One walk of the outfits tree to find an outfit by name", subMS)
+	outfitWalkFiles = counts(m, "figaro.outfit.walk.files", "{file}", "Outfit files the walk saw")
+	outfitDress = histogram(m, "figaro.outfit.dress", "Folding the outfits a create, a set or a decide asked for", subMS)
+	decideUpstream = histogram(m, "figaro.decide.upstream", "One decision request to the provider; figaro.rpc.duration minus this is figaro's own share", turnMS)
+	decideWindow = counts(m, "figaro.decide.window", "{token}", "Estimated tokens of context one decision sent")
 	rss, heapInuse, heapReleased := gauge(m, "figaro.mem.rss", "By"), gauge(m, "figaro.mem.heap_inuse", "By"), gauge(m, "figaro.mem.heap_released", "By")
 	resident, goroutines := gauge(m, "figaro.mem.resident_arias", "{aria}"), gauge(m, "figaro.mem.goroutines", "{goroutine}")
 	_, err = m.RegisterCallback(func(_ context.Context, o otelmetric.Observer) error {
@@ -472,6 +483,23 @@ func RecordFormPatchRead(ctx context.Context, returned, history int, attrs ...at
 
 func Tracer() trace.Tracer {
 	return otel.GetTracerProvider().Tracer(scopeName)
+}
+
+func RecordOutfitWalk(ctx context.Context, d time.Duration, files int, attrs ...attribute.KeyValue) {
+	record(ctx, outfitWalk, d, attrs...)
+	recordN(ctx, outfitWalkFiles, int64(files), attrs...)
+}
+
+func RecordOutfitDress(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, outfitDress, d, attrs...)
+}
+
+func RecordDecideUpstream(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, decideUpstream, d, attrs...)
+}
+
+func RecordDecideWindow(ctx context.Context, tokens int, attrs ...attribute.KeyValue) {
+	recordN(ctx, decideWindow, int64(tokens), attrs...)
 }
 
 func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {

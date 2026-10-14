@@ -1,12 +1,14 @@
 package outfit
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/internal/config"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"os"
 	"path/filepath"
 	"sort"
@@ -152,7 +154,10 @@ func (r *reader) outfitIndex(name string) (map[string][]string, error) {
 }
 
 func walkOutfits(configDir string, visit func(dir string)) (map[string][]string, error) {
-	return config.OutfitFiles(configDir, visit)
+	start := time.Now()
+	files, err := config.OutfitFiles(configDir, visit)
+	figOtel.RecordOutfitWalk(context.Background(), time.Since(start), len(files))
+	return files, err
 }
 
 // Within an epoch the same path always yields the bytes the first read pinned.

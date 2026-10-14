@@ -66,6 +66,10 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 	figOtel.RecordSweep(ctx, time.Millisecond, attribute.String("phase", "test"))
 	figOtel.RecordEvicted(ctx, 7)
 	figOtel.RecordRequestBytes(ctx, 1024)
+	figOtel.RecordOutfitWalk(ctx, time.Millisecond, 40)
+	figOtel.RecordOutfitDress(ctx, time.Millisecond)
+	figOtel.RecordDecideUpstream(ctx, time.Second, attrs...)
+	figOtel.RecordDecideWindow(ctx, 12000, attrs...)
 	require.NoError(t, shutdown(ctx))
 
 	got := exportedMetrics(t, dir)
@@ -84,6 +88,11 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 		"figaro.sweep.duration",
 		"figaro.sweep.evicted",
 		"figaro.provider.request_bytes",
+		"figaro.outfit.walk",
+		"figaro.outfit.walk.files",
+		"figaro.outfit.dress",
+		"figaro.decide.upstream",
+		"figaro.decide.window",
 		"figaro.mem.rss",
 		"figaro.mem.heap_inuse",
 		"figaro.mem.heap_released",

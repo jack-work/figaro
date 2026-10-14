@@ -1,11 +1,14 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -29,7 +32,9 @@ func (h *handlers) dress(outfits []string, patch *rpc.FormPatch) (form.Patch, er
 	if loaded != nil {
 		def = loaded.Config.DefaultOutfit
 	}
+	start := time.Now()
 	out, err := ofit.Dress(outfits, base, def)
+	figOtel.RecordOutfitDress(context.Background(), time.Since(start))
 	var missing *outfit.MissingError
 	if errors.As(err, &missing) {
 		return form.Patch{}, h.errOutfitNotFound(strings.Join(outfits, ","), err)
