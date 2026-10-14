@@ -15,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/provider/routed"
 )
 
 func LoadConfig() (*config.Loaded, error) {
@@ -30,6 +31,7 @@ func LoadConfig() (*config.Loaded, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	routed.RegisterDeclared(loaded)
 	return loaded, nil
 }
 

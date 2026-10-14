@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
 	"strings"
 
@@ -17,7 +16,6 @@ const (
 	openRouterName = "openrouter"
 	gatewayName    = "gateway"
 	azureName      = "azure"
-	rou2Name       = "rou2"
 )
 
 func init() {
@@ -36,48 +34,6 @@ func init() {
 		Build:        buildGateway,
 	})
 	registerAzure()
-	provider.Register(&provider.Registration{
-		Name:      rou2Name,
-		HasOAuth:  true,
-		LoginHint: "rou2, the house model gateway (Authelia device code):  figaro login rou2",
-		Build:     buildRou2,
-	})
-}
-
-func buildRou2(ctx provider.BuildContext) (provider.Provider, error) {
-	f, err := LoadFile(ctx.Loaded, rou2Name)
-	if err != nil {
-		return nil, err
-	}
-	if v := strings.TrimSpace(os.Getenv(provider.BaseURLEnv(rou2Name))); v != "" {
-		f.BaseURL = v
-	}
-	if strings.TrimSpace(f.BaseURL) == "" {
-		return nil, fmt.Errorf("rou2: no base_url: run figaro login rou2, or set ROU2_BASE_URL or base_url in providers/rou2.toml")
-	}
-	f.BaseURL = rou2Door(f.BaseURL)
-	spec, err := f.Apply(Spec{
-		Name:    rou2Name,
-		Default: Chat,
-		Caps:    rou2Caps,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return Build(ctx, spec, f.APIKey)
-}
-
-func rou2Door(base string) string {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	if u, err := url.Parse(base); err == nil && u.Host != "" && u.Path == "" {
-		return base + "/v1"
-	}
-	return base
-}
-
-var rou2Caps = provider.CacheCaps{
-	BlockMarkers: true,
-	MaxMarkers:   provider.AutoCacheBreakpoints,
 }
 
 func registerAzure() {
@@ -133,24 +89,29 @@ func buildOpenRouter(ctx provider.BuildContext) (provider.Provider, error) {
 }
 
 func buildGateway(ctx provider.BuildContext) (provider.Provider, error) {
-	f, err := LoadFile(ctx.Loaded, gatewayName)
+	return buildGatewayAs(ctx, gatewayName, "figaro_gateway")
+}
+
+func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider.Provider, error) {
+	f, err := LoadFile(ctx.Loaded, name)
 	if err != nil {
 		return nil, err
 	}
-	if v := strings.TrimSpace(os.Getenv(provider.BaseURLEnv("figaro_gateway"))); v != "" {
+	envBase := provider.BaseURLEnv(envPrefix)
+	if v := strings.TrimSpace(os.Getenv(envBase)); v != "" {
 		f.BaseURL = v
 	}
 	if strings.TrimSpace(f.BaseURL) == "" {
-		return nil, fmt.Errorf("gateway: no base_url: set FIGARO_GATEWAY_BASE_URL or base_url in providers/gateway.toml")
+		return nil, fmt.Errorf("%s: no base_url: set %s or base_url in providers/%s.toml", name, envBase, name)
 	}
 	caps := provider.UncachedRoute(f.BaseURL).Caps
 	if strings.EqualFold(strings.TrimSpace(f.CacheMarkers), "trusted") ||
-		strings.EqualFold(strings.TrimSpace(os.Getenv("FIGARO_GATEWAY_CACHING")), "1") {
+		(name == gatewayName && strings.EqualFold(strings.TrimSpace(os.Getenv("FIGARO_GATEWAY_CACHING")), "1")) {
 		caps = provider.GatewayRoute(f.BaseURL).Caps
 	}
 	spec, err := f.Apply(Spec{
-		Name:         gatewayName,
-		AuthOptional: true,
+		Name:         name,
+		AuthOptional: f.OAuth == nil,
 		Default:      Chat,
 		Caps:         caps,
 	})

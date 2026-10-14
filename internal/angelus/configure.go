@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/provider/routed"
 )
 
 // outfits is answered by the daemon: the CLI has no notion of where config lives.
@@ -82,6 +83,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		resp.DefaultOutfit = req.DefaultOutfit
 	}
 	if fresh, err := config.Load(loaded.ConfigDir); err == nil {
+		routed.RegisterDeclared(fresh)
 		h.configMu.Lock()
 		h.config = fresh
 		if h.outfitter != nil {

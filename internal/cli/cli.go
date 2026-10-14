@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/provider/routed"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -57,6 +58,7 @@ func Run(progName string, args []string) {
 	if len(args) > 0 && args[0] == "__complete" {
 		loaded, _ := config.Load(config.DefaultConfigDir())
 		if loaded != nil {
+			routed.RegisterDeclared(loaded)
 			if s, err := loaded.RefSigil(); err == nil {
 				SetRefSigil(s)
 			}

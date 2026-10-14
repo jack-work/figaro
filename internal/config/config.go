@@ -608,8 +608,12 @@ type Loaded struct {
 	ConfigPath string
 }
 
+func (l *Loaded) ProvidersDir() string {
+	return filepath.Join(l.dir(), "providers")
+}
+
 func (l *Loaded) ProviderAuthPath(name string) string {
-	return filepath.Join(l.dir(), "providers", name+".toml")
+	return filepath.Join(l.ProvidersDir(), name+".toml")
 }
 
 func (l *Loaded) OutfitsDir() string {

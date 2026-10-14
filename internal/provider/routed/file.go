@@ -7,11 +7,14 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
 type File struct {
+	Preset           string                       `toml:"preset,omitempty"`
+	OAuth            *auth.OAuthSettings          `toml:"oauth,omitempty"`
 	APIKey           string                       `toml:"api_key"`
 	BaseURL          string                       `toml:"base_url,omitempty"`
 	CacheMarkers     string                       `toml:"cache_markers,omitempty"`

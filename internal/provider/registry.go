@@ -18,6 +18,7 @@ type Registration struct {
 	EnvVars   []string
 	HasOAuth  bool
 	LoginHint string
+	Declared  bool
 
 	// Setup is set by the CLI at startup (import cycle with TUI/hush).
 	Setup func(loaded *config.Loaded) error
