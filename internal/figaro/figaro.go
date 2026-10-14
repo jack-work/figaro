@@ -11,10 +11,6 @@ type Figaro interface {
 	Interrupt()
 	Info() FigaroInfo
 	Kill()
-
-	// TurnActive is a lock-free atomic load: it is asked on the authorization
-	// path of every fork request, and Info takes the agent's lock.
-	TurnActive() bool
 }
 
 type FigaroInfo struct {

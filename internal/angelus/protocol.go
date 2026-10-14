@@ -115,7 +115,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodLineage:        h.lineage,
 			rpc.MethodDecide:         h.decide,
 			rpc.MethodHello:          h.hello,
-		}, authz.AriaHeader{}, h.policy()),
+		}, authz.AriaHeader{}, authz.AllowAll()),
 		h: h,
 	}
 }
@@ -131,21 +131,6 @@ func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, erro
 		return nil, fmt.Errorf("protocol version %d; this node speaks %d", req.Version, rpc.ProtocolVersion)
 	}
 	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Principal: authz.PrincipalOf(ctx)}, nil
-}
-
-func (h *handlers) policy() authz.Policy {
-	if h.config != nil && h.config.AuthzPolicy() == "default" {
-		return authz.DefaultRules(h.turnActive)
-	}
-	return authz.AllowAll()
-}
-
-func (h *handlers) turnActive(ariaID string) bool {
-	if h.angelus == nil || h.angelus.Registry == nil {
-		return false
-	}
-	live := h.angelus.Registry.Get(ariaID)
-	return live != nil && live.TurnActive()
 }
 
 // Restore wakes ariaID; wokeBy lands on FigaroInfo.WokeBy.

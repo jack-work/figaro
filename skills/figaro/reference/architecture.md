@@ -273,38 +273,25 @@ An **Authenticator** turns the credential into an `Identity`; a single
 served set and no handler opts in individually. Denials return JSON-RPC code
 **-32020** carrying the reason verbatim.
 
-`[authz]` in `config.toml` selects both, and **both default off**, an absent
-section behaves exactly as figaro did before:
-
-```toml
-[authz]
-caller_identity = true   # believe x-internal-figaro-id (default false)
-policy = "default"       # or "allow-all" (default)
-```
-
-`x-caller` is **attribution only and never authorizes**. It lands in
-`Identity.Label`, a different field from `FigaroID`, and `SelfTargeted()`
-requires an authenticated identity: so an assertion naming its own target
-cannot impersonate it. Anyone who can set an environment variable can set the
-label; if a policy keyed on it, every rule would be one `FIGARO_CALLER=…` away
-from bypass. The separation is a field, not a convention.
-
-Attribution is read **regardless of the switch**: a human is never
-authenticated and is exactly the caller a confused aria most needs named.
-Disabling the provider withholds *authority*, not identity.
-
-The switch is the point: `FIGARO_ARIA` cannot be turned off, so a server has no
-state in which it may doubt it, and a credential that cannot be doubted
-authenticates nothing. `AriaHeader` is trust-on-assertion, not proof; it is an
-interface so `SO_PEERCRED` or a bearer token drops in without any policy or
+No policy ships. Both the angelus map and every per-aria hub are guarded with
+`authz.AllowAll()`; a `Policy` is the seam where a rule drops in, with no
 handler changing.
 
-The first rule, `NoSelfForkDuringTurn`, refuses a fork an aria issues against
-**itself while its own turn is running**: that deadlocks, because fork
-coordination rides the agent's single-threaded inbox. Its error text carries the
-detached-fork workaround. It is a **guardrail, not a cure**; the fix is to move
-trunk state into its own reducible xwal channel (noted at
-`angelus.handlers.fork`).
+`x-caller` is **attribution only and never authorizes**. It lands in
+`Identity.Label`, a different field from `FigaroID`, so an assertion naming
+its own target cannot impersonate it. Anyone who can set an environment
+variable can set the label; if a policy keyed on it, every rule would be one
+`FIGARO_CALLER=…` away from bypass. The separation is a field, not a
+convention.
+
+`AriaHeader` is trust-on-assertion, not proof: it believes
+`x-internal-figaro-id`. It is an interface so `SO_PEERCRED` or a bearer token
+drops in without any policy or handler changing.
+
+An aria may fork itself from inside its own running turn. The fork handler
+calls `Backend.ForkWith` directly rather than queueing on the agent's inbox,
+so nothing waits on the turn that issued it
+(`TestFigaroCanForkItselfFromInsideItsOwnTurn`).
 
 The reply is a **server-authoritative live-render stream**:
 

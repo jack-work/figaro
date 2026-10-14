@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/authz"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -63,7 +64,7 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
 		return hb, nil
 	}
-	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"), h.policy())
+	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"), authz.AllowAll())
 	hb.wake = h.wakeForHub
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub

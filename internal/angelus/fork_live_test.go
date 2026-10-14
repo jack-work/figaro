@@ -20,9 +20,8 @@ import (
 )
 
 type liveForkFigaro struct {
-	id         string
-	killed     bool
-	turnActive bool
+	id     string
+	killed bool
 }
 
 func (f *liveForkFigaro) ID() string         { return f.id }
@@ -31,8 +30,7 @@ func (f *liveForkFigaro) Interrupt()         {}
 func (f *liveForkFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{ID: f.id, State: "active", MessageCount: 12, Provider: "provider"}
 }
-func (f *liveForkFigaro) Kill()            { f.killed = true }
-func (f *liveForkFigaro) TurnActive() bool { return f.turnActive }
+func (f *liveForkFigaro) Kill() { f.killed = true }
 
 type liveForkBackend struct {
 	store.Backend

@@ -126,7 +126,7 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 		rpc.QuaRequest{Text: "keep me busy"}, &out))
 
 	// The turn may be brief with a mock provider; assert the refusal only when caught active.
-	if f := a.Registry.Get(id); f != nil && f.TurnActive() {
+	if f := a.Registry.Get(id); f != nil && f.Info().State == "active" {
 		require.Error(t, a.Registry.Hibernate(id), "reclaimed an active aria")
 	}
 

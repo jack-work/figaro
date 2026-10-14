@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -46,79 +45,6 @@ func TestAriaHeaderRejectsAbsentAndMalformed(t *testing.T) {
 	}
 }
 
-func TestSelfTargetedNeedsAnIdentity(t *testing.T) {
-	// With no aria there is no self, and "" == "" would deny every anonymous call.
-	anon := Request{Method: rpc.MethodFork, Params: forkParams(t, "", "")}
-	if anon.SelfTargeted() {
-		t.Fatal("anonymous request reported as self-targeted")
-	}
-	self := Request{Identity: Identity{FigaroID: "aria0001"}, Method: rpc.MethodFork, Params: forkParams(t, "aria0001", "aria0001")}
-	if !self.SelfTargeted() {
-		t.Fatal("self-fork not detected")
-	}
-	other := Request{Identity: Identity{FigaroID: "aria0001"}, Method: rpc.MethodFork, Params: forkParams(t, "aria0002", "aria0001")}
-	if other.SelfTargeted() {
-		t.Fatal("cross-aria fork reported as self-targeted")
-	}
-}
-
-// Each case is a legitimate fork that must not be denied.
-func TestNoSelfForkDuringTurn(t *testing.T) {
-	busy := func(string) bool { return true }
-	idle := func(string) bool { return false }
-	aria := Identity{Principal: user, FigaroID: "aria0001"}
-
-	t.Run("denies self-fork while the turn runs", func(t *testing.T) {
-		d := NoSelfForkDuringTurn(busy).Check(Request{Identity: aria, Method: rpc.MethodFork, Params: forkParams(t, "aria0001", "aria0001")})
-		if d.Allow {
-			t.Fatal("want deny")
-		}
-		for _, want := range []string{"deadlock", "setsid", "FIGARO_ARIA", "aria0001", "fork.json"} {
-			if !strings.Contains(d.Reason, want) {
-				t.Fatalf("reason missing %q:\n%s", want, d.Reason)
-			}
-		}
-	})
-	t.Run("allows self-fork when idle", func(t *testing.T) {
-		d := NoSelfForkDuringTurn(idle).Check(Request{Identity: aria, Method: rpc.MethodFork, Params: forkParams(t, "aria0001", "aria0001")})
-		if !d.Allow {
-			t.Fatalf("want allow, got %q", d.Reason)
-		}
-	})
-	t.Run("allows a different aria forking this one", func(t *testing.T) {
-		d := NoSelfForkDuringTurn(busy).Check(Request{Identity: aria, Method: rpc.MethodFork, Params: forkParams(t, "aria0002", "aria0001")})
-		if !d.Allow {
-			t.Fatalf("want allow, got %q", d.Reason)
-		}
-	})
-	t.Run("allows anonymous callers", func(t *testing.T) {
-		d := NoSelfForkDuringTurn(busy).Check(Request{Identity: Identity{Principal: user}, Method: rpc.MethodFork, Params: forkParams(t, "aria0001", "")})
-		if !d.Allow {
-			t.Fatalf("want allow, got %q", d.Reason)
-		}
-	})
-	t.Run("ignores other methods", func(t *testing.T) {
-		d := NoSelfForkDuringTurn(busy).Check(Request{Identity: aria, Method: rpc.MethodKill, Params: forkParams(t, "aria0001", "aria0001")})
-		if !d.Allow {
-			t.Fatalf("want allow, got %q", d.Reason)
-		}
-	})
-}
-
-func TestRulesFirstDenialWins(t *testing.T) {
-	deny := Rule{Name: "deny", Check: func(Request) Decision { return Deny("first") }}
-	deny2 := Rule{Name: "deny2", Check: func(Request) Decision { return Deny("second") }}
-	if d := (Rules{deny, deny2}).Check(Request{}); d.Reason != "first" {
-		t.Fatalf("reason = %q, want first", d.Reason)
-	}
-	if d := (Rules{}).Check(Request{}); !d.Allow {
-		t.Fatal("empty table should allow")
-	}
-	if d := (Rules{{Name: "nil"}, deny}).Check(Request{}); d.Reason != "first" {
-		t.Fatalf("nil rule not skipped: %+v", d)
-	}
-}
-
 // Guard wraps the map, so the guarded set is the served set by construction.
 func TestGuardAppliesToEveryMethod(t *testing.T) {
 	called := map[string]int{}
@@ -129,7 +55,13 @@ func TestGuardAppliesToEveryMethod(t *testing.T) {
 		}
 	}
 	handlers := map[string]jkrpc.HandlerFunc{rpc.MethodFork: mk("fork"), rpc.MethodKill: mk("kill")}
-	guarded := Guard(handlers, AriaHeader{}, Rules{NoSelfForkDuringTurn(func(string) bool { return true })})
+	denyFork := PolicyFunc(func(r Request) Decision {
+		if r.Method == rpc.MethodFork {
+			return Deny("no forks for %s", r.Identity.FigaroID)
+		}
+		return Allow()
+	})
+	guarded := Guard(handlers, AriaHeader{}, denyFork)
 	if len(guarded) != len(handlers) {
 		t.Fatalf("guarded %d methods, served %d", len(guarded), len(handlers))
 	}
@@ -139,7 +71,7 @@ func TestGuardAppliesToEveryMethod(t *testing.T) {
 	if !errors.As(err, &jerr) {
 		t.Fatalf("error = %v (%T), want *jkrpc.Error", err, err)
 	}
-	if jerr.Code != ErrCode || !strings.Contains(jerr.Message, "deadlock") {
+	if jerr.Code != ErrCode || jerr.Message != "no forks for aria0001" {
 		t.Fatalf("denial = %+v", jerr)
 	}
 	if called["fork"] != 0 {

@@ -534,8 +534,6 @@ func (a *Agent) turnActive() bool {
 	return a.turnRunning.Load()
 }
 
-func (a *Agent) TurnActive() bool { return a.turnActive() }
-
 // Interrupt aborts the current turn and keeps the queue.
 func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 

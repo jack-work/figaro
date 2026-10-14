@@ -20,11 +20,4 @@ func TestLabelCannotAuthorize(t *testing.T) {
 	if id.Label != "aria0001" {
 		t.Fatalf("label lost: %+v", id)
 	}
-	req := Request{Identity: id, Method: rpc.MethodFork, Params: params}
-	if req.SelfTargeted() {
-		t.Fatal("an asserted label was treated as self-targeting")
-	}
-	if d := NoSelfForkDuringTurn(func(string) bool { return true }).Check(req); !d.Allow {
-		t.Fatalf("a label drove an authorization decision: %q", d.Reason)
-	}
 }

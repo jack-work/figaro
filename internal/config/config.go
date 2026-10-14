@@ -41,7 +41,6 @@ type Config struct {
 	Wire   WireConfig   `toml:"wire"`
 	Store  StoreConfig  `toml:"store"`
 	Memory MemoryConfig `toml:"memory"`
-	Authz  AuthzConfig  `toml:"authz"`
 	Quote  QuoteConfig  `toml:"quote"`
 }
 
@@ -104,11 +103,6 @@ type CLIConfig struct {
 
 	// Editor is a literal command line (no $EDITOR, globbing or substitution) the pager opens a path with.
 	Editor *string `toml:"editor"`
-}
-
-type AuthzConfig struct {
-	// Policy is "default" for authz.DefaultRules; anything else gates nothing.
-	Policy string `toml:"policy"`
 }
 
 type StoreConfig struct {
@@ -520,13 +514,6 @@ func (l *Loaded) Interactive() bool {
 		return true
 	}
 	return *l.cfg().CLI.Interactive
-}
-
-func (l *Loaded) AuthzPolicy() string {
-	if strings.EqualFold(strings.TrimSpace(l.cfg().Authz.Policy), "default") {
-		return "default"
-	}
-	return "allow-all"
 }
 
 func (l *Loaded) RefSigil() (string, error) {

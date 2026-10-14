@@ -54,23 +54,6 @@ type Request struct {
 	Params   json.RawMessage
 }
 
-func (r Request) Target() string {
-	if len(r.Params) == 0 {
-		return ""
-	}
-	var t struct {
-		FigaroID string `json:"figaro_id"`
-	}
-	if err := json.Unmarshal(r.Params, &t); err != nil {
-		return ""
-	}
-	return t.FigaroID
-}
-
-func (r Request) SelfTargeted() bool {
-	return r.Identity.FigaroID != "" && r.Identity.FigaroID == r.Target()
-}
-
 type Decision struct {
 	Allow  bool
 	Reason string
@@ -92,25 +75,6 @@ func (f PolicyFunc) Check(r Request) Decision { return f(r) }
 
 func AllowAll() Policy {
 	return PolicyFunc(func(Request) Decision { return Allow() })
-}
-
-type Rules []Rule
-
-type Rule struct {
-	Name  string
-	Check func(Request) Decision
-}
-
-func (rs Rules) Check(r Request) Decision {
-	for _, rule := range rs {
-		if rule.Check == nil {
-			continue
-		}
-		if d := rule.Check(r); !d.Allow {
-			return d
-		}
-	}
-	return Allow()
 }
 
 // ErrCode is in the JSON-RPC 2.0 application range.
