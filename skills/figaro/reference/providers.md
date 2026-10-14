@@ -1,7 +1,7 @@
 # Providers: routing a model to a transport
 
-`copilot`, `gateway`, `openrouter`, `azure` and `rou2` are one provider,
-`internal/provider/routed`, given five different specs. A spec names a host, the headers to send, and how
+`copilot`, `gateway`, `openrouter`, `azure` and every declared provider are
+one provider, `internal/provider/routed`, given different specs. A spec names a host, the headers to send, and how
 to choose a transport for each model. `anthropic` (native OAuth) is separate.
 
 ## Transports
@@ -54,7 +54,6 @@ with no transport, a bad glob, or a spec with no way to route at all.
 | `gateway` | default `chat`; credential optional | everything. `base_url` is required; `FIGARO_GATEWAY_BASE_URL` wins over the file. |
 | `openrouter` | default `chat`; OpenRouter host; `anthropic/` model prefix | everything. |
 | `azure` | default `chat`; credential from `AZURE_OPENAI_API_KEY`, a stored key, or a Microsoft Entra login | everything. `base_url` is required; `AZURE_BASE_URL` wins over the file. |
-| `rou2` | default `chat`; per-block cache markers, no top-level directive; credential from an Authelia login | everything. `base_url` is required and the login writes it; `ROU2_BASE_URL` wins over the file. |
 
 ## Azure AI Foundry, signed in with Microsoft Entra
 
@@ -85,23 +84,43 @@ tenant whose policy blocks the Azure CLI's client needs an app registration of
 its own (a public client with the Cognitive Services delegated permission),
 named by `client_id`.
 
-## rou2, the house gateway, signed in with Authelia
+## Declaring a provider: a gateway of your own, with OAuth
 
-```sh
-ROU2_BASE_URL=http://100.103.40.20:9110 figaro login rou2   # or answer the prompt
-figaro set system.provider rou2
-figaro set system.model explabs/<model>   # qualified: the routed door picks the upstream
+A file in `providers/` that names a `preset` creates a provider of that name.
+No Go code per provider; the file is the registration.
+
+```toml
+# providers/house.toml
+preset   = "gateway"                       # chat, OpenAI-compatible
+base_url = "http://100.103.40.20:9110/v1"
+
+[oauth]                                    # optional; makes `figaro login house` work
+issuer    = "https://auth.example"         # its /.well-known/openid-configuration is read
+client_id = "house"
+scopes    = ["openid", "profile", "groups"]   # offline_access is always added
+flow      = "device"                       # the only flow so far, and the default
+# discovery = "http://.../.well-known/..." # fills issuer, client_id, scopes the file leaves out
 ```
 
-The login reads `/.well-known/rou2` for the issuer, client id and scopes, then
-the issuer's own OpenID discovery for the device and token endpoints; nothing
-about Authelia is compiled in. Endpoints off the issuer's origin are refused.
-hush holds the tokens and refreshes them with its default `refresh_token`
-grant. The login writes `base_url = "<rou2>/v1"` to `providers/rou2.toml`.
+```sh
+figaro login house
+figaro set system.provider house
+figaro set system.model <model>
+```
 
-`figaro decide` reaches jev through it with `provider = "rou2"`,
-`base_url = "<rou2>/v1"` and `model = "explabs/jev-latest"` in
-`providers/decisions.toml`.
+`gateway` is the only preset. Every key the `gateway` row above takes works
+here too (`cache_markers`, `headers`, `routing`), and `<NAME>_BASE_URL` wins
+over `base_url`. A preset on a built-in's name is ignored with a warning. Files
+are read when figaro loads its config; a running daemon picks up a new one when
+it restarts.
+
+With `[oauth]`, the credential is the token hush holds under the provider's
+name: the login runs the device flow against the issuer and hands the pair to
+hush, which refreshes it with its `refresh_token` grant and stores each rotated
+refresh token. Endpoints off the issuer's origin are refused, the issuer must
+be https, and every issuer call carries a `figaro/<version>` User-Agent. No
+audience is sent. Without `[oauth]`, the provider takes `api_key` and may run
+keyless, as `gateway` does.
 
 ## Not a provider: decision models
 

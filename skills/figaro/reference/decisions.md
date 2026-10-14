@@ -110,7 +110,8 @@ holds for it. It is how a host that takes no key is reached.
 |---|---|---|
 | TypeSafe | `https://api.typesafe.ai/v1` (default) | `TYPESAFE_API_KEY` |
 | Experiential Labs | `https://api.experientiallabs.ai/v1` | `EXPLABS_API_KEY` |
-| a broker holding the key (rou2) | `http://127.0.0.1:8787/v1` | none; model `explabs/jev-latest` |
+| a broker holding the key | `http://127.0.0.1:8787/v1` | none; model `explabs/jev-latest` |
+| an OAuth gateway declared in `providers/<name>.toml` | its `base_url` | `provider = "<name>"` (`figaro login <name>`) |
 | Microsoft `decision-1` on Azure Foundry | `https://<resource>.cognitiveservices.azure.com/providers/microsoft/v1` | `provider = "azure"` (Entra, `figaro login azure`); model is the deployment name |
 
 The request body is closed on the far side: `model`, `state`, `questions`,
