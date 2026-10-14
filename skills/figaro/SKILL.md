@@ -20,7 +20,7 @@ the only way you see anything outside your own conversation.
 | `name="<key>"` | one key of **your bound form** (your board): `cwd`, `mantra`, `aria_id`, whatever your outfit set. `figaro set <key> <value>` changes it. |
 | `name="study"` | you began or stopped observing a form: `{form, observing, state, version}`. `state` is the whole form as it stood when observation began. |
 | `name="study:@id"` | that form **changed**: `{form, changes, set, removed, version}`, and `"exists":false` when it was deleted (the copy survives, so history still renders). |
-| `name="fork"` | you are a branch, and where you came from. |
+| `name="fork"` | you are a branch: where you came from, and the outfit's `system.fork_incantation`. Rendered only when an incantation is set. |
 
 A form you do not study is invisible to you. See [forms.md](forms.md) for the
 four species, bound form, unbound form, studied form, role, what arrives on
@@ -36,13 +36,13 @@ figaro send -f --id <id> -- <p>    fire and forget: submit, do not stream, exit 
 figaro send -A -f -S system.ttl=1h -- <p>   a one-off: a fresh aria that reaps itself
 figaro ls                          your own lineage: parent, siblings, branches
 figaro show <id> -n 5              the last 5 turns of an aria
-figaro fork <id>:12 -- <prompt>    branch at turn 12 and prompt the new branch
+figaro fork <id>:12 -- <nudge>     branch at turn 12 and nudge the new branch
 figaro attend <id>                 bind this shell to an aria, like cd
 figaro state <id>                  that aria's form
 figaro status <id> -j | jq -r .state    dormant, idle, or active
 ```
 
-Four rules that are not guessable:
+Five rules that are not guessable:
 
 - **`--` is mandatory** before a prompt. Everything after it is the prompt.
 - **`-f` is how you avoid waiting.** Without it, `send` attaches to the stream
@@ -50,6 +50,10 @@ Four rules that are not guessable:
   your shell back. Follow along later with `figaro listen <id>`.
 - **Inside an aria, `send` without `--id` reaches you.** `FIGARO_ARIA`
   outranks `-A`; mint with `new` instead. See [subagents.md](subagents.md).
+- **A fork's prompt is a nudge, never a brief.** The branch holds your whole
+  conversation already, so `go` or `take the second option` is a complete
+  instruction. Write a full prompt only for `new`, whose aria starts empty.
+  See [reference/trunks.md](reference/trunks.md).
 - **`ls` is scoped to where you are attended.** It is `ls`, not `ls -R /`.
   Start scoped; widen with `-H` (home) or `-g` (global) only when scoped comes
   back empty.

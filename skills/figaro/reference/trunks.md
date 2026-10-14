@@ -147,6 +147,23 @@ with no credentials and no tokens.
   `mode:"fork-send"`, `aria_id` = the branch. `fork --` with an empty body
   opens the composer.
 
+  **A fork's prompt is a nudge, never a brief.** The branch inherits the whole
+  conversation up to the fork point: the task, the files read, the plan, and
+  what was just decided. It is reading exactly what the forking aria is
+  reading, so anything a brief would tell it, it already has. Prompt it with
+  the next step in a few words, `go`, `take the second option`, `run the pty
+  test and report back`, and nothing more. A long prompt that re-explains the
+  situation costs tokens on both sides, and when it paraphrases it can
+  disagree with the history the branch can read for itself.
+
+  The branch learns that it IS a branch from the fork reminder
+  (`<system-reminder name="fork">`), which carries `forked_from` and the
+  bound form's `system.fork_incantation`. Set the incantation once in an
+  outfit (`core.toml` reaches every aria) and no forking prompt has to say
+  it; unset, nothing tells the branch it was forked. A fresh aria from `new`
+  is the opposite case: it has no history, and its prompt must carry
+  everything (see [../subagents.md](../subagents.md)).
+
   > Deliberate asymmetry: `send <id>:<turn> --stay` parks the branch and
   > sends to the *original* trunk. `send`'s subject is the message (*where
   > does this land?*); `fork`'s is the branch (*what did I just make?*).

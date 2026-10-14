@@ -17,6 +17,22 @@ figaro new -f -j -- "<prompt>"     spawn a worker, print {"aria_id":...}, return
 figaro send -f --id <id> -- "<p>"  steer that worker later
 ```
 
+## Spawn or fork
+
+`new` starts an aria with no history, so its prompt is the whole brief. If
+the work belongs to a conversation you are already in, **fork it instead**:
+the branch inherits everything you know, and its prompt is a nudge, not a
+brief.
+
+```sh
+figaro fork --stay -f -- go                    a branch that picks up where you are
+figaro fork --stay -f -- "take the second option"
+```
+
+Do not restate the task, the plan or the files to a fork; it can read them.
+How a branch learns it was forked, and the fork coordinates, are in
+[reference/trunks.md](reference/trunks.md).
+
 ## Core commands
 
 | Mode | Command | Use case |
