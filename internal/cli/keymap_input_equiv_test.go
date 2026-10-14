@@ -391,6 +391,10 @@ var inputOracle = []struct {
 	keys  map[string]string
 }{
 	{"incipit", "stop=false rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// 2026-10-13, for 'D': an opener like S and Q, so from the incipit it
+		// opens the pager, and inside a pit with no decision yet it keeps the
+		// pit open and says so on the bar.
+		"0x44": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
 		// from the inline view: what a draft dispatches is shown there. So it
 		// is no longer inert in any state a pager key can act from.
@@ -608,6 +612,10 @@ var inputOracle = []struct {
 		"csiu ^p+alt": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},
 	{"panel", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// 2026-10-13, for 'D': an opener like S and Q, so from the incipit it
+		// opens the pager, and inside a pit with no decision yet it keeps the
+		// pit open and says so on the bar.
+		"0x44": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// `Q` ON AN EMPTY QUEUE IS A BAR NOTICE, 2026-10-10, and no pit: this
 		// signature has no column for the bar, so it reads as inert here. The
 		// notice itself is asserted in transcript_test.go, where it can be

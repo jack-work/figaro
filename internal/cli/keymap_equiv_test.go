@@ -265,6 +265,11 @@ var pagerOracle = []struct {
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// 2026-10-13, for 'D': the decision pit, which D opens and closes as Q
+		// does the queue. With no decision yet D says so on the bar and leaves
+		// whatever pit is up open, where an unbound key would close it; the
+		// cell is what a pit kept open looks like from here.
+		"0x44": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// `Q` ON AN EMPTY QUEUE IS A BAR NOTICE, 2026-10-10, and no pit: this
 		// signature has no column for the bar, so it reads as inert here. The
 		// notice itself is asserted in transcript_test.go, where it can be
@@ -475,6 +480,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\" vis=none",
 	}},
 	{"panel+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// 2026-10-13, for 'D': the decision pit, which D opens and closes as Q
+		// does the queue. With no decision yet D says so on the bar and leaves
+		// whatever pit is up open, where an unbound key would close it; the
+		// cell is what a pit kept open looks like from here.
+		"0x44": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x4e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		// A FAILED PIT SEARCH REPORTS ON THE BAR, 2026-10-08: it used to open a
 		// note, and a note is itself a pit, so saying "no row matching x" closed
@@ -547,6 +557,11 @@ var pagerOracle = []struct {
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// 2026-10-13, for 'D': the decision pit, which D opens and closes as Q
+		// does the queue. With no decision yet D says so on the bar and leaves
+		// whatever pit is up open, where an unbound key would close it; the
+		// cell is what a pit kept open looks like from here.
+		"0x44": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
@@ -832,6 +847,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// 2026-10-13, for 'D': the decision pit, which D opens and closes as Q
+		// does the queue. With no decision yet D says so on the bar and leaves
+		// whatever pit is up open, where an unbound key would close it; the
+		// cell is what a pit kept open looks like from here.
+		"0x44": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every

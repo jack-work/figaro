@@ -283,6 +283,7 @@ var keymap = []keyBinding{
 	{chord: byteChord('h'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
+	{chord: byteChord('D'), modes: inTranscript | inPanel, open: opensPager, help: helpDecisionPit, pager: pagerDecisionPit},
 	// Space is the leader; dispatch (transcript.leaderChord) takes the second
 	// key before the mode's rows.
 	{chord: byteChord(' '), modes: inTranscript | inPanel, open: opensPager, help: helpNotifications, pager: pagerLeader},
@@ -597,6 +598,7 @@ const (
 	helpDetach
 	helpStatusPanel
 	helpQueuedPanel
+	helpDecisionPit
 	helpNotifications
 	helpHelpPanel
 	helpListPit
@@ -681,6 +683,7 @@ var helpRows = []helpRow{
 	{helpQueuedPanel, "Q", "queued prompts panel; with nothing queued it says so on the bar and opens nothing"},
 	{helpNotifications, "space n", "notifications: what figaro said, and what went wrong"},
 	{helpFormPit, "S", "the form (state) in the pit"},
+	{helpDecisionPit, "D", "the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpListPit, "l / L", "list this aria's tree / the home tree, in the pit (Enter attends, x kills)"},
 	{helpConfirm, "y / n", "answer a confirmation (Esc is no); X on a row kills with no question"},

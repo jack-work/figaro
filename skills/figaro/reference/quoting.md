@@ -134,6 +134,7 @@ Moving between arias:
 | `^O` / `^I` | jumplist: back / forward through the arias attended here |
 | `M-m` | verbose tool output, and every node's address |
 | `S` | the form in the pit |
+| `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |
 
 ## Settings
 

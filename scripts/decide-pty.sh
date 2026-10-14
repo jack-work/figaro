@@ -122,8 +122,23 @@ has "after T, k leaves the pit alone" 'queue' "$DP_DIR/wash-Tk.txt"
 dp_key T; dp_key k; dp_stable; washed > "$DP_DIR/wash-TTk.txt"
 has "T again gives the pit the keys back" 'idempotency-key' "$DP_DIR/wash-TTk.txt"
 
-echo "-- :decide replaces the decision:"
+echo "-- D reopens and closes it:"
 dp_key Escape
+dp_stable
+dp_cap > "$DP_DIR/cap-closed.txt"
+hasnt "Esc closed the pit" '?? which fix?' "$DP_DIR/cap-closed.txt"
+dp_key D
+dp_stable
+dp_cap > "$DP_DIR/cap-D.txt"
+has "D brings the last decision back" '?? which fix?' "$DP_DIR/cap-D.txt"
+washed > "$DP_DIR/wash-D.txt"
+has "with the focus on the preferred option" 'idempotency-key' "$DP_DIR/wash-D.txt"
+dp_key D
+dp_stable
+dp_cap > "$DP_DIR/cap-DD.txt"
+hasnt "D again closes it" '?? which fix?' "$DP_DIR/cap-DD.txt"
+
+echo "-- :decide replaces the decision:"
 dp_stable
 dp_key ':'
 dp_type 'decide -C=yes,no -- is a retried charge billed twice?'

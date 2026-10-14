@@ -77,7 +77,7 @@ func (t *transcript) showDecision(question string, resp rpc.DecideResponse) {
 
 func (t *transcript) openDecisionPit() {
 	if t.decision == nil {
-		t.setCommandNoteAt("no decision yet: end a draft with a ?? line, or :decide -- <question>", alertInfo)
+		t.setCommandNoteAt("no decision yet", alertInfo)
 		return
 	}
 	d := t.decision
@@ -101,4 +101,12 @@ func decisionAsk(d *decision) string {
 		return d.resp.Question
 	}
 	return d.question
+}
+
+func pagerDecisionPit(t *transcript) {
+	if t.showing(pitDecision) {
+		t.closePanels()
+		return
+	}
+	t.openDecisionPit()
 }

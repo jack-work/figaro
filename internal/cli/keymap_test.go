@@ -190,6 +190,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'l', 'L', // the listing, and the home listing
 		'^',        // attend the parent
 		'S',        // the form, in the pit
+		'D',        // the last decision, in the pit
 		'T',        // focus the conversation, keeping the pit
 		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
 		'a',        // attend the fork point (or the selected list row)
@@ -304,6 +305,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  Q                   queued prompts panel; with nothing queued it says so on the bar and opens nothing",
 		"  space n             notifications: what figaro said, and what went wrong",
 		"  S                   the form (state) in the pit",
+		"  D                   the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar",
 		"  T                   read the conversation without closing the pit (again to go back)",
 		"  l / L               list this aria's tree / the home tree, in the pit (Enter attends, x kills)",
 		"  y / n               answer a confirmation (Esc is no); X on a row kills with no question",

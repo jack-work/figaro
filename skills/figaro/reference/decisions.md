@@ -88,10 +88,11 @@ better: the model's accuracy falls as the state fills with unrelated text.
 | `>` draft ending in a bare `??` | opens the options line: comma separated, `^S`/Enter decides, empty is yes/no, `Esc` back to the draft, `^C` spends both |
 | `v`/`V`, then `>` | the draft starts with `<,>`: the highlight becomes the focus |
 | `:decide -C=a,b -- <question>` | the same, from the command line; `:<,>decide` for the highlight |
-| `:decide` | reopen the last decision |
+| `D`, or `:decide` alone | reopen the last decision; `D` again closes it |
 
-The answer opens in the decision pit (`⁇`) with the preferred option selected,
-so `y` copies it. The pit holds one decision, in this pager's memory only, and
+The answer opens in the decision pit (`⁇`) with the focus and the preferred
+option selected. Every option is a row: `j`/`k` move, `y` copies the one under
+the cursor, `T` hands the keys to the conversation and back. The pit holds one decision, in this pager's memory only, and
 the next one replaces it. Nothing is written anywhere, so it works the same
 whether or not a turn is running. A `??` line meant literally is `\??`.
 

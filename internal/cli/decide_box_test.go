@@ -293,3 +293,36 @@ func TestEveryOptionInTheDecisionPitIsSelectable(t *testing.T) {
 		t.Fatalf("k did not walk back to the top: %+v", row)
 	}
 }
+
+// D is to the decision pit what Q is to the queue and S to the form: open it,
+// and again to close it. Bytes, not intentions: these go through dispatch.
+func TestDTogglesTheDecisionPit(t *testing.T) {
+	tr, _, _ := decideTranscript(t)
+	tr.key('D')
+	if tr.showing(pitDecision) {
+		t.Fatal("D opened an empty decision pit")
+	}
+	tr.showDecision("which fix?", rpc.DecideResponse{Question: "which fix?", Rows: []rpc.DecideRow{
+		{Option: "ship", Probability: 0.9, Chosen: true}, {Option: "wait", Probability: 0.1},
+	}})
+	tr.key(0x1b)
+	if tr.pit.open() {
+		t.Fatal("Esc did not close the pit")
+	}
+	tr.key('D')
+	if !tr.showing(pitDecision) || tr.focused != focusPit {
+		t.Fatalf("D did not reopen the decision with the focus: pit=%q focus=%v", tr.pit.id, tr.focused)
+	}
+	if row, _ := tr.pit.selected(); row.yank != "ship" {
+		t.Fatalf("reopened on %+v, want the preferred option", row)
+	}
+	tr.key('D')
+	if tr.pit.open() {
+		t.Fatal("D again did not close it")
+	}
+	tr.key('S')
+	tr.key('D')
+	if !tr.showing(pitDecision) {
+		t.Fatalf("D from inside another pit did not switch to the decision: pit=%q", tr.pit.id)
+	}
+}
