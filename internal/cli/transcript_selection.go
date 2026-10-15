@@ -38,6 +38,8 @@ func blockOf(ref nodeRef) nodeRef {
 	return ref
 }
 
+func (r nodeRef) pseudo() bool { return r.delta > 0 }
+
 // m.From is the positional id of m.Nodes[0] (the wire guarantees Nodes[i].ID ==
 // From+i), so a turn delivered in slices yields one ref per node.
 func nodeRefAt(m aria.Message, i int) nodeRef {

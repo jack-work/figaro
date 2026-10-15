@@ -117,6 +117,7 @@ jump (`:12`, `:12.3`, `:0`).
 | `:listen <id>` | show that aria; the shell's binding does not move |
 | `:attend <id>` | show it AND bind this shell to it |
 | `:attend null` | go home: drop the binding, keep showing what is on screen |
+| `:next [kind]` · `:prev [kind]` | step to the next / previous stop; `kind` is `delta`, `fork`, `turn` or `block`. With no kind it is `^N` / `^P`. `:previous` is `:prev` |
 
 The difference is the binding, and it is the only difference. `:fork` without
 `--stay` does both, on purpose: no single command shows one aria while your

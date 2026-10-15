@@ -361,6 +361,15 @@ func (t *transcript) boxSubmit(snap bool) {
 		t.startJump(tg)
 		return
 	}
+	if kind, dir, ok, bad := parseNav(text); ok {
+		if bad != "" {
+			t.noteOrClear(bad)
+			return
+		}
+		t.leaveVisual()
+		t.noteStep(t.navigate(kind, dir))
+		return
+	}
 	if t.command == nil {
 		t.noteOrClear("commands need a live session")
 		return
