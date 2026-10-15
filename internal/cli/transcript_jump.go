@@ -4,9 +4,11 @@ import (
 	"errors"
 
 	"fmt"
-	"github.com/jack-work/figaro/api/quote"
 	"strconv"
 	"strings"
+
+	"github.com/jack-work/figaro/api/quote"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -398,6 +400,18 @@ func (t *transcript) boxSubmit(snap bool) {
 func (t *transcript) expandRange(text string) (string, string, string) {
 	var token, note string
 	rest := text
+	if strings.HasPrefix(text, visualRangePlaceholder) {
+		if addr, ok := t.selectedCommentAddr(); ok {
+			rest = strings.TrimSpace(text[len(visualRangePlaceholder):])
+			if rest == "" {
+				return "", "", "range: a verb must follow it (comment)"
+			}
+			if head, tail, ok := cutVerbBoundary(rest); ok {
+				return head + " " + addr + tail, "", ""
+			}
+			return rest + " " + addr, "", ""
+		}
+	}
 	switch {
 	case strings.HasPrefix(text, visualRangePlaceholder):
 		if !t.visual.highlighted() {
@@ -422,7 +436,7 @@ func (t *transcript) expandRange(text string) (string, string, string) {
 		return text, "", ""
 	}
 	if rest == "" {
-		return "", "", "range: a verb must follow it (send, fork)"
+		return "", "", "range: a verb must follow it (send, fork, comment)"
 	}
 	// The prompt is the reader's bytes: the token is spliced in front, never
 	// re-joined through Fields, which collapsed quoted spaces.
@@ -567,6 +581,16 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	}
 	take := func(m aria.Message) bool {
 		switch {
+		case ref.note > 0:
+			block := ldrender.BlockInquiry
+			if ref.index != inquiryNode {
+				block = ref.index - int(m.From)
+			}
+			for _, p := range t.notePoints(m, block) {
+				if p.nodeRef == ref {
+					point, found = p, true
+				}
+			}
 		case ref.index == inquiryNode:
 			if ref.delta > 0 {
 				takeDelta(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas)

@@ -297,6 +297,8 @@ func (t *transcript) window(a, b int, dst []string) []string {
 		}
 	}
 	band := t.selectionBand(sel, a, b)
+	notes := t.annotations(a, b)
+	focusNote := t.focusedAnnotation(a, b)
 	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
 		line := e.start + rel
 		row := t.entryLine(e, rel, hl, sel)
@@ -305,6 +307,8 @@ func (t *transcript) window(a, b int, dst []string) []string {
 			// band.
 			row = washRow(row, t.w, term.NodeWash(false))
 		}
+		row = t.washNotes(line, row, notes)
+		row = t.underlineNotes(line, row, focusNote)
 		row = t.washVisual(line, row, vis)
 		if hasCur && line == cur {
 			restore, washTo := "", 0
@@ -492,7 +496,11 @@ func (s selectionSpan) mark(ref nodeRef) selectionMark {
 		pointLess(selectionPoint{nodeRef: blockOf(s.hi.nodeRef)}, p) {
 		return selectionMark{}
 	}
-	return selectionMark{selected: true, active: block == blockOf(s.focus)}
+	active := block == blockOf(s.focus)
+	if ref.note > 0 || s.focus.note > 0 {
+		active = ref == s.focus
+	}
+	return selectionMark{selected: true, active: active}
 }
 
 // Duplicated LTs (a held-open message shadowing a committed one) widen the span.

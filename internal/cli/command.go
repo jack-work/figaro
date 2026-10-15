@@ -599,7 +599,7 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	// Both reads carry the generation: a seed owed to a superseded switch must
 	// not be applied.
 	in.seedMetrics(gen)
-	in.recomputeLimit()
+	in.boardMoved()
 	in.seedBoard(gen)
 	in.seedSubject(gen)
 	hop()

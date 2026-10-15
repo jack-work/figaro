@@ -23,6 +23,8 @@ func modeName(m keyMode) string {
 		return "visual"
 	case modeFork:
 		return "fork"
+	case modeComment:
+		return "comment"
 	case modeConfirm:
 		return "confirm"
 	}
@@ -195,6 +197,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
 		'a',        // attend the fork point (or the selected list row)
 		'f',        // arm the fork jump: f j / f k
+		'c',        // arm the comment jump: c j / c k
 		'm',        // more: the status bar's own detail
 		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
@@ -285,6 +288,8 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in :) ^V           paste the clipboard",
 		"  ^N/^P               select next/previous node (each form delta is one)",
 		"  f j / f k           next / previous fork point",
+		"  c j / c k           next / previous comment",
+		"  x                   on a comment or its message: delete the whole thread (asks first)",
 		"  a                   attend the fork point's aria (in a list, the selected row's)",
 		"  ^O / ^I             jumplist: back / forward through attended arias",
 		"  M-n / M-p           travel to the next / previous question",

@@ -125,9 +125,11 @@ type palette struct {
 	noticeOnWash, cautionOnWash string
 
 	// SGR bodies without a reset: the painter that splices them owns it.
-	selectWash, selectWash256 string
-	cursor, cursor256         string
-	nodeWash, nodeWashFocus   string
+	selectWash, selectWash256   string
+	cursor, cursor256           string
+	nodeWash, nodeWashFocus     string
+	commentWash, commentWash256 string
+	commentMark                 string
 }
 
 var kanagawa = palette{
@@ -153,8 +155,12 @@ var kanagawa = palette{
 	selectWash256: "\033[48;5;23m",
 	nodeWash:      "\033[48;5;236m",
 	nodeWashFocus: "\033[48;5;237m",
-	cursor:        "\033[38;2;22;22;29;48;2;220;215;186m",
-	cursor256:     "\033[38;5;234;48;5;187m",
+
+	commentWash:    "\033[48;2;54;72;48m",
+	commentWash256: "\033[48;5;22m",
+	commentMark:    "\033[38;5;107m",
+	cursor:         "\033[38;2;22;22;29;48;2;220;215;186m",
+	cursor256:      "\033[38;5;234;48;5;187m",
 }
 
 func TrueColor() bool {
@@ -174,6 +180,25 @@ func SelectWash() string {
 		return active.selectWash
 	}
 	return active.selectWash256
+}
+
+func CommentWash() string {
+	if !Enabled() {
+		return ""
+	}
+	if TrueColor() {
+		return active.commentWash
+	}
+	return active.commentWash256
+}
+
+func CommentMark(s string) string { return paint(active.commentMark, s) }
+
+func CommentUnderline() string {
+	if !Enabled() {
+		return ""
+	}
+	return "\033[4m"
 }
 
 // NodeWash is a bare SGR body; the caller owns the reset.

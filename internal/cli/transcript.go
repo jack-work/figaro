@@ -107,6 +107,10 @@ type transcript struct {
 	follow  bool
 	pendG   bool // saw one 'g' (for gg)
 	pendF   bool // saw 'f' (for f j / f k)
+	pendC   bool
+
+	comments     *commentIndex
+	commentsOpen map[nodeRef]bool
 
 	// render() defers while a batch is open or the frame-rate gate declines;
 	// flush() draws the deferred frame.
@@ -257,7 +261,7 @@ func (t *transcript) setNoticeTTL(d time.Duration) {
 // column with autowrap on scrolls the whole screen up a row.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
-	t.pendG, t.pendF, t.inSearch, t.query, t.matchQuery = false, false, false, "", ""
+	t.pendG, t.pendF, t.pendC, t.inSearch, t.query, t.matchQuery = false, false, false, false, "", ""
 	t.searchDir = 1
 	t.box, t.jumpNote, t.jump = boxNone, "", nil
 	t.cmdline.reset()
@@ -1090,6 +1094,7 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 				for i < len(composed) && composed[i].Block == r.Block {
 					i++
 				}
+				rows = t.appendNoteRows(rows, m, r.Block)
 				continue
 			}
 		}
@@ -1101,6 +1106,7 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 		if memo != nil {
 			memo.keep(block, rows[start:len(rows):len(rows)])
 		}
+		rows = t.appendNoteRows(rows, m, block)
 	}
 	return cachedMessage{rows: rows}
 }
@@ -1567,6 +1573,9 @@ func (t *transcript) mode() keyMode {
 	if t.pendF && !t.inSearch && !t.boxOpen() {
 		return modeFork
 	}
+	if t.pendC && !t.inSearch && !t.boxOpen() {
+		return modeComment
+	}
 	// The drawer's sub-mode is asked after openPit: a search box or ':' line
 	// over it outranks it.
 	open := t.openPit()
@@ -1649,6 +1658,13 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.render()
 		}
 		return
+	case modeComment:
+		t.pendC = false
+		if act := pagerAct.pager(modeComment, ev); act != nil {
+			act(t)
+			t.render()
+			return
+		}
 	case modeFork:
 		// 'f' followed by anything but a direction is the ordinary key.
 		t.pendF = false
@@ -1716,6 +1732,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 	}
 	t.pendG = ev.b == 'g' && !t.pendG
 	t.pendF = ev.b == 'f' && !t.pendF
+	t.pendC = ev.b == 'c' && !t.pendC
 	// A jump's report is transient, like pendG: the key that set it returned
 	// from the modeBox arm, so it always gets its frame.
 	if !t.boxOpen() {
@@ -1840,7 +1857,7 @@ func pagerVisualPendingTop(t *transcript) {
 // With a highlight up the box opens holding the range placeholder; the highlight stays.
 func pagerVisualCommand(t *transcript) {
 	pagerCommandBox(t)
-	if t.visual.highlighted() {
+	if _, onComment := t.selectedCommentAddr(); t.visual.highlighted() || onComment {
 		t.cmdline.insert(visualRangePlaceholder)
 	}
 }
@@ -2434,7 +2451,7 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.search = nil
 	t.inSearch, t.query, t.matchQuery = false, "", ""
 	t.searchDir = 1
-	t.pendG, t.pendF = false, false
+	t.pendG, t.pendF, t.pendC = false, false, false
 
 	// Repainted whole: prev describes a conversation no longer on screen.
 	t.prev = nil

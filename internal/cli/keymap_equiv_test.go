@@ -175,6 +175,9 @@ var oracleStates = map[string]func(*transcript){
 	// only state here with no pre-refactor twin -- the mode did not exist --
 	// so its row was recorded from the behaviour it was built to have.
 	"fork": func(tr *transcript) { tr.key('f') },
+	// 'c' armed: the comment jump waiting for its direction (modeComment),
+	// built to behave as the fork jump does.
+	"comment": func(tr *transcript) { tr.key('c') },
 	// A y/n question up: the mode a destructive verb opens, where every key
 	// that is not an answer is swallowed.
 	"confirm": func(tr *transcript) { tr.askConfirm("kill aria1234?", func() {}) },
@@ -1173,6 +1176,42 @@ var pagerOracle = []struct {
 	// is the whole point: consent is typed, never stumbled into.
 	{"confirm", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{}},
 	{"fork", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// 2026-10-14, notes on the bar: a one-line report (nothing to open, no
+		// parent, no fork point here) no longer opens a row of its own, so it
+		// neither displaces the pit that was up nor moves the view.
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
+		"0x4c": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x61": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x09": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
+		// report when there is no session behind them to attend WITH, which
+		// is this fixture: a bare transcript with no hooks wired. The report
+		// is a bar notice, and the bar is what moves the offset here.
+		"0x0f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
+		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6c": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x75": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
+		"Home": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"PgUp": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+	}},
+	// THE COMMENT JUMP'S SECOND KEY, 2026-10-14: the fork row's twin. j/k and
+	// Down/Up travel between comments (inert here: the fixture has none),
+	// Esc abandons the gesture, every other key falls through.
+	{"comment", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
 		// 2026-10-14, notes on the bar: a one-line report (nothing to open, no
 		// parent, no fork point here) no longer opens a row of its own, so it
 		// neither displaces the pit that was up nor moves the view.

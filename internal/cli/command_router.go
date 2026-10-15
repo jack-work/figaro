@@ -137,6 +137,10 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 func (in *interactiveInput) runCommand(line string) { go in.execCommand(line) }
 
 func (in *interactiveInput) execCommand(line string) {
+	if isCommentVerb(line) {
+		in.commandComment(line)
+		return
+	}
 	argv := tokenize(line)
 	if len(argv) == 0 {
 		return

@@ -11,6 +11,8 @@ func TestParseNav(t *testing.T) {
 		{"next", "", 1, true, false},
 		{"prev", "", -1, true, false},
 		{"previous delta", "delta", -1, true, false},
+		{"previous comment", "comment", -1, true, false},
+		{"next comment", "comment", 1, true, false},
 		{"next delta", "delta", 1, true, false},
 		{"next fork", "fork", 1, true, false},
 		{"prev turn", "turn", -1, true, false},

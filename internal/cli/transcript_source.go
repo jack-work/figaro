@@ -120,6 +120,9 @@ func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, 
 	if ref.delta > 0 {
 		return "", quote.Coord{}, 0, "form state is not quotable: it is state, not something anyone said"
 	}
+	if ref.note > 0 {
+		return "", quote.Coord{}, 0, "a comment is not quotable: it lives on the board, not in the log"
+	}
 	if ref.index == inquiryNode {
 		m, ok := t.messageOf(ref.turn)
 		if !ok || m.Inquiry == "" {

@@ -13,6 +13,7 @@ func (t *transcript) noteStep(msg string) {
 
 var navKinds = map[string]string{
 	"": "", "node": "", "nodes": "",
+	"comment": "comment", "comments": "comment",
 	"delta": "delta", "deltas": "delta",
 	"fork": "fork", "forks": "fork",
 	"turn": "turn", "turns": "turn",
@@ -33,7 +34,7 @@ func parseNav(text string) (kind string, dir int, ok bool, err string) {
 		return "", 0, false, ""
 	}
 	if len(fields) > 2 {
-		return "", 0, true, fields[0] + ": one kind at most (delta, fork, turn, block)"
+		return "", 0, true, fields[0] + ": one kind at most (comment, delta, fork, turn, block)"
 	}
 	word := ""
 	if len(fields) == 2 {
@@ -41,7 +42,7 @@ func parseNav(text string) (kind string, dir int, ok bool, err string) {
 	}
 	kind, known := navKinds[word]
 	if !known {
-		return "", 0, true, fields[0] + ": " + strconv.Quote(word) + " is not a kind (delta, fork, turn, block)"
+		return "", 0, true, fields[0] + ": " + strconv.Quote(word) + " is not a kind (comment, delta, fork, turn, block)"
 	}
 	return kind, dir, true, ""
 }
@@ -53,6 +54,8 @@ func (t *transcript) navigate(kind string, dir int) string {
 		return ""
 	case "block":
 		return t.stepBlock(dir)
+	case "comment":
+		return t.stepComment(dir)
 	case "delta":
 		return t.stepDelta(dir)
 	case "fork":

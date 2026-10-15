@@ -487,6 +487,7 @@ run `figaro show` (full content above, cursor below).
 | `>` | the COMPOSER: type or paste a prompt, newlines and quotes intact. `^S` sends, `Enter` is a newline, Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md) and the table below. |
 | `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
+| `c j` / `c k` | next / previous comment; Enter on one opens its thread. See [quoting.md](quoting.md) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
 | `^` | attend this aria's parent, or say it is top-level |
 | `l` / `L` | list this aria's tree / the home tree in the pit, uncapped |

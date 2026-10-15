@@ -783,7 +783,20 @@ func (s visualSelection) below(base int) bool {
 // Enter hands off from the cursor to the node selection; the two are exclusive.
 func pagerVisualSelect(t *transcript) {
 	ref := t.visual.cursor.ref
+	note, onNote := t.commentAtCursor()
+	if ref.note > 0 {
+		note, onNote = ref, true
+	}
 	t.leaveVisual()
+	if onNote {
+		if t.selectRef(note, false) {
+			if !t.openComments()[note] {
+				t.toggleExpansionOf(note)
+			}
+			t.ensureSelectionVisible()
+		}
+		return
+	}
 	if !ref.valid() {
 		return
 	}

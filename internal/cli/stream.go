@@ -768,12 +768,12 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			in.mu.Unlock()
 		}
 		act := inputAct.input(ev.mode, ev)
-		if act == nil && ev.mode == modeFork {
+		if act == nil && (ev.mode == modeFork || ev.mode == modeComment) {
 			// A key with no fork row is the ordinary key, and abandons
 			// the gesture.
 			if act = inputAct.input(modeTranscript, ev); act != nil {
 				in.mu.Lock()
-				in.lt.tr.pendF = false
+				in.lt.tr.pendF, in.lt.tr.pendC = false, false
 				in.mu.Unlock()
 			}
 		}

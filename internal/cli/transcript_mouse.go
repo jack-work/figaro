@@ -66,6 +66,9 @@ func (t *transcript) nodeAt(ref nodeRef) (node livedoc.Node, ok bool) {
 // delta row has no second form: the keys close the list it belongs to (see
 // foldSubjects).
 func (t *transcript) toggleExpansionOf(ref nodeRef) bool {
+	if ref.note > 0 {
+		return t.toggleFolds([]foldTarget{{state: t.openComments(), ref: headOf(ref)}})
+	}
 	if ref.delta > 0 {
 		return false
 	}

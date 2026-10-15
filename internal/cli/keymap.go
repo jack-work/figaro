@@ -19,6 +19,7 @@ const (
 	modeFork                      // 'f' is down, waiting for the direction of the fork jump
 	modeConfirm                   // a y/n question owns the keyboard until it is answered
 	modeComposer                  // the composer's NORMAL mode: motions over the draft
+	modeComment
 	numKeyModes
 )
 
@@ -34,10 +35,11 @@ const (
 	inFork       keyModeSet = 1 << modeFork
 	inConfirm    keyModeSet = 1 << modeConfirm
 	inComposer   keyModeSet = 1 << modeComposer
+	inComment    keyModeSet = 1 << modeComment
 
 	// A transcript-mode row is also reachable with a panel up: the panel
 	// swallows only its own keys.
-	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer
+	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer | inComment
 	inAnyBox = inIncipit | inPager
 )
 
@@ -210,6 +212,17 @@ var keymap = []keyBinding{
 		help: helpNone, pager: pagerForkCancel,
 	},
 
+	{chord: byteChord('c'), modes: inTranscript, open: opensPager, help: helpCommentJump, pager: pagerCommentPending},
+	{chord: byteChord('j'), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentNext},
+	{chord: byteChord('k'), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentPrev},
+	{chord: navChord(navDown), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentNext},
+	{chord: navChord(navUp), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentPrev},
+	{
+		chord: byteChord(0x1b), modes: inComment,
+		open: staysInline, why: "it abandons a gesture that is only half typed",
+		help: helpNone, pager: pagerCommentCancel,
+	},
+
 	// Confirm mode: dispatch swallows every key that is not an answer.
 	{chord: byteChord('y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpConfirm, pager: confirmYes},
 	{chord: byteChord('Y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmYes},
@@ -309,6 +322,11 @@ var keymap = []keyBinding{
 		chord: byteChord('x'), modes: inPanel,
 		open: staysInline, why: "it acts on a row in a pit that is already open",
 		help: helpPitDrop, pager: pagerPitDrop,
+	},
+	{
+		chord: byteChord('x'), modes: inTranscript,
+		open: staysInline, why: "it acts on a comment already selected in the pager",
+		help: helpCommentDelete, pager: pagerDeleteComment,
 	},
 	{
 		chord: byteChord('X'), modes: inPanel,
@@ -622,6 +640,8 @@ const (
 	helpVisualMotions
 	helpCmdSubmitSnap
 	helpForkJump
+	helpCommentJump
+	helpCommentDelete
 	helpAttend
 	helpAriaJump
 )
@@ -663,6 +683,8 @@ var helpRows = []helpRow{
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node (each form delta is one)"},
 	{helpForkJump, "f j / f k", "next / previous fork point"},
+	{helpCommentJump, "c j / c k", "next / previous comment"},
+	{helpCommentDelete, "x", "on a comment or its message: delete the whole thread (asks first)"},
 	{helpAttend, "a", "attend the fork point's aria (in a list, the selected row's)"},
 	{helpAriaJump, "^O / ^I", "jumplist: back / forward through attended arias"},
 	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},

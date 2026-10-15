@@ -416,6 +416,9 @@ var inputOracle = []struct {
 		"0x4c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x5e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x66": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		// 'c' ARMS THE COMMENT JUMP, 2026-10-14 (c j / c k): an opener exactly
+		// as 'f' is, so its cell is f's.
+		"0x63": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// 'a' IS ATTEND, 2026-09-12: the fork point's aria in the transcript,
 		// the selected row's in a pit. An opener; the attend itself needs a
 		// session this probe does not build.

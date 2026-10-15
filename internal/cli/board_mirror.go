@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 )
@@ -47,7 +50,7 @@ func (in *interactiveInput) seedBoard(gen uint64) {
 			return
 		}
 		board.catchUp(resp)
-		in.recomputeLimit()
+		in.boardMoved()
 	}()
 }
 
@@ -63,7 +66,24 @@ func (in *interactiveInput) applyBoardDelta(gen uint64, d rpc.FormDelta) {
 	case formIncompatible:
 		return
 	}
+	in.boardMoved()
+}
+
+func (in *interactiveInput) boardMoved() {
+	in.syncComments()
 	in.recomputeLimit()
+}
+
+func (in *interactiveInput) syncComments() {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.board == nil {
+		return
+	}
+	snap, _, _ := in.board.state()
+	if in.lt.tr.setComments(readComments(snap)) {
+		in.lt.render()
+	}
 }
 
 func (in *interactiveInput) recomputeLimit() {
@@ -90,4 +110,33 @@ func (in *interactiveInput) recomputeLimit() {
 	if provider, model := models.Subject(snap); provider != "" && model != "" {
 		in.models.want(provider, model)
 	}
+}
+
+func (in *interactiveInput) writeBoard(ctx context.Context, key string, value any) error {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return in.patchBoard(ctx, func(base form.Snapshot) form.Patch {
+		return form.Build(base, map[string]json.RawMessage{key: raw}, nil)
+	})
+}
+
+func (in *interactiveInput) removeBoard(ctx context.Context, key string) error {
+	return in.patchBoard(ctx, func(base form.Snapshot) form.Patch {
+		return form.Build(base, nil, []string{key})
+	})
+}
+
+func (in *interactiveInput) patchBoard(ctx context.Context, build func(form.Snapshot) form.Patch) error {
+	cli := in.aria()
+	if cli == nil {
+		return errors.New("no aria on screen")
+	}
+	var base form.Snapshot
+	if board := in.subjectBoard(); board != nil {
+		base, _, _ = board.state()
+	}
+	_, err := cli.Set(ctx, build(base), 0)
+	return err
 }

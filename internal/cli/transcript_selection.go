@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,8 @@ type nodeRef struct {
 	// block): a separate axis because a delta row must sort immediately after
 	// its block, which a negative sentinel cannot do.
 	delta int
+	note  int
+	reply int
 }
 
 // deltaRefOf is the i'th delta row of a block, 1-based.
@@ -34,11 +37,26 @@ func deltaRefOf(ref nodeRef, i int) nodeRef {
 
 // blockOf is the block a delta row adorns, or the ref itself.
 func blockOf(ref nodeRef) nodeRef {
-	ref.delta = 0
+	ref.delta, ref.note, ref.reply = 0, 0, 0
 	return ref
 }
 
-func (r nodeRef) pseudo() bool { return r.delta > 0 }
+func noteRefOf(block nodeRef, i int) nodeRef {
+	block.delta, block.note, block.reply = 0, i, 0
+	return block
+}
+
+func headOf(ref nodeRef) nodeRef {
+	ref.reply = 0
+	return ref
+}
+
+func replyRefOf(note nodeRef, k int) nodeRef {
+	note.reply = k
+	return note
+}
+
+func (r nodeRef) pseudo() bool { return r.delta > 0 || r.note > 0 }
 
 // m.From is the positional id of m.Nodes[0] (the wire guarantees Nodes[i].ID ==
 // From+i), so a turn delivered in slices yields one ref per node.
@@ -121,7 +139,9 @@ type selectionCopyPlan struct {
 	// and must not read the live map from another goroutine.
 	expanded map[nodeRef]bool
 	// adorned is the same snapshot for the delta lists.
-	adorned map[nodeRef]bool
+	adorned      map[nodeRef]bool
+	comments     *commentIndex
+	commentsOpen map[nodeRef]bool
 }
 
 type transcriptRow struct {
@@ -168,10 +188,12 @@ func (t *transcript) nodeRefs() []selectionPoint {
 		}
 		inq := nodeRef{turn: m.Turn, index: inquiryNode}
 		refs = append(refs, deltaPoints(inq, m.FormDeltas, t.adorned[inq])...)
+		refs = append(refs, t.notePoints(m, ldrender.BlockInquiry)...)
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
 			refs = append(refs, selectionPoint{nodeRef: ref, hash: nodeHash(n)})
 			refs = append(refs, deltaPoints(ref, n.FormDeltas, t.adorned[ref])...)
+			refs = append(refs, t.notePoints(m, i)...)
 		}
 	}
 	for _, m := range t.messages() {
@@ -209,10 +231,16 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 		for _, p := range deltaPoints(inq, m.FormDeltas, t.adorned[inq]) {
 			mark(p.nodeRef)
 		}
+		for _, p := range t.notePoints(m, ldrender.BlockInquiry) {
+			mark(p.nodeRef)
+		}
 		for i := range m.Nodes {
 			ref := nodeRefAt(m, i)
 			mark(ref)
 			for _, p := range deltaPoints(ref, m.Nodes[i].FormDeltas, t.adorned[ref]) {
+				mark(p.nodeRef)
+			}
+			for _, p := range t.notePoints(m, i) {
 				mark(p.nodeRef)
 			}
 		}
@@ -333,6 +361,7 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 	return selectionCopyPlan{
 		lo: lo, hi: hi, open: open, held: held,
 		expanded: snapshot(t.expanded), adorned: snapshot(t.adorned),
+		comments: t.comments, commentsOpen: snapshot(t.commentsOpen),
 	}, true
 }
 
@@ -487,7 +516,33 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[no
 		}
 		return nil
 	}
+	takeNotes := func(block int) error {
+		for _, p := range plan.comments.points(m, block, plan.commentsOpen) {
+			c := plan.comments.list[plan.comments.at(m, block)[p.note-1]]
+			if p.reply > 0 {
+				e := c.thread[p.reply-1]
+				text := entryText(e)
+				if err := take(p.nodeRef, livedoc.Node{Type: livedoc.NodeProse, Markdown: c.id + "\x00" + e.key + "\x00" + text}, text); err != nil {
+					return err
+				}
+				continue
+			}
+			text := commentText(c)
+			hashed := livedoc.Node{Type: livedoc.NodeProse, Markdown: c.id + "\x00" + text}
+			alone := plan.lo.nodeRef == p.nodeRef && plan.hi.nodeRef == p.nodeRef
+			if plan.commentsOpen[p.nodeRef] && !alone {
+				text = ""
+			}
+			if err := take(p.nodeRef, hashed, text); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if err := takeDeltas(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas); err != nil {
+		return nil, false, false, err
+	}
+	if err := takeNotes(ldrender.BlockInquiry); err != nil {
 		return nil, false, false, err
 	}
 	for i, n := range m.Nodes {
@@ -496,6 +551,9 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[no
 			return nil, false, false, err
 		}
 		if err := takeDeltas(ref, n.FormDeltas); err != nil {
+			return nil, false, false, err
+		}
+		if err := takeNotes(i); err != nil {
 			return nil, false, false, err
 		}
 	}
@@ -524,7 +582,16 @@ func pointLess(a, b selectionPoint) bool {
 	if a.index != b.index {
 		return a.index < b.index
 	}
-	return a.delta < b.delta
+	if (a.note > 0) != (b.note > 0) {
+		return b.note > 0
+	}
+	if a.delta != b.delta {
+		return a.delta < b.delta
+	}
+	if a.note != b.note {
+		return a.note < b.note
+	}
+	return a.reply < b.reply
 }
 
 func nodeHash(n livedoc.Node) uint64 {
@@ -563,18 +630,28 @@ type foldTarget struct {
 }
 
 // foldSubjects: every block in the range plus the parent of any selected delta row.
-func (t *transcript) foldSubjects() (tools, adorned []nodeRef) {
+func (t *transcript) foldSubjects() (tools, adorned, noted []nodeRef) {
 	marks := t.selectionMarks()
 	if len(marks) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	// blockOf answers both cases in one pass.
 	blocks := make(map[nodeRef]bool, len(marks))
 	for ref, m := range marks {
-		if m.selected {
-			blocks[blockOf(ref)] = true
+		if !m.selected {
+			continue
 		}
+		if ref.note > 0 {
+			if ref.reply == 0 {
+				noted = append(noted, ref)
+			}
+			continue
+		}
+		blocks[blockOf(ref)] = true
 	}
+	sort.Slice(noted, func(i, j int) bool {
+		return pointLess(selectionPoint{nodeRef: noted[i]}, selectionPoint{nodeRef: noted[j]})
+	})
 	touched := func(ref nodeRef) bool { return blocks[ref] }
 	appendMessage := func(m aria.Message) {
 		inq := nodeRef{turn: m.Turn, index: inquiryNode}
@@ -603,17 +680,27 @@ func (t *transcript) foldSubjects() (tools, adorned []nodeRef) {
 	if open := t.openMessage(); open != nil {
 		appendMessage(*open)
 	}
-	return tools, adorned
+	return tools, adorned, noted
 }
 
 func (t *transcript) toggleSelectedNodes() bool {
-	tools, adorned := t.foldSubjects()
-	return t.toggleFolds(targets(tools, t.expanded, false), targets(adorned, t.adorned, true))
+	if focus := t.selection.focus.nodeRef; t.selection.active && focus.note > 0 && t.selection.anchor.nodeRef == focus {
+		return t.stepThread(focus)
+	}
+	tools, adorned, noted := t.foldSubjects()
+	return t.toggleFolds(targets(tools, t.expanded, false), targets(adorned, t.adorned, true), targets(noted, t.openComments(), false))
 }
 
 func (t *transcript) toggleSelectedTools() bool {
-	tools, _ := t.foldSubjects()
+	tools, _, _ := t.foldSubjects()
 	return t.toggleFolds(targets(tools, t.expanded, false))
+}
+
+func (t *transcript) openComments() map[nodeRef]bool {
+	if t.commentsOpen == nil {
+		t.commentsOpen = map[nodeRef]bool{}
+	}
+	return t.commentsOpen
 }
 
 func targets(refs []nodeRef, state map[nodeRef]bool, deltas bool) []foldTarget {
@@ -698,12 +785,22 @@ func (t *transcript) repairSelection() {
 		return
 	}
 	lost := func(p selectionPoint) bool {
+		if p.note > 0 {
+			_, ok := t.commentOf(p.nodeRef)
+			return !ok || (p.reply > 0 && !t.commentsOpen[headOf(p.nodeRef)])
+		}
 		return p.delta > 0 && !t.adorned[blockOf(p.nodeRef)]
 	}
 	if !lost(t.selection.anchor) && !lost(t.selection.focus) {
 		return
 	}
-	t.selectRef(blockOf(t.selection.focus.nodeRef), false)
+	focus := t.selection.focus.nodeRef
+	if focus.note > 0 {
+		if _, ok := t.commentOf(headOf(focus)); ok && t.selectRef(headOf(focus), false) {
+			return
+		}
+	}
+	t.selectRef(blockOf(focus), false)
 }
 
 // The sticky header covers rows, so the floor is the offset plus what the header hides.

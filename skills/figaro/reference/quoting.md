@@ -117,7 +117,8 @@ jump (`:12`, `:12.3`, `:0`).
 | `:listen <id>` | show that aria; the shell's binding does not move |
 | `:attend <id>` | show it AND bind this shell to it |
 | `:attend null` | go home: drop the binding, keep showing what is on screen |
-| `:next [kind]` · `:prev [kind]` | step to the next / previous stop; `kind` is `delta`, `fork`, `turn` or `block`. With no kind it is `^N` / `^P`. `:previous` is `:prev` |
+| `:<,>comment -- <text>` | comment on the highlighted passage; on a comment, reply to it (see Comments below) |
+| `:next [kind]` · `:prev [kind]` | step to the next / previous stop; `kind` is `comment`, `delta`, `fork`, `turn` or `block`. With no kind it is `^N` / `^P`. `:previous` is `:prev` |
 
 The difference is the binding, and it is the only difference. `:fork` without
 `--stay` does both, on purpose: no single command shows one aria while your
@@ -132,10 +133,60 @@ Moving between arias:
 |---|---|
 | `a` | attend the aria the selected row (or the fork point on screen) names |
 | `f j` / `f k` | next / previous fork point |
+| `c j` / `c k` | next / previous comment |
 | `^O` / `^I` | jumplist: back / forward through the arias attended here |
 | `M-m` | verbose tool output, and every node's address |
 | `S` | the form in the pit |
 | `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |
+
+## Comments
+
+A comment marks a passage without sending anything: highlight it, then
+`:<,>comment -- why does this retry?`. Nothing reaches the model; the comment
+is written to the aria's own form, and every client watching the aria draws it.
+
+On screen the passage is washed green, and the comment hangs under the block
+where the passage ends, after a blank row: `▸ ✎ gluck: why does this retry? ·
+1 reply  #k7q`. Every comment has a short id (`#k7q`) and every message in its
+thread an ordinal (`#k7q.2`); those are its addresses.
+
+It is a selection stop like a form-delta row: `^N` / `^P` walk onto it, and
+`c j` / `c k` jump between comments. With a comment focused its passage is
+underlined as well. `Enter` walks the thread: the first opens it, the second
+steps into its first message, each further one to the next, and `Enter` on the
+last folds it back. An open thread's messages are stops of their own. In visual
+mode, `Enter` with the cursor inside a green passage selects and opens its
+comment. `y` copies the thread, or the message.
+
+| Line | Does |
+|---|---|
+| `:<,>comment -- <text>` | on a highlight: a new comment. On a comment or one of its messages: a reply |
+| `:<,>comment -X` | on a comment or any of its messages: delete the whole thread |
+| `:comment #k7q -- <text>` | reply by id (the `#` is optional) |
+| `:comment -X #k7q` | delete by id; `#k7q.2` names the same thread |
+| `x` | on a selected comment or message: delete the whole thread |
+
+With the selection on a comment, `<,>` names the comment rather than any text,
+and `:` opens holding it.
+
+From the pager a thread is append-only: a reply always goes after every
+message already in it, and a delete always takes the whole thread, after a
+y/n. Editing or removing one message is a board edit (`figaro set` /
+`figaro unset` on `comments.<id>.thread.<key>`).
+
+The form holds them under `comments`, keyed by id:
+
+```
+comments.<id>.at                   the coordinate token, <lt.block:a-b>!
+comments.<id>.turn                 the turn the passage starts in
+comments.<id>.thread.<key>.by      who wrote this entry
+comments.<id>.thread.<key>.text    what they wrote
+```
+
+Thread entries sort by key. Anything that can set a key can reply or clear
+one: `figaro set comments.<id>.thread.<key> '{"by":"figaro","text":"…"}'`
+answers, `figaro unset comments.<id>` removes it. A comment whose passage is
+not in the pager's window is reached by `c k`, which pages its turn in.
 
 ## Settings
 
