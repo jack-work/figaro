@@ -485,7 +485,7 @@ run `figaro show` (full content above, cursor below).
 | `/` / `?` | literal string search, forward / backward. Inside a drawer it searches THAT drawer: a list's rows, or the composer's draft. `n` / `N` repeat it, in the drawer or in the conversation |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
 | `>` | the COMPOSER: type or paste a prompt, newlines and quotes intact. `^S` sends, `Enter` is a newline, Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md) and the table below. |
-| `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
+| `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a queued message opens in full under its row (again, from any of its rows, folds it; `j`/`k` walk it, `F` gives it the pane, `y` yanks it whole), a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `c j` / `c k` | next / previous comment; Enter on one opens its thread. See [quoting.md](quoting.md) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |

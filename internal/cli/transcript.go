@@ -2,13 +2,13 @@ package cli
 
 import (
 	"fmt"
-	"github.com/jack-work/figaro/internal/mark"
 	"html"
 	"io"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/mattn/go-runewidth"
 
@@ -51,6 +51,7 @@ type transcript struct {
 	queueDismissed bool
 	queuedRows     []string // pre-rendered, for the inline trailer
 	queued         []queuedItem
+	queueOpen      map[uint64]bool
 	// "the queue is empty" is only ever said about a queue this client
 	// actually read; queuedErr keeps a failure from reporting as emptiness.
 	queuedErr   string
@@ -846,6 +847,9 @@ func (t *transcript) resize(w, h int) {
 		t.visualClampCol()
 	}
 	t.restoreViewportAnchor(anchor, within)
+	if t.showing(pitQueue) {
+		t.refreshQueuePit()
+	}
 	t.render()
 }
 
@@ -1430,20 +1434,6 @@ func (t *transcript) refreshQueuePit() {
 		keep = sel.id
 	}
 	t.pit.replaceRows(t.queuedPitRows(), keep)
-}
-
-func (t *transcript) queuedPitRows() []pitRow {
-	if len(t.queued) == 0 {
-		return nil
-	}
-	rows := make([]pitRow, 0, len(t.queued))
-	for _, q := range t.queued {
-		rows = append(rows, pitRow{
-			text: q.mark() + " " + firstLineTrim(q.text),
-			yank: q.text, id: strconv.FormatUint(q.id, 10),
-		})
-	}
-	return rows
 }
 
 // A bottom panel, not a floating overlay: the terminal has one alternate buffer.
@@ -2729,6 +2719,10 @@ func (t *transcript) dropRowAt(pit, id, next string) {
 }
 
 func (t *transcript) dropSelected(ask bool) {
+	if t.pit.id == pitQueue {
+		t.dropQueuedSelected()
+		return
+	}
 	row, ok := t.pit.selected()
 	if !ok || row.id == "" || t.dropRow == nil {
 		return

@@ -151,6 +151,12 @@ func pagerAttendFork(t *transcript) {
 }
 
 func pagerPitActivate(t *transcript) {
+	if t.pit.id == pitQueue {
+		if !t.toggleQueuedMessage() {
+			t.note("nothing to open on this row")
+		}
+		return
+	}
 	if iv, ok := t.pit.live.(itemView); ok {
 		if row, has := t.pit.selected(); has && row.id != "" {
 			iv.Activate(row.id)
