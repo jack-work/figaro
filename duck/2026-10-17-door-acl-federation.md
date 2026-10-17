@@ -16,9 +16,30 @@ Every hop is authenticated; every service authorizes its own resources.
 
 | layer | decided |
 |---|---|
-| identity | Authelia is the only issuer (option A). A sandbox's Authelia client secret is held by the sandbox service on the host, never in the box; the box gets short-lived JWTs from a per-sandbox token socket. Subjects are SPIFFE-shaped so SPIRE can replace the issuer later. |
+| identity | Authelia is the only issuer (option A); see the ground truths below on what its tokens do not carry. A sandbox's Authelia client secret is held by the sandbox service on the host, never in the box; the box gets short-lived JWTs from a per-sandbox token socket. Subjects are SPIFFE-shaped so SPIRE can replace the issuer later. |
 | authn | at the edge. kelliher-web's gateway verifies an Authelia session or a bearer JWT, strips client `Remote-*`, stamps user, groups and principal kind, and forwards the original token. figaro also authenticates natively (peercred, upstream headers from loopback, JWT, mTLS between nodes) so it works without the platform. |
 | authz | in each service. Tokens carry audience and coarse scopes; roles live in each service's config: principal -> roles -> verbs on selectors. One shared Go library holds principals, the JWT verifier, the RBAC grammar and reload. |
+
+## Ground truths from spain (King of Spain, 2026-10-17)
+
+- Authelia 4.39.12 access tokens (device flow at least) carry no `aud` and no
+  groups, and refreshes are not re-authorised. Never authorize on token
+  claims: authenticate the token, take `client_id`, fetch groups from
+  userinfo per request behind a short fail-closed cache. This holds for the
+  edge, for figaro's JWT authenticator and for jkauthz.
+- kelliher-web already strips client `Remote-*` and underscore identity
+  headers, refuses TCP upstreams for authenticated sites (unix sockets under
+  `/run/kweb`), bypasses forward_auth only for `Bearer <token>`, and has
+  per-site modes (`e0bdf17`: trust `Remote-*` or a verified bearer, never
+  both; `c9c6e58`: exact self-authorizing paths). Authelia already has one
+  rule per gated site restricted to `group:site-<sub>-access` (except `me`).
+  E1 subsumes these modes; it does not add a third.
+- Every spain switch and every terraform plan or apply is named by the
+  coordinator `@042d641e`. Program deploys go through it.
+- A test VM on spain lives in its own slice (MemoryMax, low CPUWeight, capped
+  IO), off the LAN and WAN interfaces. A change that renames or replaces a
+  unit owning the path we connect through goes in with boot and a reboot,
+  never switch.
 
 ## figaro's ACL
 
