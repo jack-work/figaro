@@ -3,8 +3,12 @@ incipit    0x04               input inputDisconnect
 incipit    0x0c               input inputEnterTranscript
 incipit    0x14               input inputEnterTranscript
 incipit    "y"                input inputYank
+incipit    csi-u ctrl-c       input inputInterrupt
+incipit    csi-u ctrl-d       input inputDisconnect
+incipit    csi-u ctrl-l       input inputEnterTranscript
 incipit    csi-u ctrl-n       input inputSelectNext
 incipit    csi-u ctrl-p       input inputSelectPrev
+incipit    csi-u ctrl-t       input inputEnterTranscript
 incipit    M-m                input inputToggleVerbose
 transcript 0x03               input inputInterrupt
 transcript 0x04               input inputDisconnect
@@ -58,10 +62,14 @@ transcript nav:PgUp           pager pagerHalfUp
 transcript nav:PgDn           pager pagerHalfDown
 transcript nav:Home           pager pagerTop
 transcript nav:End            pager pagerTail
+transcript csi-u ctrl-c       input inputInterrupt
+transcript csi-u ctrl-d       input inputDisconnect
 transcript csi-u ctrl-i       pager pagerAriaForward
+transcript csi-u ctrl-l       input inputEnterTranscript
 transcript csi-u ctrl-n       input inputSelectNext
 transcript csi-u ctrl-o       pager pagerAriaBack
 transcript csi-u ctrl-p       input inputSelectPrev
+transcript csi-u ctrl-t       input inputEnterTranscript
 transcript M-m                input inputToggleVerbose
 transcript M-n                input inputQuestionNext
 transcript M-p                input inputQuestionPrev
@@ -74,8 +82,13 @@ search     0x0d               pager searchAccept
 search     0x14               input inputEnterTranscript
 search     0x1b               pager searchCancel
 search     0x7f               pager searchBackspace
+search     csi-u ctrl-c       input inputInterrupt
+search     csi-u ctrl-d       input inputDisconnect
+search     csi-u ctrl-h       pager searchBackspace
+search     csi-u ctrl-l       input inputEnterTranscript
 search     csi-u ctrl-n       input inputSelectNext
 search     csi-u ctrl-p       input inputSelectPrev
+search     csi-u ctrl-t       input inputEnterTranscript
 search     M-m                input inputToggleVerbose
 jump       0x01               pager cmdHome
 jump       0x02               pager cmdLeft
@@ -110,11 +123,13 @@ jump       nav:Left           pager cmdLeft
 jump       nav:Right          pager cmdRight
 jump       csi-u ctrl-a       pager cmdHome
 jump       csi-u ctrl-b       pager cmdLeft
+jump       csi-u ctrl-c       pager cmdAbort
 jump       csi-u ctrl-d       pager cmdDeleteFwd
 jump       csi-u ctrl-e       pager cmdEnd
 jump       csi-u ctrl-f       pager cmdRight
 jump       csi-u ctrl-g       pager cmdAbort
 jump       csi-u ctrl-h       pager boxBackspace
+jump       csi-u ctrl-i       pager cmdComplete
 jump       csi-u ctrl-k       pager cmdKillToEnd
 jump       csi-u ctrl-l       pager cmdRedraw
 jump       csi-u ctrl-n       pager cmdHistNext
@@ -175,8 +190,12 @@ panel      "q"                input inputLeavePit
 panel      "s"                input inputToggleSticky
 panel      "x"                pager pagerPitDrop
 panel      "y"                input inputYank
+panel      csi-u ctrl-c       input inputInterrupt
+panel      csi-u ctrl-d       input inputDisconnect
+panel      csi-u ctrl-l       input inputEnterTranscript
 panel      csi-u ctrl-n       input inputSelectNext
 panel      csi-u ctrl-p       input inputSelectPrev
+panel      csi-u ctrl-t       input inputEnterTranscript
 panel      M-m                input inputToggleVerbose
 panel      M-n                input inputQuestionNext
 panel      M-p                input inputQuestionPrev
@@ -228,8 +247,12 @@ visual     nav:Home           pager pagerVisualTop
 visual     nav:End            pager pagerVisualEnd
 visual     nav:Left           pager pagerVisualLeft
 visual     nav:Right          pager pagerVisualRight
+visual     csi-u ctrl-c       input inputInterrupt
+visual     csi-u ctrl-d       input inputDisconnect
+visual     csi-u ctrl-l       input inputEnterTranscript
 visual     csi-u ctrl-n       input inputSelectNext
 visual     csi-u ctrl-p       input inputSelectPrev
+visual     csi-u ctrl-t       input inputEnterTranscript
 visual     M-m                input inputToggleVerbose
 confirm    0x03               input inputInterrupt
 confirm    0x04               input inputDisconnect
@@ -240,8 +263,12 @@ confirm    "N"                pager confirmNo
 confirm    "Y"                pager confirmYes
 confirm    "n"                pager confirmNo
 confirm    "y"                pager confirmYes
+confirm    csi-u ctrl-c       input inputInterrupt
+confirm    csi-u ctrl-d       input inputDisconnect
+confirm    csi-u ctrl-l       input inputEnterTranscript
 confirm    csi-u ctrl-n       input inputSelectNext
 confirm    csi-u ctrl-p       input inputSelectPrev
+confirm    csi-u ctrl-t       input inputEnterTranscript
 confirm    M-m                input inputToggleVerbose
 composer   0x03               input inputInterrupt
 composer   0x04               input inputDisconnect
@@ -282,9 +309,13 @@ composer   nav:Home           pager composerLineStart
 composer   nav:End            pager composerLineEnd
 composer   nav:Left           pager composerLeft
 composer   nav:Right          pager composerRight
+composer   csi-u ctrl-c       input inputInterrupt
+composer   csi-u ctrl-d       input inputDisconnect
+composer   csi-u ctrl-l       input inputEnterTranscript
 composer   csi-u ctrl-n       input inputSelectNext
 composer   csi-u ctrl-p       input inputSelectPrev
 composer   csi-u ctrl-s       pager composerSubmit
+composer   csi-u ctrl-t       input inputEnterTranscript
 composer   M-                pager composerSubmit
 composer   M-m                input inputToggleVerbose
 list       0x03               input inputInterrupt
@@ -331,8 +362,12 @@ list       nav:PgUp           pager listHalfUp
 list       nav:PgDn           pager listHalfDown
 list       nav:Home           pager listTop
 list       nav:End            pager listBottom
+list       csi-u ctrl-c       input inputInterrupt
+list       csi-u ctrl-d       input inputDisconnect
+list       csi-u ctrl-l       input inputEnterTranscript
 list       csi-u ctrl-n       input inputSelectNext
 list       csi-u ctrl-p       input inputSelectPrev
+list       csi-u ctrl-t       input inputEnterTranscript
 list       M-m                input inputToggleVerbose
 list       M-n                input inputQuestionNext
 list       M-p                input inputQuestionPrev
@@ -402,6 +437,7 @@ opens      M-n
 opens      M-p
 csi-u      ctrl-a
 csi-u      ctrl-b
+csi-u      ctrl-c
 csi-u      ctrl-d
 csi-u      ctrl-e
 csi-u      ctrl-f
