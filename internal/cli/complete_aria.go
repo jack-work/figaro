@@ -2,20 +2,18 @@ package cli
 
 import (
 	"context"
-	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/cmdkit"
 )
 
 // softFetchAriaIDs returns nil on any failure: completion must never autostart
 // the daemon, prompt, or block long.
 func softFetchAriaIDs() []string {
-	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
+	ep := doorEndpoint()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)

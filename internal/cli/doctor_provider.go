@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"sort"
 	"strconv"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 )
 
 func runDoctorProvider(ariaID, count string, asJSON bool) error {
@@ -25,7 +23,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		limit = n
 	}
 
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	cli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}

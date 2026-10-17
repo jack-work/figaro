@@ -28,6 +28,9 @@ func runRestWithFlags(force, keepPIDs bool) {
 		reportRetiredHushAgent()
 	}
 
+	if d := resolveDoor(); d.configured {
+		die("stop retires the daemon this shell started; %s is configured as the endpoint, and figaro does not stop a daemon it reaches that way", d.label)
+	}
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if keepPIDs {

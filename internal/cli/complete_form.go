@@ -10,8 +10,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -102,7 +100,7 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 // softFetchLiveSnapshot never autostarts the daemon, prompts, or blocks long;
 // the error names the failing step.
 func softFetchLiveSnapshot() (form.Snapshot, liveKeysStatus, error) {
-	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
+	ep := doorEndpoint()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)

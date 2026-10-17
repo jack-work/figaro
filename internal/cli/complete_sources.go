@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/sdk"
@@ -42,7 +40,7 @@ func idCandidates(c *cmdkit.CompleteContext) []string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	acli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return nil
 	}
@@ -341,7 +339,7 @@ const turnCandidatesMax = 200
 func turnCandidates(c *cmdkit.CompleteContext, id string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	acli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return nil
 	}

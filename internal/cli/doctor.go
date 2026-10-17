@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
@@ -30,7 +29,7 @@ func deadChannel(name string) bool {
 }
 
 func runDoctorGC(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
@@ -163,7 +162,7 @@ func runDoctorSchema() error {
 
 // runDoctorMem reports the daemon's accounting, never this process's.
 func runDoctorMem(asJSON, collect bool) error {
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	cli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -316,7 +315,7 @@ func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
 }
 
 func runDoctorLibrettos(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
@@ -357,7 +356,7 @@ func runDoctorLibrettos(dryRun bool) error {
 // runDoctorToolCalls closes tool invokes no result answered: history from
 // before the door; providers refuse an aria carrying one.
 func runDoctorToolCalls(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}

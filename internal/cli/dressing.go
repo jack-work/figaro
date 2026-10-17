@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
 	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/transport"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -105,7 +103,7 @@ func parseNames(text string) ([]string, error) {
 func softFetchOutfitNames() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	acli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		// No daemon is not no outfits: they are files in the config dir.
 		return outfitNamesOnDisk()
