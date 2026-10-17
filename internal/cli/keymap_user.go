@@ -210,7 +210,7 @@ func renderLayers(layers []keyLayer) []string {
 		if len(l.binds) == 0 {
 			continue
 		}
-		out = append(out, "", fmt.Sprintf("%s  (%s)", l.name, modeList(l.modes)))
+		out = append(out, "", fmt.Sprintf("%s  (%s)", l.name, spellModes(l.modes)))
 		w := 0
 		for _, b := range l.binds {
 			w = max(w, len(b.keys))
@@ -233,7 +233,7 @@ func renderActions() []string {
 		w = max(w, len(a.name))
 	}
 	for _, a := range keyActions {
-		out = append(out, fmt.Sprintf("  %-*s  %s", w, a.name, modeList(a.modes())))
+		out = append(out, fmt.Sprintf("  %-*s  %s", w, a.name, spellModes(a.modes())))
 	}
 	return out
 }

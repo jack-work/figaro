@@ -1572,6 +1572,9 @@ func (t *transcript) mode() keyMode {
 	if open == pitComposer && t.composerMode == composerNormal {
 		return modeComposer
 	}
+	if k := open.keys(); k == modePanel && t.listMode() {
+		return modeList
+	}
 	return open.keys()
 }
 
@@ -1671,6 +1674,18 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.render()
 		}
 		return
+	case modeList:
+		if act := pagerAct.pager(modeList, ev); act != nil {
+			act(t)
+			t.pendG = ev.b == 'g' && !t.pendG
+			t.render()
+			return
+		}
+		if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
+			t.render()
+			return
+		}
+		t.closePanels()
 	case modePanel:
 		if act := pagerAct.pager(modePanel, ev); act != nil {
 			act(t)
@@ -1690,29 +1705,8 @@ func (t *transcript) dispatch(ev keyEvent) {
 				return
 			}
 		}
-		if t.focused == focusPit && t.pit.live != nil && t.pit.list() != nil {
-			if t.pitVerb(ev) {
-				// This branch returns before the epilogue that arms gg.
-				t.pendG = ev.b == 'g' && !t.pendG
-				t.render()
-				return
-			}
-		} else if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && kv.Key(ev.b) {
+		if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && kv.Key(ev.b) {
 			t.render()
-			return
-		}
-		// Every pit is navigable; a one-row note is a glance, wiped by any key.
-		if t.focused == focusPit && t.pit.list() != nil && !t.pit.glance() && pitOwnsKey(ev) {
-			if t.pitMotion(ev) {
-				// This branch returns before the epilogue that arms gg.
-				t.pendG = ev.b == 'g' && !t.pendG
-				t.render()
-				return
-			}
-			if act := pagerAct.pager(modeTranscript, ev); act != nil {
-				act(t)
-				t.render()
-			}
 			return
 		}
 		t.closePanels()
@@ -2547,32 +2541,6 @@ func (t *transcript) inputDrawerLines() []string {
 	return rows
 }
 
-// pitVerb runs a live view's own verbs against the row the pit selected.
-func (t *transcript) pitVerb(ev keyEvent) bool {
-	iv, ok := t.pit.live.(itemView)
-	if !ok {
-		return false
-	}
-	row, has := t.pit.selected()
-	switch {
-	case ev.b == '\r' || ev.b == '\n':
-		if has && row.id != "" {
-			iv.Activate(row.id)
-		}
-		return true
-		// 'y' is not claimed here: the input loop yanks a selected pit row
-		// (inputYank), and two owners for one key copy one thing and
-		// report another.
-	}
-	// A list view's own letters (the notifications pit's `f`) before the
-	// shared motions.
-	if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
-		return true
-	}
-	_ = row
-	_ = has
-	return t.pitMotion(ev)
-}
 
 // Opening it is reading it, so the unread mark goes.
 func (t *transcript) openNotificationsPit() {
@@ -2599,58 +2567,7 @@ func (t *transcript) leaderChord(ev keyEvent) bool {
 	return false
 }
 
-func (t *transcript) pitMotion(ev keyEvent) bool {
-	switch {
-	// j/k move the selection where there is one, the window where there is not.
-	case ev.b == 'j', ev.nav == navDown, ev.b == 0x0e:
-		t.pit.moveSelection(1)
-	case ev.b == 'k', ev.nav == navUp, ev.b == 0x10:
-		t.pit.moveSelection(-1)
-	// e/y scroll one row, selection untouched (vim's ^E/^Y without the modifier).
-	case ev.b == 'F':
-		// Fullscreen is the pager's disposition and survives one pit
-		// closing and the next opening.
-		t.full = !t.full
-		t.focused = focusPit
-	case ev.b == 'e':
-		t.pit.scrollBy(1)
-	case ev.b == 'y' && t.pit.list() != nil && !t.pit.list().hasCursor():
-		t.pit.scrollBy(-1)
-	case ev.b == 'd', ev.nav == navPageDown:
-		t.pit.halfPage(1)
-	case ev.b == 'u', ev.nav == navPageUp:
-		t.pit.halfPage(-1)
-	case ev.b == 'G', ev.nav == navEnd:
-		t.pit.toBottom()
-	case ev.nav == navHome:
-		t.pit.toTop()
-	case ev.b == 'g':
-		if t.pendG {
-			t.pit.toTop()
-		}
-	default:
-		return false
-	}
-	return true
-}
 
-// Keys an open pit answers itself; everything else wipes the pit and acts, which
-// is what makes a panel a glance rather than a mode.
-func pitOwnsKey(ev keyEvent) bool {
-	switch {
-	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e', ev.b == 'F':
-		return true
-	case ev.nav == navPageUp, ev.nav == navPageDown, ev.nav == navHome, ev.nav == navEnd:
-		return true
-	case ev.nav == navUp || ev.nav == navDown:
-		return true
-	case ev.b == 0x0e || ev.b == 0x10: // ^N / ^P
-		return true
-	case ev.b == 'y' || ev.b == 'x':
-		return true
-	}
-	return false
-}
 
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false

@@ -240,7 +240,8 @@ var modeNames = map[string]keyModeSet{
 	"transcript": inTranscript,
 	"search":     inSearchBox,
 	"command":    inBox,
-	"pit":        inPanel,
+	"pit":        inPit,
+	"list":       inList,
 	"visual":     inVisual,
 	"fork":       inFork,
 	"confirm":    inConfirm,
@@ -273,6 +274,8 @@ func modeName(m keyMode) string {
 		return "composer"
 	case modeComment:
 		return "comment"
+	case modeList:
+		return "list"
 	}
 	return "?"
 }
@@ -306,7 +309,7 @@ func parseModes(s string) (keyModeSet, error) {
 }
 
 // modeList spells a mode set the way a reader writes it.
-func modeList(set keyModeSet) string {
+func spellModes(set keyModeSet) string {
 	if set == inAnyBox {
 		return "all"
 	}

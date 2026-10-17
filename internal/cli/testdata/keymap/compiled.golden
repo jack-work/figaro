@@ -311,6 +311,55 @@ comment    nav:Down           pager pagerCommentNext
 comment    csi-u ctrl-n       input inputSelectNext
 comment    csi-u ctrl-p       input inputSelectPrev
 comment    M-m                input inputToggleVerbose
+list       0x03               input inputInterrupt
+list       0x04               input inputDisconnect
+list       0x0a               pager pagerPitActivate
+list       0x0c               input inputEnterTranscript
+list       0x0d               pager pagerPitActivate
+list       0x0e               pager listDown
+list       0x10               pager listUp
+list       0x14               input inputEnterTranscript
+list       0x1b               pager panelDismiss
+list       " "                pager pagerLeader
+list       "!"                pager panelToggleStatus
+list       "/"                pager pagerSearchPrompt
+list       "?"                pager pagerSearchPromptBack
+list       "D"                pager pagerDecisionPit
+list       "F"                pager listFullscreen
+list       "G"                pager listBottom
+list       "H"                input inputHangUp
+list       "L"                pager pagerListHome
+list       "N"                pager pagerFindRowPrev
+list       "Q"                pager panelToggleQueued
+list       "S"                pager pagerFormPit
+list       "T"                pager pagerFocusTranscript
+list       "X"                pager pagerPitDropNow
+list       "a"                pager pagerAttendRow
+list       "d"                pager listHalfDown
+list       "e"                pager listScrollDown
+list       "g"                pager listTopGG
+list       "h"                pager panelToggleHelp
+list       "j"                pager listDown
+list       "k"                pager listUp
+list       "l"                pager pagerListPit
+list       "m"                input inputToggleBarVerbose
+list       "n"                pager pagerFindRowNext
+list       "q"                input inputLeavePit
+list       "s"                input inputToggleSticky
+list       "u"                pager listHalfUp
+list       "x"                pager pagerPitDrop
+list       "y"                input inputYank
+list       nav:Up             pager listUp
+list       nav:Down           pager listDown
+list       nav:PgUp           pager listHalfUp
+list       nav:PgDn           pager listHalfDown
+list       nav:Home           pager listTop
+list       nav:End            pager listBottom
+list       csi-u ctrl-n       input inputSelectNext
+list       csi-u ctrl-p       input inputSelectPrev
+list       M-m                input inputToggleVerbose
+list       M-n                input inputQuestionNext
+list       M-p                input inputQuestionPrev
 opens      0x09
 opens      0x0a
 opens      0x0d
@@ -413,3 +462,6 @@ meta       confirm    M-m
 meta       composer   M-
 meta       composer   M-m
 meta       comment    M-m
+meta       list       M-m
+meta       list       M-n
+meta       list       M-p

@@ -20,6 +20,7 @@ const (
 	modeConfirm                   // a y/n question owns the keyboard until it is answered
 	modeComposer                  // the composer's NORMAL mode: motions over the draft
 	modeComment
+	modeList
 	numKeyModes
 )
 
@@ -36,10 +37,11 @@ const (
 	inConfirm    keyModeSet = 1 << modeConfirm
 	inComposer   keyModeSet = 1 << modeComposer
 	inComment    keyModeSet = 1 << modeComment
+	inList       keyModeSet = 1 << modeList
 
 	// A transcript-mode row is also reachable with a panel up: the panel
 	// swallows only its own keys.
-	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer | inComment
+	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer | inComment | inList
 	inAnyBox = inIncipit | inPager
 )
 
@@ -308,7 +310,7 @@ func helpModeQualifier(modes keyModeSet) string {
 		return "(in :) "
 	case inVisual:
 		return "(in v) "
-	case inPanel:
+	case inPanel, inPit, inList:
 		return "(in a list) "
 	case inSearchBox:
 		return "(in /) "
