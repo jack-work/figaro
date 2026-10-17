@@ -3,54 +3,91 @@ package keyconf
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestLoad_MissingFileIsTheDefaultMap(t *testing.T) {
-	rows, warnings, err := Load(filepath.Join(t.TempDir(), "keys.toml"))
-	if err != nil || rows != nil || warnings != nil {
-		t.Fatalf("got %v %v %v, want three nils", rows, warnings, err)
+func TestMissingFileIsTheDefaults(t *testing.T) {
+	f, warnings, err := Load(filepath.Join(t.TempDir(), "keys.toml"))
+	if err != nil || len(warnings) != 0 || !f.Empty() {
+		t.Fatalf("a missing file must mean no overrides: %+v %v %v", f, warnings, err)
 	}
 }
 
-func TestLoad_NamesKeysNothingReads(t *testing.T) {
+func TestLoadReadsBindAndLayer(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "keys.toml")
-	os.WriteFile(path, []byte("[[key]]\nchord = \"J\"\naction = \"half-down\"\ncolour = \"blue\"\n"), 0o600)
-	rows, warnings, err := Load(path)
+	os.WriteFile(path, []byte(`
+[bind.motions]
+J = "half-down"
+d = ""
+
+[layer.mine]
+modes = ["transcript", "visual"]
+above = "transcript"
+
+[layer.mine.bind]
+z = "sticky"
+
+[typo]
+x = 1
+`), 0o600)
+	f, warnings, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].Chord != "J" || rows[0].Action != "half-down" {
-		t.Fatalf("rows = %+v", rows)
+	if f.Bind["motions"]["J"] != "half-down" || f.Bind["motions"]["d"] != "" {
+		t.Fatalf("bind.motions: %+v", f.Bind)
 	}
-	if len(warnings) != 1 {
-		t.Fatalf("a key nothing reads must be named out loud, got %v", warnings)
+	l := f.Layer["mine"]
+	if strings.Join(l.Modes, ",") != "transcript,visual" || l.Above != "transcript" || l.Bind["z"] != "sticky" {
+		t.Fatalf("layer.mine: %+v", l)
+	}
+	// A key nothing reads is a setting that silently does not apply; it must
+	// be named.
+	if len(warnings) == 0 || !strings.Contains(strings.Join(warnings, " "), "typo") {
+		t.Fatalf("an unread table must be reported: %v", warnings)
 	}
 }
 
-func TestSaveLoad_RoundTrip(t *testing.T) {
+// Save then Load is the identity, which is what `figaro keys bind` relies on
+// to edit a file without rewriting what it did not touch.
+func TestSaveRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "keys.toml")
-	want := []Row{{Chord: "J", Action: "half-down"}, {Chord: "M-m", Mode: "all", Action: "none"}}
-	if err := Save(path, want); err != nil {
+	var f File
+	f.Set("motions", "J", "half-down")
+	f.Set("user", "^", "attend-parent")
+	f.Set("user", "Space", "")
+	f.Layer = map[string]Layer{"mine": {Modes: []string{"transcript"}, Above: "pager", Bind: map[string]string{"z": "sticky"}}}
+	if err := Save(path, f); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	got, warnings, err := Load(path)
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("%v %v", warnings, err)
 	}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("got %+v, want %+v", got, want)
+	if Render(got) != Render(f) {
+		t.Fatalf("round trip changed the file:\n%s\n---\n%s", Render(f), Render(got))
+	}
+	if got.Bind["user"]["^"] != "attend-parent" || got.Bind["user"]["Space"] != "" {
+		t.Fatalf("punctuation keys and unbinds must survive quoting: %+v", got.Bind)
 	}
 }
 
-func TestUpsertAndRemove(t *testing.T) {
-	rows := []Row{{Chord: "J", Action: "half-down"}}
-	rows = Upsert(rows, Row{Chord: "J", Action: "line-down"})
-	if len(rows) != 1 || rows[0].Action != "line-down" {
-		t.Fatalf("upsert replaced the wrong thing: %+v", rows)
+func TestSetIntoAUserLayerEditsThatLayer(t *testing.T) {
+	f := File{Layer: map[string]Layer{"mine": {Modes: []string{"transcript"}}}}
+	f.Set("mine", "z", "sticky")
+	if f.Layer["mine"].Bind["z"] != "sticky" || f.Bind != nil {
+		t.Fatalf("a binding into a declared layer belongs in that layer: %+v", f)
 	}
-	rows = Upsert(rows, Row{Chord: "K", Action: "line-up"})
-	if rows = Remove(rows, "J", ""); len(rows) != 1 || rows[0].Chord != "K" {
-		t.Fatalf("remove took the wrong row: %+v", rows)
+}
+
+func TestForget(t *testing.T) {
+	var f File
+	f.Set("motions", "J", "half-down")
+	if !f.Forget("motions", "J") || !f.Empty() {
+		t.Fatalf("forget left %+v", f)
+	}
+	if f.Forget("motions", "J") {
+		t.Fatal("forgetting what is not there must say so")
 	}
 }

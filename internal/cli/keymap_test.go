@@ -92,13 +92,8 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 		if bd.modes == 0 {
 			t.Errorf("%s: live in no mode at all", bd.chord)
 		}
-		switch bd.open {
-		case openUnset:
+		if bd.open == openUnset {
 			t.Errorf("%s: no open policy: say whether it opens the pager from incipit", bd.chord)
-		case staysInline:
-			if bd.why == "" {
-				t.Errorf("%s: stays inline without saying why", bd.chord)
-			}
 		}
 		if bd.chord.kind == chordCtrlLetter && (bd.chord.b < 'a' || bd.chord.b > 'z') {
 			t.Errorf("%s: a ctrl chord must name a lowercase letter", bd.chord)
@@ -228,7 +223,7 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 			t.Fatalf("%s: consume held %q", bd.chord, rest)
 		}
 		if lt.transcriptActive() {
-			t.Errorf("%s says it stays inline (%s) but opened the pager", bd.chord, bd.why)
+			t.Errorf("%s (%s) says it stays inline but opened the pager", bd.chord, bd.action)
 		}
 	}
 }

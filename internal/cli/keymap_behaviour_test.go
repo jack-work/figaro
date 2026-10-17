@@ -133,9 +133,13 @@ func TestKeymapGoldenStatesCoverEveryMode(t *testing.T) {
 }
 
 func actionNameOf(f any) string {
-	if a := actionByFunc[reflect.ValueOf(f).Pointer()]; a != nil {
-		return a.name
+	p := reflect.ValueOf(f).Pointer()
+	for i := range liveRows {
+		r := &liveRows[i]
+		if (r.pager != nil && reflect.ValueOf(r.pager).Pointer() == p) || (r.input != nil && reflect.ValueOf(r.input).Pointer() == p) {
+			return r.action
+		}
 	}
-	n := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
+	n := runtime.FuncForPC(p).Name()
 	return n[strings.LastIndex(n, ".")+1:]
 }

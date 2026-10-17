@@ -89,6 +89,26 @@ func parseKeySpec(s string) (keySpec, error) {
 	if welded, bad := weldedSpelling[strings.ToUpper(t)]; bad {
 		return keySpec{}, fmt.Errorf("%s is %s's byte: write %s", t, welded, welded)
 	}
+	if rest, ok := strings.CutPrefix(t, "csi:"); ok {
+		if len(rest) != 2 || rest[0] != '^' {
+			return keySpec{}, fmt.Errorf("csi: names a CSI-u control letter, as csi:^N")
+		}
+		b, err := controlByte(rest[1])
+		if err != nil {
+			return keySpec{}, err
+		}
+		letter, ok := ctrlLetterFor(b)
+		if !ok {
+			return keySpec{}, fmt.Errorf("%s has no CSI-u report", rest)
+		}
+		return keySpec{text: t, chords: []chord{ctrlChord(letter)}}, nil
+	}
+	if strings.HasPrefix(t, "0x") && len(t) == 4 {
+		var b byte
+		if _, err := fmt.Sscanf(t, "0x%02x", &b); err == nil {
+			return keySpec{text: t, chords: []chord{byteChord(b)}}, nil
+		}
+	}
 	if rest, ok := cutMeta(t); ok {
 		b, err := parseMetaByte(rest)
 		if err != nil {

@@ -2,23 +2,42 @@ package cli
 
 import (
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/keyconf"
 )
 
-// The user layer is only safe if applying it is a pure function over the
-// default table: these are the tests that say so.
-
-func withUserKeys(t *testing.T, rows ...keyconf.Row) []keyDiag {
+func withUserKeys(t *testing.T, f keyconf.File) []compileDiag {
 	t.Helper()
-	t.Cleanup(func() { applyUserKeys(nil) })
-	return applyUserKeys(rows)
+	t.Cleanup(func() { applyUserKeys(keyconf.File{}) })
+	return applyUserKeys(f)
 }
 
-// TestKeySpell_RoundTripsEveryRow: the spelling the help pit prints is the
-// spelling keys.toml accepts. Every chord figaro ships must survive the trip.
+func binds(layer string, kv ...string) keyconf.File {
+	var f keyconf.File
+	for i := 0; i+1 < len(kv); i += 2 {
+		f.Set(layer, kv[i], kv[i+1])
+	}
+	return f
+}
+
+func reached(m keyMode, c chord) string {
+	ev := chordEvent(c)
+	for i := range liveRows {
+		r := &liveRows[i]
+		if r.chord == c && r.modes&(1<<m) != 0 {
+			return r.action
+		}
+	}
+	if inputAct.input(m, ev) != nil || pagerAct.pager(m, ev) != nil {
+		return "?"
+	}
+	return ""
+}
+
+// The spelling the help pit prints is the spelling keys.toml accepts.
 func TestKeySpell_RoundTripsEveryRow(t *testing.T) {
 	for i := range keymap {
 		c := keymap[i].chord
@@ -37,180 +56,206 @@ func TestKeySpell_RoundTripsEveryRow(t *testing.T) {
 	}
 }
 
-// TestKeyActions_NameEveryRow: a binding a user can see is a binding a user
-// can name. Function pointers, so a renamed handler cannot slip out of the
-// registry unnoticed.
-func TestKeyActions_NameEveryRow(t *testing.T) {
+// Every action is bound somewhere by default, and every default binding
+// resolves. An action nobody can reach is either dead or forgotten, and the
+// defaults compiling with a diagnostic would be a panic at init.
+func TestDefaultLayers_EveryActionIsBound(t *testing.T) {
 	used := map[string]bool{}
 	for i := range keymap {
-		bd := &keymap[i]
-		a := actionFor(bd)
-		if a == nil {
-			t.Errorf("%s in %s: no action name (add it to keyActions)", bd.chord, modeList(bd.modes))
-			continue
-		}
-		used[a.name] = true
+		used[keymap[i].action] = true
 	}
 	for _, a := range keyActions {
 		if !used[a.name] {
-			t.Errorf("action %q names no live binding", a.name)
+			t.Errorf("action %q is bound nowhere by default", a.name)
 		}
 	}
-}
-
-// TestApplyUserKeys_EmptyLayerIsIdentity: the defaults are what they were.
-func TestApplyUserKeys_EmptyLayerIsIdentity(t *testing.T) {
-	before := helpBody()
-	withUserKeys(t)
-	if &liveRows[0] != &keymap[0] {
-		t.Fatal("an empty layer must leave the default table in place, not a copy of it")
-	}
-	if got := helpBody(); !reflect.DeepEqual(got, before) {
-		t.Errorf("an empty layer changed the help panel")
+	if _, diags := compileLayers(defaultLayers); len(diags) > 0 {
+		t.Fatalf("the defaults compile with diagnostics: %v", diags)
 	}
 }
 
-// TestApplyUserKeys_RebindsAndTheHelpPitFollows is the whole feature in one
-// test: a row in keys.toml moves a key, and the panel says so.
-func TestApplyUserKeys_RebindsAndTheHelpPitFollows(t *testing.T) {
-	if diags := withUserKeys(t, keyconf.Row{Chord: "J", Action: "half-down"}); len(diags) > 0 {
-		t.Fatalf("refused: %v", diags[0])
-	}
-	act := pagerAct.pager(modeTranscript, keyEvent{b: 'J'})
-	if act == nil {
-		t.Fatal("J is not bound in the transcript after the rebind")
-	}
-	if reflect.ValueOf(act).Pointer() != reflect.ValueOf(pagerHalfDown).Pointer() {
-		t.Error("J is bound, but not to half-down")
-	}
-	panel := strings.Join(helpBody(), "\n")
-	scroll := ""
-	for _, line := range helpBody() {
-		if strings.Contains(line, "scroll · half-page") {
-			scroll = line
+// A polymorphic action is ONE binding: j is bound once, in the motions layer,
+// and means the right thing in every mode that layer covers.
+func TestOneBindingMeansTheRightThingPerMode(t *testing.T) {
+	j := byteChord('j')
+	for m, want := range map[keyMode]string{
+		modeTranscript: "pagerLineDown",
+		modeVisual:     "pagerVisualDown",
+		modeComposer:   "composerDownLine",
+		modeFork:       "pagerForkNext",
+		modeComment:    "pagerCommentNext",
+	} {
+		if got := actionNameOfFunc(pagerAct.pager(m, chordEvent(j))); got != want {
+			t.Errorf("j in %s reaches %s, want %s", modeName(m), got, want)
 		}
 	}
-	if scroll == "" {
-		t.Fatalf("no scroll row in the panel:\n%s", panel)
-	}
-	if !strings.Contains(scroll, "J") {
-		t.Errorf("the scroll row does not show the new key: %q", scroll)
-	}
-	if strings.Contains(scroll, "gg/G") {
-		t.Errorf("the hand-written column survived a remap: %q", scroll)
-	}
-}
-
-// TestApplyUserKeys_UnbindDropsTheHelpRow: a row nobody can press is a row
-// the panel must not promise.
-func TestApplyUserKeys_UnbindDropsTheHelpRow(t *testing.T) {
-	withUserKeys(t, keyconf.Row{Chord: "M-m", Mode: "all", Action: "none"})
-	if pagerAct.byMeta[modeTranscript]['m'] != nil || inputAct.byMeta[modeTranscript]['m'] != nil {
-		t.Error("M-m still dispatches after being unbound")
-	}
-	if metaBound[modeTranscript]['m'] {
-		t.Error("the decoder still claims ESC m as a Meta chord in the transcript")
-	}
-	for _, line := range helpBody() {
-		if strings.Contains(line, "verbose tool output") {
-			t.Errorf("the panel still documents an unbound key: %q", line)
+	n := 0
+	for _, l := range defaultLayers {
+		for _, b := range l.binds {
+			for _, k := range splitKeys(b.keys) {
+				if k == "j" {
+					n++
+				}
+			}
 		}
 	}
+	if n != 1 {
+		t.Fatalf("j is declared %d times; the point of a polymorphic action is once", n)
+	}
 }
 
-func TestApplyUserKeys_Refusals(t *testing.T) {
+// A binding claims a key only where its action means something. Motions'
+// 'h' is "left", which the transcript has no use for, so the transcript's 'h'
+// (help) must show through from the layer below.
+func TestABindingClaimsOnlyWhereItsActionIsImplemented(t *testing.T) {
+	// The user layer sits above everything and covers every mode, so its
+	// 'h' would hide the transcript's if a binding claimed a key where its
+	// action does nothing.
+	if diags := withUserKeys(t, binds(userLayerName, "h", "left")); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	if got := reached(modeTranscript, byteChord('h')); got != "help" {
+		t.Fatalf("h in transcript reaches %q, want help", got)
+	}
+	if got := reached(modeVisual, byteChord('h')); got != "left" {
+		t.Fatalf("h in visual reaches %q, want left", got)
+	}
+}
+
+func TestUserRebindReplacesTheDefaultInItsLayer(t *testing.T) {
+	if diags := withUserKeys(t, binds("motions", "J", "half-down", "d", "")); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	for _, m := range []keyMode{modeTranscript, modeVisual} {
+		if got := reached(m, byteChord('J')); got != "half-down" {
+			t.Errorf("J in %s reaches %q", modeName(m), got)
+		}
+		if got := reached(m, byteChord('d')); got != "" {
+			t.Errorf("d in %s still reaches %q after an unbind", modeName(m), got)
+		}
+	}
+	// Nothing else moved.
+	if got := reached(modeTranscript, byteChord('u')); got != "half-up" {
+		t.Errorf("u reaches %q", got)
+	}
+}
+
+// The user layer sits above every other and covers every mode, and still only
+// claims where its action is implemented: binding z to sticky must not take z
+// from the command line, where it is a letter.
+func TestTheUserLayerIsOnTopAndPolite(t *testing.T) {
+	if diags := withUserKeys(t, binds(userLayerName, "z", "sticky", "x", "help")); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	if got := reached(modeTranscript, byteChord('z')); got != "sticky" {
+		t.Errorf("z in transcript reaches %q", got)
+	}
+	if got := reached(modeBox, byteChord('z')); got != "" {
+		t.Errorf("z in the command line reaches %q; it must stay text", got)
+	}
+	// Above the transcript layer, which binds x to delete.
+	if got := reached(modeTranscript, byteChord('x')); got != "help" {
+		t.Errorf("x in transcript reaches %q, want the user's help", got)
+	}
+}
+
+func TestUserLayerDeclaredAboveAnother(t *testing.T) {
+	f := keyconf.File{Layer: map[string]keyconf.Layer{
+		"mine": {Modes: []string{"visual"}, Above: "motions", Bind: map[string]string{"j": "half-down"}},
+	}}
+	if diags := withUserKeys(t, f); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	if got := reached(modeVisual, byteChord('j')); got != "half-down" {
+		t.Errorf("j in visual reaches %q", got)
+	}
+	if got := reached(modeTranscript, byteChord('j')); got != "down" {
+		t.Errorf("j in transcript reaches %q; mine covers visual only", got)
+	}
+	if i, m := layerIndex(liveLayers, "mine"), layerIndex(liveLayers, "motions"); i < 0 || i+1 != m {
+		t.Fatalf("mine at %d, motions at %d: above means directly above", i, m)
+	}
+}
+
+// A refused binding says why, by name, and leaves the defaults in force.
+func TestRefusals(t *testing.T) {
 	cases := []struct {
-		name string
-		row  keyconf.Row
+		f    keyconf.File
 		want string
 	}{
-		{"interrupt", keyconf.Row{Chord: "^C", Action: "line-down"}, "guaranteed way out"},
-		{"welded", keyconf.Row{Chord: "^M", Action: "line-down"}, "write Enter"},
-		{"text in the box", keyconf.Row{Chord: "z", Mode: "command", Action: "cmd-home"}, "literal text"},
-		{"enter in the box", keyconf.Row{Chord: "Enter", Mode: "search", Action: "line-down"}, "cannot be rebound"},
-		{"unknown action", keyconf.Row{Chord: "z", Action: "scroll-sideways"}, "no action named"},
-		{"unknown mode", keyconf.Row{Chord: "z", Mode: "sideways", Action: "line-down"}, "unknown mode"},
-		{"shadowed by an input row", keyconf.Row{Chord: "^L", Action: "line-down"}, "would never fire"},
-		{"shadows a pager row", keyconf.Row{Chord: "j", Action: "toggle-verbose"}, "would silently kill"},
+		{binds("session", "0x03", "listen"), "^C is the guaranteed way out"},
+		{binds(userLayerName, "^C", ""), "^C is the guaranteed way out"},
+		{binds("command", "Esc", "cmd-home"), "Esc leaves the command box"},
+		{binds(userLayerName, "Enter", ""), "Enter submits the"},
+		{binds("command", "q", "cmd-home"), `"q" is literal text in the command box`},
+		{binds("motions", "j", "no-such-thing"), `no action named "no-such-thing"`},
+		{binds("nowhere", "j", "down"), "no layer named nowhere"},
+		{binds("motions", "^M", "down"), "Enter's byte"},
+		{binds("pager", "z", "cmd-home"), "does nothing in any mode this layer applies to"},
+		{keyconf.File{Layer: map[string]keyconf.Layer{"motions": {Modes: []string{"visual"}}}}, "already exists"},
+		{keyconf.File{Layer: map[string]keyconf.Layer{"mine": {Modes: []string{"nope"}}}}, `unknown mode "nope"`},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			diags := withUserKeys(t, tc.row)
-			if len(diags) != 1 {
-				t.Fatalf("want one refusal, got %v", diags)
-			}
-			if !strings.Contains(diags[0].text, tc.want) {
-				t.Errorf("refusal says %q, want it to mention %q", diags[0].text, tc.want)
-			}
-			if &liveRows[0] != &keymap[0] {
-				t.Error("a refused row still rebuilt the table")
-			}
-		})
+	defaults := compiledKeymap()
+	for _, c := range cases {
+		diags := withUserKeys(t, c.f)
+		joined := ""
+		for _, d := range diags {
+			joined += d.String() + "\n"
+		}
+		if !strings.Contains(joined, c.want) {
+			t.Errorf("%+v: want a refusal saying %q, got:\n%s", c.f, c.want, joined)
+		}
+		if compiledKeymap() != defaults {
+			t.Errorf("%+v: a refused binding changed the live map", c.f)
+		}
+		applyUserKeys(keyconf.File{})
 	}
 }
 
-// TestApplyUserKeys_BothEncodings: a reader writes ^E once and gets the key
-// their terminal actually sends, whichever of the two that is.
-func TestApplyUserKeys_BothEncodings(t *testing.T) {
-	withUserKeys(t, keyconf.Row{Chord: "^E", Action: "line-down"})
-	if pagerAct.byByte[byteSlot(modeTranscript, 0x05)] == nil {
-		t.Error("the raw control byte is not bound")
-	}
-	if pagerAct.byCtrl[modeTranscript]['e'-'a'] == nil {
-		t.Error("the CSI-u chord is not bound")
-	}
-	if !ctrlChordBoundIn(modeTranscript, 'e') {
-		t.Error("the decoder does not know ^E is a chord in the transcript")
+// An empty file is the identity, by pointer: nothing was rebuilt.
+func TestNoUserKeysIsTheDefaultTable(t *testing.T) {
+	withUserKeys(t, keyconf.File{})
+	if &liveRows[0] != &keymap[0] {
+		t.Fatal("an empty keys.toml rebuilt the table")
 	}
 }
 
-// TestApplyUserKeys_StructuralTestsHoldOverALayer: the four table invariants
-// are properties of ANY map, not just the shipped one.
-func TestApplyUserKeys_StructuralTestsHoldOverALayer(t *testing.T) {
-	withUserKeys(t,
-		keyconf.Row{Chord: "J", Action: "half-down"},
-		keyconf.Row{Chord: "M-m", Mode: "all", Action: "none"},
-		keyconf.Row{Chord: "^E", Mode: "transcript,visual", Action: "line-down"},
-	)
-	for i := range liveRows {
-		bd := &liveRows[i]
-		if bd.modes == 0 {
-			continue
-		}
-		if bd.pager == nil && bd.input == nil {
-			t.Errorf("%s: no action", bd.chord)
-		}
-		if bd.pager != nil && bd.input != nil {
-			t.Errorf("%s: both levels", bd.chord)
-		}
-		if bd.open == openUnset {
-			t.Errorf("%s: no open policy", bd.chord)
-		}
-		if bd.pager != nil && bd.modes&inIncipit != 0 {
-			t.Errorf("%s: a pager action in incipit", bd.chord)
-		}
+// The help panel's key column follows a remap: prose about the defaults is
+// honoured only while nothing under its row has moved.
+func TestHelpColumnFollowsARemap(t *testing.T) {
+	withUserKeys(t, binds("motions", "j", "", "J", "down"))
+	body := strings.Join(helpBody(), "\n")
+	if strings.Contains(body, "j/k · u/d · gg/G") {
+		t.Fatalf("the help pit still prints the default column for a remapped row:\n%s", body)
 	}
-	type slot struct {
-		c chord
-		m keyMode
-		l string
-	}
-	seen := map[slot]bool{}
-	for i := range liveRows {
-		bd := &liveRows[i]
-		level := "pager"
-		if bd.input != nil {
-			level = "input"
-		}
-		for m := keyMode(0); m < numKeyModes; m++ {
-			if bd.modes&(1<<m) == 0 {
-				continue
-			}
-			s := slot{bd.chord, m, level}
-			if seen[s] {
-				t.Errorf("%s bound twice at the %s level in %s", bd.chord, level, modeName(m))
-			}
-			seen[s] = true
-		}
+	if !strings.Contains(body, "J") {
+		t.Fatalf("the help pit does not show the new key:\n%s", body)
 	}
 }
+
+func TestKeysTomlEndToEnd(t *testing.T) {
+	path := t.TempDir() + "/keys.toml"
+	if err := keyconf.Save(path, binds("motions", "J", "half-down")); err != nil {
+		t.Fatal(err)
+	}
+	f, warnings, err := keyconf.Load(path)
+	if err != nil || len(warnings) > 0 {
+		t.Fatal(err, warnings)
+	}
+	if diags := withUserKeys(t, f); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	if got := reached(modeVisual, byteChord('J')); got != "half-down" {
+		t.Fatalf("J in visual reaches %q", got)
+	}
+}
+
+func actionNameOfFunc(f pagerFunc) string {
+	if f == nil {
+		return ""
+	}
+	n := runtimeFuncName(reflect.ValueOf(f).Pointer())
+	return n[strings.LastIndex(n, ".")+1:]
+}
+
+func runtimeFuncName(pc uintptr) string { return runtime.FuncForPC(pc).Name() }
