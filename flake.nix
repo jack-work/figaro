@@ -104,6 +104,17 @@
         };
       };
 
+      nixosModules = {
+        default = { lib, pkgs, ... }: {
+          imports = [ ./nix/module.nix ];
+          services.figaro.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
+        };
+        container = { lib, pkgs, ... }: {
+          imports = [ ./nix/container.nix ];
+          services.figaro-container.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
+        };
+      };
+
       packages = forAllSystems ({ pkgs }: rec {
         figaro = (import nixpkgs {
           inherit (pkgs) system;
