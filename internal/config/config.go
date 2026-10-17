@@ -581,7 +581,8 @@ func (l *Loaded) UpdateCheckTTLHours() int {
 // ProviderAuth lives at providers/<name>.toml. Secret fields are
 // AGE-encrypted at rest (AGE-ENC[...]) and must be decrypted through hush.
 type ProviderAuth struct {
-	APIKey string `toml:"api_key"`
+	APIKey     string `toml:"api_key"`
+	APIKeyFile string `toml:"api_key_file"`
 
 	AccessToken  string `toml:"access_token"`
 	RefreshToken string `toml:"refresh_token"`

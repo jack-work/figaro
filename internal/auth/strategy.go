@@ -3,7 +3,9 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	hush "github.com/jack-work/hush/client"
@@ -63,6 +65,34 @@ func (e *EnvVar) TryResolve() (string, bool, error) {
 }
 
 func (*EnvVar) Invalidate(string) error { return nil }
+
+type File struct {
+	Path     string
+	Required bool
+}
+
+func (f *File) TryResolve() (string, bool, error) {
+	if f.Path == "" {
+		return "", false, nil
+	}
+	b, err := os.ReadFile(f.Path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) && !f.Required {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		if f.Required {
+			return "", false, fmt.Errorf("credential file %s is empty", f.Path)
+		}
+		return "", false, nil
+	}
+	return v, true, nil
+}
+
+func (*File) Invalidate(string) error { return nil }
 
 type ConfigValue struct {
 	Get func() string

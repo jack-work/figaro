@@ -3,6 +3,7 @@ package boot
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -19,7 +20,6 @@ import (
 	_ "github.com/jack-work/figaro/internal/provider/routed"
 )
 
-// BuildResolver resolves in order: env, plaintext api_key, encrypted api_key, OAuth.
 func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
 	h, err := Hush()
 	if err != nil {
@@ -43,7 +43,8 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
 	}
 
-	strategies := append(EnvironmentStrategies(reg), storedKey(loaded, hushClient, providerName)...)
+	strategies := append(EnvironmentStrategies(reg), FileStrategies(loaded, providerName)...)
+	strategies = append(strategies, storedKey(loaded, hushClient, providerName)...)
 	if hasOAuth {
 		strategies = append(strategies, &auth.OAuth{
 			Hush: hushClient,
@@ -52,6 +53,37 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	}
 	return &auth.Aggregate{Strategies: strategies}, nil
 }
+
+func FileStrategies(loaded *config.Loaded, name string) []auth.CredentialStrategy {
+	out := []auth.CredentialStrategy{&configuredKeyFile{loaded: loaded, name: name}}
+	if dir := os.Getenv("CREDENTIALS_DIRECTORY"); dir != "" {
+		out = append(out, &auth.File{Path: filepath.Join(dir, name)})
+	}
+	return out
+}
+
+type configuredKeyFile struct {
+	loaded *config.Loaded
+	name   string
+}
+
+func (c *configuredKeyFile) TryResolve() (string, bool, error) {
+	var pa config.ProviderAuth
+	if err := c.loaded.LoadProviderAuth(c.name, &pa); err != nil || pa.APIKeyFile == "" {
+		return "", false, err
+	}
+	path := pa.APIKeyFile
+	if !filepath.IsAbs(path) {
+		dir := os.Getenv("CREDENTIALS_DIRECTORY")
+		if dir == "" {
+			return "", false, fmt.Errorf("%s: api_key_file %q is relative and $CREDENTIALS_DIRECTORY is unset", c.loaded.ProviderAuthPath(c.name), path)
+		}
+		path = filepath.Join(dir, path)
+	}
+	return (&auth.File{Path: path, Required: true}).TryResolve()
+}
+
+func (*configuredKeyFile) Invalidate(string) error { return nil }
 
 func storedKey(loaded *config.Loaded, hushClient *hush.Client, name string) []auth.CredentialStrategy {
 	return []auth.CredentialStrategy{
@@ -137,6 +169,11 @@ func durableSecretFor(loaded *config.Loaded, h *hush.Client, reg *providerPkg.Re
 	for _, env := range reg.CredentialEnvs() {
 		if v := strings.TrimSpace(os.Getenv(env)); v != "" {
 			return v, "$" + env
+		}
+	}
+	for _, f := range FileStrategies(loaded, name) {
+		if v, ok, _ := f.TryResolve(); ok {
+			return v, "a credential file"
 		}
 	}
 

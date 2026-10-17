@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -85,4 +86,34 @@ func TestOAuthInvalidateNilOnSuccessfulRefresh(t *testing.T) {
 
 func TestOAuthInvalidateNilWhenUnconfigured(t *testing.T) {
 	assert.NoError(t, (&OAuth{}).Invalidate("tok"))
+}
+
+func TestFileOptionalPassesWhenMissing(t *testing.T) {
+	f := &File{Path: filepath.Join(t.TempDir(), "absent")}
+	tok, ok, err := f.TryResolve()
+	assert.Empty(t, tok)
+	assert.False(t, ok)
+	assert.NoError(t, err)
+}
+
+func TestFileRequiredErrsWhenMissingOrEmpty(t *testing.T) {
+	dir := t.TempDir()
+	_, ok, err := (&File{Path: filepath.Join(dir, "absent"), Required: true}).TryResolve()
+	assert.False(t, ok)
+	assert.Error(t, err)
+
+	empty := filepath.Join(dir, "empty")
+	require.NoError(t, os.WriteFile(empty, []byte("  \n"), 0o600))
+	_, ok, err = (&File{Path: empty, Required: true}).TryResolve()
+	assert.False(t, ok)
+	assert.ErrorContains(t, err, "empty")
+}
+
+func TestFileTrimsTheTrailingNewline(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "key")
+	require.NoError(t, os.WriteFile(p, []byte("sk-abc\n"), 0o600))
+	tok, ok, err := (&File{Path: p}).TryResolve()
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "sk-abc", tok)
 }
