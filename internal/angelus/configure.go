@@ -94,6 +94,9 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		ofit := h.outfitter
 		h.configMu.Unlock()
 		ofit.Warm(fresh.Config.DefaultOutfit)
+		if err := h.reloadPolicy(); err != nil {
+			return nil, err
+		}
 	}
 	return resp, nil
 }

@@ -16,6 +16,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -56,6 +57,9 @@ type Angelus struct {
 	UICache *aria.ComposedCache
 
 	Models *modelcat.Catalog
+
+	Policies *authz.Policies
+	Peercred *authz.Peercred
 
 	uiProj Projector
 

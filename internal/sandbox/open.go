@@ -56,3 +56,11 @@ func ariaEnv(aria string) map[string]string {
 	}
 	return env
 }
+
+func HostPath(kind string) bool {
+	switch kind {
+	case "", "local", "bwrap":
+		return true
+	}
+	return false
+}

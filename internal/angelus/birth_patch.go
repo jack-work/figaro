@@ -106,6 +106,9 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 	if _, ofit := h.settings(); ofit != nil {
 		ofit.Reload()
 	}
+	if err := h.reloadPolicy(); err != nil {
+		return nil, err
+	}
 	rec, err := h.angelus.Backend.LoadDefaultForm()
 	if err != nil {
 		return nil, err

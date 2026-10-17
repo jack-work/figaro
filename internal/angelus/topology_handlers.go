@@ -101,10 +101,21 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
+	}
+	born := false
+	defer func() {
+		if !born {
+			h.discardBirth(id)
+		}
+	}()
+	{
 		// aria_id rides a second patch so the birth patch stays a pure
 		// function of what was asked for.
 		if _, aerr := backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); aerr != nil {
 			return nil, fmt.Errorf("stamp aria id: %w", aerr)
+		}
+		if err := h.grantSandboxOn(ctx, id, true); err != nil {
+			return nil, err
 		}
 		snap, serr := backend.FormState(id)
 		if serr != nil {
@@ -123,6 +134,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: %w", err)
 	}
+	born = true
 	reg := tool.DefaultRegistry(box, cwdFromForm(cbState, box),
 		tool.WithImageBudget(loaded.InlineImageBudget()))
 	agent := figaro.NewAgent(figaro.Config{
@@ -256,6 +268,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx))
 		if ferr != nil {
 			return ferr
+		}
+		if gerr := h.grantSandboxOn(ctx, alt, patchTouches(dress, "system.cwd")); gerr != nil {
+			h.discardBirth(alt)
+			alt = ""
+			return gerr
 		}
 		cont = req.FigaroID
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
@@ -487,6 +504,11 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	}
 	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, keys, nil)); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
+	}
+	_, cwdSet := keys["system.cwd"]
+	if err := h.grantSandboxOn(ctx, id, cwdSet); err != nil {
+		h.discardBirth(id)
+		return nil, fmt.Errorf("import: %w", err)
 	}
 	// A study naming a form this store lacks is not an error: the libretto
 	// holds an empty copy and follows if that form ever arrives.

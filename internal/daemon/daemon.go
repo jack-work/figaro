@@ -21,6 +21,7 @@ import (
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -287,6 +288,17 @@ func Run() {
 		Settings:   loaded,
 	})
 	a.Build = boot.BuildRevision()
+	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
+	a.Peercred = peer
+	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
+		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
+	}
 	figOtel.SetMemProbe(func() figOtel.MemSample {
 		st := a.MemStatus()
 		return figOtel.MemSample{HeapInuse: int64(st.HeapInuseBytes), HeapReleased: int64(st.HeapReleasedBytes),
