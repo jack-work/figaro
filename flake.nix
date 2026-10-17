@@ -169,6 +169,8 @@
           set -o pipefail
           sh scripts/check-boundary.sh | tee $out
         '';
+      } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+        container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
       });
 
       devShells = forAllSystems ({ pkgs }: let
