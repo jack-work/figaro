@@ -43,6 +43,7 @@ type Config struct {
 	Memory MemoryConfig `toml:"memory"`
 	Door   DoorConfig   `toml:"door"`
 	Quote  QuoteConfig  `toml:"quote"`
+	Authz  AuthzConfig  `toml:"authz"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
 }

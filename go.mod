@@ -32,6 +32,7 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/coder/websocket v1.8.14
 	github.com/creack/pty v1.1.24
+	github.com/jack-work/jkauthz v0.2.0
 	github.com/zalando/go-keyring v0.2.8
 )
 
