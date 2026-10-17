@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/jack-work/figaro/api/sandbox"
 	"github.com/jack-work/figaro/internal/sandbox/local"
@@ -14,7 +15,19 @@ import (
 
 var allowEnv = []string{"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "COLORTERM", "LANG", "LC_ALL", "TZ"}
 
-var maskEnv = []string{"HOME", "FIGARO_CONFIG_DIR", "FIGARO_HUSH_DIR", "FIGARO_STATE_DIR"}
+var maskEnv = []string{"HOME", "FIGARO_CONFIG_DIR", "FIGARO_HUSH_DIR", "FIGARO_STATE_DIR", "CREDENTIALS_DIRECTORY"}
+
+var maskPaths = []string{"/run/credentials"}
+
+var apiArgs = sync.OnceValue(func() []string {
+	fresh := []string{"--dev", "/dev", "--proc", "/proc"}
+	probe := append([]string{"--unshare-all", "--share-net", "--ro-bind", "/", "/"}, fresh...)
+	probe = append(probe, "sh", "-c", ": > /dev/null")
+	if exec.Command("bwrap", probe...).Run() == nil {
+		return fresh
+	}
+	return []string{"--dev-bind", "/dev", "/dev", "--ro-bind", "/proc", "/proc"}
+})
 
 type Provider struct {
 	Host       *local.Host
@@ -41,7 +54,14 @@ func (p Provider) Open(_ context.Context, spec sandbox.Spec) (sandbox.Sandbox, e
 		env = append(env, "FIGARO_RUNTIME_DIR="+p.RuntimeDir)
 	}
 	args := []string{"bwrap", "--die-with-parent", "--unshare-all", "--share-net",
-		"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"}
+		"--ro-bind", "/", "/"}
+	args = append(args, apiArgs()...)
+	args = append(args, "--tmpfs", "/tmp")
+	for _, d := range maskPaths {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			args = append(args, "--tmpfs", d)
+		}
+	}
 	for _, k := range maskEnv {
 		if d := os.Getenv(k); d != "" {
 			if st, err := os.Stat(d); err == nil && st.IsDir() {
