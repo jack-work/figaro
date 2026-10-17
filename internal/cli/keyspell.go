@@ -243,10 +243,8 @@ var modeNames = map[string]keyModeSet{
 	"pit":        inPit,
 	"list":       inList,
 	"visual":     inVisual,
-	"fork":       inFork,
 	"confirm":    inConfirm,
 	"composer":   inComposer,
-	"comment":    inComment,
 	"pager":      inPager,
 	"all":        inAnyBox,
 }
@@ -266,14 +264,10 @@ func modeName(m keyMode) string {
 		return "panel"
 	case modeVisual:
 		return "visual"
-	case modeFork:
-		return "fork"
 	case modeConfirm:
 		return "confirm"
 	case modeComposer:
 		return "composer"
-	case modeComment:
-		return "comment"
 	case modeList:
 		return "list"
 	}

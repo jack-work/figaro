@@ -28,18 +28,49 @@ func compiledKeymap() string {
 		n := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 		return n[strings.LastIndex(n, ".")+1:]
 	}
+	named := func(f any, m keyMode, c chord, prefix string) string {
+		n := funcName(f)
+		if !strings.HasPrefix(n, "func") {
+			return n
+		}
+		for i := range liveRows {
+			r := &liveRows[i]
+			if r.prefix == prefix && r.chord == c && r.modes&(1<<m) != 0 {
+				return r.action
+			}
+		}
+		return n
+	}
 	line := func(m keyMode, c chord) {
 		ev := chordEvent(c)
 		if f := inputAct.input(m, ev); f != nil {
-			fmt.Fprintf(&b, "%-10s %-18s input %s\n", modeName(m), c, funcName(f))
+			fmt.Fprintf(&b, "%-10s %-18s input %s\n", modeName(m), c, named(f, m, c, ""))
 		}
 		if f := pagerAct.pager(m, ev); f != nil {
-			fmt.Fprintf(&b, "%-10s %-18s pager %s\n", modeName(m), c, funcName(f))
+			fmt.Fprintf(&b, "%-10s %-18s pager %s\n", modeName(m), c, named(f, m, c, ""))
 		}
 	}
 	for m := keyMode(0); m < numKeyModes; m++ {
 		for _, c := range everyChord() {
 			line(m, c)
+		}
+	}
+	for _, l := range liveLayers {
+		if !l.prefix {
+			continue
+		}
+		for m := keyMode(0); m < numKeyModes; m++ {
+			for _, c := range everyChord() {
+				bd := prefixBinding(l.name, m, chordEvent(c))
+				if bd == nil {
+					continue
+				}
+				level, f := "pager", any(bd.pager)
+				if bd.input != nil {
+					level, f = "input", any(bd.input)
+				}
+				fmt.Fprintf(&b, "%-10s %-18s %s %s\n", l.name+"+"+modeName(m), c, level, named(f, m, c, l.name))
+			}
 		}
 	}
 	for _, c := range everyChord() {

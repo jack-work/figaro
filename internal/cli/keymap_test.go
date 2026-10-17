@@ -62,6 +62,9 @@ func TestKeymap_NoDuplicateBindingPerMode(t *testing.T) {
 	seen := map[slot]int{}
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		level := "pager"
 		if bd.input != nil {
 			level = "input"
@@ -83,6 +86,9 @@ func TestKeymap_NoDuplicateBindingPerMode(t *testing.T) {
 func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		switch {
 		case bd.pager == nil && bd.input == nil:
 			t.Errorf("%s: no action", bd.chord)
@@ -116,6 +122,9 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		idx := &pagerIndex
 		other := &inputIndex
 		if bd.input != nil {
@@ -189,6 +198,9 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		if bd.open != opensPager {
 			continue
 		}
@@ -208,6 +220,9 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 	stopsTheLoop := map[byte]bool{0x03: true, 0x04: true, 'q': true}
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		if bd.open != staysInline || bd.chord.kind != chordByte {
 			continue
 		}
@@ -309,6 +324,9 @@ func TestHelp_EveryVisibleBindingIsDocumented(t *testing.T) {
 	documented := map[helpID]int{}
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		if bd.hidden() {
 			continue
 		}

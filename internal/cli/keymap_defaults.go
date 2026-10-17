@@ -4,7 +4,7 @@ const (
 	inPit          = inPanel | inList
 	inReading      = inTranscript | inPit | inVisual
 	inConversation = inTranscript | inVisual
-	inMotions      = inTranscript | inVisual | inComposer | inFork | inComment | inList
+	inMotions      = inTranscript | inVisual | inComposer | inList
 	inClipboard    = inIncipit | inTranscript | inPit | inVisual | inComposer
 	inEverywhere   = inAnyBox
 )
@@ -30,15 +30,11 @@ var keyActions = []keyAction{
 		atPagerOpens(inTranscript, pagerLineDown),
 		atPagerOpens(inVisual, pagerVisualDown),
 		atPager(inComposer, composerDownLine),
-		atPagerOpens(inFork, pagerForkNext),
-		atPagerOpens(inComment, pagerCommentNext),
 		atPager(inList, listDown)),
 	named("up",
 		atPagerOpens(inTranscript, pagerLineUp),
 		atPagerOpens(inVisual, pagerVisualUp),
 		atPager(inComposer, composerUpLine),
-		atPagerOpens(inFork, pagerForkPrev),
-		atPagerOpens(inComment, pagerCommentPrev),
 		atPager(inList, listUp)),
 	named("half-down",
 		atPagerOpens(inTranscript, pagerHalfDown),
@@ -51,12 +47,8 @@ var keyActions = []keyAction{
 	named("top",
 		atPagerOpens(inTranscript, pagerTop),
 		atPagerOpens(inVisual, pagerVisualTop),
+		atPager(inComposer, composerBufferStart),
 		atPager(inList, listTop)),
-	named("top-gg",
-		atPagerOpens(inTranscript, pagerPendingTop),
-		atPagerOpens(inVisual, pagerVisualPendingTop),
-		atPager(inComposer, composerTop),
-		atPager(inList, listTopGG)),
 	named("bottom",
 		atPagerOpens(inTranscript, pagerTail),
 		atPagerOpens(inVisual, pagerVisualEnd),
@@ -126,8 +118,6 @@ var keyActions = []keyAction{
 		atPager(inSearchBox, searchCancel),
 		atPager(inBox, boxCancel),
 		atPager(inComposer, composerEscape),
-		atPager(inFork, pagerForkCancel),
-		atPager(inComment, pagerCommentCancel),
 		atPager(inConfirm, confirmNo)),
 	named("yes", atPager(inConfirm, confirmYes)),
 	named("no", atPager(inConfirm, confirmNo)),
@@ -142,8 +132,12 @@ var keyActions = []keyAction{
 	named("attend-parent", atPagerOpens(inTranscript, pagerAttendParent)),
 	named("aria-back", atPagerOpens(inTranscript, pagerAriaBack)),
 	named("aria-forward", atPagerOpens(inTranscript, pagerAriaForward)),
-	named("fork-jump", atPagerOpens(inTranscript, pagerForkPending)),
-	named("comment-jump", atPagerOpens(inTranscript, pagerCommentPending)),
+	named("fork-next", atPagerOpens(inTranscript, pagerForkNext)),
+	named("fork-prev", atPagerOpens(inTranscript, pagerForkPrev)),
+	named("comment-next", atPagerOpens(inTranscript, pagerCommentNext)),
+	named("comment-prev", atPagerOpens(inTranscript, pagerCommentPrev)),
+	named("clear-note", atPager(inTranscript, pagerClearNote)),
+	named("notifications", atPagerOpens(inTranscript|inPit, pagerNotifications)),
 	named("command",
 		atPagerOpens(inTranscript, pagerCommandBox),
 		atPagerOpens(inVisual, pagerVisualCommand),
@@ -161,7 +155,6 @@ var keyActions = []keyAction{
 		atPagerOpens(inTranscript, pagerQueuedPanel),
 		atPagerOpens(inPit, panelToggleQueued)),
 	named("decisions", atPagerOpens(inTranscript|inPit, pagerDecisionPit)),
-	named("leader", atPagerOpens(inTranscript|inPit, pagerLeader)),
 	named("list", atPagerOpens(inTranscript|inPit, pagerListPit)),
 	named("list-home", atPagerOpens(inTranscript|inPit, pagerListHome)),
 	named("form", atPagerOpens(inTranscript|inPit, pagerFormPit)),
@@ -308,12 +301,6 @@ var defaultLayers = []keyLayer{
 		bind("Esc", "cancel", helpNone),
 		bind("M-Enter ^S", "send", helpComposerSend),
 	}},
-	{name: "fork", modes: inFork, binds: []keyBind{
-		bind("Esc", "cancel", helpNone),
-	}},
-	{name: "comment", modes: inComment, binds: []keyBind{
-		bind("Esc", "cancel", helpNone),
-	}},
 	{name: "visual", modes: inVisual, binds: []keyBind{
 		bind("Esc", "cancel", helpEscape),
 		bind("Enter 0x0a", "activate", helpVisualSelect),
@@ -341,8 +328,8 @@ var defaultLayers = []keyLayer{
 		bind("0x10", "up", helpNone),
 	}},
 	{name: "transcript", modes: inTranscript, binds: []keyBind{
-		bind("f", "fork-jump", helpForkJump),
-		bind("c", "comment-jump", helpCommentJump),
+		bind("f", "prefix:fork", helpForkJump),
+		bind("c", "prefix:comment", helpCommentJump),
 		bind("a", "attend", helpAttend),
 		bind("^", "attend-parent", helpAttend),
 		bind("0x0f", "aria-back", helpAriaJump),
@@ -362,7 +349,7 @@ var defaultLayers = []keyLayer{
 		bind("M-p", "question-prev", helpNone),
 		bind("s", "sticky", helpSticky),
 		bind("D", "decisions", helpDecisionPit),
-		bind("Space", "leader", helpNotifications),
+		bind("Space", "prefix:leader", helpNotifications),
 		bind("l", "list", helpListPit),
 		bind("L", "list-home", helpListPit),
 		bind("H", "hang-up", helpHangUp),
@@ -394,7 +381,7 @@ var defaultLayers = []keyLayer{
 		bind("d", "half-down", helpScroll),
 		bind("u", "half-up", helpScroll),
 		bind("G", "bottom", helpScroll),
-		bind("g", "top-gg", helpScroll),
+		bind("g", "prefix:g", helpScroll),
 		bind("Down", "down", helpArrows),
 		bind("Up", "up", helpArrows),
 		bind("PgDn", "half-down", helpArrows),
@@ -420,5 +407,21 @@ var defaultLayers = []keyLayer{
 		bind("M-m", "verbose", helpVerbose),
 		bind("csi:^N", "select-next-extend", helpSelectExtend),
 		bind("csi:^P", "select-prev-extend", helpSelectExtend),
+	}},
+	{name: "g", prefix: true, modes: inMotions, binds: []keyBind{
+		bind("g", "top", helpNone),
+	}},
+	{name: "fork", prefix: true, modes: inTranscript, binds: []keyBind{
+		bind("j Down", "fork-next", helpNone),
+		bind("k Up", "fork-prev", helpNone),
+		bind("Esc", "clear-note", helpNone),
+	}},
+	{name: "comment", prefix: true, modes: inTranscript, binds: []keyBind{
+		bind("j Down", "comment-next", helpNone),
+		bind("k Up", "comment-prev", helpNone),
+		bind("Esc", "clear-note", helpNone),
+	}},
+	{name: "leader", prefix: true, modes: inTranscript | inPit, binds: []keyBind{
+		bind("n", "notifications", helpNone),
 	}},
 }

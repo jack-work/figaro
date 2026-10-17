@@ -105,15 +105,10 @@ func composerLineStart(t *transcript) { t.draft.home() }
 func composerLineEnd(t *transcript)   { t.draft.end() }
 func composerFirstText(t *transcript) { t.draft.firstNonBlank() }
 
-// dispatch arms pendG on the first g.
-func composerTop(t *transcript) {
-	if t.pendG {
-		t.draft.bufferStart()
-	}
-}
-func composerBottom(t *transcript)   { t.draft.bufferEnd() }
-func composerParaNext(t *transcript) { t.draft.paragraph(1) }
-func composerParaPrev(t *transcript) { t.draft.paragraph(-1) }
+func composerBufferStart(t *transcript) { t.draft.bufferStart() }
+func composerBottom(t *transcript)      { t.draft.bufferEnd() }
+func composerParaNext(t *transcript)    { t.draft.paragraph(1) }
+func composerParaPrev(t *transcript)    { t.draft.paragraph(-1) }
 
 // t.full is shared with every pit.
 func composerFullscreen(t *transcript) {

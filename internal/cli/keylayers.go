@@ -24,10 +24,13 @@ type keyBind struct {
 }
 
 type keyLayer struct {
-	name  string
-	modes keyModeSet
-	binds []keyBind
+	name   string
+	modes  keyModeSet
+	prefix bool
+	binds  []keyBind
 }
+
+const prefixAction = "prefix:"
 
 func atPager(m keyModeSet, f pagerFunc) keyImpl      { return keyImpl{modes: m, pager: f} }
 func atPagerOpens(m keyModeSet, f pagerFunc) keyImpl { return keyImpl{modes: m, pager: f, opens: true} }
@@ -90,11 +93,33 @@ func (d compileDiag) String() string {
 	return fmt.Sprintf("[%s] %s: %s", d.layer, d.keys, d.text)
 }
 
+func prefixArming(layers []keyLayer) map[string]*keyAction {
+	out := map[string]*keyAction{}
+	for _, l := range layers {
+		if !l.prefix {
+			continue
+		}
+		name := l.name
+		a := named(prefixAction+name, atPagerOpens(l.modes, func(t *transcript) { t.pending = name }))
+		out[a.name] = &a
+	}
+	return out
+}
+
 func compileLayers(layers []keyLayer) ([]keyBinding, []compileDiag) {
 	var rows []keyBinding
 	var diags []compileDiag
-	claimed := map[chord]keyModeSet{}
+	arming := prefixArming(layers)
+	claims := map[string]map[chord]keyModeSet{}
 	for _, l := range layers {
+		scope := ""
+		if l.prefix {
+			scope = l.name
+		}
+		if claims[scope] == nil {
+			claims[scope] = map[chord]keyModeSet{}
+		}
+		claimed := claims[scope]
 		for _, b := range l.binds {
 			if b.action == "" {
 				for _, k := range splitKeys(b.keys) {
@@ -111,7 +136,14 @@ func compileLayers(layers []keyLayer) ([]keyBinding, []compileDiag) {
 			}
 			a := actionByName[b.action]
 			if a == nil {
+				a = arming[b.action]
+			}
+			if a == nil {
 				diags = append(diags, compileDiag{l.name, b.keys, fmt.Sprintf("no action named %q", b.action)})
+				continue
+			}
+			if l.prefix && strings.HasPrefix(a.name, prefixAction) {
+				diags = append(diags, compileDiag{l.name, b.keys, "a prefix cannot arm another prefix"})
 				continue
 			}
 			if a.modes()&l.modes == 0 {
@@ -138,9 +170,12 @@ func compileLayers(layers []keyLayer) ([]keyBinding, []compileDiag) {
 						if im.opens {
 							open = opensPager
 						}
+						if l.prefix {
+							open = staysInline
+						}
 						rows = append(rows, keyBinding{
 							chord: c, modes: m, open: open, help: b.help,
-							pager: im.pager, input: im.input, action: a.name, layer: l.name,
+							pager: im.pager, input: im.input, action: a.name, layer: l.name, prefix: scope,
 						})
 					}
 				}

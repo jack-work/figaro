@@ -151,8 +151,8 @@ func TestCommentJumpByKeys(t *testing.T) {
 	tr.key('g')
 	tr.key('g')
 	tr.key('c')
-	if tr.mode() != modeComment {
-		t.Fatalf("c did not arm the comment jump (mode %v)", tr.mode())
+	if tr.pending != "comment" {
+		t.Fatalf("c did not arm the comment jump (pending %q)", tr.pending)
 	}
 	tr.key('j')
 	first, _ := tr.commentOf(tr.selection.focus.nodeRef)
@@ -173,7 +173,7 @@ func TestCommentJumpByKeys(t *testing.T) {
 	}
 	tr.key('c')
 	tr.key('x')
-	if tr.mode() == modeComment {
+	if tr.pending == "comment" {
 		t.Fatal("a key that is not a direction must abandon the gesture")
 	}
 }

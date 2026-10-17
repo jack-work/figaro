@@ -35,7 +35,7 @@ func applyUserKeys(f keyconf.File) []compileDiag {
 func overlayLayers(base []keyLayer, f keyconf.File) ([]keyLayer, []compileDiag) {
 	layers := make([]keyLayer, len(base))
 	for i, l := range base {
-		layers[i] = keyLayer{name: l.name, modes: l.modes, binds: append([]keyBind(nil), l.binds...)}
+		layers[i] = keyLayer{name: l.name, modes: l.modes, prefix: l.prefix, binds: append([]keyBind(nil), l.binds...)}
 	}
 	var diags []compileDiag
 	refuse := func(layer, keys, format string, args ...any) {
@@ -66,7 +66,7 @@ func overlayLayers(base []keyLayer, f keyconf.File) ([]keyLayer, []compileDiag) 
 			}
 			at = i
 		}
-		l := keyLayer{name: name, modes: modes}
+		l := keyLayer{name: name, modes: modes, prefix: spec.Prefix}
 		l.binds = userBinds(&l, spec.Bind, refuse)
 		layers = append(layers[:at], append([]keyLayer{l}, layers[at:]...)...)
 	}
@@ -104,7 +104,7 @@ func userBinds(l *keyLayer, m map[string]string, refuse func(layer, keys, format
 
 func refuseUserBind(l *keyLayer, keys, action string) string {
 	var a *keyAction
-	if action != "" {
+	if action != "" && !strings.HasPrefix(action, prefixAction) {
 		if a = actionByName[action]; a == nil {
 			return fmt.Sprintf("no action named %q (figaro keys actions lists them)", action)
 		}

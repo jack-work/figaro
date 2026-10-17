@@ -50,8 +50,8 @@ func TestForkJumpTravelsBetweenForkPoints(t *testing.T) {
 		t.Fatalf("want 2 fork points, got %d", got)
 	}
 	tr.key('f')
-	if tr.mode() != modeFork {
-		t.Fatalf("f must arm the fork mode, got %v", tr.mode())
+	if tr.pending != "fork" {
+		t.Fatalf("f must arm the fork jump, pending %q", tr.pending)
 	}
 	tr.key('k')
 	first := tr.selection.focus.nodeRef
@@ -74,7 +74,7 @@ func TestForkModeReleasesAnUnclaimedKey(t *testing.T) {
 	tr := forkedTranscript(t, 8, map[int]string{2: "aaaa1111"})
 	tr.key('f')
 	tr.key('h')
-	if tr.mode() == modeFork {
+	if tr.pending == "fork" {
 		t.Fatal("the gesture must end with the second key")
 	}
 	if !tr.pit.open() {

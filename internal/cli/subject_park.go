@@ -89,7 +89,7 @@ func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, b
 	t.jump, t.jumpNote = nil, ""
 	t.search = nil
 	t.inSearch, t.query, t.matchQuery = false, "", ""
-	t.pendG, t.pendF, t.pendC = false, false, false
+	t.pending = ""
 	t.prev = nil
 	t.invalidateWindow()
 	if t.active {

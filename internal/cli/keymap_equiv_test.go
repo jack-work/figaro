@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
@@ -88,23 +87,10 @@ func oracleSignature(tr *transcript, base int) string {
 // prefixToken names the gesture a key has left half typed: gg, f, c, the
 // leader. The names are the ones the prefix layers are declared under.
 func prefixToken(tr *transcript) string {
-	var on []string
-	if tr.pendG {
-		on = append(on, "g")
-	}
-	if tr.pendF {
-		on = append(on, "fork")
-	}
-	if tr.pendC {
-		on = append(on, "comment")
-	}
-	if tr.pendLeader {
-		on = append(on, "leader")
-	}
-	if len(on) == 0 {
+	if tr.pending == "" {
 		return "-"
 	}
-	return strings.Join(on, ",")
+	return tr.pending
 }
 
 // pitToken is what is open below the transcript and how a reader stands in
@@ -191,11 +177,11 @@ var oracleStates = map[string]func(*transcript){
 	"visual":        func(tr *transcript) { tr.key('V'); tr.key('V'); tr.key('j') },
 	"visual+char":   func(tr *transcript) { tr.key('v'); tr.key('v'); tr.key('l'); tr.key('l') },
 	"visual+cursor": func(tr *transcript) { tr.key('v'); tr.key('j') },
-	// 'f' armed: the fork jump waiting for its direction (modeFork). The
+	// 'f' armed: the fork jump waiting for its direction. The
 	// only state here with no pre-refactor twin -- the mode did not exist --
 	// so its row was recorded from the behaviour it was built to have.
 	"fork": func(tr *transcript) { tr.key('f') },
-	// 'c' armed: the comment jump waiting for its direction (modeComment),
+	// 'c' armed: the comment jump waiting for its direction,
 	// built to behave as the fork jump does.
 	"comment": func(tr *transcript) { tr.key('c') },
 	// A y/n question up: the mode a destructive verb opens, where every key

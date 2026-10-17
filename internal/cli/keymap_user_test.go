@@ -82,8 +82,7 @@ func TestOneBindingMeansTheRightThingPerMode(t *testing.T) {
 		modeTranscript: "pagerLineDown",
 		modeVisual:     "pagerVisualDown",
 		modeComposer:   "composerDownLine",
-		modeFork:       "pagerForkNext",
-		modeComment:    "pagerCommentNext",
+		modeList:       "listDown",
 	} {
 		if got := actionNameOfFunc(pagerAct.pager(m, chordEvent(j))); got != want {
 			t.Errorf("j in %s reaches %s, want %s", modeName(m), got, want)
@@ -91,6 +90,9 @@ func TestOneBindingMeansTheRightThingPerMode(t *testing.T) {
 	}
 	n := 0
 	for _, l := range defaultLayers {
+		if l.prefix {
+			continue
+		}
 		for _, b := range l.binds {
 			for _, k := range splitKeys(b.keys) {
 				if k == "j" {
@@ -259,3 +261,83 @@ func actionNameOfFunc(f pagerFunc) string {
 }
 
 func runtimeFuncName(pc uintptr) string { return runtime.FuncForPC(pc).Name() }
+
+// gg is a prefix layer, and "top" means the right thing wherever g arms it.
+func TestGGIsAPrefixInEveryMotionMode(t *testing.T) {
+	for m, want := range map[keyMode]string{
+		modeTranscript: "pagerTop",
+		modeVisual:     "pagerVisualTop",
+		modeComposer:   "composerBufferStart",
+		modeList:       "listTop",
+	} {
+		bd := prefixBinding("g", m, keyEvent{b: 'g'})
+		if bd == nil {
+			t.Errorf("g g reaches nothing in %s", modeName(m))
+			continue
+		}
+		if got := actionNameOfFunc(bd.pager); got != want {
+			t.Errorf("g g in %s reaches %s, want %s", modeName(m), got, want)
+		}
+	}
+}
+
+// A pending gesture is spent by the next key, whatever it is: a key the
+// prefix does not bind is itself, and the gesture is gone.
+func TestAnyKeySpendsAPendingGesture(t *testing.T) {
+	tr := oracleTranscript()
+	tr.key('g')
+	if tr.pending != "g" {
+		t.Fatalf("g left %q pending", tr.pending)
+	}
+	tr.key('h')
+	if tr.pending != "" {
+		t.Fatalf("h left %q pending", tr.pending)
+	}
+	if !tr.showing("help") {
+		t.Fatal("the key that spent the gesture must still act as itself")
+	}
+}
+
+// The leader is a layer a reader can fill: Space h opens help because the
+// file says so, and the default Space n is untouched.
+func TestUserLeaderChord(t *testing.T) {
+	if diags := withUserKeys(t, binds("leader", "h", "help")); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	tr := oracleTranscript()
+	tr.key(' ')
+	tr.key('h')
+	if !tr.showing("help") {
+		t.Fatal("Space h did not open help")
+	}
+	if bd := prefixBinding("leader", modeTranscript, keyEvent{b: 'n'}); bd == nil || bd.action != "notifications" {
+		t.Fatalf("Space n moved: %+v", bd)
+	}
+}
+
+// A reader can declare a prefix of their own and arm it from any layer.
+func TestUserDefinedPrefix(t *testing.T) {
+	f := keyconf.File{Layer: map[string]keyconf.Layer{
+		"z": {Modes: []string{"transcript"}, Prefix: true, Bind: map[string]string{"h": "help"}},
+	}}
+	f.Set("transcript", "z", "prefix:z")
+	if diags := withUserKeys(t, f); len(diags) > 0 {
+		t.Fatal(diags)
+	}
+	tr := oracleTranscript()
+	tr.key('z')
+	if tr.pending != "z" {
+		t.Fatalf("z left %q pending", tr.pending)
+	}
+	tr.key('h')
+	if !tr.showing("help") {
+		t.Fatal("z h did not open help")
+	}
+}
+
+func TestAPrefixCannotArmAnother(t *testing.T) {
+	diags := withUserKeys(t, binds("leader", "g", "prefix:g"))
+	if len(diags) == 0 || !strings.Contains(diags[0].String(), "cannot arm another prefix") {
+		t.Fatalf("want a refusal, got %v", diags)
+	}
+}

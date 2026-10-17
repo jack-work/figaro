@@ -8,12 +8,6 @@ func listBottom(t *transcript)     { t.pit.toBottom() }
 func listTop(t *transcript)        { t.pit.toTop() }
 func listScrollDown(t *transcript) { t.pit.scrollBy(1) }
 
-func listTopGG(t *transcript) {
-	if t.pendG {
-		t.pit.toTop()
-	}
-}
-
 func listFullscreen(t *transcript) {
 	t.full = !t.full
 	t.focused = focusPit

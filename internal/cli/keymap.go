@@ -16,10 +16,8 @@ const (
 	modeBox                       // typing into the ':' box: the same, for a coordinate
 	modePanel                     // a '?'/'!'/'Q' panel is showing
 	modeVisual                    // v/V: a visual selection is up and owns the motions
-	modeFork                      // 'f' is down, waiting for the direction of the fork jump
 	modeConfirm                   // a y/n question owns the keyboard until it is answered
 	modeComposer                  // the composer's NORMAL mode: motions over the draft
-	modeComment
 	modeList
 	numKeyModes
 )
@@ -33,15 +31,13 @@ const (
 	inBox        keyModeSet = 1 << modeBox
 	inPanel      keyModeSet = 1 << modePanel
 	inVisual     keyModeSet = 1 << modeVisual
-	inFork       keyModeSet = 1 << modeFork
 	inConfirm    keyModeSet = 1 << modeConfirm
 	inComposer   keyModeSet = 1 << modeComposer
-	inComment    keyModeSet = 1 << modeComment
 	inList       keyModeSet = 1 << modeList
 
 	// A transcript-mode row is also reachable with a panel up: the panel
 	// swallows only its own keys.
-	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer | inComment | inList
+	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inConfirm | inComposer | inList
 	inAnyBox = inIncipit | inPager
 )
 
@@ -117,6 +113,7 @@ type keyBinding struct {
 
 	action string
 	layer  string
+	prefix string
 
 	// Exactly one of pager/input is set. pager rows run inside the transcript
 	// under the render lock; input rows run on the read loop and may stop it.
@@ -318,8 +315,6 @@ func helpModeQualifier(modes keyModeSet) string {
 		return "(asked) "
 	case inComposer:
 		return "(in ✎) "
-	case inComment:
-		return "(in comment) "
 	}
 	return ""
 }
@@ -402,8 +397,17 @@ func buildKeyIndex() {
 			inputIndex.byMeta[m][c], pagerIndex.byMeta[m][c] = noBinding, noBinding
 		}
 	}
+	prefixRows = map[prefixSlot]*keyBinding{}
 	for i := range liveRows {
 		bd := &liveRows[i]
+		if bd.prefix != "" {
+			for m := keyMode(0); m < numKeyModes; m++ {
+				if bd.modes&(1<<m) != 0 {
+					prefixRows[prefixSlot{bd.prefix, m, bd.chord}] = bd
+				}
+			}
+			continue
+		}
 		idx := &pagerIndex
 		if bd.input != nil {
 			idx = &inputIndex
@@ -454,6 +458,21 @@ func buildKeyIndex() {
 			}
 		}
 	}
+}
+
+type prefixSlot struct {
+	prefix string
+	mode   keyMode
+	chord  chord
+}
+
+var prefixRows map[prefixSlot]*keyBinding
+
+func prefixBinding(prefix string, mode keyMode, ev keyEvent) *keyBinding {
+	if prefix == "" {
+		return nil
+	}
+	return prefixRows[prefixSlot{prefix, mode, ev.chord()}]
 }
 
 func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {

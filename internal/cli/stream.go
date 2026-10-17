@@ -767,15 +767,23 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			ev.mode = in.lt.transcriptMode()
 			in.mu.Unlock()
 		}
-		act := inputAct.input(ev.mode, ev)
-		if act == nil && (ev.mode == modeFork || ev.mode == modeComment) {
-			// A key with no fork row is the ordinary key, and abandons
-			// the gesture.
-			if act = inputAct.input(modeTranscript, ev); act != nil {
-				in.mu.Lock()
-				in.lt.tr.pendF, in.lt.tr.pendC = false, false
-				in.mu.Unlock()
+		in.mu.Lock()
+		var armed *keyBinding
+		if in.lt.tr.pending != "" {
+			if armed = in.lt.tr.prefixed(ev); armed == nil {
+				in.lt.tr.pending = ""
 			}
+		}
+		in.mu.Unlock()
+		var act inputFunc
+		switch {
+		case armed != nil && armed.input != nil:
+			in.mu.Lock()
+			in.lt.tr.pending = ""
+			in.mu.Unlock()
+			act = armed.input
+		case armed == nil:
+			act = inputAct.input(ev.mode, ev)
 		}
 		if act != nil {
 			if act(in, ev) == keyStop {

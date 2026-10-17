@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"reflect"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -52,16 +50,22 @@ func pagerSweepChord(name string) chord {
 	return byteChord(b)
 }
 
-// actionAt names what a chord reaches in a mode: the action, or the Go
-// function when the registry has no name for it, or "-" when nothing is bound
-// and the cell is the mode's own fallback (literal text, a dismissal).
-func actionAt(m keyMode, c chord) string {
+// actionAt names what a chord reaches from a state: the binding a pending
+// gesture gives it, else the mode's own binding, else "-" when nothing is
+// bound and the cell is the mode's fallback (literal text, a dismissal).
+func actionAt(tr *transcript, c chord) string {
 	ev := chordEvent(c)
-	if f := inputAct.input(m, ev); f != nil {
-		return actionNameOf(f)
+	if tr.pending != "" {
+		if bd := tr.prefixed(ev); bd != nil {
+			return bd.action
+		}
 	}
-	if f := pagerAct.pager(m, ev); f != nil {
-		return actionNameOf(f)
+	m := tr.mode()
+	for i := range liveRows {
+		r := &liveRows[i]
+		if r.prefix == "" && r.chord == c && r.modes&(1<<m) != 0 {
+			return r.action
+		}
 	}
 	return "-"
 }
@@ -72,7 +76,6 @@ func pagerBehaviour() string {
 		setup := oracleStates[state]
 		tr := oracleTranscript()
 		setup(tr)
-		mode := tr.mode()
 		cells, _ := sweepPager(setup)
 		inert := cells["0x00"]
 		fmt.Fprintf(&b, "%s inert %s\n", state, inert)
@@ -80,7 +83,7 @@ func pagerBehaviour() string {
 			if cells[name] == inert {
 				continue
 			}
-			fmt.Fprintf(&b, "%s %s %s %s\n", state, name, actionAt(mode, pagerSweepChord(name)), cells[name])
+			fmt.Fprintf(&b, "%s %s %s %s\n", state, name, actionAt(tr, pagerSweepChord(name)), cells[name])
 		}
 	}
 	return b.String()
@@ -130,16 +133,4 @@ func TestKeymapGoldenStatesCoverEveryMode(t *testing.T) {
 			}
 		}
 	}
-}
-
-func actionNameOf(f any) string {
-	p := reflect.ValueOf(f).Pointer()
-	for i := range liveRows {
-		r := &liveRows[i]
-		if (r.pager != nil && reflect.ValueOf(r.pager).Pointer() == p) || (r.input != nil && reflect.ValueOf(r.input).Pointer() == p) {
-			return r.action
-		}
-	}
-	n := runtime.FuncForPC(p).Name()
-	return n[strings.LastIndex(n, ".")+1:]
 }

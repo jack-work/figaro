@@ -11,9 +11,10 @@ import (
 )
 
 type Layer struct {
-	Modes []string          `toml:"modes"`
-	Above string            `toml:"above,omitempty"`
-	Bind  map[string]string `toml:"bind"`
+	Modes  []string          `toml:"modes"`
+	Above  string            `toml:"above,omitempty"`
+	Prefix bool              `toml:"prefix,omitempty"`
+	Bind   map[string]string `toml:"bind"`
 }
 
 type File struct {
@@ -110,6 +111,9 @@ func Render(f File) string {
 		fmt.Fprintf(&b, "modes = [%s]\n", strings.Join(quoted, ", "))
 		if l.Above != "" {
 			fmt.Fprintf(&b, "above = %q\n", l.Above)
+		}
+		if l.Prefix {
+			b.WriteString("prefix = true\n")
 		}
 		fmt.Fprintf(&b, "\n[layer.%s.bind]\n", quoteKey(name))
 		writeBinds(&b, l.Bind)
