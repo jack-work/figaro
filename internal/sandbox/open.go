@@ -19,6 +19,9 @@ type Opened struct {
 
 func Open(ctx context.Context, host *local.Host, kind, aria, workspace, runtimeDir string) (Opened, error) {
 	if info, err := os.Stat(workspace); err != nil || !info.IsDir() {
+		if kind != "" && kind != "local" {
+			return Opened{}, fmt.Errorf("sandbox %s: workspace %q is not a directory; set system.cwd to one", kind, workspace)
+		}
 		if workspace != "" {
 			slog.Error("system.cwd is not a usable directory, falling back to the daemon's", "cwd", workspace)
 		}
