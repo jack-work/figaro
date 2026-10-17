@@ -107,14 +107,16 @@ func sameOrigin(raw string, want *url.URL) bool {
 	return err == nil && u.Scheme == want.Scheme && u.Host == want.Host
 }
 
-func getJSON(endpoint string, out any) error {
+func getJSON(endpoint string, out any) error { return getJSONWith(oidcHTTP, endpoint, out) }
+
+func getJSONWith(client *http.Client, endpoint string, out any) error {
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", UserAgent)
-	resp, err := oidcHTTP.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

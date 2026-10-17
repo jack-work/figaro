@@ -42,6 +42,18 @@ type Config struct {
 	Store  StoreConfig  `toml:"store"`
 	Memory MemoryConfig `toml:"memory"`
 	Quote  QuoteConfig  `toml:"quote"`
+
+	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
+}
+
+type ServiceToken struct {
+	Issuer           string   `toml:"issuer"`
+	TokenURL         string   `toml:"token_url"`
+	ClientID         string   `toml:"client_id"`
+	SecretCredential string   `toml:"secret_credential"`
+	AuthMethod       string   `toml:"auth_method"`
+	Audience         []string `toml:"audience"`
+	Scopes           []string `toml:"scopes"`
 }
 
 // QuoteConfig shapes how a `<lt.block:start-end>!` prompt prefix is rewritten
