@@ -169,7 +169,7 @@ func TestSubmittedQuestionWearsItsOwnPlansDressing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fcli, err := sdk.DialAria(transport.UnixEndpoint(sock), nil)
+	fcli, err := sdk.DialAria(sdk.Addr{Door: transport.UnixEndpoint(sock), ID: "abcd1234"}, nil)
 	if err != nil {
 		t.Fatalf("dial the fake aria: %v", err)
 	}

@@ -3,7 +3,6 @@ package figaro_test
 import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,12 +38,11 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	registry.MustRegister(&waitTool{started: toolStarted})
 
 	a1 := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: filepath.Join(t.TempDir(), "a1.sock"),
-		Provider:   &interruptProvider{mode: "tool", started: make(chan struct{})},
-		Backend:    backend1,
-		Tools:      registry,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &interruptProvider{mode: "tool", started: make(chan struct{})},
+		Backend:   backend1,
+		Tools:     registry,
 	})
 
 	sink := make(chan rpc.Notification, 64)
@@ -70,11 +68,10 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	defer backend2.Close()
 
 	a2 := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: filepath.Join(t.TempDir(), "a2.sock"),
-		Provider:   &staticReplyProvider{reply: "answered after the reload"},
-		Backend:    backend2,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &staticReplyProvider{reply: "answered after the reload"},
+		Backend:   backend2,
 	})
 	defer a2.Kill()
 

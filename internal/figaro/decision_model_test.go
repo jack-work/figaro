@@ -22,8 +22,7 @@ func TestSetRefusesADecisionModelAsSystemModel(t *testing.T) {
 	cb, _ := form.Open("")
 	be, id := store.NewTestAria(t, "decide-refuse", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		ID: id, Backend: be, Projector: uiir.New(nil),
-		SocketPath: "/tmp/decide-refuse.sock", Form: cb,
+		ID: id, Backend: be, Projector: uiir.New(nil), Form: cb,
 	})
 	defer a.Kill()
 

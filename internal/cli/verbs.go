@@ -9,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -35,16 +34,16 @@ func (env verbEnv) boundAria(ctx context.Context) (string, string) {
 }
 
 // listenVerb resolves a spec to the aria and its endpoint; attendance is untouched.
-func listenVerb(ctx context.Context, env verbEnv, spec string) (string, transport.Endpoint, error) {
+func listenVerb(ctx context.Context, env verbEnv, spec string) (string, sdk.Addr, error) {
 	if spec == "" {
-		return "", transport.Endpoint{}, errors.New("which aria? (listen <id|@role>)")
+		return "", sdk.Addr{}, errors.New("which aria? (listen <id|@role>)")
 	}
 	return resolveFigaroTargetEndpoint(ctx, env.loaded, env.acli, spec, false, dressing{})
 }
 
 type attendOutcome struct {
 	ID   string
-	EP   transport.Endpoint
+	EP   sdk.Addr
 	At   forkPoint
 	Note string
 	// Home says the shell was unbound (`attend null`), so a door that shows an

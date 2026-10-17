@@ -52,13 +52,12 @@ func TestToolTimingIsStampedNoLaterThanItsDurableResult(t *testing.T) {
 	prov := &twoRoundProvider{}
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/test-figaro-timing-order.sock",
-		Provider:   prov,
-		Tools:      reg,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     reg,
+		Form:      cb,
 	})
 	t.Cleanup(a.Kill)
 

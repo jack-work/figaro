@@ -16,7 +16,6 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -76,7 +75,6 @@ type Angelus struct {
 	// lastLibrettoSweep is what the boot reconciliation found, for `doctor mem`.
 	lastLibrettoSweep atomic.Pointer[store.LibrettoAudit]
 
-	listener  net.Listener
 	cancel    context.CancelFunc
 	pprofPath string // empty when profiling is not armed
 }
@@ -118,10 +116,6 @@ func uiBudget(settings *config.Loaded) *fwtree.Budget {
 	return fwtree.NewBudget(int64(uiWindowMB(settings)) << 20)
 }
 
-func (a *Angelus) FigaroSocketDir() string {
-	return filepath.Join(a.RuntimeDir, "figaros")
-}
-
 func (a *Angelus) BindingsPath() string {
 	return filepath.Join(a.RuntimeDir, "bindings.json")
 }
@@ -139,16 +133,12 @@ func (a *Angelus) Run(ctx context.Context) error {
 	)
 	defer span.End()
 
-	if err := os.MkdirAll(a.FigaroSocketDir(), 0700); err != nil {
-		return err
-	}
 	os.Remove(a.SocketPath)
 
 	ln, err := net.Listen("unix", a.SocketPath)
 	if err != nil {
 		return err
 	}
-	a.listener = ln
 
 	if err := os.Chmod(a.SocketPath, 0600); err != nil {
 		ln.Close()
@@ -170,53 +160,9 @@ func (a *Angelus) Run(ctx context.Context) error {
 	go a.pidMonitor(ctx)
 	a.migrateLibrettoRefs()
 
-	go func() {
-		<-ctx.Done()
-		ln.Close()
-	}()
-
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				slog.Info("angelus shutting down")
-				return nil
-			default:
-				slog.Warn("angelus accept", "err", err)
-				continue
-			}
-		}
-		cctx, err := authz.Admit(ctx, conn)
-		if err != nil {
-			slog.Warn("angelus refused connection", "err", err)
-			conn.Close()
-			continue
-		}
-		go a.handleConn(cctx, conn)
-	}
-}
-
-func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
-	if a.Handlers == nil {
-		conn.Close()
-		return
-	}
-
-	jconn := jkrpc.NewConn(conn)
-	srv := jkrpc.NewServer(jconn, a.Handlers)
-
-	done := make(chan struct{})
-	go func() {
-		srv.Serve(ctx)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		srv.Stop()
-	}
+	err = a.Serve(ctx, ln, nil)
+	slog.Info("angelus shutting down")
+	return err
 }
 
 func (a *Angelus) pidMonitor(ctx context.Context) {

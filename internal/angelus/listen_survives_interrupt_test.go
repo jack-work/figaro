@@ -104,8 +104,7 @@ model = "m"
 
 	create, err := acli.Create(ctx, dress(t, "switch"), nil)
 	require.NoError(t, err)
-	figEP := transport.Endpoint{Scheme: create.Endpoint.Scheme, Address: create.Endpoint.Address}
-	waitForFigaro(t, figEP)
+	figEP := ariaAddr(a, create.FigaroID)
 
 	listenerFrames := make(chan rpc.Notification, 256)
 	listener, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {

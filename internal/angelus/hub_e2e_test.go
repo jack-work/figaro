@@ -7,6 +7,7 @@ import (
 	"github.com/jack-work/figaro/sdk"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"text/template"
 	"time"
@@ -74,22 +75,47 @@ model = "mock-model"
 	return a, acli, ctx, dir
 }
 
+// ariaConn is one connection on the door addressing one aria, the way
+// sdk.Aria does, without sdk's conveniences.
+type ariaConn struct {
+	*jkrpc.Client
+	id string
+}
+
+func (c ariaConn) Call(ctx context.Context, method string, params, out any) error {
+	b, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	raw, err := rpc.WithAria(b, c.id)
+	if err != nil {
+		return err
+	}
+	return c.Client.Call(ctx, method, raw, out)
+}
+
+func dialAria(t testing.TB, a *angelus.Angelus, id string, onNotify func(string, json.RawMessage)) ariaConn {
+	t.Helper()
+	conn, err := net.Dial("unix", a.SocketPath)
+	require.NoError(t, err)
+	c := jkrpc.NewClient(jkrpc.NewConn(conn), onNotify)
+	t.Cleanup(func() { c.Close() })
+	return ariaConn{Client: c, id: id}
+}
+
+func ariaAddr(a *angelus.Angelus, id string) sdk.Addr {
+	return sdk.Addr{Door: transport.UnixEndpoint(a.SocketPath), ID: id}
+}
+
 func TestEndpointOutlivesAgent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	sock := created.Endpoint.Address
-	require.FileExists(t, sock, "endpoint not listening when Create returned")
-
-	conn, err := net.Dial("unix", sock)
-	require.NoError(t, err)
-	defer conn.Close()
 	frames := make(chan string, 16)
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(m string, _ json.RawMessage) {
+	client := dialAria(t, a, created.FigaroID, func(m string, _ json.RawMessage) {
 		frames <- m
 	})
-	defer client.Close()
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -100,7 +126,6 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	require.Nil(t, a.Registry.Get(created.FigaroID), "agent still registered")
 
 	// The same connection still answers, from the store, with no agent rebuilt.
-	require.FileExists(t, sock, "endpoint vanished with the agent")
 	var after rpc.FormResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &after),
 		"attached client lost its connection when the agent died")
@@ -124,11 +149,7 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
 
-	conn, err := net.Dial("unix", created.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
-	defer client.Close()
+	client := dialAria(t, a, created.FigaroID, func(string, json.RawMessage) {})
 
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -142,17 +163,77 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond, "prompt did not wake the aria")
 }
 
+// A kill closes the endpoint: a follower is told, and the aria answers no more.
 func TestKillRemovesEndpoint(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	sock := created.Endpoint.Address
-	require.FileExists(t, sock)
+	closed := make(chan string, 4)
+	client := dialAria(t, a, created.FigaroID, func(m string, p json.RawMessage) {
+		if m == rpc.MethodAriaClosed {
+			closed <- rpc.AriaOf(p)
+		}
+	})
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var before rpc.FormResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &before))
 
 	require.NoError(t, acli.Kill(ctx, created.FigaroID, false))
-	require.Eventually(t, func() bool {
-		_, err := os.Stat(sock)
-		return os.IsNotExist(err)
-	}, 5*time.Second, 20*time.Millisecond, "socket survived a kill")
+	select {
+	case id := <-closed:
+		require.Equal(t, created.FigaroID, id)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the follower was not told the aria closed")
+	}
+	var after rpc.FormResponse
+	require.ErrorContains(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &after), "not found")
+}
+
+// No per-aria socket is ever created: the runtime dir holds the door alone.
+func TestRuntimeDirHasNoAriaSockets(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	client := dialAria(t, a, created.FigaroID, nil)
+	var out rpc.FormResponse
+	require.NoError(t, client.Call(ctx, rpc.MethodForm, struct{}{}, &out))
+	_, err = os.Stat(filepath.Join(a.RuntimeDir, "figaros"))
+	require.True(t, os.IsNotExist(err), "a figaros/ directory exists")
+}
+
+// The door is one method map over any listener: the same calls reach the same
+// aria over TCP as over the unix socket.
+func TestDoorServesTCP(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	admitted := make(chan struct{}, 1)
+	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+		admitted <- struct{}{}
+		return ctx, nil
+	})
+
+	tcp := sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
+	fc, err := sdk.DialAria(tcp, nil)
+	require.NoError(t, err)
+	defer fc.Close()
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = fc.Set(callCtx, *rawPatch(map[string]string{"mantra": `"over tcp"`}), 0)
+	require.NoError(t, err)
+	<-admitted
+
+	unix, err := sdk.DialAria(ariaAddr(a, created.FigaroID), nil)
+	require.NoError(t, err)
+	defer unix.Close()
+	resp, err := unix.Form(callCtx)
+	require.NoError(t, err)
+	raw, ok := resp.Snapshot.Get("mantra")
+	require.True(t, ok)
+	require.Equal(t, `"over tcp"`, string(raw))
 }

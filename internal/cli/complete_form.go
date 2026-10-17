@@ -122,8 +122,7 @@ func softFetchLiveSnapshot() (form.Snapshot, liveKeysStatus, error) {
 	if !r.Found {
 		return form.Snapshot{}, liveKeysUnbound, nil
 	}
-	fep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
-	fcli, err := sdk.DialAria(fep, nil)
+	fcli, err := sdk.DialAria(ariaAddr(r.FigaroID), nil)
 	if err != nil {
 		return form.Snapshot{}, liveKeysFetchFailed, fmt.Errorf("dial aria %s: %w", r.FigaroID, err)
 	}

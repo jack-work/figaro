@@ -73,13 +73,12 @@ func newQuoteAgent(t *testing.T) (*figaro.Agent, *quoteProvider) {
 	prov := &quoteProvider{}
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/test-figaro-quote-" + testID + ".sock",
-		Provider:   prov,
-		Tools:      tool.NewRegistry(),
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     tool.NewRegistry(),
+		Form:      cb,
 	})
 	t.Cleanup(a.Kill)
 	return a, prov

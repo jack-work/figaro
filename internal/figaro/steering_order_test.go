@@ -64,13 +64,12 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/steering-order.sock",
-		Provider:   prov,
-		Tools:      reg,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     reg,
+		Form:      cb,
 	})
 	defer a.Kill()
 
@@ -148,13 +147,12 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/unmarked-midturn.sock",
-		Provider:   prov,
-		Tools:      reg,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     reg,
+		Form:      cb,
 	})
 	defer a.Kill()
 
@@ -211,13 +209,12 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/midturn-set.sock",
-		Provider:   prov,
-		Tools:      reg,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     reg,
+		Form:      cb,
 	})
 	defer a.Kill()
 

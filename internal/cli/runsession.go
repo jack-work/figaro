@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	"github.com/jack-work/figaro/internal/tape"
@@ -26,7 +25,7 @@ import (
 
 type sessionOpts struct {
 	figaroID string
-	ep       transport.Endpoint
+	ep       sdk.Addr
 	loaded   *config.Loaded
 	set      renderSettings
 

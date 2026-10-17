@@ -99,10 +99,10 @@ func fakeRPCServer(t *testing.T, sockPath string, handlers map[string]jkrpc.Hand
 }
 
 // fakeAngelusResolvingTo is strict about the pid, as the real daemon is: any
-// pid but wantPID is not-found.
-func fakeAngelusResolvingTo(t *testing.T, runtimeDir, ariaSock string, wantPID int) {
+// pid but wantPID is not-found. aria serves the aria methods on the same door.
+func fakeAngelusResolvingTo(t *testing.T, runtimeDir string, wantPID int, aria map[string]jkrpc.HandlerFunc) {
 	t.Helper()
-	fakeRPCServer(t, filepath.Join(runtimeDir, "angelus.sock"), map[string]jkrpc.HandlerFunc{
+	methods := map[string]jkrpc.HandlerFunc{
 		rpc.MethodResolve: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 			var req rpc.ResolveRequest
 			if err := json.Unmarshal(params, &req); err != nil {
@@ -111,13 +111,13 @@ func fakeAngelusResolvingTo(t *testing.T, runtimeDir, ariaSock string, wantPID i
 			if req.PID != wantPID {
 				return rpc.ResolveResponse{Found: false}, nil
 			}
-			return rpc.ResolveResponse{
-				FigaroID: "fake-aria",
-				Endpoint: rpc.Endpoint{Scheme: "unix", Address: ariaSock},
-				Found:    true,
-			}, nil
+			return rpc.ResolveResponse{FigaroID: "fake-aria", Found: true}, nil
 		},
-	})
+	}
+	for m, h := range aria {
+		methods[m] = h
+	}
+	fakeRPCServer(t, filepath.Join(runtimeDir, "angelus.sock"), methods)
 }
 
 // bindShellPID runs the real initBindingPolicy, restoring package state after the test.
@@ -150,9 +150,7 @@ func completionTestDirs(t *testing.T) string {
 // static catalog.
 func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 	rt := completionTestDirs(t)
-	ariaSock := filepath.Join(rt, "aria.sock")
-	fakeAngelusResolvingTo(t, rt, ariaSock, bindShellPID(t))
-	fakeRPCServer(t, ariaSock, map[string]jkrpc.HandlerFunc{
+	fakeAngelusResolvingTo(t, rt, bindShellPID(t), map[string]jkrpc.HandlerFunc{
 		rpc.MethodForm: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 			var snap form.Snapshot
 			if err := json.Unmarshal([]byte(`{"skills.foo":"bar","duke-title":"Duke"}`), &snap); err != nil {
@@ -177,11 +175,11 @@ func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 	}
 }
 
-// A bound aria with a dead endpoint must decline: the catalog would present
+// A bound aria whose form cannot be read must decline: the catalog would present
 // documentation as the board's state.
 func TestCompleteFormKeys_DeclinesWhenBoundFormUnreadable(t *testing.T) {
 	rt := completionTestDirs(t)
-	fakeAngelusResolvingTo(t, rt, filepath.Join(rt, "dead.sock"), bindShellPID(t))
+	fakeAngelusResolvingTo(t, rt, bindShellPID(t), nil)
 
 	keys, status, err := softFetchLiveKeys()
 	if status != liveKeysFetchFailed {

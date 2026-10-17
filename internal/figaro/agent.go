@@ -66,9 +66,8 @@ type setVerdict struct {
 
 // Config is the constructor input for NewAgent.
 type Config struct {
-	ID         string
-	SocketPath string
-	Provider   provider.Provider
+	ID       string
+	Provider provider.Provider
 	// ProviderFactory rebinds the provider when system.provider changes; nil pins it.
 	ProviderFactory ProviderFactory
 	Tools           *tool.Registry
@@ -97,8 +96,7 @@ type ModelCatalog interface {
 }
 
 type Agent struct {
-	id         string
-	socketPath string
+	id string
 	// provBind is written by the drain loop, read lock-free on RPC goroutines.
 	provBind    atomic.Pointer[providerBinding]
 	provFactory ProviderFactory
@@ -195,7 +193,6 @@ func NewAgent(cfg Config) *Agent {
 
 	a := &Agent{
 		id:          cfg.ID,
-		socketPath:  cfg.SocketPath,
 		provFactory: cfg.ProviderFactory,
 		tools:       cfg.Tools,
 		proj:        cfg.Projector,
@@ -272,8 +269,6 @@ func (a *Agent) newLog() store.Log[message.Message] {
 }
 
 func (a *Agent) ID() string { return a.id }
-
-func (a *Agent) SocketPath() string { return a.socketPath }
 
 // dukeTitle is what this aria calls its end user.
 func (a *Agent) dukeTitle() string {

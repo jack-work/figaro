@@ -84,7 +84,6 @@ model = "mock-model"
 	createResp, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, createResp.FigaroID)
-	assert.Equal(t, "unix", createResp.Endpoint.Scheme)
 
 	err = acli.Bind(ctx, 99999, createResp.FigaroID, 0)
 	require.NoError(t, err)
@@ -99,11 +98,7 @@ model = "mock-model"
 	assert.Len(t, listResp.Figaros, 1)
 	assert.Equal(t, createResp.FigaroID, listResp.Figaros[0].ID)
 
-	figaroEP := transport.Endpoint{
-		Scheme:  createResp.Endpoint.Scheme,
-		Address: createResp.Endpoint.Address,
-	}
-	waitForFigaro(t, figaroEP)
+	figaroEP := ariaAddr(a, createResp.FigaroID)
 
 	doneCh := make(chan struct{}, 1)
 	fcli, err := sdk.DialAria(figaroEP, func(method string, params json.RawMessage) {
@@ -191,7 +186,6 @@ model = "mock-model"
 	att, err := acli.Attach(ctx, resp.FigaroID)
 	require.NoError(t, err)
 	assert.Equal(t, resp.FigaroID, att.FigaroID)
-	assert.Equal(t, resp.Endpoint.Address, att.Endpoint.Address)
 }
 
 func TestIntegration_Fork(t *testing.T) {
@@ -226,8 +220,7 @@ model = "mock-model"
 
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
-	waitForFigaro(t, figEP)
+	figEP := ariaAddr(a, created.FigaroID)
 	doneCh := make(chan struct{}, 1)
 	fcli, err := sdk.DialAria(figEP, func(method string, _ json.RawMessage) {
 		if method == "turn.done" {

@@ -44,7 +44,7 @@ const (
 	cursorShow  = "\x1b[?25h"
 )
 
-func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings, d dressing) {
+func mustPromptFigaro(ctx context.Context, ep sdk.Addr, figaroID, prompt string, loaded *config.Loaded, set renderSettings, d dressing) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 	ctx, cancel := context.WithCancel(ctx)

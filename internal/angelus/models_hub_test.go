@@ -12,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -35,7 +36,6 @@ func modelsHandlers(t *testing.T) (*handlers, *modelcat.Catalog) {
 		return listingProvider{list: []provider.ModelInfo{{ID: "gpt-4.1", ContextWindow: 1_047_576}, {ID: "claude-z", ContextWindow: 1_047_576}}}, nil
 	}})
 	a := &Angelus{Hubs: newHubs(), RuntimeDir: dir, Models: cat}
-	require.NoError(t, os.MkdirAll(a.FigaroSocketDir(), 0o700))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); a.Hubs.closeAll() })
 	h := &handlers{angelus: a, ctx: ctx}
@@ -48,9 +48,8 @@ func modelsHandlers(t *testing.T) (*handlers, *modelcat.Catalog) {
 func TestModelsCatalogIsServedLikeAForm(t *testing.T) {
 	h, cat := modelsHandlers(t)
 	require.NoError(t, h.requireAria(models.FormID))
-	hb, err := h.hubFor(models.FormID)
-	require.NoError(t, err)
-	client, frames := dialHub(t, hb)
+	hb := h.hubFor(models.FormID)
+	client, frames := dialHubOn(t, serveDoor(t, h, authz.AllowAll()), hb)
 	require.Eventually(t, func() bool { return hb.Attached() == 1 }, 2*time.Second, 5*time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -101,13 +100,11 @@ func TestModelsCatalogIsServedLikeAForm(t *testing.T) {
 
 func TestModelsCatalogRefusesWrites(t *testing.T) {
 	h, _ := modelsHandlers(t)
-	hb, err := h.hubFor(models.FormID)
-	require.NoError(t, err)
-	client, _ := dialHub(t, hb)
+	client, _ := dialDoor(t, serveDoor(t, h, authz.AllowAll()), models.FormID)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out rpc.SetResponse
-	err = client.Call(ctx, rpc.MethodSet, rpc.SetRequest{}, &out)
+	err := client.Call(ctx, rpc.MethodSet, rpc.SetRequest{}, &out)
 	require.ErrorContains(t, err, "read-only")
 	var qua map[string]any
 	err = client.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: "hi"}, &qua)

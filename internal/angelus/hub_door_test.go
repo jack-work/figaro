@@ -26,27 +26,24 @@ func (p *paramsAgent) Handle(_ context.Context, _ string, params json.RawMessage
 
 func (p *paramsAgent) Subscribe(figaro.Notifier) func() { return func() {} }
 
-func policyHub(t *testing.T, policy authz.Policy) *ariaHub {
+func policyHub(t *testing.T, policy authz.Policy) (*ariaHub, string) {
 	t.Helper()
-	hb := newAriaHub("abcd1234", t.TempDir()+"/aria.sock", policy)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() { cancel(); hb.Close() })
-	require.NoError(t, hb.listen(ctx))
-	return hb
+	hb := newAriaHub("abcd1234")
+	return hb, hubDoor(t, hb, policy)
 }
 
 // A forged x-internal-figaro-id reaches the policy as the bare asserted id,
 // beside the connection's principal the params cannot touch.
 func TestHubAttributesAForgedCallerAsAsserted(t *testing.T) {
 	seen := make(chan authz.Identity, 1)
-	hb := policyHub(t, authz.PolicyFunc(func(r authz.Request) authz.Decision {
+	hb, path := policyHub(t, authz.PolicyFunc(func(r authz.Request) authz.Decision {
 		seen <- r.Identity
 		return authz.Allow()
 	}))
 	agent := &paramsAgent{params: make(chan json.RawMessage, 1)}
 	hb.bind(agent)
 
-	client, _ := dialHub(t, hb)
+	client, _ := dialDoor(t, path, hb.id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	params, err := rpc.WithCaller(rpc.QuaRequest{Text: "hi"}, "76062b18", nil)
@@ -67,12 +64,12 @@ func TestHubAttributesAForgedCallerAsAsserted(t *testing.T) {
 }
 
 func TestHubMethodsAreGuarded(t *testing.T) {
-	hb := policyHub(t, authz.PolicyFunc(func(authz.Request) authz.Decision { return authz.Deny("door closed") }))
+	hb, path := policyHub(t, authz.PolicyFunc(func(authz.Request) authz.Decision { return authz.Deny("door closed") }))
 	hb.read = func(string, string, json.RawMessage) (any, bool, error) {
 		t.Error("a denied request reached the store")
 		return nil, true, nil
 	}
-	client, _ := dialHub(t, hb)
+	client, _ := dialDoor(t, path, hb.id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out map[string]any

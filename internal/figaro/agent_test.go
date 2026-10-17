@@ -237,12 +237,11 @@ func newTestAgent(t *testing.T, response string) *figaro.Agent {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}, nil))
 	return figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         id,
-		SocketPath: "/tmp/test-figaro.sock",
-		Provider:   &mockProvider{response: response},
-		Backend:    be,
-		Form:       cb,
+		Projector: uiir.New(nil),
+		ID:        id,
+		Provider:  &mockProvider{response: response},
+		Backend:   be,
+		Form:      cb,
 	})
 }
 
@@ -263,7 +262,6 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	a := figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
 		ID:         id,
-		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{},
 		Backend:    backend,
 		Form:       cb,
@@ -339,12 +337,6 @@ func TestAgent_ID(t *testing.T) {
 	assert.NotEmpty(t, a.ID())
 }
 
-func TestAgent_SocketPath(t *testing.T) {
-	a := newTestAgent(t, "hi")
-	defer a.Kill()
-	assert.Equal(t, "/tmp/test-figaro.sock", a.SocketPath())
-}
-
 func TestAgent_PromptAndSubscribe(t *testing.T) {
 	a := newTestAgent(t, "4")
 	defer a.Kill()
@@ -388,13 +380,12 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 	cat.fill("metrics", "gpt-5.6-terra", 128000)
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/metrics-test.sock",
-		Provider:   metricsProvider{},
-		Form:       cb,
-		Models:     cat,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  metricsProvider{},
+		Form:      cb,
+		Models:    cat,
 	})
 	defer a.Kill()
 
@@ -443,13 +434,12 @@ func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {
 	cat := &fakeCatalog{}
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/late-limit-test.sock",
-		Provider:   metricsProvider{},
-		Form:       cb,
-		Models:     cat,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  metricsProvider{},
+		Form:      cb,
+		Models:    cat,
 	})
 	defer a.Kill()
 
@@ -554,11 +544,10 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a = figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/test-fifo.sock",
-		Provider:   &mockProvider{response: "ok"},
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  &mockProvider{response: "ok"},
 	})
 	defer a.Kill()
 
@@ -683,11 +672,10 @@ func TestAgent_PanicRecovery(t *testing.T) {
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/panic-test.sock",
-		Provider:   prov,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
 	})
 	defer a.Kill()
 
@@ -740,11 +728,10 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/panic-ctx-test.sock",
-		Provider:   prov,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
 	})
 	defer a.Kill()
 
@@ -790,11 +777,10 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: "/tmp/persist-test.sock",
-		Provider:   &mockProvider{response: "persisted reply"},
-		Backend:    backend,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &mockProvider{response: "persisted reply"},
+		Backend:   backend,
 	})
 	defer a.Kill()
 
@@ -828,11 +814,10 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a1 := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: "/tmp/restore-test.sock",
-		Provider:   &mockProvider{response: "first reply"},
-		Backend:    backend,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &mockProvider{response: "first reply"},
+		Backend:   backend,
 	})
 
 	ch, _ := subscribeChan(a1)
@@ -853,11 +838,10 @@ firstDone:
 	a1.Kill()
 
 	a2 := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: "/tmp/restore-test2.sock",
-		Provider:   &mockProvider{response: "second reply"},
-		Backend:    backend,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &mockProvider{response: "second reply"},
+		Backend:   backend,
 	})
 	defer a2.Kill()
 
@@ -872,11 +856,10 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: "/tmp/killflush-test.sock",
-		Provider:   &mockProvider{response: "will be saved"},
-		Backend:    backend,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &mockProvider{response: "will be saved"},
+		Backend:   backend,
 	})
 
 	ch, _ := subscribeChan(a)
@@ -953,11 +936,10 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	require.NoError(t, err)
 
 	a := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: "/tmp/danglingboot-test.sock",
-		Provider:   &mockProvider{response: "ignored"},
-		Backend:    backend,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &mockProvider{response: "ignored"},
+		Backend:   backend,
 	})
 	defer a.Kill()
 
@@ -976,11 +958,10 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/ephemeral-test.sock",
-		Provider:   &mockProvider{response: "gone"},
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  &mockProvider{response: "gone"},
 	})
 
 	ch, _ := subscribeChan(a)
@@ -1027,11 +1008,10 @@ func TestAgent_Interrupt(t *testing.T) {
 	started := make(chan struct{})
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/interrupt-test.sock",
-		Provider:   &slowProvider{started: started},
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  &slowProvider{started: started},
 	})
 	defer a.Kill()
 
@@ -1081,11 +1061,10 @@ func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 	started := make(chan struct{})
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/active-test.sock",
-		Provider:   &slowProvider{started: started},
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  &slowProvider{started: started},
 	})
 	defer a.Kill()
 
@@ -1127,12 +1106,11 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}, nil))
 	a := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         id,
-		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
-		Provider:   &streamingMockProvider{response: "ALPHA"},
-		Backend:    backend,
-		Form:       cb,
+		Projector: uiir.New(nil),
+		ID:        id,
+		Provider:  &streamingMockProvider{response: "ALPHA"},
+		Backend:   backend,
+		Form:      cb,
 	})
 	defer a.Kill()
 
@@ -1291,12 +1269,11 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/test-figaro-q.sock",
-		Provider:   prov,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Form:      cb,
 	})
 	defer func() { close(release); a.Kill() }()
 

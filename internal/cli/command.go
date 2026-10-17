@@ -220,7 +220,7 @@ func (in *interactiveInput) switchSubjectAs(ctx context.Context, spec string, at
 		return "", err
 	}
 	var id string
-	var ep transport.Endpoint
+	var ep sdk.Addr
 	if attend {
 		out, err := attendVerb(ctx, env, spec)
 		if err != nil {
@@ -508,10 +508,10 @@ func (in *interactiveInput) hop(dir int) {
 
 // resolve goes through the same resolver `figaro listen` uses, so `@role`
 // follows target-aria.
-func (in *interactiveInput) resolve(ctx context.Context, spec string) (string, transport.Endpoint, error) {
+func (in *interactiveInput) resolve(ctx context.Context, spec string) (string, sdk.Addr, error) {
 	acli, err := in.angelus()
 	if err != nil {
-		return "", transport.Endpoint{}, err
+		return "", sdk.Addr{}, err
 	}
 	return resolveFigaroTargetEndpoint(ctx, in.loaded, acli, spec, false, dressing{})
 }
@@ -548,7 +548,7 @@ func (in *interactiveInput) aria() *sdk.Aria {
 
 // retarget dials an aria and makes it the subject; `figaro listen` opens through
 // it too.
-func (in *interactiveInput) retarget(ctx context.Context, id string, ep transport.Endpoint) error {
+func (in *interactiveInput) retarget(ctx context.Context, id string, ep sdk.Addr) error {
 	// The old connection's pump is live while we dial and its frames carry the
 	// old aria's coordinates; every handler checks the generation it was born
 	// with before touching the renderer.

@@ -57,13 +57,12 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 	}
 	testBE, testID := store.NewTestAria(b, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: filepath.Join(b.TempDir(), "sock"),
-		Provider:   &formSpyProvider{},
-		Tools:      tool.NewRegistry(),
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  &formSpyProvider{},
+		Tools:     tool.NewRegistry(),
+		Form:      cb,
 	})
 	b.Cleanup(func() { a.Kill() })
 	return a

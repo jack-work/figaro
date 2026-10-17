@@ -109,7 +109,6 @@ model = "mock-model"
 	before := ir.Len()
 
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
-	require.NoError(t, os.MkdirAll(a.FigaroSocketDir(), 0700))
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())

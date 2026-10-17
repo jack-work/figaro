@@ -564,12 +564,11 @@ func runResponsesToolRoundTrip(t *testing.T, malformed bool) {
 	require.NoError(t, err)
 	p := newResponsesTestProvider(server, cache)
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         ariaID,
-		SocketPath: t.TempDir() + "/figaro.sock",
-		Provider:   &responseAgentProvider{Provider: p},
-		Tools:      registry,
-		Backend:    be,
-		Form:       cb,
+		ID:       ariaID,
+		Provider: &responseAgentProvider{Provider: p},
+		Tools:    registry,
+		Backend:  be,
+		Form:     cb,
 	})
 	defer agent.Kill()
 

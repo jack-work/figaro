@@ -52,7 +52,7 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 		}
 	}()
 
-	cli, err := sdk.DialAria(transport.UnixEndpoint(sock), nil)
+	cli, err := sdk.DialAria(sdk.Addr{Door: transport.UnixEndpoint(sock), ID: "abcd1234"}, nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

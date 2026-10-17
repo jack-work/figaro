@@ -19,10 +19,9 @@ type wokenFigaro struct {
 	killed     int
 }
 
-func (m *wokenFigaro) ID() string         { return m.id }
-func (m *wokenFigaro) SocketPath() string { return "" }
-func (m *wokenFigaro) Interrupt()         {}
-func (m *wokenFigaro) Kill()              { m.killed++ }
+func (m *wokenFigaro) ID() string { return m.id }
+func (m *wokenFigaro) Interrupt() {}
+func (m *wokenFigaro) Kill()      { m.killed++ }
 func (m *wokenFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{
 		ID: m.id, State: "idle", Provider: "mock", Model: "mock-model",

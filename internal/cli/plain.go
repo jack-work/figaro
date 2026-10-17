@@ -11,7 +11,6 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
@@ -30,7 +29,7 @@ func stripBashFences(s string) string {
 	return s
 }
 
-func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer, d dressing) int {
+func plainPrompt(ctx context.Context, ep sdk.Addr, prompt string, out io.Writer, d dressing) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -74,7 +73,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 }
 
 // verbatimPrompt writes the wire frames as JSON lines, with no delta application.
-func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer, d dressing) int {
+func verbatimPrompt(ctx context.Context, ep sdk.Addr, prompt string, out io.Writer, d dressing) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

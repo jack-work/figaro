@@ -24,9 +24,8 @@ type liveForkFigaro struct {
 	killed bool
 }
 
-func (f *liveForkFigaro) ID() string         { return f.id }
-func (f *liveForkFigaro) SocketPath() string { return "" }
-func (f *liveForkFigaro) Interrupt()         {}
+func (f *liveForkFigaro) ID() string { return f.id }
+func (f *liveForkFigaro) Interrupt() {}
 func (f *liveForkFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{ID: f.id, State: "active", MessageCount: 12, Provider: "provider"}
 }
@@ -217,11 +216,10 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(prov.release) }) }
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         id,
-		SocketPath: "",
-		Provider:   prov,
-		Backend:    backend,
-		Form:       cb,
+		ID:       id,
+		Provider: prov,
+		Backend:  backend,
+		Form:     cb,
 	})
 	t.Cleanup(func() {
 		release()

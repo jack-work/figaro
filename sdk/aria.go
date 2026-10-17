@@ -3,6 +3,8 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"time"
 
 	"github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/rpc"
@@ -13,9 +15,14 @@ import (
 // NotifyHandler receives server-pushed notifications in wire order.
 type NotifyHandler func(method string, params json.RawMessage)
 
-// Aria is a typed JSON-RPC client for a figaro agent socket.
+type Addr struct {
+	Door transport.Endpoint
+	ID   string
+}
+
 type Aria struct {
 	cli *jkrpc.Client
+	id  string
 	// caller is presented on this hop independently of the angelus hop.
 	caller string
 	// ref is the asserted caller reference: attribution only, never a credential.
@@ -27,22 +34,53 @@ func (c *Aria) call(ctx context.Context, method string, params, result any) erro
 	if err != nil {
 		return err
 	}
+	if raw, err = rpc.WithAria(raw, c.id); err != nil {
+		return err
+	}
 	return c.cli.Call(ctx, method, raw, result)
 }
 
-func DialAria(ep transport.Endpoint, onNotify NotifyHandler) (*Aria, error) {
-	return DialAriaWith(ep, onNotify, nil)
+func DialAria(a Addr, onNotify NotifyHandler) (*Aria, error) {
+	return DialAriaWith(a, onNotify, nil)
 }
 
 // DialAriaWith is DialAria with connection middleware; nil tap is DialAria exactly.
-func DialAriaWith(ep transport.Endpoint, onNotify NotifyHandler, tap transport.Tap) (*Aria, error) {
-	conn, err := transport.DialWith(ep, tap)
+func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, error) {
+	if err := rpc.ValidateAriaID(a.ID); err != nil {
+		return nil, err
+	}
+	conn, err := transport.DialWith(a.Door, tap)
 	if err != nil {
 		return nil, err
 	}
-	cli := jkrpc.NewClient(conn, jkrpc.NotifyFunc(onNotify))
-	return &Aria{cli: cli, caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}, nil
+	c := &Aria{id: a.ID, caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}
+	ready := make(chan struct{})
+	c.cli = jkrpc.NewClient(conn, func(method string, params json.RawMessage) {
+		if onNotify != nil {
+			onNotify(method, params)
+		}
+		if method == rpc.MethodAriaClosed && rpc.AriaOf(params) == c.id {
+			go func() {
+				<-ready
+				c.cli.Close()
+			}()
+		}
+	})
+	close(ready)
+	if onNotify != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), followTimeout)
+		defer cancel()
+		if err := c.call(ctx, rpc.MethodFollow, nil, nil); err != nil {
+			c.cli.Close()
+			return nil, fmt.Errorf("follow %s: %w", a.ID, err)
+		}
+	}
+	return c, nil
 }
+
+const followTimeout = 10 * time.Second
+
+func (c *Aria) ID() string { return c.id }
 
 // Qua sends a prompt and returns the newest materialized turn id at accept
 // time. A prompt accepted while a turn is active becomes steering; one
@@ -108,7 +146,7 @@ func (c *Aria) Interrupt(ctx context.Context) error {
 func (c *Aria) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*rpc.InterruptResponse, error) {
 	var resp rpc.InterruptResponse
 	req := rpc.InterruptRequest{Queue: disposition}
-	if err := c.cli.Call(ctx, rpc.MethodInterrupt, req, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodInterrupt, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -178,7 +216,7 @@ func (c *Aria) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 func (c *Aria) QueuedAll(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse
 	req := rpc.QueuedRequest{IncludeCarriers: true}
-	if err := c.cli.Call(ctx, rpc.MethodQueued, req, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodQueued, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -197,7 +235,7 @@ func (c *Aria) Done() <-chan struct{} {
 // outcomes are in the results.
 func (c *Aria) DeleteQueued(ctx context.Context, req rpc.QueueDeleteRequest) (*rpc.QueueDeleteResponse, error) {
 	var resp rpc.QueueDeleteResponse
-	if err := c.cli.Call(ctx, rpc.MethodQueueDelete, req, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodQueueDelete, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -206,7 +244,7 @@ func (c *Aria) DeleteQueued(ctx context.Context, req rpc.QueueDeleteRequest) (*r
 // UpdateQueued rewrites one queued message's text; error is transport only.
 func (c *Aria) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (*rpc.QueueUpdateResponse, error) {
 	var resp rpc.QueueUpdateResponse
-	if err := c.cli.Call(ctx, rpc.MethodQueueUpdate, req, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodQueueUpdate, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

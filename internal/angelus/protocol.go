@@ -86,39 +86,69 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 	h.noticeUpgrade()
 	h.publishModels()
-	return &Handlers{
-		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
-			rpc.MethodCreate:         h.create,
-			rpc.MethodFormCreate:     h.formCreate,
-			rpc.MethodFormBind:       h.formBind,
-			rpc.MethodOutfitReload:   h.outfitReload,
-			rpc.MethodFork:           h.fork,
-			rpc.MethodPromote:        h.promote,
-			rpc.MethodImport:         h.importAria,
-			rpc.MethodOutfits:        h.outfits,
-			rpc.MethodConfigure:      h.configure,
-			rpc.MethodNormalize:      h.normalize,
-			rpc.MethodGC:             h.gc,
-			rpc.MethodKill:           h.kill,
-			rpc.MethodList:           h.list,
-			rpc.MethodAttach:         h.attach,
-			rpc.MethodBind:           h.bind,
-			rpc.MethodResolve:        h.resolve,
-			rpc.MethodUnbind:         h.unbind,
-			rpc.MethodStatus:         h.status,
-			rpc.MethodMemCollect:     h.memCollect,
-			rpc.MethodProviderLedger: h.providerLedger,
-			rpc.MethodModelsWant:     h.modelsWant,
-			rpc.MethodSaveBindings:   h.saveBindings,
-			rpc.MethodIR:             h.ariaRead,
-			rpc.MethodRead:           h.read,
-			rpc.MethodContext:        h.context,
-			rpc.MethodForm:           h.form,
-			rpc.MethodLineage:        h.lineage,
-			rpc.MethodDecide:         h.decide,
-			rpc.MethodHello:          h.hello,
-		}, authz.AriaHeader{}, authz.AllowAll()),
-		h: h,
+	methods := map[string]jkrpc.HandlerFunc{
+		rpc.MethodCreate:         h.create,
+		rpc.MethodFormCreate:     h.formCreate,
+		rpc.MethodFormBind:       h.formBind,
+		rpc.MethodOutfitReload:   h.outfitReload,
+		rpc.MethodFork:           h.fork,
+		rpc.MethodPromote:        h.promote,
+		rpc.MethodImport:         h.importAria,
+		rpc.MethodOutfits:        h.outfits,
+		rpc.MethodConfigure:      h.configure,
+		rpc.MethodNormalize:      h.normalize,
+		rpc.MethodGC:             h.gc,
+		rpc.MethodKill:           h.kill,
+		rpc.MethodList:           h.list,
+		rpc.MethodAttach:         h.attach,
+		rpc.MethodBind:           h.bind,
+		rpc.MethodResolve:        h.resolve,
+		rpc.MethodUnbind:         h.unbind,
+		rpc.MethodStatus:         h.status,
+		rpc.MethodMemCollect:     h.memCollect,
+		rpc.MethodProviderLedger: h.providerLedger,
+		rpc.MethodModelsWant:     h.modelsWant,
+		rpc.MethodSaveBindings:   h.saveBindings,
+		rpc.MethodIR:             h.ariaRead,
+		rpc.MethodLineage:        h.lineage,
+		rpc.MethodDecide:         h.decide,
+		rpc.MethodHello:          h.hello,
+	}
+	return &Handlers{Map: h.door(methods, authz.AllowAll()), h: h}
+}
+
+func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy) map[string]jkrpc.HandlerFunc {
+	methods := make(map[string]jkrpc.HandlerFunc, len(daemon)+len(figaro.AgentMethods()))
+	for m, fn := range daemon {
+		methods[m] = fn
+	}
+	for _, m := range figaro.AgentMethods() {
+		methods[m] = h.ariaMethod(m)
+	}
+	methods[rpc.MethodFollow] = h.ariaMethod(rpc.MethodFollow)
+	return authz.Guard(methods, authz.AriaHeader{}, policy)
+}
+
+func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
+	return func(ctx context.Context, params json.RawMessage) (any, error) {
+		id := rpc.AriaOf(params)
+		if id == "" {
+			return nil, fmt.Errorf("%s: no %s: an aria method names its aria", method, rpc.AriaKey)
+		}
+		hb := h.angelus.Hubs.get(id)
+		if hb == nil {
+			if err := h.requireAria(id); err != nil {
+				return nil, fmt.Errorf("%s: %w", method, err)
+			}
+			hb = h.hubFor(id)
+		}
+		if f := followerOf(ctx); f != nil {
+			f.follow(hb)
+		}
+		if method == rpc.MethodFollow {
+			return rpc.FollowResponse{OK: true}, nil
+		}
+		return hb.route(ctx, method, params)
 	}
 }
 
@@ -144,13 +174,8 @@ func (hs *Handlers) RemoveAria(id string, recursive bool) error {
 	return hs.h.RemoveAria(id, recursive)
 }
 
-// OpenEndpoint makes an aria dialable without waking it.
-func (hs *Handlers) OpenEndpoint(ariaID string) error {
-	if err := hs.h.requireAria(ariaID); err != nil {
-		return err
-	}
-	_, err := hs.h.hubFor(ariaID)
-	return err
+func (hs *Handlers) RequireAria(ariaID string) error {
+	return hs.h.requireAria(ariaID)
 }
 
 type handlers struct {
@@ -252,15 +277,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err != nil {
 		return nil, err
 	}
-	hb, err := h.hubFor(id)
-	if err != nil {
-		return nil, fmt.Errorf("form.create: %s minted but endpoint failed: %w", id, err)
-	}
-	return rpc.FormCreateResponse{
-		FormID:   id,
-		Version:  version,
-		Endpoint: rpc.Endpoint{Scheme: "unix", Address: hb.sockPath},
-	}, nil
+	return rpc.FormCreateResponse{FormID: id, Version: version}, nil
 }
 
 // formBind births a figaro dormant: no provider resolved, no agent, no
@@ -297,14 +314,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if _, err := h.angelus.Backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); err != nil {
 		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
 	}
-	hb, err := h.hubFor(id)
-	if err != nil {
-		return nil, fmt.Errorf("form.bind: %s minted but endpoint failed: %w", id, err)
-	}
-	return rpc.FormBindResponse{
-		FigaroID: id,
-		Endpoint: rpc.Endpoint{Scheme: "unix", Address: hb.sockPath},
-	}, nil
+	return rpc.FormBindResponse{FigaroID: id}, nil
 }
 
 const (

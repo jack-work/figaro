@@ -9,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -75,11 +74,10 @@ func (f *modelsFeed) dial() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	att, err := acli.Attach(ctx, models.FormID)
-	if err != nil {
+	if _, err := acli.Attach(ctx, models.FormID); err != nil {
 		return
 	}
-	conn, err := sdk.DialAria(transport.Endpoint{Scheme: att.Endpoint.Scheme, Address: att.Endpoint.Address}, f.handle)
+	conn, err := sdk.DialAria(ariaAddr(models.FormID), f.handle)
 	if err != nil {
 		return
 	}

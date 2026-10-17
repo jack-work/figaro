@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -113,8 +112,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		cbState.Apply(snap.AsPatch())
 	}
 
-	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
-
 	formStr := func(key string) string {
 		if s := cbState.Snapshot().Lookup(key); s != nil {
 			return *s
@@ -129,7 +126,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		tool.WithImageBudget(loaded.InlineImageBudget()))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              id,
-		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
 		Models:          h.angelus.Models,
@@ -146,24 +142,12 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// The endpoint must be listening before the response hands out its path.
-	unbind, herr := h.bindAgentToHub(id, agent)
-	if herr != nil {
-		agent.Kill()
-		return nil, fmt.Errorf("create %s: open endpoint: %w", id, herr)
-	}
-	agent.OnTeardown(unbind)
+	agent.OnTeardown(h.bindAgentToHub(id, agent))
 
 	slog.Info("created figaro",
-		"id", id, "outfit", outfitName, "provider", provName, "model", knobs.Model, "socket", sockPath)
+		"id", id, "outfit", outfitName, "provider", provName, "model", knobs.Model)
 
-	return rpc.CreateResponse{
-		FigaroID: id,
-		Endpoint: rpc.Endpoint{
-			Scheme:  "unix",
-			Address: sockPath,
-		},
-	}, nil
+	return rpc.CreateResponse{FigaroID: id}, nil
 }
 
 func (h *handlers) checkForkLT(ariaID string, lt uint64) error {

@@ -98,13 +98,12 @@ func newAgentWithForm(t *testing.T) (*figaro.Agent, *formSpyProvider, *form.Stat
 	prov := &formSpyProvider{}
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: dir + "/sock",
-		Provider:   prov,
-		Tools:      tool.NewRegistry(),
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     tool.NewRegistry(),
+		Form:      cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 	return a, prov, cb

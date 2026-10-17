@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
@@ -95,8 +94,6 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
 	}
 
-	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), ariaID+".sock")
-
 	var createdAt, lastActive time.Time
 	if meta, _ := h.angelus.Backend.Meta(ariaID); meta != nil {
 		if meta.CreatedAtMS != 0 {
@@ -115,7 +112,6 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		tool.WithImageBudget(loaded.InlineImageBudget()))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
-		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
 		Models:          h.angelus.Models,
@@ -135,12 +131,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		return nil, fmt.Errorf("restore %s: register: %w", ariaID, err)
 	}
 
-	unbind, herr := h.bindAgentToHub(ariaID, agent)
-	if herr != nil {
-		h.angelus.Registry.Kill(ariaID)
-		return nil, fmt.Errorf("restore %s: open endpoint: %w", ariaID, herr)
-	}
-	agent.OnTeardown(unbind)
+	agent.OnTeardown(h.bindAgentToHub(ariaID, agent))
 
 	slog.Info("restored figaro",
 		"id", ariaID, "provider", provName, "model", knobs.Model, "woke_by", wokeBy)

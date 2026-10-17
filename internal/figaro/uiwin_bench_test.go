@@ -3,7 +3,6 @@ package figaro_test
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -51,9 +50,8 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 		cb, _ := form.Open("")
 		cb.Apply(snap.AsPatch())
 		a := figaro.NewAgent(figaro.Config{
-			ID: id, SocketPath: filepath.Join(t.TempDir(), "s.sock"),
-			Projector: uiir.New(nil),
-			Backend:   be, Form: cb, UICache: cache,
+			ID: id, Projector: uiir.New(nil),
+			Backend: be, Form: cb, UICache: cache,
 		})
 		a.Read(aria.Anchor{}, 64*1024) // one tail page, as a client would
 		if cache != nil {

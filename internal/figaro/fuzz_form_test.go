@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -91,7 +90,6 @@ func fuzzAgent(t *testing.T, prov provider.Provider, factory figaro.ProviderFact
 	a := figaro.NewAgent(figaro.Config{
 		Projector:       uiir.New(nil),
 		ID:              id,
-		SocketPath:      filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:        prov,
 		ProviderFactory: factory,
 		Backend:         backend,

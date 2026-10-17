@@ -29,12 +29,11 @@ func newQueuedAgent(t *testing.T, id string) (*figaro.Agent, *blockedProvider, f
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/test-" + id + ".sock",
-		Provider:   prov,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Form:      cb,
 	})
 	return a, prov, func() { close(release); a.Kill() }
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -31,7 +30,7 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 	}
 
 	var figaroID string
-	var figaroEP transport.Endpoint
+	var figaroEP sdk.Addr
 
 	if resp.Found {
 		// A pending fork-point binding (attend <id>:<LT>) is one-shot: the
@@ -41,7 +40,7 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 			return
 		}
 		figaroID = resp.FigaroID
-		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
+		figaroEP = ariaAddr(figaroID)
 		// Attending a role resolves the holder per call.
 		var rerr error
 		figaroID, figaroEP, rerr = redirectRole(ctx, loaded, acli, figaroID, figaroEP)
@@ -210,43 +209,17 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 }
 
 // Aria ids are system-minted: an unknown id is an error, not a new conversation.
-func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (transport.Endpoint, error) {
+func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (sdk.Addr, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
-	resp, err := acli.Attach(attachCtx, ariaID)
+	_, err := acli.Attach(attachCtx, ariaID)
 	attachCancel()
 	if err == nil {
-		ep := transport.Endpoint{
-			Scheme:  resp.Endpoint.Scheme,
-			Address: resp.Endpoint.Address,
-		}
-		if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
-			return transport.Endpoint{}, err
-		}
-		return ep, nil
+		return ariaAddr(ariaID), nil
 	}
 	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
-		return transport.Endpoint{}, fmt.Errorf("no such aria %q (ids are system-minted; run `figaro` to start one)", ariaID)
+		return sdk.Addr{}, fmt.Errorf("no such aria %q (ids are system-minted; run `figaro` to start one)", ariaID)
 	}
-	return transport.Endpoint{}, fmt.Errorf("attach %q: %w", ariaID, err)
-}
-
-// A stale socket file can survive a daemon restart, so dial rather than stat.
-func waitForSocket(path string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		conn, err := transport.DialRaw(transport.UnixEndpoint(path))
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		lastErr = err
-		time.Sleep(20 * time.Millisecond)
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("socket was never dialed")
-	}
-	return fmt.Errorf("figaro socket %s did not accept connections within %s: %w", path, timeout, lastErr)
+	return sdk.Addr{}, fmt.Errorf("attach %q: %w", ariaID, err)
 }
 
 // An empty dressing is the configured default_outfit, resolved server-side.

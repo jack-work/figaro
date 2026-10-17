@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
-	"net"
 	"os"
 	"strings"
 	"testing"
@@ -13,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/jkrpc"
 )
 
 func rawPatch(kv map[string]string) *rpc.FormPatch {
@@ -33,20 +31,15 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(created.FormID, "@"), "form id %q lacks the sigil", created.FormID)
 	require.NotZero(t, created.Version)
-	require.FileExists(t, created.Endpoint.Address, "endpoint not listening when FormCreate returned")
 
-	conn, err := net.Dial("unix", created.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
 	type note struct {
 		method string
 		params json.RawMessage
 	}
 	notes := make(chan note, 16)
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(m string, p json.RawMessage) {
+	client := dialAria(t, a, created.FormID, func(m string, p json.RawMessage) {
 		notes <- note{m, append(json.RawMessage(nil), p...)}
 	})
-	defer client.Close()
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -102,11 +95,7 @@ func TestDormantAriaSetDoesNotWake(t *testing.T) {
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
 
-	conn, err := net.Dial("unix", created.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), nil)
-	defer client.Close()
+	client := dialAria(t, a, created.FigaroID, nil)
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -179,11 +168,7 @@ func TestFormBindBirthsDormantFigaro(t *testing.T) {
 	require.False(t, strings.HasPrefix(bound.FigaroID, "@"), "bound figaro %q carries the form sigil", bound.FigaroID)
 	require.Nil(t, a.Registry.Get(bound.FigaroID), "bind constructed an agent")
 
-	conn, err := net.Dial("unix", bound.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), nil)
-	defer client.Close()
+	client := dialAria(t, a, bound.FigaroID, nil)
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var form rpc.FormResponse
@@ -208,11 +193,7 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	require.NoError(t, err, "bind null must mint")
 	require.Nil(t, a.Registry.Get(bound.FigaroID))
 
-	conn, err := net.Dial("unix", bound.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), nil)
-	defer client.Close()
+	client := dialAria(t, a, bound.FigaroID, nil)
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})

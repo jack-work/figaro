@@ -7,7 +7,6 @@ import (
 
 type Figaro interface {
 	ID() string
-	SocketPath() string
 	Interrupt()
 	Info() FigaroInfo
 	Kill()

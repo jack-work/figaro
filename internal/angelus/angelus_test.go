@@ -58,15 +58,6 @@ func TestAngelus_SocketCreated(t *testing.T) {
 	conn.Close()
 }
 
-func TestAngelus_FigaroSocketDir(t *testing.T) {
-	a, _ := newTestAngelus(t)
-
-	dir := a.FigaroSocketDir()
-	info, err := os.Stat(dir)
-	require.NoError(t, err)
-	assert.True(t, info.IsDir())
-}
-
 func TestAngelus_RegistryAvailable(t *testing.T) {
 	a, _ := newTestAngelus(t)
 

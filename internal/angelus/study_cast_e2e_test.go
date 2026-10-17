@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
@@ -20,10 +20,10 @@ type studyClient struct {
 	done chan struct{}
 }
 
-func dialNode(t *testing.T, ep rpc.Endpoint) *studyClient {
+func dialNode(t *testing.T, a *angelus.Angelus, id string) *studyClient {
 	t.Helper()
 	sc := &studyClient{done: make(chan struct{}, 4)}
-	c, err := sdk.DialAria(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
+	c, err := sdk.DialAria(ariaAddr(a, id),
 		func(method string, _ json.RawMessage) {
 			if method == "turn.done" {
 				select {
@@ -67,14 +67,14 @@ func (sc *studyClient) formValue(t *testing.T, ctx context.Context, key string) 
 }
 
 func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"supervisor"`}))
 	require.NoError(t, err)
 
-	fc := dialNode(t, created.Endpoint)
+	fc := dialNode(t, a, created.FigaroID)
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -84,7 +84,7 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	require.True(t, cast.Studied, "first cast should register the study")
 	require.True(t, cast.Patched)
 
-	rc := dialNode(t, role.Endpoint)
+	rc := dialNode(t, a, role.FormID)
 	target, ok := rc.formValue(t, callCtx, "target-aria")
 	require.True(t, ok)
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
@@ -101,11 +101,11 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 }
 
 func TestCastMintsRoleBornCast(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
-	fc := dialNode(t, created.Endpoint)
+	fc := dialNode(t, a, created.FigaroID)
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cast, err := fc.c.Cast(callCtx, rpc.CastRequest{
@@ -116,22 +116,22 @@ func TestCastMintsRoleBornCast(t *testing.T) {
 	require.True(t, cast.Patched)
 	require.True(t, cast.Studied)
 
-	att, err := acli.Attach(ctx, cast.RoleID)
+	_, err = acli.Attach(ctx, cast.RoleID)
 	require.NoError(t, err)
-	rc := dialNode(t, rpc.Endpoint{Scheme: att.Endpoint.Scheme, Address: att.Endpoint.Address})
+	rc := dialNode(t, a, cast.RoleID)
 	target, ok := rc.formValue(t, callCtx, "target-aria")
 	require.True(t, ok, "born-cast role lacks target-aria")
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
 }
 
 func TestCastRefusesBoundTargets(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 	a1, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	a2, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
-	fc := dialNode(t, a1.Endpoint)
+	fc := dialNode(t, a, a1.FigaroID)
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	_, err = fc.c.Cast(callCtx, rpc.CastRequest{FormID: a2.FigaroID})
@@ -141,13 +141,13 @@ func TestCastRefusesBoundTargets(t *testing.T) {
 
 // The study mark and position stamps are in the IR; none of the studied form's content is.
 func TestStudyStampsIRAndBakesNothing(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"watched"`}))
 	require.NoError(t, err)
 
-	fc := dialNode(t, created.Endpoint)
+	fc := dialNode(t, a, created.FigaroID)
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	study, err := fc.c.Study(callCtx, role.FormID)
@@ -155,7 +155,7 @@ func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 	require.Contains(t, study.Studies, role.FormID)
 
 	// Through the hub: the agentless write path.
-	rc := dialNode(t, role.Endpoint)
+	rc := dialNode(t, a, role.FormID)
 	_, err = rc.c.Set(callCtx, *rawPatch(map[string]string{"phase": `"canary"`}), 0)
 	require.NoError(t, err)
 
@@ -169,13 +169,13 @@ func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 }
 
 func TestDropEndsStampsAndStatesItself(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"brief"`}))
 	require.NoError(t, err)
 
-	fc := dialNode(t, created.Endpoint)
+	fc := dialNode(t, a, created.FigaroID)
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	_, err = fc.c.Study(callCtx, role.FormID)
@@ -184,7 +184,7 @@ func TestDropEndsStampsAndStatesItself(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, after.Studies, role.FormID)
 
-	rc := dialNode(t, role.Endpoint)
+	rc := dialNode(t, a, role.FormID)
 	_, err = rc.c.Set(callCtx, *rawPatch(map[string]string{"after": `"drop"`}), 0)
 	require.NoError(t, err)
 
@@ -197,7 +197,7 @@ func TestDropEndsStampsAndStatesItself(t *testing.T) {
 
 // A naked figaro cannot wake; cast must be served from the hub with no agent.
 func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
-	_, acli, ctx := daemonFixture(t)
+	a, acli, ctx := daemonFixture(t)
 
 	naked, err := acli.FormBind(ctx, "null", nil, nil)
 	if err != nil {
@@ -208,8 +208,7 @@ func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
 		t.Fatalf("form create: %v", err)
 	}
 
-	fc, err := sdk.DialAria(transport.Endpoint{
-		Scheme: naked.Endpoint.Scheme, Address: naked.Endpoint.Address}, nil)
+	fc, err := sdk.DialAria(ariaAddr(a, naked.FigaroID), nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

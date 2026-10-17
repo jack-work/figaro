@@ -6,20 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"os"
 	"sync"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/jkrpc"
 )
 
-// ariaHub owns one aria's endpoint; its lifetime is independent of the agent's.
 type ariaHub struct {
-	id       string
-	sockPath string
+	id string
 
 	// wake is told the method so the restore is attributed (FigaroInfo.WokeBy).
 	wake func(ctx context.Context, id, method string) (figaro.AgentServer, error)
@@ -32,106 +26,60 @@ type ariaHub struct {
 	// dress resolves outfit names before routing: no writer below it reads a file.
 	dress func(method string, params json.RawMessage) (json.RawMessage, error)
 	// kind is the node's species; a form has no agent to wake, ever.
-	kind   string
-	policy authz.Policy
+	kind string
 
-	mu    sync.Mutex
-	ln    net.Listener
-	conns map[*jkrpc.Server]struct{}
-	agent figaro.AgentServer
-	// Nothing is buffered: a client that attaches catches up with a read, not a replay.
-	closed bool
+	mu        sync.Mutex
+	followers map[*follower]struct{}
+	agent     figaro.AgentServer
+	closed    bool
 }
 
-func newAriaHub(id, sockPath string, policy authz.Policy) *ariaHub {
-	return &ariaHub{id: id, sockPath: sockPath, policy: policy, conns: map[*jkrpc.Server]struct{}{}}
+func newAriaHub(id string) *ariaHub {
+	return &ariaHub{id: id, followers: map[*follower]struct{}{}}
 }
 
-func (hb *ariaHub) listen(ctx context.Context) error {
-	os.Remove(hb.sockPath)
-	ln, err := net.Listen("unix", hb.sockPath)
-	if err != nil {
-		return fmt.Errorf("hub %s: listen: %w", hb.id, err)
-	}
-	if err := os.Chmod(hb.sockPath, 0600); err != nil {
-		ln.Close()
-		return fmt.Errorf("hub %s: chmod: %w", hb.id, err)
-	}
+func (hb *ariaHub) add(f *follower) bool {
 	hb.mu.Lock()
-	hb.ln = ln
-	hb.mu.Unlock()
-
-	go func() {
-		<-ctx.Done()
-		hb.Close()
-	}()
-	go hb.accept(ctx)
-	return nil
-}
-
-func (hb *ariaHub) accept(ctx context.Context) {
-	for {
-		conn, err := hb.ln.Accept()
-		if err != nil {
-			hb.mu.Lock()
-			done := hb.closed
-			hb.mu.Unlock()
-			if done || ctx.Err() != nil {
-				return
-			}
-			continue
-		}
-		cctx, err := authz.Admit(ctx, conn)
-		if err != nil {
-			conn.Close()
-			continue
-		}
-		go hb.serve(cctx, conn)
-	}
-}
-
-func (hb *ariaHub) serve(ctx context.Context, conn net.Conn) {
-	srv := jkrpc.NewServer(jkrpc.NewConn(conn), hb.handlers())
-
-	hb.mu.Lock()
+	defer hb.mu.Unlock()
 	if hb.closed {
-		hb.mu.Unlock()
-		conn.Close()
-		return
+		return false
 	}
-	hb.conns[srv] = struct{}{}
-	hb.mu.Unlock()
-
-	defer func() {
-		hb.mu.Lock()
-		delete(hb.conns, srv)
-		hb.mu.Unlock()
-	}()
-
-	done := make(chan struct{})
-	go func() {
-		srv.Serve(ctx)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-ctx.Done():
-		srv.Stop()
-	}
+	hb.followers[f] = struct{}{}
+	return true
 }
 
-// Notify is the agent's only subscriber: a connection coming or going never touches the agent.
-func (hb *ariaHub) Notify(method string, params any) error {
+func (hb *ariaHub) remove(f *follower) {
 	hb.mu.Lock()
-	targets := make([]*jkrpc.Server, 0, len(hb.conns))
-	for c := range hb.conns {
-		targets = append(targets, c)
-	}
+	delete(hb.followers, f)
 	hb.mu.Unlock()
+}
 
+func (hb *ariaHub) targets() []*follower {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	out := make([]*follower, 0, len(hb.followers))
+	for f := range hb.followers {
+		out = append(out, f)
+	}
+	return out
+}
+
+func (hb *ariaHub) Notify(method string, params any) error {
+	targets := hb.targets()
+	if len(targets) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	raw, err = rpc.WithAria(raw, hb.id)
+	if err != nil {
+		return err
+	}
 	var firstErr error
-	for _, c := range targets {
-		if err := c.Notify(method, params); err != nil && firstErr == nil {
+	for _, f := range targets {
+		if err := f.notify(method, raw); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -160,12 +108,10 @@ func (hb *ariaHub) boundAgent() figaro.AgentServer {
 	return hb.agent
 }
 
-// Attached is for status and tests; a hibernation sweep must not consult
-// it, or an attached client pins an aria forever.
 func (hb *ariaHub) Attached() int {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
-	return len(hb.conns)
+	return len(hb.followers)
 }
 
 func (hb *ariaHub) Close() {
@@ -175,20 +121,16 @@ func (hb *ariaHub) Close() {
 		return
 	}
 	hb.closed = true
-	ln := hb.ln
-	conns := make([]*jkrpc.Server, 0, len(hb.conns))
-	for c := range hb.conns {
-		conns = append(conns, c)
-	}
 	hb.mu.Unlock()
-
-	if ln != nil {
-		ln.Close()
+	targets := hb.targets()
+	hb.mu.Lock()
+	hb.followers = map[*follower]struct{}{}
+	hb.mu.Unlock()
+	raw, _ := json.Marshal(rpc.AriaClosed{FigaroID: hb.id})
+	for _, f := range targets {
+		f.forget(hb)
+		_ = f.notify(rpc.MethodAriaClosed, raw)
 	}
-	for _, c := range conns {
-		c.Stop()
-	}
-	os.Remove(hb.sockPath)
 }
 
 // subscribableAgent is narrow on purpose: the hub must not be able to run a turn.
@@ -198,18 +140,6 @@ type subscribableAgent interface {
 }
 
 var errDormantMethod = errors.New("aria is dormant and this method needs a live agent")
-
-func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
-	methods := figaro.AgentMethods()
-	out := make(map[string]jkrpc.HandlerFunc, len(methods))
-	for _, m := range methods {
-		method := m
-		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			return hb.route(ctx, method, params)
-		}
-	}
-	return authz.Guard(out, authz.AriaHeader{}, hb.policy)
-}
 
 // route dresses first, so an outfit that names nothing on disk fails at the
 // boundary rather than landing as a literal on a board.

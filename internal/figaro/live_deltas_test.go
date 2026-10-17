@@ -13,7 +13,6 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 	client "github.com/jack-work/figaro/sdk/aria"
 	"github.com/stretchr/testify/require"
-	"path/filepath"
 )
 
 // A live aria's pages carry the same form deltas a dormant read shows.
@@ -63,12 +62,11 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	require.NoError(t, err)
 	cb.Apply(snap.AsPatch())
 	a := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         id,
-		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
-		Provider:   nil,
-		Backend:    backend,
-		Form:       cb,
+		Projector: uiir.New(nil),
+		ID:        id,
+		Provider:  nil,
+		Backend:   backend,
+		Form:      cb,
 	})
 	t.Cleanup(a.Kill)
 

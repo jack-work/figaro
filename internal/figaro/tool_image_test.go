@@ -106,13 +106,12 @@ func runImageTurn(t *testing.T, id string, reg *tool.Registry, calls []message.C
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/" + id + ".sock",
-		Provider:   prov,
-		Tools:      reg,
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     reg,
+		Form:      cb,
 	})
 	defer a.Kill()
 

@@ -65,7 +65,7 @@ func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 		"system.provider": json.RawMessage(`"mock"`),
 	}, nil))
 	a := figaro.NewAgent(figaro.Config{
-		Projector: uiir.New(nil), ID: id, SocketPath: "/tmp/test-set-midturn.sock",
+		Projector: uiir.New(nil), ID: id,
 		Provider: p, Backend: be, Form: cb,
 	})
 	defer a.Kill()

@@ -99,13 +99,12 @@ func TestSteerVisibilityGap(t *testing.T) {
 	prov := &steerProvider{queued: make(chan struct{})}
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		Projector:  uiir.New(nil),
-		ID:         testID,
-		SocketPath: "/tmp/test-figaro-steer-gap.sock",
-		Provider:   prov,
-		Tools:      tool.NewRegistry(),
-		Form:       cb,
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  prov,
+		Tools:     tool.NewRegistry(),
+		Form:      cb,
 	})
 	t.Cleanup(a.Kill)
 

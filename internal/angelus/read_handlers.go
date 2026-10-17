@@ -104,45 +104,6 @@ func (h *handlers) routeRead(ctx context.Context, id, method string, params json
 	return v, err
 }
 
-func (h *handlers) read(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	var req rpc.ReadRequest
-	if err := json.Unmarshal(params, &req); err != nil {
-		return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodRead, err)
-	}
-	return h.routeRead(ctx, req.FigaroID, rpc.MethodRead, params)
-}
-
-func (h *handlers) context(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	id, err := ariaIDParam(params, rpc.MethodContext)
-	if err != nil {
-		return nil, err
-	}
-	return h.routeRead(ctx, id, rpc.MethodContext, nil)
-}
-
-func (h *handlers) form(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	id, err := ariaIDParam(params, rpc.MethodForm)
-	if err != nil {
-		return nil, err
-	}
-	// params travel: the intrinsic selector must reach the agent.
-	return h.routeRead(ctx, id, rpc.MethodForm, params)
-}
-
-func ariaIDParam(params json.RawMessage, method string) (string, error) {
-	var req rpc.AriaIDRequest
-	if err := json.Unmarshal(params, &req); err != nil {
-		return "", fmt.Errorf("%s: parse params: %w", method, err)
-	}
-	if req.FigaroID == "" {
-		return "", errors.New(method + ": empty figaro_id")
-	}
-	if err := rpc.ValidateAriaID(req.FigaroID); err != nil {
-		return "", err
-	}
-	return req.FigaroID, nil
-}
-
 func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.IRRequest
 	if len(params) > 0 {

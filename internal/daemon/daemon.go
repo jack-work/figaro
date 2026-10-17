@@ -325,7 +325,7 @@ func Run() {
 
 	// Rebind shells without restoring their arias; an aria wakes on its next
 	// prompt.
-	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.OpenEndpoint)
+	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
 
 	drained := make(chan struct{})
 	go func() {

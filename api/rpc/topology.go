@@ -15,8 +15,7 @@ type CreateRequest struct {
 }
 
 type CreateResponse struct {
-	FigaroID string   `json:"figaro_id"`
-	Endpoint Endpoint `json:"endpoint"`
+	FigaroID string `json:"figaro_id"`
 }
 
 // FormCreateRequest mints an unbound form. Parent "" forks the null root; a
@@ -28,9 +27,8 @@ type FormCreateRequest struct {
 }
 
 type FormCreateResponse struct {
-	FormID   string   `json:"form_id"`
-	Version  uint64   `json:"version"`
-	Endpoint Endpoint `json:"endpoint"`
+	FormID  string `json:"form_id"`
+	Version uint64 `json:"version"`
 }
 
 // FormBindRequest births a figaro from a form. Parent "" or "null" forks the
@@ -43,8 +41,7 @@ type FormBindRequest struct {
 }
 
 type FormBindResponse struct {
-	FigaroID string   `json:"figaro_id"`
-	Endpoint Endpoint `json:"endpoint"`
+	FigaroID string `json:"figaro_id"`
 }
 
 // ForkRequest with neither coordinate set forks at the head.

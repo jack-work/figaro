@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/tape"
+	"github.com/jack-work/figaro/sdk"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -64,7 +65,11 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	// The recording's start time is the session clock, so the status row
 	// paints as it did when taken.
 	started, _ := time.Parse(time.RFC3339Nano, h.Started)
-	tailFigaro(ctx, cancel, ep, h.Aria, loaded, tailOpts{end: end, startedAt: started})
+	id := h.Aria
+	if id == "" {
+		id = "tape"
+	}
+	tailFigaro(ctx, cancel, sdk.Addr{Door: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started})
 }
 
 func printTapeSummary(w *os.File, h tape.Header, frames []tape.Frame) {
@@ -145,7 +150,7 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 	for _, m := range []string{
 		rpc.MethodRead, rpc.MethodQueued, rpc.MethodForm, rpc.MethodContext,
 		rpc.MethodInterrupt, rpc.MethodSet, rpc.MethodQua,
-		rpc.MethodQueueUpdate, rpc.MethodQueueDelete,
+		rpc.MethodQueueUpdate, rpc.MethodQueueDelete, rpc.MethodFollow,
 	} {
 		method := m
 		handlers[method] = func(ctx context.Context, params json.RawMessage) (any, error) {

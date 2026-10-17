@@ -118,15 +118,10 @@ func resolveBinding(ctx context.Context, acli *sdk.Angelus, ppid int) (*rpc.Reso
 
 // Attach, not Bind: revives a dormant aria without touching the pid map.
 func resolveEnvAria(ctx context.Context, acli *sdk.Angelus, id string) (*rpc.ResolveResponse, error) {
-	resp, err := acli.Attach(ctx, id)
-	if err != nil {
+	if _, err := acli.Attach(ctx, id); err != nil {
 		return &rpc.ResolveResponse{Found: false}, nil
 	}
-	return &rpc.ResolveResponse{
-		FigaroID: id,
-		Endpoint: resp.Endpoint,
-		Found:    true,
-	}, nil
+	return &rpc.ResolveResponse{FigaroID: id, Found: true}, nil
 }
 
 func bindBinding(ctx context.Context, acli *sdk.Angelus, ppid int, figaroID string, atLT uint64) error {

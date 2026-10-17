@@ -19,10 +19,9 @@ func (f *ttlFakeBackend) TTLForget(ids ...string)       { f.forgotten = append(f
 
 type ttlMockFigaro struct{ id string }
 
-func (m *ttlMockFigaro) ID() string         { return m.id }
-func (m *ttlMockFigaro) SocketPath() string { return "/tmp/" + m.id + ".sock" }
-func (m *ttlMockFigaro) Interrupt()         {}
-func (m *ttlMockFigaro) Kill()              {}
+func (m *ttlMockFigaro) ID() string { return m.id }
+func (m *ttlMockFigaro) Interrupt() {}
+func (m *ttlMockFigaro) Kill()      {}
 func (m *ttlMockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{ID: m.id, State: "idle", CreatedAt: time.Now()}
 }

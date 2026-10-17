@@ -84,8 +84,7 @@ model = "mock-model"
 	resp, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
-	ep := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-	waitForFigaro(t, ep)
+	ep := ariaAddr(a, resp.FigaroID)
 
 	doneCh := make(chan struct{}, 4)
 	fcli, err := sdk.DialAria(ep, func(method string, _ json.RawMessage) {

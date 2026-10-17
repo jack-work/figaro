@@ -44,7 +44,7 @@ func (p *parkedProvider) Send(ctx context.Context, _ provider.SendInput, _ provi
 	return ctx.Err()
 }
 
-func hangupFixture(t *testing.T) (transport.Endpoint, *parkedProvider, func()) {
+func hangupFixture(t *testing.T) (sdk.Addr, *parkedProvider, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -77,8 +77,7 @@ model = "m"
 	require.NoError(t, err)
 	acli.Close()
 
-	ep := transport.Endpoint{Scheme: create.Endpoint.Scheme, Address: create.Endpoint.Address}
-	waitForFigaro(t, ep)
+	ep := ariaAddr(a, create.FigaroID)
 	return ep, prov, func() { cancel(); a.Shutdown(0) }
 }
 

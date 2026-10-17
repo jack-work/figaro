@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
-	"github.com/jack-work/figaro/internal/authz"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -31,10 +29,14 @@ func (hs *hubs) get(id string) *ariaHub {
 	return hs.m[id]
 }
 
-func (hs *hubs) put(id string, hb *ariaHub) {
+func (hs *hubs) putIfAbsent(id string, hb *ariaHub) *ariaHub {
 	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	if prior := hs.m[id]; prior != nil {
+		return prior
+	}
 	hs.m[id] = hb
-	hs.mu.Unlock()
+	return nil
 }
 
 func (hs *hubs) drop(id string) *ariaHub {
@@ -62,12 +64,11 @@ func (hs *hubs) closeAll() {
 	}
 }
 
-// hubFor opens the endpoint on first use; it constructs no agent.
-func (h *handlers) hubFor(id string) (*ariaHub, error) {
+func (h *handlers) hubFor(id string) *ariaHub {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
-		return hb, nil
+		return hb
 	}
-	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"), authz.AllowAll())
+	hb := newAriaHub(id)
 	hb.wake = h.wakeForHub
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub
@@ -82,21 +83,16 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 		hb.wake = nil
 	}
 
-	if err := hb.listen(h.ctx); err != nil {
-		return nil, err
+	if prior := h.angelus.Hubs.putIfAbsent(id, hb); prior != nil {
+		return prior
 	}
-	h.angelus.Hubs.put(id, hb)
-	slog.Debug("aria endpoint open", "aria", id, "socket", hb.sockPath)
-	return hb, nil
+	slog.Debug("aria endpoint open", "aria", id)
+	return hb
 }
 
 // bindAgentToHub returns the unbind; running it leaves the endpoint standing.
-func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), error) {
-	hb, err := h.hubFor(id)
-	if err != nil {
-		return nil, err
-	}
-	return hb.bind(agent), nil
+func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) func() {
+	return h.hubFor(id).bind(agent)
 }
 
 // writeForHub lands mutations on a dormant aria or an unbound form without

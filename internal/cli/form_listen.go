@@ -13,7 +13,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -41,7 +40,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 
 	// Subscribe before seeding: a seed older than a delta in hand is caught by
 	// the version check; the other order drops deltas.
-	fcli, err := sdk.DialAria(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
+	fcli, err := sdk.DialAria(ep,
 		func(method string, params json.RawMessage) {
 			if method != rpc.MethodFormDelta {
 				return

@@ -39,7 +39,6 @@ type FormResponse struct {
 // from. The zero At means the end the direction starts from. A backward read
 // excludes At itself.
 type ReadRequest struct {
-	// FigaroID is empty on an aria's own socket.
 	FigaroID string      `json:"figaro_id,omitempty"`
 	At       aria.Anchor `json:"at,omitempty"`
 	Backward bool        `json:"backward,omitempty"`

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 )
 
 func benchPatch(kv map[string]string) *rpc.FormPatch {
@@ -27,7 +26,7 @@ func BenchmarkCast(b *testing.B) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	b.Cleanup(func() { slog.SetDefault(old) })
-	_, acli, ctx := daemonFixture(b)
+	a, acli, ctx := daemonFixture(b)
 	created, err := acli.Create(ctx, dress(b, "mock"), nil)
 	if err != nil {
 		b.Fatal(err)
@@ -36,7 +35,7 @@ func BenchmarkCast(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	fc, err := sdk.DialAria(transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}, nil)
+	fc, err := sdk.DialAria(ariaAddr(a, created.FigaroID), nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -61,14 +60,14 @@ func BenchmarkRoleRedirectRead(b *testing.B) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	b.Cleanup(func() { slog.SetDefault(old) })
-	_, acli, ctx := daemonFixture(b)
+	a, acli, ctx := daemonFixture(b)
 	role, err := acli.FormCreate(ctx, "", nil, benchPatch(map[string]string{
 		"name": `"bench-role"`, "target-aria": `"abc123"`,
 	}))
 	if err != nil {
 		b.Fatal(err)
 	}
-	rc, err := sdk.DialAria(transport.Endpoint{Scheme: role.Endpoint.Scheme, Address: role.Endpoint.Address}, nil)
+	rc, err := sdk.DialAria(ariaAddr(a, role.FormID), nil)
 	if err != nil {
 		b.Fatal(err)
 	}

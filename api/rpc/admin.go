@@ -67,8 +67,6 @@ type MemStatus struct {
 	Sessions      int `json:"sessions"`       // backgrounded exec sessions, all arias
 	Goroutines    int `json:"goroutines"`
 
-	// Endpoints and AttachedClients are independent of LiveArias: a reclaimed
-	// aria keeps its socket and attached shells.
 	Endpoints       int `json:"endpoints"`
 	AttachedClients int `json:"attached_clients"`
 

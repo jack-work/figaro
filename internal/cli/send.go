@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/term"
@@ -538,7 +537,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	var figaroEP transport.Endpoint
+	var figaroEP sdk.Addr
 	if opts.id == "" {
 		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
 			return acli.Create(ctx, opts.outfit.names, opts.outfit.patch)
@@ -546,15 +545,12 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}
-		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
+		figaroEP = ariaAddr(createResp.FigaroID)
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer killCancel()
 			_ = acli.Kill(killCtx, createResp.FigaroID, false)
 		}()
-		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
-			die("send: %s", err)
-		}
 	} else {
 		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {

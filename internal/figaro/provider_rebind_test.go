@@ -142,7 +142,6 @@ func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage
 		Backend:         testBE,
 		Projector:       uiir.New(nil),
 		ID:              testID,
-		SocketPath:      "/tmp/figaro-rebind-test.sock",
 		Provider:        prov,
 		ProviderFactory: f.build,
 		Form:            cb,

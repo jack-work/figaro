@@ -2,7 +2,6 @@ package angelus
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,10 +20,9 @@ func TestFloorReadsTheSameFromTheAgentAndFromTheStore(t *testing.T) {
 	require.NoError(t, err)
 
 	agent := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         id,
-		Backend:    backend,
-		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
+		Projector: uiir.New(nil),
+		ID:        id,
+		Backend:   backend,
 	})
 	t.Cleanup(agent.Kill)
 	fromAgent := agent.ReadBefore(aria.Anchor{}, floor, 1<<16)

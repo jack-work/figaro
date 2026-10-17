@@ -32,8 +32,8 @@ func TestSetDoesNotWaitByDefaultDuringAToolRound(t *testing.T) {
 	a := figaro.NewAgent(figaro.Config{
 		ID:        testID,
 		Backend:   testBE,
-		Projector: uiir.New(nil), SocketPath: "/tmp/nowait-set.sock",
-		Provider: prov, Tools: reg, Form: cb,
+		Projector: uiir.New(nil),
+		Provider:  prov, Tools: reg, Form: cb,
 	})
 	defer a.Kill()
 
@@ -76,8 +76,8 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	a := figaro.NewAgent(figaro.Config{
 		ID:        testID,
 		Backend:   testBE,
-		Projector: uiir.New(nil), SocketPath: "/tmp/wait-set.sock",
-		Provider: prov, Tools: reg, Form: cb,
+		Projector: uiir.New(nil),
+		Provider:  prov, Tools: reg, Form: cb,
 	})
 	defer a.Kill()
 
@@ -127,8 +127,8 @@ func TestACancelledContextStillApplies(t *testing.T) {
 	a := figaro.NewAgent(figaro.Config{
 		ID:        testID,
 		Backend:   testBE,
-		Projector: uiir.New(nil), SocketPath: "/tmp/wait-ctx.sock",
-		Form: cb,
+		Projector: uiir.New(nil),
+		Form:      cb,
 	})
 	defer a.Kill()
 	ctx, cancel := context.WithCancel(context.Background())

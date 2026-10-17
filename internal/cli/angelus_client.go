@@ -163,8 +163,7 @@ const (
 func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	_ = loaded
 	ensureAngelus()
-	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
-	cli, err := sdk.DialAngelus(ep)
+	cli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		die("connect angelus: %s", err)
 	}
@@ -173,24 +172,14 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 
 // mustCreate mints an aria and does not attend it: every birth verb says so
 // with attendNew.
-func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, transport.Endpoint) {
+func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, sdk.Addr) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, d.names, d.patch)
 	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
-
-	ep := transport.Endpoint{
-		Scheme:  createResp.Endpoint.Scheme,
-		Address: createResp.Endpoint.Address,
-	}
-
-	if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
-		dieWithClosure(err, "create figaro: %s", err)
-	}
-
-	return createResp.FigaroID, ep
+	return createResp.FigaroID, ariaAddr(createResp.FigaroID)
 }
 
 // attendNew moves the shell onto what a verb created for it; with binding

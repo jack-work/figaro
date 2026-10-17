@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"net"
 	"os"
 	"runtime"
 	"testing"
@@ -20,7 +19,6 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/jkrpc"
 )
 
 func TestEndToEndResourceProfile(t *testing.T) {
@@ -37,23 +35,16 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	a, acli, ctx := benchDaemon(t)
 
 	ids := make([]string, 0, arias)
-	socks := make([]string, 0, arias)
 	for i := 0; i < arias; i++ {
 		created, err := acli.Create(ctx, dress(t, "mock"), nil)
 		require.NoError(t, err)
 		ids = append(ids, created.FigaroID)
-		socks = append(socks, created.Endpoint.Address)
 	}
 
-	clients := make([]*jkrpc.Client, 0, arias*clientsPerAria)
-	for _, sock := range socks {
+	clients := make([]ariaConn, 0, arias*clientsPerAria)
+	for _, id := range ids {
 		for c := 0; c < clientsPerAria; c++ {
-			conn, err := net.Dial("unix", sock)
-			require.NoError(t, err)
-			t.Cleanup(func() { conn.Close() })
-			cl := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
-			t.Cleanup(func() { cl.Close() })
-			clients = append(clients, cl)
+			clients = append(clients, dialAria(t, a, id, func(string, json.RawMessage) {}))
 		}
 	}
 

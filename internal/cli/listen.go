@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/tape"
@@ -72,7 +71,7 @@ type tailOpts struct {
 	formIntrinsic string // "" is the board
 }
 
-func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.Endpoint, figaroID string, loaded *config.Loaded, opt tailOpts) {
+func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr, figaroID string, loaded *config.Loaded, opt tailOpts) {
 	ctx, span := figOtel.Start(ctx, "cli.listen")
 	defer span.End()
 	runSession(ctx, cancel, sessionOpts{

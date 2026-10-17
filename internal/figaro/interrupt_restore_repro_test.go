@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -68,11 +67,10 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 
 	started := make(chan struct{})
 	a1 := figaro.NewAgent(figaro.Config{
-		Projector:  uiir.New(nil),
-		ID:         conv,
-		SocketPath: filepath.Join(t.TempDir(), "a1.sock"),
-		Provider:   &slowStreamingProvider{started: started},
-		Backend:    backend1,
+		Projector: uiir.New(nil),
+		ID:        conv,
+		Provider:  &slowStreamingProvider{started: started},
+		Backend:   backend1,
 	})
 
 	sink1 := make(chan rpc.Notification, 64)
@@ -111,11 +109,10 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		require.NoError(t, err)
 		t.Cleanup(func() { backend2.Close() })
 		a2 = figaro.NewAgent(figaro.Config{
-			Projector:  uiir.New(nil),
-			ID:         conv,
-			SocketPath: filepath.Join(t.TempDir(), "a2.sock"),
-			Provider:   &staticReplyProvider{reply: "second reply after restore"},
-			Backend:    backend2,
+			Projector: uiir.New(nil),
+			ID:        conv,
+			Provider:  &staticReplyProvider{reply: "second reply after restore"},
+			Backend:   backend2,
 		})
 		t.Cleanup(a2.Kill)
 	} else {

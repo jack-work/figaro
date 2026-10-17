@@ -3,7 +3,6 @@ package figaro_test
 import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/message"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -27,11 +26,10 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Backend:    testBE,
-		ID:         testID,
-		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
-		Provider:   &mockProvider{response: "pong"},
-		Form:       cb,
+		Backend:  testBE,
+		ID:       testID,
+		Provider: &mockProvider{response: "pong"},
+		Form:     cb,
 	})
 	t.Cleanup(a.Kill)
 

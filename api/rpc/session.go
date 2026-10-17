@@ -44,19 +44,13 @@ type FigaroInfoResponse struct {
 	TargetAria string `json:"target_aria,omitempty"`
 }
 
-type Endpoint struct {
-	Scheme  string `json:"scheme"`
-	Address string `json:"address"`
-}
-
 // AttachRequest restores a dormant aria without binding a pid.
 type AttachRequest struct {
 	FigaroID string `json:"figaro_id"`
 }
 
 type AttachResponse struct {
-	FigaroID string   `json:"figaro_id"`
-	Endpoint Endpoint `json:"endpoint"`
+	FigaroID string `json:"figaro_id"`
 }
 
 // IDsOnly skips the per-aria form and tree fills. Global also lists the
@@ -85,10 +79,9 @@ type ResolveRequest struct {
 }
 
 type ResolveResponse struct {
-	FigaroID string   `json:"figaro_id,omitempty"`
-	Endpoint Endpoint `json:"endpoint,omitempty"`
-	Found    bool     `json:"found"`
-	AtMainLT uint64   `json:"at_main_lt,omitempty"` // pending fork-point bound to this pid
+	FigaroID string `json:"figaro_id,omitempty"`
+	Found    bool   `json:"found"`
+	AtMainLT uint64 `json:"at_main_lt,omitempty"` // pending fork-point bound to this pid
 }
 
 type UnbindRequest struct {

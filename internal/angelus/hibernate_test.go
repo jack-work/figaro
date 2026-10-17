@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"os"
 	"testing"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/jkrpc"
 )
 
 func TestAttendDoesNotWake(t *testing.T) {
@@ -25,7 +23,6 @@ func TestAttendDoesNotWake(t *testing.T) {
 	att, err := acli.Attach(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, id, att.FigaroID)
-	require.FileExists(t, att.Endpoint.Address)
 	require.Nil(t, a.Registry.Get(id), "attach woke the aria")
 
 	require.NoError(t, acli.Bind(ctx, os.Getpid(), id, 0))
@@ -35,8 +32,6 @@ func TestAttendDoesNotWake(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.Found, "resolve reported a bound dormant aria as missing")
 	require.Equal(t, id, res.FigaroID)
-	require.Equal(t, att.Endpoint.Address, res.Endpoint.Address,
-		"resolve and attach disagree on the address")
 	require.Nil(t, a.Registry.Get(id), "resolve woke the aria")
 }
 
@@ -77,10 +72,10 @@ func TestHibernateKeepsAriaAddressable(t *testing.T) {
 
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	id, sock := created.FigaroID, created.Endpoint.Address
+	id := created.FigaroID
+	client := dialAria(t, a, id, func(string, json.RawMessage) {})
 
 	require.NoError(t, a.Registry.Hibernate(id))
-	require.FileExists(t, sock, "hibernate took the endpoint with it")
 
 	list, err := acli.List(ctx)
 	require.NoError(t, err)
@@ -92,12 +87,7 @@ func TestHibernateKeepsAriaAddressable(t *testing.T) {
 	}
 	require.True(t, found, "hibernated aria vanished from list")
 
-	// And it still answers reads on that socket, without waking.
-	conn, err := net.Dial("unix", sock)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
-	defer client.Close()
+	// And it still answers reads on the connection that followed it, without waking.
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -113,11 +103,7 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 	require.NoError(t, err)
 	id := created.FigaroID
 
-	conn, err := net.Dial("unix", created.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
-	defer client.Close()
+	client := dialAria(t, a, created.FigaroID, func(string, json.RawMessage) {})
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -157,11 +143,7 @@ func TestHibernateWakeCycle(t *testing.T) {
 	require.NoError(t, err)
 	id := created.FigaroID
 
-	conn, err := net.Dial("unix", created.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
-	defer client.Close()
+	client := dialAria(t, a, created.FigaroID, func(string, json.RawMessage) {})
 
 	for round := 0; round < 3; round++ {
 		require.Eventually(t, func() bool {
@@ -205,11 +187,7 @@ func TestWakeIsAttributedToItsMethod(t *testing.T) {
 	require.NoError(t, a.Registry.Hibernate(id))
 	require.Nil(t, a.Registry.Get(id))
 
-	conn, err := net.Dial("unix", created.Endpoint.Address)
-	require.NoError(t, err)
-	defer conn.Close()
-	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
-	defer client.Close()
+	client := dialAria(t, a, created.FigaroID, func(string, json.RawMessage) {})
 
 	// figaro.queued needs an agent, so it wakes the aria.
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

@@ -33,9 +33,6 @@ const (
 	MethodCast  = "figaro.cast"
 )
 
-// Reads are served on both doors: the aria socket, where the connection says
-// which aria, and the angelus, where ReadRequest.FigaroID does. A live agent
-// answers when there is one; otherwise the store does, without waking it.
 const (
 	// MethodRead is the catch-up half of MethodAriaFrame.
 	MethodRead    = "figaro.read"

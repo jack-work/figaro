@@ -38,19 +38,3 @@ func waitForAngelus(t testing.TB, path string) {
 	}
 	t.Fatalf("angelus socket %s never accepted a connection: %v", path, lastErr)
 }
-
-func waitForFigaro(t testing.TB, endpoint transport.Endpoint) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		conn, err := transport.DialRaw(endpoint)
-		if err == nil {
-			_ = conn.Close()
-			return
-		}
-		lastErr = err
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("figaro socket %s never accepted a connection: %v", endpoint.Address, lastErr)
-}

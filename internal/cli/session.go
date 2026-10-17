@@ -2,26 +2,23 @@ package cli
 
 import (
 	"context"
-	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"time"
 
-	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 )
 
 type Session struct {
-	Loaded   *config.Loaded
-	Angelus  *sdk.Angelus
-	Figaro   *sdk.Aria
-	AriaID   string
-	Endpoint transport.Endpoint
+	Loaded  *config.Loaded
+	Angelus *sdk.Angelus
+	Figaro  *sdk.Aria
+	AriaID  string
+	Addr    sdk.Addr
 }
 
 func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	ensureAngelus()
-	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
-	acli, err := sdk.DialAngelus(ep)
+	acli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		die("connect angelus: %s", err)
 	}
@@ -33,8 +30,7 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 
 // WithAngelusIfRunning starts no daemon and unlocks no vault.
 func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
-	ep := transport.UnixEndpoint(boot.AngelusSocketPath())
-	acli, err := sdk.DialAngelus(ep)
+	acli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		die("angelus is not running")
 	}
@@ -51,18 +47,13 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 		defer cancel()
 
 		var ariaID string
-		var ep transport.Endpoint
+		var ep sdk.Addr
 
 		if explicitID != "" {
-			resp, err := acli.Attach(ctx, explicitID)
-			if err != nil {
+			if _, err := acli.Attach(ctx, explicitID); err != nil {
 				die("attach %q: %s", explicitID, err)
 			}
 			ariaID = explicitID
-			ep = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-			if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
-				return err
-			}
 		} else {
 			r, err := resolveBinding(ctx, acli, shellPID)
 			if err != nil {
@@ -72,8 +63,8 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 				die("no figaro bound to this shell (try: --id <id> or attend <id>)")
 			}
 			ariaID = r.FigaroID
-			ep = transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
 		}
+		ep = ariaAddr(ariaID)
 
 		fcli, err := sdk.DialAria(ep, nil)
 		if err != nil {
@@ -82,11 +73,11 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 		defer fcli.Close()
 
 		return fn(&Session{
-			Loaded:   loaded,
-			Angelus:  acli,
-			Figaro:   fcli,
-			AriaID:   ariaID,
-			Endpoint: ep,
+			Loaded:  loaded,
+			Angelus: acli,
+			Figaro:  fcli,
+			AriaID:  ariaID,
+			Addr:    ep,
 		})
 	})
 }
