@@ -1,53 +1,74 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	hush "github.com/jack-work/hush/client"
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// encryptedAPIKey decrypts an AGE-encrypted api_key through hush, cached by file mtime.
-type encryptedAPIKey struct {
-	Hush       func() (*hush.Client, error)
-	ConfigPath string
+type providerAuthFile struct {
+	loaded *config.Loaded
+	name   string
 
-	mu       sync.Mutex
-	cached   string
-	cachedAt time.Time
+	mu   sync.Mutex
+	have bool
+	mod  time.Time
+	size int64
+	pa   config.ProviderAuth
+}
+
+func (f *providerAuthFile) path() string { return f.loaded.ProviderAuthPath(f.name) }
+
+func (f *providerAuthFile) load() (config.ProviderAuth, error) {
+	st, err := os.Stat(f.path())
+	if errors.Is(err, fs.ErrNotExist) {
+		return config.ProviderAuth{}, nil
+	}
+	if err != nil {
+		return config.ProviderAuth{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.have && st.ModTime().Equal(f.mod) && st.Size() == f.size {
+		return f.pa, nil
+	}
+	var pa config.ProviderAuth
+	if err := f.loaded.LoadProviderAuth(f.name, &pa); err != nil {
+		return config.ProviderAuth{}, err
+	}
+	f.pa, f.mod, f.size, f.have = pa, st.ModTime(), st.Size(), true
+	return pa, nil
+}
+
+type encryptedAPIKey struct {
+	Hush func() (*hush.Client, error)
+	File *providerAuthFile
+
+	mu     sync.Mutex
+	cipher string
+	plain  string
 }
 
 var _ auth.CredentialStrategy = (*encryptedAPIKey)(nil)
 
 func (e *encryptedAPIKey) TryResolve() (string, bool, error) {
-	if e.Hush == nil || e.ConfigPath == "" {
-		return "", false, nil
-	}
-	info, err := os.Stat(e.ConfigPath)
-	if os.IsNotExist(err) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("stat %s: %w", e.ConfigPath, err)
+	pa, err := e.File.load()
+	if err != nil || !strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
+		return "", false, err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.cached != "" && info.ModTime().Equal(e.cachedAt) {
-		return e.cached, true, nil
-	}
-	var pa config.ProviderAuth
-	if err := loadProviderAuthFrom(e.ConfigPath, &pa); err != nil {
-		return "", false, err
-	}
-	if !strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
-		return "", false, nil
+	if e.cipher == pa.APIKey {
+		return e.plain, true, nil
 	}
 	c, err := e.Hush()
 	if err != nil {
@@ -55,28 +76,17 @@ func (e *encryptedAPIKey) TryResolve() (string, bool, error) {
 	}
 	res, err := c.Decrypt(map[string]string{"v": pa.APIKey})
 	if err != nil {
-		return "", false, fmt.Errorf("hush decrypt %s: %w", e.ConfigPath, err)
+		return "", false, fmt.Errorf("hush decrypt %s: %w", e.File.path(), err)
 	}
-	plain := res["v"]
-	e.cached = plain
-	e.cachedAt = info.ModTime()
-	return plain, true, nil
+	e.cipher, e.plain = pa.APIKey, res["v"]
+	return e.plain, true, nil
 }
 
 func (e *encryptedAPIKey) Invalidate(token string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.cached == token {
-		e.cached = ""
-		e.cachedAt = time.Time{}
+	if e.plain == token {
+		e.cipher, e.plain = "", ""
 	}
 	return nil
-}
-
-func loadProviderAuthFrom(path string, target *config.ProviderAuth) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	return toml.Unmarshal(data, target)
 }

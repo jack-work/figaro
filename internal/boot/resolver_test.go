@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -146,4 +147,38 @@ func TestExchangeResolverIsLazy(t *testing.T) {
 		t.Fatalf("Endpoint = %q before any resolve", ep)
 	}
 	assertHushUntouched(t)
+}
+
+// The provider file is parsed once per change rather than once per strategy
+// per call; an edit, even one that keeps the size, must still be seen.
+func TestProviderFileEditsAreSeen(t *testing.T) {
+	cfgDir, _ := serverEnv(t)
+	path := filepath.Join(cfgDir, "providers", "anthropic.toml")
+	writeFile(t, path, `api_key = "sk-one"`+"\n")
+	r, _ := BuildResolver(&config.Loaded{ConfigDir: cfgDir}, "anthropic")
+	if tok, _ := r.Resolve(); tok != "sk-one" {
+		t.Fatalf("Resolve = %q", tok)
+	}
+
+	writeFile(t, path, `api_key = "sk-two"`+"\n")
+	later := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if tok, _ := r.Resolve(); tok != "sk-two" {
+		t.Fatalf("Resolve = %q after a same-size edit", tok)
+	}
+
+	writeFile(t, path, `api_key = "sk-three-longer"`+"\n")
+	if tok, _ := r.Resolve(); tok != "sk-three-longer" {
+		t.Fatalf("Resolve = %q after a resize", tok)
+	}
+	assertHushUntouched(t)
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := r.Resolve(); err == nil {
+		t.Fatalf("Resolve = %q after the file went away", tok)
+	}
 }

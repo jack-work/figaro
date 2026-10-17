@@ -26,8 +26,9 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		return &exchangeResolver{loaded: loaded, reg: reg, name: providerName}, nil
 	}
 
-	strategies := append(EnvironmentStrategies(reg), FileStrategies(loaded, providerName)...)
-	strategies = append(strategies, storedKey(loaded, providerName)...)
+	pf := &providerAuthFile{loaded: loaded, name: providerName}
+	strategies := append(EnvironmentStrategies(reg), fileStrategies(pf)...)
+	strategies = append(strategies, storedKey(pf)...)
 	if reg != nil && reg.HasOAuth {
 		strategies = append(strategies, &hushStrategy{build: func(c *hush.Client) auth.CredentialStrategy {
 			return &auth.OAuth{Hush: c, Name: providerName}
@@ -36,29 +37,28 @@ func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	return &auth.Aggregate{Strategies: strategies}, nil
 }
 
-func FileStrategies(loaded *config.Loaded, name string) []auth.CredentialStrategy {
-	out := []auth.CredentialStrategy{&configuredKeyFile{loaded: loaded, name: name}}
+func fileStrategies(pf *providerAuthFile) []auth.CredentialStrategy {
+	out := []auth.CredentialStrategy{&configuredKeyFile{file: pf}}
 	if dir := os.Getenv("CREDENTIALS_DIRECTORY"); dir != "" {
-		out = append(out, &auth.File{Path: filepath.Join(dir, name)})
+		out = append(out, &auth.File{Path: filepath.Join(dir, pf.name)})
 	}
 	return out
 }
 
 type configuredKeyFile struct {
-	loaded *config.Loaded
-	name   string
+	file *providerAuthFile
 }
 
 func (c *configuredKeyFile) TryResolve() (string, bool, error) {
-	var pa config.ProviderAuth
-	if err := c.loaded.LoadProviderAuth(c.name, &pa); err != nil || pa.APIKeyFile == "" {
+	pa, err := c.file.load()
+	if err != nil || pa.APIKeyFile == "" {
 		return "", false, err
 	}
 	path := pa.APIKeyFile
 	if !filepath.IsAbs(path) {
 		dir := os.Getenv("CREDENTIALS_DIRECTORY")
 		if dir == "" {
-			return "", false, fmt.Errorf("%s: api_key_file %q is relative and $CREDENTIALS_DIRECTORY is unset", c.loaded.ProviderAuthPath(c.name), path)
+			return "", false, fmt.Errorf("%s: api_key_file %q is relative and $CREDENTIALS_DIRECTORY is unset", c.file.path(), path)
 		}
 		path = filepath.Join(dir, path)
 	}
@@ -67,17 +67,16 @@ func (c *configuredKeyFile) TryResolve() (string, bool, error) {
 
 func (*configuredKeyFile) Invalidate(string) error { return nil }
 
-func storedKey(loaded *config.Loaded, name string) []auth.CredentialStrategy {
+func storedKey(pf *providerAuthFile) []auth.CredentialStrategy {
 	return []auth.CredentialStrategy{
 		&auth.ConfigValue{Get: func() string {
-			var pa config.ProviderAuth
-			_ = loaded.LoadProviderAuth(name, &pa)
-			if pa.APIKey == "" || strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
+			pa, _ := pf.load()
+			if strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
 				return ""
 			}
 			return pa.APIKey
 		}},
-		&encryptedAPIKey{Hush: strategyHushClient, ConfigPath: loaded.ProviderAuthPath(name)},
+		&encryptedAPIKey{Hush: strategyHushClient, File: pf},
 	}
 }
 
@@ -244,7 +243,7 @@ func durableSecretFor(loaded *config.Loaded, h *hush.Client, reg *providerPkg.Re
 			return v, "$" + env
 		}
 	}
-	for _, f := range FileStrategies(loaded, name) {
+	for _, f := range fileStrategies(&providerAuthFile{loaded: loaded, name: name}) {
 		if v, ok, _ := f.TryResolve(); ok {
 			return v, "a credential file"
 		}
