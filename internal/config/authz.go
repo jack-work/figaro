@@ -14,9 +14,8 @@ type PeercredConfig struct {
 }
 
 type UpstreamConfig struct {
-	Listen       []string `toml:"listen"`
-	UserHeader   string   `toml:"user_header"`
-	GroupsHeader string   `toml:"groups_header"`
+	Services map[string]string `toml:"services"`
+	Reverify bool              `toml:"reverify"`
 }
 
 type BearerConfig struct {

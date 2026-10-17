@@ -13,25 +13,36 @@ import (
 )
 
 func peer(conn net.Conn) (rpc.Principal, error) {
+	if _, ok := conn.(*net.UnixConn); !ok {
+		return rpc.Principal{}, nil
+	}
+	uid, err := PeerUID(conn)
+	if err != nil {
+		return rpc.Principal{}, err
+	}
+	if int(uid) != os.Getuid() {
+		return rpc.Principal{}, fmt.Errorf("peer uid %d, want %d", uid, os.Getuid())
+	}
+	return rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(int(uid))}, nil
+}
+
+func PeerUID(conn net.Conn) (uint32, error) {
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
-		return rpc.Principal{}, nil
+		return 0, fmt.Errorf("peercred: %T is not a unix socket", conn)
 	}
 	raw, err := uc.SyscallConn()
 	if err != nil {
-		return rpc.Principal{}, err
+		return 0, err
 	}
 	var cred *unix.Ucred
 	if cerr := raw.Control(func(fd uintptr) {
 		cred, err = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
 	}); cerr != nil {
-		err = cerr
+		return 0, cerr
 	}
 	if err != nil {
-		return rpc.Principal{}, err
+		return 0, err
 	}
-	if int(cred.Uid) != os.Getuid() {
-		return rpc.Principal{}, fmt.Errorf("peer uid %d, want %d", cred.Uid, os.Getuid())
-	}
-	return rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(int(cred.Uid))}, nil
+	return cred.Uid, nil
 }
