@@ -78,10 +78,33 @@ func offToken(tr *transcript, base int) string {
 // oracleSignature is every piece of pager state a keystroke can touch. base is
 // the offset an inert key leaves in this state; see offToken.
 func oracleSignature(tr *transcript, base int) string {
-	return fmt.Sprintf("%s fol=%v srch=%v q=%q mq=%q h=%v s=%v Q=%v g=%v sel=%v exp=%d jmp=%v jq=%q vis=%s",
+	return fmt.Sprintf("%s fol=%v srch=%v q=%q mq=%q h=%v s=%v Q=%v g=%v sel=%v exp=%d jmp=%v jq=%q vis=%s pit=%s",
 		offToken(tr, base), tr.follow, tr.inSearch, tr.query, tr.matchQuery,
 		tr.showing("help"), tr.showing("status"), tr.showing("queue"), tr.pendG, tr.selection.active,
-		len(tr.expanded), tr.boxOpen(), tr.cmdline.String(), visToken(tr))
+		len(tr.expanded), tr.boxOpen(), tr.cmdline.String(), visToken(tr), pitToken(tr))
+}
+
+// pitToken is what is open below the transcript and how a reader stands in
+// it: the pit, where its cursor and window are, whether it holds the pane,
+// which side has the keys, and a hosted view's own state where it has one.
+func pitToken(tr *transcript) string {
+	if !tr.pit.open() {
+		return "none"
+	}
+	tok := string(tr.pit.id)
+	if p := tr.pit.list(); p != nil {
+		tok += fmt.Sprintf("@%d/%d", p.cursor, p.top)
+	}
+	if tr.full {
+		tok += "+full"
+	}
+	if tr.focused == focusTranscript {
+		tok += "+T"
+	}
+	if v, ok := tr.pit.live.(*notificationsView); ok {
+		tok += fmt.Sprintf("+f%d", v.filter)
+	}
+	return tok
 }
 
 // visToken is the visual mode as a statement about the KEY: the highlight's
@@ -155,6 +178,12 @@ var oracleStates = map[string]func(*transcript){
 	// A y/n question up: the mode a destructive verb opens, where every key
 	// that is not an answer is swallowed.
 	"confirm": func(tr *transcript) { tr.askConfirm("kill aria1234?", func() {}) },
+	// A one-row note is a glance: any key it does not own wipes it.
+	"note": func(tr *transcript) { tr.noteOrClear("a passing remark"); tr.render() },
+	// A list with the conversation focused behind it: T hands the keys over.
+	"help+focus": func(tr *transcript) { tr.key('h'); tr.key('T') },
+	// A hosted view with letters of its own (the notifications pit's f).
+	"notifications": func(tr *transcript) { tr.openNotificationsPit(); tr.render() },
 	// The composer in NORMAL mode: '>' opens it, two words are typed,
 	// Esc drops into the motions.
 	"compose": func(tr *transcript) {
