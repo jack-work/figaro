@@ -53,21 +53,18 @@ Hibernation is not a separate memory feature; it is the unlock.
 
 ## The endpoint outlives the agent: `ariaHub`
 
-The inversion everything else rests on. The **angelus** owns the listener at
-`figaros/<id>.sock` and the set of client connections; the agent is a producer
-the hub binds. See `angelus/hub.go`.
+The inversion everything else rests on. The **angelus** owns each aria's hub:
+the router for its methods and the set of connections following it; the agent
+is a producer the hub binds. See `angelus/hub.go` and `angelus/door.go`.
 
-- Creating a hub is a listener and a map. It constructs **no agent**. That is
-  required, not incidental: a unix socket has no lazy activation, so the
-  endpoint must be listening before a client dials, and only the daemon can
-  promise that.
+- Creating a hub is a map entry, on the first call naming the aria. It
+  constructs **no agent**.
 - The hub is the agent's **only** subscriber, so the agent's subscriber set is
   always ≤1 and lifetime-independent of any client. `Agent.OnTeardown` carries
   the unbind, because the endpoint must survive the agent and therefore cannot
   be owned by it.
-- Subscription is per-(conn, aria), which today buys nothing: one conn is one
-  aria. It means multiplexing later (one pooled connection, many arias, target
-  id in the envelope) is a change of *listener count*, not of architecture.
+- Following is per-(conn, aria): one connection on the door may follow many
+  arias, and every push names its aria.
 
 Requests route on liveness. `rpc.MethodNeedsAgent` classifies the surface:
 `figaro.read`, `figaro.context` and `figaro.form` are pure functions of

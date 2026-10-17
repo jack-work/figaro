@@ -1,6 +1,6 @@
 # Figaro, Architecture
 
-Single Go binary, three roles selected by invocation: CLI, supervisor (*angelus*), agent (*figaro*). All IPC is JSON-RPC 2.0 over Unix sockets.
+Single Go binary, three roles selected by invocation: CLI, supervisor (*angelus*), agent (*figaro*). All IPC is JSON-RPC 2.0 through one door per daemon: a Unix socket, or any listener `Angelus.Serve` is handed.
 
 ```
 ┌────────┐  unix   ┌──────────┐  spawns  ┌────────────┐
@@ -14,9 +14,9 @@ ephemeral          1 per user            N per user
 
 | Tier | Lifetime | Socket |
 |------|----------|--------|
-| **CLI**: stateless translator, stdio ↔ JSON-RPC | one prompt | dials angelus + figaro |
-| **Angelus**: supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock` |
-| **Figaro**, actor: one inbox, one drain loop | per conversation | `$XDG_RUNTIME_DIR/figaro/figaros/<id>.sock` |
+| **CLI**: stateless translator, stdio ↔ JSON-RPC | one prompt | dials the door |
+| **Angelus**: supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock`, the door |
+| **Figaro**, actor: one inbox, one drain loop | per conversation | none: addressed through the door by `figaro_id` |
 
 ## Packages
 
@@ -197,28 +197,31 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
 
-**Angelus socket:** `figaro.create`, `form.create`, `form.bind`,
+One door serves every method, and every request passes `authz.Guard` once.
+
+**Daemon methods:** `figaro.create`, `form.create`, `form.bind`,
 `figaro.fork`, `figaro.promote`, `figaro.import`, `figaro.normalize`,
 `figaro.gc`, `figaro.kill`, `figaro.list`, `figaro.attach`, `pid.bind`,
 `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.mem.collect`,
 `angelus.outfits`, `outfit.reload`, `angelus.configure`,
-`angelus.save_bindings`, `angelus.provider_ledger`, and the reads
-`figaro.read`, `figaro.context`, `figaro.form`, `figaro.ir`,
-`figaro.lineage` (`ReadRequest.FigaroID` names the aria; a read is
-forwarded to the live agent when there is one and served from the store when
-there is not). `figaro.attach` lazily restores a dormant aria and returns its
-endpoint.
+`angelus.save_bindings`, `angelus.provider_ledger`, `figaro.ir`,
+`figaro.lineage`. `figaro.attach` proves an aria exists without waking it.
 
-**Figaro socket (requests):** `figaro.qua` (prompt; optional `form`),
-`figaro.interrupt`, `figaro.set`, `figaro.queued`, `figaro.queue.update`,
-`figaro.queue.delete`, `figaro.study`, `figaro.drop`, `figaro.cast`, and the
-reads `figaro.read`, `figaro.context`, `figaro.form`.
+**Aria methods**, each naming its aria in `params.figaro_id`
+(`rpc.AriaKey`): `figaro.qua` (prompt; optional `form`), `figaro.interrupt`,
+`figaro.set`, `figaro.queued`, `figaro.queue.update`, `figaro.queue.delete`,
+`figaro.study`, `figaro.drop`, `figaro.cast`, `figaro.follow`, and the reads
+`figaro.read`, `figaro.context`, `figaro.form`, which a live agent answers and
+the store answers otherwise.
 
-`api/rpc/methods.go` is the list of record.
+`api/rpc/methods.go` and `api/rpc/address.go` are the list of record.
 
-Every accepted aria connection is automatically subscribed to subsequent
-notifications. A frontend calls `figaro.read` on that same connection for
-catch-up, then follows pushes; there is no explicit subscribe method.
+A connection follows every aria it addresses: from its first aria method on,
+it receives that aria's pushes, each carrying `figaro_id`, so one connection
+may follow several. `figaro.follow` follows without asking anything; a pure
+listener calls it, then `figaro.read` for catch-up. When an aria's endpoint
+closes (kill, drain) its followers get `figaro.closed` and their connections
+stay up.
 
 ### Streaming: the turn-shaped aria page
 
@@ -287,7 +290,7 @@ spinners animate on the consumer, producing no timer traffic on the wire.
 
 ```
 ~/.config/figaro/                 config, credo.md, skills/, providers/
-$XDG_RUNTIME_DIR/figaro/          angelus.sock, angelus.pid, figaros/<id>.sock
+$XDG_RUNTIME_DIR/figaro/          angelus.sock, angelus.pid
 ~/.local/state/figaro/
 ├── angelus.log                   supervisor log
 ├── traces.jsonl                  OTel exporter

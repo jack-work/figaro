@@ -15,10 +15,10 @@ There is exactly one conversation-read shape, `aria.Page`, served two ways:
 - **pushed** as `figaro.aria` JSON-RPC notifications while a turn changes;
 - **pulled** with `figaro.read` for initial state, paging, and desync recovery.
 
-Every accepted connection to an aria socket is automatically registered for
-future notifications. There is no subscribe request today: connect, issue a
-read on that same NDJSON JSON-RPC connection, then continue consuming pushed
-frames. Read/push overlap is allowed and application is idempotent.
+A connection follows an aria from its first request naming it
+(`params.figaro_id`); `figaro.follow` does only that. Follow, issue a read on
+the same NDJSON JSON-RPC connection, then continue consuming pushed frames,
+each of which names its aria. Read/push overlap is allowed and application is idempotent.
 
 ```go
 type Page struct {
@@ -350,40 +350,29 @@ pagination rules, types, and worked examples.
 
 ### Connection and endpoint discovery
 
-The Angelus supervisor and each live aria listen on local Unix-domain sockets;
-the transport payload is JSON-RPC 2.0 with one JSON object per line. The runtime
-root is `$FIGARO_RUNTIME_DIR` when set, otherwise `$XDG_RUNTIME_DIR/figaro`,
-otherwise the platform temporary directory plus `figaro`. On Windows the last
-case is normally `%TEMP%\figaro`. The supervisor is `angelus.sock` and aria
-sockets live under `figaros/<id>.sock`.
+The daemon listens on one door, a local Unix-domain socket; the transport
+payload is JSON-RPC 2.0 with one JSON object per line. The runtime root is
+`$FIGARO_RUNTIME_DIR` when set, otherwise `$XDG_RUNTIME_DIR/figaro`, otherwise
+the platform temporary directory plus `figaro`. On Windows the last case is
+normally `%TEMP%\figaro`. The door is `angelus.sock`; there are no per-aria
+sockets.
 
-Do not construct an aria path as the primary discovery mechanism. Connect to
-Angelus and attach by id, which opens the aria's endpoint if it is not already
-listening and returns its actual address. `attach` does **not** wake the aria -
-it guarantees somewhere to dial, and the aria wakes on the first request that
-needs a turn loop, which for a transcript or a pager is never. See
-[reclamation.md](../contributing/reclamation.md).
-
-```json
-{"jsonrpc":"2.0","id":1,"method":"figaro.attach","params":{"figaro_id":"85ac180e"}}
-```
+Every aria request names its aria in `params.figaro_id`. Follow the aria,
+then issue an idempotent catch-up read, and keep one reader consuming
+interleaved responses and notifications. Neither wakes the aria; it wakes on
+the first request that needs a turn loop, which for a transcript or a pager is
+never. See [reclamation.md](../contributing/reclamation.md).
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"figaro_id":"85ac180e","endpoint":{"scheme":"unix","address":".../figaros/85ac180e.sock"}}}
-```
-
-Connect to that endpoint, immediately issue an idempotent catch-up read, and
-keep one reader consuming interleaved responses and notifications:
-
-```json
-{"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{"sinceLT":0,"limit":65536}}
+{"jsonrpc":"2.0","id":1,"method":"figaro.follow","params":{"figaro_id":"85ac180e"}}
+{"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{"figaro_id":"85ac180e","sinceLT":0,"limit":65536}}
 ```
 
 A full frontend can also call `figaro.qua`, `figaro.interrupt`,
 `figaro.context`, `figaro.form`, `figaro.set`, `figaro.outfit`,
-`figaro.queued`, `figaro.queue.update` and `figaro.queue.delete` on the aria
-socket; creation, listing, forking, promotion, and
-lifecycle operations remain on Angelus. Request ids are integers in the current
+`figaro.queued`, `figaro.queue.update` and `figaro.queue.delete` the same way;
+creation, listing, forking, promotion, and lifecycle operations are daemon
+methods. Request ids are integers in the current
 `jkrpc` framing.
 
 Node types: `prose` (assistant markdown), `thinking` (extended-thinking),

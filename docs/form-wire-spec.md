@@ -11,11 +11,9 @@ live daemon on 2026-09-09, not a reconstruction. The form is `@1f84ca51`.
 ## 0. The shape of the thing
 
 ```
-          ┌── angelus.sock ──┐              one call, only to ask WHERE
-client ───┤                  ├── figaro.attach ─→ {endpoint}
-          └──────────────────┘
-          ┌── figaros/@1f84ca51.sock ───────────────────────────────┐
-client ───┤  figaro.form   (req/resp)   read the snapshot           │
+          ┌── angelus.sock, every call carries figaro_id ───────────┐
+client ───┤  figaro.follow (req/resp)   follow without asking       │
+          │  figaro.form   (req/resp)   read the snapshot           │
           │  figaro.set    (req/resp)   write a patch               │
           │  form.delta    (push)       every committed patch       │
           └─────────────────────────────────────────────────────────┘
@@ -27,9 +25,9 @@ Content-Length, no batching.
 
 **Three rules that are not guessable:**
 
-1. **There is no subscribe call.** An open connection to the form's socket
-   *is* the subscription. `ariaHub.Notify` fans to every attached conn
-   (`internal/angelus/hub.go:142`).
+1. **Addressing is following.** The first call naming `@1f84ca51` on a
+   connection makes it a follower, and `ariaHub.Notify` fans to every
+   follower. `figaro.follow` does only that. Every push carries `figaro_id`.
 2. **Notifications interleave with responses, and the push usually wins.**
    Measured: `figaro.set` on a connection returns `form.delta` for your own
    write *before* the reply to it. **Match on `id`.** A client that reads one
@@ -40,39 +38,30 @@ Content-Length, no batching.
 
 ---
 
-## 1. `figaro.attach` — where is the socket
-
-The only exchange that cannot happen on the form's own socket. On
-`angelus.sock`.
+## 1. `figaro.follow`: start hearing deltas
 
 ```json
-→ {"jsonrpc":"2.0","id":1,"method":"figaro.attach","params":{"figaro_id":"@1f84ca51"}}
-← {"jsonrpc":"2.0","id":1,"result":{
-     "figaro_id":"@1f84ca51",
-     "endpoint":{"scheme":"unix","address":"/run/user/1000/figaro/figaros/@1f84ca51.sock"}}}
+→ {"jsonrpc":"2.0","id":1,"method":"figaro.follow","params":{"figaro_id":"@1f84ca51"}}
+← {"jsonrpc":"2.0","id":1,"result":{"ok":true}}
 ```
 
-The path is derivable (`$XDG_RUNTIME_DIR/figaro/figaros/<id>.sock`, `@`
-included) but **do not derive it** — `FIGARO_RUNTIME_DIR` overrides, and the
-hub is created lazily on first attach. Asking also *stands the endpoint up*.
+An unknown id is refused here. The door is `angelus.sock` under
+`FIGARO_RUNTIME_DIR` (else `$XDG_RUNTIME_DIR/figaro`).
 
 ---
 
 ## 2. `figaro.form` — read the snapshot
 
 ```json
-→ {"id":1,"jsonrpc":"2.0","method":"figaro.form"}
-← {"id":1,"jsonrpc":"2.0","result":{"snapshot":{"title":"demo"},"version":2}}
+→ {"id":2,"jsonrpc":"2.0","method":"figaro.form","params":{"figaro_id":"@1f84ca51"}}
+← {"id":2,"jsonrpc":"2.0","result":{"snapshot":{"title":"demo"},"version":2}}
 ```
-
-`params` may be omitted entirely on the form's own socket — the connection
-says which form. (On the angelus door you would supply `figaro_id`.)
 
 `snapshot` is the board as **nested JSON**, not flat dotted keys. `version` is
 the durable version, and it is the number every delta is sequenced against.
 
 **Seed first, then follow.** Subscribing after reading drops whatever landed
-in between. Subscribing first (i.e. simply opening the connection, per rule 1)
+in between. Subscribing first (`figaro.follow`, per rule 1)
 and reading second means the seed may be *older* than a delta already in hand
 — which the version check below catches. That is the correct order and it is
 what `openFormView` does (`internal/cli/form_listen.go:33`).

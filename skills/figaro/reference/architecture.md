@@ -5,8 +5,8 @@ source named here and trust it over this file.
 
 ## Three roles, one binary
 
-- **CLI** (`internal/cli`): what the user runs. Connects to the angelus or a
-  per-aria socket and renders the stream.
+- **CLI** (`internal/cli`): what the user runs. Connects to the daemon's door
+  and renders the stream.
 - **Angelus** (`internal/angelus`): the long-running supervisor (single
   instance via flock). Owns the registry of arias, the **endpoint** each aria is
   reachable at, the daemon-wide session registry, pid bindings, and
@@ -180,13 +180,13 @@ goes through
 `sdk.Angelus.IRAll`, which walks `next_from` to the end; a single call there
 is issue #23 again.
 
-The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
-is automatically subscribed; call `figaro.read` on that connection for initial
-state, then keep reading notifications. There is no explicit subscribe method -
-though subscription is tracked per-(conn, aria) rather than per-conn, so adding
-one is a change of listener count rather than of architecture.
+The transport is NDJSON-framed JSON-RPC 2.0 over one door per daemon. An aria
+method names its aria in `params.figaro_id`, and the connection follows that
+aria from then on; `figaro.follow` follows without asking anything. Call
+`figaro.read` for initial state, then keep reading notifications, each of which
+names its aria.
 
-The per-aria socket is served by the **angelus**, not by the agent, and answers
+Aria methods are served by the **angelus**, not by the agent, and answer
 whether or not an agent is resident: `rpc.MethodNeedsAgent` decides which
 methods are served from the store and which wake the aria. See
 [reclamation.md](../contributing/reclamation.md).
