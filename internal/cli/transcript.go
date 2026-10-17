@@ -1689,8 +1689,6 @@ func (t *transcript) dispatch(ev keyEvent) {
 	if act := pagerAct.pager(modeTranscript, ev); act != nil {
 		act(t)
 	}
-	// A jump's report is transient: the key that set it returned from the
-	// modeBox arm, so it always gets its frame.
 	if !t.boxOpen() {
 		t.jumpNote = ""
 	}
@@ -2510,9 +2508,6 @@ func (t *transcript) openNotificationsPit() {
 
 func pagerNotifications(t *transcript) { t.togglePit(pitNotifications, t.openNotificationsPit) }
 
-// prefixed is the binding a half-typed gesture gives this key: in the mode
-// the pager is in, or in the transcript's, which is where every mode that
-// does not own a key sends it.
 func (t *transcript) prefixed(ev keyEvent) *keyBinding {
 	if bd := prefixBinding(t.pending, t.mode(), ev); bd != nil {
 		return bd

@@ -475,10 +475,9 @@ screen and figaro reconstructs the inline scrollback so it reads as though you'd
 run `figaro show` (full content above, cursor below).
 
 **These are the DEFAULTS.** Any of them can be moved in
-`~/.config/figaro/keys.toml`; `figaro keys` prints the map actually in force,
-`figaro keys actions` the vocabulary a row may name, and `figaro doctor keys`
-what the file asked for that figaro refused. The `?` panel derives its key
-column from the live table, so it shows your map rather than this one.
+`~/.config/figaro/keys.toml`, and the leader (Space) can be filled; see
+[keys.md](keys.md). `figaro keys` prints the map actually in force. The help
+pit follows a remap, so it shows your map rather than this one.
 
 | Key | Action |
 | --- | --- |

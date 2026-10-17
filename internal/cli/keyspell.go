@@ -5,19 +5,11 @@ import (
 	"strings"
 )
 
-// The one spelling of a chord, used in both directions: the help pit prints
-// it, keys.toml is written in it, and parseKeySpec is its inverse. A second
-// spelling would be a second definition, which is the defect the derived help
-// column exists to remove.
-
-// spell renders a chord the way a reader writes it.
 func (c chord) spell() string {
 	switch c.kind {
 	case chordNav:
 		return navName(c.nav)
 	case chordCtrlLetter:
-		// ^I IS Tab and ^M IS Enter: the CSI-u report carries the modifier,
-		// but the key still has a name, and the name is what a reader writes.
 		switch c.b {
 		case 'i':
 			return "Tab"
@@ -64,17 +56,11 @@ func metaByteName(b byte) string {
 	return byteName(b)
 }
 
-// keySpec is what one written chord expands to. A control letter has TWO
-// encodings a terminal may send (the raw byte, and the CSI-u report figaro
-// asks for with \x1b[>1u), and a reader cannot be asked which one their
-// terminal uses: writing ^N claims both.
 type keySpec struct {
 	text   string
 	chords []chord
 }
 
-// weldedSpelling names the three chords that are another key's byte. Writing
-// them is a mistake worth catching rather than honouring.
 var weldedSpelling = map[string]string{
 	"^M": "Enter",
 	"^I": "Tab",
@@ -120,9 +106,6 @@ func parseKeySpec(s string) (keySpec, error) {
 		return keySpec{text: t, chords: []chord{navChord(n)}}, nil
 	}
 	if b, ok := namedByte(t); ok {
-		// Tab claims both encodings, because a CSI-u terminal reports it as
-		// Ctrl+i. Enter and Esc do not: a terminal that can say which key was
-		// pressed says Enter, and Esc is the sequence prefix.
 		if b == 0x09 {
 			return keySpec{text: t, chords: []chord{byteChord(b), ctrlChord('i')}}, nil
 		}
@@ -206,8 +189,6 @@ func parseNavName(s string) (navKey, bool) {
 	return navNone, false
 }
 
-// controlByte is what ^<x> sends. The letters are ASCII's own answer; the
-// punctuation controls reuse the table key_input.go already keeps.
 func controlByte(x byte) (byte, error) {
 	if x >= 'a' && x <= 'z' {
 		x -= 0x20
@@ -224,16 +205,12 @@ func controlByte(x byte) (byte, error) {
 	return 0, fmt.Errorf("not a control chord: ^%s", string(x))
 }
 
-// ctrlLetterFor reports the CSI-u chord a control byte is also reported as.
 func ctrlLetterFor(b byte) (byte, bool) {
 	if b >= 1 && b <= 26 {
 		return byte('a' + b - 1), true
 	}
 	return 0, false
 }
-
-// ---------------------------------------------------------------------------
-// Modes, named.
 
 var modeNames = map[string]keyModeSet{
 	"incipit":    inIncipit,
@@ -249,7 +226,6 @@ var modeNames = map[string]keyModeSet{
 	"all":        inAnyBox,
 }
 
-// modeName is the internal spelling, used by the oracles and by error text.
 func modeName(m keyMode) string {
 	switch m {
 	case modeIncipit:
@@ -274,9 +250,6 @@ func modeName(m keyMode) string {
 	return "?"
 }
 
-// userModeName is the name a reader writes for one mode: `command` and `pit`
-// read better than the internal `jump` and `panel`, and the help pit already
-// calls them that.
 func userModeName(m keyMode) string {
 	switch m {
 	case modeBox:
@@ -302,7 +275,6 @@ func parseModes(s string) (keyModeSet, error) {
 	return set, nil
 }
 
-// modeList spells a mode set the way a reader writes it.
 func spellModes(set keyModeSet) string {
 	if set == inAnyBox {
 		return "all"

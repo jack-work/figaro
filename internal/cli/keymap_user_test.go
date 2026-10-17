@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -339,5 +340,35 @@ func TestAPrefixCannotArmAnother(t *testing.T) {
 	diags := withUserKeys(t, binds("leader", "g", "prefix:g"))
 	if len(diags) == 0 || !strings.Contains(diags[0].String(), "cannot arm another prefix") {
 		t.Fatalf("want a refusal, got %v", diags)
+	}
+}
+
+// The example in reference/keys.md is a file a reader will paste. It must
+// load with nothing refused, and do what the page says it does.
+func TestTheDocumentedExampleLoads(t *testing.T) {
+	doc, err := os.ReadFile("../../skills/figaro/reference/keys.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(doc)
+	start := strings.Index(text, "```toml\n")
+	end := strings.Index(text[start+8:], "```")
+	if start < 0 || end < 0 {
+		t.Fatal("reference/keys.md has no toml example")
+	}
+	path := t.TempDir() + "/keys.toml"
+	os.WriteFile(path, []byte(text[start+8:start+8+end]), 0o600)
+	f, warnings, err := keyconf.Load(path)
+	if err != nil || len(warnings) > 0 {
+		t.Fatal(err, warnings)
+	}
+	if diags := withUserKeys(t, f); len(diags) > 0 {
+		t.Fatalf("the documented example is refused: %v", diags)
+	}
+	tr := oracleTranscript()
+	tr.key('W')
+	tr.key('s')
+	if !tr.showing("status") {
+		t.Fatal("W s did not open status, as the page says it does")
 	}
 }

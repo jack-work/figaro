@@ -364,10 +364,6 @@ var (
 
 const navCount = int(navRight) + 1
 
-// liveRows is the table dispatch actually reads: the declared keymap until a
-// keys.toml is applied over it (see keymap_user.go). It is assigned from a
-// func init rather than a var initializer so that the help panel may read it
-// without the initializer graph closing into a cycle.
 var liveRows []keyBinding
 
 func init() {
