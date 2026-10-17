@@ -1,0 +1,415 @@
+incipit    0x03               input inputInterrupt
+incipit    0x04               input inputDisconnect
+incipit    0x0c               input inputEnterTranscript
+incipit    0x14               input inputEnterTranscript
+incipit    "y"                input inputYank
+incipit    csi-u ctrl-n       input inputSelectNext
+incipit    csi-u ctrl-p       input inputSelectPrev
+incipit    M-m                input inputToggleVerbose
+transcript 0x03               input inputInterrupt
+transcript 0x04               input inputDisconnect
+transcript 0x09               pager pagerAriaForward
+transcript 0x0a               pager pagerToggleBlocks
+transcript 0x0c               input inputEnterTranscript
+transcript 0x0d               pager pagerToggleBlocks
+transcript 0x0e               pager pagerSelectNext
+transcript 0x0f               pager pagerAriaBack
+transcript 0x10               pager pagerSelectPrev
+transcript 0x14               input inputEnterTranscript
+transcript 0x1b               pager pagerClearSelection
+transcript " "                pager pagerLeader
+transcript "!"                pager pagerStatusPanel
+transcript "/"                pager pagerSearchPrompt
+transcript ":"                pager pagerCommandBox
+transcript ">"                pager pagerComposerBox
+transcript "?"                pager pagerSearchPromptBack
+transcript "D"                pager pagerDecisionPit
+transcript "G"                pager pagerTail
+transcript "H"                input inputHangUp
+transcript "L"                pager pagerListHome
+transcript "N"                pager pagerFindPrevVisual
+transcript "Q"                pager pagerQueuedPanel
+transcript "S"                pager pagerFormPit
+transcript "T"                pager pagerFocusTranscript
+transcript "V"                pager pagerVisualLine
+transcript "X"                input inputHangUpDrop
+transcript "^"                pager pagerAttendParent
+transcript "a"                pager pagerAttendFork
+transcript "c"                pager pagerCommentPending
+transcript "d"                pager pagerHalfDown
+transcript "e"                pager pagerToggleBodies
+transcript "f"                pager pagerForkPending
+transcript "g"                pager pagerPendingTop
+transcript "h"                pager pagerHelpPanel
+transcript "j"                pager pagerLineDown
+transcript "k"                pager pagerLineUp
+transcript "l"                pager pagerListPit
+transcript "m"                input inputToggleBarVerbose
+transcript "n"                pager pagerFindNextVisual
+transcript "q"                input inputLeavePit
+transcript "s"                input inputToggleSticky
+transcript "u"                pager pagerHalfUp
+transcript "v"                pager pagerVisualChar
+transcript "x"                pager pagerDeleteComment
+transcript "y"                input inputYank
+transcript nav:Up             pager pagerLineUp
+transcript nav:Down           pager pagerLineDown
+transcript nav:PgUp           pager pagerHalfUp
+transcript nav:PgDn           pager pagerHalfDown
+transcript nav:Home           pager pagerTop
+transcript nav:End            pager pagerTail
+transcript csi-u ctrl-i       pager pagerAriaForward
+transcript csi-u ctrl-n       input inputSelectNext
+transcript csi-u ctrl-o       pager pagerAriaBack
+transcript csi-u ctrl-p       input inputSelectPrev
+transcript M-m                input inputToggleVerbose
+transcript M-n                input inputQuestionNext
+transcript M-p                input inputQuestionPrev
+search     0x03               input inputInterrupt
+search     0x04               input inputDisconnect
+search     0x08               pager searchBackspace
+search     0x0a               pager searchAccept
+search     0x0c               input inputEnterTranscript
+search     0x0d               pager searchAccept
+search     0x14               input inputEnterTranscript
+search     0x1b               pager searchCancel
+search     0x7f               pager searchBackspace
+search     csi-u ctrl-n       input inputSelectNext
+search     csi-u ctrl-p       input inputSelectPrev
+search     M-m                input inputToggleVerbose
+jump       0x01               pager cmdHome
+jump       0x02               pager cmdLeft
+jump       0x03               pager cmdAbort
+jump       0x04               pager cmdDeleteFwd
+jump       0x05               pager cmdEnd
+jump       0x06               pager cmdRight
+jump       0x07               pager cmdAbort
+jump       0x08               pager boxBackspace
+jump       0x09               pager cmdComplete
+jump       0x0a               pager boxAccept
+jump       0x0b               pager cmdKillToEnd
+jump       0x0c               pager cmdRedraw
+jump       0x0d               pager boxAccept
+jump       0x0e               pager cmdHistNext
+jump       0x10               pager cmdHistPrev
+jump       0x12               pager cmdSearchPrev
+jump       0x13               pager cmdSearchNext
+jump       0x14               pager cmdTranspose
+jump       0x15               pager cmdKillToStart
+jump       0x16               pager cmdPaste
+jump       0x17               pager cmdKillWord
+jump       0x19               pager cmdYank
+jump       0x1b               pager boxCancel
+jump       0x1f               pager cmdUndo
+jump       0x7f               pager boxBackspace
+jump       nav:Up             pager cmdHistPrev
+jump       nav:Down           pager cmdHistNext
+jump       nav:Home           pager cmdHome
+jump       nav:End            pager cmdEnd
+jump       nav:Left           pager cmdLeft
+jump       nav:Right          pager cmdRight
+jump       csi-u ctrl-a       pager cmdHome
+jump       csi-u ctrl-b       pager cmdLeft
+jump       csi-u ctrl-d       pager cmdDeleteFwd
+jump       csi-u ctrl-e       pager cmdEnd
+jump       csi-u ctrl-f       pager cmdRight
+jump       csi-u ctrl-g       pager cmdAbort
+jump       csi-u ctrl-h       pager boxBackspace
+jump       csi-u ctrl-k       pager cmdKillToEnd
+jump       csi-u ctrl-l       pager cmdRedraw
+jump       csi-u ctrl-n       pager cmdHistNext
+jump       csi-u ctrl-p       pager cmdHistPrev
+jump       csi-u ctrl-r       pager cmdSearchPrev
+jump       csi-u ctrl-s       pager cmdSearchNext
+jump       csi-u ctrl-t       pager cmdTranspose
+jump       csi-u ctrl-u       pager cmdKillToStart
+jump       csi-u ctrl-v       pager cmdPaste
+jump       csi-u ctrl-w       pager cmdKillWord
+jump       csi-u ctrl-y       pager cmdYank
+jump       M-                pager boxAcceptSnap
+jump       M-*                pager cmdInsertComplete
+jump       M-.                pager cmdYankLastArg
+jump       M-<                pager cmdHistFirst
+jump       M->                pager cmdHistLast
+jump       M-?                pager cmdListComplete
+jump       M-\                pager cmdDeleteSpace
+jump       M-_                pager cmdYankLastArg
+jump       M-b                pager cmdWordLeft
+jump       M-c                pager cmdCapitalize
+jump       M-d                pager cmdKillWordFwd
+jump       M-f                pager cmdWordRight
+jump       M-l                pager cmdDowncase
+jump       M-m                input inputToggleVerbose
+jump       M-n                pager cmdPrefixNext
+jump       M-p                pager cmdPrefixPrev
+jump       M-r                pager cmdRevert
+jump       M-t                pager cmdTransposeWord
+jump       M-u                pager cmdUpcase
+jump       M-y                pager cmdYankPop
+jump       M-DEL              pager cmdKillWordAlpha
+panel      0x03               input inputInterrupt
+panel      0x04               input inputDisconnect
+panel      0x0a               pager pagerPitActivate
+panel      0x0c               input inputEnterTranscript
+panel      0x0d               pager pagerPitActivate
+panel      0x14               input inputEnterTranscript
+panel      0x1b               pager panelDismiss
+panel      " "                pager pagerLeader
+panel      "!"                pager panelToggleStatus
+panel      "/"                pager pagerSearchPrompt
+panel      "?"                pager pagerSearchPromptBack
+panel      "D"                pager pagerDecisionPit
+panel      "H"                input inputHangUp
+panel      "L"                pager pagerListHome
+panel      "N"                pager pagerFindRowPrev
+panel      "Q"                pager panelToggleQueued
+panel      "S"                pager pagerFormPit
+panel      "T"                pager pagerFocusTranscript
+panel      "X"                pager pagerPitDropNow
+panel      "a"                pager pagerAttendRow
+panel      "h"                pager panelToggleHelp
+panel      "l"                pager pagerListPit
+panel      "m"                input inputToggleBarVerbose
+panel      "n"                pager pagerFindRowNext
+panel      "q"                input inputLeavePit
+panel      "s"                input inputToggleSticky
+panel      "x"                pager pagerPitDrop
+panel      "y"                input inputYank
+panel      csi-u ctrl-n       input inputSelectNext
+panel      csi-u ctrl-p       input inputSelectPrev
+panel      M-m                input inputToggleVerbose
+panel      M-n                input inputQuestionNext
+panel      M-p                input inputQuestionPrev
+visual     0x03               input inputInterrupt
+visual     0x04               input inputDisconnect
+visual     0x0a               pager pagerVisualSelect
+visual     0x0c               input inputEnterTranscript
+visual     0x0d               pager pagerVisualSelect
+visual     0x14               input inputEnterTranscript
+visual     0x1b               pager pagerVisualLeave
+visual     "$"                pager pagerVisualRowEnd
+visual     "/"                pager pagerSearchPrompt
+visual     "0"                pager pagerVisualRowStart
+visual     ":"                pager pagerVisualCommand
+visual     ">"                pager pagerVisualComposer
+visual     "?"                pager pagerSearchPromptBack
+visual     "G"                pager pagerVisualEnd
+visual     "H"                pager pagerVisualScreenTop
+visual     "L"                pager pagerVisualScreenBot
+visual     "M"                pager pagerVisualScreenMid
+visual     "N"                pager pagerFindPrev
+visual     "V"                pager pagerVisualLine
+visual     "X"                input inputHangUpDrop
+visual     "Y"                input inputYankCoordinate
+visual     "^"                pager pagerVisualFirstText
+visual     "a"                pager pagerVisualAttend
+visual     "b"                pager pagerVisualWordPrev
+visual     "d"                pager pagerVisualHalfDown
+visual     "e"                pager pagerVisualWordEnd
+visual     "g"                pager pagerVisualPendingTop
+visual     "h"                pager pagerVisualLeft
+visual     "j"                pager pagerVisualDown
+visual     "k"                pager pagerVisualUp
+visual     "l"                pager pagerVisualRight
+visual     "m"                input inputToggleBarVerbose
+visual     "n"                pager pagerFindNext
+visual     "q"                input inputLeavePit
+visual     "u"                pager pagerVisualHalfUp
+visual     "v"                pager pagerVisualChar
+visual     "w"                pager pagerVisualWordNext
+visual     "y"                input inputYank
+visual     "{"                pager pagerVisualParaPrev
+visual     "}"                pager pagerVisualParaNext
+visual     nav:Up             pager pagerVisualUp
+visual     nav:Down           pager pagerVisualDown
+visual     nav:PgUp           pager pagerVisualHalfUp
+visual     nav:PgDn           pager pagerVisualHalfDown
+visual     nav:Home           pager pagerVisualTop
+visual     nav:End            pager pagerVisualEnd
+visual     nav:Left           pager pagerVisualLeft
+visual     nav:Right          pager pagerVisualRight
+visual     csi-u ctrl-n       input inputSelectNext
+visual     csi-u ctrl-p       input inputSelectPrev
+visual     M-m                input inputToggleVerbose
+fork       0x03               input inputInterrupt
+fork       0x04               input inputDisconnect
+fork       0x0c               input inputEnterTranscript
+fork       0x14               input inputEnterTranscript
+fork       0x1b               pager pagerForkCancel
+fork       "j"                pager pagerForkNext
+fork       "k"                pager pagerForkPrev
+fork       nav:Up             pager pagerForkPrev
+fork       nav:Down           pager pagerForkNext
+fork       csi-u ctrl-n       input inputSelectNext
+fork       csi-u ctrl-p       input inputSelectPrev
+fork       M-m                input inputToggleVerbose
+confirm    0x03               input inputInterrupt
+confirm    0x04               input inputDisconnect
+confirm    0x0c               input inputEnterTranscript
+confirm    0x14               input inputEnterTranscript
+confirm    0x1b               pager confirmNo
+confirm    "N"                pager confirmNo
+confirm    "Y"                pager confirmYes
+confirm    "n"                pager confirmNo
+confirm    "y"                pager confirmYes
+confirm    csi-u ctrl-n       input inputSelectNext
+confirm    csi-u ctrl-p       input inputSelectPrev
+confirm    M-m                input inputToggleVerbose
+composer   0x03               input inputInterrupt
+composer   0x04               input inputDisconnect
+composer   0x0c               input inputEnterTranscript
+composer   0x13               pager composerSubmit
+composer   0x14               input inputEnterTranscript
+composer   0x1b               pager composerEscape
+composer   "$"                pager composerLineEnd
+composer   "/"                pager composerSearchFwd
+composer   "0"                pager composerLineStart
+composer   ":"                pager composerCommand
+composer   "?"                pager composerSearchBack
+composer   "A"                pager composerInsertEnd
+composer   "F"                pager composerFullscreen
+composer   "G"                pager composerBottom
+composer   "I"                pager composerInsertHome
+composer   "N"                pager composerFindPrev
+composer   "V"                pager composerMarkLine
+composer   "^"                pager composerFirstText
+composer   "a"                pager composerInsertAfter
+composer   "b"                pager composerWordBack
+composer   "e"                pager composerWordEnd
+composer   "g"                pager composerTop
+composer   "h"                pager composerLeft
+composer   "i"                pager composerInsertHere
+composer   "j"                pager composerDownLine
+composer   "k"                pager composerUpLine
+composer   "l"                pager composerRight
+composer   "n"                pager composerFindNext
+composer   "v"                pager composerMarkChar
+composer   "w"                pager composerWordFwd
+composer   "y"                input inputYank
+composer   "{"                pager composerParaPrev
+composer   "}"                pager composerParaNext
+composer   nav:Up             pager composerUpLine
+composer   nav:Down           pager composerDownLine
+composer   nav:Home           pager composerLineStart
+composer   nav:End            pager composerLineEnd
+composer   nav:Left           pager composerLeft
+composer   nav:Right          pager composerRight
+composer   csi-u ctrl-n       input inputSelectNext
+composer   csi-u ctrl-p       input inputSelectPrev
+composer   csi-u ctrl-s       pager composerSubmit
+composer   M-                pager composerSubmit
+composer   M-m                input inputToggleVerbose
+comment    0x03               input inputInterrupt
+comment    0x04               input inputDisconnect
+comment    0x0c               input inputEnterTranscript
+comment    0x14               input inputEnterTranscript
+comment    0x1b               pager pagerCommentCancel
+comment    "j"                pager pagerCommentNext
+comment    "k"                pager pagerCommentPrev
+comment    nav:Up             pager pagerCommentPrev
+comment    nav:Down           pager pagerCommentNext
+comment    csi-u ctrl-n       input inputSelectNext
+comment    csi-u ctrl-p       input inputSelectPrev
+comment    M-m                input inputToggleVerbose
+opens      0x09
+opens      0x0a
+opens      0x0d
+opens      0x0e
+opens      0x0f
+opens      0x10
+opens      " "
+opens      "!"
+opens      "/"
+opens      ":"
+opens      ">"
+opens      "?"
+opens      "D"
+opens      "G"
+opens      "L"
+opens      "Q"
+opens      "S"
+opens      "T"
+opens      "V"
+opens      "^"
+opens      "a"
+opens      "c"
+opens      "d"
+opens      "e"
+opens      "f"
+opens      "g"
+opens      "h"
+opens      "j"
+opens      "k"
+opens      "l"
+opens      "m"
+opens      "s"
+opens      "u"
+opens      "v"
+opens      nav:Up
+opens      nav:Down
+opens      nav:PgUp
+opens      nav:PgDn
+opens      nav:Home
+opens      nav:End
+opens      csi-u ctrl-i
+opens      csi-u ctrl-n
+opens      csi-u ctrl-o
+opens      csi-u ctrl-p
+opens      M-m
+opens      M-n
+opens      M-p
+csi-u      ctrl-a
+csi-u      ctrl-b
+csi-u      ctrl-d
+csi-u      ctrl-e
+csi-u      ctrl-f
+csi-u      ctrl-g
+csi-u      ctrl-h
+csi-u      ctrl-i
+csi-u      ctrl-k
+csi-u      ctrl-l
+csi-u      ctrl-n
+csi-u      ctrl-o
+csi-u      ctrl-p
+csi-u      ctrl-r
+csi-u      ctrl-s
+csi-u      ctrl-t
+csi-u      ctrl-u
+csi-u      ctrl-v
+csi-u      ctrl-w
+csi-u      ctrl-y
+meta       incipit    M-m
+meta       transcript M-m
+meta       transcript M-n
+meta       transcript M-p
+meta       search     M-m
+meta       jump       M-
+meta       jump       M-*
+meta       jump       M-.
+meta       jump       M-<
+meta       jump       M->
+meta       jump       M-?
+meta       jump       M-\
+meta       jump       M-_
+meta       jump       M-b
+meta       jump       M-c
+meta       jump       M-d
+meta       jump       M-f
+meta       jump       M-l
+meta       jump       M-m
+meta       jump       M-n
+meta       jump       M-p
+meta       jump       M-r
+meta       jump       M-t
+meta       jump       M-u
+meta       jump       M-y
+meta       jump       M-DEL
+meta       panel      M-m
+meta       panel      M-n
+meta       panel      M-p
+meta       visual     M-m
+meta       fork       M-m
+meta       confirm    M-m
+meta       composer   M-
+meta       composer   M-m
+meta       comment    M-m
