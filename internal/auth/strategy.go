@@ -183,3 +183,25 @@ func (o *OAuth) Invalidate(token string) error {
 type EndpointCarrier interface {
 	Endpoint() string
 }
+
+type WorkloadTokens interface {
+	Token(audience string) (string, error)
+}
+
+type Workload struct {
+	Source   WorkloadTokens
+	Audience string
+}
+
+func (w *Workload) TryResolve() (string, bool, error) {
+	if w.Source == nil {
+		return "", false, nil
+	}
+	tok, err := w.Source.Token(w.Audience)
+	if err != nil {
+		return "", false, err
+	}
+	return tok, tok != "", nil
+}
+
+func (*Workload) Invalidate(string) error { return nil }

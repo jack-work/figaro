@@ -1360,8 +1360,8 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:    "login",
 		Group:   "System",
-		Short:   "OAuth login for a provider",
-		Usage:   "login <provider>",
+		Short:   "OAuth login for a provider or a daemon endpoint",
+		Usage:   "login <provider|endpoint>",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {

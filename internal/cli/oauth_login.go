@@ -7,10 +7,9 @@ import (
 	hush "github.com/jack-work/hush/client"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/config"
 )
 
-func runOAuthLogin(_ *config.Loaded, name string, s auth.OAuthSettings) error {
+func runOAuthLogin(name, credential string, s auth.OAuthSettings, next string) error {
 	s, err := s.Discovered()
 	if err != nil {
 		return fmt.Errorf("%s: %w", name, err)
@@ -25,7 +24,7 @@ func runOAuthLogin(_ *config.Loaded, name string, s auth.OAuthSettings) error {
 	}
 	ensureHush()
 	if err := MustHush().Client().OAuthRegister(hush.OAuthRegisterRequest{
-		Name:         name,
+		Name:         credential,
 		TokenURL:     cfg.TokenURL,
 		ClientID:     cfg.ClientID,
 		Scopes:       cfg.Scope,
@@ -36,7 +35,7 @@ func runOAuthLogin(_ *config.Loaded, name string, s auth.OAuthSettings) error {
 	}); err != nil {
 		return fmt.Errorf("hand the %s credential to hush: %w", name, err)
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" hush holds the "+name+" credential and refreshes it "+dim("(hush oauth list)"))
-	fmt.Fprintln(os.Stderr, "  "+dim("next: figaro set system.provider "+name+"; figaro set system.model <model>"))
+	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" hush holds the "+credential+" credential and refreshes it "+dim("(hush oauth list)"))
+	fmt.Fprintln(os.Stderr, "  "+dim("next: "+next))
 	return nil
 }
