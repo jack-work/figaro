@@ -13,6 +13,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/jack-work/hush/managed"
+
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/relay"
@@ -65,18 +67,13 @@ func incumbentAnswers() bool {
 	return true
 }
 
-func keepHushAlive(ctx context.Context) {
+func keepHushAlive(ctx context.Context, h *managed.Hush) {
 	interval := boot.HushAgentTTL() / 3
 	if interval > 5*time.Minute {
 		interval = 5 * time.Minute
 	}
 	if interval < 30*time.Second {
 		interval = 30 * time.Second
-	}
-	h, err := boot.Hush()
-	if err != nil {
-		slog.Error("hush keep-alive", "err", err)
-		return
 	}
 	claimed := false
 	// Claim only after EnsureReady: a claim written earlier names a socket
@@ -248,6 +245,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 func Run() {
 	mark.Init("angelus")
 	mark.Mark("boot.begin")
+	boot.PromptPassphrase = nil
 	loaded, err := boot.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
@@ -299,6 +297,7 @@ func Run() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	boot.OnHush(func(h *managed.Hush) { go keepHushAlive(ctx, h) })
 
 	decider, err := buildDecider(loaded)
 	if err != nil {
@@ -323,8 +322,6 @@ func Run() {
 	})
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria
-
-	go keepHushAlive(ctx)
 
 	// Rebind shells without restoring their arias; an aria wakes on its next
 	// prompt.

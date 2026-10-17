@@ -16,7 +16,7 @@ import (
 
 // encryptedAPIKey decrypts an AGE-encrypted api_key through hush, cached by file mtime.
 type encryptedAPIKey struct {
-	Hush       *hush.Client
+	Hush       func() (*hush.Client, error)
 	ConfigPath string
 
 	mu       sync.Mutex
@@ -49,7 +49,11 @@ func (e *encryptedAPIKey) TryResolve() (string, bool, error) {
 	if !strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
 		return "", false, nil
 	}
-	res, err := e.Hush.Decrypt(map[string]string{"v": pa.APIKey})
+	c, err := e.Hush()
+	if err != nil {
+		return "", false, err
+	}
+	res, err := c.Decrypt(map[string]string{"v": pa.APIKey})
 	if err != nil {
 		return "", false, fmt.Errorf("hush decrypt %s: %w", e.ConfigPath, err)
 	}

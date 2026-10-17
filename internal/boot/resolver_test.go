@@ -4,13 +4,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/config"
 )
 
+func resetHush() {
+	hushOnce, hushInstance, hushErr = sync.Once{}, nil, nil
+	hushUsersMu.Lock()
+	hushUsed, hushUsers = nil, nil
+	hushUsersMu.Unlock()
+}
+
 func serverEnv(t *testing.T) (cfgDir, credDir string) {
 	t.Helper()
+	resetHush()
+	t.Cleanup(resetHush)
 	for _, k := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"} {
 		t.Setenv(k, "")
 	}
@@ -30,9 +40,16 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-// A server daemon with LoadCredential resolves a provider that would
-// otherwise fall through to hush's OAuth.
-func TestCredentialsDirectoryResolves(t *testing.T) {
+func assertHushUntouched(t *testing.T) {
+	t.Helper()
+	if hushInstance != nil || hushUsed != nil {
+		t.Fatal("hush was constructed although a file credential answered first")
+	}
+}
+
+// A server daemon with LoadCredential and no hush must resolve a provider
+// that would otherwise fall through to hush's OAuth, without touching hush.
+func TestCredentialsDirectoryResolvesWithoutHush(t *testing.T) {
 	cfgDir, credDir := serverEnv(t)
 	writeFile(t, filepath.Join(credDir, "anthropic"), "sk-from-credentials\n")
 
@@ -44,6 +61,10 @@ func TestCredentialsDirectoryResolves(t *testing.T) {
 	if err != nil || tok != "sk-from-credentials" {
 		t.Fatalf("Resolve = %q, %v", tok, err)
 	}
+	if err := r.Invalidate(tok); err != nil {
+		t.Fatalf("Invalidate: %v", err)
+	}
+	assertHushUntouched(t)
 }
 
 func TestAPIKeyFileRelativeResolvesUnderCredentialsDirectoryAndWins(t *testing.T) {
@@ -57,6 +78,7 @@ func TestAPIKeyFileRelativeResolvesUnderCredentialsDirectoryAndWins(t *testing.T
 	if err != nil || tok != "sk-configured" {
 		t.Fatalf("Resolve = %q, %v: an explicit api_key_file must win over the convention", tok, err)
 	}
+	assertHushUntouched(t)
 }
 
 func TestAPIKeyFileAbsolutePath(t *testing.T) {
@@ -105,4 +127,23 @@ func TestEnvironmentStillOutranksFiles(t *testing.T) {
 	if tok, _ := r.Resolve(); tok != "sk-env" {
 		t.Fatalf("Resolve = %q, want the environment's", tok)
 	}
+}
+
+// Building an exchange provider's resolver must not reach hush; only using it may.
+func TestExchangeResolverIsLazy(t *testing.T) {
+	cfgDir, _ := serverEnv(t)
+	r, err := BuildResolver(&config.Loaded{ConfigDir: cfgDir}, "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.(*exchangeResolver); !ok {
+		t.Fatalf("copilot resolver = %T, want the exchange", r)
+	}
+	if err := r.Invalidate("x"); err != nil {
+		t.Fatal(err)
+	}
+	if ep := r.(*exchangeResolver).Endpoint(); ep != "" {
+		t.Fatalf("Endpoint = %q before any resolve", ep)
+	}
+	assertHushUntouched(t)
 }

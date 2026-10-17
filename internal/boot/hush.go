@@ -4,9 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
+	hush "github.com/jack-work/hush/client"
 	"github.com/jack-work/hush/managed"
 )
 
@@ -60,4 +63,58 @@ func ClaimHushAgent(mode managed.Mode, hushRuntimeDir string) error {
 // socket path.
 func HushAgentSocket(runtimeDir string) string {
 	return filepath.Join(runtimeDir, "agent.sock")
+}
+
+var (
+	hushUsersMu sync.Mutex
+	hushUsers   []func(*managed.Hush)
+	hushUsed    *managed.Hush
+)
+
+func OnHush(f func(*managed.Hush)) {
+	hushUsersMu.Lock()
+	used := hushUsed
+	if used == nil {
+		hushUsers = append(hushUsers, f)
+	}
+	hushUsersMu.Unlock()
+	if used != nil {
+		f(used)
+	}
+}
+
+func strategyHush() (*managed.Hush, error) {
+	h, err := Hush()
+	if err != nil {
+		return nil, err
+	}
+	hushUsersMu.Lock()
+	if hushUsed != nil {
+		hushUsersMu.Unlock()
+		return h, nil
+	}
+	hushUsersMu.Unlock()
+	if err := h.EnsureReady(); err != nil {
+		return nil, fmt.Errorf("hush: %w", err)
+	}
+	hushUsersMu.Lock()
+	first := hushUsed == nil
+	hushUsed = h
+	users := hushUsers
+	hushUsers = nil
+	hushUsersMu.Unlock()
+	if first {
+		for _, f := range users {
+			f(h)
+		}
+	}
+	return h, nil
+}
+
+func strategyHushClient() (*hush.Client, error) {
+	h, err := strategyHush()
+	if err != nil {
+		return nil, err
+	}
+	return h.Client(), nil
 }
