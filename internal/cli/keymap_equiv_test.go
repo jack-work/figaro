@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
@@ -78,10 +79,32 @@ func offToken(tr *transcript, base int) string {
 // oracleSignature is every piece of pager state a keystroke can touch. base is
 // the offset an inert key leaves in this state; see offToken.
 func oracleSignature(tr *transcript, base int) string {
-	return fmt.Sprintf("%s fol=%v srch=%v q=%q mq=%q h=%v s=%v Q=%v g=%v sel=%v exp=%d jmp=%v jq=%q vis=%s pit=%s",
+	return fmt.Sprintf("%s fol=%v srch=%v q=%q mq=%q h=%v s=%v Q=%v pre=%s sel=%v exp=%d jmp=%v jq=%q vis=%s pit=%s",
 		offToken(tr, base), tr.follow, tr.inSearch, tr.query, tr.matchQuery,
-		tr.showing("help"), tr.showing("status"), tr.showing("queue"), tr.pendG, tr.selection.active,
+		tr.showing("help"), tr.showing("status"), tr.showing("queue"), prefixToken(tr), tr.selection.active,
 		len(tr.expanded), tr.boxOpen(), tr.cmdline.String(), visToken(tr), pitToken(tr))
+}
+
+// prefixToken names the gesture a key has left half typed: gg, f, c, the
+// leader. The names are the ones the prefix layers are declared under.
+func prefixToken(tr *transcript) string {
+	var on []string
+	if tr.pendG {
+		on = append(on, "g")
+	}
+	if tr.pendF {
+		on = append(on, "fork")
+	}
+	if tr.pendC {
+		on = append(on, "comment")
+	}
+	if tr.pendLeader {
+		on = append(on, "leader")
+	}
+	if len(on) == 0 {
+		return "-"
+	}
+	return strings.Join(on, ",")
 }
 
 // pitToken is what is open below the transcript and how a reader stands in
@@ -178,6 +201,8 @@ var oracleStates = map[string]func(*transcript){
 	// A y/n question up: the mode a destructive verb opens, where every key
 	// that is not an answer is swallowed.
 	"confirm": func(tr *transcript) { tr.askConfirm("kill aria1234?", func() {}) },
+	// Space is armed: the next key is read from the leader's chords.
+	"leader": func(tr *transcript) { tr.key(' ') },
 	// A one-row note is a glance: any key it does not own wipes it.
 	"note": func(tr *transcript) { tr.noteOrClear("a passing remark"); tr.render() },
 	// A list with the conversation focused behind it: T hands the keys over.
