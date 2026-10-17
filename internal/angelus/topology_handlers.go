@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/sandbox"
@@ -96,7 +97,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 			return nil, serr
 		}
 		var cerr error
-		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd))
+		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
@@ -252,7 +253,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			at = atMainLT
 		}
 		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID))
+		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx))
 		if ferr != nil {
 			return ferr
 		}
@@ -451,7 +452,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if err != nil {
 		return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 	}
-	id, err := h.angelus.Backend.CreateConversation(outfitID)
+	id, err := h.angelus.Backend.CreateConversation(outfitID, mintedBy(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("import: create conversation: %w", err)
 	}
@@ -574,4 +575,8 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 
 	slog.Info("killed figaro", "id", id)
 	return nil
+}
+
+func mintedBy(ctx context.Context) store.BirthOption {
+	return store.MintedBy(authz.PrincipalText(authz.PrincipalOf(ctx)))
 }

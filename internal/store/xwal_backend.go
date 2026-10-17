@@ -429,13 +429,14 @@ func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, 
 
 // ForkWith is the one birth verb: `fig new` forks the null root, `fig fork`
 // forks an aria, and the patch is the child's identity.
-func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch) (string, uint64, error) {
+func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
 	// Every path that gives a board a copy is a refcount participant; this is
 	// the one a live `fig fork` takes.
-	child, version, err := b.store.ForkWith(parent, atMainLT, patch)
+	child, version, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {
 		return "", 0, err
 	}
+	b.mirrorMintedBy(child, births(opts))
 	b.inheritStudies(child)
 	b.ttlCommitted(child, patch)
 	// The Form for a node born a moment ago must not be a replay of a channel
@@ -473,11 +474,12 @@ func (b *XwalBackend) RecordBaseTurn(trunk string, baseLT, turn uint64, exact bo
 
 // CreateForm: `fig form new` forks the null root, `fig form fork` duplicates
 // a form. Same form-cache hygiene as ForkWith.
-func (b *XwalBackend) CreateForm(parent string, patch message.Patch) (string, uint64, error) {
-	id, version, err := b.store.CreateForm(parent, patch)
+func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
+	id, version, err := b.store.CreateForm(parent, patch, opts...)
 	if err != nil {
 		return "", 0, err
 	}
+	b.mirrorMintedBy(id, births(opts))
 	b.ttlCommitted(id, patch)
 	b.dropForm(id)
 	return id, version, nil
@@ -487,8 +489,13 @@ func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, er
 	return b.store.CreateOutfit(name, patch)
 }
 
-func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
-	return b.store.CreateConversation(outfitID)
+func (b *XwalBackend) CreateConversation(outfitID string, opts ...BirthOption) (string, error) {
+	id, err := b.store.CreateConversation(outfitID)
+	if err != nil {
+		return "", err
+	}
+	b.mirrorMintedBy(id, births(opts))
+	return id, nil
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
 	cont, alt, err = b.store.Fork(ariaID)
@@ -946,8 +953,36 @@ func (b *XwalBackend) UpdateMeta(ariaID string, mutate func(*AriaMeta)) error {
 	return b.writeMetaLocked(ariaID, c, meta)
 }
 
-// writeMetaLocked is the one writer for all producers. Caller holds c.mu.
+func (b *XwalBackend) mirrorMintedBy(id string, bt birthSpec) {
+	if bt.mintedBy == "" {
+		return
+	}
+	c := b.metaCache(id)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	meta := &AriaMeta{}
+	st, err := c.loadOnce(b.metaPath(id))
+	if err == nil && st.Value != nil {
+		value := *st.Value
+		meta = &value
+	}
+	meta.MintedBy = bt.mintedBy
+	if err := b.writeMetaRawLocked(id, c, meta); err != nil {
+		slog.Error("birth: minted_by not mirrored into meta", "id", id, "err", err)
+	}
+}
+
 func (b *XwalBackend) writeMetaLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
+	if meta != nil {
+		meta.MintedBy = ""
+		if prev, err := c.loadOnce(b.metaPath(ariaID)); err == nil && prev.Value != nil {
+			meta.MintedBy = prev.Value.MintedBy
+		}
+	}
+	return b.writeMetaRawLocked(ariaID, c, meta)
+}
+
+func (b *XwalBackend) writeMetaRawLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
 	if meta != nil {
 		meta.MetaVersion = CurrentMetaVersion
 	}

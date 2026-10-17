@@ -368,15 +368,15 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 }
 
 // ForkWith forks a node and lands a patch on the child in one critical section.
-func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error) {
-	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation))
+func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (child string, version uint64, err error) {
+	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation), births(opts))
 }
 
 // CreateForm: parent "" forks the null root, a form parent duplicates its
 // state into a fresh @id. No atMainLT: a form's timeline is one ceremonial
 // record. A conversation parent is refused; a bound form's fork is the aria's
 // fork, through ForkWith.
-func (s *XwalStore) CreateForm(parent string, patch message.Patch) (id string, version uint64, err error) {
+func (s *XwalStore) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, err error) {
 	if parent != "" {
 		s.mu.Lock()
 		kind, known := s.trunks.Kind(parent)
@@ -386,12 +386,12 @@ func (s *XwalStore) CreateForm(parent string, patch message.Patch) (id string, v
 			return "", 0, fmt.Errorf("xwal store: create form: parent %s is not an unbound form", parent)
 		}
 	}
-	return s.forkWithKind(parent, 0, patch, string(kindForm))
+	return s.forkWithKind(parent, 0, patch, string(kindForm), births(opts))
 }
 
 // forkWithKind picks the spawn shape from the parent's species, then lands
 // the birth patch and its cursor-stamped record in order.
-func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string) (child string, version uint64, err error) {
+func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string, b birthSpec) (child string, version uint64, err error) {
 	if patch.IsIdentity() {
 		return "", 0, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
 	}
@@ -417,7 +417,7 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 	if err != nil {
 		return "", 0, err
 	}
-	version, err = s.writeBirth(child, patch)
+	version, err = s.writeBirth(child, patch, b)
 	if err != nil {
 		return "", 0, err
 	}
@@ -432,7 +432,7 @@ func (s *XwalStore) isFormLocked(id string) bool {
 
 // writeBirth appends a node's birth patch and the renderable record that carries
 // its cursor stamp. Caller holds s.mu.
-func (s *XwalStore) writeBirth(node string, patch message.Patch) (uint64, error) {
+func (s *XwalStore) writeBirth(node string, patch message.Patch, b birthSpec) (uint64, error) {
 	x, err := s.trunks.Head(node)
 	if err != nil {
 		return 0, err
@@ -447,7 +447,7 @@ func (s *XwalStore) writeBirth(node string, patch message.Patch) (uint64, error)
 	if err != nil {
 		return 0, err
 	}
-	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now()})
+	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now(), Principal: b.mintedBy})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
 		return 0, err

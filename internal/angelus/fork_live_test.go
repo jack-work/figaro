@@ -68,7 +68,7 @@ func (b *liveForkBackend) Fork(id string) (string, string, error) {
 	return id, "alternative", nil
 }
 
-func (b *liveForkBackend) ForkWith(_ string, _ uint64, patch message.Patch) (string, uint64, error) {
+func (b *liveForkBackend) ForkWith(_ string, _ uint64, patch message.Patch, _ ...store.BirthOption) (string, uint64, error) {
 	if patch.IsIdentity() {
 		return "", 0, fmt.Errorf("fork-with: a fork must carry a patch")
 	}

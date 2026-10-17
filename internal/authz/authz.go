@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -110,4 +111,11 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 		}
 	}
 	return out
+}
+
+func PrincipalText(p rpc.Principal) string {
+	if p.Kind == "" || p.ID == "" {
+		return ""
+	}
+	return jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}.String()
 }

@@ -179,6 +179,8 @@ type Message struct {
 	TurnID uint64 `json:"turn_id"`
 
 	Timestamp int64 `json:"timestamp"`
+
+	Principal string `json:"principal,omitempty"`
 }
 
 func TextContent(text string) Content {

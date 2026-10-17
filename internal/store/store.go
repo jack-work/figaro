@@ -48,6 +48,8 @@ type AriaMeta struct {
 	TTLMS int64 `json:"ttl_ms,omitempty"`
 	// MetaVersion below CurrentMetaVersion is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
+
+	MintedBy string `json:"minted_by,omitempty"`
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.
@@ -132,11 +134,11 @@ type Backend interface {
 
 	// ForkWith forks a node and lands a patch on the child in one critical
 	// section. parent == "" forks the null root.
-	ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error)
+	ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (child string, version uint64, err error)
 
 	// CreateForm mints an unbound form from the null root ("") or another
 	// form; a conversation parent is refused.
-	CreateForm(parent string, patch message.Patch) (id string, version uint64, err error)
+	CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, err error)
 
 	// ApplyFormEffectIntent appends unless the form has moved off ifVersion
 	// (zero is unconditional; compared in the writer, atomically with the
@@ -161,7 +163,7 @@ type Backend interface {
 	// CreateOutfit materializes or reuses the node for (name, content version of patch).
 	CreateOutfit(name string, patch message.Patch) (string, error)
 
-	CreateConversation(outfitID string) (string, error)
+	CreateConversation(outfitID string, opts ...BirthOption) (string, error)
 
 	// Fork branches at the head: the node freezes and keeps its id as an
 	// index node; both children get fresh ids.
