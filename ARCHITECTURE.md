@@ -32,6 +32,7 @@ api/livedoc/               live-render protocol core: one markdown blob, splice 
 api/message/               provider-agnostic IR (Message, Content, Patch)
 api/quote/                 quoted-coordinate grammar at the head of a prompt
 api/rpc/                   JSON-RPC types + method constants; methods.go is the whole surface
+api/sandbox/               the tool-runtime contract; its own module, so a sandbox agent need not import figaro
 api/transport/             unix/tcp endpoint abstraction
 
 internal/actor/            single-writer runtime: FIFO queue, one drain goroutine

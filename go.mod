@@ -75,6 +75,7 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/jack-work/figaro/api/sandbox v0.1.0
 	github.com/jack-work/jkrpc v0.1.0
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -92,3 +93,5 @@ require (
 	golang.org/x/sync v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/jack-work/figaro/api/sandbox => ./api/sandbox
