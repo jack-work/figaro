@@ -50,6 +50,13 @@ Every hop is authenticated; every service authorizes its own resources.
   calls, never used for a decision.
 - Every RPC method is classified into one verb: `read`, `listen`, `send`,
   `fork`, `set`, `create`, `kill`, `admin`. An unclassified method fails a test.
+- A ninth verb, `use`, on `sandbox:<name>`, is checked against the dressed form
+  on create, bind, import and set: `system.sandbox` is client-settable, and
+  `local` runs tools on the daemon's host. An aria minted by a sandbox principal
+  is pinned to that sandbox. The default policy grants `use` on `local` only to
+  the daemon's own uid.
+- The owner lives on the birth record in the trunk, written once; meta carries
+  a mirror that heal preserves and never recomputes.
 - Selectors: `aria:<id>`, `role:@name`, `owner:self` (arias this principal
   minted; owner is server-stamped at birth), `lineage:<id>`, `*`.
 - Roles are named bundles of verbs on selectors, bound to principals.
