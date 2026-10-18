@@ -166,7 +166,7 @@ func Enforce(p *Policies) Policy {
 		if !ok {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
-		if verb == rpc.VerbNone || r.Method == rpc.MethodList {
+		if verb == rpc.VerbNone || r.Method == rpc.MethodList || r.Method == rpc.MethodNodeResolve {
 			return Allow()
 		}
 		res := Daemon

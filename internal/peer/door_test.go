@@ -77,16 +77,16 @@ func serve(t *testing.T, cfg config.TLSDoor, d *peer.Door, owned ...string) *ser
 						conn.Close()
 						return nil, nil
 					},
-					rpc.MethodNodeOwns: func(_ context.Context, p json.RawMessage) (any, error) {
-						var req rpc.NodeOwnsRequest
+					rpc.MethodNodeResolve: func(_ context.Context, p json.RawMessage) (any, error) {
+						var req rpc.NodeResolveRequest
 						if err := json.Unmarshal(p, &req); err != nil {
 							return nil, err
 						}
-						out := rpc.NodeOwnsResponse{Owned: []string{}}
-						for _, id := range req.IDs {
+						out := rpc.NodeResolveResponse{IDs: map[string]string{}}
+						for _, ref := range req.Refs {
 							for _, o := range owned {
-								if id == o {
-									out.Owned = append(out.Owned, id)
+								if strings.HasPrefix(o, ref) {
+									out.IDs[ref] = o
 								}
 							}
 						}
@@ -307,14 +307,17 @@ func TestLinkCarriesPushes(t *testing.T) {
 	}
 }
 
-// node.owns answers for the ids the owner holds.
-func TestOwns(t *testing.T) {
+// node.resolve answers, for the refs the owner holds, the ids they name.
+func TestResolve(t *testing.T) {
 	p := peertest.NewPKI(t, "fed")
-	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))}, "x1", "x2")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))}, "x1aaaa", "x2bbbb")
 	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
-	owned, err := a.Owns(context.Background(), "b", []string{"x1", "y", "x2"})
+	l, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"x1", "x2"}, owned)
+	defer l.Close()
+	ids, err := l.Resolve(context.Background(), []string{"x1", "y", "x2bbbb"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"x1": "x1aaaa", "x2bbbb": "x2bbbb"}, ids)
 }
 
 // The admitter stamps nothing a non-TLS connection could reach.

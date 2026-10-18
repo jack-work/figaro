@@ -13,10 +13,10 @@ type Directory interface {
 	Owner(id string) (node string, ok bool)
 	Learn(id, node string)
 	Forget(id string)
-	Locate(ctx context.Context, id string) (node string, err error)
+	Locate(ctx context.Context, ref string) (node, id string, err error)
 }
 
-type Ask func(ctx context.Context, node string, ids []string) ([]string, error)
+type Ask func(ctx context.Context, node string, refs []string) (map[string]string, error)
 
 var ErrNoOwner = errors.New("no node owns it")
 
@@ -52,42 +52,46 @@ func (c *Cache) Forget(id string) {
 }
 
 type claim struct {
-	node  string
-	owns  bool
-	unrch error
+	node string
+	id   string
+	err  error
 }
 
-func (c *Cache) Locate(ctx context.Context, id string) (string, error) {
-	if node, ok := c.Owner(id); ok {
-		return node, nil
+func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) {
+	if node, ok := c.Owner(ref); ok {
+		return node, ref, nil
 	}
-	answers := make(chan claim, len(c.nodes))
+	claims := make(chan claim, len(c.nodes))
 	for _, node := range c.nodes {
 		go func() {
-			owned, err := c.ask(ctx, node, []string{id})
-			answers <- claim{node: node, owns: err == nil && slices.Contains(owned, id), unrch: err}
+			ids, err := c.ask(ctx, node, []string{ref})
+			claims <- claim{node: node, id: ids[ref], err: err}
 		}()
 	}
-	var owners []string
+	var found []claim
 	var unreachable []error
 	for range c.nodes {
-		a := <-answers
+		cl := <-claims
 		switch {
-		case a.unrch != nil:
-			unreachable = append(unreachable, a.unrch)
-		case a.owns:
-			owners = append(owners, a.node)
+		case cl.err != nil:
+			unreachable = append(unreachable, cl.err)
+		case cl.id != "":
+			found = append(found, cl)
 		}
 	}
-	slices.Sort(owners)
+	slices.SortFunc(found, func(a, b claim) int { return strings.Compare(a.node, b.node) })
 	switch {
-	case len(owners) == 1:
-		c.Learn(id, owners[0])
-		return owners[0], nil
-	case len(owners) > 1:
-		return "", fmt.Errorf("%s is on nodes %s: name it as <node>/%s", id, strings.Join(owners, " and "), id)
+	case len(found) == 1:
+		c.Learn(found[0].id, found[0].node)
+		return found[0].node, found[0].id, nil
+	case len(found) > 1:
+		nodes := make([]string, len(found))
+		for i, f := range found {
+			nodes[i] = f.node
+		}
+		return "", "", fmt.Errorf("%s is on nodes %s: name it as <node>/%s", ref, strings.Join(nodes, " and "), ref)
 	case len(unreachable) > 0:
-		return "", fmt.Errorf("%s: %w among reachable peers; %w", id, ErrNoOwner, errors.Join(unreachable...))
+		return "", "", fmt.Errorf("%s is on no reachable node: %w", ref, errors.Join(unreachable...))
 	}
-	return "", fmt.Errorf("%s: %w", id, ErrNoOwner)
+	return "", "", fmt.Errorf("%s: %w", ref, ErrNoOwner)
 }

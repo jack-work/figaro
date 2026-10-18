@@ -11,12 +11,12 @@ type PassageAnswer struct {
 
 const MaxPassage = 16 << 10
 
-const MethodNodeOwns = "node.owns"
+const MethodNodeResolve = "node.resolve"
 
-type NodeOwnsRequest struct {
-	IDs []string `json:"ids"`
+type NodeResolveRequest struct {
+	Refs []string `json:"refs"`
 }
 
-type NodeOwnsResponse struct {
-	Owned []string `json:"owned"`
+type NodeResolveResponse struct {
+	IDs map[string]string `json:"ids"`
 }
