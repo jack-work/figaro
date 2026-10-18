@@ -363,6 +363,8 @@
                 base="$(basename "$entry")"
                 case "$base" in
                   providers|hush|hush.bak-*) continue ;;
+                  *.key|*.pem|*.age|*secret*|*token*)
+                    ln -sfn "$entry" "$FIGARO_CONFIG_DIR/$base"; continue ;;
                 esac
                 rm -rf "$FIGARO_CONFIG_DIR/$base"
                 cp -a "$entry" "$FIGARO_CONFIG_DIR/$base"
