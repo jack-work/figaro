@@ -797,6 +797,38 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 	})
 }
 
+func runMove(loaded *config.Loaded, idFlag string, args []string, to string, asJSON bool) {
+	id := idFlag
+	if id == "" && len(args) > 0 {
+		id = args[0]
+	}
+	if to == "" {
+		dieUsage("usage: figaro move [--id <aria> | <aria>] --to <node>")
+	}
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		ctx := context.Background()
+		if id == "" {
+			r, err := resolveBinding(ctx, acli, shellPID)
+			if err != nil || !r.Found {
+				dieUsage("move: no aria bound to this shell (try: --id <aria>)")
+			}
+			id = r.FigaroID
+		}
+		resp, err := acli.Move(ctx, id, to)
+		if err != nil {
+			die("move: %s", err)
+		}
+		if asJSON {
+			return json.NewEncoder(stdout).Encode(resp)
+		}
+		fmt.Fprintf(stdout, "moved %d aria(s) to node %s: %s in %dms\n", len(resp.Moved), resp.Node, humanBytes(resp.Bytes), resp.Millis)
+		for _, m := range resp.Moved {
+			fmt.Fprintf(stdout, "  %s\n", m)
+		}
+		return nil
+	})
+}
+
 // A head fork keeps the target's id on the continuation and mints one
 // alternative; an interior fork (<id>:<turn>) splits there.
 func runFork(loaded *config.Loaded, spec string, opts sendOpts) {

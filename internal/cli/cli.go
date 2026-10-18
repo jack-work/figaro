@@ -1072,6 +1072,30 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "move",
+		Group: "Session",
+		Short: "Move an aria and its whole fork tree to another node",
+		Usage: "move [--id <aria> | <aria>] --to <node> [-j]",
+		Long: `Moves the aria's fork tree (every aria sharing its history) to a peer
+node under the same ids. The old node keeps a forwarding address, so the
+ids keep working from anywhere. Refused while any aria of the tree has a
+turn in flight or queued. Reaching another node needs a bearer.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Aria to move (defaults to this shell's)"},
+			{Long: "to", Description: "Node id, or a unique prefix of one"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Print the result as one JSON object"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runMove(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("to"), ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "state",
 		Aliases: []string{"form"},
 		Group:   "State",
