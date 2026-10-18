@@ -2,6 +2,7 @@ package bwrap
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -37,11 +38,14 @@ type Provider struct {
 }
 
 func (p Provider) Open(_ context.Context, spec sandbox.Spec) (sandbox.Sandbox, error) {
-	if _, err := exec.LookPath("bwrap"); err != nil {
-		return nil, err
-	}
 	root, err := filepath.EvalSymlinks(spec.Workspace)
 	if err != nil {
+		return nil, err
+	}
+	if root == "/" {
+		return nil, fmt.Errorf("bwrap: workspace / would bind the whole host read-write; set system.cwd to a project directory")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
 		return nil, err
 	}
 	var env []string

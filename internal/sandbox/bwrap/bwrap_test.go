@@ -110,3 +110,13 @@ func TestIsolationIsTruthful(t *testing.T) {
 		t.Fatalf("absolute path inside the workspace refused: %v", err)
 	}
 }
+
+// Under systemd the daemon's working directory is /, and an aria whose cwd
+// fell back to it would otherwise get the whole host bound read-write.
+func TestAWorkspaceOfRootIsRefused(t *testing.T) {
+	for _, ws := range []string{"/", "/.", "//"} {
+		if _, err := (Provider{}).Open(context.Background(), sandbox.Spec{Workspace: ws}); err == nil || !strings.Contains(err.Error(), "whole host") {
+			t.Errorf("workspace %q: %v", ws, err)
+		}
+	}
+}
