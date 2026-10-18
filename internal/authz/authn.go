@@ -113,28 +113,33 @@ func NewUpstream(cfg config.UpstreamConfig, listen, cliDoor string, reverify *Be
 func (u *Upstream) Listener() string { return u.listen }
 
 func (u *Upstream) Subject(ctx context.Context, h http.Header) (jkauthz.Subject, error) {
+	s, _, err := u.subject(ctx, h)
+	return s, err
+}
+
+func (u *Upstream) subject(ctx context.Context, h http.Header) (jkauthz.Subject, string, error) {
 	s, err := u.fromHeaders(h)
 	if err != nil {
-		return jkauthz.Subject{}, err
+		return jkauthz.Subject{}, "", err
 	}
 	if u.reverify == nil {
-		return s, nil
+		return s, "", nil
 	}
 	token, ok := bearer.FromHeader(h.Get("Authorization"))
 	if !ok {
 		if h.Get(headerPrincipal) != "" {
-			return jkauthz.Subject{}, fmt.Errorf("%w: the edge verified a bearer it did not forward", ErrUnadmitted)
+			return jkauthz.Subject{}, "", fmt.Errorf("%w: the edge verified a bearer it did not forward", ErrUnadmitted)
 		}
-		return s, nil
+		return s, "", nil
 	}
 	sess, err := u.reverify.Open(ctx, token)
 	if err != nil {
-		return jkauthz.Subject{}, err
+		return jkauthz.Subject{}, "", err
 	}
 	if sess.Principal() != s.Principal {
-		return jkauthz.Subject{}, fmt.Errorf("%w: the edge says %s, the forwarded token is %s", ErrUnadmitted, s.Principal, sess.Principal())
+		return jkauthz.Subject{}, "", fmt.Errorf("%w: the edge says %s, the forwarded token is %s", ErrUnadmitted, s.Principal, sess.Principal())
 	}
-	return s, nil
+	return s, token, nil
 }
 
 func (u *Upstream) fromHeaders(h http.Header) (jkauthz.Subject, error) {
@@ -234,6 +239,12 @@ func (b *Bearer) Open(ctx context.Context, token string) (*Session, error) {
 
 func (s *Session) Principal() jkauthz.Principal { return s.principal }
 
+func (s *Session) Token() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token
+}
+
 func (s *Session) Expiry() time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -288,9 +299,12 @@ func (p *Peercred) Admit(ctx context.Context, conn net.Conn) (context.Context, e
 }
 
 func (u *Upstream) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
-	s, err := u.Subject(ctx, r.Header)
+	s, token, err := u.subject(ctx, r.Header)
 	if err != nil {
 		return nil, err
+	}
+	if token != "" {
+		return WithVerifiedBearer(ctx, s, token), nil
 	}
 	return WithSubject(ctx, s), nil
 }

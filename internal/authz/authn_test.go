@@ -17,6 +17,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
 )
@@ -413,5 +414,43 @@ func TestReverifyingRefuses(t *testing.T) {
 		if _, err := u.Subject(ctx, h); err == nil {
 			t.Errorf("%s: admitted", name)
 		}
+	}
+}
+
+// A caller is forwarded to another node with the token it proved itself
+// with, and only that: a peercred caller or a tokenless browser has none
+// to carry, and the edge's headers are never turned into one.
+func TestOnlyAVerifiedTokenIsForwardable(t *testing.T) {
+	is := newIssuer(t)
+	b := is.bearer(t)
+	ctx := context.Background()
+	tok := is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})
+
+	r := &http.Request{Header: http.Header{"Authorization": {"Bearer " + tok}}}
+	bctx, err := b.AdmitRequest(ctx, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := BearerOf(bctx); !ok || got != tok {
+		t.Fatalf("bearer door: %q %v", got, ok)
+	}
+
+	u := reverifying(t, is)
+	uctx, err := u.AdmitRequest(ctx, &http.Request{Header: edge("gluck", "human", "figaro-cli", tok)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := BearerOf(uctx); !ok || got != tok {
+		t.Fatalf("upstream, reverified: %q %v", got, ok)
+	}
+	uctx, err = u.AdmitRequest(ctx, &http.Request{Header: edge("gluck", "", "", "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := BearerOf(uctx); ok {
+		t.Fatal("a browser session became forwardable")
+	}
+	if _, ok := BearerOf(WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"})); ok {
+		t.Fatal("a peercred caller became forwardable")
 	}
 }

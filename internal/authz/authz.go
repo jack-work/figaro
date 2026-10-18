@@ -38,6 +38,7 @@ type callerKey struct{}
 type caller struct {
 	subject jkauthz.Subject
 	session *Session
+	bearer  string
 }
 
 func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
@@ -58,6 +59,18 @@ func WithSession(ctx context.Context, s *Session) context.Context {
 
 func WithPrincipal(ctx context.Context, p rpc.Principal) context.Context {
 	return WithSubject(ctx, jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}})
+}
+
+func WithVerifiedBearer(ctx context.Context, s jkauthz.Subject, token string) context.Context {
+	return context.WithValue(ctx, callerKey{}, caller{subject: s, bearer: token})
+}
+
+func BearerOf(ctx context.Context) (string, bool) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.session != nil {
+		return c.session.Token(), true
+	}
+	return c.bearer, c.bearer != ""
 }
 
 func SubjectOf(ctx context.Context) (jkauthz.Subject, error) {
