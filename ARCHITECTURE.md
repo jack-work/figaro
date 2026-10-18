@@ -223,6 +223,15 @@ listener calls it, then `figaro.read` for catch-up. When an aria's endpoint
 closes (kill, drain) its followers get `figaro.closed` and their connections
 stay up.
 
+A second, web door is configured by `[door.web]` (`path`, `mode`, default
+0660; `max_conn_age`, default 8h; `authn`): a unix socket accepting an HTTP
+upgrade to WebSocket, then the same JSON-RPC, one frame per text message. Its
+authenticator admits at the upgrade and belongs to that listener alone; with
+none (the case until M2) every upgrade is refused with 403, and a credential
+it refuses gets 401, on which the wss client invalidates and retries once. A connection
+reaching its age is closed with 1008 and must upgrade again, because a
+fronting proxy authorizes only the upgrade.
+
 ### Streaming: the turn-shaped aria page
 
 The wire carries the **UI IR**, not canonical `message.Message` IR. The one
