@@ -120,3 +120,16 @@ func TestNotEveryHyphenatedWordIsAHandle(t *testing.T) {
 		}
 	}
 }
+
+// A word prefix is letters and hyphens, at least a stem long. "face" is one
+// too: the resolver tries it as hex first and as words when no id starts so.
+func TestIsPrefix(t *testing.T) {
+	for s, want := range map[string]bool{
+		"nur": true, "nursery-li": true, "@syc": true, "affidavit-": true,
+		"face": true, "nu": false, "a5647": false, "-nur": false, "nur5": false, "": false, "Nursery": false,
+	} {
+		if IsPrefix(s) != want {
+			t.Errorf("IsPrefix(%q) = %v, want %v", s, !want, want)
+		}
+	}
+}

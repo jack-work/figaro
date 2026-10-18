@@ -118,6 +118,9 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	if w, ok := handle.Parse(id); ok && h.angelus.Backend != nil {
 		return h.placeWords(ctx, id, w, route)
 	}
+	if handle.IsPrefix(id) && !rpc.IsHexID(id) && h.angelus.Backend != nil {
+		return h.placeWordPrefix(ctx, id)
+	}
 	if len(strings.TrimPrefix(id, "@")) < minIDPrefix || h.angelus.Backend == nil {
 		return id, "", nil
 	}
@@ -126,6 +129,11 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	case 0:
 		if t, ok := h.tombstoneByPrefix(ctx, id); ok {
 			return h.towardsMoved(ctx, t, route)
+		}
+		if handle.IsPrefix(id) {
+			if w, node, err := h.placeWordPrefix(ctx, id); err != nil || w != id {
+				return w, node, err
+			}
 		}
 		if route {
 			return h.locate(ctx, id)
@@ -153,6 +161,34 @@ func (h *handlers) placeWords(ctx context.Context, ref string, w handle.Ref, rou
 		if route && w.N == handle.MinWords {
 			return h.locate(ctx, w.HexPrefix())
 		}
+		return ref, "", nil
+	case 1:
+		return matches[0], "", nil
+	}
+	named := make([]string, len(matches))
+	for i, id := range matches {
+		named[i] = handle.Words(id, handle.MaxWords)
+	}
+	return "", "", fmt.Errorf("%s is ambiguous: %s", ref, strings.Join(named, ", "))
+}
+
+func (h *handlers) placeWordPrefix(ctx context.Context, ref string) (string, string, error) {
+	sigil := ref[:len(ref)-len(strings.TrimPrefix(ref, "@"))]
+	var matches []string
+	for _, id := range h.angelus.Backend.MatchID(sigil, -1) {
+		if !strings.HasPrefix(handle.Words(id, handle.MaxWords), ref) {
+			continue
+		}
+		if h.angelus.Policies != nil && !h.readableID(ctx, id) {
+			continue
+		}
+		matches = append(matches, id)
+		if len(matches) > ambiguityList {
+			break
+		}
+	}
+	switch len(matches) {
+	case 0:
 		return ref, "", nil
 	case 1:
 		return matches[0], "", nil
@@ -199,4 +235,12 @@ func (h *handlers) knownID(id string) bool {
 	}
 	_, ok := h.angelus.Backend.Node(id)
 	return ok
+}
+
+func (h *handlers) readableID(ctx context.Context, id string) bool {
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return false
+	}
+	return h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed
 }

@@ -178,6 +178,7 @@ Every `<id>` above takes any of these, and all of them name the same aria:
 | the full id | `a5647bfbc216b8a09ffea9586393c289` (old arias: `d9a9cebf`) |
 | its word handle | `nursery-lioness` |
 | the handle's stems, 3+ letters a word | `nur-lio` |
+| any unique prefix of the handle, 3+ letters | `nurs` |
 | any unique hex prefix, 4+ characters | `a5647` |
 | either, on another node | `spain2/nursery-lioness` |
 | a form | `@` before any of them |

@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -71,4 +72,51 @@ func stems(words string) string {
 		parts[i] = p[:handle.StemLen]
 	}
 	return sigil + strings.Join(parts, handle.Separator)
+}
+
+// A partial handle resolves like a partial hex id: unique, or refused with the
+// candidates named. The pager's :at sent "affi" as typed and got "not found".
+func TestAUniqueWordPrefixResolves(t *testing.T) {
+	h, _ := resolveHandlers(t)
+	a, b := "5a6b7c8d"+strings.Repeat("e", 24), "9f0e1d2c"+strings.Repeat("f", 24)
+	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{a, b}}
+	full := handle.Words(a, 2)
+	for _, ref := range []string{full[:4], full[:len(full)-2]} {
+		if got, err := h.canonicalID(context.Background(), ref); err != nil || got != a {
+			t.Errorf("canonicalID(%q) = %q, %v; want %s (%s)", ref, got, err, a, full)
+		}
+	}
+	if got, err := h.canonicalID(context.Background(), "zzz"); err != nil || got != "zzz" {
+		t.Errorf("an unmatched word prefix comes back unresolved, got %q, %v", got, err)
+	}
+}
+
+func TestAnAmbiguousWordPrefixNamesTheCandidates(t *testing.T) {
+	h, _ := resolveHandlers(t)
+	o1, o2 := "abcde123", "abcde987"
+	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{o1, o2}}
+	pre := handle.Words(o1, 2)[:5]
+	_, err := h.canonicalID(context.Background(), pre)
+	if err == nil || !strings.Contains(err.Error(), handle.Words(o1, 3)) || !strings.Contains(err.Error(), handle.Words(o2, 3)) {
+		t.Fatalf("canonicalID(%q) err = %v, want both three-word names", pre, err)
+	}
+}
+
+// A handle whose first letters are all hex ("deface-...") is tried as a hex
+// prefix first, then as words when no id starts that way.
+func TestAnAllHexWordPrefixFallsBackToWords(t *testing.T) {
+	h, _ := resolveHandlers(t)
+	var id, pre string
+	for v := uint32(0); ; v += 0x10000 {
+		cand := fmt.Sprintf("%08x", v) + strings.Repeat("0", 24)
+		w := handle.Words(cand, 2)
+		if len(w) >= 4 && strings.Trim(w[:4], "abcdef") == "" {
+			id, pre = cand, w[:4]
+			break
+		}
+	}
+	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{id}}
+	if got, err := h.canonicalID(context.Background(), pre); err != nil || got != id {
+		t.Fatalf("canonicalID(%q) = %q, %v; want %s (%s)", pre, got, err, id, handle.Words(id, 2))
+	}
 }

@@ -104,3 +104,16 @@ func split(s string) (string, string) {
 	}
 	return "", s
 }
+
+func IsPrefix(s string) bool {
+	_, body := split(s)
+	if len(body) < StemLen || strings.HasPrefix(body, Separator) {
+		return false
+	}
+	for _, r := range body {
+		if r != '-' && (r < 'a' || r > 'z') {
+			return false
+		}
+	}
+	return true
+}
