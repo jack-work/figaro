@@ -48,7 +48,7 @@ one() { # cols rows mode exit run
   full="$OUT/$tag.txt"
   $T capture-pane -pt "$S" -S - > "$full"
   after=$($T capture-pane -pt "$S" -S - | grep -c '^SEED-')
-  content=$(grep -cE '^\s*(│|✓|>|<) |aria [0-9a-f]{8}' "$full")
+  content=$(grep -cE '^\s*(│|✓|>|<) |aria [0-9a-f]{8,32}' "$full")
   # the prompt must be the LAST non-empty line, i.e. nothing painted over it
   prompt=$(grep -n 'bash-5' "$full" | tail -1 | cut -d: -f1)
   local last; last=$(grep -n . "$full" | tail -1 | cut -d: -f1)

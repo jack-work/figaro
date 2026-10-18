@@ -57,7 +57,7 @@ sleep 6
 # The tree glyphs shift awk's columns, so match the id by shape: the aria
 # line is the only one carrying a bare 8-hex token (outfit ids are
 # name@hex, and the @ keeps them out).
-ARIA=$("$BIN" ls -g 2>/dev/null | grep "say ok" | head -1 | grep -oE '(^|[^@[:alnum:]])[0-9a-f]{8}([^[:alnum:]]|$)' | grep -oE '[0-9a-f]{8}' | head -1)
+ARIA=$("$BIN" ls -g 2>/dev/null | grep "say ok" | head -1 | grep -oE '(^|[^@[:alnum:]])[0-9a-f]{8,32}([^[:alnum:]]|$)' | grep -oE '[0-9a-f]{8,32}' | head -1)
 [ -n "$ARIA" ] || { echo "FAIL: no aria was created"; exit 1; }
 
 echo "== turn 2 (aria $ARIA)"

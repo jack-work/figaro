@@ -28,8 +28,8 @@ unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 fail() { echo "FAIL: $*"; $BIN stop >/dev/null 2>&1; exit 1; }
 alive() { $BIN ls -g 2>/dev/null | grep -c "$1"; }
 
-DOOMED=$($BIN new 2>&1 | grep -oE "\b[0-9a-f]{8}\b" | head -1)
-KEEP=$($BIN new 2>&1 | grep -oE "\b[0-9a-f]{8}\b" | head -1)
+DOOMED=$($BIN new 2>&1 | grep -oE "\b[0-9a-f]{8,32}\b" | head -1)
+KEEP=$($BIN new 2>&1 | grep -oE "\b[0-9a-f]{8,32}\b" | head -1)
 FORM=$($BIN form new --set brief=doomed 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
 [ -n "$DOOMED" ] && [ -n "$KEEP" ] && [ -n "$FORM" ] || fail "could not mint the fixtures"
 echo "doomed aria=$DOOMED  control aria=$KEEP  doomed form=$FORM"

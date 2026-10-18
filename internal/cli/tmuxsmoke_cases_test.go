@@ -346,10 +346,14 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 		p.visible())
 }
 
-// ariaIDOnScreen takes the first 8-hex token on a status row; a mantra could carry
-// one too.
+// footerAriaID reads the aria id off the status row: an old 8-hex id or a new
+// 32-hex one, whichever the bar paints.
+var footerAriaID = regexp.MustCompile(`(?m)(?:^|· )([0-9a-f]{8,32}) ·`)
+
+// ariaIDOnScreen takes the first hex id token on a status row; a mantra could
+// carry one too.
 func ariaIDOnScreen(capture string) string {
-	re := regexp.MustCompile(`\b[0-9a-f]{8}\b`)
+	re := regexp.MustCompile(`\b[0-9a-f]{8,32}\b`)
 	for _, line := range strings.Split(capture, "\n") {
 		if !strings.Contains(line, "·") {
 			continue
@@ -479,7 +483,7 @@ func TestSmoke_ForkFromTheBoxAttendsAndShowsUnlessStay(t *testing.T) {
 	if !p.alive() || !strings.Contains(p.visible(), "VISOK") {
 		decline(t, "the first turn did not land with the session still open")
 	}
-	footerID := regexp.MustCompile(`· ([0-9a-f]{8}) ·`)
+	footerID := footerAriaID
 	m := footerID.FindStringSubmatch(p.visible())
 	if m == nil {
 		t.Fatalf("no aria id in the footer:\n%s", p.visible())
@@ -562,7 +566,7 @@ func TestSmoke_ForkPointJumpAttendAndJumplist(t *testing.T) {
 	p.send("clear; " + bin + " listen")
 	p.key("Enter")
 	p.waitIdle(30 * time.Second)
-	footerID := regexp.MustCompile(`· ([0-9a-f]{8}) ·`)
+	footerID := footerAriaID
 	m := footerID.FindStringSubmatch(p.visible())
 	if m == nil {
 		t.Fatalf("no aria id in the footer:\n%s", p.visible())

@@ -81,7 +81,7 @@ export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFI
 export ANTHROPIC_BASE_URL="http://127.0.0.1:$PORT/v1" ANTHROPIC_API_KEY="sink"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
-ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8}" | head -1)
+ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
 "$BIN" state set --id "$ARIA" system.use_official_sdk false >/dev/null 2>&1
 FORM=$("$BIN" form new -S name=therole 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
 "$BIN" cast "$ARIA" "$FORM" >/dev/null 2>&1

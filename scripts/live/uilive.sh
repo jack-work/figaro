@@ -32,7 +32,7 @@ CFG
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
-mapfile -t ARIAS < <("$BIN" ls -j 2>/dev/null | grep -oE '"id": *"[0-9a-f]+"' | grep -oE '[0-9a-f]{8}' | head -12)
+mapfile -t ARIAS < <("$BIN" ls -j 2>/dev/null | grep -oE '"id": *"[0-9a-f]+"' | grep -oE '[0-9a-f]{8,32}' | head -12)
 echo "tree=$TREE ui_window_mb=$UIMB arias=${#ARIAS[@]}"
 [ "${#ARIAS[@]}" -gt 0 ] || { echo "NO ARIAS -- the probe measured nothing"; exit 1; }
 

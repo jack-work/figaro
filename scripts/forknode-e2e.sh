@@ -212,7 +212,7 @@ fi
 # history this feature cut, so the branch is what has to take a turn.
 if "$BIN" send "$ARIA:1.3" -f -- "carry on from here" >/dev/null 2>"$BOX/senderr.txt"; then
   # send names the branch it made on stderr: "forked X at ... -> Y"
-  BR=$(grep -oE '\-> (attending )?[0-9a-f]{8}' "$BOX/senderr.txt" | grep -oE '[0-9a-f]{8}' | head -1)
+  BR=$(grep -oE '\-> (attending )?[0-9a-f]{8,32}' "$BOX/senderr.txt" | grep -oE '[0-9a-f]{8,32}' | head -1)
   for _ in $(seq 30); do
     "$BIN" show --id "$BR" -a -j 2>/dev/null | grep -q "carry on from here" && break
     sleep 0.5

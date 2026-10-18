@@ -38,7 +38,7 @@ echo "aria=$ID"
 "$BIN" log --id "$ID" 2>/dev/null | tail -3
 "$BIN" doctor mem 2>&1 | grep -E "figwal|heap "
 echo "--- a new aria, a patch, a read"
-NEW=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8}" | head -1)
+NEW=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
 "$BIN" set --id "$NEW" brief "lazy" 2>&1
 "$BIN" state get --id "$NEW" 2>&1 | head -3
 grep -iE "panic|corrupt" "$ROOT/daemon.log" | tail -3

@@ -19,7 +19,7 @@ cp -a "${HOME}/.config/figaro/." "$ROOT/config/" 2>/dev/null || true
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
-ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8}" | head -1)
+ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
 echo "aria $ARIA"
 
 # THE NODE, NOT THE STORE. Every aria and every form has its own directory

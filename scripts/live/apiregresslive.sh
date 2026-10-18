@@ -65,7 +65,7 @@ has "form state round-trips" "$("$BIN" --bind state --id "$F" -j 2>&1)" "hello"
 has "study lands on the board" "$("$BIN" --bind state --id "$A" -j 2>&1)" "studies"
 
 echo "== fork (topology through the collapsed surface)"
-B=$("$BIN" --bind fork "$A" 2>&1 | grep -oE "\b[0-9a-f]{8}\b" | tail -1)
+B=$("$BIN" --bind fork "$A" 2>&1 | grep -oE "\b[0-9a-f]{8,32}\b" | tail -1)
 has "fork mints a branch" "$B" "[0-9a-f]"
 has "the branch carries the history" "$("$BIN" --bind show --id "$B" 2>&1)" "PERUKE"
 

@@ -83,7 +83,7 @@ for step in $(seq 1 "$STEPS"); do
   if ! pgrep -f "$FIG" >/dev/null; then
     echo "  step $step: FIGARO IS GONE (process exited) -> $cap"; fail=$((fail+1)); break
   fi
-  if ! grep -qE 'aria [0-9a-f]{8}|ctx |help' "$cap"; then
+  if ! grep -qE 'aria [0-9a-f]{8,32}|ctx |help' "$cap"; then
     # The pager is gone. In live mode that is usually just the turn ending, and
     # measuring a dead pager is how a fuzz reports CLEAN forever (trap 12):
     # STOP rather than keep "checking" nothing.

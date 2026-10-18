@@ -14,7 +14,7 @@ unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
 FORM=$("$BIN" form new --set brief="the studied thing" 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
 echo "form=$FORM"
-ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8}" | head -1)
+ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
 echo "aria=$ARIA"
 
 echo "--- study"

@@ -72,7 +72,7 @@ settle 4
 reset_box; typ "attend "; settle 0.5
 bar_before=$(shot | tail -1) # with the box open: ':' puts its glyph there
 key Tab; settle
-rows=$(shot | grep -cE "^  [0-9a-f]{8}")
+rows=$(shot | grep -cE "^  [0-9a-f]{8,32}")
 check "Tab opens the pit with every aria in it" $(( rows >= 3 ? 0 : 1 )) "saw $rows id rows"
 check "the status bar is untouched" $([[ "$(shot | tail -1)" == "$bar_before" ]]; echo $?) "bar is now: $(shot | tail -1)"
 check "nothing chosen yet" $(shot | grep -q "♪"; [[ $? -ne 0 ]]; echo $?)
@@ -80,8 +80,8 @@ check "nothing chosen yet" $(shot | grep -q "♪"; [[ $? -ne 0 ]]; echo $?)
 # 2. ^N chooses, puts it in the line, and marks it.
 key C-n; settle 0.6
 line=$(shot | grep -E "^:attend" | tail -1)
-check "^N puts the choice in the line" $([[ "$line" =~ ^:attend\ [0-9a-f]{8}$ ]]; echo $?) "line: $line"
-check "the chosen row carries the pit's marker" $(shot | grep -qE "^♪ [0-9a-f]{8}"; echo $?)
+check "^N puts the choice in the line" $([[ "$line" =~ ^:attend\ [0-9a-f]{8,32}$ ]]; echo $?) "line: $line"
+check "the chosen row carries the pit's marker" $(shot | grep -qE "^♪ [0-9a-f]{8,32}"; echo $?)
 check "the chosen row is drawn selected" $(raw | grep "♪" | grep -q $'\x1b\[48;5;240m'; echo $?)
 
 # 3. Esc puts the typed word back and keeps the box.
@@ -90,7 +90,7 @@ check "Esc restores the typed word" $([[ "$(shot | grep -E '^:attend' | tail -1)
 
 # 4. Typing narrows, from the id's own letters.
 key Tab; typ "${ids[1]:0:3}"; settle 0.8
-rows=$(shot | grep -cE "^  [0-9a-f]{8}")
+rows=$(shot | grep -cE "^  [0-9a-f]{8,32}")
 check "typing narrows the pit" $(( rows >= 1 && rows < 3 ? 0 : 1 )) "saw $rows rows"
 
 # 5. Flags, from the command's own declaration.
