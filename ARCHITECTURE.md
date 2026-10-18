@@ -217,8 +217,9 @@ the store answers otherwise.
 
 `api/rpc/methods.go` and `api/rpc/address.go` are the list of record.
 
-A connection follows an aria once it opens or steers its stream there:
-`figaro.follow`, or `figaro.qua` (`rpc.MethodFollows`). Reads and every other
+A connection follows an aria once it opens or steers its stream there,
+`figaro.follow` or `figaro.qua` (`rpc.MethodFollows`), and only where the
+caller holds `listen`. Reads and every other
 method never subscribe, so a connection used for lookups collects no pushes.
 Pushes carry `figaro_id`, so one connection may follow several arias. When an
 aria's endpoint closes (kill, drain) its followers get `figaro.closed` and
@@ -227,9 +228,11 @@ their connections stay up.
 A second, web door is configured by `[door.web]` (`path`, `mode`, default
 0660; `max_conn_age`, default 8h; `authn`): a unix socket accepting an HTTP
 upgrade to WebSocket, then the same JSON-RPC, one frame per text message. Its
-authenticator admits at the upgrade and belongs to that listener alone; with
-none (the case until M2) every upgrade is refused with 403, and a credential
-it refuses gets 401, on which the wss client invalidates and retries once. A connection
+authenticator (`upstream` or `bearer`) admits at the upgrade and belongs to
+that listener alone; a credential it refuses gets 401, on which the wss client
+invalidates and retries once. Any other `authn` and the door does not start.
+Admission and the policy are in the Authorization section of
+`skills/figaro/reference/architecture.md`. A connection
 reaching its age is closed with 1008 and must upgrade again, because a
 fronting proxy authorizes only the upgrade.
 
@@ -322,22 +325,18 @@ $XDG_RUNTIME_DIR/figaro/          angelus.sock, angelus.pid
 ~/.local/state/figaro/
 ├── angelus.log                   supervisor log
 ├── traces.jsonl                  OTel exporter
-├── figaros/<id>.jsonl            per-agent event log
 └── arias/<id>/...                see "Streams" above
 ```
 
 ## Roadmap
 
-- **Version the frontend protocol and negotiate capabilities.** Add a protocol
-  version/capability list to the angelus/aria handshake, define compatibility
-  rules, publish the wire/folding client outside `internal/`, and provide a
-  language-neutral schema. Exact build matching is the temporary guard.
+- **A public frontend protocol.** `figaro.hello` carries a version and
+  capabilities; still owed are compatibility rules, the wire/folding client
+  outside `internal/`, and a language-neutral schema. Exact build matching is
+  the temporary guard.
 - Isolate subscriber backpressure with bounded per-client delivery; one slow
   external listener must not block the aria's ordered fan-out.
-- Browser / chat frontends through an authenticated loopback WebSocket bridge;
-  browsers cannot dial the current Unix-domain sockets directly.
 - More providers.
 - Agent pooling.
-- Tool-execution sandboxing.
 - Context compaction.
 - Child-process agents (currently goroutines under the angelus).

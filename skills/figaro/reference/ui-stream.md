@@ -357,7 +357,8 @@ the platform temporary directory plus `figaro`. On Windows the last case is
 normally `%TEMP%\figaro`. The door is `angelus.sock`; there are no per-aria
 sockets.
 
-Every aria request names its aria in `params.figaro_id`. Follow the aria,
+Every aria request names its aria in `params.figaro_id`, an id or a unique
+prefix of 4+ characters. Follow the aria,
 then issue an idempotent catch-up read, and keep one reader consuming
 interleaved responses and notifications. Neither wakes the aria; it wakes on
 the first request that needs a turn loop, which for a transcript or a pager is
@@ -381,23 +382,23 @@ message injected mid-turn: see below).
 
 ### Protocol stability TODO
 
-The local socket protocol is usable by alternate frontends, but it is not yet
-a versioned public contract. The CLI currently protects itself by comparing
-its exact build revision with the angelus because wire shapes may change
-between builds. Before independent frontends are treated as supported clients:
+The protocol is usable by alternate frontends, but it is not yet a public
+contract. `figaro.hello` carries a protocol version and capabilities, and the
+CLI still compares its exact build revision with the angelus because wire
+shapes change between builds. Clients that cannot dial a unix socket use the
+web door (WebSocket, see `[door.web]` in `ARCHITECTURE.md`). Before
+independent frontends are treated as supported clients:
 
-1. add a protocol version and capability list to the angelus/aria handshake;
-2. define compatibility and required/optional-field rules;
-3. publish the wire structs and delta-folding client outside `internal/` (plus
-   a language-neutral schema for non-Go clients);
-4. bound each subscriber independently so a slow reader cannot block aria
-   fan-out; and
-5. provide a portable bridge for clients, such as browsers, that cannot dial a
-   local Unix-domain socket directly.
+1. define compatibility and required/optional-field rules;
+2. publish the wire structs and delta-folding client outside `internal/` (plus
+   a language-neutral schema for non-Go clients); and
+3. bound each subscriber independently so a slow reader cannot block aria
+   fan-out.
 
-Until then, external clients should be revision-pinned and treat the sockets as
-a trusted, same-user interface: the aria connection also exposes mutating
-methods such as `figaro.qua`, `figaro.interrupt`, and `figaro.set`.
+Until then, external clients should be revision-pinned. Every call is
+authorized against the caller's principal (see Authorization in
+[architecture.md](architecture.md)), so a client holds exactly the verbs its
+policy grants.
 
 ## Default view: inline-freeze, in native scrollback
 

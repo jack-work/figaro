@@ -171,10 +171,9 @@ stock `send`, `listen`, inline view, and transcript pager are clients of that
 stream. See [`skills/figaro/reference/ui-stream.md`](skills/figaro/reference/ui-stream.md) and
 [`skills/figaro/reference/turns.md`](skills/figaro/reference/turns.md).
 
-The socket surface is currently trusted-local and revision-coupled, not yet a
-stable public API. Protocol versioning, capability negotiation, public client
-packages/schema, slow-subscriber isolation, and a browser-safe bridge are
-tracked in the UI-stream protocol TODO.
+Every call is authorized against the caller's principal, and the surface is
+revision-coupled, not yet a stable public API. What is still owed is tracked
+in the UI-stream protocol TODO.
 
 ## The skill that ships inside the binary
 

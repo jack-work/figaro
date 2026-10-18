@@ -259,7 +259,8 @@ observer's mouth.
 | `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |
 
 The angelus respawns on the next command after a stop, so `figaro stop` is how
-you pick up a rebuilt binary.
+you pick up a rebuilt binary. A CLI pointed at another daemon (`FIGARO_ENDPOINT`
+or `[cli] endpoint`) never spawns one.
 
 ## The vault
 
@@ -269,8 +270,11 @@ entry under service `figaro`: *not* `hush`. The `hush` binary on PATH therefore
 addresses a different instance and cannot repair figaro's. Alias: `figaro hush`.
 
 **The agent's life is the daemon's.** It is figaro's own binary, re-exec'd by
-hush with `HUSH_AGENT_CHILD=1`; the daemon spawns it and keep-alives it, and it
-serves nobody else. So `figaro stop` retires it, including `--force` and
+hush with `HUSH_AGENT_CHILD=1`; the daemon spawns it the first time a
+credential strategy needs hush (an encrypted key, an OAuth or exchanged
+token) and keep-alives it from then on, and it serves nobody else. A daemon
+whose keys all come from the environment or from files never starts one.
+So `figaro stop` retires it, including `--force` and
 including the case where no daemon answers, since an agent outlives a daemon
 that was killed rather than stopped. `--keep-pids` keeps it, because a restart
 is coming and the agent holds the unlocked identity the next daemon would

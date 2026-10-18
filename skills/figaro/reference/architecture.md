@@ -11,7 +11,7 @@ source named here and trust it over this file.
   instance via flock). Owns the registry of arias, the **endpoint** each aria is
   reachable at, the daemon-wide session registry, pid bindings, and
   `figaro.list`/`create`/`kill`/`attach`. Survives shells. `figaro rest` stops
-  it; the next command respawns it.
+  it; [cli.md](../cli.md) says when the next command respawns it.
 - **Agent** (`internal/figaro`): one per aria (= one conversation), and
   **transient**. Owns the figLog (IR), the form, the tool registry, and
   the turn loop. Mutations funnel through its **inbox** (an event queue), so
@@ -203,7 +203,7 @@ change to every handler: to carry one string `params` already carries.
 
 Injection is generic rather than a field on each request struct because
 `figaro.context` and `figaro.form` send **nil** params; there would be
-nothing to embed in, and those methods must still be authenticatable.
+nothing to embed in, and those methods must still be attributed.
 
 This is **not** the target-selection rule. Selection is
 `--id > FIGARO_ARIA > pid binding` and answers *which aria am I talking about*;
@@ -248,15 +248,14 @@ of it can produce `duke: true`. The guarantee is a type, not a reserved word.
 
 Only an **interactive** process presents the duke: the same TTY signal that
 decides the binding policy: so an aria's shell-out cannot speak as its master
-by accident. A figaro that deliberately allocates itself a terminal still can:
-a known gap, accepted until real authentication, and exactly why none of this
-reaches an authorization decision.
+by accident. A figaro that deliberately allocates itself a terminal still can,
+which is why authorization reads the door's principal and never the duke.
 
 `aria ` is a **reserved prefix**: `SanitizeLabel` strips it, so
 `FIGARO_CALLER="aria 999"` renders `999` and cannot impersonate proof.
 
-Blocks fold into **runs**: one block per run of consecutive same-sender
-submissions, joined by a blank line. So the common case (one sender, or none)
+Blocks fold into **runs**: one block per run of consecutive submissions
+with the same sender and principal, joined by a blank line. So the common case (one sender, or none)
 is one block, and a message with no senders encodes **byte-identically** to
 before, which matters because the provider wire cache is keyed by LT and holds
 signed thinking blocks.
@@ -267,26 +266,49 @@ timestamps use, indented to sit under the prose.
 
 ### Authorization: `internal/authz`
 
-An **Authenticator** turns the credential into an `Identity`; a single
-**Policy** maps `(identity, method, raw params)` to allow or deny-with-reason.
-`authz.Guard` wraps the whole angelus handler map, so the guarded set is the
-served set and no handler opts in individually. Denials return JSON-RPC code
-**-32020** carrying the reason verbatim.
+**Admission is per listener.** A connection carries the principal its
+listener's authenticator stamped, and nothing in params can change it:
 
-No policy ships. Both the angelus map and every per-aria hub are guarded with
-`authz.AllowAll()`; a `Policy` is the seam where a rule drops in, with no
-handler changing.
+| listener | authenticator | principal |
+|---|---|---|
+| CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
+| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. |
+| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller only where the door has a verifier for its bearer, and refused otherwise |
+
+**Every call is decided.** `authz.Guard` wraps the whole handler map with
+`authz.Enforce`: each method maps to one verb (`api/rpc/verbs.go`; an
+unclassified method fails `TestEveryMethodHasAVerb`), checked on
+`aria:<id>` when the request names an aria and on the daemon otherwise.
+`figaro.hello` is exempt; `figaro.list` is served and drops the rows the
+caller cannot read before it pages. A call that reaches a second resource
+checks it too: `study` reads its form, `cast` sets its role, `lineage`
+reads `against`, `kill -r` needs `kill` on every aria it takes. A prompt or
+`figaro.follow` subscribes the connection only where the caller holds
+`listen`. Denials are JSON-RPC **-32020** with the reason verbatim.
+
+Ids are resolved before the policy sees them, and a prefix resolves only
+among arias the caller may read, so resolution cannot list or expand an id
+the caller could not read.
+
+**The policy** is TOML at `[authz] policy` (relative to the config dir):
+roles of verbs on selectors (`aria:<id>`, `role:@<name>`, `owner:self`,
+`lineage:<id>`, `sandbox:<name>`, `*`), bound to principals. With none
+configured, the daemon's own principal holds every verb and nobody else holds
+any. `outfit reload` and `angelus.configure` reload it; a file that fails to
+load leaves the previous policy in force. `owner:self` reads `minted_by`,
+which the birth record writes once and nothing rewrites.
+
+**Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
+create, fork, bind, import and `figaro.set`. An aria minted by a sandbox
+principal is pinned to that sandbox. Under `local` or `bwrap` a `system.cwd`
+the caller names is a host path and needs `use` on `sandbox:local`; the one
+the daemon assigns is under "Workspaces under a sandbox" below.
 
 `x-caller` is **attribution only and never authorizes**. It lands in
 `Identity.Label`, a different field from `FigaroID`, so an assertion naming
-its own target cannot impersonate it. Anyone who can set an environment
-variable can set the label; if a policy keyed on it, every rule would be one
-`FIGARO_CALLER=…` away from bypass. The separation is a field, not a
-convention.
-
-`AriaHeader` is trust-on-assertion, not proof: it believes
-`x-internal-figaro-id`. It is an interface so `SO_PEERCRED` or a bearer token
-drops in without any policy or handler changing.
+its own target cannot impersonate it. The stamped principal rides beside it
+on every prompt block (`message.Content.Principal`), so a transcript says who
+spoke as well as who claimed to.
 
 An aria may fork itself from inside its own running turn. The fork handler
 calls `Backend.ForkWith` directly rather than queueing on the agent's inbox,

@@ -122,6 +122,12 @@ be https, and every issuer call carries a `figaro/<version>` User-Agent. No
 audience is sent. Without `[oauth]`, the provider takes `api_key`, or the
 variable `api_key_env` names, and may run keyless, as `gateway` does.
 
+The key is looked for in this order (`boot.BuildResolver`): the environment;
+`api_key_file` (relative to `$CREDENTIALS_DIRECTORY` when not absolute; a
+named file that is missing or empty is an error); `$CREDENTIALS_DIRECTORY/<provider>`;
+the stored `api_key`, decrypted through hush when it is `AGE-ENC[...]`; then
+`[oauth]` through hush.
+
 ## Not a provider: decision models
 
 A decision model (jev, decision-1) is never an aria's `system.model`; setting
