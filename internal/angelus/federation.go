@@ -31,7 +31,7 @@ func (h *handlers) federate() {
 		return
 	}
 	h.fed = &federation{members: h.angelus.Peers, dialer: &peer.Dialer{Members: h.angelus.Peers}}
-	h.fed.dir = peer.NewCache(h.angelus.Peers.Nodes(), h.askPeer)
+	h.fed.dir = peer.NewCache(h.angelus.Peers.Nodes(), h.askPeer, h.config.DirectorySize())
 }
 
 func routable(method string) bool {

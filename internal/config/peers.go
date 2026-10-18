@@ -26,6 +26,20 @@ type PeerConfig struct {
 	Key      string `toml:"key"`
 }
 
+type FederationConfig struct {
+	DirectorySize *int `toml:"directory_size"`
+}
+
+const defaultDirectorySize = 32768
+
+func (l *Loaded) DirectorySize() int {
+	n := l.cfg().Federation.DirectorySize
+	if n == nil || *n <= 0 {
+		return defaultDirectorySize
+	}
+	return *n
+}
+
 type TLSDoor struct {
 	Listen   string
 	Cert     string

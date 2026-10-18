@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -23,32 +24,61 @@ var ErrNoOwner = errors.New("no node owns it")
 type Cache struct {
 	nodes []string
 	ask   Ask
+	size  int
 
-	mu     sync.RWMutex
-	owners map[string]string
+	mu     sync.Mutex
+	owners map[string]*list.Element
+	recent *list.List
 }
 
-func NewCache(nodes []string, ask Ask) *Cache {
-	return &Cache{nodes: slices.Clone(nodes), ask: ask, owners: map[string]string{}}
+type owned struct {
+	id, node string
+}
+
+func NewCache(nodes []string, ask Ask, size int) *Cache {
+	return &Cache{nodes: slices.Clone(nodes), ask: ask, size: max(size, 1), owners: map[string]*list.Element{}, recent: list.New()}
 }
 
 func (c *Cache) Owner(id string) (string, bool) {
-	c.mu.RLock()
-	node, ok := c.owners[id]
-	c.mu.RUnlock()
-	return node, ok
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.owners[id]
+	if !ok {
+		return "", false
+	}
+	c.recent.MoveToFront(e)
+	return e.Value.(*owned).node, true
 }
 
 func (c *Cache) Learn(id, node string) {
 	c.mu.Lock()
-	c.owners[id] = node
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	if e, ok := c.owners[id]; ok {
+		e.Value.(*owned).node = node
+		c.recent.MoveToFront(e)
+		return
+	}
+	c.owners[id] = c.recent.PushFront(&owned{id: id, node: node})
+	for c.recent.Len() > c.size {
+		last := c.recent.Back()
+		c.recent.Remove(last)
+		delete(c.owners, last.Value.(*owned).id)
+	}
 }
 
 func (c *Cache) Forget(id string) {
 	c.mu.Lock()
-	delete(c.owners, id)
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	if e, ok := c.owners[id]; ok {
+		c.recent.Remove(e)
+		delete(c.owners, id)
+	}
+}
+
+func (c *Cache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.recent.Len()
 }
 
 type claim struct {

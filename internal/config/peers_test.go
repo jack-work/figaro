@@ -86,3 +86,16 @@ func TestPeersConfigRefusesWhatItCannotHonour(t *testing.T) {
 		}
 	}
 }
+
+// The directory of remote owners is bounded, by default and as configured.
+func TestDirectorySize(t *testing.T) {
+	if n := loadToml(t, "").DirectorySize(); n != defaultDirectorySize {
+		t.Fatalf("default: %d", n)
+	}
+	if n := loadToml(t, "[federation]\ndirectory_size = 500\n").DirectorySize(); n != 500 {
+		t.Fatalf("configured: %d", n)
+	}
+	if n := loadToml(t, "[federation]\ndirectory_size = 0\n").DirectorySize(); n != defaultDirectorySize {
+		t.Fatalf("zero: %d", n)
+	}
+}

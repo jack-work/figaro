@@ -49,7 +49,7 @@ func (l *askLog) count() int {
 // asks nobody.
 func TestDirectoryLearnsFromAMiss(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"c": {"x"}}))
+	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"c": {"x"}}), 64)
 	node, id, err := d.Locate(context.Background(), "x")
 	require.NoError(t, err)
 	require.Equal(t, "c", node)
@@ -69,7 +69,7 @@ func TestDirectoryLearnsFromAMiss(t *testing.T) {
 // A prefix is resolved by its owner, and the full id is what is cached.
 func TestDirectoryResolvesAPrefixAtTheOwner(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"b": {"5f3e9a01c2d4"}}))
+	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"b": {"5f3e9a01c2d4"}}), 64)
 	node, id, err := d.Locate(context.Background(), "5f3e9a")
 	require.NoError(t, err)
 	require.Equal(t, "b", node)
@@ -82,7 +82,7 @@ func TestDirectoryResolvesAPrefixAtTheOwner(t *testing.T) {
 // Births and listings fill the cache without asking.
 func TestDirectoryLearnsWithoutAsking(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b"}, log.ask(nil))
+	d := peer.NewCache([]string{"b"}, log.ask(nil), 64)
 	d.Learn("born-on-b", "b")
 	node, _, err := d.Locate(context.Background(), "born-on-b")
 	require.NoError(t, err)
@@ -94,11 +94,11 @@ func TestDirectoryLearnsWithoutAsking(t *testing.T) {
 // call it a miss.
 func TestDirectoryNamesWhatItCouldNotAsk(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(nil))
+	d := peer.NewCache([]string{"b", "c"}, log.ask(nil), 64)
 	_, _, err := d.Locate(context.Background(), "x")
 	require.ErrorIs(t, err, peer.ErrNoOwner)
 
-	d = peer.NewCache([]string{"b", "c"}, log.ask(nil, "c"))
+	d = peer.NewCache([]string{"b", "c"}, log.ask(nil, "c"), 64)
 	_, _, err = d.Locate(context.Background(), "x")
 	require.NotErrorIs(t, err, peer.ErrNoOwner, "c may be the owner; that is not the same as no owner")
 	var unreachable *peer.Unreachable
@@ -110,9 +110,32 @@ func TestDirectoryNamesWhatItCouldNotAsk(t *testing.T) {
 // to qualify it, and nothing is cached.
 func TestDirectoryRefusesToGuessACollision(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"b": {"abcd1234"}, "c": {"abcd1234"}}))
+	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"b": {"abcd1234"}, "c": {"abcd1234"}}), 64)
 	_, _, err := d.Locate(context.Background(), "abcd1234")
 	require.ErrorContains(t, err, "abcd1234 is on nodes b and c: name it as <node>/abcd1234")
 	_, ok := d.Owner("abcd1234")
 	require.False(t, ok)
+}
+
+// The directory holds at most its size, dropping the owner looked up least
+// recently; a dropped owner is asked for again, not lost.
+func TestDirectoryIsBounded(t *testing.T) {
+	var log askLog
+	d := peer.NewCache([]string{"b"}, log.ask(map[string][]string{"b": {"x1", "x2", "x3"}}), 2)
+	d.Learn("x1", "b")
+	d.Learn("x2", "b")
+	_, ok := d.Owner("x1")
+	require.True(t, ok)
+	d.Learn("x3", "b")
+	require.Equal(t, 2, d.Len())
+	_, ok = d.Owner("x2")
+	require.False(t, ok, "the least recently used owner survived")
+	_, ok = d.Owner("x1")
+	require.True(t, ok, "a recent lookup did not keep its owner")
+
+	node, _, err := d.Locate(context.Background(), "x2")
+	require.NoError(t, err)
+	require.Equal(t, "b", node)
+	require.Equal(t, 1, log.count())
+	require.Equal(t, 2, d.Len())
 }

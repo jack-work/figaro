@@ -253,8 +253,18 @@ refused. A caller that may not read an aria is told it is not found, in the
 words a missing aria gets, wherever it asked from; only a caller that may
 read it hears which verb the policy withholds. `internal/peer` holds the
 door, the links and the directory of remote owners, which learns from forks,
-listings and `node.resolve` lookups. `figaro.list` returns this node's rows and every peer's, marked with
-their `node`, plus an `unreachable` entry per peer that did not answer.
+listings and `node.resolve` lookups and keeps the most recently used
+`[federation] directory_size` of them (default 32768). `figaro.list` returns
+this node's rows and every peer's, marked with their `node`, plus an
+`unreachable` entry per peer that did not answer.
+
+Accepted limits: a link carries the bearer it opened with, so when that
+token expires the owner refuses until the caller reconnects. `pid.*` and the
+secondary ids (`form_id`, `role_id`, `against`) resolve on this node only, so
+study, cast and lineage across nodes are refused. With peers configured, a
+caller without a bearer sees one `unreachable` entry per peer on every
+listing. Each caller connection holds its own TLS connection to each peer it
+reaches.
 
 ### Streaming: the turn-shaped aria page
 
