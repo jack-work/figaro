@@ -273,18 +273,22 @@ listener's authenticator stamped, and nothing in params can change it:
 |---|---|---|
 | CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
 | web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. |
-| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller only where the door has a verifier for its bearer, and refused otherwise |
+| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[authz.bearer]`, and refused when that is not configured |
 
 **Every call is decided.** `authz.Guard` wraps the whole handler map with
 `authz.Enforce`: each method maps to one verb (`api/rpc/verbs.go`; an
 unclassified method fails `TestEveryMethodHasAVerb`), checked on
 `aria:<id>` when the request names an aria and on the daemon otherwise.
 `figaro.hello` is exempt; `figaro.list` is served and drops the rows the
-caller cannot read before it pages. A call that reaches a second resource
+caller cannot read before it pages, and `node.resolve` answers only the refs
+the caller may read. A call that reaches a second resource
 checks it too: `study` reads its form, `cast` sets its role, `lineage`
 reads `against`, `kill -r` needs `kill` on every aria it takes. A prompt or
 `figaro.follow` subscribes the connection only where the caller holds
-`listen`. Denials are JSON-RPC **-32020** with the reason verbatim.
+`listen`. Denials are JSON-RPC **-32020** with the reason verbatim. A request
+for an aria another node holds is forwarded before this node's policy runs,
+and the owner decides it (the node door, under "JSON-RPC surface" in
+`ARCHITECTURE.md`).
 
 Ids are resolved before the policy sees them, and a prefix resolves only
 among arias the caller may read, so resolution cannot list or expand an id
