@@ -26,11 +26,16 @@ func federate(a *angelus.Angelus, loaded *config.Loaded) error {
 			return fmt.Errorf("peers.%s is this node", p.Node)
 		}
 	}
-	members, err := peer.NewStatic(peers)
+	version, err := loaded.TroupeVersion()
+	if err != nil {
+		return err
+	}
+	members, err := peer.NewStatic(version, peers)
 	if err != nil {
 		return err
 	}
 	a.Peers = members
+	a.PeerVersions = &peer.Versions{}
 	return nil
 }
 
@@ -51,8 +56,8 @@ func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loade
 	if err != nil {
 		return fmt.Errorf("door.tls: %w", err)
 	}
-	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "forwarded_callers", verify != nil)
-	nd := &peer.Door{Members: a.Peers, Verify: verify}
+	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
+	nd := &peer.Door{Members: a.Peers, Versions: a.PeerVersions, Verify: verify}
 	go func() {
 		if err := a.Serve(ctx, tls.NewListener(ln, cfg), nd.Admit); err != nil {
 			slog.Error("node door", "err", err)

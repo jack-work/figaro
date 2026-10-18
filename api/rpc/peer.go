@@ -3,10 +3,12 @@ package rpc
 type Passage struct {
 	Forwarded bool   `json:"forwarded,omitempty"`
 	Bearer    string `json:"bearer,omitempty"`
+	Version   uint64 `json:"version,omitempty"`
 }
 
 type PassageAnswer struct {
-	Error string `json:"error,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Version uint64 `json:"version,omitempty"`
 }
 
 const MaxPassage = 16 << 10

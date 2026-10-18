@@ -19,6 +19,7 @@ type Verify func(ctx context.Context, bearer string) (context.Context, error)
 
 type Door struct {
 	Members   Membership
+	Versions  *Versions
 	Verify    Verify
 	Handshake time.Duration
 }
@@ -51,7 +52,7 @@ func (d *Door) Admit(ctx context.Context, conn net.Conn) (context.Context, error
 		return nil, fmt.Errorf("node door: handshake with %s: %w", conn.RemoteAddr(), err)
 	}
 	ctx, err := d.enter(ctx, tc)
-	if aerr := answer(tc, err); aerr != nil && err == nil {
+	if aerr := answer(tc, d.Members.Version(), err); aerr != nil && err == nil {
 		err = aerr
 	}
 	if err != nil {
@@ -69,6 +70,7 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 	if err := readLine(tc, &p); err != nil {
 		return nil, fmt.Errorf("node %s: passage: %w", node, err)
 	}
+	d.Versions.Saw(node, p.Version, d.Members.Version())
 	ctx = authz.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalNode, ID: node})
 	ctx = context.WithValue(ctx, viaKey{}, node)
 	switch {
@@ -89,8 +91,8 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 	return ctx, nil
 }
 
-func answer(w io.Writer, refused error) error {
-	var a rpc.PassageAnswer
+func answer(w io.Writer, version uint64, refused error) error {
+	a := rpc.PassageAnswer{Version: version}
 	if refused != nil {
 		a.Error = refused.Error()
 	}

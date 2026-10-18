@@ -99,3 +99,17 @@ func TestDirectorySize(t *testing.T) {
 		t.Fatalf("zero: %d", n)
 	}
 }
+
+// The static troupe carries a version, so nodes whose config files were
+// written apart can tell. Unset is 0; a negative one is refused.
+func TestTroupeVersion(t *testing.T) {
+	if v, err := loadToml(t, twoPeers).TroupeVersion(); err != nil || v != 0 {
+		t.Fatalf("unset: %d %v", v, err)
+	}
+	if v, err := loadToml(t, "[troupe]\nversion = 7\n"+twoPeers).TroupeVersion(); err != nil || v != 7 {
+		t.Fatalf("set: %d %v", v, err)
+	}
+	if _, err := loadToml(t, "[troupe]\nversion = -1\n").TroupeVersion(); err == nil {
+		t.Fatal("a negative version was accepted")
+	}
+}

@@ -30,8 +30,9 @@ type Refused struct {
 func (e *Refused) Error() string { return fmt.Sprintf("node %s refused: %s", e.Node, e.Reason) }
 
 type Dialer struct {
-	Members Membership
-	Timeout time.Duration
+	Members  Membership
+	Versions *Versions
+	Timeout  time.Duration
 }
 
 const defaultDialTimeout = 10 * time.Second
@@ -56,7 +57,9 @@ func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify 
 	if err != nil {
 		return nil, &Unreachable{Node: node, Err: err}
 	}
-	if err := passage(ctx, conn, p); err != nil {
+	p.Version = d.Members.Version()
+	theirs, err := passage(ctx, conn, p)
+	if err != nil {
 		conn.Close()
 		var refused *Refused
 		if errors.As(err, &refused) {
@@ -65,26 +68,27 @@ func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify 
 		}
 		return nil, &Unreachable{Node: node, Err: err}
 	}
+	d.Versions.Saw(node, theirs, p.Version)
 	return &Link{node: node, cli: jkrpc.NewClient(jkrpc.NewConn(conn), onNotify)}, nil
 }
 
-func passage(ctx context.Context, conn net.Conn, p rpc.Passage) error {
+func passage(ctx context.Context, conn net.Conn, p rpc.Passage) (uint64, error) {
 	if dl, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(dl); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if err := writeLine(conn, p); err != nil {
-		return err
+		return 0, err
 	}
 	var a rpc.PassageAnswer
 	if err := readLine(conn, &a); err != nil {
-		return fmt.Errorf("passage: %w", err)
+		return 0, fmt.Errorf("passage: %w", err)
 	}
 	if a.Error != "" {
-		return &Refused{Reason: a.Error}
+		return a.Version, &Refused{Reason: a.Error}
 	}
-	return conn.SetDeadline(time.Time{})
+	return a.Version, conn.SetDeadline(time.Time{})
 }
 
 func (l *Link) Node() string { return l.node }

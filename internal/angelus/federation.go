@@ -31,7 +31,7 @@ func (h *handlers) federate() {
 	if h.angelus.Peers == nil || len(h.angelus.Peers.Nodes()) == 0 {
 		return
 	}
-	h.fed = &federation{members: h.angelus.Peers, dialer: &peer.Dialer{Members: h.angelus.Peers}}
+	h.fed = &federation{members: h.angelus.Peers, dialer: &peer.Dialer{Members: h.angelus.Peers, Versions: h.angelus.PeerVersions}}
 	h.fed.dir = peer.NewCache(h.angelus.Peers.Nodes(), h.askPeer, h.config.DirectorySize())
 }
 

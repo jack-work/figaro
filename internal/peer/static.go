@@ -19,13 +19,14 @@ type Member struct {
 }
 
 type Static struct {
+	version    uint64
 	nodes      []string
 	byNode     map[string]*Member
 	byIdentity map[string]string
 }
 
-func NewStatic(peers []config.Peer) (*Static, error) {
-	m := &Static{byNode: map[string]*Member{}, byIdentity: map[string]string{}}
+func NewStatic(version uint64, peers []config.Peer) (*Static, error) {
+	m := &Static{version: version, byNode: map[string]*Member{}, byIdentity: map[string]string{}}
 	for _, p := range peers {
 		cert, err := tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
@@ -40,6 +41,13 @@ func NewStatic(peers []config.Peer) (*Static, error) {
 		m.byIdentity[p.Identity] = p.Node
 	}
 	return m, nil
+}
+
+func (m *Static) Version() uint64 {
+	if m == nil {
+		return 0
+	}
+	return m.version
 }
 
 func (m *Static) Nodes() []string {

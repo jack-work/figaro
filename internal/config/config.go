@@ -48,7 +48,8 @@ type Config struct {
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
 
-	Peers map[string]PeerConfig `toml:"peers"`
+	Peers  map[string]PeerConfig `toml:"peers"`
+	Troupe TroupeConfig          `toml:"troupe"`
 
 	Federation FederationConfig `toml:"federation"`
 }

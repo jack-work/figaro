@@ -122,7 +122,7 @@ func (n *fedNode) start() {
 	for _, p := range n.pendingPeers {
 		peers = append(peers, p())
 	}
-	members, err := peer.NewStatic(peers)
+	members, err := peer.NewStatic(0, peers)
 	require.NoError(t, err)
 	n.members = members
 	n.a.Peers = members

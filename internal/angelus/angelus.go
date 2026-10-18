@@ -59,9 +59,10 @@ type Angelus struct {
 
 	Models *modelcat.Catalog
 
-	Policies *authz.Policies
-	Peercred *authz.Peercred
-	Peers    peer.Membership
+	Policies     *authz.Policies
+	Peercred     *authz.Peercred
+	Peers        peer.Membership
+	PeerVersions *peer.Versions
 
 	uiProj Projector
 

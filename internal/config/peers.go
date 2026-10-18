@@ -26,6 +26,18 @@ type PeerConfig struct {
 	Key      string `toml:"key"`
 }
 
+type TroupeConfig struct {
+	Version int64 `toml:"version"`
+}
+
+func (l *Loaded) TroupeVersion() (uint64, error) {
+	v := l.cfg().Troupe.Version
+	if v < 0 {
+		return 0, fmt.Errorf("troupe.version %d: want 0 or more", v)
+	}
+	return uint64(v), nil
+}
+
 type FederationConfig struct {
 	DirectorySize *int `toml:"directory_size"`
 }
