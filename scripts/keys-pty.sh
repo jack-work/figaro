@@ -13,6 +13,11 @@ for q in first second third fourth fifth; do
   dp_wait_idle "$ARIA" || exit 1
 done
 
+dp_fig keys init > /dev/null 2>&1
+check "keys init writes the shipped recipes" "grep -q 'prefix:panels' '$DP_DIR/config/keys.toml'"
+check "doctor keys accepts what init wrote" "dp_fig doctor keys >/dev/null 2>&1"
+check "a second init refuses" "! dp_fig keys init >/dev/null 2>&1"
+
 cat > "$DP_DIR/config/keys.toml" <<'EOF'
 [bind.motions]
 J = "half-down"

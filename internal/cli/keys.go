@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 
+	figaro "github.com/jack-work/figaro"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/keyconf"
 )
@@ -27,7 +31,30 @@ func loadUserKeys(loaded *config.Loaded) {
 	}
 }
 
-const keysUsage = "usage: keys [layers | actions | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]"
+const keysUsage = "usage: keys [layers | actions | init | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]"
+
+const keysExample = "skills/figaro/reference/keys.example.toml"
+
+func keysInit(loaded *config.Loaded) error {
+	path := keysPath(loaded)
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s exists; `figaro keys reset` empties it, or move it aside", path)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	data, err := fs.ReadFile(figaro.Skills, keysExample)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(loaded.ConfigDir, 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, path)
+	return nil
+}
 
 func runKeys(loaded *config.Loaded, args []string) error {
 	if len(args) == 0 {
@@ -71,6 +98,8 @@ func runKeys(loaded *config.Loaded, args []string) error {
 			}
 			return nil
 		})
+	case "init":
+		return keysInit(loaded)
 	case "path":
 		fmt.Fprintln(stdout, keysPath(loaded))
 		return nil
@@ -133,6 +162,7 @@ func runDoctorKeys(loaded *config.Loaded) error {
 func keysHelpLines() []string {
 	return strings.Split(strings.TrimSpace(`
 keys layers                       every layer, its modes and its bindings, highest first
+keys init                         start a keys.toml from the shipped recipes
 keys actions                      what a binding may name, and where it means something
 keys bind <keys> <action> [layer] bind in a layer (default: user, above every other)
 keys unbind <keys> [layer]        the key does nothing there, and nothing below shows through

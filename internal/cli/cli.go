@@ -1434,7 +1434,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Name:  "keys",
 		Group: "System",
 		Short: "Show and edit the pager's keybindings (~/.config/figaro/keys.toml)",
-		Usage: "keys [layers | actions | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]",
+		Usage: "keys [layers | actions | init | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]",
 		Long: `The live key map, and the file behind it.
 
 A key is written the way the help panel prints it: a letter, ^D, M-m, Tab,
@@ -1448,6 +1448,7 @@ that arms it (g, f, c, Space).
 
   figaro keys                          every layer, its modes, its bindings
   figaro keys actions                  every verb, and where it means something
+  figaro keys init                     start a keys.toml from the shipped recipes
   figaro keys bind J half-down         in the user layer, above all the others
   figaro keys bind w status leader     Space w opens the status pit
   figaro keys unbind d motions         d does nothing where motions apply

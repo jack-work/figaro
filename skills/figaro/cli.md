@@ -250,6 +250,8 @@ observer's mouth.
 | `figaro doctor schema` | Report per-channel format versions. |
 | `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
 | `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, and which are already due. Reads the sidecars, so it answers while the daemon runs. |
+| `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |
+| `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
 | `figaro login <provider>` | OAuth login. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |
