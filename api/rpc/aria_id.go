@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -51,3 +52,48 @@ func SplitNode(ref string) (node, id string) {
 }
 
 const ShortIDLen = 8
+
+func ShortIDs(ids []string) map[string]string {
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	out := make(map[string]string, len(sorted))
+	for i, id := range sorted {
+		if !isHexID(id) {
+			out[id] = id
+			continue
+		}
+		n := ShortIDLen
+		if strings.HasPrefix(id, "@") {
+			n++
+		}
+		if i > 0 {
+			n = max(n, commonPrefixLen(id, sorted[i-1])+1)
+		}
+		if i+1 < len(sorted) {
+			n = max(n, commonPrefixLen(id, sorted[i+1])+1)
+		}
+		out[id] = id[:min(n, len(id))]
+	}
+	return out
+}
+
+func commonPrefixLen(a, b string) int {
+	i := 0
+	for i < len(a) && i < len(b) && a[i] == b[i] {
+		i++
+	}
+	return i
+}
+
+func isHexID(id string) bool {
+	id = strings.TrimPrefix(id, "@")
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
+}

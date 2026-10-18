@@ -66,3 +66,27 @@ func TestValidateAriaRef(t *testing.T) {
 		t.Error("a bare id must not carry a node")
 	}
 }
+
+// A displayed id is short, yet always enough to resolve back to the one it
+// names: never shorter than the stretch it shares with a neighbour, and an
+// old 8-hex id that a new one starts with stays visibly distinct.
+func TestShortIDs(t *testing.T) {
+	old := "abcd1234"
+	long := "abcd1234" + "0123456789abcdef0123456789ab"
+	near := "abcd12ff" + "0123456789abcdef0123456789ab"
+	form := "@ffff0000" + "0123456789abcdef0123456789ab"
+	got := ShortIDs([]string{long, old, near, form, "opus5-ant-outfit", "null"})
+	want := map[string]string{
+		"opus5-ant-outfit": "opus5-ant-outfit",
+		"null":             "null",
+		old:                "abcd1234",
+		long:               "abcd12340",
+		near:               "abcd12ff",
+		form:               "@ffff0000",
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("ShortIDs[%s] = %q, want %q", id, got[id], w)
+		}
+	}
+}

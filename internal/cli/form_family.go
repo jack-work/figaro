@@ -118,6 +118,11 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 		fmt.Fprintln(stderrw, "no unbound forms; mint one with `fig form new -S name='…'`")
 		return
 	}
+	ids := make([]string, 0, 2*len(forms))
+	for _, f := range forms {
+		ids = append(ids, f.ID, f.TargetAria, f.Parent)
+	}
+	short := rpc.ShortIDs(ids)
 	fmt.Fprintf(stdout, "%-14s %-22s %-10s %-8s %s\n", "FORM", "NAME", "TARGET", "AGE", "PARENT")
 	for _, f := range forms {
 		age := "-"
@@ -125,7 +130,7 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 			age = relAge(f.LastActive)
 		}
 		fmt.Fprintf(stdout, "%-14s %-22s %-10s %-8s %s\n",
-			f.ID, truncRunes(dash(f.Name), 22), dash(f.TargetAria), age, dash(f.Parent))
+			short[f.ID], truncRunes(dash(f.Name), 22), dash(short[f.TargetAria]), age, dash(short[f.Parent]))
 	}
 }
 

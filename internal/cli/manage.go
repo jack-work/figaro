@@ -270,6 +270,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		return subtreeRecency(roots[i]) > subtreeRecency(roots[j])
 	})
 
+	short := shortIDsOf(figs)
 	marker := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) {
 			return "●"
@@ -282,7 +283,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 	build := func(f rpc.FigaroInfoResponse) *figtree.Node {
 		label := f.Mantra
 		if label == "" {
-			label = "aria " + f.ID
+			label = "aria " + short[f.ID]
 		}
 		ctxStr := "-"
 		if f.ContextTokens > 0 {
@@ -301,7 +302,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 			Marker: marker(f),
 			Label:  truncRunes(label, 44),
 			Fields: map[string]string{
-				fieldID:     f.ID,
+				fieldID:     short[f.ID],
 				fieldOutfit: dash(bornOf(f)),
 				fieldVer:    dash(f.OutfitVer),
 				fieldFork:   fork,
@@ -357,6 +358,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			}
 		}
 	}
+	short := shortIDsOf(figs)
 	mark := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit) {
 			return "●"
@@ -380,9 +382,9 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			}
 			label, detail = "outfit "+dash(f.OutfitName)+"@"+ver, "ceremonial"
 		case "form":
-			label = "form " + f.ID
+			label = "form " + short[f.ID]
 			if f.Name != "" {
-				label = f.Name + " " + f.ID
+				label = f.Name + " " + short[f.ID]
 			}
 			detail = "unbound"
 			if f.TargetAria != "" {
@@ -391,7 +393,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 		default:
 			label = f.Mantra
 			if label == "" {
-				label = "aria " + f.ID
+				label = "aria " + short[f.ID]
 			}
 			detail = fmt.Sprintf("%d msgs", f.MessageCount)
 		}
@@ -399,7 +401,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			Marker: mark(f),
 			Label:  truncRunes(label, 46),
 			Fields: map[string]string{
-				fieldID:     f.ID,
+				fieldID:     short[f.ID],
 				fieldDetail: detail,
 				fieldMsgs:   strconv.Itoa(f.MessageCount),
 				fieldKind:   f.Kind,
@@ -970,4 +972,12 @@ func runAttend(loaded *config.Loaded, spec string) {
 		}
 		return nil
 	})
+}
+
+func shortIDsOf(figs []rpc.FigaroInfoResponse) map[string]string {
+	ids := make([]string, len(figs))
+	for i, f := range figs {
+		ids[i] = f.ID
+	}
+	return rpc.ShortIDs(ids)
 }
