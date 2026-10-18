@@ -83,6 +83,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}
 
 	cwd := birthCwd(req.Cwd)
+	chosen := isDir(req.Cwd)
 
 	backend := h.angelus.Backend
 
@@ -114,7 +115,10 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if _, aerr := backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); aerr != nil {
 			return nil, fmt.Errorf("stamp aria id: %w", aerr)
 		}
-		if err := h.grantSandboxOn(ctx, id, true); err != nil {
+		if err := h.grantSandboxOn(ctx, id, chosen || patchTouches(dress, "system.cwd")); err != nil {
+			return nil, err
+		}
+		if err := h.placeWorkspace(id, chosen); err != nil {
 			return nil, err
 		}
 		snap, serr := backend.FormState(id)

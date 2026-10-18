@@ -295,6 +295,10 @@ func Run() {
 		os.Exit(1)
 	}
 	a.Peercred = peer
+	if _, err := loaded.WorkspaceRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)

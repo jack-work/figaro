@@ -325,6 +325,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		return nil, err
 	}
 	cwd := birthCwd(req.Cwd)
+	chosen := isDir(req.Cwd)
 	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), mintedBy(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
@@ -333,7 +334,11 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
 	}
-	if err := h.grantSandboxOn(ctx, id, true); err != nil {
+	if err := h.grantSandboxOn(ctx, id, chosen || patchTouches(dress, "system.cwd")); err != nil {
+		h.discardBirth(id)
+		return nil, fmt.Errorf("form.bind: %w", err)
+	}
+	if err := h.placeWorkspace(id, chosen); err != nil {
 		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: %w", err)
 	}

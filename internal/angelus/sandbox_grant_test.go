@@ -55,6 +55,11 @@ func newGrantRig(t *testing.T) grantRig {
 
 func newRigWith(t *testing.T, policyText string) grantRig {
 	t.Helper()
+	return newRigConfigured(t, policyText, "")
+}
+
+func newRigConfigured(t *testing.T, policyText, extraConfig string) grantRig {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "outfits"), 0o700); err != nil {
 		t.Fatal(err)
@@ -72,7 +77,7 @@ func newRigWith(t *testing.T, policyText string) grantRig {
 	if err := os.WriteFile(policy, []byte(strings.ReplaceAll(policyText, "SELF", self)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[authz]\npolicy = \"policy.toml\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[authz]\npolicy = \"policy.toml\"\n"+extraConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)

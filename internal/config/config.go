@@ -38,12 +38,13 @@ type Config struct {
 	// CLI holds client-owned settings; everything else is the daemon's, which a client changes only through angelus.configure.
 	CLI CLIConfig `toml:"cli"`
 
-	Wire   WireConfig   `toml:"wire"`
-	Store  StoreConfig  `toml:"store"`
-	Memory MemoryConfig `toml:"memory"`
-	Door   DoorConfig   `toml:"door"`
-	Quote  QuoteConfig  `toml:"quote"`
-	Authz  AuthzConfig  `toml:"authz"`
+	Wire    WireConfig    `toml:"wire"`
+	Store   StoreConfig   `toml:"store"`
+	Memory  MemoryConfig  `toml:"memory"`
+	Door    DoorConfig    `toml:"door"`
+	Quote   QuoteConfig   `toml:"quote"`
+	Authz   AuthzConfig   `toml:"authz"`
+	Sandbox SandboxConfig `toml:"sandbox"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
 
