@@ -165,6 +165,22 @@ func (c *Angelus) List(ctx context.Context) (*rpc.ListResponse, error) {
 	return &resp, nil
 }
 
+func (c *Angelus) ListWith(ctx context.Context, req rpc.ListRequest) (*rpc.ListResponse, error) {
+	var resp rpc.ListResponse
+	if err := c.call(ctx, rpc.MethodList, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Angelus) Form(ctx context.Context, figaroID string) (*rpc.FormResponse, error) {
+	var resp rpc.FormResponse
+	if err := c.call(ctx, rpc.MethodForm, rpc.AriaIDRequest{FigaroID: figaroID}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // ListIDs returns the aria list with only ids populated.
 func (c *Angelus) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse

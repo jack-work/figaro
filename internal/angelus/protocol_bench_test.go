@@ -139,18 +139,35 @@ func BenchmarkDormantList(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			b.ReportAllocs()
-			b.ReportMetric(float64(n), "arias")
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				got, err := h.list(b.Context(), nil)
-				if err != nil {
-					b.Fatal(err)
+			b.Run("full", func(b *testing.B) {
+				b.ReportAllocs()
+				b.ReportMetric(float64(n), "arias")
+				for i := 0; i < b.N; i++ {
+					got, err := h.list(b.Context(), nil)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if len(got.(rpc.ListResponse).Figaros) != n {
+						b.Fatalf("list returned %d arias, want %d", len(got.(rpc.ListResponse).Figaros), n)
+					}
 				}
-				if len(got.(rpc.ListResponse).Figaros) != n {
-					b.Fatalf("list returned %d arias, want %d", len(got.(rpc.ListResponse).Figaros), n)
-				}
+			})
+			if n == 0 {
+				return
 			}
+			b.Run("page-6", func(b *testing.B) {
+				params := json.RawMessage(`{"limit":6}`)
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					got, err := h.list(b.Context(), params)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if len(got.(rpc.ListResponse).Figaros) != 6 {
+						b.Fatalf("a page of 6 returned %d", len(got.(rpc.ListResponse).Figaros))
+					}
+				}
+			})
 		})
 	}
 }

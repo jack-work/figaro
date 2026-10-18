@@ -283,3 +283,54 @@ func TestDoorServesTCP(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, `"over tcp"`, string(raw))
 }
+
+// A bounded listing walks every aria exactly once, most recent first, with
+// each page enriched as a full listing would be.
+func TestBoundedListingThroughTheDaemon(t *testing.T) {
+	_, acli, ctx := daemonFixture(t)
+	want := map[string]bool{}
+	for range 5 {
+		created, err := acli.Create(ctx, dress(t, "mock"), nil)
+		require.NoError(t, err)
+		want[created.FigaroID] = true
+	}
+	full, err := acli.List(ctx)
+	require.NoError(t, err)
+	require.Empty(t, full.NextBefore)
+
+	seen := map[string]int{}
+	var last int64 = 1 << 62
+	cursor := ""
+	for pages := 0; ; pages++ {
+		require.Less(t, pages, 10, "paging never ended")
+		resp, err := acli.ListWith(ctx, rpc.ListRequest{Limit: 2, Before: cursor})
+		require.NoError(t, err)
+		require.LessOrEqual(t, len(resp.Figaros), 2)
+		for _, r := range resp.Figaros {
+			seen[r.ID]++
+			require.LessOrEqual(t, r.LastActive, last, "rows out of recency order")
+			last = r.LastActive
+			if want[r.ID] {
+				require.Equal(t, "mock", r.OutfitName, "a paged row was not enriched")
+			}
+		}
+		if resp.NextBefore == "" {
+			break
+		}
+		cursor = resp.NextBefore
+	}
+	for id := range want {
+		require.Equal(t, 1, seen[id], "aria %s", id)
+	}
+	require.Equal(t, len(full.Figaros), len(seen))
+
+	_, err = acli.ListWith(ctx, rpc.ListRequest{Limit: 2, Before: "garbage"})
+	require.Error(t, err, "a malformed cursor restarted from the top")
+
+	for id := range want {
+		f, err := acli.Form(ctx, id)
+		require.NoError(t, err)
+		require.NotNil(t, f)
+		break
+	}
+}

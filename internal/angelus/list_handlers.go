@@ -126,6 +126,20 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	var nextBefore string
+	if listBounded(req) {
+		for i := range result {
+			if result[i].State == "dormant" && result[i].LastActive == 0 && h.angelus.Backend != nil {
+				result[i].LastActive = h.angelus.Backend.LastTS(result[i].ID)
+			}
+		}
+		var err error
+		if result, nextBefore, err = boundPage(result, req); err != nil {
+			return nil, err
+		}
+		enrichments = pageEnrichments(result, enrichments)
+	}
+
 	// vers memoizes the re-resolve per outfit; this pass is single-threaded,
 	// unlike the metadata fill.
 	if !req.IDsOnly {
@@ -137,7 +151,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		h.fillTTL(result)
 	}
 
-	return rpc.ListResponse{Figaros: result}, nil
+	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore}, nil
 }
 
 type ttlLister interface {

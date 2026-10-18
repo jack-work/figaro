@@ -56,12 +56,15 @@ type AttachResponse struct {
 // IDsOnly skips the per-aria form and tree fills. Global also lists the
 // ceremonial anchors (null root, versioned outfits) with Kind/Parent set.
 type ListRequest struct {
-	IDsOnly bool `json:"ids_only,omitempty"`
-	Global  bool `json:"global,omitempty"`
+	IDsOnly bool   `json:"ids_only,omitempty"`
+	Global  bool   `json:"global,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+	Before  string `json:"before,omitempty"`
 }
 
 type ListResponse struct {
-	Figaros []FigaroInfoResponse `json:"figaros"`
+	Figaros    []FigaroInfoResponse `json:"figaros"`
+	NextBefore string               `json:"next_before,omitempty"`
 }
 
 type BindRequest struct {
