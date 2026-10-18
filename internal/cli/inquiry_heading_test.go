@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -13,7 +14,7 @@ func TestInquiryHeadingNamesTheSender(t *testing.T) {
 	for _, tc := range []struct{ sender, heading string }{
 		{"Duke", "> Duke"},
 		{"", "> input"},
-		{"aria 1234abcd", "> figaro 1234abcd"},
+		{"aria 1234abcd", "> figaro " + handle.Words("1234abcd", handle.MinWords)},
 	} {
 		t.Run(tc.heading, func(t *testing.T) {
 			m := aria.Message{Turn: 1, Inquiry: "please run the tests", Role: livedoc.RoleOutput,

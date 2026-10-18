@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 
+	"github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
@@ -20,12 +21,23 @@ func messageHeader(role string) string {
 	}
 }
 
-func inputHeader(sender string) string {
-	if sender == "" {
+func inputHeader(seg aria.InquirySegment) string {
+	if seg.Sender == "" {
 		return messageHeader(livedoc.RoleInput)
 	}
-	if id, ok := strings.CutPrefix(sender, rpc.AriaLabelPrefix); ok {
-		sender = "figaro " + id
+	return term.Dim("> " + senderLabel(seg.Sender, seg.Name))
+}
+
+func senderLabel(sender, name string) string {
+	id, legacy := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
+	if name != "" {
+		return "figaro " + name
 	}
-	return term.Dim("> " + sender)
+	if rpc.IsHexID(id) && len(strings.TrimPrefix(id, "@")) >= rpc.OldIDLen {
+		return "figaro " + ariaName(id)
+	}
+	if legacy {
+		return "figaro " + id
+	}
+	return sender
 }

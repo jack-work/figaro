@@ -82,7 +82,7 @@ type Composer struct {
 
 	Header      func(role string) string
 	Rule        func() string
-	InputHeader func(sender string) string // empty sender means unattributed
+	InputHeader func(seg aria.InquirySegment) string // an empty sender means unattributed
 	// Mark is a block's address, drawn against the right edge of its first row.
 	Mark func(block int, n livedoc.Node) string
 
@@ -245,7 +245,7 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int,
 		}
 		h := c.head(livedoc.RoleInput)
 		if c.InputHeader != nil {
-			h = c.InputHeader(seg.Sender)
+			h = c.InputHeader(seg)
 		}
 		if h != "" {
 			if k == 0 && adorn.Suffix != "" {

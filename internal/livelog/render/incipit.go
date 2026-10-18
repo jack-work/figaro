@@ -53,7 +53,7 @@ type Incipit struct {
 	Bookend     func() []string          // closes an assistant message
 	Rule        func() string            // closes any other message
 	Header      func(role string) string // "" suppresses
-	InputHeader func(sender string) string
+	InputHeader func(seg aria.InquirySegment) string
 	Quote       func(m quote.Mention, w int, expanded bool) []string
 	// Queued renders accepted prompts not yet in the transcript: live chrome
 	// above the bookend, never frozen, since the log does not contain them.

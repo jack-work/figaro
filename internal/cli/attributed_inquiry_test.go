@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -80,3 +81,59 @@ func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	blank := []aria.InquirySegment{{Text: "THEQUESTION"}}
 	assertChrome(t, renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: blank, Nodes: nodes}, 48, 0, renderSettings{}), want)
 }
+
+// An aria that sends a prompt is named the way fig ls names it, never by its
+// 32-hex id: the daemon's unique handle when the page carries one, else the
+// two-word handle of the id. A human label is shown as given.
+func TestAnAriaSenderIsNamedNotNumbered(t *testing.T) {
+	const id = "a5647bfbc216b8a09ffea9586393c289"
+	segs := []aria.InquirySegment{
+		{Sender: id, Name: "named-by-daemon", Text: "first"},
+		{Sender: "aria " + id, Text: "second"},
+		{Sender: "Jack", Text: "third"},
+	}
+	const joined = "first\n\nsecond\n\nthird"
+	nodes := []livedoc.Node{
+		{Type: livedoc.NodeSteering, Sender: id, SenderName: "named-by-daemon", Markdown: "steer"},
+		{Type: livedoc.NodeSteering, Sender: id, Markdown: "steer again"},
+	}
+	words := handle.Words(id, handle.MinWords)
+	wantHeads := []string{"> figaro named-by-daemon", "> figaro " + words, "> Jack", "↳ input · figaro named-by-daemon", "↳ input · figaro " + words}
+
+	check := func(t *testing.T, rows []string) {
+		t.Helper()
+		screen := strings.Join(rows, "\n")
+		for _, h := range wantHeads {
+			if !strings.Contains(screen, h) {
+				t.Errorf("missing %q in\n%s", h, screen)
+			}
+		}
+		if strings.Contains(screen, id[:12]) {
+			t.Errorf("the hex id is on screen:\n%s", screen)
+		}
+	}
+	m := aria.Message{Role: livedoc.RoleOutput, Inquiry: joined, InquirySegments: segs, Nodes: nodes}
+	t.Run("show", func(t *testing.T) { check(t, renderTurnRows(m, 60, 0, renderSettings{})) })
+	t.Run("pager", func(t *testing.T) {
+		client := aria.NewClient()
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 1, Inquiry: joined, InquirySegments: segs, Sealed: true, Nodes: nodes}}}}, aria.Notify)
+		ft := ldrender.NewFakeTerminal(60, 40)
+		tr := newTranscript(ft, 60, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
+		tr.enter()
+		tr.follow = false
+		check(t, tr.lines())
+	})
+	t.Run("inline", func(t *testing.T) {
+		ft := ldrender.NewFakeTerminal(60, 40)
+		in := ldrender.NewIncipit(ft, &ariaView{settings: &renderSettings{}})
+		in.Header = messageHeader
+		in.InputHeader = inputHeader
+		in.Rule = func() string { return strings.Repeat("─", 60) }
+		m := m
+		m.Turn = 1
+		in.Open(m)
+		in.Freeze(m)
+		check(t, ft.Screen())
+	})
+}
+

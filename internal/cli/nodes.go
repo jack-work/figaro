@@ -287,7 +287,7 @@ func renderThinkingNode(n livedoc.Node, width int) []string {
 func renderSteeringNode(n livedoc.Node, width int) []string {
 	head := term.Dim("↳ input")
 	if n.Sender != "" {
-		head += " " + term.Dim("· "+n.Sender)
+		head += " " + term.Dim("· "+senderLabel(n.Sender, n.SenderName))
 	}
 	return append([]string{head}, nodeProseRows(n, width)...)
 }
