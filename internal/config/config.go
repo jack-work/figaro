@@ -46,6 +46,8 @@ type Config struct {
 	Authz  AuthzConfig  `toml:"authz"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
+
+	Peers map[string]PeerConfig `toml:"peers"`
 }
 
 type ServiceToken struct {

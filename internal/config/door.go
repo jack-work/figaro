@@ -9,6 +9,7 @@ import (
 
 type DoorConfig struct {
 	Web *WebDoorConfig `toml:"web"`
+	TLS *TLSDoorConfig `toml:"tls"`
 }
 
 type WebDoorConfig struct {
