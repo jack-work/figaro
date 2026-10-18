@@ -3,10 +3,13 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/sdk"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/stretchr/testify/require"
 
@@ -122,6 +125,10 @@ func TestCastMintsRoleBornCast(t *testing.T) {
 	target, ok := rc.formValue(t, callCtx, "target-aria")
 	require.True(t, ok, "born-cast role lacks target-aria")
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
+
+	m, err := a.Backend.Meta(cast.RoleID)
+	require.NoError(t, err)
+	require.Equal(t, "user:"+strconv.Itoa(os.Getuid()), m.MintedBy, "a born-cast role records who cast it")
 }
 
 func TestCastRefusesBoundTargets(t *testing.T) {

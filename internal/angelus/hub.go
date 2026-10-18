@@ -22,7 +22,7 @@ type ariaHub struct {
 	// sleeper and can reach a naked figaro whose wake would fail for want of
 	// the provider keys the patch carries.
 	read  func(id, method string, params json.RawMessage) (v any, ok bool, err error)
-	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	write func(ctx context.Context, id, method string, params json.RawMessage) (v any, ok bool, err error)
 	// dress resolves outfit names before routing: no writer below it reads a file.
 	dress func(method string, params json.RawMessage) (json.RawMessage, error)
 	// kind is the node's species; a form has no agent to wake, ever.
@@ -160,7 +160,7 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 		}
 	}
 	if hb.write != nil {
-		if v, ok, err := hb.write(hb.id, method, params); ok {
+		if v, ok, err := hb.write(ctx, hb.id, method, params); ok {
 			return v, err
 		}
 	}

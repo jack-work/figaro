@@ -13,6 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -157,6 +158,7 @@ func (a *Agent) writeStudyMark(mark *message.StudyMark) {
 type castOp struct {
 	roleID    string      // "" when rolePatch mints one
 	rolePatch *form.Patch // the role is born cast
+	mintedBy  string
 }
 
 type castResult struct {
@@ -174,7 +176,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 		b, _ := json.Marshal(a.id)
 		cast := form.Merge(*op.rolePatch, form.Build(form.Snapshot{},
 			map[string]json.RawMessage{"target-aria": b}, nil))
-		id, _, err := a.backend.CreateForm("", cast)
+		id, _, err := a.backend.CreateForm("", cast, store.MintedBy(op.mintedBy))
 		if err != nil {
 			res.err = fmt.Errorf("cast: mint role: %w", err)
 			return res
@@ -220,7 +222,7 @@ func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) 
 	if err := ctx.Err(); err != nil {
 		return castResult{}, fmt.Errorf("cast: %w", err)
 	}
-	res := a.serviceCast(&castOp{roleID: roleID, rolePatch: rolePatch})
+	res := a.serviceCast(&castOp{roleID: roleID, rolePatch: rolePatch, mintedBy: authz.PrincipalText(authz.PrincipalOf(ctx))})
 	return res, res.err
 }
 

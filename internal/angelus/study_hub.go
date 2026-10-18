@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -72,7 +73,7 @@ func (h *handlers) markStudyForHub(ariaID, formID string, began bool) {
 
 // castForHub takes the agent's two steps in the agent's order: ensure the
 // study, then point the role here.
-func (h *handlers) castForHub(ariaID string, req rpc.CastRequest) (rpc.CastResponse, error) {
+func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRequest) (rpc.CastResponse, error) {
 	b := h.angelus.Backend
 	if b == nil {
 		return rpc.CastResponse{}, fmt.Errorf("cast: no backend")
@@ -87,7 +88,7 @@ func (h *handlers) castForHub(ariaID string, req rpc.CastRequest) (rpc.CastRespo
 			return res, err
 		}
 		set["target-aria"] = raw
-		id, _, err := b.CreateForm("", form.Merge(patch, form.Build(form.Snapshot{}, set, nil)))
+		id, _, err := b.CreateForm("", form.Merge(patch, form.Build(form.Snapshot{}, set, nil)), mintedBy(ctx))
 		if err != nil {
 			return res, fmt.Errorf("cast: mint role: %w", err)
 		}

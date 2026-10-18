@@ -3,10 +3,14 @@ package angelus
 // The dormant half of study must mint and retain the libretto exactly as the agent's half does.
 
 import (
+	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
+
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 )
@@ -94,4 +98,19 @@ func TestImportRestoresStudiesThroughTheVerb(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, audit.Corrected, "the sweep disagreed after an import: %+v", audit)
 	_ = h
+}
+
+// A role cast onto a dormant aria records who cast it, as the agent's half does.
+func TestHubCastMintsTheRoleAsTheCaller(t *testing.T) {
+	h, be, aria, _ := hubStudyFixture(t)
+	caster := rpc.Principal{Kind: "sandbox", ID: "dev-3"}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"minted-role"`)}, nil)
+
+	res, err := h.castForHub(authz.WithPrincipal(context.Background(), caster), aria, rpc.CastRequest{RolePatch: &patch})
+	require.NoError(t, err)
+	require.True(t, res.Patched)
+
+	m, err := be.Meta(res.RoleID)
+	require.NoError(t, err)
+	require.Equal(t, "sandbox:dev-3", m.MintedBy)
 }
