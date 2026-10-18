@@ -114,11 +114,16 @@ func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	return true
 }
 
-func (a *Anthropic) setAuthHeaders(req *http.Request, apiKey string, betas string) {
+func (a *Anthropic) setAuthHeaders(req *http.Request, apiKey string, oauthBetas string, betas ...string) {
 	req.Header.Set("anthropic-version", apiVersion)
 	if isOAuthToken(apiKey) {
+		betas = append([]string{oauthBetas}, betas...)
+	}
+	if len(betas) > 0 {
+		req.Header.Set("anthropic-beta", strings.Join(betas, ","))
+	}
+	if isOAuthToken(apiKey) {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		req.Header.Set("anthropic-beta", betas)
 		req.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
 		req.Header.Set("x-app", "cli")
 		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
@@ -327,7 +332,7 @@ func (a *Anthropic) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v7"
+	return "anthropic/" + rr + "/v8"
 }
 
 func (a *Anthropic) SetModel(model string) {
@@ -529,6 +534,9 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot form.Snapshot) ([]j
 	raw, err := json.Marshal(nm)
 	if err != nil {
 		return nil, fmt.Errorf("marshal nativeMessage: %w", err)
+	}
+	if effort, ok := effortRowFor(msg, snap); ok {
+		return []json.RawMessage{effort, raw}, nil
 	}
 	return []json.RawMessage{raw}, nil
 }
@@ -732,6 +740,10 @@ func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, 
 		Tools: projectTools(tools),
 	}
 
+	inBand := provider.SupportsMessageEffort(model)
+	if !inBand {
+		src = dropEffortRowsSeq(src)
+	}
 	// Row-dropping passes run before any marking addresses a row.
 	rows := coalesceRowsSeq(pairToolCallsSeq(dropDuplicateResultsSeq(src)))
 
@@ -745,7 +757,7 @@ func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, 
 		}
 	}
 	rows = markRowsSeq(rows, tailMark, messageTags(snapshot, a.route().Caps))
-	applyThinking(&req, snapshot, model)
+	applyThinking(&req, snapshot, model, inBand)
 	return req, rows, nil
 }
 
@@ -915,7 +927,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		}
 		body.Attach(httpReq)
 		httpReq.Header.Set("Content-Type", "application/json")
-		a.setAuthHeaders(httpReq, token, betaMessages)
+		a.setAuthHeaders(httpReq, token, betaMessages, messageBetas(model)...)
 		return httpReq, nil
 	})
 	if err != nil {
@@ -975,7 +987,7 @@ func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
 	return nil
 }
 
-type TransportFn func(ctx context.Context, body *provider.RequestBody) (*http.Response, error)
+type TransportFn func(ctx context.Context, body *provider.RequestBody, header http.Header) (*http.Response, error)
 
 // SendWithTransport delegates the HTTP call to fn; oauth injects the Claude
 // Code identity preamble.
@@ -1006,7 +1018,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		return fmt.Errorf("encode request: %w", err)
 	}
 
-	resp, err := fn(ctx, body)
+	resp, err := fn(ctx, body, betaHeader(messageBetas(model)))
 	if err != nil {
 		return err
 	}
@@ -1338,7 +1350,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 	}
 }
 
-func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
+func applyThinking(req *nativeRequest, snap form.Snapshot, model string, inBand bool) {
 	budgetRaw, _ := snap.Get("system.thinking_budget")
 	effortRaw, _ := snap.Get("system.thinking_effort")
 
@@ -1364,10 +1376,12 @@ func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
 	if provider.IsAdaptiveThinkingModel(model) {
 		// budget_tokens and type "enabled" are a 400 on adaptive models.
 		if effort == "" {
-			effort = "high"
+			effort, inBand = "high", false
 		}
 		req.Thinking = &thinkingParam{Type: "adaptive", Display: "summarized"}
-		req.OutputConfig = &outputConfig{Effort: effort}
+		if !inBand {
+			req.OutputConfig = &outputConfig{Effort: effort}
+		}
 		return
 	}
 

@@ -25,7 +25,10 @@ func TestEncodingChangeRequiresAFingerprintBump(t *testing.T) {
 
 	msgs := []message.Message{
 		{Role: message.RoleInput, LogicalTime: 1,
-			Content: []message.Content{message.TextContent("what is the time")}},
+			Content: []message.Content{message.TextContent("what is the time")},
+			Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
+				"system.thinking_effort": json.RawMessage(`"low"`),
+			}, nil)}},
 		{Role: message.RoleOutput, LogicalTime: 2, StopReason: message.StopToolInvoke,
 			Content: []message.Content{
 				message.TextContent("checking"),

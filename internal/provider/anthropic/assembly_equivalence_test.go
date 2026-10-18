@@ -53,7 +53,7 @@ func (a *Anthropic) legacyProject(perMessage [][]json.RawMessage, lts []uint64, 
 		}
 	}
 	legacyApplyMessageTags(&req, msgLTs, snapshot, a.route().Caps)
-	applyThinking(&req, snapshot, model)
+	applyThinking(&req, snapshot, model, provider.SupportsMessageEffort(model))
 	return req, nil
 }
 

@@ -1,6 +1,10 @@
 package provider
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jack-work/figaro/api/form"
+)
 
 // adaptiveThinkingFragments: these models take output_config effort and 400
 // on budget_tokens. The 5-generation fragments carry the family name so
@@ -20,4 +24,27 @@ func IsAdaptiveThinkingModel(model string) bool {
 		}
 	}
 	return false
+}
+
+var messageEffortFragments = []string{
+	"opus-5",
+	"sonnet-5-5", "sonnet-5.5",
+	"haiku-5-5", "haiku-5.5",
+	"fable-5-1", "fable-5.1",
+	"mythos-5-1", "mythos-5.1",
+}
+
+func SupportsMessageEffort(model string) bool {
+	for _, frag := range messageEffortFragments {
+		if strings.Contains(model, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+const ThinkingEffortKey = "system.thinking_effort"
+
+type CacheKeeper interface {
+	KeepsCacheOnChange(key string, snap form.Snapshot) bool
 }

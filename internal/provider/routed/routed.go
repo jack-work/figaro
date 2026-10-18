@@ -237,7 +237,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 
 func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn {
 	headers := p.spec.headersFor(Messages)
-	return func(ctx context.Context, body *provider.RequestBody) (*http.Response, error) {
+	return func(ctx context.Context, body *provider.RequestBody, header http.Header) (*http.Response, error) {
 		token, err := p.resolver.Resolve()
 		if err != nil {
 			return nil, err
@@ -254,6 +254,11 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 		}
 		for k, v := range headers {
 			req.Header.Set(k, v)
+		}
+		for k, vs := range header {
+			for _, v := range vs {
+				req.Header.Add(k, v)
+			}
 		}
 		return client.Do(req)
 	}
@@ -495,3 +500,17 @@ func (o optionalToken) Resolve() (string, error) {
 }
 
 func (o optionalToken) Invalidate(token string) error { return o.inner.Invalidate(token) }
+
+func (p *Provider) KeepsCacheOnChange(key string, snap form.Snapshot) bool {
+	model := snapshotString(snap, "system.model")
+	if model == "" {
+		p.mu.RLock()
+		model = p.model
+		p.mu.RUnlock()
+	}
+	if p.cachedRoute(model) != Messages {
+		return false
+	}
+	m, err := p.messagesBackend()
+	return err == nil && m.KeepsCacheOnChange(key, snap)
+}

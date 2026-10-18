@@ -82,7 +82,7 @@ func sendSSE(t *testing.T, body string) (*recordingBus, error) {
 	bus := &recordingBus{}
 	err = a.SendWithTransport(context.Background(), provider.SendInput{
 		AriaID: aria, FigLog: figLog, MaxTokens: 64,
-	}, bus, false, func(context.Context, *provider.RequestBody) (*http.Response, error) {
+	}, bus, false, func(context.Context, *provider.RequestBody, http.Header) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
