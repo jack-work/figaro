@@ -72,7 +72,7 @@ settle 4
 reset_box; typ "attend "; settle 0.5
 bar_before=$(shot | tail -1) # with the box open: ':' puts its glyph there
 key Tab; settle
-rows=$(shot | grep -cE "^  [0-9a-f]{8,32}")
+rows=$(shot | grep -cE "^  ([a-z]+-[a-z]+|[0-9a-f]{8,32})")
 check "Tab opens the pit with every aria in it" $(( rows >= 3 ? 0 : 1 )) "saw $rows id rows"
 check "the status bar is untouched" $([[ "$(shot | tail -1)" == "$bar_before" ]]; echo $?) "bar is now: $(shot | tail -1)"
 check "nothing chosen yet" $(shot | grep -q "♪"; [[ $? -ne 0 ]]; echo $?)
@@ -90,7 +90,7 @@ check "Esc restores the typed word" $([[ "$(shot | grep -E '^:attend' | tail -1)
 
 # 4. Typing narrows, from the id's own letters.
 key Tab; typ "${ids[1]:0:3}"; settle 0.8
-rows=$(shot | grep -cE "^  [0-9a-f]{8,32}")
+rows=$(shot | grep -cE "^  ([a-z]+-[a-z]+|[0-9a-f]{8,32})")
 check "typing narrows the pit" $(( rows >= 1 && rows < 3 ? 0 : 1 )) "saw $rows rows"
 
 # 5. Flags, from the command's own declaration.

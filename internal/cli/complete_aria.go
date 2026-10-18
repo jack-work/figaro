@@ -1,42 +1,10 @@
 package cli
 
 import (
-	"context"
-	"github.com/jack-work/figaro/sdk"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 )
-
-// softFetchAriaIDs returns nil on any failure: completion must never autostart
-// the daemon, prompt, or block long.
-func softFetchAriaIDs() []string {
-	ep := doorEndpoint()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	acli, err := sdk.DialAngelus(ep)
-	if err != nil {
-		return nil
-	}
-	defer acli.Close()
-	resp, err := acli.ListIDs(ctx)
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, 2*len(resp.Figaros))
-	for _, f := range resp.Figaros {
-		if f.ID != "" {
-			out = append(out, f.ID)
-		}
-		if f.Handle != "" {
-			out = append(out, f.Handle)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
 
 func completeAriaIDsAfterFlag(inner func(*cmdkit.CompleteContext) []string) func(*cmdkit.CompleteContext) []string {
 	return func(c *cmdkit.CompleteContext) []string {

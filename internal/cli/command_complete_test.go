@@ -362,3 +362,47 @@ func TestClipTail(t *testing.T) {
 		}
 	}
 }
+
+// The aria pool is capped to the newest names until a word is typed, so the
+// pit cannot narrow in memory to an older aria or to a typed hex id. When the
+// pool has no prefix match, the pit asks again with the word as typed.
+func TestTabPitAsksAgainWhenTheCappedPoolMisses(t *testing.T) {
+	newest := []string{cmdkit.Candidate("nursery-lioness", "idle · newest"), cmdkit.Candidate("suds-obtain", "idle")}
+	everything := append([]string{cmdkit.Candidate("zucchini-liquid", "old"), cmdkit.Candidate("faced00d", "old")}, newest...)
+	ask := func(line string) []string {
+		word := lastWord(line)
+		if word == "" {
+			return newest
+		}
+		var out []string
+		for _, c := range everything {
+			if v, _ := cmdkit.SplitCandidate(c); strings.HasPrefix(v, word) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+
+	tr := jumpFixture(t, 1, 4)
+	tr.completer = ask
+	tr.key(':')
+	typeInto(tr, "attend ")
+	cmdComplete(tr)
+	if tr.menu == nil || len(tr.menu.shown) != 2 {
+		t.Fatalf("bare Tab: menu %+v; want the newest names", tr.menu)
+	}
+	typeInto(tr, "zuc")
+	tr.refilterCompletion()
+	if tr.menu == nil || len(tr.menu.shown) != 1 || tr.menu.shown[0].value != "zucchini-liquid" {
+		t.Fatalf("typing an older name: menu %+v; want zucchini-liquid", tr.menu)
+	}
+
+	tr2 := jumpFixture(t, 1, 4)
+	tr2.completer = ask
+	tr2.key(':')
+	typeInto(tr2, "attend fac")
+	cmdComplete(tr2)
+	if got := tr2.cmdline.String(); got != "attend faced00d " {
+		t.Fatalf("Tab on typed hex: line %q; want the one id completed", got)
+	}
+}

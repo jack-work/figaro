@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,14 +33,18 @@ func described(c *cmdkit.CompleteContext, value, desc string) string {
 // place of the shell's binding.
 var completionSubject string
 
-func ariaCandidates(c *cmdkit.CompleteContext) []string { return ariasOnly(idCandidates(c)) }
+func ariaCandidates(c *cmdkit.CompleteContext) []string { return fetchNames(c, "conversation") }
 
-// The described form costs the full listing; the bare one stays on the cheap
-// id-only listing.
+const (
+	idCandidatesBare  = 50
+	idCandidatesTyped = 200
+)
+
 func idCandidates(c *cmdkit.CompleteContext) []string {
-	if c == nil || !c.Describe {
-		return softFetchAriaIDs()
-	}
+	return fetchNames(c, "conversation", "form")
+}
+
+func fetchNames(c *cmdkit.CompleteContext, kinds ...string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(doorEndpoint())
@@ -47,51 +52,75 @@ func idCandidates(c *cmdkit.CompleteContext) []string {
 		return nil
 	}
 	defer acli.Close()
-	resp, err := acli.List(ctx)
+	resp, err := acli.ListGlobal(ctx)
 	if err != nil {
 		return nil
 	}
-	type row struct {
-		id, desc string
-		at       int64
+	current := ""
+	if c != nil {
+		current = c.Current
 	}
-	rows := make([]row, 0, len(resp.Figaros))
-	for _, f := range resp.Figaros {
-		if f.ID == "" {
+	return nameCandidates(c, resp.Figaros, current, kinds...)
+}
+
+func nameCandidates(c *cmdkit.CompleteContext, figs []rpc.FigaroInfoResponse, current string, kinds ...string) []string {
+	byHex := current != "" && rpc.IsHexID(current)
+	limit := idCandidatesBare
+	if current != "" {
+		limit = idCandidatesTyped
+	}
+	rows := make([]rpc.FigaroInfoResponse, 0, len(figs))
+	for _, f := range figs {
+		if f.ID == "" || !slices.Contains(kinds, kindOf(f)) {
 			continue
 		}
-		var parts []string
+		rows = append(rows, f)
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].LastActive > rows[j].LastActive })
+	out := make([]string, 0, min(limit, len(rows)))
+	for i := range rows {
+		f := &rows[i]
+		value := rowName(f)
+		if byHex {
+			value = f.ID
+		}
+		if !strings.HasPrefix(value, current) {
+			continue
+		}
+		out = append(out, described(c, value, candidateDesc(f)))
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
+func kindOf(f rpc.FigaroInfoResponse) string {
+	switch {
+	case f.Kind != "":
+		return f.Kind
+	case isFormID(f.ID):
+		return "form"
+	}
+	return "conversation"
+}
+
+func candidateDesc(f *rpc.FigaroInfoResponse) string {
+	var parts []string
+	if isFormID(f.ID) {
+		parts = append(parts, "form")
+		if f.Name != "" {
+			parts = append(parts, f.Name)
+		}
+	} else {
 		if f.State != "" && f.State != "dormant" {
 			parts = append(parts, f.State)
 		}
 		if m := strings.TrimSpace(f.Mantra); m != "" {
 			parts = append(parts, m)
 		}
-		desc := strings.Join(parts, " · ")
-		rows = append(rows, row{f.ID, desc, f.LastActive})
 	}
-	// Most recent first.
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].at > rows[j].at })
-	out := make([]string, 0, len(rows))
-	seen := make(map[string]bool, len(rows))
-	for _, r := range rows {
-		out = append(out, cmdkit.Candidate(r.id, r.desc))
-		seen[r.id] = true
-	}
-	// The full listing leaves out unbound forms; whatever the id listing has
-	// that this one lacks goes on the end.
-	if ids, err := acli.ListIDs(ctx); err == nil {
-		for _, f := range ids.Figaros {
-			if f.ID != "" && !seen[f.ID] {
-				desc := "aria"
-				if isFormID(f.ID) {
-					desc = "form"
-				}
-				out = append(out, cmdkit.Candidate(f.ID, desc))
-			}
-		}
-	}
-	return out
+	return strings.Join(parts, " · ")
 }
 
 // A leading ~ is expanded to read and kept in what is offered; dotfiles appear
@@ -276,26 +305,6 @@ func completeProviderAfterVerb(c *cmdkit.CompleteContext) []string {
 // is silently accepted, so each slot asks for its kind.
 func isFormID(id string) bool { return strings.HasPrefix(id, "@") }
 
-func ariasOnly(cands []string) []string {
-	out := cands[:0:0]
-	for _, c := range cands {
-		if v, _ := cmdkit.SplitCandidate(c); !isFormID(v) {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-func formsOnly(cands []string) []string {
-	out := cands[:0:0]
-	for _, c := range cands {
-		if v, _ := cmdkit.SplitCandidate(c); isFormID(v) {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
 func positionals(args []string, valued ...string) int {
 	n := 0
 	for i := 0; i < len(args); i++ {
@@ -328,7 +337,7 @@ func completeFormVerb(c *cmdkit.CompleteContext) []string {
 	case 0:
 		return idCandidates(c)
 	case 1:
-		return formsOnly(idCandidates(c))
+		return fetchNames(c, "form")
 	}
 	return nil
 }

@@ -58,8 +58,7 @@ func cmdListComplete(t *transcript) {
 func cmdInsertComplete(t *transcript) {
 	t.editor().endSearch()
 	before, word := t.wordAtCursor()
-	pool := t.fetchCompletions(before, word)
-	shown, _ := filterCompletions(pool, word)
+	_, shown, _ := t.completionPool(before, word)
 	if len(shown) == 0 {
 		return
 	}
@@ -80,8 +79,7 @@ func (t *transcript) openCompletion(insertPrefix bool) {
 	}
 	t.editor().endSearch()
 	before, word := t.wordAtCursor()
-	pool := t.fetchCompletions(before, word)
-	shown, loose := filterCompletions(pool, word)
+	pool, shown, loose := t.completionPool(before, word)
 	t.clearCompletions()
 	if len(shown) == 0 {
 		t.noteOrClear("no completions")
@@ -164,6 +162,11 @@ func (t *transcript) refilterCompletion() {
 	}
 	m.typed = word
 	shown, loose := filterCompletions(m.pool, word)
+	if len(shown) == 0 || loose {
+		if pool, s, l := t.typedPool(before, word); len(s) > 0 {
+			m.pool, shown, loose = pool, s, l
+		}
+	}
 	if len(shown) == 0 {
 		t.clearCompletions()
 		return
@@ -221,12 +224,34 @@ func (t *transcript) candidates() func(string) []string {
 	return t.completer
 }
 
-func (t *transcript) fetchCompletions(before, word string) []completionCand {
+func (t *transcript) completionPool(before, word string) (pool, shown []completionCand, loose bool) {
+	pool = t.fetchCompletions(before, word)
+	shown, loose = filterCompletions(pool, word)
+	if len(shown) == 0 || loose {
+		if p, s, l := t.typedPool(before, word); len(s) > 0 {
+			return p, s, l
+		}
+	}
+	return pool, shown, loose
+}
+
+func (t *transcript) typedPool(before, word string) (pool, shown []completionCand, loose bool) {
+	if word == "" || completionStem(word) != "" {
+		return nil, nil, false
+	}
 	ask := t.candidates()
 	if ask == nil {
-		return nil
+		return nil, nil, false
 	}
-	lines := ask(before + completionStem(word))
+	pool = candsOf(ask(before + word))
+	shown, loose = filterCompletions(pool, word)
+	if loose {
+		return nil, nil, false
+	}
+	return pool, shown, false
+}
+
+func candsOf(lines []string) []completionCand {
 	out := make([]completionCand, 0, len(lines))
 	for _, l := range lines {
 		v, d := cmdkit.SplitCandidate(l)
@@ -236,6 +261,14 @@ func (t *transcript) fetchCompletions(before, word string) []completionCand {
 		out = append(out, completionCand{value: v, desc: d})
 	}
 	return out
+}
+
+func (t *transcript) fetchCompletions(before, word string) []completionCand {
+	ask := t.candidates()
+	if ask == nil {
+		return nil
+	}
+	return candsOf(ask(before + completionStem(word)))
 }
 
 // The part of a word a completer interprets itself: a path's directory, a list's

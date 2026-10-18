@@ -190,7 +190,8 @@ Two old ids that share five digits share two words; each gets a third
 (`nursery-lioness-refinery`) and the two-word form is refused as ambiguous,
 naming both. `ls`, the status bar and every "attending" line show the handle;
 `status` shows the handle, the short hex and the full id; `-j` carries
-`id`, `short` and `handle`.
+`id`, `short` and `handle`. Tab completes handles, newest first, 50 at a
+time until you type; typed hex completes to full ids instead.
 
 ## Branching
 
