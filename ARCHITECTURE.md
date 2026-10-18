@@ -39,6 +39,7 @@ internal/actor/            single-writer runtime: FIFO queue, one drain goroutin
 internal/angelus/          supervisor, PID monitor, JSON-RPC handlers
 internal/auth/             provider credentials; OAuth + PKCE, hush-encrypted tokens
 internal/authz/            authn/authz seam for the RPC surface
+internal/peer/             node door, peer links, directory of remote owners
 internal/cli/              the CLI: commands, transcript pager, line editor, keymap; figtree/ tree tables
 internal/cmdkit/           CLI command routing
 internal/compose/          IR turn -> live-render unit of typed nodes
@@ -231,6 +232,24 @@ none (the case until M2) every upgrade is refused with 403, and a credential
 it refuses gets 401, on which the wss client invalidates and retries once. A connection
 reaching its age is closed with 1008 and must upgrade again, because a
 fronting proxy authorizes only the upgrade.
+
+A third, node door is configured by `[door.tls]` (`listen`, `cert`, `key`,
+`client_ca`) and serves the same methods to peers over mutual TLS. Peers are
+static, `[peers.<node id>]` (`endpoint = "tls://host:port"`, `identity`, the
+URI their certificate must carry, and the `ca`, `cert`, `key` this node dials
+them with). A peer's first line is a passage: empty when the node speaks for
+itself, or `forwarded` with the caller's bearer, which the owner verifies
+against `[authz.bearer]`; nodes never vouch for a caller.
+
+An aria lives on the node that minted it, forks included. A request naming
+an aria this node does not hold (by id, prefix, or `<node>/<id>`) goes once,
+whole, to its owner on a link kept per caller connection, and the owner's
+pushes come back the same way. The owner authorizes; the entry node only
+requires a bearer to forward. A forwarded request is served where it lands or
+refused. `internal/peer` holds the door, the links and the directory of
+remote owners, which learns from forks, listings and `node.resolve`
+lookups. `figaro.list` returns this node's rows and every peer's, marked with
+their `node`, plus an `unreachable` entry per peer that did not answer.
 
 ### Streaming: the turn-shaped aria page
 

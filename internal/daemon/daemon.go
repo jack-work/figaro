@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -328,6 +327,11 @@ func Run() {
 	})
 	go a.Models.Run(ctx)
 
+	if err := federate(a, loaded); err != nil {
+		slog.Error("angelus peers", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:            a,
 		Config:             loaded,
@@ -409,7 +413,7 @@ func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig) (ang
 	var b *authz.Bearer
 	if cfg.Bearer != nil {
 		var err error
-		if b, err = authz.NewBearer(*cfg.Bearer, &http.Client{Timeout: 5 * time.Second}, nil); err != nil {
+		if b, err = newBearer(*cfg.Bearer); err != nil {
 			return nil, err
 		}
 	}
