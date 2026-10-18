@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -97,7 +98,7 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, admit Admit) error
 	}
 }
 
-func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
+func (a *Angelus) handleConn(ctx context.Context, conn io.ReadWriteCloser) {
 	if a.Handlers == nil {
 		conn.Close()
 		return
