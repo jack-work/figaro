@@ -81,8 +81,27 @@ func TestShortIDs(t *testing.T) {
 		"null":             "null",
 		old:                "abcd1234",
 		long:               "abcd12340",
-		near:               "abcd12ff",
-		form:               "@ffff0000",
+		near:               "abcd12ff0",
+		form:               "@ffff00000",
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("ShortIDs[%s] = %q, want %q", id, got[id], w)
+		}
+	}
+}
+
+// An old 8-hex id outside the listing still wins an exact lookup, so a new
+// id shown at 8 characters would route to it. The 8-character form is
+// reserved for whole old ids.
+func TestShortIDsNeverShowAnOldIDsLength(t *testing.T) {
+	long := "abcd1234" + "0123456789abcdef0123456789ab"
+	form := "@abcd1234" + "0123456789abcdef0123456789ab"
+	got := ShortIDs([]string{long, form, "@ffff0000"})
+	want := map[string]string{
+		long:        "abcd12340",
+		form:        "@abcd12340",
+		"@ffff0000": "@ffff0000",
 	}
 	for id, w := range want {
 		if got[id] != w {

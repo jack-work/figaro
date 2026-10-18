@@ -62,8 +62,9 @@ func ShortIDs(ids []string) map[string]string {
 			out[id] = id
 			continue
 		}
-		n := ShortIDLen
-		if strings.HasPrefix(id, "@") {
+		body := strings.TrimPrefix(id, "@")
+		n := len(id) - len(body) + ShortIDLen
+		if len(body) > ShortIDLen {
 			n++
 		}
 		if i > 0 {
