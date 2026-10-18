@@ -340,6 +340,11 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
+	if err := serveNodeDoor(ctx, a, loaded); err != nil {
+		slog.Error("angelus node door", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Rebind shells without restoring their arias; an aria wakes on its next
 	// prompt.
