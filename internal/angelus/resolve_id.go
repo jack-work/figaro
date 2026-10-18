@@ -9,6 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -21,7 +22,7 @@ var secondaryIDKeys = []string{"form_id", "role_id", "against"}
 
 func (h *handlers) resolvingIDs(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		params, err := h.canonicalParams(params)
+		params, err := h.canonicalParams(ctx, params)
 		if err != nil {
 			return nil, err
 		}
@@ -29,9 +30,9 @@ func (h *handlers) resolvingIDs(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	}
 }
 
-func (h *handlers) canonicalParams(params json.RawMessage) (json.RawMessage, error) {
+func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
 	if ref := rpc.AriaOf(params); ref != "" {
-		id, err := h.canonicalID(ref)
+		id, err := h.canonicalID(ctx, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -54,7 +55,7 @@ func (h *handlers) canonicalParams(params json.RawMessage) (json.RawMessage, err
 		if raw, ok := fields[k]; !ok || json.Unmarshal(raw, &ref) != nil || ref == "" {
 			continue
 		}
-		id, err := h.canonicalID(ref)
+		id, err := h.canonicalID(ctx, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +79,7 @@ func mayCarrySecondaryID(params json.RawMessage) bool {
 	return false
 }
 
-func (h *handlers) canonicalID(ref string) (string, error) {
+func (h *handlers) canonicalID(ctx context.Context, ref string) (string, error) {
 	node, id := rpc.SplitNode(ref)
 	if node != "" {
 		own := h.nodeID()
@@ -92,7 +93,7 @@ func (h *handlers) canonicalID(ref string) (string, error) {
 	if len(strings.TrimPrefix(id, "@")) < minIDPrefix || h.angelus.Backend == nil {
 		return id, nil
 	}
-	matches := h.angelus.Backend.MatchID(id, ambiguityList+1)
+	matches := h.matchReadable(ctx, id)
 	switch len(matches) {
 	case 0:
 		return id, nil
@@ -104,6 +105,26 @@ func (h *handlers) canonicalID(ref string) (string, error) {
 		matches, more = matches[:ambiguityList], ", ..."
 	}
 	return "", fmt.Errorf("%s is ambiguous: %s%s", id, strings.Join(matches, ", "), more)
+}
+
+func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
+	if h.angelus.Policies == nil {
+		return h.angelus.Backend.MatchID(prefix, ambiguityList+1)
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, id := range h.angelus.Backend.MatchID(prefix, -1) {
+		if h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed {
+			out = append(out, id)
+			if len(out) > ambiguityList {
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (h *handlers) knownID(id string) bool {

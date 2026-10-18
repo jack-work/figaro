@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"context"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func BenchmarkCanonicalIDExact(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := h.canonicalID(ids[i%len(ids)]); err != nil {
+		if _, err := h.canonicalID(context.Background(), ids[i%len(ids)]); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -30,7 +31,7 @@ func BenchmarkCanonicalIDPrefix(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := h.canonicalID(ids[i%len(ids)][:12]); err != nil {
+		if _, err := h.canonicalID(context.Background(), ids[i%len(ids)][:12]); err != nil {
 			b.Fatal(err)
 		}
 	}
