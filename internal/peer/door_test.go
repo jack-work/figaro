@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/figaro/internal/peer/peertest"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -127,9 +128,9 @@ func whoami(t *testing.T, l *peer.Link) seen {
 // A configured peer is admitted as node:<id>, and the connection remembers
 // which node carried it.
 func TestDoorStampsTheNode(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))})
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))})
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 
 	l, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	require.NoError(t, err)
@@ -143,9 +144,9 @@ func TestDoorStampsTheNode(t *testing.T) {
 // A forwarded caller's bearer reaches the owner's verifier, and the owner
 // serves the call as that caller, with the carrying node kept beside it.
 func TestForwardedCallerIsVerifiedByTheOwner(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1")), Verify: verifyAs("tok")})
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1")), Verify: verifyAs("tok")})
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 
 	l, err := a.Open(context.Background(), "b", rpc.Passage{Forwarded: true, Bearer: "tok"}, nil)
 	require.NoError(t, err)
@@ -164,9 +165,9 @@ func TestForwardedCallerIsVerifiedByTheOwner(t *testing.T) {
 // Nodes never vouch: until the owner can verify a forwarded token, a
 // forwarded caller is refused, not served as the node.
 func TestForwardedCallerIsRefusedWithoutAVerifier(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))})
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))})
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 
 	_, err := a.Open(context.Background(), "b", rpc.Passage{Forwarded: true, Bearer: "tok"}, nil)
 	var refused *peer.Refused
@@ -177,9 +178,9 @@ func TestForwardedCallerIsRefusedWithoutAVerifier(t *testing.T) {
 
 // The forwarded flag and the bearer travel together or not at all.
 func TestPassageMustBeWhole(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1")), Verify: verifyAs("tok")})
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1")), Verify: verifyAs("tok")})
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 	for _, pass := range []rpc.Passage{{Forwarded: true}, {Bearer: "tok"}} {
 		_, err := a.Open(context.Background(), "b", pass, nil)
 		var refused *peer.Refused
@@ -190,19 +191,19 @@ func TestPassageMustBeWhole(t *testing.T) {
 // A certificate from the federation CA that names no configured peer is
 // refused with a reason; one from another CA never completes the handshake.
 func TestDoorRefusesStrangers(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))})
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))})
 
-	stranger := &peer.Dialer{Members: members(t, p.peer("c", "b", b.addr))}
+	stranger := &peer.Dialer{Members: members(t, p.Peer("c", "b", b.addr))}
 	_, err := stranger.Open(context.Background(), "b", rpc.Passage{}, nil)
 	var refused *peer.Refused
 	require.ErrorAs(t, err, &refused)
 	require.Contains(t, err.Error(), "names no peer")
 	require.ErrorContains(t, <-b.admitted, "names no peer")
 
-	rogue := newPKI(t, "rogue")
-	cfg := rogue.peer("a", "b", b.addr)
-	cfg.CA = p.ca
+	rogue := peertest.NewPKI(t, "rogue")
+	cfg := rogue.Peer("a", "b", b.addr)
+	cfg.CA = p.CA
 	impostor := &peer.Dialer{Members: members(t, cfg)}
 	_, err = impostor.Open(context.Background(), "b", rpc.Passage{}, nil)
 	var unreachable *peer.Unreachable
@@ -213,24 +214,24 @@ func TestDoorRefusesStrangers(t *testing.T) {
 // The dialler checks the owner's identity, not a hostname: a door holding
 // another node's certificate is not the peer.
 func TestDialerChecksThePeersIdentity(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("c", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))})
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("c", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))})
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 	_, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	var unreachable *peer.Unreachable
 	require.ErrorAs(t, err, &unreachable)
-	require.Contains(t, err.Error(), identity("b"))
+	require.Contains(t, err.Error(), peertest.Identity("b"))
 }
 
 // An unreachable owner is an error naming it, whether the door is down or
 // dies during a call; an owner's own refusal passes through untouched.
 func TestUnreachableNamesTheNode(t *testing.T) {
-	p := newPKI(t, "fed")
+	p := peertest.NewPKI(t, "fed")
 	dead, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := dead.Addr().String()
 	dead.Close()
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", addr))}
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", addr))}
 	_, err = a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	var unreachable *peer.Unreachable
 	require.ErrorAs(t, err, &unreachable)
@@ -240,8 +241,8 @@ func TestUnreachableNamesTheNode(t *testing.T) {
 	_, err = a.Open(context.Background(), "nowhere", rpc.Passage{}, nil)
 	require.ErrorContains(t, err, "node nowhere is not a peer")
 
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))})
-	a = &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))})
+	a = &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 	l, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	require.NoError(t, err)
 	defer l.Close()
@@ -259,18 +260,18 @@ func TestUnreachableNamesTheNode(t *testing.T) {
 // A peer that accepts TCP and never finishes the handshake is unreachable
 // within the dial timeout, and a door gives up on such a dialler too.
 func TestHandshakesAreBounded(t *testing.T) {
-	p := newPKI(t, "fed")
+	p := peertest.NewPKI(t, "fed")
 	silent, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer silent.Close()
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", silent.Addr().String())), Timeout: 200 * time.Millisecond}
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", silent.Addr().String())), Timeout: 200 * time.Millisecond}
 	start := time.Now()
 	_, err = a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	var unreachable *peer.Unreachable
 	require.ErrorAs(t, err, &unreachable)
 	require.Less(t, time.Since(start), 5*time.Second)
 
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1")), Handshake: 200 * time.Millisecond})
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1")), Handshake: 200 * time.Millisecond})
 	mute, err := net.Dial("tcp", b.addr)
 	require.NoError(t, err)
 	defer mute.Close()
@@ -285,9 +286,9 @@ func TestHandshakesAreBounded(t *testing.T) {
 // A listen stream rides the same link: the owner's pushes reach the
 // entry node's notify handler in order.
 func TestLinkCarriesPushes(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))})
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))})
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 	pushes := make(chan string, 4)
 	l, err := a.Open(context.Background(), "b", rpc.Passage{}, func(method string, params json.RawMessage) {
 		pushes <- method + " " + string(params)
@@ -308,9 +309,9 @@ func TestLinkCarriesPushes(t *testing.T) {
 
 // node.owns answers for the ids the owner holds.
 func TestOwns(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1"))}, "x1", "x2")
-	a := &peer.Dialer{Members: members(t, p.peer("a", "b", b.addr))}
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))}, "x1", "x2")
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", b.addr))}
 	owned, err := a.Owns(context.Background(), "b", []string{"x1", "y", "x2"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"x1", "x2"}, owned)
@@ -329,9 +330,9 @@ func TestDoorRefusesPlainTCP(t *testing.T) {
 // A peer's passage is one bounded JSON line: an endless one or a garbled
 // one is refused, and the door does not wait for more.
 func TestPassageIsBoundedAndParsed(t *testing.T) {
-	p := newPKI(t, "fed")
-	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1")), Handshake: time.Minute})
-	me := p.peer("a", "b", b.addr)
+	p := peertest.NewPKI(t, "fed")
+	b := serve(t, p.Door("b", ""), &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1")), Handshake: time.Minute})
+	me := p.Peer("a", "b", b.addr)
 	cert, err := tls.LoadX509KeyPair(me.Cert, me.Key)
 	require.NoError(t, err)
 	for name, c := range map[string]struct {
