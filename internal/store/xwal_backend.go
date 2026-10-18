@@ -28,6 +28,7 @@ var _ Backend = (*XwalBackend)(nil)
 type XwalBackend struct {
 	root  string
 	store *XwalStore
+	moves *Moves
 	mu    sync.Mutex
 	open  map[string]*ariaHandle
 	forms map[string]*Form
@@ -150,9 +151,15 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	if err != nil {
 		return nil, err
 	}
+	moves, err := OpenMoves(root)
+	if err != nil {
+		st.Close()
+		return nil, err
+	}
 	b := &XwalBackend{
 		root:        root,
 		store:       st,
+		moves:       moves,
 		open:        map[string]*ariaHandle{},
 		forms:       map[string]*Form{},
 		metas:       map[string]*metaCache{},
@@ -1032,14 +1039,16 @@ func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 // bury tombstones each doomed form, then forgets the aria's caches, for every
 // id in the set: a recursive delete must not leave children's forms resident,
 // pointed at files that no longer exist.
-func (b *XwalBackend) bury(doomed []string) {
+func (b *XwalBackend) bury(doomed []string) { b.buryAs("deleted", doomed) }
+
+func (b *XwalBackend) buryAs(reason string, doomed []string) {
 	for _, id := range doomed {
 		// Kill's half of the refcount, before the tombstone: a sealed form
 		// cannot be read back for its study set.
 		b.releaseStudies(id)
 		if f, err := b.form(id); err != nil {
 			slog.Warn("tombstone: form unreadable", "aria", id, "err", err)
-		} else if _, err := f.Tombstone("deleted"); err != nil {
+		} else if _, err := f.Tombstone(reason); err != nil {
 			slog.Warn("tombstone: not recorded", "aria", id, "err", err)
 		} else if !f.Reclaimable() {
 			// Deferred reclamation is not built: the unlink goes ahead and the
