@@ -40,7 +40,11 @@ func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	return context.WithValue(ctx, principalKey{}, p), nil
+	return WithPrincipal(ctx, p), nil
+}
+
+func WithPrincipal(ctx context.Context, p rpc.Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, p)
 }
 
 func PrincipalOf(ctx context.Context) rpc.Principal {
