@@ -126,6 +126,11 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	if filtered := h.readable(ctx, result); len(filtered) != len(result) {
+		result = filtered
+		enrichments = pageEnrichments(result, enrichments)
+	}
+
 	var nextBefore string
 	if listBounded(req) {
 		for i := range result {

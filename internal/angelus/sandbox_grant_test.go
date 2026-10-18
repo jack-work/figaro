@@ -50,6 +50,11 @@ type grantRig struct {
 
 func newGrantRig(t *testing.T) grantRig {
 	t.Helper()
+	return newRigWith(t, grantPolicy)
+}
+
+func newRigWith(t *testing.T, policyText string) grantRig {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "outfits"), 0o700); err != nil {
 		t.Fatal(err)
@@ -64,7 +69,7 @@ func newGrantRig(t *testing.T) grantRig {
 	}
 	self := strconv.Itoa(os.Getuid())
 	policy := filepath.Join(dir, "policy.toml")
-	if err := os.WriteFile(policy, []byte(strings.ReplaceAll(grantPolicy, "SELF", self)), 0o600); err != nil {
+	if err := os.WriteFile(policy, []byte(strings.ReplaceAll(policyText, "SELF", self)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[authz]\npolicy = \"policy.toml\"\n"), 0o600); err != nil {
@@ -224,7 +229,7 @@ principals = ["user:remote"]
 	if err := os.WriteFile(r.policy, []byte(widened), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.h[rpc.MethodOutfitReload](context.Background(), nil); err != nil {
+	if _, err := r.h[rpc.MethodOutfitReload](as("user", strconv.Itoa(os.Getuid())), nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.create(remote, "mock"); err != nil {
@@ -233,7 +238,7 @@ principals = ["user:remote"]
 	if err := os.WriteFile(r.policy, []byte("[roles.broken"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.h[rpc.MethodOutfitReload](context.Background(), nil); err == nil {
+	if _, err := r.h[rpc.MethodOutfitReload](as("user", strconv.Itoa(os.Getuid())), nil); err == nil {
 		t.Fatal("a broken policy reloaded without complaint")
 	}
 	if _, err := r.create(remote, "mock"); err != nil {

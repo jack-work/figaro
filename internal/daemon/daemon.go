@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -385,7 +386,11 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 	if err != nil {
 		return fmt.Errorf("door.web: %w", err)
 	}
-	admit := webAuthenticator(web.Authn)
+	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz)
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("door.web: %w", err)
+	}
 	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "admits", admit != nil)
 	go func() {
 		defer os.Remove(web.Path)
@@ -396,7 +401,26 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 	return nil
 }
 
-func webAuthenticator(name string) angelus.WebAdmit {
-	slog.Warn("door.web: no authenticator is available yet; every upgrade is refused", "authn", name)
-	return nil
+func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig) (angelus.WebAdmit, error) {
+	var b *authz.Bearer
+	if cfg.Bearer != nil {
+		var err error
+		if b, err = authz.NewBearer(*cfg.Bearer, &http.Client{Timeout: 5 * time.Second}, nil); err != nil {
+			return nil, err
+		}
+	}
+	switch name {
+	case "upstream":
+		u, err := authz.NewUpstream(cfg.Upstream, listen, cliDoor, b)
+		if err != nil {
+			return nil, err
+		}
+		return u.AdmitRequest, nil
+	case "bearer":
+		if b == nil {
+			return nil, fmt.Errorf("authn = \"bearer\" needs [authz.bearer]")
+		}
+		return b.AdmitRequest, nil
+	}
+	return nil, fmt.Errorf("authn %q: want \"upstream\" or \"bearer\"", name)
 }

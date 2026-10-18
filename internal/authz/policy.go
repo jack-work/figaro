@@ -142,3 +142,13 @@ func (p *Policies) Path() string {
 func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) jkauthz.Decision {
 	return p.store.Allow(s, string(verb), r)
 }
+
+func (r Resource) String() string {
+	switch r.Kind {
+	case ResourceAria:
+		return "aria:" + r.ID
+	case ResourceSandbox:
+		return "sandbox:" + r.ID
+	}
+	return "the daemon"
+}

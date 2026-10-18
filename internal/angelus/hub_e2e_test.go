@@ -18,9 +18,11 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -47,6 +49,11 @@ model = "mock-model"
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
+	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	require.NoError(t, err)
+	a.Peercred = peer
+	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	require.NoError(t, a.Policies.Reload(loaded.PolicyPath()))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -262,7 +269,7 @@ func TestDoorServesTCP(t *testing.T) {
 	admitted := make(chan struct{}, 1)
 	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		admitted <- struct{}{}
-		return ctx, nil
+		return authz.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
 	})
 
 	tcp := sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
@@ -301,7 +308,7 @@ func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
 		if first.CompareAndSwap(false, true) {
 			<-release
 		}
-		return ctx, nil
+		return authz.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
 	})
 
 	stalled, err := net.Dial("tcp", ln.Addr().String())
@@ -368,4 +375,24 @@ func TestBoundedListingThroughTheDaemon(t *testing.T) {
 		require.NotNil(t, f)
 		break
 	}
+}
+
+// A listener whose admit names nobody serves nobody: the policy has no
+// principal to grant anything to.
+func TestADoorWhoseAdmitNamesNobodyServesNothing(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
+
+	fc, err := sdk.DialAria(sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}, nil)
+	if err == nil {
+		defer fc.Close()
+		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_, err = fc.Set(callCtx, *rawPatch(map[string]string{"mantra": `"over tcp"`}), 0)
+	}
+	require.Error(t, err)
 }

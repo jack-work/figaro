@@ -13,9 +13,6 @@ import (
 )
 
 func peer(conn net.Conn) (rpc.Principal, error) {
-	if _, ok := conn.(*net.UnixConn); !ok {
-		return rpc.Principal{}, nil
-	}
 	uid, err := PeerUID(conn)
 	if err != nil {
 		return rpc.Principal{}, err
@@ -29,7 +26,7 @@ func peer(conn net.Conn) (rpc.Principal, error) {
 func PeerUID(conn net.Conn) (uint32, error) {
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
-		return 0, fmt.Errorf("peercred: %T is not a unix socket", conn)
+		return 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
 	}
 	raw, err := uc.SyscallConn()
 	if err != nil {

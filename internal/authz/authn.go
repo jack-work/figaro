@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -272,4 +273,36 @@ func (s *Session) Present(ctx context.Context, token string) error {
 	s.token, s.claims = token, c
 	s.mu.Unlock()
 	return nil
+}
+
+func (p *Peercred) Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
+	uid, err := PeerUID(conn)
+	if err != nil {
+		return nil, err
+	}
+	s, err := p.Subject(uid)
+	if err != nil {
+		return nil, err
+	}
+	return WithSubject(ctx, s), nil
+}
+
+func (u *Upstream) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	s, err := u.Subject(ctx, r.Header)
+	if err != nil {
+		return nil, err
+	}
+	return WithSubject(ctx, s), nil
+}
+
+func (b *Bearer) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	token, ok := bearer.FromHeader(r.Header.Get("Authorization"))
+	if !ok {
+		return nil, fmt.Errorf("%w: no bearer token", ErrUnadmitted)
+	}
+	s, err := b.Open(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	return WithSession(ctx, s), nil
 }

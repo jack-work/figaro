@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 func TestAdmitStampsThePeerUID(t *testing.T) {
@@ -43,15 +45,18 @@ func TestAdmitStampsThePeerUID(t *testing.T) {
 	}
 }
 
-func TestAdmitLeavesANonUnixPeerAnonymous(t *testing.T) {
+// Nothing vouches for a peer that did not come over a unix socket, so the
+// door refuses it rather than serving it as nobody. A TCP or WebSocket
+// listener must bring its own authenticator.
+func TestAdmitRefusesAPeerPeercredCannotVouchFor(t *testing.T) {
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
-	ctx, err := Admit(context.Background(), a)
-	if err != nil {
-		t.Fatal(err)
+	if ctx, err := Admit(context.Background(), a); err == nil {
+		t.Fatalf("admitted as %+v", PrincipalOf(ctx))
 	}
-	if got := PrincipalOf(ctx); got != (rpc.Principal{}) {
-		t.Fatalf("principal = %+v, want anonymous", got)
+	p, _ := NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
+	if _, err := p.Admit(context.Background(), a); !errors.Is(err, ErrUnadmitted) {
+		t.Fatalf("peercred admitted a pipe: %v", err)
 	}
 }

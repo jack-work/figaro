@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -113,6 +114,9 @@ func (h *handlers) lineage(ctx context.Context, params json.RawMessage) (interfa
 		return out, nil
 	}
 	if err := rpc.ValidateAriaID(req.Against); err != nil {
+		return nil, err
+	}
+	if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.Against)); err != nil {
 		return nil, err
 	}
 	against, err := h.angelus.chainOf(req.Against)

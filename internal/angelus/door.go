@@ -71,6 +71,13 @@ func (f *follower) close() {
 
 type Admit func(ctx context.Context, conn net.Conn) (context.Context, error)
 
+func (a *Angelus) cliAdmit() Admit {
+	if a.Peercred != nil {
+		return a.Peercred.Admit
+	}
+	return authz.Admit
+}
+
 func (a *Angelus) Serve(ctx context.Context, ln net.Listener, admit Admit) error {
 	if admit == nil {
 		admit = authz.Admit

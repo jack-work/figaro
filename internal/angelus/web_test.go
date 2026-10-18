@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
 	"github.com/jack-work/jkrpc"
 )
@@ -36,10 +37,14 @@ func admitAs(p rpc.Principal) WebAdmit {
 // daemon does, and returns its path.
 func serveWeb(t testing.TB, hb *ariaHub, w Web) string {
 	t.Helper()
+	return serveWebOn(t, shortSocketPath(t), hb, w)
+}
+
+func serveWebOn(t testing.TB, path string, hb *ariaHub, w Web) string {
+	t.Helper()
 	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
-	path := shortSocketPath(t)
 	ln, err := ListenUnix(path, 0o660)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,6 +152,26 @@ func TestWebDoorServesTheDoorOneFramePerMessage(t *testing.T) {
 		require.Equal(t, want, m.Params.N)
 		require.Equal(t, hb.id, m.Params.ID)
 	}
+}
+
+// The daemon's upstream authenticator on the web door: the edge's
+// Remote-User is the principal hello reports, and an upgrade without it is
+// refused before any frame.
+func TestWebDoorAdmitsByTheEdgesHeaders(t *testing.T) {
+	path := shortSocketPath(t)
+	u, err := authz.NewUpstream(config.UpstreamConfig{}, path, "/run/figaro/angelus.sock", nil)
+	require.NoError(t, err)
+	path = serveWebOn(t, path, newAriaHub("abcd1234"), Web{Admit: u.AdmitRequest})
+
+	_, resp, err := dialWeb(t, path, nil)
+	require.Error(t, err)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	c, _, err := dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
+	require.NoError(t, err)
+	var hello rpc.HelloResponse
+	require.NoError(t, json.Unmarshal(wsCall(t, c, 1, rpc.MethodHello, rpc.HelloRequest{Version: rpc.ProtocolVersion}), &hello))
+	require.Equal(t, webPrincipal, hello.Principal)
 }
 
 // Caddy authorizes the upgrade alone, so a connection lives no longer than

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -14,25 +13,12 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-func (h *handlers) subject(ctx context.Context) (jkauthz.Subject, error) {
-	p := authz.PrincipalOf(ctx)
-	if p.Kind == rpc.PrincipalUser && p.Node == "" && h.angelus.Peercred != nil {
-		if uid, err := strconv.ParseUint(p.ID, 10, 32); err == nil {
-			return h.angelus.Peercred.Subject(uint32(uid))
-		}
-	}
-	if p.Kind == "" || p.ID == "" {
-		return jkauthz.Subject{}, nil
-	}
-	return jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}}, nil
-}
-
 func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet bool) (form.Patch, error) {
 	policies := h.angelus.Policies
 	if policies == nil {
 		return form.Patch{}, nil
 	}
-	sub, err := h.subject(ctx)
+	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
 		return form.Patch{}, err
 	}
@@ -111,4 +97,119 @@ func (h *handlers) reloadPolicy() error {
 	}
 	slog.Info("authz: policy reloaded", "path", loaded.PolicyPath())
 	return nil
+}
+
+func (h *handlers) policy() authz.Policy {
+	if h.angelus.Policies == nil {
+		return authz.AllowAll()
+	}
+	return authz.Enforce(h.angelus.Policies)
+}
+
+func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resource) error {
+	p := h.angelus.Policies
+	if p == nil {
+		return nil
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return err
+	}
+	if d := p.Allow(sub, verb, res); !d.Allowed {
+		return fmt.Errorf("%s on %s: %s", verb, res, d.Reason())
+	}
+	return nil
+}
+
+func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, params json.RawMessage) error {
+	switch method {
+	case rpc.MethodStudy:
+		var req rpc.StudyRequest
+		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
+			return h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID))
+		}
+	case rpc.MethodCast:
+		var req rpc.CastRequest
+		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
+			return h.allowed(ctx, rpc.VerbSet, authz.Aria(req.FormID))
+		}
+	case rpc.MethodSet:
+		var req rpc.SetRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return err
+		}
+		return h.checkFormWrite(ctx, id, req.Patch)
+	case rpc.MethodQua:
+		var req rpc.QuaRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return err
+		}
+		if req.Form != nil && req.Form.Patch != nil {
+			return h.checkFormWrite(ctx, id, *req.Form.Patch)
+		}
+	}
+	return nil
+}
+
+func (h *handlers) checkFormWrite(ctx context.Context, id string, patch form.Patch) error {
+	if h.angelus.Policies == nil {
+		return nil
+	}
+	cwd := patchTouches(patch, "system.cwd")
+	if !cwd && !patchTouches(patch, "system.sandbox") {
+		return nil
+	}
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return err
+	}
+	pin, err := h.grantSandbox(ctx, snap.Apply(patch), cwd)
+	if err != nil {
+		return err
+	}
+	if !pin.IsIdentity() {
+		return fmt.Errorf("a sandbox may run an aria only in a sandbox it holds use on")
+	}
+	return nil
+}
+
+func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
+	if h.angelus.Policies == nil {
+		return rows
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return nil
+	}
+	out := rows[:0]
+	for _, r := range rows {
+		if r.State == "anchor" || h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (h *handlers) descendants(id string) []string {
+	if h.angelus.Policies == nil || h.angelus.Backend == nil {
+		return nil
+	}
+	children := map[string][]string{}
+	for _, n := range h.angelus.Backend.Nodes() {
+		children[n.Parent] = append(children[n.Parent], n.ID)
+	}
+	var out []string
+	queue := children[id]
+	seen := map[string]bool{id: true}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+		queue = append(queue, children[n]...)
+	}
+	return out
 }

@@ -164,7 +164,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	go a.pidMonitor(ctx)
 	a.migrateLibrettoRefs()
 
-	err = a.Serve(ctx, ln, nil)
+	err = a.Serve(ctx, ln, a.cliAdmit())
 	slog.Info("angelus shutting down")
 	return err
 }

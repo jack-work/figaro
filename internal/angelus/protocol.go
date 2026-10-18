@@ -114,7 +114,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodDecide:         h.decide,
 		rpc.MethodHello:          h.hello,
 	}
-	return &Handlers{Map: h.door(methods, authz.AllowAll()), h: h}
+	return &Handlers{Map: h.door(methods, h.policy()), h: h}
 }
 
 func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy) map[string]jkrpc.HandlerFunc {
@@ -146,13 +146,20 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			}
 			hb = h.hubFor(id)
 		}
-		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
+		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) && h.allowed(ctx, rpc.VerbListen, authz.Aria(id)) == nil {
 			f.follow(hb)
 		}
 		if method == rpc.MethodFollow {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 		}
-		return hb.route(ctx, method, params)
+		dressed, err := h.dressParams(method, params)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.checkAriaMethod(ctx, method, id, dressed); err != nil {
+			return nil, err
+		}
+		return hb.route(ctx, method, dressed)
 	}
 }
 
@@ -284,7 +291,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err != nil {
 		return nil, err
 	}
-	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch)
+	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch, mintedBy(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -318,12 +325,17 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		return nil, err
 	}
 	cwd := birthCwd(req.Cwd)
-	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd))
+	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), mintedBy(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
 	}
 	if _, err := h.angelus.Backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); err != nil {
+		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
+	}
+	if err := h.grantSandboxOn(ctx, id, true); err != nil {
+		h.discardBirth(id)
+		return nil, fmt.Errorf("form.bind: %w", err)
 	}
 	return rpc.FormBindResponse{FigaroID: id}, nil
 }

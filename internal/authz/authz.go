@@ -33,9 +33,13 @@ func (AriaHeader) Authenticate(peer rpc.Principal, params json.RawMessage) Ident
 	return Identity{Principal: peer, FigaroID: rpc.CallerOf(params), Label: rpc.LabelOf(params)}
 }
 
-type principalKey struct{}
+type callerKey struct{}
 
-// Admit stamps the peer's credentials onto the context, or refuses the connection.
+type caller struct {
+	subject jkauthz.Subject
+	session *Session
+}
+
 func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 	p, err := peer(conn)
 	if err != nil {
@@ -44,17 +48,35 @@ func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 	return WithPrincipal(ctx, p), nil
 }
 
+func WithSubject(ctx context.Context, s jkauthz.Subject) context.Context {
+	return context.WithValue(ctx, callerKey{}, caller{subject: s})
+}
+
+func WithSession(ctx context.Context, s *Session) context.Context {
+	return context.WithValue(ctx, callerKey{}, caller{subject: jkauthz.Subject{Principal: s.Principal()}, session: s})
+}
+
 func WithPrincipal(ctx context.Context, p rpc.Principal) context.Context {
-	return context.WithValue(ctx, principalKey{}, p)
+	return WithSubject(ctx, jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}})
+}
+
+func SubjectOf(ctx context.Context) (jkauthz.Subject, error) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.session != nil {
+		return c.session.Subject(ctx)
+	}
+	return c.subject, nil
 }
 
 func PrincipalOf(ctx context.Context) rpc.Principal {
-	p, _ := ctx.Value(principalKey{}).(rpc.Principal)
-	return p
+	c, _ := ctx.Value(callerKey{}).(caller)
+	p := c.subject.Principal
+	return rpc.Principal{Kind: rpc.PrincipalKind(p.Kind), ID: p.ID, Node: p.Node}
 }
 
 type Request struct {
 	Identity Identity
+	Subject  jkauthz.Subject
 	Method   string
 	Aria     string
 	Params   json.RawMessage
@@ -91,8 +113,13 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 	for name, h := range handlers {
 		method, next := name, h
 		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
+			subject, err := SubjectOf(ctx)
+			if err != nil {
+				return nil, &jkrpc.Error{Code: ErrCode, Message: err.Error()}
+			}
 			req := Request{
 				Identity: authn.Authenticate(PrincipalOf(ctx), params),
+				Subject:  subject,
 				Method:   method,
 				Aria:     rpc.AriaOf(params),
 				Params:   params,
@@ -118,4 +145,24 @@ func PrincipalText(p rpc.Principal) string {
 		return ""
 	}
 	return jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}.String()
+}
+
+func Enforce(p *Policies) Policy {
+	return PolicyFunc(func(r Request) Decision {
+		verb, ok := rpc.VerbOf(r.Method)
+		if !ok {
+			return Deny("%s has no verb, so no policy can allow it", r.Method)
+		}
+		if verb == rpc.VerbNone || r.Method == rpc.MethodList {
+			return Allow()
+		}
+		res := Daemon
+		if r.Aria != "" {
+			res = Aria(r.Aria)
+		}
+		if d := p.Allow(r.Subject, verb, res); !d.Allowed {
+			return Deny("%s: %s", r.Method, d.Reason())
+		}
+		return Allow()
+	})
 }

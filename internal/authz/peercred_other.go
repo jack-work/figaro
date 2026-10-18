@@ -3,14 +3,25 @@
 package authz
 
 import (
-	"errors"
+	"fmt"
 	"net"
+	"os"
+	"strconv"
 
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-func peer(net.Conn) (rpc.Principal, error) { return rpc.Principal{}, nil }
+func peer(conn net.Conn) (rpc.Principal, error) {
+	uid, err := PeerUID(conn)
+	if err != nil {
+		return rpc.Principal{}, err
+	}
+	return rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.FormatUint(uint64(uid), 10)}, nil
+}
 
-func PeerUID(net.Conn) (uint32, error) {
-	return 0, errors.New("peercred: unsupported on this platform")
+func PeerUID(conn net.Conn) (uint32, error) {
+	if _, ok := conn.(*net.UnixConn); !ok {
+		return 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
+	}
+	return uint32(os.Getuid()), nil
 }

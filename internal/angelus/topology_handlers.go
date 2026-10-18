@@ -563,6 +563,13 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	if req.Recursive {
+		for _, d := range h.descendants(req.FigaroID) {
+			if err := h.allowed(ctx, rpc.VerbKill, authz.Aria(d)); err != nil {
+				return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
+			}
+		}
+	}
 	if err := h.RemoveAria(req.FigaroID, req.Recursive); err != nil {
 		return nil, err
 	}

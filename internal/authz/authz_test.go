@@ -91,7 +91,7 @@ func TestGuardHandsTheConnectionPrincipalToThePolicy(t *testing.T) {
 	guarded := Guard(map[string]jkrpc.HandlerFunc{
 		rpc.MethodFork: func(context.Context, json.RawMessage) (any, error) { return "ok", nil },
 	}, AriaHeader{}, policy)
-	ctx := context.WithValue(context.Background(), principalKey{}, user)
+	ctx := WithPrincipal(context.Background(), user)
 	if _, err := guarded[rpc.MethodFork](ctx, forkParams(t, "aria0001", "aria0002")); err != nil {
 		t.Fatal(err)
 	}
