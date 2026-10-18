@@ -41,6 +41,7 @@ type Config struct {
 	Wire   WireConfig   `toml:"wire"`
 	Store  StoreConfig  `toml:"store"`
 	Memory MemoryConfig `toml:"memory"`
+	Door   DoorConfig   `toml:"door"`
 	Quote  QuoteConfig  `toml:"quote"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
