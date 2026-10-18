@@ -529,6 +529,17 @@ aria id as scope: so a backgrounded job survives its agent being reclaimed and
 keeps its id across a wake. `figaro kill` reaps an aria's sessions; hibernation
 does not.
 
+### Workspaces under a sandbox
+
+Under any sandbox but `local`, `system.cwd` is the box's read-write bind.
+A birth keeps a requested cwd only if it is a directory on the daemon's
+host; otherwise the aria gets `<workspace_root>/<id>` (0700) from
+`[sandbox] workspace_root` in `config.toml`, and with no root the birth is
+refused. `local` falls back to the daemon's cwd. A fork copies
+`system.cwd`, so a workspace is removed only when no remaining aria names
+it; nothing outside the root is ever removed. `[sandbox]` is read at
+daemon start: changing it takes a restart, not `outfit reload`.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,

@@ -3,6 +3,7 @@ package angelus
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -53,4 +54,69 @@ func (h *handlers) confinedWorkspace(kind, id string) (string, error) {
 		return "", fmt.Errorf("workspace for %s: %w", id, err)
 	}
 	return dir, nil
+}
+
+func (h *handlers) workspaceRoot() string {
+	loaded, _ := h.settings()
+	root, err := loaded.WorkspaceRoot()
+	if err != nil {
+		return ""
+	}
+	return root
+}
+
+func (h *handlers) cwdOf(id string) string {
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return ""
+	}
+	if v := snap.Lookup("system.cwd"); v != nil {
+		return filepath.Clean(*v)
+	}
+	return ""
+}
+
+func ownWorkspace(root, cwd string) bool {
+	return root != "" && cwd != "" && filepath.Dir(cwd) == root
+}
+
+func (h *handlers) ownWorkspaces(ids []string) []string {
+	root := h.workspaceRoot()
+	if root == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range ids {
+		if cwd := h.cwdOf(id); ownWorkspace(root, cwd) && !seen[cwd] {
+			seen[cwd] = true
+			out = append(out, cwd)
+		}
+	}
+	return out
+}
+
+func (h *handlers) releaseWorkspaces(dirs []string) {
+	if len(dirs) == 0 {
+		return
+	}
+	root := h.workspaceRoot()
+	named := map[string]bool{}
+	for _, id := range h.angelus.Backend.ConversationIDs() {
+		named[h.cwdOf(id)] = true
+	}
+	for _, dir := range dirs {
+		if named[dir] || !ownWorkspace(root, dir) {
+			continue
+		}
+		st, err := os.Lstat(dir)
+		if err != nil || !st.IsDir() {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			slog.Error("workspace left behind", "dir", dir, "err", err)
+			continue
+		}
+		slog.Info("workspace removed with its last aria", "dir", dir)
+	}
 }

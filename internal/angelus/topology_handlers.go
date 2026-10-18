@@ -595,11 +595,18 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 		}
 	}
 
+	var held []string
 	if h.angelus.Backend != nil {
+		removed := []string{id}
+		if recursive {
+			removed = append(removed, h.subtree(id)...)
+		}
+		held = h.ownWorkspaces(removed)
 		if err := h.angelus.Backend.Remove(id, recursive); err != nil {
 			return err
 		}
 	}
+	h.releaseWorkspaces(held)
 
 	// The endpoint outlives the agent, not the aria; this EOF must not happen on hibernate.
 	if hb := h.angelus.Hubs.drop(id); hb != nil {

@@ -191,7 +191,14 @@ func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) 
 }
 
 func (h *handlers) descendants(id string) []string {
-	if h.angelus.Policies == nil || h.angelus.Backend == nil {
+	if h.angelus.Policies == nil {
+		return nil
+	}
+	return h.subtree(id)
+}
+
+func (h *handlers) subtree(id string) []string {
+	if h.angelus.Backend == nil {
 		return nil
 	}
 	children := map[string][]string{}
