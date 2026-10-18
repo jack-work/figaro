@@ -133,7 +133,49 @@ func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
 	return p, nil
 }
 
-func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) (out rpc.DecideResponse, err error) {
+type Option struct {
+	Label     string
+	Criterion string
+}
+
+type Question struct {
+	Ask     string
+	Options []Option
+}
+
+func (q Question) plan() (plan, error) {
+	p := plan{ask: strings.TrimSpace(q.Ask), kind: rpc.DecideYesNo}
+	for _, o := range q.Options {
+		p.options = append(p.options, option{label: o.Label, criterion: firstOf(o.Criterion, o.Label)})
+	}
+	switch {
+	case len(p.options) == 1:
+		return p, fmt.Errorf("one option (%s) is not a choice", p.options[0].label)
+	case len(p.options) > 1:
+		p.kind = rpc.DecideChoice
+	case p.ask == "":
+		return p, errors.New("nothing to decide: the question is empty")
+	}
+	return p, nil
+}
+
+func (e *Engine) Ask(ctx context.Context, src Source, q Question) (rpc.DecideResponse, error) {
+	p, err := q.plan()
+	if err != nil {
+		return rpc.DecideResponse{}, err
+	}
+	return e.run(ctx, src, rpc.DecideRequest{}, p)
+}
+
+func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) (rpc.DecideResponse, error) {
+	p, err := parse(req, src.Board)
+	if err != nil {
+		return rpc.DecideResponse{}, err
+	}
+	return e.run(ctx, src, req, p)
+}
+
+func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p plan) (out rpc.DecideResponse, err error) {
 	ctx, span := figOtel.Start(ctx, "decide")
 	defer func() {
 		if err != nil {
@@ -149,10 +191,6 @@ func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) 
 		}
 		span.End()
 	}()
-	p, err := parse(req, src.Board)
-	if err != nil {
-		return out, err
-	}
 	set, err := src.settings(req)
 	if err != nil {
 		return out, err

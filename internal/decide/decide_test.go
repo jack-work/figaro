@@ -96,6 +96,19 @@ func boardOf(t *testing.T, kv map[string]string) form.Snapshot {
 	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, set, nil))
 }
 
+func named(t *testing.T, q question) map[string]string {
+	t.Helper()
+	raw, err := json.Marshal(q.Criteria)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("criteria are not named: %s", raw)
+	}
+	return out
+}
+
 func decide(t *testing.T, e *Engine, src Source, req rpc.DecideRequest) rpc.DecideResponse {
 	t.Helper()
 	out, err := e.Decide(context.Background(), src, req)
@@ -132,7 +145,7 @@ func TestChoicesFromTheFlagAndTheSigilAreOneList(t *testing.T) {
 		Choices:  []string{"nothing", "queue"},
 	})
 	q := got.body.Questions[questionKey]
-	if q.Type != "choice" || len(q.Criteria) != 3 {
+	if q.Type != "choice" || len(named(t, q)) != 3 {
 		t.Fatalf("question = %+v", q)
 	}
 	if q.Instructions != "which fix?" {
@@ -188,13 +201,13 @@ func TestANonLeafRefListsItsChildrenAsJSON(t *testing.T) {
 	e, got := engineReplying(t, `{"model":"jev-latest","answers":{"decision":{"type":"choice","choice":"printer","confidence":0.9,"probabilities":{"printer":0.9,"weather":0.1}}}}`)
 	out := decide(t, e, Source{Defaults: jevDefaults, Board: board}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
 
-	q := got.body.Questions[questionKey]
-	if len(q.Criteria) != 2 {
-		t.Fatalf("criteria = %#v", q.Criteria)
+	criteria := named(t, got.body.Questions[questionKey])
+	if len(criteria) != 2 {
+		t.Fatalf("criteria = %#v", criteria)
 	}
 	var printer map[string]string
-	if err := json.Unmarshal([]byte(q.Criteria["printer"]), &printer); err != nil {
-		t.Fatalf("a child's criterion is not its JSON object: %q", q.Criteria["printer"])
+	if err := json.Unmarshal([]byte(criteria["printer"]), &printer); err != nil {
+		t.Fatalf("a child's criterion is not its JSON object: %q", criteria["printer"])
 	}
 	if printer["filePath"] != "/s/printer.md" || !strings.Contains(printer["frontmatter"], "laser printer") {
 		t.Fatalf("printer = %#v", printer)
@@ -215,9 +228,9 @@ func TestALeafRefIsItsStringValue(t *testing.T) {
 	})
 	e, got := engineReplying(t, `{"model":"jev-latest","answers":{"decision":{"type":"choice","choice":"plan.b","probabilities":{"plan.a":0.2,"plan.b":0.8}}}}`)
 	decide(t, e, Source{Defaults: jevDefaults, Board: board}, rpc.DecideRequest{Question: "which plan?", Choices: []string{"@plan.a", "@plan.b"}})
-	q := got.body.Questions[questionKey]
-	if q.Criteria["plan.a"] != "rewrite the retry loop" || q.Criteria["plan.b"] != "add an idempotency key" {
-		t.Fatalf("criteria = %#v", q.Criteria)
+	criteria := named(t, got.body.Questions[questionKey])
+	if criteria["plan.a"] != "rewrite the retry loop" || criteria["plan.b"] != "add an idempotency key" {
+		t.Fatalf("criteria = %#v", criteria)
 	}
 }
 
@@ -603,5 +616,28 @@ func TestATimeoutAtTheEdgeIsRetriedSmaller(t *testing.T) {
 	}
 	if len(sizes) != 2 || sizes[1] >= sizes[0] {
 		t.Fatalf("sizes = %v", sizes)
+	}
+}
+
+func TestAskTakesTheQuestionAsWritten(t *testing.T) {
+	// A method renders user text into its question. Text that happens to end
+	// in a ?? line, or open on a quote coordinate, is not grammar there.
+	e, got := engineReplying(t, liveChoice)
+	ask := "<412.0:23-1180>! the user wrote:\n?? a b"
+	out, err := e.Ask(context.Background(), Source{Defaults: jevDefaults}, Question{
+		Ask: ask, Options: []Option{{Label: "idempotency-key"}, {Label: "queue", Criterion: "a retry queue"}, {Label: "nothing"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := got.body.Questions[questionKey]
+	if q.Instructions != ask {
+		t.Fatalf("instructions = %q", q.Instructions)
+	}
+	if c := named(t, q); len(c) != 3 || c["queue"] != "a retry queue" || c["nothing"] != "nothing" {
+		t.Fatalf("criteria = %#v", c)
+	}
+	if out.Window.Focus != "" || out.Kind != rpc.DecideChoice || out.Rows[0].Option != "idempotency-key" {
+		t.Fatalf("out = %+v", out)
 	}
 }
