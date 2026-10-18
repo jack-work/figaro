@@ -7,5 +7,5 @@ type Client interface {
 	OnResize(func(w, h int)) (stop func())
 	Read(p []byte) (n int, err error)
 	SetClipboard(s string)
-	IsTTY() bool
+	Interactive() bool
 }

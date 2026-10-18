@@ -150,7 +150,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 
 	// Raw mode: Ctrl-C and Ctrl-D arrive as input bytes, owned by the input
 	// loop, not a signal.
-	if tc.IsTTY() {
+	if tc.Interactive() {
 		if restore, err := tc.MakeRaw(); err == nil {
 			// The restore must survive an exit hook as well as a
 			// normal return.
@@ -228,7 +228,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 
 func (in *interactiveInput) sendPrompt(ctx context.Context) {
 	// The preamble is the inline renderer's only: the pager reads its own history.
-	catchUp := in.tc.IsTTY() && !in.set.listen
+	catchUp := in.tc.Interactive() && !in.set.listen
 
 	qua := mark.Span("submit.qua", "to", in.figaroID, "len", len(in.prompt))
 	cursor, active, qerr := in.subject.Qua(ctx, in.prompt, buildPromptForm(in.dress))
@@ -242,7 +242,7 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 	in.mu.Unlock()
 
 	// The inline renderer cannot paint a turn mid-stream: join through the pager.
-	joined := active && in.tc.IsTTY()
+	joined := active && in.tc.Interactive()
 	if joined {
 		in.enterTranscript()
 	}

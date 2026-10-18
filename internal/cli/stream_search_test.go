@@ -256,7 +256,7 @@ func (t *searchInputTerminal) Read(p []byte) (int, error) {
 	return copy(p, data), nil
 }
 func (t *searchInputTerminal) SetClipboard(string) {}
-func (t *searchInputTerminal) IsTTY() bool         { return true }
+func (t *searchInputTerminal) Interactive() bool   { return true }
 
 func newSearchInteractiveInput(reader transcriptReadClient, tc *searchInputTerminal) *interactiveInput {
 	out := ldrender.NewFakeTerminal(80, 12)

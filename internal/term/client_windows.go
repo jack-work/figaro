@@ -15,7 +15,7 @@ func (winClient) MakeRaw() (func(), error)   { return MakeRaw(int(os.Stdin.Fd())
 func (winClient) Size() (int, int)           { return Width(), Height() }
 func (winClient) Read(p []byte) (int, error) { return os.Stdin.Read(p) }
 func (winClient) SetClipboard(s string)      { _, _ = os.Stdout.WriteString(OSC52(s)) }
-func (winClient) IsTTY() bool                { return IsTerminal(int(os.Stdin.Fd())) }
+func (winClient) Interactive() bool          { return Interactive(os.Stdin, os.Stdout) }
 
 // OnResize polls: Windows has no SIGWINCH, and WINDOW_BUFFER_SIZE_EVENT
 // needs a dedicated console read loop.

@@ -33,14 +33,14 @@ func TestNewClientNoPanic(t *testing.T) {
 		}
 	}()
 	c := NewClient()
-	_ = c.IsTTY()
+	_ = c.Interactive()
 	_, _ = c.Size()
 	c.SetClipboard("x")
 }
 
 func TestMakeRawNonTTY(t *testing.T) {
 	c := NewClient()
-	if c.IsTTY() {
+	if c.Interactive() {
 		t.Skip("stdin is a tty; skipping non-tty error assertion")
 	}
 	restore, err := c.MakeRaw()

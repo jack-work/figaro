@@ -16,7 +16,7 @@ func (unixClient) MakeRaw() (func(), error)   { return MakeRaw(int(os.Stdin.Fd()
 func (unixClient) Size() (int, int)           { return Width(), Height() }
 func (unixClient) Read(p []byte) (int, error) { return os.Stdin.Read(p) }
 func (unixClient) SetClipboard(s string)      { _, _ = os.Stdout.WriteString(OSC52(s)) }
-func (unixClient) IsTTY() bool                { return IsTerminal(int(os.Stdin.Fd())) }
+func (unixClient) Interactive() bool          { return Interactive(os.Stdin, os.Stdout) }
 
 func (c unixClient) OnResize(cb func(w, h int)) func() {
 	ch := make(chan os.Signal, 1)
