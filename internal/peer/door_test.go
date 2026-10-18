@@ -315,9 +315,9 @@ func TestResolve(t *testing.T) {
 	l, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	require.NoError(t, err)
 	defer l.Close()
-	ids, err := l.Resolve(context.Background(), []string{"x1", "y", "x2bbbb"})
+	resp, err := l.Resolve(context.Background(), []string{"x1", "y", "x2bbbb"})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"x1": "x1aaaa", "x2bbbb": "x2bbbb"}, ids)
+	require.Equal(t, map[string]string{"x1": "x1aaaa", "x2bbbb": "x2bbbb"}, resp.IDs)
 }
 
 // The admitter stamps nothing a non-TLS connection could reach.

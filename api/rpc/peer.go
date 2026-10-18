@@ -18,7 +18,8 @@ type NodeResolveRequest struct {
 }
 
 type NodeResolveResponse struct {
-	IDs map[string]string `json:"ids"`
+	IDs   map[string]string `json:"ids"`
+	Moved map[string]Moved  `json:"moved,omitempty"`
 }
 
 type NodeUnreachable struct {

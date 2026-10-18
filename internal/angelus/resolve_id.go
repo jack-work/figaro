@@ -105,8 +105,14 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	if node != "" && !h.isSelf(node) {
 		return h.elsewhere(ctx, ref, node, id, route)
 	}
+	if err := h.holdsMove(id); err != nil {
+		return "", "", err
+	}
 	if h.knownID(id) {
 		return id, "", nil
+	}
+	if t, ok := h.tombstone(id); ok {
+		return h.towardsMoved(ctx, t, route)
 	}
 	if len(strings.TrimPrefix(id, "@")) < minIDPrefix || h.angelus.Backend == nil {
 		return id, "", nil
@@ -114,6 +120,9 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	matches := h.matchReadable(ctx, id)
 	switch len(matches) {
 	case 0:
+		if t, ok := h.tombstoneByPrefix(ctx, id); ok {
+			return h.towardsMoved(ctx, t, route)
+		}
 		if route {
 			return h.locate(ctx, id)
 		}

@@ -255,6 +255,8 @@ func (m *Moves) Departure(token string) (Departure, bool) {
 	return *d, true
 }
 
+func (m *Moves) Any() bool { return m.tombs.Load() > 0 }
+
 func (m *Moves) Tombstone(id string) (Tombstone, bool) {
 	if m.tombs.Load() == 0 {
 		return Tombstone{}, false

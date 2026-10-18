@@ -157,6 +157,14 @@ func (c *Angelus) Kill(ctx context.Context, figaroID string, recursive bool) err
 	return c.call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID, Recursive: recursive}, nil)
 }
 
+func (c *Angelus) Move(ctx context.Context, figaroID, to string) (*rpc.MoveResponse, error) {
+	var resp rpc.MoveResponse
+	if err := c.call(ctx, rpc.MethodMove, rpc.MoveRequest{FigaroID: figaroID, To: to}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Angelus) List(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse
 	if err := c.call(ctx, rpc.MethodList, nil, &resp); err != nil {

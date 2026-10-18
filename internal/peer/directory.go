@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 type Directory interface {
@@ -17,7 +19,7 @@ type Directory interface {
 	Locate(ctx context.Context, ref string) (node, id string, err error)
 }
 
-type Ask func(ctx context.Context, node string, refs []string) (map[string]string, error)
+type Ask func(ctx context.Context, node string, refs []string) (rpc.NodeResolveResponse, error)
 
 var ErrNoOwner = errors.New("no node owns it")
 
@@ -82,9 +84,10 @@ func (c *Cache) Len() int {
 }
 
 type claim struct {
-	node string
-	id   string
-	err  error
+	node  string
+	id    string
+	moved rpc.Moved
+	err   error
 }
 
 func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) {
@@ -94,11 +97,11 @@ func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) 
 	claims := make(chan claim, len(c.nodes))
 	for _, node := range c.nodes {
 		go func() {
-			ids, err := c.ask(ctx, node, []string{ref})
-			claims <- claim{node: node, id: ids[ref], err: err}
+			resp, err := c.ask(ctx, node, []string{ref})
+			claims <- claim{node: node, id: resp.IDs[ref], moved: resp.Moved[ref], err: err}
 		}()
 	}
-	var found []claim
+	var found, moved []claim
 	var unreachable []error
 	for range c.nodes {
 		cl := <-claims
@@ -107,9 +110,12 @@ func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) 
 			unreachable = append(unreachable, cl.err)
 		case cl.id != "":
 			found = append(found, cl)
+		case cl.moved.Node != "":
+			moved = append(moved, cl)
 		}
 	}
 	slices.SortFunc(found, func(a, b claim) int { return strings.Compare(a.node, b.node) })
+	slices.SortFunc(moved, func(a, b claim) int { return strings.Compare(a.node, b.node) })
 	switch {
 	case len(found) == 1:
 		c.Learn(found[0].id, found[0].node)
@@ -120,6 +126,10 @@ func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) 
 			nodes[i] = f.node
 		}
 		return "", "", fmt.Errorf("%s is on nodes %s: name it as <node>/%s", ref, strings.Join(nodes, " and "), ref)
+	case len(moved) > 0:
+		m := moved[len(moved)-1].moved
+		c.Learn(m.ID, m.Node)
+		return m.Node, m.ID, nil
 	case len(unreachable) > 0:
 		return "", "", fmt.Errorf("%s is on no reachable node: %w", ref, errors.Join(unreachable...))
 	}

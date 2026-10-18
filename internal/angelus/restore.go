@@ -28,6 +28,10 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 		return f, nil
 	}
 	h.restoreMu.Lock()
+	if err := h.holdsMove(ariaID); err != nil {
+		h.restoreMu.Unlock()
+		return nil, err
+	}
 	if call, ok := h.restoring[ariaID]; ok {
 		h.restoreMu.Unlock()
 		select {

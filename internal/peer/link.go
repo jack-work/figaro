@@ -109,18 +109,18 @@ func (l *Link) Done() <-chan struct{} { return l.cli.Done() }
 
 func (l *Link) Close() error { return l.cli.Close() }
 
-func (l *Link) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
+func (l *Link) Resolve(ctx context.Context, refs []string) (rpc.NodeResolveResponse, error) {
 	params, err := json.Marshal(rpc.NodeResolveRequest{Refs: refs})
 	if err != nil {
-		return nil, err
+		return rpc.NodeResolveResponse{}, err
 	}
 	raw, err := l.Call(ctx, rpc.MethodNodeResolve, params)
 	if err != nil {
-		return nil, err
+		return rpc.NodeResolveResponse{}, err
 	}
 	var resp rpc.NodeResolveResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, fmt.Errorf("node %s: %s: %w", l.node, rpc.MethodNodeResolve, err)
+		return rpc.NodeResolveResponse{}, fmt.Errorf("node %s: %s: %w", l.node, rpc.MethodNodeResolve, err)
 	}
-	return resp.IDs, nil
+	return resp, nil
 }

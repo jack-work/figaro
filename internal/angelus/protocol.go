@@ -7,6 +7,7 @@ import (
 	"github.com/jack-work/figaro/internal/decide"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"text/template"
 
 	"github.com/jack-work/figaro/api/form"
@@ -114,8 +115,19 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodDecide:         h.decide,
 		rpc.MethodHello:          h.hello,
 		rpc.MethodNodeResolve:    h.nodeResolve,
+		rpc.MethodMove:           h.move,
+		rpc.MethodImportBegin:    h.importBegin,
+		rpc.MethodImportChunk:    h.importChunk,
+		rpc.MethodImportCommit:   h.importCommit,
+		rpc.MethodImportAbort:    h.importAbort,
+		rpc.MethodImportStatus:   h.importStatus,
+		rpc.MethodNodeLearn:      h.nodeLearn,
 	}
 	h.federate()
+	h.mover()
+	if h.holdDepartures() {
+		h.ensureSettling()
+	}
 	return &Handlers{Map: h.door(methods, h.policy()), h: h}
 }
 
@@ -223,6 +235,13 @@ type handlers struct {
 	// while a wake is running.
 	restoreMu sync.Mutex
 	restoring map[string]*restoreCall
+
+	moving    moving
+	settling  atomic.Bool
+	grafts    grafts
+	moverOnce sync.Once
+	mv        mover
+	moves     *store.Moves
 }
 
 // settings returns config and outfitter under one lock so they are never seen half-swapped.

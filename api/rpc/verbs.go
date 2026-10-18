@@ -45,8 +45,10 @@ var methodVerbs = map[string]Verb{
 	MethodAttach:  VerbRead,
 	MethodOutfits: VerbRead,
 
-	MethodModelsWant:  VerbRead,
-	MethodNodeResolve: VerbRead,
+	MethodModelsWant:   VerbRead,
+	MethodNodeResolve:  VerbRead,
+	MethodImportStatus: VerbRead,
+	MethodNodeLearn:    VerbRead,
 
 	MethodSet:     VerbSet,
 	MethodStudy:   VerbSet,
@@ -59,8 +61,14 @@ var methodVerbs = map[string]Verb{
 	MethodFormBind:   VerbCreate,
 	MethodImport:     VerbCreate,
 
+	MethodImportBegin:  VerbCreate,
+	MethodImportChunk:  VerbCreate,
+	MethodImportCommit: VerbCreate,
+	MethodImportAbort:  VerbCreate,
+
 	MethodFork: VerbFork,
 	MethodKill: VerbKill,
+	MethodMove: VerbKill,
 
 	MethodNormalize:      VerbAdmin,
 	MethodGC:             VerbAdmin,

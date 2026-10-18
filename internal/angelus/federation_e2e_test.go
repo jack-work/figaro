@@ -44,8 +44,9 @@ type fedNode struct {
 	tlsCfg  *tls.Config
 	members *peer.Members
 
-	pendingPeer func() config.Peer
-	alsoOwners  []string
+	pendingPeers []func() config.Peer
+	alsoOwners   []string
+	prov         provider.Provider
 }
 
 const fedPolicy = `
@@ -62,6 +63,13 @@ grants = [{ verbs = ["read"], on = ["*"] }]
 [[bind]]
 role = "reader"
 principals = ["user:reader"]
+
+[roles.self]
+grants = [{ verbs = ["*"], on = ["owner:self"] }]
+
+[[bind]]
+role = "self"
+principals = ["user:stranger"]
 `
 
 func extraPrincipals(ps []string) string {
@@ -96,19 +104,25 @@ func openFedNode(t *testing.T, is *peertest.Issuer, alsoOwners ...string) *fedNo
 		a: angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})}
 }
 
-func (n *fedNode) serve(pki *peertest.PKI, other *fedNode) {
+func (n *fedNode) serve(pki *peertest.PKI, others ...*fedNode) {
 	t := n.t
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	n.doorLn = ln
 	n.tlsCfg, err = peer.ServerTLS(pki.Door(n.id, ""))
 	require.NoError(t, err)
-	n.pendingPeer = func() config.Peer { return pki.Peer(n.id, other.id, other.doorLn.Addr().String()) }
+	for _, other := range others {
+		n.pendingPeers = append(n.pendingPeers, func() config.Peer { return pki.Peer(n.id, other.id, other.doorLn.Addr().String()) })
+	}
 }
 
 func (n *fedNode) start() {
 	t := n.t
-	members, err := peer.NewMembers([]config.Peer{n.pendingPeer()})
+	var peers []config.Peer
+	for _, p := range n.pendingPeers {
+		peers = append(peers, p())
+	}
+	members, err := peer.NewMembers(peers)
 	require.NoError(t, err)
 	n.members = members
 	n.a.Peers = members
@@ -121,7 +135,7 @@ func (n *fedNode) start() {
 	require.NoError(t, os.WriteFile(n.dir+"/policy.toml", []byte(fmt.Sprintf(fedPolicy, pc.Self().String(), extraPrincipals(n.alsoOwners))), 0o600))
 	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.a.Backend))
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
-	n.bearer, err = authz.NewBearer(n.issuer.Config("probe", "intruder", "reader"), nil, nil)
+	n.bearer, err = authz.NewBearer(n.issuer.Config("probe", "intruder", "reader", "stranger"), nil, nil)
 	require.NoError(t, err)
 
 	n.ctx, n.stop = context.WithCancel(context.Background())
@@ -130,6 +144,9 @@ func (n *fedNode) start() {
 		Angelus: n.a,
 		Config:  loaded,
 		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
+			if n.prov != nil {
+				return n.prov, nil
+			}
 			return &mockProviderForIntegration{}, nil
 		},
 		Ctx:           n.ctx,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/peer"
 )
 
@@ -18,13 +19,13 @@ type askLog struct {
 }
 
 func (l *askLog) ask(owners map[string][]string, down ...string) peer.Ask {
-	return func(_ context.Context, node string, refs []string) (map[string]string, error) {
+	return func(_ context.Context, node string, refs []string) (rpc.NodeResolveResponse, error) {
 		l.mu.Lock()
 		l.asked = append(l.asked, node)
 		l.mu.Unlock()
 		for _, d := range down {
 			if d == node {
-				return nil, &peer.Unreachable{Node: node, Err: errors.New("connection refused")}
+				return rpc.NodeResolveResponse{}, &peer.Unreachable{Node: node, Err: errors.New("connection refused")}
 			}
 		}
 		out := map[string]string{}
@@ -35,7 +36,7 @@ func (l *askLog) ask(owners map[string][]string, down ...string) peer.Ask {
 				}
 			}
 		}
-		return out, nil
+		return rpc.NodeResolveResponse{IDs: out}, nil
 	}
 }
 
@@ -138,4 +139,23 @@ func TestDirectoryIsBounded(t *testing.T) {
 	require.Equal(t, "b", node)
 	require.Equal(t, 1, log.count())
 	require.Equal(t, 2, d.Len())
+}
+
+// An old home answers with where the aria went; with no owner answering, the
+// directory takes the forwarding address and remembers it.
+func TestAMovedAnswerLocatesTheNewHome(t *testing.T) {
+	ask := func(_ context.Context, node string, refs []string) (rpc.NodeResolveResponse, error) {
+		if node == "b" {
+			return rpc.NodeResolveResponse{Moved: map[string]rpc.Moved{refs[0]: {ID: "x1aaaa", Node: "c"}}}, nil
+		}
+		return rpc.NodeResolveResponse{}, &peer.Unreachable{Node: node, Err: errors.New("connection refused")}
+	}
+	d := peer.NewCache([]string{"b", "c"}, ask, 64)
+	node, id, err := d.Locate(context.Background(), "x1")
+	require.NoError(t, err)
+	require.Equal(t, "c", node)
+	require.Equal(t, "x1aaaa", id)
+	owner, ok := d.Owner("x1aaaa")
+	require.True(t, ok)
+	require.Equal(t, "c", owner)
 }

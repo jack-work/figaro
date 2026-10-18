@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -128,10 +129,10 @@ func (h *handlers) linkFor(ctx context.Context, node string) (*peer.Link, func()
 	return l, func() { l.Close() }, nil
 }
 
-func (h *handlers) askPeer(ctx context.Context, node string, refs []string) (map[string]string, error) {
+func (h *handlers) askPeer(ctx context.Context, node string, refs []string) (rpc.NodeResolveResponse, error) {
 	l, done, err := h.linkFor(ctx, node)
 	if err != nil {
-		return nil, err
+		return rpc.NodeResolveResponse{}, err
 	}
 	defer done()
 	return l.Resolve(ctx, refs)
@@ -144,11 +145,33 @@ func (h *handlers) forward(ctx context.Context, node, method string, params json
 	}
 	defer done()
 	raw, err := l.Call(ctx, method, params)
+	if to, ok := movedAway(err); ok && to != node && !h.isSelf(to) {
+		h.fed.dir.Learn(rpc.AriaOf(params), to)
+		l2, done2, lerr := h.linkFor(ctx, to)
+		if lerr != nil {
+			return nil, lerr
+		}
+		defer done2()
+		node, l = to, l2
+		raw, err = l.Call(ctx, method, params)
+	}
 	if err != nil {
 		return nil, err
 	}
 	h.learnFrom(node, method, params, raw)
 	return raw, nil
+}
+
+func movedAway(err error) (string, bool) {
+	var answered *jkrpc.Error
+	if !errors.As(err, &answered) || answered.Code != rpc.ErrCodeMoved {
+		return "", false
+	}
+	var m rpc.Moved
+	if json.Unmarshal(answered.Data, &m) != nil || m.Node == "" {
+		return "", false
+	}
+	return m.Node, true
 }
 
 func (h *handlers) learnFrom(node, method string, params, raw json.RawMessage) {
@@ -184,9 +207,21 @@ func (h *handlers) nodeResolve(ctx context.Context, params json.RawMessage) (any
 		if ref == "" || ref == models.FormID || strings.Contains(ref, rpc.NodeSeparator) {
 			continue
 		}
+		if h.holdsMove(ref) != nil {
+			continue
+		}
 		if h.knownID(ref) {
 			if h.allowed(ctx, rpc.VerbRead, authz.Aria(ref)) == nil {
 				out.IDs[ref] = ref
+			}
+			continue
+		}
+		if t, ok := h.tombstone(ref); ok {
+			if t.State == store.MoveFinal && h.allowed(ctx, rpc.VerbRead, authz.Aria(ref)) == nil {
+				if out.Moved == nil {
+					out.Moved = map[string]rpc.Moved{}
+				}
+				out.Moved[ref] = rpc.Moved{ID: ref, Node: t.To}
 			}
 			continue
 		}
