@@ -110,13 +110,9 @@ func (t *transcript) selectedCommentAddr() (string, bool) {
 	return commentAddress(c, ref.reply), true
 }
 
-func pagerCommentPending(t *transcript) {}
-
 func pagerCommentNext(t *transcript) { t.noteStep(t.stepComment(1)) }
 
 func pagerCommentPrev(t *transcript) { t.noteStep(t.stepComment(-1)) }
-
-func pagerCommentCancel(t *transcript) { t.note("") }
 
 func pagerDeleteComment(t *transcript) {
 	addr, ok := t.selectedCommentAddr()

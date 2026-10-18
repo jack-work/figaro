@@ -106,9 +106,7 @@ type transcript struct {
 	wantTop bool
 	kept    bool
 	follow  bool
-	pendG   bool // saw one 'g' (for gg)
-	pendF   bool // saw 'f' (for f j / f k)
-	pendC   bool
+	pending string
 
 	comments     *commentIndex
 	commentsOpen map[nodeRef]bool
@@ -150,10 +148,8 @@ type transcript struct {
 	notes *notificationStore
 	// noticeTTL outlives the status for the same reason notes does.
 	noticeTTL *time.Duration
-	// pendLeader: saw space, so the next key is a leader chord.
-	pendLeader bool
-	jumpNote   string
-	jump       *transcriptJump
+	jumpNote  string
+	jump      *transcriptJump
 
 	// Older history is pulled only when the viewport nears the window floor.
 	search *transcriptSearch
@@ -262,7 +258,7 @@ func (t *transcript) setNoticeTTL(d time.Duration) {
 // column with autowrap on scrolls the whole screen up a row.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
-	t.pendG, t.pendF, t.pendC, t.inSearch, t.query, t.matchQuery = false, false, false, false, "", ""
+	t.pending, t.inSearch, t.query, t.matchQuery = "", false, "", ""
 	t.searchDir = 1
 	t.box, t.jumpNote, t.jump = boxNone, "", nil
 	t.cmdline.reset()
@@ -1559,18 +1555,14 @@ func (t *transcript) mode() keyMode {
 	if t.visual.active() && !t.inSearch && !t.boxOpen() {
 		return modeVisual
 	}
-	// 'f' is armed: j/k mean fork points, every other key falls through.
-	if t.pendF && !t.inSearch && !t.boxOpen() {
-		return modeFork
-	}
-	if t.pendC && !t.inSearch && !t.boxOpen() {
-		return modeComment
-	}
 	// The drawer's sub-mode is asked after openPit: a search box or ':' line
 	// over it outranks it.
 	open := t.openPit()
 	if open == pitComposer && t.composerMode == composerNormal {
 		return modeComposer
+	}
+	if k := open.keys(); k == modePanel && t.listMode() {
+		return modeList
 	}
 	return open.keys()
 }
@@ -1600,9 +1592,14 @@ func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
 func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
 func (t *transcript) dispatch(ev keyEvent) {
-	if t.pendLeader && t.leaderChord(ev) {
-		t.render()
-		return
+	if t.pending != "" {
+		bd := t.prefixed(ev)
+		t.pending = ""
+		if bd != nil && bd.pager != nil {
+			bd.pager(t)
+			t.render()
+			return
+		}
 	}
 	switch t.mode() {
 	case modeConfirm:
@@ -1644,33 +1641,27 @@ func (t *transcript) dispatch(ev keyEvent) {
 		// The drawer owns the keyboard: a key with no row is inert.
 		if act := pagerAct.pager(modeComposer, ev); act != nil {
 			act(t)
-			t.pendG = ev.b == 'g' && !t.pendG
 			t.render()
 		}
 		return
-	case modeComment:
-		t.pendC = false
-		if act := pagerAct.pager(modeComment, ev); act != nil {
-			act(t)
-			t.render()
-			return
-		}
-	case modeFork:
-		// 'f' followed by anything but a direction is the ordinary key.
-		t.pendF = false
-		if act := pagerAct.pager(modeFork, ev); act != nil {
-			act(t)
-			t.render()
-			return
-		}
 	case modeVisual:
 		// The selection owns the keyboard: a key with no row is inert.
 		if act := pagerAct.pager(modeVisual, ev); act != nil {
 			act(t)
-			t.pendG = ev.b == 'g' && !t.pendG
 			t.render()
 		}
 		return
+	case modeList:
+		if act := pagerAct.pager(modeList, ev); act != nil {
+			act(t)
+			t.render()
+			return
+		}
+		if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
+			t.render()
+			return
+		}
+		t.closePanels()
 	case modePanel:
 		if act := pagerAct.pager(modePanel, ev); act != nil {
 			act(t)
@@ -1685,34 +1676,12 @@ func (t *transcript) dispatch(ev keyEvent) {
 			// Esc still closes the pit.
 			if act := pagerAct.pager(modeTranscript, ev); act != nil {
 				act(t)
-				t.pendG = ev.b == 'g' && !t.pendG
 				t.render()
 				return
 			}
 		}
-		if t.focused == focusPit && t.pit.live != nil && t.pit.list() != nil {
-			if t.pitVerb(ev) {
-				// This branch returns before the epilogue that arms gg.
-				t.pendG = ev.b == 'g' && !t.pendG
-				t.render()
-				return
-			}
-		} else if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && kv.Key(ev.b) {
+		if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && kv.Key(ev.b) {
 			t.render()
-			return
-		}
-		// Every pit is navigable; a one-row note is a glance, wiped by any key.
-		if t.focused == focusPit && t.pit.list() != nil && !t.pit.glance() && pitOwnsKey(ev) {
-			if t.pitMotion(ev) {
-				// This branch returns before the epilogue that arms gg.
-				t.pendG = ev.b == 'g' && !t.pendG
-				t.render()
-				return
-			}
-			if act := pagerAct.pager(modeTranscript, ev); act != nil {
-				act(t)
-				t.render()
-			}
 			return
 		}
 		t.closePanels()
@@ -1720,11 +1689,6 @@ func (t *transcript) dispatch(ev keyEvent) {
 	if act := pagerAct.pager(modeTranscript, ev); act != nil {
 		act(t)
 	}
-	t.pendG = ev.b == 'g' && !t.pendG
-	t.pendF = ev.b == 'f' && !t.pendF
-	t.pendC = ev.b == 'c' && !t.pendC
-	// A jump's report is transient, like pendG: the key that set it returned
-	// from the modeBox arm, so it always gets its frame.
 	if !t.boxOpen() {
 		t.jumpNote = ""
 	}
@@ -1749,12 +1713,6 @@ func pagerTop(t *transcript) {
 	t.stopFollowing()
 	t.offset = 0
 	t.wantTop = !t.atAriaFloor()
-}
-
-func pagerPendingTop(t *transcript) {
-	if t.pendG {
-		pagerTop(t)
-	}
 }
 
 func pagerSearchPrompt(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", 1 }
@@ -1837,12 +1795,6 @@ func pagerVisualScreenMid(t *transcript) { t.visualScreen(0) }
 func pagerVisualScreenBot(t *transcript) { t.visualScreen(1) }
 func pagerVisualParaNext(t *transcript)  { t.visualParagraph(1) }
 func pagerVisualParaPrev(t *transcript)  { t.visualParagraph(-1) }
-
-func pagerVisualPendingTop(t *transcript) {
-	if t.pendG {
-		t.visualJump(false)
-	}
-}
 
 // With a highlight up the box opens holding the range placeholder; the highlight stays.
 func pagerVisualCommand(t *transcript) {
@@ -2441,7 +2393,7 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.search = nil
 	t.inSearch, t.query, t.matchQuery = false, "", ""
 	t.searchDir = 1
-	t.pendG, t.pendF, t.pendC = false, false, false
+	t.pending = ""
 
 	// Repainted whole: prev describes a conversation no longer on screen.
 	t.prev = nil
@@ -2547,33 +2499,6 @@ func (t *transcript) inputDrawerLines() []string {
 	return rows
 }
 
-// pitVerb runs a live view's own verbs against the row the pit selected.
-func (t *transcript) pitVerb(ev keyEvent) bool {
-	iv, ok := t.pit.live.(itemView)
-	if !ok {
-		return false
-	}
-	row, has := t.pit.selected()
-	switch {
-	case ev.b == '\r' || ev.b == '\n':
-		if has && row.id != "" {
-			iv.Activate(row.id)
-		}
-		return true
-		// 'y' is not claimed here: the input loop yanks a selected pit row
-		// (inputYank), and two owners for one key copy one thing and
-		// report another.
-	}
-	// A list view's own letters (the notifications pit's `f`) before the
-	// shared motions.
-	if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
-		return true
-	}
-	_ = row
-	_ = has
-	return t.pitMotion(ev)
-}
-
 // Opening it is reading it, so the unread mark goes.
 func (t *transcript) openNotificationsPit() {
 	t.pit.showLive(pitNotifications, &notificationsView{store: t.notes})
@@ -2583,74 +2508,14 @@ func (t *transcript) openNotificationsPit() {
 
 func pagerNotifications(t *transcript) { t.togglePit(pitNotifications, t.openNotificationsPit) }
 
-func pagerLeader(t *transcript) { t.pendLeader = true }
-
-// Any other key is not swallowed: it is itself, and the leader is spent.
-func (t *transcript) leaderChord(ev keyEvent) bool {
-	t.pendLeader = false
-	if t.inSearch || t.boxOpen() || ev.nav != navNone {
-		return false
+func (t *transcript) prefixed(ev keyEvent) *keyBinding {
+	if bd := prefixBinding(t.pending, t.mode(), ev); bd != nil {
+		return bd
 	}
-	switch ev.b {
-	case 'n':
-		pagerNotifications(t)
-		return true
-	}
-	return false
+	return prefixBinding(t.pending, modeTranscript, ev)
 }
 
-func (t *transcript) pitMotion(ev keyEvent) bool {
-	switch {
-	// j/k move the selection where there is one, the window where there is not.
-	case ev.b == 'j', ev.nav == navDown, ev.b == 0x0e:
-		t.pit.moveSelection(1)
-	case ev.b == 'k', ev.nav == navUp, ev.b == 0x10:
-		t.pit.moveSelection(-1)
-	// e/y scroll one row, selection untouched (vim's ^E/^Y without the modifier).
-	case ev.b == 'F':
-		// Fullscreen is the pager's disposition and survives one pit
-		// closing and the next opening.
-		t.full = !t.full
-		t.focused = focusPit
-	case ev.b == 'e':
-		t.pit.scrollBy(1)
-	case ev.b == 'y' && t.pit.list() != nil && !t.pit.list().hasCursor():
-		t.pit.scrollBy(-1)
-	case ev.b == 'd', ev.nav == navPageDown:
-		t.pit.halfPage(1)
-	case ev.b == 'u', ev.nav == navPageUp:
-		t.pit.halfPage(-1)
-	case ev.b == 'G', ev.nav == navEnd:
-		t.pit.toBottom()
-	case ev.nav == navHome:
-		t.pit.toTop()
-	case ev.b == 'g':
-		if t.pendG {
-			t.pit.toTop()
-		}
-	default:
-		return false
-	}
-	return true
-}
-
-// Keys an open pit answers itself; everything else wipes the pit and acts, which
-// is what makes a panel a glance rather than a mode.
-func pitOwnsKey(ev keyEvent) bool {
-	switch {
-	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e', ev.b == 'F':
-		return true
-	case ev.nav == navPageUp, ev.nav == navPageDown, ev.nav == navHome, ev.nav == navEnd:
-		return true
-	case ev.nav == navUp || ev.nav == navDown:
-		return true
-	case ev.b == 0x0e || ev.b == 0x10: // ^N / ^P
-		return true
-	case ev.b == 'y' || ev.b == 'x':
-		return true
-	}
-	return false
-}
+func pagerClearNote(t *transcript) { t.note("") }
 
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false

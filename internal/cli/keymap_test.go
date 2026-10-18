@@ -7,30 +7,6 @@ import (
 	"testing"
 )
 
-func modeName(m keyMode) string {
-	switch m {
-	case modeIncipit:
-		return "incipit"
-	case modeTranscript:
-		return "transcript"
-	case modeSearch:
-		return "search"
-	case modeBox:
-		return "jump"
-	case modePanel:
-		return "panel"
-	case modeVisual:
-		return "visual"
-	case modeFork:
-		return "fork"
-	case modeComment:
-		return "comment"
-	case modeConfirm:
-		return "confirm"
-	}
-	return "?"
-}
-
 // The canonical encoding; key_nav_test.go covers the others.
 func navSequence(n navKey) string {
 	switch n {
@@ -86,6 +62,9 @@ func TestKeymap_NoDuplicateBindingPerMode(t *testing.T) {
 	seen := map[slot]int{}
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		level := "pager"
 		if bd.input != nil {
 			level = "input"
@@ -107,6 +86,9 @@ func TestKeymap_NoDuplicateBindingPerMode(t *testing.T) {
 func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		switch {
 		case bd.pager == nil && bd.input == nil:
 			t.Errorf("%s: no action", bd.chord)
@@ -116,13 +98,8 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 		if bd.modes == 0 {
 			t.Errorf("%s: live in no mode at all", bd.chord)
 		}
-		switch bd.open {
-		case openUnset:
+		if bd.open == openUnset {
 			t.Errorf("%s: no open policy: say whether it opens the pager from incipit", bd.chord)
-		case staysInline:
-			if bd.why == "" {
-				t.Errorf("%s: stays inline without saying why", bd.chord)
-			}
 		}
 		if bd.chord.kind == chordCtrlLetter && (bd.chord.b < 'a' || bd.chord.b > 'z') {
 			t.Errorf("%s: a ctrl chord must name a lowercase letter", bd.chord)
@@ -145,6 +122,9 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		idx := &pagerIndex
 		other := &inputIndex
 		if bd.input != nil {
@@ -218,6 +198,9 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		if bd.open != opensPager {
 			continue
 		}
@@ -237,6 +220,9 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 	stopsTheLoop := map[byte]bool{0x03: true, 0x04: true, 'q': true}
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		if bd.open != staysInline || bd.chord.kind != chordByte {
 			continue
 		}
@@ -252,7 +238,7 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 			t.Fatalf("%s: consume held %q", bd.chord, rest)
 		}
 		if lt.transcriptActive() {
-			t.Errorf("%s says it stays inline (%s) but opened the pager", bd.chord, bd.why)
+			t.Errorf("%s (%s) says it stays inline but opened the pager", bd.chord, bd.action)
 		}
 	}
 }
@@ -338,6 +324,9 @@ func TestHelp_EveryVisibleBindingIsDocumented(t *testing.T) {
 	documented := map[helpID]int{}
 	for i := range keymap {
 		bd := &keymap[i]
+		if bd.prefix != "" {
+			continue
+		}
 		if bd.hidden() {
 			continue
 		}

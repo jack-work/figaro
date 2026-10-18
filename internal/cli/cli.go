@@ -77,6 +77,8 @@ func Run(progName string, args []string) {
 		SetRefSigil(sigil)
 	}
 
+	loadUserKeys(loaded)
+
 	initBindingPolicy()
 	args = extractNoBindFlag(args)
 
@@ -1432,10 +1434,43 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "keys",
+		Group: "System",
+		Short: "Show and edit the pager's keybindings (~/.config/figaro/keys.toml)",
+		Usage: "keys [layers | actions | init | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]",
+		Long: `The live key map, and the file behind it.
+
+A key is written the way the help panel prints it: a letter, ^D, M-m, Tab,
+Esc, Enter, Up, PgDn, Space. ^X claims both encodings a terminal may send.
+
+Bindings live in LAYERS, highest first; a layer covers some modes, and a
+binding claims its key only in the modes where its action means something,
+so "down" on j is a line in the transcript, the cursor in visual mode and
+the selection in a list. A PREFIX layer is read by the key after the one
+that arms it (g, f, c, Space).
+
+  figaro keys                          every layer, its modes, its bindings
+  figaro keys actions                  every verb, and where it means something
+  figaro keys init                     start a keys.toml from the shipped recipes
+  figaro keys bind J half-down         in the user layer, above all the others
+  figaro keys bind w status leader     Space w opens the status pit
+  figaro keys unbind d motions         d does nothing where motions apply
+  figaro keys reset                    back to the defaults
+  figaro doctor keys                   what the file asks that figaro refused
+
+keys.toml is read when the process starts, and is the client's own file:
+the daemon neither reads nor writes it.`,
+		ArgsMax: 3,
+		Run: func(ctx *cmdkit.RunContext) error {
+			return runKeys(ctx.Extra.(*config.Loaded), ctx.Args)
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
 		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | keys | ttl [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider)"},
@@ -1446,7 +1481,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1463,12 +1498,14 @@ flow writes both through the daemon, so a client never has to know the path.`,
 				return runDoctorLibrettos(ctx.BoolFlag("dry-run"))
 			case "toolcalls":
 				return runDoctorToolCalls(ctx.BoolFlag("dry-run"))
+			case "keys":
+				return runDoctorKeys(ctx.Extra.(*config.Loaded))
 			case "skills":
 				return runDoctorSkills(loaded, ctx.BoolFlag("json"))
 			case "ttl":
 				return runDoctorTTL(loaded, ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j]>")
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},

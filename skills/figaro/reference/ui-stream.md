@@ -463,6 +463,11 @@ your shell history permanently: on exit, the terminal restores your normal
 screen and figaro reconstructs the inline scrollback so it reads as though you'd
 run `figaro show` (full content above, cursor below).
 
+**These are the DEFAULTS.** Any of them can be moved in
+`~/.config/figaro/keys.toml`, and the leader (Space) can be filled; see
+[keys.md](keys.md). `figaro keys` prints the map actually in force. The help
+pit follows a remap, so it shows your map rather than this one.
+
 | Key | Action |
 | --- | --- |
 | `j` / `k` | line down / up |

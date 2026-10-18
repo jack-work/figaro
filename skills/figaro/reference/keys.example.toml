@@ -1,0 +1,33 @@
+# keys.toml: copy what you want into ~/.config/figaro/keys.toml.
+# `figaro keys` prints the result; `figaro doctor keys` what it refused.
+
+# Fill the leader: Space w for status, Space q for the queue, Space l for the tree.
+[bind.leader]
+w = "status"
+q = "queue"
+l = "list"
+
+# Page with ^F and ^B, as in less and vim. The command line keeps them for the cursor.
+[bind.motions]
+"^F" = "half-down"
+"^B" = "half-up"
+
+# Move the panels behind a prefix of your own: p h, p !, p Q. Alone, h and ! do nothing.
+[layer.panels]
+modes = ["transcript", "pit"]
+prefix = true
+
+[layer.panels.bind]
+h = "help"
+"!" = "status"
+Q = "queue"
+
+[bind.pager]
+h = ""
+"!" = ""
+Q = ""
+p = "prefix:panels"
+
+# A key of your own in every mode it means something: M-s pins the question.
+[bind.user]
+M-s = "sticky"

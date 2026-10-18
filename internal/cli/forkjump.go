@@ -52,8 +52,6 @@ func forkParentOf(deltas map[string]livedoc.FormDelta) string {
 	return ""
 }
 
-func pagerForkPending(t *transcript) {}
-
 func pagerForkNext(t *transcript) { t.jumpFork(1) }
 func pagerForkPrev(t *transcript) { t.jumpFork(-1) }
 
@@ -291,4 +289,3 @@ func (j *ariaJumplist) forget(id string) {
 func (j *ariaJumplist) where() (int, int) { return j.pos + 1, len(j.ids) }
 
 // Swallows the key: Esc must not clear a selection the reader did not mean to touch.
-func pagerForkCancel(t *transcript) { t.note("") }

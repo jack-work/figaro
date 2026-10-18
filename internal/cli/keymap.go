@@ -16,10 +16,9 @@ const (
 	modeBox                       // typing into the ':' box: the same, for a coordinate
 	modePanel                     // a '?'/'!'/'Q' panel is showing
 	modeVisual                    // v/V: a visual selection is up and owns the motions
-	modeFork                      // 'f' is down, waiting for the direction of the fork jump
 	modeConfirm                   // a y/n question owns the keyboard until it is answered
 	modeComposer                  // the composer's NORMAL mode: motions over the draft
-	modeComment
+	modeList
 	numKeyModes
 )
 
@@ -32,14 +31,13 @@ const (
 	inBox        keyModeSet = 1 << modeBox
 	inPanel      keyModeSet = 1 << modePanel
 	inVisual     keyModeSet = 1 << modeVisual
-	inFork       keyModeSet = 1 << modeFork
 	inConfirm    keyModeSet = 1 << modeConfirm
 	inComposer   keyModeSet = 1 << modeComposer
-	inComment    keyModeSet = 1 << modeComment
+	inList       keyModeSet = 1 << modeList
 
 	// A transcript-mode row is also reachable with a panel up: the panel
 	// swallows only its own keys.
-	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm | inComposer | inComment
+	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inConfirm | inComposer | inList
 	inAnyBox = inIncipit | inPager
 )
 
@@ -110,9 +108,12 @@ type keyBinding struct {
 	modes keyModeSet
 
 	open openPolicy
-	why  string
 
 	help helpID
+
+	action string
+	layer  string
+	prefix string
 
 	// Exactly one of pager/input is set. pager rows run inside the transcript
 	// under the render lock; input rows run on the read loop and may stop it.
@@ -122,467 +123,7 @@ type keyBinding struct {
 
 func (b *keyBinding) hidden() bool { return b.help == helpNone }
 
-// Ctrl+M is Enter (0x0d) and Tab is ^I: neither can be bound apart from the other.
-var keymap = []keyBinding{
-	// Input level. Inside the ':' box these chords are readline's, hence `&^
-	// inBox`.
-	{
-		chord: byteChord(0x03), modes: inAnyBox &^ inBox,
-		open: staysInline, why: "interrupt; handled whether or not the pager is up",
-		help: helpInterrupt, input: inputInterrupt,
-	},
-	{
-		chord: byteChord(0x04), modes: inAnyBox &^ inBox,
-		open: staysInline, why: "detach; handled whether or not the pager is up",
-		help: helpDetach, input: inputDisconnect,
-	},
-	{
-		chord: byteChord('q'), modes: inTranscript | inPanel | inVisual,
-		open: staysInline, why: "detach: it would open the pager and immediately tear it down",
-		help: helpLeavePit, input: inputLeavePit,
-	},
-	{
-		chord: byteChord(0x0c), modes: inAnyBox &^ inBox,
-		open: staysInline, why: "enters the pager through its own action",
-		help: helpListen, input: inputEnterTranscript,
-	},
-	{
-		chord: byteChord(0x14), modes: inAnyBox &^ inBox,
-		open: staysInline, why: "^T enters the pager through its own action",
-		help: helpNone, input: inputEnterTranscript,
-	},
-	{
-		// Alt, not a plain letter: in incipit a printable byte composes a
-		// steer.
-		chord: metaChord('m'), modes: inAnyBox,
-		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
-	},
-	{
-		// Alt arrives as an ESC prefix on every terminal; Ctrl+Shift needs
-		// a protocol tmux must opt into.
-		chord: metaChord('n'), modes: inTranscript | inPanel,
-		open: opensPager, help: helpQuestionTravel, input: inputQuestionNext,
-	},
-	{
-		chord: metaChord('p'), modes: inTranscript | inPanel,
-		open: opensPager, help: helpNone, input: inputQuestionPrev,
-	},
-	{
-		chord: byteChord('s'), modes: inTranscript | inPanel,
-		open: opensPager, help: helpSticky, input: inputToggleSticky,
-	},
-	{
-		chord: byteChord('m'), modes: inTranscript | inPanel | inVisual,
-		open: opensPager, help: helpBarVerbose, input: inputToggleBarVerbose,
-	},
-	{
-		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel | inVisual | inComposer,
-		open: staysInline, why: "in incipit it already copies the aria id",
-		help: helpYank, input: inputYank,
-	},
-	{
-		// CSI-u Ctrl-N/P keep their modifiers (Shift/Alt extends); the raw
-		// 0x0e/0x10 bytes cannot. Input-level rows run before the box's
-		// own, so a box that binds the chord must be excluded here.
-		chord: ctrlChord('n'), modes: inAnyBox &^ inBox,
-		open: opensPager, help: helpSelectExtend, input: inputSelectNext,
-	},
-	{
-		chord: ctrlChord('p'), modes: inAnyBox &^ inBox,
-		open: opensPager, help: helpSelectExtend, input: inputSelectPrev,
-	},
-
-	{chord: byteChord('j'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineDown},
-	{chord: byteChord('k'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineUp},
-	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfDown},
-	{chord: byteChord('u'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfUp},
-	{chord: byteChord('G'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerTail},
-	{chord: byteChord('g'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerPendingTop},
-
-	// Fork points: with 'f' down the next key is read from the inFork rows,
-	// else falls through.
-	{chord: byteChord('f'), modes: inTranscript, open: opensPager, help: helpForkJump, pager: pagerForkPending},
-	{chord: byteChord('j'), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkNext},
-	{chord: byteChord('k'), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkPrev},
-	{chord: navChord(navDown), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkNext},
-	{chord: navChord(navUp), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkPrev},
-	{
-		chord: byteChord(0x1b), modes: inFork,
-		open: staysInline, why: "it abandons a gesture that is only half typed",
-		help: helpNone, pager: pagerForkCancel,
-	},
-
-	{chord: byteChord('c'), modes: inTranscript, open: opensPager, help: helpCommentJump, pager: pagerCommentPending},
-	{chord: byteChord('j'), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentNext},
-	{chord: byteChord('k'), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentPrev},
-	{chord: navChord(navDown), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentNext},
-	{chord: navChord(navUp), modes: inComment, open: opensPager, help: helpNone, pager: pagerCommentPrev},
-	{
-		chord: byteChord(0x1b), modes: inComment,
-		open: staysInline, why: "it abandons a gesture that is only half typed",
-		help: helpNone, pager: pagerCommentCancel,
-	},
-
-	// Confirm mode: dispatch swallows every key that is not an answer.
-	{chord: byteChord('y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpConfirm, pager: confirmYes},
-	{chord: byteChord('Y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmYes},
-	{chord: byteChord('n'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
-	{chord: byteChord('N'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
-	{chord: byteChord(0x1b), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
-
-	{chord: byteChord('a'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendFork},
-	{chord: byteChord('a'), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
-	{chord: byteChord(0x0d), modes: inPanel, open: opensPager, help: helpPitEnter, pager: pagerPitActivate},
-	{chord: byteChord(0x0a), modes: inPanel, open: opensPager, help: helpPitEnter, pager: pagerPitActivate},
-	{chord: byteChord('^'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendParent},
-
-	// Jumplist. ^I is Tab, which is completion in the ':' box, so these rows
-	// do not name it.
-	{chord: byteChord(0x0f), modes: inTranscript, open: opensPager, help: helpAriaJump, pager: pagerAriaBack},
-	{chord: ctrlChord('o'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaBack},
-	{chord: byteChord(0x09), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
-	{chord: ctrlChord('i'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
-
-	{chord: navChord(navUp), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerLineUp},
-	{chord: navChord(navDown), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerLineDown},
-	{chord: navChord(navPageUp), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerHalfUp},
-	{chord: navChord(navPageDown), modes: inTranscript, open: opensPager, help: helpArrows, pager: pagerHalfDown},
-	{chord: navChord(navHome), modes: inTranscript, open: opensPager, help: helpHomeEnd, pager: pagerTop},
-	{chord: navChord(navEnd), modes: inTranscript, open: opensPager, help: helpHomeEnd, pager: pagerTail},
-
-	// Search; in a pit the same box walks the rows.
-	{chord: byteChord('/'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
-	{chord: byteChord('?'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
-	// n/N enter visual mode with the cursor on the hit.
-	{
-		chord: byteChord('n'), modes: inTranscript,
-		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
-		help: helpSearchRepeat, pager: pagerFindNextVisual,
-	},
-	{
-		chord: byteChord('n'), modes: inPanel,
-		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
-		help: helpNone, pager: pagerFindRowNext,
-	},
-	{
-		chord: byteChord('N'), modes: inPanel,
-		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
-		help: helpNone, pager: pagerFindRowPrev,
-	},
-	{
-		chord: byteChord('N'), modes: inTranscript,
-		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
-		help: helpSearchRepeat, pager: pagerFindPrevVisual,
-	},
-
-	{
-		chord: byteChord(':'), modes: inTranscript,
-		open: opensPager,
-		help: helpJump, pager: pagerCommandBox,
-	},
-
-	{
-		chord: byteChord('>'), modes: inTranscript,
-		open: opensPager,
-		help: helpDraft, pager: pagerComposerBox,
-	},
-	{
-		// With a highlight up the draft opens holding the range.
-		chord: byteChord('>'), modes: inVisual,
-		open: opensPager,
-		help: helpDraft, pager: pagerVisualComposer,
-	},
-
-	{chord: byteChord('h'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
-	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
-	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
-	{chord: byteChord('D'), modes: inTranscript | inPanel, open: opensPager, help: helpDecisionPit, pager: pagerDecisionPit},
-	// Space is the leader; dispatch (transcript.leaderChord) takes the second
-	// key before the mode's rows.
-	{chord: byteChord(' '), modes: inTranscript | inPanel, open: opensPager, help: helpNotifications, pager: pagerLeader},
-	{chord: byteChord('l'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListPit},
-	{chord: byteChord('L'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListHome},
-	{chord: byteChord('S'), modes: inTranscript, open: opensPager, help: helpFormPit, pager: pagerFormPit},
-	{chord: byteChord('T'), modes: inTranscript, open: opensPager, help: helpFocus, pager: pagerFocusTranscript},
-
-	{
-		// keyHandled, not keyStop: the pager stays up.
-		chord: byteChord('H'), modes: inTranscript | inPanel,
-		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
-		help: helpHangUp, input: inputHangUp,
-	},
-	{
-		// Not in a pit, where 'X' drops the selected row.
-		chord: byteChord('X'), modes: inTranscript | inVisual,
-		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
-		help: helpHangUpDrop, input: inputHangUpDrop,
-	},
-
-	{
-		chord: byteChord('x'), modes: inPanel,
-		open: staysInline, why: "it acts on a row in a pit that is already open",
-		help: helpPitDrop, pager: pagerPitDrop,
-	},
-	{
-		chord: byteChord('x'), modes: inTranscript,
-		open: staysInline, why: "it acts on a comment already selected in the pager",
-		help: helpCommentDelete, pager: pagerDeleteComment,
-	},
-	{
-		chord: byteChord('X'), modes: inPanel,
-		open: staysInline, why: "it acts on a row in a pit that is already open",
-		help: helpPitDrop, pager: pagerPitDropNow,
-	},
-
-	{chord: byteChord(0x0e), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectNext},
-	{chord: byteChord(0x10), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectPrev},
-	{chord: byteChord(0x0d), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
-	{chord: byteChord(0x0a), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
-	// Enter is the only key that opens form deltas; 'e' opens tool bodies alone.
-	{chord: byteChord('e'), modes: inTranscript, open: opensPager, help: helpToolBody, pager: pagerToggleBodies},
-	{
-		chord: byteChord(0x1b), modes: inTranscript,
-		open: staysInline, why: "clears a selection there is none of, and is a sequence prefix besides",
-		help: helpEscape, pager: pagerClearSelection,
-	},
-
-	// Visual mode: the motions move the cursor; every unbound key is inert so
-	// a mark cannot be lost.
-	{chord: byteChord('v'), modes: inTranscript | inVisual, open: opensPager, help: helpVisual, pager: pagerVisualChar},
-	{chord: byteChord('V'), modes: inTranscript | inVisual, open: opensPager, help: helpVisual, pager: pagerVisualLine},
-	{
-		chord: byteChord(0x1b), modes: inVisual,
-		open: staysInline, why: "only reachable with a visual selection up",
-		help: helpEscape, pager: pagerVisualLeave,
-	},
-	{chord: byteChord('j'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualDown},
-	{chord: byteChord('k'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualUp},
-	{chord: byteChord('h'), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualLeft},
-	{chord: byteChord('l'), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualRight},
-	{chord: byteChord('d'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualHalfDown},
-	{chord: byteChord('u'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualHalfUp},
-	{chord: byteChord('G'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualEnd},
-	{chord: byteChord('g'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualPendingTop},
-	{chord: navChord(navUp), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualUp},
-	{chord: navChord(navDown), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualDown},
-	{chord: navChord(navLeft), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualLeft},
-	{chord: navChord(navRight), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualRight},
-	{chord: navChord(navPageUp), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualHalfUp},
-	{chord: navChord(navPageDown), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualHalfDown},
-	{chord: navChord(navHome), modes: inVisual, open: opensPager, help: helpHomeEnd, pager: pagerVisualTop},
-	{chord: navChord(navEnd), modes: inVisual, open: opensPager, help: helpHomeEnd, pager: pagerVisualEnd},
-	{chord: byteChord('w'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordNext},
-	{chord: byteChord('b'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordPrev},
-	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordEnd},
-	{chord: byteChord(0x0d), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
-	{chord: byteChord(0x0a), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
-	{chord: byteChord('a'), modes: inVisual, open: staysInline, why: "there is no cursor to read under", help: helpVisualAttend, pager: pagerVisualAttend},
-	{chord: byteChord('0'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualRowStart},
-	{chord: byteChord('^'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualFirstText},
-	{chord: byteChord('$'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualRowEnd},
-	{chord: byteChord('H'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenTop},
-	{chord: byteChord('M'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenMid},
-	{chord: byteChord('L'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenBot},
-	{chord: byteChord('{'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaPrev},
-	{chord: byteChord('}'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaNext},
-	{chord: byteChord('/'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
-	{chord: byteChord('?'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
-	{chord: byteChord('n'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindNext},
-	{chord: byteChord('N'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindPrev},
-	{chord: byteChord(':'), modes: inVisual, open: opensPager, help: helpJump, pager: pagerVisualCommand},
-	{
-		chord: byteChord('Y'), modes: inVisual,
-		open: staysInline, why: "there is no selection to name until one is made",
-		help: helpVisualYankCoord, input: inputYankCoordinate,
-	},
-
-	// Panel mode: any other key wipes the panel and then acts (in dispatch).
-	{chord: byteChord('h'), modes: inPanel, open: opensPager, help: helpHelpPanel, pager: panelToggleHelp},
-	{chord: byteChord('!'), modes: inPanel, open: opensPager, help: helpStatusPanel, pager: panelToggleStatus},
-	{chord: byteChord('Q'), modes: inPanel, open: opensPager, help: helpQueuedPanel, pager: panelToggleQueued},
-	{chord: byteChord('S'), modes: inPanel, open: opensPager, help: helpFormPit, pager: pagerFormPit},
-	{chord: byteChord('T'), modes: inPanel, open: opensPager, help: helpFocus, pager: pagerFocusTranscript},
-	{
-		chord: byteChord(0x1b), modes: inPanel,
-		open: staysInline, why: "closing a panel that is not showing is not an opening gesture",
-		help: helpEscape, pager: panelDismiss,
-	},
-
-	// Search box: anything with no row here and no input-level row is literal text.
-	{
-		chord: byteChord(0x0d), modes: inSearchBox,
-		open: staysInline, why: "only reachable with the search prompt already up",
-		help: helpSearch, pager: searchAccept,
-	},
-	{
-		chord: byteChord(0x0a), modes: inSearchBox,
-		open: staysInline, why: "only reachable with the search prompt already up",
-		help: helpSearch, pager: searchAccept,
-	},
-	{
-		chord: byteChord(0x1b), modes: inSearchBox,
-		open: staysInline, why: "only reachable with the search prompt already up",
-		help: helpSearch, pager: searchCancel,
-	},
-	{
-		chord: byteChord(0x7f), modes: inSearchBox,
-		open: staysInline, why: "only reachable with the search prompt already up",
-		help: helpNone, pager: searchBackspace,
-	},
-	{
-		chord: byteChord(0x08), modes: inSearchBox,
-		open: staysInline, why: "only reachable with the search prompt already up",
-		help: helpNone, pager: searchBackspace,
-	},
-
-	// ':' box: same shape as the search box.
-	{
-		chord: byteChord(0x0d), modes: inBox,
-		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpJump, pager: boxAccept,
-	},
-	{
-		chord: byteChord(0x0a), modes: inBox,
-		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpJump, pager: boxAccept,
-	},
-	{
-		chord: byteChord(0x1b), modes: inBox,
-		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpJump, pager: boxCancel,
-	},
-
-	// Composer normal mode: motions, marks and search only; no editing verbs.
-	{chord: byteChord('i'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerNormal, pager: composerInsertHere},
-	{chord: byteChord('a'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertAfter},
-	{chord: byteChord('I'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertHome},
-	{chord: byteChord('A'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerInsertEnd},
-	{chord: byteChord('h'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerMotions, pager: composerLeft},
-	{chord: byteChord('l'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerRight},
-	{chord: byteChord('k'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerUpLine},
-	{chord: byteChord('j'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerDownLine},
-	{chord: navChord(navLeft), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLeft},
-	{chord: navChord(navRight), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerRight},
-	{chord: navChord(navUp), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerUpLine},
-	{chord: navChord(navDown), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerDownLine},
-	{chord: byteChord('w'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerWordFwd},
-	{chord: byteChord('b'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerWordBack},
-	{chord: byteChord('e'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerWordEnd},
-	{chord: byteChord('0'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineStart},
-	{chord: byteChord('^'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFirstText},
-	{chord: byteChord('$'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineEnd},
-	{chord: byteChord('g'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerTop},
-	{chord: byteChord('G'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerBottom},
-	{chord: byteChord('{'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerParaPrev},
-	{chord: byteChord('}'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerParaNext},
-	{chord: navChord(navHome), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineStart},
-	{chord: navChord(navEnd), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerLineEnd},
-	{chord: byteChord('v'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpComposerMark, pager: composerMarkChar},
-	{chord: byteChord('V'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerMarkLine},
-	{chord: byteChord('/'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerSearchFwd},
-	{chord: byteChord('?'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerSearchBack},
-	{chord: byteChord('n'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFindNext},
-	{chord: byteChord('N'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFindPrev},
-	{chord: byteChord('F'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFullscreen},
-	{chord: byteChord(':'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerCommand},
-	{chord: byteChord(0x1b), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerEscape},
-	{chord: metaChord(0x0d), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpNone, pager: composerSubmit},
-	// ^S is the submit that works on Windows, where the terminal claims Alt+Enter.
-	{chord: byteChord(0x13), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpComposerSend, pager: composerSubmit},
-	{chord: ctrlChord('s'), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpNone, pager: composerSubmit},
-	{
-		// Also Ctrl+Enter on a CSI-u terminal: the input loop folds it
-		// onto Alt+Enter.
-		chord: metaChord(0x0d), modes: inBox,
-		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpCmdSubmitSnap, pager: boxAcceptSnap,
-	},
-	// The ':' box is readline's emacs keymap. Every chord is bound twice: the raw
-	// control byte, and the CSI-u report a terminal with modified-key reporting
-	// sends instead (^N arrives as \x1b[110;5u, never 0x0e).
-	{chord: byteChord(0x01), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdHome},
-	{chord: byteChord(0x05), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdEnd},
-	{chord: byteChord(0x02), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
-	{chord: byteChord(0x06), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
-	{chord: metaChord('b'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordLeft},
-	{chord: metaChord('f'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordRight},
-	{chord: byteChord(0x0c), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
-
-	{chord: byteChord(0x04), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDeleteFwd},
-	{chord: byteChord(0x14), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTranspose},
-	{chord: metaChord('t'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTransposeWord},
-	{chord: metaChord('u'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUpcase},
-	{chord: metaChord('l'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDowncase},
-	{chord: metaChord('c'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdCapitalize},
-
-	{chord: byteChord(0x0b), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToEnd},
-	{chord: byteChord(0x15), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToStart},
-	{chord: byteChord(0x17), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWord},
-	{chord: metaChord('d'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordFwd},
-	{chord: metaChord(0x7f), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordAlpha},
-	{chord: metaChord('\\'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteSpace},
-	{chord: byteChord(0x19), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYank},
-	{chord: metaChord('y'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankPop},
-
-	{chord: byteChord(0x10), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
-	{chord: byteChord(0x0e), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
-	{chord: metaChord('<'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistFirst},
-	{chord: metaChord('>'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistLast},
-	{chord: byteChord(0x12), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchPrev},
-	{chord: byteChord(0x13), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchNext},
-	{chord: metaChord('p'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixPrev},
-	{chord: metaChord('n'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixNext},
-	{chord: metaChord('.'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
-	{chord: metaChord('_'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
-
-	{chord: byteChord(0x1f), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUndo},
-	{chord: metaChord('r'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRevert},
-	{chord: byteChord(0x07), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
-	{chord: byteChord(0x03), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
-
-	{chord: byteChord(0x09), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
-	{chord: byteChord(0x16), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdPaste, pager: cmdPaste},
-	{chord: ctrlChord('v'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPaste},
-	{chord: metaChord('?'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdListComplete},
-	{chord: metaChord('*'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdInsertComplete},
-
-	// The CSI-u rows.
-	{chord: ctrlChord('a'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
-	{chord: ctrlChord('e'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
-	{chord: ctrlChord('b'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
-	{chord: ctrlChord('f'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
-	{chord: ctrlChord('d'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteFwd},
-	{chord: ctrlChord('t'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdTranspose},
-	{chord: ctrlChord('k'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
-	{chord: ctrlChord('u'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
-	{chord: ctrlChord('w'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
-	{chord: ctrlChord('y'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdYank},
-	{chord: ctrlChord('n'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistNext},
-	{chord: ctrlChord('p'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistPrev},
-	{chord: ctrlChord('r'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchPrev},
-	{chord: ctrlChord('s'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchNext},
-	{chord: ctrlChord('g'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdAbort},
-	{chord: ctrlChord('l'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
-	{chord: ctrlChord('h'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: boxBackspace},
-
-	{chord: navChord(navUp), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
-	{chord: navChord(navDown), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
-	{chord: navChord(navHome), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
-	{chord: navChord(navEnd), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
-	{chord: navChord(navLeft), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
-	{chord: navChord(navRight), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
-
-	{
-		chord: byteChord(0x7f), modes: inBox,
-		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpNone, pager: boxBackspace,
-	},
-	{
-		chord: byteChord(0x08), modes: inBox,
-		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpNone, pager: boxBackspace,
-	},
-}
+var keymap = mustCompile(defaultLayers)
 
 // helpID names a help-panel row; the panel renders in declaration order.
 type helpID uint8
@@ -718,13 +259,64 @@ const helpKeyColumn = 20
 func helpBody() []string {
 	rows := make([]string, 0, len(helpRows))
 	for _, r := range helpRows {
-		pad := helpKeyColumn - runewidth.StringWidth(r.keys)
+		keys := helpKeysFor(r.id)
+		if keys == "" {
+			continue // every binding under this row has been unbound
+		}
+		if r.keys != "" && !userTouchedHelp[r.id] {
+			keys = r.keys
+		}
+		pad := helpKeyColumn - runewidth.StringWidth(keys)
 		if pad < 1 {
 			pad = 1
 		}
-		rows = append(rows, "  "+r.keys+strings.Repeat(" ", pad)+r.text)
+		rows = append(rows, "  "+keys+strings.Repeat(" ", pad)+r.text)
+	}
+	if line := helpDiagLine(); line != "" {
+		rows = append(rows, "  "+line)
 	}
 	return rows
+}
+
+func helpKeysFor(id helpID) string {
+	var spelled []string
+	seen := map[string]bool{}
+	confined := keyModeSet(0)
+	for i := range liveRows {
+		bd := &liveRows[i]
+		if bd.help != id || bd.modes == 0 {
+			continue
+		}
+		confined |= bd.modes
+		s := bd.chord.spell()
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		spelled = append(spelled, s)
+	}
+	if len(spelled) == 0 {
+		return ""
+	}
+	return helpModeQualifier(confined) + strings.Join(spelled, " ")
+}
+
+func helpModeQualifier(modes keyModeSet) string {
+	switch modes {
+	case inBox:
+		return "(in :) "
+	case inVisual:
+		return "(in v) "
+	case inPanel, inPit, inList:
+		return "(in a list) "
+	case inSearchBox:
+		return "(in /) "
+	case inConfirm:
+		return "(asked) "
+	case inComposer:
+		return "(in ✎) "
+	}
+	return ""
 }
 
 const noBinding = int16(-1)
@@ -772,12 +364,21 @@ var (
 
 const navCount = int(navRight) + 1
 
-func init() { buildKeyIndex() }
+var liveRows []keyBinding
+
+func init() {
+	liveRows = keymap
+	buildKeyIndex()
+}
 
 func buildKeyIndex() {
-	if len(keymap) > 32767 {
+	if len(liveRows) > 32767 {
 		panic("keymap: more rows than an int16 index can name")
 	}
+	pagerAct, inputAct = pagerActions{}, inputActions{}
+	openerByte, openerNav, openerCtrl, openerMeta = [256]bool{}, [navCount]bool{}, [26]bool{}, [128]bool{}
+	ctrlChordLetters = [26]bool{}
+	metaBound = [numKeyModes][128]bool{}
 	for m := range numKeyModes {
 		for b := range inputIndex.byByte[m] {
 			inputIndex.byByte[m][b], pagerIndex.byByte[m][b] = noBinding, noBinding
@@ -792,8 +393,17 @@ func buildKeyIndex() {
 			inputIndex.byMeta[m][c], pagerIndex.byMeta[m][c] = noBinding, noBinding
 		}
 	}
-	for i := range keymap {
-		bd := &keymap[i]
+	prefixRows = map[prefixSlot]*keyBinding{}
+	for i := range liveRows {
+		bd := &liveRows[i]
+		if bd.prefix != "" {
+			for m := keyMode(0); m < numKeyModes; m++ {
+				if bd.modes&(1<<m) != 0 {
+					prefixRows[prefixSlot{bd.prefix, m, bd.chord}] = bd
+				}
+			}
+			continue
+		}
 		idx := &pagerIndex
 		if bd.input != nil {
 			idx = &inputIndex
@@ -844,6 +454,21 @@ func buildKeyIndex() {
 			}
 		}
 	}
+}
+
+type prefixSlot struct {
+	prefix string
+	mode   keyMode
+	chord  chord
+}
+
+var prefixRows map[prefixSlot]*keyBinding
+
+func prefixBinding(prefix string, mode keyMode, ev keyEvent) *keyBinding {
+	if prefix == "" {
+		return nil
+	}
+	return prefixRows[prefixSlot{prefix, mode, ev.chord()}]
 }
 
 func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {
@@ -916,7 +541,7 @@ func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 	if i == noBinding {
 		return nil
 	}
-	return &keymap[i]
+	return &liveRows[i]
 }
 
 // ctrlChordLetter reports whether a CSI-u Ctrl report is a chord some row binds,
@@ -1009,6 +634,10 @@ func navName(n navKey) string {
 		return "Home"
 	case navEnd:
 		return "End"
+	case navLeft:
+		return "Left"
+	case navRight:
+		return "Right"
 	}
 	return "none"
 }
