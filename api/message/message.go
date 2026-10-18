@@ -128,6 +128,8 @@ type Content struct {
 	Reason InterruptReason `json:"reason,omitempty"`
 
 	Sender string `json:"sender,omitempty"`
+
+	Principal string `json:"principal,omitempty"`
 }
 
 type Usage struct {

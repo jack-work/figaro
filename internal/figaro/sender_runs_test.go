@@ -69,3 +69,14 @@ func TestSenderRunsGroupsByRun(t *testing.T) {
 
 // The openTurn condition is keyed on the content, not on which branch
 // produced it; TestSecondTurnDoesNotRecomposePriorTurn covers it.
+
+func TestSenderRunsNeverFoldAcrossPrincipals(t *testing.T) {
+	got := senderRuns([]promptSegment{
+		{sender: "aria 1", principal: "sandbox:dev-3", text: "a"},
+		{sender: "aria 1", principal: "user:1000", text: "b"},
+		{sender: "aria 1", principal: "user:1000", text: "c"},
+	})
+	if len(got) != 2 || got[0].Principal != "sandbox:dev-3" || got[1].Principal != "user:1000" || got[1].Text != "b\n\nc" {
+		t.Fatalf("%+v", got)
+	}
+}

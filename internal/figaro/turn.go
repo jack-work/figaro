@@ -789,11 +789,13 @@ func senderRuns(segments []promptSegment) []message.Content {
 		if seg.text == "" {
 			continue
 		}
-		if n := len(out); n > 0 && out[n-1].Sender == seg.sender {
+		if n := len(out); n > 0 && out[n-1].Sender == seg.sender && out[n-1].Principal == seg.principal {
 			out[n-1].Text += "\n\n" + seg.text
 			continue
 		}
-		out = append(out, message.SenderText(seg.sender, seg.text))
+		c := message.SenderText(seg.sender, seg.text)
+		c.Principal = seg.principal
+		out = append(out, c)
 	}
 	return out
 }

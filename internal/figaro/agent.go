@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -38,8 +39,9 @@ const (
 )
 
 type promptSegment struct {
-	sender string
-	text   string
+	sender    string
+	principal string
+	text      string
 }
 
 type event struct {
@@ -495,7 +497,7 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		text: req.Text,
 	}
 	if req.Text != "" {
-		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
+		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}
 	}
 	a.inbox.Send(evt)
 	if !a.turnActive() {
