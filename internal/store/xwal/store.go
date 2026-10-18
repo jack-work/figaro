@@ -599,3 +599,17 @@ func (s *Store) Close() error {
 	})
 	return s.closeErr
 }
+
+func (s *Store) Export(trunk, token string) (*Export, error) {
+	s.syncDirty()
+	return s.Trunks.Export(trunk, token)
+}
+
+func (s *Store) RemoveComponent(c Component, token string) ([]string, error) {
+	s.syncDirty()
+	removed, err := s.Trunks.RemoveComponent(c, token)
+	if len(removed) > 0 {
+		s.purgeLineage(removed...)
+	}
+	return removed, err
+}

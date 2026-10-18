@@ -211,6 +211,9 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	if man, err = materializeManifestChannels(dir, cfg, man); err != nil {
 		return nil, err
 	}
+	if err := (&Trunks{root: dir, main: man.Main}).resumeGrafts(); err != nil {
+		return nil, err
+	}
 	x, err := Open(dir, cfg)
 	if err != nil {
 		return nil, err
