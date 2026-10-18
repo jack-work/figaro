@@ -7,6 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/message"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -137,3 +138,20 @@ func TestAnAriaSenderIsNamedNotNumbered(t *testing.T) {
 	})
 }
 
+// The raw view is where a reader goes for the id itself: it names every
+// sender of an input message in full.
+func TestTheRawViewKeepsTheSendersFullID(t *testing.T) {
+	const id = "a5647bfbc216b8a09ffea9586393c289"
+	m := message.Message{Role: message.RoleInput, Content: []message.Content{
+		message.SenderText(id, "first"), message.SenderText("Jack", "second"),
+	}}
+	var verbose, plain strings.Builder
+	renderMessage(&verbose, m, 4, true)
+	renderMessage(&plain, m, 4, false)
+	if !strings.Contains(verbose.String(), "**input** [#4] from `"+id+"`, `Jack`") {
+		t.Fatalf("verbose input header lost the senders:\n%s", verbose.String())
+	}
+	if strings.Contains(plain.String(), id) {
+		t.Fatalf("the plain view prints the id:\n%s", plain.String())
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -369,6 +370,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 	case message.RoleInput:
 		var text string
 		var toolResults []message.Content
+		var senders []string
 		for _, c := range m.Content {
 			switch c.Type {
 			case message.ContentProse:
@@ -376,12 +378,19 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 					text += "\n\n"
 				}
 				text += c.Text
+				if c.Sender != "" && !slices.Contains(senders, c.Sender) {
+					senders = append(senders, c.Sender)
+				}
 			case message.ContentToolResult:
 				toolResults = append(toolResults, c)
 			}
 		}
 		if text != "" {
-			fmt.Fprintf(w, "**input** [#%d]\n\n> %s\n\n", lt, indentBlockquote(text))
+			from := ""
+			if verbose && len(senders) > 0 {
+				from = " from `" + strings.Join(senders, "`, `") + "`"
+			}
+			fmt.Fprintf(w, "**input** [#%d]%s\n\n> %s\n\n", lt, from, indentBlockquote(text))
 		}
 		for _, c := range toolResults {
 			marker := "↩"
