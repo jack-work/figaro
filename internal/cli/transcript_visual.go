@@ -846,16 +846,18 @@ func (t *transcript) findRepeatVisual(delta int) {
 	t.findRepeat(delta)
 }
 
-// The shape of a minted id (eight hex digits) or a form reference, not what
-// ValidateAriaID would merely accept.
 func looksLikeAriaID(s string) bool {
-	if strings.HasPrefix(s, "@") {
-		return rpc.ValidateAriaID(s) == nil
-	}
-	if len(s) != 8 {
+	if rpc.ValidateAriaRef(s) != nil {
 		return false
 	}
-	for _, r := range s {
+	_, id := rpc.SplitNode(s)
+	if strings.HasPrefix(id, "@") {
+		return true
+	}
+	if len(id) < rpc.ShortIDLen {
+		return false
+	}
+	for _, r := range id {
 		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
 			return false
 		}

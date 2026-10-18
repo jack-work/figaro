@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
@@ -387,5 +388,55 @@ func TestVisual_RepeatSearchLandsTheCursor(t *testing.T) {
 	}
 	if got := cursorWord(t, tr); got != "hotel" {
 		t.Fatalf("the cursor landed on %q, want hotel", got)
+	}
+}
+
+// Every id shape the CLI prints must be attendable from the pager: an old
+// 8-hex id, a new 32-hex id, the short form ShortIDs shows for either, a
+// node-qualified ref and a form. Deriving the cases from ShortIDs means a
+// change to the display length fails here instead of silently opening the
+// id as a path.
+func TestVisual_EveryPrintedIDShapeIsAnAriaID(t *testing.T) {
+	old, fresh := "a5647bfb", "a5647bfbc216b8a09ffea9586393c289"
+	sibling := "3f9e01c2d4b5a6978877665544332211"
+	var cases []string
+	for _, short := range rpc.ShortIDs([]string{old, fresh, sibling}) {
+		cases = append(cases, short)
+	}
+	cases = append(cases, old, fresh, sibling, "spain2/"+fresh, "5f1c0e2a/"+old, "@f062f8d7", "@"+fresh)
+	for _, s := range cases {
+		if !looksLikeAriaID(s) {
+			t.Errorf("%q is a printed aria id but the pager would not attend it", s)
+		}
+	}
+	for _, s := range []string{"alpha", "cafe", "deadbee", "a5647bfz", "path/to/file", "~/dev/figaro", "a5647bfb.go"} {
+		if looksLikeAriaID(s) {
+			t.Errorf("%q is not an aria id but the pager would attend it", s)
+		}
+	}
+}
+
+func TestVisual_AttendsANewLongIDUnderTheCursor(t *testing.T) {
+	const id = "a5647bfbc216b8a09ffea9586393c289"
+	ft := ldrender.NewFakeTerminal(60, 16)
+	client := aria.NewClient()
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 1, Sealed: true, Inquiry: "the question", Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: "minted " + id + " just now"},
+		},
+	}}}}, aria.Notify)
+	tr := newTranscript(ft, 60, 16, ldrender.NodeText{}, client, "aria1234", time.Now())
+	tr.enter()
+	tr.render()
+	var attended, opened []string
+	tr.attendAria = func(id string) { attended = append(attended, id) }
+	tr.openPath = func(p string) { opened = append(opened, p) }
+	tr.key('v')
+	stepTo(t, tr, id)
+	tr.key('^')
+	tr.key('w')
+	tr.key('a')
+	if len(attended) != 1 || attended[0] != id || len(opened) != 0 {
+		t.Fatalf("a on a 32-hex id: attended %v, opened %v", attended, opened)
 	}
 }
