@@ -53,7 +53,7 @@ func (s *XwalStore) listStumps() []xwal.StumpInfo {
 }
 
 func hexTrunkID() string {
-	b := make([]byte, 4)
+	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
