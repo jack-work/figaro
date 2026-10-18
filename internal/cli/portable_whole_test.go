@@ -39,6 +39,14 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 		require.NoError(t, err)
 	}
 
+	acli, _ := serveBackend(t, backend)
+	return acli, id
+}
+
+// serveBackend runs a real angelus over backend and returns a client and the
+// runtime dir its door listens in.
+func serveBackend(t *testing.T, backend store.Backend) (*sdk.Angelus, string) {
+	t.Helper()
 	// A unix socket path is length-capped, so the runtime dir is short.
 	dir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "f")
 	require.NoError(t, err)
@@ -70,7 +78,7 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 		return err == nil
 	}, 3*time.Second, 10*time.Millisecond, "angelus did not come up")
 	t.Cleanup(func() { acli.Close() })
-	return acli, id
+	return acli, dir
 }
 
 func ordinals(t *testing.T, msgs []message.Message, n int) {

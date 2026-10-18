@@ -33,6 +33,14 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		if ariaID == "" {
 			ariaID = nameArg
 		}
+		var resolveErr error
+		if ariaID != "" {
+			if id, err := doorID(ctx, acli, ariaID); err == nil {
+				ariaID = id
+			} else {
+				resolveErr = err
+			}
+		}
 		if ariaID == "" {
 			r, err := resolveBinding(ctx, acli, shellPID)
 			if err != nil {
@@ -57,6 +65,9 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			}
 		}
 		if f == nil {
+			if resolveErr != nil && !strings.Contains(resolveErr.Error(), "not found") {
+				die("%s", resolveErr)
+			}
 			die("no aria or form %q (try: figaro ls -g)", ariaID)
 		}
 

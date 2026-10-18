@@ -166,8 +166,8 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 
 		if o.rootID != "" && o.rootID != "/" && !strings.HasPrefix(o.rootID, "^") {
-			if resp, aerr := acli.Attach(ctx, o.rootID); aerr == nil {
-				o.rootID = resp.FigaroID
+			if id, aerr := doorID(ctx, acli, o.rootID); aerr == nil {
+				o.rootID = id
 			}
 		}
 		rootID, note, serr := lsScope(figs, boundID, o.rootID, o.home)
