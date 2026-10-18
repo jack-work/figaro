@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
 func extractPrompt(args []string) string {
@@ -41,18 +42,28 @@ type exitPanic int
 
 // exitHooks run before any exit: os.Exit runs no defers, and leaving the alt
 // screen is a defer.
-var exitHooks []func()
+var (
+	exitMu    sync.Mutex
+	exitHooks []func()
+)
 
-func atExit(f func()) { exitHooks = append(exitHooks, f) }
+func atExit(f func()) {
+	exitMu.Lock()
+	defer exitMu.Unlock()
+	exitHooks = append(exitHooks, f)
+}
 
 // Every exit that is not a normal return goes through exitNow.
 func exitNow(code int) { panic(exitPanic(code)) }
 
 func exitAt(code int) {
-	for i := len(exitHooks) - 1; i >= 0; i-- {
-		exitHooks[i]()
-	}
+	exitMu.Lock()
+	hooks := exitHooks
 	exitHooks = nil
+	exitMu.Unlock()
+	for i := len(hooks) - 1; i >= 0; i-- {
+		hooks[i]()
+	}
 	exitProcess(code)
 }
 

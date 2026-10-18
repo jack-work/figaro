@@ -98,6 +98,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		lt.leaveTranscript()
 		endSession(os.Stdout)
 	})
+	defer armTermination()()
 
 	lt.setRenderLock(&mu)
 	// The watchdog dumps every goroutine when the render lock is held for
