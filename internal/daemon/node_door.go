@@ -17,7 +17,7 @@ import (
 
 func federate(a *angelus.Angelus, loaded *config.Loaded) error {
 	peers, err := loaded.Peers()
-	if err != nil || len(peers) == 0 {
+	if err != nil {
 		return err
 	}
 	self := a.Backend.NodeID()
@@ -26,7 +26,7 @@ func federate(a *angelus.Angelus, loaded *config.Loaded) error {
 			return fmt.Errorf("peers.%s is this node", p.Node)
 		}
 	}
-	members, err := peer.NewMembers(peers)
+	members, err := peer.NewStatic(peers)
 	if err != nil {
 		return err
 	}

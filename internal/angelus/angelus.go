@@ -61,7 +61,7 @@ type Angelus struct {
 
 	Policies *authz.Policies
 	Peercred *authz.Peercred
-	Peers    *peer.Members
+	Peers    peer.Membership
 
 	uiProj Projector
 

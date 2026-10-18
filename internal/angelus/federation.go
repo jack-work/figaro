@@ -22,7 +22,7 @@ const maxResolveRefs = 64
 var errNoBearer = errors.New("nodes never vouch for a caller: reaching another node needs a bearer (figaro troupe login <name>)")
 
 type federation struct {
-	members *peer.Members
+	members peer.Membership
 	dialer  *peer.Dialer
 	dir     peer.Directory
 }

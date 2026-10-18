@@ -18,7 +18,7 @@ import (
 type Verify func(ctx context.Context, bearer string) (context.Context, error)
 
 type Door struct {
-	Members   *Members
+	Members   Membership
 	Verify    Verify
 	Handshake time.Duration
 }

@@ -18,14 +18,14 @@ type Member struct {
 	tls      *tls.Config
 }
 
-type Members struct {
+type Static struct {
 	nodes      []string
 	byNode     map[string]*Member
 	byIdentity map[string]string
 }
 
-func NewMembers(peers []config.Peer) (*Members, error) {
-	m := &Members{byNode: map[string]*Member{}, byIdentity: map[string]string{}}
+func NewStatic(peers []config.Peer) (*Static, error) {
+	m := &Static{byNode: map[string]*Member{}, byIdentity: map[string]string{}}
 	for _, p := range peers {
 		cert, err := tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
@@ -42,14 +42,14 @@ func NewMembers(peers []config.Peer) (*Members, error) {
 	return m, nil
 }
 
-func (m *Members) Nodes() []string {
+func (m *Static) Nodes() []string {
 	if m == nil {
 		return nil
 	}
 	return slices.Clone(m.nodes)
 }
 
-func (m *Members) Member(node string) (*Member, bool) {
+func (m *Static) Member(node string) (*Member, bool) {
 	if m == nil {
 		return nil, false
 	}
@@ -57,7 +57,7 @@ func (m *Members) Member(node string) (*Member, bool) {
 	return p, ok
 }
 
-func (m *Members) NodeOf(cert *x509.Certificate) (string, bool) {
+func (m *Static) NodeOf(cert *x509.Certificate) (string, bool) {
 	if m == nil || cert == nil {
 		return "", false
 	}

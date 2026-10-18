@@ -30,7 +30,7 @@ type Refused struct {
 func (e *Refused) Error() string { return fmt.Sprintf("node %s refused: %s", e.Node, e.Reason) }
 
 type Dialer struct {
-	Members *Members
+	Members Membership
 	Timeout time.Duration
 }
 

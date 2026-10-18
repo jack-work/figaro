@@ -100,9 +100,9 @@ func serve(t *testing.T, cfg config.TLSDoor, d *peer.Door, owned ...string) *ser
 	return s
 }
 
-func members(t *testing.T, peers ...config.Peer) *peer.Members {
+func members(t *testing.T, peers ...config.Peer) *peer.Static {
 	t.Helper()
-	m, err := peer.NewMembers(peers)
+	m, err := peer.NewStatic(peers)
 	require.NoError(t, err)
 	return m
 }

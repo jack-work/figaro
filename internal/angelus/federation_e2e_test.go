@@ -42,7 +42,7 @@ type fedNode struct {
 	stop    context.CancelFunc
 	doorLn  net.Listener
 	tlsCfg  *tls.Config
-	members *peer.Members
+	members *peer.Static
 
 	pendingPeers []func() config.Peer
 	alsoOwners   []string
@@ -122,7 +122,7 @@ func (n *fedNode) start() {
 	for _, p := range n.pendingPeers {
 		peers = append(peers, p())
 	}
-	members, err := peer.NewMembers(peers)
+	members, err := peer.NewStatic(peers)
 	require.NoError(t, err)
 	n.members = members
 	n.a.Peers = members
