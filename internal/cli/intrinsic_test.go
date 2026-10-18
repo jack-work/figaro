@@ -162,3 +162,23 @@ func TestCommittedRowsLeaveTheDrawer(t *testing.T) {
 		}
 	}
 }
+
+// "<node>/<id>" names an aria on a node; it must not be read as an intrinsic,
+// while a misspelled intrinsic still is one.
+func TestANodeQualifiedIDIsAHostNotAnIntrinsic(t *testing.T) {
+	node := "aca6cfd2-f5f9-494f-9810-6009bdfcd428"
+	cases := []struct{ spec, host, intrinsic string }{
+		{node + "/00386cbe", node + "/00386cbe", ""},
+		{node + "/@abcd", node + "/@abcd", ""},
+		{node + "/00386cbe:12", node + "/00386cbe:12", ""},
+		{node + "/00386cbe/runtime", node + "/00386cbe", intrinsicRuntime},
+		{node + "/00386cbe/state", node + "/00386cbe", ""},
+		{"00386cbe/qeueu", "00386cbe", "qeueu"},
+	}
+	for _, c := range cases {
+		host, in := splitIntrinsic(c.spec)
+		if host != c.host || in != c.intrinsic {
+			t.Errorf("splitIntrinsic(%q) = (%q, %q), want (%q, %q)", c.spec, host, in, c.host, c.intrinsic)
+		}
+	}
+}

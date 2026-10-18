@@ -17,10 +17,29 @@ func splitIntrinsic(spec string) (host, intrinsic string) {
 		return spec, ""
 	}
 	host, name := spec[:i], spec[i+1:]
-	if name == intrinsicState {
+	switch {
+	case name == intrinsicState:
 		return host, ""
+	case knownIntrinsic(name), !looksLikeID(name):
+		return host, name
 	}
-	return host, name
+	return spec, ""
+}
+
+func looksLikeID(s string) bool {
+	if i := strings.IndexAny(s, ":."); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimPrefix(s, "@")
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func knownIntrinsic(name string) bool {
