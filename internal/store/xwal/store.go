@@ -28,7 +28,7 @@ type StoreOptions struct {
 	Codec       string
 	SegmentSize int64
 	Genesis     []byte
-	MintTrunkID func(kind string) string
+	MintTrunkID func(kind string, taken func(prefix string) bool) string
 
 	// NoBackgroundFlush stops the periodic syncDirty pass: a caller that syncs
 	// explicitly before publishing needs no second opinion about when a record

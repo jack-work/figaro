@@ -22,10 +22,10 @@ type Index struct {
 	version  atomic.Uint64
 	// rebuilds counts full marker walks; a spawn must cause none.
 	rebuilds atomic.Uint64
-	mintID   func(kind string) string
+	mintID   func(kind string, taken func(prefix string) bool) string
 }
 
-func newIndex(mintTrunkID func(kind string) string) *Index {
+func newIndex(mintTrunkID func(kind string, taken func(prefix string) bool) string) *Index {
 	return &Index{nodes: map[string]*NodeInfo{}, heads: map[string]string{}, mintID: mintTrunkID}
 }
 
@@ -150,9 +150,20 @@ func (x *Index) MintNode() string {
 	return id
 }
 
+func (x *Index) trunkPrefixTaken(prefix string) bool {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	for id := range x.heads {
+		if strings.HasPrefix(id, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func (x *Index) MintTrunk(kind string) string {
 	if x.mintID != nil {
-		return x.mintID(kind)
+		return x.mintID(kind, x.trunkPrefixTaken)
 	}
 	x.mu.Lock()
 	defer x.mu.Unlock()

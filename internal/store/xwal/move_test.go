@@ -23,7 +23,7 @@ func moveCfg(prefix string) Config {
 			{Name: "tr/anthropic", Kind: ChannelLog, Opaque: true},
 		},
 		SegmentSize: 512,
-		MintTrunkID: func(string) string {
+		MintTrunkID: func(string, func(string) bool) string {
 			return fmt.Sprintf("%s%04d", prefix, moveSeq.Add(1))
 		},
 	}

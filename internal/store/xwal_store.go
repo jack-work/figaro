@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
 	fwlog "github.com/jack-work/figaro/internal/store/log"
@@ -58,13 +59,20 @@ func hexTrunkID() string {
 	return hex.EncodeToString(b)
 }
 
-// mintTrunkID: unbound forms mint as "@<hex>", the sigil that makes a form id
-// unmistakably not an aria id; everything else mints bare hex.
-func mintTrunkID(kind string) string {
+const mintDraws = 64
+
+var drawTrunkID = hexTrunkID
+
+func mintTrunkID(kind string, taken func(prefix string) bool) string {
+	sigil := ""
 	if kind == string(kindForm) {
-		return formSigil + hexTrunkID()
+		sigil = formSigil
 	}
-	return hexTrunkID()
+	id := sigil + drawTrunkID()
+	for i := 1; i < mintDraws && taken(id[:len(sigil)+handle.HexLen]); i++ {
+		id = sigil + drawTrunkID()
+	}
+	return id
 }
 
 const formSigil = "@"

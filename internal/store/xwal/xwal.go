@@ -78,10 +78,8 @@ type Config struct {
 	SegmentSize       int64
 	MaxUnflushedBytes int64
 	// Genesis is the root trunk's first main entry; used only at creation.
-	Genesis []byte
-	// MintTrunkID generates trunk ids per node kind; the ids land in the
-	// .trunk markers. Default is sequential "t<N>".
-	MintTrunkID func(kind string) string
+	Genesis     []byte
+	MintTrunkID func(kind string, taken func(prefix string) bool) string
 	// ParentOf resolves a flat node's logical parent. Empty means none.
 	ParentOf func(node string) string
 	// probeTS reads a node's newest record timestamp from its segment files
