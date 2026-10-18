@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/mark"
 	"github.com/jack-work/figaro/internal/modelcat"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/tool"
@@ -60,6 +61,7 @@ type Angelus struct {
 
 	Policies *authz.Policies
 	Peercred *authz.Peercred
+	Peers    *peer.Members
 
 	uiProj Projector
 

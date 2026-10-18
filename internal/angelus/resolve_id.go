@@ -20,28 +20,39 @@ const (
 
 var secondaryIDKeys = []string{"form_id", "role_id", "against"}
 
-func (h *handlers) resolvingIDs(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
+func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		params, err := h.canonicalParams(ctx, params)
+		params, node, err := h.placeParams(ctx, method, params)
 		if err != nil {
 			return nil, err
+		}
+		if node != "" {
+			return h.forward(ctx, node, method, params)
 		}
 		return next(ctx, params)
 	}
 }
 
-func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
+func (h *handlers) placeParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, string, error) {
 	if ref := rpc.AriaOf(params); ref != "" {
-		id, err := h.canonicalID(ctx, ref)
+		id, node, err := h.placeID(ctx, ref, h.routes(ctx, method))
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if id != ref {
 			if params, err = rpc.WithAria(params, id); err != nil {
-				return nil, err
+				return nil, "", err
 			}
 		}
+		if node != "" {
+			return params, node, nil
+		}
 	}
+	params, err := h.canonicalParams(ctx, params)
+	return params, "", err
+}
+
+func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
 	if !mayCarrySecondaryID(params) {
 		return params, nil
 	}
@@ -80,31 +91,36 @@ func mayCarrySecondaryID(params json.RawMessage) bool {
 }
 
 func (h *handlers) canonicalID(ctx context.Context, ref string) (string, error) {
+	id, _, err := h.placeID(ctx, ref, false)
+	return id, err
+}
+
+func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string, string, error) {
 	node, id := rpc.SplitNode(ref)
-	if node != "" {
-		own := h.nodeID()
-		if own == "" || !(node == own || len(node) >= rpc.ShortIDLen && strings.HasPrefix(own, node)) {
-			return "", fmt.Errorf("%s is on node %s, and this is node %s: reaching another node arrives with peering", ref, node, own)
-		}
+	if node != "" && !h.isSelf(node) {
+		return h.elsewhere(ctx, ref, node, id, route)
 	}
 	if h.knownID(id) {
-		return id, nil
+		return id, "", nil
 	}
 	if len(strings.TrimPrefix(id, "@")) < minIDPrefix || h.angelus.Backend == nil {
-		return id, nil
+		return id, "", nil
 	}
 	matches := h.matchReadable(ctx, id)
 	switch len(matches) {
 	case 0:
-		return id, nil
+		if route {
+			return h.locate(ctx, id)
+		}
+		return id, "", nil
 	case 1:
-		return matches[0], nil
+		return matches[0], "", nil
 	}
 	more := ""
 	if len(matches) > ambiguityList {
 		matches, more = matches[:ambiguityList], ", ..."
 	}
-	return "", fmt.Errorf("%s is ambiguous: %s%s", id, strings.Join(matches, ", "), more)
+	return "", "", fmt.Errorf("%s is ambiguous: %s%s", id, strings.Join(matches, ", "), more)
 }
 
 func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {

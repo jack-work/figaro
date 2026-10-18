@@ -133,9 +133,9 @@ func TestSecondaryIDsResolveToo(t *testing.T) {
 	long := "abcd1234" + strings.Repeat("e", 24)
 	form := "@" + "9876" + strings.Repeat("a", 28)
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{long, form}}
-	out, err := h.canonicalParams(context.Background(), json.RawMessage(`{"figaro_id":"abcd1234","form_id":"@9876","against":"abcd12"}`))
-	if err != nil {
-		t.Fatal(err)
+	out, node, err := h.placeParams(context.Background(), rpc.MethodLineage, json.RawMessage(`{"figaro_id":"abcd1234","form_id":"@9876","against":"abcd12"}`))
+	if err != nil || node != "" {
+		t.Fatal(node, err)
 	}
 	var got map[string]string
 	if err := json.Unmarshal(out, &got); err != nil {

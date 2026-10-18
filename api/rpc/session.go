@@ -2,6 +2,7 @@ package rpc
 
 type FigaroInfoResponse struct {
 	ID               string `json:"id"`
+	Node             string `json:"node,omitempty"`
 	State            string `json:"state"`
 	Provider         string `json:"provider"`
 	Model            string `json:"model"`
@@ -63,8 +64,9 @@ type ListRequest struct {
 }
 
 type ListResponse struct {
-	Figaros    []FigaroInfoResponse `json:"figaros"`
-	NextBefore string               `json:"next_before,omitempty"`
+	Figaros     []FigaroInfoResponse `json:"figaros"`
+	NextBefore  string               `json:"next_before,omitempty"`
+	Unreachable []NodeUnreachable    `json:"unreachable,omitempty"`
 }
 
 type BindRequest struct {

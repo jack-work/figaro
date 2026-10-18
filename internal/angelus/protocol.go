@@ -113,7 +113,9 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodLineage:        h.lineage,
 		rpc.MethodDecide:         h.decide,
 		rpc.MethodHello:          h.hello,
+		rpc.MethodNodeResolve:    h.nodeResolve,
 	}
+	h.federate()
 	return &Handlers{Map: h.door(methods, h.policy()), h: h}
 }
 
@@ -127,8 +129,11 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 	}
 	methods[rpc.MethodFollow] = h.ariaMethod(rpc.MethodFollow)
 	guarded := authz.Guard(methods, authz.AriaHeader{}, policy)
+	if list, ok := guarded[rpc.MethodList]; ok {
+		guarded[rpc.MethodList] = h.listingPeers(list)
+	}
 	for m, fn := range guarded {
-		guarded[m] = h.resolvingIDs(fn)
+		guarded[m] = h.resolvingIDs(m, fn)
 	}
 	return guarded
 }
@@ -205,6 +210,7 @@ type handlers struct {
 	outfitter          *outfit.Outfitter
 	availableProviders []string
 	decider            *decide.Engine
+	fed                *federation
 
 	// readerInst's per-aria servers are the window; a reader per call would retain nothing.
 	readerOnce sync.Once

@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"sync"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -18,6 +21,7 @@ type follower struct {
 
 	mu     sync.Mutex
 	hubs   map[*ariaHub]struct{}
+	links  map[string]*peer.Link
 	closed bool
 }
 
@@ -62,11 +66,50 @@ func (f *follower) close() {
 	for hb := range f.hubs {
 		hubs = append(hubs, hb)
 	}
-	f.hubs = nil
+	links := f.links
+	f.hubs, f.links = nil, nil
 	f.mu.Unlock()
 	for _, hb := range hubs {
 		hb.remove(f)
 	}
+	for _, l := range links {
+		l.Close()
+	}
+}
+
+func (f *follower) link(ctx context.Context, d *peer.Dialer, node string, p rpc.Passage) (*peer.Link, error) {
+	f.mu.Lock()
+	l, ok := f.links[node]
+	f.mu.Unlock()
+	if ok {
+		select {
+		case <-l.Done():
+			l.Close()
+		default:
+			return l, nil
+		}
+	}
+	fresh, err := d.Open(ctx, node, p, func(method string, params json.RawMessage) {
+		f.notify(method, params)
+	})
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		fresh.Close()
+		return nil, fmt.Errorf("connection closed")
+	}
+	if cur, ok := f.links[node]; ok && cur != l {
+		fresh.Close()
+		return cur, nil
+	}
+	if f.links == nil {
+		f.links = map[string]*peer.Link{}
+	}
+	f.links[node] = fresh
+	return fresh, nil
 }
 
 type Admit func(ctx context.Context, conn net.Conn) (context.Context, error)

@@ -20,3 +20,8 @@ type NodeResolveRequest struct {
 type NodeResolveResponse struct {
 	IDs map[string]string `json:"ids"`
 }
+
+type NodeUnreachable struct {
+	Node  string `json:"node"`
+	Error string `json:"error"`
+}
