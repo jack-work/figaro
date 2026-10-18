@@ -325,3 +325,31 @@ func TestDoorRefusesPlainTCP(t *testing.T) {
 	_, err := d.Admit(context.Background(), c1)
 	require.ErrorContains(t, err, "did not arrive over TLS")
 }
+
+// A peer's passage is one bounded JSON line: an endless one or a garbled
+// one is refused, and the door does not wait for more.
+func TestPassageIsBoundedAndParsed(t *testing.T) {
+	p := newPKI(t, "fed")
+	b := serve(t, p.door("b", ""), &peer.Door{Members: members(t, p.peer("b", "a", "127.0.0.1:1")), Handshake: time.Minute})
+	me := p.peer("a", "b", b.addr)
+	cert, err := tls.LoadX509KeyPair(me.Cert, me.Key)
+	require.NoError(t, err)
+	for name, c := range map[string]struct {
+		passage []byte
+		refusal string
+	}{
+		"endless": {[]byte(strings.Repeat("x", rpc.MaxPassage+1)), "longer than"},
+		"garbled": {[]byte("not json\n"), "invalid character"},
+	} {
+		conn, err := tls.Dial("tcp", b.addr, &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true})
+		require.NoError(t, err, name)
+		_, _ = conn.Write(c.passage)
+		select {
+		case err := <-b.admitted:
+			require.ErrorContains(t, err, c.refusal, name)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: the door kept reading", name)
+		}
+		conn.Close()
+	}
+}
