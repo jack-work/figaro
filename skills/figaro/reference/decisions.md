@@ -37,6 +37,7 @@ figaro -A decide --context - -- does this log show a crash? < run.log
 | `-m`, `--model` | the decision model for this call |
 | `--context <text>` / `-` | text to decide over (stdin with `-`) |
 | `--budget <n>` | cap the context tokens sent |
+| `--score` | the options are a scale, lowest first: answer with the weighted level |
 | `-j` | the response as JSON |
 | `-A` (global) | ignore the binding: decide over `--context` and training alone |
 
@@ -58,6 +59,11 @@ and a repeat collapses.
 | none, or exactly `yes`/`no` | one probability that the answer is yes |
 | two or more | a choice: every option scored, one preferred |
 | one | refused: one option is not a choice |
+
+`--score` reads two or more options as a scale. System One is asked its
+`score` question, which returns the probability-weighted level index; OpenAI
+is asked a choice and figaro weights its probabilities the same way. The
+level, rounded, picks the option, and the rows stay in scale order.
 
 `@key` names a form key on the aria:
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -130,6 +131,12 @@ func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
 	default:
 		p.kind = rpc.DecideChoice
 	}
+	if req.Score {
+		if p.kind != rpc.DecideChoice {
+			return p, errors.New("a score needs two or more options, lowest first")
+		}
+		p.kind = rpc.DecideScore
+	}
 	return p, nil
 }
 
@@ -141,6 +148,7 @@ type Option struct {
 type Question struct {
 	Ask     string
 	Options []Option
+	Score   bool
 }
 
 func (q Question) plan() (plan, error) {
@@ -151,8 +159,12 @@ func (q Question) plan() (plan, error) {
 	switch {
 	case len(p.options) == 1:
 		return p, fmt.Errorf("one option (%s) is not a choice", p.options[0].label)
+	case len(p.options) > 1 && q.Score:
+		p.kind = rpc.DecideScore
 	case len(p.options) > 1:
 		p.kind = rpc.DecideChoice
+	case q.Score:
+		return p, errors.New("a score needs two or more options, lowest first")
 	case p.ask == "":
 		return p, errors.New("nothing to decide: the question is empty")
 	}
@@ -265,7 +277,11 @@ func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p p
 	out.API = api
 	out.Provider = set.provider
 	out.Kind, out.Question = p.kind, p.ask
-	out.Rows = rank(p, a)
+	if p.kind == rpc.DecideScore {
+		out.Rows, out.Score = levels(p, a)
+	} else {
+		out.Rows = rank(p, a)
+	}
 	out.Confidence = a.Confidence
 	out.Window.Messages = w.messages
 	out.Window.Tokens = stateTokens
@@ -362,4 +378,32 @@ func rank(p plan, a answer) []rpc.DecideRow {
 		return order[rows[i].Option] < order[rows[j].Option]
 	})
 	return rows
+}
+
+func levels(p plan, a answer) ([]rpc.DecideRow, *float64) {
+	byLabel := make(map[string]float64, len(a.Probabilities))
+	for k, prob := range a.Probabilities {
+		if label, ok := a.Legend[k]; ok {
+			k = label
+		}
+		byLabel[k] = prob
+	}
+	rows := make([]rpc.DecideRow, len(p.options))
+	expected := 0.0
+	for i, o := range p.options {
+		prob := byLabel[o.label]
+		rows[i] = rpc.DecideRow{Option: o.label, Probability: prob}
+		expected += float64(i) * prob
+	}
+	score := a.Score
+	if score == nil {
+		if len(a.Probabilities) == 0 {
+			return rows, nil
+		}
+		score = &expected
+	}
+	at := int(math.Round(*score))
+	at = max(0, min(at, len(rows)-1))
+	rows[at].Chosen = true
+	return rows, score
 }

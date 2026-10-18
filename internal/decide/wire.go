@@ -12,9 +12,9 @@ type request struct {
 }
 
 type question struct {
-	Type         string            `json:"type"`
-	Instructions string            `json:"instructions"`
-	Criteria     map[string]string `json:"criteria,omitempty"`
+	Type         string `json:"type"`
+	Instructions string `json:"instructions"`
+	Criteria     any    `json:"criteria,omitempty"`
 }
 
 type response struct {
@@ -30,6 +30,8 @@ type answer struct {
 	Type          string             `json:"type"`
 	Choice        string             `json:"choice"`
 	Noul          *float64           `json:"noul"`
+	Score         *float64           `json:"score"`
+	Legend        map[string]string  `json:"legend"`
 	Confidence    *float64           `json:"confidence"`
 	Probabilities map[string]float64 `json:"probabilities"`
 }
@@ -50,6 +52,14 @@ func choiceQuestion(ask string, opts []option) question {
 		criteria[o.label] = o.criterion
 	}
 	return question{Type: "choice", Instructions: ask, Criteria: criteria}
+}
+
+func scoreQuestion(ask string, opts []option) question {
+	levels := make([]string, len(opts))
+	for i, o := range opts {
+		levels[i] = o.label
+	}
+	return question{Type: "score", Instructions: ask, Criteria: levels}
 }
 
 func noulQuestion(ask string) question {

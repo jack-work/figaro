@@ -34,7 +34,7 @@ func dialectFor(api string) (dialect, error) {
 }
 
 func askOf(p plan) string {
-	if p.ask == "" && p.kind == rpc.DecideChoice {
+	if p.ask == "" && p.kind != rpc.DecideYesNo {
 		return choiceDefault
 	}
 	return p.ask
@@ -47,8 +47,11 @@ func (systemOne) path() string { return "/systemone" }
 func (systemOne) limit() int   { return systemOneLimit }
 
 func (systemOne) question(p plan) any {
-	if p.kind == rpc.DecideYesNo {
+	switch p.kind {
+	case rpc.DecideYesNo:
 		return noulQuestion(askOf(p))
+	case rpc.DecideScore:
+		return scoreQuestion(askOf(p), p.options)
 	}
 	return choiceQuestion(askOf(p), p.options)
 }
@@ -115,7 +118,7 @@ func (openAI) limit() int   { return openAILimit }
 
 func (openAI) question(p plan) any {
 	q := openAIQuestion{Type: "predicate", Name: questionKey, Instructions: askOf(p)}
-	if p.kind == rpc.DecideChoice {
+	if p.kind != rpc.DecideYesNo {
 		q.Type = "choice"
 		for _, o := range p.options {
 			desc := o.criterion

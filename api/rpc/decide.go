@@ -9,6 +9,7 @@ type DecideRequest struct {
 	API      string   `json:"api,omitempty"`
 	Context  string   `json:"context,omitempty"`
 	Budget   int      `json:"budget,omitempty"`
+	Score    bool     `json:"score,omitempty"`
 }
 
 type DecideKind string
@@ -16,6 +17,7 @@ type DecideKind string
 const (
 	DecideYesNo  DecideKind = "yes_no"
 	DecideChoice DecideKind = "choice"
+	DecideScore  DecideKind = "score"
 )
 
 type DecideRow struct {
@@ -41,6 +43,7 @@ type DecideResponse struct {
 	Question   string       `json:"question"`
 	Rows       []DecideRow  `json:"rows"`
 	Confidence *float64     `json:"confidence,omitempty"`
+	Score      *float64     `json:"score,omitempty"`
 	Window     DecideWindow `json:"window"`
 	InputToks  int          `json:"input_tokens"`
 	OutputToks int          `json:"output_tokens"`

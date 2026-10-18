@@ -27,6 +27,7 @@ type decidePlan struct {
 	api      string
 	context  string
 	budget   int
+	score    bool
 	json     bool
 	question string
 }
@@ -39,6 +40,7 @@ var decideFlagDefs = []cmdkit.FlagDef{
 	{Long: "api", Description: "Decision API: systemone (jev, decision-1) or openai (luna); default inferred from the model"},
 	{Long: "context", Description: "Text to decide over; - reads stdin"},
 	{Long: "budget", Description: "Cap the context tokens sent"},
+	{Long: "score", IsBool: true, Description: "Treat the options as a scale, lowest first, and answer with the probability-weighted level"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Emit the response as JSON"},
 }
 
@@ -111,6 +113,8 @@ func parseDecideArgs(args []string) (decidePlan, error) {
 				return p, fmt.Errorf("--budget takes a positive number of tokens, not %q", v)
 			}
 			p.budget = n
+		case a == "--score":
+			p.score = true
 		case a == "-j" || a == "--json":
 			p.json = true
 		case strings.HasPrefix(a, "-") && len(a) > 1:
@@ -137,6 +141,7 @@ func (p decidePlan) request(aria string) rpc.DecideRequest {
 		API:      p.api,
 		Context:  p.context,
 		Budget:   p.budget,
+		Score:    p.score,
 	}
 }
 
@@ -191,7 +196,7 @@ func registerDecide(r *cmdkit.Router) {
 		Name:  "decide",
 		Group: "Prompt",
 		Short: "Ask a decision model a yes/no or multiple-choice question",
-		Usage: "decide [--id <id>] [-C <a,b,...>] [--provider <name>] [-m <model>] [--api systemone|openai] [--context <text|->] [-j] -- <question>",
+		Usage: "decide [--id <id>] [-C <a,b,...>] [--provider <name>] [-m <model>] [--api systemone|openai] [--context <text|->] [--score] [-j] -- <question>",
 		Long: `Asks a System One decision model (jev) one typed question and prints its
 scored answer. Nothing is written to any aria: bound to one, decide only READS
 its conversation and form, and never waits on a running turn.
@@ -207,6 +212,12 @@ Options come from -C (comma separated, quotes keep commas) and from a last
 line of the question that starts with ??. With no options, or yes/no, the
 answer is one probability. @key names a form key: a key with children makes
 each child an option, carrying its value as JSON; a leaf is one option.
+
+--score reads the options as a scale, lowest first: the answer is the
+probability-weighted level, rounded to the option it lands on. System One asks
+its score question; OpenAI is asked a choice and weighted here.
+
+  figaro decide --score -C=low,medium,high -- how hard is this task?
 
 The context is the aria's newest messages, as many as fit once the question
 and its options are counted. A leading quote coordinate is the FOCUS: the

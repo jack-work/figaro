@@ -32,6 +32,9 @@ func Lines(r rpc.DecideResponse) []string {
 
 func Footer(r rpc.DecideResponse) string {
 	parts := []string{}
+	if r.Score != nil {
+		parts = append(parts, fmt.Sprintf("score %.2f", *r.Score))
+	}
 	if r.Confidence != nil {
 		parts = append(parts, fmt.Sprintf("confidence %.2f", *r.Confidence))
 	}
