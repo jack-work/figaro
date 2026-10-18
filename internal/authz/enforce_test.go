@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -61,5 +62,34 @@ func TestEveryCallIsDecidedOnItsVerbAndTheAriaItNames(t *testing.T) {
 	}
 	if err := call(t, h, context.Background(), rpc.MethodQua, "aaaa0002"); err == nil {
 		t.Fatal("a caller nobody admitted was served")
+	}
+}
+
+// A caller that may not read an aria cannot tell it from one that does not
+// exist: both answer not found, in the same words. Only a caller that may
+// read it is told which verb the policy withholds.
+func TestAnAriaTheCallerCannotReadIsNotFound(t *testing.T) {
+	h := enforced(t)
+	boxCtx := WithSubject(context.Background(), subject(box))
+
+	hidden := call(t, h, boxCtx, rpc.MethodQua, "aaaa0002")
+	absent := call(t, h, boxCtx, rpc.MethodQua, "ffff0009")
+	if hidden == nil || absent == nil {
+		t.Fatalf("hidden=%v absent=%v", hidden, absent)
+	}
+	if hidden.Error() != NotFound(rpc.MethodQua, "aaaa0002").Error() {
+		t.Fatalf("hidden: %v", hidden)
+	}
+	if strings.Replace(hidden.Error(), "aaaa0002", "ffff0009", 1) != absent.Error() {
+		t.Fatalf("an unreadable aria and a missing one answer differently: %q, %q", hidden, absent)
+	}
+	var jerr *jkrpc.Error
+	if errors.As(hidden, &jerr) {
+		t.Fatalf("the refusal kept the policy's error code: %v", jerr)
+	}
+
+	err := call(t, h, boxCtx, rpc.MethodKill, "aaaa0001")
+	if !errors.As(err, &jerr) || jerr.Code != ErrCode || !strings.Contains(err.Error(), rpc.MethodKill) {
+		t.Fatalf("a reader lacking kill should hear the policy: %v", err)
 	}
 }

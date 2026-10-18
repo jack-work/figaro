@@ -101,9 +101,6 @@ func (h *handlers) locate(ctx context.Context, id string) (string, string, error
 		return id, "", nil
 	}
 	node, full, err := h.fed.dir.Locate(ctx, id)
-	if errors.Is(err, peer.ErrNoOwner) {
-		return id, "", nil
-	}
 	if err != nil {
 		return "", "", err
 	}

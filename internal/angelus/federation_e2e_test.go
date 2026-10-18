@@ -55,6 +55,13 @@ grants = [{ verbs = ["*"], on = ["*"] }]
 [[bind]]
 role = "owner"
 principals = [%q, "user:probe"%s]
+
+[roles.reader]
+grants = [{ verbs = ["read"], on = ["*"] }]
+
+[[bind]]
+role = "reader"
+principals = ["user:reader"]
 `
 
 func extraPrincipals(ps []string) string {
@@ -114,7 +121,7 @@ func (n *fedNode) start() {
 	require.NoError(t, os.WriteFile(n.dir+"/policy.toml", []byte(fmt.Sprintf(fedPolicy, pc.Self().String(), extraPrincipals(n.alsoOwners))), 0o600))
 	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.a.Backend))
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
-	n.bearer, err = authz.NewBearer(n.issuer.Config("probe", "intruder"), nil, nil)
+	n.bearer, err = authz.NewBearer(n.issuer.Config("probe", "intruder", "reader"), nil, nil)
 	require.NoError(t, err)
 
 	n.ctx, n.stop = context.WithCancel(context.Background())
@@ -314,8 +321,11 @@ func TestFederationForksOnTheParentsNode(t *testing.T) {
 }
 
 // The owner decides: A's policy makes intruder an owner, B's does not
-// name it, so intruder rules A's arias and is refused by B on B's. A caller
-// without a bearer never leaves A.
+// name it, so intruder rules A's arias and is refused by B on B's. B will
+// not say an aria exists to a caller that may not read it, so intruder
+// hears not found whether or not A already knew where the aria lives; a
+// reader lacking set hears the policy. A caller without a bearer never
+// leaves A.
 func TestFederationTheOwnerDecides(t *testing.T) {
 	a, b := newFedPair(t)
 	id, mine := b.mint(), a.mint()
@@ -323,14 +333,19 @@ func TestFederationTheOwnerDecides(t *testing.T) {
 
 	_, err := a.ariaAs("intruder", mine, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"yes"`}), 0)
 	require.NoError(t, err)
-	_, err = a.ariaAs("intruder", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"no"`}), 0)
-	require.ErrorContains(t, err, "not found", "B told a caller it may not read where the aria lives")
+	_, cold := a.ariaAs("intruder", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"no"`}), 0)
+	require.ErrorContains(t, cold, "not found")
 
 	_, err = a.as("probe").List(ctx)
 	require.NoError(t, err)
-	_, err = a.ariaAs("intruder", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"no"`}), 0)
-	require.ErrorContains(t, err, "user:intruder", "once A knows the owner, B refuses by its own policy")
+	_, warm := a.ariaAs("intruder", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"no"`}), 0)
+	require.Error(t, warm)
+	require.Equal(t, cold.Error(), warm.Error(), "knowing the owner changed what intruder hears")
 	require.NotContains(t, mantraOf(t, b, id), "no")
+
+	_, err = a.ariaAs("reader", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"read only"`}), 0)
+	require.ErrorContains(t, err, "user:reader", "a reader lacking set hears the owner's policy")
+	require.NotContains(t, mantraOf(t, b, id), "read only")
 
 	local, err := sdk.DialAria(ariaAddr(a.a, id), nil)
 	require.NoError(t, err)

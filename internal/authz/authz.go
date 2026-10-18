@@ -98,6 +98,11 @@ type Request struct {
 type Decision struct {
 	Allow  bool
 	Reason string
+	Hidden bool
+}
+
+func NotFound(method, id string) error {
+	return fmt.Errorf("%s: aria %s not found", method, id)
 }
 
 func Allow() Decision { return Decision{Allow: true} }
@@ -138,6 +143,9 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 				Params:   params,
 			}
 			if d := policy.Check(req); !d.Allow {
+				if d.Hidden {
+					return nil, NotFound(method, req.Aria)
+				}
 				return nil, &jkrpc.Error{Code: ErrCode, Message: d.Reason}
 			}
 			start := time.Now()
@@ -174,6 +182,9 @@ func Enforce(p *Policies) Policy {
 			res = Aria(r.Aria)
 		}
 		if d := p.Allow(r.Subject, verb, res); !d.Allowed {
+			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !p.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
+				return Decision{Hidden: true}
+			}
 			return Deny("%s: %s", r.Method, d.Reason())
 		}
 		return Allow()

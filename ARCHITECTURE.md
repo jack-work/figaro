@@ -249,9 +249,11 @@ an aria this node does not hold (by id, prefix, or `<node>/<id>`) goes once,
 whole, to its owner on a link kept per caller connection, and the owner's
 pushes come back the same way. The owner authorizes; the entry node only
 requires a bearer to forward. A forwarded request is served where it lands or
-refused. `internal/peer` holds the door, the links and the directory of
-remote owners, which learns from forks, listings and `node.resolve`
-lookups. `figaro.list` returns this node's rows and every peer's, marked with
+refused. A caller that may not read an aria is told it is not found, in the
+words a missing aria gets, wherever it asked from; only a caller that may
+read it hears which verb the policy withholds. `internal/peer` holds the
+door, the links and the directory of remote owners, which learns from forks,
+listings and `node.resolve` lookups. `figaro.list` returns this node's rows and every peer's, marked with
 their `node`, plus an `unreachable` entry per peer that did not answer.
 
 ### Streaming: the turn-shaped aria page

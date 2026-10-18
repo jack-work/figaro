@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -36,6 +38,9 @@ func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.Han
 func (h *handlers) placeParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, string, error) {
 	if ref := rpc.AriaOf(params); ref != "" {
 		id, node, err := h.placeID(ctx, ref, h.routes(ctx, method))
+		if errors.Is(err, peer.ErrNoOwner) {
+			return nil, "", authz.NotFound(method, ref)
+		}
 		if err != nil {
 			return nil, "", err
 		}
