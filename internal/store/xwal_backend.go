@@ -557,8 +557,11 @@ func (b *XwalBackend) Node(id string) (NodeView, bool) {
 	return n, ok
 }
 
-func (b *XwalBackend) Nodes() []NodeView         { return b.labelAll(b.store.Nodes()) }
-func (b *XwalBackend) NodeID() string            { return b.store.NodeID() }
+func (b *XwalBackend) Nodes() []NodeView { return b.labelAll(b.store.Nodes()) }
+func (b *XwalBackend) NodeID() string    { return b.store.NodeID() }
+func (b *XwalBackend) MatchID(prefix string, limit int) []string {
+	return b.store.MatchID(prefix, limit)
+}
 func (b *XwalBackend) Conversations() []NodeView { return b.labelAll(b.store.Conversations()) }
 func (b *XwalBackend) Forms() []NodeView         { return b.store.Forms() }
 func (b *XwalBackend) ConversationIDs() []string { return b.store.ConversationIDs() }

@@ -36,10 +36,10 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 	}
 
 	attachCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := acli.Attach(attachCtx, explicitID)
+	resp, err := acli.Attach(attachCtx, explicitID)
 	cancel()
 	if err == nil {
-		return explicitID, ariaAddr(explicitID), nil
+		return resp.FigaroID, ariaAddr(resp.FigaroID), nil
 	}
 	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
 		return "", sdk.Addr{}, fmt.Errorf("no such aria: %s", explicitID)

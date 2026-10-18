@@ -50,10 +50,11 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 		var ep sdk.Addr
 
 		if explicitID != "" {
-			if _, err := acli.Attach(ctx, explicitID); err != nil {
+			resp, err := acli.Attach(ctx, explicitID)
+			if err != nil {
 				die("attach %q: %s", explicitID, err)
 			}
-			ariaID = explicitID
+			ariaID = resp.FigaroID
 		} else {
 			r, err := resolveBinding(ctx, acli, shellPID)
 			if err != nil {

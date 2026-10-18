@@ -360,7 +360,7 @@ func parseTurnCoord(spec, coord string) (forkPoint, error) {
 }
 
 func validateSendID(id string) error {
-	if err := rpc.ValidateAriaID(id); err != nil {
+	if err := rpc.ValidateAriaRef(id); err != nil {
 		return fmt.Errorf("--id %q: %w", id, err)
 	}
 	return nil

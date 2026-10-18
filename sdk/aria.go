@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/api/aria"
@@ -22,7 +23,7 @@ type Addr struct {
 
 type Aria struct {
 	cli *jkrpc.Client
-	id  string
+	id  atomic.Pointer[string]
 	// caller is presented on this hop independently of the angelus hop.
 	caller string
 	// ref is the asserted caller reference: attribution only, never a credential.
@@ -34,7 +35,7 @@ func (c *Aria) call(ctx context.Context, method string, params, result any) erro
 	if err != nil {
 		return err
 	}
-	if raw, err = rpc.WithAria(raw, c.id); err != nil {
+	if raw, err = rpc.WithAria(raw, c.ID()); err != nil {
 		return err
 	}
 	return c.cli.Call(ctx, method, raw, result)
@@ -46,20 +47,21 @@ func DialAria(a Addr, onNotify NotifyHandler) (*Aria, error) {
 
 // DialAriaWith is DialAria with connection middleware; nil tap is DialAria exactly.
 func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, error) {
-	if err := rpc.ValidateAriaID(a.ID); err != nil {
+	if err := rpc.ValidateAriaRef(a.ID); err != nil {
 		return nil, err
 	}
 	conn, err := transport.DialWith(a.Door, tap)
 	if err != nil {
 		return nil, err
 	}
-	c := &Aria{id: a.ID, caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}
+	c := &Aria{caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}
+	c.id.Store(&a.ID)
 	ready := make(chan struct{})
 	c.cli = jkrpc.NewClient(conn, func(method string, params json.RawMessage) {
 		if onNotify != nil {
 			onNotify(method, params)
 		}
-		if method == rpc.MethodAriaClosed && rpc.AriaOf(params) == c.id {
+		if method == rpc.MethodAriaClosed && rpc.AriaOf(params) == c.ID() {
 			go func() {
 				<-ready
 				c.cli.Close()
@@ -70,9 +72,13 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 	if onNotify != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), followTimeout)
 		defer cancel()
-		if err := c.call(ctx, rpc.MethodFollow, nil, nil); err != nil {
+		var followed rpc.FollowResponse
+		if err := c.call(ctx, rpc.MethodFollow, nil, &followed); err != nil {
 			c.cli.Close()
 			return nil, fmt.Errorf("follow %s: %w", a.ID, err)
+		}
+		if followed.FigaroID != "" {
+			c.id.Store(&followed.FigaroID)
 		}
 	}
 	return c, nil
@@ -80,7 +86,7 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 
 const followTimeout = 10 * time.Second
 
-func (c *Aria) ID() string { return c.id }
+func (c *Aria) ID() string { return *c.id.Load() }
 
 // Qua sends a prompt and returns the newest materialized turn id at accept
 // time. A prompt accepted while a turn is active becomes steering; one

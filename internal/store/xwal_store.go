@@ -243,6 +243,36 @@ type topologySnapshot struct {
 	forms           []NodeView
 	conversationIDs []string
 	byID            map[string]NodeView
+
+	sortOnce sync.Once
+	sorted   []string
+}
+
+func (t *topologySnapshot) sortedIDs() []string {
+	t.sortOnce.Do(func() {
+		ids := make([]string, 0, len(t.conversations)+len(t.forms))
+		for _, n := range t.conversations {
+			ids = append(ids, n.ID)
+		}
+		for _, n := range t.forms {
+			ids = append(ids, n.ID)
+		}
+		sort.Strings(ids)
+		t.sorted = ids
+	})
+	return t.sorted
+}
+
+func (s *XwalStore) MatchID(prefix string, limit int) []string {
+	ids := s.topologySnapshot().sortedIDs()
+	var out []string
+	for i := sort.SearchStrings(ids, prefix); i < len(ids) && strings.HasPrefix(ids[i], prefix); i++ {
+		if len(out) == limit {
+			break
+		}
+		out = append(out, ids[i])
+	}
+	return out
 }
 
 func (t *topologySnapshot) fresh(version, rev uint64) bool {

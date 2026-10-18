@@ -134,8 +134,14 @@ func TestExtractSendFlags(t *testing.T) {
 		},
 		{
 			name:    "invalid id char",
-			in:      []string{"--id", "bad/id", "--", "p"},
+			in:      []string{"--id", "bad$id", "--", "p"},
 			wantErr: "--id",
+		},
+		{
+			name:     "node-qualified id",
+			in:       []string{"--id", "0e6f7dbf-0000-4000-8000-000000000000/abcd1234", "--", "p"},
+			wantOpts: sendOpts{id: "0e6f7dbf-0000-4000-8000-000000000000/abcd1234"},
+			wantRest: []string{"--", "p"},
 		},
 		{
 			name:    "no -- boundary",

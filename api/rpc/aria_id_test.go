@@ -46,3 +46,23 @@ func repeat(s string, n int) string {
 	}
 	return string(out)
 }
+
+// A client may qualify an id with its node; storage never sees one.
+func TestValidateAriaRef(t *testing.T) {
+	for ref, ok := range map[string]bool{
+		"abcd1234": true,
+		"0e6f7dbf-0000-4000-8000-000000000000/abcd1234": true,
+		"node/@form1234": true,
+		"/abcd":          true,
+		"node/":          false,
+		"a/b/c":          false,
+		"../x":           false,
+	} {
+		if err := ValidateAriaRef(ref); (err == nil) != ok {
+			t.Errorf("ValidateAriaRef(%q) = %v, want ok=%v", ref, err, ok)
+		}
+	}
+	if err := ValidateAriaID("node/abcd"); err == nil {
+		t.Error("a bare id must not carry a node")
+	}
+}

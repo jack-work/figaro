@@ -126,7 +126,11 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		methods[m] = h.ariaMethod(m)
 	}
 	methods[rpc.MethodFollow] = h.ariaMethod(rpc.MethodFollow)
-	return authz.Guard(methods, authz.AriaHeader{}, policy)
+	guarded := authz.Guard(methods, authz.AriaHeader{}, policy)
+	for m, fn := range guarded {
+		guarded[m] = h.resolvingIDs(fn)
+	}
+	return guarded
 }
 
 func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
@@ -146,7 +150,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			f.follow(hb)
 		}
 		if method == rpc.MethodFollow {
-			return rpc.FollowResponse{OK: true}, nil
+			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 		}
 		return hb.route(ctx, method, params)
 	}

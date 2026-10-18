@@ -11,7 +11,8 @@ const AriaKey = "figaro_id"
 const MethodFollow = "figaro.follow"
 
 type FollowResponse struct {
-	OK bool `json:"ok"`
+	OK       bool   `json:"ok"`
+	FigaroID string `json:"figaro_id,omitempty"`
 }
 
 const MethodAriaClosed = "figaro.closed"

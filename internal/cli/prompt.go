@@ -191,7 +191,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	if err != nil {
 		die("%s", err)
 	}
-	mustPromptFigaro(ctx, ep, target, prompt, loaded, set, d)
+	mustPromptFigaro(ctx, ep, ep.ID, prompt, loaded, set, d)
 }
 
 func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings, d dressing) {
@@ -205,16 +205,16 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	if err != nil {
 		die("%s", err)
 	}
-	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set, d)
+	mustPromptFigaro(ctx, ep, ep.ID, prompt, loaded, set, d)
 }
 
 // Aria ids are system-minted: an unknown id is an error, not a new conversation.
 func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (sdk.Addr, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := acli.Attach(attachCtx, ariaID)
+	resp, err := acli.Attach(attachCtx, ariaID)
 	attachCancel()
 	if err == nil {
-		return ariaAddr(ariaID), nil
+		return ariaAddr(resp.FigaroID), nil
 	}
 	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
 		return sdk.Addr{}, fmt.Errorf("no such aria %q (ids are system-minted; run `figaro` to start one)", ariaID)

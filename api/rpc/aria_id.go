@@ -1,6 +1,9 @@
 package rpc
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // MaxAriaIDLen caps id length to fit unix socket sun_path.
 const MaxAriaIDLen = 64
@@ -27,3 +30,24 @@ func ValidateAriaID(id string) error {
 	}
 	return nil
 }
+
+const NodeSeparator = "/"
+
+func ValidateAriaRef(ref string) error {
+	node, id := SplitNode(ref)
+	if node != "" {
+		if err := ValidateAriaID(node); err != nil {
+			return fmt.Errorf("node of %q: %w", ref, err)
+		}
+	}
+	return ValidateAriaID(id)
+}
+
+func SplitNode(ref string) (node, id string) {
+	if i := strings.Index(ref, NodeSeparator); i >= 0 {
+		return ref[:i], ref[i+1:]
+	}
+	return "", ref
+}
+
+const ShortIDLen = 8

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/jack-work/figaro/api/message"
 )
 
 // The node id is minted once per store and survives every reopen; it is the
@@ -71,5 +73,32 @@ func TestACorruptNodeIDRefusesToOpen(t *testing.T) {
 	}
 	if _, err := OpenXwalStore(root, 0); err == nil || !strings.Contains(err.Error(), "node id") {
 		t.Fatalf("err = %v, want a refusal naming the node id", err)
+	}
+}
+
+func TestMatchIDFindsByPrefixAndCaps(t *testing.T) {
+	b := NewTestBackend(t)
+	stump, err := b.CreateOutfit("test", message.Patch{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for i := 0; i < 3; i++ {
+		id, err := b.CreateConversation(stump)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		if got := b.MatchID(id[:12], 5); len(got) != 1 || got[0] != id {
+			t.Fatalf("MatchID(%q) = %v, want [%s]", id[:12], got, id)
+		}
+	}
+	if got := b.MatchID("", 2); len(got) != 2 {
+		t.Fatalf("MatchID with limit 2 returned %d", len(got))
+	}
+	if got := b.MatchID("test", 5); len(got) != 0 {
+		t.Fatalf("an outfit stump matched an id prefix: %v", got)
 	}
 }
