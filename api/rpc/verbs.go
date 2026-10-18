@@ -46,6 +46,7 @@ var methodVerbs = map[string]Verb{
 	MethodOutfits: VerbRead,
 
 	MethodModelsWant: VerbRead,
+	MethodNodeOwns:   VerbRead,
 
 	MethodSet:     VerbSet,
 	MethodStudy:   VerbSet,
