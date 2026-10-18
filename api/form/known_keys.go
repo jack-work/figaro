@@ -49,6 +49,8 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.decide.model", Short: "The decision model `figaro decide` asks (openai/gpt-6-luna, explabs/jev-latest, decision-1); never a conversation model", Mode: KeyUserSettable},
 		{Key: "system.decide.base_url", Short: "Where decisions go when the provider's base_url serves turns elsewhere (Azure's decision-1 at .../providers/microsoft/v1); the credential stays the provider's", Mode: KeyUserSettable},
 		{Key: "system.decide.api", Short: "The decision API `figaro decide` speaks for this aria: systemone (jev, decision-1) or openai (luna); default inferred from the model", Mode: KeyUserSettable},
+		{Key: "system.methods.enabled", Short: "Master switch for methods (default true); false and no method runs", Mode: KeyUserSettable},
+		{Key: "system.methods.<name>", Short: `A method: on each inquiry the decision model picks one of {options} from the rendered {context} ({{inquiry}}, {{inquiry~N}}) and writes it to {key}; {score, default, enabled, event, keep_cache} optional; keep_cache (default true) holds a method whose change would break the prompt cache`, Mode: KeyUserSettable},
 		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},

@@ -50,6 +50,7 @@ internal/formdelta/        per-record form state a transcript reader needs
 internal/livelog/          aria/ page server + field deltas; render/ terminal differential renderer
 internal/logring/          bounded in-memory slog tail
 internal/mark/             timing sink for transcript benchmarks
+internal/methods/          system.methods: templated decisions that set a form key on each inquiry
 internal/otel/             OpenTelemetry init + span helpers
 internal/outfit/           assembles an aria's form from on-disk config; unpacks bundled skills
 internal/partialjson/      string field from a truncated JSON prefix

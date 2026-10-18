@@ -103,6 +103,7 @@ about changing figaro rather than using it live under
 | [reference/keys.md](reference/keys.md) | Moving a key in the pager, filling the leader, writing `keys.toml`, or why a key means one thing in one mode and another elsewhere. |
 | [reference/quoting.md](reference/quoting.md) | Quoting a passage into a prompt (`<412.0:23-1180>!`), visual selection, and the pager's `:send` / `:fork` / `:listen` / `:attend`. |
 | [reference/decisions.md](reference/decisions.md) | You want a fast yes/no or a scored choice instead of prose (`figaro decide`, a `??` draft), you are choosing between form entries (`?? @skills`), or you are changing that grammar. |
+| [reference/methods.md](reference/methods.md) | A form key should be decided for you on every inquiry (`system.methods`), or a key changed and nobody set it. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |

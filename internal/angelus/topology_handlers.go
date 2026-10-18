@@ -152,6 +152,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Form:            cbState,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
+		Decider:         h.methodAsker(),
+		DefaultForm:     h.defaultForm,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

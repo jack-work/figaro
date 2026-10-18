@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/decide"
+	"github.com/jack-work/figaro/internal/methods"
 )
 
 func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, error) {
@@ -19,10 +20,7 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 	if h.decider == nil {
 		return nil, errors.New("decide: this daemon has no decision model configured")
 	}
-	src := decide.Source{Context: req.Context}
-	if patch, err := h.dressDefault(); err == nil {
-		src.Defaults = form.Snapshot{}.Apply(patch)
-	}
+	src := decide.Source{Context: req.Context, Defaults: h.defaultForm()}
 	if req.FigaroID != "" {
 		if err := h.requireAria(req.FigaroID); err != nil {
 			return nil, err
@@ -42,4 +40,26 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 		src.Log, src.Board = log, board.Snapshot
 	}
 	return h.decider.Decide(ctx, src, req)
+}
+
+func (h *handlers) defaultForm() form.Snapshot {
+	patch, err := h.dressDefault()
+	if err != nil {
+		return form.Snapshot{}
+	}
+	return form.Snapshot{}.Apply(patch)
+}
+
+type defaultedAsker struct{ h *handlers }
+
+func (d defaultedAsker) Ask(ctx context.Context, src decide.Source, q decide.Question) (rpc.DecideResponse, error) {
+	src.Defaults = d.h.defaultForm()
+	return d.h.decider.Ask(ctx, src, q)
+}
+
+func (h *handlers) methodAsker() methods.Asker {
+	if h.decider == nil {
+		return nil
+	}
+	return defaultedAsker{h}
 }

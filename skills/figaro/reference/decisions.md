@@ -63,7 +63,8 @@ and a repeat collapses.
 `--score` reads two or more options as a scale. System One is asked its
 `score` question, which returns the probability-weighted level index; OpenAI
 is asked a choice and figaro weights its probabilities the same way. The
-level, rounded, picks the option, and the rows stay in scale order.
+level, rounded, picks the option, and the rows stay in scale order. This is
+what a method with `score = true` asks ([methods.md](methods.md)).
 
 `@key` names a form key on the aria:
 

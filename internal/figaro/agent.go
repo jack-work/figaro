@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/methods"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -90,6 +91,9 @@ type Config struct {
 	UICache *aria.ComposedCache
 
 	Models ModelCatalog
+
+	Decider     methods.Asker
+	DefaultForm func() form.Snapshot
 }
 
 type ModelCatalog interface {
@@ -103,6 +107,8 @@ type Agent struct {
 	provBind    atomic.Pointer[providerBinding]
 	provFactory ProviderFactory
 	models      ModelCatalog
+	decider     methods.Asker
+	defaultForm func() form.Snapshot
 	tools       *tool.Registry
 	proj        Projector
 	// figLog is read directly and written through journal only; see journal.go.
@@ -202,6 +208,8 @@ func NewAgent(cfg Config) *Agent {
 		form:        cfg.Form,
 		settings:    cfg.Settings,
 		models:      cfg.Models,
+		decider:     cfg.Decider,
+		defaultForm: cfg.DefaultForm,
 		createdAt:   createdAt,
 		lastActive:  lastActive,
 		agentSince:  now,

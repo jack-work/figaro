@@ -160,6 +160,9 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
+	if prompt.text != "" {
+		a.runInquiryMethods(turnCtx, prompt.text)
+	}
 	if _, err := a.appendUserPrompt(prompt, false); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
