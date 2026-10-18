@@ -138,6 +138,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			if err != nil {
 				die("list: %s", err)
 			}
+			printUnreachable(resp.Unreachable)
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderFormScope(figs, boundID, o.limit)
 			printExpiredNote(hidden)
@@ -149,6 +150,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			if err != nil {
 				die("list: %s", err)
 			}
+			printUnreachable(resp.Unreachable)
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderGlobal(figs, boundID, o.limit)
 			printExpiredNote(hidden)
@@ -160,6 +162,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		if err != nil {
 			die("list: %s", err)
 		}
+		printUnreachable(resp.Unreachable)
 		figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 
 		if o.rootID != "" && o.rootID != "/" && !strings.HasPrefix(o.rootID, "^") {
@@ -244,7 +247,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		if len(f.Vector) == 0 {
 			continue
 		}
-		byVec[vecKey(f.Vector)] = f
+		byVec[nodeVecKey(f.Node, f.Vector)] = f
 		isRoot := len(f.Vector) == 1
 		if rootID != "" {
 			isRoot = f.ID == rootID
@@ -252,7 +255,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		if isRoot {
 			roots = append(roots, f)
 		} else {
-			pk := vecKey(f.Vector[:len(f.Vector)-1])
+			pk := nodeVecKey(f.Node, f.Vector[:len(f.Vector)-1])
 			kids[pk] = append(kids[pk], f)
 		}
 	}
@@ -264,7 +267,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 	var subtreeRecency func(f rpc.FigaroInfoResponse) int64
 	subtreeRecency = func(f rpc.FigaroInfoResponse) int64 {
 		best := f.LastActive
-		for _, c := range kids[vecKey(f.Vector)] {
+		for _, c := range kids[nodeVecKey(f.Node, f.Vector)] {
 			if r := subtreeRecency(c); r > best {
 				best = r
 			}
@@ -321,7 +324,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 	var grow func(f rpc.FigaroInfoResponse) *figtree.Node
 	grow = func(f rpc.FigaroInfoResponse) *figtree.Node {
 		n := build(f)
-		for _, c := range kids[vecKey(f.Vector)] {
+		for _, c := range kids[nodeVecKey(f.Node, f.Vector)] {
 			n.Children = append(n.Children, grow(c))
 		}
 		return n
@@ -588,6 +591,10 @@ func truncateVisible(s string, width int) string {
 		return s
 	}
 	return term.TruncateVisible(s, width)
+}
+
+func nodeVecKey(node string, v []int) string {
+	return node + rpc.NodeSeparator + vecKey(v)
 }
 
 func vecKey(v []int) string {
@@ -984,5 +991,17 @@ func shortIDsOf(figs []rpc.FigaroInfoResponse) map[string]string {
 	for i, f := range figs {
 		ids[i] = f.ID
 	}
-	return rpc.ShortIDs(ids)
+	short := rpc.ShortIDs(ids)
+	for _, f := range figs {
+		if f.Node != "" {
+			short[f.ID] = f.Node[:min(rpc.ShortIDLen, len(f.Node))] + rpc.NodeSeparator + short[f.ID]
+		}
+	}
+	return short
+}
+
+func printUnreachable(nodes []rpc.NodeUnreachable) {
+	for _, n := range nodes {
+		fmt.Fprintf(stderrw, "node %s: %s\n", n.Node, n.Error)
+	}
 }
