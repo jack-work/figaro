@@ -266,6 +266,36 @@ caller without a bearer sees one `unreachable` entry per peer on every
 listing. Each caller connection holds its own TLS connection to each peer it
 reaches.
 
+`figaro.move {figaro_id, to}` changes the home of a fork tree: every
+conversation sharing history with the named aria (its parent chain up to the
+outfit stump, and every fork below). The caller needs `kill` on each aria
+here; the new home checks `create` and `use` on each aria's sandbox under the
+same bearer. Any aria of the tree with a turn in flight or queued refuses the
+move; otherwise the tree's agents are hibernated and its ids answer as moving
+until the move settles.
+
+The old home ships the tree's files verbatim (`node.import.begin`, `.chunk`,
+`.commit`, `.abort`): every channel's segments per node, the top node's
+inherited prefix absorbed as `Detach` would, and the `_meta` sidecars. The new
+home stages them under `.graft-<token>` in its store and, after checking the
+digest, publishes each node with fresh node keys and the same trunk ids, so
+LTs, translator caches and fork bases read as before. A sealed graft finishes
+on the next open. The old home writes a pending departure to
+`_moves/out/<token>.json` before the commit and makes it final after, then
+removes the tree; at start it asks the new home (`node.import.status`, node
+principals only) about any pending one and either lets go or keeps the tree.
+
+A final departure is a forwarding address, kept indefinitely: a caller there
+is routed to the new home, a forwarded request is answered with a
+`moved` error (code -32030, data `{id, node}`) that the entry node follows
+once, and `node.resolve` answers it under `moved`. Each answer first asks
+whether the caller could have read the aria, from the owner and lineage the
+departure recorded, so a caller who could not hears not found. The old home
+also tells every other peer (`node.learn`). An aria that moves back drops the
+address. Accepted limits: background sessions on the old host are killed,
+followers there are disconnected, `system.cwd` still names a path on the old
+host, and studies the moved forms held of forms left behind lapse.
+
 ### Streaming: the turn-shaped aria page
 
 The wire carries the **UI IR**, not canonical `message.Message` IR. The one
