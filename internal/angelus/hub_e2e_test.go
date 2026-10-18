@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
@@ -282,6 +283,40 @@ func TestDoorServesTCP(t *testing.T) {
 	raw, ok := resp.Snapshot.Get("mantra")
 	require.True(t, ok)
 	require.Equal(t, `"over tcp"`, string(raw))
+}
+
+// An admitter that stalls (a TLS handshake that never finishes) holds only
+// its own connection; the next caller is admitted and served.
+func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	release := make(chan struct{})
+	defer close(release)
+	var first atomic.Bool
+	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+		if first.CompareAndSwap(false, true) {
+			<-release
+		}
+		return ctx, nil
+	})
+
+	stalled, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	defer stalled.Close()
+	require.Eventually(t, first.Load, 5*time.Second, time.Millisecond)
+
+	tcp := sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
+	fc, err := sdk.DialAria(tcp, nil)
+	require.NoError(t, err)
+	defer fc.Close()
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = fc.Form(callCtx)
+	require.NoError(t, err)
 }
 
 // A bounded listing walks every aria exactly once, most recent first, with

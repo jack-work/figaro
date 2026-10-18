@@ -88,14 +88,18 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, admit Admit) error
 			slog.Warn("door accept", "err", err)
 			continue
 		}
-		cctx, err := admit(ctx, conn)
-		if err != nil {
-			slog.Warn("door refused connection", "err", err)
-			conn.Close()
-			continue
-		}
-		go a.handleConn(cctx, conn)
+		go a.admitConn(ctx, conn, admit)
 	}
+}
+
+func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, admit Admit) {
+	cctx, err := admit(ctx, conn)
+	if err != nil {
+		slog.Warn("door refused connection", "err", err)
+		conn.Close()
+		return
+	}
+	a.handleConn(cctx, conn)
 }
 
 func (a *Angelus) handleConn(ctx context.Context, conn io.ReadWriteCloser) {
