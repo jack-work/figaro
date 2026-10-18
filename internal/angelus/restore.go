@@ -120,7 +120,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		ProviderFactory: h.factory,
 		Models:          h.angelus.Models,
 		Tools:           reg,
-		Projector:       uiir.New(reg),
+		Projector:       uiir.New(reg).Naming(h.angelus.senderName),
 		Backend:         h.angelus.Backend,
 		Form:            cb,
 		CreatedAt:       createdAt,

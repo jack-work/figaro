@@ -21,7 +21,7 @@ import (
 // reader's projector has an empty tool registry: sealed IR carries the tool names.
 func (h *handlers) reader() *AriaReader {
 	h.readerOnce.Do(func() {
-		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil), h.angelus.UICache)
+		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil).Naming(h.angelus.senderName), h.angelus.UICache)
 		h.readerInst.models = h.angelus.Models
 	})
 	return h.readerInst

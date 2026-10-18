@@ -425,6 +425,7 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalar("name", old.Name, n.Name)
 	scalar("summary", old.Summary, n.Summary)
 	scalar("sender", old.Sender, n.Sender)
+	scalar("sender_name", old.SenderName, n.SenderName)
 	scalar("status", old.Status, n.Status)
 	scalar("tool_call_id", old.ToolCallID, n.ToolCallID)
 	scalarInt("opened_at", old.OpenedAt, n.OpenedAt)
@@ -473,6 +474,7 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	str("tool_call_id", n.ToolCallID)
 	str("markdown", n.Markdown)
 	str("sender", n.Sender)
+	str("sender_name", n.SenderName)
 	str("output", n.Output)
 	str("input", n.Input)
 	if n.Args != nil {

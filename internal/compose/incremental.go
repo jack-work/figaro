@@ -8,6 +8,8 @@ import (
 // Incremental composes the open region, memoizing the prefix that can no
 // longer change.
 type Incremental struct {
+	Names Namer
+
 	nodes []livedoc.Node
 	keys  []memoKey
 
@@ -57,7 +59,7 @@ func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[st
 		published = 0
 	}
 	if n := len(c.keys); bound > n {
-		c.nodes = append(c.nodes, Nodes(msgs[n:bound], partials, argPartials, timings)...)
+		c.nodes = append(c.nodes, c.Names.Nodes(Nodes(msgs[n:bound], partials, argPartials, timings))...)
 		for _, m := range msgs[n:bound] {
 			c.keys = append(c.keys, keyOf(m))
 		}
@@ -71,7 +73,7 @@ func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[st
 
 	tail := msgs[len(c.keys):]
 	c.composed += len(tail)
-	return c.nodes, Nodes(tail, partials, argPartials, timings), published
+	return c.nodes, c.Names.Nodes(Nodes(tail, partials, argPartials, timings)), published
 }
 
 // A memo that cannot be trusted is dropped, not repaired: a composed node is

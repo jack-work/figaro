@@ -34,6 +34,7 @@ func TestLiveDeltaCarriesEveryNodeField(t *testing.T) {
 		Input:      `{"command":"ls`,
 		Summary:    "ls",
 		Sender:     "aria 76062b18",
+		SenderName: "nursery-lioness",
 		OpenedAt:   99,
 		StartedAt:  111,
 		FinishedAt: 222,

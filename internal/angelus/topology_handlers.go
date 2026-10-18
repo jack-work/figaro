@@ -147,7 +147,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		ProviderFactory: h.factory,
 		Models:          h.angelus.Models,
 		Tools:           reg,
-		Projector:       uiir.New(reg),
+		Projector:       uiir.New(reg).Naming(h.angelus.senderName),
 		Backend:         backend,
 		Form:            cbState,
 		Settings:        loaded,

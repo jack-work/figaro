@@ -89,10 +89,11 @@ type Node struct {
 
 	Markdown string `json:"markdown,omitempty"`
 
-	// Sender is already rendered (rpc.Attribution); one message can fold
-	// several submissions, so attribution lives on the node. Empty draws
-	// nothing.
-	Sender string `json:"sender,omitempty"`
+	// Sender is an aria id or a caller's label; one message can fold several
+	// submissions, so attribution lives on the node. Empty draws nothing.
+	// SenderName is the daemon's unique handle for an aria sender.
+	Sender     string `json:"sender,omitempty"`
+	SenderName string `json:"sender_name,omitempty"`
 
 	// ID is legacy provenance, serialized but not UI identity: the wire
 	// addresses a node by the positional pair (turn, From+i).

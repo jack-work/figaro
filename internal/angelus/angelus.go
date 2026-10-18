@@ -103,9 +103,9 @@ func New(cfg Config) *Angelus {
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
 		Models:     cfg.Models,
-		uiProj:     uiir.New(nil),
 		Hubs:       newHubs(),
 	}
+	a.uiProj = uiir.New(nil).Naming(a.senderName)
 	a.UICache = aria.NewComposedCache(uiBudget(cfg.Settings), a.composeTurns, a.uiLineage)
 	return a
 }

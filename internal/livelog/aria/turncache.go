@@ -504,7 +504,7 @@ func (c *TurnCache) release() {
 func turnBytes(t Turn) int {
 	n := len(t.Inquiry)
 	for _, s := range t.InquirySegments {
-		n += len(s.Text) + len(s.Sender)
+		n += len(s.Text) + len(s.Sender) + len(s.Name)
 	}
 	for k, d := range t.FormDeltas {
 		n += len(k) + len(d.Value) + len(d.Form)

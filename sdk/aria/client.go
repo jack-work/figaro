@@ -647,6 +647,8 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Summary = asStr(v)
 	case "sender":
 		n.Sender = asStr(v)
+	case "sender_name":
+		n.SenderName = asStr(v)
 	case "status":
 		n.Status = asStr(v)
 	case "markdown":

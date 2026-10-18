@@ -32,10 +32,11 @@ type Turn struct {
 	Live   *Live          `json:"live,omitempty"`
 }
 
-// InquirySegment.Sender is already rendered (rpc.Attribution); empty means
-// unknown and draws nothing.
+// InquirySegment.Sender is who sent it: an aria id or a caller's label; empty
+// draws nothing. Name is the daemon's unique handle for an aria sender.
 type InquirySegment struct {
 	Sender string `json:"sender,omitempty"`
+	Name   string `json:"name,omitempty"`
 	Text   string `json:"text"`
 }
 

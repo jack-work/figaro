@@ -40,18 +40,31 @@ func names(m idMatcher, id string) (short, words string) {
 			break
 		}
 	}
+	return short, uniqueWords(m, id)
+}
+
+func uniqueWords(m idMatcher, id string) string {
 	for n := handle.MinWords; n <= handle.MaxWords; n++ {
 		w := handle.Words(id, n)
 		ref, _ := handle.Parse(w)
-		hits := 0
+		hits, mine := 0, false
 		for _, c := range m.MatchID(ref.HexPrefix(), -1) {
 			if ref.Matches(c) {
 				hits++
+				mine = mine || c == id
 			}
 		}
-		if hits == 1 {
-			return short, w
+		if hits == 1 && mine {
+			return w
 		}
 	}
-	return short, ""
+	return ""
+}
+
+func (a *Angelus) senderName(sender string) string {
+	id := strings.TrimPrefix(sender, rpc.AriaLabelPrefix)
+	if a.Backend == nil || !rpc.IsHexID(id) || len(strings.TrimPrefix(id, "@")) < rpc.OldIDLen {
+		return ""
+	}
+	return uniqueWords(a.Backend, id)
 }

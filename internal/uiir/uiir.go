@@ -13,23 +13,33 @@ import (
 type Projector struct {
 	timings map[string]compose.ToolTiming
 	live    *compose.Incremental
+	names   compose.Namer
 }
 
 func New(r *tool.Registry) *Projector {
 	return &Projector{live: compose.NewIncremental()}
 }
 
+func (p *Projector) Naming(names func(sender string) string) *Projector {
+	p.names = names
+	if p.live != nil {
+		p.live.Names = names
+	}
+	return p
+}
+
 func (p *Projector) InquirySegments(m message.Message) []aria.InquirySegment {
-	return compose.InquirySegmentsOf(m)
+	return p.names.Segments(compose.InquirySegmentsOf(m))
 }
 
 func (p *Projector) Turns(msgs []message.Message) []aria.Turn {
-	return compose.Turns(msgs)
+	return p.names.Turns(compose.Turns(msgs))
 }
 
 func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]string) (prefix, suffix []livedoc.Node, stable int) {
 	if p.live == nil {
 		p.live = compose.NewIncremental()
+		p.live.Names = p.names
 	}
 	return p.live.Nodes(msgs, tails, argPartials, p.timings)
 }
@@ -46,6 +56,7 @@ func (p *Projector) ResetTools() {
 	p.timings = map[string]compose.ToolTiming{}
 	if p.live == nil {
 		p.live = compose.NewIncremental()
+		p.live.Names = p.names
 	}
 	p.live.Reset()
 }
