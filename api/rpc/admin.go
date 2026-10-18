@@ -56,6 +56,7 @@ type StatusResponse struct {
 	BoundPIDs   int   `json:"bound_pids"`
 	// Build is the daemon's VCS revision; the wire changes between builds.
 	Build string `json:"build,omitempty"`
+	Node  string `json:"node,omitempty"`
 
 	// Mem is a pointer so an older daemon's silence reads as unknown, not zero.
 	Mem *MemStatus `json:"mem,omitempty"`

@@ -162,7 +162,14 @@ func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, erro
 	if req.Version != rpc.ProtocolVersion {
 		return nil, fmt.Errorf("protocol version %d; this node speaks %d", req.Version, rpc.ProtocolVersion)
 	}
-	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Principal: authz.PrincipalOf(ctx)}, nil
+	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Node: h.nodeID(), Principal: authz.PrincipalOf(ctx)}, nil
+}
+
+func (h *handlers) nodeID() string {
+	if h.angelus.Backend == nil {
+		return ""
+	}
+	return h.angelus.Backend.NodeID()
 }
 
 // Restore wakes ariaID; wokeBy lands on FigaroInfo.WokeBy.

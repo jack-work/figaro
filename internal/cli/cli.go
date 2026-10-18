@@ -47,7 +47,7 @@ func Run(progName string, args []string) {
 	if len(args) > 0 {
 		switch args[0] {
 		case "--version", "-V":
-			boot.PrintVersion(os.Stdout)
+			runVersion(false)
 			return
 		}
 	}
@@ -1420,10 +1420,13 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Name:    "version",
 		Aliases: []string{"v"},
 		Group:   "System",
-		Short:   "Print build identity (revision, exe path, Go version)",
-		Usage:   "version",
+		Short:   "Print build identity (revision, exe path, Go version) and the reachable daemon's node id",
+		Usage:   "version [-j]",
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "One line of JSON"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			boot.PrintVersion(os.Stdout)
+			runVersion(ctx.BoolFlag("json"))
 			return nil
 		},
 	})

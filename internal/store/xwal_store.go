@@ -171,6 +171,7 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 
 type XwalStore struct {
 	root     string
+	nodeID   string
 	mu       sync.Mutex
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
@@ -280,8 +281,13 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := ensureSchema(root, st); err != nil {
 		return nil, err
 	}
+	nodeID, err := ensureNodeID(root)
+	if err != nil {
+		st.Close()
+		return nil, err
+	}
 	x := &XwalStore{
-		root: root, trunks: st,
+		root: root, trunks: st, nodeID: nodeID,
 		now: func() int64 { return time.Now().UnixMilli() },
 	}
 	empty := map[string][]string{}

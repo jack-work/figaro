@@ -39,8 +39,12 @@ func TestHelloStampsTheConnectionPrincipal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := out.(rpc.HelloResponse); got.Version != rpc.ProtocolVersion || got.Principal != (rpc.Principal{}) {
+	got := out.(rpc.HelloResponse)
+	if got.Version != rpc.ProtocolVersion || got.Principal != (rpc.Principal{}) {
 		t.Fatalf("hello = %+v", got)
+	}
+	if got.Node == "" || got.Node != hs.h.angelus.Backend.NodeID() {
+		t.Fatalf("hello node = %q, want the store's %q", got.Node, hs.h.angelus.Backend.NodeID())
 	}
 }
 

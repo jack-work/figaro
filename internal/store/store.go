@@ -185,6 +185,7 @@ type Backend interface {
 
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView
+	NodeID() string
 
 	// Forms returns every unbound form trunk.
 	Forms() []NodeView
