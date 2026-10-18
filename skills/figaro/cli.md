@@ -157,8 +157,8 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
 
-`ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID,
-OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
+`ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID
+(the aria's word handle), OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
 row shows `▸`, not `●`, so identify yourself from the header instead.
 
 `attend` binds the **terminal**, not the process that typed it: on unix the key
@@ -168,6 +168,28 @@ attended shell therefore speaks to that shell's aria: it cannot move the
 attendance, only use it. Windows has no POSIX session and keys on the parent.
 Override with `--no-bind`/`-A` (ignore the binding) or `--bind` (use it where
 the no-TTY rule would switch writes off); both go before the verb.
+
+### Naming an aria
+
+Every `<id>` above takes any of these, and all of them name the same aria:
+
+| Form | Example |
+|---|---|
+| the full id | `a5647bfbc216b8a09ffea9586393c289` (old arias: `d9a9cebf`) |
+| its word handle | `nursery-lioness` |
+| the handle's stems, 3+ letters a word | `nur-lio` |
+| any unique hex prefix, 4+ characters | `a5647` |
+| either, on another node | `spain2/nursery-lioness` |
+| a form | `@` before any of them |
+
+The two words spell the id's first five hex digits, so the handle and the
+five-character prefix are one name written two ways. A new id is redrawn at
+mint until its first five digits are its own, so both stay unique for good.
+Two old ids that share five digits share two words; each gets a third
+(`nursery-lioness-refinery`) and the two-word form is refused as ambiguous,
+naming both. `ls`, the status bar and every "attending" line show the handle;
+`status` shows the handle, the short hex and the full id; `-j` carries
+`id`, `short` and `handle`.
 
 ## Branching
 

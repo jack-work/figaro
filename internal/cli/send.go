@@ -630,11 +630,12 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID string `json:"aria_id"`
+			Handle string `json:"handle"`
 			Mode   string `json:"mode"`
-		}{AriaID: ariaID, Mode: "forget"})
+		}{AriaID: ariaID, Handle: ariaName(ariaID), Mode: "forget"})
 		return
 	}
-	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
+	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaName(ariaID), ariaName(ariaID))
 }
 
 // promptFlagDefs exists for completion only: send, new and fork are PassRaw and

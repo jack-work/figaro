@@ -205,7 +205,8 @@ func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Sna
 	}
 
 	species := speciesOf(f)
-	fmt.Fprintf(w, "%s\t%s\n", species, f.ID)
+	fmt.Fprintf(w, "%s\t%s\n", species, rowName(f))
+	row("id", f.ID)
 	row("name", dash(f.Name))
 	if target := roleTargetOf(f, snap); target != "" {
 		if targetState != "" {
@@ -264,7 +265,11 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTu
 		return s
 	}
 
-	fmt.Fprintf(w, "figaro\t%s\n", f.ID)
+	fmt.Fprintf(w, "figaro\t%s\n", rowName(f))
+	row("id", f.ID)
+	if f.Short != "" {
+		row("short", f.Short)
+	}
 	row("state", dash(f.State))
 	row("mantra", dash(f.Mantra))
 	row("provider", dash(f.Provider))

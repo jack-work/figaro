@@ -84,14 +84,15 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID string `json:"aria_id"`
+			Handle string `json:"handle"`
 			Mode   string `json:"mode"`
-		}{AriaID: figaroID, Mode: "new"})
+		}{AriaID: figaroID, Handle: ariaName(figaroID), Mode: "new"})
 		return
 	}
 
 	// Nothing was bound, so the id goes to stderr for callers to capture.
 	if bindingDisabled() {
-		fmt.Fprintf(stderrw, "created %s\n", figaroID)
+		fmt.Fprintf(stderrw, "created %s\n", ariaName(figaroID))
 	}
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set, d)
 }
@@ -151,7 +152,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	if stay {
 		target = trunkID
 		if !asJSON {
-			fmt.Fprintf(stderrw, "forked %s at %s -> %s (parked; staying on %s)\n", trunkID, at, fr.Alternative, trunkID)
+			fmt.Fprintf(stderrw, "forked %s at %s -> %s (parked; staying on %s)\n", ariaName(trunkID), at, ariaName(fr.Alternative), ariaName(trunkID))
 		}
 	} else {
 		// Registry.Bind rebinds in place; no Unbind needed first.
@@ -159,7 +160,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			fmt.Fprintf(stderrw, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
 		if !asJSON {
-			fmt.Fprintf(stderrw, "forked %s at %s -> attending %s\n", trunkID, at, fr.Alternative)
+			fmt.Fprintf(stderrw, "forked %s at %s -> attending %s\n", ariaName(trunkID), at, ariaName(fr.Alternative))
 		}
 	}
 
@@ -167,6 +168,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID       string `json:"aria_id"`
+			Handle       string `json:"handle"`
 			Parent       string `json:"parent"`
 			Alternative  string `json:"alternative"`
 			Continuation string `json:"continuation"`
@@ -175,6 +177,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			Mode         string `json:"mode"`
 		}{
 			AriaID:       target,
+			Handle:       ariaName(target),
 			Parent:       fr.Parent,
 			Alternative:  fr.Alternative,
 			Continuation: fr.Continuation,
@@ -236,13 +239,14 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID string `json:"aria_id"`
+			Handle string `json:"handle"`
 			Mode   string `json:"mode"`
-		}{AriaID: figaroID, Mode: "new"})
+		}{AriaID: figaroID, Handle: ariaName(figaroID), Mode: "new"})
 		return
 	}
 	dressed := "the default outfit"
 	if !d.IsEmpty() {
 		dressed = "outfit " + d.label()
 	}
-	fmt.Fprintf(stderrw, "created %s under %s (attended; no prompt sent)\n", figaroID, dressed)
+	fmt.Fprintf(stderrw, "created %s under %s (attended; no prompt sent)\n", ariaName(figaroID), dressed)
 }

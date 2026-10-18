@@ -66,7 +66,7 @@ func reportCast(out castOutcome, asJSON bool) {
 		}
 		die("cast: %s", out.Err)
 	}
-	fmt.Fprintf(stdout, "cast %s into %s\n", out.AriaID, out.RoleID)
+	fmt.Fprintf(stdout, "cast %s into %s\n", ariaName(out.AriaID), ariaName(out.RoleID))
 	fmt.Fprintf(stderrw,
 		"the role follows: `fig send --id %s -- …` reaches %s until it is repointed\n",
 		out.RoleID, out.AriaID)
@@ -115,10 +115,10 @@ func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	if err := bindBinding(ctx, acli, shellPID, roleID, 0); err != nil {
-		fmt.Fprintf(stderrw, "cast: minted %s but could not attend it: %s\n", roleID, err)
+		fmt.Fprintf(stderrw, "cast: minted %s but could not attend it: %s\n", ariaName(roleID), err)
 		return
 	}
-	fmt.Fprintf(stderrw, "attending %s (--stay to keep your previous attendance)\n", roleID)
+	fmt.Fprintf(stderrw, "attending %s (--stay to keep your previous attendance)\n", ariaName(roleID))
 }
 
 func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string, set renderSettings, stay bool) {
@@ -161,7 +161,7 @@ func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, a
 	if err != nil {
 		die("cast: attending %s, but minting a figaro for it failed: %s", formID, err)
 	}
-	fmt.Fprintf(stderrw, "attending %s: minted %s to play it\n", formID, ariaID)
+	fmt.Fprintf(stderrw, "attending %s: minted %s to play it\n", ariaName(formID), ariaName(ariaID))
 	out := autocast(loaded, ariaID, formID, dressing{})
 	out.Minted = true
 	// The shell stays on the form it was attending: the aria was minted to

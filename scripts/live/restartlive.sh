@@ -18,8 +18,8 @@ mkdir -p "$ROOT/config" "$ROOT/state" "$ROOT/rt" "$ROOT/wire"
 cp -a "${HOME}/.config/figaro/." "$ROOT/config/" 2>/dev/null || true
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
-FORM=$("$BIN" form new --set brief=b0 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
-ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
+FORM=$("$BIN" form new --set brief=b0 -j 2>/dev/null | jq -r .form_id)
+ARIA=$("$BIN" new -j 2>/dev/null | jq -r .aria_id)
 "$BIN" set --id "$ARIA" system.environment.figaro_wire_dir "$ROOT/wire" >/dev/null
 "$BIN" study "$ARIA" "$FORM" >/dev/null
 SEND_OUT=$("$BIN" send --id "$ARIA" -- "say: one" 2>&1); assert_send "say: one" "$SEND_OUT"

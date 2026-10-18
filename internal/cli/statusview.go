@@ -200,7 +200,7 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 		Pit:     pit,
 		State:   s.turn,
 		Tick:    s.tick,
-		Aria:    s.figaroID,
+		Aria:    ariaName(s.figaroID),
 		Mantra:  s.metrics.Mantra,
 		LastAt:  s.lastAt,
 		Verbose: verbose,

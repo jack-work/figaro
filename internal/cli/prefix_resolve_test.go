@@ -76,5 +76,5 @@ func TestListScopesToAPrefixInFigaroAria(t *testing.T) {
 	loaded, id := prefixRig(t)
 	t.Setenv("FIGARO_ARIA", id[:6])
 	out := stdoutOf(t, func() { runList(loaded, lsOpts{limit: 10}) })
-	require.True(t, strings.Contains(out, id[:9]), "ls drew no row for %s:\n%s", id, out)
+	require.True(t, strings.Contains(out, ariaName(id)), "ls drew no row for %s:\n%s", id, out)
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
@@ -114,6 +115,9 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	if t, ok := h.tombstone(id); ok {
 		return h.towardsMoved(ctx, t, route)
 	}
+	if w, ok := handle.Parse(id); ok && h.angelus.Backend != nil {
+		return h.placeWords(ctx, id, w, route)
+	}
 	if len(strings.TrimPrefix(id, "@")) < minIDPrefix || h.angelus.Backend == nil {
 		return id, "", nil
 	}
@@ -135,6 +139,29 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 		matches, more = matches[:ambiguityList], ", ..."
 	}
 	return "", "", fmt.Errorf("%s is ambiguous: %s%s", id, strings.Join(matches, ", "), more)
+}
+
+func (h *handlers) placeWords(ctx context.Context, ref string, w handle.Ref, route bool) (string, string, error) {
+	var matches []string
+	for _, id := range h.matchReadable(ctx, w.HexPrefix()) {
+		if w.Matches(id) {
+			matches = append(matches, id)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		if route && w.N == handle.MinWords {
+			return h.locate(ctx, w.HexPrefix())
+		}
+		return ref, "", nil
+	case 1:
+		return matches[0], "", nil
+	}
+	named := make([]string, len(matches))
+	for i, id := range matches {
+		named[i] = handle.Words(id, handle.MaxWords)
+	}
+	return "", "", fmt.Errorf("%s is ambiguous: %s", ref, strings.Join(named, ", "))
 }
 
 func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {

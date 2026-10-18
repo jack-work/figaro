@@ -7,6 +7,7 @@ package cli
 // and cannot hold the cursor.
 
 import (
+	"github.com/jack-work/figaro/api/handle"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -851,6 +852,9 @@ func looksLikeAriaID(s string) bool {
 		return false
 	}
 	_, id := rpc.SplitNode(s)
+	if _, ok := handle.Parse(id); ok {
+		return true
+	}
 	if strings.HasPrefix(id, "@") {
 		return true
 	}

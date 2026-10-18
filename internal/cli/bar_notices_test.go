@@ -33,7 +33,7 @@ func TestTwoNotesShareTheBarNewestFirst(t *testing.T) {
 	if !strings.HasPrefix(row, "sent · widened both ends") {
 		t.Fatalf("the newest note does not lead, or the older is missing: %q", row)
 	}
-	for _, keep := range []string{"✓", "d9727632", "~190.1k/1.0m"} {
+	for _, keep := range []string{"✓", ariaName("d9727632"), "~190.1k/1.0m"} {
 		if !strings.Contains(row, keep) {
 			t.Fatalf("%q was pushed off the row: %q", keep, row)
 		}

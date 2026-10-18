@@ -78,9 +78,9 @@ func runStudy(loaded *config.Loaded, args []string, drop, asJSON bool) {
 			return json.NewEncoder(stdout).Encode(map[string]any{"aria_id": ariaID, "studies": resp.Studies})
 		}
 		if formID == "" {
-			fmt.Fprintf(stdout, "%s studies: %s\n", ariaID, strings.Join(resp.Studies, ", "))
+			fmt.Fprintf(stdout, "%s studies: %s\n", ariaName(ariaID), strings.Join(resp.Studies, ", "))
 		} else {
-			fmt.Fprintf(stdout, "%s %s %s (studies: %d)\n", ariaID, verbPast(verb), formID, len(resp.Studies))
+			fmt.Fprintf(stdout, "%s %s %s (studies: %d)\n", ariaName(ariaID), verbPast(verb), ariaName(formID), len(resp.Studies))
 		}
 		return nil
 	})
@@ -150,7 +150,7 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 		}
 		ariaID = created.FigaroID
 		minted = ariaID
-		fmt.Fprintf(stderrw, "no figaro attended: minted %s from the default form (unattended)\n", ariaID)
+		fmt.Fprintf(stderrw, "no figaro attended: minted %s from the default form (unattended)\n", ariaName(ariaID))
 	}
 
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
@@ -177,12 +177,12 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 		// A role this call minted is what the shell ends up in front of; an
 		// existing role leaves attendance alone.
 		attendAfterCast(loaded, resp.RoleID, minting, stay)
-		fmt.Fprintf(stdout, "cast %s into %s", ariaID, resp.RoleID)
+		fmt.Fprintf(stdout, "cast %s into %s", ariaName(ariaID), ariaName(resp.RoleID))
 		if resp.Studied {
 			fmt.Fprintf(stdout, " (now studying it)")
 		}
 		fmt.Fprintln(stdout)
-		fmt.Fprintf(stderrw, "the role follows: `fig send --id %s -- …` reaches %s until it is repointed\n", resp.RoleID, ariaID)
+		fmt.Fprintf(stderrw, "the role follows: `fig send --id %s -- …` reaches %s until it is repointed\n", ariaName(resp.RoleID), ariaName(ariaID))
 		return nil
 	})
 }

@@ -52,11 +52,11 @@ sleep 1
 has "show (dormant)"   "$("$BIN" --bind show --id "$A" 2>&1)"     "PERUKE"
 has "state (dormant)"  "$("$BIN" --bind state --id "$A" -j 2>&1)" "system"
 has "status (dormant)" "$("$BIN" --bind status --id "$A" 2>&1)"   "$A"
-LIVE=$("$BIN" --bind ls 2>&1 | grep -c "$A" || true)
+LIVE=$("$BIN" --bind ls 2>&1 | grep -c "$("$BIN" status "$A" -j 2>/dev/null | jq -r .handle)" || true)
 [ "$LIVE" -ge 1 ] && ok "the aria still lists after the read" || bad "the aria vanished from ls"
 
 echo "== forms, study, cast (the SDK's other door)"
-F=$("$BIN" --bind form new -S name=regress 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
+F=$("$BIN" --bind form new -S name=regress -j 2>/dev/null | jq -r .form_id)
 has "form new mints" "$F" "@"
 "$BIN" --bind set --id "$F" note hello >/dev/null 2>&1
 has "form state round-trips" "$("$BIN" --bind state --id "$F" -j 2>&1)" "hello"
@@ -65,7 +65,7 @@ has "form state round-trips" "$("$BIN" --bind state --id "$F" -j 2>&1)" "hello"
 has "study lands on the board" "$("$BIN" --bind state --id "$A" -j 2>&1)" "studies"
 
 echo "== fork (topology through the collapsed surface)"
-B=$("$BIN" --bind fork "$A" 2>&1 | grep -oE "\b[0-9a-f]{8,32}\b" | tail -1)
+B=$("$BIN" --bind fork "$A" -j 2>/dev/null | jq -r .aria_id)
 has "fork mints a branch" "$B" "[0-9a-f]"
 has "the branch carries the history" "$("$BIN" --bind show --id "$B" 2>&1)" "PERUKE"
 

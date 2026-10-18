@@ -21,7 +21,7 @@ PROMPT="reply with exactly: one"
 
 ARIAS=""
 send_under() { # $1 = wire dir, $2 = streaming on/off
-  ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
+  ARIA=$("$BIN" new -j 2>/dev/null | jq -r .aria_id)
   ARIAS="$ARIAS $ARIA"
   "$BIN" set --id "$ARIA" system.environment.figaro_wire_dir "$1" >/dev/null 2>&1
   "$BIN" set --id "$ARIA" system.stream_request_body "$2" >/dev/null 2>&1

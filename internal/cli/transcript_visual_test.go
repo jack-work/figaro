@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -392,10 +393,10 @@ func TestVisual_RepeatSearchLandsTheCursor(t *testing.T) {
 }
 
 // Every id shape the CLI prints must be attendable from the pager: an old
-// 8-hex id, a new 32-hex id, the short form ShortIDs shows for either, a
-// node-qualified ref and a form. Deriving the cases from ShortIDs means a
-// change to the display length fails here instead of silently opening the
-// id as a path.
+// 8-hex id, a new 32-hex id, the short form ShortIDs shows for either, the
+// word handle in any of its spellings, a node-qualified ref and a form.
+// Deriving the cases from ShortIDs and ariaName means a change to either
+// fails here instead of silently opening the name as a path.
 func TestVisual_EveryPrintedIDShapeIsAnAriaID(t *testing.T) {
 	old, fresh := "a5647bfb", "a5647bfbc216b8a09ffea9586393c289"
 	sibling := "3f9e01c2d4b5a6978877665544332211"
@@ -403,13 +404,14 @@ func TestVisual_EveryPrintedIDShapeIsAnAriaID(t *testing.T) {
 	for _, short := range rpc.ShortIDs([]string{old, fresh, sibling}) {
 		cases = append(cases, short)
 	}
-	cases = append(cases, old, fresh, sibling, "spain2/"+fresh, "5f1c0e2a/"+old, "@f062f8d7", "@"+fresh)
+	cases = append(cases, old, fresh, sibling, "spain2/"+fresh, "5f1c0e2a/"+old, "@f062f8d7", "@"+fresh,
+		ariaName(fresh), ariaName(old), ariaName("@"+fresh), handle.Words(old, 3), "spain2/"+ariaName(fresh))
 	for _, s := range cases {
 		if !looksLikeAriaID(s) {
 			t.Errorf("%q is a printed aria id but the pager would not attend it", s)
 		}
 	}
-	for _, s := range []string{"alpha", "cafe", "deadbee", "a5647bfz", "path/to/file", "~/dev/figaro", "a5647bfb.go"} {
+	for _, s := range []string{"alpha", "cafe", "a5647bfz", "path/to/file", "~/dev/figaro", "a5647bfb.go", "el-vigia", "well-known"} {
 		if looksLikeAriaID(s) {
 			t.Errorf("%q is not an aria id but the pager would attend it", s)
 		}

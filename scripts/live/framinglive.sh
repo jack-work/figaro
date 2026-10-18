@@ -70,7 +70,7 @@ export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFI
 export ANTHROPIC_BASE_URL="http://127.0.0.1:8791/v1" ANTHROPIC_API_KEY="sink"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
-ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
+ARIA=$("$BIN" new -j 2>/dev/null | jq -r .aria_id)
 echo "aria $ARIA, one board, two settings"
 
 for VALUE in true false true; do

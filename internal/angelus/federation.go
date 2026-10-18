@@ -54,7 +54,7 @@ func (h *handlers) routes(ctx context.Context, method string) bool {
 
 func (h *handlers) isSelf(node string) bool {
 	own := h.nodeID()
-	return own != "" && (node == own || len(node) >= rpc.ShortIDLen && strings.HasPrefix(own, node))
+	return own != "" && (node == own || len(node) >= rpc.NodeShortLen && strings.HasPrefix(own, node))
 }
 
 func (h *handlers) peerNamed(node string) (string, bool) {
@@ -64,7 +64,7 @@ func (h *handlers) peerNamed(node string) (string, bool) {
 	if _, ok := h.fed.members.Member(node); ok {
 		return node, true
 	}
-	if len(node) < rpc.ShortIDLen {
+	if len(node) < rpc.NodeShortLen {
 		return "", false
 	}
 	var found []string

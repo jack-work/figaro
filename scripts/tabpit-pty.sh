@@ -80,8 +80,8 @@ check "nothing chosen yet" $(shot | grep -q "♪"; [[ $? -ne 0 ]]; echo $?)
 # 2. ^N chooses, puts it in the line, and marks it.
 key C-n; settle 0.6
 line=$(shot | grep -E "^:attend" | tail -1)
-check "^N puts the choice in the line" $([[ "$line" =~ ^:attend\ [0-9a-f]{8,32}$ ]]; echo $?) "line: $line"
-check "the chosen row carries the pit's marker" $(shot | grep -qE "^♪ [0-9a-f]{8,32}"; echo $?)
+check "^N puts the choice in the line" $([[ "$line" =~ ^:attend\ ([a-z]+-[a-z]+(-[a-z]+)?|[0-9a-f]{8,32})$ ]]; echo $?) "line: $line"
+check "the chosen row carries the pit's marker" $(shot | grep -qE "^♪ ([a-z]+-[a-z]+|[0-9a-f]{8,32})"; echo $?)
 check "the chosen row is drawn selected" $(raw | grep "♪" | grep -q $'\x1b\[48;5;240m'; echo $?)
 
 # 3. Esc puts the typed word back and keeps the box.

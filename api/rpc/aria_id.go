@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jack-work/figaro/api/handle"
 )
 
-// MaxAriaIDLen caps id length to fit unix socket sun_path.
 const MaxAriaIDLen = 64
 
 // ValidateAriaID enforces [A-Za-z0-9_-@]{1,64}: '@' is the unbound-form
@@ -51,27 +52,31 @@ func SplitNode(ref string) (node, id string) {
 	return "", ref
 }
 
-const ShortIDLen = 8
+const (
+	ShortIDLen   = handle.HexLen
+	OldIDLen     = 8
+	NodeShortLen = 8
+)
 
 func ShortIDs(ids []string) map[string]string {
 	sorted := append([]string(nil), ids...)
 	sort.Strings(sorted)
 	out := make(map[string]string, len(sorted))
 	for i, id := range sorted {
-		if !isHexID(id) {
+		if !IsHexID(id) {
 			out[id] = id
 			continue
 		}
-		body := strings.TrimPrefix(id, "@")
-		n := len(id) - len(body) + ShortIDLen
-		if len(body) > ShortIDLen {
-			n++
-		}
+		sigil := len(id) - len(strings.TrimPrefix(id, "@"))
+		n := sigil + ShortIDLen
 		if i > 0 {
 			n = max(n, commonPrefixLen(id, sorted[i-1])+1)
 		}
 		if i+1 < len(sorted) {
 			n = max(n, commonPrefixLen(id, sorted[i+1])+1)
+		}
+		if n-sigil == OldIDLen && len(id)-sigil > OldIDLen {
+			n++
 		}
 		out[id] = id[:min(n, len(id))]
 	}
@@ -86,7 +91,7 @@ func commonPrefixLen(a, b string) int {
 	return i
 }
 
-func isHexID(id string) bool {
+func IsHexID(id string) bool {
 	id = strings.TrimPrefix(id, "@")
 	if id == "" {
 		return false

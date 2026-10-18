@@ -130,6 +130,7 @@ func runForkPrompt(loaded *config.Loaded, plan forkPlan) {
 			enc := json.NewEncoder(stdout)
 			_ = enc.Encode(struct {
 				AriaID       string `json:"aria_id"`
+				Handle       string `json:"handle"`
 				Parent       string `json:"parent"`
 				Continuation string `json:"continuation"`
 				Alternative  string `json:"alternative"`
@@ -140,6 +141,7 @@ func runForkPrompt(loaded *config.Loaded, plan forkPlan) {
 				Mode         string `json:"mode"`
 			}{
 				AriaID:       out.Alternative,
+				Handle:       ariaName(out.Alternative),
 				Parent:       out.Parent,
 				Continuation: out.Continuation,
 				Alternative:  out.Alternative,

@@ -29,7 +29,7 @@ echo "== a verb that creates something FOR you attends it"
 A1=$("$BIN" --bind new -j 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin)["aria_id"])')
 check "fig new" "$A1" "$(bound)"
 
-FORM=$("$BIN" --bind form new -S probe=1 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
+FORM=$("$BIN" --bind form new -S probe=1 -j 2>/dev/null | jq -r .form_id)
 check "fig form new" "$FORM" "$(bound)"
 
 "$BIN" --bind attend "$A1" >/dev/null 2>&1
@@ -38,7 +38,7 @@ check "fig attend <aria>" "$A1" "$(bound)"
 echo "== a verb that creates something BESIDE you leaves the shell alone"
 A2=$("$BIN" --bind new -j 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin)["aria_id"])')
 "$BIN" --bind attend "$A1" >/dev/null 2>&1
-FORM2=$("$BIN" --bind form fork "$FORM" -S probe=2 2>&1 | grep -oE "@[0-9a-f]+" | tail -1)
+FORM2=$("$BIN" --bind form fork "$FORM" -S probe=2 -j 2>/dev/null | jq -r .form_id)
 # form fork is a birth verb too: it mints FOR you, so it attends. Recorded
 # here so the answer is asserted rather than assumed either way.
 check "fig form fork" "$FORM2" "$(bound)"

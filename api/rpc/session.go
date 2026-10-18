@@ -2,6 +2,8 @@ package rpc
 
 type FigaroInfoResponse struct {
 	ID               string `json:"id"`
+	Short            string `json:"short,omitempty"`
+	Handle           string `json:"handle,omitempty"`
 	Node             string `json:"node,omitempty"`
 	State            string `json:"state"`
 	Provider         string `json:"provider"`

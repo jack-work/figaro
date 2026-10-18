@@ -94,7 +94,7 @@ func runExport(loaded *config.Loaded, args []string) {
 	if err := os.WriteFile(out, blob, 0o600); err != nil {
 		die("export: %s", err)
 	}
-	fmt.Fprintf(stderrw, "exported %s (%d messages) to %s\n", id, len(doc.Messages), out)
+	fmt.Fprintf(stderrw, "exported %s (%d messages) to %s\n", ariaName(id), len(doc.Messages), out)
 }
 
 func exportMessages(ctx context.Context, acli *sdk.Angelus, id string) ([]message.Message, error) {

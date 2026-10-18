@@ -114,18 +114,18 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// The window is labelled by turn id, not slice position.
 	if lo >= hi {
 		if w.atHead {
-			fmt.Fprintf(stdout, "# aria %s: %d turns (no turn in range)\n\n", figaroID, len(turns))
+			fmt.Fprintf(stdout, "# aria %s: %d turns (no turn in range)\n\n", ariaName(figaroID), len(turns))
 		} else {
 			// The count is not known: the walk stopped once the
 			// selector was covered.
-			fmt.Fprintf(stdout, "# aria %s: no turn in that range within the %d turns walked back from the tail\n\n", figaroID, len(turns))
+			fmt.Fprintf(stdout, "# aria %s: no turn in that range within the %d turns walked back from the tail\n\n", ariaName(figaroID), len(turns))
 		}
 		return
 	}
 	if w.atHead {
-		fmt.Fprintf(stdout, "# aria %s: %d turns (showing %d..%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
+		fmt.Fprintf(stdout, "# aria %s: %d turns (showing %d..%d) · [N] is the turn to fork/send at\n\n", ariaName(figaroID), len(turns), turns[lo].ID, turns[hi-1].ID)
 	} else {
-		fmt.Fprintf(stdout, "# aria %s: turns %d..%d, walked back from the tail · [N] is the turn to fork/send at\n\n", figaroID, turns[lo].ID, turns[hi-1].ID)
+		fmt.Fprintf(stdout, "# aria %s: turns %d..%d, walked back from the tail · [N] is the turn to fork/send at\n\n", ariaName(figaroID), turns[lo].ID, turns[hi-1].ID)
 	}
 	for i := lo; i < hi; i++ {
 		u := turns[i]
@@ -284,7 +284,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 	}
 
 	// The denominator is the aria's message count, not the window's.
-	fmt.Fprintf(w, "# aria %s: showing %d of %d messages\n\n", figaroID, len(entries)-start, win.total)
+	fmt.Fprintf(w, "# aria %s: showing %d of %d messages\n\n", ariaName(figaroID), len(entries)-start, win.total)
 	for _, e := range entries[start:] {
 		renderMessage(w, e.Payload, e.LT, opts.verbose)
 	}

@@ -84,6 +84,6 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus,
 	if strings.Contains(*target, "@") {
 		return "", sdk.Addr{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)
 	}
-	report(ctx, "role %s → aria %s", id, *target)
+	report(ctx, "role %s → aria %s", ariaName(id), ariaName(*target))
 	return resolveTargetEndpoint(ctx, loaded, acli, *target, false, dressing{})
 }

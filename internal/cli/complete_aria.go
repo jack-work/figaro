@@ -25,10 +25,13 @@ func softFetchAriaIDs() []string {
 	if err != nil {
 		return nil
 	}
-	out := make([]string, 0, len(resp.Figaros))
+	out := make([]string, 0, 2*len(resp.Figaros))
 	for _, f := range resp.Figaros {
 		if f.ID != "" {
 			out = append(out, f.ID)
+		}
+		if f.Handle != "" {
+			out = append(out, f.Handle)
 		}
 	}
 	sort.Strings(out)

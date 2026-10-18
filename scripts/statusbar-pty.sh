@@ -109,7 +109,7 @@ done
 
 # 1b. THE BAR IS THE VALUE'S OUTPUT NOW: the aria id is on it, and the fields
 #     the requirement removed are gone.
-if [[ "$row" == *"123"* || "$row" =~ [0-9a-f]{8,32} ]]; then
+if [[ "$row" == *"123"* || "$row" =~ [a-z]+-[a-z]+|[0-9a-f]{5,32} ]]; then
   echo "ok   the aria id is on the status row"
 else
   echo "FAIL: no aria id on the status row: [$row]"; fail=1

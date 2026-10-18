@@ -67,7 +67,7 @@ One definition each. The file named owns the model behind it.
 
 | Term | One sentence | Owner |
 |---|---|---|
-| aria | One conversation, addressed by an opaque hex id; any unique prefix of 4+ characters works, and `<node>/<id>` names the store it lives in. | [cli.md](cli.md) |
+| aria | One conversation, addressed by an opaque hex id or its two-word handle (`nursery-lioness`); see "Naming an aria". | [cli.md](cli.md) |
 | trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |

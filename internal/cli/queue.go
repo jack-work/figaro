@@ -84,10 +84,10 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 	}
 
 	if len(queue) == 0 {
-		fmt.Fprintf(stdout, "queue %s: empty\n", s.id)
+		fmt.Fprintf(stdout, "queue %s: empty\n", ariaName(s.id))
 		return
 	}
-	fmt.Fprintf(stdout, "queue %s: %s waiting\n", s.id, plural(len(queue), "message"))
+	fmt.Fprintf(stdout, "queue %s: %s waiting\n", ariaName(s.id), plural(len(queue), "message"))
 	width := termWidth() - 24
 	if width < 20 {
 		width = 20

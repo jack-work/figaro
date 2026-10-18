@@ -54,11 +54,11 @@ func TestSessionStatusRulePrefersMantraOverSecondaryDetails(t *testing.T) {
 	})
 	status.setLimit(128000)
 
-	if rule := status.ruleLine(40, ""); strings.Contains(rule, "dac6cb6d") {
+	if rule := status.ruleLine(40, ""); strings.Contains(rule, "dac6cb6d") || strings.Contains(rule, ariaName("dac6cb6d")) {
 		t.Fatalf("the rule still carries the aria id: %q", rule)
 	}
 	line := row(status, 40)
-	if !strings.Contains(line, "dac6cb6d") {
+	if !strings.Contains(line, ariaName("dac6cb6d")) {
 		t.Fatalf("narrow status line dropped the aria: %q", line)
 	}
 	if !strings.Contains(line, "12.0k/128.0k") {

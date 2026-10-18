@@ -60,7 +60,7 @@ func TestListRowIDComesFromTheVerbNotTheRenderedText(t *testing.T) {
 	rows := []figtree.Row{{
 		Marker: "▸",
 		Label:  "orchestrating fix aria 90ec6584",
-		Fields: map[string]string{fieldID: "23e03e27", fieldAge: "4m", fieldMsgs: "12"},
+		Fields: map[string]string{fieldID: "suds-obtain", fieldAriaID: "23e03e27", fieldAge: "4m", fieldMsgs: "12"},
 	}}
 
 	var buf lockedBuffer
@@ -79,6 +79,24 @@ func TestListRowIDComesFromTheVerbNotTheRenderedText(t *testing.T) {
 	}
 	if !strings.Contains(got[1].text, "90ec6584") {
 		t.Fatalf("the case needs both ids in one line: %q", got[1].text)
+	}
+}
+
+// The ID column shows a name, but a row acts on, and is found by, the aria's
+// full id: L and l land the cursor on the attended row by matching that id,
+// and fell to the first row when the column started showing words.
+func TestListPitFocusesTheAttendedRowByItsFullID(t *testing.T) {
+	tree, _ := listTree(treeFixture(), "", 0)
+	var buf lockedBuffer
+	printListRows(&buf, tree.Rows(), 160, false)
+	cap := buf.captured()
+	p := newPicker(cap.rows(splitOutputLines(cap.text)))
+	if !p.focus("cccc3333") {
+		t.Fatalf("no row in the pit is about cccc3333:\n%s", cap.text)
+	}
+	row, _ := p.selected()
+	if row.id != "cccc3333" || !strings.Contains(row.text, ariaName("cccc3333")) {
+		t.Fatalf("focus landed on %q (%q), want the row named %s", row.id, row.text, ariaName("cccc3333"))
 	}
 }
 

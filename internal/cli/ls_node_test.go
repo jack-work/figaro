@@ -12,7 +12,7 @@ import (
 func TestRemoteRowsShowTheirNode(t *testing.T) {
 	local, remote := "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
 	plain := rpc.ShortIDs([]string{local, remote})
-	short := shortIDsOf([]rpc.FigaroInfoResponse{
+	short := namesOf([]rpc.FigaroInfoResponse{
 		{ID: local},
 		{ID: remote, Node: "65cb28d9-e752-4627-bbdc-44fb3750dbde"},
 	})
@@ -21,6 +21,13 @@ func TestRemoteRowsShowTheirNode(t *testing.T) {
 	}
 	if got, want := short[remote], "65cb28d9/"+plain[remote]; got != want {
 		t.Fatalf("remote row: %q, want %q", got, want)
+	}
+	named := namesOf([]rpc.FigaroInfoResponse{
+		{ID: local, Handle: "nursery-lioness", Short: "01234"},
+		{ID: remote, Handle: "suds-obtain", Short: "fedcb", Node: "65cb28d9-e752-4627-bbdc-44fb3750dbde"},
+	})
+	if named[local] != "nursery-lioness" || named[remote] != "65cb28d9/suds-obtain" {
+		t.Fatalf("rows the daemon named show their handles: %v", named)
 	}
 }
 
@@ -39,10 +46,10 @@ func TestRemoteRowsNestUnderTheirOwnNode(t *testing.T) {
 	}
 	for _, r := range tree.Roots {
 		remote := len(r.Children) == 1
-		if strings.Contains(r.Label, "aaaaaaaa") && remote {
+		if strings.Contains(r.Label, "aaaaa") && remote {
 			t.Fatal("the remote child nested under the local root")
 		}
-		if strings.Contains(r.Label, "bbbbbbbb") && !remote {
+		if strings.Contains(r.Label, "bbbbb") && !remote {
 			t.Fatal("the remote child lost its parent")
 		}
 	}

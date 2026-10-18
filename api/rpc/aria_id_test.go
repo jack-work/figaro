@@ -68,21 +68,23 @@ func TestValidateAriaRef(t *testing.T) {
 }
 
 // A displayed id is short, yet always enough to resolve back to the one it
-// names: never shorter than the stretch it shares with a neighbour, and an
-// old 8-hex id that a new one starts with stays visibly distinct.
+// names within the listing: handle.HexLen digits at least, never shorter than
+// the stretch it shares with a neighbour.
 func TestShortIDs(t *testing.T) {
 	old := "abcd1234"
 	long := "abcd1234" + "0123456789abcdef0123456789ab"
 	near := "abcd12ff" + "0123456789abcdef0123456789ab"
 	form := "@ffff0000" + "0123456789abcdef0123456789ab"
-	got := ShortIDs([]string{long, old, near, form, "opus5-ant-outfit", "null"})
+	lone := "5a6b7c8d" + "0123456789abcdef0123456789ab"
+	got := ShortIDs([]string{long, old, near, form, lone, "opus5-ant-outfit", "null"})
 	want := map[string]string{
 		"opus5-ant-outfit": "opus5-ant-outfit",
 		"null":             "null",
 		old:                "abcd1234",
 		long:               "abcd12340",
-		near:               "abcd12ff0",
-		form:               "@ffff00000",
+		near:               "abcd12f",
+		form:               "@ffff0",
+		lone:               "5a6b7",
 	}
 	for id, w := range want {
 		if got[id] != w {
@@ -91,18 +93,16 @@ func TestShortIDs(t *testing.T) {
 	}
 }
 
-// An old 8-hex id outside the listing still wins an exact lookup, so a new
-// id shown at 8 characters would route to it. The 8-character form is
-// reserved for whole old ids.
-func TestShortIDsNeverShowAnOldIDsLength(t *testing.T) {
-	long := "abcd1234" + "0123456789abcdef0123456789ab"
-	form := "@abcd1234" + "0123456789abcdef0123456789ab"
-	got := ShortIDs([]string{long, form, "@ffff0000"})
-	want := map[string]string{
-		long:        "abcd12340",
-		form:        "@abcd12340",
-		"@ffff0000": "@ffff0000",
-	}
+// An old 8-hex id outside the listing still wins an exact lookup, so a new id
+// shown at exactly 8 characters could route to it. A long id whose short form
+// would land on 8 is shown at 9.
+func TestShortIDsNeverShowALongIDAtAnOldIDsLength(t *testing.T) {
+	a := "abcd1230" + "0123456789abcdef0123456789ab"
+	b := "abcd1239" + "0123456789abcdef0123456789ab"
+	fa := "@abcd1230" + "0123456789abcdef0123456789ab"
+	fb := "@abcd1239" + "0123456789abcdef0123456789ab"
+	got := ShortIDs([]string{a, b, fa, fb})
+	want := map[string]string{a: "abcd12300", b: "abcd12390", fa: "@abcd12300", fb: "@abcd12390"}
 	for id, w := range want {
 		if got[id] != w {
 			t.Errorf("ShortIDs[%s] = %q, want %q", id, got[id], w)

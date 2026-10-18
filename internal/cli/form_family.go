@@ -59,19 +59,20 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(map[string]any{
 			"form_id": resp.FormID,
+			"handle":  ariaName(resp.FormID),
 			"version": resp.Version,
 			"parent":  parent,
 		})
 		return
 	}
 	if parent == "" {
-		fmt.Fprintf(stdout, "minted %s (version %d)\n", resp.FormID, resp.Version)
+		fmt.Fprintf(stdout, "minted %s (version %d)\n", ariaName(resp.FormID), resp.Version)
 	} else {
-		fmt.Fprintf(stdout, "forked %s from %s (version %d)\n", resp.FormID, parent, resp.Version)
+		fmt.Fprintf(stdout, "forked %s from %s (version %d)\n", ariaName(resp.FormID), ariaName(parent), resp.Version)
 	}
 	// A form you just minted is created for you, so the shell moves onto it.
 	attendNew(ctx, acli, resp.FormID)
-	fmt.Fprintf(stderrw, "attending %s (it binds with `fig bind %s`)\n", resp.FormID, resp.FormID)
+	fmt.Fprintf(stderrw, "attending %s (it binds with `fig bind %s`)\n", ariaName(resp.FormID), ariaName(resp.FormID))
 }
 
 // runFormLs scopes by attendance: a form shows its subtree, a figaro its
@@ -118,19 +119,15 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 		fmt.Fprintln(stderrw, "no unbound forms; mint one with `fig form new -S name='…'`")
 		return
 	}
-	ids := make([]string, 0, 2*len(forms))
-	for _, f := range forms {
-		ids = append(ids, f.ID, f.TargetAria, f.Parent)
-	}
-	short := rpc.ShortIDs(ids)
-	fmt.Fprintf(stdout, "%-14s %-22s %-10s %-8s %s\n", "FORM", "NAME", "TARGET", "AGE", "PARENT")
+	short := namesOf(resp.Figaros)
+	fmt.Fprintf(stdout, "%-22s %-22s %-20s %-8s %s\n", "FORM", "NAME", "TARGET", "AGE", "PARENT")
 	for _, f := range forms {
 		age := "-"
 		if f.LastActive != 0 {
 			age = relAge(f.LastActive)
 		}
-		fmt.Fprintf(stdout, "%-14s %-22s %-10s %-8s %s\n",
-			short[f.ID], truncRunes(dash(f.Name), 22), dash(short[f.TargetAria]), age, dash(short[f.Parent]))
+		fmt.Fprintf(stdout, "%-22s %-22s %-20s %-8s %s\n",
+			nameIn(short, f.ID), truncRunes(dash(f.Name), 22), dash(nameIfSet(short, f.TargetAria)), age, dash(nameIfSet(short, f.Parent)))
 	}
 }
 
@@ -205,6 +202,6 @@ func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON boo
 		_ = enc.Encode(map[string]any{"figaro_id": resp.FigaroID, "form_id": target})
 		return
 	}
-	fmt.Fprintf(stdout, "bound %s from %s\n", resp.FigaroID, target)
-	fmt.Fprintf(stderrw, "dormant until first use; attend it with `fig at %s`\n", resp.FigaroID)
+	fmt.Fprintf(stdout, "bound %s from %s\n", ariaName(resp.FigaroID), ariaName(target))
+	fmt.Fprintf(stderrw, "dormant until first use; attend it with `fig at %s`\n", ariaName(resp.FigaroID))
 }

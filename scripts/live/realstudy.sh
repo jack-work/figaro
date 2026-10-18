@@ -19,7 +19,7 @@ ROWS=$("$BIN" ls -j 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.st
 t1=$(date +%s.%N)
 awk -v a=$t0 -v b=$t1 -v n="$ROWS" 'BEGIN{printf "first listing: %s rows in %.2f s\n", n, b-a}'
 ARIA=$("$BIN" ls -j 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);r=d if isinstance(d,list) else d.get("conversations",d.get("arias",[]));print(r[0]["id"])')
-FORM=$("$BIN" form new --set brief="studied on the real store" 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
+FORM=$("$BIN" form new --set brief="studied on the real store" -j 2>/dev/null | jq -r .form_id)
 echo "aria=$ARIA form=$FORM"
 echo "--- study an EXISTING aria (dormant, with real history)"
 "$BIN" study "$ARIA" "$FORM" 2>&1 | head -2

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+NAME_RE='([a-z]+-[a-z]+(-[a-z]+)?|[0-9a-f]{5,32})'
 # Forking at a NODE, end to end: no credentials, no network, no tokens.
 #
 # `<id>:<turn>.<node>` is a coordinate the PAGER prints and the fork wire does
@@ -212,7 +213,7 @@ fi
 # history this feature cut, so the branch is what has to take a turn.
 if "$BIN" send "$ARIA:1.3" -f -- "carry on from here" >/dev/null 2>"$BOX/senderr.txt"; then
   # send names the branch it made on stderr: "forked X at ... -> Y"
-  BR=$(grep -oE '\-> (attending )?[0-9a-f]{8,32}' "$BOX/senderr.txt" | grep -oE '[0-9a-f]{8,32}' | head -1)
+  BR=$(grep -oE '\-> (attending )?'"$NAME_RE" "$BOX/senderr.txt" | sed -E 's/^-> (attending )?//' | head -1)
   for _ in $(seq 30); do
     "$BIN" show --id "$BR" -a -j 2>/dev/null | grep -q "carry on from here" && break
     sleep 0.5

@@ -52,12 +52,8 @@ export FIGARO_CONFIG_DIR=$BOX/cfg FIGARO_STATE_DIR=$BOX/state \
        FIGARO_RUNTIME_DIR=$BOX/rt FIGARO_CACHE_DIR=$BOX/cache
 
 echo "== turn 1"
-"$BIN" new -f -- "say ok" >/dev/null 2>&1
+ARIA=$("$BIN" new -j -f -- "say ok" 2>/dev/null | jq -r .aria_id)
 sleep 6
-# The tree glyphs shift awk's columns, so match the id by shape: the aria
-# line is the only one carrying a bare 8-hex token (outfit ids are
-# name@hex, and the @ keeps them out).
-ARIA=$("$BIN" ls -g 2>/dev/null | grep "say ok" | head -1 | grep -oE '(^|[^@[:alnum:]])[0-9a-f]{8,32}([^[:alnum:]]|$)' | grep -oE '[0-9a-f]{8,32}' | head -1)
 [ -n "$ARIA" ] || { echo "FAIL: no aria was created"; exit 1; }
 
 echo "== turn 2 (aria $ARIA)"

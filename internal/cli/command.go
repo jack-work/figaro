@@ -236,7 +236,7 @@ func (in *interactiveInput) switchSubjectAs(ctx context.Context, spec string, at
 	}
 	if id == in.currentID() {
 		if attend {
-			return "attending " + id + " (already showing)", nil
+			return "attending " + ariaName(id) + " (already showing)", nil
 		}
 		return "already showing " + id, nil
 	}
@@ -246,7 +246,7 @@ func (in *interactiveInput) switchSubjectAs(ctx context.Context, spec string, at
 	}
 	if attend {
 		pos, total := in.recordAttend(from, id, how)
-		return fmt.Sprintf("attending %s (%d/%d)", id, pos, total), nil
+		return fmt.Sprintf("attending %s (%d/%d)", ariaName(id), pos, total), nil
 	}
 	return "showing " + id, nil
 }

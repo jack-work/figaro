@@ -19,7 +19,7 @@ cp -a "${HOME}/.config/figaro/." "$ROOT/config/" 2>/dev/null || true
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
-ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8,32}" | head -1)
+ARIA=$("$BIN" new -j 2>/dev/null | jq -r .aria_id)
 echo "aria $ARIA"
 
 # THE NODE, NOT THE STORE. Every aria and every form has its own directory
@@ -53,7 +53,7 @@ echo "    translations name LTs: $(trans_mains "$NODE")"
 
 echo
 echo "--- THE PROBE: study a form. One fig IR entry lands. NOTHING SENDS."
-FORM=$("$BIN" form new --set probe=1 2>&1 | grep -oE "@[0-9a-f]+" | head -1)
+FORM=$("$BIN" form new --set probe=1 -j 2>/dev/null | jq -r .form_id)
 echo "    form $FORM"
 "$BIN" study "$ARIA" "$FORM" 2>&1 | head -2
 sleep 1

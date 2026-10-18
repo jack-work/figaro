@@ -346,14 +346,14 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 		p.visible())
 }
 
-// footerAriaID reads the aria id off the status row: an old 8-hex id or a new
-// 32-hex one, whichever the bar paints.
-var footerAriaID = regexp.MustCompile(`(?m)(?:^|· )([0-9a-f]{8,32}) ·`)
+// footerAriaID reads the aria's name off the status row: its two-word handle,
+// or a hex id where the bar has no words for it.
+var footerAriaID = regexp.MustCompile(`(?m)(?:^|· )([a-z]+-[a-z]+(?:-[a-z]+)?|[0-9a-f]{5,32}) ·`)
 
-// ariaIDOnScreen takes the first hex id token on a status row; a mantra could
+// ariaIDOnScreen takes the first aria name on a status row; a mantra could
 // carry one too.
 func ariaIDOnScreen(capture string) string {
-	re := regexp.MustCompile(`\b[0-9a-f]{8,32}\b`)
+	re := regexp.MustCompile(`\b[a-z]+-[a-z]+(?:-[a-z]+)?\b|\b[0-9a-f]{5,32}\b`)
 	for _, line := range strings.Split(capture, "\n") {
 		if !strings.Contains(line, "·") {
 			continue

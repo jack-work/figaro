@@ -62,6 +62,7 @@ func listOptsFrom(ctx *cmdkit.RunContext, forceHome bool) lsOpts {
 
 const (
 	fieldID     = "id"
+	fieldAriaID = "aria-id"
 	fieldOutfit = "outfit"
 	fieldVer    = "ver"
 	fieldFork   = "fork"
@@ -202,9 +203,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		hint := " · home"
 		if boundID != "" {
 			if o.home {
-				hint = " · home (attending " + boundID + ")"
+				hint = " · home (attending " + ariaName(boundID) + ")"
 			} else {
-				hint = " · attending " + boundID
+				hint = " · attending " + ariaName(boundID)
 			}
 		}
 		width := listOutputWidth()
@@ -278,7 +279,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		return subtreeRecency(roots[i]) > subtreeRecency(roots[j])
 	})
 
-	short := shortIDsOf(figs)
+	short := namesOf(figs)
 	marker := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) {
 			return "●"
@@ -311,6 +312,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 			Label:  truncRunes(label, 44),
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
+				fieldAriaID: f.ID,
 				fieldOutfit: dash(bornOf(f)),
 				fieldVer:    dash(f.OutfitVer),
 				fieldFork:   fork,
@@ -366,7 +368,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			}
 		}
 	}
-	short := shortIDsOf(figs)
+	short := namesOf(figs)
 	mark := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit) {
 			return "●"
@@ -396,7 +398,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			}
 			detail = "unbound"
 			if f.TargetAria != "" {
-				detail = "role → " + f.TargetAria
+				detail = "role → " + nameIn(short, f.TargetAria)
 			}
 		default:
 			label = f.Mantra
@@ -410,6 +412,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			Label:  truncRunes(label, 46),
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
+				fieldAriaID: f.ID,
 				fieldDetail: detail,
 				fieldMsgs:   strconv.Itoa(f.MessageCount),
 				fieldKind:   f.Kind,
@@ -496,7 +499,7 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 		rows = rows[:limit]
 		shown = limit
 	}
-	hint := " · attending " + boundID
+	hint := " · attending " + ariaName(boundID)
 	if boundID == "" {
 		hint = " · home (live outfit)"
 	}
@@ -545,7 +548,7 @@ func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
 	for i, line := range lines {
 		id := ""
 		if i >= off && off >= 0 {
-			id = rows[i-off].Field(fieldID)
+			id = rows[i-off].Field(fieldAriaID)
 		}
 		sink.WriteRow(line, id)
 	}
@@ -566,7 +569,7 @@ func renderListRows(rows []figtree.Row, width int, global bool) string {
 }
 
 func compactListRow(r figtree.Row, width int) string {
-	id := truncRunes(r.Field(fieldID), 8)
+	id := r.Field(fieldID)
 	parts := []string{id}
 	if age := r.Field(fieldAge); age != "" && age != "-" {
 		parts = append(parts, age)
@@ -792,7 +795,7 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 		if err := acli.Kill(ctx, figaroID, recursive); err != nil {
 			die("kill: %s", err)
 		}
-		fmt.Fprintf(stderrw, "killed %s\n", figaroID)
+		fmt.Fprintf(stderrw, "killed %s\n", ariaName(figaroID))
 		return nil
 	})
 }
@@ -879,6 +882,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 			enc := json.NewEncoder(stdout)
 			_ = enc.Encode(struct {
 				AriaID       string `json:"aria_id"`
+				Handle       string `json:"handle"`
 				Parent       string `json:"parent"`
 				Continuation string `json:"continuation"`
 				Alternative  string `json:"alternative"`
@@ -889,6 +893,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 				Mode         string `json:"mode"`
 			}{
 				AriaID:       ariaID,
+				Handle:       ariaName(ariaID),
 				Parent:       resp.Parent,
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
@@ -1010,26 +1015,39 @@ func runAttend(loaded *config.Loaded, spec string) {
 			return nil
 		}
 		if !out.At.isHead() {
-			fmt.Fprintf(stderrw, "attending %s at %s (next prompt forks there)\n", out.ID, out.At)
+			fmt.Fprintf(stderrw, "attending %s at %s (next prompt forks there)\n", ariaName(out.ID), out.At)
 		} else {
-			fmt.Fprintf(stderrw, "attending %s\n", out.ID)
+			fmt.Fprintf(stderrw, "attending %s\n", ariaName(out.ID))
 		}
 		return nil
 	})
 }
 
-func shortIDsOf(figs []rpc.FigaroInfoResponse) map[string]string {
+func namesOf(figs []rpc.FigaroInfoResponse) map[string]string {
 	ids := make([]string, len(figs))
 	for i, f := range figs {
 		ids[i] = f.ID
 	}
-	short := rpc.ShortIDs(ids)
-	for _, f := range figs {
-		if f.Node != "" {
-			short[f.ID] = f.Node[:min(rpc.ShortIDLen, len(f.Node))] + rpc.NodeSeparator + short[f.ID]
+	names := rpc.ShortIDs(ids)
+	for i := range figs {
+		f := &figs[i]
+		name := names[f.ID]
+		if f.Handle != "" || f.Short != "" {
+			name = rowName(f)
 		}
+		if f.Node != "" {
+			name = f.Node[:min(rpc.NodeShortLen, len(f.Node))] + rpc.NodeSeparator + name
+		}
+		names[f.ID] = name
 	}
-	return short
+	return names
+}
+
+func nameIn(names map[string]string, id string) string {
+	if n, ok := names[id]; ok {
+		return n
+	}
+	return ariaName(id)
 }
 
 func printUnreachable(nodes []rpc.NodeUnreachable) {

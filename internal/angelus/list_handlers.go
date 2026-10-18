@@ -155,6 +155,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 		h.fillTTL(result)
 	}
+	h.fillNames(result)
 
 	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore}, nil
 }
