@@ -43,6 +43,8 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	var followed rpc.FollowResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodFollow, nil, &followed))
 
 	var form rpc.FormResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &form))

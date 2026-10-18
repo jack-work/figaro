@@ -20,6 +20,14 @@ type AriaClosed struct {
 	FigaroID string `json:"figaro_id"`
 }
 
+func MethodFollows(method string) bool {
+	switch method {
+	case MethodQua, MethodFollow:
+		return true
+	}
+	return false
+}
+
 func WithAria(params json.RawMessage, id string) (json.RawMessage, error) {
 	key, err := json.Marshal(AriaKey)
 	if err != nil {

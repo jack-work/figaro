@@ -43,8 +43,9 @@ The same `Page` travels two ways:
 - `figaro.read` pulls initial state, forward catch-up, or backward history;
 - `figaro.aria` pushes subsequent changes to every connection following the aria.
 
-A connection follows an aria from its first call naming it (`figaro_id`):
-call `figaro.read` on that connection, then consume notifications. The read may overlap live pushes; `Client.Apply` is idempotent.
+A connection follows an aria after `figaro.follow` (or a prompt) naming it in
+`figaro_id`: follow, call `figaro.read` on that connection, then consume
+notifications. Reads alone never subscribe. The read may overlap live pushes; `Client.Apply` is idempotent.
 
 The request still has legacy LT-era names:
 

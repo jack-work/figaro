@@ -142,7 +142,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			}
 			hb = h.hubFor(id)
 		}
-		if f := followerOf(ctx); f != nil {
+		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
 			f.follow(hb)
 		}
 		if method == rpc.MethodFollow {

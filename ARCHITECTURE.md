@@ -216,12 +216,12 @@ the store answers otherwise.
 
 `api/rpc/methods.go` and `api/rpc/address.go` are the list of record.
 
-A connection follows every aria it addresses: from its first aria method on,
-it receives that aria's pushes, each carrying `figaro_id`, so one connection
-may follow several. `figaro.follow` follows without asking anything; a pure
-listener calls it, then `figaro.read` for catch-up. When an aria's endpoint
-closes (kill, drain) its followers get `figaro.closed` and their connections
-stay up.
+A connection follows an aria once it opens or steers its stream there:
+`figaro.follow`, or `figaro.qua` (`rpc.MethodFollows`). Reads and every other
+method never subscribe, so a connection used for lookups collects no pushes.
+Pushes carry `figaro_id`, so one connection may follow several arias. When an
+aria's endpoint closes (kill, drain) its followers get `figaro.closed` and
+their connections stay up.
 
 A second, web door is configured by `[door.web]` (`path`, `mode`, default
 0660; `max_conn_age`, default 8h; `authn`): a unix socket accepting an HTTP

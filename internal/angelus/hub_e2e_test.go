@@ -177,8 +177,8 @@ func TestKillRemovesEndpoint(t *testing.T) {
 	})
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var before rpc.FormResponse
-	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &before))
+	var followed rpc.FollowResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodFollow, nil, &followed))
 
 	require.NoError(t, acli.Kill(ctx, created.FigaroID, false))
 	select {
@@ -189,6 +189,52 @@ func TestKillRemovesEndpoint(t *testing.T) {
 	}
 	var after rpc.FormResponse
 	require.ErrorContains(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &after), "not found")
+}
+
+// Reads answer and never subscribe: a connection that only reads collects no
+// pushes, however busy the aria is.
+func TestReadOnlyConnectionCollectsNoPushes(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	pushes := make(chan string, 64)
+	reader := dialAria(t, a, created.FigaroID, func(m string, _ json.RawMessage) { pushes <- m })
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var form rpc.FormResponse
+	require.NoError(t, reader.Call(callCtx, rpc.MethodForm, struct{}{}, &form))
+	var cx rpc.ContextResponse
+	require.NoError(t, reader.Call(callCtx, rpc.MethodContext, struct{}{}, &cx))
+	var page map[string]any
+	require.NoError(t, reader.Call(callCtx, rpc.MethodRead, rpc.ReadRequest{}, &page))
+	var ir rpc.IRResponse
+	require.NoError(t, reader.Call(callCtx, rpc.MethodIR, rpc.IRRequest{FigaroID: created.FigaroID}, &ir))
+	var list rpc.ListResponse
+	require.NoError(t, reader.Client.Call(callCtx, rpc.MethodList, rpc.ListRequest{}, &list))
+
+	done := make(chan struct{}, 1)
+	sender := dialAria(t, a, created.FigaroID, func(m string, _ json.RawMessage) {
+		if m == rpc.MethodTurnDone {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	var out rpc.QuaResponse
+	require.NoError(t, sender.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "busy"}, &out))
+	var set rpc.SetResponse
+	require.NoError(t, sender.Call(callCtx, rpc.MethodSet, rpc.SetRequest{Patch: *rawPatch(map[string]string{"mantra": `"busy"`})}, &set))
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sender, which prompted, did not hear its turn end")
+	}
+	select {
+	case m := <-pushes:
+		t.Fatalf("a read-only connection collected %s", m)
+	case <-time.After(200 * time.Millisecond):
+	}
 }
 
 // No per-aria socket is ever created: the runtime dir holds the door alone.

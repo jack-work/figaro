@@ -181,8 +181,8 @@ goes through
 is issue #23 again.
 
 The transport is NDJSON-framed JSON-RPC 2.0 over one door per daemon. An aria
-method names its aria in `params.figaro_id`, and the connection follows that
-aria from then on; `figaro.follow` follows without asking anything. Call
+method names its aria in `params.figaro_id`. A connection follows an aria
+after `figaro.follow` or a prompt there; reads never subscribe. Follow, call
 `figaro.read` for initial state, then keep reading notifications, each of which
 names its aria.
 

@@ -25,9 +25,9 @@ Content-Length, no batching.
 
 **Three rules that are not guessable:**
 
-1. **Addressing is following.** The first call naming `@1f84ca51` on a
-   connection makes it a follower, and `ariaHub.Notify` fans to every
-   follower. `figaro.follow` does only that. Every push carries `figaro_id`.
+1. **Follow explicitly.** `figaro.follow` makes the connection a follower of
+   `@1f84ca51`, and `ariaHub.Notify` fans to every follower. Reads and sets
+   never subscribe. Every push carries `figaro_id`.
 2. **Notifications interleave with responses, and the push usually wins.**
    Measured: `figaro.set` on a connection returns `form.delta` for your own
    write *before* the reply to it. **Match on `id`.** A client that reads one

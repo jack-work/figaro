@@ -15,8 +15,8 @@ There is exactly one conversation-read shape, `aria.Page`, served two ways:
 - **pushed** as `figaro.aria` JSON-RPC notifications while a turn changes;
 - **pulled** with `figaro.read` for initial state, paging, and desync recovery.
 
-A connection follows an aria from its first request naming it
-(`params.figaro_id`); `figaro.follow` does only that. Follow, issue a read on
+A connection follows an aria after `figaro.follow` (or a prompt) naming it in
+`params.figaro_id`; reads never subscribe. Follow, issue a read on
 the same NDJSON JSON-RPC connection, then continue consuming pushed frames,
 each of which names its aria. Read/push overlap is allowed and application is idempotent.
 
