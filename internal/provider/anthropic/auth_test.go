@@ -41,7 +41,7 @@ func always401() *http.Client {
 }
 
 func TestDoWithAuthRetrySurfacesInvalidateError(t *testing.T) {
-	refreshErr := errors.New(`oauth refresh for "anthropic" rejected (run: figaro login anthropic)`)
+	refreshErr := errors.New(`oauth refresh for "anthropic" rejected (run: figaro provider login anthropic)`)
 	fr := &fakeResolver{tokens: []string{"tok"}, invErr: refreshErr}
 	a := &Anthropic{auth: fr, HTTPClient: always401()}
 

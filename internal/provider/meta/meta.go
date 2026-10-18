@@ -13,7 +13,7 @@ func init() {
 		Name:         providerName,
 		DefaultModel: "muse-wonder-1.0",
 		EnvVar:       "META_API_KEY",
-		LoginHint:    "Muse Code subscription (device code):  figaro login meta",
+		LoginHint:    "Muse Code subscription (device code):  figaro provider login meta",
 		Build:        build,
 	})
 }

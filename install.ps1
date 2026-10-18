@@ -230,7 +230,7 @@ try {
     Write-Host 'figaro is installed.' -ForegroundColor Green -NoNewline
     Write-Host ' Also reachable as fig.'
     Write-Host ''
-    Write-Host '  figaro login anthropic      # or: figaro login copilot'
+    Write-Host '  figaro provider login anthropic   # or: figaro provider login copilot'
     Write-Host '  figaro -- buongiorno'
 }
 finally {

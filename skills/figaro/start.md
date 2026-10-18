@@ -15,6 +15,11 @@ figaro -- say buongiorno back to me
 The `--` is mandatory and everything after it is the prompt. That is the whole
 gesture. There is no session to start and no file to create.
 
+Prompts go to a model provider. `figaro provider ls` shows each provider and
+where its credential comes from; `figaro provider login <name>` signs in to one,
+and `figaro provider logout <name>` removes figaro's copy. See
+[reference/providers.md](reference/providers.md#credentials).
+
 ## 2. Turn on completion
 
 Do this second, because it makes everything after it easier. Aria ids are

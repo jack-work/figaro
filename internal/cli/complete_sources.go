@@ -248,8 +248,17 @@ func completeTroupeAfterLogin(c *cmdkit.CompleteContext) []string {
 	return names
 }
 
-func completeProviders(c *cmdkit.CompleteContext) []string {
-	if c == nil || len(c.Args) > 0 {
+func completeProviderAfterVerb(c *cmdkit.CompleteContext) []string {
+	if c == nil {
+		return nil
+	}
+	positional := 0
+	for _, a := range c.Args {
+		if !strings.HasPrefix(a, "-") {
+			positional++
+		}
+	}
+	if positional != 1 {
 		return nil
 	}
 	var out []string

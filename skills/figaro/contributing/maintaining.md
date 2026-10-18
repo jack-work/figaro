@@ -63,7 +63,7 @@ isolate. Every preset is a choice about which ones to isolate.
 |---|---|---|
 | `nix develop` | nothing | a quick look at the worktree binary |
 | `.#share-hush` | config, runtime, state | testing credential resolution or refresh against a live provider. Real OAuth and AGE keys stay reachable, so you meet the first-run outfit picker. |
-| `.#share-config` | runtime, state, hush | iterating on outfit or agent logic. Real outfits and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig login <provider>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
+| `.#share-config` | runtime, state, hush | iterating on outfit or agent logic. Real outfits and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig provider login <name>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
 | `.#clean` | everything | the truth test for the first-run flow and for auth migration |
 | `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real arias and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
 | `.#sandbox` | runtime, state, config (a writable COPY) | exercising real outfits, skills and credo while you EDIT them. `providers/` is symlinked, hush is shared, so turns run. `figaro-config-reseed` for a fresh copy. |

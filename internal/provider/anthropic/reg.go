@@ -13,7 +13,7 @@ func init() {
 		DefaultModel: "claude-sonnet-4-5",
 		EnvVar:       "ANTHROPIC_API_KEY",
 		HasOAuth:     true,
-		LoginHint:    "Claude subscription (OAuth):  figaro login anthropic",
+		LoginHint:    "Claude subscription (OAuth):  figaro provider login anthropic",
 		Build:        buildFromContext,
 	})
 }

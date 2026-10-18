@@ -1384,18 +1384,36 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "login",
-		Group:   "System",
-		Short:   "OAuth login for a provider",
-		Usage:   "login <provider>",
-		ArgsMin: 1,
-		ArgsMax: 1,
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			runLoginByName(ld, ctx.Args[0])
-			return nil
+		Name:  "provider",
+		Group: "System",
+		Short: "Sign in to, sign out of, and list model providers",
+		Usage: "provider <login | logout | ls> [<name>] [-j]",
+		Long: `Model credentials, one provider at a time.
+
+  login <name>    run the provider's sign-in: OAuth or device code where it
+                  has one, else ask for an API key and seal it in hush
+  logout <name>   remove what figaro holds for it: the hush credential and
+                  a sealed api_key. A key in the environment, a key file,
+                  a service credential or a plaintext api_key you wrote is
+                  left alone and named; logout exits 1 while one remains
+  ls [<name>]     every source of each provider's credential, in the order
+                  figaro tries them; the first is the one in use
+
+logout removes figaro's copy only: a token the provider issued stays valid
+there until you revoke it with the provider.`,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls and logout"},
 		},
-		CompleteArgs: completeProviders,
+		ArgsMin: 1,
+		ArgsMax: 2,
+		Run: func(ctx *cmdkit.RunContext) error {
+			return runProviderVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeWords([][2]string{
+			{"login", "sign in to a provider"},
+			{"logout", "remove figaro's credential for a provider"},
+			{"ls", "where each provider's credential comes from"},
+		}, completeProviderAfterVerb),
 	})
 
 	r.Register(&cmdkit.Command{

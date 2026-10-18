@@ -58,7 +58,7 @@ with no transport, a bad glob, or a spec with no way to route at all.
 ## Azure AI Foundry, signed in with Microsoft Entra
 
 ```sh
-figaro login azure                     # asks for the endpoint and tenant once
+figaro provider login azure            # asks for the endpoint and tenant once
 figaro set system.provider azure
 figaro set system.model <deployment>   # the deployment name, not the model family
 ```
@@ -94,7 +94,7 @@ No Go code per provider; the file is the registration.
 preset   = "gateway"                       # chat, OpenAI-compatible
 base_url = "http://100.103.40.20:9110/v1"
 
-[oauth]                                    # optional; makes `figaro login house` work
+[oauth]                                    # optional; makes `figaro provider login house` work
 issuer    = "https://auth.example"         # its /.well-known/openid-configuration is read
 client_id = "house"
 scopes    = ["openid", "profile", "groups"]   # offline_access is always added
@@ -103,7 +103,7 @@ flow      = "device"                       # the only flow so far, and the defau
 ```
 
 ```sh
-figaro login house
+figaro provider login house
 figaro set system.provider house
 figaro set system.model <model>
 ```
@@ -127,6 +127,40 @@ The key is looked for in this order (`boot.BuildResolver`): the environment;
 named file that is missing or empty is an error); `$CREDENTIALS_DIRECTORY/<provider>`;
 the stored `api_key`, decrypted through hush when it is `AGE-ENC[...]`; then
 `[oauth]` through hush.
+
+## Credentials
+
+```sh
+figaro provider ls                 every provider, the source in use, and the others
+figaro provider ls copilot         one provider's sources in order, and who owns each
+figaro provider login copilot      sign in
+figaro provider logout copilot     remove figaro's copy
+```
+
+`login` runs the provider's own flow: OAuth for `anthropic`, a device code for
+`copilot`, `meta` and `azure`, and `[oauth]` for a declared provider. A provider
+with no flow (`openrouter`, `gateway`) asks for an API key and seals it into
+`providers/<name>.toml` as `AGE-ENC[...]`.
+
+`ls` lists sources in the order above, so the first is the one in use. `copilot`
+is the exception: unless `token_mode = "direct"`, it uses only the credential
+hush holds, and its other sources are what would be handed to hush again the
+next time that credential is missing.
+
+`logout` removes what figaro wrote and nothing else:
+
+| Source | logout |
+|---|---|
+| the hush credential (OAuth, device code, copilot's exchange) | deleted from hush |
+| a sealed `api_key` (`AGE-ENC[...]`) | its line removed from `providers/<name>.toml`; the file goes when nothing else is in it |
+| a plaintext `api_key` | kept: you wrote it |
+| `api_key_file`, `$CREDENTIALS_DIRECTORY/<name>` | kept: the file or the service manager owns it |
+| the environment | kept: figaro cannot unset its parent's variables |
+
+It names each source it kept and exits 1 while one would still sign figaro in.
+It removes figaro's copy only: a token the provider issued, or a key it minted
+(`meta`), stays valid there until revoked with the provider. Nothing caches a
+token past it, so the daemon's next request already goes without.
 
 ## Not a provider: decision models
 

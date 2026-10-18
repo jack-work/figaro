@@ -50,7 +50,7 @@ func init() {
 		EnvVar:       "COPILOT_GITHUB_TOKEN",
 		EnvVars:      []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"},
 		HasOAuth:     true,
-		LoginHint:    "Copilot subscription (device code):  figaro login copilot",
+		LoginHint:    "Copilot subscription (device code):  figaro provider login copilot",
 		Build:        buildFromContext,
 
 		// hush exchanges the GitHub token for a short-lived session token,

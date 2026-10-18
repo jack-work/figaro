@@ -252,9 +252,11 @@ observer's mouth.
 | `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, and which are already due. Reads the sidecars, so it answers while the daemon runs. |
 | `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
-| `figaro login <provider>` | OAuth login. |
+| `figaro provider login <name>` | Sign in to a model provider: its OAuth or device-code flow, else an API key sealed in hush. See [reference/providers.md](reference/providers.md#credentials). |
+| `figaro provider logout <name> [-j]` | Remove what figaro holds for it (the hush credential, a sealed `api_key`). Names and keeps what figaro did not write; exits 1 while a credential remains. |
 | `figaro troupe login <name>` | Sign in to a troupe's door (`[auth] scheme = "oidc-device"`); hush holds the token as `troupe:<name>`. |
 | `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. |
+| `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |
 | `figaro completion install [shell]` | Install shell completion. |
@@ -313,7 +315,7 @@ out still turns the light off.
 |---|---|
 | `figaro vault status` | Mode, identity path, public key, agent liveness, unlock method, and whether the saved passphrase actually decrypts the identity. Every keyring call it makes is bounded at 5s, because a locked Secret Service collection with no prompter makes `keyring.Get` block forever rather than fail. |
 | `figaro vault init [--file \| --passphrase]` | Create the identity. `--file` writes 32 random bytes, base64, to `<hushconfig>/passphrase` mode 0600, points `hush.toml` at it, and asks you nothing, ever. `--passphrase` asks. |
-| `figaro vault reset [--file \| --passphrase] [--yes]` | Throw the identity away and make a new one, then walk back through `figaro login` for every provider the old one held. |
+| `figaro vault reset [--file \| --passphrase] [--yes]` | Throw the identity away and make a new one, then walk back through `figaro provider login` for every provider the old one held. |
 | `figaro vault forget` | Delete the keyring entry. The next figaro command prompts. |
 | `figaro vault unlock` | Prompt, verify against the identity, save to the keyring, start the agent. |
 | `figaro vault lock` | Stop the agent, dropping the decrypted identity from memory. |

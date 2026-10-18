@@ -13,7 +13,6 @@ import (
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	providerPkg "github.com/jack-work/figaro/internal/provider"
 )
 
 func runRestWithFlags(force, keepPIDs bool) {
@@ -29,7 +28,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 	}
 
 	if d := resolveDoor(); d.configured {
-		die("stop retires the daemon this shell started; %s is configured as the endpoint, and figaro does not stop a daemon it reaches that way", d.label)
+		die("stop retires the daemon this shell started; %s is configured as the troupe, and figaro does not stop a daemon it reaches that way", d.label)
 	}
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
@@ -126,23 +125,4 @@ func runModels(loaded *config.Loaded) {
 			m.Provider, m.ID, m.Name, dashCount(m.ContextWindow), dashCount(m.MaxTokens))
 	}
 	w.Flush()
-}
-
-func runLoginByName(loaded *config.Loaded, providerName string) {
-	reg := providerPkg.Lookup(providerName)
-	var err error
-	switch {
-	case reg == nil:
-		die("no provider %q", providerName)
-	case reg.Login != nil:
-		err = reg.Login(loaded)
-	case reg.OAuth != nil:
-		err = runOAuthLogin(providerName, providerName, *reg.OAuth,
-			"figaro set system.provider "+providerName+"; figaro set system.model <model>")
-	default:
-		die("no login flow for provider %q", providerName)
-	}
-	if err != nil {
-		die("%s", err)
-	}
 }

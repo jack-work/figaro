@@ -48,7 +48,7 @@ func TestAzureIsAnOAuthProvider(t *testing.T) {
 	if reg.EnvVar != "AZURE_OPENAI_API_KEY" {
 		t.Fatalf("env = %q", reg.EnvVar)
 	}
-	if !strings.Contains(reg.LoginHint, "figaro login azure") {
+	if !strings.Contains(reg.LoginHint, "figaro provider login azure") {
 		t.Fatalf("hint = %q", reg.LoginHint)
 	}
 }

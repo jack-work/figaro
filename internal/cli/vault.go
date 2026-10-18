@@ -248,7 +248,7 @@ func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error 
 		fmt.Fprintf(stderrw, "\nReset the %s vault at %s.\n\n", vaultAppName(), h.Config().ConfigDir)
 		fmt.Fprintln(stderrw, "What is lost: the provider credentials this identity encrypted.")
 		if len(providers) > 0 {
-			fmt.Fprintf(stderrw, "  %s: you will be sent through `figaro login` for each, right after.\n", strings.Join(providers, ", "))
+			fmt.Fprintf(stderrw, "  %s: you will be sent through `figaro provider login` for each, right after.\n", strings.Join(providers, ", "))
 		} else {
 			fmt.Fprintln(stderrw, "  (none stored yet)")
 		}
@@ -349,7 +349,7 @@ func archiveVaultFiles(h *managed.Hush, providers []string, stamp string) ([]str
 func reloginProviders(loaded *config.Loaded, providers []string) error {
 	var ok, failed []string
 	for _, name := range providers {
-		fmt.Fprintf(stderrw, "\n--- figaro login %s ---\n", name)
+		fmt.Fprintf(stderrw, "\n--- figaro provider login %s ---\n", name)
 		reg := providerPkg.Lookup(name)
 		if reg == nil || reg.Login == nil {
 			fmt.Fprintf(stderrw, "no login flow for provider %q: skipped\n", name)
@@ -369,7 +369,7 @@ func reloginProviders(loaded *config.Loaded, providers []string) error {
 	}
 	if len(failed) > 0 {
 		fmt.Fprintf(stdout, "still missing   %s\n", strings.Join(failed, ", "))
-		fmt.Fprintf(stdout, "                retry with: figaro login %s\n", failed[0])
+		fmt.Fprintf(stdout, "                retry with: figaro provider login %s\n", failed[0])
 	}
 	return nil
 }

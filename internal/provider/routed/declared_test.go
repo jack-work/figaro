@@ -58,7 +58,7 @@ func TestAProviderFileWithAPresetIsAProvider(t *testing.T) {
 }
 
 func TestTheRegistrationCarriesTheFilesOAuth(t *testing.T) {
-	// figaro login <name> reads the [oauth] settings off the registration.
+	// figaro provider login <name> reads the [oauth] settings off the registration.
 	RegisterDeclared(declaredDir(t, map[string]string{"house": houseTOML}))
 	got := provider.Lookup("house").OAuth
 	if got == nil || got.Issuer != "https://auth.example" || got.ClientID != "house" || got.Flow != "device" || len(got.Scopes) != 3 {

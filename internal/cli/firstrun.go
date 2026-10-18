@@ -159,7 +159,7 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 				"  or configure manually:\n"+
 				"    - set default_outfit in %s\n"+
 				"    - create %s with `[system]\\nprovider = \"<name>\"`\n"+
-				"    - run `figaro login <provider>` to add credentials",
+				"    - run `figaro provider login <provider>` to add credentials",
 			loaded.ConfigPath, loaded.OutfitPath("default"))
 	}
 
@@ -171,7 +171,7 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 	printWelcome(loaded)
 
 	printStep(2, 3, "Provider")
-	fmt.Fprintln(os.Stderr, dim("     Where should your prompts go? You can add more later with `figaro login`."))
+	fmt.Fprintln(os.Stderr, dim("     Where should your prompts go? You can add more later with `figaro provider login`."))
 	fmt.Fprintln(os.Stderr)
 
 	chosen, err := pickFromMenu(loaded, options)

@@ -229,7 +229,7 @@ func plainForTest(s string) string { return pitText(s) }
 func TestLongAlertClipsItselfNotItsNeighbours(t *testing.T) {
 	v := barFixture()
 	v.State = turnStatusError
-	v.Alerts = []barAlert{{Text: `error: anthropic 401: invalidate failed: oauth refresh for "anthropic" rejected (run: figaro login anthropic)`, Level: alertError}}
+	v.Alerts = []barAlert{{Text: `error: anthropic 401: invalidate failed: oauth refresh for "anthropic" rejected (run: figaro provider login anthropic)`, Level: alertError}}
 	rows := v.render(100)
 	if len(rows) != 1 {
 		t.Fatalf("a 100-column bar split into %d rows for a long alert:\n%s", len(rows), strings.Join(rows, "\n"))

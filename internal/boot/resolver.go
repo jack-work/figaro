@@ -22,7 +22,7 @@ import (
 
 func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
 	reg := providerPkg.Lookup(providerName)
-	if reg != nil && reg.ExchangeGrant != "" && reg.ExchangeURL != nil && reg.ExchangeURL(loaded) != "" {
+	if exchanges(loaded, reg) {
 		return &exchangeResolver{loaded: loaded, reg: reg, name: providerName}, nil
 	}
 

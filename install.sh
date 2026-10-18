@@ -320,6 +320,6 @@ cat >&2 <<EOF
 
 ${B}figaro is installed.${R} Also reachable as ${B}fig${R}.
 
-  figaro login anthropic      # or: figaro login copilot
+  figaro provider login anthropic   # or: figaro provider login copilot
   figaro -- buongiorno
 EOF

@@ -23,14 +23,14 @@ func init() {
 		Name:         openRouterName,
 		DefaultModel: "anthropic/claude-sonnet-4-6",
 		EnvVar:       "OPENROUTER_API_KEY",
-		LoginHint:    "OpenRouter API key:  https://openrouter.ai/keys",
+		LoginHint:    "OpenRouter API key (https://openrouter.ai/keys):  figaro provider login openrouter",
 		Build:        buildOpenRouter,
 	})
 	provider.Register(&provider.Registration{
 		Name:         gatewayName,
 		DefaultModel: "auto",
 		EnvVar:       "FIGARO_GATEWAY_API_KEY",
-		LoginHint:    "OpenAI-compatible gateway: set base_url in providers/gateway.toml",
+		LoginHint:    "OpenAI-compatible gateway: base_url in providers/gateway.toml, then figaro provider login gateway",
 		Build:        buildGateway,
 	})
 	registerAzure()
@@ -41,7 +41,7 @@ func registerAzure() {
 		Name:      azureName,
 		EnvVar:    "AZURE_OPENAI_API_KEY",
 		HasOAuth:  true,
-		LoginHint: "Azure AI Foundry (Microsoft Entra device code):  figaro login azure",
+		LoginHint: "Azure AI Foundry (Microsoft Entra device code):  figaro provider login azure",
 		Build:     buildAzure,
 	})
 }

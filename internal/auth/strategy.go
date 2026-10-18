@@ -173,7 +173,7 @@ func (o *OAuth) Invalidate(token string) error {
 		return nil
 	}
 	if errors.Is(err, hush.ErrOAuthRefreshPermanent) {
-		return fmt.Errorf("oauth refresh for %q rejected (run: figaro login %s): %w", o.Name, o.Name, err)
+		return fmt.Errorf("oauth refresh for %q rejected (run: figaro provider login %s): %w", o.Name, o.Name, err)
 	}
 	return fmt.Errorf("oauth refresh for %q: %w", o.Name, err)
 }

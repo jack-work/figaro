@@ -61,7 +61,7 @@ func declared(loaded *config.Loaded, name string) (*provider.Registration, error
 	}
 	if f.OAuth != nil {
 		reg.OAuth = f.OAuth
-		reg.LoginHint = "OAuth gateway (providers/" + name + ".toml):  figaro login " + name
+		reg.LoginHint = "OAuth gateway (providers/" + name + ".toml):  figaro provider login " + name
 	}
 	return reg, nil
 }

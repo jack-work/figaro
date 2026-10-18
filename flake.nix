@@ -463,7 +463,7 @@
 
         # Share config (real providers, real outfits) but isolate
         # runtime + state AND run an isolated, embedded hush (its own
-        # identity, re-authenticated per shell: `q login` or set
+        # identity, re-authenticated per shell: `figaro provider login <name>` or set
         # ANTHROPIC_API_KEY on first use). The shared agent's socket
         # isn't reachable from inside the sandbox, so this gives a
         # self-contained hush instead. NOTE: AGE-ENC provider keys in

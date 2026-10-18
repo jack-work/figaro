@@ -120,7 +120,7 @@ whether or not a turn is running. A `??` line meant literally is `\??`.
 ## Where the decision goes
 
 Decisions go through a provider: its `base_url` with `/systemone` or
-`/decisions` appended, and its credential, so `figaro login <provider>`
+`/decisions` appended, and its credential, so `figaro provider login <name>`
 covers decide too. There is no decisions provider of its own. Set it once in
 an outfit, `core.toml` to reach every aria:
 
@@ -142,7 +142,7 @@ an aria minted before the outfit changed still follows it:
 
 | Host | Provider | Model |
 |---|---|---|
-| rou2, OpenAI's luna | `rou2` (declared, `figaro login rou2`) | `openai/gpt-6-luna` |
+| rou2, OpenAI's luna | `rou2` (declared, `figaro provider login rou2`) | `openai/gpt-6-luna` |
 | rou2, Experiential Labs' jev | `rou2` | `explabs/jev-latest` |
 | TypeSafe direct | a declared `providers/typesafe.toml` with `api_key_env = "TYPESAFE_API_KEY"` | `jev-latest` |
 | Microsoft `decision-1` on Azure Foundry | `azure` (Entra), with `base_url = "https://<resource>.cognitiveservices.azure.com/providers/microsoft/v1"` | the deployment name |

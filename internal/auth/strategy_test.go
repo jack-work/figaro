@@ -75,7 +75,7 @@ func TestOAuthInvalidateWrapsPermanentRefreshError(t *testing.T) {
 	err := o.Invalidate("tok")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, hush.ErrOAuthRefreshPermanent)
-	assert.Contains(t, err.Error(), "figaro login anthropic")
+	assert.Contains(t, err.Error(), "figaro provider login anthropic")
 }
 
 func TestOAuthInvalidateNilOnSuccessfulRefresh(t *testing.T) {

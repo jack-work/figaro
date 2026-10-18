@@ -57,7 +57,7 @@ func (v *modelsView) Items(width int) []pitRow {
 		rows = append(rows, pitRow{text: text, note: m.Provider, yank: m.ID, id: modelRowID(i)})
 	}
 	if len(rows) == 0 {
-		rows = append(rows, staticRow("no models: no provider answered (figaro login <provider>)"))
+		rows = append(rows, staticRow("no models: no provider answered (figaro provider login <provider>)"))
 	}
 	return rows
 }

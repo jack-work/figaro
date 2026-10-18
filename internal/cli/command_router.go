@@ -76,7 +76,6 @@ var overlayVerbs = map[string]bool{
 	"new":    true, "replay": true, "fork": true,
 	"kill":   true, // may kill the aria on screen, and must then move
 	"import": true, // reads os.Stdin for `-`
-	"login":  true, // an interactive OAuth flow
 	// models is a pit; as a routed verb it would print to os.Stdout.
 	"models": true,
 }
@@ -84,10 +83,12 @@ var overlayVerbs = map[string]bool{
 // terminalSubverbs take the terminal: `form listen` reads os.Stdin in a loop,
 // which would race the pager's input loop for the fd and hold routerMu forever.
 var terminalSubverbs = map[string]bool{
-	"vault unlock": true,
-	"vault init":   true,
-	"vault reset":  true,
-	"troupe login": true,
+	"vault unlock":    true,
+	"vault init":      true,
+	"vault reset":     true,
+	"provider login":  true,
+	"provider logout": true,
+	"troupe login":    true,
 }
 
 // A form read in the pager is the live view; formSubverbs do something else and

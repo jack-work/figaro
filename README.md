@@ -48,7 +48,7 @@ Config lives at `~/.config/figaro/`.
 ## First run
 
 ```bash
-figaro login copilot        # or: figaro login anthropic
+figaro provider login copilot   # or: figaro provider login anthropic
 figaro -- buongiorno
 ```
 

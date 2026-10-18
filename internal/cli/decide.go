@@ -217,7 +217,8 @@ Unbound (or under -A, which ignores the binding) it is stateless: the
 question, --context and the model's own training are all it has.
 
 Where it goes is a provider: its base_url, with /systemone or /decisions
-appended, and its credential, so figaro login <provider> covers decide too.
+appended, and its credential, so figaro provider login <name> covers decide
+too.
 Each setting is the flag, else the aria's form, else the default outfit's:
 
   --provider   system.decide.provider   which provider (rou2, azure, ...)
