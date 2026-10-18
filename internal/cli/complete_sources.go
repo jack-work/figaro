@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -232,6 +234,18 @@ func valueSummary(raw json.RawMessage) string {
 		return strings.Join(strings.Fields(s), " ")
 	}
 	return strings.Join(strings.Fields(string(raw)), " ")
+}
+
+func completeTroupeAfterLogin(c *cmdkit.CompleteContext) []string {
+	if c == nil || len(c.Args) != 1 || c.Args[0] != "login" {
+		return nil
+	}
+	loaded, err := config.Load(config.DefaultConfigDir())
+	if err != nil {
+		return nil
+	}
+	names, _ := boot.TroupeNames(loaded)
+	return names
 }
 
 func completeProviders(c *cmdkit.CompleteContext) []string {

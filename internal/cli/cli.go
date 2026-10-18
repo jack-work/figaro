@@ -1386,8 +1386,8 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:    "login",
 		Group:   "System",
-		Short:   "OAuth login for a provider or a daemon endpoint",
-		Usage:   "login <provider|endpoint>",
+		Short:   "OAuth login for a provider",
+		Usage:   "login <provider>",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -1396,6 +1396,33 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			return nil
 		},
 		CompleteArgs: completeProviders,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "troupe",
+		Group: "System",
+		Short: "Sign in to a troupe's door, and list the troupes this CLI knows",
+		Usage: "troupe <login <name> | ls> [-j]",
+		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
+CLI reaches it: its url (unix:// or wss://), an optional audience, and
+an [auth] table naming how a human signs in.
+
+  login <name>   sign in to the troupe's door (scheme = "oidc-device");
+                 hush holds the token as troupe:<name>
+  ls             each troupe, its url, and whether you are signed in;
+                 ● marks the one FIGARO_TROUPE or [cli] troupe selects`,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls"},
+		},
+		ArgsMin: 1,
+		ArgsMax: 2,
+		Run: func(ctx *cmdkit.RunContext) error {
+			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeWords([][2]string{
+			{"login", "sign in to a troupe's door"},
+			{"ls", "the troupes this CLI knows"},
+		}, completeTroupeAfterLogin),
 	})
 
 	r.Register(&cmdkit.Command{

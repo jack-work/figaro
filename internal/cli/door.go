@@ -17,7 +17,7 @@ type door struct {
 	label      string
 }
 
-type doorKey struct{ endpoint, configDir, runtimeDir string }
+type doorKey struct{ troupe, configDir, runtimeDir string }
 
 var (
 	doorMu     sync.Mutex
@@ -25,7 +25,7 @@ var (
 )
 
 func resolveDoor() door {
-	k := doorKey{os.Getenv("FIGARO_ENDPOINT"), config.DefaultConfigDir(), boot.AngelusRuntimeDir()}
+	k := doorKey{os.Getenv("FIGARO_TROUPE"), config.DefaultConfigDir(), boot.AngelusRuntimeDir()}
 	doorMu.Lock()
 	defer doorMu.Unlock()
 	if d, ok := doorCached[k]; ok {
@@ -41,22 +41,22 @@ func resolveDoor() door {
 
 func chooseDoor(configDir string) door {
 	loaded, _ := config.Load(configDir)
-	e, ok, err := boot.SelectedEndpoint(loaded)
+	tr, ok, err := boot.SelectedTroupe(loaded)
 	if err != nil {
 		die("%s", err)
 	}
 	if !ok {
 		return door{ep: transport.UnixEndpoint(boot.AngelusSocketPath())}
 	}
-	d := door{configured: true, label: e.URL}
-	if e.Name != "" {
-		d.label = e.Name + " (" + e.URL + ")"
+	d := door{configured: true, label: tr.URL}
+	if tr.Name != "" {
+		d.label = tr.Name + " (" + tr.URL + ")"
 	}
-	if u, _ := url.Parse(e.URL); u.Scheme == "unix" {
+	if u, _ := url.Parse(tr.URL); u.Scheme == "unix" {
 		d.ep = transport.UnixEndpoint(u.Path)
 		return d
 	}
-	d.ep = transport.WSSEndpoint(e.URL, boot.EndpointResolver(e))
+	d.ep = transport.WSSEndpoint(tr.URL, boot.TroupeResolver(tr))
 	return d
 }
 

@@ -133,7 +133,7 @@ func runLoginByName(loaded *config.Loaded, providerName string) {
 	var err error
 	switch {
 	case reg == nil:
-		err = runEndpointLogin(loaded, providerName)
+		die("no provider %q", providerName)
 	case reg.Login != nil:
 		err = reg.Login(loaded)
 	case reg.OAuth != nil:
@@ -145,15 +145,4 @@ func runLoginByName(loaded *config.Loaded, providerName string) {
 	if err != nil {
 		die("%s", err)
 	}
-}
-
-func runEndpointLogin(loaded *config.Loaded, name string) error {
-	e, err := boot.LoadEndpoint(loaded, name)
-	if err != nil {
-		return fmt.Errorf("no provider or endpoint %q", name)
-	}
-	if e.OAuth == nil {
-		return fmt.Errorf("endpoint %q has no [oauth] to sign in with", name)
-	}
-	return runOAuthLogin(name, e.HushCredential(), *e.OAuth, "FIGARO_ENDPOINT="+name+" figaro ls, or [cli] endpoint = \""+name+"\"")
 }

@@ -25,7 +25,7 @@ func prefixRig(t *testing.T) (*config.Loaded, string) {
 	cfg := t.TempDir()
 	t.Setenv("FIGARO_RUNTIME_DIR", dir)
 	t.Setenv("FIGARO_CONFIG_DIR", cfg)
-	t.Setenv("FIGARO_ENDPOINT", "")
+	t.Setenv("FIGARO_TROUPE", "")
 	t.Setenv("FIGARO_NO_BIND", "1")
 	loaded, err := config.Load(cfg)
 	require.NoError(t, err)

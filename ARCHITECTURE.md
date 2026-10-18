@@ -356,6 +356,7 @@ spinners animate on the consumer, producing no timer traffic on the wire.
 | `figaro show <id> -j` | Dump materialized UI turns as a `Page` |
 | `figaro models` | List provider models |
 | `figaro login <provider>` | OAuth PKCE |
+| `figaro troupe login <name>` / `troupe ls` | Sign in to a troupe's door; list `troupes/` |
 | `figaro listen <id>` | Follow an aria without sending a prompt |
 | `figaro stop` | Shut down the angelus |
 

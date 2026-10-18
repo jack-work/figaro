@@ -253,14 +253,31 @@ observer's mouth.
 | `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
 | `figaro login <provider>` | OAuth login. |
+| `figaro troupe login <name>` | Sign in to a troupe's door (`[auth] scheme = "oidc-device"`); hush holds the token as `troupe:<name>`. |
+| `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |
 | `figaro completion install [shell]` | Install shell completion. |
 | `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |
 
 The angelus respawns on the next command after a stop, so `figaro stop` is how
-you pick up a rebuilt binary. A CLI pointed at another daemon (`FIGARO_ENDPOINT`
-or `[cli] endpoint`) never spawns one.
+you pick up a rebuilt binary. A CLI pointed at another daemon (`FIGARO_TROUPE`
+or `[cli] troupe`, naming `troupes/<name>.toml` or giving a `unix://` or `wss://`
+URL) never spawns one.
+
+A troupe file is the door as this CLI reaches it:
+
+```toml
+# ~/.config/figaro/troupes/spain.toml
+url      = "wss://fig.kelliher.info"   # audience = "..." optional; default is the url
+[auth]                              # optional; how a human signs in
+scheme    = "oidc-device"           # the only scheme; any other is refused
+issuer    = "https://auth.kelliher.info"
+client_id = "figaro-cli"
+```
+
+`figaro troupe login spain` runs the device flow and hush holds the token as
+`troupe:spain`. A key the file does not define is refused when it is read.
 
 ## The vault
 

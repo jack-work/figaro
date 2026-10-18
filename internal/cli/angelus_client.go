@@ -66,10 +66,10 @@ func ensureAngelus() {
 	if d := resolveDoor(); d.configured {
 		cli, err := sdk.DialAngelus(d.ep)
 		if err != nil {
-			die("daemon endpoint %s: %s\n"+
-				"  an endpoint is configured, so figaro does not start a daemon", d.label, err)
+			die("troupe %s: %s\n"+
+				"  a troupe is configured, so figaro does not start a daemon", d.label, err)
 		}
-		checkEndpointBuild(cli, d.label)
+		checkTroupeBuild(cli, d.label)
 		cli.Close()
 		return
 	}
@@ -241,7 +241,7 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 	}
 }
 
-func checkEndpointBuild(cli *sdk.Angelus, label string) {
+func checkTroupeBuild(cli *sdk.Angelus, label string) {
 	mine := boot.BuildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

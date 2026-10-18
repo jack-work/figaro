@@ -87,6 +87,7 @@ var terminalSubverbs = map[string]bool{
 	"vault unlock": true,
 	"vault init":   true,
 	"vault reset":  true,
+	"troupe login": true,
 }
 
 // A form read in the pager is the live view; formSubverbs do something else and

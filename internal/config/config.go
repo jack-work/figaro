@@ -84,7 +84,7 @@ type QuoteConfig struct {
 
 // CLIConfig is the client's own settings. Nothing here reaches the daemon.
 type CLIConfig struct {
-	Endpoint string `toml:"endpoint"`
+	Troupe string `toml:"troupe"`
 
 	// EchoPrompt: default true.
 	EchoPrompt *bool `toml:"echo_prompt"`
@@ -624,8 +624,8 @@ func (l *Loaded) ProviderAuthPath(name string) string {
 	return filepath.Join(l.ProvidersDir(), name+".toml")
 }
 
-func (l *Loaded) EndpointsDir() string {
-	return filepath.Join(l.dir(), "endpoints")
+func (l *Loaded) TroupesDir() string {
+	return filepath.Join(l.dir(), "troupes")
 }
 
 func (l *Loaded) OutfitsDir() string {

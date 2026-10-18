@@ -19,7 +19,7 @@ import (
 
 const maxResolveRefs = 64
 
-var errNoBearer = errors.New("nodes never vouch for a caller: reaching another node needs a bearer (figaro login)")
+var errNoBearer = errors.New("nodes never vouch for a caller: reaching another node needs a bearer (figaro troupe login <name>)")
 
 type federation struct {
 	members *peer.Members
@@ -109,7 +109,7 @@ func (h *handlers) locate(ctx context.Context, id string) (string, string, error
 }
 
 func (h *handlers) needsBearer(id, node string) error {
-	return fmt.Errorf("%s is on node %s, and nodes never vouch for a caller: reaching it needs a bearer (figaro login)", id, node)
+	return fmt.Errorf("%s is on node %s, and nodes never vouch for a caller: reaching it needs a bearer (figaro troupe login <name>)", id, node)
 }
 
 func (h *handlers) linkFor(ctx context.Context, node string) (*peer.Link, func(), error) {
