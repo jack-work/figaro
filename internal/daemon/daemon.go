@@ -323,6 +323,12 @@ func Run() {
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria
 
+	if err := serveWebDoor(ctx, a, loaded); err != nil {
+		slog.Error("angelus web door", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Rebind shells without restoring their arias; an aria wakes on its next
 	// prompt.
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
@@ -351,4 +357,29 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
+	web, ok, err := loaded.WebDoor()
+	if err != nil || !ok {
+		return err
+	}
+	ln, err := angelus.ListenUnix(web.Path, web.Mode)
+	if err != nil {
+		return fmt.Errorf("door.web: %w", err)
+	}
+	admit := webAuthenticator(web.Authn)
+	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "admits", admit != nil)
+	go func() {
+		defer os.Remove(web.Path)
+		if err := a.ServeWeb(ctx, ln, angelus.Web{Admit: admit, MaxConnAge: web.MaxConnAge}); err != nil {
+			slog.Error("web door", "err", err)
+		}
+	}()
+	return nil
+}
+
+func webAuthenticator(name string) angelus.WebAdmit {
+	slog.Warn("door.web: no authenticator is available yet; every upgrade is refused", "authn", name)
+	return nil
 }
