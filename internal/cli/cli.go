@@ -1445,7 +1445,9 @@ an [auth] table naming how a human signs in.
   login <name>   sign in to the troupe's door (scheme = "oidc-device");
                  hush holds the token as troupe:<name>
   ls             each troupe, its url, and whether you are signed in;
-                 ● marks the one FIGARO_TROUPE or [cli] troupe selects`,
+                 ● marks the one FIGARO_TROUPE or [cli] troupe selects.
+                 With [peers] configured, this node's troupe version and
+                 what each peer last showed, from a running daemon`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls"},
 		},

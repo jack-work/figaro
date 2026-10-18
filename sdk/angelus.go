@@ -303,6 +303,12 @@ func (c *Angelus) IRBefore(ctx context.Context, figaroID string, from, before ui
 	return &resp, nil
 }
 
+func (c *Angelus) TroupeMembers(ctx context.Context) (*rpc.TroupeMembersResponse, error) {
+	var resp rpc.TroupeMembersResponse
+	err := c.call(ctx, rpc.MethodTroupeMembers, struct{}{}, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) Close() error {
 	return c.cli.Close()
 }

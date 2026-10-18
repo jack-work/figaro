@@ -115,6 +115,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodDecide:         h.decide,
 		rpc.MethodHello:          h.hello,
 		rpc.MethodNodeResolve:    h.nodeResolve,
+		rpc.MethodTroupeMembers:  h.troupeMembers,
 		rpc.MethodMove:           h.move,
 		rpc.MethodImportBegin:    h.importBegin,
 		rpc.MethodImportChunk:    h.importChunk,

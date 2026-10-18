@@ -1,13 +1,18 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"text/tabwriter"
+	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/sdk"
 )
 
 const (
@@ -53,11 +58,48 @@ func troupeRows(loaded *config.Loaded, store oauthStore) []troupeRow {
 	return rows
 }
 
+type troupeListing struct {
+	Troupes []troupeRow                `json:"troupes"`
+	Members *rpc.TroupeMembersResponse `json:"members,omitempty"`
+}
+
+func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
+	if peers, err := loaded.Peers(); err != nil || len(peers) == 0 {
+		return nil, err
+	}
+	acli, err := sdk.DialAngelus(doorEndpoint())
+	if err != nil {
+		return nil, fmt.Errorf("daemon not running, so no peer versions: %w", err)
+	}
+	defer acli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return acli.TroupeMembers(ctx)
+}
+
+func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
+	fmt.Fprintf(out, "\nthis node %s, troupe membership version %d\n", m.Node, m.Version)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "\tPEER\tENDPOINT\tVERSION\tDRIFT")
+	for _, p := range m.Peers {
+		switch {
+		case !p.Met:
+			fmt.Fprintf(w, "\t%s\t%s\t-\tnot met\n", p.Node, p.Endpoint)
+		case p.Drift:
+			fmt.Fprintf(w, "\t%s\t%s\t%d\tdrift: ours is %d\n", p.Node, p.Endpoint, p.Version, m.Version)
+		default:
+			fmt.Fprintf(w, "\t%s\t%s\t%d\t\n", p.Node, p.Endpoint, p.Version)
+		}
+	}
+	_ = w.Flush()
+}
+
 func runTroupeList(loaded *config.Loaded, jsonOut bool) {
 	store, hushErr := cliOAuthStore(false)
 	rows := troupeRows(loaded, store)
+	members, membersErr := localMembers(loaded)
 	if jsonOut {
-		_ = json.NewEncoder(stdout).Encode(rows)
+		_ = json.NewEncoder(stdout).Encode(troupeListing{Troupes: rows, Members: members})
 	} else if len(rows) == 0 {
 		fmt.Fprintf(stderrw, "no troupes (%s/<name>.toml)\n", loaded.TroupesDir())
 	} else {
@@ -75,6 +117,12 @@ func runTroupeList(loaded *config.Loaded, jsonOut bool) {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", mark, r.Name, r.URL, r.SignIn)
 		}
 		_ = w.Flush()
+	}
+	if members != nil && !jsonOut {
+		writeTroupeMembers(stdout, members)
+	}
+	if membersErr != nil {
+		fmt.Fprintf(stderrw, "peers: %s\n", membersErr)
 	}
 	if hushErr != nil {
 		fmt.Fprintf(stderrw, "hush unavailable (%s): sign-in not shown\n", hushErr)

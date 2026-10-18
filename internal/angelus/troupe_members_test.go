@@ -1,0 +1,62 @@
+package angelus
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/figaro/internal/peer/peertest"
+	"github.com/jack-work/figaro/internal/store"
+)
+
+// troupe.members is this node's membership as it stands: its version, every
+// peer it names, the version each last showed on a handshake, and whether
+// that differs from ours. A peer never met has no version, not version 0.
+func TestTroupeMembersShowsEachPeersVersionAndDrift(t *testing.T) {
+	pki := peertest.NewPKI(t, "fed")
+	members, err := peer.NewStatic(7, []config.Peer{
+		pki.Peer("self", "agrees", "127.0.0.1:7001"),
+		pki.Peer("self", "behind", "127.0.0.1:7002"),
+		pki.Peer("self", "unmet", "127.0.0.1:7003"),
+	})
+	require.NoError(t, err)
+	seen := &peer.Versions{}
+	seen.Saw("agrees", 7, 7)
+	seen.Saw("behind", 5, 7)
+
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs(), Peers: members, PeerVersions: seen}
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
+	out, err := hs.Map[rpc.MethodTroupeMembers](context.Background(), nil)
+	require.NoError(t, err)
+	got := out.(rpc.TroupeMembersResponse)
+
+	require.Equal(t, a.Backend.NodeID(), got.Node)
+	require.Equal(t, uint64(7), got.Version)
+	byNode := map[string]rpc.TroupeMember{}
+	for _, m := range got.Peers {
+		byNode[m.Node] = m
+	}
+	require.Len(t, byNode, 3)
+	require.Equal(t, "tls://127.0.0.1:7002", byNode["behind"].Endpoint)
+	require.True(t, byNode["agrees"].Met)
+	require.False(t, byNode["agrees"].Drift)
+	require.Equal(t, uint64(5), byNode["behind"].Version)
+	require.True(t, byNode["behind"].Drift)
+	require.False(t, byNode["unmet"].Met)
+	require.False(t, byNode["unmet"].Drift)
+}
+
+// A node with no peers answers with an empty membership, not an error.
+func TestTroupeMembersWithoutPeers(t *testing.T) {
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs()}
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
+	out, err := hs.Map[rpc.MethodTroupeMembers](context.Background(), nil)
+	require.NoError(t, err)
+	got := out.(rpc.TroupeMembersResponse)
+	require.Empty(t, got.Peers)
+	require.NotNil(t, got.Peers)
+}

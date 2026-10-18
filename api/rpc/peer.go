@@ -28,3 +28,20 @@ type NodeUnreachable struct {
 	Node  string `json:"node"`
 	Error string `json:"error"`
 }
+
+const MethodTroupeMembers = "troupe.members"
+
+type TroupeMembersResponse struct {
+	Node    string         `json:"node"`
+	Version uint64         `json:"version"`
+	Peers   []TroupeMember `json:"peers"`
+}
+
+type TroupeMember struct {
+	Node     string `json:"node"`
+	Endpoint string `json:"endpoint"`
+	Met      bool   `json:"met"`
+	Version  uint64 `json:"version,omitempty"`
+	SeenAt   int64  `json:"seen_at,omitempty"`
+	Drift    bool   `json:"drift,omitempty"`
+}

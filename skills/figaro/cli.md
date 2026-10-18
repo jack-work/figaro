@@ -280,7 +280,7 @@ observer's mouth.
 | `figaro provider login <name>` | Sign in to a model provider: its OAuth or device-code flow, else an API key sealed in hush. See [reference/providers.md](reference/providers.md#credentials). |
 | `figaro provider logout <name> [-j]` | Remove what figaro holds for it (the hush credential, a sealed `api_key`). Names and keeps what figaro did not write; exits 1 while a credential remains. |
 | `figaro troupe login <name>` | Sign in to a troupe's door (`[auth] scheme = "oidc-device"`); hush holds the token as `troupe:<name>`. |
-| `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. |
+| `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. With `[peers]` configured, also this node's `[troupe] version` and, per peer, the version it last showed on a handshake and any drift (asks a running daemon; never starts one). |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |

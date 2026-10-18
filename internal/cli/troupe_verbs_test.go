@@ -3,10 +3,12 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -68,4 +70,32 @@ func TestTroupeLoginRefusesATroupeWithoutAuth(t *testing.T) {
 	require.ErrorContains(t, err, "no [auth]")
 	_, err = troupeForLogin(loaded, "nowhere")
 	require.ErrorContains(t, err, "no troupe")
+}
+
+// troupe ls shows this node's membership version and, per peer, the version
+// it last showed and whether that drifts from ours.
+func TestTroupeLsShowsPeerVersionsAndDrift(t *testing.T) {
+	var buf strings.Builder
+	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{
+		Node:    "11111111-0000-4000-8000-000000000001",
+		Version: 7,
+		Peers: []rpc.TroupeMember{
+			{Node: "agrees", Endpoint: "tls://10.0.0.2:7443", Version: 7, Met: true},
+			{Node: "behind", Endpoint: "tls://10.0.0.3:7443", Version: 5, Met: true, Drift: true},
+			{Node: "unmet", Endpoint: "tls://10.0.0.4:7443"},
+		},
+	})
+	out := buf.String()
+	require.Contains(t, out, "version 7")
+	lines := map[string]string{}
+	for _, l := range strings.Split(out, "\n") {
+		for _, n := range []string{"agrees", "behind", "unmet"} {
+			if strings.Contains(l, n) {
+				lines[n] = l
+			}
+		}
+	}
+	require.Regexp(t, `agrees\s+tls://10\.0\.0\.2:7443\s+7\s*$`, lines["agrees"])
+	require.Regexp(t, `behind\s+tls://10\.0\.0\.3:7443\s+5\s+drift: ours is 7`, lines["behind"])
+	require.Regexp(t, `unmet\s+tls://10\.0\.0\.4:7443\s+-\s+not met`, lines["unmet"])
 }

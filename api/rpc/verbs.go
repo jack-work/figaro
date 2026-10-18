@@ -45,10 +45,11 @@ var methodVerbs = map[string]Verb{
 	MethodAttach:  VerbRead,
 	MethodOutfits: VerbRead,
 
-	MethodModelsWant:   VerbRead,
-	MethodNodeResolve:  VerbRead,
-	MethodImportStatus: VerbRead,
-	MethodNodeLearn:    VerbRead,
+	MethodModelsWant:    VerbRead,
+	MethodNodeResolve:   VerbRead,
+	MethodTroupeMembers: VerbRead,
+	MethodImportStatus:  VerbRead,
+	MethodNodeLearn:     VerbRead,
 
 	MethodSet:     VerbSet,
 	MethodStudy:   VerbSet,

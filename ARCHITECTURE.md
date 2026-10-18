@@ -241,9 +241,12 @@ A third, node door is configured by `[door.tls]` (`listen`, `cert`, `key`,
 `client_ca`) and serves the same methods to peers over mutual TLS. Peers are
 static, `[peers.<node id>]` (`endpoint = "tls://host:port"`, `identity`, the
 URI their certificate must carry, and the `ca`, `cert`, `key` this node dials
-them with). A peer's first line is a passage: empty when the node speaks for
-itself, or `forwarded` with the caller's bearer, which the owner verifies
-against `[authz.bearer]`; nodes never vouch for a caller.
+them with), and `[troupe] version` names the revision of that list. A peer's
+first line is a passage: the dialer's troupe version, and, when it forwards a
+caller, `forwarded` with the caller's bearer, which the owner verifies against
+`[authz.bearer]`; nodes never vouch for a caller. The door answers with its
+own version. Each side logs once when the other's differs and refuses
+nothing for it; `figaro troupe ls` shows what each peer last showed.
 
 An aria lives on the node that minted it, forks included. A request naming
 an aria this node does not hold (by id, prefix, or `<node>/<id>`) goes once,
