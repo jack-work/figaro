@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/term"
@@ -105,17 +103,4 @@ func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, 
 
 	fmt.Fprintln(os.Stderr, "       "+term.Green("✓")+" Logged in"+term.Dim(fmt.Sprintf(" · token expires in %ds", tokenResp.ExpiresIn)))
 	return nil
-}
-
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	cmd.Start()
 }

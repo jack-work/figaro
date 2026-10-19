@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -72,7 +70,7 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (Dev
 	if err := prompt(p); err != nil {
 		return DeviceTokens{}, err
 	}
-	openBrowserDevice(p.VerificationURI)
+	openBrowser(p.VerificationURI)
 
 	interval := max(time.Duration(device.Interval)*time.Second, 5*time.Second)
 	expiresIn := device.ExpiresIn
@@ -150,17 +148,4 @@ func postDeviceForm(cfg DeviceCodeConfig, endpoint string, form url.Values) (*ht
 		req.Header.Set(k, v)
 	}
 	return http.DefaultClient.Do(req)
-}
-
-func openBrowserDevice(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	cmd.Start()
 }
