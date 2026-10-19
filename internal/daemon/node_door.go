@@ -73,6 +73,9 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	case door.Advertise == "":
 		return fmt.Errorf("door.tls: listen %q is a wildcard, so set advertise to the host:port peers dial", door.Listen)
 	}
+	if a.Peercred == nil {
+		return errors.New("troupe.provider figaro: no local principal to own this node")
+	}
 	creds, err := troupeKeys(ctx, a, loaded, stateDir)
 	if err != nil {
 		return err
@@ -105,7 +108,8 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 		}
 	}
 	a.Peers = m
-	seedJoin(k, m, door.Advertise, time.Now())
+	owner := a.Peercred.Self().String()
+	seedJoin(k, m, door.Advertise, owner, time.Now())
 	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}
 	m.OnEvict(dialer.Evict)
 	k.Renew = renewer(ctx, m, dialer, door.Advertise)
@@ -154,7 +158,7 @@ func renewAt(ctx context.Context, d *peer.Dialer, node string, req rpc.TroupeSig
 	return leaf, issuer, err
 }
 
-func seedJoin(k *troupe.Keeper, m *peer.Ledger, door string, now time.Time) {
+func seedJoin(k *troupe.Keeper, m *peer.Ledger, door, owner string, now time.Time) {
 	inter, key, err := k.Dir.Intermediate()
 	if err != nil || !now.Before(inter.NotAfter) {
 		return
@@ -164,10 +168,14 @@ func seedJoin(k *troupe.Keeper, m *peer.Ledger, door string, now time.Time) {
 		slog.Warn("troupe: this node is out of the troupe and does not sign itself back in", "troupe", m.Troupe(), "by", gone)
 		return
 	}
-	if mem, ok := v.Members[self]; ok && mem.Door == door && mem.SignsUntil.Equal(inter.NotAfter) {
+	mem, ok := v.Members[self]
+	if ok && mem.Door == door && mem.SignsUntil.Equal(inter.NotAfter) {
 		return
 	}
-	e, err := troupe.SignJoin(key, inter, m.Troupe(), self, door, now)
+	if ok {
+		owner = mem.Owner
+	}
+	e, err := troupe.SignJoin(key, inter, m.Troupe(), self, door, owner, now)
 	if err == nil {
 		_, err = m.Merge(e)
 	}
@@ -235,7 +243,7 @@ func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string
 	g := &peer.Gossip{
 		Members: m,
 		Dialer:  &peer.Dialer{Members: m, Versions: a.PeerVersions},
-		Seed:    func() { seedJoin(a.Troupe, m, door, time.Now()) },
+		Seed:    func() { seedJoin(a.Troupe, m, door, a.Peercred.Self().String(), time.Now()) },
 	}
 	m.OnEvict(g.Dialer.Evict)
 	m.OnAdmit(g.Greet(ctx))

@@ -57,7 +57,7 @@ func (lt *ledgerTroupe) selfJoin(node string) troupe.Entry {
 	lt.t.Helper()
 	inter, ik, err := lt.keep[node].Dir.Intermediate()
 	require.NoError(lt.t, err)
-	e, err := troupe.SignJoin(ik, inter, "estate", node, lt.ln[node].Addr().String(), time.Now())
+	e, err := troupe.SignJoin(ik, inter, "estate", node, lt.ln[node].Addr().String(), "user:owner", time.Now())
 	require.NoError(lt.t, err)
 	return e
 }
@@ -250,7 +250,7 @@ func TestACertificateFromARevokedIntermediateIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	dinter, dik, err := lt.keep["d"].Dir.Intermediate()
 	require.NoError(t, err)
-	cjoin, err := troupe.SignJoin(dik, dinter, "estate", "c", "c:1", time.Now())
+	cjoin, err := troupe.SignJoin(dik, dinter, "estate", "c", "c:1", "user:owner", time.Now())
 	require.NoError(t, err)
 
 	md := lt.membership("d", lt.selfJoin("a"), lt.selfJoin("d"), cjoin)

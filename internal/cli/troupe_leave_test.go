@@ -101,24 +101,24 @@ func TestTroupeRevokeSignsWithTheTroupesRootOnly(t *testing.T) {
 	require.Contains(t, r.out.String(), "node-a")
 }
 
-// Under the figaro provider troupe ls says who admitted each node, which
-// can sign, and which nodes are out and how.
+// Under the figaro provider troupe ls says who owns each node, who
+// admitted it, which can sign, and which nodes are out and how.
 func TestTroupeLsShowsAdmissionsSignersAndWhoIsOut(t *testing.T) {
 	var buf strings.Builder
 	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{
-		Node: "node-b", Provider: "figaro", AdmittedBy: "node-a", Version: 9,
+		Node: "node-b", Provider: "figaro", AdmittedBy: "node-a", Owner: "user:guest", Version: 9,
 		Peers: []rpc.TroupeMember{
-			{Node: "node-a", Endpoint: "tls://a.lan:7443", AdmittedBy: "node-a", Signs: true, Met: true, Version: 9},
-			{Node: "node-c", Endpoint: "tls://c.lan:7443", AdmittedBy: "node-a"},
+			{Node: "node-a", Endpoint: "tls://a.lan:7443", Owner: "user:jack", AdmittedBy: "node-a", Signs: true, Met: true, Version: 9},
+			{Node: "node-c", Endpoint: "tls://c.lan:7443", Owner: "user:jack", AdmittedBy: "node-a"},
 		},
 		Gone: []rpc.TroupeGone{{Node: "node-d", By: "leave"}, {Node: "node-e", By: "revoke"}},
 		Keys: &rpc.TroupeKeys{Troupe: "estate", NodeExpires: 1},
 	})
 	out := buf.String()
-	require.Contains(t, out, "admitted by node-a")
+	require.Contains(t, out, "admitted by node-a, owned by user:guest")
 	require.Contains(t, out, "no intermediate, so a signer renews it")
-	require.Regexp(t, `node-a\s+tls://a\.lan:7443\s+node-a\s+yes\s+9`, out)
-	require.Regexp(t, `node-c\s+tls://c\.lan:7443\s+node-a\s+-\s+not met`, out)
+	require.Regexp(t, `node-a\s+tls://a\.lan:7443\s+user:jack\s+node-a\s+yes\s+9`, out)
+	require.Regexp(t, `node-c\s+tls://c\.lan:7443\s+user:jack\s+node-a\s+-\s+not met`, out)
 	require.Contains(t, out, "out: node-d (leave)")
 	require.Contains(t, out, "out: node-e (revoke)")
 }

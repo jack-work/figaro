@@ -16,7 +16,7 @@ func benchEntries(b *testing.B, n int) (*estate, []Entry) {
 	s.inter["a"], s.ikey["a"] = c, k
 	es := make([]Entry, n)
 	for i := range es {
-		e, err := SignJoin(k, c, "estate", fmt.Sprintf("node-%d", i), "n.lan:7443", s.now.Add(time.Duration(i)*time.Millisecond))
+		e, err := SignJoin(k, c, "estate", fmt.Sprintf("node-%d", i), "n.lan:7443", "user:owner", s.now.Add(time.Duration(i)*time.Millisecond))
 		if err != nil {
 			b.Fatal(err)
 		}

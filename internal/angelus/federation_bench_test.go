@@ -61,7 +61,7 @@ func BenchmarkDoorCallUnixLedger(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	join, err := troupe.SignJoin(ik, inter, "estate", "elsewhere", "127.0.0.1:1", time.Now())
+	join, err := troupe.SignJoin(ik, inter, "estate", "elsewhere", "127.0.0.1:1", "user:owner", time.Now())
 	if err != nil {
 		b.Fatal(err)
 	}

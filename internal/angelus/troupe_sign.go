@@ -106,7 +106,14 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 		return nil, err
 	}
 	if mem, ok := view.Members[req.Node]; !renewal || !ok || mem.Door != req.Door {
-		e, err := troupe.SignJoin(ikey, inter, m.Troupe(), req.Node, req.Door, now)
+		owner := mem.Owner
+		if !renewal {
+			owner = authz.PrincipalText(authz.PrincipalOf(ctx))
+		}
+		if err := troupe.ValidOwner(owner); err != nil {
+			return nil, fmt.Errorf("no principal to record as the node's owner: %w", err)
+		}
+		e, err := troupe.SignJoin(ikey, inter, m.Troupe(), req.Node, req.Door, owner, now)
 		if err != nil {
 			return nil, err
 		}

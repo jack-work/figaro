@@ -17,7 +17,7 @@ func (lt *ledgerTroupe) admitByNode(by, node, door string) troupe.Entry {
 	lt.t.Helper()
 	inter, ik, err := lt.keep[by].Dir.Intermediate()
 	require.NoError(lt.t, err)
-	e, err := troupe.SignJoin(ik, inter, "estate", node, door, time.Now())
+	e, err := troupe.SignJoin(ik, inter, "estate", node, door, "user:owner", time.Now())
 	require.NoError(lt.t, err)
 	return e
 }

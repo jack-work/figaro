@@ -14,6 +14,7 @@ import (
 	"maps"
 	"net"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -36,6 +37,7 @@ type Entry struct {
 	Troupe string   `json:"troupe"`
 	Node   string   `json:"node"`
 	Door   string   `json:"door,omitempty"`
+	Owner  string   `json:"owner,omitempty"`
 	At     int64    `json:"at"`
 	Chain  [][]byte `json:"chain,omitempty"`
 	Sig    []byte   `json:"sig"`
@@ -47,8 +49,9 @@ func (e Entry) message() []byte {
 		Troupe string `json:"troupe"`
 		Node   string `json:"node"`
 		Door   string `json:"door"`
+		Owner  string `json:"owner"`
 		At     int64  `json:"at"`
-	}{e.Kind, e.Troupe, e.Node, e.Door, e.At})
+	}{e.Kind, e.Troupe, e.Node, e.Door, e.Owner, e.At})
 	return append([]byte(entryDomain), body...)
 }
 
@@ -73,8 +76,8 @@ func sign(e Entry, key crypto.Signer) (Entry, error) {
 	return e, nil
 }
 
-func SignJoin(key crypto.Signer, inter *x509.Certificate, troupe, node, door string, at time.Time) (Entry, error) {
-	return sign(Entry{Kind: Join, Troupe: troupe, Node: node, Door: door, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
+func SignJoin(key crypto.Signer, inter *x509.Certificate, troupe, node, door, owner string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: Join, Troupe: troupe, Node: node, Door: door, Owner: owner, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
 }
 
 func SignLeave(key crypto.Signer, leaf, inter *x509.Certificate, troupe, node string, at time.Time) (Entry, error) {
@@ -122,6 +125,9 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		if _, _, err := net.SplitHostPort(e.Door); err != nil {
 			return out, fmt.Errorf("door %q: %w", e.Door, err)
 		}
+		if err := ValidOwner(e.Owner); err != nil {
+			return out, err
+		}
 		if len(out.chain) != 1 {
 			return out, errors.New("a join carries the admitting intermediate alone")
 		}
@@ -134,7 +140,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		}
 		pub = inter.PublicKey
 	case Leave:
-		if e.Door != "" || len(out.chain) != 2 {
+		if e.Door != "" || e.Owner != "" || len(out.chain) != 2 {
 			return out, errors.New("a leave carries the node's certificate and its issuer, and no door")
 		}
 		leaf := out.chain[0]
@@ -146,7 +152,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		}
 		pub = leaf.PublicKey
 	case Revoke:
-		if e.Door != "" || len(out.chain) != 0 {
+		if e.Door != "" || e.Owner != "" || len(out.chain) != 0 {
 			return out, errors.New("a revoke is signed by the root alone, and has no door")
 		}
 		pub = root.PublicKey
@@ -158,6 +164,16 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		return out, errors.New("bad signature")
 	}
 	return out, nil
+}
+
+const maxOwner = 256
+
+func ValidOwner(owner string) error {
+	kind, id, ok := strings.Cut(owner, ":")
+	if !ok || kind == "" || id == "" || len(owner) > maxOwner || strings.ContainsAny(owner, " \t\r\n") {
+		return fmt.Errorf("owner %q: a join names the principal that owns the node, as kind:id", owner)
+	}
+	return nil
 }
 
 func chainsTo(c, inter, root *x509.Certificate, at time.Time) error {
@@ -184,6 +200,7 @@ func names(c *x509.Certificate, identity string) bool {
 type Member struct {
 	Node       string
 	Door       string
+	Owner      string
 	AdmittedBy string
 	Since      time.Time
 	SignsUntil time.Time
@@ -278,7 +295,7 @@ func (l *Ledger) rebuild() {
 			m.Node, m.AdmittedBy, m.Since = e.Node, e.signer(), e.Time()
 		}
 		if e.At >= latest[e.Node] {
-			latest[e.Node], m.Door = e.At, e.Door
+			latest[e.Node], m.Door, m.Owner = e.At, e.Door, e.Owner
 		}
 		if e.signer() == e.Node && e.chain[0].NotAfter.After(m.SignsUntil) {
 			m.SignsUntil = e.chain[0].NotAfter

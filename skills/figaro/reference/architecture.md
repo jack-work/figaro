@@ -604,7 +604,8 @@ dialer, and logs the command to run; `troupe ls` shows both expiries.
 `[troupe] provider = "static"` (the default) takes the members from
 `[peers]`. `provider = "figaro"` takes them from signed entries instead, and
 `[peers]` must be empty: a join (signed by the admitting node's
-intermediate), a leave (signed by the node's own key) or a revoke (signed by
+intermediate, naming the node's door and its owner, the principal that
+joined it), a leave (signed by the node's own key) or a revoke (signed by
 the root). Each is verified at the time it was signed. A leave or revoke
 beats every join of its node, and a root revoke also voids the joins its
 node's intermediates signed. A node holding an intermediate signs its own

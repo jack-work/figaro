@@ -76,7 +76,7 @@ func newSignRig(t *testing.T, intermediate bool) *signRig {
 	}
 	inter, err := troupe.IssueIntermediate(rk, root, "estate", signerNode, ik.Public(), time.Now(), troupe.IntermediateTTL)
 	require.NoError(t, err)
-	selfJoin, err := troupe.SignJoin(ik, inter, "estate", signerNode, signerNode+".lan:7443", time.Now())
+	selfJoin, err := troupe.SignJoin(ik, inter, "estate", signerNode, signerNode+".lan:7443", "user:owner", time.Now())
 	require.NoError(t, err)
 	_, err = l.Merge(selfJoin)
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func newSignRig(t *testing.T, intermediate bool) *signRig {
 		leaf, err := troupe.IssueNode(ik, inter, "estate", b.NodeID(), nk.Public(), time.Now(), troupe.NodeTTL)
 		require.NoError(t, err)
 		require.NoError(t, d.WriteNode(leaf, inter, nk))
-		me, err := troupe.SignJoin(ik, inter, "estate", b.NodeID(), "me.lan:7443", time.Now())
+		me, err := troupe.SignJoin(ik, inter, "estate", b.NodeID(), "me.lan:7443", "user:owner", time.Now())
 		require.NoError(t, err)
 		_, err = l.Merge(me)
 		require.NoError(t, err)
@@ -234,4 +234,14 @@ func signParams(t *testing.T, req rpc.TroupeSignRequest) json.RawMessage {
 	raw, err := json.Marshal(req)
 	require.NoError(t, err)
 	return raw
+}
+
+// The join troupe.sign records names the principal that asked as the
+// node's owner; a renewal from a new door keeps it.
+func TestTroupeSignRecordsTheCallerAsOwner(t *testing.T) {
+	r := newSignRig(t, true)
+	_, _, err := r.sign(as("member"), "node-b", "b.lan:7443")
+	require.NoError(t, err)
+	m := r.a.Peers.(*peer.Ledger)
+	require.Equal(t, "user:member", m.View().Members["node-b"].Owner)
 }

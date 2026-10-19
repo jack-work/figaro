@@ -65,9 +65,9 @@ func (f *fakeMember) TroupeSign(_ context.Context, req rpc.TroupeSignRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	self, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, "node-a", "a.lan:7443", time.Now())
+	self, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, "node-a", "a.lan:7443", "user:owner", time.Now())
 	require.NoError(f.t, err)
-	join, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, req.Node, req.Door, time.Now())
+	join, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, req.Node, req.Door, "user:owner", time.Now())
 	require.NoError(f.t, err)
 	resp := &rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, f.inter.Raw}, Root: f.root.Raw, Entries: troupe.Encode([]troupe.Entry{self, join})}
 	if f.tamper != nil {

@@ -99,6 +99,7 @@ type TroupeMembersResponse struct {
 	Node       string         `json:"node"`
 	Provider   string         `json:"provider,omitempty"`
 	AdmittedBy string         `json:"admitted_by,omitempty"`
+	Owner      string         `json:"owner,omitempty"`
 	Version    uint64         `json:"version"`
 	Peers      []TroupeMember `json:"peers"`
 	Gone       []TroupeGone   `json:"gone,omitempty"`
@@ -121,6 +122,7 @@ type TroupeMember struct {
 	Node       string `json:"node"`
 	Endpoint   string `json:"endpoint"`
 	AdmittedBy string `json:"admitted_by,omitempty"`
+	Owner      string `json:"owner,omitempty"`
 	Signs      bool   `json:"signs,omitempty"`
 	Met        bool   `json:"met"`
 	Version    uint64 `json:"version,omitempty"`

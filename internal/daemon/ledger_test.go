@@ -19,6 +19,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
@@ -94,6 +95,9 @@ func (n *ledgerNode) start() *peer.Ledger {
 	ctx, cancel := context.WithCancel(context.Background())
 	n.stop = cancel
 	n.a = angelus.New(angelus.Config{RuntimeDir: t.TempDir(), Backend: n.backend})
+	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	require.NoError(t, err)
+	n.a.Peercred = pc
 	require.NoError(t, federateIn(ctx, n.a, loaded, n.stateDir))
 	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: n.a, Config: loaded, Ctx: ctx}).Map
 	require.NoError(t, serveNodeDoor(ctx, n.a, loaded))
@@ -144,6 +148,7 @@ func TestAFounderSignsItselfInAndKeepsItsLedgerInAForm(t *testing.T) {
 	me, ok := m.View().Members[n.id()]
 	require.True(t, ok)
 	require.Equal(t, n.addr, me.Door)
+	require.Equal(t, n.a.Peercred.Self().String(), me.Owner, "a founder is owned by the local principal")
 	require.Equal(t, []string{n.id()}, m.View().Signers(time.Now()))
 	require.Empty(t, m.Nodes(), "a node is not its own peer")
 	require.Len(t, storedEntries(t, n), 1)
@@ -182,7 +187,7 @@ func TestTwoNodesTradeEntriesOverTheNodeDoor(t *testing.T) {
 
 	inter, ik, err := na.dir().Intermediate()
 	require.NoError(t, err)
-	c, err := troupe.SignJoin(ik, inter, "estate", "node-c", "127.0.0.1:1", time.Now())
+	c, err := troupe.SignJoin(ik, inter, "estate", "node-c", "127.0.0.1:1", "user:owner", time.Now())
 	require.NoError(t, err)
 	_, err = ma.Merge(c)
 	require.NoError(t, err)
@@ -241,7 +246,7 @@ func (n *ledgerNode) joinedBy(signer *ledgerNode) troupe.Entry {
 	n.t.Helper()
 	inter, ik, err := signer.dir().Intermediate()
 	require.NoError(n.t, err)
-	e, err := troupe.SignJoin(ik, inter, "estate", n.id(), n.addr, time.Now())
+	e, err := troupe.SignJoin(ik, inter, "estate", n.id(), n.addr, "user:owner", time.Now())
 	require.NoError(n.t, err)
 	return e
 }

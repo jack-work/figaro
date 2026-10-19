@@ -34,7 +34,7 @@ func (h *handlers) troupeMembers(context.Context, json.RawMessage) (any, error) 
 	if l, ok := m.(*peer.Ledger); ok {
 		view = l.View()
 		out.Provider = config.ProviderFigaro
-		out.AdmittedBy = view.Members[l.Self()].AdmittedBy
+		out.AdmittedBy, out.Owner = view.Members[l.Self()].AdmittedBy, view.Members[l.Self()].Owner
 		for _, node := range slices.Sorted(maps.Keys(view.Gone)) {
 			out.Gone = append(out.Gone, rpc.TroupeGone{Node: node, By: string(view.Gone[node])})
 		}
@@ -46,7 +46,7 @@ func (h *handlers) troupeMembers(context.Context, json.RawMessage) (any, error) 
 			row.Endpoint = "tls://" + mem.Address
 		}
 		if mem, ok := view.Members[node]; ok {
-			row.AdmittedBy, row.Signs = mem.AdmittedBy, now.Before(mem.SignsUntil)
+			row.AdmittedBy, row.Owner, row.Signs = mem.AdmittedBy, mem.Owner, now.Before(mem.SignsUntil)
 		}
 		if s, ok := h.angelus.PeerVersions.Seen(node); ok {
 			row.Met, row.Version, row.SeenAt, row.Drift = true, s.Version, s.At.UnixMilli(), s.Version != out.Version

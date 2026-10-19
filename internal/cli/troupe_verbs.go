@@ -85,7 +85,7 @@ func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 	ledger := m.Provider == config.ProviderFigaro
 	fmt.Fprintf(out, "\nthis node %s, troupe membership version %d\n", m.Node, m.Version)
 	if ledger && m.AdmittedBy != "" {
-		fmt.Fprintf(out, "admitted by %s\n", m.AdmittedBy)
+		fmt.Fprintf(out, "admitted by %s, owned by %s\n", m.AdmittedBy, m.Owner)
 	}
 	if k := m.Keys; k != nil {
 		switch {
@@ -100,7 +100,7 @@ func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 	if len(m.Peers) > 0 {
 		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 		if ledger {
-			fmt.Fprintln(w, "\tPEER\tENDPOINT\tADMITTED BY\tSIGNS\tVERSION\tDRIFT")
+			fmt.Fprintln(w, "\tPEER\tENDPOINT\tOWNER\tADMITTED BY\tSIGNS\tVERSION\tDRIFT")
 		} else {
 			fmt.Fprintln(w, "\tPEER\tENDPOINT\tVERSION\tDRIFT")
 		}
@@ -111,7 +111,7 @@ func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 				if p.Signs {
 					signs = "yes"
 				}
-				cols += "\t" + p.AdmittedBy + "\t" + signs
+				cols += "\t" + p.Owner + "\t" + p.AdmittedBy + "\t" + signs
 			}
 			switch {
 			case !p.Met:

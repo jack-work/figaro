@@ -41,7 +41,7 @@ func (s *estate) intermediate(node string) {
 
 func (s *estate) join(by, node string, at time.Duration) Entry {
 	s.t.Helper()
-	e, err := SignJoin(s.ikey[by], s.inter[by], "estate", node, node+".lan:7444", s.now.Add(at))
+	e, err := SignJoin(s.ikey[by], s.inter[by], "estate", node, node+".lan:7444", "user:owner", s.now.Add(at))
 	require.NoError(s.t, err)
 	return e
 }
@@ -134,24 +134,40 @@ func TestForgedAndTamperedEntriesAreRefused(t *testing.T) {
 	k := newKey(t)
 	leaf, err := IssueNode(s.ikey["a"], s.inter["a"], "estate", "b", k.Public(), s.now, NodeTTL)
 	require.NoError(t, err)
-	byLeaf, err := SignJoin(k, leaf, "estate", "c", "c:1", s.now)
+	byLeaf, err := SignJoin(k, leaf, "estate", "c", "c:1", "user:owner", s.now)
 	require.NoError(t, err)
 	byInterRevoke := s.revoke("b", 0)
 	byInterRevoke.Sig = ed25519.Sign(s.ikey["a"], byInterRevoke.message())
 
 	cases := map[string]Entry{
-		"door changed":            func() Entry { e := good; e.Door = "evil:1"; return e }(),
-		"node changed":            func() Entry { e := good; e.Node = "c"; return e }(),
-		"time changed":            func() Entry { e := good; e.At++; return e }(),
-		"another troupe's root":   other.join("a", "b", 0),
-		"signed by a leaf":        byLeaf,
-		"revoke not by the root":  byInterRevoke,
-		"leave for another node":  s.leaveAs("b", "c", "a", 0),
-		"join without a door":     func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "", s.now); return e }(),
-		"wrong troupe name":       func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "other", "c", "c:1", s.now); return e }(),
-		"node id with a slash":    func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c/d", "c:1", s.now); return e }(),
-		"leave carrying a door":   func() Entry { e := s.leave("b", "a", 0); e.Door = "x:1"; return e }(),
-		"unknown kind":            func() Entry { e := good; e.Kind = "promote"; return e }(),
+		"door changed":           func() Entry { e := good; e.Door = "evil:1"; return e }(),
+		"node changed":           func() Entry { e := good; e.Node = "c"; return e }(),
+		"time changed":           func() Entry { e := good; e.At++; return e }(),
+		"another troupe's root":  other.join("a", "b", 0),
+		"signed by a leaf":       byLeaf,
+		"revoke not by the root": byInterRevoke,
+		"leave for another node": s.leaveAs("b", "c", "a", 0),
+		"join without a door": func() Entry {
+			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "", "user:owner", s.now)
+			return e
+		}(),
+		"wrong troupe name": func() Entry {
+			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "other", "c", "c:1", "user:owner", s.now)
+			return e
+		}(),
+		"node id with a slash": func() Entry {
+			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c/d", "c:1", "user:owner", s.now)
+			return e
+		}(),
+		"leave carrying a door": func() Entry { e := s.leave("b", "a", 0); e.Door = "x:1"; return e }(),
+		"unknown kind":          func() Entry { e := good; e.Kind = "promote"; return e }(),
+		"owner changed":         func() Entry { e := good; e.Owner = "user:mallory"; return e }(),
+		"join without an owner": func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "", s.now); return e }(),
+		"owner that is no principal": func() Entry {
+			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "jack", s.now)
+			return e
+		}(),
+		"leave carrying an owner": func() Entry { e := s.leave("b", "a", 0); e.Owner = "user:x"; return e }(),
 		"revoke with a chain":     func() Entry { e := s.revoke("b", 0); e.Chain = good.Chain; return e }(),
 		"join with an extra cert": func() Entry { e := good; e.Chain = append(e.Chain, leaf.Raw); return e }(),
 	}
@@ -179,7 +195,7 @@ func TestAnEntryIsVerifiedAtItsOwnTime(t *testing.T) {
 	require.Contains(t, l.View().Members, "b")
 	require.Empty(t, l.View().Signers(time.Now()), "an expired intermediate signs nothing new")
 
-	late, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", s.inter["a"].NotAfter.Add(time.Hour))
+	late, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "user:owner", s.inter["a"].NotAfter.Add(time.Hour))
 	require.NoError(t, err)
 	_, err = l.Merge(late)
 	require.Error(t, err, "a join dated after its intermediate expired")
@@ -231,7 +247,7 @@ func TestARevokeAfterALeaveStillCascades(t *testing.T) {
 func TestTheLatestJoinNamesTheDoor(t *testing.T) {
 	s := newEstate(t)
 	s.intermediate("a")
-	moved, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "a", "a.tail:7444", s.now.Add(time.Hour))
+	moved, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "a", "a.tail:7444", "user:owner", s.now.Add(time.Hour))
 	require.NoError(t, err)
 	v := s.ledger(moved, s.join("a", "a", 0)).View()
 	require.Equal(t, "a.tail:7444", v.Members["a"].Door)
@@ -296,4 +312,17 @@ func TestAFullLedgerRefusesJoinsButNotRevokes(t *testing.T) {
 	added, err = l.Merge(s.revoke("a", 0), s.leave("b", "a", 0))
 	require.NoError(t, err)
 	require.Len(t, added, 2)
+}
+
+// Every node has an owner, the principal that joined it, signed into its
+// join so no peer can rewrite it; the newest join names it, as it names the
+// door.
+func TestAJoinRecordsTheNodesOwner(t *testing.T) {
+	s := newEstate(t)
+	s.intermediate("a")
+	guest, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "g", "g.lan:7443", "user:guest@auth.test", s.now)
+	require.NoError(t, err)
+	v := s.ledger(s.join("a", "a", 0), guest).View()
+	require.Equal(t, "user:owner", v.Members["a"].Owner)
+	require.Equal(t, "user:guest@auth.test", v.Members["g"].Owner)
 }
