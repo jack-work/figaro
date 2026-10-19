@@ -38,7 +38,9 @@ default = "high"
 
 `system.methods.enabled = false` turns every method off. Each switch takes a
 boolean or the string `"false"`, so `figaro set system.methods.enabled false`
-works either way.
+works either way. `figaro toggle system.methods.enabled` flips it, and a
+command binding puts that on a key (`M-e = ":toggle system.methods.enabled"`
+under `[bind.user]` in `keys.toml`; see [keys.md](keys.md)).
 
 ## The template
 
@@ -115,4 +117,6 @@ until the next inquiry. To pin a value, turn the method off
 Methods are read from the aria's `system.methods` laid over the default
 outfit's, leaf by leaf, the same fallback the `system.decide` settings use. An
 aria minted before the outfit gained a method still runs it, and anything the
-aria sets (`enabled = false`, a different `default`) wins.
+aria sets (`enabled = false`, a different `default`) wins. `figaro toggle`
+reads an absent key the same way, so the first M-e on such an aria turns the
+method off.

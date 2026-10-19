@@ -28,6 +28,9 @@ h = ""
 Q = ""
 p = "prefix:panels"
 
-# A key of your own in every mode it means something: M-s pins the question.
+# Keys of your own in every mode they mean something: M-s pins the question.
+# A value starting with : runs that command line, as typed at :, on the aria on screen,
+# with or without the pager up: M-e turns the reasoning-effort method off and on again.
 [bind.user]
 M-s = "sticky"
+M-e = ":toggle system.methods.enabled"

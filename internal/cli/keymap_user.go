@@ -104,7 +104,11 @@ func userBinds(l *keyLayer, m map[string]string, refuse func(layer, keys, format
 
 func refuseUserBind(l *keyLayer, keys, action string) string {
 	var a *keyAction
-	if action != "" && !strings.HasPrefix(action, prefixAction) {
+	if _, isCommand := boundCommand(action); isCommand {
+		if a = commandBinding(action); a == nil {
+			return "a command binding names a command after the colon, as \":toggle system.methods.enabled\""
+		}
+	} else if action != "" && !strings.HasPrefix(action, prefixAction) {
 		if a = actionByName[action]; a == nil {
 			return fmt.Sprintf("no action named %q (figaro keys actions lists them)", action)
 		}

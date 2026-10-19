@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 // OutfitLayer with no Name is the synthetic root holding several requested
@@ -17,6 +19,7 @@ type OutfitLayer struct {
 // Spec is the `-O` syntax; empty means the configured default.
 type OutfitsRequest struct {
 	Spec string `json:"spec,omitempty"`
+	Fold bool   `json:"fold,omitempty"`
 }
 
 // Flagged is false when nothing was minted yet.
@@ -27,9 +30,10 @@ type OutfitReloadResponse struct {
 
 // Closure lists found and missing nodes alike.
 type OutfitsResponse struct {
-	Default string       `json:"default,omitempty"`
-	Names   []string     `json:"names,omitempty"`
-	Closure *OutfitLayer `json:"closure,omitempty"`
+	Default string         `json:"default,omitempty"`
+	Names   []string       `json:"names,omitempty"`
+	Closure *OutfitLayer   `json:"closure,omitempty"`
+	Form    *form.Snapshot `json:"form,omitempty"`
 }
 
 // ConfigureRequest patches the server's config.toml.

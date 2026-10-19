@@ -227,6 +227,7 @@ that goes wrong yields a store that looks fine.
 | `figaro state [show] [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`; `show` is the explicit spelling. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
+| `figaro toggle [--id <id>] <key>` | Flip a true/false key. Absent on the aria, it reads the default outfit's value, else false. Refuses any other value. |
 | `figaro form set <key> <value>` | The same, from the form family. `form set a=1,b=2` takes the `-S` grammar instead. |
 | `figaro form delete <paths>` | Remove key paths, comma-separated (the `-D` grammar). `unset` is its older name. |
 | `figaro form help <topic>` | A help page, from the form family's third position. |

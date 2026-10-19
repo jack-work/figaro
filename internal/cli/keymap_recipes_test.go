@@ -97,9 +97,12 @@ p = "prefix:panels"
 		},
 	},
 	{
-		title: "A key of your own in every mode it means something: M-s pins the question.",
+		title: "Keys of your own in every mode they mean something: M-s pins the question.\n" +
+			"# A value starting with : runs that command line, as typed at :, on the aria on screen,\n" +
+			"# with or without the pager up: M-e turns the reasoning-effort method off and on again.",
 		toml: `[bind.user]
 M-s = "sticky"
+M-e = ":toggle system.methods.enabled"
 `,
 		check: func(t *testing.T) {
 			for _, m := range []keyMode{modeTranscript, modeList} {
@@ -109,6 +112,33 @@ M-s = "sticky"
 			}
 			if got := reached(modeBox, metaChord('s')); got != "" {
 				t.Errorf("M-s in the command line reaches %q; sticky means nothing there", got)
+			}
+			const toggle = ":toggle system.methods.enabled"
+			for _, m := range []keyMode{modeIncipit, modeTranscript, modeVisual, modeList, modeComposer} {
+				if got := reached(m, metaChord('e')); got != toggle {
+					t.Errorf("M-e in %s reaches %q", modeName(m), got)
+				}
+			}
+			for _, m := range []keyMode{modeBox, modeSearch, modeConfirm} {
+				if got := reached(m, metaChord('e')); got == toggle {
+					t.Errorf("M-e in %s runs the command; a text box or a question keeps its keys", modeName(m))
+				}
+			}
+			tr := oracleTranscript()
+			var ran []string
+			tr.command = func(line string) { ran = append(ran, line) }
+			in := &interactiveInput{mu: new(renderLock), lt: &livelogTurn{tr: tr}}
+			for _, m := range []keyMode{modeIncipit, modeTranscript} {
+				ev := chordEvent(metaChord('e'))
+				ev.mode = m
+				f := inputAct.input(m, ev)
+				if f == nil {
+					t.Fatalf("M-e has no input action in %s", modeName(m))
+				}
+				f(in, ev)
+			}
+			if len(ran) != 2 || ran[0] != "toggle system.methods.enabled" {
+				t.Fatalf("ran %q, want the command line twice without its colon", ran)
 			}
 		},
 	},

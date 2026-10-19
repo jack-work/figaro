@@ -30,7 +30,37 @@ type keyLayer struct {
 	binds  []keyBind
 }
 
-const prefixAction = "prefix:"
+const (
+	prefixAction  = "prefix:"
+	commandAction = ":"
+)
+
+const commandModes = inIncipit | inTranscript | inPanel | inVisual | inList | inComposer
+
+func boundCommand(action string) (string, bool) {
+	if !strings.HasPrefix(action, commandAction) {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(action, commandAction)), true
+}
+
+func commandBinding(action string) *keyAction {
+	line, ok := boundCommand(action)
+	if !ok || line == "" {
+		return nil
+	}
+	a := named(action, atInput(commandModes, func(in *interactiveInput, _ keyEvent) keyVerdict {
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		if in.lt.tr.command == nil {
+			in.lt.tr.setCommandNoteAt(line+": this session cannot run commands", alertError)
+			return keyHandled
+		}
+		in.lt.tr.command(line)
+		return keyHandled
+	}))
+	return &a
+}
 
 func atPager(m keyModeSet, f pagerFunc) keyImpl      { return keyImpl{modes: m, pager: f} }
 func atPagerOpens(m keyModeSet, f pagerFunc) keyImpl { return keyImpl{modes: m, pager: f, opens: true} }
@@ -137,6 +167,9 @@ func compileLayers(layers []keyLayer) ([]keyBinding, []compileDiag) {
 			a := actionByName[b.action]
 			if a == nil {
 				a = arming[b.action]
+			}
+			if a == nil {
+				a = commandBinding(b.action)
 			}
 			if a == nil {
 				diags = append(diags, compileDiag{l.name, b.keys, fmt.Sprintf("no action named %q", b.action)})

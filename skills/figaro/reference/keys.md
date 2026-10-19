@@ -56,6 +56,13 @@ Beside `config.toml`, read once when figaro starts. Three shapes:
 `figaro keys init` writes it to your config directory as a start. Every recipe
 in it is a test: if one stops doing what its comment says, the build fails.
 
+A value that starts with `:` is a **command binding**: the rest is a command
+line, run as if typed at `:` on the aria on screen, and its one-line answer
+lands in the status bar. It works with the pager up and inline (incipit), and
+never in the `:` line, the `/` box or a y/n question. `M-e =
+":toggle system.methods.enabled"` turns the reasoning-effort method off and
+on again ([methods.md](methods.md)).
+
 Keys are spelled as the help panel prints them: `j`, `^D`, `M-m`, `Tab`, `Esc`,
 `Enter`, `Space`, `Up`, `PgDn`, `Home`. `^X` claims both encodings a terminal
 may send (the control byte and its CSI-u report). Several keys in one entry are

@@ -1229,6 +1229,23 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "toggle",
+		Group:   "State",
+		Short:   "Flip a true/false form key; absent reads the default outfit's, else false",
+		Usage:   "toggle [--id <id>] <key>",
+		ArgsMin: 1,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runToggle(ld, ctx.Flag("id"), ctx.Args[0])
+		},
+		CompleteArgs: completeSetArgs,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "cd",
 		Group:   "State",
 		Short:   "Change an aria's working directory",

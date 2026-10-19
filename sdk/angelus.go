@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jack-work/figaro/api/aria"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/jkrpc"
@@ -104,6 +105,17 @@ func (c *Angelus) Outfits(ctx context.Context, spec string) (*rpc.OutfitsRespons
 	var resp rpc.OutfitsResponse
 	err := c.call(ctx, rpc.MethodOutfits, rpc.OutfitsRequest{Spec: spec}, &resp)
 	return &resp, err
+}
+
+func (c *Angelus) OutfitForm(ctx context.Context, spec string) (form.Snapshot, error) {
+	var resp rpc.OutfitsResponse
+	if err := c.call(ctx, rpc.MethodOutfits, rpc.OutfitsRequest{Spec: spec, Fold: true}, &resp); err != nil {
+		return form.Snapshot{}, err
+	}
+	if resp.Form == nil {
+		return form.Snapshot{}, nil
+	}
+	return *resp.Form, nil
 }
 
 // Configure patches the server's config.

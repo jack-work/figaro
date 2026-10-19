@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -38,6 +39,14 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 		return nil, err
 	}
 	resp.Closure = figaro.OutfitClosureWire(ofit.ResolveAll(names))
+	if req.Fold {
+		patch, err := h.dress(names, nil)
+		if err != nil {
+			return nil, err
+		}
+		folded := form.Snapshot{}.Apply(patch)
+		resp.Form = &folded
+	}
 	return resp, nil
 }
 

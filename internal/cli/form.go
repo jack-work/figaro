@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,62 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
 		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
+}
+
+func runToggle(loaded *config.Loaded, ariaID, key string) error {
+	if strings.ContainsAny(key, "[]") {
+		return fmt.Errorf("toggle: %s: name the key with dots, not brackets", key)
+	}
+	current, version := mustFetchFormKey(loaded, ariaID, key)
+	if len(current) == 0 {
+		var err error
+		if current, err = defaultOutfitKey(loaded, key); err != nil {
+			return fmt.Errorf("toggle: %s is not on the aria, and the default outfit could not be read: %w", key, err)
+		}
+	}
+	on, err := toggleState(current)
+	if err != nil {
+		return fmt.Errorf("toggle: %s %w", key, err)
+	}
+	value := json.RawMessage(strconv.FormatBool(!on))
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{key: value}, nil)
+	resp := mustCallSet(loaded, ariaID, patch, version)
+	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
+		resp.verb("toggle"), key, value, resp.figaroID, resp.at())
+	return nil
+}
+
+func defaultOutfitKey(loaded *config.Loaded, key string) (json.RawMessage, error) {
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	snap, err := acli.OutfitForm(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := snap.Get(key)
+	return raw, nil
+}
+
+func toggleState(raw json.RawMessage) (bool, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false, nil
+	}
+	var b bool
+	if json.Unmarshal(raw, &b) == nil {
+		return b, nil
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return false, fmt.Errorf("is %s, not true or false", raw)
 }
 
 func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
