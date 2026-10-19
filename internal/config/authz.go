@@ -1,12 +1,15 @@
 package config
 
-import "path/filepath"
+import (
+	"errors"
+	"path/filepath"
+)
 
 type AuthzConfig struct {
 	Policy   string         `toml:"policy"`
 	Peercred PeercredConfig `toml:"peercred"`
 	Upstream UpstreamConfig `toml:"upstream"`
-	Bearer   *BearerConfig  `toml:"bearer"`
+	Issuers  []IssuerConfig `toml:"issuers"`
 }
 
 type PeercredConfig struct {
@@ -14,11 +17,12 @@ type PeercredConfig struct {
 }
 
 type UpstreamConfig struct {
+	Issuer   string            `toml:"issuer"`
 	Services map[string]string `toml:"services"`
 	Reverify bool              `toml:"reverify"`
 }
 
-type BearerConfig struct {
+type IssuerConfig struct {
 	Issuer   string            `toml:"issuer"`
 	JWKS     string            `toml:"jwks"`
 	Userinfo string            `toml:"userinfo"`
@@ -27,6 +31,8 @@ type BearerConfig struct {
 	Users    []string          `toml:"users"`
 	Clients  map[string]string `toml:"clients"`
 }
+
+var errRetiredBearer = errors.New("[authz.bearer] is now [[authz.issuers]]: same keys, one table per issuer, and principals carry the issuer (user:jack@auth.kelliher.info)")
 
 func (l *Loaded) PolicyPath() string {
 	p := l.cfg().Authz.Policy

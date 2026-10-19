@@ -22,7 +22,7 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-var webPrincipal = rpc.Principal{Kind: rpc.PrincipalUser, ID: "gluck"}
+var webPrincipal = rpc.Principal{Kind: rpc.PrincipalUser, ID: "gluck@auth.kelliher.info"}
 
 func admitAs(p rpc.Principal) WebAdmit {
 	return func(ctx context.Context, r *http.Request) (context.Context, error) {
@@ -159,7 +159,7 @@ func TestWebDoorServesTheDoorOneFramePerMessage(t *testing.T) {
 // refused before any frame.
 func TestWebDoorAdmitsByTheEdgesHeaders(t *testing.T) {
 	path := shortSocketPath(t)
-	u, err := authz.NewUpstream(config.UpstreamConfig{}, path, "/run/figaro/angelus.sock", nil)
+	u, err := authz.NewUpstream(config.UpstreamConfig{Issuer: "https://auth.kelliher.info"}, path, "/run/figaro/angelus.sock", nil)
 	require.NoError(t, err)
 	path = serveWebOn(t, path, newAriaHub("abcd1234"), Web{Admit: u.AdmitRequest})
 

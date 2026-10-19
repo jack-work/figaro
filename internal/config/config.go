@@ -711,8 +711,12 @@ func Load(configDir string) (*Loaded, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	md, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", configPath, err)
+	}
+	if md.IsDefined("authz", "bearer") {
+		return nil, fmt.Errorf("%s: %w", configPath, errRetiredBearer)
 	}
 	// default_loadout is the pre-rename key.
 	if cfg.DefaultOutfit == "" {

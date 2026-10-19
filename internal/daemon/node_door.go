@@ -254,16 +254,16 @@ func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string
 }
 
 func forwardedCallers(cfg config.AuthzConfig) (peer.Verify, error) {
-	if cfg.Bearer == nil {
-		slog.Warn("door.tls: no [authz.bearer], so every forwarded caller is refused")
+	if len(cfg.Issuers) == 0 {
+		slog.Warn("door.tls: no [[authz.issuers]], so every forwarded caller is refused")
 		return nil, nil
 	}
-	b, err := newBearer(*cfg.Bearer)
+	is, err := newIssuers(cfg.Issuers)
 	if err != nil {
 		return nil, err
 	}
 	return func(ctx context.Context, token string) (context.Context, error) {
-		s, err := b.Open(ctx, token)
+		s, err := is.Open(ctx, token)
 		if err != nil {
 			return nil, err
 		}
@@ -271,6 +271,6 @@ func forwardedCallers(cfg config.AuthzConfig) (peer.Verify, error) {
 	}, nil
 }
 
-func newBearer(cfg config.BearerConfig) (*authz.Bearer, error) {
-	return authz.NewBearer(cfg, &http.Client{Timeout: 5 * time.Second}, nil)
+func newIssuers(cfgs []config.IssuerConfig) (*authz.Issuers, error) {
+	return authz.NewIssuers(cfgs, &http.Client{Timeout: 5 * time.Second}, nil)
 }

@@ -410,10 +410,10 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 }
 
 func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig) (angelus.WebAdmit, error) {
-	var b *authz.Bearer
-	if cfg.Bearer != nil {
+	var b *authz.Issuers
+	if len(cfg.Issuers) > 0 {
 		var err error
-		if b, err = newBearer(*cfg.Bearer); err != nil {
+		if b, err = newIssuers(cfg.Issuers); err != nil {
 			return nil, err
 		}
 	}
@@ -426,7 +426,7 @@ func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig) (ang
 		return u.AdmitRequest, nil
 	case "bearer":
 		if b == nil {
-			return nil, fmt.Errorf("authn = \"bearer\" needs [authz.bearer]")
+			return nil, fmt.Errorf("authn = \"bearer\" needs [[authz.issuers]]")
 		}
 		return b.AdmitRequest, nil
 	}

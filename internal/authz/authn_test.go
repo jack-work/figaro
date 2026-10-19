@@ -8,7 +8,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -60,10 +63,13 @@ func TestPeercredConfigErrors(t *testing.T) {
 	}
 }
 
-const webDoor = "/run/figaro/web.sock"
+const (
+	webDoor  = "/run/figaro/web.sock"
+	kelliher = "https://auth.kelliher.info"
+)
 
 func TestUpstreamReadsTheEdgesHeaders(t *testing.T) {
-	u, err := NewUpstream(config.UpstreamConfig{Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "/run/figaro/angelus.sock", nil)
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "/run/figaro/angelus.sock", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +80,7 @@ func TestUpstreamReadsTheEdgesHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Principal != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "gluck"}) || !slices.Equal(s.Groups, []string{"figaro-admin", "site-fig-access"}) {
+	if s.Principal != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "gluck@auth.kelliher.info"}) || !slices.Equal(s.Groups, []string{"figaro-admin@auth.kelliher.info", "site-fig-access@auth.kelliher.info"}) {
 		t.Fatalf("human: %+v", s)
 	}
 
@@ -87,13 +93,13 @@ func TestUpstreamReadsTheEdgesHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Principal != (jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "sandbox-dev-3"}) || len(s.Groups) != 0 {
+	if s.Principal != (jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "sandbox-dev-3@auth.kelliher.info"}) || len(s.Groups) != 0 {
 		t.Fatalf("a service gets its configured kind and never groups: %+v", s)
 	}
 }
 
 func TestUpstreamRefuses(t *testing.T) {
-	u, _ := NewUpstream(config.UpstreamConfig{Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "", nil)
+	u, _ := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "", nil)
 	for name, set := range map[string]map[string]string{
 		"no user":              {},
 		"an unlisted service":  {"Remote-User": "kcal-notify", "Remote-Principal": "service", "Remote-Client": "kcal-notify"},
@@ -110,8 +116,9 @@ func TestUpstreamRefuses(t *testing.T) {
 	}
 }
 
-type issuer struct {
+type testIssuer struct {
 	t     testing.TB
+	url   string
 	key   *rsa.PrivateKey
 	now   atomic.Int64
 	jwks  *httptest.Server
@@ -121,12 +128,14 @@ type issuer struct {
 	uiHit atomic.Int32
 }
 
-func newIssuer(t testing.TB) *issuer {
+func newTestIssuer(t testing.TB) *testIssuer { return newTestIssuerAt(t, kelliher) }
+
+func newTestIssuerAt(t testing.TB, url string) *testIssuer {
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	is := &issuer{t: t, key: k, users: map[string]map[string]any{}}
+	is := &testIssuer{t: t, url: url, key: k, users: map[string]map[string]any{}}
 	is.now.Store(time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC).Unix())
 	is.jwks = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &k.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"}}})
@@ -148,18 +157,18 @@ func newIssuer(t testing.TB) *issuer {
 	return is
 }
 
-func (is *issuer) clock() time.Time { return time.Unix(is.now.Load(), 0) }
+func (is *testIssuer) clock() time.Time { return time.Unix(is.now.Load(), 0) }
 
-func (is *issuer) advance(d time.Duration) { is.now.Add(int64(d / time.Second)) }
+func (is *testIssuer) advance(d time.Duration) { is.now.Add(int64(d / time.Second)) }
 
-func (is *issuer) mint(sub, client string, ttl time.Duration, user map[string]any) string {
+func (is *testIssuer) mint(sub, client string, ttl time.Duration, user map[string]any) string {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: is.key}, (&jose.SignerOptions{}).WithHeader("kid", "k1"))
 	if err != nil {
 		is.t.Fatal(err)
 	}
 	now := is.clock()
 	raw, err := josejwt.Signed(signer).Claims(map[string]any{
-		"iss": "https://auth.kelliher.info", "sub": sub, "client_id": client,
+		"iss": is.url, "sub": sub, "client_id": client,
 		"iat": now.Unix(), "exp": now.Add(ttl).Unix(),
 	}).Serialize()
 	if err != nil {
@@ -173,14 +182,14 @@ func (is *issuer) mint(sub, client string, ttl time.Duration, user map[string]an
 	return raw
 }
 
-func (is *issuer) bearer(t testing.TB) *Bearer {
-	b, err := NewBearer(config.BearerConfig{
-		Issuer:   "https://auth.kelliher.info",
+func (is *testIssuer) bearer(t testing.TB) *Issuers {
+	b, err := NewIssuers([]config.IssuerConfig{{
+		Issuer:   is.url,
 		JWKS:     is.jwks.URL,
 		Userinfo: is.ui.URL,
 		Users:    []string{"figaro-cli"},
 		Clients:  map[string]string{"sandbox-dev-3": "sandbox"},
-	}, nil, is.clock)
+	}}, nil, is.clock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +197,7 @@ func (is *issuer) bearer(t testing.TB) *Bearer {
 }
 
 func TestABearerSessionBindsThePrincipalAtConnect(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	b := is.bearer(t)
 	ctx := context.Background()
 
@@ -200,7 +209,7 @@ func TestABearerSessionBindsThePrincipalAtConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sub.Principal != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "gluck"}) || !sub.InGroup("figaro-admin") {
+	if sub.Principal != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "gluck@auth.kelliher.info"}) || !sub.InGroup("figaro-admin@auth.kelliher.info") {
 		t.Fatalf("%+v", sub)
 	}
 
@@ -208,13 +217,13 @@ func TestABearerSessionBindsThePrincipalAtConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if box.Principal() != (jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "sandbox-dev-3"}) {
+	if box.Principal() != (jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "sandbox-dev-3@auth.kelliher.info"}) {
 		t.Fatalf("%+v", box.Principal())
 	}
 }
 
 func TestAClientTheConfigDoesNotAdmitIsRefusedAtConnect(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	if _, err := is.bearer(t).Open(context.Background(), is.mint("u-1", "gluck-todo-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})); err == nil {
 		t.Fatal("a token minted for another service opened a session")
 	}
@@ -223,7 +232,7 @@ func TestAClientTheConfigDoesNotAdmitIsRefusedAtConnect(t *testing.T) {
 // The connection must not outlive what it verified: past exp every call is
 // refused until a fresh token is presented.
 func TestASessionStopsAtExpiryUntilAFreshTokenIsPresented(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	b := is.bearer(t)
 	ctx := context.Background()
 	user := map[string]any{"sub": "u-1", "preferred_username": "gluck"}
@@ -244,7 +253,7 @@ func TestASessionStopsAtExpiryUntilAFreshTokenIsPresented(t *testing.T) {
 }
 
 func TestAFreshTokenForSomeoneElseCannotTakeOverTheConnection(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	b := is.bearer(t)
 	ctx := context.Background()
 	s, err := b.Open(ctx, is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"}))
@@ -255,7 +264,7 @@ func TestAFreshTokenForSomeoneElseCannotTakeOverTheConnection(t *testing.T) {
 	if !errors.Is(err, ErrUnadmitted) {
 		t.Fatalf("%v", err)
 	}
-	if sub, err := s.Subject(ctx); err != nil || sub.Principal.ID != "gluck" {
+	if sub, err := s.Subject(ctx); err != nil || sub.Principal.ID != "gluck@auth.kelliher.info" {
 		t.Fatalf("%+v %v", sub, err)
 	}
 }
@@ -263,7 +272,7 @@ func TestAFreshTokenForSomeoneElseCannotTakeOverTheConnection(t *testing.T) {
 // Groups are re-read per call once the userinfo cache lapses, so a group
 // removed upstream stops working on a long-lived connection.
 func TestGroupsAreReresolvedOnTheConnectionWhenTheCacheLapses(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	b := is.bearer(t)
 	ctx := context.Background()
 	user := map[string]any{"sub": "u-1", "preferred_username": "gluck", "groups": []string{"figaro-admin"}}
@@ -274,7 +283,7 @@ func TestGroupsAreReresolvedOnTheConnectionWhenTheCacheLapses(t *testing.T) {
 	is.mu.Lock()
 	user["groups"] = []string{}
 	is.mu.Unlock()
-	if sub, _ := s.Subject(ctx); !sub.InGroup("figaro-admin") {
+	if sub, _ := s.Subject(ctx); !sub.InGroup("figaro-admin@auth.kelliher.info") {
 		t.Fatal("inside the ttl the cached groups hold")
 	}
 	is.advance(time.Minute)
@@ -282,18 +291,21 @@ func TestGroupsAreReresolvedOnTheConnectionWhenTheCacheLapses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sub.InGroup("figaro-admin") {
+	if sub.InGroup("figaro-admin@auth.kelliher.info") {
 		t.Fatal("a removed group survived the cache")
 	}
 }
 
-func TestBearerConfigErrors(t *testing.T) {
-	base := config.BearerConfig{Issuer: "https://a", JWKS: "http://j"}
-	for name, mod := range map[string]func(*config.BearerConfig){
-		"no clients":             func(c *config.BearerConfig) {},
-		"users without userinfo": func(c *config.BearerConfig) { c.Users = []string{"figaro-cli"} },
-		"a bad kind":             func(c *config.BearerConfig) { c.Clients = map[string]string{"x": "ro:ot"} },
-		"one client both ways": func(c *config.BearerConfig) {
+func TestIssuerConfigErrors(t *testing.T) {
+	base := config.IssuerConfig{Issuer: "https://a", JWKS: "http://j", Clients: map[string]string{"x": "sandbox"}}
+	for name, mod := range map[string]func(*config.IssuerConfig){
+		"no clients":             func(c *config.IssuerConfig) { c.Clients = nil },
+		"users without userinfo": func(c *config.IssuerConfig) { c.Users = []string{"figaro-cli"} },
+		"a bad kind":             func(c *config.IssuerConfig) { c.Clients = map[string]string{"x": "ro:ot"} },
+		"no scheme":              func(c *config.IssuerConfig) { c.Issuer = "auth.kelliher.info" },
+		"a query":                func(c *config.IssuerConfig) { c.Issuer = "https://a/?realm=x" },
+		"a user":                 func(c *config.IssuerConfig) { c.Issuer = "https://me@a" },
+		"one client both ways": func(c *config.IssuerConfig) {
 			c.Userinfo = "http://u"
 			c.Users = []string{"x"}
 			c.Clients = map[string]string{"x": "sandbox"}
@@ -301,14 +313,14 @@ func TestBearerConfigErrors(t *testing.T) {
 	} {
 		c := base
 		mod(&c)
-		if _, err := NewBearer(c, nil, nil); err == nil {
+		if _, err := NewIssuers([]config.IssuerConfig{c}, nil, nil); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 }
 
 func BenchmarkSessionSubject(b *testing.B) {
-	is := newIssuer(b)
+	is := newTestIssuer(b)
 	br := is.bearer(b)
 	ctx := context.Background()
 	s, err := br.Open(ctx, is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"}))
@@ -324,7 +336,7 @@ func BenchmarkSessionSubject(b *testing.B) {
 }
 
 func BenchmarkBearerOpen(b *testing.B) {
-	is := newIssuer(b)
+	is := newTestIssuer(b)
 	br := is.bearer(b)
 	ctx := context.Background()
 	tok := is.mint("sandbox-dev-3", "sandbox-dev-3", time.Hour, nil)
@@ -348,21 +360,22 @@ func TestUpstreamIsNeverBoundToTheCLIDoor(t *testing.T) {
 		"relative":                {"figaro/web.sock", config.UpstreamConfig{}},
 		"empty":                   {"", config.UpstreamConfig{}},
 		"the cli door":            {"/run/figaro/../figaro/angelus.sock", config.UpstreamConfig{}},
-		"reverify without bearer": {webDoor, config.UpstreamConfig{Reverify: true}},
+		"reverify without bearer": {webDoor, config.UpstreamConfig{Issuer: kelliher, Reverify: true}},
+		"no issuer":               {webDoor, config.UpstreamConfig{}},
 	} {
 		if _, err := NewUpstream(c.cfg, c.listen, cli, nil); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	u, err := NewUpstream(config.UpstreamConfig{}, webDoor, cli, nil)
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher}, webDoor, cli, nil)
 	if err != nil || u.Listener() != webDoor {
 		t.Fatalf("%v %v", u, err)
 	}
 }
 
-func reverifying(t *testing.T, is *issuer) *Upstream {
+func reverifying(t *testing.T, is *testIssuer) *Upstream {
 	t.Helper()
-	u, err := NewUpstream(config.UpstreamConfig{Reverify: true, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "", is.bearer(t))
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: is.url, Reverify: true, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "", is.bearer(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +398,7 @@ func edge(user, kind, client, token string) http.Header {
 }
 
 func TestReverifyingAcceptsATokenThatSaysWhatTheEdgeSaid(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	u := reverifying(t, is)
 	ctx := context.Background()
 	human := is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})
@@ -402,7 +415,7 @@ func TestReverifyingAcceptsATokenThatSaysWhatTheEdgeSaid(t *testing.T) {
 }
 
 func TestReverifyingRefuses(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	u := reverifying(t, is)
 	ctx := context.Background()
 	mallory := is.mint("u-2", "figaro-cli", time.Hour, map[string]any{"sub": "u-2", "preferred_username": "mallory"})
@@ -421,7 +434,7 @@ func TestReverifyingRefuses(t *testing.T) {
 // with, and only that: a peercred caller or a tokenless browser has none
 // to carry, and the edge's headers are never turned into one.
 func TestOnlyAVerifiedTokenIsForwardable(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	b := is.bearer(t)
 	ctx := context.Background()
 	tok := is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})
@@ -452,5 +465,183 @@ func TestOnlyAVerifiedTokenIsForwardable(t *testing.T) {
 	}
 	if _, ok := BearerOf(WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"})); ok {
 		t.Fatal("a peercred caller became forwardable")
+	}
+}
+
+func (is *testIssuer) config() config.IssuerConfig {
+	return config.IssuerConfig{
+		Issuer:   is.url,
+		JWKS:     is.jwks.URL,
+		Userinfo: is.ui.URL,
+		Users:    []string{"figaro-cli"},
+		Clients:  map[string]string{"sandbox-dev-3": "sandbox"},
+	}
+}
+
+func twoIssuers(t *testing.T) (*testIssuer, *testIssuer, *Issuers) {
+	t.Helper()
+	a, b := newTestIssuer(t), newTestIssuerAt(t, "https://id.example.org/realms/guests")
+	is, err := NewIssuers([]config.IssuerConfig{a.config(), b.config()}, nil, a.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, b, is
+}
+
+// Two issuers can each have a "gluck"; they are different people and must
+// never resolve to the same principal.
+func TestTheSameNameFromTwoIssuersIsTwoPrincipals(t *testing.T) {
+	a, b, is := twoIssuers(t)
+	ctx := context.Background()
+	user := map[string]any{"sub": "u-1", "preferred_username": "gluck", "groups": []string{"figaro-admin"}}
+	sa, err := is.Open(ctx, a.mint("u-1", "figaro-cli", time.Hour, user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb, err := is.Open(ctx, b.mint("u-1", "figaro-cli", time.Hour, user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sa.Principal().String() != "user:gluck@auth.kelliher.info" || sb.Principal().String() != "user:gluck@id.example.org/realms/guests" {
+		t.Fatalf("%s %s", sa.Principal(), sb.Principal())
+	}
+	sub, err := sb.Subject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.InGroup("figaro-admin@auth.kelliher.info") || !sub.InGroup("figaro-admin@id.example.org/realms/guests") {
+		t.Fatalf("%+v", sub.Groups)
+	}
+}
+
+// A second issuer may hand out any group name it likes; a binding written
+// for the first issuer's group must not be satisfied by it.
+func TestAGroupFromTheWrongIssuerSatisfiesNoBinding(t *testing.T) {
+	a, b, is := twoIssuers(t)
+	ctx := context.Background()
+	p := NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "policy.toml")
+	src := `
+[roles.admin]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[[bind]]
+role = "admin"
+groups = ["figaro-admin@auth.kelliher.info"]
+`
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Reload(path); err != nil {
+		t.Fatal(err)
+	}
+	user := map[string]any{"sub": "u-9", "preferred_username": "mallory", "groups": []string{"figaro-admin"}}
+	for name, c := range map[string]struct {
+		iss  *testIssuer
+		want bool
+	}{"the bound issuer": {a, true}, "another issuer": {b, false}} {
+		s, err := is.Open(ctx, c.iss.mint("u-9", "figaro-cli", time.Hour, user))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := s.Subject(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Allow(sub, rpc.VerbUse, Daemon).Allowed; got != c.want {
+			t.Errorf("%s: allowed %v", name, got)
+		}
+	}
+}
+
+func TestATokenFromAnUntrustedIssuerIsRefused(t *testing.T) {
+	_, _, two := twoIssuers(t)
+	stranger := newTestIssuerAt(t, "https://evil.example")
+	tok := stranger.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})
+	if _, err := two.Open(context.Background(), tok); !errors.Is(err, ErrUnadmitted) {
+		t.Fatalf("two issuers: %v", err)
+	}
+	if _, err := newTestIssuer(t).bearer(t).Open(context.Background(), tok); err == nil {
+		t.Fatal("one issuer: admitted")
+	}
+	if _, err := two.Open(context.Background(), "not-a-jwt"); !errors.Is(err, ErrUnadmitted) {
+		t.Fatalf("garbage: %v", err)
+	}
+}
+
+// A session stays with the issuer that opened it: a token from another
+// issuer, even for the same name, cannot refresh it.
+func TestASessionRefusesATokenFromTheOtherIssuer(t *testing.T) {
+	a, b, is := twoIssuers(t)
+	ctx := context.Background()
+	user := map[string]any{"sub": "u-1", "preferred_username": "gluck"}
+	s, err := is.Open(ctx, a.mint("u-1", "figaro-cli", time.Hour, user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Present(ctx, b.mint("u-1", "figaro-cli", time.Hour, user)); err == nil {
+		t.Fatal("another issuer's token took over the session")
+	}
+	if got := s.Principal().String(); got != "user:gluck@auth.kelliher.info" {
+		t.Fatal(got)
+	}
+}
+
+func TestTwoIssuersWithOneScopeAreRefused(t *testing.T) {
+	a := newTestIssuer(t)
+	b := newTestIssuerAt(t, "http://auth.kelliher.info/")
+	_, err := NewIssuers([]config.IssuerConfig{a.config(), b.config()}, nil, nil)
+	if err == nil {
+		t.Fatal("two issuers share @auth.kelliher.info")
+	} else if !strings.Contains(err.Error(), "both scope") {
+		t.Fatal(err)
+	}
+}
+
+func TestReverifyingRefusesTheSameNameFromAnotherIssuer(t *testing.T) {
+	a, b, is := twoIssuers(t)
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: a.url, Reverify: true}, webDoor, "", is)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := b.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})
+	if _, err := u.Subject(context.Background(), edge("gluck", "human", "figaro-cli", tok)); !errors.Is(err, ErrUnadmitted) {
+		t.Fatalf("%v", err)
+	}
+	if _, err := NewUpstream(config.UpstreamConfig{Issuer: "https://elsewhere", Reverify: true}, webDoor, "", is); err == nil {
+		t.Fatal("reverify against an issuer this node does not trust")
+	}
+}
+
+func BenchmarkSessionSubjectWithGroups(b *testing.B) {
+	is := newTestIssuer(b)
+	br := is.bearer(b)
+	ctx := context.Background()
+	s, err := br.Open(ctx, is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck", "groups": []string{"figaro-admin", "troupe-members", "site-fig-access"}}))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := s.Subject(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkBearerOpenTwoIssuers(b *testing.B) {
+	a, other := newTestIssuer(b), newTestIssuerAt(b, "https://id.example.org/realms/guests")
+	is, err := NewIssuers([]config.IssuerConfig{a.config(), other.config()}, nil, a.clock)
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	tok := other.mint("sandbox-dev-3", "sandbox-dev-3", time.Hour, nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := is.Open(ctx, tok); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

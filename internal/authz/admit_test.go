@@ -18,7 +18,7 @@ func upgrade(h http.Header) *http.Request {
 // The edge's headers become the subject of the upgrade; an upgrade without
 // them is no one.
 func TestUpstreamAdmitsAnUpgradeByItsHeaders(t *testing.T) {
-	u, err := NewUpstream(config.UpstreamConfig{}, "/run/figaro/web.sock", "/run/figaro/angelus.sock", nil)
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher}, "/run/figaro/web.sock", "/run/figaro/angelus.sock", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestUpstreamAdmitsAnUpgradeByItsHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ := SubjectOf(ctx)
-	if s.Principal != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "gluck"}) || !s.InGroup("site-fig-access") {
+	if s.Principal != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "gluck@auth.kelliher.info"}) || !s.InGroup("site-fig-access@auth.kelliher.info") {
 		t.Fatalf("%+v", s)
 	}
 	if _, err := u.AdmitRequest(context.Background(), upgrade(http.Header{})); !errors.Is(err, ErrUnadmitted) {
@@ -42,7 +42,7 @@ func TestUpstreamAdmitsAnUpgradeByItsHeaders(t *testing.T) {
 // A bearer upgrade binds a session; once its token lapses every call on the
 // connection is refused, and an upgrade without a token is no one.
 func TestABearerConnectionIsRefusedOnceItsTokenLapses(t *testing.T) {
-	is := newIssuer(t)
+	is := newTestIssuer(t)
 	b := is.bearer(t)
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+is.mint("u-1", "figaro-cli", time.Minute, map[string]any{"sub": "u-1", "preferred_username": "gluck"}))
@@ -50,10 +50,10 @@ func TestABearerConnectionIsRefusedOnceItsTokenLapses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, err := SubjectOf(ctx); err != nil || s.Principal.ID != "gluck" {
+	if s, err := SubjectOf(ctx); err != nil || s.Principal.ID != "gluck@auth.kelliher.info" {
 		t.Fatalf("%+v %v", s, err)
 	}
-	if p := PrincipalOf(ctx); p.ID != "gluck" {
+	if p := PrincipalOf(ctx); p.ID != "gluck@auth.kelliher.info" {
 		t.Fatalf("hello would report %+v", p)
 	}
 	is.advance(time.Minute)

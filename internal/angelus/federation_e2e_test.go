@@ -36,7 +36,7 @@ type fedNode struct {
 	id      string
 	dir     string
 	owner   *sdk.Angelus
-	bearer  *authz.Bearer
+	bearer  *authz.Issuers
 	issuer  *peertest.Issuer
 	ctx     context.Context
 	stop    context.CancelFunc
@@ -55,21 +55,21 @@ grants = [{ verbs = ["*"], on = ["*"] }]
 
 [[bind]]
 role = "owner"
-principals = [%q, "user:probe"%s]
+principals = [%q, "user:probe@issuer.test.figaro"%s]
 
 [roles.reader]
 grants = [{ verbs = ["read"], on = ["*"] }]
 
 [[bind]]
 role = "reader"
-principals = ["user:reader"]
+principals = ["user:reader@issuer.test.figaro"]
 
 [roles.self]
 grants = [{ verbs = ["*"], on = ["owner:self"] }]
 
 [[bind]]
 role = "self"
-principals = ["user:stranger"]
+principals = ["user:stranger@issuer.test.figaro"]
 `
 
 func extraPrincipals(ps []string) string {
@@ -84,7 +84,7 @@ func newFedPair(t *testing.T) (*fedNode, *fedNode) {
 	t.Helper()
 	pki := peertest.NewPKI(t, "fed")
 	is := peertest.NewIssuer(t)
-	a, b := openFedNode(t, is, "user:intruder"), openFedNode(t, is)
+	a, b := openFedNode(t, is, "user:intruder@issuer.test.figaro"), openFedNode(t, is)
 	a.serve(pki, b)
 	b.serve(pki, a)
 	a.start()
@@ -135,7 +135,7 @@ func (n *fedNode) start() {
 	require.NoError(t, os.WriteFile(n.dir+"/policy.toml", []byte(fmt.Sprintf(fedPolicy, pc.Self().String(), extraPrincipals(n.alsoOwners))), 0o600))
 	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.a.Backend))
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
-	n.bearer, err = authz.NewBearer(n.issuer.Config("probe", "intruder", "reader", "stranger"), nil, nil)
+	n.bearer, err = authz.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger"), nil, nil)
 	require.NoError(t, err)
 
 	n.ctx, n.stop = context.WithCancel(context.Background())
@@ -361,7 +361,7 @@ func TestFederationTheOwnerDecides(t *testing.T) {
 	require.NotContains(t, mantraOf(t, b, id), "no")
 
 	_, err = a.ariaAs("reader", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"read only"`}), 0)
-	require.ErrorContains(t, err, "user:reader", "a reader lacking set hears the owner's policy")
+	require.ErrorContains(t, err, "user:reader@issuer.test.figaro", "a reader lacking set hears the owner's policy")
 	require.NotContains(t, mantraOf(t, b, id), "read only")
 
 	local, err := sdk.DialAria(ariaAddr(a.a, id), nil)

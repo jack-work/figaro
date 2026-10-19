@@ -54,10 +54,10 @@ func (is *Issuer) Mint(client string, ttl time.Duration) string {
 	return raw
 }
 
-func (is *Issuer) Config(clients ...string) config.BearerConfig {
+func (is *Issuer) Config(clients ...string) []config.IssuerConfig {
 	m := map[string]string{}
 	for _, c := range clients {
 		m[c] = "user"
 	}
-	return config.BearerConfig{Issuer: IssuerURL, JWKS: is.JWKS.URL, Clients: m}
+	return []config.IssuerConfig{{Issuer: IssuerURL, JWKS: is.JWKS.URL, Clients: m}}
 }
