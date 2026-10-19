@@ -294,3 +294,27 @@ func (l *Ledger) rebuild() {
 	}
 	l.view = v
 }
+
+func Encode(es []Entry) []json.RawMessage {
+	out := make([]json.RawMessage, 0, len(es))
+	for _, e := range es {
+		raw, _ := json.Marshal(e)
+		out = append(out, raw)
+	}
+	return out
+}
+
+func Decode(raw []json.RawMessage) ([]Entry, error) {
+	if len(raw) > MaxEntries {
+		return nil, fmt.Errorf("%d entries, more than a troupe holds (%d)", len(raw), MaxEntries)
+	}
+	out := make([]Entry, 0, len(raw))
+	for i, r := range raw {
+		var e Entry
+		if err := json.Unmarshal(r, &e); err != nil {
+			return nil, fmt.Errorf("entry %d: %w", i, err)
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}

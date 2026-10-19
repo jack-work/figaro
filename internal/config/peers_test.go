@@ -150,3 +150,43 @@ func TestATroupeNameLetsPeersAndTheDoorUseTroupeKeys(t *testing.T) {
 		require.True(t, derr != nil || perr != nil || nerr != nil, "accepted %q", bad)
 	}
 }
+
+// The figaro provider takes its members from the troupe: it needs a troupe
+// name, and refuses the static provider's [peers] and version.
+func TestTroupeProvider(t *testing.T) {
+	p, err := loadToml(t, twoPeers).TroupeProvider()
+	require.NoError(t, err)
+	require.Equal(t, ProviderStatic, p)
+	p, err = loadToml(t, "[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n").TroupeProvider()
+	require.NoError(t, err)
+	require.Equal(t, ProviderFigaro, p)
+	for _, bad := range []string{
+		"[troupe]\nprovider = \"figaro\"\n",
+		"[troupe]\nname = \"estate\"\nprovider = \"gossip\"\n",
+		"[troupe]\nname = \"estate\"\nprovider = \"figaro\"\nversion = 3\n",
+		"[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n",
+	} {
+		_, err := loadToml(t, bad).TroupeProvider()
+		require.Error(t, err, bad)
+	}
+}
+
+// A join records the door other nodes dial. It is the listen address
+// unless that is a wildcard, in which case advertise must name it.
+func TestTheAdvertisedDoor(t *testing.T) {
+	door := func(body string) (TLSDoor, error) {
+		d, _, err := loadToml(t, "[troupe]\nname = \"estate\"\n[door.tls]\n"+body).TLSDoor()
+		return d, err
+	}
+	d, err := door("listen = \"10.0.0.2:7443\"\n")
+	require.NoError(t, err)
+	require.Equal(t, "10.0.0.2:7443", d.Advertise)
+	d, err = door("listen = \"0.0.0.0:7443\"\n")
+	require.NoError(t, err)
+	require.Empty(t, d.Advertise, "a wildcard is no address to dial")
+	d, err = door("listen = \"[::]:7443\"\nadvertise = \"gluck.tail:7443\"\n")
+	require.NoError(t, err)
+	require.Equal(t, "gluck.tail:7443", d.Advertise)
+	_, err = door("listen = \"0.0.0.0:7443\"\nadvertise = \"0.0.0.0:7443\"\n")
+	require.Error(t, err)
+}

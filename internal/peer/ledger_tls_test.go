@@ -115,6 +115,18 @@ func (lt *ledgerTroupe) serveLedgerDoor(node string, m *Ledger) *Door {
 				}
 				srv := jkrpc.NewServer(jkrpc.NewConn(conn), map[string]jkrpc.HandlerFunc{
 					"echo": func(_ context.Context, p json.RawMessage) (any, error) { return p, nil },
+					rpc.MethodTroupeEntries: func(_ context.Context, p json.RawMessage) (any, error) {
+						var req rpc.TroupeEntriesRequest
+						if err := json.Unmarshal(p, &req); err != nil {
+							return nil, err
+						}
+						es, err := troupe.Decode(req.Entries)
+						if err != nil {
+							return nil, err
+						}
+						m.Merge(es...)
+						return rpc.TroupeEntriesResponse{Entries: troupe.Encode(m.Entries())}, nil
+					},
 				})
 				done := make(chan struct{})
 				go func() { srv.Serve(cctx); close(done) }()

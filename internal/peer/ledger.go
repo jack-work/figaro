@@ -16,12 +16,15 @@ type Ledger struct {
 	troupe string
 	creds  *Credentials
 
+	Persist func(added []troupe.Entry)
+
 	mu      sync.RWMutex
 	ledger  *troupe.Ledger
 	view    troupe.View
 	members map[string]*Member
 	nodes   []string
 	evict   []func(node string)
+	admit   []func(node string)
 }
 
 func NewLedger(self string, l *troupe.Ledger, creds *Credentials) *Ledger {
@@ -33,9 +36,19 @@ func NewLedger(self string, l *troupe.Ledger, creds *Credentials) *Ledger {
 
 func (m *Ledger) Credentials() *Credentials { return m.creds }
 
+func (m *Ledger) Troupe() string { return m.troupe }
+
+func (m *Ledger) Self() string { return m.self }
+
 func (m *Ledger) OnEvict(fn func(node string)) {
 	m.mu.Lock()
 	m.evict = append(m.evict, fn)
+	m.mu.Unlock()
+}
+
+func (m *Ledger) OnAdmit(fn func(node string)) {
+	m.mu.Lock()
+	m.admit = append(m.admit, fn)
 	m.mu.Unlock()
 }
 
@@ -46,21 +59,34 @@ func (m *Ledger) Merge(es ...troupe.Entry) ([]troupe.Entry, error) {
 	if len(added) > 0 {
 		m.rebuild()
 	}
-	var gone []string
-	for node := range before {
-		if _, ok := m.members[node]; !ok {
-			gone = append(gone, node)
-		}
-	}
-	evict := slices.Clone(m.evict)
+	gone, come := changed(before, m.members), changed(m.members, before)
+	evict, admit := slices.Clone(m.evict), slices.Clone(m.admit)
 	m.mu.Unlock()
-	slices.Sort(gone)
+	if len(added) > 0 && m.Persist != nil {
+		m.Persist(added)
+	}
 	for _, node := range gone {
 		for _, fn := range evict {
 			fn(node)
 		}
 	}
+	for _, node := range come {
+		for _, fn := range admit {
+			fn(node)
+		}
+	}
 	return added, err
+}
+
+func changed(from, to map[string]*Member) []string {
+	var out []string
+	for node, was := range from {
+		if now, ok := to[node]; !ok || now.Address != was.Address {
+			out = append(out, node)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (m *Ledger) rebuild() {

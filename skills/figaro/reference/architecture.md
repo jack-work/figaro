@@ -598,6 +598,26 @@ omit their certificate files and the peer `identity`. An expired or missing
 intermediate keeps local callers served, closes the node door and the
 dialer, and logs the command to run; `troupe ls` shows both expiries.
 
+### Troupe membership
+
+`[troupe] provider = "static"` (the default) takes the members from
+`[peers]`. `provider = "figaro"` takes them from signed entries instead, and
+`[peers]` must be empty: a join (signed by the admitting node's
+intermediate), a leave (signed by the node's own key) or a revoke (signed by
+the root). Each is verified at the time it was signed. A leave or revoke
+beats every join of its node, and a root revoke also voids the joins its
+node's intermediates signed. A node holding an intermediate signs its own
+join at start with `[door.tls] advertise` (default `listen`; required when
+`listen` is a wildcard), which marks it as able to sign others in.
+
+The entries live in an unbound form the daemon writes (its id in
+`<state>/troupe/<name>/ledger.form`); the signatures, not the form, are what
+protect them. Nodes trade the whole set over `troupe.entries` on the node
+door: on a handshake whose digest differs, when a member first appears, and
+hourly. Both TLS verifiers refuse a node outside the set and a chain through
+a revoked node's intermediate; a revoke that arrives while links are open
+closes them.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,

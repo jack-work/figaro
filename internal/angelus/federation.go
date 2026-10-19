@@ -28,16 +28,24 @@ type federation struct {
 }
 
 func (h *handlers) federate() {
-	if h.angelus.Peers == nil || len(h.angelus.Peers.Nodes()) == 0 {
+	m := h.angelus.Peers
+	if m == nil {
 		return
 	}
-	h.fed = &federation{members: h.angelus.Peers, dialer: &peer.Dialer{Members: h.angelus.Peers, Versions: h.angelus.PeerVersions}}
-	h.fed.dir = peer.NewCache(h.angelus.Peers.Nodes, h.askPeer, h.config.DirectorySize())
+	ledger, growing := m.(*peer.Ledger)
+	if !growing && len(m.Nodes()) == 0 {
+		return
+	}
+	h.fed = &federation{members: m, dialer: &peer.Dialer{Members: m, Versions: h.angelus.PeerVersions}}
+	h.fed.dir = peer.NewCache(m.Nodes, h.askPeer, h.config.DirectorySize())
+	if growing {
+		ledger.OnEvict(h.fed.dialer.Evict)
+	}
 }
 
 func routable(method string) bool {
 	switch method {
-	case rpc.MethodHello, rpc.MethodBind, rpc.MethodResolve, rpc.MethodUnbind, rpc.MethodNodeResolve:
+	case rpc.MethodHello, rpc.MethodBind, rpc.MethodResolve, rpc.MethodUnbind, rpc.MethodNodeResolve, rpc.MethodTroupeEntries:
 		return false
 	}
 	return true

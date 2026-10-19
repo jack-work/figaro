@@ -168,8 +168,12 @@ func PrincipalText(p rpc.Principal) string {
 	return jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}.String()
 }
 
-func nodeOnly(method string) bool {
-	return method == rpc.MethodImportStatus || method == rpc.MethodNodeLearn
+func checkedByHandler(method string) bool {
+	switch method {
+	case rpc.MethodImportStatus, rpc.MethodNodeLearn, rpc.MethodTroupeEntries:
+		return true
+	}
+	return false
 }
 
 func Enforce(p *Policies) Policy {
@@ -178,7 +182,7 @@ func Enforce(p *Policies) Policy {
 		if !ok {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
-		if verb == rpc.VerbNone || r.Method == rpc.MethodList || r.Method == rpc.MethodNodeResolve || nodeOnly(r.Method) {
+		if verb == rpc.VerbNone || r.Method == rpc.MethodList || r.Method == rpc.MethodNodeResolve || checkedByHandler(r.Method) {
 			return Allow()
 		}
 		res := Daemon

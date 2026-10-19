@@ -169,3 +169,19 @@ func (l *Link) Resolve(ctx context.Context, refs []string) (rpc.NodeResolveRespo
 	}
 	return resp, nil
 }
+
+func (l *Link) TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) (rpc.TroupeEntriesResponse, error) {
+	params, err := json.Marshal(req)
+	if err != nil {
+		return rpc.TroupeEntriesResponse{}, err
+	}
+	raw, err := l.Call(ctx, rpc.MethodTroupeEntries, params)
+	if err != nil {
+		return rpc.TroupeEntriesResponse{}, err
+	}
+	var resp rpc.TroupeEntriesResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return rpc.TroupeEntriesResponse{}, fmt.Errorf("node %s: %s: %w", l.node, rpc.MethodTroupeEntries, err)
+	}
+	return resp, nil
+}

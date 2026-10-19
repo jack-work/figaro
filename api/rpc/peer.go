@@ -1,5 +1,7 @@
 package rpc
 
+import "encoding/json"
+
 type Passage struct {
 	Forwarded bool   `json:"forwarded,omitempty"`
 	Bearer    string `json:"bearer,omitempty"`
@@ -30,6 +32,17 @@ type NodeUnreachable struct {
 }
 
 const MethodTroupeMembers = "troupe.members"
+
+const MethodTroupeEntries = "troupe.entries"
+
+type TroupeEntriesRequest struct {
+	Troupe  string            `json:"troupe"`
+	Entries []json.RawMessage `json:"entries,omitempty"`
+}
+
+type TroupeEntriesResponse struct {
+	Entries []json.RawMessage `json:"entries"`
+}
 
 type TroupeMembersResponse struct {
 	Node    string         `json:"node"`

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,10 +14,11 @@ import (
 )
 
 type TLSDoorConfig struct {
-	Listen   string `toml:"listen"`
-	Cert     string `toml:"cert"`
-	Key      string `toml:"key"`
-	ClientCA string `toml:"client_ca"`
+	Listen    string `toml:"listen"`
+	Advertise string `toml:"advertise"`
+	Cert      string `toml:"cert"`
+	Key       string `toml:"key"`
+	ClientCA  string `toml:"client_ca"`
 }
 
 type PeerConfig struct {
@@ -28,8 +30,39 @@ type PeerConfig struct {
 }
 
 type TroupeConfig struct {
-	Name    string `toml:"name"`
-	Version int64  `toml:"version"`
+	Name     string `toml:"name"`
+	Version  int64  `toml:"version"`
+	Provider string `toml:"provider"`
+}
+
+const (
+	ProviderStatic = "static"
+	ProviderFigaro = "figaro"
+)
+
+func (l *Loaded) TroupeProvider() (string, error) {
+	p := l.cfg().Troupe.Provider
+	switch p {
+	case "", ProviderStatic:
+		return ProviderStatic, nil
+	case ProviderFigaro:
+	default:
+		return "", fmt.Errorf("troupe.provider %q: want %s or %s", p, ProviderStatic, ProviderFigaro)
+	}
+	name, err := l.TroupeName()
+	if err != nil {
+		return "", err
+	}
+	if name == "" {
+		return "", errors.New("troupe.provider figaro needs troupe.name")
+	}
+	if len(l.cfg().Peers) > 0 {
+		return "", errors.New("troupe.provider figaro takes its members from the troupe, so [peers] must be empty")
+	}
+	if l.cfg().Troupe.Version != 0 {
+		return "", errors.New("troupe.version belongs to the static provider")
+	}
+	return ProviderFigaro, nil
 }
 
 func (l *Loaded) TroupeName() (string, error) {
@@ -94,10 +127,11 @@ func (l *Loaded) DirectorySize() int {
 }
 
 type TLSDoor struct {
-	Listen   string
-	Cert     string
-	Key      string
-	ClientCA string
+	Listen    string
+	Advertise string
+	Cert      string
+	Key       string
+	ClientCA  string
 }
 
 type Peer struct {
@@ -119,7 +153,16 @@ func (l *Loaded) TLSDoor() (TLSDoor, bool, error) {
 	if _, _, err := net.SplitHostPort(c.Listen); err != nil {
 		return TLSDoor{}, false, fmt.Errorf("door.tls: listen %q is not host:port", c.Listen)
 	}
-	out := TLSDoor{Listen: c.Listen, Cert: l.credPath(c.Cert), Key: l.credPath(c.Key), ClientCA: l.credPath(c.ClientCA)}
+	out := TLSDoor{Listen: c.Listen, Advertise: c.Advertise, Cert: l.credPath(c.Cert), Key: l.credPath(c.Key), ClientCA: l.credPath(c.ClientCA)}
+	if out.Advertise == "" {
+		out.Advertise = out.Listen
+	}
+	if host, _, err := net.SplitHostPort(out.Advertise); err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
+		out.Advertise = ""
+	}
+	if c.Advertise != "" && out.Advertise == "" {
+		return TLSDoor{}, false, fmt.Errorf("door.tls: advertise %q is not a host:port another node can dial", c.Advertise)
+	}
 	if _, err := l.troupeKeyed(map[string]string{"cert": out.Cert, "key": out.Key, "client_ca": out.ClientCA}); err != nil {
 		return TLSDoor{}, false, fmt.Errorf("door.tls: %w", err)
 	}

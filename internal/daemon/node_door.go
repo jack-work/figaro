@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -18,7 +19,18 @@ import (
 )
 
 func federate(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
-	creds, err := troupeKeys(ctx, a, loaded)
+	return federateIn(ctx, a, loaded, boot.StateDir())
+}
+
+func federateIn(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, stateDir string) error {
+	provider, err := loaded.TroupeProvider()
+	if err != nil {
+		return err
+	}
+	if provider == config.ProviderFigaro {
+		return federateByLedger(ctx, a, loaded, stateDir)
+	}
+	creds, err := troupeKeys(ctx, a, loaded, stateDir)
 	if err != nil {
 		return err
 	}
@@ -45,12 +57,75 @@ func federate(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) er
 	return nil
 }
 
-func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) (*peer.Credentials, error) {
+func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, stateDir string) error {
+	door, ok, err := loaded.TLSDoor()
+	switch {
+	case err != nil:
+		return err
+	case !ok:
+		return errors.New("troupe.provider figaro needs a [door.tls] for its peers to reach")
+	case door.Cert != "":
+		return errors.New("troupe.provider figaro serves its door on troupe keys: drop door.tls cert, key and client_ca")
+	case door.Advertise == "":
+		return fmt.Errorf("door.tls: listen %q is a wildcard, so set advertise to the host:port peers dial", door.Listen)
+	}
+	creds, err := troupeKeys(ctx, a, loaded, stateDir)
+	if err != nil {
+		return err
+	}
+	a.PeerVersions = &peer.Versions{}
+	k := a.Troupe
+	root, err := k.Dir.Root()
+	if err != nil {
+		slog.Error("troupe: no root certificate, so no members; the node door refuses peers", "troupe", k.Troupe, "err", err)
+		a.Peers, _ = peer.NewStatic(0, nil, nil)
+		return nil
+	}
+	store := newLedgerForm(a.Backend, k.Dir, k.Troupe)
+	stored, err := store.Load()
+	if err != nil {
+		return err
+	}
+	l := troupe.NewLedger(k.Troupe, root)
+	if _, err := l.Merge(stored...); err != nil {
+		slog.Warn("troupe ledger: stored entries refused", "err", err)
+	}
+	m := peer.NewLedger(a.Backend.NodeID(), l, creds)
+	m.Persist = store.Save
+	a.Peers = m
+	seedJoin(k, m, door.Advertise, time.Now())
+	slog.Info("troupe ledger loaded", "troupe", k.Troupe, "entries", len(m.Entries()), "members", m.Nodes(), "version", m.Version())
+	return nil
+}
+
+func seedJoin(k *troupe.Keeper, m *peer.Ledger, door string, now time.Time) {
+	inter, key, err := k.Dir.Intermediate()
+	if err != nil || !now.Before(inter.NotAfter) {
+		return
+	}
+	v, self := m.View(), m.Self()
+	if gone := v.Gone[self]; gone != "" {
+		slog.Warn("troupe: this node is out of the troupe and does not sign itself back in", "troupe", m.Troupe(), "by", gone)
+		return
+	}
+	if mem, ok := v.Members[self]; ok && mem.Door == door && mem.SignsUntil.Equal(inter.NotAfter) {
+		return
+	}
+	e, err := troupe.SignJoin(key, inter, m.Troupe(), self, door, now)
+	if err == nil {
+		_, err = m.Merge(e)
+	}
+	if err != nil {
+		slog.Error("troupe: this node could not sign its own join", "err", err)
+	}
+}
+
+func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, stateDir string) (*peer.Credentials, error) {
 	name, err := loaded.TroupeName()
 	if err != nil || name == "" {
 		return nil, err
 	}
-	k := &troupe.Keeper{Dir: troupe.DirFor(boot.StateDir(), name), Troupe: name, Node: a.Backend.NodeID()}
+	k := &troupe.Keeper{Dir: troupe.DirFor(stateDir, name), Troupe: name, Node: a.Backend.NodeID()}
 	if err := k.Ensure(); err != nil {
 		slog.Error("troupe certificate: local callers are served, the node door refuses peers", "err", err)
 	}
@@ -60,6 +135,9 @@ func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) 
 }
 
 func troupeCredentials(a *angelus.Angelus) *peer.Credentials {
+	if m, ok := a.Peers.(*peer.Ledger); ok {
+		return m.Credentials()
+	}
 	if a.Troupe == nil {
 		return nil
 	}
@@ -85,12 +163,29 @@ func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loade
 	}
 	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
 	nd := &peer.Door{Members: a.Peers, Versions: a.PeerVersions, Verify: verify}
+	if m, ok := a.Peers.(*peer.Ledger); ok {
+		m.OnEvict(nd.Evict)
+		gossip(ctx, a, m, door.Advertise)
+	}
 	go func() {
 		if err := a.Serve(ctx, tls.NewListener(ln, cfg), nd.Admit); err != nil {
 			slog.Error("node door", "err", err)
 		}
 	}()
 	return nil
+}
+
+func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string) *peer.Gossip {
+	g := &peer.Gossip{
+		Members: m,
+		Dialer:  &peer.Dialer{Members: m, Versions: a.PeerVersions},
+		Seed:    func() { seedJoin(a.Troupe, m, door, time.Now()) },
+	}
+	m.OnEvict(g.Dialer.Evict)
+	m.OnAdmit(g.Greet(ctx))
+	a.PeerVersions.OnDrift(g.Drift(ctx))
+	go g.Run(ctx)
+	return g
 }
 
 func forwardedCallers(cfg config.AuthzConfig) (peer.Verify, error) {

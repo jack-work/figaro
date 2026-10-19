@@ -13,8 +13,15 @@ type Sighting struct {
 }
 
 type Versions struct {
-	mu   sync.Mutex
-	seen map[string]Sighting
+	mu    sync.Mutex
+	seen  map[string]Sighting
+	drift func(node string)
+}
+
+func (v *Versions) OnDrift(fn func(node string)) {
+	v.mu.Lock()
+	v.drift = fn
+	v.mu.Unlock()
 }
 
 func (v *Versions) Saw(node string, theirs, ours uint64) {
@@ -27,8 +34,13 @@ func (v *Versions) Saw(node string, theirs, ours uint64) {
 		v.seen = map[string]Sighting{}
 	}
 	v.seen[node] = Sighting{Version: theirs, At: time.Now()}
+	drift := v.drift
 	v.mu.Unlock()
-	if theirs != ours && (!had || prev.Version != theirs) {
+	switch {
+	case theirs == ours:
+	case drift != nil:
+		drift(node)
+	case !had || prev.Version != theirs:
 		slog.Warn("troupe membership version differs", "node", node, "theirs", theirs, "ours", ours)
 	}
 }
