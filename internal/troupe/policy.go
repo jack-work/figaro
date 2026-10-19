@@ -155,6 +155,9 @@ func Newer(a, b Entry) bool {
 	if a.Version != b.Version {
 		return a.Version > b.Version
 	}
+	if a.RootSigned() != b.RootSigned() {
+		return a.RootSigned()
+	}
 	ha, hb := sha256.Sum256([]byte(a.Body)), sha256.Sum256([]byte(b.Body))
 	if c := bytes.Compare(ha[:], hb[:]); c != 0 {
 		return c > 0

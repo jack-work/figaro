@@ -138,6 +138,28 @@ func TestTwoWritesAtOneVersionConvergeAndTheLoserIsNamed(t *testing.T) {
 	require.NotEqual(t, one.View().Policy.Body, one.View().Rivals[0].Body)
 }
 
+// A setter and the root writing the same version: the root's entry is in
+// force whatever the bodies hash to and whatever time the setter signed,
+// and the setter's is kept as the rival.
+func TestTheRootWinsItsOwnVersionOutright(t *testing.T) {
+	for _, bodies := range [][2]string{{bodyA, bodyB}, {bodyB, bodyA}} {
+		s := newEstate(t)
+		s.intermediate("aaaa0001")
+		rootBody, setterBody := setters(bodies[0], "aaaa0001"), setters(bodies[1], "aaaa0001")
+		base := []Entry{s.join("aaaa0001", "aaaa0001", 0), s.rootPolicy(1, rootBody, 0)}
+		root := s.rootPolicy(2, rootBody, time.Second)
+		setter := s.policy("aaaa0001", 2, setterBody, time.Hour)
+		for _, es := range [][]Entry{{root, setter}, {setter, root}} {
+			v := s.ledger(append(slices.Clone(base), es...)...).View()
+			require.Equal(t, uint64(2), v.Policy.Version)
+			require.True(t, v.Policy.RootSigned())
+			require.Equal(t, rootBody, v.Policy.Body)
+			require.Len(t, v.Rivals, 1)
+			require.Equal(t, "aaaa0001", v.Rivals[0].Node)
+		}
+	}
+}
+
 // Revoking the node that signed the policy in force voids it, and the
 // version before it, which the root signed, is in force again.
 func TestRevokingTheSignerFallsBackToTheNextPolicy(t *testing.T) {

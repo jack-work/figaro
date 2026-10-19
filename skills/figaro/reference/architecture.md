@@ -720,8 +720,9 @@ checked against the one before. `troupe.policy.set` checks the document,
 refuses explicit grants on `sandbox:local` and admin or every verb on the
 troupe, refuses on a node that is not a setter of the version in force,
 signs the next version, and spreads it before it returns. Among the
-versions that count, the highest (version, body hash) is in force on every
-node; a write that lost a tie and a version that did not count stay
+versions that count, the highest version is in force on every node; within
+one version the root's entry beats any setter's, and the highest body hash
+breaks a tie among the rest; a write that lost a tie and a version that did not count stay
 visible to `troupe policy show`. A root revoke of a signer voids its
 versions, so the chain continues without them. Passages, answers and `troupe.entries`
 replies carry each side's policy version, which `troupe policy show` lists
