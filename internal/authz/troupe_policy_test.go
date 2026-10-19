@@ -172,3 +172,43 @@ func TestNoCallerMayBeTheTroupe(t *testing.T) {
 		t.Error("an edge service resolved to the troupe")
 	}
 }
+
+// jkauthz's kind wildcard ignores the issuer scope in the id, so the kinds a
+// troupe issuer may produce are the only fence between its callers and a
+// node's own `node:*`, `sandbox:*` bindings.
+func TestAKindWildcardMatchesEveryIssuersScope(t *testing.T) {
+	pol, err := jkauthz.Compile([]byte(`
+[roles.r]
+grants = [{ verbs = ["read"], on = ["*"] }]
+
+[[bind]]
+role = "r"
+principals = ["node:*", "user:*", "service:*", "sandbox:*"]
+`), Schema(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"node:x@auth.example.org",
+		"node:b81f0e2a",
+		"user:jack@auth.kelliher.info",
+		"user:ana@id.example.org/realms/guests",
+		"user:1000",
+		"service:ci@troupe:estate",
+		"sandbox:figbox@auth.kelliher.info",
+	} {
+		p, err := jkauthz.ParsePrincipal(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !pol.Allow(jkauthz.Subject{Principal: p}, string(rpc.VerbRead), Daemon).Allowed {
+			t.Errorf("%s not matched by its kind's wildcard", name)
+		}
+	}
+	for _, name := range []string{"spain/node:x", "troupe:estate"} {
+		p, _ := jkauthz.ParsePrincipal(name)
+		if pol.Allow(jkauthz.Subject{Principal: p}, string(rpc.VerbRead), Daemon).Allowed {
+			t.Errorf("%s matched a wildcard of no node or another kind", name)
+		}
+	}
+}
