@@ -126,7 +126,7 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 	goFile := filepath.Join(dir, "go")
 
 	run := func(args ...string) (string, error) {
-		cmd := exec.Command("tmux", append([]string{"-S", socket}, args...)...)
+		cmd := exec.Command("tmux", append([]string{"-S", socket, "-f", "/dev/null"}, args...)...)
 		cmd.Env = append(os.Environ(), "TMUX=")
 		out, err := cmd.CombinedOutput()
 		return string(out), err
@@ -134,9 +134,9 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 	// A returning shell prompt would land on the final row.
 	script := "cat " + pre + "; touch " + readyFile +
 		"; while [ ! -e " + goFile + " ]; do sleep 0.02; done; cat " + post + "; sleep 60"
-	// `-y N` gives N-1 rows: the status row is taken at creation and turning
-	// it off afterwards does not give it back.
-	if out, err := run("new-session", "-d", "-x", itoaTest(w0), "-y", itoaTest(h0+1), "sh", "-c", script); err != nil {
+	// With no user config, a detached session's window is exactly -x by -y:
+	// the status row belongs to a client, and there is none.
+	if out, err := run("new-session", "-d", "-x", itoaTest(w0), "-y", itoaTest(h0), "sh", "-c", script); err != nil {
 		t.Skipf("tmux new-session failed (%v): %s", err, out)
 	}
 	// The pane's shell writes the ready marker into dir, on a skip as on a
@@ -168,7 +168,7 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 	}
 	waitFor(readyFile, "the pre-resize stream to finish replaying")
 
-	if out, err := run("resize-window", "-x", itoaTest(w1), "-y", itoaTest(h1+1)); err != nil {
+	if out, err := run("resize-window", "-x", itoaTest(w1), "-y", itoaTest(h1)); err != nil {
 		t.Skipf("tmux resize-window failed (%v): %s", err, out)
 	}
 	deadline := time.Now().Add(10 * time.Second)

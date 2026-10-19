@@ -144,12 +144,15 @@ question in figaro's voice, four times, with no error.
 
 ## Eleven traps, each of which produced a confident wrong answer
 
-**1. `tmux new-session -y N` gives pane height N−1.** The status bar takes a row,
-and turning it off afterwards does **not** give the row back to a detached
-session: nor does `resize-window`. Measured: `-y 30` → 29 either way; `-y 31` →
-30. So **ask for `h+1`**, then *read back* `#{pane_height}` and report **that**.
-An entire thread of "h=1 loses the reply": three investigators, many trials -
-was measured at pane height **zero**, a state no user can reach.
+**1. The pane is not the height you think.** On tmux 3.6a and 3.7c, a detached
+session started with `-f /dev/null` is exactly `-x` by `-y`, and so is
+`resize-window`; an older measurement said `-y N` gave N−1, and the `h+1`
+habit it taught made one pane-replay test skip every run. Ask for
+`h`, *read back* `#{pane_height}`, and skip (never adapt silently) when it
+differs. Always pass `-f /dev/null` or a config of your own: the user's
+`tmux.conf` starts its plugins on your server. An entire thread of "h=1 loses
+the reply": three investigators, many trials - was measured at pane height
+**zero**, a state no user can reach.
 
 **2. Counting a token across the capture is unsound.** The footer mantra echoes
 the prompt, the prompt usually contains your token, and an 80-column shell echo

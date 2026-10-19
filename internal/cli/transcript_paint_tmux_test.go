@@ -102,12 +102,12 @@ func visibleText(row string) string {
 	return b.String()
 }
 
-// tmuxReplay asks for h+1 rows with the status line off, which gives h usable rows.
+// tmuxReplay replays a frame stream into a private tmux pane of exactly w by h.
 func tmuxReplay(t *testing.T, dir, path string, w, h int) []string {
 	t.Helper()
 	socket := filepath.Join(dir, "tmux.sock")
 	run := func(args ...string) (string, error) {
-		cmd := exec.Command("tmux", append([]string{"-S", socket}, args...)...)
+		cmd := exec.Command("tmux", append([]string{"-S", socket, "-f", "/dev/null"}, args...)...)
 		cmd.Env = append(os.Environ(), "TMUX=")
 		out, err := cmd.CombinedOutput()
 		return string(out), err
@@ -115,12 +115,15 @@ func tmuxReplay(t *testing.T, dir, path string, w, h int) []string {
 	defer run("kill-server")
 
 	// A returning shell prompt would land on the final row.
-	if out, err := run("new-session", "-d", "-x", itoaTest(w), "-y", itoaTest(h+1),
+	if out, err := run("new-session", "-d", "-x", itoaTest(w), "-y", itoaTest(h),
 		"sh", "-c", "cat "+path+"; sleep 60"); err != nil {
 		t.Skipf("tmux new-session failed (%v): %s", err, out)
 	}
 	if out, err := run("set", "-g", "status", "off"); err != nil {
 		t.Skipf("tmux set status off failed (%v): %s", err, out)
+	}
+	if out, err := run("display", "-p", "#{pane_height}"); err != nil || strings.TrimSpace(out) != itoaTest(h) {
+		t.Skipf("pane height is %q, wanted %d: cannot assert against a geometry we did not get", strings.TrimSpace(out), h)
 	}
 
 	var last string

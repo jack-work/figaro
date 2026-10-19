@@ -90,7 +90,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 		t.Logf("sticky junction:\n%s", p.capture(true))
 		p.key("j")
 		check()
-		p.tmux("resize-window", "-t", "0", "-x", "60", "-y", "41")
+		p.tmux("resize-window", "-t", "0", "-x", "60", "-y", "40")
 		p.w, p.h = 60, p.height()
 		p.settle()
 		check()

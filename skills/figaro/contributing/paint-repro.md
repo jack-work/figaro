@@ -367,11 +367,11 @@ unset FIGARO_ARIA FIGARO_NO_BIND      # inside the pane's shell
 figaro list -g -a                     # -g/--global, or you see only your subtree
 ```
 
-**(b) Pane height is `-y N` → `N-1`** (trap #1). The status bar takes a row and
-turning it off afterwards does **not** give it back to a detached session, nor
-does `resize-window`. **Measured here:** `-y 41` → 40; `resize-window -y 25` →
-24. So ask for `h+1`, then read back `#{pane_height}` and assert against *that*.
-An entire thread of "h=1 loses the reply" was measured at pane height **zero**.
+**(b) Read the pane height back** (trap #1). With `-f /dev/null`, tmux 3.6a
+and 3.7c give a detached session exactly `-y N` rows, and `resize-window` the
+same; the older `-y N` → `N-1` measurement no longer holds. Ask for `h`, read
+back `#{pane_height}`, and assert against *that*. An entire thread of "h=1
+loses the reply" was measured at pane height **zero**.
 
 **(c) Inside the pager there is NO SCROLLBACK.** The pager enters the alternate
 screen (`enter()` emits `altScreenOn + autowrapOff + mouse + cursorHide +

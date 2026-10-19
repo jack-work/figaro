@@ -344,11 +344,10 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 		awaitPaneGone(t, panePID)
 	})
 
-	// `-y N` gives pane height N-1; the status row is taken whether or not drawn.
 	cmd := fmt.Sprintf("env FIGARO_STATE_DIR=%s/state FIGARO_RUNTIME_DIR=%s/run FIGARO_CONFIG_DIR=%s/config %s replay %s",
 		dir, dir, dir, bin, tapePath)
 	out, err := exec.Command("tmux", "-S", p.sock, "-f", conf, "new-session", "-d",
-		"-x", fmt.Sprint(p.w), "-y", fmt.Sprint(p.h+1), "sh", "-c", cmd).CombinedOutput()
+		"-x", fmt.Sprint(p.w), "-y", fmt.Sprint(p.h), "sh", "-c", cmd).CombinedOutput()
 	if err != nil {
 		t.Skipf("tmux new-session: %v: %s", err, out)
 	}
