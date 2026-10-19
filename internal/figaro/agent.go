@@ -652,7 +652,7 @@ func (a *Agent) Subscribe(n Notifier) func() {
 func (a *Agent) Info() FigaroInfo {
 	a.mu.RLock()
 	state := "idle"
-	if a.turnCtx != nil || !a.inbox.IsIdle() {
+	if !a.inbox.Quiet() {
 		state = "active"
 	}
 	info := FigaroInfo{

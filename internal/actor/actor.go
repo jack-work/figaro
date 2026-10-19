@@ -16,6 +16,7 @@ type Queue[E any] struct {
 	mu      sync.Mutex
 	cond    *sync.Cond
 	pending []E
+	held    bool
 	closed  bool
 	fold    Coalescer[E]
 	done    chan struct{}
@@ -64,6 +65,7 @@ func (q *Queue[E]) Send(item E) bool {
 func (q *Queue[E]) Recv() (E, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	q.held = false
 	for len(q.pending) == 0 && !q.closed {
 		q.cond.Wait()
 	}
@@ -74,11 +76,13 @@ func (q *Queue[E]) Recv() (E, bool) {
 	if q.fold != nil {
 		if taken, folded := q.fold.Coalesce(q.pending); taken > 0 {
 			q.dropLocked(taken)
+			q.held = true
 			return folded, true
 		}
 	}
 	item := q.pending[0]
 	q.dropLocked(1)
+	q.held = true
 	return item, true
 }
 
@@ -119,6 +123,12 @@ func (q *Queue[E]) Len() int {
 }
 
 func (q *Queue[E]) IsIdle() bool { return q.Len() == 0 }
+
+func (q *Queue[E]) Quiet() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.pending) == 0 && !q.held
+}
 
 // Closed reads the done channel, not the flag, so it is safe inside Do or Read.
 func (q *Queue[E]) Closed() bool {

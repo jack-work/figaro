@@ -551,6 +551,8 @@ func containsID(ids []uint64, id uint64) bool {
 
 func (b *Inbox) IsIdle() bool { return b.q.IsIdle() }
 
+func (b *Inbox) Quiet() bool { return b.q.Quiet() }
+
 // SnapshotPrompts copies queued prompts without removing them; carriers==false omits empty-text form carriers.
 func (b *Inbox) SnapshotPrompts(carriers bool) []event {
 	var out []event

@@ -209,3 +209,37 @@ func TestCloseLetsTheHandlerFinishAcceptedWork(t *testing.T) {
 		}
 	}
 }
+
+// An item the consumer has taken is still work in hand: the queue is quiet
+// only once the consumer comes back for more and finds nothing.
+func TestTheQueueIsQuietOnlyWhenTheConsumerHoldsNothing(t *testing.T) {
+	q := actor.Start[int](context.Background(), nil, nil)
+	defer q.Close()
+	if !q.Quiet() {
+		t.Fatal("a fresh queue is not quiet")
+	}
+	q.Send(1)
+	if q.Quiet() {
+		t.Fatal("quiet with an item pending")
+	}
+	if _, ok := q.Recv(); !ok {
+		t.Fatal("recv")
+	}
+	if q.Quiet() || !q.IsIdle() {
+		t.Fatalf("taken item: quiet %v, idle %v", q.Quiet(), q.IsIdle())
+	}
+	back := make(chan struct{})
+	go func() {
+		q.Recv()
+		close(back)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for !q.Quiet() {
+		if time.Now().After(deadline) {
+			t.Fatal("the consumer came back and the queue never went quiet")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	q.Close()
+	<-back
+}
