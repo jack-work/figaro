@@ -755,8 +755,10 @@ and the hash, so the key reaches a node only when it is presented.
 
 `troupe.apikey.mint` takes admin on the troupe. A node holding an
 intermediate signs an `apikey` ledger entry: the id, the principal, the hash,
-`not_after` (required, at most 365 days, 90 by default), the admin who asked
-(`by`) and the signing node. A leaf-only node refuses and names the signers.
+`not_after` (required, at most 365 days, 90 by default), the nodes the key is
+good on, the admin who asked (`by`) and the signing node. A leaf-only node
+refuses and names the signers. The nodes are a sorted list of node ids, or
+`*` for all of them; the minting node alone unless `--nodes` names others.
 `troupe.apikey.revoke` is open to the minter, the key's own principal (a
 leaked key can revoke itself) or a troupe admin. The serving node signs an
 `apikey-revoke` with its leaf. A revoke beats its key in any order, and a root
@@ -771,16 +773,30 @@ gossip cannot bring them back.
 
 `authz.APIKeys` holds the live set behind an atomic pointer.
 - Opening a key: parse, look up by id, constant-time compare of the hash,
-  then `void` and expiry.
+  then `void`, expiry, and that this node is among the key's nodes.
 - Unknown id, wrong secret and junk all fail with the same error.
 - Every RPC re-reads the key from the current set, so an expired or revoked
   key stops at the next call.
+- A node never forwards a key's call to a node outside its audience
+  (`authz.ForwardableTo`, checked where a peer link opens), and a node door
+  refuses a forwarded key that does not name it. A key never reaches a node
+  it was not minted for.
 - A revoke cancels every connection the key holds, forwarded ones on other
   nodes included, as each node takes the revoke. Each connection also ends at
   `not_after`.
-- `[[authz.api_keys]]` (id, principal, sha256, not_after) adds keys from
-  local config for that node alone, outranking a ledger entry under the same
-  id. `troupe apikey mint --static` prints the key and the stanza.
+- `[[authz.api_keys]]` (id, principal, sha256, not_after, and optionally
+  nodes, default this node) adds keys from local config for that node alone,
+  outranking a ledger entry under the same id. `troupe apikey mint --static`
+  prints the key and the stanza.
+
+How fast a revoke lands. The serving node refuses the key at once, and
+spreads the revoke to every member it reaches before the call returns; the
+reply names any it missed. A member unreachable then still admits the key
+until it hears, at its next exchange with any member: a handshake whose
+ledger digest differs, or the hourly gossip round. The bound is the gossip
+interval, one hour, after the member is reachable again; a key's `not_after`
+bounds a member that never returns. Keep everyday keys short (days or weeks)
+for this reason, well under the 365-day ceiling.
 
 A troupe file with `[auth] scheme = "api-key"` sends the key as the bearer,
 over wss only. It comes from `key_file`, which must be 0600 or tighter and
