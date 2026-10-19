@@ -101,6 +101,16 @@ func TestUseIsNeverAMethodVerb(t *testing.T) {
 	}
 }
 
+// join is granted on troupes and checked where a node is asked to sign
+// one in, so no method carries it.
+func TestJoinIsNeverAMethodVerb(t *testing.T) {
+	for m, v := range methodVerbs {
+		if v == VerbJoin {
+			t.Errorf("%s is classified as join", m)
+		}
+	}
+}
+
 func TestEveryClassifiedVerbIsAPolicyVerb(t *testing.T) {
 	known := map[Verb]bool{VerbNone: true}
 	for _, v := range Verbs() {

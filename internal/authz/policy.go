@@ -15,6 +15,7 @@ const (
 	ResourceDaemon ResourceKind = iota
 	ResourceAria
 	ResourceSandbox
+	ResourceTroupe
 )
 
 type Resource struct {
@@ -30,6 +31,8 @@ func Sandbox(name string) Resource {
 	}
 	return Resource{Kind: ResourceSandbox, ID: name}
 }
+
+func Troupe(name string) Resource { return Resource{Kind: ResourceTroupe, ID: name} }
 
 var Daemon = Resource{}
 
@@ -47,13 +50,14 @@ const (
 	selOwner   = "owner:self"
 	selLineage = "lineage:"
 	selSandbox = "sandbox:"
+	selTroupe  = "troupe:"
 )
 
 func (selectors) Validate(sel string) error {
 	if sel == selOwner {
 		return nil
 	}
-	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox} {
+	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe} {
 		if rest, ok := strings.CutPrefix(sel, prefix); ok {
 			if rest == "" {
 				return fmt.Errorf("%s names nothing", prefix)
@@ -61,12 +65,16 @@ func (selectors) Validate(sel string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id> or sandbox:<name>")
+	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name> or troupe:<name>")
 }
 
 func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
-	if r.Kind == ResourceSandbox {
+	switch r.Kind {
+	case ResourceSandbox:
 		name, ok := strings.CutPrefix(sel, selSandbox)
+		return ok && name == r.ID
+	case ResourceTroupe:
+		name, ok := strings.CutPrefix(sel, selTroupe)
 		return ok && name == r.ID
 	}
 	if r.Kind != ResourceAria {

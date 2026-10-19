@@ -12,10 +12,11 @@ const (
 	VerbKill   Verb = "kill"
 	VerbAdmin  Verb = "admin"
 	VerbUse    Verb = "use"
+	VerbJoin   Verb = "join"
 )
 
 func Verbs() []Verb {
-	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse}
+	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse, VerbJoin}
 }
 
 const VerbNone Verb = ""

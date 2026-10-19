@@ -296,7 +296,7 @@ the caller could not read.
 
 **The policy** is TOML at `[authz] policy` (relative to the config dir):
 roles of verbs on selectors (`aria:<id>`, `role:@<name>`, `owner:self`,
-`lineage:<id>`, `sandbox:<name>`, `*`), bound to principals. With none
+`lineage:<id>`, `sandbox:<name>`, `troupe:<name>`, `*`), bound to principals. With none
 configured, the daemon's own principal holds every verb and nobody else holds
 any. `outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
@@ -307,6 +307,9 @@ create, fork, bind, import and `figaro.set`. An aria minted by a sandbox
 principal is pinned to that sandbox. Under `local` or `bwrap` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
+
+**Troupes.** `join` on `troupe:<name>` is checked when a node is asked to
+sign a new node into that troupe. No method carries it.
 
 `x-caller` is **attribution only and never authorizes**. It lands in
 `Identity.Label`, a different field from `FigaroID`, so an assertion naming

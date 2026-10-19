@@ -149,8 +149,50 @@ principals = ["sandbox:dev-3"]
 	}
 }
 
+// join is granted per troupe: a grant on one troupe admits nobody to
+// another, a troupe selector matches no aria, and the owner's default
+// grant covers it.
+func TestJoinIsGrantedOnANamedTroupe(t *testing.T) {
+	p := loaded(t, `
+[roles.member]
+grants = [{ verbs = ["join"], on = ["troupe:estate"] }, { verbs = ["read"], on = ["troupe:estate"] }]
+[[bind]]
+role = "member"
+principals = ["user:1001"]
+`)
+	cases := []struct {
+		name string
+		r    Resource
+		verb rpc.Verb
+		want bool
+	}{
+		{"its troupe", Troupe("estate"), rpc.VerbJoin, true},
+		{"another troupe", Troupe("other"), rpc.VerbJoin, false},
+		{"an aria named like the troupe", Aria("estate"), rpc.VerbRead, false},
+		{"a sandbox named like the troupe", Sandbox("estate"), rpc.VerbJoin, false},
+		{"the daemon", Daemon, rpc.VerbJoin, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if d := p.Allow(subject(other), c.verb, c.r); d.Allowed != c.want {
+				t.Fatalf("want %v: %s", c.want, d.Reason())
+			}
+		})
+	}
+	def := NewPolicies(me, facts())
+	if err := def.Reload(""); err != nil {
+		t.Fatal(err)
+	}
+	if d := def.Allow(subject(me), rpc.VerbJoin, Troupe("estate")); !d.Allowed {
+		t.Fatalf("the owner cannot join under the default policy: %s", d.Reason())
+	}
+	if d := def.Allow(subject(other), rpc.VerbJoin, Troupe("estate")); d.Allowed {
+		t.Fatal("a stranger may join under the default policy")
+	}
+}
+
 func TestSelectorsFigaroDoesNotKnowAreRefusedAtLoad(t *testing.T) {
-	for _, sel := range []string{"owner:me", "role:herald", "aria:", "lineage:", "sandbox:", "path:/srv"} {
+	for _, sel := range []string{"owner:me", "role:herald", "aria:", "lineage:", "sandbox:", "troupe:", "path:/srv"} {
 		p := NewPolicies(me, facts())
 		err := p.Reload(writePolicy(t, `
 [roles.r]
