@@ -22,10 +22,15 @@ import (
 
 var ErrUnadmitted = errors.New("authz: caller not admitted")
 
+var errTroupeKind = errors.New("authz: troupe is the kind a node's policy delegates to; no caller may be one")
+
 func kindOf(name string) (jkauthz.Kind, error) {
 	p, err := jkauthz.ParsePrincipal(name + ":x")
 	if err != nil || p.Node != "" || string(p.Kind) != name {
 		return "", fmt.Errorf("authz: %q is not a principal kind", name)
+	}
+	if p.Kind == KindTroupe {
+		return "", errTroupeKind
 	}
 	return p.Kind, nil
 }
@@ -53,6 +58,9 @@ func NewPeercred(selfUID uint32, cfg config.PeercredConfig) (*Peercred, error) {
 		}
 		if pr.Node != "" {
 			return nil, fmt.Errorf("authz.peercred.uids.%s: a local uid cannot name another node", k)
+		}
+		if pr.Kind == KindTroupe {
+			return nil, fmt.Errorf("authz.peercred.uids.%s: %w", k, errTroupeKind)
 		}
 		if uint32(uid) == selfUID {
 			p.self = pr

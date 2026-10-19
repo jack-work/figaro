@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/BurntSushi/toml"
 
@@ -130,10 +131,20 @@ type Policies struct {
 	self   jkauthz.Principal
 	path   string
 	scopes []string
+	troupe atomic.Pointer[troupeLayer]
+	schema jkauthz.Schema[Resource]
+}
+
+type troupeLayer struct {
+	name   string
+	as     jkauthz.Subject
+	policy *jkauthz.Policy[Resource]
+	err    error
 }
 
 func NewPolicies(self jkauthz.Principal, facts Facts) *Policies {
-	return &Policies{store: jkauthz.NewStore(Schema(facts)), self: self}
+	schema := Schema(facts)
+	return &Policies{store: jkauthz.NewStore(schema), self: self, schema: schema}
 }
 
 func (p *Policies) SetIssuerScopes(scopes []string) {
@@ -229,8 +240,86 @@ func (p *Policies) Path() string {
 	return p.path
 }
 
-func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) jkauthz.Decision {
-	return p.store.Allow(s, string(verb), r)
+type Verdict struct {
+	jkauthz.Decision
+	undelegated string
+}
+
+func (v Verdict) Reason() string {
+	if v.undelegated != "" {
+		return fmt.Sprintf("%s; troupe %s grants it, but this node does not delegate it to the troupe", v.Decision.Reason(), v.undelegated)
+	}
+	return v.Decision.Reason()
+}
+
+func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
+	local := p.store.Allow(s, string(verb), r)
+	if local.Allowed {
+		return Verdict{Decision: local}
+	}
+	t := p.troupe.Load()
+	if t == nil || t.policy == nil || LocalOnly(verb, r) {
+		return Verdict{Decision: local}
+	}
+	if !t.policy.Allow(s, string(verb), r).Allowed {
+		return Verdict{Decision: local}
+	}
+	ceiling := p.store.Allow(t.as, string(verb), r)
+	if !ceiling.Allowed {
+		return Verdict{Decision: local, undelegated: t.name}
+	}
+	return Verdict{Decision: ceiling}
+}
+
+func LocalOnly(verb rpc.Verb, r Resource) bool {
+	switch r.Kind {
+	case ResourceSandbox:
+		return r.ID == "local"
+	case ResourceTroupe:
+		return verb == rpc.VerbAdmin
+	}
+	return false
+}
+
+const KindTroupe jkauthz.Kind = "troupe"
+
+func TroupePrincipal(name string) jkauthz.Principal {
+	return jkauthz.Principal{Kind: KindTroupe, ID: name}
+}
+
+func (p *Policies) SetTroupe(name string, body []byte) error {
+	if name == "" {
+		p.troupe.Store(nil)
+		return nil
+	}
+	layer := &troupeLayer{name: name, as: jkauthz.Subject{Principal: TroupePrincipal(name)}}
+	if body == nil {
+		p.troupe.Store(layer)
+		return nil
+	}
+	pol, err := CompileTroupePolicy(body, p.schema)
+	if err != nil {
+		layer.err = err
+		p.troupe.Store(layer)
+		return err
+	}
+	layer.policy = pol
+	p.troupe.Store(layer)
+	return nil
+}
+
+func (p *Policies) TroupeLoadError() error {
+	if t := p.troupe.Load(); t != nil {
+		return t.err
+	}
+	return nil
+}
+
+func (p *Policies) TroupeName() string {
+	if t := p.troupe.Load(); t != nil {
+		return t.name
+	}
+	return ""
 }
 
 func (r Resource) String() string {
@@ -239,6 +328,8 @@ func (r Resource) String() string {
 		return "aria:" + r.ID
 	case ResourceSandbox:
 		return "sandbox:" + r.ID
+	case ResourceTroupe:
+		return "troupe:" + r.ID
 	}
 	return "the daemon"
 }
