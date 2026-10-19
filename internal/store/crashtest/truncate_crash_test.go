@@ -36,6 +36,7 @@ func runTruncateChild() {
 		childFail(err)
 	}
 	ts := st.(*trunksStore)
+	emit("open")
 	if err := ts.s.TruncateFrom(trunk, chanNotes, truncateCut); err != nil {
 		childFail(err)
 	}
@@ -147,9 +148,17 @@ func runTruncateChildOnce(t *testing.T, dir, trunk string, delay time.Duration) 
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	// The kill window is timed from the child's open, not its exec: under a
+	// loaded check, starting the binary and opening the store alone can
+	// outlast the whole window, and then no cycle ever reaches the cut.
+	sc := bufio.NewScanner(stdout)
+	if !sc.Scan() || sc.Text() != "open" {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("child did not open the store: %s", stderr.String())
+	}
 	done := make(chan []string, 1)
 	go func() {
-		sc := bufio.NewScanner(stdout)
 		var lines []string
 		for sc.Scan() {
 			lines = append(lines, sc.Text())
