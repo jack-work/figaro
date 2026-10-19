@@ -272,8 +272,8 @@ listener's authenticator stamped, and nothing in params can change it:
 | listener | authenticator | principal |
 |---|---|---|
 | CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
-| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. |
-| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]`, and refused when none is configured |
+| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. A bearer starting `fgk_` is an api key (Troupe api keys, below) and goes only to the key table; anything else goes only to the issuers. |
+| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]` or, for an api key, this node's key table, and refused when neither applies |
 
 **Issuers.** `[[authz.issuers]]` lists the identity issuers this node
 trusts (`issuer`, `jwks`, `userinfo`, `audience`, `types`, `users`,
@@ -323,8 +323,9 @@ the daemon assigns is under "Workspaces under a sandbox" below.
 
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
-caller), `troupe.leave` and `troupe.policy.set`, since the guard knows only
-arias and the daemon.
+caller), `troupe.leave`, `troupe.policy.set` and `troupe.apikey.mint`, since
+the guard knows only arias and the daemon. `troupe.apikey.revoke` and
+`troupe.apikey.ls` decide for themselves too (below).
 
 **The troupe layer.** A call the node's own policy refuses may still be
 allowed by the troupe policy in force (below, under Troupe membership), but
@@ -736,6 +737,61 @@ a root revoke reaches the daemon through `troupe.entries` from a caller
 holding admin on the troupe. Either is spread to every member before the
 call returns, which says who heard. A door gives an evicted node's open
 connections a second to finish the reply in flight, then closes them.
+
+### Troupe api keys
+
+An api key is a credential the troupe issues, for a principal of its own:
+`service:<name>@troupe:<troupe>` or `user:<name>@troupe:<troupe>`. The scope
+cannot be an issuer's (`troupe:<name>` does not parse as a URL host), so a key
+never passes for an issuer's principal, and it carries no groups. Grants come
+from policy naming the principal, like any other.
+
+The wire form is `fgk_<id>_<secret>_<crc>`: a 10-character id, 32 random
+bytes, and a CRC32 that catches a typo before any lookup. All base32. A node
+keeps `sha256("figaro-api-key\0" || id || secret)` and never the key; with a
+256-bit secret a slow hash would cost every connection and buy nothing.
+`figaro troupe apikey mint` makes the key in the CLI and sends only the id
+and the hash, so the key reaches a node only when it is presented.
+
+`troupe.apikey.mint` takes admin on the troupe. A node holding an
+intermediate signs an `apikey` ledger entry: the id, the principal, the hash,
+`not_after` (required, at most 365 days, 90 by default), the admin who asked
+(`by`) and the signing node. A leaf-only node refuses and names the signers.
+`troupe.apikey.revoke` is open to the minter, the key's own principal (a
+leaked key can revoke itself) or a troupe admin. The serving node signs an
+`apikey-revoke` with its leaf. A revoke beats its key in any order, and a root
+revoke of the signer voids the keys it signed, as does a second entry under
+the same id. Both are spread before the call returns and logged as
+structured events (id, principal, by, node). `troupe.apikey.ls` lists every
+key to a troupe admin, and otherwise the keys the caller minted or that name
+it; it also says who the caller is, which `troupe login` uses. Key entries
+have a cap of their own (1024 of each kind), apart from the joins. An expired
+key and its revoke leave the ledger a day after neither can matter, and
+gossip cannot bring them back.
+
+`authz.APIKeys` holds the live set behind an atomic pointer.
+- Opening a key: parse, look up by id, constant-time compare of the hash,
+  then `void` and expiry.
+- Unknown id, wrong secret and junk all fail with the same error.
+- Every RPC re-reads the key from the current set, so an expired or revoked
+  key stops at the next call.
+- A revoke cancels every connection the key holds, forwarded ones on other
+  nodes included, as each node takes the revoke. Each connection also ends at
+  `not_after`.
+- `[[authz.api_keys]]` (id, principal, sha256, not_after) adds keys from
+  local config for that node alone, outranking a ledger entry under the same
+  id. `troupe apikey mint --static` prints the key and the stanza.
+
+A troupe file with `[auth] scheme = "api-key"` sends the key as the bearer,
+over wss only. It comes from `key_file`, which must be 0600 or tighter and
+owned by the caller, or from `troupes/<name>.key`, sealed by hush, which
+`troupe login` writes after the door accepts the key. Keys are taken on
+`authn = "bearer"` web doors and on the node door. An upstream door does not
+take them yet: the edge would have to pass them through.
+
+The web door listens on a unix socket, so it cannot see a caller's source,
+and failed presentations are not rate-limited there. Guessing a 256-bit
+secret is out of reach; a limit for hygiene belongs at the edge.
 
 ## Storage
 

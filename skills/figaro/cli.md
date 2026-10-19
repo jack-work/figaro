@@ -284,7 +284,7 @@ observer's mouth.
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
 | `figaro provider login <name>` | Sign in to a model provider: its OAuth or device-code flow, else an API key sealed in hush. See [reference/providers.md](reference/providers.md#credentials). |
 | `figaro provider logout <name> [-j]` | Remove what figaro holds for it (the hush credential, a sealed `api_key`). Names and keeps what figaro did not write; exits 1 while a credential remains. |
-| `figaro troupe login <name>` | Sign in to a troupe's door (`[auth] scheme = "oidc-device"`); hush holds the token as `troupe:<name>`. |
+| `figaro troupe login <name>` | Sign in to a troupe's door. `[auth] scheme = "oidc-device"`: hush holds the token as `troupe:<name>`. `scheme = "api-key"`: reads the key without echo (or one line of stdin), checks it at the door, and hush seals it in `troupes/<name>.key`; with `key_file` set, it only checks that file's key. |
 | `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. With `[peers]` or `[troupe] name` configured, also this node's `[troupe] version`, when its node certificate and intermediate end, and, per peer, the version it last showed on a handshake and any drift (asks a running daemon; never starts one). Under the figaro provider also who owns and who admitted each node, which can sign, and the nodes that left or were revoked. |
 | `op read <ref> \| figaro troupe create <name>` | Start a troupe here from the root key on stdin (never written): `root.crt` and this node's one-year intermediate. See [reference/architecture.md](reference/architecture.md#troupe-keys). |
 | `op read <ref> \| figaro troupe intermediate <name>` | Issue or renew this node's intermediate from the same root. |
@@ -295,6 +295,9 @@ observer's mouth.
 | `op read <ref> \| figaro troupe intermediate <name> --for <node-id> --out <dir> [--allow-disk]` | Issue another node's intermediate into `<dir>` (a tmpfs unless `--allow-disk`): `root.crt`, `intermediate.crt`, `intermediate.key`, 0600. Prints fingerprints only. |
 | `figaro troupe join <name> [--door host:port] [--listen host:port] [--root-sha256 <hex>\|-y]` | Sign this node into troupe `<name>` through the member `troupes/<name>.toml` reaches (needs `join` on `troupe:<name>`). Shows the root's sha256 and asks before trusting it; writes this node's leaf and the `[troupe]`, `[door.tls]` and peercred config; restart the daemon after. See [reference/architecture.md](reference/architecture.md#troupe-membership). |
 | `figaro troupe leave <name> [-y]` | The running daemon signs this node's leave with its own key and tells every member before it returns; then its troupe keys and `[troupe]`/`[door.tls]` go. Final for this node id. |
+| `figaro troupe apikey mint <name> <kind:name> [--ttl 90d] [--static]` | Mint an api key for `service:<n>` or `user:<n>`, scoped `@troupe:<name>` (needs admin on the troupe). The key goes to stdout once; the node keeps its hash. `--static` prints the key and an `[[authz.api_keys]]` stanza instead. See [reference/architecture.md](reference/architecture.md#troupe-api-keys). |
+| `figaro troupe apikey ls <name> [-j]` | Keys with who minted each and their state; every key for a troupe admin, else the ones you minted or that name you. |
+| `figaro troupe apikey revoke <name> <id>` | Revoke a key (its minter, its own principal, or a troupe admin) and tell every member; its open connections close. |
 | `op read <ref> \| figaro troupe revoke <name> <node>` | Revoke a node with the root: it is out, and so is every join its intermediates signed. The running daemon tells every member and lists who heard. |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models` | List available provider models. |
@@ -313,13 +316,27 @@ A troupe file is the door as this CLI reaches it:
 # ~/.config/figaro/troupes/spain.toml
 url      = "wss://fig.kelliher.info"   # audience = "..." optional; default is the url
 [auth]                              # optional; how a human signs in
-scheme    = "oidc-device"           # the only scheme; any other is refused
+scheme    = "oidc-device"           # or "api-key"; any other is refused
 issuer    = "https://auth.kelliher.info"
 client_id = "figaro-cli"
 ```
 
 `figaro troupe login spain` runs the device flow and hush holds the token as
 `troupe:spain`. A key the file does not define is refused when it is read.
+
+A troupe that a service reaches with an api key:
+
+```toml
+# ~/.config/figaro/troupes/estate.toml
+url = "wss://fig.example"
+[auth]
+scheme   = "api-key"
+key_file = "/run/credentials/ci/figaro-key"   # optional; 0600, yours
+```
+
+Without `key_file`, `figaro troupe login estate` reads the key and hush
+seals it in `troupes/estate.key`. The key is never read from argv or the
+environment.
 
 ## The vault
 
