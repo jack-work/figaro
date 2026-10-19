@@ -86,6 +86,7 @@ func (g *Gossip) Round(ctx context.Context) {
 	if g.Seed != nil {
 		g.Seed()
 	}
+	g.Members.Prune()
 	var wg sync.WaitGroup
 	for _, node := range g.Members.Nodes() {
 		wg.Add(1)

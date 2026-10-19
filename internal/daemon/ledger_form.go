@@ -84,10 +84,10 @@ func (f *ledgerForm) mint() error {
 	return nil
 }
 
-func (f *ledgerForm) Save(added []troupe.Entry) {
+func (f *ledgerForm) Save(added []troupe.Entry, removed []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.id == "" {
+	if f.id == "" || len(added) == 0 && len(removed) == 0 {
 		return
 	}
 	set := make(map[string]json.RawMessage, len(added))
@@ -99,9 +99,13 @@ func (f *ledgerForm) Save(added []troupe.Entry) {
 		s, _ := json.Marshal(string(body))
 		set[entriesKey+"."+e.ID()] = s
 	}
+	drop := make([]string, 0, len(removed))
+	for _, id := range removed {
+		drop = append(drop, entriesKey+"."+id)
+	}
 	snap, err := f.backend.FormState(f.id)
 	if err == nil {
-		_, err = f.backend.ApplyFormPrivileged(f.id, form.Build(snap, set, nil))
+		_, err = f.backend.ApplyFormPrivileged(f.id, form.Build(snap, set, drop))
 	}
 	if err != nil {
 		slog.Error("troupe ledger form: entries not stored; peers still hold them", "form", f.id, "err", err)

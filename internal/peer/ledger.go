@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/troupe"
 )
@@ -16,7 +17,7 @@ type Ledger struct {
 	troupe string
 	creds  *Credentials
 
-	Persist func(added []troupe.Entry)
+	Persist func(added []troupe.Entry, removed []string)
 
 	mu      sync.RWMutex
 	ledger  *troupe.Ledger
@@ -26,6 +27,7 @@ type Ledger struct {
 	evict   []func(node string)
 	admit   []func(node string)
 	policy  []func()
+	keys    []func(map[string]troupe.APIKeyRecord)
 }
 
 func NewLedger(self string, l *troupe.Ledger, creds *Credentials) *Ledger {
@@ -60,11 +62,28 @@ func (m *Ledger) OnPolicy(fn func()) {
 	fn()
 }
 
+func (m *Ledger) OnAPIKeys(fn func(map[string]troupe.APIKeyRecord)) {
+	m.mu.Lock()
+	m.keys = append(m.keys, fn)
+	keys := m.view.APIKeys
+	m.mu.Unlock()
+	fn(keys)
+}
+
+func (m *Ledger) APIKeys() map[string]troupe.APIKeyRecord {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.view.APIKeys
+}
+
+func (m *Ledger) Prune() { _, _ = m.Merge() }
+
 func (m *Ledger) Merge(es ...troupe.Entry) ([]troupe.Entry, error) {
 	m.mu.Lock()
-	before, was := m.members, m.view.Policy
+	before, was, keysWere := m.members, m.view.Policy, m.view.KeysDigest
 	added, err := m.ledger.Merge(es...)
-	if len(added) > 0 {
+	removed := m.ledger.Prune(time.Now())
+	if len(added) > 0 || len(removed) > 0 {
 		m.rebuild()
 	}
 	gone, come := changed(before, m.members), changed(m.members, before)
@@ -73,12 +92,20 @@ func (m *Ledger) Merge(es ...troupe.Entry) ([]troupe.Entry, error) {
 	if !samePolicy(was, m.view.Policy) {
 		policy = slices.Clone(m.policy)
 	}
+	var keys []func(map[string]troupe.APIKeyRecord)
+	if keysWere != m.view.KeysDigest {
+		keys = slices.Clone(m.keys)
+	}
+	view := m.view.APIKeys
 	m.mu.Unlock()
 	for _, fn := range policy {
 		fn()
 	}
-	if len(added) > 0 && m.Persist != nil {
-		m.Persist(added)
+	for _, fn := range keys {
+		fn(view)
+	}
+	if (len(added) > 0 || len(removed) > 0) && m.Persist != nil {
+		m.Persist(added, removed)
 	}
 	for _, node := range gone {
 		for _, fn := range evict {

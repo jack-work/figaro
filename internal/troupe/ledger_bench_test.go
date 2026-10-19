@@ -2,6 +2,7 @@ package troupe
 
 import (
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 )
@@ -65,4 +66,31 @@ func BenchmarkLedgerMerge(b *testing.B) {
 			}
 		}
 	})
+}
+
+// A troupe at its key cap: merging a join into it rebuilds the key view.
+// The full ledger is verified once and copied for each merge.
+func BenchmarkLedgerMergeAtKeyCap(b *testing.B) {
+	s, es := benchEntries(b, 101)
+	keys := make([]Entry, MaxAPIKeys)
+	for i := range keys {
+		keys[i], _ = s.mint("a", "service:ci@troupe:estate", 0, time.Hour)
+	}
+	full := NewLedger("estate", s.root)
+	if _, err := full.Merge(append(es[:100:100], keys...)...); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		l := full.clone()
+		b.StartTimer()
+		if _, err := l.Merge(es[100]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func (l *Ledger) clone() *Ledger {
+	return &Ledger{troupe: l.troupe, root: l.root, now: l.now, entries: maps.Clone(l.entries), counts: maps.Clone(l.counts), view: l.view}
 }

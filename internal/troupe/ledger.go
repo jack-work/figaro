@@ -35,18 +35,22 @@ const MaxEntries = 4096
 const entryDomain = "figaro troupe entry v1\n"
 
 type Entry struct {
-	Kind    Kind     `json:"kind"`
-	Troupe  string   `json:"troupe"`
-	Node    string   `json:"node"`
-	Door    string   `json:"door,omitempty"`
-	Owner   string   `json:"owner,omitempty"`
-	Version uint64   `json:"version,omitempty"`
-	By      string   `json:"by,omitempty"`
-	Body    string   `json:"body,omitempty"`
-	Renews  string   `json:"renews,omitempty"`
-	At      int64    `json:"at"`
-	Chain   [][]byte `json:"chain,omitempty"`
-	Sig     []byte   `json:"sig"`
+	Kind      Kind     `json:"kind"`
+	Troupe    string   `json:"troupe"`
+	Node      string   `json:"node"`
+	Door      string   `json:"door,omitempty"`
+	Owner     string   `json:"owner,omitempty"`
+	Version   uint64   `json:"version,omitempty"`
+	By        string   `json:"by,omitempty"`
+	Body      string   `json:"body,omitempty"`
+	Renews    string   `json:"renews,omitempty"`
+	Key       string   `json:"key,omitempty"`
+	Principal string   `json:"principal,omitempty"`
+	Hash      []byte   `json:"hash,omitempty"`
+	NotAfter  int64    `json:"not_after,omitempty"`
+	At        int64    `json:"at"`
+	Chain     [][]byte `json:"chain,omitempty"`
+	Sig       []byte   `json:"sig"`
 }
 
 func (e Entry) message() []byte {
@@ -55,6 +59,8 @@ func (e Entry) message() []byte {
 		return e.policyMessage()
 	case Renewer:
 		return e.renewerMessage()
+	case APIKey, APIKeyRevoke:
+		return e.apiKeyMessage()
 	}
 	body, _ := json.Marshal(struct {
 		Kind   Kind   `json:"kind"`
@@ -134,13 +140,22 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 	}
 	at := e.Time()
 	var pub crypto.PublicKey
-	if e.Kind != Policy && (e.Version != 0 || e.By != "" || e.Body != "") {
+	if e.Kind != Policy && !isKeyKind(e.Kind) && (e.Version != 0 || e.By != "" || e.Body != "") {
 		return out, fmt.Errorf("a %s carries no policy", e.Kind)
 	}
 	if e.Kind != Renewer && e.Renews != "" {
 		return out, fmt.Errorf("a %s names no renewer", e.Kind)
 	}
+	if !isKeyKind(e.Kind) && (e.Key != "" || e.Principal != "" || e.Hash != nil || e.NotAfter != 0) {
+		return out, fmt.Errorf("a %s carries no api key", e.Kind)
+	}
 	switch e.Kind {
+	case APIKey, APIKeyRevoke:
+		k, err := verifyAPIKey(out, root, at)
+		if err != nil {
+			return out, err
+		}
+		pub = k
 	case Policy:
 		key, err := verifyPolicy(out, root, at)
 		if err != nil {
@@ -239,14 +254,16 @@ type Member struct {
 }
 
 type View struct {
-	Members  map[string]Member
-	Renewers map[string][]string
-	Gone     map[string]Kind
-	Policy   *Entry
-	Rivals   []Entry
-	Voided   []Entry
-	Refused  []Entry
-	Digest   uint64
+	Members    map[string]Member
+	Renewers   map[string][]string
+	Gone       map[string]Kind
+	Policy     *Entry
+	Rivals     []Entry
+	Voided     []Entry
+	Refused    []Entry
+	APIKeys    map[string]APIKeyRecord
+	Digest     uint64
+	KeysDigest uint64
 }
 
 func (v View) Signers(now time.Time) []string {
@@ -263,12 +280,14 @@ func (v View) Signers(now time.Time) []string {
 type Ledger struct {
 	troupe  string
 	root    *x509.Certificate
+	now     func() time.Time
 	entries map[string]verified
+	counts  map[Kind]int
 	view    View
 }
 
 func NewLedger(troupe string, root *x509.Certificate) *Ledger {
-	l := &Ledger{troupe: troupe, root: root, entries: map[string]verified{}}
+	l := &Ledger{troupe: troupe, root: root, now: time.Now, entries: map[string]verified{}, counts: map[Kind]int{}}
 	l.rebuild()
 	return l
 }
@@ -284,8 +303,15 @@ func (l *Ledger) Merge(es ...Entry) ([]Entry, error) {
 		if _, ok := l.entries[id]; ok {
 			continue
 		}
-		if (e.Kind == Join || e.Kind == Policy) && len(l.entries) >= MaxEntries {
+		if (e.Kind == Join || e.Kind == Policy) && len(l.entries)-l.counts[APIKey]-l.counts[APIKeyRevoke] >= MaxEntries {
 			errs = append(errs, fmt.Errorf("troupe %s holds %d entries, its limit for joins and policies", l.troupe, MaxEntries))
+			continue
+		}
+		if isKeyKind(e.Kind) && l.counts[e.Kind] >= MaxAPIKeys {
+			errs = append(errs, fmt.Errorf("troupe %s holds %d %s entries, its limit", l.troupe, MaxAPIKeys, e.Kind))
+			continue
+		}
+		if Prunable(e, l.now()) {
 			continue
 		}
 		v, err := verify(e, l.troupe, l.root)
@@ -298,6 +324,7 @@ func (l *Ledger) Merge(es ...Entry) ([]Entry, error) {
 			continue
 		}
 		l.entries[id] = v
+		l.count(e.Kind, 1)
 		added = append(added, e)
 	}
 	for progress := true; progress && len(parked) > 0; {
@@ -411,15 +438,22 @@ func (l *Ledger) rebuild() {
 	}
 	w := walkPolicies(policies)
 	v.Policy, v.Rivals, v.Refused = w.adopted, w.rivals, w.refused
+	v.APIKeys = l.apiKeyView(ids, v.Gone)
 	if len(ids) > 0 {
-		h := sha256.New()
+		h, k := sha256.New(), sha256.New()
 		for _, id := range ids {
 			h.Write([]byte(id))
+			if kind := l.entries[id].Kind; isKeyKind(kind) || kind == Revoke {
+				k.Write([]byte(id))
+			}
 		}
 		v.Digest = max(binary.BigEndian.Uint64(h.Sum(nil)), 1)
+		v.KeysDigest = binary.BigEndian.Uint64(k.Sum(nil))
 	}
 	l.view = v
 }
+
+func (l *Ledger) count(k Kind, n int) { l.counts[k] += n }
 
 func Encode(es []Entry) []json.RawMessage {
 	out := make([]json.RawMessage, 0, len(es))
@@ -431,8 +465,8 @@ func Encode(es []Entry) []json.RawMessage {
 }
 
 func Decode(raw []json.RawMessage) ([]Entry, error) {
-	if len(raw) > MaxEntries {
-		return nil, fmt.Errorf("%d entries, more than a troupe holds (%d)", len(raw), MaxEntries)
+	if limit := MaxEntries + 2*MaxAPIKeys; len(raw) > limit {
+		return nil, fmt.Errorf("%d entries, more than a troupe holds (%d)", len(raw), limit)
 	}
 	out := make([]Entry, 0, len(raw))
 	for i, r := range raw {

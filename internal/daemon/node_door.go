@@ -144,6 +144,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	}
 	m := peer.NewLedger(a.Backend.NodeID(), l, creds)
 	m.Persist = store.Save
+	store.Save(nil, prunable(stored, time.Now()))
 	if joined, err := k.Dir.Joined(); err == nil {
 		if _, err := m.Merge(joined...); err != nil {
 			slog.Warn("troupe ledger: entries from the join refused", "err", err)
@@ -311,6 +312,16 @@ func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string
 	a.TroupeSpread = g.Spread
 	go g.Run(ctx)
 	return g
+}
+
+func prunable(es []troupe.Entry, now time.Time) []string {
+	var out []string
+	for _, e := range es {
+		if troupe.Prunable(e, now) {
+			out = append(out, e.ID())
+		}
+	}
+	return out
 }
 
 func forwardedCallers(is *authz.Issuers) peer.Verify {
