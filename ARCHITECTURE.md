@@ -246,7 +246,7 @@ troupe's keys stand in, see Troupe keys in `skills/figaro/reference/architecture
 and `[troupe] version` names the revision of that list. A peer's
 first line is a passage: the dialer's troupe version, and, when it forwards a
 caller, `forwarded` with the caller's bearer, which the owner verifies against
-`[authz.bearer]`; nodes never vouch for a caller. The door answers with its
+`[[authz.issuers]]`; nodes never vouch for a caller. The door answers with its
 own version. Each side logs once when the other's differs and refuses
 nothing for it; `figaro troupe ls` shows what each peer last showed.
 

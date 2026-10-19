@@ -272,8 +272,21 @@ listener's authenticator stamped, and nothing in params can change it:
 | listener | authenticator | principal |
 |---|---|---|
 | CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
-| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. |
-| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[authz.bearer]`, and refused when that is not configured |
+| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. |
+| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]`, and refused when none is configured |
+
+**Issuers.** `[[authz.issuers]]` lists the identity issuers this node
+trusts (`issuer`, `jwks`, `userinfo`, `audience`, `types`, `users`,
+`clients`). A token goes to the issuer its `iss` names and is verified
+there. Every principal and group an issuer or the edge produces carries
+the issuer's scope, its URL without the scheme:
+`user:jack@auth.kelliher.info`, `sandbox:figbox@auth.kelliher.info`, the
+group `figaro-admin@auth.kelliher.info`. The scope is derived, so an
+issuer cannot take another's names, and two issuers with one scope are
+refused. Policies name the scoped spelling; one that grants an unscoped
+user (other than a uid) or group still loads, and each such name is
+logged with what to write. The retired single `[authz.bearer]` table is
+refused by name.
 
 **Every call is decided.** `authz.Guard` wraps the whole handler map with
 `authz.Enforce`: each method maps to one verb (`api/rpc/verbs.go`; an
@@ -633,6 +646,11 @@ needs its current leaf, unexpired and unrevoked; once it expires the node
 joins again. `troupe.identity` (also `join`) returns the caller's principal,
 the root and its SHA-256, and the signers, for a joiner to check before it
 trusts anything.
+
+A join's owner is the caller's principal as `troupe.sign` saw it, so
+since issuer scoping it reads `user:jack@auth.kelliher.info`. Joins signed
+before that name their owner unscoped; such ledgers exist only in
+development roots, and nothing rewrites them.
 
 `troupe.leave` (admin) has the daemon sign its own leave with its node key;
 a root revoke reaches the daemon through `troupe.entries` from a caller
