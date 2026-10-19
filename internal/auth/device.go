@@ -45,7 +45,7 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (Dev
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return DeviceTokens{}, fmt.Errorf("device code request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return DeviceTokens{}, fmt.Errorf("device code request failed (%d): %q", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var device struct {
 		DeviceCode              string `json:"device_code"`
@@ -131,9 +131,9 @@ func pollDeviceToken(cfg DeviceCodeConfig, deviceCode string, interval time.Dura
 		return DeviceTokens{}, interval, fmt.Errorf("device flow: HTTP %d with neither a token nor an error", resp.StatusCode)
 	}
 	if raw.Description != "" {
-		return DeviceTokens{}, interval, fmt.Errorf("device flow error: %s: %s", raw.Error, raw.Description)
+		return DeviceTokens{}, interval, fmt.Errorf("device flow error: %q: %q", raw.Error, raw.Description)
 	}
-	return DeviceTokens{}, interval, fmt.Errorf("device flow error: %s", raw.Error)
+	return DeviceTokens{}, interval, fmt.Errorf("device flow error: %q", raw.Error)
 }
 
 func postDeviceForm(cfg DeviceCodeConfig, endpoint string, form url.Values) (*http.Response, error) {

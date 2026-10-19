@@ -114,7 +114,7 @@ func requestToken(client *http.Client, endpoint, clientID string, form url.Value
 	_ = json.Unmarshal(body, &out)
 	if resp.StatusCode != http.StatusOK {
 		if out.Error != "" {
-			return tokenResponse{}, fmt.Errorf("client %s: token endpoint: HTTP %d: %s: %s", clientID, resp.StatusCode, out.Error, out.Description)
+			return tokenResponse{}, fmt.Errorf("client %s: token endpoint: HTTP %d: %q: %q", clientID, resp.StatusCode, out.Error, out.Description)
 		}
 		return tokenResponse{}, fmt.Errorf("client %s: token endpoint: HTTP %d", clientID, resp.StatusCode)
 	}

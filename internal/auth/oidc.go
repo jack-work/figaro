@@ -116,7 +116,7 @@ func getJSONWith(client *http.Client, endpoint string, out any) error {
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s: HTTP %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(body[:min(len(body), 256)])))
+		return fmt.Errorf("GET %s: HTTP %d: %q", endpoint, resp.StatusCode, strings.TrimSpace(string(body[:min(len(body), 256)])))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("GET %s: %w", endpoint, err)
