@@ -48,6 +48,7 @@ func Spec(tokens *CopilotTokenSource) routed.Spec {
 		},
 		IdentityHeaders: identityHeaders,
 		Catalog:         "/models",
+		MessagesPath:    "/v1/messages",
 		Rules:           []routed.Rule{{Model: "claude-*", Transport: routed.Messages}},
 	}
 }

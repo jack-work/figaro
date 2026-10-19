@@ -51,7 +51,7 @@ func (f *fakeUpstream) Base() string { return f.base }
 func (f *fakeUpstream) Endpoint(t routed.Transport) string {
 	switch t {
 	case routed.Messages:
-		return f.base + "/v1/messages"
+		return f.base + "/messages"
 	case routed.Chat:
 		return f.base + "/chat/completions"
 	}
@@ -177,7 +177,7 @@ func TestModelPrefixPicksProviderAndIsStripped(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if s := <-gotA; s.path != "/v1/v1/messages" {
+	if s := <-gotA; s.path != "/v1/messages" {
 		t.Errorf("messages went to %s, want the provider's messages endpoint", s.path)
 	}
 }

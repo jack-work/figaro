@@ -47,7 +47,7 @@ func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translato
 		return nil, fmt.Errorf("%s: nil token resolver", spec.Name)
 	}
 	if spec.MessagesPath == "" {
-		spec.MessagesPath = "/v1/messages"
+		spec.MessagesPath = "/messages"
 	}
 	if spec.AuthOptional {
 		resolver = auth.Optional(resolver)
@@ -239,7 +239,7 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 	headers := p.spec.headersFor(Messages)
 	return func(ctx context.Context, body *provider.RequestBody, header http.Header) (*http.Response, error) {
 		return auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
-			req, err := http.NewRequestWithContext(ctx, "POST", p.base()+p.spec.MessagesPath, nil)
+			req, err := http.NewRequestWithContext(ctx, "POST", p.Endpoint(Messages), nil)
 			if err != nil {
 				return nil, err
 			}

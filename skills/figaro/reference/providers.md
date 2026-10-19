@@ -8,7 +8,7 @@ to choose a transport for each model. `anthropic` (native OAuth) is separate.
 
 | Name | Wire | Endpoint |
 |---|---|---|
-| `messages` | Anthropic Messages | `base_url` + `messages_path` (default `/v1/messages`) |
+| `messages` | Anthropic Messages | `base_url` + `messages_path` (default `/messages`) |
 | `chat` | OpenAI Chat Completions | `base_url` + `/chat/completions` |
 | `responses` | OpenAI Responses, HTTP SSE | `base_url` + `/responses` |
 | `responses-ws` | OpenAI Responses, WebSocket | `ws(s)://` `base_url` + `/responses` |
@@ -28,7 +28,7 @@ to choose a transport for each model. `anthropic` (native OAuth) is separate.
 base_url      = "http://localhost:4000/v1"
 api_key       = "..."                       # or the provider's env var
 cache_markers = "trusted"                   # chat only; see cache-control.md
-messages_path = "/messages"                 # when base_url already ends in /v1
+messages_path = "/v1/messages"              # when base_url does not end in /v1
 headers       = { "X-Team" = "figaro" }     # every request, every transport
 
 [transport_headers.responses]               # one transport only

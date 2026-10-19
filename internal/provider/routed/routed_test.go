@@ -416,7 +416,7 @@ func TestAGatewayRejectionRenewsTheTokenOnEveryTransport(t *testing.T) {
 	defer srv.Close()
 
 	var f File
-	doc := fmt.Sprintf("base_url = %q\nmessages_path = \"/messages\"\n[routing]\ndefault = \"chat\"\ncatalog = \"/models\"\n[[routing.rule]]\nmodel = \"claude-*\"\ntransport = \"messages\"\n", srv.URL+"/v1")
+	doc := fmt.Sprintf("base_url = %q\n[routing]\ndefault = \"chat\"\ncatalog = \"/models\"\n[[routing.rule]]\nmodel = \"claude-*\"\ntransport = \"messages\"\n", srv.URL+"/v1")
 	if _, err := toml.Decode(doc, &f); err != nil {
 		t.Fatal(err)
 	}
@@ -466,5 +466,36 @@ func TestAGatewayRejectionRenewsTheTokenOnEveryTransport(t *testing.T) {
 	}
 	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(seen, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// messages joins base_url the way chat and responses do, so a /v1 base needs
+// no path of its own; a base without /v1 names the path it wants.
+func TestTheMessagesPathJoinsTheBaseLikeTheOthers(t *testing.T) {
+	for _, c := range []struct {
+		name, doc string
+		want      map[Transport]string
+	}{
+		{"base ending in /v1", `base_url = "http://gw/v1"`, map[Transport]string{
+			Messages: "http://gw/v1/messages", Chat: "http://gw/v1/chat/completions", Responses: "http://gw/v1/responses",
+		}},
+		{"base without /v1", "base_url = \"http://gw\"\nmessages_path = \"/v1/messages\"", map[Transport]string{
+			Messages: "http://gw/v1/messages", Chat: "http://gw/chat/completions", Responses: "http://gw/responses",
+		}},
+	} {
+		var f File
+		if _, err := toml.Decode(c.doc, &f); err != nil {
+			t.Fatal(err)
+		}
+		spec, err := f.Apply(Spec{Name: "gw", Default: Chat})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := mustNew(t, spec)
+		for tr, want := range c.want {
+			if got := p.Endpoint(tr); got != want {
+				t.Errorf("%s: %s = %s, want %s", c.name, tr, got, want)
+			}
+		}
 	}
 }
