@@ -24,7 +24,7 @@ type Ask func(ctx context.Context, node string, refs []string) (rpc.NodeResolveR
 var ErrNoOwner = errors.New("no node owns it")
 
 type Cache struct {
-	nodes []string
+	nodes func() []string
 	ask   Ask
 	size  int
 
@@ -37,8 +37,8 @@ type owned struct {
 	id, node string
 }
 
-func NewCache(nodes []string, ask Ask, size int) *Cache {
-	return &Cache{nodes: slices.Clone(nodes), ask: ask, size: max(size, 1), owners: map[string]*list.Element{}, recent: list.New()}
+func NewCache(nodes func() []string, ask Ask, size int) *Cache {
+	return &Cache{nodes: nodes, ask: ask, size: max(size, 1), owners: map[string]*list.Element{}, recent: list.New()}
 }
 
 func (c *Cache) Owner(id string) (string, bool) {
@@ -94,8 +94,9 @@ func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) 
 	if node, ok := c.Owner(ref); ok {
 		return node, ref, nil
 	}
-	claims := make(chan claim, len(c.nodes))
-	for _, node := range c.nodes {
+	nodes := c.nodes()
+	claims := make(chan claim, len(nodes))
+	for _, node := range nodes {
 		go func() {
 			resp, err := c.ask(ctx, node, []string{ref})
 			claims <- claim{node: node, id: resp.IDs[ref], moved: resp.Moved[ref], err: err}
@@ -103,7 +104,7 @@ func (c *Cache) Locate(ctx context.Context, ref string) (string, string, error) 
 	}
 	var found, moved []claim
 	var unreachable []error
-	for range c.nodes {
+	for range nodes {
 		cl := <-claims
 		switch {
 		case cl.err != nil:

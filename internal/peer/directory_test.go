@@ -40,6 +40,10 @@ func (l *askLog) ask(owners map[string][]string, down ...string) peer.Ask {
 	}
 }
 
+func nodesOf(nodes ...string) func() []string {
+	return func() []string { return nodes }
+}
+
 func (l *askLog) count() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -50,7 +54,7 @@ func (l *askLog) count() int {
 // asks nobody.
 func TestDirectoryLearnsFromAMiss(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"c": {"x"}}), 64)
+	d := peer.NewCache(nodesOf("b", "c"), log.ask(map[string][]string{"c": {"x"}}), 64)
 	node, id, err := d.Locate(context.Background(), "x")
 	require.NoError(t, err)
 	require.Equal(t, "c", node)
@@ -70,7 +74,7 @@ func TestDirectoryLearnsFromAMiss(t *testing.T) {
 // A prefix is resolved by its owner, and the full id is what is cached.
 func TestDirectoryResolvesAPrefixAtTheOwner(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"b": {"5f3e9a01c2d4"}}), 64)
+	d := peer.NewCache(nodesOf("b", "c"), log.ask(map[string][]string{"b": {"5f3e9a01c2d4"}}), 64)
 	node, id, err := d.Locate(context.Background(), "5f3e9a")
 	require.NoError(t, err)
 	require.Equal(t, "b", node)
@@ -83,7 +87,7 @@ func TestDirectoryResolvesAPrefixAtTheOwner(t *testing.T) {
 // Births and listings fill the cache without asking.
 func TestDirectoryLearnsWithoutAsking(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b"}, log.ask(nil), 64)
+	d := peer.NewCache(nodesOf("b"), log.ask(nil), 64)
 	d.Learn("born-on-b", "b")
 	node, _, err := d.Locate(context.Background(), "born-on-b")
 	require.NoError(t, err)
@@ -95,11 +99,11 @@ func TestDirectoryLearnsWithoutAsking(t *testing.T) {
 // call it a miss.
 func TestDirectoryNamesWhatItCouldNotAsk(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(nil), 64)
+	d := peer.NewCache(nodesOf("b", "c"), log.ask(nil), 64)
 	_, _, err := d.Locate(context.Background(), "x")
 	require.ErrorIs(t, err, peer.ErrNoOwner)
 
-	d = peer.NewCache([]string{"b", "c"}, log.ask(nil, "c"), 64)
+	d = peer.NewCache(nodesOf("b", "c"), log.ask(nil, "c"), 64)
 	_, _, err = d.Locate(context.Background(), "x")
 	require.NotErrorIs(t, err, peer.ErrNoOwner, "c may be the owner; that is not the same as no owner")
 	var unreachable *peer.Unreachable
@@ -111,7 +115,7 @@ func TestDirectoryNamesWhatItCouldNotAsk(t *testing.T) {
 // to qualify it, and nothing is cached.
 func TestDirectoryRefusesToGuessACollision(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b", "c"}, log.ask(map[string][]string{"b": {"abcd1234"}, "c": {"abcd1234"}}), 64)
+	d := peer.NewCache(nodesOf("b", "c"), log.ask(map[string][]string{"b": {"abcd1234"}, "c": {"abcd1234"}}), 64)
 	_, _, err := d.Locate(context.Background(), "abcd1234")
 	require.ErrorContains(t, err, "abcd1234 is on nodes b and c: name it as <node>/abcd1234")
 	_, ok := d.Owner("abcd1234")
@@ -122,7 +126,7 @@ func TestDirectoryRefusesToGuessACollision(t *testing.T) {
 // recently; a dropped owner is asked for again, not lost.
 func TestDirectoryIsBounded(t *testing.T) {
 	var log askLog
-	d := peer.NewCache([]string{"b"}, log.ask(map[string][]string{"b": {"x1", "x2", "x3"}}), 2)
+	d := peer.NewCache(nodesOf("b"), log.ask(map[string][]string{"b": {"x1", "x2", "x3"}}), 2)
 	d.Learn("x1", "b")
 	d.Learn("x2", "b")
 	_, ok := d.Owner("x1")
@@ -150,7 +154,7 @@ func TestAMovedAnswerLocatesTheNewHome(t *testing.T) {
 		}
 		return rpc.NodeResolveResponse{}, &peer.Unreachable{Node: node, Err: errors.New("connection refused")}
 	}
-	d := peer.NewCache([]string{"b", "c"}, ask, 64)
+	d := peer.NewCache(nodesOf("b", "c"), ask, 64)
 	node, id, err := d.Locate(context.Background(), "x1")
 	require.NoError(t, err)
 	require.Equal(t, "c", node)
@@ -158,4 +162,28 @@ func TestAMovedAnswerLocatesTheNewHome(t *testing.T) {
 	owner, ok := d.Owner("x1aaaa")
 	require.True(t, ok)
 	require.Equal(t, "c", owner)
+}
+
+// Membership can grow while the daemon runs: a node admitted after the
+// directory was built is asked on the next miss.
+func TestALookupAsksANodeThatJoinedAfterTheDirectoryWasBuilt(t *testing.T) {
+	var log askLog
+	var mu sync.Mutex
+	members := []string{"b"}
+	nodes := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), members...)
+	}
+	d := peer.NewCache(nodes, log.ask(map[string][]string{"c": {"x1aaaa"}}), 64)
+	_, _, err := d.Locate(context.Background(), "x1")
+	require.ErrorIs(t, err, peer.ErrNoOwner)
+
+	mu.Lock()
+	members = append(members, "c")
+	mu.Unlock()
+	node, id, err := d.Locate(context.Background(), "x1")
+	require.NoError(t, err)
+	require.Equal(t, "c", node)
+	require.Equal(t, "x1aaaa", id)
 }
