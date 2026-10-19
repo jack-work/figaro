@@ -154,6 +154,28 @@ per client and shares it across arias, renews it a minute before expiry, and
 mints again when the gateway answers 401. `provider login` refuses such a
 provider; `provider ls` shows the client and flags a missing secret.
 
+An IdP that grants no client_credentials (Kanidm) may still exchange a
+service account's long-lived API token for a short access token, by RFC 8693
+token exchange:
+
+```toml
+[service_tokens.rou2]
+grant              = "token-exchange"
+issuer             = "https://idm.example/oauth2/openid/rou2"   # or token_url
+client_id          = "rou2"
+subject_credential = "rou2-api-token"             # a file in $CREDENTIALS_DIRECTORY
+scopes             = ["openid", "groups", "profile"]
+# subject_token_type = "urn:ietf:params:oauth:token-type:access_token" (the default)
+```
+
+The client is public: `client_id` goes in the body and nothing else
+authenticates it, so `secret_credential` and `auth_method` are refused (Kanidm
+answers `invalid_request` to a secret on an exchange). The subject is read
+from its file at every exchange and held nowhere else. Caching, sharing,
+renewal and the retry on 401 are client_credentials'. systemd copies a
+`LoadCredential=` file when the unit starts, so a rotated subject reaches the
+daemon at its next restart.
+
 ## Credentials
 
 ```sh

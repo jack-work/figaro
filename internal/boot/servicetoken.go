@@ -13,7 +13,7 @@ import (
 
 var (
 	serviceTokensMu sync.Mutex
-	serviceTokens   = map[string]*auth.ClientCredentials{}
+	serviceTokens   = map[string]auth.TokenResolver{}
 )
 
 func ServiceToken(loaded *config.Loaded, name string) (auth.TokenResolver, error) {
@@ -21,30 +21,76 @@ func ServiceToken(loaded *config.Loaded, name string) (auth.TokenResolver, error
 	if !ok {
 		return nil, fmt.Errorf("service token %q is not configured ([service_tokens.%s] in config.toml)", name, name)
 	}
-	secret, err := CredentialPath(st.SecretCredential)
+	path, build, err := serviceGrant(st)
 	if err != nil {
-		return nil, fmt.Errorf("service token %q: secret_credential %w", name, err)
+		return nil, fmt.Errorf("service token %q: %w", name, err)
 	}
 	if st.Issuer == "" && st.TokenURL == "" {
 		return nil, fmt.Errorf("service token %q names neither an issuer nor a token_url", name)
 	}
-	key := fmt.Sprintf("%s\x00%s\x00%#v", name, secret, st)
+	key := fmt.Sprintf("%s\x00%s\x00%#v", name, path, st)
 	serviceTokensMu.Lock()
 	defer serviceTokensMu.Unlock()
-	if cc, ok := serviceTokens[key]; ok {
-		return cc, nil
+	if r, ok := serviceTokens[key]; ok {
+		return r, nil
 	}
-	cc := &auth.ClientCredentials{
-		Issuer:     st.Issuer,
-		TokenURL:   st.TokenURL,
-		ClientID:   st.ClientID,
-		Secret:     &auth.File{Path: secret, Required: true},
-		AuthMethod: st.AuthMethod,
-		Audience:   st.Audience,
-		Scopes:     st.Scopes,
+	r := build()
+	serviceTokens[key] = r
+	return r, nil
+}
+
+func serviceGrant(st config.ServiceToken) (string, func() auth.TokenResolver, error) {
+	switch st.Grant {
+	case "", auth.GrantClientCredentials:
+		if st.SubjectCredential != "" || st.SubjectTokenType != "" {
+			return "", nil, fmt.Errorf("subject_credential and subject_token_type belong to grant = %q", auth.GrantTokenExchange)
+		}
+		secret, err := CredentialPath(st.SecretCredential)
+		if err != nil {
+			return "", nil, fmt.Errorf("secret_credential %w", err)
+		}
+		return secret, func() auth.TokenResolver {
+			return &auth.ClientCredentials{
+				Issuer:     st.Issuer,
+				TokenURL:   st.TokenURL,
+				ClientID:   st.ClientID,
+				Secret:     &auth.File{Path: secret, Required: true},
+				AuthMethod: st.AuthMethod,
+				Audience:   st.Audience,
+				Scopes:     st.Scopes,
+			}
+		}, nil
+	case auth.GrantTokenExchange:
+		if st.SecretCredential != "" || st.AuthMethod != "" {
+			return "", nil, fmt.Errorf("grant = %q is a public client and sends no secret: drop secret_credential and auth_method", auth.GrantTokenExchange)
+		}
+		if st.ClientID == "" {
+			return "", nil, fmt.Errorf("grant = %q needs client_id", auth.GrantTokenExchange)
+		}
+		subject, err := CredentialPath(st.SubjectCredential)
+		if err != nil {
+			return "", nil, fmt.Errorf("subject_credential %w", err)
+		}
+		return subject, func() auth.TokenResolver {
+			return &auth.TokenExchange{
+				Issuer:           st.Issuer,
+				TokenURL:         st.TokenURL,
+				ClientID:         st.ClientID,
+				Subject:          &auth.File{Path: subject, Required: true},
+				SubjectTokenType: st.SubjectTokenType,
+				Audience:         st.Audience,
+				Scopes:           st.Scopes,
+			}
+		}, nil
 	}
-	serviceTokens[key] = cc
-	return cc, nil
+	return "", nil, fmt.Errorf("grant %q is not %q or %q", st.Grant, auth.GrantClientCredentials, auth.GrantTokenExchange)
+}
+
+func serviceCredential(st config.ServiceToken) (string, string) {
+	if st.Grant == auth.GrantTokenExchange {
+		return "subject", st.SubjectCredential
+	}
+	return "secret", st.SecretCredential
 }
 
 func ServiceTokenOf(loaded *config.Loaded, provider string) (string, error) {

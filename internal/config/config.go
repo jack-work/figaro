@@ -55,13 +55,16 @@ type Config struct {
 }
 
 type ServiceToken struct {
-	Issuer           string   `toml:"issuer"`
-	TokenURL         string   `toml:"token_url"`
-	ClientID         string   `toml:"client_id"`
-	SecretCredential string   `toml:"secret_credential"`
-	AuthMethod       string   `toml:"auth_method"`
-	Audience         []string `toml:"audience"`
-	Scopes           []string `toml:"scopes"`
+	Issuer            string   `toml:"issuer"`
+	TokenURL          string   `toml:"token_url"`
+	ClientID          string   `toml:"client_id"`
+	SecretCredential  string   `toml:"secret_credential"`
+	AuthMethod        string   `toml:"auth_method"`
+	Audience          []string `toml:"audience"`
+	Scopes            []string `toml:"scopes"`
+	Grant             string   `toml:"grant"`
+	SubjectCredential string   `toml:"subject_credential"`
+	SubjectTokenType  string   `toml:"subject_token_type"`
 }
 
 // QuoteConfig shapes how a `<lt.block:start-end>!` prompt prefix is rewritten
