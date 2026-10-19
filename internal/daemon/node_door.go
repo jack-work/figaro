@@ -206,7 +206,7 @@ func renewAt(ctx context.Context, d *peer.Dialer, node string, req rpc.TroupeSig
 }
 
 func seedJoin(k *troupe.Keeper, m *peer.Ledger, door, owner string, now time.Time) {
-	inter, key, err := k.Dir.Intermediate()
+	inter, key, err := k.Intermediate()
 	if err != nil || !now.Before(inter.NotAfter) {
 		return
 	}
@@ -237,6 +237,14 @@ func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, 
 		return nil, err
 	}
 	k := &troupe.Keeper{Dir: troupe.DirFor(stateDir, name), Troupe: name, Node: a.Backend.NodeID()}
+	if id := loaded.TroupeIntermediateKeyCredential(); id != "" {
+		if k.IntermediateKey, err = boot.CredentialPath(id); err != nil {
+			return nil, fmt.Errorf("troupe.intermediate_key_credential %w", err)
+		}
+		if path, ok := k.Dir.IntermediateKeyAtRest(); ok {
+			slog.Warn("troupe: the intermediate key is read from the credential, yet a copy is at rest in the troupe dir; remove it", "troupe", name, "path", path)
+		}
+	}
 	if err := k.Ensure(); err != nil {
 		slog.Error("troupe certificate: local callers are served, the node door refuses peers", "err", err)
 	}

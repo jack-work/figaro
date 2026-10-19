@@ -1438,7 +1438,7 @@ there until you revoke it with the provider.`,
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | policy show <name> | policy set <name> <file|-> [--root] | create <name> | intermediate <name>> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | policy show <name> | policy set <name> <file|-> | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -1454,7 +1454,12 @@ an [auth] table naming how a human signs in.
                        create <name>) and is never written; root.crt and
                        this node's intermediate (one year) are
   intermediate <name>  issue or renew this node's intermediate with the
-                       root on stdin: yearly, or on a node joining
+                       root on stdin: yearly, or on a node joining.
+                       --for <node-id> --out <dir> issues another node's
+                       instead, as root.crt, intermediate.crt and
+                       intermediate.key (0600) in <dir>, which must be on
+                       a tmpfs unless --allow-disk; only fingerprints are
+                       printed. The root stays on this node
   join <name>    sign this node into the troupe through the member that
                  troupes/<name>.toml reaches, which needs join on
                  troupe:<name>. Shows the root's sha256 and asks before
@@ -1492,6 +1497,9 @@ an [auth] table naming how a human signs in.
 			{Long: "listen", Description: "join: host:port the node door listens on (default the door)"},
 			{Long: "root-sha256", Description: "join: trust the troupe root only if its sha256 is this"},
 			{Long: "yes", Short: "y", IsBool: true, Description: "join: trust the root shown without asking; leave: do not ask"},
+			{Long: "for", Description: "intermediate: the node id to issue for, instead of this node"},
+			{Long: "out", Description: "intermediate --for: the directory (a tmpfs) that receives the keys"},
+			{Long: "allow-disk", IsBool: true, Description: "intermediate --for: allow an --out that is not a tmpfs"},
 			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
 		},
 		ArgsMin: 1,
@@ -1499,7 +1507,7 @@ an [auth] table naming how a human signs in.
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
-			}, keyOpts{Root: ctx.BoolFlag("root")})
+			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root")})
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"login", "sign in to a troupe's door"},

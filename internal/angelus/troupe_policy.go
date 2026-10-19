@@ -46,7 +46,7 @@ func (h *handlers) troupePolicySet(ctx context.Context, params json.RawMessage) 
 	defer h.policySign.Unlock()
 	now := time.Now()
 	view := m.View()
-	inter, ikey, err := h.angelus.Troupe.Dir.Intermediate()
+	inter, ikey, err := h.angelus.Troupe.Intermediate()
 	if errors.Is(err, fs.ErrNotExist) || err == nil && !now.Before(inter.NotAfter) {
 		return nil, cannotSign(m, view, now)
 	}

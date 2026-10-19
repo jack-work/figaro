@@ -33,6 +33,8 @@ type Keeper struct {
 	TTL    time.Duration
 	Renew  Renew
 
+	IntermediateKey string
+
 	ensuring sync.Mutex
 	mu       sync.Mutex
 	cur      *tls.Certificate
@@ -55,7 +57,22 @@ func (k *Keeper) ttl() time.Duration {
 }
 
 func (k *Keeper) remedy() string {
+	if k.IntermediateKey != "" {
+		return fmt.Sprintf("op read <root ref> | figaro troupe intermediate %s --for %s --out <tmpfs dir> on the founder, then deliver intermediate.key to %s and intermediate.crt into %s",
+			k.Troupe, k.Node, k.IntermediateKey, k.Dir)
+	}
 	return fmt.Sprintf("op read <root ref> | figaro troupe intermediate %s", k.Troupe)
+}
+
+func (k *Keeper) Intermediate() (*x509.Certificate, ed25519.PrivateKey, error) {
+	if k.IntermediateKey == "" {
+		return k.Dir.Intermediate()
+	}
+	cert, key, err := k.Dir.IntermediateWithKey(k.IntermediateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("the intermediate from the credential: %v; to replace it: %s", err, k.remedy())
+	}
+	return cert, key, nil
 }
 
 func (k *Keeper) rejoin() string {
@@ -92,7 +109,7 @@ func (k *Keeper) ensure(now time.Time) error {
 	k.mu.Lock()
 	k.roots = pool
 	k.mu.Unlock()
-	inter, ikey, err := k.Dir.Intermediate()
+	inter, ikey, err := k.Intermediate()
 	if errors.Is(err, fs.ErrNotExist) {
 		return k.ensureLeaf(root, now)
 	}

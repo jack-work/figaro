@@ -99,7 +99,7 @@ func serviceTokenWhere(loaded *config.Loaded, name string) string {
 		from = st.Issuer
 	}
 	where += ": client " + st.ClientID + " at " + from
-	secret, _ := credentialID(st.SecretCredential)
+	secret, _ := CredentialPath(st.SecretCredential)
 	if _, err := os.Stat(secret); err != nil {
 		where += " (secret " + secret + " missing)"
 	}

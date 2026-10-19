@@ -96,7 +96,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 		}
 	}
 	now := time.Now()
-	inter, ikey, err := h.angelus.Troupe.Dir.Intermediate()
+	inter, ikey, err := h.angelus.Troupe.Intermediate()
 	if errors.Is(err, fs.ErrNotExist) || err == nil && !now.Before(inter.NotAfter) {
 		return nil, cannotSign(m, view, now)
 	}

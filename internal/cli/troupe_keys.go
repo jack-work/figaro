@@ -98,6 +98,17 @@ func issueIntermediate(d troupe.Dir, rootKey ed25519.PrivateKey, name, node stri
 		name, sha256.Sum256(root.Raw), node, inter.NotAfter.Format("2006-01-02"), d.IntermediatePath(), name), nil
 }
 
+func runTroupeIssueFor(name string, o keyOpts) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		dieUsage("troupe intermediate --for reads the root key on stdin: op read <ref> | figaro troupe intermediate %s --for %s --out <dir>", name, o.For)
+	}
+	out, err := troupeIntermediateFor(os.Stdin, boot.StateDir(), name, o, time.Now())
+	if err != nil {
+		die("%s", err)
+	}
+	fmt.Fprint(stdout, out)
+}
+
 func runTroupeKeyVerb(verb, name string) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		dieUsage("troupe %s reads the root key on stdin: op read <ref> | figaro troupe %s %s", verb, verb, name)

@@ -84,15 +84,27 @@ func (d Dir) Root() (*x509.Certificate, error) {
 }
 
 func (d Dir) Intermediate() (*x509.Certificate, ed25519.PrivateKey, error) {
+	return d.IntermediateWithKey(d.intermediateKey())
+}
+
+func (d Dir) IntermediateWithKey(keyPath string) (*x509.Certificate, ed25519.PrivateKey, error) {
 	cert, err := readCert(d.IntermediatePath())
 	if err != nil {
 		return nil, nil, err
 	}
-	key, err := readKey(d.intermediateKey())
+	key, err := readKey(keyPath)
 	if err != nil {
 		return nil, nil, err
 	}
+	if !key.Public().(ed25519.PublicKey).Equal(cert.PublicKey) {
+		return nil, nil, fmt.Errorf("%s does not hold the key %s certifies", keyPath, d.IntermediatePath())
+	}
 	return cert, key, nil
+}
+
+func (d Dir) IntermediateKeyAtRest() (string, bool) {
+	_, err := os.Stat(d.intermediateKey())
+	return d.intermediateKey(), err == nil
 }
 
 func (d Dir) Node() (tls.Certificate, error) {

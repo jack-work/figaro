@@ -616,6 +616,18 @@ one on another node from the same root. The CLI signs; the root never
 reaches the daemon or the disk. Under `<state>/troupe/<name>/` sit
 `root.crt` and the intermediate and node keys and certificates, 0600.
 
+So that the root stays with the founder, `figaro troupe intermediate <name>
+--for <node id> --out <dir>` issues another node's intermediate instead:
+`root.crt`, `intermediate.crt` and `intermediate.key`, 0600, into `<dir>`,
+which must be a tmpfs unless `--allow-disk`; it prints the fingerprints
+(root, intermediate, public key) and nothing secret, and never overwrites.
+On a node where the key should not rest on disk, `[troupe]
+intermediate_key_credential = "<id>"` reads it from
+`$CREDENTIALS_DIRECTORY/<id>` (systemd `LoadCredential=`) and never from
+the troupe dir, while `root.crt` and `intermediate.crt` stay there. A
+missing credential, or one that is not the key the certificate names, is an
+error that closes the node door; a key still at rest beside it is logged.
+
 The daemon issues its node certificate (seven days, URI SAN
 `spiffe://<name>/node/<node id>`) from the intermediate at start and renews
 it, with a fresh key, once less than a third of its life is left (checked

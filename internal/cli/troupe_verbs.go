@@ -203,10 +203,6 @@ func runTroupeLogin(loaded *config.Loaded, name string) {
 	}
 }
 
-type keyOpts struct {
-	Root bool
-}
-
 func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpts, iss keyOpts) error {
 	verb, rest := args[0], args[1:]
 	switch verb {
@@ -248,6 +244,13 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 		if iss.Root {
 			dieUsage("--root goes with troupe policy set")
+		}
+		if iss.For != "" || iss.Out != "" || iss.AllowDisk {
+			if verb != "intermediate" || iss.For == "" {
+				dieUsage("--for, --out and --allow-disk go together, on troupe intermediate: figaro troupe intermediate <name> --for <node-id> --out <tmpfs dir>")
+			}
+			runTroupeIssueFor(rest[0], iss)
+			return nil
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:

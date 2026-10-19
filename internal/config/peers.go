@@ -34,6 +34,8 @@ type TroupeConfig struct {
 	Version  int64  `toml:"version"`
 	Provider string `toml:"provider"`
 	Policy   string `toml:"policy"`
+
+	IntermediateKeyCredential string `toml:"intermediate_key_credential"`
 }
 
 const (
@@ -75,6 +77,10 @@ func (l *Loaded) TroupeName() (string, error) {
 		return "", fmt.Errorf("troupe.name: %w", err)
 	}
 	return name, nil
+}
+
+func (l *Loaded) TroupeIntermediateKeyCredential() string {
+	return l.cfg().Troupe.IntermediateKeyCredential
 }
 
 func (l *Loaded) troupeKeyed(files map[string]string) (bool, error) {

@@ -21,9 +21,9 @@ func ServiceToken(loaded *config.Loaded, name string) (auth.TokenResolver, error
 	if !ok {
 		return nil, fmt.Errorf("service token %q is not configured ([service_tokens.%s] in config.toml)", name, name)
 	}
-	secret, err := credentialID(st.SecretCredential)
+	secret, err := CredentialPath(st.SecretCredential)
 	if err != nil {
-		return nil, fmt.Errorf("service token %q: %w", name, err)
+		return nil, fmt.Errorf("service token %q: secret_credential %w", name, err)
 	}
 	if st.Issuer == "" && st.TokenURL == "" {
 		return nil, fmt.Errorf("service token %q names neither an issuer nor a token_url", name)
@@ -58,13 +58,13 @@ func ServiceTokenOf(loaded *config.Loaded, provider string) (string, error) {
 	return strings.TrimSpace(pa.ServiceToken), nil
 }
 
-func credentialID(id string) (string, error) {
+func CredentialPath(id string) (string, error) {
 	if id == "" || id != filepath.Base(id) || id == "." || id == ".." {
-		return "", fmt.Errorf("secret_credential %q must be a bare credential id under $CREDENTIALS_DIRECTORY", id)
+		return "", fmt.Errorf("%q must be a bare credential id under $CREDENTIALS_DIRECTORY", id)
 	}
 	dir := os.Getenv("CREDENTIALS_DIRECTORY")
 	if dir == "" {
-		return "", fmt.Errorf("secret_credential %q needs $CREDENTIALS_DIRECTORY, which is unset", id)
+		return "", fmt.Errorf("%q needs $CREDENTIALS_DIRECTORY, which is unset", id)
 	}
 	return filepath.Join(dir, id), nil
 }
