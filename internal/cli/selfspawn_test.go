@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/keyringfence"
 )
 
 // ensureAngelus re-execs os.Executable(); from a test binary that is a fork bomb.
@@ -119,6 +121,9 @@ func TestMain(m *testing.M) {
 				"  path (see refuseSelfSpawn in angelus_client.go). Aborting generation 1.\n")
 		os.Exit(3)
 	}
+	// No test may reach the OS keyring: a test vault that saves its
+	// passphrase there can overwrite the user's real entry (figaro:default).
+	keyringfence.Install()
 	code := m.Run()
 	// A case's Cleanup has not run until m.Run returns.
 	if !smokeParticipation() && code == 0 {
