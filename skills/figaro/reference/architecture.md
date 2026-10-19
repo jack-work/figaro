@@ -675,8 +675,10 @@ or a **renewer** the ledger names for that node: a renewer entry, signed by
 the root (`op read <ref> | figaro troupe renewer <name> <node> <renewer>`)
 or by the node's own intermediate. Both TLS verifiers apply this, and so do
 a leave (a leave under a leaf from any other intermediate does not count)
-and the old-key proof of a rejoin. So an intermediate cannot act as a member
-that is not its own or its renewee. A node joined through another member
+and the old-key proof of a rejoin, and so does a join: once a node has a
+join from its own intermediate or a renewer, a join from any other
+intermediate no longer sets its door, owner or admitter. So an intermediate
+cannot act as, or move, a member that is not its own or its renewee. A node joined through another member
 holds a leaf from that member, which the rest of the troupe takes once the
 root names the member its renewer; `troupe join` says so. A revoked
 renewer renews nothing. The joiner cannot name its renewer itself: the key

@@ -371,10 +371,19 @@ func (l *Ledger) rebuild() {
 			v.Gone[e.Node] = Leave
 		}
 	}
+	vouched := map[string]bool{}
+	for _, id := range ids {
+		if e := l.entries[id]; e.Kind == Join && v.MayIssue(e.Node, e.signer()) {
+			vouched[e.Node] = true
+		}
+	}
 	latest := map[string]int64{}
 	for _, id := range ids {
 		e := l.entries[id]
 		if e.Kind != Join || v.Gone[e.Node] != "" || v.Gone[e.signer()] == Revoke {
+			continue
+		}
+		if vouched[e.Node] && !v.MayIssue(e.Node, e.signer()) {
 			continue
 		}
 		m, seen := v.Members[e.Node]

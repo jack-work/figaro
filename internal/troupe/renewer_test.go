@@ -72,3 +72,63 @@ func TestARevokedRenewerIsDropped(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"d"}, l.View().Renewers["c"])
 }
+
+// The attack on a member's door: q, an intermediate that is neither b's nor
+// b's renewer, signs a newer join for b naming its own door and owner, and a
+// backdated one to claim b's admission. Neither counts; b keeps the door,
+// owner and admitter its renewer gave it. A newer join from the renewer
+// still moves b, and a self-joined member is as safe.
+func TestAJoinFromAnotherIntermediateDoesNotRewriteAMember(t *testing.T) {
+	s := newEstate(t)
+	s.intermediate("a")
+	s.intermediate("q")
+	l := s.ledger(s.join("a", "a", 0), s.join("q", "q", 0), s.join("a", "b", time.Minute), s.renewer("b", "a"))
+	before := l.View().Members["b"]
+
+	for _, node := range []string{"b", "a"} {
+		later, err := SignJoin(s.ikey["q"], s.inter["q"], "estate", node, "evil.lan:7444", "user:mallory", s.now.Add(time.Hour))
+		require.NoError(t, err)
+		earlier, err := SignJoin(s.ikey["q"], s.inter["q"], "estate", node, "evil.lan:7444", "user:mallory", s.now.Add(30*time.Second))
+		require.NoError(t, err)
+		_, err = l.Merge(later, earlier)
+		require.NoError(t, err)
+		m := l.View().Members[node]
+		require.Equal(t, node+".lan:7444", m.Door, node)
+		require.Equal(t, "user:owner", m.Owner, node)
+		require.Equal(t, "a", m.AdmittedBy, node)
+	}
+	require.Equal(t, before, l.View().Members["b"])
+
+	moved, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "b", "b.tail:7444", "user:owner", s.now.Add(2*time.Hour))
+	require.NoError(t, err)
+	_, err = l.Merge(moved)
+	require.NoError(t, err)
+	require.Equal(t, "b.tail:7444", l.View().Members["b"].Door)
+}
+
+// A guest joined through a member is listed before the root names that
+// member its renewer, so troupe join can report it. Until then no join for
+// it is vouched for and the newest names its door, which costs nothing: no
+// peer takes the guest's certificate yet. Naming the renewer sets aside every
+// join its renewer did not sign.
+func TestAGuestIsAMemberBeforeItsRenewerIsNamed(t *testing.T) {
+	s := newEstate(t)
+	s.intermediate("a")
+	s.intermediate("q")
+	l := s.ledger(s.join("a", "a", 0), s.join("a", "b", time.Minute))
+	require.Equal(t, "a", l.View().Members["b"].AdmittedBy)
+	require.False(t, l.View().MayIssue("b", "a"))
+
+	rogue, err := SignJoin(s.ikey["q"], s.inter["q"], "estate", "b", "evil.lan:7444", "user:mallory", s.now.Add(time.Hour))
+	require.NoError(t, err)
+	_, err = l.Merge(rogue)
+	require.NoError(t, err)
+	require.Equal(t, "evil.lan:7444", l.View().Members["b"].Door)
+
+	_, err = l.Merge(s.renewer("b", "a"))
+	require.NoError(t, err)
+	m := l.View().Members["b"]
+	require.Equal(t, "b.lan:7444", m.Door)
+	require.Equal(t, "user:owner", m.Owner)
+	require.Equal(t, "a", m.AdmittedBy)
+}
