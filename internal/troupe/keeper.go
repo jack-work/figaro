@@ -34,6 +34,7 @@ type Keeper struct {
 	Renew  Renew
 
 	IntermediateKey string
+	NodeKey         string
 
 	ensuring sync.Mutex
 	mu       sync.Mutex
@@ -76,7 +77,39 @@ func (k *Keeper) Intermediate() (*x509.Certificate, ed25519.PrivateKey, error) {
 }
 
 func (k *Keeper) rejoin() string {
+	if k.NodeKey != "" {
+		return fmt.Sprintf("op read <root ref> | figaro troupe leaf %s --for %s --public-key <its key> --door <its door> --out <dir> on a node that holds an intermediate, then deliver node.crt into %s", k.Troupe, k.Node, k.Dir)
+	}
 	return fmt.Sprintf("figaro troupe join %s", k.Troupe)
+}
+
+func (k *Keeper) node() (tls.Certificate, error) {
+	if k.NodeKey == "" {
+		return k.Dir.Node()
+	}
+	pair, err := k.Dir.NodeWithKey(k.NodeKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("the node certificate with the key from the credential: %v", err)
+	}
+	return pair, nil
+}
+
+func (k *Keeper) nodeKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
+	if k.NodeKey == "" {
+		return ed25519.GenerateKey(rand.Reader)
+	}
+	key, err := readKey(k.NodeKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("the node key from the credential: %v", err)
+	}
+	return key.Public().(ed25519.PublicKey), key, nil
+}
+
+func (k *Keeper) writeNode(leaf, issuer *x509.Certificate, key ed25519.PrivateKey) error {
+	if k.NodeKey != "" {
+		return k.Dir.WriteNodeCert(leaf, issuer)
+	}
+	return k.Dir.WriteNode(leaf, issuer, key)
 }
 
 func (k *Keeper) Ensure() error {
@@ -123,23 +156,23 @@ func (k *Keeper) ensure(now time.Time) error {
 		return fmt.Errorf("troupe %s: %w at %s; the node door refuses peers until you run: %s",
 			k.Troupe, ErrIntermediateExpired, inter.NotAfter.Format(time.RFC3339), k.remedy())
 	}
-	held, err := k.Dir.Node()
+	held, err := k.node()
 	if err == nil && k.fresh(held, inter.Raw, now) {
 		k.keep(&held)
 		return nil
 	}
-	_, nk, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-	leaf, err := IssueNode(ikey, inter, k.Troupe, k.Node, nk.Public(), now, k.ttl())
+	npub, nk, err := k.nodeKey()
 	if err != nil {
 		return fmt.Errorf("troupe %s: %w", k.Troupe, err)
 	}
-	if err := k.Dir.WriteNode(leaf, inter, nk); err != nil {
+	leaf, err := IssueNode(ikey, inter, k.Troupe, k.Node, npub, now, k.ttl())
+	if err != nil {
+		return fmt.Errorf("troupe %s: %w", k.Troupe, err)
+	}
+	if err := k.writeNode(leaf, inter, nk); err != nil {
 		return err
 	}
-	pair, err := k.Dir.Node()
+	pair, err := k.node()
 	if err != nil {
 		return err
 	}
@@ -161,7 +194,10 @@ func unspent(leaf *x509.Certificate, now time.Time) bool {
 }
 
 func (k *Keeper) ensureLeaf(root *x509.Certificate, now time.Time) error {
-	held, err := k.Dir.Node()
+	held, err := k.node()
+	if err != nil && k.NodeKey != "" {
+		return fmt.Errorf("troupe %s: %w; to replace it: %s", k.Troupe, err, k.rejoin())
+	}
 	if err != nil {
 		return fmt.Errorf("troupe %s: this node holds neither an intermediate nor a node certificate; run: %s", k.Troupe, k.rejoin())
 	}
@@ -185,7 +221,7 @@ func (k *Keeper) ensureLeaf(root *x509.Certificate, now time.Time) error {
 }
 
 func (k *Keeper) renewFromPeer(root *x509.Certificate, now time.Time) error {
-	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	pub, key, err := k.nodeKey()
 	if err != nil {
 		return err
 	}
@@ -196,10 +232,10 @@ func (k *Keeper) renewFromPeer(root *x509.Certificate, now time.Time) error {
 	if err := CheckLeaf(leaf, issuer, root, k.Troupe, k.Node, pub, now); err != nil {
 		return fmt.Errorf("the renewed certificate: %w", err)
 	}
-	if err := k.Dir.WriteNode(leaf, issuer, key); err != nil {
+	if err := k.writeNode(leaf, issuer, key); err != nil {
 		return err
 	}
-	pair, err := k.Dir.Node()
+	pair, err := k.node()
 	if err != nil {
 		return err
 	}

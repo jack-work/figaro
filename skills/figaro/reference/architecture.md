@@ -628,6 +628,18 @@ the troupe dir, while `root.crt` and `intermediate.crt` stay there. A
 missing credential, or one that is not the key the certificate names, is an
 error that closes the node door; a key still at rest beside it is logged.
 
+A node can hold no intermediate and keep even its node key off the disk.
+`figaro troupe keygen --out <tmpfs dir>` makes the key there and prints its
+public key; it is delivered as a credential and named by `[troupe]
+node_key_credential`. On a node that holds an intermediate, `op read <ref> |
+figaro troupe leaf <name> --for <node id> --public-key <hex> --door
+<host:port> --out <dir>` issues that node a leaf for the key, signs its join
+(owner: the caller), has the root name this node its renewer, has the
+daemon spread both, and writes `root.crt`, `node.crt` and `joined.json` for
+the node's troupe dir: all public, and the private key never travels. The
+node renews from its renewer for the same key and writes back only
+`node.crt`; a new key means a new credential and a new `troupe leaf`.
+
 The daemon issues its node certificate (seven days, URI SAN
 `spiffe://<name>/node/<node id>`) from the intermediate at start and renews
 it, with a fresh key, once less than a third of its life is left (checked

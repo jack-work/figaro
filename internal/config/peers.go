@@ -36,6 +36,7 @@ type TroupeConfig struct {
 	Policy   string `toml:"policy"`
 
 	IntermediateKeyCredential string `toml:"intermediate_key_credential"`
+	NodeKeyCredential         string `toml:"node_key_credential"`
 }
 
 const (
@@ -81,6 +82,10 @@ func (l *Loaded) TroupeName() (string, error) {
 
 func (l *Loaded) TroupeIntermediateKeyCredential() string {
 	return l.cfg().Troupe.IntermediateKeyCredential
+}
+
+func (l *Loaded) TroupeNodeKeyCredential() string {
+	return l.cfg().Troupe.NodeKeyCredential
 }
 
 func (l *Loaded) troupeKeyed(files map[string]string) (bool, error) {

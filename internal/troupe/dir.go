@@ -107,8 +107,21 @@ func (d Dir) IntermediateKeyAtRest() (string, bool) {
 	return d.intermediateKey(), err == nil
 }
 
+func (d Dir) WriteNodeCert(leaf, inter *x509.Certificate) error {
+	return d.write(d.NodePath(), append(certPEM(leaf), certPEM(inter)...))
+}
+
 func (d Dir) Node() (tls.Certificate, error) {
-	pair, err := tls.LoadX509KeyPair(d.NodePath(), d.nodeKey())
+	return d.NodeWithKey(d.nodeKey())
+}
+
+func (d Dir) NodeKeyAtRest() (string, bool) {
+	_, err := os.Stat(d.nodeKey())
+	return d.nodeKey(), err == nil
+}
+
+func (d Dir) NodeWithKey(keyPath string) (tls.Certificate, error) {
+	pair, err := tls.LoadX509KeyPair(d.NodePath(), keyPath)
 	if err != nil {
 		return tls.Certificate{}, err
 	}

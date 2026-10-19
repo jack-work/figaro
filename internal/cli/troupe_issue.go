@@ -25,6 +25,7 @@ type keyOpts struct {
 	Out       string
 	AllowDisk bool
 	Root      bool
+	PublicKey string
 }
 
 var issuedFiles = []string{"root.crt", "intermediate.crt", "intermediate.key"}

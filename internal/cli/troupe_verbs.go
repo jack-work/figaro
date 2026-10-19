@@ -231,6 +231,18 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 			dieUsage("troupe revoke takes a troupe and a node, and the root key on stdin")
 		}
 		runTroupeRevoke(loaded, rest[0], rest[1])
+	case "keygen":
+		if len(rest) != 0 || iss.Out == "" {
+			dieUsage("troupe keygen takes --out <dir>, a tmpfs (or --allow-disk)")
+		}
+		if err := troupeKeygen(stdout, iss); err != nil {
+			die("troupe keygen: %s", err)
+		}
+	case "leaf":
+		if len(rest) != 1 {
+			dieUsage("troupe leaf takes one troupe: op read <ref> | figaro troupe leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir>")
+		}
+		runTroupeLeaf(loaded, rest[0], leafOpts{For: iss.For, PublicKey: iss.PublicKey, Door: o.Door, Out: iss.Out})
 	case "renewer":
 		if len(rest) != 3 {
 			dieUsage("troupe renewer takes a troupe, a node and the node whose intermediate renews it, and the root key on stdin")
@@ -254,7 +266,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:
-		dieUsage("troupe: want login, ls, join, leave, revoke, renewer, policy, create or intermediate, not %q", verb)
+		dieUsage("troupe: want login, ls, join, leave, revoke, renewer, policy, create, intermediate, keygen or leaf, not %q", verb)
 	}
 	return nil
 }

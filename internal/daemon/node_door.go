@@ -245,6 +245,14 @@ func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, 
 			slog.Warn("troupe: the intermediate key is read from the credential, yet a copy is at rest in the troupe dir; remove it", "troupe", name, "path", path)
 		}
 	}
+	if id := loaded.TroupeNodeKeyCredential(); id != "" {
+		if k.NodeKey, err = boot.CredentialPath(id); err != nil {
+			return nil, fmt.Errorf("troupe.node_key_credential %w", err)
+		}
+		if path, ok := k.Dir.NodeKeyAtRest(); ok {
+			slog.Warn("troupe: the node key is read from the credential, yet a copy is at rest in the troupe dir; remove it", "troupe", name, "path", path)
+		}
+	}
 	if err := k.Ensure(); err != nil {
 		slog.Error("troupe certificate: local callers are served, the node door refuses peers", "err", err)
 	}

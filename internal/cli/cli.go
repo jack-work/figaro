@@ -1438,7 +1438,7 @@ there until you revoke it with the provider.`,
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | policy show <name> | policy set <name> <file|-> | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> | policy show <name> | policy set <name> <file|-> | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -1474,6 +1474,16 @@ an [auth] table naming how a human signs in.
   revoke <name> <node>  with the root on stdin, revoke a node and every
                  join its intermediates signed; the running daemon tells
                  every member
+  keygen --out <dir>   a node key, node.key (0600) in <dir> (a tmpfs unless
+                       --allow-disk), and its public key printed: for a
+                       node whose key is a credential
+  leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir>
+                       with the root on stdin, issue that node a leaf from
+                       this node's intermediate for the key it generated,
+                       sign its join and name this node its renewer (both
+                       spread by the daemon), and write root.crt, node.crt
+                       and joined.json for its troupe dir. Its private key
+                       never leaves it; it renews from this node
   renewer <name> <node> <renewer>  with the root on stdin, let
                  <renewer>'s intermediate issue <node>'s certificates.
                  A member takes a node's certificate only from the node's
@@ -1501,13 +1511,14 @@ an [auth] table naming how a human signs in.
 			{Long: "out", Description: "intermediate --for: the directory (a tmpfs) that receives the keys"},
 			{Long: "allow-disk", IsBool: true, Description: "intermediate --for: allow an --out that is not a tmpfs"},
 			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
+			{Long: "public-key", Description: "leaf: the node's Ed25519 public key in hex, as troupe keygen prints it"},
 		},
 		ArgsMin: 1,
 		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
-			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root")})
+			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")})
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"login", "sign in to a troupe's door"},
@@ -1516,6 +1527,8 @@ an [auth] table naming how a human signs in.
 			{"leave", "sign this node out of its troupe for good"},
 			{"revoke", "with the root, revoke a node"},
 			{"renewer", "with the root, name a node's renewer"},
+			{"keygen", "a node key for a credential"},
+			{"leaf", "with the root, issue another node's leaf for its key"},
 			{"policy", "show or set the troupe policy"},
 		}, completeTroupeAfterLogin),
 	})
