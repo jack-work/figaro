@@ -98,8 +98,8 @@ base_url = "http://100.103.40.20:9110/v1"
 [oauth]                                    # optional; makes `figaro provider login house` work
 issuer    = "https://auth.example"         # its /.well-known/openid-configuration is read
 client_id = "house"
-scopes    = ["openid", "profile", "groups"]   # offline_access is always added
-flow      = "device"                       # the only flow so far, and the default
+scopes    = ["openid", "profile", "groups"]   # the device flow adds offline_access
+flow      = "device"                       # the default, or "pkce" (below)
 # discovery = "http://.../.well-known/..." # fills issuer, client_id, scopes the file leaves out
 ```
 
@@ -116,12 +116,25 @@ are read when figaro loads its config; a running daemon picks up a new one when
 it restarts.
 
 With `[oauth]`, the credential is the token hush holds under the provider's
-name: the login runs the device flow against the issuer and hands the pair to
+name: the login runs the flow against the issuer and hands the pair to
 hush, which refreshes it with its `refresh_token` grant and stores each rotated
 refresh token. Endpoints off the issuer's origin are refused, the issuer must
 be https, and every issuer call carries a `figaro/<version>` User-Agent. No
-audience is sent. Without `[oauth]`, the provider takes `api_key`, or the
-variable `api_key_env` names, and may run keyless, as `gateway` does.
+audience is sent.
+
+`flow = "pkce"` is for an IdP with no device flow (Kanidm): the authorization
+code grant with PKCE (S256) as a public client. The login listens on
+`127.0.0.1` at a port the OS picks, opens `$BROWSER` or the platform opener on
+the authorize URL (and prints it), and waits up to five minutes for the
+redirect to `http://127.0.0.1:<port>/callback`, an IP literal rather than
+`localhost` per RFC 8252. The IdP must accept any loopback port for the client
+(Kanidm: `enable-localhost-redirects` on a public client). A redirect whose
+`state` is not this login's is answered 400 and the login keeps waiting.
+Scopes go out as written, with no `offline_access` added, and a login that
+gets no `refresh_token` fails, since hush could not keep it fresh.
+
+Without `[oauth]`, the provider takes `api_key`, or the variable
+`api_key_env` names, and may run keyless, as `gateway` does.
 
 The key is looked for in this order (`boot.BuildResolver`): the environment;
 `api_key_file` (relative to `$CREDENTIALS_DIRECTORY` when not absolute; a

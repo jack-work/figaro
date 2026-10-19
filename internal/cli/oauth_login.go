@@ -14,23 +14,19 @@ func runOAuthLogin(name, credential string, s auth.OAuthSettings, next string) e
 	if err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
-	cfg, err := s.DeviceConfig(name)
-	if err != nil {
-		return err
-	}
-	tok, err := auth.LoginOIDCDevice(cfg, s.Issuer)
+	in, err := s.SignIn(name)
 	if err != nil {
 		return err
 	}
 	ensureHush()
 	if err := MustHush().Client().OAuthRegister(hush.OAuthRegisterRequest{
 		Name:         credential,
-		TokenURL:     cfg.TokenURL,
-		ClientID:     cfg.ClientID,
-		Scopes:       cfg.Scope,
-		AccessToken:  tok.AccessToken,
-		RefreshToken: tok.RefreshToken,
-		ExpiresIn:    tok.ExpiresIn,
+		TokenURL:     in.TokenURL,
+		ClientID:     in.ClientID,
+		Scopes:       in.Scope,
+		AccessToken:  in.Tokens.AccessToken,
+		RefreshToken: in.Tokens.RefreshToken,
+		ExpiresIn:    in.Tokens.ExpiresIn,
 		Grant:        hush.GrantRefreshToken,
 	}); err != nil {
 		return fmt.Errorf("hand the %s credential to hush: %w", name, err)

@@ -25,6 +25,7 @@ type OAuthSettings struct {
 
 type oidcConfiguration struct {
 	Issuer                      string `json:"issuer"`
+	AuthorizationEndpoint       string `json:"authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 }
@@ -57,7 +58,7 @@ func (s OAuthSettings) Discovered() (OAuthSettings, error) {
 
 func (s OAuthSettings) DeviceConfig(provider string) (DeviceCodeConfig, error) {
 	if s.Flow != "" && s.Flow != FlowDevice {
-		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth flow %q is not supported (have: %s)", provider, s.Flow, FlowDevice)
+		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth flow %q is not the device flow", provider, s.Flow)
 	}
 	if strings.TrimSpace(s.ClientID) == "" {
 		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth names no client_id", provider)
