@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -336,10 +337,12 @@ func pagerUncapped(argv []string) []string {
 }
 
 func (in *interactiveInput) runThroughRouter(argv []string) {
+	typed := strings.Join(argv, " ")
 	argv = in.withSubject(pagerUncapped(argv))
-	in.progress("…" + strings.Join(argv, " "))
 	go func() {
+		finished := in.progressIfSlow("…" + typed)
 		out, code := in.routeCaptured(argv)
+		finished()
 		lines := splitOutputLines(out.text)
 		switch {
 		case len(lines) == 0 && code == 0:
@@ -551,4 +554,24 @@ func (in *interactiveInput) renderLocked() {
 	in.mu.Lock()
 	in.lt.render()
 	in.mu.Unlock()
+}
+
+const progressDelay = 150 * time.Millisecond
+
+func (in *interactiveInput) progressIfSlow(msg string) (finished func()) {
+	var mu sync.Mutex
+	done := false
+	timer := time.AfterFunc(progressDelay, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if !done {
+			in.progress(msg)
+		}
+	})
+	return func() {
+		mu.Lock()
+		done = true
+		mu.Unlock()
+		timer.Stop()
+	}
 }
