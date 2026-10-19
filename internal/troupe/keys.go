@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -39,6 +40,14 @@ func ValidName(name string) error {
 
 func Identity(troupe, node string) string {
 	return (&url.URL{Scheme: "spiffe", Host: troupe, Path: "/node/" + node}).String()
+}
+
+func NodeOf(troupe string, u *url.URL) (string, bool) {
+	if u.Scheme != "spiffe" || u.Host != troupe {
+		return "", false
+	}
+	node, ok := strings.CutPrefix(u.Path, "/node/")
+	return node, ok && node != "" && !strings.Contains(node, "/")
 }
 
 func ParseRoot(raw []byte) (ed25519.PrivateKey, error) {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -33,13 +34,48 @@ type Dialer struct {
 	Members  Membership
 	Versions *Versions
 	Timeout  time.Duration
+
+	mu    sync.Mutex
+	links map[string]map[*Link]struct{}
+}
+
+func (d *Dialer) Evict(node string) {
+	d.mu.Lock()
+	links := d.links[node]
+	delete(d.links, node)
+	d.mu.Unlock()
+	for l := range links {
+		l.cli.Close()
+	}
+}
+
+func (d *Dialer) track(l *Link) {
+	d.mu.Lock()
+	if d.links == nil {
+		d.links = map[string]map[*Link]struct{}{}
+	}
+	if d.links[l.node] == nil {
+		d.links[l.node] = map[*Link]struct{}{}
+	}
+	d.links[l.node][l] = struct{}{}
+	d.mu.Unlock()
+}
+
+func (d *Dialer) untrack(l *Link) {
+	d.mu.Lock()
+	delete(d.links[l.node], l)
+	if len(d.links[l.node]) == 0 {
+		delete(d.links, l.node)
+	}
+	d.mu.Unlock()
 }
 
 const defaultDialTimeout = 10 * time.Second
 
 type Link struct {
-	node string
-	cli  *jkrpc.Client
+	node   string
+	cli    *jkrpc.Client
+	dialer *Dialer
 }
 
 func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify jkrpc.NotifyFunc) (*Link, error) {
@@ -69,7 +105,9 @@ func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify 
 		return nil, &Unreachable{Node: node, Err: err}
 	}
 	d.Versions.Saw(node, theirs, p.Version)
-	return &Link{node: node, cli: jkrpc.NewClient(jkrpc.NewConn(conn), onNotify)}, nil
+	l := &Link{node: node, cli: jkrpc.NewClient(jkrpc.NewConn(conn), onNotify), dialer: d}
+	d.track(l)
+	return l, nil
 }
 
 func passage(ctx context.Context, conn net.Conn, p rpc.Passage) (uint64, error) {
@@ -111,7 +149,10 @@ func (l *Link) Call(ctx context.Context, method string, params json.RawMessage) 
 
 func (l *Link) Done() <-chan struct{} { return l.cli.Done() }
 
-func (l *Link) Close() error { return l.cli.Close() }
+func (l *Link) Close() error {
+	l.dialer.untrack(l)
+	return l.cli.Close()
+}
 
 func (l *Link) Resolve(ctx context.Context, refs []string) (rpc.NodeResolveResponse, error) {
 	params, err := json.Marshal(rpc.NodeResolveRequest{Refs: refs})

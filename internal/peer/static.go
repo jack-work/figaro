@@ -28,6 +28,14 @@ type Static struct {
 type Credentials struct {
 	Certificate func() (*tls.Certificate, error)
 	Roots       func() (*x509.CertPool, error)
+	Admit       func(chain []*x509.Certificate) error
+}
+
+func (c *Credentials) admit(chain []*x509.Certificate) error {
+	if c.Admit == nil {
+		return nil
+	}
+	return c.Admit(chain)
 }
 
 func NewStatic(version uint64, peers []config.Peer, creds *Credentials) (*Static, error) {
@@ -49,20 +57,7 @@ func memberTLS(p config.Peer, creds *Credentials) (*tls.Config, error) {
 		if creds == nil {
 			return nil, errors.New("no certificate files and no troupe keys")
 		}
-		return &tls.Config{
-			MinVersion:         tls.VersionTLS13,
-			InsecureSkipVerify: true,
-			GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-				return creds.Certificate()
-			},
-			VerifyConnection: func(cs tls.ConnectionState) error {
-				roots, err := creds.Roots()
-				if err != nil {
-					return err
-				}
-				return verifyIdentity(cs.PeerCertificates, roots, p.Identity)
-			},
-		}, nil
+		return keyedTLS(p.Identity, creds), nil
 	}
 	cert, err := tls.LoadX509KeyPair(p.Cert, p.Key)
 	if err != nil {
@@ -73,6 +68,27 @@ func memberTLS(p config.Peer, creds *Credentials) (*tls.Config, error) {
 		return nil, err
 	}
 	return dialTLS(cert, roots, p.Identity), nil
+}
+
+func keyedTLS(identity string, creds *Credentials) *tls.Config {
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: true,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return creds.Certificate()
+		},
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			roots, err := creds.Roots()
+			if err != nil {
+				return err
+			}
+			chain, err := verifyIdentity(cs.PeerCertificates, roots, identity)
+			if err != nil {
+				return err
+			}
+			return creds.admit(chain)
+		},
+	}
 }
 
 func (m *Static) Version() uint64 {
@@ -130,6 +146,9 @@ func ServerTLS(door config.TLSDoor, creds *Credentials) (*tls.Config, error) {
 					Certificates: []tls.Certificate{*cert},
 					ClientAuth:   tls.RequireAndVerifyClientCert,
 					ClientCAs:    roots,
+					VerifyConnection: func(cs tls.ConnectionState) error {
+						return creds.admit(cs.VerifiedChains[0])
+					},
 				}, nil
 			},
 		}, nil
@@ -156,28 +175,30 @@ func dialTLS(cert tls.Certificate, roots *x509.CertPool, identity string) *tls.C
 		Certificates:       []tls.Certificate{cert},
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			return verifyIdentity(cs.PeerCertificates, roots, identity)
+			_, err := verifyIdentity(cs.PeerCertificates, roots, identity)
+			return err
 		},
 	}
 }
 
-func verifyIdentity(chain []*x509.Certificate, roots *x509.CertPool, identity string) error {
+func verifyIdentity(chain []*x509.Certificate, roots *x509.CertPool, identity string) ([]*x509.Certificate, error) {
 	if len(chain) == 0 {
-		return errors.New("the peer presented no certificate")
+		return nil, errors.New("the peer presented no certificate")
 	}
 	inter := x509.NewCertPool()
 	for _, c := range chain[1:] {
 		inter.AddCert(c)
 	}
-	if _, err := chain[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
-		return err
+	verified, err := chain[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+	if err != nil {
+		return nil, err
 	}
 	for _, u := range chain[0].URIs {
 		if u.String() == identity {
-			return nil
+			return verified[0], nil
 		}
 	}
-	return fmt.Errorf("the peer's certificate does not carry %s", identity)
+	return nil, fmt.Errorf("the peer's certificate does not carry %s", identity)
 }
 
 func loadPool(path string) (*x509.CertPool, error) {

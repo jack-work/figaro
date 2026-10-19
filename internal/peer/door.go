@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -22,6 +23,42 @@ type Door struct {
 	Versions  *Versions
 	Verify    Verify
 	Handshake time.Duration
+
+	mu   sync.Mutex
+	open map[string]map[*context.CancelFunc]struct{}
+}
+
+func (d *Door) Evict(node string) {
+	d.mu.Lock()
+	conns := d.open[node]
+	delete(d.open, node)
+	d.mu.Unlock()
+	for cancel := range conns {
+		(*cancel)()
+	}
+}
+
+func (d *Door) track(ctx context.Context, node string) context.Context {
+	ctx, cancel := context.WithCancel(ctx)
+	key := &cancel
+	d.mu.Lock()
+	if d.open == nil {
+		d.open = map[string]map[*context.CancelFunc]struct{}{}
+	}
+	if d.open[node] == nil {
+		d.open[node] = map[*context.CancelFunc]struct{}{}
+	}
+	d.open[node][key] = struct{}{}
+	d.mu.Unlock()
+	context.AfterFunc(ctx, func() {
+		d.mu.Lock()
+		delete(d.open[node], key)
+		if len(d.open[node]) == 0 {
+			delete(d.open, node)
+		}
+		d.mu.Unlock()
+	})
+	return ctx
 }
 
 const defaultHandshake = 10 * time.Second
@@ -58,7 +95,8 @@ func (d *Door) Admit(ctx context.Context, conn net.Conn) (context.Context, error
 	if err != nil {
 		return nil, fmt.Errorf("node door: %s: %w", conn.RemoteAddr(), err)
 	}
-	return ctx, tc.SetDeadline(time.Time{})
+	node, _ := Via(ctx)
+	return d.track(ctx, node), tc.SetDeadline(time.Time{})
 }
 
 func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error) {

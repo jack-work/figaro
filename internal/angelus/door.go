@@ -143,6 +143,8 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, admit Admit) error
 }
 
 func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, admit Admit) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	cctx, err := admit(ctx, conn)
 	if err != nil {
 		slog.Warn("door refused connection", "err", err)
