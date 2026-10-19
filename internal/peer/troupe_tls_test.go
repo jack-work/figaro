@@ -19,7 +19,7 @@ type troupeClock struct{ t time.Time }
 
 func (c *troupeClock) now() time.Time { return c.t }
 
-func troupeNodes(t *testing.T, start time.Time, interTTL time.Duration, nodes ...string) (map[string]*troupe.Keeper, *troupeClock) {
+func troupeNodes(t testing.TB, start time.Time, interTTL time.Duration, nodes ...string) (map[string]*troupe.Keeper, *troupeClock) {
 	t.Helper()
 	c := &troupeClock{t: start}
 	_, rk, err := ed25519.GenerateKey(rand.Reader)

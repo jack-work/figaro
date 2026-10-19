@@ -22,7 +22,7 @@ func rootPEM(t *testing.T) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 }
 
-func newKey(t *testing.T) ed25519.PrivateKey {
+func newKey(t testing.TB) ed25519.PrivateKey {
 	t.Helper()
 	_, k, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)

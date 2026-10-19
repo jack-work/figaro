@@ -20,14 +20,14 @@ import (
 )
 
 type ledgerTroupe struct {
-	t    *testing.T
+	t    testing.TB
 	rk   ed25519.PrivateKey
 	root *x509.Certificate
 	keep map[string]*troupe.Keeper
 	ln   map[string]net.Listener
 }
 
-func newLedgerTroupe(t *testing.T, nodes ...string) *ledgerTroupe {
+func newLedgerTroupe(t testing.TB, nodes ...string) *ledgerTroupe {
 	t.Helper()
 	_, rk, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)

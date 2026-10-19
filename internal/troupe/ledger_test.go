@@ -15,7 +15,7 @@ import (
 )
 
 type estate struct {
-	t     *testing.T
+	t     testing.TB
 	rk    ed25519.PrivateKey
 	root  *x509.Certificate
 	now   time.Time
@@ -23,7 +23,7 @@ type estate struct {
 	ikey  map[string]ed25519.PrivateKey
 }
 
-func newEstate(t *testing.T) *estate {
+func newEstate(t testing.TB) *estate {
 	t.Helper()
 	rk := newKey(t)
 	root, err := RootCert("estate", rk)
