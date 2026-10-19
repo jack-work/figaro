@@ -367,3 +367,21 @@ func (c *Angelus) TroupePolicySet(ctx context.Context, troupe, body string) (*rp
 	err := c.call(ctx, rpc.MethodTroupePolicySet, rpc.TroupePolicySetRequest{Troupe: troupe, Body: body}, &resp)
 	return &resp, err
 }
+
+func (c *Angelus) TroupeAPIKeyMint(ctx context.Context, req rpc.TroupeAPIKeyMintRequest) (*rpc.TroupeAPIKeyMintResponse, error) {
+	var resp rpc.TroupeAPIKeyMintResponse
+	err := c.call(ctx, rpc.MethodTroupeAPIKeyMint, req, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) TroupeAPIKeyRevoke(ctx context.Context, troupe, id string) (*rpc.TroupeAPIKeyRevokeResponse, error) {
+	var resp rpc.TroupeAPIKeyRevokeResponse
+	err := c.call(ctx, rpc.MethodTroupeAPIKeyRevoke, rpc.TroupeAPIKeyRevokeRequest{Troupe: troupe, ID: id}, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) TroupeAPIKeyList(ctx context.Context, troupe string) (*rpc.TroupeAPIKeyListResponse, error) {
+	var resp rpc.TroupeAPIKeyListResponse
+	err := c.call(ctx, rpc.MethodTroupeAPIKeyList, rpc.TroupeAPIKeyListRequest{Troupe: troupe}, &resp)
+	return &resp, err
+}
