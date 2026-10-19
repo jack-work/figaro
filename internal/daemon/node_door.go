@@ -96,6 +96,14 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	}
 	m := peer.NewLedger(a.Backend.NodeID(), l, creds)
 	m.Persist = store.Save
+	if joined, err := k.Dir.Joined(); err == nil {
+		if _, err := m.Merge(joined...); err != nil {
+			slog.Warn("troupe ledger: entries from the join refused", "err", err)
+		}
+		if err := k.Dir.DropJoined(); err != nil {
+			slog.Warn("troupe ledger", "err", err)
+		}
+	}
 	a.Peers = m
 	seedJoin(k, m, door.Advertise, time.Now())
 	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}

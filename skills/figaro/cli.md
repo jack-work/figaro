@@ -283,6 +283,7 @@ observer's mouth.
 | `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. With `[peers]` or `[troupe] name` configured, also this node's `[troupe] version`, when its node certificate and intermediate end, and, per peer, the version it last showed on a handshake and any drift (asks a running daemon; never starts one). |
 | `op read <ref> \| figaro troupe create <name>` | Start a troupe here from the root key on stdin (never written): `root.crt` and this node's one-year intermediate. See [reference/architecture.md](reference/architecture.md#troupe-keys). |
 | `op read <ref> \| figaro troupe intermediate <name>` | Issue or renew this node's intermediate from the same root. |
+| `figaro troupe join <name> [--door host:port] [--listen host:port] [--root-sha256 <hex>\|-y]` | Sign this node into troupe `<name>` through the member `troupes/<name>.toml` reaches (needs `join` on `troupe:<name>`). Shows the root's sha256 and asks before trusting it; writes this node's leaf and the `[troupe]`, `[door.tls]` and peercred config; restart the daemon after. See [reference/architecture.md](reference/architecture.md#troupe-membership). |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |

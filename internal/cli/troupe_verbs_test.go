@@ -14,18 +14,19 @@ import (
 )
 
 // troupe carries what exists today: signing a human in to a troupe's door,
-// listing troupes, and this node's keys. Verbs for enrollment arrive with
-// enrollment, not before.
+// listing troupes, this node's keys and joining. No approvals or invites:
+// permission decides.
 func TestTroupeCarriesWhatExistsOnly(t *testing.T) {
 	cmd, ok := buildRouter("figaro", nil).Command("troupe")
 	require.True(t, ok)
-	for _, verb := range []string{"login", "ls", "create", "intermediate"} {
+	for _, verb := range []string{"login", "ls", "join", "create", "intermediate"} {
 		require.Contains(t, cmd.Usage, verb)
 	}
-	for _, absent := range []string{"join", "approve", "invite", "leave"} {
+	for _, absent := range []string{"approve", "invite", "leave"} {
 		require.NotContains(t, cmd.Usage, absent)
 	}
 	require.True(t, terminalSubverbs["troupe login"], ":troupe login reads the keyboard")
+	require.True(t, terminalSubverbs["troupe join"], ":troupe join asks before trusting a root")
 }
 
 func troupeRig(t *testing.T, files map[string]string) *config.Loaded {

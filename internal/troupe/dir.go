@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ func (d Dir) IntermediatePath() string { return filepath.Join(string(d), "interm
 func (d Dir) intermediateKey() string  { return filepath.Join(string(d), "intermediate.key") }
 func (d Dir) NodePath() string         { return filepath.Join(string(d), "node.crt") }
 func (d Dir) nodeKey() string          { return filepath.Join(string(d), "node.key") }
+func (d Dir) joinedPath() string       { return filepath.Join(string(d), "joined.json") }
 
 func (d Dir) WriteRoot(root *x509.Certificate) error {
 	return d.write(d.RootPath(), certPEM(root))
@@ -47,6 +49,34 @@ func (d Dir) WriteNode(leaf, inter *x509.Certificate, key ed25519.PrivateKey) er
 		return err
 	}
 	return d.write(d.NodePath(), append(certPEM(leaf), certPEM(inter)...))
+}
+
+func (d Dir) WriteJoined(es []Entry) error {
+	raw, err := json.Marshal(es)
+	if err != nil {
+		return err
+	}
+	return d.write(d.joinedPath(), raw)
+}
+
+func (d Dir) Joined() ([]Entry, error) {
+	raw, err := os.ReadFile(d.joinedPath())
+	if err != nil {
+		return nil, err
+	}
+	var es []Entry
+	if err := json.Unmarshal(raw, &es); err != nil {
+		return nil, fmt.Errorf("%s: %w", d.joinedPath(), err)
+	}
+	return es, nil
+}
+
+func (d Dir) DropJoined() error {
+	err := os.Remove(d.joinedPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func (d Dir) Root() (*x509.Certificate, error) {

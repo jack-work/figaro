@@ -320,3 +320,22 @@ func TestANodeCannotAskForAnotherNodesCertificate(t *testing.T) {
 	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: "node-c", PublicKey: pub, Door: "c.lan:7443"})
 	require.ErrorContains(t, err, "only for its own")
 }
+
+// The entries a node was handed when it joined are folded into its ledger
+// at the next start, kept in the form, and not read again.
+func TestTheEntriesFromAJoinAreTakenUpAtStart(t *testing.T) {
+	root := newEstateRoot(t)
+	na := newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now())
+	ma := na.start()
+	_, err := ma.Merge(nb.joinedBy(na))
+	require.NoError(t, err)
+	require.NoError(t, nb.dir().WriteJoined(ma.Entries()))
+
+	mb := nb.start()
+	require.Equal(t, ma.Version(), mb.Version())
+	require.Equal(t, []string{na.id()}, mb.Nodes())
+	_, err = nb.dir().Joined()
+	require.True(t, os.IsNotExist(err))
+	require.Len(t, storedEntries(t, nb), len(ma.Entries()))
+}

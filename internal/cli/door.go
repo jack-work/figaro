@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"net/url"
 	"os"
 	"sync"
 
@@ -52,11 +51,9 @@ func chooseDoor(configDir string) door {
 	if tr.Name != "" {
 		d.label = tr.Name + " (" + tr.URL + ")"
 	}
-	if u, _ := url.Parse(tr.URL); u.Scheme == "unix" {
-		d.ep = transport.UnixEndpoint(u.Path)
-		return d
+	if d.ep, err = troupeEndpoint(tr); err != nil {
+		die("%s", err)
 	}
-	d.ep = transport.WSSEndpoint(tr.URL, boot.TroupeResolver(tr))
 	return d
 }
 

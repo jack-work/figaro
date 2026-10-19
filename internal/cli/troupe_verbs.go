@@ -166,7 +166,7 @@ func runTroupeLogin(loaded *config.Loaded, name string) {
 	}
 }
 
-func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool) error {
+func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpts) error {
 	verb, rest := args[0], args[1:]
 	switch verb {
 	case "ls":
@@ -179,13 +179,18 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool) error {
 			dieUsage("troupe login takes one troupe (figaro troupe ls)")
 		}
 		runTroupeLogin(loaded, rest[0])
+	case "join":
+		if len(rest) != 1 {
+			dieUsage("troupe join takes one troupe (troupes/<name>.toml names a member's door)")
+		}
+		runTroupeJoin(loaded, rest[0], o)
 	case "create", "intermediate":
 		if len(rest) != 1 {
 			dieUsage("troupe %s takes one troupe name, and the root key on stdin", verb)
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:
-		dieUsage("troupe: want login, ls, create or intermediate, not %q", verb)
+		dieUsage("troupe: want login, ls, join, create or intermediate, not %q", verb)
 	}
 	return nil
 }
