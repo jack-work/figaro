@@ -9,6 +9,7 @@ import (
 
 type Sighting struct {
 	Version uint64
+	Policy  uint64
 	At      time.Time
 }
 
@@ -24,7 +25,7 @@ func (v *Versions) OnDrift(fn func(node string)) {
 	v.mu.Unlock()
 }
 
-func (v *Versions) Saw(node string, theirs, ours uint64) {
+func (v *Versions) Saw(node string, theirs, ours, policy uint64) {
 	if v == nil {
 		return
 	}
@@ -33,7 +34,7 @@ func (v *Versions) Saw(node string, theirs, ours uint64) {
 	if v.seen == nil {
 		v.seen = map[string]Sighting{}
 	}
-	v.seen[node] = Sighting{Version: theirs, At: time.Now()}
+	v.seen[node] = Sighting{Version: theirs, Policy: policy, At: time.Now()}
 	drift := v.drift
 	v.mu.Unlock()
 	switch {

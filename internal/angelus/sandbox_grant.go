@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/jkauthz"
 )
@@ -96,6 +99,26 @@ func (h *handlers) reloadPolicy() error {
 		return err
 	}
 	slog.Info("authz: policy reloaded", "path", loaded.PolicyPath())
+	return h.reloadStaticTroupePolicy(loaded)
+}
+
+func (h *handlers) reloadStaticTroupePolicy(loaded *config.Loaded) error {
+	if _, ledger := h.angelus.Peers.(*peer.Ledger); ledger {
+		return nil
+	}
+	path, err := loaded.StaticTroupePolicy()
+	if err != nil || path == "" {
+		return err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("troupe.policy: %w", err)
+	}
+	if err := h.angelus.Policies.SetTroupe(h.angelus.Policies.TroupeName(), body); err != nil {
+		slog.Error("troupe policy: it grants nothing until it loads", "path", path, "err", err)
+		return err
+	}
+	slog.Info("troupe policy reloaded", "path", path)
 	return nil
 }
 

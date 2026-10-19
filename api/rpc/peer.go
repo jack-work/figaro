@@ -6,11 +6,13 @@ type Passage struct {
 	Forwarded bool   `json:"forwarded,omitempty"`
 	Bearer    string `json:"bearer,omitempty"`
 	Version   uint64 `json:"version,omitempty"`
+	Policy    uint64 `json:"policy,omitempty"`
 }
 
 type PassageAnswer struct {
 	Error   string `json:"error,omitempty"`
 	Version uint64 `json:"version,omitempty"`
+	Policy  uint64 `json:"policy,omitempty"`
 }
 
 const MaxPassage = 16 << 10
@@ -79,6 +81,8 @@ type TroupeEntriesRequest struct {
 
 type TroupeEntriesResponse struct {
 	Entries     []json.RawMessage `json:"entries"`
+	Version     uint64            `json:"version,omitempty"`
+	Policy      uint64            `json:"policy,omitempty"`
 	Reached     []string          `json:"reached,omitempty"`
 	Unreachable []NodeUnreachable `json:"unreachable,omitempty"`
 }

@@ -91,6 +91,8 @@ func keyedTLS(identity string, creds *Credentials) *tls.Config {
 	}
 }
 
+func (m *Static) PolicyVersion() uint64 { return 0 }
+
 func (m *Static) Version() uint64 {
 	if m == nil {
 		return 0

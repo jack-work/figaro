@@ -64,6 +64,7 @@ func (h *handlers) troupeEntries(ctx context.Context, params json.RawMessage) (a
 		resp.Reached, resp.Unreachable = h.spread(ctx)
 	}
 	resp.Entries = troupe.Encode(m.Entries())
+	resp.Version, resp.Policy = m.Version(), m.PolicyVersion()
 	return resp, nil
 }
 

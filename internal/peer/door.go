@@ -96,7 +96,7 @@ func (d *Door) Admit(ctx context.Context, conn net.Conn) (context.Context, error
 		return nil, fmt.Errorf("node door: handshake with %s: %w", conn.RemoteAddr(), err)
 	}
 	ctx, err := d.enter(ctx, tc)
-	if aerr := answer(tc, d.Members.Version(), err); aerr != nil && err == nil {
+	if aerr := answer(tc, d.Members, err); aerr != nil && err == nil {
 		err = aerr
 	}
 	if err != nil {
@@ -115,7 +115,7 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 	if err := readLine(tc, &p); err != nil {
 		return nil, fmt.Errorf("node %s: passage: %w", node, err)
 	}
-	d.Versions.Saw(node, p.Version, d.Members.Version())
+	d.Versions.Saw(node, p.Version, d.Members.Version(), p.Policy)
 	ctx = authz.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalNode, ID: node})
 	ctx = context.WithValue(ctx, viaKey{}, node)
 	switch {
@@ -136,8 +136,8 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 	return ctx, nil
 }
 
-func answer(w io.Writer, version uint64, refused error) error {
-	a := rpc.PassageAnswer{Version: version}
+func answer(w io.Writer, m Membership, refused error) error {
+	a := rpc.PassageAnswer{Version: m.Version(), Policy: m.PolicyVersion()}
 	if refused != nil {
 		a.Error = refused.Error()
 	}

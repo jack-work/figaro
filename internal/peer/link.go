@@ -93,7 +93,7 @@ func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify 
 	if err != nil {
 		return nil, &Unreachable{Node: node, Err: err}
 	}
-	p.Version = d.Members.Version()
+	p.Version, p.Policy = d.Members.Version(), d.Members.PolicyVersion()
 	theirs, err := passage(ctx, conn, p)
 	if err != nil {
 		conn.Close()
@@ -104,29 +104,29 @@ func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify 
 		}
 		return nil, &Unreachable{Node: node, Err: err}
 	}
-	d.Versions.Saw(node, theirs, p.Version)
+	d.Versions.Saw(node, theirs.Version, p.Version, theirs.Policy)
 	l := &Link{node: node, cli: jkrpc.NewClient(jkrpc.NewConn(conn), onNotify), dialer: d}
 	d.track(l)
 	return l, nil
 }
 
-func passage(ctx context.Context, conn net.Conn, p rpc.Passage) (uint64, error) {
+func passage(ctx context.Context, conn net.Conn, p rpc.Passage) (rpc.PassageAnswer, error) {
 	if dl, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(dl); err != nil {
-			return 0, err
+			return rpc.PassageAnswer{}, err
 		}
 	}
 	if err := writeLine(conn, p); err != nil {
-		return 0, err
+		return rpc.PassageAnswer{}, err
 	}
 	var a rpc.PassageAnswer
 	if err := readLine(conn, &a); err != nil {
-		return 0, fmt.Errorf("passage: %w", err)
+		return rpc.PassageAnswer{}, fmt.Errorf("passage: %w", err)
 	}
 	if a.Error != "" {
-		return a.Version, &Refused{Reason: a.Error}
+		return a, &Refused{Reason: a.Error}
 	}
-	return a.Version, conn.SetDeadline(time.Time{})
+	return a, conn.SetDeadline(time.Time{})
 }
 
 func (l *Link) Node() string { return l.node }

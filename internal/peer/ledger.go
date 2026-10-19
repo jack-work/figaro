@@ -25,6 +25,7 @@ type Ledger struct {
 	nodes   []string
 	evict   []func(node string)
 	admit   []func(node string)
+	policy  []func()
 }
 
 func NewLedger(self string, l *troupe.Ledger, creds *Credentials) *Ledger {
@@ -52,16 +53,30 @@ func (m *Ledger) OnAdmit(fn func(node string)) {
 	m.mu.Unlock()
 }
 
+func (m *Ledger) OnPolicy(fn func()) {
+	m.mu.Lock()
+	m.policy = append(m.policy, fn)
+	m.mu.Unlock()
+	fn()
+}
+
 func (m *Ledger) Merge(es ...troupe.Entry) ([]troupe.Entry, error) {
 	m.mu.Lock()
-	before := m.members
+	before, was := m.members, m.view.Policy
 	added, err := m.ledger.Merge(es...)
 	if len(added) > 0 {
 		m.rebuild()
 	}
 	gone, come := changed(before, m.members), changed(m.members, before)
 	evict, admit := slices.Clone(m.evict), slices.Clone(m.admit)
+	var policy []func()
+	if !samePolicy(was, m.view.Policy) {
+		policy = slices.Clone(m.policy)
+	}
 	m.mu.Unlock()
+	for _, fn := range policy {
+		fn()
+	}
 	if len(added) > 0 && m.Persist != nil {
 		m.Persist(added)
 	}
@@ -76,6 +91,13 @@ func (m *Ledger) Merge(es ...troupe.Entry) ([]troupe.Entry, error) {
 		}
 	}
 	return added, err
+}
+
+func samePolicy(a, b *troupe.Entry) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ID() == b.ID()
 }
 
 func changed(from, to map[string]*Member) []string {
@@ -123,6 +145,18 @@ func (m *Ledger) View() troupe.View {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.view
+}
+
+func (m *Ledger) PolicyVersion() uint64 {
+	if m == nil {
+		return 0
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.view.Policy == nil {
+		return 0
+	}
+	return m.view.Policy.Version
 }
 
 func (m *Ledger) Version() uint64 {

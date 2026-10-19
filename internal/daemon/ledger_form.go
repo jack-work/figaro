@@ -91,6 +91,7 @@ func (f *ledgerForm) Save(added []troupe.Entry) {
 		return
 	}
 	set := make(map[string]json.RawMessage, len(added))
+	signers := map[string]bool{}
 	for _, e := range added {
 		body, err := json.Marshal(e)
 		if err != nil {
@@ -98,12 +99,41 @@ func (f *ledgerForm) Save(added []troupe.Entry) {
 		}
 		s, _ := json.Marshal(string(body))
 		set[entriesKey+"."+e.ID()] = s
+		if e.Kind == troupe.Policy {
+			signers[e.Node] = true
+		}
 	}
 	snap, err := f.backend.FormState(f.id)
 	if err == nil {
-		_, err = f.backend.ApplyFormPrivileged(f.id, form.Build(snap, set, nil))
+		_, err = f.backend.ApplyFormPrivileged(f.id, form.Build(snap, set, supersededPolicies(snap, signers, set)))
 	}
 	if err != nil {
 		slog.Error("troupe ledger form: entries not stored; peers still hold them", "form", f.id, "err", err)
 	}
+}
+
+func supersededPolicies(snap form.Snapshot, signers map[string]bool, kept map[string]json.RawMessage) []string {
+	if len(signers) == 0 {
+		return nil
+	}
+	stored, ok := snap.Get(entriesKey)
+	if !ok {
+		return nil
+	}
+	var byID map[string]string
+	if json.Unmarshal(stored, &byID) != nil {
+		return nil
+	}
+	var out []string
+	for id, raw := range byID {
+		key := entriesKey + "." + id
+		if _, fresh := kept[key]; fresh {
+			continue
+		}
+		var e troupe.Entry
+		if json.Unmarshal([]byte(raw), &e) == nil && e.Kind == troupe.Policy && signers[e.Node] {
+			out = append(out, key)
+		}
+	}
+	return out
 }

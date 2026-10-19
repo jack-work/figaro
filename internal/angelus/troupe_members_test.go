@@ -26,8 +26,8 @@ func TestTroupeMembersShowsEachPeersVersionAndDrift(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 	seen := &peer.Versions{}
-	seen.Saw("agrees", 7, 7)
-	seen.Saw("behind", 5, 7)
+	seen.Saw("agrees", 7, 7, 0)
+	seen.Saw("behind", 5, 7, 0)
 
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs(), Peers: members, PeerVersions: seen}
 	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})

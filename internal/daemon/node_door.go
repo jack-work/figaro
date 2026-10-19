@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"time"
 
@@ -58,7 +59,51 @@ func federateIn(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, 
 	}
 	a.Peers = members
 	a.PeerVersions = &peer.Versions{}
+	return bindStaticTroupePolicy(a, loaded)
+}
+
+func bindStaticTroupePolicy(a *angelus.Angelus, loaded *config.Loaded) error {
+	if a.Policies == nil {
+		return nil
+	}
+	name, err := loaded.TroupeName()
+	if err != nil {
+		return err
+	}
+	path, err := loaded.StaticTroupePolicy()
+	if err != nil {
+		return err
+	}
+	var body []byte
+	if path != "" {
+		if body, err = os.ReadFile(path); err != nil {
+			return fmt.Errorf("troupe.policy: %w", err)
+		}
+	}
+	if err := a.Policies.SetTroupe(name, body); err != nil {
+		slog.Error("troupe policy: it grants nothing until it loads", "path", path, "err", err)
+	}
 	return nil
+}
+
+func bindLedgerTroupePolicy(a *angelus.Angelus, m *peer.Ledger) {
+	if a.Policies == nil {
+		return
+	}
+	m.OnPolicy(func() {
+		in := m.View().Policy
+		var body []byte
+		if in != nil {
+			body = []byte(in.Body)
+		}
+		if err := a.Policies.SetTroupe(m.Troupe(), body); err != nil {
+			slog.Error("troupe policy in force does not load here; it grants nothing on this node", "version", in.Version, "signer", in.Node, "err", err)
+			return
+		}
+		if in != nil {
+			slog.Info("troupe policy in force", "troupe", m.Troupe(), "version", in.Version, "signer", in.Node, "by", in.By)
+		}
+	})
 }
 
 func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, stateDir string) error {
@@ -108,6 +153,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 		}
 	}
 	a.Peers = m
+	bindLedgerTroupePolicy(a, m)
 	owner := a.Peercred.Self().String()
 	seedJoin(k, m, door.Advertise, owner, time.Now())
 	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}

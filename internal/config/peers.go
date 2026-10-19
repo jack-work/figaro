@@ -33,6 +33,7 @@ type TroupeConfig struct {
 	Name     string `toml:"name"`
 	Version  int64  `toml:"version"`
 	Provider string `toml:"provider"`
+	Policy   string `toml:"policy"`
 }
 
 const (
@@ -102,6 +103,23 @@ func (l *Loaded) troupeKeyed(files map[string]string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (l *Loaded) StaticTroupePolicy() (string, error) {
+	t := l.cfg().Troupe
+	if t.Policy == "" {
+		return "", nil
+	}
+	if t.Provider == ProviderFigaro {
+		return "", errors.New("troupe.policy: a figaro troupe's policy is signed and gossiped; set it with figaro troupe policy set")
+	}
+	if t.Name == "" {
+		return "", errors.New("troupe.policy needs troupe.name")
+	}
+	if filepath.IsAbs(t.Policy) {
+		return t.Policy, nil
+	}
+	return filepath.Join(l.dir(), t.Policy), nil
 }
 
 func (l *Loaded) TroupeVersion() (uint64, error) {

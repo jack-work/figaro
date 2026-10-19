@@ -73,6 +73,9 @@ func (g *Gossip) Exchange(ctx context.Context, node string) error {
 	if len(added) > 0 {
 		slog.Info("troupe entries learned", "from", node, "added", len(added), "version", g.Members.Version())
 	}
+	if resp.Version != 0 {
+		g.Dialer.Versions.Saw(node, resp.Version, g.Members.Version(), resp.Policy)
+	}
 	if err != nil {
 		slog.Warn("troupe entries refused", "from", node, "err", err)
 	}
