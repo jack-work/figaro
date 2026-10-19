@@ -13,14 +13,15 @@ import (
 )
 
 // troupe carries what exists today: signing a human in to a troupe's door,
-// and listing the troupes this CLI knows. Verbs for enrollment arrive with
+// listing troupes, and this node's keys. Verbs for enrollment arrive with
 // enrollment, not before.
-func TestTroupeCarriesLoginAndLsOnly(t *testing.T) {
+func TestTroupeCarriesWhatExistsOnly(t *testing.T) {
 	cmd, ok := buildRouter("figaro", nil).Command("troupe")
 	require.True(t, ok)
-	require.Contains(t, cmd.Usage, "login")
-	require.Contains(t, cmd.Usage, "ls")
-	for _, absent := range []string{"join", "create", "approve", "invite", "leave"} {
+	for _, verb := range []string{"login", "ls", "create", "intermediate"} {
+		require.Contains(t, cmd.Usage, verb)
+	}
+	for _, absent := range []string{"join", "approve", "invite", "leave"} {
 		require.NotContains(t, cmd.Usage, absent)
 	}
 	require.True(t, terminalSubverbs["troupe login"], ":troupe login reads the keyboard")

@@ -1436,8 +1436,8 @@ there until you revoke it with the provider.`,
 	r.Register(&cmdkit.Command{
 		Name:  "troupe",
 		Group: "System",
-		Short: "Sign in to a troupe's door, and list the troupes this CLI knows",
-		Usage: "troupe <login <name> | ls> [-j]",
+		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
+		Usage: "troupe <login <name> | ls | create <name> | intermediate <name>> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -1447,7 +1447,13 @@ an [auth] table naming how a human signs in.
   ls             each troupe, its url, and whether you are signed in;
                  ● marks the one FIGARO_TROUPE or [cli] troupe selects.
                  With [peers] configured, this node's troupe version and
-                 what each peer last showed, from a running daemon`,
+                 what each peer last showed, from a running daemon
+  create <name>        start troupe <name> on this node: the root key
+                       arrives on stdin (op read <ref> | figaro troupe
+                       create <name>) and is never written; root.crt and
+                       this node's intermediate (one year) are
+  intermediate <name>  issue or renew this node's intermediate with the
+                       root on stdin: yearly, or on a node joining`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls"},
 		},

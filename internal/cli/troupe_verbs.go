@@ -164,8 +164,13 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool) error {
 			dieUsage("troupe login takes one troupe (figaro troupe ls)")
 		}
 		runTroupeLogin(loaded, rest[0])
+	case "create", "intermediate":
+		if len(rest) != 1 {
+			dieUsage("troupe %s takes one troupe name, and the root key on stdin", verb)
+		}
+		runTroupeKeyVerb(verb, rest[0])
 	default:
-		dieUsage("troupe: want login or ls, not %q", verb)
+		dieUsage("troupe: want login, ls, create or intermediate, not %q", verb)
 	}
 	return nil
 }
