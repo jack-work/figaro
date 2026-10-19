@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/hush/managed"
 	"github.com/zalando/go-keyring"
 
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/term"
@@ -150,12 +151,9 @@ func runVaultLock() error {
 	return nil
 }
 
-// Dev shells pivot the app name with FIGARO_HUSH_APP; MustHush reads the same variable.
 func vaultAppName() string {
-	if n := os.Getenv("FIGARO_HUSH_APP"); n != "" {
-		return n
-	}
-	return "figaro"
+	app, _ := boot.HushAppName()
+	return app
 }
 
 type vaultUnlockKind string

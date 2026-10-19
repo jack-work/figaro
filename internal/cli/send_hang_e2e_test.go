@@ -98,6 +98,7 @@ func newSendRig(t *testing.T, baseURL string) *sendRig {
 		"FIGARO_STATE_DIR="+filepath.Join(root, "state"),
 		"FIGARO_CACHE_DIR="+filepath.Join(root, "cache"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(root, "config"),
+		"FIGARO_HUSH_APP=figaro-test-sendhang",
 		"FIGARO_HUSH_DIR="+filepath.Join(root, "hush"),
 		"FIGARO_HUSH_PASSPHRASE=figaro-sendhang-e2e",
 		"FIGARO_HUSH_TTL=2m",

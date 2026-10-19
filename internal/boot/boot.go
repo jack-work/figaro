@@ -2,6 +2,7 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -57,11 +58,24 @@ func HushAgentTTL() time.Duration {
 	return 24 * time.Hour
 }
 
+var errHushDirWithoutApp = errors.New("FIGARO_HUSH_DIR is set without FIGARO_HUSH_APP: an isolated vault would save its passphrase over the real keyring entry figaro:default")
+
+func HushAppName() (string, error) {
+	if app := os.Getenv("FIGARO_HUSH_APP"); app != "" {
+		return app, nil
+	}
+	if os.Getenv("FIGARO_HUSH_DIR") != "" {
+		return "", errHushDirWithoutApp
+	}
+	return "figaro", nil
+}
+
 func Hush() (*managed.Hush, error) {
 	hushOnce.Do(func() {
-		appName := os.Getenv("FIGARO_HUSH_APP")
-		if appName == "" {
-			appName = "figaro"
+		appName, err := HushAppName()
+		if err != nil {
+			hushErr = err
+			return
 		}
 		ttl := HushAgentTTL()
 		opts := managed.Options{

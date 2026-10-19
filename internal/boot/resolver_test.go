@@ -25,6 +25,7 @@ func serverEnv(t *testing.T) (cfgDir, credDir string) {
 	for _, k := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"} {
 		t.Setenv(k, "")
 	}
+	t.Setenv("FIGARO_HUSH_APP", "figaro-test-boot-resolver")
 	t.Setenv("FIGARO_HUSH_DIR", t.TempDir())
 	cfgDir, credDir = t.TempDir(), t.TempDir()
 	t.Setenv("CREDENTIALS_DIRECTORY", credDir)

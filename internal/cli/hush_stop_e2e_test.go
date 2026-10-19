@@ -75,6 +75,7 @@ func newHushRigSharing(t *testing.T, name, shareHush string) *hushRig {
 		"FIGARO_RUNTIME_DIR="+filepath.Join(root, "run"),
 		"FIGARO_STATE_DIR="+filepath.Join(root, "state"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(root, "config"),
+		"FIGARO_HUSH_APP=figaro-test-hushstop",
 		"FIGARO_HUSH_DIR="+hushDir,
 		"FIGARO_HUSH_PASSPHRASE=figaro-hushstop-e2e",
 		"FIGARO_HUSH_TTL=2m",
