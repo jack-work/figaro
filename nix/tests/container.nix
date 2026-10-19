@@ -37,6 +37,7 @@ pkgs.testers.runNixOSTest {
       enable = true;
       externalInterface = "eth1";
       memoryMax = "1G";
+      nameservers = [ "10.233.1.1" ];
       credentials.stub = "/run/secrets/figaro-stub";
       figaro = {
         services.figaro.providers.gateway.base_url = "http://10.233.1.1:8099/v1";
@@ -52,6 +53,16 @@ pkgs.testers.runNixOSTest {
       "f /var/lib/host-only 0400 root root - host-varlib"
     ];
     networking.firewall.interfaces."ve-figaro".allowedTCPPorts = [ 8099 ];
+    networking.firewall.interfaces."ve-figaro".allowedUDPPorts = [ 53 ];
+    services.dnsmasq = {
+      enable = true;
+      resolveLocalQueries = true;
+      settings = {
+        listen-address = [ "127.0.0.1" "10.233.1.1" ];
+        bind-dynamic = true;
+        address = [ "/door.figaro.test/10.233.1.1" ];
+      };
+    };
     systemd.services.stub-model = {
       wantedBy = [ "multi-user.target" ];
       serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 ${./stub_model.py} ${probe}";
@@ -109,6 +120,26 @@ pkgs.testers.runNixOSTest {
                     "ANGELUS-ROOT-READABLE", "ANGELUS-ENV-READABLE"]:
             assert bad not in shown, bad
         assert host.succeed("cat /var/lib/figaro/work/box-wrote-this").strip() == "inside"
+
+    # On spain, the host's resolv.conf names its own dnsmasq at 127.0.0.1.
+    # The containers module copies it over the container's at every start,
+    # owned by host root, which the container's private user range shows as
+    # nobody; after the first boot resolvconf could not take it back and the
+    # container lost DNS.
+    with subtest("the container keeps its own resolver across a restart"):
+        def resolves():
+            out = inside("getent hosts door.figaro.test")
+            assert out.split()[0] == "10.233.1.1", out
+            assert "127.0.0.1" not in inside("cat /etc/resolv.conf")
+            assert inside("systemctl --failed --no-legend").strip() == "", inside("systemctl --failed --no-legend")
+
+        resolves()
+        host.succeed("systemctl restart container@figaro.service")
+        host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active figaro.service", timeout=120)
+        host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active resolvconf.service || "
+                                 "nixos-container run figaro -- systemctl is-failed resolvconf.service", timeout=60)
+        host.wait_until_succeeds("nixos-container run figaro -- getent hosts door.figaro.test", timeout=60)
+        resolves()
 
     # The host forwards IPv6, as spain does, and the container's root can
     # give itself a global address and a default route via the host. Each

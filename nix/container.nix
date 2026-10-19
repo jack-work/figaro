@@ -186,6 +186,7 @@ in
           credentials = lib.mapAttrs (_: _: "") cfg.credentials;
         };
         networking.useHostResolvConf = false;
+        systemd.services.resolvconf.preStart = "rm -f /etc/resolv.conf";
         networking.nameservers = cfg.nameservers;
         networking.firewall.enable = true;
         system.stateVersion = "26.05";
