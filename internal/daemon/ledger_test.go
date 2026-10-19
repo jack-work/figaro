@@ -422,6 +422,35 @@ func TestALeaveReachesEveryMemberBeforeItReturns(t *testing.T) {
 	require.NotContains(t, ma.Nodes(), nb.id())
 }
 
+func (n *ledgerNode) signedLeave() troupe.Entry {
+	n.t.Helper()
+	cur, err := n.a.Troupe.Current()
+	require.NoError(n.t, err)
+	issuer, err := x509.ParseCertificate(cur.Certificate[1])
+	require.NoError(n.t, err)
+	e, err := troupe.SignLeave(cur.PrivateKey.(ed25519.PrivateKey), cur.Leaf, issuer, "estate", n.id(), time.Now())
+	require.NoError(n.t, err)
+	return e
+}
+
+// The race between a leave and gossip: a learns b's leave by gossip before
+// b's own notice reaches it, so b is no longer a peer of a when b dials.
+// a holds the leave, which is all the notice would deliver, so b counts a
+// as reached rather than unreachable. A revoked node stays refused.
+func TestALeaveAMemberAlreadyHoldsCountsAsDelivered(t *testing.T) {
+	na, nb, ma, _, _ := pair(t)
+	_, err := ma.Merge(nb.signedLeave())
+	require.NoError(t, err)
+	require.Equal(t, troupe.Leave, ma.View().Gone[nb.id()])
+
+	out, err := call(t, nb, rpc.MethodTroupeLeave, rpc.TroupeLeaveRequest{Troupe: "estate"})
+	require.NoError(t, err)
+	resp := out.(rpc.TroupeLeaveResponse)
+	require.Equal(t, []string{na.id()}, resp.Reached, "%+v", resp.Unreachable)
+	require.Empty(t, resp.Unreachable)
+	require.NotContains(t, ma.Nodes(), nb.id())
+}
+
 // A root revoke pushed to one member is spread to the rest before the push
 // returns.
 func TestARevokePushedToOneMemberReachesTheRest(t *testing.T) {

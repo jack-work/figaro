@@ -106,12 +106,31 @@ func (d *Door) Admit(ctx context.Context, conn net.Conn) (context.Context, error
 	return d.track(ctx, node), tc.SetDeadline(time.Time{})
 }
 
+type leftAlready struct{ node string }
+
+func IsLeftAlready(err error) bool {
+	left := (*leftAlready)(nil)
+	return errors.As(err, &left)
+}
+
+func (e *leftAlready) Error() string {
+	return fmt.Sprintf("node %s left the troupe, and this node holds its leave", e.node)
+}
+
 func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error) {
-	node, ok := d.Members.NodeOf(tc.ConnectionState().PeerCertificates[0])
-	if !ok {
-		return nil, errors.New("the certificate names no peer of this node")
-	}
+	cert := tc.ConnectionState().PeerCertificates[0]
+	node, ok := d.Members.NodeOf(cert)
 	var p rpc.Passage
+	if !ok {
+		left, gone := d.Members.Left(cert)
+		if !gone {
+			return nil, errors.New("the certificate names no peer of this node")
+		}
+		if err := readLine(tc, &p); err != nil {
+			return nil, fmt.Errorf("node %s: passage: %w", left, err)
+		}
+		return nil, &leftAlready{node: left}
+	}
 	if err := readLine(tc, &p); err != nil {
 		return nil, fmt.Errorf("node %s: passage: %w", node, err)
 	}
@@ -137,6 +156,9 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 }
 
 func answer(w io.Writer, m Membership, refused error) error {
+	if left := (*leftAlready)(nil); errors.As(refused, &left) {
+		return writeLine(w, rpc.PassageAnswer{Error: left.Error(), Left: true})
+	}
 	a := rpc.PassageAnswer{Version: m.Version(), Policy: m.PolicyVersion()}
 	if refused != nil {
 		a.Error = refused.Error()

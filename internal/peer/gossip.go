@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -175,6 +176,9 @@ func (g *Gossip) Spread(ctx context.Context) map[string]error {
 			g.mu.Unlock()
 			if !delivered {
 				errs[i] = g.Exchange(ctx, node)
+			}
+			if r := (*Refused)(nil); errors.As(errs[i], &r) && r.Left && g.Members.View().Gone[g.Members.Self()] == troupe.Leave {
+				errs[i] = nil
 			}
 		}()
 	}

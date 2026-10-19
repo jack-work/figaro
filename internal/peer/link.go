@@ -26,6 +26,7 @@ func (e *Unreachable) Unwrap() error { return e.Err }
 type Refused struct {
 	Node   string
 	Reason string
+	Left   bool
 }
 
 func (e *Refused) Error() string { return fmt.Sprintf("node %s refused: %s", e.Node, e.Reason) }
@@ -124,7 +125,7 @@ func passage(ctx context.Context, conn net.Conn, p rpc.Passage) (rpc.PassageAnsw
 		return rpc.PassageAnswer{}, fmt.Errorf("passage: %w", err)
 	}
 	if a.Error != "" {
-		return a, &Refused{Reason: a.Error}
+		return a, &Refused{Reason: a.Error, Left: a.Left}
 	}
 	return a, conn.SetDeadline(time.Time{})
 }

@@ -738,7 +738,10 @@ and lapsed after seven days.
 `troupe.leave` (admin on the troupe) has the daemon sign its own leave with its node key;
 a root revoke reaches the daemon through `troupe.entries` from a caller
 holding admin on the troupe. Either is spread to every member before the
-call returns, which says who heard. A door gives an evicted node's open
+call returns, which says who heard. A member that already holds the leave,
+having learned it by gossip, lets the leaving node through the handshake
+only to answer that it holds the leave (no ledger version, no call), and
+the leaving node counts it as heard. A door gives an evicted node's open
 connections a second to finish the reply in flight, then closes them.
 
 ### Troupe api keys

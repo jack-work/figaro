@@ -8,4 +8,5 @@ type Membership interface {
 	Nodes() []string
 	Member(node string) (*Member, bool)
 	NodeOf(cert *x509.Certificate) (string, bool)
+	Left(cert *x509.Certificate) (string, bool)
 }

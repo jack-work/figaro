@@ -32,7 +32,7 @@ type Ledger struct {
 
 func NewLedger(self string, l *troupe.Ledger, creds *Credentials) *Ledger {
 	m := &Ledger{self: self, troupe: l.Troupe(), ledger: l}
-	m.creds = &Credentials{Certificate: creds.Certificate, Roots: creds.Roots, Admit: m.Admit}
+	m.creds = &Credentials{Certificate: creds.Certificate, Roots: creds.Roots, Admit: m.Admit, AdmitLeft: m.admitLeft}
 	m.rebuild()
 	return m
 }
@@ -230,6 +230,20 @@ func (m *Ledger) NodeOf(cert *x509.Certificate) (string, bool) {
 	return "", false
 }
 
+func (m *Ledger) Left(cert *x509.Certificate) (string, bool) {
+	if m == nil || cert == nil {
+		return "", false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, u := range cert.URIs {
+		if node, ok := troupe.NodeOf(m.troupe, u); ok && m.view.Gone[node] == troupe.Leave {
+			return node, true
+		}
+	}
+	return "", false
+}
+
 func (m *Ledger) Admit(chain []*x509.Certificate) error {
 	if len(chain) == 0 {
 		return errors.New("the peer presented no certificate")
@@ -238,6 +252,21 @@ func (m *Ledger) Admit(chain []*x509.Certificate) error {
 	if !ok {
 		return fmt.Errorf("the certificate names no member of troupe %s", m.troupe)
 	}
+	return m.issuedFor(node, chain)
+}
+
+func (m *Ledger) admitLeft(chain []*x509.Certificate) error {
+	if len(chain) == 0 {
+		return errors.New("the peer presented no certificate")
+	}
+	node, ok := m.Left(chain[0])
+	if !ok {
+		return fmt.Errorf("the certificate names no node that left troupe %s", m.troupe)
+	}
+	return m.issuedFor(node, chain)
+}
+
+func (m *Ledger) issuedFor(node string, chain []*x509.Certificate) error {
 	if len(chain) < 2 || !chain[1].IsCA {
 		return fmt.Errorf("node %s presented no issuing intermediate", node)
 	}

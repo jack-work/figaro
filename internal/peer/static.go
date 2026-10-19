@@ -29,6 +29,7 @@ type Credentials struct {
 	Certificate func() (*tls.Certificate, error)
 	Roots       func() (*x509.CertPool, error)
 	Admit       func(chain []*x509.Certificate) error
+	AdmitLeft   func(chain []*x509.Certificate) error
 }
 
 func (c *Credentials) admit(chain []*x509.Certificate) error {
@@ -36,6 +37,14 @@ func (c *Credentials) admit(chain []*x509.Certificate) error {
 		return nil
 	}
 	return c.Admit(chain)
+}
+
+func (c *Credentials) admitCaller(chain []*x509.Certificate) error {
+	err := c.admit(chain)
+	if err != nil && c.AdmitLeft != nil && c.AdmitLeft(chain) == nil {
+		return nil
+	}
+	return err
 }
 
 func NewStatic(version uint64, peers []config.Peer, creds *Credentials) (*Static, error) {
@@ -127,6 +136,8 @@ func (m *Static) NodeOf(cert *x509.Certificate) (string, bool) {
 	return "", false
 }
 
+func (m *Static) Left(*x509.Certificate) (string, bool) { return "", false }
+
 func ServerTLS(door config.TLSDoor, creds *Credentials) (*tls.Config, error) {
 	if door.Cert == "" {
 		if creds == nil {
@@ -149,7 +160,7 @@ func ServerTLS(door config.TLSDoor, creds *Credentials) (*tls.Config, error) {
 					ClientAuth:   tls.RequireAndVerifyClientCert,
 					ClientCAs:    roots,
 					VerifyConnection: func(cs tls.ConnectionState) error {
-						return creds.admit(cs.VerifiedChains[0])
+						return creds.admitCaller(cs.VerifiedChains[0])
 					},
 				}, nil
 			},

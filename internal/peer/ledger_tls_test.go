@@ -1,12 +1,14 @@
 package peer
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -316,4 +318,67 @@ func TestTheDoorForgetsAClosedConnection(t *testing.T) {
 		defer d.mu.Unlock()
 		return len(d.open) == 0
 	}, 2*time.Second, 10*time.Millisecond)
+}
+
+// A node whose leave the door already holds gets through the handshake only
+// to hear so: the passage answers Left with no ledger version, the dialer
+// gets no link, and Spread counts the member reached once the dialer holds
+// its own leave. A revoked node, and a left node's leaf from an
+// intermediate that is not its issuer, are still refused.
+func TestADoorAnswersANodeWhoseLeaveItHolds(t *testing.T) {
+	lt := newLedgerTroupe(t, "a", "b", "q")
+	es := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
+	ma, mb := lt.membership("a", es...), lt.membership("b", es...)
+	leave := lt.leave("b")
+	_, err := ma.Merge(leave)
+	require.NoError(t, err)
+	lt.serveLedgerDoor("a", ma)
+
+	_, err = open(t, mb, "a")
+	var refused *Refused
+	require.ErrorAs(t, err, &refused)
+	require.True(t, refused.Left)
+
+	ctx := context.Background()
+	g := &Gossip{Members: mb, Dialer: &Dialer{Members: mb, Versions: &Versions{}, Timeout: 2 * time.Second}}
+	require.Error(t, g.Spread(ctx)["a"], "b has not left in its own view, so a's answer delivers nothing")
+	_, err = mb.Merge(leave)
+	require.NoError(t, err)
+	require.NoError(t, g.Spread(ctx)["a"])
+
+	cur, err := lt.keep["b"].Current()
+	require.NoError(t, err)
+	binter, err := x509.ParseCertificate(cur.Certificate[1])
+	require.NoError(t, err)
+	require.NoError(t, ma.admitLeft([]*x509.Certificate{cur.Leaf, binter, lt.root}))
+	require.Error(t, ma.Admit([]*x509.Certificate{cur.Leaf, binter, lt.root}), "a left node is not a member")
+
+	qinter, qik, err := lt.keep["q"].Dir.Intermediate()
+	require.NoError(t, err)
+	_, k, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	forged, err := troupe.IssueNode(qik, qinter, "estate", "b", k.Public(), time.Now(), troupe.NodeTTL)
+	require.NoError(t, err)
+	require.ErrorContains(t, ma.admitLeft([]*x509.Certificate{forged, qinter, lt.root}), "issued by q")
+
+	_, err = ma.Merge(lt.revoke("b"))
+	require.NoError(t, err)
+	require.ErrorContains(t, ma.admitLeft([]*x509.Certificate{cur.Leaf, binter, lt.root}), "no node that left")
+	_, err = open(t, mb, "a")
+	require.Error(t, err)
+	require.False(t, errors.As(err, &refused) && refused.Left, "a revoked node was told it left")
+}
+
+// The passage answer to a node that left carries no version or policy of
+// the ledger it is no longer part of.
+func TestTheLeftAnswerCarriesNoLedgerVersion(t *testing.T) {
+	var buf bytes.Buffer
+	lt := newLedgerTroupe(t, "a", "b")
+	ma := lt.membership("a", lt.selfJoin("a"), lt.selfJoin("b"))
+	require.NoError(t, answer(&buf, ma, &leftAlready{node: "b"}))
+	var a rpc.PassageAnswer
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &a))
+	require.True(t, a.Left)
+	require.Zero(t, a.Version)
+	require.Zero(t, a.Policy)
 }

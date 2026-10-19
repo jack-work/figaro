@@ -147,7 +147,11 @@ func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, admit Admit) {
 	defer cancel()
 	cctx, err := admit(ctx, conn)
 	if err != nil {
-		slog.Warn("door refused connection", "err", err)
+		if peer.IsLeftAlready(err) {
+			slog.Info("door answered a node that left", "err", err)
+		} else {
+			slog.Warn("door refused connection", "err", err)
+		}
 		conn.Close()
 		return
 	}

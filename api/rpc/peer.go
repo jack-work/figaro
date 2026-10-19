@@ -11,6 +11,7 @@ type Passage struct {
 
 type PassageAnswer struct {
 	Error   string `json:"error,omitempty"`
+	Left    bool   `json:"left,omitempty"`
 	Version uint64 `json:"version,omitempty"`
 	Policy  uint64 `json:"policy,omitempty"`
 }
