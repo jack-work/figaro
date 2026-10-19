@@ -59,29 +59,18 @@ func (s OAuthSettings) DeviceConfig(provider string) (DeviceCodeConfig, error) {
 	if s.Flow != "" && s.Flow != FlowDevice {
 		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth flow %q is not supported (have: %s)", provider, s.Flow, FlowDevice)
 	}
-	issuer := strings.TrimRight(strings.TrimSpace(s.Issuer), "/")
-	iu, err := url.Parse(issuer)
-	if err != nil || iu.Scheme != "https" || iu.Host == "" {
-		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth issuer %q is not an https URL", provider, s.Issuer)
-	}
 	if strings.TrimSpace(s.ClientID) == "" {
 		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth names no client_id", provider)
 	}
-	disc := issuer + "/.well-known/openid-configuration"
-	var oc oidcConfiguration
-	if err := getJSON(disc, &oc); err != nil {
-		return DeviceCodeConfig{}, fmt.Errorf("%s: oidc discovery: %w", provider, err)
-	}
-	if strings.TrimRight(oc.Issuer, "/") != issuer {
-		return DeviceCodeConfig{}, fmt.Errorf("%s: %s names issuer %q, the provider file names %q", provider, disc, oc.Issuer, s.Issuer)
+	oc, iu, err := discover(oidcHTTP, s.Issuer)
+	if err != nil {
+		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth %w", provider, err)
 	}
 	if oc.DeviceAuthorizationEndpoint == "" {
-		return DeviceCodeConfig{}, fmt.Errorf("%s: %s offers no device flow (no device_authorization_endpoint)", provider, issuer)
+		return DeviceCodeConfig{}, fmt.Errorf("%s: %s offers no device flow (no device_authorization_endpoint)", provider, s.Issuer)
 	}
-	for _, e := range []string{oc.DeviceAuthorizationEndpoint, oc.TokenEndpoint} {
-		if !sameOrigin(e, iu) {
-			return DeviceCodeConfig{}, fmt.Errorf("%s: endpoint %q is not on the issuer %s", provider, e, issuer)
-		}
+	if !sameOrigin(oc.DeviceAuthorizationEndpoint, iu) {
+		return DeviceCodeConfig{}, fmt.Errorf("%s: device endpoint %q is not on the issuer %s", provider, oc.DeviceAuthorizationEndpoint, s.Issuer)
 	}
 	return DeviceCodeConfig{
 		ProviderName: provider,
