@@ -299,6 +299,7 @@ func Run() {
 		os.Exit(1)
 	}
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
 	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)

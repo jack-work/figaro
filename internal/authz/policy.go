@@ -2,10 +2,17 @@ package authz
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -118,14 +125,21 @@ principals = [%q]
 }
 
 type Policies struct {
-	mu    sync.Mutex
-	store *jkauthz.Store[Resource]
-	self  jkauthz.Principal
-	path  string
+	mu     sync.Mutex
+	store  *jkauthz.Store[Resource]
+	self   jkauthz.Principal
+	path   string
+	scopes []string
 }
 
 func NewPolicies(self jkauthz.Principal, facts Facts) *Policies {
 	return &Policies{store: jkauthz.NewStore(Schema(facts)), self: self}
+}
+
+func (p *Policies) SetIssuerScopes(scopes []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.scopes = scopes
 }
 
 func (p *Policies) Reload(path string) error {
@@ -135,10 +149,78 @@ func (p *Policies) Reload(path string) error {
 	if path == "" {
 		return p.store.LoadBytes([]byte(DefaultPolicy(p.self)))
 	}
-	if err := p.store.Load(path); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return fmt.Errorf("policy %s: %w", path, err)
 	}
+	if err := p.store.LoadBytes(data); err != nil {
+		return fmt.Errorf("policy %s: %w", path, err)
+	}
+	for _, name := range UnscopedNames(data) {
+		slog.Warn("authz: policy names "+name+", which no issuer or edge produces: their principals and groups carry the issuer's scope", "policy", path, "write", ScopedSpelling(name, p.scopes))
+	}
 	return nil
+}
+
+func IssuerScopes(cfg config.AuthzConfig) []string {
+	var out []string
+	add := func(url string) {
+		if scope, err := IssuerScope(url); err == nil && !slices.Contains(out, scope) {
+			out = append(out, scope)
+		}
+	}
+	add(cfg.Upstream.Issuer)
+	for _, is := range cfg.Issuers {
+		add(is.Issuer)
+	}
+	return out
+}
+
+func UnscopedNames(policy []byte) []string {
+	var doc struct {
+		Bind []struct {
+			Principals []string `toml:"principals"`
+			Groups     []string `toml:"groups"`
+		} `toml:"bind"`
+	}
+	if _, err := toml.Decode(string(policy), &doc); err != nil {
+		return nil
+	}
+	var out []string
+	for _, b := range doc.Bind {
+		for _, name := range b.Principals {
+			pr, err := jkauthz.ParsePrincipal(name)
+			if err == nil && pr.Kind == jkauthz.KindUser && pr.Node == "" && !strings.Contains(pr.ID, "@") && !isUID(pr.ID) {
+				out = append(out, name)
+			}
+		}
+		for _, g := range b.Groups {
+			if !strings.Contains(g, "@") {
+				out = append(out, "group "+g)
+			}
+		}
+	}
+	return out
+}
+
+func isUID(id string) bool {
+	_, err := strconv.ParseUint(id, 10, 32)
+	return err == nil
+}
+
+func ScopedSpelling(name string, scopes []string) string {
+	scope := "<issuer host>"
+	switch len(scopes) {
+	case 0:
+	case 1:
+		scope = scopes[0]
+	default:
+		scope = "{" + strings.Join(scopes, ",") + "}"
+	}
+	if g, ok := strings.CutPrefix(name, "group "); ok {
+		return "group " + g + "@" + scope
+	}
+	return name + "@" + scope
 }
 
 func (p *Policies) Path() string {
