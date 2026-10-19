@@ -158,7 +158,7 @@ func Build(ctx provider.BuildContext, spec Spec, apiKey string) (*Provider, erro
 		markers = "per-block"
 	}
 	slog.Info("provider routing resolved", "provider", spec.Name,
-		"catalog", spec.Catalog, "default", spec.Default, "rules", strings.Join(rules, ","),
+		"catalog", spec.Catalog, "default", string(spec.Default), "rules", strings.Join(rules, ","),
 		"chat_markers", markers, "session_key", spec.Caps.SessionKey)
 	return p, nil
 }

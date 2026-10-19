@@ -12,14 +12,18 @@ import (
 	"text/template"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/auth"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/wirelog"
 )
 
 const anthropicVersion = "2023-06-01"
@@ -202,7 +206,11 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err := responses.Prevalidate(model, in.Snapshot); err != nil {
 		return err
 	}
+	routeStart := time.Now()
 	t, err := p.route(ctx, model)
+	figOtel.Event(ctx, "provider.route",
+		attribute.String("model", model), attribute.String("transport", string(t)),
+		attribute.Int64("elapsed_ms", time.Since(routeStart).Milliseconds()))
 	if err != nil {
 		return err
 	}
@@ -299,6 +307,8 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 	}
 	return "", fmt.Errorf("%s: model %q has no route: no rule matches, the catalog offers no transport for it, and there is no default", p.spec.Name, model)
 }
+
+var catalogClient = &http.Client{Transport: &wirelog.Transport{Inner: http.DefaultTransport}}
 
 const (
 	catalogRetry   = 5 * time.Minute
@@ -458,7 +468,18 @@ func (m catalogModel) contextLimits() responses.ContextLimits {
 	return limits
 }
 
-func (p *Provider) fetchCatalog(ctx context.Context) ([]catalogModel, error) {
+func (p *Provider) fetchCatalog(ctx context.Context) (models []catalogModel, err error) {
+	start := time.Now()
+	defer func() {
+		attrs := []attribute.KeyValue{
+			attribute.Int("models", len(models)),
+			attribute.Int64("elapsed_ms", time.Since(start).Milliseconds()),
+		}
+		if err != nil {
+			attrs = append(attrs, attribute.String("error", err.Error()))
+		}
+		figOtel.Event(ctx, "provider.catalog", attrs...)
+	}()
 	resp, err := auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, "GET", p.base()+p.spec.Catalog, nil)
 		if err != nil {
@@ -471,7 +492,7 @@ func (p *Provider) fetchCatalog(ctx context.Context) ([]catalogModel, error) {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		req.Header.Set("Accept", "application/json")
-		return http.DefaultClient.Do(req)
+		return catalogClient.Do(req)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s models: %w", p.spec.Name, err)
