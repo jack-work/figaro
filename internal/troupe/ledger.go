@@ -26,6 +26,7 @@ const (
 	Join   Kind = "join"
 	Leave  Kind = "leave"
 	Revoke Kind = "revoke"
+	Policy Kind = "policy"
 )
 
 const MaxEntries = 4096
@@ -33,17 +34,23 @@ const MaxEntries = 4096
 const entryDomain = "figaro troupe entry v1\n"
 
 type Entry struct {
-	Kind   Kind     `json:"kind"`
-	Troupe string   `json:"troupe"`
-	Node   string   `json:"node"`
-	Door   string   `json:"door,omitempty"`
-	Owner  string   `json:"owner,omitempty"`
-	At     int64    `json:"at"`
-	Chain  [][]byte `json:"chain,omitempty"`
-	Sig    []byte   `json:"sig"`
+	Kind    Kind     `json:"kind"`
+	Troupe  string   `json:"troupe"`
+	Node    string   `json:"node"`
+	Door    string   `json:"door,omitempty"`
+	Owner   string   `json:"owner,omitempty"`
+	Version uint64   `json:"version,omitempty"`
+	By      string   `json:"by,omitempty"`
+	Body    string   `json:"body,omitempty"`
+	At      int64    `json:"at"`
+	Chain   [][]byte `json:"chain,omitempty"`
+	Sig     []byte   `json:"sig"`
 }
 
 func (e Entry) message() []byte {
+	if e.Kind == Policy {
+		return e.policyMessage()
+	}
 	body, _ := json.Marshal(struct {
 		Kind   Kind   `json:"kind"`
 		Troupe string `json:"troupe"`
@@ -94,7 +101,7 @@ type verified struct {
 }
 
 func (v verified) signer() string {
-	if v.Kind == Join {
+	if v.Kind == Join || v.Kind == Policy {
 		return IntermediateNode(v.chain[0])
 	}
 	return ""
@@ -120,7 +127,16 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 	}
 	at := e.Time()
 	var pub crypto.PublicKey
+	if e.Kind != Policy && (e.Version != 0 || e.By != "" || e.Body != "") {
+		return out, fmt.Errorf("a %s carries no policy", e.Kind)
+	}
 	switch e.Kind {
+	case Policy:
+		inter, err := verifyPolicy(out, root, at)
+		if err != nil {
+			return out, err
+		}
+		pub = inter.PublicKey
 	case Join:
 		if _, _, err := net.SplitHostPort(e.Door); err != nil {
 			return out, fmt.Errorf("door %q: %w", e.Door, err)
@@ -209,6 +225,9 @@ type Member struct {
 type View struct {
 	Members map[string]Member
 	Gone    map[string]Kind
+	Policy  *Entry
+	Rivals  []Entry
+	Voided  []Entry
 	Digest  uint64
 }
 
@@ -224,14 +243,15 @@ func (v View) Signers(now time.Time) []string {
 }
 
 type Ledger struct {
-	troupe  string
-	root    *x509.Certificate
-	entries map[string]verified
-	view    View
+	troupe   string
+	root     *x509.Certificate
+	entries  map[string]verified
+	policies map[string]string
+	view     View
 }
 
 func NewLedger(troupe string, root *x509.Certificate) *Ledger {
-	l := &Ledger{troupe: troupe, root: root, entries: map[string]verified{}}
+	l := &Ledger{troupe: troupe, root: root, entries: map[string]verified{}, policies: map[string]string{}}
 	l.rebuild()
 	return l
 }
@@ -254,6 +274,14 @@ func (l *Ledger) Merge(es ...Entry) ([]Entry, error) {
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s %s: %w", e.Kind, e.Node, err))
 			continue
+		}
+		if e.Kind == Policy {
+			held, ok := l.policies[e.Node]
+			if ok && !Newer(e, l.entries[held].Entry) {
+				continue
+			}
+			delete(l.entries, held)
+			l.policies[e.Node] = id
 		}
 		l.entries[id] = v
 		added = append(added, e)
@@ -301,6 +329,28 @@ func (l *Ledger) rebuild() {
 			m.SignsUntil = e.chain[0].NotAfter
 		}
 		v.Members[e.Node] = m
+	}
+	for _, id := range ids {
+		e := l.entries[id]
+		if e.Kind != Policy {
+			continue
+		}
+		if v.Gone[e.Node] == Revoke {
+			v.Voided = append(v.Voided, e.Entry)
+			continue
+		}
+		if v.Policy == nil || Newer(e.Entry, *v.Policy) {
+			in := e.Entry
+			v.Policy = &in
+		}
+	}
+	if v.Policy != nil {
+		for _, id := range ids {
+			e := l.entries[id]
+			if e.Kind == Policy && e.Version == v.Policy.Version && e.Body != v.Policy.Body && v.Gone[e.Node] != Revoke {
+				v.Rivals = append(v.Rivals, e.Entry)
+			}
+		}
 	}
 	if len(ids) > 0 {
 		h := sha256.New()
