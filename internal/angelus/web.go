@@ -65,7 +65,9 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			http.Error(rw, "this listener has no authenticator", http.StatusForbidden)
 			return
 		}
-		cctx, err := w.Admit(ctx, r)
+		conn, done := context.WithCancel(ctx)
+		defer done()
+		cctx, err := w.Admit(conn, r)
 		if err != nil {
 			slog.Warn("door refused upgrade", "err", err)
 			rw.Header().Set("WWW-Authenticate", "Bearer")
