@@ -80,13 +80,13 @@ func bindStaticTroupePolicy(a *angelus.Angelus, loaded *config.Loaded) error {
 			return fmt.Errorf("troupe.policy: %w", err)
 		}
 	}
-	if err := a.Policies.SetTroupe(name, body); err != nil {
+	if err := a.ApplyTroupeDocument(name, body, loaded.Config.Authz.TakesTroupeIssuers()); err != nil {
 		slog.Error("troupe policy: it grants nothing until it loads", "path", path, "err", err)
 	}
 	return nil
 }
 
-func bindLedgerTroupePolicy(a *angelus.Angelus, m *peer.Ledger) {
+func bindLedgerTroupePolicy(a *angelus.Angelus, m *peer.Ledger, takeIssuers bool) {
 	if a.Policies == nil {
 		return
 	}
@@ -96,7 +96,7 @@ func bindLedgerTroupePolicy(a *angelus.Angelus, m *peer.Ledger) {
 		if in != nil {
 			body = []byte(in.Body)
 		}
-		if err := a.Policies.SetTroupe(m.Troupe(), body); err != nil {
+		if err := a.ApplyTroupeDocument(m.Troupe(), body, takeIssuers); err != nil {
 			slog.Error("troupe policy in force does not load here; it grants nothing on this node", "version", in.Version, "signer", in.Node, "err", err)
 			return
 		}
@@ -153,7 +153,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 		}
 	}
 	a.Peers = m
-	bindLedgerTroupePolicy(a, m)
+	bindLedgerTroupePolicy(a, m, loaded.Config.Authz.TakesTroupeIssuers())
 	owner := a.Peercred.Self().String()
 	seedJoin(k, m, door.Advertise, owner, time.Now())
 	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}
@@ -263,10 +263,7 @@ func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loade
 	if err != nil {
 		return err
 	}
-	verify, err := forwardedCallers(loaded.Config.Authz)
-	if err != nil {
-		return fmt.Errorf("door.tls: %w", err)
-	}
+	verify := forwardedCallers(a.Issuers)
 	ln, err := net.Listen("tcp", door.Listen)
 	if err != nil {
 		return fmt.Errorf("door.tls: %w", err)
@@ -299,14 +296,13 @@ func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string
 	return g
 }
 
-func forwardedCallers(cfg config.AuthzConfig) (peer.Verify, error) {
-	if len(cfg.Issuers) == 0 {
-		slog.Warn("door.tls: no [[authz.issuers]], so every forwarded caller is refused")
-		return nil, nil
+func forwardedCallers(is *authz.Issuers) peer.Verify {
+	if is == nil {
+		slog.Warn("door.tls: no issuers, so every forwarded caller is refused")
+		return nil
 	}
-	is, err := newIssuers(cfg.Issuers)
-	if err != nil {
-		return nil, err
+	if is.Empty() {
+		slog.Warn("door.tls: no issuer yet, so forwarded callers are refused until [[authz.issuers]] or the troupe policy names one")
 	}
 	return func(ctx context.Context, token string) (context.Context, error) {
 		s, err := is.Open(ctx, token)
@@ -314,7 +310,7 @@ func forwardedCallers(cfg config.AuthzConfig) (peer.Verify, error) {
 			return nil, err
 		}
 		return authz.WithSession(ctx, s), nil
-	}, nil
+	}
 }
 
 func newIssuers(cfgs []config.IssuerConfig) (*authz.Issuers, error) {

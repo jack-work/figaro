@@ -645,3 +645,52 @@ func BenchmarkBearerOpenTwoIssuers(b *testing.B) {
 		}
 	}
 }
+
+// A troupe may add issuers, but never one this node names itself and never
+// one that would claim a scope this node's issuers own; the node's own
+// stay in force whatever the troupe says.
+func TestTroupeIssuersAddToTheLocalOnesAndNeverReplaceThem(t *testing.T) {
+	a := newTestIssuer(t)
+	guests := newTestIssuerAt(t, "https://id.example.org/realms/guests")
+	is, err := NewIssuers([]config.IssuerConfig{a.config()}, nil, a.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	user := map[string]any{"sub": "u-1", "preferred_username": "gluck"}
+	tok := guests.mint("u-1", "figaro-cli", time.Hour, user)
+	if _, err := is.Open(ctx, tok); err == nil {
+		t.Fatal("an issuer no one named was trusted")
+	}
+
+	hijack := a.config()
+	hijack.JWKS = guests.jwks.URL
+	plain := guests.config()
+	plain.Issuer = "http://id.example.org/plain"
+	collide := guests.config()
+	collide.Issuer = kelliher + "/"
+	err = is.SetTroupe([]config.IssuerConfig{guests.config(), hijack, plain, collide})
+	if err == nil || !strings.Contains(err.Error(), "only https") || !strings.Contains(err.Error(), "already does") {
+		t.Fatalf("an http issuer or a scope this node owns was not refused: %v", err)
+	}
+	s, err := is.Open(ctx, tok)
+	if err != nil {
+		t.Fatalf("the troupe's issuer was not taken up: %v", err)
+	}
+	if s.Principal().String() != "user:gluck@id.example.org/realms/guests" {
+		t.Fatal(s.Principal())
+	}
+	if _, err := is.Open(ctx, a.mint("u-1", "figaro-cli", time.Hour, user)); err != nil {
+		t.Fatalf("the local issuer lost to the troupe's entry for its URL: %v", err)
+	}
+	if is.Trusts(guests.url) {
+		t.Fatal("a troupe issuer counts as this node's own for reverify")
+	}
+
+	if err := is.SetTroupe(nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := is.Open(ctx, tok); err == nil {
+		t.Fatal("a troupe issuer outlived the policy that named it")
+	}
+}

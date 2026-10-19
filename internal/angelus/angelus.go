@@ -61,6 +61,7 @@ type Angelus struct {
 	Models *modelcat.Catalog
 
 	Policies     *authz.Policies
+	Issuers      *authz.Issuers
 	Peercred     *authz.Peercred
 	Peers        peer.Membership
 	PeerVersions *peer.Versions

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
@@ -190,6 +191,14 @@ func (u *Upstream) fromHeaders(h http.Header) (jkauthz.Subject, error) {
 var ErrExpired = errors.New("authz: token expired; present a fresh one")
 
 type Issuers struct {
+	local  map[string]*issuer
+	scopes map[string]string
+	client *http.Client
+	now    func() time.Time
+	set    atomic.Pointer[issuerSet]
+}
+
+type issuerSet struct {
 	byURL map[string]*issuer
 	only  *issuer
 }
@@ -202,31 +211,74 @@ type issuer struct {
 }
 
 func NewIssuers(cfgs []config.IssuerConfig, client *http.Client, now func() time.Time) (*Issuers, error) {
-	if len(cfgs) == 0 {
-		return nil, fmt.Errorf("authz.issuers: none configured")
-	}
 	if now == nil {
 		now = time.Now
 	}
-	is := &Issuers{byURL: map[string]*issuer{}}
-	scopes := map[string]string{}
+	is := &Issuers{local: map[string]*issuer{}, scopes: map[string]string{}, client: client, now: now}
 	for _, cfg := range cfgs {
 		iss, err := newIssuer(cfg, client, now)
 		if err != nil {
 			return nil, err
 		}
-		if prev, dup := scopes[iss.scope]; dup {
+		if prev, dup := is.scopes[iss.scope]; dup {
 			return nil, fmt.Errorf("authz.issuers: %s and %s both scope principals as @%s", prev, cfg.Issuer, iss.scope)
 		}
-		scopes[iss.scope] = cfg.Issuer
-		is.byURL[cfg.Issuer] = iss
-		is.only = iss
+		is.scopes[iss.scope] = cfg.Issuer
+		is.local[cfg.Issuer] = iss
 	}
-	if len(is.byURL) > 1 {
-		is.only = nil
-	}
+	is.publish(nil)
 	return is, nil
 }
+
+func (is *Issuers) publish(troupe map[string]*issuer) {
+	set := &issuerSet{byURL: make(map[string]*issuer, len(is.local)+len(troupe))}
+	for url, i := range is.local {
+		set.byURL[url] = i
+	}
+	for url, i := range troupe {
+		set.byURL[url] = i
+	}
+	if len(set.byURL) == 1 {
+		for _, i := range set.byURL {
+			set.only = i
+		}
+	}
+	is.set.Store(set)
+}
+
+func (is *Issuers) SetTroupe(cfgs []config.IssuerConfig) error {
+	troupe := map[string]*issuer{}
+	scopes := map[string]string{}
+	var errs []error
+	for _, cfg := range cfgs {
+		if _, local := is.local[cfg.Issuer]; local {
+			continue
+		}
+		if !strings.HasPrefix(cfg.Issuer, "https://") {
+			errs = append(errs, fmt.Errorf("troupe issuer %q: a troupe names only https issuers", cfg.Issuer))
+			continue
+		}
+		iss, err := newIssuer(cfg, is.client, is.now)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("troupe %w", err))
+			continue
+		}
+		if prev, dup := is.scopes[iss.scope]; dup {
+			errs = append(errs, fmt.Errorf("troupe issuer %s scopes principals as @%s, which this node's issuer %s already does", cfg.Issuer, iss.scope, prev))
+			continue
+		}
+		if prev, dup := scopes[iss.scope]; dup {
+			errs = append(errs, fmt.Errorf("troupe issuers %s and %s both scope principals as @%s", prev, cfg.Issuer, iss.scope))
+			continue
+		}
+		scopes[iss.scope] = cfg.Issuer
+		troupe[cfg.Issuer] = iss
+	}
+	is.publish(troupe)
+	return errors.Join(errs...)
+}
+
+func (is *Issuers) Empty() bool { return len(is.set.Load().byURL) == 0 }
 
 func newIssuer(cfg config.IssuerConfig, client *http.Client, now func() time.Time) (*issuer, error) {
 	scope, err := IssuerScope(cfg.Issuer)
@@ -286,16 +338,17 @@ func IssuerScope(raw string) (string, error) {
 }
 
 func (is *Issuers) Trusts(url string) bool {
-	_, ok := is.byURL[url]
+	_, ok := is.local[url]
 	return ok
 }
 
 func (is *Issuers) issuerFor(token string) (*issuer, error) {
-	if is.only != nil {
-		return is.only, nil
+	set := is.set.Load()
+	if set.only != nil {
+		return set.only, nil
 	}
 	iss := unverifiedIssuer(token)
-	if i, ok := is.byURL[iss]; ok {
+	if i, ok := set.byURL[iss]; ok {
 		return i, nil
 	}
 	return nil, fmt.Errorf("%w: token issuer %.128q is not trusted here", ErrUnadmitted, iss)

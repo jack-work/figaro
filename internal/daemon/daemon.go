@@ -300,6 +300,10 @@ func Run() {
 	}
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
+	if a.Issuers, err = newIssuers(loaded.Config.Authz.Issuers); err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
@@ -395,7 +399,7 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 	if err != nil {
 		return fmt.Errorf("door.web: %w", err)
 	}
-	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz)
+	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz, a.Issuers)
 	if err != nil {
 		ln.Close()
 		return fmt.Errorf("door.web: %w", err)
@@ -410,13 +414,9 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 	return nil
 }
 
-func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig) (angelus.WebAdmit, error) {
-	var b *authz.Issuers
-	if len(cfg.Issuers) > 0 {
-		var err error
-		if b, err = newIssuers(cfg.Issuers); err != nil {
-			return nil, err
-		}
+func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b *authz.Issuers) (angelus.WebAdmit, error) {
+	if len(cfg.Issuers) == 0 {
+		b = nil
 	}
 	switch name {
 	case "upstream":

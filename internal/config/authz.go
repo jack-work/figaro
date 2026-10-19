@@ -6,10 +6,11 @@ import (
 )
 
 type AuthzConfig struct {
-	Policy   string         `toml:"policy"`
-	Peercred PeercredConfig `toml:"peercred"`
-	Upstream UpstreamConfig `toml:"upstream"`
-	Issuers  []IssuerConfig `toml:"issuers"`
+	Policy        string         `toml:"policy"`
+	TroupeIssuers *bool          `toml:"troupe_issuers"`
+	Peercred      PeercredConfig `toml:"peercred"`
+	Upstream      UpstreamConfig `toml:"upstream"`
+	Issuers       []IssuerConfig `toml:"issuers"`
 }
 
 type PeercredConfig struct {
@@ -33,6 +34,10 @@ type IssuerConfig struct {
 }
 
 var errRetiredBearer = errors.New("[authz.bearer] is now [[authz.issuers]]: same keys, one table per issuer, and principals carry the issuer (user:jack@auth.kelliher.info)")
+
+func (c AuthzConfig) TakesTroupeIssuers() bool {
+	return c.TroupeIssuers == nil || *c.TroupeIssuers
+}
 
 func (l *Loaded) PolicyPath() string {
 	p := l.cfg().Authz.Policy

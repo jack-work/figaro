@@ -114,7 +114,7 @@ func (h *handlers) reloadStaticTroupePolicy(loaded *config.Loaded) error {
 	if err != nil {
 		return fmt.Errorf("troupe.policy: %w", err)
 	}
-	if err := h.angelus.Policies.SetTroupe(h.angelus.Policies.TroupeName(), body); err != nil {
+	if err := h.angelus.ApplyTroupeDocument(h.angelus.Policies.TroupeName(), body, loaded.Config.Authz.TakesTroupeIssuers()); err != nil {
 		slog.Error("troupe policy: it grants nothing until it loads", "path", path, "err", err)
 		return err
 	}
