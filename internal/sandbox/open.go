@@ -7,6 +7,8 @@ import (
 	"os"
 
 	api "github.com/jack-work/figaro/api/sandbox"
+	"github.com/jack-work/figaro/internal/boot"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/sandbox/bwrap"
 	"github.com/jack-work/figaro/internal/sandbox/local"
@@ -33,7 +35,8 @@ func Open(ctx context.Context, host *local.Host, kind, aria, workspace, runtimeD
 	case "", "local":
 		prov = local.Provider{Host: host, Scope: aria}
 	case "bwrap":
-		prov = bwrap.Provider{Host: host, Scope: aria, RuntimeDir: runtimeDir, SkillsDir: outfit.BundledSkillsRoot()}
+		prov = bwrap.Provider{Host: host, Scope: aria, RuntimeDir: runtimeDir, SkillsDir: outfit.BundledSkillsRoot(),
+			Hide: []string{boot.StateDir(), config.DefaultConfigDir()}}
 	default:
 		return Opened{}, fmt.Errorf("sandbox: unknown provider %q", kind)
 	}

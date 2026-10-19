@@ -35,6 +35,7 @@ type Provider struct {
 	Scope      string
 	RuntimeDir string
 	SkillsDir  string
+	Hide       []string
 }
 
 func (p Provider) Open(_ context.Context, spec sandbox.Spec) (sandbox.Sandbox, error) {
@@ -71,6 +72,11 @@ func (p Provider) Open(_ context.Context, spec sandbox.Spec) (sandbox.Sandbox, e
 			if st, err := os.Stat(d); err == nil && st.IsDir() {
 				args = append(args, "--tmpfs", d)
 			}
+		}
+	}
+	for _, d := range p.Hide {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			args = append(args, "--tmpfs", d)
 		}
 	}
 	if p.SkillsDir != "" {

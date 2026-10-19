@@ -566,6 +566,15 @@ refused. `local` falls back to the daemon's cwd. A fork copies
 it; nothing outside the root is ever removed. `[sandbox]` is read at
 daemon start: changing it takes a restart, not `outfit reload`.
 
+The box also replaces the daemon's resolved state and config dirs with empty
+tmpfs, wherever they resolved from (`FIGARO_STATE_DIR`, `XDG_STATE_HOME`, or
+under `HOME`), then binds the workspace, the runtime dir and the bundled
+skills back. So no tool reads `<state>/troupe/<name>/`, the node's
+intermediate key among it. The NixOS module sets `HOME` and
+`FIGARO_STATE_DIR` to its `stateDir`, and the container mounts the host's
+state dir at `/var/lib/figaro` under the same module, so the rule holds
+there too.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,
