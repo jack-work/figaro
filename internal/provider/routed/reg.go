@@ -112,6 +112,7 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 	spec, err := f.Apply(Spec{
 		Name:         name,
 		AuthOptional: f.OAuth == nil && f.ServiceToken == "",
+		Catalog:      "/models",
 		Default:      Chat,
 		Caps:         caps,
 	})

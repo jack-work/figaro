@@ -1,13 +1,21 @@
 package routed
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 func declaredDir(t *testing.T, files map[string]string) *config.Loaded {
@@ -132,3 +140,99 @@ func TestAServiceTokenMakesTheGatewayRequireAuth(t *testing.T) {
 		t.Fatal("a gateway with a service token treats a missing token as optional")
 	}
 }
+
+func gatewayAt(t *testing.T, name, body string) *Provider {
+	t.Helper()
+	loaded := declaredDir(t, map[string]string{name: body})
+	RegisterDeclared(loaded)
+	p, err := provider.Lookup(name).Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.(*Provider)
+}
+
+// A gateway that says which endpoints a model serves is listened to without
+// the file having to name a catalog.
+func TestAGatewayReadsSupportedEndpointsWithoutARoutingTable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, `{"data":[{"id":"claude-x","supported_endpoints":["/v1/messages","/chat/completions"]},{"id":"llama"}]}`)
+	}))
+	defer srv.Close()
+	p := gatewayAt(t, "edgegw", "preset = \"gateway\"\nbase_url = \""+srv.URL+"/v1\"\n")
+	for model, want := range map[string]Transport{"claude-x": Messages, "llama": Chat, "unlisted": Chat} {
+		got, err := p.route(context.Background(), model)
+		if err != nil || got != want {
+			t.Errorf("%s: route = %q, %v; want %q", model, got, err, want)
+		}
+	}
+}
+
+// A gateway without /models, or with a broken one, still answers the turn by
+// its rules and default, and is not asked again on every turn.
+func TestAGatewayWithoutACatalogRoutesByRulesAndDefault(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusInternalServerError} {
+		var mu sync.Mutex
+		hits := map[string]int{}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			mu.Lock()
+			hits[r.URL.Path]++
+			mu.Unlock()
+			if r.URL.Path == "/v1/chat/completions" {
+				w.Header().Set("Content-Type", "text/event-stream")
+				io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"chat\"}}]}\n\ndata: [DONE]\n\n")
+				return
+			}
+			w.WriteHeader(status)
+		}))
+		p := gatewayAt(t, "plaingw", "preset = \"gateway\"\nbase_url = \""+srv.URL+"/v1\"\n[[routing.rule]]\nmodel = \"claude-*\"\ntransport = \"messages\"\n")
+
+		if got, err := p.route(context.Background(), "claude-x"); err != nil || got != Messages {
+			t.Errorf("%d: rule route = %q, %v", status, got, err)
+		}
+		for i := 0; i < 2; i++ {
+			be, aria := store.NewTestAria(t, "d", message.Patch{})
+			figLog, _ := be.OpenFigIR(aria)
+			_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+				Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")},
+			}})
+			p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+			p.SetModel("llama")
+			if err := p.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &nullBus{}); err != nil {
+				t.Fatalf("%d: turn %d failed: %v", status, i, err)
+			}
+		}
+		srv.Close()
+		mu.Lock()
+		if hits["/v1/models"] != 1 || hits["/v1/chat/completions"] != 2 {
+			t.Errorf("%d: hits %v; want one catalog request and two turns", status, hits)
+		}
+		mu.Unlock()
+	}
+}
+
+// A gateway that wants static routing, and translation on append, turns the
+// catalog off.
+func TestCatalogOffKeepsAGatewayStatic(t *testing.T) {
+	p := gatewayAt(t, "staticgw", "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n[routing]\ncatalog = \"off\"\n")
+	if p.spec.Catalog != "" || p.TranslatorChannel() != "staticgw" {
+		t.Fatalf("catalog %q, channel %q", p.spec.Catalog, p.TranslatorChannel())
+	}
+	if p := gatewayAt(t, "dynamicgw", "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n"); p.TranslatorChannel() != "" {
+		t.Fatalf("a gateway with its catalog on translated on append under %q", p.TranslatorChannel())
+	}
+}
+
+type nullBus struct{}
+
+func (nullBus) PushDelta(message.Content)                              {}
+func (nullBus) PushToolInvokeStart(string, string)                     {}
+func (nullBus) PushToolInvokeDelta(string, string)                     {}
+func (nullBus) PushToolReady(message.Content)                          {}
+func (nullBus) PushMessageEnd(string)                                  {}
+func (nullBus) PushFigaro(message.Message, ...provider.AssistantCache) {}

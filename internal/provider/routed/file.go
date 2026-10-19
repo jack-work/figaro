@@ -12,6 +12,8 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
+const CatalogOff = "off"
+
 type File struct {
 	Preset           string                       `toml:"preset,omitempty"`
 	OAuth            *auth.OAuthSettings          `toml:"oauth,omitempty"`
@@ -72,8 +74,12 @@ func (f File) Apply(spec Spec) (Spec, error) {
 		}
 		spec.TransportHeaders[t] = merge(spec.TransportHeaders[t], h)
 	}
-	if f.Routing.Catalog != "" {
-		spec.Catalog = "/" + strings.TrimLeft(f.Routing.Catalog, "/")
+	switch c := strings.TrimSpace(f.Routing.Catalog); c {
+	case "":
+	case CatalogOff:
+		spec.Catalog = ""
+	default:
+		spec.Catalog = "/" + strings.TrimLeft(c, "/")
 	}
 	if f.Routing.Default != "" {
 		t, err := ParseTransport(f.Routing.Default)

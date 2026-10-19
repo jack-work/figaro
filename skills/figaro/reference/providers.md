@@ -18,7 +18,8 @@ to choose a transport for each model. `anthropic` (native OAuth) is separate.
 1. The first `[[routing.rule]]` whose `model` glob matches.
 2. The catalog: `GET base_url + routing.catalog`, then the model's
    `supported_endpoints`. Preference: `responses-ws` > `responses` > `messages` >
-   `chat`. A `ws:` prefix marks a socket.
+   `chat`. A `ws:` prefix marks a socket. With a default, a catalog that is
+   missing or fails is logged and skipped, and asked again after five minutes.
 3. `routing.default`.
 4. Otherwise the send is refused, and the error names all three.
 
@@ -35,7 +36,7 @@ headers       = { "X-Team" = "figaro" }     # every request, every transport
 "X-Experiment" = "1"
 
 [routing]
-catalog = "/models"                         # optional
+catalog = "/models"                         # "off" for none; the gateway preset defaults to /models
 default = "chat"
 
 [[routing.rule]]                            # file rules run before the preset's
@@ -51,7 +52,7 @@ with no transport, a bad glob, or a spec with no way to route at all.
 | Provider | Built in | The file adds |
 |---|---|---|
 | `copilot` | catalog `/models`; rule `claude-*` → `messages`; Copilot and identity headers; host from the hush token | rules, headers. `base_url` stays Copilot's own override (`token_mode`, `enterprise_domain`). |
-| `gateway` | default `chat`; credential optional | everything. `base_url` is required; `FIGARO_GATEWAY_BASE_URL` wins over the file. |
+| `gateway` | catalog `/models`; default `chat`; credential optional | everything. `base_url` is required; `FIGARO_GATEWAY_BASE_URL` wins over the file. |
 | `openrouter` | default `chat`; OpenRouter host; `anthropic/` model prefix | everything. |
 | `azure` | default `chat`; credential from `AZURE_OPENAI_API_KEY`, a stored key, or a Microsoft Entra login | everything. `base_url` is required; `AZURE_BASE_URL` wins over the file. |
 
@@ -201,7 +202,8 @@ ordinary provider named by `system.decide.provider`. See
 transports write `<name>-responses`. The names predate routing, so existing arias
 keep their caches. Entries are translated as they land only when routing is
 static (a default, no catalog, no rules); otherwise they are translated at send
-time, once the model's transport is known.
+time, once the model's transport is known. A gateway is static only with
+`catalog = "off"` and no rules.
 
 ## Checking a route
 

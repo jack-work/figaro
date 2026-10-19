@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -34,6 +36,7 @@ type Provider struct {
 	model     string
 	templates *template.Template
 	catalog   map[string]catalogModel
+	tried     time.Time
 	messages  *anthropic.Anthropic
 	chat      *openaichat.Provider
 	responses *responses.Provider
@@ -270,9 +273,16 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 		p.mu.RLock()
 		entry, known := p.catalog[model]
 		p.mu.RUnlock()
-		if !known {
-			if _, err := p.fetchCatalog(ctx); err != nil && p.spec.Default == "" {
-				return "", fmt.Errorf("%s: route %q: %w", p.spec.Name, model, err)
+		if !known && (p.spec.Default == "" || p.catalogDue()) {
+			cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+			_, err := p.fetchCatalog(cctx)
+			cancel()
+			if err != nil {
+				if p.spec.Default == "" {
+					return "", fmt.Errorf("%s: route %q: %w", p.spec.Name, model, err)
+				}
+				slog.Warn("provider catalog unavailable; routing by rules and default",
+					"provider", p.spec.Name, "model", model, "default", p.spec.Default, "err", err)
 			}
 			p.mu.RLock()
 			entry, known = p.catalog[model]
@@ -288,6 +298,22 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 		return p.spec.Default, nil
 	}
 	return "", fmt.Errorf("%s: model %q has no route: no rule matches, the catalog offers no transport for it, and there is no default", p.spec.Name, model)
+}
+
+const (
+	catalogRetry   = 5 * time.Minute
+	catalogTimeout = 10 * time.Second
+)
+
+func (p *Provider) catalogDue() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	if !p.tried.IsZero() && now.Sub(p.tried) < catalogRetry {
+		return false
+	}
+	p.tried = now
+	return true
 }
 
 func (p *Provider) cachedRoute(model string) Transport {
