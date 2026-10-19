@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -81,6 +82,22 @@ func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
 	return acli.TroupeMembers(ctx)
 }
 
+const quietAfter = 2 * time.Hour
+
+func seen(p rpc.TroupeMember, now time.Time) string {
+	if !p.Met || p.SeenAt == 0 {
+		return "-"
+	}
+	since := now.Sub(time.UnixMilli(p.SeenAt))
+	switch {
+	case since > troupe.NodeTTL:
+		return "lapsed, " + ago(since)
+	case since > quietAfter:
+		return "quiet, " + ago(since)
+	}
+	return ago(since)
+}
+
 func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 	ledger := m.Provider == config.ProviderFigaro
 	fmt.Fprintf(out, "\nthis node %s, troupe membership version %d\n", m.Node, m.Version)
@@ -100,7 +117,7 @@ func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 	if len(m.Peers) > 0 {
 		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 		if ledger {
-			fmt.Fprintln(w, "\tPEER\tENDPOINT\tOWNER\tADMITTED BY\tSIGNS\tVERSION\tDRIFT")
+			fmt.Fprintln(w, "\tPEER\tENDPOINT\tOWNER\tADMITTED BY\tSIGNS\tSEEN\tVERSION\tDRIFT")
 		} else {
 			fmt.Fprintln(w, "\tPEER\tENDPOINT\tVERSION\tDRIFT")
 		}
@@ -111,7 +128,7 @@ func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 				if p.Signs {
 					signs = "yes"
 				}
-				cols += "\t" + p.Owner + "\t" + p.AdmittedBy + "\t" + signs
+				cols += "\t" + p.Owner + "\t" + p.AdmittedBy + "\t" + signs + "\t" + seen(p, time.Now())
 			}
 			switch {
 			case !p.Met:

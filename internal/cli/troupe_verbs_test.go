@@ -120,3 +120,28 @@ func TestTroupeLsShowsKeyExpiry(t *testing.T) {
 	}})
 	require.Contains(t, buf.String(), "figaro troupe intermediate estate")
 }
+
+// A member heard from within the last two hours is shown by age alone; one
+// silent longer is quiet, and one silent past a node certificate's life is
+// lapsed, since every peer now refuses it.
+func TestTroupeLsMarksQuietAndLapsedMembers(t *testing.T) {
+	now := time.Now()
+	at := func(d time.Duration) int64 { return now.Add(-d).UnixMilli() }
+	for want, p := range map[string]rpc.TroupeMember{
+		"just now":       {Met: true, SeenAt: at(10 * time.Second)},
+		"40m ago":        {Met: true, SeenAt: at(40 * time.Minute)},
+		"quiet, 3h ago":  {Met: true, SeenAt: at(3 * time.Hour)},
+		"quiet, 6d ago":  {Met: true, SeenAt: at(6 * 24 * time.Hour)},
+		"lapsed, 8d ago": {Met: true, SeenAt: at(8 * 24 * time.Hour)},
+		"-":              {},
+	} {
+		if got := seen(p, now); got != want {
+			t.Errorf("want %q, got %q", want, got)
+		}
+	}
+	var buf strings.Builder
+	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{Node: "n", Provider: config.ProviderFigaro, Version: 1, Peers: []rpc.TroupeMember{
+		{Node: "silent", Endpoint: "tls://10.0.0.9:7443", Owner: "user:ana", AdmittedBy: "n", Met: true, Version: 1, SeenAt: at(5 * time.Hour)},
+	}})
+	require.Regexp(t, `silent\s+tls://10\.0\.0\.9:7443\s+user:ana\s+n\s+quiet, 5h ago\s+1`, buf.String())
+}

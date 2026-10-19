@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -108,7 +109,7 @@ func TestTroupeLsShowsAdmissionsSignersAndWhoIsOut(t *testing.T) {
 	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{
 		Node: "node-b", Provider: "figaro", AdmittedBy: "node-a", Owner: "user:guest", Version: 9,
 		Peers: []rpc.TroupeMember{
-			{Node: "node-a", Endpoint: "tls://a.lan:7443", Owner: "user:jack", AdmittedBy: "node-a", Signs: true, Met: true, Version: 9},
+			{Node: "node-a", Endpoint: "tls://a.lan:7443", Owner: "user:jack", AdmittedBy: "node-a", Signs: true, Met: true, Version: 9, SeenAt: time.Now().UnixMilli()},
 			{Node: "node-c", Endpoint: "tls://c.lan:7443", Owner: "user:jack", AdmittedBy: "node-a"},
 		},
 		Gone: []rpc.TroupeGone{{Node: "node-d", By: "leave"}, {Node: "node-e", By: "revoke"}},
@@ -117,8 +118,8 @@ func TestTroupeLsShowsAdmissionsSignersAndWhoIsOut(t *testing.T) {
 	out := buf.String()
 	require.Contains(t, out, "admitted by node-a, owned by user:guest")
 	require.Contains(t, out, "no intermediate, so a signer renews it")
-	require.Regexp(t, `node-a\s+tls://a\.lan:7443\s+user:jack\s+node-a\s+yes\s+9`, out)
-	require.Regexp(t, `node-c\s+tls://c\.lan:7443\s+user:jack\s+node-a\s+-\s+not met`, out)
+	require.Regexp(t, `node-a\s+tls://a\.lan:7443\s+user:jack\s+node-a\s+yes\s+just now\s+9`, out)
+	require.Regexp(t, `node-c\s+tls://c\.lan:7443\s+user:jack\s+node-a\s+-\s+-\s+not met`, out)
 	require.Contains(t, out, "out: node-d (leave)")
 	require.Contains(t, out, "out: node-e (revoke)")
 }
