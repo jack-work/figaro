@@ -25,7 +25,24 @@ import (
 
 type apiKeyOpts struct {
 	TTL    string
+	Nodes  string
 	Static bool
+}
+
+func keyNodes(s string) []string {
+	if s == "" {
+		return nil
+	}
+	if s == "all" {
+		return []string{apikey.AllNodes}
+	}
+	var out []string
+	for _, n := range strings.Split(s, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 type apiKeyDoor interface {
@@ -79,10 +96,11 @@ func apiKeyMint(ctx context.Context, d apiKeyDoor, out, info io.Writer, troupe, 
 	if err != nil {
 		return err
 	}
+	nodes := keyNodes(o.Nodes)
 	if o.Static {
-		return writeStaticKey(out, info, wire, k, principal, time.Now().Add(ttl).UTC().Truncate(time.Second), jsonOut)
+		return writeStaticKey(out, info, wire, k, principal, nodes, time.Now().Add(ttl).UTC().Truncate(time.Second), jsonOut)
 	}
-	resp, err := d.TroupeAPIKeyMint(ctx, rpc.TroupeAPIKeyMintRequest{Troupe: troupe, ID: k.ID, Principal: principal, Hash: k.Hash[:], TTLMillis: ttl.Milliseconds()})
+	resp, err := d.TroupeAPIKeyMint(ctx, rpc.TroupeAPIKeyMintRequest{Troupe: troupe, ID: k.ID, Principal: principal, Hash: k.Hash[:], TTLMillis: ttl.Milliseconds(), Nodes: nodes})
 	if err != nil {
 		return err
 	}
@@ -94,13 +112,27 @@ func apiKeyMint(ctx context.Context, d apiKeyDoor, out, info io.Writer, troupe, 
 	}
 	fmt.Fprintln(out, wire)
 	r := resp.Key
-	fmt.Fprintf(info, "api key %s for %s, minted by %s, signed by %s, expires %s.\nShown once: store it now (figaro troupe login %s on the machine that uses it).\n", r.ID, r.Principal, r.By, r.Signer, day(r.NotAfter), troupe)
+	fmt.Fprintf(info, "api key %s for %s, minted by %s, signed by %s, good on %s, expires %s.\nShown once: store it now (figaro troupe login %s on the machine that uses it).\n", r.ID, r.Principal, r.By, r.Signer, nodeList(r.Nodes), day(r.NotAfter), troupe)
 	writeReach(info, resp.Reached, resp.Unreachable)
 	return nil
 }
 
-func writeStaticKey(out, info io.Writer, wire string, k apikey.Key, principal string, notAfter time.Time, jsonOut bool) error {
+func nodeList(nodes []string) string {
+	if len(nodes) == 1 && nodes[0] == apikey.AllNodes {
+		return "every node"
+	}
+	return strings.Join(nodes, ", ")
+}
+
+func writeStaticKey(out, info io.Writer, wire string, k apikey.Key, principal string, nodes []string, notAfter time.Time, jsonOut bool) error {
 	stanza := fmt.Sprintf("[[authz.api_keys]]\nid = %q\nprincipal = %q\nsha256 = %q\nnot_after = %s\n", k.ID, principal, hex.EncodeToString(k.Hash[:]), notAfter.Format(time.RFC3339))
+	if len(nodes) > 0 {
+		quoted := make([]string, len(nodes))
+		for i, n := range nodes {
+			quoted[i] = strconv.Quote(n)
+		}
+		stanza += "nodes = [" + strings.Join(quoted, ", ") + "]\n"
+	}
 	if jsonOut {
 		return json.NewEncoder(out).Encode(struct {
 			APIKey string `json:"api_key"`
@@ -131,11 +163,22 @@ func apiKeyList(ctx context.Context, d apiKeyDoor, out io.Writer, troupe string,
 	}
 	now := time.Now()
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "  ID\tPRINCIPAL\tMINTED BY\tSIGNER\tMINTED\tEXPIRES\tSTATE")
+	fmt.Fprintln(w, "  ID\tPRINCIPAL\tMINTED BY\tSIGNER\tNODES\tMINTED\tEXPIRES\tSTATE")
 	for _, k := range resp.Keys {
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n", k.ID, k.Principal, k.By, k.Signer, day(k.MintedAt), day(k.NotAfter), keyState(k, now))
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", k.ID, k.Principal, k.By, k.Signer, shortNodes(k.Nodes), day(k.MintedAt), day(k.NotAfter), keyState(k, now))
 	}
 	return w.Flush()
+}
+
+func shortNodes(nodes []string) string {
+	if len(nodes) == 1 && nodes[0] == apikey.AllNodes {
+		return "all"
+	}
+	out := make([]string, len(nodes))
+	for i, n := range nodes {
+		out[i] = short12(n)
+	}
+	return strings.Join(out, ",")
 }
 
 func keyState(k rpc.TroupeAPIKey, now time.Time) string {

@@ -33,12 +33,12 @@ func mintKey(t testing.TB) (string, apikey.Key) {
 }
 
 func grant(k apikey.Key, principal string, notAfter time.Time) APIKeyGrant {
-	return APIKeyGrant{ID: k.ID, Principal: principal, Hash: k.Hash[:], NotAfter: notAfter}
+	return APIKeyGrant{ID: k.ID, Principal: principal, Hash: k.Hash[:], NotAfter: notAfter, Nodes: []string{"node-a"}}
 }
 
 func TestAKeyAdmitsItsPrincipalWithNoGroups(t *testing.T) {
 	c := newKeyClock()
-	keys, err := NewAPIKeys("estate", nil, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", nil, c.now)
 	require.NoError(t, err)
 	wire, k := mintKey(t)
 	require.NoError(t, keys.SetTroupe([]APIKeyGrant{grant(k, "service:ci@troupe:estate", c.now().Add(time.Hour))}))
@@ -58,7 +58,7 @@ func TestAKeyAdmitsItsPrincipalWithNoGroups(t *testing.T) {
 // id it already sent.
 func TestAWrongKeyIsRefusedTheSameWayWhateverIsWrong(t *testing.T) {
 	c := newKeyClock()
-	keys, err := NewAPIKeys("estate", nil, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", nil, c.now)
 	require.NoError(t, err)
 	_, k := mintKey(t)
 	require.NoError(t, keys.SetTroupe([]APIKeyGrant{grant(k, "service:ci@troupe:estate", c.now().Add(time.Hour))}))
@@ -75,7 +75,7 @@ func TestAWrongKeyIsRefusedTheSameWayWhateverIsWrong(t *testing.T) {
 // the next call on one that is still draining is refused.
 func TestARevokeCutsTheKeysLiveConnections(t *testing.T) {
 	c := newKeyClock()
-	keys, err := NewAPIKeys("estate", nil, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", nil, c.now)
 	require.NoError(t, err)
 	wire, k := mintKey(t)
 	other, ko := mintKey(t)
@@ -111,7 +111,7 @@ func TestARevokeCutsTheKeysLiveConnections(t *testing.T) {
 // connection, and a fresh upgrade with it is refused.
 func TestAnExpiredKeyIsRefusedOnTheNextCall(t *testing.T) {
 	c := newKeyClock()
-	keys, err := NewAPIKeys("estate", nil, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", nil, c.now)
 	require.NoError(t, err)
 	wire, k := mintKey(t)
 	require.NoError(t, keys.SetTroupe([]APIKeyGrant{grant(k, "service:ci@troupe:estate", c.now().Add(time.Hour))}))
@@ -125,7 +125,7 @@ func TestAnExpiredKeyIsRefusedOnTheNextCall(t *testing.T) {
 }
 
 func TestAnAdmittedConnectionClosesWhenItsKeyExpires(t *testing.T) {
-	keys, err := NewAPIKeys("estate", nil, nil)
+	keys, err := NewAPIKeys("estate", "node-a", nil, nil)
 	require.NoError(t, err)
 	wire, k := mintKey(t)
 	require.NoError(t, keys.SetTroupe([]APIKeyGrant{grant(k, "service:ci@troupe:estate", time.Now().Add(50*time.Millisecond))}))
@@ -143,7 +143,7 @@ func TestAnAdmittedConnectionClosesWhenItsKeyExpires(t *testing.T) {
 // taken up even if a ledger carried it.
 func TestOnlyThisTroupesKeyPrincipalsAreTakenUp(t *testing.T) {
 	c := newKeyClock()
-	keys, err := NewAPIKeys("estate", nil, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", nil, c.now)
 	require.NoError(t, err)
 	wire, k := mintKey(t)
 	err = keys.SetTroupe([]APIKeyGrant{grant(k, "user:jack@auth.kelliher.info", c.now().Add(time.Hour))})
@@ -158,25 +158,25 @@ func TestStaticKeysAreHashesInConfigAndOutrankTheTroupe(t *testing.T) {
 	c := newKeyClock()
 	wire, k := mintKey(t)
 	cfg := []config.APIKeyConfig{{ID: k.ID, Principal: "service:ci@troupe:estate", SHA256: hex.EncodeToString(k.Hash[:]), NotAfter: c.now().Add(time.Hour)}}
-	keys, err := NewAPIKeys("estate", cfg, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", cfg, c.now)
 	require.NoError(t, err)
 	_, other := mintKey(t)
-	require.NoError(t, keys.SetTroupe([]APIKeyGrant{{ID: k.ID, Principal: "service:cd@troupe:estate", Hash: other.Hash[:], NotAfter: c.now().Add(time.Hour)}}))
+	require.NoError(t, keys.SetTroupe([]APIKeyGrant{{ID: k.ID, Principal: "service:cd@troupe:estate", Hash: other.Hash[:], NotAfter: c.now().Add(time.Hour), Nodes: []string{apikey.AllNodes}}}))
 	ctx, err := keys.Admit(context.Background(), wire)
 	require.NoError(t, err)
 	s, err := SubjectOf(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "service:ci@troupe:estate", s.Principal.String())
 
-	_, err = NewAPIKeys("", cfg, c.now)
+	_, err = NewAPIKeys("", "node-a", cfg, c.now)
 	require.Error(t, err, "no troupe to scope by")
 	bad := cfg[0]
 	bad.NotAfter = time.Time{}
-	_, err = NewAPIKeys("estate", []config.APIKeyConfig{bad}, c.now)
+	_, err = NewAPIKeys("estate", "node-a", []config.APIKeyConfig{bad}, c.now)
 	require.Error(t, err, "a key that never expires")
 	bad = cfg[0]
 	bad.SHA256 = "abcd"
-	_, err = NewAPIKeys("estate", []config.APIKeyConfig{bad}, c.now)
+	_, err = NewAPIKeys("estate", "node-a", []config.APIKeyConfig{bad}, c.now)
 	require.Error(t, err, "a short hash")
 }
 
@@ -192,7 +192,7 @@ func TestAKeyNeverReachesAnIssuer(t *testing.T) {
 	is, err := NewIssuers([]config.IssuerConfig{{Issuer: "https://auth.example", JWKS: trap.URL, Userinfo: trap.URL, Users: []string{"figaro-cli"}}}, nil, nil)
 	require.NoError(t, err)
 	c := newKeyClock()
-	keys, err := NewAPIKeys("estate", nil, c.now)
+	keys, err := NewAPIKeys("estate", "node-a", nil, c.now)
 	require.NoError(t, err)
 	wire, _ := mintKey(t)
 
@@ -217,4 +217,59 @@ func TestAJWTNeverReachesTheKeyTable(t *testing.T) {
 
 	_, err = (Bearers{}).Verify(context.Background(), tok)
 	require.ErrorIs(t, err, ErrUnadmitted)
+}
+
+// A key is good only on the nodes it names: another node's door refuses it
+// after the secret checks out, and a connection it holds is never forwarded
+// to a node outside its audience.
+func TestAKeyIsGoodOnlyOnItsNodes(t *testing.T) {
+	c := newKeyClock()
+	wire, k := mintKey(t)
+	g := grant(k, "service:ci@troupe:estate", c.now().Add(time.Hour))
+	g.Nodes = []string{"node-a", "node-b"}
+	for node, ok := range map[string]bool{"node-a": true, "node-b": true, "node-c": false} {
+		keys, err := NewAPIKeys("estate", node, nil, c.now)
+		require.NoError(t, err)
+		require.NoError(t, keys.SetTroupe([]APIKeyGrant{g}))
+		ctx, err := keys.Admit(context.Background(), wire)
+		if !ok {
+			require.ErrorIs(t, err, ErrUnadmitted, node)
+			require.ErrorContains(t, err, "not good on node node-c")
+			continue
+		}
+		require.NoError(t, err, node)
+		require.NoError(t, ForwardableTo(ctx, "node-b"))
+		require.ErrorContains(t, ForwardableTo(ctx, "node-c"), "not sent there")
+	}
+
+	all := grant(k, "service:ci@troupe:estate", c.now().Add(time.Hour))
+	all.Nodes = []string{apikey.AllNodes}
+	keys, err := NewAPIKeys("estate", "node-z", nil, c.now)
+	require.NoError(t, err)
+	require.NoError(t, keys.SetTroupe([]APIKeyGrant{all}))
+	ctx, err := keys.Admit(context.Background(), wire)
+	require.NoError(t, err)
+	require.NoError(t, ForwardableTo(ctx, "node-q"))
+	require.NoError(t, ForwardableTo(context.Background(), "node-q"), "a caller without a key")
+
+	none := grant(k, "service:ci@troupe:estate", c.now().Add(time.Hour))
+	none.Nodes = nil
+	require.Error(t, keys.SetTroupe([]APIKeyGrant{none}))
+}
+
+func TestAStaticKeyIsGoodOnTheNodeThatLoadsItUnlessItNamesOthers(t *testing.T) {
+	c := newKeyClock()
+	wire, k := mintKey(t)
+	cfg := config.APIKeyConfig{ID: k.ID, Principal: "service:ci@troupe:estate", SHA256: hex.EncodeToString(k.Hash[:]), NotAfter: c.now().Add(time.Hour)}
+	keys, err := NewAPIKeys("estate", "node-a", []config.APIKeyConfig{cfg}, c.now)
+	require.NoError(t, err)
+	ctx, err := keys.Admit(context.Background(), wire)
+	require.NoError(t, err)
+	require.Error(t, ForwardableTo(ctx, "node-b"))
+	cfg.Nodes = []string{"node-a", "node-b"}
+	keys, err = NewAPIKeys("estate", "node-a", []config.APIKeyConfig{cfg}, c.now)
+	require.NoError(t, err)
+	ctx, err = keys.Admit(context.Background(), wire)
+	require.NoError(t, err)
+	require.NoError(t, ForwardableTo(ctx, "node-b"))
 }

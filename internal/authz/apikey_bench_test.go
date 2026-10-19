@@ -8,7 +8,7 @@ import (
 )
 
 func benchKeys(b *testing.B) (*APIKeys, string) {
-	keys, err := NewAPIKeys("estate", nil, nil)
+	keys, err := NewAPIKeys("estate", "node-a", nil, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

@@ -1506,7 +1506,9 @@ an [auth] table naming how a human signs in.
   apikey mint <name> <kind:name>  mint a key for user:<n> or service:<n>,
                  scoped <kind>:<n>@troupe:<name> (needs admin on the
                  troupe). The key goes to stdout once; the node keeps only
-                 its hash. --ttl 30d (default 90d, at most 365d).
+                 its hash. --nodes <id,...|all> names the nodes it is good
+                 on (default: the minting node alone); it is never sent to
+                 another. --ttl 30d (default 90d, at most 365d).
                  --static prints the key and an [[authz.api_keys]]
                  stanza instead, with no daemon involved
   apikey ls <name>     keys with who minted each; all of them for a
@@ -1526,6 +1528,7 @@ an [auth] table naming how a human signs in.
 			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
 			{Long: "public-key", Description: "leaf: the node's Ed25519 public key in hex, as troupe keygen prints it"},
 			{Long: "ttl", Description: "apikey mint: how long the key lives, like 30d or 12h (default 90d)"},
+			{Long: "nodes", Description: "apikey mint: the node ids the key is good on, comma-separated, or all (default: the minting node)"},
 			{Long: "static", IsBool: true, Description: "apikey mint: print the key and a config stanza; no daemon"},
 		},
 		ArgsMin: 1,
@@ -1533,7 +1536,7 @@ an [auth] table naming how a human signs in.
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
-			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")}, apiKeyOpts{TTL: ctx.Flag("ttl"), Static: ctx.BoolFlag("static")})
+			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")}, apiKeyOpts{TTL: ctx.Flag("ttl"), Nodes: ctx.Flag("nodes"), Static: ctx.BoolFlag("static")})
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"login", "sign in to a troupe's door"},

@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -74,6 +76,10 @@ func (h *handlers) troupeAPIKeyMint(ctx context.Context, params json.RawMessage)
 	if _, taken := m.APIKeys()[req.ID]; taken {
 		return nil, fmt.Errorf("api key id %s is taken; mint again", req.ID)
 	}
+	nodes, err := keyAudience(m, req.Nodes)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	inter, ikey, err := h.angelus.Troupe.Dir.Intermediate()
 	if errors.Is(err, fs.ErrNotExist) || err == nil && !now.Before(inter.NotAfter) {
@@ -82,7 +88,7 @@ func (h *handlers) troupeAPIKeyMint(ctx context.Context, params json.RawMessage)
 	if err != nil {
 		return nil, err
 	}
-	e, err := troupe.SignAPIKey(ikey, inter, m.Troupe(), req.ID, req.Principal, req.Hash, now.Add(ttl), by, now)
+	e, err := troupe.SignAPIKey(ikey, inter, m.Troupe(), req.ID, req.Principal, req.Hash, now.Add(ttl), nodes, by, now)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +96,7 @@ func (h *handlers) troupeAPIKeyMint(ctx context.Context, params json.RawMessage)
 		return nil, err
 	}
 	rec := m.APIKeys()[req.ID]
-	slog.Info("troupe api key minted", "troupe", m.Troupe(), "id", rec.ID, "principal", rec.Principal, "by", rec.By, "node", rec.Signer, "not_after", rec.NotAfter.UTC().Format(time.RFC3339))
+	slog.Info("troupe api key minted", "troupe", m.Troupe(), "id", rec.ID, "principal", rec.Principal, "by", rec.By, "node", rec.Signer, "nodes", strings.Join(rec.Nodes, ","), "not_after", rec.NotAfter.UTC().Format(time.RFC3339))
 	out := rpc.TroupeAPIKeyMintResponse{Key: apiKeyRow(rec)}
 	out.Reached, out.Unreachable = h.spread(ctx)
 	return out, nil
@@ -176,8 +182,52 @@ func (h *handlers) troupeAPIKeyList(ctx context.Context, params json.RawMessage)
 	return out, nil
 }
 
+func keyAudience(m *peer.Ledger, asked []string) ([]string, error) {
+	if len(asked) == 0 {
+		return []string{m.Self()}, nil
+	}
+	if len(asked) == 1 && asked[0] == apikey.AllNodes {
+		return asked, nil
+	}
+	known := append(slices.Sorted(maps.Keys(m.View().Members)), m.Self())
+	var out []string
+	for _, ref := range asked {
+		node, err := memberNamed(known, ref)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(out, node) {
+			out = append(out, node)
+		}
+	}
+	slices.Sort(out)
+	return out, troupe.CheckAudience(out)
+}
+
+func memberNamed(known []string, ref string) (string, error) {
+	if ref == apikey.AllNodes {
+		return "", fmt.Errorf("%q names every node on its own, not beside others", apikey.AllNodes)
+	}
+	var found []string
+	for _, n := range known {
+		if n == ref {
+			return n, nil
+		}
+		if len(ref) >= rpc.NodeShortLen && strings.HasPrefix(n, ref) && !slices.Contains(found, n) {
+			found = append(found, n)
+		}
+	}
+	switch len(found) {
+	case 1:
+		return found[0], nil
+	case 0:
+		return "", fmt.Errorf("no member of this troupe is node %q", ref)
+	}
+	return "", fmt.Errorf("node %q names %s", ref, strings.Join(found, " and "))
+}
+
 func apiKeyRow(r troupe.APIKeyRecord) rpc.TroupeAPIKey {
-	row := rpc.TroupeAPIKey{ID: r.ID, Principal: r.Principal, By: r.By, Signer: r.Signer, MintedAt: r.At.UnixMilli(), NotAfter: r.NotAfter.UnixMilli(), Void: r.Void}
+	row := rpc.TroupeAPIKey{ID: r.ID, Principal: r.Principal, By: r.By, Signer: r.Signer, MintedAt: r.At.UnixMilli(), NotAfter: r.NotAfter.UnixMilli(), Nodes: r.Nodes, Void: r.Void}
 	if r.Revoked != nil {
 		row.RevokedBy, row.RevokedVia, row.RevokedAt = r.Revoked.By, r.Revoked.Node, r.Revoked.At.UnixMilli()
 	}

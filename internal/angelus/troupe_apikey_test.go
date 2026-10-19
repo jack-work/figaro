@@ -2,8 +2,10 @@ package angelus
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/figaro/internal/troupe"
 )
 
 type keyRig struct {
@@ -32,10 +35,10 @@ func (r *keyRig) do(ctx context.Context, method string, req any) (any, error) {
 	return r.hs.Map[method](ctx, params)
 }
 
-func (r *keyRig) mint(ctx context.Context, principal string, ttl time.Duration) (rpc.TroupeAPIKeyMintResponse, apikey.Key, error) {
+func (r *keyRig) mint(ctx context.Context, principal string, ttl time.Duration, nodes ...string) (rpc.TroupeAPIKeyMintResponse, apikey.Key, error) {
 	_, k, err := apikey.New(rand.Reader)
 	require.NoError(r.t, err)
-	out, err := r.do(ctx, rpc.MethodTroupeAPIKeyMint, rpc.TroupeAPIKeyMintRequest{Troupe: "estate", ID: k.ID, Principal: principal, Hash: k.Hash[:], TTLMillis: ttl.Milliseconds()})
+	out, err := r.do(ctx, rpc.MethodTroupeAPIKeyMint, rpc.TroupeAPIKeyMintRequest{Troupe: "estate", ID: k.ID, Principal: principal, Hash: k.Hash[:], TTLMillis: ttl.Milliseconds(), Nodes: nodes})
 	if err != nil {
 		return rpc.TroupeAPIKeyMintResponse{}, k, err
 	}
@@ -65,6 +68,7 @@ func TestMintingAKeyTakesAdminAndRecordsTheMinter(t *testing.T) {
 	require.Equal(t, k.ID, out.Key.ID)
 	require.Equal(t, "user:0", out.Key.By)
 	require.Equal(t, r.a.Backend.NodeID(), out.Key.Signer)
+	require.Equal(t, []string{r.a.Backend.NodeID()}, out.Key.Nodes, "a key is good on the minting node alone unless it names others")
 	require.InDelta(t, time.Now().Add(apikey.DefaultTTL).UnixMilli(), out.Key.NotAfter, float64(time.Minute.Milliseconds()))
 	rec := r.a.Peers.(*peer.Ledger).APIKeys()[k.ID]
 	require.True(t, k.Matches(rec.Hash))
@@ -157,4 +161,48 @@ func TestAStaticTroupeMintsNoKeysButSaysWhoYouAre(t *testing.T) {
 	out := r.list(asKey("service:ci@troupe:estate"))
 	require.Equal(t, "service:ci@troupe:estate", out.Caller)
 	require.Empty(t, out.Keys)
+}
+
+func (r *keyRig) member(node string) {
+	r.t.Helper()
+	_, ik, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(r.t, err)
+	inter, err := troupe.IssueIntermediate(r.rk, r.root, "estate", node, ik.Public(), time.Now(), troupe.IntermediateTTL)
+	require.NoError(r.t, err)
+	e, err := troupe.SignJoin(ik, inter, "estate", node, node+".lan:7443", "user:owner", time.Now())
+	require.NoError(r.t, err)
+	_, err = r.a.Peers.(*peer.Ledger).Merge(e)
+	require.NoError(r.t, err)
+}
+
+// --nodes names members by id or unique prefix, or all of them; an unknown
+// node, or all beside others, is refused, and ls shows the audience.
+func TestAKeyNamesTheNodesItIsGoodOn(t *testing.T) {
+	r := newKeyRig(t, true)
+	r.member("node-bbbbbbbb-1")
+	r.member("node-bbbbbbbb-2")
+	self := r.a.Backend.NodeID()
+
+	out, _, err := r.mint(as("0"), "service:ci@troupe:estate", time.Hour, "node-bbbbbbbb-2", self)
+	require.NoError(t, err)
+	want := []string{"node-bbbbbbbb-2", self}
+	slices.Sort(want)
+	require.Equal(t, want, out.Key.Nodes)
+
+	out, _, err = r.mint(as("0"), "service:ci@troupe:estate", time.Hour, apikey.AllNodes)
+	require.NoError(t, err)
+	require.Equal(t, []string{apikey.AllNodes}, out.Key.Nodes)
+
+	for name, nodes := range map[string][]string{
+		"an unknown node":     {"node-zzzzzzzz"},
+		"an ambiguous prefix": {"node-bbbbbbbb"},
+		"all beside one":      {apikey.AllNodes, self},
+	} {
+		_, _, err := r.mint(as("0"), "service:ci@troupe:estate", time.Hour, nodes...)
+		require.Error(t, err, name)
+	}
+
+	for _, k := range r.list(as("0")).Keys {
+		require.NotEmpty(t, k.Nodes)
+	}
 }

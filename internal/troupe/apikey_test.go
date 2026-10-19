@@ -15,7 +15,7 @@ func (s *estate) mint(by, principal string, at, ttl time.Duration) (Entry, apike
 	s.t.Helper()
 	_, k, err := apikey.New(rand.Reader)
 	require.NoError(s.t, err)
-	e, err := SignAPIKey(s.ikey[by], s.inter[by], "estate", k.ID, principal, k.Hash[:], s.now.Add(at+ttl), "user:owner", s.now.Add(at))
+	e, err := SignAPIKey(s.ikey[by], s.inter[by], "estate", k.ID, principal, k.Hash[:], s.now.Add(at+ttl), []string{"a", "b"}, "user:owner", s.now.Add(at))
 	require.NoError(s.t, err)
 	return e, k
 }
@@ -41,6 +41,7 @@ func TestAMintedKeyIsLiveUntilItExpires(t *testing.T) {
 	require.Equal(t, "a", r.Signer)
 	require.Equal(t, "user:owner", r.By)
 	require.True(t, k.Matches(r.Hash))
+	require.Equal(t, []string{"a", "b"}, r.Nodes)
 	require.True(t, r.Live(s.now))
 	require.False(t, r.Live(s.now.Add(time.Hour)))
 	require.NotZero(t, v.KeysDigest)
@@ -60,6 +61,8 @@ func TestForgedAndTamperedKeysAreRefused(t *testing.T) {
 		"key":       func(e *Entry) { e.Key = "aaaaaaaaaa" },
 		"node":      func(e *Entry) { e.Node = "b" },
 		"door":      func(e *Entry) { e.Door = "x.lan:1" },
+		"nodes":     func(e *Entry) { e.Nodes = []string{"a", "b", "c"} },
+		"all nodes": func(e *Entry) { e.Nodes = []string{apikey.AllNodes} },
 	}
 	for name, f := range tamper {
 		e := good
@@ -160,7 +163,7 @@ func TestTwoKeysUnderOneIDAreBothVoid(t *testing.T) {
 	s.intermediate("a")
 	e, k := s.mint("a", "service:ci@troupe:estate", 0, time.Hour)
 	_, other := s.mint("a", "service:ci@troupe:estate", 0, time.Hour)
-	clash, err := SignAPIKey(s.ikey["a"], s.inter["a"], "estate", k.ID, "service:cd@troupe:estate", other.Hash[:], s.now.Add(time.Hour), "user:owner", s.now)
+	clash, err := SignAPIKey(s.ikey["a"], s.inter["a"], "estate", k.ID, "service:cd@troupe:estate", other.Hash[:], s.now.Add(time.Hour), []string{"a"}, "user:owner", s.now)
 	require.NoError(t, err)
 	v := s.ledger(e, clash).View()
 	require.False(t, v.APIKeys[k.ID].Live(s.now))
@@ -222,4 +225,35 @@ func TestTheKeysDigestMovesWithKeysAndRootRevokesOnly(t *testing.T) {
 	_, err = l.Merge(s.revoke("c", time.Minute))
 	require.NoError(t, err)
 	require.NotEqual(t, withKey, l.View().KeysDigest)
+}
+
+// A key names the nodes it is good on, signed with it: sorted, each once,
+// or all of them, and never none.
+func TestAKeysAudienceIsCheckedAndSigned(t *testing.T) {
+	s := newEstate(t)
+	s.intermediate("a")
+	_, k, err := apikey.New(rand.Reader)
+	require.NoError(t, err)
+	sign := func(nodes []string) error {
+		e, err := SignAPIKey(s.ikey["a"], s.inter["a"], "estate", k.ID, "service:ci@troupe:estate", k.Hash[:], s.now.Add(time.Hour), nodes, "user:owner", s.now)
+		require.NoError(t, err)
+		_, err = NewLedger("estate", s.root).Merge(e)
+		return err
+	}
+	require.NoError(t, sign([]string{apikey.AllNodes}))
+	require.NoError(t, sign([]string{"a"}))
+	for name, nodes := range map[string][]string{
+		"none":        nil,
+		"empty":       {},
+		"unsorted":    {"b", "a"},
+		"twice":       {"a", "a"},
+		"all and one": {apikey.AllNodes, "a"},
+		"not an id":   {"a/b"},
+	} {
+		require.Error(t, sign(nodes), name)
+	}
+	r := s.revokeKey("b", "a", k.ID, 0)
+	r.Nodes = []string{"a"}
+	_, err = NewLedger("estate", s.root).Merge(r)
+	require.Error(t, err, "a revoke carries no audience")
 }

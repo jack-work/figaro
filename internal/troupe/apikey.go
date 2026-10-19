@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
 )
 
@@ -37,20 +38,39 @@ func (e Entry) apiKeyMessage() []byte {
 		return append([]byte(apiKeyRevokeDomain), body...)
 	}
 	body, _ := json.Marshal(struct {
-		Troupe    string `json:"troupe"`
-		Node      string `json:"node"`
-		Key       string `json:"key"`
-		Principal string `json:"principal"`
-		Hash      []byte `json:"hash"`
-		NotAfter  int64  `json:"not_after"`
-		By        string `json:"by"`
-		At        int64  `json:"at"`
-	}{e.Troupe, e.Node, e.Key, e.Principal, e.Hash, e.NotAfter, e.By, e.At})
+		Troupe    string   `json:"troupe"`
+		Node      string   `json:"node"`
+		Key       string   `json:"key"`
+		Principal string   `json:"principal"`
+		Hash      []byte   `json:"hash"`
+		NotAfter  int64    `json:"not_after"`
+		Nodes     []string `json:"nodes"`
+		By        string   `json:"by"`
+		At        int64    `json:"at"`
+	}{e.Troupe, e.Node, e.Key, e.Principal, e.Hash, e.NotAfter, e.Nodes, e.By, e.At})
 	return append([]byte(apiKeyDomain), body...)
 }
 
-func SignAPIKey(key crypto.Signer, inter *x509.Certificate, troupe, id, principal string, hash []byte, notAfter time.Time, by string, at time.Time) (Entry, error) {
-	return sign(Entry{Kind: APIKey, Troupe: troupe, Node: IntermediateNode(inter), Key: id, Principal: principal, Hash: hash, NotAfter: notAfter.UnixMilli(), By: by, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
+func SignAPIKey(key crypto.Signer, inter *x509.Certificate, troupe, id, principal string, hash []byte, notAfter time.Time, nodes []string, by string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: APIKey, Troupe: troupe, Node: IntermediateNode(inter), Key: id, Principal: principal, Hash: hash, NotAfter: notAfter.UnixMilli(), Nodes: nodes, By: by, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
+}
+
+func CheckAudience(nodes []string) error {
+	if len(nodes) == 0 || len(nodes) > apikey.MaxAudience {
+		return fmt.Errorf("an api key names 1 to %d nodes, or %q for all", apikey.MaxAudience, apikey.AllNodes)
+	}
+	if len(nodes) == 1 && nodes[0] == apikey.AllNodes {
+		return nil
+	}
+	for i, n := range nodes {
+		if err := rpc.ValidateAriaID(n); err != nil {
+			return fmt.Errorf("api key node %q: %w", n, err)
+		}
+		if i > 0 && nodes[i-1] >= n {
+			return errors.New("an api key's nodes are sorted and named once")
+		}
+	}
+	return nil
 }
 
 func SignAPIKeyRevoke(key crypto.Signer, leaf, inter *x509.Certificate, troupe, node, id, by string, at time.Time) (Entry, error) {
@@ -69,7 +89,7 @@ func verifyAPIKey(v verified, root *x509.Certificate, at time.Time) (crypto.Publ
 		return nil, fmt.Errorf("by: %w", err)
 	}
 	if e.Kind == APIKeyRevoke {
-		if e.Principal != "" || e.Hash != nil || e.NotAfter != 0 {
+		if e.Principal != "" || e.Hash != nil || e.NotAfter != 0 || e.Nodes != nil {
 			return nil, errors.New("an apikey-revoke names the key by id alone")
 		}
 		if len(v.chain) != 2 {
@@ -85,6 +105,9 @@ func verifyAPIKey(v verified, root *x509.Certificate, at time.Time) (crypto.Publ
 		return leaf.PublicKey, nil
 	}
 	if _, err := apikey.ParsePrincipal(e.Principal, e.Troupe); err != nil {
+		return nil, err
+	}
+	if err := CheckAudience(e.Nodes); err != nil {
 		return nil, err
 	}
 	if len(e.Hash) != apikey.HashSize {
@@ -129,6 +152,7 @@ type APIKeyRecord struct {
 	Principal string
 	Hash      []byte
 	NotAfter  time.Time
+	Nodes     []string
 	By        string
 	Signer    string
 	At        time.Time
@@ -152,7 +176,7 @@ func (l *Ledger) apiKeyView(ids []string, gone map[string]Kind) map[string]APIKe
 			clash[e.Key] = true
 			continue
 		}
-		r := APIKeyRecord{ID: e.Key, Principal: e.Principal, Hash: e.Hash, NotAfter: e.Expires(), By: e.By, Signer: e.Node, At: e.Time()}
+		r := APIKeyRecord{ID: e.Key, Principal: e.Principal, Hash: e.Hash, NotAfter: e.Expires(), Nodes: e.Nodes, By: e.By, Signer: e.Node, At: e.Time()}
 		if gone[e.Node] == Revoke {
 			r.Void = "its signer " + e.Node + " is revoked by the root"
 		}

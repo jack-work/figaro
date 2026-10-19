@@ -48,6 +48,7 @@ type Entry struct {
 	Principal string   `json:"principal,omitempty"`
 	Hash      []byte   `json:"hash,omitempty"`
 	NotAfter  int64    `json:"not_after,omitempty"`
+	Nodes     []string `json:"nodes,omitempty"`
 	At        int64    `json:"at"`
 	Chain     [][]byte `json:"chain,omitempty"`
 	Sig       []byte   `json:"sig"`
@@ -146,7 +147,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 	if e.Kind != Renewer && e.Renews != "" {
 		return out, fmt.Errorf("a %s names no renewer", e.Kind)
 	}
-	if !isKeyKind(e.Kind) && (e.Key != "" || e.Principal != "" || e.Hash != nil || e.NotAfter != 0) {
+	if !isKeyKind(e.Kind) && (e.Key != "" || e.Principal != "" || e.Hash != nil || e.NotAfter != 0 || e.Nodes != nil) {
 		return out, fmt.Errorf("a %s carries no api key", e.Kind)
 	}
 	switch e.Kind {

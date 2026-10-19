@@ -126,6 +126,9 @@ func (h *handlers) linkFor(ctx context.Context, node string) (*peer.Link, func()
 	if !ok {
 		return nil, nil, errNoBearer
 	}
+	if err := authz.ForwardableTo(ctx, node); err != nil {
+		return nil, nil, err
+	}
 	p := rpc.Passage{Forwarded: true, Bearer: token}
 	if f := followerOf(ctx); f != nil {
 		l, err := f.link(ctx, h.fed.dialer, node, p)

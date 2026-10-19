@@ -25,6 +25,9 @@ const (
 	MaxTTL     = 365 * 24 * time.Hour
 	MaxName    = 64
 	HashSize   = sha256.Size
+
+	AllNodes    = "*"
+	MaxAudience = 64
 )
 
 var (
@@ -108,6 +111,15 @@ func checksum(body string) string {
 }
 
 func Scope(troupe string) string { return "troupe:" + troupe }
+
+func Reaches(audience []string, node string) bool {
+	for _, n := range audience {
+		if n == AllNodes || n == node {
+			return true
+		}
+	}
+	return false
+}
 
 func Principal(kind jkauthz.Kind, name, troupe string) (jkauthz.Principal, error) {
 	p := jkauthz.Principal{Kind: kind, ID: name + "@" + Scope(troupe)}

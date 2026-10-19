@@ -336,7 +336,7 @@ func forwardedCallers(b authz.Bearers) peer.Verify {
 	return b.Verify
 }
 
-func newAPIKeys(loaded *config.Loaded) (*authz.APIKeys, error) {
+func newAPIKeys(loaded *config.Loaded, self string) (*authz.APIKeys, error) {
 	name, err := loaded.TroupeName()
 	if err != nil {
 		return nil, err
@@ -345,7 +345,7 @@ func newAPIKeys(loaded *config.Loaded) (*authz.APIKeys, error) {
 	if name == "" && len(static) == 0 {
 		return nil, nil
 	}
-	return authz.NewAPIKeys(name, static, nil)
+	return authz.NewAPIKeys(name, self, static, nil)
 }
 
 func bindLedgerAPIKeys(a *angelus.Angelus, m *peer.Ledger) {
@@ -362,7 +362,7 @@ func bindLedgerAPIKeys(a *angelus.Angelus, m *peer.Ledger) {
 func apiKeyGrants(recs map[string]troupe.APIKeyRecord) []authz.APIKeyGrant {
 	out := make([]authz.APIKeyGrant, 0, len(recs))
 	for _, r := range recs {
-		g := authz.APIKeyGrant{ID: r.ID, Principal: r.Principal, Hash: r.Hash, NotAfter: r.NotAfter, Void: r.Void}
+		g := authz.APIKeyGrant{ID: r.ID, Principal: r.Principal, Hash: r.Hash, NotAfter: r.NotAfter, Nodes: r.Nodes, Void: r.Void}
 		if r.Revoked != nil {
 			g.Void = fmt.Sprintf("revoked by %s through node %s, %s", r.Revoked.By, r.Revoked.Node, r.Revoked.At.UTC().Format(time.RFC3339))
 		}

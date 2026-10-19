@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,11 +26,13 @@ type APIKeyGrant struct {
 	Principal string
 	Hash      []byte
 	NotAfter  time.Time
+	Nodes     []string
 	Void      string
 }
 
 type APIKeys struct {
 	troupe string
+	self   string
 	now    func() time.Time
 	local  map[string]*keyEntry
 	set    atomic.Pointer[map[string]*keyEntry]
@@ -42,31 +45,37 @@ type keyEntry struct {
 	principal jkauthz.Principal
 	hash      []byte
 	notAfter  time.Time
+	nodes     []string
 	void      string
-	local     bool
 }
 
 type keyConn struct {
 	cancel context.CancelCauseFunc
 }
 
-func NewAPIKeys(troupe string, static []config.APIKeyConfig, now func() time.Time) (*APIKeys, error) {
+func NewAPIKeys(troupe, self string, static []config.APIKeyConfig, now func() time.Time) (*APIKeys, error) {
 	if now == nil {
 		now = time.Now
 	}
-	k := &APIKeys{troupe: troupe, now: now, local: map[string]*keyEntry{}, live: map[string]map[*keyConn]struct{}{}}
+	if self == "" {
+		return nil, errors.New("authz: api keys are checked against this node's id, and it has none")
+	}
+	k := &APIKeys{troupe: troupe, self: self, now: now, local: map[string]*keyEntry{}, live: map[string]map[*keyConn]struct{}{}}
 	if len(static) > 0 && troupe == "" {
 		return nil, errors.New("authz.api_keys: keys are scoped by their troupe, and [troupe] name is unset")
 	}
 	for i, c := range static {
-		e, err := k.entry(APIKeyGrant{ID: c.ID, Principal: c.Principal, NotAfter: c.NotAfter}, c.SHA256)
+		nodes := c.Nodes
+		if len(nodes) == 0 {
+			nodes = []string{self}
+		}
+		e, err := k.entry(APIKeyGrant{ID: c.ID, Principal: c.Principal, NotAfter: c.NotAfter, Nodes: nodes}, c.SHA256)
 		if err != nil {
 			return nil, fmt.Errorf("authz.api_keys[%d]: %w", i, err)
 		}
 		if _, dup := k.local[c.ID]; dup {
 			return nil, fmt.Errorf("authz.api_keys[%d]: id %s twice", i, c.ID)
 		}
-		e.local = true
 		k.local[c.ID] = e
 	}
 	k.publish(nil)
@@ -93,7 +102,10 @@ func (k *APIKeys) entry(g APIKeyGrant, hexHash string) (*keyEntry, error) {
 	if g.NotAfter.IsZero() {
 		return nil, errors.New("not_after: every key expires")
 	}
-	return &keyEntry{principal: p, hash: hash, notAfter: g.NotAfter, void: g.Void}, nil
+	if len(g.Nodes) == 0 {
+		return nil, errors.New("nodes: a key names the nodes it is good on")
+	}
+	return &keyEntry{principal: p, hash: hash, notAfter: g.NotAfter, nodes: g.Nodes, void: g.Void}, nil
 }
 
 func (k *APIKeys) publish(troupe map[string]*keyEntry) {
@@ -153,7 +165,10 @@ func (k *APIKeys) Open(token string) (*KeySession, error) {
 	if !k.now().Before(e.notAfter) {
 		return nil, fmt.Errorf("%w: api key %s expired %s", ErrExpired, key.ID, e.notAfter.UTC().Format(time.RFC3339))
 	}
-	return &KeySession{keys: k, id: key.ID, hash: e.hash, principal: e.principal, token: token}, nil
+	if !apikey.Reaches(e.nodes, k.self) {
+		return nil, fmt.Errorf("%w: api key %s is not good on node %s", ErrUnadmitted, key.ID, k.self)
+	}
+	return &KeySession{keys: k, id: key.ID, hash: e.hash, principal: e.principal, nodes: e.nodes, token: token}, nil
 }
 
 func (k *APIKeys) Admit(ctx context.Context, token string) (context.Context, error) {
@@ -203,7 +218,16 @@ type KeySession struct {
 	id        string
 	hash      []byte
 	principal jkauthz.Principal
+	nodes     []string
 	token     string
+}
+
+func ForwardableTo(ctx context.Context, node string) error {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.key == nil || apikey.Reaches(c.key.nodes, node) {
+		return nil
+	}
+	return fmt.Errorf("api key %s is not good on node %s (it names %s), so it is not sent there", c.key.id, node, strings.Join(c.key.nodes, ", "))
 }
 
 func (s *KeySession) expiry() time.Time {

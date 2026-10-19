@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/apikey"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -37,6 +39,8 @@ type fedNode struct {
 	dir     string
 	owner   *sdk.Angelus
 	bearer  *authz.Issuers
+	keys    *authz.APIKeys
+	keysAt  atomic.Int32
 	issuer  *peertest.Issuer
 	ctx     context.Context
 	stop    context.CancelFunc
@@ -137,6 +141,8 @@ func (n *fedNode) start() {
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
 	n.bearer, err = authz.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger"), nil, nil)
 	require.NoError(t, err)
+	n.keys, err = authz.NewAPIKeys("fed", n.id, nil, nil)
+	require.NoError(t, err)
 
 	n.ctx, n.stop = context.WithCancel(context.Background())
 	t.Cleanup(n.stop)
@@ -156,12 +162,12 @@ func (n *fedNode) start() {
 	t.Cleanup(func() { n.a.Shutdown(0) })
 	waitForAngelus(t, n.a.SocketPath)
 
+	bearers := authz.Bearers{Issuers: n.bearer, Keys: n.keys}
 	door := &peer.Door{Members: members, Verify: func(ctx context.Context, token string) (context.Context, error) {
-		s, err := n.bearer.Open(ctx, token)
-		if err != nil {
-			return nil, err
+		if apikey.Is(token) {
+			n.keysAt.Add(1)
 		}
-		return authz.WithSession(ctx, s), nil
+		return bearers.Verify(ctx, token)
 	}}
 	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), door.Admit)
 
@@ -182,6 +188,19 @@ func (n *fedNode) callerDoor(token string) transport.Endpoint {
 			return nil, err
 		}
 		return authz.WithSession(ctx, s), nil
+	})
+	return transport.UnixEndpoint(path)
+}
+
+// keyDoor is a unix door admitting every connection by an api key, the way
+// a bearer web door does.
+func (n *fedNode) keyDoor(wire string) transport.Endpoint {
+	t := n.t
+	path := filepath.Join(n.dir, fmt.Sprintf("key-%d.sock", time.Now().UnixNano()))
+	ln, err := net.Listen("unix", path)
+	require.NoError(t, err)
+	go n.a.Serve(n.ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+		return n.keys.Admit(ctx, wire)
 	})
 	return transport.UnixEndpoint(path)
 }

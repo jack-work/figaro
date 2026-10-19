@@ -25,7 +25,7 @@ type fakeKeyDoor struct {
 
 func (f *fakeKeyDoor) TroupeAPIKeyMint(_ context.Context, req rpc.TroupeAPIKeyMintRequest) (*rpc.TroupeAPIKeyMintResponse, error) {
 	f.minted = req
-	return &rpc.TroupeAPIKeyMintResponse{Key: rpc.TroupeAPIKey{ID: req.ID, Principal: req.Principal, By: "user:jack@auth.kelliher.info", Signer: "node-a", NotAfter: time.Now().Add(time.Duration(req.TTLMillis) * time.Millisecond).UnixMilli()}, Reached: []string{"node-b"}}, nil
+	return &rpc.TroupeAPIKeyMintResponse{Key: rpc.TroupeAPIKey{ID: req.ID, Principal: req.Principal, By: "user:jack@auth.kelliher.info", Signer: "node-a", Nodes: []string{"node-a"}, NotAfter: time.Now().Add(time.Duration(req.TTLMillis) * time.Millisecond).UnixMilli()}, Reached: []string{"node-b"}}, nil
 }
 
 func (f *fakeKeyDoor) TroupeAPIKeyRevoke(_ context.Context, troupe, id string) (*rpc.TroupeAPIKeyRevokeResponse, error) {
@@ -74,11 +74,18 @@ func TestMintPrintsTheKeyOnceAndSendsOnlyItsHash(t *testing.T) {
 	require.Equal(t, k.Hash[:], d.minted.Hash)
 	require.Equal(t, "service:ci@troupe:estate", d.minted.Principal)
 	require.Equal(t, (30 * 24 * time.Hour).Milliseconds(), d.minted.TTLMillis)
+	require.Nil(t, d.minted.Nodes, "the node picks the default audience, itself")
+	require.Contains(t, info.String(), "good on node-a")
 	require.NotContains(t, info.String(), wire)
 	require.Contains(t, info.String(), "minted by user:jack@auth.kelliher.info")
 	require.Contains(t, info.String(), "node-b")
 
 	require.Error(t, apiKeyMint(context.Background(), d, &out, &info, "estate", "service:ci", apiKeyOpts{TTL: "400d"}, false))
+
+	require.NoError(t, apiKeyMint(context.Background(), d, &out, &info, "estate", "service:ci", apiKeyOpts{Nodes: "node-a, node-b"}, false))
+	require.Equal(t, []string{"node-a", "node-b"}, d.minted.Nodes)
+	require.NoError(t, apiKeyMint(context.Background(), d, &out, &info, "estate", "service:ci", apiKeyOpts{Nodes: "all"}, false))
+	require.Equal(t, []string{apikey.AllNodes}, d.minted.Nodes)
 }
 
 // A static key's stanza is what a node's config takes: decoded and loaded,
@@ -94,13 +101,22 @@ func TestAStaticKeyStanzaAdmitsItsKey(t *testing.T) {
 	}
 	_, err := toml.Decode(stanza, &cfg)
 	require.NoError(t, err)
-	keys, err := authz.NewAPIKeys("estate", cfg.Authz.APIKeys, nil)
+	keys, err := authz.NewAPIKeys("estate", "node-a", cfg.Authz.APIKeys, nil)
 	require.NoError(t, err)
 	ctx, err := keys.Admit(context.Background(), wire)
 	require.NoError(t, err)
 	s, err := authz.SubjectOf(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "service:ci@troupe:estate", s.Principal.String())
+	require.Error(t, authz.ForwardableTo(ctx, "node-b"), "a static key is good where it is loaded")
+
+	out.Reset()
+	info.Reset()
+	require.NoError(t, apiKeyMint(context.Background(), nil, &out, &info, "estate", "service:ci", apiKeyOpts{TTL: "1d", Nodes: "node-a,node-b", Static: true}, false))
+	stanza = info.String()[strings.Index(info.String(), "[[authz.api_keys]]"):]
+	_, err = toml.Decode(stanza, &cfg)
+	require.NoError(t, err)
+	require.Equal(t, []string{"node-a", "node-b"}, cfg.Authz.APIKeys[0].Nodes)
 }
 
 func TestListShowsWhoMintedEachKeyAndItsState(t *testing.T) {
@@ -114,6 +130,7 @@ func TestListShowsWhoMintedEachKeyAndItsState(t *testing.T) {
 	require.NoError(t, apiKeyList(context.Background(), d, &out, "estate", false))
 	s := out.String()
 	require.Contains(t, s, "MINTED BY")
+	require.Contains(t, s, "NODES")
 	require.Contains(t, s, "user:jack@auth.kelliher.info")
 	require.Contains(t, s, "live")
 	require.Contains(t, s, "revoked by user:0")

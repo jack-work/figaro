@@ -7,11 +7,12 @@ const (
 )
 
 type TroupeAPIKeyMintRequest struct {
-	Troupe    string `json:"troupe"`
-	ID        string `json:"id"`
-	Principal string `json:"principal"`
-	Hash      []byte `json:"hash"`
-	TTLMillis int64  `json:"ttl_ms,omitempty"`
+	Troupe    string   `json:"troupe"`
+	ID        string   `json:"id"`
+	Principal string   `json:"principal"`
+	Hash      []byte   `json:"hash"`
+	TTLMillis int64    `json:"ttl_ms,omitempty"`
+	Nodes     []string `json:"nodes,omitempty"`
 }
 
 type TroupeAPIKeyMintResponse struct {
@@ -37,16 +38,17 @@ type TroupeAPIKeyListRequest struct {
 }
 
 type TroupeAPIKey struct {
-	ID         string `json:"id"`
-	Principal  string `json:"principal"`
-	By         string `json:"by"`
-	Signer     string `json:"signer"`
-	MintedAt   int64  `json:"minted_at"`
-	NotAfter   int64  `json:"not_after"`
-	RevokedBy  string `json:"revoked_by,omitempty"`
-	RevokedVia string `json:"revoked_via,omitempty"`
-	RevokedAt  int64  `json:"revoked_at,omitempty"`
-	Void       string `json:"void,omitempty"`
+	ID         string   `json:"id"`
+	Principal  string   `json:"principal"`
+	By         string   `json:"by"`
+	Signer     string   `json:"signer"`
+	MintedAt   int64    `json:"minted_at"`
+	NotAfter   int64    `json:"not_after"`
+	Nodes      []string `json:"nodes"`
+	RevokedBy  string   `json:"revoked_by,omitempty"`
+	RevokedVia string   `json:"revoked_via,omitempty"`
+	RevokedAt  int64    `json:"revoked_at,omitempty"`
+	Void       string   `json:"void,omitempty"`
 }
 
 type TroupeAPIKeyListResponse struct {

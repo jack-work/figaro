@@ -304,7 +304,7 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-	if a.APIKeys, err = newAPIKeys(loaded); err != nil {
+	if a.APIKeys, err = newAPIKeys(loaded, backend.NodeID()); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}

@@ -20,6 +20,7 @@ type APIKeyConfig struct {
 	Principal string    `toml:"principal"`
 	SHA256    string    `toml:"sha256"`
 	NotAfter  time.Time `toml:"not_after"`
+	Nodes     []string  `toml:"nodes"`
 }
 
 type PeercredConfig struct {

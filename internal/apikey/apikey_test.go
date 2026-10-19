@@ -96,3 +96,10 @@ func TestAKeyPrincipalIsAUserOrServiceScopedByItsTroupe(t *testing.T) {
 	}
 	require.Error(t, CheckPrincipal(jkauthz.Principal{Kind: "service", ID: "ci@troupe:estate", Node: "n"}, "estate"))
 }
+
+func TestAnAudienceReachesItsNodesOrAll(t *testing.T) {
+	require.True(t, Reaches([]string{"a", "b"}, "b"))
+	require.False(t, Reaches([]string{"a", "b"}, "c"))
+	require.True(t, Reaches([]string{AllNodes}, "c"))
+	require.False(t, Reaches(nil, "a"))
+}
