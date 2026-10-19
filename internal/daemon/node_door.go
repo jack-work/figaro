@@ -155,6 +155,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	}
 	a.Peers = m
 	bindLedgerTroupePolicy(a, m, loaded.Config.Authz.TakesTroupeIssuers())
+	bindLedgerAPIKeys(a, m)
 	owner := a.Peercred.Self().String()
 	seedJoin(k, m, door.Advertise, owner, time.Now())
 	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}
@@ -281,7 +282,7 @@ func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loade
 	if err != nil {
 		return err
 	}
-	verify := forwardedCallers(a.Issuers)
+	verify := forwardedCallers(authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
 	ln, err := net.Listen("tcp", door.Listen)
 	if err != nil {
 		return fmt.Errorf("door.tls: %w", err)
@@ -324,21 +325,50 @@ func prunable(es []troupe.Entry, now time.Time) []string {
 	return out
 }
 
-func forwardedCallers(is *authz.Issuers) peer.Verify {
-	if is == nil {
-		slog.Warn("door.tls: no issuers, so every forwarded caller is refused")
+func forwardedCallers(b authz.Bearers) peer.Verify {
+	if b.Issuers == nil && b.Keys == nil {
+		slog.Warn("door.tls: no issuers and no api keys, so every forwarded caller is refused")
 		return nil
 	}
-	if is.Empty() {
-		slog.Warn("door.tls: no issuer yet, so forwarded callers are refused until [[authz.issuers]] or the troupe policy names one")
+	if b.Issuers == nil || b.Issuers.Empty() {
+		slog.Warn("door.tls: no issuer yet, so forwarded callers other than api keys are refused until [[authz.issuers]] or the troupe policy names one")
 	}
-	return func(ctx context.Context, token string) (context.Context, error) {
-		s, err := is.Open(ctx, token)
-		if err != nil {
-			return nil, err
+	return b.Verify
+}
+
+func newAPIKeys(loaded *config.Loaded) (*authz.APIKeys, error) {
+	name, err := loaded.TroupeName()
+	if err != nil {
+		return nil, err
+	}
+	static := loaded.Config.Authz.APIKeys
+	if name == "" && len(static) == 0 {
+		return nil, nil
+	}
+	return authz.NewAPIKeys(name, static, nil)
+}
+
+func bindLedgerAPIKeys(a *angelus.Angelus, m *peer.Ledger) {
+	if a.APIKeys == nil {
+		return
+	}
+	m.OnAPIKeys(func(recs map[string]troupe.APIKeyRecord) {
+		if err := a.APIKeys.SetTroupe(apiKeyGrants(recs)); err != nil {
+			slog.Error("troupe api keys: some are not taken up", "err", err)
 		}
-		return authz.WithSession(ctx, s), nil
+	})
+}
+
+func apiKeyGrants(recs map[string]troupe.APIKeyRecord) []authz.APIKeyGrant {
+	out := make([]authz.APIKeyGrant, 0, len(recs))
+	for _, r := range recs {
+		g := authz.APIKeyGrant{ID: r.ID, Principal: r.Principal, Hash: r.Hash, NotAfter: r.NotAfter, Void: r.Void}
+		if r.Revoked != nil {
+			g.Void = fmt.Sprintf("revoked by %s through node %s, %s", r.Revoked.By, r.Revoked.Node, r.Revoked.At.UTC().Format(time.RFC3339))
+		}
+		out = append(out, g)
 	}
+	return out
 }
 
 func newIssuers(cfgs []config.IssuerConfig) (*authz.Issuers, error) {

@@ -3,6 +3,7 @@ package daemon
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -20,11 +21,11 @@ func TestAWebDoorWithoutTheConfigToVerifyCallersDoesNotStart(t *testing.T) {
 		"upstream with no [authz] at all":  {"upstream", config.AuthzConfig{}},
 		"upstream reverifying, no issuers": {"upstream", config.AuthzConfig{Upstream: config.UpstreamConfig{Issuer: "https://auth.kelliher.info", Reverify: true}}},
 	} {
-		if admit, err := webAuthenticator(c.authn, listen, cli, c.cfg, nil); err == nil || admit != nil {
+		if admit, err := webAuthenticator(c.authn, listen, cli, c.cfg, authz.Bearers{}); err == nil || admit != nil {
 			t.Errorf("%s: started (%v)", name, err)
 		}
 	}
-	if _, err := webAuthenticator("upstream", listen, cli, config.AuthzConfig{Upstream: config.UpstreamConfig{Issuer: "https://auth.kelliher.info"}}, nil); err != nil {
+	if _, err := webAuthenticator("upstream", listen, cli, config.AuthzConfig{Upstream: config.UpstreamConfig{Issuer: "https://auth.kelliher.info"}}, authz.Bearers{}); err != nil {
 		t.Fatalf("upstream naming its issuer: %v", err)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jack-work/figaro/internal/apikey"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkauthz/bearer"
@@ -407,6 +408,9 @@ type Session struct {
 }
 
 func (is *Issuers) Open(ctx context.Context, token string) (*Session, error) {
+	if apikey.Is(token) {
+		return nil, fmt.Errorf("%w: an api key is not an issuer's token", ErrUnadmitted)
+	}
 	i, err := is.issuerFor(token)
 	if err != nil {
 		return nil, err
@@ -503,14 +507,10 @@ func (u *Upstream) AdmitRequest(ctx context.Context, r *http.Request) (context.C
 	return WithSubject(ctx, s), nil
 }
 
-func (is *Issuers) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+func (b Bearers) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
 	token, ok := bearer.FromHeader(r.Header.Get("Authorization"))
 	if !ok {
 		return nil, fmt.Errorf("%w: no bearer token", ErrUnadmitted)
 	}
-	s, err := is.Open(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	return WithSession(ctx, s), nil
+	return b.Verify(ctx, token)
 }

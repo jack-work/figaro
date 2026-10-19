@@ -46,7 +46,7 @@ func TestABearerConnectionIsRefusedOnceItsTokenLapses(t *testing.T) {
 	b := is.bearer(t)
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+is.mint("u-1", "figaro-cli", time.Minute, map[string]any{"sub": "u-1", "preferred_username": "gluck"}))
-	ctx, err := b.AdmitRequest(context.Background(), upgrade(h))
+	ctx, err := Bearers{Issuers: b}.AdmitRequest(context.Background(), upgrade(h))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestABearerConnectionIsRefusedOnceItsTokenLapses(t *testing.T) {
 	if _, err := SubjectOf(ctx); !errors.Is(err, ErrExpired) {
 		t.Fatalf("served past exp: %v", err)
 	}
-	if _, err := b.AdmitRequest(context.Background(), upgrade(http.Header{})); !errors.Is(err, ErrUnadmitted) {
+	if _, err := (Bearers{Issuers: b}).AdmitRequest(context.Background(), upgrade(http.Header{})); !errors.Is(err, ErrUnadmitted) {
 		t.Fatalf("no token: %v", err)
 	}
 }

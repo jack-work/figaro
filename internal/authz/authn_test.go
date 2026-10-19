@@ -440,7 +440,7 @@ func TestOnlyAVerifiedTokenIsForwardable(t *testing.T) {
 	tok := is.mint("u-1", "figaro-cli", time.Hour, map[string]any{"sub": "u-1", "preferred_username": "gluck"})
 
 	r := &http.Request{Header: http.Header{"Authorization": {"Bearer " + tok}}}
-	bctx, err := b.AdmitRequest(ctx, r)
+	bctx, err := Bearers{Issuers: b}.AdmitRequest(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}

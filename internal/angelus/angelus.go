@@ -62,6 +62,7 @@ type Angelus struct {
 
 	Policies     *authz.Policies
 	Issuers      *authz.Issuers
+	APIKeys      *authz.APIKeys
 	Peercred     *authz.Peercred
 	Peers        peer.Membership
 	PeerVersions *peer.Versions

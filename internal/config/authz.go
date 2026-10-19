@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"path/filepath"
+	"time"
 )
 
 type AuthzConfig struct {
@@ -11,6 +12,14 @@ type AuthzConfig struct {
 	Peercred      PeercredConfig `toml:"peercred"`
 	Upstream      UpstreamConfig `toml:"upstream"`
 	Issuers       []IssuerConfig `toml:"issuers"`
+	APIKeys       []APIKeyConfig `toml:"api_keys"`
+}
+
+type APIKeyConfig struct {
+	ID        string    `toml:"id"`
+	Principal string    `toml:"principal"`
+	SHA256    string    `toml:"sha256"`
+	NotAfter  time.Time `toml:"not_after"`
 }
 
 type PeercredConfig struct {

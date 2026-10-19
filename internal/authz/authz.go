@@ -38,6 +38,7 @@ type callerKey struct{}
 type caller struct {
 	subject jkauthz.Subject
 	session *Session
+	key     *KeySession
 	bearer  string
 }
 
@@ -67,16 +68,22 @@ func WithVerifiedBearer(ctx context.Context, s jkauthz.Subject, token string) co
 
 func BearerOf(ctx context.Context) (string, bool) {
 	c, _ := ctx.Value(callerKey{}).(caller)
-	if c.session != nil {
+	switch {
+	case c.session != nil:
 		return c.session.Token(), true
+	case c.key != nil:
+		return c.key.token, true
 	}
 	return c.bearer, c.bearer != ""
 }
 
 func SubjectOf(ctx context.Context) (jkauthz.Subject, error) {
 	c, _ := ctx.Value(callerKey{}).(caller)
-	if c.session != nil {
+	switch {
+	case c.session != nil:
 		return c.session.Subject(ctx)
+	case c.key != nil:
+		return c.key.Subject()
 	}
 	return c.subject, nil
 }

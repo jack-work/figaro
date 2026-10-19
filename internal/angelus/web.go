@@ -139,7 +139,20 @@ func (w *webConn) Close() error {
 			err = w.c.Close(websocket.StatusPolicyViolation, webAgeReason)
 			return
 		}
+		if cause := context.Cause(w.life); cause != nil && !errors.Is(cause, context.Canceled) {
+			err = w.c.Close(websocket.StatusPolicyViolation, closeReason(cause))
+			return
+		}
 		err = w.c.Close(websocket.StatusNormalClosure, "")
 	})
 	return err
+}
+
+func closeReason(err error) string {
+	const max = 123
+	msg := err.Error()
+	if len(msg) > max {
+		msg = msg[:max]
+	}
+	return msg
 }
