@@ -109,7 +109,7 @@ func (n *fedNode) serve(pki *peertest.PKI, others ...*fedNode) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	n.doorLn = ln
-	n.tlsCfg, err = peer.ServerTLS(pki.Door(n.id, ""))
+	n.tlsCfg, err = peer.ServerTLS(pki.Door(n.id, ""), nil)
 	require.NoError(t, err)
 	for _, other := range others {
 		n.pendingPeers = append(n.pendingPeers, func() config.Peer { return pki.Peer(n.id, other.id, other.doorLn.Addr().String()) })
@@ -122,7 +122,7 @@ func (n *fedNode) start() {
 	for _, p := range n.pendingPeers {
 		peers = append(peers, p())
 	}
-	members, err := peer.NewStatic(0, peers)
+	members, err := peer.NewStatic(0, peers, nil)
 	require.NoError(t, err)
 	n.members = members
 	n.a.Peers = members

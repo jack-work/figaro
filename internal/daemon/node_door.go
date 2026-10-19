@@ -11,11 +11,17 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/figaro/internal/troupe"
 )
 
-func federate(a *angelus.Angelus, loaded *config.Loaded) error {
+func federate(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
+	creds, err := troupeKeys(ctx, a, loaded)
+	if err != nil {
+		return err
+	}
 	peers, err := loaded.Peers()
 	if err != nil {
 		return err
@@ -30,7 +36,7 @@ func federate(a *angelus.Angelus, loaded *config.Loaded) error {
 	if err != nil {
 		return err
 	}
-	members, err := peer.NewStatic(version, peers)
+	members, err := peer.NewStatic(version, peers, creds)
 	if err != nil {
 		return err
 	}
@@ -39,12 +45,33 @@ func federate(a *angelus.Angelus, loaded *config.Loaded) error {
 	return nil
 }
 
+func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) (*peer.Credentials, error) {
+	name, err := loaded.TroupeName()
+	if err != nil || name == "" {
+		return nil, err
+	}
+	k := &troupe.Keeper{Dir: troupe.DirFor(boot.StateDir(), name), Troupe: name, Node: a.Backend.NodeID()}
+	if err := k.Ensure(); err != nil {
+		slog.Error("troupe certificate: local callers are served, the node door refuses peers", "err", err)
+	}
+	go k.Run(ctx)
+	a.Troupe = k
+	return troupeCredentials(a), nil
+}
+
+func troupeCredentials(a *angelus.Angelus) *peer.Credentials {
+	if a.Troupe == nil {
+		return nil
+	}
+	return &peer.Credentials{Certificate: a.Troupe.Current, Roots: a.Troupe.Roots}
+}
+
 func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
 	door, ok, err := loaded.TLSDoor()
 	if err != nil || !ok {
 		return err
 	}
-	cfg, err := peer.ServerTLS(door)
+	cfg, err := peer.ServerTLS(door, troupeCredentials(a))
 	if err != nil {
 		return err
 	}

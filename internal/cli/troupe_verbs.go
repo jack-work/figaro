@@ -64,7 +64,11 @@ type troupeListing struct {
 }
 
 func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
-	if peers, err := loaded.Peers(); err != nil || len(peers) == 0 {
+	name, err := loaded.TroupeName()
+	if err != nil {
+		return nil, err
+	}
+	if peers, err := loaded.Peers(); err != nil || (len(peers) == 0 && name == "") {
 		return nil, err
 	}
 	acli, err := sdk.DialAngelus(doorEndpoint())
@@ -79,6 +83,17 @@ func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
 
 func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 	fmt.Fprintf(out, "\nthis node %s, troupe membership version %d\n", m.Node, m.Version)
+	if k := m.Keys; k != nil {
+		switch {
+		case k.Error != "":
+			fmt.Fprintf(out, "keys: %s\n", k.Error)
+		default:
+			fmt.Fprintf(out, "troupe %s keys: node certificate until %s, intermediate until %s\n", k.Troupe, day(k.NodeExpires), day(k.IntermediateExpires))
+		}
+	}
+	if len(m.Peers) == 0 {
+		return
+	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "\tPEER\tENDPOINT\tVERSION\tDRIFT")
 	for _, p := range m.Peers {
@@ -173,4 +188,11 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool) error {
 		dieUsage("troupe: want login, ls, create or intermediate, not %q", verb)
 	}
 	return nil
+}
+
+func day(ms int64) string {
+	if ms == 0 {
+		return "-"
+	}
+	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04Z")
 }

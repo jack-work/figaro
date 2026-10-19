@@ -38,7 +38,7 @@ type served struct {
 
 func serve(t *testing.T, cfg config.TLSDoor, d *peer.Door, owned ...string) *served {
 	t.Helper()
-	tlsCfg, err := peer.ServerTLS(cfg)
+	tlsCfg, err := peer.ServerTLS(cfg, nil)
 	require.NoError(t, err)
 	raw, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func serve(t *testing.T, cfg config.TLSDoor, d *peer.Door, owned ...string) *ser
 
 func members(t *testing.T, peers ...config.Peer) *peer.Static {
 	t.Helper()
-	m, err := peer.NewStatic(0, peers)
+	m, err := peer.NewStatic(0, peers, nil)
 	require.NoError(t, err)
 	return m
 }

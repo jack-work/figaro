@@ -327,7 +327,7 @@ func Run() {
 	})
 	go a.Models.Run(ctx)
 
-	if err := federate(a, loaded); err != nil {
+	if err := federate(ctx, a, loaded); err != nil {
 		slog.Error("angelus peers", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)

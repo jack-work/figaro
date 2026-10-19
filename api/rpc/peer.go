@@ -35,6 +35,14 @@ type TroupeMembersResponse struct {
 	Node    string         `json:"node"`
 	Version uint64         `json:"version"`
 	Peers   []TroupeMember `json:"peers"`
+	Keys    *TroupeKeys    `json:"keys,omitempty"`
+}
+
+type TroupeKeys struct {
+	Troupe              string `json:"troupe"`
+	NodeExpires         int64  `json:"node_expires,omitempty"`
+	IntermediateExpires int64  `json:"intermediate_expires,omitempty"`
+	Error               string `json:"error,omitempty"`
 }
 
 type TroupeMember struct {

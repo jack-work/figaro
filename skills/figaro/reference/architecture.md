@@ -575,6 +575,26 @@ intermediate key among it. The NixOS module sets `HOME` and
 state dir at `/var/lib/figaro` under the same module, so the rule holds
 there too.
 
+### Troupe keys
+
+`[troupe] name` turns them on. The root is an Ed25519 key held outside every
+node (1Password): `op read <ref> | figaro troupe create <name>` derives the
+root certificate from it (the same bytes on any machine) and issues this
+node's intermediate, a CA for one year that may sign only leaves under
+`spiffe://<name>/`. `figaro troupe intermediate <name>` renews it, or issues
+one on another node from the same root. The CLI signs; the root never
+reaches the daemon or the disk. Under `<state>/troupe/<name>/` sit
+`root.crt` and the intermediate and node keys and certificates, 0600.
+
+The daemon issues its node certificate (seven days, URI SAN
+`spiffe://<name>/node/<node id>`) from the intermediate at start and renews
+it, with a fresh key, once less than a third of its life is left (checked
+hourly); the node door and the dialer take each new one on the next
+handshake. With `[troupe] name` set, `[door.tls]` and `[peers.<id>]` may
+omit their certificate files and the peer `identity`. An expired or missing
+intermediate keeps local callers served, closes the node door and the
+dialer, and logs the command to run; `troupe ls` shows both expiries.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,

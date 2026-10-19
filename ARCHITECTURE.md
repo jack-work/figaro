@@ -241,7 +241,9 @@ A third, node door is configured by `[door.tls]` (`listen`, `cert`, `key`,
 `client_ca`) and serves the same methods to peers over mutual TLS. Peers are
 static, `[peers.<node id>]` (`endpoint = "tls://host:port"`, `identity`, the
 URI their certificate must carry, and the `ca`, `cert`, `key` this node dials
-them with), and `[troupe] version` names the revision of that list. A peer's
+them with; with `[troupe] name` set these files may be left out and the
+troupe's keys stand in, see Troupe keys in `skills/figaro/reference/architecture.md`),
+and `[troupe] version` names the revision of that list. A peer's
 first line is a passage: the dialer's troupe version, and, when it forwards a
 caller, `forwarded` with the caller's bearer, which the owner verifies against
 `[authz.bearer]`; nodes never vouch for a caller. The door answers with its

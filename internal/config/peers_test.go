@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 const twoPeers = `[door.tls]
@@ -111,5 +113,40 @@ func TestTroupeVersion(t *testing.T) {
 	}
 	if _, err := loadToml(t, "[troupe]\nversion = -1\n").TroupeVersion(); err == nil {
 		t.Fatal("a negative version was accepted")
+	}
+}
+
+// With [troupe] name set, peers and the node door may leave their
+// certificate files out: the troupe's keys stand in, and a peer's identity
+// defaults to its spiffe id in the troupe. Half a set of files is refused.
+func TestATroupeNameLetsPeersAndTheDoorUseTroupeKeys(t *testing.T) {
+	body := "[troupe]\nname = \"estate\"\n[door.tls]\nlisten = \"127.0.0.1:7443\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n"
+	l := loadToml(t, body)
+	name, err := l.TroupeName()
+	require.NoError(t, err)
+	require.Equal(t, "estate", name)
+	door, ok, err := l.TLSDoor()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, door.Cert)
+	peers, err := l.Peers()
+	require.NoError(t, err)
+	require.Equal(t, "spiffe://estate/node/b1", peers[0].Identity)
+	require.Empty(t, peers[0].Cert)
+
+	for _, bad := range []string{
+		"[door.tls]\nlisten = \"127.0.0.1:7443\"\n",
+		"[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n",
+		"[troupe]\nname = \"estate\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\ncert = \"c\"\n",
+		"[troupe]\nname = \"Not A Name\"\n",
+	} {
+		l, err := loadWith(t, bad)
+		if err != nil {
+			continue
+		}
+		_, _, derr := l.TLSDoor()
+		_, perr := l.Peers()
+		_, nerr := l.TroupeName()
+		require.True(t, derr != nil || perr != nil || nerr != nil, "accepted %q", bad)
 	}
 }

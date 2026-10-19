@@ -44,7 +44,7 @@ func captureLogs(t *testing.T) *logBuffer {
 
 func staticAt(t *testing.T, version uint64, peers ...config.Peer) *peer.Static {
 	t.Helper()
-	m, err := peer.NewStatic(version, peers)
+	m, err := peer.NewStatic(version, peers, nil)
 	require.NoError(t, err)
 	return m
 }

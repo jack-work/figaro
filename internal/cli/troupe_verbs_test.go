@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -99,4 +100,22 @@ func TestTroupeLsShowsPeerVersionsAndDrift(t *testing.T) {
 	require.Regexp(t, `agrees\s+tls://10\.0\.0\.2:7443\s+7\s*$`, lines["agrees"])
 	require.Regexp(t, `behind\s+tls://10\.0\.0\.3:7443\s+5\s+drift: ours is 7`, lines["behind"])
 	require.Regexp(t, `unmet\s+tls://10\.0\.0\.4:7443\s+-\s+not met`, lines["unmet"])
+}
+
+// troupe ls shows when this node's certificate and intermediate end, and
+// the keeper's error verbatim when the keys are not usable.
+func TestTroupeLsShowsKeyExpiry(t *testing.T) {
+	var buf strings.Builder
+	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{Node: "n", Peers: []rpc.TroupeMember{}, Keys: &rpc.TroupeKeys{
+		Troupe: "estate", NodeExpires: time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC).UnixMilli(),
+		IntermediateExpires: time.Date(2027, 10, 18, 0, 0, 0, 0, time.UTC).UnixMilli(),
+	}})
+	require.Contains(t, buf.String(), "node certificate until 2026-10-25")
+	require.Contains(t, buf.String(), "intermediate until 2027-10-18")
+
+	buf.Reset()
+	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{Node: "n", Peers: []rpc.TroupeMember{}, Keys: &rpc.TroupeKeys{
+		Troupe: "estate", Error: "troupe estate: the node intermediate has expired; run: op read <root ref> | figaro troupe intermediate estate",
+	}})
+	require.Contains(t, buf.String(), "figaro troupe intermediate estate")
 }

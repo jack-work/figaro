@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/peer/peertest"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/troupe"
 )
 
 // troupe.members is this node's membership as it stands: its version, every
@@ -22,7 +23,7 @@ func TestTroupeMembersShowsEachPeersVersionAndDrift(t *testing.T) {
 		pki.Peer("self", "agrees", "127.0.0.1:7001"),
 		pki.Peer("self", "behind", "127.0.0.1:7002"),
 		pki.Peer("self", "unmet", "127.0.0.1:7003"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	seen := &peer.Versions{}
 	seen.Saw("agrees", 7, 7)
@@ -59,4 +60,20 @@ func TestTroupeMembersWithoutPeers(t *testing.T) {
 	got := out.(rpc.TroupeMembersResponse)
 	require.Empty(t, got.Peers)
 	require.NotNil(t, got.Peers)
+}
+
+// With troupe keys, troupe.members carries when this node's certificate and
+// intermediate end, and the keeper's error when there is one, so a lapse
+// shows in troupe ls before peers start failing.
+func TestTroupeMembersCarriesKeyExpiry(t *testing.T) {
+	k := &troupe.Keeper{Dir: troupe.DirFor(t.TempDir(), "estate"), Troupe: "estate", Node: "n"}
+	_ = k.Ensure()
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs(), Troupe: k}
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
+	out, err := hs.Map[rpc.MethodTroupeMembers](context.Background(), nil)
+	require.NoError(t, err)
+	got := out.(rpc.TroupeMembersResponse)
+	require.NotNil(t, got.Keys)
+	require.Equal(t, "estate", got.Keys.Troupe)
+	require.Contains(t, got.Keys.Error, "figaro troupe intermediate estate")
 }

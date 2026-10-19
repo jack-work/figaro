@@ -27,6 +27,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/jack-work/jkrpc"
 )
@@ -63,6 +64,7 @@ type Angelus struct {
 	Peercred     *authz.Peercred
 	Peers        peer.Membership
 	PeerVersions *peer.Versions
+	Troupe       *troupe.Keeper
 
 	uiProj Projector
 

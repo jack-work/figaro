@@ -25,22 +25,54 @@ type Static struct {
 	byIdentity map[string]string
 }
 
-func NewStatic(version uint64, peers []config.Peer) (*Static, error) {
+type Credentials struct {
+	Certificate func() (*tls.Certificate, error)
+	Roots       func() (*x509.CertPool, error)
+}
+
+func NewStatic(version uint64, peers []config.Peer, creds *Credentials) (*Static, error) {
 	m := &Static{version: version, byNode: map[string]*Member{}, byIdentity: map[string]string{}}
 	for _, p := range peers {
-		cert, err := tls.LoadX509KeyPair(p.Cert, p.Key)
-		if err != nil {
-			return nil, fmt.Errorf("peer %s: %w", p.Node, err)
-		}
-		roots, err := loadPool(p.CA)
+		cfg, err := memberTLS(p, creds)
 		if err != nil {
 			return nil, fmt.Errorf("peer %s: %w", p.Node, err)
 		}
 		m.nodes = append(m.nodes, p.Node)
-		m.byNode[p.Node] = &Member{Node: p.Node, Address: p.Address, Identity: p.Identity, tls: dialTLS(cert, roots, p.Identity)}
+		m.byNode[p.Node] = &Member{Node: p.Node, Address: p.Address, Identity: p.Identity, tls: cfg}
 		m.byIdentity[p.Identity] = p.Node
 	}
 	return m, nil
+}
+
+func memberTLS(p config.Peer, creds *Credentials) (*tls.Config, error) {
+	if p.Cert == "" {
+		if creds == nil {
+			return nil, errors.New("no certificate files and no troupe keys")
+		}
+		return &tls.Config{
+			MinVersion:         tls.VersionTLS13,
+			InsecureSkipVerify: true,
+			GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				return creds.Certificate()
+			},
+			VerifyConnection: func(cs tls.ConnectionState) error {
+				roots, err := creds.Roots()
+				if err != nil {
+					return err
+				}
+				return verifyIdentity(cs.PeerCertificates, roots, p.Identity)
+			},
+		}, nil
+	}
+	cert, err := tls.LoadX509KeyPair(p.Cert, p.Key)
+	if err != nil {
+		return nil, err
+	}
+	roots, err := loadPool(p.CA)
+	if err != nil {
+		return nil, err
+	}
+	return dialTLS(cert, roots, p.Identity), nil
 }
 
 func (m *Static) Version() uint64 {
@@ -77,7 +109,31 @@ func (m *Static) NodeOf(cert *x509.Certificate) (string, bool) {
 	return "", false
 }
 
-func ServerTLS(door config.TLSDoor) (*tls.Config, error) {
+func ServerTLS(door config.TLSDoor, creds *Credentials) (*tls.Config, error) {
+	if door.Cert == "" {
+		if creds == nil {
+			return nil, errors.New("door.tls: no certificate files and no troupe keys")
+		}
+		return &tls.Config{
+			MinVersion: tls.VersionTLS13,
+			GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+				cert, err := creds.Certificate()
+				if err != nil {
+					return nil, err
+				}
+				roots, err := creds.Roots()
+				if err != nil {
+					return nil, err
+				}
+				return &tls.Config{
+					MinVersion:   tls.VersionTLS13,
+					Certificates: []tls.Certificate{*cert},
+					ClientAuth:   tls.RequireAndVerifyClientCert,
+					ClientCAs:    roots,
+				}, nil
+			},
+		}, nil
+	}
 	cert, err := tls.LoadX509KeyPair(door.Cert, door.Key)
 	if err != nil {
 		return nil, fmt.Errorf("door.tls: %w", err)

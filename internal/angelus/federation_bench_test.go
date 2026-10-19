@@ -16,7 +16,7 @@ import (
 func BenchmarkDoorCallUnixFederated(b *testing.B) {
 	quiet(b)
 	pki := peertest.NewPKI(b, "fed")
-	members, err := peer.NewStatic(0, []config.Peer{pki.Peer("self", "elsewhere", "127.0.0.1:1")})
+	members, err := peer.NewStatic(0, []config.Peer{pki.Peer("self", "elsewhere", "127.0.0.1:1")}, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
