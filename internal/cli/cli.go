@@ -1459,7 +1459,10 @@ an [auth] table naming how a human signs in.
                  troupes/<name>.toml reaches, which needs join on
                  troupe:<name>. Shows the root's sha256 and asks before
                  trusting it; writes this node's certificate and the
-                 [troupe], [door.tls] and peercred config, then restart
+                 [troupe], [door.tls] and peercred config, then restart.
+                 --delegate all binds troupe:<name> to an all-granting
+                 role in policy.toml, so the troupe's grants apply here;
+                 --delegate none lends nothing. Asked when not given
   leave <name>   this node signs its own leave, the running daemon tells
                  every member, and its troupe keys and config go. Final
                  for this node id; asks unless --yes
@@ -1476,6 +1479,7 @@ an [auth] table naming how a human signs in.
                  on the troupe are never the troupe's to grant`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls and policy show"},
+			{Long: "delegate", Description: "join: all or none, what this node lends the troupe policy (required unless asked)"},
 			{Long: "door", Description: "join: host:port other nodes dial (default [door.tls] advertise)"},
 			{Long: "listen", Description: "join: host:port the node door listens on (default the door)"},
 			{Long: "root-sha256", Description: "join: trust the troupe root only if its sha256 is this"},
@@ -1485,7 +1489,7 @@ an [auth] table naming how a human signs in.
 		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
-				Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
+				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
 			})
 		},
 		CompleteArgs: completeWords([][2]string{

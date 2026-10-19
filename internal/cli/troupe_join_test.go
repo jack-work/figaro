@@ -19,8 +19,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/troupe"
+	"github.com/jack-work/jkauthz"
 )
 
 // fakeMember is a node of troupe estate holding an intermediate, answering
@@ -94,6 +96,9 @@ func newJoinRig(t *testing.T, cfg string) *joinRig {
 
 func (r *joinRig) opts(o joinOpts) joinOpts {
 	o.Out, o.UID = r.out, 1000
+	if o.Delegate == "" && !o.Interactive {
+		o.Delegate = delegateNone
+	}
 	if o.In == nil {
 		o.In = strings.NewReader("")
 	}
@@ -156,7 +161,7 @@ func TestTroupeJoinTrustsTheRootOnlyWhenTold(t *testing.T) {
 	}{
 		{"no terminal, no flag", joinOpts{}, false},
 		{"answered no", joinOpts{Interactive: true, In: strings.NewReader("n\n")}, false},
-		{"answered yes", joinOpts{Interactive: true, In: strings.NewReader("y\n")}, true},
+		{"answered yes", joinOpts{Interactive: true, In: strings.NewReader("y\nnone\n")}, true},
 		{"a wrong pin", joinOpts{RootSHA256: strings.Repeat("0", 64), Yes: true}, false},
 		{"the right pin", joinOpts{RootSHA256: f.sum()}, true},
 	}
@@ -270,4 +275,61 @@ func TestTroupeJoinAgainCarriesProofOfTheOldKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, old.Leaf.Raw, leaf.Raw)
 	require.NoError(t, troupe.CheckRejoin(leaf, issuer, root, f.last.Rejoin.Sig, "estate", "node-b", ed25519.PublicKey(f.last.PublicKey), "b.lan:7443"))
+}
+
+// What a node lends the troupe policy is chosen, never assumed: a run
+// without a terminal must say, and an unclear answer signs nothing.
+func TestTroupeJoinNeedsADelegationChoice(t *testing.T) {
+	f := newFakeMember(t)
+	for name, o := range map[string]joinOpts{
+		"no terminal, no flag":        {Yes: true},
+		"a word that is not a choice": {Yes: true, Delegate: "some"},
+		"asked, answered neither":     {Yes: true, Interactive: true, In: strings.NewReader("maybe\n")},
+	} {
+		r := newJoinRig(t, "")
+		o.Door = "b.lan:7443"
+		before := f.signed
+		opts := r.opts(o)
+		if name == "no terminal, no flag" {
+			opts.Delegate = ""
+		}
+		err := troupeJoin(context.Background(), f, r.site, "estate", opts)
+		require.Error(t, err, name)
+		require.Equal(t, before, f.signed, "%s: signed without a choice", name)
+	}
+}
+
+// --delegate all binds the troupe to an all-granting role in the node's
+// policy, starting one from the default when there is none, and joining
+// again does not bind it twice; none writes nothing.
+func TestTroupeJoinWritesTheDelegation(t *testing.T) {
+	f := newFakeMember(t)
+	r := newJoinRig(t, "default_outfit = \"mock\"\n")
+	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true, Delegate: delegateAll})), r.out.String())
+	require.Equal(t, "policy.toml", r.config(t)["authz"].(map[string]any)["policy"])
+	path := filepath.Join(r.site.loaded.ConfigDir, "policy.toml")
+	reloaded, err := config.Load(r.site.loaded.ConfigDir)
+	require.NoError(t, err)
+	require.Equal(t, path, reloaded.PolicyPath())
+
+	p := authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil)
+	require.NoError(t, p.Reload(path))
+	lent := jkauthz.Subject{Principal: authz.TroupePrincipal("estate")}
+	require.True(t, p.Allow(lent, rpc.VerbSend, authz.Aria("aaaa0001")).Allowed)
+	self := jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.KindUser, ID: "jack@auth.test"}}
+	require.True(t, p.Allow(self, rpc.VerbKill, authz.Aria("aaaa0001")).Allowed, "the node's own principal lost its owner role")
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	r.site.loaded = reloaded
+	require.NoError(t, writeDelegation(r.out, reloaded, "estate", delegateAll, "user:1000"))
+	again, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, string(body), string(again), "a second join bound the troupe twice")
+
+	none := newJoinRig(t, "default_outfit = \"mock\"\n")
+	require.NoError(t, troupeJoin(context.Background(), f, none.site, "estate", none.opts(joinOpts{Door: "b.lan:7443", Yes: true, Delegate: delegateNone})))
+	_, err = os.Stat(filepath.Join(none.site.loaded.ConfigDir, "policy.toml"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Contains(t, none.out.String(), "lends troupe estate nothing")
 }

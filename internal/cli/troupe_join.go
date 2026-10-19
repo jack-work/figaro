@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"crypto"
 	"crypto/ed25519"
@@ -39,6 +38,7 @@ type joinDoor interface {
 }
 
 type joinOpts struct {
+	Delegate    string
 	Door        string
 	Listen      string
 	RootSHA256  string
@@ -122,8 +122,7 @@ func trustRoot(id *rpc.TroupeIdentityResponse, held []byte, o joinOpts) (string,
 		return "", fmt.Errorf("the troupe's root is sha256 %s: pass --root-sha256 %s to pin it, or --yes to trust it", hexSum, hexSum)
 	default:
 		fmt.Fprintf(o.Out, "Trust this root for troupe %s? [y/N] ", id.Troupe)
-		line, _ := bufio.NewReader(o.In).ReadString('\n')
-		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+		if a := strings.ToLower(strings.TrimSpace(readLine(o.In))); a != "y" && a != "yes" {
 			return "", errors.New("the root was not trusted; nothing was signed or written")
 		}
 	}
@@ -132,6 +131,9 @@ func trustRoot(id *rpc.TroupeIdentityResponse, held []byte, o joinOpts) (string,
 
 func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o joinOpts) error {
 	if err := site.fits(name); err != nil {
+		return err
+	}
+	if err := checkDelegate(o); err != nil {
 		return err
 	}
 	door, listen, err := site.doors(o)
@@ -155,6 +157,10 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 		return err
 	}
 	if _, err := trustRoot(id, held, o); err != nil {
+		return err
+	}
+	lend, err := askDelegate(name, o)
+	if err != nil {
 		return err
 	}
 
@@ -215,7 +221,11 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 		fmt.Fprintf(o.Out, "could not write %s (%v); add this yourself:\n\n%s\n", site.loaded.ConfigPath, err, snippet)
 		return err
 	}
-	fmt.Fprintf(o.Out, "wrote to %s:\n\n%s\nrestart the daemon to take it up: figaro stop\n", site.loaded.ConfigPath, snippet)
+	fmt.Fprintf(o.Out, "wrote to %s:\n\n%s\n", site.loaded.ConfigPath, snippet)
+	if err := writeDelegation(o.Out, site.loaded, name, lend, selfPrincipal(o.UID, id.Principal)); err != nil {
+		return err
+	}
+	fmt.Fprintln(o.Out, "restart the daemon to take it up: figaro stop")
 	return nil
 }
 
