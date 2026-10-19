@@ -355,3 +355,15 @@ func (c *Angelus) Decide(ctx context.Context, req rpc.DecideRequest) (*rpc.Decid
 	}
 	return &resp, nil
 }
+
+func (c *Angelus) TroupePolicy(ctx context.Context, troupe string) (*rpc.TroupePolicyResponse, error) {
+	var resp rpc.TroupePolicyResponse
+	err := c.call(ctx, rpc.MethodTroupePolicy, rpc.TroupePolicyRequest{Troupe: troupe}, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) TroupePolicySet(ctx context.Context, troupe, body string) (*rpc.TroupePolicySetResponse, error) {
+	var resp rpc.TroupePolicySetResponse
+	err := c.call(ctx, rpc.MethodTroupePolicySet, rpc.TroupePolicySetRequest{Troupe: troupe, Body: body}, &resp)
+	return &resp, err
+}

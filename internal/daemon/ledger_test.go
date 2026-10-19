@@ -59,6 +59,7 @@ type ledgerNode struct {
 	a        *angelus.Angelus
 	backend  *store.XwalBackend
 	stop     context.CancelFunc
+	policy   string
 }
 
 func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
@@ -98,6 +99,12 @@ func (n *ledgerNode) start() *peer.Ledger {
 	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	n.a.Peercred = pc
+	if n.policy != "" {
+		path := filepath.Join(n.cfgDir, "policy.toml")
+		require.NoError(t, os.WriteFile(path, []byte(n.policy), 0o600))
+		n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.backend))
+		require.NoError(t, n.a.Policies.Reload(path))
+	}
 	require.NoError(t, federateIn(ctx, n.a, loaded, n.stateDir))
 	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: n.a, Config: loaded, Ctx: ctx}).Map
 	require.NoError(t, serveNodeDoor(ctx, n.a, loaded))
@@ -355,9 +362,15 @@ func call(t *testing.T, n *ledgerNode, method string, req any) (any, error) {
 
 func pair(t *testing.T) (*ledgerNode, *ledgerNode, *peer.Ledger, *peer.Ledger, estateRoot) {
 	t.Helper()
+	return pairWith(t, "")
+}
+
+func pairWith(t *testing.T, policy string) (*ledgerNode, *ledgerNode, *peer.Ledger, *peer.Ledger, estateRoot) {
+	t.Helper()
 	root := newEstateRoot(t)
 	na := newLedgerNode(t, root)
 	nb := newLeafNode(t, root, na, time.Now())
+	na.policy, nb.policy = policy, policy
 	ma := na.start()
 	_, err := ma.Merge(nb.joinedBy(na))
 	require.NoError(t, err)

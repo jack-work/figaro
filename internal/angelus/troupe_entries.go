@@ -95,6 +95,9 @@ func (h *handlers) troupeLeave(ctx context.Context, params json.RawMessage) (any
 	if err != nil {
 		return nil, err
 	}
+	if err := h.allowed(ctx, rpc.VerbAdmin, authz.Troupe(m.Troupe())); err != nil {
+		return nil, err
+	}
 	cur, err := h.angelus.Troupe.Current()
 	if err != nil {
 		return nil, fmt.Errorf("this node has no current certificate to sign its leave with: %w", err)

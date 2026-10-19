@@ -170,7 +170,7 @@ func PrincipalText(p rpc.Principal) string {
 
 func checkedByHandler(method string) bool {
 	switch method {
-	case rpc.MethodImportStatus, rpc.MethodNodeLearn, rpc.MethodTroupeEntries, rpc.MethodTroupeSign, rpc.MethodTroupeIdentity:
+	case rpc.MethodImportStatus, rpc.MethodNodeLearn, rpc.MethodTroupeEntries, rpc.MethodTroupeSign, rpc.MethodTroupeIdentity, rpc.MethodTroupeLeave, rpc.MethodTroupePolicySet:
 		return true
 	}
 	return false

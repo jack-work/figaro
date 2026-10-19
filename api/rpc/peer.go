@@ -133,3 +133,51 @@ type TroupeMember struct {
 	SeenAt     int64  `json:"seen_at,omitempty"`
 	Drift      bool   `json:"drift,omitempty"`
 }
+
+const (
+	MethodTroupePolicy    = "troupe.policy"
+	MethodTroupePolicySet = "troupe.policy.set"
+)
+
+type TroupePolicyRequest struct {
+	Troupe string `json:"troupe"`
+}
+
+type TroupePolicySetRequest struct {
+	Troupe string `json:"troupe"`
+	Body   string `json:"body"`
+}
+
+type TroupePolicyVersion struct {
+	Version uint64 `json:"version"`
+	Signer  string `json:"signer"`
+	By      string `json:"by"`
+	At      int64  `json:"at"`
+}
+
+type TroupePolicySighting struct {
+	Node   string `json:"node"`
+	Self   bool   `json:"self,omitempty"`
+	Policy uint64 `json:"policy"`
+	SeenAt int64  `json:"seen_at,omitempty"`
+}
+
+type TroupePolicyResponse struct {
+	Troupe    string                 `json:"troupe"`
+	Provider  string                 `json:"provider"`
+	Path      string                 `json:"path,omitempty"`
+	InForce   *TroupePolicyVersion   `json:"in_force,omitempty"`
+	Body      string                 `json:"body,omitempty"`
+	LoadError string                 `json:"load_error,omitempty"`
+	Rivals    []TroupePolicyVersion  `json:"rivals,omitempty"`
+	Voided    []TroupePolicyVersion  `json:"voided,omitempty"`
+	Nodes     []TroupePolicySighting `json:"nodes,omitempty"`
+	LocalOnly []string               `json:"local_only"`
+}
+
+type TroupePolicySetResponse struct {
+	Version     uint64            `json:"version"`
+	Signer      string            `json:"signer"`
+	Reached     []string          `json:"reached"`
+	Unreachable []NodeUnreachable `json:"unreachable,omitempty"`
+}
