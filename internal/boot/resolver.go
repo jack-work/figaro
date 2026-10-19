@@ -21,6 +21,12 @@ import (
 )
 
 func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
+	if name, err := ServiceTokenOf(loaded, providerName); err != nil || name != "" {
+		if err != nil {
+			return nil, err
+		}
+		return ServiceToken(loaded, name)
+	}
 	reg := providerPkg.Lookup(providerName)
 	if exchanges(loaded, reg) {
 		return &exchangeResolver{loaded: loaded, reg: reg, name: providerName}, nil

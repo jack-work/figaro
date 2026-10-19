@@ -23,6 +23,7 @@ const (
 	SourcePlainKey  = "api_key"
 	SourceSealedKey = "sealed_api_key"
 	SourceOAuth     = "oauth"
+	SourceService   = "service_token"
 )
 
 func exchanges(loaded *config.Loaded, reg *providerPkg.Registration) bool {
@@ -35,6 +36,13 @@ func ConsultsHushOAuth(loaded *config.Loaded, reg *providerPkg.Registration) boo
 
 func CredentialSources(loaded *config.Loaded, reg *providerPkg.Registration, oauthNames []string) ([]CredentialSource, error) {
 	var out []CredentialSource
+	name, err := ServiceTokenOf(loaded, reg.Name)
+	if err != nil {
+		return nil, err
+	}
+	if name != "" {
+		out = append(out, CredentialSource{Kind: SourceService, Where: serviceTokenWhere(loaded, name)})
+	}
 	for _, env := range reg.CredentialEnvs() {
 		if strings.TrimSpace(os.Getenv(env)) != "" {
 			out = append(out, CredentialSource{Kind: SourceEnv, Where: "$" + env})
@@ -78,4 +86,22 @@ func keyFilePath(p string) string {
 		return filepath.Join(dir, p)
 	}
 	return p + " (relative, and $CREDENTIALS_DIRECTORY is unset)"
+}
+
+func serviceTokenWhere(loaded *config.Loaded, name string) string {
+	where := "service token " + name
+	if _, err := ServiceToken(loaded, name); err != nil {
+		return where + " (" + err.Error() + ")"
+	}
+	st := loaded.Config.ServiceTokens[name]
+	from := st.TokenURL
+	if from == "" {
+		from = st.Issuer
+	}
+	where += ": client " + st.ClientID + " at " + from
+	secret, _ := credentialID(st.SecretCredential)
+	if _, err := os.Stat(secret); err != nil {
+		where += " (secret " + secret + " missing)"
+	}
+	return where
 }

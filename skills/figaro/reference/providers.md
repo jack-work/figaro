@@ -128,6 +128,31 @@ named file that is missing or empty is an error); `$CREDENTIALS_DIRECTORY/<provi
 the stored `api_key`, decrypted through hush when it is `AGE-ENC[...]`; then
 `[oauth]` through hush.
 
+### A service token instead of a login
+
+A daemon with no user to log in (a container, a server) can authenticate as an
+OAuth client with the client_credentials grant:
+
+```toml
+# providers/rou2.toml
+preset        = "gateway"
+base_url      = "http://10.233.1.1:9110/u/explabs/v1"
+service_token = "rou2"
+
+# config.toml
+[service_tokens.rou2]
+issuer            = "https://auth.kelliher.info"   # or token_url
+client_id         = "figaro"
+secret_credential = "authelia-client-secret"       # a file in $CREDENTIALS_DIRECTORY
+audience          = ["https://rou2.kelliher.info"]
+```
+
+`service_token` replaces every other source: a failed mint is an error, never a
+keyless request, and it cannot sit beside `[oauth]`. The daemon mints one token
+per client and shares it across arias, renews it a minute before expiry, and
+mints again when the gateway answers 401. `provider login` refuses such a
+provider; `provider ls` shows the client and flags a missing secret.
+
 ## Credentials
 
 ```sh
@@ -155,6 +180,7 @@ next time that credential is missing.
 | a sealed `api_key` (`AGE-ENC[...]`) | its line removed from `providers/<name>.toml`; the file goes when nothing else is in it |
 | a plaintext `api_key` | kept: you wrote it |
 | `api_key_file`, `$CREDENTIALS_DIRECTORY/<name>` | kept: the file or the service manager owns it |
+| `service_token` | kept: the daemon mints it from config |
 | the environment | kept: figaro cannot unset its parent's variables |
 
 It names each source it kept and exits 1 while one would still sign figaro in.

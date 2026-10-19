@@ -108,7 +108,7 @@ func describeSource(s boot.CredentialSource) string {
 		return "plaintext api_key in " + s.Where
 	case boot.SourceSealedKey:
 		return "sealed api_key in " + s.Where
-	case boot.SourceOAuth:
+	case boot.SourceOAuth, boot.SourceService:
 		return s.Where
 	}
 	return s.Kind + " " + s.Where
@@ -124,6 +124,8 @@ func leaveHint(s boot.CredentialSource) string {
 		return "the service manager supplies it; drop the LoadCredential line"
 	case boot.SourcePlainKey:
 		return "you wrote it; delete the api_key line"
+	case boot.SourceService:
+		return "the daemon mints it; delete the service_token line"
 	}
 	return ""
 }
@@ -132,6 +134,12 @@ func runProviderLogin(loaded *config.Loaded, name string) {
 	reg, err := lookupProvider(name)
 	if err != nil {
 		dieUsage("%s", err)
+	}
+	if st, err := boot.ServiceTokenOf(loaded, name); err != nil || st != "" {
+		if err != nil {
+			die("%s", err)
+		}
+		die("%s authenticates as service token %s ([service_tokens.%s] in config.toml); there is nothing to log in", name, st, st)
 	}
 	switch {
 	case reg.Login != nil:

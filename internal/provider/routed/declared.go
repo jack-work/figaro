@@ -50,6 +50,9 @@ func declared(loaded *config.Loaded, name string) (*provider.Registration, error
 	if f.Preset != PresetGateway {
 		return nil, fmt.Errorf("preset %q is not one of: %s", f.Preset, PresetGateway)
 	}
+	if f.OAuth != nil && f.ServiceToken != "" {
+		return nil, fmt.Errorf("[oauth] and service_token both name the credential; keep one")
+	}
 	reg := &provider.Registration{
 		Name:     name,
 		EnvVar:   f.APIKeyEnv,

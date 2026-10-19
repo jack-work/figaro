@@ -17,6 +17,7 @@ type File struct {
 	OAuth            *auth.OAuthSettings          `toml:"oauth,omitempty"`
 	APIKey           string                       `toml:"api_key"`
 	APIKeyEnv        string                       `toml:"api_key_env,omitempty"`
+	ServiceToken     string                       `toml:"service_token,omitempty"`
 	BaseURL          string                       `toml:"base_url,omitempty"`
 	CacheMarkers     string                       `toml:"cache_markers,omitempty"`
 	MessagesPath     string                       `toml:"messages_path,omitempty"`

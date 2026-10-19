@@ -171,3 +171,15 @@ func TestProviderCompletesVerbsThenNames(t *testing.T) {
 	require.Contains(t, names, "copilot")
 	require.Empty(t, cmd.CompleteArgs(&cmdkit.CompleteContext{Args: []string{"logout", "copilot"}}))
 }
+
+// The daemon mints a service token from config; logout has nothing of its to
+// remove and says where it comes from.
+func TestLogoutKeepsAServiceToken(t *testing.T) {
+	loaded := providerRig(t)
+	writeProviderFile(t, loaded, "gateway", "service_token = \"rou2\"\n")
+	rep, err := providerLogout(loaded, "gateway", noOAuth{})
+	require.NoError(t, err)
+	require.Empty(t, rep.Removed)
+	require.Equal(t, []string{boot.SourceService}, kinds(rep.Remaining))
+	require.Contains(t, leaveHint(rep.Remaining[0]), "service_token")
+}

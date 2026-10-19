@@ -112,3 +112,23 @@ func TestAPIKeyEnvIsTheRegistrationsVariable(t *testing.T) {
 		t.Fatalf("plain reads %v; no api_key_env, no variable", envs)
 	}
 }
+
+func TestAServiceTokenAndOAuthAreNotBothTheCredential(t *testing.T) {
+	loaded := declaredDir(t, map[string]string{"both": "service_token = \"rou2\"\n" + houseTOML})
+	if got := RegisterDeclared(loaded); len(got) != 0 {
+		t.Fatalf("registered %v; two credentials for one provider must be refused", got)
+	}
+}
+
+// A minted token that fails must stop the turn, not send it anonymously.
+func TestAServiceTokenMakesTheGatewayRequireAuth(t *testing.T) {
+	loaded := declaredDir(t, map[string]string{"svc": "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\nservice_token = \"rou2\"\n"})
+	RegisterDeclared(loaded)
+	p, err := provider.Lookup("svc").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("t")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.(*Provider).spec.AuthOptional {
+		t.Fatal("a gateway with a service token treats a missing token as optional")
+	}
+}

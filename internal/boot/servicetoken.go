@@ -4,9 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
+)
+
+var (
+	serviceTokensMu sync.Mutex
+	serviceTokens   = map[string]*auth.ClientCredentials{}
 )
 
 func ServiceToken(loaded *config.Loaded, name string) (auth.TokenResolver, error) {
@@ -21,7 +28,13 @@ func ServiceToken(loaded *config.Loaded, name string) (auth.TokenResolver, error
 	if st.Issuer == "" && st.TokenURL == "" {
 		return nil, fmt.Errorf("service token %q names neither an issuer nor a token_url", name)
 	}
-	return &auth.ClientCredentials{
+	key := fmt.Sprintf("%s\x00%s\x00%#v", name, secret, st)
+	serviceTokensMu.Lock()
+	defer serviceTokensMu.Unlock()
+	if cc, ok := serviceTokens[key]; ok {
+		return cc, nil
+	}
+	cc := &auth.ClientCredentials{
 		Issuer:     st.Issuer,
 		TokenURL:   st.TokenURL,
 		ClientID:   st.ClientID,
@@ -29,7 +42,20 @@ func ServiceToken(loaded *config.Loaded, name string) (auth.TokenResolver, error
 		AuthMethod: st.AuthMethod,
 		Audience:   st.Audience,
 		Scopes:     st.Scopes,
-	}, nil
+	}
+	serviceTokens[key] = cc
+	return cc, nil
+}
+
+func ServiceTokenOf(loaded *config.Loaded, provider string) (string, error) {
+	if loaded == nil {
+		return "", nil
+	}
+	var pa config.ProviderAuth
+	if err := loaded.LoadProviderAuth(provider, &pa); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(pa.ServiceToken), nil
 }
 
 func credentialID(id string) (string, error) {
