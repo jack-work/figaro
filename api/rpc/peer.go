@@ -35,6 +35,43 @@ const MethodTroupeMembers = "troupe.members"
 
 const MethodTroupeEntries = "troupe.entries"
 
+const (
+	MethodTroupeSign     = "troupe.sign"
+	MethodTroupeIdentity = "troupe.identity"
+)
+
+type TroupeSignRequest struct {
+	Troupe    string        `json:"troupe"`
+	Node      string        `json:"node"`
+	PublicKey []byte        `json:"public_key"`
+	Door      string        `json:"door"`
+	Rejoin    *TroupeRejoin `json:"rejoin,omitempty"`
+}
+
+type TroupeRejoin struct {
+	Chain [][]byte `json:"chain"`
+	Sig   []byte   `json:"sig"`
+}
+
+type TroupeSignResponse struct {
+	Chain   [][]byte          `json:"chain"`
+	Root    []byte            `json:"root"`
+	Entries []json.RawMessage `json:"entries"`
+}
+
+type TroupeIdentityRequest struct {
+	Troupe string `json:"troupe"`
+}
+
+type TroupeIdentityResponse struct {
+	Troupe     string    `json:"troupe"`
+	Node       string    `json:"node"`
+	Principal  Principal `json:"principal"`
+	Root       []byte    `json:"root"`
+	RootSHA256 string    `json:"root_sha256"`
+	Signers    []string  `json:"signers"`
+}
+
 type TroupeEntriesRequest struct {
 	Troupe  string            `json:"troupe"`
 	Entries []json.RawMessage `json:"entries,omitempty"`

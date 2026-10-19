@@ -156,3 +156,45 @@ func earlier(a, b time.Time) time.Time {
 	}
 	return b
 }
+
+func ParseSigned(chain [][]byte, rootDER []byte) (leaf, issuer, root *x509.Certificate, err error) {
+	if len(chain) != 2 {
+		return nil, nil, nil, fmt.Errorf("want a leaf and its issuer, got %d certificates", len(chain))
+	}
+	if leaf, err = x509.ParseCertificate(chain[0]); err != nil {
+		return nil, nil, nil, err
+	}
+	if issuer, err = x509.ParseCertificate(chain[1]); err != nil {
+		return nil, nil, nil, err
+	}
+	if root, err = x509.ParseCertificate(rootDER); err != nil {
+		return nil, nil, nil, err
+	}
+	return leaf, issuer, root, nil
+}
+
+const rejoinDomain = "figaro troupe rejoin v1\n"
+
+func rejoinMessage(troupe, node string, pub ed25519.PublicKey, door string) []byte {
+	msg := []byte(rejoinDomain + troupe + "\n" + node + "\n" + door + "\n")
+	return append(msg, pub...)
+}
+
+func SignRejoin(old crypto.Signer, troupe, node string, pub ed25519.PublicKey, door string) ([]byte, error) {
+	return old.Sign(rand.Reader, rejoinMessage(troupe, node, pub, door), crypto.Hash(0))
+}
+
+func CheckRejoin(leaf, issuer, root *x509.Certificate, sig []byte, troupe, node string, pub ed25519.PublicKey, door string) error {
+	if !names(leaf, Identity(troupe, node)) {
+		return fmt.Errorf("the old certificate does not name %s", Identity(troupe, node))
+	}
+	during := leaf.NotBefore.Add(leaf.NotAfter.Sub(leaf.NotBefore) / 2)
+	if err := chainsTo(leaf, issuer, root, during); err != nil {
+		return fmt.Errorf("the old certificate: %w", err)
+	}
+	old, ok := leaf.PublicKey.(ed25519.PublicKey)
+	if !ok || !ed25519.Verify(old, rejoinMessage(troupe, node, pub, door), sig) {
+		return errors.New("the request is not signed by the old certificate's key")
+	}
+	return nil
+}

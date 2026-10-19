@@ -85,6 +85,9 @@ var methodVerbs = map[string]Verb{
 	MethodSaveBindings:   VerbAdmin,
 	MethodProviderLedger: VerbAdmin,
 	MethodTroupeEntries:  VerbAdmin,
+
+	MethodTroupeSign:     VerbJoin,
+	MethodTroupeIdentity: VerbJoin,
 }
 
 func VerbOf(method string) (Verb, bool) {

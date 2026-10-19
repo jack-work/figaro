@@ -185,3 +185,19 @@ func (l *Link) TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) 
 	}
 	return resp, nil
 }
+
+func (l *Link) TroupeSign(ctx context.Context, req rpc.TroupeSignRequest) (rpc.TroupeSignResponse, error) {
+	params, err := json.Marshal(req)
+	if err != nil {
+		return rpc.TroupeSignResponse{}, err
+	}
+	raw, err := l.Call(ctx, rpc.MethodTroupeSign, params)
+	if err != nil {
+		return rpc.TroupeSignResponse{}, err
+	}
+	var resp rpc.TroupeSignResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return rpc.TroupeSignResponse{}, fmt.Errorf("node %s: %s: %w", l.node, rpc.MethodTroupeSign, err)
+	}
+	return resp, nil
+}

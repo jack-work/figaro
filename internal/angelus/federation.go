@@ -45,7 +45,7 @@ func (h *handlers) federate() {
 
 func routable(method string) bool {
 	switch method {
-	case rpc.MethodHello, rpc.MethodBind, rpc.MethodResolve, rpc.MethodUnbind, rpc.MethodNodeResolve, rpc.MethodTroupeEntries:
+	case rpc.MethodHello, rpc.MethodBind, rpc.MethodResolve, rpc.MethodUnbind, rpc.MethodNodeResolve, rpc.MethodTroupeEntries, rpc.MethodTroupeSign, rpc.MethodTroupeIdentity:
 		return false
 	}
 	return true

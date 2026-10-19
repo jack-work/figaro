@@ -309,6 +309,24 @@ func (c *Angelus) TroupeMembers(ctx context.Context) (*rpc.TroupeMembersResponse
 	return &resp, err
 }
 
+func (c *Angelus) TroupeIdentity(ctx context.Context, troupe string) (*rpc.TroupeIdentityResponse, error) {
+	var resp rpc.TroupeIdentityResponse
+	err := c.call(ctx, rpc.MethodTroupeIdentity, rpc.TroupeIdentityRequest{Troupe: troupe}, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) TroupeSign(ctx context.Context, req rpc.TroupeSignRequest) (*rpc.TroupeSignResponse, error) {
+	var resp rpc.TroupeSignResponse
+	err := c.call(ctx, rpc.MethodTroupeSign, req, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error) {
+	var resp rpc.TroupeEntriesResponse
+	err := c.call(ctx, rpc.MethodTroupeEntries, req, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) Close() error {
 	return c.cli.Close()
 }

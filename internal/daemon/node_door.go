@@ -2,14 +2,18 @@ package daemon
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
@@ -94,8 +98,52 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	m.Persist = store.Save
 	a.Peers = m
 	seedJoin(k, m, door.Advertise, time.Now())
+	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}
+	m.OnEvict(dialer.Evict)
+	k.Renew = renewer(ctx, m, dialer, door.Advertise)
+	if k.Status().Err != nil {
+		go func() {
+			if err := k.Ensure(); err != nil {
+				slog.Error("troupe certificate", "err", err)
+			}
+		}()
+	}
 	slog.Info("troupe ledger loaded", "troupe", k.Troupe, "entries", len(m.Entries()), "members", m.Nodes(), "version", m.Version())
 	return nil
+}
+
+func renewer(ctx context.Context, m *peer.Ledger, d *peer.Dialer, door string) troupe.Renew {
+	return func(pub ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+		signers := slices.DeleteFunc(m.View().Signers(time.Now()), func(n string) bool { return n == m.Self() })
+		if len(signers) == 0 {
+			return nil, nil, errors.New("no member that holds an intermediate is known")
+		}
+		var errs []error
+		for _, node := range signers {
+			leaf, issuer, err := renewAt(ctx, d, node, rpc.TroupeSignRequest{Troupe: m.Troupe(), Node: m.Self(), PublicKey: pub, Door: door})
+			if err == nil {
+				return leaf, issuer, nil
+			}
+			errs = append(errs, fmt.Errorf("%s: %w", node, err))
+		}
+		return nil, nil, errors.Join(errs...)
+	}
+}
+
+func renewAt(ctx context.Context, d *peer.Dialer, node string, req rpc.TroupeSignRequest) (*x509.Certificate, *x509.Certificate, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	l, err := d.Open(ctx, node, rpc.Passage{}, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer l.Close()
+	resp, err := l.TroupeSign(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	leaf, issuer, _, err := troupe.ParseSigned(resp.Chain, resp.Root)
+	return leaf, issuer, err
 }
 
 func seedJoin(k *troupe.Keeper, m *peer.Ledger, door string, now time.Time) {

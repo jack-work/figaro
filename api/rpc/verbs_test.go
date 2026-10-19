@@ -101,11 +101,11 @@ func TestUseIsNeverAMethodVerb(t *testing.T) {
 	}
 }
 
-// join is granted on troupes and checked where a node is asked to sign
-// one in, so no method carries it.
-func TestJoinIsNeverAMethodVerb(t *testing.T) {
+// join is granted on troupe:<name>, a resource the guard does not know, so
+// only the troupe handlers that check it themselves may carry it.
+func TestJoinIsCarriedOnlyByTheTroupeHandlers(t *testing.T) {
 	for m, v := range methodVerbs {
-		if v == VerbJoin {
+		if v == VerbJoin && m != MethodTroupeSign && m != MethodTroupeIdentity {
 			t.Errorf("%s is classified as join", m)
 		}
 	}

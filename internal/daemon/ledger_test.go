@@ -215,3 +215,108 @@ func TestTheFigaroProviderRefusesADoorItCannotAdvertise(t *testing.T) {
 		require.Error(t, federateIn(context.Background(), a, loaded, t.TempDir()), door)
 	}
 }
+
+// newLeafNode is a node that joined through signer: it holds the root and
+// a leaf from signer's intermediate, issued at issued, and no intermediate.
+func newLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time) *ledgerNode {
+	t.Helper()
+	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir(), addr: freeAddr(t)}
+	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
+	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
+	n.open()
+	inter, ik, err := signer.dir().Intermediate()
+	require.NoError(t, err)
+	_, nk, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	leaf, err := troupe.IssueNode(ik, inter, "estate", n.id(), nk.Public(), issued, troupe.NodeTTL)
+	require.NoError(t, err)
+	require.NoError(t, n.dir().WriteRoot(root.cert))
+	require.NoError(t, n.dir().WriteNode(leaf, inter, nk))
+	n.backend.Close()
+	return n
+}
+
+func (n *ledgerNode) joinedBy(signer *ledgerNode) troupe.Entry {
+	n.t.Helper()
+	inter, ik, err := signer.dir().Intermediate()
+	require.NoError(n.t, err)
+	e, err := troupe.SignJoin(ik, inter, "estate", n.id(), n.addr, time.Now())
+	require.NoError(n.t, err)
+	return e
+}
+
+// A joined node renews its leaf from a signer over the node door, proving
+// itself with the leaf it still holds.
+func TestALeafOnlyNodeRenewsOverTheNodeDoor(t *testing.T) {
+	root := newEstateRoot(t)
+	na := newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
+	ma := na.start()
+	_, err := ma.Merge(nb.joinedBy(na))
+	require.NoError(t, err)
+	mb := nb.start()
+	_, err = mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+	before := len(ma.Entries())
+
+	require.NoError(t, nb.a.Troupe.Ensure())
+	require.True(t, nb.a.Troupe.Status().NodeExpires.After(time.Now().Add(6*24*time.Hour)))
+	require.Equal(t, before, len(ma.Entries()), "a renewal at the same door signed another join")
+}
+
+// Renewal needs the leaf to be current and its node unrevoked: an expired
+// leaf cannot open the door, and neither can a node the root revoked.
+// Either way the remedy is to join again.
+func TestRenewalNeedsACurrentUnrevokedLeaf(t *testing.T) {
+	t.Run("expired", func(t *testing.T) {
+		root := newEstateRoot(t)
+		na := newLedgerNode(t, root)
+		nb := newLeafNode(t, root, na, time.Now().Add(-8*24*time.Hour))
+		ma := na.start()
+		_, err := ma.Merge(nb.joinedBy(na))
+		require.NoError(t, err)
+		mb := nb.start()
+		_, err = mb.Merge(ma.Entries()...)
+		require.NoError(t, err)
+		require.ErrorContains(t, nb.a.Troupe.Ensure(), "figaro troupe join estate")
+		_, err = nb.a.Troupe.Current()
+		require.Error(t, err)
+	})
+	t.Run("revoked", func(t *testing.T) {
+		root := newEstateRoot(t)
+		na := newLedgerNode(t, root)
+		nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
+		ma := na.start()
+		revoke, err := troupe.SignRevoke(root.key, "estate", nb.id(), time.Now())
+		require.NoError(t, err)
+		_, err = ma.Merge(nb.joinedBy(na), revoke)
+		require.NoError(t, err)
+		mb := nb.start()
+		_, err = mb.Merge(ma.Entries()...)
+		require.NoError(t, err)
+		err = nb.a.Troupe.Ensure()
+		require.ErrorContains(t, err, "not renewed")
+		require.True(t, nb.a.Troupe.Status().NodeExpires.Before(time.Now().Add(2*24*time.Hour)))
+	})
+}
+
+// Over the node door a node asks only for itself.
+func TestANodeCannotAskForAnotherNodesCertificate(t *testing.T) {
+	root := newEstateRoot(t)
+	na := newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now())
+	ma := na.start()
+	_, err := ma.Merge(nb.joinedBy(na))
+	require.NoError(t, err)
+	mb := nb.start()
+	_, err = mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+
+	l, err := (&peer.Dialer{Members: mb, Versions: &peer.Versions{}, Timeout: 2 * time.Second}).Open(context.Background(), na.id(), rpc.Passage{}, nil)
+	require.NoError(t, err)
+	defer l.Close()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: "node-c", PublicKey: pub, Door: "c.lan:7443"})
+	require.ErrorContains(t, err, "only for its own")
+}

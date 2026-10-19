@@ -23,17 +23,21 @@ type Status struct {
 	Err                 error
 }
 
+type Renew func(pub ed25519.PublicKey) (leaf, issuer *x509.Certificate, err error)
+
 type Keeper struct {
 	Dir    Dir
 	Troupe string
 	Node   string
 	Now    func() time.Time
 	TTL    time.Duration
+	Renew  Renew
 
-	mu     sync.Mutex
-	cur    *tls.Certificate
-	roots  *x509.CertPool
-	status Status
+	ensuring sync.Mutex
+	mu       sync.Mutex
+	cur      *tls.Certificate
+	roots    *x509.CertPool
+	status   Status
 }
 
 func (k *Keeper) now() time.Time {
@@ -54,7 +58,13 @@ func (k *Keeper) remedy() string {
 	return fmt.Sprintf("op read <root ref> | figaro troupe intermediate %s", k.Troupe)
 }
 
+func (k *Keeper) rejoin() string {
+	return fmt.Sprintf("figaro troupe join %s", k.Troupe)
+}
+
 func (k *Keeper) Ensure() error {
+	k.ensuring.Lock()
+	defer k.ensuring.Unlock()
 	now := k.now()
 	err := k.ensure(now)
 	k.mu.Lock()
@@ -72,7 +82,7 @@ func (k *Keeper) Ensure() error {
 func (k *Keeper) ensure(now time.Time) error {
 	root, err := k.Dir.Root()
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("troupe %s: this node holds no root certificate; run: %s", k.Troupe, k.remedy())
+		return fmt.Errorf("troupe %s: this node holds no root certificate; run: %s, or %s", k.Troupe, k.rejoin(), k.remedy())
 	}
 	if err != nil {
 		return fmt.Errorf("troupe %s: %w", k.Troupe, err)
@@ -84,7 +94,7 @@ func (k *Keeper) ensure(now time.Time) error {
 	k.mu.Unlock()
 	inter, ikey, err := k.Dir.Intermediate()
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("troupe %s: this node has no intermediate; run: %s", k.Troupe, k.remedy())
+		return k.ensureLeaf(root, now)
 	}
 	if err != nil {
 		return fmt.Errorf("troupe %s: %w", k.Troupe, err)
@@ -125,8 +135,75 @@ func (k *Keeper) fresh(c tls.Certificate, interRaw []byte, now time.Time) bool {
 	if len(c.Certificate) < 2 || string(c.Certificate[1]) != string(interRaw) {
 		return false
 	}
-	life := c.Leaf.NotAfter.Sub(c.Leaf.NotBefore)
-	return c.Leaf.NotAfter.Sub(now) > life/3
+	return unspent(c.Leaf, now)
+}
+
+func unspent(leaf *x509.Certificate, now time.Time) bool {
+	life := leaf.NotAfter.Sub(leaf.NotBefore)
+	return leaf.NotAfter.Sub(now) > life/3
+}
+
+func (k *Keeper) ensureLeaf(root *x509.Certificate, now time.Time) error {
+	held, err := k.Dir.Node()
+	if err != nil {
+		return fmt.Errorf("troupe %s: this node holds neither an intermediate nor a node certificate; run: %s", k.Troupe, k.rejoin())
+	}
+	if unspent(held.Leaf, now) {
+		k.keep(&held)
+		return nil
+	}
+	err = errors.New("no signer to renew from")
+	if k.Renew != nil {
+		err = k.renewFromPeer(root, now)
+		if err == nil {
+			return nil
+		}
+	}
+	if now.Before(held.Leaf.NotAfter) {
+		k.keep(&held)
+		return fmt.Errorf("troupe %s: the node certificate (until %s) is due and was not renewed: %w", k.Troupe, held.Leaf.NotAfter.Format(time.RFC3339), err)
+	}
+	return fmt.Errorf("troupe %s: the node certificate expired at %s and was not renewed (%v); run: %s",
+		k.Troupe, held.Leaf.NotAfter.Format(time.RFC3339), err, k.rejoin())
+}
+
+func (k *Keeper) renewFromPeer(root *x509.Certificate, now time.Time) error {
+	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	leaf, issuer, err := k.Renew(pub)
+	if err != nil {
+		return err
+	}
+	if err := CheckLeaf(leaf, issuer, root, k.Troupe, k.Node, pub, now); err != nil {
+		return fmt.Errorf("the renewed certificate: %w", err)
+	}
+	if err := k.Dir.WriteNode(leaf, issuer, key); err != nil {
+		return err
+	}
+	pair, err := k.Dir.Node()
+	if err != nil {
+		return err
+	}
+	slog.Info("troupe node certificate renewed by a peer", "troupe", k.Troupe, "node", k.Node, "issuer", IntermediateNode(issuer), "until", leaf.NotAfter.Format(time.RFC3339))
+	k.keep(&pair)
+	return nil
+}
+
+func CheckLeaf(leaf, issuer, root *x509.Certificate, troupe, node string, pub ed25519.PublicKey, now time.Time) error {
+	if got, ok := leaf.PublicKey.(ed25519.PublicKey); !ok || !got.Equal(pub) {
+		return errors.New("it does not carry the key this node sent")
+	}
+	if !names(leaf, Identity(troupe, node)) {
+		return fmt.Errorf("it does not name %s", Identity(troupe, node))
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(root)
+	inter := x509.NewCertPool()
+	inter.AddCert(issuer)
+	_, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}})
+	return err
 }
 
 func (k *Keeper) keep(c *tls.Certificate) {

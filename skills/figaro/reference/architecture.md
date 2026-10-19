@@ -308,8 +308,9 @@ principal is pinned to that sandbox. Under `local` or `bwrap` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
 
-**Troupes.** `join` on `troupe:<name>` is checked when a node is asked to
-sign a new node into that troupe. No method carries it.
+**Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
+`troupe.identity` themselves, since the guard knows only arias and the
+daemon.
 
 `x-caller` is **attribution only and never authorizes**. It lands in
 `Identity.Label`, a different field from `FigaroID`, so an assertion naming
@@ -617,6 +618,20 @@ door: on a handshake whose digest differs, when a member first appears, and
 hourly. Both TLS verifiers refuse a node outside the set and a chain through
 a revoked node's intermediate; a revoke that arrives while links are open
 closes them.
+
+`troupe.sign` admits a node: a caller holding `join` on `troupe:<name>`
+sends a node id, an Ed25519 public key and a door, and a node holding an
+intermediate returns a seven-day leaf, its issuer, the root and the
+entries, which now carry the new join. A node holding only a leaf refuses
+and names the members that can sign. A node id that is already a member is
+signed again only when the request is signed by that node's old key (its
+leaf may have expired), so holding `join` does not let anyone act as an
+existing node. A joined node renews its leaf the same
+way over the node door, as a node principal asking only for itself, which
+needs its current leaf, unexpired and unrevoked; once it expires the node
+joins again. `troupe.identity` (also `join`) returns the caller's principal,
+the root and its SHA-256, and the signers, for a joiner to check before it
+trusts anything.
 
 ## Storage
 
