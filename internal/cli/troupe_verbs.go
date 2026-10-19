@@ -49,6 +49,8 @@ func troupeRows(loaded *config.Loaded, store oauthStore) []troupeRow {
 			r.Error = err.Error()
 		case tr.Auth == nil:
 			r.URL, r.SignIn = tr.URL, troupeNoAuth
+		case tr.APIKey():
+			r.URL, r.SignIn = tr.URL, apiKeySignIn(tr)
 		case slices.Contains(held, tr.HushCredential()):
 			r.URL, r.SignIn = tr.URL, troupeSignedIn
 		default:
@@ -197,13 +199,17 @@ func runTroupeLogin(loaded *config.Loaded, name string) {
 	if err != nil {
 		die("%s", err)
 	}
+	if tr.APIKey() {
+		runAPIKeyLogin(loaded, tr)
+		return
+	}
 	next := "FIGARO_TROUPE=" + name + " figaro ls, or [cli] troupe = \"" + name + "\""
 	if err := runOAuthLogin(name, tr.HushCredential(), tr.Auth.OAuthSettings, next); err != nil {
 		die("%s", err)
 	}
 }
 
-func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpts, iss keyOpts) error {
+func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpts, iss keyOpts, k apiKeyOpts) error {
 	verb, rest := args[0], args[1:]
 	switch verb {
 	case "ls":
@@ -250,6 +256,8 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		runTroupeRenewer(loaded, rest[0], rest[1], rest[2])
 	case "policy":
 		runTroupePolicy(loaded, rest, jsonOut, iss.Root)
+	case "apikey":
+		runTroupeAPIKey(rest, jsonOut, k)
 	case "create", "intermediate":
 		if len(rest) != 1 {
 			dieUsage("troupe %s takes one troupe name, and the root key on stdin", verb)
@@ -266,7 +274,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:
-		dieUsage("troupe: want login, ls, join, leave, revoke, renewer, policy, create, intermediate, keygen or leaf, not %q", verb)
+		dieUsage("troupe: want login, ls, join, leave, revoke, renewer, policy, apikey, create, intermediate, keygen or leaf, not %q", verb)
 	}
 	return nil
 }

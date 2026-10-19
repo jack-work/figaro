@@ -1438,13 +1438,16 @@ there until you revoke it with the provider.`,
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> | policy show <name> | policy set <name> <file|-> | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> | policy show <name> | policy set <name> <file|-> | apikey mint|ls|revoke <name> ... | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
 
-  login <name>   sign in to the troupe's door (scheme = "oidc-device");
-                 hush holds the token as troupe:<name>
+  login <name>   sign in to the troupe's door. scheme = "oidc-device":
+                 hush holds the token as troupe:<name>. scheme =
+                 "api-key": reads the key without echo (or one line of
+                 stdin), checks it at the door, and hush seals it in
+                 troupes/<name>.key; with key_file set, only checks it
   ls             each troupe, its url, and whether you are signed in;
                  ● marks the one FIGARO_TROUPE or [cli] troupe selects.
                  With [peers] configured, this node's troupe version and
@@ -1499,7 +1502,17 @@ an [auth] table naming how a human signs in.
                  and the root may sign any version. A troupe grant counts on
                  a node only where that node's policy lends the same
                  right to troupe:<name>; use on sandbox:local and admin
-                 on the troupe are never the troupe's to grant`,
+                 on the troupe are never the troupe's to grant
+  apikey mint <name> <kind:name>  mint a key for user:<n> or service:<n>,
+                 scoped <kind>:<n>@troupe:<name> (needs admin on the
+                 troupe). The key goes to stdout once; the node keeps only
+                 its hash. --ttl 30d (default 90d, at most 365d).
+                 --static prints the key and an [[authz.api_keys]]
+                 stanza instead, with no daemon involved
+  apikey ls <name>     keys with who minted each; all of them for a
+                 troupe admin, else the ones you minted or that name you
+  apikey revoke <name> <id>  revoke a key (its minter, its own principal
+                 or a troupe admin) and tell every member`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls and policy show"},
 			{Long: "delegate", Description: "join: all or none, what this node lends the troupe policy (required unless asked)"},
@@ -1512,13 +1525,15 @@ an [auth] table naming how a human signs in.
 			{Long: "allow-disk", IsBool: true, Description: "intermediate --for: allow an --out that is not a tmpfs"},
 			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
 			{Long: "public-key", Description: "leaf: the node's Ed25519 public key in hex, as troupe keygen prints it"},
+			{Long: "ttl", Description: "apikey mint: how long the key lives, like 30d or 12h (default 90d)"},
+			{Long: "static", IsBool: true, Description: "apikey mint: print the key and a config stanza; no daemon"},
 		},
 		ArgsMin: 1,
 		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
-			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")})
+			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")}, apiKeyOpts{TTL: ctx.Flag("ttl"), Static: ctx.BoolFlag("static")})
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"login", "sign in to a troupe's door"},
@@ -1530,6 +1545,7 @@ an [auth] table naming how a human signs in.
 			{"keygen", "a node key for a credential"},
 			{"leaf", "with the root, issue another node's leaf for its key"},
 			{"policy", "show or set the troupe policy"},
+			{"apikey", "mint, list or revoke api keys"},
 		}, completeTroupeAfterLogin),
 	})
 

@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,10 +16,14 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-const SchemeOIDCDevice = "oidc-device"
+const (
+	SchemeOIDCDevice = "oidc-device"
+	SchemeAPIKey     = "api-key"
+)
 
 type TroupeAuth struct {
-	Scheme string `toml:"scheme"`
+	Scheme  string `toml:"scheme"`
+	KeyFile string `toml:"key_file"`
 	auth.OAuthSettings
 }
 
@@ -27,7 +32,12 @@ type Troupe struct {
 	URL      string      `toml:"url"`
 	Audience string      `toml:"audience"`
 	Auth     *TroupeAuth `toml:"auth"`
+	keyPath  string
 }
+
+func (t Troupe) APIKey() bool { return t.Auth != nil && t.Auth.Scheme == SchemeAPIKey }
+
+func (t Troupe) StoredKeyPath() string { return t.keyPath }
 
 var WorkloadSource auth.WorkloadTokens
 
@@ -101,11 +111,38 @@ func LoadTroupe(loaded *config.Loaded, name string) (Troupe, error) {
 		}
 		return Troupe{}, fmt.Errorf("%s: unknown key %s", path, strings.Join(keys, ", "))
 	}
-	if t.Auth != nil && t.Auth.Scheme != SchemeOIDCDevice {
-		return Troupe{}, fmt.Errorf("%s: auth.scheme %q is not one of: %s", path, t.Auth.Scheme, SchemeOIDCDevice)
+	if err := checkTroupeAuth(t); err != nil {
+		return Troupe{}, fmt.Errorf("%s: %w", path, err)
 	}
 	t.Name = name
+	t.keyPath = filepath.Join(loaded.TroupesDir(), name+".key")
 	return t, nil
+}
+
+func checkTroupeAuth(t Troupe) error {
+	if t.Auth == nil {
+		return nil
+	}
+	switch t.Auth.Scheme {
+	case SchemeOIDCDevice:
+		if t.Auth.KeyFile != "" {
+			return errors.New("auth.key_file belongs to scheme \"api-key\"")
+		}
+	case SchemeAPIKey:
+		o := t.Auth.OAuthSettings
+		if o.Issuer != "" || o.ClientID != "" || len(o.Scopes) > 0 || o.Flow != "" || o.Discovery != "" {
+			return errors.New("scheme \"api-key\" takes key_file only; issuer, client_id, scopes, flow and discovery are oidc-device's")
+		}
+		if t.Auth.KeyFile != "" && !filepath.IsAbs(t.Auth.KeyFile) {
+			return fmt.Errorf("auth.key_file %q: want an absolute path", t.Auth.KeyFile)
+		}
+		if !strings.HasPrefix(t.URL, "wss://") {
+			return fmt.Errorf("scheme \"api-key\" sends the key over wss only, and url is %q", t.URL)
+		}
+	default:
+		return fmt.Errorf("auth.scheme %q is not one of: %s, %s", t.Auth.Scheme, SchemeOIDCDevice, SchemeAPIKey)
+	}
+	return nil
 }
 
 func checkTroupe(t Troupe) (Troupe, bool, error) {
@@ -128,6 +165,9 @@ func TroupeResolver(t Troupe) auth.TokenResolver {
 	audience := t.Audience
 	if audience == "" {
 		audience = t.URL
+	}
+	if t.APIKey() {
+		return &auth.Aggregate{Strategies: apiKeyStrategies(t)}
 	}
 	strategies := []auth.CredentialStrategy{&auth.Workload{Source: WorkloadSource, Audience: audience}}
 	if t.Auth != nil {
