@@ -278,15 +278,23 @@ func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loade
 	if err != nil || !ok {
 		return err
 	}
+	ln, err := net.Listen("tcp", door.Listen)
+	if err != nil {
+		return fmt.Errorf("door.tls: %w", err)
+	}
+	if err := serveNodeDoorOn(ctx, a, door, ln); err != nil {
+		ln.Close()
+		return err
+	}
+	return nil
+}
+
+func serveNodeDoorOn(ctx context.Context, a *angelus.Angelus, door config.TLSDoor, ln net.Listener) error {
 	cfg, err := peer.ServerTLS(door, troupeCredentials(a))
 	if err != nil {
 		return err
 	}
 	verify := forwardedCallers(authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
-	ln, err := net.Listen("tcp", door.Listen)
-	if err != nil {
-		return fmt.Errorf("door.tls: %w", err)
-	}
 	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
 	nd := &peer.Door{Members: a.Peers, Versions: a.PeerVersions, Verify: verify}
 	if m, ok := a.Peers.(*peer.Ledger); ok {

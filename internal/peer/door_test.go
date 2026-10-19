@@ -227,12 +227,8 @@ func TestDialerChecksThePeersIdentity(t *testing.T) {
 // dies during a call; an owner's own refusal passes through untouched.
 func TestUnreachableNamesTheNode(t *testing.T) {
 	p := peertest.NewPKI(t, "fed")
-	dead, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := dead.Addr().String()
-	dead.Close()
-	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", addr))}
-	_, err = a.Open(context.Background(), "b", rpc.Passage{}, nil)
+	a := &peer.Dialer{Members: members(t, p.Peer("a", "b", "127.0.0.1:1"))}
+	_, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)
 	var unreachable *peer.Unreachable
 	require.ErrorAs(t, err, &unreachable)
 	require.Equal(t, "b", unreachable.Node)

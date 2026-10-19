@@ -89,7 +89,8 @@ func TestACredentialWithoutACredentialsDirectoryIsRefused(t *testing.T) {
 // key in its troupe dir.
 func newCredentialLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time) *ledgerNode {
 	t.Helper()
-	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir(), addr: freeAddr(t)}
+	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
+	n.moveDoor()
 	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\nnode_key_credential = \"troupe-node\"\n[door.tls]\nlisten = %q\n", n.addr)
 	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 	creds := t.TempDir()

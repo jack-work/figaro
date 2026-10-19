@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,15 +39,6 @@ func newEstateRoot(t *testing.T) estateRoot {
 	return estateRoot{key: k, cert: c}
 }
 
-func freeAddr(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := ln.Addr().String()
-	ln.Close()
-	return addr
-}
-
 type ledgerNode struct {
 	t        *testing.T
 	root     estateRoot
@@ -56,6 +46,8 @@ type ledgerNode struct {
 	stateDir string
 	cfgDir   string
 	addr     string
+	door     *testDoor
+	serving  *doorTenancy
 	a        *angelus.Angelus
 	backend  *store.XwalBackend
 	stop     context.CancelFunc
@@ -64,9 +56,8 @@ type ledgerNode struct {
 
 func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
 	t.Helper()
-	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir(), addr: freeAddr(t)}
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
-	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
+	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
+	n.moveDoor()
 	n.open()
 	_, ik, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
@@ -77,6 +68,14 @@ func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
 	require.NoError(t, d.WriteIntermediate(inter, ik))
 	n.backend.Close()
 	return n
+}
+
+// moveDoor gives the node a newly bound port and names it in its config.
+func (n *ledgerNode) moveDoor() {
+	n.door = openTestDoor(n.t)
+	n.addr = n.door.addr()
+	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
+	require.NoError(n.t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 }
 
 func (n *ledgerNode) open() {
@@ -107,7 +106,11 @@ func (n *ledgerNode) start() *peer.Ledger {
 	}
 	require.NoError(t, federateIn(ctx, n.a, loaded, n.stateDir))
 	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: n.a, Config: loaded, Ctx: ctx}).Map
-	require.NoError(t, serveNodeDoor(ctx, n.a, loaded))
+	door, ok, err := loaded.TLSDoor()
+	require.NoError(t, err)
+	require.True(t, ok)
+	n.serving = n.door.tenancy()
+	require.NoError(t, serveNodeDoorOn(ctx, n.a, door, n.serving))
 	t.Cleanup(n.halt)
 	m, ok := n.a.Peers.(*peer.Ledger)
 	require.True(t, ok, "troupe.provider figaro built %T", n.a.Peers)
@@ -121,14 +124,7 @@ func (n *ledgerNode) halt() {
 	n.stop()
 	n.stop = nil
 	n.backend.Close()
-	require.Eventually(n.t, func() bool {
-		ln, err := net.Listen("tcp", n.addr)
-		if err != nil {
-			return false
-		}
-		ln.Close()
-		return true
-	}, 2*time.Second, 10*time.Millisecond, "the node door kept its port")
+	require.Eventually(n.t, n.serving.closed, 2*time.Second, 10*time.Millisecond, "the node door never closed its listener")
 }
 
 func storedEntries(t *testing.T, n *ledgerNode) map[string]string {
@@ -172,9 +168,7 @@ func TestANewDoorIsSignedIn(t *testing.T) {
 	n := newLedgerNode(t, newEstateRoot(t))
 	n.start()
 	n.halt()
-	n.addr = freeAddr(t)
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
-	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
+	n.moveDoor()
 	m := n.start()
 	require.Len(t, m.Entries(), 2)
 	require.Equal(t, n.addr, m.View().Members[n.id()].Door)
@@ -233,9 +227,8 @@ func TestTheFigaroProviderRefusesADoorItCannotAdvertise(t *testing.T) {
 // a leaf from signer's intermediate, issued at issued, and no intermediate.
 func newLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time) *ledgerNode {
 	t.Helper()
-	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir(), addr: freeAddr(t)}
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
-	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
+	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
+	n.moveDoor()
 	n.open()
 	inter, ik, err := signer.dir().Intermediate()
 	require.NoError(t, err)
@@ -457,12 +450,6 @@ func (n *ledgerNode) rogueJoin(rogue *ledgerNode) troupe.Entry {
 	e, err := troupe.SignJoin(ik, inter, "estate", n.id(), "evil.lan:7443", "user:mallory", time.Now().Add(time.Minute))
 	require.NoError(n.t, err)
 	return e
-}
-
-func (n *ledgerNode) moveDoor() {
-	n.addr = freeAddr(n.t)
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
-	require.NoError(n.t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 }
 
 func joinsSignedBy(m *peer.Ledger, node, signer string) []troupe.Entry {
