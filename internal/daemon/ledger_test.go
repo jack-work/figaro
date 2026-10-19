@@ -249,13 +249,17 @@ func newLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.
 	return n
 }
 
-func (n *ledgerNode) joinedBy(signer *ledgerNode) troupe.Entry {
+// joinedBy is signer's join for n and the root naming signer n's renewer,
+// which the rest of the troupe needs before it takes a leaf signer issued.
+func (n *ledgerNode) joinedBy(signer *ledgerNode) []troupe.Entry {
 	n.t.Helper()
 	inter, ik, err := signer.dir().Intermediate()
 	require.NoError(n.t, err)
 	e, err := troupe.SignJoin(ik, inter, "estate", n.id(), n.addr, "user:owner", time.Now())
 	require.NoError(n.t, err)
-	return e
+	r, err := troupe.SignRootRenewer(n.root.key, "estate", n.id(), signer.id(), time.Now())
+	require.NoError(n.t, err)
+	return []troupe.Entry{e, r}
 }
 
 // A joined node renews its leaf from a signer over the node door, proving
@@ -265,7 +269,7 @@ func TestALeafOnlyNodeRenewsOverTheNodeDoor(t *testing.T) {
 	na := newLedgerNode(t, root)
 	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
 	ma := na.start()
-	_, err := ma.Merge(nb.joinedBy(na))
+	_, err := ma.Merge(nb.joinedBy(na)...)
 	require.NoError(t, err)
 	mb := nb.start()
 	_, err = mb.Merge(ma.Entries()...)
@@ -286,7 +290,7 @@ func TestRenewalNeedsACurrentUnrevokedLeaf(t *testing.T) {
 		na := newLedgerNode(t, root)
 		nb := newLeafNode(t, root, na, time.Now().Add(-8*24*time.Hour))
 		ma := na.start()
-		_, err := ma.Merge(nb.joinedBy(na))
+		_, err := ma.Merge(nb.joinedBy(na)...)
 		require.NoError(t, err)
 		mb := nb.start()
 		_, err = mb.Merge(ma.Entries()...)
@@ -302,7 +306,7 @@ func TestRenewalNeedsACurrentUnrevokedLeaf(t *testing.T) {
 		ma := na.start()
 		revoke, err := troupe.SignRevoke(root.key, "estate", nb.id(), time.Now())
 		require.NoError(t, err)
-		_, err = ma.Merge(nb.joinedBy(na), revoke)
+		_, err = ma.Merge(append(nb.joinedBy(na), revoke)...)
 		require.NoError(t, err)
 		mb := nb.start()
 		_, err = mb.Merge(ma.Entries()...)
@@ -319,7 +323,7 @@ func TestANodeCannotAskForAnotherNodesCertificate(t *testing.T) {
 	na := newLedgerNode(t, root)
 	nb := newLeafNode(t, root, na, time.Now())
 	ma := na.start()
-	_, err := ma.Merge(nb.joinedBy(na))
+	_, err := ma.Merge(nb.joinedBy(na)...)
 	require.NoError(t, err)
 	mb := nb.start()
 	_, err = mb.Merge(ma.Entries()...)
@@ -334,6 +338,38 @@ func TestANodeCannotAskForAnotherNodesCertificate(t *testing.T) {
 	require.ErrorContains(t, err, "only for its own")
 }
 
+// A member that is not a node's renewer refuses to renew it over the node
+// door: no member would take the leaf. The renewing client asks only its
+// renewers, so b renews from a even with q listening.
+func TestOnlyANodesRenewerRenewsIt(t *testing.T) {
+	root := newEstateRoot(t)
+	na, nq := newLedgerNode(t, root), newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
+	ma, mq := na.start(), nq.start()
+	_, err := ma.Merge(append(nb.joinedBy(na), mq.Entries()...)...)
+	require.NoError(t, err)
+	_, err = mq.Merge(ma.Entries()...)
+	require.NoError(t, err)
+	mb := nb.start()
+	_, err = mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+
+	l, err := (&peer.Dialer{Members: mb, Versions: &peer.Versions{}, Timeout: 2 * time.Second}).Open(context.Background(), nq.id(), rpc.Passage{}, nil)
+	require.NoError(t, err)
+	defer l.Close()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: nb.id(), PublicKey: pub, Door: nb.addr})
+	require.ErrorContains(t, err, "is not "+nb.id()+"'s renewer")
+
+	require.NoError(t, nb.a.Troupe.Ensure())
+	cur, err := nb.a.Troupe.Current()
+	require.NoError(t, err)
+	issuer, err := x509.ParseCertificate(cur.Certificate[1])
+	require.NoError(t, err)
+	require.Equal(t, na.id(), troupe.IntermediateNode(issuer))
+}
+
 // The entries a node was handed when it joined are folded into its ledger
 // at the next start, kept in the form, and not read again.
 func TestTheEntriesFromAJoinAreTakenUpAtStart(t *testing.T) {
@@ -341,7 +377,7 @@ func TestTheEntriesFromAJoinAreTakenUpAtStart(t *testing.T) {
 	na := newLedgerNode(t, root)
 	nb := newLeafNode(t, root, na, time.Now())
 	ma := na.start()
-	_, err := ma.Merge(nb.joinedBy(na))
+	_, err := ma.Merge(nb.joinedBy(na)...)
 	require.NoError(t, err)
 	require.NoError(t, nb.dir().WriteJoined(ma.Entries()))
 
@@ -372,7 +408,7 @@ func pairWith(t *testing.T, policy string) (*ledgerNode, *ledgerNode, *peer.Ledg
 	nb := newLeafNode(t, root, na, time.Now())
 	na.policy, nb.policy = policy, policy
 	ma := na.start()
-	_, err := ma.Merge(nb.joinedBy(na))
+	_, err := ma.Merge(nb.joinedBy(na)...)
 	require.NoError(t, err)
 	require.NoError(t, nb.dir().WriteJoined(ma.Entries()))
 	mb := nb.start()
@@ -399,9 +435,9 @@ func TestARevokePushedToOneMemberReachesTheRest(t *testing.T) {
 	na, nb, ma, mb, root := pair(t)
 	nc := newLeafNode(t, root, na, time.Now())
 	join := nc.joinedBy(na)
-	_, err := ma.Merge(join)
+	_, err := ma.Merge(join...)
 	require.NoError(t, err)
-	_, err = mb.Merge(join)
+	_, err = mb.Merge(join...)
 	require.NoError(t, err)
 	require.True(t, slices.Contains(mb.Nodes(), nc.id()))
 

@@ -235,6 +235,11 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 			dieUsage("troupe revoke takes a troupe and a node, and the root key on stdin")
 		}
 		runTroupeRevoke(loaded, rest[0], rest[1])
+	case "renewer":
+		if len(rest) != 3 {
+			dieUsage("troupe renewer takes a troupe, a node and the node whose intermediate renews it, and the root key on stdin")
+		}
+		runTroupeRenewer(loaded, rest[0], rest[1], rest[2])
 	case "policy":
 		runTroupePolicy(loaded, rest, jsonOut, iss.Root)
 	case "create", "intermediate":
@@ -246,7 +251,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:
-		dieUsage("troupe: want login, ls, join, leave, revoke, policy, create or intermediate, not %q", verb)
+		dieUsage("troupe: want login, ls, join, leave, revoke, renewer, policy, create or intermediate, not %q", verb)
 	}
 	return nil
 }

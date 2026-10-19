@@ -76,6 +76,8 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	switch {
 	case renewal && via != req.Node:
 		return nil, fmt.Errorf("node %s may ask only for its own certificate, not %s's", via, req.Node)
+	case renewal && !m.View().MayIssue(req.Node, m.Self()):
+		return nil, fmt.Errorf("node %s is not %s's renewer, so no member would take a certificate it issued; ask one of %v", m.Self(), req.Node, m.View().Renewers[req.Node])
 	case !renewal:
 		if err := h.allowed(ctx, rpc.VerbJoin, authz.Troupe(m.Troupe())); err != nil {
 			return nil, err
@@ -89,7 +91,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 		return nil, fmt.Errorf("node %s is out of troupe %s (%s); a node id that left does not return", req.Node, m.Troupe(), gone)
 	}
 	if _, member := view.Members[req.Node]; member && !renewal {
-		if err := h.checkRejoin(req, pub, view); err != nil {
+		if err := h.checkRejoin(req, pub, view, m.Self()); err != nil {
 			return nil, fmt.Errorf("node %s is already a member, so only its own key signs it in again: %w", req.Node, err)
 		}
 	}
@@ -159,7 +161,7 @@ func cannotSign(m *peer.Ledger, view troupe.View, now time.Time) error {
 	return fmt.Errorf("node %s holds no intermediate, so it cannot sign; ask one that can: %s", m.Self(), strings.Join(named, ", "))
 }
 
-func (h *handlers) checkRejoin(req rpc.TroupeSignRequest, pub ed25519.PublicKey, view troupe.View) error {
+func (h *handlers) checkRejoin(req rpc.TroupeSignRequest, pub ed25519.PublicKey, view troupe.View, self string) error {
 	if req.Rejoin == nil {
 		return errors.New("no proof of its old key")
 	}
@@ -171,8 +173,12 @@ func (h *handlers) checkRejoin(req rpc.TroupeSignRequest, pub ed25519.PublicKey,
 	if err != nil {
 		return err
 	}
-	if view.Gone[troupe.IntermediateNode(issuer)] == troupe.Revoke {
-		return fmt.Errorf("its old certificate came from %s, whose keys the root revoked", troupe.IntermediateNode(issuer))
+	by := troupe.IntermediateNode(issuer)
+	if view.Gone[by] == troupe.Revoke {
+		return fmt.Errorf("its old certificate came from %s, whose keys the root revoked", by)
+	}
+	if !view.MayIssue(req.Node, by) && by != self {
+		return fmt.Errorf("its old certificate came from %s, which is neither its own intermediate, its renewer, nor this node", by)
 	}
 	return troupe.CheckRejoin(leaf, issuer, root, req.Rejoin.Sig, req.Troupe, req.Node, pub, req.Door)
 }

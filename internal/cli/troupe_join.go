@@ -226,6 +226,9 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 		return err
 	}
 	fmt.Fprintln(o.Out, "restart the daemon to take it up: figaro stop")
+	if by := troupe.IntermediateNode(issuer); !l.View().MayIssue(site.node, by) {
+		fmt.Fprintf(o.Out, "members other than %s refuse this node's certificate until the root names %s its renewer, on the node that holds the root:\n  op read <root ref> | figaro troupe renewer %s %s %s\n", by, by, name, site.node, by)
+	}
 	return nil
 }
 

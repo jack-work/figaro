@@ -646,6 +646,20 @@ hourly. Both TLS verifiers refuse a node outside the set and a chain through
 a revoked node's intermediate; a revoke that arrives while links are open
 closes them.
 
+A node's certificate counts only when its node's own intermediate issued it,
+or a **renewer** the ledger names for that node: a renewer entry, signed by
+the root (`op read <ref> | figaro troupe renewer <name> <node> <renewer>`)
+or by the node's own intermediate. Both TLS verifiers apply this, and so do
+a leave (a leave under a leaf from any other intermediate does not count)
+and the old-key proof of a rejoin. So an intermediate cannot act as a member
+that is not its own or its renewee. A node joined through another member
+holds a leaf from that member, which the rest of the troupe takes once the
+root names the member its renewer; `troupe join` says so. A revoked
+renewer renews nothing. The joiner cannot name its renewer itself: the key
+it would sign with is certified by the intermediate it would name, so a
+rogue intermediate could forge the same statement for any member. That
+needs node ids bound to a long-term node key, which UUID ids are not.
+
 `troupe.sign` admits a node: a caller holding `join` on `troupe:<name>`
 sends a node id, an Ed25519 public key and a door, and a node holding an
 intermediate returns a seven-day leaf, its issuer, the root and the
@@ -654,8 +668,9 @@ and names the members that can sign. A node id that is already a member is
 signed again only when the request is signed by that node's old key (its
 leaf may have expired), so holding `join` does not let anyone act as an
 existing node. A joined node renews its leaf the same
-way over the node door, as a node principal asking only for itself, which
-needs its current leaf, unexpired and unrevoked; once it expires the node
+way over the node door, as a node principal asking only for itself and only
+of its renewers, which needs its current leaf, unexpired and unrevoked; a
+member that is not its renewer refuses. Once the leaf expires the node
 joins again. `troupe.identity` (also `join`) returns the caller's principal,
 the root and its SHA-256, and the signers, for a joiner to check before it
 trusts anything.

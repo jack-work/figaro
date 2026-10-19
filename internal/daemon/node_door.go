@@ -172,9 +172,10 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 
 func renewer(ctx context.Context, m *peer.Ledger, d *peer.Dialer, door string) troupe.Renew {
 	return func(pub ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
-		signers := slices.DeleteFunc(m.View().Signers(time.Now()), func(n string) bool { return n == m.Self() })
+		view := m.View()
+		signers := slices.DeleteFunc(view.Signers(time.Now()), func(n string) bool { return !view.MayIssue(m.Self(), n) || n == m.Self() })
 		if len(signers) == 0 {
-			return nil, nil, errors.New("no member that holds an intermediate is known")
+			return nil, nil, fmt.Errorf("no renewer of this node is known to hold an intermediate (named: %v); the root names one: op read <root ref> | figaro troupe renewer %s %s <node>", view.Renewers[m.Self()], m.Troupe(), m.Self())
 		}
 		var errs []error
 		for _, node := range signers {

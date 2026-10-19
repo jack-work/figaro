@@ -1438,7 +1438,7 @@ there until you revoke it with the provider.`,
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | policy show <name> | policy set <name> <file|-> [--root] | create <name> | intermediate <name>> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | policy show <name> | policy set <name> <file|-> [--root] | create <name> | intermediate <name>> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -1469,6 +1469,11 @@ an [auth] table naming how a human signs in.
   revoke <name> <node>  with the root on stdin, revoke a node and every
                  join its intermediates signed; the running daemon tells
                  every member
+  renewer <name> <node> <renewer>  with the root on stdin, let
+                 <renewer>'s intermediate issue <node>'s certificates.
+                 A member takes a node's certificate only from the node's
+                 own intermediate or a renewer named so; a node that joined
+                 through another member needs this once
   policy show <name>   the troupe policy in force, who signed it, what
                  each member last showed, and the policy itself
   policy set <name> <file|->  sign a new version of the troupe policy
@@ -1502,6 +1507,7 @@ an [auth] table naming how a human signs in.
 			{"join", "sign this node into a troupe"},
 			{"leave", "sign this node out of its troupe for good"},
 			{"revoke", "with the root, revoke a node"},
+			{"renewer", "with the root, name a node's renewer"},
 			{"policy", "show or set the troupe policy"},
 		}, completeTroupeAfterLogin),
 	})

@@ -211,15 +211,17 @@ func (m *Ledger) Admit(chain []*x509.Certificate) error {
 	if !ok {
 		return fmt.Errorf("the certificate names no member of troupe %s", m.troupe)
 	}
+	if len(chain) < 2 || !chain[1].IsCA {
+		return fmt.Errorf("node %s presented no issuing intermediate", node)
+	}
+	by := troupe.IntermediateNode(chain[1])
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	for _, c := range chain[1:] {
-		if !c.IsCA {
-			continue
-		}
-		if by := troupe.IntermediateNode(c); m.view.Gone[by] == troupe.Revoke {
-			return fmt.Errorf("node %s's certificate was issued by %s, whose keys the root revoked", node, by)
-		}
+	if m.view.Gone[by] == troupe.Revoke {
+		return fmt.Errorf("node %s's certificate was issued by %s, whose keys the root revoked", node, by)
+	}
+	if !m.view.MayIssue(node, by) {
+		return fmt.Errorf("node %s's certificate was issued by %s, which is neither its own intermediate nor a renewer the root or %s named", node, by, node)
 	}
 	return nil
 }

@@ -102,6 +102,28 @@ func TestTroupeRevokeSignsWithTheTroupesRootOnly(t *testing.T) {
 	require.Contains(t, r.out.String(), "node-a")
 }
 
+// troupe renewer signs, with this troupe's root only, a statement that
+// lets another node's intermediate issue a node's certificates.
+func TestTroupeRenewerSignsWithTheTroupesRootOnly(t *testing.T) {
+	r := newJoinRig(t, memberConfig)
+	raw, k := rootKeyPEM(t)
+	root, err := troupe.RootCert("estate", k)
+	require.NoError(t, err)
+	require.NoError(t, troupe.DirFor(r.site.stateDir, "estate").WriteRoot(root))
+
+	f := &fakeEntries{}
+	wrong, _ := rootKeyPEM(t)
+	require.ErrorContains(t, troupeRenewer(context.Background(), f, bytes.NewReader(wrong), r.out, r.site, "estate", "node-c", "node-a"), "not troupe estate's root")
+	require.Empty(t, f.got)
+
+	require.NoError(t, troupeRenewer(context.Background(), f, bytes.NewReader(raw), r.out, r.site, "estate", "node-c", "node-a"))
+	require.Len(t, f.got, 1)
+	l := troupe.NewLedger("estate", root)
+	_, err = l.Merge(f.got...)
+	require.NoError(t, err)
+	require.True(t, l.View().MayIssue("node-c", "node-a"))
+}
+
 // Under the figaro provider troupe ls says who owns each node, who
 // admitted it, which can sign, and which nodes are out and how.
 func TestTroupeLsShowsAdmissionsSignersAndWhoIsOut(t *testing.T) {

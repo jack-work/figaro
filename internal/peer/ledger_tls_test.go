@@ -253,13 +253,49 @@ func TestACertificateFromARevokedIntermediateIsRefused(t *testing.T) {
 	cjoin, err := troupe.SignJoin(dik, dinter, "estate", "c", "c:1", "user:owner", time.Now())
 	require.NoError(t, err)
 
-	md := lt.membership("d", lt.selfJoin("a"), lt.selfJoin("d"), cjoin)
+	renews, err := troupe.SignRootRenewer(lt.rk, "estate", "c", "a", time.Now())
+	require.NoError(t, err)
+	md := lt.membership("d", lt.selfJoin("a"), lt.selfJoin("d"), cjoin, renews)
 	chain := []*x509.Certificate{leaf, ainter, lt.root}
 	require.NoError(t, md.Admit(chain))
 	_, err = md.Merge(lt.revoke("a"))
 	require.NoError(t, err)
 	require.Contains(t, md.Nodes(), "c", "c was admitted by d, so it stays a member")
 	require.ErrorContains(t, md.Admit(chain), "revoked")
+}
+
+// The attack: q holds an intermediate of the same root and mints a leaf
+// for member c, whose certificates only d (c's renewer) may issue. Every
+// member refuses it; c's own leaf from d, and c's leaf from its own
+// intermediate, are admitted.
+func TestALeafFromAnIntermediateThatIsNotTheNodesIsRefused(t *testing.T) {
+	lt := newLedgerTroupe(t, "c", "d", "q")
+	leafFrom := func(issuer, node string) []*x509.Certificate {
+		inter, ik, err := lt.keep[issuer].Dir.Intermediate()
+		require.NoError(t, err)
+		_, k, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+		leaf, err := troupe.IssueNode(ik, inter, "estate", node, k.Public(), time.Now(), troupe.NodeTTL)
+		require.NoError(t, err)
+		return []*x509.Certificate{leaf, inter, lt.root}
+	}
+	dinter, dik, err := lt.keep["d"].Dir.Intermediate()
+	require.NoError(t, err)
+	bjoin, err := troupe.SignJoin(dik, dinter, "estate", "b", "b:1", "user:owner", time.Now())
+	require.NoError(t, err)
+	renews, err := troupe.SignRootRenewer(lt.rk, "estate", "b", "d", time.Now())
+	require.NoError(t, err)
+	es := []troupe.Entry{lt.selfJoin("c"), lt.selfJoin("d"), lt.selfJoin("q"), bjoin}
+
+	md := lt.membership("d", es...)
+	require.ErrorContains(t, md.Admit(leafFrom("d", "b")), "neither its own intermediate nor a renewer", "a leaf from the admitting node before the root named it renewer")
+	_, err = md.Merge(renews)
+	require.NoError(t, err)
+	require.NoError(t, md.Admit(leafFrom("d", "b")))
+	require.NoError(t, md.Admit(leafFrom("c", "c")))
+	require.ErrorContains(t, md.Admit(leafFrom("q", "b")), "issued by q")
+	require.ErrorContains(t, md.Admit(leafFrom("q", "c")), "issued by q")
+	require.ErrorContains(t, md.Admit([]*x509.Certificate{leafFrom("d", "b")[0]}), "no issuing intermediate")
 }
 
 // The door forgets a connection when it ends, so a node that is never

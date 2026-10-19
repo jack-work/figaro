@@ -245,3 +245,30 @@ func TestTroupeSignRecordsTheCallerAsOwner(t *testing.T) {
 	m := r.a.Peers.(*peer.Ledger)
 	require.Equal(t, "user:member", m.View().Members["node-b"].Owner)
 }
+
+// The attack through rejoin: q's intermediate mints a leaf for member b and
+// offers it as b's old certificate. This node issued b's leaf itself and is
+// not q, and q is not b's renewer, so the proof is refused.
+func TestARejoinProofFromAnotherIntermediateIsRefused(t *testing.T) {
+	r := newSignRig(t, true)
+	_, _, err := r.sign(as("member"), "node-b", "b.lan:7443")
+	require.NoError(t, err)
+
+	_, qk, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	qinter, err := troupe.IssueIntermediate(r.rk, r.root, "estate", "node-q", qk.Public(), time.Now(), troupe.IntermediateTTL)
+	require.NoError(t, err)
+	forgedPub, forgedKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	leaf, err := troupe.IssueNode(qk, qinter, "estate", "node-b", forgedPub, time.Now(), troupe.NodeTTL)
+	require.NoError(t, err)
+
+	newPub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	sig, err := troupe.SignRejoin(forgedKey, "estate", "node-b", newPub, "evil.lan:7443")
+	require.NoError(t, err)
+	req := rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: newPub, Door: "evil.lan:7443",
+		Rejoin: &rpc.TroupeRejoin{Chain: [][]byte{leaf.Raw, qinter.Raw}, Sig: sig}}
+	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
+	require.ErrorContains(t, err, "came from node-q, which is neither")
+}

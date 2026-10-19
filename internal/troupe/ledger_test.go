@@ -61,6 +61,13 @@ func (s *estate) leaveAs(holder, node, issuer string, at time.Duration) Entry {
 	return e
 }
 
+func (s *estate) renewer(node, by string) Entry {
+	s.t.Helper()
+	e, err := SignRootRenewer(s.rk, "estate", node, by, s.now)
+	require.NoError(s.t, err)
+	return e
+}
+
 func (s *estate) revoke(node string, at time.Duration) Entry {
 	s.t.Helper()
 	e, err := SignRevoke(s.rk, "estate", node, s.now.Add(at))
@@ -206,7 +213,7 @@ func TestAnEntryIsVerifiedAtItsOwnTime(t *testing.T) {
 func TestALeaveBeatsAJoinOfTheSameNodeWhateverTheOrder(t *testing.T) {
 	s := newEstate(t)
 	s.intermediate("a")
-	v := s.ledger(s.join("a", "a", 0), s.join("a", "b", 0), s.leave("b", "a", time.Minute), s.join("a", "b", time.Hour)).View()
+	v := s.ledger(s.join("a", "a", 0), s.join("a", "b", 0), s.renewer("b", "a"), s.leave("b", "a", time.Minute), s.join("a", "b", time.Hour)).View()
 	require.Equal(t, []string{"a"}, members(v))
 	require.Equal(t, Leave, v.Gone["b"])
 }
@@ -264,7 +271,7 @@ func TestMergeIsOrderFreeAndIdempotent(t *testing.T) {
 	es := []Entry{
 		s.join("a", "a", 0), s.join("d", "d", 0), s.join("e", "e", 0),
 		s.join("a", "b", 1*time.Minute), s.join("d", "c", 2*time.Minute), s.join("e", "f", 3*time.Minute), s.join("a", "g", 4*time.Minute),
-		s.leave("c", "d", 5*time.Minute), s.revoke("e", 6*time.Minute), s.join("d", "f", 7*time.Minute), s.join("a", "a", 8*time.Minute),
+		s.renewer("c", "d"), s.leave("c", "d", 5*time.Minute), s.revoke("e", 6*time.Minute), s.join("d", "f", 7*time.Minute), s.join("a", "a", 8*time.Minute),
 	}
 	want := s.ledger(es...).View()
 	require.Equal(t, []string{"a", "b", "d", "f", "g"}, members(want))

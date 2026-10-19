@@ -23,10 +23,11 @@ import (
 type Kind string
 
 const (
-	Join   Kind = "join"
-	Leave  Kind = "leave"
-	Revoke Kind = "revoke"
-	Policy Kind = "policy"
+	Join    Kind = "join"
+	Leave   Kind = "leave"
+	Revoke  Kind = "revoke"
+	Policy  Kind = "policy"
+	Renewer Kind = "renewer"
 )
 
 const MaxEntries = 4096
@@ -42,14 +43,18 @@ type Entry struct {
 	Version uint64   `json:"version,omitempty"`
 	By      string   `json:"by,omitempty"`
 	Body    string   `json:"body,omitempty"`
+	Renews  string   `json:"renews,omitempty"`
 	At      int64    `json:"at"`
 	Chain   [][]byte `json:"chain,omitempty"`
 	Sig     []byte   `json:"sig"`
 }
 
 func (e Entry) message() []byte {
-	if e.Kind == Policy {
+	switch e.Kind {
+	case Policy:
 		return e.policyMessage()
+	case Renewer:
+		return e.renewerMessage()
 	}
 	body, _ := json.Marshal(struct {
 		Kind   Kind   `json:"kind"`
@@ -132,6 +137,9 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 	if e.Kind != Policy && (e.Version != 0 || e.By != "" || e.Body != "") {
 		return out, fmt.Errorf("a %s carries no policy", e.Kind)
 	}
+	if e.Kind != Renewer && e.Renews != "" {
+		return out, fmt.Errorf("a %s names no renewer", e.Kind)
+	}
 	switch e.Kind {
 	case Policy:
 		key, err := verifyPolicy(out, root, at)
@@ -169,6 +177,12 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 			return out, fmt.Errorf("a leave for %s is signed by another node", e.Node)
 		}
 		pub = leaf.PublicKey
+	case Renewer:
+		key, err := verifyRenewer(out, troupe, root, at)
+		if err != nil {
+			return out, err
+		}
+		pub = key
 	case Revoke:
 		if e.Door != "" || e.Owner != "" || len(out.chain) != 0 {
 			return out, errors.New("a revoke is signed by the root alone, and has no door")
@@ -225,13 +239,14 @@ type Member struct {
 }
 
 type View struct {
-	Members map[string]Member
-	Gone    map[string]Kind
-	Policy  *Entry
-	Rivals  []Entry
-	Voided  []Entry
-	Refused []Entry
-	Digest  uint64
+	Members  map[string]Member
+	Renewers map[string][]string
+	Gone     map[string]Kind
+	Policy   *Entry
+	Rivals   []Entry
+	Voided   []Entry
+	Refused  []Entry
+	Digest   uint64
 }
 
 func (v View) Signers(now time.Time) []string {
@@ -335,11 +350,25 @@ func (l *Ledger) View() View { return l.view }
 
 func (l *Ledger) rebuild() {
 	ids := slices.Sorted(maps.Keys(l.entries))
-	v := View{Members: map[string]Member{}, Gone: map[string]Kind{}}
+	v := View{Members: map[string]Member{}, Renewers: map[string][]string{}, Gone: map[string]Kind{}}
+	for _, id := range ids {
+		if e := l.entries[id]; e.Kind == Revoke {
+			v.Gone[e.Node] = Revoke
+		}
+	}
 	for _, id := range ids {
 		e := l.entries[id]
-		if e.Kind == Revoke || e.Kind == Leave && v.Gone[e.Node] != Revoke {
-			v.Gone[e.Node] = e.Kind
+		if e.Kind == Renewer && v.Gone[e.Renews] != Revoke && !slices.Contains(v.Renewers[e.Node], e.Renews) {
+			v.Renewers[e.Node] = append(v.Renewers[e.Node], e.Renews)
+		}
+	}
+	for n := range v.Renewers {
+		slices.Sort(v.Renewers[n])
+	}
+	for _, id := range ids {
+		e := l.entries[id]
+		if e.Kind == Leave && v.Gone[e.Node] == "" && v.MayIssue(e.Node, IntermediateNode(e.chain[1])) {
+			v.Gone[e.Node] = Leave
 		}
 	}
 	latest := map[string]int64{}
