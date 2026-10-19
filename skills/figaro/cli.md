@@ -194,7 +194,9 @@ naming both. `ls`, the status bar and every "attending" line show the handle;
 time until you type; typed hex completes to full ids instead.
 
 `[display] ids = "short"` in `keys.toml` shows the five-digit hex instead of
-the handle wherever a person reads a name; `-j` fields are unchanged.
+the handle wherever a person reads a name; `-j` fields are unchanged. In the
+pager `y` copies the name shown (the attended aria's, or a listing row's) and
+`M-y` the full id.
 
 ## Branching
 

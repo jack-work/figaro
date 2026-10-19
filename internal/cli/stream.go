@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -985,8 +986,6 @@ func (in *interactiveInput) questionKey(delta int) keyVerdict {
 	return keyHandled
 }
 
-// inputYank copies, in order of precedence, the composer's mark, the pit's row,
-// the visual selection, the node selection, else the aria id.
 func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 	if ev.mode != modeIncipit {
 		in.mu.Lock()
@@ -1038,7 +1037,29 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 		}
 		in.mu.Unlock()
 	}
-	in.tc.SetClipboard(in.figaroID)
+	in.mu.Lock()
+	name := ariaName(in.figaroID)
+	if ev.mode != modeIncipit {
+		in.lt.tr.noteYank(name)
+		in.lt.tr.render()
+	}
+	in.mu.Unlock()
+	in.tc.SetClipboard(name)
+	return keyHandled
+}
+
+func inputYankID(in *interactiveInput, ev keyEvent) keyVerdict {
+	in.mu.Lock()
+	id, name := in.figaroID, ariaName(in.figaroID)
+	if ev.mode != modeIncipit {
+		if row, ok := in.lt.tr.pit.selected(); ok && row.aria != "" {
+			id, name = row.aria, cmp.Or(row.yank, ariaName(row.aria))
+		}
+		in.lt.tr.setCommandNote("yanked the id of " + name)
+		in.lt.tr.render()
+	}
+	in.mu.Unlock()
+	in.tc.SetClipboard(id)
 	return keyHandled
 }
 

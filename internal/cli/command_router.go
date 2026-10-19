@@ -397,16 +397,16 @@ func (in *interactiveInput) routeCaptured(argv []string) (captured, int) {
 // captured is what a command printed, plus the id each line is about, declared
 // by the verb at write time (emitRow): never parsed back out of rendered text.
 type captured struct {
-	text string
-	ids  map[int]string
+	text  string
+	arias map[int]listedAria
 }
 
 // A line with no id is chrome: not selectable.
 func (c captured) rows(lines []string) []pitRow {
 	out := make([]pitRow, 0, len(lines))
 	for i, line := range lines {
-		id := c.ids[i]
-		out = append(out, pitRow{text: line, yank: id, id: id})
+		a := c.arias[i]
+		out = append(out, pitRow{text: line, yank: a.name, id: a.id, aria: a.id})
 	}
 	return out
 }
@@ -416,7 +416,7 @@ type lockedBuffer struct {
 	mu    sync.Mutex
 	b     strings.Builder
 	lines int
-	ids   map[int]string
+	arias map[int]listedAria
 }
 
 func (w *lockedBuffer) Write(p []byte) (int, error) {
@@ -426,14 +426,14 @@ func (w *lockedBuffer) Write(p []byte) (int, error) {
 	return w.b.Write(p)
 }
 
-func (w *lockedBuffer) WriteRow(line, id string) {
+func (w *lockedBuffer) WriteRow(line string, a listedAria) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if id != "" {
-		if w.ids == nil {
-			w.ids = map[int]string{}
+	if a.id != "" {
+		if w.arias == nil {
+			w.arias = map[int]listedAria{}
 		}
-		w.ids[w.lines] = id
+		w.arias[w.lines] = a
 	}
 	w.b.WriteString(line)
 	w.b.WriteByte('\n')
@@ -443,7 +443,7 @@ func (w *lockedBuffer) WriteRow(line, id string) {
 func (w *lockedBuffer) captured() captured {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return captured{text: w.b.String(), ids: w.ids}
+	return captured{text: w.b.String(), arias: w.arias}
 }
 
 func splitOutputLines(s string) []string {

@@ -124,7 +124,7 @@ your changes applied.
 | pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `H` hang-up · `S` form · `T` focus · `h` help · `!` status · `Q` queue |
 | reading | transcript,pit,visual,list | `q` leave · `m` bar-verbose · `/` search · `?` search-back |
 | conversation | transcript,visual | `v` mark-char · `V` mark-line · `X` hang-up-drop · `:` command · `>` compose |
-| clipboard | incipit,transcript,pit,visual,composer,list | `y` yank |
+| clipboard | incipit,transcript,pit,visual,composer,list | `y` yank · `M-y` yank-id |
 | motions | transcript,visual,composer,list | `j` down · `k` up · `d` half-down · `u` half-up · `G` bottom · `g` prefix:g · `Down` down · `Up` up · `PgDn` half-down · `PgUp` half-up · `Home` top · `End` bottom · `h Left` left · `l Right` right · `w` word-next · `b` word-prev · `e` word-end · `0` line-start · `^` line-first · `$` line-end · `{` para-prev · `}` para-next |
 | session | all | `^C` interrupt · `^D` detach · `^L` listen · `^T` listen · `M-m` verbose · `csi:^N` select-next-extend · `csi:^P` select-prev-extend |
 | g (prefix) | transcript,visual,composer,list | `g` top |
@@ -150,6 +150,7 @@ your changes applied.
 | `question-prev` | transcript,pit,list |
 | `sticky` | transcript,pit,list |
 | `yank` | incipit,transcript,pit,visual,composer,list |
+| `yank-id` | incipit,transcript,pit,visual,composer,list |
 | `yank-coordinate` | visual |
 | `hang-up` | transcript,pit,list |
 | `hang-up-drop` | transcript,visual |

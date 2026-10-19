@@ -154,6 +154,7 @@ func inputSweepKeys() []struct {
 	// sweep above cannot reach it, and a binding no sweep reaches is a
 	// binding this oracle does not defend.
 	add("alt m", "\x1bm")
+	add("alt y", "\x1by")
 	add("alt ^n fallback", "\x1b\x0e")
 	add("alt ^p fallback", "\x1b\x10")
 	return keys

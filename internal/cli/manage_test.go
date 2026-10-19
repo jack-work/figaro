@@ -74,8 +74,8 @@ func TestListRowIDComesFromTheVerbNotTheRenderedText(t *testing.T) {
 	if got[0].id != "" {
 		t.Fatalf("the header is chrome, not a row about %q", got[0].id)
 	}
-	if got[1].id != "23e03e27" || got[1].yank != "23e03e27" {
-		t.Fatalf("row acts on %q (yanks %q); the mantra named 90ec6584 and the row is 23e03e27", got[1].id, got[1].yank)
+	if got[1].id != "23e03e27" || got[1].aria != "23e03e27" || got[1].yank != "suds-obtain" {
+		t.Fatalf("row acts on %q (aria %q, yanks %q); the mantra named 90ec6584 and the row is 23e03e27, named suds-obtain", got[1].id, got[1].aria, got[1].yank)
 	}
 	if !strings.Contains(got[1].text, "90ec6584") {
 		t.Fatalf("the case needs both ids in one line: %q", got[1].text)

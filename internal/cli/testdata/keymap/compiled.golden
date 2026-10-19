@@ -10,6 +10,7 @@ incipit    csi-u ctrl-n       input inputSelectNext
 incipit    csi-u ctrl-p       input inputSelectPrev
 incipit    csi-u ctrl-t       input inputEnterTranscript
 incipit    M-m                input inputToggleVerbose
+incipit    M-y                input inputYankID
 transcript 0x03               input inputInterrupt
 transcript 0x04               input inputDisconnect
 transcript 0x09               pager pagerAriaForward
@@ -73,6 +74,7 @@ transcript csi-u ctrl-t       input inputEnterTranscript
 transcript M-m                input inputToggleVerbose
 transcript M-n                input inputQuestionNext
 transcript M-p                input inputQuestionPrev
+transcript M-y                input inputYankID
 search     0x03               input inputInterrupt
 search     0x04               input inputDisconnect
 search     0x08               pager searchBackspace
@@ -199,6 +201,7 @@ panel      csi-u ctrl-t       input inputEnterTranscript
 panel      M-m                input inputToggleVerbose
 panel      M-n                input inputQuestionNext
 panel      M-p                input inputQuestionPrev
+panel      M-y                input inputYankID
 visual     0x03               input inputInterrupt
 visual     0x04               input inputDisconnect
 visual     0x0a               pager pagerVisualSelect
@@ -254,6 +257,7 @@ visual     csi-u ctrl-n       input inputSelectNext
 visual     csi-u ctrl-p       input inputSelectPrev
 visual     csi-u ctrl-t       input inputEnterTranscript
 visual     M-m                input inputToggleVerbose
+visual     M-y                input inputYankID
 confirm    0x03               input inputInterrupt
 confirm    0x04               input inputDisconnect
 confirm    0x0c               input inputEnterTranscript
@@ -318,6 +322,7 @@ composer   csi-u ctrl-s       pager composerSubmit
 composer   csi-u ctrl-t       input inputEnterTranscript
 composer   M-                pager composerSubmit
 composer   M-m                input inputToggleVerbose
+composer   M-y                input inputYankID
 list       0x03               input inputInterrupt
 list       0x04               input inputDisconnect
 list       0x0a               pager pagerPitActivate
@@ -371,6 +376,7 @@ list       csi-u ctrl-t       input inputEnterTranscript
 list       M-m                input inputToggleVerbose
 list       M-n                input inputQuestionNext
 list       M-p                input inputQuestionPrev
+list       M-y                input inputYankID
 g+transcript "g"                pager pagerTop
 g+visual   "g"                pager pagerVisualTop
 g+composer "g"                pager composerBufferStart
@@ -457,9 +463,11 @@ csi-u      ctrl-v
 csi-u      ctrl-w
 csi-u      ctrl-y
 meta       incipit    M-m
+meta       incipit    M-y
 meta       transcript M-m
 meta       transcript M-n
 meta       transcript M-p
+meta       transcript M-y
 meta       search     M-m
 meta       jump       M-
 meta       jump       M-*
@@ -485,10 +493,14 @@ meta       jump       M-DEL
 meta       panel      M-m
 meta       panel      M-n
 meta       panel      M-p
+meta       panel      M-y
 meta       visual     M-m
+meta       visual     M-y
 meta       confirm    M-m
 meta       composer   M-
 meta       composer   M-m
+meta       composer   M-y
 meta       list       M-m
 meta       list       M-n
 meta       list       M-p
+meta       list       M-y

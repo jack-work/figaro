@@ -22,6 +22,7 @@ var keyActions = []keyAction{
 	named("question-prev", atInputOpens(inTranscript|inPit, inputQuestionPrev)),
 	named("sticky", atInputOpens(inTranscript|inPit, inputToggleSticky)),
 	named("yank", atInput(inClipboard, inputYank)),
+	named("yank-id", atInput(inClipboard, inputYankID)),
 	named("yank-coordinate", atInput(inVisual, inputYankCoordinate)),
 	named("hang-up", atInput(inTranscript|inPit, inputHangUp)),
 	named("hang-up-drop", atInput(inConversation, inputHangUpDrop)),
@@ -373,6 +374,7 @@ var defaultLayers = []keyLayer{
 	}},
 	{name: "clipboard", modes: inClipboard, binds: []keyBind{
 		bind("y", "yank", helpYank),
+		bind("M-y", "yank-id", helpYank),
 	}},
 	{name: "motions", modes: inMotions, binds: []keyBind{
 		bind("j", "down", helpScroll),

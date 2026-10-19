@@ -530,11 +530,11 @@ func listOutputWidth() int {
 	return term.Width()
 }
 
-// rowSink takes a line with the id it is about: an id is data the verb hands
-// over, never read back out of the rendering.
 type rowSink interface {
-	WriteRow(line, id string)
+	WriteRow(line string, a listedAria)
 }
+
+type listedAria struct{ id, name string }
 
 func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
 	text := renderListRows(rows, width, global)
@@ -546,11 +546,11 @@ func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	off := len(lines) - len(rows)
 	for i, line := range lines {
-		id := ""
+		var a listedAria
 		if i >= off && off >= 0 {
-			id = rows[i-off].Field(fieldAriaID)
+			a = listedAria{id: rows[i-off].Field(fieldAriaID), name: rows[i-off].Field(fieldID)}
 		}
-		sink.WriteRow(line, id)
+		sink.WriteRow(line, a)
 	}
 }
 
@@ -893,7 +893,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 				Mode         string `json:"mode"`
 			}{
 				AriaID:       ariaID,
-				Handle:       ariaName(ariaID),
+				Handle:       ariaHandle(ariaID),
 				Parent:       resp.Parent,
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,

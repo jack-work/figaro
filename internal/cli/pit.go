@@ -29,6 +29,7 @@ type pitRow struct {
 	text string
 	yank string
 	id   string
+	aria string
 	// note is drawn at full strength on the selected row: dim on a wash would
 	// not read.
 	note string
