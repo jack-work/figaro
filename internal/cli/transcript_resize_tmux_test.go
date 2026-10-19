@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -130,12 +131,6 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	// kill-server leaves the socket inode behind.
-	defer func() {
-		_, _ = run("kill-server")
-		_ = os.Remove(socket)
-	}()
-
 	// A returning shell prompt would land on the final row.
 	script := "cat " + pre + "; touch " + readyFile +
 		"; while [ ! -e " + goFile + " ]; do sleep 0.02; done; cat " + post + "; sleep 60"
@@ -144,6 +139,15 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 	if out, err := run("new-session", "-d", "-x", itoaTest(w0), "-y", itoaTest(h0+1), "sh", "-c", script); err != nil {
 		t.Skipf("tmux new-session failed (%v): %s", err, out)
 	}
+	// The pane's shell writes the ready marker into dir, on a skip as on a
+	// pass. kill-server also leaves the socket inode behind.
+	var panePID int
+	defer func() {
+		_, _ = run("kill-server")
+		_ = os.Remove(socket)
+		awaitPaneGone(t, panePID)
+	}()
+	panePID, _ = strconv.Atoi(strings.TrimSpace(mustOut(t, run, "display", "-p", "#{pane_pid}")))
 	if out, err := run("set", "-g", "status", "off"); err != nil {
 		t.Skipf("tmux set status off failed (%v): %s", err, out)
 	}
