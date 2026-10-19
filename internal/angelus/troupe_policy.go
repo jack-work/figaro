@@ -53,10 +53,13 @@ func (h *handlers) troupePolicySet(ctx context.Context, params json.RawMessage) 
 	if err != nil {
 		return nil, err
 	}
-	version := uint64(1)
-	if view.Policy != nil {
-		version = view.Policy.Version + 1
+	if view.Policy == nil {
+		return nil, fmt.Errorf("troupe %s has no policy yet, and the root signs the first: op read <root ref> | figaro troupe policy set %s <file> --root", m.Troupe(), m.Troupe())
 	}
+	if setters, _ := troupe.PolicySetters(view.Policy.Body); !slices.Contains(setters, m.Self()) {
+		return nil, fmt.Errorf("version %d names %v as setters, not this node (%s): sign from one of them, or with the root (--root)", view.Policy.Version, setters, m.Self())
+	}
+	version := view.Policy.Version + 1
 	e, err := troupe.SignPolicy(ikey, inter, m.Troupe(), version, by, req.Body, now)
 	if err != nil {
 		return nil, err
@@ -109,6 +112,9 @@ func (h *handlers) troupePolicy(ctx context.Context, params json.RawMessage) (an
 	for _, e := range view.Voided {
 		out.Voided = append(out.Voided, policyVersion(e))
 	}
+	for _, e := range view.Refused {
+		out.Refused = append(out.Refused, policyVersion(e))
+	}
 	seen := h.angelus.PeerVersions.All()
 	for _, node := range slices.Sorted(maps.Keys(view.Members)) {
 		row := rpc.TroupePolicySighting{Node: node}
@@ -124,5 +130,5 @@ func (h *handlers) troupePolicy(ctx context.Context, params json.RawMessage) (an
 }
 
 func policyVersion(e troupe.Entry) rpc.TroupePolicyVersion {
-	return rpc.TroupePolicyVersion{Version: e.Version, Signer: e.Node, By: e.By, At: e.At}
+	return rpc.TroupePolicyVersion{Version: e.Version, Root: e.RootSigned(), Signer: e.Node, By: e.By, At: e.At}
 }

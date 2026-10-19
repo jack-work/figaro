@@ -203,7 +203,11 @@ func runTroupeLogin(loaded *config.Loaded, name string) {
 	}
 }
 
-func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpts) error {
+type keyOpts struct {
+	Root bool
+}
+
+func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpts, iss keyOpts) error {
 	verb, rest := args[0], args[1:]
 	switch verb {
 	case "ls":
@@ -232,10 +236,13 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 		runTroupeRevoke(loaded, rest[0], rest[1])
 	case "policy":
-		runTroupePolicy(rest, jsonOut)
+		runTroupePolicy(loaded, rest, jsonOut, iss.Root)
 	case "create", "intermediate":
 		if len(rest) != 1 {
 			dieUsage("troupe %s takes one troupe name, and the root key on stdin", verb)
+		}
+		if iss.Root {
+			dieUsage("--root goes with troupe policy set")
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:

@@ -1438,7 +1438,7 @@ there until you revoke it with the provider.`,
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | policy show <name> | policy set <name> <file|-> | create <name> | intermediate <name>> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | policy show <name> | policy set <name> <file|-> [--root] | create <name> | intermediate <name>> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -1473,7 +1473,10 @@ an [auth] table naming how a human signs in.
                  each member last showed, and the policy itself
   policy set <name> <file|->  sign a new version of the troupe policy
                  (needs admin on troupe:<name> in this node's own
-                 policy) and tell every member. A troupe grant counts on
+                 policy) and tell every member. The root signs version 1
+                 (--root, the key on stdin); after that a node signs only
+                 while the version in force lists it in setters = [...],
+                 and the root may sign any version. A troupe grant counts on
                  a node only where that node's policy lends the same
                  right to troupe:<name>; use on sandbox:local and admin
                  on the troupe are never the troupe's to grant`,
@@ -1484,13 +1487,14 @@ an [auth] table naming how a human signs in.
 			{Long: "listen", Description: "join: host:port the node door listens on (default the door)"},
 			{Long: "root-sha256", Description: "join: trust the troupe root only if its sha256 is this"},
 			{Long: "yes", Short: "y", IsBool: true, Description: "join: trust the root shown without asking; leave: do not ask"},
+			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
 		},
 		ArgsMin: 1,
 		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
-			})
+			}, keyOpts{Root: ctx.BoolFlag("root")})
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"login", "sign in to a troupe's door"},

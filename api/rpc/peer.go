@@ -150,7 +150,8 @@ type TroupePolicySetRequest struct {
 
 type TroupePolicyVersion struct {
 	Version uint64 `json:"version"`
-	Signer  string `json:"signer"`
+	Root    bool   `json:"root,omitempty"`
+	Signer  string `json:"signer,omitempty"`
 	By      string `json:"by"`
 	At      int64  `json:"at"`
 }
@@ -171,6 +172,7 @@ type TroupePolicyResponse struct {
 	LoadError string                 `json:"load_error,omitempty"`
 	Rivals    []TroupePolicyVersion  `json:"rivals,omitempty"`
 	Voided    []TroupePolicyVersion  `json:"voided,omitempty"`
+	Refused   []TroupePolicyVersion  `json:"refused,omitempty"`
 	Nodes     []TroupePolicySighting `json:"nodes,omitempty"`
 	LocalOnly []string               `json:"local_only"`
 }

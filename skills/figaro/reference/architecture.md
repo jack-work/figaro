@@ -666,15 +666,23 @@ before that name their owner unscoped; such ledgers exist only in
 development roots, and nothing rewrites them.
 
 **The troupe policy** is a ledger entry too: a version, the admin who asked
-(`by`), and the document (policy TOML plus optional `[[issuers]]`), signed
-by the intermediate of the node that took the change. `troupe.policy.set`
-checks the document, refuses explicit grants on `sandbox:local` and admin or
-every verb on the troupe, signs the next version, and spreads it before it
-returns. A leaf-only node refuses and names the signers. The highest
-(version, body hash) is in force on every node, and a write that lost a tie
-stays visible to `troupe policy show`. A ledger keeps the newest policy per
-signer, and a root revoke of the signer voids its policy, so the newest one
-from an unrevoked signer takes over. Passages, answers and `troupe.entries`
+(`by`), and the document (policy TOML plus optional `[[issuers]]` and
+`setters = ["<node id>", ...]`), signed by the root or by a node's
+intermediate. Versions are adopted in order: one the root signs always
+counts, and the root signs version 1 (`op read <ref> | figaro troupe policy
+set <name> <file> --root`); any later version counts only if its signer is a
+setter of the version adopted before it. So an intermediate the policy does
+not name cannot publish, and a setter dropped from the list cannot return
+by writing a higher version. A ledger stores a node's policies only once
+some stored version names it, and keeps every version, so each can be
+checked against the one before. `troupe.policy.set` checks the document,
+refuses explicit grants on `sandbox:local` and admin or every verb on the
+troupe, refuses on a node that is not a setter of the version in force,
+signs the next version, and spreads it before it returns. Among the
+versions that count, the highest (version, body hash) is in force on every
+node; a write that lost a tie and a version that did not count stay
+visible to `troupe policy show`. A root revoke of a signer voids its
+versions, so the chain continues without them. Passages, answers and `troupe.entries`
 replies carry each side's policy version, which `troupe policy show` lists
 per member with the age of the sighting. With `provider = "static"`,
 `[troupe] policy` names an unsigned file instead, read at start and on a

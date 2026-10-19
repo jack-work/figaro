@@ -3,12 +3,18 @@ package troupe
 import (
 	"bytes"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
+
+	"github.com/BurntSushi/toml"
+
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 const (
@@ -32,7 +38,28 @@ func SignPolicy(key crypto.Signer, inter *x509.Certificate, troupe string, versi
 	return sign(Entry{Kind: Policy, Troupe: troupe, Node: IntermediateNode(inter), Version: version, By: by, Body: body, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
 }
 
-func verifyPolicy(v verified, root *x509.Certificate, at time.Time) (*x509.Certificate, error) {
+func SignRootPolicy(root ed25519.PrivateKey, troupe string, version uint64, by, body string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: Policy, Troupe: troupe, Version: version, By: by, Body: body, At: at.UnixMilli()}, root)
+}
+
+func (e Entry) RootSigned() bool { return e.Kind == Policy && len(e.Chain) == 0 }
+
+func PolicySetters(body string) ([]string, error) {
+	var doc struct {
+		Setters []string `toml:"setters"`
+	}
+	if _, err := toml.Decode(body, &doc); err != nil {
+		return nil, fmt.Errorf("setters: %w", err)
+	}
+	for _, n := range doc.Setters {
+		if err := rpc.ValidateAriaID(n); err != nil {
+			return nil, fmt.Errorf("setters: %w", err)
+		}
+	}
+	return doc.Setters, nil
+}
+
+func verifyPolicy(v verified, root *x509.Certificate, at time.Time) (crypto.PublicKey, error) {
 	e := v.Entry
 	if e.Door != "" || e.Owner != "" {
 		return nil, errors.New("a policy has no door or owner")
@@ -46,8 +73,17 @@ func verifyPolicy(v verified, root *x509.Certificate, at time.Time) (*x509.Certi
 	if err := ValidOwner(e.By); err != nil {
 		return nil, fmt.Errorf("by: %w", err)
 	}
+	if _, err := PolicySetters(e.Body); err != nil {
+		return nil, err
+	}
+	if len(v.chain) == 0 {
+		if e.Node != "" {
+			return nil, errors.New("a policy the root signs names no node")
+		}
+		return root.PublicKey, nil
+	}
 	if len(v.chain) != 1 {
-		return nil, errors.New("a policy carries the signing intermediate alone")
+		return nil, errors.New("a policy carries the signing intermediate alone, or nothing when the root signs it")
 	}
 	inter := v.chain[0]
 	if !inter.IsCA || inter.MaxPathLen != 0 || IntermediateNode(inter) != e.Node {
@@ -56,7 +92,63 @@ func verifyPolicy(v verified, root *x509.Certificate, at time.Time) (*x509.Certi
 	if err := chainsTo(inter, nil, root, at); err != nil {
 		return nil, err
 	}
-	return inter, nil
+	return inter.PublicKey, nil
+}
+
+type policyWalk struct {
+	adopted *Entry
+	rivals  []Entry
+	refused []Entry
+}
+
+func walkPolicies(es []Entry) policyWalk {
+	slices.SortFunc(es, func(a, b Entry) int {
+		switch {
+		case a.Version != b.Version:
+			return cmpU(a.Version, b.Version)
+		case Newer(a, b):
+			return 1
+		case Newer(b, a):
+			return -1
+		}
+		return 0
+	})
+	var w policyWalk
+	var setters []string
+	for i := 0; i < len(es); {
+		j := i
+		for j < len(es) && es[j].Version == es[i].Version {
+			j++
+		}
+		var ok []Entry
+		for _, e := range es[i:j] {
+			if e.RootSigned() || w.adopted != nil && slices.Contains(setters, e.Node) {
+				ok = append(ok, e)
+			} else {
+				w.refused = append(w.refused, e)
+			}
+		}
+		if len(ok) > 0 {
+			best := ok[len(ok)-1]
+			w.adopted = &best
+			setters, _ = PolicySetters(best.Body)
+			w.rivals = nil
+			for _, e := range ok {
+				if e.Body != best.Body {
+					w.rivals = append(w.rivals, e)
+				}
+			}
+		}
+		i = j
+	}
+	return w
+}
+
+func cmpU(a, b uint64) int {
+	if a < b {
+		return -1
+	}
+	return 1
 }
 
 func Newer(a, b Entry) bool {

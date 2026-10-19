@@ -112,8 +112,10 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 	if e.Troupe != troupe {
 		return out, fmt.Errorf("entry for troupe %q, not %q", e.Troupe, troupe)
 	}
-	if err := rpc.ValidateAriaID(e.Node); err != nil {
-		return out, fmt.Errorf("node: %w", err)
+	if !e.RootSigned() {
+		if err := rpc.ValidateAriaID(e.Node); err != nil {
+			return out, fmt.Errorf("node: %w", err)
+		}
 	}
 	if e.At <= 0 {
 		return out, errors.New("no time")
@@ -132,11 +134,11 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 	}
 	switch e.Kind {
 	case Policy:
-		inter, err := verifyPolicy(out, root, at)
+		key, err := verifyPolicy(out, root, at)
 		if err != nil {
 			return out, err
 		}
-		pub = inter.PublicKey
+		pub = key
 	case Join:
 		if _, _, err := net.SplitHostPort(e.Door); err != nil {
 			return out, fmt.Errorf("door %q: %w", e.Door, err)
@@ -228,6 +230,7 @@ type View struct {
 	Policy  *Entry
 	Rivals  []Entry
 	Voided  []Entry
+	Refused []Entry
 	Digest  uint64
 }
 
@@ -243,15 +246,14 @@ func (v View) Signers(now time.Time) []string {
 }
 
 type Ledger struct {
-	troupe   string
-	root     *x509.Certificate
-	entries  map[string]verified
-	policies map[string]string
-	view     View
+	troupe  string
+	root    *x509.Certificate
+	entries map[string]verified
+	view    View
 }
 
 func NewLedger(troupe string, root *x509.Certificate) *Ledger {
-	l := &Ledger{troupe: troupe, root: root, entries: map[string]verified{}, policies: map[string]string{}}
+	l := &Ledger{troupe: troupe, root: root, entries: map[string]verified{}}
 	l.rebuild()
 	return l
 }
@@ -261,13 +263,14 @@ func (l *Ledger) Troupe() string { return l.troupe }
 func (l *Ledger) Merge(es ...Entry) ([]Entry, error) {
 	var errs []error
 	var added []Entry
+	var parked []verified
 	for _, e := range es {
 		id := e.ID()
 		if _, ok := l.entries[id]; ok {
 			continue
 		}
-		if e.Kind == Join && len(l.entries) >= MaxEntries {
-			errs = append(errs, fmt.Errorf("troupe %s holds %d entries, its limit for joins", l.troupe, MaxEntries))
+		if (e.Kind == Join || e.Kind == Policy) && len(l.entries) >= MaxEntries {
+			errs = append(errs, fmt.Errorf("troupe %s holds %d entries, its limit for joins and policies", l.troupe, MaxEntries))
 			continue
 		}
 		v, err := verify(e, l.troupe, l.root)
@@ -275,21 +278,48 @@ func (l *Ledger) Merge(es ...Entry) ([]Entry, error) {
 			errs = append(errs, fmt.Errorf("%s %s: %w", e.Kind, e.Node, err))
 			continue
 		}
-		if e.Kind == Policy {
-			held, ok := l.policies[e.Node]
-			if ok && !Newer(e, l.entries[held].Entry) {
-				continue
-			}
-			delete(l.entries, held)
-			l.policies[e.Node] = id
+		if e.Kind == Policy && !e.RootSigned() {
+			parked = append(parked, v)
+			continue
 		}
 		l.entries[id] = v
 		added = append(added, e)
+	}
+	for progress := true; progress && len(parked) > 0; {
+		progress = false
+		rest := parked[:0]
+		for _, v := range parked {
+			if !l.namedSetter(v.Node) {
+				rest = append(rest, v)
+				continue
+			}
+			if _, ok := l.entries[v.ID()]; !ok {
+				l.entries[v.ID()] = v
+				added = append(added, v.Entry)
+			}
+			progress = true
+		}
+		parked = rest
+	}
+	for _, v := range parked {
+		errs = append(errs, fmt.Errorf("policy version %d from %s: no policy here names that node a setter", v.Version, v.Node))
 	}
 	if len(added) > 0 {
 		l.rebuild()
 	}
 	return added, errors.Join(errs...)
+}
+
+func (l *Ledger) namedSetter(node string) bool {
+	for _, v := range l.entries {
+		if v.Kind != Policy {
+			continue
+		}
+		if setters, _ := PolicySetters(v.Body); slices.Contains(setters, node) {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *Ledger) Entries() []Entry {
@@ -330,28 +360,19 @@ func (l *Ledger) rebuild() {
 		}
 		v.Members[e.Node] = m
 	}
+	var policies []Entry
 	for _, id := range ids {
 		e := l.entries[id]
-		if e.Kind != Policy {
-			continue
-		}
-		if v.Gone[e.Node] == Revoke {
+		switch {
+		case e.Kind != Policy:
+		case !e.RootSigned() && v.Gone[e.Node] == Revoke:
 			v.Voided = append(v.Voided, e.Entry)
-			continue
-		}
-		if v.Policy == nil || Newer(e.Entry, *v.Policy) {
-			in := e.Entry
-			v.Policy = &in
+		default:
+			policies = append(policies, e.Entry)
 		}
 	}
-	if v.Policy != nil {
-		for _, id := range ids {
-			e := l.entries[id]
-			if e.Kind == Policy && e.Version == v.Policy.Version && e.Body != v.Policy.Body && v.Gone[e.Node] != Revoke {
-				v.Rivals = append(v.Rivals, e.Entry)
-			}
-		}
-	}
+	w := walkPolicies(policies)
+	v.Policy, v.Rivals, v.Refused = w.adopted, w.rivals, w.refused
 	if len(ids) > 0 {
 		h := sha256.New()
 		for _, id := range ids {

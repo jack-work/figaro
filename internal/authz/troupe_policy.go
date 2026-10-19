@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -33,6 +34,12 @@ func ParseTroupeDocument(body []byte) (TroupeDocument, error) {
 		}
 		doc.Issuers = only.Issuers
 		delete(raw, "issuers")
+	}
+	if _, ok := raw["setters"]; ok {
+		if _, err := troupe.PolicySetters(string(body)); err != nil {
+			return TroupeDocument{}, err
+		}
+		delete(raw, "setters")
 	}
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(raw); err != nil {
