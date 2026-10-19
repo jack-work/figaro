@@ -1007,6 +1007,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if src == nil {
 		return fmt.Errorf("empty context")
 	}
+	figOtel.Event(ctx, "provider.caught_up")
 	model := a.resolveModel(in.Snapshot)
 
 	req, rows, err := a.projectRequest(src, in.Snapshot, in.Tools, in.MaxTokens, oauth, model)
@@ -1018,6 +1019,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		return fmt.Errorf("encode request: %w", err)
 	}
 
+	figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
 	resp, err := fn(ctx, body, betaHeader(messageBetas(model)))
 	if err != nil {
 		return err

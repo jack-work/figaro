@@ -320,6 +320,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 	sendDone := make(chan error, 1)
 	started := time.Now()
+	figOtel.Event(turnCtx, "agent.round.send", attribute.String("provider", prov.Name()))
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
