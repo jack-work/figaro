@@ -344,3 +344,127 @@ func TestCopilotResponsesFingerprintIsUnchanged(t *testing.T) {
 		t.Errorf("fingerprint %q", got)
 	}
 }
+
+const messagesSSE = "event: message_start\n" +
+	`data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}` + "\n\n" +
+	"event: content_block_start\n" +
+	`data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}` + "\n\n" +
+	"event: content_block_delta\n" +
+	`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"messages"}}` + "\n\n" +
+	"event: content_block_stop\n" +
+	`data: {"type":"content_block_stop","index":0}` + "\n\n" +
+	"event: message_delta\n" +
+	`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}` + "\n\n" +
+	"event: message_stop\n" +
+	`data: {"type":"message_stop"}` + "\n\n"
+
+type revocable struct {
+	mu      sync.Mutex
+	current string
+	minted  int
+}
+
+func (r *revocable) Resolve() (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.current == "" {
+		r.minted++
+		r.current = fmt.Sprintf("tok-%d", r.minted)
+	}
+	return r.current, nil
+}
+
+func (r *revocable) Invalidate(token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.current == token {
+		r.current = ""
+	}
+	return nil
+}
+
+// A gateway that revokes a service token must get a fresh one on the next
+// request, on every transport, rather than a 401 until the token expires.
+func TestAGatewayRejectionRenewsTheTokenOnEveryTransport(t *testing.T) {
+	var mu sync.Mutex
+	revoked := map[string]bool{}
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		mu.Lock()
+		seen = append(seen, r.URL.Path+" "+tok)
+		bad := revoked[tok]
+		mu.Unlock()
+		_, _ = io.Copy(io.Discard, r.Body)
+		if bad {
+			http.Error(w, "revoked", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/v1/chat/completions":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, chatSSE)
+		case "/v1/messages":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, messagesSSE)
+		case "/v1/models":
+			_, _ = io.WriteString(w, `{"data":[{"id":"llama-4"}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	var f File
+	doc := fmt.Sprintf("base_url = %q\nmessages_path = \"/messages\"\n[routing]\ndefault = \"chat\"\ncatalog = \"/models\"\n[[routing.rule]]\nmodel = \"claude-*\"\ntransport = \"messages\"\n", srv.URL+"/v1")
+	if _, err := toml.Decode(doc, &f); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := f.Apply(Spec{Name: "rou2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := &revocable{}
+	revoke := func() {
+		cur, _ := tokens.Resolve()
+		mu.Lock()
+		revoked[cur] = true
+		mu.Unlock()
+	}
+
+	for _, model := range []string{"llama-4", "claude-sonnet-5.5"} {
+		be, aria := store.NewTestAria(t, "d", message.Patch{})
+		figLog, err := be.OpenFigIR(aria)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role: message.RoleInput, Content: []message.Content{message.TextContent("say something")},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New(spec, provider.Knobs{Model: model, MaxTokens: 64}, tokens,
+			func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		revoke()
+		if _, err := p.fetchCatalog(context.Background()); err != nil {
+			t.Fatalf("%s catalog: %v", model, err)
+		}
+		revoke()
+		if err := p.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &captureBus{}); err != nil {
+			t.Fatalf("%s: %v", model, err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{
+		"/v1/models tok-1", "/v1/models tok-2", "/v1/chat/completions tok-2", "/v1/chat/completions tok-3",
+		"/v1/models tok-3", "/v1/models tok-4", "/v1/messages tok-4", "/v1/messages tok-5",
+	}
+	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(seen, "\n"), strings.Join(want, "\n"))
+	}
+}

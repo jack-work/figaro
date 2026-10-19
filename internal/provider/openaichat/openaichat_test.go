@@ -418,13 +418,12 @@ func FuzzStampLeafCache(f *testing.F) {
 func TestAuthOptionalRouteSendsNoAuthorizationHeader(t *testing.T) {
 	p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), provider.MarkAuto)
 	p.auth = failingResolver{}
-	req, err := http.NewRequest("POST", "http://x/v1/chat/completions", nil)
+	token, err := p.credential().Resolve()
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.authorize(req); err != nil {
 		t.Fatalf("an auth-optional route must not fail on a missing credential: %v", err)
 	}
+	req, _ := http.NewRequest("POST", "http://x/v1/chat/completions", nil)
+	p.authorize(req, token)
 	if got := req.Header.Get("Authorization"); got != "" {
 		t.Errorf("want no Authorization header, got %q", got)
 	}
@@ -433,8 +432,7 @@ func TestAuthOptionalRouteSendsNoAuthorizationHeader(t *testing.T) {
 func TestAuthRequiredRouteFailsLoudly(t *testing.T) {
 	p := newTestProvider(t, provider.OpenRouterRoute(), provider.MarkAuto)
 	p.auth = failingResolver{}
-	req, _ := http.NewRequest("POST", "http://x/v1/chat/completions", nil)
-	if err := p.authorize(req); err == nil {
+	if _, err := p.credential().Resolve(); err == nil {
 		t.Error("openrouter without a credential must error, not send an anonymous request")
 	}
 }

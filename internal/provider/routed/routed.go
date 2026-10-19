@@ -50,7 +50,7 @@ func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translato
 		spec.MessagesPath = "/v1/messages"
 	}
 	if spec.AuthOptional {
-		resolver = optionalToken{inner: resolver}
+		resolver = auth.Optional(resolver)
 	}
 	return &Provider{
 		spec:        spec,
@@ -238,29 +238,27 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn {
 	headers := p.spec.headersFor(Messages)
 	return func(ctx context.Context, body *provider.RequestBody, header http.Header) (*http.Response, error) {
-		token, err := p.resolver.Resolve()
-		if err != nil {
-			return nil, err
-		}
-		req, err := http.NewRequestWithContext(ctx, "POST", p.base()+p.spec.MessagesPath, nil)
-		if err != nil {
-			return nil, err
-		}
-		body.Attach(req)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", anthropicVersion)
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-		for k, v := range headers {
-			req.Header.Set(k, v)
-		}
-		for k, vs := range header {
-			for _, v := range vs {
-				req.Header.Add(k, v)
+		return auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
+			req, err := http.NewRequestWithContext(ctx, "POST", p.base()+p.spec.MessagesPath, nil)
+			if err != nil {
+				return nil, err
 			}
-		}
-		return client.Do(req)
+			body.Attach(req)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("anthropic-version", anthropicVersion)
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+			for k, v := range headers {
+				req.Header.Set(k, v)
+			}
+			for k, vs := range header {
+				for _, v := range vs {
+					req.Header.Add(k, v)
+				}
+			}
+			return client.Do(req)
+		})
 	}
 }
 
@@ -435,24 +433,22 @@ func (m catalogModel) contextLimits() responses.ContextLimits {
 }
 
 func (p *Provider) fetchCatalog(ctx context.Context) ([]catalogModel, error) {
-	token, err := p.resolver.Resolve()
+	resp, err := auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, "GET", p.base()+p.spec.Catalog, nil)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range p.spec.Headers {
+			req.Header.Set(k, v)
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		req.Header.Set("Accept", "application/json")
+		return http.DefaultClient.Do(req)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("%s models: resolve token: %w", p.spec.Name, err)
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", p.base()+p.spec.Catalog, nil)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range p.spec.Headers {
-		req.Header.Set(k, v)
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s models: %w", p.spec.Name, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -486,20 +482,6 @@ func snapshotString(snapshot form.Snapshot, key string) string {
 	}
 	return s
 }
-
-type optionalToken struct {
-	inner auth.TokenResolver
-}
-
-func (o optionalToken) Resolve() (string, error) {
-	tok, err := o.inner.Resolve()
-	if err != nil {
-		return "", nil
-	}
-	return tok, nil
-}
-
-func (o optionalToken) Invalidate(token string) error { return o.inner.Invalidate(token) }
 
 func (p *Provider) KeepsCacheOnChange(key string, snap form.Snapshot) bool {
 	model := snapshotString(snap, "system.model")

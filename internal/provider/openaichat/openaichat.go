@@ -104,14 +104,14 @@ func (p *Provider) plan() provider.MarkPlan {
 }
 
 func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", p.Route.ModelsURL(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.authorize(req); err != nil {
-		return nil, err
-	}
-	resp, err := p.HTTPClient.Do(req)
+	resp, err := auth.SendRenewing(p.credential(), func(token string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, "GET", p.Route.ModelsURL(), nil)
+		if err != nil {
+			return nil, err
+		}
+		p.authorize(req, token)
+		return p.HTTPClient.Do(req)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -143,23 +143,20 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return out, nil
 }
 
-func (p *Provider) authorize(req *http.Request) error {
+func (p *Provider) credential() auth.TokenResolver {
+	if p.Route.AuthOptional {
+		return auth.Optional(p.auth)
+	}
+	return p.auth
+}
+
+func (p *Provider) authorize(req *http.Request, token string) {
 	for k, v := range p.Route.Headers {
 		req.Header.Set(k, v)
 	}
-	key, err := p.auth.Resolve()
-	if err != nil {
-		if !p.Route.AuthOptional {
-			return fmt.Errorf("resolve token: %w", err)
-		}
-		return nil
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	if key == "" {
-		// Some servers reject an empty Bearer outright.
-		return nil
-	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	return nil
 }
 
 func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
@@ -191,19 +188,19 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("encode request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), nil)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	body.Attach(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
-	if req.SessionID != "" {
-		httpReq.Header.Set("x-session-id", req.SessionID)
-	}
-	if err := p.authorize(httpReq); err != nil {
-		return err
-	}
-	resp, err := p.HTTPClient.Do(httpReq)
+	resp, err := auth.SendRenewing(p.credential(), func(token string) (*http.Response, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		body.Attach(httpReq)
+		httpReq.Header.Set("Content-Type", "application/json")
+		if req.SessionID != "" {
+			httpReq.Header.Set("x-session-id", req.SessionID)
+		}
+		p.authorize(httpReq, token)
+		return p.HTTPClient.Do(httpReq)
+	})
 	if err != nil {
 		return err
 	}
