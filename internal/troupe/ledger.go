@@ -252,6 +252,7 @@ type Member struct {
 	AdmittedBy string
 	Since      time.Time
 	SignsUntil time.Time
+	Vouched    bool
 }
 
 type View struct {
@@ -415,6 +416,7 @@ func (l *Ledger) rebuild() {
 			continue
 		}
 		m, seen := v.Members[e.Node]
+		m.Vouched = vouched[e.Node]
 		if !seen || e.Time().Before(m.Since) {
 			m.Node, m.AdmittedBy, m.Since = e.Node, e.signer(), e.Time()
 		}

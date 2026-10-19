@@ -697,8 +697,11 @@ leaf may have expired), so holding `join` does not let anyone act as an
 existing node. A joined node renews its leaf the same
 way over the node door, as a node principal asking only for itself and only
 of its renewers, which needs its current leaf, unexpired and unrevoked; a
-member that is not its renewer refuses. Once the leaf expires the node
-joins again. `troupe.identity` (also `join`) returns the caller's principal,
+member that is not its renewer refuses. A renewal from a new door signs a
+join carrying the owner from the node's vouched joins (its own
+intermediate's or a renewer's), and is refused when it has none, so a
+renewer never repeats an owner another intermediate wrote. Once the leaf
+expires the node joins again. `troupe.identity` (also `join`) returns the caller's principal,
 the root and its SHA-256, and the signers, for a joiner to check before it
 trusts anything.
 

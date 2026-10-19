@@ -449,3 +449,73 @@ func TestARevokePushedToOneMemberReachesTheRest(t *testing.T) {
 	require.Contains(t, resp.Reached, na.id())
 	require.Equal(t, troupe.Revoke, ma.View().Gone[nc.id()])
 }
+
+func (n *ledgerNode) rogueJoin(rogue *ledgerNode) troupe.Entry {
+	n.t.Helper()
+	inter, ik, err := rogue.dir().Intermediate()
+	require.NoError(n.t, err)
+	e, err := troupe.SignJoin(ik, inter, "estate", n.id(), "evil.lan:7443", "user:mallory", time.Now().Add(time.Minute))
+	require.NoError(n.t, err)
+	return e
+}
+
+func (n *ledgerNode) moveDoor() {
+	n.addr = freeAddr(n.t)
+	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
+	require.NoError(n.t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
+}
+
+func joinsSignedBy(m *peer.Ledger, node, signer string) []troupe.Entry {
+	var out []troupe.Entry
+	for _, e := range m.Entries() {
+		if e.Kind == troupe.Join && e.Node == node && len(e.Chain) == 1 {
+			if c, err := x509.ParseCertificate(e.Chain[0]); err == nil && troupe.IntermediateNode(c) == signer {
+				out = append(out, e)
+			}
+		}
+	}
+	return out
+}
+
+// The renewal residue: q, an intermediate that is not b's, signs the newest
+// join for b with its own door and owner, and b's renewer a has signed no
+// join for b. Renewing b from a new door would have a sign a join copying
+// q's owner, turning it into a's word. a refuses and sends b to join again.
+func TestARenewalDoesNotVouchForAnOwnerNoIssuerNamed(t *testing.T) {
+	root := newEstateRoot(t)
+	na, nq := newLedgerNode(t, root), newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
+	ma := na.start()
+	renewer, err := troupe.SignRootRenewer(root.key, "estate", nb.id(), na.id(), time.Now())
+	require.NoError(t, err)
+	_, err = ma.Merge(nb.rogueJoin(nq), renewer)
+	require.NoError(t, err)
+	require.Equal(t, "user:mallory", ma.View().Members[nb.id()].Owner)
+	mb := nb.start()
+	_, err = mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+
+	require.ErrorContains(t, nb.a.Troupe.Ensure(), "join again")
+	require.Empty(t, joinsSignedBy(ma, nb.id(), na.id()))
+}
+
+// With a join from its renewer on record, a renewal from a new door keeps
+// the owner that join named, whatever a newer join from q says.
+func TestARenewalFromANewDoorKeepsTheVouchedOwner(t *testing.T) {
+	root := newEstateRoot(t)
+	na, nq := newLedgerNode(t, root), newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
+	ma := na.start()
+	_, err := ma.Merge(append(nb.joinedBy(na), nb.rogueJoin(nq))...)
+	require.NoError(t, err)
+	nb.moveDoor()
+	mb := nb.start()
+	_, err = mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+
+	require.NoError(t, nb.a.Troupe.Ensure())
+	require.Len(t, joinsSignedBy(ma, nb.id(), na.id()), 2)
+	m := ma.View().Members[nb.id()]
+	require.Equal(t, nb.addr, m.Door)
+	require.Equal(t, "user:owner", m.Owner)
+}

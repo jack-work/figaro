@@ -90,9 +90,23 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	if gone := view.Gone[req.Node]; gone != "" {
 		return nil, fmt.Errorf("node %s is out of troupe %s (%s); a node id that left does not return", req.Node, m.Troupe(), gone)
 	}
-	if _, member := view.Members[req.Node]; member && !renewal {
+	mem, member := view.Members[req.Node]
+	if member && !renewal {
 		if err := h.checkRejoin(req, pub, view, m.Self()); err != nil {
 			return nil, fmt.Errorf("node %s is already a member, so only its own key signs it in again: %w", req.Node, err)
+		}
+	}
+	join := !renewal || !member || mem.Door != req.Door
+	owner := authz.PrincipalText(authz.PrincipalOf(ctx))
+	if renewal {
+		owner = mem.Owner
+	}
+	if join && renewal && member && !mem.Vouched {
+		return nil, fmt.Errorf("node %s has no join from its own intermediate or a renewer, so no issuer of it vouches for its owner and this node will not; join again: figaro troupe join %s", req.Node, m.Troupe())
+	}
+	if join {
+		if err := troupe.ValidOwner(owner); err != nil {
+			return nil, fmt.Errorf("no principal to record as the node's owner: %w", err)
 		}
 	}
 	now := time.Now()
@@ -107,14 +121,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	if err != nil {
 		return nil, err
 	}
-	if mem, ok := view.Members[req.Node]; !renewal || !ok || mem.Door != req.Door {
-		owner := mem.Owner
-		if !renewal {
-			owner = authz.PrincipalText(authz.PrincipalOf(ctx))
-		}
-		if err := troupe.ValidOwner(owner); err != nil {
-			return nil, fmt.Errorf("no principal to record as the node's owner: %w", err)
-		}
+	if join {
 		e, err := troupe.SignJoin(ikey, inter, m.Troupe(), req.Node, req.Door, owner, now)
 		if err != nil {
 			return nil, err

@@ -124,10 +124,12 @@ func TestAGuestIsAMemberBeforeItsRenewerIsNamed(t *testing.T) {
 	_, err = l.Merge(rogue)
 	require.NoError(t, err)
 	require.Equal(t, "evil.lan:7444", l.View().Members["b"].Door)
+	require.False(t, l.View().Members["b"].Vouched)
 
 	_, err = l.Merge(s.renewer("b", "a"))
 	require.NoError(t, err)
 	m := l.View().Members["b"]
+	require.True(t, m.Vouched)
 	require.Equal(t, "b.lan:7444", m.Door)
 	require.Equal(t, "user:owner", m.Owner)
 	require.Equal(t, "a", m.AdmittedBy)
