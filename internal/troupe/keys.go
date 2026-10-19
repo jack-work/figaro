@@ -88,7 +88,7 @@ func IssueIntermediate(root ed25519.PrivateKey, rootCert *x509.Certificate, trou
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "figaro troupe " + troupe + " node " + node},
+		Subject:               pkix.Name{CommonName: "figaro troupe " + troupe + " node " + node, SerialNumber: node},
 		NotBefore:             now.Add(-clockSkew),
 		NotAfter:              earlier(now.Add(ttl), rootCert.NotAfter),
 		IsCA:                  true,
@@ -99,6 +99,10 @@ func IssueIntermediate(root ed25519.PrivateKey, rootCert *x509.Certificate, trou
 		PermittedURIDomains:   []string{troupe},
 	}
 	return create(tmpl, rootCert, pub, root)
+}
+
+func IntermediateNode(c *x509.Certificate) string {
+	return c.Subject.SerialNumber
 }
 
 func IssueNode(inter crypto.Signer, interCert *x509.Certificate, troupe, node string, pub crypto.PublicKey, now time.Time, ttl time.Duration) (*x509.Certificate, error) {

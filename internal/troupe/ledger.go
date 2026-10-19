@@ -1,0 +1,296 @@
+package troupe
+
+import (
+	"crypto"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"net"
+	"slices"
+	"time"
+
+	"github.com/jack-work/figaro/api/rpc"
+)
+
+type Kind string
+
+const (
+	Join   Kind = "join"
+	Leave  Kind = "leave"
+	Revoke Kind = "revoke"
+)
+
+const MaxEntries = 4096
+
+const entryDomain = "figaro troupe entry v1\n"
+
+type Entry struct {
+	Kind   Kind     `json:"kind"`
+	Troupe string   `json:"troupe"`
+	Node   string   `json:"node"`
+	Door   string   `json:"door,omitempty"`
+	At     int64    `json:"at"`
+	Chain  [][]byte `json:"chain,omitempty"`
+	Sig    []byte   `json:"sig"`
+}
+
+func (e Entry) message() []byte {
+	body, _ := json.Marshal(struct {
+		Kind   Kind   `json:"kind"`
+		Troupe string `json:"troupe"`
+		Node   string `json:"node"`
+		Door   string `json:"door"`
+		At     int64  `json:"at"`
+	}{e.Kind, e.Troupe, e.Node, e.Door, e.At})
+	return append([]byte(entryDomain), body...)
+}
+
+func (e Entry) ID() string {
+	h := sha256.New()
+	h.Write(e.message())
+	h.Write(e.Sig)
+	for _, c := range e.Chain {
+		h.Write(c)
+	}
+	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+func (e Entry) Time() time.Time { return time.UnixMilli(e.At) }
+
+func sign(e Entry, key crypto.Signer) (Entry, error) {
+	sig, err := key.Sign(rand.Reader, e.message(), crypto.Hash(0))
+	if err != nil {
+		return Entry{}, err
+	}
+	e.Sig = sig
+	return e, nil
+}
+
+func SignJoin(key crypto.Signer, inter *x509.Certificate, troupe, node, door string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: Join, Troupe: troupe, Node: node, Door: door, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
+}
+
+func SignLeave(key crypto.Signer, leaf, inter *x509.Certificate, troupe, node string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: Leave, Troupe: troupe, Node: node, At: at.UnixMilli(), Chain: [][]byte{leaf.Raw, inter.Raw}}, key)
+}
+
+func SignRevoke(root ed25519.PrivateKey, troupe, node string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: Revoke, Troupe: troupe, Node: node, At: at.UnixMilli()}, root)
+}
+
+type verified struct {
+	Entry
+	chain []*x509.Certificate
+}
+
+func (v verified) signer() string {
+	if v.Kind == Join {
+		return IntermediateNode(v.chain[0])
+	}
+	return ""
+}
+
+func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
+	out := verified{Entry: e}
+	if e.Troupe != troupe {
+		return out, fmt.Errorf("entry for troupe %q, not %q", e.Troupe, troupe)
+	}
+	if err := rpc.ValidateAriaID(e.Node); err != nil {
+		return out, fmt.Errorf("node: %w", err)
+	}
+	if e.At <= 0 {
+		return out, errors.New("no time")
+	}
+	for _, der := range e.Chain {
+		c, err := x509.ParseCertificate(der)
+		if err != nil {
+			return out, err
+		}
+		out.chain = append(out.chain, c)
+	}
+	at := e.Time()
+	var pub crypto.PublicKey
+	switch e.Kind {
+	case Join:
+		if _, _, err := net.SplitHostPort(e.Door); err != nil {
+			return out, fmt.Errorf("door %q: %w", e.Door, err)
+		}
+		if len(out.chain) != 1 {
+			return out, errors.New("a join carries the admitting intermediate alone")
+		}
+		inter := out.chain[0]
+		if !inter.IsCA || inter.MaxPathLen != 0 || IntermediateNode(inter) == "" {
+			return out, errors.New("a join is signed by a node intermediate")
+		}
+		if err := chainsTo(inter, nil, root, at); err != nil {
+			return out, err
+		}
+		pub = inter.PublicKey
+	case Leave:
+		if e.Door != "" || len(out.chain) != 2 {
+			return out, errors.New("a leave carries the node's certificate and its issuer, and no door")
+		}
+		leaf := out.chain[0]
+		if err := chainsTo(leaf, out.chain[1], root, at); err != nil {
+			return out, err
+		}
+		if !names(leaf, Identity(troupe, e.Node)) {
+			return out, fmt.Errorf("a leave for %s is signed by another node", e.Node)
+		}
+		pub = leaf.PublicKey
+	case Revoke:
+		if e.Door != "" || len(out.chain) != 0 {
+			return out, errors.New("a revoke is signed by the root alone, and has no door")
+		}
+		pub = root.PublicKey
+	default:
+		return out, fmt.Errorf("kind %q", e.Kind)
+	}
+	ed, ok := pub.(ed25519.PublicKey)
+	if !ok || !ed25519.Verify(ed, e.message(), e.Sig) {
+		return out, errors.New("bad signature")
+	}
+	return out, nil
+}
+
+func chainsTo(c, inter, root *x509.Certificate, at time.Time) error {
+	roots := x509.NewCertPool()
+	roots.AddCert(root)
+	opts := x509.VerifyOptions{Roots: roots, CurrentTime: at, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
+	if inter != nil {
+		opts.Intermediates = x509.NewCertPool()
+		opts.Intermediates.AddCert(inter)
+	}
+	_, err := c.Verify(opts)
+	return err
+}
+
+func names(c *x509.Certificate, identity string) bool {
+	for _, u := range c.URIs {
+		if u.String() == identity {
+			return true
+		}
+	}
+	return false
+}
+
+type Member struct {
+	Node       string
+	Door       string
+	AdmittedBy string
+	Since      time.Time
+	SignsUntil time.Time
+}
+
+type View struct {
+	Members map[string]Member
+	Gone    map[string]Kind
+	Digest  uint64
+}
+
+func (v View) Signers(now time.Time) []string {
+	var out []string
+	for n, m := range v.Members {
+		if now.Before(m.SignsUntil) {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+type Ledger struct {
+	troupe  string
+	root    *x509.Certificate
+	entries map[string]verified
+	view    View
+}
+
+func NewLedger(troupe string, root *x509.Certificate) *Ledger {
+	l := &Ledger{troupe: troupe, root: root, entries: map[string]verified{}}
+	l.rebuild()
+	return l
+}
+
+func (l *Ledger) Troupe() string { return l.troupe }
+
+func (l *Ledger) Merge(es ...Entry) ([]Entry, error) {
+	var errs []error
+	var added []Entry
+	for _, e := range es {
+		id := e.ID()
+		if _, ok := l.entries[id]; ok {
+			continue
+		}
+		if e.Kind == Join && len(l.entries) >= MaxEntries {
+			errs = append(errs, fmt.Errorf("troupe %s holds %d entries, its limit for joins", l.troupe, MaxEntries))
+			continue
+		}
+		v, err := verify(e, l.troupe, l.root)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s %s: %w", e.Kind, e.Node, err))
+			continue
+		}
+		l.entries[id] = v
+		added = append(added, e)
+	}
+	if len(added) > 0 {
+		l.rebuild()
+	}
+	return added, errors.Join(errs...)
+}
+
+func (l *Ledger) Entries() []Entry {
+	ids := slices.Sorted(maps.Keys(l.entries))
+	out := make([]Entry, len(ids))
+	for i, id := range ids {
+		out[i] = l.entries[id].Entry
+	}
+	return out
+}
+
+func (l *Ledger) View() View { return l.view }
+
+func (l *Ledger) rebuild() {
+	ids := slices.Sorted(maps.Keys(l.entries))
+	v := View{Members: map[string]Member{}, Gone: map[string]Kind{}}
+	for _, id := range ids {
+		e := l.entries[id]
+		if e.Kind == Revoke || e.Kind == Leave && v.Gone[e.Node] != Revoke {
+			v.Gone[e.Node] = e.Kind
+		}
+	}
+	latest := map[string]int64{}
+	for _, id := range ids {
+		e := l.entries[id]
+		if e.Kind != Join || v.Gone[e.Node] != "" || v.Gone[e.signer()] == Revoke {
+			continue
+		}
+		m, seen := v.Members[e.Node]
+		if !seen || e.Time().Before(m.Since) {
+			m.Node, m.AdmittedBy, m.Since = e.Node, e.signer(), e.Time()
+		}
+		if e.At >= latest[e.Node] {
+			latest[e.Node], m.Door = e.At, e.Door
+		}
+		if e.signer() == e.Node && e.chain[0].NotAfter.After(m.SignsUntil) {
+			m.SignsUntil = e.chain[0].NotAfter
+		}
+		v.Members[e.Node] = m
+	}
+	if len(ids) > 0 {
+		h := sha256.New()
+		for _, id := range ids {
+			h.Write([]byte(id))
+		}
+		v.Digest = max(binary.BigEndian.Uint64(h.Sum(nil)), 1)
+	}
+	l.view = v
+}
