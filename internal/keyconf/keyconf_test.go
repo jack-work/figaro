@@ -91,26 +91,3 @@ func TestForget(t *testing.T) {
 		t.Fatal("forgetting what is not there must say so")
 	}
 }
-
-// A binding edit rewrites the whole file; the display table must ride along.
-func TestDisplaySurvivesARewrite(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "keys.toml")
-	if err := os.WriteFile(path, []byte("[display]\nids = \"short\"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	f, warnings, err := Load(path)
-	if err != nil || len(warnings) != 0 || f.Display.IDs != "short" {
-		t.Fatalf("%+v %v %v", f, warnings, err)
-	}
-	if f.HasBindings() || f.Empty() {
-		t.Fatalf("a display-only file has no bindings and is not empty: %+v", f)
-	}
-	f.Set("user", "J", "half-down")
-	if err := Save(path, f); err != nil {
-		t.Fatal(err)
-	}
-	got, _, err := Load(path)
-	if err != nil || got.Display.IDs != "short" || got.Bind["user"]["J"] != "half-down" {
-		t.Fatalf("rewrite lost something: %+v %v", got, err)
-	}
-}

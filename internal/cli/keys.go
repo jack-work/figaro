@@ -23,27 +23,12 @@ func loadKeysFile(loaded *config.Loaded) {
 	for _, w := range warnings {
 		fmt.Fprintf(stderrw, "figaro: %s\n", w)
 	}
-	if err := applyDisplay(f.Display); err != nil {
-		fmt.Fprintf(stderrw, "figaro: keys.toml %s\n", err)
-	}
-	if !f.HasBindings() {
+	if f.Empty() {
 		return
 	}
 	for _, d := range applyUserKeys(f) {
 		fmt.Fprintf(stderrw, "figaro: keys.toml %s\n", d)
 	}
-}
-
-func loadDisplayQuietly(loaded *config.Loaded) {
-	if f, _, err := keyconf.Load(keysPath(loaded)); err == nil {
-		_ = applyDisplay(f.Display)
-	}
-}
-
-func applyDisplay(d keyconf.Display) error {
-	style, err := parseIDStyle(d.IDs)
-	shownIDs = style
-	return err
 }
 
 const keysUsage = "usage: keys [layers | actions | init | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]"
@@ -105,7 +90,7 @@ func runKeys(loaded *config.Loaded, args []string) error {
 	case "reset":
 		return keysEdit(loaded, func(f *keyconf.File) error {
 			if len(args) < 2 {
-				*f = keyconf.File{Display: f.Display}
+				*f = keyconf.File{}
 				return nil
 			}
 			if !f.Forget(layerArg(args, 2), args[1]) {
@@ -161,9 +146,6 @@ func runDoctorKeys(loaded *config.Loaded) error {
 		return nil
 	}
 	diags := applyUserKeys(f)
-	if err := applyDisplay(f.Display); err != nil {
-		warnings = append(warnings, err.Error())
-	}
 	for _, w := range warnings {
 		fmt.Fprintln(stdout, "  "+w)
 	}

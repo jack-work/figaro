@@ -193,8 +193,10 @@ naming both. `ls`, the status bar and every "attending" line show the handle;
 `id`, `short` and `handle`. Tab completes handles, newest first, 50 at a
 time until you type; typed hex completes to full ids instead.
 
-`[display] ids = "short"` in `keys.toml` shows the five-digit hex instead of
-the handle wherever a person reads a name; `-j` fields are unchanged. In the
+`ids = "short"` under `[cli]` in `config.toml` shows the five-digit hex
+instead of the handle wherever a person reads a name: the pager, the bar,
+every CLI line. `-j` keeps `id`, `short` and `handle` as they are and adds
+`display`, the name the setting shows, for scripts that print one. In the
 pager `y` copies the name shown (the attended aria's, or a listing row's) and
 `M-y` the full id.
 

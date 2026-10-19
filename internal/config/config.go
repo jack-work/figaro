@@ -126,6 +126,8 @@ type CLIConfig struct {
 	// RefSigil prefixes form references; "@" or ":". Default "@".
 	RefSigil string `toml:"ref_sigil"`
 
+	IDs string `toml:"ids"`
+
 	// Editor is a literal command line (no $EDITOR, globbing or substitution) the pager opens a path with.
 	Editor *string `toml:"editor"`
 }
@@ -567,6 +569,8 @@ func (l *Loaded) CoordFormat() string {
 	}
 	return *l.cfg().CLI.CoordFormat
 }
+
+func (l *Loaded) IDs() string { return l.cfg().CLI.IDs }
 
 func (l *Loaded) StreamCPS() int {
 	if l.cfg().CLI.StreamCPS == nil {

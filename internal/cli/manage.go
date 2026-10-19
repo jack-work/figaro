@@ -119,9 +119,13 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			}
 			figs := resp.Figaros
 			sort.SliceStable(figs, func(i, j int) bool { return vectorLess(figs[i].Vector, figs[j].Vector) })
+			rows := make([]displayedRow, len(figs))
+			for i := range figs {
+				rows[i] = displayed(&figs[i])
+			}
 			enc := json.NewEncoder(stdout)
 			enc.SetIndent("", "  ")
-			if err := enc.Encode(figs); err != nil {
+			if err := enc.Encode(rows); err != nil {
 				die("list --json: %s", err)
 			}
 			return nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 type idStyle uint8
@@ -24,7 +25,13 @@ func parseIDStyle(s string) (idStyle, error) {
 	case "short":
 		return idsAsShortHex, nil
 	}
-	return idsAsHandles, fmt.Errorf("display.ids = %q: want \"handle\" or \"short\"", s)
+	return idsAsHandles, fmt.Errorf("[cli] ids = %q: want \"handle\" or \"short\"", s)
+}
+
+func applyIDStyle(loaded *config.Loaded) error {
+	style, err := parseIDStyle(loaded.IDs())
+	shownIDs = style
+	return err
 }
 
 func ariaName(id string) string {
@@ -64,4 +71,13 @@ func nameIfSet(names map[string]string, id string) string {
 		return ""
 	}
 	return nameIn(names, id)
+}
+
+type displayedRow struct {
+	*rpc.FigaroInfoResponse
+	Display string `json:"display"`
+}
+
+func displayed(f *rpc.FigaroInfoResponse) displayedRow {
+	return displayedRow{FigaroInfoResponse: f, Display: rowName(f)}
 }

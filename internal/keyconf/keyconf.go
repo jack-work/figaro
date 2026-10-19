@@ -18,18 +18,11 @@ type Layer struct {
 }
 
 type File struct {
-	Display Display                      `toml:"display"`
-	Bind    map[string]map[string]string `toml:"bind"`
-	Layer   map[string]Layer             `toml:"layer"`
+	Bind  map[string]map[string]string `toml:"bind"`
+	Layer map[string]Layer             `toml:"layer"`
 }
 
-type Display struct {
-	IDs string `toml:"ids,omitempty"`
-}
-
-func (f *File) Empty() bool { return !f.HasBindings() && f.Display == (Display{}) }
-
-func (f *File) HasBindings() bool { return len(f.Bind) > 0 || len(f.Layer) > 0 }
+func (f *File) Empty() bool { return len(f.Bind) == 0 && len(f.Layer) == 0 }
 
 func Path(configDir string) string { return filepath.Join(configDir, "keys.toml") }
 
@@ -103,9 +96,6 @@ func Save(path string, f File) error {
 
 func Render(f File) string {
 	var b strings.Builder
-	if f.Display.IDs != "" {
-		fmt.Fprintf(&b, "[display]\nids = %q\n\n", f.Display.IDs)
-	}
 	for _, layer := range sortedKeys(f.Bind) {
 		fmt.Fprintf(&b, "[bind.%s]\n", quoteKey(layer))
 		writeBinds(&b, f.Bind[layer])

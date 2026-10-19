@@ -101,7 +101,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		if jsonOut {
 			enc := json.NewEncoder(stdout)
 			enc.SetIndent("", "  ")
-			return enc.Encode(f)
+			return enc.Encode(displayed(f))
 		}
 		// The tree records a fork point as an LT; the user's coordinate is
 		// a turn.
