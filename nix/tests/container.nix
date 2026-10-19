@@ -17,8 +17,20 @@ let
 in
 pkgs.testers.runNixOSTest {
   name = "figaro-container";
+  nodes.lan = { lib, ... }: {
+    networking.interfaces.eth1.ipv6.addresses = [ { address = "fd00:1::2"; prefixLength = 64; } ];
+    networking.defaultGateway6 = { address = "fd00:1::1"; interface = "eth1"; };
+    networking.firewall.allowedUDPPorts = [ 9999 ];
+    systemd.services.v6-sink = {
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.ExecStart = "${pkgs.socat}/bin/socat -u UDP6-RECV:9999,reuseaddr OPEN:/tmp/v6-arrived,creat,append";
+    };
+  };
+
   nodes.host = { config, ... }: {
     imports = [ self.nixosModules.container ];
+    boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
+    networking.interfaces.eth1.ipv6.addresses = [ { address = "fd00:1::1"; prefixLength = 64; } ];
     virtualisation.memorySize = 2048;
     virtualisation.useNixStoreImage = true;
     services.figaro-container = {
@@ -44,7 +56,7 @@ pkgs.testers.runNixOSTest {
       wantedBy = [ "multi-user.target" ];
       serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 ${./stub_model.py} ${probe}";
     };
-    environment.systemPackages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.figaro pkgs.jq ];
+    environment.systemPackages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.figaro pkgs.jq pkgs.socat ];
   };
 
   testScript = ''
@@ -97,5 +109,35 @@ pkgs.testers.runNixOSTest {
                     "ANGELUS-ROOT-READABLE", "ANGELUS-ENV-READABLE"]:
             assert bad not in shown, bad
         assert host.succeed("cat /var/lib/figaro/work/box-wrote-this").strip() == "inside"
+
+    # The host forwards IPv6, as spain does, and the container's root can
+    # give itself a global address and a default route via the host. Each
+    # control is shown alone: the ve-figaro DROP with the reverse-path filter
+    # emptied, the path itself with both gone, and a reload restoring both.
+    with subtest("the container cannot forward IPv6 through the host"):
+        import time
+        lan.wait_for_unit("v6-sink.service")
+        host.wait_until_succeeds("ping -6 -c1 -W1 fd00:1::2")
+        gw = host.succeed("ip -6 -o addr show dev ve-figaro scope link | awk '{print $4}' | cut -d/ -f1").strip()
+        inside("${pkgs.iproute2}/bin/ip -6 addr add fd99::2/64 dev eth0 nodad")
+        inside(f"${pkgs.iproute2}/bin/ip -6 route add default via {gw} dev eth0")
+
+        def send(word):
+            inside(f"sh -c 'echo {word} | ${pkgs.socat}/bin/socat -u - UDP6-SENDTO:[fd00:1::2]:9999,bind=[fd99::2]'")
+
+        def stopped(word):
+            send(word)
+            time.sleep(3)
+            return word not in lan.succeed("cat /tmp/v6-arrived 2>/dev/null || true")
+
+        assert stopped("as-built"), "forwarded IPv6 from the container reached the LAN as built"
+        host.succeed("for t in raw mangle; do ip6tables -t $t -F nixos-fw-rpfilter 2>/dev/null || true; done")
+        assert stopped("drop-alone"), "the ve-figaro DROP alone did not stop forwarded IPv6"
+        host.succeed("ip6tables -D FORWARD -i ve-figaro -j DROP")
+        send("unguarded")
+        lan.wait_until_succeeds("grep -q unguarded /tmp/v6-arrived", timeout=15)
+        host.succeed("systemctl reload firewall.service")
+        host.succeed("ip6tables -S FORWARD | grep -q -- '-i ve-figaro -j DROP'")
+        assert stopped("reloaded"), "the DROP did not come back with a firewall reload"
   '';
 }

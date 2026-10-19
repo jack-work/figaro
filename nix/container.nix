@@ -149,10 +149,14 @@ in
 
     networking.firewall.extraCommands = lib.concatMapStrings (d: ''
       iptables -I FORWARD 1 -i ve-figaro -d ${d} -j DROP
-    '') cfg.blockedDestinations;
+    '') cfg.blockedDestinations + ''
+      ip6tables -I FORWARD 1 -i ve-figaro -j DROP
+    '';
     networking.firewall.extraStopCommands = lib.concatMapStrings (d: ''
       iptables -D FORWARD -i ve-figaro -d ${d} -j DROP 2>/dev/null || true
-    '') cfg.blockedDestinations;
+    '') cfg.blockedDestinations + ''
+      ip6tables -D FORWARD -i ve-figaro -j DROP 2>/dev/null || true
+    '';
 
     containers.figaro = {
       autoStart = true;
