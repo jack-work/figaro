@@ -322,8 +322,21 @@ the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
 
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
-`troupe.identity` themselves, since the guard knows only arias and the
-daemon.
+`troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
+caller), `troupe.leave` and `troupe.policy.set`, since the guard knows only
+arias and the daemon.
+
+**The troupe layer.** A call the node's own policy refuses may still be
+allowed by the troupe policy in force (below, under Troupe membership), but
+only where the node's policy grants the principal `troupe:<name>` the same
+verb on the same resource. That binding is what the node lends the troupe:
+`troupe join --delegate all` binds it to an all-granting role, `none` binds
+nothing. A denial caused by the missing loan says so. The troupe never
+decides `use` on `sandbox:local` or `admin` on `troupe:<name>`, whatever it
+or the loan says. No peercred uid, token client or edge service may resolve
+to kind `troupe`. The troupe policy's `[[issuers]]` are added to the node's
+own unless `[authz] troupe_issuers = false`: https only, never one of the
+node's own URLs or scopes, and never trusted for the edge's reverify.
 
 `x-caller` is **attribution only and never authorizes**. It lands in
 `Identity.Label`, a different field from `FigaroID`, so an assertion naming
@@ -652,7 +665,23 @@ since issuer scoping it reads `user:jack@auth.kelliher.info`. Joins signed
 before that name their owner unscoped; such ledgers exist only in
 development roots, and nothing rewrites them.
 
-`troupe.leave` (admin) has the daemon sign its own leave with its node key;
+**The troupe policy** is a ledger entry too: a version, the admin who asked
+(`by`), and the document (policy TOML plus optional `[[issuers]]`), signed
+by the intermediate of the node that took the change. `troupe.policy.set`
+checks the document, refuses explicit grants on `sandbox:local` and admin or
+every verb on the troupe, signs the next version, and spreads it before it
+returns. A leaf-only node refuses and names the signers. The highest
+(version, body hash) is in force on every node, and a write that lost a tie
+stays visible to `troupe policy show`. A ledger keeps the newest policy per
+signer, and a root revoke of the signer voids its policy, so the newest one
+from an unrevoked signer takes over. Passages, answers and `troupe.entries`
+replies carry each side's policy version, which `troupe policy show` lists
+per member with the age of the sighting. With `provider = "static"`,
+`[troupe] policy` names an unsigned file instead, read at start and on a
+policy reload. `troupe ls` marks a member quiet after two hours unheard
+and lapsed after seven days.
+
+`troupe.leave` (admin on the troupe) has the daemon sign its own leave with its node key;
 a root revoke reaches the daemon through `troupe.entries` from a caller
 holding admin on the troupe. Either is spread to every member before the
 call returns, which says who heard. A door gives an evicted node's open
