@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 )
@@ -99,9 +100,14 @@ func serviceTokenWhere(loaded *config.Loaded, name string) string {
 		from = st.Issuer
 	}
 	where += ": client " + st.ClientID + " at " + from
-	secret, _ := credentialID(st.SecretCredential)
-	if _, err := os.Stat(secret); err != nil {
-		where += " (secret " + secret + " missing)"
+	key, id := "secret_credential", st.SecretCredential
+	if st.Grant == auth.GrantTokenExchange {
+		where += " (token-exchange)"
+		key, id = "subject_credential", st.SubjectCredential
+	}
+	path, _ := credentialID(key, id)
+	if _, err := os.Stat(path); err != nil {
+		where += " (" + strings.TrimSuffix(key, "_credential") + " " + path + " missing)"
 	}
 	return where
 }

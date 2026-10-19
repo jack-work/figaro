@@ -98,8 +98,8 @@ base_url = "http://100.103.40.20:9110/v1"
 [oauth]                                    # optional; makes `figaro provider login house` work
 issuer    = "https://auth.example"         # its /.well-known/openid-configuration is read
 client_id = "house"
-scopes    = ["openid", "profile", "groups"]   # offline_access is always added
-flow      = "device"                       # the only flow so far, and the default
+scopes    = ["openid", "profile", "groups"]   # device flow adds offline_access
+flow      = "device"                       # the default; or "pkce" (below)
 # discovery = "http://.../.well-known/..." # fills issuer, client_id, scopes the file leaves out
 ```
 
@@ -120,7 +120,19 @@ name: the login runs the device flow against the issuer and hands the pair to
 hush, which refreshes it with its `refresh_token` grant and stores each rotated
 refresh token. Endpoints off the issuer's origin are refused, the issuer must
 be https, and every issuer call carries a `figaro/<version>` User-Agent. No
-audience is sent. Without `[oauth]`, the provider takes `api_key`, or the
+audience is sent.
+
+`flow = "pkce"` is for an IdP with no device flow (Kanidm). The login runs the
+authorization code grant with PKCE (S256) as a public client. It listens on a
+loopback port that the OS picks, opens `$BROWSER` (or the platform opener) on
+the authorize URL, and prints the URL in case nothing opens. It then waits up to
+five minutes for the redirect to `http://127.0.0.1:<port>/callback`. That is a
+loopback IP literal rather than `localhost`, per RFC 8252. The IdP must accept
+any loopback port for the client (Kanidm: `enable-localhost-redirects` on a
+public client). A redirect whose `state` is
+not this login's is refused, and the login keeps waiting. Scopes go out exactly
+as written, with no `offline_access` added. The login fails if the IdP issues
+no `refresh_token`, because hush could not keep such a sign-in fresh. Without `[oauth]`, the provider takes `api_key`, or the
 variable `api_key_env` names, and may run keyless, as `gateway` does.
 
 The key is looked for in this order (`boot.BuildResolver`): the environment;
@@ -153,6 +165,36 @@ keyless request, and it cannot sit beside `[oauth]`. The daemon mints one token
 per client and shares it across arias, renews it a minute before expiry, and
 mints again when the gateway answers 401. `provider login` refuses such a
 provider; `provider ls` shows the client and flags a missing secret.
+
+#### Token exchange (RFC 8693), for an IdP with no client_credentials
+
+Some IdPs (Kanidm) do not grant client_credentials, but will exchange a
+service account's long-lived API token for a short access token. Set
+`grant = "token-exchange"`:
+
+```toml
+# config.toml
+[service_tokens.rou2]
+grant              = "token-exchange"
+issuer             = "https://idm.example:8445/oauth2/openid/rou2"   # or token_url
+client_id          = "rou2"                       # a PUBLIC client: no secret
+subject_credential = "rou2-api-token"             # a file in $CREDENTIALS_DIRECTORY
+scopes             = ["openid", "groups", "profile"]
+# subject_token_type defaults to urn:ietf:params:oauth:token-type:access_token
+```
+
+The client is public: `client_id` goes in the body and nothing else
+authenticates it, so `secret_credential` and `auth_method` are refused here.
+Kanidm answers `invalid_request` to a secret on an exchange anyway. The subject is
+read on every exchange, never held, so it is not cached past the token it
+bought. Caching, sharing, renewal and the retry on 401 work as for
+client_credentials.
+
+Under systemd, give the daemon the subject with
+`LoadCredential=rou2-api-token:/run/secrets/rou2-api-token`. systemd copies
+the file when the unit starts, so after rotating the token, restart the
+daemon (`figaro stop -k` under a `Restart=always` unit) for the new copy to be
+read.
 
 ## Credentials
 

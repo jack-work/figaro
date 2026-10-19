@@ -55,6 +55,10 @@ type Config struct {
 }
 
 type ServiceToken struct {
+	// Grant is "client_credentials" (the default, a confidential client with
+	// secret_credential) or "token-exchange" (RFC 8693, a public client that
+	// presents subject_credential and sends no secret).
+	Grant            string   `toml:"grant"`
 	Issuer           string   `toml:"issuer"`
 	TokenURL         string   `toml:"token_url"`
 	ClientID         string   `toml:"client_id"`
@@ -62,6 +66,12 @@ type ServiceToken struct {
 	AuthMethod       string   `toml:"auth_method"`
 	Audience         []string `toml:"audience"`
 	Scopes           []string `toml:"scopes"`
+
+	// SubjectCredential is the token-exchange subject: a bare credential id
+	// under $CREDENTIALS_DIRECTORY, like secret_credential. SubjectTokenType
+	// defaults to urn:ietf:params:oauth:token-type:access_token.
+	SubjectCredential string `toml:"subject_credential"`
+	SubjectTokenType  string `toml:"subject_token_type"`
 }
 
 // QuoteConfig shapes how a `<lt.block:start-end>!` prompt prefix is rewritten

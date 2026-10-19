@@ -183,3 +183,62 @@ func TestCredentialSourcesNameTheServiceTokenFirst(t *testing.T) {
 		t.Fatalf("Where = %q; an unconfigured token must say so", srcs[0].Where)
 	}
 }
+
+// token-exchange is a public client: its subject is a credential id like a
+// secret, and a secret beside it is refused rather than sent, because an IdP
+// holding the client as public answers invalid_request to one.
+func TestServiceTokenExchangeConfig(t *testing.T) {
+	serverEnv(t)
+	base := config.ServiceToken{Grant: "token-exchange", TokenURL: "https://x/token", ClientID: "rou2", SubjectCredential: "rou2-api-token"}
+	if _, err := ServiceToken(serviceLoaded(base), "herald"); err != nil {
+		t.Fatalf("a well-formed token-exchange token: %v", err)
+	}
+	for name, mut := range map[string]func(*config.ServiceToken){
+		"a secret":         func(s *config.ServiceToken) { s.SecretCredential = "x" },
+		"an auth method":   func(s *config.ServiceToken) { s.AuthMethod = "client_secret_post" },
+		"no client id":     func(s *config.ServiceToken) { s.ClientID = "" },
+		"a path subject":   func(s *config.ServiceToken) { s.SubjectCredential = "/run/secrets/rou2-api-token" },
+		"an unknown grant": func(s *config.ServiceToken) { s.Grant = "password" },
+		"a subject on cc":  func(s *config.ServiceToken) { s.Grant = ""; s.SecretCredential = "x" },
+	} {
+		st := base
+		mut(&st)
+		if _, err := ServiceToken(serviceLoaded(st), "herald"); err == nil {
+			t.Errorf("token-exchange with %s was accepted", name)
+		}
+	}
+}
+
+// The exchange posts the subject read from $CREDENTIALS_DIRECTORY and mints
+// without touching the environment or hush, like client_credentials.
+func TestServiceTokenExchangeMints(t *testing.T) {
+	_, credDir := serverEnv(t)
+	writeFile(t, filepath.Join(credDir, "rou2-api-token"), "api-token\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if _, _, basic := r.BasicAuth(); basic || r.PostForm.Get("client_secret") != "" ||
+			r.PostForm.Get("client_id") != "rou2" || r.PostForm.Get("subject_token") != "api-token" ||
+			r.PostForm.Get("grant_type") != "urn:ietf:params:oauth:grant-type:token-exchange" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"access_token": "exchanged", "token_type": "bearer", "expires_in": 900})
+	}))
+	defer srv.Close()
+
+	before := strings.Join(os.Environ(), "\n")
+	r, err := ServiceToken(serviceLoaded(config.ServiceToken{
+		Grant: "token-exchange", TokenURL: srv.URL, ClientID: "rou2", SubjectCredential: "rou2-api-token",
+		Scopes: []string{"openid", "groups", "profile"},
+	}), "herald")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := r.Resolve(); err != nil || tok != "exchanged" {
+		t.Fatalf("Resolve = %q, %v", tok, err)
+	}
+	if after := strings.Join(os.Environ(), "\n"); after != before || strings.Contains(after, "api-token") {
+		t.Fatal("exchanging a service token changed the process environment")
+	}
+	assertHushUntouched(t)
+}
