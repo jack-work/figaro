@@ -62,7 +62,7 @@ func reportCast(out castOutcome, asJSON bool) {
 	}
 	if !out.CastOK {
 		if out.Minted {
-			die("cast: figaro %s was minted, but the casting failed: %s", out.AriaID, out.Err)
+			die("cast: figaro %s was minted, but the casting failed: %s", ariaName(out.AriaID), out.Err)
 		}
 		die("cast: %s", out.Err)
 	}

@@ -733,7 +733,7 @@ Folding an outfit onto a LIVE aria is a different act: see
 				die("outfit reload: %s", err)
 			}
 			if resp.Flagged {
-				fmt.Fprintf(stdout, "default form %s flagged; the next `fig new` recomputes from the outfit files\n", resp.FormID)
+				fmt.Fprintf(stdout, "default form %s flagged; the next `fig new` recomputes from the outfit files\n", ariaName(resp.FormID))
 			} else {
 				fmt.Fprintln(stdout, "no default form minted yet; the next `fig new` computes from the files regardless")
 			}

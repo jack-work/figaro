@@ -184,7 +184,7 @@ func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON boo
 			die("bind: nothing attended; name the form: fig bind <@form-id|null>")
 		}
 		if !strings.HasPrefix(r.FigaroID, "@") {
-			die("bind: attending %s, which is a figaro, not a form.\n  fig fork          branch the attended figaro\n  fig bind <@form>  birth a figaro from a form", r.FigaroID)
+			die("bind: attending %s, which is a figaro, not a form.\n  fig fork          branch the attended figaro\n  fig bind <@form>  birth a figaro from a form", ariaName(r.FigaroID))
 		}
 		target = r.FigaroID
 	}

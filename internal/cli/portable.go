@@ -236,7 +236,7 @@ func runImport(loaded *config.Loaded, args []string) {
 		die("import: %s", err)
 	}
 	fmt.Fprintf(stderrw, "imported %d messages as %s (outfit %s)\n",
-		resp.Messages, resp.FigaroID, resp.Outfit)
+		resp.Messages, ariaName(resp.FigaroID), resp.Outfit)
 	if resp.WasID != "" {
 		fmt.Fprintf(stderrw, "  it was %s where it came from: a trunk id is unique per store, so this one is new\n", resp.WasID)
 	}

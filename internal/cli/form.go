@@ -44,7 +44,7 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{top: topValue}, nil)
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
-		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
+		resp.verb("set"), keyArg, value, ariaName(resp.figaroID), resp.at())
 }
 
 func runToggle(loaded *config.Loaded, ariaID, key string) error {
@@ -66,7 +66,7 @@ func runToggle(loaded *config.Loaded, ariaID, key string) error {
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{key: value}, nil)
 	resp := mustCallSet(loaded, ariaID, patch, version)
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
-		resp.verb("toggle"), key, value, resp.figaroID, resp.at())
+		resp.verb("toggle"), key, value, ariaName(resp.figaroID), resp.at())
 	return nil
 }
 
@@ -122,7 +122,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	}
 	resp := mustCallSet(loaded, ariaID, patch, 0)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
-		resp.verb("set"), strings.Join(resp.resp.Set, ", "), resp.figaroID, resp.at())
+		resp.verb("set"), strings.Join(resp.resp.Set, ", "), ariaName(resp.figaroID), resp.at())
 	return nil
 }
 
@@ -192,7 +192,7 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 	// An absent key is a refusal, not a silent success.
 	resp := mustCallSetAsserting(loaded, ariaID, form.Build(form.Snapshot{}, keys, drops), ifVersion)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
-		resp.verb("unset"), strings.Join(args, ", "), resp.figaroID, resp.at())
+		resp.verb("unset"), strings.Join(args, ", "), ariaName(resp.figaroID), resp.at())
 }
 
 func runForm(loaded *config.Loaded, ariaID string) {

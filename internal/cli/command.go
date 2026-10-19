@@ -160,16 +160,16 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	}
 	fcli, err := sdk.DialAria(ep, nil)
 	if err != nil {
-		return "", fmt.Errorf("fork: forked %s but could not connect: %w", branch, err)
+		return "", fmt.Errorf("fork: forked %s but could not connect: %w", ariaName(branch), err)
 	}
 	if _, _, err := fcli.Qua(ctx, plan.prompt, buildPromptForm(plan.opts.outfit)); err != nil {
 		fcli.Close()
-		return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", branch, err)
+		return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", ariaName(branch), err)
 	}
 	fcli.Close()
-	done := fmt.Sprintf("forked %s at %s, prompting %s", out.Parent, out.At, branch)
+	done := fmt.Sprintf("forked %s at %s, prompting %s", ariaName(out.Parent), out.At, ariaName(branch))
 	if plan.opts.stay {
-		return done + " (:listen " + branch + " to follow)", nil
+		return done + " (:listen " + ariaName(branch) + " to follow)", nil
 	}
 	if out.Rebound {
 		done += ", attending"
@@ -317,29 +317,29 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	onScreen := id == in.currentID()
 	if !onScreen {
 		if err := acli.Kill(ctx, id, recursive); err != nil {
-			return "", fmt.Errorf("kill %s: %w", id, err)
+			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
 		in.forgetAria(id)
-		return "killed " + id, nil
+		return "killed " + ariaName(id), nil
 	}
 	successor := in.successorFor(ctx, acli, id, prefer)
 	if successor == "" {
 		if err := acli.Kill(ctx, id, recursive); err != nil {
-			return "", fmt.Errorf("kill %s: %w", id, err)
+			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
 		in.forgetAria(id)
 		in.leaveSession()
-		return "killed " + id + ": nothing left to attend", nil
+		return "killed " + ariaName(id) + ": nothing left to attend", nil
 	}
 	note, aerr := in.attendNote(ctx, successor)
 	if aerr != nil {
 		return "", aerr
 	}
 	if err := acli.Kill(ctx, id, recursive); err != nil {
-		return "", fmt.Errorf("kill %s: %w", id, err)
+		return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 	}
 	in.forgetAria(id)
-	return "killed " + id + "; " + note, nil
+	return "killed " + ariaName(id) + "; " + note, nil
 }
 
 func (in *interactiveInput) forgetAria(id string) {

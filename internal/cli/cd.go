@@ -25,7 +25,7 @@ func runCd(loaded *config.Loaded, ariaID, path string) error {
 	resp := mustCallSet(loaded, ariaID,
 		form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.cwd": value}, nil), 0)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
-		resp.verb("cd"), dir, resp.figaroID, resp.at())
+		resp.verb("cd"), dir, ariaName(resp.figaroID), resp.at())
 	return nil
 }
 

@@ -456,17 +456,17 @@ const bgFormRow = "\x1b[48;5;236m"
 
 func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 	parent := ""
-	label := formID
+	label := ariaName(formID)
 	for _, f := range figs {
 		if f.ID == formID {
 			// drawnUnder, not Parent: a promoted form must scope under
 			// the row the tree draws it beneath.
 			parent = drawnUnder(f)
 			if f.Name != "" {
-				label = f.Name + " " + formID
+				label = f.Name + " " + ariaName(formID)
 			}
 			if f.TargetAria != "" {
-				label += " → " + f.TargetAria
+				label += " → " + ariaName(f.TargetAria)
 			}
 			break
 		}
@@ -663,7 +663,7 @@ func climbFrom(figs []rpc.FigaroInfoResponse, boundID string, n int) (string, st
 		}
 	}
 	if len(vec) == 0 {
-		return "", "", fmt.Errorf("ls: the attended aria %s is not in this listing", boundID)
+		return "", "", fmt.Errorf("ls: the attended aria %s is not in this listing", ariaName(boundID))
 	}
 	depth := len(vec) - n
 	clamped := depth < 1
@@ -680,7 +680,7 @@ func climbFrom(figs []rpc.FigaroInfoResponse, boundID string, n int) (string, st
 			}
 		}
 	}
-	return "", "", fmt.Errorf("ls: no ancestor of %s is in this listing", boundID)
+	return "", "", fmt.Errorf("ls: no ancestor of %s is in this listing", ariaName(boundID))
 }
 
 func scopeSubtree(figs []rpc.FigaroInfoResponse, rootID string) ([]rpc.FigaroInfoResponse, bool) {
@@ -919,7 +919,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 		}
 		fmt.Fprintf(stderrw,
 			"forked %s at %s\n  continuation %s  %s\n  alternative  %s  (attend it to diverge)\n",
-			resp.Parent, at, resp.Continuation, contNote, resp.Alternative)
+			ariaName(resp.Parent), at, ariaName(resp.Continuation), contNote, ariaName(resp.Alternative))
 		return nil
 	})
 }
@@ -988,7 +988,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 			die("promote: nothing above %s but an outfit, and only conversations nest;\n"+
 				"  edit the outfit instead, or promote something under this one", target)
 		}
-		fmt.Fprintf(stderrw, "promoted %s by %d level(s): `figaro ls` now draws it there\n", target, resp.Climbed)
+		fmt.Fprintf(stderrw, "promoted %s by %d level(s): `figaro ls` now draws it there\n", ariaName(target), resp.Climbed)
 		return nil
 	})
 }
@@ -1000,7 +1000,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 	if id := envAriaID(); id != "" {
 		die("attend: this shell is statically attended to %s (FIGARO_ARIA) and cannot be re-attended.\n"+
 			"  figaro send --id <id> -- <prompt>   talk to another aria\n"+
-			"  figaro show --id <id>               read another aria", id)
+			"  figaro show --id <id>               read another aria", ariaName(id))
 	}
 	if bindingDisabled() {
 		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")

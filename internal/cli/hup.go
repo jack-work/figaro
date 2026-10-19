@@ -39,7 +39,7 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 
 	resp, err := fcli.Hangup(ctx, disposition)
 	if err != nil {
-		die("%s %s: %s", verbFor(disposition), resolvedID, err)
+		die("%s %s: %s", verbFor(disposition), ariaName(resolvedID), err)
 	}
 
 	queue := resp.Queue
@@ -60,7 +60,7 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 		return
 	}
 
-	fmt.Fprintf(stdout, "%s %s\n", verbFor(disposition), resolvedID)
+	fmt.Fprintf(stdout, "%s %s\n", verbFor(disposition), ariaName(resolvedID))
 	// Say what happened to the queue even when empty: it is the only visible
 	// difference between the verbs.
 	switch {
