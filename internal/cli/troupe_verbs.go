@@ -82,31 +82,51 @@ func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
 }
 
 func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
+	ledger := m.Provider == config.ProviderFigaro
 	fmt.Fprintf(out, "\nthis node %s, troupe membership version %d\n", m.Node, m.Version)
+	if ledger && m.AdmittedBy != "" {
+		fmt.Fprintf(out, "admitted by %s\n", m.AdmittedBy)
+	}
 	if k := m.Keys; k != nil {
 		switch {
 		case k.Error != "":
 			fmt.Fprintf(out, "keys: %s\n", k.Error)
+		case k.IntermediateExpires == 0:
+			fmt.Fprintf(out, "troupe %s keys: node certificate until %s; no intermediate, so a signer renews it\n", k.Troupe, day(k.NodeExpires))
 		default:
 			fmt.Fprintf(out, "troupe %s keys: node certificate until %s, intermediate until %s\n", k.Troupe, day(k.NodeExpires), day(k.IntermediateExpires))
 		}
 	}
-	if len(m.Peers) == 0 {
-		return
-	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "\tPEER\tENDPOINT\tVERSION\tDRIFT")
-	for _, p := range m.Peers {
-		switch {
-		case !p.Met:
-			fmt.Fprintf(w, "\t%s\t%s\t-\tnot met\n", p.Node, p.Endpoint)
-		case p.Drift:
-			fmt.Fprintf(w, "\t%s\t%s\t%d\tdrift: ours is %d\n", p.Node, p.Endpoint, p.Version, m.Version)
-		default:
-			fmt.Fprintf(w, "\t%s\t%s\t%d\t\n", p.Node, p.Endpoint, p.Version)
+	if len(m.Peers) > 0 {
+		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+		if ledger {
+			fmt.Fprintln(w, "\tPEER\tENDPOINT\tADMITTED BY\tSIGNS\tVERSION\tDRIFT")
+		} else {
+			fmt.Fprintln(w, "\tPEER\tENDPOINT\tVERSION\tDRIFT")
 		}
+		for _, p := range m.Peers {
+			cols := "\t" + p.Node + "\t" + p.Endpoint
+			if ledger {
+				signs := ""
+				if p.Signs {
+					signs = "yes"
+				}
+				cols += "\t" + p.AdmittedBy + "\t" + signs
+			}
+			switch {
+			case !p.Met:
+				fmt.Fprintf(w, "%s\t-\tnot met\n", cols)
+			case p.Drift:
+				fmt.Fprintf(w, "%s\t%d\tdrift: ours is %d\n", cols, p.Version, m.Version)
+			default:
+				fmt.Fprintf(w, "%s\t%d\t\n", cols, p.Version)
+			}
+		}
+		_ = w.Flush()
 	}
-	_ = w.Flush()
+	for _, g := range m.Gone {
+		fmt.Fprintf(out, "out: %s (%s)\n", g.Node, g.By)
+	}
 }
 
 func runTroupeList(loaded *config.Loaded, jsonOut bool) {
@@ -184,13 +204,23 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 			dieUsage("troupe join takes one troupe (troupes/<name>.toml names a member's door)")
 		}
 		runTroupeJoin(loaded, rest[0], o)
+	case "leave":
+		if len(rest) != 1 {
+			dieUsage("troupe leave takes one troupe")
+		}
+		runTroupeLeave(loaded, rest[0], o)
+	case "revoke":
+		if len(rest) != 2 {
+			dieUsage("troupe revoke takes a troupe and a node, and the root key on stdin")
+		}
+		runTroupeRevoke(loaded, rest[0], rest[1])
 	case "create", "intermediate":
 		if len(rest) != 1 {
 			dieUsage("troupe %s takes one troupe name, and the root key on stdin", verb)
 		}
 		runTroupeKeyVerb(verb, rest[0])
 	default:
-		dieUsage("troupe: want login, ls, join, create or intermediate, not %q", verb)
+		dieUsage("troupe: want login, ls, join, leave, revoke, create or intermediate, not %q", verb)
 	}
 	return nil
 }

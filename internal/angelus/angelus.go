@@ -65,6 +65,7 @@ type Angelus struct {
 	Peers        peer.Membership
 	PeerVersions *peer.Versions
 	Troupe       *troupe.Keeper
+	TroupeSpread func(ctx context.Context) map[string]error
 
 	uiProj Projector
 

@@ -633,6 +633,12 @@ joins again. `troupe.identity` (also `join`) returns the caller's principal,
 the root and its SHA-256, and the signers, for a joiner to check before it
 trusts anything.
 
+`troupe.leave` (admin) has the daemon sign its own leave with its node key;
+a root revoke reaches the daemon through `troupe.entries` from a caller
+holding admin on the troupe. Either is spread to every member before the
+call returns, which says who heard. A door gives an evicted node's open
+connections a second to finish the reply in flight, then closes them.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,

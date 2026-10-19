@@ -1437,7 +1437,7 @@ there until you revoke it with the provider.`,
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | create <name> | intermediate <name>> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | create <name> | intermediate <name>> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -1458,16 +1458,22 @@ an [auth] table naming how a human signs in.
                  troupes/<name>.toml reaches, which needs join on
                  troupe:<name>. Shows the root's sha256 and asks before
                  trusting it; writes this node's certificate and the
-                 [troupe], [door.tls] and peercred config, then restart`,
+                 [troupe], [door.tls] and peercred config, then restart
+  leave <name>   this node signs its own leave, the running daemon tells
+                 every member, and its troupe keys and config go. Final
+                 for this node id; asks unless --yes
+  revoke <name> <node>  with the root on stdin, revoke a node and every
+                 join its intermediates signed; the running daemon tells
+                 every member`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls"},
 			{Long: "door", Description: "join: host:port other nodes dial (default [door.tls] advertise)"},
 			{Long: "listen", Description: "join: host:port the node door listens on (default the door)"},
 			{Long: "root-sha256", Description: "join: trust the troupe root only if its sha256 is this"},
-			{Long: "yes", Short: "y", IsBool: true, Description: "join: trust the root shown without asking"},
+			{Long: "yes", Short: "y", IsBool: true, Description: "join: trust the root shown without asking; leave: do not ask"},
 		},
 		ArgsMin: 1,
-		ArgsMax: 2,
+		ArgsMax: 3,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
@@ -1477,6 +1483,8 @@ an [auth] table naming how a human signs in.
 			{"login", "sign in to a troupe's door"},
 			{"ls", "the troupes this CLI knows"},
 			{"join", "sign this node into a troupe"},
+			{"leave", "sign this node out of its troupe for good"},
+			{"revoke", "with the root, revoke a node"},
 		}, completeTroupeAfterLogin),
 	})
 

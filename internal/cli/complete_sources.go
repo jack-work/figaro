@@ -266,7 +266,7 @@ func valueSummary(raw json.RawMessage) string {
 }
 
 func completeTroupeAfterLogin(c *cmdkit.CompleteContext) []string {
-	if c == nil || len(c.Args) != 1 || c.Args[0] != "login" && c.Args[0] != "join" {
+	if c == nil || len(c.Args) != 1 || c.Args[0] != "login" && c.Args[0] != "join" && c.Args[0] != "leave" && c.Args[0] != "revoke" {
 		return nil
 	}
 	loaded, err := config.Load(config.DefaultConfigDir())

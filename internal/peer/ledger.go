@@ -107,6 +107,12 @@ func (m *Ledger) rebuild() {
 	m.nodes = slices.Sorted(maps.Keys(members))
 }
 
+func (m *Ledger) Snapshot() ([]troupe.Entry, uint64) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.ledger.Entries(), m.view.Digest
+}
+
 func (m *Ledger) Entries() []troupe.Entry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

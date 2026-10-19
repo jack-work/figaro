@@ -78,14 +78,36 @@ type TroupeEntriesRequest struct {
 }
 
 type TroupeEntriesResponse struct {
-	Entries []json.RawMessage `json:"entries"`
+	Entries     []json.RawMessage `json:"entries"`
+	Reached     []string          `json:"reached,omitempty"`
+	Unreachable []NodeUnreachable `json:"unreachable,omitempty"`
+}
+
+const MethodTroupeLeave = "troupe.leave"
+
+type TroupeLeaveRequest struct {
+	Troupe string `json:"troupe"`
+}
+
+type TroupeLeaveResponse struct {
+	Node        string            `json:"node"`
+	Reached     []string          `json:"reached"`
+	Unreachable []NodeUnreachable `json:"unreachable,omitempty"`
 }
 
 type TroupeMembersResponse struct {
-	Node    string         `json:"node"`
-	Version uint64         `json:"version"`
-	Peers   []TroupeMember `json:"peers"`
-	Keys    *TroupeKeys    `json:"keys,omitempty"`
+	Node       string         `json:"node"`
+	Provider   string         `json:"provider,omitempty"`
+	AdmittedBy string         `json:"admitted_by,omitempty"`
+	Version    uint64         `json:"version"`
+	Peers      []TroupeMember `json:"peers"`
+	Gone       []TroupeGone   `json:"gone,omitempty"`
+	Keys       *TroupeKeys    `json:"keys,omitempty"`
+}
+
+type TroupeGone struct {
+	Node string `json:"node"`
+	By   string `json:"by"`
 }
 
 type TroupeKeys struct {
@@ -96,10 +118,12 @@ type TroupeKeys struct {
 }
 
 type TroupeMember struct {
-	Node     string `json:"node"`
-	Endpoint string `json:"endpoint"`
-	Met      bool   `json:"met"`
-	Version  uint64 `json:"version,omitempty"`
-	SeenAt   int64  `json:"seen_at,omitempty"`
-	Drift    bool   `json:"drift,omitempty"`
+	Node       string `json:"node"`
+	Endpoint   string `json:"endpoint"`
+	AdmittedBy string `json:"admitted_by,omitempty"`
+	Signs      bool   `json:"signs,omitempty"`
+	Met        bool   `json:"met"`
+	Version    uint64 `json:"version,omitempty"`
+	SeenAt     int64  `json:"seen_at,omitempty"`
+	Drift      bool   `json:"drift,omitempty"`
 }

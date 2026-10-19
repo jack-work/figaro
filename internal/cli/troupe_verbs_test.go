@@ -19,10 +19,10 @@ import (
 func TestTroupeCarriesWhatExistsOnly(t *testing.T) {
 	cmd, ok := buildRouter("figaro", nil).Command("troupe")
 	require.True(t, ok)
-	for _, verb := range []string{"login", "ls", "join", "create", "intermediate"} {
+	for _, verb := range []string{"login", "ls", "join", "leave", "revoke", "create", "intermediate"} {
 		require.Contains(t, cmd.Usage, verb)
 	}
-	for _, absent := range []string{"approve", "invite", "leave"} {
+	for _, absent := range []string{"approve", "invite"} {
 		require.NotContains(t, cmd.Usage, absent)
 	}
 	require.True(t, terminalSubverbs["troupe login"], ":troupe login reads the keyboard")

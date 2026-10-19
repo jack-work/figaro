@@ -91,6 +91,7 @@ var terminalSubverbs = map[string]bool{
 	"provider logout": true,
 	"troupe login":    true,
 	"troupe join":     true,
+	"troupe leave":    true,
 }
 
 // A form read in the pager is the live view; formSubverbs do something else and

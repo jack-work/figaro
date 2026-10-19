@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -338,4 +339,59 @@ func TestTheEntriesFromAJoinAreTakenUpAtStart(t *testing.T) {
 	_, err = nb.dir().Joined()
 	require.True(t, os.IsNotExist(err))
 	require.Len(t, storedEntries(t, nb), len(ma.Entries()))
+}
+
+func call(t *testing.T, n *ledgerNode, method string, req any) (any, error) {
+	t.Helper()
+	params, err := json.Marshal(req)
+	require.NoError(t, err)
+	return n.a.Handlers[method](context.Background(), params)
+}
+
+func pair(t *testing.T) (*ledgerNode, *ledgerNode, *peer.Ledger, *peer.Ledger, estateRoot) {
+	t.Helper()
+	root := newEstateRoot(t)
+	na := newLedgerNode(t, root)
+	nb := newLeafNode(t, root, na, time.Now())
+	ma := na.start()
+	_, err := ma.Merge(nb.joinedBy(na))
+	require.NoError(t, err)
+	require.NoError(t, nb.dir().WriteJoined(ma.Entries()))
+	mb := nb.start()
+	require.Equal(t, ma.Version(), mb.Version())
+	return na, nb, ma, mb, root
+}
+
+// A node that leaves signs it with its own key and tells every member
+// before it answers; they drop it at once.
+func TestALeaveReachesEveryMemberBeforeItReturns(t *testing.T) {
+	na, nb, ma, _, _ := pair(t)
+	out, err := call(t, nb, rpc.MethodTroupeLeave, rpc.TroupeLeaveRequest{Troupe: "estate"})
+	require.NoError(t, err)
+	resp := out.(rpc.TroupeLeaveResponse)
+	require.Equal(t, []string{na.id()}, resp.Reached, "%+v", resp.Unreachable)
+	require.Empty(t, resp.Unreachable)
+	require.Equal(t, troupe.Leave, ma.View().Gone[nb.id()])
+	require.NotContains(t, ma.Nodes(), nb.id())
+}
+
+// A root revoke pushed to one member is spread to the rest before the push
+// returns.
+func TestARevokePushedToOneMemberReachesTheRest(t *testing.T) {
+	na, nb, ma, mb, root := pair(t)
+	nc := newLeafNode(t, root, na, time.Now())
+	join := nc.joinedBy(na)
+	_, err := ma.Merge(join)
+	require.NoError(t, err)
+	_, err = mb.Merge(join)
+	require.NoError(t, err)
+	require.True(t, slices.Contains(mb.Nodes(), nc.id()))
+
+	revoke, err := troupe.SignRevoke(root.key, "estate", nc.id(), time.Now())
+	require.NoError(t, err)
+	out, err := call(t, nb, rpc.MethodTroupeEntries, rpc.TroupeEntriesRequest{Troupe: "estate", Entries: troupe.Encode([]troupe.Entry{revoke})})
+	require.NoError(t, err)
+	resp := out.(rpc.TroupeEntriesResponse)
+	require.Contains(t, resp.Reached, na.id())
+	require.Equal(t, troupe.Revoke, ma.View().Gone[nc.id()])
 }

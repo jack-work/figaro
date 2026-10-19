@@ -28,14 +28,21 @@ type Door struct {
 	open map[string]map[*context.CancelFunc]struct{}
 }
 
+const evictGrace = time.Second
+
 func (d *Door) Evict(node string) {
 	d.mu.Lock()
 	conns := d.open[node]
 	delete(d.open, node)
 	d.mu.Unlock()
-	for cancel := range conns {
-		(*cancel)()
+	if len(conns) == 0 {
+		return
 	}
+	time.AfterFunc(evictGrace, func() {
+		for cancel := range conns {
+			(*cancel)()
+		}
+	})
 }
 
 func (d *Door) track(ctx context.Context, node string) context.Context {

@@ -321,6 +321,12 @@ func (c *Angelus) TroupeSign(ctx context.Context, req rpc.TroupeSignRequest) (*r
 	return &resp, err
 }
 
+func (c *Angelus) TroupeLeave(ctx context.Context, troupe string) (*rpc.TroupeLeaveResponse, error) {
+	var resp rpc.TroupeLeaveResponse
+	err := c.call(ctx, rpc.MethodTroupeLeave, rpc.TroupeLeaveRequest{Troupe: troupe}, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error) {
 	var resp rpc.TroupeEntriesResponse
 	err := c.call(ctx, rpc.MethodTroupeEntries, req, &resp)

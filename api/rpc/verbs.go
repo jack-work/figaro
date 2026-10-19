@@ -85,6 +85,7 @@ var methodVerbs = map[string]Verb{
 	MethodSaveBindings:   VerbAdmin,
 	MethodProviderLedger: VerbAdmin,
 	MethodTroupeEntries:  VerbAdmin,
+	MethodTroupeLeave:    VerbAdmin,
 
 	MethodTroupeSign:     VerbJoin,
 	MethodTroupeIdentity: VerbJoin,
