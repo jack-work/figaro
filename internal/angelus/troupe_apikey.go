@@ -205,6 +205,9 @@ func keyAudience(m *peer.Ledger, asked []string) ([]string, error) {
 		return []string{m.Self()}, nil
 	}
 	if len(asked) == 1 && asked[0] == apikey.AllNodes {
+		if leaf := leafOnly(m.View(), time.Now()); len(leaf) > 0 {
+			return nil, fmt.Errorf("--nodes all would reach the leaf-only members %s; name the nodes the key is for instead", strings.Join(leaf, ", "))
+		}
 		return asked, nil
 	}
 	known := append(slices.Sorted(maps.Keys(m.View().Members)), m.Self())
@@ -220,6 +223,18 @@ func keyAudience(m *peer.Ledger, asked []string) ([]string, error) {
 	}
 	slices.Sort(out)
 	return out, troupe.CheckAudience(out)
+}
+
+func leafOnly(v troupe.View, now time.Time) []string {
+	signs := v.Signers(now)
+	var out []string
+	for n := range v.Members {
+		if !slices.Contains(signs, n) {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func memberNamed(known []string, ref string) (string, error) {

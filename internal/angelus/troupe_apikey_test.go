@@ -231,3 +231,30 @@ func TestANodeThatIsNotASetterRefusesToMint(t *testing.T) {
 	require.ErrorContains(t, err, "not a setter in policy version 2")
 	require.ErrorContains(t, err, "node-elsewhere")
 }
+
+// --nodes all is refused while any member is leaf-only, naming them, so a
+// key never reaches a box its minter did not name; listing the nodes,
+// leaf-only ones included, is how to mint for them.
+func TestMintRefusesAllWhileAMemberIsLeafOnly(t *testing.T) {
+	r := newKeyRig(t, true)
+	_, ik, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	inter, err := troupe.IssueIntermediate(r.rk, r.root, "estate", "node-signer", ik.Public(), time.Now(), troupe.IntermediateTTL)
+	require.NoError(t, err)
+	ledger := r.a.Peers.(*peer.Ledger)
+	for _, node := range []string{"node-signer", "node-leaf-1", "node-leaf-2"} {
+		e, err := troupe.SignJoin(ik, inter, "estate", node, node+".lan:7443", "user:owner", time.Now())
+		require.NoError(t, err)
+		_, err = ledger.Merge(e)
+		require.NoError(t, err)
+	}
+	require.NotContains(t, ledger.View().Signers(time.Now()), "node-leaf-1")
+
+	_, _, err = r.mint(as("0"), "service:ci@troupe:estate", time.Hour, apikey.AllNodes)
+	require.ErrorContains(t, err, "leaf-only members node-leaf-1, node-leaf-2")
+	require.ErrorContains(t, err, "name the nodes")
+
+	out, _, err := r.mint(as("0"), "service:ci@troupe:estate", time.Hour, "node-leaf-1", "node-signer")
+	require.NoError(t, err)
+	require.Equal(t, []string{"node-leaf-1", "node-signer"}, out.Key.Nodes)
+}

@@ -1508,7 +1508,7 @@ an [auth] table naming how a human signs in.
                  troupe). The key goes to stdout once; the node keeps only
                  its hash. --nodes <id,...|all> names the nodes it is good
                  on (default: the minting node alone); it is never sent to
-                 another. --ttl 30d (default 90d, at most 365d); for
+                 another. all is refused while any member is leaf-only. --ttl 30d (default 90d, at most 365d); for
                  everyday use mint short keys, days or weeks, and mint
                  again. --static prints the key and an [[authz.api_keys]]
                  stanza instead, with no daemon involved

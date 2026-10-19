@@ -759,6 +759,8 @@ intermediate signs an `apikey` ledger entry: the id, the principal, the hash,
 good on, the admin who asked (`by`) and the signing node. A leaf-only node
 refuses and names the signers. The nodes are a sorted list of node ids, or
 `*` for all of them; the minting node alone unless `--nodes` names others.
+Mint refuses `*` while any member is leaf-only, naming those members, so a
+key reaches a leaf-only box only when its minter names it.
 A key counts only when the root signs it or its signer is a setter in the
 policy version in force, the rule policy versions follow: troupe policy
 grants a key's principal by name, so a key from any other intermediate would
