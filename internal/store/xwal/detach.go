@@ -28,7 +28,7 @@ func (t *Trunks) Detach(node string) error {
 	}
 	var dirs []string
 	for _, c := range x.Channels() {
-		ch := x.chans[c.Name]
+		ch := x.channel(c.Name)
 		dir := filepath.Join(t.root, c.Name, fsName(node))
 		if _, serr := os.Stat(dir); os.IsNotExist(serr) {
 			continue // a channel added after this node existed

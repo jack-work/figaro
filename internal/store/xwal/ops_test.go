@@ -99,7 +99,7 @@ func TestXWAL_LookupIndexesFromTail(t *testing.T) {
 	if _, ok, err := x.Lookup("translations", 10); err != nil || !ok {
 		t.Fatalf("tail lookup: ok=%v err=%v", ok, err)
 	}
-	ch := x.chans["translations"]
+	ch := x.channel("translations")
 	if len(ch.fk) != 1 || ch.fkBuilt {
 		t.Fatalf("tail lookup indexed %d entries, complete=%v", len(ch.fk), ch.fkBuilt)
 	}

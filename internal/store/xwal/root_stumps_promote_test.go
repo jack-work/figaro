@@ -24,9 +24,9 @@ func relDirs(t *testing.T, base string) []string {
 	return out
 }
 
-// --- Task 1: channel root-and-backfill ---
+// --- Task 1: channel registration ---
 
-func TestAddChannel_RootAndBackfill(t *testing.T) {
+func TestAddChannel_RootOnly(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, err := createTrunks(dir, trunksCfg())
 	if err != nil {
@@ -58,7 +58,7 @@ func TestAddChannel_RootAndBackfill(t *testing.T) {
 	// The translations channel does not exist yet (lazy add).
 	irDirs := relDirs(t, filepath.Join(dir, "ir"))
 
-	// Add + backfill the channel (note the slashed name).
+	// Register the channel (note the slashed name).
 	const ch = "translations/anthropic"
 	x, err := Open(dir, trunksCfg())
 	if err != nil {
@@ -69,40 +69,11 @@ func TestAddChannel_RootAndBackfill(t *testing.T) {
 	}
 	x.Close()
 
-	// The new channel's node tree mirrors ir's exactly — no stray
-	// "anthropic/anthropic" from the slash, no flattening.
-	chDirs := relDirs(t, filepath.Join(dir, ch))
-	if len(chDirs) != len(irDirs) {
-		t.Fatalf("channel tree does not mirror ir:\n ir=%v\n ch=%v", irDirs, chDirs)
+	// Adding a channel writes no node directory, however many nodes exist:
+	// the cost of a new channel must not grow with the store.
+	if chDirs := relDirs(t, filepath.Join(dir, ch)); len(chDirs) != 0 {
+		t.Fatalf("adding a channel wrote node directories %v; ir has %v", chDirs, irDirs)
 	}
-	for i := range irDirs {
-		if chDirs[i] != irDirs[i] {
-			t.Fatalf("channel dir mismatch at %d: ir=%q ch=%q\n ir=%v\n ch=%v",
-				i, irDirs[i], chDirs[i], irDirs, chDirs)
-		}
-	}
-
-	// Sane forkBases: every backfilled (non-root) node has base=1 (an empty
-	// channel forks at its own first index everywhere), no segments.
-	filepath.WalkDir(filepath.Join(dir, ch), func(p string, d os.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return nil
-		}
-		fork := filepath.Join(p, ".fork")
-		if b, rerr := os.ReadFile(fork); rerr == nil {
-			if string(b) != "base=1\n" {
-				t.Errorf("backfilled node %q: .fork = %q, want base=1", p, b)
-			}
-		}
-		// No segment files in backfilled log nodes (content derivable).
-		ents, _ := os.ReadDir(p)
-		for _, e := range ents {
-			if filepath.Ext(e.Name()) == ".jsonl" {
-				t.Errorf("backfilled log node %q has a segment %q (should be empty)", p, e.Name())
-			}
-		}
-		return nil
-	})
 
 	// A write to each trunk lands in its own node and reads back (prefix
 	// read-through: the empty inherited prefix resolves up the chain).
@@ -117,8 +88,8 @@ func TestAddChannel_RootAndBackfill(t *testing.T) {
 			xw.Close()
 			t.Fatalf("append translation on %s: %v", tr, err)
 		}
-		// The write lands in this trunk's own node (empty backfilled prefix:
-		// own range starts at channel-LT 1) and reads back through the handle.
+		// The write lands in this trunk's own node (nothing inherited: own
+		// range starts at channel-LT 1) and reads back through the handle.
 		if chLT != 1 {
 			t.Errorf("trunk %s: first translation landed at chLT %d, want 1", tr, chLT)
 		}
@@ -142,8 +113,8 @@ func channelTail(x *XWAL, name string) uint64 {
 	return 0
 }
 
-// A reducible channel backfills each node with the Initial watermark seed.
-func TestAddChannel_BackfillReducible(t *testing.T) {
+// A node that predates a reducible channel folds from the Initial state.
+func TestAddChannel_Reducible(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, conv := seedTrunk(t, dir)
 	f.Append(conv, 0, []byte(`"u1"`), nil)
@@ -164,11 +135,11 @@ func TestAddChannel_BackfillReducible(t *testing.T) {
 	}
 	defer xw.Close()
 	if _, err := xw.Append("scratch", channelTail(xw, "ir"), []byte(`{"set":{"k":"v"}}`), nil); err != nil {
-		t.Fatalf("append to backfilled reducible: %v", err)
+		t.Fatalf("append to a new reducible channel: %v", err)
 	}
 	st, err := xw.StateAt("scratch", channelTail(xw, "scratch"))
 	if err != nil {
-		t.Fatalf("StateAt backfilled reducible: %v", err)
+		t.Fatalf("StateAt new reducible channel: %v", err)
 	}
 	if string(st) != `{"k":"v"}` {
 		t.Fatalf("folded reducible state = %s, want {\"k\":\"v\"}", st)
@@ -178,7 +149,7 @@ func TestAddChannel_BackfillReducible(t *testing.T) {
 // A fork AFTER a slashed channel was lazily added must joint-fork that
 // channel too (keeping the tree mirrored, no stray "anthropic/anthropic"),
 // and both children inherit the parent's content.
-func TestAddChannel_ForkAfterBackfill(t *testing.T) {
+func TestAddChannel_ForkAfterFirstWrite(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, conv := seedTrunkBirth(t, dir, "L@h")
 	f.Append(conv, 0, []byte(`"hello"`), nil)
@@ -212,9 +183,9 @@ func TestAddChannel_ForkAfterBackfill(t *testing.T) {
 			t.Fatalf("stray nested dir from slashed channel name: %q", p)
 		}
 	}
-	// The channel tree mirrors ir after the fork.
-	if got, want := relDirs(t, filepath.Join(dir, ch)), relDirs(t, filepath.Join(dir, "ir")); len(got) != len(want) {
-		t.Fatalf("channel tree diverged from ir after fork:\n ir=%v\n ch=%v", want, got)
+	// The channel holds the node that wrote and the fork of it, nothing else.
+	if got := relDirs(t, filepath.Join(dir, ch)); len(got) != 2 {
+		t.Fatalf("channel nodes after write and fork: %v, want the writer and its fork", got)
 	}
 	// Both the continuation and the alternative inherit the translation.
 	for _, tr := range []TrunkID{conv, alt} {

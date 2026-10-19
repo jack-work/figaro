@@ -820,7 +820,7 @@ func TestCursorFallbackIsUnreachableOnAStoreThisBuildCreated(t *testing.T) {
 	// The premise, checked rather than assumed: the channel really is
 	// unkeyed, so its records carry no main LT and the fallback has
 	// something wrong to say.
-	if lt, ok, err := x.chans["notes"].lookupAtOrBelow(1); err != nil || !ok || lt == 0 {
+	if lt, ok, err := x.channel("notes").lookupAtOrBelow(1); err != nil || !ok || lt == 0 {
 		t.Fatalf("the fallback would answer %d (ok %v, err %v); this test cannot fail unless it answers something", lt, ok, err)
 	}
 	for _, at := range []uint64{1, 2} {

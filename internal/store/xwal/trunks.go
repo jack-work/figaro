@@ -69,13 +69,15 @@ var trunkRegistry = struct {
 }{roots: map[string]map[*Trunks]struct{}{}}
 
 type rootTopologyState struct {
-	mu        sync.Mutex
-	ready     *sync.Cond
-	mutating  bool
-	borrowers int
-	epoch     uint64
-	owners    map[*Trunks]int
-	lineages  map[string]*rootLineageState
+	mu         sync.Mutex
+	ready      *sync.Cond
+	mutating   bool
+	borrowers  int
+	epoch      uint64
+	owners     map[*Trunks]int
+	lineages   map[string]*rootLineageState
+	manifestMu sync.Mutex
+	channelGen atomic.Uint64
 }
 
 type rootLineageState struct {
@@ -117,7 +119,7 @@ type (
 const genesisMarker = `{"genesis":true}`
 
 func mainTail(x *XWAL) uint64 {
-	l, err := x.chans[x.main].Log()
+	l, err := x.channel(x.main).Log()
 	if err != nil {
 		return 0
 	}
@@ -168,6 +170,7 @@ func createTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ltsReg = t.ltsReg
 	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
+	t.cfg.channelGen = channelGenFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
 		return nil, err
 	}
@@ -178,16 +181,13 @@ func createTrunks(dir string, cfg Config) (*Trunks, error) {
 	return t, nil
 }
 
-func openTrunks(dir string, cfg Config) (*Trunks, error) {
-	endMutation, root, err := beginRootTopologyMutation(dir)
-	if err != nil {
-		return nil, err
-	}
-	defer endMutation()
-	retireTrunkStores(dir)
+func settleManifest(dir, root string, cfg Config) (manifest, error) {
+	state := rootTopologyStateFor(root)
+	state.manifestMu.Lock()
+	defer state.manifestMu.Unlock()
 	man, err := loadOrCreateManifest(dir, cfg)
 	if err != nil {
-		return nil, err
+		return manifest{}, err
 	}
 	// Before anything walks: a nested v3 store opens "successfully" from here
 	// and reports its stumps and none of its conversations, because
@@ -195,20 +195,31 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	// layout or it is refused; Flatten is the way through.
 	switch {
 	case man.Layout > layoutVersion:
-		return nil, fmt.Errorf("%w: store %s is layout %d, this build reads %d",
+		return manifest{}, fmt.Errorf("%w: store %s is layout %d, this build reads %d",
 			ErrFutureLayout, dir, man.Layout, layoutVersion)
 	case man.Layout < layoutVersion:
-		return nil, fmt.Errorf("%w: store %s is layout %d, this build writes %d",
+		return manifest{}, fmt.Errorf("%w: store %s is layout %d, this build writes %d",
 			ErrLegacyLayout, dir, man.Layout, layoutVersion)
 	}
 	man, err = recoverChannelPending(dir, cfg, man)
 	if err != nil {
-		return nil, err
+		return manifest{}, err
 	}
 	if man, err = reconcileChannelProps(dir, cfg, man); err != nil {
+		return manifest{}, err
+	}
+	return materializeManifestChannels(dir, cfg, man)
+}
+
+func openTrunks(dir string, cfg Config) (*Trunks, error) {
+	endMutation, root, err := beginRootTopologyMutation(dir)
+	if err != nil {
 		return nil, err
 	}
-	if man, err = materializeManifestChannels(dir, cfg, man); err != nil {
+	defer endMutation()
+	retireTrunkStores(dir)
+	man, err := settleManifest(dir, root, cfg)
+	if err != nil {
 		return nil, err
 	}
 	if err := (&Trunks{root: dir, main: man.Main}).resumeGrafts(); err != nil {
@@ -229,6 +240,7 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ltsReg = t.ltsReg
 	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
+	t.cfg.channelGen = channelGenFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
 		return nil, err
 	}
@@ -473,8 +485,8 @@ func (t *Trunks) evictLineage(trunk string) (bool, error) {
 	}
 	t.hotMu.Unlock()
 
-	for _, name := range head.x.order {
-		l := head.x.chans[name].opened()
+	for _, name := range head.x.channels().order {
+		l := head.x.channel(name).opened()
 		if l == nil {
 			continue
 		}
@@ -494,14 +506,14 @@ func (t *Trunks) evictLineage(trunk string) (bool, error) {
 		if other.x == nil {
 			continue
 		}
-		for _, ch := range other.x.chans {
+		for _, ch := range other.x.channels().byName {
 			inUse[ch.dir] = true
 		}
 	}
 	t.hotMu.Unlock()
 
-	for _, name := range head.x.order {
-		ch := head.x.chans[name]
+	for _, name := range head.x.channels().order {
+		ch := head.x.channel(name)
 		if inUse[ch.dir] {
 			continue
 		}
@@ -982,42 +994,8 @@ func (t *Trunks) Close() error {
 	return errors.Join(errs...)
 }
 
-// ensureChannel adds and backfills a channel if needed, and installs its
-// runtime policy for subsequent hot heads.
 func (t *Trunks) ensureChannel(spec ChannelSpec) error {
-	endMutation, err := t.beginTopologyMutation()
-	if err != nil {
-		return err
-	}
-	defer endMutation()
-
-	man, err := loadOrCreateManifest(t.root, t.cfg)
-	if err != nil {
-		return err
-	}
-	man, err = recoverChannelPending(t.root, t.cfg, man)
-	if err != nil {
-		return err
-	}
-	if err := validateChannelSpec(t.root, t.cfg, man, spec); err != nil {
-		return err
-	}
-	if err := t.ensureNoOpenHeads(); err != nil {
-		return err
-	}
-
-	cfg := withChannelSpec(t.cfg, spec)
-	t.retireRootHotPreservingValidation()
-	pending := channelPendingPlan{Channel: spec.manifest()}
-	if err := writeChannelPending(t.root, pending); err != nil {
-		return err
-	}
-	if _, err := recoverChannelPending(t.root, cfg, man); err != nil {
-		return err
-	}
-
-	t.cfg = cfg
-	return t.rebuild()
+	return registerChannel(t.root, t.cfg, spec)
 }
 
 // Head opens the live head node of a trunk. Caller closes it.
@@ -1219,13 +1197,16 @@ func (t *Trunks) channelBases(node string, at uint64) (map[string]uint64, error)
 	}
 	out := map[string]uint64{}
 	for _, c := range x.Channels() {
+		if c.Absent {
+			continue
+		}
 		var base uint64
 		switch {
 		case c.Name == t.main:
 			base = at + 1
-		case x.chans[c.Name].unkeyed && tailFork:
+		case x.channel(c.Name).unkeyed && tailFork:
 			base = c.Last + 1
-		case x.chans[c.Name].unkeyed:
+		case x.channel(c.Name).unkeyed:
 			// An unkeyed channel carries no main LT; the main record at the
 			// fork point recorded where it stood, and that stamp is the boundary.
 			cur, cerr := x.CursorAt(at, c.Name)
@@ -1241,7 +1222,7 @@ func (t *Trunks) channelBases(node string, at uint64) (map[string]uint64, error)
 				base = c.Last + 1
 			}
 		default:
-			lt, ok, lerr := x.chans[c.Name].lookupAtOrBelow(at)
+			lt, ok, lerr := x.channel(c.Name).lookupAtOrBelow(at)
 			if lerr != nil {
 				x.Close()
 				return nil, lerr // a failed lookup is not "found nothing"
@@ -1977,7 +1958,7 @@ func mainChannelName(dir string) (string, error) {
 
 // ownFirstIdx is the head's own first main index (forkBase, or 1 at root).
 func ownFirstIdx(x *XWAL) uint64 {
-	l, err := x.chans[x.main].Log()
+	l, err := x.channel(x.main).Log()
 	if err != nil {
 		return 1
 	}

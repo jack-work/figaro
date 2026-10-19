@@ -148,8 +148,8 @@ provider-owned payload bytes. Decoding accepts both frame shapes.
 A `Config` describes the join at creation:
 
 - `Main`, the main channel name.
-- `Channels`, the `ChannelSpec` list (name, kind, reducer key, runtime
-  `SyncMode`, persisted `Opaque` payload encoding).
+- `Channels`, the `ChannelSpec` list (name, kind, reducer key, persisted
+  `Opaque` payload encoding and `Unkeyed` flag).
 - `Registry`, maps reducer names to `Reducer{Reduce, Initial}`;
   resolved on every open (functions are never persisted).
 - `Codec`, `"jsonl"` (default) or `"binary"`; persisted in the manifest.
@@ -158,9 +158,7 @@ A `Config` describes the join at creation:
   Trunks layer).
 
 After first open the on-disk `xwal.json` manifest is authoritative for channel
-shape and codec. `ChannelSpec.SyncMode` remains runtime-only and is resolved
-from `Config.Channels` by channel name on every private or shared open; it is
-never written to the manifest. `ChannelSpec.Opaque` is an optional persisted
+shape and codec. `ChannelSpec.Opaque` is an optional persisted
 channel property. It is immutable for an existing channel: callers migrate to
 a fresh channel namespace rather than mixing encoding policy implicitly.
 
@@ -180,21 +178,15 @@ plan sentinel makes the join crash-atomic across channels: `Open`
 roll-forward-completes any interrupted fork before serving a branch, so
 the triune is never observed half-diverged.
 
-Before planning a fork, XWAL validates that every manifest channel has the
-complete logical branch path and valid fork markers. A missing or invalid path
-returns `ErrTopologyIncomplete` before a fork plan or filesystem mutation.
-`OpenTrunks` and `EnsureChannel` validate and repair reducible watermarks while
-all hot generations are retired. An inherited related-channel tail that
-reaches the missing main fork boundary is ambiguous and is rejected rather
-than copied or filtered.
-
-`Trunks` caches successful fork preflight validation against its topology
-version and validation generation. Normal in-process topology mutations carry
-that validation forward because they mirror every channel atomically. Forks
-still perform a shallow structural probe for missing paths, markers, and
-watermark files; only an unknown or incomplete generation runs the deep
-parent-state repair. `Refresh` and explicit external-generation retirement
-invalidate the cache.
+A node has a directory in a related channel only if it wrote that channel,
+or it was forked from a parent that had one. A missing directory means the
+node inherited nothing there: it reads as an empty log (an Initial state for
+a reducible channel), a read creates nothing, and a fork of it gets no
+directory either. The first write materializes the node's directory with
+`.fork base=1` (and the Initial watermark for a reducible channel) under the
+lineage lock, then reopens the log. This is the state the old eager backfill
+wrote for every node, so stores backfilled by earlier builds need no
+migration.
 
 ---
 
@@ -224,7 +216,7 @@ shared channels, so repeated head views continue the same O(delta) lookup
 rather than rebuilding it. A topology rebuild or XWAL filesystem mutation
 retires the generation; existing borrowers keep it alive until `XWAL.Close`,
 while new opens use a fresh store. A shared `XWAL` detaches to private handles
-before `Fork`, `Clear`, or `AddChannel`, so filesystem mutation never runs
+before `Fork` or `Clear`, so filesystem mutation never runs
 through a stale shared generation. `Trunks.Close` releases the current hot
 generation; callers should use it when a trunk store has a shorter lifetime
 than the process.
@@ -241,20 +233,31 @@ removal while Windows still has segment handles open.
 Provides the trunk-level operations: `CreateTrunks` / `OpenTrunks`,
 `Head`, `Append`, `ForkAt` / `ForkTail`, `SpawnChild`, `Remove`,
 `OwnerTrunk`, `EnsureChannel`, `AppendChannel`, `SyncChannel`,
-`LatestChannelRecord`, `List` / `Nodes`. `EnsureChannel` runs under topology
-exclusion, backfills the manifest channel across existing nodes, installs its
-runtime sync policy, and retires shared hot generations before later opens.
-It writes and syncs `.xwal-channel-pending` before changing the channel tree;
-`Open` and `OpenTrunks` complete that plan idempotently, publish the final
-manifest only after backfill, then remove and sync the sentinel.
-For existing reducible nodes it reads the persisted `.fork` base and repairs
-only the watermark at that base, deriving its state from the parent. Existing
-watermarks are opened and their headers checked rather than trusted by name.
-Repairs write and fsync a temporary segment, atomically rename it, and sync the
-directory. The Windows two-rename fallback is guarded by a synced
-`.replace-pending` sentinel and recoverable `.invalid` backup. Missing or
-malformed branch markers are repaired only by `EnsureChannel`; forks fail
-closed.
+`LatestChannelRecord`, `List` / `Nodes`.
+
+`EnsureChannel` registers a channel: it creates the channel's root directory
+(and root watermark for a reducible channel) and then appends the manifest
+entry, under a per-root manifest mutex that `OpenTrunks` also holds while it
+settles the manifest. It
+writes no node directory, takes no topology mutation, retires no hot
+generation and does not wait on borrowed heads. It bumps a per-root
+registration counter; an open head that is asked for a channel it does not
+know re-reads the manifest only when that counter has moved. A
+`.xwal-channel-pending` sentinel left by an older build is recovered on open:
+an unpublished channel's half-built tree is removed and the channel is
+registered afresh; a published one only loses the sentinel.
+
+The root topology mutation guards what removes or rewrites directories a
+live head may read: `OpenTrunks`/`CreateTrunks`, `Refresh`, `Remove`,
+`RemoveStump`, `RemoveComponent`, and `Store.Clear`/`Store.TruncateFrom`.
+Flat forks, spawns, `Detach` and move imports take only the Trunks mutex
+(`beginFlatCreate`). Channel registration and a node's first write to a
+channel take neither.
+
+Existing reducible watermarks are opened and their headers checked rather than
+trusted by name. Repairs write and fsync a temporary segment, atomically rename
+it, and sync the directory. The Windows two-rename fallback is guarded by a
+synced `.replace-pending` sentinel and recoverable `.invalid` backup.
 `AppendChannel` and `SyncChannel` use the same per-lineage mutex.
 `LatestChannelRecord` scans backward from one immutable hot snapshot and
 stops after the newest record, including duplicate-main-LT checkpoints and

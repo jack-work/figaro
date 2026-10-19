@@ -77,7 +77,7 @@ func viewOf(t *testing.T, f *Trunks, trunk string) view {
 		if c.Last == 0 {
 			continue
 		}
-		err := x.chans[c.Name].mustLog().Range(1, func(idx uint64, frame []byte) error {
+		err := x.channel(c.Name).mustLog().Range(1, func(idx uint64, frame []byte) error {
 			v.Records[c.Name] = append(v.Records[c.Name], fmt.Sprintf("%d:%s", idx, frame))
 			return nil
 		})

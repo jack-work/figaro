@@ -89,7 +89,7 @@ func TestWorkload212c263aEnsureChannelRuntimePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !head.chans[spec.Name].opaque {
+	if !head.channel(spec.Name).opaque {
 		head.Close()
 		t.Fatal("turn-wal is not opaque")
 	}
@@ -131,7 +131,7 @@ func TestWorkload212c263aEnsureChannelRuntimePolicy(t *testing.T) {
 	if err := x.addChannel(added); err != nil {
 		t.Fatal(err)
 	}
-	if !x.chans[added.Name].opaque {
+	if !x.channel(added.Name).opaque {
 		t.Fatal("AddChannel did not apply opaque encoding")
 	}
 }

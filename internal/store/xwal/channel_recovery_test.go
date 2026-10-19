@@ -36,7 +36,7 @@ func TestOpenTrunksCompletesPendingChannelBeforeManifest(t *testing.T) {
 	}
 }
 
-func TestOpenTrunksCompletesPartialReducibleBackfill(t *testing.T) {
+func TestOpenTrunksRecoversALegacyPartialReducibleBackfill(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)
 	branch := f.head(trunk)
@@ -71,7 +71,7 @@ func TestOpenTrunksCompletesPartialReducibleBackfill(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := reopened.ForkTail(trunk); err != nil {
-		t.Fatalf("fork after recovered partial backfill: %v", err)
+		t.Fatalf("fork after a recovered legacy backfill: %v", err)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestReplacementRecoveryPhases(t *testing.T) {
 	})
 }
 
-func TestRootTopologyMutationRejectsPeerBorrowedHead(t *testing.T) {
+func TestChannelRegistrationDoesNotWaitOnAPeerHead(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	first, trunk := seedTrunk(t, dir)
 	peer, err := openTrunks(dir, trunksCfg())
@@ -166,22 +166,23 @@ func TestRootTopologyMutationRejectsPeerBorrowedHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Neither a creator nor a channel registration waits on a peer's borrowed
+	// head: neither rewrites anything that head is reading.
 	spec := ChannelSpec{Name: "turn-wal", Kind: ChannelLog, Opaque: true}
-	if err := first.ensureChannel(spec); !isTopologyTimeout(err) {
+	if err := first.ensureChannel(spec); err != nil {
 		head.Close()
-		t.Fatalf("EnsureChannel error = %v, want bounded-wait timeout", err)
+		t.Fatalf("EnsureChannel must not wait on a peer head: %v", err)
 	}
-	// A creator does not wait on a peer's borrowed head; only channel and
-	// destructive mutations, which rewrite what that head is reading, do.
 	if err := first.CreateStump("unblocked"); err != nil {
 		head.Close()
 		t.Fatalf("CreateStump must not wait on a peer head: %v", err)
 	}
+	if head.channel(spec.Name) == nil {
+		head.Close()
+		t.Fatal("the peer's open head did not adopt the registered channel")
+	}
 	if err := head.Close(); err != nil {
 		t.Fatal(err)
-	}
-	if err := first.ensureChannel(spec); err != nil {
-		t.Fatalf("EnsureChannel after peer release: %v", err)
 	}
 }
 

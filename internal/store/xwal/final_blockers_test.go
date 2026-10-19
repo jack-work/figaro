@@ -1,7 +1,6 @@
 package xwal
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -103,38 +102,34 @@ func TestDetachedHeadRetainsRootBorrowUntilClose(t *testing.T) {
 	}
 }
 
-func TestAddChannelRetiresPostPublicationGeneration(t *testing.T) {
+// Registering a channel retires nothing: an open hot head picks the channel
+// up from the manifest the first time it is asked for it.
+func TestAnOpenHeadAdoptsAChannelRegisteredAfterIt(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)
 	head, err := f.Head(trunk)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := head.Close(); err != nil {
-		t.Fatal(err)
-	}
-	x, err := Open(dir, f.cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer x.Close()
+	defer head.Close()
+	f.hotMu.Lock()
+	before := f.hot
+	f.hotMu.Unlock()
 	spec := ChannelSpec{Name: "translations/barrier", Kind: ChannelLog, Opaque: true}
-	if err := x.addChannel(spec); err != nil {
+	if err := f.ensureChannel(spec); err != nil {
 		t.Fatal(err)
 	}
 	f.hotMu.Lock()
-	hot := f.hot
+	after := f.hot
 	f.hotMu.Unlock()
-	if hot != nil {
-		t.Fatal("AddChannel left a pre-publication hot generation active")
+	if before == nil || after != before {
+		t.Fatal("registering a channel retired the hot generation")
 	}
-	head, err = f.Head(trunk)
-	if err != nil {
-		t.Fatal(err)
+	if head.channel(spec.Name) == nil {
+		t.Fatal("open head did not adopt the registered channel")
 	}
-	defer head.Close()
-	if head.chans[spec.Name] == nil {
-		t.Fatal("fresh hot generation did not observe added channel")
+	if _, err := f.AppendChannel(trunk, spec.Name, 1, opaquePayloadOne, nil); err != nil {
+		t.Fatalf("append through the adopting head: %v", err)
 	}
 }
 
@@ -172,7 +167,9 @@ func TestRepeatedEmptyReducibleForksKeepInheritedState(t *testing.T) {
 	}
 }
 
-func TestForkPreflightRepairsMissingRehomeMarker(t *testing.T) {
+// A node that never wrote a channel has no directory in it, and that is not
+// a damaged topology: forks of it and of its parent go ahead.
+func TestForkSucceedsOverAChannelNodeNeverWritten(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)
 	spec := ChannelSpec{Name: "turn-wal", Kind: ChannelLog, Opaque: true}
@@ -190,16 +187,13 @@ func TestForkPreflightRepairsMissingRehomeMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	altBranch := f.head(alt)
-	f.retireRootHot()
-	descendantDir := filepath.Join(dir, spec.Name, altBranch)
-	if err := os.Remove(filepath.Join(descendantDir, ".fork")); err != nil {
-		t.Fatal(err)
+	if pathExists(filepath.Join(dir, spec.Name, f.head(alt))) {
+		t.Fatal("a fork of a node with no channel directory wrote one")
 	}
 	if _, err := f.ForkAt(trunk, atMainLT); err != nil {
-		t.Fatalf("ForkAt after rehome marker repair: %v", err)
+		t.Fatalf("ForkAt over an unwritten channel node: %v", err)
 	}
-	if pathExists(filepath.Join(dir, channelPendingName)) {
-		t.Fatal("rehome marker repair left a pending channel plan")
+	if _, err := f.ForkTail(alt); err != nil {
+		t.Fatalf("ForkTail of a fork with no channel node: %v", err)
 	}
 }

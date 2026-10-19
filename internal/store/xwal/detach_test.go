@@ -19,7 +19,7 @@ func mainLTs(t *testing.T, f *Trunks, trunk TrunkID) []uint64 {
 	}
 	defer x.Close()
 	var out []uint64
-	ch := x.chans[f.main]
+	ch := x.channel(f.main)
 	if err := ch.mustLog().Range(1, func(idx uint64, _ []byte) error {
 		out = append(out, idx)
 		return nil

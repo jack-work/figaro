@@ -81,7 +81,7 @@ func TestFlatForkInheritsPrefix(t *testing.T) {
 	if got := mainTail(x); got < 3 {
 		t.Fatalf("child tail = %d, want >= 3: the prefix is not visible", got)
 	}
-	if _, err := x.chans[f.main].mustLog().Read(2); err != nil {
+	if _, err := x.channel(f.main).mustLog().Read(2); err != nil {
 		t.Fatalf("child cannot read shared LT 2: %v", err)
 	}
 }
@@ -116,7 +116,7 @@ func TestResplitBelowForksTheOwner(t *testing.T) {
 	}
 	defer x.Close()
 	for i := uint64(1); i <= at; i++ {
-		if _, err := x.chans[f.main].mustLog().Read(i); err != nil {
+		if _, err := x.channel(f.main).mustLog().Read(i); err != nil {
 			t.Fatalf("shared prefix LT %d unreadable: %v", i, err)
 		}
 	}
@@ -334,7 +334,7 @@ func TestInteriorForkDropsRelatedRecordsPastTheForkPoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer x.Close()
-	ch := x.chans["translations"]
+	ch := x.channel("translations")
 	last := ch.mustLog().LastIndex()
 	if last == 0 {
 		return // nothing inherited at all is fine
@@ -380,7 +380,7 @@ func TestTailForkDropsRelatedRecordsAheadOfMain(t *testing.T) {
 	}
 	defer x.Close()
 	mainTailLT := mainTail(x)
-	ch := x.chans["translations"]
+	ch := x.channel("translations")
 	if err := ch.mustLog().Range(1, func(idx uint64, payload []byte) error {
 		m, derr := decodeMainLT(payload)
 		if derr != nil {

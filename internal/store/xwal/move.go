@@ -176,7 +176,7 @@ func (t *Trunks) exportTop(e *Export) error {
 	}
 	defer x.Close()
 	for _, c := range x.Channels() {
-		ch := x.chans[c.Name]
+		ch := x.channel(c.Name)
 		if _, err := os.Stat(filepath.Join(t.root, c.Name, fsName(top))); os.IsNotExist(err) {
 			continue
 		} else if err != nil {

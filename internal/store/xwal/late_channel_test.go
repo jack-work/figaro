@@ -9,8 +9,8 @@ import (
 // An ancestor can lack a directory in a channel (added after it existed, or
 // cleared). Opening that ancestor's log would create it, and an empty log
 // owns its numbering from 1, severing the reader from everything above.
-// The state is constructed: creating a channel backfills every node, so no
-// ordinary sequence of calls leaves the gap.
+// The state is constructed: a fork gives the child a directory whenever the
+// parent has one, so no ordinary sequence of calls leaves the gap.
 func TestAMissingAncestorChannelDirIsPassedThroughNotCreated(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenStore(dir, testStoreOptions())
