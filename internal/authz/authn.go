@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -259,6 +261,10 @@ func (is *Issuers) SetTroupe(cfgs []config.IssuerConfig) error {
 			errs = append(errs, fmt.Errorf("troupe issuer %q: a troupe names only https issuers", cfg.Issuer))
 			continue
 		}
+		if err := checkTroupeClients(cfg); err != nil {
+			errs = append(errs, err)
+			continue
+		}
 		iss, err := newIssuer(cfg, is.client, is.now)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("troupe %w", err))
@@ -277,6 +283,15 @@ func (is *Issuers) SetTroupe(cfgs []config.IssuerConfig) error {
 	}
 	is.publish(troupe)
 	return errors.Join(errs...)
+}
+
+func checkTroupeClients(cfg config.IssuerConfig) error {
+	for _, id := range slices.Sorted(maps.Keys(cfg.Clients)) {
+		if k := jkauthz.Kind(cfg.Clients[id]); k != jkauthz.KindUser && k != KindService {
+			return fmt.Errorf("troupe issuer %s: clients.%s resolves to %q; a troupe issuer names only users and services", cfg.Issuer, id, k)
+		}
+	}
+	return nil
 }
 
 func (is *Issuers) Empty() bool { return len(is.set.Load().byURL) == 0 }

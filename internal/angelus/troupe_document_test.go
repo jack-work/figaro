@@ -20,7 +20,7 @@ principals = ["user:ana@id.example.org"]
 [[issuers]]
 issuer = "https://id.example.org"
 jwks = "https://id.example.org/jwks"
-clients = { box = "sandbox" }
+clients = { box = "service" }
 `
 
 // A node that opts out of troupe issuers takes the troupe's grants but

@@ -663,15 +663,23 @@ func TestTroupeIssuersAddToTheLocalOnesAndNeverReplaceThem(t *testing.T) {
 		t.Fatal("an issuer no one named was trusted")
 	}
 
+	guestsConfig := guests.config()
+	guestsConfig.Clients = map[string]string{"build-bot": "service"}
+	asNode := guests.config()
+	asNode.Issuer = "https://id.example.org/realms/nodes"
+	asNode.Clients = map[string]string{"bot": "service", "peer": "node"}
 	hijack := a.config()
 	hijack.JWKS = guests.jwks.URL
-	plain := guests.config()
+	plain := guestsConfig
 	plain.Issuer = "http://id.example.org/plain"
-	collide := guests.config()
+	collide := guestsConfig
 	collide.Issuer = kelliher + "/"
-	err = is.SetTroupe([]config.IssuerConfig{guests.config(), hijack, plain, collide})
-	if err == nil || !strings.Contains(err.Error(), "only https") || !strings.Contains(err.Error(), "already does") {
-		t.Fatalf("an http issuer or a scope this node owns was not refused: %v", err)
+	err = is.SetTroupe([]config.IssuerConfig{guestsConfig, hijack, plain, collide, asNode})
+	if err == nil || !strings.Contains(err.Error(), "only https") || !strings.Contains(err.Error(), "already does") || !strings.Contains(err.Error(), "only users and services") {
+		t.Fatalf("an http issuer, a scope this node owns or a client resolving to a node was not refused: %v", err)
+	}
+	if is.set.Load().byURL[asNode.Issuer] != nil {
+		t.Fatal("an issuer with a client resolving to a node was taken up")
 	}
 	s, err := is.Open(ctx, tok)
 	if err != nil {

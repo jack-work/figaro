@@ -281,7 +281,10 @@ func LocalOnly(verb rpc.Verb, r Resource) bool {
 	return false
 }
 
-const KindTroupe jkauthz.Kind = "troupe"
+const (
+	KindTroupe  jkauthz.Kind = "troupe"
+	KindService jkauthz.Kind = "service"
+)
 
 func TroupePrincipal(name string) jkauthz.Principal {
 	return jkauthz.Principal{Kind: KindTroupe, ID: name}

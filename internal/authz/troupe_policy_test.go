@@ -124,7 +124,7 @@ func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 		everything,
 		"[roles.j]\ngrants = [{ verbs = [\"join\"], on = [\"troupe:estate\"] }]\n",
 		"[roles.s]\ngrants = [{ verbs = [\"use\"], on = [\"sandbox:dev-3\"] }]\n",
-		everything + "\n[[issuers]]\nissuer = \"https://id.example.org\"\njwks = \"https://id.example.org/jwks\"\nclients = { x = \"sandbox\" }\n",
+		everything + "\n[[issuers]]\nissuer = \"https://id.example.org\"\njwks = \"https://id.example.org/jwks\"\nclients = { x = \"service\" }\n",
 	}
 	for _, body := range ok {
 		if err := CheckTroupeDocument([]byte(body), "estate", nil); err != nil {
@@ -136,8 +136,11 @@ func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 		"admin on the troupe":       "[roles.a]\ngrants = [{ verbs = [\"admin\"], on = [\"troupe:estate\"] }]\n",
 		"every verb on the troupe":  "[roles.a]\ngrants = [{ verbs = [\"*\"], on = [\"troupe:estate\"] }]\n",
 		"binding the troupe itself": everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"troupe:estate\"]\n",
-		"an http issuer":            everything + "\n[[issuers]]\nissuer = \"http://id.example.org\"\njwks = \"http://j\"\nclients = { x = \"sandbox\" }\n",
+		"an http issuer":            everything + "\n[[issuers]]\nissuer = \"http://id.example.org\"\njwks = \"http://j\"\nclients = { x = \"service\" }\n",
 		"an unknown verb":           "[roles.x]\ngrants = [{ verbs = [\"fly\"], on = [\"*\"] }]\n",
+	}
+	for _, kind := range []string{"node", "sandbox", "troupe", "robot"} {
+		bad["a client resolved to "+kind] = everything + "\n[[issuers]]\nissuer = \"https://id.example.org\"\njwks = \"https://id.example.org/jwks\"\nclients = { a = \"user\", x = \"" + kind + "\" }\n"
 	}
 	for name, body := range bad {
 		if err := CheckTroupeDocument([]byte(body), "estate", nil); err == nil {

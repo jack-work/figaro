@@ -73,6 +73,9 @@ func CheckTroupeDocument(body []byte, troupe string, facts Facts) error {
 		if _, err := IssuerScope(is.Issuer); err != nil {
 			return fmt.Errorf("troupe policy: %w", err)
 		}
+		if err := checkTroupeClients(is); err != nil {
+			return fmt.Errorf("troupe policy: %w", err)
+		}
 	}
 	var grants struct {
 		Roles map[string]struct {
