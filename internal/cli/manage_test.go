@@ -156,7 +156,7 @@ func TestListScopeCaretPastTheRootClampsAndSaysSo(t *testing.T) {
 	if root != "aaaa1111" {
 		t.Fatalf("root = %q, want the top-level aria aaaa1111", root)
 	}
-	if !strings.Contains(note, "aaaa1111") {
+	if !strings.Contains(note, ariaName("aaaa1111")) {
 		t.Fatalf("clamping is silent: note = %q", note)
 	}
 }

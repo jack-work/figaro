@@ -59,7 +59,7 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(map[string]any{
 			"form_id": resp.FormID,
-			"handle":  ariaName(resp.FormID),
+			"handle":  ariaHandle(resp.FormID),
 			"version": resp.Version,
 			"parent":  parent,
 		})

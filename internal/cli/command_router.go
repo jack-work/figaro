@@ -268,7 +268,7 @@ func (in *interactiveInput) chooseModel(c modelChoice) {
 		in.noteErr("models: " + wireErrorText(err))
 		return
 	}
-	in.note(fmt.Sprintf("model: %s (%s) on %s", c.model, c.provider, id))
+	in.note(fmt.Sprintf("model: %s (%s) on %s", c.model, c.provider, ariaName(id)))
 }
 
 func mustJSON(s string) json.RawMessage {

@@ -30,7 +30,7 @@ func inputHeader(seg aria.InquirySegment) string {
 
 func senderLabel(sender, name string) string {
 	id, legacy := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
-	if name != "" {
+	if name != "" && shownIDs == idsAsHandles {
 		return "figaro " + name
 	}
 	if rpc.IsHexID(id) && len(strings.TrimPrefix(id, "@")) >= rpc.OldIDLen {

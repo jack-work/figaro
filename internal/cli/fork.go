@@ -141,7 +141,7 @@ func runForkPrompt(loaded *config.Loaded, plan forkPlan) {
 				Mode         string `json:"mode"`
 			}{
 				AriaID:       out.Alternative,
-				Handle:       ariaName(out.Alternative),
+				Handle:       ariaHandle(out.Alternative),
 				Parent:       out.Parent,
 				Continuation: out.Continuation,
 				Alternative:  out.Alternative,

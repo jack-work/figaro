@@ -670,7 +670,7 @@ func climbFrom(figs []rpc.FigaroInfoResponse, boundID string, n int) (string, st
 		for _, f := range figs {
 			if len(f.Vector) == d && hasVecPrefix(vec[:d], f.Vector) {
 				if clamped {
-					return f.ID, fmt.Sprintf("^%d passes the root: scoped to the top-level aria %s", n, f.ID), nil
+					return f.ID, fmt.Sprintf("^%d passes the root: scoped to the top-level aria %s", n, ariaName(f.ID)), nil
 				}
 				return f.ID, "", nil
 			}

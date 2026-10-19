@@ -17,7 +17,7 @@ var (
 )
 
 func applyUserKeys(f keyconf.File) []compileDiag {
-	if f.Empty() {
+	if !f.HasBindings() {
 		liveLayers, liveRows, userKeyDiags, userTouchedHelp = defaultLayers, keymap, nil, map[helpID]bool{}
 		buildKeyIndex()
 		return nil

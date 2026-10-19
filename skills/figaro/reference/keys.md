@@ -63,6 +63,10 @@ never in the `:` line, the `/` box or a y/n question. `M-e =
 ":toggle system.methods.enabled"` turns the reasoning-effort method off and
 on again ([methods.md](methods.md)).
 
+One table is not about keys: `[display]` with `ids = "handle"` (the default)
+or `ids = "short"` chooses how every aria name you read is spelled. Bindings
+edits and `figaro keys reset` keep it.
+
 Keys are spelled as the help panel prints them: `j`, `^D`, `M-m`, `Tab`, `Esc`,
 `Enter`, `Space`, `Up`, `PgDn`, `Home`. `^X` claims both encodings a terminal
 may send (the control byte and its CSI-u report). Several keys in one entry are

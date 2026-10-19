@@ -632,7 +632,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 			AriaID string `json:"aria_id"`
 			Handle string `json:"handle"`
 			Mode   string `json:"mode"`
-		}{AriaID: ariaID, Handle: ariaName(ariaID), Mode: "forget"})
+		}{AriaID: ariaID, Handle: ariaHandle(ariaID), Mode: "forget"})
 		return
 	}
 	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaName(ariaID), ariaName(ariaID))

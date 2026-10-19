@@ -86,7 +86,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 			AriaID string `json:"aria_id"`
 			Handle string `json:"handle"`
 			Mode   string `json:"mode"`
-		}{AriaID: figaroID, Handle: ariaName(figaroID), Mode: "new"})
+		}{AriaID: figaroID, Handle: ariaHandle(figaroID), Mode: "new"})
 		return
 	}
 
@@ -177,7 +177,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			Mode         string `json:"mode"`
 		}{
 			AriaID:       target,
-			Handle:       ariaName(target),
+			Handle:       ariaHandle(target),
 			Parent:       fr.Parent,
 			Alternative:  fr.Alternative,
 			Continuation: fr.Continuation,
@@ -241,7 +241,7 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 			AriaID string `json:"aria_id"`
 			Handle string `json:"handle"`
 			Mode   string `json:"mode"`
-		}{AriaID: figaroID, Handle: ariaName(figaroID), Mode: "new"})
+		}{AriaID: figaroID, Handle: ariaHandle(figaroID), Mode: "new"})
 		return
 	}
 	dressed := "the default outfit"

@@ -57,6 +57,7 @@ func Run(progName string, args []string) {
 	if len(args) > 0 && args[0] == "__complete" {
 		loaded, _ := config.Load(config.DefaultConfigDir())
 		if loaded != nil {
+			loadDisplayQuietly(loaded)
 			boot.DeclareProviders(loaded)
 			if s, err := loaded.RefSigil(); err == nil {
 				SetRefSigil(s)
@@ -77,7 +78,7 @@ func Run(progName string, args []string) {
 		SetRefSigil(sigil)
 	}
 
-	loadUserKeys(loaded)
+	loadKeysFile(loaded)
 
 	initBindingPolicy()
 	args = extractNoBindFlag(args)

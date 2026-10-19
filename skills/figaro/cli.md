@@ -193,6 +193,9 @@ naming both. `ls`, the status bar and every "attending" line show the handle;
 `id`, `short` and `handle`. Tab completes handles, newest first, 50 at a
 time until you type; typed hex completes to full ids instead.
 
+`[display] ids = "short"` in `keys.toml` shows the five-digit hex instead of
+the handle wherever a person reads a name; `-j` fields are unchanged.
+
 ## Branching
 
 | Command | Effect |

@@ -10,6 +10,7 @@ import (
 
 	figaro "github.com/jack-work/figaro"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/keyconf"
 )
 
 // init installs the embedded example byte for byte, and will not overwrite a
@@ -39,5 +40,25 @@ func TestKeysInitWritesTheShippedExample(t *testing.T) {
 	}
 	if after, _ := os.ReadFile(filepath.Join(dir, "keys.toml")); !bytes.Equal(after, got) {
 		t.Fatal("a refused init changed the file")
+	}
+}
+
+// reset forgets the bindings; the display table is not a binding.
+func TestKeysResetKeepsDisplay(t *testing.T) {
+	dir := t.TempDir()
+	loaded := &config.Loaded{ConfigDir: dir}
+	old := stdout
+	stdout = &bytes.Buffer{}
+	t.Cleanup(func() { stdout = old; applyUserKeys(keyconf.File{}) })
+	path := filepath.Join(dir, "keys.toml")
+	if err := os.WriteFile(path, []byte("[display]\nids = \"short\"\n\n[bind.user]\nJ = \"half-down\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runKeys(loaded, []string{"reset"}); err != nil {
+		t.Fatal(err)
+	}
+	f, _, err := keyconf.Load(path)
+	if err != nil || f.HasBindings() || f.Display.IDs != "short" {
+		t.Fatalf("after reset: %+v %v", f, err)
 	}
 }
