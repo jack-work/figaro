@@ -2,10 +2,12 @@ package troupe
 
 import (
 	"crypto"
+	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -53,6 +55,10 @@ func (e Entry) apiKeyMessage() []byte {
 
 func SignAPIKey(key crypto.Signer, inter *x509.Certificate, troupe, id, principal string, hash []byte, notAfter time.Time, nodes []string, by string, at time.Time) (Entry, error) {
 	return sign(Entry{Kind: APIKey, Troupe: troupe, Node: IntermediateNode(inter), Key: id, Principal: principal, Hash: hash, NotAfter: notAfter.UnixMilli(), Nodes: nodes, By: by, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
+}
+
+func SignRootAPIKey(root ed25519.PrivateKey, troupe, id, principal string, hash []byte, notAfter time.Time, nodes []string, by string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: APIKey, Troupe: troupe, Key: id, Principal: principal, Hash: hash, NotAfter: notAfter.UnixMilli(), Nodes: nodes, By: by, At: at.UnixMilli()}, root)
 }
 
 func CheckAudience(nodes []string) error {
@@ -116,8 +122,14 @@ func verifyAPIKey(v verified, root *x509.Certificate, at time.Time) (crypto.Publ
 	if e.NotAfter <= e.At || time.Duration(e.NotAfter-e.At)*time.Millisecond > apikey.MaxTTL {
 		return nil, fmt.Errorf("an apikey expires after it is minted and within %s", apikey.MaxTTL)
 	}
+	if len(v.chain) == 0 {
+		if e.Node != "" {
+			return nil, errors.New("an apikey the root signs names no node")
+		}
+		return root.PublicKey, nil
+	}
 	if len(v.chain) != 1 {
-		return nil, errors.New("an apikey carries the signing intermediate alone")
+		return nil, errors.New("an apikey carries the signing intermediate alone, or nothing when the root signs it")
 	}
 	inter := v.chain[0]
 	if !inter.IsCA || inter.MaxPathLen != 0 || IntermediateNode(inter) != e.Node {
@@ -164,7 +176,13 @@ func (r APIKeyRecord) Live(now time.Time) bool {
 	return r.Revoked == nil && r.Void == "" && now.Before(r.NotAfter)
 }
 
-func (l *Ledger) apiKeyView(ids []string, gone map[string]Kind) map[string]APIKeyRecord {
+const RootSigner = "root"
+
+func (l *Ledger) apiKeyView(ids []string, gone map[string]Kind, policy *Entry) map[string]APIKeyRecord {
+	var setters []string
+	if policy != nil {
+		setters, _ = PolicySetters(policy.Body)
+	}
 	out := map[string]APIKeyRecord{}
 	clash := map[string]bool{}
 	for _, id := range ids {
@@ -177,8 +195,15 @@ func (l *Ledger) apiKeyView(ids []string, gone map[string]Kind) map[string]APIKe
 			continue
 		}
 		r := APIKeyRecord{ID: e.Key, Principal: e.Principal, Hash: e.Hash, NotAfter: e.Expires(), Nodes: e.Nodes, By: e.By, Signer: e.Node, At: e.Time()}
-		if gone[e.Node] == Revoke {
+		switch {
+		case e.RootSigned():
+			r.Signer = RootSigner
+		case gone[e.Node] == Revoke:
 			r.Void = "its signer " + e.Node + " is revoked by the root"
+		case policy == nil:
+			r.Void = "no troupe policy is in force to name its signer " + e.Node + " a setter"
+		case !slices.Contains(setters, e.Node):
+			r.Void = fmt.Sprintf("its signer %s is not a setter in policy version %d", e.Node, policy.Version)
 		}
 		out[e.Key] = r
 	}

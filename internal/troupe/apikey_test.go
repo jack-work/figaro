@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,17 @@ func (s *estate) mint(by, principal string, at, ttl time.Duration) (Entry, apike
 	return e, k
 }
 
+func (s *estate) setters(version uint64, nodes ...string) Entry {
+	s.t.Helper()
+	quoted := make([]string, len(nodes))
+	for i, n := range nodes {
+		quoted[i] = fmt.Sprintf("%q", n)
+	}
+	e, err := SignRootPolicy(s.rk, "estate", version, "root:estate", "setters = ["+strings.Join(quoted, ", ")+"]\n", s.now.Add(time.Duration(version)*time.Millisecond))
+	require.NoError(s.t, err)
+	return e
+}
+
 func (s *estate) revokeKey(node, issuer, id string, at time.Duration) Entry {
 	s.t.Helper()
 	k := newKey(s.t)
@@ -34,7 +46,7 @@ func TestAMintedKeyIsLiveUntilItExpires(t *testing.T) {
 	s := newEstate(t)
 	s.intermediate("a")
 	e, k := s.mint("a", "service:ci@troupe:estate", 0, time.Hour)
-	v := s.ledger(e).View()
+	v := s.ledger(s.setters(1, "a"), e).View()
 	r, ok := v.APIKeys[k.ID]
 	require.True(t, ok)
 	require.Equal(t, "service:ci@troupe:estate", r.Principal)
@@ -150,7 +162,7 @@ func TestARootRevokeVoidsTheKeysItsNodeSigned(t *testing.T) {
 	s.intermediate("b")
 	ea, ka := s.mint("a", "service:ci@troupe:estate", 0, time.Hour)
 	eb, kb := s.mint("b", "service:cd@troupe:estate", 0, time.Hour)
-	v := s.ledger(ea, eb, s.revoke("b", time.Minute)).View()
+	v := s.ledger(s.setters(1, "a", "b"), ea, eb, s.revoke("b", time.Minute)).View()
 	require.True(t, v.APIKeys[ka.ID].Live(s.now))
 	require.False(t, v.APIKeys[kb.ID].Live(s.now))
 	require.NotEmpty(t, v.APIKeys[kb.ID].Void)
@@ -256,4 +268,50 @@ func TestAKeysAudienceIsCheckedAndSigned(t *testing.T) {
 	r.Nodes = []string{"a"}
 	_, err = NewLedger("estate", s.root).Merge(r)
 	require.Error(t, err, "a revoke carries no audience")
+}
+
+// A key counts only when the root signs it or a setter of the policy in
+// force does: an intermediate the policy does not name cannot mint for a
+// principal the policy grants, and a node that stops being a setter takes
+// its keys with it.
+func TestOnlyTheRootOrASetterMintsAKeyThatCounts(t *testing.T) {
+	s := newEstate(t)
+	s.intermediate("a")
+	s.intermediate("b")
+	byA, ka := s.mint("a", "service:ci@troupe:estate", 0, time.Hour)
+	byB, kb := s.mint("b", "service:ci@troupe:estate", 0, time.Hour)
+	_, kr, err := apikey.New(rand.Reader)
+	require.NoError(t, err)
+	byRoot, err := SignRootAPIKey(s.rk, "estate", kr.ID, "service:ci@troupe:estate", kr.Hash[:], s.now.Add(time.Hour), []string{apikey.AllNodes}, "root:estate", s.now)
+	require.NoError(t, err)
+
+	v := s.ledger(byA, byB, byRoot).View()
+	require.Contains(t, v.APIKeys[ka.ID].Void, "no troupe policy")
+	require.False(t, v.APIKeys[kb.ID].Live(s.now))
+	require.True(t, v.APIKeys[kr.ID].Live(s.now), "the root needs no setter")
+	require.Equal(t, RootSigner, v.APIKeys[kr.ID].Signer)
+
+	l := s.ledger(s.setters(1, "a"), byA, byB, byRoot)
+	v = l.View()
+	require.True(t, v.APIKeys[ka.ID].Live(s.now))
+	require.Contains(t, v.APIKeys[kb.ID].Void, "not a setter in policy version 1")
+	require.True(t, v.APIKeys[kr.ID].Live(s.now))
+
+	before := v.KeysDigest
+	_, err = l.Merge(s.setters(2, "b"))
+	require.NoError(t, err)
+	v = l.View()
+	require.False(t, v.APIKeys[ka.ID].Live(s.now), "a is no longer a setter")
+	require.True(t, v.APIKeys[kb.ID].Live(s.now))
+	require.NotEqual(t, before, v.KeysDigest, "key watchers hear of a change of setters")
+
+	forged := byRoot
+	forged.Chain = byA.Chain
+	_, err = NewLedger("estate", s.root).Merge(forged)
+	require.Error(t, err)
+	named, err := SignRootAPIKey(s.rk, "estate", kr.ID, "service:ci@troupe:estate", kr.Hash[:], s.now.Add(time.Hour), []string{apikey.AllNodes}, "root:estate", s.now)
+	require.NoError(t, err)
+	named.Node = "a"
+	_, err = NewLedger("estate", s.root).Merge(named)
+	require.Error(t, err, "a root-signed key names no node")
 }

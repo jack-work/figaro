@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,7 +28,21 @@ type keyRig struct {
 
 func newKeyRig(t *testing.T, intermediate bool) *keyRig {
 	r := newSignRig(t, intermediate)
-	return &keyRig{signRig: r, hs: NewHandlers(ServerConfig{Angelus: r.a, Config: &config.Loaded{}, Ctx: context.Background()})}
+	k := &keyRig{signRig: r, hs: NewHandlers(ServerConfig{Angelus: r.a, Config: &config.Loaded{}, Ctx: context.Background()})}
+	k.setters(1, r.a.Backend.NodeID())
+	return k
+}
+
+func (r *keyRig) setters(version uint64, nodes ...string) {
+	r.t.Helper()
+	body := "setters = []\n"
+	if len(nodes) > 0 {
+		body = "setters = [\"" + strings.Join(nodes, "\", \"") + "\"]\n"
+	}
+	e, err := troupe.SignRootPolicy(r.rk, "estate", version, "root:estate", body, time.Now().Add(time.Duration(version)*time.Millisecond))
+	require.NoError(r.t, err)
+	_, err = r.a.Peers.(*peer.Ledger).Merge(e)
+	require.NoError(r.t, err)
 }
 
 func (r *keyRig) do(ctx context.Context, method string, req any) (any, error) {
@@ -205,4 +220,14 @@ func TestAKeyNamesTheNodesItIsGoodOn(t *testing.T) {
 	for _, k := range r.list(as("0")).Keys {
 		require.NotEmpty(t, k.Nodes)
 	}
+}
+
+// A node the policy in force does not name a setter refuses to mint, since
+// what it signed would not count anywhere.
+func TestANodeThatIsNotASetterRefusesToMint(t *testing.T) {
+	r := newKeyRig(t, true)
+	r.setters(2, "node-elsewhere")
+	_, _, err := r.mint(as("0"), "service:ci@troupe:estate", time.Hour)
+	require.ErrorContains(t, err, "not a setter in policy version 2")
+	require.ErrorContains(t, err, "node-elsewhere")
 }

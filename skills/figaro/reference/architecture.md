@@ -759,9 +759,15 @@ intermediate signs an `apikey` ledger entry: the id, the principal, the hash,
 good on, the admin who asked (`by`) and the signing node. A leaf-only node
 refuses and names the signers. The nodes are a sorted list of node ids, or
 `*` for all of them; the minting node alone unless `--nodes` names others.
+A key counts only when the root signs it or its signer is a setter in the
+policy version in force, the rule policy versions follow: troupe policy
+grants a key's principal by name, so a key from any other intermediate would
+carry those grants. A node that is not a setter refuses to mint, and a key
+whose signer stops being a setter stops counting.
 `troupe.apikey.revoke` is open to the minter, the key's own principal (a
 leaked key can revoke itself) or a troupe admin. The serving node signs an
-`apikey-revoke` with its leaf. A revoke beats its key in any order, and a root
+`apikey-revoke` with its leaf, and any member's leaf will do: a rogue
+member can revoke keys, which denies service and grants nothing. A revoke beats its key in any order, and a root
 revoke of the signer voids the keys it signed, as does a second entry under
 the same id. Both are spread before the call returns and logged as
 structured events (id, principal, by, node). `troupe.apikey.ls` lists every

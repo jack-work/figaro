@@ -439,9 +439,12 @@ func (l *Ledger) rebuild() {
 	}
 	w := walkPolicies(policies)
 	v.Policy, v.Rivals, v.Refused = w.adopted, w.rivals, w.refused
-	v.APIKeys = l.apiKeyView(ids, v.Gone)
+	v.APIKeys = l.apiKeyView(ids, v.Gone, v.Policy)
 	if len(ids) > 0 {
 		h, k := sha256.New(), sha256.New()
+		if v.Policy != nil {
+			k.Write([]byte(v.Policy.ID()))
+		}
 		for _, id := range ids {
 			h.Write([]byte(id))
 			if kind := l.entries[id].Kind; isKeyKind(kind) || kind == Revoke {

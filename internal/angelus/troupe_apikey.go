@@ -80,6 +80,9 @@ func (h *handlers) troupeAPIKeyMint(ctx context.Context, params json.RawMessage)
 	if err != nil {
 		return nil, err
 	}
+	if err := mintsKeys(m); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	inter, ikey, err := h.angelus.Troupe.Dir.Intermediate()
 	if errors.Is(err, fs.ErrNotExist) || err == nil && !now.Before(inter.NotAfter) {
@@ -180,6 +183,21 @@ func (h *handlers) troupeAPIKeyList(ctx context.Context, params json.RawMessage)
 		return cmp.Or(cmp.Compare(a.MintedAt, b.MintedAt), cmp.Compare(a.ID, b.ID))
 	})
 	return out, nil
+}
+
+func mintsKeys(m *peer.Ledger) error {
+	in := m.View().Policy
+	if in == nil {
+		return fmt.Errorf("troupe %s has no policy in force, so no node's key counts; the root sets one naming setters", m.Troupe())
+	}
+	setters, _ := troupe.PolicySetters(in.Body)
+	if slices.Contains(setters, m.Self()) {
+		return nil
+	}
+	if len(setters) == 0 {
+		return fmt.Errorf("policy version %d names no setters, so no node's key counts", in.Version)
+	}
+	return fmt.Errorf("node %s is not a setter in policy version %d, so a key it signed would not count; mint on one that is: %s", m.Self(), in.Version, strings.Join(setters, ", "))
 }
 
 func keyAudience(m *peer.Ledger, asked []string) ([]string, error) {

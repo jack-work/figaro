@@ -42,7 +42,9 @@ func SignRootPolicy(root ed25519.PrivateKey, troupe string, version uint64, by, 
 	return sign(Entry{Kind: Policy, Troupe: troupe, Version: version, By: by, Body: body, At: at.UnixMilli()}, root)
 }
 
-func (e Entry) RootSigned() bool { return e.Kind == Policy && len(e.Chain) == 0 }
+func (e Entry) RootSigned() bool {
+	return (e.Kind == Policy || e.Kind == APIKey) && len(e.Chain) == 0
+}
 
 func PolicySetters(body string) ([]string, error) {
 	var doc struct {
