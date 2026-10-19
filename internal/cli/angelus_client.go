@@ -57,10 +57,7 @@ func refuseSelfSpawn(exe string) {
 	}
 }
 
-func isTestBinary(exe string) bool {
-	base := strings.TrimSuffix(filepath.Base(exe), ".exe")
-	return strings.HasSuffix(base, ".test")
-}
+func isTestBinary(exe string) bool { return boot.IsTestBinary(exe) }
 
 func ensureAngelus() {
 	if d := resolveDoor(); d.configured {

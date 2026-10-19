@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -60,6 +61,12 @@ func HushAgentTTL() time.Duration {
 
 var errHushDirWithoutApp = errors.New("FIGARO_HUSH_DIR is set without FIGARO_HUSH_APP: an isolated vault would save its passphrase over the real keyring entry figaro:default")
 
+var ErrHushAgentFromTestBinary = errors.New("refusing to start a hush agent from a test binary: the agent re-executes os.Executable(), which would rerun the tests and spawn again")
+
+func IsTestBinary(exe string) bool {
+	return strings.HasSuffix(strings.TrimSuffix(filepath.Base(exe), ".exe"), ".test")
+}
+
 func HushAppName() (string, error) {
 	if app := os.Getenv("FIGARO_HUSH_APP"); app != "" {
 		return app, nil
@@ -85,9 +92,9 @@ func Hush() (*managed.Hush, error) {
 			// HUSH_TTL in its env carries the TTL.
 			AgentEnv: []string{"HUSH_TTL=" + ttl.String()},
 			PromptPassphrase: func() ([]byte, error) {
-				// A preset passphrase is honoured only for an
-				// isolated embedded hush, never the user's
-				// keystore.
+				if exe, err := os.Executable(); err == nil && IsTestBinary(exe) {
+					return nil, fmt.Errorf("%w (%s)", ErrHushAgentFromTestBinary, filepath.Base(exe))
+				}
 				if pass := os.Getenv("FIGARO_HUSH_PASSPHRASE"); pass != "" && os.Getenv("FIGARO_HUSH_DIR") != "" {
 					return []byte(pass), nil
 				}
