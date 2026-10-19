@@ -28,6 +28,7 @@ var (
 	ErrCodecMismatch   = errors.New("log directory contains segments with a different codec")
 	ErrPayloadTooLarge = errors.New("payload too large for segment size")
 	ErrReadOnly        = errors.New("log is read-only (branch point with child forks)")
+	ErrAbsent          = errors.New("log directory does not exist")
 	ErrForkMismatch    = errors.New(".fork base starts before the first segment")
 	ErrBelowForkBase   = errors.New("cut below the fork base: the prefix is the parent's")
 	errRangeBoundary   = errors.New("range reached fork boundary")
@@ -46,6 +47,7 @@ type Options struct {
 	// segment from the previous header (nil for the first) and the sealed
 	// payloads. Stored verbatim; the fold lives in the caller.
 	OnSegmentOpen func(prevHeader []byte, sealed [][]byte) ([]byte, error)
+	MayBeAbsent   bool
 }
 
 type Log struct {
@@ -60,6 +62,7 @@ type Log struct {
 	ownsParent bool
 	forkBase   uint64 // first index this log owns; 0 if not a fork
 	readOnly   bool   // true when the dir has child subdirs (branch point)
+	absent     bool
 }
 
 // SyncDir fsyncs a directory where the platform supports it.
@@ -68,6 +71,13 @@ func SyncDir(dir string) error { return syncDir(dir) }
 func Open(dir string, opts Options) (*Log, error) {
 	if opts.SegmentSize == 0 {
 		opts.SegmentSize = defaultSegSize
+	}
+	if opts.MayBeAbsent {
+		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+			return openAbsent(dir, opts), nil
+		} else if err != nil {
+			return nil, err
+		}
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
@@ -169,6 +179,22 @@ func Open(dir string, opts Options) (*Log, error) {
 	return l, nil
 }
 
+func openAbsent(dir string, opts Options) *Log {
+	if opts.Codec == nil {
+		opts.Codec = segment.BinaryCodec{}
+	}
+	return &Log{
+		dir:      dir,
+		opts:     opts,
+		codec:    opts.Codec,
+		ext:      opts.Codec.FileExt(),
+		readOnly: true,
+		absent:   true,
+	}
+}
+
+func (l *Log) Absent() bool { return l.absent }
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -180,6 +206,9 @@ func (l *Log) Write(idx uint64, payload []byte) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if l.absent {
+		return fmt.Errorf("%w: %s", ErrAbsent, l.dir)
+	}
 	if l.readOnly {
 		return fmt.Errorf("%w: %s", ErrReadOnly, l.dir)
 	}

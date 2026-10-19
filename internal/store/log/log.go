@@ -342,6 +342,8 @@ func (l *Log) Disk() *disk.Log { return l.inner }
 // ForkBase returns the first index this log owns, or zero for a root log.
 func (l *Log) ForkBase() uint64 { return l.inner.ForkBase() }
 
+func (l *Log) Absent() bool { return l.inner.Absent() }
+
 // RangeOwn delegates an own-entry iteration for topology operations. It sees
 // only what is on disk; callers that may have unsynced entries use Range.
 func (l *Log) RangeOwn(from uint64, fn func(idx uint64, payload []byte) error) error {

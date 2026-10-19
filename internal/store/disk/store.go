@@ -2,6 +2,7 @@ package disk
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 )
@@ -33,8 +34,11 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 		return nil, errors.New("log store is closed")
 	}
 	if l, ok := s.logs[abs]; ok {
-		s.mu.Unlock()
-		return l, nil
+		if !l.absent || !dirExists(abs) {
+			s.mu.Unlock()
+			return l, nil
+		}
+		delete(s.logs, abs)
 	}
 	s.mu.Unlock()
 
@@ -63,7 +67,7 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 
 	s.mu.Lock()
 	// Re-check under the lock in case a concurrent Open landed first.
-	if existing, ok := s.logs[abs]; ok {
+	if existing, ok := s.logs[abs]; ok && (!existing.absent || l.absent) {
 		s.mu.Unlock()
 		// Close our duplicate. The shared instance wins.
 		_ = l.Close()
@@ -90,4 +94,9 @@ func (s *Store) Close() error {
 	}
 	s.logs = nil
 	return errors.Join(errs...)
+}
+
+func dirExists(dir string) bool {
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
 }

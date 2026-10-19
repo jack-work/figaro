@@ -2,6 +2,7 @@ package log
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -49,8 +50,11 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 		return nil, errors.New("log store is closed")
 	}
 	if l := s.logs[abs]; l != nil {
-		s.mu.Unlock()
-		return l, nil
+		if !l.Absent() || !dirExists(abs) {
+			s.mu.Unlock()
+			return l, nil
+		}
+		delete(s.logs, abs)
 	}
 	if pending := s.opening[abs]; pending != nil {
 		s.mu.Unlock()
@@ -149,4 +153,9 @@ func (s *Store) Close() error {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+func dirExists(dir string) bool {
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
 }
