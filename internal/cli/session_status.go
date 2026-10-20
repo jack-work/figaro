@@ -84,7 +84,7 @@ func (st turnStatus) paint(s string) string {
 	case turnStatusError:
 		return term.NoticeInDim(s)
 	case turnStatusInterrupted:
-		return term.StateDim(s)
+		return term.StateInDim(s)
 	}
 	return s
 }

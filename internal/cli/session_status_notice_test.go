@@ -116,9 +116,10 @@ func TestClipToWidthEllipsis(t *testing.T) {
 	}{
 		{"short", 10, "short"},
 		{"exactly-10", 10, "exactly-10"},
-		{"eleven chars", 10, "eleven ch…\x1b[0m"},
-		{"日本語のテキスト", 5, "日本…\x1b[0m"}, // wide runes: two columns each
-		{"anything", 1, "…\x1b[0m"},
+		{"eleven chars", 10, "eleven ch…"},
+		{"日本語のテキスト", 5, "日本…"}, // wide runes: two columns each
+		{"anything", 1, "…"},
+		{"\x1b[1mbold text", 5, "\x1b[1mbold…\x1b[0m"},
 		{"anything", 0, ""},
 	}
 	for _, tc := range cases {

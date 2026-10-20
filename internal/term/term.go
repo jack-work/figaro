@@ -295,6 +295,13 @@ const dimHandBack = "\033[39;2m"
 
 func StateDim(s string) string { return paint(active.stateDim, s) }
 
+func StateInDim(s string) string {
+	if !Enabled() {
+		return s
+	}
+	return active.stateDim + s + dimHandBack
+}
+
 var roles = map[string]func(string) string{
 	"dim":       Dim,
 	"red":       Red,

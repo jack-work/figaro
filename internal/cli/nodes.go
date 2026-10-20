@@ -235,12 +235,16 @@ func clipToWidthEllipsis(s string, width int) string {
 	if body, clipped := clipRewrite(s, width); !clipped {
 		return body
 	}
+	reset := ""
+	if styled(s) {
+		reset = "\x1b[0m"
+	}
 	if width == 1 {
-		return "…\x1b[0m"
+		return "…" + reset
 	}
 	body, _ := clipRewrite(s, width-1)
 	body = strings.TrimSuffix(body, "\x1b[0m")
-	return body + "…\x1b[0m"
+	return body + "…" + reset
 }
 
 func clipToWidthRewrite(s string, width int) string {
@@ -278,11 +282,13 @@ func clipRewrite(s string, width int) (string, bool) {
 		i += sz
 	}
 
-	if clipped {
+	if clipped && styled(s) {
 		b.WriteString("\x1b[0m")
 	}
 	return b.String(), clipped
 }
+
+func styled(s string) bool { return strings.IndexByte(s, 0x1b) >= 0 }
 
 func renderProseNode(n livedoc.Node, width int) []string {
 	return nodeProseRows(n, width)

@@ -10,7 +10,8 @@ import (
 )
 
 // clipToWidthReference is the differential oracle: the fast path must be
-// byte-identical to it.
+// byte-identical to it. A cut closes a style only when the row carried one: a
+// reset after plain text would end a style the caller wrapped around it.
 func clipToWidthReference(s string, width int) string {
 	col := 0
 	var b strings.Builder
@@ -42,7 +43,7 @@ func clipToWidthReference(s string, width int) string {
 		col += w
 		i++
 	}
-	if clipped {
+	if clipped && strings.IndexByte(s, 0x1b) >= 0 {
 		b.WriteString("\x1b[0m")
 	}
 	return b.String()
