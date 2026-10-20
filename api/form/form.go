@@ -315,7 +315,7 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 			if err != nil || next.Equal(cur.value) {
 				continue
 			}
-			t = ptree{root: setEntry(t.root, &node{key: k, value: next})}
+			t = ptree{root: setEntry(t.root, leafOrBranch(k, next))}
 			changed = true
 			continue
 		}

@@ -50,6 +50,25 @@ func TestSetPathThroughBranchKeepsSiblings(t *testing.T) {
 	assert.JSONEq(t, `{"system":{"ttl":"1h","ebac":{"round":7}}}`, string(out))
 }
 
+// The live half of issue 43: a patch that turns a null leaf into an object
+// left the object stored as a leaf, so the next nested write could not see
+// its members and replaced them.
+func TestPatchedLeafBecomesABranch(t *testing.T) {
+	var s form.Snapshot
+	require.NoError(t, json.Unmarshal([]byte(`{"system":null}`), &s))
+
+	applied := s.Apply(form.Build(s, map[string]json.RawMessage{"system.ttl": json.RawMessage(`"1h"`)}, nil))
+	next := applied.SetPath("system.zz", json.RawMessage(`1`))
+
+	out, err := json.Marshal(next)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"system":{"ttl":"1h","zz":1}}`, string(out))
+
+	p, err := json.Marshal(next.Diff(applied))
+	require.NoError(t, err)
+	assert.NotContains(t, string(p), `"ttl"`, "an untouched member must not ride the diff")
+}
+
 // A flat key set naming both a scalar and a member under it cannot describe
 // one JSON object; the member wins, whatever order the map yields.
 func TestFlatScalarAndMemberNestTheMember(t *testing.T) {
