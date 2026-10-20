@@ -125,6 +125,7 @@ func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 		"[roles.j]\ngrants = [{ verbs = [\"join\"], on = [\"troupe:estate\"] }]\n",
 		"[roles.s]\ngrants = [{ verbs = [\"use\"], on = [\"sandbox:dev-3\"] }]\n",
 		everything + "\n[[issuers]]\nissuer = \"https://id.example.org\"\njwks = \"https://id.example.org/jwks\"\nclients = { x = \"service\" }\n",
+		everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"node:*\", \"user:ana@id.example.org\"]\n",
 	}
 	for _, body := range ok {
 		if err := CheckTroupeDocument([]byte(body), "estate", nil); err != nil {
@@ -138,6 +139,9 @@ func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 		"binding the troupe itself": everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"troupe:estate\"]\n",
 		"an http issuer":            everything + "\n[[issuers]]\nissuer = \"http://id.example.org\"\njwks = \"http://j\"\nclients = { x = \"service\" }\n",
 		"an unknown verb":           "[roles.x]\ngrants = [{ verbs = [\"fly\"], on = [\"*\"] }]\n",
+	}
+	for _, name := range []string{"user:*", "service:*", "sandbox:*"} {
+		bad["binding "+name] = everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"user:ana@id.example.org\", \"" + name + "\"]\n"
 	}
 	for _, kind := range []string{"node", "sandbox", "troupe", "robot"} {
 		bad["a client resolved to "+kind] = everything + "\n[[issuers]]\nissuer = \"https://id.example.org\"\njwks = \"https://id.example.org/jwks\"\nclients = { a = \"user\", x = \"" + kind + "\" }\n"

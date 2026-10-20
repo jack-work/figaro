@@ -87,3 +87,46 @@ func TestReloadWarnsOnUnscopedNamesAndStillLoads(t *testing.T) {
 		t.Error("an unscoped grant is warned about, not dropped")
 	}
 }
+
+const wildcardPolicy = `
+[roles.r]
+grants = [{ verbs = ["read"], on = ["*"] }]
+
+[[bind]]
+role = "r"
+principals = ["user:*", "service:*", "sandbox:*", "node:*", "spain/user:*", "user:jack@auth.kelliher.info"]
+`
+
+// user:*, service:* and sandbox:* match that kind from every issuer, troupe
+// issuer and api key; node:* only peers and local issuer clients. A node's
+// own policy may still say so, but it is told.
+func TestReloadWarnsOnWildcardsAcrossIssuersAndStillLoads(t *testing.T) {
+	if got, want := WildcardsAcrossIssuers([]byte(wildcardPolicy)), []string{"user:*", "service:*", "sandbox:*"}; !slices.Equal(got, want) {
+		t.Fatalf("%q", got)
+	}
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	path := filepath.Join(t.TempDir(), "policy.toml")
+	if err := os.WriteFile(path, []byte(wildcardPolicy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil)
+	if err := p.Reload(path); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if n := strings.Count(out, "level=WARN"); n != 3 {
+		t.Errorf("%d warnings:\n%s", n, out)
+	}
+	for _, name := range []string{"user:*", "service:*", "sandbox:*"} {
+		if !strings.Contains(out, "binds "+name+",") {
+			t.Errorf("no warning for %s in\n%s", name, out)
+		}
+	}
+	if !p.Allow(jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.KindUser, ID: "ana@id.example.org"}}, "read", Daemon).Allowed {
+		t.Error("a wildcard in the node's own policy is warned about, not dropped")
+	}
+}

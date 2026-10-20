@@ -338,8 +338,16 @@ or the loan says. No peercred uid, token client or edge service may resolve
 to kind `troupe`. The troupe policy's `[[issuers]]` are added to the node's
 own unless `[authz] troupe_issuers = false`: https only, `clients` resolve
 only to `user` or `service`, never one of the node's own URLs or scopes, and
-never trusted for the edge's reverify. A policy's `<kind>:*` matches every
-issuer's principals of that kind, scoped or not.
+never trusted for the edge's reverify.
+
+**Kind wildcards.** jkauthz matches `<kind>:*` on kind alone; the issuer
+scope is part of the id, so `user:*` admits users from every issuer, troupe
+issuer and api key. A troupe policy may not bind `user:*`, `service:*` or
+`sandbox:*`; a node's own policy may, and each is logged at load. `node:*`
+is allowed in both: node principals come only from mTLS peers and from a
+node's own issuers. The real fix is in jkauthz: a scoped wildcard
+(`user:*@auth.kelliher.info`) that a troupe policy could bind, after which
+the bare forms can be refused everywhere.
 
 `x-caller` is **attribution only and never authorizes**. It lands in
 `Identity.Label`, a different field from `FigaroID`, so an assertion naming

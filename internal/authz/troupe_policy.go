@@ -93,8 +93,15 @@ func CheckTroupeDocument(body []byte, troupe string, facts Facts) error {
 	}
 	for _, b := range grants.Bind {
 		for _, name := range b.Principals {
-			if pr, err := jkauthz.ParsePrincipal(name); err == nil && pr.Kind == KindTroupe {
+			pr, err := jkauthz.ParsePrincipal(name)
+			if err != nil {
+				continue
+			}
+			if pr.Kind == KindTroupe {
 				return fmt.Errorf("troupe policy: %s is the troupe itself, which a node's own policy names to delegate; the troupe cannot bind it", name)
+			}
+			if acrossIssuers(pr) {
+				return fmt.Errorf("troupe policy: %s matches that kind from every issuer, troupe issuer and api key on every member; bind the principals by name", name)
 			}
 		}
 	}

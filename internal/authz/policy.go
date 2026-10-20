@@ -167,6 +167,9 @@ func (p *Policies) Reload(path string) error {
 	if err := p.store.LoadBytes(data); err != nil {
 		return fmt.Errorf("policy %s: %w", path, err)
 	}
+	for _, name := range WildcardsAcrossIssuers(data) {
+		slog.Warn("authz: policy binds "+name+", which matches that kind from every issuer, troupe issuer and api key", "policy", path)
+	}
 	for _, name := range UnscopedNames(data) {
 		slog.Warn("authz: policy names "+name+", which no issuer or edge produces: their principals and groups carry the issuer's scope", "policy", path, "write", ScopedSpelling(name, p.scopes))
 	}
@@ -187,21 +190,46 @@ func IssuerScopes(cfg config.AuthzConfig) []string {
 	return out
 }
 
-func UnscopedNames(policy []byte) []string {
+type bindNames struct {
+	Principals []string `toml:"principals"`
+	Groups     []string `toml:"groups"`
+}
+
+func binds(policy []byte) []bindNames {
 	var doc struct {
-		Bind []struct {
-			Principals []string `toml:"principals"`
-			Groups     []string `toml:"groups"`
-		} `toml:"bind"`
+		Bind []bindNames `toml:"bind"`
 	}
 	if _, err := toml.Decode(string(policy), &doc); err != nil {
 		return nil
 	}
+	return doc.Bind
+}
+
+func WildcardsAcrossIssuers(policy []byte) []string {
 	var out []string
-	for _, b := range doc.Bind {
+	for _, b := range binds(policy) {
+		for _, name := range b.Principals {
+			if pr, err := jkauthz.ParsePrincipal(name); err == nil && acrossIssuers(pr) {
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
+func acrossIssuers(p jkauthz.Principal) bool {
+	if p.Node != "" || p.ID != jkauthz.Any {
+		return false
+	}
+	return p.Kind == jkauthz.KindUser || p.Kind == KindService || p.Kind == jkauthz.KindSandbox
+}
+
+func UnscopedNames(policy []byte) []string {
+	var out []string
+	for _, b := range binds(policy) {
 		for _, name := range b.Principals {
 			pr, err := jkauthz.ParsePrincipal(name)
-			if err == nil && pr.Kind == jkauthz.KindUser && pr.Node == "" && !strings.Contains(pr.ID, "@") && !isUID(pr.ID) {
+			if err == nil && pr.Kind == jkauthz.KindUser && pr.Node == "" && pr.ID != jkauthz.Any && !strings.Contains(pr.ID, "@") && !isUID(pr.ID) {
 				out = append(out, name)
 			}
 		}
