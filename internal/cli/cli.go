@@ -1405,6 +1405,25 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "name",
+		Group:   "Session",
+		Short:   "Print an aria's name the way this CLI shows it",
+		Usage:   "name [<id> | --id <id>] [-m]",
+		Long:    "Prints the name [cli] ids chooses for the named aria (or the one bound to\nthis shell, or FIGARO_ARIA inside a tool): its word handle, or its short\nhex. For a script or a reply footer that should name an aria the way\nfigaro does.\n\n  -m/--more   add the other spelling in parentheses",
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id"},
+			{Long: "more", Short: "m", IsBool: true, Description: "Add the other spelling"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runName(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Args, ctx.BoolFlag("more"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "provider",
 		Group: "System",
 		Short: "Sign in to, sign out of, and list model providers",

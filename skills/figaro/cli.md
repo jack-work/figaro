@@ -196,7 +196,9 @@ time until you type; typed hex completes to full ids instead.
 `ids = "short"` under `[cli]` in `config.toml` shows the five-digit hex
 instead of the handle wherever a person reads a name: the pager, the bar,
 every CLI line. `-j` keeps `id`, `short` and `handle` as they are and adds
-`display`, the name the setting shows, for scripts that print one. In the
+`display`, the name the setting shows, for scripts that print one, and
+`figaro name [<id>] [-m]` prints it alone (`-m` adds the other spelling): sign
+a herald footer with `--sender-id "$(figaro name)"`. In the
 pager `y` copies the name shown (the attended aria's, or a listing row's) and
 `M-y` the full id.
 

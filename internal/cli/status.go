@@ -29,46 +29,9 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		ariaID := idFlag
-		if ariaID == "" {
-			ariaID = nameArg
-		}
-		var resolveErr error
-		if ariaID != "" {
-			if id, err := doorID(ctx, acli, ariaID); err == nil {
-				ariaID = id
-			} else {
-				resolveErr = err
-			}
-		}
-		if ariaID == "" {
-			r, err := resolveBinding(ctx, acli, shellPID)
-			if err != nil {
-				return fmt.Errorf("resolve: %w", err)
-			}
-			if !r.Found {
-				die("no figaro bound to this shell (try: figaro status --id <id> or figaro status <id>)")
-			}
-			ariaID = r.FigaroID
-		}
-
-		// The global listing: a status target may be either species.
-		resp, err := acli.ListGlobal(ctx)
+		resp, f, err := statusRow(ctx, acli, idFlag, nameArg)
 		if err != nil {
-			return fmt.Errorf("list: %w", err)
-		}
-		var f *rpc.FigaroInfoResponse
-		for i := range resp.Figaros {
-			if resp.Figaros[i].ID == ariaID {
-				f = &resp.Figaros[i]
-				break
-			}
-		}
-		if f == nil {
-			if resolveErr != nil && !strings.Contains(resolveErr.Error(), "not found") {
-				die("%s", resolveErr)
-			}
-			die("no aria or form %q (try: figaro ls -g)", ariaID)
+			return err
 		}
 
 		if isFormRow(f) {
@@ -114,6 +77,66 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			}
 		}
 		printStatusPanel(os.Stdout, f, more, forkTurn)
+		return nil
+	})
+}
+
+func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (*rpc.ListResponse, *rpc.FigaroInfoResponse, error) {
+	ariaID := idFlag
+	if ariaID == "" {
+		ariaID = nameArg
+	}
+	var resolveErr error
+	if ariaID != "" {
+		if id, err := doorID(ctx, acli, ariaID); err == nil {
+			ariaID = id
+		} else {
+			resolveErr = err
+		}
+	}
+	if ariaID == "" {
+		r, err := resolveBinding(ctx, acli, shellPID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve: %w", err)
+		}
+		if !r.Found {
+			die("no figaro bound to this shell (try: figaro status --id <id> or figaro status <id>)")
+		}
+		ariaID = r.FigaroID
+	}
+	resp, err := acli.ListGlobal(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list: %w", err)
+	}
+	for i := range resp.Figaros {
+		if resp.Figaros[i].ID == ariaID {
+			return resp, &resp.Figaros[i], nil
+		}
+	}
+	if resolveErr != nil && !strings.Contains(resolveErr.Error(), "not found") {
+		die("%s", resolveErr)
+	}
+	die("no aria or form %q (try: figaro ls -g)", ariaID)
+	return nil, nil, nil
+}
+
+func runName(loaded *config.Loaded, idFlag string, args []string, more bool) {
+	var nameArg string
+	if len(args) > 0 {
+		nameArg = args[0]
+	}
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, f, err := statusRow(ctx, acli, idFlag, nameArg)
+		if err != nil {
+			return err
+		}
+		name := rowName(f)
+		if more {
+			name = withOther(name, otherName(f.ID))
+		}
+		fmt.Fprintln(stdout, name)
 		return nil
 	})
 }
