@@ -119,3 +119,77 @@ func (t *transcript) dropQueuedSelected() {
 	delete(t.queueOpen, id)
 	t.pit.replaceRows(keep, next)
 }
+
+// Opening defers to a reader who has said what they want on screen; closing does not.
+func (t *transcript) showQueuedAuto(on bool) {
+	if on {
+		if t.showing(pitQueue) {
+			t.refreshQueuePit()
+			return
+		}
+		// Dismissed by hand, or a deliberate pit is up. A note is not
+		// deliberate.
+		if t.queueDismissed || (t.pit.open() && !t.pit.glance()) {
+			return
+		}
+		t.openQueuePit()
+		return
+	}
+	t.queueDismissed = false
+	if !t.showing(pitQueue) {
+		return
+	}
+	// A drained queue closes its pit, opened by hand or not, and says so on
+	// the bar.
+	t.queuedByKey = false
+	t.pit.close()
+	t.noteQueueEmpty()
+}
+
+// The stale snapshot renders immediately; the async refresh replaces it in place.
+func (t *transcript) openQueueFromKey() {
+	// An empty queue is a sentence on the bar, not a pit; the dismissal is
+	// revoked either way.
+	t.queueDismissed = false
+	if t.queueEmpty() {
+		t.noteQueueEmpty()
+		if t.queuedFetch != nil {
+			// Resync anyway: the seed may still be in flight, and
+			// showQueuedAuto opens the pit when a real queue lands.
+			t.queuedFetch()
+		}
+		return
+	}
+	t.queuedByKey = true
+	t.openQueuePit()
+	if t.queuedFetch != nil {
+		t.queuedFetch()
+	}
+}
+
+// An unreadable queue is not empty.
+func (t *transcript) queueEmpty() bool {
+	return len(t.queued) == 0 && t.queuedErr == ""
+}
+
+// The pit's absence and its auto-close are the same fact, worded once.
+const queueEmptyNote = "message queue is empty"
+
+func (t *transcript) noteQueueEmpty() { t.setCommandNoteAt(queueEmptyNote, alertInfo) }
+
+func (t *transcript) openQueuePit() {
+	// No title: the bar already says "queue".
+	t.pit.showList(pitQueue, "", t.queuedPitRows())
+	t.focused = focusPit
+}
+
+// Keeps the selection: a queue that re-sorts under the cursor on every poll is one
+// nobody can hit `x` on.
+func (t *transcript) refreshQueuePit() {
+	sel, had := t.pit.selected()
+	keep := ""
+	if had {
+		keep = sel.id
+	}
+	t.pit.replaceRows(t.queuedPitRows(), keep)
+}

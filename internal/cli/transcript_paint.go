@@ -3,8 +3,10 @@ package cli
 import (
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/jack-work/figaro/internal/mark"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -519,4 +521,82 @@ func appendCUPCol(dst []byte, row, col int) []byte {
 	dst = append(dst, ';')
 	dst = appendUint(dst, col)
 	return append(dst, 'H')
+}
+
+func (t *transcript) paint(screen []string) {
+	buf := append(t.paintBuf[:0], t.prefix...)
+	// The alt-screen switch has reached the terminal; leave() may switch back
+	// only if this happened.
+	if t.altPending && t.prefix != "" {
+		t.altOn, t.altPending = true, false
+	}
+	t.prefix = ""
+	buf = append(buf, "\x1b[?2026h"...)
+	// A frame that says nothing is not sent: writing the ?2026 brackets alone
+	// kept a remote terminal busy.
+	quiet := len(buf)
+	base := t.prev
+	// base == nil: the painter has no claim on the screen; a due resync
+	// upgrades a frame that has something to say, and a quiet frame leaves the
+	// debt owed, since re-earning the screen is a visible flash on terminals
+	// without synchronized update (WSL under remote desktop). Asked up front:
+	// folding it into the row loop builds a whole frame to throw away.
+	full := base == nil
+	if !full && !t.trustScreen && t.resyncDue() {
+		full = !screensEqual(screen, base)
+	}
+	t.trustScreen = false
+	if full {
+		base = nil
+		if t.now == nil {
+			t.now = time.Now
+		}
+		t.lastFull = t.now()
+	} else if plan, ok := t.planScroll(screen); ok {
+		buf = appendScroll(buf, plan)
+		base = t.predBuf
+	}
+	for r := 0; r < len(screen); r++ {
+		// A row with no record is unknown, not blank: it must be painted.
+		if r < len(base) && screen[r] == base[r] {
+			continue
+		}
+		var old string
+		if r < len(base) {
+			old = base[r]
+		}
+		buf = appendRowUpdate(buf, r, t.w, old, screen[r])
+	}
+	if len(buf) == quiet {
+		// Nothing to say: the resync debt stays owed until a frame differs.
+		t.paintBuf = buf[:0]
+		t.screenSpare, t.prev = t.prev, screen
+		mark.Mark("frame.quiet", "aria", t.subjectID())
+		return
+	}
+	buf = append(buf, "\x1b[?2026l"...)
+	_, _ = t.out.Write(buf)
+	t.paintBuf = buf
+	t.screenSpare, t.prev = t.prev, screen
+	if mark.Enabled() {
+		mark.Mark("frame", "aria", t.subjectID(), "bytes", len(buf), "full", full,
+			"content", t.index.total > 0, "tail", t.follow, "rows", len(screen))
+	}
+}
+
+// Not fmt: the profile put 9% of paint in doPrintf for a two-digit number.
+func appendCUP(dst []byte, row int) []byte {
+	dst = append(dst, '\x1b', '[')
+	dst = appendUint(dst, row)
+	return append(dst, ';', '1', 'H')
+}
+
+func appendUint(dst []byte, n int) []byte {
+	if n < 0 {
+		n = 0
+	}
+	if n >= 10 {
+		dst = appendUint(dst, n/10)
+	}
+	return append(dst, byte('0'+n%10))
 }
