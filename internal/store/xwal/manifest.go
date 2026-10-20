@@ -402,3 +402,37 @@ func materializeManifestChannels(root string, cfg Config, man manifest) (manifes
 	}
 	return man, nil
 }
+
+// readManifestFile is the read-only load; loadOrCreateManifest is the writing path.
+func readManifestFile(dir string) (manifest, error) {
+	data, err := os.ReadFile(filepath.Join(dir, manifestName))
+	if err != nil {
+		return manifest{}, fmt.Errorf("xwal: read manifest: %w", err)
+	}
+	var m manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return manifest{}, fmt.Errorf("xwal: parse manifest: %w", err)
+	}
+	return m, nil
+}
+
+// channelNames: each maps directly to a dir under the root.
+func channelNames(dir string) ([]string, error) {
+	m, err := readManifestFile(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(m.Channels))
+	for _, c := range m.Channels {
+		out = append(out, c.Name)
+	}
+	return out, nil
+}
+
+func mainChannelName(dir string) (string, error) {
+	m, err := readManifestFile(dir)
+	if err != nil {
+		return "", err
+	}
+	return m.Main, nil
+}
