@@ -98,10 +98,11 @@ type transcript struct {
 	// The painter's model of the screen (prev) is only true while figaro is
 	// the only writer; lastFull is when it was last repainted unconditionally,
 	// and now is injectable for tests.
-	now      func() time.Time
-	lastFull time.Time
-	lineKey  []sliceKey // slice owning each line, for resize anchoring
-	offset   int        // top line of the viewport
+	now         func() time.Time
+	lastFull    time.Time
+	trustScreen bool
+	lineKey     []sliceKey // slice owning each line, for resize anchoring
+	offset      int        // top line of the viewport
 	// wantTop is a standing request for the beginning, armed by Home/gg.
 	wantTop bool
 	kept    bool
@@ -1486,9 +1487,10 @@ func (t *transcript) paint(screen []string) {
 	// without synchronized update (WSL under remote desktop). Asked up front:
 	// folding it into the row loop builds a whole frame to throw away.
 	full := base == nil
-	if !full && t.resyncDue() {
+	if !full && !t.trustScreen && t.resyncDue() {
 		full = !screensEqual(screen, base)
 	}
+	t.trustScreen = false
 	if full {
 		base = nil
 		if t.now == nil {

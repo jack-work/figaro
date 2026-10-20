@@ -732,6 +732,7 @@ func (t *transcript) toggleFolds(sets ...[]foldTarget) bool {
 		}
 	}
 	dirty := make(map[int]struct{}, len(targets))
+	t.trustScreen = true
 	toggle := func() {
 		for _, g := range targets {
 			if open {
