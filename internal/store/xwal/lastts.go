@@ -156,3 +156,64 @@ func tailFrameTS(dir string, codec segment.SegmentCodec) int64 {
 	}
 	return rec.TS
 }
+
+// stampTS advances lastTS monotonically; the CAS loop is for cross-channel
+// concurrency, since each channel serializes only its own appends.
+func (x *XWAL) stampTS() int64 {
+	x.ensureHydrated()
+	ts := x.nowMS()
+	for {
+		cur := x.lastTS.Load()
+		if ts <= cur || x.lastTS.CompareAndSwap(cur, ts) {
+			return ts
+		}
+	}
+}
+
+// LastTS is zero when the node has no timestamped records. Lock-free.
+func (x *XWAL) LastTS() int64 {
+	x.ensureHydrated()
+	return x.lastTS.Load()
+}
+
+// ensureHydrated prefers the file probe: a tail frame per channel directory,
+// no log opened.
+func (x *XWAL) ensureHydrated() {
+	if x.hydrated.Load() || !x.hydrated.CompareAndSwap(false, true) {
+		return
+	}
+	if x.cfg.probeTS != nil {
+		mergeMax(x.lastTS, x.cfg.probeTS(x.key))
+		return
+	}
+	x.hydrateLastTS()
+}
+
+// hydrateLastTS: one frame read per non-empty channel. Legacy tails without
+// a timestamp contribute zero.
+func (x *XWAL) hydrateLastTS() {
+	var max int64
+	for _, name := range x.channels().order {
+		ch := x.channel(name)
+		l, err := ch.Log()
+		if err != nil {
+			continue
+		}
+		last := l.LastIndex()
+		if last == 0 {
+			continue
+		}
+		f, err := l.Read(last)
+		if err != nil {
+			continue
+		}
+		r, err := decodeRecordFrom(last, f, name == x.main)
+		if err != nil {
+			continue
+		}
+		if r.TS > max {
+			max = r.TS
+		}
+	}
+	mergeMax(x.lastTS, max)
+}

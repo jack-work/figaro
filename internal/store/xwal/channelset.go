@@ -247,3 +247,14 @@ func channelGenFor(root string) func() uint64 {
 	state := rootTopologyStateFor(root)
 	return state.channelGen.Load
 }
+
+func (x *XWAL) addChannel(spec ChannelSpec) error {
+	if x.channels().byName[spec.Name] != nil {
+		return fmt.Errorf("xwal: channel %q already exists", spec.Name)
+	}
+	if err := registerChannel(x.root, x.cfg, spec); err != nil {
+		return err
+	}
+	x.cfg = withChannelSpec(x.cfg, spec)
+	return x.publish(spec.manifest())
+}
