@@ -328,7 +328,7 @@ func (p *Policies) SetTroupe(name string, body []byte) error {
 		p.troupe.Store(layer)
 		return nil
 	}
-	pol, err := CompileTroupePolicy(body, p.schema)
+	pol, err := CompileTroupePolicy(body, name, p.schema)
 	if err != nil {
 		layer.err = err
 		p.troupe.Store(layer)

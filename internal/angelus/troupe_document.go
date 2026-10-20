@@ -13,7 +13,7 @@ func (a *Angelus) ApplyTroupeDocument(name string, body []byte, takeIssuers bool
 		return err
 	}
 	var issuers []config.IssuerConfig
-	if body != nil {
+	if body != nil && err == nil {
 		if doc, perr := authz.ParseTroupeDocument(body); perr == nil {
 			issuers = doc.Issuers
 		}

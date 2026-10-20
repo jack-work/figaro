@@ -173,6 +173,21 @@ func TestAnAllGrantingTroupePolicyCannotTakeTheLocalOnlyRights(t *testing.T) {
 	require.Equal(t, uint64(1), mb.PolicyVersion())
 }
 
+// The root may sign anything, and a ledger adopts what it signs. A version
+// binding user:* is adopted and spread, and grants nothing on any member.
+func TestAnAdoptedPolicyBindingAKindWildcardGrantsNothing(t *testing.T) {
+	na, nb, ma, mb, root := pairWith(t, lendingEverything())
+	rootStartsPolicy(t, na, root, "[roles.all]\ngrants = [{ verbs = [\"*\"], on = [\"*\"] }]\n\n[[bind]]\nrole = \"all\"\nprincipals = [\"user:*\"]\n", na.id())
+	require.Equal(t, uint64(1), ma.PolicyVersion())
+	_, err := mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), mb.PolicyVersion())
+	for _, n := range []*ledgerNode{na, nb} {
+		require.Error(t, n.a.Policies.TroupeLoadError(), "on %s", n.id())
+		require.False(t, n.a.Policies.Allow(jkauthz.Subject{Principal: ana}, rpc.VerbSend, authz.Aria("aaaa0001")).Allowed, "user:* granted on %s", n.id())
+	}
+}
+
 func TestSettingTheTroupePolicyRefuses(t *testing.T) {
 	na, nb, _, _, _ := pairWith(t, lendingEverything())
 	for name, body := range map[string]string{

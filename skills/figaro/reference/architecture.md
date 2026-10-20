@@ -345,9 +345,11 @@ scope is part of the id, so `user:*` admits users from every issuer, troupe
 issuer and api key. A troupe policy may not bind `user:*`, `service:*` or
 `sandbox:*`; a node's own policy may, and each is logged at load. `node:*`
 is allowed in both: node principals come only from mTLS peers and from a
-node's own issuers. The real fix is in jkauthz: a scoped wildcard
-(`user:*@auth.kelliher.info`) that a troupe policy could bind, after which
-the bare forms can be refused everywhere.
+node's own issuers. A version adopted from the ledger passes the same rules
+as one set at a door; one that breaks them (the root may sign anything)
+grants nothing on the node and its issuers are not taken up. The real fix
+is in jkauthz: a scoped wildcard (`user:*@auth.kelliher.info`) that a troupe
+policy could bind, after which the bare forms can be refused everywhere.
 
 `x-caller` is **attribution only and never authorizes**. It lands in
 `Identity.Label`, a different field from `FigaroID`, so an assertion naming

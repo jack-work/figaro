@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,4 +39,16 @@ func TestATroupeDocumentsIssuersAreTakenUnlessTheNodeOptsOut(t *testing.T) {
 		require.NoError(t, a.ApplyTroupeDocument("estate", nil, take))
 		require.True(t, is.Empty(), "the issuer outlived its document")
 	}
+}
+
+// A document that does not load on this node takes up none of its issuers.
+func TestARefusedTroupeDocumentTakesNoIssuers(t *testing.T) {
+	is, err := authz.NewIssuers(nil, nil, nil)
+	require.NoError(t, err)
+	a := &Angelus{Policies: authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil), Issuers: is}
+	require.NoError(t, a.Policies.Reload(""))
+	wild := strings.Replace(documentWithAnIssuer, `"user:ana@id.example.org"`, `"user:*"`, 1)
+	require.NotEqual(t, documentWithAnIssuer, wild)
+	require.Error(t, a.ApplyTroupeDocument("estate", []byte(wild), true))
+	require.True(t, is.Empty(), "a refused document's issuer was taken up")
 }

@@ -119,6 +119,19 @@ func TestATroupeDocumentThatDoesNotCompileGrantsNothing(t *testing.T) {
 	}
 }
 
+// A document arrives by the ledger without passing a door's set check; one
+// the set check would refuse loads as nothing.
+func TestATroupeDocumentThatBreaksASetRuleGrantsNothing(t *testing.T) {
+	p := localDelegating(t, `{ verbs = ["*"], on = ["*"] }`)
+	err := p.SetTroupe("estate", []byte("[roles.r]\ngrants = [{ verbs = [\"read\"], on = [\"*\"] }]\n\n[[bind]]\nrole = \"r\"\nprincipals = [\"user:*\"]\n"))
+	if err == nil || p.TroupeLoadError() == nil {
+		t.Fatal("a bare user:* loaded")
+	}
+	if d := p.Allow(subject(guest), rpc.VerbRead, Aria("aaaa0002")); d.Allowed {
+		t.Fatal("a refused troupe document granted")
+	}
+}
+
 func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 	ok := []string{
 		everything,

@@ -49,7 +49,7 @@ func ParseTroupeDocument(body []byte) (TroupeDocument, error) {
 	return doc, nil
 }
 
-func CompileTroupePolicy(body []byte, schema jkauthz.Schema[Resource]) (*jkauthz.Policy[Resource], error) {
+func CompileTroupePolicy(body []byte, troupe string, schema jkauthz.Schema[Resource]) (*jkauthz.Policy[Resource], error) {
 	doc, err := ParseTroupeDocument(body)
 	if err != nil {
 		return nil, fmt.Errorf("troupe policy: %w", err)
@@ -58,14 +58,18 @@ func CompileTroupePolicy(body []byte, schema jkauthz.Schema[Resource]) (*jkauthz
 	if err != nil {
 		return nil, fmt.Errorf("troupe policy: %w", err)
 	}
+	if err := checkTroupeRules(doc, troupe); err != nil {
+		return nil, err
+	}
 	return pol, nil
 }
 
 func CheckTroupeDocument(body []byte, troupe string, facts Facts) error {
-	if _, err := CompileTroupePolicy(body, Schema(facts)); err != nil {
-		return err
-	}
-	doc, _ := ParseTroupeDocument(body)
+	_, err := CompileTroupePolicy(body, troupe, Schema(facts))
+	return err
+}
+
+func checkTroupeRules(doc TroupeDocument, troupe string) error {
 	for _, is := range doc.Issuers {
 		if !strings.HasPrefix(is.Issuer, "https://") {
 			return fmt.Errorf("troupe policy: issuer %q: a troupe names only https issuers", is.Issuer)
