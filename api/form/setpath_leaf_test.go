@@ -49,3 +49,21 @@ func TestSetPathThroughBranchKeepsSiblings(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"system":{"ttl":"1h","ebac":{"round":7}}}`, string(out))
 }
+
+// A flat key set naming both a scalar and a member under it cannot describe
+// one JSON object; the member wins, whatever order the map yields.
+func TestFlatScalarAndMemberNestTheMember(t *testing.T) {
+	s := form.FromMap(map[string]json.RawMessage{
+		"succession":      json.RawMessage(`"the protocol"`),
+		"succession.rule": json.RawMessage(`"you are a seat"`),
+	})
+	out, err := json.Marshal(s)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"succession":{"rule":"you are a seat"}}`, string(out))
+
+	var back form.Snapshot
+	require.NoError(t, json.Unmarshal(out, &back))
+	got, ok := back.Get("succession.rule")
+	require.True(t, ok)
+	assert.JSONEq(t, `"you are a seat"`, string(got))
+}

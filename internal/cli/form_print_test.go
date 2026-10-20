@@ -27,23 +27,6 @@ func TestPrintedFormIsTheTree(t *testing.T) {
 	}
 }
 
-// A key whose prefix is already a leaf keeps its dotted name, in either order.
-func TestPrintedFormKeepsCollidingKeysReadable(t *testing.T) {
-	snap := form.FromMap(map[string]json.RawMessage{
-		"a":   json.RawMessage(`"leaf"`),
-		"a.b": json.RawMessage(`"under"`),
-	})
-	got, err := json.Marshal(snap)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"a":"leaf"`, `"a.b":"under"`} {
-		if !strings.Contains(string(got), want) {
-			t.Errorf("printed form %s missing %s", got, want)
-		}
-	}
-}
-
 // A dot inside a key is not a level. Re-splitting flattened paths printed
 // claude-opus-5.5 as a child "5" of claude-opus-5, in `state -j`, `form show`
 // and the S pit alike.

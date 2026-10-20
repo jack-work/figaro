@@ -10,25 +10,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// A key whose own name contains a dot is addressable alongside a key that is
-// its prefix.
-func TestCollidingKeysAreBothAddressable(t *testing.T) {
-	s := form.FromMap(map[string]json.RawMessage{
-		"succession":           json.RawMessage(`"the protocol"`),
-		"succession.rule":      json.RawMessage(`"you are a seat"`),
-		"succession.authority": json.RawMessage(`"only the target may write"`),
-	})
-	for k, want := range map[string]string{
-		"succession":           `"the protocol"`,
-		"succession.rule":      `"you are a seat"`,
-		"succession.authority": `"only the target may write"`,
-	} {
-		got, ok := s.Get(k)
-		require.True(t, ok, "%s is unreachable", k)
-		assert.JSONEq(t, want, string(got), k)
-	}
-}
-
 // One field of a large value changes without rewriting the value.
 func TestOneFieldOfALargeValueIsItsOwnChange(t *testing.T) {
 	big := make([]byte, 6000)

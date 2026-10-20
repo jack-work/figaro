@@ -68,7 +68,7 @@ func TestRealBoard_OnDiskFlatBoardOpensAndIsStable(t *testing.T) {
 func TestWireShape_AdversarialValues(t *testing.T) {
 	m := map[string]json.RawMessage{
 		"html":         json.RawMessage(`"<script>a & b</script>"`),
-		"html.nested":  json.RawMessage(`{"tag":"<b>","amp":"&"}`),
+		"tags.nested":  json.RawMessage(`{"tag":"<b>","amp":"&"}`),
 		"spaced":       json.RawMessage("{ \"x\" : 1,\n  \"y\" : [ 1, 2 ] }"),
 		"unsorted":     json.RawMessage(`{"z":1,"a":2,"m":{"q":1,"b":2}}`),
 		"escapes":      json.RawMessage(`"\u00e9 é \u003c < \\ \" \n"`),

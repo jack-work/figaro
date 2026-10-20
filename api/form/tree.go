@@ -253,8 +253,6 @@ func lookupLongest(n *node, rest string) *node {
 	return best
 }
 
-// setPath shares every subtree it does not touch. Where a segment lands on a
-// leaf, the rest of the path is stored whole beside it.
 func (t ptree) setPath(segs []string, v Value) ptree {
 	if len(segs) == 0 {
 		return t
@@ -263,12 +261,8 @@ func (t ptree) setPath(segs []string, v Value) ptree {
 	if len(segs) == 1 {
 		return ptree{root: setEntry(t.root, leafOrBranch(head, v))}
 	}
-	cur := lookupExact(t.root, head)
-	if cur != nil && !cur.branch {
-		return ptree{root: setEntry(t.root, leafOrBranch(joinSegs(segs), v))}
-	}
 	var kids ptree
-	if cur != nil {
+	if cur := lookupExact(t.root, head); cur != nil && cur.branch {
 		kids = cur.kids
 	}
 	kids = kids.setPath(segs[1:], v)
