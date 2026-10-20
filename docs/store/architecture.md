@@ -13,7 +13,7 @@ below it, and the public surface a consumer addresses is the *top* layer
   ┌───────────────────────────▼─────────────────────────────────┐
   │  xwal.XWAL        multi-channel "triune" join; Main + reduc- │
   │  (xwal.go,        ible channels forked as one unit; genesis  │
-  │   fork.go)        seeding; manifest; Config                  │
+  │   manifest.go)    seeding; manifest; Config                  │
   └───────────────────────────┬─────────────────────────────────┘
                               │ depends on
   ┌───────────────────────────▼─────────────────────────────────┐
@@ -133,7 +133,8 @@ still has the sentinel.
 
 ## `xwal.XWAL`: the multi-channel "triune" join
 
-**File:** `xwal/xwal.go`, `xwal/fork.go`. **Depends on:** `disk.Log`.
+**File:** `xwal/xwal.go`, with `append.go`, `read.go`, `manifest.go`,
+`watermark.go` and `frame.go` beside it. **Depends on:** `disk.Log`.
 
 `XWAL` binds several `disk.Log`s into one logical timeline. There is one
 **Main** channel (a `ChannelLog`) plus zero or more related channels;
@@ -192,7 +193,8 @@ migration.
 
 ## `xwal.Trunks`: the trunk-addressed view
 
-**File:** `xwal/trunks.go`. **Depends on:** `xwal.XWAL`.
+**File:** `xwal/trunks.go`, with `topology.go`, `hot.go`, `fork.go`,
+`stumps.go` and `trunkinfo.go` beside it. **Depends on:** `xwal.XWAL`.
 
 `Trunks` is the surface a consumer addresses. A **trunk** is one
 continuation chain across all channels (the triune forked as a unit),

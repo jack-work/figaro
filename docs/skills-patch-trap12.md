@@ -203,7 +203,7 @@ Found by **BARTOLO** while writing the regression tests for the resize/gap bug.
 | | |
 |---|---|
 | the shared defect | both read a missing base row as `""` and then skip a row that compares equal, so a legitimately-blank row is never painted |
-| the real painter | `transcript.paint`, `internal/cli/transcript.go`: `var old string; if r < len(base) { old = base[r] }; if screen[r] == old { continue }` |
+| the real painter | `transcript.paint`, `internal/cli/transcript_paint.go`: `var old string; if r < len(base) { old = base[r] }; if screen[r] == old { continue }` |
 | the oracle | `naivePaint`, `internal/cli/transcript_paint_test.go` |
 | the test that could not fail | `TestTranscriptPaint_MatchesNaiveRepaint`: still green, bug present on both sides |
 | the remedy | unconditional repaint: `internal/cli/transcript_resize_paint_test.go` on `fix/gap-rows` |

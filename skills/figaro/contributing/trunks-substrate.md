@@ -119,12 +119,12 @@ Terminology & mechanics (`xwal/xwal.go`, `xwal/fork.go`):
   of fork names from the root (empty = the trunk-of-the-xwal, distinct from figaro "trunk").
 - **Every channel entry is `(channelLT, mainLT, payload, meta)`.** `mainLT` is the foreign
   key to the IR timeline; it must be non-decreasing per channel and may reference *future*
-  IR LTs (for catch-up). `AppendMain(payload,meta)` (`xwal.go:397`) writes the IR and returns
-  its LT; `Append(channel, mainLT, payload, meta)` (`xwal.go:411`) writes a related channel.
+  IR LTs (for catch-up). `AppendMain(payload,meta)` (`xwal/append.go`) writes the IR and returns
+  its LT; `Append(channel, mainLT, payload, meta)` (`xwal/append.go`) writes a related channel.
 - **Reducible channels** ride a per-segment **watermark** + patches; `StateAt(channel, lt)`
-  (`xwal.go:474`) folds the nearest watermark with the patches after it. The form is
+  (`xwal/read.go`) folds the nearest watermark with the patches after it. The form is
   this: there is **no the form channel**; the channel is the durable truth.
-- **`meta`** is an opaque per-entry side-channel (`xwal.go:546-557`): figaro stores the
+- **`meta`** is an opaque per-entry side-channel (`xwal/frame.go`): figaro stores the
   translation fingerprint here.
 - **Joint fork** (`xwal/fork.go:51`): `Fork(atMainLT, childName, oldFutureName) → *XWAL`.
   The **main channel forks at `atMainLT`**; each related channel forks at its own boundary -
