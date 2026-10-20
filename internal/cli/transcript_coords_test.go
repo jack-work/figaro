@@ -30,7 +30,7 @@ func coordFixture(tb testing.TB, verbose bool) *transcript {
 		}}},
 	}}, aria.Notify)
 	ft := ldrender.NewFakeTerminal(60, 40)
-	tr := newTranscript(ft, 60, 40, &ariaView{settings: &renderSettings{verbose: verbose, coordFormat: "15:04:05"}},
+	tr := newTranscript(ft, 60, 40, &ariaView{settings: &renderSettings{more: verbose, coordFormat: "15:04:05"}},
 		client, "aria1234", time.Unix(0, 0))
 	tr.enter()
 	tr.follow = false
@@ -177,7 +177,7 @@ func TestAddressesSurviveToggling(t *testing.T) {
 
 	off := plainRows(tr.lines())
 	for range 3 {
-		set.verbose = true
+		set.more = true
 		on := plainRows(tr.lines())
 		if len(on) != len(off) {
 			t.Fatalf("^O moved the conversation: %d rows on, %d off", len(on), len(off))
@@ -195,7 +195,7 @@ func TestAddressesSurviveToggling(t *testing.T) {
 		if addressed == 0 {
 			t.Fatal("^O drew no addresses at all")
 		}
-		set.verbose = false
+		set.more = false
 		if again := plainRows(tr.lines()); strings.Join(again, "\n") != strings.Join(off, "\n") {
 			for i := range again {
 				if again[i] != off[i] {

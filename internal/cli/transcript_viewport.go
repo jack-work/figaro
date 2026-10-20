@@ -16,7 +16,7 @@ func (t *transcript) shiftViewport(delta int) {
 // anchorBelow keeps ref's tail on its screen row across mutate.
 func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 	t.buildIndex()
-	before, ok := t.nodeSpanOf(ref)
+	before, ok := t.blockSpanOf(ref)
 	if !ok {
 		mutate()
 		return false
@@ -29,7 +29,7 @@ func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 		return true
 	}
 	t.buildIndex()
-	after, ok := t.nodeSpanOf(ref)
+	after, ok := t.blockSpanOf(ref)
 	if !ok {
 		return false
 	}

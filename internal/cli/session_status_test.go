@@ -20,7 +20,7 @@ func TestSessionStatusRuleIncludesMantraContextAndTokenCost(t *testing.T) {
 	})
 	status.setLimit(128000)
 
-	rule := status.ruleLine(160, "12-40/97 live")
+	rule := status.ruleLine(160, "", "12-40/97 live")
 	for _, want := range []string{"12-40/97 live"} {
 		if !strings.Contains(rule, want) {
 			t.Fatalf("rule line missing %q: %q", want, rule)
@@ -54,7 +54,7 @@ func TestSessionStatusRulePrefersMantraOverSecondaryDetails(t *testing.T) {
 	})
 	status.setLimit(128000)
 
-	if rule := status.ruleLine(40, ""); strings.Contains(rule, "dac6cb6d") || strings.Contains(rule, ariaName("dac6cb6d")) {
+	if rule := status.ruleLine(40, "", ""); strings.Contains(rule, "dac6cb6d") || strings.Contains(rule, ariaName("dac6cb6d")) {
 		t.Fatalf("the rule still carries the aria id: %q", rule)
 	}
 	line := row(status, 40)

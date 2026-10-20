@@ -51,9 +51,8 @@ func adornFixtureH(t testing.TB, h, turns int) *transcript {
 		Nodes: []livedoc.Node{
 			{
 				Type: livedoc.NodeTool, ID: "t1", Name: "bash", Status: livedoc.StatusOK,
-				Args:      map[string]any{"command": "figaro set mantra"},
-				Output:    "set mantra (figaro e5abf08d) @7",
-				StartedAt: 1, FinishedAt: 38,
+				Args:       map[string]any{"command": "figaro set mantra"},
+				Output:     "set mantra (figaro e5abf08d) @7",
 				FormDeltas: deltas,
 			},
 			{Type: livedoc.NodeProse, Markdown: "a quote of my own line, sliced.", FormDeltas: deltas},
@@ -127,7 +126,7 @@ func TestAdornmentCollapsedIsOneGlyphInTheGutter(t *testing.T) {
 	if marked != 3 {
 		t.Fatalf("three adorned blocks, three markers, got %d:\n%s", marked, strings.Join(rows, "\n"))
 	}
-	if !strings.HasSuffix(rows[0], "Δ") || !strings.Contains(rows[0], "> input ⑂ e5abf08d") {
+	if !strings.HasSuffix(rows[0], "Δ") || !strings.Contains(rows[0], "> input ⑂ "+ariaName("e5abf08d")) {
 		t.Fatalf("the question's fork rides its header row, the marker its gutter: %q", rows[0])
 	}
 }
@@ -136,11 +135,12 @@ func TestAdornmentCollapsedIsOneGlyphInTheGutter(t *testing.T) {
 func TestInquiryLiftsTheForkOutOfItsList(t *testing.T) {
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
-	tr.adorned[inq] = true
+	tr.metaOpen[inq] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
-	wantRows(t, adornRowsAt(t, tr, "what does this say?", 4),
+	wantRows(t, adornRowsAt(t, tr, "what does this say?", 5),
 		"  what does this say?",
-		"Δ",
+		"•",
+		"│ address   1",
 		"│ datetime  ∅ -> Saturday, September 12, 2026",
 		"│ mantra    going to test some harness behavi… -> harness behavior test",
 	)
@@ -169,9 +169,9 @@ func TestNodeForkIsAnOrdinaryRow(t *testing.T) {
 	if n := adornRowCount(deltas, adornLift(0)); n != 2 {
 		t.Fatalf("a node lists its fork like any other key: %d rows", n)
 	}
-	row, ok := adornRowFull(deltas, adornLift(0), 2)
-	if !ok || !strings.Contains(row, "system.forked_from") {
-		t.Fatalf("a node's fork row says what it is: %q", row)
+	rows := deltaRows(deltas, adornLift(0))
+	if len(rows) < 2 || !strings.Contains(deltaRowFull(rows[1]), "system.forked_from") {
+		t.Fatalf("a node's fork row says what it is: %+v", rows)
 	}
 }
 
@@ -180,28 +180,32 @@ func TestNodeForkIsAnOrdinaryRow(t *testing.T) {
 func TestToolSnakeFollowsTheSelection(t *testing.T) {
 	tr := adornFixture(t)
 	ref := nodeRef{turn: 1, index: 0}
-	tr.adorned[ref] = true
+	tr.metaOpen[ref] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
 
 	wantRows(t, adornRowsAt(t, tr, "set mantra (figaro", 4),
 		"  │ set mantra (figaro e5abf08d) @7",
-		" Δ╯",
-		"   datetime  ∅ -> Saturday, September 12, 2026",
-		"   mantra    going to test some harness behav… -> harness behavior test",
+		" •╯",
+		"   address   1.0",
+		"   tool      bash",
 	)
 
-	tr.selectRef(deltaRefOf(ref, 1), false)
+	tr.selectRef(metaRefOf(ref, 1), false)
 	wantRows(t, adornRowsAt(t, tr, "set mantra (figaro", 4),
 		"  │ set mantra (figaro e5abf08d) @7",
 		" ╭╯",
-		" Δ datetime  ∅ -> Saturday, September 12, 2026",
-		"   mantra    going to test some harness behav… -> harness behavior test",
+		" • address   1.0",
+		"   tool      bash",
 	)
 
-	tr.selectRef(deltaRefOf(ref, 2), false)
-	wantRows(t, adornRowsAt(t, tr, "set mantra (figaro", 4),
+	tr.selectRef(metaRefOf(ref, 6), false)
+	wantRows(t, adornRowsAt(t, tr, "set mantra (figaro", 8),
 		"  │ set mantra (figaro e5abf08d) @7",
 		" ╭╯",
+		" │ address   1.0",
+		" │ tool      bash",
+		" │ command   figaro set mantra",
+		" │ status    ok",
 		" │ datetime  ∅ -> Saturday, September 12, 2026",
 		" Δ mantra    going to test some harness behav… -> harness behavior test",
 	)
@@ -209,7 +213,7 @@ func TestToolSnakeFollowsTheSelection(t *testing.T) {
 	tr.selectRef(nodeRef{turn: 1, index: 1}, false)
 	wantRows(t, adornRowsAt(t, tr, "set mantra (figaro", 2),
 		"  │ set mantra (figaro e5abf08d) @7",
-		" Δ╯",
+		" •╯",
 	)
 }
 
@@ -218,19 +222,21 @@ func TestToolSnakeFollowsTheSelection(t *testing.T) {
 func TestInquirySnakeRunsDownToItsCorner(t *testing.T) {
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
-	tr.adorned[inq] = true
+	tr.metaOpen[inq] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
-	tr.selectRef(deltaRefOf(inq, 1), false)
-	wantRows(t, adornRowsAt(t, tr, "what does this say?", 4),
+	tr.selectRef(metaRefOf(inq, 2), false)
+	wantRows(t, adornRowsAt(t, tr, "what does this say?", 5),
 		"  what does this say?",
 		"",
+		"  address   1",
 		"Δ datetime  ∅ -> Saturday, September 12, 2026",
 		"│ mantra    going to test some harness behavi… -> harness behavior test",
 	)
-	tr.selectRef(deltaRefOf(inq, 2), false)
-	wantRows(t, adornRowsAt(t, tr, "what does this say?", 4),
+	tr.selectRef(metaRefOf(inq, 3), false)
+	wantRows(t, adornRowsAt(t, tr, "what does this say?", 5),
 		"  what does this say?",
 		"",
+		"  address   1",
 		"  datetime  ∅ -> Saturday, September 12, 2026",
 		"Δ mantra    going to test some harness behavi… -> harness behavior test",
 	)
@@ -241,18 +247,20 @@ func TestInquirySnakeRunsDownToItsCorner(t *testing.T) {
 func TestProseSnakeHangsFromItsFirstLine(t *testing.T) {
 	tr := adornFixture(t)
 	ref := nodeRef{turn: 1, index: 1}
-	tr.adorned[ref] = true
+	tr.metaOpen[ref] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
-	wantRows(t, adornRowsAt(t, tr, "a quote of my own line", 4),
-		"Δ a quote of my own line, sliced.",
+	wantRows(t, adornRowsAt(t, tr, "a quote of my own line", 5),
+		"• a quote of my own line, sliced.",
 		"",
+		"  address   1.1",
 		"  datetime  ∅ -> Saturday, September 12, 2026",
 		"  mantra    going to test some harness behavi… -> harness behavior test",
 	)
-	tr.selectRef(deltaRefOf(ref, 2), false)
-	wantRows(t, adornRowsAt(t, tr, "a quote of my own line", 4),
+	tr.selectRef(metaRefOf(ref, 3), false)
+	wantRows(t, adornRowsAt(t, tr, "a quote of my own line", 5),
 		"╭ a quote of my own line, sliced.",
 		"│",
+		"│ address   1.1",
 		"│ datetime  ∅ -> Saturday, September 12, 2026",
 		"Δ mantra    going to test some harness behavi… -> harness behavior test",
 	)
@@ -266,14 +274,21 @@ func TestSelectionWalksEveryDeltaRow(t *testing.T) {
 	tool := nodeRef{turn: 1, index: 0}
 	prose := nodeRef{turn: 1, index: 1}
 	for _, ref := range []nodeRef{inq, tool, prose} {
-		tr.adorned[ref] = true
+		tr.metaOpen[ref] = true
 	}
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
 
-	want := []nodeRef{
-		inq, deltaRefOf(inq, 1), deltaRefOf(inq, 2),
-		tool, deltaRefOf(tool, 1), deltaRefOf(tool, 2),
-		prose, deltaRefOf(prose, 1), deltaRefOf(prose, 2),
+	want := []nodeRef{inq}
+	for i := 1; i <= 3; i++ {
+		want = append(want, metaRefOf(inq, i))
+	}
+	want = append(want, tool)
+	for i := 1; i <= 6; i++ {
+		want = append(want, metaRefOf(tool, i))
+	}
+	want = append(want, prose)
+	for i := 1; i <= 3; i++ {
+		want = append(want, metaRefOf(prose, i))
 	}
 	var got []nodeRef
 	for range want {
@@ -317,7 +332,7 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 
 	tr.selectRef(tool, false)
 	tr.key('e')
-	if tr.adorned[tool] {
+	if tr.metaOpen[tool] {
 		t.Fatal("e must not open the delta list")
 	}
 	if !tr.expanded[tool] {
@@ -325,8 +340,8 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 	}
 	tr.key('e')
 	tr.key(0x0d)
-	if !tr.adorned[tool] || !tr.expanded[tool] {
-		t.Fatalf("Enter opens both: adorned=%v expanded=%v", tr.adorned[tool], tr.expanded[tool])
+	if !tr.metaOpen[tool] || !tr.expanded[tool] {
+		t.Fatalf("Enter opens both: adorned=%v expanded=%v", tr.metaOpen[tool], tr.expanded[tool])
 	}
 
 	tr.selectRef(prose, false)
@@ -335,17 +350,19 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 		t.Fatal("prose has no body: t must be inert on it")
 	}
 	tr.key(0x0d)
-	if !tr.adorned[prose] {
+	if !tr.metaOpen[prose] {
 		t.Fatal("Enter must open prose's list")
 	}
 
-	tr.selectRef(deltaRefOf(prose, 2), false)
+	tr.selectRef(metaRefOf(prose, 2), false)
 	tr.key(0x0d)
-	if tr.adorned[prose] {
-		t.Fatal("Enter inside the list must close it")
+	if !tr.metaOpen[prose] || !tr.entryOpen[metaRefOf(prose, 2)] {
+		t.Fatal("Enter inside the list opens the entry and leaves the list open")
 	}
-	if ref := tr.selection.focus.nodeRef; ref != prose {
-		t.Fatalf("closing the list leaves the selection on the block, got %+v", ref)
+	tr.selectRef(prose, false)
+	tr.key(0x0d)
+	if tr.metaOpen[prose] {
+		t.Fatal("Enter on the block closes its list")
 	}
 }
 
@@ -361,7 +378,7 @@ func TestDeltaKeyIsTheHalfPageScroll(t *testing.T) {
 	ref := nodeRef{turn: 1, index: 1}
 	tr.selectRef(ref, false)
 	tr.key('d')
-	if tr.adorned[ref] {
+	if tr.metaOpen[ref] {
 		t.Fatal("d must not open a form-delta list")
 	}
 	if tr.offset == 0 {
@@ -375,7 +392,7 @@ func TestWashCoversTheBlocksChrome(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
-	tr.adorned[inq] = true
+	tr.metaOpen[inq] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
 	tr.selectRef(inq, false)
 	tr.buildIndex()
@@ -406,14 +423,14 @@ func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
-	tr.adorned[tool] = true
+	tr.metaOpen[tool] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
-	tr.selectRef(deltaRefOf(tool, 1), false)
+	tr.selectRef(metaRefOf(tool, 1), false)
 	tr.buildIndex()
 
 	for _, e := range tr.index.entries {
 		for _, r := range e.rows {
-			if r.ref != deltaRefOf(tool, 1) {
+			if r.ref != metaRefOf(tool, 1) {
 				continue
 			}
 			line := tr.rowLine(r, "", tr.selectionSpan())
@@ -421,7 +438,7 @@ func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 				t.Fatalf("a selected delta row is washed: %q", line)
 			}
 			plain := stripANSI(line)
-			if !strings.Contains(plain, deltaGlyph) {
+			if !strings.Contains(plain, headGlyph) {
 				t.Fatalf("the snake's head survives the wash: %q", plain)
 			}
 			return
@@ -434,9 +451,9 @@ func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 func TestDeltaRowYanksItsValueWhole(t *testing.T) {
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
-	tr.adorned[tool] = true
+	tr.metaOpen[tool] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
-	tr.selectRef(deltaRefOf(tool, 2), false)
+	tr.selectRef(metaRefOf(tool, 6), false)
 	plan, ok := tr.selectionPlan()
 	if !ok {
 		t.Fatal("a selected row must yank")
@@ -455,7 +472,7 @@ func TestDeltaRowYanksItsValueWhole(t *testing.T) {
 // The coordinate mark never paints over the gutter.
 func TestCoordinateMarkStopsShortOfTheGutter(t *testing.T) {
 	tr := adornFixture(t)
-	tr.view.(*ariaView).settings.verbose = true
+	tr.view.(*ariaView).settings.more = true
 	tr.buildIndex()
 	rows := adornScreen(tr)
 	joined := strings.Join(rows, "\n")
@@ -490,10 +507,10 @@ func TestAdornmentRowsFitEveryWidth(t *testing.T) {
 		tr := newTranscript(ldrender.NewFakeTerminal(w, 40), w, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()
 		for _, ref := range []nodeRef{{turn: 1, index: inquiryNode}, {turn: 1, index: 0}, {turn: 1, index: 1}, {turn: 1, index: 2}} {
-			tr.adorned[ref] = true
+			tr.metaOpen[ref] = true
 		}
 		tr.dropTurnsRows(map[int]struct{}{1: {}})
-		tr.selectRef(deltaRefOf(nodeRef{turn: 1, index: 0}, 2), false)
+		tr.selectRef(metaRefOf(nodeRef{turn: 1, index: 0}, 2), false)
 		for i, row := range tr.lines() {
 			if n := displayWidth(row); n > w {
 				t.Fatalf("width %d: row %d is %d columns: %q", w, i, n, stripANSI(row))
@@ -502,20 +519,20 @@ func TestAdornmentRowsFitEveryWidth(t *testing.T) {
 	}
 }
 
-// A second click on a block opens what it has; on a delta row, nothing.
-func TestSecondClickOnADeltaRowOpensNothing(t *testing.T) {
+// A second click on a block opens what it has; on a delta row, that row.
+func TestSecondClickOnADeltaRowOpensTheRow(t *testing.T) {
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
 	if !tr.toggleExpansionOf(tool) {
 		t.Fatal("a second click on a tool must open it")
 	}
-	if !tr.adorned[tool] || !tr.expanded[tool] {
-		t.Fatalf("a click opens what the block has: adorned=%v expanded=%v", tr.adorned[tool], tr.expanded[tool])
+	if !tr.metaOpen[tool] || !tr.expanded[tool] {
+		t.Fatalf("a click opens what the block has: adorned=%v expanded=%v", tr.metaOpen[tool], tr.expanded[tool])
 	}
-	if tr.toggleExpansionOf(deltaRefOf(tool, 1)) {
-		t.Fatal("a second click on a delta row must do nothing")
+	if !tr.toggleExpansionOf(metaRefOf(tool, 5)) || !tr.entryOpen[metaRefOf(tool, 5)] {
+		t.Fatal("a second click on a delta row opens it")
 	}
-	if !tr.adorned[tool] {
+	if !tr.metaOpen[tool] {
 		t.Fatal("and must not close the list it is in")
 	}
 }
@@ -570,7 +587,7 @@ func stickyAdorned(t testing.TB) (*transcript, nodeRef) {
 	tr := adornFixtureH(t, 8, 3)
 	tr.view.(*ariaView).settings.sticky = true
 	inq := nodeRef{turn: 3, index: inquiryNode}
-	tr.adorned[inq] = true
+	tr.metaOpen[inq] = true
 	tr.dropTurnsRows(map[int]struct{}{3: {}})
 	tr.buildIndex()
 	return tr, inq
@@ -580,7 +597,7 @@ func stickyAdorned(t testing.TB) (*transcript, nodeRef) {
 // offset.
 func TestSelectedRowClearsTheStickyHeader(t *testing.T) {
 	tr, inq := stickyAdorned(t)
-	tr.selectRef(deltaRefOf(inq, 2), false)
+	tr.selectRef(metaRefOf(inq, 2), false)
 
 	span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
 	if !ok {
@@ -615,7 +632,7 @@ func TestSelectedRowClearsTheStickyHeader(t *testing.T) {
 func TestWashStopsAtTheAdornmentsCorner(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, inq := stickyAdorned(t)
-	tr.selectRef(deltaRefOf(inq, 2), false)
+	tr.selectRef(metaRefOf(inq, 2), false)
 	tr.ensureSelectionVisible()
 
 	rows := tr.window(tr.offset, tr.offset+8, nil)
@@ -637,4 +654,8 @@ func TestWashStopsAtTheAdornmentsCorner(t *testing.T) {
 	if washed(rows[voice]) {
 		t.Errorf("the wash ran past the corner onto %q", stripANSI(rows[voice]))
 	}
+}
+
+func adornRowCount(deltas map[string]livedoc.FormDelta, lift bool) int {
+	return deltaRowCount(deltas, lift, lift && forkParentOf(deltas) != "")
 }

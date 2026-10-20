@@ -142,7 +142,7 @@ const (
 	helpComposerMotions
 	helpComposerMark
 	helpYank
-	helpVerbose
+	helpMore
 	helpSticky
 	helpQuestionTravel
 	helpSelect
@@ -218,7 +218,7 @@ var helpRows = []helpRow{
 	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
 	{helpPitDrop, "(in a list) x / X", "drop or kill the selected row, asking first / at once"},
 	{helpYank, "y · M-y", "copy the selection, else the aria's name · its full id"},
-	{helpVerbose, "M-m", "toggle verbose tool output and the node addresses"},
+	{helpMore, "M-m", "more: every name beside its other spelling, and addresses in the spare columns"},
 	{helpSticky, "s", "pin the question of the turn you are inside"},
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},

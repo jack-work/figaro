@@ -55,17 +55,17 @@ func TestForkJumpTravelsBetweenForkPoints(t *testing.T) {
 	}
 	tr.key('k')
 	first := tr.selection.focus.nodeRef
-	if first.delta != 0 || first.index != inquiryNode || first.turn != 6 {
+	if first.meta != 0 || first.index != inquiryNode || first.turn != 6 {
 		t.Fatalf("f k should land on turn 6's question, got %+v", first)
 	}
 	tr.key('f')
 	tr.key('k')
-	if ref := tr.selection.focus.nodeRef; ref.delta != 0 || ref.turn != 2 {
+	if ref := tr.selection.focus.nodeRef; ref.meta != 0 || ref.turn != 2 {
 		t.Fatalf("a second f k should land on turn 2's, got %+v", ref)
 	}
 	tr.key('f')
 	tr.key('j')
-	if ref := tr.selection.focus.nodeRef; ref.delta != 0 || ref.turn != 6 {
+	if ref := tr.selection.focus.nodeRef; ref.meta != 0 || ref.turn != 6 {
 		t.Fatalf("f j should come back down to turn 6's, got %+v", ref)
 	}
 }

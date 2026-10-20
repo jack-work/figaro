@@ -17,6 +17,7 @@ type statusView struct {
 	State       turnStatus
 	Tick        uint64
 	Aria        string
+	AriaMore    string
 	Mantra      string
 	Ctx         string // already formatted
 	Alerts      []barAlert
@@ -51,6 +52,15 @@ const lastAtFormat = "01/02/06 15:04:05"
 func (v statusView) render(w int) []string {
 	if w <= 0 {
 		return nil
+	}
+	if v.AriaMore != "" {
+		more := v
+		v.AriaMore, more.AriaMore, more.Aria = "", "", v.AriaMore
+		rows, plain := more.render(w), v.render(w)
+		if len(rows) == len(plain) {
+			return rows
+		}
+		return plain
 	}
 	rest, right, at := v.groups()
 	r := joinFields(right)
@@ -205,6 +215,9 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 		LastAt:  s.lastAt,
 		Verbose: verbose,
 	}
+	if s.more {
+		v.AriaMore = ariaNameMore(s.figaroID)
+	}
 	for _, n := range s.notices {
 		v.Alerts = append(v.Alerts, barAlert{Text: n.text, Level: n.level})
 	}
@@ -228,7 +241,7 @@ func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool) 
 	if s == nil || w <= 0 {
 		return nil
 	}
-	rows := []string{term.Dim(s.ruleLine(w, pos))}
+	rows := []string{term.Dim(s.ruleLine(w, "", pos))}
 	for _, r := range s.viewOf(pit, verbose, time.Now()).render(w) {
 		rows = append(rows, term.Dim(r))
 	}

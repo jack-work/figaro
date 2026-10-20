@@ -432,17 +432,14 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 // the adornment marker is put back after it.
 func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) string {
 	line := r.text
-	if r.mark != "" && t.verbose() {
-		line = ldrender.OverlayRight(line, r.mark, t.w-ldrender.GutterCols)
-		if r.gutter != "" {
-			line = ldrender.OverlayGutter(line, r.gutter, t.w)
-		}
+	if t.more() && (r.mark != "" || len(r.more) > 0) {
+		line = ldrender.Annotate(line, r.more, r.mark, r.gutter, t.w)
 	}
 	// The snake's head follows the cursor, so it is resolved here and not
 	// baked into the cache.
 	if r.spine.Kind != ldrender.SpineNone {
 		if c := spineCursor(r.ref, sel); c != 0 {
-			line = ldrender.OverlayColumn(line, r.spine.Col, spineGlyph(r.spine, r.ref.delta, c))
+			line = ldrender.OverlayColumn(line, r.spine.Col, spineGlyph(r.spine, r.ref.meta, c))
 		}
 	}
 	if r.ref.valid() {
@@ -462,7 +459,7 @@ func spineCursor(ref nodeRef, sel selectionSpan) int {
 	if sel.focus.turn != ref.turn || sel.focus.index != ref.index {
 		return 0
 	}
-	return sel.focus.delta
+	return sel.focus.meta
 }
 
 // selectionSpan answers "is this ref selected" by comparison rather than a map
@@ -484,8 +481,6 @@ func (t *transcript) selectionSpan() selectionSpan {
 	return selectionSpan{active: true, lo: lo, hi: hi, focus: t.selection.focus.nodeRef}
 }
 
-// The wash is the block's, never a delta row's own; the snake's head says which
-// row the cursor stands on.
 func (s selectionSpan) mark(ref nodeRef) selectionMark {
 	if !s.active {
 		return selectionMark{}
@@ -497,7 +492,7 @@ func (s selectionSpan) mark(ref nodeRef) selectionMark {
 		return selectionMark{}
 	}
 	active := block == blockOf(s.focus)
-	if ref.note > 0 || s.focus.note > 0 {
+	if ref.meta > 0 || s.focus.meta > 0 {
 		active = ref == s.focus
 	}
 	return selectionMark{selected: true, active: active}
@@ -505,15 +500,24 @@ func (s selectionSpan) mark(ref nodeRef) selectionMark {
 
 // Duplicated LTs (a held-open message shadowing a committed one) widen the span.
 func (t *transcript) nodeSpanOf(ref nodeRef) (nodeSpan, bool) {
+	return t.spanWhere(ref.turn, func(r nodeRef) bool { return r == ref })
+}
+
+func (t *transcript) blockSpanOf(ref nodeRef) (nodeSpan, bool) {
+	block := blockOf(ref)
+	return t.spanWhere(ref.turn, func(r nodeRef) bool { return blockOf(r) == block })
+}
+
+func (t *transcript) spanWhere(turn int, match func(nodeRef) bool) (nodeSpan, bool) {
 	span, found := nodeSpan{}, false
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
-		if e.turn != ref.turn {
+		if e.turn != turn {
 			continue
 		}
 		base := e.start + e.sepHeight()
 		for i := range e.rows {
-			if e.rows[i].ref != ref {
+			if !match(e.rows[i].ref) {
 				continue
 			}
 			if !found {

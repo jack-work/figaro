@@ -21,7 +21,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 		}}}}, "Then check the tests")
 		rows := p.rows()
 		heading := p.only(t, rows, "Duke")
-		if !strings.HasPrefix(rows[heading], "> Duke ⑂ e87bb154") || !strings.HasSuffix(rows[heading], "Δ") {
+		if !strings.HasPrefix(rows[heading], "> Duke ⑂ "+ariaName("e87bb154")) || !strings.HasSuffix(rows[heading], "Δ") {
 			t.Fatalf("inquiry heading lost metadata: %s", p.dump())
 		}
 		p.key("C-n")
@@ -35,7 +35,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 			first := p.only(t, rows, "I should read")
 			last := p.only(t, rows, "Then check")
 			delta := p.only(t, rows, "mantra")
-			if delta != last+2 || strings.TrimSpace(rows[last+1]) != want {
+			if delta != last+3 || strings.TrimSpace(rows[last+1]) != want || !strings.Contains(rows[last+2], "address") {
 				t.Fatalf("connector should be %s below the thinking: %s", want, p.dump())
 			}
 			for _, row := range rows[first : last+1] {
@@ -44,18 +44,26 @@ func TestGutterJunctionPTY(t *testing.T) {
 				}
 			}
 		}
-		assertThinkingConnector("Δ─╯")
+		assertThinkingConnector(headGlyph + "─╯")
 		t.Logf("parked:\n%s", p.capture(true))
+		p.key("C-n")
 		p.key("C-n")
 		p.key("C-n")
 		p.key("C-n")
 		assertThinkingConnector("╭─╯")
 		rows = p.rows()
 		delta := p.only(t, rows, "mantra")
-		if !strings.HasPrefix(rows[delta], "Δ mantra") {
+		if !strings.HasPrefix(rows[delta], deltaGlyph+" mantra") {
 			t.Fatalf("head did not follow the delta selection: %s", p.dump())
 		}
 		t.Logf("delta selected:\n%s", p.capture(true))
+		p.key("Enter")
+		if !hasRow(p.rows(), "mantra") || !hasRow(p.rows(), "+ checking the tests") {
+			t.Fatalf("Enter on a delta row must open that row and keep the list: %s", p.dump())
+		}
+		p.key("Enter")
+		p.key("C-p")
+		p.key("C-p")
 		p.key("Enter")
 		if hasRow(p.rows(), "mantra") || hasRow(p.rows(), "╯") {
 			t.Fatalf("closed list left a connector or delta behind: %s", p.dump())
@@ -79,7 +87,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 		check := func() {
 			t.Helper()
 			rows := p.rows()
-			if !strings.HasPrefix(rows[0], "∨ Duke ⑂ e87bb154") || !strings.HasSuffix(rows[0], "1 Δ") || !strings.Contains(rows[1], "keep the question") {
+			if !strings.HasPrefix(rows[0], "∨ Duke ⑂ "+ariaName("e87bb154")) || !strings.HasSuffix(rows[0], "1 Δ") || !strings.Contains(rows[1], "keep the question") {
 				t.Fatalf("fixture has no pinned question: %s", p.dump())
 			}
 			if !strings.HasPrefix(rows[2], "──┬─") || !strings.HasPrefix(rows[3], "  │") {

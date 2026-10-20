@@ -394,7 +394,7 @@ renderers in `internal/livelog/render`:
   history. It continues applying live pages while the user scrolls and pages
   older ranges by `(turn,node)` anchors.
 
-Presentation is a pure client concern. M-m toggles verbose tool output and the node addresses;
+Presentation is a pure client concern. M-m shows more (other name spellings, node addresses);
 Ctrl-T enters or leaves the transcript. Thinking is muted by default, tools are
 native widgets, and spinners animate locally. The wire carries semantic node
 data rather than terminal rows, ANSI, width, theme, or animation ticks.

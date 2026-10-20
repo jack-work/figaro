@@ -86,7 +86,7 @@ func inputSignature(p *inputProbe, stop bool, rest []byte, base int) string {
 	return fmt.Sprintf("stop=%v rest=%q act=%v %s fol=%v srch=%v q=%q h=%v s=%v Q=%v pre=%s sel=%v verb=%v disc=%d canc=%v clip=%q cpfail=%v cping=%v jmp=%v jq=%q",
 		stop, string(rest), tr.active, offToken(tr, base), tr.follow, tr.inSearch, tr.query,
 		tr.showing("help"), tr.showing("status"), tr.showing("queue"), prefixToken(tr), tr.selection.active,
-		p.in.set.verbose, len(p.in.disconnectCh), p.cancelled.Load(), clip, copyFailed, copying,
+		p.in.set.more, len(p.in.disconnectCh), p.cancelled.Load(), clip, copyFailed, copying,
 		tr.boxOpen(), tr.cmdline.String())
 }
 

@@ -8,64 +8,48 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/jack-work/figaro/sdk/aria"
 )
 
-func (t *transcript) appendNoteRows(rows []transcriptRow, m aria.Message, block int) []transcriptRow {
-	idxs := t.comments.at(m, block)
-	if len(idxs) == 0 {
-		return rows
-	}
-	rows = append(rows, transcriptRow{text: ""})
-	ref := blockRef(m, block)
-	for i, ci := range idxs {
-		note := noteRefOf(ref, i+1)
-		for _, r := range t.commentRows(t.comments.list[ci], note, t.commentsOpen[note]) {
-			r.text = plainNodeRow(r.text, t.w)
-			rows = append(rows, r)
-		}
-	}
-	return rows
+type entryRow struct {
+	text  string
+	reply int
 }
 
-func (t *transcript) commentRows(c comment, note nodeRef, open bool) []transcriptRow {
-	pad := strings.Repeat(" ", commentIndent)
+func commentEntryRows(c comment, open bool, width int, render func(string, int) []string) []entryRow {
 	head := c.head()
-	fold := "▸"
-	if open {
-		fold = "▾"
-	}
-	id := term.StateDim("  " + commentAddress(c, 0))
 	label := head.by
 	if label == "" {
 		label = "comment"
 	}
+	id := term.StateDim("  " + commentAddress(c, 0))
 	if !open {
 		more := ""
 		if n := len(c.thread) - 1; n > 0 {
 			more = term.StateDim(" · " + pluralReplies(n))
 		}
-		first := strings.TrimSpace(strings.SplitN(head.text, "\n", 2)[0])
-		return []transcriptRow{{ref: note, text: pad + term.CommentMark(fold+" "+commentGlyph+" "+label) + term.StateDim(": ") + first + more + id}}
+		lead := "▸ " + label + ": "
+		tail := ldrender.Width(more) + ldrender.Width(id)
+		first := elide(headLine(head.text), width-ldrender.Width(lead)-tail)
+		return []entryRow{{text: term.CommentMark("▸ "+label) + term.StateDim(": ") + first + more + id}}
 	}
-	rows := []transcriptRow{{ref: note, text: pad + term.CommentMark(fold+" "+commentGlyph+" "+c.token) + id}}
-	body := t.w - commentBodyShift - ldrender.GutterCols
-	if body < 8 {
-		body = 8
-	}
+	rows := []entryRow{{text: term.CommentMark("▾ "+c.token) + id}}
+	body := max(width-commentBodyShift, 8)
 	shift := strings.Repeat(" ", commentBodyShift)
 	for k, e := range c.thread {
-		ref := replyRefOf(note, k+1)
 		if k > 0 {
-			rows = append(rows, transcriptRow{ref: ref, text: ""})
+			rows = append(rows, entryRow{reply: k + 1})
 		}
 		by := e.by
 		if by == "" {
 			by = "comment"
 		}
-		rows = append(rows, transcriptRow{ref: ref, text: strings.Repeat(" ", commentBodyShift-2) + term.CommentMark("› "+by) + term.StateDim("  "+commentAddress(c, k+1))})
-		for _, line := range t.renderCommentText(e.text, body) {
-			rows = append(rows, transcriptRow{ref: ref, text: shift + line})
+		rows = append(rows, entryRow{reply: k + 1, text: strings.Repeat(" ", commentBodyShift-2) + term.CommentMark("› "+by) + term.StateDim("  "+commentAddress(c, k+1))})
+		lines := wrapPlain(e.text, body)
+		if render != nil {
+			lines = render(e.text, body)
+		}
+		for _, line := range lines {
+			rows = append(rows, entryRow{reply: k + 1, text: shift + line})
 		}
 	}
 	return rows
@@ -101,7 +85,7 @@ func (t *transcript) annotations(a, b int) annotationRuns {
 }
 
 func (t *transcript) focusedAnnotation(a, b int) annotationRuns {
-	if !t.selection.active || t.selection.focus.note == 0 {
+	if !t.selection.active || t.selection.focus.meta == 0 {
 		return nil
 	}
 	focused, ok := t.commentOf(t.selection.focus.nodeRef)

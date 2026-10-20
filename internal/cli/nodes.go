@@ -23,10 +23,9 @@ const (
 	toolSummaryCap      = 80
 )
 
-// renderSettings changes only what is drawn beside a row, never what it says, so
-// every field can flip live.
 type renderSettings struct {
-	verbose     bool
+	more        bool
+	details     bool
 	coordFormat string
 	sticky      bool
 	jsonMode    bool
@@ -60,30 +59,39 @@ func nodeExpandable(n livedoc.Node) bool {
 }
 
 func renderTurnRows(m aria.Message, width int, tick uint64, set renderSettings) []string {
-	return ldrender.Text(turnComposer(m.Turn, width, tick, set).Message(m, width))
+	return ldrender.Painted(turnComposer(m, width, tick, set).Message(m, width), width, set.more)
 }
 
 func renderNodeList(nodes []livedoc.Node, width int, tick uint64, set renderSettings) []string {
-	return ldrender.Text(turnComposer(0, width, tick, set).Nodes(nodes, width))
+	return ldrender.Painted(turnComposer(aria.Message{Nodes: nodes}, width, tick, set).Nodes(nodes, width), width, set.more)
 }
 
-func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Composer {
+func turnComposer(m aria.Message, width int, tick uint64, set renderSettings) ldrender.Composer {
+	turn := m.Turn
 	c := ldrender.Composer{
 		View:        &ariaView{settings: &set},
 		Header:      messageHeader,
 		Rule:        func() string { return dimTransRule(width) },
 		InputHeader: inputHeader,
+		HeadMore:    headMore,
 		Tick:        int(tick),
-		// -v opens the delta list: a one-shot dump has no d to press.
 		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
-			return buildAdornment(adornerFor(block, n), deltas, w, set.verbose)
+			sec := metaSection{
+				ref:    blockRef(m, block),
+				block:  block,
+				deltas: deltas,
+				open:   set.details && len(deltas) > 0,
+			}
+			if sec.open {
+				held := m
+				sec.src, sec.m = metaSource{layout: set.coordFormat}, &held
+			}
+			return buildAdornment(adornerFor(block, n), sec, w)
 		},
 		Quote: func(q quote.Mention, w int, _ bool) []string { return quoteRows(q, w, true) },
-	}
-	if set.verbose {
-		c.Mark = func(block int, n livedoc.Node) string {
+		Mark: func(block int, n livedoc.Node) string {
 			return term.Dim(coordLabel(turn, block, nodeCoordAt(n), set.coordFormat))
-		}
+		},
 	}
 	return c
 }
@@ -285,10 +293,7 @@ func renderThinkingNode(n livedoc.Node, width int) []string {
 }
 
 func renderSteeringNode(n livedoc.Node, width int) []string {
-	head := term.Dim("↳ input")
-	if n.Sender != "" {
-		head += " " + term.Dim("· "+senderLabel(n.Sender, n.SenderName))
-	}
+	head, _ := steeringHead(n)
 	return append([]string{head}, nodeProseRows(n, width)...)
 }
 

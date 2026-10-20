@@ -194,7 +194,7 @@ func TestRetarget_FoldStatesFollowTheDivergence(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	below := nodeRef{turn: 5, index: 0}
 	above := nodeRef{turn: 30, index: 0}
-	for _, fold := range []map[nodeRef]bool{tr.expanded, tr.adorned} {
+	for _, fold := range []map[nodeRef]bool{tr.expanded, tr.metaOpen} {
 		fold[below] = true
 		fold[above] = true
 	}
@@ -203,7 +203,7 @@ func TestRetarget_FoldStatesFollowTheDivergence(t *testing.T) {
 	b.Apply(aria.Page{Parts: partsFor(1, 20, "A")}, aria.Notify)
 	tr.retarget(b, "aria2222", newSessionStatus("aria2222", time.Now()), 21)
 
-	for name, fold := range map[string]map[nodeRef]bool{"expanded": tr.expanded, "adorned": tr.adorned} {
+	for name, fold := range map[string]map[nodeRef]bool{"expanded": tr.expanded, "adorned": tr.metaOpen} {
 		if !fold[below] {
 			t.Fatalf("%s lost a fold in the prefix both arias share", name)
 		}
@@ -216,14 +216,14 @@ func TestRetarget_FoldStatesFollowTheDivergence(t *testing.T) {
 func TestRetarget_AStrangerKeepsNoFolds(t *testing.T) {
 	tr := forkPager(t, 40, 21, 24)
 	tr.expanded[nodeRef{turn: 5}] = true
-	tr.adorned[nodeRef{turn: 5}] = true
+	tr.metaOpen[nodeRef{turn: 5}] = true
 
 	b := aria.NewClient()
 	b.Apply(aria.Page{Parts: partsFor(1, 3, "Z")}, aria.Notify)
 	tr.retarget(b, "aria3333", newSessionStatus("aria3333", time.Now()), 0)
 
-	if len(tr.expanded) != 0 || len(tr.adorned) != 0 {
-		t.Fatalf("a stranger inherited %d expansions and %d adornments", len(tr.expanded), len(tr.adorned))
+	if len(tr.expanded) != 0 || len(tr.metaOpen) != 0 {
+		t.Fatalf("a stranger inherited %d expansions and %d adornments", len(tr.expanded), len(tr.metaOpen))
 	}
 }
 

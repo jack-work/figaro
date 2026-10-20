@@ -48,6 +48,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		startedAt = time.Now()
 	}
 	status := newSessionStatus(opt.figaroID, startedAt)
+	status.setMore(opt.set.more)
 
 	if opt.signals {
 		var sigCancel context.CancelFunc

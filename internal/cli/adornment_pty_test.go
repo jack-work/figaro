@@ -128,9 +128,9 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 			t.Errorf("delta row %q shows no transition: %q", key, rows[i])
 		}
 	}
-	anchor := p.onlyBare(t, rows, deltaGlyph)
-	if first := p.only(t, rows, adornAskKeys[0]); first != anchor+1 {
-		t.Errorf("the first delta row is at %d, want %d (right under the anchor)\n%s",
+	anchor := p.onlyBare(t, rows, headGlyph)
+	if first := p.only(t, rows, "address"); first != anchor+1 {
+		t.Errorf("the section's first row is at %d, want %d (right under the anchor)\n%s",
 			first, anchor+1, p.dump())
 	}
 	for _, key := range adornAskKeys {
@@ -152,7 +152,7 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 	if !wash[anchor] {
 		t.Errorf("the block's chrome row is not washed with the rest of it\n%s", p.dump())
 	}
-	if !strings.Contains(rows[anchor], deltaGlyph) {
+	if !strings.Contains(rows[anchor], headGlyph) {
 		t.Errorf("the parked head is gone from the chrome row: %q", rows[anchor])
 	}
 }
@@ -160,9 +160,11 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 // ^N and ^P walk the rows one at a time and leave onto the adjacent block.
 func adornRowsWalk(t *testing.T, p *adornPane) {
 	p.key("C-n")
-	adornFocus(t, p, adornAskKeys[0], "entering the list from above")
+	adornFocus(t, p, "address", "entering the list from above")
 	p.key("C-n")
-	adornFocus(t, p, adornAskKeys[1], "the second step")
+	adornFocus(t, p, adornAskKeys[0], "the second step")
+	p.key("C-n")
+	adornFocus(t, p, adornAskKeys[1], "the third step")
 
 	p.key("C-n")
 	wash := p.paneWashed()
@@ -175,6 +177,8 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	p.key("C-p")
 	adornFocus(t, p, adornAskKeys[0], "stepping up inside the list")
 	p.key("C-p")
+	adornFocus(t, p, "address", "the list's first row")
+	p.key("C-p")
 	wash, rows := p.paneWashed(), p.rows()
 	if !wash[p.only(t, rows, adornAsk)] {
 		t.Errorf("^P past the first row did not select the parent block\n%s", p.dump())
@@ -185,16 +189,24 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 		if !wash[i] {
 			t.Errorf("the block's wash stopped short of its delta row %q: %q", key, clean(rows[i]))
 		}
-		if strings.Contains(rows[i], deltaGlyph) {
+		if strings.HasPrefix(clean(rows[i]), deltaGlyph) {
 			t.Errorf("the head stayed on delta row %q with the block selected: %q", key, clean(rows[i]))
 		}
 	}
 }
 
-// Enter closes the list from any row in it and selects the block.
+// Enter on a row opens that row and keeps the list; Enter on the block closes it.
 func adornCloseLands(t *testing.T, p *adornPane) {
 	p.key("C-n")
-	adornFocus(t, p, adornAskKeys[0], "before closing")
+	adornFocus(t, p, "address", "before closing")
+	p.key("Enter")
+	for _, key := range adornAskKeys {
+		if !hasRow(p.rows(), key) {
+			t.Errorf("Enter on a row closed the list (no row for %q)\n%s", key, p.dump())
+		}
+	}
+	p.key("Enter")
+	p.key("C-p")
 	p.key("Enter")
 	rows := p.rows()
 	for _, key := range adornAskKeys {
@@ -219,11 +231,11 @@ func adornToolSnake(t *testing.T, p *adornPane) {
 		p.only(t, rows, key)
 	}
 	elbow := p.only(t, rows, snakeElbow)
-	if got, want := strings.TrimRight(rows[elbow], " "), " "+deltaGlyph+snakeElbow; got != want {
+	if got, want := strings.TrimRight(rows[elbow], " "), " "+headGlyph+snakeElbow; got != want {
 		t.Errorf("the tool's connector reads %q, want %q (the head parks at the anchor)", got, want)
 	}
-	if first := p.only(t, rows, adornToolKeys[0]); first != elbow+1 {
-		t.Errorf("the first tool delta row is at %d, want %d", first, elbow+1)
+	if first := p.only(t, rows, "address"); first != elbow+1 {
+		t.Errorf("the tool section's first row is at %d, want %d", first, elbow+1)
 	}
 
 	p.key("C-n")
@@ -232,11 +244,11 @@ func adornToolSnake(t *testing.T, p *adornPane) {
 	if got, want := strings.TrimRight(rows[elbow], " "), " "+snakeHang+snakeElbow; got != want {
 		t.Errorf("with the cursor in the list the connector reads %q, want %q", got, want)
 	}
-	adornFocus(t, p, adornToolKeys[0], "the tool's first row")
+	adornFocus(t, p, "address", "the tool's first row")
 
 	rows = p.rows()
-	i := p.only(t, rows, adornToolKeys[0])
-	if !p.paneWashed()[i] || !strings.Contains(rows[i], deltaGlyph) {
+	i := p.only(t, rows, "address")
+	if !p.paneWashed()[i] || !strings.Contains(rows[i], headGlyph) {
 		t.Errorf("the focused row lost its head or its wash: %q", rows[i])
 	}
 
@@ -279,11 +291,15 @@ func adornFocus(t *testing.T, p *adornPane, key, what string) {
 		t.Errorf("%s: the row for %q is not washed with its block\n%s", what, key, p.dump())
 		return
 	}
-	if !strings.Contains(plain[i], deltaGlyph) {
+	head := deltaGlyph
+	if key == "address" {
+		head = headGlyph
+	}
+	if !strings.HasPrefix(clean(plain[i]), head) && !strings.Contains(plain[i], " "+head+" ") {
 		t.Errorf("%s: the row for %q carries no head: %q", what, key, plain[i])
 	}
 	for j, row := range plain {
-		if j != i && strings.Contains(row, "->") && strings.Contains(row, deltaGlyph) {
+		if c := clean(row); j != i && (strings.HasPrefix(c, headGlyph+" ") || strings.HasPrefix(c, deltaGlyph+" ") || strings.HasPrefix(c, " "+headGlyph+" ") || strings.HasPrefix(c, " "+deltaGlyph+" ")) {
 			t.Errorf("%s: row %d carries a second head: %q", what, j, row)
 		}
 	}

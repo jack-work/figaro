@@ -418,7 +418,7 @@ func TestSticky_PinsTheQuestionNotTheFormDeltas(t *testing.T) {
 	}
 	// Collapsed, the delta list draws no rows at all.
 	inq := nodeRef{turn: 2, index: inquiryNode}
-	tr.adorned[inq] = true
+	tr.metaOpen[inq] = true
 	tr.dropTurnsRows(map[int]struct{}{2: {}})
 	tr.buildIndex()
 	q := tr.stickyBlockOf(2)

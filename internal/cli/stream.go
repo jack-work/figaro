@@ -951,11 +951,12 @@ func inputEnterTranscript(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyHandled
 }
 
-func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
+func inputToggleMore(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
-	in.set.verbose = !in.set.verbose
-	in.lt.invalidateTranscriptRows()
+	in.set.more = !in.set.more
+	in.lt.status.setMore(in.set.more)
+	in.lt.tr.trustScreen = true
 	in.lt.render()
 	in.mu.Unlock()
 	return keyHandled

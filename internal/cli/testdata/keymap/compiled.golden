@@ -9,7 +9,7 @@ incipit    csi-u ctrl-l       input inputEnterTranscript
 incipit    csi-u ctrl-n       input inputSelectNext
 incipit    csi-u ctrl-p       input inputSelectPrev
 incipit    csi-u ctrl-t       input inputEnterTranscript
-incipit    M-m                input inputToggleVerbose
+incipit    M-m                input inputToggleMore
 incipit    M-y                input inputYankID
 transcript 0x03               input inputInterrupt
 transcript 0x04               input inputDisconnect
@@ -71,7 +71,7 @@ transcript csi-u ctrl-n       input inputSelectNext
 transcript csi-u ctrl-o       pager pagerAriaBack
 transcript csi-u ctrl-p       input inputSelectPrev
 transcript csi-u ctrl-t       input inputEnterTranscript
-transcript M-m                input inputToggleVerbose
+transcript M-m                input inputToggleMore
 transcript M-n                input inputQuestionNext
 transcript M-p                input inputQuestionPrev
 transcript M-y                input inputYankID
@@ -91,7 +91,7 @@ search     csi-u ctrl-l       input inputEnterTranscript
 search     csi-u ctrl-n       input inputSelectNext
 search     csi-u ctrl-p       input inputSelectPrev
 search     csi-u ctrl-t       input inputEnterTranscript
-search     M-m                input inputToggleVerbose
+search     M-m                input inputToggleMore
 jump       0x01               pager cmdHome
 jump       0x02               pager cmdLeft
 jump       0x03               pager cmdAbort
@@ -156,7 +156,7 @@ jump       M-c                pager cmdCapitalize
 jump       M-d                pager cmdKillWordFwd
 jump       M-f                pager cmdWordRight
 jump       M-l                pager cmdDowncase
-jump       M-m                input inputToggleVerbose
+jump       M-m                input inputToggleMore
 jump       M-n                pager cmdPrefixNext
 jump       M-p                pager cmdPrefixPrev
 jump       M-r                pager cmdRevert
@@ -198,7 +198,7 @@ panel      csi-u ctrl-l       input inputEnterTranscript
 panel      csi-u ctrl-n       input inputSelectNext
 panel      csi-u ctrl-p       input inputSelectPrev
 panel      csi-u ctrl-t       input inputEnterTranscript
-panel      M-m                input inputToggleVerbose
+panel      M-m                input inputToggleMore
 panel      M-n                input inputQuestionNext
 panel      M-p                input inputQuestionPrev
 panel      M-y                input inputYankID
@@ -256,7 +256,7 @@ visual     csi-u ctrl-l       input inputEnterTranscript
 visual     csi-u ctrl-n       input inputSelectNext
 visual     csi-u ctrl-p       input inputSelectPrev
 visual     csi-u ctrl-t       input inputEnterTranscript
-visual     M-m                input inputToggleVerbose
+visual     M-m                input inputToggleMore
 visual     M-y                input inputYankID
 confirm    0x03               input inputInterrupt
 confirm    0x04               input inputDisconnect
@@ -273,7 +273,7 @@ confirm    csi-u ctrl-l       input inputEnterTranscript
 confirm    csi-u ctrl-n       input inputSelectNext
 confirm    csi-u ctrl-p       input inputSelectPrev
 confirm    csi-u ctrl-t       input inputEnterTranscript
-confirm    M-m                input inputToggleVerbose
+confirm    M-m                input inputToggleMore
 composer   0x03               input inputInterrupt
 composer   0x04               input inputDisconnect
 composer   0x0c               input inputEnterTranscript
@@ -321,7 +321,7 @@ composer   csi-u ctrl-p       input inputSelectPrev
 composer   csi-u ctrl-s       pager composerSubmit
 composer   csi-u ctrl-t       input inputEnterTranscript
 composer   M-                pager composerSubmit
-composer   M-m                input inputToggleVerbose
+composer   M-m                input inputToggleMore
 composer   M-y                input inputYankID
 list       0x03               input inputInterrupt
 list       0x04               input inputDisconnect
@@ -373,7 +373,7 @@ list       csi-u ctrl-l       input inputEnterTranscript
 list       csi-u ctrl-n       input inputSelectNext
 list       csi-u ctrl-p       input inputSelectPrev
 list       csi-u ctrl-t       input inputEnterTranscript
-list       M-m                input inputToggleVerbose
+list       M-m                input inputToggleMore
 list       M-n                input inputQuestionNext
 list       M-p                input inputQuestionPrev
 list       M-y                input inputYankID
@@ -438,7 +438,6 @@ opens      csi-u ctrl-i
 opens      csi-u ctrl-n
 opens      csi-u ctrl-o
 opens      csi-u ctrl-p
-opens      M-m
 opens      M-n
 opens      M-p
 csi-u      ctrl-a

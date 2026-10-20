@@ -123,8 +123,8 @@ func TestClickOnFocusTogglesExpansion(t *testing.T) {
 	}
 }
 
-// A node with no collapsed form is not flipped invisibly.
-func TestClickOnFocusedProseIsInert(t *testing.T) {
+// A node with no collapsed form opens only its metadata section.
+func TestSecondClickOnProseOpensOnlyItsSection(t *testing.T) {
 	tr, _, _ := mouseFixture(t, 30)
 	prose := nodeRef{turn: 1, index: 0}
 	row := clickRowOf(t, tr, prose)
@@ -133,14 +133,14 @@ func TestClickOnFocusedProseIsInert(t *testing.T) {
 	}
 	tr.render()
 	row = clickRowOf(t, tr, prose)
-	if tr.clickAt(row, false) {
-		t.Fatal("a second click on a node with no collapsed form must report no-op")
+	if !tr.clickAt(row, false) || !tr.metaOpen[prose] {
+		t.Fatal("a second click on prose did not open its metadata section")
 	}
 	if tr.expanded[prose] {
 		t.Fatal("a non-expandable node must not be marked expanded")
 	}
 	if !tr.selection.active || tr.selection.focus.nodeRef != prose {
-		t.Fatalf("an inert second click must not disturb the selection: %+v", tr.selection)
+		t.Fatalf("opening the section must not disturb the selection: %+v", tr.selection)
 	}
 }
 

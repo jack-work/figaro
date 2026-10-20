@@ -109,8 +109,8 @@ type transcript struct {
 	follow  bool
 	pending string
 
-	comments     *commentIndex
-	commentsOpen map[nodeRef]bool
+	comments  *commentIndex
+	entryOpen map[nodeRef]bool
 
 	// render() defers while a batch is open or the frame-rate gate declines;
 	// flush() draws the deferred frame.
@@ -182,9 +182,7 @@ type transcript struct {
 	selection nodeSelection
 	visual    visualSelection
 	expanded  map[nodeRef]bool
-	// adorned is the form-delta fold state; a tool has both, Enter opens the
-	// pair, d and t one each.
-	adorned map[nodeRef]bool
+	metaOpen  map[nodeRef]bool
 
 	// index maps line space to message rows so scrolling never materializes
 	// rows it will not paint.
@@ -228,7 +226,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	t := &transcript{
 		out: out, view: view, client: client, w: w, h: h,
 		rowCache: map[sliceKey]cachedMessage{}, stickyCache: map[sliceKey]stickyQuestion{},
-		expanded: map[nodeRef]bool{}, adorned: map[nodeRef]bool{},
+		expanded: map[nodeRef]bool{}, metaOpen: map[nodeRef]bool{},
 		notes: newNotificationStore(),
 	}
 	t.setStatus(newSessionStatus(figaroID, startedAt))
@@ -758,7 +756,7 @@ func (t *transcript) pruneCaches() {
 			delete(t.rowCache, k)
 		}
 	}
-	for _, state := range []map[nodeRef]bool{t.expanded, t.adorned} {
+	for _, state := range []map[nodeRef]bool{t.expanded, t.metaOpen} {
 		for ref := range state {
 			if !keep[ref.turn] {
 				delete(state, ref)
@@ -980,7 +978,7 @@ func (t *transcript) transcriptRule() string {
 	if t.follow {
 		pos = strings.TrimSpace(pos + " live")
 	}
-	return "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
+	return "\x1b[2m" + t.status.ruleLine(t.w, t.composerHints(), pos) + "\x1b[0m"
 }
 
 type pitFocus uint8
@@ -1085,7 +1083,7 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 	for i := 0; i < len(composed); {
 		r := composed[i]
 		if r.Block == ldrender.BlockChrome {
-			rows = append(rows, transcriptRow{text: r.Text})
+			rows = append(rows, transcriptRow{text: r.Text, more: r.More})
 			i++
 			continue
 		}
@@ -1095,7 +1093,6 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 				for i < len(composed) && composed[i].Block == r.Block {
 					i++
 				}
-				rows = t.appendNoteRows(rows, m, r.Block)
 				continue
 			}
 		}
@@ -1107,15 +1104,14 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 		if memo != nil {
 			memo.keep(block, rows[start:len(rows):len(rows)])
 		}
-		rows = t.appendNoteRows(rows, m, block)
 	}
 	return cachedMessage{rows: rows}
 }
 
 func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
 	ref := blockRef(m, r.Block)
-	if r.Delta > 0 {
-		ref = deltaRefOf(ref, r.Delta)
+	if r.Meta > 0 {
+		ref = replyRefOf(metaRefOf(ref, r.Meta), r.Reply)
 	}
 	// Stored clipped (plainNodeRow) so an untouched frame allocates nothing;
 	// sgrCollapse strips the per-cell rendition churn glamour emits, 3/4 of
@@ -1127,6 +1123,7 @@ func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
 		gutter: r.Gutter,
 		spine:  r.Spine,
 		chrome: r.Chrome,
+		more:   r.More,
 	}
 }
 
@@ -1134,11 +1131,10 @@ func (t *transcript) rowComposer(m aria.Message) ldrender.Composer {
 	c := ldrender.Composer{
 		// The pager view may open arguments as well as output
 		// (ariaView.gesture).
-		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, InputHeader: inputHeader, Tick: t.tick,
+		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, InputHeader: inputHeader, HeadMore: headMore, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[blockRef(m, block)] },
 		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
-			ref := blockRef(m, block)
-			return buildAdornment(adornerFor(block, n), deltas, w, t.adorned[ref])
+			return buildAdornment(adornerFor(block, n), t.section(m, block, n, deltas), w)
 		},
 		Quote: quoteRows,
 	}
@@ -2163,8 +2159,11 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 	if strings.Contains(messageHeader(m.Role), q) {
 		return true
 	}
-	verbose := t.verbose()
-	if verbose && m.Inquiry != "" &&
+	if t.sectionOpenIn(m) {
+		return true
+	}
+	more := t.more()
+	if more && m.Inquiry != "" &&
 		strings.Contains(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat()), q) {
 		return true
 	}
@@ -2173,7 +2172,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
 			return true
 		}
-		if verbose && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat()), q) {
+		if more && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat()), q) {
 			return true
 		}
 		if n.Type == livedoc.NodeSteering && strings.Contains("↳ input", q) {
@@ -2193,16 +2192,9 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 			if strings.Contains(toolElapsed(n), q) {
 				return true
 			}
-			if verbose && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||
+			if more && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||
 				strings.Contains("finished "+formatToolTime(n.FinishedAt), q)) {
 				return true
-			}
-		}
-		if verbose {
-			for k, v := range n.Args {
-				if strings.Contains(fmt.Sprintf("%s=%v", k, v), q) {
-					return true
-				}
 			}
 		}
 		if !t.expanded[nodeRefAt(m, i)] && n.Output != "" {
@@ -2344,6 +2336,7 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 		return
 	}
 	t.rowRev++
+	t.openMemo = openMemo{}
 	for k := range t.rowCache {
 		if _, ok := lts[k.turn()]; ok {
 			delete(t.rowCache, k)
@@ -2368,7 +2361,7 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.rowCache = keepRowsBelow(t.rowCache, base)
 	t.stickyCache = keepStickyBelow(t.stickyCache, base)
 	t.expanded = keepRefsBelow(t.expanded, base)
-	t.adorned = keepRefsBelow(t.adorned, base)
+	t.metaOpen = keepRefsBelow(t.metaOpen, base)
 	if !keepScroll {
 		t.from = aria.Anchor{}
 		t.offset = 0

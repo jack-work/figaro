@@ -51,22 +51,23 @@ func TestComposerOpensOnAngleBracket(t *testing.T) {
 	}
 }
 
-func TestComposerTitleOnlyUnderVerbose(t *testing.T) {
+// More spells the drawer's gestures into the rule above it: a row it already
+// had, so turning more on moves nothing.
+func TestComposerHintsRideTheRuleUnderMore(t *testing.T) {
 	tr, _ := composerPager(t, 72, 24)
 	tr.key('>')
 	typeInto(tr, "hello")
-	if _, found := rowContaining(plainRows(tr.inputDrawerLines()), "composer"); found {
+	if strings.Contains(stripANSI(tr.transcriptRule()), "composer") {
 		t.Fatal("the drawer named itself without being asked")
 	}
-	// M-m is an input-level chord, so the fixture flips the setting itself.
-	tr.view.(*ariaView).settings.verbose = true
-	rows := plainRows(tr.inputDrawerLines())
-	if _, ok := rowContaining(rows, composerGlyph+" composer"); !ok {
-		t.Fatalf("M-m must title the drawer:\n%s", strings.Join(rows, "\n"))
+	before := len(tr.footLines())
+	tr.view.(*ariaView).settings.more = true
+	rule := stripANSI(tr.transcriptRule())
+	if !strings.Contains(rule, composerGlyph+" composer") || !strings.Contains(rule, "^S send") {
+		t.Fatalf("more must spell the drawer's gestures on its rule: %q", rule)
 	}
-	// Windows claims Alt+Enter, so the title names ^S.
-	if _, ok := rowContaining(rows, "^S send"); !ok {
-		t.Fatalf("the title is where the gesture is spelled out:\n%s", strings.Join(rows, "\n"))
+	if after := len(tr.footLines()); after != before {
+		t.Fatalf("more changed the drawer's height from %d to %d rows", before, after)
 	}
 }
 

@@ -3,9 +3,6 @@ package cli
 import (
 	"strconv"
 	"strings"
-
-	ldrender "github.com/jack-work/figaro/internal/livelog/render"
-	"github.com/jack-work/figaro/sdk/aria"
 )
 
 func (t *transcript) commentAtCursor() (nodeRef, bool) {
@@ -36,60 +33,11 @@ func (t *transcript) commentAtCursor() (nodeRef, bool) {
 		if !ok || off < lo || (hi >= 0 && off >= hi) {
 			continue
 		}
-		if ref, ok := t.noteRefFor(c); ok {
+		if ref, ok := t.entryRefFor(c); ok {
 			return ref, true
 		}
 	}
 	return nodeRef{}, false
-}
-
-func (t *transcript) noteRefFor(c comment) (nodeRef, bool) {
-	end := endBlockOf(c.at)
-	var found nodeRef
-	ok := false
-	visit := func(m aria.Message) {
-		if ok {
-			return
-		}
-		try := func(block int) {
-			if k, has := blockKeyOf(m, block); has && k == end {
-				for i, ci := range t.comments.byBlock[end] {
-					if t.comments.list[ci].id == c.id {
-						found, ok = noteRefOf(blockRef(m, block), i+1), true
-					}
-				}
-			}
-		}
-		try(ldrender.BlockInquiry)
-		for i := range m.Nodes {
-			try(i)
-		}
-	}
-	t.forEachMessage(visit)
-	if open := t.openMessage(); open != nil {
-		visit(*open)
-	}
-	return found, ok
-}
-
-func (t *transcript) stepThread(focus nodeRef) bool {
-	c, ok := t.commentOf(focus)
-	if !ok {
-		return false
-	}
-	head := headOf(focus)
-	switch {
-	case !t.commentsOpen[head]:
-		t.toggleFolds([]foldTarget{{state: t.openComments(), ref: head}})
-		t.selectRef(head, false)
-	case focus.reply < len(c.thread):
-		t.selectRef(replyRefOf(head, focus.reply+1), false)
-	default:
-		t.selectRef(head, false)
-		t.toggleFolds([]foldTarget{{state: t.openComments(), ref: head}})
-	}
-	t.ensureSelectionVisible()
-	return true
 }
 
 func (t *transcript) selectedCommentAddr() (string, bool) {
@@ -100,7 +48,7 @@ func (t *transcript) selectedCommentAddr() (string, bool) {
 	case t.selection.active:
 		ref = t.selection.focus.nodeRef
 	}
-	if ref.note == 0 {
+	if ref.meta == 0 {
 		return "", false
 	}
 	c, ok := t.commentOf(ref)
@@ -132,16 +80,15 @@ func (t *transcript) stepComment(dir int) string {
 	if t.comments == nil || len(t.comments.list) == 0 {
 		return "no comments on this aria"
 	}
-	p, ok := t.stepTo(func(p selectionPoint) bool { return p.note > 0 }, dir)
-	if ok {
-		t.land(p.nodeRef)
+	note := t.stepEntry(dir, func(e metaEntry) bool { return e.kind == metaComment }, "no comment")
+	if note == "" {
 		return ""
 	}
 	if turn, ok := t.commentBeyondWindow(dir); ok {
 		t.startJump(jumpTarget{turn: turn})
 		return "the next comment is in turn " + strconv.Itoa(turn) + ": paging it in"
 	}
-	return "no comment " + towards(dir)
+	return note
 }
 
 func (t *transcript) commentBeyondWindow(dir int) (int, bool) {
@@ -158,7 +105,7 @@ func (t *transcript) commentBeyondWindow(dir int) (int, bool) {
 		if c.turn <= 0 {
 			continue
 		}
-		if _, drawn := t.noteRefFor(c); drawn {
+		if _, drawn := t.entryRefFor(c); drawn {
 			continue
 		}
 		if dir < 0 && c.turn < lowest && c.turn > best {

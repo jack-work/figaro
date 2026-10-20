@@ -268,7 +268,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in :) Esc / ^C / ^G abandon the line, close the box",
 		"  (in a list) x / X   drop or kill the selected row, asking first / at once",
 		"  y · M-y             copy the selection, else the aria's name · its full id",
-		"  M-m                 toggle verbose tool output and the node addresses",
+		"  M-m                 more: every name beside its other spelling, and addresses in the spare columns",
 		"  s                   pin the question of the turn you are inside",
 		"  m                   more: state names, model, last interaction",
 		"  (in :) ^V           paste the clipboard",

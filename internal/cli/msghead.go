@@ -6,6 +6,7 @@ import (
 	"github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -21,11 +22,41 @@ func messageHeader(role string) string {
 	}
 }
 
-func inputHeader(seg aria.InquirySegment) string {
+func inputHeader(seg aria.InquirySegment) (string, []ldrender.Spot) {
 	if seg.Sender == "" {
-		return messageHeader(livedoc.RoleInput)
+		return messageHeader(livedoc.RoleInput), nil
 	}
-	return term.Dim("> " + senderLabel(seg.Sender, seg.Name))
+	head := "> " + senderLabel(seg.Sender, seg.Name)
+	return term.Dim(head), otherSpot(ldrender.Width(head), senderOther(seg.Sender, seg.Name))
+}
+
+func steeringHead(n livedoc.Node) (string, []ldrender.Spot) {
+	head := term.Dim("↳ input")
+	if n.Sender == "" {
+		return head, nil
+	}
+	label := "· " + senderLabel(n.Sender, n.SenderName)
+	head += " " + term.Dim(label)
+	return head, otherSpot(ldrender.Width("↳ input "+label), senderOther(n.Sender, n.SenderName))
+}
+
+func headMore(n livedoc.Node) []ldrender.Spot {
+	if n.Type != livedoc.NodeSteering {
+		return nil
+	}
+	_, spots := steeringHead(n)
+	return spots
+}
+
+func senderOther(sender, name string) string {
+	id, _ := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
+	if !rpc.IsHexID(id) || len(strings.TrimPrefix(id, "@")) < rpc.OldIDLen {
+		return ""
+	}
+	if shownIDs == idsAsShortHex && name != "" {
+		return name
+	}
+	return otherName(id)
 }
 
 func senderLabel(sender, name string) string {

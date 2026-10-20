@@ -122,7 +122,7 @@ your changes applied.
 | conversation | transcript,visual | `v` mark-char · `V` mark-line · `X` hang-up-drop · `:` command · `>` compose |
 | clipboard | incipit,transcript,pit,visual,composer,list | `y` yank · `M-y` yank-id |
 | motions | transcript,visual,composer,list | `j` down · `k` up · `d` half-down · `u` half-up · `G` bottom · `g` prefix:g · `Down` down · `Up` up · `PgDn` half-down · `PgUp` half-up · `Home` top · `End` bottom · `h Left` left · `l Right` right · `w` word-next · `b` word-prev · `e` word-end · `0` line-start · `^` line-first · `$` line-end · `{` para-prev · `}` para-next |
-| session | all | `^C` interrupt · `^D` detach · `^L` listen · `^T` listen · `M-m` verbose · `csi:^N` select-next-extend · `csi:^P` select-prev-extend |
+| session | all | `^C` interrupt · `^D` detach · `^L` listen · `^T` listen · `M-m` more · `csi:^N` select-next-extend · `csi:^P` select-prev-extend |
 | g (prefix) | transcript,visual,composer,list | `g` top |
 | fork (prefix) | transcript | `j Down` fork-next · `k Up` fork-prev · `Esc` clear-note |
 | comment (prefix) | transcript | `j Down` comment-next · `k Up` comment-prev · `Esc` clear-note |
@@ -137,7 +137,7 @@ your changes applied.
 | `interrupt` | all |
 | `detach` | all |
 | `listen` | all |
-| `verbose` | all |
+| `more` | all |
 | `select-next-extend` | all |
 | `select-prev-extend` | all |
 | `leave` | transcript,pit,visual,list |

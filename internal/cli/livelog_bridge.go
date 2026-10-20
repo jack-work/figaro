@@ -80,6 +80,8 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Rule = rule
 	in.Header = messageHeader
 	in.InputHeader = inputHeader
+	in.HeadMore = headMore
+	in.More = func() bool { return view.settings != nil && view.settings.more }
 	in.Quote = func(q quote.Mention, w int, expanded bool) []string { return quoteRows(q, w, expanded) }
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	in.Queued = t.queuedRows

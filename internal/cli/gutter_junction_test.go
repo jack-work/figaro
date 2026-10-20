@@ -46,12 +46,12 @@ func TestThinkingAdornmentJoinsBelowTheText(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := gutterPager(t, gutterThinking())
 	ref := nodeRef{turn: 1, index: 0}
-	tr.adorned[ref] = true
+	tr.metaOpen[ref] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
 
 	for _, selected := range []bool{false, true, false} {
 		if selected {
-			tr.selectRef(deltaRefOf(ref, 1), false)
+			tr.selectRef(metaRefOf(ref, 2), false)
 		} else {
 			tr.clearSelection()
 		}
@@ -63,13 +63,13 @@ func TestThinkingAdornmentJoinsBelowTheText(t *testing.T) {
 				start = i
 			case strings.Contains(row, "Then check"):
 				end = i
-			case strings.HasPrefix(row, "Δ─╯"), strings.HasPrefix(row, "╭─╯"):
+			case strings.HasPrefix(row, headGlyph+"─╯"), strings.HasPrefix(row, "╭─╯"):
 				connector = i
 			case strings.Contains(row, "mantra"):
 				delta = i
 			}
 		}
-		if start < 0 || end < 0 || connector != end+1 || delta != connector+1 {
+		if start < 0 || end < 0 || connector != end+1 || delta != connector+2 {
 			t.Fatalf("selected=%v: connector must follow the thinking text, then the delta:\n%s", selected, strings.Join(rows, "\n"))
 		}
 		for _, row := range rows[start : end+1] {
@@ -78,9 +78,9 @@ func TestThinkingAdornmentJoinsBelowTheText(t *testing.T) {
 			}
 		}
 		if selected {
-			wantRows(t, rows[connector:delta+1], "╭─╯", "Δ mantra  reading the handoff -> checking the tests")
+			wantRows(t, rows[connector:delta+1], "╭─╯", "│ address  1.0", deltaGlyph+" mantra   reading the handoff -> checking the tests")
 		} else {
-			wantRows(t, rows[connector:delta+1], "Δ─╯", "  mantra  reading the handoff -> checking the tests")
+			wantRows(t, rows[connector:delta+1], headGlyph+"─╯", "  address  1.0", "  mantra   reading the handoff -> checking the tests")
 		}
 	}
 }
@@ -183,7 +183,7 @@ func TestJoinRule(t *testing.T) {
 func TestThinkingConnectorKeepsCoordinatesAndChromeSeparate(t *testing.T) {
 	tr := gutterPager(t, gutterThinking())
 	ref := nodeRef{turn: 1, index: 0}
-	tr.adorned[ref] = true
+	tr.metaOpen[ref] = true
 	tr.dropTurnsRows(map[int]struct{}{1: {}})
 	tr.buildIndex()
 	connectors := 0
@@ -191,11 +191,11 @@ func TestThinkingConnectorKeepsCoordinatesAndChromeSeparate(t *testing.T) {
 		for _, row := range e.rows {
 			if row.spine.Kind == ldrender.SpineAnchor && blockOf(row.ref) == ref {
 				connectors++
-				if !row.chrome || row.ref.delta != 0 {
+				if !row.chrome || row.ref.meta != 0 {
 					t.Fatalf("connector should not be a selectable delta: %+v", row)
 				}
 			}
-			if strings.Contains(row.text, "mantra") && row.ref != deltaRefOf(ref, 1) {
+			if strings.Contains(row.text, "mantra") && row.ref != metaRefOf(ref, 2) {
 				t.Fatalf("delta row lost its address: %+v", row.ref)
 			}
 		}
@@ -207,12 +207,12 @@ func TestThinkingConnectorKeepsCoordinatesAndChromeSeparate(t *testing.T) {
 
 func TestShowThinkingUsesTheSameConnector(t *testing.T) {
 	m := aria.Message{Turn: 1, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{gutterThinking()}}
-	rows := plain(renderTurnRows(m, 100, 0, renderSettings{verbose: true}))
+	rows := plain(renderTurnRows(m, 100, 0, renderSettings{details: true}))
 	for i, row := range rows {
 		if strings.Contains(row, "Then check") {
-			wantRows(t, rows[i:i+3],
+			wantRows(t, rows[i:i+4],
 				"  │ Then check the tests before changing anything.",
-				"Δ─╯", "  mantra  reading the handoff -> checking the tests")
+				headGlyph+"─╯", "  address  1.0", "  mantra   reading the handoff -> checking the tests")
 			return
 		}
 	}

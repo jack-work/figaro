@@ -7,6 +7,8 @@ import (
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 type idStyle uint8
@@ -54,6 +56,37 @@ func shortHex(id string) string {
 		return id
 	}
 	return id[:len(id)-len(body)+rpc.ShortIDLen]
+}
+
+func otherName(id string) string {
+	if !rpc.IsHexID(id) || len(strings.TrimPrefix(id, "@")) < rpc.OldIDLen {
+		return ""
+	}
+	if shownIDs == idsAsShortHex {
+		if h := ariaHandle(id); h != id {
+			return h
+		}
+		return ""
+	}
+	return shortHex(id)
+}
+
+func ariaNameMore(id string) string {
+	return withOther(ariaName(id), otherName(id))
+}
+
+func withOther(shown, other string) string {
+	if other == "" || other == shown {
+		return shown
+	}
+	return shown + " (" + other + ")"
+}
+
+func otherSpot(col int, other string) []ldrender.Spot {
+	if other == "" {
+		return nil
+	}
+	return []ldrender.Spot{{Col: col, Text: term.Dim(" (" + other + ")")}}
 }
 
 func rowName(f *rpc.FigaroInfoResponse) string {

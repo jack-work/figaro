@@ -1,6 +1,7 @@
 package render
 
 import (
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -45,6 +46,103 @@ func OverlayRight(line, tag string, width int) string {
 	room := width - tw - 1
 	left := clip(line, room)
 	return left + strings.Repeat(" ", room-Width(left)) + " " + tag
+}
+
+type Spot struct {
+	Col  int
+	Text string
+}
+
+func Unfold(line string, spots []Spot, width int) string {
+	if len(spots) == 0 {
+		return line
+	}
+	ordered := append([]Spot(nil), spots...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Col > ordered[j].Col })
+	for _, s := range ordered {
+		line = insertAt(line, s.Col, s.Text)
+	}
+	return clip(strings.TrimRight(line, " "), width)
+}
+
+func insertAt(line string, col int, text string) string {
+	at, i := 0, 0
+	for i < len(line) && at < col {
+		if line[i] == '\x1b' {
+			i = fig.SkipEscape(line, i)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		at += runewidth.RuneWidth(r)
+		i += size
+	}
+	for i < len(line) && line[i] == '\x1b' && !resets(line, i) {
+		i = fig.SkipEscape(line, i)
+	}
+	if at < col {
+		return line + strings.Repeat(" ", col-at) + text
+	}
+	return line[:i] + text + line[i:]
+}
+
+func resets(line string, i int) bool {
+	return strings.HasPrefix(line[i:], "\x1b[0m") || strings.HasPrefix(line[i:], "\x1b[m")
+}
+
+func FillRight(line, tag string, width int) string {
+	if tag == "" || width <= 0 {
+		return line
+	}
+	ink, cut, styled := inkEnd(line)
+	room := width - ink - 1
+	if room < minFill {
+		return line
+	}
+	tw := Width(tag)
+	if tw > room {
+		tag = clip(tag, room-1) + "…"
+		tw = room
+	}
+	left := line[:cut]
+	if styled {
+		left += "\x1b[0m"
+	}
+	return left + strings.Repeat(" ", width-tw-ink) + tag
+}
+
+const minFill = 4
+
+func Annotate(line string, spots []Spot, mark, gutter string, width int) string {
+	bare := line
+	if gutter != "" {
+		bare = clip(line, width-GutterCols)
+	}
+	more := FillRight(Unfold(bare, spots, width), mark, width)
+	if more == bare {
+		return line
+	}
+	if gutter != "" {
+		more = OverlayGutter(more, gutter, width)
+	}
+	return more
+}
+
+func inkEnd(line string) (ink, cut int, styled bool) {
+	col := 0
+	for i := 0; i < len(line); {
+		if line[i] == '\x1b' {
+			styled = true
+			i = fig.SkipEscape(line, i)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		col += runewidth.RuneWidth(r)
+		i += size
+		if r != ' ' {
+			ink, cut = col, i
+		}
+	}
+	return ink, cut, styled
 }
 
 // GutterCols is the width of the right gutter, held for the adornment glyph;

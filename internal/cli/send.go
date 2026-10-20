@@ -416,7 +416,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 
 	set := pagerSettings(loaded)
-	set.verbose, set.listen, set.record = opts.verbose, opts.listen, opts.record
+	set.more, set.listen, set.record = opts.verbose, opts.listen, opts.record
 
 	// `send <trunk>:<turn>` forks at that turn, then sends to whichever trunk
 	// is attended afterwards.

@@ -101,7 +101,7 @@ func TestSurfaceContract_NoSurfaceCollapsesProse(t *testing.T) {
 	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{})); got != full {
 		t.Errorf("show: %d rows, want the full %d", got, full)
 	}
-	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{verbose: true})); got != full {
+	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{more: true, details: true})); got != full {
 		// The address rides the first row, so asking for it moves nothing.
 		t.Errorf("show -o: %d rows, want the full %d, and the address adds none", got, full)
 	}

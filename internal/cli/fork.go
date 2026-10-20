@@ -206,7 +206,7 @@ func promptForkedAria(loaded *config.Loaded, ariaID string, opts sendOpts, promp
 	opts.id = ariaID
 	opts.target = ""
 	set := pagerSettings(loaded)
-	set.verbose, set.listen = opts.verbose, opts.listen
+	set.more, set.listen = opts.verbose, opts.listen
 	switch forkPromptRoute(opts) {
 	case "forget":
 		runSendForget(loaded, opts, prompt)

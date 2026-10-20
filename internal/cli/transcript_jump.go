@@ -10,7 +10,6 @@ import (
 	"github.com/jack-work/figaro/api/quote"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 
-	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
@@ -569,42 +568,27 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	t.wantTop = false
 	var point selectionPoint
 	found := false
-	// A delta row's hash is the row's own, so the copier's guard catches state
-	// that moved.
-	takeDelta := func(block nodeRef, deltas map[string]livedoc.FormDelta) {
-		for _, p := range deltaPoints(block, deltas, true) {
-			if p.nodeRef == ref {
-				point, found = p, true
-				return
+	take := func(m aria.Message) bool {
+		block := ldrender.BlockInquiry
+		if ref.index != inquiryNode {
+			block = ref.index - int(m.From)
+			if block < 0 || block >= len(m.Nodes) {
+				return true
 			}
 		}
-	}
-	take := func(m aria.Message) bool {
 		switch {
-		case ref.note > 0:
-			block := ldrender.BlockInquiry
-			if ref.index != inquiryNode {
-				block = ref.index - int(m.From)
-			}
-			for _, p := range t.notePoints(m, block) {
+		case ref.meta > 0:
+			b := blockRef(m, block)
+			for _, p := range metaPoints(b, t.metaSource().entries(m, block), t.entryOpen) {
 				if p.nodeRef == ref {
 					point, found = p, true
+					break
 				}
 			}
-		case ref.index == inquiryNode:
-			if ref.delta > 0 {
-				takeDelta(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas)
-			} else {
-				point, found = inquiryPoint(m)
-			}
+		case block == ldrender.BlockInquiry:
+			point, found = inquiryPoint(m)
 		default:
-			if i := ref.index - int(m.From); i >= 0 && i < len(m.Nodes) {
-				if ref.delta > 0 {
-					takeDelta(nodeRefAt(m, i), m.Nodes[i].FormDeltas)
-				} else {
-					point, found = selectionPoint{nodeRef: ref, hash: nodeHash(m.Nodes[i])}, true
-				}
-			}
+			point, found = selectionPoint{nodeRef: ref, hash: nodeHash(m.Nodes[block])}, true
 		}
 		return !found
 	}
@@ -615,6 +599,10 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	}
 	if !found {
 		return false
+	}
+	if block := blockOf(ref); ref.meta > 0 && !t.metaOpen[block] {
+		t.metaOpen[block] = true
+		t.dropTurnsRows(map[int]struct{}{block.turn: {}})
 	}
 	if !extend || !t.selection.active {
 		t.selection.anchor = point

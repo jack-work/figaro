@@ -187,9 +187,9 @@ func (t *transcript) setComments(idx *commentIndex) bool {
 		return false
 	}
 	t.comments = idx
-	for ref := range t.commentsOpen {
+	for ref := range t.entryOpen {
 		if _, ok := t.commentOf(ref); !ok {
-			delete(t.commentsOpen, ref)
+			delete(t.entryOpen, ref)
 		}
 	}
 	t.invalidateRows()
@@ -206,35 +206,6 @@ func (idx *commentIndex) at(m aria.Message, block int) []int {
 		return nil
 	}
 	return idx.byBlock[k]
-}
-
-func (t *transcript) notePoints(m aria.Message, block int) []selectionPoint {
-	return t.comments.points(m, block, t.commentsOpen)
-}
-
-func (idx *commentIndex) points(m aria.Message, block int, open map[nodeRef]bool) []selectionPoint {
-	idxs := idx.at(m, block)
-	if len(idxs) == 0 {
-		return nil
-	}
-	ref := blockRef(m, block)
-	out := make([]selectionPoint, 0, len(idxs))
-	for i, ci := range idxs {
-		c := idx.list[ci]
-		note := noteRefOf(ref, i+1)
-		out = append(out, selectionPoint{nodeRef: note, hash: commentHash(c)})
-		if !open[note] {
-			continue
-		}
-		for k, e := range c.thread {
-			out = append(out, selectionPoint{nodeRef: replyRefOf(note, k+1), hash: entryHash(c, e)})
-		}
-	}
-	return out
-}
-
-func commentHash(c comment) uint64 {
-	return nodeHash(livedoc.Node{Type: livedoc.NodeProse, Markdown: c.id + "\x00" + commentText(c)})
 }
 
 func entryHash(c comment, e commentEntry) uint64 {
@@ -257,25 +228,6 @@ func commentText(c comment) string {
 		b.WriteString(entryText(e))
 	}
 	return b.String()
-}
-
-func (t *transcript) commentOf(ref nodeRef) (comment, bool) {
-	if ref.note <= 0 || t.comments == nil {
-		return comment{}, false
-	}
-	k, ok := t.blockKeyOfRef(blockOf(ref))
-	if !ok {
-		return comment{}, false
-	}
-	idxs := t.comments.byBlock[k]
-	if ref.note > len(idxs) {
-		return comment{}, false
-	}
-	c := t.comments.list[idxs[ref.note-1]]
-	if ref.reply > len(c.thread) {
-		return comment{}, false
-	}
-	return c, true
 }
 
 func (t *transcript) blockKeyOfRef(ref nodeRef) (blockKey, bool) {

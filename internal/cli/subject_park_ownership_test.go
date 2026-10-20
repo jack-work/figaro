@@ -77,7 +77,7 @@ func TestPark_TheShelfKeepsItsOwnRows(t *testing.T) {
 	tr.buildIndex()
 	tr.lines()
 	tr.expanded[nodeRef{turn: 5, index: 0}] = true
-	tr.adorned[nodeRef{turn: 5, index: 0}] = true
+	tr.metaOpen[nodeRef{turn: 5, index: 0}] = true
 
 	in.parkSubject("ariaAAAA")
 	p := in.parked["ariaAAAA"]

@@ -171,7 +171,7 @@ func TestPagerLsIsUncapped(t *testing.T) {
 func TestRuleLineEndsWithThePosition(t *testing.T) {
 	s := newSessionStatus("dac6cb6d", time.Now())
 	const pos = "12-40/97 live"
-	rule := s.ruleLine(80, pos)
+	rule := s.ruleLine(80, "", pos)
 	if !strings.HasSuffix(rule, pos) {
 		t.Fatalf("the rule does not end with the position: %q", rule)
 	}

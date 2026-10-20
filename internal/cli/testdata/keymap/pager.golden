@@ -670,6 +670,8 @@ transcript+pendG Up up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=
 transcript+pendG PgUp half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript+pendG Home top off:top fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel inert off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
+transcript+sel 0x0a activate off:sel fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
+transcript+sel 0x0d activate off:sel fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel 0x10 select-prev off:sel fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel 0x1b cancel off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel 0x20 prefix:leader off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=leader sel=true exp=0 jmp=false jq="" vis=none pit=none

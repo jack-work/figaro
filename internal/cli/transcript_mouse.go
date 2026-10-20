@@ -62,50 +62,18 @@ func (t *transcript) nodeAt(ref nodeRef) (node livedoc.Node, ok bool) {
 	return node, ok
 }
 
-// A block with nothing to open is left alone rather than flipped invisibly. A
-// delta row has no second form: the keys close the list it belongs to (see
-// foldSubjects).
 func (t *transcript) toggleExpansionOf(ref nodeRef) bool {
-	if ref.note > 0 {
-		return t.toggleFolds([]foldTarget{{state: t.openComments(), ref: headOf(ref)}})
-	}
-	if ref.delta > 0 {
-		return false
+	if ref.meta > 0 {
+		return t.toggleEntry(headOf(ref))
 	}
 	var targets []foldTarget
-	if d, ok := t.deltasAt(ref); ok && adornRowCount(d, adornLift(ref.index)) > 0 {
-		targets = append(targets, foldTarget{state: t.adorned, ref: ref})
+	if t.hasMeta(ref) {
+		targets = append(targets, foldTarget{state: t.metaOpen, ref: ref, deltas: true})
 	}
 	if n, ok := t.nodeAt(ref); ok && nodeExpandable(n) {
 		targets = append(targets, foldTarget{state: t.expanded, ref: ref})
 	}
 	return t.toggleFolds(targets)
-}
-
-// deltasAt is a node's deltas, or the turn's when the ref sits on the inquiry.
-func (t *transcript) deltasAt(ref nodeRef) (deltas map[string]livedoc.FormDelta, ok bool) {
-	find := func(m aria.Message) {
-		if ok || m.Turn != ref.turn {
-			return
-		}
-		if ref.index == inquiryNode {
-			deltas, ok = m.FormDeltas, len(m.FormDeltas) > 0
-			return
-		}
-		for i := range m.Nodes {
-			if nodeRefAt(m, i) == ref {
-				deltas, ok = m.Nodes[i].FormDeltas, len(m.Nodes[i].FormDeltas) > 0
-				return
-			}
-		}
-	}
-	for _, m := range t.messages() {
-		find(m)
-	}
-	if open := t.openMessage(); open != nil {
-		find(*open)
-	}
-	return deltas, ok
 }
 
 func mouseHelpRows() []string {

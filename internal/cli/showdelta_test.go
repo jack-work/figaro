@@ -20,7 +20,7 @@ func TestShowDrawsTheDeltaTable(t *testing.T) {
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "done"}},
 	}
 	collapsed := strings.Join(renderTurnRows(m, 100, 0, renderSettings{}), "\n")
-	if !strings.Contains(stripANSI(collapsed), "⑂ aaaa1111") {
+	if !strings.Contains(stripANSI(collapsed), "⑂ "+ariaName("aaaa1111")) {
 		t.Fatalf("show must draw the fork banner:\n%s", collapsed)
 	}
 	if strings.Contains(stripANSI(collapsed), strings.Repeat("m", 60)) {
@@ -33,7 +33,7 @@ func TestShowDrawsTheDeltaTable(t *testing.T) {
 	if raw := parseShowArgs([]string{"-v"}); !raw.verbose || raw.details {
 		t.Fatalf("show -v is the raw IR path, not the table: %+v", raw)
 	}
-	open := strings.Join(renderTurnRows(m, 100, 0, renderSettings{verbose: opts.details}), "\n")
+	open := strings.Join(renderTurnRows(m, 100, 0, renderSettings{more: opts.details, details: opts.details}), "\n")
 	if !strings.Contains(stripANSI(open), strings.Repeat("m", 60)) {
 		t.Fatalf("show -o opens the table:\n%s", open)
 	}

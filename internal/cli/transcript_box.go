@@ -33,8 +33,12 @@ func (t *transcript) composerTitle() []string {
 	if t.box == boxComposer && t.askOptions {
 		return t.optionsTitle()
 	}
-	if t.box != boxComposer || !t.verbose() {
-		return nil
+	return nil
+}
+
+func (t *transcript) composerHints() string {
+	if t.box != boxComposer || t.askOptions || !t.more() {
+		return ""
 	}
 	parts := []string{composerGlyph + " composer"}
 	if t.composerMode == composerNormal {
@@ -44,7 +48,7 @@ func (t *transcript) composerTitle() []string {
 		parts = append(parts, plural(n+1, "line"))
 	}
 	parts = append(parts, "^S send")
-	return []string{pitGray(clipToWidth("  "+strings.Join(parts, " · "), t.w))}
+	return strings.Join(parts, " · ")
 }
 
 func (t *transcript) boxOpen() bool { return t.box != boxNone }

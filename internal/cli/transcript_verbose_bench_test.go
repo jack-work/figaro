@@ -24,7 +24,7 @@ func verboseTranscript(b *testing.B, messages, outputLines int, verbose bool) *t
 	}
 	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(io.Discard, 100, 40,
-		&ariaView{settings: &renderSettings{verbose: verbose}}, client, "benchmark", time.Unix(0, 0))
+		&ariaView{settings: &renderSettings{more: verbose}}, client, "benchmark", time.Unix(0, 0))
 	tr.enter()
 	return tr
 }
@@ -46,7 +46,7 @@ func BenchmarkTranscriptVerboseEnter(b *testing.B) {
 			b.ResetTimer()
 			for range b.N {
 				tr := newTranscript(io.Discard, 100, 40,
-					&ariaView{settings: &renderSettings{verbose: verbose}}, client, "benchmark", time.Unix(0, 0))
+					&ariaView{settings: &renderSettings{more: verbose}}, client, "benchmark", time.Unix(0, 0))
 				tr.enter()
 			}
 		})

@@ -144,8 +144,9 @@ func TestQuoteCardOpensOnEnter(t *testing.T) {
 	}
 }
 
-// A question with no quote leaves Enter inert.
-func TestEnterOverAPlainQuestionIsInert(t *testing.T) {
+// A question with no quote has no card to open: Enter opens its metadata
+// section and nothing else.
+func TestEnterOverAPlainQuestionOpensOnlyItsSection(t *testing.T) {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Inquiry: "an ordinary question", Sealed: true,
@@ -157,8 +158,12 @@ func TestEnterOverAPlainQuestionIsInert(t *testing.T) {
 	tr.follow = false
 	tr.buildIndex()
 	selectQuestion(t, tr, 1, "an ordinary question")
-	if tr.toggleSelectedNodes() {
-		t.Fatal("a question with no card reported something to open")
+	inq := nodeRef{turn: 1, index: inquiryNode}
+	if !tr.toggleSelectedNodes() || !tr.metaOpen[inq] {
+		t.Fatal("Enter on a question did not open its metadata section")
+	}
+	if tr.expanded[inq] {
+		t.Fatal("a question with no card was marked expanded")
 	}
 }
 

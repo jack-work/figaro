@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 
+	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -50,7 +51,9 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 		Turn: turn, Inquiry: inq.Text, InquirySegments: inq.Segments, FormDeltas: inq.FormDeltas,
 	}
 	q.rows = t.renderMsgBase(m).rows
-	q.gutter = buildAdornment(inquiryAdorner{}, inq.FormDeltas, t.w, false).Gutter
+	sec := t.section(m, ldrender.BlockInquiry, livedoc.Node{}, inq.FormDeltas)
+	sec.open = false
+	q.gutter = buildAdornment(inquiryAdorner{}, sec, t.w).Gutter
 	// The question's text stops where the adornment starts; its closing blank
 	// row is not text either.
 	q.textHigh = len(q.rows)

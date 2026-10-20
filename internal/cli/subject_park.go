@@ -46,7 +46,7 @@ func (t *transcript) park(id string) *parkedSubject {
 	t.client.Detach()
 	return &parkedSubject{
 		id: id, client: t.client,
-		rows: t.rowCache, sticky: t.stickyCache, expand: t.expanded, adorn: t.adorned,
+		rows: t.rowCache, sticky: t.stickyCache, expand: t.expanded, adorn: t.metaOpen,
 		from: t.from, offset: t.offset, follow: t.follow, at: time.Now(),
 	}
 }
@@ -57,9 +57,9 @@ func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, b
 	t.client = p.client
 	t.setStatus(status)
 	t.rowCache, t.stickyCache = p.rows, p.sticky
-	t.expanded, t.adorned = p.expand, p.adorn
-	if t.adorned == nil {
-		t.adorned = map[nodeRef]bool{}
+	t.expanded, t.metaOpen = p.expand, p.adorn
+	if t.metaOpen == nil {
+		t.metaOpen = map[nodeRef]bool{}
 	}
 	if t.rowCache == nil {
 		t.rowCache = map[sliceKey]cachedMessage{}

@@ -121,8 +121,17 @@ func TestIntegration_ClickOnATableIsInert(t *testing.T) {
 	selected := body()
 	tr.clickAt(clickRowOf(t, tr, ref), false)
 	tr.render()
-	if got := body(); got != selected {
-		t.Errorf("a click changed an unexpandable node's render:\nbefore:\n%s\nafter:\n%s", selected, got)
+	table := func(s string) string {
+		var rows []string
+		for _, l := range strings.Split(s, "\n") {
+			if strings.Contains(l, "│") || strings.Contains(l, "┼") {
+				rows = append(rows, strings.TrimLeft(l, "•╭│ "))
+			}
+		}
+		return strings.Join(rows, "\n")
+	}
+	if got := body(); table(got) != table(selected) || strings.Contains(got, "more table lines") {
+		t.Errorf("a click changed the table itself:\nbefore:\n%s\nafter:\n%s", selected, got)
 	}
 }
 

@@ -36,9 +36,9 @@ func coordLabel(turn, node int, at int64, layout string) string {
 	return s
 }
 
-func (t *transcript) verbose() bool {
+func (t *transcript) more() bool {
 	view, ok := t.view.(*ariaView)
-	return ok && view.settings != nil && view.settings.verbose
+	return ok && view.settings != nil && view.settings.more
 }
 
 func (t *transcript) coordFormat() string {

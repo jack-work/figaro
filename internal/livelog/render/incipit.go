@@ -53,7 +53,9 @@ type Incipit struct {
 	Bookend     func() []string          // closes an assistant message
 	Rule        func() string            // closes any other message
 	Header      func(role string) string // "" suppresses
-	InputHeader func(seg aria.InquirySegment) string
+	InputHeader func(seg aria.InquirySegment) (string, []Spot)
+	HeadMore    func(n livedoc.Node) []Spot
+	More        func() bool
 	Quote       func(m quote.Mention, w int, expanded bool) []string
 	// Queued renders accepted prompts not yet in the transcript: live chrome
 	// above the bookend, never frozen, since the log does not contain them.
@@ -360,13 +362,14 @@ func (i *Incipit) composeWith(inquiry string, segments []aria.InquirySegment, no
 
 func (i *Incipit) messageRows(inquiry string, segments []aria.InquirySegment, role string, nodes []livedoc.Node) []string {
 	w, _ := i.term.Size()
-	return Text(i.composer().Message(aria.Message{
+	more := i.More != nil && i.More()
+	return Painted(i.composer().Message(aria.Message{
 		Role: role, Inquiry: inquiry, InquirySegments: segments, Nodes: nodes,
-	}, w))
+	}, w), w, more)
 }
 
 func (i *Incipit) composer() Composer {
-	return Composer{View: i.view, Header: i.Header, InputHeader: i.InputHeader, Quote: i.Quote, Tick: i.tick,
+	return Composer{View: i.view, Header: i.Header, InputHeader: i.InputHeader, HeadMore: i.HeadMore, Quote: i.Quote, Tick: i.tick,
 		Rule: func() string {
 			if i.Rule == nil {
 				return ""

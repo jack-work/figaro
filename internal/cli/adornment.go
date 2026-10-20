@@ -6,11 +6,9 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// An adornment is a block's form deltas drawn as part of the block: collapsed, one
-// glyph in the right gutter; open, one pseudonode row per delta joined to the
-// block by a snake. The glyphs are painted plain: the row carries the rendition.
 const (
 	snakeHang  = "╭"
 	snakeBody  = "│"
@@ -56,8 +54,6 @@ func (toolAdorner) tail() string              { return "" }
 func (toolAdorner) liftFork() bool            { return false }
 func (toolAdorner) gutterLast() bool          { return false }
 
-// inquiryAdorner encloses the deltas between the question and the closing rule; a
-// fork rises into the header.
 type inquiryAdorner struct{}
 
 func (inquiryAdorner) spineCol() int             { return 0 }
@@ -80,73 +76,101 @@ func adornerFor(block int, n livedoc.Node) adorner {
 	}
 }
 
-func buildAdornment(a adorner, deltas map[string]livedoc.FormDelta, w int, open bool) ldrender.Adornment {
+type metaSection struct {
+	ref       nodeRef
+	src       metaSource
+	m         *aria.Message
+	block     int
+	deltas    map[string]livedoc.FormDelta
+	notes     int
+	open      bool
+	entryOpen map[nodeRef]bool
+	thread    func(text string, width int) []string
+}
+
+func buildAdornment(a adorner, sec metaSection, w int) ldrender.Adornment {
 	out := ldrender.Adornment{GutterLast: a.gutterLast(), Tail: a.tail()}
 	lift := a.liftFork()
 	forked := false
 	if lift {
-		if parent := forkParentOf(deltas); parent != "" {
-			out.Suffix = term.StateDim(forkGlyph + " " + parent)
+		if parent := forkParentOf(sec.deltas); parent != "" {
+			head := forkGlyph + " " + ariaName(parent)
+			out.Suffix = term.StateDim(head)
+			out.SuffixMore = otherSpot(ldrender.Width(head), otherName(parent))
 			forked = true
 		}
 	}
-	// Closed is the common case on every frame: decide without building the rows.
-	if !open || w < adornFloor(a) {
-		if !anyDeltaRow(deltas, lift, forked) {
-			return out
+	if !sec.open || w < adornFloor(a) {
+		switch {
+		case anyDeltaRow(sec.deltas, lift, forked):
+			out.Gutter = term.StateDim(deltaGlyph)
+		case sec.notes > 0:
+			out.Gutter = term.CommentMark(commentGlyph)
 		}
-		out.Gutter = term.StateDim(deltaGlyph)
 		return out
 	}
-	rows := deltaRows(deltas, lift)
-	if len(rows) == 0 {
+	entries := sec.src.entries(*sec.m, sec.block)
+	if len(entries) == 0 {
 		return out
 	}
 	tail := a.tail() != ""
 	anchor := ldrender.SpineSlot{Kind: ldrender.SpineAnchor, Col: a.spineCol(), Tail: tail}
 	if text, own := a.anchorRow(); own {
-		out.Rows = append(out.Rows, adornRow(text, anchor, 0))
+		out.Rows = append(out.Rows, adornRow(text, anchor, 0, 0))
 	} else {
 		out.Head, out.HeadGlyph = anchor, spineGlyph(anchor, 0, 0)
 		link := ldrender.SpineSlot{Kind: ldrender.SpineLink, Col: a.spineCol(), Tail: tail}
-		out.Rows = append(out.Rows, adornRow("", link, 0))
+		out.Rows = append(out.Rows, adornRow("", link, 0, 0))
 	}
-	keyw := deltaKeyWidth(rows)
+	keyw := metaKeyWidth(entries)
 	body := w - a.textCol() - ldrender.GutterCols
-	for i, r := range rows {
-		slot := ldrender.SpineSlot{Kind: ldrender.SpineRow, Col: a.spineCol(), Tail: tail}
-		text := strings.Repeat(" ", a.textCol()) + deltaRowText(r, keyw, body)
-		out.Rows = append(out.Rows, adornRow(text, slot, i+1))
+	indent := strings.Repeat(" ", a.textCol())
+	for i, e := range entries {
+		meta := i + 1
+		first := i == 0 || entries[i-1].kind != e.kind
+		own := ldrender.SpineSlot{Kind: ldrender.SpineRow, Col: a.spineCol(), Tail: tail, Glyph: e.glyph()}
+		cont := ldrender.SpineSlot{Kind: ldrender.SpineCont, Col: a.spineCol(), Tail: tail}
+		open := sec.entryOpen[metaRefOf(sec.ref, meta)]
+		for k, r := range entryRows(e, keyw, body, open, sec.thread) {
+			slot := own
+			if k > 0 {
+				slot = cont
+			}
+			row := styledAdornRow(e.paint(indent+r.text), slot, meta, r.reply)
+			if label := entryLabel(e, first); k == 0 && label != "" {
+				row.Mark = term.Dim(label)
+			}
+			out.Rows = append(out.Rows, row)
+		}
 	}
 	return out
 }
 
-// adornFloor is the narrowest pane an open list draws in.
 func adornFloor(a adorner) int {
 	return a.textCol() + ldrender.GutterCols + 2*formDeltaValueFloor + len(deltaArrow) + 1
 }
 
-// adornRow: delta 0 is the adornment's own chrome, which selects as nothing.
-func adornRow(text string, slot ldrender.SpineSlot, delta int) ldrender.Row {
-	text = ldrender.OverlayColumn(text, slot.Col, spineGlyph(slot, delta, 0))
+func adornRow(text string, slot ldrender.SpineSlot, meta, reply int) ldrender.Row {
+	return styledAdornRow(term.StateDim(text), slot, meta, reply)
+}
+
+func styledAdornRow(text string, slot ldrender.SpineSlot, meta, reply int) ldrender.Row {
+	text = ldrender.OverlayColumn(text, slot.Col, spineGlyph(slot, meta, 0))
 	return ldrender.Row{
-		Text:   term.StateDim(text),
-		Delta:  delta,
-		Chrome: delta == 0,
+		Text:   text,
+		Meta:   meta,
+		Reply:  reply,
+		Chrome: meta == 0,
 		Spine:  slot,
 	}
 }
 
-// spineGlyph is the snake on delta row `delta` while the cursor is on row `cursor`
-// (0: not in this adornment). A hanging adornment runs the body up to the anchor;
-// an enclosed one runs it down to the tail, and draws it whole with no cursor,
-// because the enclosure has to close.
 func spineGlyph(slot ldrender.SpineSlot, delta, cursor int) string {
 	switch slot.Kind {
 	case ldrender.SpineAnchor:
 		switch {
 		case cursor == 0:
-			return deltaGlyph
+			return headGlyph
 		case slot.Tail:
 			return " "
 		default:
@@ -160,8 +184,19 @@ func spineGlyph(slot ldrender.SpineSlot, delta, cursor int) string {
 	case ldrender.SpineRow:
 		switch {
 		case cursor == delta:
-			return deltaGlyph
+			if slot.Glyph != "" {
+				return slot.Glyph
+			}
+			return headGlyph
 		case slot.Tail && (cursor == 0 || delta > cursor):
+			return snakeBody
+		case !slot.Tail && cursor > 0 && delta < cursor:
+			return snakeBody
+		}
+		return " "
+	case ldrender.SpineCont:
+		switch {
+		case slot.Tail && (cursor == 0 || delta >= cursor):
 			return snakeBody
 		case !slot.Tail && cursor > 0 && delta < cursor:
 			return snakeBody
@@ -171,18 +206,5 @@ func spineGlyph(slot ldrender.SpineSlot, delta, cursor int) string {
 	return ""
 }
 
-func adornRowCount(deltas map[string]livedoc.FormDelta, lift bool) int {
-	return deltaRowCount(deltas, lift, lift && forkParentOf(deltas) != "")
-}
-
 // adornLift is the one derivation shared by the selection's refs and the screen's rows.
 func adornLift(index int) bool { return index == inquiryNode }
-
-// adornRowFull: i is 1-based, as nodeRef.delta is.
-func adornRowFull(deltas map[string]livedoc.FormDelta, lift bool, i int) (string, bool) {
-	rows := deltaRows(deltas, lift)
-	if i < 1 || i > len(rows) {
-		return "", false
-	}
-	return deltaRowFull(rows[i-1]), true
-}

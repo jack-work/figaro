@@ -26,7 +26,7 @@ func fdPrev(form string, kind livedoc.FormKind, event livedoc.FormEvent, prev, v
 
 func rowTexts(deltas map[string]livedoc.FormDelta, width int) []string {
 	rows := deltaRows(deltas, false)
-	keyw := deltaKeyWidth(rows)
+	keyw := metaKeyWidth(deltaEntries(deltas, false))
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, deltaRowText(r, keyw, width))
@@ -82,8 +82,8 @@ func TestFormDeltaValuesAreSingleLined(t *testing.T) {
 	rows := rowTexts(map[string]livedoc.FormDelta{
 		"a1.credo": fd("a1", livedoc.FormBound, livedoc.FormSet, `"one\ntwo\n\nthree"`),
 	}, 300)
-	if len(rows) != 1 || !strings.Contains(rows[0], "one two three") {
-		t.Fatalf("a multi-line value must flatten to one row: %q", rows)
+	if len(rows) != 1 || !strings.HasSuffix(rows[0], "∅ -> one…") {
+		t.Fatalf("a multi-line value is its first line and an ellipsis: %q", rows)
 	}
 }
 
@@ -96,7 +96,8 @@ func TestFormDeltaStripsControlSequences(t *testing.T) {
 	rows := deltaRows(deltas, false)
 	var lines []string
 	for _, r := range rows {
-		lines = append(lines, deltaRowFull(r), deltaRowText(r, deltaKeyWidth(rows), 40), deltaRowText(r, deltaKeyWidth(rows), 300))
+		keyw := metaKeyWidth(deltaEntries(deltas, false))
+		lines = append(lines, deltaRowFull(r), deltaRowText(r, keyw, 40), deltaRowText(r, keyw, 300))
 	}
 	for _, l := range lines {
 		for _, r := range l {
@@ -140,12 +141,12 @@ func TestDeltaRowIdentityIsNotClipped(t *testing.T) {
 	long := func(tail string) livedoc.FormDelta {
 		return fd("a1", livedoc.FormBound, livedoc.FormSet, `"`+strings.Repeat("x", 240)+tail+`"`)
 	}
-	a := deltaNodeOf(deltaRowFull(deltaRows(map[string]livedoc.FormDelta{"a1.brief": long("A")}, false)[0]))
-	b := deltaNodeOf(deltaRowFull(deltaRows(map[string]livedoc.FormDelta{"a1.brief": long("B")}, false)[0]))
-	if a.Markdown == b.Markdown {
-		t.Fatalf("two rows that differ at column 250 render identically:\n%s", a.Markdown)
+	a := deltaEntries(map[string]livedoc.FormDelta{"a1.brief": long("A")}, false)[0]
+	b := deltaEntries(map[string]livedoc.FormDelta{"a1.brief": long("B")}, false)[0]
+	if a.full() == b.full() {
+		t.Fatalf("two rows that differ at column 250 render identically:\n%s", a.full())
 	}
-	if nodeHash(a) == nodeHash(b) {
+	if a.hash() == b.hash() {
 		t.Fatal("two different rows hash the same")
 	}
 }

@@ -63,9 +63,9 @@ func BenchmarkAdornmentFrame(b *testing.B) {
 			tr := benchAdorned(b, 2_000, c.deltas)
 			if c.open {
 				tr.forEachMessage(func(m aria.Message) {
-					tr.adorned[nodeRef{turn: m.Turn, index: inquiryNode}] = true
+					tr.metaOpen[nodeRef{turn: m.Turn, index: inquiryNode}] = true
 					for i := range m.Nodes {
-						tr.adorned[nodeRefAt(m, i)] = true
+						tr.metaOpen[nodeRefAt(m, i)] = true
 					}
 				})
 				tr.rowCache = map[sliceKey]cachedMessage{}

@@ -97,7 +97,8 @@ type sessionStatus struct {
 	limit     int
 	turn      turnStatus
 	tick      uint64
-	verbose   bool      // the bar's verbosity (^V), not the tool-output toggle (^O)
+	verbose   bool
+	more      bool
 	lastAt    time.Time // when the conversation last moved, in either direction
 	model     string
 	noticeTTL time.Duration      // zero: the alert holds the slot until displaced
@@ -408,16 +409,22 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 }
 
 // ruleLine is undecorated; the caller dims it.
-func (s *sessionStatus) ruleLine(width int, pos string) string {
-	if pos == "" {
-		return clipToWidth(strings.Repeat("─", max(width, 0)), width)
+func (s *sessionStatus) ruleLine(width int, label, pos string) string {
+	left, right := "", ""
+	if label != "" {
+		left = "── " + label + " "
 	}
-	right := " " + pos
-	fill := width - runewidth.StringWidth(right)
+	if pos != "" {
+		right = " " + pos
+	}
+	fill := width - runewidth.StringWidth(left) - runewidth.StringWidth(right)
+	if fill < 3 && left != "" {
+		left, fill = "", width-runewidth.StringWidth(right)
+	}
 	if fill < 3 {
 		fill = 3
 	}
-	return clipToWidth(strings.Repeat("─", fill)+right, width)
+	return clipToWidth(left+strings.Repeat("─", fill)+right, width)
 }
 
 func (s *sessionStatus) panelLines() []string {
@@ -431,7 +438,7 @@ func (s *sessionStatus) panelLines() []string {
 		state = "idle 𝄐"
 	}
 	rows := []string{
-		"  aria      " + s.figaroID,
+		"  aria      " + ariaName(s.figaroID) + "  " + term.Dim(s.figaroID),
 		"  status    " + state,
 	}
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
@@ -536,6 +543,15 @@ func (s *sessionStatus) setVerbose(v bool) {
 	}
 	s.mu.Lock()
 	s.verbose = v
+	s.mu.Unlock()
+}
+
+func (s *sessionStatus) setMore(v bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.more = v
 	s.mu.Unlock()
 }
 

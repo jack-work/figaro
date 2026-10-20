@@ -137,7 +137,7 @@ An unknown tool keeps its name and takes its first argument as the headline -
 the same shape as the known ones, not a special case.
 
 ```
-minimized                                    expanded (Enter, or M-m)
+minimized                                    expanded (Enter)
 ✓ $ grep -n baritone opera.md [1.4s]         ✓ bash [1.4s]
   │ … last 10 of 32 lines                      │ grep -n baritone opera.md
   │ 15:13. Figaro is a baritone.                │ timeout 240
@@ -172,12 +172,16 @@ suffix and is not in the store's window, so a walk of the window alone prunes
 it as though it had scrolled out of history. That dropped a live expansion on
 `Esc` and on every frame while following the tail.)
 
-`M-m` shows the metadata and the coordinate row and **nothing else**: it no
-longer opens content. (It was `Ctrl-O` until 2026-09-12, when that chord went
-to the jumplist below. `Ctrl-M` could not take the job: that byte is Enter.
-`m` is the status bar's own verbosity, so the letter names the axis and the
-modifier names the depth.) Verbosity and "open this one thing" are different
-questions, and one key answering both meant neither could be asked alone.
+`M-m` is **more**, and it never adds a row. Every name gets its other
+spelling beside it (`atom-factory (1756f)`, or `1756f (atom-factory)` under
+`ids = "short"`), and every block's address fills the blank columns at the
+right of its first row, ending in the same column as the gutter marker, which
+sits over its last cell. An address that does not fit is cut, never painted over
+text. In an open metadata section (below) it labels the first row of each kind
+(`meta`, `delta`, `comment`) and gives an aria id its other spelling, the same
+way. Toggling it repaints only the rows that changed, and it is exempt from the
+painter's two-second resync, so an idle pager does not flash. It stays inline:
+pressed in the incipit it does not open the pager.
 
 A folded multi-line value names its fold on its **label**: `content (…last 5
 of 41 lines)`, and `(…first 2 of 41 lines)` once settled, because a reader
@@ -236,49 +240,58 @@ Two rules that are easy to get wrong:
 The argument fold note lives on the label rather than in a row of its own,
 because rows are what is being rationed.
 
-### Form state: the adornment
+### A block's metadata: the section
 
-A block that arrived with form state wears it. Collapsed, that is **one glyph
-in the right gutter** and nothing else: a tool on its header row, prose on the
-end of its text, a turn's question on the `> input` row. The gutter is one
-column held for exactly this, and the `M-m` addresses stop one column short of
-it.
-
-```
-> input ⑂ e5abf08d                                                          Δ
-```
-
-`d` opens the list: **one row per key, and every row is a pseudonode**,
-selected and yanked and walked by `^N`/`^P` like a node. A snake joins the rows
-to the block: its head (`Δ`) marks the selected row and parks at the anchor
-when the selection is elsewhere, and its body reaches from the head back to the
-block it explains.
+Everything known about a block that is not its text is one list, built by one
+function (`metaSource.entries`, `internal/cli/meta.go`) and drawn by one
+(`buildAdornment`): first its metadata (address and, by kind, who sent it, the
+tool, each argument, its status, timing and call id), then the form deltas it
+caused, then the comments that end on it. Collapsed, the block wears **one
+glyph in the right gutter**: `Δ` when it changed form state, else `✎` when it
+carries a comment, else nothing.
 
 ```
-✓ bash [37ms]                    (open, cursor on the second row)
+> input ⑂ tusk-padlock                                                     Δ
+```
+
+`Enter` on the block opens the section under it: **one row per entry, and every
+row is a pseudonode**, selected and yanked and walked by `^N`/`^P` like a node.
+A snake joins the rows to the block. Its head marks the selected row and says
+what kind it is (`•` metadata, `Δ` delta, `✎` comment), and parks at the anchor
+as `•` when the selection is elsewhere. Each kind has its own colour.
+
+```
+✓ bash [37ms]                    (open, cursor on the mantra row)
   │ set mantra = "harness beh…
  ╭╯
- │ datetime  ∅ -> Saturday, September 12, 2026
+ │ address   1.0 · 12/09/26 01:33:48
+ │ tool      bash
+ │ command   figaro set mantra 'harness behavior test'
+ │ status    ok
  Δ mantra    going to test some ha… -> harness behavior test
+   ▸ gluck: why does this say done twice? · 1 reply  #k1
 ```
 
-Three layouts, one primitive (`internal/cli/adornment.go`): a tool hangs the
-snake off a connector row under its output, prose off the first line of its own
-text, and a question **encloses** its deltas between its text and the rule that
-closes the seam, so its snake runs down to a `╰` corner instead of up to a
-block. A fork is lifted out of the question's list and into its header row,
-where the glyph and the parent id read as what they are: a property of the turn,
-not a row of its state. Anywhere else a `system.forked_from` is a key like any
-other, because a fork only ever happens on the question.
+An entry is **one row** until you open it: a value with a newline shows its
+first line and `…`, as does one wider than the pane. `Enter` (or a second
+click) on an entry opens its text and nothing else, the way Enter opens a value
+in the form pit (the same `formValueLines`): a field's whole value wraps under
+its value column, a delta shows `- old` and `+ new`, a comment its thread.
+`Enter` again closes it. It never closes the section or folds the block; that
+is `Enter` on the block itself. An open thread's messages are stops of their
+own; `Enter` on one closes the thread.
 
-Entering an open list from above lands on its first row, from below on its
-last, and stepping up past the first row selects the block, which is where the
-keys that opened it act. A row's yank is the transition **whole**: what the
-screen elided to keep one key on one row is not what the row says.
+Three layouts, one primitive: a tool hangs the snake off a connector row under
+its output, prose off the first line of its own text, and a question
+**encloses** its section between its text and the rule that closes the seam, so
+its snake runs down to a `╰` corner instead of up to a block. A fork is lifted
+out of the question's section and into its header row, named the way every
+aria is named. Anywhere else a `system.forked_from` is a key like any other.
 
-`d` and `t` are the halves `Enter` presses together: `d` the state beside a
-block, `t` a tool's body. Each is inert where it has nothing to open, and `d`
-with nothing to open keeps its older job of scrolling half a page.
+`c j` / `c k` open the section a comment lives in and land on it. A comment's
+passage stays washed in the block's text whether or not the section is open. A
+row's yank is the entry **whole**, open or not. Opening an entry or a section
+repaints that message's rows and nothing above them.
 
 A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
 a close marker for that streaming suffix; it does **not** necessarily finish
@@ -423,7 +436,7 @@ Inline keybindings while a turn streams:
 
 | Key | Action |
 | --- | --- |
-| `M-m` | toggle verbosity (expand tool arguments and full output) |
+| `M-m` | more: each name beside its other spelling, addresses in the spare columns |
 | `Ctrl-T` | open the transcript pager (below) |
 | `Ctrl-D` | end the turn |
 
@@ -491,7 +504,7 @@ pit follows a remap, so it shows your map rather than this one.
 | `h` | the help panel |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, Enter selects the node under the cursor (then `e` expands it); `e` itself stays the word-end motion; `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
-| `M-m` | verbose tool output, and every node's address |
+| `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 
@@ -521,8 +534,8 @@ The sigil is the whole indicator: `>` insert, `✎` normal.
 
 There are no editing verbs (`d`, `c`, `x`, `p`, `r`): a draft is written in
 insert mode, and this mode is for reading one, marking part of it and
-searching it. `M-m` titles the drawer, which is the only place its gestures
-are spelled out on screen.
+searching it. `M-m` writes the drawer's gestures into the rule above it,
+which is the only place they are spelled out on screen.
 
 **A search targets whatever drawer is open.** `/` with the composer up
 moves the draft's cursor; with a list up it walks that list's rows, and `n`/`N`
@@ -539,8 +552,9 @@ session only when there is none of the three.
 
 ### Coordinates and the `:` jump
 
-**`M-m` in the pager also draws every node's address**, one dim row above
-it: `12.3 · 01:23:45`: turn id, node id, and when the node was written. The
+**`M-m` in the pager also draws every node's address** in the spare columns
+of its first row: `12.3 · 01:23:45`: turn id, node id, and when the node was
+written. Every open metadata section carries it as its first row. The
 turn's opening question gets the same row at its virtual node id, `-1`, because
 the question selects, copies and highlights exactly as a node does and is
 addressable the same way.

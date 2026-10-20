@@ -21,9 +21,8 @@ type Row struct {
 	Text  string
 	Block int
 	Mark  string
-	// Delta addresses one row of the block's form-delta adornment: 0 is the
-	// block's own row, n the n'th delta.
-	Delta int
+	Meta  int
+	Reply int
 	// Gutter is the glyph the row wears in the right gutter.
 	Gutter string
 	// Chrome marks a row that carries its block's coordinate but is none of
@@ -32,6 +31,7 @@ type Row struct {
 	// Spine is the row's place in the adornment's snake, drawn into Text at
 	// rest; a surface with a cursor resolves it again at paint time.
 	Spine SpineSlot
+	More  []Spot
 }
 
 // SpineKind is what a row contributes to an adornment's snake.
@@ -41,22 +41,24 @@ const (
 	SpineNone   SpineKind = iota
 	SpineAnchor           // where the snake hangs from the block
 	SpineLink             // between the anchor and the first delta
-	SpineRow              // a delta row: which one is Row.Delta
+	SpineRow
+	SpineCont
 )
 
 // SpineSlot is one column of one row held for the snake. Tail marks an
 // adornment that closes below its last row, so the spine runs down to the
 // closing corner instead of up to the block.
 type SpineSlot struct {
-	Kind SpineKind
-	Col  int
-	Tail bool
+	Kind  SpineKind
+	Col   int
+	Tail  bool
+	Glyph string
 }
 
-// Adornment is what a block's form deltas add to it.
 type Adornment struct {
 	// Suffix is lifted into the block's opening chrome row.
-	Suffix string
+	Suffix     string
+	SuffixMore []Spot
 	// Gutter is the collapsed marker, worn by the block's first row, or by
 	// its last when GutterLast.
 	Gutter     string
@@ -82,15 +84,14 @@ type Composer struct {
 
 	Header      func(role string) string
 	Rule        func() string
-	InputHeader func(seg aria.InquirySegment) string // an empty sender means unattributed
+	InputHeader func(seg aria.InquirySegment) (string, []Spot) // an empty sender means unattributed
+	HeadMore    func(n livedoc.Node) []Spot
 	// Mark is a block's address, drawn against the right edge of its first row.
 	Mark func(block int, n livedoc.Node) string
 
 	// Expanded reports whether a block draws expanded; nil means the view's default.
 	Expanded func(block int) bool
 
-	// Adorn draws a block's form-delta adornment, already styled; BlockInquiry
-	// addresses the turn-level set. nil adorns nothing.
 	Adorn func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) Adornment
 
 	// Quote draws a passage the question opens by quoting, already styled.
@@ -122,7 +123,7 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 		w = 80
 	}
 	var adorn Adornment
-	if c.Adorn != nil && len(m.FormDeltas) > 0 {
+	if c.Adorn != nil && strings.TrimSpace(m.Inquiry) != "" {
 		adorn = c.Adorn(BlockInquiry, livedoc.Node{}, m.FormDeltas, w)
 	}
 	rows := c.Inquiry(m.Inquiry, m.InquirySegments, w, adorn)
@@ -184,7 +185,7 @@ func (c Composer) block(n livedoc.Node, w, k int) []Row {
 		state.Expanded = c.Expanded == nil || c.Expanded(k)
 	}
 	var adorn Adornment
-	if c.Adorn != nil && len(n.FormDeltas) > 0 {
+	if c.Adorn != nil {
 		adorn = c.Adorn(k, n, n.FormDeltas, w)
 		state.Adorned = len(adorn.Rows) > 0
 	}
@@ -192,6 +193,9 @@ func (c Composer) block(n livedoc.Node, w, k int) []Row {
 		var rows []Row
 		for _, l := range c.render(n, w, k) {
 			rows = append(rows, Row{Text: clip(l, w), Block: k})
+		}
+		if len(rows) > 0 && c.HeadMore != nil {
+			rows[0].More = c.HeadMore(n)
 		}
 		if len(rows) > 0 {
 			if c.Mark != nil {
@@ -244,14 +248,20 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int,
 			rows = append(rows, chrome(""))
 		}
 		h := c.head(livedoc.RoleInput)
+		var more []Spot
 		if c.InputHeader != nil {
-			h = c.InputHeader(seg)
+			h, more = c.InputHeader(seg)
 		}
 		if h != "" {
 			if k == 0 && adorn.Suffix != "" {
+				at := Width(h) + 1
 				h += " " + adorn.Suffix
+				for _, s := range adorn.SuffixMore {
+					more = append(more, Spot{Col: at + s.Col, Text: s.Text})
+				}
 			}
 			head := chrome(clip(h, w))
+			head.More = more
 			if k == 0 {
 				head.Text = OverlayGutter(head.Text, adorn.Gutter, w)
 				head.Gutter = adorn.Gutter
@@ -306,6 +316,17 @@ func prose(text string, w, block int) []Row {
 		rows = append(rows, Row{Text: clip(l, w), Block: block})
 	}
 	return rows
+}
+
+func Painted(rows []Row, w int, more bool) []string {
+	if !more {
+		return Text(rows)
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Annotate(r.Text, r.More, r.Mark, r.Gutter, w))
+	}
+	return out
 }
 
 // Text drops the block addressing.

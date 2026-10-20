@@ -92,10 +92,11 @@ func TestCommentSpanWashesBothBlocksAndHangsUnderTheEnd(t *testing.T) {
 	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
 		"c1": {At: "<412.0:150-414.0:2>!", Turn: 3, Thread: one("gluck", "spans")},
 	})))
+	openSection(tr, nodeRef{turn: 3, index: 1})
 	lines := paintedLines(tr)
 	second := findLine(lines, "second paragraph")
 	tool := findLine(lines, "l1")
-	note := findLine(lines, "✎ gluck")
+	note := findLine(lines, "▸ gluck")
 	if second < 0 || tool < 0 || note < 0 {
 		t.Fatalf("missing rows (second %d, tool %d, note %d):\n%s", second, tool, note, render.StripEscapes(strings.Join(lines, "\n")))
 	}
@@ -120,6 +121,7 @@ func TestCommentIsASelectionStopAfterItsBlock(t *testing.T) {
 	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
+	openSection(tr, nodeRef{turn: 3, index: 0})
 	var order []nodeRef
 	for _, p := range tr.nodeRefs() {
 		order = append(order, p.nodeRef)
@@ -180,8 +182,9 @@ func TestCommentJumpByKeys(t *testing.T) {
 
 // Enter walks a thread: the first opens it, the second steps into its first
 // message, each further one to the next, and Enter on the last folds it back
-// onto the comment.
-func TestEnterWalksTheThread(t *testing.T) {
+// Enter opens a comment's thread and Enter closes it, from the comment or from
+// any of its messages; it never steps through the thread.
+func TestEnterTogglesTheThread(t *testing.T) {
 	tr, _ := sourceFixture(t)
 	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
@@ -213,19 +216,14 @@ func TestEnterWalksTheThread(t *testing.T) {
 		t.Fatalf("opening moved the selection to %+v", got)
 	}
 	tr.key(0x0d)
-	if got := tr.selection.focus.nodeRef; got != replyRefOf(head, 1) {
-		t.Fatalf("the second Enter landed on %+v, want the first message", got)
+	if tr.entryOpen[head] || tr.selection.focus.nodeRef != head {
+		t.Fatalf("the second Enter must close the thread and stay on the comment: %+v", tr.selection.focus.nodeRef)
 	}
 	tr.key(0x0d)
-	if got := tr.selection.focus.nodeRef; got != replyRefOf(head, 2) {
-		t.Fatalf("Enter on the first message landed on %+v, want the second", got)
-	}
+	tr.selectRef(replyRefOf(head, 2), false)
 	tr.key(0x0d)
-	if got := tr.selection.focus.nodeRef; got != head {
-		t.Fatalf("Enter on the last message landed on %+v, want the comment", got)
-	}
-	if strings.Contains(render.StripEscapes(strings.Join(paintedLines(tr), "\n")), "because the jitter") {
-		t.Fatal("Enter on the last message did not fold the thread")
+	if tr.entryOpen[head] || tr.selection.focus.nodeRef != head {
+		t.Fatalf("Enter on a message closes the thread onto its comment: %+v", tr.selection.focus.nodeRef)
 	}
 }
 
@@ -259,10 +257,11 @@ func TestABlankRowSeparatesABlockFromItsComments(t *testing.T) {
 	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
+	openSection(tr, nodeRef{turn: 3, index: 0})
 	lines := stripAll(paintedLines(tr))
-	note := findLine(lines, "✎ gluck")
-	if note < 1 || strings.TrimSpace(lines[note-1]) != "" || !strings.Contains(lines[note-2], "is width.") {
-		t.Fatalf("want the block's last row, a blank row, then the comment:\n%s", strings.Join(lines[max(note-3, 0):note+1], "\n"))
+	note := findLine(lines, "▸ gluck")
+	if note < 3 || !strings.Contains(lines[note-1], "address") || strings.TrimSpace(lines[note-2]) != "" || !strings.Contains(lines[note-3], "is width.") {
+		t.Fatalf("want the block's last row, a blank row, the address, then the comment:\n%s", strings.Join(lines[max(note-4, 0):note+1], "\n"))
 	}
 }
 
@@ -323,7 +322,7 @@ func TestRangeOnACommentIsTheComment(t *testing.T) {
 			t.Fatalf("expandRange(%q) = %q, %q; want %q", in, got, err, want)
 		}
 	}
-	tr.openComments()[head] = true
+	tr.openEntries()[head] = true
 	tr.invalidateRows()
 	tr.selectRef(replyRefOf(head, 2), false)
 	if got, _, _ := tr.expandRange("<,>comment -X"); got != "comment -X #c1.2" {
@@ -395,7 +394,7 @@ func TestVisualEnterInsideAnAnnotationOpensIt(t *testing.T) {
 	if !ok || c.id != "c1" {
 		t.Fatalf("selection is %+v, want the comment", tr.selection.focus.nodeRef)
 	}
-	if !tr.commentsOpen[tr.selection.focus.nodeRef] {
+	if !tr.entryOpen[tr.selection.focus.nodeRef] {
 		t.Fatal("the comment was selected but not opened")
 	}
 }
@@ -423,8 +422,14 @@ func TestNavigateKinds(t *testing.T) {
 	if msg := tr.navigate("", -1); msg != "" {
 		t.Fatal(msg)
 	}
+	if got := tr.selection.focus.nodeRef; got != metaRefOf(prose, 1) {
+		t.Fatalf(":prev from the comment landed on %+v, want the address above it", got)
+	}
+	if msg := tr.navigate("", -1); msg != "" {
+		t.Fatal(msg)
+	}
 	if got := tr.selection.focus.nodeRef; got != prose {
-		t.Fatalf(":prev from the comment landed on %+v, want its block", got)
+		t.Fatalf(":prev from the section's first row landed on %+v, want its block", got)
 	}
 	if msg := tr.navigate("comment", -1); !strings.Contains(msg, "no comment") {
 		t.Fatalf(":prev comment with none above said %q", msg)
@@ -495,7 +500,7 @@ func TestFocusedShadeFollowsTheCommentNotItsBlock(t *testing.T) {
 	prose := nodeRef{turn: 3, index: 0}
 	tr.selectRef(noteRefOf(prose, 1), false)
 	lines := paintedLines(tr)
-	if got := shade(lines, "✎ gluck"); got != "focused" {
+	if got := shade(lines, "▸ gluck"); got != "focused" {
 		t.Fatalf("a focused comment wears %s", got)
 	}
 	if got := shade(lines, "The retry loop"); got != "selected" {
@@ -506,7 +511,7 @@ func TestFocusedShadeFollowsTheCommentNotItsBlock(t *testing.T) {
 	if got := shade(lines, "The retry loop"); got != "focused" {
 		t.Fatalf("a focused block wears %s", got)
 	}
-	if got := shade(lines, "✎ gluck"); got != "selected" {
+	if got := shade(lines, "▸ gluck"); got != "selected" {
 		t.Fatalf("the comment of a focused block wears %s", got)
 	}
 }
@@ -526,8 +531,7 @@ func TestXSendsTheThreadsDelete(t *testing.T) {
 	tr.selectRef(head, false)
 	tr.key('x')
 	tr.key(0x0d)
-	tr.key(0x0d)
-	tr.key(0x0d)
+	tr.selectRef(replyRefOf(head, 2), false)
 	if tr.selection.focus.nodeRef != replyRefOf(head, 2) {
 		t.Fatalf("setup: selection %+v", tr.selection.focus.nodeRef)
 	}
@@ -594,4 +598,14 @@ func TestAReplyAppends(t *testing.T) {
 	if fresh := appendKey(nil); fresh == "" {
 		t.Fatal("no key for an empty thread")
 	}
+}
+
+// A prose block's section opens with its address; its comments follow.
+const proseFields = 1
+
+func noteRefOf(block nodeRef, i int) nodeRef { return metaRefOf(block, proseFields+i) }
+
+func openSection(tr *transcript, ref nodeRef) {
+	tr.metaOpen[ref] = true
+	tr.dropTurnsRows(map[int]struct{}{ref.turn: {}})
 }

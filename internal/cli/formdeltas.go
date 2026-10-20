@@ -22,6 +22,8 @@ const forkGlyph = "⑂"
 
 const deltaGlyph = "Δ"
 
+const headGlyph = "•"
+
 const deadGlyph = "⊘"
 
 // absentValue is the missing side of a transition: a key born has no old, a key
@@ -31,11 +33,13 @@ const absentValue = "∅"
 const emptyValue = `""`
 
 type deltaRow struct {
-	glyph  string
-	key    string
-	from   deltaCell
-	to     deltaCell
-	banner bool
+	glyph   string
+	key     string
+	from    deltaCell
+	to      deltaCell
+	fromRaw json.RawMessage
+	toRaw   json.RawMessage
+	banner  bool
 }
 
 // Absence and the empty string are different rows.
@@ -66,9 +70,9 @@ func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 				continue
 			}
 			d := g.byKey[k]
-			row := deltaRow{key: sanitize(prefix + k), from: unquote(d.Prev)}
+			row := deltaRow{key: sanitize(prefix + k), from: unquote(d.Prev), fromRaw: d.Prev}
 			if d.Event != livedoc.FormRemoved {
-				row.to = unquote(d.Value)
+				row.to, row.toRaw = unquote(d.Value), d.Value
 			}
 			out = append(out, row)
 		}
@@ -104,19 +108,6 @@ func anyDeltaRow(deltas map[string]livedoc.FormDelta, liftFork, forked bool) boo
 	return deltaRowCount(deltas, liftFork, forked) > 0
 }
 
-func deltaKeyWidth(rows []deltaRow) int {
-	w := 0
-	for _, r := range rows {
-		if r.banner {
-			continue
-		}
-		if n := runewidth.StringWidth(r.key); n > w && n <= formDeltaKeyCap {
-			w = n
-		}
-	}
-	return w
-}
-
 // One row per key: a value too long is elided, not wrapped; yank gives it back whole.
 func deltaRowText(r deltaRow, keyw, width int) string {
 	if r.banner {
@@ -125,7 +116,7 @@ func deltaRowText(r deltaRow, keyw, width int) string {
 	var b strings.Builder
 	b.WriteString(padTo(truncCols(r.key, formDeltaKeyCap), keyw))
 	b.WriteString("  ")
-	from, to := cell(r.from), cell(r.to)
+	from, to := lineCell(r.from), lineCell(r.to)
 	if room := width - runewidth.StringWidth(b.String()) - len(deltaArrow); room > 0 {
 		from, to = fitTransition(from, to, room)
 	}
@@ -180,6 +171,25 @@ func cell(v deltaCell) string {
 		return emptyValue
 	}
 	return s
+}
+
+func lineCell(v deltaCell) string {
+	if !v.present {
+		return absentValue
+	}
+	return headLine(v.text)
+}
+
+func headLine(s string) string {
+	first, rest, multi := strings.Cut(strings.TrimSpace(s), "\n")
+	line := flatten(first)
+	if multi && strings.TrimSpace(rest) != "" {
+		return line + "…"
+	}
+	if line == "" {
+		return emptyValue
+	}
+	return line
 }
 
 func flatten(s string) string {

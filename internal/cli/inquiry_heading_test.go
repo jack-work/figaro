@@ -23,7 +23,7 @@ func TestInquiryHeadingNamesTheSender(t *testing.T) {
 				Nodes:           []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "done"}},
 			}
 			rows := plain(renderTurnRows(m, 100, 0, renderSettings{}))
-			if !strings.HasPrefix(rows[0], tc.heading+" ⑂ e87bb154") || !strings.HasSuffix(rows[0], "Δ") {
+			if !strings.HasPrefix(rows[0], tc.heading+" ⑂ "+ariaName("e87bb154")) || !strings.HasSuffix(rows[0], "Δ") {
 				t.Fatalf("heading lost sender, fork or delta marker: %q", rows[0])
 			}
 			if rows[1] != "  please run the tests" {
@@ -54,7 +54,8 @@ func TestStickyHeadingKeepsSenderForkTurnAndDelta(t *testing.T) {
 			t.Fatalf("width %d: want metadata, text, rule; got %q", width, rows)
 		}
 		header := stripANSI(rows[0])
-		if !strings.HasPrefix(header, "∨ Duke ⑂ e87bb154") || !strings.HasSuffix(header, "1 Δ") {
+		name := strings.TrimSuffix(strings.TrimPrefix(header, "∨ Duke ⑂ "), "1 Δ")
+		if name == header || !strings.HasPrefix(ariaName("e87bb154"), strings.TrimRight(name, " …")) || !strings.HasSuffix(header, "1 Δ") {
 			t.Fatalf("width %d: sticky metadata incomplete: %q", width, header)
 		}
 		for _, row := range rows {

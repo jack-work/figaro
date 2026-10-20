@@ -120,31 +120,46 @@ func (t *transcript) stepBlock(dir int) string {
 }
 
 func (t *transcript) stepDelta(dir int) string {
+	return t.stepEntry(dir, func(e metaEntry) bool { return e.kind == metaDelta }, "no form delta")
+}
+
+func (t *transcript) stepEntry(dir int, want func(metaEntry) bool, none string) string {
 	p, ok := t.stepTo(func(p selectionPoint) bool {
-		if p.delta > 0 {
-			return true
-		}
-		if p.pseudo() || t.adorned[p.nodeRef] {
+		if p.reply > 0 {
 			return false
 		}
-		d, has := t.deltasAt(p.nodeRef)
-		return has && adornRowCount(d, adornLift(p.index)) > 0
+		if p.meta > 0 {
+			e, ok := t.entryAt(p.nodeRef)
+			return ok && want(e)
+		}
+		return !t.metaOpen[p.nodeRef] && t.firstEntry(p.nodeRef, want, dir) > 0
 	}, dir)
 	if !ok {
-		return "no form delta " + towards(dir)
+		return none + " " + towards(dir)
 	}
-	if p.delta > 0 {
+	if p.meta > 0 {
 		t.land(p.nodeRef)
 		return ""
 	}
-	t.toggleFolds([]foldTarget{{state: t.adorned, ref: p.nodeRef, deltas: true}})
-	d, _ := t.deltasAt(p.nodeRef)
-	row := 1
-	if dir < 0 {
-		row = adornRowCount(d, adornLift(p.index))
-	}
-	t.land(deltaRefOf(p.nodeRef, row))
+	i := t.firstEntry(p.nodeRef, want, dir)
+	t.toggleFolds([]foldTarget{{state: t.metaOpen, ref: p.nodeRef, deltas: true}})
+	t.land(metaRefOf(p.nodeRef, i))
 	return ""
+}
+
+func (t *transcript) firstEntry(ref nodeRef, want func(metaEntry) bool, dir int) int {
+	entries := t.entriesAt(ref)
+	found := 0
+	for i, e := range entries {
+		if !want(e) {
+			continue
+		}
+		found = i + 1
+		if dir > 0 {
+			break
+		}
+	}
+	return found
 }
 
 func towards(dir int) string {

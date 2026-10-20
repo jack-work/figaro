@@ -135,7 +135,7 @@ Moving between arias:
 | `f j` / `f k` | next / previous fork point |
 | `c j` / `c k` | next / previous comment |
 | `^O` / `^I` | jumplist: back / forward through the arias attended here |
-| `M-m` | verbose tool output, and every node's address |
+| `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `S` | the form in the pit |
 | `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |
 
