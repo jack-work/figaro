@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -209,5 +210,49 @@ func TestAppendUsesGlobalIndexInJSONL(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("file missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// An empty segment takes any one record: refusing it would leave the record
+// with nowhere to go, since every fresh segment is just as small.
+func TestSegmentTakesOversizedFirstRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "00001.seg")
+	s, _ := Create(path, BinaryCodec{}, 1, 32)
+	defer s.Close()
+	big := bytes.Repeat([]byte("x"), 100)
+	if _, err := s.Append(big); err != nil {
+		t.Fatalf("first record: %v", err)
+	}
+	if _, err := s.Append([]byte("y")); err != ErrFull {
+		t.Fatalf("second record after an oversized one: want ErrFull, got %v", err)
+	}
+}
+
+// A watermark header is not record capacity: a reducible state larger than
+// the segment size must still leave room for the patches that follow it.
+func TestSegmentHeaderDoesNotCountAgainstCapacity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "00001.seg")
+	s, _ := Create(path, BinaryCodec{}, 1, 64)
+	if err := s.WriteHeader(bytes.Repeat([]byte("h"), 200)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append([]byte("patch-1")); err != nil {
+		t.Fatalf("patch under a big header: %v", err)
+	}
+	if _, err := s.Append([]byte("patch-2")); err != nil {
+		t.Fatalf("second patch: %v", err)
+	}
+	s.Close()
+
+	r, err := OpenHeadered(path, BinaryCodec{}, 1, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := r.Append([]byte("patch-3")); err != nil {
+		t.Fatalf("patch after reopen: %v", err)
+	}
+	if _, err := r.Append(bytes.Repeat([]byte("z"), 20)); err != ErrFull {
+		t.Fatalf("records past capacity: want ErrFull, got %v", err)
 	}
 }

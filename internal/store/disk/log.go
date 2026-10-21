@@ -24,14 +24,13 @@ var (
 	ErrEmpty      = errors.New("log is empty")
 	// ErrNotHeaderMode is distinct so a caller can tell "no headers at all"
 	// from "this index is not here".
-	ErrNotHeaderMode   = errors.New("log is not in header mode")
-	ErrCodecMismatch   = errors.New("log directory contains segments with a different codec")
-	ErrPayloadTooLarge = errors.New("payload too large for segment size")
-	ErrReadOnly        = errors.New("log is read-only (branch point with child forks)")
-	ErrAbsent          = errors.New("log directory does not exist")
-	ErrForkMismatch    = errors.New(".fork base starts before the first segment")
-	ErrBelowForkBase   = errors.New("cut below the fork base: the prefix is the parent's")
-	errRangeBoundary   = errors.New("range reached fork boundary")
+	ErrNotHeaderMode = errors.New("log is not in header mode")
+	ErrCodecMismatch = errors.New("log directory contains segments with a different codec")
+	ErrReadOnly      = errors.New("log is read-only (branch point with child forks)")
+	ErrAbsent        = errors.New("log directory does not exist")
+	ErrForkMismatch  = errors.New(".fork base starts before the first segment")
+	ErrBelowForkBase = errors.New("cut below the fork base: the prefix is the parent's")
+	errRangeBoundary = errors.New("range reached fork boundary")
 )
 
 type Options struct {
@@ -242,21 +241,12 @@ func (l *Log) Write(idx uint64, payload []byte) error {
 
 	_, err := l.active.Append(payload)
 	if errors.Is(err, segment.ErrFull) {
-		if l.active.Count() == 0 {
-			return fmt.Errorf("%w: segmentSize=%d", ErrPayloadTooLarge, l.opts.SegmentSize)
-		}
 		if err := l.rotateLocked(idx); err != nil {
 			return err
 		}
 		_, err = l.active.Append(payload)
-		if errors.Is(err, segment.ErrFull) {
-			return fmt.Errorf("%w: segmentSize=%d", ErrPayloadTooLarge, l.opts.SegmentSize)
-		}
 	}
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // Sync fsyncs the active segment. Write does not fsync on its own;

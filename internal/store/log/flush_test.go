@@ -3,6 +3,7 @@ package log
 import (
 	"bytes"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/store/disk"
@@ -69,6 +70,9 @@ func TestFlushRetrySkipsPersistedEntries(t *testing.T) {
 }
 
 func TestFlushFailureKeepsPendingAndRetriesCleanly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory mode this test relies on")
+	}
 	dir := t.TempDir()
 	l, err := Open(dir, Options{SegmentSize: 64})
 	if err != nil {
@@ -78,21 +82,44 @@ func TestFlushFailureKeepsPendingAndRetriesCleanly(t *testing.T) {
 	if err := l.Write(1, []byte{1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.Write(2, bytes.Repeat([]byte{2}, 200)); err != nil {
+	if err := l.Sync(); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.Sync(); !errors.Is(err, disk.ErrPayloadTooLarge) {
-		t.Fatalf("first flush: %v", err)
+	if err := l.Write(2, []byte{2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Write(3, bytes.Repeat([]byte{3}, 200)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	if err := l.Sync(); err == nil {
+		t.Fatal("first flush succeeded with no room to rotate into")
 	}
 	first, last, ok := l.PendingBounds()
-	if !ok || first != 1 || last != 2 {
+	if !ok || first > 3 || last != 3 {
 		t.Fatalf("pending after failure: %d..%d ok=%v", first, last, ok)
 	}
 	retryErr := l.Sync()
 	if errors.Is(retryErr, disk.ErrOutOfOrder) {
 		t.Fatal("retry re-wrote persisted entries")
 	}
-	if !errors.Is(retryErr, disk.ErrPayloadTooLarge) {
-		t.Fatalf("retry flush: %v", retryErr)
+	if retryErr == nil {
+		t.Fatal("retry succeeded with no room to rotate into")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Sync(); err != nil {
+		t.Fatalf("flush once the directory is writable: %v", err)
+	}
+	if _, _, ok := l.PendingBounds(); ok {
+		t.Fatal("pending left after a clean flush")
+	}
+	got, err := l.Read(3)
+	if err != nil || len(got) != 200 {
+		t.Fatalf("read 3: %d bytes, %v", len(got), err)
 	}
 }

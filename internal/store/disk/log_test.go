@@ -485,3 +485,35 @@ func TestGlobalIndexAcrossRotation(t *testing.T) {
 		t.Fatalf("second segment missing %q in first line:\n%s", want, raw)
 	}
 }
+
+// A record larger than the segment size gets a segment of its own. Refusing
+// it at flush used to wedge the log: the record was already acknowledged and
+// every record behind it queued forever.
+func TestOversizedRecordGetsItsOwnSegment(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir, Options{SegmentSize: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := bytes.Repeat([]byte("b"), 500)
+	for i, p := range [][]byte{[]byte("a"), big, []byte("c")} {
+		if err := l.Write(uint64(i+1), p); err != nil {
+			t.Fatalf("write %d: %v", i+1, err)
+		}
+	}
+	if err := l.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+	r, err := Open(dir, Options{SegmentSize: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	for i, want := range [][]byte{[]byte("a"), big, []byte("c")} {
+		got, err := r.Read(uint64(i + 1))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("read %d: %d bytes, %v", i+1, len(got), err)
+		}
+	}
+}

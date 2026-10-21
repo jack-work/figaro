@@ -31,6 +31,7 @@ type Segment struct {
 	// in reducible use), framed like a record but not counted in the index.
 	hasHeader bool
 	header    []byte
+	headerLen int64
 
 	// registered marks this segment findable by the payload cache's Source.
 	registered atomic.Bool
@@ -154,6 +155,7 @@ func (s *Segment) recover() error {
 			return herr
 		}
 		s.header = payload
+		s.headerLen = headerEnd
 	}
 	fi, err := s.f.Stat()
 	if err != nil {
@@ -193,7 +195,7 @@ func (s *Segment) Append(payload []byte) (offset int64, err error) {
 	if err != nil {
 		return 0, err
 	}
-	if s.maxSize > 0 && s.size+int64(len(frame)) > s.maxSize {
+	if s.maxSize > 0 && s.count > 0 && s.size-s.headerLen+int64(len(frame)) > s.maxSize {
 		return 0, ErrFull
 	}
 	offset = s.size
@@ -233,6 +235,7 @@ func (s *Segment) WriteHeader(payload []byte) error {
 		return fmt.Errorf("short write: %d/%d", n, len(frame))
 	}
 	s.size = int64(n)
+	s.headerLen = int64(n)
 	s.hasHeader = true
 	s.header = append([]byte(nil), payload...)
 	return nil
