@@ -333,6 +333,15 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	}
 	copy := *meta
 	copy.CreatedAtMS = time.Now().UnixMilli()
+	copy.RetiredAtMS, copy.LastAccessMS = 0, 0
+	if own, _ := h.angelus.Backend.Meta(child); own != nil {
+		if own.TTLMS != 0 {
+			copy.TTLMS = own.TTLMS
+		}
+		if own.KeepaliveMS != nil {
+			copy.KeepaliveMS = own.KeepaliveMS
+		}
+	}
 	if interior {
 		copy.MessageCount = h.messageCountAt(parent, atMainLT)
 		copy.TurnCount = 0

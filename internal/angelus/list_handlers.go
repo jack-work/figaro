@@ -47,6 +47,11 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			Cwd:              info.Cwd,
 			BoundPIDs:        boundPIDs[info.ID],
 		}
+		if h.angelus.Backend != nil {
+			if meta, _ := h.angelus.Backend.Meta(info.ID); meta != nil {
+				entry.RetiredAt = meta.RetiredAtMS
+			}
+		}
 		result = append(result, entry)
 	}
 
@@ -177,6 +182,7 @@ func (h *handlers) fillTTL(result []rpc.FigaroInfoResponse) {
 	for _, e := range entries {
 		byID[e.ID] = e
 	}
+	def := h.angelus.keepalive()
 	for i := range result {
 		e, ok := byID[result[i].ID]
 		if !ok {
@@ -184,6 +190,8 @@ func (h *handlers) fillTTL(result []rpc.FigaroInfoResponse) {
 		}
 		result[i].TTLMS = e.TTL.Milliseconds()
 		result[i].ExpiresAt = e.DeadlineMS
+		result[i].KeepaliveMS = e.KeepaliveOr(def).Milliseconds()
+		result[i].ReapsAt = e.ReapsAt(def, h.angelus.Backend.LastTS(e.ID))
 	}
 }
 
@@ -231,6 +239,7 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	if meta.CreatedAtMS != 0 {
 		entry.CreatedAt = meta.CreatedAtMS
 	}
+	entry.RetiredAt = meta.RetiredAtMS
 }
 
 func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string][2]string, entry *rpc.FigaroInfoResponse) {

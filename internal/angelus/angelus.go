@@ -308,48 +308,6 @@ func (a *Angelus) sweepCacheBudgets() {
 	}
 }
 
-type ttlKeeper interface {
-	TTLDue(nowMS int64) []store.TTLEntry
-	TTLForget(ids ...string)
-}
-
-// expireTTL reads only sidecars and opens no node. An expired aria with a
-// live agent or a bound shell keeps its deadline until it is dormant. The
-// delete is recursive over the presentation hierarchy, so a child promoted
-// past an expired parent survives it.
-func (a *Angelus) expireTTL() {
-	keeper, ok := a.Backend.(ttlKeeper)
-	if !ok || a.RemoveAria == nil {
-		return
-	}
-	due := keeper.TTLDue(time.Now().UnixMilli())
-	if len(due) == 0 {
-		return
-	}
-	bound := a.Registry.BoundPIDsByFigaro()
-	for _, e := range due {
-		if a.Registry.Get(e.ID) != nil {
-			slog.Info("lifetime spent, waiting for the aria to go dormant",
-				"node", e.ID, "ttl", e.TTL)
-			continue
-		}
-		if len(bound[e.ID]) > 0 {
-			slog.Info("lifetime spent, waiting for the bound shell to leave",
-				"node", e.ID, "ttl", e.TTL, "pids", bound[e.ID])
-			continue
-		}
-		if err := a.RemoveAria(e.ID, true); err != nil {
-			slog.Warn("lifetime spent, removal failed", "node", e.ID, "err", err)
-			continue
-		}
-		keeper.TTLForget(e.ID)
-		slog.Info("removed a node whose lifetime was spent",
-			"node", e.ID, "ttl", e.TTL,
-			"created", time.UnixMilli(e.CreatedAtMS),
-			"expired", time.UnixMilli(e.DeadlineMS))
-	}
-}
-
 func sweep(ctx context.Context, phase string, fn func()) {
 	start := time.Now()
 	fn()

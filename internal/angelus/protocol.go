@@ -155,7 +155,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		guarded[rpc.MethodList] = h.listingPeers(list)
 	}
 	for m, fn := range guarded {
-		guarded[m] = h.resolvingIDs(m, fn)
+		guarded[m] = h.resolvingIDs(m, h.touching(m, fn))
 	}
 	return guarded
 }
@@ -184,6 +184,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			return nil, err
 		}
 		if err := h.checkAriaMethod(ctx, method, id, dressed); err != nil {
+			return nil, err
+		}
+		if err := h.refuseRetired(method, id, dressed); err != nil {
 			return nil, err
 		}
 		return hb.route(ctx, method, dressed)
