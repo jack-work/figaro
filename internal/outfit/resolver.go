@@ -169,30 +169,41 @@ func (r *reader) read(path string) ([]byte, error) {
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		r.note(path, "")
+		r.note(path, "", "", true)
 		return nil, err
 	}
-	r.note(path, r.o.snaps.put(b))
+	r.note(path, r.o.snaps.put(b), fileKey(b), true)
 	return b, nil
 }
 
 // The directory's own stat is recorded: adding or removing a skill changes only it.
 func (r *reader) readDir(dir string) ([]os.DirEntry, error) {
 	entries, err := os.ReadDir(dir)
-	r.note(dir, "")
+	key := ""
+	if err == nil {
+		key = dirKey(entries)
+	}
+	r.note(dir, "", key, true)
 	return entries, err
 }
 
-func (r *reader) stat(path string) { r.note(path, "") }
+func (r *reader) stat(path string) { r.note(path, "", "", false) }
 
-func (r *reader) note(path, hash string) {
+func (r *reader) note(path, hash, key string, keyed bool) {
+	d := statDep(path)
+	d.hash = hash
+	d.racy = d.racyAt(time.Now())
+	if d.racy {
+		if !keyed {
+			key = contentKey(path)
+		}
+		d.key = key
+	}
 	r.o.mu.Lock()
 	defer r.o.mu.Unlock()
 	if r.ep.gen != r.o.ep.gen {
 		return
 	}
-	d := statDep(path)
-	d.hash = hash
 	r.ep.touched[path] = d
 }
 
@@ -209,6 +220,46 @@ type dep struct {
 	size   int64
 	mod    int64
 	hash   string
+	key    string
+	racy   bool
+}
+
+const racyWindow = 2 * time.Second
+
+func (d dep) racyAt(now time.Time) bool {
+	return d.exists && now.UnixNano()-d.mod < int64(racyWindow)
+}
+
+func fileKey(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func dirKey(entries []os.DirEntry) string {
+	h := sha256.New()
+	for _, e := range entries {
+		fmt.Fprintf(h, "%s\x00%d\x00", e.Name(), e.Type())
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func contentKey(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return ""
+		}
+		return dirKey(entries)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return fileKey(b)
 }
 
 func statDep(path string) dep {
@@ -238,10 +289,22 @@ func (o *Outfitter) current() *epoch {
 	o.mu.Unlock()
 
 	moved := false
+	var settled []string
+	now := time.Now()
 	for _, d := range touched {
 		if !statDep(d.path).sameFile(d) {
 			moved = true
 			break
+		}
+		if !d.racy {
+			continue
+		}
+		if contentKey(d.path) != d.key {
+			moved = true
+			break
+		}
+		if !d.racyAt(now) {
+			settled = append(settled, d.path)
 		}
 	}
 
@@ -253,6 +316,11 @@ func (o *Outfitter) current() *epoch {
 	if moved {
 		o.rollLocked()
 		return o.ep
+	}
+	for _, path := range settled {
+		d := ep.touched[path]
+		d.racy, d.key = false, ""
+		ep.touched[path] = d
 	}
 	ep.checked = time.Now()
 	return ep

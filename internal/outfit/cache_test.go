@@ -70,17 +70,75 @@ func TestCacheSeesSkillsAddedAndRemoved(t *testing.T) {
 	_, hasBeta := patch.Entry("skills.beta")
 	require.False(t, hasBeta)
 
-	require.NoError(t, os.WriteFile(filepath.Join(skills, "beta.md"), []byte("---\nname: beta\n---\nbody\n"), 0o600))
+	// Same-tick changes are simulated by putting the directory's mtime back:
+	// on a coarse clock most real adds look exactly like this.
+	sameTick := func(change func()) {
+		before, err := os.Stat(skills)
+		require.NoError(t, err)
+		change()
+		require.NoError(t, os.Chtimes(skills, before.ModTime(), before.ModTime()))
+	}
+
+	sameTick(func() {
+		require.NoError(t, os.WriteFile(filepath.Join(skills, "beta.md"), []byte("---\nname: beta\n---\nbody\n"), 0o600))
+	})
 	patch, err = o.Load("top")
 	require.NoError(t, err)
 	_, hasNew := patch.Entry("skills.beta")
 	assert.True(t, hasNew, "an ADDED skill must invalidate the outfit")
 
-	require.NoError(t, os.Remove(filepath.Join(skills, "alpha.md")))
+	sameTick(func() { require.NoError(t, os.Remove(filepath.Join(skills, "alpha.md"))) })
 	patch, err = o.Load("top")
 	require.NoError(t, err)
 	_, stillAlpha := patch.Entry("skills.alpha")
 	assert.False(t, stillAlpha, "a REMOVED skill must invalidate the outfit")
+}
+
+// A same-size edit that keeps the mtime is invisible to stat; the racy rule
+// must catch it by content (issue #37).
+func TestCacheSeesASameSizeEditInTheSameTick(t *testing.T) {
+	dir := t.TempDir()
+	credo := filepath.Join(dir, "credo.md")
+	require.NoError(t, os.WriteFile(credo, []byte("first"), 0o600))
+	writeOutfit(t, dir, "top", "[system]\ncredo = { fileName = \"credo.md\" }\n")
+	o := outfit.New(dir)
+	o.SetStaleWindow(0)
+
+	patch, err := o.Load("top")
+	require.NoError(t, err)
+	require.Contains(t, string(mustEntry(patch, "system.credo")), "first")
+
+	before, err := os.Stat(credo)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(credo, []byte("again"), 0o600))
+	require.NoError(t, os.Chtimes(credo, before.ModTime(), before.ModTime()))
+
+	patch, err = o.Load("top")
+	require.NoError(t, err)
+	assert.Contains(t, string(mustEntry(patch, "system.credo")), "again",
+		"an edit that changes neither size nor mtime must still invalidate a racy dep")
+}
+
+// A skill directory that settled long ago and then changes in place is seen
+// through its mtime as before; the racy rule only adds checks, never removes one.
+func TestCacheSeesAnOldDirectoryChange(t *testing.T) {
+	dir := t.TempDir()
+	skills := filepath.Join(dir, "skills")
+	require.NoError(t, os.MkdirAll(skills, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(skills, "alpha.md"), []byte("---\nname: alpha\n---\nbody\n"), 0o600))
+	old := time.Now().Add(-time.Hour)
+	require.NoError(t, os.Chtimes(skills, old, old))
+	writeOutfit(t, dir, "top", "skills = { dirName = \"skills\" }\n")
+	o := outfit.New(dir)
+	o.SetStaleWindow(0)
+
+	_, err := o.Load("top")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(skills, "beta.md"), []byte("---\nname: beta\n---\nbody\n"), 0o600))
+	patch, err := o.Load("top")
+	require.NoError(t, err)
+	_, hasBeta := patch.Entry("skills.beta")
+	assert.True(t, hasBeta)
 }
 
 func TestCacheSeesALayerAppear(t *testing.T) {
