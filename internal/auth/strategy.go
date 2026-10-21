@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
@@ -71,23 +72,25 @@ type File struct {
 	Required bool
 }
 
+var ErrNotProvisioned = errors.New("not provisioned")
+
 func (f *File) TryResolve() (string, bool, error) {
 	if f.Path == "" {
 		return "", false, nil
 	}
 	b, err := os.ReadFile(f.Path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) && !f.Required {
-			return "", false, nil
+		if errors.Is(err, fs.ErrNotExist) {
+			if !f.Required {
+				return "", false, nil
+			}
+			return "", false, fmt.Errorf("credential %s is %w: %s does not exist", filepath.Base(f.Path), ErrNotProvisioned, f.Path)
 		}
 		return "", false, err
 	}
 	v := strings.TrimSpace(string(b))
 	if v == "" {
-		if f.Required {
-			return "", false, fmt.Errorf("credential file %s is empty", f.Path)
-		}
-		return "", false, nil
+		return "", false, fmt.Errorf("credential %s is %w: %s is empty", filepath.Base(f.Path), ErrNotProvisioned, f.Path)
 	}
 	return v, true, nil
 }

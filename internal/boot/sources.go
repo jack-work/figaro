@@ -59,8 +59,12 @@ func CredentialSources(loaded *config.Loaded, reg *providerPkg.Registration, oau
 	}
 	if dir := os.Getenv("CREDENTIALS_DIRECTORY"); dir != "" {
 		p := filepath.Join(dir, reg.Name)
-		if _, err := os.Stat(p); err == nil {
-			out = append(out, CredentialSource{Kind: SourceCredDir, Where: p})
+		if info, err := os.Stat(p); err == nil {
+			where := p
+			if info.Size() == 0 {
+				where += " (empty: not provisioned)"
+			}
+			out = append(out, CredentialSource{Kind: SourceCredDir, Where: where})
 		}
 	}
 	switch {
@@ -105,8 +109,10 @@ func serviceTokenWhere(loaded *config.Loaded, name string) string {
 	}
 	kind, id := serviceCredential(st)
 	path, _ := CredentialPath(id)
-	if _, err := os.Stat(path); err != nil {
+	if info, err := os.Stat(path); err != nil {
 		where += " (" + kind + " " + path + " missing)"
+	} else if info.Size() == 0 {
+		where += " (" + kind + " " + path + " empty: not provisioned)"
 	}
 	return where
 }

@@ -107,6 +107,29 @@ func TestFileRequiredErrsWhenMissingOrEmpty(t *testing.T) {
 	_, ok, err = (&File{Path: empty, Required: true}).TryResolve()
 	assert.False(t, ok)
 	assert.ErrorContains(t, err, "empty")
+	assert.ErrorIs(t, err, ErrNotProvisioned)
+}
+
+// systemd's SetCredential fallback leaves an empty file where a missing
+// LoadCredential source would have failed the unit: that file is a credential
+// nobody provisioned, and the aggregate must say so rather than "no strategy
+// returned a token".
+func TestFileEmptyIsNotProvisionedEvenWhenOptional(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "anthropic")
+	require.NoError(t, os.WriteFile(p, nil, 0o600))
+	_, ok, err := (&File{Path: p}).TryResolve()
+	assert.False(t, ok)
+	assert.ErrorIs(t, err, ErrNotProvisioned)
+
+	_, err = (&Aggregate{Strategies: []CredentialStrategy{&EnvVar{Name: "FIGARO_I41_UNSET"}, &File{Path: p}}}).Resolve()
+	assert.ErrorIs(t, err, ErrNotProvisioned)
+	assert.ErrorContains(t, err, "credential anthropic is not provisioned")
+}
+
+func TestFileRequiredMissingIsNotProvisioned(t *testing.T) {
+	_, _, err := (&File{Path: filepath.Join(t.TempDir(), "rou2-api-token"), Required: true}).TryResolve()
+	assert.ErrorIs(t, err, ErrNotProvisioned)
+	assert.ErrorContains(t, err, "rou2-api-token")
 }
 
 func TestFileTrimsTheTrailingNewline(t *testing.T) {

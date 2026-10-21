@@ -2,6 +2,7 @@ package boot
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 )
@@ -267,5 +269,63 @@ func TestCredentialSourcesNameTheExchangeSubject(t *testing.T) {
 	want := "service token rou2: client rou2 at https://idm.example/oauth2/token by token exchange (subject " + filepath.Join(credDir, "rou2-api-token") + " missing)"
 	if srcs[0].Where != want {
 		t.Fatalf("Where = %q\nwant    %q", srcs[0].Where, want)
+	}
+}
+
+// Issue #41: the unit's SetCredential fallback hands figaro an empty file where
+// a missing LoadCredential source used to fail the whole service. Only the
+// provider naming that credential may notice: it refuses as not provisioned
+// without asking the issuer, another provider still resolves, and filling the
+// file is enough for the next request.
+func TestAnUnprovisionedServiceTokenRefusesOnlyItsProvider(t *testing.T) {
+	cfgDir, credDir := serverEnv(t)
+	writeFile(t, filepath.Join(credDir, "authelia-client-secret"), "")
+	writeFile(t, filepath.Join(credDir, "anthropic"), "sk-ant\n")
+	writeFile(t, filepath.Join(cfgDir, "providers", "rou2.toml"), "preset = \"gateway\"\nservice_token = \"rou2\"\n")
+	var minted int
+	loaded := rou2Loaded(cfgDir, tokenServer(t, &minted).URL)
+
+	r, err := BuildResolver(loaded, "rou2")
+	if err != nil {
+		t.Fatalf("an unprovisioned credential must not stop the provider from building: %v", err)
+	}
+	if _, err := r.Resolve(); !errors.Is(err, auth.ErrNotProvisioned) || !strings.Contains(err.Error(), "authelia-client-secret") {
+		t.Fatalf("Resolve err = %v; want not provisioned, naming the credential", err)
+	}
+	if minted != 0 {
+		t.Fatalf("asked the issuer %d times with no secret", minted)
+	}
+
+	other, err := BuildResolver(loaded, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := other.Resolve(); err != nil || tok != "sk-ant" {
+		t.Fatalf("anthropic Resolve = %q, %v; another provider's missing credential leaked", tok, err)
+	}
+
+	srcs, err := CredentialSources(loaded, &providerPkg.Registration{Name: "rou2"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(srcs[0].Where, "empty: not provisioned)") {
+		t.Fatalf("Where = %q; the status must say the credential is not provisioned", srcs[0].Where)
+	}
+
+	writeFile(t, filepath.Join(credDir, "authelia-client-secret"), "the-secret\n")
+	if tok, err := r.Resolve(); err != nil || tok != "svc-1" {
+		t.Fatalf("Resolve after provisioning = %q, %v", tok, err)
+	}
+}
+
+func TestAnEmptyProviderCredentialSaysNotProvisioned(t *testing.T) {
+	cfgDir, credDir := serverEnv(t)
+	writeFile(t, filepath.Join(credDir, "anthropic"), "")
+	r, err := BuildResolver(&config.Loaded{ConfigDir: cfgDir}, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Resolve(); !errors.Is(err, auth.ErrNotProvisioned) {
+		t.Fatalf("Resolve err = %v; want not provisioned", err)
 	}
 }
