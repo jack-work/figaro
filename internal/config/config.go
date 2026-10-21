@@ -184,8 +184,7 @@ const (
 	defaultSweepInterval = 2 * time.Minute
 	defaultKeepalive     = 24 * time.Hour
 	defaultSegmentSize   = 2 * 1024 * 1024
-	// figwal fails an append whose record cannot fit one empty segment.
-	minSegmentSize = 1024 * 1024
+	minSegmentSize       = 1024 * 1024
 )
 
 // Every accessor reads through cfg() and dir() so a nil *Loaded is safe by
@@ -447,7 +446,7 @@ func (c Config) validateStream() error {
 
 func (c Config) validateStore() error {
 	if s := c.Store.SegmentSize; s != nil && *s < minSegmentSize {
-		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record: below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
+		return fmt.Errorf("config: store.segment_size (%d) must be >= %d", *s, minSegmentSize)
 	}
 	return nil
 }

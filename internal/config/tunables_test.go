@@ -35,8 +35,8 @@ func TestStoreSegmentSizeFloor(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%q: expected a validation error, got nil", tomlText)
 		}
-		if !strings.Contains(err.Error(), "ONE whole record") || !strings.Contains(err.Error(), "base64") {
-			t.Errorf("%q: error does not explain the record-size constraint: %v", tomlText, err)
+		if !strings.Contains(err.Error(), "must be >= 1048576") {
+			t.Errorf("%q: error does not name the floor: %v", tomlText, err)
 		}
 	}
 }
