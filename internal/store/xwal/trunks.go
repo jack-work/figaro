@@ -834,7 +834,11 @@ func (t *Trunks) syncHot() error {
 			continue
 		}
 		if ferr := head.x.syncCoherent(); ferr != nil && err == nil {
-			err = ferr
+			node := head.x.key
+			if node == "" {
+				node = "root"
+			}
+			err = fmt.Errorf("node %s: %w", node, ferr)
 		}
 	}
 	t.hotMu.Lock()

@@ -1443,7 +1443,7 @@ func (x *XWAL) syncCoherent() error {
 		return nil // nothing written through this handle
 	}
 	if err := mainLog.Sync(); err != nil {
-		return err
+		return fmt.Errorf("channel %s: %w", x.main, err)
 	}
 	// The cut is bounded by the durable main tail: a racing append may
 	// already sit in the memory snapshot, and admitting it would let related
@@ -1462,7 +1462,7 @@ func (x *XWAL) syncCoherent() error {
 			return err
 		}
 		if err := ch.opened().SyncThrough(target); err != nil {
-			return err
+			return fmt.Errorf("channel %s: %w", name, err)
 		}
 	}
 	return nil
