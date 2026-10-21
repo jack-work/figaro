@@ -77,6 +77,10 @@ in
         a system credential of that id (what a container receives from
         systemd-nspawn --load-credential); otherwise it is a host path.
         figaro reads a provider's key from $CREDENTIALS_DIRECTORY/<provider>.
+        A host path that is missing or unreadable at start leaves the
+        credential empty instead of failing the unit: the provider naming it
+        refuses each request as not provisioned, and every other provider
+        keeps working. Restart the unit once the file exists.
       '';
     };
 
@@ -148,6 +152,7 @@ in
         RestrictSUIDSGID = true;
         UMask = "0077";
         LoadCredential = lib.mapAttrsToList (id: src: "${id}:${src}") (lib.filterAttrs (_: src: src != "") cfg.credentials);
+        SetCredential = lib.mapAttrsToList (id: _: "${id}:") (lib.filterAttrs (_: src: src != "") cfg.credentials);
         ImportCredential = lib.attrNames (lib.filterAttrs (_: src: src == "") cfg.credentials);
       } // lib.optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; };
     };

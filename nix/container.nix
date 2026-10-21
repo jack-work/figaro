@@ -99,7 +99,9 @@ in
       description = ''
         Credential id -> host path. Loaded into container@figaro by
         LoadCredential, passed into the container by --load-credential, and
-        imported by the angelus unit there.
+        imported by the angelus unit there. A path missing at start passes an
+        empty credential instead of failing the container; the provider naming
+        it refuses requests as not provisioned.
       '';
     };
 
@@ -139,6 +141,7 @@ in
     systemd.services."container@figaro".serviceConfig = {
       Slice = lib.mkForce "figaro.slice";
       LoadCredential = lib.mapAttrsToList (id: path: "${id}:${path}") cfg.credentials;
+      SetCredential = lib.mapAttrsToList (id: _: "${id}:") cfg.credentials;
     };
 
     networking.nat = {
