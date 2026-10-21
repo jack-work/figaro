@@ -284,6 +284,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 	})
 
 	short := namesOf(figs)
+	now := time.Now()
 	marker := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) {
 			return "●"
@@ -313,7 +314,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		}
 		return &figtree.Node{
 			Marker: marker(f),
-			Label:  truncRunes(label, 44),
+			Label:  withLifeNote(label, 44, f, now),
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
 				fieldAriaID: f.ID,
@@ -373,6 +374,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 		}
 	}
 	short := namesOf(figs)
+	now := time.Now()
 	mark := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit) {
 			return "●"
@@ -413,7 +415,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 		}
 		n := &figtree.Node{
 			Marker: mark(f),
-			Label:  truncRunes(label, 46),
+			Label:  withLifeNote(label, 46, f, now),
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
 				fieldAriaID: f.ID,

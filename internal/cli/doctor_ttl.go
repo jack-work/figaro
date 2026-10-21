@@ -38,7 +38,10 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 				"ttl":           ttlOf(f).String(),
 				"created_at_ms": f.CreatedAt,
 				"deadline_ms":   f.ExpiresAt,
-				"expired":       f.ExpiresAt <= now.UnixMilli(),
+				"reaps_at_ms":   reapsAt(f),
+				"keepalive":     (time.Duration(f.KeepaliveMS) * time.Millisecond).String(),
+				"retired_at_ms": f.RetiredAt,
+				"expired":       reapsAt(f) <= now.UnixMilli(),
 			})
 		}
 		enc := json.NewEncoder(stdout)
@@ -55,10 +58,17 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 	due := 0
 	for _, f := range rows {
 		deadline := time.UnixMilli(f.ExpiresAt)
+		reaps := time.UnixMilli(reapsAt(f))
 		status := "in " + deadline.Sub(now).Round(time.Minute).String()
-		if f.ExpiresAt <= now.UnixMilli() {
+		switch {
+		case reapsAt(f) <= now.UnixMilli():
 			status = "DUE"
 			due++
+		case f.ExpiresAt <= now.UnixMilli():
+			status = "kept alive until " + reaps.Format("2006-01-02 15:04")
+		}
+		if f.RetiredAt > 0 {
+			status += " (retired)"
 		}
 		fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n",
 			f.ID, ttlOf(f).String(),
@@ -66,6 +76,7 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 			deadline.Format("2006-01-02 15:04"), status)
 	}
 	fmt.Fprintf(stderrw, "\n%d with a lifetime, %d due. The daemon's sweep takes what is due"+
-		" once the aria is dormant and no shell is bound to it.\n", len(rows), due)
+		" once the aria is dormant, no shell is bound to it, and nothing it would take"+
+		" was used within its keepalive or is a role's target.\n", len(rows), due)
 	return nil
 }

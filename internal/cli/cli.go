@@ -1076,6 +1076,44 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "retire",
+		Group: "Session",
+		Short: "Stop an aria taking prompts, and dress it on the way out",
+		Usage: "retire [--id <aria> | <aria>] [--ttl <d>] [-O <outfits>] [-S <keys>] [-D <paths>] [--undo] [-j]",
+		Long: `A retired aria refuses every prompt; reading it (show, attend, ls,
+fork) still works, and a fork of it is not retired. The outfits and keys
+land in the same write as the retirement, so a tombstone can carry its own
+end:
+
+  figaro retire <id> --ttl 1h        reaped an hour from now, unless held
+  figaro retire <id> -S system.ttl=30d
+                                     system.ttl as written: counted from
+                                     the aria's creation, not from now
+
+A retired aria is not kept alive by the default keepalive, only by a
+system.keepalive of its own. Its sweep still waits for a live agent, a
+bound shell, a role pointing into it, or a recently used branch under it.
+--undo lets it take prompts again.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Aria to retire"},
+			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded in with the retirement"},
+			{Long: "set", Short: "S", Description: "Keys set with the retirement: k=v or a JSON literal"},
+			{Long: "delete", Short: "D", Description: "Key paths removed with the retirement"},
+			{Long: "ttl", Description: "Reap the aria this long from now (sets system.ttl from its age)"},
+			{Long: "undo", IsBool: true, Description: "Let the aria take prompts again"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runRetire(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"),
+				ctx.Flag("delete"), ctx.Flag("ttl"), ctx.BoolFlag("undo"), ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "move",
 		Group: "Session",
 		Short: "Move an aria and its whole fork tree to another node",

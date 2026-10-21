@@ -1,17 +1,79 @@
 package cli
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// expired: lifetime spent and nobody holding it (no bound shell, no turn in
-// flight); residency is not holding. The daemon's sweep deletes such nodes
-// later, once dormant; `ls --json` and `doctor ttl` still report them.
+func reapsAt(f rpc.FigaroInfoResponse) int64 {
+	if f.ReapsAt > 0 {
+		return f.ReapsAt
+	}
+	return f.ExpiresAt
+}
+
 func expired(f rpc.FigaroInfoResponse, nowMS int64) bool {
-	return f.ExpiresAt > 0 &&
-		f.ExpiresAt <= nowMS &&
+	at := reapsAt(f)
+	return at > 0 &&
+		at <= nowMS &&
 		f.State != "active" &&
 		len(f.BoundPIDs) == 0
+}
+
+func nearReapWindow(f rpc.FigaroInfoResponse) time.Duration {
+	w := 6 * time.Hour
+	if ka := time.Duration(f.KeepaliveMS) * time.Millisecond; ka > 0 {
+		w = min(w, ka/4)
+	}
+	return w
+}
+
+func lifeNote(f rpc.FigaroInfoResponse, now time.Time) string {
+	var notes []string
+	if f.RetiredAt > 0 {
+		notes = append(notes, "retired")
+	}
+	if at := reapsAt(f); at > 0 {
+		left := time.UnixMilli(at).Sub(now)
+		switch {
+		case left <= 0:
+			notes = append(notes, "reaping")
+		case left <= nearReapWindow(f):
+			notes = append(notes, "reaps in "+shortDuration(left))
+		}
+	}
+	if len(notes) == 0 {
+		return ""
+	}
+	out := "["
+	for i, n := range notes {
+		if i > 0 {
+			out += ", "
+		}
+		out += n
+	}
+	return out + "]"
+}
+
+func shortDuration(d time.Duration) string {
+	switch {
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh", int(d.Round(time.Hour)/time.Hour))
+	case d >= time.Minute:
+		return fmt.Sprintf("%dm", int(d.Round(time.Minute)/time.Minute))
+	}
+	return "<1m"
+}
+
+func withLifeNote(label string, width int, f rpc.FigaroInfoResponse, now time.Time) string {
+	note := lifeNote(f, now)
+	if note == "" {
+		return truncRunes(label, width)
+	}
+	room := max(width-len([]rune(note))-1, 8)
+	return truncRunes(label, room) + " " + note
 }
 
 // A withheld row takes its subtree with it, except an expired ancestor of a
