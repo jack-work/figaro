@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -40,7 +41,9 @@ type Provider struct {
 	model     string
 	templates *template.Template
 	catalog   map[string]catalogModel
+	fetched   time.Time
 	tried     time.Time
+	now       func() time.Time
 	messages  *anthropic.Anthropic
 	chat      *openaichat.Provider
 	responses *responses.Provider
@@ -66,6 +69,7 @@ func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translato
 		translators: translators,
 		model:       knobs.Model,
 		catalog:     map[string]catalogModel{},
+		now:         time.Now,
 	}, nil
 }
 
@@ -214,6 +218,21 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
+	watched := &watchBus{Bus: bus}
+	err = p.sendVia(ctx, t, model, in, watched)
+	if err == nil || watched.spoke.Load() || ctx.Err() != nil {
+		return err
+	}
+	moved, ok := p.rerouteAfterFailure(ctx, model, t)
+	if !ok {
+		return err
+	}
+	slog.Info("provider catalog moved the model's route; retrying once",
+		"provider", p.spec.Name, "model", model, "from", t, "to", moved, "err", err)
+	return p.sendVia(ctx, moved, model, in, bus)
+}
+
+func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in provider.SendInput, bus provider.Bus) error {
 	switch t {
 	case Responses, ResponsesWS:
 		r := p.responsesBackend()
@@ -273,6 +292,23 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 	}
 }
 
+func (p *Provider) rerouteAfterFailure(ctx context.Context, model string, failed Transport) (Transport, bool) {
+	if _, ruled := p.spec.ruleFor(model); ruled || p.spec.Catalog == "" {
+		return "", false
+	}
+	if !p.catalogDue(catalogRecheck) {
+		return "", false
+	}
+	cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+	_, err := p.fetchCatalog(cctx)
+	cancel()
+	if err != nil {
+		return "", false
+	}
+	moved := p.cachedRoute(model)
+	return moved, moved != "" && moved != failed
+}
+
 func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 	if t, ok := p.spec.ruleFor(model); ok {
 		return t, nil
@@ -280,13 +316,14 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 	if p.spec.Catalog != "" {
 		p.mu.RLock()
 		entry, known := p.catalog[model]
+		stale := known && p.now().Sub(p.fetched) >= catalogTTL
 		p.mu.RUnlock()
-		if !known && (p.spec.Default == "" || p.catalogDue()) {
+		if (!known && (p.spec.Default == "" || p.catalogDue(catalogRetry))) || (stale && p.catalogDue(catalogRetry)) {
 			cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 			_, err := p.fetchCatalog(cctx)
 			cancel()
 			if err != nil {
-				if p.spec.Default == "" {
+				if !known && p.spec.Default == "" {
 					return "", fmt.Errorf("%s: route %q: %w", p.spec.Name, model, err)
 				}
 				slog.Warn("provider catalog unavailable; routing by rules and default",
@@ -311,15 +348,17 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 var catalogClient = &http.Client{Transport: &wirelog.Transport{Inner: http.DefaultTransport}}
 
 const (
+	catalogTTL     = 30 * time.Minute
 	catalogRetry   = 5 * time.Minute
+	catalogRecheck = 30 * time.Second
 	catalogTimeout = 10 * time.Second
 )
 
-func (p *Provider) catalogDue() bool {
+func (p *Provider) catalogDue(every time.Duration) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	now := time.Now()
-	if !p.tried.IsZero() && now.Sub(p.tried) < catalogRetry {
+	now := p.now()
+	if !p.tried.IsZero() && now.Sub(p.tried) < every {
 		return false
 	}
 	p.tried = now
@@ -514,6 +553,7 @@ func (p *Provider) fetchCatalog(ctx context.Context) (models []catalogModel, err
 	}
 	p.mu.Lock()
 	p.catalog = catalog
+	p.fetched = p.now()
 	p.mu.Unlock()
 	return raw.Data, nil
 }
@@ -542,4 +582,39 @@ func (p *Provider) KeepsCacheOnChange(key string, snap form.Snapshot) bool {
 	}
 	m, err := p.messagesBackend()
 	return err == nil && m.KeepsCacheOnChange(key, snap)
+}
+
+type watchBus struct {
+	provider.Bus
+	spoke atomic.Bool
+}
+
+func (b *watchBus) PushDelta(content message.Content) {
+	b.spoke.Store(true)
+	b.Bus.PushDelta(content)
+}
+
+func (b *watchBus) PushFigaro(msg message.Message, cache ...provider.AssistantCache) {
+	b.spoke.Store(true)
+	b.Bus.PushFigaro(msg, cache...)
+}
+
+func (b *watchBus) PushToolInvokeStart(toolCallID, toolName string) {
+	b.spoke.Store(true)
+	b.Bus.PushToolInvokeStart(toolCallID, toolName)
+}
+
+func (b *watchBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
+	b.spoke.Store(true)
+	b.Bus.PushToolInvokeDelta(toolCallID, partialJSON)
+}
+
+func (b *watchBus) PushToolReady(call message.Content) {
+	b.spoke.Store(true)
+	b.Bus.PushToolReady(call)
+}
+
+func (b *watchBus) PushMessageEnd(stopReason string) {
+	b.spoke.Store(true)
+	b.Bus.PushMessageEnd(stopReason)
 }
