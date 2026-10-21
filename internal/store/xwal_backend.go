@@ -439,6 +439,9 @@ func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, 
 func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
 	// Every path that gives a board a copy is a refcount participant; this is
 	// the one a live `fig fork` takes.
+	if pm, _ := b.Meta(parent); pm != nil && pm.RetiredAtMS > 0 {
+		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemRetiredKey}))
+	}
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {
 		return "", 0, err
@@ -1012,8 +1015,12 @@ func (b *XwalBackend) writeMetaRawLocked(ariaID string, c *metaCache, meta *Aria
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	c := b.metaCache(ariaID)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	return b.writeMetaLocked(ariaID, c, meta)
+	err := b.writeMetaLocked(ariaID, c, meta)
+	c.mu.Unlock()
+	if err == nil {
+		b.ttlNoted(ariaID, meta)
+	}
+	return err
 }
 
 // metaCache does not touch: a listing reads every sidecar, and touching there
@@ -1032,6 +1039,8 @@ func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 // Remove buries, then unlinks. The burial runs inside RemoveLeaf after its
 // refusal and before its repair, so a refused delete leaves nothing sealed
 // and an interrupted one leaves forms that say they are dead.
+func (b *XwalBackend) DeleteSet(ariaID string) []string { return b.store.DeleteSet(ariaID) }
+
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	return b.store.RemoveLeaf(ariaID, recursive, b.bury)
 }

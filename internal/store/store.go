@@ -45,11 +45,29 @@ type AriaMeta struct {
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
 	// TTLMS mirrors the board's system.ttl so the sweep finds what is due without opening a node.
-	TTLMS int64 `json:"ttl_ms,omitempty"`
+	TTLMS        int64  `json:"ttl_ms,omitempty"`
+	KeepaliveMS  *int64 `json:"keepalive_ms,omitempty"`
+	RetiredAtMS  int64  `json:"retired_at_ms,omitempty"`
+	LastAccessMS int64  `json:"last_access_ms,omitempty"`
 	// MetaVersion below CurrentMetaVersion is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
 
 	MintedBy string `json:"minted_by,omitempty"`
+}
+
+type Lifetime struct {
+	TTLMS        int64
+	KeepaliveMS  *int64
+	RetiredAtMS  int64
+	LastAccessMS int64
+}
+
+func (m *AriaMeta) Lifetime() Lifetime {
+	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS, LastAccessMS: m.LastAccessMS}
+}
+
+func (m *AriaMeta) SetLifetime(l Lifetime) {
+	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.

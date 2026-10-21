@@ -1091,11 +1091,10 @@ func (a *Agent) publishMetadata() {
 		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
-	// The agent owns the counts and identity fields, not TTLMS.
 	if err := a.backend.UpdateMeta(a.id, func(m *store.AriaMeta) {
-		ttl := m.TTLMS
+		life := m.Lifetime()
 		*m = mine
-		m.TTLMS = ttl
+		m.SetLifetime(life)
 	}); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}

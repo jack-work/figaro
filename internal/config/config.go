@@ -145,6 +145,8 @@ type MemoryConfig struct {
 	// SweepIntervalSeconds: default 120.
 	SweepIntervalSeconds *int `toml:"sweep_interval_seconds"`
 
+	KeepaliveMinutes *int `toml:"keepalive_minutes"`
+
 	// MaxLiveArias caps resident agents; 0 (default) is unbounded.
 	MaxLiveArias *int `toml:"max_live_arias"`
 
@@ -180,6 +182,7 @@ type MemoryConfig struct {
 const (
 	defaultDormantAfter  = 15 * time.Minute
 	defaultSweepInterval = 2 * time.Minute
+	defaultKeepalive     = 24 * time.Hour
 	defaultSegmentSize   = 2 * 1024 * 1024
 	// figwal fails an append whose record cannot fit one empty segment.
 	minSegmentSize = 1024 * 1024
@@ -210,6 +213,16 @@ func (l *Loaded) DormantAfter() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
+}
+
+func (l *Loaded) Keepalive() time.Duration {
+	if l.cfg().Memory.KeepaliveMinutes == nil {
+		return defaultKeepalive
+	}
+	if *l.cfg().Memory.KeepaliveMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(*l.cfg().Memory.KeepaliveMinutes) * time.Minute
 }
 
 // A negative quote count is returned as written; the quote refuses it by name.

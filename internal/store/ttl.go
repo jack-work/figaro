@@ -20,14 +20,48 @@ import (
 // b.form refuses only librettos, whose lifetime is a refcount, never a clock.
 const SystemTTLKey = "system.ttl"
 
+const SystemKeepaliveKey = "system.keepalive"
+
+const SystemRetiredKey = "system.retired"
+
 type TTLEntry struct {
-	ID          string
-	TTL         time.Duration
-	CreatedAtMS int64
-	DeadlineMS  int64
+	ID           string
+	TTL          time.Duration
+	CreatedAtMS  int64
+	DeadlineMS   int64
+	Keepalive    *time.Duration
+	RetiredAtMS  int64
+	LastAccessMS int64
 }
 
 func (e TTLEntry) Expired(nowMS int64) bool { return e.DeadlineMS <= nowMS }
+
+func (e TTLEntry) KeepaliveOr(def time.Duration) time.Duration {
+	if e.Keepalive != nil {
+		return max(*e.Keepalive, 0)
+	}
+	if e.RetiredAtMS > 0 {
+		return 0
+	}
+	return max(def, 0)
+}
+
+func KeepaliveFor(meta *AriaMeta, def time.Duration) time.Duration {
+	if meta == nil {
+		return max(def, 0)
+	}
+	e := TTLEntry{RetiredAtMS: meta.RetiredAtMS}
+	if meta.KeepaliveMS != nil {
+		ka := time.Duration(*meta.KeepaliveMS) * time.Millisecond
+		e.Keepalive = &ka
+	}
+	return e.KeepaliveOr(def)
+}
+
+func (e TTLEntry) ReapsAt(def time.Duration, lastWriteMS int64) int64 {
+	last := max(e.LastAccessMS, lastWriteMS)
+	return max(e.DeadlineMS, last+e.KeepaliveOr(def).Milliseconds())
+}
 
 // ParseTTL accepts Go duration syntax plus the d and w suffixes. Empty, zero
 // or negative means no lifetime.
@@ -59,56 +93,109 @@ func ParseTTL(s string) (time.Duration, error) {
 
 // ttlOf: spoke reports whether the patch names the key at all; a removal clears the lifetime.
 func ttlOf(patch message.Patch) (raw string, spoke bool) {
-	if e, ok := patch.Entry(SystemTTLKey); ok && !e.IsRemoval() {
-		v := e.New
+	return stringKeyOf(patch, SystemTTLKey)
+}
+
+func stringKeyOf(patch message.Patch, key string) (raw string, spoke bool) {
+	if e, ok := patch.Entry(key); ok && !e.IsRemoval() {
 		var s string
-		if err := json.Unmarshal(v, &s); err != nil {
-			// A malformed ttl must never delete anything: clear it.
+		if err := json.Unmarshal(e.New, &s); err != nil {
 			return "", true
 		}
 		return s, true
 	}
 	for _, ent := range patch.Entries() {
-		if !ent.IsRemoval() {
-			continue
-		}
-		k := ent.Key
-		if k == SystemTTLKey {
+		if ent.IsRemoval() && ent.Key == key {
 			return "", true
 		}
 	}
 	return "", false
 }
 
-// ttlCommitted mirrors the board's lifetime into the sidecar; a node without
-// created_at_ms is stamped now, the only moment anybody asked.
+type lifetimeChange struct {
+	ttl          *time.Duration
+	keepalive    *time.Duration
+	keepaliveSet bool
+	retired      *bool
+}
+
+func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
+	var c lifetimeChange
+	if raw, spoke := ttlOf(patch); spoke {
+		if ttl, err := ParseTTL(raw); err != nil {
+			slog.Warn("system.ttl ignored", "node", id, "value", raw, "err", err)
+		} else {
+			c.ttl = &ttl
+		}
+	}
+	if raw, spoke := stringKeyOf(patch, SystemKeepaliveKey); spoke {
+		if ka, err := ParseTTL(raw); err != nil {
+			slog.Warn("system.keepalive ignored", "node", id, "value", raw, "err", err)
+		} else {
+			c.keepalive, c.keepaliveSet = &ka, strings.TrimSpace(raw) != ""
+		}
+	}
+	if raw, spoke := stringKeyOf(patch, SystemRetiredKey); spoke {
+		on := retiredValue(raw)
+		c.retired = &on
+	}
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil
+}
+
+func retiredValue(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
+}
+
 func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
-	raw, spoke := ttlOf(patch)
+	c, spoke := lifetimeOf(id, patch)
 	if !spoke {
 		return
 	}
-	ttl, err := ParseTTL(raw)
-	if err != nil {
-		slog.Warn("system.ttl ignored", "node", id, "value", raw, "err", err)
-		return
-	}
+	now := time.Now().UnixMilli()
 	var meta AriaMeta
 	if err := b.UpdateMeta(id, func(m *AriaMeta) {
 		if m.CreatedAtMS == 0 {
-			m.CreatedAtMS = time.Now().UnixMilli()
+			m.CreatedAtMS = now
 		}
-		m.TTLMS = ttl.Milliseconds()
+		if c.ttl != nil {
+			m.TTLMS = c.ttl.Milliseconds()
+		}
+		if c.keepalive != nil {
+			if c.keepaliveSet {
+				ms := c.keepalive.Milliseconds()
+				m.KeepaliveMS = &ms
+			} else {
+				m.KeepaliveMS = nil
+			}
+		}
+		if c.retired != nil {
+			switch {
+			case *c.retired && m.RetiredAtMS == 0:
+				m.RetiredAtMS = now
+			case !*c.retired:
+				m.RetiredAtMS = 0
+			}
+		}
 		meta = *m
 	}); err != nil {
-		slog.Warn("system.ttl: sidecar unwritable", "node", id, "err", err)
+		slog.Warn("lifetime: sidecar unwritable", "node", id, "err", err)
 		return
 	}
 	b.ttlNoted(id, &meta)
-	if ttl > 0 {
-		slog.Info("node lifetime set", "node", id, "ttl", ttl,
-			"expires", time.UnixMilli(meta.CreatedAtMS+ttl.Milliseconds()))
-	} else {
-		slog.Info("node lifetime cleared", "node", id)
+	if c.ttl != nil {
+		if *c.ttl > 0 {
+			slog.Info("node lifetime set", "node", id, "ttl", *c.ttl,
+				"expires", time.UnixMilli(meta.CreatedAtMS+meta.TTLMS))
+		} else {
+			slog.Info("node lifetime cleared", "node", id)
+		}
+	}
+	if c.retired != nil {
+		slog.Info("node retirement changed", "node", id, "retired", *c.retired)
 	}
 }
 
@@ -117,18 +204,57 @@ func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 	b.ttlMu.Lock()
 	defer b.ttlMu.Unlock()
 	if b.ttl == nil {
-		return // not seeded yet; the scan will find it
+		return
 	}
-	if meta == nil || meta.TTLMS <= 0 {
+	e, ok := ttlEntryOf(id, meta)
+	if !ok {
 		delete(b.ttl, id)
 		return
 	}
-	b.ttl[id] = TTLEntry{
-		ID:          id,
-		TTL:         time.Duration(meta.TTLMS) * time.Millisecond,
-		CreatedAtMS: meta.CreatedAtMS,
-		DeadlineMS:  meta.CreatedAtMS + meta.TTLMS,
+	b.ttl[id] = e
+}
+
+func ttlEntryOf(id string, meta *AriaMeta) (TTLEntry, bool) {
+	if meta == nil || meta.TTLMS <= 0 {
+		return TTLEntry{}, false
 	}
+	e := TTLEntry{
+		ID:           id,
+		TTL:          time.Duration(meta.TTLMS) * time.Millisecond,
+		CreatedAtMS:  meta.CreatedAtMS,
+		DeadlineMS:   meta.CreatedAtMS + meta.TTLMS,
+		RetiredAtMS:  meta.RetiredAtMS,
+		LastAccessMS: meta.LastAccessMS,
+	}
+	if meta.KeepaliveMS != nil {
+		ka := time.Duration(*meta.KeepaliveMS) * time.Millisecond
+		e.Keepalive = &ka
+	}
+	return e, true
+}
+
+const touchGranularity = 10 * time.Minute
+
+func (b *XwalBackend) Touch(id string, at time.Time) {
+	meta, err := b.Meta(id)
+	if err != nil || meta == nil {
+		return
+	}
+	ms := at.UnixMilli()
+	if ms-meta.LastAccessMS < touchGranularity.Milliseconds() {
+		return
+	}
+	var updated AriaMeta
+	if err := b.UpdateMeta(id, func(m *AriaMeta) {
+		if ms > m.LastAccessMS {
+			m.LastAccessMS = ms
+		}
+		updated = *m
+	}); err != nil {
+		slog.Warn("access stamp: sidecar unwritable", "node", id, "err", err)
+		return
+	}
+	b.ttlNoted(id, &updated)
 }
 
 // TTLEntries scans the sidecar directory once; after that it is a map read
@@ -186,15 +312,12 @@ func ScanTTL(root string) map[string]TTLEntry {
 			continue
 		}
 		meta, err := readJSON[AriaMeta](filepath.Join(dir, e.Name()))
-		if err != nil || meta == nil || meta.TTLMS <= 0 {
+		if err != nil {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".json")
-		found[id] = TTLEntry{
-			ID:          id,
-			TTL:         time.Duration(meta.TTLMS) * time.Millisecond,
-			CreatedAtMS: meta.CreatedAtMS,
-			DeadlineMS:  meta.CreatedAtMS + meta.TTLMS,
+		if entry, ok := ttlEntryOf(id, meta); ok {
+			found[id] = entry
 		}
 	}
 	return found

@@ -1095,6 +1095,8 @@ func (s *XwalStore) Normalize() (int, error) {
 	return done, nil
 }
 
+func (s *XwalStore) DeleteSet(id string) []string { return s.tree.DeleteSet(id) }
+
 // deleteOrphans is the survivors a delete of id would strand. Empty whenever
 // the presentation hierarchy is normalized, which is always without the
 // trunk capability.
