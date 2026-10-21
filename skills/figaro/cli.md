@@ -212,6 +212,7 @@ pager `y` copies the name shown (the attended aria's, or a listing row's) and
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
+| `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop an aria taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |
 | `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
 
@@ -255,15 +256,25 @@ lifetime is spent. `-S system.ttl=1h` states one at birth, on `new`, `fork`, or
 a `send` that mints. It is counted from when the node was CREATED, not from its
 last turn, and a fork inherits the key with its own creation time. Go duration
 syntax plus `d` and `w`; `0`, an empty value or `unset system.ttl` means no
-lifetime and nothing is ever deleted. The sweep runs on
-`[memory] sweep_interval_seconds` (two minutes by default) and passes over a
-node the daemon still holds an agent for or a shell is bound to, so an expired
-aria you are still typing into is taken once you leave it. The deletion
-therefore lands some way after the deadline; `ls` does not wait for it, and
-omits an expired row from the moment it expires unless a turn is in flight or
-a shell is attending it, reporting how many rows it withheld. `figaro doctor
-ttl` reports every lifetime, expired or not, and `ls -j` still carries all of
-them with `ttl_ms` and `expires_at`.
+lifetime and nothing is ever deleted.
+
+A spent lifetime does not delete a node in use. `system.keepalive` (same
+syntax; default one day, `[memory] keepalive_minutes`) keeps a node whose
+lifetime is spent while it was accessed within that window: a prompt, a
+`set`, an attend, a read, a fork from it, a status. `system.keepalive=0`
+gives the old behaviour, gone at its deadline. The sweep runs on
+`[memory] sweep_interval_seconds` (two minutes by default) and also passes
+over a node when anything its delete would take (the node and its branches)
+has a live agent, a bound shell, a role pointing at it, or an access within
+its own keepalive. So a forgotten parent cannot take a child somebody still
+uses. A retired aria (`figaro retire`) is held only by a keepalive it states
+itself, so `retire --ttl 1h` really ends it in an hour. `ls`, the tree view
+and the pager's `L` mark a row `[reaps in 3h]` inside the last quarter of its
+keepalive (at most six hours), `[reaping]` once it is due and only held, and
+`[retired]`; a row past its reap time that nothing holds is omitted, with a
+count of what was withheld. `figaro doctor ttl` reports every lifetime with
+when the sweep may take it, and `ls -j` carries `ttl_ms`, `expires_at`,
+`reaps_at`, `keepalive_ms` and `retired_at`.
 
 Two `system.` keys are exceptions in one direction: they do not render
 themselves, they change what OTHER events say.
@@ -283,7 +294,7 @@ observer's mouth.
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
 | `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
-| `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, and which are already due. Reads the sidecars, so it answers while the daemon runs. |
+| `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, which a keepalive still holds, and which are due. Reads the sidecars, so it answers while the daemon runs. |
 | `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
 | `figaro provider login <name>` | Sign in to a model provider: its OAuth or device-code flow, else an API key sealed in hush. See [reference/providers.md](reference/providers.md#credentials). |
