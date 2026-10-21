@@ -106,6 +106,7 @@ type SessionState string
 
 const (
 	SessionRunning  SessionState = "running"
+	SessionKilling  SessionState = "killing"
 	SessionExited   SessionState = "exited"
 	SessionKilled   SessionState = "killed"
 	SessionTimedOut SessionState = "timed_out"

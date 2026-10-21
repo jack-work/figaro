@@ -77,3 +77,29 @@ func TestCapBufferDropsFront(t *testing.T) {
 		t.Fatalf("capBuffer = %q, want %q", got, "cdef")
 	}
 }
+
+type stuckProc struct{ fakeProc }
+
+func (s *stuckProc) Kill() error { return nil }
+
+// Issue #42: a kill that the process never confirms reads as killing, not
+// running, so a poll can tell the two apart.
+func TestInfoReportsKillingUntilExitConfirmed(t *testing.T) {
+	proc := &stuckProc{fakeProc{done: make(chan struct{})}}
+	v := NewHost(DefaultTTL).Scoped("s", func(sandbox.ExecRequest) (sandbox.Process, error) { return proc, nil })
+	s, err := v.Start(sandbox.ExecRequest{Command: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Info().State; got != sandbox.SessionRunning {
+		t.Fatalf("before kill: %s, want running", got)
+	}
+	s.Kill()
+	if got := s.Info().State; got != sandbox.SessionKilling {
+		t.Fatalf("after an unconfirmed kill: %s, want killing", got)
+	}
+	close(proc.done)
+	if got := s.Info().State; got != sandbox.SessionKilled {
+		t.Fatalf("after exit: %s, want killed", got)
+	}
+}

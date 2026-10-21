@@ -190,6 +190,11 @@ func (s *session) Info() sandbox.SessionInfo {
 	select {
 	case <-s.Done():
 	default:
+		s.mu.Lock()
+		if s.killed {
+			info.State = sandbox.SessionKilling
+		}
+		s.mu.Unlock()
 		return info
 	}
 	res := s.Wait()

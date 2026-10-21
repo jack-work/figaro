@@ -10,6 +10,8 @@ import (
 	"github.com/jack-work/figaro/api/sandbox"
 )
 
+var KillConfirmWait = 5 * time.Second
+
 type ProcessTool struct {
 	Sessions sandbox.Sessions
 }
@@ -84,7 +86,14 @@ func (p *ProcessTool) Execute(ctx context.Context, args map[string]any, _ OnOutp
 		if err := sess.Kill(); err != nil {
 			return nil, err
 		}
-		<-sess.Done()
+		select {
+		case <-sess.Done():
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(KillConfirmWait):
+			return text(formatStatus(sess.Info()) + fmt.Sprintf(
+				"\n\nSIGKILL sent; exit not confirmed after %s. `remove` drops the session.", KillConfirmWait)), nil
+		}
 		return text(formatStatus(sess.Info())), nil
 	default:
 		return nil, fmt.Errorf("unknown action %q", action)
@@ -105,7 +114,7 @@ func (p *ProcessTool) list() string {
 
 func formatStatus(info sandbox.SessionInfo) string {
 	s := fmt.Sprintf("%s [%s]", info.ID, info.State)
-	if info.State != sandbox.SessionRunning {
+	if info.State != sandbox.SessionRunning && info.State != sandbox.SessionKilling {
 		s += fmt.Sprintf(" exit=%d", info.ExitCode)
 	} else {
 		s += fmt.Sprintf(" up=%s", time.Since(info.StartedAt).Round(time.Second))

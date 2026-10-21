@@ -132,8 +132,12 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 		return b.backgrounded(sess), nil
 	case <-ctx.Done():
 		sess.Kill()
-		<-sess.Done()
-		return b.finished(sess, true, hard), nil
+		select {
+		case <-sess.Done():
+			return b.finished(sess, true, hard), nil
+		case <-time.After(KillConfirmWait):
+			return formatResult(string(sess.Log()), -1, false, true, hard), nil
+		}
 	}
 }
 
