@@ -57,7 +57,8 @@ func Start(ctx context.Context, argv []string, dir string, env []string, req san
 		if err != nil {
 			emit([]byte(fmt.Sprintf("PTY spawn failed, fell back to pipe: %v\n", err)))
 		} else {
-			p.cmd, p.stdin, p.pty, ptmx = cmd, f, true, f
+			ptmx = interruptible(f)
+			p.cmd, p.stdin, p.pty = cmd, ptmx, true
 		}
 	}
 	if p.cmd == nil {
@@ -102,6 +103,10 @@ func Start(ctx context.Context, argv []string, dir string, env []string, req san
 		p.cmd.Wait()
 		afterWait(p.cmd)
 		if ptmx != nil {
+			select {
+			case <-copied:
+			case <-time.After(waitDelay):
+			}
 			ptmx.Close()
 		}
 		<-copied

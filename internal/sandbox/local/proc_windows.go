@@ -4,6 +4,7 @@ package local
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -112,3 +113,5 @@ func signalTree(cmd *exec.Cmd, _ syscall.Signal) error {
 	killTree(cmd)
 	return nil
 }
+
+func interruptible(f *os.File) *os.File { return f }
