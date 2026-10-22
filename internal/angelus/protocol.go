@@ -86,7 +86,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
 	h.noticeUpgrade()
-	h.publishModels()
+	h.publishDaemonForms()
 	methods := map[string]jkrpc.HandlerFunc{
 		rpc.MethodCreate:             h.create,
 		rpc.MethodFormCreate:         h.formCreate,

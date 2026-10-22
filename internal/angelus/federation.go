@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
@@ -216,7 +215,7 @@ func (h *handlers) nodeResolve(ctx context.Context, params json.RawMessage) (any
 	}
 	out := rpc.NodeResolveResponse{IDs: map[string]string{}}
 	for _, ref := range req.Refs {
-		if ref == "" || ref == models.FormID || strings.Contains(ref, rpc.NodeSeparator) {
+		if ref == "" || isDaemonFormID(ref) || strings.Contains(ref, rpc.NodeSeparator) {
 			continue
 		}
 		if h.holdsMove(ref) != nil {

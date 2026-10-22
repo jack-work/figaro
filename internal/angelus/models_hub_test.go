@@ -39,7 +39,7 @@ func modelsHandlers(t *testing.T) (*handlers, *modelcat.Catalog) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); a.Hubs.closeAll() })
 	h := &handlers{angelus: a, ctx: ctx}
-	h.publishModels()
+	h.publishDaemonForms()
 	return h, cat
 }
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/handle"
-	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
@@ -221,7 +220,7 @@ func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
 }
 
 func (h *handlers) knownID(id string) bool {
-	if id == models.FormID {
+	if isDaemonFormID(id) {
 		return true
 	}
 	if h.angelus.Hubs != nil && h.angelus.Hubs.get(id) != nil {

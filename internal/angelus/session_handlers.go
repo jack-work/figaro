@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
@@ -28,7 +27,7 @@ func (h *handlers) requireAria(id string) error {
 	if err := rpc.ValidateAriaID(id); err != nil {
 		return err
 	}
-	if id == models.FormID && h.angelus.Models != nil {
+	if h.daemonForm(id) != nil {
 		return nil
 	}
 	if h.angelus.Registry.Get(id) != nil {

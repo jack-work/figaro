@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/models"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -78,7 +77,7 @@ func (h *handlers) hubFor(id string) *ariaHub {
 			hb.kind = n.Kind
 		}
 	}
-	if id == models.FormID {
+	if isDaemonFormID(id) {
 		hb.kind = kindFormNode
 		hb.wake = nil
 	}
@@ -98,8 +97,8 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) func() {
 // writeForHub lands mutations on a dormant aria or an unbound form without
 // an agent; it is the only path that can patch provider keys into a naked figaro.
 func (h *handlers) writeForHub(ctx context.Context, id, method string, params json.RawMessage) (any, bool, error) {
-	if id == models.FormID {
-		return nil, true, fmt.Errorf("%s is the daemon's model catalog: it is read-only", id)
+	if isDaemonFormID(id) {
+		return nil, true, fmt.Errorf("%s is a daemon form: it is read-only", id)
 	}
 	switch method {
 	case rpc.MethodSet:
