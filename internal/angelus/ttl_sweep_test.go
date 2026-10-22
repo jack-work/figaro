@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/config"
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
@@ -63,7 +64,10 @@ func ttlSweepFixture(t *testing.T, due ...string) (*Angelus, *ttlFakeBackend, *[
 		})
 	}
 	removed := &[]string{}
-	a := &Angelus{Registry: NewRegistry(), Backend: be}
+	hardDelete := 0
+	a := &Angelus{Registry: NewRegistry(), Backend: be, Settings: &config.Loaded{
+		Config: config.Config{Memory: config.MemoryConfig{ReapedGraceHours: &hardDelete}},
+	}}
 	a.RemoveAria = func(id string, recursive bool) error {
 		if !recursive {
 			t.Errorf("the sweep must delete recursively; branches go with their ancestor")

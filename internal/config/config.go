@@ -147,6 +147,8 @@ type MemoryConfig struct {
 
 	KeepaliveMinutes *int `toml:"keepalive_minutes"`
 
+	ReapedGraceHours *int `toml:"reaped_grace_hours"`
+
 	// MaxLiveArias caps resident agents; 0 (default) is unbounded.
 	MaxLiveArias *int `toml:"max_live_arias"`
 
@@ -183,6 +185,7 @@ const (
 	defaultDormantAfter  = 15 * time.Minute
 	defaultSweepInterval = 2 * time.Minute
 	defaultKeepalive     = 24 * time.Hour
+	defaultReapedGrace   = 7 * 24 * time.Hour
 	defaultSegmentSize   = 2 * 1024 * 1024
 	minSegmentSize       = 1024 * 1024
 )
@@ -212,6 +215,16 @@ func (l *Loaded) DormantAfter() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
+}
+
+func (l *Loaded) ReapedGrace() time.Duration {
+	if l.cfg().Memory.ReapedGraceHours == nil {
+		return defaultReapedGrace
+	}
+	if *l.cfg().Memory.ReapedGraceHours <= 0 {
+		return 0
+	}
+	return time.Duration(*l.cfg().Memory.ReapedGraceHours) * time.Hour
 }
 
 func (l *Loaded) Keepalive() time.Duration {

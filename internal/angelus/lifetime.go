@@ -14,7 +14,10 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-var ErrRetired = errors.New("aria is retired")
+var (
+	ErrRetired = errors.New("aria is retired")
+	ErrReaped  = errors.New("aria is reaped")
+)
 
 type ttlKeeper interface {
 	TTLDue(nowMS int64) []store.TTLEntry
@@ -35,6 +38,7 @@ func (a *Angelus) expireTTL() {
 		return
 	}
 	now := time.Now()
+	a.purgeReaped(keeper, now)
 	due := keeper.TTLDue(now.UnixMilli())
 	if len(due) == 0 {
 		return
@@ -42,7 +46,11 @@ func (a *Angelus) expireTTL() {
 	def := a.keepalive()
 	bound := a.Registry.BoundPIDsByFigaro()
 	var roles map[string]string
+	grace := a.Settings.ReapedGrace()
 	for _, e := range due {
+		if e.ReapedAtMS > 0 {
+			continue
+		}
 		if reaps := e.ReapsAt(def, a.Backend.LastTS(e.ID)); reaps > now.UnixMilli() {
 			slog.Debug("lifetime spent, kept alive by recent access",
 				"node", e.ID, "until", time.UnixMilli(reaps))
@@ -59,6 +67,10 @@ func (a *Angelus) expireTTL() {
 			slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
 			continue
 		}
+		if grace > 0 {
+			a.softDelete(e, taken, grace)
+			continue
+		}
 		if err := a.RemoveAria(e.ID, true); err != nil {
 			slog.Warn("lifetime spent, removal failed", "node", e.ID, "err", err)
 			continue
@@ -72,16 +84,10 @@ func (a *Angelus) expireTTL() {
 }
 
 func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, roles map[string]string, def time.Duration, now time.Time) (string, string) {
+	if node, why := a.liveIn(taken, bound, roles); why != "" {
+		return node, why
+	}
 	for _, id := range taken {
-		if a.Registry.Get(id) != nil {
-			return id, "an agent is live"
-		}
-		if len(bound[id]) > 0 {
-			return id, "a shell is bound"
-		}
-		if role, ok := roles[id]; ok {
-			return id, "role " + role + " points at it"
-		}
 		if id == self {
 			continue
 		}
@@ -157,12 +163,16 @@ func (h *handlers) refuseRetired(method, id string, params json.RawMessage) erro
 		return nil
 	}
 	meta, _ := h.angelus.Backend.Meta(id)
-	if meta == nil || meta.RetiredAtMS == 0 {
+	if meta == nil || (meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0) {
 		return nil
 	}
 	var req rpc.QuaRequest
 	if json.Unmarshal(params, &req) == nil && req.Text == "" {
 		return nil
+	}
+	if meta.ReapedAtMS > 0 {
+		return fmt.Errorf("%w: %s was reaped %s; it takes no prompts (figaro reaped restore %s)",
+			ErrReaped, id, time.UnixMilli(meta.ReapedAtMS).Format(time.RFC3339), id)
 	}
 	return fmt.Errorf("%w: %s retired %s; it takes no prompts (figaro retire --undo %s)",
 		ErrRetired, id, time.UnixMilli(meta.RetiredAtMS).Format(time.RFC3339), id)

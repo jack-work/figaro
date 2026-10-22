@@ -33,6 +33,7 @@ type FigaroInfoResponse struct {
 	ReapsAt     int64 `json:"reaps_at,omitempty"`
 	KeepaliveMS int64 `json:"keepalive_ms,omitempty"`
 	RetiredAt   int64 `json:"retired_at,omitempty"`
+	ReapedAt    int64 `json:"reaped_at,omitempty"`
 
 	// Fork-tree position. Vector is the child-index path; Trunk flows down
 	// the continuation line; Parent is the aria branched from.
@@ -101,3 +102,5 @@ type UnbindRequest struct {
 type UnbindResponse struct {
 	OK bool `json:"ok"`
 }
+
+const ReapedFormID = "@reaped"

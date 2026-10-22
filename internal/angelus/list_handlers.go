@@ -50,6 +50,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		if h.angelus.Backend != nil {
 			if meta, _ := h.angelus.Backend.Meta(info.ID); meta != nil {
 				entry.RetiredAt = meta.RetiredAtMS
+				entry.ReapedAt = meta.ReapedAtMS
 			}
 		}
 		result = append(result, entry)
@@ -240,6 +241,7 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 		entry.CreatedAt = meta.CreatedAtMS
 	}
 	entry.RetiredAt = meta.RetiredAtMS
+	entry.ReapedAt = meta.ReapedAtMS
 }
 
 func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string][2]string, entry *rpc.FigaroInfoResponse) {

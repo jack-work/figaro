@@ -3,8 +3,10 @@ package angelus
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
@@ -12,7 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-var daemonFormIDs = []string{models.FormID}
+var daemonFormIDs = []string{models.FormID, rpc.ReapedFormID}
 
 func isDaemonFormID(id string) bool {
 	for _, d := range daemonFormIDs {
@@ -29,6 +31,8 @@ func (h *handlers) daemonForm(id string) *store.Form {
 		if h.angelus.Models != nil {
 			return h.angelus.Models.Form()
 		}
+	case rpc.ReapedFormID:
+		return h.reapedForm
 	}
 	return nil
 }
@@ -67,5 +71,54 @@ func (h *handlers) publishDaemonForms() {
 				Patch: patch, At: time.Now().UnixMilli(),
 			})
 		})
+	}
+}
+
+type reapedIndex interface {
+	Reaped() []store.ReapedEntry
+	OnReapedChange(fn func())
+}
+
+func (h *handlers) startReapedForm() {
+	idx, ok := h.angelus.Backend.(reapedIndex)
+	if !ok {
+		return
+	}
+	h.reapedForm = store.NewMemForm()
+	h.refreshReapedForm()
+	idx.OnReapedChange(h.refreshReapedForm)
+}
+
+func (h *handlers) refreshReapedForm() {
+	idx, ok := h.angelus.Backend.(reapedIndex)
+	if !ok || h.reapedForm == nil {
+		return
+	}
+	grace := h.config.ReapedGrace()
+	keys := map[string]json.RawMessage{}
+	put := func(k string, v any) {
+		raw, _ := json.Marshal(v)
+		keys[k] = raw
+	}
+	for _, g := range reapedGroups(idx.Reaped()) {
+		base := "items." + g.root + "."
+		put(base+"nodes", g.nodes)
+		if g.atMS > 0 {
+			put(base+"at", g.atMS)
+			put(base+"purge_at", time.UnixMilli(g.atMS).Add(grace).UnixMilli())
+		}
+		if snap, err := h.angelus.Backend.FormState(g.root); err == nil {
+			if m := snap.Lookup("mantra"); m != nil && *m != "" {
+				put(base+"mantra", *m)
+			}
+		}
+	}
+	put("grace_hours", strconv.Itoa(int(grace/time.Hour)))
+	h.reapedMu.Lock()
+	defer h.reapedMu.Unlock()
+	cur, _ := h.reapedForm.Snapshot()
+	next := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
+	if patch := next.Diff(cur); !patch.IsIdentity() {
+		_, _, _ = h.reapedForm.ApplyEffect(patch, 0)
 	}
 }

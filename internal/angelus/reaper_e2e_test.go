@@ -1,6 +1,7 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk"
 )
 
 type metaWriter interface {
@@ -55,6 +57,18 @@ func ariaExists(a *angelus.Angelus, id string) bool {
 	return ok
 }
 
+func reaped(t *testing.T, a *angelus.Angelus, id string) bool {
+	t.Helper()
+	meta, err := a.Backend.Meta(id)
+	require.NoError(t, err)
+	return ariaExists(a, id) && meta != nil && meta.ReapedAtMS > 0
+}
+
+func alive(t *testing.T, a *angelus.Angelus, id string) bool {
+	t.Helper()
+	return ariaExists(a, id) && !reaped(t, a, id)
+}
+
 func TestReaperEndToEnd(t *testing.T) {
 	t.Run("an idle aria past its lifetime and keepalive is taken", func(t *testing.T) {
 		a, acli, ctx := daemonFixture(t)
@@ -62,7 +76,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		age(t, a, c.FigaroID, 72*time.Hour, 48*time.Hour, nil)
 		a.SweepLifetimesNow()
-		require.False(t, ariaExists(a, c.FigaroID))
+		require.True(t, reaped(t, a, c.FigaroID), "the sweep did not soft-delete it")
 	})
 
 	t.Run("a read through the door keeps it", func(t *testing.T) {
@@ -73,7 +87,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		var page map[string]any
 		require.NoError(t, dialAria(t, a, c.FigaroID, nil).Call(ctx, rpc.MethodRead, rpc.ReadRequest{}, &page))
 		a.SweepLifetimesNow()
-		require.True(t, ariaExists(a, c.FigaroID), "an aria read a moment ago was reaped")
+		require.True(t, alive(t, a, c.FigaroID), "an aria read a moment ago was reaped")
 	})
 
 	t.Run("keepalive 0 restores reaping at the deadline", func(t *testing.T) {
@@ -82,7 +96,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		age(t, a, c.FigaroID, 72*time.Hour, time.Minute, map[string]string{"system.keepalive": "0"})
 		a.SweepLifetimesNow()
-		require.False(t, ariaExists(a, c.FigaroID))
+		require.True(t, reaped(t, a, c.FigaroID), "the sweep did not soft-delete it")
 	})
 
 	t.Run("a lifetime not yet spent is never taken", func(t *testing.T) {
@@ -91,7 +105,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		age(t, a, c.FigaroID, 30*time.Minute, 48*time.Hour, map[string]string{"system.keepalive": "0"})
 		a.SweepLifetimesNow()
-		require.True(t, ariaExists(a, c.FigaroID))
+		require.True(t, alive(t, a, c.FigaroID))
 	})
 
 	t.Run("an aria without a lifetime is never taken", func(t *testing.T) {
@@ -99,7 +113,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		c, err := acli.Create(ctx, dress(t, "mock"), nil)
 		require.NoError(t, err)
 		a.SweepLifetimesNow()
-		require.True(t, ariaExists(a, c.FigaroID))
+		require.True(t, alive(t, a, c.FigaroID))
 	})
 
 	t.Run("a parent waits for a child prompted recently, and takes it later", func(t *testing.T) {
@@ -112,12 +126,13 @@ func TestReaperEndToEnd(t *testing.T) {
 		age(t, a, c.FigaroID, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
 		age(t, a, child, 72*time.Hour, time.Hour, map[string]string{"system.ttl": "0"})
 		a.SweepLifetimesNow()
-		require.True(t, ariaExists(a, c.FigaroID), "the parent went while its child is in use")
-		require.True(t, ariaExists(a, child))
+		require.True(t, alive(t, a, c.FigaroID), "the parent went while its child is in use")
+		require.True(t, alive(t, a, child))
 
 		age(t, a, child, 72*time.Hour, 48*time.Hour, map[string]string{"system.ttl": "0"})
 		a.SweepLifetimesNow()
-		require.False(t, ariaExists(a, c.FigaroID), "nothing under the parent is in use any more")
+		require.True(t, reaped(t, a, c.FigaroID), "nothing under the parent is in use any more")
+		require.True(t, reaped(t, a, child), "the soft delete must take what the hard delete would")
 	})
 
 	t.Run("a role pointing into the subtree holds it", func(t *testing.T) {
@@ -129,7 +144,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		_, _, err = backend(t, a).CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": raw}, nil))
 		require.NoError(t, err)
 		a.SweepLifetimesNow()
-		require.True(t, ariaExists(a, c.FigaroID), "an aria a role points at was reaped")
+		require.True(t, alive(t, a, c.FigaroID), "an aria a role points at was reaped")
 	})
 
 	t.Run("a retired aria with a short ttl goes despite recent use", func(t *testing.T) {
@@ -138,7 +153,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		age(t, a, c.FigaroID, 72*time.Hour, time.Minute, map[string]string{store.SystemRetiredKey: "yes"})
 		a.SweepLifetimesNow()
-		require.False(t, ariaExists(a, c.FigaroID))
+		require.True(t, reaped(t, a, c.FigaroID), "the sweep did not soft-delete it")
 	})
 
 	t.Run("a bound shell holds it", func(t *testing.T) {
@@ -148,6 +163,100 @@ func TestReaperEndToEnd(t *testing.T) {
 		require.NoError(t, a.Registry.Bind(4747, c.FigaroID, 0))
 		age(t, a, c.FigaroID, 72*time.Hour, 48*time.Hour, nil)
 		a.SweepLifetimesNow()
-		require.True(t, ariaExists(a, c.FigaroID))
+		require.True(t, alive(t, a, c.FigaroID))
+	})
+}
+
+func reapedFormItems(t *testing.T, a *angelus.Angelus) map[string]any {
+	t.Helper()
+	var resp rpc.FormResponse
+	require.NoError(t, dialAria(t, a, rpc.ReapedFormID, nil).Call(context.Background(), rpc.MethodForm, rpc.FormRequest{}, &resp))
+	raw, err := json.Marshal(resp.Snapshot)
+	require.NoError(t, err)
+	var state map[string]any
+	require.NoError(t, json.Unmarshal(raw, &state))
+	items, _ := state["items"].(map[string]any)
+	return items
+}
+
+func backdateReaped(t *testing.T, a *angelus.Angelus, id string, ago time.Duration) {
+	t.Helper()
+	b := backend(t, a)
+	meta, err := b.Meta(id)
+	require.NoError(t, err)
+	meta.ReapedAtMS = time.Now().Add(-ago).UnixMilli()
+	require.NoError(t, b.SetMeta(id, meta))
+}
+
+func TestSoftDeletion(t *testing.T) {
+	reap := func(t *testing.T) (*angelus.Angelus, *sdk.Angelus, context.Context, string, string) {
+		a, acli, ctx := daemonFixture(t)
+		c, err := acli.Create(ctx, dress(t, "mock"), nil)
+		require.NoError(t, err)
+		fork, err := acli.Fork(ctx, c.FigaroID, 0, 0, nil, nil)
+		require.NoError(t, err)
+		age(t, a, c.FigaroID, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0", "mantra": "old work"})
+		age(t, a, fork.Alternative, 72*time.Hour, 48*time.Hour, map[string]string{"system.ttl": "0"})
+		a.SweepLifetimesNow()
+		require.True(t, reaped(t, a, c.FigaroID))
+		return a, acli, ctx, c.FigaroID, fork.Alternative
+	}
+
+	t.Run("a reaped aria refuses prompts, leaves ls, and is indexed", func(t *testing.T) {
+		a, acli, ctx, root, child := reap(t)
+		var out rpc.QuaResponse
+		err := dialAria(t, a, child, nil).Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: "anyone?"}, &out)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "reaped")
+
+		resp, err := acli.List(ctx)
+		require.NoError(t, err)
+		for _, f := range resp.Figaros {
+			if f.ID == root || f.ID == child {
+				require.NotZero(t, f.ReapedAt, "%s is listed without its reaped mark", f.ID)
+			}
+		}
+
+		items := reapedFormItems(t, a)
+		entry, ok := items[root].(map[string]any)
+		require.True(t, ok, "@reaped has no entry for %s: %v", root, items)
+		require.Equal(t, "old work", entry["mantra"])
+		require.Len(t, entry["nodes"], 2)
+		require.NotZero(t, entry["purge_at"])
+	})
+
+	t.Run("a sweep inside the grace leaves it; past the grace it is purged", func(t *testing.T) {
+		a, _, _, root, child := reap(t)
+		a.SweepLifetimesNow()
+		require.True(t, reaped(t, a, root), "a second sweep inside the grace purged it")
+
+		backdateReaped(t, a, root, 8*24*time.Hour)
+		a.SweepLifetimesNow()
+		require.False(t, ariaExists(a, root))
+		require.False(t, ariaExists(a, child))
+		require.Empty(t, reapedFormItems(t, a), "a purged node is still in @reaped")
+	})
+
+	t.Run("a bound shell holds the purge", func(t *testing.T) {
+		a, _, _, root, child := reap(t)
+		require.NoError(t, a.Registry.Bind(4848, child, 0))
+		backdateReaped(t, a, root, 8*24*time.Hour)
+		a.SweepLifetimesNow()
+		require.True(t, ariaExists(a, root))
+	})
+
+	t.Run("restoring takes it back out of the index and lets it talk", func(t *testing.T) {
+		a, _, ctx, root, child := reap(t)
+		for _, id := range []string{root, child} {
+			var set rpc.SetResponse
+			require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodSet, setKeys(t, nil, store.SystemReapedKey), &set))
+		}
+		require.True(t, alive(t, a, root))
+		require.Empty(t, reapedFormItems(t, a))
+		var out rpc.QuaResponse
+		require.NoError(t, dialAria(t, a, child, nil).Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: "back"}, &out))
+
+		a.SweepLifetimesNow()
+		require.True(t, alive(t, a, root), "restoring stamps an access; the keepalive must hold it for a day")
 	})
 }

@@ -86,6 +86,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
 	h.noticeUpgrade()
+	h.startReapedForm()
 	h.publishDaemonForms()
 	methods := map[string]jkrpc.HandlerFunc{
 		rpc.MethodCreate:             h.create,
@@ -237,6 +238,9 @@ type handlers struct {
 	decider            *decide.Engine
 	fed                *federation
 	policySign         sync.Mutex
+
+	reapedForm *store.Form
+	reapedMu   sync.Mutex
 
 	// readerInst's per-aria servers are the window; a reader per call would retain nothing.
 	readerOnce sync.Once
