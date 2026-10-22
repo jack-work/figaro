@@ -80,7 +80,7 @@ func keepHushAlive(ctx context.Context, h *managed.Hush) {
 	// Claim only after EnsureReady: a claim written earlier names a socket
 	// that may never exist.
 	ensure := func(stage string) {
-		if err := h.EnsureReady(); err != nil {
+		if err := boot.ReviveHushAgent(h); err != nil {
 			slog.Warn("hush keep-alive: "+stage+" ensure failed", "err", err)
 			return
 		}

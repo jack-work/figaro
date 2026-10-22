@@ -21,6 +21,14 @@ import (
 )
 
 func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
+	r, err := buildResolver(loaded, providerName)
+	if err != nil {
+		return nil, err
+	}
+	return &revivingResolver{inner: r, gone: hushAgentGone, revive: reviveUsedHush}, nil
+}
+
+func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
 	if name, err := ServiceTokenOf(loaded, providerName); err != nil || name != "" {
 		if err != nil {
 			return nil, err
@@ -268,4 +276,39 @@ func durableSecretFor(loaded *config.Loaded, h *hush.Client, reg *providerPkg.Re
 		return "", ""
 	}
 	return dec["api_key"], path
+}
+
+type revivingResolver struct {
+	inner  auth.TokenResolver
+	gone   func(error) bool
+	revive func() error
+}
+
+func (r *revivingResolver) Resolve() (string, error) {
+	tok, err := r.inner.Resolve()
+	if err == nil || !r.gone(err) {
+		return tok, err
+	}
+	if rerr := r.revive(); rerr != nil {
+		return "", fmt.Errorf("%w (respawning the hush agent: %v)", err, rerr)
+	}
+	return r.inner.Resolve()
+}
+
+func (r *revivingResolver) Invalidate(token string) error {
+	err := r.inner.Invalidate(token)
+	if err == nil || !r.gone(err) {
+		return err
+	}
+	if rerr := r.revive(); rerr != nil {
+		return fmt.Errorf("%w (respawning the hush agent: %v)", err, rerr)
+	}
+	return r.inner.Invalidate(token)
+}
+
+func (r *revivingResolver) Endpoint() string {
+	if c, ok := r.inner.(auth.EndpointCarrier); ok {
+		return c.Endpoint()
+	}
+	return ""
 }

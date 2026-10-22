@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -138,13 +139,13 @@ func TestExchangeResolverIsLazy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := r.(*exchangeResolver); !ok {
-		t.Fatalf("copilot resolver = %T, want the exchange", r)
+	if _, ok := r.(*revivingResolver).inner.(*exchangeResolver); !ok {
+		t.Fatalf("copilot resolver = %T, want the exchange", r.(*revivingResolver).inner)
 	}
 	if err := r.Invalidate("x"); err != nil {
 		t.Fatal(err)
 	}
-	if ep := r.(*exchangeResolver).Endpoint(); ep != "" {
+	if ep := r.(auth.EndpointCarrier).Endpoint(); ep != "" {
 		t.Fatalf("Endpoint = %q before any resolve", ep)
 	}
 	assertHushUntouched(t)
