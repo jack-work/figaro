@@ -335,6 +335,8 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		b.wroteTo(ariaID, time.Now().UnixMilli())
 		if namesOutfit(patch) {
 			b.labelChanged(ariaID)
+			b.mirrorBoardLifetime(ariaID, opened.Read().Snapshot)
+			return
 		}
 		b.ttlCommitted(ariaID, patch)
 	})
@@ -454,11 +456,11 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	}
 	b.mirrorMintedBy(child, births(opts))
 	b.inheritStudies(child)
-	b.ttlCommitted(child, patch)
 	// The Form for a node born a moment ago must not be a replay of a channel
 	// that was empty when someone opened it first. Close what is dropped: a
 	// Form holds a writer.
 	b.dropForm(child)
+	b.lifetimeAtBirth(child)
 	b.recordForkTurn(child)
 	return child, version, nil
 }
@@ -496,8 +498,8 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...Bir
 		return "", 0, err
 	}
 	b.mirrorMintedBy(id, births(opts))
-	b.ttlCommitted(id, patch)
 	b.dropForm(id)
+	b.lifetimeAtBirth(id)
 	return id, version, nil
 }
 
@@ -511,6 +513,7 @@ func (b *XwalBackend) CreateConversation(outfitID string, opts ...BirthOption) (
 		return "", err
 	}
 	b.mirrorMintedBy(id, births(opts))
+	b.lifetimeAtBirth(id)
 	return id, nil
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {

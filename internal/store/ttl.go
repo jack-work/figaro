@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -105,15 +106,7 @@ func ttlOf(patch message.Patch) (raw string, spoke bool) {
 
 func stringKeyOf(patch message.Patch, key string) (raw string, spoke bool) {
 	if e, ok := patch.Entry(key); ok && !e.IsRemoval() {
-		var s string
-		if err := json.Unmarshal(e.New, &s); err == nil {
-			return s, true
-		}
-		var n json.Number
-		if err := json.Unmarshal(e.New, &n); err == nil {
-			return n.String(), true
-		}
-		return "", true
+		return lifetimeString(e.New), true
 	}
 	for _, ent := range patch.Entries() {
 		if ent.IsRemoval() && ent.Key == key {
@@ -121,6 +114,18 @@ func stringKeyOf(patch message.Patch, key string) (raw string, spoke bool) {
 		}
 	}
 	return "", false
+}
+
+func lifetimeString(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n.String()
+	}
+	return ""
 }
 
 type lifetimeChange struct {
@@ -132,26 +137,41 @@ type lifetimeChange struct {
 }
 
 func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
+	return lifetimeFrom(id, func(key string) (string, bool) { return stringKeyOf(patch, key) })
+}
+
+func lifetimeOfBoard(id string, board form.Snapshot) lifetimeChange {
+	c, _ := lifetimeFrom(id, func(key string) (string, bool) {
+		raw, ok := board.Get(key)
+		if !ok {
+			return "", true
+		}
+		return lifetimeString(raw), true
+	})
+	return c
+}
+
+func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeChange, bool) {
 	var c lifetimeChange
-	if raw, spoke := ttlOf(patch); spoke {
+	if raw, spoke := valueOf(SystemTTLKey); spoke {
 		if ttl, err := ParseTTL(raw); err != nil {
 			slog.Warn("system.ttl ignored", "node", id, "value", raw, "err", err)
 		} else {
 			c.ttl = &ttl
 		}
 	}
-	if raw, spoke := stringKeyOf(patch, SystemKeepaliveKey); spoke {
+	if raw, spoke := valueOf(SystemKeepaliveKey); spoke {
 		if ka, err := ParseTTL(raw); err != nil {
 			slog.Warn("system.keepalive ignored", "node", id, "value", raw, "err", err)
 		} else {
 			c.keepalive, c.keepaliveSet = &ka, strings.TrimSpace(raw) != ""
 		}
 	}
-	if raw, spoke := stringKeyOf(patch, SystemRetiredKey); spoke {
+	if raw, spoke := valueOf(SystemRetiredKey); spoke {
 		on := retiredValue(raw)
 		c.retired = &on
 	}
-	if raw, spoke := stringKeyOf(patch, SystemReapedKey); spoke {
+	if raw, spoke := valueOf(SystemReapedKey); spoke {
 		root := strings.TrimSpace(raw)
 		c.reapedRoot = &root
 	}
@@ -166,44 +186,80 @@ func retiredValue(raw string) bool {
 	return true
 }
 
+func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
+	if c.ttl != nil {
+		m.TTLMS = c.ttl.Milliseconds()
+	}
+	if c.keepalive != nil {
+		if c.keepaliveSet {
+			ms := c.keepalive.Milliseconds()
+			m.KeepaliveMS = &ms
+		} else {
+			m.KeepaliveMS = nil
+		}
+	}
+	if c.retired != nil {
+		switch {
+		case *c.retired && m.RetiredAtMS == 0:
+			m.RetiredAtMS = now
+		case !*c.retired:
+			m.RetiredAtMS = 0
+		}
+	}
+	if c.reapedRoot != nil {
+		switch {
+		case *c.reapedRoot == "":
+			m.ReapedAtMS, m.ReapedRoot = 0, ""
+		case m.ReapedAtMS == 0 || m.ReapedRoot != *c.reapedRoot:
+			m.ReapedAtMS, m.ReapedRoot = now, *c.reapedRoot
+		}
+	}
+}
+
+func sameLifetime(a, b *AriaMeta) bool {
+	ka, kb := a.KeepaliveMS, b.KeepaliveMS
+	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS &&
+		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot &&
+		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb)
+}
+
 func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
-	c, spoke := lifetimeOf(id, patch)
-	if !spoke {
+	if c, spoke := lifetimeOf(id, patch); spoke {
+		b.mirrorLifetime(id, c)
+	}
+}
+
+func (b *XwalBackend) mirrorBoardLifetime(id string, board form.Snapshot) {
+	c := lifetimeOfBoard(id, board)
+	cur, _ := b.Meta(id)
+	if cur == nil {
+		cur = &AriaMeta{}
+	}
+	probe := *cur
+	c.applyTo(&probe, time.Now().UnixMilli())
+	if sameLifetime(&probe, cur) {
 		return
 	}
+	b.mirrorLifetime(id, c)
+}
+
+func (b *XwalBackend) lifetimeAtBirth(id string) {
+	f, err := b.form(id)
+	if err != nil {
+		slog.Warn("lifetime: board unreadable at birth", "node", id, "err", err)
+		return
+	}
+	b.mirrorBoardLifetime(id, f.Read().Snapshot)
+}
+
+func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
 	now := time.Now().UnixMilli()
 	var meta AriaMeta
 	if err := b.UpdateMeta(id, func(m *AriaMeta) {
 		if m.CreatedAtMS == 0 {
 			m.CreatedAtMS = now
 		}
-		if c.ttl != nil {
-			m.TTLMS = c.ttl.Milliseconds()
-		}
-		if c.keepalive != nil {
-			if c.keepaliveSet {
-				ms := c.keepalive.Milliseconds()
-				m.KeepaliveMS = &ms
-			} else {
-				m.KeepaliveMS = nil
-			}
-		}
-		if c.retired != nil {
-			switch {
-			case *c.retired && m.RetiredAtMS == 0:
-				m.RetiredAtMS = now
-			case !*c.retired:
-				m.RetiredAtMS = 0
-			}
-		}
-		if c.reapedRoot != nil {
-			switch {
-			case *c.reapedRoot == "":
-				m.ReapedAtMS, m.ReapedRoot = 0, ""
-			case m.ReapedAtMS == 0 || m.ReapedRoot != *c.reapedRoot:
-				m.ReapedAtMS, m.ReapedRoot = now, *c.reapedRoot
-			}
-		}
+		c.applyTo(m, now)
 		meta = *m
 	}); err != nil {
 		slog.Warn("lifetime: sidecar unwritable", "node", id, "err", err)
