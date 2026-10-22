@@ -106,10 +106,14 @@ func ttlOf(patch message.Patch) (raw string, spoke bool) {
 func stringKeyOf(patch message.Patch, key string) (raw string, spoke bool) {
 	if e, ok := patch.Entry(key); ok && !e.IsRemoval() {
 		var s string
-		if err := json.Unmarshal(e.New, &s); err != nil {
-			return "", true
+		if err := json.Unmarshal(e.New, &s); err == nil {
+			return s, true
 		}
-		return s, true
+		var n json.Number
+		if err := json.Unmarshal(e.New, &n); err == nil {
+			return n.String(), true
+		}
+		return "", true
 	}
 	for _, ent := range patch.Entries() {
 		if ent.IsRemoval() && ent.Key == key {

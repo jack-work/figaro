@@ -1,8 +1,11 @@
 package store
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 // The keepalive is the reaper's mercy: it must reach the sidecar the sweep reads.
@@ -125,5 +128,26 @@ func TestForkOfARetiredAriaIsNotRetired(t *testing.T) {
 	}
 	if meta, _ := b.Meta(id); meta == nil || meta.RetiredAtMS == 0 {
 		t.Error("forking unretired the parent")
+	}
+}
+
+// `figaro set --id x system.keepalive 0` writes the number 0, not the string:
+// it must mean "no keepalive", not fall back to the default.
+func TestANumericZeroIsAnExplicitZero(t *testing.T) {
+	b := newTTLBackend(t)
+	id := mustNewAria(t, b)
+	setBoardKey(t, b, id, SystemTTLKey, "1h")
+	if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{SystemKeepaliveKey: json.RawMessage(`0`)}, nil)); err != nil {
+		t.Fatal(err)
+	}
+	e := ScanTTL(b.root)[id]
+	if e.Keepalive == nil || *e.Keepalive != 0 {
+		t.Fatalf("keepalive %v after the number 0, want an explicit zero", e.Keepalive)
+	}
+	if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{SystemKeepaliveKey: json.RawMessage(`3600`)}, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if e := ScanTTL(b.root)[id]; e.Keepalive == nil || *e.Keepalive != 0 {
+		t.Fatalf("a bare number with no unit changed the keepalive to %v; it must be ignored", e.Keepalive)
 	}
 }
