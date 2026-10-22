@@ -254,7 +254,8 @@ under `system.` are hidden from the agent and read directly by the harness.
 **Lifetimes.** `figaro set --id <id> system.ttl 30d` gives a node a lifetime:
 the daemon's reclamation sweep deletes that node and its subtree once the
 lifetime is spent. `-S system.ttl=1h` states one at birth, on `new`, `fork`, or
-a `send` that mints. It is counted from when the node was CREATED, not from its
+a `send` that mints, and an outfit's `[system] ttl` does the same for every
+aria dressed in it (the shared default form keeps none of its own). It is counted from when the node was CREATED, not from its
 last turn, and a fork inherits the key with its own creation time. Go duration
 syntax plus `d` and `w`; `0`, an empty value or `unset system.ttl` means no
 lifetime and nothing is ever deleted.
