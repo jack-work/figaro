@@ -49,6 +49,8 @@ type AriaMeta struct {
 	KeepaliveMS  *int64 `json:"keepalive_ms,omitempty"`
 	RetiredAtMS  int64  `json:"retired_at_ms,omitempty"`
 	LastAccessMS int64  `json:"last_access_ms,omitempty"`
+	ReapedAtMS   int64  `json:"reaped_at_ms,omitempty"`
+	ReapedRoot   string `json:"reaped_root,omitempty"`
 	// MetaVersion below CurrentMetaVersion is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
 
@@ -60,14 +62,18 @@ type Lifetime struct {
 	KeepaliveMS  *int64
 	RetiredAtMS  int64
 	LastAccessMS int64
+	ReapedAtMS   int64
+	ReapedRoot   string
 }
 
 func (m *AriaMeta) Lifetime() Lifetime {
-	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS, LastAccessMS: m.LastAccessMS}
+	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS,
+		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot}
 }
 
 func (m *AriaMeta) SetLifetime(l Lifetime) {
 	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
+	m.ReapedAtMS, m.ReapedRoot = l.ReapedAtMS, l.ReapedRoot
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.

@@ -44,6 +44,8 @@ type XwalBackend struct {
 	ttlMu    sync.Mutex
 	ttl      map[string]TTLEntry
 	access   map[string]int64
+	reaped   map[string]ReapedEntry
+	onReaped []func()
 	encoders translatorEncoders
 
 	// labels is never invalidated for a stump: its id is the hash of content
@@ -442,6 +444,9 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	// the one a live `fig fork` takes.
 	if pm, _ := b.Meta(parent); pm != nil && pm.RetiredAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemRetiredKey}))
+	}
+	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
+		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey}))
 	}
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {
@@ -1074,9 +1079,11 @@ func (b *XwalBackend) buryAs(reason string, doomed []string) {
 		b.mu.Unlock()
 		b.ttlMu.Lock()
 		delete(b.access, id)
+		delete(b.ttl, id)
 		b.ttlMu.Unlock()
 		_ = os.Remove(b.metaPath(id))
 	}
+	b.ReapedForget(doomed...)
 }
 
 // releaseStudies is best-effort: a delete is the recovery path for a broken

@@ -32,6 +32,7 @@ type TTLEntry struct {
 	Keepalive    *time.Duration
 	RetiredAtMS  int64
 	LastAccessMS int64
+	ReapedAtMS   int64
 }
 
 func (e TTLEntry) Expired(nowMS int64) bool { return e.DeadlineMS <= nowMS }
@@ -123,6 +124,7 @@ type lifetimeChange struct {
 	keepalive    *time.Duration
 	keepaliveSet bool
 	retired      *bool
+	reapedRoot   *string
 }
 
 func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
@@ -145,7 +147,11 @@ func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
 		on := retiredValue(raw)
 		c.retired = &on
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil
+	if raw, spoke := stringKeyOf(patch, SystemReapedKey); spoke {
+		root := strings.TrimSpace(raw)
+		c.reapedRoot = &root
+	}
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapedRoot != nil
 }
 
 func retiredValue(raw string) bool {
@@ -186,6 +192,14 @@ func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
 				m.RetiredAtMS = 0
 			}
 		}
+		if c.reapedRoot != nil {
+			switch {
+			case *c.reapedRoot == "":
+				m.ReapedAtMS, m.ReapedRoot = 0, ""
+			case m.ReapedAtMS == 0 || m.ReapedRoot != *c.reapedRoot:
+				m.ReapedAtMS, m.ReapedRoot = now, *c.reapedRoot
+			}
+		}
 		meta = *m
 	}); err != nil {
 		slog.Warn("lifetime: sidecar unwritable", "node", id, "err", err)
@@ -203,22 +217,29 @@ func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
 	if c.retired != nil {
 		slog.Info("node retirement changed", "node", id, "retired", *c.retired)
 	}
+	if c.reapedRoot != nil {
+		slog.Info("node reaped state changed", "node", id, "root", *c.reapedRoot)
+	}
 }
 
 // ttlNoted holds only the nodes that carry a lifetime.
 func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 	b.ttlMu.Lock()
-	defer b.ttlMu.Unlock()
 	if b.ttl == nil {
+		b.ttlMu.Unlock()
 		return
 	}
-	e, ok := ttlEntryOf(id, meta)
-	if !ok {
+	if e, ok := ttlEntryOf(id, meta); ok {
+		e.LastAccessMS = max(e.LastAccessMS, b.access[id])
+		b.ttl[id] = e
+	} else {
 		delete(b.ttl, id)
-		return
 	}
-	e.LastAccessMS = max(e.LastAccessMS, b.access[id])
-	b.ttl[id] = e
+	changed := b.reapedNotedLocked(id, meta)
+	b.ttlMu.Unlock()
+	if changed {
+		b.reapedChanged()
+	}
 }
 
 func ttlEntryOf(id string, meta *AriaMeta) (TTLEntry, bool) {
@@ -232,6 +253,7 @@ func ttlEntryOf(id string, meta *AriaMeta) (TTLEntry, bool) {
 		DeadlineMS:   meta.CreatedAtMS + meta.TTLMS,
 		RetiredAtMS:  meta.RetiredAtMS,
 		LastAccessMS: meta.LastAccessMS,
+		ReapedAtMS:   meta.ReapedAtMS,
 	}
 	if meta.KeepaliveMS != nil {
 		ka := time.Duration(*meta.KeepaliveMS) * time.Millisecond
@@ -243,6 +265,10 @@ func ttlEntryOf(id string, meta *AriaMeta) (TTLEntry, bool) {
 const touchGranularity = 10 * time.Minute
 
 func (b *XwalBackend) Touch(id string, at time.Time) {
+	meta, err := b.Meta(id)
+	if err != nil || meta == nil {
+		return
+	}
 	ms := at.UnixMilli()
 	b.ttlMu.Lock()
 	if b.access == nil {
@@ -256,8 +282,7 @@ func (b *XwalBackend) Touch(id string, at time.Time) {
 		b.ttl[id] = e
 	}
 	b.ttlMu.Unlock()
-	meta, err := b.Meta(id)
-	if err != nil || meta == nil || ms-meta.LastAccessMS < touchGranularity.Milliseconds() {
+	if ms-meta.LastAccessMS < touchGranularity.Milliseconds() {
 		return
 	}
 	if err := b.UpdateMeta(id, func(m *AriaMeta) {
@@ -271,15 +296,20 @@ func (b *XwalBackend) Touch(id string, at time.Time) {
 
 // TTLEntries scans the sidecar directory once; after that it is a map read
 // kept current by every board commit that names the key.
+func (b *XwalBackend) seedLifetimesLocked() {
+	if b.ttl != nil {
+		return
+	}
+	b.ttl, b.reaped = scanLifetimes(b.root)
+	for id, e := range b.ttl {
+		e.LastAccessMS = max(e.LastAccessMS, b.access[id])
+		b.ttl[id] = e
+	}
+}
+
 func (b *XwalBackend) TTLEntries() []TTLEntry {
 	b.ttlMu.Lock()
-	if b.ttl == nil {
-		b.ttl = b.ttlScan()
-		for id, e := range b.ttl {
-			e.LastAccessMS = max(e.LastAccessMS, b.access[id])
-			b.ttl[id] = e
-		}
-	}
+	b.seedLifetimesLocked()
 	out := make([]TTLEntry, 0, len(b.ttl))
 	for _, e := range b.ttl {
 		out = append(out, e)
@@ -306,22 +336,23 @@ func (b *XwalBackend) TTLForget(ids ...string) {
 	}
 }
 
-// Caller holds ttlMu.
-func (b *XwalBackend) ttlScan() map[string]TTLEntry {
-	return ScanTTL(b.root)
-}
-
 // ScanTTL reads the sidecars alone: no store opened, no lock taken, nothing
 // woken, so it may run against a live daemon's store.
 func ScanTTL(root string) map[string]TTLEntry {
+	found, _ := scanLifetimes(root)
+	return found
+}
+
+func scanLifetimes(root string) (map[string]TTLEntry, map[string]ReapedEntry) {
 	found := map[string]TTLEntry{}
+	reaped := map[string]ReapedEntry{}
 	dir := filepath.Join(root, "_meta")
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			slog.Warn("ttl scan", "dir", dir, "err", err)
 		}
-		return found
+		return found, reaped
 	}
 	for _, e := range ents {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -335,8 +366,11 @@ func ScanTTL(root string) map[string]TTLEntry {
 		if entry, ok := ttlEntryOf(id, meta); ok {
 			found[id] = entry
 		}
+		if entry, ok := reapedEntryOf(id, meta); ok {
+			reaped[id] = entry
+		}
 	}
-	return found
+	return found, reaped
 }
 
 func (b *XwalBackend) LastAccess(id string) int64 {
