@@ -497,9 +497,12 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...Bir
 	if err != nil {
 		return "", 0, err
 	}
-	b.mirrorMintedBy(id, births(opts))
+	bt := births(opts)
+	b.mirrorMintedBy(id, bt)
 	b.dropForm(id)
-	b.lifetimeAtBirth(id)
+	if !bt.template {
+		b.lifetimeAtBirth(id)
+	}
 	return id, version, nil
 }
 

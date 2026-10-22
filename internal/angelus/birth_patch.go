@@ -87,7 +87,7 @@ func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patc
 			return rec.FormID, nil
 		}
 	}
-	id, version, err := backend.CreateForm("", birth)
+	id, version, err := backend.CreateForm("", birth, store.Template())
 	if err != nil {
 		return "", fmt.Errorf("mint default form: %w", err)
 	}

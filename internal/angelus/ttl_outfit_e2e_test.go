@@ -33,3 +33,33 @@ ttl = "1h"
 	require.EqualValues(t, 3600000, child.TTLMS, "a fork of a ttl outfit's aria lost the lifetime")
 	require.Greater(t, child.CreatedAtMS, int64(0))
 }
+
+// A default outfit's ttl is for the arias it dresses: the shared default form
+// they are forked from is a template, and reaping it would take every aria
+// beneath it.
+func TestDefaultOutfitTTLLeavesTheSharedFormUnleashed(t *testing.T) {
+	a, acli, ctx, dir := daemonFixtureDir(t)
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
+[system]
+provider = "mock"
+model = "mock-model"
+ttl = "1h"
+`), 0600))
+	_, err := acli.OutfitReload(ctx)
+	require.NoError(t, err)
+
+	created, err := acli.Create(ctx, nil, nil)
+	require.NoError(t, err)
+	meta, err := a.Backend.Meta(created.FigaroID)
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+	require.EqualValues(t, 3600000, meta.TTLMS, "the default outfit's ttl did not reach the aria")
+
+	node, ok := a.Backend.Node(created.FigaroID)
+	require.True(t, ok)
+	shared, err := a.Backend.Meta(node.Parent)
+	require.NoError(t, err)
+	if shared != nil {
+		require.Zero(t, shared.TTLMS, "the shared default form %s was given the outfit's lifetime", node.Parent)
+	}
+}
