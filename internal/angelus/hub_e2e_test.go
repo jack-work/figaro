@@ -58,7 +58,7 @@ model = "mock-model"
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
+	hs := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus: a,
 		Config:  loaded,
 		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
@@ -71,7 +71,9 @@ model = "mock-model"
 		Ctx: ctx,
 		// Without FormTemplates restoreOne fails "form unavailable".
 		FormTemplates: template.New("t"),
-	}).Map
+	})
+	a.Handlers = hs.Map
+	a.RemoveAria = hs.RemoveAria
 
 	go a.Run(ctx)
 	t.Cleanup(func() { a.Shutdown(0) })
