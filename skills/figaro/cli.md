@@ -212,6 +212,7 @@ pager `y` copies the name shown (the attended aria's, or a listing row's) and
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
+| `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What the ttl sweep soft-deleted, when each group is purged, and the way back. |
 | `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop an aria taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |
 | `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
@@ -260,21 +261,36 @@ lifetime and nothing is ever deleted.
 
 A spent lifetime does not delete a node in use. `system.keepalive` (same
 syntax; default one day, `[memory] keepalive_minutes`) keeps a node whose
-lifetime is spent while it was accessed within that window: a prompt, a
-`set`, an attend, a read, a fork from it, a status. `system.keepalive=0`
-gives the old behaviour, gone at its deadline. The sweep runs on
-`[memory] sweep_interval_seconds` (two minutes by default) and also passes
-over a node when anything its delete would take (the node and its branches)
-has a live agent, a bound shell, a role pointing at it, or an access within
-its own keepalive. So a forgotten parent cannot take a child somebody still
-uses. A retired aria (`figaro retire`) is held only by a keepalive it states
-itself, so `retire --ttl 1h` really ends it in an hour. `ls`, the tree view
-and the pager's `L` mark a row `[reaps in 3h]` inside the last quarter of its
-keepalive (at most six hours), `[reaping]` once it is due and only held, and
-`[retired]`; a row past its reap time that nothing holds is omitted, with a
-count of what was withheld. `figaro doctor ttl` reports every lifetime with
-when the sweep may take it, and `ls -j` carries `ttl_ms`, `expires_at`,
-`reaps_at`, `keepalive_ms` and `retired_at`.
+lifetime is spent while it was used within that window. Use is a successful
+call that names the aria: a prompt, a `set`, a read or `show`, attend, bind,
+listen, a fork from it, a queue read. `ls`, the tree view, the `L` pit, status
+and `doctor ttl` are not use, and neither is a call that was refused. Records
+nobody asked for (translation catch-up, study marks) do not count either: a
+node is measured from its last use, and from its newest record only until it
+is first used under 0.50. `system.keepalive=0` gives reaping at the deadline.
+The sweep runs on `[memory] sweep_interval_seconds` (two minutes by default)
+and also passes over a node when anything its delete would take (the node and
+its branches) has a live agent, a bound shell, a role pointing at it, or a use
+within its own keepalive. A retired aria (`figaro retire`) is held only by a
+keepalive it states itself, so `retire --ttl 1h` really ends it in an hour.
+
+What the sweep takes, it first reaps rather than deletes: the node and
+everything its delete would take get `system.reaped` (naming the root), leave
+`ls`, refuse prompts, and are indexed in the daemon form `@reaped`
+(`figaro form show @reaped`). `[memory] reaped_grace_hours` later (seven days by
+default; `0` deletes at once) the sweep purges the group, unless it has a live
+agent, a bound shell or a role pointing in. `figaro reaped` lists the groups,
+`figaro reaped restore <id>` brings one back (the keepalive then holds it a
+day; `--keep` also unsets its ttl), and `figaro reaped purge <id>` deletes it
+now. A fork of a reaped aria is not reaped.
+
+`ls`, the tree view and the pager's `L` mark a row `[reaps in 3h]` inside the
+last quarter of its keepalive (at most six hours), `[reaping]` once it is due
+and only held, and `[retired]`; a row past its reap time that nothing holds,
+and every reaped row, is omitted, with a count of what was withheld.
+`figaro doctor ttl` reports every lifetime with when the sweep may take it, and
+`ls -j` carries `ttl_ms`, `expires_at`, `reaps_at`, `keepalive_ms`,
+`retired_at` and `reaped_at`.
 
 Two `system.` keys are exceptions in one direction: they do not render
 themselves, they change what OTHER events say.

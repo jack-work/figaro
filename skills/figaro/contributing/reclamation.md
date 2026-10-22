@@ -215,6 +215,7 @@ an outfit or the form.
 dormant_after_minutes  = 15   # 0 disables reclamation entirely
 sweep_interval_seconds = 120  # floored at 1s
 keepalive_minutes      = 1440 # default system.keepalive; 0 = none
+reaped_grace_hours     = 168  # reaped arias wait this long; 0 = delete at once
 max_live_arias         = 0    # 0 = unbounded; SOFT cap
 ir_window_mb           = 4    # 0 = unbounded; the knob that matters
 ir_window              = 0    # row-count safety, floored at 64

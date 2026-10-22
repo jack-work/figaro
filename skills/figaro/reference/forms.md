@@ -326,6 +326,21 @@ A message never blinks out of existence on its way through:
 screen until its own transcript has adopted the turn — which it knows, and
 which the daemon must not have to know per-client.
 
+## `@reaped`: what the ttl sweep soft-deleted
+
+`@reaped` is a daemon form like `@models`: derived from the sidecars, held in
+memory, read-only. One entry per reaped group, keyed by the root the delete
+would start from:
+
+```
+items.<root>.{nodes, at, purge_at, mantra}
+grace_hours
+```
+
+`nodes` is every node the group holds (the root first or not; order is not
+meaningful). It changes when the sweep reaps or purges, and when a node is
+restored (`figaro reaped restore`, or removing `system.reaped` by hand).
+
 ## `@models`: the model catalog
 
 `@models` is the daemon's catalog of model metadata, one form for every aria.
