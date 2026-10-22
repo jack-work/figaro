@@ -1114,6 +1114,32 @@ bound shell, a role pointing into it, or a recently used branch under it.
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "reaped",
+		Group: "Session",
+		Short: "Arias the ttl sweep soft-deleted: list, restore or purge them",
+		Usage: "reaped [ls | restore <id> [--keep] | purge <id>] [-j]",
+		Long: `When an aria's lifetime is spent and nothing holds it, the sweep does not
+delete it at once: it reaps it. A reaped aria and everything under it are
+hidden from ls, refuse prompts, and wait [memory] reaped_grace_hours (seven
+days by default) before the sweep purges them for good. The index is the
+daemon form @reaped (figaro form show @reaped).
+
+  figaro reaped                 what is reaped, and when each purge is due
+  figaro reaped restore <id>    bring the group back; the keepalive holds
+                                it for a day, --keep also unsets system.ttl
+  figaro reaped purge <id>      delete the group now`,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "keep", IsBool: true, Description: "restore: also unset system.ttl on the root"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runReaped(ld, ctx.Args, ctx.BoolFlag("keep"), ctx.BoolFlag("json"))
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "move",
 		Group: "Session",
 		Short: "Move an aria and its whole fork tree to another node",

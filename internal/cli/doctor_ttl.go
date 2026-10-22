@@ -41,6 +41,7 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 				"reaps_at_ms":   reapsAt(f),
 				"keepalive":     (time.Duration(f.KeepaliveMS) * time.Millisecond).String(),
 				"retired_at_ms": f.RetiredAt,
+				"reaped_at_ms":  f.ReapedAt,
 				"expired":       reapsAt(f) <= now.UnixMilli(),
 			})
 		}
@@ -69,6 +70,9 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 		}
 		if f.RetiredAt > 0 {
 			status += " (retired)"
+		}
+		if f.ReapedAt > 0 {
+			status = "reaped " + relAge(f.ReapedAt) + " ago (figaro reaped)"
 		}
 		fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n",
 			f.ID, ttlOf(f).String(),

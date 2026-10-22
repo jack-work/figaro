@@ -146,7 +146,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			printUnreachable(resp.Unreachable)
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderFormScope(figs, boundID, o.limit)
-			printExpiredNote(hidden)
+			printExpiredNote(hidden, withheldReaped(resp.Figaros, figs))
 			return nil
 		}
 
@@ -158,7 +158,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			printUnreachable(resp.Unreachable)
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderGlobal(figs, boundID, o.limit)
-			printExpiredNote(hidden)
+			printExpiredNote(hidden, withheldReaped(resp.Figaros, figs))
 			return nil
 		}
 
@@ -169,6 +169,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 		printUnreachable(resp.Unreachable)
 		figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
+		reapedHidden := withheldReaped(resp.Figaros, figs)
 
 		if o.rootID != "" && o.rootID != "/" && !strings.HasPrefix(o.rootID, "^") {
 			if id, aerr := doorID(ctx, acli, o.rootID); aerr == nil {
@@ -230,16 +231,18 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		if note != "" {
 			fmt.Fprintf(stderrw, "\n%s\n", note)
 		}
-		printExpiredNote(hidden)
+		printExpiredNote(hidden, reapedHidden)
 		return nil
 	})
 }
 
-func printExpiredNote(n int) {
-	if n <= 0 {
-		return
+func printExpiredNote(n, reaped int) {
+	if expired := n - reaped; expired > 0 {
+		fmt.Fprintf(stderrw, "\n%d expired, hidden until the daemon's sweep takes them (figaro doctor ttl)\n", expired)
 	}
-	fmt.Fprintf(stderrw, "\n%d expired, hidden until the daemon's sweep takes them (figaro doctor ttl)\n", n)
+	if reaped > 0 {
+		fmt.Fprintf(stderrw, "\n%d reaped, hidden until purged or restored (figaro reaped)\n", reaped)
+	}
 }
 
 func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.Tree, []rpc.FigaroInfoResponse) {

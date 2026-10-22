@@ -15,6 +15,9 @@ func reapsAt(f rpc.FigaroInfoResponse) int64 {
 }
 
 func expired(f rpc.FigaroInfoResponse, nowMS int64) bool {
+	if f.ReapedAt > 0 {
+		return true
+	}
 	at := reapsAt(f)
 	return at > 0 &&
 		at <= nowMS &&
@@ -120,4 +123,18 @@ func dropExpired(figs []rpc.FigaroInfoResponse, nowMS int64) ([]rpc.FigaroInfoRe
 		kept = append(kept, f)
 	}
 	return kept, len(doomed)
+}
+
+func withheldReaped(all, kept []rpc.FigaroInfoResponse) int {
+	shown := make(map[string]bool, len(kept))
+	for _, f := range kept {
+		shown[f.ID] = true
+	}
+	n := 0
+	for _, f := range all {
+		if f.ReapedAt > 0 && !shown[f.ID] {
+			n++
+		}
+	}
+	return n
 }
