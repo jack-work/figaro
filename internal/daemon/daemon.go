@@ -69,21 +69,11 @@ func incumbentAnswers() bool {
 }
 
 func keepHushAlive(ctx context.Context, h *managed.Hush) {
-	interval := boot.HushAgentTTL() / 3
-	if interval > 5*time.Minute {
-		interval = 5 * time.Minute
-	}
-	if interval < 30*time.Second {
-		interval = 30 * time.Second
-	}
+	interval := hushKeepAliveInterval(boot.HushAgentTTL())
 	claimed := false
-	// Claim only after EnsureReady: a claim written earlier names a socket
-	// that may never exist.
-	ensure := func(stage string) {
-		if err := boot.ReviveHushAgent(h); err != nil {
-			slog.Warn("hush keep-alive: "+stage+" ensure failed", "err", err)
-			return
-		}
+	// Claim only after the agent answers: a claim written earlier names a
+	// socket that may never exist.
+	claim := func() {
 		if claimed {
 			return
 		}
@@ -93,7 +83,11 @@ func keepHushAlive(ctx context.Context, h *managed.Hush) {
 		}
 		claimed = true
 	}
-	ensure("initial")
+	if err := boot.ReviveHushAgent(h); err != nil {
+		slog.Warn("hush keep-alive: initial ensure failed", "err", err)
+	} else {
+		claim()
+	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -101,9 +95,21 @@ func keepHushAlive(ctx context.Context, h *managed.Hush) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			ensure("periodic")
+			renewed, err := boot.RenewHushAgent(h, 2*interval)
+			if err != nil {
+				slog.Warn("hush keep-alive: renewal failed", "err", err)
+				continue
+			}
+			if renewed {
+				slog.Info("hush keep-alive: replaced the agent before its deadline")
+			}
+			claim()
 		}
 	}
+}
+
+func hushKeepAliveInterval(ttl time.Duration) time.Duration {
+	return min(max(ttl/3, time.Second), 5*time.Minute)
 }
 
 // applyStoreSettings must run before the backend opens: the store reads its bounds

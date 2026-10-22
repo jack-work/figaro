@@ -3,8 +3,10 @@ package boot
 import (
 	"errors"
 	"net"
+	"os"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/jack-work/hush/managed"
 )
@@ -15,6 +17,37 @@ func ReviveHushAgent(h *managed.Hush) error {
 	hushAgentMu.Lock()
 	defer hushAgentMu.Unlock()
 	return h.EnsureReady()
+}
+
+func RenewHushAgent(h *managed.Hush, margin time.Duration) (renewed bool, err error) {
+	hushAgentMu.Lock()
+	defer hushAgentMu.Unlock()
+	left, err := h.Client().Status()
+	if err != nil {
+		return false, h.EnsureReady()
+	}
+	if h.Mode() != managed.ModeEmbedded {
+		return false, nil
+	}
+	remaining, err := time.ParseDuration(left)
+	if err != nil || remaining > margin {
+		return false, nil
+	}
+	if err := h.Client().Shutdown(); err != nil && !dialRefused(err) {
+		return false, err
+	}
+	awaitSocketGone(HushAgentSocket(h.Config().RuntimeDir), 5*time.Second)
+	return true, h.EnsureReady()
+}
+
+func awaitSocketGone(sock string, within time.Duration) {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sock); errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func dialRefused(err error) bool {
