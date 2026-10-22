@@ -59,7 +59,8 @@ func TestReapsAtHonoursKeepalive(t *testing.T) {
 	}{
 		{"never touched: the deadline", TTLEntry{DeadlineMS: 100 * hour}, 0, 100 * hour},
 		{"touched late: deadline moves to touch+default", TTLEntry{DeadlineMS: 100 * hour}, 99 * hour, 123 * hour},
-		{"access stamp counts like a write", TTLEntry{DeadlineMS: 100 * hour, LastAccessMS: 110 * hour}, 99 * hour, 134 * hour},
+		{"access stamp counts", TTLEntry{DeadlineMS: 100 * hour, LastAccessMS: 110 * hour}, 99 * hour, 134 * hour},
+		{"a write nobody asked for does not extend a stamped node", TTLEntry{DeadlineMS: 100 * hour, LastAccessMS: 90 * hour}, 99 * hour, 114 * hour},
 		{"own keepalive wins", TTLEntry{DeadlineMS: 100 * hour, Keepalive: &two}, 99 * hour, 101 * hour},
 		{"explicit zero: no mercy", TTLEntry{DeadlineMS: 100 * hour, Keepalive: &zero}, 99 * hour, 100 * hour},
 		{"retired: the default does not hold it", TTLEntry{DeadlineMS: 100 * hour, RetiredAtMS: 1}, 99 * hour, 100 * hour},
@@ -86,6 +87,12 @@ func TestTouchIsThrottledAndDurable(t *testing.T) {
 	b.Touch(id, t0.Add(time.Minute))
 	if got := ScanTTL(b.root)[id].LastAccessMS; got != t0.UnixMilli() {
 		t.Fatalf("a touch inside the granularity rewrote the sidecar: %d", got)
+	}
+	if got := b.TTLEntries()[0].LastAccessMS; got != t0.Add(time.Minute).UnixMilli() {
+		t.Fatalf("the in-memory stamp is %d; a touch inside the granularity must still count in memory", got)
+	}
+	if got := b.LastAccess(id); got != t0.Add(time.Minute).UnixMilli() {
+		t.Fatalf("LastAccess %d, want the unthrottled stamp", got)
 	}
 	later := t0.Add(touchGranularity + time.Second)
 	b.Touch(id, later)

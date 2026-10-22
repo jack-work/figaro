@@ -59,8 +59,14 @@ func KeepaliveFor(meta *AriaMeta, def time.Duration) time.Duration {
 }
 
 func (e TTLEntry) ReapsAt(def time.Duration, lastWriteMS int64) int64 {
-	last := max(e.LastAccessMS, lastWriteMS)
-	return max(e.DeadlineMS, last+e.KeepaliveOr(def).Milliseconds())
+	return max(e.DeadlineMS, LastUse(e.LastAccessMS, lastWriteMS)+e.KeepaliveOr(def).Milliseconds())
+}
+
+func LastUse(accessMS, lastWriteMS int64) int64 {
+	if accessMS > 0 {
+		return accessMS
+	}
+	return lastWriteMS
 }
 
 // ParseTTL accepts Go duration syntax plus the d and w suffixes. Empty, zero
@@ -211,6 +217,7 @@ func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 		delete(b.ttl, id)
 		return
 	}
+	e.LastAccessMS = max(e.LastAccessMS, b.access[id])
 	b.ttl[id] = e
 }
 
@@ -236,25 +243,30 @@ func ttlEntryOf(id string, meta *AriaMeta) (TTLEntry, bool) {
 const touchGranularity = 10 * time.Minute
 
 func (b *XwalBackend) Touch(id string, at time.Time) {
-	meta, err := b.Meta(id)
-	if err != nil || meta == nil {
-		return
-	}
 	ms := at.UnixMilli()
-	if ms-meta.LastAccessMS < touchGranularity.Milliseconds() {
+	b.ttlMu.Lock()
+	if b.access == nil {
+		b.access = map[string]int64{}
+	}
+	if ms > b.access[id] {
+		b.access[id] = ms
+	}
+	if e, ok := b.ttl[id]; ok && ms > e.LastAccessMS {
+		e.LastAccessMS = ms
+		b.ttl[id] = e
+	}
+	b.ttlMu.Unlock()
+	meta, err := b.Meta(id)
+	if err != nil || meta == nil || ms-meta.LastAccessMS < touchGranularity.Milliseconds() {
 		return
 	}
-	var updated AriaMeta
 	if err := b.UpdateMeta(id, func(m *AriaMeta) {
 		if ms > m.LastAccessMS {
 			m.LastAccessMS = ms
 		}
-		updated = *m
 	}); err != nil {
 		slog.Warn("access stamp: sidecar unwritable", "node", id, "err", err)
-		return
 	}
-	b.ttlNoted(id, &updated)
 }
 
 // TTLEntries scans the sidecar directory once; after that it is a map read
@@ -263,6 +275,10 @@ func (b *XwalBackend) TTLEntries() []TTLEntry {
 	b.ttlMu.Lock()
 	if b.ttl == nil {
 		b.ttl = b.ttlScan()
+		for id, e := range b.ttl {
+			e.LastAccessMS = max(e.LastAccessMS, b.access[id])
+			b.ttl[id] = e
+		}
 	}
 	out := make([]TTLEntry, 0, len(b.ttl))
 	for _, e := range b.ttl {
@@ -321,4 +337,14 @@ func ScanTTL(root string) map[string]TTLEntry {
 		}
 	}
 	return found
+}
+
+func (b *XwalBackend) LastAccess(id string) int64 {
+	b.ttlMu.Lock()
+	ms := b.access[id]
+	b.ttlMu.Unlock()
+	if meta, _ := b.Meta(id); meta != nil {
+		ms = max(ms, meta.LastAccessMS)
+	}
+	return ms
 }

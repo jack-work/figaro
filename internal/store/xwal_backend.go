@@ -43,6 +43,7 @@ type XwalBackend struct {
 	// must not queue behind a cold node open holding b.mu.
 	ttlMu    sync.Mutex
 	ttl      map[string]TTLEntry
+	access   map[string]int64
 	encoders translatorEncoders
 
 	// labels is never invalidated for a stump: its id is the hash of content
@@ -1071,6 +1072,9 @@ func (b *XwalBackend) buryAs(reason string, doomed []string) {
 		delete(b.lastTS, id)
 		delete(b.labels, id)
 		b.mu.Unlock()
+		b.ttlMu.Lock()
+		delete(b.access, id)
+		b.ttlMu.Unlock()
 		_ = os.Remove(b.metaPath(id))
 	}
 }

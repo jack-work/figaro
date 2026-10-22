@@ -24,6 +24,7 @@ type ttlKeeper interface {
 
 type toucher interface {
 	Touch(id string, at time.Time)
+	LastAccess(id string) int64
 }
 
 func (a *Angelus) keepalive() time.Duration { return a.Settings.Keepalive() }
@@ -85,10 +86,13 @@ func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, ro
 			continue
 		}
 		meta, _ := a.Backend.Meta(id)
-		last := a.Backend.LastTS(id)
-		if meta != nil {
-			last = max(last, meta.LastAccessMS)
+		var access int64
+		if t, ok := a.Backend.(toucher); ok {
+			access = t.LastAccess(id)
+		} else if meta != nil {
+			access = meta.LastAccessMS
 		}
+		last := store.LastUse(access, a.Backend.LastTS(id))
 		if ka := store.KeepaliveFor(meta, def); ka > 0 && last+ka.Milliseconds() > now.UnixMilli() {
 			return id, "accessed within its keepalive"
 		}
