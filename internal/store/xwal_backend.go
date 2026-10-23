@@ -33,6 +33,9 @@ type XwalBackend struct {
 	open  map[string]*ariaHandle
 	forms map[string]*Form
 	metas map[string]*metaCache
+
+	modelsMu sync.Mutex
+	models   *Form
 	// librettos: one fold goroutine per libretto, not per observer.
 	librettos map[string]*Libretto
 	// lastTS is aria id -> newest record timestamp, memoized.
@@ -1127,6 +1130,12 @@ func (b *XwalBackend) Close() error {
 		f.Close()
 	}
 	b.forms = map[string]*Form{}
+	b.modelsMu.Lock()
+	if b.models != nil {
+		b.models.Close()
+		b.models = nil
+	}
+	b.modelsMu.Unlock()
 	b.metas = map[string]*metaCache{}
 	return b.store.trunks.Close() // Trunks.Close flushes the topology index
 }

@@ -155,7 +155,7 @@ func studiesOf(snap interface {
 
 // isReservedStump: nodes carrying machinery rather than a conversation.
 func isReservedStump(id string) bool {
-	if id == topologyStump {
+	if id == topologyStump || id == modelsStump {
 		return true
 	}
 	_, isLibretto := SourceOfLibretto(id)
