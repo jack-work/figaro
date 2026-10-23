@@ -2,6 +2,8 @@ package angelus
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,17 +16,19 @@ type reapedKeeper interface {
 	ApplyForm(id string, patch form.Patch) (uint64, error)
 }
 
-func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Duration) {
+func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Duration) error {
 	keeper, ok := a.Backend.(reapedKeeper)
 	if !ok {
-		return
+		return nil
 	}
 	raw, _ := json.Marshal(e.ID)
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedKey: raw}, []string{store.SystemReapedUntilKey})
 	marked := 0
+	var failed error
 	for _, id := range taken {
 		if _, err := keeper.ApplyForm(id, patch); err != nil {
 			slog.Warn("lifetime spent, soft delete failed", "node", id, "root", e.ID, "err", err)
+			failed = errors.Join(failed, fmt.Errorf("soft delete %s: %w", id, err))
 			continue
 		}
 		marked++
@@ -32,6 +36,7 @@ func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Durati
 	slog.Info("soft-deleted a node whose lifetime was spent",
 		"node", e.ID, "ttl", e.TTL, "taken", marked,
 		"purge", time.Now().Add(grace).Format(time.RFC3339))
+	return failed
 }
 
 type reapedGroup struct {
@@ -57,7 +62,7 @@ func (a *Angelus) reapedGraceOf(g reapedGroup, daemon time.Duration) time.Durati
 	return a.purgeGraceIn(a.sandboxOf(g.root), daemon)
 }
 
-func reapedGroups(entries []store.ReapedEntry) []reapedGroup {
+func groupReaped(entries []store.ReapedEntry) []reapedGroup {
 	byRoot := map[string]*reapedGroup{}
 	var order []string
 	for _, e := range entries {
@@ -79,40 +84,44 @@ func reapedGroups(entries []store.ReapedEntry) []reapedGroup {
 	return out
 }
 
-func (a *Angelus) purgeReaped(keeper ttlKeeper, now time.Time) {
+func (a *Angelus) reapedGroups() []reapedGroup {
 	rk, ok := a.Backend.(reapedKeeper)
 	if !ok {
-		return
+		return nil
 	}
+	return groupReaped(rk.Reaped())
+}
+
+func (a *Angelus) mayBePastGrace(g reapedGroup, now time.Time) bool {
 	grace := a.Settings.ReapedGrace()
 	least, boxed := a.Settings.ShortestBoxPurgeGrace()
 	if !boxed || least > grace {
 		least = grace
 	}
-	bound := a.Registry.BoundPIDsByFigaro()
-	var roles map[string]string
-	for _, g := range reapedGroups(rk.Reaped()) {
-		if g.atMS == 0 || g.purgeAt(least).After(now) {
-			continue
-		}
-		if boxed && g.purgeAt(a.reapedGraceOf(g, grace)).After(now) {
-			continue
-		}
-		if roles == nil {
-			roles = a.roleTargets()
-		}
-		if node, why := a.liveIn(keeper.DeleteSet(g.root), bound, roles); why != "" && !g.killed() {
-			slog.Info("reaped node past its grace, kept: "+why, "node", g.root, "held_by", node)
-			continue
-		}
-		if err := a.RemoveAria(g.root, true); err != nil {
-			slog.Warn("reaped node past its grace, removal failed", "node", g.root, "err", err)
-			continue
-		}
-		keeper.TTLForget(g.root)
-		slog.Info("purged a reaped node", "node", g.root, "nodes", len(g.nodes),
-			"reaped", time.UnixMilli(g.atMS))
+	return g.atMS > 0 && !g.purgeAt(least).After(now)
+}
+
+func (a *Angelus) pastGrace(g reapedGroup, now time.Time) bool {
+	return g.atMS > 0 && !g.purgeAt(a.reapedGraceOf(g, a.Settings.ReapedGrace())).After(now)
+}
+
+func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
+	roles, ready := a.roleTargets()
+	if !ready {
+		slog.Debug("reaped node past its grace, waiting for the role index", "node", g.root)
+		return errNotYet
 	}
+	if node, why := a.liveIn(keeper.DeleteSet(g.root), a.Registry.BoundPIDsByFigaro(), roles); why != "" && !g.killed() {
+		slog.Info("reaped node past its grace, kept: "+why, "node", g.root, "held_by", node)
+		return nil
+	}
+	if err := a.RemoveAria(g.root, true); err != nil {
+		return err
+	}
+	keeper.TTLForget(g.root)
+	slog.Info("purged a reaped node", "node", g.root, "nodes", len(g.nodes),
+		"reaped", time.UnixMilli(g.atMS))
+	return nil
 }
 
 func (a *Angelus) liveIn(ids []string, bound map[string][]int, roles map[string]string) (string, string) {

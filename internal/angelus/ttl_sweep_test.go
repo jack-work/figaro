@@ -1,7 +1,7 @@
 package angelus
 
 import (
-	"encoding/json"
+	"context"
 	"testing"
 	"time"
 
@@ -20,6 +20,7 @@ type ttlFakeBackend struct {
 	metas         map[string]*store.AriaMeta
 	lastTS        map[string]int64
 	roles         map[string]string
+	rolesWarming  bool
 }
 
 func (f *ttlFakeBackend) TTLDue(int64) []store.TTLEntry { return f.due }
@@ -29,16 +30,19 @@ func (f *ttlFakeBackend) DeleteSet(id string) []string {
 }
 func (f *ttlFakeBackend) Meta(id string) (*store.AriaMeta, error) { return f.metas[id], nil }
 func (f *ttlFakeBackend) LastTS(id string) int64                  { return f.lastTS[id] }
-func (f *ttlFakeBackend) Forms() []store.NodeView {
-	var out []store.NodeView
-	for role := range f.roles {
-		out = append(out, store.NodeView{ID: role})
+func (f *ttlFakeBackend) RoleTargets() (map[string]string, bool) {
+	out := map[string]string{}
+	for role, target := range f.roles {
+		out[target] = role
 	}
-	return out
+	return out, !f.rolesWarming
 }
-func (f *ttlFakeBackend) FormState(id string) (form.Snapshot, error) {
-	raw, _ := json.Marshal(f.roles[id])
-	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": raw}, nil)), nil
+
+func (f *ttlFakeBackend) FormState(string) (form.Snapshot, error) { return form.Snapshot{}, nil }
+
+func sweepNow(a *Angelus) {
+	a.expireTTL()
+	a.reclaims().drain(context.Background())
 }
 
 type ttlMockFigaro struct{ id string }
@@ -80,7 +84,7 @@ func ttlSweepFixture(t *testing.T, due ...string) (*Angelus, *ttlFakeBackend, *[
 
 func TestExpireTTLRemovesADormantNode(t *testing.T) {
 	a, be, removed := ttlSweepFixture(t, "gone")
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 1 || (*removed)[0] != "gone" {
 		t.Fatalf("removed %v, want [gone]", *removed)
 	}
@@ -95,7 +99,7 @@ func TestExpireTTLSkipsALiveAria(t *testing.T) {
 	if err := a.Registry.Register(&ttlMockFigaro{id: "busy"}); err != nil {
 		t.Fatal(err)
 	}
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 0 {
 		t.Fatalf("removed %v; an aria with a live agent must survive its deadline", *removed)
 	}
@@ -109,7 +113,7 @@ func TestExpireTTLSkipsABoundShell(t *testing.T) {
 	if err := a.Registry.Bind(4242, "watched", 0); err != nil {
 		t.Fatal(err)
 	}
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 0 {
 		t.Fatalf("removed %v; a node with a bound shell must survive its deadline", *removed)
 	}
@@ -117,7 +121,7 @@ func TestExpireTTLSkipsABoundShell(t *testing.T) {
 
 func TestExpireTTLQuietWhenNothingIsDue(t *testing.T) {
 	a, _, removed := ttlSweepFixture(t)
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 0 {
 		t.Fatalf("removed %v with nothing due", *removed)
 	}
@@ -129,7 +133,7 @@ func TestExpireTTLIgnoresABackendWithoutLifetimes(t *testing.T) {
 		t.Error("a backend that keeps no lifetimes must never reach a deletion")
 		return nil
 	}
-	a.expireTTL()
+	sweepNow(a)
 }
 
 func hoursAgo(h int) int64 { return time.Now().Add(-time.Duration(h) * time.Hour).UnixMilli() }
@@ -139,7 +143,7 @@ func hoursAgo(h int) int64 { return time.Now().Add(-time.Duration(h) * time.Hour
 func TestExpireTTLKeepsANodeAccessedWithinTheKeepalive(t *testing.T) {
 	a, _, removed := ttlSweepFixture(t, "recent")
 	a.Backend.(*ttlFakeBackend).lastTS["recent"] = hoursAgo(3)
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 0 {
 		t.Fatalf("removed %v; a node written 3h ago is inside the default 1d keepalive", *removed)
 	}
@@ -149,7 +153,7 @@ func TestExpireTTLTakesANodeOnceItsKeepaliveRunsOut(t *testing.T) {
 	a, _, removed := ttlSweepFixture(t, "stale")
 	be := a.Backend.(*ttlFakeBackend)
 	be.lastTS["stale"] = hoursAgo(25)
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 1 {
 		t.Fatalf("removed %v; a node idle past its keepalive and deadline must go", *removed)
 	}
@@ -159,7 +163,7 @@ func TestExpireTTLCountsAReadLikeAWrite(t *testing.T) {
 	a, _, removed := ttlSweepFixture(t, "read")
 	be := a.Backend.(*ttlFakeBackend)
 	be.due[0].LastAccessMS = hoursAgo(2)
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 0 {
 		t.Fatalf("removed %v; an attend 2h ago is an access", *removed)
 	}
@@ -170,7 +174,7 @@ func TestExpireTTLRetiredIgnoresTheDefaultKeepalive(t *testing.T) {
 	be := a.Backend.(*ttlFakeBackend)
 	be.due[0].RetiredAtMS = hoursAgo(1)
 	be.lastTS["tomb"] = hoursAgo(1)
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 1 {
 		t.Fatalf("removed %v; a retired node with a spent ttl is the tombstone's point", *removed)
 	}
@@ -206,7 +210,7 @@ func TestExpireTTLKeepsAParentWhoseChildIsInUse(t *testing.T) {
 			be.subtree["parent"] = []string{"child"}
 			be.lastTS["parent"] = hoursAgo(72)
 			arrange(a, be)
-			a.expireTTL()
+			sweepNow(a)
 			if len(*removed) != 0 {
 				t.Fatalf("removed %v; the delete would take a child in use", *removed)
 			}
@@ -219,7 +223,7 @@ func TestExpireTTLTakesAParentWithIdleChildren(t *testing.T) {
 	be.subtree["parent"] = []string{"child"}
 	be.lastTS["parent"] = hoursAgo(72)
 	be.lastTS["child"] = hoursAgo(48)
-	a.expireTTL()
+	sweepNow(a)
 	if len(*removed) != 1 {
 		t.Fatalf("removed %v; nothing under the parent is in use", *removed)
 	}

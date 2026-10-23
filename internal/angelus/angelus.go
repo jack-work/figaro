@@ -46,6 +46,9 @@ type Angelus struct {
 	// nil disables the TTL sweep's deletions.
 	RemoveAria func(id string, recursive bool) error
 
+	reclaimOnce sync.Once
+	reclaim     *reclaimer
+
 	// Sessions is daemon-wide, scoped by aria id: killing or hibernating an
 	// agent must not take its children's addressability with it.
 	Sessions *tool.SessionRegistry
@@ -170,6 +173,8 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	go a.pidMonitor(ctx)
 	go a.keepReachable(ctx, pidPath)
+	go a.reclaims().run(ctx)
+	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
 
 	err = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit())

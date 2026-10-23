@@ -102,7 +102,7 @@ func (h *handlers) refreshReapedForm() {
 		raw, _ := json.Marshal(v)
 		keys[k] = raw
 	}
-	for _, g := range reapedGroups(idx.Reaped()) {
+	for _, g := range groupReaped(idx.Reaped()) {
 		base := "items." + g.root + "."
 		put(base+"nodes", g.nodes)
 		if g.atMS > 0 {

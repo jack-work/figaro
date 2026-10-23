@@ -34,6 +34,17 @@ func daemonFixture(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Contex
 
 func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Context, string) {
 	t.Helper()
+	return daemonFixtureConfig(t, "")
+}
+
+func hardDeleteFixture(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Context) {
+	t.Helper()
+	a, acli, ctx, _ := daemonFixtureConfig(t, "[memory]\nreaped_grace_hours = 0\n")
+	return a, acli, ctx
+}
+
+func daemonFixtureConfig(t testing.TB, extra string) (*angelus.Angelus, *sdk.Angelus, context.Context, string) {
+	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
@@ -42,7 +53,7 @@ provider = "mock"
 model = "mock-model"
 `), 0600))
 	// A named default makes the lifecycle observable: the empty form's hash never moves.
-	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0600))
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"+extra), 0600))
 	a, acli, ctx := daemonOnStore(t, dir, nil)
 	return a, acli, ctx, dir
 }
@@ -54,12 +65,12 @@ func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store
 	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 
-	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
+	loaded, err := config.Load(dir)
+	require.NoError(t, err)
+	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend, Settings: loaded})
 	if setup != nil {
 		setup(a, backend)
 	}
-	loaded, err := config.Load(dir)
-	require.NoError(t, err)
 	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	a.Peercred = peer

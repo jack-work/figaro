@@ -38,53 +38,87 @@ func (a *Angelus) expireTTL() {
 		return
 	}
 	now := time.Now()
-	a.purgeReaped(keeper, now)
-	due := keeper.TTLDue(now.UnixMilli())
-	if len(due) == 0 {
-		return
+	for _, g := range a.reapedGroups() {
+		if a.mayBePastGrace(g, now) {
+			a.reclaims().enqueue(g.root)
+		}
 	}
 	def := a.keepalive()
-	bound := a.Registry.BoundPIDsByFigaro()
-	var roles map[string]string
-	grace := a.Settings.ReapedGrace()
-	for _, e := range due {
+	for _, e := range keeper.TTLDue(now.UnixMilli()) {
 		if e.ReapedAtMS > 0 {
 			continue
 		}
-		if reaps := e.ReapsAt(def, a.Backend.LastTS(e.ID)); reaps > now.UnixMilli() {
-			slog.Debug("lifetime spent, kept alive by recent access",
-				"node", e.ID, "until", time.UnixMilli(reaps))
+		if e.ReapsAt(def, a.Backend.LastTS(e.ID)) > now.UnixMilli() {
 			continue
 		}
-		taken := keeper.DeleteSet(e.ID)
-		if len(taken) == 0 {
-			taken = []string{e.ID}
-		}
-		if roles == nil {
-			roles = a.roleTargets()
-		}
-		if node := a.otherSandboxIn(taken, e.ID); node != "" {
-			slog.Info("lifetime spent, kept: a node it would take runs in another sandbox", "node", e.ID, "held_by", node, "ttl", e.TTL)
-			continue
-		}
-		if node, why := a.heldIn(taken, e.ID, bound, roles, def, now); why != "" {
-			slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
-			continue
-		}
-		if g := a.purgeGraceIn(a.sandboxOf(e.ID), grace); g > 0 {
-			a.softDelete(e, taken, g)
-			continue
-		}
-		if err := a.RemoveAria(e.ID, true); err != nil {
-			slog.Warn("lifetime spent, removal failed", "node", e.ID, "err", err)
-			continue
-		}
-		keeper.TTLForget(e.ID)
-		slog.Info("removed a node whose lifetime was spent",
-			"node", e.ID, "ttl", e.TTL, "taken", len(taken),
-			"created", time.UnixMilli(e.CreatedAtMS),
-			"expired", time.UnixMilli(e.DeadlineMS))
+		a.reclaims().enqueue(e.ID)
 	}
+}
+
+func (a *Angelus) reapOne(id string) error {
+	keeper, ok := a.Backend.(ttlKeeper)
+	if !ok || a.RemoveAria == nil {
+		return nil
+	}
+	now := time.Now()
+	for _, g := range a.reapedGroups() {
+		if g.root == id {
+			if !a.pastGrace(g, now) {
+				return nil
+			}
+			return a.purge(keeper, g)
+		}
+	}
+	return a.expire(keeper, id, now)
+}
+
+func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
+	var e store.TTLEntry
+	found := false
+	for _, d := range keeper.TTLDue(now.UnixMilli()) {
+		if d.ID == id {
+			e, found = d, true
+			break
+		}
+	}
+	if !found || e.ReapedAtMS > 0 {
+		return nil
+	}
+	def := a.keepalive()
+	if reaps := e.ReapsAt(def, a.Backend.LastTS(e.ID)); reaps > now.UnixMilli() {
+		slog.Debug("lifetime spent, kept alive by recent access",
+			"node", e.ID, "until", time.UnixMilli(reaps))
+		return nil
+	}
+	roles, ready := a.roleTargets()
+	if !ready {
+		slog.Debug("lifetime spent, waiting for the role index", "node", e.ID)
+		return errNotYet
+	}
+	taken := keeper.DeleteSet(e.ID)
+	if len(taken) == 0 {
+		taken = []string{e.ID}
+	}
+	if node := a.otherSandboxIn(taken, e.ID); node != "" {
+		slog.Info("lifetime spent, kept: a node it would take runs in another sandbox", "node", e.ID, "held_by", node, "ttl", e.TTL)
+		return nil
+	}
+	if node, why := a.heldIn(taken, e.ID, a.Registry.BoundPIDsByFigaro(), roles, def, now); why != "" {
+		slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
+		return nil
+	}
+	if g := a.purgeGraceIn(a.sandboxOf(e.ID), a.Settings.ReapedGrace()); g > 0 {
+		return a.softDelete(e, taken, g)
+	}
+	if err := a.RemoveAria(e.ID, true); err != nil {
+		return err
+	}
+	keeper.TTLForget(e.ID)
+	slog.Info("removed a node whose lifetime was spent",
+		"node", e.ID, "ttl", e.TTL, "taken", len(taken),
+		"created", time.UnixMilli(e.CreatedAtMS),
+		"expired", time.UnixMilli(e.DeadlineMS))
+	return nil
 }
 
 func (a *Angelus) otherSandboxIn(taken []string, self string) string {
@@ -138,18 +172,16 @@ func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, ro
 	return "", ""
 }
 
-func (a *Angelus) roleTargets() map[string]string {
-	out := map[string]string{}
-	for _, f := range a.Backend.Forms() {
-		snap, err := a.Backend.FormState(f.ID)
-		if err != nil {
-			continue
-		}
-		if v := snap.Lookup("target-aria"); v != nil && *v != "" {
-			out[*v] = f.ID
-		}
+type roleIndexer interface {
+	RoleTargets() (map[string]string, bool)
+}
+
+func (a *Angelus) roleTargets() (map[string]string, bool) {
+	idx, ok := a.Backend.(roleIndexer)
+	if !ok {
+		return map[string]string{}, true
 	}
-	return out
+	return idx.RoleTargets()
 }
 
 var touchingMethods = map[string]bool{
