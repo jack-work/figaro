@@ -34,8 +34,8 @@ a node whose species changed under it, and the marker would need a write
 path. Binding forks instead, so kind is decided once, at node creation, and
 the index can read it without opening heads.
 
-The special case inventory is CLOSED. The stumps, null and `@topology`, are
-the only special nodes: neither can be forked or branched. The
+The special case inventory is CLOSED. The stumps (null, `@topology` and
+`@models`) are the only special nodes: none can be forked or branched. The
 only other distinctions are bound versus unbound, and cast versus uncast.
 A change that adds a third kind is a change to this design, not an
 implementation detail.

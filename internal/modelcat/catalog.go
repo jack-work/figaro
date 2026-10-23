@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -24,11 +23,10 @@ type Config struct {
 	Build        Builder
 	Providers    func() []string
 	Poll         time.Duration
-	Path         string
+	Form         *store.Form
 	TTL          time.Duration
 	Retry        time.Duration
 	FetchTimeout time.Duration
-	PersistDelay time.Duration
 	Now          func() time.Time
 }
 
@@ -36,7 +34,6 @@ const (
 	DefaultTTL          = 24 * time.Hour
 	DefaultRetry        = 10 * time.Minute
 	DefaultFetchTimeout = 30 * time.Second
-	DefaultPersistDelay = 2 * time.Second
 )
 
 type Catalog struct {
@@ -47,9 +44,8 @@ type Catalog struct {
 	provs  map[string]*provState
 	closed bool
 
-	persist chan struct{}
-	wg      sync.WaitGroup
-	ctx     context.Context
+	wg  sync.WaitGroup
+	ctx context.Context
 }
 
 type provState struct {
@@ -73,27 +69,19 @@ func New(cfg Config) *Catalog {
 	if cfg.FetchTimeout <= 0 {
 		cfg.FetchTimeout = DefaultFetchTimeout
 	}
-	if cfg.PersistDelay <= 0 {
-		cfg.PersistDelay = DefaultPersistDelay
-	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	c := &Catalog{
-		cfg:     cfg,
-		form:    store.NewMemForm(),
-		provs:   map[string]*provState{},
-		persist: make(chan struct{}, 1),
-		ctx:     context.Background(),
+	f := cfg.Form
+	if f == nil {
+		f = store.NewMemForm()
 	}
-	c.load()
-	c.form.OnCommit(func(uint64, message.Patch) {
-		select {
-		case c.persist <- struct{}{}:
-		default:
-		}
-	})
-	return c
+	return &Catalog{
+		cfg:   cfg,
+		form:  f,
+		provs: map[string]*provState{},
+		ctx:   context.Background(),
+	}
 }
 
 func (c *Catalog) Form() *store.Form { return c.form }
@@ -126,29 +114,15 @@ func (c *Catalog) Run(ctx context.Context) {
 		defer poll.Stop()
 		polled = poll.C
 	}
-	var timer *time.Timer
-	var fire <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
-			if timer != nil {
-				timer.Stop()
-			}
 			c.stopWanting()
 			c.wg.Wait()
-			c.save()
 			return
 		case <-polled:
 			c.listAll()
 			poll.Reset(c.jittered())
-		case <-c.persist:
-			if timer == nil {
-				timer = time.NewTimer(c.cfg.PersistDelay)
-				fire = timer.C
-			}
-		case <-fire:
-			timer, fire = nil, nil
-			c.save()
 		}
 	}
 }
@@ -460,49 +434,23 @@ func (c *Catalog) publish(providerName string, p models.Provider) {
 	}
 }
 
-func (c *Catalog) load() {
-	if c.cfg.Path == "" {
-		return
+func Import(f *store.Form, path string) error {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
-	data, err := os.ReadFile(c.cfg.Path)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("models: read cache", "path", c.cfg.Path, "err", err)
+		return err
+	}
+	if cur, _ := f.Snapshot(); cur.Len() == 0 {
+		var snap form.Snapshot
+		if err := json.Unmarshal(data, &snap); err != nil {
+			slog.Warn("models: old cache unreadable, dropping it", "path", path, "err", err)
+		} else if snap.Len() > 0 {
+			if _, _, err := f.ApplyEffect(snap.AsPatch(), 0); err != nil {
+				return fmt.Errorf("models: import %s: %w", path, err)
+			}
 		}
-		return
 	}
-	var snap form.Snapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
-		slog.Warn("models: cache unreadable, starting empty", "path", c.cfg.Path, "err", err)
-		return
-	}
-	if snap.Len() == 0 {
-		return
-	}
-	if _, _, err := c.form.ApplyEffect(snap.AsPatch(), 0); err != nil {
-		slog.Warn("models: load cache", "err", err)
-	}
-}
-
-func (c *Catalog) save() {
-	if c.cfg.Path == "" {
-		return
-	}
-	data, err := json.Marshal(c.Snapshot())
-	if err != nil {
-		slog.Warn("models: encode cache", "err", err)
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(c.cfg.Path), 0o755); err != nil {
-		slog.Warn("models: cache dir", "err", err)
-		return
-	}
-	tmp := c.cfg.Path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		slog.Warn("models: write cache", "err", err)
-		return
-	}
-	if err := os.Rename(tmp, c.cfg.Path); err != nil {
-		slog.Warn("models: commit cache", "err", err)
-	}
+	return os.Remove(path)
 }

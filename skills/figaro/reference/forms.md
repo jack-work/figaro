@@ -29,7 +29,7 @@ sense.
 | **outfit** | A named patch in `outfits/<name>.toml`, folded into a form at birth or onto a live aria, and stored once per content version (`<name>@<hash>`). |
 | **intrinsic** | A form a host publishes as part of itself (`<id>/runtime`, `<id>/queue`): derived, never persisted, gone with its host. |
 | **catalog** | A live, daemon-scoped, read-only form: `@models` and `@reaped`. |
-| **stump** | A form that cannot be forked or branched. Two today, as special cases: the null (ur) form and `@topology`. |
+| **stump** | A form that cannot be forked or branched. Three today, as special cases: the null (ur) form, `@topology`, and the store behind `@models`. |
 
 ---
 
@@ -369,8 +369,13 @@ restored (`figaro reaped restore`, or removing `system.reaped` by hand).
 ## `@models`: the model catalog
 
 `@models` is the daemon's catalog of model metadata, one form for every aria.
-It lives in memory, is snapshotted to `$FIGARO_CACHE_DIR/models.json` so a
-cold daemon answers before any network, and refuses every write.
+It is a stump in the store: its patches are its truth, its version survives a
+restart, and a cold daemon answers from it before any network. Every poll
+restamps it, so once its form channel rotates the sealed segments are
+dropped (the active segment's watermark holds their state); a reader behind
+that floor reseeds from the snapshot. It refuses every write from a client.
+A `$FIGARO_CACHE_DIR/models.json` left by an older daemon is imported as its
+first patch, then removed.
 
 ```
 <provider>.models.<model>.{name, context.default, context.long, max_output, hidden, source}

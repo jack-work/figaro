@@ -2,7 +2,9 @@ package modelcat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 type fakeProvider struct {
@@ -269,13 +272,38 @@ func TestAnUnchangedRefreshTouchesOnlyTheStamp(t *testing.T) {
 	require.Equal(t, []string{"p.attempted_at", "p.refreshed_at"}, keys)
 }
 
+type modelsStore struct {
+	root string
+	be   *store.XwalBackend
+}
+
+func openModelsStore(t *testing.T, root string) (*modelsStore, *store.Form) {
+	t.Helper()
+	be, err := store.NewXwalBackend(root, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { be.Close() })
+	f, err := be.ModelsForm()
+	require.NoError(t, err)
+	return &modelsStore{root: root, be: be}, f
+}
+
+func (s *modelsStore) reopen(t *testing.T) *store.Form {
+	t.Helper()
+	require.NoError(t, s.be.Close())
+	next, f := openModelsStore(t, s.root)
+	*s = *next
+	return f
+}
+
 func TestTheCatalogSurvivesARestart(t *testing.T) {
+	root := t.TempDir()
+	be, err := store.NewXwalBackend(root, 0)
+	require.NoError(t, err)
+	f, err := be.ModelsForm()
+	require.NoError(t, err)
 	var calls atomic.Int32
 	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "gpt-4.1", ContextWindow: 1_047_576}}}
-	path := filepath.Join(t.TempDir(), "models.json")
-	cfg := Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Path: path, PersistDelay: time.Millisecond}
-
-	c := New(cfg)
+	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Form: f})
 	ctx, cancel := context.WithCancel(context.Background())
 	ran := make(chan struct{})
 	go func() { c.Run(ctx); close(ran) }()
@@ -283,9 +311,50 @@ func TestTheCatalogSurvivesARestart(t *testing.T) {
 	waitFor(t, func() bool { return limitOf(c, "openai", "gpt-4.1") == 1_047_576 })
 	cancel()
 	<-ran
+	_, version := f.Snapshot()
+	require.NoError(t, be.Close())
 
-	again := New(Config{Path: path})
-	require.Equal(t, 1_047_576, limitOf(again, "openai", "gpt-4.1"), "a cold daemon answers from the file before any network")
+	_, againForm := openModelsStore(t, root)
+	again := New(Config{Form: againForm})
+	require.Equal(t, 1_047_576, limitOf(again, "openai", "gpt-4.1"), "a cold daemon answers from the store before any network")
+	_, againVersion := again.Form().Snapshot()
+	require.Equal(t, version, againVersion)
+}
+
+// The first daemon on this version finds the old cache file: it becomes the
+// form's first patch, and the file goes.
+func TestTheOldCacheFileIsImportedOnceAndRemoved(t *testing.T) {
+	root := t.TempDir()
+	old := New(Config{})
+	old.publish("openai", models.Provider{RefreshedAt: 7, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 1_047_576}}}})
+	data, err := json.Marshal(old.Snapshot())
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "models.json")
+	require.NoError(t, os.WriteFile(path, data, 0o644))
+
+	st, f := openModelsStore(t, root)
+	require.NoError(t, Import(f, path))
+	_, err = os.Stat(path)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	c := New(Config{Form: f})
+	require.Equal(t, 1_047_576, limitOf(c, "openai", "gpt-4.1"))
+	_, imported := f.Snapshot()
+
+	f = st.reopen(t)
+	snap, version := f.Snapshot()
+	require.Equal(t, imported, version)
+	require.Equal(t, 1_047_576, models.EntryLimit(snap, "openai", "gpt-4.1", ""))
+
+	stale := New(Config{})
+	stale.publish("openai", models.Provider{RefreshedAt: 1, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 8}}}})
+	data, err = json.Marshal(stale.Snapshot())
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, data, 0o644))
+	require.NoError(t, Import(f, path))
+	_, after := f.Snapshot()
+	require.Equal(t, version, after, "a form that already holds the catalog ignores a stray file")
+	_, err = os.Stat(path)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestANilCatalogAnswersNothing(t *testing.T) {
@@ -363,10 +432,9 @@ func TestStartListsOnlyStaleProviders(t *testing.T) {
 	clk := newClock()
 	fresh := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "f1", ContextWindow: 1}}}
 	stale := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "s1", ContextWindow: 1}}}
-	path := filepath.Join(t.TempDir(), "models.json")
-	seed := New(Config{Build: perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}), Path: path, Now: clk.Now})
+	st, f := openModelsStore(t, t.TempDir())
+	seed := New(Config{Build: perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}), Form: f, Now: clk.Now})
 	require.NoError(t, seed.Refresh(context.Background(), "fresh", "stale"))
-	seed.save()
 	fresh.calls.Store(0)
 	stale.calls.Store(0)
 
@@ -374,13 +442,12 @@ func TestStartListsOnlyStaleProviders(t *testing.T) {
 	raw := seed.current("stale")
 	raw.RefreshedAt = clk.Now().Add(-7 * time.Hour).UnixMilli()
 	seed.publish("stale", raw)
-	seed.save()
 
 	c := New(Config{
 		Build:     perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}),
 		Providers: func() []string { return []string{"fresh", "stale", "never"} },
 		Poll:      6 * time.Hour,
-		Path:      path,
+		Form:      st.reopen(t),
 		Now:       clk.Now,
 	})
 	runCatalog(t, c)

@@ -171,6 +171,22 @@ func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 	return b, nil
 }
 
+func modelsForm(backend store.Backend) *store.Form {
+	b, ok := backend.(interface{ ModelsForm() (*store.Form, error) })
+	if !ok {
+		return nil
+	}
+	f, err := b.ModelsForm()
+	if err != nil {
+		slog.Error("models: the catalog form will not open; keeping it in memory", "err", err)
+		return nil
+	}
+	if err := modelcat.Import(f, filepath.Join(boot.CacheDir(), "models.json")); err != nil {
+		slog.Warn("models: import the old cache", "err", err)
+	}
+	return f
+}
+
 func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
 	return decide.New(func(provider string) (decide.Target, error) {
 		up, err := relay.Resolve(loaded, provider)
@@ -340,7 +356,7 @@ func Run() {
 		Build:     func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
 		Providers: func() []string { return catalogProviders(loaded) },
 		Poll:      loaded.ModelsPoll(),
-		Path:      filepath.Join(boot.CacheDir(), "models.json"),
+		Form:      modelsForm(backend),
 	})
 	go a.Models.Run(ctx)
 

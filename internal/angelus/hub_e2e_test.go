@@ -42,11 +42,21 @@ model = "mock-model"
 `), 0600))
 	// A named default makes the lifecycle observable: the empty form's hash never moves.
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0600))
+	a, acli, ctx := daemonOnStore(t, dir, nil)
+	return a, acli, ctx, dir
+}
 
+// daemonOnStore serves the store under dir; setup runs before the handlers
+// are built, which is when a daemon wires its catalogs.
+func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend)) (*angelus.Angelus, *sdk.Angelus, context.Context) {
+	t.Helper()
 	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
+	if setup != nil {
+		setup(a, backend)
+	}
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
@@ -82,7 +92,7 @@ model = "mock-model"
 	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
-	return a, acli, ctx, dir
+	return a, acli, ctx
 }
 
 // ariaConn is one connection on the door addressing one aria, the way
