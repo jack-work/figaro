@@ -104,7 +104,7 @@ func rendererForLocked(width int) *markdownRenderer {
 	if r, ok := rendererCache[width]; ok {
 		return r
 	}
-	r := newMarkdownRenderer(max(width+2, 1))
+	r := newMarkdownRenderer(width)
 	rendererCache[width] = r
 	return r
 }

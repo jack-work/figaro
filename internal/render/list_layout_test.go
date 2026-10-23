@@ -94,3 +94,21 @@ func TestLayoutMarksNeverReachTheScreen(t *testing.T) {
 		}
 	}
 }
+
+// glamour counts one column for a blockquote's indent and draws two, so a row
+// filled to the width overflowed by one and its last word fell onto a row of
+// its own, outside the quote.
+func TestBlockquoteRowsKeepTheirBarAndTheirWidth(t *testing.T) {
+	md := "> okay can you please give one final readthrough of my report having just seen my repo as a smoke test to make sure i didnt miss anything at all\n>\n> > a nested quote long enough to wrap around the width more than once, surely\n\nafter"
+	for w := 30; w <= 120; w++ {
+		rows := plainRows(md, w)
+		for i, row := range rows {
+			if n := len([]rune(row)); n > w {
+				t.Errorf("width %d: row %q is %d cells", w, row, n)
+			}
+			if i < len(rows)-2 && !strings.HasPrefix(row, "  │") {
+				t.Errorf("width %d: row %d %q fell out of the quote", w, i, row)
+			}
+		}
+	}
+}

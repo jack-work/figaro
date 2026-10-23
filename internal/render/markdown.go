@@ -22,13 +22,15 @@ import (
 const (
 	itemMark        = "\u2060"
 	paragraphMark   = "\u2063"
+	quoteMark       = "\u2064"
 	listMarkerCells = 3
+	quoteBar        = "│ "
 )
 
-var layoutMarks = strings.NewReplacer(itemMark, "", paragraphMark, "")
+var layoutMarks = strings.NewReplacer(itemMark, "", paragraphMark, "", quoteMark, "")
 
 func stripLayoutMarks(row string) string {
-	for _, mark := range []string{itemMark, paragraphMark} {
+	for _, mark := range []string{itemMark, paragraphMark, quoteMark} {
 		for at := strings.Index(row, mark); at >= 0; at = strings.Index(row, mark) {
 			from, to := at, at+len(mark)
 			if open := strings.LastIndex(row[:at], "\x1b["); open >= 0 && isSGR(row[open:at]) &&
@@ -48,9 +50,10 @@ func isSGR(seq string) bool {
 type markdownRenderer struct {
 	md     goldmark.Markdown
 	marker xansi.Style
+	width  int
 }
 
-func newMarkdownRenderer(wrap int) *markdownRenderer {
+func newMarkdownRenderer(width int) *markdownRenderer {
 	st := styles.DarkStyleConfig
 	indent := uint(listMarkerCells)
 	st.List.StyleBlock.Indent = &indent
@@ -59,18 +62,22 @@ func newMarkdownRenderer(wrap int) *markdownRenderer {
 	st.Task.Ticked = itemMark
 	st.Task.Unticked = itemMark
 	st.Paragraph.Suffix = paragraphMark
+	quoteIndent := uint(len([]rune(quoteBar)))
+	st.BlockQuote.Indent = &quoteIndent
+	quoteToken := quoteMark
+	st.BlockQuote.IndentToken = &quoteToken
 	tableWrap := true
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
-		ansi.NewRenderer(ansi.Options{WordWrap: wrap, TableWrap: &tableWrap, Styles: st}), 1000))))
+		ansi.NewRenderer(ansi.Options{WordWrap: max(width+2, 1), TableWrap: &tableWrap, Styles: st}), 1000))))
 	var marker xansi.Style
 	if c := st.Document.Color; c != nil {
 		marker = marker.ForegroundColor(lipgloss.Color(*c))
 	}
-	return &markdownRenderer{md: md, marker: marker}
+	return &markdownRenderer{md: md, marker: marker, width: width}
 }
 
 func (r *markdownRenderer) Render(md string) (string, error) {
@@ -81,7 +88,7 @@ func (r *markdownRenderer) Render(md string) (string, error) {
 	if err := r.md.Renderer().Render(&buf, source, doc); err != nil {
 		return "", err
 	}
-	return layout.apply(buf.String(), r.marker), nil
+	return layout.apply(buf.String(), r.marker, r.width), nil
 }
 
 type listLayout struct {
@@ -176,7 +183,7 @@ func endsItemText(p gast.Node) bool {
 	return next == nil || next.Kind() == gast.KindList
 }
 
-func (l listLayout) apply(out string, marker xansi.Style) string {
+func (l listLayout) apply(out string, marker xansi.Style, width int) string {
 	rows := strings.Split(out, "\n")
 	kept := rows[:0]
 	item, para := 0, 0
@@ -187,6 +194,9 @@ func (l listLayout) apply(out string, marker xansi.Style) string {
 				gapEnds = true
 			}
 			para++
+		}
+		if barred := drawQuoteBars(row); barred != row {
+			row = xansi.Truncate(barred, max(width, 1), "")
 		}
 		if gapEnds && onlyRules(layoutMarks.Replace(row)) {
 			continue
@@ -210,4 +220,25 @@ func placeMarker(row, marker string, style xansi.Style) string {
 
 func onlyRules(row string) bool {
 	return strings.Trim(StripEscapes(row), " │") == ""
+}
+
+func drawQuoteBars(row string) string {
+	if !strings.Contains(row, quoteMark) {
+		return row
+	}
+	bar := []rune(quoteBar)
+	var b strings.Builder
+	n := 0
+	for {
+		at := strings.Index(row, quoteMark)
+		if at < 0 {
+			break
+		}
+		b.WriteString(row[:at])
+		b.WriteRune(bar[n%len(bar)])
+		n++
+		row = row[at+len(quoteMark):]
+	}
+	b.WriteString(row)
+	return b.String()
 }
