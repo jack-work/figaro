@@ -1018,6 +1018,23 @@ func (v formView) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
+type formStater interface {
+	FormStateAt(ariaID string, version uint64) (form.Snapshot, error)
+}
+
+func (v formView) StateAt(version uint64) (form.Snapshot, bool) {
+	fs, ok := v.backend.(formStater)
+	if !ok {
+		return form.Snapshot{}, false
+	}
+	snap, err := fs.FormStateAt(v.id, version)
+	if err != nil {
+		slog.Debug("form state at", "form", v.id, "version", version, "err", err)
+		return form.Snapshot{}, false
+	}
+	return snap, true
+}
+
 // endTurn commits the live unit and signals idle.
 func (a *Agent) endTurn(reason string) {
 	a.refreshMetrics()

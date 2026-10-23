@@ -22,6 +22,10 @@ func NewDeriver(bound Form, studies map[string]Form) *Deriver {
 	return &Deriver{form: bound, studies: studies, lastStudy: map[string]uint64{}, snap: form.Snapshot{}}
 }
 
+type formStater interface {
+	StateAt(version uint64) (form.Snapshot, bool)
+}
+
 func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
@@ -37,9 +41,16 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	}
 	switch {
 	case d.form != nil:
-		if d.lastForm > 0 {
-			d.snap = form.Fold(d.snap, d.form.PatchesBetween(0, d.lastForm))
+		if d.lastForm == 0 {
+			break
 		}
+		if s, ok := d.form.(formStater); ok {
+			if snap, ok := s.StateAt(d.lastForm); ok {
+				d.snap = snap
+				break
+			}
+		}
+		d.snap = form.Fold(d.snap, d.form.PatchesBetween(0, d.lastForm))
 	default:
 		// No accessor: O(entries before the watermark), on this branch only.
 		prefix, _ := store.TailAfter(log, 0)

@@ -396,6 +396,14 @@ func (b *XwalBackend) FormVersion(ariaID string) (uint64, error) {
 	return f.Read().Version, nil
 }
 
+func (b *XwalBackend) FormStateAt(ariaID string, version uint64) (form.Snapshot, error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return form.Snapshot{}, err
+	}
+	return f.StateAt(version)
+}
+
 // FormPatchesBetween is a read-only view on the form's published patch array;
 // the caller must not retain or mutate it.
 func (b *XwalBackend) FormPatchesBetween(ariaID string, after, upTo uint64) ([]VersionedPatch, error) {

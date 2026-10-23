@@ -252,6 +252,28 @@ func (f *Form) Base() (form.Snapshot, uint64) {
 	return form.Snapshot{}, 0
 }
 
+type formStateLog interface {
+	StateAt(version uint64) (form.Snapshot, error)
+}
+
+func (f *Form) StateAt(version uint64) (form.Snapshot, error) {
+	st := f.state.Load()
+	if version == st.version {
+		return st.snap, nil
+	}
+	if version > st.version {
+		return form.Snapshot{}, fmt.Errorf("form: version %d is past the head %d", version, st.version)
+	}
+	if sl, ok := f.log.(formStateLog); ok {
+		return sl.StateAt(version)
+	}
+	snap := form.Snapshot{}
+	for _, vp := range f.PatchesBetween(0, version) {
+		snap = snap.Apply(vp.Patch)
+	}
+	return snap, nil
+}
+
 // The cold path; allocates.
 func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	var out []VersionedPatch
@@ -738,7 +760,34 @@ func (l *xwalFormLog) Base() (form.Snapshot, uint64) {
 	return snap, l.base
 }
 
-func (l *xwalFormLog) Floor() uint64 { return 0 }
+func (l *xwalFormLog) Floor() uint64 {
+	xw, err := l.backend.store.openNode(l.ariaID)
+	if err != nil {
+		return 0
+	}
+	defer xw.Close()
+	return xw.ChannelFloor(chanForm)
+}
+
+func (l *xwalFormLog) StateAt(version uint64) (form.Snapshot, error) {
+	if version == 0 {
+		return form.Snapshot{}, nil
+	}
+	xw, err := l.backend.store.openNode(l.ariaID)
+	if err != nil {
+		return form.Snapshot{}, err
+	}
+	defer xw.Close()
+	raw, err := xw.StateAt(chanForm, version)
+	if err != nil {
+		return form.Snapshot{}, err
+	}
+	snap := form.Snapshot{}
+	if err := snap.UnmarshalJSON(raw); err != nil {
+		return form.Snapshot{}, err
+	}
+	return snap, nil
+}
 
 func (l *xwalFormLog) AppendPatch(payload []byte) (uint64, error) {
 	return l.backend.store.trunks.Append(l.ariaID, chanForm, 0, payload, nil)
