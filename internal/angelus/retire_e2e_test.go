@@ -60,10 +60,7 @@ func TestAReadStampsTheAccessTheKeepaliveCounts(t *testing.T) {
 	before := time.Now().UnixMilli()
 	var page json.RawMessage
 	require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodRead, rpc.ReadRequest{}, &page))
-	meta, err := a.Backend.Meta(id)
-	require.NoError(t, err)
-	require.NotNil(t, meta)
-	require.GreaterOrEqual(t, meta.LastAccessMS, before, "the read left no access stamp")
+	require.GreaterOrEqual(t, lastAccess(t, a, id), before, "the read left no access stamp")
 }
 
 // A fork carries its parent's sidecar across; retirement must not ride along,
