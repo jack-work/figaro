@@ -127,3 +127,24 @@ func TestProviderStatus(t *testing.T) {
 	_, ok = ProviderStatus(cat, "copilot")
 	require.False(t, ok)
 }
+
+// Providers decodes the whole catalog in one read; a dotted id must come back
+// as one model, not as a nested object.
+func TestProvidersDecodesTheCatalogWithDottedIDs(t *testing.T) {
+	cat := catalogOf(t, map[string]Provider{
+		"openai": {RefreshedAt: 7, Models: map[string]Entry{
+			"gpt-4.1": {Context: Context{Default: 1_047_576}, Hidden: true, Source: SourceAPI},
+		}},
+		"copilot": {Error: "no credential"},
+	})
+	provs, err := Providers(cat)
+	require.NoError(t, err)
+	require.Len(t, provs, 2)
+	require.Equal(t, int64(7), provs["openai"].RefreshedAt)
+	require.Equal(t, Entry{Context: Context{Default: 1_047_576}, Hidden: true, Source: SourceAPI}, provs["openai"].Models["gpt-4.1"])
+	require.Equal(t, "no credential", provs["copilot"].Error)
+
+	empty, err := Providers(form.Snapshot{})
+	require.NoError(t, err)
+	require.Empty(t, empty)
+}

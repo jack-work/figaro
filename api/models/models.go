@@ -31,6 +31,7 @@ type Entry struct {
 	Name      string  `json:"name,omitempty"`
 	Context   Context `json:"context"`
 	MaxOutput int     `json:"max_output,omitempty"`
+	Hidden    bool    `json:"hidden,omitempty"`
 	Source    string  `json:"source"`
 }
 
@@ -45,6 +46,18 @@ type Status struct {
 	RefreshedAt time.Time
 	AttemptedAt time.Time
 	Error       string
+}
+
+func Providers(catalog form.Snapshot) (map[string]Provider, error) {
+	raw, err := json.Marshal(catalog)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]Provider{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func Lookup(catalog form.Snapshot, provider, model string) (Entry, bool) {

@@ -309,6 +309,7 @@ func entryOf(info provider.ModelInfo, source string) models.Entry {
 		Name:      name,
 		Context:   models.Context{Default: info.ContextWindow, Long: info.LongContextWindow},
 		MaxOutput: info.MaxTokens,
+		Hidden:    info.Hidden,
 		Source:    source,
 	}
 }
