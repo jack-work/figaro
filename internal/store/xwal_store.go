@@ -610,6 +610,50 @@ func (s *XwalStore) Promote(id string, levels int) (int, error) {
 	return levels, nil
 }
 
+func (s *XwalStore) Demote(id, prefer string) (string, error) {
+	if s.tree == nil {
+		return "", ErrNoTrunkCapability
+	}
+	if _, ok := s.Node(id); !ok {
+		return "", fmt.Errorf("demote: no aria %q", id)
+	}
+	under := s.demoteTarget(id, prefer)
+	if under == "" {
+		return "", nil
+	}
+	if err := s.tree.Demote(id, under); err != nil {
+		if errors.Is(err, topo.ErrNoPromote) {
+			return "", ErrNoTrunkCapability
+		}
+		return "", err
+	}
+	return under, nil
+}
+
+func (s *XwalStore) demoteTarget(id, prefer string) string {
+	var kids []NodeView
+	for _, k := range s.tree.Children(id) {
+		node, ok := s.Node(k)
+		if !ok || node.Kind != string(kindConversation) {
+			continue
+		}
+		if k == prefer {
+			return k
+		}
+		kids = append(kids, node)
+	}
+	if len(kids) == 0 {
+		return ""
+	}
+	sort.Slice(kids, func(i, j int) bool {
+		if kids[i].BranchedLT != kids[j].BranchedLT {
+			return kids[i].BranchedLT < kids[j].BranchedLT
+		}
+		return kids[i].ID < kids[j].ID
+	})
+	return kids[0].ID
+}
+
 func (s *XwalStore) promotableInto(id string) bool {
 	parent, ok := s.tree.Parent(id)
 	if !ok || parent == "" {

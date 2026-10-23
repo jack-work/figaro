@@ -564,6 +564,10 @@ func (b *XwalBackend) Promote(ariaID string, levels int) (int, error) {
 	return b.store.Promote(ariaID, levels)
 }
 
+func (b *XwalBackend) Demote(ariaID, prefer string) (string, error) {
+	return b.store.Demote(ariaID, prefer)
+}
+
 func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error) {
 	o, err := b.store.OwnerOf(ariaID, atMainLT)
 	if err != nil {

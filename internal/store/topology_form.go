@@ -248,6 +248,29 @@ func (t *TopologyTree) Promote(id string) error {
 	return t.apply(patch)
 }
 
+func (t *TopologyTree) Demote(id, under string) error {
+	parent, ok := t.Parent(id)
+	if !ok || parent == "" {
+		return fmt.Errorf("trunk: %q is a root", id)
+	}
+	if p, _ := t.Parent(under); p != id {
+		return fmt.Errorf("trunk: %q is not drawn under %q", under, id)
+	}
+	patch := newEdgeIntent()
+	for _, kid := range t.Children(id) {
+		if kid == under {
+			continue
+		}
+		up, _ := t.topo.From(kid)
+		edge(patch, kid, under, up)
+	}
+	underUp, _ := t.topo.From(under)
+	idUp, _ := t.topo.From(id)
+	edge(patch, under, parent, underUp)
+	edge(patch, id, under, idUp)
+	return t.apply(patch)
+}
+
 // edgeIntent is collected and diffed once against the form it applies to: a
 // structural patch is a difference and cannot be assembled field by field.
 type edgeIntent struct {

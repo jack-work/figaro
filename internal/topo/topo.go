@@ -16,6 +16,7 @@ type Tree interface {
 	// DeleteSet is id plus its descendants.
 	DeleteSet(id string) []string
 	Promote(id string) error
+	Demote(id, under string) error
 	// Normalized reports whether this tree agrees with the topology.
 	Normalized() bool
 	// Overridden is empty exactly when Normalized.
@@ -45,6 +46,7 @@ type topoTree struct{ t Topology }
 func (x topoTree) Parent(id string) (string, bool) { return x.t.From(id) }
 func (x topoTree) Children(id string) []string     { return x.t.ChildrenOf(id) }
 func (x topoTree) Promote(string) error            { return ErrNoPromote }
+func (x topoTree) Demote(string, string) error     { return ErrNoPromote }
 func (x topoTree) Normalized() bool                { return true }
 func (x topoTree) Overridden() []string            { return nil }
 func (x topoTree) Edges() map[string]string        { return nil }

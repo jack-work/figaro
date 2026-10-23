@@ -308,3 +308,30 @@ func TestTopologyForm_ForgetWritesNothingWhenNothingMatches(t *testing.T) {
 		t.Fatalf("Forget of unknown ids wrote a record: rev %d -> %d", rev, x.Rev())
 	}
 }
+
+// Demote keeps grandchildren where they are: D rides along under C, and A's
+// delete set shrinks to A alone.
+func TestTopologyForm_DemoteLeavesALeaf(t *testing.T) {
+	x, f := openTopo(t)
+	if err := x.Demote("A", "B"); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"B": "null", "C": "B", "A": "B", "D": "C"} {
+		if p, _ := x.Parent(id); p != want {
+			t.Errorf("Parent(%s) = %q, want %q", id, p, want)
+		}
+	}
+	if del := x.DeleteSet("A"); len(del) != 1 || del[0] != "A" {
+		t.Fatalf("DeleteSet(A) = %v, want [A]", del)
+	}
+	if up, _ := f.From("C"); up != "A" {
+		t.Errorf("TOPOLOGY moved: From(C) = %q, want A", up)
+	}
+}
+
+func TestTopologyForm_DemoteRefusesAStranger(t *testing.T) {
+	x, _ := openTopo(t)
+	if err := x.Demote("A", "D"); err == nil {
+		t.Fatal("D is a grandchild of A; demoting under it must be refused")
+	}
+}

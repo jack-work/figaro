@@ -202,6 +202,8 @@ type Backend interface {
 	// it climbed; ErrAtStump when rooted at an outfit.
 	Promote(ariaID string, levels int) (climbed int, err error)
 
+	Demote(ariaID, prefer string) (under string, err error)
+
 	// Normalize runs deferred topology work now: blocking, O(absorbed bytes).
 	Normalize() (detached int, err error)
 
