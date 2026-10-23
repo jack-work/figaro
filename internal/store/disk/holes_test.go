@@ -34,8 +34,8 @@ func TestADroppedMiddleSegmentIsAHoleNotAMisroute(t *testing.T) {
 	l, dir := holedLog(t)
 	victim := l.sealed[2]
 	keep := func(first, last uint64) bool { return first != victim.base }
-	if n, err := l.DropSealed(keep); err != nil || n != 1 {
-		t.Fatalf("DropSealed = %d, %v", n, err)
+	if dropped, err := l.DropSealed(keep); err != nil || len(dropped) != 1 {
+		t.Fatalf("DropSealed = %v, %v", dropped, err)
 	}
 	check := func(l *Log, when string) {
 		t.Helper()
@@ -147,4 +147,126 @@ func TestReadersDuringADropSeeOnlyGoodRecordsOrTheHole(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
+}
+
+func TestDroppableNamesWhatDropSealedWouldTake(t *testing.T) {
+	l, _ := holedLog(t)
+	defer l.Close()
+	keep := func(first, last uint64) bool { return first%2 == 0 }
+	plan := l.Droppable(keep)
+	if len(plan) == 0 {
+		t.Fatal("the plan is empty; the test needs something to drop")
+	}
+	for _, sp := range plan {
+		if sp.Bytes <= 0 {
+			t.Fatalf("span %+v carries no size", sp)
+		}
+	}
+	got, err := l.DropSealed(keep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(plan) {
+		t.Fatalf("dropped %v, the plan said %v", got, plan)
+	}
+	if again := l.Droppable(keep); len(again) != 0 {
+		t.Fatalf("after the drop the plan still names %v", again)
+	}
+}
+
+func TestTheFloorIsTheTopOfTheHighestHole(t *testing.T) {
+	l, _ := holedLog(t)
+	defer l.Close()
+	if f := l.Floor(); f != 0 {
+		t.Fatalf("an intact log has floor %d", f)
+	}
+	low, high := l.sealed[1], l.sealed[3]
+	if _, err := l.DropSealed(func(first, last uint64) bool { return first != low.base && first != high.base }); err != nil {
+		t.Fatal(err)
+	}
+	if f := l.Floor(); f != high.last {
+		t.Fatalf("floor %d, want %d (the top of the highest hole)", f, high.last)
+	}
+}
+
+func TestAFrontDropRaisesTheFloor(t *testing.T) {
+	l, _ := holedLog(t)
+	defer l.Close()
+	cut := l.sealed[2].base
+	if _, err := l.DropSealed(func(first, last uint64) bool { return first >= cut }); err != nil {
+		t.Fatal(err)
+	}
+	if f := l.Floor(); f != cut-1 {
+		t.Fatalf("floor %d, want %d", f, cut-1)
+	}
+}
+
+// A child sees only the parent's holes below its fork base: one above it is
+// history the child never read.
+func TestAChildFloorCountsOnlyTheParentHolesItReads(t *testing.T) {
+	parent, _ := holedLog(t)
+	defer parent.Close()
+	below, above := parent.sealed[1], parent.sealed[4]
+	fork := parent.sealed[3].base + 1
+	childDir := filepath.Join(t.TempDir(), "child")
+	if err := os.MkdirAll(childDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(childDir, ".fork"), []byte(fmt.Sprintf("base=%d\n", fork)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	child, err := Open(childDir, Options{SegmentSize: 64, Parent: parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.Close()
+	if _, err := parent.DropSealed(func(first, last uint64) bool { return first != above.base }); err != nil {
+		t.Fatal(err)
+	}
+	if f := child.Floor(); f != 0 {
+		t.Fatalf("a hole above the fork base gave the child floor %d", f)
+	}
+	if _, err := parent.DropSealed(func(first, last uint64) bool { return first != below.base }); err != nil {
+		t.Fatal(err)
+	}
+	if f := child.Floor(); f != below.last {
+		t.Fatalf("child floor %d, want %d", f, below.last)
+	}
+}
+
+// A forked log's marker must line up with its first segment on open, so a
+// front drop there keeps its stub instead of deleting the range outright.
+func TestAFrontDropInAForkedLogReopens(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".fork"), []byte("base=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(dir, Options{SegmentSize: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := uint64(1); i <= 40; i++ {
+		if err := l.Write(i, []byte(fmt.Sprintf("rec-%02d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cut := l.sealed[2].base
+	if _, err := l.DropSealed(func(first, last uint64) bool { return first >= cut }); err != nil {
+		t.Fatal(err)
+	}
+	if f := l.Floor(); f != cut-1 {
+		t.Fatalf("floor %d, want %d", f, cut-1)
+	}
+	l.Close()
+	l2, err := Open(dir, Options{SegmentSize: 64})
+	if err != nil {
+		t.Fatalf("reopen after a front drop: %v", err)
+	}
+	defer l2.Close()
+	if f := l2.Floor(); f != cut-1 {
+		t.Fatalf("reopened floor %d, want %d", f, cut-1)
+	}
+	if got, err := l2.Read(cut); err != nil || string(got) != fmt.Sprintf("rec-%02d", cut) {
+		t.Fatalf("read %d = %q, %v", cut, got, err)
+	}
 }

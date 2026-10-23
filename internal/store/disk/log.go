@@ -32,7 +32,6 @@ var (
 	ErrAbsent        = errors.New("log directory does not exist")
 	ErrForkMismatch  = errors.New(".fork base starts before the first segment")
 	ErrBelowForkBase = errors.New("cut below the fork base: the prefix is the parent's")
-	errRangeBoundary = errors.New("range reached fork boundary")
 )
 
 type Options struct {
@@ -270,19 +269,18 @@ func (l *Log) Sync() error {
 // Range iterates from `from` (clamped to FirstIndex) to LastIndex; fork
 // prefixes are served from the parent chain.
 func (l *Log) Range(from uint64, fn func(idx uint64, payload []byte) error) error {
-	// After a fork the parent's segments end at forkBase-1, so parent.Range
-	// will not yield beyond our forkBase on its own.
+	return l.rangeThrough(from, ^uint64(0), fn)
+}
+
+func (l *Log) rangeThrough(from, upTo uint64, fn func(idx uint64, payload []byte) error) error {
 	if l.parent != nil && from < l.forkBase {
-		err := l.parent.Range(from, func(idx uint64, payload []byte) error {
-			if idx >= l.forkBase {
-				return errRangeBoundary
-			}
-			return fn(idx, payload)
-		})
-		if err != nil && !errors.Is(err, errRangeBoundary) {
+		if err := l.parent.rangeThrough(from, min(upTo, l.forkBase-1), fn); err != nil {
 			return err
 		}
 		from = l.forkBase
+	}
+	if from > upTo {
+		return nil
 	}
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -290,7 +288,7 @@ func (l *Log) Range(from uint64, fn func(idx uint64, payload []byte) error) erro
 		return nil
 	}
 	first := l.firstIndexLocked()
-	last := l.lastIndexLocked()
+	last := min(l.lastIndexLocked(), upTo)
 	if from < first {
 		from = first
 	}
