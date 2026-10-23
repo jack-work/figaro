@@ -25,6 +25,7 @@ const (
 	quoteMark       = "\u2064"
 	listMarkerCells = 3
 	quoteBar        = "│ "
+	heldHyphen      = "\u2011"
 )
 
 var layoutMarks = strings.NewReplacer(itemMark, "", paragraphMark, "", quoteMark, "")
@@ -81,7 +82,7 @@ func newMarkdownRenderer(width int) *markdownRenderer {
 }
 
 func (r *markdownRenderer) Render(md string) (string, error) {
-	source := []byte(layoutMarks.Replace(md))
+	source := r.holdHyphens([]byte(layoutMarks.Replace(md)))
 	doc := r.md.Parser().Parse(text.NewReader(source))
 	layout := layOutLists(doc)
 	var buf bytes.Buffer
@@ -89,6 +90,56 @@ func (r *markdownRenderer) Render(md string) (string, error) {
 		return "", err
 	}
 	return layout.apply(buf.String(), r.marker, r.width), nil
+}
+
+func (r *markdownRenderer) holdHyphens(source []byte) []byte {
+	if !bytes.Contains(source, []byte("-")) {
+		return source
+	}
+	doc := r.md.Parser().Parse(text.NewReader(source))
+	held := make([]bool, len(source))
+	_ = gast.Walk(doc, func(n gast.Node, entering bool) (gast.WalkStatus, error) {
+		if !entering {
+			return gast.WalkContinue, nil
+		}
+		switch n.Kind() {
+		case gast.KindParagraph, gast.KindTextBlock, gast.KindHeading:
+			lines := n.Lines()
+			for i := 0; i < lines.Len(); i++ {
+				seg := lines.At(i)
+				for k := seg.Start; k < seg.Stop; k++ {
+					held[k] = true
+				}
+			}
+		case gast.KindAutoLink:
+			label := n.(*gast.AutoLink).Label(source)
+			at := cap(source) - cap(label)
+			for k := at; k >= 0 && k < at+urlPathStart(label) && k < len(held); k++ {
+				held[k] = false
+			}
+		}
+		return gast.WalkContinue, nil
+	})
+	out := make([]byte, 0, len(source)+16)
+	for k, b := range source {
+		if b == '-' && held[k] {
+			out = append(out, heldHyphen...)
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+func urlPathStart(url []byte) int {
+	host := 0
+	if i := bytes.Index(url, []byte("://")); i >= 0 {
+		host = i + 3
+	}
+	if i := bytes.IndexByte(url[host:], '/'); i >= 0 {
+		return host + i
+	}
+	return len(url)
 }
 
 type listLayout struct {
@@ -205,7 +256,7 @@ func (l listLayout) apply(out string, marker xansi.Style, width int) string {
 			row = placeMarker(row, l.markers[item], marker)
 			item += n
 		}
-		kept = append(kept, stripLayoutMarks(row))
+		kept = append(kept, strings.ReplaceAll(stripLayoutMarks(row), heldHyphen, "-"))
 	}
 	return strings.Join(kept, "\n")
 }

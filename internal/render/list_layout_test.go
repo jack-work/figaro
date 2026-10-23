@@ -112,3 +112,39 @@ func TestBlockquoteRowsKeepTheirBarAndTheirWidth(t *testing.T) {
 		}
 	}
 }
+
+// ansi.Wrap breaks after every hyphen, so a path in a code span or a URL that
+// fit on the next row was split at its first hyphen instead.
+func TestAHyphenIsNotABreak(t *testing.T) {
+	md := "some leading words here and then `ol/report/paper/ol-report.tex` and https://example.com/jack-cs7641-notes/blob/report.pdf done"
+	for w := 40; w <= 140; w++ {
+		for _, row := range plainRows(md, w) {
+			if strings.HasSuffix(row, "-") {
+				t.Errorf("width %d: a row ends at a hyphen: %q", w, row)
+			}
+			if strings.Contains(row, heldHyphen) {
+				t.Errorf("width %d: a held hyphen reached the screen: %q", w, row)
+			}
+		}
+	}
+}
+
+func TestAHeldHyphenComesBackInTheLinkTarget(t *testing.T) {
+	for _, row := range Prose("see https://example.com/jack-cs7641-notes/x for it", 80) {
+		if strings.Contains(row, heldHyphen) {
+			t.Fatalf("a held hyphen survived in the row bytes: %q", row)
+		}
+	}
+}
+
+func TestHyphenatedListMarkersAndRulesStayMarkdown(t *testing.T) {
+	expectRows(t, "- a well-known item\n\n---\n\n| a-b | c |\n|-----|---|\n| d-e | f |\n", 40, []string{
+		"   • a well-known item",
+		"",
+		"  --------",
+		"",
+		"   a-b               │ c",
+		"  ───────────────────┼──────────────────",
+		"   d-e               │ f",
+	})
+}
