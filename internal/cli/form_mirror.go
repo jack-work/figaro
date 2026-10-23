@@ -18,10 +18,11 @@ import (
 // formMirror is a client's own copy of an aria's form, kept live by the server's
 // patches.
 type formMirror struct {
-	mu      sync.Mutex
-	snap    form.Snapshot
-	version uint64
-	gaps    int
+	mu          sync.Mutex
+	snap        form.Snapshot
+	incarnation uint64
+	version     uint64
+	gaps        int
 	// schema is non-zero once a peer sent an envelope version we cannot read:
 	// the mirror has stopped tracking.
 	schema int
@@ -37,10 +38,13 @@ const (
 	formIncompatible
 )
 
-func (m *formMirror) reset(snap form.Snapshot, version uint64) {
+func (m *formMirror) reset(snap form.Snapshot, incarnation, version uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.snap, m.version = snap, version
+	if incarnation < m.incarnation || incarnation == m.incarnation && version < m.version {
+		return
+	}
+	m.snap, m.incarnation, m.version = snap, incarnation, version
 }
 
 func (m *formMirror) apply(d rpc.FormDelta) formApply {
@@ -50,6 +54,11 @@ func (m *formMirror) apply(d rpc.FormDelta) formApply {
 	case d.Schema != rpc.FormDeltaSchema:
 		m.schema = d.Schema
 		return formIncompatible
+	case d.Incarnation < m.incarnation:
+		return formApplied
+	case d.Incarnation > m.incarnation:
+		m.gaps++
+		return formResync
 	case d.Version <= m.version:
 		return formApplied
 	case d.Version != m.version+1:

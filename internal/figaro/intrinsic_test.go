@@ -346,3 +346,62 @@ func TestACoalescedRunLeavesTheQueueEntirely(t *testing.T) {
 		}
 	}
 }
+
+// A woken aria's intrinsics restart their versions at 1; only a later
+// incarnation tells a watching client that the form it mirrors was replaced.
+func TestARebornIntrinsicIsALaterIncarnation(t *testing.T) {
+	prev := newIntrinsic(IntrinsicRuntime)
+	defer prev.close()
+	for range 1000 {
+		next := newIntrinsic(IntrinsicRuntime)
+		if next.incarnation <= prev.incarnation {
+			t.Fatalf("incarnation %d follows %d", next.incarnation, prev.incarnation)
+		}
+		prev.close()
+		prev = next
+	}
+}
+
+type deltaSink struct{ deltas []rpc.FormDelta }
+
+func (d *deltaSink) Notify(method string, params any) error {
+	if fd, ok := params.(rpc.FormDelta); ok && method == rpc.MethodFormDelta {
+		d.deltas = append(d.deltas, fd)
+	}
+	return nil
+}
+
+// A client seeds its mirror from a read and follows it with deltas; both must
+// name the same incarnation or the seed and the stream cannot be told apart
+// from a replaced form.
+func TestTheRuntimeDeltaAndTheReadNameTheSameIncarnation(t *testing.T) {
+	a := &Agent{id: "test", inbox: newTestInbox(t)}
+	sink := &deltaSink{}
+	a.Subscribe(sink)
+	a.openIntrinsics()
+	t.Cleanup(func() { a.runtime.close(); a.queue.close() })
+	a.publishRuntime(rpc.RuntimeThinking, "")
+
+	params, _ := json.Marshal(rpc.FormRequest{Intrinsic: IntrinsicRuntime})
+	out, err := a.Handle(context.Background(), rpc.MethodForm, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := out.(rpc.FormResponse)
+	if read.Incarnation == 0 {
+		t.Fatal("the read of an intrinsic carries no incarnation")
+	}
+	var runtime int
+	for _, d := range sink.deltas {
+		if d.Intrinsic != IntrinsicRuntime {
+			continue
+		}
+		runtime++
+		if d.Incarnation != read.Incarnation {
+			t.Fatalf("a delta names incarnation %d, the read %d", d.Incarnation, read.Incarnation)
+		}
+	}
+	if runtime == 0 {
+		t.Fatal("no runtime delta reached the subscriber")
+	}
+}

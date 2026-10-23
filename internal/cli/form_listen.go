@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -69,14 +68,10 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		acli.Close()
 		return nil, nil, fmt.Errorf("dial aria: %w", err)
 	}
-	view.refetch = func() (form.Snapshot, uint64, error) {
+	view.refetch = func() (*rpc.FormResponse, error) {
 		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer rcancel()
-		resp, rerr := fcli.FormOf(rctx, intrinsic)
-		if rerr != nil {
-			return form.Snapshot{}, 0, rerr
-		}
-		return resp.Snapshot, resp.Version, nil
+		return fcli.FormOf(rctx, intrinsic)
 	}
 	view.resync()
 	return view, func() { fcli.Close(); acli.Close(); cancel() }, nil
@@ -102,7 +97,7 @@ type formView struct {
 	top       int
 	notice    string
 	stopped   bool
-	refetch   func() (form.Snapshot, uint64, error)
+	refetch   func() (*rpc.FormResponse, error)
 	closeConn func()
 	repaint   func() // the host's; the view never paints itself
 }
@@ -131,12 +126,12 @@ func (v *formView) resync() {
 	if v.refetch == nil || stopped {
 		return
 	}
-	snap, version, err := v.refetch()
+	resp, err := v.refetch()
 	if err != nil {
 		v.setNotice("resync failed: " + err.Error())
 		return
 	}
-	v.mirror.reset(snap, version)
+	v.mirror.reset(resp.Snapshot, resp.Incarnation, resp.Version)
 	v.changed()
 }
 

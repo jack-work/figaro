@@ -308,6 +308,14 @@ They push. `form.delta` carries a `intrinsic` field; empty means the identity
 segment, which is what every form delta on that wire has always meant, so an
 older peer that ignores the field reads exactly what it read before.
 
+An intrinsic dies with its agent, so an aria woken from dormancy publishes a
+new one whose versions start again at 1. Every delta and every read of an
+intrinsic carries an `incarnation`, increasing across the daemon's lifetime, and
+a mirror orders on (incarnation, version): a newer incarnation means re-read, an
+older one is ignored. Without it a client watching across a hibernation took
+the new form's deltas for replays and kept the last turn's verdict on the bar
+while the aria worked.
+
 ### `<id>/runtime`
 
 | key | meaning |

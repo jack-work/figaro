@@ -96,7 +96,7 @@ func (f *modelsFeed) dial() {
 	if err != nil {
 		return
 	}
-	f.mirror.reset(seed.Snapshot, seed.Version)
+	f.mirror.reset(seed.Snapshot, seed.Incarnation, seed.Version)
 	f.changed()
 }
 

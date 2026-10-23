@@ -556,7 +556,7 @@ func TestCommentDeleteAsksFirst(t *testing.T) {
 			"a": {By: "gluck", Text: "one"}, "b": {By: "figaro", Text: "two"},
 		}},
 	})
-	in.bound.reset(bound, 1)
+	in.bound.reset(bound, 0, 1)
 	tr.setComments(readComments(bound))
 
 	in.commandComment("comment -X #c1.2")

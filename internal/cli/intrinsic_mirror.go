@@ -225,7 +225,7 @@ func (in *interactiveInput) resyncIntrinsic(name string) {
 	if mirror == nil {
 		return
 	}
-	mirror.reset(resp.Snapshot, resp.Version)
+	mirror.reset(resp.Snapshot, resp.Incarnation, resp.Version)
 	in.onIntrinsicChanged(name)
 }
 

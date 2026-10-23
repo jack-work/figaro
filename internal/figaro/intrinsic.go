@@ -5,6 +5,7 @@ import (
 	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
@@ -31,8 +32,9 @@ const (
 
 // intrinsic is one such form plus the fanout that publishes it.
 type intrinsic struct {
-	name string
-	form *store.Form
+	name        string
+	form        *store.Form
+	incarnation uint64
 
 	// mu serializes projection, not the form: two projectors racing would each
 	// diff against a snapshot the other had moved past.
@@ -40,7 +42,19 @@ type intrinsic struct {
 }
 
 func newIntrinsic(name string) *intrinsic {
-	return &intrinsic{name: name, form: store.NewMemForm()}
+	return &intrinsic{name: name, form: store.NewMemForm(), incarnation: nextIncarnation()}
+}
+
+var lastIncarnation atomic.Uint64
+
+func nextIncarnation() uint64 {
+	for {
+		last := lastIncarnation.Load()
+		next := max(uint64(time.Now().UnixNano()), last+1)
+		if lastIncarnation.CompareAndSwap(last, next) {
+			return next
+		}
+	}
 }
 
 // publish states the desired whole; form.Build diffs it, so an unchanged
@@ -95,12 +109,13 @@ func (a *Agent) openIntrinsics() {
 	a.runtime = newIntrinsic(IntrinsicRuntime)
 	a.queue = newIntrinsic(IntrinsicQueue)
 	for _, c := range []*intrinsic{a.runtime, a.queue} {
-		name := c.name
+		name, incarnation := c.name, c.incarnation
 		c.form.OnCommit(func(version uint64, patch message.Patch) {
 			a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodFormDelta,
 				Params: rpc.FormDelta{
 					Schema: rpc.FormDeltaSchema, AriaID: a.id, Intrinsic: name,
-					Version: version, Patch: patch, At: time.Now().UnixMilli(),
+					Incarnation: incarnation, Version: version, Patch: patch,
+					At: time.Now().UnixMilli(),
 				}})
 		})
 	}
@@ -116,15 +131,18 @@ func (a *Agent) openIntrinsics() {
 
 // Intrinsic returns a named intrinsic's form, or nil; `state` is not one.
 func (a *Agent) Intrinsic(name string) *store.Form {
+	if c := a.intrinsic(name); c != nil {
+		return c.form
+	}
+	return nil
+}
+
+func (a *Agent) intrinsic(name string) *intrinsic {
 	switch name {
 	case IntrinsicRuntime:
-		if a.runtime != nil {
-			return a.runtime.form
-		}
+		return a.runtime
 	case IntrinsicQueue:
-		if a.queue != nil {
-			return a.queue.form
-		}
+		return a.queue
 	}
 	return nil
 }

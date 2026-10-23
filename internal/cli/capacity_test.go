@@ -135,7 +135,7 @@ func TestAMissIsAskedOncePerWindow(t *testing.T) {
 func TestAParkedSubjectKeepsItsBoundForm(t *testing.T) {
 	in, _ := capacitySession(t)
 	cat, _, _ := in.models.mirror.state()
-	in.models.mirror.reset(cat.Apply(catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 1_000_000})), 1)
+	in.models.mirror.reset(cat.Apply(catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 1_000_000})), 0, 1)
 
 	in.mu.Lock()
 	in.figaroID = "first"
@@ -166,7 +166,7 @@ func TestCatchUpSkipsWhatADeltaAlreadyApplied(t *testing.T) {
 	s2 := s1.Apply(p2)
 	p3 := boundFormPatch(s2, map[string]string{"a": `3`})
 
-	m.reset(s1, 1)
+	m.reset(s1, 0, 1)
 	require.Equal(t, formApplied, m.apply(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2, Patch: p2}))
 	m.catchUp(&rpc.FormResponse{Delta: true, Version: 3, Patches: []rpc.FormVersionedPatch{
 		{Version: 2, Patch: p2}, {Version: 3, Patch: p3}}})

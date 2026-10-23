@@ -150,12 +150,14 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			_ = json.Unmarshal(params, &req)
 		}
 		if name := req.Intrinsic; name != "" && name != IntrinsicState {
-			c := a.Intrinsic(name)
+			c := a.intrinsic(name)
 			if c == nil {
 				return nil, fmt.Errorf("no intrinsic %q on %s (have: %s, %s; %q is the host's own form)",
 					name, a.id, IntrinsicRuntime, IntrinsicQueue, IntrinsicState)
 			}
-			return FormResponseOf(c.Since(req.Since), name), nil
+			resp := FormResponseOf(c.form.Since(req.Since), name)
+			resp.Incarnation = c.incarnation
+			return resp, nil
 		}
 		since, err := a.backend.FormSince(a.id, req.Since)
 		if err != nil {

@@ -41,10 +41,11 @@ type FormDelta struct {
 	AriaID string `json:"aria_id,omitempty"`
 	// Intrinsic is the segment after the slash in `<host>/<name>`; empty is
 	// `state`, the host's own form.
-	Intrinsic string    `json:"intrinsic,omitempty"`
-	Version   uint64    `json:"version"`
-	Patch     FormPatch `json:"patch"`
-	At        int64     `json:"at,omitempty"`
+	Intrinsic   string    `json:"intrinsic,omitempty"`
+	Incarnation uint64    `json:"incarnation,omitempty"`
+	Version     uint64    `json:"version"`
+	Patch       FormPatch `json:"patch"`
+	At          int64     `json:"at,omitempty"`
 }
 
 type FormPatch = message.Patch
