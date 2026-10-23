@@ -3,9 +3,13 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jack-work/figaro/api/livedoc"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The wash is background only: a selected row paints the same cells, fills
@@ -131,6 +135,76 @@ func TestWashedRowReachesTheMarginOnScreen(t *testing.T) {
 					break
 				}
 			}
+		}
+	}
+}
+
+func twoTurnPager(t *testing.T) *transcript {
+	t.Helper()
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	turn := func(id int, q string) aria.TurnPart {
+		return aria.TurnPart{Turn: aria.Turn{ID: uint64(id), Inquiry: q, Sealed: true, Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: "first answer of " + q},
+			{Type: livedoc.NodeProse, Markdown: "second answer of " + q},
+		}}}
+	}
+	client.Apply(aria.Page{Parts: []aria.TurnPart{turn(1, "ONE"), turn(2, "TWO")}}, aria.Notify)
+	tr := newTranscript(ldrender.NewFakeTerminal(60, 60), 60, 60,
+		&ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
+	tr.enter()
+	tr.follow = false
+	tr.offset = 0
+	tr.buildIndex()
+	return tr
+}
+
+// The rule between a question and its reply closes the question: selecting the
+// reply's first node washed it too, so the seam lit up for both selections.
+func TestASeamRuleBelongsToTheBlockAboveIt(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	for _, tc := range []struct {
+		name   string
+		ref    nodeRef
+		washed []string
+		dry    []string
+	}{
+		{"the reply's first node", nodeRef{turn: 2, index: 0},
+			[]string{"< figaro", "first answer of TWO"},
+			[]string{"TWO", "second answer of ONE", "> input"}},
+		{"the question", nodeRef{turn: 2, index: inquiryNode},
+			[]string{"> input", "TWO"},
+			[]string{"< figaro", "second answer of ONE"}},
+	} {
+		tr := twoTurnPager(t)
+		tr.selectRef(tc.ref, false)
+		rows := tr.window(0, tr.index.total, nil)
+		find := func(text string) int {
+			for i := len(rows) - 1; i >= 0; i-- {
+				if strings.TrimSpace(stripANSI(rows[i])) == text {
+					return i
+				}
+			}
+			t.Fatalf("%s: fixture has no row %q:\n%s", tc.name, text, strings.Join(stripANSIAll(rows), "\n"))
+			return -1
+		}
+		for _, text := range tc.washed {
+			if !washed(rows[find(text)]) {
+				t.Errorf("%s: %q is not washed", tc.name, text)
+			}
+		}
+		for _, text := range tc.dry {
+			if washed(rows[find(text)]) {
+				t.Errorf("%s: the wash reached %q", tc.name, text)
+			}
+		}
+		voice := find("< figaro")
+		seam := rows[voice-1]
+		if !isRuleRow(seam) {
+			t.Fatalf("%s: fixture: the row above the voice header is not the seam rule: %q", tc.name, stripANSI(seam))
+		}
+		if want := tc.ref.index == inquiryNode; washed(seam) != want {
+			t.Errorf("%s: the seam rule washed = %v, want %v", tc.name, washed(seam), want)
 		}
 	}
 }

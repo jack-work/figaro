@@ -362,8 +362,12 @@ func (t *transcript) bandEdge(from, step int) int {
 		if e.refAt(line - e.start).valid() {
 			break
 		}
+		rule := isRuleRow(t.entryLine(e, line-e.start, "", selectionSpan{}))
+		if rule && step < 0 {
+			break
+		}
 		edge = line
-		if isRuleRow(t.entryLine(e, line-e.start, "", selectionSpan{})) {
+		if rule {
 			break
 		}
 	}
