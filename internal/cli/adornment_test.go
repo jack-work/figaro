@@ -573,8 +573,8 @@ func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 			if r.ref != tool || !strings.Contains(stripANSI(r.text), "set mantra (figaro") {
 				continue
 			}
-			if line := tr.rowLine(r, "", tr.selectionSpan()); !strings.Contains(line, "\x1b[K") {
-				t.Fatalf("a short row must wash to the edge: %q", line)
+			if line := tr.rowLine(r, "", tr.selectionSpan()); displayWidth(line) != tr.w {
+				t.Fatalf("a short row must wash to the edge: %d of %d cells: %q", displayWidth(line), tr.w, line)
 			}
 			return
 		}

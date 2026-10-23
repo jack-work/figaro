@@ -8,8 +8,8 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// The wash is background only: a selected row paints the same cells, never
-// grows past the pane (which would soft-wrap and desync the cursor math),
+// The wash is background only: a selected row paints the same cells, fills
+// the pane to its margin, never grows past it (which would soft-wrap and desync the cursor math),
 // and the focused block is washed apart from the range.
 func TestDecorateNodeRowContract(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
@@ -38,10 +38,11 @@ func TestDecorateNodeRowContract(t *testing.T) {
 			}
 			for _, mark := range marks {
 				got := decorateNodeRow(plain, mark, w)
-				if n, pane := displayWidth(got), max(w, 1); n > pane {
+				if n, pane := displayWidth(got), max(w, 1); n > pane || (w >= 1 && n < pane) {
 					t.Errorf("selected decorate(%q, %d) is %d cells; the pane is %d", row, w, n, pane)
 				}
-				if vis, want := render.StripEscapes(got), render.StripEscapes(plain); vis != want {
+				vis := strings.TrimRight(render.StripEscapes(got), " ")
+				if want := strings.TrimRight(render.StripEscapes(plain), " "); vis != want {
 					t.Errorf("selected decorate(%q, %d) moved the text: %q, want %q", row, w, vis, want)
 				}
 				if !strings.Contains(got, term.NodeWash(mark.active)) {
@@ -101,5 +102,35 @@ func TestTranscriptRowSearchText(t *testing.T) {
 	head := transcriptRow{text: "─── header ───"}
 	if got := head.searchText(); got != head.text {
 		t.Errorf("searchText() on a ref-less row = %q, want %q", got, head.text)
+	}
+}
+
+// The frame writer closes every row with its own erase, at a cursor an EL never
+// moved: a wash that relied on EL was wiped back to the text's end, and a blank
+// row in a selected block showed no wash at all.
+func TestWashedRowReachesTheMarginOnScreen(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	const w = 40
+	rows := []string{
+		"",
+		"  ╭ ❝ lt 959.1",
+		"\x1b[2m  │ \x1b[0m\x1b[38;5;252mstyled then reset\x1b[39m",
+		"  code \x1b[48;5;238m span \x1b[49m then plain",
+		"  code \x1b[48;5;238m span \x1b[0;38;5;252m then fg",
+		"a row that is quite a lot longer than the forty column pane it lands in",
+	}
+	for _, row := range rows {
+		for _, active := range []bool{false, true} {
+			plain := plainNodeRow(row, w)
+			line := decorateNodeRow(plain, selectionMark{selected: true, active: active}, w)
+			screen := sgrRender(string(appendRowUpdate(nil, 0, w, "", line)), w, 1)
+			for x := 0; x < w; x++ {
+				c, ok := screen.cells[[2]int{0, x}]
+				if !ok || strings.Contains(c.rend, "bg= [") {
+					t.Errorf("row %q (active=%v): column %d is unwashed on screen (%+v)", row, active, x, c)
+					break
+				}
+			}
+		}
 	}
 }

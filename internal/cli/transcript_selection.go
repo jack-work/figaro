@@ -782,25 +782,38 @@ func washRow(plain string, width int, wash string) string {
 	if wash == "" {
 		return plain
 	}
-	return wash + washBody(plain, wash) + washFill(plain, width) + "\x1b[0m"
+	pad := max(width-displayWidth(plain), 0)
+	return wash + washBody(plain, wash) + strings.Repeat(" ", pad) + "\x1b[0m"
 }
 
-// Autowrap is off, so a row reaching the last column leaves the cursor on it and
-// \x1b[K would wipe that cell: no erase when the row already reaches the edge.
-func washFill(plain string, width int) string {
-	if displayWidth(plain) >= width {
-		return ""
-	}
-	return "\x1b[K"
-}
-
-// The wash is re-emitted after every reset, so inline styling cannot end it.
 func washBody(plain, wash string) string {
-	body := plain
-	for _, r := range []string{"\x1b[0m", "\x1b[m"} {
-		body = strings.ReplaceAll(body, r, r+wash)
+	var b strings.Builder
+	last := 0
+	for i := 0; i < len(plain); {
+		if plain[i] != '\x1b' {
+			i++
+			continue
+		}
+		j := skipANSI(plain, i)
+		if params, ok := sgrParams(plain[i:j]); ok && clearsBackground(params) {
+			b.WriteString(plain[last:j])
+			b.WriteString(wash)
+			last = j
+		}
+		i = j
 	}
-	return body
+	if b.Len() == 0 {
+		return plain
+	}
+	b.WriteString(plain[last:])
+	return b.String()
+}
+
+func clearsBackground(params string) bool {
+	var tok uint32
+	painted := sgrState{bg: sgrColor{kind: color256}, bgKn: true}
+	after, _ := applySGRParams(painted, params, &tok)
+	return after.bgKn && after.bg.kind == colorDefault
 }
 
 // below: every end sits in the prefix a fork shares with its ancestor, where a ref
