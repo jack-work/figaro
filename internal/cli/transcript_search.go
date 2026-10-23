@@ -5,6 +5,8 @@ import (
 	"html"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/render"
+
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -158,67 +160,50 @@ func (t *transcript) activeHighlight() string {
 	return t.matchQuery
 }
 
+const (
+	matchOn, matchOff = "\x1b[7m", "\x1b[27m"
+)
+
 // Escapes are stepped over for matching, so coloured rows keep their colour under
 // the match band.
 func highlightMatches(row, q string) string {
 	if q == "" || row == "" {
 		return row
 	}
-	const hlOn, hlOff = "\x1b[7m", "\x1b[27m"
-	if !strings.ContainsRune(row, '\x1b') {
-		if !strings.Contains(row, q) {
-			return row
-		}
-		return strings.ReplaceAll(row, q, hlOn+q+hlOff)
-	}
-	// Every retained row runs through here per frame while a search is active:
-	// reject non-matches without allocating.
-	if visibleIndex(row, q) < 0 {
+	p := patternOf(q)
+	if !p.matchesRow(row) {
 		return row
 	}
-	var visBuf strings.Builder
-	visBuf.Grow(len(row))
-	for i := 0; i < len(row); {
-		if row[i] == '\x1b' {
-			i = skipANSI(row, i)
-			continue
-		}
-		visBuf.WriteByte(row[i])
-		i++
-	}
-	visible := visBuf.String()
-	if !strings.Contains(visible, q) {
+	visible := visibleOf(row)
+	spans := p.spans(visible)
+	if len(spans) == 0 {
 		return row
 	}
-	next := strings.Index(visible, q)
-	matchEnd := -1
-	vi := 0
 	var b strings.Builder
-	b.Grow(len(row) + 16)
+	b.Grow(len(row) + 16*len(spans))
+	k, vi, open := 0, 0, ""
 	for i := 0; i < len(row); {
 		if row[i] == '\x1b' {
-			j := skipANSI(row, i)
+			j := render.SkipEscape(row, i)
 			b.WriteString(row[i:j])
 			i = j
 			continue
 		}
-		if next >= 0 && vi == next {
-			b.WriteString(hlOn)
-			matchEnd = vi + len(q)
-			after := matchEnd
-			if rel := strings.Index(visible[after:], q); rel >= 0 {
-				next = after + rel
-			} else {
-				next = -1
-			}
+		if open == "" && k < len(spans) && vi == spans[k][0] {
+			b.WriteString(matchOn)
+			open = matchOff
 		}
 		b.WriteByte(row[i])
 		i++
 		vi++
-		if vi == matchEnd {
-			b.WriteString(hlOff)
-			matchEnd = -1
+		if open != "" && vi == spans[k][1] {
+			b.WriteString(open)
+			open = ""
+			k++
 		}
+	}
+	if open != "" {
+		b.WriteString(open)
 	}
 	return b.String()
 }
@@ -274,46 +259,15 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 	return false
 }
 
-// visibleIndex matches q against the visible text, escapes skipped and allowed to
-// interrupt the match, without allocating.
-func visibleIndex(row, q string) int {
-	if q == "" {
-		return 0
-	}
-	for start := 0; start < len(row); {
-		if row[start] == '\x1b' {
-			start = skipANSI(row, start)
-			continue
-		}
-		i, j := start, 0
-		for j < len(q) && i < len(row) {
-			if row[i] == '\x1b' {
-				i = skipANSI(row, i)
-				continue
-			}
-			if row[i] != q[j] {
-				break
-			}
-			i++
-			j++
-		}
-		if j == len(q) {
-			return start
-		}
-		start++
-	}
-	return -1
-}
-
-func searchContains(row, q string) bool {
-	if !strings.ContainsRune(row, '\x1b') {
-		return strings.Contains(row, q)
-	}
-	return visibleIndex(row, q) >= 0
-}
+func searchContains(row, q string) bool { return patternOf(q).matchesRow(row) }
 
 func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
-	if strings.Contains(messageHeader(m.Role), q) {
+	p := patternOf(q)
+	if !p.literal() {
+		return true
+	}
+	has := func(s string) bool { return indexFold(s, q, p.fold) >= 0 }
+	if has(messageHeader(m.Role)) {
 		return true
 	}
 	if t.sectionOpenIn(m) {
@@ -321,48 +275,55 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 	}
 	more := t.more()
 	if more && m.Inquiry != "" &&
-		strings.Contains(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat()), q) {
+		has(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat())) {
 		return true
 	}
 	for i, n := range m.Nodes {
-		if markdownMayRenderQuery(n.Markdown, q) || strings.Contains(n.Name, q) ||
-			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
+		if markdownMayRenderQuery(foldIf(n.Markdown, p.fold), q) || has(n.Name) ||
+			has(n.Summary) || has(n.Output) {
 			return true
 		}
-		if more && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat()), q) {
+		if more && has(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat())) {
 			return true
 		}
-		if n.Type == livedoc.NodeSteering && strings.Contains("↳ input", q) {
+		if n.Type == livedoc.NodeSteering && has("↳ input") {
 			return true
 		}
 		if n.Type != livedoc.NodeTool {
 			continue
 		}
-		if n.Name == "" && strings.Contains("tool", q) {
+		if n.Name == "" && has("tool") {
 			return true
 		}
 		glyph := "✓✗" + string(livedoc.SpinnerFrames)
-		if strings.Contains(glyph, q) {
+		if has(glyph) {
 			return true
 		}
 		if n.StartedAt != 0 {
-			if strings.Contains(toolElapsed(n), q) {
+			if has(toolElapsed(n)) {
 				return true
 			}
-			if more && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||
-				strings.Contains("finished "+formatToolTime(n.FinishedAt), q)) {
+			if more && (has("started "+formatToolTime(n.StartedAt)) ||
+				has("finished "+formatToolTime(n.FinishedAt))) {
 				return true
 			}
 		}
 		if !t.expanded[nodeRefAt(m, i)] && n.Output != "" {
 			total := 1 + strings.Count(strings.TrimRight(n.Output, "\n"), "\n")
 			if total > nodeBashCapDefault &&
-				strings.Contains(fmt.Sprintf("last %d of %d lines", nodeBashCapDefault, total), q) {
+				has(fmt.Sprintf("last %d of %d lines", nodeBashCapDefault, total)) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func foldIf(s string, fold bool) string {
+	if fold {
+		return strings.ToLower(s)
+	}
+	return s
 }
 
 func markdownMayRenderQuery(markdown, q string) bool {

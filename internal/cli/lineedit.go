@@ -933,29 +933,39 @@ func (e *lineEditor) findRune(q string, dir int) bool {
 	if q == "" || len(e.runes) == 0 {
 		return false
 	}
-	hay := []rune(strings.ToLower(string(e.runes)))
-	needle := []rune(strings.ToLower(q))
-	at := func(i int) bool {
-		if i < 0 || i+len(needle) > len(hay) {
-			return false
-		}
-		for k, r := range needle {
-			if hay[i+k] != r {
-				return false
+	text := string(e.runes)
+	var starts []int
+	for _, sp := range patternOf(q).spans(text) {
+		starts = append(starts, utf8.RuneCountInString(text[:sp[0]]))
+	}
+	if len(starts) == 0 {
+		return false
+	}
+	pick := -1
+	if dir > 0 {
+		for _, at := range starts {
+			if at > e.cursor {
+				pick = at
+				break
 			}
 		}
-		return true
-	}
-	n := len(hay)
-	for step := 1; step <= n; step++ {
-		i := ((e.cursor+dir*step)%n + n) % n
-		if at(i) {
-			e.lastOp = opOther
-			e.cursor = i
-			return true
+		if pick < 0 {
+			pick = starts[0]
+		}
+	} else {
+		for k := len(starts) - 1; k >= 0; k-- {
+			if starts[k] < e.cursor {
+				pick = starts[k]
+				break
+			}
+		}
+		if pick < 0 {
+			pick = starts[len(starts)-1]
 		}
 	}
-	return false
+	e.lastOp = opOther
+	e.cursor = pick
+	return true
 }
 
 func (e *lineEditor) selectionText(lo, hi int) string {

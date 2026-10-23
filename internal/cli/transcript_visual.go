@@ -766,7 +766,7 @@ func (t *transcript) visualLandSearch(line int, q string) {
 	}
 	row := t.visualRowPlain(line)
 	col := 0
-	if k := strings.Index(string(row), q); k >= 0 {
+	if k, _, ok := patternOf(q).next(string(row), 0); ok {
 		col = colOfRune(row, len([]rune(string(row)[:k])))
 	}
 	p.col = col
