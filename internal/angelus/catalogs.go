@@ -94,6 +94,8 @@ func (h *handlers) refreshReapedForm() {
 	if !ok || h.reapedForm == nil {
 		return
 	}
+	h.reapedMu.Lock()
+	defer h.reapedMu.Unlock()
 	grace := h.config.ReapedGrace()
 	keys := map[string]json.RawMessage{}
 	put := func(k string, v any) {
@@ -114,8 +116,6 @@ func (h *handlers) refreshReapedForm() {
 		}
 	}
 	put("grace_hours", strconv.Itoa(int(grace/time.Hour)))
-	h.reapedMu.Lock()
-	defer h.reapedMu.Unlock()
 	cur, _ := h.reapedForm.Snapshot()
 	next := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
 	if patch := next.Diff(cur); !patch.IsIdentity() {
