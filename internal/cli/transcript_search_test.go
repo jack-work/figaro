@@ -123,8 +123,8 @@ func TestHighlightMatches(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := highlightMatches(c.row, c.q); got != c.want {
-				t.Fatalf("highlightMatches(%q, %q)\n  got: %q\n want: %q", c.row, c.q, got, c.want)
+			if got := highlightMatches(c.row, c.q, -1); got != c.want {
+				t.Fatalf("highlightMatches(%q, %q, -1)\n  got: %q\n want: %q", c.row, c.q, got, c.want)
 			}
 		})
 	}

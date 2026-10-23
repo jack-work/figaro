@@ -137,7 +137,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	q := t.stickyBlockOf(turn)
 	out := make([]string, 0, len(rows)+1)
 	for i, r := range rows {
-		line := t.rowLine(r, hl, sel)
+		line := t.rowLine(r, hl, sel, -1)
 		if i == len(rows)-1 && len(rows) < q.textHigh {
 			line = stickyClip(line, t.w)
 		}
@@ -159,7 +159,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 
 // The gutter meeting the header's rule from above.
 func (t *transcript) stickyCut(q stickyQuestion, rows []transcriptRow, seen int) gutterCut {
-	cut := gutterCut{row: t.rowLine(rows[len(rows)-1], "", selectionSpan{})}
+	cut := gutterCut{row: t.rowLine(rows[len(rows)-1], "", selectionSpan{}, -1)}
 	if seen < len(q.rows) {
 		cut.hidden = q.rows[seen].text
 		cut.sameBlock = q.rows[seen].ref == rows[len(rows)-1].ref

@@ -402,9 +402,9 @@ func TestWashCoversTheBlocksChrome(t *testing.T) {
 		for _, r := range e.rows {
 			switch {
 			case r.ref == inq && !r.chrome && strings.Contains(stripANSI(r.text), "what does this say?"):
-				text = tr.rowLine(r, "", tr.selectionSpan())
+				text = tr.rowLine(r, "", tr.selectionSpan(), -1)
 			case r.ref == inq && r.chrome:
-				chrome = tr.rowLine(r, "", tr.selectionSpan())
+				chrome = tr.rowLine(r, "", tr.selectionSpan(), -1)
 			}
 		}
 	}
@@ -433,7 +433,7 @@ func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 			if r.ref != metaRefOf(tool, 1) {
 				continue
 			}
-			line := tr.rowLine(r, "", tr.selectionSpan())
+			line := tr.rowLine(r, "", tr.selectionSpan(), -1)
 			if !washed(line) {
 				t.Fatalf("a selected delta row is washed: %q", line)
 			}
@@ -553,7 +553,7 @@ func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 				continue
 			}
 			seen = true
-			line := tr.rowLine(r, "", tr.selectionSpan())
+			line := tr.rowLine(r, "", tr.selectionSpan(), -1)
 			if !strings.HasSuffix(stripANSI(line), deltaGlyph) {
 				t.Fatalf("the marker must survive the wash: %q", stripANSI(line))
 			}
@@ -573,7 +573,7 @@ func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 			if r.ref != tool || !strings.Contains(stripANSI(r.text), "set mantra (figaro") {
 				continue
 			}
-			if line := tr.rowLine(r, "", tr.selectionSpan()); displayWidth(line) != tr.w {
+			if line := tr.rowLine(r, "", tr.selectionSpan(), -1); displayWidth(line) != tr.w {
 				t.Fatalf("a short row must wash to the edge: %d of %d cells: %q", displayWidth(line), tr.w, line)
 			}
 			return

@@ -440,12 +440,16 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 		// plays the voice header of the block that is missing.
 		return t.gapRow(e.gap)
 	}
-	return t.rowLine(e.rows[rel], hl, sel)
+	cur := -1
+	if h := t.matchAt; h.query != "" && h.query == hl && h.line == e.start+rel+e.sepHeight() {
+		cur = h.col
+	}
+	return t.rowLine(e.rows[rel], hl, sel, cur)
 }
 
 // The right gutter is never painted over: the address stops one column short and
 // the adornment marker is put back after it.
-func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) string {
+func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan, cur int) string {
 	line := r.text
 	if t.more() && (r.mark != "" || len(r.more) > 0) {
 		line = ldrender.Annotate(line, r.more, r.mark, r.gutter, t.w)
@@ -461,7 +465,7 @@ func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) stri
 		line = decorateNodeRow(line, sel.mark(r.ref), t.w)
 	}
 	if hl != "" {
-		line = highlightMatches(line, hl)
+		line = highlightMatches(line, hl, cur)
 	}
 	return line
 }

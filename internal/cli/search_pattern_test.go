@@ -54,3 +54,10 @@ func TestPitAndComposerSearchWithThePattern(t *testing.T) {
 		t.Fatalf("an uppercase letter makes it case-exact: cursor %d", e.cursor)
 	}
 }
+
+func TestTheCurrentMatchIsDrawnApart(t *testing.T) {
+	got := highlightMatches("foo bar foo", "foo", 8)
+	if want := matchOn + "foo" + matchOff + " bar " + currentOn + "foo" + currentOff; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

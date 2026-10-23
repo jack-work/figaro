@@ -49,7 +49,7 @@ func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 				nodeRows[r.ref] = span
 			}
 			if hl != "" {
-				line = highlightMatches(line, hl)
+				line = highlightMatches(line, hl, -1)
 			}
 			out = append(out, line)
 			lts = append(lts, lt)

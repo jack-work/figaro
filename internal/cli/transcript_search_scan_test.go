@@ -54,7 +54,7 @@ func TestSearchContainsMatchesReference(t *testing.T) {
 func TestHighlightKeepsTheTextAndMarksEveryMatch(t *testing.T) {
 	for _, row := range searchRows {
 		for _, q := range searchQueries {
-			got := highlightMatches(row, q)
+			got := highlightMatches(row, q, -1)
 			if visibleOf(got) != visibleOf(row) {
 				t.Errorf("highlightMatches(%q, %q) changed the text: %q", row, q, visibleOf(got))
 			}

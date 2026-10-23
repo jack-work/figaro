@@ -756,22 +756,17 @@ func (t *transcript) visualParagraph(dir int) {
 }
 
 // With a highlight up, landing on a hit extends the wash to it.
-func (t *transcript) visualLandSearch(line int, q string) {
+func (t *transcript) visualLandSearch(h searchHit) {
 	if !t.visual.active() {
 		return
 	}
-	p, ok := t.visualPointAt(line, 0)
+	p, ok := t.visualPointAt(h.line, 0)
 	if !ok {
 		return
 	}
-	row := t.visualRowPlain(line)
-	col := 0
-	if k, _, ok := patternOf(q).next(string(row), 0); ok {
-		col = colOfRune(row, len([]rune(string(row)[:k])))
-	}
-	p.col = col
+	p.col = max(h.col, 0)
 	t.visual.cursor = p
-	t.visualEnsureVisible(line)
+	t.visualEnsureVisible(h.line)
 }
 
 func (s visualSelection) below(base int) bool {
@@ -839,8 +834,14 @@ func (t *transcript) findRepeatVisual(delta int) {
 	}
 	if !t.visual.on {
 		t.enterVisual()
-		// The search walks from the offset, where the reader was reading.
-		if p, ok := t.visualPointAt(t.offset, 0); ok {
+		// The search walks from the match it last landed on, else from the
+		// offset, where the reader was reading.
+		at := searchHit{line: t.offset}
+		if h := t.matchAt; h.query == t.matchQuery {
+			at = h
+		}
+		if p, ok := t.visualPointAt(at.line, 0); ok {
+			p.col = max(at.col, 0)
 			t.visual.cursor = p
 		}
 	}

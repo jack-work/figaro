@@ -124,11 +124,11 @@ func TestVisualMotion_SearchLandsTheCursor(t *testing.T) {
 	tr.key('v')
 	stepTo(t, tr, "alpha")
 	tr.key('v')
-	for _, b := range []byte("/t\r") {
+	for _, b := range []byte("/trot\r") {
 		tr.key(b)
 	}
 	if row := cursorRow(t, tr); !strings.Contains(row, "foxtrot") {
-		t.Fatalf("/t left the cursor on %q", row)
+		t.Fatalf("/trot left the cursor on %q", row)
 	}
 	if got := cursorWord(t, tr); got != "trot" {
 		t.Fatalf("the cursor is not on the match's column: %q", got)
@@ -139,13 +139,33 @@ func TestVisualMotion_SearchLandsTheCursor(t *testing.T) {
 	if text := tr.visualText(); !strings.Contains(text, "alpha") || !strings.Contains(text, "ech") {
 		t.Fatalf("the wash did not extend to the match: %q", text)
 	}
-	tr.key('n')
-	if row := cursorRow(t, tr); !strings.Contains(row, "golf") {
-		t.Fatalf("n did not walk on to the next hit: %q", row)
+}
+
+// n and N visit every match, two on one row included, in reading order.
+func TestVisualMotion_SearchVisitsEveryMatchOnARow(t *testing.T) {
+	tr := motionFixture(t)
+	tr.key('v')
+	stepTo(t, tr, "alpha")
+	for _, b := range []byte("/t\r") {
+		tr.key(b)
+	}
+	walk := []struct{ row, word string }{
+		{"delta", "ta"},
+		{"foxtrot", "trot"},
+		{"foxtrot", "t"},
+		{"golf", "tel"},
+	}
+	for i, want := range walk {
+		if i > 0 {
+			tr.key('n')
+		}
+		if row, word := cursorRow(t, tr), cursorWord(t, tr); !strings.Contains(row, want.row) || word != want.word {
+			t.Fatalf("hit %d: the cursor is on %q in %q, want %q in a row with %q", i, word, row, want.word, want.row)
+		}
 	}
 	tr.key('N')
-	if row := cursorRow(t, tr); !strings.Contains(row, "echo") {
-		t.Fatalf("N did not walk back: %q", row)
+	if row, word := cursorRow(t, tr), cursorWord(t, tr); !strings.Contains(row, "foxtrot") || word != "t" {
+		t.Fatalf("N went to %q in %q, want the last t of foxtrot", word, row)
 	}
 }
 

@@ -112,6 +112,7 @@ type transcript struct {
 	searchDir  int
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
+	matchAt    searchHit
 
 	// box is which text box owns the keyboard; both are one keyMode (modeBox)
 	// and one pit.

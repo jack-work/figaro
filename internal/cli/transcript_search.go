@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"html"
+	"math"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/render"
@@ -87,33 +88,119 @@ func (t *transcript) find(q string) {
 	if total == 0 {
 		return
 	}
-	from := t.offset
-	if line, ok := t.visualCursorLine(); ok {
-		from = line // in visual mode the search walks from the cursor
-	}
 	dir := t.searchStep()
-	for i := 0; i < total; i++ {
-		idx := ((from+dir*(i+1))%total + total) % total
-		if searchContains(t.lineAt(idx), q) {
-			t.landSearch(idx, q)
-			return
-		}
+	if hit, ok := t.seek(q, dir, t.searchOrigin(q, dir)); ok {
+		t.landSearch(hit)
+		return
 	}
 	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
 }
 
+type searchHit struct {
+	query string
+	line  int
+	col   int
+}
+
+func (h searchHit) valid() bool { return h.query != "" }
+
+// The walk starts at the visual cursor, else at the match n last landed on while
+// it is still on screen, else past the top row as it always has.
+func (t *transcript) searchOrigin(q string, dir int) searchHit {
+	if line, ok := t.visualCursorLine(); ok {
+		return searchHit{query: q, line: line, col: t.visual.cursor.col}
+	}
+	body, _ := t.layoutNow()
+	if h := t.matchAt; h.query == q && h.line >= t.offset && h.line < t.offset+body {
+		return h
+	}
+	col := -1
+	if dir > 0 {
+		col = math.MaxInt
+	}
+	return searchHit{query: q, line: t.offset, col: col}
+}
+
+// seek finds the match after from in the walk's direction: later on from's own
+// line first, then line by line, wrapping back to from's line last.
+func (t *transcript) seek(q string, dir int, from searchHit) (searchHit, bool) {
+	total := t.index.total
+	if total == 0 {
+		return searchHit{}, false
+	}
+	p := patternOf(q)
+	cols := func(line int) []int {
+		row := t.lineAt(line)
+		if !p.matchesRow(row) {
+			return nil
+		}
+		visible := visibleOf(row)
+		var out []int
+		for _, s := range p.spans(visible) {
+			out = append(out, cellsOf(visible[:s[0]]))
+		}
+		return out
+	}
+	hit := func(line, col int) (searchHit, bool) { return searchHit{query: q, line: line, col: col}, true }
+	if from.line >= 0 && from.line < total {
+		cs := cols(from.line)
+		if dir > 0 {
+			for _, c := range cs {
+				if c > from.col {
+					return hit(from.line, c)
+				}
+			}
+		} else {
+			for k := len(cs) - 1; k >= 0; k-- {
+				if cs[k] < from.col {
+					return hit(from.line, cs[k])
+				}
+			}
+		}
+	}
+	for i := 1; i <= total; i++ {
+		line := ((from.line+dir*i)%total + total) % total
+		cs := cols(line)
+		if len(cs) == 0 {
+			continue
+		}
+		if dir > 0 {
+			return hit(line, cs[0])
+		}
+		return hit(line, cs[len(cs)-1])
+	}
+	return searchHit{}, false
+}
+
+func cellsOf(s string) int {
+	n := 0
+	for _, r := range s {
+		n += runeCells(r)
+	}
+	return n
+}
+
+func (t *transcript) firstHitOn(line int, q string) searchHit {
+	h, ok := t.seek(q, 1, searchHit{query: q, line: line, col: -1})
+	if !ok || h.line != line {
+		return searchHit{query: q, line: line}
+	}
+	return h
+}
+
 // stopFollowing pins the viewport first, so the jump comes after it.
-func (t *transcript) landSearch(idx int, q string) {
+func (t *transcript) landSearch(h searchHit) {
 	t.stopFollowing()
+	t.matchAt = h
 	if t.visual.active() {
-		t.visualLandSearch(idx, q)
+		t.visualLandSearch(h)
 		// Keep the viewport rather than snapping the hit to the top row,
 		// which would drag a highlight's other end off screen.
-		t.visualEnsureVisible(idx)
+		t.visualEnsureVisible(h.line)
 		return
 	}
-	t.offset = idx
+	t.offset = h.line
 }
 
 // The paged fallback walks backward: the window reaches the live tail by
@@ -129,18 +216,13 @@ func (t *transcript) findRepeat(delta int) {
 	if total == 0 {
 		return
 	}
-	from := t.offset
-	if line, ok := t.visualCursorLine(); ok {
-		from = line
+	dir := 1
+	if delta*t.searchStep() < 0 {
+		dir = -1
 	}
-	delta *= t.searchStep()
-	start := from + delta
-	for i := 0; i < total; i++ {
-		idx := ((start+delta*i)%total + total) % total
-		if searchContains(t.lineAt(idx), q) {
-			t.landSearch(idx, q)
-			return
-		}
+	if hit, ok := t.seek(q, dir, t.searchOrigin(q, dir)); ok {
+		t.landSearch(hit)
+		return
 	}
 	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
@@ -161,12 +243,13 @@ func (t *transcript) activeHighlight() string {
 }
 
 const (
-	matchOn, matchOff = "\x1b[7m", "\x1b[27m"
+	matchOn, matchOff     = "\x1b[7m", "\x1b[27m"
+	currentOn, currentOff = "\x1b[7;4m", "\x1b[24;27m"
 )
 
 // Escapes are stepped over for matching, so coloured rows keep their colour under
-// the match band.
-func highlightMatches(row, q string) string {
+// the match band. cur is the display column of the match n/N stands on, or -1.
+func highlightMatches(row, q string, cur int) string {
 	if q == "" || row == "" {
 		return row
 	}
@@ -190,8 +273,12 @@ func highlightMatches(row, q string) string {
 			continue
 		}
 		if open == "" && k < len(spans) && vi == spans[k][0] {
-			b.WriteString(matchOn)
-			open = matchOff
+			on, off := matchOn, matchOff
+			if cur >= 0 && cellsOf(visible[:spans[k][0]]) == cur {
+				on, off = currentOn, currentOff
+			}
+			b.WriteString(on)
+			open = off
 		}
 		b.WriteByte(row[i])
 		i++
@@ -248,7 +335,8 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 					}
 					if searchContains(t.lineAt(i), q) {
 						t.offset, t.follow = i, false
-						t.visualLandSearch(i, q)
+						t.matchAt = t.firstHitOn(i, q)
+						t.visualLandSearch(t.matchAt)
 						return true
 					}
 				}
