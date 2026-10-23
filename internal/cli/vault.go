@@ -359,6 +359,7 @@ func reloginProviders(loaded *config.Loaded, providers []string) error {
 			failed = append(failed, name)
 			continue
 		}
+		relistProvider(name)
 		ok = append(ok, name)
 	}
 	fmt.Fprintln(stdout)

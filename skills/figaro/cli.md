@@ -332,7 +332,7 @@ observer's mouth.
 | `figaro troupe apikey revoke <name> <id>` | Revoke a key (its minter, its own principal, or a troupe admin) and tell every member; its open connections close. |
 | `op read <ref> \| figaro troupe revoke <name> <node>` | Revoke a node with the root: it is out, and so is every join its intermediates signed. The running daemon tells every member and lists who heard. |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
-| `figaro models` | List available provider models. |
+| `figaro models [--refresh] [-j]` | The daemon's model catalog (`@models`): every provider's models, when each was listed, and its last error. `--refresh` lists them all now. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |
 | `figaro completion install [shell]` | Install shell completion. |
 | `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |

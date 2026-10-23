@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"strings"
 	"sync"
@@ -214,39 +215,29 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 	}
 }
 
-// openModels fetches off the input goroutine (it dials) and installs under the
-// render lock.
 func (in *interactiveInput) openModels() {
-	in.progress("…models")
-	go func() {
-		models, warnings := fetchModels(in.loaded)
-		current := in.subjectModel()
-		view := newModelsView(models, current, in.chooseModel)
-		in.mu.Lock()
-		in.lt.tr.showLivePit("models", view, false)
-		in.mu.Unlock()
-		if len(models) == 0 && len(warnings) > 0 {
-			in.note("models: " + strings.Join(warnings, "; "))
+	in.models.ensure()
+	in.mu.Lock()
+	board := in.board
+	current := func() modelChoice {
+		if board == nil {
+			return modelChoice{}
 		}
-	}()
+		snap, _, _ := board.state()
+		provider, model := models.Subject(snap)
+		return modelChoice{provider: provider, model: model}
+	}
+	in.lt.tr.showLivePit(modelsPit, newModelsView(in.models.snapshot, current, in.chooseModel), false)
+	in.mu.Unlock()
 }
 
-func (in *interactiveInput) subjectModel() string {
-	cli := in.aria()
-	if cli == nil {
-		return ""
+func (in *interactiveInput) modelsChanged() {
+	in.recomputeLimit()
+	in.mu.Lock()
+	if in.lt.tr.pit.id == modelsPit {
+		in.lt.render()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
-	resp, err := cli.Form(ctx)
-	if err != nil {
-		return ""
-	}
-	raw, ok := resp.Snapshot.Get("system.model")
-	if !ok {
-		return ""
-	}
-	return valueSummary(raw)
+	in.mu.Unlock()
 }
 
 // chooseModel writes system.model and system.provider in one patch: a model is

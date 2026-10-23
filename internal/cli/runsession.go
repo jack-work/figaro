@@ -133,7 +133,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		}
 	}()
 
-	in.models = newModelsFeed(in.angelus, in.recomputeLimit)
+	in.models = newModelsFeed(in.angelus, in.modelsChanged)
 	defer in.models.close()
 
 	in.lt.setCatchUp(in.pagerCatchUp)

@@ -348,7 +348,7 @@ It lives in memory, is snapshotted to `$FIGARO_CACHE_DIR/models.json` so a
 cold daemon answers before any network, and refuses every write.
 
 ```
-<provider>.models.<model>.{name, context.default, context.long, max_output, source}
+<provider>.models.<model>.{name, context.default, context.long, max_output, hidden, source}
 <provider>.{refreshed_at, attempted_at, error}
 ```
 
@@ -356,9 +356,13 @@ It is keyed by provider, then model: the same model id under two providers is
 two entries, and a miss under one never borrows another's. `source` is `api`
 for what the provider's model listing said and `table` for the built-in
 Anthropic window table, which answers for aliases the listing never names.
+`hidden` is a provider's own word that a model stays out of pickers.
 
 | fills it | when |
 |---|---|
+| the poll | every configured provider (the provider files, else every built-in), every `[models] poll_minutes` (default 360, ±10%; 0 turns it off) |
+| daemon start | each provider whose listing is older than the poll interval, or never landed |
+| `figaro provider login` / `logout`, `figaro models --refresh` | that provider, or all of them, at once (`angelus.models.refresh`, an admin verb; `--refresh` waits up to 35 s) |
 | a want for a pair it lacks, or a provider older than a day | the daemon refreshes that provider in the background; a want never waits |
 | a failed refresh | records `error` and `attempted_at`, keeps the last good entries, retries after ten minutes |
 
@@ -367,6 +371,7 @@ client asks (`angelus.models.want`) when its own lookup misses.
 
 ```sh
 fig form show @models         # the catalog as a live tree
+fig models                    # the same, as a table, with each provider's age and last error
 ```
 
 **A client derives an aria's context percentage itself:** it mirrors the

@@ -1525,12 +1525,24 @@ there until you revoke it with the provider.`,
 	r.Register(&cmdkit.Command{
 		Name:  "models",
 		Group: "System",
-		Short: "List available provider models",
-		Usage: "models",
+		Short: "List the models every provider offers, from the daemon's catalog",
+		Usage: "models [--refresh] [-j]",
+		Long: `Reads the daemon form @models: instant, no provider is asked. The daemon
+lists every configured provider in the background ([models] poll_minutes,
+six hours by default), once at start when its snapshot is stale, and after
+figaro provider login. Each provider shows when it was last listed, and the
+error of its last attempt if that failed.
+
+  figaro models             the catalog as the daemon holds it
+  figaro models --refresh   list every provider now and wait for the answers
+  figaro models -j          every entry, hidden ones included, as JSON`,
+		Flags: []cmdkit.FlagDef{
+			{Long: "refresh", IsBool: true, Description: "ask the daemon to list every provider now, and wait"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runModels(ld)
-			return nil
+			return runModels(ld, ctx.BoolFlag("refresh"), ctx.BoolFlag("json"))
 		},
 	})
 

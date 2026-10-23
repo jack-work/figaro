@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,9 +9,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/sdk"
 )
 
 func lookupProvider(name string) (*providerPkg.Registration, error) {
@@ -154,6 +157,18 @@ func runProviderLogin(loaded *config.Loaded, name string) {
 	if err != nil {
 		die("%s", err)
 	}
+	relistProvider(name)
+}
+
+func relistProvider(name string) {
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	if err != nil {
+		return
+	}
+	defer acli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	_, _ = acli.ModelsRefresh(ctx, false, name)
 }
 
 func runProviderLogout(loaded *config.Loaded, name string, jsonOut bool) {
@@ -171,6 +186,7 @@ func runProviderLogout(loaded *config.Loaded, name string, jsonOut bool) {
 	if err != nil {
 		die("%s", err)
 	}
+	relistProvider(name)
 	if jsonOut {
 		_ = json.NewEncoder(stdout).Encode(rep)
 	} else {

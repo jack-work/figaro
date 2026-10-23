@@ -8,11 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/config"
 )
 
 func runRestWithFlags(force, keepPIDs bool) {
@@ -103,26 +101,4 @@ func waitForExit(pid int, within time.Duration) bool {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-}
-
-func dashCount(n int) string {
-	if n <= 0 {
-		return "-"
-	}
-	return formatCtxCell(n)
-}
-
-func runModels(loaded *config.Loaded) {
-	models, warnings := fetchModels(loaded)
-	for _, w := range warnings {
-		fmt.Fprintf(stderrw, "warning: %s\n", w)
-	}
-	// The package's writer, never os.Stdout: the pager captures this one.
-	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "PROVIDER\tMODEL ID\tNAME\tCONTEXT\tMAX OUT\n")
-	for _, m := range models {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			m.Provider, m.ID, m.Name, dashCount(m.ContextWindow), dashCount(m.MaxTokens))
-	}
-	w.Flush()
 }
