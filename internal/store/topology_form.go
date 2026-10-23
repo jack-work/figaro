@@ -37,6 +37,15 @@ func (l *stumpFormLog) SyncThrough(index uint64) error {
 	return x.SyncChannelThrough(chanForm, index)
 }
 
+func (l *stumpFormLog) DiscardFrom(index uint64) error {
+	x, err := l.store.trunks.StumpHead(l.stump)
+	if err != nil {
+		return err
+	}
+	defer x.Close()
+	return x.DiscardFrom(chanForm, index)
+}
+
 func (l *stumpFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
 	x, err := l.store.trunks.StumpHead(l.stump)
 	if err != nil {

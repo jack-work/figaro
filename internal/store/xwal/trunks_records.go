@@ -2,6 +2,15 @@ package xwal
 
 // AppendCursors is Append for the main channel with extra cursor entries; it
 // hands back the stamp it wrote so a caller need not read the record.
+func (t *Trunks) DiscardFrom(trunk, channel string, channelLT uint64) error {
+	x, err := t.Head(trunk)
+	if err != nil {
+		return err
+	}
+	defer x.Close()
+	return x.DiscardFrom(channel, channelLT)
+}
+
 func (t *Trunks) AppendCursors(trunk string, payload, meta []byte, extra map[string]uint64) (string, uint64, map[string]uint64, error) {
 	return t.appendMainWith(trunk, payload, meta, extra)
 }

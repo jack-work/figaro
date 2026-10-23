@@ -34,7 +34,10 @@ type Form struct {
 	sealed atomic.Bool
 	subs   atomic.Pointer[[]*Subscription]
 	closed atomic.Bool
+	failed atomic.Pointer[formFailure]
 }
+
+type formFailure struct{ err error }
 
 // formState is one published version. patches are kept because the projection
 // renders each at the record it landed on, which a folded snapshot cannot say.
@@ -88,6 +91,7 @@ type FormLog interface {
 	// beginning) through `upTo` (0 is the end), starting at the range rather
 	// than at record 1.
 	RangePatches(from, upTo uint64, fn func(index uint64, payload []byte) error) error
+	DiscardFrom(index uint64) error
 }
 
 // FormBaseLog has a floor and a base to start from below it: Floor says where
@@ -406,6 +410,9 @@ func (f *Form) runBatch(batch []*formWrite) {
 		if err != nil {
 			// Without durability the writes did not happen: every write in the
 			// batch is rejected and the state stands.
+			if derr := f.log.DiscardFrom(events[0].version); derr != nil {
+				f.failed.Store(&formFailure{err: fmt.Errorf("form sync failed (%v) and its records could not be taken back: %w", err, derr)})
+			}
 			for _, w := range batch {
 				if w.result.err == nil {
 					w.result = formResult{err: fmt.Errorf("form sync: %w", err)}
@@ -431,6 +438,9 @@ type versionedApplied struct {
 func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	if f.closed.Load() {
 		return nil, formResult{err: ErrFormClosed}
+	}
+	if fail := f.failed.Load(); fail != nil {
+		return nil, formResult{err: fail.err}
 	}
 	// A tombstone is final. The one write allowed past it is the tombstone
 	// itself, which Tombstone makes idempotent rather than repeatable.
@@ -647,6 +657,17 @@ func replayPage(p *memPage) (form.Snapshot, error) {
 // SyncThrough is a no-op: memory is as durable as this log gets.
 func (m *MemFormLog) SyncThrough(uint64) error { return nil }
 
+func (m *MemFormLog) DiscardFrom(index uint64) error {
+	old := m.load()
+	if index <= old.live.baseVersion || index > old.live.top() {
+		return fmt.Errorf("mem form log: cannot discard from %d (live page %d..%d)", index, old.live.baseVersion+1, old.live.top())
+	}
+	keep := index - old.live.baseVersion - 1
+	live := &memPage{base: old.live.base, baseVersion: old.live.baseVersion, patches: append([][]byte(nil), old.live.patches[:keep]...)}
+	m.state.Store(&memLogState{sealed: old.sealed, live: live})
+	return nil
+}
+
 // RangePatches takes no lock: it walks one published state, and a concurrent
 // append publishes a successor this call does not see, a consistent older
 // history rather than a torn newer one. Below the floor it returns
@@ -695,6 +716,10 @@ type xwalFormLog struct {
 
 func (l *xwalFormLog) AppendPatch(payload []byte) (uint64, error) {
 	return l.backend.store.trunks.Append(l.ariaID, chanForm, 0, payload, nil)
+}
+
+func (l *xwalFormLog) DiscardFrom(index uint64) error {
+	return l.backend.store.trunks.DiscardFrom(l.ariaID, chanForm, index)
 }
 
 func (l *xwalFormLog) SyncThrough(index uint64) error {

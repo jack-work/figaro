@@ -174,6 +174,28 @@ func (x *XWAL) Clear(channelName string) error {
 	return nil
 }
 
+func (x *XWAL) DiscardFrom(channelName string, channelLT uint64) error {
+	ch := x.channel(channelName)
+	if ch == nil {
+		return fmt.Errorf("xwal: no channel %q", channelName)
+	}
+	if channelName == x.main {
+		return fmt.Errorf("xwal: the main channel is append-only")
+	}
+	l, err := ch.Log()
+	if err != nil {
+		return err
+	}
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	if err := l.DiscardFrom(channelLT); err != nil {
+		return err
+	}
+	ch.fk = map[uint64]uint64{}
+	ch.fkBuilt, ch.fkScan, ch.fkNext, ch.fkFloor = false, false, 0, 0
+	return nil
+}
+
 // Flusher-unaware: use Store.TruncateFrom when the store's flusher is running.
 func (x *XWAL) TruncateFrom(channelName string, channelLT uint64) error {
 	if err := x.ensurePrivate(); err != nil {

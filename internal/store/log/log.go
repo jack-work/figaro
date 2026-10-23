@@ -247,6 +247,37 @@ func (p *pendingView) entriesPrefix(n int) [][]byte {
 	return p.entries[:n:n]
 }
 
+func (l *Log) DiscardFrom(index uint64) error {
+	if index == 0 {
+		return fmt.Errorf("log: discard from 0")
+	}
+	l.fmu.Lock()
+	defer l.fmu.Unlock()
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	if pend := l.pend.Load(); pend != nil && len(pend.entries) > 0 && index <= pend.last() {
+		keep := 0
+		if index > pend.first {
+			keep = int(index - pend.first)
+		}
+		for _, p := range pend.entries[keep:] {
+			l.pendingBytes -= int64(len(p))
+		}
+		if keep == 0 {
+			l.pend.Store(&pendingView{})
+		} else {
+			l.pend.Store(&pendingView{first: pend.first, entries: pend.entries[:keep:keep]})
+		}
+	}
+	if l.inner.LastIndex() >= index {
+		if l.shared {
+			return ErrSharedMutation
+		}
+		return l.inner.TruncateFrom(index)
+	}
+	return nil
+}
+
 // PendingBounds reports the unsynced index range, if any.
 func (l *Log) PendingBounds() (first, last uint64, ok bool) {
 	pend := l.pend.Load()
