@@ -120,7 +120,7 @@ figaro list -g
 ## Notes
 
 - Each subagent gets its own context window and token budget.
-- Every aria remains in the store until removed. Clean up with `figaro kill <id>`, or state a lifetime at birth (`-S system.ttl=1h`) and the daemon removes it once spent; `figaro doctor ttl` lists what is due.
+- Every aria remains in the store until removed. Clean up with `figaro kill --now <id>` (a plain `kill` reaps it for three days first, so a fan-out of throwaways lingers in `figaro reaped`), or state a lifetime at birth (`-S system.ttl=1h`) and the daemon removes it once spent; `figaro doctor ttl` lists what is due.
 - The angelus daemon manages all concurrent arias. It starts automatically on the first command that needs it.
 - Practical concurrency: depends on your provider's rate limits. 4-8 simultaneous arias is typical before throttling.
 - Subagents inherit the default outfit (provider, model, skills). Override per-aria with `figaro set --id <id> system.model <model>` after creation.

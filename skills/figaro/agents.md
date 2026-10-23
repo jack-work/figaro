@@ -62,12 +62,13 @@ answered by identity rather than by guessing at file descriptors.
 figaro new -r -S system.ttl=1h -- <p>   a one-off, raw output for a pipe; reaps itself
 figaro new -- <prompt>             a sub-aria you can keep talking to
 figaro send --id <id> -r -- <p>    talk to it again
-figaro kill <id>                   when done, so it stops showing up in ls
+figaro kill --now <id>             when done: gone at once (a plain kill lingers 3 days)
 ```
 
 EVERY ARIA IS PERSISTENT (2026-08-19: ephemeral arias were cut -- one behaviour
 instead of two). `-r` is about formatting only; when you are done with a
-sub-aria, `figaro kill <id>`, or give it `-S system.ttl=<d>` at birth and the
+sub-aria, `figaro kill --now <id>` (a plain `kill` reaps it and purges it
+three days later, restorable until then), or give it `-S system.ttl=<d>` at birth and the
 daemon removes it. Fan several out in parallel when the sub-questions are
 independent. [subagents.md](subagents.md) has the fan-out patterns, and the
 **figscript** skill (not bundled: it lives in the repo's `skills/`) has the

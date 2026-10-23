@@ -213,8 +213,8 @@ pager `y` copies the name shown (the attended aria's, or a listing row's) and
 | `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
 | `figaro succeed <@role> [--turn <n> \| --successor <aria>] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the aria it targets at `--turn` (default 2) or take `--successor`, demote the predecessor beneath it, prompt and cast the successor, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
 | `figaro demote <id> [--under <child>]` | Sink an aria to a leaf: a child takes its place, the other children move under that child, and a kill then takes the aria alone. Presentation only. |
-| `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
-| `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What the ttl sweep soft-deleted, when each group is purged, and the way back. |
+| `figaro kill <id> [-r] [--when <d> \| --now]` | Stop a trunk's agent and sessions, then reap it (and with `-r` its branches, which a kill without `-r` refuses) until its grace runs out: `--when` (`90m`, `6h`, `2d`, `1w`), else `[memory] kill_grace_hours`, three days. `--now` or `--when 0` deletes at once. Killing a reaped aria moves its group's purge to the new grace. |
+| `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What `kill` and the ttl sweep soft-deleted, when each group is purged, and the way back. |
 | `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop an aria taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |
 | `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
@@ -286,6 +286,12 @@ agent, a bound shell or a role pointing in. `figaro reaped` lists the groups,
 `figaro reaped restore <id>` brings one back (the keepalive then holds it a
 day; `--keep` also unsets its ttl), and `figaro reaped purge <id>` deletes it
 now. A fork of a reaped aria is not reaped.
+
+`figaro kill` reaps the same way, but the group carries its own deadline
+(`system.reaped_until`, the kill time plus `--when` or `[memory]
+kill_grace_hours`), and at that deadline it is purged whatever holds it: a kill
+is a delete deferred, not a request. A sweep-reaped group keeps
+`reaped_grace_hours`; killing one gives it the kill's deadline.
 
 `ls`, the tree view and the pager's `L` mark a row `[reaps in 3h]` inside the
 last quarter of its keepalive (at most six hours), `[reaping]` once it is due
