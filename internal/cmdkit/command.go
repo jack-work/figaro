@@ -67,10 +67,11 @@ type FlagDef struct {
 }
 
 type RunContext struct {
-	Args    []string
-	Flags   map[string]string
-	RawArgs []string
-	Extra   interface{}
+	Args           []string
+	Flags          map[string]string
+	RawArgs        []string
+	AfterSeparator []string
+	Extra          interface{}
 
 	// In, Out and Err nil mean the router's own, so a verb can run inside a pit or a test.
 	In       io.Reader

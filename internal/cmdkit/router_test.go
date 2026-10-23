@@ -205,3 +205,24 @@ func TestLevenshtein(t *testing.T) {
 		}
 	}
 }
+
+// A verb that takes a prompt after "--" must tell the prompt from positionals,
+// even when the prompt holds flag-shaped words.
+func TestParseKeepsWhatFollowsTheSeparator(t *testing.T) {
+	r := NewRouter("test")
+	r.Register(&Command{Name: "v", Flags: []FlagDef{{Long: "x"}}, Run: func(*RunContext) error { return nil }})
+	ctx, err := r.Parse("v", []string{"pos", "--x", "1", "--", "a", "--x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ctx.AfterSeparator) != 2 || ctx.AfterSeparator[0] != "a" || ctx.AfterSeparator[1] != "--x" {
+		t.Fatalf("AfterSeparator = %q", ctx.AfterSeparator)
+	}
+	if ctx.Flag("x") != "1" || len(ctx.Args) != 3 {
+		t.Fatalf("flags %v args %q", ctx.Flags, ctx.Args)
+	}
+	ctx, _ = r.Parse("v", []string{"pos"})
+	if ctx.AfterSeparator != nil {
+		t.Fatalf("no separator typed, AfterSeparator = %q", ctx.AfterSeparator)
+	}
+}

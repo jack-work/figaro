@@ -224,6 +224,14 @@ func (r *Router) Run(args []string) int {
 // errUsage: the command already printed its diagnostic; the router exits 2 silently.
 var errUsage = errors.New("usage")
 
+func (r *Router) Parse(name string, args []string) (*RunContext, error) {
+	cmd, ok := r.Command(name)
+	if !ok {
+		return nil, fmt.Errorf("unknown command: %s", name)
+	}
+	return r.parse(cmd, name, args)
+}
+
 // verb is the name as typed (possibly an alias), so messages echo what the user wrote.
 func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, error) {
 	if verb == "" {
@@ -253,7 +261,8 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 		arg := expanded[i]
 
 		if arg == "--" {
-			ctx.Args = append(ctx.Args, expanded[i+1:]...)
+			ctx.AfterSeparator = append([]string{}, expanded[i+1:]...)
+			ctx.Args = append(ctx.Args, ctx.AfterSeparator...)
 			break
 		}
 
