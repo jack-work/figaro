@@ -96,10 +96,10 @@ func TestMigrationsPreserveInheritedRemovalAndTurnIDs(t *testing.T) {
 	_, err = altLog.Append(Entry[message.Message]{Payload: prompt("alternative")})
 	require.NoError(t, err)
 
-	boards := map[string]string{}
+	boundForms := map[string]string{}
 	turnIDs := map[string][]uint64{}
 	for _, id := range []string{aria, alt} {
-		boards[id] = boardOf(t, be, id)
+		boundForms[id] = boundFormOf(t, be, id)
 		log, err := be.OpenFigIR(id)
 		require.NoError(t, err)
 		for _, e := range log.Read() {
@@ -125,7 +125,7 @@ func TestMigrationsPreserveInheritedRemovalAndTurnIDs(t *testing.T) {
 			prior = next
 			return nil
 		}))
-		require.Equal(t, boards[id], boardOf(t, be, id), "migrated board %s", id)
+		require.Equal(t, boundForms[id], boundFormOf(t, be, id), "migrated bound form %s", id)
 		log, err := be.OpenFigIR(id)
 		require.NoError(t, err)
 		var got []uint64

@@ -241,7 +241,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 		enc.TranslatorChannel(),
 		enc.EncodeMessage,
 		enc.Fingerprint,
-		func(aria string) providerPkg.Form { return figaro.BoardAccessorFor(backend, aria) },
+		func(aria string) providerPkg.Form { return figaro.BoundFormAccessorFor(backend, aria) },
 		func(aria string) map[string]providerPkg.Form { return figaro.StudyAccessorsFor(backend, aria) },
 		func(aria string) (store.Log[[]json.RawMessage], error) {
 			return backend.OpenTranslator(aria, enc.TranslatorChannel())

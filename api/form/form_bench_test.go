@@ -11,10 +11,10 @@ import (
 func BenchmarkClone(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
-			s := f.board()
+			s := f.bound()
 			b.ResetTimer()
 			for b.Loop() {
-				sink(boardLen(s.Clone()))
+				sink(boundFormLen(s.Clone()))
 			}
 		})
 	}
@@ -23,7 +23,7 @@ func BenchmarkClone(b *testing.B) {
 func BenchmarkApply_SmallPatch(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
-			s := f.board()
+			s := f.bound()
 			keys := f.sampleKeys(3)
 			patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
 				keys[0]:       json.RawMessage(`"patched"`),
@@ -31,7 +31,7 @@ func BenchmarkApply_SmallPatch(b *testing.B) {
 			}, []string{keys[len(keys)-1]})
 			b.ResetTimer()
 			for b.Loop() {
-				sink(boardLen(s.Apply(patch)))
+				sink(boundFormLen(s.Apply(patch)))
 			}
 		})
 	}
@@ -49,10 +49,10 @@ func BenchmarkDiff(b *testing.B) {
 	for _, f := range fixtures() {
 		for _, c := range cases {
 			b.Run(f.name+"/"+c.name, func(b *testing.B) {
-				prev := f.board()
+				prev := f.bound()
 				next := prev
 				if c.changed != 0 {
-					next = buildBoard(f.mutated(c.changed))
+					next = buildBoundForm(f.mutated(c.changed))
 				}
 				b.ResetTimer()
 				for b.Loop() {
@@ -70,7 +70,7 @@ func BenchmarkDiffDerived(b *testing.B) {
 	for _, f := range fixtures() {
 		for _, n := range []int{1, 5} {
 			b.Run(fmt.Sprintf("%s/%d-key", f.name, n), func(b *testing.B) {
-				prev := f.board()
+				prev := f.bound()
 				set := map[string]json.RawMessage{}
 				for _, k := range f.sampleKeys(n) {
 					set[k] = json.RawMessage(`"derived-change"`)
@@ -89,12 +89,12 @@ func BenchmarkDiffDerived(b *testing.B) {
 func BenchmarkGet(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
-			s := f.board()
+			s := f.bound()
 			keys := f.sampleKeys(32)
 			i := 0
 			b.ResetTimer()
 			for b.Loop() {
-				v, ok := boardGet(s, keys[i%len(keys)])
+				v, ok := boundFormGet(s, keys[i%len(keys)])
 				if !ok {
 					b.Fatalf("missing key %q", keys[i%len(keys)])
 				}
@@ -106,7 +106,7 @@ func BenchmarkGet(b *testing.B) {
 }
 
 func BenchmarkLookup(b *testing.B) {
-	s := buildBoard(defaultBoardMap())
+	s := buildBoundForm(defaultBoundFormMap())
 	if s.Lookup("system.model") == nil {
 		b.Fatal("fixture lacks system.model")
 	}
@@ -125,13 +125,13 @@ func BenchmarkRender(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for _, f := range []fixture{{"default", defaultBoardMap}, {"large", largeBoardMap}} {
+	for _, f := range []fixture{{"default", defaultBoundFormMap}, {"large", largeBoundFormMap}} {
 		b.Run(f.name, func(b *testing.B) {
-			prev := f.board()
+			prev := f.bound()
 			keys := f.sampleKeys(5)
 			set := make(map[string]json.RawMessage, len(keys))
 			for _, k := range keys {
-				v, _ := boardGet(prev, k)
+				v, _ := boundFormGet(prev, k)
 				set[k] = mutateValue(v)
 			}
 			patch := form.Build(prev, set, nil)
@@ -150,7 +150,7 @@ func BenchmarkRender(b *testing.B) {
 func BenchmarkMarshalJSON(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
-			s := f.board()
+			s := f.bound()
 			data, err := json.Marshal(s)
 			if err != nil {
 				b.Fatal(err)
@@ -171,18 +171,18 @@ func BenchmarkMarshalJSON(b *testing.B) {
 func BenchmarkUnmarshalJSON(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
-			data, err := json.Marshal(f.board())
+			data, err := json.Marshal(f.bound())
 			if err != nil {
 				b.Fatal(err)
 			}
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
 			for b.Loop() {
-				s, err := unmarshalBoard(data)
+				s, err := unmarshalBoundForm(data)
 				if err != nil {
 					b.Fatal(err)
 				}
-				sink(boardLen(s))
+				sink(boundFormLen(s))
 			}
 		})
 	}
@@ -191,18 +191,18 @@ func BenchmarkUnmarshalJSON(b *testing.B) {
 func BenchmarkJSONRoundTrip(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
-			s := f.board()
+			s := f.bound()
 			b.ResetTimer()
 			for b.Loop() {
 				data, err := json.Marshal(s)
 				if err != nil {
 					b.Fatal(err)
 				}
-				back, err := unmarshalBoard(data)
+				back, err := unmarshalBoundForm(data)
 				if err != nil {
 					b.Fatal(err)
 				}
-				sink(boardLen(back))
+				sink(boundFormLen(back))
 			}
 		})
 	}
@@ -222,7 +222,7 @@ func BenchmarkSnapshot_Diff_Small(b *testing.B) {
 					nextM[key] = prevM[key]
 				}
 			}
-			prev, next := buildBoard(prevM), buildBoard(nextM)
+			prev, next := buildBoundForm(prevM), buildBoundForm(nextM)
 			b.ResetTimer()
 			for b.Loop() {
 				p := next.Diff(prev)
@@ -237,7 +237,7 @@ func BenchmarkRender_DefaultTemplates_5entries(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	prev := buildBoard(map[string]json.RawMessage{})
+	prev := buildBoundForm(map[string]json.RawMessage{})
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"cwd":      json.RawMessage(`"/home/figaro"`),
 		"root":     json.RawMessage(`"/home/figaro"`),

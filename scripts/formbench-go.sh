@@ -8,7 +8,7 @@
 #
 # The three fixtures are run in SEPARATE processes on purpose: each
 # fixture is built lazily and cached for the life of the process, so a
-# single combined run leaves ~60MB of large/huge boards resident and the
+# single combined run leaves ~60MB of large/huge bound forms resident and the
 # GC tax inflates the cheap `default` numbers ~2x. One process per
 # fixture keeps each measurement honest.
 #

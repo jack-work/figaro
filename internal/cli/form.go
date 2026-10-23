@@ -196,7 +196,7 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 }
 
 func runForm(loaded *config.Loaded, ariaID string) {
-	// `<host>/<intrinsic>`: "" is the identity segment, the board.
+	// `<host>/<intrinsic>`: "" is the identity segment, the host's own form.
 	spec, intrinsic := splitIntrinsic(ariaID)
 	if !knownIntrinsic(intrinsic) {
 		die("no intrinsic %q (have: %s; %s is the host's own form, and is implied)",

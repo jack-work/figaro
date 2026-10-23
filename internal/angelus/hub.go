@@ -18,7 +18,7 @@ type ariaHub struct {
 	// wake is told the method so the restore is attributed (FigaroInfo.WokeBy).
 	wake func(ctx context.Context, id, method string) (figaro.AgentServer, error)
 	// read and write answer from the store; ok=false hands the request onward.
-	// write runs after read and before wake, so a board patch never wakes a
+	// write runs after read and before wake, so a bound form patch never wakes a
 	// sleeper and can reach a naked figaro whose wake would fail for want of
 	// the provider keys the patch carries.
 	read  func(id, method string, params json.RawMessage) (v any, ok bool, err error)
@@ -142,7 +142,7 @@ type subscribableAgent interface {
 var errDormantMethod = errors.New("aria is dormant and this method needs a live agent")
 
 // route dresses first, so an outfit that names nothing on disk fails at the
-// boundary rather than landing as a literal on a board.
+// boundary rather than landing as a literal on a form.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	if hb.dress != nil {
 		dressed, err := hb.dress(method, params)

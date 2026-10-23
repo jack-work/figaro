@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func boardWith(t *testing.T, key, rawValue string) Snapshot {
+func boundFormWith(t *testing.T, key, rawValue string) Snapshot {
 	t.Helper()
 	return FromMap(map[string]json.RawMessage{key: json.RawMessage(rawValue)})
 }
@@ -27,9 +27,9 @@ func captureWarnings(t *testing.T, fn func()) string {
 }
 
 func TestStudyIncantationReadsEveryEvent(t *testing.T) {
-	board := boardWith(t, StudyIncantationKey,
+	bound := boundFormWith(t, StudyIncantationKey,
 		`{"onstudy":"watch it","onupdate":"it moved","ondrop":"look away"}`)
-	got := ReadStudyIncantation(board)
+	got := ReadStudyIncantation(bound)
 	if got.OnStudy != "watch it" || got.OnUpdate != "it moved" || got.OnDrop != "look away" {
 		t.Fatalf("all three events should carry their phrase, got %+v", got)
 	}
@@ -50,10 +50,10 @@ func TestStudyIncantationAbsentIsSilentAndEmpty(t *testing.T) {
 }
 
 func TestStudyIncantationPartialSurvivesOneBadField(t *testing.T) {
-	board := boardWith(t, StudyIncantationKey,
+	bound := boundFormWith(t, StudyIncantationKey,
 		`{"onstudy":"watch it","onupdate":42,"ondrop":"look away"}`)
 	var got StudyIncantation
-	out := captureWarnings(t, func() { got = ReadStudyIncantation(board) })
+	out := captureWarnings(t, func() { got = ReadStudyIncantation(bound) })
 
 	if got.OnStudy != "watch it" || got.OnDrop != "look away" {
 		t.Fatalf("one bad field silenced its neighbours: %+v", got)
@@ -76,7 +76,7 @@ func TestStudyIncantationWrongShapeIsRefusedWholesale(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got StudyIncantation
 			out := captureWarnings(t, func() {
-				got = ReadStudyIncantation(boardWith(t, StudyIncantationKey, tc.raw))
+				got = ReadStudyIncantation(boundFormWith(t, StudyIncantationKey, tc.raw))
 			})
 			if !got.IsEmpty() {
 				t.Fatalf("a %s must not parse as an incantation: %+v", tc.name, got)
@@ -92,9 +92,9 @@ func TestStudyIncantationWrongShapeIsRefusedWholesale(t *testing.T) {
 }
 
 func TestStudyIncantationNamesUnknownKeys(t *testing.T) {
-	board := boardWith(t, StudyIncantationKey, `{"onstudied":"watch it"}`)
+	bound := boundFormWith(t, StudyIncantationKey, `{"onstudied":"watch it"}`)
 	var got StudyIncantation
-	out := captureWarnings(t, func() { got = ReadStudyIncantation(board) })
+	out := captureWarnings(t, func() { got = ReadStudyIncantation(bound) })
 	if !got.IsEmpty() {
 		t.Fatalf("an unknown field must not become a phrase: %+v", got)
 	}
@@ -104,8 +104,8 @@ func TestStudyIncantationNamesUnknownKeys(t *testing.T) {
 }
 
 func TestForkIncantationAcceptsBothSpellings(t *testing.T) {
-	bare := ReadForkIncantation(boardWith(t, ForkIncantationKey, `"you are a branch"`))
-	object := ReadForkIncantation(boardWith(t, ForkIncantationKey, `{"onfork":"you are a branch"}`))
+	bare := ReadForkIncantation(boundFormWith(t, ForkIncantationKey, `"you are a branch"`))
+	object := ReadForkIncantation(boundFormWith(t, ForkIncantationKey, `{"onfork":"you are a branch"}`))
 	if bare.OnFork != "you are a branch" || object.OnFork != "you are a branch" {
 		t.Fatalf("both spellings must mean the same thing: bare=%+v object=%+v", bare, object)
 	}
@@ -114,7 +114,7 @@ func TestForkIncantationAcceptsBothSpellings(t *testing.T) {
 func TestForkIncantationWrongShapeIsRefused(t *testing.T) {
 	var got ForkIncantation
 	out := captureWarnings(t, func() {
-		got = ReadForkIncantation(boardWith(t, ForkIncantationKey, `["a","b"]`))
+		got = ReadForkIncantation(boundFormWith(t, ForkIncantationKey, `["a","b"]`))
 	})
 	if !got.IsEmpty() {
 		t.Fatalf("an array must not parse: %+v", got)
@@ -126,11 +126,11 @@ func TestForkIncantationWrongShapeIsRefused(t *testing.T) {
 
 // Whitespace-only is not a phrase.
 func TestIncantationTrimsAndDropsBlank(t *testing.T) {
-	s := ReadStudyIncantation(boardWith(t, StudyIncantationKey, `{"onstudy":"   "}`))
+	s := ReadStudyIncantation(boundFormWith(t, StudyIncantationKey, `{"onstudy":"   "}`))
 	if !s.IsEmpty() {
 		t.Fatalf("a blank phrase must be no phrase: %+v", s)
 	}
-	f := ReadForkIncantation(boardWith(t, ForkIncantationKey, `"  branched  "`))
+	f := ReadForkIncantation(boundFormWith(t, ForkIncantationKey, `"  branched  "`))
 	if f.OnFork != "branched" {
 		t.Fatalf("a phrase must be trimmed, got %q", f.OnFork)
 	}

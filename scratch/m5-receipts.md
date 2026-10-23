@@ -100,7 +100,7 @@ figwal v0.16.0 AppendMainCursors merges caller-supplied positions into
 the main record's cursor stamp; the store stamps every observed form's
 version on every IR append (SetObservedForms, mirrored from
 system.studies); the projection derives each member's patch-fold
-between consecutive stamps: the bound board is member zero of the same
+between consecutive stamps: the bound form is member zero of the same
 loop, and all four providers fold the result into their IR beside the
 form's transitions, deterministically (sorted members, cache-
 stable bytes). Study/drop are stated IR marks; tombstones render for

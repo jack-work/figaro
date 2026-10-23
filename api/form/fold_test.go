@@ -72,7 +72,7 @@ func asMap(s Snapshot) map[string]string {
 	return out
 }
 
-func startingBoards() []Snapshot {
+func startingBoundForms() []Snapshot {
 	empty := Snapshot{}
 	seeded := FromMap(map[string]json.RawMessage{
 		"mantra":       json.RawMessage(`"before"`),
@@ -83,16 +83,16 @@ func startingBoards() []Snapshot {
 }
 
 func TestFoldEqualsTheLoopItReplaced(t *testing.T) {
-	for bi, board := range startingBoards() {
+	for bi, bound := range startingBoundForms() {
 		for ci, patches := range foldCorpus(t) {
-			want := oldFold(board, patches)
-			got := Fold(board, patches)
+			want := oldFold(bound, patches)
+			got := Fold(bound, patches)
 			if !reflect.DeepEqual(asMap(want), asMap(got)) {
-				t.Fatalf("board %d corpus %d: Fold diverged from the loop it replaced\n want %v\n got  %v",
+				t.Fatalf("bound form %d corpus %d: Fold diverged from the loop it replaced\n want %v\n got  %v",
 					bi, ci, asMap(want), asMap(got))
 			}
-			if len(patches) == 0 && !got.Root().Equal(board.Root()) {
-				t.Fatalf("board %d: an empty fold minted a new root", bi)
+			if len(patches) == 0 && !got.Root().Equal(bound.Root()) {
+				t.Fatalf("bound form %d: an empty fold minted a new root", bi)
 			}
 		}
 	}
@@ -118,49 +118,49 @@ func orderSensitiveTemplates(t *testing.T) *template.Template {
 
 func TestFoldRenderEqualsTheLoopItReplaced(t *testing.T) {
 	tmpls := orderSensitiveTemplates(t)
-	for bi, board := range startingBoards() {
+	for bi, bound := range startingBoundForms() {
 		for ci, patches := range foldCorpus(t) {
-			wantOut, wantSnap, wantErrs := oldRenderLoop(board, patches, tmpls)
+			wantOut, wantSnap, wantErrs := oldRenderLoop(bound, patches, tmpls)
 
 			var gotOut []string
 			var gotErrs []error
-			gotSnap := FoldRender(board, patches, tmpls,
+			gotSnap := FoldRender(bound, patches, tmpls,
 				func(r RenderedEntry) { gotOut = append(gotOut, r.Key+"="+r.Body) },
 				func(err error) { gotErrs = append(gotErrs, err) })
 
 			if !reflect.DeepEqual(wantOut, gotOut) {
-				t.Fatalf("board %d corpus %d: rendered entries diverged\n want %q\n got  %q",
+				t.Fatalf("bound form %d corpus %d: rendered entries diverged\n want %q\n got  %q",
 					bi, ci, wantOut, gotOut)
 			}
 			if len(wantErrs) != len(gotErrs) {
-				t.Fatalf("board %d corpus %d: %d errors vs %d", bi, ci, len(wantErrs), len(gotErrs))
+				t.Fatalf("bound form %d corpus %d: %d errors vs %d", bi, ci, len(wantErrs), len(gotErrs))
 			}
 			if !reflect.DeepEqual(asMap(wantSnap), asMap(gotSnap)) {
-				t.Fatalf("board %d corpus %d: final board diverged\n want %v\n got  %v",
+				t.Fatalf("bound form %d corpus %d: final bound form diverged\n want %v\n got  %v",
 					bi, ci, asMap(wantSnap), asMap(gotSnap))
 			}
 		}
 	}
 }
 
-func TestFoldRenderSeesTheBoardBeforeEachPatch(t *testing.T) {
+func TestFoldRenderSeesTheBoundFormBeforeEachPatch(t *testing.T) {
 	tmpls := orderSensitiveTemplates(t)
-	board := FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})
+	bound := FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})
 	patches := []Patch{
 		Build(Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}, nil),
 		Build(Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}, nil),
 	}
 	var bodies []string
-	final := FoldRender(board, patches, tmpls,
+	final := FoldRender(bound, patches, tmpls,
 		func(r RenderedEntry) { bodies = append(bodies, r.Body) },
 		func(err error) { t.Fatalf("render: %v", err) })
 
 	want := []string{"first -> second", "second -> third"}
 	if !reflect.DeepEqual(bodies, want) {
-		t.Fatalf("rendered %q, want %q: each patch must render against the board BEFORE it",
+		t.Fatalf("rendered %q, want %q: each patch must render against the bound form BEFORE it",
 			bodies, want)
 	}
 	if v, _ := final.Get("mantra"); string(v) != `"third"` {
-		t.Fatalf("final board is %s, want \"third\"", v)
+		t.Fatalf("final bound form is %s, want \"third\"", v)
 	}
 }

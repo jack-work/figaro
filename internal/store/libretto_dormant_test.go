@@ -3,7 +3,7 @@ package store
 import "testing"
 
 // What does a studied form cost when NOBODY is awake? The libretto is keyed
-// by source, not by observer, so it keeps folding while any board names it --
+// by source, not by observer, so it keeps folding while any bound form names it --
 // and a form with a subscriber is immune to the idle sweep, by design.
 func TestStudiedFormStaysResidentWhileObserversSleep(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
@@ -35,7 +35,7 @@ func TestStudiedFormStaysResidentWhileObserversSleep(t *testing.T) {
 		t.Fatal("the studied form was evicted out from under its libretto")
 	}
 	if librettos != 1 {
-		t.Fatalf("librettos = %d while a board still studies", librettos)
+		t.Fatalf("librettos = %d while a bound form still studies", librettos)
 	}
 
 	// And the fold is still live: a patch to the source reaches the copy

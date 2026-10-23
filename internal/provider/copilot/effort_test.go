@@ -76,9 +76,9 @@ data: {"type":"message_stop"}`,
 	if err != nil {
 		t.Fatal(err)
 	}
-	board := form.Snapshot{}.Apply(effort)
+	bound := form.Snapshot{}.Apply(effort)
 	if err := c.Send(context.Background(), provider.SendInput{
-		AriaID: aria, FigLog: figLog, Snapshot: board, MaxTokens: 64,
+		AriaID: aria, FigLog: figLog, Snapshot: bound, MaxTokens: 64,
 	}, &captureBus{}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -99,7 +99,7 @@ data: {"type":"message_stop"}`,
 	if len(body.Messages) != 2 || !strings.Contains(string(body.Messages[0]), `"effort":"low"`) {
 		t.Fatalf("messages = %s", body.Messages)
 	}
-	if !c.KeepsCacheOnChange("system.thinking_effort", board) {
+	if !c.KeepsCacheOnChange("system.thinking_effort", bound) {
 		t.Fatal("the route reports that an effort change breaks the cache")
 	}
 }

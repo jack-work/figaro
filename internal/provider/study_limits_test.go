@@ -9,7 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-func boardWithLimits(keyBytes, total int) form.Snapshot {
+func boundFormWithLimits(keyBytes, total int) form.Snapshot {
 	s := form.Snapshot{}
 	return s.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.DeltaKeyBytesKey: json.RawMessage(itoa(keyBytes)),
@@ -32,7 +32,7 @@ func TestStudyBlockCutsFatValuesOnRuneBoundaries(t *testing.T) {
 		},
 		StudyAt: map[string]uint64{"@f1": 7},
 	}
-	texts := StudyReminderTexts(msg, boardWithLimits(101, 0))
+	texts := StudyReminderTexts(msg, boundFormWithLimits(101, 0))
 	if len(texts) != 1 {
 		t.Fatalf("want one block, got %d", len(texts))
 	}
@@ -60,7 +60,7 @@ func TestStudyBlockElidesPastTheTotalAndSaysWhere(t *testing.T) {
 		StudyPatches: map[string][]message.Patch{"@f1": {form.Build(form.Snapshot{}, set, nil)}},
 		StudyAt:      map[string]uint64{"@f1": 3},
 	}
-	texts := StudyReminderTexts(msg, boardWithLimits(0, 450))
+	texts := StudyReminderTexts(msg, boundFormWithLimits(0, 450))
 	body := blockJSON(t, texts[0])
 	shown, _ := body["set"].(map[string]any)
 	if len(shown) == 5 || len(shown) == 0 {
@@ -71,7 +71,7 @@ func TestStudyBlockElidesPastTheTotalAndSaysWhere(t *testing.T) {
 		t.Fatalf("the elision must name the verb that shows the rest: %q", note)
 	}
 	for i := 0; i < 5; i++ {
-		again := blockJSON(t, StudyReminderTexts(msg, boardWithLimits(0, 450))[0])
+		again := blockJSON(t, StudyReminderTexts(msg, boundFormWithLimits(0, 450))[0])
 		if !sameKeys(shown, again["set"].(map[string]any)) {
 			t.Fatal("two renderings of one record disagree: the fold is not deterministic")
 		}
@@ -88,7 +88,7 @@ func TestStudyBlockNegativeLimitIsUnbounded(t *testing.T) {
 		},
 		StudyAt: map[string]uint64{"@f1": 1},
 	}
-	texts := StudyReminderTexts(msg, boardWithLimits(-1, -1))
+	texts := StudyReminderTexts(msg, boundFormWithLimits(-1, -1))
 	if !strings.Contains(texts[0], fat) {
 		t.Fatal("a negative limit must render the value whole")
 	}

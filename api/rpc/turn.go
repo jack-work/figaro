@@ -77,7 +77,7 @@ type InterruptResponse struct {
 type SetRequest struct {
 	Patch   FormPatch `json:"patch"`
 	Outfits []string  `json:"outfits,omitempty"`
-	// IfVersion refuses the patch unless the board is still at this durable
+	// IfVersion refuses the patch unless the form is still at this durable
 	// version; zero is unconditional.
 	IfVersion uint64 `json:"if_version,omitempty"`
 	// Assert makes a removal of an absent key a refusal rather than a no-op.
@@ -90,7 +90,7 @@ type SetResponse struct {
 	Remove []string `json:"remove,omitempty"`
 	// Outcome is empty from a daemon that predates it.
 	Outcome string `json:"outcome,omitempty"`
-	// Version is the durable version the board stands at after this call,
+	// Version is the durable version the form stands at after this call,
 	// what a follower quotes back in IfVersion.
 	Version uint64 `json:"version,omitempty"`
 }

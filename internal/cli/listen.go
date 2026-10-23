@@ -68,7 +68,7 @@ type tailOpts struct {
 	end           <-chan struct{} // the caller's own end of stream (a replayed tape); exits cleanly
 	startedAt     time.Time       // a replay passes the recording's start; zero is time.Now
 	formPit       bool
-	formIntrinsic string // "" is the board
+	formIntrinsic string // "" is the host's own form
 }
 
 func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr, figaroID string, loaded *config.Loaded, opt tailOpts) {

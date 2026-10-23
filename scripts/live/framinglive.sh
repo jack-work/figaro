@@ -1,7 +1,7 @@
 # Does system.stream_request_body ON AN ARIA'S BOARD reach the wire?
 #
 # The unit tests prove the two framings and the byte-identity; this proves the
-# SETTING travels -- board -> snapshot -> provider -> transport -- which no
+# SETTING travels -- bound form -> snapshot -> provider -> transport -- which no
 # unit test can, because the wiring lives in the daemon.
 #
 # THE SINK IS LOCAL AND HTTP/1.1, which is what makes the framing VISIBLE: an
@@ -71,7 +71,7 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:8791/v1" ANTHROPIC_API_KEY="sink"
 unset FIGARO_ARIA FIGARO_NO_BIND FIGARO_PROMPT
 
 ARIA=$("$BIN" new -j 2>/dev/null | jq -r .aria_id)
-echo "aria $ARIA, one board, two settings"
+echo "aria $ARIA, one bound form, two settings"
 
 for VALUE in true false true; do
   "$BIN" set --id "$ARIA" system.stream_request_body "$VALUE" >/dev/null 2>&1
@@ -88,7 +88,7 @@ echo "--- THE VERDICT"
 CHUNKED=$(grep -c 'transfer-encoding=chunked' "$ROOT/framing.log")
 LENGTHED=$(grep -c 'transfer-encoding=none' "$ROOT/framing.log")
 if [ "$CHUNKED" = "2" ] && [ "$LENGTHED" = "1" ]; then
-  echo "PASS: the board key decides the framing, both ways, on one aria."
+  echo "PASS: the bound form key decides the framing, both ways, on one aria."
 else
   echo "FAIL: $CHUNKED chunked and $LENGTHED length-declared requests, want 2 and 1"
   cat "$ROOT/framing.log"

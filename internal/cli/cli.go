@@ -555,7 +555,7 @@ ordinary form verbs and pushes its changes rather than being polled:
   figaro form show <aria>/queue     the same thing, as a live tree
   figaro form show <aria>/runtime   what the aria is DOING right now
 
-<aria> alone means <aria>/state, the aria's own board.
+<aria> alone means <aria>/state, the aria's own bound form.
 
 Ids come from the listing and are only meaningful in the generation they
 were read from: they restart whenever the agent is rebuilt: so every
@@ -749,7 +749,7 @@ Folding an outfit onto a LIVE aria is a different act: see
 		Usage: "study [<aria>] <@form-id> | study [-j]",
 		Long: `Subscribes a figaro to an unbound form: committed patches to the form
 reach the figaro as <system-reminder> blocks on its next turn. Durable on
-the figaro's own board (system.studies); revival resubscribes; a fork
+the figaro's own bound form (system.studies); revival resubscribes; a fork
 inherits the relationship, never a private copy. No arguments lists the
 attended figaro's studies. The form is always the LAST positional.`,
 		ArgsMax: 2,
@@ -802,7 +802,7 @@ exists; attending an ARIA they mint the ROLE, for the same reason.
   figaro cast -O sonn5        (attending @form) dress the minted figaro
   figaro cast -O reviewer     (attending an aria) mint the role, cast into it
 
-The form is always the LAST positional. Bound boards are refused: roles
+The form is always the LAST positional. Bound forms are refused: roles
 are unbound forms only.`,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
@@ -1195,7 +1195,7 @@ THE TWO AXES. Outfits and patches are separate and never mixed:
 
 They compose wherever dressing is accepted, and the order is fixed:
 outfits fold first, then --set, then --delete. Outfit names are resolved
-once, at the daemon's API boundary; what lands on a board is always data.
+once, at the daemon's API boundary; what lands on a form is always data.
 
 An unbound form is durable, versioned, forkable state with no figaro
 attached: patch it with set/delete, watch it with form listen, make a
@@ -1377,7 +1377,7 @@ ORDER IS FIXED where they compose: outfits fold first, then --set, then
 --delete. A key you wrote always beats the outfit that also sets it.
 
 What travels is names on one side and DATA on the other. The daemon resolves
-the names once, at its API boundary, and what lands on a board is always
+the names once, at its API boundary, and what lands on a form is always
 materialized keys: so the same ` + "`-O`" + ` means the same thing at birth and on a
 live aria, and a patch never carries a directive:
 

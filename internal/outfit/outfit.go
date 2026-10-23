@@ -524,7 +524,7 @@ func skillName(file string) (string, bool) {
 	return name, true
 }
 
-// One key per field, so the board can reach into an envelope.
+// One key per field, so a form can reach into an envelope.
 func emitEnvelope(out map[string]json.RawMessage, prefix string, env ContentEnvelope) {
 	put := func(field, v string) {
 		if v == "" {

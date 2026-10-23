@@ -17,7 +17,7 @@ import (
 // figaro migrates a store before it opens it; the failure prevented is a
 // store that opens reporting its outfits and none of its arias.
 
-func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string]string) {
+func seedForkedArias(t *testing.T, root string) (ids []string, boundForms map[string]string) {
 	t.Helper()
 	be, err := NewXwalBackend(root, 0)
 	if err != nil {
@@ -60,18 +60,18 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 		aria = alt
 	}
 	ids = append(ids, aria)
-	boards = map[string]string{}
+	boundForms = map[string]string{}
 	for _, id := range ids {
-		boards[id] = boardOf(t, be, id)
+		boundForms[id] = boundFormOf(t, be, id)
 	}
 	sort.Strings(ids)
 	if err := be.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return ids, boards
+	return ids, boundForms
 }
 
-func boardOf(t *testing.T, be *XwalBackend, id string) string {
+func boundFormOf(t *testing.T, be *XwalBackend, id string) string {
 	t.Helper()
 	snap, err := be.FormState(id)
 	if err != nil {
@@ -87,7 +87,7 @@ func boardOf(t *testing.T, be *XwalBackend, id string) string {
 
 func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 	root := t.TempDir()
-	ids, boards := seedForkedArias(t, root)
+	ids, boundForms := seedForkedArias(t, root)
 	nestStore(t, root)
 
 	// The store really is in the old shape, and figwal really does refuse it.
@@ -118,8 +118,8 @@ func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 		t.Fatalf("arias after migration:\n got  %v\n want %v", got, ids)
 	}
 	for _, id := range ids {
-		if b := boardOf(t, be, id); b != boards[id] {
-			t.Errorf("aria %s form after migration: got %q want %q", id, b, boards[id])
+		if b := boundFormOf(t, be, id); b != boundForms[id] {
+			t.Errorf("aria %s form after migration: got %q want %q", id, b, boundForms[id])
 		}
 		lg, err := be.OpenFigIR(id)
 		if err != nil {

@@ -161,7 +161,7 @@ func (in *interactiveInput) newComment(ctx context.Context, r quote.Range, text 
 	turn := in.lt.tr.turnOfLT(r.Start.LT)
 	in.mu.Unlock()
 	taken := map[string]bool{}
-	for _, c := range in.boardComments().list {
+	for _, c := range in.boundFormComments().list {
 		taken[c.id] = true
 	}
 	id := newCommentID(taken)
@@ -170,23 +170,23 @@ func (in *interactiveInput) newComment(ctx context.Context, r quote.Range, text 
 		Turn:   turn,
 		Thread: map[string]commentEntryRecord{appendKey(nil): {By: commenter(), Text: text}},
 	}
-	if err := in.writeBoard(ctx, commentsKey+"."+id, rec); err != nil {
+	if err := in.writeBoundForm(ctx, commentsKey+"."+id, rec); err != nil {
 		return "", fmt.Errorf("comment: %w", err)
 	}
 	return "commented #" + id + " on " + rec.At, nil
 }
 
-func (in *interactiveInput) boardComments() *commentIndex {
+func (in *interactiveInput) boundFormComments() *commentIndex {
 	var snap form.Snapshot
-	if board := in.subjectBoard(); board != nil {
-		snap, _, _ = board.state()
+	if bound := in.subjectBoundForm(); bound != nil {
+		snap, _, _ = bound.state()
 	}
 	return readComments(snap)
 }
 
 func (in *interactiveInput) resolveComment(addr commentAddr, named bool) (comment, int, error) {
 	if named {
-		for _, c := range in.boardComments().list {
+		for _, c := range in.boundFormComments().list {
 			if c.id != addr.id {
 				continue
 			}
@@ -214,14 +214,14 @@ func (in *interactiveInput) resolveComment(addr commentAddr, named bool) (commen
 
 func (in *interactiveInput) reply(ctx context.Context, c comment, text string) (string, error) {
 	key := appendKey(c.thread)
-	if err := in.writeBoard(ctx, commentsKey+"."+c.id+".thread."+key, commentEntryRecord{By: commenter(), Text: text}); err != nil {
+	if err := in.writeBoundForm(ctx, commentsKey+"."+c.id+".thread."+key, commentEntryRecord{By: commenter(), Text: text}); err != nil {
 		return "", fmt.Errorf("comment: %w", err)
 	}
 	return "replied to " + commentAddress(c, 0), nil
 }
 
 func (in *interactiveInput) deleteComment(ctx context.Context, c comment) (string, error) {
-	if err := in.removeBoard(ctx, commentsKey+"."+c.id); err != nil {
+	if err := in.removeBoundForm(ctx, commentsKey+"."+c.id); err != nil {
 		return "", fmt.Errorf("comment: %w", err)
 	}
 	return "deleted " + commentAddress(c, 0), nil

@@ -17,7 +17,7 @@ import (
 type treeSnapshot struct {
 	trunks map[string]uint64            // trunk id -> main tail
 	main   map[string][]string          // trunk id -> ir payloads, in order
-	board  map[string]string            // trunk id -> reduced chalkboard state
+	bound  map[string]string            // trunk id -> reduced chalkboard state
 	bases  map[string]map[string]uint64 // channel -> node leaf -> .fork base
 }
 
@@ -48,7 +48,7 @@ func buildNestedFixture(t *testing.T) (dir string, before treeSnapshot) {
 			}
 		}
 		// A REAL patch: MapReducer folds MapPatch, not a bare object, so a
-		// raw `{"depth":N}` is a no-op and every board assertion built on
+		// raw `{"depth":N}` is a no-op and every bound form assertion built on
 		// one compares "{}" to "{}".
 		patch, perr := MapSetPatch([]string{fmt.Sprintf("depth%d", i)}, []byte(`"set"`))
 		if perr != nil {
@@ -79,13 +79,13 @@ func buildNestedFixture(t *testing.T) (dir string, before treeSnapshot) {
 	}
 	before = snapshotTree(t, s, dir)
 	folded := false
-	for _, b := range before.board {
+	for _, b := range before.bound {
 		if b != "" && b != "{}" {
 			folded = true
 		}
 	}
 	if !folded {
-		t.Fatal("no aria's board folded to anything: every board assertion in this file would be vacuous")
+		t.Fatal("no aria's bound form folded to anything: every bound form assertion in this file would be vacuous")
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func snapshotTree(t *testing.T, s *Store, dir string) treeSnapshot {
 	snap := treeSnapshot{
 		trunks: map[string]uint64{},
 		main:   map[string][]string{},
-		board:  map[string]string{},
+		bound:  map[string]string{},
 	}
 	for _, ti := range s.List() {
 		snap.trunks[ti.ID] = ti.Tip
@@ -114,7 +114,7 @@ func snapshotTree(t *testing.T, s *Store, dir string) treeSnapshot {
 		if err != nil {
 			t.Fatal(err)
 		}
-		snap.board[ti.ID] = state
+		snap.bound[ti.ID] = state
 	}
 	snap.bases = forkBases(t, dir)
 	return snap
@@ -137,7 +137,7 @@ func canonJSON(t *testing.T, raw []byte) string {
 	return string(out)
 }
 
-// chalkboardState reduces a trunk's board at its own tail. The reduced
+// chalkboardState reduces a trunk's bound form at its own tail. The reduced
 // state is what a moved watermark would break, so it is worth reading
 // rather than the raw patches.
 func chalkboardState(t *testing.T, s *Store, trunk string) (string, error) {
@@ -327,8 +327,8 @@ func TestFlattenRestoresANestedTree(t *testing.T) {
 		if got := strings.Join(after.main[id], "|"); got != strings.Join(before.main[id], "|") {
 			t.Errorf("trunk %s ir records:\n got  %s\n want %s", id, got, strings.Join(before.main[id], "|"))
 		}
-		if after.board[id] != before.board[id] {
-			t.Errorf("trunk %s chalkboard: got %s want %s", id, after.board[id], before.board[id])
+		if after.bound[id] != before.bound[id] {
+			t.Errorf("trunk %s chalkboard: got %s want %s", id, after.bound[id], before.bound[id])
 		}
 	}
 }
@@ -450,8 +450,8 @@ func TestFlattenResumesWithOnlyTheMainChannelMigrated(t *testing.T) {
 		t.Fatalf("trunks after resume: %d, want %d", len(after.trunks), len(before.trunks))
 	}
 	for id := range before.trunks {
-		if after.board[id] != before.board[id] {
-			t.Errorf("trunk %s chalkboard after resume: got %q want %q", id, after.board[id], before.board[id])
+		if after.bound[id] != before.bound[id] {
+			t.Errorf("trunk %s chalkboard after resume: got %q want %q", id, after.bound[id], before.bound[id])
 		}
 	}
 }

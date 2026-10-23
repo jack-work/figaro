@@ -106,10 +106,10 @@ type Snapshot struct {
 - `Apply` **path-copies**: only the O(k·log n) nodes on the touched paths are
   new; every other subtree is shared with the receiver. A patch that changes
   nothing returns the receiver *pointer-identically*, and `State.Apply` then
-  does not even mark the board dirty.
+  does not even mark the bound form dirty.
 - `Diff` (`treediff.go`) is a merge-join by key with a **pointer-identity
   short-circuit**: `prev == next` proves a whole subtree is unchanged, so a
-  one-key delta costs ~10 node comparisons on a 1024-key board. The
+  one-key delta costs ~10 node comparisons on a 1024-key bound form. The
   short-circuit is a pure optimisation: the algorithm is correct without it,
   which matters because AVL rotations move nodes.
 - Read through `Get`/`Has`/`Len`/`All` (lexical key order); construct from a
@@ -126,7 +126,7 @@ type Snapshot struct {
 - **A semantically-equal `Set` is a no-op that keeps the OLD bytes** and returns
   the same root pointer. So never ask "did this key change?" with
   `bytes.Equal` against the stored value: it will answer yes forever. Ask the
-  board: `cur.Apply(candidate).Diff(cur)`.
+  bound form: `cur.Apply(candidate).Diff(cur)`.
 - `MarshalJSON`/`UnmarshalJSON` emit and read the **flat object** form
   (`{"key": value, …}`, keys lexical). Three things consume it: the reducible
   form channel's watermark/state records in the aria store (see
@@ -138,7 +138,7 @@ type Snapshot struct {
   compacts a raw message and rewrites `<`, `>`, `&` as `\u003c`, `\u003e`,
   `\u0026`, and that post-processing is part of the bytes already on disk.
 - **The custom codec is charged twice.** `encoding/json` re-scans a marshaler's
-  output and pre-scans an unmarshaler's input: ~2x on a 15KB board, for
+  output and pre-scans an unmarshaler's input: ~2x on a 15KB bound form, for
   identical bytes. Hot paths (`formReduce`, `State.Open`/`Save`) call
   `MarshalJSON`/`UnmarshalJSON` **directly** to skip it;
   `TestSnapshotDirectCodecMatchesEncodingJSON` pins that the two spellings
@@ -150,7 +150,7 @@ drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the
 `Agent.formString`/`formInt`, all on RPC goroutines. `State`
 publishes `{snapshot, dirty}` as one immutable value through an
 `atomic.Pointer`, so readers are **lock-free** and always see a complete
-board. (Before that, `State.snapshot` was a plain field read with no
+bound form. (Before that, `State.snapshot` was a plain field read with no
 happens-before edge, a genuine data race, 11 reports per `-race` run.) One
 writer means the update path stores unconditionally; no CAS loop. `Save`
 clears the dirty flag with a single non-looping CAS.
@@ -490,7 +490,7 @@ session.
 
 ### The provider binding is live, not a birthmark
 
-`system.provider` is form state like any other key, and the board is
+`system.provider` is form state like any other key, and the bound form is
 authoritative. The agent holds a `ProviderFactory` and re-resolves the binding
 at the top of **every** provider round (`internal/figaro/provbind.go`,
 `syncProvider`), after that round's queued `set`s are serviced: so
@@ -499,7 +499,7 @@ aria) takes effect on the next round, with no restart and no fork. Before
 this, the instance was frozen at create/restore: an aria whose provider was
 wedged (a persistent `overloaded_error`, say) could not be moved off it while
 the angelus stayed up, and `figaro status` cheerfully reported the *old*
-provider while the board said otherwise.
+provider while the bound form said otherwise.
 
 - The binding is `{name, knobs, instance}` published through an
   `atomic.Pointer`: written by the drain loop, read lock-free by
@@ -510,7 +510,7 @@ provider while the board said otherwise.
   (`system.reminder_renderer`, `system.max_tokens`)
   do trigger one.
 - A factory error **fails the turn** naming the provider. Falling back to the
-  old instance would silently contradict the board: the exact confusion the
+  old instance would silently contradict the bound form: the exact confusion the
   bug produced.
 - Switching is safe because the IR is canonical and each provider owns its
   own translation channel: the new provider simply re-projects the history it

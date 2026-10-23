@@ -14,14 +14,14 @@ import (
 )
 
 // StudyReminderTexts is deterministic: its bytes land in the per-LT cache.
-func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
+func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 	var out []string
 	var incantation form.StudyIncantation
 	limits := form.DeltaLimits{KeyBytes: -1, TotalBytes: -1}
 	if msg.Study != nil || len(msg.StudyPatches) > 0 {
-		incantation = form.ReadStudyIncantation(board)
+		incantation = form.ReadStudyIncantation(bound)
 		// Point-in-time limits, so a cold retranslation reproduces the bytes.
-		limits = form.ReadDeltaLimits(board)
+		limits = form.ReadDeltaLimits(bound)
 	}
 	// The began mark carries the baseline state; no separate fold block is
 	// emitted for the same form at the same stamp.

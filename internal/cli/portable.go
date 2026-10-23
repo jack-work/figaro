@@ -17,15 +17,15 @@ import (
 // portableAria carries the messages verbatim and no node ids, LTs or fork
 // bases: those belong to the store, not the aria.
 type portableAria struct {
-	Figaro   string            `json:"figaro"`
-	AriaID   string            `json:"aria_id,omitempty"`
-	Outfit   string            `json:"outfit"`
-	Mantra   string            `json:"mantra,omitempty"`
-	Provider string            `json:"provider,omitempty"`
-	Model    string            `json:"model,omitempty"`
-	Exported string            `json:"exported,omitempty"`
-	Board    message.Patch     `json:"form,omitempty"`
-	Messages []message.Message `json:"messages"`
+	Figaro    string            `json:"figaro"`
+	AriaID    string            `json:"aria_id,omitempty"`
+	Outfit    string            `json:"outfit"`
+	Mantra    string            `json:"mantra,omitempty"`
+	Provider  string            `json:"provider,omitempty"`
+	Model     string            `json:"model,omitempty"`
+	Exported  string            `json:"exported,omitempty"`
+	BoundForm message.Patch     `json:"form,omitempty"`
+	Messages  []message.Message `json:"messages"`
 }
 
 // UnmarshalJSON accepts the pre-rename "loadout" field; only "outfit" is written.
@@ -140,44 +140,44 @@ func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, i
 
 	// The form lives on the aria socket, so this attaches and revives a
 	// dormant aria.
-	var board form.Snapshot
-	var boardErr error
+	var bound form.Snapshot
+	var boundFormErr error
 	WithSessionFor(loaded, id, func(s *Session) error {
 		resp, cErr := s.Figaro.Form(ctx)
 		if cErr != nil {
-			boardErr = cErr
+			boundFormErr = cErr
 			return nil
 		}
-		board = resp.Snapshot
+		bound = resp.Snapshot
 		return nil
 	})
-	if boardErr != nil {
-		return portableAria{}, fmt.Errorf("form %s: %w", id, boardErr)
+	if boundFormErr != nil {
+		return portableAria{}, fmt.Errorf("form %s: %w", id, boundFormErr)
 	}
 	keys := map[string]json.RawMessage{}
-	for k, v := range board.All() {
+	for k, v := range bound.All() {
 		// The destination stamps its own id.
 		if k == "aria_id" {
 			continue
 		}
 		keys[k] = v
 	}
-	doc.Board = form.Build(form.Snapshot{}, keys, nil)
-	if raw, ok := board.Get("system.outfit_name"); ok {
+	doc.BoundForm = form.Build(form.Snapshot{}, keys, nil)
+	if raw, ok := bound.Get("system.outfit_name"); ok {
 		_ = json.Unmarshal(raw, &doc.Outfit)
 	}
 	if doc.Outfit == "" {
-		if raw, ok := board.Get("system.loadout_name"); ok {
+		if raw, ok := bound.Get("system.loadout_name"); ok {
 			_ = json.Unmarshal(raw, &doc.Outfit)
 		}
 	}
-	if raw, ok := board.Get("mantra"); ok {
+	if raw, ok := bound.Get("mantra"); ok {
 		_ = json.Unmarshal(raw, &doc.Mantra)
 	}
-	if raw, ok := board.Get("system.provider"); ok {
+	if raw, ok := bound.Get("system.provider"); ok {
 		_ = json.Unmarshal(raw, &doc.Provider)
 	}
-	if raw, ok := board.Get("system.model"); ok {
+	if raw, ok := bound.Get("system.model"); ok {
 		_ = json.Unmarshal(raw, &doc.Model)
 	}
 	if doc.Outfit == "" {
@@ -225,7 +225,7 @@ func runImport(loaded *config.Loaded, args []string) {
 
 	resp, err := acli.Import(ctx, rpc.ImportRequest{
 		Outfit:   doc.Outfit,
-		Form:     doc.Board,
+		Form:     doc.BoundForm,
 		Messages: doc.Messages,
 		WasID:    doc.AriaID,
 		Mantra:   doc.Mantra,

@@ -81,7 +81,7 @@ func outfitWithTTL(t *testing.T, b *XwalBackend, ttl string) string {
 	return outfit
 }
 
-// Issue #48: a lifetime that reaches the board through the outfit, never
+// Issue #48: a lifetime that reaches the bound form through the outfit, never
 // through a patch that names it, was never indexed and so never reaped.
 func TestTTLLayeredByTheOutfitIsIndexedAtBirth(t *testing.T) {
 	b := newTTLBackend(t)
@@ -111,7 +111,7 @@ func TestTTLLayeredByTheOutfitIsIndexedAtBirth(t *testing.T) {
 func TestTTLInheritedByAForkIsIndexed(t *testing.T) {
 	b := newTTLBackend(t)
 	parent := mustNewAria(t, b)
-	setBoardKey(t, b, parent, SystemTTLKey, "3h")
+	setBoundFormKey(t, b, parent, SystemTTLKey, "3h")
 
 	child, _, err := b.ForkWith(parent, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"child"`),
@@ -132,13 +132,13 @@ func TestTTLInheritedByAForkIsIndexed(t *testing.T) {
 	}
 }
 
-// A board that holds a lifetime the sidecar lost (an aria born before the
+// A bound form that holds a lifetime the sidecar lost (an aria born before the
 // birth mirror) is reconciled when an outfit is dressed onto it, even if the
 // dress repeats the lifetime it already holds.
 func TestTTLReconciledWhenDressed(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemTTLKey, "2h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "2h")
 	meta, _ := b.Meta(id)
 	meta.TTLMS = 0
 	if err := b.SetMeta(id, meta); err != nil {

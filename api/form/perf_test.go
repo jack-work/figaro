@@ -11,20 +11,20 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Patch size against the real default board: what a one-field edit writes.
+// Patch size against the real default bound form: what a one-field edit writes.
 func BenchmarkOneFieldEdit(b *testing.B) {
-	m := realBoardFor(b)
-	board := form.FromMap(m)
+	m := realBoundFormFor(b)
+	bound := form.FromMap(m)
 
-	// The largest object-valued key on the board.
+	// The largest object-valued key on the bound form.
 	target, field, size := largestObjectKey(b, m)
 	b.Logf("target %s.%s, value is %d bytes", target, field, size)
 
 	b.Run("patch-bytes", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			next := board.SetPath(target+"."+field, json.RawMessage(`"changed"`))
-			p := next.Diff(board)
+			next := bound.SetPath(target+"."+field, json.RawMessage(`"changed"`))
+			p := next.Diff(bound)
 			raw, err := json.Marshal(p)
 			if err != nil {
 				b.Fatal(err)
@@ -35,12 +35,12 @@ func BenchmarkOneFieldEdit(b *testing.B) {
 }
 
 func TestPatchSizeAgainstWholeValueRewrite(t *testing.T) {
-	m := realBoardFor(t)
-	board := form.FromMap(m)
+	m := realBoundFormFor(t)
+	bound := form.FromMap(m)
 	target, field, size := largestObjectKey(t, m)
 
-	next := board.SetPath(target+"."+field, json.RawMessage(`"changed"`))
-	p := next.Diff(board)
+	next := bound.SetPath(target+"."+field, json.RawMessage(`"changed"`))
+	p := next.Diff(bound)
 	raw, err := json.Marshal(p)
 	require.NoError(t, err)
 
@@ -69,12 +69,12 @@ func largestObjectKey(tb testing.TB, m map[string]json.RawMessage) (key, field s
 		}
 	}
 	if key == "" {
-		tb.Skip("no object-valued key on the fixture board")
+		tb.Skip("no object-valued key on the fixture bound form")
 	}
 	return key, field, size
 }
 
-func realBoardFor(tb testing.TB) map[string]json.RawMessage {
+func realBoundFormFor(tb testing.TB) map[string]json.RawMessage {
 	tb.Helper()
 	data, err := readFixture()
 	require.NoError(tb, err)
@@ -84,7 +84,7 @@ func realBoardFor(tb testing.TB) map[string]json.RawMessage {
 }
 
 func readFixture() ([]byte, error) {
-	for _, p := range []string{"testdata/board-default.json"} {
+	for _, p := range []string{"testdata/bound-default.json"} {
 		if b, err := os.ReadFile(p); err == nil {
 			return b, nil
 		}

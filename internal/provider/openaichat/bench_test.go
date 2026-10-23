@@ -97,7 +97,7 @@ func BenchmarkCatchUp(b *testing.B) {
 
 // BenchmarkAssemble guards that marking does not add a second full pass.
 func BenchmarkAssemble(b *testing.B) {
-	board := form.FromMap(map[string]json.RawMessage{
+	bound := form.FromMap(map[string]json.RawMessage{
 		"system.credo": json.RawMessage(`"you are figaro"`),
 	})
 	for _, n := range []int{1_000, 10_000} {
@@ -112,7 +112,7 @@ func BenchmarkAssemble(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if _, err := p.assemble(perMessage, board, nil, 1024, "aria1"); err != nil {
+					if _, err := p.assemble(perMessage, bound, nil, 1024, "aria1"); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -131,14 +131,14 @@ func BenchmarkMarkRequest(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			board := form.FromMap(map[string]json.RawMessage{
+			bound := form.FromMap(map[string]json.RawMessage{
 				"system.credo": json.RawMessage(`"you are figaro"`),
 			})
-			req, err := p.assemble(perMessage, board, nil, 1024, "aria1")
+			req, err := p.assemble(perMessage, bound, nil, 1024, "aria1")
 			if err != nil {
 				b.Fatal(err)
 			}
-			policy := provider.ResolveCachePolicy(board)
+			policy := provider.ResolveCachePolicy(bound)
 			plan := p.plan()
 			b.ReportAllocs()
 			b.ResetTimer()

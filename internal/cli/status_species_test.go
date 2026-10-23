@@ -27,13 +27,13 @@ func TestStatusNamesTheSpecies(t *testing.T) {
 	}
 }
 
-func TestRoleTargetFallsBackToTheBoard(t *testing.T) {
+func TestRoleTargetFallsBackToTheForm(t *testing.T) {
 	snap := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
-		"target-aria": json.RawMessage(`"fromboard"`),
+		"target-aria": json.RawMessage(`"fromform"`),
 	}, nil))
 	row := rpc.FigaroInfoResponse{ID: "@a1b2c3d4", Kind: "form"}
-	if got := roleTargetOf(&row, snap); got != "fromboard" {
-		t.Errorf("board fallback: %q", got)
+	if got := roleTargetOf(&row, snap); got != "fromform" {
+		t.Errorf("form fallback: %q", got)
 	}
 	row.TargetAria = "fromlisting"
 	if got := roleTargetOf(&row, snap); got != "fromlisting" {

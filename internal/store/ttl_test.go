@@ -34,7 +34,7 @@ func mustNewAria(t *testing.T, b *XwalBackend) string {
 	return id
 }
 
-func setBoardKey(t *testing.T, b *XwalBackend, id, key, val string) {
+func setBoundFormKey(t *testing.T, b *XwalBackend, id, key, val string) {
 	t.Helper()
 	raw, _ := json.Marshal(val)
 	if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{key: raw}, nil)); err != nil {
@@ -42,7 +42,7 @@ func setBoardKey(t *testing.T, b *XwalBackend, id, key, val string) {
 	}
 }
 
-func removeBoardKey(t *testing.T, b *XwalBackend, id, key string) {
+func removeBoundFormKey(t *testing.T, b *XwalBackend, id, key string) {
 	t.Helper()
 	if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, nil, []string{key})); err != nil {
 		t.Fatal(err)
@@ -96,14 +96,14 @@ func TestTTLOfSilentPatch(t *testing.T) {
 	}
 }
 
-// The sidecar is the reaper's whole index: setting the key on a board must
+// The sidecar is the reaper's whole index: setting the key on a bound form must
 // leave a deadline readable WITHOUT opening the node again.
 func TestTTLCommittedStampsSidecar(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
 
 	before := time.Now().UnixMilli()
-	setBoardKey(t, b, id, SystemTTLKey, "48h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "48h")
 
 	meta, err := b.Meta(id)
 	if err != nil || meta == nil {
@@ -132,11 +132,11 @@ func TestTTLCommittedStampsSidecar(t *testing.T) {
 func TestTTLClearedRemovesDeadline(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemTTLKey, "1h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "1h")
 	if len(b.TTLEntries()) != 1 {
 		t.Fatalf("after set: %d entries, want 1", len(b.TTLEntries()))
 	}
-	removeBoardKey(t, b, id, SystemTTLKey)
+	removeBoundFormKey(t, b, id, SystemTTLKey)
 	if n := len(b.TTLEntries()); n != 0 {
 		t.Fatalf("after remove: %d entries, want 0", n)
 	}
@@ -150,7 +150,7 @@ func TestTTLClearedRemovesDeadline(t *testing.T) {
 func TestTTLDueCountsFromCreation(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemTTLKey, "1h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "1h")
 
 	meta, _ := b.Meta(id)
 	meta.CreatedAtMS = time.Now().Add(-3 * time.Hour).UnixMilli()
@@ -175,7 +175,7 @@ func TestTTLDueCountsFromCreation(t *testing.T) {
 func TestTTLIndexHoldsOnlyOptIns(t *testing.T) {
 	b := newTTLBackend(t)
 	quiet := mustNewAria(t, b)
-	setBoardKey(t, b, quiet, "mantra", "no lifetime here")
+	setBoundFormKey(t, b, quiet, "mantra", "no lifetime here")
 	if n := len(b.TTLEntries()); n != 0 {
 		t.Fatalf("%d entries for a store where nobody set a ttl, want 0", n)
 	}

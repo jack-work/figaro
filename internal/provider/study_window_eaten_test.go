@@ -14,7 +14,7 @@ import (
 func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 	const fid = "@studied"
 
-	// A stateless accessor: newFakeBoard's cursor consumes, and this test's
+	// A stateless accessor: newFakeBoundForm's cursor consumes, and this test's
 	// subject is whether the range is asked for twice.
 	studies := map[string]Form{fid: patchAt(7)}
 

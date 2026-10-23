@@ -26,7 +26,7 @@ type FigaroInfoResponse struct {
 	OutfitVer        string `json:"outfit_ver,omitempty"`    // "live" if the stamped hash matches the current outfit, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
-	// TTLMS is board key system.ttl; ExpiresAt is CreatedAt + TTLMS. Zero
+	// TTLMS is bound form key system.ttl; ExpiresAt is CreatedAt + TTLMS. Zero
 	// when no lifetime is stated.
 	TTLMS       int64 `json:"ttl_ms,omitempty"`
 	ExpiresAt   int64 `json:"expires_at,omitempty"`

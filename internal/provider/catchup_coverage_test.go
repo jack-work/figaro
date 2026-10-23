@@ -117,7 +117,7 @@ func TestAnEmptyRowCommitsNoCursor(t *testing.T) {
 
 	var rendered [][]string
 	cfg := catchUpTestConfig(log, rows)
-	cfg.Form = newFakeBoard(2, 3, 4, 5, 6)
+	cfg.Form = newFakeBoundForm(2, 3, 4, 5, 6)
 	cfg.Encode = func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 		var keys []string
 		for _, p := range msg.Patches {
@@ -146,7 +146,7 @@ func TestAnEmptyRowCommitsNoCursor(t *testing.T) {
 		t.Fatalf("SeedLT=%d, want %d: the empty row is not a seed", SeedLT(rows), entries[0].LT)
 	}
 	cfg.Log = log
-	cfg.Form = newFakeBoard(2, 3, 4, 5, 6)
+	cfg.Form = newFakeBoundForm(2, 3, 4, 5, 6)
 	if _, err := CatchUp(cfg); err != nil {
 		t.Fatal(err)
 	}

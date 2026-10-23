@@ -12,19 +12,19 @@ import (
 func TestKeepaliveMirrorsIntoTheIndex(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemTTLKey, "1h")
-	setBoardKey(t, b, id, SystemKeepaliveKey, "2h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "1h")
+	setBoundFormKey(t, b, id, SystemKeepaliveKey, "2h")
 
 	e := ScanTTL(b.root)[id]
 	if e.Keepalive == nil || *e.Keepalive != 2*time.Hour {
 		t.Fatalf("keepalive %v, want 2h", e.Keepalive)
 	}
-	setBoardKey(t, b, id, SystemKeepaliveKey, "0")
+	setBoundFormKey(t, b, id, SystemKeepaliveKey, "0")
 	e = ScanTTL(b.root)[id]
 	if e.Keepalive == nil || *e.Keepalive != 0 {
 		t.Fatalf("keepalive %v after \"0\", want an explicit zero (no mercy), not the default", e.Keepalive)
 	}
-	removeBoardKey(t, b, id, SystemKeepaliveKey)
+	removeBoundFormKey(t, b, id, SystemKeepaliveKey)
 	if e = ScanTTL(b.root)[id]; e.Keepalive != nil {
 		t.Fatalf("keepalive %v after removal, want nil (the daemon default)", *e.Keepalive)
 	}
@@ -33,17 +33,17 @@ func TestKeepaliveMirrorsIntoTheIndex(t *testing.T) {
 func TestRetiredMirrorsAndClears(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemRetiredKey, "2026-10-21T06:00:00Z")
+	setBoundFormKey(t, b, id, SystemRetiredKey, "2026-10-21T06:00:00Z")
 	meta, _ := b.Meta(id)
 	if meta == nil || meta.RetiredAtMS == 0 {
 		t.Fatal("system.retired did not reach the sidecar; the prompt refusal reads it there")
 	}
-	setBoardKey(t, b, id, SystemRetiredKey, "false")
+	setBoundFormKey(t, b, id, SystemRetiredKey, "false")
 	if meta, _ = b.Meta(id); meta.RetiredAtMS != 0 {
 		t.Fatalf("retired_at_ms %d after \"false\", want 0", meta.RetiredAtMS)
 	}
-	setBoardKey(t, b, id, SystemRetiredKey, "yes")
-	removeBoardKey(t, b, id, SystemRetiredKey)
+	setBoundFormKey(t, b, id, SystemRetiredKey, "yes")
+	removeBoundFormKey(t, b, id, SystemRetiredKey)
 	if meta, _ = b.Meta(id); meta.RetiredAtMS != 0 {
 		t.Fatalf("retired_at_ms %d after removal, want 0", meta.RetiredAtMS)
 	}
@@ -81,7 +81,7 @@ func TestReapsAtHonoursKeepalive(t *testing.T) {
 func TestTouchIsThrottledAndDurable(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemTTLKey, "1h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "1h")
 	t0 := time.Now()
 	b.Touch(id, t0)
 	if got := ScanTTL(b.root)[id].LastAccessMS; got != t0.UnixMilli() {
@@ -111,7 +111,7 @@ func TestTouchIsThrottledAndDurable(t *testing.T) {
 func TestForkOfARetiredAriaIsNotRetired(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemRetiredKey, "2026-10-21T06:00:00Z")
+	setBoundFormKey(t, b, id, SystemRetiredKey, "2026-10-21T06:00:00Z")
 	child, _, err := b.ForkWith(id, 0, setPatch(map[string]string{"mantra": "fork"}))
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestForkOfARetiredAriaIsNotRetired(t *testing.T) {
 		t.Fatal(err)
 	}
 	if v := snap.Lookup(SystemRetiredKey); v != nil {
-		t.Errorf("fork's board still says %s=%q", SystemRetiredKey, *v)
+		t.Errorf("fork's bound form still says %s=%q", SystemRetiredKey, *v)
 	}
 	if meta, _ := b.Meta(id); meta == nil || meta.RetiredAtMS == 0 {
 		t.Error("forking unretired the parent")
@@ -136,7 +136,7 @@ func TestForkOfARetiredAriaIsNotRetired(t *testing.T) {
 func TestANumericZeroIsAnExplicitZero(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemTTLKey, "1h")
+	setBoundFormKey(t, b, id, SystemTTLKey, "1h")
 	if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{SystemKeepaliveKey: json.RawMessage(`0`)}, nil)); err != nil {
 		t.Fatal(err)
 	}

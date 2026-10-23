@@ -15,7 +15,7 @@ type option struct {
 	criterion string
 }
 
-func expand(choices []string, board form.Snapshot) ([]option, []string, error) {
+func expand(choices []string, bound form.Snapshot) ([]option, []string, error) {
 	var opts []option
 	var refs []string
 	seen := map[string]bool{}
@@ -35,7 +35,7 @@ func expand(choices []string, board form.Snapshot) ([]option, []string, error) {
 			add(option{label: c, criterion: c}, "")
 			continue
 		}
-		raw, ok := board.Get(key)
+		raw, ok := bound.Get(key)
 		if !ok {
 			return nil, nil, fmt.Errorf("@%s: no such key on the form", key)
 		}

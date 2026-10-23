@@ -1,6 +1,6 @@
-# board-default.json: provenance
+# bound-default.json: provenance
 
-`board-default.json` is a **verbatim capture of the real default-outfit
+`bound-default.json` is a **verbatim capture of the real default-outfit
 form** of this machine's figaro user, frozen so the benchmarks in
 `form_bench_test.go` are hermetic and reproducible anywhere. Nothing
 in the benchmark suite reads live config; it reads this file.
@@ -43,7 +43,7 @@ export FIGARO_BUNDLED_SKILLS=<repo>
 mkdir -p "$FIGARO_RUNTIME_DIR" "$FIGARO_STATE_DIR"
 
 id=$(./figaro new --outfit opus5 -j | jq -r .aria_id)   # no prompt => no turn, no tokens
-./figaro state "$id" -j | jq -S . > <repo>/internal/form/testdata/board-default.json
+./figaro state "$id" -j | jq -S . > <repo>/internal/form/testdata/bound-default.json
 
 ./figaro rest                      # tear the isolated daemon down
 rm -rf /tmp/chalkcap/run /tmp/chalkcap/state

@@ -39,10 +39,10 @@ const (
 )
 
 type Source struct {
-	Log      store.Log[message.Message]
-	Board    form.Snapshot
-	Defaults form.Snapshot
-	Context  string
+	Log       store.Log[message.Message]
+	BoundForm form.Snapshot
+	Defaults  form.Snapshot
+	Context   string
 }
 
 type Target struct {
@@ -64,7 +64,7 @@ type settings struct {
 
 func (src Source) settings(req rpc.DecideRequest) (settings, error) {
 	pick := func(asked, key string) string {
-		return firstOf(asked, boardString(src.Board, key), boardString(src.Defaults, key))
+		return firstOf(asked, boundFormString(src.BoundForm, key), boundFormString(src.Defaults, key))
 	}
 	s := settings{
 		provider: pick(req.Provider, ProviderKey),
@@ -94,7 +94,7 @@ type plan struct {
 	focus   *quote.Range
 }
 
-func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
+func parse(req rpc.DecideRequest, bound form.Snapshot) (plan, error) {
 	text := strings.TrimSpace(req.Question)
 	var p plan
 	if r, rest, err := quote.Parse(text); err == nil {
@@ -111,7 +111,7 @@ func parse(req rpc.DecideRequest, board form.Snapshot) (plan, error) {
 		}
 	}
 	choices = apidecide.Dedupe(append(choices, req.Choices...))
-	opts, refs, err := expand(choices, board)
+	opts, refs, err := expand(choices, bound)
 	if err != nil {
 		return p, err
 	}
@@ -180,7 +180,7 @@ func (e *Engine) Ask(ctx context.Context, src Source, q Question) (rpc.DecideRes
 }
 
 func (e *Engine) Decide(ctx context.Context, src Source, req rpc.DecideRequest) (rpc.DecideResponse, error) {
-	p, err := parse(req, src.Board)
+	p, err := parse(req, src.BoundForm)
 	if err != nil {
 		return rpc.DecideResponse{}, err
 	}
@@ -337,8 +337,8 @@ func firstOf(vals ...string) string {
 	return ""
 }
 
-func boardString(board form.Snapshot, key string) string {
-	if v := board.Lookup(key); v != nil {
+func boundFormString(bound form.Snapshot, key string) string {
+	if v := bound.Lookup(key); v != nil {
 		return *v
 	}
 	return ""

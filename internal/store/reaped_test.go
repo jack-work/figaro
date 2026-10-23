@@ -17,8 +17,8 @@ func TestReapedMirrorsIndexesAndClears(t *testing.T) {
 	changes := 0
 	b.OnReapedChange(func() { changes++ })
 
-	setBoardKey(t, b, root, SystemReapedKey, root)
-	setBoardKey(t, b, child, SystemReapedKey, root)
+	setBoundFormKey(t, b, root, SystemReapedKey, root)
+	setBoundFormKey(t, b, child, SystemReapedKey, root)
 	got := b.Reaped()
 	if len(got) != 2 || got[0].Root != root || got[1].Root != root {
 		t.Fatalf("reaped %+v, want both nodes under root %s", got, root)
@@ -34,7 +34,7 @@ func TestReapedMirrorsIndexesAndClears(t *testing.T) {
 		t.Fatalf("a fresh scan found %d reaped; the sidecar is the record and must survive a restart", n)
 	}
 
-	removeBoardKey(t, b, child, SystemReapedKey)
+	removeBoundFormKey(t, b, child, SystemReapedKey)
 	if got = b.Reaped(); len(got) != 1 || got[0].ID != root {
 		t.Fatalf("reaped %+v after restoring the child, want only the root", got)
 	}
@@ -43,7 +43,7 @@ func TestReapedMirrorsIndexesAndClears(t *testing.T) {
 func TestAForkOfAReapedAriaIsNotReaped(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemReapedKey, id)
+	setBoundFormKey(t, b, id, SystemReapedKey, id)
 	child, _, err := b.ForkWith(id, 0, setPatch(map[string]string{"mantra": "revived"}))
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestAForkOfAReapedAriaIsNotReaped(t *testing.T) {
 func TestAHardDeleteForgetsTheReapedEntry(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoardKey(t, b, id, SystemReapedKey, id)
+	setBoundFormKey(t, b, id, SystemReapedKey, id)
 	if err := b.Remove(id, true); err != nil {
 		t.Fatal(err)
 	}

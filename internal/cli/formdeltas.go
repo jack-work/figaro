@@ -48,7 +48,7 @@ type deltaCell struct {
 	present bool
 }
 
-// deltaRows: the fork banner first when lifted, then this figaro's own board,
+// deltaRows: the fork banner first when lifted, then this figaro's own bound form,
 // then every other form by id. liftFork is the inquiry's: a fork happens only
 // on the turn's question.
 func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
@@ -265,7 +265,7 @@ func forkKey(kind livedoc.FormKind, key string) bool {
 	return kind == livedoc.FormBound && (key == forkedFromKey || key == "aria_id")
 }
 
-// The bound board is unnamed; every other form is named by id.
+// The bound form is unnamed; every other form is named by id.
 func deltaFormName(formID string, g *deltaGroup) string {
 	if g.kind == livedoc.FormBound {
 		return ""

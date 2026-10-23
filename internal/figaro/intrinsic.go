@@ -90,7 +90,7 @@ func (c *intrinsic) close() {
 }
 
 // openIntrinsics wires each intrinsic to the aria's fanout: same socket and
-// notification as the board's deltas, distinguished by the Intrinsic field.
+// notification as the bound form's deltas, distinguished by the Intrinsic field.
 func (a *Agent) openIntrinsics() {
 	a.runtime = newIntrinsic(IntrinsicRuntime)
 	a.queue = newIntrinsic(IntrinsicQueue)

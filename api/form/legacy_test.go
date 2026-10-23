@@ -10,7 +10,7 @@ import (
 )
 
 // A flat patch no longer decodes; migration replays each record against the
-// board it lands on.
+// bound form it lands on.
 
 func TestLegacyFlatSnapshotNests(t *testing.T) {
 	var s form.Snapshot

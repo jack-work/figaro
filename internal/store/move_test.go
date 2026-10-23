@@ -98,7 +98,7 @@ func talk(t *testing.T, be *XwalBackend, id string, turn uint64, text string) ui
 }
 
 // A whole fork component moves between backends under its ids: the IR, the
-// translator cache, the board and the meta sidecar read back the same on the
+// translator cache, the bound form and the meta sidecar read back the same on the
 // new home, the old home forgets it, and a neighbour under the same outfit
 // is untouched.
 func TestABackendMovesAComponentWhole(t *testing.T) {

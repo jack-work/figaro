@@ -53,7 +53,7 @@ func TestStudyMarkCannotLandInsideARound(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// The board took the study immediately: the mark is narration, the declaration is the mechanism.
+	// The bound form took the study immediately: the mark is narration, the declaration is the mechanism.
 	studies := a.StudyList()
 	require.Contains(t, studies, formID, "the study was not declared while the turn ran")
 
@@ -65,7 +65,7 @@ func TestStudyMarkCannotLandInsideARound(t *testing.T) {
 		"the mark never arrived after the round boundary")
 }
 
-// The board is authoritative and the libretto count derives from it; they
+// The bound form is authoritative and the libretto count derives from it; they
 // agree the moment the verb returns.
 func TestStudyMintsAndRetainsItsLibretto(t *testing.T) {
 	entered, gate := newGate()
@@ -92,7 +92,7 @@ func TestStudyMintsAndRetainsItsLibretto(t *testing.T) {
 		return ok && string(raw) == `"observed"`
 	}, 3*time.Second, 5*time.Millisecond, "the libretto is not following the source")
 
-	// Studying again is not a second reference: the board is a set.
+	// Studying again is not a second reference: the bound form is a set.
 	if _, err := a.Study(formID); err != nil {
 		t.Fatal(err)
 	}

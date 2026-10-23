@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// snapshotWatchProvider records the board each send was given and blocks mid-send.
+// snapshotWatchProvider records the bound form each send was given and blocks mid-send.
 type snapshotWatchProvider struct {
 	mu      sync.Mutex
 	seen    []string
@@ -52,8 +52,8 @@ func (p *snapshotWatchProvider) Send(_ context.Context, in provider.SendInput, b
 }
 
 // A set landing mid-turn does not change the request in flight, and the
-// next turn sees it: the turn samples the board once, at send.
-func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
+// next turn sees it: the turn samples the bound form once, at send.
+func TestASetMidTurnDoesNotMoveTheBoundFormUnderTheTurnInFlight(t *testing.T) {
 	p := &snapshotWatchProvider{entered: make(chan struct{}), release: make(chan struct{})}
 	cb, _ := form.Open("")
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
@@ -109,7 +109,7 @@ func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.seen[0] != "before" {
-		t.Errorf("the in-flight request saw probe=%s, want before: the board moved under it", p.seen[0])
+		t.Errorf("the in-flight request saw probe=%s, want before: the bound form moved under it", p.seen[0])
 	}
 	if p.seen[1] != "during" {
 		t.Errorf("the next turn saw probe=%s, want during: the set never reached a turn", p.seen[1])

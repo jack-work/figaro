@@ -88,7 +88,7 @@ func TestFormReplaysItsLog(t *testing.T) {
 //
 // Each writer writes a DIFFERENT value on purpose. Thirty-two writers all
 // setting k=1 is not a test of serialization: since the writer reduces a
-// patch against the board, thirty-one of those are no-ops and SHOULD share a
+// patch against the bound form, thirty-one of those are no-ops and SHOULD share a
 // version. What must never happen is two real changes landing on one.
 func TestFormSerializesConcurrentWrites(t *testing.T) {
 	f := store.NewMemForm()
@@ -120,7 +120,7 @@ func TestFormSerializesConcurrentWrites(t *testing.T) {
 
 // A patch that changes nothing is not an event. The rule lives in the WRITER,
 // where the diff is atomic with the append, so both write paths: the agent's
-// board and an agentless form: obey it identically, and an aria observing a
+// bound form and an agentless form: obey it identically, and an aria observing a
 // form derives no transition from a set that set nothing.
 func TestNoOpPatchIsNotAnEvent(t *testing.T) {
 	f := store.NewMemForm()

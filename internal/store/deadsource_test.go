@@ -2,7 +2,7 @@ package store
 
 import "testing"
 
-// A drop on a deleted form is legal: the subscription goes and the board
+// A drop on a deleted form is legal: the subscription goes and the bound form
 // stops naming it. A real `fig kill` unlinks the source, so the libretto's
 // source cannot be opened at all.
 func TestDropAfterTheSourceIsUnlinked(t *testing.T) {
@@ -33,7 +33,7 @@ func TestDropAfterTheSourceIsUnlinked(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(studies) != 0 {
-		t.Fatalf("the board still names a deleted form: %v", studies)
+		t.Fatalf("the bound form still names a deleted form: %v", studies)
 	}
 }
 
@@ -103,7 +103,7 @@ func TestDropAfterTheSourceIsUnlinkedAcrossARestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(studies) != 0 {
-		t.Fatalf("the board still names a deleted form after the drop: %v", studies)
+		t.Fatalf("the bound form still names a deleted form after the drop: %v", studies)
 	}
 	// The copy is still readable, which is what makes the history render.
 	lib, err := again.Libretto(sourceID)

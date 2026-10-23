@@ -65,7 +65,7 @@ type AssistantCache struct {
 	Fingerprint string
 }
 
-// Form is the per-LT board patch accessor; the encoder folds a message's
+// Form is the per-LT bound form patch accessor; the encoder folds a message's
 // patches into its wire bytes so per-LT caching stays sound.
 type Form interface {
 	PatchesBetween(after, upTo uint64) []message.Patch
@@ -75,7 +75,7 @@ type Form interface {
 // lands; the catch-up calls the same function.
 type EntryEncoder interface {
 	TranslatorChannel() string
-	// EncodeMessage renders against the board as it stood before the message.
+	// EncodeMessage renders against the bound form as it stood before the message.
 	EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
 	Fingerprint() string
 }

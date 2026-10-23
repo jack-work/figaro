@@ -92,9 +92,9 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
 
-	// The study is on the board, not just in memory.
+	// The study is on the bound form, not just in memory.
 	studies, ok := fc.formValue(t, callCtx, "system.studies")
-	require.True(t, ok, "system.studies missing from the caster's board")
+	require.True(t, ok, "system.studies missing from the caster's bound form")
 	require.Contains(t, studies, role.FormID)
 
 	// A second cast is idempotent on the study.
@@ -234,7 +234,7 @@ func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
 		t.Fatalf("form: %v", err)
 	}
 	if studies := figaro.StudiesFromSnapshot(form.Snapshot); len(studies) != 1 || studies[0] != role.FormID {
-		t.Fatalf("studies on the board: %v", studies)
+		t.Fatalf("studies on the bound form: %v", studies)
 	}
 
 	if _, err := fc.Drop(ctx, role.FormID); err != nil {

@@ -36,13 +36,13 @@ func seedUnkeyed(t *testing.T, dir string) (*Trunks, TrunkID) {
 }
 
 // An unkeyed channel is appended with NO reference to the timeline, and a
-// fork still inherits exactly what the board held at the fork point --
+// fork still inherits exactly what the bound form held at the fork point --
 // because the main record there recorded where the channel stood.
 func TestUnkeyedChannelForksAtTheCursor(t *testing.T) {
 	f, trunk := seedUnkeyed(t, filepath.Join(t.TempDir(), "f"))
 	var at uint64
 	for i := range 4 {
-		// Board patch FIRST, with mainLT 0: it does not consult main at all.
+		// Bound form patch FIRST, with mainLT 0: it does not consult main at all.
 		patch, _ := MapSetPatch([]string{fmt.Sprintf("k%d", i)}, fmt.Appendf(nil, `%d`, i))
 		if _, err := f.AppendChannel(string(trunk), "chalkboard", 0, patch, nil); err != nil {
 			t.Fatal(err)
@@ -52,7 +52,7 @@ func TestUnkeyedChannelForksAtTheCursor(t *testing.T) {
 			t.Fatal(err)
 		}
 		if i == 1 {
-			at = lt // fork here: the board held k0,k1 and nothing later
+			at = lt // fork here: the bound form held k0,k1 and nothing later
 		}
 	}
 	alt, err := f.ForkAt(trunk, at)
@@ -76,7 +76,7 @@ func TestUnkeyedChannelForksAtTheCursor(t *testing.T) {
 	}
 	got := string(st)
 	if want := `{"k0":0,"k1":1}`; got != want {
-		t.Fatalf("forked board = %s, want %s (the board AS OF the fork point)", got, want)
+		t.Fatalf("forked bound form = %s, want %s (the bound form AS OF the fork point)", got, want)
 	}
 }
 
@@ -149,14 +149,14 @@ func TestMainRecordCarriesTheCursor(t *testing.T) {
 		t.Fatal("no main record carried a cursor; the stamp is not reaching Record")
 	}
 	if prev == 0 {
-		t.Fatal("cursor never advanced despite three board patches")
+		t.Fatal("cursor never advanced despite three bound form patches")
 	}
 }
 
 // A cursor is data on disk: stale, repaired, or written by an older build,
 // it can name a position the parent does not have, and a fork base above
 // the parent's tail leaves the child numbering over a hole. Forged the way
-// reality forges it: the board's records are lost while the stamp survives.
+// reality forges it: the bound form's records are lost while the stamp survives.
 func TestUnkeyedForkCeilingsAtTheParentTail(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedUnkeyed(t, dir)
@@ -178,11 +178,11 @@ func TestUnkeyedForkCeilingsAtTheParentTail(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Lose the board's records; keep main and its stamps.
-	boardDir := filepath.Join(dir, "chalkboard", node)
-	segs, _ := filepath.Glob(filepath.Join(boardDir, "*.jsonl"))
+	// Lose the bound form's records; keep main and its stamps.
+	boundFormDir := filepath.Join(dir, "chalkboard", node)
+	segs, _ := filepath.Glob(filepath.Join(boundFormDir, "*.jsonl"))
 	if len(segs) == 0 {
-		t.Fatal("no board segments to lose; the test proves nothing")
+		t.Fatal("no bound form segments to lose; the test proves nothing")
 	}
 	for _, p := range segs {
 		if err := os.Remove(p); err != nil {
@@ -192,7 +192,7 @@ func TestUnkeyedForkCeilingsAtTheParentTail(t *testing.T) {
 
 	g, err := openTrunks(dir, unkeyedCfg())
 	if err != nil {
-		t.Fatalf("reopen after losing the board: %v", err)
+		t.Fatalf("reopen after losing the bound form: %v", err)
 	}
 	cleanupTrunks(t, g)
 	// What the parent can actually serve.
@@ -214,7 +214,7 @@ func TestUnkeyedForkCeilingsAtTheParentTail(t *testing.T) {
 	}
 	base := g.readChannelBase(t, g.head(string(alt)), "chalkboard")
 	if base > parentTail+1 {
-		t.Fatalf("board base %d, parent serves only through %d: the child numbers over a hole",
+		t.Fatalf("bound form base %d, parent serves only through %d: the child numbers over a hole",
 			base, parentTail)
 	}
 }

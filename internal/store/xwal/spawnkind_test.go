@@ -104,7 +104,7 @@ func TestSpawnChildKindParentStaysAppendable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	board := func(trunk TrunkID) string {
+	bound := func(trunk TrunkID) string {
 		t.Helper()
 		x, err := f.Head(trunk)
 		if err != nil {
@@ -124,13 +124,13 @@ func TestSpawnChildKindParentStaysAppendable(t *testing.T) {
 		return string(st)
 	}
 
-	if got, want := board(child1), `{"k0":0}`; got != want {
-		t.Errorf("child1 board = %s, want %s (parent patches after the fork must not leak in)", got, want)
+	if got, want := bound(child1), `{"k0":0}`; got != want {
+		t.Errorf("child1 bound form = %s, want %s (parent patches after the fork must not leak in)", got, want)
 	}
-	if got, want := board(child2), `{"k0":0,"k1":1}`; got != want {
-		t.Errorf("child2 board = %s, want %s (a later fork takes the later base)", got, want)
+	if got, want := bound(child2), `{"k0":0,"k1":1}`; got != want {
+		t.Errorf("child2 bound form = %s, want %s (a later fork takes the later base)", got, want)
 	}
-	if got, want := board(form), `{"k0":0,"k1":1}`; got != want {
-		t.Errorf("parent board = %s, want %s (spawning children must not disturb the parent)", got, want)
+	if got, want := bound(form), `{"k0":0,"k1":1}`; got != want {
+		t.Errorf("parent bound form = %s, want %s (spawning children must not disturb the parent)", got, want)
 	}
 }

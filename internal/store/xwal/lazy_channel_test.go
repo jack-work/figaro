@@ -20,15 +20,15 @@ var lazyVariants = []lazyVariant{
 	{name: "keyed-log", channel: "notes"},
 	{name: "unkeyed-log", channel: "turnlog"},
 	{name: "keyed-reducible", channel: "chalkboard", reducible: true},
-	{name: "unkeyed-reducible", channel: "board", reducible: true},
+	{name: "unkeyed-reducible", channel: "form", reducible: true},
 }
 
 func lazyStoreOptions() StoreOptions {
 	return StoreOptions{
 		Main:         "ir",
 		SyncInterval: 20 * time.Millisecond,
-		Reducers:     map[string]Reducer{"chalkboard": MapReducer(), "board": MapReducer()},
-		Unkeyed:      []string{"turnlog", "board"},
+		Reducers:     map[string]Reducer{"chalkboard": MapReducer(), "form": MapReducer()},
+		Unkeyed:      []string{"turnlog", "form"},
 	}
 }
 

@@ -39,7 +39,7 @@ that are easy to get backwards:
 | layer | drops | trigger | where |
 |---|---|---|---|
 | **figwal** | a lineage's in-RAM head; buffers flushed then unloaded | `IdleUnload`, 5 min | `figwal/xwal/store.go` `evictIdle` |
-| **backend cache** | decoded IR, translations, board, meta | `EvictIdle(live, dormantAfter)`, refuses anything live | `store/xwal_backend.go` |
+| **backend cache** | decoded IR, translations, bound form, meta | `EvictIdle(live, dormantAfter)`, refuses anything live | `store/xwal_backend.go` |
 | **agent** | the whole agent: composed UI, goroutines, provider binding | `Registry.Hibernate`, `dormant_after_minutes` | `angelus/registry.go` |
 
 They cascade: hibernate drops the agent → the aria stops being `live` → the
@@ -317,7 +317,7 @@ and the counters as the sweep runs. What to look for is two numbers at once -
   and the form binary-search. figwal already builds a main-LT index for
   `Lookup`, and exposing a "first channel-LT at or after this main-LT" query
   would remove the search. `TODO(perf)` in `store/xwal_log.go`.
-- **The form patch list is not windowed.** It holds the board plus every
+- **The form patch list is not windowed.** It holds the bound form plus every
   patch. Measured at ~45 KiB, so this is design tidiness, not a memory win.
 - **The first `fig ls` on a 515-aria store takes 2.7 s and nobody knows why
   yet.** It is NOT the segment scan: figwal now opens only the newest segment

@@ -218,7 +218,7 @@ func TestTheHeadNamesTheKindOfRow(t *testing.T) {
 // section under one snake.
 func TestOneSectionCarriesFieldsDeltasAndComments(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
 	prose := nodeRef{turn: 3, index: 0}

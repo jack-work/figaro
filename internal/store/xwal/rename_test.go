@@ -14,9 +14,9 @@ func renameStore(t *testing.T) string {
 		Main: "ir",
 		Channels: []ChannelSpec{
 			{Name: "ir", Kind: ChannelLog},
-			{Name: "board", Kind: ChannelReducible, Reducer: "board", Unkeyed: true},
+			{Name: "chalkboard", Kind: ChannelReducible, Reducer: "chalkboard", Unkeyed: true},
 		},
-		Registry: map[string]Reducer{"board": {Reduce: lastWins, Initial: []byte("{}")}},
+		Registry: map[string]Reducer{"chalkboard": {Reduce: lastWins, Initial: []byte("{}")}},
 	})
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -24,8 +24,8 @@ func renameStore(t *testing.T) string {
 	if _, err := x.AppendMain([]byte(`{"n":1}`), nil); err != nil {
 		t.Fatalf("append main: %v", err)
 	}
-	if _, err := x.Append("board", 0, []byte(`{"k":"v"}`), nil); err != nil {
-		t.Fatalf("append board: %v", err)
+	if _, err := x.Append("chalkboard", 0, []byte(`{"k":"v"}`), nil); err != nil {
+		t.Fatalf("append chalkboard: %v", err)
 	}
 	if err := x.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -39,10 +39,10 @@ func lastWins(_, patch []byte) ([]byte, error) { return patch, nil }
 // and the reducer resolves.
 func TestRenameChannelMovesDataAndManifest(t *testing.T) {
 	dir := renameStore(t)
-	if err := RenameChannel(dir, "board", "form"); err != nil {
+	if err := RenameChannel(dir, "chalkboard", "form"); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "board")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "chalkboard")); !os.IsNotExist(err) {
 		t.Fatalf("old channel dir survived: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "form")); err != nil {
@@ -58,13 +58,13 @@ func TestRenameChannelMovesDataAndManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range m.Channels {
-		if c.Name == "board" {
+		if c.Name == "chalkboard" {
 			t.Fatal("manifest still names the old channel")
 		}
 		if c.Name == "form" && c.Reducer != "form" {
 			// The reducer name travelled because it matched the channel name;
 			// resolveReducer looks by reducer first, channel second, so leaving
-			// it as "board" would demand a registration nobody will make.
+			// it as "chalkboard" would demand a registration nobody will make.
 			t.Fatalf("reducer = %q, want form", c.Reducer)
 		}
 	}
@@ -95,10 +95,10 @@ func TestRenameChannelMovesDataAndManifest(t *testing.T) {
 // repaired.
 func TestRenameChannelResumesAfterAHalfMove(t *testing.T) {
 	dir := renameStore(t)
-	if err := os.Rename(filepath.Join(dir, "board"), filepath.Join(dir, "form")); err != nil {
+	if err := os.Rename(filepath.Join(dir, "chalkboard"), filepath.Join(dir, "form")); err != nil {
 		t.Fatal(err)
 	}
-	if err := RenameChannel(dir, "board", "form"); err != nil {
+	if err := RenameChannel(dir, "chalkboard", "form"); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
 	names, err := channelNames(dir)
@@ -106,7 +106,7 @@ func TestRenameChannelResumesAfterAHalfMove(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range names {
-		if n == "board" {
+		if n == "chalkboard" {
 			t.Fatal("manifest not repaired")
 		}
 	}
@@ -115,10 +115,10 @@ func TestRenameChannelResumesAfterAHalfMove(t *testing.T) {
 // Already done is not an error: a consumer runs its migration on every open.
 func TestRenameChannelIsIdempotent(t *testing.T) {
 	dir := renameStore(t)
-	if err := RenameChannel(dir, "board", "form"); err != nil {
+	if err := RenameChannel(dir, "chalkboard", "form"); err != nil {
 		t.Fatal(err)
 	}
-	if err := RenameChannel(dir, "board", "form"); err != nil {
+	if err := RenameChannel(dir, "chalkboard", "form"); err != nil {
 		t.Fatalf("second run: %v", err)
 	}
 }
@@ -126,7 +126,7 @@ func TestRenameChannelIsIdempotent(t *testing.T) {
 func TestRenameChannelRefusesEscapes(t *testing.T) {
 	dir := renameStore(t)
 	for _, to := range []string{"../escape", "/abs", ".hidden", ""} {
-		if err := RenameChannel(dir, "board", to); err == nil {
+		if err := RenameChannel(dir, "chalkboard", to); err == nil {
 			t.Fatalf("rename to %q was allowed", to)
 		}
 	}

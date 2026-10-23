@@ -596,15 +596,15 @@ func adornPage() aria.Page {
 	turn := aria.Turn{
 		ID: 1, Sealed: true, Inquiry: adornAsk,
 		FormDeltas: map[string]livedoc.FormDelta{
-			"@board.mantra": adornDelta("@board", "bound", "listening", "idle"),
-			"@board.mode":   adornDelta("@board", "bound", "concise", ""),
+			"@bound.mantra": adornDelta("@bound", "bound", "listening", "idle"),
+			"@bound.mode":   adornDelta("@bound", "bound", "concise", ""),
 		},
 		Nodes: []livedoc.Node{
 			{
 				Type: livedoc.NodeProse, Markdown: adornProse,
 				FormDeltas: map[string]livedoc.FormDelta{
-					"@board.tone": adornDelta("@board", "bound", "dry", "wet"),
-					"@board.gain": adornDelta("@board", "bound", "11", "10"),
+					"@bound.tone": adornDelta("@bound", "bound", "dry", "wet"),
+					"@bound.gain": adornDelta("@bound", "bound", "11", "10"),
 				},
 			},
 			{
@@ -612,8 +612,8 @@ func adornPage() aria.Page {
 				Args: map[string]any{"command": adornCmd}, Summary: adornCmd,
 				Output: "one\ntwo\nthree\nfour\nfive\nsix",
 				FormDeltas: map[string]livedoc.FormDelta{
-					"@board.decay":   adornDelta("@board", "bound", "0.4s", "0.9s"),
-					"@board.damping": adornDelta("@board", "bound", "high", "low"),
+					"@bound.decay":   adornDelta("@bound", "bound", "0.4s", "0.9s"),
+					"@bound.damping": adornDelta("@bound", "bound", "high", "low"),
 				},
 			},
 		},

@@ -643,8 +643,8 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Target a specific existing aria"},
 	{Long: "outfit", Short: "O", Description: "Dress the aria in an outfit"},
-	{Long: "set", Short: "S", Description: "Patch the board in the same call: k=v"},
-	{Long: "delete", Short: "D", Description: "Remove board keys in the same call"},
+	{Long: "set", Short: "S", Description: "Patch the bound form in the same call: k=v"},
+	{Long: "delete", Short: "D", Description: "Remove bound form keys in the same call"},
 	{Long: "raw", Short: "r", IsBool: true, Description: "Stream verbatim to stdout: no ANSI, no markdown"},
 	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the raw wire frames as JSON"},
 	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},

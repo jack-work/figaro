@@ -46,7 +46,7 @@ func wantTexts(t *testing.T, got []string, want ...string) {
 	}
 }
 
-// The board's rows draw first and unprefixed; every other form's key is dotted
+// The bound form's rows draw first and unprefixed; every other form's key is dotted
 // onto its id.
 func TestFormDeltaRows(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{

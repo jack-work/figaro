@@ -25,7 +25,7 @@ const (
 const (
 	// OutcomeApplied: reduced, appended, fsynced. Version is the record.
 	OutcomeApplied = "applied"
-	// OutcomeUnchanged: no record, no event; Version is where the board stands.
+	// OutcomeUnchanged: no record, no event; Version is where the form stands.
 	OutcomeUnchanged = "unchanged"
 )
 

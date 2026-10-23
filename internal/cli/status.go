@@ -203,7 +203,7 @@ func speciesOf(f *rpc.FigaroInfoResponse) string {
 	}
 }
 
-// The listing can lag a cast by one refresh; the board is the truth.
+// The listing can lag a cast by one refresh; the form is the truth.
 func roleTargetOf(f *rpc.FigaroInfoResponse, snap form.Snapshot) string {
 	if f.TargetAria != "" {
 		return f.TargetAria

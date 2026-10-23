@@ -509,7 +509,7 @@ func (f *Form) emit(events []versionedApplied) {
 }
 
 // effectivePatch: the keys a patch changes and the removals that remove
-// something. Every place that dresses a board must agree about what "already
+// something. Every place that dresses a form must agree about what "already
 // wearing it" means.
 func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
 	// Apply and re-diff keeps exactly what changed; a removal of something

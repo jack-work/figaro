@@ -92,7 +92,7 @@ func TestConcurrentCastsOfOneFigaro(t *testing.T) {
 	}
 	require.Len(t, studies, casts, "the study set gained or lost entries: %v", studies)
 
-	// The refcounts must agree with the board.
+	// The refcounts must agree with the bound form.
 	if rec, ok := backend.(interface {
 		ReconcileLibrettos() (store.LibrettoAudit, error)
 	}); ok {

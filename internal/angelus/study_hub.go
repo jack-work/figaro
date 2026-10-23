@@ -58,7 +58,7 @@ type studyBackend interface {
 	DropForm(observerID, sourceFormID string) (store.StudyDecl, error)
 }
 
-// markStudyForHub is best effort: the subscription is durable on the board.
+// markStudyForHub is best effort: the subscription is durable on the bound form.
 func (h *handlers) markStudyForHub(ariaID, formID string, began bool) {
 	log, err := h.angelus.Backend.OpenFigIR(ariaID)
 	if err != nil {

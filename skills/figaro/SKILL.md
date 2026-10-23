@@ -17,7 +17,7 @@ the only way you see anything outside your own conversation.
 
 | tag | what it is |
 |---|---|
-| `name="<key>"` | one key of **your bound form** (your board): `cwd`, `mantra`, `aria_id`, whatever your outfit set. `figaro set <key> <value>` changes it. |
+| `name="<key>"` | one key of **your bound form**: `cwd`, `mantra`, `aria_id`, whatever your outfit set. `figaro set <key> <value>` changes it. |
 | `name="study"` | you began or stopped observing a form: `{form, observing, state, version}`. `state` is the whole form as it stood when observation began. |
 | `name="study:@id"` | that form **changed**: `{form, changes, set, removed, version}`, and `"exists":false` when it was deleted (the copy survives, so history still renders). |
 | `name="fork"` | you are a branch: where you came from, and the outfit's `system.fork_incantation`. Rendered only when an incantation is set. |

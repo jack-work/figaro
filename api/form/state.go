@@ -9,22 +9,22 @@ import (
 	"sync/atomic"
 )
 
-// board is the unit of publication: snapshot and dirty travel together under
+// edition is the unit of publication: snapshot and dirty travel together under
 // one atomic pointer store.
-type board struct {
+type edition struct {
 	snapshot Snapshot
 	dirty    bool
 }
 
 type State struct {
-	published atomic.Pointer[board]
+	published atomic.Pointer[edition]
 	path      string
 }
 
 // Open reads the snapshot at path; a missing file is an empty state.
 func Open(path string) (*State, error) {
 	s := &State{path: path}
-	s.publish(board{})
+	s.publish(edition{})
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -41,18 +41,18 @@ func Open(path string) (*State, error) {
 	if err := snap.UnmarshalJSON(data); err != nil {
 		return nil, fmt.Errorf("form.Open: parse %s: %w", path, err)
 	}
-	s.publish(board{snapshot: snap})
+	s.publish(edition{snapshot: snap})
 	return s, nil
 }
 
-func (s *State) load() board {
+func (s *State) load() edition {
 	if b := s.published.Load(); b != nil {
 		return *b
 	}
-	return board{}
+	return edition{}
 }
 
-func (s *State) publish(b board) { s.published.Store(&b) }
+func (s *State) publish(b edition) { s.published.Store(&b) }
 
 // Snapshot is lock-free and safe from any goroutine.
 func (s *State) Snapshot() Snapshot {
@@ -65,7 +65,7 @@ func (s *State) Apply(p Patch) Snapshot {
 	}
 	for {
 		old := s.published.Load()
-		var cur board
+		var cur edition
 		if old != nil {
 			cur = *old
 		}
@@ -73,7 +73,7 @@ func (s *State) Apply(p Patch) Snapshot {
 		if next.Root().Equal(cur.snapshot.Root()) {
 			return cur.snapshot
 		}
-		if s.published.CompareAndSwap(old, &board{snapshot: next, dirty: true}) {
+		if s.published.CompareAndSwap(old, &edition{snapshot: next, dirty: true}) {
 			return next
 		}
 	}
@@ -101,7 +101,7 @@ func (s *State) Save() error {
 		return fmt.Errorf("form.Save: rename: %w", err)
 	}
 	// A failed swap means newer state exists and is still dirty.
-	s.published.CompareAndSwap(old, &board{snapshot: old.snapshot})
+	s.published.CompareAndSwap(old, &edition{snapshot: old.snapshot})
 	return nil
 }
 

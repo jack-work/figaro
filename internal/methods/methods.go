@@ -200,9 +200,9 @@ func (m Method) Question(inquiries []string) decide.Question {
 	return decide.Question{Ask: m.Template.Render(inquiries), Options: m.Options, Score: m.Score}
 }
 
-func Effective(board, defaults form.Snapshot) form.Snapshot {
+func Effective(bound, defaults form.Snapshot) form.Snapshot {
 	set := map[string]json.RawMessage{}
-	for _, snap := range []form.Snapshot{defaults, board} {
+	for _, snap := range []form.Snapshot{defaults, bound} {
 		for key, raw := range snap.All() {
 			if strings.HasPrefix(key, FormKey+".") {
 				set[key] = raw

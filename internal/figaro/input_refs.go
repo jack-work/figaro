@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// formRefs expands `@key!` from the aria's board. The sigil is configurable
+// formRefs expands `@key!` from the aria's bound form. The sigil is configurable
 // (cli.ref_sigil); the terminator is not. An unknown key refuses the message.
 type formRefs struct{}
 
@@ -37,7 +37,7 @@ func (formRefs) Rewrite(_ context.Context, view InputView, text string) (string,
 		}
 		raw, ok := view.Form.Get(key)
 		if !ok {
-			return "", fmt.Errorf("%c%s! is not on the board", sigil, key)
+			return "", fmt.Errorf("%c%s! is not on the bound form", sigil, key)
 		}
 		out.WriteString(refValueString(raw))
 		i += 1 + n + 1

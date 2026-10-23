@@ -16,7 +16,7 @@ import (
 const librettoPrefix = "@libretto::"
 
 // Under system. because a whole-form mirror copies the source's keys verbatim;
-// system.libretto.* is the one namespace a board cannot write (CheckWritable
+// system.libretto.* is the one namespace a form cannot write (CheckWritable
 // refuses it), which makes a collision impossible rather than unlikely.
 const (
 	KeyLibrettoRefs  = "system.libretto.refs"
@@ -324,7 +324,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	for k := range removed {
 		remove = append(remove, k)
 	}
-	// Built against the copy's own board so the patch carries what it replaces.
+	// Built against the copy's own form so the patch carries what it replaces.
 	base, _ := l.form.Snapshot()
 	if _, _, err := l.form.ApplyEffectPrivileged(
 		form.Build(base, set, remove), 0); err != nil {
@@ -383,7 +383,7 @@ func librettoPatch(kv map[string]any) message.Patch {
 }
 
 // refsOf: a libretto written before the set existed carries a number here; it
-// reads as empty and the migration pass rebuilds it from the boards.
+// reads as empty and the migration pass rebuilds it from the bound forms.
 func refsOf(s form.Snapshot) []string {
 	raw, ok := s.Get(KeyLibrettoRefs)
 	if !ok {

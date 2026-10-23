@@ -72,7 +72,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 	if p.IsIdentity() {
 		return nil, nil
 	}
-	// Limits come off the same board as the render, so a cold retranslation
+	// Limits come off the same bound form as the render, so a cold retranslation
 	// reproduces these bytes exactly.
 	limits := ReadDeltaLimits(prev)
 	entries := PatchEntries(p, prev)

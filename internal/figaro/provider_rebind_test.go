@@ -220,7 +220,7 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	assert.EqualValues(t, 1, f.inst("alpha", "tool").sends.Load())
 }
 
-// A provider that cannot be built fails the turn loudly; the aria recovers once the board is corrected.
+// A provider that cannot be built fails the turn loudly; the aria recovers once the bound form is corrected.
 func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	f := newRebindFactory()
 	a, ch := rebindAgent(t, f, map[string]json.RawMessage{

@@ -111,7 +111,7 @@ type interactiveInput struct {
 	queueDebut   map[uint64]time.Time // guarded by in.mu
 	debutTimer   *time.Timer
 	intrinsics   *intrinsicMirrors
-	board        *formMirror // the subject's form; guarded by in.mu, parked with the subject
+	bound        *formMirror // the subject's form; guarded by in.mu, parked with the subject
 	models       *modelsFeed
 	interrupting bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user
 	hangup       hangupClient // nil leaves H inert
@@ -176,7 +176,7 @@ type tailReader interface {
 
 func (in *interactiveInput) enterTranscript() { in.enterPager(true) }
 
-// enterFormPager reads no conversation: a reader who came for the board may not be
+// enterFormPager reads no conversation: a reader who came for the bound form may not be
 // permitted to read it.
 func (in *interactiveInput) enterFormPager() { in.enterPager(false) }
 

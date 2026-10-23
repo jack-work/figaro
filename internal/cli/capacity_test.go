@@ -36,7 +36,7 @@ func (a *askLog) list() []string {
 func capacitySession(t *testing.T) (*interactiveInput, *askLog) {
 	t.Helper()
 	var out bytes.Buffer
-	in := &interactiveInput{mu: new(renderLock), board: &formMirror{}}
+	in := &interactiveInput{mu: new(renderLock), bound: &formMirror{}}
 	in.lt = newLivelogTurn(&out, 120, 20, &renderSettings{}, "abcd1234", time.Now(),
 		newSessionStatus("abcd1234", time.Now()), nil, dimRule)
 	asks := &askLog{}
@@ -45,7 +45,7 @@ func capacitySession(t *testing.T) (*interactiveInput, *askLog) {
 	return in, asks
 }
 
-func boardPatch(base form.Snapshot, kv map[string]string) form.Patch {
+func boundFormPatch(base form.Snapshot, kv map[string]string) form.Patch {
 	set := map[string]json.RawMessage{}
 	for k, v := range kv {
 		set[k] = json.RawMessage(v)
@@ -71,18 +71,18 @@ func barText(in *interactiveInput) string {
 }
 
 // The bar's percentage is derived on the client from two mirrors: the
-// subject's board names provider x model, the catalog names its capacity. A
+// subject's bound form names provider x model, the catalog names its capacity. A
 // fork's dormant alternative has both, so it reads like its parent.
-func TestBarDerivesCapacityFromBoardAndCatalog(t *testing.T) {
+func TestBarDerivesCapacityFromBoundFormAndCatalog(t *testing.T) {
 	in, asks := capacitySession(t)
 
-	board, _, _ := in.board.state()
-	in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
-		Patch: boardPatch(board, map[string]string{"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`})})
+	bound, _, _ := in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
+		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`})})
 	require.Contains(t, barText(in), "12.4k")
 	require.NotContains(t, barText(in), "%", "no catalog yet: tokens only")
 	require.Eventually(t, func() bool { return len(asks.list()) == 1 }, time.Second, 2*time.Millisecond)
-	require.Equal(t, []string{"anthropic/claude-opus-5"}, asks.list(), "a miss asks the daemon for exactly the board's pair")
+	require.Equal(t, []string{"anthropic/claude-opus-5"}, asks.list(), "a miss asks the daemon for exactly the bound form's pair")
 
 	cat, _, _ := in.models.mirror.state()
 	delta, err := json.Marshal(rpc.FormDelta{Schema: rpc.FormDeltaSchema, AriaID: models.FormID, Version: 1,
@@ -91,23 +91,23 @@ func TestBarDerivesCapacityFromBoardAndCatalog(t *testing.T) {
 	in.models.handle(rpc.MethodFormDelta, delta)
 	require.Contains(t, barText(in), "12.4k/1.0m 1.2%")
 
-	// A model switch is a board delta; the bar follows it with no round trip.
-	board, _, _ = in.board.state()
-	in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2,
-		Patch: boardPatch(board, map[string]string{"system.model": `"claude-sonnet-5"`})})
+	// A model switch is a bound form delta; the bar follows it with no round trip.
+	bound, _, _ = in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2,
+		Patch: boundFormPatch(bound, map[string]string{"system.model": `"claude-sonnet-5"`})})
 	require.Contains(t, barText(in), "12.4k/500.0k 2.5%")
 
 	// The same model under another provider is not the same entry.
-	board, _, _ = in.board.state()
-	in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 3,
-		Patch: boardPatch(board, map[string]string{"system.provider": `"copilot"`})})
+	bound, _, _ = in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 3,
+		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"copilot"`})})
 	require.NotContains(t, barText(in), "%")
 }
 
-func TestABoardPinNeedsNoCatalogAndAsksForNothing(t *testing.T) {
+func TestABoundFormPinNeedsNoCatalogAndAsksForNothing(t *testing.T) {
 	in, asks := capacitySession(t)
-	board, _, _ := in.board.state()
-	in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boardPatch(board, map[string]string{
+	bound, _, _ := in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
 		"system.provider": `"anthropic"`, "system.model": `"unknown"`, "system.max_context_tokens": `200000`})})
 	require.Contains(t, barText(in), "12.4k/200.0k 6.2%")
 	time.Sleep(20 * time.Millisecond)
@@ -115,24 +115,24 @@ func TestABoardPinNeedsNoCatalogAndAsksForNothing(t *testing.T) {
 }
 
 // A miss is asked about once per window, not once per delta: the bar
-// recomputes on every board change and must not flood the daemon.
+// recomputes on every bound form change and must not flood the daemon.
 func TestAMissIsAskedOncePerWindow(t *testing.T) {
 	in, asks := capacitySession(t)
-	board, _, _ := in.board.state()
-	in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boardPatch(board, map[string]string{
+	bound, _, _ := in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
 		"system.provider": `"anthropic"`, "system.model": `"nope"`})})
 	for v := uint64(2); v < 20; v++ {
-		board, _, _ = in.board.state()
-		in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: v,
-			Patch: boardPatch(board, map[string]string{"mantra": `"m` + string(rune('a'+v)) + `"`})})
+		bound, _, _ = in.bound.state()
+		in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: v,
+			Patch: boundFormPatch(bound, map[string]string{"mantra": `"m` + string(rune('a'+v)) + `"`})})
 	}
 	time.Sleep(20 * time.Millisecond)
 	require.Len(t, asks.list(), 1)
 }
 
-// A parked subject keeps its board: hopping back paints the percentage from
+// A parked subject keeps its bound form: hopping back paints the percentage from
 // what is held, before any read.
-func TestAParkedSubjectKeepsItsBoard(t *testing.T) {
+func TestAParkedSubjectKeepsItsBoundForm(t *testing.T) {
 	in, _ := capacitySession(t)
 	cat, _, _ := in.models.mirror.state()
 	in.models.mirror.reset(cat.Apply(catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 1_000_000})), 1)
@@ -140,19 +140,19 @@ func TestAParkedSubjectKeepsItsBoard(t *testing.T) {
 	in.mu.Lock()
 	in.figaroID = "first"
 	in.mu.Unlock()
-	board, _, _ := in.board.state()
-	in.applyBoardDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boardPatch(board, map[string]string{
+	bound, _, _ := in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
 		"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`})})
-	held := in.subjectBoard()
+	held := in.subjectBoundForm()
 
 	in.lt.client.Apply(aria.Page{Parts: partsFor(1, 2, "FIRST")}, aria.Notify)
 	_, _, ok := in.claimSubject(0, "second", "first", nil, 0)
 	require.True(t, ok)
-	require.NotSame(t, held, in.subjectBoard(), "a new subject starts from an empty board")
+	require.NotSame(t, held, in.subjectBoundForm(), "a new subject starts from an empty bound form")
 
 	_, _, ok = in.claimSubject(0, "first", "second", nil, 0)
 	require.True(t, ok)
-	require.Same(t, held, in.subjectBoard(), "the parked board comes back with its subject")
+	require.Same(t, held, in.subjectBoundForm(), "the parked bound form comes back with its subject")
 	in.lt.status.update(aria.Metrics{ContextTokens: 12_400, ContextExact: true})
 	in.recomputeLimit()
 	require.Contains(t, barText(in), "1.2%")
@@ -160,11 +160,11 @@ func TestAParkedSubjectKeepsItsBoard(t *testing.T) {
 
 func TestCatchUpSkipsWhatADeltaAlreadyApplied(t *testing.T) {
 	var m formMirror
-	p1 := boardPatch(form.Snapshot{}, map[string]string{"a": `1`})
+	p1 := boundFormPatch(form.Snapshot{}, map[string]string{"a": `1`})
 	s1 := form.Snapshot{}.Apply(p1)
-	p2 := boardPatch(s1, map[string]string{"b": `2`})
+	p2 := boundFormPatch(s1, map[string]string{"b": `2`})
 	s2 := s1.Apply(p2)
-	p3 := boardPatch(s2, map[string]string{"a": `3`})
+	p3 := boundFormPatch(s2, map[string]string{"a": `3`})
 
 	m.reset(s1, 1)
 	require.Equal(t, formApplied, m.apply(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2, Patch: p2}))

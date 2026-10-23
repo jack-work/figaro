@@ -87,8 +87,8 @@ func rewriteChannel(root, channel string, seed func() any,
 }
 
 // MigrateFormToStructural is form channel v1 -> v2: flat patches become
-// structural. It replays each node so that at every record it holds the board
-// the record applies to; only that board can turn a flat set into a patch
+// structural. It replays each node so that at every record it holds the form
+// the record applies to; only that form can turn a flat set into a patch
 // that carries what it replaced.
 func MigrateFormToStructural(root string) error {
 	return rewriteChannel(root, chanForm,
@@ -98,19 +98,19 @@ func MigrateFormToStructural(root string) error {
 			if !ok {
 				return nil, nil
 			}
-			board, _ := n.carry.(form.Snapshot)
+			bound, _ := n.carry.(form.Snapshot)
 
 			flat, isFlat := readFlatPatch(praw)
 			if !isFlat {
 				var p message.Patch
 				if json.Unmarshal(praw, &p) == nil {
-					n.carry = board.Apply(p)
+					n.carry = bound.Apply(p)
 				}
 				return nil, nil
 			}
 
-			p := form.Build(board, flat.Set, flat.Remove)
-			n.carry = board.Apply(p)
+			p := form.Build(bound, flat.Set, flat.Remove)
+			n.carry = bound.Apply(p)
 
 			nb, err := json.Marshal(p)
 			if err != nil {

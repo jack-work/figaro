@@ -72,10 +72,10 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.Equal(t, []string{"say alpha", "alpha", "say beta", "beta"}, got,
 		"the conversation must arrive whole and in order")
 
-	// The board carries this store's id, re-stamped as a fork does.
-	board, err := backend.FormState(resp.FigaroID)
+	// The bound form carries this store's id, re-stamped as a fork does.
+	bound, err := backend.FormState(resp.FigaroID)
 	require.NoError(t, err)
-	raw, ok := board.Get("aria_id")
+	raw, ok := bound.Get("aria_id")
 	require.True(t, ok, "an imported aria must know its own id")
 	var stamped string
 	require.NoError(t, json.Unmarshal(raw, &stamped))

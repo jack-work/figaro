@@ -65,7 +65,7 @@ easy to rediscover the hard way:
 
 1. It is the only place the diff is ATOMIC with the append. Filtering in a
    handler reads, then filters, then writes. Two shells, one setting `a=2`
-   and one setting `a=1` against a board holding `a=1`, and the second
+   and one setting `a=1` against a bound form holding `a=1`, and the second
    silently drops the write that should have won.
 2. It is the only place both write paths pass through. Two implementations
    of "already wearing it" is how the agent path and the hub path came to
@@ -141,7 +141,7 @@ into a patch it is ordinary data.
 
 This is not tidiness. While the hub's write path applied patches verbatim
 and the agent's did not, `fig form outfit test` stored `{"layers":["test"]}`
-on a board and reported success, because an attended form has no agent and
+on a bound form and reported success, because an attended form has no agent and
 takes exactly that path.
 
 ## 5. Hub-hosted forms
@@ -182,7 +182,7 @@ Legacy stumps stay readable and are listed as legacy.
 
 ## 8. Observation is pull at the stamp
 
-An aria observes a SET of forms. Its own board is member zero, the fork it
+An aria observes a SET of forms. Its own bound form is member zero, the fork it
 was born restudying; studied forms are the shared members.
 
 Every IR append stamps the whole set's positions into ONE cursor map
@@ -214,14 +214,14 @@ them:
   member per Send: `history:plans/form-view-perf.md` has the measurements and the
   reason a bounded question was being answered at unbounded cost.
 - What each event SAYS beyond the fact is `system.study_incantation` on the
-  observer's own board. See §8c.
+  observer's own bound form. See §8c.
 - **Every studied form now has a LIBRETTO**, `@libretto::<formid>`: a derived
   form on a reserved stump holding a COPY of the studied state, shared by
   every observer, refcounted, never listed and never forked. `study` retains
-  it before the board declares the study; `drop` releases it after the board
+  it before the bound form declares the study; `drop` releases it after the bound form
   stops claiming one; fork retains for the child before the child exists and
-  kill releases for the board it destroys. Every crash therefore leaves the
-  count too HIGH, and `figaro doctor librettos` recomputes it from the boards
+  kill releases for the bound form it destroys. Every crash therefore leaves the
+  count too HIGH, and `figaro doctor librettos` recomputes it from the bound forms
   (recompute, never adjust, so it repairs both directions). The copy outlives
   its source: that is what makes a studied form deletable, and it is why a
   libretto is NOT reclaimed merely because its refcount reached zero.
@@ -239,7 +239,7 @@ a bare string or as `{"onfork": …}`.
 Three properties, each load-bearing:
 
 - **The bound form only.** A studied form does not get to put words in its
-  observer's mouth. All system settings live on the observer's own board and
+  observer's mouth. All system settings live on the observer's own bound form and
   this is no exception.
 - **Tolerance is asymmetric.** A malformed incantation costs its own phrase
   and nothing else: a non-object is refused wholesale, a non-string field is

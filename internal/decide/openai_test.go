@@ -89,14 +89,14 @@ func TestALunaModelSpeaksTheOpenAIWire(t *testing.T) {
 }
 
 func TestAChoiceSendsValuesAndDescriptions(t *testing.T) {
-	board := boardOf(t, map[string]string{
+	bound := boundFormOf(t, map[string]string{
 		"skills.printer.filePath":    `"/s/printer.md"`,
 		"skills.printer.frontmatter": `"name: printer"`,
 		"skills.weather.filePath":    `"/s/weather.md"`,
 		"skills.weather.frontmatter": `"name: weather"`,
 	})
 	e, got := openAIReplying(t, `{"model":"gpt-6-luna","answers":[{"type":"choice","name":"decision","choice":"printer","probabilities":[{"value":"printer","probability":0.9},{"value":"weather","probability":0.1}],"confidence":0.8}]}`)
-	out := decide(t, e, Source{Defaults: lunaDefaults, Board: board}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
+	out := decide(t, e, Source{Defaults: lunaDefaults, BoundForm: bound}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
 	q := got.body.Questions[0]
 	if q.Type != "choice" || len(q.Choices) != 2 {
 		t.Fatalf("question = %+v", q)
@@ -188,11 +188,11 @@ func TestTheOpenAITokenLimitRejectionIsRetriedSmaller(t *testing.T) {
 	}
 }
 
-func TestTheAPIComesFromTheRequestThenTheBoardThenTheDefaultOutfitThenTheModel(t *testing.T) {
-	board := boardOf(t, map[string]string{APIKey: `"openai"`})
+func TestTheAPIComesFromTheRequestThenTheBoundFormThenTheDefaultOutfitThenTheModel(t *testing.T) {
+	bound := boundFormOf(t, map[string]string{APIKey: `"openai"`})
 	cases := []struct {
 		name  string
-		board bool
+		bound bool
 		req   string
 		file  string
 		model string
@@ -201,8 +201,8 @@ func TestTheAPIComesFromTheRequestThenTheBoardThenTheDefaultOutfitThenTheModel(t
 		{"model infers jev", false, "", "", "jev-latest", "/systemone"},
 		{"model infers luna", false, "", "", "gpt-6-luna", "/decisions"},
 		{"the default outfit beats the model", false, "", "openai", "jev-latest", "/decisions"},
-		{"the board beats the default outfit", true, "", "systemone", "jev-latest", "/decisions"},
-		{"the request beats the board", true, "systemone", "", "gpt-6-luna", "/systemone"},
+		{"the bound form beats the default outfit", true, "", "systemone", "jev-latest", "/decisions"},
+		{"the request beats the bound form", true, "systemone", "", "gpt-6-luna", "/systemone"},
 	}
 	for _, c := range cases {
 		var path string
@@ -221,8 +221,8 @@ func TestTheAPIComesFromTheRequestThenTheBoardThenTheDefaultOutfitThenTheModel(t
 			set[APIKey] = json.RawMessage(`"` + file + `"`)
 		}
 		src := Source{Defaults: form.Snapshot{}.Apply(form.Build(form.Snapshot{}, set, nil))}
-		if c.board {
-			src.Board = board
+		if c.bound {
+			src.BoundForm = bound
 		}
 		if _, err := e.Decide(context.Background(), src, rpc.DecideRequest{Question: "q?", API: c.req}); err != nil {
 			t.Fatalf("%s: %v", c.name, err)

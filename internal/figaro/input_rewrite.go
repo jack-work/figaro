@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// InputView is read-only: the board, the log, and the settings.
+// InputView is read-only: the bound form, the log, and the settings.
 type InputView struct {
 	AriaID   string
 	Form     form.Snapshot

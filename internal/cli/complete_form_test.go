@@ -168,7 +168,7 @@ func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 	if _, ok := gotSet["skills.foo"]; !ok {
 		t.Fatalf("attended aria's live key skills.foo missing from candidates: %v", got)
 	}
-	// The catalog still rides along on success: settable keys the board lacks
+	// The catalog still rides along on success: settable keys the bound form lacks
 	// are legitimate `set` targets.
 	if _, ok := gotSet["system.model"]; !ok {
 		t.Errorf("well-known key system.model missing alongside live keys")
@@ -176,7 +176,7 @@ func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 }
 
 // A bound aria whose form cannot be read must decline: the catalog would present
-// documentation as the board's state.
+// documentation as the bound form's state.
 func TestCompleteFormKeys_DeclinesWhenBoundFormUnreadable(t *testing.T) {
 	rt := completionTestDirs(t)
 	fakeAngelusResolvingTo(t, rt, bindShellPID(t), nil)

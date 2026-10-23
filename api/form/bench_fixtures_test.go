@@ -12,19 +12,19 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Three deterministic boards: default is a real capture, large and huge are
+// Three deterministic bound forms: default is a real capture, large and huge are
 // synthetic.
 
-const defaultBoardPath = "testdata/board-default.json"
+const defaultBoundFormPath = "testdata/bound-default.json"
 
-var defaultBoardMap = sync.OnceValue(func() map[string]json.RawMessage {
-	data, err := os.ReadFile(defaultBoardPath)
+var defaultBoundFormMap = sync.OnceValue(func() map[string]json.RawMessage {
+	data, err := os.ReadFile(defaultBoundFormPath)
 	if err != nil {
-		panic(fmt.Sprintf("read %s: %v", defaultBoardPath, err))
+		panic(fmt.Sprintf("read %s: %v", defaultBoundFormPath, err))
 	}
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
-		panic(fmt.Sprintf("parse %s: %v", defaultBoardPath, err))
+		panic(fmt.Sprintf("parse %s: %v", defaultBoundFormPath, err))
 	}
 	return m
 })
@@ -37,16 +37,16 @@ const (
 	hugeKeys      = 50_000
 )
 
-var largeBoardMap = sync.OnceValue(func() map[string]json.RawMessage {
+var largeBoundFormMap = sync.OnceValue(func() map[string]json.RawMessage {
 	return syntheticMap(largeKeys, largeAvgValue, largeBlobs, largeBlobSize, 1)
 })
 
-var hugeBoardMap = sync.OnceValue(func() map[string]json.RawMessage {
+var hugeBoundFormMap = sync.OnceValue(func() map[string]json.RawMessage {
 	return syntheticMap(hugeKeys, 48, 0, 0, 2)
 })
 
 // syntheticMap values are content envelopes, the shape the outfit loader
-// puts on a board.
+// puts on a bound form.
 func syntheticMap(n, avg, blobs, blobSize int, seed int64) map[string]json.RawMessage {
 	rng := rand.New(rand.NewSource(seed))
 	m := make(map[string]json.RawMessage, n)
@@ -96,13 +96,13 @@ type fixture struct {
 
 func fixtures() []fixture {
 	return []fixture{
-		{"default", defaultBoardMap},
-		{"large", largeBoardMap},
-		{"huge", hugeBoardMap},
+		{"default", defaultBoundFormMap},
+		{"large", largeBoundFormMap},
+		{"huge", hugeBoundFormMap},
 	}
 }
 
-func (f fixture) board() form.Snapshot { return buildBoard(f.m()) }
+func (f fixture) bound() form.Snapshot { return buildBoundForm(f.m()) }
 
 // mutated changes the first n keys in sorted order; -1 means every key.
 func (f fixture) mutated(n int) map[string]json.RawMessage {

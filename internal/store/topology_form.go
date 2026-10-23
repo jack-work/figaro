@@ -239,7 +239,7 @@ func (t *TopologyTree) Promote(id string) error {
 	return t.apply(patch)
 }
 
-// edgeIntent is collected and diffed once against the board it applies to: a
+// edgeIntent is collected and diffed once against the form it applies to: a
 // structural patch is a difference and cannot be assembled field by field.
 type edgeIntent struct {
 	set    map[string]json.RawMessage

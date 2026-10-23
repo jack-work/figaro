@@ -292,7 +292,7 @@ func (p *Provider) assemble(src provider.RowSeq, snapshot form.Snapshot,
 	return req, nil
 }
 
-// encode renders against the board as of the previous message.
+// encode renders against the bound form as of the previous message.
 func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]json.RawMessage, error) {
 	reminders := p.renderPatches(msg.Patches, prevSnapshot)
 	reminders = append(reminders, provider.StudyReminderTexts(msg, prevSnapshot)...)

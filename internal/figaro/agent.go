@@ -439,7 +439,7 @@ func (a *Agent) seedMetricsFromMeta() bool {
 	a.metricsLT = meta.LastFigaroLT
 	a.contextTokens = meta.ContextTokens
 	a.contextExact = meta.ContextExact
-	// Form-owned fields come from the board, not the sidecar.
+	// Form-owned fields come from the bound form, not the sidecar.
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
@@ -857,7 +857,7 @@ func (a *Agent) serviceSets() bool {
 }
 
 // applyFormPatch is safe off the drain loop: the durable write is serialized by
-// the form's actor and the in-memory board applies by CAS over an immutable snapshot.
+// the form's actor and the in-memory bound form applies by CAS over an immutable snapshot.
 func (a *Agent) applyFormPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) (uint64, message.Patch, error) {
 	v := a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
 	return v.version, v.applied, v.err
@@ -1159,10 +1159,10 @@ func (a *Agent) UpdateQueued(epoch string, id uint64, text string) (string, rpc.
 	return a.inbox.UpdatePrompt(epoch, id, text)
 }
 
-// BoardAccessorFor and StudyAccessorsFor serve the fig IR write path, which has
+// BoundFormAccessorFor and StudyAccessorsFor serve the fig IR write path, which has
 // no agent; an entry must translate the same way whether it lands through a
 // daemon, a repair, or a study sweep.
-func BoardAccessorFor(backend store.Backend, ariaID string) provider.Form {
+func BoundFormAccessorFor(backend store.Backend, ariaID string) provider.Form {
 	if backend == nil {
 		return nil
 	}

@@ -191,7 +191,7 @@ func (in *interactiveInput) applyFormDelta(gen uint64, params json.RawMessage) {
 		return
 	}
 	if d.Intrinsic == "" {
-		in.applyBoardDelta(gen, d)
+		in.applyBoundFormDelta(gen, d)
 		return
 	}
 	mirror := in.intrinsics.of(d.Intrinsic)

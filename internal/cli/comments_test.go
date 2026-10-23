@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-func commentBoard(t *testing.T, recs map[string]commentRecord) form.Snapshot {
+func commentBoundForm(t *testing.T, recs map[string]commentRecord) form.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(recs)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestCommentWashCoversExactlyItsRunes(t *testing.T) {
 	if got := string([]rune(body)[4:9]); got != "retry" {
 		t.Fatalf("fixture moved: runes 4..9 are %q", got)
 	}
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
 	lines := paintedLines(tr)
@@ -73,7 +73,7 @@ func TestCommentWashBridgesTheSpaceBetweenWords(t *testing.T) {
 	if got := string([]rune(body)[4:14]); got != "retry loop" {
 		t.Fatalf("fixture moved: runes 4..14 are %q", got)
 	}
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-14>!", Turn: 3, Thread: one("gluck", "two words")},
 	})))
 	lines := paintedLines(tr)
@@ -89,7 +89,7 @@ func TestCommentSpanWashesBothBlocksAndHangsUnderTheEnd(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	t.Setenv("COLORTERM", "truecolor")
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:150-414.0:2>!", Turn: 3, Thread: one("gluck", "spans")},
 	})))
 	openSection(tr, nodeRef{turn: 3, index: 1})
@@ -118,7 +118,7 @@ func TestCommentSpanWashesBothBlocksAndHangsUnderTheEnd(t *testing.T) {
 // ^N walks block, comment, next block.
 func TestCommentIsASelectionStopAfterItsBlock(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
 	openSection(tr, nodeRef{turn: 3, index: 0})
@@ -146,7 +146,7 @@ func TestCommentIsASelectionStopAfterItsBlock(t *testing.T) {
 // what is under test.
 func TestCommentJumpByKeys(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "first")},
 		"c2": {At: "<414.0:0-2>!", Turn: 3, Thread: one("gluck", "second")},
 	})))
@@ -186,7 +186,7 @@ func TestCommentJumpByKeys(t *testing.T) {
 // any of its messages; it never steps through the thread.
 func TestEnterTogglesTheThread(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "why retry?"},
 			"b": {By: "figaro", Text: "because the jitter comes first"},
@@ -231,7 +231,7 @@ func TestEnterTogglesTheThread(t *testing.T) {
 // before the next block: ^N walks them.
 func TestOpenThreadMessagesAreStops(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "one"}, "b": {By: "figaro", Text: "two"},
 		}},
@@ -254,7 +254,7 @@ func TestOpenThreadMessagesAreStops(t *testing.T) {
 
 func TestABlankRowSeparatesABlockFromItsComments(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
 	openSection(tr, nodeRef{turn: 3, index: 0})
@@ -279,7 +279,7 @@ func TestAFocusedCommentUnderlinesItsPassage(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	t.Setenv("COLORTERM", "truecolor")
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 		"c2": {At: "<412.0:10-14>!", Turn: 3, Thread: one("gluck", "and the loop")},
 	})))
@@ -306,7 +306,7 @@ func TestAFocusedCommentUnderlinesItsPassage(t *testing.T) {
 // <,> names the comment the selection is on, not text: -X deletes it, -- replies.
 func TestRangeOnACommentIsTheComment(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "one"}, "b": {By: "figaro", Text: "two"},
 		}},
@@ -371,7 +371,7 @@ func TestParseCommentCommand(t *testing.T) {
 // comment and opens it.
 func TestVisualEnterInsideAnAnnotationOpensIt(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "why retry?"},
 			"b": {By: "figaro", Text: "the jitter"},
@@ -402,7 +402,7 @@ func TestVisualEnterInsideAnAnnotationOpensIt(t *testing.T) {
 // :next block skips every pseudonode; :next comment lands on one.
 func TestNavigateKinds(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "first")},
 	})))
 	prose := nodeRef{turn: 3, index: 0}
@@ -440,7 +440,7 @@ func TestNavigateKinds(t *testing.T) {
 // node goes through.
 func TestYankingACommentCopiesTheThread(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "why retry?"},
 			"b": {By: "figaro", Text: "the jitter"},
@@ -463,10 +463,10 @@ func TestYankingACommentCopiesTheThread(t *testing.T) {
 	}
 }
 
-// Comments live on the board; a board without them, or with a malformed
+// Comments live on the bound form; a bound form without them, or with a malformed
 // coordinate, draws nothing and breaks nothing.
 func TestReadCommentsIgnoresWhatItCannotPlace(t *testing.T) {
-	idx := readComments(commentBoard(t, map[string]commentRecord{
+	idx := readComments(commentBoundForm(t, map[string]commentRecord{
 		"ok":  {At: "<412.0:4-9>!", Thread: one("a", "x")},
 		"bad": {At: "not a coordinate", Thread: one("a", "y")},
 	}))
@@ -474,7 +474,7 @@ func TestReadCommentsIgnoresWhatItCannotPlace(t *testing.T) {
 		t.Fatalf("index = %+v", idx.list)
 	}
 	if len(readComments(form.Snapshot{}).list) != 0 {
-		t.Fatal("an empty board has comments")
+		t.Fatal("an empty bound form has comments")
 	}
 }
 
@@ -483,7 +483,7 @@ func TestReadCommentsIgnoresWhatItCannotPlace(t *testing.T) {
 func TestFocusedShadeFollowsTheCommentNotItsBlock(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: one("gluck", "why retry?")},
 	})))
 	focused, selected := term.NodeWash(true), term.NodeWash(false)
@@ -520,7 +520,7 @@ func TestFocusedShadeFollowsTheCommentNotItsBlock(t *testing.T) {
 // thread: a command may delete a comment only whole.
 func TestXSendsTheThreadsDelete(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	tr.setComments(readComments(commentBoard(t, map[string]commentRecord{
+	tr.setComments(readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "one"}, "b": {By: "figaro", Text: "two"},
 		}},
@@ -547,17 +547,17 @@ func TestXSendsTheThreadsDelete(t *testing.T) {
 }
 
 // The verb asks before it deletes, names the whole thread even when a
-// message was named, and n leaves the board alone.
+// message was named, and n leaves the bound form alone.
 func TestCommentDeleteAsksFirst(t *testing.T) {
 	tr, _ := sourceFixture(t)
-	in := &interactiveInput{mu: new(renderLock), lt: &livelogTurn{tr: tr}, board: &formMirror{}}
-	board := commentBoard(t, map[string]commentRecord{
+	in := &interactiveInput{mu: new(renderLock), lt: &livelogTurn{tr: tr}, bound: &formMirror{}}
+	bound := commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Turn: 3, Thread: map[string]commentEntryRecord{
 			"a": {By: "gluck", Text: "one"}, "b": {By: "figaro", Text: "two"},
 		}},
 	})
-	in.board.reset(board, 1)
-	tr.setComments(readComments(board))
+	in.bound.reset(bound, 1)
+	tr.setComments(readComments(bound))
 
 	in.commandComment("comment -X #c1.2")
 	if tr.confirm == nil {
@@ -570,8 +570,8 @@ func TestCommentDeleteAsksFirst(t *testing.T) {
 	if tr.confirm != nil {
 		t.Fatal("n did not dismiss the question")
 	}
-	if snap, _, _ := in.board.state(); len(readComments(snap).list) != 1 {
-		t.Fatal("the board changed without a yes")
+	if snap, _, _ := in.bound.state(); len(readComments(snap).list) != 1 {
+		t.Fatal("the bound form changed without a yes")
 	}
 	in.commandComment("comment -X #nope")
 	if tr.confirm != nil {
@@ -587,7 +587,7 @@ func TestAReplyAppends(t *testing.T) {
 	if key <= "zz1" {
 		t.Fatalf("appendKey = %q, which sorts before an existing message", key)
 	}
-	c := readComments(commentBoard(t, map[string]commentRecord{
+	c := readComments(commentBoundForm(t, map[string]commentRecord{
 		"c1": {At: "<412.0:4-9>!", Thread: map[string]commentEntryRecord{
 			"mv8ztuwk": {Text: "first"}, "zz1": {Text: "second"}, key: {Text: "third"},
 		}},

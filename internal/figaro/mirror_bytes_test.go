@@ -1,6 +1,6 @@
 package figaro_test
 
-// The board mirror and the form log must agree byte for byte: a re-set with
+// The bound form mirror and the form log must agree byte for byte: a re-set with
 // an equal value spelled differently must not leave the mirror holding bytes
 // the log never received.
 

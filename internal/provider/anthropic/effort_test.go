@@ -92,19 +92,19 @@ func TestAnOlderModelGetsTheEffortAtTheTopLevel(t *testing.T) {
 }
 
 func TestOnlyEffortOnAPerMessageModelKeepsTheCache(t *testing.T) {
-	board := func(model string) form.Snapshot {
+	bound := func(model string) form.Snapshot {
 		return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"system.model": json.RawMessage(`"` + model + `"`),
 		}, nil))
 	}
 	a := &Anthropic{}
-	if !a.KeepsCacheOnChange("system.thinking_effort", board("claude-opus-5.5")) {
+	if !a.KeepsCacheOnChange("system.thinking_effort", bound("claude-opus-5.5")) {
 		t.Fatal("copilot's spelling of opus 5.5 supports per-message effort")
 	}
-	if a.KeepsCacheOnChange("system.thinking_effort", board("claude-opus-4-7")) {
+	if a.KeepsCacheOnChange("system.thinking_effort", bound("claude-opus-4-7")) {
 		t.Fatal("opus 4.7 has no per-message effort")
 	}
-	if a.KeepsCacheOnChange("system.model", board("claude-opus-5-5")) {
+	if a.KeepsCacheOnChange("system.model", bound("claude-opus-5-5")) {
 		t.Fatal("a model change never keeps the cache")
 	}
 }

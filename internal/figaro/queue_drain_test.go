@@ -117,7 +117,7 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 // newDrainTestAgent does not start the actor: a running drain loop would race the test for its queue.
 func newDrainTestAgent(t *testing.T, ctx context.Context) *Agent {
 	t.Helper()
-	board, _ := form.Open("")
+	bound, _ := form.Open("")
 	be, id := store.NewTestAria(t, "d", message.Patch{})
 	log, err := be.OpenFigIR(id)
 	if err != nil {
@@ -128,7 +128,7 @@ func newDrainTestAgent(t *testing.T, ctx context.Context) *Agent {
 		backend:     be,
 		inbox:       NewInbox(ctx),
 		figLog:      log,
-		form:        board,
+		form:        bound,
 		ariaSrv:     aria.NewServer(),
 		gov:         toolout.New(liveOutputTail),
 		argPartials: map[string]string{},

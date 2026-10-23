@@ -14,13 +14,13 @@ import (
 
 type StudyDecl struct {
 	Studies []string // the declared set as it stands
-	Version uint64   // board version this set landed at; 0 if nothing was written
+	Version uint64   // bound form version this set landed at; 0 if nothing was written
 	Changed bool     // whether this call wrote
 }
 
-// StudyForm mints, seeds, retains and follows the libretto, then the board
-// declares it. Idempotent: the board is a set and the refcount is derived
-// from the boards.
+// StudyForm mints, seeds, retains and follows the libretto, then the bound form
+// declares it. Idempotent: the bound form is a set and the refcount is derived
+// from the bound forms.
 func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, error) {
 	lib, err := b.libretto(sourceFormID)
 	if err != nil {
@@ -44,14 +44,14 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 			return StudyDecl{}, err
 		}
 		if slices.Contains(studies, sourceFormID) {
-			// The board already declares it: make the backref agree.
+			// The bound form already declares it: make the backref agree.
 			if _, err := lib.Retain(observerID); err != nil {
 				return StudyDecl{}, err
 			}
 			declared = true
 			return StudyDecl{Studies: studies}, nil
 		}
-		// Libretto first: the reverse leaves a board naming a libretto nothing counted.
+		// Libretto first: the reverse leaves a bound form naming a libretto nothing counted.
 		if _, err := lib.Retain(observerID); err != nil {
 			return StudyDecl{}, err
 		}
@@ -66,13 +66,13 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 		}
 		backoff(attempt)
 	}
-	return StudyDecl{}, fmt.Errorf("study: the board would not hold still after %d attempts",
+	return StudyDecl{}, fmt.Errorf("study: the bound form would not hold still after %d attempts",
 		studyAttempts)
 }
 
 var studyAttempts = 32
 
-// backoff breaks the lockstep of N writers of one board; tiny because the
+// backoff breaks the lockstep of N writers of one bound form; tiny because the
 // writes themselves are milliseconds.
 func backoff(attempt int) {
 	d := time.Duration(attempt+1) * 200 * time.Microsecond
@@ -83,12 +83,12 @@ func backoff(attempt int) {
 }
 
 // DropForm is the inverse, in the inverse order. Dropping a form since deleted
-// is legal: the subscription goes, the board stops naming it, the copy stays.
+// is legal: the subscription goes, the bound form stops naming it, the copy stays.
 func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, error) {
 	var studies []string
 	var landed uint64
 	// The declaration must be gone before the count comes down: releasing
-	// after exhausted retries would under-count a libretto a board still
+	// after exhausted retries would under-count a libretto a bound form still
 	// names, which the sweep cannot tell from a legitimate observer.
 	undeclared := false
 	for attempt := 0; attempt < studyAttempts; attempt++ {
@@ -102,7 +102,7 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, erro
 		if idx < 0 {
 			return StudyDecl{Studies: studies}, nil
 		}
-		// Board first, so a crash between the two over-counts rather than under-counts.
+		// Bound form first, so a crash between the two over-counts rather than under-counts.
 		next := slices.Delete(append([]string(nil), studies...), idx, idx+1)
 		v, err := b.setStudies(observerID, next, version)
 		if err != nil {
@@ -118,7 +118,7 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, erro
 	}
 	if !undeclared {
 		return StudyDecl{Studies: studies}, fmt.Errorf(
-			"drop: the board would not hold still after %d attempts (the study stands, and so does its reference)",
+			"drop: the bound form would not hold still after %d attempts (the study stands, and so does its reference)",
 			studyAttempts)
 	}
 	decl := StudyDecl{Studies: studies, Version: landed, Changed: true}
@@ -146,7 +146,7 @@ func KindWord(kind string) string {
 }
 
 // RequireStudyTarget: only an unbound form is study-able or castable. An
-// outfit is a seed, a bound board is private to its figaro, and a libretto is
+// outfit is a seed, a bound form is private to its figaro, and a libretto is
 // derived and never reaches this check.
 func RequireStudyTarget(b Backend, formID string) error {
 	if b == nil {
@@ -157,14 +157,14 @@ func RequireStudyTarget(b Backend, formID string) error {
 		return fmt.Errorf("%s: no such form", formID)
 	}
 	if n.Kind != "form" {
-		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound board is private to its figaro)", formID, KindWord(n.Kind))
+		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound form is private to its figaro)", formID, KindWord(n.Kind))
 	}
 	return nil
 }
 
-// StudiedBy reads the durable board, not an in-memory mirror of it.
+// StudiedBy reads the durable bound form, not an in-memory mirror of it.
 func (b *XwalBackend) StudiedBy(observerID string) ([]string, error) {
-	return b.studiesOfBoard(observerID)
+	return b.studiesOfBoundForm(observerID)
 }
 
 func (b *XwalBackend) Libretto(sourceFormID string) (*Libretto, error) {
@@ -267,7 +267,7 @@ func (b *XwalBackend) closeLibretto(source string) {
 	}
 }
 
-func (b *XwalBackend) studiesOfBoard(observerID string) ([]string, error) {
+func (b *XwalBackend) studiesOfBoundForm(observerID string) ([]string, error) {
 	snap, err := b.FormState(observerID)
 	if err != nil {
 		return nil, err
@@ -275,7 +275,7 @@ func (b *XwalBackend) studiesOfBoard(observerID string) ([]string, error) {
 	return studiesOf(snap), nil
 }
 
-// setStudies is guarded by the board version so two arias studying at once
+// setStudies is guarded by the bound form version so two arias studying at once
 // cannot overwrite each other's declaration.
 func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint64) (uint64, error) {
 	slices.Sort(ids)

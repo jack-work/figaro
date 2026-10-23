@@ -44,7 +44,7 @@ func TestMigrationsRunBackToBackOnOpen(t *testing.T) {
 	require.Equal(t, 2, after.Channels[chanForm], "the form channel did not reach v2")
 	require.Equal(t, 5, after.Channels[chanIR], "the IR channel did not reach v5")
 
-	// And the board survived both.
+	// And the bound form survived both.
 	snap, err := be2.FormState(aria)
 	require.NoError(t, err)
 	require.Equal(t, "/tmp", *snap.Lookup("system.cwd"))

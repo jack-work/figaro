@@ -1,6 +1,6 @@
 package store
 
-// The deadline lives in the _meta sidecar, never on the board: the sweep must
+// The deadline lives in the _meta sidecar, never on the bound form: the sweep must
 // find what is due without opening nodes.
 
 import (
@@ -17,7 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// SystemTTLKey is read from an aria's board and an unbound form's state alike;
+// SystemTTLKey is read from an aria's bound form and an unbound form's state alike;
 // b.form refuses only librettos, whose lifetime is a refcount, never a clock.
 const SystemTTLKey = "system.ttl"
 
@@ -140,9 +140,9 @@ func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
 	return lifetimeFrom(id, func(key string) (string, bool) { return stringKeyOf(patch, key) })
 }
 
-func lifetimeOfBoard(id string, board form.Snapshot) lifetimeChange {
+func lifetimeOfForm(id string, snap form.Snapshot) lifetimeChange {
 	c, _ := lifetimeFrom(id, func(key string) (string, bool) {
-		raw, ok := board.Get(key)
+		raw, ok := snap.Get(key)
 		if !ok {
 			return "", true
 		}
@@ -229,8 +229,8 @@ func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
 	}
 }
 
-func (b *XwalBackend) mirrorBoardLifetime(id string, board form.Snapshot) {
-	c := lifetimeOfBoard(id, board)
+func (b *XwalBackend) mirrorFormLifetime(id string, snap form.Snapshot) {
+	c := lifetimeOfForm(id, snap)
 	cur, _ := b.Meta(id)
 	if cur == nil {
 		cur = &AriaMeta{}
@@ -246,10 +246,10 @@ func (b *XwalBackend) mirrorBoardLifetime(id string, board form.Snapshot) {
 func (b *XwalBackend) lifetimeAtBirth(id string) {
 	f, err := b.form(id)
 	if err != nil {
-		slog.Warn("lifetime: board unreadable at birth", "node", id, "err", err)
+		slog.Warn("lifetime: form unreadable at birth", "node", id, "err", err)
 		return
 	}
-	b.mirrorBoardLifetime(id, f.Read().Snapshot)
+	b.mirrorFormLifetime(id, f.Read().Snapshot)
 }
 
 func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
@@ -355,7 +355,7 @@ func (b *XwalBackend) Touch(id string, at time.Time) {
 }
 
 // TTLEntries scans the sidecar directory once; after that it is a map read
-// kept current by every board commit that names the key.
+// kept current by every bound form commit that names the key.
 func (b *XwalBackend) seedLifetimesLocked() {
 	if b.ttl != nil {
 		return

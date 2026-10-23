@@ -335,7 +335,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		b.wroteTo(ariaID, time.Now().UnixMilli())
 		if namesOutfit(patch) {
 			b.labelChanged(ariaID)
-			b.mirrorBoardLifetime(ariaID, opened.Read().Snapshot)
+			b.mirrorFormLifetime(ariaID, opened.Read().Snapshot)
 			return
 		}
 		b.ttlCommitted(ariaID, patch)
@@ -442,7 +442,7 @@ func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, 
 // ForkWith is the one birth verb: `fig new` forks the null root, `fig fork`
 // forks an aria, and the patch is the child's identity.
 func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
-	// Every path that gives a board a copy is a refcount participant; this is
+	// Every path that gives a bound form a copy is a refcount participant; this is
 	// the one a live `fig fork` takes.
 	if pm, _ := b.Meta(parent); pm != nil && pm.RetiredAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemRetiredKey}))
@@ -534,7 +534,7 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 	return cont, alt, err
 }
 
-// inheritStudies is fork's half of the backref set: the id whose board
+// inheritStudies is fork's half of the backref set: the id whose bound form
 // declares the study is what the libretto records, so it runs on the child
 // after the child exists.
 func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ariaID) }
@@ -542,7 +542,7 @@ func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ar
 func (b *XwalBackend) inheritStudies(ariaID string) {
 	snap, err := b.FormState(ariaID)
 	if err != nil {
-		return // no board to inherit; nothing to count
+		return // no bound form to inherit; nothing to count
 	}
 	for _, formID := range studiesOf(snap) {
 		lib, err := b.Libretto(formID)
@@ -648,7 +648,7 @@ func (b *XwalBackend) labelOf(n *NodeView) outfitLabel {
 	return l
 }
 
-// labelChanged is the whole invalidation: every write to a board passes
+// labelChanged is the whole invalidation: every write to a form passes
 // through this backend.
 func (b *XwalBackend) labelChanged(ariaID string) {
 	b.mu.Lock()
@@ -959,7 +959,7 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	return &value, nil
 }
 
-// UpdateMeta: the record has two writers (the agent's counts, a board commit
+// UpdateMeta: the record has two writers (the agent's counts, a bound form commit
 // mirroring system.ttl), and a whole-record SetMeta from either dropped what
 // the other wrote.
 func (b *XwalBackend) UpdateMeta(ariaID string, mutate func(*AriaMeta)) error {

@@ -29,47 +29,47 @@ func (m *formMirror) catchUp(resp *rpc.FormResponse) {
 	}
 }
 
-func (in *interactiveInput) subjectBoard() *formMirror {
+func (in *interactiveInput) subjectBoundForm() *formMirror {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	return in.board
+	return in.bound
 }
 
-func (in *interactiveInput) seedBoard(gen uint64) {
+func (in *interactiveInput) seedBoundForm(gen uint64) {
 	cli := in.aria()
-	board := in.subjectBoard()
-	if cli == nil || board == nil {
+	bound := in.subjectBoundForm()
+	if cli == nil || bound == nil {
 		return
 	}
 	go func() {
-		_, version, _ := board.state()
+		_, version, _ := bound.state()
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
 		resp, err := cli.FormSince(ctx, version)
 		if err != nil || !in.current(gen) {
 			return
 		}
-		board.catchUp(resp)
-		in.boardMoved()
+		bound.catchUp(resp)
+		in.boundFormMoved()
 	}()
 }
 
-func (in *interactiveInput) applyBoardDelta(gen uint64, d rpc.FormDelta) {
-	board := in.subjectBoard()
-	if board == nil || !in.current(gen) {
+func (in *interactiveInput) applyBoundFormDelta(gen uint64, d rpc.FormDelta) {
+	bound := in.subjectBoundForm()
+	if bound == nil || !in.current(gen) {
 		return
 	}
-	switch board.apply(d) {
+	switch bound.apply(d) {
 	case formResync:
-		in.seedBoard(gen)
+		in.seedBoundForm(gen)
 		return
 	case formIncompatible:
 		return
 	}
-	in.boardMoved()
+	in.boundFormMoved()
 }
 
-func (in *interactiveInput) boardMoved() {
+func (in *interactiveInput) boundFormMoved() {
 	in.syncComments()
 	in.recomputeLimit()
 }
@@ -77,10 +77,10 @@ func (in *interactiveInput) boardMoved() {
 func (in *interactiveInput) syncComments() {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	if in.board == nil {
+	if in.bound == nil {
 		return
 	}
-	snap, _, _ := in.board.state()
+	snap, _, _ := in.bound.state()
 	if in.lt.tr.setComments(readComments(snap)) {
 		in.lt.render()
 	}
@@ -89,12 +89,12 @@ func (in *interactiveInput) syncComments() {
 func (in *interactiveInput) recomputeLimit() {
 	in.models.ensure()
 	in.mu.Lock()
-	board := in.board
-	if board == nil {
+	bound := in.bound
+	if bound == nil {
 		in.mu.Unlock()
 		return
 	}
-	snap, _, _ := board.state()
+	snap, _, _ := bound.state()
 	limit := models.ContextLimit(in.models.snapshot(), snap)
 	if in.lt.status.setLimit(limit) {
 		in.lt.render()
@@ -112,30 +112,30 @@ func (in *interactiveInput) recomputeLimit() {
 	}
 }
 
-func (in *interactiveInput) writeBoard(ctx context.Context, key string, value any) error {
+func (in *interactiveInput) writeBoundForm(ctx context.Context, key string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return in.patchBoard(ctx, func(base form.Snapshot) form.Patch {
+	return in.patchBoundForm(ctx, func(base form.Snapshot) form.Patch {
 		return form.Build(base, map[string]json.RawMessage{key: raw}, nil)
 	})
 }
 
-func (in *interactiveInput) removeBoard(ctx context.Context, key string) error {
-	return in.patchBoard(ctx, func(base form.Snapshot) form.Patch {
+func (in *interactiveInput) removeBoundForm(ctx context.Context, key string) error {
+	return in.patchBoundForm(ctx, func(base form.Snapshot) form.Patch {
 		return form.Build(base, nil, []string{key})
 	})
 }
 
-func (in *interactiveInput) patchBoard(ctx context.Context, build func(form.Snapshot) form.Patch) error {
+func (in *interactiveInput) patchBoundForm(ctx context.Context, build func(form.Snapshot) form.Patch) error {
 	cli := in.aria()
 	if cli == nil {
 		return errors.New("no aria on screen")
 	}
 	var base form.Snapshot
-	if board := in.subjectBoard(); board != nil {
-		base, _, _ = board.state()
+	if bound := in.subjectBoundForm(); bound != nil {
+		base, _, _ = bound.state()
 	}
 	_, err := cli.Set(ctx, build(base), 0)
 	return err

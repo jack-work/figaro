@@ -44,7 +44,7 @@ type AriaMeta struct {
 	ContextTokens    int    `json:"context_tokens,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
-	// TTLMS mirrors the board's system.ttl so the sweep finds what is due without opening a node.
+	// TTLMS mirrors the bound form's system.ttl so the sweep finds what is due without opening a node.
 	TTLMS        int64  `json:"ttl_ms,omitempty"`
 	KeepaliveMS  *int64 `json:"keepalive_ms,omitempty"`
 	RetiredAtMS  int64  `json:"retired_at_ms,omitempty"`
@@ -152,7 +152,7 @@ type Backend interface {
 	WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error
 
 	// SetObservedForms declares the forms whose positions every IR append
-	// stamps. The board's system.studies is the durable truth; this is its
+	// stamps. The bound form's system.studies is the durable truth; this is its
 	// in-memory mirror, re-declared on boot and on study/drop.
 	SetObservedForms(ariaID string, formIDs []string)
 

@@ -26,7 +26,7 @@ type parkedSubject struct {
 	offset int
 	follow bool
 	at     time.Time
-	board  *formMirror
+	bound  *formMirror
 }
 
 func (p *parkedSubject) messages() int {
@@ -106,7 +106,7 @@ func (in *interactiveInput) parkSubject(id string) {
 	if in.parked == nil {
 		in.parked = map[string]*parkedSubject{}
 	}
-	p.board = in.board
+	p.bound = in.bound
 	if _, dup := in.parked[id]; !dup {
 		in.parkOrder = append(in.parkOrder, id)
 	}

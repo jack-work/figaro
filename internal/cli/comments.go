@@ -56,9 +56,9 @@ type commentEntryRecord struct {
 	Text string `json:"text"`
 }
 
-func readComments(board form.Snapshot) *commentIndex {
+func readComments(bound form.Snapshot) *commentIndex {
 	idx := &commentIndex{byBlock: map[blockKey][]int{}}
-	raw, ok := board.Get(commentsKey)
+	raw, ok := bound.Get(commentsKey)
 	if !ok {
 		return idx
 	}

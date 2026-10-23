@@ -44,7 +44,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(studies) != 1 || studies[0] != sourceID {
-		t.Fatalf("board declares %v, want [%s]", studies, sourceID)
+		t.Fatalf("bound form declares %v, want [%s]", studies, sourceID)
 	}
 	// The libretto is following: the copy carries the source's state.
 	waitFor(t, "the libretto to hold the source's state", func() bool {
@@ -57,8 +57,8 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 		return got == "watch me"
 	})
 
-	// Studying twice is not two references: the board is a SET, and the
-	// count is derived from the boards.
+	// Studying twice is not two references: the bound form is a SET, and the
+	// count is derived from the bound forms.
 	if _, err := be.StudyForm(watcherA, sourceID); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(studies) != 0 {
-		t.Fatalf("board still declares %v after a drop", studies)
+		t.Fatalf("bound form still declares %v after a drop", studies)
 	}
 	lib, err := be.Libretto(sourceID)
 	if err != nil {
@@ -145,7 +145,7 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 }
 
 // Dropping a form that has since been deleted is legal: the subscription
-// goes, the board stops naming it, and the copy stays.
+// goes, the bound form stops naming it, and the copy stays.
 func TestDropAfterTheSourceIsDead(t *testing.T) {
 	be, sourceID, src := librettoFixture(t)
 	outfit, err := be.CreateOutfit("dead", setPatch(map[string]string{"system.model": "m"}))
@@ -190,7 +190,7 @@ func TestDropAfterTheSourceIsDead(t *testing.T) {
 }
 
 // Fork is a refcount participant, and the one that fails in the
-// unrecoverable direction: a child inherits the board and therefore the study
+// unrecoverable direction: a child inherits the bound form and therefore the study
 // set, with nothing incrementing the librettos it names.
 func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
@@ -220,7 +220,7 @@ func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	if got := lib.Refs(); got != 2 {
 		t.Fatalf("refs after a fork = %d, want 2: the child studies it too", got)
 	}
-	// And the boards agree with the count, which is what the sweep checks.
+	// And the bound forms agree with the count, which is what the sweep checks.
 	audit, err := be.ReconcileLibrettos()
 	if err != nil {
 		t.Fatal(err)
@@ -239,9 +239,9 @@ func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	_ = alt
 }
 
-// KILL is the same rule at the other end: a board going out of existence
+// KILL is the same rule at the other end: a bound form going out of existence
 // stops studying what it named, or refs stays high forever.
-func TestKillReleasesWhatItsBoardStudied(t *testing.T) {
+func TestKillReleasesWhatItsBoundFormStudied(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("kill", setPatch(map[string]string{"system.model": "m"}))
 	if err != nil {
@@ -276,7 +276,7 @@ func TestKillReleasesWhatItsBoardStudied(t *testing.T) {
 	}
 }
 
-// Every path that gives a board a copy is a participant; ForkWith is the one
+// Every path that gives a bound form a copy is a participant; ForkWith is the one
 // a live `fig fork` takes, so the property is asserted on both entry points.
 func TestEveryForkEntryPointInheritsTheReference(t *testing.T) {
 	for _, tc := range []struct {
@@ -355,9 +355,9 @@ func TestLibrettoStumpsAreNeverListed(t *testing.T) {
 	}
 }
 
-// Import restores a board wholesale, and `system.studies` is an ordinary key
-// an exported board carries, so an import can name studied forms nothing counted.
-func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
+// Import restores a bound form wholesale, and `system.studies` is an ordinary key
+// an exported bound form carries, so an import can name studied forms nothing counted.
+func TestRetainDeclaredStudiesCoversAnImportedBoundForm(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("imported", setPatch(map[string]string{"system.model": "m"}))
 	if err != nil {
@@ -376,7 +376,7 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The import: a new conversation whose restored board already names the
+	// The import: a new conversation whose restored bound form already names the
 	// studied form, exactly as `angelus.import` applies it.
 	imported, err := be.CreateConversation(outfit)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 	if _, err := be.ApplyForm(imported, form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil)); err == nil {
 		t.Fatal("an unprivileged write of system.studies was allowed")
 	}
-	// The harness's own restore (a fork's board copy, an import replaying the
+	// The harness's own restore (a fork's bound form copy, an import replaying the
 	// set) is privileged, and THAT is what the participant hook covers.
 	if _, err := be.ApplyFormPrivileged(imported, form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil)); err != nil {
 		t.Fatal(err)
@@ -427,7 +427,7 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 // Sixteen arias studying one form at once: the libretto singleton, the
 // refcount's compare-and-set loop, and sixteen version-guarded
 // read-modify-writes. What matters is that the sweep agrees afterwards: the
-// count derived from the boards is what reclamation trusts.
+// count derived from the bound forms is what reclamation trusts.
 func TestConcurrentStudiesOfOneForm(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("crowd", setPatch(map[string]string{"system.model": "m"}))
@@ -504,7 +504,7 @@ func TestConcurrentStudiesOfOneForm(t *testing.T) {
 }
 
 // A study that ultimately fails must not leave a reference behind: the
-// retain happens before the first board write.
+// retain happens before the first bound form write.
 func TestAFailedStudyLeavesNoReference(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("failed", setPatch(map[string]string{"system.model": "m"}))
@@ -519,18 +519,18 @@ func TestAFailedStudyLeavesNoReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Seal the observer's board: every write to it now fails, so the study
+	// Seal the observer's bound form: every write to it now fails, so the study
 	// cannot be declared however many times it is retried.
 	f, err := be.form(watcher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.Tombstone("test: make the board unwritable"); err != nil {
+	if _, err := f.Tombstone("test: make the bound form unwritable"); err != nil {
 		t.Fatal(err)
 	}
 	before := lib.Refs()
 	if _, err := be.StudyForm(watcher, sourceID); err == nil {
-		t.Fatal("studying onto a sealed board succeeded")
+		t.Fatal("studying onto a sealed bound form succeeded")
 	}
 	if got := lib.Refs(); got != before {
 		t.Fatalf("a failed study left refs at %d, was %d", got, before)
@@ -544,7 +544,7 @@ func TestAFailedStudyLeavesNoReference(t *testing.T) {
 	}
 }
 
-// Study and drop racing on one form: nothing may end with a board naming a
+// Study and drop racing on one form: nothing may end with a bound form naming a
 // study whose copy has stopped following.
 func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
@@ -582,7 +582,7 @@ func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 		<-done
 	}
 
-	// Every board is clean, so the count must be zero and the sweep silent.
+	// Every bound form is clean, so the count must be zero and the sweep silent.
 	lib, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
@@ -616,7 +616,7 @@ func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 }
 
 // Exhausting the retries is not a drop: releasing the libretto anyway takes a
-// reference off a copy a live board still names, the under-count the sweep
+// reference off a copy a live bound form still names, the under-count the sweep
 // cannot distinguish from a legitimate observer. The attempt budget is a var
 // so the exhaustion branch is reachable.
 func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
@@ -647,7 +647,7 @@ func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
 		t.Error("a drop that changed nothing reported changed")
 	}
 	if got := lib.Refs(); got != before {
-		t.Fatalf("refs %d, want %d: the reference went back while the board still names the study", got, before)
+		t.Fatalf("refs %d, want %d: the reference went back while the bound form still names the study", got, before)
 	}
 
 	// And the two participants still agree, which is the invariant the verb
@@ -675,8 +675,8 @@ func TestKindWordNamesWhatWasAimedAt(t *testing.T) {
 // A pair that existed: every optimistic read-modify-write quotes a version
 // alongside a value from the same form; if the two come from separate loads
 // a writer landing between them hands back a pair that never existed. The
-// board is the case that matters, since there is no sweep that can recompute
-// a board.
+// bound form is the case that matters, since there is no sweep that can recompute
+// a bound form.
 func TestFormAtIsAPairThatExisted(t *testing.T) {
 	be, _, _ := librettoFixture(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
@@ -684,7 +684,7 @@ func TestFormAtIsAPairThatExisted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A writer hammering the same board while a reader takes pairs: every
+	// A writer hammering the same bound form while a reader takes pairs: every
 	// pair must be self-consistent, which here means the version is the one
 	// at which that exact value was published.
 	stop := make(chan struct{})
@@ -720,7 +720,7 @@ func TestFormAtIsAPairThatExisted(t *testing.T) {
 			t.Fatalf("(v, v] is not empty at version %d", version)
 		}
 		if _, ok := snap.Get("aria_id"); !ok {
-			t.Fatalf("the snapshot at version %d is not this board", version)
+			t.Fatalf("the snapshot at version %d is not this bound form", version)
 		}
 	}
 }

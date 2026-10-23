@@ -42,7 +42,7 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 		return nil, nil, err
 	}
 	// A set does not ride the figaro's queue: store.Form has its own actor, and
-	// a turn samples the board once at send, so the board cannot move under it.
+	// a turn samples the bound form once at send, so the bound form cannot move under it.
 	_, applied, err := a.applyFormPatch(patch, ifVersion, assert, "set")
 	if err != nil {
 		return nil, nil, err

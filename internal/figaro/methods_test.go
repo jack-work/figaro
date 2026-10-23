@@ -99,17 +99,17 @@ func agentOn(t *testing.T, asker *scriptedAsker, p *effortProvider, methods stri
 
 func agentWith(t *testing.T, asker *scriptedAsker, p *effortProvider, extra map[string]json.RawMessage, defaults *form.Snapshot) (*figaro.Agent, *effortProvider) {
 	t.Helper()
-	board := map[string]json.RawMessage{
+	bound := map[string]json.RawMessage{
 		"system.model":           json.RawMessage(`"mock-model-v1"`),
 		"system.provider":        json.RawMessage(`"mock"`),
 		"system.thinking_effort": json.RawMessage(`"medium"`),
 	}
 	for k, v := range extra {
-		board[k] = v
+		bound[k] = v
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Build(form.Snapshot{}, board, nil))
-	be, id := store.NewTestAria(t, "m", form.Build(form.Snapshot{}, board, nil))
+	cb.Apply(form.Build(form.Snapshot{}, bound, nil))
+	be, id := store.NewTestAria(t, "m", form.Build(form.Snapshot{}, bound, nil))
 	cfg := figaro.Config{
 		Projector: uiir.New(nil), ID: id,
 		Provider: p, Backend: be, Form: cb, Decider: asker,

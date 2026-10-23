@@ -34,7 +34,7 @@ func sameBuild(a, b provider.Knobs) bool {
 		a.ReminderRenderer == b.ReminderRenderer
 }
 
-// bindProvider takes the name off the board, not the instance: `system.provider`
+// bindProvider takes the name off the bound form, not the instance: `system.provider`
 // is the label that decides rebinds, and a differently spelled Name() must not read as a switch.
 func (a *Agent) bindProvider(prov provider.Provider) {
 	if prov == nil {

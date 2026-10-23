@@ -9,16 +9,16 @@ import (
 )
 
 type LibrettoAudit struct {
-	Boards    int // boards read
-	Librettos int // librettos examined
-	Corrected int // refcounts that were wrong
-	Orphaned  int // librettos no board names at all
-	Missing   int // studied forms STILL without a libretto when the pass ended
-	Minted    int // librettos this pass created (the migration)
+	BoundForms int // bound forms read
+	Librettos  int // librettos examined
+	Corrected  int // refcounts that were wrong
+	Orphaned   int // librettos no bound form names at all
+	Missing    int // studied forms STILL without a libretto when the pass ended
+	Minted     int // librettos this pass created (the migration)
 }
 
 // StudiesKey: the store owns the name because its reconciliation sweep
-// recomputes refcounts from the boards; figaro re-exports it.
+// recomputes refcounts from the bound forms; figaro re-exports it.
 const StudiesKey = "system.studies"
 
 // ReconcileLibrettos is idempotent and safe while live: each correction is an
@@ -33,7 +33,7 @@ func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
 	return b.reconcileLibrettos(false)
 }
 
-// RefsNeedMigration reads only the librettos, never the boards.
+// RefsNeedMigration reads only the librettos, never the bound forms.
 func (b *XwalBackend) RefsNeedMigration() bool {
 	for _, st := range b.store.trunks.Stumps() {
 		source, ok := SourceOfLibretto(st.Name)
@@ -54,7 +54,7 @@ func (b *XwalBackend) RefsNeedMigration() bool {
 func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	var audit LibrettoAudit
 
-	// What the boards actually say.
+	// What the bound forms actually say.
 	want := map[string][]string{}
 	for _, n := range b.store.Nodes() {
 		if isReservedStump(n.ID) {
@@ -62,9 +62,9 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		}
 		snap, err := b.FormState(n.ID)
 		if err != nil {
-			continue // a node whose board cannot be read cannot claim a study
+			continue // a node whose bound form cannot be read cannot claim a study
 		}
-		audit.Boards++
+		audit.BoundForms++
 		for _, formID := range studiesOf(snap) {
 			src := strings.TrimPrefix(formID, "@")
 			want[src] = append(want[src], n.ID)

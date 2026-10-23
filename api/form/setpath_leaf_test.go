@@ -13,7 +13,7 @@ import (
 // Issue 43: a member written through a non-object leaf must land nested,
 // never as a flat "a.b" sibling that no JSON reader finds at a.b.
 func TestSetPathThroughLeafNests(t *testing.T) {
-	for name, board := range map[string]string{
+	for name, bound := range map[string]string{
 		"null":   `{"name":"f","system":null}`,
 		"string": `{"name":"f","system":"prose"}`,
 		"number": `{"name":"f","system":7}`,
@@ -21,7 +21,7 @@ func TestSetPathThroughLeafNests(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var s form.Snapshot
-			require.NoError(t, json.Unmarshal([]byte(board), &s))
+			require.NoError(t, json.Unmarshal([]byte(bound), &s))
 
 			next := s.SetPath("system.ebac", json.RawMessage(`{"round":7}`))
 

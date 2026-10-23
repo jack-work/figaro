@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Phase 9 against a COPY OF THE REAL STORE: 515 arias, real boards, a
+# Phase 9 against a COPY OF THE REAL STORE: 515 arias, real bound forms, a
 # topology form that has to migrate, and a reconciliation sweep that has to
-# read every board. A fresh store proves the mechanism; this proves it meets
+# read every bound form. A fresh store proves the mechanism; this proves it meets
 # the data that exists.
 set -uo pipefail
 cd /home/gluck/dev/figaro-qua/incant
@@ -30,7 +30,7 @@ echo "--- fork it"
 echo "--- drop"
 "$BIN" drop "$ARIA" "$FORM" 2>&1 | head -2
 "$BIN" doctor mem 2>&1 | grep -E "librettos|heap "
-echo "--- the sweep over every real board"
+echo "--- the sweep over every real bound form"
 "$BIN" stop >/dev/null 2>&1; sleep 1
 t0=$(date +%s.%N)
 "$BIN" doctor librettos --dry-run 2>&1

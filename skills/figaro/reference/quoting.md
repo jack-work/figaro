@@ -171,7 +171,7 @@ and `:` opens holding it.
 
 From the pager a thread is append-only: a reply always goes after every
 message already in it, and a delete always takes the whole thread, after a
-y/n. Editing or removing one message is a board edit (`figaro set` /
+y/n. Editing or removing one message is a bound form edit (`figaro set` /
 `figaro unset` on `comments.<id>.thread.<key>`).
 
 The form holds them under `comments`, keyed by id:

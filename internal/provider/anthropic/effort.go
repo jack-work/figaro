@@ -20,11 +20,11 @@ type effortRow struct {
 	OutputConfig outputConfig  `json:"output_config"`
 }
 
-func effortRowFor(msg message.Message, board form.Snapshot) (json.RawMessage, bool) {
+func effortRowFor(msg message.Message, bound form.Snapshot) (json.RawMessage, bool) {
 	if msg.Role != message.RoleInput || !turns.Opens(msg) {
 		return nil, false
 	}
-	effort := board.Lookup(provider.ThinkingEffortKey)
+	effort := bound.Lookup(provider.ThinkingEffortKey)
 	if effort == nil || *effort == "" {
 		return nil, false
 	}

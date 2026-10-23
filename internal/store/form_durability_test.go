@@ -277,7 +277,7 @@ func TestSyncCountsRecordsNotWrites(t *testing.T) {
 	}
 	before := log.syncs.Load()
 
-	// Twenty writers, all setting the value the board already holds: every
+	// Twenty writers, all setting the value the bound form already holds: every
 	// one reduces to nothing, so the batch writes no record at all.
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {

@@ -149,10 +149,10 @@ func markedIndexes(t *testing.T, req chatRequest) []int {
 func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 	for _, mode := range []provider.MarkMode{provider.MarkAuto, provider.MarkBlocks} {
 		p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), mode)
-		board := snap(t, map[string]any{"system.credo": "credo"})
+		bound := snap(t, map[string]any{"system.credo": "credo"})
 
 		turn1 := conversation()
-		req1, err := p.assemble(encodeAll(t, p, turn1), board, nil, 1024, "aria1")
+		req1, err := p.assemble(encodeAll(t, p, turn1), bound, nil, 1024, "aria1")
 		if err != nil {
 			t.Fatalf("%s turn 1: %v", mode, err)
 		}
@@ -160,7 +160,7 @@ func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 		turn2 := append(turn1,
 			message.Message{Role: message.RoleOutput, Content: []message.Content{message.TextContent("second reply")}},
 			message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("third turn")}})
-		req2, err := p.assemble(encodeAll(t, p, turn2), board, nil, 1024, "aria1")
+		req2, err := p.assemble(encodeAll(t, p, turn2), bound, nil, 1024, "aria1")
 		if err != nil {
 			t.Fatalf("%s turn 2: %v", mode, err)
 		}
@@ -178,10 +178,10 @@ func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 
 func TestSessionKeyIsSentUnderBothNamesAndIsStable(t *testing.T) {
 	p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), provider.MarkAuto)
-	board := snap(t, map[string]any{"system.credo": "credo"})
-	req1, _ := p.assemble(encodeAll(t, p, conversation()), board, nil, 1024, "aria1")
-	req2, _ := p.assemble(encodeAll(t, p, conversation()), board, nil, 1024, "aria1")
-	other, _ := p.assemble(encodeAll(t, p, conversation()), board, nil, 1024, "aria2")
+	bound := snap(t, map[string]any{"system.credo": "credo"})
+	req1, _ := p.assemble(encodeAll(t, p, conversation()), bound, nil, 1024, "aria1")
+	req2, _ := p.assemble(encodeAll(t, p, conversation()), bound, nil, 1024, "aria1")
+	other, _ := p.assemble(encodeAll(t, p, conversation()), bound, nil, 1024, "aria2")
 
 	if req1.SessionID == "" || req1.SessionID != req1.PromptCacheKey {
 		t.Fatalf("session key must ride under both names: session_id=%q prompt_cache_key=%q",

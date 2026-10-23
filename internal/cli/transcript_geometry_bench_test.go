@@ -171,9 +171,9 @@ func BenchmarkTranscriptLiveTickFrame(b *testing.B) {
 
 	deltas := map[string]livedoc.FormDelta{}
 	for i := range 30 {
-		key := fmt.Sprintf("board.skills.key%02d", i)
+		key := fmt.Sprintf("bound.skills.key%02d", i)
 		deltas[key] = livedoc.FormDelta{
-			Form: "board", Kind: livedoc.FormBound, Event: livedoc.FormSet,
+			Form: "bound", Kind: livedoc.FormBound, Event: livedoc.FormSet,
 			Value: []byte(fmt.Sprintf("%q", "a value of the sort a chalkboard carries")),
 		}
 	}

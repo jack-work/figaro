@@ -66,9 +66,9 @@ var metaIdentityHealed atomic.Int64
 
 func MetaIdentityHealed() int64 { return metaIdentityHealed.Load() }
 
-// healIdentity folds the board's identity keys into a sidecar below
+// healIdentity folds the bound form's identity keys into a sidecar below
 // CurrentMetaVersion. Returns the upgraded copy, or nil; the write abandons
-// when `from` was superseded while the board was folding.
+// when `from` was superseded while the bound form was folding.
 func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMeta) *AriaMeta {
 	// Before the sidecar lock: FormState takes the store's own.
 	snap, err := b.FormState(ariaID)

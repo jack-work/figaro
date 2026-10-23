@@ -284,7 +284,7 @@ Then read, in this order: each answers a different question:
 - `figaro ls -a`: twelve DISTINCT ids, each with its own mantra and 2 messages.
   A shared-state bug shows up as a repeated mantra or a missing row.
 - `figaro state --id <one>`: the form is materialized: `-O` names became keys,
-  and `layers` is not on the board.
+  and `layers` is not on the bound form.
 - `awk '/VmRSS/{print $2}' /proc/$(cat $FIGARO_RUNTIME_DIR/angelus.pid)/status`
 : the daemon's own footprint, not the harness's.
 

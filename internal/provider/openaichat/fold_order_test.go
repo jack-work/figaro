@@ -10,8 +10,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Each patch renders against the board before it.
-func TestRenderPatchesRendersAgainstThePriorBoard(t *testing.T) {
+// Each patch renders against the bound form before it.
+func TestRenderPatchesRendersAgainstThePriorBoundForm(t *testing.T) {
 	tmpl := template.Must(template.New("form").New("mantra").Parse(`{{.OldString}}=>{{.NewString}}`))
 	p := &Provider{Templates: tmpl}
 	snap := form.FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})

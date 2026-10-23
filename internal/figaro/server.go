@@ -146,7 +146,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 	case rpc.MethodForm:
 		var req rpc.FormRequest
 		if len(params) > 0 {
-			// No params and `null` both mean the board.
+			// No params and `null` both mean the bound form.
 			_ = json.Unmarshal(params, &req)
 		}
 		if name := req.Intrinsic; name != "" && name != IntrinsicState {

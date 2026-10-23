@@ -87,7 +87,7 @@ func chatter(n int) []message.Message {
 	return out
 }
 
-func boardOf(t *testing.T, kv map[string]string) form.Snapshot {
+func boundFormOf(t *testing.T, kv map[string]string) form.Snapshot {
 	t.Helper()
 	set := map[string]json.RawMessage{}
 	for k, v := range kv {
@@ -191,7 +191,7 @@ func TestAnEmptyQuestionIsRefused(t *testing.T) {
 func TestANonLeafRefListsItsChildrenAsJSON(t *testing.T) {
 	// Gluck: "just the frontmatter and the path as a json object. not the
 	// full text." One level, no closure.
-	board := boardOf(t, map[string]string{
+	bound := boundFormOf(t, map[string]string{
 		"skills.printer.filePath":    `"/s/printer.md"`,
 		"skills.printer.frontmatter": `"name: printer\ndescription: Send documents to the laser printer."`,
 		"skills.weather.filePath":    `"/s/weather.md"`,
@@ -199,7 +199,7 @@ func TestANonLeafRefListsItsChildrenAsJSON(t *testing.T) {
 		"mantra":                     `"unrelated"`,
 	})
 	e, got := engineReplying(t, `{"model":"jev-latest","answers":{"decision":{"type":"choice","choice":"printer","confidence":0.9,"probabilities":{"printer":0.9,"weather":0.1}}}}`)
-	out := decide(t, e, Source{Defaults: jevDefaults, Board: board}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
+	out := decide(t, e, Source{Defaults: jevDefaults, BoundForm: bound}, rpc.DecideRequest{Question: "which skill?\n?? @skills"})
 
 	criteria := named(t, got.body.Questions[questionKey])
 	if len(criteria) != 2 {
@@ -222,12 +222,12 @@ func TestANonLeafRefListsItsChildrenAsJSON(t *testing.T) {
 }
 
 func TestALeafRefIsItsStringValue(t *testing.T) {
-	board := boardOf(t, map[string]string{
+	bound := boundFormOf(t, map[string]string{
 		"plan.a": `"rewrite the retry loop"`,
 		"plan.b": `"add an idempotency key"`,
 	})
 	e, got := engineReplying(t, `{"model":"jev-latest","answers":{"decision":{"type":"choice","choice":"plan.b","probabilities":{"plan.a":0.2,"plan.b":0.8}}}}`)
-	decide(t, e, Source{Defaults: jevDefaults, Board: board}, rpc.DecideRequest{Question: "which plan?", Choices: []string{"@plan.a", "@plan.b"}})
+	decide(t, e, Source{Defaults: jevDefaults, BoundForm: bound}, rpc.DecideRequest{Question: "which plan?", Choices: []string{"@plan.a", "@plan.b"}})
 	criteria := named(t, got.body.Questions[questionKey])
 	if criteria["plan.a"] != "rewrite the retry loop" || criteria["plan.b"] != "add an idempotency key" {
 		t.Fatalf("criteria = %#v", criteria)
@@ -236,7 +236,7 @@ func TestALeafRefIsItsStringValue(t *testing.T) {
 
 func TestAMissingRefIsNamed(t *testing.T) {
 	e, _ := engineReplying(t, liveChoice)
-	_, err := e.Decide(context.Background(), Source{Defaults: jevDefaults, Board: form.Snapshot{}}, rpc.DecideRequest{Question: "q", Choices: []string{"@skills"}})
+	_, err := e.Decide(context.Background(), Source{Defaults: jevDefaults, BoundForm: form.Snapshot{}}, rpc.DecideRequest{Question: "q", Choices: []string{"@skills"}})
 	if err == nil || !strings.Contains(err.Error(), "@skills") {
 		t.Fatalf("err = %v", err)
 	}
@@ -544,16 +544,16 @@ func TestEachSettingIsTheRequestThenTheAriaThenTheDefaultOutfit(t *testing.T) {
 	defer srv.Close()
 	e := New(func(p string) (Target, error) { provider = p; return Target{BaseURL: srv.URL}, nil })
 	defaults := defaultsOf(t, "rou2", "jev-latest")
-	board := defaultsOf(t, "gateway", "explabs/jev-latest")
+	bound := defaultsOf(t, "gateway", "explabs/jev-latest")
 	cases := []struct {
 		src          Source
 		req          rpc.DecideRequest
 		wantP, wantM string
 	}{
 		{Source{Defaults: defaults}, rpc.DecideRequest{}, "rou2", "jev-latest"},
-		{Source{Defaults: defaults, Board: board}, rpc.DecideRequest{}, "gateway", "explabs/jev-latest"},
-		{Source{Defaults: defaults, Board: board}, rpc.DecideRequest{Provider: "azure", Model: "decision-1"}, "azure", "decision-1"},
-		{Source{Defaults: defaults, Board: defaultsOf(t, "", "explabs/jev-latest")}, rpc.DecideRequest{}, "rou2", "explabs/jev-latest"},
+		{Source{Defaults: defaults, BoundForm: bound}, rpc.DecideRequest{}, "gateway", "explabs/jev-latest"},
+		{Source{Defaults: defaults, BoundForm: bound}, rpc.DecideRequest{Provider: "azure", Model: "decision-1"}, "azure", "decision-1"},
+		{Source{Defaults: defaults, BoundForm: defaultsOf(t, "", "explabs/jev-latest")}, rpc.DecideRequest{}, "rou2", "explabs/jev-latest"},
 	}
 	for i, c := range cases {
 		c.req.Question = "q?"

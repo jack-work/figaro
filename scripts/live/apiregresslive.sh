@@ -62,7 +62,7 @@ has "form new mints" "$F" "@"
 has "form state round-trips" "$("$BIN" --bind state --id "$F" -j 2>&1)" "hello"
 "$BIN" --bind attend "$A" >/dev/null 2>&1
 "$BIN" --bind study "$A" "$F" >/dev/null 2>&1
-has "study lands on the board" "$("$BIN" --bind state --id "$A" -j 2>&1)" "studies"
+has "study lands on the bound form" "$("$BIN" --bind state --id "$A" -j 2>&1)" "studies"
 
 echo "== fork (topology through the collapsed surface)"
 B=$("$BIN" --bind fork "$A" -j 2>/dev/null | jq -r .aria_id)

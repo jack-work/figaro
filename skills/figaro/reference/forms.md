@@ -38,7 +38,7 @@ holds, and, for a role, where it points and whether that aria is live,
 dormant or gone. `fig form listen @a5af1a83` watches it live (deltas ride
 `form.delta`; reconnect resyncs).
 
-**Write.** The same verbs an aria's board uses:
+**Write.** The same verbs an aria's bound form uses:
 
 ```sh
 fig set --id @a5af1a83 status.phase canary
@@ -52,7 +52,7 @@ by the daemon without waking anything, a form has nothing to wake.
 Concurrent writers serialize through the form's single writer (an actor
 whose goroutine exists only while there is work, batching one fsync across
 concurrent patches);
-conditional writes (`if-version`) refuse when the board moved.
+conditional writes (`if-version`) refuse when the bound form moved.
 
 **Fork.** `fig form fork @a5af1a83 who=trial` duplicates the state at
 that moment into a fresh `@id`. The parent stays fully patchable; later
@@ -117,10 +117,10 @@ default form remints too: the lifecycle refuses to propagate an ad-hoc
 patch to every future aria. There is deliberately **no `outfit write`**:
 outfit files are one-way sources of truth.
 
-**A figaro's board is a form with a turn loop attached.** `fig set` on
+**A figaro's bound form is a form with a turn loop attached.** `fig set` on
 an aria projects the patch as a `<system-reminder>` into its next turn;
 on a *dormant* aria the write lands without waking it. `fig form
-listen <aria-id>` watches a figaro's board exactly as it watches a
+listen <aria-id>` watches a figaro's bound form exactly as it watches a
 form.
 
 **Scripting.** Every form verb takes `-j`:
@@ -144,7 +144,7 @@ marker); the resolver checks it before anything else.
 | `fig bind` | naked figaro | figaro inheriting `@x` | refused (use `fig fork`) |
 | `fig fork` |: | `form fork` | conversation fork (as ever) |
 | `fig set` / `unset` |: | writes, wake-free | live: reminder next turn; dormant: wake-free |
-| `fig form` / `state` |: | the tree | the board |
+| `fig form` / `state` |: | the tree | the bound form |
 | `fig form listen` |: | live deltas | live deltas |
 | `fig send` / `q` | attended-null: `fig new` path + autobind | role: **follows `target-aria`**, once, late, per call; plain: refused with the two remedies | the turn, as ever |
 | `fig listen` |: | role: follows the target (banner `role @x → aria y`); plain: refused | transcript |
@@ -157,7 +157,7 @@ marker); the resolver checks it before anything else.
 
 A form carrying a **`target-aria`** key is a **role**, a stable name
 for "whoever holds this job now". Duck-typed: the key IS the type, and
-only unbound forms count (the key is inert on a figaro's board).
+only unbound forms count (the key is inert on a figaro's bound form).
 
 **Resolution is late, and per call.** `fig send`, `fig listen`, `hup`,
 and the queue verbs against a role read the form THEN, a banner says
@@ -185,8 +185,8 @@ fig send --id @role -- status?                # reaches the holder, whoever that
 an unbound form; `fig drop` unsubscribes; `fig cast [<aria>] <@form>`
 (or `-O <names>` / `-S <k=v>` to mint the role born cast) points the role here AND
 ensures the study, serialized through the figaro's actor loop. The
-mechanism is the bound board's, generalized: every IR record stamps the
-positions of the whole OBSERVED SET (own board plus studied forms), and
+mechanism is the bound form's, generalized: every IR record stamps the
+positions of the whole OBSERVED SET (own bound form plus studied forms), and
 the provider translator derives each member's patch-fold between
 consecutive stamps at translation time: folded into the provider IR
 exactly as the form's transitions are, re-derived on every
@@ -214,7 +214,7 @@ but not cast is reported as exactly that, with its id, and `-j` carries both
 facts: `{"aria_id":…,"minted_figaro":true,"cast":false,"error":…}`.
 
 **What a studied form SAYS at each event** is `system.study_incantation` on
-the observer's own board, an object with any subset of `onstudy`, `onupdate`
+the observer's own bound form, an object with any subset of `onstudy`, `onupdate`
 and `ondrop`. The phrase rides the block for that event as a `say` field; the
 fact is rendered either way. `system.fork_incantation` is the same idea for a
 branch's birth: a string, or `{"onfork": …}`. Unset means silence, which is
@@ -268,7 +268,7 @@ distinction:
 is implied, so `fig form show <id>` and `fig form show <id>/state` are the same
 address in every respect. What "the host's own form" means per host kind:
 
-- a **bound figaro** → its bound form (its board)
+- a **bound figaro** → its bound form
 - an **unbound form** → that form's own state
 - a **role** → the role form's own state, **not** its target's
 
@@ -375,10 +375,10 @@ fig models                    # the same, as a table, with each provider's age a
 ```
 
 **A client derives an aria's context percentage itself:** it mirrors the
-aria's board and `@models`, and looks up the board's `system.provider` ×
-`system.model`. `system.max_context_tokens` on the board wins outright, and
+aria's bound form and `@models`, and looks up the bound form's `system.provider` ×
+`system.model`. `system.max_context_tokens` on the bound form wins outright, and
 `system.context_tier = "long_context"` selects `context.long`. A model switch
-is a board delta, so the bar follows it with no round trip; a catalog fill is
+is a bound form delta, so the bar follows it with no round trip; a catalog fill is
 an `@models` delta, so a bar showing tokens alone gains its percentage the
 moment the fill lands. `aria.Metrics` carries the token count, never the limit.
 The lookup is `api/models.ContextLimit`, the one implementation the daemon's

@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-// Snapshot is an aria's board: a JSON object nested where the dotted keys
+// Snapshot is a form's state: a JSON object nested where the dotted keys
 // nest. Immutable; the tree is the authority and raw memoises its bytes.
 type Snapshot struct {
 	t   ptree
@@ -279,7 +279,7 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 		if p.IsIdentity() {
 			return t, false
 		}
-		// A scalar or list patch replaces the whole board.
+		// A scalar or list patch replaces the whole form.
 		next, err := p.Apply(NewValue(mustEncode(t)))
 		if err != nil {
 			return t, false
@@ -404,7 +404,7 @@ func (s Snapshot) DeletePath(key string) Snapshot {
 // member that is not valid JSON is an error, never an omission.
 func (s Snapshot) MarshalJSON() ([]byte, error) { return s.marshal() }
 
-// UnmarshalJSON nests a flat board (dotted keys at the top level) on read.
+// UnmarshalJSON nests a flat form (dotted keys at the top level) on read.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {

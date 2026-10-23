@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Issue #48: an outfit's [system] ttl reaches the board by layering, never by
+// Issue #48: an outfit's [system] ttl reaches the bound form by layering, never by
 // a patch that names it, and was never mirrored into the sweep's index.
 func TestOutfitTTLIsIndexedAtCreateAndFork(t *testing.T) {
 	a, acli, ctx, dir := daemonFixtureDir(t)

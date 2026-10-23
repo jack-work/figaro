@@ -1,4 +1,4 @@
-// Package formdelta derives, per IR record, what changed on the bound board
+// Package formdelta derives, per IR record, what changed on the bound form
 // and on every studied form.
 package formdelta
 

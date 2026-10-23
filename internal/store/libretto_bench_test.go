@@ -9,7 +9,7 @@ import (
 )
 
 // The fold must be tree surgery, not marshal and unmarshal: allocation
-// proportional to the patch, not to the board. Each iteration patches one key
+// proportional to the patch, not to the bound form. Each iteration patches one key
 // of a `size`-key source and waits for the copy to carry it; the per-fold
 // cost must not climb with size.
 func benchLibrettoFold(b *testing.B, size int) {
@@ -63,8 +63,8 @@ func benchLibrettoFold(b *testing.B, size int) {
 	}
 }
 
-func BenchmarkLibrettoFoldSmallBoard(b *testing.B) { benchLibrettoFold(b, 10) }
-func BenchmarkLibrettoFoldLargeBoard(b *testing.B) { benchLibrettoFold(b, 5000) }
+func BenchmarkLibrettoFoldSmallBoundForm(b *testing.B) { benchLibrettoFold(b, 10) }
+func BenchmarkLibrettoFoldLargeBoundForm(b *testing.B) { benchLibrettoFold(b, 5000) }
 
 // A burst is where coalescing shows: the number to watch is source patches
 // per libretto record, since one means an fsync per source patch.

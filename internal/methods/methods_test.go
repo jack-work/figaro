@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/decide"
 )
 
-func board(t *testing.T, methods string) form.Snapshot {
+func bound(t *testing.T, methods string) form.Snapshot {
 	t.Helper()
 	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{FormKey: json.RawMessage(methods)}, nil))
 }
@@ -31,7 +31,7 @@ const effort = `{
 }`
 
 func TestTheWorkOrderConfigReads(t *testing.T) {
-	ms, errs := Read(board(t, effort))
+	ms, errs := Read(bound(t, effort))
 	if len(errs) != 0 || len(ms) != 1 {
 		t.Fatalf("methods = %+v, errs = %v", ms, errs)
 	}
@@ -56,19 +56,19 @@ func TestTheWorkOrderConfigReads(t *testing.T) {
 
 func TestTheSwitchesDefaultOnAndTurnOff(t *testing.T) {
 	off := strings.Replace(effort, `"enabled": true`, `"enabled": false`, 1)
-	if ms, _ := Read(board(t, off)); len(ms) != 0 {
+	if ms, _ := Read(bound(t, off)); len(ms) != 0 {
 		t.Fatalf("the whole feature was off and %d methods ran", len(ms))
 	}
 	offAsString := strings.Replace(effort, `"enabled": true`, `"enabled": "false"`, 1)
-	if ms, _ := Read(board(t, offAsString)); len(ms) != 0 {
+	if ms, _ := Read(bound(t, offAsString)); len(ms) != 0 {
 		t.Fatal(`a "false" written by figaro set did not turn the feature off`)
 	}
 	one := strings.Replace(effort, `"score": true`, `"score": true, "enabled": false`, 1)
-	if ms, errs := Read(board(t, one)); len(ms) != 0 || len(errs) != 0 {
+	if ms, errs := Read(bound(t, one)); len(ms) != 0 || len(errs) != 0 {
 		t.Fatalf("a disabled method: %+v %v", ms, errs)
 	}
 	bare := strings.Replace(effort, `"enabled": true,`, ``, 1)
-	if ms, _ := Read(board(t, bare)); len(ms) != 1 {
+	if ms, _ := Read(bound(t, bare)); len(ms) != 1 {
 		t.Fatal("enabled must default to true")
 	}
 }
@@ -84,7 +84,7 @@ func TestABadMethodDoesNotSilenceItsSiblings(t *testing.T) {
 		"g": {"context": "{{inquiry}}", "options": ["x", "y"]},
 		"ok": {"key": "k", "context": "{{inquiry}}", "options": ["x", "y"]}
 	}`
-	ms, errs := Read(board(t, raw))
+	ms, errs := Read(bound(t, raw))
 	if len(ms) != 1 || ms[0].Name != "ok" || ms[0].Event != EventInquiry {
 		t.Fatalf("methods = %+v", ms)
 	}
@@ -95,7 +95,7 @@ func TestABadMethodDoesNotSilenceItsSiblings(t *testing.T) {
 
 func TestNamedOptionsCarryTheirDescriptions(t *testing.T) {
 	raw := `{"m": {"key": "k", "context": "{{inquiry}}", "options": {"quick": "a one-liner", "deep": "a proof"}}}`
-	ms, errs := Read(board(t, raw))
+	ms, errs := Read(bound(t, raw))
 	if len(errs) != 0 || len(ms) != 1 {
 		t.Fatal(errs)
 	}
@@ -128,7 +128,7 @@ func chose(label string) asker {
 
 func method(t *testing.T, raw string) Method {
 	t.Helper()
-	ms, errs := Read(board(t, raw))
+	ms, errs := Read(bound(t, raw))
 	if len(errs) != 0 || len(ms) != 1 {
 		t.Fatalf("methods = %+v, errs = %v", ms, errs)
 	}
@@ -179,7 +179,7 @@ func TestAnAnswerOutsideTheOptionsIsRefused(t *testing.T) {
 }
 
 func TestTheAriaOverridesTheDefaultOutfitLeafByLeaf(t *testing.T) {
-	defaults := board(t, effort)
+	defaults := bound(t, effort)
 	aria := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.methods.reasoning-effort.default": json.RawMessage(`"low"`),
 		"mantra": json.RawMessage(`"unrelated"`),

@@ -9,7 +9,7 @@ import (
 
 // A store written before a channel became unkeyed kept it keyed forever: the
 // manifest is authoritative once a store exists, and nothing reconciled it.
-// The symptom: a board patch written with no turn in flight is keyed above
+// The symptom: a bound form patch written with no turn in flight is keyed above
 // the tail, so a tail fork's child does not inherit it.
 func TestAKeyedChannelBecomesUnkeyedAndATailForkInheritsAgain(t *testing.T) {
 	dir := t.TempDir()
@@ -52,7 +52,7 @@ func TestAKeyedChannelBecomesUnkeyedAndATailForkInheritsAgain(t *testing.T) {
 	}
 
 	// A patch with NO turn in flight, then a tail fork. The child must
-	// start from the board the parent declared, patch included.
+	// start from the bound form the parent declared, patch included.
 	if _, err := s2.Append(string(trunk), "chalkboard", 0, []byte(`{"k":"v"}`), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestAKeyedChannelBecomesUnkeyedAndATailForkInheritsAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(recs) == 0 {
-		t.Fatal("the child inherited NO board records")
+		t.Fatal("the child inherited NO bound form records")
 	}
 	found := false
 	for _, r := range recs {
@@ -74,7 +74,7 @@ func TestAKeyedChannelBecomesUnkeyedAndATailForkInheritsAgain(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("the child inherited %d board records but not the one written since the last turn", len(recs))
+		t.Errorf("the child inherited %d bound form records but not the one written since the last turn", len(recs))
 	}
 }
 
@@ -351,7 +351,7 @@ func TestAReducerRenameDoesNotRefuseAStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(before, `"k"`) {
-		t.Fatalf("fixture board is %q; the test cannot show a fold surviving anything", before)
+		t.Fatalf("fixture bound form is %q; the test cannot show a fold surviving anything", before)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -382,6 +382,6 @@ func TestAReducerRenameDoesNotRefuseAStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	if after != before {
-		t.Errorf("board across the reducer rename: got %q want %q", after, before)
+		t.Errorf("bound form across the reducer rename: got %q want %q", after, before)
 	}
 }

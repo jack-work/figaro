@@ -57,7 +57,7 @@ An unknown id is refused here. The door is `angelus.sock` under
 ← {"id":2,"jsonrpc":"2.0","result":{"snapshot":{"title":"demo"},"version":2}}
 ```
 
-`snapshot` is the board as **nested JSON**, not flat dotted keys. `version` is
+`snapshot` is the bound form as **nested JSON**, not flat dotted keys. `version` is
 the durable version, and it is the number every delta is sequenced against.
 
 **Seed first, then follow.** Subscribing after reading drops whatever landed
@@ -84,7 +84,7 @@ Full `params`:
 |---|---|---|
 | `patch` | `Patch` | required; §5 |
 | `outfits` | `[]string` | outfit NAMES, folded **under** the patch's own keys |
-| `if_version` | `uint64` | refuse unless the board is still at this version; 0 = unconditional |
+| `if_version` | `uint64` | refuse unless the bound form is still at this version; 0 = unconditional |
 | `assert` | `bool` | make a removal of an absent key a **refusal** rather than a no-op |
 | `wait` | `bool` | ask a live aria for the writer's verdict instead of `queued` (moot for a form: no agent, always synchronous) |
 

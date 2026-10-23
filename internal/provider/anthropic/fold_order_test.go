@@ -9,8 +9,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Each patch renders against the board before it.
-func TestRenderPatchBlocksRendersAgainstThePriorBoard(t *testing.T) {
+// Each patch renders against the bound form before it.
+func TestRenderPatchBlocksRendersAgainstThePriorBoundForm(t *testing.T) {
 	base, err := form.LoadDefaultTemplates()
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +39,6 @@ func TestRenderPatchBlocksRendersAgainstThePriorBoard(t *testing.T) {
 		}
 	}
 	if v, _ := advanced.Get("mantra"); string(v) != `"third"` {
-		t.Fatalf("returned board is %s, want \"third\"", v)
+		t.Fatalf("returned bound form is %s, want \"third\"", v)
 	}
 }

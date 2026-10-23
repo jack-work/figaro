@@ -69,7 +69,7 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 		t.Fatalf("refs after repairing an under-count = %d, want 2", got)
 	}
 
-	// OVER-count: a crash between the libretto write and the board write.
+	// OVER-count: a crash between the libretto write and the bound form write.
 	if err := again.SetRefs([]string{"n0", "n1", "n2", "n3"}); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestRefsNeedMigrationIsFalseOnceTheSetsExist(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !be.RefsNeedMigration() {
-		t.Fatal("a count was not recognised as unmigrated: the boards would never be read")
+		t.Fatal("a count was not recognised as unmigrated: the bound forms would never be read")
 	}
 	if _, err := be.ReconcileLibrettos(); err != nil {
 		t.Fatal(err)

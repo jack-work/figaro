@@ -6,7 +6,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// Deriver turns a fig IR entry into what an encoder renders: the board before
+// Deriver turns a fig IR entry into what an encoder renders: the bound form before
 // it, its patches, and its studied-form transitions. The catch-up and the
 // write path share it so one channel never sees two derivations.
 type Deriver struct {
@@ -18,8 +18,8 @@ type Deriver struct {
 	snap      form.Snapshot
 }
 
-func NewDeriver(board Form, studies map[string]Form) *Deriver {
-	return &Deriver{form: board, studies: studies, lastStudy: map[string]uint64{}, snap: form.Snapshot{}}
+func NewDeriver(bound Form, studies map[string]Form) *Deriver {
+	return &Deriver{form: bound, studies: studies, lastStudy: map[string]uint64{}, snap: form.Snapshot{}}
 }
 
 func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
@@ -54,7 +54,7 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 
 func (d *Deriver) At() uint64 { return d.lastForm }
 
-// Next returns the message with its patches and study blocks, and the board
+// Next returns the message with its patches and study blocks, and the bound form
 // before it. Call in log order, once per entry. It does not advance the
 // cursors: an entry can encode to nothing, and its window must then ride the
 // next entry that carries bytes (Commit).

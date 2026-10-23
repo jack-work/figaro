@@ -42,10 +42,10 @@ func TestIntrinsicAddressRoundTrips(t *testing.T) {
 	}
 }
 
-func TestUnknownIntrinsicIsNotSilentlyTheBoard(t *testing.T) {
+func TestUnknownIntrinsicIsNotSilentlyTheHostForm(t *testing.T) {
 	if knownIntrinsic("qeueu") {
 		t.Fatal("a misspelled intrinsic was accepted; the reader would be shown the " +
-			"board and told nothing")
+			"host's own form and told nothing")
 	}
 	for _, name := range append(intrinsicNames(), "", intrinsicState) {
 		if !knownIntrinsic(name) {

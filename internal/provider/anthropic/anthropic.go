@@ -573,15 +573,15 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			}
 		}
 		// Taken before renderPatchBlocks advances prevSnap: every dialect
-		// reads incantations from the pre-patch board.
-		board := *prevSnap
-		patchBlocks, advanced := a.renderPatchBlocks(msg.Patches, board)
+		// reads incantations from the pre-patch bound form.
+		bound := *prevSnap
+		patchBlocks, advanced := a.renderPatchBlocks(msg.Patches, bound)
 		*prevSnap = advanced
 		reminders := patchBlocks
-		for _, text := range provider.StudyReminderTexts(msg, board) {
+		for _, text := range provider.StudyReminderTexts(msg, bound) {
 			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
 		}
-		for _, text := range provider.ForkReminderTexts(msg, board) {
+		for _, text := range provider.ForkReminderTexts(msg, bound) {
 			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
 		}
 		blocks = placeReminders(blocks, reminders)

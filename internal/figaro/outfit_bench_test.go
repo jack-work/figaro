@@ -68,7 +68,7 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 	return a
 }
 
-// BenchmarkDressFirstTime materializes onto a fresh board: closure fold plus append.
+// BenchmarkDressFirstTime materializes onto a fresh bound form: closure fold plus append.
 func BenchmarkDressFirstTime(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
 	a := benchAgent(b, dir, form.Patch{})

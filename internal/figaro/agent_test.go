@@ -422,7 +422,7 @@ done:
 	assert.Equal(t, 15000, contextResp.Metrics.ContextTokens)
 }
 
-// The agent asks the catalog for the board's own provider x model at its
+// The agent asks the catalog for the bound form's own provider x model at its
 // metrics boundary, and a fill that lands later is what Info reports: nothing
 // about the limit is captured at construction.
 func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {

@@ -42,7 +42,7 @@ uninvited:
 
 | species | what it is | how you see it |
 |---|---|---|
-| **bound form** | your own board | one `<system-reminder name="<key>">` per key, every turn |
+| **bound form** | your own bound form | one `<system-reminder name="<key>">` per key, every turn |
 | **unbound form** `@x` | free-standing state, no figaro | not at all, unless you study it |
 | **studied form** | an unbound form you observe | a `study` block when you begin, a `study:@x` block on each change |
 | **role** | a form carrying `target-aria` | an ordinary form: visible only if you study it. `fig cast` studies it for you |
@@ -57,8 +57,8 @@ whole changed value, so keep studied values small if context matters.
 **What configures it**
 
 - `fig study @x` / `fig drop @x`, the subscription itself. It lives on your
-  board as `system.studies`, which is system-managed: only the verbs write it.
-- `system.study_incantation` on **your own board**: `{onstudy, onupdate,
+  bound form as `system.studies`, which is system-managed: only the verbs write it.
+- `system.study_incantation` on **your own bound form**: `{onstudy, onupdate,
   ondrop}`, a sentence added to each event so a figaro is told what the change
   MEANS to it, not just what changed.
 - Nothing else. There is no per-key filter today: a studied form is mirrored

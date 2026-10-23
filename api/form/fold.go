@@ -9,7 +9,7 @@ func Fold(s Snapshot, patches []Patch) Snapshot {
 	return s
 }
 
-// FoldRender renders each patch against the board as it stood before that
+// FoldRender renders each patch against the form as it stood before that
 // patch.
 func FoldRender(s Snapshot, patches []Patch, tmpls *template.Template, visit func(RenderedEntry), onErr func(error)) Snapshot {
 	for _, p := range patches {

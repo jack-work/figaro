@@ -20,8 +20,8 @@ func benchStudyMessage() message.Message {
 	}
 }
 
-// A one-key board would flatter the tree lookup.
-func benchBoard(keys int, extra map[string]json.RawMessage) form.Snapshot {
+// A one-key bound form would flatter the tree lookup.
+func benchBoundForm(keys int, extra map[string]json.RawMessage) form.Snapshot {
 	m := make(map[string]json.RawMessage, keys+len(extra))
 	for i := 0; i < keys; i++ {
 		m[fmt.Sprintf("key%03d", i)] = json.RawMessage(`"value"`)
@@ -34,35 +34,35 @@ func benchBoard(keys int, extra map[string]json.RawMessage) form.Snapshot {
 
 func BenchmarkStudyReminderNoIncantation(b *testing.B) {
 	msg := benchStudyMessage()
-	board := benchBoard(40, nil)
+	bound := benchBoundForm(40, nil)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		provider.StudyReminderTexts(msg, board)
+		provider.StudyReminderTexts(msg, bound)
 	}
 }
 
 func BenchmarkStudyReminderWithIncantation(b *testing.B) {
 	msg := benchStudyMessage()
-	board := benchBoard(40, map[string]json.RawMessage{
+	bound := benchBoundForm(40, map[string]json.RawMessage{
 		form.StudyIncantationKey: json.RawMessage(`{"onstudy":"watch","onupdate":"moved","ondrop":"away"}`),
 	})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		provider.StudyReminderTexts(msg, board)
+		provider.StudyReminderTexts(msg, bound)
 	}
 }
 
 func BenchmarkStudyReminderNoStudyEvent(b *testing.B) {
 	msg := message.Message{Role: message.RoleInput}
-	board := benchBoard(40, map[string]json.RawMessage{
+	bound := benchBoundForm(40, map[string]json.RawMessage{
 		form.StudyIncantationKey: json.RawMessage(`{"onstudy":"watch"}`),
 	})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		provider.StudyReminderTexts(msg, board)
+		provider.StudyReminderTexts(msg, bound)
 	}
 }
 
@@ -70,16 +70,16 @@ func BenchmarkForkReminderOrdinaryMessage(b *testing.B) {
 	msg := message.Message{Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"hello"`),
 	}, nil)}}
-	board := benchBoard(40, nil)
+	bound := benchBoundForm(40, nil)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		provider.ForkReminderTexts(msg, board)
+		provider.ForkReminderTexts(msg, bound)
 	}
 }
 
-// The control: an empty board.
-func BenchmarkStudyReminderEmptyBoard(b *testing.B) {
+// The control: an empty bound form.
+func BenchmarkStudyReminderEmptyBoundForm(b *testing.B) {
 	msg := benchStudyMessage()
 	b.ReportAllocs()
 	b.ResetTimer()

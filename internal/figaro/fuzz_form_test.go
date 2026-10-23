@@ -23,7 +23,7 @@ import (
 )
 
 // Stress harness for the unkeyed form channel: ApplyForm serializes against
-// nothing, so a set can land mid-turn; each IR record stamps the board version
+// nothing, so a set can land mid-turn; each IR record stamps the bound form version
 // it was written at. No sleeps: turns are awaited on turn.done, and the inbox's
 // FIFO is the barrier proving every queued set drained.
 
@@ -188,7 +188,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		}
 		// One writer straight at the channel: ApplyForm takes no lock against the
 		// turn, so it must complete while the round is parked. Its writes never reach
-		// the in-memory board, so only the durable board is asserted.
+		// the in-memory bound form, so only the durable bound form is asserted.
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -219,17 +219,17 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 				key := fmt.Sprintf("fuzz.w%d.k%d", w, i)
 				want := fmt.Sprintf("%q", fmt.Sprintf("v%d", i))
 				got, ok := live.Get(key)
-				require.True(t, ok, "live board is missing %s", key)
-				require.Equal(t, want, string(got), "live board value for %s", key)
+				require.True(t, ok, "live bound form is missing %s", key)
+				require.Equal(t, want, string(got), "live bound form value for %s", key)
 				got, ok = durable.Get(key)
-				require.True(t, ok, "durable board is missing %s", key)
-				require.Equal(t, want, string(got), "durable board value for %s", key)
+				require.True(t, ok, "durable bound form is missing %s", key)
+				require.Equal(t, want, string(got), "durable bound form value for %s", key)
 			}
 		}
 		for i := 0; i < setsPerWriter; i++ {
 			key := fmt.Sprintf("fuzz.direct.k%d", i)
 			got, ok := durable.Get(key)
-			require.True(t, ok, "durable board is missing the mid-turn direct write %s", key)
+			require.True(t, ok, "durable bound form is missing the mid-turn direct write %s", key)
 			require.Equal(t, fmt.Sprintf("%q", fmt.Sprintf("d%d", i)), string(got))
 		}
 		assert.EqualValues(t, 2, prov.sends.Load(), "one gated turn plus the barrier turn")
@@ -237,7 +237,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 
 	t.Run("ProviderSwitchAcrossAndMidTurn", func(t *testing.T) {
 		// A provider switch is just a patch; the contract is no panic, no deadlock,
-		// turn.done every time, and the board's provider serving after the boundary.
+		// turn.done every time, and the bound form's provider serving after the boundary.
 		entered, gate := newGate()
 		var mu sync.Mutex
 		insts := map[string]*gateProvider{}
@@ -280,8 +280,8 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		}
 	})
 
-	t.Run("InteriorForkTakesTheBoardAsOfThatTurn", func(t *testing.T) {
-		// The fork inherits the board as of the forked turn, not as it stands now.
+	t.Run("InteriorForkTakesTheBoundFormAsOfThatTurn", func(t *testing.T) {
+		// The fork inherits the bound form as of the forked turn, not as it stands now.
 		entered, gate := newGate()
 		prov := &gateProvider{name: "gate", entered: entered, gate: gate}
 		a, backend, id := fuzzAgent(t, prov, nil)
@@ -291,7 +291,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		const turns = 6
 		type mark struct {
 			lt    uint64
-			board map[string]string
+			bound map[string]string
 		}
 		marks := make([]mark, 0, turns)
 
@@ -311,9 +311,9 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 
 			entries := log.Read()
 			require.NotEmpty(t, entries)
-			board, err := backend.FormState(id)
+			bound, err := backend.FormState(id)
 			require.NoError(t, err)
-			marks = append(marks, mark{lt: entries[len(entries)-1].LT, board: snapMap(board)})
+			marks = append(marks, mark{lt: entries[len(entries)-1].LT, bound: snapMap(bound)})
 		}
 
 		at := marks[2]
@@ -323,20 +323,20 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		require.NotEmpty(t, alt)
 		require.NotEqual(t, id, alt)
 
-		altBoard, err := backend.FormState(alt)
+		altBoundForm, err := backend.FormState(alt)
 		require.NoError(t, err)
-		nowBoard, err := backend.FormState(id)
+		nowBoundForm, err := backend.FormState(id)
 		require.NoError(t, err)
 
-		assert.Equal(t, at.board, snapMap(altBoard),
-			"an interior fork must inherit the board as of turn 2, not the current one")
-		assert.NotEqual(t, snapMap(nowBoard), snapMap(altBoard),
+		assert.Equal(t, at.bound, snapMap(altBoundForm),
+			"an interior fork must inherit the bound form as of turn 2, not the current one")
+		assert.NotEqual(t, snapMap(nowBoundForm), snapMap(altBoundForm),
 			"turns 3..5 wrote keys the fork must not have inherited")
 		for _, key := range []string{"turn5.pre0", "turn5.mid", "turn4.mid"} {
-			assert.False(t, altBoard.Has(key), "fork inherited %s from after its fork point", key)
+			assert.False(t, altBoundForm.Has(key), "fork inherited %s from after its fork point", key)
 		}
 		for _, key := range []string{"turn0.pre0", "turn2.pre2", "turn2.mid"} {
-			assert.True(t, altBoard.Has(key), "fork is missing %s from before its fork point", key)
+			assert.True(t, altBoundForm.Has(key), "fork is missing %s from before its fork point", key)
 		}
 	})
 
@@ -401,13 +401,13 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 				"versions are append positions: they must form one contiguous run")
 		}
 
-		board, err := backend.FormState(id)
+		bound, err := backend.FormState(id)
 		require.NoError(t, err)
 		for w := 0; w < writers; w++ {
 			for i := 0; i < patchesPerHand; i++ {
 				key := fmt.Sprintf("conc.w%d.k%d", w, i)
-				got, ok := board.Get(key)
-				require.True(t, ok, "board is missing %s", key)
+				got, ok := bound.Get(key)
+				require.True(t, ok, "bound form is missing %s", key)
 				require.Equal(t, fmt.Sprintf("%q", fmt.Sprintf("w%d-i%d", w, i)), string(got))
 			}
 		}

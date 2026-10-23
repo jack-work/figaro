@@ -177,7 +177,7 @@ echo "== control ($ARIAS x 'ls -j', no turn): $(secs "$ctl_start" "$ctl_end")s"
 # --- the studied-form arm ---------------------------------------------------
 #
 # The ephemeral arm above exercises the provider and the inbox but touches no
-# board: `-er` arias have no store, so the form/patch accessor is never asked
+# bound form: `-er` arias have no store, so the form/patch accessor is never asked
 # anything. The path this script exists to load is the OTHER one: N backed
 # arias all observing one form with a long history, where every provider Send
 # asks that form what changed. One key, many patches, so the CONTEXT stays

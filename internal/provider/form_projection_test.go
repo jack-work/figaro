@@ -11,14 +11,14 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-type fakeBoard struct {
+type fakeBoundForm struct {
 	versions []uint64
 	i        int
 }
 
-func newFakeBoard(versions ...uint64) *fakeBoard { return &fakeBoard{versions: versions} }
+func newFakeBoundForm(versions ...uint64) *fakeBoundForm { return &fakeBoundForm{versions: versions} }
 
-func (b *fakeBoard) PatchesBetween(after, upTo uint64) []message.Patch {
+func (b *fakeBoundForm) PatchesBetween(after, upTo uint64) []message.Patch {
 	for b.i < len(b.versions) && b.versions[b.i] <= after {
 		b.i++
 	}
@@ -46,13 +46,13 @@ func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uin
 	_ = e
 }
 
-// renderedKeys records which board keys each entry was given.
-func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessage], board Form) ([]string, error) {
+// renderedKeys records which bound form keys each entry was given.
+func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessage], bound Form) ([]string, error) {
 	var seen []string
 	_, err := CatchUp(CatchUpConfig{
 		Log:         log,
 		Translator:  rows,
-		Form:        board,
+		Form:        bound,
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			for _, p := range msg.Patches {
@@ -80,7 +80,7 @@ func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 		return log
 	}
 
-	coldKeys, err := renderedKeys(build(), store.NewMemLog[[]json.RawMessage](), newFakeBoard(2, 3, 4, 5))
+	coldKeys, err := renderedKeys(build(), store.NewMemLog[[]json.RawMessage](), newFakeBoundForm(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,12 +89,12 @@ func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 	rows := store.NewMemLog[[]json.RawMessage]()
 	stamp(t, warmLog, "one", 2)
 	stamp(t, warmLog, "two", 4)
-	warmKeys, err := renderedKeys(warmLog, rows, newFakeBoard(2, 3, 4, 5))
+	warmKeys, err := renderedKeys(warmLog, rows, newFakeBoundForm(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
 	stamp(t, warmLog, "three", 5)
-	moreKeys, err := renderedKeys(warmLog, rows, newFakeBoard(2, 3, 4, 5))
+	moreKeys, err := renderedKeys(warmLog, rows, newFakeBoundForm(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,10 +114,10 @@ func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 	rows := store.NewMemLog[[]json.RawMessage]()
 	var all []string
 
-	// A fresh board cursor every pass: formAccessor() is called per Send.
+	// A fresh bound form cursor every pass: formAccessor() is called per Send.
 	for i, mark := range []uint64{2, 3, 4, 6, 6} {
 		stamp(t, log, fmt.Sprintf("turn%d", i), mark)
-		keys, err := renderedKeys(log, rows, newFakeBoard(2, 3, 4, 5, 6))
+		keys, err := renderedKeys(log, rows, newFakeBoundForm(2, 3, 4, 5, 6))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 		case 0:
 			t.Errorf("patch %s was never rendered: state the aria has and was never told about", want)
 		default:
-			t.Errorf("patch %s rendered %d times: the board is re-sent on every round-trip", want, counts[want])
+			t.Errorf("patch %s rendered %d times: the bound form is re-sent on every round-trip", want, counts[want])
 		}
 	}
 }

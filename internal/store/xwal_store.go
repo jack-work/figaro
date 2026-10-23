@@ -80,7 +80,7 @@ const formSigil = "@"
 const (
 	chanIR = "ir"
 	// chanForm was "chalkboard" through store generation 1; the version gate
-	// refuses a generation-1 store rather than reading it as a board with no keys.
+	// refuses a generation-1 store rather than reading it as a form with no keys.
 	chanForm = "form"
 	// chanUI is declared so the schema registry can version it before it carries data.
 	chanUI = "ui"
@@ -184,7 +184,7 @@ type XwalStore struct {
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
 
-	// observed is in-memory; the aria's board is the durable truth.
+	// observed is in-memory; the aria's bound form is the durable truth.
 	observedMu sync.Mutex // writers only
 	observed   atomic.Pointer[map[string][]string]
 	now        func() int64
@@ -638,7 +638,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	}
 	pb, _ := json.Marshal(patch)
 
-	// The board patch goes first, and the order is the whole point.
+	// The bound form patch goes first, and the order is the whole point.
 	next := mainTailOf(x) + 1
 	if _, err := x.Append(chanForm, next, pb, nil); err != nil {
 		return err
@@ -651,7 +651,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	if glt != next {
 		// Nothing else may write to a stump; if this fires, the patch is keyed
 		// to a record that does not exist.
-		return fmt.Errorf("xwal store: stump %s birth record landed at %d, board patch keyed to %d",
+		return fmt.Errorf("xwal store: stump %s birth record landed at %d, bound form patch keyed to %d",
 			stump, glt, next)
 	}
 	// Durable before conversations spawn under the stump: a crash between
@@ -1138,8 +1138,8 @@ func studyCursors(cursors map[string]uint64) map[string]uint64 {
 	return out
 }
 
-// SetObservedForms: the list mirrors the agent's board; the store holds it in
-// memory only, since the board is the durable truth and the agent re-declares
+// SetObservedForms: the list mirrors the agent's bound form; the store holds it in
+// memory only, since the bound form is the durable truth and the agent re-declares
 // on boot.
 func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 	s.observedMu.Lock()

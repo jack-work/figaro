@@ -38,7 +38,7 @@ func (t *transcript) forkPoints() []forkAt {
 }
 
 // A lookup, not a survey: this runs per block per frame under the render lock, and
-// a board has one forked_from.
+// a bound form has one forked_from.
 func forkParentOf(deltas map[string]livedoc.FormDelta) string {
 	for key, d := range deltas {
 		if d.Kind != livedoc.FormBound || d.Event != livedoc.FormSet {

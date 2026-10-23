@@ -131,7 +131,7 @@ func TestFromMap_Nil(t *testing.T) {
 	assert.Equal(t, raw(t, "v"), json.RawMessage(e.New))
 }
 
-func realBoardMap(t *testing.T) map[string]json.RawMessage {
+func realBoundFormMap(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 	return map[string]json.RawMessage{
 		"a key with spaces":   raw(t, "ok"),
@@ -151,7 +151,7 @@ func realBoardMap(t *testing.T) map[string]json.RawMessage {
 }
 
 func TestSnapshot_MarshalsAsATreeAndReadsBackByPath(t *testing.T) {
-	src := realBoardMap(t)
+	src := realBoundFormMap(t)
 	s := form.FromMap(src)
 
 	got, err := json.Marshal(s)
@@ -174,7 +174,7 @@ func TestSnapshot_MarshalsAsATreeAndReadsBackByPath(t *testing.T) {
 }
 
 func TestSnapshot_JSONRoundTripIsStable(t *testing.T) {
-	src := realBoardMap(t)
+	src := realBoundFormMap(t)
 	flat, err := json.Marshal(src)
 	require.NoError(t, err)
 

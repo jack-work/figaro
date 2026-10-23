@@ -312,7 +312,7 @@ func TestRecencyMemoAdvancesOnAWrite(t *testing.T) {
 	}
 	second := be.LastTS(id)
 	if second <= first {
-		t.Fatalf("recency did not advance on a board write: %d -> %d", first, second)
+		t.Fatalf("recency did not advance on a bound form write: %d -> %d", first, second)
 	}
 	// An IR append must move it too.
 	log, err := be.OpenFigIR(id)

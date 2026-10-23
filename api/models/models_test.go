@@ -20,7 +20,7 @@ func catalogOf(t *testing.T, provs map[string]Provider) form.Snapshot {
 	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, set, nil))
 }
 
-func boardOf(kv map[string]string) form.Snapshot {
+func boundFormOf(kv map[string]string) form.Snapshot {
 	m := map[string]json.RawMessage{}
 	for k, v := range kv {
 		m[k] = json.RawMessage(v)
@@ -99,17 +99,17 @@ func TestContextLimitPrecedence(t *testing.T) {
 		for k, v := range extra {
 			kv[k] = v
 		}
-		return boardOf(kv)
+		return boundFormOf(kv)
 	}
 
 	require.Equal(t, 128_000, ContextLimit(cat, with(nil)))
 	require.Equal(t, 1_000_000, ContextLimit(cat, with(map[string]string{"system.context_tier": `"long_context"`})))
 	require.Equal(t, 200_000, ContextLimit(cat, with(map[string]string{"system.max_context_tokens": `200000`})),
-		"the board's pin beats the catalog")
+		"the bound form's pin beats the catalog")
 	require.Equal(t, 128_000, ContextLimit(cat, with(map[string]string{"system.max_context_tokens": `"big"`})),
 		"an unreadable pin is no pin")
 	require.Equal(t, 128_000, ContextLimit(cat, with(map[string]string{"system.max_context_tokens": `0`})))
-	require.Equal(t, 0, ContextLimit(cat, boardOf(map[string]string{"system.provider": `"routed"`, "system.model": `"other"`})))
+	require.Equal(t, 0, ContextLimit(cat, boundFormOf(map[string]string{"system.provider": `"routed"`, "system.model": `"other"`})))
 	require.Equal(t, 0, ContextLimit(form.Snapshot{}, with(nil)))
 	require.Equal(t, 300_000, ContextLimit(form.Snapshot{}, with(map[string]string{"system.max_context_tokens": `300000`})),
 		"a pin needs no catalog")

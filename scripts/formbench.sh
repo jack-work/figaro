@@ -8,7 +8,7 @@
 # Everything runs in a fresh temp dir:
 #   FIGARO_RUNTIME_DIR=$TMP/run   FIGARO_STATE_DIR=$TMP/state
 # while FIGARO_CONFIG_DIR / FIGARO_HUSH_APP are inherited so the real
-# outfit + skills are visible (we want a realistic board). The script
+# outfit + skills are visible (we want a realistic bound form). The script
 # refuses to run if those point at the user's live store, tears the
 # daemon down on exit, and removes the temp dir.
 #
@@ -109,9 +109,9 @@ do_unset()   { fig unset --id "$ARIA" "bench.k$IDX"; }
 do_outfit() { fig outfit --id "$ARIA" "$OUTFIT"; }
 do_list()    { fig list -j; }
 
-# top-level key count of the aria's board
-board_keys()  { fig state --id "$ARIA" -j | jq -r 'keys|length'; }
-board_bytes() { fig state --id "$ARIA" -j | wc -c; }
+# top-level key count of the aria's bound form
+bound_keys()  { fig state --id "$ARIA" -j | jq -r 'keys|length'; }
+bound_bytes() { fig state --id "$ARIA" -j | wc -c; }
 
 # --- run --------------------------------------------------------------
 start=$(now_ms)
@@ -120,15 +120,15 @@ end=$(now_ms)
 [ -n "$ARIA" ] || die "could not create aria on outfit $OUTFIT"
 row "new --outfit $OUTFIT (daemon cold start incl.)" 1 "$((end - start))"
 
-KEYS0=$(board_keys)
-BYTES0=$(board_bytes)
+KEYS0=$(bound_keys)
+BYTES0=$(bound_bytes)
 
 time_block "list -j (RPC + process overhead baseline)" "$OPS" do_list
 TAG=small
-time_block "set (small board)" "$OPS" do_set
-time_block "state -j (small board)" "$OPS" do_state
-time_block "outfit $OUTFIT re-apply (small board)" 1 do_outfit
-time_block "unset (small board)" "$OPS" do_unset
+time_block "set (small bound form)" "$OPS" do_set
+time_block "state -j (small bound form)" "$OPS" do_state
+time_block "outfit $OUTFIT re-apply (small bound form)" 1 do_outfit
+time_block "unset (small bound form)" "$OPS" do_unset
 
 # --- inflate ----------------------------------------------------------
 BIG="$(head -c "$INFLATE_VALUE_BYTES" /dev/zero | tr '\0' 'x')"
@@ -139,14 +139,14 @@ done
 end=$(now_ms)
 row "inflate: $INFLATE sets of ${INFLATE_VALUE_BYTES}B" "$INFLATE" "$((end - start))"
 
-KEYS1=$(board_keys)
-BYTES1=$(board_bytes)
+KEYS1=$(bound_keys)
+BYTES1=$(bound_bytes)
 
 TAG=large
-time_block "set (large board)" "$OPS" do_set
-time_block "state -j (large board)" "$OPS" do_state
-time_block "outfit $OUTFIT re-apply (large board)" 1 do_outfit
-time_block "unset (large board)" "$OPS" do_unset
+time_block "set (large bound form)" "$OPS" do_set
+time_block "state -j (large bound form)" "$OPS" do_state
+time_block "outfit $OUTFIT re-apply (large bound form)" 1 do_outfit
+time_block "unset (large bound form)" "$OPS" do_unset
 
 # --- cold replay ------------------------------------------------------
 # Put the daemon to rest and re-read the aria: this pays the full
@@ -160,7 +160,7 @@ printf '\n'
 printf 'formbench: isolated daemon, no LLM round-trips\n'
 printf '  repo:     %s (%s)\n' "$REPO" "$(git rev-parse --short HEAD)"
 printf '  outfit:  %s\n' "$OUTFIT"
-printf '  board:    %s keys / %s bytes  ->  %s keys / %s bytes after inflate\n' \
+printf '  bound form:    %s keys / %s bytes  ->  %s keys / %s bytes after inflate\n' \
   "$KEYS0" "$BYTES0" "$KEYS1" "$BYTES1"
 printf '  store:    %s (removed on exit)\n\n' "$FIGARO_STATE_DIR"
 printf '%-52s %6s %10s %10s\n' "operation" "n" "total ms" "ms/op"

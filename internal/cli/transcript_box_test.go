@@ -200,7 +200,7 @@ func TestComposerCompletesPromptThingsNotVerbs(t *testing.T) {
 	asked := ""
 	tr.composerCompleter = func(line string) []string {
 		asked = line
-		return []string{"@mantra\tthe board's mantra"}
+		return []string{"@mantra\tthe bound form's mantra"}
 	}
 	tr.completer = func(string) []string {
 		t.Fatal("the draft asked the command line's completer")

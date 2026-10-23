@@ -52,7 +52,7 @@ func waitFold(t *testing.T, lib *store.Libretto, v uint64) {
 	t.Fatalf("libretto did not fold source version %d (at %d)", v, lib.At())
 }
 
-func TestBoundBoardDeltasBracketTheWindows(t *testing.T) {
+func TestBoundBoundFormDeltasBracketTheWindows(t *testing.T) {
 	be := backend(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(map[string]string{"aria_id": `"a1"`}))
 	if err != nil {
@@ -80,7 +80,7 @@ func TestBoundBoardDeltasBracketTheWindows(t *testing.T) {
 		}
 	}
 	if d, ok := deltas[first][aria+".aria_id"]; !ok || d.Event != livedoc.FormSet || d.Kind != livedoc.FormBound {
-		t.Fatalf("the first record should carry the birth board: %+v", deltas[first])
+		t.Fatalf("the first record should carry the birth bound form: %+v", deltas[first])
 	}
 	d, ok := deltas[e2.LT][aria+".phase"]
 	if !ok || string(d.Value) != `"canary"` || d.Kind != livedoc.FormBound || d.Form != aria {

@@ -15,7 +15,7 @@ role marker, no conversion. The consequences are deliberate:
   being one when the key is removed.
 - Exclusivity with bound forms is enforced in the READERS, not in the
   schema. `cast` refuses a bound target, and `target-aria` is never read off
-  a bound form, so a hand-set key on a figaro's board is inert. The key
+  a bound form, so a hand-set key on a figaro's bound form is inert. The key
   itself cannot be forbidden, because a form's keys are the user's.
 - Roles do not chain. If `target-aria` names another form, resolution
   reports that rather than following it.
@@ -56,7 +56,7 @@ that was waiting for the turn that issued it, the SELF-CAST DEADLOCK, and
 
 Since phase 9 a cast runs on the caller's goroutine, and what the loop bought
 is paid for where the writes are: the study is a version-guarded
-read-modify-write on the board (retried on conflict, in the store's own
+read-modify-write on the bound form (retried on conflict, in the store's own
 two-participant write), and `target-aria` is a patch on the ROLE form's
 single writer. Two concurrent casts cannot lose each other's work, and two
 casts producing two roles that both point here is what was asked for, not a
@@ -137,7 +137,7 @@ bought at the haiku tier in a storm of fifty observers:
 </system-reminder>
 ```
 
-`system.*` is skipped, as the board's own renderer skips it. A window of
+`system.*` is skipped, as the bound form's own renderer skips it. A window of
 nothing but system keys renders no block at all.
 
 Determinism is load-bearing: encoded bytes land in the per-LT cache, so

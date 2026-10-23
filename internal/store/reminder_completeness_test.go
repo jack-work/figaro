@@ -13,7 +13,7 @@ import (
 // Folding every patch the figaro was shown reproduces its form exactly. A
 // patch is shown when some IR entry's cursor stamp is at or above its
 // version; a patch nobody's stamp reaches is state the aria has and was
-// never told about. The outfit needs no special case: the null root's board
+// never told about. The outfit needs no special case: the null root's form
 // is empty, so the outfit's own patch is the snapshot.
 func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)

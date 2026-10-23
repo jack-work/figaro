@@ -93,7 +93,7 @@ type formView struct {
 	mirror    *formMirror
 	out       *os.File
 	aria      string
-	intrinsic string // "" is the board
+	intrinsic string // "" is the host's own form
 	open      map[string]bool
 	wrapped   map[string]wrappedLines // an opened value, wrapped once
 	wraps     int

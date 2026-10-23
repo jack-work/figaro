@@ -12,7 +12,7 @@ import (
 // The catch-up and the write path must produce the same bytes: they write to
 // one channel.
 func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
-	board := newFakeBoard(2, 3, 4, 5, 6)
+	bound := newFakeBoundForm(2, 3, 4, 5, 6)
 	build := func() *store.MemLog[message.Message] {
 		log := store.NewMemLog[message.Message]()
 		stamp(t, log, "one", 2)
@@ -34,7 +34,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		body, err := json.Marshal(map[string]any{
 			"text":    msg.Content[0].Text,
 			"patches": keys,
-			"board":   snap.Len(),
+			"bound":   snap.Len(),
 		})
 		if err != nil {
 			return nil, err
@@ -44,7 +44,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 
 	catchLog, catchTrans := build(), store.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(CatchUpConfig{
-		Log: catchLog, Translator: catchTrans, Form: board,
+		Log: catchLog, Translator: catchTrans, Form: bound,
 		Fingerprint: "fp/v1", Encode: encode,
 	}); err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 	adapter := NewOnAppend("fake",
 		encode,
 		func() string { return "fp/v1" },
-		func(string) Form { return newFakeBoard(2, 3, 4, 5, 6) },
+		func(string) Form { return newFakeBoundForm(2, 3, 4, 5, 6) },
 		func(string) map[string]Form { return nil },
 		func(string) (store.Log[[]json.RawMessage], error) { return appendTrans, nil },
 	)
@@ -112,7 +112,7 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 	}
 	newAdapter := func() *OnAppend {
 		return NewOnAppend("fake", encode, func() string { return "fp/v1" },
-			func(string) Form { return newFakeBoard(2, 3, 4, 5, 6) },
+			func(string) Form { return newFakeBoundForm(2, 3, 4, 5, 6) },
 			func(string) map[string]Form { return nil },
 			func(string) (store.Log[[]json.RawMessage], error) { return trans, nil })
 	}

@@ -152,11 +152,11 @@ its hub). So:
   loop, the hub's agentless writer: holds pure data and reads no file. That
   last one is not decoration: the hub path is what an attended FORM takes, and
   while it was the one write path that never materialized, `fig form outfit
-  test` stored `{"layers":["test"]}` on a board and reported success.
+  test` stored `{"layers":["test"]}` on a bound form and reported success.
 
-The FOLD still happens at drain, against the board the patch actually lands on.
+The FOLD still happens at drain, against the bound form the patch actually lands on.
 That is not an implementation detail: a `set` or `unset` queued behind a running
-turn has not touched the board yet, so a diff taken at accept can call a key
+turn has not touched the bound form yet, so a diff taken at accept can call a key
 "already equal", omit it, and let the queued removal win: the turn answered
 without the key you dressed for.
 

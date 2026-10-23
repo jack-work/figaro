@@ -642,7 +642,7 @@ func namesOf(o *ObjectPatch) map[string]bool {
 	return out
 }
 
-// Build states what a board should hold and diffs the result.
+// Build states what a form should hold and diffs the result.
 func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch {
 	next := base
 	keys := make([]string, 0, len(set))

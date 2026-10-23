@@ -148,7 +148,7 @@ func TestBadQuoteIsRefusedBeforeAnythingLands(t *testing.T) {
 		{"<" + itoa(lt) + ".7>! what", "quote: <" + itoa(lt) + ".7>: lt " + itoa(lt) + " has 1 block, not block 7"},
 		{"<" + itoa(lt) + ".0:0-5000>! what", "quote: <" + itoa(lt) + ".0:0-5000>: block 0 of lt " + itoa(lt) + " has " + itoa(uint64(len(quotedReply))) + " chars, not 0-5000"},
 		{"<" + itoa(lt) + ".0:9-2>! what", "quote: <" + itoa(lt) + ".0:9-2>: end 2 is before start 9"},
-		{"@nothing! what", "ref: @nothing! is not on the board"},
+		{"@nothing! what", "ref: @nothing! is not on the bound form"},
 	}
 	for _, c := range cases {
 		err := a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: c.text}, "Duke")

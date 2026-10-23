@@ -44,7 +44,7 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 	r := h.reader()
 	switch method {
 	case rpc.MethodForm:
-		// An intrinsic form is not on disk; answering with the board would be a different form.
+		// An intrinsic form is not on disk; answering with the host's own form would be a different form.
 		var req rpc.FormRequest
 		if len(params) > 0 {
 			_ = json.Unmarshal(params, &req)
@@ -52,7 +52,7 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 		if name := req.Intrinsic; name != "" && name != figaro.IntrinsicState {
 			return nil, true, fmt.Errorf(
 				"%s is dormant, so it has no %q: an intrinsic form is live-only state and is "+
-					"never written to disk. Wake it (send it something) or read its board instead",
+					"never written to disk. Wake it (send it something) or read its bound form instead",
 				id, name)
 		}
 		since, err := r.FormSince(id, req.Since)

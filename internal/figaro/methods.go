@@ -36,7 +36,7 @@ func (a *Agent) runInquiryMethods(ctx context.Context, inquiry string) {
 	}
 	inquiries := append([]string{inquiry}, a.inquiriesBefore(methods.Depth(ms))...)
 	set := map[string]json.RawMessage{}
-	for _, o := range methods.RunAll(ctx, a.decider, decide.Source{Board: snap}, ms, inquiries) {
+	for _, o := range methods.RunAll(ctx, a.decider, decide.Source{BoundForm: snap}, ms, inquiries) {
 		slog.Info("method", "aria", a.id, "method", o.Method.Name, "key", o.Method.Key,
 			"verdict", string(o.Verdict), "value", o.Value, "elapsed", o.Elapsed, "err", o.Err)
 		if o.Verdict == methods.Kept {

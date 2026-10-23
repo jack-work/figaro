@@ -33,7 +33,7 @@ func StudiesFromSnapshot(snap form.Snapshot) []string {
 	return ids
 }
 
-// resumeStudies re-declares the observed set from the board, the durable truth.
+// resumeStudies re-declares the observed set from the bound form, the durable truth.
 func (a *Agent) resumeStudies() {
 	ids := StudiesFromSnapshot(a.form.Snapshot())
 	a.backend.SetObservedForms(a.id, ids)
@@ -54,13 +54,13 @@ func (a *Agent) requireStudyTarget(formID string) error {
 	return store.RequireStudyTarget(a.backend, formID)
 }
 
-// Study is durable on the board, declared to the store, and stated in the IR.
+// Study is durable on the bound form, declared to the store, and stated in the IR.
 // No transactional guarantee: that is cast's job.
 func (a *Agent) Study(formID string) ([]string, error) {
 	if err := a.requireStudyTarget(formID); err != nil {
 		return nil, err
 	}
-	// Libretto retained first, board declared second: a crash leaves the count
+	// Libretto retained first, bound form declared second: a crash leaves the count
 	// too high (the sweep repairs it), never too low.
 	decl, err := a.declareStudy(formID, false)
 	if err != nil {
@@ -72,7 +72,7 @@ func (a *Agent) Study(formID string) ([]string, error) {
 	return decl.Studies, nil
 }
 
-// Drop unsubscribes: board first, then the store's mirror, then the mark.
+// Drop unsubscribes: bound form first, then the store's mirror, then the mark.
 func (a *Agent) Drop(formID string) ([]string, error) {
 	decl, err := a.declareStudy(formID, true)
 	if err != nil {
@@ -84,7 +84,7 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 	return decl.Studies, nil
 }
 
-// declareStudy writes through the store, then refreshes the agent's own board
+// declareStudy writes through the store, then refreshes the agent's own bound form
 // mirror, which renders from an in-memory snapshot.
 func (a *Agent) declareStudy(formID string, drop bool) (store.StudyDecl, error) {
 	sb, ok := a.backend.(studyBackend)

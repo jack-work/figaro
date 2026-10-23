@@ -191,7 +191,7 @@ func TestFormRefsExpandAndRefuse(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 	_, err = rw.Rewrite(context.Background(), view, "see @missing! please")
-	if err == nil || err.Error() != "@missing! is not on the board" {
+	if err == nil || err.Error() != "@missing! is not on the bound form" {
 		t.Fatalf("an unknown terminated key must refuse and name itself: %v", err)
 	}
 }
@@ -204,7 +204,7 @@ func TestRewriteInputOrderAndNaming(t *testing.T) {
 	if _, err := a.rewriteInput(context.Background(), "<2.x>! hi"); err == nil || !strings.HasPrefix(err.Error(), "quote: <2.x>: block") {
 		t.Fatalf("%v", err)
 	}
-	if _, err := a.rewriteInput(context.Background(), "@zip! hi"); err == nil || err.Error() != "ref: @zip! is not on the board" {
+	if _, err := a.rewriteInput(context.Background(), "@zip! hi"); err == nil || err.Error() != "ref: @zip! is not on the bound form" {
 		t.Fatalf("%v", err)
 	}
 	out, err := a.rewriteInput(context.Background(), "<2.0:0-5>! what is this")

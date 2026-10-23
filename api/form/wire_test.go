@@ -12,20 +12,20 @@ import (
 )
 
 // The on-disk form is a flat object; the oracle is what json.Marshal does to
-// a map[string]json.RawMessage. testdata/board-default.json is a real capture.
+// a map[string]json.RawMessage. testdata/bound-default.json is a real capture.
 
-func realBoard(t *testing.T) map[string]json.RawMessage {
+func realBoundForm(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
-	data, err := os.ReadFile("testdata/board-default.json")
+	data, err := os.ReadFile("testdata/bound-default.json")
 	require.NoError(t, err)
 	var m map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(data, &m))
-	require.Greater(t, len(m), 30, "fixture should be the real default board")
+	require.Greater(t, len(m), 30, "fixture should be the real default bound form")
 	return m
 }
 
-func TestRealBoard_MarshalsIdenticallyToMap(t *testing.T) {
-	m := realBoard(t)
+func TestRealBoundForm_MarshalsIdenticallyToMap(t *testing.T) {
+	m := realBoundForm(t)
 
 	s := form.FromMap(m)
 	got, err := json.Marshal(s)
@@ -40,8 +40,8 @@ func TestRealBoard_MarshalsIdenticallyToMap(t *testing.T) {
 	}
 }
 
-func TestRealBoard_OnDiskFlatBoardOpensAndIsStable(t *testing.T) {
-	m := realBoard(t)
+func TestRealBoundForm_OnDiskFlatBoundFormOpensAndIsStable(t *testing.T) {
+	m := realBoundForm(t)
 	onDisk, err := json.Marshal(m)
 	require.NoError(t, err)
 
@@ -62,7 +62,7 @@ func TestRealBoard_OnDiskFlatBoardOpensAndIsStable(t *testing.T) {
 	second, err := json.Marshal(again)
 	require.NoError(t, err)
 	assert.Equal(t, string(first), string(second),
-		"re-reading a board and writing it back must change nothing")
+		"re-reading a bound form and writing it back must change nothing")
 }
 
 func TestWireShape_AdversarialValues(t *testing.T) {
@@ -81,11 +81,11 @@ func TestWireShape_AdversarialValues(t *testing.T) {
 		"key\"with\\q": json.RawMessage(`"tricky"`),
 		"key<html>":    json.RawMessage(`"tricky too"`),
 	}
-	board := form.FromMap(m)
-	got, err := json.Marshal(board)
+	bound := form.FromMap(m)
+	got, err := json.Marshal(bound)
 	require.NoError(t, err)
 	for k, want := range m {
-		v, ok := board.Get(k)
+		v, ok := bound.Get(k)
 		require.True(t, ok, "key %q did not survive", k)
 		assert.JSONEq(t, string(want), string(v), "key %q", k)
 	}
@@ -172,8 +172,8 @@ func TestAsPatch(t *testing.T) {
 // The hot paths call MarshalJSON/UnmarshalJSON directly; if this fails they
 // must go back through encoding/json.
 func TestSnapshotDirectCodecMatchesEncodingJSON(t *testing.T) {
-	boards := []map[string]json.RawMessage{
-		realBoard(t),
+	boundForms := []map[string]json.RawMessage{
+		realBoundForm(t),
 		{
 			"html":     json.RawMessage(`"<a>&</a>"`),
 			"spaced":   json.RawMessage("{ \"x\" : 1 }"),
@@ -184,19 +184,19 @@ func TestSnapshotDirectCodecMatchesEncodingJSON(t *testing.T) {
 		},
 		{},
 	}
-	for i, m := range boards {
+	for i, m := range boundForms {
 		s := form.FromMap(m)
 
 		viaJSON, err := json.Marshal(s)
 		require.NoError(t, err)
 		direct, err := s.MarshalJSON()
 		require.NoError(t, err)
-		assert.JSONEq(t, string(viaJSON), string(direct), "board %d: marshal", i)
+		assert.JSONEq(t, string(viaJSON), string(direct), "bound form %d: marshal", i)
 
 		var a, b form.Snapshot
 		require.NoError(t, json.Unmarshal(viaJSON, &a))
 		require.NoError(t, b.UnmarshalJSON(viaJSON))
-		assert.Equal(t, content2(t, a), content2(t, b), "board %d: unmarshal", i)
+		assert.Equal(t, content2(t, a), content2(t, b), "bound form %d: unmarshal", i)
 	}
 
 	var a, b form.Snapshot

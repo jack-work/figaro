@@ -215,8 +215,8 @@ func (a *Angelus) migrateLibrettoRefs() {
 			return
 		}
 		a.lastLibrettoSweep.Store(&audit)
-		slog.Info("libretto backrefs built from the boards",
-			"boards", audit.Boards, "librettos", audit.Librettos,
+		slog.Info("libretto backrefs built from the bound forms",
+			"bound_forms", audit.BoundForms, "librettos", audit.Librettos,
 			"corrected", audit.Corrected, "minted", audit.Minted,
 			"orphaned", audit.Orphaned, "missing", audit.Missing)
 	}()

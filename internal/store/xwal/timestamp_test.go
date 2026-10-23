@@ -55,13 +55,13 @@ func TestTimestampsStampedOnEveryAppend(t *testing.T) {
 
 	// The main record: takes the SLOW decode path (cursor stamp present,
 	// because the store has an unkeyed channel) — TS must survive it.
-	var mainLast, boardLast uint64
+	var mainLast, boundFormLast uint64
 	for _, c := range x.Channels() {
 		switch c.Name {
 		case "ir":
 			mainLast = c.Last
 		case "chalkboard":
-			boardLast = c.Last
+			boundFormLast = c.Last
 		}
 	}
 	rec, err := x.ReadAt("ir", mainLast)
@@ -71,8 +71,8 @@ func TestTimestampsStampedOnEveryAppend(t *testing.T) {
 	if rec.TS != 2_000 {
 		t.Errorf("main record TS = %d, want 2000", rec.TS)
 	}
-	// The unkeyed board record: fast decode path.
-	rec, err = x.ReadAt("chalkboard", boardLast)
+	// The unkeyed bound form record: fast decode path.
+	rec, err = x.ReadAt("chalkboard", boundFormLast)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestTimestampsStampedOnEveryAppend(t *testing.T) {
 
 // LastTS survives a full close/reopen: it is hydrated from channel tails,
 // one frame read per channel, and the newest across ALL channels wins —
-// here the unkeyed board, written after the last main record.
+// here the unkeyed bound form, written after the last main record.
 func TestLastTSHydratesOnReopen(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	clk := &fakeClock{}

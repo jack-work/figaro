@@ -17,7 +17,7 @@ func (b *metadataCaptureBackend) SetMeta(_ string, meta *store.AriaMeta) error {
 	return nil
 }
 
-// UpdateMeta is read-modify-write: a board commit mirroring system.ttl is a second writer.
+// UpdateMeta is read-modify-write: a bound form commit mirroring system.ttl is a second writer.
 func (b *metadataCaptureBackend) UpdateMeta(_ string, mutate func(*store.AriaMeta)) error {
 	cur := &store.AriaMeta{}
 	if b.meta != nil {

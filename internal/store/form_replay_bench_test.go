@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// Form replay benchmarks: the figwal reducer fold (O(board) per record, so
+// Form replay benchmarks: the figwal reducer fold (O(bound form) per record, so
 // O(N*M) over a replay) and the end-to-end cold open.
 //
 //	go test ./internal/store -run XXX -bench 'Form' -benchmem -benchtime=1x -count=5
@@ -22,20 +22,20 @@ var replayGrid = []struct{ m, n int }{
 	{5000, 100}, {5000, 2000},
 }
 
-// replayBoardJSON: m keys of ~64-byte values, the size a real key runs.
-func replayBoardJSON(m int) []byte {
-	board := make(map[string]json.RawMessage, m)
-	for k, v := range replayBoardMap(m) {
-		board[k] = v
+// replayBoundFormJSON: m keys of ~64-byte values, the size a real key runs.
+func replayBoundFormJSON(m int) []byte {
+	bound := make(map[string]json.RawMessage, m)
+	for k, v := range replayBoundFormMap(m) {
+		bound[k] = v
 	}
-	data, err := json.Marshal(board)
+	data, err := json.Marshal(bound)
 	if err != nil {
 		panic(err)
 	}
 	return data
 }
 
-func replayBoardMap(m int) map[string]json.RawMessage {
+func replayBoundFormMap(m int) map[string]json.RawMessage {
 	rng := rand.New(rand.NewSource(7))
 	out := make(map[string]json.RawMessage, m)
 	for i := range m {
@@ -60,7 +60,7 @@ func replayValue(rng *rand.Rand, size int) json.RawMessage {
 	return b
 }
 
-// replayPatches: n single-key patches cycling over the board's own keys.
+// replayPatches: n single-key patches cycling over the bound form's own keys.
 func replayPatches(m, n int) []message.Patch {
 	rng := rand.New(rand.NewSource(11))
 	out := make([]message.Patch, 0, n)
@@ -72,12 +72,12 @@ func replayPatches(m, n int) []message.Patch {
 	return out
 }
 
-// BenchmarkFormReduceFold folds n patch records onto an m-key board through
+// BenchmarkFormReduceFold folds n patch records onto an m-key bound form through
 // the real reducer; ns/record makes the scaling in m readable directly.
 func BenchmarkFormReduceFold(b *testing.B) {
 	for _, g := range replayGrid {
 		b.Run(fmt.Sprintf("M=%d/N=%d", g.m, g.n), func(b *testing.B) {
-			initial := replayBoardJSON(g.m)
+			initial := replayBoundFormJSON(g.m)
 			patches := replayPatches(g.m, g.n)
 			raw := make([][]byte, len(patches))
 			for i, p := range patches {
@@ -139,7 +139,7 @@ func seedFormAria(tb testing.TB, m, n int) (string, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	outfit, err := be.CreateOutfit("bench", form.Build(form.Snapshot{}, replayBoardMap(m), nil))
+	outfit, err := be.CreateOutfit("bench", form.Build(form.Snapshot{}, replayBoundFormMap(m), nil))
 	if err != nil {
 		tb.Fatal(err)
 	}

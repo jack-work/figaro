@@ -33,11 +33,11 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 		if err != nil {
 			return nil, fmt.Errorf("decide: form of %s: %w", req.FigaroID, err)
 		}
-		board, ok := v.(rpc.FormResponse)
+		bound, ok := v.(rpc.FormResponse)
 		if !ok {
 			return nil, fmt.Errorf("decide: form of %s: unexpected %T", req.FigaroID, v)
 		}
-		src.Log, src.Board = log, board.Snapshot
+		src.Log, src.BoundForm = log, bound.Snapshot
 	}
 	return h.decider.Decide(ctx, src, req)
 }

@@ -43,7 +43,7 @@ func TestHubStudyRetainsTheLibretto(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, lib.Refs(), "the hub declared a study nothing counted")
 
-	// Idempotent: the board is a set, so a repeat is not a second reference.
+	// Idempotent: the bound form is a set, so a repeat is not a second reference.
 	_, err = h.studyForHub(aria, formID, false)
 	require.NoError(t, err)
 	require.Equal(t, 1, lib.Refs(), "a repeated hub study double-counted")

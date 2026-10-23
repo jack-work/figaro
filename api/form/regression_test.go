@@ -86,11 +86,11 @@ func TestSiblingWritesUnderOneParentCompose(t *testing.T) {
 	a := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.credo": json.RawMessage(`"largo"`)}, nil)
 	b := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"opus"`)}, nil)
 
-	board := form.Snapshot{}.Apply(a).Apply(b)
-	credo, ok := board.Get("system.credo")
+	bound := form.Snapshot{}.Apply(a).Apply(b)
+	credo, ok := bound.Get("system.credo")
 	require.True(t, ok, "the second write clobbered the first")
 	assert.JSONEq(t, `"largo"`, string(credo))
-	model, ok := board.Get("system.model")
+	model, ok := bound.Get("system.model")
 	require.True(t, ok)
 	assert.JSONEq(t, `"opus"`, string(model))
 }
@@ -99,7 +99,7 @@ func TestSiblingWritesUnderOneParentCompose(t *testing.T) {
 func TestAnInvalidValueIsRefusedNotDropped(t *testing.T) {
 	s := form.FromMap(map[string]json.RawMessage{"bad": json.RawMessage(`{not json`)})
 	_, err := json.Marshal(s)
-	assert.Error(t, err, "a board that cannot be serialised must say so")
+	assert.Error(t, err, "a bound form that cannot be serialised must say so")
 }
 
 func mustJSON(t *testing.T, v any) json.RawMessage {

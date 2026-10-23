@@ -10,12 +10,12 @@ import (
 
 // ForkReminderTexts renders the fork incantation on the message carrying a
 // branch's birth mark.
-func ForkReminderTexts(msg message.Message, board form.Snapshot) []string {
+func ForkReminderTexts(msg message.Message, bound form.Snapshot) []string {
 	parent, forked := forkedFrom(msg.Patches)
 	if !forked {
 		return nil
 	}
-	say := form.ReadForkIncantation(board).OnFork
+	say := form.ReadForkIncantation(bound).OnFork
 	if say == "" {
 		return nil
 	}

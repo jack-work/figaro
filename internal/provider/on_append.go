@@ -18,7 +18,7 @@ type OnAppend struct {
 	name        string
 	encode      func(message.Message, form.Snapshot) ([]json.RawMessage, error)
 	fingerprint func() string
-	board       func(ariaID string) Form
+	bound       func(ariaID string) Form
 	studies     func(ariaID string) map[string]Form
 	translator  func(ariaID string) (store.Log[[]json.RawMessage], error)
 
@@ -30,13 +30,13 @@ func NewOnAppend(
 	name string,
 	encode func(message.Message, form.Snapshot) ([]json.RawMessage, error),
 	fingerprint func() string,
-	board func(ariaID string) Form,
+	bound func(ariaID string) Form,
 	studies func(ariaID string) map[string]Form,
 	translator func(ariaID string) (store.Log[[]json.RawMessage], error),
 ) *OnAppend {
 	return &OnAppend{
 		name: name, encode: encode, fingerprint: fingerprint,
-		board: board, studies: studies, translator: translator,
+		bound: bound, studies: studies, translator: translator,
 		at: map[string]*Deriver{},
 	}
 }
@@ -50,7 +50,7 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 	o.mu.Lock()
 	d, ok := o.at[ariaID]
 	if !ok {
-		d = NewDeriver(o.board(ariaID), o.studies(ariaID))
+		d = NewDeriver(o.bound(ariaID), o.studies(ariaID))
 		var watermark uint64
 		if o.translator != nil {
 			trans, err := o.translator(ariaID)

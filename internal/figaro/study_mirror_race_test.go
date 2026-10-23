@@ -39,7 +39,7 @@ func mirrorRaceEnv(t *testing.T, key string, def, min int) int {
 // mirrorRoundLoss is one round's verdict per side.
 type mirrorRoundLoss struct {
 	round        int
-	board        int
+	bound        int
 	mirror       int
 	lostFromMap  []string
 	lostFromDisk []string
@@ -63,18 +63,18 @@ func TestConcurrentCastsKeepEveryStudyInTheMirror(t *testing.T) {
 	if len(losses) == 0 {
 		return
 	}
-	lostStudies, boardLosses := 0, 0
+	lostStudies, boundFormLosses := 0, 0
 	for _, l := range losses {
 		lostStudies += len(l.lostFromMap)
-		boardLosses += len(l.lostFromDisk)
+		boundFormLosses += len(l.lostFromDisk)
 	}
 	t.Fatalf("studies were lost in %d of %d rounds of %d concurrent casts (GOMAXPROCS=%d): "+
-		"%d lost from the MIRROR a turn renders from, %d lost from the DURABLE board.\n"+
+		"%d lost from the MIRROR a turn renders from, %d lost from the DURABLE bound form.\n"+
 		"MIRROR losses are the unguarded whole-set a.form.Apply in declareStudy: last writer wins, "+
 		"and the last writer is not the last durable write.\n"+
 		"BOARD losses would mean the version-guarded compare-and-set itself leaks, which is a "+
 		"different and worse defect.\nrounds: %+v",
-		len(losses), rounds, casts, procs, lostStudies, boardLosses, losses)
+		len(losses), rounds, casts, procs, lostStudies, boundFormLosses, losses)
 }
 
 // mirrorRaceRound casts N roles at once and reports what each side holds.
@@ -110,7 +110,7 @@ func mirrorRaceRound(t *testing.T, round, casts int) mirrorRoundLoss {
 	mirror := a.StudyList() // what a TURN renders from
 	durable, err := backend.FormState(ariaID)
 	require.NoError(t, err)
-	board := figaro.StudiesFromSnapshot(durable) // what the sweep and a revival read
+	bound := figaro.StudiesFromSnapshot(durable) // what the sweep and a revival read
 
 	missing := func(have []string) []string {
 		seen := make(map[string]bool, len(have))
@@ -126,13 +126,13 @@ func mirrorRaceRound(t *testing.T, round, casts int) mirrorRoundLoss {
 		return lost
 	}
 	// A side holding more than it was given is also a loss: counts, not membership.
-	require.Lenf(t, board, casts,
-		"round %d: the durable board holds %d entries for %d casts: %v", round, len(board), casts, board)
+	require.Lenf(t, bound, casts,
+		"round %d: the durable bound form holds %d entries for %d casts: %v", round, len(bound), casts, bound)
 	require.LessOrEqualf(t, len(mirror), casts,
 		"round %d: the mirror holds %d entries for %d casts: %v", round, len(mirror), casts, mirror)
 
 	return mirrorRoundLoss{
-		round: round, board: len(board), mirror: len(mirror),
-		lostFromMap: missing(mirror), lostFromDisk: missing(board),
+		round: round, bound: len(bound), mirror: len(mirror),
+		lostFromMap: missing(mirror), lostFromDisk: missing(bound),
 	}
 }

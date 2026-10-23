@@ -37,7 +37,7 @@ ROOT=${ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 [ -d "$ROOT/cmd/figaro" ] || { echo "not a figaro checkout: $ROOT" >&2; exit 2; }
 
 # The migration proof needs a store that has not migrated yet, and an aria in
-# it whose board we can read back. Neither has a sane default: unset used to
+# it whose bound form we can read back. Neither has a sane default: unset used to
 # mean the step silently proved nothing.
 SEED_STORE=${SEED_STORE:-}
 SEED_ARIA=${SEED_ARIA:-}
@@ -134,9 +134,9 @@ echo "    after : $after"
 echo "$after" | grep -q "'form': 2" && ok "form reached v2" || bad "form did not reach v2"
 echo "$after" | grep -q "'ir': 5"   && ok "IR reached v5"   || bad "IR did not reach v5"
 
-step "the board survived the migration"
-board=$(fig state show "$SEED_ARIA" -j 2>/dev/null)
-echo "$board" | python3 -c "
+step "the bound form survived the migration"
+bound=$(fig state show "$SEED_ARIA" -j 2>/dev/null)
+echo "$bound" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 for name,v in (('mantra',d.get('mantra')),('system.model',d.get('system',{}).get('model'))):

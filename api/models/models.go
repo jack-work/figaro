@@ -91,24 +91,24 @@ func ProviderStatus(catalog form.Snapshot, provider string) (Status, bool) {
 	return st, found
 }
 
-func Override(board form.Snapshot) (int, bool) {
-	n, ok := intAt(board, OverrideKey)
+func Override(bound form.Snapshot) (int, bool) {
+	n, ok := intAt(bound, OverrideKey)
 	if !ok || n <= 0 {
 		return 0, false
 	}
 	return n, true
 }
 
-func Subject(board form.Snapshot) (provider, model string) {
-	return stringAt(board, ProviderKey), stringAt(board, ModelKey)
+func Subject(bound form.Snapshot) (provider, model string) {
+	return stringAt(bound, ProviderKey), stringAt(bound, ModelKey)
 }
 
-func ContextLimit(catalog, board form.Snapshot) int {
-	if n, ok := Override(board); ok {
+func ContextLimit(catalog, bound form.Snapshot) int {
+	if n, ok := Override(bound); ok {
 		return n
 	}
-	provider, model := Subject(board)
-	return EntryLimit(catalog, provider, model, stringAt(board, ContextTierKey))
+	provider, model := Subject(bound)
+	return EntryLimit(catalog, provider, model, stringAt(bound, ContextTierKey))
 }
 
 func EntryLimit(catalog form.Snapshot, provider, model, tier string) int {

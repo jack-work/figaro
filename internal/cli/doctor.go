@@ -338,13 +338,13 @@ func runDoctorLibrettos(dryRun bool) error {
 	if dryRun {
 		verb = "would correct"
 	}
-	fmt.Fprintf(stdout, "boards read      %d\n", audit.Boards)
+	fmt.Fprintf(stdout, "bound forms read      %d\n", audit.BoundForms)
 	fmt.Fprintf(stdout, "librettos        %d\n", audit.Librettos)
 	fmt.Fprintf(stdout, "%-16s %d\n", verb, audit.Corrected)
 	if audit.Minted > 0 {
 		fmt.Fprintf(stdout, "minted           %d  (pre-existing studies migrated)\n", audit.Minted)
 	}
-	fmt.Fprintf(stdout, "orphaned         %d  (no board names them: reclaimable when nothing renders them)\n",
+	fmt.Fprintf(stdout, "orphaned         %d  (no bound form names them: reclaimable when nothing renders them)\n",
 		audit.Orphaned)
 	fmt.Fprintf(stdout, "%-16s %d  (studied forms still without one%s)\n",
 		map[bool]string{true: "would mint", false: "missing"}[dryRun],

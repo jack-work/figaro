@@ -41,7 +41,7 @@ const (
 type FormKind string
 
 const (
-	FormBound   FormKind = "bound"   // the aria's own board
+	FormBound   FormKind = "bound"   // the aria's own bound form
 	FormStudied FormKind = "studied" // an observed unbound form
 	FormRole    FormKind = "role"    // a studied form carrying target-aria
 )

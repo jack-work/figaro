@@ -218,12 +218,12 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 func (in *interactiveInput) openModels() {
 	in.models.ensure()
 	in.mu.Lock()
-	board := in.board
+	bound := in.bound
 	current := func() modelChoice {
-		if board == nil {
+		if bound == nil {
 			return modelChoice{}
 		}
-		snap, _, _ := board.state()
+		snap, _, _ := bound.state()
 		provider, model := models.Subject(snap)
 		return modelChoice{provider: provider, model: model}
 	}

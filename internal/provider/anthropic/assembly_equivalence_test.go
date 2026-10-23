@@ -255,7 +255,7 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 		name       string
 		perMessage [][]json.RawMessage
 		lts        []uint64
-		board      map[string]json.RawMessage
+		bound      map[string]json.RawMessage
 	}{
 		{
 			name:       "plain",
@@ -288,7 +288,7 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 				{msg("user", "four")},
 			},
 			lts:   []uint64{1, 2, 3},
-			board: map[string]json.RawMessage{"system.tags": raw(`{"2":{"cache_control":"ephemeral"}}`)},
+			bound: map[string]json.RawMessage{"system.tags": raw(`{"2":{"cache_control":"ephemeral"}}`)},
 		},
 		{
 			// The tag must sit on the last row to exercise the mark order.
@@ -299,7 +299,7 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 				{msg("user", "three")},
 			},
 			lts:   []uint64{1, 2, 3},
-			board: map[string]json.RawMessage{"system.tags": raw(`{"3":{"cache_control":"long"}}`)},
+			bound: map[string]json.RawMessage{"system.tags": raw(`{"3":{"cache_control":"long"}}`)},
 		},
 		{
 			name:       "empty rows are skipped",
@@ -310,11 +310,11 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			board := map[string]json.RawMessage{"system.credo": raw(`"you are a test agent"`)}
-			for k, v := range tc.board {
-				board[k] = v
+			bound := map[string]json.RawMessage{"system.credo": raw(`"you are a test agent"`)}
+			for k, v := range tc.bound {
+				bound[k] = v
 			}
-			snap := form.FromMap(board)
+			snap := form.FromMap(bound)
 			a := &Anthropic{Model: "claude-opus-5", ReminderRenderer: "tag"}
 			want := legacyBody(t, a, tc.perMessage, tc.lts, snap, nil, "claude-opus-5")
 			got := streamedBody(t, a, tc.perMessage, tc.lts, snap, nil, "claude-opus-5")
