@@ -328,7 +328,7 @@ which the daemon must not have to know per-client.
 
 ## `@reaped`: what the ttl sweep soft-deleted
 
-`@reaped` is a daemon form like `@models`: derived from the sidecars, held in
+`@reaped` is a catalog like `@models`: derived from the sidecars, held in
 memory, read-only. One entry per reaped group, keyed by the root the delete
 would start from:
 

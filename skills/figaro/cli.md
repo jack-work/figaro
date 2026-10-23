@@ -277,7 +277,7 @@ keepalive it states itself, so `retire --ttl 1h` really ends it in an hour.
 
 What the sweep takes, it first reaps rather than deletes: the node and
 everything its delete would take get `system.reaped` (naming the root), leave
-`ls`, refuse prompts, and are indexed in the daemon form `@reaped`
+`ls`, refuse prompts, and are indexed in the catalog `@reaped`
 (`figaro form show @reaped`). `[memory] reaped_grace_hours` later (seven days by
 default; `0` deletes at once) the sweep purges the group, unless it has a live
 agent, a bound shell or a role pointing in. `figaro reaped` lists the groups,

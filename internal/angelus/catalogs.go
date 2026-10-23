@@ -14,10 +14,10 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-var daemonFormIDs = []string{models.FormID, rpc.ReapedFormID}
+var catalogIDs = []string{models.FormID, rpc.ReapedFormID}
 
-func isDaemonFormID(id string) bool {
-	for _, d := range daemonFormIDs {
+func isCatalogID(id string) bool {
+	for _, d := range catalogIDs {
 		if id == d {
 			return true
 		}
@@ -25,7 +25,7 @@ func isDaemonFormID(id string) bool {
 	return false
 }
 
-func (h *handlers) daemonForm(id string) *store.Form {
+func (h *handlers) catalog(id string) *store.Form {
 	switch id {
 	case models.FormID:
 		if h.angelus.Models != nil {
@@ -37,13 +37,13 @@ func (h *handlers) daemonForm(id string) *store.Form {
 	return nil
 }
 
-func (h *handlers) readDaemonForm(id, method string, params json.RawMessage) (any, bool, error) {
-	f := h.daemonForm(id)
+func (h *handlers) readCatalog(id, method string, params json.RawMessage) (any, bool, error) {
+	f := h.catalog(id)
 	if f == nil {
 		return nil, true, fmt.Errorf("%s: this daemon does not keep it", id)
 	}
 	if method != rpc.MethodForm {
-		return nil, true, fmt.Errorf("%s is a daemon form: %s does not apply, read it with %s", id, method, rpc.MethodForm)
+		return nil, true, fmt.Errorf("%s is a catalog: %s does not apply, read it with %s", id, method, rpc.MethodForm)
 	}
 	var req rpc.FormRequest
 	if len(params) > 0 {
@@ -55,9 +55,9 @@ func (h *handlers) readDaemonForm(id, method string, params json.RawMessage) (an
 	return figaro.FormResponseOf(f.Since(req.Since), ""), true, nil
 }
 
-func (h *handlers) publishDaemonForms() {
-	for _, id := range daemonFormIDs {
-		f := h.daemonForm(id)
+func (h *handlers) publishCatalogs() {
+	for _, id := range catalogIDs {
+		f := h.catalog(id)
 		if f == nil {
 			continue
 		}

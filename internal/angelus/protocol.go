@@ -87,7 +87,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 	h.noticeUpgrade()
 	h.startReapedForm()
-	h.publishDaemonForms()
+	h.publishCatalogs()
 	methods := map[string]jkrpc.HandlerFunc{
 		rpc.MethodCreate:             h.create,
 		rpc.MethodFormCreate:         h.formCreate,

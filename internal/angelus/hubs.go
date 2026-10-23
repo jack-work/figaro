@@ -77,7 +77,7 @@ func (h *handlers) hubFor(id string) *ariaHub {
 			hb.kind = n.Kind
 		}
 	}
-	if isDaemonFormID(id) {
+	if isCatalogID(id) {
 		hb.kind = kindFormNode
 		hb.wake = nil
 	}
@@ -97,8 +97,8 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) func() {
 // writeForHub lands mutations on a dormant aria or an unbound form without
 // an agent; it is the only path that can patch provider keys into a naked figaro.
 func (h *handlers) writeForHub(ctx context.Context, id, method string, params json.RawMessage) (any, bool, error) {
-	if isDaemonFormID(id) {
-		return nil, true, fmt.Errorf("%s is a daemon form: it is read-only", id)
+	if isCatalogID(id) {
+		return nil, true, fmt.Errorf("%s is a catalog: it is read-only", id)
 	}
 	switch method {
 	case rpc.MethodSet:

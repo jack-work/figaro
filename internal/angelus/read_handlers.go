@@ -38,8 +38,8 @@ func (h *handlers) liveAgent(id string) figaro.AgentServer {
 
 // readFromStore is the one agentless read path for both doors.
 func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any, bool, error) {
-	if isDaemonFormID(id) {
-		return h.readDaemonForm(id, method, params)
+	if isCatalogID(id) {
+		return h.readCatalog(id, method, params)
 	}
 	r := h.reader()
 	switch method {
