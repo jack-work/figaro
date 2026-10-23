@@ -130,7 +130,7 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 
 func restoreReaped(loaded *config.Loaded, g reapedGroup, keep bool) error {
 	for _, id := range g.Nodes {
-		drops := []string{store.SystemReapedKey}
+		drops := []string{store.SystemReapedKey, store.SystemReapedUntilKey}
 		if keep && id == g.Root {
 			drops = append(drops, store.SystemTTLKey)
 		}

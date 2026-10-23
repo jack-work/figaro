@@ -260,3 +260,86 @@ func TestSoftDeletion(t *testing.T) {
 		require.True(t, alive(t, a, root), "restoring stamps an access; the keepalive must hold it for a day")
 	})
 }
+
+func setReapedUntil(t *testing.T, a *angelus.Angelus, until time.Time, ids ...string) {
+	t.Helper()
+	raw, _ := json.Marshal(store.ReapedUntilValue(until))
+	for _, id := range ids {
+		_, err := backend(t, a).ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedUntilKey: raw}, nil))
+		require.NoError(t, err)
+	}
+}
+
+func purgeAt(t *testing.T, a *angelus.Angelus, root string) time.Time {
+	t.Helper()
+	entry, ok := reapedFormItems(t, a)[root].(map[string]any)
+	require.True(t, ok, "@reaped has no entry for %s", root)
+	ms, ok := entry["purge_at"].(float64)
+	require.True(t, ok, "purge_at missing: %v", entry)
+	return time.UnixMilli(int64(ms))
+}
+
+func TestReapedDeadline(t *testing.T) {
+	reap := func(t *testing.T) (*angelus.Angelus, *sdk.Angelus, context.Context, string, string) {
+		a, acli, ctx := daemonFixture(t)
+		c, err := acli.Create(ctx, dress(t, "mock"), nil)
+		require.NoError(t, err)
+		fork, err := acli.Fork(ctx, c.FigaroID, 0, 0, nil, nil)
+		require.NoError(t, err)
+		age(t, a, c.FigaroID, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
+		age(t, a, fork.Alternative, 72*time.Hour, 48*time.Hour, map[string]string{"system.ttl": "0"})
+		a.SweepLifetimesNow()
+		require.True(t, reaped(t, a, c.FigaroID))
+		return a, acli, ctx, c.FigaroID, fork.Alternative
+	}
+
+	t.Run("a group without its own deadline purges a grace after the reap", func(t *testing.T) {
+		a, _, _, root, _ := reap(t)
+		meta, err := a.Backend.Meta(root)
+		require.NoError(t, err)
+		want := time.UnixMilli(meta.ReapedAtMS).Add(7 * 24 * time.Hour)
+		require.Equal(t, want.UnixMilli(), purgeAt(t, a, root).UnixMilli())
+	})
+
+	t.Run("a group's own deadline is its purge time, early or late", func(t *testing.T) {
+		a, _, _, root, child := reap(t)
+		until := time.Now().Add(time.Hour).Truncate(time.Millisecond)
+		setReapedUntil(t, a, until, root, child)
+		require.Equal(t, until.UnixMilli(), purgeAt(t, a, root).UnixMilli())
+
+		backdateReaped(t, a, root, 8*24*time.Hour)
+		a.SweepLifetimesNow()
+		require.True(t, reaped(t, a, root), "purged on the global grace although its own deadline is ahead")
+
+		setReapedUntil(t, a, time.Now().Add(-time.Second), root, child)
+		a.SweepLifetimesNow()
+		require.False(t, ariaExists(a, root), "its own deadline passed and it was not purged")
+		require.False(t, ariaExists(a, child))
+	})
+
+	t.Run("restoring clears the deadline", func(t *testing.T) {
+		a, _, ctx, root, child := reap(t)
+		setReapedUntil(t, a, time.Now().Add(time.Hour), root, child)
+		for _, id := range []string{root, child} {
+			var set rpc.SetResponse
+			require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodSet, setKeys(t, nil, store.SystemReapedKey), &set))
+			meta, err := a.Backend.Meta(id)
+			require.NoError(t, err)
+			require.Zero(t, meta.ReapedUntilMS, "%s keeps a purge deadline after restore", id)
+		}
+	})
+
+	t.Run("a fork of a reaped aria carries no deadline", func(t *testing.T) {
+		a, acli, ctx, root, child := reap(t)
+		setReapedUntil(t, a, time.Now().Add(time.Hour), root, child)
+		fork, err := acli.Fork(ctx, child, 0, 0, nil, nil)
+		require.NoError(t, err)
+		meta, err := a.Backend.Meta(fork.Alternative)
+		require.NoError(t, err)
+		require.Zero(t, meta.ReapedAtMS)
+		require.Zero(t, meta.ReapedUntilMS)
+		snap, err := a.Backend.FormState(fork.Alternative)
+		require.NoError(t, err)
+		require.Nil(t, snap.Lookup(store.SystemReapedUntilKey), "the fork inherited its parent's purge deadline")
+	})
+}

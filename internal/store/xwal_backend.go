@@ -451,7 +451,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemRetiredKey}))
 	}
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
-		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey}))
+		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey, SystemReapedUntilKey}))
 	}
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {

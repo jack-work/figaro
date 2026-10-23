@@ -2,21 +2,40 @@ package store
 
 import (
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const SystemReapedKey = "system.reaped"
 
+const SystemReapedUntilKey = "system.reaped_until"
+
 type ReapedEntry struct {
-	ID   string
-	Root string
-	AtMS int64
+	ID      string
+	Root    string
+	AtMS    int64
+	UntilMS int64
 }
 
 func reapedEntryOf(id string, meta *AriaMeta) (ReapedEntry, bool) {
 	if meta == nil || meta.ReapedAtMS == 0 || meta.ReapedRoot == "" {
 		return ReapedEntry{}, false
 	}
-	return ReapedEntry{ID: id, Root: meta.ReapedRoot, AtMS: meta.ReapedAtMS}, true
+	return ReapedEntry{ID: id, Root: meta.ReapedRoot, AtMS: meta.ReapedAtMS, UntilMS: meta.ReapedUntilMS}, true
+}
+
+func ReapedUntilValue(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+func parseReapedUntil(raw string) (int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t.UnixMilli(), nil
+	}
+	return strconv.ParseInt(raw, 10, 64)
 }
 
 func (b *XwalBackend) reapedNotedLocked(id string, meta *AriaMeta) bool {

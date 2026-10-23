@@ -45,12 +45,13 @@ type AriaMeta struct {
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
 	// TTLMS mirrors the bound form's system.ttl so the sweep finds what is due without opening a node.
-	TTLMS        int64  `json:"ttl_ms,omitempty"`
-	KeepaliveMS  *int64 `json:"keepalive_ms,omitempty"`
-	RetiredAtMS  int64  `json:"retired_at_ms,omitempty"`
-	LastAccessMS int64  `json:"last_access_ms,omitempty"`
-	ReapedAtMS   int64  `json:"reaped_at_ms,omitempty"`
-	ReapedRoot   string `json:"reaped_root,omitempty"`
+	TTLMS         int64  `json:"ttl_ms,omitempty"`
+	KeepaliveMS   *int64 `json:"keepalive_ms,omitempty"`
+	RetiredAtMS   int64  `json:"retired_at_ms,omitempty"`
+	LastAccessMS  int64  `json:"last_access_ms,omitempty"`
+	ReapedAtMS    int64  `json:"reaped_at_ms,omitempty"`
+	ReapedRoot    string `json:"reaped_root,omitempty"`
+	ReapedUntilMS int64  `json:"reaped_until_ms,omitempty"`
 	// MetaVersion below CurrentMetaVersion is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
 
@@ -58,22 +59,24 @@ type AriaMeta struct {
 }
 
 type Lifetime struct {
-	TTLMS        int64
-	KeepaliveMS  *int64
-	RetiredAtMS  int64
-	LastAccessMS int64
-	ReapedAtMS   int64
-	ReapedRoot   string
+	TTLMS         int64
+	KeepaliveMS   *int64
+	RetiredAtMS   int64
+	LastAccessMS  int64
+	ReapedAtMS    int64
+	ReapedRoot    string
+	ReapedUntilMS int64
 }
 
 func (m *AriaMeta) Lifetime() Lifetime {
 	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS,
-		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot}
+		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot,
+		ReapedUntilMS: m.ReapedUntilMS}
 }
 
 func (m *AriaMeta) SetLifetime(l Lifetime) {
 	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
-	m.ReapedAtMS, m.ReapedRoot = l.ReapedAtMS, l.ReapedRoot
+	m.ReapedAtMS, m.ReapedRoot, m.ReapedUntilMS = l.ReapedAtMS, l.ReapedRoot, l.ReapedUntilMS
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.

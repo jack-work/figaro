@@ -105,7 +105,7 @@ func (h *handlers) refreshReapedForm() {
 		put(base+"nodes", g.nodes)
 		if g.atMS > 0 {
 			put(base+"at", g.atMS)
-			put(base+"purge_at", time.UnixMilli(g.atMS).Add(grace).UnixMilli())
+			put(base+"purge_at", g.purgeAt(grace).UnixMilli())
 		}
 		if snap, err := h.angelus.Backend.FormState(g.root); err == nil {
 			if m := snap.Lookup("mantra"); m != nil && *m != "" {

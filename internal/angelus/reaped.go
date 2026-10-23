@@ -20,7 +20,7 @@ func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Durati
 		return
 	}
 	raw, _ := json.Marshal(e.ID)
-	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedKey: raw}, nil)
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedKey: raw}, []string{store.SystemReapedUntilKey})
 	marked := 0
 	for _, id := range taken {
 		if _, err := keeper.ApplyForm(id, patch); err != nil {
@@ -35,9 +35,17 @@ func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Durati
 }
 
 type reapedGroup struct {
-	root  string
-	atMS  int64
-	nodes []string
+	root    string
+	atMS    int64
+	untilMS int64
+	nodes   []string
+}
+
+func (g reapedGroup) purgeAt(grace time.Duration) time.Time {
+	if g.untilMS > 0 {
+		return time.UnixMilli(g.untilMS)
+	}
+	return time.UnixMilli(g.atMS).Add(grace)
 }
 
 func reapedGroups(entries []store.ReapedEntry) []reapedGroup {
@@ -52,7 +60,7 @@ func reapedGroups(entries []store.ReapedEntry) []reapedGroup {
 		}
 		g.nodes = append(g.nodes, e.ID)
 		if e.ID == e.Root {
-			g.atMS = e.AtMS
+			g.atMS, g.untilMS = e.AtMS, e.UntilMS
 		}
 	}
 	out := make([]reapedGroup, 0, len(order))
@@ -71,7 +79,7 @@ func (a *Angelus) purgeReaped(keeper ttlKeeper, now time.Time) {
 	bound := a.Registry.BoundPIDsByFigaro()
 	var roles map[string]string
 	for _, g := range reapedGroups(rk.Reaped()) {
-		if g.atMS == 0 || time.UnixMilli(g.atMS).Add(grace).After(now) {
+		if g.atMS == 0 || g.purgeAt(grace).After(now) {
 			continue
 		}
 		if roles == nil {
