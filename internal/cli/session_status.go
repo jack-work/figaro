@@ -27,23 +27,12 @@ const (
 	turnStatusDisconnected // the turn continues on the daemon; the glyph is static since nothing repaints after a detach
 )
 
-// The moving states use disjoint glyph families: a reader tells families apart,
-// speeds never.
-var (
-	sendingFrames  = []rune{'→', '⇢', '⇉', '⇶'}
-	acceptedFrames = []rune{'⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'}
-)
-
 func (st turnStatus) symbol(tick uint64) string {
-	frame := func(fs []rune) string { return string(fs[int(tick)%len(fs)]) }
-	switch st {
-	case turnStatusSending:
-		return frame(sendingFrames)
-	case turnStatusAccepted:
-		return frame(acceptedFrames)
-	case turnStatusThinking, turnStatusTooling:
+	if st.moving() {
 		frames := livedoc.SpinnerFrames
 		return string(frames[int(tick)%len(frames)])
+	}
+	switch st {
 	case turnStatusCompleted:
 		return "✓"
 	case turnStatusInterrupted:

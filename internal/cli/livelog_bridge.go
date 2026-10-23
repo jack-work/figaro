@@ -133,9 +133,9 @@ func (t *livelogTurn) wireClient() {
 			if newOpen {
 				t.finished = false
 				t.failSealed = false
+				t.status.beginTurn()
 			}
 			t.thinkingOpen = false
-			t.status.beginTurn()
 		}
 		// A turn taller than the viewport cannot render inline without
 		// scrolling its live region off-screen.

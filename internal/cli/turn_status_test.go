@@ -35,15 +35,9 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 		}
 	}
 
-	// A submit is "sending": the client asserts only facts about itself;
-	// thinking comes from the runtime form.
 	status.beginTurn()
-	if line := bar(status, false); !strings.ContainsAny(line, string(sendingFrames)) {
-		t.Fatalf("no departure frame on the row while sending: %q", line)
-	}
-	if line := bar(status, false); strings.ContainsAny(line, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") {
-		t.Fatalf("the bar claimed the model was THINKING about a message that has "+
-			"not been acknowledged by anything: %q", line)
+	if line := bar(status, false); !strings.ContainsAny(line, spinnerGlyphs) {
+		t.Fatalf("a message on its way is mid-turn, and the row does not say so: %q", line)
 	}
 
 	if !status.setRuntime(runtimeView{State: "thinking", Known: true}) {
@@ -57,32 +51,26 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 	}
 }
 
-// The glyph sets of the moving states are disjoint; the glyphs themselves are a taste.
-func TestMovingStatesUseDistinctGlyphFamilies(t *testing.T) {
-	families := map[turnStatus]map[string]bool{}
-	for _, st := range []turnStatus{turnStatusSending, turnStatusAccepted, turnStatusThinking} {
-		set := map[string]bool{}
-		for tick := uint64(0); tick < 32; tick++ {
-			set[st.symbol(tick)] = true
+const spinnerGlyphs = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+// Mid-turn is one fact with one picture: a reader must never have to tell a
+// "sending" glyph from a "thinking" one, and never see a verdict while the
+// aria is still working.
+func TestEveryMidTurnStateDrawsTheOneSpinner(t *testing.T) {
+	for tick := uint64(0); tick < 32; tick++ {
+		want := turnStatusThinking.symbol(tick)
+		for _, st := range []turnStatus{turnStatusSending, turnStatusAccepted, turnStatusThinking, turnStatusTooling} {
+			got := st.symbol(tick)
+			if got != want {
+				t.Fatalf("state %d draws %q at tick %d where thinking draws %q", st, got, tick, want)
+			}
+			if !strings.ContainsAny(got, spinnerGlyphs) {
+				t.Fatalf("state %d draws %q, which is not the spinner", st, got)
+			}
 		}
-		if len(set) < 2 {
-			t.Fatalf("state %d does not animate: it drew %d distinct glyphs over 32 ticks, "+
-				"which is a still picture of a thing that is moving", st, len(set))
-		}
-		families[st] = set
 	}
-	for a, sa := range families {
-		for b, sb := range families {
-			if a >= b {
-				continue
-			}
-			for g := range sa {
-				if sb[g] {
-					t.Fatalf("states %d and %d share the glyph %q. Two moving indicators that "+
-						"overlap are one indicator as far as a reader is concerned", a, b, g)
-				}
-			}
-		}
+	if turnStatusThinking.symbol(0) == turnStatusThinking.symbol(1) {
+		t.Fatal("the spinner does not animate")
 	}
 }
 

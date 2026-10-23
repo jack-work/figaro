@@ -270,7 +270,7 @@ func TestSmoke_QueuedMessageIsHeldUntilItRoundTrips(t *testing.T) {
 		if sawRow == "" && strings.Contains(vis, "QUEUETOK") {
 			sawRow = vis
 		}
-		if sawTransit == "" && strings.ContainsAny(vis, string(sendingFrames)+string(acceptedFrames)) {
+		if sawTransit == "" && strings.ContainsAny(vis, spinnerGlyphs) {
 			sawTransit = vis
 		}
 		if sawRow != "" && sawTransit != "" {
@@ -284,8 +284,7 @@ func TestSmoke_QueuedMessageIsHeldUntilItRoundTrips(t *testing.T) {
 			"daemon and shown nowhere: which is the reported bug exactly\n%s", p.visible())
 	}
 	if sawTransit == "" {
-		t.Errorf("no in-transit indicator appeared. The bar must be animated and "+
-			"DISTINCT from the thinking spinner between submit and the daemon's "+
+		t.Errorf("no mid-turn indicator appeared between submit and the daemon's "+
 			"acknowledgement\n%s", p.visible())
 	}
 
