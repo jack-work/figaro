@@ -172,6 +172,12 @@ func TestVisual_PaintCursorAndWash(t *testing.T) {
 	if want := span.hiLine - span.loLine + 1; rowsWashed != want || want < 2 {
 		t.Fatalf("line highlight over lines %d..%d washed %d rows", span.loLine, span.hiLine, rowsWashed)
 	}
+	at := tr.visual.cursor
+	tr.key(0x1b)
+	if count(cur) != 1 || count(wash) != 0 || !tr.visual.active() || tr.visual.cursor != at {
+		t.Fatalf("Esc over a highlight must drop only the highlight: %d cursor cells, %d wash runs, on=%v, cursor moved=%v",
+			count(cur), count(wash), tr.visual.active(), tr.visual.cursor != at)
+	}
 	tr.key(0x1b)
 	if count(cur) != 0 || count(wash) != 0 {
 		t.Fatal("Esc left paint behind")

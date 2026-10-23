@@ -700,7 +700,7 @@ transcript+sel End bottom off:bottom fol=true srch=false q="" mq="" h=false s=fa
 visual inert off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=line+1:0 pit=none
 visual 0x0a activate off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
 visual 0x0d activate off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
-visual 0x1b cancel off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
+visual 0x1b cancel off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+5:0 pit=none
 visual 0x24 line-end off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=line+1:6 pit=none
 visual 0x2f search off:same fol=false srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=line+1:0 pit=none
 visual 0x3a command off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="<,>" vis=line+1:0 pit=none
@@ -726,7 +726,7 @@ visual Home top off:top fol=false srch=false q="" mq="" h=false s=false Q=false 
 visual+char inert off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=char+0:2 pit=none
 visual+char 0x0a activate off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
 visual+char 0x0d activate off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
-visual+char 0x1b cancel off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
+visual+char 0x1b cancel off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:2 pit=none
 visual+char 0x24 line-end off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=char+0:10 pit=none
 visual+char 0x2f search off:same fol=false srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=char+0:2 pit=none
 visual+char 0x30 line-start off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=char+0:0 pit=none

@@ -245,9 +245,16 @@ func pagerClearSelection(t *transcript) {
 	}
 }
 
-func pagerVisualChar(t *transcript)     { t.pressVisual(visualChar) }
-func pagerVisualLine(t *transcript)     { t.pressVisual(visualLine) }
-func pagerVisualLeave(t *transcript)    { t.leaveVisual() }
+func pagerVisualChar(t *transcript) { t.pressVisual(visualChar) }
+func pagerVisualLine(t *transcript) { t.pressVisual(visualLine) }
+func pagerVisualLeave(t *transcript) {
+	if t.visual.highlighted() {
+		t.visual.kind = visualNone
+		return
+	}
+	t.leaveVisual()
+}
+
 func pagerVisualDown(t *transcript)     { t.visualMove(1) }
 func pagerVisualUp(t *transcript)       { t.visualMove(-1) }
 func pagerVisualLeft(t *transcript)     { t.visualMoveCol(-1) }
