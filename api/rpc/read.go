@@ -85,3 +85,12 @@ type ModelsWantRequest struct {
 type ModelsWantResponse struct {
 	OK bool `json:"ok"`
 }
+
+type ModelsRefreshRequest struct {
+	Providers []string `json:"providers,omitempty"`
+	Wait      bool     `json:"wait,omitempty"`
+}
+
+type ModelsRefreshResponse struct {
+	Done bool `json:"done"`
+}

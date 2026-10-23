@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/formdelta"
+	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/store"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -185,4 +187,23 @@ func (h *handlers) modelsWant(_ context.Context, params json.RawMessage) (any, e
 	}
 	h.angelus.Models.Want(req.Provider, req.Model)
 	return rpc.ModelsWantResponse{OK: true}, nil
+}
+
+const modelsRefreshWait = modelcat.DefaultFetchTimeout + 5*time.Second
+
+func (h *handlers) modelsRefresh(ctx context.Context, params json.RawMessage) (any, error) {
+	var req rpc.ModelsRefreshRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodModelsRefresh, err)
+		}
+	}
+	if !req.Wait {
+		h.angelus.Models.Kick(req.Providers...)
+		return rpc.ModelsRefreshResponse{}, nil
+	}
+	wait, cancel := context.WithTimeout(ctx, modelsRefreshWait)
+	defer cancel()
+	err := h.angelus.Models.Refresh(wait, req.Providers...)
+	return rpc.ModelsRefreshResponse{Done: err == nil}, nil
 }

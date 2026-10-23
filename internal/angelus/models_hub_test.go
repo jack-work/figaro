@@ -118,3 +118,22 @@ func TestModelsWantKicksARefresh(t *testing.T) {
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return cat.Limit("openai", "gpt-4.1") == 1_047_576 }, 2*time.Second, 5*time.Millisecond)
 }
+
+// A waiting refresh answers after the listing has landed, so the caller's next
+// read of @models already holds it.
+func TestModelsRefreshAnswersAfterTheListingLands(t *testing.T) {
+	h, cat := modelsHandlers(t)
+	params, _ := json.Marshal(rpc.ModelsRefreshRequest{Providers: []string{"openai"}, Wait: true})
+	resp, err := h.modelsRefresh(context.Background(), params)
+	require.NoError(t, err)
+	require.True(t, resp.(rpc.ModelsRefreshResponse).Done)
+	e, ok := models.Lookup(cat.Snapshot(), "openai", "claude-z")
+	require.True(t, ok)
+	require.Equal(t, 1_047_576, e.Context.Default)
+}
+
+func TestModelsRefreshIsAnAdminVerb(t *testing.T) {
+	verb, ok := rpc.VerbOf(rpc.MethodModelsRefresh)
+	require.True(t, ok)
+	require.Equal(t, rpc.VerbAdmin, verb, "a refresh spends the daemon's provider credentials")
+}

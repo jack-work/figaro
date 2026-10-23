@@ -74,6 +74,7 @@ var methodVerbs = map[string]Verb{
 
 	MethodNormalize:      VerbAdmin,
 	MethodGC:             VerbAdmin,
+	MethodModelsRefresh:  VerbAdmin,
 	MethodBind:           VerbAdmin,
 	MethodResolve:        VerbAdmin,
 	MethodUnbind:         VerbAdmin,

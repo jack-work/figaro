@@ -225,6 +225,14 @@ func (c *Angelus) ModelsWant(ctx context.Context, provider, model string) error 
 }
 
 // Attach restores a dormant aria without binding a pid.
+func (c *Angelus) ModelsRefresh(ctx context.Context, wait bool, providers ...string) (*rpc.ModelsRefreshResponse, error) {
+	var resp rpc.ModelsRefreshResponse
+	if err := c.call(ctx, rpc.MethodModelsRefresh, rpc.ModelsRefreshRequest{Providers: providers, Wait: wait}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Angelus) Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error) {
 	var resp rpc.AttachResponse
 	if err := c.call(ctx, rpc.MethodAttach, rpc.AttachRequest{FigaroID: figaroID}, &resp); err != nil {

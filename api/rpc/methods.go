@@ -101,4 +101,5 @@ const (
 	MethodSaveBindings   = "angelus.save_bindings"
 	MethodProviderLedger = "angelus.provider_ledger"
 	MethodModelsWant     = "angelus.models.want"
+	MethodModelsRefresh  = "angelus.models.refresh"
 )
