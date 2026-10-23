@@ -2,7 +2,6 @@ package angelus
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -158,7 +157,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	}
 
 	pidPath := filepath.Join(a.RuntimeDir, "angelus.pid")
-	os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
+	writePidFile(pidPath)
 	defer os.Remove(pidPath)
 
 	// The socket is not removed here: `figaro rest` treats its removal as
@@ -170,6 +169,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	_ = a.StartPprof(ctx)
 
 	go a.pidMonitor(ctx)
+	go a.keepReachable(ctx, pidPath)
 	a.migrateLibrettoRefs()
 
 	err = a.Serve(ctx, ln, a.cliAdmit())
