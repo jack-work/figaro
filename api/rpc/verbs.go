@@ -57,6 +57,7 @@ var methodVerbs = map[string]Verb{
 	MethodDrop:    VerbSet,
 	MethodCast:    VerbSet,
 	MethodPromote: VerbSet,
+	MethodDemote:  VerbSet,
 
 	MethodCreate:     VerbCreate,
 	MethodFormCreate: VerbCreate,

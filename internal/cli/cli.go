@@ -1057,6 +1057,36 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "demote",
+		Group: "Session",
+		Short: "Sink an aria to a leaf so deleting it takes nothing else",
+		Usage: "demote [--id <id> | <id>] [--under <child>] [-j]",
+		Long: `Sink an aria to the bottom of the tree ` + "`figaro ls`" + ` draws. One of its
+children takes its place, its other children move under that child at the
+depth they had, and the aria hangs beneath it with nothing under it. A kill
+or a reap of the demoted aria then takes it alone.
+
+  figaro demote <id>                  the child branched earliest takes its place
+  figaro demote <id> --under <child>  that child does, if it is one
+
+Presentation only, like promote: no history moves. An aria with no
+children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it replaces.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Aria to demote (defaults to this shell's)"},
+			{Long: "under", Description: "The child that takes its place"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runDemote(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("under"), ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "kill",
 		Group:   "Session",
 		Short:   "Terminate and remove a trunk",

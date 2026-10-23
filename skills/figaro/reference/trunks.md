@@ -268,6 +268,28 @@ RPC, `PromoteResponse{FigaroID, Climbed, AtStump}`, the boundary check in
 carries both edges: `parent` (history, what `status` prints as forked-from)
 and `present` (where the row is drawn, what the vector follows).
 
+## demote
+
+**`demote [<id>] [--under <child>]`** is the opposite move, made for a
+delete: the aria sinks to a leaf, so a kill or a reap takes it and nothing
+else. One child takes its place; the aria's other children move under that
+child, keeping their depth (grandchildren ride along under their own
+parents); the aria hangs beneath it with no rows of its own.
+
+```sh
+figaro demote <id>                  the child branched earliest takes its place
+figaro demote <id> --under <child>  that child does, if it is one
+```
+
+A `--under` that is not a child is not an error: the earliest child is used
+and the tool says so. An aria with no children is left where it is. Like a
+promote it is one patch on the topology form, so it lands whole or not at
+all, and it moves no history. `figaro succeed` demotes the aria it replaces.
+
+Implementation: `runDemote` (`internal/cli/manage.go`), the `figaro.demote`
+RPC, `DemoteResponse{FigaroID, Under, Preferred}`, `XwalStore.Demote` (which
+picks the child) and `TopologyTree.Demote` (which writes the patch).
+
 ## Delete, and the two hierarchies
 
 `kill <id>` counts on one tree and cuts on the other, deliberately:

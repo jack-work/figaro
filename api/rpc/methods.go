@@ -68,6 +68,7 @@ const (
 	MethodFormBind  = "form.bind"
 	MethodFork      = "figaro.fork"
 	MethodPromote   = "figaro.promote"
+	MethodDemote    = "figaro.demote"
 	MethodImport    = "figaro.import"
 	MethodNormalize = "figaro.normalize"
 	MethodGC        = "figaro.gc"

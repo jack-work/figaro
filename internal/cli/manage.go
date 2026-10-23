@@ -998,6 +998,45 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 	})
 }
 
+func runDemote(loaded *config.Loaded, idFlag string, args []string, under string, asJSON bool) {
+	target := idFlag
+	if target == "" && len(args) > 0 {
+		target = args[0]
+	}
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if target == "" {
+			if r, err := resolveBinding(ctx, acli, shellPID); err == nil && r.Found {
+				target = r.FigaroID
+			}
+		}
+		if target == "" {
+			dieUsage("demote: no aria bound to this shell (try: demote <id>)")
+		}
+		resp, err := acli.Demote(ctx, target, under)
+		if err != nil {
+			die("demote: %s", err)
+		}
+		if resp.Unsupported {
+			die("demote: this figaro is built without the trunk capability, so there is\n" +
+				"  no hierarchy to demote within. Aria nesting follows fork history alone.")
+		}
+		if asJSON {
+			return json.NewEncoder(stdout).Encode(resp)
+		}
+		switch {
+		case resp.Under == "":
+			fmt.Fprintf(stderrw, "%s has no children; nothing to demote\n", ariaName(resp.FigaroID))
+		case under != "" && !resp.Preferred:
+			fmt.Fprintf(stderrw, "%s is not a child of %s; demoted under %s instead\n", under, ariaName(resp.FigaroID), ariaName(resp.Under))
+		default:
+			fmt.Fprintf(stderrw, "demoted %s under %s: it is a leaf now\n", ariaName(resp.FigaroID), ariaName(resp.Under))
+		}
+		return nil
+	})
+}
+
 // A bare id pins the trunk's leaf; an LT pins a pending fork point; :<LT>
 // re-pins the bound aria.
 func runAttend(loaded *config.Loaded, spec string) {

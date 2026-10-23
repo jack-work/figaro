@@ -574,6 +574,22 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 	return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: climbed}, nil
 }
 
+func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.DemoteRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	under, err := h.angelus.Backend.Demote(req.FigaroID, req.Prefer)
+	if errors.Is(err, store.ErrNoTrunkCapability) {
+		return rpc.DemoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("demote %q: %w", req.FigaroID, err)
+	}
+	slog.Info("demoted figaro", "trunk", req.FigaroID, "under", under)
+	return rpc.DemoteResponse{FigaroID: req.FigaroID, Under: under, Preferred: under != "" && under == req.Prefer}, nil
+}
+
 func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.KillRequest
 	if err := json.Unmarshal(params, &req); err != nil {

@@ -94,6 +94,18 @@ type PromoteResponse struct {
 	Unsupported bool   `json:"unsupported,omitempty"`
 }
 
+type DemoteRequest struct {
+	FigaroID string `json:"figaro_id"`
+	Prefer   string `json:"prefer,omitempty"`
+}
+
+type DemoteResponse struct {
+	FigaroID    string `json:"figaro_id"`
+	Under       string `json:"under,omitempty"`
+	Preferred   bool   `json:"preferred,omitempty"`
+	Unsupported bool   `json:"unsupported,omitempty"`
+}
+
 // ImportRequest restores an exported aria as a new conversation: nothing is
 // grafted, so ids and LTs are the destination's own.
 type ImportRequest struct {

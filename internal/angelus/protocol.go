@@ -95,6 +95,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodOutfitReload:       h.outfitReload,
 		rpc.MethodFork:               h.fork,
 		rpc.MethodPromote:            h.promote,
+		rpc.MethodDemote:             h.demote,
 		rpc.MethodImport:             h.importAria,
 		rpc.MethodOutfits:            h.outfits,
 		rpc.MethodConfigure:          h.configure,

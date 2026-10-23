@@ -211,6 +211,7 @@ pager `y` copies the name shown (the attended aria's, or a listing row's) and
 | `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags. |
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
+| `figaro demote <id> [--under <child>]` | Sink an aria to a leaf: a child takes its place, the other children move under that child, and a kill then takes the aria alone. Presentation only. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
 | `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What the ttl sweep soft-deleted, when each group is purged, and the way back. |
 | `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop an aria taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |

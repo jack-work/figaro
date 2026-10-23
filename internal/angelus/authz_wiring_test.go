@@ -19,7 +19,7 @@ func authzHandlers(t *testing.T) *Handlers {
 func TestEveryServedMethodIsGuarded(t *testing.T) {
 	hs := authzHandlers(t)
 	for _, m := range []string{
-		rpc.MethodCreate, rpc.MethodFork, rpc.MethodPromote, rpc.MethodKill,
+		rpc.MethodCreate, rpc.MethodFork, rpc.MethodPromote, rpc.MethodDemote, rpc.MethodKill,
 		rpc.MethodList, rpc.MethodAttach, rpc.MethodBind, rpc.MethodResolve,
 		rpc.MethodUnbind, rpc.MethodStatus, rpc.MethodSaveBindings, rpc.MethodIR,
 		rpc.MethodProviderLedger, rpc.MethodHello,

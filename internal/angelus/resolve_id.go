@@ -20,7 +20,7 @@ const (
 	ambiguityList = 5
 )
 
-var secondaryIDKeys = []string{"form_id", "role_id", "against"}
+var secondaryIDKeys = []string{"form_id", "role_id", "against", "prefer"}
 
 func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
