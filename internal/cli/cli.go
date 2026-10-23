@@ -1106,6 +1106,62 @@ children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it rep
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "succeed",
+		Group: "Session",
+		Short: "Hand a role to a successor and wind the old aria down",
+		Usage: "succeed <@role> [--turn <n> | --successor <aria>] [--title <t>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
+		Long: `Replace the aria a role points at. The role must already target an aria
+that exists; that aria is the predecessor.
+
+  figaro succeed @warden -- take over from here
+  figaro succeed @warden --turn 5 --title "deploy warden II" -- go
+  figaro succeed @warden --successor <aria> -- you hold the seat now
+  figaro succeed @warden --ttl 0 -- go          kill the predecessor at once
+
+In order, stopping at the first step that fails:
+
+  1. fork the predecessor at --turn (default 2: the successor keeps turn 1
+     and the prompt becomes its turn 2), its mantra set to --title.
+     --successor names an existing aria instead and skips the fork.
+  2. demote the predecessor beneath the successor (figaro demote), so its
+     branches survive its end. A successor not drawn under it is left where
+     it is, and the branch forked earliest takes its place.
+  3. send the prompt to the successor. A successor mid-turn is steered.
+  4. cast the successor into the role.
+  5. the predecessor drops the role, its mantra gains "SUCCEEDED: ", and
+     --abdication decides the rest:
+       retire  (default) it refuses prompts from now on
+       linger  it still takes prompts, for a handover with overlap
+     Either way it is reaped --ttl from now (default 10m) unless something
+     holds it: a bound shell, another role, a recent branch. --ttl 0 kills
+     it instead. A reaped predecessor stays in ` + "`figaro reaped`" + `.
+
+Nothing is rolled back. A step that fails leaves the ones before it in
+place, and the error lists the commands that finish the job by hand.
+
+In the pager, :succeed takes the same flags. When the aria on screen is the
+predecessor, the pager moves to the successor afterwards; --stay keeps it.`,
+		ArgsMin: 0,
+		Flags: []cmdkit.FlagDef{
+			{Long: "turn", Description: "Fork the predecessor at this turn (default 2)"},
+			{Long: "successor", Description: "An existing aria to take the role, instead of a fork"},
+			{Long: "title", Description: "The successor's mantra"},
+			{Long: "ttl", Description: "Reap the predecessor this long from now; 0 kills it (default 10m)"},
+			{Long: "abdication", Description: "retire (refuse prompts) or linger (keep taking them)"},
+			{Long: "stay", IsBool: true, Description: "In the pager, keep showing the predecessor"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON report"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			plan, err := succeedPlanFrom(ctx)
+			if err != nil {
+				return err
+			}
+			return runSucceed(plan, ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeSucceed,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "retire",
 		Group: "Session",
 		Short: "Stop an aria taking prompts, and dress it on the way out",

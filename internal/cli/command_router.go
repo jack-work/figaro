@@ -76,8 +76,9 @@ var overlayVerbs = map[string]bool{
 	"send": true, "s": true,
 	"decide": true,
 	"new":    true, "replay": true, "fork": true,
-	"kill":   true, // may kill the aria on screen, and must then move
-	"import": true, // reads os.Stdin for `-`
+	"succeed": true,
+	"kill":    true, // may kill the aria on screen, and must then move
+	"import":  true, // reads os.Stdin for `-`
 	// models is a pit; as a routed verb it would print to os.Stdout.
 	"models": true,
 }
@@ -195,6 +196,8 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandFork(ctx, args)
 		})
+	case "succeed":
+		in.commandSucceed(args)
 	case "decide":
 		in.commandDecide(args)
 	case "notifications", "no":

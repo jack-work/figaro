@@ -198,6 +198,34 @@ fig set --id @role target-aria dcb89d6b       # repoint on succession
 fig send --id @role -- status?                # reaches the holder, whoever that is now
 ```
 
+**Succession, in one gesture.** `fig succeed @role -- <prompt>` replaces
+the holder rather than just repointing. The role must already target an
+aria that exists, the predecessor.
+
+```sh
+fig succeed @role -- take over                       # fork at turn 2, retire the old one in 10m
+fig succeed @role --turn 9 --title "warden II" -- go # fork later; the title is the new mantra
+fig succeed @role --successor <aria> -- you're up    # an aria that exists; no fork
+fig succeed @role --ttl 0 -- go                      # kill the predecessor outright
+fig succeed @role --abdication linger -- go          # it keeps taking prompts until reaped
+```
+
+The steps, each landing before the next runs: fork (or take
+`--successor`); `demote` the predecessor beneath the successor, so its
+branches outlive it (a successor not drawn under it stays put and the
+earliest branch takes the place); prompt the successor, steering it if it is
+mid-turn; cast it; the predecessor drops the role, its mantra gains
+`SUCCEEDED: `, and it is retired (or, with `linger`, not) with `system.ttl`
+counted from now. When the ttl is spent the sweep reaps it into
+`figaro reaped` unless something holds it: a shell attending it, a second
+role still pointing at it (the report names those), a recent branch.
+
+Nothing is rolled back. `-j` prints the report (`failed_at`, `error`, and
+every step that landed), and a failure lists the commands that finish the
+job by hand. In the pager `:succeed` takes the same flags; when the
+predecessor is on screen the pager attends the successor before the
+predecessor is retired, unless `--stay`.
+
 **Study and cast.** `fig study [<aria>] <@form>` subscribes a figaro to
 an unbound form; `fig drop` unsubscribes; `fig cast [<aria>] <@form>`
 (or `-O <names>` / `-S <k=v>` to mint the role born cast) points the role here AND

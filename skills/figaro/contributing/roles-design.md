@@ -156,6 +156,12 @@ fig send --id $R -- "status?"   # answered by B, no restart
 fig drop $A $R                  # A stops observing; later patches are silent
 ```
 
+`fig succeed $R -- <prompt>` is that flow as one verb, with the fork, the
+demote and the predecessor's retirement folded in; see
+[reference/forms.md](../reference/forms.md#roles). It runs from the client
+over the existing RPCs and is deliberately not a transaction: each step is
+recoverable by hand, and the report says which landed.
+
 `target-aria` is ONE pointer. Casting N arias into one role is N
 repointings, and the last one wins. That is the semantic, not a bug: a role
 is a seat, and a seat holds one occupant. Many arias may STUDY a role

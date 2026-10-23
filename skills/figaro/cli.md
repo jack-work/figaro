@@ -211,6 +211,7 @@ pager `y` copies the name shown (the attended aria's, or a listing row's) and
 | `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags. |
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
+| `figaro succeed <@role> [--turn <n> \| --successor <aria>] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the aria it targets at `--turn` (default 2) or take `--successor`, demote the predecessor beneath it, prompt and cast the successor, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
 | `figaro demote <id> [--under <child>]` | Sink an aria to a leaf: a child takes its place, the other children move under that child, and a kill then takes the aria alone. Presentation only. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
 | `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What the ttl sweep soft-deleted, when each group is purged, and the way back. |
