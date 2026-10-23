@@ -55,9 +55,10 @@ func TestAReadStampsTheAccessTheKeepaliveCounts(t *testing.T) {
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id := created.FigaroID
-	conn := dialAria(t, a, id, nil)
-	var set rpc.SetResponse
-	require.NoError(t, conn.Call(ctx, rpc.MethodSet, setKeys(t, map[string]string{"system.ttl": "1h"}), &set))
+	_, err = a.Backend.(interface {
+		ApplyForm(string, form.Patch) (uint64, error)
+	}).ApplyForm(id, setKeys(t, map[string]string{"system.ttl": "1h"}).Patch)
+	require.NoError(t, err, "set through the store, not the door: a door set is itself an access")
 
 	before := time.Now().UnixMilli()
 	var page json.RawMessage
