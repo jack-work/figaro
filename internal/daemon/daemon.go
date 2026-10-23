@@ -337,8 +337,10 @@ func Run() {
 
 	build := buildProvider(loaded, formTmpls, backend)
 	a.Models = modelcat.New(modelcat.Config{
-		Build: func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
-		Path:  filepath.Join(boot.CacheDir(), "models.json"),
+		Build:     func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
+		Providers: func() []string { return catalogProviders(loaded) },
+		Poll:      loaded.ModelsPoll(),
+		Path:      filepath.Join(boot.CacheDir(), "models.json"),
 	})
 	go a.Models.Run(ctx)
 
@@ -442,4 +444,11 @@ func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b au
 		return b.AdmitRequest, nil
 	}
 	return nil, fmt.Errorf("authn %q: want \"upstream\" or \"bearer\"", name)
+}
+
+func catalogProviders(loaded *config.Loaded) []string {
+	if names := loaded.ListProviders(); len(names) > 0 {
+		return names
+	}
+	return providerPkg.Names()
 }

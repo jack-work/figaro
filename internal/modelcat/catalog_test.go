@@ -322,3 +322,116 @@ func TestAWantAfterShutdownStartsNothing(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	require.Zero(t, builds.Load())
 }
+
+func runCatalog(t *testing.T, c *Catalog) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	ran := make(chan struct{})
+	go func() { c.Run(ctx); close(ran) }()
+	t.Cleanup(func() { cancel(); <-ran })
+}
+
+func perProvider(fps map[string]*fakeProvider) Builder {
+	return func(name string) (provider.Provider, error) {
+		fp, ok := fps[name]
+		if !ok {
+			return nil, errors.New("unknown provider: " + name)
+		}
+		return fp, nil
+	}
+}
+
+// The daemon lists every configured provider on its own clock, so a reader
+// never waits on a provider: nobody has to want a model first.
+func TestThePollListsEveryProviderWithoutAWant(t *testing.T) {
+	a := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "a1", ContextWindow: 100}}}
+	b := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "b1", ContextWindow: 200}}}
+	c := New(Config{
+		Build:     perProvider(map[string]*fakeProvider{"a": a, "b": b}),
+		Providers: func() []string { return []string{"a", "b"} },
+		Poll:      20 * time.Millisecond,
+	})
+	runCatalog(t, c)
+	waitFor(t, func() bool { return a.calls.Load() >= 3 && b.calls.Load() >= 3 })
+	require.Equal(t, 100, limitOf(c, "a", "a1"))
+	require.Equal(t, 200, limitOf(c, "b", "b1"))
+}
+
+// A restart lists only what the snapshot holds stale; a fresh provider waits for
+// the poll.
+func TestStartListsOnlyStaleProviders(t *testing.T) {
+	clk := newClock()
+	fresh := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "f1", ContextWindow: 1}}}
+	stale := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "s1", ContextWindow: 1}}}
+	path := filepath.Join(t.TempDir(), "models.json")
+	seed := New(Config{Build: perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}), Path: path, Now: clk.Now})
+	require.NoError(t, seed.Refresh(context.Background(), "fresh", "stale"))
+	seed.save()
+	fresh.calls.Store(0)
+	stale.calls.Store(0)
+
+	clk.advance(time.Hour)
+	raw := seed.current("stale")
+	raw.RefreshedAt = clk.Now().Add(-7 * time.Hour).UnixMilli()
+	seed.publish("stale", raw)
+	seed.save()
+
+	c := New(Config{
+		Build:     perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}),
+		Providers: func() []string { return []string{"fresh", "stale", "never"} },
+		Poll:      6 * time.Hour,
+		Path:      path,
+		Now:       clk.Now,
+	})
+	runCatalog(t, c)
+	waitFor(t, func() bool { return stale.calls.Load() == 1 })
+	waitFor(t, func() bool {
+		st, ok := models.ProviderStatus(c.Snapshot(), "never")
+		return ok && st.Error != ""
+	})
+	require.Zero(t, fresh.calls.Load())
+}
+
+// Refresh waits for a listing that starts after the call: one already in flight
+// may have begun before a login and would answer with the old credential.
+func TestRefreshWaitsForAListingThatStartsAfterIt(t *testing.T) {
+	gate := make(chan struct{})
+	fp := &fakeProvider{calls: new(atomic.Int32), gate: gate, list: []provider.ModelInfo{{ID: "m", ContextWindow: 1}}}
+	c := New(Config{Build: perProvider(map[string]*fakeProvider{"p": fp})})
+	first := c.list("p")
+	waitFor(t, func() bool { return fp.calls.Load() == 1 })
+
+	refreshed := make(chan error, 1)
+	go func() { refreshed <- c.Refresh(context.Background(), "p") }()
+	gate <- struct{}{}
+	<-first
+	select {
+	case <-refreshed:
+		t.Fatal("Refresh returned on the listing that was already in flight")
+	case <-time.After(20 * time.Millisecond):
+	}
+	gate <- struct{}{}
+	require.NoError(t, <-refreshed)
+	require.Equal(t, int32(2), fp.calls.Load())
+}
+
+func TestRefreshIsBoundedByItsContext(t *testing.T) {
+	fp := &fakeProvider{calls: new(atomic.Int32), gate: make(chan struct{})}
+	c := New(Config{Build: perProvider(map[string]*fakeProvider{"p": fp})})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, c.Refresh(ctx, "p"), context.DeadlineExceeded)
+}
+
+func TestThePickerFlagSurvivesIntoTheCatalog(t *testing.T) {
+	fp := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{
+		{ID: "shown", ContextWindow: 1}, {ID: "kept-out", ContextWindow: 1, Hidden: true},
+	}}
+	c := New(Config{Build: perProvider(map[string]*fakeProvider{"p": fp})})
+	require.NoError(t, c.Refresh(context.Background(), "p"))
+	e, ok := models.Lookup(c.Snapshot(), "p", "kept-out")
+	require.True(t, ok)
+	require.True(t, e.Hidden)
+	e, _ = models.Lookup(c.Snapshot(), "p", "shown")
+	require.False(t, e.Hidden)
+}

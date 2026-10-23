@@ -41,6 +41,7 @@ type Config struct {
 	Wire    WireConfig    `toml:"wire"`
 	Store   StoreConfig   `toml:"store"`
 	Memory  MemoryConfig  `toml:"memory"`
+	Models  ModelsConfig  `toml:"models"`
 	Door    DoorConfig    `toml:"door"`
 	Quote   QuoteConfig   `toml:"quote"`
 	Authz   AuthzConfig   `toml:"authz"`
@@ -181,7 +182,12 @@ type MemoryConfig struct {
 	FormPatchWindow *int `toml:"form_patch_window"`
 }
 
+type ModelsConfig struct {
+	PollMinutes *int `toml:"poll_minutes"`
+}
+
 const (
+	defaultModelsPoll    = 6 * time.Hour
 	defaultDormantAfter  = 15 * time.Minute
 	defaultSweepInterval = 2 * time.Minute
 	defaultKeepalive     = 24 * time.Hour
@@ -215,6 +221,16 @@ func (l *Loaded) DormantAfter() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
+}
+
+func (l *Loaded) ModelsPoll() time.Duration {
+	if l.cfg().Models.PollMinutes == nil {
+		return defaultModelsPoll
+	}
+	if *l.cfg().Models.PollMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(*l.cfg().Models.PollMinutes) * time.Minute
 }
 
 func (l *Loaded) ReapedGrace() time.Duration {

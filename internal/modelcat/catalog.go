@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,6 +22,8 @@ type Builder func(providerName string) (provider.Provider, error)
 
 type Config struct {
 	Build        Builder
+	Providers    func() []string
+	Poll         time.Duration
 	Path         string
 	TTL          time.Duration
 	Retry        time.Duration
@@ -51,6 +54,9 @@ type Catalog struct {
 
 type provState struct {
 	inflight bool
+	listing  bool
+	listNext bool
+	listDone chan struct{}
 	again    bool
 	attempt  time.Time
 	wanted   map[string]bool
@@ -112,6 +118,14 @@ func (c *Catalog) Run(ctx context.Context) {
 	c.mu.Lock()
 	c.ctx = ctx
 	c.mu.Unlock()
+	c.listStale()
+	var poll *time.Timer
+	var polled <-chan time.Time
+	if c.cfg.Poll > 0 && c.cfg.Providers != nil {
+		poll = time.NewTimer(c.jittered())
+		defer poll.Stop()
+		polled = poll.C
+	}
 	var timer *time.Timer
 	var fire <-chan time.Time
 	for {
@@ -124,6 +138,9 @@ func (c *Catalog) Run(ctx context.Context) {
 			c.wg.Wait()
 			c.save()
 			return
+		case <-polled:
+			c.listAll()
+			poll.Reset(c.jittered())
 		case <-c.persist:
 			if timer == nil {
 				timer = time.NewTimer(c.cfg.PersistDelay)
@@ -136,6 +153,113 @@ func (c *Catalog) Run(ctx context.Context) {
 	}
 }
 
+func (c *Catalog) jittered() time.Duration {
+	spread := int64(c.cfg.Poll / 5)
+	if spread <= 0 {
+		return c.cfg.Poll
+	}
+	return c.cfg.Poll - time.Duration(spread/2) + time.Duration(rand.Int64N(spread))
+}
+
+func (c *Catalog) providers() []string {
+	if c.cfg.Providers == nil {
+		return nil
+	}
+	return c.cfg.Providers()
+}
+
+func (c *Catalog) staleAfter() time.Duration {
+	if c.cfg.Poll > 0 && c.cfg.Poll < c.cfg.TTL {
+		return c.cfg.Poll
+	}
+	return c.cfg.TTL
+}
+
+func (c *Catalog) listStale() {
+	snap := c.Snapshot()
+	now := c.cfg.Now()
+	for _, name := range c.providers() {
+		if !c.fresh(snap, name, now, c.staleAfter()) {
+			c.list(name)
+		}
+	}
+}
+
+func (c *Catalog) listAll() {
+	for _, name := range c.providers() {
+		c.list(name)
+	}
+}
+
+func (c *Catalog) Refresh(ctx context.Context, names ...string) error {
+	for _, done := range c.Kick(names...) {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func (c *Catalog) Kick(names ...string) []<-chan struct{} {
+	if c == nil {
+		return nil
+	}
+	if len(names) == 0 {
+		names = c.providers()
+	}
+	waits := make([]<-chan struct{}, 0, len(names))
+	for _, name := range names {
+		waits = append(waits, c.list(name))
+	}
+	return waits
+}
+
+func (c *Catalog) list(providerName string) <-chan struct{} {
+	if providerName == "" || c.cfg.Build == nil {
+		return closedChan
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return closedChan
+	}
+	st := c.state(providerName)
+	st.listNext = true
+	st.attempt = c.cfg.Now()
+	if st.listDone == nil {
+		st.listDone = make(chan struct{})
+	}
+	done := st.listDone
+	c.start(providerName, st)
+	return done
+}
+
+var closedChan = func() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
+
+func (c *Catalog) state(providerName string) *provState {
+	st := c.provs[providerName]
+	if st == nil {
+		st = &provState{wanted: map[string]bool{}, tried: map[string]time.Time{}}
+		c.provs[providerName] = st
+	}
+	return st
+}
+
+func (c *Catalog) start(providerName string, st *provState) {
+	if st.inflight || c.closed {
+		return
+	}
+	st.inflight = true
+	c.wg.Add(1)
+	go c.refresh(c.ctx, providerName)
+}
+
 func (c *Catalog) Want(providerName, model string) {
 	if c == nil || providerName == "" || model == "" || c.cfg.Build == nil {
 		return
@@ -143,48 +267,32 @@ func (c *Catalog) Want(providerName, model string) {
 	snap := c.Snapshot()
 	now := c.cfg.Now()
 	_, known := models.Lookup(snap, providerName, model)
-	if known && c.fresh(snap, providerName, now) {
+	if known && c.fresh(snap, providerName, now, c.cfg.TTL) {
 		return
 	}
 
 	c.mu.Lock()
-	st := c.provs[providerName]
-	if st == nil {
-		st = &provState{wanted: map[string]bool{}, tried: map[string]time.Time{}}
-		c.provs[providerName] = st
-	}
+	defer c.mu.Unlock()
+	st := c.state(providerName)
 	list := st.attempt.IsZero() || now.Sub(st.attempt) >= c.cfg.Retry
 	if !known {
 		if at, ok := st.tried[model]; ok && now.Sub(at) < c.cfg.Retry && !list {
-			c.mu.Unlock()
 			return
 		}
 		st.tried[model] = now
 		st.wanted[model] = true
+		st.again = true
 	} else if !list {
-		c.mu.Unlock()
 		return
 	}
-	if st.inflight {
-		if !known {
-			st.again = true
-		}
-		c.mu.Unlock()
-		return
-	}
-	if c.closed {
-		c.mu.Unlock()
-		return
-	}
-	ctx := c.ctx
-	st.inflight = true
-	if list {
+	if list && !st.listing {
+		st.listNext = true
 		st.attempt = now
 	}
-	c.wg.Add(1)
-	c.mu.Unlock()
-
-	go c.refresh(ctx, providerName, list)
+	if !st.again && !st.listNext {
+		return
+	}
+	c.start(providerName, st)
 }
 
 func (c *Catalog) stopWanting() {
@@ -193,15 +301,15 @@ func (c *Catalog) stopWanting() {
 	c.mu.Unlock()
 }
 
-func (c *Catalog) fresh(snap form.Snapshot, providerName string, now time.Time) bool {
+func (c *Catalog) fresh(snap form.Snapshot, providerName string, now time.Time, within time.Duration) bool {
 	st, ok := models.ProviderStatus(snap, providerName)
 	if !ok || st.RefreshedAt.IsZero() {
 		return false
 	}
-	return now.Sub(st.RefreshedAt) < c.cfg.TTL
+	return now.Sub(st.RefreshedAt) < within
 }
 
-func (c *Catalog) refresh(ctx context.Context, providerName string, list bool) {
+func (c *Catalog) refresh(ctx context.Context, providerName string) {
 	defer c.wg.Done()
 	for {
 		c.mu.Lock()
@@ -211,14 +319,28 @@ func (c *Catalog) refresh(ctx context.Context, providerName string, list bool) {
 			wanted = append(wanted, m)
 		}
 		st.again = false
+		list := st.listNext
+		var done chan struct{}
+		if list {
+			st.listNext, st.listing = false, true
+			done, st.listDone = st.listDone, nil
+		}
 		c.mu.Unlock()
 
 		c.fetch(ctx, providerName, wanted, list)
-		list = false
+		if done != nil {
+			close(done)
+		}
 
 		c.mu.Lock()
-		if !st.again || ctx.Err() != nil {
+		st.listing = false
+		if (!st.again && !st.listNext) || ctx.Err() != nil {
 			st.inflight = false
+			if st.listDone != nil {
+				close(st.listDone)
+				st.listDone = nil
+			}
+			st.listNext = false
 			c.mu.Unlock()
 			return
 		}
