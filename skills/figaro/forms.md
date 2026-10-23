@@ -42,10 +42,13 @@ uninvited:
 
 | species | what it is | how you see it |
 |---|---|---|
-| **bound form** | your own bound form | one `<system-reminder name="<key>">` per key, every turn |
+| **bound form** | your own form | one `<system-reminder name="<key>">` per key, every turn |
 | **unbound form** `@x` | free-standing state, no figaro | not at all, unless you study it |
 | **studied form** | an unbound form you observe | a `study` block when you begin, a `study:@x` block on each change |
 | **role** | a form carrying `target-aria` | an ordinary form: visible only if you study it. `fig cast` studies it for you |
+
+Every kind of form, these and the rest, is defined once in the
+[glossary](reference/forms.md#glossary).
 
 **On change** you get one `study:@x` block per user message, folded: several
 patches inside one window arrive as a single block (`"changes":2`), and it

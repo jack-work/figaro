@@ -71,7 +71,7 @@ One definition each. The file named owns the model behind it.
 | trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
-| form | Durable, versioned, forkable JSON state. Every aria's form is one; an UNBOUND form (`@`-sigiled id) has no figaro and stands alone. A form carrying `target-aria` is a ROLE. | [forms.md](forms.md) |
+| form | Versioned JSON state. Every aria's own form is its BOUND form; an UNBOUND form (`@`-sigiled id) has no figaro and stands alone; a form carrying `target-aria` is a ROLE. The rest (catalog, stump, libretto, intrinsic) are in the glossary. | [reference/forms.md](reference/forms.md#glossary) |
 | outfit | A named patch for a form: model, credo, skills. Named by NAME (`-O sonn5,focus`), folded at birth or onto a live aria; keys travel beside it on `-S`. | [reference/outfits.md](reference/outfits.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 

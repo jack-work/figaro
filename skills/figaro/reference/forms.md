@@ -14,6 +14,23 @@ null form ──mint──▶ unbound forms ──fork+aria_id──▶ figaros
 
 `state` and `form` are one command; both spellings work everywhere.
 
+## Glossary
+
+The one glossary for forms. Every other page uses these words in exactly this
+sense.
+
+| term | one line |
+|---|---|
+| **bound form** | An aria's own form, addressed by the bare aria id; its keys reach the agent every turn. |
+| **unbound form** | A form with no figaro, addressed by an `@` id: patchable, forkable, bindable, studiable. |
+| **role** | An unbound form carrying `target-aria`; turn-shaped verbs reach whichever aria it names at the moment of the call. |
+| **default form** | The template `fig new` forks for every new aria, minted from the default outfit and named in `default_form.json`. |
+| **libretto** | `@libretto::<id>`, the durable copy of a studied form's state: one per source, shared by every observer, refcounted, never listed or forked. |
+| **outfit** | A named patch in `outfits/<name>.toml`, folded into a form at birth or onto a live aria, and stored once per content version (`<name>@<hash>`). |
+| **intrinsic** | A form a host publishes as part of itself (`<id>/runtime`, `<id>/queue`): derived, never persisted, gone with its host. |
+| **catalog** | A live, daemon-scoped, read-only form: `@models` and `@reaped`. |
+| **stump** | A form that cannot be forked or branched. Two today, as special cases: the null (ur) form and `@topology`. |
+
 ---
 
 ## Using forms without a figaro (state tracking)
