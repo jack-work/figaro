@@ -602,6 +602,18 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 			}
 		}
 	}
+	grace := time.Duration(req.GraceMS) * time.Millisecond
+	if grace <= 0 {
+		grace = h.config.KillGrace()
+	}
+	if !req.Now && grace > 0 {
+		if until, ok, err := h.reapKilled(req.FigaroID, req.Recursive, time.Now().Add(grace)); ok || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli()}, nil
+		}
+	}
 	if err := h.RemoveAria(req.FigaroID, req.Recursive); err != nil {
 		return nil, err
 	}

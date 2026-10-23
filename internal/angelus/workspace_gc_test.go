@@ -12,7 +12,7 @@ import (
 
 func (r grantRig) kill(t *testing.T, id string, recursive bool) {
 	t.Helper()
-	raw, _ := json.Marshal(rpc.KillRequest{FigaroID: id, Recursive: recursive})
+	raw, _ := json.Marshal(rpc.KillRequest{FigaroID: id, Recursive: recursive, Now: true})
 	if _, err := r.h[rpc.MethodKill](as("user", strings.TrimPrefix(owner(), "user:")), raw); err != nil {
 		t.Fatalf("kill %s: %v", id, err)
 	}

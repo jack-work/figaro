@@ -1089,17 +1089,19 @@ children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it rep
 	r.Register(&cmdkit.Command{
 		Name:    "kill",
 		Group:   "Session",
-		Short:   "Terminate and remove a trunk",
-		Usage:   "kill [--id <trunk> | <trunk>] [--recursive]",
+		Short:   "Stop a trunk and reap it; purged after a grace",
+		Usage:   "kill [--id <trunk> | <trunk>] [-r] [--when <duration> | --now]",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target trunk id"},
-			{Long: "recursive", Short: "r", IsBool: true, Description: "Also remove the trunk's live branches"},
+			{Long: "recursive", Short: "r", IsBool: true, Description: "Also take the trunk's live branches"},
+			{Long: "when", Description: "Grace before the purge (90m, 6h, 2d, 1w; 0 deletes now); default [memory] kill_grace_hours, 3 days"},
+			{Long: "now", IsBool: true, Description: "Delete at once instead of reaping"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runKill(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("recursive"))
+			runKill(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("recursive"), ctx.BoolFlag("now"), ctx.Flag("when"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -1338,7 +1340,7 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 				runFormLs(ld, ctx.BoolFlag("json"))
 				return nil
 			case "rm":
-				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"))
+				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"), true, "")
 				return nil
 			case "set":
 				return runFormSet(ld, ctx.Flag("id"), args[1:])

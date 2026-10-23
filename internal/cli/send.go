@@ -549,7 +549,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer killCancel()
-			_ = acli.Kill(killCtx, createResp.FigaroID, false)
+			_, _ = acli.Kill(killCtx, rpc.KillRequest{FigaroID: createResp.FigaroID, Now: true})
 		}()
 	} else {
 		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)

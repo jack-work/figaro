@@ -316,7 +316,7 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	// under the session.
 	onScreen := id == in.currentID()
 	if !onScreen {
-		if err := acli.Kill(ctx, id, recursive); err != nil {
+		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
 			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
 		in.forgetAria(id)
@@ -324,7 +324,7 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	}
 	successor := in.successorFor(ctx, acli, id, prefer)
 	if successor == "" {
-		if err := acli.Kill(ctx, id, recursive); err != nil {
+		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
 			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
 		in.forgetAria(id)
@@ -335,7 +335,7 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	if aerr != nil {
 		return "", aerr
 	}
-	if err := acli.Kill(ctx, id, recursive); err != nil {
+	if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
 		return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 	}
 	in.forgetAria(id)

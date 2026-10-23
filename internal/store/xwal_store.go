@@ -1165,6 +1165,8 @@ func (s *XwalStore) LastTS(id string) int64 {
 
 const KindForm = string(kindForm)
 
+const KindConversation = string(kindConversation)
+
 // librettoCursorPrefix namespaces observed-form positions in the main
 // record's cursor map; the value is the libretto's version, never the source's.
 const librettoCursorPrefix = "libretto:"

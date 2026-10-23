@@ -188,7 +188,10 @@ func movedAway(err error) (string, bool) {
 func (h *handlers) learnFrom(node, method string, params, raw json.RawMessage) {
 	switch method {
 	case rpc.MethodKill:
-		h.fed.dir.Forget(rpc.AriaOf(params))
+		var r rpc.KillResponse
+		if json.Unmarshal(raw, &r) != nil || r.PurgeAt == 0 {
+			h.fed.dir.Forget(rpc.AriaOf(params))
+		}
 	case rpc.MethodFork:
 		var r rpc.ForkResponse
 		if json.Unmarshal(raw, &r) == nil {

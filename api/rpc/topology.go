@@ -150,8 +150,11 @@ type GCResponse struct {
 type KillRequest struct {
 	FigaroID  string `json:"figaro_id"`
 	Recursive bool   `json:"recursive,omitempty"` // also remove the trunk's live branches
+	Now       bool   `json:"now,omitempty"`
+	GraceMS   int64  `json:"grace_ms,omitempty"`
 }
 
 type KillResponse struct {
-	OK bool `json:"ok"`
+	OK      bool  `json:"ok"`
+	PurgeAt int64 `json:"purge_at,omitempty"`
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/mark"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -786,25 +788,61 @@ func shortCwd(p string) string {
 	return p
 }
 
-func runKill(loaded *config.Loaded, idFlag string, args []string, recursive bool) {
+func runKill(loaded *config.Loaded, idFlag string, args []string, recursive, now bool, when string) {
 	ariaID := idFlag
 	if ariaID == "" && len(args) > 0 {
 		ariaID = args[0]
 	}
 	if ariaID == "" {
-		dieUsage("usage: figaro kill [--id <trunk> | <trunk>] [--recursive]")
+		dieUsage("usage: figaro kill [--id <trunk> | <trunk>] [-r] [--when <duration> | --now]")
 	}
-	runKillByID(loaded, ariaID, recursive)
+	req, err := killRequest(ariaID, recursive, now, when)
+	if err != nil {
+		dieUsage("kill: %s", err)
+	}
+	runKillRequest(loaded, req)
 }
 
-func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
+func killRequest(id string, recursive, now bool, when string) (rpc.KillRequest, error) {
+	req := rpc.KillRequest{FigaroID: id, Recursive: recursive, Now: now}
+	if when == "" {
+		return req, nil
+	}
+	if now {
+		return req, errors.New("--now and --when are exclusive (--when 0 is --now)")
+	}
+	grace, err := store.ParseTTL(when)
+	if err != nil {
+		return req, fmt.Errorf("--when: %w", err)
+	}
+	switch {
+	case grace < 0:
+		return req, fmt.Errorf("--when %s: a grace cannot be negative", when)
+	case grace == 0:
+		req.Now = true
+	case grace < time.Millisecond:
+		return req, fmt.Errorf("--when %s: under a millisecond", when)
+	default:
+		req.GraceMS = grace.Milliseconds()
+	}
+	return req, nil
+}
+
+func runKillRequest(loaded *config.Loaded, req rpc.KillRequest) {
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := acli.Kill(ctx, figaroID, recursive); err != nil {
+		resp, err := acli.Kill(ctx, req)
+		if err != nil {
 			die("kill: %s", err)
 		}
-		fmt.Fprintf(stderrw, "killed %s\n", ariaName(figaroID))
+		name := ariaName(req.FigaroID)
+		if resp.PurgeAt == 0 {
+			fmt.Fprintf(stderrw, "killed %s\n", name)
+			return nil
+		}
+		left := shortDuration(time.Until(time.UnixMilli(resp.PurgeAt)))
+		fmt.Fprintf(stderrw, "killed %s; purged in %s (figaro reaped restore %s, or kill --now)\n", name, left, name)
 		return nil
 	})
 }

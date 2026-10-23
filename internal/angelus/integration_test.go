@@ -125,7 +125,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(cresp.Messages), 2) // user + assistant
 
-	err = acli.Kill(ctx, createResp.FigaroID, false)
+	_, err = acli.Kill(ctx, rpc.KillRequest{FigaroID: createResp.FigaroID, Now: true})
 	require.NoError(t, err)
 
 	listResp, err = acli.List(ctx)

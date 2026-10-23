@@ -200,7 +200,8 @@ func TestKillRemovesEndpoint(t *testing.T) {
 	var followed rpc.FollowResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodFollow, nil, &followed))
 
-	require.NoError(t, acli.Kill(ctx, created.FigaroID, false))
+	_, err = acli.Kill(ctx, rpc.KillRequest{FigaroID: created.FigaroID, Now: true})
+	require.NoError(t, err)
 	select {
 	case id := <-closed:
 		require.Equal(t, created.FigaroID, id)

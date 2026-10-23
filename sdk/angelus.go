@@ -171,8 +171,12 @@ func (c *Angelus) Import(ctx context.Context, req rpc.ImportRequest) (*rpc.Impor
 	return &resp, err
 }
 
-func (c *Angelus) Kill(ctx context.Context, figaroID string, recursive bool) error {
-	return c.call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID, Recursive: recursive}, nil)
+func (c *Angelus) Kill(ctx context.Context, req rpc.KillRequest) (*rpc.KillResponse, error) {
+	var resp rpc.KillResponse
+	if err := c.call(ctx, rpc.MethodKill, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func (c *Angelus) Move(ctx context.Context, figaroID, to string) (*rpc.MoveResponse, error) {

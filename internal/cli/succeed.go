@@ -309,7 +309,7 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 
 	if plan.ttl == 0 {
 		progress("killing " + ariaName(old.ID))
-		if err := acli.Kill(ctx, old.ID, false); err != nil {
+		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: old.ID}); err != nil {
 			return r, r.fail("kill", err)
 		}
 		r.Killed, r.Abdicated = true, true

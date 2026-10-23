@@ -48,6 +48,8 @@ func (g reapedGroup) purgeAt(grace time.Duration) time.Time {
 	return time.UnixMilli(g.atMS).Add(grace)
 }
 
+func (g reapedGroup) killed() bool { return g.untilMS > 0 }
+
 func reapedGroups(entries []store.ReapedEntry) []reapedGroup {
 	byRoot := map[string]*reapedGroup{}
 	var order []string
@@ -85,7 +87,7 @@ func (a *Angelus) purgeReaped(keeper ttlKeeper, now time.Time) {
 		if roles == nil {
 			roles = a.roleTargets()
 		}
-		if node, why := a.liveIn(keeper.DeleteSet(g.root), bound, roles); why != "" {
+		if node, why := a.liveIn(keeper.DeleteSet(g.root), bound, roles); why != "" && !g.killed() {
 			slog.Info("reaped node past its grace, kept: "+why, "node", g.root, "held_by", node)
 			continue
 		}
