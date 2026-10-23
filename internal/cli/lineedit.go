@@ -810,29 +810,50 @@ type visualRow struct {
 
 func (e *lineEditor) layout(avail int) ([]visualRow, int) {
 	rows := []visualRow{{start: 0}}
-	at, width := 0, 0
+	width := 0
 	for i, r := range e.runes {
-		if i == e.cursor {
-			at = len(rows) - 1
-		}
 		if r == '\n' {
 			rows = append(rows, visualRow{start: i + 1})
 			width = 0
 			continue
 		}
 		rw := runewidth.RuneWidth(r)
-		if width+rw > avail-1 {
-			rows = append(rows, visualRow{start: i})
-			width = 0
-		}
 		last := &rows[len(rows)-1]
+		switch {
+		case width+rw <= avail-1:
+		case r == ' ' && width+rw <= avail:
+		default:
+			carry := wordCarry(last.runes)
+			if cw := runewidth.StringWidth(string(carry)); len(carry) > 0 && len(carry) < len(last.runes) && cw+rw <= avail-1 {
+				last.runes = last.runes[:len(last.runes)-len(carry)]
+				rows = append(rows, visualRow{start: i - len(carry), runes: append([]rune(nil), carry...)})
+				width = cw
+			} else {
+				rows = append(rows, visualRow{start: i})
+				width = 0
+			}
+			last = &rows[len(rows)-1]
+		}
 		last.runes = append(last.runes, r)
 		width += rw
 	}
-	if e.cursor >= len(e.runes) {
-		at = len(rows) - 1
+	at := 0
+	for k := len(rows) - 1; k >= 0; k-- {
+		if rows[k].start <= e.cursor {
+			at = k
+			break
+		}
 	}
 	return rows, at
+}
+
+func wordCarry(row []rune) []rune {
+	for k := len(row) - 1; k >= 0; k-- {
+		if row[k] == ' ' {
+			return row[k+1:]
+		}
+	}
+	return row
 }
 
 // A newline drawn into a one-row view would desync the painter.
