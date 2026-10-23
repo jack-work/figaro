@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
@@ -269,5 +270,92 @@ func TestQuoteCardAtNarrowWidth(t *testing.T) {
 	}
 	if got := len(gutterRows(rows)); got != quoteBriefRows {
 		t.Fatalf("narrow shows %d rows of the passage, want %d:\n%s", got, quoteBriefRows, strings.Join(rows, "\n"))
+	}
+}
+
+// A quoted passage is a byte range of source, often code or tool output: it
+// keeps its line breaks and indentation instead of being reflowed as markdown,
+// which joined the lines of the code below into one paragraph.
+func TestQuoteCardKeepsTheLinesOfItsPassage(t *testing.T) {
+	m := quote.Mention{Body: "func (h *handlers) daemonForm(id string) *store.Form {\n\tswitch id {\n\tcase models.FormID:\n\t\treturn h.angelus.Models.Form()\n\t}\n\treturn nil\n}"}
+	got := quoteRows(m, 80, true)[1:]
+	want := []string{
+		"func (h *handlers) daemonForm(id string) *store.Form {",
+		"    switch id {",
+		"    case models.FormID:",
+		"        return h.angelus.Models.Form()",
+		"    }",
+		"    return nil",
+		"}",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows, want %d: %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if row := strings.TrimPrefix(stripANSI(got[i]), quoteGutter); row != want[i] {
+			t.Errorf("row %d = %q, want %q", i, row, want[i])
+		}
+	}
+}
+
+// Markdown fragments are shown as written: a dangling ** from a range that cut
+// a bold span must not swallow the rest of the passage.
+func TestQuoteCardWrapsUnderTheLinesIndent(t *testing.T) {
+	m := quote.Mention{Body: "0.** With SGD's weight decay\n    an indented line that is long enough to wrap at this width"}
+	got := quoteRows(m, 34, true)[1:]
+	want := []string{
+		"0.** With SGD's weight decay",
+		"    an indented line that is",
+		"    long enough to wrap at",
+		"    this width",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows, want %d: %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if row := strings.TrimPrefix(stripANSI(got[i]), quoteGutter); row != want[i] {
+			t.Errorf("row %d = %q, want %q", i, row, want[i])
+		}
+	}
+}
+
+func TestHangWrapNeverExceedsTheWidth(t *testing.T) {
+	for _, line := range []string{
+		"",
+		"short",
+		"averyveryveryveryverylongwordthatcannotfitanywhereatall and then some",
+		"        deeply indented text that wraps around a few times over and over",
+		"wide あいうえおかきくけこさしすせそ characters wrap too",
+		"   ",
+	} {
+		for _, w := range []int{1, 5, 12, 30} {
+			for _, row := range hangWrap(line, w) {
+				if n := displayWidth(row); n > w && utf8.RuneCountInString(strings.TrimSpace(row)) > 1 {
+					t.Errorf("hangWrap(%q, %d) row %q is %d cells", line, w, row, n)
+				}
+			}
+			joined := strings.Join(strings.Fields(strings.Join(hangWrap(line, w), " ")), "")
+			if want := strings.Join(strings.Fields(line), ""); joined != want {
+				t.Errorf("hangWrap(%q, %d) lost text: %q", line, w, joined)
+			}
+		}
+	}
+}
+
+// A prose passage is still markdown: its code spans are drawn as spans, not as
+// backticks, and each of its lines keeps its own row.
+func TestQuoteCardDrawsProseAsMarkdownLineByLine(t *testing.T) {
+	m := quote.Mention{Body: "Everything is still an empty `TODO(jack)` stub.\nA second line, kept apart."}
+	got := quoteRows(m, 80, true)[1:]
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2: %q", len(got), stripANSIAll(got))
+	}
+	for _, r := range got {
+		if strings.Contains(stripANSI(r), "`") {
+			t.Errorf("a code span drew its backticks: %q", stripANSI(r))
+		}
+	}
+	if !strings.Contains(stripANSI(got[0]), "TODO(jack)") || !strings.Contains(stripANSI(got[1]), "A second line") {
+		t.Errorf("rows %q", stripANSIAll(got))
 	}
 }
