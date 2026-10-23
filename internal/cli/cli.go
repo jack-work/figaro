@@ -1535,7 +1535,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "gc",
 		Group: "System",
-		Short: "Collect outfit versions nothing is using",
+		Short: "Collect outfit versions and form history nothing is using",
 		Usage: "gc [--dry-run] [-j|--json]",
 		Long: "An outfit is stored once per VERSION, content-addressed (<outfit>@<hash>):\n" +
 			"editing an outfit mints a new version the next time an aria is born\n" +
@@ -1544,6 +1544,11 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			"Collecting loses nothing: the version is content-addressed, so the next\n" +
 			"aria wanting that outfit re-mints the same id. Only versions with no\n" +
 			"arias under them are taken.\n\n" +
+			"It also drops a form's old history segments: a segment goes when no\n" +
+			"aria or form was born from a version inside it, and never the newest.\n" +
+			"Reads of the form's history below what is kept answer from its state\n" +
+			"instead. The daemon does the same hourly. [store] gc decides:\n" +
+			"\"dry-run\" (default) only reports, \"on\" drops, \"off\" skips.\n\n" +
 			"  figaro gc --dry-run   show what would go\n" +
 			"  figaro gc             take it",
 		Flags: []cmdkit.FlagDef{

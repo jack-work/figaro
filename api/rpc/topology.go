@@ -126,7 +126,6 @@ type ImportResponse struct {
 	WasID    string `json:"was_id,omitempty"`
 }
 
-// GCRequest collects outfit versions nothing is using.
 type GCRequest struct {
 	DryRun bool `json:"dry_run,omitempty"`
 }
@@ -140,11 +139,22 @@ type GCStump struct {
 	Err       string `json:"err,omitempty"`
 }
 
-// GCResponse lists every outfit version considered, in name order.
+type GCForm struct {
+	ID       string `json:"id"`
+	Pins     int    `json:"pins"`
+	Segments int    `json:"segments"`
+	Bytes    int64  `json:"bytes"`
+}
+
 type GCResponse struct {
 	Stumps    []GCStump `json:"stumps"`
 	Collected int       `json:"collected"`
 	DryRun    bool      `json:"dry_run,omitempty"`
+
+	Retention    string   `json:"retention,omitempty"`
+	Forms        []GCForm `json:"forms,omitempty"`
+	FormsPlanned bool     `json:"forms_planned,omitempty"`
+	FormsErr     string   `json:"forms_err,omitempty"`
 }
 
 type KillRequest struct {

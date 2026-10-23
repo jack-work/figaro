@@ -477,6 +477,14 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 	if !req.DryRun && resp.Collected > 0 {
 		slog.Info("collected outfit versions", "count", resp.Collected)
 	}
+	pass := h.angelus.retainForms(ctx, req.DryRun)
+	resp.Retention, resp.FormsPlanned = string(pass.Mode), pass.DryRun
+	if pass.Err != nil {
+		resp.FormsErr = pass.Err.Error()
+	}
+	for _, f := range pass.Forms {
+		resp.Forms = append(resp.Forms, rpc.GCForm{ID: f.ID, Pins: f.Pins, Segments: f.Dropped, Bytes: f.Bytes})
+	}
 	return resp, nil
 }
 

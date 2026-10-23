@@ -174,6 +174,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	go a.pidMonitor(ctx)
 	go a.keepReachable(ctx, pidPath)
 	go a.reclaims().run(ctx)
+	go a.retention(ctx)
 	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
 

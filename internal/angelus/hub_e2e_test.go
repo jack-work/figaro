@@ -62,10 +62,9 @@ model = "mock-model"
 // are built, which is when a daemon wires its catalogs.
 func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend)) (*angelus.Angelus, *sdk.Angelus, context.Context) {
 	t.Helper()
-	backend, err := store.NewXwalBackend(dir+"/arias", 0)
-	require.NoError(t, err)
-
 	loaded, err := config.Load(dir)
+	require.NoError(t, err)
+	backend, err := store.NewXwalBackend(dir+"/arias", loaded.SegmentSize())
 	require.NoError(t, err)
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend, Settings: loaded})
 	if setup != nil {

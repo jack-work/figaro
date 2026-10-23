@@ -289,6 +289,32 @@ skipped, because hitting a number is never worth killing a turn. It logs once
 per situation when it cannot be met, and exempts anything woken in the last
 minute.
 
+## Disk: form history retention
+
+Memory is residency (recency and budgets, above). Disk is retention:
+reachability, one collector, on its own goroutine (`angelus/retention.go`),
+five minutes after boot and hourly, never on the sweep loop.
+
+Unit: a sealed segment of an unbound form's `form` channel. Pins: for every
+child of the form (an aria or form born from it), its `.fork` base minus one,
+the last version it reads from the form. A segment holding no pin goes; the
+newest sealed segment and the active one never do. Pins are read and the
+drop made under one tracked read lock (`xwal.Trunks.Retain`), so no birth can
+land between them. Conversations, librettos and outfit stumps are not
+collected: translation and study windows still fold their patch ranges.
+
+A dropped middle segment leaves a `.hole` stub; reads inside it fail with
+`disk.ErrCompacted`, `Form.PatchFloor` reports the top of the highest hole,
+and `Form.StateAt` answers from the watermark of the segment holding the
+version. Detach and Export over a hole copy from the child's pin, not record 1.
+
+```toml
+[store]
+gc = "dry-run"   # default: log what would drop; "on" drops; "off" skips
+```
+
+`figaro gc [--dry-run]` prints the same plan next to the outfit versions.
+
 ## Seeing it
 
 `figaro doctor mem [-j]` reports live arias, resident handles, resident IR rows

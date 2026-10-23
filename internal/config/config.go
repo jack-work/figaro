@@ -136,6 +136,8 @@ type CLIConfig struct {
 type StoreConfig struct {
 	// SegmentSize bounds one WAL segment file in bytes; applies to new segments only. Default 2 MiB.
 	SegmentSize *int `toml:"segment_size"`
+
+	GC string `toml:"gc"`
 }
 
 // MemoryConfig tunes when the daemon reclaims an idle aria.
@@ -595,6 +597,25 @@ func (l *Loaded) Interactive() bool {
 		return true
 	}
 	return *l.cfg().CLI.Interactive
+}
+
+type Retention string
+
+const (
+	RetentionOff    Retention = "off"
+	RetentionDryRun Retention = "dry-run"
+	RetentionOn     Retention = "on"
+)
+
+func (l *Loaded) Retention() (Retention, error) {
+	switch r := Retention(l.cfg().Store.GC); r {
+	case "":
+		return RetentionDryRun, nil
+	case RetentionOff, RetentionDryRun, RetentionOn:
+		return r, nil
+	default:
+		return RetentionOff, fmt.Errorf("config: [store] gc must be \"off\", \"dry-run\" or \"on\", got %q", r)
+	}
 }
 
 func (l *Loaded) RefSigil() (string, error) {
