@@ -8,7 +8,6 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"charm.land/glamour/v2"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -97,30 +96,15 @@ func renderLocked(text string, width int) (string, error) {
 
 var (
 	rendererMu    sync.Mutex
-	rendererCache = map[int]*glamour.TermRenderer{}
+	rendererCache = map[int]*markdownRenderer{}
 )
 
 // Caller holds rendererMu, and keeps holding it across Render.
-func rendererForLocked(width int) *glamour.TermRenderer {
+func rendererForLocked(width int) *markdownRenderer {
 	if r, ok := rendererCache[width]; ok {
 		return r
 	}
-	// glamour v2 counts the dark style's 2-column margin inside the word-wrap
-	// budget, so WithWordWrap(width+2) lands rows at exactly width.
-	wrap := width + 2
-	if wrap < 1 {
-		wrap = 1
-	}
-	opts := []glamour.TermRendererOption{
-		glamour.WithStandardStyle("dark"),
-		glamour.WithWordWrap(wrap),
-		// Without it a cell taller than one line keeps its first line and loses the rest.
-		glamour.WithTableWrap(true),
-	}
-	r, err := glamour.NewTermRenderer(opts...)
-	if err != nil {
-		r, _ = glamour.NewTermRenderer(glamour.WithWordWrap(wrap))
-	}
+	r := newMarkdownRenderer(max(width+2, 1))
 	rendererCache[width] = r
 	return r
 }

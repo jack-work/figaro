@@ -1,0 +1,213 @@
+package render
+
+import (
+	"bytes"
+	"strconv"
+	"strings"
+
+	"charm.land/glamour/v2/ansi"
+	"charm.land/glamour/v2/styles"
+	"charm.land/lipgloss/v2"
+	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/yuin/goldmark"
+	gast "github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
+)
+
+const (
+	itemMark        = "\u2060"
+	paragraphMark   = "\u2063"
+	listMarkerCells = 3
+)
+
+var layoutMarks = strings.NewReplacer(itemMark, "", paragraphMark, "")
+
+func stripLayoutMarks(row string) string {
+	for _, mark := range []string{itemMark, paragraphMark} {
+		for at := strings.Index(row, mark); at >= 0; at = strings.Index(row, mark) {
+			from, to := at, at+len(mark)
+			if open := strings.LastIndex(row[:at], "\x1b["); open >= 0 && isSGR(row[open:at]) &&
+				strings.HasPrefix(row[to:], "\x1b[m") {
+				from, to = open, to+len("\x1b[m")
+			}
+			row = row[:from] + row[to:]
+		}
+	}
+	return row
+}
+
+func isSGR(seq string) bool {
+	return len(seq) >= 3 && seq[len(seq)-1] == 'm' && strings.Trim(seq[2:len(seq)-1], "0123456789;") == ""
+}
+
+type markdownRenderer struct {
+	md     goldmark.Markdown
+	marker xansi.Style
+}
+
+func newMarkdownRenderer(wrap int) *markdownRenderer {
+	st := styles.DarkStyleConfig
+	indent := uint(listMarkerCells)
+	st.List.StyleBlock.Indent = &indent
+	st.List.LevelIndent = listMarkerCells
+	st.Item.BlockPrefix = itemMark
+	st.Task.Ticked = itemMark
+	st.Task.Unticked = itemMark
+	st.Paragraph.Suffix = paragraphMark
+	tableWrap := true
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	)
+	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
+		ansi.NewRenderer(ansi.Options{WordWrap: wrap, TableWrap: &tableWrap, Styles: st}), 1000))))
+	var marker xansi.Style
+	if c := st.Document.Color; c != nil {
+		marker = marker.ForegroundColor(lipgloss.Color(*c))
+	}
+	return &markdownRenderer{md: md, marker: marker}
+}
+
+func (r *markdownRenderer) Render(md string) (string, error) {
+	source := []byte(layoutMarks.Replace(md))
+	doc := r.md.Parser().Parse(text.NewReader(source))
+	layout := layOutLists(doc)
+	var buf bytes.Buffer
+	if err := r.md.Renderer().Render(&buf, source, doc); err != nil {
+		return "", err
+	}
+	return layout.apply(buf.String(), r.marker), nil
+}
+
+type listLayout struct {
+	markers []string
+	keepGap []bool
+}
+
+func layOutLists(doc gast.Node) listLayout {
+	var items []*gast.ListItem
+	_ = gast.Walk(doc, func(n gast.Node, entering bool) (gast.WalkStatus, error) {
+		if item, ok := n.(*gast.ListItem); ok && entering {
+			items = append(items, item)
+		}
+		return gast.WalkContinue, nil
+	})
+	var l listLayout
+	for _, item := range items {
+		l.markers = append(l.markers, itemMarker(item))
+		hoistParagraphs(item)
+	}
+	for _, item := range items {
+		if list, ok := item.Parent().(*gast.List); ok {
+			list.Marker = '-'
+		}
+	}
+	_ = gast.Walk(doc, func(n gast.Node, entering bool) (gast.WalkStatus, error) {
+		if n.Kind() == gast.KindParagraph && entering {
+			l.keepGap = append(l.keepGap, !endsItemText(n))
+		}
+		return gast.WalkContinue, nil
+	})
+	return l
+}
+
+func itemMarker(item *gast.ListItem) string {
+	if text := item.FirstChild(); text != nil {
+		if box, ok := text.FirstChild().(*east.TaskCheckBox); ok {
+			if box.IsChecked {
+				return "[x]"
+			}
+			return "[ ]"
+		}
+	}
+	list, ok := item.Parent().(*gast.List)
+	if !ok || !list.IsOrdered() {
+		return "•"
+	}
+	n := list.Start
+	for s := item.PreviousSibling(); s != nil; s = s.PreviousSibling() {
+		n++
+	}
+	return strconv.Itoa(n) + string(list.Marker)
+}
+
+func hoistParagraphs(item *gast.ListItem) {
+	for c := item.FirstChild(); c != nil; {
+		next := c.NextSibling()
+		if k := c.Kind(); k != gast.KindTextBlock && k != gast.KindParagraph {
+			c = next
+			continue
+		}
+		follows := c.PreviousSibling() != nil
+		p := gast.NewParagraph()
+		p.SetLines(c.Lines())
+		for in := c.FirstChild(); in != nil; {
+			after := in.NextSibling()
+			p.AppendChild(p, in)
+			in = after
+		}
+		if box, ok := p.FirstChild().(*east.TaskCheckBox); ok {
+			holder := gast.NewTextBlock()
+			holder.AppendChild(holder, box)
+			item.InsertBefore(item, c, holder)
+		}
+		wrapper := gast.NewTextBlock()
+		if follows {
+			wrapper.AppendChild(wrapper, gast.NewTextBlock())
+		}
+		wrapper.AppendChild(wrapper, p)
+		item.ReplaceChild(item, c, wrapper)
+		c = next
+	}
+}
+
+func endsItemText(p gast.Node) bool {
+	wrapper := p.Parent()
+	if wrapper == nil || wrapper.Kind() != gast.KindTextBlock || wrapper.Parent() == nil ||
+		wrapper.Parent().Kind() != gast.KindListItem {
+		return false
+	}
+	next := wrapper.NextSibling()
+	return next == nil || next.Kind() == gast.KindList
+}
+
+func (l listLayout) apply(out string, marker xansi.Style) string {
+	rows := strings.Split(out, "\n")
+	kept := rows[:0]
+	item, para := 0, 0
+	for _, row := range rows {
+		gapEnds := false
+		for n := strings.Count(row, paragraphMark); n > 0; n-- {
+			if para < len(l.keepGap) && !l.keepGap[para] {
+				gapEnds = true
+			}
+			para++
+		}
+		if gapEnds && onlyRules(layoutMarks.Replace(row)) {
+			continue
+		}
+		if n := strings.Count(row, itemMark); n > 0 && item < len(l.markers) {
+			row = placeMarker(row, l.markers[item], marker)
+			item += n
+		}
+		kept = append(kept, stripLayoutMarks(row))
+	}
+	return strings.Join(kept, "\n")
+}
+
+func placeMarker(row, marker string, style xansi.Style) string {
+	at := strings.Index(row, itemMark)
+	col := xansi.StringWidth(row[:at])
+	label := marker + " "
+	from := max(col-xansi.StringWidth(label), 0)
+	return xansi.Truncate(row, from, "") + style.Styled(label) + xansi.TruncateLeft(row, col, "")
+}
+
+func onlyRules(row string) bool {
+	return strings.Trim(StripEscapes(row), " │") == ""
+}
