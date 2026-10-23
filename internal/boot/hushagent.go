@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/hush/managed"
 )
 
-var hushAgentMu sync.Mutex
+var hushAgentMu sync.RWMutex
 
 func ReviveHushAgent(h *managed.Hush) error {
 	hushAgentMu.Lock()

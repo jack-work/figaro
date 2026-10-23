@@ -142,3 +142,51 @@ func TestHushAgentGoneNamesOnlyTheAgentSocket(t *testing.T) {
 		t.Fatal("a missing file was read as the agent gone")
 	}
 }
+
+type blockingResolver struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingResolver) Resolve() (string, error) {
+	close(b.entered)
+	<-b.release
+	return "tok", nil
+}
+
+func (b *blockingResolver) Invalidate(string) error { return nil }
+
+// The agent is replaced under hushAgentMu. A resolve already talking to the
+// old agent must finish before the swap starts, or it reads a reset that no
+// retry recognises (#46's handover gap).
+func TestTheAgentSwapWaitsForAResolveInFlight(t *testing.T) {
+	inner := &blockingResolver{entered: make(chan struct{}), release: make(chan struct{})}
+	r := &revivingResolver{inner: inner, gone: func(error) bool { return false }, revive: func() error { return nil }}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := r.Resolve(); err != nil {
+			t.Error(err)
+		}
+	}()
+	<-inner.entered
+
+	swapped := make(chan struct{})
+	go func() {
+		hushAgentMu.Lock()
+		close(swapped)
+		hushAgentMu.Unlock()
+	}()
+	select {
+	case <-swapped:
+		t.Fatal("the swap began while a resolve was still using the agent")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(inner.release)
+	<-done
+	select {
+	case <-swapped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the swap never ran after the resolve finished")
+	}
+}

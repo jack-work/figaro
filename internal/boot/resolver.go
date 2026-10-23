@@ -285,24 +285,36 @@ type revivingResolver struct {
 }
 
 func (r *revivingResolver) Resolve() (string, error) {
-	tok, err := r.inner.Resolve()
+	tok, err := r.resolveHeld()
 	if err == nil || !r.gone(err) {
 		return tok, err
 	}
 	if rerr := r.revive(); rerr != nil {
 		return "", fmt.Errorf("%w (respawning the hush agent: %v)", err, rerr)
 	}
+	return r.resolveHeld()
+}
+
+func (r *revivingResolver) resolveHeld() (string, error) {
+	hushAgentMu.RLock()
+	defer hushAgentMu.RUnlock()
 	return r.inner.Resolve()
 }
 
 func (r *revivingResolver) Invalidate(token string) error {
-	err := r.inner.Invalidate(token)
+	err := r.invalidateHeld(token)
 	if err == nil || !r.gone(err) {
 		return err
 	}
 	if rerr := r.revive(); rerr != nil {
 		return fmt.Errorf("%w (respawning the hush agent: %v)", err, rerr)
 	}
+	return r.invalidateHeld(token)
+}
+
+func (r *revivingResolver) invalidateHeld(token string) error {
+	hushAgentMu.RLock()
+	defer hushAgentMu.RUnlock()
 	return r.inner.Invalidate(token)
 }
 
