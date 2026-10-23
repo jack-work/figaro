@@ -712,7 +712,33 @@ func NewMemForm() *Form {
 type xwalFormLog struct {
 	backend *XwalBackend
 	ariaID  string
+	base    uint64
 }
+
+func (l *xwalFormLog) Base() (form.Snapshot, uint64) {
+	l.base = 0
+	xw, err := l.backend.store.openNode(l.ariaID)
+	if err != nil {
+		return form.Snapshot{}, 0
+	}
+	defer xw.Close()
+	_, last, _ := xw.ChannelBounds(chanForm)
+	if last == 0 {
+		return form.Snapshot{}, 0
+	}
+	header, segBase, err := xw.SegmentHeaderAt(chanForm, last)
+	if err != nil || segBase <= 1 || len(header) == 0 {
+		return form.Snapshot{}, 0
+	}
+	snap := form.Snapshot{}
+	if err := snap.UnmarshalJSON(header); err != nil {
+		return form.Snapshot{}, 0
+	}
+	l.base = segBase - 1
+	return snap, l.base
+}
+
+func (l *xwalFormLog) Floor() uint64 { return 0 }
 
 func (l *xwalFormLog) AppendPatch(payload []byte) (uint64, error) {
 	return l.backend.store.trunks.Append(l.ariaID, chanForm, 0, payload, nil)
@@ -735,6 +761,9 @@ func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) er
 	first, last, _ := xw.ChannelBounds(chanForm)
 	if first == 0 && last > 0 {
 		first = 1
+	}
+	if from == 0 && l.base > 0 {
+		from = l.base + 1
 	}
 	if from > first {
 		first = from // start AT the range, not at the beginning of history
