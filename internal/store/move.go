@@ -83,6 +83,9 @@ func (b *XwalBackend) CommitImport(g *xwal.Graft, digest string, metas map[strin
 	}
 	for id, m := range decoded {
 		b.ttlNoted(id, m)
+		if kind, ok := b.store.trunks.Kind(id); ok && kind == string(kindForm) {
+			b.roleFromState(id)
+		}
 	}
 	return nil
 }

@@ -26,6 +26,9 @@ import (
 var _ Backend = (*XwalBackend)(nil)
 
 type XwalBackend struct {
+	rolesMu sync.Mutex
+	roles   roleIndex
+
 	root  string
 	store *XwalStore
 	moves *Moves
@@ -336,6 +339,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	// Registered where the form is opened, so every writer passes it.
 	opened.OnCommit(func(_ uint64, patch message.Patch) {
 		b.wroteTo(ariaID, time.Now().UnixMilli())
+		b.roleCommitted(ariaID, patch)
 		if namesOutfit(patch) {
 			b.labelChanged(ariaID)
 			b.mirrorFormLifetime(ariaID, opened.Read().Snapshot)
@@ -505,6 +509,11 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...Bir
 	b.dropForm(id)
 	if !bt.template {
 		b.lifetimeAtBirth(id)
+	}
+	if parent != "" {
+		b.roleFromState(id)
+	} else {
+		b.roleCommitted(id, patch)
 	}
 	return id, version, nil
 }
@@ -1097,6 +1106,7 @@ func (b *XwalBackend) buryAs(reason string, doomed []string) {
 		_ = os.Remove(b.metaPath(id))
 	}
 	b.ReapedForget(doomed...)
+	b.rolesForgotten(doomed)
 }
 
 // releaseStudies is best-effort: a delete is the recovery path for a broken
