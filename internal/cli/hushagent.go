@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jack-work/hush/client"
 
@@ -49,8 +52,39 @@ func retireHushAgent() (sock string, stopped bool, heldBy []string, err error) {
 	case hushAgentAlreadyGone(shutErr):
 		return sock, false, nil, nil
 	default:
-		return sock, false, nil, shutErr
+		if signalHushAgent(sock) {
+			return sock, true, nil, nil
+		}
+		return sock, false, nil, fmt.Errorf("%w: %v", errHushAgentStuck, shutErr)
 	}
+}
+
+var errHushAgentStuck = errors.New("it neither answered nor exited on a signal")
+
+func signalHushAgent(sock string) bool {
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(sock), "agent.pid"))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 0 || !pidAlive(pid) || !looksLikeHushAgent(pid) {
+		return false
+	}
+	killPid(pid, syscall.SIGTERM)
+	if waitForExit(pid, 3*time.Second) {
+		return true
+	}
+	killPid(pid, syscall.SIGKILL)
+	return waitForExit(pid, 2*time.Second)
+}
+
+func looksLikeHushAgent(pid int) bool {
+	exe, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	if err != nil {
+		return runtime.GOOS != "linux"
+	}
+	name := filepath.Base(strings.TrimSuffix(exe, " (deleted)"))
+	return name == "figaro" || name == "hush"
 }
 
 // otherLiveHushUsers prunes dead registrations. A recycled pid reads as
@@ -106,6 +140,8 @@ func hushAgentAlreadyGone(err error) bool {
 func reportRetiredHushAgent() {
 	sock, stopped, heldBy, err := retireHushAgent()
 	switch {
+	case errors.Is(err, errHushAgentStuck):
+		die("hush agent at %s did not shut down: %s", sock, err)
 	case err != nil:
 		fmt.Fprintf(stderrw, "hush agent at %s did not shut down: %s\n", sock, err)
 	case len(heldBy) > 0:
