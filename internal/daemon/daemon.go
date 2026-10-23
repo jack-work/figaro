@@ -3,7 +3,9 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -91,10 +93,18 @@ func keepHushAlive(ctx context.Context, h *managed.Hush) {
 	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
+	claimCheck := time.NewTicker(hushClaimCheck)
+	defer claimCheck.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-claimCheck.C:
+			if _, err := os.Stat(boot.HushClaimPath()); claimed && errors.Is(err, fs.ErrNotExist) {
+				claimed = false
+				slog.Warn("hush keep-alive: the agent claim was removed; claiming again")
+				claim()
+			}
 		case <-t.C:
 			renewed, err := boot.RenewHushAgent(h, 2*interval)
 			if err != nil {
@@ -108,6 +118,8 @@ func keepHushAlive(ctx context.Context, h *managed.Hush) {
 		}
 	}
 }
+
+const hushClaimCheck = 2 * time.Second
 
 func hushKeepAliveInterval(ttl time.Duration) time.Duration {
 	return min(max(ttl/3, time.Second), 5*time.Minute)
