@@ -1,6 +1,6 @@
 //go:build windows
 
-package daemon
+package boot
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func tryLockFile(f *os.File) error {
+func TryLockFile(f *os.File) error {
 	ol := new(windows.Overlapped)
 	return windows.LockFileEx(
 		windows.Handle(f.Fd()),

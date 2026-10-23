@@ -1,12 +1,12 @@
 //go:build !windows
 
-package daemon
+package boot
 
 import (
 	"os"
 	"syscall"
 )
 
-func tryLockFile(f *os.File) error {
+func TryLockFile(f *os.File) error {
 	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 }

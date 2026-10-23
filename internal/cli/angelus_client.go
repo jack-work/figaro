@@ -132,8 +132,8 @@ func ensureAngelus() {
 		}
 		switch {
 		case !deferred.IsZero() && time.Since(deferred) > incumbentGrace:
-			die("angelus stood down for another instance that never answered on %s%s",
-				boot.AngelusSocketPath(), startupDiagnosis())
+			die("angelus stood down for another instance that never answered on %s%s%s",
+				boot.AngelusSocketPath(), storeOwnerHint(), startupDiagnosis())
 		case time.Since(start) > startupHardCap:
 			die("angelus has not answered in %s%s", startupHardCap, startupDiagnosis())
 		}
@@ -283,4 +283,12 @@ func short12(s string) string {
 		return s[:12]
 	}
 	return s
+}
+
+func storeOwnerHint() string {
+	pid, held := boot.StoreLockOwner()
+	if !held || pid <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n  pid %d holds the store; `figaro stop` stops it", pid)
 }

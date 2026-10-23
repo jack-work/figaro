@@ -42,13 +42,14 @@ func lockStore() (*os.File, bool) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, false
 	}
-	f, err := os.OpenFile(filepath.Join(dir, ".daemon.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(boot.StoreLockPath(), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, false
 	}
 	deadline := time.Now().Add(lockHandoff)
 	for {
-		if err := tryLockFile(f); err == nil {
+		if err := boot.TryLockFile(f); err == nil {
+			boot.RecordStoreLockOwner(f)
 			return f, true
 		}
 		if incumbentAnswers() || time.Now().After(deadline) {

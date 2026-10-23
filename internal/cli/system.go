@@ -46,6 +46,10 @@ func runRestWithFlags(force, keepPIDs bool) {
 		fmt.Fprintf(stderrw, "persisted %d pid binding(s)\n", resp.Count)
 	} else if cli, err := sdk.DialAngelus(ep); err == nil {
 		cli.Close()
+	} else if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
+		fmt.Fprintf(stderrw, "angelus (pid %d) holds the store but does not answer on %s\n", owner, sockPath)
+		stopPid(owner, force, retireAgent)
+		return
 	} else {
 		// An agent outlives a daemon that was killed rather than stopped; the
 		// claim file is the daemon's record of the one it owned.
@@ -56,6 +60,10 @@ func runRestWithFlags(force, keepPIDs bool) {
 
 	pidBytes, err := os.ReadFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid"))
 	if err != nil {
+		if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
+			stopPid(owner, force, retireAgent)
+			return
+		}
 		os.Remove(sockPath)
 		fmt.Fprintln(stderrw, "angelus pid file missing; socket removed")
 		return
@@ -66,6 +74,11 @@ func runRestWithFlags(force, keepPIDs bool) {
 		fmt.Fprintln(stderrw, "angelus pid file unreadable; socket removed")
 		return
 	}
+	stopPid(pid, force, retireAgent)
+}
+
+func stopPid(pid int, force bool, retireAgent func()) {
+	sockPath := boot.AngelusSocketPath()
 
 	if force {
 		killPid(pid, syscall.SIGKILL)
@@ -86,8 +99,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 	}
 
 	// keepHushAlive would respawn anything retired while the daemon is up.
-	fmt.Fprintf(stderrw,
-		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
+	die("angelus (pid %d) did not rest within 15s; try `figaro rest --force`", pid)
 }
 
 func waitForExit(pid int, within time.Duration) bool {
