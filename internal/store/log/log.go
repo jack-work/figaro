@@ -341,6 +341,10 @@ func (l *Log) ForkRehome(atIdx uint64, name, oldFutureName string, rehome []stri
 
 // TruncateFront drops entries below beforeIdx on disk. Only this Log's
 // own entries are affected; parent entries are untouched.
+func (l *Log) DropSealed(keep func(first, last uint64) bool) (int, error) {
+	return l.inner.DropSealed(keep)
+}
+
 func (l *Log) TruncateFront(beforeIdx uint64) error {
 	if l.shared {
 		return ErrSharedMutation

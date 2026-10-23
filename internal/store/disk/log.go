@@ -3,14 +3,16 @@ package disk
 import (
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/internal/store/segment"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/jack-work/figaro/internal/store/segment"
 )
 
 const (
@@ -828,11 +830,20 @@ func (l *Log) loadSegments() error {
 		return err
 	}
 	var bases []uint64
+	holes := map[uint64]bool{}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
+		if seg, ok := isHoleName(name, l.ext); ok {
+			base, err := parseSegName(seg, l.ext)
+			if err != nil {
+				return fmt.Errorf("bad hole name %q: %w", name, err)
+			}
+			holes[base] = true
+			continue
+		}
 		if !strings.HasSuffix(name, l.ext) {
 			for _, other := range knownExts {
 				if other != l.ext && strings.HasSuffix(name, other) {
@@ -845,6 +856,15 @@ func (l *Log) loadSegments() error {
 		base, err := parseSegName(name, l.ext)
 		if err != nil {
 			return fmt.Errorf("bad segment name %q: %w", name, err)
+		}
+		bases = append(bases, base)
+	}
+	for base := range holes {
+		if slices.Contains(bases, base) {
+			if err := os.Remove(filepath.Join(l.dir, l.segName(base))); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("finish dropping segment %d: %w", base, err)
+			}
+			continue
 		}
 		bases = append(bases, base)
 	}
@@ -869,7 +889,9 @@ func (l *Log) loadSegments() error {
 			l.active = s
 			break
 		}
-		l.sealed = append(l.sealed, newSealed(base, bases[i+1]-1, path))
+		ss := newSealed(base, bases[i+1]-1, path)
+		ss.hole = holes[base]
+		l.sealed = append(l.sealed, ss)
 	}
 	return l.reseedEmptyActiveHeader()
 }

@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -12,6 +13,7 @@ type sealedSeg struct {
 	base uint64
 	last uint64
 	path string
+	hole bool
 
 	once sync.Once
 	seg  atomic.Pointer[segment.Segment]
@@ -99,6 +101,9 @@ func searchSealed(sealed []*sealedSeg, idx uint64) int {
 
 // openSealed is open() with the log's own codec and header mode.
 func (l *Log) openSealed(ss *sealedSeg) (*segment.Segment, error) {
+	if ss.hole {
+		return nil, fmt.Errorf("%w: [%d, %d] in %s", ErrCompacted, ss.base, ss.last, l.dir)
+	}
 	return ss.open(l.codec, l.opts.OnSegmentOpen != nil)
 }
 
