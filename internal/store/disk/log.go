@@ -160,7 +160,12 @@ func Open(dir string, opts Options) (*Log, error) {
 		// prefix (Detach) writes segments below it, and reads under the base
 		// still delegate to the parent, which serves identical bytes. Only a
 		// marker claiming data that starts later than it says is a defect.
-		if firstBase > base {
+		front, _, ferr := readIndexFile(dir, frontName)
+		if ferr != nil {
+			_ = l.Close()
+			return nil, ferr
+		}
+		if firstBase > base && firstBase > front {
 			_ = l.Close()
 			return nil, fmt.Errorf("%w: marker=%d firstSegment=%d",
 				ErrForkMismatch, base, firstBase)
@@ -374,6 +379,11 @@ func (l *Log) TruncateFront(beforeIdx uint64) error {
 	if len(l.sealed) == 0 {
 		return nil
 	}
+	if l.forkBase > 0 {
+		if err := l.recordFrontLocked(beforeIdx); err != nil {
+			return err
+		}
+	}
 	kept := make([]*sealedSeg, 0, len(l.sealed))
 	dropped := 0
 	for _, ss := range l.sealed {
@@ -399,6 +409,23 @@ func (l *Log) TruncateFront(beforeIdx uint64) error {
 		"droppedSegments", dropped,
 		"remainingSealed", len(l.sealed))
 	return syncDir(l.dir)
+}
+
+func (l *Log) recordFrontLocked(beforeIdx uint64) error {
+	var front uint64
+	for _, ss := range l.sealed {
+		if ss.LastIndex() >= beforeIdx {
+			front = ss.BaseIndex()
+			break
+		}
+	}
+	if front == 0 && l.active != nil {
+		front = l.active.BaseIndex()
+	}
+	if front <= l.forkBase {
+		return nil
+	}
+	return writeIndexFile(l.dir, frontName, front)
 }
 
 func (l *Log) Dir() string { return l.dir }
@@ -909,7 +936,10 @@ func (l *Log) DropPayloadCache() {
 	}
 }
 
-const truncatePendingName = ".truncate-pending"
+const (
+	truncatePendingName = ".truncate-pending"
+	frontName           = ".front"
+)
 
 // The cut is planned on disk first and Open finishes a planned cut, so a
 // crash shows either the old tail or the cut.
@@ -1035,13 +1065,21 @@ func (l *Log) rewriteSegment(path string, base, keep uint64) error {
 }
 
 func writeTruncatePending(dir string, fromIdx uint64) error {
-	path := filepath.Join(dir, truncatePendingName)
+	return writeIndexFile(dir, truncatePendingName, fromIdx)
+}
+
+func readTruncatePending(dir string) (uint64, bool, error) {
+	return readIndexFile(dir, truncatePendingName)
+}
+
+func writeIndexFile(dir, name string, idx uint64) error {
+	path := filepath.Join(dir, name)
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
-	if _, err := f.WriteString(strconv.FormatUint(fromIdx, 10)); err != nil {
+	if _, err := f.WriteString(strconv.FormatUint(idx, 10)); err != nil {
 		f.Close()
 		return err
 	}
@@ -1058,8 +1096,8 @@ func writeTruncatePending(dir string, fromIdx uint64) error {
 	return syncDir(dir)
 }
 
-func readTruncatePending(dir string) (uint64, bool, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, truncatePendingName))
+func readIndexFile(dir, name string) (uint64, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, name))
 	if os.IsNotExist(err) {
 		return 0, false, nil
 	}
@@ -1068,7 +1106,7 @@ func readTruncatePending(dir string) (uint64, bool, error) {
 	}
 	idx, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
 	if err != nil {
-		return 0, false, fmt.Errorf("%s: %w", truncatePendingName, err)
+		return 0, false, fmt.Errorf("%s: %w", name, err)
 	}
 	return idx, true, nil
 }

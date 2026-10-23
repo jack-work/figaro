@@ -203,6 +203,34 @@ func (x *XWAL) TruncateFrom(channelName string, channelLT uint64) error {
 	return nil
 }
 
+func (x *XWAL) TruncateFront(channelName string, beforeLT uint64) error {
+	if err := x.ensurePrivate(); err != nil {
+		return err
+	}
+	ch := x.channel(channelName)
+	if ch == nil {
+		return fmt.Errorf("xwal: no channel %q", channelName)
+	}
+	if channelName == x.main {
+		return fmt.Errorf("xwal: the main channel is append-only")
+	}
+	l, err := ch.Log()
+	if err != nil {
+		return err
+	}
+	if l.Absent() {
+		return nil
+	}
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	if err := l.TruncateFront(beforeLT); err != nil {
+		return err
+	}
+	ch.fk = map[uint64]uint64{}
+	ch.fkBuilt, ch.fkScan, ch.fkNext, ch.fkFloor = false, false, 0, 0
+	return nil
+}
+
 type ChannelInfo struct {
 	Name    string
 	Kind    Kind

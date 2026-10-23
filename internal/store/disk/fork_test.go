@@ -564,3 +564,45 @@ func TestForkOldFutureNameValidations(t *testing.T) {
 		t.Fatal("expected error on multiple override args")
 	}
 }
+
+// A fork that drops its own front still opens: the marker says where the
+// parent hands over, the front file says where the fork's own data now starts.
+func TestTruncateFrontOnAForkReopens(t *testing.T) {
+	_, root := forkSetup(t, segment.BinaryCodec{}, 3, 3)
+	child, err := root.Fork(root.LastIndex()+1, "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	childDir := child.Dir()
+	opts := Options{SegmentSize: 80 * 3, Codec: segment.BinaryCodec{}}
+	for i := uint64(4); i <= 30; i++ {
+		if err := child.Write(i, []byte(fmt.Sprintf("data%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cut := child.active.BaseIndex()
+	if cut <= 4 {
+		t.Fatal("expected the child to rotate")
+	}
+	if err := child.TruncateFront(cut); err != nil {
+		t.Fatal(err)
+	}
+	child.Close()
+	root.Close()
+
+	reopened, err := Open(childDir, opts)
+	if err != nil {
+		t.Fatalf("reopen after front truncation: %v", err)
+	}
+	defer reopened.Close()
+	got, err := reopened.Read(30)
+	if err != nil || string(got) != "data30" {
+		t.Fatalf("read 30 = %q, %v", got, err)
+	}
+	if _, err := reopened.Read(cut - 1); err == nil {
+		t.Fatal("a dropped record was read, from the parent or anywhere")
+	}
+	if got, err := reopened.Read(2); err != nil || string(got) != "data2" {
+		t.Fatalf("the parent's records still read through: %q, %v", got, err)
+	}
+}
