@@ -18,8 +18,8 @@ comment PgUp half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=fa
 comment Home top off:top fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 compose inert off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 compose 0x1b cancel off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
-compose 0x2f search off:same fol=true srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
-compose 0x3f search-back off:same fol=true srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
+compose 0x2f search off:bottom fol=true srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
+compose 0x3f search-back off:bottom fol=true srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 compose 0x46 fullscreen off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 compose 0x67 prefix:g off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=g sel=false exp=0 jmp=true jq="" vis=none pit=none
 confirm inert off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none

@@ -9,13 +9,9 @@ import (
 )
 
 func (t *transcript) footLines() []string {
-	rows := t.inputDrawerLines()
+	rows := t.drawerLines()
 	if rows == nil {
-		if !t.pit.open() {
-			return nil
-		}
-		t.pit.full = t.fullPit()
-		rows = t.pit.lines(t.w, t.pitRoom())
+		return nil
 	}
 	// Fullscreen is the pit and nothing else: no rule, no page position.
 	if t.fullPit() {
@@ -67,14 +63,33 @@ func (t *transcript) pitRoom() int {
 
 // Without re-entering footLines, which calls transcriptRule, which would call this.
 func (t *transcript) layoutNow() (body, maxOff int) {
-	foot := 0
-	if rows := t.inputDrawerLines(); rows != nil {
-		foot = len(rows)
-	} else if t.pit.open() {
+	return t.layout(len(t.drawerLines()) + 1)
+}
+
+func (t *transcript) drawerLines() []string {
+	rows := t.inputDrawerLines()
+	if rows == nil {
+		if !t.pit.open() {
+			return nil
+		}
 		t.pit.full = t.fullPit()
-		foot = len(t.pit.lines(t.w, t.pitRoom()))
+		return t.pit.lines(t.w, t.pitRoom())
 	}
-	return t.layout(foot + 1)
+	if t.inSearch {
+		return append(t.searchedLines(len(rows)), rows...)
+	}
+	return rows
+}
+
+func (t *transcript) searchedLines(reserve int) []string {
+	switch {
+	case t.box == boxComposer:
+		return t.boxLines(reserve)
+	case t.pit.open():
+		t.pit.full = t.fullPit()
+		return t.pit.lines(t.w, max(t.pitRoom()-reserve, 1))
+	}
+	return nil
 }
 
 func padTo(s string, n int) string {
@@ -133,6 +148,29 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 	return stanza[0], stanza[1:]
 }
 
+// The prompt is the editor's: under ^R it reads `(reverse-i-search)`. The box
+// wraps on the pit's page; the drawer may take the pane (F), the command line
+// may not.
+func (t *transcript) boxLines(reserve int) []string {
+	e := t.editor()
+	rows := t.composerTitle()
+	room := max(min(t.boxRows(), t.pitRoom()-reserve)-len(rows), 1)
+	if t.fullPit() {
+		room = max(t.pitRoom()-reserve-len(rows), 1)
+	}
+	lo, hi := -1, -1
+	if from, to, ok := t.composerSpan(); ok {
+		lo, hi = from, to
+	}
+	rows = append(rows, e.wrapWash(e.prompt(t.boxSigil()), t.w, room, lo, hi)...)
+	if t.box == boxComposer && t.fullPit() {
+		for len(rows) < room {
+			rows = append(rows, "")
+		}
+	}
+	return rows
+}
+
 func (t *transcript) inputDrawerLines() []string {
 	var rows []string
 	switch {
@@ -147,25 +185,7 @@ func (t *transcript) inputDrawerLines() []string {
 		}
 		rows = []string{pitGray(clipToWidth(sigil+t.query, t.w))}
 	case t.box != boxNone:
-		// The prompt is the editor's: under ^R it reads
-		// `(reverse-i-search)`. The box wraps on the pit's page; the
-		// drawer may take the pane (F), the command line may not.
-		e := t.editor()
-		rows = t.composerTitle()
-		room := max(min(t.boxRows(), t.pitRoom())-len(rows), 1)
-		if t.fullPit() {
-			room = max(t.pitRoom()-len(rows), 1)
-		}
-		lo, hi := -1, -1
-		if from, to, ok := t.composerSpan(); ok {
-			lo, hi = from, to
-		}
-		rows = append(rows, e.wrapWash(e.prompt(t.boxSigil()), t.w, room, lo, hi)...)
-		if t.box == boxComposer && t.fullPit() {
-			for len(rows) < room {
-				rows = append(rows, "")
-			}
-		}
+		rows = t.boxLines(0)
 	default:
 		return nil
 	}
