@@ -443,7 +443,7 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
 	}}}}, aria.Notify)
 	tr.render()
-	if len(tr.index.entries) != 1 || tr.index.entries[0].sep {
+	if len(tr.index.entries) != 1 || tr.index.entries[0].seam != seamNone {
 		t.Fatalf("single message must not carry a separator: %+v", tr.index.entries)
 	}
 	assertWindowMatchesLegacy(t, tr, 3)

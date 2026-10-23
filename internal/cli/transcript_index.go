@@ -17,7 +17,7 @@ type lineEntry struct {
 	// the viewport anchor must tell them apart.
 	key   sliceKey
 	start int
-	sep   bool // preceded by the ""/rule separator pair
+	seam  entrySeam
 	open  bool // the live message, re-rendered every frame
 	rows  []transcriptRow
 	// A gap entry has no rows: it renders as exactly one row, synthesized per
@@ -27,15 +27,25 @@ type lineEntry struct {
 
 func (e *lineEntry) isGap() bool { return e.gap != nil }
 
-// A blank, then the rule, with the next message's voice header directly beneath.
-const sepRows = 2
+type entrySeam uint8
 
-func (e *lineEntry) sepHeight() int {
-	if e.sep {
-		return sepRows
+const (
+	seamNone entrySeam = iota
+	seamSlice
+	seamTurn
+)
+
+func (s entrySeam) rows() int {
+	switch s {
+	case seamSlice:
+		return 1
+	case seamTurn:
+		return 2
 	}
 	return 0
 }
+
+func (e *lineEntry) sepHeight() int { return e.seam.rows() }
 
 func (e *lineEntry) height() int {
 	if e.isGap() {
@@ -177,15 +187,19 @@ func (t *transcript) rebuildIndex(live *aria.Message) {
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
-	// lineEntry.height is the one authority on height; a separator marks a
-	// turn boundary, not an entry boundary, since a long turn is delivered in
-	// slices.
-	prevTurn := -1
+	prevTurn, turnDrawn := -1, false
 	add := func(turn int, key sliceKey, rows []transcriptRow, open bool, gap *aria.Gap) {
-		sep := total > 0 && turn != prevTurn
+		seam := seamNone
+		switch {
+		case total > 0 && turn != prevTurn:
+			seam, turnDrawn = seamTurn, false
+		case turnDrawn && (len(rows) > 0 || open):
+			seam = seamSlice
+		}
 		prevTurn = turn
+		turnDrawn = turnDrawn || len(rows) > 0
 		e := lineEntry{
-			turn: turn, key: key, start: total, sep: sep,
+			turn: turn, key: key, start: total, seam: seam,
 			open: open, rows: rows, gap: gap,
 		}
 		entries = append(entries, e)
@@ -414,14 +428,11 @@ func (t *transcript) lineAt(i int) string {
 // Decoration happens at paint time, not into rowCache: the cue is a function of
 // the selection, which changes far more often than the rows.
 func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSpan) string {
-	if e.sep {
-		// The one place the separator's rows are named rather than counted.
-		switch rel {
-		case 0:
-			return ""
-		case 1:
+	if rel < e.sepHeight() {
+		if rel == 1 {
 			return t.transRule()
 		}
+		return ""
 	}
 	rel -= e.sepHeight()
 	if e.isGap() {

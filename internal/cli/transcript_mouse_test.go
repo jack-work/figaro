@@ -324,7 +324,7 @@ func TestFrameRefsAlignWithPaintedRows(t *testing.T) {
 // The gap sentinel has no rows at all.
 func TestRowRefsSkipSeparatorsAndGaps(t *testing.T) {
 	e := &lineEntry{
-		turn: 3, sep: true, start: 10,
+		turn: 3, seam: seamTurn, start: 10,
 		rows: []transcriptRow{
 			{text: "header"},
 			{text: "body", ref: nodeRef{turn: 3, index: 0}},
@@ -336,13 +336,13 @@ func TestRowRefsSkipSeparatorsAndGaps(t *testing.T) {
 	if got := e.refAt(1); got.valid() {
 		t.Errorf("separator rule resolved to %+v", got)
 	}
-	if got := e.refAt(sepRows); got.valid() {
+	if got := e.refAt(seamTurn.rows()); got.valid() {
 		t.Errorf("voice header row resolved to %+v", got)
 	}
-	if got := e.refAt(sepRows + 1); got != (nodeRef{turn: 3, index: 0}) {
+	if got := e.refAt(seamTurn.rows() + 1); got != (nodeRef{turn: 3, index: 0}) {
 		t.Errorf("node row resolved to %+v", got)
 	}
-	if got := e.refAt(sepRows + 2); got.valid() {
+	if got := e.refAt(seamTurn.rows() + 2); got.valid() {
 		t.Errorf("past the last row resolved to %+v", got)
 	}
 

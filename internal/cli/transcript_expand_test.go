@@ -373,11 +373,15 @@ func TestSeparatorOnlyAtATurnBoundary(t *testing.T) {
 
 	var seps, entries int
 	byTurn := map[int]int{}
-	for _, e := range tr.index.entries {
+	for k, e := range tr.index.entries {
 		entries++
 		byTurn[e.turn]++
-		if e.sep {
+		if e.seam == seamTurn {
 			seps++
+		}
+		if k > 0 && e.turn == tr.index.entries[k-1].turn && e.seam != seamSlice {
+			t.Errorf("slice %d continues turn %d with seam %d: its first node sits directly "+
+				"under the previous slice's last row", k, e.turn, e.seam)
 		}
 	}
 	if byTurn[9] < 2 {
