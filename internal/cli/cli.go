@@ -324,7 +324,7 @@ new always mints. To go home instead, ` + "`figaro attend null`" + ` drops this
 shell's binding: which is what bare ` + "`new`" + ` used to do, a second spelling
 of another verb sitting on the obvious meaning of this one.
 
-The outfit is the aria's BIRTH outfit here: the stump it is spawned under,
+The outfit is the aria's BIRTH outfit here: the outfit version it is spawned under,
 which is what ` + "`figaro ls`" + ` shows in the OUTFIT column. It defaults to
 config.toml's default_outfit. See ` + "`figaro help outfits`" + ` for the spec syntax.
 
@@ -1424,15 +1424,15 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "gc",
 		Group: "System",
-		Short: "Collect outfit stumps nothing is using",
+		Short: "Collect outfit versions nothing is using",
 		Usage: "gc [--dry-run] [-j|--json]",
-		Long: "An outfit stump is content-addressed (<outfit>@<hash>), so one exists\n" +
-			"per outfit VERSION: editing an outfit mints a new stump the next time an\n" +
-			"aria is born under it. Killing an aria collects its stump when it was the\n" +
+		Long: "An outfit is stored once per VERSION, content-addressed (<outfit>@<hash>):\n" +
+			"editing an outfit mints a new version the next time an aria is born\n" +
+			"under it. Killing an aria collects its version when it was the\n" +
 			"last child, so `gc` is the sweep for versions that predate that.\n\n" +
-			"Collecting loses nothing: the stump is content-addressed, so the next aria\n" +
-			"wanting that outfit re-mints the same id. Only stumps with no arias under\n" +
-			"them are taken.\n\n" +
+			"Collecting loses nothing: the version is content-addressed, so the next\n" +
+			"aria wanting that outfit re-mints the same id. Only versions with no\n" +
+			"arias under them are taken.\n\n" +
 			"  figaro gc --dry-run   show what would go\n" +
 			"  figaro gc             take it",
 		Flags: []cmdkit.FlagDef{

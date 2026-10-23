@@ -47,7 +47,7 @@ func runGC(loaded *config.Loaded, dryRun, jsonOut bool) {
 		}
 
 		if len(resp.Stumps) == 0 {
-			fmt.Fprintln(stderrw, "no outfit stumps in this store")
+			fmt.Fprintln(stderrw, "no outfit versions in this store")
 			return nil
 		}
 
@@ -68,12 +68,12 @@ func runGC(loaded *config.Loaded, dryRun, jsonOut bool) {
 		fmt.Fprintln(stderrw)
 		switch {
 		case resp.DryRun && resp.Collected == 0:
-			fmt.Fprintf(stderrw, "%d stump(s), none collectable\n", len(resp.Stumps))
+			fmt.Fprintf(stderrw, "%d version(s), none collectable\n", len(resp.Stumps))
 		case resp.DryRun:
-			fmt.Fprintf(stderrw, "%d of %d stump(s) would be collected · run `figaro gc` to do it\n",
+			fmt.Fprintf(stderrw, "%d of %d version(s) would be collected · run `figaro gc` to do it\n",
 				resp.Collected, len(resp.Stumps))
 		default:
-			fmt.Fprintf(stderrw, "collected %d of %d stump(s)\n", resp.Collected, len(resp.Stumps))
+			fmt.Fprintf(stderrw, "collected %d of %d version(s)\n", resp.Collected, len(resp.Stumps))
 		}
 		return nil
 	})

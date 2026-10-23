@@ -12,7 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// librettoPrefix carries "::", which an outfit stump ("@" + a hex hash) cannot.
+// librettoPrefix carries "::", which an outfit version ("@" + a hex hash) cannot.
 const librettoPrefix = "@libretto::"
 
 // Under system. because a whole-form mirror copies the source's keys verbatim;

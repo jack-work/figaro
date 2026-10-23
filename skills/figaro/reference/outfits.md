@@ -4,8 +4,7 @@ The model behind every place an outfit can be named. Read it when you are
 composing outfits, when `-O` did not do what you expected, or before changing
 anything under `internal/outfit`.
 
-> **Stumps are dead.** The sections below that speak of stumps and
-> content-addressed birth describe the pre-forms world; the primitive is now
+> **Older than forms.** The sections below on content-addressed birth describe the pre-forms world; the primitive is now
 > the unbound FORM, and `reference/forms.md` is the current model. What remains
 > true here is the outfit grammar, the resolver, and how dressing travels.
 
@@ -108,8 +107,8 @@ Which is the point of overriding rather than layering: what you named is what
 you get, including its gaps.
 
 The layering rule that used to be here expired with the grammar. In 0.22.x
-`-O` still took `k=v` terms and was folded into the stump, so `-O mantra=x`
-minted a private stump per literal and defeated the sharing stumps exist for.
+`-O` still took `k=v` terms and was folded into the outfit version, so `-O mantra=x`
+minted a private version per literal and defeated the sharing versions exist for.
 The fix then was to move `-O` to the child, which made it additive as a side
 effect. `-O` has since become NAMES ONLY (keys travel on `-S`), so a named
 closure is shared by name and content version like any other and belongs back
@@ -260,9 +259,9 @@ overrides them by name.
 
 ## What makes two births the same outfit
 
-The stump id is `<label>@<version>`, and the **version is the identity**: the
-canonical hash (keys sorted, no whitespace, numbers by value) of the birth
-record the stump writes, minus the version field, which cannot cover its own
+An outfit version's id is `<label>@<version>`, and the **version is the identity**: the
+canonical hash (keys sorted, no whitespace, numbers by value) of its birth
+record, minus the version field, which cannot cover its own
 hash. Everything is decoded and re-marshalled on the way in, so formatting
 never reaches it.
 
@@ -286,24 +285,24 @@ reading, the version IS the identity.
 label carried a `{}` to say one was present. That grammar is gone: `-O` takes
 names, `-S` takes data, and a `k=v` passed to `-O` is now refused by name. The
 paragraphs above were written against the old spelling and have been corrected
-to the new one; the stump-versus-child economy described earlier in this file
+to the new one; the version-versus-child economy described earlier in this file
 is the part to trust about WHICH patch a term lands in.)*
 
 Two outfits with identical bodies and different NAMES stay two outfits, because
 the name is hashed with the body, a listing that reported an aria under a name
-nobody asked for would be worse than a duplicate stump.
+nobody asked for would be worse than a duplicate version.
 
 Content decides sameness; the label in the id is a readable restatement of what
 the hash already covers, and it renders a literal as something no name may
 contain, so a stamp carrying one cannot be re-resolved by accident.
 
 Change one byte of an outfit file and the next birth hashes differently, so it
-mints a new stump; arias already under the old one stay there, and `figaro ls`
+mints a new version; arias already under the old one stay there, and `figaro ls`
 shows their version instead of `live`.
 
 ## The label is a UI concern; the hash is the value
 
-`figaro ls`'s OUTFIT column names the **stump** an aria was born under, read
+`figaro ls`'s OUTFIT column names the **outfit version** an aria was born under, read
 from the topology. It is not `system.outfit_name`. That key still rides the
 form, where the agent can see it (and change it: the form is
 mutable by design), but nothing structural reads it: a `set system.outfit_name
@@ -312,32 +311,17 @@ what the version is re-resolved against, report an unchanged outfit as stale in
 the same breath.
 
 So a row's outfit is immutable for the life of the aria, and a fork keeps its
-parent's: the branch is under the same stump. An aria spawned under the root
-with no stump carries no outfit rather than borrowing one, and an outfit with
+parent's: the branch is under the same outfit version. An aria spawned under the root
+with no outfit carries no outfit rather than borrowing one, and an outfit with
 no names in it displays as `{}` with its hash in the VER column.
 
-## Stumps and `gc`
+## Outfit versions and `gc`
 
-One stump exists per outfit VERSION, so editing an outfit mints a new stump the
-next time an aria is born under it. Killing an aria collects its stump when it
-was the last child; `figaro gc` sweeps the versions that predate that.
-Collecting loses nothing: the stump is content-addressed, so the next aria
+One outfit version exists per content hash, so editing an outfit mints a new
+version the next time an aria is born under it. Killing an aria collects its
+version when it was the last child; `figaro gc` sweeps the versions that
+predate that. Collecting loses nothing: the version is content-addressed, so the next aria
 wanting that outfit re-mints the same id.
-
-## Where this is going
-
-A stump is very nearly a **cast object** already: a durable reducible thing an
-aria observes. The difference is one rule, a stump cannot be patched, only
-forked, and that rule is what makes content-addressing work. Minting an aria
-becomes "fork a cast object; the fork backs the figaro, the object keeps its
-own history".
-
-So the vocabulary settles as: an outfit is a named **spec**; a spec
-materializes as a cast object; a cast object is a **stump** when it is closed
-to patches and an ordinary object when it is not; a stump can be used as a spec
-in turn. Stump versioning stays a separate axis from an object's history, a
-new version is a whole new stump, because no version can be produced *from*
-one.
 
 ## Source
 

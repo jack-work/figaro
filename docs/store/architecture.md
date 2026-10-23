@@ -282,7 +282,7 @@ forever and never migrated (the JSONL `_hash` covers the payload, so old
 bytes stand).
 
 "When was this node last written" is answered by `Trunks.LastTS(trunk)`
-(and `StumpLastTS(name)` for legacy stumps), designed for the consumer
+(and `StumpLastTS(name)` for legacy forms), designed for the consumer
 that asks it N times per listing:
 
 - **The counter outlives the handle.** `Trunks` owns a registry of

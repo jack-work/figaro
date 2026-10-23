@@ -260,7 +260,7 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)
 		return
 	}
-	// The outfit is the stump the aria was born under, not the mutable
+	// The outfit is the outfit version the aria was born under, not the mutable
 	// system.outfit_name and not the presentation parent a promote moves.
 	if n.Outfit != "" {
 		entry.OutfitName = n.Outfit

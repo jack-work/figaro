@@ -454,7 +454,7 @@ func (in *interactiveInput) attendParentFromPager() {
 			}
 			break
 		}
-		// A top-level aria's parent is its outfit stump, which attend refuses.
+		// A top-level aria's parent is its outfit version, which attend refuses.
 		if parent == "" || strings.HasPrefix(parent, "@") {
 			return id + " has no parent aria: it is top-level", nil
 		}

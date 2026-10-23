@@ -8,9 +8,9 @@ for what shipped, and the differences below before changing either.
 ## What shipped, and where it differs from this design
 
 - **The home is a reserved STUMP** (`@topology`), not an unbound form node.
-  A stump is the one node figwal names by a string the caller chooses, so
-  the form needs no marker file and no lookup, and it cannot be forked or
-  bound. An unbound form node would have needed client-specified trunk ids,
+  A stump is a form that cannot be forked or branched; figwal names its
+  node by a string the caller chooses (`CreateStump`), so the form needs no
+  marker file and no lookup, and it cannot be bound either. An unbound form node would have needed client-specified trunk ids,
   which figwal does not have yet (and which Gluck wants for other reasons:
   see `history:plans/answers-forms.md` §2). `listStumps` filters it out, or the
   hierarchy grows a row describing itself.

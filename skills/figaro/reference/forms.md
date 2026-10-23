@@ -9,7 +9,7 @@ hex id is a figaro, which IS its bound form. Nothing ever converts
 between the two: **binding forks**, and the form goes on living.
 
 ```
-null form ──fork──▶ unbound forms ──fork+aria_id──▶ figaros
+null form ──mint──▶ unbound forms ──fork+aria_id──▶ figaros
 ```
 
 `state` and `form` are one command; both spellings work everywhere.
@@ -140,7 +140,7 @@ marker); the resolver checks it before anything else.
 
 | verb | `null` | unbound form `@x` | figaro (bound form) |
 |---|---|---|---|
-| `fig form new` | forks it (that is what new is) | `form fork @x` duplicates | **refused**: "not an unbound form" |
+| `fig form new` | mints under it (that is what new is) | `form fork @x` duplicates | **refused**: "not an unbound form" |
 | `fig bind` | naked figaro | figaro inheriting `@x` | refused (use `fig fork`) |
 | `fig fork` |: | `form fork` | conversation fork (as ever) |
 | `fig set` / `unset` |: | writes, wake-free | live: reminder next turn; dormant: wake-free |
@@ -246,7 +246,7 @@ are properties *of* one. Nothing mints them, nothing forks them, and no
 `figaro set` reaches them.
 
 The nearest neighbour is the **libretto** — also a derived form with exactly
-one source, and refcounted, stumped and durable. The difference is the whole
+one source, refcounted and durable. The difference is the whole
 distinction:
 
 > A libretto is written down. An intrinsic form is only ever live.

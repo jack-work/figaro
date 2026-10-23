@@ -9,13 +9,14 @@ family in `internal/cli`. If you want to USE forms, read
 Spec of record: `history:plans/forms-and-roles-v2.md`. This file is the distilled
 design, kept current with the code.
 
-## 1. One primitive, one verb, nothing converts
+## 1. One primitive, nothing converts
 
 ```
-null form ──fork+patch──▶ unbound form ──fork+patch⊇{aria_id}──▶ figaro
+null form ──mint+patch──▶ unbound form ──fork+patch⊇{aria_id}──▶ figaro
 ```
 
-- **Null form** is the ur-form: the store's root, empty state, markerless.
+- **Null form** is the ur-form: the store's root, empty state, markerless. It is a
+  stump: it cannot be forked or branched.
   Unattendance is attendance of null. Whether the pid map records a null
   binding or an absence is an implementation detail.
 - **Unbound form** carries kind `form` in the figwal node marker. Patchable,
@@ -33,14 +34,15 @@ a node whose species changed under it, and the marker would need a write
 path. Binding forks instead, so kind is decided once, at node creation, and
 the index can read it without opening heads.
 
-The special case inventory is CLOSED. Null is the only special node. The
+The special case inventory is CLOSED. The stumps, null and `@topology`, are
+the only special nodes: neither can be forked or branched. The
 only other distinctions are bound versus unbound, and cast versus uncast.
 A change that adds a third kind is a change to this design, not an
 implementation detail.
 
 ## 2. Identity
 
-Unbound forms mint with the `@` sigil. Bound forms have none. Legacy stump
+Unbound forms mint with the `@` sigil. Bound forms have none. Legacy outfit-version
 ids (`@<hash>`, `<name>@<hash>`) already read as form ids, so they simply
 ARE legacy forms: bindable as-is, no rename, no id migration.
 
@@ -163,7 +165,7 @@ the agent's opens, both in-daemon and actor-serialized.
 
 `ForkTail` is continuation: the child keeps the trunk id, because the aria
 id IS the trunk id. Binding and form-forking need the spawn-beneath shape
-instead, generalized from stumps to arbitrary form nodes. This is the
+instead, generalized from outfit versions to arbitrary form nodes. This is the
 sharpest store-level edge in the whole design; a change here is a change to
 lineage, listings and recency at once.
 
@@ -178,7 +180,7 @@ a specific way: any per-row read that opens a node turns a listing into a
 scan. One did, once, and cost +6784% at 300 arias.
 
 GC collects forms that are unreferenced AND unbound AND not the default.
-Legacy stumps stay readable and are listed as legacy.
+Legacy outfit versions stay readable and are listed as legacy.
 
 ## 8. Observation is pull at the stamp
 
@@ -216,7 +218,7 @@ them:
 - What each event SAYS beyond the fact is `system.study_incantation` on the
   observer's own bound form. See §8c.
 - **Every studied form now has a LIBRETTO**, `@libretto::<formid>`: a derived
-  form on a reserved stump holding a COPY of the studied state, shared by
+  form on a reserved named node holding a COPY of the studied state, shared by
   every observer, refcounted, never listed and never forked. `study` retains
   it before the bound form declares the study; `drop` releases it after the bound form
   stops claiming one; fork retains for the child before the child exists and

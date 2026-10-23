@@ -394,12 +394,12 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 			return stump, nil
 		}
 		if rerr := s.trunks.RemoveStump(stump); rerr != nil {
-			return "", fmt.Errorf("xwal store: half-minted stump %s: %w", stump, rerr)
+			return "", fmt.Errorf("xwal store: half-minted outfit version %s: %w", stump, rerr)
 		}
 		break
 	}
 	if err := s.trunks.CreateStump(stump); err != nil {
-		return "", fmt.Errorf("xwal store: create outfit stump: %w", err)
+		return "", fmt.Errorf("xwal store: create outfit version: %w", err)
 	}
 	// The birth message renders the form patch as the outfit's
 	// <system-reminder> blocks once in this shared prefix, inherited by every
@@ -416,7 +416,7 @@ func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch
 	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation), births(opts))
 }
 
-// CreateForm: parent "" forks the null root, a form parent duplicates its
+// CreateForm: parent "" spawns under the null root, a form parent duplicates its
 // state into a fresh @id. No atMainLT: a form's timeline is one ceremonial
 // record. A conversation parent is refused; a bound form's fork is the aria's
 // fork, through ForkWith.
@@ -651,7 +651,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	if glt != next {
 		// Nothing else may write to a stump; if this fires, the patch is keyed
 		// to a record that does not exist.
-		return fmt.Errorf("xwal store: stump %s birth record landed at %d, bound form patch keyed to %d",
+		return fmt.Errorf("xwal store: %s birth record landed at %d, form patch keyed to %d",
 			stump, glt, next)
 	}
 	// Durable before conversations spawn under the stump: a crash between
@@ -1071,7 +1071,7 @@ func (s *XwalStore) collectStump(name string) {
 			return // still hosting arias; nothing to collect
 		}
 		if err := s.trunks.RemoveStump(name); err != nil {
-			slog.Warn("collect outfit stump", "stump", name, "err", err)
+			slog.Warn("collect outfit version", "outfit", name, "err", err)
 		}
 		return
 	}

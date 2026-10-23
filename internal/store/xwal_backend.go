@@ -439,7 +439,7 @@ func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, 
 	return f.ApplyEffectIntent(patch, ifVersion, intent)
 }
 
-// ForkWith is the one birth verb: `fig new` forks the null root, `fig fork`
+// ForkWith is the one birth verb: `fig new` spawns under the null root, `fig fork`
 // forks an aria, and the patch is the child's identity.
 func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
 	// Every path that gives a bound form a copy is a refcount participant; this is
@@ -490,7 +490,7 @@ func (b *XwalBackend) RecordBaseTurn(trunk string, baseLT, turn uint64, exact bo
 	return b.store.trunks.SetBranchedTurn(trunk, baseLT, turn, exact)
 }
 
-// CreateForm: `fig form new` forks the null root, `fig form fork` duplicates
+// CreateForm: `fig form new` spawns under the null root, `fig form fork` duplicates
 // a form. Same form-cache hygiene as ForkWith.
 func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
 	id, version, err := b.store.CreateForm(parent, patch, opts...)

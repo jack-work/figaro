@@ -18,7 +18,7 @@ type CreateResponse struct {
 	FigaroID string `json:"figaro_id"`
 }
 
-// FormCreateRequest mints an unbound form. Parent "" forks the null root; a
+// FormCreateRequest mints an unbound form. Parent "" spawns under the null root; a
 // form id duplicates that form's state. Patch is required.
 type FormCreateRequest struct {
 	Parent  string     `json:"parent,omitempty"`
@@ -79,8 +79,8 @@ type NormalizeResponse struct {
 	Unsupported bool `json:"unsupported,omitempty"`
 }
 
-// PromoteRequest climbs a trunk Levels stump-bounded levels, absorbing its
-// parent trunk's run.
+// PromoteRequest climbs a trunk up to Levels levels, absorbing its
+// parent trunk's run; it stops at the outfit version or root it was born under.
 type PromoteRequest struct {
 	FigaroID string `json:"figaro_id"`
 	Levels   int    `json:"levels,omitempty"`
@@ -114,7 +114,7 @@ type ImportResponse struct {
 	WasID    string `json:"was_id,omitempty"`
 }
 
-// GCRequest collects outfit stumps nothing is using.
+// GCRequest collects outfit versions nothing is using.
 type GCRequest struct {
 	DryRun bool `json:"dry_run,omitempty"`
 }
@@ -128,7 +128,7 @@ type GCStump struct {
 	Err       string `json:"err,omitempty"`
 }
 
-// GCResponse lists every stump considered, in name order.
+// GCResponse lists every outfit version considered, in name order.
 type GCResponse struct {
 	Stumps    []GCStump `json:"stumps"`
 	Collected int       `json:"collected"`

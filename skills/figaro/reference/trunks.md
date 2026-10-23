@@ -24,13 +24,13 @@ Node ids are pure plumbing; nothing in the CLI ever addresses them.
 ## The outfit tree (the policy layer)
 
 figaro derives three node kinds from XWAL topology: the markerless root is
-`null`, markerless depth-one stumps are outfits, and live trunks are
+`null`, markerless depth-one named nodes are outfits, and live trunks are
 conversations. The full tree, top to bottom:
 
 - **null**: the genesis root, **one per store** (`xwal.CreateTrunks`).
   Ceremonial, **closed**. Pure structure.
 - **outfit** (`name@content-hash`), a named `CreateStump` child of null;
-  **one per distinct outfit name + content-version**, deduped by its stump
+  **one per distinct outfit name + content-version**, deduped by its node
   name. Each carries that outfit's form stamp baked once
   into a **shared prefix**: `system.outfit_name`/`system.outfit_version`,
   plus the whole outfit form: `skills.*`, `system.credo`,
@@ -46,7 +46,7 @@ parent is an outfit, a root of the conversation forest. A **branch** is a
 conversation whose parent is another conversation. (Both are `kindConversation`
 on disk; the distinction is lineage.)
 
-**Cauterization:** the null root and outfit stumps are **closed**: you can't
+**Cauterization:** the null root and outfit versions are **closed**: you can't
 append to or continue them; they're structure, not conversation. Forking or
 sending "at" a cauterized trunk does *not* re-split it: it spawns a **fresh
 child conversation** beneath it instead (`ForkAt` redirects through
@@ -252,7 +252,7 @@ PRESENTATION says where a row is drawn and what a delete warns about. They
 start identical; a promote is the only thing that parts them.
 
 Promotion stops at the outfit boundary. Only conversations nest, so an
-outfit stump and the genesis root are never reparented under an aria: a
+outfit version and the genesis root are never reparented under an aria: a
 top-level conversation has nothing above it to promote into and is refused
 ("cannot promote into an outfit"), with a nudge toward making or editing an
 outfit instead. `promote <id> 10` on an aria three levels deep climbs three
@@ -289,8 +289,9 @@ repair, because a repair cannot be taken back.
 
 ## The trunk state IS a form
 
-The presentation lives in the **topology form**: a form on the reserved
-stump `@topology`, one per store and so 1:1 with the angelus that owns it.
+The presentation lives in the **topology form**: a reserved stump,
+`@topology`: it cannot be forked or branched. One per store, and so 1:1 with
+the angelus that owns it.
 It holds OVERRIDES, never a full tree, so a lost topology form degrades to
 "draw every aria where its history puts it" rather than to a wrong tree.
 

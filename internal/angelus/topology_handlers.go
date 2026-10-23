@@ -449,7 +449,7 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 	}
 	sort.Slice(resp.Stumps, func(i, j int) bool { return resp.Stumps[i].ID < resp.Stumps[j].ID })
 	if !req.DryRun && resp.Collected > 0 {
-		slog.Info("collected outfit stumps", "count", resp.Collected)
+		slog.Info("collected outfit versions", "count", resp.Collected)
 	}
 	return resp, nil
 }

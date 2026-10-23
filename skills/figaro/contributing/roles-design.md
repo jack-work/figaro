@@ -67,7 +67,7 @@ writer to set `target-aria`. That is safe by `store.Form`'s contract: the
 form writer does I/O and nothing else, and never calls back.
 
 With `-O` or `-S` the role is MINTED by the call, born already cast: the
-fork of the null form carries `outfit ⊕ {target-aria: me}` in its birth
+birth under the null form carries `outfit ⊕ {target-aria: me}` in its birth
 patch, so there is no separate patch step to half-fail. If the figaro had to
 be minted first and the role fork then failed, the response says so in
 words, and `-j` carries both outcomes.

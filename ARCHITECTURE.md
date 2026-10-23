@@ -274,7 +274,7 @@ reaches.
 
 `figaro.move {figaro_id, to}` changes the home of a fork tree: every
 conversation sharing history with the named aria (its parent chain up to the
-outfit stump, and every fork below). The caller needs `kill` on each aria
+outfit version, and every fork below). The caller needs `kill` on each aria
 here; the new home checks `create` and `use` on each aria's sandbox under the
 same bearer. Any aria of the tree with a turn in flight or queued refuses the
 move; otherwise the tree's agents are hibernated and its ids answer as moving

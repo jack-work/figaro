@@ -19,7 +19,7 @@ type LineageLink struct {
 
 type LineageResponse struct {
 	// Chain is root first, ending in FigaroID. The genesis root and the
-	// outfit stump are not in it.
+	// outfit version are not in it.
 	Chain   []LineageLink `json:"chain,omitempty"`
 	Against []LineageLink `json:"against,omitempty"`
 	// Ancestor is empty when the two share nothing.

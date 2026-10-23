@@ -29,7 +29,7 @@ spread across the node dirs along its path.
 ├── xwal.json                  channel manifest (main=ir, codec=jsonl, reducers)
 ├── ir/                        the MAIN channel = the fork-node tree (the IR log)
 │   ├── <NNN>.jsonl            root node's IR segments (figwal NDJSON)
-│   ├── <outfit>@<hash>/      markerless outfit stump
+│   ├── <outfit>@<hash>/      markerless outfit version
 │   ├── n0/                    a fork child: .fork (base index) + its own segments
 │   │   ├── .fork
 │   │   ├── .trunk

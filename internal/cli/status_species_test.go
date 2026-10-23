@@ -18,7 +18,7 @@ func TestStatusNamesTheSpecies(t *testing.T) {
 		{"a figaro", rpc.FigaroInfoResponse{ID: "abc12345", Kind: "conversation"}, "figaro"},
 		{"a plain form", rpc.FigaroInfoResponse{ID: "@a1b2c3d4", Kind: "form"}, "form"},
 		{"a role", rpc.FigaroInfoResponse{ID: "@a1b2c3d4", Kind: "form", TargetAria: "abc12345"}, "role"},
-		{"a legacy stump", rpc.FigaroInfoResponse{ID: "sonn5@deadbeef", Kind: "outfit"}, "form (legacy outfit stump)"},
+		{"a legacy outfit version", rpc.FigaroInfoResponse{ID: "sonn5@deadbeef", Kind: "outfit"}, "form (legacy outfit version)"},
 		{"kindless, by sigil", rpc.FigaroInfoResponse{ID: "@a1b2c3d4"}, "form"},
 	} {
 		if got := speciesOf(&tc.row); got != tc.want {

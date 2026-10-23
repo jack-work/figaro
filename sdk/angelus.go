@@ -79,7 +79,7 @@ func (c *Angelus) Create(ctx context.Context, outfits []string, patch *rpc.FormP
 	return &resp, err
 }
 
-// FormCreate mints an unbound form. Parent "" forks the null root; a form id
+// FormCreate mints an unbound form. Parent "" spawns under the null root; a form id
 // duplicates that form. The response's endpoint is live before the call returns.
 func (c *Angelus) FormCreate(ctx context.Context, parent string, outfits []string, patch *rpc.FormPatch) (*rpc.FormCreateResponse, error) {
 	var resp rpc.FormCreateResponse
@@ -125,7 +125,7 @@ func (c *Angelus) Configure(ctx context.Context, req rpc.ConfigureRequest) (*rpc
 	return &resp, err
 }
 
-// GC collects outfit stumps nothing is using; DryRun reports without removing.
+// GC collects outfit versions nothing is using; DryRun reports without removing.
 func (c *Angelus) GC(ctx context.Context, dryRun bool) (*rpc.GCResponse, error) {
 	var resp rpc.GCResponse
 	err := c.call(ctx, rpc.MethodGC, rpc.GCRequest{DryRun: dryRun}, &resp)
@@ -151,7 +151,7 @@ func (c *Angelus) Normalize(ctx context.Context, segments bool) (*rpc.NormalizeR
 	return &resp, nil
 }
 
-// Promote climbs a trunk up `levels` stump-bounded levels; <= 0 means one.
+// Promote climbs a trunk up `levels` levels, stopping at the outfit version or root it was born under; <= 0 means one.
 func (c *Angelus) Promote(ctx context.Context, figaroID string, levels int) (*rpc.PromoteResponse, error) {
 	var resp rpc.PromoteResponse
 	err := c.call(ctx, rpc.MethodPromote, rpc.PromoteRequest{FigaroID: figaroID, Levels: levels}, &resp)

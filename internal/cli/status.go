@@ -197,7 +197,7 @@ func speciesOf(f *rpc.FigaroInfoResponse) string {
 	case f.TargetAria != "":
 		return "role"
 	case f.Kind == "outfit":
-		return "form (legacy outfit stump)"
+		return "form (legacy outfit version)"
 	default:
 		return "form"
 	}

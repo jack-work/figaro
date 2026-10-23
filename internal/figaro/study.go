@@ -172,7 +172,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 	res := castResult{roleID: op.roleID}
 
 	if op.rolePatch != nil {
-		// Fork the null form with target-aria set, so there is no separate patch step to half-fail.
+		// Mint under the null form with target-aria set, so there is no separate patch step to half-fail.
 		b, _ := json.Marshal(a.id)
 		cast := form.Merge(*op.rolePatch, form.Build(form.Snapshot{},
 			map[string]json.RawMessage{"target-aria": b}, nil))

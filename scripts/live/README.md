@@ -4,7 +4,7 @@ Each of these starts a real daemon against a real store and drives real
 verbs. They exist because **a green unit suite is not evidence about the
 product**: between them they found nine bugs during the state-layer work
 (session 3), and four of those were in the direction that loses data, a
-libretto stump drawn in `fig ls`, a fork entry point the CLI uses and the
+libretto node drawn in `fig ls`, a fork entry point the CLI uses and the
 tests did not, a repair command that declined to repair, a study of a deleted
 form that could not be dropped after a restart.
 
@@ -13,7 +13,7 @@ lost. They are here so the next person has them.
 
 | script | what it drives | what it caught |
 |---|---|---|
-| `studylive.sh` | study, fork, drop, `doctor librettos` on a fresh store | the libretto stump appearing in `ls -g`; `ForkWith` missing the refcount participant |
+| `studylive.sh` | study, fork, drop, `doctor librettos` on a fresh store | the libretto node appearing in `ls -g`; `ForkWith` missing the refcount participant |
 | `renderlive.sh` | what the MODEL is sent, from the wire dump: deltas, machinery, and the death | the studied block frozen at its first version on every real turn; a studied form's DEATH never reaching the model at all |
 | `restartlive.sh` | a studied form across a daemon restart | a study window closed by an assistant record, losing the change permanently |
 | `realstudy.sh` | the same against a COPY OF THE REAL STORE (715 rows) | the migration: eleven pre-existing studies with no libretto |

@@ -60,7 +60,7 @@ can diverge into two branches that share an immutable prefix. The storage substr
 wrapper **xwal** (which forks several parallel logs: the IR, the form, the
 translation caches: together as one unit), and figwal's **`xwal.Trunks`** forest layer
 (nodes + trunks + heads on disk). figaro stacks only *policy* on top: a null root →
-outfit stumps → conversation trunks. The **trunk** is the thing humans and the API
+outfit versions → conversation trunks. The **trunk** is the thing humans and the API
 address: its id is the aria id, **stable across forks** (the continuation keeps it) -
 while the per-fork **node id** (`n0/n1/…`) is pure plumbing, never addressed.
 
@@ -152,7 +152,7 @@ is the trunk id per node, kept in a **`.trunk` marker** in each node's `ir/` dir
   the create path for both outfits and conversations.
 - `ForkTail(trunk)` / `ForkAt(trunk, atMainLT)` branch; the **continuation keeps the
   trunk id**, the alternative is the returned new id. `Owner(id, atMainLT)` resolves
-  which root, stump, or trunk owns an interior LT.
+  which root, outfit version, or trunk owns an interior LT.
 - `Head(trunk) → *XWAL` opens the trunk's live writable leaf. `Remove(trunk, recursive)`
   deletes a trunk and (with `recursive`) its subtree. `List()` returns live trunks;
   closed ones aren't listed.
@@ -164,16 +164,16 @@ With the forest in figwal, figaro keeps **only policy**. `XwalStore`
 interface.
 
 - **`nodeKind`**: `null` | `outfit` | `conversation`. It is derived from XWAL
-  topology: the markerless root is null, markerless depth-one stumps are
+  topology: the markerless root is null, markerless depth-one named nodes are
   outfits, and live trunks are conversations.
-- There is no policy side-file. Outfit stump names (`name@version`) provide
+- There is no policy side-file. Outfit version names (`name@version`) provide
   durable identity and deduplication.
 - **The full tree (four layers):**
   - **`null`**: the genesis root, **one per store** (`xwal.CreateTrunks`). Ceremonial,
     **closed**. Pure structure.
-  - **`outfit(name@content-hash)` stumps**: `CreateStump`, **one per distinct
+  - **`outfit(name@content-hash)` versions**: `CreateStump`, **one per distinct
     outfit name + content-version** (content-versioned via `segment.ValueHash` over the
-    stable outfit patch, dedup'd by its `name@version` stump name). Each carries a
+    stable outfit patch, dedup'd by its `name@version` node name). Each carries a
     renderable `RoleUser` birth message stamping that outfit's form: `skills.*`,
     `system.credo`, `system.model`, the `keyOutfitName`/`keyOutfitVer` stamp: baked
     **once** into a shared prefix. **Closed.**
@@ -182,7 +182,7 @@ interface.
     is an outfit is a **top-level aria** (a root of the conversation forest).
   - **branches**: forks of conversations; a conversation whose parent is *another
     conversation*. (Still `kindConversation`; the distinction is lineage.)
-- **Cauterization** (`cauterized` = kind is null or outfit): the root and outfit stumps are
+- **Cauterization** (`cauterized` = kind is null or outfit): the root and outfit versions are
   **closed**: you can't append to or continue them; they are structure, not conversation.
   A fork/send "at" a cauterized trunk does **not** re-split it: `Fork`/`ForkAt` redirect to
   `SpawnChild(owner)`, a fresh child conversation: instead of `ForkTail`/`ForkAt`. This
@@ -319,22 +319,22 @@ the RPC does with it.
 | `attend <id>` / `:<turn>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
 | `attend null` |: | unbind (go home); next conversation defaults to the live outfit |
 | `kill <trunk>` |: | remove trunk + subtree (`-r` for live branches) |
-| `send` *unattended* / `new` | resolve default/named outfit stump | spawn a conversation under it, send |
+| `send` *unattended* / `new` | resolve default/named outfit version | spawn a conversation under it, send |
 
-### 4.4 Outfits are cauterized stumps; create = spawn under an outfit
-- An outfit **version** is its own ceremonial stump (one per `name@content-version`), and is
+### 4.4 Outfits are cauterized nodes; create = spawn under an outfit
+- An outfit **version** is its own ceremonial node (one per `name@content-version`), and is
   **closed**: forking/sending "at" it never re-splits it: it **spawns a new child
   conversation** (cauterization). A conversation inherits the outfit's full form
   (`skills.*`, `system.credo`, `system.model`, the outfit name/version stamp).
 - `fig new`, `fig new -O <spec>`, and `fig send --` *with nothing attended* all resolve a
-  outfit stump → spawn a conversation under it → bind → send (`CreateOutfit` dedups by
+  outfit version → spawn a conversation under it → bind → send (`CreateOutfit` dedups by
   content version; `CreateConversation` = `SpawnUnderStump(outfit)`).
 - Form-key completion falls back to the **default outfit** when no aria is bound.
 
 ### 4.5 Outfit materialization
 - Outfits materialize **lazily** on first create (`CreateOutfit`): the stable outfit patch
-  is content-hashed (`segment.ValueHash`); a matching `name@version` stump is reused, a new
-  hash mints a new outfit stump. Old versions stick around unchanged. (An eager
+  is content-hashed (`segment.ValueHash`); a matching `name@version` version is reused, a new
+  hash mints a new outfit version. Old versions stick around unchanged. (An eager
   bootstrap/`outfit reload` action remains a possible future refinement, not a current
   command.)
 
@@ -348,7 +348,7 @@ the RPC does with it.
   shown, never addressed.
 - **An LT is a trunk-relative position** (figwal main-LT), continuous across the trunk's node
   chain: `1`=genesis, `2`=outfit birth, `3+`=conversation turns. `send`/`fork`/`attend`
-  the resolved LT tells which root, stump, or trunk owns it (`Owner`); `show` labels each
+  the resolved LT tells which root, outfit version, or trunk owns it (`Owner`); `show` labels each
   **turn** by its turn id, which is the `:N` a fork takes: no realignment needed.
 - **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The scopes, the views,
   the cap, the columns and the JSON escape hatch are specified once, in
@@ -364,16 +364,16 @@ the RPC does with it.
 
 **Shipped** (the whole trunk pass):
 - **The forest lives in figwal** (`xwal.Trunks`): nodes/trunks/heads/forks/LTs on disk, disk
-  as the sole source of truth. The markerless root and named outfit stumps make separate
+  as the sole source of truth. The markerless root and named outfit versions make separate
   policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: fork-then-send and plain append are the same codepath, discriminated
   by whether the address carries a turn. The gesture semantics of `send`, `fork`, `attend`
   and `kill` are owned by [trunks.md](../reference/trunks.md) and are not repeated here.
-- **Cauterization**: the null root and outfit stumps are closed: forking/sending "at"
+- **Cauterization**: the null root and outfit versions are closed: forking/sending "at"
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
-- **The four-layer outfit tree**: `null` → content-versioned **outfit** stumps (dedup'd by
+- **The four-layer outfit tree**: `null` → content-versioned **outfit** versions (dedup'd by
   `name@version`) → **top-level arias** (conversations under an outfit) → **branches** (forks
   of conversations); conversations inherit the outfit form.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,

@@ -23,9 +23,9 @@ fig set --id @a1b2c3 target-aria <id>  # now it's a ROLE: fig send @a1b2c3 reach
 
 ## The mental model, three lines
 
-    null form ── fork+patch ──▶ any form ── fork+patch ──▶ figaro
+    null form ── mint+patch ──▶ any form ── fork+patch ──▶ figaro
 
-- **Forks only, nothing converts.** `fig new` itself is sugar: bind the
+- **Nothing converts.** `fig new` itself is sugar: bind the
   daemon's *default form* (minted from your default outfit, reused so
   every aria shares one rendered prefix, and one warm provider cache).
 - **One id namespace.** A figaro is addressed by its bound form's id;

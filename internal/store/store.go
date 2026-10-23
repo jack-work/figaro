@@ -157,7 +157,7 @@ type Backend interface {
 	SetObservedForms(ariaID string, formIDs []string)
 
 	// ForkWith forks a node and lands a patch on the child in one critical
-	// section. parent == "" forks the null root.
+	// section. parent == "" spawns under the null root.
 	ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (child string, version uint64, err error)
 
 	// CreateForm mints an unbound form from the null root ("") or another
