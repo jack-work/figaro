@@ -80,8 +80,6 @@ func (t *Trunks) Detach(node string) error {
 	return t.rebuild()
 }
 
-// absorbPrefix copies [1, base) out of the parent chain into dir as ONE
-// segment based at 1, streaming straight from the read.
 func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) error {
 	if base <= 1 {
 		return nil
@@ -94,18 +92,26 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 		return err
 	}
 	defer os.Remove(tmpName)
+	from, header := uint64(1), initial
+	if initial != nil && src.Floor() > 0 {
+		h, segBase, err := src.SegmentHeaderAt(base - 1)
+		if err != nil {
+			return err
+		}
+		from, header = segBase, h
+	}
 	// maxSize 0: unbounded, so the whole prefix lands in this one segment.
-	seg, err := segment.Create(tmpName, codec, 1, 0)
+	seg, err := segment.Create(tmpName, codec, from, 0)
 	if err != nil {
 		return err
 	}
-	if initial != nil {
-		if err := seg.WriteHeader(initial); err != nil {
+	if header != nil {
+		if err := seg.WriteHeader(header); err != nil {
 			seg.Close()
 			return err
 		}
 	}
-	rerr := src.Range(1, func(idx uint64, payload []byte) error {
+	rerr := src.Range(from, func(idx uint64, payload []byte) error {
 		if idx >= base {
 			return errStopRange
 		}
@@ -123,7 +129,12 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	if err := seg.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, filepath.Join(dir, segFileName(1, codec))); err != nil {
+	if from > 1 {
+		if err := disk.StubHole(dir, segFileName(1, codec)); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(tmpName, filepath.Join(dir, segFileName(from, codec))); err != nil {
 		return err
 	}
 	return disk.SyncDir(dir)
