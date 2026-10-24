@@ -161,3 +161,48 @@ func TestYankKey_ListRowNameAndID(t *testing.T) {
 }
 
 var _ sync.Locker = (*sync.Mutex)(nil)
+
+// A failed copy left a flag that sent every later 'y' to the aria's name, with
+// nothing on screen to say why: one failure broke yanking for the session.
+func TestYankKey_AfterAFailedCopyStillCopiesTheSelection(t *testing.T) {
+	reader := &stubHistoryReader{history: transcriptHistory(120)}
+	tc := newRecordingTerminal()
+	in := newSearchInteractiveInput(reader, tc.searchInputTerminal)
+	in.tc = tc
+	in.figaroID = "aria-99"
+
+	in.mu.Lock()
+	in.lt.tr.selectNode(-1, false)
+	plan, active := in.lt.transcriptSelectionPlan()
+	in.copyFailed = true
+	in.copyFailedLo, in.copyFailedHi = plan.lo, plan.hi
+	in.mu.Unlock()
+	if !active {
+		t.Fatal("failed to seed selection")
+	}
+
+	done := make(chan struct{})
+	go func() { in.run(); close(done) }()
+	tc.send([]byte{'y'})
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if s, _ := tc.clipboard.Load().(string); s != "" && s != "aria-99" {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("after a failed copy, y yanked %q instead of the selection", tc.clipboard.Load())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	in.mu.Lock()
+	note := in.lt.tr.status.noticeText()
+	in.mu.Unlock()
+	if !strings.HasPrefix(note, "yanked ") {
+		t.Errorf("a finished copy says nothing: notice %q", note)
+	}
+
+	tc.send([]byte{0x04})
+	waitSignal(t, done, "input loop exit")
+}

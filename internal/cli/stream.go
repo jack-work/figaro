@@ -1028,7 +1028,11 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 			return keyHandled
 		}
 		plan, selected := in.lt.transcriptSelectionPlan()
-		if selected && in.copyCancel == nil && !in.copyFailed {
+		if selected && in.copyCancel != nil {
+			in.mu.Unlock()
+			return keyHandled
+		}
+		if selected {
 			copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			in.copyGen++
 			gen := in.copyGen
@@ -1140,11 +1144,14 @@ func (in *interactiveInput) copySelection(ctx context.Context, cancel context.Ca
 	}
 	if err == nil {
 		in.copyFailed = false
+		in.lt.tr.noteYank(text)
 		in.tc.SetClipboard(text)
 	} else {
 		in.copyFailed = true
 		in.copyFailedLo, in.copyFailedHi = plan.lo, plan.hi
+		in.lt.tr.setCommandNoteAt("yank failed: "+err.Error(), alertError)
 	}
+	in.lt.render()
 	in.mu.Unlock()
 }
 
