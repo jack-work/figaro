@@ -125,7 +125,7 @@ func TestStickyRuleJoinsOnlyTheNextRowsGutter(t *testing.T) {
 			t.Fatalf("fixture has no gutter below the rule: %q", below)
 		}
 		rule := stripANSI(head[len(head)-1])
-		if !strings.HasPrefix(rule, "──┬─") || displayWidth(rule) != width {
+		if !strings.HasPrefix(rule, "══╤═") || displayWidth(rule) != width {
 			t.Fatalf("width %d: rule above %q is %q", width, below, rule)
 		}
 		// One row higher the block starts under the rule: nothing to join.
@@ -301,18 +301,18 @@ func stickyRuleOver(t *testing.T, tr *transcript, want string) string {
 // block that starts there says nothing.
 func TestStickyRuleReadsBothSidesOfTheCut(t *testing.T) {
 	one := quotedPager(t, 1)
-	if rule := stickyRuleOver(t, one, "(no output)"); !strings.HasPrefix(rule, "──┬─") {
+	if rule := stickyRuleOver(t, one, "(no output)"); !strings.HasPrefix(rule, "══╤═") {
 		t.Errorf("a tool cut under its own header: %q", rule)
 	}
-	if rule := stickyRuleOver(t, one, "$ grep"); strings.ContainsAny(rule, "┬┴┼") {
+	if rule := stickyRuleOver(t, one, "$ grep"); strings.ContainsAny(rule, "┬┴┼╤╧╪") {
 		t.Errorf("a tool that begins under the rule joins nothing: %q", rule)
 	}
 
 	many := quotedPager(t, 3)
-	if rule := stickyRuleOver(t, many, "(no output)"); !strings.HasPrefix(rule, "──┼─") {
+	if rule := stickyRuleOver(t, many, "(no output)"); !strings.HasPrefix(rule, "══╪═") {
 		t.Errorf("two cut lines make a crossing: %q", rule)
 	}
-	if rule := stickyRuleOver(t, many, "$ grep"); !strings.HasPrefix(rule, "──┴─") {
+	if rule := stickyRuleOver(t, many, "$ grep"); !strings.HasPrefix(rule, "══╧═") {
 		t.Errorf("the question alone is cut: %q", rule)
 	}
 }

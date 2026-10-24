@@ -175,9 +175,11 @@ type transcript struct {
 
 	// index maps line space to message rows so scrolling never materializes
 	// rows it will not paint.
-	index   lineIndex
-	ruleStr string
-	ruleW   int
+	index       lineIndex
+	ruleStr     string
+	ruleW       int
+	headRuleStr string
+	headRuleW   int
 	// Reused buffers, each with one owner so none can alias.
 	rowBuf      []string  // valid until the next render()
 	frameRefs   []nodeRef // the node behind each body row of the last painted frame

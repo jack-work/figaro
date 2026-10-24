@@ -90,7 +90,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 			if !strings.HasPrefix(rows[0], "∨ Duke ⑂ "+ariaName("e87bb154")) || !strings.HasSuffix(rows[0], "1 Δ") || !strings.Contains(rows[1], "keep the question") {
 				t.Fatalf("fixture has no pinned question: %s", p.dump())
 			}
-			if !strings.HasPrefix(rows[2], "──┬─") || !strings.HasPrefix(rows[3], "  │") {
+			if !strings.HasPrefix(rows[2], "══╤═") || !strings.HasPrefix(rows[3], "  │") {
 				t.Fatalf("rule and gutter do not meet: %s", p.dump())
 			}
 		}
@@ -105,7 +105,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 		t.Logf("after resize:\n%s", p.capture(true))
 		p.key("g")
 		p.key("g")
-		if hasRow(p.rows(), "┬") {
+		if hasRow(p.rows(), "╤") || hasRow(p.rows(), "┬") {
 			t.Fatalf("junction survived after the header let go: %s", p.dump())
 		}
 	})

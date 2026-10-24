@@ -68,7 +68,7 @@ func headRowsOf(tr *transcript) []string {
 
 func headTextOf(tr *transcript) []string {
 	rows := plain(headRowsOf(tr))
-	if n := len(rows); n > 0 && strings.Contains(rows[n-1], "─") {
+	if n := len(rows); n > 0 && strings.ContainsAny(rows[n-1], "─═") {
 		return rows[:n-1]
 	}
 	return rows
@@ -641,7 +641,7 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 
 		// No rule while the block itself is still on screen.
 		full := plain(headRowsOf(tr))
-		ruled := len(full) > 0 && strings.Contains(full[len(full)-1], "─")
+		ruled := len(full) > 0 && strings.ContainsAny(full[len(full)-1], "─═")
 		if want := above >= len(q.rows); ruled != want && len(rows) > 0 {
 			t.Fatalf("at %d rows above (block is %d rows) the header ruled=%v, want %v",
 				above, len(q.rows), ruled, want)

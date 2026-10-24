@@ -184,7 +184,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 		// The header covers rows, so a gutter may run under it on either
 		// side; the rule says which (joinRule).
 		seen := len(out)
-		out = append(out, joinRule(t.transRule(),
+		out = append(out, joinRule(t.headRule(),
 			t.stickyCut(q, rows, seen),
 			t.lineCut(t.offset+seen+1, t.offset+seen)))
 	}
@@ -239,27 +239,6 @@ func (c gutterCut) column() (int, bool) {
 	}
 	other, ok := gutterColumn(c.hidden)
 	return col, ok && other == col
-}
-
-// A stroke only where the line goes on past the rule; a gutter that merely begins
-// or ends there is already whole.
-func joinRule(rule string, above, below gutterCut) string {
-	up, upOK := above.column()
-	down, downOK := below.column()
-	w := displayWidth(rule)
-	upOK = upOK && up < w
-	downOK = downOK && down < w
-	switch {
-	case upOK && downOK && up == down:
-		return ldrender.OverlayColumn(rule, up, "┼")
-	case upOK && downOK:
-		return ldrender.OverlayColumn(ldrender.OverlayColumn(rule, up, "┴"), down, "┬")
-	case upOK:
-		return ldrender.OverlayColumn(rule, up, "┴")
-	case downOK:
-		return ldrender.OverlayColumn(rule, down, "┬")
-	}
-	return rule
 }
 
 // Only indentation may precede it: a vertical line inside the text is content.
