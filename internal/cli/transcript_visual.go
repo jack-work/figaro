@@ -824,6 +824,19 @@ func pagerVisualAttend(t *transcript) {
 	t.openPath(text)
 }
 
+func pagerVisualOpenPath(t *transcript) {
+	text := t.visualTextUnderCursor()
+	if text == "" {
+		t.note("nothing under the cursor")
+		return
+	}
+	if t.openPath == nil {
+		t.note("this session cannot open an editor")
+		return
+	}
+	t.openPath(text)
+}
+
 // n/N from the transcript land the cursor on the hit.
 func pagerFindNextVisual(t *transcript) { t.findRepeatVisual(1) }
 func pagerFindPrevVisual(t *transcript) { t.findRepeatVisual(-1) }

@@ -51,6 +51,7 @@ transcript "k"                pager pagerLineUp
 transcript "l"                pager pagerListPit
 transcript "m"                input inputToggleBarVerbose
 transcript "n"                pager pagerFindNextVisual
+transcript "o"                input inputOpenEditor
 transcript "q"                input inputLeavePit
 transcript "s"                input inputToggleSticky
 transcript "u"                pager pagerHalfUp
@@ -235,6 +236,7 @@ visual     "k"                pager pagerVisualUp
 visual     "l"                pager pagerVisualRight
 visual     "m"                input inputToggleBarVerbose
 visual     "n"                pager pagerFindNext
+visual     "o"                input inputOpenEditor
 visual     "q"                input inputLeavePit
 visual     "u"                pager pagerVisualHalfUp
 visual     "v"                pager pagerVisualChar
@@ -256,6 +258,7 @@ visual     csi-u ctrl-l       input inputEnterTranscript
 visual     csi-u ctrl-n       input inputSelectNext
 visual     csi-u ctrl-p       input inputSelectPrev
 visual     csi-u ctrl-t       input inputEnterTranscript
+visual     M-                pager pagerVisualOpenPath
 visual     M-m                input inputToggleMore
 visual     M-y                input inputYankID
 confirm    0x03               input inputInterrupt
@@ -493,6 +496,7 @@ meta       panel      M-m
 meta       panel      M-n
 meta       panel      M-p
 meta       panel      M-y
+meta       visual     M-
 meta       visual     M-m
 meta       visual     M-y
 meta       confirm    M-m

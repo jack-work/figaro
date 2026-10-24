@@ -5,12 +5,16 @@ package cli
 // and the editor must be the foreground process group or the tty's Ctrl-C lands
 // on figaro too.
 import (
+	"cmp"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // editorTarget: a `:LINE` or `:LINE:COL` suffix is stripped only when the text
@@ -112,20 +116,103 @@ func (in *interactiveInput) openPath(text string) {
 		go in.note(text + " is not an aria id or a file")
 		return
 	}
-	argv := editorArgv(in.loaded.Editor(), path, line)
+	argv := editorArgv(in.editorSpec(), path, line)
 	if len(argv) == 0 {
-		go in.note("no editor configured: set editor under [cli] in config.toml")
+		go in.note("no editor: set editor under [cli] in config.toml, or $VISUAL / $EDITOR")
 		return
 	}
 	paused, resume := in.gate.request()
-	go in.runEditor(argv, path, paused, resume)
+	go in.runEditor(argv, "edited "+filepath.Base(path), paused, resume)
+}
+
+func (in *interactiveInput) editorSpec() string {
+	if in.loaded != nil {
+		if spec := in.loaded.Editor(); spec != "" {
+			return spec
+		}
+	}
+	return cmp.Or(strings.TrimSpace(os.Getenv("VISUAL")), strings.TrimSpace(os.Getenv("EDITOR")))
+}
+
+func inputOpenEditor(in *interactiveInput, _ keyEvent) keyVerdict {
+	if text, ok := in.editorSource(); ok {
+		in.openText(text)
+	}
+	return keyHandled
+}
+
+func (in *interactiveInput) editorSource() (func(context.Context) (string, error), bool) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	tr := in.lt.tr
+	if tr.visual.highlighted() {
+		text := tr.visualText()
+		return func(context.Context) (string, error) { return text, nil }, true
+	}
+	plan, selected := in.lt.transcriptSelectionPlan()
+	if !selected {
+		tr.setCommandNoteAt("nothing selected: ^N/^P selects messages, v V highlights", alertError)
+		tr.render()
+		return nil, false
+	}
+	return func(ctx context.Context) (string, error) {
+		return selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+			return in.fcli.ReadBefore(ctx, at, wireBudget(limit))
+		})
+	}, true
+}
+
+func (in *interactiveInput) openText(text func(context.Context) (string, error)) {
+	if in.editorSpec() == "" {
+		go in.note("no editor: set editor under [cli] in config.toml, or $VISUAL / $EDITOR")
+		return
+	}
+	paused, resume := in.gate.request()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), editorFetchWait)
+		body, err := text(ctx)
+		cancel()
+		var path string
+		if err == nil {
+			path, err = writeTempText(body)
+		}
+		if err != nil {
+			select {
+			case <-paused:
+			case <-time.After(editorParkWait):
+			}
+			close(resume)
+			in.note("editor: " + err.Error())
+			return
+		}
+		defer os.Remove(path)
+		in.runEditor(editorArgv(in.editorSpec(), path, 0), "", paused, resume)
+	}()
+}
+
+const editorFetchWait = 10 * time.Second
+
+func writeTempText(text string) (string, error) {
+	f, err := os.CreateTemp("", "figaro-selection-*.md")
+	if err != nil {
+		return "", err
+	}
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 // Exceeding editorParkWait means there is no read loop to park: the terminal is
 // not ours to give away.
 const editorParkWait = 2 * time.Second
 
-func (in *interactiveInput) runEditor(argv []string, path string, paused <-chan struct{}, resume chan<- struct{}) {
+func (in *interactiveInput) runEditor(argv []string, done string, paused <-chan struct{}, resume chan<- struct{}) {
 	select {
 	case <-paused:
 	case <-time.After(editorParkWait):
@@ -159,7 +246,9 @@ func (in *interactiveInput) runEditor(argv []string, path string, paused <-chan 
 		in.note("editor: " + err.Error())
 		return
 	}
-	in.note("edited " + filepath.Base(path))
+	if done != "" {
+		in.note(done)
+	}
 }
 
 // The editor runs as its own foreground process group; a non-zero exit is

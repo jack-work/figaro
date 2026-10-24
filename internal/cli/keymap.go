@@ -165,6 +165,8 @@ const (
 	helpPitEnter
 	helpVisualSelect
 	helpVisualAttend
+	helpOpenEditor
+	helpVisualOpenPath
 	helpCmdHistory
 	helpCmdComplete
 	helpCmdEdit
@@ -235,6 +237,8 @@ var helpRows = []helpRow{
 	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value or a notification, attend an aria"},
 	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},
 	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
+	{helpOpenEditor, "o", "open the selected messages, or the highlight, in your editor; quitting it comes back here"},
+	{helpVisualOpenPath, "(in v) ^Enter · M-Enter", "open the highlighted path in your editor, at its line"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpVisual, "v / V", "visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)"},
 	{helpVisualCols, "(in v) h/l · ←/→", "move the cursor's column"},
