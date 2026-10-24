@@ -25,7 +25,7 @@ func (t *transcript) sticky() bool {
 }
 
 // The body is not shortened by the header: see renderFrame.
-func (t *transcript) headRows() int { return len(t.stickyLines("", selectionSpan{})) }
+func (t *transcript) headRows() int { return t.headCovers() }
 
 // stickyQuestion is the whole inline block plus the rows that are the question's
 // own text.

@@ -923,9 +923,10 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 
 func inputLeavePit(in *interactiveInput, ev keyEvent) keyVerdict {
 	in.mu.Lock()
-	open := in.lt.tr.pit.open()
+	tr := in.lt.tr
+	open := tr.pit.open() || tr.headFocused()
 	if open {
-		in.lt.tr.closePanels()
+		panelDismiss(tr)
 		in.lt.render()
 	}
 	in.mu.Unlock()

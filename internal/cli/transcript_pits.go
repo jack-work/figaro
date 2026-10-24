@@ -67,6 +67,9 @@ func (t *transcript) closePanels() {
 	t.pit.close()
 	t.queuedByKey = false
 	t.focused = focusPit // the next pit opens focused
+	if t.head.open {
+		t.focused = focusHead
+	}
 }
 
 func (t *transcript) showing(id pitID) bool {

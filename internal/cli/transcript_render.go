@@ -237,19 +237,29 @@ func (t *transcript) renderFrame() {
 		t.offset = 0
 	}
 	screen := t.nextScreen()
+	push := t.headPush()
 	// Only the rows about to be painted are materialized, decorated and
 	// highlighted.
 	t.rowBuf = t.window(t.offset, t.offset+body, t.rowBuf)
 	// The row->node map is recorded from the geometry actually painted:
 	// re-deriving it at click time would consult an offset a live token may
 	// have moved.
-	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs[:0])
-	copy(screen[:body], t.rowBuf)
+	t.frameRefs = t.frameRefs[:0]
+	for range push {
+		t.frameRefs = append(t.frameRefs, nodeRef{})
+	}
+	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
+	copy(screen[min(push, len(screen)):], t.rowBuf)
 	// The header covers rows: they address nothing while they cannot be seen.
-	head := t.stickyLines(t.activeHighlight(), t.selectionSpan())
-	copy(screen[:len(head)], head)
+	head := t.headLines(t.activeHighlight(), t.selectionSpan())
+	copy(screen, head)
 	for i := range min(len(head), len(t.frameRefs)) {
 		t.frameRefs[i] = nodeRef{}
+	}
+	if t.fullHead() {
+		for r := len(head); r < t.h-2; r++ {
+			screen[r] = ""
+		}
 	}
 	// Bottom-aligned: the live padding row belongs above the transcript rule,
 	// not between the pit and its rule.
@@ -276,7 +286,7 @@ func (t *transcript) renderFrame() {
 	// when a panel is up, the footer's otherwise; a clipped stanza has lost
 	// its rule, a fullscreen pit has no conversation under it.
 	floor := t.lineCut(t.offset+body-1, t.offset+body)
-	if len(foot) > 0 && !clipped && !t.fullPit() && start > 0 {
+	if len(foot) > 0 && !clipped && !t.fullPit() && !t.fullHead() && start > 0 {
 		foot[0] = joinRule(foot[0], floor, gutterCut{})
 	}
 	for k, l := range foot {
@@ -290,7 +300,7 @@ func (t *transcript) renderFrame() {
 		rule = ""
 	}
 	if top := t.h - 1 - len(bar); top >= 0 {
-		if rule != "" && len(foot) == 0 && top > 0 {
+		if rule != "" && len(foot) == 0 && top > 0 && !t.fullHead() {
 			rule = joinRule(rule, floor, gutterCut{})
 		}
 		screen[top] = rule

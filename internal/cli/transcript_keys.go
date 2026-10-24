@@ -7,14 +7,14 @@ import (
 )
 
 func focusTranscriptKey(t *transcript) {
-	if !t.pit.open() {
-		return
-	}
-	if t.focused == focusPit {
+	switch {
+	case t.focused != focusTranscript && (t.pit.open() || t.head.open):
 		t.focused = focusTranscript
-		return
+	case t.pit.open():
+		t.focused = focusPit
+	case t.head.open:
+		t.focused = focusHead
 	}
-	t.focused = focusPit
 }
 
 // mode is derived from the pit identity (pitid.go); the dispatch order is the
@@ -33,6 +33,9 @@ func (t *transcript) mode() keyMode {
 	open := t.openPit()
 	if open == pitComposer && t.composerMode == composerNormal {
 		return modeComposer
+	}
+	if t.headFocused() && (open == pitNothing || open.keys() == modePanel) {
+		return modeList
 	}
 	if k := open.keys(); k == modePanel && t.listMode() {
 		return modeList
@@ -129,6 +132,10 @@ func (t *transcript) dispatch(ev keyEvent) {
 			act(t)
 			t.render()
 			return
+		}
+		if t.headFocused() {
+			t.collapseHead()
+			break
 		}
 		if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
 			t.render()
@@ -294,7 +301,13 @@ func panelToggleStatus(t *transcript) { t.togglePit(pitStatus, t.openStatusPit) 
 func panelToggleQueued(t *transcript) { t.togglePit(pitQueue, t.openQueueFromKey) }
 
 // Esc's other meaning (clear the selection) is not reached from here.
-func panelDismiss(t *transcript) { t.closePanels() }
+func panelDismiss(t *transcript) {
+	if t.headFocused() {
+		t.collapseHead()
+		return
+	}
+	t.closePanels()
+}
 
 func pagerNotifications(t *transcript) { t.togglePit(pitNotifications, t.openNotificationsPit) }
 

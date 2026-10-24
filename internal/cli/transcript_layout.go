@@ -43,6 +43,7 @@ type pitFocus uint8
 const (
 	focusPit        pitFocus = iota // a pit you opened is a pit you are in
 	focusTranscript                 // `T`: read the conversation, keep the pit
+	focusHead
 )
 
 // A fullscreen pit recedes when the transcript takes the keys.
@@ -102,7 +103,7 @@ func padTo(s string, n int) string {
 // The bar is not always one row: on a narrow pane it is three, and reserving one
 // while painting three pushes the conversation off the top.
 func (t *transcript) layout(foot int) (body, maxOff int) {
-	body = t.h - 1 - t.barRows() - foot
+	body = t.h - 1 - t.barRows() - foot - t.headPush()
 	if t.follow {
 		body--
 	}

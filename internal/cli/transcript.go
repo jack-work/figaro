@@ -34,6 +34,7 @@ type transcript struct {
 	// A fullscreen pit recedes when the transcript takes focus (`T`) rather
 	// than closing.
 	focused pitFocus
+	head    questionHead
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool

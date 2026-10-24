@@ -52,6 +52,7 @@ transcript "l"                pager pagerListPit
 transcript "m"                input inputToggleBarVerbose
 transcript "n"                pager pagerFindNextVisual
 transcript "o"                input inputOpenEditor
+transcript "p"                pager pagerExpandHead
 transcript "q"                input inputLeavePit
 transcript "s"                input inputToggleSticky
 transcript "u"                pager pagerHalfUp
@@ -189,6 +190,7 @@ panel      "h"                pager panelToggleHelp
 panel      "l"                pager pagerListPit
 panel      "m"                input inputToggleBarVerbose
 panel      "n"                pager pagerFindRowNext
+panel      "p"                pager pagerExpandHead
 panel      "q"                input inputLeavePit
 panel      "s"                input inputToggleSticky
 panel      "x"                pager pagerPitDrop
@@ -359,6 +361,7 @@ list       "k"                pager listUp
 list       "l"                pager pagerListPit
 list       "m"                input inputToggleBarVerbose
 list       "n"                pager pagerFindRowNext
+list       "p"                pager pagerExpandHead
 list       "q"                input inputLeavePit
 list       "s"                input inputToggleSticky
 list       "u"                pager listHalfUp
@@ -428,6 +431,7 @@ opens      "j"
 opens      "k"
 opens      "l"
 opens      "m"
+opens      "p"
 opens      "s"
 opens      "u"
 opens      "v"

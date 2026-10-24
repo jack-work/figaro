@@ -174,6 +174,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'S',        // the form, in the pit
 		'D',        // the last decision, in the pit
 		'T',        // focus the conversation, keeping the pit
+		'p',        // expand the pinned question
 		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
 		'a',        // attend the fork point (or the selected list row)
 		'f',        // arm the fork jump: f j / f k
@@ -300,6 +301,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  S                   the form (state) in the pit",
 		"  D                   the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar",
 		"  T                   read the conversation without closing the pit (again to go back)",
+		"  p                   expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it",
 		"  l / L               list this aria's tree / the home tree, in the pit (Enter attends, x kills)",
 		"  y / n               answer a confirmation (Esc is no); X on a row kills with no question",
 		"  h                   close help",
