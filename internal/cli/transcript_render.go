@@ -250,6 +250,8 @@ func (t *transcript) renderFrame() {
 	}
 	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
 	copy(screen[min(push, len(screen)):], t.rowBuf)
+	t.noteHandoff()
+	t.releasedRule(screen, push, body)
 	// The header covers rows: they address nothing while they cannot be seen.
 	head := t.headLines(t.activeHighlight(), t.selectionSpan())
 	copy(screen, head)
@@ -311,6 +313,7 @@ func (t *transcript) renderFrame() {
 		}
 	}
 	t.paint(screen)
+	t.wakeForHandoff()
 }
 
 // Two frame buffers are swapped so a frame does not allocate a []string of screen

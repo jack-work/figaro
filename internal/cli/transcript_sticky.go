@@ -184,9 +184,11 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 		// The header covers rows, so a gutter may run under it on either
 		// side; the rule says which (joinRule).
 		seen := len(out)
-		out = append(out, joinRule(t.headRule(),
+		out = append(out, joinRule(t.edgeRule(),
 			t.stickyCut(q, rows, seen),
 			t.lineCut(t.offset+seen+1, t.offset+seen)))
+	} else if t.turnRuleAt(t.offset + len(out)) {
+		out = append(out, t.edgeRule())
 	}
 	return out
 }

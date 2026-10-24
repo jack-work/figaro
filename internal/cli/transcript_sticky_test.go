@@ -639,10 +639,12 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 		rows := headTextOf(tr)
 		heights = append(heights, len(rows))
 
-		// No rule while the block itself is still on screen.
+		// No rule of its own while the block is still on screen; a turn rule
+		// meeting the header is its edge.
 		full := plain(headRowsOf(tr))
 		ruled := len(full) > 0 && strings.ContainsAny(full[len(full)-1], "─═")
-		if want := above >= len(q.rows); ruled != want && len(rows) > 0 {
+		meets := tr.turnRuleAt(tr.offset + len(rows))
+		if want := above >= len(q.rows) || meets; ruled != want && len(rows) > 0 {
 			t.Fatalf("at %d rows above (block is %d rows) the header ruled=%v, want %v",
 				above, len(q.rows), ruled, want)
 		}

@@ -204,6 +204,14 @@ func (t *livelogTurn) setRenderLock(mu sync.Locker) {
 		t.pace.after = func(d time.Duration, fn func()) { time.AfterFunc(d, fn) }
 	}
 	t.pace.flush = t.tr.flush
+	t.tr.wake = func(d time.Duration) {
+		t.pace.after(d, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			t.tr.waking = false
+			t.tr.render()
+		})
+	}
 	t.tr.gate = t.pace.allow
 	t.tr.painted = t.pace.painted
 }

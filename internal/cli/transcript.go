@@ -35,6 +35,9 @@ type transcript struct {
 	// than closing.
 	focused pitFocus
 	head    questionHead
+	handoff ruleHandoff
+	wake    func(time.Duration)
+	waking  bool
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool
