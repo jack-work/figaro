@@ -148,3 +148,37 @@ func TestHyphenatedListMarkersAndRulesStayMarkdown(t *testing.T) {
 		"   d-e               │ f",
 	})
 }
+
+// glamour ends every blockquote with a blank row drawn at the closing quote's
+// depth, which then stands in for the gap before whatever follows: a stray bar
+// one level too deep inside a nest, and prose glued under a lone bar outside it.
+func TestABlockquoteClosesAtTheDepthThatFollows(t *testing.T) {
+	expectRows(t, "> one\n>\n> > two\n> >\n> > > three\n> >\n> > two again\n>\n> one again\n\nprose\n\n> single\n\nmore prose", 60, []string{
+		"  │ one",
+		"  │",
+		"  │ │ two",
+		"  │ │",
+		"  │ │ │ three",
+		"  │ │",
+		"  │ │ two again",
+		"  │",
+		"  │ one again",
+		"",
+		"  prose",
+		"",
+		"  │ single",
+		"",
+		"  more prose",
+	})
+	expectRows(t, "> - an item in a quote\n> - another\n\nafter", 60, []string{
+		"  │  • an item in a quote",
+		"  │  • another",
+		"",
+		"  after",
+	})
+	expectRows(t, "before\n\n> the last thing", 60, []string{
+		"  before",
+		"",
+		"  │ the last thing",
+	})
+}

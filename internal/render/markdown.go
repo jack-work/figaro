@@ -235,7 +235,7 @@ func endsItemText(p gast.Node) bool {
 }
 
 func (l listLayout) apply(out string, marker xansi.Style, width int) string {
-	rows := strings.Split(out, "\n")
+	rows := settleQuoteCloses(strings.Split(out, "\n"))
 	kept := rows[:0]
 	item, para := 0, 0
 	for _, row := range rows {
@@ -292,4 +292,58 @@ func drawQuoteBars(row string) string {
 	}
 	b.WriteString(row)
 	return b.String()
+}
+
+func quoteDepth(row string) int {
+	return strings.Count(row, quoteMark) / len([]rune(quoteBar))
+}
+
+func blankQuoted(row string) bool {
+	return quoteDepth(row) > 0 && visiblyBlank(layoutMarks.Replace(row))
+}
+
+func settleQuoteCloses(rows []string) []string {
+	kept := rows[:0]
+	for i, row := range rows {
+		if blankQuoted(row) && (len(kept) == 0 || quoteDepth(kept[len(kept)-1]) < quoteDepth(row)) && i+1 < len(rows) {
+			rows[i+1] = quotedBlankAt(row, 0) + rows[i+1]
+			continue
+		}
+		kept = append(kept, row)
+	}
+	rows = kept
+	for i, row := range rows {
+		if !blankQuoted(row) {
+			continue
+		}
+		next := 0
+		for _, below := range rows[i+1:] {
+			if !blankQuoted(below) {
+				next = quoteDepth(below)
+				break
+			}
+		}
+		if next < quoteDepth(row) {
+			rows[i] = quotedBlankAt(row, next)
+		}
+	}
+	return rows
+}
+
+func quotedBlankAt(row string, depth int) string {
+	marks := strings.Repeat(paragraphMark, strings.Count(row, paragraphMark)) +
+		strings.Repeat(itemMark, strings.Count(row, itemMark))
+	if depth == 0 {
+		return marks
+	}
+	cut, seen := 0, 0
+	for seen < depth*len([]rune(quoteBar)) {
+		at := strings.Index(row[cut:], quoteMark)
+		if at < 0 {
+			break
+		}
+		cut += at + len(quoteMark)
+		seen++
+	}
+	return row[:cut] + "\x1b[m" + marks
 }
