@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/quote"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -33,6 +34,7 @@ type stickyQuestion struct {
 	rows     []transcriptRow
 	textLo   int // first row of the question's own text
 	textHigh int // one past its last row of text
+	ownWords int
 }
 
 func (q stickyQuestion) empty() bool { return q.textHigh <= q.textLo }
@@ -75,6 +77,7 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 	if q.textHigh > len(q.rows) {
 		q.textHigh = len(q.rows)
 	}
+	q.ownWords = ownWordsRow(q, inq)
 	if t.stickyCache == nil {
 		t.stickyCache = map[sliceKey]stickyQuestion{}
 	}
@@ -123,6 +126,34 @@ func (t *transcript) stickyRows() []transcriptRow {
 		}
 		rows = append(rows, r)
 	}
+	if q.ownWords > 0 && len(rows) == stickyText {
+		r := q.rows[q.ownWords]
+		r.mark = ""
+		rows[stickyText-1] = r
+	}
+	return rows
+}
+
+func ownWordsRow(q stickyQuestion, inq aria.Inquiry) int {
+	text := inq.Text
+	if len(inq.Segments) > 0 {
+		text = inq.Segments[0].Text
+	}
+	if _, rest, ok := quote.Mentioned(text); !ok || strings.TrimSpace(rest) == "" {
+		return 0
+	}
+	for i := q.textLo + 1; i+1 < q.textHigh; i++ {
+		if strings.TrimSpace(pitText(q.rows[i].text)) == "" {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+func (q stickyQuestion) shownThrough(rows int) int {
+	if q.ownWords > 0 {
+		return q.ownWords + rows - 1
+	}
 	return rows
 }
 
@@ -138,10 +169,13 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	out := make([]string, 0, len(rows)+1)
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel, -1)
-		if i == len(rows)-1 && len(rows) < q.textHigh {
+		if i == len(rows)-1 && q.shownThrough(len(rows)) < q.textHigh {
 			line = stickyClip(line, t.w)
 		}
 		out = append(out, line)
+	}
+	if q.ownWords > 0 && len(out) > 1 {
+		out[1] = ldrender.OverlayColumn(out[1], 0, quoteMark)
 	}
 	out[0] = ldrender.OverlayColumn(out[0], 0, "∨")
 	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())+" "), t.w-ldrender.GutterCols)
@@ -160,9 +194,9 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 // The gutter meeting the header's rule from above.
 func (t *transcript) stickyCut(q stickyQuestion, rows []transcriptRow, seen int) gutterCut {
 	cut := gutterCut{row: t.rowLine(rows[len(rows)-1], "", selectionSpan{}, -1)}
-	if seen < len(q.rows) {
-		cut.hidden = q.rows[seen].text
-		cut.sameBlock = q.rows[seen].ref == rows[len(rows)-1].ref
+	if next := q.shownThrough(seen); next < len(q.rows) {
+		cut.hidden = q.rows[next].text
+		cut.sameBlock = q.rows[next].ref == rows[len(rows)-1].ref
 	}
 	return cut
 }
