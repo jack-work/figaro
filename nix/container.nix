@@ -8,25 +8,6 @@ let
   inherit (lib) mkOption types;
   hostUid = cfg.uidBase + cfg.uid;
   hostGid = cfg.uidBase + cfg.gid;
-  fw = config.networking.firewall;
-  iface = "ve-figaro";
-  open =
-    proto:
-    let
-      own = fw.interfaces.${iface} or { };
-      ports = fw."allowed${proto}Ports" ++ own."allowed${proto}Ports" or [ ];
-      ranges = fw."allowed${proto}PortRanges" ++ own."allowed${proto}PortRanges" or [ ];
-    in
-    map toString ports ++ map (r: "${toString r.from}:${toString r.to}") ranges;
-  families = ''
-    v4="iptables -w -t mangle"
-    v6="ip6tables -w -t mangle"
-  '';
-  returns =
-    proto:
-    lib.concatMapStrings (p: ''
-      $t -A figaro-guard-in -p ${lib.toLower proto} --dport ${p} -j RETURN
-    '') (open proto);
 in
 {
   options.services.figaro-container = {
@@ -157,63 +138,28 @@ in
       };
     };
 
-    systemd.services.figaro-guard-net = {
-      description = "The figaro container's forward and input filter";
-      path = [ fw.package ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        set -euo pipefail
-        ${families}
-        for t in "$v4" "$v6"; do
-          $t -N figaro-guard 2>/dev/null || $t -F figaro-guard
-          $t -N figaro-guard-in 2>/dev/null || $t -F figaro-guard-in
-        done
-        ${lib.concatMapStrings (d: ''
-          $v4 -A figaro-guard -d ${d} -j DROP
-        '') cfg.blockedDestinations}
-        $v6 -A figaro-guard -j DROP
-        for t in "$v4" "$v6"; do
-          $t -A figaro-guard-in -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-          ${returns "TCP"}
-          ${returns "UDP"}
-        done
-        ${lib.optionalString fw.allowPing ''
-          $v4 -A figaro-guard-in -p icmp --icmp-type echo-request -j RETURN
-        ''}
-        $v6 -A figaro-guard-in -p ipv6-icmp -j RETURN
-        for t in "$v4" "$v6"; do
-          $t -A figaro-guard-in -j DROP
-          $t -C FORWARD -i ${iface} -j figaro-guard 2>/dev/null || $t -I FORWARD 1 -i ${iface} -j figaro-guard
-          $t -C INPUT -i ${iface} -j figaro-guard-in 2>/dev/null || $t -I INPUT 1 -i ${iface} -j figaro-guard-in
-        done
-      '';
-      preStop = ''
-        ${families}
-        for t in "$v4" "$v6"; do
-          $t -D FORWARD -i ${iface} -j figaro-guard 2>/dev/null || true
-          $t -D INPUT -i ${iface} -j figaro-guard-in 2>/dev/null || true
-        done
-      '';
-    };
-
-    systemd.services."container@figaro" = {
-      bindsTo = [ "figaro-guard-net.service" ];
-      after = [ "figaro-guard-net.service" ];
-      serviceConfig = {
-        Slice = lib.mkForce "figaro.slice";
-        LoadCredential = lib.mapAttrsToList (id: path: "${id}:${path}") cfg.credentials;
-        SetCredential = lib.mapAttrsToList (id: _: "${id}:") cfg.credentials;
-      };
+    systemd.services."container@figaro".serviceConfig = {
+      Slice = lib.mkForce "figaro.slice";
+      LoadCredential = lib.mapAttrsToList (id: path: "${id}:${path}") cfg.credentials;
+      SetCredential = lib.mapAttrsToList (id: _: "${id}:") cfg.credentials;
     };
 
     networking.nat = {
       enable = true;
-      internalInterfaces = [ iface ];
+      internalInterfaces = [ "ve-figaro" ];
       externalInterface = cfg.externalInterface;
     };
+
+    networking.firewall.extraCommands = lib.concatMapStrings (d: ''
+      iptables -I FORWARD 1 -i ve-figaro -d ${d} -j DROP
+    '') cfg.blockedDestinations + ''
+      ip6tables -I FORWARD 1 -i ve-figaro -j DROP
+    '';
+    networking.firewall.extraStopCommands = lib.concatMapStrings (d: ''
+      iptables -D FORWARD -i ve-figaro -d ${d} -j DROP 2>/dev/null || true
+    '') cfg.blockedDestinations + ''
+      ip6tables -D FORWARD -i ve-figaro -j DROP 2>/dev/null || true
+    '';
 
     containers.figaro = {
       autoStart = true;
