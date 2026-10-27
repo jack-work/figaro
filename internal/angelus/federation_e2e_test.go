@@ -372,6 +372,13 @@ func TestFederationTheOwnerDecides(t *testing.T) {
 	_, cold := a.ariaAs("intruder", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"no"`}), 0)
 	require.ErrorContains(t, cold, "not found")
 
+	listed, err := a.as("intruder").List(ctx)
+	require.NoError(t, err)
+	require.Empty(t, listed.Unreachable, "B's refusal of a caller it binds to no role reads as B unreachable")
+	for _, row := range listed.Figaros {
+		require.NotEqual(t, id, row.ID, "B listed its aria to a caller it binds to no role")
+	}
+
 	_, err = a.as("probe").List(ctx)
 	require.NoError(t, err)
 	_, warm := a.ariaAs("intruder", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"no"`}), 0)

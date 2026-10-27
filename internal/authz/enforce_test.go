@@ -16,11 +16,13 @@ func enforced(t *testing.T) map[string]jkrpc.HandlerFunc {
 	p := loaded(t, sandboxPolicy)
 	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
 	return Guard(map[string]jkrpc.HandlerFunc{
-		rpc.MethodHello:     ok,
-		rpc.MethodQua:       ok,
-		rpc.MethodKill:      ok,
-		rpc.MethodGC:        ok,
-		"figaro.undeclared": ok,
+		rpc.MethodHello:       ok,
+		rpc.MethodList:        ok,
+		rpc.MethodNodeResolve: ok,
+		rpc.MethodQua:         ok,
+		rpc.MethodKill:        ok,
+		rpc.MethodGC:          ok,
+		"figaro.undeclared":   ok,
 	}, AriaHeader{}, Enforce(p))
 }
 
@@ -91,5 +93,23 @@ func TestAnAriaTheCallerCannotReadIsNotFound(t *testing.T) {
 	err := call(t, h, boxCtx, rpc.MethodKill, "aaaa0001")
 	if !errors.As(err, &jerr) || jerr.Code != ErrCode || !strings.Contains(err.Error(), rpc.MethodKill) {
 		t.Fatalf("a reader lacking kill should hear the policy: %v", err)
+	}
+}
+
+// list and node.resolve filter their rows by read, so they need no read on
+// the daemon; they still need a role, so a subject the policy does not know
+// learns nothing, not even an empty answer.
+func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
+	h := enforced(t)
+	for _, m := range []string{rpc.MethodList, rpc.MethodNodeResolve} {
+		for _, d := range []Door{DoorInProcess, DoorLocal, DoorWeb} {
+			if err := call(t, h, WithDoor(WithSubject(context.Background(), subject(box)), d), m, ""); err != nil {
+				t.Errorf("%s at the %s door, for a role with no read on the daemon: %v", m, d, err)
+			}
+			err := call(t, h, WithDoor(WithSubject(context.Background(), subject(other)), d), m, "")
+			if err == nil || !strings.Contains(err.Error(), "holds no role") {
+				t.Errorf("%s at the %s door, for a subject with no role: %v", m, d, err)
+			}
+		}
 	}
 }

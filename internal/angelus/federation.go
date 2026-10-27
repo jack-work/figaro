@@ -146,7 +146,16 @@ func (h *handlers) askPeer(ctx context.Context, node string, refs []string) (rpc
 		return rpc.NodeResolveResponse{}, err
 	}
 	defer done()
-	return l.Resolve(ctx, refs)
+	resp, err := l.Resolve(ctx, refs)
+	if refusedByPolicy(err) {
+		return rpc.NodeResolveResponse{}, nil
+	}
+	return resp, err
+}
+
+func refusedByPolicy(err error) bool {
+	var answered *jkrpc.Error
+	return errors.As(err, &answered) && answered.Code == authz.ErrCode
 }
 
 func (h *handlers) forward(ctx context.Context, node, method string, params json.RawMessage) (any, error) {
@@ -291,6 +300,9 @@ func (h *handlers) listPeer(ctx context.Context, node string, params json.RawMes
 	}
 	defer done()
 	raw, err := l.Call(ctx, rpc.MethodList, params)
+	if refusedByPolicy(err) {
+		return out
+	}
 	if err == nil {
 		err = json.Unmarshal(raw, &out.resp)
 	}

@@ -186,13 +186,23 @@ func checkedByHandler(method string) bool {
 	return false
 }
 
+func filtersPerRow(method string) bool {
+	return method == rpc.MethodList || method == rpc.MethodNodeResolve
+}
+
 func Enforce(p *Policies) Policy {
 	return PolicyFunc(func(r Request) Decision {
 		verb, ok := rpc.VerbOf(r.Method)
 		if !ok {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
-		if verb == rpc.VerbNone || r.Method == rpc.MethodList || r.Method == rpc.MethodNodeResolve || checkedByHandler(r.Method) {
+		if verb == rpc.VerbNone || checkedByHandler(r.Method) {
+			return Allow()
+		}
+		if filtersPerRow(r.Method) {
+			if !p.HoldsRole(r.Subject) {
+				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
+			}
 			return Allow()
 		}
 		res := Daemon
