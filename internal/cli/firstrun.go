@@ -273,7 +273,13 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 }
 
 func runCopilotLogin(loaded *config.Loaded) error {
-	line, err := term.ReadLine("       GitHub Enterprise domain (blank for github.com): ")
+	prompt := "       GitHub Enterprise domain (blank for github.com): "
+	if cur, _ := readCopilotFile(loaded); cur != nil {
+		if d, _ := cur["enterprise_domain"].(string); d != "" {
+			prompt = fmt.Sprintf("       GitHub Enterprise domain [current: %s] (blank for github.com): ", d)
+		}
+	}
+	line, err := term.ReadLine(prompt)
 	if err != nil {
 		return fmt.Errorf("read domain: %w", err)
 	}
@@ -284,11 +290,10 @@ func runCopilotLogin(loaded *config.Loaded) error {
 		return err
 	}
 
-	// The domain is not a secret; it says where to exchange.
-	if domain != "" {
-		if err := writeCopilotDomain(loaded, domain); err != nil {
-			return err
-		}
+	// The domain is not a secret; it says where to exchange. Always write
+	// it, so switching GHE -> github.com clears the old host.
+	if err := writeCopilotDomain(loaded, domain); err != nil {
+		return err
 	}
 
 	reg := providerPkg.Lookup("copilot")
@@ -313,10 +318,36 @@ func runCopilotLogin(loaded *config.Loaded) error {
 	return nil
 }
 
+// readCopilotFile returns providers/copilot.toml as a generic table so a
+// rewrite keeps keys this code does not name.
+func readCopilotFile(loaded *config.Loaded) (map[string]any, error) {
+	path := loaded.ProviderAuthPath("copilot")
+	cfg := map[string]any{}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return cfg, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// writeCopilotDomain makes the login answer authoritative: blank means
+// github.com and removes any stale enterprise_domain. Other keys survive.
 func writeCopilotDomain(loaded *config.Loaded, domain string) error {
-	cfg := struct {
-		EnterpriseDomain string `toml:"enterprise_domain"`
-	}{EnterpriseDomain: domain}
+	cfg, err := readCopilotFile(loaded)
+	if err != nil {
+		return err
+	}
+	if domain == "" {
+		delete(cfg, "enterprise_domain")
+	} else {
+		cfg["enterprise_domain"] = domain
+	}
 	path := loaded.ProviderAuthPath("copilot")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
