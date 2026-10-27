@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -110,6 +111,30 @@ func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "holds no role") {
 				t.Errorf("%s at the %s door, for a subject with no role: %v", m, d, err)
 			}
+		}
+	}
+}
+
+// hello names the node and the caller's principal. Off the local door it
+// is answered only to a subject the policy binds to a role.
+func TestHelloOffTheLocalDoorNeedsARole(t *testing.T) {
+	h := enforced(t)
+	at := func(d Door, p jkauthz.Principal) context.Context {
+		return WithDoor(WithSubject(context.Background(), subject(p)), d)
+	}
+	for name, c := range map[string]struct {
+		ctx  context.Context
+		pass bool
+	}{
+		"a stranger in process":         {at(DoorInProcess, other), true},
+		"a stranger at the local door":  {at(DoorLocal, other), true},
+		"a role holder at the web door": {at(DoorWeb, box), true},
+		"a stranger at the web door":    {at(DoorWeb, other), false},
+		"a stranger at a node door":     {at(DoorNode, other), false},
+		"a stranger at a new door":      {at(DoorWeb+1, other), false},
+	} {
+		if err := call(t, h, c.ctx, rpc.MethodHello, ""); (err == nil) != c.pass {
+			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)
 		}
 	}
 }

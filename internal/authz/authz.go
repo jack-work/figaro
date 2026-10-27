@@ -196,10 +196,13 @@ func Enforce(p *Policies) Policy {
 		if !ok {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
-		if verb == rpc.VerbNone || checkedByHandler(r.Method) {
+		if checkedByHandler(r.Method) {
 			return Allow()
 		}
-		if filtersPerRow(r.Method) {
+		if verb == rpc.VerbNone && r.Door.Trusted() {
+			return Allow()
+		}
+		if verb == rpc.VerbNone || filtersPerRow(r.Method) {
 			if !p.HoldsRole(r.Subject) {
 				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
 			}
