@@ -86,6 +86,7 @@ type serverConn struct {
 	mu     sync.Mutex
 	box    sandbox.Sandbox
 	ws     string
+	scope  string
 	procs  map[string]running
 	cancel context.CancelFunc
 }
@@ -135,6 +136,12 @@ func (c *serverConn) handlers() map[string]jkrpc.HandlerFunc {
 				return nil, err
 			}
 			return b.Sessions().List(), nil
+		}),
+		mReap: handle(func(struct{}) (any, error) {
+			if _, err := c.opened(); err != nil {
+				return nil, err
+			}
+			return c.srv.host.KillScope(c.scope), nil
 		}),
 		mRemove: handle(c.sessionDo(func(b sandbox.Sandbox, id string) (any, error) { return nil, b.Sessions().Remove(id) })),
 		mPoll:   handle(c.sessionOp(func(s sandbox.Session) any { return dataResp{Data: s.Poll()} })),
@@ -187,7 +194,7 @@ func (c *serverConn) open(r openReq) (any, error) {
 	c.srv.mu.Lock()
 	c.srv.scopes[r.Scope] = true
 	c.srv.mu.Unlock()
-	c.box, c.ws = b, ws
+	c.box, c.ws, c.scope = b, ws, r.Scope
 	return openResp{Workspace: ws, Isolation: b.Isolation()}, nil
 }
 

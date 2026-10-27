@@ -23,6 +23,7 @@ const (
 	mPoll    = "box.session.poll"
 	mLog     = "box.session.log"
 	mInfo    = "box.session.info"
+	mReap    = "box.session.killscope"
 	mRead    = "box.fs.read"
 	mWrite   = "box.fs.write"
 	mStat    = "box.fs.stat"
