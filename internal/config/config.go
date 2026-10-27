@@ -830,6 +830,9 @@ func Load(configDir string) (*Loaded, error) {
 	if err := cfg.validateStream(); err != nil {
 		return nil, err
 	}
+	if err := cfg.validateSandbox(); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
 
 	return &Loaded{Config: cfg, ConfigDir: configDir, ConfigPath: configPath}, nil
 }

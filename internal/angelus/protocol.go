@@ -383,7 +383,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: %w", err)
 	}
-	if err := h.placeWorkspace(id, chosen); err != nil {
+	if err := h.placeWorkspace(id, chosen, patchTouches(dress, "system.cwd")); err != nil {
 		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: %w", err)
 	}

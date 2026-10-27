@@ -1,16 +1,19 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/sandbox"
 )
 
-func (h *handlers) placeWorkspace(id string, chosen bool) error {
+func (h *handlers) placeWorkspace(id string, chosen, dressedCwd bool) error {
 	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
 		return err
@@ -21,6 +24,15 @@ func (h *handlers) placeWorkspace(id string, chosen bool) error {
 	}
 	if v := snap.Lookup("system.cwd"); v != nil {
 		cwd = *v
+	}
+	if loaded, _ := h.settings(); loaded != nil {
+		if _, ok := loaded.Box(kind); ok {
+			if dressedCwd || cwd == "" {
+				return nil
+			}
+			_, err := h.angelus.Backend.ApplyFormPrivileged(id, form.Build(form.Snapshot{}, nil, []string{"system.cwd"}))
+			return err
+		}
 	}
 	if kind == "" || kind == "local" || chosen && isDir(cwd) {
 		return nil
@@ -119,4 +131,37 @@ func (h *handlers) releaseWorkspaces(dirs []string) {
 		}
 		slog.Info("workspace removed with its last aria", "dir", dir)
 	}
+}
+
+func (h *handlers) killSessions(id string) int {
+	n := 0
+	if h.angelus.Sessions != nil {
+		n = h.angelus.Sessions.KillScope(id)
+	}
+	kind := h.sandboxOf(id)
+	loaded, _ := h.settings()
+	if _, ok := loaded.Box(kind); !ok {
+		return n
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	m, err := sandbox.KillBoxScope(ctx, loaded, kind, id)
+	if err != nil {
+		slog.Warn("sessions in the box may outlive the aria", "id", id, "box", kind, "err", err)
+	}
+	return n + m
+}
+
+func (h *handlers) sandboxOf(id string) string {
+	if h.angelus.Backend == nil {
+		return ""
+	}
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return ""
+	}
+	if v := snap.Lookup("system.sandbox"); v != nil {
+		return *v
+	}
+	return ""
 }

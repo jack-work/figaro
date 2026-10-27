@@ -108,7 +108,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		lastActive = time.UnixMilli(ts)
 	}
 	loaded, _ := h.settings()
-	box, err := sandbox.Open(ctx, h.angelus.Sessions, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"), h.angelus.RuntimeDir)
+	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"), h.angelus.RuntimeDir)
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
 	}
@@ -134,10 +134,12 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
 		agent.Kill()
+		box.Close()
 		return nil, fmt.Errorf("restore %s: register: %w", ariaID, err)
 	}
 
 	agent.OnTeardown(h.bindAgentToHub(ariaID, agent))
+	agent.OnTeardown(func() { box.Close() })
 
 	slog.Info("restored figaro",
 		"id", ariaID, "provider", provName, "model", knobs.Model, "woke_by", wokeBy)

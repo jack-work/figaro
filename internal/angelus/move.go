@@ -394,9 +394,7 @@ func (h *handlers) arrive(token string) error {
 func (h *handlers) letGo(mv mover, dep store.Departure) error {
 	ids := dep.Component.TrunkIDs()
 	for _, id := range ids {
-		if h.angelus.Sessions != nil {
-			h.angelus.Sessions.KillScope(id)
-		}
+		h.killSessions(id)
 	}
 	if h.holdsAny(ids) {
 		if err := mv.RemoveMoved(dep.Component, dep.Token); err != nil {

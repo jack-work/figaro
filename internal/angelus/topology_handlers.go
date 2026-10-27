@@ -118,7 +118,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if err := h.grantSandboxOn(ctx, id, chosen || patchTouches(dress, "system.cwd")); err != nil {
 			return nil, err
 		}
-		if err := h.placeWorkspace(id, chosen); err != nil {
+		if err := h.placeWorkspace(id, chosen, patchTouches(dress, "system.cwd")); err != nil {
 			return nil, err
 		}
 		snap, serr := backend.FormState(id)
@@ -134,7 +134,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		}
 		return ""
 	}
-	box, err := sandbox.Open(ctx, h.angelus.Sessions, formStr("system.sandbox"), id, formStr("system.cwd"), h.angelus.RuntimeDir)
+	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, formStr("system.sandbox"), id, formStr("system.cwd"), h.angelus.RuntimeDir)
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: %w", err)
 	}
@@ -158,10 +158,12 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
 		agent.Kill()
+		box.Close()
 		return nil, err
 	}
 
 	agent.OnTeardown(h.bindAgentToHub(id, agent))
+	agent.OnTeardown(func() { box.Close() })
 
 	slog.Info("created figaro",
 		"id", id, "outfit", outfitName, "provider", provName, "model", knobs.Model)
@@ -629,10 +631,8 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 	}
 
 	// Unconditional: a hibernated aria has no live agent and still owns running children.
-	if h.angelus.Sessions != nil {
-		if n := h.angelus.Sessions.KillScope(id); n > 0 {
-			slog.Info("killed aria sessions", "id", id, "sessions", n)
-		}
+	if n := h.killSessions(id); n > 0 {
+		slog.Info("killed aria sessions", "id", id, "sessions", n)
 	}
 
 	var held []string

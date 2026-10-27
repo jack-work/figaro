@@ -27,7 +27,7 @@ func needBwrap(t *testing.T) {
 func catInBox(t *testing.T, path string) string {
 	t.Helper()
 	ws := t.TempDir()
-	box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), "bwrap", t.Name(), ws, "")
+	box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, "bwrap", t.Name(), ws, "")
 	if err != nil {
 		t.Fatal(err)
 	}

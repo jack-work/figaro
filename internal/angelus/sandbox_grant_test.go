@@ -60,13 +60,21 @@ func newRigWith(t *testing.T, policyText string) grantRig {
 
 func newRigConfigured(t *testing.T, policyText, extraConfig string) grantRig {
 	t.Helper()
+	return newRigProviding(t, policyText, extraConfig, func(string, provider.Knobs) (provider.Provider, error) {
+		return &mockProviderForIntegration{}, nil
+	})
+}
+
+func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(string, provider.Knobs) (provider.Provider, error)) grantRig {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "outfits"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"mock":  "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
-		"boxed": "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"bwrap\"\n",
+		"mock":   "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
+		"boxed":  "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"bwrap\"\n",
+		"judged": "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, "outfits", name+".toml"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -102,12 +110,10 @@ func newRigConfigured(t *testing.T, policyText, extraConfig string) grantRig {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	hs := angelus.NewHandlers(angelus.ServerConfig{
-		Angelus: a,
-		Config:  loaded,
-		Ctx:     ctx,
-		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) {
-			return &mockProviderForIntegration{}, nil
-		},
+		Angelus:         a,
+		Config:          loaded,
+		Ctx:             ctx,
+		ProviderFactory: factory,
 	})
 	t.Cleanup(func() {
 		for _, id := range backend.ConversationIDs() {
@@ -182,8 +188,8 @@ func TestACallerWithoutUseOnTheSandboxIsRefused(t *testing.T) {
 	}
 }
 
-// A sandbox principal's arias are pinned to its own sandbox. There is no
-// box provider yet, so the pinned birth fails at the sandbox open, which
+// A sandbox principal's arias are pinned to its own sandbox. dev-3 names
+// no configured box, so the pinned birth fails at the sandbox open, which
 // shows both the pin and that the failed birth is cleaned up.
 func TestASandboxPrincipalIsPinnedToItsOwnSandbox(t *testing.T) {
 	r := newGrantRig(t)

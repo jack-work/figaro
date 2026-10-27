@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/sandbox/box"
 	"github.com/jack-work/figaro/internal/sandbox/bwrap"
 	"github.com/jack-work/figaro/internal/sandbox/local"
 )
@@ -19,7 +20,10 @@ type Opened struct {
 	Workspace string
 }
 
-func Open(ctx context.Context, host *local.Host, kind, aria, workspace, runtimeDir string) (Opened, error) {
+func Open(ctx context.Context, host *local.Host, loaded *config.Loaded, kind, aria, workspace, runtimeDir string) (Opened, error) {
+	if b, ok := loaded.Box(kind); ok {
+		return openBox(ctx, kind, b, aria, workspace)
+	}
 	if info, err := os.Stat(workspace); err != nil || !info.IsDir() {
 		if kind != "" && kind != "local" {
 			return Opened{}, fmt.Errorf("sandbox %s: workspace %q is not a directory; set system.cwd to one", kind, workspace)
@@ -45,6 +49,22 @@ func Open(ctx context.Context, host *local.Host, kind, aria, workspace, runtimeD
 		return Opened{}, err
 	}
 	return Opened{Sandbox: box, Workspace: workspace}, nil
+}
+
+func openBox(ctx context.Context, name string, b config.BoxConfig, aria, workspace string) (Opened, error) {
+	opened, err := box.Provider{Name: name, Socket: b.Exec, Scope: aria}.Open(ctx, api.Spec{Workspace: workspace, Env: ariaEnv(aria)})
+	if err != nil {
+		return Opened{}, err
+	}
+	return Opened{Sandbox: opened, Workspace: opened.(*box.Box).Workspace()}, nil
+}
+
+func KillBoxScope(ctx context.Context, loaded *config.Loaded, kind, aria string) (int, error) {
+	b, ok := loaded.Box(kind)
+	if !ok {
+		return 0, nil
+	}
+	return box.Provider{Name: kind, Socket: b.Exec, Scope: aria}.KillScope(ctx)
 }
 
 func ariaEnv(aria string) map[string]string {

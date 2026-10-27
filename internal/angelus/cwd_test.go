@@ -32,7 +32,7 @@ func TestBirthCwdFallsBackWhenUnusable(t *testing.T) {
 
 func TestCwdFromFormFallsBackWhenUnusable(t *testing.T) {
 	dir := t.TempDir()
-	box, err := sandbox.Open(context.Background(), local.NewHost(local.DefaultTTL), "", "t", dir, "")
+	box, err := sandbox.Open(context.Background(), local.NewHost(local.DefaultTTL), nil, "", "t", dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}

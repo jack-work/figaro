@@ -35,7 +35,7 @@ func TestAConfiningProviderRefusesAnUnusableWorkspace(t *testing.T) {
 		"unset":     "",
 	} {
 		t.Run(name, func(t *testing.T) {
-			box, err := Open(context.Background(), host, "bwrap", "a1", ws, t.TempDir())
+			box, err := Open(context.Background(), host, nil, "bwrap", "a1", ws, t.TempDir())
 			if err == nil {
 				t.Fatalf("opened with workspace %q", box.Workspace)
 			}
@@ -49,7 +49,7 @@ func TestAConfiningProviderRefusesAnUnusableWorkspace(t *testing.T) {
 func TestAConfiningProviderOpensOnAUsableWorkspace(t *testing.T) {
 	fakeBwrapOnPath(t)
 	ws := t.TempDir()
-	box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), "bwrap", "a1", ws, t.TempDir())
+	box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, "bwrap", "a1", ws, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestAConfiningProviderOpensOnAUsableWorkspace(t *testing.T) {
 func TestLocalStillFallsBackToTheDaemonsDirectory(t *testing.T) {
 	daemon, _ := os.Getwd()
 	for _, kind := range []string{"", "local"} {
-		box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), kind, "a1", filepath.Join(t.TempDir(), "gone"), t.TempDir())
+		box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, kind, "a1", filepath.Join(t.TempDir(), "gone"), t.TempDir())
 		if err != nil {
 			t.Fatalf("%q: %v", kind, err)
 		}

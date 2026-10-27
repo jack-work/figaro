@@ -84,9 +84,7 @@ func (h *handlers) stopAria(id string) {
 			slog.Warn("kill: agent did not stop", "id", id, "err", err)
 		}
 	}
-	if h.angelus.Sessions != nil {
-		if n := h.angelus.Sessions.KillScope(id); n > 0 {
-			slog.Info("killed aria sessions", "id", id, "sessions", n)
-		}
+	if n := h.killSessions(id); n > 0 {
+		slog.Info("killed aria sessions", "id", id, "sessions", n)
 	}
 }
