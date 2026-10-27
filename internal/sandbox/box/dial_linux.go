@@ -2,6 +2,7 @@ package box
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -9,8 +10,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var openat2 = unix.Openat2
+
+func openNoLinks(path string) (int, error) {
+	fd, err := openat2(unix.AT_FDCWD, path, &unix.OpenHow{
+		Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC,
+		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
+	if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EPERM) {
+		return unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	}
+	return fd, err
+}
+
 func dialSocket(ctx context.Context, d *net.Dialer, path string) (net.Conn, error) {
-	fd, err := unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	fd, err := openNoLinks(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}

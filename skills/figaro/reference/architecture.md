@@ -671,9 +671,10 @@ profile = "build"                                # carried, not yet read
 ```
 
 `system.sandbox = "judge"` opens it. The box owns the directory its exec
-socket lives in, so the daemon opens `exec` with `O_PATH|O_NOFOLLOW`,
-refuses anything but a socket, and connects through `/proc/self/fd`: a
-link there cannot point it at another socket. Paths are paths in the box: a box
+socket lives in, so the daemon opens `exec` with openat2 refusing a link
+in any component (`O_PATH|O_NOFOLLOW` on the last one where openat2 is
+missing), refuses anything but a socket, and connects through
+`/proc/self/fd`: a link there cannot point it at another socket. Paths are paths in the box: a box
 aria is born without the CLI's host cwd, `system.cwd` (if dressed)
 resolves against the box's `--workspace`, and none of it needs `use` on
 `sandbox:local`. Cancelling an exec or killing a session signals its
