@@ -63,6 +63,10 @@ func (a *Angelus) expireTTL() {
 		if roles == nil {
 			roles = a.roleTargets()
 		}
+		if node := a.otherSandboxIn(taken, e.ID); node != "" {
+			slog.Info("lifetime spent, kept: a node it would take runs in another sandbox", "node", e.ID, "held_by", node, "ttl", e.TTL)
+			continue
+		}
 		if node, why := a.heldIn(taken, e.ID, bound, roles, def, now); why != "" {
 			slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
 			continue
@@ -81,6 +85,27 @@ func (a *Angelus) expireTTL() {
 			"created", time.UnixMilli(e.CreatedAtMS),
 			"expired", time.UnixMilli(e.DeadlineMS))
 	}
+}
+
+func (a *Angelus) otherSandboxIn(taken []string, self string) string {
+	own := a.sandboxOf(self)
+	for _, id := range taken {
+		if id != self && a.sandboxOf(id) != own {
+			return id
+		}
+	}
+	return ""
+}
+
+func (a *Angelus) sandboxOf(id string) string {
+	snap, err := a.Backend.FormState(id)
+	if err != nil {
+		return "local"
+	}
+	if s := snap.Lookup("system.sandbox"); s != nil && *s != "" {
+		return *s
+	}
+	return "local"
 }
 
 func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, roles map[string]string, def time.Duration, now time.Time) (string, string) {

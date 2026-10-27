@@ -608,7 +608,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	if req.Recursive {
-		for _, d := range h.descendants(req.FigaroID) {
+		for _, d := range h.takenWith(req.FigaroID) {
 			if err := h.allowed(ctx, rpc.VerbKill, authz.Aria(d)); err != nil {
 				return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
 			}

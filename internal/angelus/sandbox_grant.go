@@ -243,11 +243,25 @@ func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) 
 	return out
 }
 
-func (h *handlers) descendants(id string) []string {
+func (h *handlers) takenWith(id string) []string {
 	if h.angelus.Policies == nil {
 		return nil
 	}
-	return h.subtree(id)
+	seen := map[string]bool{id: true}
+	var out []string
+	add := func(ids []string) {
+		for _, n := range ids {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	add(h.subtree(id))
+	if rk, ok := h.angelus.Backend.(killReaper); ok {
+		add(rk.DeleteSet(id))
+	}
+	return out
 }
 
 func (h *handlers) subtree(id string) []string {

@@ -38,8 +38,6 @@ var boxWritable = []string{
 	"system.reminder_renderer",
 	"system.credo",
 	"system.tags",
-	"system.ttl",
-	"system.keepalive",
 	"system.retired",
 	"system.study_incantation",
 	"system.fork_incantation",

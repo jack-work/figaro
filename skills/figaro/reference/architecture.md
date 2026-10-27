@@ -328,7 +328,7 @@ Arias in one box share its files and processes, so the box is the unit a
 policy can separate; an aria moved out of the box leaves the box's reach.
 A policy file binds boxes itself, with the same two selectors. A box
 writes only the `system.` keys `boxWritable` lists (`internal/angelus/box_keys.go`):
-model and sampling knobs, credo, tags, cwd, sandbox, lifetimes, the decision
+model and sampling knobs, credo, tags, cwd, sandbox, the decision
 provider and model. Among those it may not write, the daemon dereferences
 `system.environment.*` (a directory it writes wire logs to),
 `system.decide.base_url` (a URL it sends a credential to), `system.methods`

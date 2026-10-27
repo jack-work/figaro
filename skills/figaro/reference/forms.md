@@ -218,7 +218,8 @@ mid-turn; cast it; the predecessor drops the role, its mantra gains
 `SUCCEEDED: `, and it is retired (or, with `linger`, not) with `system.ttl`
 counted from now. When the ttl is spent the sweep reaps it into
 `figaro reaped` unless something holds it: a shell attending it, a second
-role still pointing at it (the report names those), a recent branch.
+role still pointing at it (the report names those), a recent branch, or a
+branch running in a different sandbox.
 
 Nothing is rolled back. `-j` prints the report (`failed_at`, `error`, and
 every step that landed), and a failure lists the commands that finish the
