@@ -19,8 +19,8 @@ let
     in
     map toString ports ++ map (r: "${toString r.from}:${toString r.to}") ranges;
   families = ''
-    v4="iptables -w -t mangle"
-    v6="ip6tables -w -t mangle"
+    v4="iptables -w"
+    v6="ip6tables -w"
   '';
   returns =
     proto:
