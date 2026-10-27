@@ -49,6 +49,9 @@ func Run(progName string, args []string) {
 		case "--version", "-V":
 			runVersion(false)
 			return
+		case "box":
+			exitAt(runBoxStandalone(progName, args))
+			return
 		}
 	}
 
@@ -1609,6 +1612,7 @@ there until you revoke it with the provider.`,
 	})
 
 	registerTroupe(r)
+	r.Register(boxVerb)
 
 	r.Register(&cmdkit.Command{
 		Name:  "models",
