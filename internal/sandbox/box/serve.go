@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,6 +30,7 @@ func Listen(path string) (net.Listener, error) {
 }
 
 type Server struct {
+	env    map[string]string
 	root   string
 	host   *local.Host
 	mu     sync.Mutex
@@ -44,6 +46,18 @@ func NewServer(workspace string) (*Server, error) {
 		return nil, fmt.Errorf("box: workspace %q is not a directory", workspace)
 	}
 	return &Server{root: root, host: local.NewHost(local.DefaultTTL), scopes: map[string]bool{}}, nil
+}
+
+func (s *Server) CallBackThrough(door string) error {
+	abs, err := filepath.Abs(door)
+	if err != nil {
+		return err
+	}
+	s.env = map[string]string{
+		"FIGARO_TROUPE":      "unix://" + abs,
+		"FIGARO_RUNTIME_DIR": filepath.Dir(abs),
+	}
+	return nil
 }
 
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
@@ -187,7 +201,10 @@ func (c *serverConn) open(r openReq) (any, error) {
 			ws = p
 		}
 	}
-	b, err := local.Provider{Host: c.srv.host, Scope: r.Scope}.Open(c.ctx, sandbox.Spec{Workspace: ws, Env: r.Env})
+	env := map[string]string{}
+	maps.Copy(env, r.Env)
+	maps.Copy(env, c.srv.env)
+	b, err := local.Provider{Host: c.srv.host, Scope: r.Scope}.Open(c.ctx, sandbox.Spec{Workspace: ws, Env: env})
 	if err != nil {
 		return nil, err
 	}

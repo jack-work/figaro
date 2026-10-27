@@ -17,20 +17,25 @@ var boxVerb = &cmdkit.Command{
 	Name:  "box",
 	Group: "System",
 	Short: "Serve a sandbox over a unix socket, or run one command through it",
-	Usage: "box serve --socket <path> --workspace <dir> | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
+	Usage: "box serve --socket <path> --workspace <dir> [--door <path>] | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
 	Long: `A box is a sandbox a daemon reaches over a unix socket: the daemon names
 it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 
   serve   run the local provider behind --socket, rooted at --workspace.
           It holds no figaro state and needs no daemon or config. The
           socket takes the process umask; a stale socket is replaced, a
-          live one refused. SIGINT or SIGTERM kills every session it holds
+          live one refused. SIGINT or SIGTERM kills every session it holds.
+          --door names the daemon's door for this box as seen inside it:
+          every command run here gets FIGARO_TROUPE=unix://<door> and
+          FIGARO_RUNTIME_DIR=<its dir>, so figaro in the box calls back
+          through the door and never starts a daemon of its own
   exec    run one shell command through a served box, stream its output
           and exit with its code (130 cancelled, 124 timed out). stdin
           is not forwarded`,
 	Flags: []cmdkit.FlagDef{
 		{Long: "socket", Short: "s", Description: "the box's unix socket"},
 		{Long: "workspace", Short: "w", Description: "serve: the directory every relative path and cwd resolves against"},
+		{Long: "door", Description: "serve: the daemon's door socket for this box, as a path inside it"},
 		{Long: "cwd", Description: "exec: working directory, relative to the workspace"},
 		{Long: "scope", Description: "exec: session scope (default: this pid)"},
 	},
@@ -45,7 +50,7 @@ it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 			if len(ctx.Args) > 1 {
 				return fmt.Errorf("box serve takes no arguments")
 			}
-			return runBoxServe(sock, ctx.Flag("workspace"))
+			return runBoxServe(sock, ctx.Flag("workspace"), ctx.Flag("door"))
 		case "exec":
 			if len(ctx.Args) < 2 {
 				return fmt.Errorf("box exec: name a command after --")
@@ -67,13 +72,18 @@ func runBoxStandalone(progName string, args []string) int {
 	return r.Run(args)
 }
 
-func runBoxServe(sock, workspace string) error {
+func runBoxServe(sock, workspace, door string) error {
 	if workspace == "" {
 		return fmt.Errorf("box serve: --workspace is required")
 	}
 	srv, err := box.NewServer(workspace)
 	if err != nil {
 		return err
+	}
+	if door != "" {
+		if err := srv.CallBackThrough(door); err != nil {
+			return err
+		}
 	}
 	ln, err := box.Listen(sock)
 	if err != nil {

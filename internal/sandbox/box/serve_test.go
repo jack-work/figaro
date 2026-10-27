@@ -86,3 +86,56 @@ func TestServeSpeaksPlainJSONRPC(t *testing.T) {
 		t.Fatal("no exit notification")
 	}
 }
+
+func TestCommandsInABoxCallBackThroughItsDoor(t *testing.T) {
+	dir := sockDir(t)
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.CallBackThrough(filepath.Join(dir, "door", "angelus.sock")); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(dir, "s")
+	ln, err := Listen(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go srv.Serve(ctx, ln)
+	nc, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var out strings.Builder
+	exited := make(chan struct{})
+	c := jkrpc.NewClient(jkrpc.NewConn(nc), func(method string, params json.RawMessage) {
+		switch method {
+		case nChunk:
+			var n chunkNote
+			json.Unmarshal(params, &n)
+			mu.Lock()
+			out.Write(n.Data)
+			mu.Unlock()
+		case nExit:
+			close(exited)
+		}
+	})
+	defer c.Close()
+	env := map[string]string{"FIGARO_TROUPE": "unix:///elsewhere", "FIGARO_RUNTIME_DIR": "/elsewhere"}
+	if err := c.Call(ctx, mOpen, openReq{Scope: "s", Env: env}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Call(ctx, mExec, execReq{Handle: "x", Command: `echo "$FIGARO_TROUPE $FIGARO_RUNTIME_DIR"`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	<-exited
+	mu.Lock()
+	defer mu.Unlock()
+	want := "unix://" + filepath.Join(dir, "door", "angelus.sock") + " " + filepath.Join(dir, "door") + "\n"
+	if out.String() != want {
+		t.Fatalf("env %q, want %q: the box's door wins over what the daemon sends", out.String(), want)
+	}
+}
