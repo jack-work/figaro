@@ -21,9 +21,14 @@ pkgs.testers.runNixOSTest {
     networking.interfaces.eth1.ipv6.addresses = [ { address = "fd00:1::2"; prefixLength = 64; } ];
     networking.defaultGateway6 = { address = "fd00:1::1"; interface = "eth1"; };
     networking.firewall.allowedUDPPorts = [ 9999 ];
+    networking.firewall.allowedTCPPorts = [ 9997 ];
     systemd.services.v6-sink = {
       wantedBy = [ "multi-user.target" ];
       serviceConfig.ExecStart = "${pkgs.socat}/bin/socat -u UDP6-RECV:9999,reuseaddr OPEN:/tmp/v6-arrived,creat,append";
+    };
+    systemd.services.v4-listener = {
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:9997,fork,reuseaddr SYSTEM:true";
     };
   };
 
@@ -142,33 +147,117 @@ pkgs.testers.runNixOSTest {
         resolves()
 
     # The host forwards IPv6, as spain does, and the container's root can
-    # give itself a global address and a default route via the host. Each
-    # control is shown alone: the ve-figaro DROP with the reverse-path filter
-    # emptied, the path itself with both gone, and a reload restoring both.
-    with subtest("the container cannot forward IPv6 through the host"):
-        import time
-        lan.wait_for_unit("v6-sink.service")
-        host.wait_until_succeeds("ping -6 -c1 -W1 fd00:1::2")
-        gw = host.succeed("ip -6 -o addr show dev ve-figaro scope link | awk '{print $4}' | cut -d/ -f1").strip()
+    # give itself a global address and a default route via the host.
+    import time
+    lan.wait_for_unit("v6-sink.service")
+    lan.wait_for_unit("v4-listener.service")
+    lan_v4 = lan.succeed("ip -4 -o addr show dev eth1 | awk '{print $4}' | cut -d/ -f1").strip()
+    host.succeed("systemd-run --unit=host-8081 -- ${pkgs.socat}/bin/socat TCP-LISTEN:8081,fork,reuseaddr SYSTEM:true")
+    host.wait_until_succeeds("${pkgs.socat}/bin/socat -u OPEN:/dev/null TCP:127.0.0.1:8081")
+    host.wait_until_succeeds("ping -6 -c1 -W1 fd00:1::2")
+    gw = host.succeed("ip -6 -o addr show dev ve-figaro scope link | awk '{print $4}' | cut -d/ -f1").strip()
+
+    def give_v6():
         inside("${pkgs.iproute2}/bin/ip -6 addr add fd99::2/64 dev eth0 nodad")
         inside(f"${pkgs.iproute2}/bin/ip -6 route add default via {gw} dev eth0")
 
-        def send(word):
-            inside(f"sh -c 'echo {word} | ${pkgs.socat}/bin/socat -u - UDP6-SENDTO:[fd00:1::2]:9999,bind=[fd99::2]'")
+    def reaches(addr, port):
+        status, _ = host.execute(f"nixos-container run figaro -- ${pkgs.socat}/bin/socat -T3 -u OPEN:/dev/null TCP:{addr}:{port},connect-timeout=4")
+        return status == 0
 
-        def stopped(word):
-            send(word)
-            time.sleep(3)
-            return word not in lan.succeed("cat /tmp/v6-arrived 2>/dev/null || true")
+    def forwards_v6(word):
+        inside(f"sh -c 'echo {word} | ${pkgs.socat}/bin/socat -u - UDP6-SENDTO:[fd00:1::2]:9999,bind=[fd99::2]'")
+        time.sleep(3)
+        return word in lan.succeed("cat /tmp/v6-arrived 2>/dev/null || true")
 
-        assert stopped("as-built"), "forwarded IPv6 from the container reached the LAN as built"
+    def contained(word):
+        assert not reaches(lan_v4, 9997), "the container reached a blocked destination"
+        assert not reaches("10.233.1.1", 8081), "the container reached a host port the firewall does not open to it"
+        assert not forwards_v6(word), "the container forwarded IPv6 through the host"
+        assert reaches("10.233.1.1", 8099), "the guard closed a port the firewall opens to the container"
+        inside("getent hosts door.figaro.test")
+
+    families = ("iptables -w -t mangle", "ip6tables -w -t mangle")
+
+    def guarded():
+        for fam in families:
+            host.succeed(f"{fam} -C FORWARD -i ve-figaro -j figaro-guard", f"{fam} -C INPUT -i ve-figaro -j figaro-guard-in")
+
+    def figaro_up():
+        host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active figaro.service", timeout=120)
+        host.wait_until_succeeds("nixos-container run figaro -- getent hosts door.figaro.test", timeout=60)
+
+    def state(unit):
+        return host.succeed(f"systemctl show {unit} -p ActiveState --value").strip()
+
+    with subtest("the guard alone contains the container, as built and with the reverse-path filter emptied"):
+        give_v6()
+        guarded()
+        contained("as-built")
         host.succeed("for t in raw mangle; do ip6tables -t $t -F nixos-fw-rpfilter 2>/dev/null || true; done")
-        assert stopped("drop-alone"), "the ve-figaro DROP alone did not stop forwarded IPv6"
-        host.succeed("ip6tables -D FORWARD -i ve-figaro -j DROP")
-        send("unguarded")
-        lan.wait_until_succeeds("grep -q unguarded /tmp/v6-arrived", timeout=15)
-        host.succeed("systemctl reload firewall.service")
-        host.succeed("ip6tables -S FORWARD | grep -q -- '-i ve-figaro -j DROP'")
-        assert stopped("reloaded"), "the DROP did not come back with a firewall reload"
+        contained("rpfilter-emptied")
+
+    with subtest("the guard outlives a firewall restart and a stopped firewall"):
+        host.succeed("systemctl restart firewall.service")
+        guarded()
+        contained("firewall-restarted")
+        host.succeed("systemctl stop firewall.service")
+        assert "nixos-fw" not in host.succeed("iptables -w -S INPUT; iptables -w -t mangle -S PREROUTING")
+        guarded()
+        contained("firewall-stopped")
+
+    # tailscaled puts its own jumps first in filter INPUT and FORWARD
+    # whenever it starts, and ts-forward accepts anything leaving by
+    # tailscale0. The guard sits in mangle, ahead of every filter rule.
+    with subtest("an accept that another service puts first in the filter table does not open the guard"):
+        for fam in ("iptables -w", "ip6tables -w"):
+            host.succeed(f"{fam} -I FORWARD 1 -j ACCEPT", f"{fam} -I INPUT 1 -j ACCEPT")
+        contained("filter-accepts-first")
+        for fam in ("iptables -w", "ip6tables -w"):
+            host.succeed(f"{fam} -D FORWARD -j ACCEPT", f"{fam} -D INPUT -j ACCEPT")
+
+    # With the firewall stopped, the guard is the only thing in the way, so
+    # taking its jumps out must open every path the checks above found shut.
+    with subtest("without the guard and the firewall, every one of those paths is open"):
+        for fam in families:
+            host.succeed(f"{fam} -D FORWARD -i ve-figaro -j figaro-guard", f"{fam} -D INPUT -i ve-figaro -j figaro-guard-in")
+        assert reaches(lan_v4, 9997), "no path to the blocked destination even unguarded"
+        assert reaches("10.233.1.1", 8081), "no path to the host port even unguarded"
+        assert forwards_v6("unguarded"), "no IPv6 path even unguarded"
+        host.succeed("systemctl start firewall.service")
+
+    with subtest("a restarted guard restarts the container behind it"):
+        leader = host.succeed("machinectl show -p Leader --value figaro").strip()
+        host.succeed("systemctl restart figaro-guard-net.service")
+        figaro_up()
+        assert host.succeed("machinectl show -p Leader --value figaro").strip() != leader
+        guarded()
+        give_v6()
+        contained("guard-restarted")
+
+    with subtest("a guard that stops without a job for the container still stops it"):
+        host.succeed("systemctl stop --job-mode=ignore-dependencies figaro-guard-net.service")
+        host.wait_until_succeeds("test \"$(systemctl show container@figaro -p ActiveState --value)\" != active", timeout=60)
+        assert "figaro" not in host.succeed("machinectl list --no-legend")
+        host.succeed("systemctl start container@figaro.service")
+        figaro_up()
+        guarded()
+
+    with subtest("a guard that fails to come back leaves the container stopped"):
+        host.succeed("mkdir -p /run/systemd/system/figaro-guard-net.service.d")
+        host.succeed("printf '[Service]\\nExecStartPre=${pkgs.coreutils}/bin/false\\n' > /run/systemd/system/figaro-guard-net.service.d/fail.conf")
+        host.succeed("systemctl daemon-reload")
+        host.fail("systemctl restart figaro-guard-net.service")
+        assert state("figaro-guard-net.service") == "failed", state("figaro-guard-net.service")
+        assert state("container@figaro.service") in ("inactive", "failed"), state("container@figaro.service")
+        assert "figaro" not in host.succeed("machinectl list --no-legend")
+        host.fail("systemctl start container@figaro.service")
+        assert "figaro" not in host.succeed("machinectl list --no-legend")
+        host.succeed("rm -r /run/systemd/system/figaro-guard-net.service.d && systemctl daemon-reload && systemctl reset-failed")
+        host.succeed("systemctl start container@figaro.service")
+        figaro_up()
+        guarded()
+        give_v6()
+        contained("guard-back")
   '';
 }
