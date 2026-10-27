@@ -64,6 +64,14 @@ func CompileTroupePolicy(body []byte, troupe string, schema jkauthz.Schema[Resou
 	return pol, nil
 }
 
+func troupeHolders(body []byte) (*jkauthz.Policy[Resource], error) {
+	doc, err := ParseTroupeDocument(body)
+	if err != nil {
+		return nil, fmt.Errorf("troupe policy: %w", err)
+	}
+	return holders(doc.policy)
+}
+
 func CheckTroupeDocument(body []byte, troupe string, facts Facts) error {
 	_, err := CompileTroupePolicy(body, troupe, Schema(facts))
 	return err

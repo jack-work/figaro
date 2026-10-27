@@ -30,6 +30,10 @@ func (d Door) String() string {
 	return fmt.Sprintf("door %d", d)
 }
 
+func (d Door) SeatsOnlyPolicySubjects() bool {
+	return d != DoorInProcess && d != DoorLocal && d != DoorNode
+}
+
 func (d Door) Trusted() bool {
 	return d == DoorInProcess || d == DoorLocal
 }

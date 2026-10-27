@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -146,6 +147,9 @@ func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, door authz.Door,
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cctx, err := admit(ctx, conn)
+	if err == nil {
+		err = a.seat(cctx, door)
+	}
 	if err != nil {
 		if peer.IsLeftAlready(err) {
 			slog.Info("door answered a node that left", "err", err)
@@ -156,6 +160,36 @@ func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, door authz.Door,
 		return
 	}
 	a.handleConn(cctx, door, conn)
+}
+
+type unseated struct {
+	door    authz.Door
+	subject jkauthz.Principal
+}
+
+func (e *unseated) Error() string {
+	return fmt.Sprintf("the %s door seats only a subject the policy binds to a role, and %s holds none", e.door, e.subject)
+}
+
+func (a *Angelus) seat(ctx context.Context, door authz.Door) error {
+	if !door.SeatsOnlyPolicySubjects() {
+		return nil
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return err
+	}
+	if !a.holdsRole(sub) {
+		return &unseated{door: door, subject: sub.Principal}
+	}
+	return nil
+}
+
+func (a *Angelus) holdsRole(sub jkauthz.Subject) bool {
+	if a.Policies == nil {
+		return authz.IsOwner(a.owner(), sub)
+	}
+	return a.Policies.HoldsRole(sub)
 }
 
 func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadWriteCloser) {

@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -132,6 +133,7 @@ type Policies struct {
 	path   string
 	scopes []string
 	troupe atomic.Pointer[troupeLayer]
+	held   atomic.Pointer[jkauthz.Policy[Resource]]
 	schema jkauthz.Schema[Resource]
 }
 
@@ -139,6 +141,7 @@ type troupeLayer struct {
 	name   string
 	as     jkauthz.Subject
 	policy *jkauthz.Policy[Resource]
+	held   *jkauthz.Policy[Resource]
 	err    error
 }
 
@@ -158,13 +161,13 @@ func (p *Policies) Reload(path string) error {
 	defer p.mu.Unlock()
 	p.path = path
 	if path == "" {
-		return p.store.LoadBytes([]byte(DefaultPolicy(p.self)))
+		return p.load([]byte(DefaultPolicy(p.self)))
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("policy %s: %w", path, err)
 	}
-	if err := p.store.LoadBytes(data); err != nil {
+	if err := p.load(data); err != nil {
 		return fmt.Errorf("policy %s: %w", path, err)
 	}
 	for _, name := range WildcardsAcrossIssuers(data) {
@@ -174,6 +177,61 @@ func (p *Policies) Reload(path string) error {
 		slog.Warn("authz: policy names "+name+", which no issuer or edge produces: their principals and groups carry the issuer's scope", "policy", path, "write", ScopedSpelling(name, p.scopes))
 	}
 	return nil
+}
+
+func (p *Policies) load(data []byte) error {
+	held, err := holders(data)
+	if err != nil {
+		return err
+	}
+	if err := p.store.LoadBytes(data); err != nil {
+		return err
+	}
+	p.held.Store(held)
+	return nil
+}
+
+const verbHold = "hold"
+
+var holdSchema = jkauthz.Schema[Resource]{Verbs: []string{verbHold}}
+
+func holders(policy []byte) (*jkauthz.Policy[Resource], error) {
+	type grant struct {
+		Verbs []string `toml:"verbs"`
+		On    []string `toml:"on"`
+	}
+	type bind struct {
+		Role       string   `toml:"role"`
+		Principals []string `toml:"principals,omitempty"`
+		Groups     []string `toml:"groups,omitempty"`
+	}
+	doc := struct {
+		Roles map[string]map[string][]grant `toml:"roles"`
+		Bind  []bind                        `toml:"bind"`
+	}{Roles: map[string]map[string][]grant{"held": {"grants": {{Verbs: []string{verbHold}, On: []string{jkauthz.Any}}}}}}
+	for _, b := range binds(policy) {
+		if len(b.Principals)+len(b.Groups) > 0 {
+			doc.Bind = append(doc.Bind, bind{Role: "held", Principals: b.Principals, Groups: b.Groups})
+		}
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(doc); err != nil {
+		return nil, err
+	}
+	return jkauthz.Compile(buf.Bytes(), holdSchema)
+}
+
+func holdsRole(pol *jkauthz.Policy[Resource], s jkauthz.Subject) bool {
+	return pol != nil && pol.Allow(s, verbHold, Daemon).Allowed
+}
+
+func (p *Policies) HoldsRole(s jkauthz.Subject) bool {
+	local := p.held.Load()
+	if holdsRole(local, s) {
+		return true
+	}
+	t := p.troupe.Load()
+	return t != nil && t.policy != nil && holdsRole(t.held, s) && holdsRole(local, t.as)
 }
 
 func IssuerScopes(cfg config.AuthzConfig) []string {
@@ -329,6 +387,9 @@ func (p *Policies) SetTroupe(name string, body []byte) error {
 		return nil
 	}
 	pol, err := CompileTroupePolicy(body, name, p.schema)
+	if err == nil {
+		layer.held, err = troupeHolders(body)
+	}
 	if err != nil {
 		layer.err = err
 		p.troupe.Store(layer)
