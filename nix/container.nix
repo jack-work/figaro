@@ -200,7 +200,7 @@ in
     };
 
     systemd.services."container@figaro" = {
-      bindsTo = [ "figaro-guard-net.service" ];
+      requires = [ "figaro-guard-net.service" ];
       after = [ "figaro-guard-net.service" ];
       serviceConfig = {
         Slice = lib.mkForce "figaro.slice";
