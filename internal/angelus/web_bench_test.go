@@ -71,3 +71,31 @@ func (drainAgent) Handle(context.Context, string, json.RawMessage) (any, error) 
 }
 
 func (drainAgent) Subscribe(figaro.Notifier) func() { return func() {} }
+
+// What a client pays to open the web door: the HTTP upgrade, admission and
+// the first frame back.
+func BenchmarkDoorUpgradeWeb(b *testing.B) {
+	quiet(b)
+	hb := newAriaHub("abcd1234")
+	defer hb.bind(newDrainAgent())()
+	path := serveWeb(b, hb, Web{Admit: admitAs(webPrincipal)})
+	ctx := context.Background()
+	hdr := http.Header{"Remote-User": {"gluck"}}
+	hello, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": rpc.MethodHello,
+		"params": rpc.HelloRequest{Version: rpc.ProtocolVersion}})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c, _, err := dialWeb(b, path, hdr)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := c.Write(ctx, websocket.MessageText, hello); err != nil {
+			b.Fatal(err)
+		}
+		if _, _, err := c.Read(ctx); err != nil {
+			b.Fatal(err)
+		}
+		c.Close(websocket.StatusNormalClosure, "")
+	}
+}
