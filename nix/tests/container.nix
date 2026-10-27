@@ -108,6 +108,63 @@ pkgs.testers.runNixOSTest {
         print(out)
         host.fail("env FIGARO_RUNTIME_DIR=/run/figaro-door FIGARO_NO_SELF_SPAWN=1 HOME=/tmp figaro list -j")
 
+    with subtest("nspawn neither waits on the guest's readiness nor links its journal into the host's"):
+        argv = host.succeed("tr '\\0' '\\n' < /proc/$(systemctl show container@figaro -p MainPID --value)/cmdline").split("\n")
+        for flag in ("--notify-ready", "--link-journal"):
+            given = [a for a in argv if a.startswith(flag + "=")]
+            assert given and given[-1] == flag + "=no", (flag, given)
+        machine = host.succeed("machinectl show figaro -p Id --value").strip()
+        host.fail(f"test -e /var/log/journal/{machine} || test -L /var/log/journal/{machine}")
+        inside("journalctl -u figaro.service -n1 --no-pager")
+
+    with subtest("the container's root is an unprivileged uid range on the host"):
+        for m in ("uid_map", "gid_map"):
+            assert inside(f"cat /proc/self/{m}").split() == ["0", "524288", "65536"], m
+        leader = host.succeed("machinectl show figaro -p Leader --value").strip()
+        assert host.succeed(f"stat -c %u /proc/{leader}").strip() == "524288"
+
+    host_devs = set(host.succeed("findmnt -rn -o MAJ:MIN").split())
+
+    def host_binds():
+        top = {}
+        for line in inside("findmnt -rn -o TARGET,MAJ:MIN,OPTIONS").splitlines():
+            target, dev, opts = line.split(" ", 2)
+            top[target] = (dev, "ro" if "ro" in opts.split(",") else "rw")
+        return {t: mode for t, (dev, mode) in top.items() if dev in host_devs}
+
+    with subtest("the container sees only the declared host mounts, read-only where it can be"):
+        binds = host_binds()
+        print(binds)
+        # nspawn's --inaccessible lays the host's own mode-000 node over a
+        # path, so those three show as read-only host mounts with nothing in them.
+        assert binds == {
+            "/": "rw",
+            "/nix/store": "ro",
+            "/nix/var/nix/profiles": "ro",
+            "/nix/var/nix/gcroots": "ro",
+            "/var/lib/figaro": "rw",
+            "/run/figaro": "rw",
+            "/run/host/incoming": "ro",
+            "/run/host/os-release": "ro",
+            "/sys/fs/cgroup": "rw",
+            "/nix/var/nix/daemon-socket": "ro",
+            "/nix/var/nix/db": "ro",
+            "/run/host/unix-export": "ro",
+        }, binds
+        for gone in ("/nix/var/nix/daemon-socket", "/nix/var/nix/db", "/run/host/unix-export"):
+            assert inside(f"stat -c %a {gone}").strip() == "0", gone
+        inside("sh -c 'test ! -e /nix/var/nix/daemon-socket/socket'")
+
+    with subtest("no host D-Bus or machined socket reaches the container"):
+        socks = set(inside("find /run/figaro -type s").split())
+        assert socks <= {"/run/figaro/angelus.sock", "/run/figaro/web.sock"}, socks
+        assert host.succeed("find /run/systemd/nspawn/propagate/figaro -mindepth 1").strip() == ""
+        bus = inside("findmnt -rn -o MAJ:MIN -T /run/dbus/system_bus_socket").strip()
+        assert bus not in host_devs, bus
+        assert inside("busctl --system get-property org.freedesktop.systemd1 /org/freedesktop/systemd1 "
+                      "org.freedesktop.systemd1.Manager Virtualization").strip() == 's "systemd-nspawn"'
+        inside("sh -c 'test ! -e /run/systemd/machine'")
+
     with subtest("a tool call runs under bwrap inside the container"):
         out = as_figaro("sh -c 'cd /var/lib/figaro/work && exec figaro new -j -S system.provider=gateway -S system.model=stub -S system.sandbox=bwrap -S system.cwd=/var/lib/figaro/work -- probe'")
         print(out)
