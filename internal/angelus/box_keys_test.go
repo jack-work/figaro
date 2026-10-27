@@ -222,3 +222,30 @@ func TestKillingABoxAriaNeverReleasesAHostWorkspace(t *testing.T) {
 		t.Fatalf("killing a box aria released a host workspace: %v", err)
 	}
 }
+
+// The rule is an allowlist: a system key no one has classified yet is the
+// owner's until someone lists it, and the open keys a box writes stay its own.
+func TestABoxWritesOnlyListedSystemKeys(t *testing.T) {
+	d := boxDoorRig(t, "true")
+	inBox, err := d.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := d.dial(t)
+	onIt := func(method string, req any) error { return boxOnAria(t, c, method, inBox.FigaroID, req, nil) }
+	if err := onIt(rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.added_tomorrow": "/etc"})}); err == nil || !strings.Contains(err.Error(), "only the system keys it is listed for") {
+		t.Fatalf("an unlisted system key: %v", err)
+	}
+	for key, val := range map[string]any{"system.model": "m2", "system.credo": map[string]any{"content": "be brief"}, "system.tags": map[string]any{"3": map[string]any{"cache_control": "1h"}}, "chalkboard.note": "mine", "mantra": "boxed"} {
+		if err := onIt(rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{key: val})}); err != nil {
+			t.Errorf("%s: %v", key, err)
+		}
+	}
+	ctxOnly := &rpc.FormInput{Context: map[string]json.RawMessage{"target-aria": json.RawMessage(`"elsewhere"`)}}
+	if err := onIt(rpc.MethodQua, rpc.QuaRequest{Text: "hi", Form: ctxOnly}); err == nil || !strings.Contains(err.Error(), "target-aria") {
+		t.Fatalf("target-aria through a prompt's context: %v", err)
+	}
+	if v, ok := keyOn(t, d.grantRig, inBox.FigaroID, "target-aria"); ok {
+		t.Fatalf("target-aria landed: %s", v)
+	}
+}
