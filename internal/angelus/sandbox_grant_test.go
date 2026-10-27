@@ -46,7 +46,10 @@ type grantRig struct {
 	backend *store.XwalBackend
 	cwd     string
 	policy  string
+	a       *angelus.Angelus
 }
+
+const defaultPolicy = "<the default policy>"
 
 func newGrantRig(t *testing.T) grantRig {
 	t.Helper()
@@ -81,11 +84,18 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		}
 	}
 	self := strconv.Itoa(os.Getuid())
-	policy := filepath.Join(dir, "policy.toml")
-	if err := os.WriteFile(policy, []byte(strings.ReplaceAll(policyText, "SELF", self)), 0o600); err != nil {
+	policy, authzConfig := "", ""
+	if policyText != defaultPolicy {
+		policy, authzConfig = filepath.Join(dir, "policy.toml"), "[authz]\npolicy = \"policy.toml\"\n"
+		if err := os.WriteFile(policy, []byte(strings.ReplaceAll(policyText, "SELF", self)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(authzConfig+extraConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[authz]\npolicy = \"policy.toml\"\n"+extraConfig), 0o600); err != nil {
+	loaded, err := config.Load(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
@@ -100,11 +110,8 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	}
 	a.Peercred = peer
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	a.Policies.SetBoxes(loaded.DooredBoxes())
 	if err := a.Policies.Reload(policy); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := config.Load(dir)
-	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -124,7 +131,8 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	for k, v := range hs.Map {
 		h[k] = v
 	}
-	return grantRig{h: h, backend: backend, cwd: t.TempDir(), policy: policy}
+	a.Handlers = hs.Map
+	return grantRig{h: h, backend: backend, cwd: t.TempDir(), policy: policy, a: a}
 }
 
 func as(kind, id string) context.Context {

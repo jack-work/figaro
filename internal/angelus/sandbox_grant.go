@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -30,10 +31,11 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet 
 		kind = *s
 	}
 	if d := policies.Allow(sub, rpc.VerbUse, authz.Sandbox(kind)); !d.Allowed {
-		if sub.Principal.Kind != jkauthz.KindSandbox || sandbox.HostPath(sub.Principal.ID) {
+		home, ok := homeSandbox(sub.Principal)
+		if !ok || sandbox.HostPath(home) {
 			return form.Patch{}, fmt.Errorf("sandbox %q: %s", sandboxName(kind), d.Reason())
 		}
-		pin, _ := json.Marshal(sub.Principal.ID)
+		pin, _ := json.Marshal(home)
 		return form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": pin}, nil), nil
 	}
 	if cwdSet && sandbox.HostPath(kind) {
@@ -42,6 +44,16 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet 
 		}
 	}
 	return form.Patch{}, nil
+}
+
+func homeSandbox(p jkauthz.Principal) (string, bool) {
+	if name, ok := authz.BoxOf(p); ok {
+		return name, true
+	}
+	if p.Kind != jkauthz.KindSandbox || p.Node != "" || strings.Contains(p.ID, "@") {
+		return "", false
+	}
+	return p.ID, true
 }
 
 func sandboxName(kind string) string {
@@ -94,6 +106,7 @@ func (h *handlers) reloadPolicy() error {
 		return nil
 	}
 	loaded, _ := h.settings()
+	p.SetBoxes(loaded.DooredBoxes())
 	if err := p.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: policy reload failed; the previous policy stays in force", "err", err)
 		return err

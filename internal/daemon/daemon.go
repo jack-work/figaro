@@ -334,6 +334,7 @@ func Run() {
 		os.Exit(1)
 	}
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	a.Policies.SetBoxes(loaded.DooredBoxes())
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
 	if a.Issuers, err = newIssuers(loaded.Config.Authz.Issuers); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
@@ -395,6 +396,11 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
+	if err := serveBoxDoors(ctx, a, loaded); err != nil {
+		slog.Error("angelus box door", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	if err := serveNodeDoor(ctx, a, loaded); err != nil {
 		slog.Error("angelus node door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
@@ -429,6 +435,31 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func serveBoxDoors(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
+	doors := loaded.BoxDoors()
+	for _, name := range loaded.DooredBoxes() {
+		path := doors[name]
+		if path == filepath.Clean(a.SocketPath) {
+			return fmt.Errorf("sandbox.boxes.%s.door: %s is the CLI door", name, path)
+		}
+		if web, ok, _ := loaded.WebDoor(); ok && filepath.Clean(web.Path) == path {
+			return fmt.Errorf("sandbox.boxes.%s.door: %s is the web door", name, path)
+		}
+		ln, err := angelus.ListenUnix(path, 0o660)
+		if err != nil {
+			return fmt.Errorf("sandbox.boxes.%s.door: %w", name, err)
+		}
+		slog.Info("box door listening", "box", name, "path", path, "principal", authz.BoxPrincipal(name).String())
+		go func() {
+			defer os.Remove(path)
+			if err := a.Serve(ctx, ln, authz.DoorBox, authz.BoxAdmit(name)); err != nil {
+				slog.Error("box door", "box", name, "err", err)
+			}
+		}()
+	}
+	return nil
 }
 
 func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {

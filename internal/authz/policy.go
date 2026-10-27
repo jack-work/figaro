@@ -49,6 +49,7 @@ type Facts interface {
 	Owner(aria string) (jkauthz.Principal, bool)
 	DescendsFrom(aria, root string) bool
 	RoleTarget(role string) string
+	SandboxOf(aria string) string
 }
 
 type selectors struct{ facts Facts }
@@ -60,10 +61,12 @@ const (
 	selLineage = "lineage:"
 	selSandbox = "sandbox:"
 	selTroupe  = "troupe:"
+	selBoxed   = "sandboxed:self"
+	selSelf    = "self"
 )
 
 func (selectors) Validate(sel string) error {
-	if sel == selOwner {
+	if sel == selOwner || sel == selBoxed {
 		return nil
 	}
 	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe} {
@@ -74,13 +77,17 @@ func (selectors) Validate(sel string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name> or troupe:<name>")
+	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self or troupe:<name>")
 }
 
 func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	switch r.Kind {
 	case ResourceSandbox:
 		name, ok := strings.CutPrefix(sel, selSandbox)
+		if ok && name == selSelf {
+			box, isBox := BoxOf(s.Principal)
+			return isBox && box == r.ID
+		}
 		return ok && name == r.ID
 	case ResourceTroupe:
 		name, ok := strings.CutPrefix(sel, selTroupe)
@@ -90,6 +97,9 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 		return false
 	}
 	switch {
+	case sel == selBoxed:
+		box, ok := BoxOf(s.Principal)
+		return ok && m.facts != nil && m.facts.SandboxOf(r.ID) == box
 	case sel == selOwner:
 		if m.facts == nil {
 			return false
@@ -115,8 +125,8 @@ func Schema(facts Facts) jkauthz.Schema[Resource] {
 	return jkauthz.Schema[Resource]{Verbs: verbs, Selectors: selectors{facts: facts}}
 }
 
-func DefaultPolicy(self jkauthz.Principal) string {
-	return fmt.Sprintf(`
+func DefaultPolicy(self jkauthz.Principal, boxes []string) string {
+	text := fmt.Sprintf(`
 [roles.owner]
 grants = [{ verbs = ["*"], on = ["*"] }]
 
@@ -124,6 +134,25 @@ grants = [{ verbs = ["*"], on = ["*"] }]
 role = "owner"
 principals = [%q]
 `, self.String())
+	if len(boxes) == 0 {
+		return text
+	}
+	var names []string
+	for _, b := range boxes {
+		names = append(names, fmt.Sprintf("%q", BoxPrincipal(b).String()))
+	}
+	return text + fmt.Sprintf(`
+[roles.box]
+grants = [
+  { verbs = ["create"], on = ["*"] },
+  { verbs = ["use"], on = ["sandbox:self"] },
+  { verbs = ["read", "listen", "send", "fork", "set", "kill"], on = ["sandboxed:self"] },
+]
+
+[[bind]]
+role = "box"
+principals = [%s]
+`, strings.Join(names, ", "))
 }
 
 type Policies struct {
@@ -135,6 +164,7 @@ type Policies struct {
 	troupe atomic.Pointer[troupeLayer]
 	held   atomic.Pointer[jkauthz.Policy[Resource]]
 	schema jkauthz.Schema[Resource]
+	boxes  []string
 }
 
 type troupeLayer struct {
@@ -156,12 +186,18 @@ func (p *Policies) SetIssuerScopes(scopes []string) {
 	p.scopes = scopes
 }
 
+func (p *Policies) SetBoxes(names []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.boxes = names
+}
+
 func (p *Policies) Reload(path string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.path = path
 	if path == "" {
-		return p.load([]byte(DefaultPolicy(p.self)))
+		return p.load([]byte(DefaultPolicy(p.self, p.boxes)))
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

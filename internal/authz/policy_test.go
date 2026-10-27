@@ -14,6 +14,7 @@ type fakeFacts struct {
 	owners  map[string]jkauthz.Principal
 	parents map[string]string
 	roles   map[string]string
+	boxed   map[string]string
 }
 
 func (f fakeFacts) Owner(id string) (jkauthz.Principal, bool) {
@@ -31,6 +32,8 @@ func (f fakeFacts) DescendsFrom(id, root string) bool {
 }
 
 func (f fakeFacts) RoleTarget(role string) string { return f.roles[role] }
+
+func (f fakeFacts) SandboxOf(id string) string { return f.boxed[id] }
 
 var (
 	me    = jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}

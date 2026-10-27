@@ -94,7 +94,7 @@ func writeDelegation(out io.Writer, loaded *config.Loaded, name, lend, self stri
 	}
 	var add string
 	if len(existing) == 0 {
-		add = authz.DefaultPolicy(mustPrincipal(self))
+		add = authz.DefaultPolicy(mustPrincipal(self), loaded.DooredBoxes())
 	}
 	add += fmt.Sprintf("\n[roles.%s]\ngrants = [{ verbs = [\"*\"], on = [\"*\"] }]\n\n[[bind]]\nrole = %q\nprincipals = [%q]\n", lentRole, lentRole, troupeP)
 	if path == "" {

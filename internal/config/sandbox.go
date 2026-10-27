@@ -34,14 +34,28 @@ func (l *Loaded) Box(name string) (BoxConfig, bool) {
 	return b, ok
 }
 
+func (l *Loaded) BoxDoors() map[string]string {
+	out := map[string]string{}
+	for name, b := range l.cfg().Sandbox.Boxes {
+		if b.Door != "" {
+			out[name] = filepath.Clean(b.Door)
+		}
+	}
+	return out
+}
+
+func (l *Loaded) DooredBoxes() []string {
+	return sortedKeys(l.BoxDoors())
+}
+
 func (c Config) validateSandbox() error {
 	doors := map[string]string{}
 	for _, name := range sortedKeys(c.Sandbox.Boxes) {
 		b := c.Sandbox.Boxes[name]
 		where := "sandbox.boxes." + name
 		switch {
-		case name == "local" || name == "bwrap":
-			return fmt.Errorf("%s: %s is a built-in sandbox", where, name)
+		case name == "local" || name == "bwrap" || name == "self":
+			return fmt.Errorf("%s: %s is reserved", where, name)
 		case name == "" || strings.ContainsAny(name, ":/@* \t"):
 			return fmt.Errorf("%s: a box name has no : / @ * or space", where)
 		case !filepath.IsAbs(b.Exec):
