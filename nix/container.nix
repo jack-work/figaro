@@ -230,17 +230,8 @@ in
           isReadOnly = false;
         };
       };
-      extraFlags = [
-        "--private-users-ownership=chown"
-        "--notify-ready=no"
-        "--link-journal=no"
-        "--inaccessible=/nix/var/nix/daemon-socket"
-        "--inaccessible=/nix/var/nix/db"
-        "--inaccessible=/run/host/unix-export"
-        "--bind-ro=/nix/var/nix/profiles/per-container/figaro:/nix/var/nix/profiles:idmap"
-        "--bind-ro=/nix/var/nix/gcroots/per-container/figaro:/nix/var/nix/gcroots:idmap"
-      ]
-      ++ map (id: "--load-credential=${id}:${id}") (lib.attrNames cfg.credentials);
+      extraFlags = [ "--private-users-ownership=chown" ]
+        ++ map (id: "--load-credential=${id}:${id}") (lib.attrNames cfg.credentials);
       config = {
         imports = [ ./module.nix cfg.figaro ];
         services.figaro = {
