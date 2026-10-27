@@ -33,6 +33,10 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	req.Cwd = hostCwdOf(ctx, req.Cwd)
+	if err := refuseBoxKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+		return nil, err
+	}
 
 	loaded, _ := h.settings()
 
@@ -220,6 +224,9 @@ func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
 func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ForkRequest
 	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if err := refuseBoxKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 	var cont, alt string
@@ -479,6 +486,9 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	var req rpc.ImportRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
+	}
+	if box, ok := callerBox(ctx); ok {
+		return nil, fmt.Errorf("import: box %s may not import an aria: an export carries any form key", box)
 	}
 	if req.Outfit == "" {
 		return nil, errors.New("import: no outfit named")

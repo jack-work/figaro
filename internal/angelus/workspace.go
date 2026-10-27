@@ -99,7 +99,11 @@ func (h *handlers) ownWorkspaces(ids []string) []string {
 	}
 	seen := map[string]bool{}
 	var out []string
+	loaded, _ := h.settings()
 	for _, id := range ids {
+		if _, boxed := loaded.Box(h.sandboxOf(id)); boxed {
+			continue
+		}
 		if cwd := h.cwdOf(id); ownWorkspace(root, cwd) && !seen[cwd] {
 			seen[cwd] = true
 			out = append(out, cwd)

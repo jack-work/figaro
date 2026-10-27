@@ -326,7 +326,15 @@ to `create`, `use` on `sandbox:self` (its own box) and every aria verb but
 `admin` on `sandboxed:self`: the arias whose `system.sandbox` is that box.
 Arias in one box share its files and processes, so the box is the unit a
 policy can separate; an aria moved out of the box leaves the box's reach.
-A policy file binds boxes itself, with the same two selectors. Under `local` or `bwrap` a `system.cwd`
+A policy file binds boxes itself, with the same two selectors. A box
+may not supply the keys the daemon dereferences on the host or uses to
+reach past its checks: `system.environment.*` (a directory it writes wire
+logs to), `system.decide.base_url` (a URL it sends a credential to),
+`system.methods` (keys it writes for the aria), `system.studies` and
+`target-aria` (forms it reads or resolves), `system.reaped` and
+`system.reaped_until`. That holds for set, prompt, cast, create, fork and
+form.create/bind; values from outfits it names are the owner's. A box may not
+import, and the cwd it sends at birth is never looked up on the host. Under `local` or `bwrap` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
 

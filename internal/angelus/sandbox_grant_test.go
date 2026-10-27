@@ -68,7 +68,7 @@ func newRigConfigured(t *testing.T, policyText, extraConfig string) grantRig {
 	})
 }
 
-func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(string, provider.Knobs) (provider.Provider, error)) grantRig {
+func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(string, provider.Knobs) (provider.Provider, error), opts ...func(*angelus.ServerConfig)) grantRig {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "outfits"), 0o700); err != nil {
@@ -116,12 +116,16 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	hs := angelus.NewHandlers(angelus.ServerConfig{
+	cfg := angelus.ServerConfig{
 		Angelus:         a,
 		Config:          loaded,
 		Ctx:             ctx,
 		ProviderFactory: factory,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	hs := angelus.NewHandlers(cfg)
 	t.Cleanup(func() {
 		for _, id := range backend.ConversationIDs() {
 			_ = hs.RemoveAria(id, true)
