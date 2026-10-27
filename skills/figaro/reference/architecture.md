@@ -273,6 +273,7 @@ listener's authenticator stamped, and nothing in params can change it:
 |---|---|---|
 | CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
 | web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. A bearer starting `fgk_` is an api key (Troupe api keys, below) and goes only to the key table; anything else goes only to the issuers. |
+| box door (`[sandbox.boxes.<name>] door`) | `authz.BoxAdmit`: every caller is the box, whatever its uid; seated only if the policy binds it | `sandbox:<name>@local:box`. `local:box` is not a host, so no issuer or api key can mint it. |
 | node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]` or, for an api key, this node's key table, and refused when neither applies |
 
 **Issuers.** `[[authz.issuers]]` lists the identity issuers this node
@@ -317,7 +318,15 @@ which the birth record writes once and nothing rewrites.
 
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
 create, fork, bind, import and `figaro.set`. An aria minted by a sandbox
-principal is pinned to that sandbox. Under `local` or `bwrap` a `system.cwd`
+principal is pinned to that sandbox. `form.create` and `form.bind` with a
+parent need `read` on it, since the new form starts as its copy.
+
+**Box principals.** With no policy file, each box that has a door is bound
+to `create`, `use` on `sandbox:self` (its own box) and every aria verb but
+`admin` on `sandboxed:self`: the arias whose `system.sandbox` is that box.
+Arias in one box share its files and processes, so the box is the unit a
+policy can separate; an aria moved out of the box leaves the box's reach.
+A policy file binds boxes itself, with the same two selectors. Under `local` or `bwrap` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
 
@@ -598,9 +607,41 @@ aria id as scope: so a backgrounded job survives its agent being reclaimed and
 keeps its id across a wake. `figaro kill` reaps an aria's sessions; hibernation
 does not.
 
+### Boxes: `internal/sandbox/box`
+
+A box is a unit (an nspawn container, a VM) the daemon reaches only over a
+unix socket. `figaro box serve` runs inside it and serves `api/sandbox` from
+the `local` provider over jkrpc: `box.open` (scope = aria id, workspace,
+env), `box.exec` and `box.session.*` with output as `box.chunk` and
+`box.exit` notifications keyed by a handle the caller picks, and
+`box.fs.*`, where an update is a compare-and-swap on the old bytes'
+sha256. It reads no config and writes no state.
+
+```toml
+[sandbox.boxes.judge]
+exec    = "/run/figaro/boxes/judge/exec.sock"   # box serve --socket
+door    = "/run/figaro/boxes/judge/door.sock"   # optional: the box's way back
+profile = "build"                                # carried, not yet read
+```
+
+`system.sandbox = "judge"` opens it. Paths are paths in the box: a box
+aria is born without the CLI's host cwd, `system.cwd` (if dressed)
+resolves against the box's `--workspace`, and none of it needs `use` on
+`sandbox:local`. Cancelling an exec or killing a session signals its
+process group in the box. When the socket drops, everything started over
+it ends with exit -1 and a line saying so; the next call redials, and
+sessions are found again. A dropped connection kills its execs in the box,
+not its sessions; `figaro kill` kills those. Isolation is what the box
+server claims, `local`'s, named `box`: the server cannot vouch for the unit.
+
+The daemon listens on each `door` (0660) at start; `box serve --door
+<path>` gives every command `FIGARO_TROUPE=unix://<path>` and
+`FIGARO_RUNTIME_DIR`, so `figaro` in the box calls back as the box and
+never starts a daemon there.
+
 ### Workspaces under a sandbox
 
-Under any sandbox but `local`, `system.cwd` is the box's read-write bind.
+Under `bwrap`, `system.cwd` is the box's read-write bind.
 A birth keeps a requested cwd only if it is a directory on the daemon's
 host; otherwise the aria gets `<workspace_root>/<id>` (0700) from
 `[sandbox] workspace_root` in `config.toml`, and with no root the birth is

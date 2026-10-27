@@ -339,6 +339,8 @@ observer's mouth.
 | `figaro troupe apikey ls <name> [-j]` | Keys with who minted each, the nodes each is good on, and their state; every key for a troupe admin, else the ones you minted or that name you. |
 | `figaro troupe apikey revoke <name> <id>` | Revoke a key (its minter, its own principal, or a troupe admin) and tell every member; its open connections close. |
 | `op read <ref> \| figaro troupe revoke <name> <node>` | Revoke a node with the root: it is out, and so is every join its intermediates signed. The running daemon tells every member and lists who heard. |
+| `figaro box serve --socket <path> --workspace <dir> [--door <path>]` | Inside a box: serve it to a daemon over `--socket`. No config, no state, no daemon. `--door` is the daemon's door for this box as seen inside it; `figaro` run in the box calls back through it. See [reference/architecture.md](reference/architecture.md#boxes-internalsandboxbox). |
+| `figaro box exec --socket <path> [--cwd <dir>] -- <command>` | Run one command through a served box, stream its output, exit with its code. |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models [--refresh] [-j]` | The daemon's model catalog (`@models`): every provider's models, when each was listed, and its last error. `--refresh` lists them all now. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |
