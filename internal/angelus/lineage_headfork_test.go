@@ -41,7 +41,7 @@ func TestLineage_AHeadForkSharesAllButTheLastTurn(t *testing.T) {
 	a := &Angelus{Backend: be, uiProj: uiir.New(nil)}
 	h := &handlers{angelus: a}
 	params, _ := json.Marshal(rpc.LineageRequest{FigaroID: branch, Against: parent})
-	out, err := h.lineage(t.Context(), params)
+	out, err := h.lineage(inProcess(t.Context()), params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 	divergence := func() uint64 {
 		t.Helper()
 		params, _ := json.Marshal(rpc.LineageRequest{FigaroID: branch, Against: parent})
-		out, err := h.lineage(t.Context(), params)
+		out, err := h.lineage(inProcess(t.Context()), params)
 		if err != nil {
 			t.Fatal(err)
 		}

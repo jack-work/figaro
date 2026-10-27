@@ -559,7 +559,7 @@ func (h *handlers) ensureSettling() {
 	}
 	ctx := h.ctx
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = inProcess(context.Background())
 	}
 	go func() {
 		defer h.settling.Store(false)

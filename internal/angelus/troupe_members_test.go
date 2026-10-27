@@ -30,8 +30,8 @@ func TestTroupeMembersShowsEachPeersVersionAndDrift(t *testing.T) {
 	seen.Saw("behind", 5, 7, 0)
 
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs(), Peers: members, PeerVersions: seen}
-	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
-	out, err := hs.Map[rpc.MethodTroupeMembers](context.Background(), nil)
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
+	out, err := hs.Map[rpc.MethodTroupeMembers](inProcess(context.Background()), nil)
 	require.NoError(t, err)
 	got := out.(rpc.TroupeMembersResponse)
 
@@ -54,8 +54,8 @@ func TestTroupeMembersShowsEachPeersVersionAndDrift(t *testing.T) {
 // A node with no peers answers with an empty membership, not an error.
 func TestTroupeMembersWithoutPeers(t *testing.T) {
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs()}
-	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
-	out, err := hs.Map[rpc.MethodTroupeMembers](context.Background(), nil)
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
+	out, err := hs.Map[rpc.MethodTroupeMembers](inProcess(context.Background()), nil)
 	require.NoError(t, err)
 	got := out.(rpc.TroupeMembersResponse)
 	require.Empty(t, got.Peers)
@@ -69,8 +69,8 @@ func TestTroupeMembersCarriesKeyExpiry(t *testing.T) {
 	k := &troupe.Keeper{Dir: troupe.DirFor(t.TempDir(), "estate"), Troupe: "estate", Node: "n"}
 	_ = k.Ensure()
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs(), Troupe: k}
-	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
-	out, err := hs.Map[rpc.MethodTroupeMembers](context.Background(), nil)
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
+	out, err := hs.Map[rpc.MethodTroupeMembers](inProcess(context.Background()), nil)
 	require.NoError(t, err)
 	got := out.(rpc.TroupeMembersResponse)
 	require.NotNil(t, got.Keys)

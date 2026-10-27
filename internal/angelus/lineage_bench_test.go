@@ -30,12 +30,12 @@ func BenchmarkLineageRead(b *testing.B) {
 						leaf, parent := fx.pair(shape, depth)
 						params, _ := json.Marshal(rpc.LineageRequest{FigaroID: leaf, Against: parent})
 						// One read outside the timer: the first read records the base turn.
-						if _, err := fx.h.lineage(b.Context(), params); err != nil {
+						if _, err := fx.h.lineage(inProcess(b.Context()), params); err != nil {
 							b.Fatal(err)
 						}
 						b.ReportAllocs()
 						for b.Loop() {
-							if _, err := fx.h.lineage(b.Context(), params); err != nil {
+							if _, err := fx.h.lineage(inProcess(b.Context()), params); err != nil {
 								b.Fatal(err)
 							}
 						}

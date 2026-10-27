@@ -127,6 +127,7 @@ func TestHelloOffTheLocalDoorNeedsARole(t *testing.T) {
 		pass bool
 	}{
 		"a stranger in process":         {at(DoorInProcess, other), true},
+		"a stranger, door unstamped":    {WithSubject(context.Background(), subject(other)), false},
 		"a stranger at the local door":  {at(DoorLocal, other), true},
 		"a role holder at the web door": {at(DoorWeb, box), true},
 		"a stranger at the web door":    {at(DoorWeb, other), false},

@@ -57,7 +57,7 @@ func TestDormantListUsesMetadataOnly(t *testing.T) {
 	backend := &metadataListBackend{}
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend}}
 
-	response, err := h.list(t.Context(), nil)
+	response, err := h.list(inProcess(t.Context()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestDormantListReportsBoundPIDs(t *testing.T) {
 	}
 	h := &handlers{angelus: &Angelus{Registry: reg, Backend: &metadataListBackend{}}}
 
-	response, err := h.list(t.Context(), nil)
+	response, err := h.list(inProcess(t.Context()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestListLabelsFromTheStumpNotTheForm(t *testing.T) {
 	backend := &metadataListBackend{}
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend}}
 
-	resp, err := h.list(t.Context(), nil)
+	resp, err := h.list(inProcess(t.Context()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

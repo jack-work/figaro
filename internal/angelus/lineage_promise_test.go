@@ -84,7 +84,7 @@ func TestLineage_EveryTurnItCallsSharedIsByteIdentical(t *testing.T) {
 	a := &Angelus{Backend: be, uiProj: uiir.New(nil)}
 	h := &handlers{angelus: a}
 	params, _ := json.Marshal(rpc.LineageRequest{FigaroID: child, Against: parent})
-	out, err := h.lineage(t.Context(), params)
+	out, err := h.lineage(inProcess(t.Context()), params)
 	if err != nil {
 		t.Fatal(err)
 	}

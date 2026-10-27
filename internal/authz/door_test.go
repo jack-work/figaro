@@ -117,13 +117,14 @@ func TestWithNoPolicyOnlyTheOwnerPassesOffTheLocalDoor(t *testing.T) {
 		ctx  context.Context
 		pass bool
 	}{
-		"a stranger in process":     {WithSubject(context.Background(), subject(other)), true},
-		"a stranger at the local":   {at(DoorLocal, other), true},
-		"the owner at the web door": {at(DoorWeb, me), true},
-		"a stranger at the web":     {at(DoorWeb, other), false},
-		"a stranger at a node door": {at(DoorNode, other), false},
-		"a stranger at a new door":  {at(DoorWeb+1, other), false},
-		"nobody at the web door":    {at(DoorWeb, jkauthz.Principal{}), false},
+		"a stranger in process":      {at(DoorInProcess, other), true},
+		"a stranger, door unstamped": {WithSubject(context.Background(), subject(other)), false},
+		"a stranger at the local":    {at(DoorLocal, other), true},
+		"the owner at the web door":  {at(DoorWeb, me), true},
+		"a stranger at the web":      {at(DoorWeb, other), false},
+		"a stranger at a node door":  {at(DoorNode, other), false},
+		"a stranger at a new door":   {at(DoorWeb+1, other), false},
+		"nobody at the web door":     {at(DoorWeb, jkauthz.Principal{}), false},
 	} {
 		if err := call(t, h, c.ctx, rpc.MethodGC, ""); (err == nil) != c.pass {
 			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)
@@ -138,7 +139,7 @@ func TestWithNoPolicyOnlyTheOwnerPassesOffTheLocalDoor(t *testing.T) {
 // local door seats by uid, a node door by troupe membership, and any door
 // added later seats by role until it says otherwise.
 func TestEveryDoorButLocalAndNodeSeatsOnlyPolicySubjects(t *testing.T) {
-	for d, want := range map[Door]bool{DoorInProcess: false, DoorLocal: false, DoorNode: false, DoorWeb: true, DoorWeb + 1: true} {
+	for d, want := range map[Door]bool{DoorUnknown: true, DoorInProcess: false, DoorLocal: false, DoorNode: false, DoorWeb: true, DoorWeb + 1: true} {
 		if got := d.SeatsOnlyPolicySubjects(); got != want {
 			t.Errorf("%s: SeatsOnlyPolicySubjects = %v, want %v", d, got, want)
 		}

@@ -76,7 +76,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		angelus:            cfg.Angelus,
 		config:             cfg.Config,
 		factory:            cfg.ProviderFactory,
-		ctx:                cfg.Ctx,
+		ctx:                inProcess(cfg.Ctx),
 		formTmpls:          cfg.FormTemplates,
 		outfitter:          newOutfitter(cfg.Angelus, cfg.Config),
 		availableProviders: cfg.AvailableProviders,
@@ -397,3 +397,10 @@ const (
 )
 
 const ariaReadHardCap = 1000
+
+func inProcess(ctx context.Context) context.Context {
+	if ctx == nil {
+		return nil
+	}
+	return authz.WithDoor(ctx, authz.DoorInProcess)
+}

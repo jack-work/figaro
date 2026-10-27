@@ -76,7 +76,7 @@ func (f lineageFixture) ask(t *testing.T, id, against string) rpc.LineageRespons
 	t.Helper()
 	h := &handlers{angelus: f.a}
 	params, _ := json.Marshal(rpc.LineageRequest{FigaroID: id, Against: against})
-	out, err := h.lineage(t.Context(), params)
+	out, err := h.lineage(inProcess(t.Context()), params)
 	if err != nil {
 		t.Fatalf("lineage(%s, %s): %v", id, against, err)
 	}
@@ -181,7 +181,7 @@ func TestLineage_StampedLogsTakeTheOneRecordPath(t *testing.T) {
 	a := &Angelus{Backend: be, uiProj: uiir.New(nil)}
 	h := &handlers{angelus: a}
 	params, _ := json.Marshal(rpc.LineageRequest{FigaroID: branch, Against: parent})
-	out, err := h.lineage(t.Context(), params)
+	out, err := h.lineage(inProcess(t.Context()), params)
 	if err != nil {
 		t.Fatal(err)
 	}

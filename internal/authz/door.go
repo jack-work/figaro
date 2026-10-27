@@ -10,7 +10,8 @@ import (
 type Door uint8
 
 const (
-	DoorInProcess Door = iota
+	DoorUnknown Door = iota
+	DoorInProcess
 	DoorLocal
 	DoorNode
 	DoorWeb
@@ -26,6 +27,8 @@ func (d Door) String() string {
 		return "web"
 	case DoorInProcess:
 		return "in-process"
+	case DoorUnknown:
+		return "unknown"
 	}
 	return fmt.Sprintf("door %d", d)
 }

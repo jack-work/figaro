@@ -25,7 +25,7 @@ func TestEveryPrintedNameResolvesToItsID(t *testing.T) {
 			t.Fatalf("%s: short %q, words %q", id, short, words)
 		}
 		for _, ref := range []string{short, words, strings.ToUpper(words), stems(words), id} {
-			got, err := h.canonicalID(context.Background(), ref)
+			got, err := h.canonicalID(inProcess(context.Background()), ref)
 			if err != nil || got != id {
 				t.Errorf("%q, printed for %s, resolves to %q, %v", ref, id, got, err)
 			}
@@ -46,7 +46,7 @@ func TestSharedTwoWordsAreAmbiguousAndNameTheThreeWordForms(t *testing.T) {
 	h, _ := resolveHandlers(t)
 	o1, o2 := "abcde123", "abcde987"
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{o1, o2}}
-	_, err := h.canonicalID(context.Background(), handle.Words(o1, 2))
+	_, err := h.canonicalID(inProcess(context.Background()), handle.Words(o1, 2))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") ||
 		!strings.Contains(err.Error(), handle.Words(o1, 3)) || !strings.Contains(err.Error(), handle.Words(o2, 3)) {
 		t.Fatalf("err = %v, want an ambiguity naming both three-word forms", err)
@@ -57,7 +57,7 @@ func TestUnknownWordsAreNotFoundRatherThanGuessed(t *testing.T) {
 	h, _ := resolveHandlers(t)
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{"abcde123"}}
 	ref := handle.Words("12345678", 2)
-	if got, err := h.canonicalID(context.Background(), ref); err != nil || got != ref {
+	if got, err := h.canonicalID(inProcess(context.Background()), ref); err != nil || got != ref {
 		t.Fatalf("canonicalID(%q) = %q, %v; want it returned unresolved", ref, got, err)
 	}
 }
@@ -82,11 +82,11 @@ func TestAUniqueWordPrefixResolves(t *testing.T) {
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{a, b}}
 	full := handle.Words(a, 2)
 	for _, ref := range []string{full[:4], full[:len(full)-2]} {
-		if got, err := h.canonicalID(context.Background(), ref); err != nil || got != a {
+		if got, err := h.canonicalID(inProcess(context.Background()), ref); err != nil || got != a {
 			t.Errorf("canonicalID(%q) = %q, %v; want %s (%s)", ref, got, err, a, full)
 		}
 	}
-	if got, err := h.canonicalID(context.Background(), "zzz"); err != nil || got != "zzz" {
+	if got, err := h.canonicalID(inProcess(context.Background()), "zzz"); err != nil || got != "zzz" {
 		t.Errorf("an unmatched word prefix comes back unresolved, got %q, %v", got, err)
 	}
 }
@@ -96,7 +96,7 @@ func TestAnAmbiguousWordPrefixNamesTheCandidates(t *testing.T) {
 	o1, o2 := "abcde123", "abcde987"
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{o1, o2}}
 	pre := handle.Words(o1, 2)[:5]
-	_, err := h.canonicalID(context.Background(), pre)
+	_, err := h.canonicalID(inProcess(context.Background()), pre)
 	if err == nil || !strings.Contains(err.Error(), handle.Words(o1, 3)) || !strings.Contains(err.Error(), handle.Words(o2, 3)) {
 		t.Fatalf("canonicalID(%q) err = %v, want both three-word names", pre, err)
 	}
@@ -116,7 +116,7 @@ func TestAnAllHexWordPrefixFallsBackToWords(t *testing.T) {
 		}
 	}
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{id}}
-	if got, err := h.canonicalID(context.Background(), pre); err != nil || got != id {
+	if got, err := h.canonicalID(inProcess(context.Background()), pre); err != nil || got != id {
 		t.Fatalf("canonicalID(%q) = %q, %v; want %s (%s)", pre, got, err, id, handle.Words(id, 2))
 	}
 }

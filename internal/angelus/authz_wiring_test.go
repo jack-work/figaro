@@ -13,7 +13,7 @@ import (
 func authzHandlers(t *testing.T) *Handlers {
 	t.Helper()
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
-	return NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
+	return NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
 }
 
 func TestEveryServedMethodIsGuarded(t *testing.T) {
@@ -32,10 +32,10 @@ func TestEveryServedMethodIsGuarded(t *testing.T) {
 
 func TestHelloStampsTheConnectionPrincipal(t *testing.T) {
 	hs := authzHandlers(t)
-	if _, err := hs.Map[rpc.MethodHello](context.Background(), []byte(`{"version":99}`)); err == nil {
+	if _, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":99}`)); err == nil {
 		t.Fatal("version 99 accepted")
 	}
-	out, err := hs.Map[rpc.MethodHello](context.Background(), []byte(`{"version":1}`))
+	out, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}

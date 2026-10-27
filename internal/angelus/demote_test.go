@@ -28,13 +28,13 @@ func demoteHandlers(t *testing.T) (*Handlers, *store.XwalBackend, string) {
 		t.Fatal(err)
 	}
 	a := &Angelus{Registry: NewRegistry(), Backend: b}
-	return NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()}), b, outfit
+	return NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())}), b, outfit
 }
 
 func callDemote(t *testing.T, hs *Handlers, req rpc.DemoteRequest) rpc.DemoteResponse {
 	t.Helper()
 	raw, _ := json.Marshal(req)
-	out, err := hs.Map[rpc.MethodDemote](context.Background(), raw)
+	out, err := hs.Map[rpc.MethodDemote](inProcess(context.Background()), raw)
 	if err != nil {
 		t.Fatal(err)
 	}

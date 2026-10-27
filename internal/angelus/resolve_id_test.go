@@ -19,7 +19,7 @@ import (
 func resolveHandlers(t testing.TB) (*handlers, *Handlers) {
 	t.Helper()
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
-	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
+	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
 	return hs.h, hs
 }
 
@@ -50,13 +50,13 @@ func TestAPrefixResolvesToItsAria(t *testing.T) {
 	id := mintConversation(t, h)
 
 	for _, ref := range []string{id, id[:8], id[:4], h.nodeID() + "/" + id[:8], h.nodeID()[:8] + "/" + id} {
-		got, err := h.canonicalID(context.Background(), ref)
+		got, err := h.canonicalID(inProcess(context.Background()), ref)
 		if err != nil || got != id {
 			t.Fatalf("canonicalID(%q) = %q, %v; want %q", ref, got, err, id)
 		}
 	}
 
-	out, err := hs.Map[rpc.MethodAttach](context.Background(), json.RawMessage(`{"figaro_id":"`+id[:8]+`"}`))
+	out, err := hs.Map[rpc.MethodAttach](inProcess(context.Background()), json.RawMessage(`{"figaro_id":"`+id[:8]+`"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestAPrefixResolvesToItsAria(t *testing.T) {
 func TestAnotherNodeIsNotThisOne(t *testing.T) {
 	h, hs := resolveHandlers(t)
 	id := mintConversation(t, h)
-	_, err := hs.Map[rpc.MethodAttach](context.Background(), json.RawMessage(`{"figaro_id":"0e6f7dbf-0000-4000-8000-000000000000/`+id+`"}`))
+	_, err := hs.Map[rpc.MethodAttach](inProcess(context.Background()), json.RawMessage(`{"figaro_id":"0e6f7dbf-0000-4000-8000-000000000000/`+id+`"}`))
 	if err == nil || !strings.Contains(err.Error(), "this is node "+h.nodeID()) {
 		t.Fatalf("err = %v, want a refusal naming both nodes", err)
 	}
@@ -115,7 +115,7 @@ func TestPrefixResolutionAcrossBothWidths(t *testing.T) {
 		{ref: "abc", want: "abc"},
 	}
 	for _, c := range cases {
-		got, err := h.canonicalID(context.Background(), c.ref)
+		got, err := h.canonicalID(inProcess(context.Background()), c.ref)
 		if c.err != "" {
 			if err == nil || !strings.Contains(err.Error(), c.err) || !strings.Contains(err.Error(), old) {
 				t.Errorf("canonicalID(%q) err = %v, want %q naming the candidates", c.ref, err, c.err)
@@ -133,7 +133,7 @@ func TestSecondaryIDsResolveToo(t *testing.T) {
 	long := "abcd1234" + strings.Repeat("e", 24)
 	form := "@" + "9876" + strings.Repeat("a", 28)
 	h.angelus.Backend = fixedIDs{Backend: h.angelus.Backend, ids: []string{long, form}}
-	out, node, err := h.placeParams(context.Background(), rpc.MethodLineage, json.RawMessage(`{"figaro_id":"abcd1234","form_id":"@9876","against":"abcd12"}`))
+	out, node, err := h.placeParams(inProcess(context.Background()), rpc.MethodLineage, json.RawMessage(`{"figaro_id":"abcd1234","form_id":"@9876","against":"abcd12"}`))
 	if err != nil || node != "" {
 		t.Fatal(node, err)
 	}
@@ -174,8 +174,8 @@ principals = ["user:guest"]
 	if err := h.angelus.Policies.Reload(policy); err != nil {
 		t.Fatal(err)
 	}
-	owner := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
-	guest := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
+	owner := authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
+	guest := authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
 
 	if _, err := h.canonicalID(owner, "abcd"); err == nil || !strings.Contains(err.Error(), theirs) {
 		t.Fatalf("the owner reads both, so abcd is ambiguous: %v", err)
