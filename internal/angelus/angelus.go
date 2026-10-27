@@ -33,6 +33,7 @@ import (
 
 // Angelus is the figaro supervisor.
 type Angelus struct {
+	held       heldNodes
 	Registry   *Registry
 	Handlers   map[string]jkrpc.HandlerFunc // set before Run()
 	Backend    store.Backend

@@ -194,6 +194,9 @@ func (h *handlers) fillTTL(result []rpc.FigaroInfoResponse) {
 		result[i].ExpiresAt = e.DeadlineMS
 		result[i].KeepaliveMS = e.KeepaliveOr(def).Milliseconds()
 		result[i].ReapsAt = e.ReapsAt(def, h.angelus.Backend.LastTS(e.ID))
+		if held, ok := h.angelus.held.get(e.ID); ok {
+			result[i].HeldBy, result[i].HeldWhy, result[i].HeldSince = held.By, held.Why, held.Since.UnixMilli()
+		}
 	}
 }
 

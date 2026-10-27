@@ -86,6 +86,7 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 	}
 	def := a.keepalive()
 	if reaps := e.ReapsAt(def, a.Backend.LastTS(e.ID)); reaps > now.UnixMilli() {
+		a.held.release(e.ID)
 		slog.Debug("lifetime spent, kept alive by recent access",
 			"node", e.ID, "until", time.UnixMilli(reaps))
 		return nil
@@ -100,13 +101,14 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 		taken = []string{e.ID}
 	}
 	if node := a.otherSandboxIn(taken, e.ID); node != "" {
-		slog.Info("lifetime spent, kept: a node it would take runs in another sandbox", "node", e.ID, "held_by", node, "ttl", e.TTL)
+		a.held.keep(e.ID, node, "a node it would take runs in another sandbox", "lifetime spent, kept: a node it would take runs in another sandbox", "ttl", e.TTL)
 		return nil
 	}
 	if node, why := a.heldIn(taken, e.ID, a.Registry.BoundPIDsByFigaro(), roles, def, now); why != "" {
-		slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
+		a.held.keep(e.ID, node, why, "lifetime spent, kept: "+why, "ttl", e.TTL)
 		return nil
 	}
+	a.held.release(e.ID)
 	if err := a.scanForRoleIn(taken, e.ID); err != nil {
 		return err
 	}

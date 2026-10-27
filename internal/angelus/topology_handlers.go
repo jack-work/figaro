@@ -707,6 +707,9 @@ func (h *handlers) removeAria(id string, recursive bool, expect []string) error 
 		if err := remove(); err != nil {
 			return err
 		}
+		for _, n := range append(removed, expect...) {
+			h.angelus.held.release(n)
+		}
 	}
 	h.releaseWorkspaces(held)
 

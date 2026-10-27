@@ -112,9 +112,10 @@ func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
 		return errNotYet
 	}
 	if node, why := a.liveIn(keeper.DeleteSet(g.root), a.Registry.BoundPIDsByFigaro(), roles); why != "" && !g.killed() {
-		slog.Info("reaped node past its grace, kept: "+why, "node", g.root, "held_by", node)
+		a.held.keep(g.root, node, why, "reaped node past its grace, kept: "+why)
 		return nil
 	}
+	a.held.release(g.root)
 	if !g.killed() {
 		if err := a.scanForRoleIn(append(keeper.DeleteSet(g.root), g.root), g.root); err != nil {
 			return err

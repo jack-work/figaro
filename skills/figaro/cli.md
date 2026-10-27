@@ -321,7 +321,7 @@ observer's mouth.
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
 | `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
-| `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, which a keepalive still holds, and which are due. Reads the sidecars, so it answers while the daemon runs. |
+| `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, which a keepalive still holds, which are due, and which the sweep keeps past their lifetime (held: by which node, why, since when). The sweep logs a held node once per holder and reason. |
 | `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
 | `figaro provider login <name>` | Sign in to a model provider: its OAuth or device-code flow, else an API key sealed in hush. See [reference/providers.md](reference/providers.md#credentials). |

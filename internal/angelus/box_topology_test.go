@@ -86,6 +86,20 @@ func TestTheLifetimeSweepNeverTakesAnotherSandboxsAria(t *testing.T) {
 	if !alive(t, d.a, root) {
 		t.Fatal("the sweep took the root and left its branch")
 	}
+	d.a.SweepLifetimesNow()
+	out, err := d.call(asOwner(), rpc.MethodList, rpc.ListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row rpc.FigaroInfoResponse
+	for _, r := range out.(rpc.ListResponse).Figaros {
+		if r.ID == root {
+			row = r
+		}
+	}
+	if row.HeldBy != fork || !strings.Contains(row.HeldWhy, "another sandbox") || row.HeldSince == 0 {
+		t.Fatalf("the listing does not show the root held: %+v", row)
+	}
 
 	canary := boxDoorRig(t, "true")
 	croot, cfork := boxAriaWithForkOutside(t, canary, false)

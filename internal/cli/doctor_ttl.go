@@ -43,6 +43,9 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 				"retired_at_ms": f.RetiredAt,
 				"reaped_at_ms":  f.ReapedAt,
 				"expired":       reapsAt(f) <= now.UnixMilli(),
+				"held_by":       f.HeldBy,
+				"held_why":      f.HeldWhy,
+				"held_since_ms": f.HeldSince,
 			})
 		}
 		enc := json.NewEncoder(stdout)
@@ -56,7 +59,7 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 		return nil
 	}
 	fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n", "NODE", "TTL", "CREATED", "EXPIRES", "STATUS")
-	due := 0
+	due, held := 0, 0
 	for _, f := range rows {
 		deadline := time.UnixMilli(f.ExpiresAt)
 		reaps := time.UnixMilli(reapsAt(f))
@@ -74,13 +77,17 @@ func runDoctorTTL(loaded *config.Loaded, jsonOut bool) error {
 		if f.ReapedAt > 0 {
 			status = "reaped " + relAge(f.ReapedAt) + " ago (figaro reaped)"
 		}
+		if f.HeldBy != "" {
+			status = "held by " + f.HeldBy + " since " + time.UnixMilli(f.HeldSince).Format("2006-01-02 15:04") + ": " + f.HeldWhy
+			held++
+		}
 		fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n",
 			f.ID, ttlOf(f).String(),
 			time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04"),
 			deadline.Format("2006-01-02 15:04"), status)
 	}
-	fmt.Fprintf(stderrw, "\n%d with a lifetime, %d due. The daemon's sweep takes what is due"+
+	fmt.Fprintf(stderrw, "\n%d with a lifetime, %d due, %d held. The daemon's sweep takes what is due"+
 		" once the aria is dormant, no shell is bound to it, and nothing it would take"+
-		" was used within its keepalive or is a role's target.\n", len(rows), due)
+		" was used within its keepalive, is a role's target or runs in another sandbox.\n", len(rows), due, held)
 	return nil
 }
