@@ -73,7 +73,7 @@ type link struct {
 
 func (b *Box) dial(ctx context.Context) (*link, error) {
 	d := net.Dialer{Timeout: dialTimeout}
-	nc, err := d.DialContext(ctx, "unix", b.prov.Socket)
+	nc, err := dialSocket(ctx, &d, b.prov.Socket)
 	if err != nil {
 		return nil, fmt.Errorf("box %s: %w", b.prov.Name, err)
 	}
