@@ -332,6 +332,11 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if req.Patch == nil || req.Patch.IsIdentity() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
 	}
+	if req.Parent != "" {
+		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.Parent)); err != nil {
+			return nil, fmt.Errorf("form.create: a copy of %s reads it: %w", req.Parent, err)
+		}
+	}
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
@@ -359,6 +364,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		parent = ""
 	}
 	if parent != "" {
+		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(parent)); err != nil {
+			return nil, fmt.Errorf("form.bind: a fork of %s reads it: %w", parent, err)
+		}
 		n, ok := h.angelus.Backend.Node(parent)
 		isStump := ok && n.Kind == "outfit"
 		if !ok || (n.Kind != store.KindForm && !isStump) {
