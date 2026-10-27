@@ -121,7 +121,7 @@ func (a *Angelus) cliAdmit() Admit {
 	return authz.Admit
 }
 
-func (a *Angelus) Serve(ctx context.Context, ln net.Listener, admit Admit) error {
+func (a *Angelus) Serve(ctx context.Context, ln net.Listener, door authz.Door, admit Admit) error {
 	if admit == nil {
 		admit = authz.Admit
 	}
@@ -138,11 +138,11 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, admit Admit) error
 			slog.Warn("door accept", "err", err)
 			continue
 		}
-		go a.admitConn(ctx, conn, admit)
+		go a.admitConn(ctx, conn, door, admit)
 	}
 }
 
-func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, admit Admit) {
+func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, door authz.Door, admit Admit) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cctx, err := admit(ctx, conn)
@@ -150,15 +150,16 @@ func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, admit Admit) {
 		if peer.IsLeftAlready(err) {
 			slog.Info("door answered a node that left", "err", err)
 		} else {
-			slog.Warn("door refused connection", "err", err)
+			slog.Warn("door refused connection", "door", door.String(), "err", err)
 		}
 		conn.Close()
 		return
 	}
-	a.handleConn(cctx, conn)
+	a.handleConn(cctx, door, conn)
 }
 
-func (a *Angelus) handleConn(ctx context.Context, conn io.ReadWriteCloser) {
+func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadWriteCloser) {
+	ctx = authz.WithDoor(ctx, door)
 	if a.Handlers == nil {
 		conn.Close()
 		return

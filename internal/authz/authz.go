@@ -97,6 +97,7 @@ func PrincipalOf(ctx context.Context) rpc.Principal {
 type Request struct {
 	Identity Identity
 	Subject  jkauthz.Subject
+	Door     Door
 	Method   string
 	Aria     string
 	Params   json.RawMessage
@@ -145,6 +146,7 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 			req := Request{
 				Identity: authn.Authenticate(PrincipalOf(ctx), params),
 				Subject:  subject,
+				Door:     DoorOf(ctx),
 				Method:   method,
 				Aria:     rpc.AriaOf(params),
 				Params:   params,

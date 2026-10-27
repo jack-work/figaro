@@ -48,7 +48,7 @@ func TestTheNodeDoorIsDecidedByThePolicy(t *testing.T) {
 	raw, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	door := &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))}
-	go a.Serve(ctx, tls.NewListener(raw, tlsCfg), door.Admit)
+	go a.Serve(ctx, tls.NewListener(raw, tlsCfg), authz.DoorNode, door.Admit)
 
 	dialer := &peer.Dialer{Members: members(t, p.Peer("a", "b", raw.Addr().String()))}
 	l, err := dialer.Open(ctx, "b", rpc.Passage{}, nil)

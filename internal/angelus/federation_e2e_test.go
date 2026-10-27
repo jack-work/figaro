@@ -169,7 +169,7 @@ func (n *fedNode) start() {
 		}
 		return bearers.Verify(ctx, token)
 	}}
-	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), door.Admit)
+	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), authz.DoorNode, door.Admit)
 
 	n.owner, err = sdk.DialAngelus(transport.UnixEndpoint(n.a.SocketPath))
 	require.NoError(t, err)
@@ -182,7 +182,7 @@ func (n *fedNode) callerDoor(token string) transport.Endpoint {
 	path := filepath.Join(n.dir, fmt.Sprintf("caller-%d.sock", time.Now().UnixNano()))
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
-	go n.a.Serve(n.ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		s, err := n.bearer.Open(ctx, token)
 		if err != nil {
 			return nil, err
@@ -199,7 +199,7 @@ func (n *fedNode) keyDoor(wire string) transport.Endpoint {
 	path := filepath.Join(n.dir, fmt.Sprintf("key-%d.sock", time.Now().UnixNano()))
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
-	go n.a.Serve(n.ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		return n.keys.Admit(ctx, wire)
 	})
 	return transport.UnixEndpoint(path)

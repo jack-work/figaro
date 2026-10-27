@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/stretchr/testify/require"
 
@@ -280,7 +281,7 @@ func TestDoorServesTCP(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	admitted := make(chan struct{}, 1)
-	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		admitted <- struct{}{}
 		return authz.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
 	})
@@ -317,7 +318,7 @@ func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	var first atomic.Bool
-	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		if first.CompareAndSwap(false, true) {
 			<-release
 		}
@@ -398,7 +399,7 @@ func TestADoorWhoseAdmitNamesNobodyServesNothing(t *testing.T) {
 	require.NoError(t, err)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	go a.Serve(ctx, ln, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
+	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
 
 	fc, err := sdk.DialAria(sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}, nil)
 	if err == nil {

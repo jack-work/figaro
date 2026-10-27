@@ -61,7 +61,7 @@ func serveDoor(t testing.TB, h *handlers, policy authz.Policy) string {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.angelus.Serve(ctx, ln, nil)
+	go h.angelus.Serve(ctx, ln, authz.DoorLocal, nil)
 	return path
 }
 

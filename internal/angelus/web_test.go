@@ -7,6 +7,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -42,7 +46,7 @@ func serveWeb(t testing.TB, hb *ariaHub, w Web) string {
 
 func serveWebOn(t testing.TB, path string, hb *ariaHub, w Web) string {
 	t.Helper()
-	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
+	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal), "service:ci@troupe:estate")}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
 	ln, err := ListenUnix(path, 0o660)
@@ -51,6 +55,28 @@ func serveWebOn(t testing.TB, path string, hb *ariaHub, w Web) string {
 	t.Cleanup(cancel)
 	go h.angelus.ServeWeb(ctx, ln, w)
 	return path
+}
+
+// seats is a policy binding each principal to a role, so the web door
+// seats it.
+func seats(t testing.TB, principals ...string) *authz.Policies {
+	t.Helper()
+	quoted := make([]string, len(principals))
+	for i, p := range principals {
+		quoted[i] = strconv.Quote(p)
+	}
+	path := filepath.Join(t.TempDir(), "policy.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+[roles.owner]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[[bind]]
+role = "owner"
+principals = [`+strings.Join(quoted, ", ")+`]
+`), 0o600))
+	p := authz.NewPolicies(jkauthz.Principal{}, nil)
+	require.NoError(t, p.Reload(path))
+	return p
 }
 
 func dialWeb(t testing.TB, path string, header http.Header) (*websocket.Conn, *http.Response, error) {
@@ -212,7 +238,7 @@ func TestWebDoorServesTheWSSClient(t *testing.T) {
 	hb := newAriaHub("abcd1234")
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
-	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
+	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal))}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.angelus.Handlers = h.door(nil, authz.AllowAll())
 	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {

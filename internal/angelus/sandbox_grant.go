@@ -124,19 +124,33 @@ func (h *handlers) reloadStaticTroupePolicy(loaded *config.Loaded) error {
 
 func (h *handlers) policy() authz.Policy {
 	if h.angelus.Policies == nil {
-		return authz.AllowAll()
+		return authz.LocalOrOwner(h.angelus.owner())
 	}
 	return authz.Enforce(h.angelus.Policies)
 }
 
-func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resource) error {
-	p := h.angelus.Policies
-	if p == nil {
-		return nil
+func (a *Angelus) owner() jkauthz.Principal {
+	if a.Peercred == nil {
+		return jkauthz.Principal{}
 	}
+	return a.Peercred.Self()
+}
+
+func (h *handlers) passesUnpoliced(ctx context.Context, sub jkauthz.Subject) bool {
+	return authz.PassesUnpoliced(authz.DoorOf(ctx), h.angelus.owner(), sub)
+}
+
+func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resource) error {
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
 		return err
+	}
+	p := h.angelus.Policies
+	if p == nil {
+		if h.passesUnpoliced(ctx, sub) {
+			return nil
+		}
+		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authz.DoorOf(ctx))
 	}
 	if d := p.Allow(sub, verb, res); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, res, d.Reason())
@@ -197,11 +211,14 @@ func (h *handlers) checkFormWrite(ctx context.Context, id string, patch form.Pat
 }
 
 func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
-	if h.angelus.Policies == nil {
-		return rows
-	}
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
+		return nil
+	}
+	if h.angelus.Policies == nil {
+		if h.passesUnpoliced(ctx, sub) {
+			return rows
+		}
 		return nil
 	}
 	out := rows[:0]

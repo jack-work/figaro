@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/jack-work/figaro/internal/authz"
 )
 
 type WebAdmit func(ctx context.Context, r *http.Request) (context.Context, error)
@@ -84,7 +86,7 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			cctx, cancel = context.WithTimeout(cctx, w.MaxConnAge)
 			defer cancel()
 		}
-		a.handleConn(cctx, &webConn{io: ctx, life: cctx, c: c})
+		a.handleConn(cctx, authz.DoorWeb, &webConn{io: ctx, life: cctx, c: c})
 	})
 }
 

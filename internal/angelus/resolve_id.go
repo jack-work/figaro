@@ -200,11 +200,14 @@ func (h *handlers) placeWordPrefix(ctx context.Context, ref string) (string, str
 }
 
 func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
-	if h.angelus.Policies == nil {
-		return h.angelus.Backend.MatchID(prefix, ambiguityList+1)
-	}
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
+		return nil
+	}
+	if h.angelus.Policies == nil {
+		if h.passesUnpoliced(ctx, sub) {
+			return h.angelus.Backend.MatchID(prefix, ambiguityList+1)
+		}
 		return nil
 	}
 	var out []string

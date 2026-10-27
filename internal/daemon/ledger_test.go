@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/troupe"
+	"github.com/jack-work/jkauthz"
 )
 
 type estateRoot struct {
@@ -98,12 +99,13 @@ func (n *ledgerNode) start() *peer.Ledger {
 	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	n.a.Peercred = pc
+	path := ""
 	if n.policy != "" {
-		path := filepath.Join(n.cfgDir, "policy.toml")
+		path = filepath.Join(n.cfgDir, "policy.toml")
 		require.NoError(t, os.WriteFile(path, []byte(n.policy), 0o600))
-		n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.backend))
-		require.NoError(t, n.a.Policies.Reload(path))
 	}
+	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.backend))
+	require.NoError(t, n.a.Policies.Reload(path))
 	require.NoError(t, federateIn(ctx, n.a, loaded, n.stateDir))
 	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: n.a, Config: loaded, Ctx: ctx}).Map
 	door, ok, err := loaded.TLSDoor()
@@ -386,7 +388,8 @@ func call(t *testing.T, n *ledgerNode, method string, req any) (any, error) {
 	t.Helper()
 	params, err := json.Marshal(req)
 	require.NoError(t, err)
-	return n.a.Handlers[method](context.Background(), params)
+	owner := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: n.a.Peercred.Self()})
+	return n.a.Handlers[method](authz.WithDoor(owner, authz.DoorLocal), params)
 }
 
 func pair(t *testing.T) (*ledgerNode, *ledgerNode, *peer.Ledger, *peer.Ledger, estateRoot) {

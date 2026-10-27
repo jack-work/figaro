@@ -302,7 +302,7 @@ func serveNodeDoorOn(ctx context.Context, a *angelus.Angelus, door config.TLSDoo
 		gossip(ctx, a, m, door.Advertise)
 	}
 	go func() {
-		if err := a.Serve(ctx, tls.NewListener(ln, cfg), nd.Admit); err != nil {
+		if err := a.Serve(ctx, tls.NewListener(ln, cfg), authz.DoorNode, nd.Admit); err != nil {
 			slog.Error("node door", "err", err)
 		}
 	}()
