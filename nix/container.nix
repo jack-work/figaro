@@ -234,7 +234,6 @@ in
         "--private-users-ownership=chown"
         "--notify-ready=no"
         "--link-journal=no"
-        "--inaccessible=/nix/var/nix/daemon-socket"
         "--inaccessible=/nix/var/nix/db"
         "--inaccessible=/run/host/unix-export"
         "--bind-ro=/nix/var/nix/profiles/per-container/figaro:/nix/var/nix/profiles:idmap"
