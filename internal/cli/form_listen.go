@@ -103,6 +103,11 @@ type formView struct {
 	notice    string
 	stopped   bool
 	refetch   func() (form.Snapshot, uint64, error)
+	tree      *formNode
+	treeGen   uint64
+	openRev   uint64
+	items     []pitRow
+	itemsKey  [4]uint64
 	closeConn func()
 	repaint   func() // the host's; the view never paints itself
 }
@@ -147,13 +152,22 @@ func (v *formView) setNotice(text string) {
 }
 
 func (v *formView) Items(width int) []pitRow {
+	gen := v.mirror.generation()
 	snap, version, gaps := v.mirror.state()
 	if width <= 0 {
 		width = 80
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
+	key := [4]uint64{gen + 1, v.openRev, uint64(width), uint64(len(v.notice))}
+	if v.items != nil && key == v.itemsKey {
+		return v.items
+	}
+	if v.tree == nil || v.treeGen != gen {
+		v.tree, v.treeGen = buildFormTree(snap), gen
+	}
+	v.rows = flattenFormTree(v.tree, v.open, nil)
+	defer func() { v.itemsKey = key }()
 
 	out := make([]pitRow, 0, len(v.rows)+1)
 	if v.notice != "" {
@@ -175,6 +189,7 @@ func (v *formView) Items(width int) []pitRow {
 			})
 		}
 	}
+	v.items = out
 	return out
 }
 
@@ -222,6 +237,7 @@ func (v *formView) Activate(id string) {
 	for _, n := range v.rows {
 		if n.path == path {
 			openBranch(n, v.open)
+			v.openRev++
 			return
 		}
 	}

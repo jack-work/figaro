@@ -21,6 +21,7 @@ type formMirror struct {
 	mu      sync.Mutex
 	snap    form.Snapshot
 	version uint64
+	gen     uint64
 	gaps    int
 	// schema is non-zero once a peer sent an envelope version we cannot read:
 	// the mirror has stopped tracking.
@@ -41,6 +42,7 @@ func (m *formMirror) reset(snap form.Snapshot, version uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.snap, m.version = snap, version
+	m.gen++
 }
 
 func (m *formMirror) apply(d rpc.FormDelta) formApply {
@@ -58,7 +60,14 @@ func (m *formMirror) apply(d rpc.FormDelta) formApply {
 	}
 	m.snap = m.snap.Apply(d.Patch)
 	m.version = d.Version
+	m.gen++
 	return formApplied
+}
+
+func (m *formMirror) generation() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.gen
 }
 
 func (m *formMirror) state() (form.Snapshot, uint64, int) {
