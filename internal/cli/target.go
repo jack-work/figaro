@@ -84,6 +84,35 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus,
 	if strings.Contains(*target, "@") {
 		return "", sdk.Addr{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)
 	}
+	if box := resp.Snapshot.Lookup("system.sandbox"); box != nil && *box != "" {
+		report(ctx, "role %s → aria %s, held in sandbox %s", ariaName(id), ariaName(*target), *box)
+		tid, tep, err := resolveTargetEndpoint(ctx, loaded, acli, *target, false, dressing{})
+		if err != nil {
+			return "", sdk.Addr{}, err
+		}
+		if got := sandboxOfAria(ctx, tep); got != *box {
+			return "", sdk.Addr{}, fmt.Errorf("role %s is held in sandbox %s but points at %s, which runs in %q: refused", id, *box, ariaName(tid), got)
+		}
+		return tid, tep, nil
+	}
 	report(ctx, "role %s → aria %s", ariaName(id), ariaName(*target))
 	return resolveTargetEndpoint(ctx, loaded, acli, *target, false, dressing{})
+}
+
+func sandboxOfAria(ctx context.Context, ep sdk.Addr) string {
+	fcli, err := sdk.DialAria(ep, nil)
+	if err != nil {
+		return ""
+	}
+	defer fcli.Close()
+	formCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, err := fcli.Form(formCtx)
+	if err != nil {
+		return ""
+	}
+	if v := resp.Snapshot.Lookup("system.sandbox"); v != nil {
+		return *v
+	}
+	return ""
 }

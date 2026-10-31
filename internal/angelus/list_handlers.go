@@ -126,6 +126,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 					if v := snap.Lookup("target-aria"); v != nil {
 						entry.TargetAria = *v
 					}
+					entry.Sandbox = h.heldBox(snap)
 				}
 			}
 			result = append(result, entry)

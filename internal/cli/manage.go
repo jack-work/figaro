@@ -411,6 +411,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			if f.TargetAria != "" {
 				detail = "role → " + nameIn(short, f.TargetAria)
 			}
+			detail += heldIn(f.Sandbox)
 		default:
 			label = f.Mantra
 			if label == "" {
@@ -475,6 +476,7 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 			if f.TargetAria != "" {
 				label += " → " + ariaName(f.TargetAria)
 			}
+			label += heldIn(f.Sandbox)
 			break
 		}
 	}

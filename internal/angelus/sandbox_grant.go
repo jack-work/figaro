@@ -206,12 +206,19 @@ func (h *handlers) checkFormWrite(ctx context.Context, id string, patch form.Pat
 		return nil
 	}
 	cwd := patchTouches(patch, "system.cwd")
-	if !cwd && !patchTouches(patch, "system.sandbox") {
+	held := patchTouches(patch, "system.sandbox")
+	if !cwd && !held && !patchTouches(patch, "target-aria") {
 		return nil
 	}
 	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
 		return err
+	}
+	if err := h.refuseRoleOutOfBox(snap.Apply(patch)); err != nil {
+		return err
+	}
+	if !cwd && !held {
+		return nil
 	}
 	pin, err := h.grantSandbox(ctx, snap.Apply(patch), cwd)
 	if err != nil {

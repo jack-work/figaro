@@ -127,7 +127,7 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 			age = relAge(f.LastActive)
 		}
 		fmt.Fprintf(stdout, "%-22s %-22s %-20s %-8s %s\n",
-			nameIn(short, f.ID), truncRunes(dash(f.Name), 22), dash(nameIfSet(short, f.TargetAria)), age, dash(nameIfSet(short, f.Parent)))
+			nameIn(short, f.ID), truncRunes(dash(f.Name), 22), dash(nameIfSet(short, f.TargetAria)), age, dash(nameIfSet(short, f.Parent))+heldIn(f.Sandbox))
 	}
 }
 
@@ -204,4 +204,11 @@ func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON boo
 	}
 	fmt.Fprintf(stdout, "bound %s from %s\n", ariaName(resp.FigaroID), ariaName(target))
 	fmt.Fprintf(stderrw, "dormant until first use; attend it with `fig at %s`\n", ariaName(resp.FigaroID))
+}
+
+func heldIn(box string) string {
+	if box == "" {
+		return ""
+	}
+	return "  [sandbox " + box + "]"
 }

@@ -49,6 +49,7 @@ type FigaroInfoResponse struct {
 	// Unbound-form rows only; TargetAria is set when the form is a role.
 	Name       string `json:"name,omitempty"`
 	TargetAria string `json:"target_aria,omitempty"`
+	Sandbox    string `json:"sandbox,omitempty"`
 }
 
 // AttachRequest restores a dormant aria without binding a pid.

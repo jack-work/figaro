@@ -189,6 +189,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
+		if dressed, err = h.holdCastInBox(ctx, method, id, dressed); err != nil {
+			return nil, err
+		}
 		if err := h.checkAriaMethod(ctx, method, id, dressed); err != nil {
 			return nil, err
 		}
@@ -346,6 +349,18 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
+	}
+	if patch, err = h.holdInCallerBox(ctx, patch); err != nil {
+		return nil, fmt.Errorf("form.create: %w", err)
+	}
+	born := form.Snapshot{}
+	if req.Parent != "" {
+		if born, err = h.angelus.Backend.FormState(req.Parent); err != nil {
+			return nil, err
+		}
+	}
+	if err := h.refuseRoleOutOfBox(born.Apply(patch)); err != nil {
+		return nil, fmt.Errorf("form.create: %w", err)
 	}
 	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch, mintedBy(ctx))
 	if err != nil {

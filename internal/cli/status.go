@@ -231,6 +231,11 @@ func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Sna
 	fmt.Fprintf(w, "%s\t%s\n", species, rowName(f))
 	row("id", f.ID)
 	row("name", dash(f.Name))
+	if species != "figaro" {
+		if box := snap.Lookup("system.sandbox"); box != nil && *box != "" {
+			row("sandbox", *box+" (held there: a role here reaches only that sandbox)")
+		}
+	}
 	if target := roleTargetOf(f, snap); target != "" {
 		if targetState != "" {
 			target += " (" + targetState + ")"
