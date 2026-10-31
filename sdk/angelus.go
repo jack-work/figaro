@@ -50,6 +50,13 @@ func callerCwd() string {
 	return dir
 }
 
+// Hello reports who the daemon takes this connection to be.
+func (c *Angelus) Hello(ctx context.Context) (*rpc.HelloResponse, error) {
+	var resp rpc.HelloResponse
+	err := c.call(ctx, rpc.MethodHello, rpc.HelloRequest{Version: rpc.ProtocolVersion}, &resp)
+	return &resp, err
+}
+
 // Status reports the daemon's uptime, population and build.
 func (c *Angelus) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	var resp rpc.StatusResponse

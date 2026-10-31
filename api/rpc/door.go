@@ -10,9 +10,10 @@ type Capability string
 type PrincipalKind string
 
 const (
-	PrincipalAria PrincipalKind = "aria"
-	PrincipalUser PrincipalKind = "user"
-	PrincipalNode PrincipalKind = "node"
+	PrincipalAria    PrincipalKind = "aria"
+	PrincipalUser    PrincipalKind = "user"
+	PrincipalNode    PrincipalKind = "node"
+	PrincipalSandbox PrincipalKind = "sandbox"
 )
 
 // Principal is set by the server from how the connection authenticated,

@@ -336,7 +336,9 @@ provider and model. Among those it may not write, the daemon dereferences
 `system.reaped(_until)`. Open keys are its own except `target-aria`, and a
 test fails on any open key the daemon reads that no one has classified. That holds for set, prompt, cast, create, fork and
 form.create/bind; values from outfits it names are the owner's. A box may not
-import, and the cwd it sends at birth is never looked up on the host. Under `local` or `bwrap` a `system.cwd`
+import, and the cwd it sends at birth is never looked up on the host. Shell
+bindings stay admin-only, since they are keyed by a pid and a box has its own
+pid namespace; `figaro new` inside a box prints the id instead of attending. Under `local` or `bwrap` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
 

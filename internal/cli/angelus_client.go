@@ -192,6 +192,10 @@ func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d
 // attendNew moves the shell onto what a verb created for it; with binding
 // disabled it is a silent no-op.
 func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
+	if !bindingDisabled() && throughABox(ctx, acli) {
+		fmt.Fprintf(stderrw, "figaro: a box does not attend shells; address %s with --id %s\n", ariaName(id), id)
+		return
+	}
 	if err := bindBinding(ctx, acli, shellPID, id, 0); err != nil {
 		die("attend %s: %s", id, err)
 	}
@@ -291,4 +295,9 @@ func storeOwnerHint() string {
 		return ""
 	}
 	return fmt.Sprintf("\n  pid %d holds the store; `figaro stop` stops it", pid)
+}
+
+func throughABox(ctx context.Context, acli *sdk.Angelus) bool {
+	hello, err := acli.Hello(ctx)
+	return err == nil && hello.Principal.Kind == rpc.PrincipalSandbox
 }
