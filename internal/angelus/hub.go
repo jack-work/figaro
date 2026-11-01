@@ -24,7 +24,7 @@ type ariaHub struct {
 	read  func(id, method string, params json.RawMessage) (v any, ok bool, err error)
 	write func(ctx context.Context, id, method string, params json.RawMessage) (v any, ok bool, err error)
 	// dress resolves outfit names before routing: no writer below it reads a file.
-	dress func(method string, params json.RawMessage) (json.RawMessage, error)
+	dress func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
 	// kind is the node's species; a form has no agent to wake, ever.
 	kind string
 
@@ -145,7 +145,7 @@ var errDormantMethod = errors.New("aria is dormant and this method needs a live 
 // boundary rather than landing as a literal on a form.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	if hb.dress != nil {
-		dressed, err := hb.dress(method, params)
+		dressed, err := hb.dress(ctx, method, params)
 		if err != nil {
 			return nil, err
 		}

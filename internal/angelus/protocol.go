@@ -185,7 +185,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err := h.refuseCallerPatch(ctx, method, id, params); err != nil {
 			return nil, err
 		}
-		dressed, err := h.dressParams(method, params)
+		dressed, err := h.dressParams(ctx, method, params)
 		if err != nil {
 			return nil, err
 		}
@@ -346,6 +346,9 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 			return nil, fmt.Errorf("form.create: a copy of %s reads it: %w", req.Parent, err)
 		}
 	}
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+		return nil, err
+	}
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
@@ -397,6 +400,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		if !ok || (n.Kind != store.KindForm && !isStump) {
 			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
 		}
+	}
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+		return nil, err
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {

@@ -40,6 +40,9 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	loaded, _ := h.settings()
 
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
+		return nil, err
+	}
 	outfitName := loaded.Config.DefaultOutfit
 	named := len(req.Outfits) > 0
 	if named {
@@ -248,6 +251,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		atMainLT = lt
 	}
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
+		return nil, err
+	}
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
 		return nil, err
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)

@@ -55,7 +55,7 @@ const outfitNameDefault = "default"
 
 // dressParams expands outfit names before a request enters the hub; a
 // request naming none is handed back byte for byte.
-func (h *handlers) dressParams(method string, params json.RawMessage) (json.RawMessage, error) {
+func (h *handlers) dressParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	if len(params) == 0 || !mightCarryOutfits(params) {
 		return params, nil
 	}
@@ -67,6 +67,9 @@ func (h *handlers) dressParams(method string, params json.RawMessage) (json.RawM
 		}
 		if len(req.Outfits) == 0 {
 			return params, nil
+		}
+		if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+			return params, err
 		}
 		dressed, err := h.dress(req.Outfits, &req.Patch)
 		if err != nil {
@@ -83,6 +86,9 @@ func (h *handlers) dressParams(method string, params json.RawMessage) (json.RawM
 		if req.Form == nil || len(req.Form.Outfits) == 0 {
 			return params, nil
 		}
+		if err := h.refuseBoxOutfits(ctx, req.Form.Outfits, false); err != nil {
+			return params, err
+		}
 		dressed, err := h.dress(req.Form.Outfits, req.Form.Patch)
 		if err != nil {
 			return params, err
@@ -97,6 +103,9 @@ func (h *handlers) dressParams(method string, params json.RawMessage) (json.RawM
 		}
 		if len(req.Outfits) == 0 {
 			return params, nil
+		}
+		if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+			return params, err
 		}
 		dressed, err := h.dress(req.Outfits, req.RolePatch)
 		if err != nil {

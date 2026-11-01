@@ -363,6 +363,12 @@ providers an aria in that box may run on. Anything else is refused where the
 provider is resolved: at birth, at wake, on a rebind, and for a decision
 asked by the box or for an aria in it. Unset keeps every provider.
 
+**Box outfits.** `[sandbox.boxes.<name>] outfits = [...]` names the outfits
+a box may dress in. A box naming any other outfit is refused at create, fork,
+set, prompt, cast and form.create/bind, and a create naming none is refused
+with the list of allowed outfits: no implicit default. Unset keeps every outfit; the owner is
+never limited by it.
+
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
 caller), `troupe.leave`, `troupe.policy.set` and `troupe.apikey.mint`, since

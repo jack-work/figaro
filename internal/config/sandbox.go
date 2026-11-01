@@ -17,6 +17,7 @@ type BoxConfig struct {
 	Door      string   `toml:"door"`
 	Profile   string   `toml:"profile"`
 	Providers []string `toml:"providers"`
+	Outfits   []string `toml:"outfits"`
 }
 
 func (l *Loaded) WorkspaceRoot() (string, error) {
