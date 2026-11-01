@@ -1100,14 +1100,16 @@ func (a *Agent) publishMetadata() {
 	}
 }
 
-func (a *Agent) toolDefs() []provider.Tool {
+func (a *Agent) toolDefs(snap form.Snapshot) []provider.Tool {
 	if a.tools == nil {
 		return nil
 	}
-	list := a.tools.List()
-	defs := make([]provider.Tool, len(list))
-	for i, t := range list {
-		defs[i] = provider.Tool{Name: t.Name(), Description: t.Description(), Parameters: t.Parameters()}
+	allowed := toolsAllowed(snap)
+	var defs []provider.Tool
+	for _, t := range a.tools.List() {
+		if allowed.allows(t.Name()) {
+			defs = append(defs, provider.Tool{Name: t.Name(), Description: t.Description(), Parameters: t.Parameters()})
+		}
 	}
 	return defs
 }

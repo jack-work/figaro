@@ -351,7 +351,10 @@ the daemon assigns is under "Workspaces under a sandbox" below.
 `system.methods` (`api/form/owner_held.go`) are set or removed only by the
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
-and form.create/bind. Owner-held does not bind an
+and form.create/bind. `system.tools` lists the tools an aria may use; `[]` is
+none, unset is all, and a value that is not a list is none. It is enforced
+where tools are offered to the model and again where a call runs, so a
+forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed aria whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 

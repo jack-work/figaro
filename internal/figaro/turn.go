@@ -309,13 +309,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	bus := newTurnBus(turnCtx)
 	// Thinking is the only state the client's spinner animates on.
 	a.publishRuntime(rpc.RuntimeThinking, "")
+	snap := a.form.Snapshot()
 	in := provider.SendInput{
 		AriaID:    a.id,
 		FigLog:    a.figLog,
-		Snapshot:  a.form.Snapshot(),
+		Snapshot:  snap,
 		Form:      a.formAccessor(),
 		Studies:   a.studyAccessors(),
-		Tools:     a.toolDefs(),
+		Tools:     a.toolDefs(snap),
 		MaxTokens: a.formInt("system.max_tokens"),
 	}
 	sendDone := make(chan error, 1)
@@ -1141,6 +1142,13 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			}
 		}
 
+		if !toolsAllowed(a.form.Snapshot()).allows(tc.ToolName) {
+			emitEnd(toolOutcome{
+				content: []message.Content{message.TextContent(fmt.Sprintf("Tool %s is not allowed for this aria (system.tools)", tc.ToolName))},
+				isErr:   true,
+			})
+			return
+		}
 		t, ok := a.tools.Get(tc.ToolName)
 		if !ok {
 			emitEnd(toolOutcome{
