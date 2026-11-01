@@ -365,8 +365,10 @@ asked by the box or for an aria in it. Unset keeps every provider.
 
 **Box outfits.** `[sandbox.boxes.<name>] outfits = [...]` names the outfits
 a box may dress in. A box naming any other outfit is refused at create, fork,
-set, prompt, cast and form.create/bind, and a create naming none is refused
-with the list of allowed outfits: no implicit default. Unset keeps every outfit; the owner is
+set, prompt, cast and form.create/bind. Whatever mints an aria from the box
+names a listed outfit, or is refused with the list: create and form.bind
+always, and a fork unless it is a head fork of a conversation, which carries
+its parent's dress. No implicit default. Unset keeps every outfit; the owner is
 never limited by it.
 
 **Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long

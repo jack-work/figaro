@@ -253,7 +253,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
-	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, !h.headForkOfAConversation(req)); err != nil {
 		return nil, err
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)
@@ -312,6 +312,14 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
+}
+
+func (h *handlers) headForkOfAConversation(req rpc.ForkRequest) bool {
+	if req.AtTurn > 0 || req.AtLT > 0 {
+		return false
+	}
+	n, ok := h.angelus.Backend.Node(req.FigaroID)
+	return ok && n.Kind == store.KindConversation
 }
 
 func (h *handlers) forkMetaSnapshot(parent string) *store.AriaMeta {

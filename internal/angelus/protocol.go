@@ -401,7 +401,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
 		}
 	}
-	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
 		return nil, err
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)
