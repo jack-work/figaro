@@ -208,6 +208,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 			a.form.Apply(combined)
 		}
 	}
+	msg.Content = append(msg.Content, prompt.images...)
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {
@@ -776,6 +777,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 			texts = append(texts, p.text)
 		}
 		out.form = mergeFormInput(out.form, p.form)
+		out.images = append(out.images, p.images...)
 		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
 		if i > 0 && p.id != 0 {

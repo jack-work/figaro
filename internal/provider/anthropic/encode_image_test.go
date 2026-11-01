@@ -164,3 +164,26 @@ func TestNativeToolImageShapes(t *testing.T) {
 		})
 	}
 }
+
+// A picture sent with a prompt is a top-level image block on the user turn,
+// ahead of the text, with no tool_result around it.
+func TestNativePromptImageIsAnImageBlockBeforeTheText(t *testing.T) {
+	msg := message.Message{
+		Role: message.RoleInput,
+		Content: []message.Content{
+			message.ImageContent("image/jpeg", "/9j/AAAA"),
+			message.SenderText("payup", "what is the total?"),
+		},
+	}
+
+	blocks := nativeBlocks(t, renderNative(t, msg))
+	require.Len(t, blocks, 2)
+	assert.Equal(t, "image", blocks[0]["type"])
+	src, ok := blocks[0]["source"].(map[string]any)
+	require.True(t, ok, "image block has no source: %v", blocks[0])
+	assert.Equal(t, "base64", src["type"])
+	assert.Equal(t, "image/jpeg", src["media_type"])
+	assert.Equal(t, "/9j/AAAA", src["data"])
+	assert.Equal(t, "text", blocks[1]["type"])
+	assert.Contains(t, blocks[1]["text"], "what is the total?")
+}

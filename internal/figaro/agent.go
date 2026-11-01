@@ -55,8 +55,9 @@ type event struct {
 
 	studyMark *message.StudyMark
 
-	text string
-	form *rpc.FormInput
+	text   string
+	images []message.Content
+	form   *rpc.FormInput
 	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
 }
@@ -494,6 +495,10 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		return err
 	}
 	req.Text = text
+	images, err := promptImages(req.Images, req.Text, a.settings.InlineImageBudget())
+	if err != nil {
+		return err
+	}
 	if patch := a.combineFormInput(req.Form); !patch.IsIdentity() {
 		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
 			return err
@@ -501,8 +506,9 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		a.form.Apply(patch)
 	}
 	evt := event{
-		typ:  eventUserPrompt,
-		text: req.Text,
+		typ:    eventUserPrompt,
+		text:   req.Text,
+		images: images,
 	}
 	if req.Text != "" {
 		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}

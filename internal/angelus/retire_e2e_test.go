@@ -38,6 +38,8 @@ func TestARetiredAriaRefusesPromptsUntilUnretired(t *testing.T) {
 	err = conn.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: "are you there?"}, &out)
 	require.Error(t, err, "a retired aria must refuse a prompt")
 	require.Contains(t, err.Error(), "retired")
+	err = conn.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Images: []rpc.QuaImage{{Data: "AAAA"}}}, &out)
+	require.ErrorContains(t, err, "retired", "a picture with no text is still a prompt")
 
 	require.NoError(t, conn.Call(ctx, rpc.MethodSet, setKeys(t, map[string]string{"mantra": "epitaph"}), &set),
 		"a retired aria must still take a write")
