@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,7 +123,15 @@ type OAuth struct {
 
 	// endpoint is published atomically: Resolve runs on provider goroutines.
 	endpoint atomic.Pointer[string]
+	dead     atomic.Pointer[deadGrant]
 }
+
+type deadGrant struct {
+	token string
+	err   error
+}
+
+var ErrLoginRequired = errors.New("login required")
 
 func (o *OAuth) TryResolve() (string, bool, error) {
 	if o.Hush == nil || o.Name == "" {
@@ -134,6 +143,14 @@ func (o *OAuth) TryResolve() (string, bool, error) {
 			return "", false, nil
 		}
 		return "", false, err
+	}
+	if d := o.dead.Load(); d != nil {
+		if tok == d.token {
+			return "", false, d.err
+		}
+		if o.dead.CompareAndSwap(d, nil) {
+			slog.Info("provider credential has a new login", "credential", o.Name)
+		}
 	}
 	o.rememberEndpoint(meta)
 	return tok, true, nil
@@ -170,13 +187,20 @@ func (o *OAuth) Invalidate(token string) error {
 	if o.Hush == nil || o.Name == "" {
 		return nil
 	}
+	if d := o.dead.Load(); d != nil && d.token == token {
+		return d.err
+	}
 	_, meta, err := o.Hush.OAuthRefreshFull(o.Name)
 	if err == nil {
 		o.rememberEndpoint(meta)
 		return nil
 	}
 	if errors.Is(err, hush.ErrOAuthRefreshPermanent) {
-		return fmt.Errorf("oauth refresh for %q rejected (run: figaro provider login %s): %w", o.Name, o.Name, err)
+		dead := &deadGrant{token: token, err: fmt.Errorf("%w: oauth refresh for %q rejected (run: figaro provider login %s): %w", ErrLoginRequired, o.Name, o.Name, err)}
+		if o.dead.Swap(dead) == nil {
+			slog.Warn("provider credential needs login; requests stop until it has one", "credential", o.Name, "run", "figaro provider login "+o.Name)
+		}
+		return dead.err
 	}
 	return fmt.Errorf("oauth refresh for %q: %w", o.Name, err)
 }
