@@ -92,8 +92,12 @@ func (c *Aria) ID() string { return *c.id.Load() }
 // time. A prompt accepted while a turn is active becomes steering; one
 // accepted while idle opens a new turn.
 func (c *Aria) Qua(ctx context.Context, text string, cb *rpc.FormInput) (int, bool, error) {
+	return c.QuaWith(ctx, rpc.QuaRequest{Text: text, Form: cb})
+}
+
+func (c *Aria) QuaWith(ctx context.Context, req rpc.QuaRequest) (int, bool, error) {
 	var resp rpc.QuaResponse
-	err := c.call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Form: cb}, &resp)
+	err := c.call(ctx, rpc.MethodQua, req, &resp)
 	return resp.Cursor, resp.Active, err
 }
 

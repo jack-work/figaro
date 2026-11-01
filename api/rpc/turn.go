@@ -19,8 +19,19 @@ type ErrorData struct {
 }
 
 type QuaRequest struct {
-	Text string     `json:"text"`
-	Form *FormInput `json:"form,omitempty"`
+	Text   string     `json:"text"`
+	Form   *FormInput `json:"form,omitempty"`
+	Images []QuaImage `json:"images,omitempty"`
+}
+
+const (
+	MaxQuaImages     = 4
+	MaxQuaImageBytes = 10 << 20
+)
+
+type QuaImage struct {
+	MimeType string `json:"mime_type,omitempty"`
+	Data     string `json:"data"`
 }
 
 // FormInput is the client's view of state at send time and the delta it means.
