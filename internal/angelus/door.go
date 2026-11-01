@@ -199,12 +199,14 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		return
 	}
 	f := &follower{hubs: map[*ariaHub]struct{}{}}
-	f.srv = jkrpc.NewServer(jkrpc.NewConn(conn), a.Handlers)
+	f.srv = jkrpc.NewServer(jkrpc.NewConn(capFrames(conn, maxDoorFrame)), a.Handlers)
 	defer f.close()
 
 	done := make(chan struct{})
 	go func() {
-		f.srv.Serve(context.WithValue(ctx, followerKey{}, f))
+		if err := f.srv.Serve(context.WithValue(ctx, followerKey{}, f)); errors.Is(err, errFrameTooLarge) {
+			slog.Warn("door closed a connection", "door", door.String(), "err", err)
+		}
 		close(done)
 	}()
 	select {
