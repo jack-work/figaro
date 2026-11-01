@@ -28,6 +28,7 @@ func InquirySegmentsOf(m message.Message) []aria.InquirySegment {
 	if !attributed {
 		return nil
 	}
+	out[0].Text = turns.Inquiry(out[0].Text, m)
 	return out
 }
 
@@ -56,7 +57,7 @@ func Turns(msgs []message.Message) []aria.Turn {
 		if turns.Opens(m) {
 			flush()
 			id, first = m.TurnID, m.LogicalTime
-			inquiry = turns.Text(m)
+			inquiry = turns.Inquiry(turns.Text(m), m)
 			segments = InquirySegmentsOf(m)
 			at = m.Timestamp
 		}

@@ -71,6 +71,24 @@ func Text(m message.Message) string {
 	return strings.Join(parts, "\n")
 }
 
+func Inquiry(text string, m message.Message) string {
+	lines := imageLines(m)
+	if len(lines) == 0 {
+		return text
+	}
+	return strings.Join(append(lines, text), "\n\n")
+}
+
+func imageLines(m message.Message) []string {
+	var lines []string
+	for _, c := range m.Content {
+		if c.Type == message.ContentImage && c.ToolCallID == "" {
+			lines = append(lines, "[image: "+c.MimeType+"]")
+		}
+	}
+	return lines
+}
+
 func HasToolResult(m message.Message) bool {
 	for _, c := range m.Content {
 		if c.Type == message.ContentToolResult {

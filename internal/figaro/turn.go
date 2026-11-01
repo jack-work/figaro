@@ -238,7 +238,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 			}
 			// Segments come off the message, not the event, so live and re-read agree on who asked.
 			a.turnFirstLT = entry.LT
-			a.ariaSrv.OpenInquiry(a.turnID, prompt.text, a.openingFormDeltas(), a.projInquirySegments(msg)...)
+			a.ariaSrv.OpenInquiry(a.turnID, turns.Inquiry(prompt.text, msg), a.openingFormDeltas(), a.projInquirySegments(msg)...)
 		}
 	}
 	return entry, nil
