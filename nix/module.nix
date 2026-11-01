@@ -17,6 +17,10 @@ let
       name = "providers/${name}.toml";
       path = toml.generate "${name}.toml" spec;
     }) cfg.providers
+    ++ lib.mapAttrsToList (name: spec: {
+      name = "outfits/${name}.toml";
+      path = toml.generate "${name}.toml" spec;
+    }) cfg.outfits
   );
 in
 {
@@ -66,6 +70,13 @@ in
       type = types.attrsOf toml.type;
       default = { };
       description = "Declared providers, rendered as providers/<name>.toml. Never put a key here; use credentials.";
+    };
+
+    outfits = mkOption {
+      type = types.attrsOf toml.type;
+      default = { };
+      example = { guest = { system = { ttl = "24h"; keepalive = "24h"; }; }; };
+      description = "Declared outfits, rendered as outfits/<name>.toml; `figaro new -O <name>` dresses with one.";
     };
 
     credentials = mkOption {

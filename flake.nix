@@ -171,6 +171,7 @@
         '';
       } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
         container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
+        module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
       });
 
       devShells = forAllSystems ({ pkgs }: let
