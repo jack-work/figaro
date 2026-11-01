@@ -624,7 +624,11 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 	grace := time.Duration(req.GraceMS) * time.Millisecond
-	if grace <= 0 {
+	if box, ok := h.config.BoxPurgeGrace(h.angelus.sandboxOf(req.FigaroID)); ok {
+		if grace <= 0 || grace > box {
+			grace = box
+		}
+	} else if grace <= 0 {
 		grace = h.config.KillGrace()
 	}
 	if !req.Now && grace > 0 {

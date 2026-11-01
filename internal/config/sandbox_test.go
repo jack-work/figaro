@@ -36,6 +36,9 @@ func TestBoxesLoadAndRefuseWhatTheyCannotBe(t *testing.T) {
 		{"[sandbox.boxes.judge]\nexec = \"judge.sock\"\n", false},
 		{"[sandbox.boxes.judge]\nexec = \"/x\"\ndoor = \"door.sock\"\n", false},
 		{"[sandbox.boxes.a]\nexec = \"/x\"\ndoor = \"/d\"\n[sandbox.boxes.b]\nexec = \"/y\"\ndoor = \"/d/\"\n", false},
+		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\npurge_grace = \"1h\"\n", true},
+		{"[sandbox.boxes.judge]\nexec = \"/x\"\npurge_grace = \"an hour\"\n", false},
+		{"[sandbox.boxes.judge]\nexec = \"/x\"\npurge_grace = \"-1h\"\n", false},
 	} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(c.body), 0o600); err != nil {

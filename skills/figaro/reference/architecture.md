@@ -369,6 +369,11 @@ set, prompt, cast and form.create/bind, and a create naming none is refused
 with the list of allowed outfits: no implicit default. Unset keeps every outfit; the owner is
 never limited by it.
 
+**Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long
+a reaped or killed aria in that box waits before it is purged, in place of
+`[memory] reaped_grace_hours` and `kill_grace_hours`. A kill asking for a
+longer grace gets the box's; `kill --now` still purges at once.
+
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
 caller), `troupe.leave`, `troupe.policy.set` and `troupe.apikey.mint`, since

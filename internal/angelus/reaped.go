@@ -50,6 +50,13 @@ func (g reapedGroup) purgeAt(grace time.Duration) time.Time {
 
 func (g reapedGroup) killed() bool { return g.untilMS > 0 }
 
+func (a *Angelus) reapedGraceOf(g reapedGroup, daemon time.Duration) time.Duration {
+	if _, any := a.Settings.ShortestBoxPurgeGrace(); !any || g.untilMS > 0 {
+		return daemon
+	}
+	return a.purgeGraceIn(a.sandboxOf(g.root), daemon)
+}
+
 func reapedGroups(entries []store.ReapedEntry) []reapedGroup {
 	byRoot := map[string]*reapedGroup{}
 	var order []string
@@ -78,10 +85,17 @@ func (a *Angelus) purgeReaped(keeper ttlKeeper, now time.Time) {
 		return
 	}
 	grace := a.Settings.ReapedGrace()
+	least, boxed := a.Settings.ShortestBoxPurgeGrace()
+	if !boxed || least > grace {
+		least = grace
+	}
 	bound := a.Registry.BoundPIDsByFigaro()
 	var roles map[string]string
 	for _, g := range reapedGroups(rk.Reaped()) {
-		if g.atMS == 0 || g.purgeAt(grace).After(now) {
+		if g.atMS == 0 || g.purgeAt(least).After(now) {
+			continue
+		}
+		if boxed && g.purgeAt(a.reapedGraceOf(g, grace)).After(now) {
 			continue
 		}
 		if roles == nil {

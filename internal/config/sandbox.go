@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type SandboxConfig struct {
@@ -13,11 +14,12 @@ type SandboxConfig struct {
 }
 
 type BoxConfig struct {
-	Exec      string   `toml:"exec"`
-	Door      string   `toml:"door"`
-	Profile   string   `toml:"profile"`
-	Providers []string `toml:"providers"`
-	Outfits   []string `toml:"outfits"`
+	Exec       string   `toml:"exec"`
+	Door       string   `toml:"door"`
+	Profile    string   `toml:"profile"`
+	Providers  []string `toml:"providers"`
+	Outfits    []string `toml:"outfits"`
+	PurgeGrace string   `toml:"purge_grace"`
 }
 
 func (l *Loaded) WorkspaceRoot() (string, error) {
@@ -34,6 +36,29 @@ func (l *Loaded) WorkspaceRoot() (string, error) {
 func (l *Loaded) Box(name string) (BoxConfig, bool) {
 	b, ok := l.cfg().Sandbox.Boxes[name]
 	return b, ok
+}
+
+func (l *Loaded) BoxPurgeGrace(name string) (time.Duration, bool) {
+	b, ok := l.cfg().Sandbox.Boxes[name]
+	if !ok || b.PurgeGrace == "" {
+		return 0, false
+	}
+	d, err := time.ParseDuration(b.PurgeGrace)
+	if err != nil {
+		return 0, false
+	}
+	return d, true
+}
+
+func (l *Loaded) ShortestBoxPurgeGrace() (time.Duration, bool) {
+	var least time.Duration
+	found := false
+	for name := range l.cfg().Sandbox.Boxes {
+		if d, ok := l.BoxPurgeGrace(name); ok && (!found || d < least) {
+			least, found = d, true
+		}
+	}
+	return least, found
 }
 
 func (l *Loaded) BoxDoors() map[string]string {
@@ -64,6 +89,11 @@ func (c Config) validateSandbox() error {
 			return fmt.Errorf("%s.exec: want the absolute path of the socket box serve listens on", where)
 		case b.Door != "" && !filepath.IsAbs(b.Door):
 			return fmt.Errorf("%s.door: want an absolute socket path", where)
+		}
+		if b.PurgeGrace != "" {
+			if d, err := time.ParseDuration(b.PurgeGrace); err != nil || d < 0 {
+				return fmt.Errorf("%s.purge_grace %q: want a duration like \"1h\"", where, b.PurgeGrace)
+			}
 		}
 		if b.Door != "" {
 			door := filepath.Clean(b.Door)

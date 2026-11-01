@@ -71,8 +71,8 @@ func (a *Angelus) expireTTL() {
 			slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
 			continue
 		}
-		if grace > 0 {
-			a.softDelete(e, taken, grace)
+		if g := a.purgeGraceIn(a.sandboxOf(e.ID), grace); g > 0 {
+			a.softDelete(e, taken, g)
 			continue
 		}
 		if err := a.RemoveAria(e.ID, true); err != nil {
@@ -95,6 +95,13 @@ func (a *Angelus) otherSandboxIn(taken []string, self string) string {
 		}
 	}
 	return ""
+}
+
+func (a *Angelus) purgeGraceIn(sandbox string, daemon time.Duration) time.Duration {
+	if d, ok := a.Settings.BoxPurgeGrace(sandbox); ok {
+		return d
+	}
+	return daemon
 }
 
 func (a *Angelus) sandboxOf(id string) string {

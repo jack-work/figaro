@@ -78,6 +78,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		"mock":             "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
 		"boxed":            "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"bwrap\"\n",
 		"judged":           "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
+		"judged-chat":      "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\nttl = \"24h\"\nkeepalive = \"24h\"\n",
 		"judged-elsewhere": "[system]\nprovider = \"anthropic\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, "outfits", name+".toml"), []byte(body), 0o600); err != nil {
@@ -110,6 +111,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		t.Fatal(err)
 	}
 	a.Peercred = peer
+	a.Settings = loaded
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetBoxes(loaded.DooredBoxes())
 	if err := a.Policies.Reload(policy); err != nil {
