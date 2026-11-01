@@ -19,10 +19,6 @@ import (
 var boxWritable = []string{
 	"system.cwd",
 	"system.sandbox",
-	"system.provider",
-	"system.model",
-	"system.max_tokens",
-	"system.max_context_tokens",
 	"system.context_tier",
 	"system.thinking_budget",
 	"system.thinking_effort",
@@ -36,7 +32,6 @@ var boxWritable = []string{
 	"system.cache_markers",
 	"system.stream_request_body",
 	"system.reminder_renderer",
-	"system.credo",
 	"system.tags",
 	"system.retired",
 	"system.study_incantation",
@@ -106,15 +101,25 @@ func changedPaths(before, after form.Snapshot) []string {
 	return out
 }
 
-func refuseBoxKeys(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
+func (h *handlers) refuseCallerKeys(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}
-	box, ok := callerBox(ctx)
-	if !ok {
+	box, boxed := callerBox(ctx)
+	owns := h.callerOwns(ctx)
+	if owns && !boxed {
 		return nil
 	}
 	for _, p := range changedPaths(before, before.Apply(*patch)) {
+		if key, held := form.OwnerHeld(p); held && !owns {
+			if boxed {
+				return fmt.Errorf("box %s may not set %s: it is owner-held", box, key)
+			}
+			return fmt.Errorf("%s is owner-held: only the owner sets it", key)
+		}
+		if !boxed {
+			continue
+		}
 		if why, refused := boxRefusal(p); refused {
 			return fmt.Errorf("box %s may not set %s", box, why)
 		}
@@ -122,8 +127,16 @@ func refuseBoxKeys(ctx context.Context, before form.Snapshot, patch *form.Patch)
 	return nil
 }
 
-func (h *handlers) refuseBoxPatch(ctx context.Context, method, id string, params json.RawMessage) error {
-	if _, ok := callerBox(ctx); !ok {
+func (h *handlers) callerOwns(ctx context.Context) bool {
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return false
+	}
+	return h.passesUnpoliced(ctx, sub)
+}
+
+func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
+	if _, boxed := callerBox(ctx); !boxed && h.callerOwns(ctx) {
 		return nil
 	}
 	var patch *form.Patch
@@ -146,7 +159,7 @@ func (h *handlers) refuseBoxPatch(ctx context.Context, method, id string, params
 				if err != nil {
 					return err
 				}
-				if err := refuseBoxKeys(ctx, snap, ptr(form.FromMap(open).AsPatch())); err != nil {
+				if err := h.refuseCallerKeys(ctx, snap, ptr(form.FromMap(open).AsPatch())); err != nil {
 					return err
 				}
 			}
@@ -167,7 +180,7 @@ func (h *handlers) refuseBoxPatch(ctx context.Context, method, id string, params
 	if err != nil {
 		return err
 	}
-	return refuseBoxKeys(ctx, snap, patch)
+	return h.refuseCallerKeys(ctx, snap, patch)
 }
 
 func openKeys(m map[string]json.RawMessage) map[string]json.RawMessage {

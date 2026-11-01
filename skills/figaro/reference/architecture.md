@@ -328,8 +328,7 @@ Arias in one box share its files and processes, so the box is the unit a
 policy can separate; an aria moved out of the box leaves the box's reach.
 A policy file binds boxes itself, with the same two selectors. A box
 writes only the `system.` keys `boxWritable` lists (`internal/angelus/box_keys.go`):
-model and sampling knobs, credo, tags, cwd, sandbox, the decision
-provider and model. Among those it may not write, the daemon dereferences
+sampling knobs, tags, cwd, sandbox, the decision provider and model. Among those it may not write, the daemon dereferences
 `system.environment.*` (a directory it writes wire logs to),
 `system.decide.base_url` (a URL it sends a credential to), `system.methods`
 (keys it writes for the aria), `system.studies` (forms it reads) and
@@ -346,6 +345,15 @@ bindings stay admin-only, since they are keyed by a pid and a box has its own
 pid namespace; `figaro new` inside a box prints the id instead of attending. Under `local` or `bwrap` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
+
+**Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
+`system.max_context_tokens`, `system.credo`, `system.tools` and
+`system.methods` (`api/form/owner_held.go`) are set or removed only by the
+owner: the local door, an in-process call, or the owner's principal. Every
+other caller, a box included, is refused at set, prompt, cast, create, fork
+and form.create/bind. Owner-held does not bind an
+unboxed aria whose tools include bash or process: those tools reach the
+local door as the owner (issue #57).
 
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a

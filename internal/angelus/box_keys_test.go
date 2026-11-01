@@ -133,7 +133,7 @@ func TestABoxCannotSetKeysTheDaemonDereferencesOnTheHost(t *testing.T) {
 		t.Fatalf("the canary directory exists: %v", err)
 	}
 
-	if err := onIt(rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"mantra": "fine", "system.model": "m2"})}); err != nil {
+	if err := onIt(rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"mantra": "fine", "system.thinking_effort": "low"})}); err != nil {
 		t.Fatalf("a key the daemon does not dereference: %v", err)
 	}
 	ownerSet := heldPatch(t, map[string]any{"system.environment.figaro_wire_dir": canary})
@@ -236,7 +236,7 @@ func TestABoxWritesOnlyListedSystemKeys(t *testing.T) {
 	if err := onIt(rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.added_tomorrow": "/etc"})}); err == nil || !strings.Contains(err.Error(), "only the system keys it is listed for") {
 		t.Fatalf("an unlisted system key: %v", err)
 	}
-	for key, val := range map[string]any{"system.model": "m2", "system.credo": map[string]any{"content": "be brief"}, "system.tags": map[string]any{"3": map[string]any{"cache_control": "1h"}}, "chalkboard.note": "mine", "mantra": "boxed"} {
+	for key, val := range map[string]any{"system.thinking_effort": "low", "system.tags": map[string]any{"3": map[string]any{"cache_control": "1h"}}, "chalkboard.note": "mine", "mantra": "boxed"} {
 		if err := onIt(rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{key: val})}); err != nil {
 			t.Errorf("%s: %v", key, err)
 		}

@@ -34,7 +34,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
-	if err := refuseBoxKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 
@@ -226,7 +226,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := refuseBoxKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 	var cont, alt string

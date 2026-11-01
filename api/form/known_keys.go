@@ -51,6 +51,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.decide.api", Short: "The decision API `figaro decide` speaks for this aria: systemone (jev, decision-1) or openai (luna); default inferred from the model", Mode: KeyUserSettable},
 		{Key: "system.methods.enabled", Short: "Master switch for methods (default true); false and no method runs", Mode: KeyUserSettable},
 		{Key: "system.methods.<name>", Short: `A method: on each inquiry the decision model picks one of {options} from the rendered {context} ({{inquiry}}, {{inquiry~N}}) and writes it to {key}; {score, default, enabled, event, keep_cache} optional; keep_cache (default true) holds a method whose change would break the prompt cache`, Mode: KeyUserSettable},
+		{Key: "system.tools", Short: "Owner-held allowlist of tool names the aria may use; [] means none, unset means all. Owner-held does not bind an unboxed aria whose tools include bash or process (issue #57)", Mode: KeyUserSettable},
 		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},

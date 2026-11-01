@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Open keys (outside system.) are a box's to write unless held. Each one the
@@ -100,5 +102,30 @@ func TestHeldKeysAreRefusedAndListedKeysAreNot(t *testing.T) {
 	}
 	if _, refused := boxRefusal("system.added_tomorrow"); !refused {
 		t.Error("an unlisted system key is writable")
+	}
+}
+
+// The chat outfit reaps its arias after a day idle; a box that could write its
+// own lifetime could keep a guest's transcript forever.
+func TestALifetimeIsNeverBoxWritable(t *testing.T) {
+	for _, key := range []string{"system.ttl", "system.keepalive"} {
+		for _, w := range boxWritable {
+			if under(key, w) || under(w, key) {
+				t.Errorf("%s is box-writable under %s", key, w)
+			}
+		}
+		if _, refused := boxRefusal(key); !refused {
+			t.Errorf("%s is not refused to a box", key)
+		}
+	}
+}
+
+func TestOwnerHeldKeysAreNeverBoxWritable(t *testing.T) {
+	for _, key := range form.OwnerHeldKeys() {
+		for _, w := range boxWritable {
+			if under(key, w) || under(w, key) {
+				t.Errorf("owner-held %s is box-writable under %s", key, w)
+			}
+		}
 	}
 }

@@ -182,7 +182,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if method == rpc.MethodFollow {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 		}
-		if err := h.refuseBoxPatch(ctx, method, id, params); err != nil {
+		if err := h.refuseCallerPatch(ctx, method, id, params); err != nil {
 			return nil, err
 		}
 		dressed, err := h.dressParams(method, params)
@@ -338,7 +338,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if req.Patch == nil || req.Patch.IsIdentity() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
 	}
-	if err := refuseBoxKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 	if req.Parent != "" {
@@ -381,7 +381,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		return nil, err
 	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
-	if err := refuseBoxKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 	parent := req.Parent
