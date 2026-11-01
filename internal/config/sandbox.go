@@ -13,9 +13,10 @@ type SandboxConfig struct {
 }
 
 type BoxConfig struct {
-	Exec    string `toml:"exec"`
-	Door    string `toml:"door"`
-	Profile string `toml:"profile"`
+	Exec      string   `toml:"exec"`
+	Door      string   `toml:"door"`
+	Profile   string   `toml:"profile"`
+	Providers []string `toml:"providers"`
 }
 
 func (l *Loaded) WorkspaceRoot() (string, error) {

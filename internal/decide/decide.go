@@ -43,6 +43,7 @@ type Source struct {
 	BoundForm form.Snapshot
 	Defaults  form.Snapshot
 	Context   string
+	Allowed   func(provider string) error
 }
 
 type Target struct {
@@ -206,6 +207,11 @@ func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p p
 	set, err := src.settings(req)
 	if err != nil {
 		return out, err
+	}
+	if src.Allowed != nil {
+		if err := src.Allowed(set.provider); err != nil {
+			return out, err
+		}
 	}
 	model, api := set.model, set.api
 	span.SetAttributes(attribute.String("decide.provider", set.provider), attribute.String("decide.model", model))

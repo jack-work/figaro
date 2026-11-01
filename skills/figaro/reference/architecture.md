@@ -358,6 +358,11 @@ forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed aria whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 
+**Box providers.** `[sandbox.boxes.<name>] providers = [...]` names the
+providers an aria in that box may run on. Anything else is refused where the
+provider is resolved: at birth, at wake, on a rebind, and for a decision
+asked by the box or for an aria in it. Unset keeps every provider.
+
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
 caller), `troupe.leave`, `troupe.policy.set` and `troupe.apikey.mint`, since

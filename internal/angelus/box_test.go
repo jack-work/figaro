@@ -191,10 +191,15 @@ func boxDoorRig(t *testing.T, command string) doorRig {
 
 func boxDoorRigWith(t *testing.T, policy, command string, opts ...func(*angelus.ServerConfig)) doorRig {
 	t.Helper()
+	return boxDoorRigConfigured(t, policy, command, "", opts...)
+}
+
+func boxDoorRigConfigured(t *testing.T, policy, command, boxExtra string, opts ...func(*angelus.ServerConfig)) doorRig {
+	t.Helper()
 	sb := serveBoxDoor(t, true)
 	door := filepath.Join(filepath.Dir(sb.sock), "door.sock")
 	p := &bashProvider{command: command, turns: make(chan string, 4)}
-	r := newRigProviding(t, policy, fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n[sandbox]\nworkspace_root = %q\n", sb.sock, door, filepath.Join(filepath.Dir(sb.sock), "workspaces")),
+	r := newRigProviding(t, policy, fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n%s[sandbox]\nworkspace_root = %q\n", sb.sock, door, boxExtra, filepath.Join(filepath.Dir(sb.sock), "workspaces")),
 		func(string, provider.Knobs) (provider.Provider, error) { return p, nil }, opts...)
 	ln, err := angelus.ListenUnix(door, 0o660)
 	if err != nil {

@@ -138,6 +138,9 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		}
 		return ""
 	}
+	if err := h.providerAllowedIn(formStr("system.sandbox"), provName); err != nil {
+		return nil, err
+	}
 	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, formStr("system.sandbox"), id, formStr("system.cwd"), h.angelus.RuntimeDir)
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: %w", err)
@@ -148,7 +151,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              id,
 		Provider:        prov,
-		ProviderFactory: h.factory,
+		ProviderFactory: h.factoryIn(formStr("system.sandbox")),
 		Models:          h.angelus.Models,
 		Tools:           reg,
 		Projector:       uiir.New(reg).Naming(h.angelus.senderName),

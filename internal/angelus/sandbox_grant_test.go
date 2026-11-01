@@ -75,9 +75,10 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"mock":   "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
-		"boxed":  "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"bwrap\"\n",
-		"judged": "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
+		"mock":             "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
+		"boxed":            "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"bwrap\"\n",
+		"judged":           "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
+		"judged-elsewhere": "[system]\nprovider = \"anthropic\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, "outfits", name+".toml"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)

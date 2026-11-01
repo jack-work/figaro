@@ -39,6 +39,7 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 		}
 		src.Log, src.BoundForm = log, bound.Snapshot
 	}
+	src.Allowed = h.decisionProvidersFor(ctx, src.BoundForm)
 	return h.decider.Decide(ctx, src, req)
 }
 
@@ -54,6 +55,7 @@ type defaultedAsker struct{ h *handlers }
 
 func (d defaultedAsker) Ask(ctx context.Context, src decide.Source, q decide.Question) (rpc.DecideResponse, error) {
 	src.Defaults = d.h.defaultForm()
+	src.Allowed = d.h.decisionProvidersFor(ctx, src.BoundForm)
 	return d.h.decider.Ask(ctx, src, q)
 }
 

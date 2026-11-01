@@ -93,7 +93,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		MaxTokens:        cbInt("system.max_tokens"),
 		ReminderRenderer: cbStr("system.reminder_renderer"),
 	}
-	prov, err := h.factory(provName, knobs)
+	prov, err := h.factoryIn(cbStr("system.sandbox"))(provName, knobs)
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
 	}
@@ -117,7 +117,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
 		Provider:        prov,
-		ProviderFactory: h.factory,
+		ProviderFactory: h.factoryIn(cbStr("system.sandbox")),
 		Models:          h.angelus.Models,
 		Tools:           reg,
 		Projector:       uiir.New(reg).Naming(h.angelus.senderName),
