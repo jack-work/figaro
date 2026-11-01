@@ -54,3 +54,41 @@ func promptImages(in []rpc.QuaImage, text string, budget int) ([]message.Content
 	}
 	return out, nil
 }
+
+func fitPromptImagesTotal(images []message.Content, budget int) []message.Content {
+	total := 0
+	for _, c := range images {
+		total += len(c.Data)
+	}
+	if total <= budget {
+		return images
+	}
+	per := min(budget/len(images), tool.ProviderImageCeiling)
+	out := make([]message.Content, 0, len(images))
+	for _, c := range images {
+		if len(c.Data) <= per {
+			out = append(out, c)
+			continue
+		}
+		if fitted, ok := refitPromptImage(c, per); ok {
+			out = append(out, fitted)
+			continue
+		}
+		out = append(out, message.TextContent(fmt.Sprintf(
+			"[image omitted: it could not be shrunk to share this message's %s image budget with %d others]",
+			tool.FormatSize(budget), len(images)-1)))
+	}
+	return out
+}
+
+func refitPromptImage(c message.Content, limit int) (message.Content, bool) {
+	raw, err := base64.StdEncoding.DecodeString(c.Data)
+	if err != nil {
+		return message.Content{}, false
+	}
+	fitted, err := tool.FitImage(raw, c.MimeType, tool.ImageLimits{MaxBase64: limit})
+	if err != nil {
+		return message.Content{}, false
+	}
+	return message.ImageContent(fitted.MimeType, fitted.Data), true
+}

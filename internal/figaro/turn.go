@@ -208,7 +208,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 			a.form.Apply(combined)
 		}
 	}
-	msg.Content = append(msg.Content, prompt.images...)
+	msg.Content = append(msg.Content, fitPromptImagesTotal(prompt.images, a.settings.InlineImageBudget())...)
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {

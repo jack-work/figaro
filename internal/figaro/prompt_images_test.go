@@ -136,3 +136,15 @@ func BenchmarkPromptImagesPassThrough(b *testing.B) {
 		}
 	}
 }
+
+func TestAFoldThatCannotShrinkSaysWhatItDropped(t *testing.T) {
+	img := message.ImageContent("image/png", b64(testPNG(t, 300, 300, true)))
+	got := fitPromptImagesTotal([]message.Content{img, img}, 10<<10)
+	if len(got) != 2 || got[0].Type != message.ContentProse || !strings.Contains(got[0].Text, "image omitted") {
+		t.Fatalf("want two notes in place of pictures no budget can hold, got %+v", got)
+	}
+	small := []message.Content{message.ImageContent("image/png", "AAAA")}
+	if out := fitPromptImagesTotal(small, 1<<20); &out[0] != &small[0] {
+		t.Fatal("a fold under the budget must pass through untouched")
+	}
+}
