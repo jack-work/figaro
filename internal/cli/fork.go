@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"os"
@@ -30,6 +31,9 @@ func planFork(args []string) (forkPlan, error) {
 	opts, rest, err := extractForkFlags(args)
 	if err != nil {
 		return forkPlan{}, err
+	}
+	if opts.stdin {
+		return forkPlan{}, errors.New("--stdin is for send and new")
 	}
 	plan := forkPlan{opts: opts, spec: opts.id}
 	if plan.spec == "" {

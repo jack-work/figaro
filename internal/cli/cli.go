@@ -227,7 +227,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-O <spec>] [-S <k=v>] [-D <paths>] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-O <spec>] [-S <k=v>] [-D <paths>] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] [--stdin | -- <prompt>]",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding): or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
@@ -260,6 +260,9 @@ Flags:
                  because the script governs its own output.
   -n, --dry-run  --exec only: print the script without running it.
   -y, --yes      --exec only: skip the confirmation prompt.
+  --stdin        Read the prompt from stdin, never from argv, so a caller
+                 keeps message text out of the process table. A prompt
+                 after ` + "`--`" + ` with --stdin is refused.
   -f, --forget   Submit the prompt and exit immediately. Do not attach
                  to the stream; do not send figaro.interrupt on Ctrl-C.
                  Use ` + "`figaro listen <id>`" + ` later to follow.
@@ -305,7 +308,7 @@ positional target needs the explicit verb or --id.`,
 		Name:  "new",
 		Group: "Prompt",
 		Short: "Start a fresh aria and prompt it",
-		Usage: "new [-j|--json] [-O <spec>] [-C [<@form>]] [-- <prompt>]",
+		Usage: "new [-j|--json] [-O <spec>] [-C [<@form>]] [--stdin | -- <prompt>]",
 		Long: `Creates a new aria (server-generated id), binds it to this shell, and: when
 a prompt follows ` + "`--`" + `: sends it.
 
@@ -315,6 +318,7 @@ a prompt follows ` + "`--`" + `: sends it.
   figaro new -S ttl=1h -- <p>       fresh aria with a birth patch (-O names, -S data)
   figaro new                        fresh aria on the default outfit, attended
   figaro new -C <@form>             fresh aria, cast into that role at birth
+  figaro new --stdin < prompt.txt   the prompt from stdin, never from argv
   figaro new -CO reviewer           fresh aria, and a role minted from an outfit
   figaro new -CS name=x             fresh aria, and a role minted from keys
 
@@ -355,7 +359,10 @@ already exists (--id, -x) are refused rather than ignored.
 			if role != "" && !opts.cast {
 				return fmt.Errorf("new: %s is a role; `new -C %s` casts into it", role, role)
 			}
-			prompt := extractPrompt(rest)
+			prompt, perr := promptFromStdin(opts, rest, os.Stdin)
+			if perr != nil {
+				return fmt.Errorf("new: %s", perr)
+			}
 			set := pagerSettings(ld)
 			set.jsonMode = opts.json
 			if opts.cast {

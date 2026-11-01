@@ -271,6 +271,9 @@ func planSend(args []string) (sendPlan, error) {
 	if err != nil {
 		return sendPlan{}, err
 	}
+	if opts.stdin {
+		return sendPlan{}, errors.New("--stdin reads a shell's stdin; the pager has none")
+	}
 	plan := sendPlan{opts: opts, spec: opts.target, prompt: extractPrompt(rest)}
 	if plan.spec == "" {
 		plan.spec = opts.id

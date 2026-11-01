@@ -39,6 +39,7 @@ type sendOpts struct {
 	delText    string
 	record     string
 	cast       bool
+	stdin      bool
 }
 
 // extractSendFlags returns the parsed opts and the residual args, `--` boundary
@@ -194,6 +195,10 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			continue
 		case a == "--json", a == "-j":
 			opts.json = true
+			i++
+			continue
+		case a == "--stdin":
+			opts.stdin = true
 			i++
 			continue
 		case a == "--stay", a == "--no-attend", a == "--attend=false", a == "--attend=0":
@@ -378,7 +383,10 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if err != nil {
 		dieUsage("%s: %s", verb, err)
 	}
-	prompt := extractPrompt(rest)
+	prompt, err := promptFromStdin(opts, rest, os.Stdin)
+	if err != nil {
+		dieUsage("%s: %s", verb, err)
+	}
 	if prompt == "" {
 		// A boundary with nothing after it opens the editor.
 		if hasDashBoundary(rest) {
@@ -456,6 +464,9 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	}
 	if opts.forget && (opts.exec || opts.verbatim) {
 		return fmt.Errorf("--forget contradicts --exec/--verbatim")
+	}
+	if opts.stdin && opts.exec {
+		return fmt.Errorf("--stdin contradicts --exec, which reads its confirmation from stdin")
 	}
 	if hasTurn && (opts.exec || opts.verbatim) {
 		return fmt.Errorf("<trunk>:<turn> is not compatible with --exec/--verbatim")
@@ -656,4 +667,5 @@ var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "json", Short: "j", IsBool: true, Description: "Emit a single JSON line on stdout"},
 	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
 	{Long: "record", Description: "Record the wire to a tape file"},
+	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv"},
 }
