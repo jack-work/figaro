@@ -266,7 +266,9 @@ Flags:
   --image <file> Attach a png, jpeg, gif or webp to the prompt, ahead of
                  its text; repeat for up to 4. Each file is capped at 10 MB,
                  and the daemon checks and shrinks it before a model sees it.
-                 Needs a prompt; refused with --exec and --verbatim.
+                 A picture that already fits is sent as is: EXIF and GPS
+                 metadata are not removed. Needs a prompt; refused with
+                 --exec and --verbatim.
   -f, --forget   Submit the prompt and exit immediately. Do not attach
                  to the stream; do not send figaro.interrupt on Ctrl-C.
                  Use ` + "`figaro listen <id>`" + ` later to follow.

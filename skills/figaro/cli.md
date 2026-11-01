@@ -52,6 +52,8 @@ These hold across the whole CLI:
 | `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
 | `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`. |
+| `--stdin` | Read the prompt from stdin, never argv, so the text stays out of the process table. A prompt after `--` beside it is refused, as is `-x`. |
+| `--image <file>` | Attach a png, jpeg, gif or webp ahead of the prompt's text; repeat for up to 4, 10 MB each. The daemon sniffs the bytes and shrinks a picture to fit the message, so an aria with `system.tools = []` still sees it. A picture that already fits is sent byte for byte: EXIF, including GPS location, is NOT removed; strip it first if it matters. Needs a prompt; refused with `-x`, `-v`, fork and the pager. |
 
 Every aria persists. A one-off is an ordinary send that mints and states its
 own lifetime: `figaro send -A -f -S system.ttl=1h -- <prompt>`, or `-r` in
