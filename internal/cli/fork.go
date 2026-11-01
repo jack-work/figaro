@@ -35,6 +35,9 @@ func planFork(args []string) (forkPlan, error) {
 	if opts.stdin {
 		return forkPlan{}, errors.New("--stdin is for send and new")
 	}
+	if len(opts.images) > 0 {
+		return forkPlan{}, errors.New("--image is for send and new")
+	}
 	plan := forkPlan{opts: opts, spec: opts.id}
 	if plan.spec == "" {
 		plan.spec = opts.target

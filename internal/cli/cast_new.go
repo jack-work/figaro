@@ -152,7 +152,7 @@ func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string,
 	if prompt != "" {
 		// A role redirects to its holder, so the bare prompt path reaches the
 		// same figaro either way.
-		runPrompt(loaded, dressing{}, prompt, set)
+		runPrompt(loaded, dressing{images: d.images}, prompt, set)
 	}
 }
 

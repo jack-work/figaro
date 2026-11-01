@@ -40,6 +40,7 @@ type sendOpts struct {
 	record     string
 	cast       bool
 	stdin      bool
+	images     []string
 }
 
 // extractSendFlags returns the parsed opts and the residual args, `--` boundary
@@ -141,6 +142,21 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			continue
 		case strings.HasPrefix(a, "--delete="):
 			opts.delText = joinTerms(opts.delText, strings.TrimPrefix(a, "--delete="))
+			i++
+			continue
+		case a == "--image":
+			if i+1 >= len(expanded) || expanded[i+1] == "--" {
+				return opts, nil, fmt.Errorf("--image requires a file")
+			}
+			opts.images = append(opts.images, expanded[i+1])
+			i += 2
+			continue
+		case strings.HasPrefix(a, "--image="):
+			path := strings.TrimPrefix(a, "--image=")
+			if path == "" {
+				return opts, nil, fmt.Errorf("--image requires a file")
+			}
+			opts.images = append(opts.images, path)
 			i++
 			continue
 		case a == "--record":
@@ -387,6 +403,12 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if err != nil {
 		dieUsage("%s: %s", verb, err)
 	}
+	if len(opts.images) > 0 && prompt == "" {
+		dieUsage("%s: %s", verb, errImageNeedsPrompt)
+	}
+	if opts.outfit.images, err = readPromptImages(opts.images); err != nil {
+		die("%s: %s", verb, err)
+	}
 	if prompt == "" {
 		// A boundary with nothing after it opens the editor.
 		if hasDashBoundary(rest) {
@@ -467,6 +489,9 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	}
 	if opts.stdin && opts.exec {
 		return fmt.Errorf("--stdin contradicts --exec, which reads its confirmation from stdin")
+	}
+	if len(opts.images) > 0 && (opts.exec || opts.verbatim) {
+		return fmt.Errorf("--image goes with a prompt to a model, not with --exec/--verbatim")
 	}
 	if hasTurn && (opts.exec || opts.verbatim) {
 		return fmt.Errorf("<trunk>:<turn> is not compatible with --exec/--verbatim")
@@ -634,7 +659,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptForm(opts.outfit)); qerr != nil {
+	if _, _, qerr := fcli.QuaWith(ctx, opts.outfit.request(prompt)); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {
@@ -668,4 +693,5 @@ var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
 	{Long: "record", Description: "Record the wire to a tape file"},
 	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv"},
+	{Long: "image", Description: "Attach an image file to the prompt (repeatable)"},
 }

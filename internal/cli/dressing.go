@@ -18,9 +18,14 @@ import (
 // dressing keeps outfit names and the patch apart: names travel as names and the
 // daemon resolves them.
 type dressing struct {
-	text  string
-	names []string
-	patch *rpc.FormPatch
+	text   string
+	names  []string
+	patch  *rpc.FormPatch
+	images []rpc.QuaImage
+}
+
+func (d dressing) request(prompt string) rpc.QuaRequest {
+	return rpc.QuaRequest{Text: prompt, Form: buildPromptForm(d), Images: d.images}
 }
 
 func (d dressing) IsEmpty() bool {

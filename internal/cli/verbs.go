@@ -274,6 +274,9 @@ func planSend(args []string) (sendPlan, error) {
 	if opts.stdin {
 		return sendPlan{}, errors.New("--stdin reads a shell's stdin; the pager has none")
 	}
+	if len(opts.images) > 0 {
+		return sendPlan{}, errors.New("--image reads a file from a shell; send it with `figaro send --image`")
+	}
 	plan := sendPlan{opts: opts, spec: opts.target, prompt: extractPrompt(rest)}
 	if plan.spec == "" {
 		plan.spec = opts.id
@@ -289,7 +292,7 @@ func sendVerb(ctx context.Context, env verbEnv, plan sendPlan, implied *sdk.Aria
 	}
 	if plan.spec == "" && implied != nil {
 		qua := mark.Span("submit.qua", "to", impliedID, "len", len(plan.prompt))
-		_, active, err := implied.Qua(ctx, plan.prompt, buildPromptForm(plan.opts.outfit))
+		_, active, err := implied.QuaWith(ctx, plan.opts.outfit.request(plan.prompt))
 		qua("active", active, "err", err != nil)
 		if err != nil {
 			return impliedID, nil, err
@@ -306,7 +309,7 @@ func sendVerb(ctx context.Context, env verbEnv, plan sendPlan, implied *sdk.Aria
 	}
 	defer fcli.Close()
 	qua := mark.Span("submit.qua", "to", id, "len", len(plan.prompt))
-	_, active, err := fcli.Qua(ctx, plan.prompt, buildPromptForm(plan.opts.outfit))
+	_, active, err := fcli.QuaWith(ctx, plan.opts.outfit.request(plan.prompt))
 	qua("active", active, "err", err != nil)
 	if err != nil {
 		return id, nil, err
