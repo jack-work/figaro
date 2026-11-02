@@ -16,6 +16,7 @@ type Config struct {
 	Stall           time.Duration
 	MaxAge          time.Duration
 	Sweep           time.Duration
+	WatchNetwork    bool
 	Dial            func(ctx context.Context, network, addr string) (net.Conn, error)
 	TLS             *tls.Config
 }
@@ -25,6 +26,7 @@ var Defaults = Config{
 	PingTimeout:     10 * time.Second,
 	Stall:           90 * time.Second,
 	MaxAge:          15 * time.Minute,
+	WatchNetwork:    true,
 }
 
 type Transport struct {
@@ -38,7 +40,7 @@ func New(cfg Config) *Transport {
 	if dial == nil {
 		dial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
-	p := newPool(cfg.MaxAge, cfg.Sweep)
+	p := newPool(cfg)
 	return &Transport{
 		stall: cfg.Stall,
 		pool:  p,

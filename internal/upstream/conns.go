@@ -39,8 +39,11 @@ type Stats struct {
 }
 
 type pool struct {
-	maxAge time.Duration
-	sweep  time.Duration
+	maxAge    time.Duration
+	sweep     time.Duration
+	watch     func(changed func()) error
+	watchOnce sync.Once
+	source    func(remote *net.TCPAddr) (net.IP, error)
 
 	mu       sync.Mutex
 	conns    map[*conn]struct{}
@@ -48,11 +51,16 @@ type pool struct {
 	sweeping bool
 }
 
-func newPool(maxAge, sweep time.Duration) *pool {
-	if sweep <= 0 {
-		sweep = time.Minute
+func newPool(cfg Config) *pool {
+	p := &pool{maxAge: cfg.MaxAge, sweep: cfg.Sweep, source: kernelSource,
+		conns: map[*conn]struct{}{}, dropped: map[string]uint64{}}
+	if p.sweep <= 0 {
+		p.sweep = time.Minute
 	}
-	return &pool{maxAge: maxAge, sweep: sweep, conns: map[*conn]struct{}{}, dropped: map[string]uint64{}}
+	if cfg.WatchNetwork {
+		p.watch = watchRoutes
+	}
+	return p
 }
 
 func (p *pool) dialer(inner func(ctx context.Context, network, addr string) (net.Conn, error)) func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -63,6 +71,7 @@ func (p *pool) dialer(inner func(ctx context.Context, network, addr string) (net
 		}
 		tc := &conn{Conn: c, pool: p, born: time.Now()}
 		p.add(tc)
+		p.watchNetwork()
 		return tc, nil
 	}
 }

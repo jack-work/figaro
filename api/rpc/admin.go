@@ -151,7 +151,7 @@ type ProviderLedgerResponse struct {
 }
 
 // Dropped counts closed provider connections by reason since the daemon
-// started: age, peer closed, error, in flight, idle.
+// started: age, network, peer closed, error, in flight, idle.
 type ProviderConnections struct {
 	Open    int               `json:"open"`
 	Dropped map[string]uint64 `json:"dropped,omitempty"`
