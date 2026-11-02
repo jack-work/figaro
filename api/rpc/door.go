@@ -7,7 +7,10 @@ const ProtocolVersion = 1
 
 type Capability string
 
-const CapQuaImages Capability = "qua.images"
+const (
+	CapQuaImages Capability = "qua.images"
+	CapFormSeq   Capability = "form.seq"
+)
 
 type PrincipalKind string
 

@@ -154,7 +154,7 @@ type Backend interface {
 	// return. It is registered on one Form instance and dies with it on
 	// eviction; a long-lived reader of another aria's form wants
 	// Form.SubscribeFrom, whose subscription is a lease the sweep honours.
-	WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error
+	WatchForm(ariaID string, fn func(Commit)) error
 
 	// SetObservedForms declares the forms whose positions every IR append
 	// stamps. The bound form's system.studies is the durable truth; this is its
@@ -169,12 +169,8 @@ type Backend interface {
 	// form; a conversation parent is refused.
 	CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, err error)
 
-	// ApplyFormEffectIntent appends unless the form has moved off ifVersion
-	// (zero is unconditional; compared in the writer, atomically with the
-	// append) and returns the reduced patch that actually landed, which is
-	// what any fan-out must report. Under Assert a removal of an absent key is
-	// refused rather than reduced away.
-	ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error)
+	ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, error)
+	FormLastSeq(ariaID, client string) (uint64, error)
 
 	// ApplyFormPrivileged may touch system-managed keys. There is no wire
 	// field for this and must never be one: privilege is a property of the

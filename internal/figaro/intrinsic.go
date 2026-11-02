@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -110,11 +109,11 @@ func (a *Agent) openIntrinsics() {
 	a.queue = newIntrinsic(IntrinsicQueue)
 	for _, c := range []*intrinsic{a.runtime, a.queue} {
 		name, incarnation := c.name, c.incarnation
-		c.form.OnCommit(func(version uint64, patch message.Patch) {
+		c.form.OnCommit(func(cm store.Commit) {
 			a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodFormDelta,
 				Params: rpc.FormDelta{
 					Schema: rpc.FormDeltaSchema, AriaID: a.id, Intrinsic: name,
-					Incarnation: incarnation, Version: version, Patch: patch,
+					Incarnation: incarnation, Version: cm.Version, Patch: cm.Patch,
 					At: time.Now().UnixMilli(),
 				}})
 		})

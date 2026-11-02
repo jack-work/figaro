@@ -19,6 +19,7 @@ type ContextResponse struct {
 type FormRequest struct {
 	Intrinsic string `json:"intrinsic,omitempty"`
 	Since     uint64 `json:"since,omitempty"`
+	Client    string `json:"client,omitempty"`
 }
 
 type FormVersionedPatch struct {
@@ -34,6 +35,7 @@ type FormResponse struct {
 	Incarnation uint64               `json:"incarnation,omitempty"`
 	Delta       bool                 `json:"delta,omitempty"`
 	Patches     []FormVersionedPatch `json:"patches,omitempty"`
+	LastSeq     uint64               `json:"last_seq,omitempty"`
 }
 
 // ReadRequest is a keyset read; the answer carries the coordinate to continue

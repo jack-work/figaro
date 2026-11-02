@@ -82,7 +82,7 @@ func (s *Subscription) Close() {
 }
 
 // publish runs on the drainer, after the state is published and never before.
-func (f *Form) publish(events []versionedApplied) {
+func (f *Form) publish(events []Commit) {
 	subs := f.subs.Load()
 	if len(*subs) == 0 {
 		return
@@ -91,7 +91,7 @@ func (f *Form) publish(events []versionedApplied) {
 		for _, ev := range events {
 			if n := s.missed.Load(); n > 0 {
 				select {
-				case s.ch <- Event{Version: ev.version, Missed: int(n)}:
+				case s.ch <- Event{Version: ev.Version, Missed: int(n)}:
 					s.missed.Add(-n)
 				default:
 					s.missed.Add(1)
@@ -99,7 +99,7 @@ func (f *Form) publish(events []versionedApplied) {
 				}
 			}
 			select {
-			case s.ch <- Event{Version: ev.version, Applied: ev.applied}:
+			case s.ch <- Event{Version: ev.Version, Applied: ev.Patch}:
 			default:
 				s.missed.Add(1)
 			}

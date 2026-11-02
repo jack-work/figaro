@@ -122,10 +122,14 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		version, applied, err := a.SetAwaiting(ctx, req.Patch, req.IfVersion, req.Assert)
+		v, err := a.SetFrom(ctx, req)
 		if err != nil {
 			// A patch may name layers, so a set can fail with a closure the caller can draw.
 			return nil, outfitError(err)
+		}
+		version, applied := v.Version, v.Applied
+		if v.Duplicate {
+			return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeDuplicate, Version: version}, nil
 		}
 		if applied.IsIdentity() {
 			return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
@@ -159,11 +163,20 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			resp.Incarnation = c.incarnation
 			return resp, nil
 		}
+		var lastSeq uint64
+		if req.Client != "" {
+			var err error
+			if lastSeq, err = a.backend.FormLastSeq(a.id, req.Client); err != nil {
+				return nil, err
+			}
+		}
 		since, err := a.backend.FormSince(a.id, req.Since)
 		if err != nil {
 			return nil, err
 		}
-		return FormResponseOf(since, ""), nil
+		resp := FormResponseOf(since, "")
+		resp.LastSeq = lastSeq
+		return resp, nil
 
 	case rpc.MethodQueued:
 		var req rpc.QueuedRequest

@@ -127,7 +127,7 @@ func TestNoOpPatchIsNotAnEvent(t *testing.T) {
 	defer f.Close()
 
 	var committed int
-	f.OnCommit(func(uint64, message.Patch) { committed++ })
+	f.OnCommit(func(store.Commit) { committed++ })
 
 	v1, applied, err := f.ApplyEffect(set("k", `1`), 0)
 	require.NoError(t, err)

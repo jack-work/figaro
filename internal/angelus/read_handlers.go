@@ -55,11 +55,20 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 					"never written to disk. Wake it (send it something) or read its bound form instead",
 				id, name)
 		}
+		var lastSeq uint64
+		if req.Client != "" {
+			var err error
+			if lastSeq, err = h.angelus.Backend.FormLastSeq(id, req.Client); err != nil {
+				return nil, true, err
+			}
+		}
 		since, err := r.FormSince(id, req.Since)
 		if err != nil {
 			return nil, true, err
 		}
-		return figaro.FormResponseOf(since, ""), true, nil
+		resp := figaro.FormResponseOf(since, "")
+		resp.LastSeq = lastSeq
+		return resp, true, nil
 
 	case rpc.MethodContext:
 		msgs, metrics, err := r.Context(id)

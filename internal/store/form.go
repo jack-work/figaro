@@ -28,7 +28,7 @@ type Form struct {
 	tick atomic.Pointer[chan struct{}]
 
 	// sinks is an immutable slice behind a pointer, so emitting takes no lock.
-	sinks atomic.Pointer[[]func(uint64, message.Patch)]
+	sinks atomic.Pointer[[]func(Commit)]
 	// sealed is rebuilt from the published state at open, so a dead form stays
 	// dead across a restart.
 	sealed atomic.Bool
@@ -49,6 +49,24 @@ type formState struct {
 	// explicit because an identity patch appends no record, so a gap below the
 	// first kept patch is not a trim.
 	trimmed uint64
+	seqs    map[string]uint64
+}
+
+type Origin struct {
+	Client string `json:"client,omitempty"`
+	Seq    uint64 `json:"seq,omitempty"`
+}
+
+type Commit struct {
+	Version uint64
+	Patch   message.Patch
+	Origin  Origin
+}
+
+type formRecord struct {
+	message.Patch
+	Client string `json:"client,omitempty"`
+	Seq    uint64 `json:"seq,omitempty"`
 }
 
 type formWrite struct {
@@ -56,8 +74,22 @@ type formWrite struct {
 	ifVersion uint64
 	intent    Intent
 	priv      bool
+	origin    Origin
 	result    formResult
 	done      atomic.Bool
+}
+
+type FormWrite struct {
+	Patch     message.Patch
+	IfVersion uint64
+	Intent    Intent
+	Origin    Origin
+}
+
+type FormVerdict struct {
+	Version   uint64
+	Applied   message.Patch
+	Duplicate bool
 }
 
 // Intent says what a removal means: the one place a command and its event may
@@ -76,8 +108,9 @@ type formResult struct {
 	version uint64
 	// applied is what the writer committed after reducing against the
 	// published state: the keys that really changed.
-	applied message.Patch
-	err     error
+	applied   message.Patch
+	err       error
+	duplicate bool
 }
 
 // FormLog is the durable half: append-only patch payloads indexed from 1.
@@ -115,9 +148,16 @@ func OpenForm(log FormLog) (*Form, error) {
 		st.trimmed = st.version
 	}
 	if err := log.RangePatches(0, 0, func(index uint64, payload []byte) error {
-		var p message.Patch
-		if err := json.Unmarshal(payload, &p); err != nil {
+		var rec formRecord
+		if err := json.Unmarshal(payload, &rec); err != nil {
 			return err
+		}
+		p := rec.Patch
+		if rec.Seq > 0 && rec.Seq > st.seqs[rec.Client] {
+			if st.seqs == nil {
+				st.seqs = map[string]uint64{}
+			}
+			st.seqs[rec.Client] = rec.Seq
 		}
 		st.snap = st.snap.Apply(p)
 		st.version = index
@@ -134,7 +174,7 @@ func OpenForm(log FormLog) (*Form, error) {
 	}
 	tick := make(chan struct{})
 	f.tick.Store(&tick)
-	empty := []func(uint64, message.Patch){}
+	empty := []func(Commit){}
 	f.sinks.Store(&empty)
 	subsInit(&f.subs)
 	f.q = actor.NewLazy(formBatch, time.Duration(formLinger.Load()), f.runBatch)
@@ -340,6 +380,22 @@ func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uin
 	return f.applyEffect(patch, ifVersion, Ensure, true)
 }
 
+func (f *Form) ApplyWrite(in FormWrite) (FormVerdict, error) {
+	t, err := f.submit(&formWrite{patch: in.Patch, ifVersion: in.IfVersion, intent: in.Intent, origin: in.Origin})
+	if err != nil {
+		return FormVerdict{}, err
+	}
+	version, applied, err := f.Await(context.Background(), t)
+	return FormVerdict{Version: version, Applied: applied, Duplicate: t.w.result.duplicate}, err
+}
+
+func (f *Form) LastSeq(client string) uint64 {
+	if client == "" {
+		return 0
+	}
+	return f.state.Load().seqs[client]
+}
+
 func (f *Form) applyEffect(patch message.Patch, ifVersion uint64, intent Intent, priv bool) (uint64, message.Patch, error) {
 	t, err := f.submit(&formWrite{patch: patch, ifVersion: ifVersion, intent: intent, priv: priv})
 	if err != nil {
@@ -387,10 +443,10 @@ func (f *Form) Await(ctx context.Context, t Ticket) (uint64, message.Patch, erro
 
 // OnCommit sinks run after the append and the publish, never before, so an
 // observer never sees state that would not survive a restart.
-func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
+func (f *Form) OnCommit(fn func(Commit)) {
 	for {
 		old := f.sinks.Load()
-		next := make([]func(uint64, message.Patch), len(*old), len(*old)+1)
+		next := make([]func(Commit), len(*old), len(*old)+1)
 		copy(next, *old)
 		next = append(next, fn)
 		if f.sinks.CompareAndSwap(old, &next) {
@@ -409,17 +465,20 @@ func (f *Form) Close() {
 // runBatch: reduce each submission against a running state, append, one sync
 // for the batch, publish, then answer and emit.
 func (f *Form) runBatch(batch []*formWrite) {
-	published := f.state.Load()
+	stored := f.state.Load()
+	published := stored
 	var lastRecord uint64
-	var events []versionedApplied
+	var events []Commit
 
 	for _, w := range batch {
-		next, res := f.reduceOne(published, w)
+		next, res, record := f.reduceOne(published, w)
 		w.result = res
 		if next != nil {
 			published = next
+		}
+		if record {
 			lastRecord = next.version
-			events = append(events, versionedApplied{next.version, res.applied})
+			events = append(events, Commit{Version: next.version, Patch: res.applied, Origin: w.origin})
 		}
 	}
 
@@ -432,7 +491,7 @@ func (f *Form) runBatch(batch []*formWrite) {
 		if err != nil {
 			// Without durability the writes did not happen: every write in the
 			// batch is rejected and the state stands.
-			if derr := f.log.DiscardFrom(events[0].version); derr != nil {
+			if derr := f.log.DiscardFrom(events[0].Version); derr != nil {
 				f.failed.Store(&formFailure{err: fmt.Errorf("form sync failed (%v) and its records could not be taken back: %w", err, derr)})
 			}
 			for _, w := range batch {
@@ -443,6 +502,8 @@ func (f *Form) runBatch(batch []*formWrite) {
 			f.answer(batch)
 			return
 		}
+	}
+	if published != stored {
 		f.state.Store(published)
 	}
 	// Emit before answering: a caller returning from Apply may assume the delta
@@ -452,29 +513,52 @@ func (f *Form) runBatch(batch []*formWrite) {
 	f.answer(batch)
 }
 
-type versionedApplied struct {
-	version uint64
-	applied message.Patch
-}
-
-func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
+func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res formResult, record bool) {
 	if f.closed.Load() {
-		return nil, formResult{err: ErrFormClosed}
+		return nil, formResult{err: ErrFormClosed}, false
 	}
 	if fail := f.failed.Load(); fail != nil {
-		return nil, formResult{err: fail.err}
+		return nil, formResult{err: fail.err}, false
 	}
+	if w.origin.Seq > 0 && w.origin.Seq <= st.seqs[w.origin.Client] {
+		return nil, formResult{version: st.version, duplicate: true}, false
+	}
+	res = f.judge(st, w)
+	if res.err != nil || res.applied.IsIdentity() {
+		if w.origin.Seq == 0 {
+			return nil, res, false
+		}
+		return st.answered(w.origin), res, false
+	}
+	payload, err := json.Marshal(formRecord{Patch: res.applied, Client: w.origin.Client, Seq: w.origin.Seq})
+	if err != nil {
+		return nil, formResult{err: err}, false
+	}
+	version, err := f.log.AppendPatch(payload)
+	if err != nil {
+		return nil, formResult{err: err}, false
+	}
+	next = &formState{snap: st.snap.Apply(res.applied), version: version, seqs: st.seqs}
+	next = next.answered(w.origin)
+	// Append to the shared backing array: safe with exactly one drainer, since
+	// a published state holds its own slice length and a later append either
+	// writes past it or reallocates.
+	next.patches, next.trimmed = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: res.applied}), st.trimmed)
+	return next, formResult{version: version, applied: res.applied}, true
+}
+
+func (f *Form) judge(st *formState, w *formWrite) formResult {
 	// A tombstone is final. The one write allowed past it is the tombstone
 	// itself, which Tombstone makes idempotent rather than repeatable.
 	if f.sealed.Load() {
-		return nil, formResult{version: st.version, err: errSealed}
+		return formResult{version: st.version, err: errSealed}
 	}
 	if w.ifVersion != 0 && st.version != w.ifVersion {
-		return nil, formResult{err: fmt.Errorf("%w: at version %d, not %d: re-read and retry",
+		return formResult{err: fmt.Errorf("%w: at version %d, not %d: re-read and retry",
 			ErrFormMoved, st.version, w.ifVersion)}
 	}
 	if err := form.CheckWritable(w.patch, w.priv); err != nil {
-		return nil, formResult{version: st.version, err: err}
+		return formResult{version: st.version, err: err}
 	}
 	if w.intent == Assert {
 		for _, ent := range w.patch.Entries() {
@@ -483,31 +567,25 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 			}
 			k := ent.Key
 			if !st.snap.Has(k) {
-				return nil, formResult{version: st.version,
+				return formResult{version: st.version,
 					err: fmt.Errorf("remove %q: no such key", k)}
 			}
 		}
 	}
-	// Reduce first, purely: a patch is only an event if it changes something,
-	// and a failure has nothing to roll back.
-	applied := effectivePatch(st.snap, w.patch)
-	if applied.IsIdentity() {
-		return nil, formResult{version: st.version, applied: applied}
+	return formResult{version: st.version, applied: effectivePatch(st.snap, w.patch)}
+}
+
+func (st *formState) answered(o Origin) *formState {
+	if o.Seq == 0 {
+		return st
 	}
-	payload, err := json.Marshal(applied)
-	if err != nil {
-		return nil, formResult{err: err}
+	next := *st
+	next.seqs = make(map[string]uint64, len(st.seqs)+1)
+	for k, v := range st.seqs {
+		next.seqs[k] = v
 	}
-	version, err := f.log.AppendPatch(payload)
-	if err != nil {
-		return nil, formResult{err: err}
-	}
-	next := &formState{snap: st.snap.Apply(applied), version: version}
-	// Append to the shared backing array: safe with exactly one drainer, since
-	// a published state holds its own slice length and a later append either
-	// writes past it or reallocates.
-	next.patches, next.trimmed = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: applied}), st.trimmed)
-	return next, formResult{version: version, applied: applied}
+	next.seqs[o.Client] = o.Seq
+	return &next
 }
 
 func (f *Form) answer(batch []*formWrite) {
@@ -521,7 +599,7 @@ func (f *Form) answer(batch []*formWrite) {
 
 // emit runs after the publish, never before; a sink that panics must not take
 // the drainer with it.
-func (f *Form) emit(events []versionedApplied) {
+func (f *Form) emit(events []Commit) {
 	if len(events) == 0 {
 		return
 	}
@@ -534,7 +612,7 @@ func (f *Form) emit(events []versionedApplied) {
 						slog.Error("form commit sink panicked", "err", r)
 					}
 				}()
-				fn(ev.version, ev.applied)
+				fn(ev)
 			}()
 		}
 	}

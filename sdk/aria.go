@@ -177,6 +177,18 @@ func (c *Aria) SetAsserting(ctx context.Context, patch rpc.FormPatch, ifVersion 
 	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: true})
 }
 
+func (c *Aria) SetWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
+	return c.setWith(ctx, req)
+}
+
+func (c *Aria) FormFor(ctx context.Context, client string) (*rpc.FormResponse, error) {
+	var resp rpc.FormResponse
+	if err := c.call(ctx, rpc.MethodForm, rpc.FormRequest{Client: client}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Aria) setWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
 	if err := c.call(ctx, rpc.MethodSet, req, &resp); err != nil {

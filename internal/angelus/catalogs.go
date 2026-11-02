@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -61,14 +60,14 @@ func (h *handlers) publishCatalogs() {
 		if f == nil {
 			continue
 		}
-		f.OnCommit(func(version uint64, patch message.Patch) {
+		f.OnCommit(func(c store.Commit) {
 			hb := h.angelus.Hubs.get(id)
 			if hb == nil {
 				return
 			}
 			_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
-				Schema: rpc.FormDeltaSchema, AriaID: id, Version: version,
-				Patch: patch, At: time.Now().UnixMilli(),
+				Schema: rpc.FormDeltaSchema, AriaID: id, Version: c.Version,
+				Patch: c.Patch, At: time.Now().UnixMilli(),
 			})
 		})
 	}

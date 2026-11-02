@@ -3,6 +3,7 @@ package figaro
 // The runtime intrinsic's publish half, with no daemon, provider, or terminal.
 
 import (
+	"github.com/jack-work/figaro/internal/store"
 	"strings"
 	"testing"
 
@@ -14,7 +15,8 @@ import (
 func recordRuntime(t *testing.T, a *Agent) func() []string {
 	t.Helper()
 	var seq []string
-	a.runtime.form.OnCommit(func(_ uint64, patch form.Patch) {
+	a.runtime.form.OnCommit(func(c store.Commit) {
+		patch := c.Patch
 		ent, ok := patch.Entry("turn.state")
 		if !ok {
 			return

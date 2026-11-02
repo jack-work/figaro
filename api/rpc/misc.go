@@ -27,6 +27,7 @@ const (
 	OutcomeApplied = "applied"
 	// OutcomeUnchanged: no record, no event; Version is where the form stands.
 	OutcomeUnchanged = "unchanged"
+	OutcomeDuplicate = "duplicate"
 )
 
 // The states a message travels through from a client to an inquiry; a

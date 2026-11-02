@@ -112,7 +112,7 @@ func TestWantNeverBlocksAndFillsFromTheListing(t *testing.T) {
 	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now})
 
 	var commits atomic.Int32
-	c.Form().OnCommit(func(uint64, form.Patch) { commits.Add(1) })
+	c.Form().OnCommit(func(store.Commit) { commits.Add(1) })
 
 	done := make(chan struct{})
 	go func() { c.Want("gw", "m1"); close(done) }()
@@ -256,7 +256,7 @@ func TestAnUnchangedRefreshTouchesOnlyTheStamp(t *testing.T) {
 
 	var mu sync.Mutex
 	var patches []form.Patch
-	c.Form().OnCommit(func(_ uint64, p form.Patch) { mu.Lock(); patches = append(patches, p); mu.Unlock() })
+	c.Form().OnCommit(func(cm store.Commit) { mu.Lock(); patches = append(patches, cm.Patch); mu.Unlock() })
 	clk.advance(2 * time.Hour)
 	c.Want("p", "a")
 	waitFor(t, func() bool { return calls.Load() == 2 && !c.inflight("p") })

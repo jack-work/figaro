@@ -337,7 +337,8 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		return nil, err
 	}
 	// Registered where the form is opened, so every writer passes it.
-	opened.OnCommit(func(_ uint64, patch message.Patch) {
+	opened.OnCommit(func(c Commit) {
+		patch := c.Patch
 		b.wroteTo(ariaID, time.Now().UnixMilli())
 		b.roleCommitted(ariaID, patch)
 		if namesOutfit(patch) {
@@ -378,7 +379,7 @@ func namesOutfit(patch message.Patch) bool {
 
 // WatchForm opens the Form if nobody had, so a listener can follow a dormant
 // aria without an agent.
-func (b *XwalBackend) WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error {
+func (b *XwalBackend) WatchForm(ariaID string, fn func(Commit)) error {
 	b.touch(ariaID)
 	f, err := b.form(ariaID)
 	if err != nil {
@@ -418,8 +419,8 @@ func (b *XwalBackend) FormPatchesBetween(ariaID string, after, upTo uint64) ([]V
 // position, not an IR LT, since several patches can arrive between two turns.
 func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
 	b.touch(ariaID)
-	version, _, err := b.ApplyFormEffectIntent(ariaID, patch, 0, Ensure)
-	return version, err
+	v, err := b.ApplyFormWrite(ariaID, FormWrite{Patch: patch})
+	return v.Version, err
 }
 
 func (b *XwalBackend) FormReclaimable(ariaID string) (bool, error) {
@@ -446,12 +447,20 @@ func (b *XwalBackend) ApplyFormEffectPrivilegedIf(ariaID string, patch message.P
 	return f.ApplyEffectPrivileged(patch, ifVersion)
 }
 
-func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error) {
+func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
-		return 0, message.Patch{}, err
+		return FormVerdict{}, err
 	}
-	return f.ApplyEffectIntent(patch, ifVersion, intent)
+	return f.ApplyWrite(w)
+}
+
+func (b *XwalBackend) FormLastSeq(ariaID, client string) (uint64, error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return 0, err
+	}
+	return f.LastSeq(client), nil
 }
 
 // ForkWith is the one birth verb: `fig new` spawns under the null root, `fig fork`

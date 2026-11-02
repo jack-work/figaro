@@ -164,9 +164,9 @@ func TestSinkPanicIsContained(t *testing.T) {
 	f := NewMemForm()
 	defer f.Close()
 
-	f.OnCommit(func(uint64, message.Patch) { panic("sink") })
+	f.OnCommit(func(Commit) { panic("sink") })
 	var saw atomic.Int64
-	f.OnCommit(func(uint64, message.Patch) { saw.Add(1) })
+	f.OnCommit(func(Commit) { saw.Add(1) })
 
 	if _, err := f.Apply(kv("a", "1"), 0); err != nil {
 		t.Fatal(err)

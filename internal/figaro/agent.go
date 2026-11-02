@@ -62,12 +62,6 @@ type event struct {
 	segments []promptSegment
 }
 
-type setVerdict struct {
-	version uint64
-	applied message.Patch
-	err     error
-}
-
 // Config is the constructor input for NewAgent.
 type Config struct {
 	ID       string
@@ -247,11 +241,12 @@ func NewAgent(cfg Config) *Agent {
 
 	// Form transitions ride the same fanout as frames. The sink runs on the form's writer.
 	if a.backend != nil {
-		if err := a.backend.WatchForm(a.id, func(version uint64, patch message.Patch) {
+		if err := a.backend.WatchForm(a.id, func(c store.Commit) {
 			a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodFormDelta,
 				Params: rpc.FormDelta{
-					Schema: rpc.FormDeltaSchema, AriaID: a.id, Version: version,
-					Patch: patch, At: time.Now().UnixMilli(),
+					Schema: rpc.FormDeltaSchema, AriaID: a.id, Version: c.Version,
+					Patch: c.Patch, At: time.Now().UnixMilli(),
+					Client: c.Origin.Client, Seq: c.Origin.Seq,
 				}})
 		}); err != nil {
 			slog.Warn("watch form", "aria", a.id, "err", err)
@@ -865,51 +860,44 @@ func (a *Agent) serviceSets() bool {
 // applyFormPatch is safe off the drain loop: the durable write is serialized by
 // the form's actor and the in-memory bound form applies by CAS over an immutable snapshot.
 func (a *Agent) applyFormPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) (uint64, message.Patch, error) {
-	v := a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
-	return v.version, v.applied, v.err
+	intent := store.Ensure
+	if assert {
+		intent = store.Assert
+	}
+	v, err := a.writeForm(store.FormWrite{Patch: patch, IfVersion: ifVersion, Intent: intent}, kind)
+	return v.Version, v.Applied, err
 }
 
-func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, assert bool, kind string, done chan setVerdict) setVerdict {
-	verdict := setVerdict{}
-	if done != nil {
-		defer func() {
-			select {
-			case done <- verdict:
-			default:
-			}
-		}()
-	}
-	slog.Debug("event "+kind, "aria", a.id, "entries", len(patch.Entries()))
+func (a *Agent) writeForm(w store.FormWrite, kind string) (store.FormVerdict, error) {
+	slog.Debug("event "+kind, "aria", a.id, "entries", len(w.Patch.Entries()))
+	var verdict store.FormVerdict
 	if a.backend != nil {
-		intent := store.Ensure
-		if assert {
-			intent = store.Assert
-		}
-		version, applied, err := a.backend.ApplyFormEffectIntent(a.id, patch, ifVersion, intent)
-		verdict.version, verdict.applied, verdict.err = version, applied, err
+		v, err := a.backend.ApplyFormWrite(a.id, w)
 		if err != nil {
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
-			return verdict
+			return v, err
 		}
-		// Publish what the writer actually wrote, not the requested bytes.
-		patch = applied
+		verdict = v
 	} else {
 		msg := message.Message{
 			Role:      message.RoleInput,
-			Patches:   []message.Patch{patch},
+			Patches:   []message.Patch{w.Patch},
 			Timestamp: time.Now().UnixMilli(),
 		}
 		if _, err := a.appendMsg(msg); err != nil {
-			verdict.err = err
 			slog.Error(kind+" append", "aria", a.id, "err", err)
-			return verdict
+			return verdict, err
 		}
-		verdict.applied = patch
+		verdict.Applied = w.Patch
 	}
-	a.form.Apply(patch)
+	if verdict.Duplicate {
+		return verdict, nil
+	}
+	// Publish what the writer actually wrote, not the requested bytes.
+	a.form.Apply(verdict.Applied)
 	a.refreshMetrics()
 	a.publishMetadata()
-	return verdict
+	return verdict, nil
 }
 
 // formAccessor is nil for an unopenable form; the provider then falls back to inline IR patches.

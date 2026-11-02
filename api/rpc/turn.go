@@ -56,6 +56,8 @@ type FormDelta struct {
 	Version     uint64    `json:"version"`
 	Patch       FormPatch `json:"patch"`
 	At          int64     `json:"at,omitempty"`
+	Client      string    `json:"client,omitempty"`
+	Seq         uint64    `json:"seq,omitempty"`
 }
 
 type FormPatch = message.Patch
@@ -92,7 +94,9 @@ type SetRequest struct {
 	// version; zero is unconditional.
 	IfVersion uint64 `json:"if_version,omitempty"`
 	// Assert makes a removal of an absent key a refusal rather than a no-op.
-	Assert bool `json:"assert,omitempty"`
+	Assert bool   `json:"assert,omitempty"`
+	Client string `json:"client,omitempty"`
+	Seq    uint64 `json:"seq,omitempty"`
 }
 
 type SetResponse struct {

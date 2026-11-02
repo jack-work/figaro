@@ -146,9 +146,16 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 	if req.Assert {
 		intent = store.Assert
 	}
-	version, applied, err := h.angelus.Backend.ApplyFormEffectIntent(id, req.Patch, req.IfVersion, intent)
+	v, err := h.angelus.Backend.ApplyFormWrite(id, store.FormWrite{
+		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
+		Origin: store.Origin{Client: req.Client, Seq: req.Seq},
+	})
 	if err != nil {
 		return nil, true, err
+	}
+	version, applied := v.Version, v.Applied
+	if v.Duplicate {
+		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeDuplicate, Version: version}, true, nil
 	}
 	// Report and fan out what landed, not what was asked for: a no-op set is not an event.
 	if applied.IsIdentity() {
@@ -166,6 +173,7 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 		_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
 			Schema: rpc.FormDeltaSchema, AriaID: id, Version: version,
 			Patch: applied, At: time.Now().UnixMilli(),
+			Client: req.Client, Seq: req.Seq,
 		})
 	}
 	return rpc.SetResponse{

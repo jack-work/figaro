@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 func (a *Agent) Snapshot() form.Snapshot {
@@ -64,20 +66,32 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 
 // SetAwaiting is Set; the form's actor answers before this returns. ctx is
 // kept because the RPC surface passes one.
-func (a *Agent) SetAwaiting(_ context.Context, patch form.Patch, ifVersion uint64, assert bool) (uint64, form.Patch, error) {
+func (a *Agent) SetAwaiting(ctx context.Context, patch form.Patch, ifVersion uint64, assert bool) (uint64, form.Patch, error) {
+	v, err := a.SetFrom(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: assert})
+	return v.Version, v.Applied, err
+}
+
+func (a *Agent) SetFrom(_ context.Context, req rpc.SetRequest) (store.FormVerdict, error) {
 	if a.form == nil {
-		return 0, form.Patch{}, fmt.Errorf("set requires a form")
+		return store.FormVerdict{}, fmt.Errorf("set requires a form")
 	}
-	if patch.IsIdentity() {
-		return 0, form.Patch{}, nil
+	if req.Patch.IsIdentity() {
+		return store.FormVerdict{}, nil
 	}
-	if err := form.CheckWritable(patch, false); err != nil {
-		return 0, form.Patch{}, err
+	if err := form.CheckWritable(req.Patch, false); err != nil {
+		return store.FormVerdict{}, err
 	}
-	if err := refuseDecisionModel(patch); err != nil {
-		return 0, form.Patch{}, err
+	if err := refuseDecisionModel(req.Patch); err != nil {
+		return store.FormVerdict{}, err
 	}
-	return a.applyFormPatch(patch, ifVersion, assert, "set")
+	intent := store.Ensure
+	if req.Assert {
+		intent = store.Assert
+	}
+	return a.writeForm(store.FormWrite{
+		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
+		Origin: store.Origin{Client: req.Client, Seq: req.Seq},
+	}, "set")
 }
 
 func refuseDecisionModel(patch form.Patch) error {
