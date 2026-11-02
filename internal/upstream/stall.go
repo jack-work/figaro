@@ -22,19 +22,36 @@ func (e *StallError) Error() string {
 
 func (e *StallError) Is(target error) bool { return target == ErrStalled }
 
+type clock interface {
+	Now() time.Time
+	AfterFunc(d time.Duration, f func()) timer
+}
+
+type timer interface {
+	Reset(d time.Duration) bool
+	Stop() bool
+}
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time { return time.Now() }
+
+func (wallClock) AfterFunc(d time.Duration, f func()) timer { return time.AfterFunc(d, f) }
+
 type watchdog struct {
 	window time.Duration
+	clock  clock
 	origin time.Time
 	last   atomic.Int64
-	timer  *time.Timer
+	timer  timer
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 }
 
 func (t *Transport) watched(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancelCause(req.Context())
-	w := &watchdog{window: t.stall, origin: time.Now(), ctx: ctx, cancel: cancel}
-	w.timer = time.AfterFunc(time.Hour, w.fire)
+	w := &watchdog{window: t.stall, clock: t.clock, origin: t.clock.Now(), ctx: ctx, cancel: cancel}
+	w.timer = t.clock.AfterFunc(time.Hour, w.fire)
 	w.timer.Reset(w.window)
 
 	req = req.WithContext(ctx)
@@ -62,10 +79,12 @@ func (t *Transport) watched(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func (w *watchdog) kick() { w.last.Store(int64(time.Since(w.origin))) }
+func (w *watchdog) elapsed() time.Duration { return w.clock.Now().Sub(w.origin) }
+
+func (w *watchdog) kick() { w.last.Store(int64(w.elapsed())) }
 
 func (w *watchdog) fire() {
-	idle := time.Since(w.origin) - time.Duration(w.last.Load())
+	idle := w.elapsed() - time.Duration(w.last.Load())
 	if idle < w.window {
 		w.timer.Reset(w.window - idle)
 		return

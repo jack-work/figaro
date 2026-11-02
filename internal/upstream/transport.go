@@ -32,6 +32,7 @@ var Defaults = Config{
 type Transport struct {
 	base  *http.Transport
 	stall time.Duration
+	clock clock
 	pool  *pool
 }
 
@@ -43,6 +44,7 @@ func New(cfg Config) *Transport {
 	p := newPool(cfg)
 	t := &Transport{
 		stall: cfg.Stall,
+		clock: wallClock{},
 		pool:  p,
 		base: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
