@@ -57,14 +57,23 @@ func (t *Trunks) ensureNoOpenHeads() error {
 }
 
 func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error) {
+	key := strings.Join(branch, "\x00")
 	t.hotMu.Lock()
+	for {
+		fence := t.fenceOverLocked(key)
+		if fence == nil {
+			break
+		}
+		t.hotMu.Unlock()
+		<-fence
+		t.hotMu.Lock()
+	}
 	h := t.hot
 	if h == nil {
 		h = &trunkStore{store: log.NewStore(), heads: map[string]*hotHead{}}
 		t.hot = h
 	}
 	h.refs++
-	key := strings.Join(branch, "\x00")
 	head := h.heads[key]
 	creator := head == nil
 	if creator {
@@ -327,4 +336,211 @@ func retireTrunkStores(root string) {
 	for _, peer := range peers {
 		peer.retireHot()
 	}
+}
+
+func (t *Trunks) descendsFrom(key, node string) bool {
+	if key == node {
+		return true
+	}
+	if t.cfg.ParentOf == nil || key == "" || strings.Contains(key, "\x00") {
+		return false
+	}
+	for hops, k := t.idx.Len(), t.cfg.ParentOf(key); k != "" && hops >= 0; k, hops = t.cfg.ParentOf(k), hops-1 {
+		if k == node {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *Trunks) fenceOverLocked(key string) chan struct{} {
+	for node, fence := range t.fences {
+		if t.descendsFrom(key, node) {
+			return fence
+		}
+	}
+	return nil
+}
+
+func (t *Trunks) fenceAlongLocked(node string) chan struct{} {
+	for other, fence := range t.fences {
+		if t.descendsFrom(node, other) || t.descendsFrom(other, node) {
+			return fence
+		}
+	}
+	return nil
+}
+
+func (t *Trunks) busyReadersOfLocked(node string) int {
+	refs := 0
+	stores := make([]*trunkStore, 0, 1+len(t.retired))
+	if t.hot != nil {
+		stores = append(stores, t.hot)
+	}
+	for h := range t.retired {
+		stores = append(stores, h)
+	}
+	for _, h := range stores {
+		for key, head := range h.heads {
+			if t.descendsFrom(key, node) {
+				refs += head.refs
+			}
+		}
+	}
+	return refs
+}
+
+// fenceNode stops new borrows of a node and of every node that reads it as
+// its flat parent, waits for the borrows already out to return, and unloads
+// those heads with their buffers flushed. Heads of unrelated arias are left
+// alone: a cut in one aria's channel never waits on another aria's reads.
+func (t *Trunks) fenceNode(node string) (func(), error) {
+	t.hotMu.Lock()
+	for {
+		fence := t.fenceAlongLocked(node)
+		if fence == nil {
+			break
+		}
+		t.hotMu.Unlock()
+		<-fence
+		t.hotMu.Lock()
+	}
+	if t.fences == nil {
+		t.fences = map[string]chan struct{}{}
+	}
+	fence := make(chan struct{})
+	t.fences[node] = fence
+	t.hotMu.Unlock()
+	release := func() {
+		t.hotMu.Lock()
+		if t.fences[node] == fence {
+			delete(t.fences, node)
+		}
+		t.hotMu.Unlock()
+		close(fence)
+	}
+
+	deadline := time.Now().Add(topologyWaitTimeout)
+	for {
+		t.hotMu.Lock()
+		refs := t.busyReadersOfLocked(node)
+		t.hotMu.Unlock()
+		if refs == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			release()
+			return nil, fmt.Errorf("xwal: channel cut timed out waiting for %d open head(s) on node %s", refs, node)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if err := t.unloadReadersOf(node); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
+}
+
+func (t *Trunks) unloadReadersOf(node string) error {
+	t.hotMu.Lock()
+	var stale []*hotHead
+	stores := make([]*trunkStore, 0, 1+len(t.retired))
+	if t.hot != nil {
+		stores = append(stores, t.hot)
+	}
+	for h := range t.retired {
+		stores = append(stores, h)
+	}
+	for _, h := range stores {
+		for key, head := range h.heads {
+			if t.descendsFrom(key, node) && head.x != nil && head.err == nil {
+				stale = append(stale, head)
+			}
+		}
+	}
+	t.hotMu.Unlock()
+	for _, head := range stale {
+		for _, name := range head.x.channels().order {
+			if l := head.x.channel(name).opened(); l != nil {
+				if err := l.Sync(); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	t.hotMu.Lock()
+	h := t.hot
+	var dirs []string
+	if h != nil {
+		for key, head := range h.heads {
+			if !t.descendsFrom(key, node) {
+				continue
+			}
+			delete(h.heads, key)
+			if head.x == nil {
+				continue
+			}
+			for _, name := range head.x.channels().order {
+				dirs = append(dirs, head.x.channel(name).dir)
+			}
+		}
+	}
+	t.hotMu.Unlock()
+	if h == nil {
+		return nil
+	}
+	for _, dir := range dirs {
+		if err := h.store.Evict(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cutChannel runs a destructive channel edit on a trunk's head node with only
+// that node and its readers fenced: the lineage lock keeps writers out, the
+// fence keeps readers out, and every cached handle on the node is gone before
+// the private open edits the files.
+func (t *Trunks) cutChannel(trunk, channel string, edit func(*XWAL) error) error {
+	unlockLineage := t.lockLineage(trunk)
+	defer unlockLineage()
+	t.mu.RLock()
+	node, err := t.headKey(trunk)
+	t.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+	release, err := t.fenceNode(node)
+	if err != nil {
+		return err
+	}
+	defer release()
+	x, err := Open(t.root, t.cfg, node)
+	if err != nil {
+		return err
+	}
+	x.retire = func() {}
+	if ch := x.channel(channel); ch != nil {
+		t.hotMu.Lock()
+		stores := make([]*trunkStore, 0, 1+len(t.retired))
+		if t.hot != nil {
+			stores = append(stores, t.hot)
+		}
+		for h := range t.retired {
+			stores = append(stores, h)
+		}
+		t.hotMu.Unlock()
+		for _, h := range stores {
+			if err := h.store.Forget(ch.dir); err != nil {
+				_ = x.Close()
+				return err
+			}
+		}
+	}
+	editErr := edit(x)
+	if cerr := x.Close(); editErr == nil {
+		editErr = cerr
+	}
+	return editErr
 }

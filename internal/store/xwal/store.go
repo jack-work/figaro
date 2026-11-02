@@ -253,60 +253,16 @@ func (s *Store) RemoveStump(name string) error {
 	return nil
 }
 
-// Clear wipes a channel for a trunk's lineage and reseeds it empty,
-// atomically with the flusher: pending buffers are drained and every hot
-// handle retired under the topology lock before the wipe, so an in-flight
-// flush can never resurrect wiped records.
+// Clear wipes a channel for a trunk's head node and reseeds it empty. Only
+// that node and the nodes reading it as their parent are fenced, so the wipe
+// never waits on another aria's open reads.
 func (s *Store) Clear(trunk, channel string) error {
-	endMutation, err := s.Trunks.beginTopologyMutation()
-	if err != nil {
-		return err
-	}
-	defer endMutation()
-	if err := s.Trunks.ensureNoOpenHeads(); err != nil {
-		return err
-	}
-	s.Trunks.retireRootHotPreservingValidation()
-	branch, err := s.Trunks.headKey(trunk)
-	if err != nil {
-		return err
-	}
-	x, err := Open(s.Trunks.root, s.Trunks.cfg, branch)
-	if err != nil {
-		return err
-	}
-	clearErr := x.Clear(channel)
-	if cerr := x.Close(); clearErr == nil {
-		clearErr = cerr
-	}
-	return clearErr
+	return s.Trunks.cutChannel(trunk, channel, func(x *XWAL) error { return x.Clear(channel) })
 }
 
-// Hot handles retire under the topology lock first, so an in-flight flush
-// can never resurrect cut records.
+// TruncateFrom cuts a channel of a trunk's head node, fenced like Clear.
 func (s *Store) TruncateFrom(trunk, channel string, channelLT uint64) error {
-	endMutation, err := s.Trunks.beginTopologyMutation()
-	if err != nil {
-		return err
-	}
-	defer endMutation()
-	if err := s.Trunks.ensureNoOpenHeads(); err != nil {
-		return err
-	}
-	s.Trunks.retireRootHotPreservingValidation()
-	branch, err := s.Trunks.headKey(trunk)
-	if err != nil {
-		return err
-	}
-	x, err := Open(s.Trunks.root, s.Trunks.cfg, branch)
-	if err != nil {
-		return err
-	}
-	cutErr := x.TruncateFrom(channel, channelLT)
-	if cerr := x.Close(); cutErr == nil {
-		cutErr = cerr
-	}
-	return cutErr
+	return s.Trunks.cutChannel(trunk, channel, func(x *XWAL) error { return x.TruncateFrom(channel, channelLT) })
 }
 
 // SyncStump persists a stump's birth records lineage-coherently. Raw StumpHead

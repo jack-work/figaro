@@ -100,3 +100,43 @@ func dirExists(dir string) bool {
 	info, err := os.Stat(dir)
 	return err == nil && info.IsDir()
 }
+
+func readsDir(l *Log, abs string) bool {
+	for ; l != nil; l = l.parent {
+		if l.dir == abs {
+			return true
+		}
+	}
+	return false
+}
+
+// Forget closes and drops the cached log for dir and every cached log that
+// reads it as a parent, so the next Open sees what is on disk.
+func (s *Store) Forget(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	abs = filepath.Clean(abs)
+	s.mu.Lock()
+	var children, owner []*Log
+	for key, l := range s.logs {
+		if !readsDir(l, abs) {
+			continue
+		}
+		delete(s.logs, key)
+		if l.dir == abs {
+			owner = append(owner, l)
+		} else {
+			children = append(children, l)
+		}
+	}
+	s.mu.Unlock()
+	var errs []error
+	for _, l := range append(children, owner...) {
+		if err := l.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}

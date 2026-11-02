@@ -117,6 +117,35 @@ func (s *Store) Evict(dir string) error {
 	return nil
 }
 
+// Forget syncs and drops the cached logs for dir and for every log reading it
+// as a parent, then has the disk store close them, so the next Open reads the
+// files as they now are.
+func (s *Store) Forget(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	abs = filepath.Clean(abs)
+	s.mu.Lock()
+	var stale []*Log
+	for key, l := range s.logs {
+		for d := l.inner; d != nil; d = d.Parent() {
+			if d.Dir() == abs {
+				stale = append(stale, l)
+				delete(s.logs, key)
+				break
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, l := range stale {
+		if err := l.Sync(); err != nil {
+			return err
+		}
+	}
+	return s.disk.Forget(abs)
+}
+
 // Close syncs queued entries and closes every disk log after all
 // in-flight cache constructions finish. The Store cannot be used again.
 func (s *Store) Close() error {

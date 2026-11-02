@@ -29,6 +29,7 @@ type Trunks struct {
 	hotMu   sync.Mutex
 	hot     *trunkStore
 	retired map[*trunkStore]struct{}
+	fences  map[string]chan struct{}
 
 	// ltsReg retains each node's lastTS counter across open/close/evict cycles.
 	ltsReg *lastTSRegistry
