@@ -140,8 +140,7 @@ func deleteNode(n *node, key string) (*node, bool) {
 	if n.right == nil {
 		return n.left, true
 	}
-	successor := minNode(n.right)
-	return balance(makeNode(successor.key, successor.value, n.left, deleteMin(n.right))), true
+	return balance(cloneWith(minNode(n.right), n.left, deleteMin(n.right))), true
 }
 
 func deleteMin(n *node) *node {
