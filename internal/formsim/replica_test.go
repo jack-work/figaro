@@ -230,3 +230,18 @@ func (u *unavailableFirst) Set(ctx context.Context, req rpc.SetRequest) (*rpc.Se
 	}
 	return u.direct.Set(ctx, req)
 }
+
+// Edit returns with Shown already holding the edit, so the next edit is
+// built against it.
+func TestEditIsVisibleWhenItReturns(t *testing.T) {
+	d := newDirect(t)
+	r := d.open(t, "r", replica.Options{Debounce: time.Hour})
+	r.Edit(setKey("a", `"scalar"`))
+	require.Equal(t, `"scalar"`, get(r.Shown(), "a"))
+	r.Edit(form.Build(r.Shown(), map[string]json.RawMessage{"a": json.RawMessage(`{"b":1}`)}, nil))
+	r.Edit(form.Build(r.Shown(), map[string]json.RawMessage{"a.c": json.RawMessage(`2`)}, nil))
+	require.Equal(t, "1", get(r.Shown(), "a.b"))
+	require.Equal(t, "2", get(r.Shown(), "a.c"))
+	flush(t, r)
+	require.Equal(t, "2", get(d.f.Read().Snapshot, "a.c"))
+}

@@ -31,7 +31,7 @@ type Replica struct {
 	o      Options
 
 	cur    atomic.Pointer[state]
-	events chan func(*state) *state
+	events chan event
 	done   chan struct{}
 	ready  chan struct{}
 	stop   sync.Once
@@ -68,7 +68,7 @@ func New(client string, t Transport, o Options) *Replica {
 		client: client,
 		t:      t,
 		o:      o,
-		events: make(chan func(*state) *state, 1024),
+		events: make(chan event, 1024),
 		done:   make(chan struct{}),
 		ready:  make(chan struct{}),
 	}
@@ -97,7 +97,12 @@ func (r *Replica) Edit(p form.Patch) {
 	if p.IsIdentity() {
 		return
 	}
-	r.post(func(s *state) *state { return r.edit(s, p) })
+	applied := make(chan struct{})
+	r.postThen(func(s *state) *state { return r.edit(s, p) }, applied)
+	select {
+	case <-applied:
+	case <-r.done:
+	}
 }
 
 func (r *Replica) Delta(d rpc.FormDelta) {
@@ -133,9 +138,16 @@ func (r *Replica) Close() {
 	r.stop.Do(func() { close(r.done) })
 }
 
-func (r *Replica) post(fn func(*state) *state) {
+type event struct {
+	fn   func(*state) *state
+	then chan struct{}
+}
+
+func (r *Replica) post(fn func(*state) *state) { r.postThen(fn, nil) }
+
+func (r *Replica) postThen(fn func(*state) *state, then chan struct{}) {
 	select {
-	case r.events <- fn:
+	case r.events <- event{fn: fn, then: then}:
 	case <-r.done:
 	}
 }
@@ -146,13 +158,18 @@ func (r *Replica) run() {
 		case <-r.done:
 			r.stopTimers()
 			return
-		case fn := <-r.events:
+		case ev := <-r.events:
 			prev := r.cur.Load()
-			next := fn(prev)
+			next := ev.fn(prev)
+			if next != prev {
+				r.cur.Store(next)
+			}
+			if ev.then != nil {
+				close(ev.then)
+			}
 			if next == prev {
 				continue
 			}
-			r.cur.Store(next)
 			if next.loaded && !prev.loaded {
 				close(r.ready)
 			}
