@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -152,10 +153,27 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	return line
 }
 
-// A form holds skill bodies measured in kilobytes.
 func formValuePreview(raw json.RawMessage) string {
-	s := strings.Join(strings.Fields(string(raw)), " ")
-	return clipToWidthEllipsis(s, 120)
+	const cols = 120
+	var b strings.Builder
+	w, space := 0, false
+	for _, r := range string(raw) {
+		if unicode.IsSpace(r) {
+			space = b.Len() > 0
+			continue
+		}
+		if space {
+			b.WriteByte(' ')
+			w++
+			space = false
+		}
+		b.WriteRune(r)
+		w += runewidth.RuneWidth(r)
+		if w > cols+1 {
+			break
+		}
+	}
+	return clipToWidthEllipsis(b.String(), cols)
 }
 
 func openBranch(n *formNode, open map[string]bool) {
