@@ -56,13 +56,13 @@ func TestADeadHTTP2ConnectionFailsAndTheNextRequestDialsFresh(t *testing.T) {
 	}
 }
 
-func TestSharedCarriesTheHealthCheck(t *testing.T) {
-	tr, ok := Shared().(*http.Transport)
-	if !ok {
-		t.Skip("Shared is wrapped; the round-trip tests cover it")
+func TestSharedCarriesTheHealthCheckAndTheStallWindow(t *testing.T) {
+	tr := Shared()
+	if h := tr.base.HTTP2; h == nil || h.SendPingTimeout != Defaults.SendPingTimeout || h.PingTimeout != Defaults.PingTimeout {
+		t.Fatalf("shared transport has no HTTP/2 health check: %+v", h)
 	}
-	if tr.HTTP2 == nil || tr.HTTP2.SendPingTimeout != Defaults.SendPingTimeout || tr.HTTP2.PingTimeout != Defaults.PingTimeout {
-		t.Fatalf("shared transport has no HTTP/2 health check: %+v", tr.HTTP2)
+	if tr.stall != Defaults.Stall || tr.stall <= 0 {
+		t.Fatalf("shared transport stall window %v, want %v", tr.stall, Defaults.Stall)
 	}
 }
 

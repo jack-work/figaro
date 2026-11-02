@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/upstream"
 )
 
 func TestIsTransientStatus(t *testing.T) {
@@ -98,5 +100,39 @@ func TestDoWithAuthRetry_GivesUp(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&hits); got != maxTransientRetries+1 {
 		t.Fatalf("server hits = %d, want %d", got, maxTransientRetries+1)
+	}
+}
+
+func TestDoWithAuthRetry_RetriesAStalledRequestOnAFreshConnection(t *testing.T) {
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = old }()
+
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&hits, 1) == 1 {
+			select {
+			case <-r.Context().Done():
+			case <-t.Context().Done():
+			}
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Transport: upstream.New(upstream.Config{Stall: 100 * time.Millisecond})}
+	a := &Anthropic{auth: &staticAuth{token: "t"}, HTTPClient: client}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, _, err := a.doWithAuthRetry(ctx, func(string) (*http.Request, error) {
+		return http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
+	})
+	if err != nil {
+		t.Fatalf("a stalled first attempt was not retried: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := atomic.LoadInt32(&hits); got != 2 {
+		t.Fatalf("server hits = %d, want 2 (one stall, one success)", got)
 	}
 }

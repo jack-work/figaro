@@ -54,7 +54,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route
 		auth:           resolver,
 		Model:          knobs.Model,
 		MaxTokens:      knobs.MaxTokens,
-		HTTPClient:     &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: upstream.Shared()}},
+		HTTPClient:     &http.Client{Transport: &wirelog.Transport{Inner: upstream.Shared()}},
 		Route:          route,
 		CacheOpen:      cacheOpen,
 		CacheNamespace: route.Name,
