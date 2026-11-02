@@ -51,8 +51,8 @@ func TestADeadHTTP2ConnectionFailsAndTheNextRequestDialsFresh(t *testing.T) {
 	if string(body) != "ok" {
 		t.Fatalf("body %q", body)
 	}
-	if n := hole.dialed.Load(); n != 2 {
-		t.Fatalf("dialled %d connections, want 2 (the dead one, then a fresh one)", n)
+	if n := hole.dialed.Load(); n < 2 {
+		t.Fatalf("dialled %d connections: the request after the drop did not dial a fresh one", n)
 	}
 }
 

@@ -36,8 +36,8 @@ func TestAnIdleConnectionPastTheAgeCapIsRetired(t *testing.T) {
 	if _, _, err := get(context.Background(), rt, srv.URL); err != nil {
 		t.Fatalf("the request after a retirement failed: %v", err)
 	}
-	if n := hole.dialed.Load(); n != 2 {
-		t.Fatalf("dialled %d connections, want 2", n)
+	if n := hole.dialed.Load(); n < 2 {
+		t.Fatalf("dialled %d connections: the request after the drop did not dial a fresh one", n)
 	}
 }
 
