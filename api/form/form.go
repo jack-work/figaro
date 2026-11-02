@@ -310,6 +310,11 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 		if cur != nil && cur.branch {
 			kids = cur.kids
 		}
+		if cur != nil && cur.branch && child.Scalar != nil {
+			t = ptree{root: setEntry(t.root, leafOrBranch(k, child.Scalar.After))}
+			changed = true
+			continue
+		}
 		if leafHere {
 			next, err := child.Apply(cur.value)
 			if err != nil || next.Equal(cur.value) {
