@@ -3,35 +3,106 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/form/replica"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/sdk"
 )
 
-type wireFormSource struct {
-	*formMirror
-	aria *sdk.Aria
+const (
+	formEditDebounce = 150 * time.Millisecond
+	formEditMaxWait  = time.Second
+	formFlushOnClose = 2 * time.Second
+)
+
+type ariaTransport struct{ aria *sdk.Aria }
+
+func (t ariaTransport) Set(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
+	return t.aria.SetWith(ctx, req)
 }
 
-func (s wireFormSource) Edit(p form.Patch) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err := s.aria.Set(ctx, p, 0)
-	return err
+func (t ariaTransport) Load(ctx context.Context, client string) (*rpc.FormResponse, error) {
+	return t.aria.FormFor(ctx, client)
 }
+
+type replicaSource struct{ *replica.Replica }
+
+func (s replicaSource) Edit(p form.Patch) error {
+	s.Replica.Edit(p)
+	return nil
+}
+
+func newReplicaClient() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return "pit-" + hex.EncodeToString(b[:])
+}
+
+type formKicker struct {
+	ch   chan struct{}
+	done chan struct{}
+	once sync.Once
+}
+
+func newFormKicker(repaint func()) *formKicker {
+	k := &formKicker{ch: make(chan struct{}, 1), done: make(chan struct{})}
+	go func() {
+		for {
+			select {
+			case <-k.ch:
+				if repaint != nil {
+					repaint()
+				}
+			case <-k.done:
+				return
+			}
+		}
+	}()
+	return k
+}
+
+func (k *formKicker) kick() {
+	select {
+	case k.ch <- struct{}{}:
+	default:
+	}
+}
+
+func (k *formKicker) close() { k.once.Do(func() { close(k.done) }) }
 
 var errFormReadOnly = errors.New("this form is read-only in the pit")
 
 func (v *formView) Edit(p form.Patch) error {
-	if e, ok := v.source().(formEditor); ok {
-		return e.Edit(p)
+	e, ok := v.source().(formEditor)
+	if !ok {
+		return errFormReadOnly
 	}
-	return errFormReadOnly
+	v.mu.Lock()
+	if v.stopped {
+		notice := v.notice
+		v.mu.Unlock()
+		return errors.New(notice)
+	}
+	if v.refused {
+		v.notice, v.refused = "", false
+	}
+	v.mu.Unlock()
+	return e.Edit(p)
+}
+
+func (v *formView) refuse(err error) {
+	v.mu.Lock()
+	v.notice, v.refused = "an edit was refused and taken back: "+err.Error(), true
+	v.mu.Unlock()
 }
 
 func (v *formView) editable() bool {
@@ -194,6 +265,10 @@ func (in *interactiveInput) editShownForm(argv []string) bool {
 		}
 		if err := v.Edit(patch); err != nil {
 			in.note(typed + ": " + err.Error())
+			return
+		}
+		if _, optimistic := v.source().(pendingReader); optimistic {
+			in.note(typed + ": sent")
 			return
 		}
 		in.note(typed + ": ok")

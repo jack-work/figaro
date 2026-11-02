@@ -9,9 +9,11 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/form/replica"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -37,6 +39,8 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	mirror := &formMirror{}
 	view := &formView{mirror: mirror, out: os.Stdout, open: map[string]bool{},
 		aria: resolvedID, intrinsic: intrinsic}
+	kick := newFormKicker(onChange)
+	var rep atomic.Pointer[replica.Replica]
 
 	// Subscribe before seeding: a seed older than a delta in hand is caught by
 	// the version check; the other order drops deltas.
@@ -53,6 +57,10 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 			if d.Intrinsic != intrinsic {
 				return
 			}
+			if r := rep.Load(); r != nil {
+				r.Delta(d)
+				return
+			}
 			switch mirror.apply(d) {
 			case formResync:
 				view.resync()
@@ -60,25 +68,56 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 				view.stop(fmt.Sprintf("this daemon speaks form schema %d, this client speaks %d: not tracking",
 					d.Schema, rpc.FormDeltaSchema))
 			}
-			if onChange != nil {
-				onChange()
-			}
+			kick.kick()
 		})
 	if err != nil {
 		cancel()
 		acli.Close()
+		kick.close()
 		return nil, nil, fmt.Errorf("dial aria: %w", err)
 	}
-	view.refetch = func() (*rpc.FormResponse, error) {
-		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer rcancel()
-		return fcli.FormOf(rctx, intrinsic)
+	if intrinsic != "" {
+		view.refetch = func() (*rpc.FormResponse, error) {
+			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer rcancel()
+			return fcli.FormOf(rctx, intrinsic)
+		}
+		view.resync()
+		return view, func() { fcli.Close(); acli.Close(); cancel(); kick.close() }, nil
 	}
-	if intrinsic == "" {
-		view.src = wireFormSource{formMirror: mirror, aria: fcli}
+
+	r := replica.New(newReplicaClient(), ariaTransport{fcli}, replica.Options{
+		Debounce: formEditDebounce,
+		MaxWait:  formEditMaxWait,
+		OnChange: func(_, _ form.Snapshot) { kick.kick() },
+		OnIncompatible: func(schema int) {
+			go view.stop(fmt.Sprintf("this daemon speaks form schema %d, this client speaks %d: not tracking",
+				schema, rpc.FormDeltaSchema))
+		},
+		OnRefused: func(_ uint64, err error) {
+			view.refuse(err)
+			kick.kick()
+		},
+	})
+	rep.Store(r)
+	view.src = replicaSource{r}
+	select {
+	case <-r.Ready():
+	case <-time.After(5 * time.Second):
+		view.setNotice("the form has not loaded yet")
 	}
-	view.resync()
-	return view, func() { fcli.Close(); acli.Close(); cancel() }, nil
+	return view, func() {
+		if r.Pending() > 0 {
+			fctx, fcancel := context.WithTimeout(context.Background(), formFlushOnClose)
+			_ = r.Flush(fctx)
+			fcancel()
+		}
+		r.Close()
+		fcli.Close()
+		acli.Close()
+		cancel()
+		kick.close()
+	}, nil
 }
 
 func runFormListen(loaded *config.Loaded, ariaID string) {
@@ -106,6 +145,8 @@ type formView struct {
 	cursor    int
 	top       int
 	notice    string
+	refused   bool
+	touched   map[string]bool // paths under an edit the server has not answered
 	stopped   bool
 	refetch   func() (*rpc.FormResponse, error)
 	closeConn func()
@@ -123,10 +164,16 @@ type formEditor interface {
 }
 
 type formItemsKey struct {
-	root    form.Stamp
-	openRev uint64
-	width   int
-	notice  string
+	root      form.Stamp
+	confirmed form.Stamp
+	openRev   uint64
+	width     int
+	notice    string
+	pending   int
+}
+
+type pendingReader interface {
+	Read() (confirmed, shown form.Snapshot, pending int)
 }
 
 func (v *formView) source() formSource {
@@ -182,13 +229,24 @@ func (v *formView) Items(width int) []pitRow {
 	if width <= 0 {
 		width = 80
 	}
-	snap := v.source().Shown()
+	src := v.source()
+	var confirmed, snap form.Snapshot
+	pending := 0
+	if pr, ok := src.(pendingReader); ok {
+		confirmed, snap, pending = pr.Read()
+	} else {
+		snap = src.Shown()
+	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	root := snap.RootNode()
-	key := formItemsKey{root: root.Stamp(), openRev: v.openRev, width: width, notice: v.notice}
+	key := formItemsKey{root: root.Stamp(), confirmed: confirmed.RootNode().Stamp(), openRev: v.openRev, width: width, notice: v.notice, pending: pending}
 	if v.items != nil && key == v.itemsKey {
 		return v.items
+	}
+	v.touched = nil
+	if pending > 0 {
+		v.touched = touchedPaths(snap.Diff(confirmed))
 	}
 	if v.root == nil {
 		v.root = newFormRoot(snap)
@@ -204,7 +262,11 @@ func (v *formView) Items(width int) []pitRow {
 	}
 	for _, n := range v.rows {
 		n.width = width
-		out = append(out, pitRow{textFrom: n, yankFrom: n, id: n.path})
+		row := pitRow{textFrom: n, yankFrom: n, id: n.path}
+		if v.touched[n.path] {
+			row.note = "pending"
+		}
+		out = append(out, row)
 		if !n.leaf() || !v.open[n.path] {
 			continue
 		}
@@ -219,6 +281,21 @@ func (v *formView) Items(width int) []pitRow {
 	}
 	v.items, v.itemsKey = out, key
 	v.rev++
+	return out
+}
+
+func touchedPaths(p form.Patch) map[string]bool {
+	out := map[string]bool{}
+	for _, ent := range p.Entries() {
+		for path := ent.Key; path != "" && !out[path]; {
+			out[path] = true
+			i := strings.LastIndexByte(path, '.')
+			if i < 0 {
+				break
+			}
+			path = path[:i]
+		}
+	}
 	return out
 }
 
