@@ -108,21 +108,6 @@ const (
 	kindForm nodeKind = "form"
 )
 
-func formReduce(state, patch []byte) ([]byte, error) {
-	snap := form.Snapshot{}
-	if len(state) > 0 {
-		if err := snap.UnmarshalJSON(state); err != nil {
-			return nil, err
-		}
-	}
-	var p message.Patch
-	if err := json.Unmarshal(patch, &p); err != nil {
-		return nil, err
-	}
-	next := snap.Apply(p)
-	return next.MarshalJSON()
-}
-
 var handleIdle atomic.Int64
 
 // SetHandleIdle: call before opening the store; zero leaves figwal's default.

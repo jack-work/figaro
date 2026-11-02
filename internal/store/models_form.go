@@ -47,11 +47,9 @@ func (l *compactingStumpLog) loadBase(x *xwal.XWAL, last uint64) error {
 	if err != nil {
 		return fmt.Errorf("stump %s: segment header: %w", l.stump, err)
 	}
-	var snap form.Snapshot
-	if len(header) > 0 {
-		if err := snap.UnmarshalJSON(header); err != nil {
-			return fmt.Errorf("stump %s: segment header: %w", l.stump, err)
-		}
+	snap, _, err := decodeFormWatermark(header)
+	if err != nil {
+		return fmt.Errorf("stump %s: segment header: %w", l.stump, err)
 	}
 	if first == 0 {
 		first = 1
@@ -60,9 +58,9 @@ func (l *compactingStumpLog) loadBase(x *xwal.XWAL, last uint64) error {
 	return nil
 }
 
-func (l *compactingStumpLog) Base() (form.Snapshot, uint64) {
+func (l *compactingStumpLog) Base() FormBase {
 	b := l.base.Load()
-	return b.snap, b.version
+	return FormBase{Snapshot: b.snap, Version: b.version}
 }
 
 func (l *compactingStumpLog) Floor() uint64 { return l.base.Load().version }

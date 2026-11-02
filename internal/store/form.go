@@ -132,8 +132,14 @@ type FormLog interface {
 // floor is reseeded from memory rather than sent over the wire.
 type FormBaseLog interface {
 	FormLog
-	Base() (form.Snapshot, uint64)
+	Base() FormBase
 	Floor() uint64
+}
+
+type FormBase struct {
+	Snapshot form.Snapshot
+	Version  uint64
+	Seqs     map[string]uint64
 }
 
 // OpenForm replays the log (the cold cost); afterwards every read is an atomic load.
@@ -144,7 +150,8 @@ func OpenForm(log FormLog) (*Form, error) {
 	// exist; trimmed records that a read under the base is told no rather than
 	// answered short.
 	if bl, ok := log.(FormBaseLog); ok {
-		st.snap, st.version = bl.Base()
+		b := bl.Base()
+		st.snap, st.version, st.seqs = b.Snapshot, b.Version, b.Seqs
 		st.trimmed = st.version
 	}
 	if err := log.RangePatches(0, 0, func(index uint64, payload []byte) error {
@@ -285,11 +292,11 @@ func (f *Form) PatchFloor() uint64 {
 
 // Base is the oldest state this form can be reseeded from without the wire;
 // for a durable form, the zero snapshot at version 0.
-func (f *Form) Base() (form.Snapshot, uint64) {
+func (f *Form) Base() FormBase {
 	if bl, ok := f.log.(FormBaseLog); ok {
 		return bl.Base()
 	}
-	return form.Snapshot{}, 0
+	return FormBase{}
 }
 
 type formStateLog interface {
@@ -560,6 +567,9 @@ func (f *Form) judge(st *formState, w *formWrite) formResult {
 	if err := form.CheckWritable(w.patch, w.priv); err != nil {
 		return formResult{version: st.version, err: err}
 	}
+	if touchesWatermarkKeys(w.patch) {
+		return formResult{version: st.version, err: ErrReservedFormKey}
+	}
 	if w.intent == Assert {
 		for _, ent := range w.patch.Entries() {
 			if !ent.IsRemoval() {
@@ -640,6 +650,7 @@ func SetMemFormPage(n int) { memFormPage.Store(int64(n)) }
 type memPage struct {
 	base        form.Snapshot // the state as of baseVersion
 	baseVersion uint64
+	baseSeqs    map[string]uint64
 	patches     [][]byte // absolute versions baseVersion+1 .. baseVersion+len
 }
 
@@ -694,12 +705,13 @@ func (m *MemFormLog) load() *memLogState {
 }
 
 // Base: a reader below Floor() starts here and replays forward.
-func (m *MemFormLog) Base() (form.Snapshot, uint64) {
+func (m *MemFormLog) Base() FormBase {
 	st := m.load()
+	p := st.live
 	if st.sealed != nil {
-		return st.sealed.base, st.sealed.baseVersion
+		p = st.sealed
 	}
-	return st.live.base, st.live.baseVersion
+	return FormBase{Snapshot: p.base, Version: p.baseVersion, Seqs: p.baseSeqs}
 }
 
 // Floor is the oldest version a patch is still held for.
@@ -721,6 +733,7 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	live := &memPage{
 		base:        old.live.base,
 		baseVersion: old.live.baseVersion,
+		baseSeqs:    old.live.baseSeqs,
 		patches:     append(append(make([][]byte, 0, len(old.live.patches)+1), old.live.patches...), append([]byte(nil), payload...)),
 	}
 	next := &memLogState{sealed: old.sealed, live: live}
@@ -728,13 +741,13 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	// Rotate: the predecessor is dropped only when the page replacing it can
 	// carry the floor on its own.
 	if page := int(memFormPage.Load()); page > 0 && len(live.patches) >= page {
-		snap, err := replayPage(live)
+		snap, seqs, err := replayPage(live)
 		if err != nil {
 			return 0, err
 		}
 		next = &memLogState{
 			sealed: live,
-			live:   &memPage{base: snap, baseVersion: live.top()},
+			live:   &memPage{base: snap, baseVersion: live.top(), baseSeqs: seqs},
 		}
 	}
 	m.state.Store(next)
@@ -742,16 +755,23 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 }
 
 // replayPage runs once per rotation: the amortized cost of the bound.
-func replayPage(p *memPage) (form.Snapshot, error) {
+func replayPage(p *memPage) (form.Snapshot, map[string]uint64, error) {
 	snap := p.base
-	for _, payload := range p.patches {
-		var patch message.Patch
-		if err := json.Unmarshal(payload, &patch); err != nil {
-			return form.Snapshot{}, fmt.Errorf("mem form log: replay page: %w", err)
-		}
-		snap = snap.Apply(patch)
+	seqs := make(map[string]uint64, len(p.baseSeqs))
+	for k, v := range p.baseSeqs {
+		seqs[k] = v
 	}
-	return snap, nil
+	for _, payload := range p.patches {
+		var rec formRecord
+		if err := json.Unmarshal(payload, &rec); err != nil {
+			return form.Snapshot{}, nil, fmt.Errorf("mem form log: replay page: %w", err)
+		}
+		snap = snap.Apply(rec.Patch)
+		if rec.Seq > seqs[rec.Client] {
+			seqs[rec.Client] = rec.Seq
+		}
+	}
+	return snap, seqs, nil
 }
 
 // SyncThrough is a no-op: memory is as durable as this log gets.
@@ -763,7 +783,7 @@ func (m *MemFormLog) DiscardFrom(index uint64) error {
 		return fmt.Errorf("mem form log: cannot discard from %d (live page %d..%d)", index, old.live.baseVersion+1, old.live.top())
 	}
 	keep := index - old.live.baseVersion - 1
-	live := &memPage{base: old.live.base, baseVersion: old.live.baseVersion, patches: append([][]byte(nil), old.live.patches[:keep]...)}
+	live := &memPage{base: old.live.base, baseVersion: old.live.baseVersion, baseSeqs: old.live.baseSeqs, patches: append([][]byte(nil), old.live.patches[:keep]...)}
 	m.state.Store(&memLogState{sealed: old.sealed, live: live})
 	return nil
 }
@@ -815,27 +835,27 @@ type xwalFormLog struct {
 	base    uint64
 }
 
-func (l *xwalFormLog) Base() (form.Snapshot, uint64) {
+func (l *xwalFormLog) Base() FormBase {
 	l.base = 0
 	xw, err := l.backend.store.openNode(l.ariaID)
 	if err != nil {
-		return form.Snapshot{}, 0
+		return FormBase{}
 	}
 	defer xw.Close()
 	_, last, _ := xw.ChannelBounds(chanForm)
 	if last == 0 {
-		return form.Snapshot{}, 0
+		return FormBase{}
 	}
 	header, segBase, err := xw.SegmentHeaderAt(chanForm, last)
 	if err != nil || segBase <= 1 || len(header) == 0 {
-		return form.Snapshot{}, 0
+		return FormBase{}
 	}
-	snap := form.Snapshot{}
-	if err := snap.UnmarshalJSON(header); err != nil {
-		return form.Snapshot{}, 0
+	snap, seqs, err := decodeFormWatermark(header)
+	if err != nil {
+		return FormBase{}
 	}
 	l.base = segBase - 1
-	return snap, l.base
+	return FormBase{Snapshot: snap, Version: l.base, Seqs: seqs}
 }
 
 func (l *xwalFormLog) Floor() uint64 {
@@ -860,11 +880,8 @@ func (l *xwalFormLog) StateAt(version uint64) (form.Snapshot, error) {
 	if err != nil {
 		return form.Snapshot{}, err
 	}
-	snap := form.Snapshot{}
-	if err := snap.UnmarshalJSON(raw); err != nil {
-		return form.Snapshot{}, err
-	}
-	return snap, nil
+	snap, _, err := decodeFormWatermark(raw)
+	return snap, err
 }
 
 func (l *xwalFormLog) AppendPatch(payload []byte) (uint64, error) {

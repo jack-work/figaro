@@ -172,7 +172,8 @@ func TestMemFormLogBaseCarriesWhatWasDropped(t *testing.T) {
 			t.Fatalf("append: %v", err)
 		}
 	}
-	snap, version := m.Base()
+	b := m.Base()
+	snap, version := b.Snapshot, b.Version
 	if version == 0 {
 		t.Fatal("nothing rotated, so this test proves nothing")
 	}

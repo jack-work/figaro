@@ -1,4 +1,4 @@
-package replica_test
+package formsim_test
 
 import (
 	"context"

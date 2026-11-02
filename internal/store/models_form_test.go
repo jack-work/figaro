@@ -124,7 +124,8 @@ func TestModelsFormRefusesARangeBelowTheDroppedSegments(t *testing.T) {
 	}
 	floor := f.PatchFloor()
 	require.NotZero(t, floor)
-	base, baseVersion := f.Base()
+	b := f.Base()
+	base, baseVersion := b.Snapshot, b.Version
 	require.Equal(t, floor, baseVersion)
 	require.True(t, base.Has("p.refreshed_at"))
 	err = f.log.RangePatches(1, 0, func(uint64, []byte) error { return nil })
