@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"sync"
 	"time"
 )
@@ -13,6 +14,8 @@ type Config struct {
 	SendPingTimeout time.Duration
 	PingTimeout     time.Duration
 	Stall           time.Duration
+	MaxAge          time.Duration
+	Sweep           time.Duration
 	Dial            func(ctx context.Context, network, addr string) (net.Conn, error)
 	TLS             *tls.Config
 }
@@ -21,11 +24,13 @@ var Defaults = Config{
 	SendPingTimeout: 15 * time.Second,
 	PingTimeout:     10 * time.Second,
 	Stall:           90 * time.Second,
+	MaxAge:          15 * time.Minute,
 }
 
 type Transport struct {
 	base  *http.Transport
 	stall time.Duration
+	pool  *pool
 }
 
 func New(cfg Config) *Transport {
@@ -33,11 +38,13 @@ func New(cfg Config) *Transport {
 	if dial == nil {
 		dial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
+	p := newPool(cfg.MaxAge, cfg.Sweep)
 	return &Transport{
 		stall: cfg.Stall,
+		pool:  p,
 		base: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           dial,
+			DialContext:           p.dialer(dial),
 			TLSClientConfig:       cfg.TLS,
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          100,
@@ -53,10 +60,28 @@ func New(cfg Config) *Transport {
 }
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.stall <= 0 || upgrading(req) {
-		return t.base.RoundTrip(req)
+	u := &use{}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{GotConn: u.got}))
+	if upgrading(req) {
+		resp, err := t.base.RoundTrip(req)
+		if err != nil {
+			u.release()
+		}
+		return resp, err
 	}
-	return t.watched(req)
+	var resp *http.Response
+	var err error
+	if t.stall > 0 {
+		resp, err = t.watched(req)
+	} else {
+		resp, err = t.base.RoundTrip(req)
+	}
+	if err != nil {
+		u.release()
+		return nil, err
+	}
+	resp.Body = &usedBody{ReadCloser: resp.Body, u: u}
+	return resp, nil
 }
 
 func (t *Transport) CloseIdleConnections() { t.base.CloseIdleConnections() }
