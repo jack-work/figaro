@@ -16,11 +16,12 @@ import (
 const FlowDevice = "device"
 
 type OAuthSettings struct {
-	Issuer    string   `toml:"issuer,omitempty"`
-	ClientID  string   `toml:"client_id,omitempty"`
-	Scopes    []string `toml:"scopes,omitempty"`
-	Flow      string   `toml:"flow,omitempty"`
-	Discovery string   `toml:"discovery,omitempty"`
+	Issuer      string   `toml:"issuer,omitempty"`
+	ClientID    string   `toml:"client_id,omitempty"`
+	Scopes      []string `toml:"scopes,omitempty"`
+	Flow        string   `toml:"flow,omitempty"`
+	Discovery   string   `toml:"discovery,omitempty"`
+	RedirectURI string   `toml:"redirect_uri,omitempty"`
 }
 
 type oidcConfiguration struct {

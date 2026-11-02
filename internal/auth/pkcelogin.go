@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -29,6 +30,7 @@ type PKCEConfig struct {
 	Scope        string
 	AuthorizeURL string
 	TokenURL     string
+	RedirectURI  string
 }
 
 func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
@@ -37,6 +39,12 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 	}
 	if strings.TrimSpace(s.ClientID) == "" {
 		return PKCEConfig{}, fmt.Errorf("%s: oauth names no client_id", provider)
+	}
+	redirect := strings.TrimSpace(s.RedirectURI)
+	if redirect != "" {
+		if err := checkRedirectURI(redirect); err != nil {
+			return PKCEConfig{}, fmt.Errorf("%s: oauth %w", provider, err)
+		}
 	}
 	oc, iu, err := discover(oidcHTTP, s.Issuer)
 	if err != nil {
@@ -60,11 +68,36 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 		Scope:        strings.Join(scopes, " "),
 		AuthorizeURL: oc.AuthorizationEndpoint,
 		TokenURL:     oc.TokenEndpoint,
+		RedirectURI:  redirect,
 	}, nil
 }
 
+func checkRedirectURI(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("redirect_uri %q is not an absolute URL", raw)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+	}
+	return fmt.Errorf("redirect_uri %q must be https (plain http only on a loopback address): the authorization code travels in it", raw)
+}
+
+func isLoopbackHost(h string) bool {
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
 func LoginPKCE(cfg PKCEConfig) (DeviceTokens, error) {
-	return loginPKCE(context.Background(), cfg, openBrowser, pkceTimeout)
+	return loginPKCE(context.Background(), cfg, openBrowser, pkceTimeout, pasteLine)
 }
 
 type pkceRedirect struct {
@@ -72,7 +105,10 @@ type pkceRedirect struct {
 	err  error
 }
 
-func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration) (DeviceTokens, error) {
+func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration, read func(string) (string, error)) (DeviceTokens, error) {
+	if cfg.RedirectURI != "" {
+		return loginPKCEPasted(ctx, cfg, open, timeout, read)
+	}
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return DeviceTokens{}, err
@@ -109,12 +145,16 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	if got.err != nil {
 		return DeviceTokens{}, got.err
 	}
+	return exchangePKCE(cfg, got.code, redirect, pkce.Verifier)
+}
+
+func exchangePKCE(cfg PKCEConfig, code, redirect, verifier string) (DeviceTokens, error) {
 	tr, err := requestToken(oidcHTTP, cfg.TokenURL, cfg.ClientID, url.Values{
 		"grant_type":    {"authorization_code"},
-		"code":          {got.code},
+		"code":          {code},
 		"redirect_uri":  {redirect},
 		"client_id":     {cfg.ClientID},
-		"code_verifier": {pkce.Verifier},
+		"code_verifier": {verifier},
 	}, nil)
 	if err != nil {
 		return DeviceTokens{}, fmt.Errorf("%s: %w", cfg.ProviderName, err)
@@ -174,6 +214,106 @@ func pkceCallback(provider, state string, done chan<- pkceRedirect) http.Handler
 		finish(pkceRedirect{code: code})
 	})
 	return mux
+}
+
+func loginPKCEPasted(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration, read func(string) (string, error)) (DeviceTokens, error) {
+	if read == nil {
+		return DeviceTokens{}, fmt.Errorf("%s: redirect_uri is set but nothing can read the pasted code", cfg.ProviderName)
+	}
+	pkce, err := GeneratePKCE()
+	if err != nil {
+		return DeviceTokens{}, err
+	}
+	state, err := randomState()
+	if err != nil {
+		return DeviceTokens{}, err
+	}
+	authorize := authorizeURL(cfg, cfg.RedirectURI, state, pkce.Challenge)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "       "+term.Dim(cfg.ProviderName+" signs in through a browser, on any machine (authorization code with PKCE). Open:"))
+	fmt.Fprintln(os.Stderr, "       "+term.Cyan(authorize))
+	fmt.Fprintln(os.Stderr, "       "+term.Dim("The page it lands on shows the code. Bring it back here."))
+	fmt.Fprintln(os.Stderr)
+	open(authorize)
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ask := func(prompt string) (string, error) {
+		type line struct {
+			s   string
+			err error
+		}
+		got := make(chan line, 1)
+		go func() {
+			s, err := read(prompt)
+			got <- line{s, err}
+		}()
+		select {
+		case l := <-got:
+			return strings.TrimSpace(l.s), l.err
+		case <-ctx.Done():
+			return "", fmt.Errorf("%s: no sign-in came back within %s", cfg.ProviderName, timeout)
+		}
+	}
+
+	pasted, err := ask("Paste the code shown on the page (or the full redirected URL): ")
+	if err != nil {
+		return DeviceTokens{}, err
+	}
+	code, gotState, idpErr, idpDesc := parsePasted(pasted)
+	if gotState != "" && subtle.ConstantTimeCompare([]byte(gotState), []byte(state)) != 1 {
+		return DeviceTokens{}, fmt.Errorf("%s: the pasted sign-in is not the one figaro is waiting for (state mismatch); start again", cfg.ProviderName)
+	}
+	if idpErr != "" {
+		return DeviceTokens{}, fmt.Errorf("%s: the IdP refused the sign-in: %q: %q", cfg.ProviderName, idpErr, idpDesc)
+	}
+	if code == "" {
+		return DeviceTokens{}, fmt.Errorf("%s: no authorization code in what was pasted", cfg.ProviderName)
+	}
+	if gotState == "" {
+		if gotState, err = ask("Paste the state shown on the page: "); err != nil {
+			return DeviceTokens{}, err
+		}
+		if subtle.ConstantTimeCompare([]byte(gotState), []byte(state)) != 1 {
+			return DeviceTokens{}, fmt.Errorf("%s: the pasted sign-in is not the one figaro is waiting for (state mismatch); start again", cfg.ProviderName)
+		}
+	}
+	return exchangePKCE(cfg, code, cfg.RedirectURI, pkce.Verifier)
+}
+
+func parsePasted(in string) (code, state, idpErr, idpDesc string) {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return "", "", "", ""
+	}
+	var q url.Values
+	switch {
+	case strings.Contains(in, "://"):
+		u, err := url.Parse(in)
+		if err != nil {
+			return "", "", "", ""
+		}
+		q = u.Query()
+	case strings.HasPrefix(in, "?") || strings.Contains(in, "code=") || strings.Contains(in, "error="):
+		var err error
+		if q, err = url.ParseQuery(strings.TrimPrefix(in, "?")); err != nil {
+			return "", "", "", ""
+		}
+	default:
+		return in, "", "", ""
+	}
+	return q.Get("code"), q.Get("state"), q.Get("error"), q.Get("error_description")
+}
+
+var stdin = bufio.NewReader(os.Stdin)
+
+func pasteLine(prompt string) (string, error) {
+	fmt.Fprint(os.Stderr, "       "+prompt)
+	s, err := stdin.ReadString('\n')
+	if err != nil && s == "" {
+		return "", fmt.Errorf("read the pasted code: %w", err)
+	}
+	return s, nil
 }
 
 func randomState() (string, error) {
