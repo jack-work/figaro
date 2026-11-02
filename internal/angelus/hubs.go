@@ -3,16 +3,17 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkrpc"
 )
 
 type hubs struct {
@@ -150,6 +151,9 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
 		Origin: store.Origin{Client: req.Client, Seq: req.Seq},
 	})
+	if errors.Is(err, store.ErrFormUnavailable) {
+		return nil, true, &jkrpc.Error{Code: rpc.ErrCodeFormUnavailable, Message: err.Error()}
+	}
 	if err != nil {
 		return nil, true, err
 	}

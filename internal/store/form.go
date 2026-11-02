@@ -424,7 +424,7 @@ func (f *Form) Submit(patch message.Patch, ifVersion uint64, intent Intent) (Tic
 // harness keys says so by call site, not by argument.
 func (f *Form) submit(w *formWrite) (Ticket, error) {
 	if err := f.q.Submit(w); err != nil {
-		return Ticket{}, ErrFormClosed
+		return Ticket{}, fmt.Errorf("%w: %w", ErrFormUnavailable, ErrFormClosed)
 	}
 	return Ticket{w: w}, nil
 }
@@ -499,11 +499,11 @@ func (f *Form) runBatch(batch []*formWrite) {
 			// Without durability the writes did not happen: every write in the
 			// batch is rejected and the state stands.
 			if derr := f.log.DiscardFrom(events[0].Version); derr != nil {
-				f.failed.Store(&formFailure{err: fmt.Errorf("form sync failed (%v) and its records could not be taken back: %w", err, derr)})
+				f.failed.Store(&formFailure{err: fmt.Errorf("%w: form sync failed (%v) and its records could not be taken back: %w", ErrFormUnavailable, err, derr)})
 			}
 			for _, w := range batch {
 				if w.result.err == nil {
-					w.result = formResult{err: fmt.Errorf("form sync: %w", err)}
+					w.result = formResult{err: fmt.Errorf("%w: form sync: %w", ErrFormUnavailable, err)}
 				}
 			}
 			f.answer(batch)
@@ -522,7 +522,7 @@ func (f *Form) runBatch(batch []*formWrite) {
 
 func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res formResult, record bool) {
 	if f.closed.Load() {
-		return nil, formResult{err: ErrFormClosed}, false
+		return nil, formResult{err: fmt.Errorf("%w: %w", ErrFormUnavailable, ErrFormClosed)}, false
 	}
 	if fail := f.failed.Load(); fail != nil {
 		return nil, formResult{err: fail.err}, false

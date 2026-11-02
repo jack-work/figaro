@@ -235,6 +235,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 
 // outfitError types a failed outfit resolution for the wire; a missing layer carries its closure.
 func outfitError(err error) error {
+	if errors.Is(err, store.ErrFormUnavailable) {
+		return &jkrpc.Error{Code: rpc.ErrCodeFormUnavailable, Message: err.Error()}
+	}
 	var missing *outfit.MissingError
 	if !errors.As(err, &missing) {
 		return err

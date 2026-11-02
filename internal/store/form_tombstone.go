@@ -13,6 +13,8 @@ const TombstoneKey = "system.tombstone"
 
 var ErrFormClosed = errors.New("form is closed")
 
+var ErrFormUnavailable = errors.New("form unavailable")
+
 // ErrFormMoved is the stale-ifVersion refusal: retry, the write itself is not wrong.
 var ErrFormMoved = errors.New("form moved")
 

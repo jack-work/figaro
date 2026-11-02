@@ -11,6 +11,8 @@ const (
 
 	// ErrOutfitNotFound: Data is ErrorData{Name, SearchPaths}.
 	ErrOutfitNotFound = -32012
+
+	ErrCodeFormUnavailable = -32041
 )
 
 const (

@@ -197,3 +197,36 @@ func TestADeltaOfAnotherSchemaStopsTheReplica(t *testing.T) {
 	require.Equal(t, []int{rpc.FormDeltaSchema + 1}, schemas, "said once")
 	mu.Unlock()
 }
+
+// A server that could not judge an edit is not a refusal: the edit stays in
+// Shown and lands when sent again.
+func TestUnavailableIsNotARefusal(t *testing.T) {
+	d := newDirect(t)
+	flaky := &unavailableFirst{direct: d}
+	var refused int
+	r := replica.New("r", flaky, replica.Options{Debounce: time.Millisecond, Timeout: 200 * time.Millisecond,
+		OnRefused: func(uint64, error) { refused++ }})
+	t.Cleanup(r.Close)
+	d.mu.Lock()
+	d.reps = append(d.reps, r)
+	d.mu.Unlock()
+	<-r.Ready()
+	r.Edit(setKey("u", `1`))
+	flush(t, r)
+	require.Equal(t, "1", get(d.f.Read().Snapshot, "u"))
+	require.Equal(t, 0, refused)
+}
+
+type unavailableFirst struct {
+	*direct
+	once sync.Once
+}
+
+func (u *unavailableFirst) Set(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
+	first := false
+	u.once.Do(func() { first = true })
+	if first {
+		return nil, &jkrpc.Error{Code: rpc.ErrCodeFormUnavailable, Message: "form unavailable: form is closed"}
+	}
+	return u.direct.Set(ctx, req)
+}

@@ -113,3 +113,13 @@ func TestApplyWrite_TheCommitCarriesTheOrigin(t *testing.T) {
 	require.Len(t, got, 1)
 	require.Equal(t, store.Origin{Client: "r", Seq: 7}, got[0].Origin)
 }
+
+// A form that cannot judge a write says so in a way a replica can tell from
+// a refusal: the same write sent again may land.
+func TestApplyWrite_AClosedFormIsUnavailable(t *testing.T) {
+	f := store.NewMemForm()
+	f.Close()
+	_, err := f.ApplyWrite(originWrite("a", `1`, "r", 1))
+	require.ErrorIs(t, err, store.ErrFormUnavailable)
+	require.ErrorIs(t, err, store.ErrFormClosed)
+}

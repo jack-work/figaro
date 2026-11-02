@@ -227,7 +227,7 @@ func (r *Replica) answer(s *state, seq uint64, resp *rpc.SetResponse, err error)
 		return r.sendNext(&next)
 	case err == nil:
 		next.pending = without(s.pending, seq)
-	case errors.As(err, &refusal):
+	case errors.As(err, &refusal) && refusal.Code != rpc.ErrCodeFormUnavailable:
 		next.pending = without(s.pending, seq)
 		if r.o.OnRefused != nil {
 			r.o.OnRefused(seq, err)
