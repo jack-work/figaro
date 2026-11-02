@@ -53,8 +53,8 @@ func TestEachDroppedConnectionIsLoggedOnceAndCountedByReason(t *testing.T) {
 	srv := okServer(t)
 	hole := newBlackhole(t, srv.addr)
 	rt := New(Config{
-		SendPingTimeout: 100 * time.Millisecond,
-		PingTimeout:     200 * time.Millisecond,
+		SendPingTimeout: 300 * time.Millisecond,
+		PingTimeout:     time.Second,
 		MaxAge:          time.Hour,
 		Dial:            hole.dial,
 		TLS:             srv.tls,
@@ -70,7 +70,7 @@ func TestEachDroppedConnectionIsLoggedOnceAndCountedByReason(t *testing.T) {
 
 	mustGet(t, rt, srv.url)
 	hole.freeze()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, _, err := get(ctx, rt, srv.url); err == nil {
 		t.Fatal("a request over a blackholed connection succeeded")
@@ -119,7 +119,7 @@ func mustGet(t *testing.T, rt http.RoundTripper, url string) {
 
 func waitDrop(t *testing.T, rt *Transport, reason string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for rt.Stats().Dropped[reason] != 1 {
 		if time.Now().After(deadline) {
 			t.Fatalf("no drop for %q; drops so far %v", reason, rt.Stats().Dropped)

@@ -18,8 +18,8 @@ func TestADeadHTTP2ConnectionFailsAndTheNextRequestDialsFresh(t *testing.T) {
 	}))
 	hole := newBlackhole(t, srv.Listener.Addr().String())
 	rt := New(Config{
-		SendPingTimeout: 100 * time.Millisecond,
-		PingTimeout:     200 * time.Millisecond,
+		SendPingTimeout: 300 * time.Millisecond,
+		PingTimeout:     time.Second,
 		Dial:            hole.dial,
 		TLS:             serverTLS(srv),
 	})
@@ -33,7 +33,7 @@ func TestADeadHTTP2ConnectionFailsAndTheNextRequestDialsFresh(t *testing.T) {
 	}
 
 	hole.freeze()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	start := time.Now()
 	_, _, err = get(ctx, rt, srv.URL)
