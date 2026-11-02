@@ -146,6 +146,15 @@ type ProviderLedgerResponse struct {
 	Rounds []ProviderRound `json:"rounds"`
 	// Retained is how many rows the ring holds at all.
 	Retained int `json:"retained"`
+	// Connections is nil from a daemon that predates it.
+	Connections *ProviderConnections `json:"connections,omitempty"`
+}
+
+// Dropped counts closed provider connections by reason since the daemon
+// started: age, peer closed, error, in flight, idle.
+type ProviderConnections struct {
+	Open    int               `json:"open"`
+	Dropped map[string]uint64 `json:"dropped,omitempty"`
 }
 
 // ProviderRound appears the moment the request departs, with InFlight set,

@@ -181,3 +181,16 @@ func TestProviderLedgerToleratesNoRing(t *testing.T) {
 		t.Errorf("retained = %d with no ring", got.Retained)
 	}
 }
+
+func TestProviderLedgerCarriesTheConnectionCounts(t *testing.T) {
+	installRing(t)
+	h := &handlers{}
+	out, err := h.providerLedger(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.(rpc.ProviderLedgerResponse)
+	if got.Connections == nil {
+		t.Fatal("the ledger carries no connection counts: doctor cannot show dropped connections")
+	}
+}

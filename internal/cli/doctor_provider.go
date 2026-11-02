@@ -48,6 +48,9 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		} else {
 			fmt.Fprintf(stdout, "no round-trips for that filter (%d retained overall)\n", resp.Retained)
 		}
+		if line := connectionsLine(resp.Connections); line != "" {
+			fmt.Fprintln(stdout, line)
+		}
 		return nil
 	}
 
@@ -90,8 +93,31 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		}
 	}
 
+	if line := connectionsLine(resp.Connections); line != "" {
+		fmt.Fprintln(stdout, "\n"+line)
+	}
 	summarizeProviderTrouble(resp.Rounds)
 	return nil
+}
+
+func connectionsLine(c *rpc.ProviderConnections) string {
+	if c == nil {
+		return ""
+	}
+	line := fmt.Sprintf("connections: %d open", c.Open)
+	if len(c.Dropped) == 0 {
+		return line + ", none dropped"
+	}
+	reasons := make([]string, 0, len(c.Dropped))
+	for r := range c.Dropped {
+		reasons = append(reasons, r)
+	}
+	sort.Strings(reasons)
+	parts := make([]string, 0, len(reasons))
+	for _, r := range reasons {
+		parts = append(parts, fmt.Sprintf("%s %d", r, c.Dropped[r]))
+	}
+	return line + "; dropped: " + strings.Join(parts, ", ")
 }
 
 // streamLine: counts, sizes and timings only, never a payload, an id, or an error text.

@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/logring"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
@@ -75,7 +76,9 @@ func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (
 	if req.Limit > 0 && len(out) > req.Limit {
 		out = out[len(out)-req.Limit:]
 	}
-	return rpc.ProviderLedgerResponse{Rounds: out, Retained: retained}, nil
+	conns := upstream.Shared().Stats()
+	return rpc.ProviderLedgerResponse{Rounds: out, Retained: retained,
+		Connections: &rpc.ProviderConnections{Open: conns.Open, Dropped: conns.Dropped}}, nil
 }
 
 // roundFromLog reads what wirelog wrote; the attribute names are the whole contract.

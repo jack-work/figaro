@@ -19,9 +19,10 @@ type blackhole struct {
 	ln     net.Listener
 	target string
 
-	mu     sync.Mutex
-	pipes  []*atomic.Bool
-	dialed atomic.Int32
+	mu      sync.Mutex
+	pipes   []*atomic.Bool
+	clients []net.Conn
+	dialed  atomic.Int32
 }
 
 func newBlackhole(t *testing.T, target string) *blackhole {
@@ -50,6 +51,7 @@ func (b *blackhole) serve() {
 		frozen := new(atomic.Bool)
 		b.mu.Lock()
 		b.pipes = append(b.pipes, frozen)
+		b.clients = append(b.clients, c)
 		b.mu.Unlock()
 		go pump(c, s, frozen)
 		go pump(s, c, frozen)
@@ -80,6 +82,14 @@ func (b *blackhole) freeze() {
 	defer b.mu.Unlock()
 	for _, p := range b.pipes {
 		p.Store(true)
+	}
+}
+
+func (b *blackhole) cut() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, c := range b.clients {
+		c.Close()
 	}
 }
 
@@ -114,4 +124,9 @@ func get(ctx context.Context, rt http.RoundTripper, url string) (*http.Response,
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	return resp, body, err
+}
+
+type httptestServer struct {
+	url, addr string
+	tls       *tls.Config
 }

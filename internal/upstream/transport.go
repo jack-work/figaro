@@ -77,6 +77,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp, err = t.base.RoundTrip(req)
 	}
 	if err != nil {
+		u.failed(err)
 		u.release()
 		return nil, err
 	}
@@ -85,6 +86,8 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (t *Transport) CloseIdleConnections() { t.base.CloseIdleConnections() }
+
+func (t *Transport) Stats() Stats { return t.pool.stats() }
 
 func upgrading(req *http.Request) bool { return req.Header.Get("Upgrade") != "" }
 

@@ -94,3 +94,18 @@ func captureStdout(t *testing.T, fn func()) string {
 	r.Close()
 	return out
 }
+
+func TestConnectionsLineNamesEachDropReason(t *testing.T) {
+	line := connectionsLine(&rpc.ProviderConnections{Open: 2, Dropped: map[string]uint64{"network": 3, "age": 1}})
+	for _, want := range []string{"2 open", "age 1", "network 3"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("%q missing %q", line, want)
+		}
+	}
+	if connectionsLine(nil) != "" {
+		t.Error("an old daemon's missing counts printed a line")
+	}
+	if got := connectionsLine(&rpc.ProviderConnections{Open: 1}); !strings.Contains(got, "none dropped") {
+		t.Errorf("%q", got)
+	}
+}

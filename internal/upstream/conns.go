@@ -2,20 +2,40 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http/httptrace"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
+)
+
+const (
+	ReasonAge      = "age"
+	ReasonPeer     = "peer closed"
+	ReasonError    = "error"
+	ReasonInFlight = "in flight"
+	ReasonIdle     = "idle"
 )
 
 type conn struct {
 	net.Conn
-	pool   *pool
-	born   time.Time
-	active atomic.Int32
-	closed atomic.Bool
+	pool    *pool
+	born    time.Time
+	active  atomic.Int32
+	lost    atomic.Bool
+	served  atomic.Int64
+	closed  atomic.Bool
+	reason  atomic.Pointer[string]
+	failure atomic.Pointer[error]
+}
+
+type Stats struct {
+	Open    int               `json:"open"`
+	Dropped map[string]uint64 `json:"dropped,omitempty"`
 }
 
 type pool struct {
@@ -24,6 +44,7 @@ type pool struct {
 
 	mu       sync.Mutex
 	conns    map[*conn]struct{}
+	dropped  map[string]uint64
 	sweeping bool
 }
 
@@ -31,7 +52,7 @@ func newPool(maxAge, sweep time.Duration) *pool {
 	if sweep <= 0 {
 		sweep = time.Minute
 	}
-	return &pool{maxAge: maxAge, sweep: sweep, conns: map[*conn]struct{}{}}
+	return &pool{maxAge: maxAge, sweep: sweep, conns: map[*conn]struct{}{}, dropped: map[string]uint64{}}
 }
 
 func (p *pool) dialer(inner func(ctx context.Context, network, addr string) (net.Conn, error)) func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -56,10 +77,21 @@ func (p *pool) add(c *conn) {
 	}
 }
 
-func (p *pool) remove(c *conn) {
+func (p *pool) remove(c *conn, reason string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.conns, c)
+	p.dropped[reason]++
+}
+
+func (p *pool) stats() Stats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	s := Stats{Open: len(p.conns), Dropped: make(map[string]uint64, len(p.dropped))}
+	for r, n := range p.dropped {
+		s.Dropped[r] = n
+	}
+	return s
 }
 
 func (p *pool) live() []*conn {
@@ -90,16 +122,63 @@ func (p *pool) sweepLoop() {
 func (p *pool) retireOld(now time.Time) {
 	for _, c := range p.live() {
 		if now.Sub(c.born) >= p.maxAge && c.active.Load() == 0 {
-			c.Close()
+			c.retire(ReasonAge)
 		}
 	}
 }
 
+func (c *conn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if err != nil {
+		c.failed(err)
+	}
+	return n, err
+}
+
+func (c *conn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if err != nil {
+		c.failed(err)
+	}
+	return n, err
+}
+
+func (c *conn) failed(err error) {
+	if !c.closed.Load() {
+		c.failure.CompareAndSwap(nil, &err)
+	}
+}
+
+func (c *conn) retire(reason string) {
+	c.reason.CompareAndSwap(nil, &reason)
+	c.Close()
+}
+
 func (c *conn) Close() error {
 	if c.closed.CompareAndSwap(false, true) {
-		c.pool.remove(c)
+		reason := c.dropReason()
+		c.pool.remove(c, reason)
+		slog.Info("provider connection dropped", "reason", reason,
+			"remote", c.RemoteAddr().String(), "local", c.LocalAddr().String(),
+			"age", time.Since(c.born).Round(time.Second), "requests", c.served.Load())
 	}
 	return c.Conn.Close()
+}
+
+func (c *conn) dropReason() string {
+	if r := c.reason.Load(); r != nil {
+		return *r
+	}
+	if f := c.failure.Load(); f != nil {
+		if errors.Is(*f, io.EOF) || errors.Is(*f, syscall.ECONNRESET) {
+			return ReasonPeer
+		}
+		return ReasonError
+	}
+	if c.active.Load() > 0 || c.lost.Load() {
+		return ReasonInFlight
+	}
+	return ReasonIdle
 }
 
 func tracked(nc net.Conn) *conn {
@@ -135,6 +214,7 @@ func (u *use) got(info httptrace.GotConnInfo) {
 	u.c = c
 	if c != nil {
 		c.active.Add(1)
+		c.served.Add(1)
 	}
 }
 
@@ -150,9 +230,27 @@ func (u *use) release() {
 	}
 }
 
+func (u *use) failed(err error) {
+	if err == nil || err == io.EOF || errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrStalled) {
+		return
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.c != nil {
+		u.c.lost.Store(true)
+	}
+}
+
 type usedBody struct {
 	io.ReadCloser
 	u *use
+}
+
+func (b *usedBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.u.failed(err)
+	return n, err
 }
 
 func (b *usedBody) Close() error {
