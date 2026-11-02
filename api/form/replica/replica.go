@@ -91,6 +91,15 @@ func (r *Replica) Pending() int {
 	return n
 }
 
+func (r *Replica) Read() (confirmed, shown form.Snapshot, pending int) {
+	s := r.cur.Load()
+	pending = len(s.pending)
+	if !s.draft.IsIdentity() {
+		pending++
+	}
+	return s.confirmed, s.shown, pending
+}
+
 func (r *Replica) Ready() <-chan struct{} { return r.ready }
 
 func (r *Replica) Edit(p form.Patch) {
