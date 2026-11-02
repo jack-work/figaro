@@ -115,6 +115,11 @@ func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
 		slog.Info("reaped node past its grace, kept: "+why, "node", g.root, "held_by", node)
 		return nil
 	}
+	if !g.killed() {
+		if err := a.scanForRoleIn(append(keeper.DeleteSet(g.root), g.root), g.root); err != nil {
+			return err
+		}
+	}
 	if err := a.RemoveAria(g.root, true); err != nil {
 		return err
 	}

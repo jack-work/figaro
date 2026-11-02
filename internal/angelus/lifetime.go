@@ -107,6 +107,9 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 		slog.Info("lifetime spent, kept: "+why, "node", e.ID, "held_by", node, "ttl", e.TTL)
 		return nil
 	}
+	if err := a.scanForRoleIn(taken, e.ID); err != nil {
+		return err
+	}
 	if g := a.purgeGraceIn(a.sandboxOf(e.ID), a.Settings.ReapedGrace()); g > 0 {
 		return a.softDelete(e, taken, g)
 	}
@@ -174,6 +177,34 @@ func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, ro
 
 type roleIndexer interface {
 	RoleTargets() (map[string]string, bool)
+}
+
+var errRoleIndexMissed = errors.New("a role the index missed points into the delete set")
+
+func (a *Angelus) scanForRoleIn(taken []string, root string) error {
+	scanned := a.scanRoleTargets()
+	for _, id := range taken {
+		if role, ok := scanned[id]; ok {
+			slog.Error("role index missed a role: refusing the delete",
+				"node", root, "target", id, "role", role)
+			return errRoleIndexMissed
+		}
+	}
+	return nil
+}
+
+func (a *Angelus) scanRoleTargets() map[string]string {
+	out := map[string]string{}
+	for _, f := range a.Backend.Forms() {
+		snap, err := a.Backend.FormState(f.ID)
+		if err != nil {
+			continue
+		}
+		if v := snap.Lookup("target-aria"); v != nil && *v != "" {
+			out[*v] = f.ID
+		}
+	}
+	return out
 }
 
 func (a *Angelus) roleTargets() (map[string]string, bool) {

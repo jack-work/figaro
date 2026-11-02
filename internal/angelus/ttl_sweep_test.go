@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -38,7 +39,21 @@ func (f *ttlFakeBackend) RoleTargets() (map[string]string, bool) {
 	return out, !f.rolesWarming
 }
 
-func (f *ttlFakeBackend) FormState(string) (form.Snapshot, error) { return form.Snapshot{}, nil }
+func (f *ttlFakeBackend) Forms() []store.NodeView {
+	var out []store.NodeView
+	for role := range f.roles {
+		out = append(out, store.NodeView{ID: role})
+	}
+	return out
+}
+func (f *ttlFakeBackend) FormState(id string) (form.Snapshot, error) {
+	target, ok := f.roles[id]
+	if !ok {
+		return form.Snapshot{}, nil
+	}
+	raw, _ := json.Marshal(target)
+	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": raw}, nil)), nil
+}
 
 func sweepNow(a *Angelus) {
 	a.expireTTL()
