@@ -41,7 +41,7 @@ func New(cfg Config) *Transport {
 		dial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
 	p := newPool(cfg)
-	return &Transport{
+	t := &Transport{
 		stall: cfg.Stall,
 		pool:  p,
 		base: &http.Transport{
@@ -59,6 +59,8 @@ func New(cfg Config) *Transport {
 			},
 		},
 	}
+	p.closeIdle = t.base.CloseIdleConnections
+	return t
 }
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {

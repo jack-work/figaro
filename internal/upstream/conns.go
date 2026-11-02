@@ -44,6 +44,7 @@ type pool struct {
 	watch     func(changed func()) error
 	watchOnce sync.Once
 	source    func(remote *net.TCPAddr) (net.IP, error)
+	closeIdle func()
 
 	mu       sync.Mutex
 	conns    map[*conn]struct{}
@@ -129,10 +130,22 @@ func (p *pool) sweepLoop() {
 }
 
 func (p *pool) retireOld(now time.Time) {
+	var old []*conn
 	for _, c := range p.live() {
-		if now.Sub(c.born) >= p.maxAge && c.active.Load() == 0 {
-			c.retire(ReasonAge)
+		if now.Sub(c.born) >= p.maxAge && c.served.Load() > 0 && c.active.Load() == 0 {
+			old = append(old, c)
 		}
+	}
+	if len(old) == 0 || p.closeIdle == nil {
+		return
+	}
+	age := ReasonAge
+	for _, c := range old {
+		c.reason.CompareAndSwap(nil, &age)
+	}
+	p.closeIdle()
+	for _, c := range old {
+		c.reason.CompareAndSwap(&age, nil)
 	}
 }
 
