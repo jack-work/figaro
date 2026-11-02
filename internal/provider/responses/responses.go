@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
+	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
@@ -579,6 +580,7 @@ func postResponses(ctx context.Context, endpoint string, headers http.Header, pa
 	req.Header = headers.Clone()
 	req.Header.Set("Accept", "text/event-stream")
 	client := &http.Client{
+		Transport:     upstream.Shared(),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	resp, err := client.Do(req)
@@ -688,7 +690,8 @@ func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*
 	headers = headers.Clone()
 	headers.Set("Origin", "https://github.com")
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Transport: upstream.Shared(),
+		Timeout:   30 * time.Second,
 		// A redirect must not forward the credential to another endpoint.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
@@ -51,7 +52,7 @@ func NewClient(baseURL string, resolver auth.TokenResolver) *Client {
 	return &Client{
 		auth:    resolver,
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 2 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
+		http:    &http.Client{Timeout: 2 * time.Minute, Transport: &wirelog.Transport{Inner: upstream.Shared()}},
 	}
 }
 

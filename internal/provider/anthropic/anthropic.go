@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
@@ -65,7 +66,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		auth:             resolver,
 		Model:            knobs.Model,
 		MaxTokens:        knobs.MaxTokens,
-		HTTPClient:       &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
+		HTTPClient:       &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: upstream.Shared()}},
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
 		CacheNamespace:   providerName,

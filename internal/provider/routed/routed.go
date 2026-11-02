@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
@@ -345,7 +346,7 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 	return "", fmt.Errorf("%s: model %q has no route: no rule matches, the catalog offers no transport for it, and there is no default", p.spec.Name, model)
 }
 
-var catalogClient = &http.Client{Transport: &wirelog.Transport{Inner: http.DefaultTransport}}
+var catalogClient = &http.Client{Transport: &wirelog.Transport{Inner: upstream.Shared()}}
 
 const (
 	catalogTTL     = 30 * time.Minute
