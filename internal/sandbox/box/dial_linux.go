@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
 
-var openat2 = unix.Openat2
+var (
+	openat2      = unix.Openat2
+	warnFallback sync.Once
+)
 
 func openNoLinks(path string) (int, error) {
 	fd, err := openat2(unix.AT_FDCWD, path, &unix.OpenHow{
@@ -18,6 +23,9 @@ func openNoLinks(path string) (int, error) {
 		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
 	})
 	if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EPERM) {
+		warnFallback.Do(func() {
+			slog.Warn("box: openat2 refused, so only the last component of an exec socket path is checked for links", "err", err)
+		})
 		return unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	}
 	return fd, err

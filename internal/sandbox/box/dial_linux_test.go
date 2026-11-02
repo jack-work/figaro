@@ -1,10 +1,14 @@
 package box
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,8 +65,13 @@ func TestALinkedDirectoryOnTheExecPathIsRefused(t *testing.T) {
 
 func TestWithoutOpenat2TheFinalLinkIsStillRefused(t *testing.T) {
 	was := openat2
-	openat2 = func(int, string, *unix.OpenHow) (int, error) { return -1, unix.ENOSYS }
+	openat2 = func(int, string, *unix.OpenHow) (int, error) { return -1, unix.EPERM }
 	t.Cleanup(func() { openat2 = was })
+	warnFallback = sync.Once{}
+	var logged bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	dir := sockDir(t)
 	accepted := canarySocket(t, filepath.Join(dir, "canary.sock"))
 	exec := filepath.Join(dir, "exec.sock")
@@ -73,6 +82,12 @@ func TestWithoutOpenat2TheFinalLinkIsStillRefused(t *testing.T) {
 		t.Fatal("the fallback dialed through a symlink")
 	}
 	quiet(t, accepted)
+	if _, err := (Provider{Name: "t", Socket: exec, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err == nil {
+		t.Fatal("the fallback dialed through a symlink")
+	}
+	if n := strings.Count(logged.String(), "level=WARN"); n != 1 {
+		t.Fatalf("the fallback warned %d times over two opens, want once:\n%s", n, logged.String())
+	}
 	s := serve(t)
 	if _, err := (Provider{Name: "t", Socket: s.sock, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err != nil {
 		t.Fatalf("canary: the fallback cannot dial a real socket: %v", err)
