@@ -47,11 +47,11 @@ func TestPrintedFormKeepsDottedKeysWhole(t *testing.T) {
 }
 
 func TestFormTreeKeepsDottedKeysWhole(t *testing.T) {
-	root := buildFormTree(dottedCatalog())
+	root := newFormRoot(dottedCatalog())
 	var labels []string
 	var walk func(n *formNode)
 	walk = func(n *formNode) {
-		for _, c := range n.children {
+		for _, c := range n.kids() {
 			labels = append(labels, strings.Repeat(" ", c.depth)+c.label)
 			walk(c)
 		}

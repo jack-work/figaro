@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -86,13 +87,19 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 type formView struct {
 	mu        sync.Mutex
 	mirror    *formMirror
+	src       formSource
 	out       *os.File
 	aria      string
 	intrinsic string // "" is the host's own form
 	open      map[string]bool
+	openRev   uint64
 	wrapped   map[string]wrappedLines // an opened value, wrapped once
 	wraps     int
+	root      *formNode
 	rows      []*formNode
+	items     []pitRow
+	itemsKey  formItemsKey
+	rev       uint64
 	cursor    int
 	top       int
 	notice    string
@@ -100,6 +107,28 @@ type formView struct {
 	refetch   func() (*rpc.FormResponse, error)
 	closeConn func()
 	repaint   func() // the host's; the view never paints itself
+}
+
+type formSource interface {
+	Shown() form.Snapshot
+	Version() uint64
+}
+
+type formItemsKey struct {
+	root    form.Stamp
+	openRev uint64
+	width   int
+	notice  string
+}
+
+func (v *formView) source() formSource {
+	if v.src != nil {
+		return v.src
+	}
+	if v.mirror != nil {
+		return v.mirror
+	}
+	return &formMirror{}
 }
 
 func (v *formView) changed() {
@@ -142,35 +171,53 @@ func (v *formView) setNotice(text string) {
 }
 
 func (v *formView) Items(width int) []pitRow {
-	snap, version, gaps := v.mirror.state()
 	if width <= 0 {
 		width = 80
 	}
+	snap := v.source().Shown()
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
+	root := snap.RootNode()
+	key := formItemsKey{root: root.Stamp(), openRev: v.openRev, width: width, notice: v.notice}
+	if v.items != nil && key == v.itemsKey {
+		return v.items
+	}
+	if v.root == nil {
+		v.root = newFormRoot(snap)
+	} else {
+		v.root.take(root)
+		v.root.branch = true
+	}
+	v.rows = flattenFormTree(v.root, v.open, v.rows[:0])
 
 	out := make([]pitRow, 0, len(v.rows)+1)
 	if v.notice != "" {
 		out = append(out, staticRow(clipLine(v.notice, width)))
 	}
-	_, _ = version, gaps
 	for _, n := range v.rows {
-		yank := yankFormNode(n)
-		out = append(out, pitRow{text: renderFormRow(n, width, false), yank: yank, id: n.path})
+		n.width = width
+		out = append(out, pitRow{textFrom: n, yankFrom: n, id: n.path})
 		if !n.leaf() || !v.open[n.path] {
 			continue
 		}
 		indent := strings.Repeat("  ", n.depth)
 		for i, line := range v.wrappedValue(n, width-len(indent)-2) {
 			out = append(out, pitRow{
-				text: indent + line,
-				yank: yank,
-				id:   fmt.Sprintf("%s\x00%d", n.path, i),
+				text:     indent + line,
+				yankFrom: n,
+				id:       fmt.Sprintf("%s\x00%d", n.path, i),
 			})
 		}
 	}
+	v.items, v.itemsKey = out, key
+	v.rev++
 	return out
+}
+
+func (v *formView) Revision() uint64 {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.rev
 }
 
 // Items runs on every paint under the render lock: wrap once per value and width,
@@ -185,7 +232,7 @@ type wrappedLines struct {
 }
 
 func (v *formView) wrappedValue(n *formNode, width int) []string {
-	if c, ok := v.wrapped[n.path]; ok && c.width == width && bytes.Equal(c.raw, n.value) {
+	if c, ok := v.wrapped[n.path]; ok && c.width == width && sameBytes(c.raw, n.value) {
 		return c.lines
 	}
 	v.wraps++
@@ -199,6 +246,16 @@ func (v *formView) wrappedValue(n *formNode, width int) []string {
 	}
 	v.wrapped[n.path] = wrappedLines{raw: n.value, width: width, lines: lines}
 	return lines
+}
+
+func sameBytes(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 || &a[0] == &b[0] {
+		return true
+	}
+	return bytes.Equal(a, b)
 }
 
 // Value rows carry "<path>\x00<n>" so every row has an id of its own.
@@ -217,6 +274,7 @@ func (v *formView) Activate(id string) {
 	for _, n := range v.rows {
 		if n.path == path {
 			openBranch(n, v.open)
+			v.openRev++
 			return
 		}
 	}

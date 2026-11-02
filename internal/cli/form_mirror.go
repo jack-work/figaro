@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -77,6 +76,18 @@ func (m *formMirror) state() (form.Snapshot, uint64, int) {
 	return m.snap, m.version, m.gaps
 }
 
+func (m *formMirror) Shown() form.Snapshot {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.snap
+}
+
+func (m *formMirror) Version() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.version
+}
+
 // The expansion set is keyed by path, so a row keeps its state across a reorder.
 type formNode struct {
 	path     string
@@ -84,51 +95,97 @@ type formNode struct {
 	value    json.RawMessage
 	children []*formNode
 	depth    int
+	branch   bool
+	count    int
+
+	node      form.Node
+	stamp     form.Stamp
+	kidsStamp form.Stamp
+	kidsBuilt bool
+	row       string
+	rowWidth  int
+	width     int
 }
 
-func (n *formNode) leaf() bool { return len(n.children) == 0 }
+func (n *formNode) leaf() bool { return !n.branch && len(n.children) == 0 }
 
-func buildFormTree(snap form.Snapshot) *formNode {
-	root := &formNode{path: "", label: "form"}
-	raw, err := snap.MarshalJSON()
-	if err != nil {
-		return root
+func (n *formNode) size() int {
+	if n.branch {
+		return n.count
 	}
-	addFormChildren(root, raw)
-	sortFormTree(root)
+	return len(n.children)
+}
+
+func (n *formNode) take(fn form.Node) {
+	st := fn.Stamp()
+	if n.node.Valid() && n.stamp == st {
+		n.node = fn
+		return
+	}
+	n.node, n.stamp = fn, st
+	n.branch = fn.Branch()
+	n.rowWidth = 0
+	if n.branch {
+		n.count, n.value = fn.Len(), nil
+		return
+	}
+	n.count, n.children, n.kidsBuilt = 0, nil, false
+	n.value = fn.Value().Raw()
+}
+
+func (n *formNode) kids() []*formNode {
+	if !n.branch {
+		return n.children
+	}
+	if n.kidsBuilt && n.kidsStamp == n.stamp {
+		return n.children
+	}
+	old := n.children
+	next := make([]*formNode, 0, n.count)
+	i := 0
+	for c := range n.node.Children() {
+		key := c.Key()
+		for i < len(old) && old[i].label < key {
+			i++
+		}
+		var vn *formNode
+		if i < len(old) && old[i].label == key {
+			vn = old[i]
+			i++
+		} else {
+			path := key
+			if n.path != "" {
+				path = n.path + "." + key
+			}
+			vn = &formNode{path: path, label: key, depth: n.depth + 1}
+		}
+		vn.take(c)
+		next = append(next, vn)
+	}
+	n.children, n.kidsStamp, n.kidsBuilt = next, n.stamp, true
+	return next
+}
+
+func (n *formNode) rendered(width int) string {
+	if n.rowWidth != width {
+		n.row, n.rowWidth = renderFormRow(n, width, false), width
+	}
+	return n.row
+}
+
+func (n *formNode) yankText() string { return yankFormNode(n) }
+
+func (n *formNode) rowText() string { return n.rendered(n.width) }
+
+func newFormRoot(snap form.Snapshot) *formNode {
+	root := &formNode{path: "", label: "form"}
+	root.take(snap.RootNode())
+	root.branch = true
 	return root
 }
 
-func addFormChildren(parent *formNode, raw json.RawMessage) {
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil {
-		return
-	}
-	for key, value := range members {
-		path := key
-		if parent.path != "" {
-			path = parent.path + "." + key
-		}
-		n := &formNode{path: path, label: key, depth: parent.depth + 1}
-		var inner map[string]json.RawMessage
-		if json.Unmarshal(value, &inner) == nil && len(inner) > 0 {
-			addFormChildren(n, value)
-		} else {
-			n.value = value
-		}
-		parent.children = append(parent.children, n)
-	}
-}
-
-func sortFormTree(n *formNode) {
-	sort.SliceStable(n.children, func(i, j int) bool { return n.children[i].label < n.children[j].label })
-	for _, c := range n.children {
-		sortFormTree(c)
-	}
-}
-
 func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*formNode {
-	for _, c := range n.children {
+	for _, c := range n.kids() {
 		out = append(out, c)
 		if !c.leaf() && open[c.path] {
 			out = flattenFormTree(c, open, out)
@@ -143,7 +200,7 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	if n.leaf() {
 		line += ": " + formValuePreview(n.value)
 	} else {
-		line += fmt.Sprintf(" (%d)", len(n.children))
+		line += fmt.Sprintf(" (%d)", n.size())
 	}
 	// Columns, not bytes.
 	line = clipToWidthEllipsis(line, width)
@@ -251,25 +308,34 @@ func yankFormNode(n *formNode) string {
 	if n.leaf() {
 		return string(n.value)
 	}
-	out := map[string]any{}
-	var walk func(*formNode, map[string]any)
-	walk = func(node *formNode, into map[string]any) {
-		for _, c := range node.children {
-			if c.leaf() {
-				into[c.label] = json.RawMessage(c.value)
-				continue
-			}
-			sub := map[string]any{}
-			into[c.label] = sub
-			walk(c, sub)
+	var raw json.RawMessage
+	if n.node.Valid() {
+		enc, err := n.node.Encode()
+		if err != nil {
+			return ""
 		}
+		raw = enc
+	} else {
+		raw = encodeFormChildren(n)
 	}
-	walk(n, out)
-	b, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, raw, "", "  "); err != nil {
 		return ""
 	}
-	return string(b)
+	return buf.String()
+}
+
+func encodeFormChildren(n *formNode) json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for _, c := range n.children {
+		if c.leaf() {
+			out[c.label] = c.value
+			continue
+		}
+		out[c.label] = encodeFormChildren(c)
+	}
+	b, _ := json.Marshal(out)
+	return b
 }
 
 // OSC 52 works over ssh and in tmux without a helper binary; a terminal may refuse.

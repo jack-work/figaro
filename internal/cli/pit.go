@@ -26,10 +26,12 @@ func (s screen) lines(_ pitID, w, h int) []string {
 
 // A row with neither yank nor id is chrome and cannot be selected.
 type pitRow struct {
-	text string
-	yank string
-	id   string
-	aria string
+	text     string
+	textFrom interface{ rowText() string }
+	yank     string
+	yankFrom interface{ yankText() string }
+	id       string
+	aria     string
 	// note is drawn at full strength on the selected row: dim on a wash would
 	// not read.
 	note string
@@ -47,11 +49,28 @@ const (
 
 func staticRow(text string) pitRow { return pitRow{text: text} }
 
-func (r pitRow) selectable() bool { return r.yank != "" || r.id != "" }
+func (r pitRow) selectable() bool { return r.yank != "" || r.yankFrom != nil || r.id != "" }
+
+func (r pitRow) str() string {
+	if r.textFrom != nil {
+		return r.textFrom.rowText()
+	}
+	return r.text
+}
+
+func (r pitRow) yankText() string {
+	if r.yankFrom != nil {
+		return r.yankFrom.yankText()
+	}
+	return r.yank
+}
 
 type pit struct {
 	id    pitID
 	title string
+
+	liveRev   uint64
+	liveWidth int
 
 	body act
 	live cmdkit.LiveView
@@ -90,6 +109,10 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	switch view := v.(type) {
 	case itemView:
 		d.body = newPicker(view.Items(80))
+		d.liveRev, d.liveWidth = 0, 0
+		if rv, ok := v.(revisioned); ok {
+			d.liveRev, d.liveWidth = rv.Revision(), 80
+		}
 	case cmdkit.ScreenView:
 		d.body = screen{view}
 	default:
@@ -97,12 +120,22 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	}
 }
 
+type revisioned interface{ Revision() uint64 }
+
 func (d *pit) refreshLive(w int) {
 	iv, ok := d.live.(itemView)
 	if !ok || d.list() == nil {
 		return
 	}
-	d.list().setRows(iv.Items(w), "")
+	rows := iv.Items(w)
+	if rv, ok := d.live.(revisioned); ok {
+		rev := rv.Revision()
+		if rev == d.liveRev && w == d.liveWidth {
+			return
+		}
+		d.liveRev, d.liveWidth = rev, w
+	}
+	d.list().setRows(rows, "")
 }
 
 func (d *pit) showNote(text string) {

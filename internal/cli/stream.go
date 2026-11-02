@@ -1004,11 +1004,13 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 			in.tc.SetClipboard(text)
 			return keyHandled
 		}
-		if row, ok := in.lt.tr.pit.selected(); ok && row.yank != "" {
-			in.lt.tr.noteYank(row.yank)
-			in.mu.Unlock()
-			in.tc.SetClipboard(row.yank)
-			return keyHandled
+		if row, ok := in.lt.tr.pit.selected(); ok {
+			if text := row.yankText(); text != "" {
+				in.lt.tr.noteYank(text)
+				in.mu.Unlock()
+				in.tc.SetClipboard(text)
+				return keyHandled
+			}
 		}
 		// A visual selection is answered from the painted rows: no wire.
 		if in.lt.tr.visual.active() {

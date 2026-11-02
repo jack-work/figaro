@@ -105,7 +105,7 @@ func (p *picker) find(q string, dir int) bool {
 			continue
 		}
 		// The note is drawn, so it is searched.
-		if searchContains(p.rows[n].text, q) || searchContains(p.rows[n].note, q) {
+		if searchContains(p.rows[n].str(), q) || searchContains(p.rows[n].note, q) {
 			p.cursor = n
 			p.follow()
 			return true
@@ -297,7 +297,7 @@ func (p *picker) lines(id pitID, w, h int) []string {
 			prefix = mark + " "
 		}
 		// Every row passes pitText once.
-		text := prefix + pitText(p.rows[i].text)
+		text := prefix + pitText(p.rows[i].str())
 		if note := p.rows[i].note; note != "" {
 			if i == p.cursor {
 				text += "  " + pitText(note)
