@@ -42,3 +42,5 @@ func (a *Angelus) WaitPacedReclaimsForBench() {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func (a *Angelus) RetainFormsForBench(ctx context.Context) { a.retainForms(ctx, false) }

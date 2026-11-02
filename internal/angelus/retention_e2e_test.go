@@ -24,6 +24,10 @@ type formBearer interface {
 }
 
 func longForm(t *testing.T, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) (formID, child string, pin uint64, born string) {
+	return longFormTB(t, a, acli, ctx)
+}
+
+func longFormTB(t testing.TB, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) (formID, child string, pin uint64, born string) {
 	t.Helper()
 	b := a.Backend.(formBearer)
 	seed := form.Build(form.Snapshot{}, map[string]json.RawMessage{"seed": json.RawMessage(`0`)}, nil)
