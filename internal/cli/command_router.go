@@ -161,6 +161,9 @@ func (in *interactiveInput) execCommand(line string) {
 		in.runLive(name, spec)
 		return
 	}
+	if in.editShownForm(argv) {
+		return
+	}
 	if len(argv) > 1 && terminalSubverbs[verb+" "+argv[1]] {
 		in.note(verb + " " + argv[1] + ": not available inside the pager (it reads the keyboard)")
 		return
@@ -540,6 +543,7 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 		}
 		view.closeConn = closeView
 		view.repaint = in.renderLocked
+		view.change = func() { pitChange(in.lt.tr) }
 		in.mu.Lock()
 		in.lt.tr.showLivePit(name, view, full)
 		in.mu.Unlock()

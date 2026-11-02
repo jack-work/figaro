@@ -74,6 +74,9 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		defer rcancel()
 		return fcli.FormOf(rctx, intrinsic)
 	}
+	if intrinsic == "" {
+		view.src = wireFormSource{formMirror: mirror, aria: fcli}
+	}
 	view.resync()
 	return view, func() { fcli.Close(); acli.Close(); cancel() }, nil
 }
@@ -107,11 +110,16 @@ type formView struct {
 	refetch   func() (*rpc.FormResponse, error)
 	closeConn func()
 	repaint   func() // the host's; the view never paints itself
+	change    func() // the host's: fill its : line from the selected row
 }
 
 type formSource interface {
 	Shown() form.Snapshot
 	Version() uint64
+}
+
+type formEditor interface {
+	Edit(form.Patch) error
 }
 
 type formItemsKey struct {
