@@ -42,8 +42,7 @@ type FormInput struct {
 	Outfits []string `json:"outfits,omitempty"`
 }
 
-// FormDeltaSchema versions the envelope, not the patch.
-const FormDeltaSchema = 1
+const FormDeltaSchema = 2
 
 // FormDelta is the same shape in both directions: what a client sends as
 // {patch, if_version} comes back as {patch, version}.

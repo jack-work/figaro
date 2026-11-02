@@ -139,7 +139,6 @@ func (p Patch) Inverse() Patch {
 	return Patch{}
 }
 
-// Apply: apply(diff(A,B), A) = B.
 func (p Patch) Apply(v Value) (Value, error) {
 	switch {
 	case p.Scalar != nil:
@@ -147,49 +146,33 @@ func (p Patch) Apply(v Value) (Value, error) {
 	case p.Object != nil:
 		return p.applyObject(v)
 	case p.List != nil:
-		return p.applyList(v)
+		return p.List.apply(v), nil
 	}
 	return v, nil
 }
 
 func (p Patch) applyObject(v Value) (Value, error) {
-	src, isObj := v.members()
-	if !isObj && len(v.Raw()) > 0 && string(v.Raw()) != "null" {
-		return Value{}, fmt.Errorf("object patch against a non-object")
+	var t ptree
+	if _, isObj := v.members(); isObj {
+		t = leafOrBranch("", v).kids
+	} else if !nullish(v) || p.IsIdentity() {
+		return v, nil
 	}
-	// members() is a shared memo; copy before mutating.
-	obj := make(map[string]Value, len(src)+len(p.Object.Set))
-	for k, val := range src {
-		obj[k] = val
+	next, changed := applyObjectToTree(t, p.Object)
+	if _, isObj := v.members(); isObj && !changed {
+		return v, nil
 	}
-	for k, nv := range p.Object.Set {
-		// An equal value keeps the stored bytes: providers cache on exact bytes.
-		if cur, ok := obj[k]; ok && cur.Equal(nv) {
-			continue
-		}
-		obj[k] = nv
-	}
-	for k := range p.Object.Delete {
-		delete(obj, k)
-	}
-	for k, child := range p.Object.Update {
-		cur, ok := obj[k]
-		if !ok {
-			cur = NewValue(json.RawMessage(`{}`))
-		}
-		next, err := child.Apply(cur)
-		if err != nil {
-			return Value{}, fmt.Errorf("%s: %w", k, err)
-		}
-		obj[k] = next
-	}
-	return encodeObject(obj), nil
-}
-
-func (p Patch) applyList(v Value) (Value, error) {
-	items, err := decodeList(v)
+	raw, err := encodeTree(next)
 	if err != nil {
 		return Value{}, err
+	}
+	return NewValue(raw), nil
+}
+
+func (l *ListPatch) apply(v Value) Value {
+	items, err := decodeList(v)
+	if err != nil {
+		return v
 	}
 	byKey := make(map[string]Value, len(items))
 	order := make([]string, 0, len(items))
@@ -197,39 +180,39 @@ func (p Patch) applyList(v Value) (Value, error) {
 		byKey[it.Key] = it.Value
 		order = append(order, it.Key)
 	}
-	for _, c := range p.List.Create {
-		if _, exists := byKey[c.Key]; exists {
-			return Value{}, fmt.Errorf("create of existing key %q", c.Key)
+	for _, d := range l.Delete {
+		if _, ok := byKey[d.Key]; ok {
+			delete(byKey, d.Key)
+			order = removeKey(order, d.Key)
+		}
+	}
+	for _, c := range l.Create {
+		if _, exists := byKey[c.Key]; !exists {
+			order = append(order, c.Key)
 		}
 		byKey[c.Key] = c.Value
-		order = append(order, c.Key)
 	}
-	for _, d := range p.List.Delete {
-		if _, ok := byKey[d.Key]; !ok {
-			return Value{}, fmt.Errorf("delete of absent key %q", d.Key)
-		}
-		delete(byKey, d.Key)
-		order = removeKey(order, d.Key)
-	}
-	for k, child := range p.List.Update {
+	for k, child := range l.Update {
 		cur, ok := byKey[k]
 		if !ok {
-			return Value{}, fmt.Errorf("update of absent key %q", k)
+			continue
 		}
-		next, err := child.Apply(cur)
-		if err != nil {
-			return Value{}, fmt.Errorf("%s: %w", k, err)
+		if next, err := child.Apply(cur); err == nil {
+			byKey[k] = next
 		}
-		byKey[k] = next
 	}
-	if p.List.Order != nil {
-		order = applyOrder(order, p.List.Order)
+	if l.Order != nil {
+		order = applyOrder(order, l.Order)
 	}
 	out := make([]KeyedValue, 0, len(order))
 	for _, k := range order {
 		out = append(out, KeyedValue{Key: k, Value: byKey[k]})
 	}
-	return encodeList(out)
+	enc, err := encodeList(out)
+	if err != nil {
+		return v
+	}
+	return enc
 }
 
 // applyOrder fills the seats the declared keys occupied, in declared order;
@@ -265,6 +248,9 @@ func applyOrder(cur []string, o *Order) []string {
 // Order windows are relative to the post-edit sequence, so a list whose
 // membership and order both change does not compose without the base.
 func Merge(p, q Patch) Patch {
+	if m, ok := TryMerge(p, q); ok {
+		return m
+	}
 	switch {
 	case p.IsIdentity():
 		return q
@@ -293,7 +279,7 @@ func Merge(p, q Patch) Patch {
 		}
 		return Patch{Scalar: &ScalarPatch{Before: before, After: q.Scalar.After}}
 	}
-	return q
+	return p
 }
 
 func mergeObject(p, q *ObjectPatch) *ObjectPatch {
@@ -308,24 +294,20 @@ func mergeObject(p, q *ObjectPatch) *ObjectPatch {
 	for k, v := range p.Delete {
 		out.Delete[k] = v
 	}
+	out.New = map[string]bool{}
 	for k, c := range p.Update {
 		out.Update[k] = c
+		out.New[k] = p.New[k]
 	}
 	for k, v := range q.Set {
-		if old, wasDeleted := out.Delete[k]; wasDeleted {
-			delete(out.Delete, k)
-			out.Update[k] = Patch{Scalar: &ScalarPatch{Before: old, After: v}}
-			continue
-		}
+		delete(out.Update, k)
+		delete(out.New, k)
 		out.Set[k] = v
 	}
 	for k, v := range q.Delete {
-		if _, wasSet := out.Set[k]; wasSet {
-			delete(out.Set, k)
-			delete(out.Update, k)
-			continue
-		}
+		delete(out.Set, k)
 		delete(out.Update, k)
+		delete(out.New, k)
 		out.Delete[k] = v
 	}
 	for k, c := range q.Update {
@@ -337,9 +319,11 @@ func mergeObject(p, q *ObjectPatch) *ObjectPatch {
 		}
 		if prior, ok := out.Update[k]; ok {
 			out.Update[k] = Merge(prior, c)
+			out.New[k] = out.New[k] || q.New[k]
 			continue
 		}
 		out.Update[k] = c
+		out.New[k] = q.New[k]
 	}
 	return compactObject(out)
 }
@@ -445,6 +429,14 @@ func compactObject(o *ObjectPatch) *ObjectPatch {
 	}
 	if len(o.Update) == 0 {
 		o.Update = nil
+	}
+	for k, isNew := range o.New {
+		if _, ok := o.Update[k]; !ok || !isNew {
+			delete(o.New, k)
+		}
+	}
+	if len(o.New) == 0 {
+		o.New = nil
 	}
 	return o
 }

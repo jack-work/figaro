@@ -3,6 +3,7 @@
 package form
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"iter"
@@ -197,7 +198,12 @@ func diffTrees(prev, next ptree) Patch {
 		case old == nil:
 			if n.branch {
 				child := diffTrees(ptree{}, n.kids)
-				if !child.IsIdentity() {
+				if child.IsIdentity() {
+					if out.Set == nil {
+						out.Set = map[string]Value{}
+					}
+					out.Set[n.key] = NewValue(json.RawMessage(`{}`))
+				} else {
 					if out.Update == nil {
 						out.Update = map[string]Patch{}
 					}
@@ -275,63 +281,87 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 // applyToTree rebuilds only the nodes the patch names; the rest keep their
 // pointers, which is what keeps Diff cheap.
 func applyToTree(t ptree, p Patch) (ptree, bool) {
-	if p.Object == nil {
-		if p.IsIdentity() {
+	switch {
+	case p.Object != nil:
+		return applyObjectToTree(t, p.Object)
+	case p.Scalar != nil:
+		if _, isObj := p.Scalar.After.members(); !isObj {
 			return t, false
 		}
-		// A scalar or list patch replaces the whole form.
-		next, err := p.Apply(NewValue(mustEncode(t)))
-		if err != nil {
+		next := leafOrBranch("", p.Scalar.After).kids
+		if diffTrees(t, next).IsIdentity() {
 			return t, false
 		}
-		out, err := treeFromJSON(next.Raw())
-		if err != nil {
-			return t, false
-		}
-		return out, true
+		return next, true
 	}
+	return t, false
+}
+
+func applyObjectToTree(t ptree, o *ObjectPatch) (ptree, bool) {
 	changed := false
-	for k, v := range p.Object.Set {
+	for k := range o.Delete {
+		if root, found := deleteNode(t.root, k); found {
+			t, changed = ptree{root: root}, true
+		}
+	}
+	for k, v := range o.Set {
 		if cur := lookupExact(t.root, k); cur != nil && !cur.branch && cur.value.Equal(v) {
 			continue
 		}
 		t = ptree{root: setEntry(t.root, leafOrBranch(k, v))}
 		changed = true
 	}
-	for k := range p.Object.Delete {
-		if root, found := deleteNode(t.root, k); found {
-			t, changed = ptree{root: root}, true
-		}
-	}
-	for k, child := range p.Object.Update {
-		cur := lookupExact(t.root, k)
-		var kids ptree
-		leafHere := cur != nil && !cur.branch
-		if cur != nil && cur.branch {
-			kids = cur.kids
-		}
-		if cur != nil && cur.branch && child.Scalar != nil {
-			t = ptree{root: setEntry(t.root, leafOrBranch(k, child.Scalar.After))}
-			changed = true
+	for k, child := range o.Update {
+		next, ok := applyAt(lookupExact(t.root, k), k, child)
+		if !ok {
 			continue
 		}
-		if leafHere {
-			next, err := child.Apply(cur.value)
-			if err != nil || next.Equal(cur.value) {
-				continue
-			}
-			t = ptree{root: setEntry(t.root, leafOrBranch(k, next))}
-			changed = true
-			continue
-		}
-		sub, subChanged := applyToTree(kids, child)
-		if !subChanged && cur != nil {
-			continue
-		}
-		t = ptree{root: setEntry(t.root, &node{key: k, kids: sub, branch: true})}
+		t = ptree{root: setEntry(t.root, next)}
 		changed = true
 	}
 	return t, changed
+}
+
+func applyAt(cur *node, key string, p Patch) (*node, bool) {
+	if p.IsIdentity() {
+		return nil, false
+	}
+	switch {
+	case p.Scalar != nil:
+		if cur != nil && !cur.branch && cur.value.Equal(p.Scalar.After) {
+			return nil, false
+		}
+		return leafOrBranch(key, p.Scalar.After), true
+	case p.Object != nil:
+		var kids ptree
+		switch {
+		case cur == nil:
+		case cur.branch:
+			kids = cur.kids
+		case !nullish(cur.value):
+			return nil, false
+		}
+		sub, changed := applyObjectToTree(kids, p.Object)
+		if !changed && cur != nil && cur.branch {
+			return nil, false
+		}
+		return &node{key: key, kids: sub, branch: true}, true
+	case p.List != nil:
+		if cur == nil || cur.branch {
+			return nil, false
+		}
+		next := p.List.apply(cur.value)
+		if next.Equal(cur.value) {
+			return nil, false
+		}
+		return leafOrBranch(key, next), true
+	}
+	return nil, false
+}
+
+func nullish(v Value) bool {
+	raw := bytes.TrimSpace(v.Raw())
+	return len(raw) == 0 || string(raw) == "null"
 }
 
 func asNestedObject(v json.RawMessage) (json.RawMessage, bool) {

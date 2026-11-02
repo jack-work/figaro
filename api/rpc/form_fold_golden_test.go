@@ -19,6 +19,7 @@ import (
 // folds and this fails until FormDeltaSchema is bumped and its digest added.
 var foldDigests = map[int]string{
 	1: "c44385b83f4528677c816e09e5a3202eeec6c770b3f964ec3413f32e6176c313",
+	2: "03d49112826bbc3effd53edee9bd856e365d853327c94d2b99cdc3e3e6cd0062",
 }
 
 var foldKeys = []string{"a", "b", "c"}

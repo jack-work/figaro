@@ -98,8 +98,10 @@ func TestMerge_QWinsOnConflict(t *testing.T) {
 	}, []string{"b"})
 	merged := form.Merge(p, q)
 	assert.Equal(t, raw(t, 100), json.RawMessage(mustEntry(merged, "a")), "q wins on conflicting Set")
-	_, hasB := merged.Entry("b")
-	assert.False(t, hasB, "q's Remove cancels p's Set of the same key")
+	b, hasB := merged.Entry("b")
+	assert.True(t, hasB && b.IsRemoval(), "q's Remove survives p's Set: b may have existed before p")
+	_, stays := form.Snapshot{}.Apply(merged).Get("b")
+	assert.False(t, stays, "b is gone after the merged patch")
 }
 
 func TestEntries_DeterministicOrder(t *testing.T) {

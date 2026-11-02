@@ -53,7 +53,9 @@ its shape. `fig status @a5af1a83` answers the other question: what this
 node IS (form, role, or figaro), its name and version, how many keys it
 holds, and, for a role, where it points and whether that aria is live,
 dormant or gone. `fig form listen @a5af1a83` watches it live (deltas ride
-`form.delta`; reconnect resyncs).
+`form.delta`; reconnect resyncs). Each delta names its form schema, which moves whenever
+the rules for folding a patch change (2 since 0.53); a client of another
+schema stops tracking and says so rather than fold it its own way.
 
 **Write.** The same verbs an aria's bound form uses:
 
