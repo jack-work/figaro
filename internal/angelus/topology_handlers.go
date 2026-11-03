@@ -663,6 +663,25 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 
 // RemoveAria is the whole of a deletion: agent, background sessions, bytes, endpoint.
 func (h *handlers) RemoveAria(id string, recursive bool) error {
+	return h.removeAria(id, recursive, nil)
+}
+
+func (h *handlers) RemoveAriaIf(id string, expect []string) error {
+	return h.removeAria(id, true, expect)
+}
+
+func (h *handlers) removeAria(id string, recursive bool, expect []string) error {
+	type decidedRemover interface {
+		RemoveIf(ariaID string, expect []string) error
+	}
+	dr, decided := h.angelus.Backend.(decidedRemover)
+	if expect != nil && decided {
+		if keeper, ok := h.angelus.Backend.(interface{ DeleteSet(string) []string }); ok {
+			if now := keeper.DeleteSet(id); !sameMembers(orSelf(now, id), expect) {
+				return fmt.Errorf("%w: %q", store.ErrDeleteSetChanged, id)
+			}
+		}
+	}
 	if h.angelus.Registry.Get(id) != nil {
 		if err := h.angelus.Registry.Kill(id); err != nil {
 			return err
@@ -681,7 +700,11 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 			removed = append(removed, h.subtree(id)...)
 		}
 		held = h.ownWorkspaces(removed)
-		if err := h.angelus.Backend.Remove(id, recursive); err != nil {
+		remove := func() error { return h.angelus.Backend.Remove(id, recursive) }
+		if expect != nil && decided {
+			remove = func() error { return dr.RemoveIf(id, expect) }
+		}
+		if err := remove(); err != nil {
 			return err
 		}
 	}
@@ -698,4 +721,28 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 
 func mintedBy(ctx context.Context) store.BirthOption {
 	return store.MintedBy(authz.PrincipalText(authz.PrincipalOf(ctx)))
+}
+
+func orSelf(ids []string, id string) []string {
+	if len(ids) == 0 {
+		return []string{id}
+	}
+	return ids
+}
+
+func sameMembers(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, id := range a {
+		seen[id]++
+	}
+	for _, id := range b {
+		if seen[id] == 0 {
+			return false
+		}
+		seen[id]--
+	}
+	return true
 }

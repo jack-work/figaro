@@ -990,12 +990,19 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 }
 
 func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) error {
+	return s.RemoveLeafIf(id, recursive, nil, bury)
+}
+
+func (s *XwalStore) RemoveLeafIf(id string, recursive bool, expect []string, bury func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
 	// Refuse before touching anything: the boundary repair rewrites surviving arias.
 	taken := s.tree.DeleteSet(id)
 	if !recursive && len(taken) > 1 {
 		return fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
+	}
+	if expect != nil && !sameIDs(orSelf(taken, id), expect) {
+		return fmt.Errorf("%w: %q takes %v, decided on %v", ErrDeleteSetChanged, id, taken, expect)
 	}
 	if bury != nil {
 		bury(taken)
@@ -1237,3 +1244,27 @@ func (s *XwalStore) formTail(id string) (uint64, bool) {
 // HandleIdleForTest reads the variable the store consults, so a config test
 // can tell a wired knob from an unwired one.
 func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load()) }
+
+func sameIDs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, id := range a {
+		seen[id]++
+	}
+	for _, id := range b {
+		if seen[id] == 0 {
+			return false
+		}
+		seen[id]--
+	}
+	return true
+}
+
+func orSelf(ids []string, id string) []string {
+	if len(ids) == 0 {
+		return []string{id}
+	}
+	return ids
+}

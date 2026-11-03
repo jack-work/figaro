@@ -231,6 +231,10 @@ func (hs *Handlers) RemoveAria(id string, recursive bool) error {
 	return hs.h.RemoveAria(id, recursive)
 }
 
+func (hs *Handlers) RemoveAriaIf(id string, expect []string) error {
+	return hs.h.RemoveAriaIf(id, expect)
+}
+
 func (hs *Handlers) RequireAria(ariaID string) error {
 	return hs.h.requireAria(ariaID)
 }

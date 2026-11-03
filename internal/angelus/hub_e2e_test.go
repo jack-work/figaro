@@ -95,6 +95,7 @@ func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store
 	})
 	a.Handlers = hs.Map
 	a.RemoveAria = hs.RemoveAria
+	a.RemoveAriaIf = hs.RemoveAriaIf
 
 	go a.Run(ctx)
 	t.Cleanup(func() { a.Shutdown(0) })

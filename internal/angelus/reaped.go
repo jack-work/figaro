@@ -120,7 +120,7 @@ func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
 			return err
 		}
 	}
-	if err := a.RemoveAria(g.root, true); err != nil {
+	if err := a.removeDecided(g.root, orSelf(keeper.DeleteSet(g.root), g.root)); err != nil {
 		return err
 	}
 	keeper.TTLForget(g.root)

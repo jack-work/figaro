@@ -21,6 +21,8 @@ var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
 // ErrHasBranches is checked before anything is written: the boundary repair a delete performs cannot be taken back.
 var ErrHasBranches = errors.New("aria has live branches")
 
+var ErrDeleteSetChanged = errors.New("the nodes a delete takes changed since it was decided")
+
 // VersionedPatch carries a patch's durable version: its index in the (unkeyed) form channel.
 type VersionedPatch struct {
 	Version uint64

@@ -390,6 +390,7 @@ func Run() {
 	})
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria
+	a.RemoveAriaIf = handlers.RemoveAriaIf
 
 	if err := serveWebDoor(ctx, a, loaded); err != nil {
 		slog.Error("angelus web door", "err", err)

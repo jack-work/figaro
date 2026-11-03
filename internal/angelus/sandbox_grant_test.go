@@ -140,6 +140,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	}
 	a.Handlers = hs.Map
 	a.RemoveAria = hs.RemoveAria
+	a.RemoveAriaIf = hs.RemoveAriaIf
 	return grantRig{h: h, backend: backend, cwd: t.TempDir(), policy: policy, a: a}
 }
 

@@ -113,7 +113,7 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 	if g := a.purgeGraceIn(a.sandboxOf(e.ID), a.Settings.ReapedGrace()); g > 0 {
 		return a.softDelete(e, taken, g)
 	}
-	if err := a.RemoveAria(e.ID, true); err != nil {
+	if err := a.removeDecided(e.ID, taken); err != nil {
 		return err
 	}
 	keeper.TTLForget(e.ID)
@@ -271,4 +271,16 @@ func (h *handlers) refuseRetired(method, id string, params json.RawMessage) erro
 	}
 	return fmt.Errorf("%w: %s retired %s; it takes no prompts (figaro retire --undo %s)",
 		ErrRetired, id, time.UnixMilli(meta.RetiredAtMS).Format(time.RFC3339), id)
+}
+
+func (a *Angelus) removeDecided(id string, taken []string) error {
+	if a.RemoveAriaIf == nil {
+		return a.RemoveAria(id, true)
+	}
+	err := a.RemoveAriaIf(id, taken)
+	if errors.Is(err, store.ErrDeleteSetChanged) {
+		slog.Info("delete not taken: the nodes it would take changed since the decision", "node", id)
+		return errNotYet
+	}
+	return err
 }

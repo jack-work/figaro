@@ -1081,6 +1081,10 @@ func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	return b.store.RemoveLeaf(ariaID, recursive, b.bury)
 }
 
+func (b *XwalBackend) RemoveIf(ariaID string, expect []string) error {
+	return b.store.RemoveLeafIf(ariaID, true, expect, b.bury)
+}
+
 // bury tombstones each doomed form, then forgets the aria's caches, for every
 // id in the set: a recursive delete must not leave children's forms resident,
 // pointed at files that no longer exist.
