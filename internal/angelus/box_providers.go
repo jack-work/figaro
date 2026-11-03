@@ -16,7 +16,7 @@ func (h *handlers) providerAllowedIn(sandboxName, prov string) error {
 		return nil
 	}
 	b, ok := loaded.Box(sandboxName)
-	if !ok || b.Providers == nil || slices.Contains(b.Providers, prov) {
+	if !ok || b.Providers == nil || b.AnyProvider() || slices.Contains(b.Providers, prov) {
 		return nil
 	}
 	return fmt.Errorf("box %s does not allow provider %q (sandbox.boxes.%s.providers)", sandboxName, prov, sandboxName)

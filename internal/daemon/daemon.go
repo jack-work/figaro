@@ -442,6 +442,13 @@ func serveBoxDoors(ctx context.Context, a *angelus.Angelus, loaded *config.Loade
 	doors := loaded.BoxDoors()
 	for _, name := range loaded.DooredBoxes() {
 		path := doors[name]
+		if err := loaded.BoxDoorWithoutLists(name); err != nil {
+			slog.Error("box door refused", "box", name, "err", err)
+			continue
+		}
+		if b, _ := loaded.Box(name); b.AnyOutfit() || b.AnyProvider() {
+			slog.Info("box door opens with an open list", "box", name, "any_outfit", b.AnyOutfit(), "any_provider", b.AnyProvider())
+		}
 		if path == filepath.Clean(a.SocketPath) {
 			return fmt.Errorf("sandbox.boxes.%s.door: %s is the CLI door", name, path)
 		}

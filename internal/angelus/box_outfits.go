@@ -17,7 +17,7 @@ func (h *handlers) refuseBoxOutfits(ctx context.Context, outfits []string, mints
 		return nil
 	}
 	b, ok := loaded.Box(box)
-	if !ok || b.Outfits == nil {
+	if !ok || b.Outfits == nil || b.AnyOutfit() {
 		return nil
 	}
 	allowed := strings.Join(b.Outfits, ", ")

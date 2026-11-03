@@ -361,15 +361,21 @@ local door as the owner (issue #57).
 **Box providers.** `[sandbox.boxes.<name>] providers = [...]` names the
 providers an aria in that box may run on. Anything else is refused where the
 provider is resolved: at birth, at wake, on a rebind, and for a decision
-asked by the box or for an aria in it. Unset keeps every provider.
+asked by the box or for an aria in it. A box with a door must set it; see
+below.
 
 **Box outfits.** `[sandbox.boxes.<name>] outfits = [...]` names the outfits
 a box may dress in. A box naming any other outfit is refused at create, fork,
 set, prompt, cast and form.create/bind. Whatever mints an aria from the box
 names a listed outfit, or is refused with the list: create and form.bind
 always, and a fork unless it is a head fork of a conversation, which carries
-its parent's dress. No implicit default. Unset keeps every outfit; the owner is
-never limited by it.
+its parent's dress. No implicit default. The owner is never limited by it.
+
+**A door needs both lists.** A box with a `door` and no `outfits` or no
+`providers` list gets no door: the daemon logs "box door refused" naming the
+box and the missing list, and opens the other doors. A list of exactly
+`["*"]` allows any outfit or any provider, logged when the door opens; `"*"`
+beside names is a config error. A box without a door needs neither.
 
 **Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long
 a reaped or killed aria in that box waits before it is purged, in place of
