@@ -22,6 +22,10 @@ type OAuthSettings struct {
 	Flow        string   `toml:"flow,omitempty"`
 	Discovery   string   `toml:"discovery,omitempty"`
 	RedirectURI string   `toml:"redirect_uri,omitempty"`
+	// CodeRelay is where figaro collects the authorization code that the
+	// browser delivered to RedirectURI, by long-polling it with its own state.
+	// It lets a sign-in finish in a browser on another machine with no paste.
+	CodeRelay string `toml:"code_relay,omitempty"`
 }
 
 type oidcConfiguration struct {

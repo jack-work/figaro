@@ -102,6 +102,7 @@ scopes    = ["openid", "profile", "groups"]   # the device flow adds offline_acc
 flow      = "device"                       # the default, or "pkce" (below)
 # discovery = "http://.../.well-known/..." # fills issuer, client_id, scopes the file leaves out
 # redirect_uri = "https://login.example/callback"  # pkce only: sign in from another machine (below)
+# code_relay   = "https://login.example/code"      # with redirect_uri: no paste needed (below)
 ```
 
 ```sh
@@ -143,6 +144,18 @@ the token endpoint. The page needs no secret and should post nothing: the code
 is useless without the verifier, which never leaves figaro. The URI must be
 https (plain http only on a loopback address), and the IdP must allow exactly
 that URI for the client.
+
+`code_relay` (with `redirect_uri`) removes the paste. The page at `redirect_uri`
+keeps `state -> code` briefly, and figaro long-polls
+`GET <code_relay>?state=<its state>` until the code arrives. The relay answers
+`200` with `{"state": "...", "code": "..."}` (or `"error"` and
+`"error_description"` for an IdP refusal), only once, and `404` for any state
+it holds nothing for: not arrived yet, unknown, expired, or already collected.
+figaro keeps polling on `404` until the login's deadline, backs off on `5xx`,
+and refuses an answer whose `state` is not its own. The paste prompt stays
+open at the same time, and whichever answers first wins. The relay needs no
+credential: `state` is random, and a code is useless without this login's
+verifier. Same transport rule as `redirect_uri`.
 
 Without `[oauth]`, the provider takes `api_key`, or the variable
 `api_key_env` names, and may run keyless, as `gateway` does.

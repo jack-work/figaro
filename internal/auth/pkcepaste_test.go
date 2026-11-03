@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const pasteRedirect = "https://login.band.internal/callback"
+const pasteRedirect = "https://login.example/callback"
 
 func (p *pkceIdP) pasteConfig(t *testing.T) PKCEConfig {
 	t.Helper()
@@ -57,7 +57,7 @@ func TestPKCEConfigCarriesTheRedirectURI(t *testing.T) {
 
 func TestPKCEConfigRefusesARedirectThatWouldCarryTheCodeInPlaintext(t *testing.T) {
 	p := newPKCEIdP(t)
-	for _, bad := range []string{"http://login.band.internal/callback", "login.band.internal/callback", "/callback"} {
+	for _, bad := range []string{"http://login.example/callback", "login.example/callback", "/callback"} {
 		_, err := OAuthSettings{Issuer: p.srv.URL, ClientID: "rou2", Flow: FlowPKCE, RedirectURI: bad}.PKCEConfig("band")
 		require.Error(t, err, bad)
 		assert.Contains(t, err.Error(), "redirect_uri", bad)
@@ -111,12 +111,12 @@ func TestLoginPKCEWithARedirectURIRefusesAPasteWithTheWrongState(t *testing.T) {
 func TestLoginPKCEWithARedirectURIReportsTheIdPsRefusal(t *testing.T) {
 	p := newPKCEIdP(t)
 	open, read, _ := p.pasteUser(t, func(state string) string {
-		return redirectedURL(url.Values{"error": {"access_denied"}, "error_description": {"not in rou2_users"}, "state": {state}})
+		return redirectedURL(url.Values{"error": {"access_denied"}, "error_description": {"not in the allowed group"}, "state": {state}})
 	})
 	_, err := loginPKCE(context.Background(), p.pasteConfig(t), open, 10*time.Second, read)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "access_denied")
-	assert.Contains(t, err.Error(), "not in rou2_users")
+	assert.Contains(t, err.Error(), "not in the allowed group")
 	assert.Nil(t, p.tokenForm)
 }
 
