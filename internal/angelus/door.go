@@ -198,6 +198,7 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		conn.Close()
 		return
 	}
+	defer conn.Close()
 	f := &follower{hubs: map[*ariaHub]struct{}{}}
 	f.srv = jkrpc.NewServer(jkrpc.NewConn(capFrames(conn, maxDoorFrame)), a.Handlers)
 	defer f.close()
