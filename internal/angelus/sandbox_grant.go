@@ -243,7 +243,7 @@ func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) 
 	}
 	out := rows[:0]
 	for _, r := range rows {
-		if r.State == "anchor" || h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
+		if h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
 			out = append(out, r)
 		}
 	}
