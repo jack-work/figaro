@@ -339,9 +339,6 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if req.Patch == nil || req.Patch.IsIdentity() {
-		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
-	}
 	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
@@ -356,6 +353,9 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
+	}
+	if patch.IsIdentity() {
+		return nil, fmt.Errorf("form.create: a form is born of its patch and outfits; an empty one names nothing")
 	}
 	if patch, err = h.holdInCallerBox(ctx, patch); err != nil {
 		return nil, fmt.Errorf("form.create: %w", err)
