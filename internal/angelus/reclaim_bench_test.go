@@ -56,11 +56,9 @@ func BenchmarkLifetimeSweepWith200Due(b *testing.B) {
 // GC must not take the door down: round trips while 200 removals run against
 // the same store, compared with an idle daemon.
 func BenchmarkDoorRoundTripWhileReclaiming(b *testing.B) {
-	for _, reclaiming := range []bool{false, true} {
-		name := "idle"
-		if reclaiming {
-			name = "reclaiming"
-		}
+	for _, mode := range []string{"idle", "reclaiming", "reclaiming-batched"} {
+		name := mode
+		reclaiming := mode != "idle"
 		b.Run(name, func(b *testing.B) {
 			a, acli, ctx := hardDeleteFixture(b)
 			waitRolesReadyTB(b, a)
@@ -73,7 +71,15 @@ func BenchmarkDoorRoundTripWhileReclaiming(b *testing.B) {
 			var wg sync.WaitGroup
 			if reclaiming {
 				wg.Add(1)
-				go func() { defer wg.Done(); a.ExpireTTLForBench(); a.WaitPacedReclaimsForBench() }()
+				go func() {
+					defer wg.Done()
+					a.ExpireTTLForBench()
+					if mode == "reclaiming-batched" {
+						a.WaitReclaimsForBench()
+						return
+					}
+					a.WaitPacedReclaimsForBench()
+				}()
 			}
 			lat := make([]time.Duration, 0, b.N)
 			b.ResetTimer()
