@@ -201,6 +201,11 @@ func runDoctorMem(asJSON, collect bool) error {
 	fmt.Fprintf(stdout, "figwal     loaded-heads=%d  segment-cache=%s of %s  loads=%d\n",
 		m.LoadedHeads, humanBytes(m.SegmentCacheBytes),
 		humanBytes(m.SegmentCacheBudget), m.SegmentCacheLoads)
+	if m.PendingRemovals > 0 {
+		fmt.Fprintf(stdout, "           removals waiting on readers=%d  heads=%d  oldest=%s\n",
+			m.PendingRemovals, m.PendingRemovalHeads,
+			(time.Duration(m.OldestPendingRemovalMS) * time.Millisecond).Round(time.Second))
+	}
 	if m.UIWindowBudget > 0 {
 		fmt.Fprintf(stdout, "ui window  resident=%s of %s  evictions=%d\n",
 			humanBytes(m.UIWindowBytes), humanBytes(m.UIWindowBudget), m.UIWindowEvictions)

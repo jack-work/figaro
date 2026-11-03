@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // PprofEnv arms the profiler. Off by default: a profile stops the world and
@@ -103,6 +104,18 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	}
 	if fp, ok := a.Backend.(interface{ ResidentFormPatches() int }); ok {
 		st.ResidentFormPatches = fp.ResidentFormPatches()
+	}
+	if pr, ok := a.Backend.(interface {
+		PendingRemovals() []store.PendingRemoval
+	}); ok {
+		pending := pr.PendingRemovals()
+		st.PendingRemovals = len(pending)
+		for _, p := range pending {
+			st.PendingRemovalHeads += p.Heads
+		}
+		if len(pending) > 0 {
+			st.OldestPendingRemovalMS = time.Since(pending[0].Since).Milliseconds()
+		}
 	}
 	if lh, ok := a.Backend.(interface{ LoadedHeads() int }); ok {
 		st.LoadedHeads = lh.LoadedHeads()

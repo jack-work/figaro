@@ -1168,6 +1168,8 @@ func (b *XwalBackend) Close() error {
 
 func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
 
+func (b *XwalBackend) PendingRemovals() []PendingRemoval { return b.store.PendingRemovals() }
+
 // Segment cache figures are process-wide: one segment file has one copy
 // however many lineages read through it.
 func (b *XwalBackend) SegmentCacheBytes() int64  { return SegmentCacheBytes() }

@@ -236,6 +236,10 @@ func (t xwalTopology) ChildrenOf(id string) []string {
 // figwal's idle unload brings it down.
 func (s *XwalStore) LoadedHeads() int { return s.trunks.LoadedHeads() }
 
+type PendingRemoval = xwal.PendingRemoval
+
+func (s *XwalStore) PendingRemovals() []xwal.PendingRemoval { return s.trunks.PendingRemovals() }
+
 func (s *XwalStore) Tree() topo.Tree { return s.tree }
 
 func (s *XwalStore) TopologyAdjacency() topo.Topology { return xwalTopology{s} }

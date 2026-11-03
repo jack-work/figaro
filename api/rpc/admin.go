@@ -79,9 +79,12 @@ type MemStatus struct {
 	ResidentFormPatches int `json:"resident_form_patches"`
 	ResidentIRBytes     int `json:"resident_ir_bytes"`
 	// One translation cache per (aria, provider); nothing bounds it.
-	ResidentTranslationRows  int `json:"resident_translation_rows"`
-	ResidentTranslationBytes int `json:"resident_translation_bytes"`
-	LoadedHeads              int `json:"loaded_heads"`
+	ResidentTranslationRows  int   `json:"resident_translation_rows"`
+	ResidentTranslationBytes int   `json:"resident_translation_bytes"`
+	LoadedHeads              int   `json:"loaded_heads"`
+	PendingRemovals          int   `json:"pending_removals,omitempty"`
+	OldestPendingRemovalMS   int64 `json:"oldest_pending_removal_ms,omitempty"`
+	PendingRemovalHeads      int   `json:"pending_removal_heads,omitempty"`
 	// Raw segment payloads figwal holds, against [memory] segment_cache_mb.
 	// The IR, translation and patch numbers above are decoded copies of these.
 	SegmentCacheBytes  int64 `json:"segment_cache_bytes"`
