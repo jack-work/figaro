@@ -328,9 +328,17 @@ func (e *lineEditor) killToEnd() {
 func (e *lineEditor) killToStart() { e.kill(e.lineStart(e.cursor), e.cursor, true) }
 
 // ^W is whitespace-delimited; M-DEL is word-character-delimited, as in readline.
-func (e *lineEditor) killWordBack() { e.kill(e.shellWordStart(), e.cursor, true) }
+func (e *lineEditor) killWordBack() { e.kill(e.backKillStart(e.shellWordStart()), e.cursor, true) }
 
-func (e *lineEditor) killWordBackAlpha() { e.kill(e.wordStart(), e.cursor, true) }
+func (e *lineEditor) killWordBackAlpha() { e.kill(e.backKillStart(e.wordStart()), e.cursor, true) }
+
+func (e *lineEditor) backKillStart(wordStart int) int {
+	lineStart := e.lineStart(e.cursor)
+	if e.cursor == lineStart {
+		return e.cursor - 1
+	}
+	return max(wordStart, lineStart)
+}
 
 func (e *lineEditor) killWordForward() { e.kill(e.cursor, e.wordEnd(), false) }
 
