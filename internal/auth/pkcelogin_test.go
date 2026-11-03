@@ -122,7 +122,7 @@ func TestPKCEConfigRefusesWhatItCannotDo(t *testing.T) {
 
 func TestLoginPKCEExchangesTheCodeAsAPublicClient(t *testing.T) {
 	p := newPKCEIdP(t)
-	tok, err := loginPKCE(context.Background(), p.config(t), p.browser(t, codeFor), 10*time.Second)
+	tok, err := loginPKCE(context.Background(), p.config(t), p.browser(t, codeFor), 10*time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, DeviceTokens{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 900}, tok)
 
@@ -156,7 +156,7 @@ func TestLoginPKCEIgnoresARedirectWithTheWrongState(t *testing.T) {
 		forgedStatus = resp.StatusCode
 		p.browser(t, codeFor)(raw)
 	}
-	tok, err := loginPKCE(context.Background(), p.config(t), open, 10*time.Second)
+	tok, err := loginPKCE(context.Background(), p.config(t), open, 10*time.Second, nil)
 	require.NoError(t, err, "a forged redirect is refused and the real one still lands")
 	assert.Equal(t, http.StatusBadRequest, forgedStatus)
 	assert.Equal(t, "at", tok.AccessToken)
@@ -176,7 +176,7 @@ func TestLoginPKCEReportsTheIdPsRefusal(t *testing.T) {
 	refuse := func(state string) url.Values {
 		return url.Values{"error": {"access_denied"}, "error_description": {"not in rou2_users"}, "state": {state}}
 	}
-	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second)
+	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "access_denied")
 	assert.Contains(t, err.Error(), "not in rou2_users")
@@ -185,14 +185,14 @@ func TestLoginPKCEReportsTheIdPsRefusal(t *testing.T) {
 func TestLoginPKCEInsistsOnARefreshToken(t *testing.T) {
 	p := newPKCEIdP(t)
 	p.noRefresh = true
-	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, codeFor), 10*time.Second)
+	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, codeFor), 10*time.Second, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no refresh_token")
 }
 
 func TestLoginPKCETimesOutWhenNobodyComesBack(t *testing.T) {
 	p := newPKCEIdP(t)
-	_, err := loginPKCE(context.Background(), p.config(t), func(string) {}, 150*time.Millisecond)
+	_, err := loginPKCE(context.Background(), p.config(t), func(string) {}, 150*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no sign-in came back")
 }

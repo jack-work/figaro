@@ -33,7 +33,7 @@ func TestTheIdPsRefusalOfAPKCESignInArrivesQuoted(t *testing.T) {
 	refuse := func(state string) url.Values {
 		return url.Values{"error": {hostileText}, "error_description": {hostileText}, "state": {state}}
 	}
-	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second)
+	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second, nil)
 	assertNoRawControl(t, err)
 }
 
@@ -83,4 +83,13 @@ func TestADeviceFlowPollErrorArrivesQuoted(t *testing.T) {
 		srv.Close()
 		assertNoRawControl(t, err)
 	}
+}
+
+func TestTheIdPsRefusalInAPastedURLArrivesQuoted(t *testing.T) {
+	p := newPKCEIdP(t)
+	open, read, _ := p.pasteUser(t, func(state string) string {
+		return redirectedURL(url.Values{"error": {hostileText}, "error_description": {hostileText}, "state": {state}})
+	})
+	_, err := loginPKCE(context.Background(), p.pasteConfig(t), open, 10*time.Second, read)
+	assertNoRawControl(t, err)
 }
