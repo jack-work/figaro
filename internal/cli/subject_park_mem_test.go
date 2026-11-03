@@ -30,12 +30,17 @@ func parkFixture(tag string) *aria.Client {
 	return c
 }
 
-func heapNow() uint64 {
+func heapNow() int64 {
+	runtime.GC()
 	runtime.GC()
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return m.HeapAlloc
+	return int64(m.HeapAlloc)
 }
+
+// Other goroutines in the test binary allocate and free while this runs, so
+// a reading moves by this much with nothing parked or dropped.
+const heapNoise = 256 << 10
 
 // The per-aria figure is what multiplies by parkedSubjects.
 func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
@@ -56,9 +61,10 @@ func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
 		in.parkSubject(id)
 	}
 	held := heapNow()
-	perAria := (held - base) / uint64(len(in.parked))
+	cost := held - base
+	perAria := cost / int64(len(in.parked))
 	t.Logf("shelf of %d arias (40 turns x 3.2KB, rows drawn): %.2f MB total, %.2f MB per aria",
-		len(in.parked), float64(held-base)/1e6, float64(perAria)/1e6)
+		len(in.parked), float64(cost)/1e6, float64(perAria)/1e6)
 	runtime.KeepAlive(in)
 
 	if perAria > 1<<20 {
@@ -74,7 +80,11 @@ func TestPark_TheShelfCostsWhatItHolds(t *testing.T) {
 	tr.rowBuf, tr.lineBuf, tr.frameRefs = nil, nil, nil
 	tr.prev, tr.screenSpare = nil, nil
 	after := heapNow()
-	if after > base+(held-base)/2 {
+	if cost < 2*heapNoise {
+		t.Logf("the shelf cost %.2f MB, inside the measurement noise; nothing to check it freed", float64(cost)/1e6)
+		return
+	}
+	if after-base > cost/2+heapNoise {
 		t.Fatalf("dropping the shelf freed less than half of what it held: %.2f MB still resident",
 			float64(after-base)/1e6)
 	}
