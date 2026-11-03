@@ -2,8 +2,6 @@ package xwal
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -32,16 +30,19 @@ func (t *Trunks) CreateStump(name string) error {
 
 // RemoveStump deletes a childless stump.
 func (t *Trunks) RemoveStump(name string) error {
-	endMutation, err := t.beginTopologyMutation()
+	if err := t.lockCurrent(); err != nil {
+		return err
+	}
+	err := t.removeStumpLocked(name)
+	t.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	defer endMutation()
-	if err := t.ensureNoOpenHeads(); err != nil {
-		return err
-	}
-	t.retireRootHotPreservingValidation()
+	t.drainRemovals()
+	return nil
+}
 
+func (t *Trunks) removeStumpLocked(name string) error {
 	n := t.node(name)
 	if n == nil || n.Kind != "loadout" {
 		return fmt.Errorf("%w %q", ErrUnknownStump, name)
@@ -49,17 +50,7 @@ func (t *Trunks) RemoveStump(name string) error {
 	if kids := t.idx.ChildrenOf(name); len(kids) > 0 {
 		return fmt.Errorf("%w: %q has %d", ErrStumpHasChildren, name, len(kids))
 	}
-
-	names, err := channelNames(t.root)
-	if err != nil {
-		return err
-	}
-	for _, ch := range names {
-		if err := os.RemoveAll(filepath.Join(t.root, ch, fsName(name))); err != nil {
-			return err
-		}
-	}
-	return t.rebuild()
+	return t.commitRemoval(t.componentOfLocked([]string{name}), removalToken())
 }
 
 // StumpHead opens a stump's branch for appending its birth content. Caller closes it.

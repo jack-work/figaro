@@ -630,7 +630,9 @@ func TestConcurrentAppendsUseLineageSerialization(t *testing.T) {
 	}
 }
 
-func TestTopologyMutationRefusesOpenHead(t *testing.T) {
+// An open head keeps reading a removed node: the removal is logical at once,
+// the head's reads still succeed, and the directories go when it closes.
+func TestARemovalBesideAnOpenHeadIsLogicalUntilItCloses(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	if _, _, err := f.Append(trunk, 0, []byte(`"m1"`), nil); err != nil {
 		t.Fatal(err)
@@ -639,25 +641,27 @@ func TestTopologyMutationRefusesOpenHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A creator no longer waits on open heads; a DESTRUCTIVE op still must,
-	// because it unlinks directories a live head is reading.
 	if _, err := f.ForkTail(trunk); err != nil {
 		t.Fatalf("ForkTail must not wait on an open head: %v", err)
 	}
-	shortTopologyWait(t)
-	if err := f.Remove(trunk, true); err == nil {
+	node := f.head(trunk)
+	tail := mainTail(x)
+	if err := f.Remove(trunk, true); err != nil {
 		x.Close()
-		t.Fatal("Remove succeeded with an open head")
+		t.Fatalf("Remove beside an open head: %v", err)
+	}
+	assertRemovedButHeld(t, f, trunk, node, 1)
+	if got := mainTail(x); got != tail {
+		x.Close()
+		t.Fatalf("the open head reads tail %d after the removal, want %d", got, tail)
 	}
 	if err := x.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Remove(trunk, true); err != nil {
-		t.Fatalf("Remove after close: %v", err)
-	}
+	assertDrained(t, f, node)
 }
 
-func TestTopologyMutationSeesRetiredOpenHead(t *testing.T) {
+func TestARemovalCountsARetiredStoresOpenHead(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
 	if _, _, err := f.Append(trunk, 0, []byte(`"m1"`), nil); err != nil {
 		t.Fatal(err)
@@ -666,30 +670,17 @@ func TestTopologyMutationSeesRetiredOpenHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mutator, err := f.Head(trunk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	spec := ChannelSpec{Name: "scratch", Kind: ChannelLog}
-	if err := mutator.addChannel(spec); err != nil {
+	f.retireHot()
+	node := f.head(trunk)
+	if err := f.Remove(trunk, true); err != nil {
 		stale.Close()
-		mutator.Close()
-		t.Fatalf("AddChannel with retired head: %v", err)
+		t.Fatalf("Remove beside a retired head: %v", err)
 	}
-	if err := mutator.Close(); err != nil {
-		t.Fatal(err)
-	}
-	shortTopologyWait(t)
-	if err := f.Remove(trunk, true); !isTopologyTimeout(err) {
-		stale.Close()
-		t.Fatalf("Remove error = %v, want bounded-wait timeout", err)
-	}
+	assertRemovedButHeld(t, f, trunk, node, 1)
 	if err := stale.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.ForkTail(trunk); err != nil {
-		t.Fatalf("ForkTail after retired head close: %v", err)
-	}
+	assertDrained(t, f, node)
 }
 
 // TestConcurrentAppendAndFork proves that a topology writer waits for an

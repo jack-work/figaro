@@ -68,6 +68,10 @@ func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error
 		<-fence
 		t.hotMu.Lock()
 	}
+	if t.isDead(branch) {
+		t.hotMu.Unlock()
+		return nil, nil, fmt.Errorf("%w: node %s is removed", ErrUnknownTrunk, key)
+	}
 	h := t.hot
 	if h == nil {
 		h = &trunkStore{store: log.NewStore(), heads: map[string]*hotHead{}}
@@ -511,6 +515,11 @@ func (t *Trunks) cutChannel(trunk, channel string, edit func(*XWAL) error) error
 	if err != nil {
 		return err
 	}
+	endCut, err := t.beginCut(node)
+	if err != nil {
+		return err
+	}
+	defer endCut()
 	release, err := t.fenceNode(node)
 	if err != nil {
 		return err

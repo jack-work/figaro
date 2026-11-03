@@ -19,6 +19,13 @@ type rootTopologyState struct {
 	lineages   map[string]*rootLineageState
 	manifestMu sync.Mutex
 	channelGen atomic.Uint64
+
+	dead           map[string]struct{}
+	private        map[string]int
+	cutting        map[string]int
+	pending        []*pendingRemoval
+	drainMu        sync.Mutex
+	drainerRunning bool
 }
 
 type rootLineageState struct {

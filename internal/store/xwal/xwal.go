@@ -344,7 +344,8 @@ func (x *XWAL) ensurePrivate() error {
 	if x.releaseRoot != nil && x.borrowOwner != nil {
 		transferRootBorrow(x.borrowRoot, x.borrowOwner, nil)
 		root := x.borrowRoot
-		x.releaseRoot = func() { endRootBorrow(root, nil) }
+		endPrivate := holdPrivate(root, x.branch)
+		x.releaseRoot = func() { endPrivate(); endRootBorrow(root, nil) }
 		x.borrowOwner = nil
 	}
 	var releaseErr error

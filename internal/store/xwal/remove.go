@@ -2,8 +2,6 @@ package xwal
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // Remove deletes a trunk's founding subtree in every channel. Refuses the
@@ -13,19 +11,34 @@ func (t *Trunks) Remove(trunk string, recursive bool) error {
 	return err
 }
 
+func (t *Trunks) lockCurrent() error {
+	t.mu.Lock()
+	if epoch := rootTopologyEpoch(t.registryRoot); t.rootEpoch.Load() != epoch {
+		if err := t.rebuild(); err != nil {
+			t.mu.Unlock()
+			return err
+		}
+		t.rootEpoch.Store(epoch)
+	}
+	return nil
+}
+
 // remove reports every trunk id that ceased to exist, so lifecycle
 // bookkeeping above can purge them.
 func (t *Trunks) remove(trunk string, recursive bool) ([]TrunkID, error) {
-	endMutation, err := t.beginTopologyMutation()
+	if err := t.lockCurrent(); err != nil {
+		return nil, err
+	}
+	removed, err := t.removeLocked(trunk, recursive)
+	t.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	defer endMutation()
-	if err := t.ensureNoOpenHeads(); err != nil {
-		return nil, err
-	}
-	t.retireRootHotPreservingValidation()
+	t.drainRemovals()
+	return removed, nil
+}
 
+func (t *Trunks) removeLocked(trunk string, recursive bool) ([]TrunkID, error) {
 	// The founding node is the shallowest node carrying this trunk (its
 	// parent is in another trunk, or it is the root).
 	foundKey, ok := "", false
@@ -45,7 +58,10 @@ func (t *Trunks) remove(trunk string, recursive bool) ([]TrunkID, error) {
 		return nil, fmt.Errorf("%w %q", ErrUnknownTrunk, trunk)
 	}
 
-	// Collect the trunks living in the founding node's subtree.
+	// EVERY node of the subtree, in every channel. The layout is flat, so a
+	// descendant is a sibling directory: taking the founding node alone
+	// leaves the rest behind pointing at a .from that is no longer there,
+	// and the index reads those orphans back as roots.
 	sub := map[string]bool{}
 	var keys []string
 	kids := t.idx.ChildIndex()
@@ -72,21 +88,8 @@ func (t *Trunks) remove(trunk string, recursive bool) ([]TrunkID, error) {
 	for id := range sub {
 		removed = append(removed, id)
 	}
-
-	// EVERY node of the subtree, in every channel. The layout is flat, so a
-	// descendant is a sibling directory: taking the founding node alone
-	// leaves the rest behind pointing at a .from that is no longer there,
-	// and the index reads those orphans back as roots.
-	names, err := channelNames(t.root)
-	if err != nil {
+	if err := t.commitRemoval(t.componentOfLocked(keys), removalToken()); err != nil {
 		return nil, err
 	}
-	for _, ch := range names {
-		for _, key := range keys {
-			if err := os.RemoveAll(filepath.Join(t.root, ch, fsName(key))); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return removed, t.rebuild()
+	return removed, nil
 }

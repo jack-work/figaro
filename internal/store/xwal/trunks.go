@@ -41,6 +41,7 @@ type Trunks struct {
 
 	testAfterReadLock func()
 	testDeepRepair    func()
+	testRemovalStep   func(string)
 }
 
 // ErrUnknownTrunk reports an operation addressed to a trunk id with no
@@ -117,6 +118,7 @@ func createTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ltsReg = t.ltsReg
 	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
+	t.idx.onSpawn = t.reviveNode
 	t.cfg.channelGen = channelGenFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
 		return nil, err
@@ -187,6 +189,7 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ltsReg = t.ltsReg
 	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
+	t.idx.onSpawn = t.reviveNode
 	t.cfg.channelGen = channelGenFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
 		return nil, err
@@ -275,13 +278,18 @@ func (t *Trunks) Close() error {
 	t.hotMu.Unlock()
 
 	trunkRegistry.Lock()
+	last := false
 	if peers := trunkRegistry.roots[t.registryRoot]; peers != nil {
 		delete(peers, t)
 		if len(peers) == 0 {
 			delete(trunkRegistry.roots, t.registryRoot)
+			last = true
 		}
 	}
 	trunkRegistry.Unlock()
+	if last {
+		t.abandonRemovals()
+	}
 	var errs []error
 	for _, h := range stores {
 		if err := h.store.Close(); err != nil {

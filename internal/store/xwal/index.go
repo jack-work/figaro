@@ -23,6 +23,7 @@ type Index struct {
 	// rebuilds counts full marker walks; a spawn must cause none.
 	rebuilds atomic.Uint64
 	mintID   func(kind string, taken func(prefix string) bool) string
+	onSpawn  func(key string)
 }
 
 func newIndex(mintTrunkID func(kind string, taken func(prefix string) bool) string) *Index {
@@ -83,12 +84,32 @@ func (x *Index) Version() uint64 { return x.version.Load() }
 // not touched: no child list, no freeze, no continuation.
 func (x *Index) SpawnFlat(parent, child, trunk, kind string) {
 	x.mu.Lock()
-	defer x.mu.Unlock()
 	x.nodes[child] = &NodeInfo{Trunk: trunk, From: parent, Kind: kind}
 	if trunk != "" {
 		x.heads[trunk] = child
 	}
 	x.bumpSeqsLocked(child, trunk)
+	x.version.Add(1)
+	onSpawn := x.onSpawn
+	x.mu.Unlock()
+	if onSpawn != nil {
+		onSpawn(child)
+	}
+}
+
+func (x *Index) Drop(keys []string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	for _, k := range keys {
+		n := x.nodes[k]
+		if n == nil {
+			continue
+		}
+		if n.Trunk != "" && x.heads[n.Trunk] == k {
+			delete(x.heads, n.Trunk)
+		}
+		delete(x.nodes, k)
+	}
 	x.version.Add(1)
 }
 

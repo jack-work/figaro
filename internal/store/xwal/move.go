@@ -723,15 +723,19 @@ func (t *Trunks) RemoveComponent(c Component, token string) ([]string, error) {
 	if !validToken(token) {
 		return nil, fmt.Errorf("xwal: invalid move token %q", token)
 	}
-	endMutation, err := t.beginTopologyMutation()
+	if err := t.lockCurrent(); err != nil {
+		return nil, err
+	}
+	err := t.removeComponentLocked(c, token)
+	t.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	defer endMutation()
-	if err := t.ensureNoOpenHeads(); err != nil {
-		return nil, err
-	}
-	t.retireRootHotPreservingValidation()
+	t.drainRemovals()
+	return c.TrunkIDs(), nil
+}
+
+func (t *Trunks) removeComponentLocked(c Component, token string) error {
 	inside := map[string]bool{}
 	for _, n := range c.Nodes {
 		inside[n.Key] = true
@@ -740,29 +744,15 @@ func (t *Trunks) RemoveComponent(c Component, token string) ([]string, error) {
 	for _, n := range c.Nodes {
 		have := t.node(n.Key)
 		if have == nil || have.Trunk != n.Trunk {
-			return nil, fmt.Errorf("xwal: node %q no longer carries trunk %q", n.Key, n.Trunk)
+			return fmt.Errorf("xwal: node %q no longer carries trunk %q", n.Key, n.Trunk)
 		}
 		for _, k := range kids[n.Key] {
 			if !inside[k] {
-				return nil, fmt.Errorf("xwal: node %q gained a child %q outside the component", n.Key, k)
+				return fmt.Errorf("xwal: node %q gained a child %q outside the component", n.Key, k)
 			}
 		}
 	}
-	dir := filepath.Join(t.root, removalPrefix+token)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
-	}
-	body, err := json.Marshal(c)
-	if err != nil {
-		return nil, err
-	}
-	if err := writeSyncedFile(filepath.Join(dir, graftPlanName), body); err != nil {
-		return nil, err
-	}
-	if err := t.removeNodes(c, dir); err != nil {
-		return nil, err
-	}
-	return c.TrunkIDs(), t.rebuild()
+	return t.commitRemoval(c, token)
 }
 
 func (t *Trunks) removeNodes(c Component, plan string) error {

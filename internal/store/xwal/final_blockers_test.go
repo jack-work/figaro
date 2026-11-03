@@ -73,7 +73,9 @@ func TestReservedChannelComponentsRejectedAtCreateAndEnsure(t *testing.T) {
 	}
 }
 
-func TestDetachedHeadRetainsRootBorrowUntilClose(t *testing.T) {
+// A head that went private holds its node's directories: the removal is
+// logical at once, and the unlink waits for that head to close.
+func TestARemovalWaitsForADetachedHeadBeforeUnlinking(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, trunk := seedTrunk(t, dir)
 	head, err := f.Head(trunk)
@@ -84,22 +86,19 @@ func TestDetachedHeadRetainsRootBorrowUntilClose(t *testing.T) {
 		head.Close()
 		t.Fatal(err)
 	}
-	shortTopologyWait(t)
-	// A creator never waits on a detached head. A destructive op still does:
-	// the borrow is what keeps its directories alive.
 	if _, err := f.ForkTail(trunk); err != nil {
 		t.Fatalf("ForkTail must not wait on a detached head: %v", err)
 	}
-	if err := f.Remove(trunk, true); !isTopologyTimeout(err) {
+	node := f.head(trunk)
+	if err := f.Remove(trunk, true); err != nil {
 		head.Close()
-		t.Fatalf("Remove error = %v, want bounded-wait timeout", err)
+		t.Fatalf("Remove beside a detached head: %v", err)
 	}
+	assertRemovedButHeld(t, f, trunk, node, 1)
 	if err := head.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Remove(trunk, true); err != nil {
-		t.Fatalf("Remove after detached head close: %v", err)
-	}
+	assertDrained(t, f, node)
 }
 
 // Registering a channel retires nothing: an open hot head picks the channel

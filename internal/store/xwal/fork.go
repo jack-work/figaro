@@ -76,6 +76,12 @@ func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool) (string, error
 
 // forkFlatNamed is forkFlat with a caller-chosen node name (stumps).
 func (t *Trunks) forkFlatNamed(parentKey, name, kind string) error {
+	if t.removalPending(name) {
+		t.drainRemovals()
+		if t.removalPending(name) {
+			return fmt.Errorf("xwal: node %q is still being removed; a head still reads it", name)
+		}
+	}
 	bases, err := t.channelBases(parentKey, 0)
 	if err != nil {
 		return err
