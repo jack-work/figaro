@@ -158,8 +158,8 @@ func (p Patch) applyObject(v Value) (Value, error) {
 	} else if !nullish(v) || p.IsIdentity() {
 		return v, nil
 	}
-	next, changed := applyObjectToTree(t, p.Object)
-	if _, isObj := v.members(); isObj && !changed {
+	next, _ := applyObjectToTree(t, p.Object, false)
+	if _, isObj := v.members(); isObj && next.root == t.root {
 		return v, nil
 	}
 	raw, err := encodeTree(next)

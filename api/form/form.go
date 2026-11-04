@@ -174,84 +174,89 @@ func (s Snapshot) Lookup(key string) *string {
 	return nil
 }
 
-// Diff is the patch that transforms prev into s. Shared subtrees are skipped
-// by pointer.
 func (s Snapshot) Diff(prev Snapshot) Patch {
-	p := diffTrees(prev.t, s.t)
-	if p.IsIdentity() {
-		return Patch{}
-	}
-	return p
+	return asPatch(diffTrees(prev.t, s.t))
 }
 
-func diffTrees(prev, next ptree) Patch {
-	if prev.root == next.root {
+func asPatch(o *ObjectPatch) Patch {
+	if o == nil {
 		return Patch{}
 	}
-	out := &ObjectPatch{}
+	return Patch{Object: o}
+}
+
+func diffTrees(prev, next ptree) *ObjectPatch {
+	if prev.root == next.root {
+		return nil
+	}
+	var out *ObjectPatch
 	rangeEntries(next.root, func(n *node) bool {
-		old := lookupExact(prev.root, n.key)
-		if old == n {
-			return true
-		}
-		switch {
-		case old == nil:
-			if n.branch {
-				child := diffTrees(ptree{}, n.kids)
-				if child.IsIdentity() {
-					if out.Set == nil {
-						out.Set = map[string]Value{}
-					}
-					out.Set[n.key] = NewValue(json.RawMessage(`{}`))
-				} else {
-					if out.Update == nil {
-						out.Update = map[string]Patch{}
-					}
-					if out.New == nil {
-						out.New = map[string]bool{}
-					}
-					out.Update[n.key], out.New[n.key] = child, true
-				}
-				return true
-			}
-			if out.Set == nil {
-				out.Set = map[string]Value{}
-			}
-			out.Set[n.key] = n.value
-		case old.branch && n.branch:
-			child := diffTrees(old.kids, n.kids)
-			if !child.IsIdentity() {
-				if out.Update == nil {
-					out.Update = map[string]Patch{}
-				}
-				out.Update[n.key] = child
-			}
-		case !old.branch && !n.branch:
-			if !old.value.Equal(n.value) {
-				if out.Update == nil {
-					out.Update = map[string]Patch{}
-				}
-				out.Update[n.key] = Patch{Scalar: &ScalarPatch{Before: old.value, After: n.value}}
-			}
-		default:
-			if out.Update == nil {
-				out.Update = map[string]Patch{}
-			}
-			out.Update[n.key] = Patch{Scalar: &ScalarPatch{
-				Before: entryValue(old), After: entryValue(n)}}
+		if old := lookupExact(prev.root, n.key); old != n {
+			out = entryDelta(out, n.key, old, n, nil)
 		}
 		return true
 	})
 	rangeEntries(prev.root, func(n *node) bool {
 		if lookupExact(next.root, n.key) == nil {
-			if out.Delete == nil {
-				out.Delete = map[string]Value{}
-			}
-			out.Delete[n.key] = entryValue(n)
+			out = entryDelta(out, n.key, n, nil, nil)
 		}
 		return true
 	})
-	return Patch{Object: out}
+	return nonEmpty(out)
+}
+
+func entryDelta(out *ObjectPatch, key string, old, next *node, child *ObjectPatch) *ObjectPatch {
+	if old == next {
+		return out
+	}
+	if out == nil {
+		out = &ObjectPatch{}
+	}
+	switch {
+	case next == nil:
+		out.Delete = put(out.Delete, key, entryValue(old))
+	case old == nil && !next.branch:
+		out.Set = put(out.Set, key, next.value)
+	case old == nil:
+		if child == nil {
+			child = diffTrees(ptree{}, next.kids)
+		}
+		if child == nil {
+			out.Set = put(out.Set, key, NewValue(json.RawMessage(`{}`)))
+			break
+		}
+		out.Update = put(out.Update, key, Patch{Object: child})
+		out.New = put(out.New, key, true)
+	case old.branch && next.branch:
+		if child == nil {
+			child = diffTrees(old.kids, next.kids)
+		}
+		if child != nil {
+			out.Update = put(out.Update, key, Patch{Object: child})
+		}
+	case !old.branch && !next.branch:
+		if !old.value.Equal(next.value) {
+			out.Update = put(out.Update, key, Patch{Scalar: &ScalarPatch{Before: old.value, After: next.value}})
+		}
+	default:
+		out.Update = put(out.Update, key, Patch{Scalar: &ScalarPatch{Before: entryValue(old), After: entryValue(next)}})
+	}
+	return out
+}
+
+func put[V any](m map[string]V, key string, v V) map[string]V {
+	if m == nil {
+		m = map[string]V{}
+	}
+	m[key] = v
+	return m
+}
+
+func nonEmpty(o *ObjectPatch) *ObjectPatch {
+	if o == nil || len(o.Set)+len(o.Delete)+len(o.Update) == 0 {
+		return nil
+	}
+	return o
 }
 
 func entryValue(n *node) Value {
@@ -269,69 +274,121 @@ func (s Snapshot) AsPatch() Patch {
 	return Diff(NewValue(json.RawMessage(`{}`)), s.Root())
 }
 
-// Apply returns a new snapshot sharing every subtree the patch did not touch.
 func (s Snapshot) Apply(p Patch) Snapshot {
-	t, changed := applyToTree(s.t, p)
-	if !changed {
+	t, _ := applyToTree(s.t, p, false)
+	if t.root == s.t.root {
 		return s
 	}
 	return Snapshot{t: t, raw: &rawBox{}}
 }
 
-// applyToTree rebuilds only the nodes the patch names; the rest keep their
-// pointers, which is what keeps Diff cheap.
-func applyToTree(t ptree, p Patch) (ptree, bool) {
-	switch {
-	case p.Object != nil:
-		return applyObjectToTree(t, p.Object)
-	case p.Scalar != nil:
-		if _, isObj := p.Scalar.After.members(); !isObj {
-			return t, false
-		}
-		next := leafOrBranch("", p.Scalar.After).kids
-		if diffTrees(t, next).IsIdentity() {
-			return t, false
-		}
-		return next, true
+// ApplyEffective returns the new snapshot and the patch that takes s to it:
+// only what changed, the same patch next.Diff(s) would report.
+func (s Snapshot) ApplyEffective(p Patch) (Snapshot, Patch) {
+	t, applied := applyToTree(s.t, p, true)
+	if applied == nil {
+		return s, Patch{}
 	}
-	return t, false
+	return Snapshot{t: t, raw: &rawBox{}}, Patch{Object: applied}
 }
 
-func applyObjectToTree(t ptree, o *ObjectPatch) (ptree, bool) {
-	changed := false
+func applyToTree(t ptree, p Patch, record bool) (ptree, *ObjectPatch) {
+	switch {
+	case p.Object != nil:
+		return applyObjectToTree(t, p.Object, record)
+	case p.Scalar != nil:
+		if _, isObj := p.Scalar.After.members(); !isObj {
+			return t, nil
+		}
+		next := leafOrBranch("", p.Scalar.After).kids
+		if applied := diffTrees(t, next); applied != nil {
+			return next, applied
+		}
+	}
+	return t, nil
+}
+
+func applyObjectToTree(t ptree, o *ObjectPatch, record bool) (ptree, *ObjectPatch) {
+	before := t
+	var applied *ObjectPatch
 	for k := range o.Delete {
-		if root, found := deleteNode(t.root, k); found {
-			t, changed = ptree{root: root}, true
+		if old := lookupExact(t.root, k); old != nil {
+			root, _ := deleteNode(t.root, k)
+			t = ptree{root: root}
+			if record && o.names(k) == 1 {
+				applied = entryDelta(applied, k, old, nil, nil)
+			}
 		}
 	}
 	for k, v := range o.Set {
-		if cur := lookupExact(t.root, k); cur != nil && !cur.branch && cur.value.Equal(v) {
+		cur := lookupExact(t.root, k)
+		if cur != nil && !cur.branch && cur.value.Equal(v) {
 			continue
 		}
-		t = ptree{root: setEntry(t.root, leafOrBranch(k, v))}
-		changed = true
+		next := leafOrBranch(k, v)
+		t = ptree{root: setEntry(t.root, next)}
+		if record && o.names(k) == 1 {
+			applied = entryDelta(applied, k, cur, next, nil)
+		}
 	}
 	for k, child := range o.Update {
-		next, ok := applyAt(lookupExact(t.root, k), k, child)
-		if !ok {
-			continue
+		cur := lookupExact(t.root, k)
+		if next, sub, ok := applyAt(cur, k, child, record); ok {
+			t = ptree{root: setEntry(t.root, next)}
+			if record && o.names(k) == 1 {
+				applied = entryDelta(applied, k, cur, next, sub)
+			}
 		}
-		t = ptree{root: setEntry(t.root, next)}
-		changed = true
 	}
-	return t, changed
+	if record {
+		for k := range o.Delete {
+			applied = settleRepeat(applied, o, k, before, t)
+		}
+		for k := range o.Set {
+			if _, del := o.Delete[k]; !del {
+				applied = settleRepeat(applied, o, k, before, t)
+			}
+		}
+	}
+	return t, nonEmpty(applied)
 }
 
-func applyAt(cur *node, key string, p Patch) (*node, bool) {
+// settleRepeat records a key the patch names more than once by comparing
+// where it started with where it ended.
+func settleRepeat(applied, o *ObjectPatch, k string, before, after ptree) *ObjectPatch {
+	if o.names(k) == 1 {
+		return applied
+	}
+	if old, next := lookupExact(before.root, k), lookupExact(after.root, k); old != next {
+		applied = entryDelta(applied, k, old, next, nil)
+	}
+	return applied
+}
+
+func (o *ObjectPatch) names(key string) int {
+	n := 0
+	if _, ok := o.Delete[key]; ok {
+		n++
+	}
+	if _, ok := o.Set[key]; ok {
+		n++
+	}
+	if _, ok := o.Update[key]; ok {
+		n++
+	}
+	return n
+}
+
+func applyAt(cur *node, key string, p Patch, record bool) (next *node, applied *ObjectPatch, ok bool) {
 	if p.IsIdentity() {
-		return nil, false
+		return nil, nil, false
 	}
 	switch {
 	case p.Scalar != nil:
 		if cur != nil && !cur.branch && cur.value.Equal(p.Scalar.After) {
-			return nil, false
+			return nil, nil, false
 		}
-		return leafOrBranch(key, p.Scalar.After), true
+		return leafOrBranch(key, p.Scalar.After), nil, true
 	case p.Object != nil:
 		var kids ptree
 		switch {
@@ -339,24 +396,24 @@ func applyAt(cur *node, key string, p Patch) (*node, bool) {
 		case cur.branch:
 			kids = cur.kids
 		case !nullish(cur.value):
-			return nil, false
+			return nil, nil, false
 		}
-		sub, changed := applyObjectToTree(kids, p.Object)
-		if !changed && cur != nil && cur.branch {
-			return nil, false
+		sub, applied := applyObjectToTree(kids, p.Object, record)
+		if cur != nil && cur.branch && sub.root == kids.root {
+			return nil, nil, false
 		}
-		return &node{key: key, kids: sub, branch: true}, true
+		return &node{key: key, kids: sub, branch: true}, applied, true
 	case p.List != nil:
 		if cur == nil || cur.branch {
-			return nil, false
+			return nil, nil, false
 		}
 		next := p.List.apply(cur.value)
 		if next.Equal(cur.value) {
-			return nil, false
+			return nil, nil, false
 		}
-		return leafOrBranch(key, next), true
+		return leafOrBranch(key, next), nil, true
 	}
-	return nil, false
+	return nil, nil, false
 }
 
 func nullish(v Value) bool {
