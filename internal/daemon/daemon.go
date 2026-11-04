@@ -181,16 +181,26 @@ func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: loaded.Trunks()}); err != nil {
 		return nil, err
 	}
+	sweepNodes(loaded, b)
+	return b, nil
+}
+
+type nodeSweeper interface {
+	SweepUnmarkedNodes(remove bool) (store.SweepReport, error)
+}
+
+func sweepNodes(loaded *config.Loaded, b nodeSweeper) {
 	mode, err := loaded.NodeSweep()
 	if err != nil {
-		return nil, err
+		slog.Error("node sweep not run: bad [store] node_sweep", "err", err)
+		return
 	}
-	if mode != config.RetentionOff {
-		if _, err := b.SweepUnmarkedNodes(mode == config.RetentionOn); err != nil {
-			return nil, err
-		}
+	if mode == config.RetentionOff {
+		return
 	}
-	return b, nil
+	if _, err := b.SweepUnmarkedNodes(mode == config.RetentionOn); err != nil {
+		slog.Error("node sweep failed; serving anyway", "err", err)
+	}
 }
 
 func modelsForm(backend store.Backend) *store.Form {
