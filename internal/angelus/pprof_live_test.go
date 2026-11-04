@@ -86,3 +86,33 @@ func TestThePprofSocketIsOutsideTheRuntimeDirBoxesSee(t *testing.T) {
 		})
 	}
 }
+
+// El Inspector X: MkdirAll leaves an existing directory as it is, so the
+// fallback beside the runtime dir must be checked, not assumed: a directory
+// another user can enter, or a link to one, is refused rather than used.
+func TestThePprofFallbackDirIsRefusedUnlessPrivate(t *testing.T) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(root, "run")
+	require.NoError(t, os.MkdirAll(runtimeDir, 0o700))
+	fallback := runtimeDir + "-pprof"
+
+	require.NoError(t, os.Mkdir(fallback, 0o755))
+	require.NoError(t, os.Chmod(fallback, 0o755))
+	_, err := angelus.New(angelus.Config{RuntimeDir: runtimeDir}).ArmPprof(true)
+	require.ErrorContains(t, err, "mode 755")
+
+	require.NoError(t, os.Remove(fallback))
+	elsewhere := filepath.Join(root, "elsewhere")
+	require.NoError(t, os.Mkdir(elsewhere, 0o700))
+	require.NoError(t, os.Symlink(elsewhere, fallback))
+	_, err = angelus.New(angelus.Config{RuntimeDir: runtimeDir}).ArmPprof(true)
+	require.ErrorContains(t, err, "not a directory")
+
+	require.NoError(t, os.Remove(fallback))
+	require.NoError(t, os.Mkdir(fallback, 0o700))
+	a := angelus.New(angelus.Config{RuntimeDir: runtimeDir})
+	sock, err := a.ArmPprof(true)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(fallback, angelus.PprofSocketName), sock)
+	_, _ = a.ArmPprof(false)
+}

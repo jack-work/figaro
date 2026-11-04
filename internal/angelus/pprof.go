@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"net"
@@ -45,6 +46,22 @@ func (a *Angelus) StartPprof(ctx context.Context) error {
 	return err
 }
 
+func privateDir(dir string) error {
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	switch {
+	case !fi.IsDir():
+		return fmt.Errorf("%s is not a directory", dir)
+	case fi.Mode().Perm() != 0o700:
+		return fmt.Errorf("%s has mode %o, want 700", dir, fi.Mode().Perm())
+	case !ownedByUs(fi):
+		return fmt.Errorf("%s is not owned by this user", dir)
+	}
+	return nil
+}
+
 type pprofState struct {
 	mu   sync.Mutex
 	life context.Context
@@ -82,6 +99,12 @@ func (a *Angelus) ArmPprof(on bool) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		slog.Warn("pprof socket dir unavailable", "path", path, "err", err)
 		return "", err
+	}
+	if a.pprofDir == "" {
+		if err := privateDir(filepath.Dir(path)); err != nil {
+			slog.Warn("pprof socket dir refused", "path", path, "err", err)
+			return "", err
+		}
 	}
 	os.Remove(path)
 	ln, err := net.Listen("unix", path)
