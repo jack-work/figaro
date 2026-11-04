@@ -169,6 +169,26 @@
           set -o pipefail
           sh scripts/check-boundary.sh | tee $out
         '';
+        compat = pkgs.runCommand "figaro-compat" {
+          nativeBuildInputs = [ figaro.go pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused ];
+        } ''
+          cp -r ${self} src
+          chmod -R u+w src
+          cd src
+          ln -s ${figaro.goModules} vendor
+          ${goEnv}
+          b=github.com/jack-work/figaro/internal/boot
+          for x in "a 0.52.4 aaaaaaaaaaaa1111" "b 0.52.5 bbbbbbbbbbbb2222" "c 0.53.0 cccccccccccc3333"; do
+            set -- $x
+            go build -o $TMPDIR/figaro-$1 -ldflags "-X $b.semver=$2 -X $b.commit=$3" ./cmd/figaro
+          done
+          export TMPDIR
+          pair() { bash scripts/compat-pair.sh "$TMPDIR/figaro-$1" "$TMPDIR/figaro-$2" "$3"; }
+          pair a b accept | tee -a $out
+          pair b a accept | tee -a $out
+          pair a c warn | tee -a $out
+          pair c a warn | tee -a $out
+        '';
       } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
         container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
         module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
