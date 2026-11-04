@@ -132,6 +132,7 @@ func applyStoreSettings(loaded *config.Loaded) {
 	store.SetFormLinger(loaded.ActorLinger())
 	store.SetHandleIdle(loaded.HandleIdle())
 	store.SetPatchWindow(loaded.FormPatchWindow())
+	store.SetPatchWindowBytes(loaded.FormPatchWindowBytes())
 	if n, set := loaded.SegmentCacheBytes(); set {
 		store.SetSegmentCacheBudget(n)
 	}

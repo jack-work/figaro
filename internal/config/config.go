@@ -185,7 +185,8 @@ type MemoryConfig struct {
 	HandleIdleMinutes *int `toml:"handle_idle_minutes"`
 
 	// FormPatchWindow bounds resident decoded patches per form. Default 2048; 0 retains everything.
-	FormPatchWindow *int `toml:"form_patch_window"`
+	FormPatchWindow   *int `toml:"form_patch_window"`
+	FormPatchWindowKB *int `toml:"form_patch_window_kb"`
 }
 
 type ModelsConfig struct {
@@ -412,11 +413,12 @@ func (l *Loaded) UIWindowMB() (int, bool) {
 
 const (
 	// A window smaller than one turn makes an in-flight turn re-read its own tail on every append.
-	minIRWindow            = 64
-	minIRWindowMB          = 1
-	defaultSoftLimitMB     = 2048
-	defaultActorLingerMS   = 2000
-	defaultFormPatchWindow = 2048
+	minIRWindow              = 64
+	minIRWindowMB            = 1
+	defaultSoftLimitMB       = 2048
+	defaultActorLingerMS     = 2000
+	defaultFormPatchWindow   = 2048
+	defaultFormPatchWindowKB = 256
 )
 
 func (l *Loaded) SoftLimitBytes() int64 {
@@ -453,6 +455,16 @@ func (l *Loaded) FormPatchWindow() int {
 	}
 	if n := *l.cfg().Memory.FormPatchWindow; n > 0 {
 		return n
+	}
+	return 0
+}
+
+func (l *Loaded) FormPatchWindowBytes() int64 {
+	if l.cfg().Memory.FormPatchWindowKB == nil {
+		return defaultFormPatchWindowKB << 10
+	}
+	if n := *l.cfg().Memory.FormPatchWindowKB; n > 0 {
+		return int64(n) << 10
 	}
 	return 0
 }

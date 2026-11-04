@@ -45,9 +45,10 @@ type formFailure struct{ err error }
 // formState is one published version. patches are kept because the projection
 // renders each at the record it landed on, which a folded snapshot cannot say.
 type formState struct {
-	snap    form.Snapshot
-	version uint64
-	patches []VersionedPatch
+	snap        form.Snapshot
+	version     uint64
+	patches     []VersionedPatch
+	windowBytes int64
 	// trimmed is the highest version dropped from patches, 0 if none. It is
 	// explicit because an identity patch appends no record, so a gap below the
 	// first kept patch is not a trim.
@@ -191,7 +192,9 @@ func OpenForm(log FormLog) (*Form, error) {
 		st.snap = st.snap.Apply(p)
 		st.version = index
 		if !p.IsIdentity() {
-			st.patches = append(st.patches, VersionedPatch{Version: index, Patch: p})
+			st.windowBytes += int64(p.ApproxBytes())
+			st.patches, st.trimmed, st.windowBytes = trimPatches(
+				append(st.patches, VersionedPatch{Version: index, Patch: p}), st.trimmed, st.windowBytes)
 		}
 		return nil
 	}); err != nil {
@@ -217,14 +220,20 @@ const formBatch = 64
 // patchWindow bounds the DECODED patch history a form keeps resident, and
 // patchSlack is how far past it the array may run before it is copied down.
 var (
-	patchWindow atomic.Int64
-	patchSlack  = 256
+	patchWindow      atomic.Int64
+	patchWindowBytes atomic.Int64
+	patchSlack       = 256
 )
 
-func init() { patchWindow.Store(2048) }
+func init() {
+	patchWindow.Store(2048)
+	patchWindowBytes.Store(256 << 10)
+}
 
 // SetPatchWindow: zero or negative retains everything.
 func SetPatchWindow(n int) { patchWindow.Store(int64(n)) }
+
+func SetPatchWindowBytes(n int64) { patchWindowBytes.Store(n) }
 
 // formLinger is package level so the daemon sets it once before any form
 // opens; already-open forms keep the old value.
@@ -363,15 +372,25 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	return out, true
 }
 
-func trimPatches(ps []VersionedPatch, trimmed uint64) ([]VersionedPatch, uint64) {
+func trimPatches(ps []VersionedPatch, trimmed uint64, bytes int64) ([]VersionedPatch, uint64, int64) {
 	w := int(patchWindow.Load())
-	if w <= 0 || len(ps) <= w+patchSlack {
-		return ps, trimmed
+	b := patchWindowBytes.Load()
+	overCount := w > 0 && len(ps) > w+patchSlack
+	overBytes := b > 0 && bytes > b+b/4 && len(ps) > 1
+	if !overCount && !overBytes {
+		return ps, trimmed, bytes
 	}
-	cut := len(ps) - w
-	kept := make([]VersionedPatch, w)
+	cut := 0
+	for cut < len(ps)-1 && ((w > 0 && len(ps)-cut > w) || (b > 0 && bytes > b)) {
+		bytes -= int64(ps[cut].Patch.ApproxBytes())
+		cut++
+	}
+	if cut == 0 {
+		return ps, trimmed, bytes
+	}
+	kept := make([]VersionedPatch, len(ps)-cut)
 	copy(kept, ps[cut:])
-	return kept, ps[cut-1].Version
+	return kept, ps[cut-1].Version, bytes
 }
 
 func patchRange(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
@@ -575,7 +594,9 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res form
 	// Append to the shared backing array: safe with exactly one drainer, since
 	// a published state holds its own slice length and a later append either
 	// writes past it or reallocates.
-	next.patches, next.trimmed = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: res.applied}), st.trimmed)
+	next.patches, next.trimmed, next.windowBytes = trimPatches(
+		append(st.patches, VersionedPatch{Version: version, Patch: res.applied}), st.trimmed,
+		st.windowBytes+int64(res.applied.ApproxBytes()))
 	return next, formResult{version: version, applied: res.applied}, true
 }
 

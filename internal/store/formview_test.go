@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/api/form"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -200,5 +202,42 @@ func TestPatchesBelowTheWindowComeFromTheLog(t *testing.T) {
 	v := f.Read().Version
 	if hot := f.PatchesBetween(v-1, v); len(hot) != 1 {
 		t.Fatalf("the window must still answer its own range: got %d", len(hot))
+	}
+}
+
+// Issue #59: a re-dress carries every skill body twice (before and after), so
+// a window bounded only by count held hundreds of MB. The size bound keeps a
+// big-patch form small, and a range it dropped still comes back from the log.
+func TestTheWindowIsBoundedBySize(t *testing.T) {
+	SetPatchWindowBytes(64 << 10)
+	t.Cleanup(func() { SetPatchWindowBytes(256 << 10) })
+
+	f := NewMemForm()
+	t.Cleanup(f.Close)
+	body := strings.Repeat("x", 16<<10)
+	for i := range 40 {
+		v := strconv.Quote(body + strconv.Itoa(i))
+		patch := form.Build(f.Read().Snapshot, map[string]json.RawMessage{"skills.big": json.RawMessage(v)}, nil)
+		if _, err := f.Apply(patch, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st := f.state.Load()
+	if st.windowBytes > (64<<10)+(64<<10)/4+40<<10 {
+		t.Fatalf("window holds ~%d bytes against a 64 KiB bound (%d patches)", st.windowBytes, len(st.patches))
+	}
+	var sum int64
+	for _, vp := range st.patches {
+		sum += int64(vp.Patch.ApproxBytes())
+	}
+	if sum != st.windowBytes {
+		t.Fatalf("windowBytes drifted: tracked %d, actual %d", st.windowBytes, sum)
+	}
+	if len(st.patches) == 0 || st.patches[0].Version <= 1 {
+		t.Fatalf("nothing trimmed: %d patches resident", len(st.patches))
+	}
+	got := f.PatchesBetween(0, 3)
+	if len(got) != 3 || got[0].Version != 1 {
+		t.Fatalf("a range below the size-bounded window: %d patches", len(got))
 	}
 }

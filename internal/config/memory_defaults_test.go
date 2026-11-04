@@ -112,6 +112,23 @@ func TestFormPatchWindow(t *testing.T) {
 	}
 }
 
+func TestFormPatchWindowBytes(t *testing.T) {
+	if got := (*Loaded)(nil).FormPatchWindowBytes(); got != defaultFormPatchWindowKB<<10 {
+		t.Fatalf("nil config: got %d", got)
+	}
+	var l Loaded
+	off := 0
+	l.Config.Memory.FormPatchWindowKB = &off
+	if got := l.FormPatchWindowBytes(); got != 0 {
+		t.Fatalf("0 must lift the size bound: got %d", got)
+	}
+	n := 64
+	l.Config.Memory.FormPatchWindowKB = &n
+	if got := l.FormPatchWindowBytes(); got != 64<<10 {
+		t.Fatalf("configured: got %d", got)
+	}
+}
+
 func TestTranslationWindowBytesConfigured(t *testing.T) {
 	if got, set := (*Loaded)(nil).TranslationWindowBytes(); set || got != 0 {
 		t.Fatalf("nil config must configure nothing, got %d set=%v", got, set)
