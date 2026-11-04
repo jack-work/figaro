@@ -243,7 +243,7 @@ func (s *sim) committed(c commit) {
 		}
 		s.applied[k] = c.Version
 	}
-	d := rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: c.Version, Patch: c.Patch, Client: c.Origin.Client, Seq: c.Origin.Seq}
+	d := rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: c.Version, Patch: c.Patch, Origin: c.Origin.Tag(), Seq: c.Origin.Seq}
 	for _, p := range s.peers {
 		if p.link.alive {
 			p.link.down = append(p.link.down, downMsg{delta: &d})
@@ -367,8 +367,8 @@ func (s *sim) deliverDown(p *peer) {
 	before := len(p.changes)
 	s.mu.Unlock()
 	if m.delta != nil {
-		own := m.delta.Client == p.id && m.delta.Version == p.r.Version()+1
-		s.log("%s down delta v%d (%s seq %d)", p.id, m.delta.Version, m.delta.Client, m.delta.Seq)
+		own := m.delta.Origin == store.Origin{Client: p.id}.Tag() && m.delta.Version == p.r.Version()+1
+		s.log("%s down delta v%d (%s seq %d)", p.id, m.delta.Version, m.delta.Origin, m.delta.Seq)
 		p.r.Delta(*m.delta)
 		synctest.Wait()
 		if own {

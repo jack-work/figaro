@@ -455,12 +455,12 @@ func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, e
 	return f.ApplyWrite(w)
 }
 
-func (b *XwalBackend) FormLastSeq(ariaID, client string) (uint64, error) {
+func (b *XwalBackend) FormLastSeq(ariaID, principal, client string) (uint64, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
 		return 0, err
 	}
-	return f.LastSeq(client), nil
+	return f.LastSeq(principal, client), nil
 }
 
 // ForkWith is the one birth verb: `fig new` spawns under the null root, `fig fork`

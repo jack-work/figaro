@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
@@ -163,10 +164,11 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			resp.Incarnation = c.incarnation
 			return resp, nil
 		}
+		origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client}
 		var lastSeq uint64
 		if req.Client != "" {
 			var err error
-			if lastSeq, err = a.backend.FormLastSeq(a.id, req.Client); err != nil {
+			if lastSeq, err = a.backend.FormLastSeq(a.id, origin.Principal, origin.Client); err != nil {
 				return nil, err
 			}
 		}
@@ -175,7 +177,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return nil, err
 		}
 		resp := FormResponseOf(since, "")
-		resp.LastSeq = lastSeq
+		resp.LastSeq, resp.Origin = lastSeq, origin.Tag()
 		return resp, nil
 
 	case rpc.MethodQueued:

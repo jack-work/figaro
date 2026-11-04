@@ -56,7 +56,7 @@ type FormDelta struct {
 	Version     uint64    `json:"version"`
 	Patch       FormPatch `json:"patch"`
 	At          int64     `json:"at,omitempty"`
-	Client      string    `json:"client,omitempty"`
+	Origin      string    `json:"origin,omitempty"`
 	Seq         uint64    `json:"seq,omitempty"`
 }
 

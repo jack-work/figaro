@@ -246,7 +246,7 @@ func NewAgent(cfg Config) *Agent {
 				Params: rpc.FormDelta{
 					Schema: rpc.FormDeltaSchema, AriaID: a.id, Version: c.Version,
 					Patch: c.Patch, At: time.Now().UnixMilli(),
-					Client: c.Origin.Client, Seq: c.Origin.Seq,
+					Origin: c.Origin.Tag(), Seq: c.Origin.Seq,
 				}})
 		}); err != nil {
 			slog.Warn("watch form", "aria", a.id, "err", err)

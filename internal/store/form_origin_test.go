@@ -38,9 +38,9 @@ func TestApplyWrite_ASeqAppliesOnce(t *testing.T) {
 	other, err := f.ApplyWrite(originWrite("a", `3`, "r2", 1))
 	require.NoError(t, err)
 	require.False(t, other.Duplicate, "seqs are per client")
-	require.Equal(t, uint64(1), f.LastSeq("r1"))
-	require.Equal(t, uint64(1), f.LastSeq("r2"))
-	require.Equal(t, uint64(0), f.LastSeq("nobody"))
+	require.Equal(t, uint64(1), f.LastSeq("", "r1"))
+	require.Equal(t, uint64(1), f.LastSeq("", "r2"))
+	require.Equal(t, uint64(0), f.LastSeq("", "nobody"))
 }
 
 // Refusals and no-ops are answers too: LastSeq moves past them, so a replica
@@ -51,7 +51,7 @@ func TestApplyWrite_RefusalsAndNoOpsAreAnswered(t *testing.T) {
 
 	_, err := f.ApplyWrite(originWrite("system.forked_from", `"forged"`, "r", 1))
 	require.Error(t, err)
-	require.Equal(t, uint64(1), f.LastSeq("r"))
+	require.Equal(t, uint64(1), f.LastSeq("", "r"))
 
 	_, err = f.ApplyWrite(originWrite("k", `1`, "r", 2))
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestApplyWrite_RefusalsAndNoOpsAreAnswered(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, noop.Applied.IsIdentity())
 	require.False(t, noop.Duplicate)
-	require.Equal(t, uint64(3), f.LastSeq("r"))
+	require.Equal(t, uint64(3), f.LastSeq("", "r"))
 }
 
 // An applied seq is in the log with its patch, so a restart still refuses to
@@ -77,7 +77,7 @@ func TestApplyWrite_AnAppliedSeqSurvivesAReopen(t *testing.T) {
 	g, err := store.OpenForm(log)
 	require.NoError(t, err)
 	defer g.Close()
-	require.Equal(t, uint64(4), g.LastSeq("r"))
+	require.Equal(t, uint64(4), g.LastSeq("", "r"))
 	dup, err := g.ApplyWrite(originWrite("a", `9`, "r", 4))
 	require.NoError(t, err)
 	require.True(t, dup.Duplicate)
@@ -134,7 +134,7 @@ func TestApplyWrite_ASeqMayNotBeConditional(t *testing.T) {
 	}
 	_, err = f.ApplyWrite(assertRemove)
 	require.ErrorIs(t, err, store.ErrSeqConditional)
-	require.Equal(t, uint64(0), f.LastSeq("r"), "a refusal before judging answers no seq")
+	require.Equal(t, uint64(0), f.LastSeq("", "r"), "a refusal before judging answers no seq")
 	_, err = f.ApplyWrite(originWrite("k", `1`, "other", 1))
 	require.NoError(t, err)
 	f.Close()
@@ -156,4 +156,35 @@ func TestApplyWrite_ASeqMayNotBeConditional(t *testing.T) {
 	plain := store.FormWrite{Patch: form.Build(form.Snapshot{}, nil, []string{"k"}), Intent: store.Assert}
 	_, err = f2.ApplyWrite(plain)
 	require.NoError(t, err, "without a seq, Assert works as before")
+}
+
+// The seq table is keyed by the authenticated principal as well as the client
+// id: two principals that pick the same client id and seq are two writers.
+func TestApplyWrite_SeqsAreKeyedByPrincipal(t *testing.T) {
+	log := &store.MemFormLog{}
+	f, err := store.OpenForm(log)
+	require.NoError(t, err)
+	box := originWrite("k", `"box"`, "pit", 1)
+	box.Origin.Principal = "sandbox:judge@local:box"
+	owner := originWrite("k", `"owner"`, "pit", 1)
+	owner.Origin.Principal = "user:1000"
+	v, err := f.ApplyWrite(box)
+	require.NoError(t, err)
+	require.False(t, v.Duplicate)
+	v, err = f.ApplyWrite(owner)
+	require.NoError(t, err)
+	require.False(t, v.Duplicate, "the owner's seq was spent by another principal")
+	raw, _ := f.Read().Snapshot.Get("k")
+	require.JSONEq(t, `"owner"`, string(raw))
+	f.Close()
+
+	g, err := store.OpenForm(log)
+	require.NoError(t, err)
+	defer g.Close()
+	require.Equal(t, uint64(1), g.LastSeq("user:1000", "pit"))
+	require.Equal(t, uint64(1), g.LastSeq("sandbox:judge@local:box", "pit"))
+	require.Equal(t, uint64(0), g.LastSeq("", "pit"))
+	dup, err := g.ApplyWrite(owner)
+	require.NoError(t, err)
+	require.True(t, dup.Duplicate, "the owner's own resend is still a duplicate after a reopen")
 }

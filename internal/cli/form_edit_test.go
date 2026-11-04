@@ -161,7 +161,7 @@ type fakeFormServer struct {
 func (s *fakeFormServer) Load(_ context.Context, client string) (*rpc.FormResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return &rpc.FormResponse{Snapshot: s.snap, Version: s.version, Incarnation: 1, LastSeq: s.last[client]}, nil
+	return &rpc.FormResponse{Snapshot: s.snap, Version: s.version, Incarnation: 1, LastSeq: s.last[client], Origin: "o:" + client}, nil
 }
 
 func (s *fakeFormServer) Set(_ context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
@@ -179,7 +179,7 @@ func (s *fakeFormServer) Set(_ context.Context, req rpc.SetRequest) (*rpc.SetRes
 	s.snap = s.snap.Apply(req.Patch)
 	s.version++
 	s.last[req.Client] = req.Seq
-	d := rpc.FormDelta{Schema: rpc.FormDeltaSchema, Incarnation: 1, Version: s.version, Patch: req.Patch, Client: req.Client, Seq: req.Seq}
+	d := rpc.FormDelta{Schema: rpc.FormDeltaSchema, Incarnation: 1, Version: s.version, Patch: req.Patch, Origin: "o:" + req.Client, Seq: req.Seq}
 	v := s.version
 	s.mu.Unlock()
 	s.rep.Delta(d)

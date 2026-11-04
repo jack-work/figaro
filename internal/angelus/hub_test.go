@@ -201,7 +201,7 @@ func TestHubServesReadsWithoutWaking(t *testing.T) {
 		woke++
 		return nil, nil
 	}
-	hb.read = func(id, method string, _ json.RawMessage) (any, bool, error) {
+	hb.read = func(_ context.Context, id, method string, _ json.RawMessage) (any, bool, error) {
 		return map[string]any{"served_by": "store", "method": method}, true, nil
 	}
 
@@ -227,7 +227,7 @@ func TestHubWakesForMutatingMethods(t *testing.T) {
 		woke++
 		return agent, nil
 	}
-	hb.read = func(string, string, json.RawMessage) (any, bool, error) {
+	hb.read = func(context.Context, string, string, json.RawMessage) (any, bool, error) {
 		t.Error("store answered a method that needs an agent")
 		return nil, true, nil
 	}

@@ -69,7 +69,7 @@ func (s *server) set(req rpc.SetRequest) (*rpc.SetResponse, error) {
 
 func (s *server) load(client string) *rpc.FormResponse {
 	snap, version := s.form.Snapshot()
-	return &rpc.FormResponse{Snapshot: snap, Version: version, LastSeq: s.form.LastSeq(client)}
+	return &rpc.FormResponse{Snapshot: snap, Version: version, LastSeq: s.form.LastSeq("", client), Origin: store.Origin{Client: client}.Tag()}
 }
 
 func seqData(seq uint64) json.RawMessage {

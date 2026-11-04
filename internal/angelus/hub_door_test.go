@@ -65,7 +65,7 @@ func TestHubAttributesAForgedCallerAsAsserted(t *testing.T) {
 
 func TestHubMethodsAreGuarded(t *testing.T) {
 	hb, path := policyHub(t, authz.PolicyFunc(func(authz.Request) authz.Decision { return authz.Deny("door closed") }))
-	hb.read = func(string, string, json.RawMessage) (any, bool, error) {
+	hb.read = func(context.Context, string, string, json.RawMessage) (any, bool, error) {
 		t.Error("a denied request reached the store")
 		return nil, true, nil
 	}

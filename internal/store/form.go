@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -53,8 +56,21 @@ type formState struct {
 }
 
 type Origin struct {
-	Client string `json:"client,omitempty"`
-	Seq    uint64 `json:"seq,omitempty"`
+	Principal string `json:"principal,omitempty"`
+	Client    string `json:"client,omitempty"`
+	Seq       uint64 `json:"seq,omitempty"`
+}
+
+func (o Origin) key() string {
+	return strconv.Itoa(len(o.Principal)) + ":" + o.Principal + o.Client
+}
+
+func (o Origin) Tag() string {
+	if o.Client == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(o.key()))
+	return hex.EncodeToString(sum[:8])
 }
 
 type Commit struct {
@@ -65,8 +81,13 @@ type Commit struct {
 
 type formRecord struct {
 	message.Patch
-	Client string `json:"client,omitempty"`
-	Seq    uint64 `json:"seq,omitempty"`
+	Principal string `json:"principal,omitempty"`
+	Client    string `json:"client,omitempty"`
+	Seq       uint64 `json:"seq,omitempty"`
+}
+
+func (r formRecord) origin() Origin {
+	return Origin{Principal: r.Principal, Client: r.Client, Seq: r.Seq}
 }
 
 type formWrite struct {
@@ -160,11 +181,11 @@ func OpenForm(log FormLog) (*Form, error) {
 			return err
 		}
 		p := rec.Patch
-		if rec.Seq > 0 && rec.Seq > st.seqs[rec.Client] {
+		if k := rec.origin().key(); rec.Seq > 0 && rec.Seq > st.seqs[k] {
 			if st.seqs == nil {
 				st.seqs = map[string]uint64{}
 			}
-			st.seqs[rec.Client] = rec.Seq
+			st.seqs[k] = rec.Seq
 		}
 		st.snap = st.snap.Apply(p)
 		st.version = index
@@ -399,11 +420,11 @@ func (f *Form) ApplyWrite(in FormWrite) (FormVerdict, error) {
 	return FormVerdict{Version: version, Applied: applied, Duplicate: t.w.result.duplicate}, err
 }
 
-func (f *Form) LastSeq(client string) uint64 {
+func (f *Form) LastSeq(principal, client string) uint64 {
 	if client == "" {
 		return 0
 	}
-	return f.state.Load().seqs[client]
+	return f.state.Load().seqs[Origin{Principal: principal, Client: client}.key()]
 }
 
 func (f *Form) applyEffect(patch message.Patch, ifVersion uint64, intent Intent, priv bool) (uint64, message.Patch, error) {
@@ -530,7 +551,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res form
 	if fail := f.failed.Load(); fail != nil {
 		return nil, formResult{err: fail.err}, false
 	}
-	if w.origin.Seq > 0 && w.origin.Seq <= st.seqs[w.origin.Client] {
+	if w.origin.Seq > 0 && w.origin.Seq <= st.seqs[w.origin.key()] {
 		return nil, formResult{version: st.version, duplicate: true}, false
 	}
 	res = f.judge(st, w)
@@ -540,7 +561,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res form
 		}
 		return st.answered(w.origin), res, false
 	}
-	payload, err := json.Marshal(formRecord{Patch: res.applied, Client: w.origin.Client, Seq: w.origin.Seq})
+	payload, err := json.Marshal(formRecord{Patch: res.applied, Principal: w.origin.Principal, Client: w.origin.Client, Seq: w.origin.Seq})
 	if err != nil {
 		return nil, formResult{err: err}, false
 	}
@@ -597,7 +618,7 @@ func (st *formState) answered(o Origin) *formState {
 	for k, v := range st.seqs {
 		next.seqs[k] = v
 	}
-	next.seqs[o.Client] = o.Seq
+	next.seqs[o.key()] = o.Seq
 	return &next
 }
 
@@ -770,8 +791,8 @@ func replayPage(p *memPage) (form.Snapshot, map[string]uint64, error) {
 			return form.Snapshot{}, nil, fmt.Errorf("mem form log: replay page: %w", err)
 		}
 		snap = snap.Apply(rec.Patch)
-		if rec.Seq > seqs[rec.Client] {
-			seqs[rec.Client] = rec.Seq
+		if k := rec.origin().key(); rec.Seq > seqs[k] {
+			seqs[k] = rec.Seq
 		}
 	}
 	return snap, seqs, nil

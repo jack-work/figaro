@@ -179,7 +179,8 @@ The pit holds a replica (`api/form/replica`): an edit is on screen at once
 and marked `pending` until the server's own delta for it lands; a refused
 edit is taken back and the pit says why. Each edit carries the pit's client
 id and a sequence number, so a resend after a lost answer is answered, not
-applied twice. A refusal or no-op is remembered in memory only: after a
+applied twice. The form keys that table by the caller's authenticated
+principal as well, so a writer can only ever collide with its own seqs. A refusal or no-op is remembered in memory only: after a
 daemon restart a resent one is judged again, which the client sees as one
 late answer (Gluck's decision, 2026-11-02). That holds because a write with
 a seq is unconditional: the form refuses one that also carries `Assert` or

@@ -36,6 +36,7 @@ type FormResponse struct {
 	Delta       bool                 `json:"delta,omitempty"`
 	Patches     []FormVersionedPatch `json:"patches,omitempty"`
 	LastSeq     uint64               `json:"last_seq,omitempty"`
+	Origin      string               `json:"origin,omitempty"`
 }
 
 // ReadRequest is a keyset read; the answer carries the coordinate to continue

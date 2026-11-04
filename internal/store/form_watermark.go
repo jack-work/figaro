@@ -105,11 +105,11 @@ func formReduce(state, record []byte) ([]byte, error) {
 	if err := json.Unmarshal(record, &rec); err != nil {
 		return nil, err
 	}
-	if rec.Client != "" && rec.Seq > seqs[rec.Client] {
+	if k := rec.origin().key(); rec.Seq > 0 && rec.Seq > seqs[k] {
 		if seqs == nil {
 			seqs = map[string]uint64{}
 		}
-		seqs[rec.Client] = rec.Seq
+		seqs[k] = rec.Seq
 	}
 	return encodeFormWatermark(snap.Apply(rec.Patch), seqs)
 }

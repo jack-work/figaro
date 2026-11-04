@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestDormantReadAppliesPageBudget(t *testing.T) {
 				req := rpc.ReadRequest{Backward: backward, Limit: budget}
 				raw, err := json.Marshal(req)
 				require.NoError(t, err)
-				got, handled, err := h.readFromStore(id, rpc.MethodRead, raw)
+				got, handled, err := h.readFromStore(context.Background(), id, rpc.MethodRead, raw)
 				require.NoError(t, err)
 				require.True(t, handled)
 				page := got.(aria.Page)

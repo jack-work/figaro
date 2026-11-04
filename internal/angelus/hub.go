@@ -21,7 +21,7 @@ type ariaHub struct {
 	// write runs after read and before wake, so a bound form patch never wakes a
 	// sleeper and can reach a naked figaro whose wake would fail for want of
 	// the provider keys the patch carries.
-	read  func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	read  func(ctx context.Context, id, method string, params json.RawMessage) (v any, ok bool, err error)
 	write func(ctx context.Context, id, method string, params json.RawMessage) (v any, ok bool, err error)
 	// dress resolves outfit names before routing: no writer below it reads a file.
 	dress func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
@@ -155,7 +155,7 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 		return agent.Handle(ctx, method, params)
 	}
 	if hb.read != nil && !rpc.MethodNeedsAgent(method) {
-		if v, ok, err := hb.read(hb.id, method, params); ok {
+		if v, ok, err := hb.read(ctx, hb.id, method, params); ok {
 			return v, err
 		}
 	}

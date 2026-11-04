@@ -49,6 +49,7 @@ type pendingEdit struct {
 
 type state struct {
 	incompatible bool
+	origin       string
 	confirmed    form.Snapshot
 	version      uint64
 	incarnation  uint64
@@ -298,7 +299,7 @@ func (r *Replica) delta(s *state, d rpc.FormDelta) *state {
 	next := *s
 	next.confirmed = s.confirmed.Apply(d.Patch)
 	next.version = d.Version
-	if d.Client == r.client && d.Seq > 0 {
+	if d.Origin != "" && d.Origin == s.origin && d.Seq > 0 {
 		next.pending = settled(s.pending, d.Seq)
 	}
 	recompute(&next)
@@ -348,6 +349,7 @@ func (r *Replica) loaded(s *state, resp *rpc.FormResponse) *state {
 	next := *s
 	next.confirmed, next.version, next.incarnation = resp.Snapshot, resp.Version, resp.Incarnation
 	next.loaded = true
+	next.origin = resp.Origin
 	next.pending = settled(s.pending, resp.LastSeq)
 	if !s.inFlight {
 		next.pending = unsent(next.pending)

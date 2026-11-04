@@ -48,7 +48,7 @@ func (s *restartable) open() {
 		r := s.rep
 		s.mu.Unlock()
 		if r != nil {
-			r.Delta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: c.Version, Patch: c.Patch, Client: c.Origin.Client, Seq: c.Origin.Seq})
+			r.Delta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: c.Version, Patch: c.Patch, Origin: c.Origin.Tag(), Seq: c.Origin.Seq})
 		}
 	})
 	s.mu.Lock()
@@ -165,7 +165,7 @@ func TestANoOpLostInARestartLandsAsALateWrite(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, 1, s.answers(1), "seq 1 reached the client once")
 	require.Equal(t, "1", get(s.form().Read().Snapshot, "a"), "the resend landed after the outside write")
-	require.Equal(t, uint64(1), s.form().LastSeq("r"))
+	require.Equal(t, uint64(1), s.form().LastSeq("", "r"))
 	require.Equal(t, 0, r.Pending())
 	require.Eventually(t, func() bool { return get(r.Shown(), "a") == "1" }, time.Second, time.Millisecond)
 }

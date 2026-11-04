@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
@@ -147,9 +148,10 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 	if req.Assert {
 		intent = store.Assert
 	}
+	origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client, Seq: req.Seq}
 	v, err := h.angelus.Backend.ApplyFormWrite(id, store.FormWrite{
 		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
-		Origin: store.Origin{Client: req.Client, Seq: req.Seq},
+		Origin: origin,
 	})
 	if errors.Is(err, store.ErrFormUnavailable) {
 		return nil, true, &jkrpc.Error{Code: rpc.ErrCodeFormUnavailable, Message: err.Error()}
@@ -177,7 +179,7 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 		_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
 			Schema: rpc.FormDeltaSchema, AriaID: id, Version: version,
 			Patch: applied, At: time.Now().UnixMilli(),
-			Client: req.Client, Seq: req.Seq,
+			Origin: origin.Tag(), Seq: req.Seq,
 		})
 	}
 	return rpc.SetResponse{

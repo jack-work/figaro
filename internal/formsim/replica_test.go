@@ -33,7 +33,7 @@ func newDirect(t *testing.T) *direct {
 		reps := append([]*replica.Replica(nil), d.reps...)
 		d.mu.Unlock()
 		for _, r := range reps {
-			r.Delta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: c.Version, Patch: c.Patch, Client: c.Origin.Client, Seq: c.Origin.Seq})
+			r.Delta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: c.Version, Patch: c.Patch, Origin: c.Origin.Tag(), Seq: c.Origin.Seq})
 		}
 	})
 	return d
@@ -59,9 +59,9 @@ func (d *direct) Set(_ context.Context, req rpc.SetRequest) (*rpc.SetResponse, e
 }
 
 func (d *direct) Load(_ context.Context, client string) (*rpc.FormResponse, error) {
-	last := d.f.LastSeq(client)
+	last := d.f.LastSeq("", client)
 	at := d.f.Read()
-	return &rpc.FormResponse{Snapshot: at.Snapshot, Version: at.Version, LastSeq: last}, nil
+	return &rpc.FormResponse{Snapshot: at.Snapshot, Version: at.Version, LastSeq: last, Origin: store.Origin{Client: client}.Tag()}, nil
 }
 
 func (d *direct) open(t *testing.T, client string, o replica.Options) *replica.Replica {
@@ -244,4 +244,49 @@ func TestEditIsVisibleWhenItReturns(t *testing.T) {
 	require.Equal(t, "2", get(r.Shown(), "a.c"))
 	flush(t, r)
 	require.Equal(t, "2", get(d.f.Read().Snapshot, "a.c"))
+}
+
+// A delta settles a pending edit only when it carries this replica's origin,
+// a tag the server derives from the authenticated principal and the client id.
+// Another writer that reuses the client id and seq has another tag, so its
+// delta leaves the pending edit on screen and still to be answered.
+func TestADeltaFromAnotherOriginSettlesNothing(t *testing.T) {
+	d := newDirect(t)
+	held := &holdSets{direct: d, release: make(chan struct{})}
+	r := replica.New("r", held, replica.Options{Debounce: time.Millisecond})
+	t.Cleanup(r.Close)
+	<-r.Ready()
+	r.Edit(setKey("mine", `1`))
+	require.Eventually(t, func() bool { return held.waiting() }, time.Second, time.Millisecond)
+	r.Delta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: setKey("theirs", `2`),
+		Origin: store.Origin{Principal: "sandbox:box", Client: "r"}.Tag(), Seq: 1})
+	require.Eventually(t, func() bool { return get(r.Shown(), "theirs") == "2" }, time.Second, time.Millisecond)
+	require.Equal(t, 1, r.Pending(), "a foreign origin settled the edit")
+	require.Equal(t, "1", get(r.Shown(), "mine"))
+	close(held.release)
+}
+
+type holdSets struct {
+	*direct
+	release chan struct{}
+	mu      sync.Mutex
+	held    bool
+}
+
+func (h *holdSets) waiting() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.held
+}
+
+func (h *holdSets) Set(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
+	h.mu.Lock()
+	h.held = true
+	h.mu.Unlock()
+	select {
+	case <-h.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return nil, errors.New("released")
 }

@@ -3,11 +3,13 @@ package figaro
 import (
 	"context"
 	"fmt"
-	"github.com/jack-work/figaro/api/decide"
 	"strings"
+
+	"github.com/jack-work/figaro/api/decide"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -71,7 +73,7 @@ func (a *Agent) SetAwaiting(ctx context.Context, patch form.Patch, ifVersion uin
 	return v.Version, v.Applied, err
 }
 
-func (a *Agent) SetFrom(_ context.Context, req rpc.SetRequest) (store.FormVerdict, error) {
+func (a *Agent) SetFrom(ctx context.Context, req rpc.SetRequest) (store.FormVerdict, error) {
 	if a.form == nil {
 		return store.FormVerdict{}, fmt.Errorf("set requires a form")
 	}
@@ -90,7 +92,7 @@ func (a *Agent) SetFrom(_ context.Context, req rpc.SetRequest) (store.FormVerdic
 	}
 	return a.writeForm(store.FormWrite{
 		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
-		Origin: store.Origin{Client: req.Client, Seq: req.Seq},
+		Origin: store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client, Seq: req.Seq},
 	}, "set")
 }
 

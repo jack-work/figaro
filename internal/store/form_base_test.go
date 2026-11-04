@@ -137,7 +137,7 @@ func TestAClientsSeqRidesTheWatermark(t *testing.T) {
 	if base.Version <= lastVersion {
 		t.Fatalf("base %d does not lie above c's last record %d: the test proves nothing", base.Version, lastVersion)
 	}
-	if got := f.LastSeq("c"); got != lastSeq {
+	if got := f.LastSeq("", "c"); got != lastSeq {
 		t.Fatalf("LastSeq(c) = %d after a cold open from the watermark, want %d", got, lastSeq)
 	}
 	v := write("c1", 999, Origin{Client: "c", Seq: lastSeq})

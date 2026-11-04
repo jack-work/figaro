@@ -170,7 +170,7 @@ type Backend interface {
 	CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, err error)
 
 	ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, error)
-	FormLastSeq(ariaID, client string) (uint64, error)
+	FormLastSeq(ariaID, principal, client string) (uint64, error)
 
 	// ApplyFormPrivileged may touch system-managed keys. There is no wire
 	// field for this and must never be one: privilege is a property of the

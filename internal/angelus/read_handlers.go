@@ -9,6 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/store"
@@ -37,7 +38,7 @@ func (h *handlers) liveAgent(id string) figaro.AgentServer {
 }
 
 // readFromStore is the one agentless read path for both doors.
-func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any, bool, error) {
+func (h *handlers) readFromStore(ctx context.Context, id, method string, params json.RawMessage) (any, bool, error) {
 	if isCatalogID(id) {
 		return h.readCatalog(id, method, params)
 	}
@@ -55,10 +56,11 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 					"never written to disk. Wake it (send it something) or read its bound form instead",
 				id, name)
 		}
+		origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client}
 		var lastSeq uint64
 		if req.Client != "" {
 			var err error
-			if lastSeq, err = h.angelus.Backend.FormLastSeq(id, req.Client); err != nil {
+			if lastSeq, err = h.angelus.Backend.FormLastSeq(id, origin.Principal, origin.Client); err != nil {
 				return nil, true, err
 			}
 		}
@@ -67,7 +69,7 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 			return nil, true, err
 		}
 		resp := figaro.FormResponseOf(since, "")
-		resp.LastSeq = lastSeq
+		resp.LastSeq, resp.Origin = lastSeq, origin.Tag()
 		return resp, true, nil
 
 	case rpc.MethodContext:
@@ -106,7 +108,7 @@ func (h *handlers) routeRead(ctx context.Context, id, method string, params json
 	if srv := h.liveAgent(id); srv != nil {
 		return srv.Handle(ctx, method, params)
 	}
-	v, ok, err := h.readFromStore(id, method, params)
+	v, ok, err := h.readFromStore(ctx, id, method, params)
 	if !ok {
 		return nil, fmt.Errorf("%s: not a read", method)
 	}
