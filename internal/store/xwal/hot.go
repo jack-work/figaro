@@ -2,6 +2,7 @@ package xwal
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -216,9 +217,18 @@ func (t *Trunks) releaseHot(h *trunkStore) error {
 	}
 	t.hotMu.Unlock()
 	if closeStore {
-		return h.store.Close()
+		return t.closeStore(h)
 	}
 	return nil
+}
+
+// closeStore is the close that flushes a store's buffered tail; every close of
+// a hot or retired store goes through it.
+func (t *Trunks) closeStore(h *trunkStore) error {
+	if t.testStoreClose != nil {
+		t.testStoreClose()
+	}
+	return h.store.Close()
 }
 
 // syncHot flushes every loaded head lineage-coherently (main first, related
@@ -270,24 +280,42 @@ func (t *Trunks) syncHot() error {
 	return err
 }
 
+// retireHot is the one place a hot store stops being hot, and every
+// retirement path comes here. Before any other borrow can make a new store,
+// the old store's buffered tail is on disk: closed now if nothing borrows it,
+// synced now if something does.
 func (t *Trunks) retireHot() {
 	t.hotMu.Lock()
+	defer t.hotMu.Unlock()
 	h := t.hot
 	t.hot = nil
-	if h != nil {
-		h.retired = true
-		if h.refs != 0 {
-			if t.retired == nil {
-				t.retired = map[*trunkStore]struct{}{}
-			}
-			t.retired[h] = struct{}{}
+	if h == nil {
+		return
+	}
+	h.retired = true
+	if h.refs == 0 {
+		if err := t.closeStore(h); err != nil {
+			slog.Warn("xwal: closing a retired hot store", "err", err)
+		}
+		return
+	}
+	for _, head := range h.heads {
+		select {
+		case <-head.ready:
+		default:
+			continue
+		}
+		if head.x == nil || head.err != nil {
+			continue
+		}
+		if err := head.x.syncCoherent(); err != nil {
+			slog.Warn("xwal: flushing a retired hot store", "node", head.x.key, "err", err)
 		}
 	}
-	closeStore := h != nil && h.refs == 0
-	t.hotMu.Unlock()
-	if closeStore {
-		_ = h.store.Close()
+	if t.retired == nil {
+		t.retired = map[*trunkStore]struct{}{}
 	}
+	t.retired[h] = struct{}{}
 }
 
 func (t *Trunks) register() error {

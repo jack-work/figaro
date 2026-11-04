@@ -42,6 +42,8 @@ type Trunks struct {
 	testAfterReadLock func()
 	testDeepRepair    func()
 	testRemovalStep   func(string)
+	testStoreClose    func()
+	testAppendBorrow  func()
 }
 
 // ErrUnknownTrunk reports an operation addressed to a trunk id with no
