@@ -169,6 +169,18 @@
           set -o pipefail
           sh scripts/check-boundary.sh | tee $out
         '';
+        gofmt = pkgs.runCommand "figaro-gofmt" {
+          nativeBuildInputs = [ figaro.go ];
+        } ''
+          unformatted=$(cd ${self} && gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt -l lists files that are not formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+          touch $out
+        '';
+
         compat = pkgs.runCommand "figaro-compat" {
           nativeBuildInputs = [ figaro.go pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused ];
         } ''
