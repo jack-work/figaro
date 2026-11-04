@@ -21,6 +21,7 @@ type rootTopologyState struct {
 	channelGen atomic.Uint64
 
 	dead           map[string]struct{}
+	unflushed      map[string]*Trunks
 	private        map[string]int
 	cutting        map[string]int
 	pending        []*pendingRemoval
@@ -62,8 +63,11 @@ func (t *Trunks) adoptLineage(lineage *rootLineageState) {
 		lineage.owner = t
 	} else if lineage.owner != t {
 		// The previous owner's buffered appends must reach disk before this
-		// peer opens the lineage from disk.
-		_ = lineage.owner.syncHot()
+		// peer opens the lineage from disk. A sync that fails retires the
+		// owner's store, which fences the nodes it could not flush.
+		if err := lineage.owner.syncHot(); err != nil {
+			lineage.owner.retireHot()
+		}
 		t.retireHot()
 		lineage.owner = t
 	}

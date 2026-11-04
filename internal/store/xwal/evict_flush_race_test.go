@@ -366,3 +366,76 @@ func TestAFailedFlushAtRetirementRefusesTheNodeUntilItFlushes(t *testing.T) {
 		}
 	}
 }
+
+// The fence is per root: while one Trunks holds a retired store whose tail on
+// a node could not be flushed, a peer Trunks on the same root is refused that
+// node too, until the holder's flush succeeds.
+func TestAPeerIsRefusedANodeAnotherTrunksCouldNotFlush(t *testing.T) {
+	dir := t.TempDir()
+	opts := testStoreOptions()
+	opts.NoBackgroundFlush = true
+	opts.IdleUnload = -1
+	s, err := OpenStore(dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := s.SpawnUnderRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.syncDirty()
+	peer, err := openTrunks(dir, s.Trunks.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+
+	first, err := s.Append(tr, "ir", 0, []byte(`{"i":0}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, _ := s.HeadNode(tr)
+	var mu sync.Mutex
+	failing := true
+	s.Trunks.testHeadSync = func(key string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if failing && key == node {
+			return fmt.Errorf("input/output error")
+		}
+		return nil
+	}
+	s.Trunks.retireHot()
+
+	if _, lt, err := peer.Append(tr, 0, []byte(`{"i":1}`), nil); err == nil {
+		t.Fatalf("a peer appended at LT %d while another Trunks held the node's tail unflushed", lt)
+	}
+	mu.Lock()
+	failing = false
+	mu.Unlock()
+	_, second, err := peer.Append(tr, 0, []byte(`{"i":1}`), nil)
+	if err != nil {
+		t.Fatalf("after the holder's flush succeeds: %v", err)
+	}
+	s.Trunks.testHeadSync = nil
+	if second != first+1 {
+		t.Fatalf("the peer's append got LT %d, want %d", second, first+1)
+	}
+	if err := peer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := OpenStore(dir, testStoreOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	for i, lt := range []uint64{first, second} {
+		_, payload, err := s2.Read(tr, "ir", lt)
+		if want := fmt.Sprintf(`{"i":%d}`, i); err != nil || string(payload) != want {
+			t.Fatalf("append %d at LT %d reads %s (err %v), want %s", i, lt, payload, err, want)
+		}
+	}
+}

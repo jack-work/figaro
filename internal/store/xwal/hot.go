@@ -60,6 +60,11 @@ func (t *Trunks) ensureNoOpenHeads() error {
 
 func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error) {
 	key := strings.Join(branch, "\x00")
+	if holder := rootFenceHolder(t.registryRoot, key); holder != nil && holder != t {
+		if err := holder.retryFlush(key); err != nil {
+			return nil, nil, err
+		}
+	}
 	t.hotMu.Lock()
 	for {
 		fence := t.fenceOverLocked(key)
@@ -345,9 +350,13 @@ func (t *Trunks) flushStoreLocked(h *trunkStore) {
 				h.unflushed = map[string]error{}
 			}
 			h.unflushed[key] = err
+			t.fenceRoot(key, true)
 			continue
 		}
-		delete(h.unflushed, key)
+		if _, was := h.unflushed[key]; was {
+			delete(h.unflushed, key)
+			t.fenceRoot(key, false)
+		}
 	}
 }
 
@@ -355,10 +364,17 @@ func (t *Trunks) flushStoreLocked(h *trunkStore) {
 // unflushed tail of key, and reports the error if one remains. A store that
 // is flushed and unborrowed is closed here.
 func (t *Trunks) unflushedLocked(key string) error {
+	held := false
+	defer func() {
+		if !held {
+			t.fenceRoot(key, false)
+		}
+	}()
 	for h := range t.retired {
 		if _, ok := h.unflushed[key]; !ok {
 			continue
 		}
+		held = true
 		t.flushStoreLocked(h)
 		if err, still := h.unflushed[key]; still {
 			return fmt.Errorf("xwal: node %s holds entries a retired store could not flush: %w", key, err)
@@ -635,4 +651,35 @@ func (t *Trunks) cutChannel(trunk, channel string, edit func(*XWAL) error) error
 		editErr = cerr
 	}
 	return editErr
+}
+
+// fenceRoot records, for every Trunks on the root, that this one holds the
+// node's tail unflushed; a peer's borrow of the node asks this one to retry.
+func (t *Trunks) fenceRoot(key string, on bool) {
+	state := rootTopologyStateFor(t.registryRoot)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if on {
+		if state.unflushed == nil {
+			state.unflushed = map[string]*Trunks{}
+		}
+		state.unflushed[key] = t
+		return
+	}
+	if state.unflushed[key] == t {
+		delete(state.unflushed, key)
+	}
+}
+
+func rootFenceHolder(root, key string) *Trunks {
+	state := rootTopologyStateFor(root)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.unflushed[key]
+}
+
+func (t *Trunks) retryFlush(key string) error {
+	t.hotMu.Lock()
+	defer t.hotMu.Unlock()
+	return t.unflushedLocked(key)
 }
