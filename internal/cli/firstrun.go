@@ -285,10 +285,8 @@ func runCopilotLogin(loaded *config.Loaded) error {
 	}
 
 	// The domain is not a secret; it says where to exchange.
-	if domain != "" {
-		if err := writeCopilotDomain(loaded, domain); err != nil {
-			return err
-		}
+	if err := writeCopilotDomain(loaded, domain); err != nil {
+		return err
 	}
 
 	reg := providerPkg.Lookup("copilot")
@@ -314,22 +312,43 @@ func runCopilotLogin(loaded *config.Loaded) error {
 }
 
 func writeCopilotDomain(loaded *config.Loaded, domain string) error {
-	cfg := struct {
-		EnterpriseDomain string `toml:"enterprise_domain"`
-	}{EnterpriseDomain: domain}
 	path := loaded.ProviderAuthPath("copilot")
+	cfg := map[string]any{}
+	if raw, err := os.ReadFile(path); err == nil {
+		if _, err := toml.Decode(string(raw), &cfg); err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if domain == "" {
+		if _, had := cfg["enterprise_domain"]; !had {
+			return nil
+		}
+		delete(cfg, "enterprise_domain")
+	} else {
+		cfg["enterprise_domain"] = domain
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".copilot-*.toml")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
+	defer os.Remove(tmp.Name())
+	if err := toml.NewEncoder(tmp).Encode(cfg); err != nil {
+		tmp.Close()
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	return nil
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
