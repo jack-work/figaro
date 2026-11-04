@@ -470,11 +470,7 @@ var _ = func(acli *sdk.Angelus, ctx context.Context) createFn {
 }
 
 func isStdinTTY() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // On any failure it falls back to defaultModelFor: the wizard never blocks on a
