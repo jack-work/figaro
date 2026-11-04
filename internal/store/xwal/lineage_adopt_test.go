@@ -133,3 +133,19 @@ func TestABorrowedLineageHeadIsNotForgotten(t *testing.T) {
 		t.Fatal("forgetLineageHead dropped a borrowed head")
 	}
 }
+
+// A head still borrowed in a retired store keeps its node: forgetting the
+// lineage would open a fresh head beside it, so adoption takes the fallback.
+func TestARetiredBorrowedLineageHeadIsNotForgotten(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "f")
+	f, trunk := seedTrunk(t, dir)
+	head, err := f.Head(trunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer head.Close()
+	f.retireHot()
+	if f.forgetLineageHead(trunk) {
+		t.Fatal("forgetLineageHead ignored a head borrowed in a retired store")
+	}
+}

@@ -218,6 +218,12 @@ func (t *Trunks) forgetLineageHead(trunk string) bool {
 		return false
 	}
 	t.hotMu.Lock()
+	for r := range t.retired {
+		if head := r.heads[key]; head != nil && head.refs != 0 {
+			t.hotMu.Unlock()
+			return false
+		}
+	}
 	h := t.hot
 	if h == nil {
 		t.hotMu.Unlock()
