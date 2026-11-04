@@ -16,23 +16,29 @@ import (
 
 func (h *handlers) status(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	return rpc.StatusResponse{
-		Uptime:      h.angelus.StartedAt.UnixMilli(),
-		FigaroCount: h.angelus.Registry.FigaroCount(),
-		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
-		Build:       h.angelus.Build,
-		Node:        h.nodeID(),
-		Mem:         h.angelus.MemStatus(),
+		Uptime:       h.angelus.StartedAt.UnixMilli(),
+		FigaroCount:  h.angelus.Registry.FigaroCount(),
+		BoundPIDs:    h.angelus.Registry.BoundPIDCount(),
+		Build:        h.angelus.Build,
+		Release:      h.angelus.Release,
+		Protocol:     rpc.ProtocolVersion,
+		Capabilities: daemonCapabilities,
+		Node:         h.nodeID(),
+		Mem:          h.angelus.MemStatus(),
 	}, nil
 }
 
 func (h *handlers) memCollect(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	return rpc.StatusResponse{
-		Uptime:      h.angelus.StartedAt.UnixMilli(),
-		FigaroCount: h.angelus.Registry.FigaroCount(),
-		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
-		Build:       h.angelus.Build,
-		Node:        h.nodeID(),
-		Mem:         h.angelus.MemCollectStatus(),
+		Uptime:       h.angelus.StartedAt.UnixMilli(),
+		FigaroCount:  h.angelus.Registry.FigaroCount(),
+		BoundPIDs:    h.angelus.Registry.BoundPIDCount(),
+		Build:        h.angelus.Build,
+		Release:      h.angelus.Release,
+		Protocol:     rpc.ProtocolVersion,
+		Capabilities: daemonCapabilities,
+		Node:         h.nodeID(),
+		Mem:          h.angelus.MemCollectStatus(),
 	}, nil
 }
 

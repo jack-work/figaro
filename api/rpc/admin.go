@@ -55,12 +55,14 @@ type ConfigureResponse struct {
 }
 
 type StatusResponse struct {
-	Uptime      int64 `json:"uptime_ms"` // millis since angelus start
-	FigaroCount int   `json:"figaro_count"`
-	BoundPIDs   int   `json:"bound_pids"`
-	// Build is the daemon's VCS revision; the wire changes between builds.
-	Build string `json:"build,omitempty"`
-	Node  string `json:"node,omitempty"`
+	Uptime       int64        `json:"uptime_ms"` // millis since angelus start
+	FigaroCount  int          `json:"figaro_count"`
+	BoundPIDs    int          `json:"bound_pids"`
+	Build        string       `json:"build,omitempty"`
+	Release      string       `json:"release,omitempty"`
+	Protocol     int          `json:"protocol,omitempty"`
+	Capabilities []Capability `json:"capabilities,omitempty"`
+	Node         string       `json:"node,omitempty"`
 
 	// Mem is a pointer so an older daemon's silence reads as unknown, not zero.
 	Mem *MemStatus `json:"mem,omitempty"`

@@ -40,8 +40,8 @@ type Angelus struct {
 	SocketPath string
 	RuntimeDir string
 	StartedAt  time.Time
-	// Build is this daemon's VCS revision; a CLI refuses a daemon from another build.
-	Build string
+	Build      string
+	Release    string
 
 	// RemoveAria is the one delete path (agent, sessions, bytes, endpoint);
 	// nil disables the TTL sweep's deletions.

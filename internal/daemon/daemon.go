@@ -342,6 +342,7 @@ func Run() {
 		Settings:   loaded,
 	})
 	a.Build = boot.BuildRevision()
+	a.Release = boot.BuildRelease()
 	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)

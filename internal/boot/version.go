@@ -19,6 +19,8 @@ var (
 
 // BuildRevision is empty when unknown; callers must skip the comparison rather
 // than treat it as a mismatch.
+func BuildRelease() string { return semver }
+
 func BuildRevision() string {
 	if commit != "" {
 		return commit
