@@ -160,6 +160,29 @@ func TestANeedRegisteredBeforeTheHandshakeIsCheckedAtIt(t *testing.T) {
 	}
 }
 
+// The first handshake settles a need registered before it and clears it, so
+// a second handshake in the same process does not judge an old request.
+func TestTheFirstHandshakeClearsThePendingNeeds(t *testing.T) {
+	resetDaemonSeen(t)
+	if err := needCapability(rpc.CapQuaImages, "images on a prompt"); err != nil {
+		t.Fatalf("no daemon seen yet, nothing to refuse: %v", err)
+	}
+	recordDaemon("the daemon", daemonIdentity{build: "b", release: "0.52.5", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages}}, "a")
+	if err := settlePendingNeeds(); err != nil {
+		t.Fatalf("a daemon with qua.images refused the pending images: %v", err)
+	}
+	daemonSeen.Lock()
+	left := len(daemonSeen.needs)
+	daemonSeen.Unlock()
+	if left != 0 {
+		t.Fatalf("%d need(s) still pending after the first handshake", left)
+	}
+	recordDaemon("the daemon", daemonIdentity{build: "c", release: "0.52.4", protocol: 1}, "a")
+	if err := settlePendingNeeds(); err != nil {
+		t.Fatalf("a second handshake judged the first request's need: %v", err)
+	}
+}
+
 // A need is the current request's, not the process's: after one image went
 // to a daemon that takes images, a reconnect to one that does not survives the
 // handshake and refuses only the next image.
