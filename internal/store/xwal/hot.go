@@ -229,16 +229,33 @@ func (t *Trunks) forgetLineageHead(trunk string) bool {
 		t.hotMu.Unlock()
 		return true
 	}
-	if head := h.heads[key]; head != nil {
-		if head.refs != 0 {
-			t.hotMu.Unlock()
-			return false
-		}
-		delete(h.heads, key)
+	head := h.heads[key]
+	if head != nil && head.refs != 0 {
+		t.hotMu.Unlock()
+		return false
 	}
 	h.refs++
 	t.hotMu.Unlock()
 	defer func() { _ = t.releaseHot(h) }()
+	if head != nil {
+		select {
+		case <-head.ready:
+		default:
+			return false
+		}
+		if head.x != nil && head.err == nil {
+			if err := t.syncHead(key, head.x); err != nil {
+				return false
+			}
+		}
+		t.hotMu.Lock()
+		if h.heads[key] != head || head.refs != 0 {
+			t.hotMu.Unlock()
+			return false
+		}
+		delete(h.heads, key)
+		t.hotMu.Unlock()
+	}
 	for _, ch := range names {
 		dir := filepath.Join(t.root, ch, fsName(key))
 		if !h.store.Holds(dir) {

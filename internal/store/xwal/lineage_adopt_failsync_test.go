@@ -2,6 +2,7 @@ package xwal
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 )
 
@@ -52,5 +53,40 @@ func TestAdoptingALineageWhoseOwnerCannotFlushFencesTheNode(t *testing.T) {
 
 	if holder := rootFenceHolder(peer.registryRoot, node); holder != s.Trunks {
 		t.Fatalf("after a failed sync on adoption the node is fenced by %p, want the owner %p", holder, s.Trunks)
+	}
+}
+
+// A lineage head whose own flush fails is not forgotten: it stays in the hot
+// store so the fallback retire flushes it again and fences its node.
+func TestALineageHeadThatCannotFlushIsNotForgotten(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "f")
+	f, trunk := seedTrunk(t, dir)
+	head, err := f.Head(trunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := head.Close(); err != nil {
+		t.Fatal(err)
+	}
+	key, ok := f.idx.Head(trunk)
+	if !ok {
+		t.Fatal("no head key")
+	}
+	f.testHeadSync = func(k string) error {
+		if k == key {
+			return fmt.Errorf("input/output error")
+		}
+		return nil
+	}
+	defer func() { f.testHeadSync = nil }()
+	h := hotStoreOf(f)
+	if f.forgetLineageHead(trunk) {
+		t.Fatal("forgetLineageHead dropped a head whose flush failed")
+	}
+	f.hotMu.Lock()
+	_, kept := h.heads[key]
+	f.hotMu.Unlock()
+	if !kept {
+		t.Fatal("the head whose flush failed was removed from the hot store")
 	}
 }
