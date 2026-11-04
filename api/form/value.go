@@ -63,6 +63,13 @@ func (v Value) canonical() []byte {
 	if v.c == nil {
 		return nil
 	}
+	if len(v.raw) > canonMemoMax {
+		canon, err := canonicalJSON(v.raw)
+		if err != nil {
+			return nil
+		}
+		return canon
+	}
 	v.c.once.Do(func() {
 		if canon, err := canonicalJSON(v.raw); err == nil {
 			v.c.bytes = canon
@@ -72,6 +79,8 @@ func (v Value) canonical() []byte {
 	return v.c.bytes
 }
 
+const canonMemoMax = 4 << 10
+
 func (v Value) IsJSON() bool { return v.canonical() != nil }
 
 // Equal is semantic: whitespace and key order are insignificant.
@@ -79,11 +88,29 @@ func (v Value) Equal(other Value) bool {
 	if bytes.Equal(v.raw, other.raw) {
 		return true
 	}
+	if eq, ok := stringsEqual(v.raw, other.raw); ok {
+		return eq
+	}
 	a, b := v.canonical(), other.canonical()
 	if a == nil || b == nil {
 		return false
 	}
 	return bytes.Equal(a, b)
+}
+
+func stringsEqual(a, b json.RawMessage) (equal, ok bool) {
+	a, b = bytes.TrimSpace(a), bytes.TrimSpace(b)
+	if len(a) == 0 || len(b) == 0 || a[0] != '"' || b[0] != '"' {
+		return false, false
+	}
+	if bytes.IndexByte(a, '\\') < 0 && bytes.IndexByte(b, '\\') < 0 {
+		return bytes.Equal(a, b), true
+	}
+	var sa, sb string
+	if json.Unmarshal(a, &sa) != nil || json.Unmarshal(b, &sb) != nil {
+		return false, false
+	}
+	return sa == sb, true
 }
 
 func (v Value) Decode(dst any) error {
