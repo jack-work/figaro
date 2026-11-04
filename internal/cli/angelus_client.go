@@ -204,22 +204,24 @@ func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
 // A daemon from another revision renders nothing rather than failing loudly, so
 // the mismatch is named.
 func checkDaemonBuild(cli *sdk.Angelus) {
-	mine := boot.BuildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
 	if err != nil || st == nil {
 		return
 	}
-	switch buildHandshake(st.Build, mine) {
+	d := identityOf(st)
+	mine := boot.BuildRevision()
+	switch v := buildHandshake(d, mine, boot.BuildRelease()); v {
 	case handshakeOK:
-		return
+	case handshakeOtherMinor:
+		warnOtherMinor("the running angelus", d)
 	case handshakeCLIUnknown:
 		fmt.Fprintf(stderrw,
 			"figaro: this CLI's build is unknown, so it cannot be checked against\n"+
 				"        the running angelus (%s). If output is missing or garbled,\n"+
 				"        run `figaro stop` and retry; see the tmux-testing skill to\n"+
-				"        build a stamped binary.\n", short12(st.Build))
+				"        build a stamped binary.\n", short12(d.build))
 	case handshakeDaemonOld:
 		fmt.Fprintf(stderrw,
 			"figaro: the running angelus predates the build check, so it is older\n"+
@@ -233,39 +235,71 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 				"        They may or may not be the same release. If output is missing\n"+
 				"        or garbled, run `figaro stop`: the next command starts an\n"+
 				"        angelus from THIS binary, and the pair matches by construction.\n",
-			short12(st.Build), boot.BuildIdentityKind(st.Build), short12(mine), boot.BuildIdentityKind(mine))
-	case handshakeRefuse:
+			short12(d.build), boot.BuildIdentityKind(d.build), short12(mine), boot.BuildIdentityKind(mine))
+	case handshakeProtocolMismatch:
+		die("the running angelus speaks protocol %d and this CLI speaks %d:\n"+
+			"  daemon %s\n  cli    %s\n"+
+			"run `figaro stop` and retry.", d.protocol, rpc.ProtocolVersion, describeBuild(d.build, d.release), describeBuild(mine, boot.BuildRelease()))
+	default:
 		die("running angelus is a different build than this CLI:\n"+
 			"  daemon %s\n  cli    %s\n"+
-			"the wire changes between builds, so this pair would render nothing.\n"+
-			"run `figaro stop` and retry.", short12(st.Build), short12(mine))
+			"it reports no protocol, so the pair cannot be checked.\n"+
+			"run `figaro stop` and retry.", short12(d.build), short12(mine))
 	}
 }
 
 func checkTroupeBuild(cli *sdk.Angelus, label string) {
-	mine := boot.BuildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
 	if err != nil || st == nil {
 		return
 	}
-	if buildHandshake(st.Build, mine) == handshakeRefuse {
+	d := identityOf(st)
+	mine := boot.BuildRevision()
+	switch buildHandshake(d, mine, boot.BuildRelease()) {
+	case handshakeProtocolMismatch:
+		die("the daemon at %s speaks protocol %d and this CLI speaks %d:\n"+
+			"  daemon %s\n  cli    %s\n"+
+			"use a figaro of the daemon's release line.", label, d.protocol, rpc.ProtocolVersion,
+			describeBuild(d.build, d.release), describeBuild(mine, boot.BuildRelease()))
+	case handshakeRefuse:
 		die("the daemon at %s is a different build than this CLI:\n"+
 			"  daemon %s\n  cli    %s\n"+
-			"the wire changes between builds; use a figaro of the daemon's build.", label, short12(st.Build), short12(mine))
+			"it reports no protocol, so the pair cannot be checked; use a figaro of the daemon's build.",
+			label, short12(d.build), short12(mine))
+	case handshakeOtherMinor:
+		warnOtherMinor("the daemon at "+label, d)
 	}
 }
 
-func buildHandshake(daemon, mine string) handshakeVerdict {
+type daemonIdentity struct {
+	build    string
+	release  string
+	protocol int
+	caps     []rpc.Capability
+}
+
+func identityOf(st *rpc.StatusResponse) daemonIdentity {
+	return daemonIdentity{build: st.Build, release: st.Release, protocol: st.Protocol, caps: st.Capabilities}
+}
+
+func buildHandshake(d daemonIdentity, mine, mineRelease string) handshakeVerdict {
 	switch {
-	case daemon == mine:
+	case d.build == mine:
 		return handshakeOK
+	case d.protocol != 0 && d.protocol != rpc.ProtocolVersion:
+		return handshakeProtocolMismatch
+	case d.protocol != 0 && d.release != "" && mineRelease != "":
+		if releaseMinor(d.release) == releaseMinor(mineRelease) {
+			return handshakeOK
+		}
+		return handshakeOtherMinor
 	case mine == "":
 		return handshakeCLIUnknown
-	case daemon == "":
+	case d.build == "":
 		return handshakeDaemonOld
-	case boot.BuildIdentityKind(daemon) != boot.BuildIdentityKind(mine):
+	case boot.BuildIdentityKind(d.build) != boot.BuildIdentityKind(mine):
 		return handshakeMixedSchemes
 	default:
 		return handshakeRefuse
@@ -280,7 +314,31 @@ const (
 	handshakeDaemonOld
 	handshakeMixedSchemes
 	handshakeRefuse
+	handshakeProtocolMismatch
+	handshakeOtherMinor
 )
+
+func releaseMinor(release string) string {
+	parts := strings.SplitN(strings.TrimPrefix(release, "v"), ".", 3)
+	if len(parts) < 2 {
+		return release
+	}
+	return parts[0] + "." + parts[1]
+}
+
+func describeBuild(build, release string) string {
+	if release == "" {
+		return short12(build)
+	}
+	return release + " (" + short12(build) + ")"
+}
+
+func warnOtherMinor(who string, d daemonIdentity) {
+	fmt.Fprintf(stderrw,
+		"figaro: %s is %s and this CLI is %s: another minor release.\n"+
+			"        They share protocol %d, so the pair works.\n",
+		who, d.release, boot.BuildRelease(), d.protocol)
+}
 
 func short12(s string) string {
 	if len(s) > 12 {

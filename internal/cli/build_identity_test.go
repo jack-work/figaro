@@ -3,6 +3,7 @@ package cli
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/boot"
 )
 
@@ -42,6 +43,8 @@ func TestMixedSchemesAreNotRefused(t *testing.T) {
 	}
 }
 
+// A daemon that reports no protocol (0.52.3 and older) is judged by build
+// alone, exactly as before the contract.
 func TestBuildHandshakeMatrix(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -60,8 +63,40 @@ func TestBuildHandshakeMatrix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := buildHandshake(tc.daemon, tc.mine); got != tc.want {
+			if got := buildHandshake(daemonIdentity{build: tc.daemon}, tc.mine, "0.52.4"); got != tc.want {
 				t.Fatalf("buildHandshake(%q, %q) = %v, want %v", tc.daemon, tc.mine, got, tc.want)
+			}
+		})
+	}
+}
+
+// The contract: a daemon that reports the CLI's protocol is accepted across
+// builds within a minor release, warned about across minors, and refused only
+// on another protocol. Dev builds, which carry no release, keep the build rule.
+func TestBuildHandshakeAcrossReleases(t *testing.T) {
+	const a, b = "8e92e2677ac0", "b7e91d23aaaa"
+	cases := []struct {
+		name       string
+		d          daemonIdentity
+		mine, mrel string
+		want       handshakeVerdict
+	}{
+		{"same build", daemonIdentity{build: a, release: "0.52.4", protocol: rpc.ProtocolVersion}, a, "0.52.4", handshakeOK},
+		{"next patch daemon", daemonIdentity{build: b, release: "0.52.5", protocol: rpc.ProtocolVersion}, a, "0.52.4", handshakeOK},
+		{"previous patch daemon", daemonIdentity{build: b, release: "0.52.4", protocol: rpc.ProtocolVersion}, a, "0.52.5", handshakeOK},
+		{"v-prefixed release", daemonIdentity{build: b, release: "v0.52.6", protocol: rpc.ProtocolVersion}, a, "0.52.4", handshakeOK},
+		{"another minor", daemonIdentity{build: b, release: "0.53.0", protocol: rpc.ProtocolVersion}, a, "0.52.4", handshakeOtherMinor},
+		{"another protocol", daemonIdentity{build: b, release: "0.52.5", protocol: rpc.ProtocolVersion + 1}, a, "0.52.4", handshakeProtocolMismatch},
+		{"another protocol, same minor", daemonIdentity{build: b, release: "0.52.4", protocol: rpc.ProtocolVersion + 1}, a, "0.52.4", handshakeProtocolMismatch},
+		{"dev daemon with a protocol", daemonIdentity{build: b, protocol: rpc.ProtocolVersion}, a, "0.52.4", handshakeRefuse},
+		{"dev cli against a release", daemonIdentity{build: b, release: "0.52.4", protocol: rpc.ProtocolVersion}, a, "", handshakeRefuse},
+		{"unknown cli against a release", daemonIdentity{build: b, release: "0.52.4", protocol: rpc.ProtocolVersion}, "", "", handshakeCLIUnknown},
+		{"pre-protocol daemon of another release", daemonIdentity{build: b, release: ""}, a, "0.52.4", handshakeRefuse},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildHandshake(tc.d, tc.mine, tc.mrel); got != tc.want {
+				t.Fatalf("buildHandshake(%+v, %q, %q) = %v, want %v", tc.d, tc.mine, tc.mrel, got, tc.want)
 			}
 		})
 	}
