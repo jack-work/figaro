@@ -39,6 +39,9 @@ func (t *Trunks) appendMainWith(trunk string, payload, meta []byte, extra map[st
 	if err != nil {
 		return "", 0, nil, err
 	}
+	if t.testAppendBorrow != nil {
+		t.testAppendBorrow()
+	}
 	lt, cursors, appendErr := x.AppendMainCursors(payload, meta, extra)
 	_ = release()
 	if appendErr != nil {
