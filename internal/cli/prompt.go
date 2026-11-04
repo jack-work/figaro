@@ -76,7 +76,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 		}
 		defer fcli.Close()
 		qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
-		if _, _, qerr := fcli.QuaWith(qctx, d.request(prompt)); qerr != nil {
+		if _, _, qerr := quaWith(qctx, fcli, d.request(prompt)); qerr != nil {
 			qcancel()
 			dieWithClosure(qerr, "prompt: %s", qerr)
 		}
@@ -115,7 +115,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 
 	qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer qcancel()
-	if _, _, qerr := fcli.QuaWith(qctx, d.request(prompt)); qerr != nil {
+	if _, _, qerr := quaWith(qctx, fcli, d.request(prompt)); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 }

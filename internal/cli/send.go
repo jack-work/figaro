@@ -659,7 +659,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := fcli.QuaWith(ctx, opts.outfit.request(prompt)); qerr != nil {
+	if _, _, qerr := quaWith(ctx, fcli, opts.outfit.request(prompt)); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {

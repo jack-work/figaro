@@ -233,7 +233,7 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 	catchUp := in.tc.Interactive() && !in.set.listen
 
 	qua := mark.Span("submit.qua", "to", in.figaroID, "len", len(in.prompt))
-	cursor, active, qerr := in.subject.QuaWith(ctx, in.dress.request(in.prompt))
+	cursor, active, qerr := quaWith(ctx, in.subject, in.dress.request(in.prompt))
 	qua("active", active, "err", qerr != nil)
 	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)

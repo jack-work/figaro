@@ -162,7 +162,7 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	if err != nil {
 		return "", fmt.Errorf("fork: forked %s but could not connect: %w", ariaName(branch), err)
 	}
-	if _, _, err := fcli.QuaWith(ctx, plan.opts.outfit.request(plan.prompt)); err != nil {
+	if _, _, err := quaWith(ctx, fcli, plan.opts.outfit.request(plan.prompt)); err != nil {
 		fcli.Close()
 		return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", ariaName(branch), err)
 	}
