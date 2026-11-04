@@ -121,12 +121,14 @@ func TestYankKey_NoSelectionCopiesNameAndMetaYTheID(t *testing.T) {
 		{idsAsHandles, ariaHandle(yankTestID)},
 		{idsAsShortHex, yankTestID[:rpc.ShortIDLen]},
 	} {
-		withShownIDs(t, tc.style)
-		_, term, _ := yankInput(t)
-		term.send([]byte{'y'})
-		waitClipboard(t, term, tc.want)
-		term.send([]byte("\x1by"))
-		waitClipboard(t, term, yankTestID)
+		t.Run(tc.want, func(t *testing.T) {
+			withShownIDs(t, tc.style)
+			_, term, _ := yankInput(t)
+			term.send([]byte{'y'})
+			waitClipboard(t, term, tc.want)
+			term.send([]byte("\x1by"))
+			waitClipboard(t, term, yankTestID)
+		})
 	}
 	if h := ariaHandle(yankTestID); !strings.Contains(h, "-") {
 		t.Fatalf("the fixture id must spell a handle, got %q", h)
