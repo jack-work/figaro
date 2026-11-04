@@ -154,10 +154,32 @@ func TestANeedRegisteredBeforeTheHandshakeIsCheckedAtIt(t *testing.T) {
 	if err := needCapability(rpc.CapQuaImages, "images on a prompt"); err != nil {
 		t.Fatalf("no daemon seen yet, nothing to refuse: %v", err)
 	}
-	daemonSeen.Lock()
-	daemonSeen.known, daemonSeen.who, daemonSeen.d = true, "the daemon", daemonIdentity{build: "b", release: "0.52.5", protocol: 1}
-	daemonSeen.Unlock()
-	if err := missingCapability(); err == nil {
+	recordDaemon("the daemon", daemonIdentity{build: "b", release: "0.52.5", protocol: 1}, "a")
+	if err := settlePendingNeeds(); err == nil {
 		t.Fatal("a daemon without qua.images must refuse the images registered before it was seen")
+	}
+}
+
+// A need is the current request's, not the process's: after one image went
+// to a daemon that takes images, a reconnect to one that does not survives the
+// handshake and refuses only the next image.
+func TestAReconnectToADaemonWithoutImagesRefusesOnlyTheNextImage(t *testing.T) {
+	resetDaemonSeen(t)
+	withImages := daemonIdentity{build: "b", release: "0.52.5", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages}}
+	without := daemonIdentity{build: "c", release: "0.52.4", protocol: 1}
+	sawDaemon("the daemon", withImages, "a")
+	img := rpc.QuaRequest{Text: "total?", Images: []rpc.QuaImage{{MimeType: "image/png", Data: "AA"}}}
+	if err := refuseUnknownFields(img); err != nil {
+		t.Fatalf("a daemon with qua.images refused an image: %v", err)
+	}
+	recordDaemon("the daemon", without, "a")
+	if err := settlePendingNeeds(); err != nil {
+		t.Fatalf("the reconnect's handshake failed on a need from an earlier request: %v", err)
+	}
+	if err := refuseUnknownFields(rpc.QuaRequest{Text: "hi"}); err != nil {
+		t.Fatalf("a text prompt after the reconnect was refused: %v", err)
+	}
+	if err := refuseUnknownFields(img); err == nil || !strings.Contains(err.Error(), string(rpc.CapQuaImages)) {
+		t.Fatalf("the next image to a daemon without %s: %v", rpc.CapQuaImages, err)
 	}
 }

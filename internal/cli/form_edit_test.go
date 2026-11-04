@@ -287,8 +287,11 @@ func TestThePitIsReadOnlyAgainstADaemonWithoutFormSeq(t *testing.T) {
 	if formPitEditable("runtime") {
 		t.Fatal("an intrinsic form is never editable")
 	}
-	if err := missingCapability(); err != nil {
-		t.Fatalf("asking about form.seq registered a need: %v", err)
+	daemonSeen.Lock()
+	pending := len(daemonSeen.needs)
+	daemonSeen.Unlock()
+	if pending != 0 {
+		t.Fatalf("asking about form.seq registered %d need(s)", pending)
 	}
 	sawDaemon("the daemon", daemonIdentity{build: "new2", release: "0.53.0", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages, rpc.CapFormSeq}}, "new")
 	if !formPitEditable("") {

@@ -355,23 +355,44 @@ var daemonSeen struct {
 }
 
 func sawDaemon(who string, d daemonIdentity, mine string) {
-	daemonSeen.Lock()
-	daemonSeen.known, daemonSeen.who, daemonSeen.d = true, who, d
-	daemonSeen.same = d.build == mine
-	daemonSeen.Unlock()
-	if err := missingCapability(); err != nil {
+	recordDaemon(who, d, mine)
+	if err := settlePendingNeeds(); err != nil {
 		die("%s", err)
 	}
 }
 
+func recordDaemon(who string, d daemonIdentity, mine string) {
+	daemonSeen.Lock()
+	defer daemonSeen.Unlock()
+	daemonSeen.known, daemonSeen.who, daemonSeen.d = true, who, d
+	daemonSeen.same = d.build == mine
+}
+
+func settlePendingNeeds() error {
+	daemonSeen.Lock()
+	pending := daemonSeen.needs
+	daemonSeen.needs = nil
+	daemonSeen.Unlock()
+	for c, use := range pending {
+		if err := lacksForUse(c, use); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func needCapability(c rpc.Capability, use string) error {
 	daemonSeen.Lock()
-	if daemonSeen.needs == nil {
-		daemonSeen.needs = map[rpc.Capability]string{}
+	if !daemonSeen.known {
+		if daemonSeen.needs == nil {
+			daemonSeen.needs = map[rpc.Capability]string{}
+		}
+		daemonSeen.needs[c] = use
+		daemonSeen.Unlock()
+		return nil
 	}
-	daemonSeen.needs[c] = use
 	daemonSeen.Unlock()
-	return missingCapability()
+	return lacksForUse(c, use)
 }
 
 func daemonLacks(c rpc.Capability) bool {
@@ -380,19 +401,14 @@ func daemonLacks(c rpc.Capability) bool {
 	return daemonSeen.known && !daemonSeen.same && !slices.Contains(daemonSeen.d.caps, c)
 }
 
-func missingCapability() error {
-	daemonSeen.Lock()
-	defer daemonSeen.Unlock()
-	if !daemonSeen.known || daemonSeen.same {
+func lacksForUse(c rpc.Capability, use string) error {
+	if !daemonLacks(c) {
 		return nil
 	}
-	for c, use := range daemonSeen.needs {
-		if !slices.Contains(daemonSeen.d.caps, c) {
-			return fmt.Errorf("%s (%s) cannot take %s: it does not report %q; upgrade it, or use a figaro of its release",
-				daemonSeen.who, describeBuild(daemonSeen.d.build, daemonSeen.d.release), use, c)
-		}
-	}
-	return nil
+	daemonSeen.Lock()
+	defer daemonSeen.Unlock()
+	return fmt.Errorf("%s (%s) cannot take %s: it does not report %q; upgrade it, or use a figaro of its release",
+		daemonSeen.who, describeBuild(daemonSeen.d.build, daemonSeen.d.release), use, c)
 }
 
 func short12(s string) string {
