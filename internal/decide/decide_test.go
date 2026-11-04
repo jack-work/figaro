@@ -641,3 +641,28 @@ func TestAskTakesTheQuestionAsWritten(t *testing.T) {
 		t.Fatalf("out = %+v", out)
 	}
 }
+
+// Fixes #55: a provider that needs a header gets it on decide's requests too,
+// as it does through serve.
+func TestTheProvidersHeadersRideEveryDecision(t *testing.T) {
+	var got, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, path = r.Header.Get("X-Required-Header"), r.URL.Path
+		io.WriteString(w, liveNoul)
+	}))
+	defer srv.Close()
+	var askedFor string
+	e := New(func(string) (Target, error) {
+		return Target{BaseURL: srv.URL, Auth: fixedToken("k"), Headers: func(p string) map[string]string {
+			askedFor = p
+			return map[string]string{"X-Required-Header": "value"}
+		}}, nil
+	})
+	decide(t, e, Source{Defaults: defaultsOf(t, "azure", "decision-1")}, rpc.DecideRequest{Question: "is it urgent?"})
+	if got != "value" {
+		t.Fatalf("X-Required-Header = %q", got)
+	}
+	if askedFor != path {
+		t.Fatalf("headers were chosen for %q, the request went to %q", askedFor, path)
+	}
+}

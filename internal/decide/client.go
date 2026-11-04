@@ -46,6 +46,7 @@ type Client struct {
 	auth    auth.TokenResolver
 	baseURL string
 	http    *http.Client
+	headers func(path string) map[string]string
 }
 
 func NewClient(baseURL string, resolver auth.TokenResolver) *Client {
@@ -66,6 +67,11 @@ func (c *Client) post(ctx context.Context, path string, body any) ([]byte, error
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.headers != nil {
+		for k, v := range c.headers(path) {
+			req.Header.Set(k, v)
+		}
+	}
 	if c.auth != nil {
 		if key, err := c.auth.Resolve(); err == nil && key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)

@@ -49,6 +49,7 @@ type Source struct {
 type Target struct {
 	BaseURL string
 	Auth    auth.TokenResolver
+	Headers func(path string) map[string]string
 }
 
 type Targets func(provider string) (Target, error)
@@ -243,6 +244,7 @@ func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p p
 		return out, fmt.Errorf("decision provider %q: %w", set.provider, err)
 	}
 	client := NewClient(firstOf(set.baseURL, target.BaseURL), target.Auth)
+	client.headers = target.Headers
 
 	var resp response
 	var w built

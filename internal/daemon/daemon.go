@@ -19,6 +19,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/modelcat"
+	"github.com/jack-work/figaro/internal/provider/routed"
 	"github.com/jack-work/figaro/internal/relay"
 
 	"github.com/jack-work/figaro/api/transport"
@@ -225,8 +226,14 @@ func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
 		if err != nil {
 			return decide.Target{}, err
 		}
-		return decide.Target{BaseURL: up.Base(), Auth: up.Credential()}, nil
+		return decideTarget(up), nil
 	}), nil
+}
+
+func decideTarget(up relay.Upstream) decide.Target {
+	return decide.Target{BaseURL: up.Base(), Auth: up.Credential(), Headers: func(path string) map[string]string {
+		return up.Headers(routed.TransportForPath(path))
+	}}
 }
 
 func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
