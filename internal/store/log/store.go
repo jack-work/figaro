@@ -120,6 +120,18 @@ func (s *Store) Evict(dir string) error {
 // Forget syncs and drops the cached logs for dir and for every log reading it
 // as a parent, then has the disk store close them, so the next Open reads the
 // files as they now are.
+func (s *Store) Holds(dir string) bool {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	abs = filepath.Clean(abs)
+	s.mu.Lock()
+	_, ok := s.logs[abs]
+	s.mu.Unlock()
+	return ok || s.disk.Has(abs)
+}
+
 func (s *Store) Forget(dir string) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {

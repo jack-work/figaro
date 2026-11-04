@@ -58,17 +58,21 @@ func (t *Trunks) rootLineage(trunk string) *rootLineageState {
 	return lineage
 }
 
-func (t *Trunks) adoptLineage(lineage *rootLineageState) {
+func (t *Trunks) adoptLineage(trunk string, lineage *rootLineageState) {
 	if lineage.owner == nil {
 		lineage.owner = t
 	} else if lineage.owner != t {
 		// The previous owner's buffered appends must reach disk before this
 		// peer opens the lineage from disk. A sync that fails retires the
-		// owner's store, which fences the nodes it could not flush.
+		// owner's store, which fences the nodes it could not flush, and the
+		// adopter drops its whole store as before; a sync that succeeds lets
+		// the adopter drop only this lineage.
 		if err := lineage.owner.syncHot(); err != nil {
 			lineage.owner.retireHot()
+			t.retireHot()
+		} else if !t.forgetLineageHead(trunk) {
+			t.retireHot()
 		}
-		t.retireHot()
 		lineage.owner = t
 	}
 }
@@ -89,7 +93,7 @@ func (t *Trunks) lockLineage(trunk string) func() {
 		lineage.ready.Wait()
 	}
 	lineage.writing = true
-	t.adoptLineage(lineage)
+	t.adoptLineage(trunk, lineage)
 	lineage.mu.Unlock()
 	return func() {
 		lineage.mu.Lock()
@@ -105,7 +109,7 @@ func (t *Trunks) holdLineageHead(trunk string) func() {
 	for lineage.writing || foreignLineageHeads(lineage, t) {
 		lineage.ready.Wait()
 	}
-	t.adoptLineage(lineage)
+	t.adoptLineage(trunk, lineage)
 	lineage.heads[t]++
 	lineage.mu.Unlock()
 	return func() {

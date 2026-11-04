@@ -206,6 +206,45 @@ func (t *Trunks) evictLineage(trunk string) (bool, error) {
 	return true, nil
 }
 
+func (t *Trunks) forgetLineageHead(trunk string) bool {
+	t.mu.RLock()
+	key, ok := t.idx.Head(trunk)
+	t.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	names, err := channelNames(t.root)
+	if err != nil {
+		return false
+	}
+	t.hotMu.Lock()
+	h := t.hot
+	if h == nil {
+		t.hotMu.Unlock()
+		return true
+	}
+	if head := h.heads[key]; head != nil {
+		if head.refs != 0 {
+			t.hotMu.Unlock()
+			return false
+		}
+		delete(h.heads, key)
+	}
+	h.refs++
+	t.hotMu.Unlock()
+	defer func() { _ = t.releaseHot(h) }()
+	for _, ch := range names {
+		dir := filepath.Join(t.root, ch, fsName(key))
+		if !h.store.Holds(dir) {
+			continue
+		}
+		if err := h.store.Forget(dir); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func (t *Trunks) openHotTopology(key string) (*XWAL, error) {
 	var branch []string
 	if key != "" {

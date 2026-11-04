@@ -79,6 +79,17 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 }
 
 // Close closes every cached log; the Store owns their lifetime.
+func (s *Store) Has(dir string) bool {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	s.mu.Lock()
+	_, ok := s.logs[filepath.Clean(abs)]
+	s.mu.Unlock()
+	return ok
+}
+
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
