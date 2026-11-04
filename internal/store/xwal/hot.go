@@ -12,10 +12,11 @@ import (
 )
 
 type trunkStore struct {
-	store   *log.Store
-	heads   map[string]*hotHead
-	refs    int
-	retired bool
+	store     *log.Store
+	heads     map[string]*hotHead
+	refs      int
+	retired   bool
+	unflushed map[string]error
 }
 
 type hotHead struct {
@@ -72,6 +73,10 @@ func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error
 	if t.isDead(branch) {
 		t.hotMu.Unlock()
 		return nil, nil, fmt.Errorf("%w: node %s is removed", ErrUnknownTrunk, key)
+	}
+	if err := t.unflushedLocked(key); err != nil {
+		t.hotMu.Unlock()
+		return nil, nil, err
 	}
 	h := t.hot
 	if h == nil {
@@ -211,7 +216,10 @@ func (t *Trunks) openHotTopology(key string) (*XWAL, error) {
 func (t *Trunks) releaseHot(h *trunkStore) error {
 	t.hotMu.Lock()
 	h.refs--
-	closeStore := h.retired && h.refs == 0
+	if h.retired && h.refs == 0 {
+		t.flushStoreLocked(h)
+	}
+	closeStore := h.retired && h.refs == 0 && len(h.unflushed) == 0
 	if closeStore {
 		delete(t.retired, h)
 	}
@@ -284,6 +292,12 @@ func (t *Trunks) syncHot() error {
 // retirement path comes here. Before any other borrow can make a new store,
 // the old store's buffered tail is on disk: closed now if nothing borrows it,
 // synced now if something does.
+// retireHot is the one place a hot store stops being hot, and every
+// retirement path comes here. Before any other borrow can make a new store,
+// the old store's buffered tail is on disk: every loaded head is synced, and
+// the store closed if nothing borrows it. A head whose sync fails keeps the
+// store retired and open, and its node refuses new heads until a retry
+// flushes it.
 func (t *Trunks) retireHot() {
 	t.hotMu.Lock()
 	defer t.hotMu.Unlock()
@@ -293,13 +307,30 @@ func (t *Trunks) retireHot() {
 		return
 	}
 	h.retired = true
-	if h.refs == 0 {
+	t.flushStoreLocked(h)
+	if h.refs == 0 && len(h.unflushed) == 0 {
 		if err := t.closeStore(h); err != nil {
 			slog.Warn("xwal: closing a retired hot store", "err", err)
 		}
 		return
 	}
-	for _, head := range h.heads {
+	if t.retired == nil {
+		t.retired = map[*trunkStore]struct{}{}
+	}
+	t.retired[h] = struct{}{}
+}
+
+func (t *Trunks) syncHead(key string, x *XWAL) error {
+	if t.testHeadSync != nil {
+		if err := t.testHeadSync(key); err != nil {
+			return err
+		}
+	}
+	return x.syncCoherent()
+}
+
+func (t *Trunks) flushStoreLocked(h *trunkStore) {
+	for key, head := range h.heads {
 		select {
 		case <-head.ready:
 		default:
@@ -308,14 +339,38 @@ func (t *Trunks) retireHot() {
 		if head.x == nil || head.err != nil {
 			continue
 		}
-		if err := head.x.syncCoherent(); err != nil {
-			slog.Warn("xwal: flushing a retired hot store", "node", head.x.key, "err", err)
+		if err := t.syncHead(key, head.x); err != nil {
+			slog.Error("xwal: a retired hot store's tail could not be flushed; its node refuses new heads until it is", "node", head.x.key, "err", err)
+			if h.unflushed == nil {
+				h.unflushed = map[string]error{}
+			}
+			h.unflushed[key] = err
+			continue
+		}
+		delete(h.unflushed, key)
+	}
+}
+
+// unflushedLocked retries the flush of any retired store still holding an
+// unflushed tail of key, and reports the error if one remains. A store that
+// is flushed and unborrowed is closed here.
+func (t *Trunks) unflushedLocked(key string) error {
+	for h := range t.retired {
+		if _, ok := h.unflushed[key]; !ok {
+			continue
+		}
+		t.flushStoreLocked(h)
+		if err, still := h.unflushed[key]; still {
+			return fmt.Errorf("xwal: node %s holds entries a retired store could not flush: %w", key, err)
+		}
+		if len(h.unflushed) == 0 && h.refs == 0 {
+			delete(t.retired, h)
+			if err := t.closeStore(h); err != nil {
+				slog.Warn("xwal: closing a retired hot store", "err", err)
+			}
 		}
 	}
-	if t.retired == nil {
-		t.retired = map[*trunkStore]struct{}{}
-	}
-	t.retired[h] = struct{}{}
+	return nil
 }
 
 func (t *Trunks) register() error {

@@ -2,6 +2,7 @@ package xwal
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -284,6 +285,71 @@ func TestAPeersForkThatRetiresThisStoreNeverLetsTheNextAppendReuseALT(t *testing
 	}
 	if err := peer.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := OpenStore(dir, testStoreOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	for i, lt := range []uint64{first, second} {
+		_, payload, err := s2.Read(tr, "ir", lt)
+		if want := fmt.Sprintf(`{"i":%d}`, i); err != nil || string(payload) != want {
+			t.Fatalf("append %d at LT %d reads %s (err %v), want %s", i, lt, payload, err, want)
+		}
+	}
+}
+
+// Fail closed: when a retired store's tail cannot be flushed (ENOSPC, EIO),
+// the node refuses new heads instead of letting the next append read a short
+// tail and reuse an LT. Once a retry flushes the tail, appends go on, and
+// nothing is lost.
+func TestAFailedFlushAtRetirementRefusesTheNodeUntilItFlushes(t *testing.T) {
+	dir := t.TempDir()
+	opts := testStoreOptions()
+	opts.NoBackgroundFlush = true
+	opts.IdleUnload = -1
+	s, err := OpenStore(dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := s.SpawnUnderRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.Append(tr, "ir", 0, []byte(`{"i":0}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, _ := s.HeadNode(tr)
+	var mu sync.Mutex
+	failing := true
+	s.Trunks.testHeadSync = func(key string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if failing && key == node {
+			return fmt.Errorf("no space left on device")
+		}
+		return nil
+	}
+	s.Trunks.retireHot()
+	if lt, err := s.Append(tr, "ir", 0, []byte(`{"i":1}`), nil); err == nil {
+		t.Fatalf("an append while the retired tail is unflushed was given LT %d", lt)
+	} else if !strings.Contains(err.Error(), "could not flush") {
+		t.Fatalf("refused with %v", err)
+	}
+	mu.Lock()
+	failing = false
+	mu.Unlock()
+	second, err := s.Append(tr, "ir", 0, []byte(`{"i":1}`), nil)
+	if err != nil {
+		t.Fatalf("after the flush succeeds: %v", err)
+	}
+	s.Trunks.testHeadSync = nil
+	if second != first+1 {
+		t.Fatalf("after the retry the append got LT %d, want %d", second, first+1)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
