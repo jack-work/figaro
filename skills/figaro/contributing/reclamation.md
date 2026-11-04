@@ -315,6 +315,22 @@ gc = "dry-run"   # default: log what would drop; "on" drops; "off" skips
 
 `figaro gc [--dry-run]` prints the same plan next to the outfit versions.
 
+## Disk: node directories nothing names
+
+A node directory in any channel with no `.node` marker in the main channel,
+no pending move or removal plan naming it, and a `.fork` base is unreachable:
+a fork that crashed before its marker, or data a removal should have taken.
+The daemon looks for them once at boot, holding the store's writer lock and
+before it serves anything; no other opener does.
+
+```toml
+[store]
+node_sweep = "dry-run"   # default: log each path it would remove and a count; "on" removes; "off" skips
+```
+
+A plan it cannot read or parse, or a marker it cannot stat, keeps
+everything: the sweep is skipped, or that directory is kept, with a warning.
+
 ## Seeing it
 
 `figaro doctor mem [-j]` reports live arias, resident handles, resident IR rows

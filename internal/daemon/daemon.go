@@ -181,6 +181,15 @@ func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: loaded.Trunks()}); err != nil {
 		return nil, err
 	}
+	mode, err := loaded.NodeSweep()
+	if err != nil {
+		return nil, err
+	}
+	if mode != config.RetentionOff {
+		if _, err := b.SweepUnmarkedNodes(mode == config.RetentionOn); err != nil {
+			return nil, err
+		}
+	}
 	return b, nil
 }
 

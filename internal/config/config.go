@@ -138,6 +138,8 @@ type StoreConfig struct {
 	SegmentSize *int `toml:"segment_size"`
 
 	GC string `toml:"gc"`
+
+	NodeSweep string `toml:"node_sweep"`
 }
 
 // MemoryConfig tunes when the daemon reclaims an idle aria.
@@ -615,6 +617,17 @@ func (l *Loaded) Retention() (Retention, error) {
 		return r, nil
 	default:
 		return RetentionOff, fmt.Errorf("config: [store] gc must be \"off\", \"dry-run\" or \"on\", got %q", r)
+	}
+}
+
+func (l *Loaded) NodeSweep() (Retention, error) {
+	switch r := Retention(l.cfg().Store.NodeSweep); r {
+	case "":
+		return RetentionDryRun, nil
+	case RetentionOff, RetentionDryRun, RetentionOn:
+		return r, nil
+	default:
+		return RetentionOff, fmt.Errorf("config: [store] node_sweep must be \"off\", \"dry-run\" or \"on\", got %q", r)
 	}
 }
 

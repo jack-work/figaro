@@ -1249,6 +1249,8 @@ func (s *XwalStore) formTail(id string) (uint64, bool) {
 // can tell a wired knob from an unwired one.
 func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load()) }
 
+type SweepReport = xwal.SweepReport
+
 func sameIDs(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

@@ -57,3 +57,28 @@ func TestStreamEmitInterval(t *testing.T) {
 		t.Error("negative interval: expected a validation error, got nil")
 	}
 }
+
+// The node sweep ships dry: a store's first boot only reports.
+func TestNodeSweepDefaultsToDryRun(t *testing.T) {
+	for body, want := range map[string]Retention{
+		"":                                RetentionDryRun,
+		"[store]\nnode_sweep = \"on\"\n":  RetentionOn,
+		"[store]\nnode_sweep = \"off\"\n": RetentionOff,
+	} {
+		l, err := loadWith(t, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := l.NodeSweep()
+		if err != nil || got != want {
+			t.Errorf("%q: NodeSweep = %q, %v; want %q", body, got, err, want)
+		}
+	}
+	l, err := loadWith(t, "[store]\nnode_sweep = \"yes\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.NodeSweep(); err == nil {
+		t.Error("node_sweep = \"yes\" was accepted")
+	}
+}

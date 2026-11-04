@@ -1168,6 +1168,10 @@ func (b *XwalBackend) Close() error {
 
 func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
 
+func (b *XwalBackend) SweepUnmarkedNodes(remove bool) (SweepReport, error) {
+	return b.store.trunks.SweepUnmarkedNodes(remove)
+}
+
 func (b *XwalBackend) PendingRemovals() []PendingRemoval { return b.store.PendingRemovals() }
 
 // Segment cache figures are process-wide: one segment file has one copy
