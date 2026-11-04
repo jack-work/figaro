@@ -279,6 +279,7 @@ func (t *Trunks) Close() error {
 	t.hot = nil
 	t.retired = nil
 	t.hotMu.Unlock()
+	t.releaseLineages()
 
 	trunkRegistry.Lock()
 	last := false

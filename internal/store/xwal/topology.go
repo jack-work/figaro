@@ -77,6 +77,23 @@ func (t *Trunks) adoptLineage(trunk string, lineage *rootLineageState) {
 	}
 }
 
+func (t *Trunks) releaseLineages() {
+	state := rootTopologyStateFor(t.registryRoot)
+	state.mu.Lock()
+	lineages := make([]*rootLineageState, 0, len(state.lineages))
+	for _, lineage := range state.lineages {
+		lineages = append(lineages, lineage)
+	}
+	state.mu.Unlock()
+	for _, lineage := range lineages {
+		lineage.mu.Lock()
+		if lineage.owner == t {
+			lineage.owner = nil
+		}
+		lineage.mu.Unlock()
+	}
+}
+
 func foreignLineageHeads(lineage *rootLineageState, owner *Trunks) bool {
 	for peer, count := range lineage.heads {
 		if peer != owner && count != 0 {
