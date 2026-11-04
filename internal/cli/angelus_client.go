@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -246,6 +248,7 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 			"it reports no protocol, so the pair cannot be checked.\n"+
 			"run `figaro stop` and retry.", short12(d.build), short12(mine))
 	}
+	sawDaemon("the running angelus", d, mine)
 }
 
 func checkTroupeBuild(cli *sdk.Angelus, label string) {
@@ -271,6 +274,7 @@ func checkTroupeBuild(cli *sdk.Angelus, label string) {
 	case handshakeOtherMinor:
 		warnOtherMinor("the daemon at "+label, d)
 	}
+	sawDaemon("the daemon at "+label, d, mine)
 }
 
 type daemonIdentity struct {
@@ -336,8 +340,53 @@ func describeBuild(build, release string) string {
 func warnOtherMinor(who string, d daemonIdentity) {
 	fmt.Fprintf(stderrw,
 		"figaro: %s is %s and this CLI is %s: another minor release.\n"+
-			"        They share protocol %d, so the pair works.\n",
+			"        They share protocol %d, so the pair works; features newer than\n"+
+			"        the older side are refused by name, not dropped.\n",
 		who, d.release, boot.BuildRelease(), d.protocol)
+}
+
+var daemonSeen struct {
+	sync.Mutex
+	known bool
+	same  bool
+	who   string
+	d     daemonIdentity
+	needs map[rpc.Capability]string
+}
+
+func sawDaemon(who string, d daemonIdentity, mine string) {
+	daemonSeen.Lock()
+	daemonSeen.known, daemonSeen.who, daemonSeen.d = true, who, d
+	daemonSeen.same = d.build == mine
+	daemonSeen.Unlock()
+	if err := missingCapability(); err != nil {
+		die("%s", err)
+	}
+}
+
+func needCapability(c rpc.Capability, use string) error {
+	daemonSeen.Lock()
+	if daemonSeen.needs == nil {
+		daemonSeen.needs = map[rpc.Capability]string{}
+	}
+	daemonSeen.needs[c] = use
+	daemonSeen.Unlock()
+	return missingCapability()
+}
+
+func missingCapability() error {
+	daemonSeen.Lock()
+	defer daemonSeen.Unlock()
+	if !daemonSeen.known || daemonSeen.same {
+		return nil
+	}
+	for c, use := range daemonSeen.needs {
+		if !slices.Contains(daemonSeen.d.caps, c) {
+			return fmt.Errorf("%s (%s) cannot take %s: it does not report %q; upgrade it, or use a figaro of its release",
+				daemonSeen.who, describeBuild(daemonSeen.d.build, daemonSeen.d.release), use, c)
+		}
+	}
+	return nil
 }
 
 func short12(s string) string {

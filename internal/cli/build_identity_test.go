@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -99,5 +100,64 @@ func TestBuildHandshakeAcrossReleases(t *testing.T) {
 				t.Fatalf("buildHandshake(%+v, %q, %q) = %v, want %v", tc.d, tc.mine, tc.mrel, got, tc.want)
 			}
 		})
+	}
+}
+
+func resetDaemonSeen(t *testing.T) {
+	t.Helper()
+	daemonSeen.Lock()
+	daemonSeen.known, daemonSeen.same, daemonSeen.who = false, false, ""
+	daemonSeen.d, daemonSeen.needs = daemonIdentity{}, nil
+	daemonSeen.Unlock()
+	t.Cleanup(func() {
+		daemonSeen.Lock()
+		daemonSeen.known, daemonSeen.same, daemonSeen.needs = false, false, nil
+		daemonSeen.Unlock()
+	})
+}
+
+// An older daemon drops an unknown field without a word: images sent to a
+// daemon that does not report qua.images would run the prompt without them.
+func TestImagesAreRefusedByNameToADaemonWithoutTheCapability(t *testing.T) {
+	cases := []struct {
+		name    string
+		d       daemonIdentity
+		same    bool
+		refused bool
+	}{
+		{"reports qua.images", daemonIdentity{build: "b", release: "0.52.5", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages}}, false, false},
+		{"reports nothing", daemonIdentity{build: "b", release: "0.52.5", protocol: 1}, false, true},
+		{"same build needs no list", daemonIdentity{build: "a"}, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetDaemonSeen(t)
+			mine := "b2"
+			if tc.same {
+				mine = tc.d.build
+			}
+			sawDaemon("the daemon", tc.d, mine)
+			err := needCapability(rpc.CapQuaImages, "images on a prompt")
+			if (err != nil) != tc.refused {
+				t.Fatalf("needCapability = %v, refused want %v", err, tc.refused)
+			}
+			if tc.refused && !strings.Contains(err.Error(), string(rpc.CapQuaImages)) {
+				t.Fatalf("the refusal must name the capability: %v", err)
+			}
+		})
+	}
+}
+
+// A capability needed before the daemon is reached is checked when it is.
+func TestANeedRegisteredBeforeTheHandshakeIsCheckedAtIt(t *testing.T) {
+	resetDaemonSeen(t)
+	if err := needCapability(rpc.CapQuaImages, "images on a prompt"); err != nil {
+		t.Fatalf("no daemon seen yet, nothing to refuse: %v", err)
+	}
+	daemonSeen.Lock()
+	daemonSeen.known, daemonSeen.who, daemonSeen.d = true, "the daemon", daemonIdentity{build: "b", release: "0.52.5", protocol: 1}
+	daemonSeen.Unlock()
+	if err := missingCapability(); err == nil {
+		t.Fatal("a daemon without qua.images must refuse the images registered before it was seen")
 	}
 }

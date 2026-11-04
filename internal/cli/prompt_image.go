@@ -16,6 +16,11 @@ func readPromptImages(paths []string) ([]rpc.QuaImage, error) {
 	if len(paths) > rpc.MaxQuaImages {
 		return nil, fmt.Errorf("--image given %d times: a prompt carries at most %d", len(paths), rpc.MaxQuaImages)
 	}
+	if len(paths) > 0 {
+		if err := needCapability(rpc.CapQuaImages, "images on a prompt"); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]rpc.QuaImage, 0, len(paths))
 	for _, p := range paths {
 		info, err := os.Stat(p)
