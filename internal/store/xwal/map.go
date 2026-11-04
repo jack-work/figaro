@@ -26,7 +26,7 @@ const MapReducerName = "map"
 
 // MapReducer is auto-available as "map"; exposed so a caller can register it
 // under another name.
-func MapReducer() Reducer { return Reducer{Reduce: reduceMap, Initial: []byte("{}")} }
+func MapReducer() Reducer { return Reducer{Fold: foldMap, Initial: []byte("{}")} }
 
 // MapSetPatch builds (and validates) a patch setting value at path.
 func MapSetPatch(path []string, value json.RawMessage) ([]byte, error) {
@@ -47,35 +47,36 @@ func MapRemovePatch(path []string) ([]byte, error) {
 	return json.Marshal(MapPatch{Remove: [][]string{path}})
 }
 
-// reduceMap is the ReduceFunc, so the watermark fold and StateAt share one path.
-func reduceMap(state, patch []byte) ([]byte, error) {
+func foldMap(state []byte, patches [][]byte) ([]byte, error) {
 	root, err := decodeObject(state)
 	if err != nil {
 		return nil, fmt.Errorf("xwal: map state: %w", err)
 	}
-	var p MapPatch
-	if len(patch) > 0 {
-		if err := json.Unmarshal(patch, &p); err != nil {
-			return nil, fmt.Errorf("xwal: map patch: %w", err)
+	for _, patch := range patches {
+		var p MapPatch
+		if len(patch) > 0 {
+			if err := json.Unmarshal(patch, &p); err != nil {
+				return nil, fmt.Errorf("xwal: map patch: %w", err)
+			}
+		}
+		for _, s := range p.Set {
+			if len(s.Path) == 0 {
+				return nil, fmt.Errorf("xwal: map set with empty path")
+			}
+			v, err := decodeAny(s.Value)
+			if err != nil {
+				return nil, fmt.Errorf("xwal: map set value: %w", err)
+			}
+			deepSet(root, s.Path, v)
+		}
+		for _, path := range p.Remove {
+			if len(path) == 0 {
+				continue
+			}
+			deepRemove(root, path)
 		}
 	}
-	for _, s := range p.Set {
-		if len(s.Path) == 0 {
-			return nil, fmt.Errorf("xwal: map set with empty path")
-		}
-		v, err := decodeAny(s.Value)
-		if err != nil {
-			return nil, fmt.Errorf("xwal: map set value: %w", err)
-		}
-		deepSet(root, s.Path, v)
-	}
-	for _, path := range p.Remove {
-		if len(path) == 0 {
-			continue
-		}
-		deepRemove(root, path)
-	}
-	return json.Marshal(root) // map keys marshal sorted -> deterministic
+	return json.Marshal(root)
 }
 
 func decodeObject(b []byte) (map[string]any, error) {

@@ -87,10 +87,10 @@ func (x *XWAL) newChannel(mc manifestChannel) (*channel, error) {
 	case "reducible":
 		ch.kind = ChannelReducible
 		r, ok := resolveReducer(x.cfg, mc.Reducer, mc.Name)
-		if !ok || r.Reduce == nil {
+		if !ok || r.Fold == nil {
 			return nil, fmt.Errorf("xwal: no reducer %q registered for channel %q", mc.Reducer, mc.Name)
 		}
-		ch.reduce = r.Reduce
+		ch.fold = r.Fold
 		ch.initial = r.Initial
 	default:
 		ch.kind = ChannelLog

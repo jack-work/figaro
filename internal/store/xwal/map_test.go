@@ -12,7 +12,7 @@ func TestMap_DeepSetCreatesPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := reduceMap([]byte("{}"), p)
+	st, err := foldMap([]byte("{}"), [][]byte{p})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestMap_DeepSetCreatesPath(t *testing.T) {
 func TestMap_LeafSetDoesNotClobberSiblings(t *testing.T) {
 	st := []byte(`{"system":{"a":1,"b":2}}`)
 	p, _ := MapSetPatch([]string{"system", "b"}, []byte(`9`))
-	out, err := reduceMap(st, p)
+	out, err := foldMap(st, [][]byte{p})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestMap_LeafSetDoesNotClobberSiblings(t *testing.T) {
 func TestMap_Remove(t *testing.T) {
 	st := []byte(`{"system":{"a":1,"b":2},"mantra":"x"}`)
 	p, _ := MapRemovePatch([]string{"system", "a"})
-	out, err := reduceMap(st, p)
+	out, err := foldMap(st, [][]byte{p})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestMap_Remove(t *testing.T) {
 
 func TestMap_EmptyPatchIsNoOp(t *testing.T) {
 	st := []byte(`{"a":1}`)
-	out, err := reduceMap(st, []byte("{}"))
+	out, err := foldMap(st, [][]byte{[]byte("{}")})
 	if err != nil || string(out) != `{"a":1}` {
 		t.Fatalf("empty patch not a no-op: %s err=%v", out, err)
 	}
@@ -56,7 +56,7 @@ func TestMap_EmptyPatchIsNoOp(t *testing.T) {
 
 func TestMap_BigIntPrecision(t *testing.T) {
 	p, _ := MapSetPatch([]string{"n"}, []byte(`9007199254740993`)) // > 2^53
-	out, err := reduceMap([]byte("{}"), p)
+	out, err := foldMap([]byte("{}"), [][]byte{p})
 	if err != nil {
 		t.Fatal(err)
 	}

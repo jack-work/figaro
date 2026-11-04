@@ -149,7 +149,7 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		Genesis:           genesis,
 		MintTrunkID:       mintTrunkID,
 		Reducers: map[string]xwal.Reducer{
-			chanForm: {Reduce: formReduce, Initial: []byte("{}")},
+			chanForm: {Fold: formFold, Initial: []byte("{}")},
 		},
 		Opaque: []string{
 			transChannel("anthropic"),

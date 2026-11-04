@@ -22,13 +22,16 @@ func storeOptions() xwal.StoreOptions {
 	return xwal.StoreOptions{
 		Main:         chanMain,
 		SyncInterval: flushInterval,
-		Reducers:     map[string]xwal.Reducer{chanState: {Reduce: lastWins, Initial: []byte("{}")}},
+		Reducers:     map[string]xwal.Reducer{chanState: {Fold: lastWins, Initial: []byte("{}")}},
 		SegmentSize:  4096,
 	}
 }
 
-func lastWins(_, patch []byte) ([]byte, error) {
-	return append([]byte(nil), patch...), nil
+func lastWins(state []byte, patches [][]byte) ([]byte, error) {
+	if len(patches) == 0 {
+		return state, nil
+	}
+	return append([]byte(nil), patches[len(patches)-1]...), nil
 }
 
 // Known contract gaps of the bound implementation, kept green so the harness

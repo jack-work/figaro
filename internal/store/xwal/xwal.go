@@ -40,13 +40,12 @@ func (k Kind) String() string {
 	return "log"
 }
 
-// ReduceFunc applies one patch to a state.
-type ReduceFunc func(state, patch []byte) ([]byte, error)
+type FoldFunc func(state []byte, patches [][]byte) ([]byte, error)
 
 // Reducer.Initial must be a valid value for the codec (a JSON object under
 // JSONL), since it seeds the very first watermark.
 type Reducer struct {
-	Reduce  ReduceFunc
+	Fold    FoldFunc
 	Initial []byte
 }
 
@@ -252,7 +251,7 @@ func (x *XWAL) channelOpts(ch *channel) disk.Options {
 		Codec: x.codec, SegmentSize: x.cfg.SegmentSize, MaxUnflushedBytes: x.cfg.MaxUnflushedBytes,
 	}
 	if ch.kind == ChannelReducible {
-		opts.OnSegmentOpen = reducibleFold(ch.reduce, ch.initial)
+		opts.OnSegmentOpen = reducibleFold(ch.fold, ch.initial)
 	}
 	return opts
 }

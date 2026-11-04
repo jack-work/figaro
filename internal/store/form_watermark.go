@@ -96,20 +96,23 @@ func encodeFormWatermark(snap form.Snapshot, seqs map[string]uint64) ([]byte, er
 	return snap.SetPath(key, table).MarshalJSON()
 }
 
-func formReduce(state, record []byte) ([]byte, error) {
+func formFold(state []byte, records [][]byte) ([]byte, error) {
 	snap, seqs, err := decodeFormWatermark(state)
 	if err != nil {
 		return nil, err
 	}
-	var rec formRecord
-	if err := json.Unmarshal(record, &rec); err != nil {
-		return nil, err
-	}
-	if k := rec.origin().key(); rec.Seq > 0 && rec.Seq > seqs[k] {
-		if seqs == nil {
-			seqs = map[string]uint64{}
+	for _, raw := range records {
+		var rec formRecord
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return nil, err
 		}
-		seqs[k] = rec.Seq
+		if k := rec.origin().key(); rec.Seq > 0 && rec.Seq > seqs[k] {
+			if seqs == nil {
+				seqs = map[string]uint64{}
+			}
+			seqs[k] = rec.Seq
+		}
+		snap = snap.Apply(rec.Patch)
 	}
-	return encodeFormWatermark(snap.Apply(rec.Patch), seqs)
+	return encodeFormWatermark(snap, seqs)
 }

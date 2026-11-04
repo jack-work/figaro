@@ -13,25 +13,24 @@ import (
 	"github.com/jack-work/figaro/internal/store/segment"
 )
 
-// reducibleFold adapts a Reducer into figwal's OnSegmentOpen: the new
-// watermark is the previous one (or Initial) with every sealed patch folded in.
-func reducibleFold(reduce ReduceFunc, initial []byte) func(prevHeader []byte, sealed [][]byte) ([]byte, error) {
+func reducibleFold(fold FoldFunc, initial []byte) func(prevHeader []byte, sealed [][]byte) ([]byte, error) {
 	return func(prevHeader []byte, sealed [][]byte) ([]byte, error) {
 		state := prevHeader
 		if len(state) == 0 {
 			state = initial
 		}
-		for _, f := range sealed {
+		if len(sealed) == 0 {
+			return state, nil
+		}
+		patches := make([][]byte, len(sealed))
+		for i, f := range sealed {
 			_, patch, err := decodeFrame(f)
 			if err != nil {
 				return nil, err
 			}
-			state, err = reduce(state, patch)
-			if err != nil {
-				return nil, err
-			}
+			patches[i] = patch
 		}
-		return state, nil
+		return fold(state, patches)
 	}
 }
 

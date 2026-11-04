@@ -16,7 +16,7 @@ func renameStore(t *testing.T) string {
 			{Name: "ir", Kind: ChannelLog},
 			{Name: "chalkboard", Kind: ChannelReducible, Reducer: "chalkboard", Unkeyed: true},
 		},
-		Registry: map[string]Reducer{"chalkboard": {Reduce: lastWins, Initial: []byte("{}")}},
+		Registry: map[string]Reducer{"chalkboard": {Fold: perPatch(lastWins), Initial: []byte("{}")}},
 	})
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -75,7 +75,7 @@ func TestRenameChannelMovesDataAndManifest(t *testing.T) {
 			{Name: "ir", Kind: ChannelLog},
 			{Name: "form", Kind: ChannelReducible, Reducer: "form", Unkeyed: true},
 		},
-		Registry: map[string]Reducer{"form": {Reduce: lastWins, Initial: []byte("{}")}},
+		Registry: map[string]Reducer{"form": {Fold: perPatch(lastWins), Initial: []byte("{}")}},
 	})
 	if err != nil {
 		t.Fatalf("reopen after rename: %v", err)

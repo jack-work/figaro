@@ -20,7 +20,7 @@ type channel struct {
 	opener  func() (*log.Log, error)
 	openErr error
 	lg      *log.Log
-	reduce  ReduceFunc
+	fold    FoldFunc
 	initial []byte
 	opaque  bool
 	// unkeyed: records carry no main LT. Appended with no reference to the

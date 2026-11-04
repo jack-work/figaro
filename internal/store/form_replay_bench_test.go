@@ -91,7 +91,7 @@ func BenchmarkFormReduceFold(b *testing.B) {
 			for b.Loop() {
 				state := initial
 				for _, p := range raw {
-					next, err := formReduce(state, p)
+					next, err := formFold(state, [][]byte{p})
 					if err != nil {
 						b.Fatal(err)
 					}

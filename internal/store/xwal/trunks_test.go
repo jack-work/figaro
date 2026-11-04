@@ -16,7 +16,7 @@ func trunksCfg() Config {
 			{Name: "translations", Kind: ChannelLog},
 			{Name: "chalkboard", Kind: ChannelReducible, Reducer: "jsonmerge"},
 		},
-		Registry:    map[string]Reducer{"jsonmerge": {Reduce: jsonMerge, Initial: []byte("{}")}},
+		Registry:    map[string]Reducer{"jsonmerge": {Fold: perPatch(jsonMerge), Initial: []byte("{}")}},
 		SegmentSize: 4096,
 	}
 }

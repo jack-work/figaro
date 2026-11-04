@@ -25,7 +25,7 @@ func benchConfig() Config {
 		Main:        "ir",
 		SegmentSize: benchSegmentSize,
 		Registry: map[string]Reducer{
-			"latest": {Reduce: benchReducer, Initial: []byte("{}")},
+			"latest": {Fold: perPatch(benchReducer), Initial: []byte("{}")},
 		},
 		Channels: []ChannelSpec{
 			{Name: "ir", Kind: ChannelLog},
@@ -54,7 +54,7 @@ func buildLongAria(b *testing.B, records int) (string, Config) {
 		}
 		if spec.Kind == ChannelReducible {
 			r := cfg.Registry[spec.Reducer]
-			opts.OnSegmentOpen = reducibleFold(r.Reduce, r.Initial)
+			opts.OnSegmentOpen = reducibleFold(r.Fold, r.Initial)
 		}
 		l, err := disk.Open(filepath.Join(dir, spec.Name), opts)
 		if err != nil {

@@ -472,7 +472,7 @@ func TestAMoveCrossesAReducerRename(t *testing.T) {
 	cfg := func(prefix, reducer string) Config {
 		c := moveCfg(prefix)
 		c.Channels[1].Reducer = reducer
-		c.Registry = map[string]Reducer{"form": builtinReducers()[MapReducerName], "lastwins": {Reduce: func(_, p []byte) ([]byte, error) { return p, nil }, Initial: []byte("{}")}}
+		c.Registry = map[string]Reducer{"form": builtinReducers()[MapReducerName], "lastwins": {Fold: perPatch(func(_, p []byte) ([]byte, error) { return p, nil }), Initial: []byte("{}")}}
 		return c
 	}
 	src, err := createTrunks(filepath.Join(t.TempDir(), "src"), cfg("o", "jsonmerge"))

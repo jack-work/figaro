@@ -135,7 +135,7 @@ func prepareInitialChannels(dir string, cfg Config, m manifest) error {
 			continue
 		}
 		reducer, ok := resolveReducer(cfg, mc.Reducer, mc.Name)
-		if !ok || reducer.Reduce == nil {
+		if !ok || reducer.Fold == nil {
 			return fmt.Errorf("xwal: no reducer %q registered for channel %q", mc.Reducer, mc.Name)
 		}
 		if err := ensureWatermark(chDir, 1, codec, reducer.Initial); err != nil {
@@ -173,7 +173,7 @@ func validateChannelSpec(root string, cfg Config, man manifest, spec ChannelSpec
 			return fmt.Errorf("xwal: reducible channel %q needs a reducer name", spec.Name)
 		}
 		reducer, ok := resolveReducer(cfg, spec.Reducer, spec.Name)
-		if !ok || reducer.Reduce == nil {
+		if !ok || reducer.Fold == nil {
 			return fmt.Errorf("xwal: no reducer %q registered for channel %q", spec.Reducer, spec.Name)
 		}
 		codec, err := codecByName(man.Codec)
@@ -321,10 +321,10 @@ func channelFromManifest(cfg Config, mc manifestChannel) (*channel, error) {
 	}
 	ch.kind = ChannelReducible
 	reducer, ok := resolveReducer(cfg, ch.rname, ch.name)
-	if !ok || reducer.Reduce == nil {
+	if !ok || reducer.Fold == nil {
 		return nil, fmt.Errorf("xwal: no reducer %q registered for channel %q", ch.rname, ch.name)
 	}
-	ch.reduce = reducer.Reduce
+	ch.fold = reducer.Fold
 	ch.initial = reducer.Initial
 	return ch, nil
 }
