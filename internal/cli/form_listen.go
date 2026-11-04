@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/form/replica"
@@ -102,6 +104,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	rep.Store(r)
 	view.src = replicaSource{r}
 	go stopPitWhenLinkDies(fcli.Done(), ctx.Done(), view, r)
+	notePit(resolvedID, r.Pending)
 	select {
 	case <-r.Ready():
 	case <-time.After(5 * time.Second):
@@ -119,6 +122,34 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		cancel()
 		kick.close()
 	}, nil
+}
+
+var pitLedger struct {
+	sync.Mutex
+	pits []pitEntry
+}
+
+type pitEntry struct {
+	form    string
+	pending func() int
+}
+
+func notePit(form string, pending func() int) {
+	pitLedger.Lock()
+	defer pitLedger.Unlock()
+	pitLedger.pits = append(pitLedger.pits, pitEntry{form: form, pending: pending})
+}
+
+func reportUnansweredPitEdits(w io.Writer) {
+	pitLedger.Lock()
+	pits := pitLedger.pits
+	pitLedger.pits = nil
+	pitLedger.Unlock()
+	for _, p := range pits {
+		if n := p.pending(); n > 0 {
+			fmt.Fprintf(w, "%d form edit(s) to %s were not confirmed\n", n, p.form)
+		}
+	}
 }
 
 func stopPitWhenLinkDies(link, closing <-chan struct{}, view *formView, r *replica.Replica) {

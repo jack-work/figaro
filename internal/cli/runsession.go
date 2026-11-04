@@ -43,6 +43,8 @@ type sessionOpts struct {
 }
 
 func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts) {
+	defer reportUnansweredPitEdits(stderrw)
+	atExit(func() { reportUnansweredPitEdits(stderrw) })
 	startedAt := opt.startedAt
 	if startedAt.IsZero() {
 		startedAt = time.Now()

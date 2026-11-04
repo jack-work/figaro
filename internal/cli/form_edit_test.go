@@ -345,3 +345,44 @@ func TestAPitWhoseDaemonIsSwappedStopsAndReopensReadOnly(t *testing.T) {
 		t.Fatal("reopened against a daemon without form.seq, the pit would edit through a replica")
 	}
 }
+
+// An edit the server never answered must not vanish with the process: when the
+// pager exits, every pit with unanswered edits says so on stderr.
+func TestUnansweredPitEditsAreReportedAtExit(t *testing.T) {
+	srv := &fakeFormServer{snap: form.FromMap(formKeys("a", `1`)), version: 1, last: map[string]uint64{}, hold: make(chan struct{})}
+	v, changed := pitWithReplica(t, srv)
+	r := v.src.(replicaSource).Replica
+	notePit("@form-a", r.Pending)
+	settled := &fakeFormServer{snap: form.FromMap(formKeys("b", `1`)), version: 1, last: map[string]uint64{}}
+	w, wchanged := pitWithReplica(t, settled)
+	notePit("@form-b", w.src.(replicaSource).Replica.Pending)
+
+	p, _, _ := shownFormEdit(tokenize("set a 5"), form.FromMap(formKeys("a", `1`)))
+	if err := v.Edit(p); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, changed, "the edit on screen", func() bool { return strings.Contains(formRowText(v.Items(80), "a"), "5") })
+	q, _, _ := shownFormEdit(tokenize("set b 6"), form.FromMap(formKeys("b", `1`)))
+	if err := w.Edit(q); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, wchanged, "the other pit's edit settled", func() bool { return w.src.(replicaSource).Replica.Pending() == 0 })
+
+	link, closing := make(chan struct{}), make(chan struct{})
+	stopped := make(chan struct{})
+	go func() { stopPitWhenLinkDies(link, closing, v, r); close(stopped) }()
+	close(link)
+	<-stopped
+	defer close(srv.hold)
+
+	var out strings.Builder
+	reportUnansweredPitEdits(&out)
+	if got, want := out.String(), "1 form edit(s) to @form-a were not confirmed\n"; got != want {
+		t.Fatalf("exit report = %q, want %q", got, want)
+	}
+	out.Reset()
+	reportUnansweredPitEdits(&out)
+	if out.Len() != 0 {
+		t.Fatalf("reported twice: %q", out.String())
+	}
+}
