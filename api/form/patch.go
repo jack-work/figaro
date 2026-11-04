@@ -584,12 +584,73 @@ func (p Patch) Entry(key string) (Entry, bool) {
 		}
 		cur, rest = child, remainder
 	}
-	for _, e := range p.Entries() {
-		if e.Key == key {
-			return e, true
-		}
+	if es := p.EntriesAt(key); len(es) > 0 {
+		return es[0], true
 	}
 	return Entry{}, false
+}
+
+// EntriesAt is Entries filtered to one key, found without expanding the rest.
+func (p Patch) EntriesAt(key string) []Entry {
+	var out []Entry
+	entriesAt(p, "", key, &out)
+	return out
+}
+
+func entriesAt(q Patch, prefix, key string, out *[]Entry) {
+	join := func(k string) string {
+		if prefix == "" {
+			return k
+		}
+		return prefix + "." + k
+	}
+	switch {
+	case q.Scalar != nil:
+		if prefix != "" && prefix == key {
+			*out = append(*out, Entry{Key: prefix, Old: q.Scalar.Before.Raw(), New: q.Scalar.After.Raw()})
+		}
+	case q.Object != nil:
+		for k, v := range q.Object.Set {
+			if path := join(k); pathCovers(path, key) {
+				expandAt(v, path, key, out)
+			}
+		}
+		for k, v := range q.Object.Delete {
+			if join(k) == key {
+				*out = append(*out, Entry{Key: key, Old: v.Raw()})
+			}
+		}
+		for k, c := range q.Object.Update {
+			if path := join(k); pathCovers(path, key) {
+				entriesAt(c, path, key, out)
+			}
+		}
+	case q.List != nil:
+		if prefix != "" && prefix == key {
+			if raw, err := json.Marshal(q.List.Create); err == nil {
+				*out = append(*out, Entry{Key: prefix, New: raw})
+			}
+		}
+	}
+}
+
+func expandAt(v Value, path, key string, out *[]Entry) {
+	obj, isObj := asObject(v)
+	if !isObj || len(obj) == 0 {
+		if path == key {
+			*out = append(*out, Entry{Key: path, New: v.Raw()})
+		}
+		return
+	}
+	for k, child := range obj {
+		if next := path + "." + k; pathCovers(next, key) {
+			expandAt(child, next, key, out)
+		}
+	}
+}
+
+func pathCovers(path, key string) bool {
+	return key == path || strings.HasPrefix(key, path+".")
 }
 
 func longestPatchMember(o *ObjectPatch, rest string) (seg, remainder string, ok bool) {

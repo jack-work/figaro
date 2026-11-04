@@ -364,15 +364,6 @@ func namesOutfit(patch message.Patch) bool {
 		if _, ok := patch.Entry(k); ok {
 			return true
 		}
-		for _, ent := range patch.Entries() {
-			if !ent.IsRemoval() {
-				continue
-			}
-			r := ent.Key
-			if r == k {
-				return true
-			}
-		}
 	}
 	return false
 }

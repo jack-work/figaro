@@ -105,15 +105,14 @@ func ttlOf(patch message.Patch) (raw string, spoke bool) {
 }
 
 func stringKeyOf(patch message.Patch, key string) (raw string, spoke bool) {
-	if e, ok := patch.Entry(key); ok && !e.IsRemoval() {
-		return lifetimeString(e.New), true
+	e, ok := patch.Entry(key)
+	if !ok {
+		return "", false
 	}
-	for _, ent := range patch.Entries() {
-		if ent.IsRemoval() && ent.Key == key {
-			return "", true
-		}
+	if e.IsRemoval() {
+		return "", true
 	}
-	return "", false
+	return lifetimeString(e.New), true
 }
 
 func lifetimeString(raw json.RawMessage) string {
