@@ -15,9 +15,9 @@ type sealedSeg struct {
 	path string
 	hole bool
 
-	once sync.Once
-	seg  atomic.Pointer[segment.Segment]
-	err  error
+	mu  sync.Mutex
+	seg atomic.Pointer[segment.Segment]
+	err error
 }
 
 func newSealed(base, last uint64, path string) *sealedSeg {
@@ -32,7 +32,6 @@ func wrapOpen(s *segment.Segment) *sealedSeg {
 	if s.Count() > 0 {
 		ss.last = s.LastIndex()
 	}
-	ss.once.Do(func() {})
 	ss.seg.Store(s)
 	return ss
 }
@@ -44,30 +43,31 @@ func (ss *sealedSeg) Path() string      { return ss.path }
 // loaded reports the open segment without opening one.
 func (ss *sealedSeg) loaded() *segment.Segment { return ss.seg.Load() }
 
-// open builds the segment's index on first use. Safe under the log's READ
-// lock: it publishes through an atomic pointer and mutates nothing else.
 func (ss *sealedSeg) open(codec segment.SegmentCodec, headered bool) (*segment.Segment, error) {
 	if s := ss.seg.Load(); s != nil {
 		return s, nil
 	}
-	ss.once.Do(func() {
-		var s *segment.Segment
-		var err error
-		if headered {
-			s, err = segment.OpenReadOnlyHeadered(ss.path, codec, ss.base)
-		} else {
-			s, err = segment.OpenReadOnly(ss.path, codec, ss.base)
-		}
-		if err != nil {
-			ss.err = err
-			return
-		}
-		ss.seg.Store(s)
-	})
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	if s := ss.seg.Load(); s != nil {
+		return s, nil
+	}
 	if ss.err != nil {
 		return nil, ss.err
 	}
-	return ss.seg.Load(), ss.err
+	var s *segment.Segment
+	var err error
+	if headered {
+		s, err = segment.OpenReadOnlyHeadered(ss.path, codec, ss.base)
+	} else {
+		s, err = segment.OpenReadOnly(ss.path, codec, ss.base)
+	}
+	if err != nil {
+		ss.err = err
+		return nil, err
+	}
+	ss.seg.Store(s)
+	return s, nil
 }
 
 func (ss *sealedSeg) close() error {

@@ -741,8 +741,20 @@ func (l *Log) rotateLocked(baseIndex uint64) error {
 			"newBase", baseIndex)
 		l.sealed = append(l.sealed, wrapOpen(l.active))
 		l.active = nil
+		l.closeOlderSealedLocked()
 	}
 	return l.openActiveLocked(baseIndex)
+}
+
+func (l *Log) closeOlderSealedLocked() {
+	for _, ss := range l.sealed[:len(l.sealed)-1] {
+		if ss.loaded() == nil {
+			continue
+		}
+		if err := ss.close(); err != nil {
+			slog.Warn("close a sealed segment", "path", ss.path, "err", err)
+		}
+	}
 }
 
 func (l *Log) isEmptyLocked() bool {
