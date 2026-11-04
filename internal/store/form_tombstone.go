@@ -15,6 +15,8 @@ var ErrFormClosed = errors.New("form is closed")
 
 var ErrFormUnavailable = errors.New("form unavailable")
 
+var ErrSeqConditional = errors.New("a write with a client seq may not carry Assert or IfVersion: its refusal is not durable, so a resend after a restart could be judged against a different form")
+
 // ErrFormMoved is the stale-ifVersion refusal: retry, the write itself is not wrong.
 var ErrFormMoved = errors.New("form moved")
 

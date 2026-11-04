@@ -388,6 +388,9 @@ func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uin
 }
 
 func (f *Form) ApplyWrite(in FormWrite) (FormVerdict, error) {
+	if in.Origin.Seq > 0 && (in.Intent == Assert || in.IfVersion != 0) {
+		return FormVerdict{}, ErrSeqConditional
+	}
 	t, err := f.submit(&formWrite{patch: in.Patch, ifVersion: in.IfVersion, intent: in.Intent, origin: in.Origin})
 	if err != nil {
 		return FormVerdict{}, err

@@ -49,11 +49,7 @@ func TestApplyWrite_RefusalsAndNoOpsAreAnswered(t *testing.T) {
 	f := store.NewMemForm()
 	defer f.Close()
 
-	_, err := f.ApplyWrite(store.FormWrite{
-		Patch:  form.Build(form.Snapshot{}, nil, []string{"missing"}),
-		Intent: store.Assert,
-		Origin: store.Origin{Client: "r", Seq: 1},
-	})
+	_, err := f.ApplyWrite(originWrite("system.forked_from", `"forged"`, "r", 1))
 	require.Error(t, err)
 	require.Equal(t, uint64(1), f.LastSeq("r"))
 
@@ -122,4 +118,42 @@ func TestApplyWrite_AClosedFormIsUnavailable(t *testing.T) {
 	_, err := f.ApplyWrite(originWrite("a", `1`, "r", 1))
 	require.ErrorIs(t, err, store.ErrFormUnavailable)
 	require.ErrorIs(t, err, store.ErrFormClosed)
+}
+
+// A refusal is answered in memory only, so a conditional write with a seq
+// could be refused, forgotten in a restart, and applied on its resend (the
+// auditor's sequence). Such a write is refused before it is judged, every time.
+func TestApplyWrite_ASeqMayNotBeConditional(t *testing.T) {
+	log := &store.MemFormLog{}
+	f, err := store.OpenForm(log)
+	require.NoError(t, err)
+	assertRemove := store.FormWrite{
+		Patch:  form.Build(form.Snapshot{}, nil, []string{"k"}),
+		Intent: store.Assert,
+		Origin: store.Origin{Client: "r", Seq: 1},
+	}
+	_, err = f.ApplyWrite(assertRemove)
+	require.ErrorIs(t, err, store.ErrSeqConditional)
+	require.Equal(t, uint64(0), f.LastSeq("r"), "a refusal before judging answers no seq")
+	_, err = f.ApplyWrite(originWrite("k", `1`, "other", 1))
+	require.NoError(t, err)
+	f.Close()
+
+	f2, err := store.OpenForm(log)
+	require.NoError(t, err)
+	defer f2.Close()
+	_, err = f2.ApplyWrite(assertRemove)
+	require.ErrorIs(t, err, store.ErrSeqConditional, "the resend after a restart is refused the same way")
+	raw, ok := f2.Read().Snapshot.Get("k")
+	require.True(t, ok)
+	require.JSONEq(t, `1`, string(raw))
+
+	ifv := originWrite("k", `2`, "r", 2)
+	ifv.IfVersion = f2.Read().Version
+	_, err = f2.ApplyWrite(ifv)
+	require.ErrorIs(t, err, store.ErrSeqConditional)
+
+	plain := store.FormWrite{Patch: form.Build(form.Snapshot{}, nil, []string{"k"}), Intent: store.Assert}
+	_, err = f2.ApplyWrite(plain)
+	require.NoError(t, err, "without a seq, Assert works as before")
 }
