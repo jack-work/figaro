@@ -304,3 +304,44 @@ func TestThePitIsReadOnlyAgainstADaemonWithoutFormSeq(t *testing.T) {
 		t.Fatal("the read-only mirror took an edit")
 	}
 }
+
+// The pit's replica is bound to the daemon it was opened against. When that
+// link dies the pit stops and sends nothing more; the next daemon is reached
+// only by reopening, which asks the new handshake for form.seq first. So a
+// pit can never hand a seq'd edit to a daemon that would drop the seq.
+func TestAPitWhoseDaemonIsSwappedStopsAndReopensReadOnly(t *testing.T) {
+	resetDaemonSeen(t)
+	sawDaemon("the daemon", daemonIdentity{build: "new2", release: "0.53.0", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages, rpc.CapFormSeq}}, "new")
+	if !formPitEditable("") {
+		t.Fatal("a daemon reporting form.seq gets a replica")
+	}
+	srv := &fakeFormServer{snap: form.FromMap(formKeys("a", `1`)), version: 1, last: map[string]uint64{}, hold: make(chan struct{})}
+	v, changed := pitWithReplica(t, srv)
+	link, closing := make(chan struct{}), make(chan struct{})
+	r := v.src.(replicaSource).Replica
+	stopped := make(chan struct{})
+	go func() {
+		stopPitWhenLinkDies(link, closing, v, r)
+		close(stopped)
+	}()
+	p, _, _ := shownFormEdit(tokenize("set a 5"), form.FromMap(formKeys("a", `1`)))
+	if err := v.Edit(p); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, changed, "the edit on screen", func() bool { return strings.Contains(formRowText(v.Items(80), "a"), "5") })
+
+	close(link)
+	<-stopped
+	close(srv.hold)
+	if err := v.Edit(p); err == nil || !strings.Contains(err.Error(), "connection closed") {
+		t.Fatalf("a pit whose link died took an edit: %v", err)
+	}
+	if got := formRowText(v.Items(80), ""); !strings.Contains(got, "unanswered") {
+		t.Fatalf("the pit does not say an edit went unanswered: %q", got)
+	}
+
+	sawDaemon("the daemon", daemonIdentity{build: "old", release: "0.52.4", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages}}, "new")
+	if formPitEditable("") {
+		t.Fatal("reopened against a daemon without form.seq, the pit would edit through a replica")
+	}
+}

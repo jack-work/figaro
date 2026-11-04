@@ -101,6 +101,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	})
 	rep.Store(r)
 	view.src = replicaSource{r}
+	go stopPitWhenLinkDies(fcli.Done(), ctx.Done(), view, r)
 	select {
 	case <-r.Ready():
 	case <-time.After(5 * time.Second):
@@ -118,6 +119,21 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		cancel()
 		kick.close()
 	}, nil
+}
+
+func stopPitWhenLinkDies(link, closing <-chan struct{}, view *formView, r *replica.Replica) {
+	select {
+	case <-link:
+	case <-closing:
+		return
+	}
+	unanswered := r.Pending()
+	r.Close()
+	note := "this form's connection closed: reopen the form to edit again"
+	if unanswered > 0 {
+		note = fmt.Sprintf("this form's connection closed with %d edit(s) unanswered: reopen the form to see what landed", unanswered)
+	}
+	view.stop(note)
 }
 
 func formPitEditable(intrinsic string) bool {
