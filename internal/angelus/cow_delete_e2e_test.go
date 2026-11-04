@@ -65,7 +65,9 @@ func TestDeletingAnAriaMidTurnStopsTheTurnFirst(t *testing.T) {
 // I2: a delete decided on one set of nodes is not taken once the tree under
 // it has moved; with the set as it now stands it goes through.
 func TestADecidedDeleteRefusesWhenTheNodesItTakesChanged(t *testing.T) {
-	r := newRigProviding(t, defaultPolicy, "", func(string, provider.Knobs) (provider.Provider, error) { return &stallProvider{started: make(chan struct{}, 1), returned: make(chan struct{})}, nil })
+	r := newRigProviding(t, defaultPolicy, "", func(string, provider.Knobs) (provider.Provider, error) {
+		return &stallProvider{started: make(chan struct{}, 1), returned: make(chan struct{})}, nil
+	})
 	parent, err := r.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)

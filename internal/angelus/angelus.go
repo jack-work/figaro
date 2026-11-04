@@ -45,7 +45,7 @@ type Angelus struct {
 
 	// RemoveAria is the one delete path (agent, sessions, bytes, endpoint);
 	// nil disables the TTL sweep's deletions.
-	RemoveAria func(id string, recursive bool) error
+	RemoveAria   func(id string, recursive bool) error
 	RemoveAriaIf func(id string, expect []string) error
 
 	reclaimOnce sync.Once

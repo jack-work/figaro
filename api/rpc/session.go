@@ -28,15 +28,15 @@ type FigaroInfoResponse struct {
 
 	// TTLMS is bound form key system.ttl; ExpiresAt is CreatedAt + TTLMS. Zero
 	// when no lifetime is stated.
-	TTLMS       int64 `json:"ttl_ms,omitempty"`
-	ExpiresAt   int64 `json:"expires_at,omitempty"`
-	ReapsAt     int64 `json:"reaps_at,omitempty"`
-	KeepaliveMS int64 `json:"keepalive_ms,omitempty"`
-	RetiredAt   int64 `json:"retired_at,omitempty"`
-	ReapedAt    int64 `json:"reaped_at,omitempty"`
-	HeldBy    string `json:"held_by,omitempty"`
-	HeldWhy   string `json:"held_why,omitempty"`
-	HeldSince int64  `json:"held_since,omitempty"`
+	TTLMS       int64  `json:"ttl_ms,omitempty"`
+	ExpiresAt   int64  `json:"expires_at,omitempty"`
+	ReapsAt     int64  `json:"reaps_at,omitempty"`
+	KeepaliveMS int64  `json:"keepalive_ms,omitempty"`
+	RetiredAt   int64  `json:"retired_at,omitempty"`
+	ReapedAt    int64  `json:"reaped_at,omitempty"`
+	HeldBy      string `json:"held_by,omitempty"`
+	HeldWhy     string `json:"held_why,omitempty"`
+	HeldSince   int64  `json:"held_since,omitempty"`
 
 	// Fork-tree position. Vector is the child-index path; Trunk flows down
 	// the continuation line; Parent is the aria branched from.
