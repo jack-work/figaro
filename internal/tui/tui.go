@@ -98,6 +98,9 @@ func (r PassphraseRequest) app() string {
 	return r.App
 }
 
+// ErrAborted is the user ending a prompt: a key, or a signal.
+var ErrAborted = huh.ErrUserAborted
+
 // ErrTooManyAttempts deliberately wraps no crypto error.
 var ErrTooManyAttempts = errors.New("incorrect passphrase")
 
@@ -142,7 +145,7 @@ func promptCreate(req PassphraseRequest) ([]byte, error) {
 		),
 	)
 	withFigaroKeymap(form)
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return nil, err
 	}
 	out := []byte(pass1)
@@ -184,7 +187,7 @@ func promptUnlock(req PassphraseRequest) ([]byte, error) {
 			),
 		)
 		withFigaroKeymap(form)
-		if err := form.Run(); err != nil {
+		if err := runForm(form); err != nil {
 			return nil, err
 		}
 		out := []byte(pass)
@@ -250,10 +253,22 @@ func PickProvider(title string, options []ProviderOption) (string, error) {
 		),
 	)
 	withFigaroKeymap(form)
-	if err := form.Run(); err != nil {
+	if err := runForm(form); err != nil {
 		return "", err
 	}
 	return chosen, nil
+}
+
+// A form ended by a signal (bubbletea quits on SIGTERM without an error)
+// leaves its fields at whatever was highlighted; only a completed form answers.
+func runForm(form *huh.Form) error {
+	if err := form.Run(); err != nil {
+		return err
+	}
+	if form.State != huh.StateCompleted {
+		return huh.ErrUserAborted
+	}
+	return nil
 }
 
 // zeroString is best-effort: the runtime may hold copies.

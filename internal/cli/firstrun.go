@@ -190,7 +190,10 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 	fmt.Fprintln(os.Stderr, dim("     when you don't pass flags. We'll make one for you and set it as default."))
 	fmt.Fprintln(os.Stderr)
 
-	chosenModel := pickModelOrFallback(loaded, chosen.provider)
+	chosenModel, err := pickModelOrFallback(loaded, chosen.provider)
+	if err != nil {
+		return err
+	}
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -494,12 +497,12 @@ func isStdinTTY() bool {
 
 // On any failure it falls back to defaultModelFor: the wizard never blocks on a
 // listing.
-func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
+func pickModelOrFallback(loaded *config.Loaded, providerName string) (string, error) {
 	fallback := defaultModelFor(providerName)
 
 	prov, _ := buildProvider(loaded, providerName)
 	if prov == nil {
-		return fallback
+		return fallback, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -507,7 +510,7 @@ func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 	models = providerPkg.Pickable(models)
 	if err != nil || len(models) == 0 {
 		fmt.Fprintln(os.Stderr, dim("     (could not list models; using built-in default "+fallback+")"))
-		return fallback
+		return fallback, nil
 	}
 
 	sort.SliceStable(models, func(i, j int) bool { return models[i].ID > models[j].ID })
@@ -524,8 +527,11 @@ func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 
 	fmt.Fprintln(os.Stderr, dim("     Choose a model (Enter for the newest):"))
 	key, err := tui.PickProvider("Model", opts)
-	if err != nil || key == "" {
-		return fallback
+	if errors.Is(err, tui.ErrAborted) {
+		return "", err
 	}
-	return key
+	if err != nil || key == "" {
+		return fallback, nil
+	}
+	return key, nil
 }
