@@ -82,6 +82,7 @@ var methodVerbs = map[string]Verb{
 	MethodAngelusInfo:    VerbAdmin,
 	MethodStatus:         VerbAdmin,
 	MethodMemCollect:     VerbAdmin,
+	MethodPprofArm:       VerbAdmin,
 	MethodOutfitReload:   VerbAdmin,
 	MethodConfigure:      VerbAdmin,
 	MethodSaveBindings:   VerbAdmin,

@@ -91,12 +91,14 @@ type Angelus struct {
 	// lastLibrettoSweep is what the boot reconciliation found, for `doctor mem`.
 	lastLibrettoSweep atomic.Pointer[store.LibrettoAudit]
 
-	cancel    context.CancelFunc
-	pprofPath string // empty when profiling is not armed
+	cancel   context.CancelFunc
+	pprof    pprofState
+	pprofDir string
 }
 
 type Config struct {
 	RuntimeDir string
+	PprofDir   string
 	Backend    store.Backend
 	Settings   *config.Loaded // nil = defaults
 	Models     *modelcat.Catalog
@@ -109,6 +111,7 @@ func New(cfg Config) *Angelus {
 		Backend:    cfg.Backend,
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
+		pprofDir:   cfg.PprofDir,
 		StartedAt:  time.Now(),
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,

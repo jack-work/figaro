@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -26,29 +27,75 @@ const PprofSocketName = "pprof.sock"
 const UnlimitedMemLimit int64 = math.MaxInt64
 
 func (a *Angelus) PprofSocketPath() string {
-	return filepath.Join(a.RuntimeDir, PprofSocketName)
+	dir := a.pprofDir
+	if dir == "" {
+		dir = filepath.Clean(a.RuntimeDir) + "-pprof"
+	}
+	return filepath.Join(dir, PprofSocketName)
 }
 
 func (a *Angelus) StartPprof(ctx context.Context) error {
+	a.pprof.mu.Lock()
+	a.pprof.life = ctx
+	a.pprof.mu.Unlock()
 	if os.Getenv(PprofEnv) == "" {
 		return nil
 	}
-	path := a.PprofSocketPath()
-	os.Remove(path)
+	_, err := a.ArmPprof(true)
+	return err
+}
 
+type pprofState struct {
+	mu   sync.Mutex
+	life context.Context
+	srv  *http.Server
+	stop chan struct{}
+	path string
+}
+
+func (a *Angelus) pprofSocket() string {
+	a.pprof.mu.Lock()
+	defer a.pprof.mu.Unlock()
+	return a.pprof.path
+}
+
+func (a *Angelus) ArmPprof(on bool) (string, error) {
+	p := &a.pprof
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !on {
+		if p.srv != nil {
+			p.srv.Close()
+			close(p.stop)
+			os.Remove(p.path)
+			runtime.SetMutexProfileFraction(0)
+			runtime.SetBlockProfileRate(0)
+			slog.Info("pprof disarmed", "socket", p.path)
+		}
+		p.srv, p.stop, p.path = nil, nil, ""
+		return "", nil
+	}
+	if p.srv != nil {
+		return p.path, nil
+	}
+	path := a.PprofSocketPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		slog.Warn("pprof socket dir unavailable", "path", path, "err", err)
+		return "", err
+	}
+	os.Remove(path)
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		slog.Warn("pprof socket unavailable", "path", path, "err", err)
-		return err
+		return "", err
 	}
 	if err := os.Chmod(path, 0600); err != nil {
 		ln.Close()
 		slog.Warn("pprof socket chmod failed", "path", path, "err", err)
-		return err
+		return "", err
 	}
 
 	mux := http.NewServeMux()
-	// mutex and block profiles are empty unless sampling is on.
 	runtime.SetMutexProfileFraction(5)
 	runtime.SetBlockProfileRate(10000)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -58,20 +105,26 @@ func (a *Angelus) StartPprof(ctx context.Context) error {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	srv := &http.Server{Handler: mux}
+	life := p.life
+	if life == nil {
+		life = context.Background()
+	}
+	stop := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		srv.Close()
-		os.Remove(path)
+		select {
+		case <-life.Done():
+			a.ArmPprof(false)
+		case <-stop:
+		}
 	}()
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			slog.Warn("pprof server stopped", "err", err)
 		}
 	}()
-
-	a.pprofPath = path
+	p.srv, p.stop, p.path = srv, stop, path
 	slog.Info("pprof armed", "socket", path)
-	return nil
+	return path, nil
 }
 
 // MemStatus stops the world (ReadMemStats); keep it off tickers.
@@ -90,7 +143,7 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 		SysBytes:          ms.Sys,
 		NumGC:             ms.NumGC,
 		MemLimitBytes:     debug.SetMemoryLimit(-1),
-		PprofSocket:       a.pprofPath,
+		PprofSocket:       a.pprofSocket(),
 	}
 	a.fillFormMem(st)
 	if a.Sessions != nil {

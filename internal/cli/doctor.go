@@ -268,7 +268,7 @@ func runDoctorMem(asJSON, collect bool) error {
 	}
 
 	if m.PprofSocket == "" {
-		fmt.Fprintln(stdout, "pprof      not armed: restart the daemon with FIGARO_PPROF=1")
+		fmt.Fprintln(stdout, "pprof      not armed: `figaro doctor pprof on`")
 	} else {
 		fmt.Fprintf(stdout, "pprof      %s\n", m.PprofSocket)
 		fmt.Fprintf(stdout, "           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
@@ -278,6 +278,39 @@ func runDoctorMem(asJSON, collect bool) error {
 	if m.LiveArias > 0 && m.LiveArias == m.ResidentArias {
 		fmt.Fprintf(stdout, "\nevery resident aria has a live agent, so idle eviction can free nothing.\n")
 	}
+	return nil
+}
+
+func runDoctorPprof(state string) error {
+	var on bool
+	switch state {
+	case "on":
+		on = true
+	case "off":
+	default:
+		return fmt.Errorf("usage: doctor pprof <on | off>")
+	}
+	cli, err := sdk.DialAngelus(doorEndpoint())
+	if err != nil {
+		return fmt.Errorf("no angelus running: %w", err)
+	}
+	defer cli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sock, err := cli.ArmPprof(ctx, on)
+	if err != nil && strings.Contains(err.Error(), "method not found") {
+		return fmt.Errorf("the running angelus predates `doctor pprof`; restart it with FIGARO_PPROF=1")
+	}
+	if err != nil {
+		return err
+	}
+	if !on {
+		fmt.Fprintln(stdout, "pprof      disarmed")
+		return nil
+	}
+	fmt.Fprintf(stdout, "pprof      %s\n", sock)
+	fmt.Fprintf(stdout, "           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", sock)
+	fmt.Fprintln(stdout, "           `figaro doctor pprof off` when done: a profile stops the world")
 	return nil
 }
 

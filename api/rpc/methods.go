@@ -94,6 +94,7 @@ const (
 	MethodStatus      = "angelus.status"
 	// MethodMemCollect stops the world; never call it from a ticker.
 	MethodMemCollect = "angelus.mem.collect"
+	MethodPprofArm   = "angelus.pprof.arm"
 	MethodOutfits    = "angelus.outfits"
 	// MethodOutfitReload flags the default form for recomputation on the next
 	// create; outfit files are one-way sources of truth.

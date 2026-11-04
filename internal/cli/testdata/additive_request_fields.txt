@@ -94,6 +94,7 @@ NodeResolveRequest.Refs
 NormalizeRequest.Segments
 OutfitsRequest.Fold
 OutfitsRequest.Spec
+PprofArmRequest.Arm
 PromoteRequest.FigaroID
 PromoteRequest.Levels
 ProviderLedgerRequest.Aria

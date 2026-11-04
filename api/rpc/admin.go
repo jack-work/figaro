@@ -225,3 +225,11 @@ type StreamStats struct {
 	EventTypes   map[string]int64 `json:"event_types,omitempty"`
 	TypesDropped int64            `json:"types_dropped,omitempty"`
 }
+
+type PprofArmRequest struct {
+	Arm bool `json:"arm"`
+}
+
+type PprofArmResponse struct {
+	Socket string `json:"socket,omitempty"`
+}

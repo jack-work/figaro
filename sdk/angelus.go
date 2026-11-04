@@ -72,6 +72,12 @@ func (c *Angelus) MemCollect(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, err
 }
 
+func (c *Angelus) ArmPprof(ctx context.Context, on bool) (string, error) {
+	var resp rpc.PprofArmResponse
+	err := c.call(ctx, rpc.MethodPprofArm, rpc.PprofArmRequest{Arm: on}, &resp)
+	return resp.Socket, err
+}
+
 // ProviderLedger reads the daemon's recent and in-flight provider round-trips.
 func (c *Angelus) ProviderLedger(ctx context.Context, aria string, limit int) (*rpc.ProviderLedgerResponse, error) {
 	var resp rpc.ProviderLedgerResponse

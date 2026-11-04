@@ -345,6 +345,7 @@ func Run() {
 
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
+		PprofDir:   boot.StateDir(),
 		Backend:    backend,
 		Settings:   loaded,
 	})

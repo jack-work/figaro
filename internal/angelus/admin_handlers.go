@@ -42,6 +42,20 @@ func (h *handlers) memCollect(ctx context.Context, params json.RawMessage) (inte
 	}, nil
 }
 
+func (h *handlers) pprofArm(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.PprofArmRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+	}
+	path, err := h.angelus.ArmPprof(req.Arm)
+	if err != nil {
+		return nil, err
+	}
+	return rpc.PprofArmResponse{Socket: path}, nil
+}
+
 func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ProviderLedgerRequest
 	if len(params) > 0 {
