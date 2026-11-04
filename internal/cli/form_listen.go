@@ -76,7 +76,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		kick.close()
 		return nil, nil, fmt.Errorf("dial aria: %w", err)
 	}
-	if intrinsic != "" {
+	if !formPitEditable(intrinsic) {
 		view.refetch = func() (*rpc.FormResponse, error) {
 			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer rcancel()
@@ -118,6 +118,10 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		cancel()
 		kick.close()
 	}, nil
+}
+
+func formPitEditable(intrinsic string) bool {
+	return intrinsic == "" && !daemonLacks(rpc.CapFormSeq)
 }
 
 func runFormListen(loaded *config.Loaded, ariaID string) {

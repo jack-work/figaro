@@ -17,7 +17,10 @@ capabilities.
 - **Anything an older side would get wrong without saying so** is a
   capability. The daemon lists it; the CLI refuses the feature by name
   against a daemon that does not. `qua.images` is the first: a daemon
-  without it would run the prompt and drop the images.
+  without it would run the prompt and drop the images. `form.seq` is the
+  second: a daemon without it would drop a replica's client and sequence
+  number, so a resent edit could apply twice; against it the form pit
+  opens read-only.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

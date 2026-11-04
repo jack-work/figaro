@@ -269,3 +269,35 @@ func formRowByID(rows []pitRow, id string) pitRow {
 	}
 	return pitRow{}
 }
+
+// A daemon without form.seq would drop a replica's client and seq, so a resent
+// edit could apply twice: against it the pit opens on the read-only mirror.
+// Asking must not register a need, or the next handshake with that daemon
+// would end the process.
+func TestThePitIsReadOnlyAgainstADaemonWithoutFormSeq(t *testing.T) {
+	resetDaemonSeen(t)
+	if !formPitEditable("") {
+		t.Fatal("no daemon seen yet: nothing says the pit cannot edit")
+	}
+	old := daemonIdentity{build: "old", release: "0.52.4", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages}}
+	sawDaemon("the daemon", old, "new")
+	if formPitEditable("") {
+		t.Fatal("the pit would edit through a replica against a daemon that drops seqs")
+	}
+	if formPitEditable("runtime") {
+		t.Fatal("an intrinsic form is never editable")
+	}
+	if err := missingCapability(); err != nil {
+		t.Fatalf("asking about form.seq registered a need: %v", err)
+	}
+	sawDaemon("the daemon", daemonIdentity{build: "new2", release: "0.53.0", protocol: 1, caps: []rpc.Capability{rpc.CapQuaImages, rpc.CapFormSeq}}, "new")
+	if !formPitEditable("") {
+		t.Fatal("a daemon reporting form.seq gets a replica")
+	}
+	m := &formMirror{}
+	m.reset(form.FromMap(formKeys("a", `1`)), 1, 1)
+	p, _, _ := shownFormEdit(tokenize("set a 5"), m.snap)
+	if err := (&formView{mirror: m}).Edit(p); err == nil {
+		t.Fatal("the read-only mirror took an edit")
+	}
+}

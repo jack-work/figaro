@@ -374,6 +374,12 @@ func needCapability(c rpc.Capability, use string) error {
 	return missingCapability()
 }
 
+func daemonLacks(c rpc.Capability) bool {
+	daemonSeen.Lock()
+	defer daemonSeen.Unlock()
+	return daemonSeen.known && !daemonSeen.same && !slices.Contains(daemonSeen.d.caps, c)
+}
+
 func missingCapability() error {
 	daemonSeen.Lock()
 	defer daemonSeen.Unlock()
