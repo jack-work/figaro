@@ -190,19 +190,29 @@ func diffTrees(prev, next ptree) *ObjectPatch {
 		return nil
 	}
 	var out *ObjectPatch
-	rangeEntries(next.root, func(n *node) bool {
+	rangeUnshared(next.root, prev.root, func(n *node) {
 		if old := lookupExact(prev.root, n.key); old != n {
 			out = entryDelta(out, n.key, old, n, nil)
 		}
-		return true
 	})
-	rangeEntries(prev.root, func(n *node) bool {
+	rangeUnshared(prev.root, next.root, func(n *node) {
 		if lookupExact(next.root, n.key) == nil {
 			out = entryDelta(out, n.key, n, nil, nil)
 		}
-		return true
 	})
 	return nonEmpty(out)
+}
+
+// rangeUnshared visits the entries of n's tree outside every subtree it shares
+// with other: a node is immutable, so finding it at its own key in other
+// means everything under it is the same in both.
+func rangeUnshared(n, other *node, visit func(*node)) {
+	if n == nil || lookupExact(other, n.key) == n {
+		return
+	}
+	rangeUnshared(n.left, other, visit)
+	visit(n)
+	rangeUnshared(n.right, other, visit)
 }
 
 func entryDelta(out *ObjectPatch, key string, old, next *node, child *ObjectPatch) *ObjectPatch {
