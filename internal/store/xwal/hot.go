@@ -298,10 +298,10 @@ func (t *Trunks) syncHot() error {
 	if h != nil {
 		h.refs++
 	}
-	var heads []*hotHead
+	heads := map[string]*hotHead{}
 	if h != nil {
-		for _, head := range h.heads {
-			heads = append(heads, head)
+		for key, head := range h.heads {
+			heads[key] = head
 			head.refs++
 		}
 	}
@@ -310,7 +310,7 @@ func (t *Trunks) syncHot() error {
 		return nil
 	}
 	var err error
-	for _, head := range heads {
+	for key, head := range heads {
 		select {
 		case <-head.ready:
 		default:
@@ -319,7 +319,7 @@ func (t *Trunks) syncHot() error {
 		if head.x == nil || head.err != nil {
 			continue
 		}
-		if ferr := head.x.syncCoherent(); ferr != nil && err == nil {
+		if ferr := t.syncHead(key, head.x); ferr != nil && err == nil {
 			node := head.x.key
 			if node == "" {
 				node = "root"

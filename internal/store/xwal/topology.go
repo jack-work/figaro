@@ -62,11 +62,6 @@ func (t *Trunks) adoptLineage(trunk string, lineage *rootLineageState) {
 	if lineage.owner == nil {
 		lineage.owner = t
 	} else if lineage.owner != t {
-		// The previous owner's buffered appends must reach disk before this
-		// peer opens the lineage from disk. A sync that fails retires the
-		// owner's store, which fences the nodes it could not flush, and the
-		// adopter drops its whole store as before; a sync that succeeds lets
-		// the adopter drop only this lineage.
 		if err := lineage.owner.syncHot(); err != nil {
 			lineage.owner.retireHot()
 			t.retireHot()
