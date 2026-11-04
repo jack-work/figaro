@@ -201,6 +201,10 @@ func runDoctorMem(asJSON, collect bool) error {
 	fmt.Fprintf(stdout, "figwal     loaded-heads=%d  segment-cache=%s of %s  loads=%d\n",
 		m.LoadedHeads, humanBytes(m.SegmentCacheBytes),
 		humanBytes(m.SegmentCacheBudget), m.SegmentCacheLoads)
+	if m.OpenSegments > 0 {
+		fmt.Fprintf(stdout, "           open-segments=%d  headers=%s\n",
+			m.OpenSegments, humanBytes(m.SegmentHeaderBytes))
+	}
 	if m.PendingRemovals > 0 {
 		fmt.Fprintf(stdout, "           removals waiting on readers=%d  heads=%d  oldest=%s\n",
 			m.PendingRemovals, m.PendingRemovalHeads,
@@ -220,6 +224,13 @@ func runDoctorMem(asJSON, collect bool) error {
 	}
 	fmt.Fprintf(stdout, "runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
+	if m.ResidentForms > 0 || m.LibrettoForms > 0 {
+		fmt.Fprintf(stdout, "forms      resident=%d  subscribed=%d  libretto=%d  window-patches=%d\n",
+			m.ResidentForms, m.SubscribedForms, m.LibrettoForms, m.FormWindowPatches)
+		fmt.Fprintf(stdout, "           state~=%s  patches~=%s  (librettos %s)  memo=%s  canonical=%s\n",
+			humanBytes(m.FormStateBytes), humanBytes(m.FormPatchBytes), humanBytes(m.LibrettoFormBytes),
+			humanBytes(m.ValueMemoBytes), humanBytes(m.ValueCanonBytes))
+	}
 	if c := m.Collected; c != nil {
 		fmt.Fprintf(stdout, "collected  live %s -> %s  (reclaimed %s in %s)\n",
 			humanBytes(int64(c.BeforeBytes)), humanBytes(int64(c.AfterBytes)),
@@ -248,6 +259,13 @@ func runDoctorMem(asJSON, collect bool) error {
 		limit = humanBytes(m.MemLimitBytes)
 	}
 	fmt.Fprintf(stdout, "limit      %s (GOMEMLIMIT, soft)\n", limit)
+	if m.HeapLiveBytes > 0 {
+		fmt.Fprintf(stdout, "           live after the last GC=%s\n", humanBytes(int64(m.HeapLiveBytes)))
+	}
+	if m.MemPressure {
+		fmt.Fprintf(stdout, "\nWARNING: the live heap is above 85%% of the limit, so the collector runs\n"+
+			"         continuously. Look at the forms line above, then take a heap profile.\n")
+	}
 
 	if m.PprofSocket == "" {
 		fmt.Fprintln(stdout, "pprof      not armed: restart the daemon with FIGARO_PPROF=1")

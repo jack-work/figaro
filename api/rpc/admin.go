@@ -117,6 +117,20 @@ type MemStatus struct {
 	SysBytes          uint64 `json:"sys_bytes"`
 	NumGC             uint32 `json:"num_gc"`
 	MemLimitBytes     int64  `json:"mem_limit_bytes"` // armed GOMEMLIMIT; MaxInt64 = unlimited
+	HeapLiveBytes     uint64 `json:"heap_live_bytes,omitempty"`
+	MemPressure       bool   `json:"mem_pressure,omitempty"`
+
+	ResidentForms      int   `json:"resident_forms,omitempty"`
+	SubscribedForms    int   `json:"subscribed_forms,omitempty"`
+	LibrettoForms      int   `json:"libretto_forms,omitempty"`
+	FormWindowPatches  int   `json:"form_window_patches,omitempty"`
+	FormStateBytes     int64 `json:"form_state_bytes,omitempty"`
+	FormPatchBytes     int64 `json:"form_patch_bytes,omitempty"`
+	LibrettoFormBytes  int64 `json:"libretto_form_bytes,omitempty"`
+	ValueMemoBytes     int64 `json:"value_memo_bytes,omitempty"`
+	ValueCanonBytes    int64 `json:"value_canon_bytes,omitempty"`
+	OpenSegments       int64 `json:"open_segments,omitempty"`
+	SegmentHeaderBytes int64 `json:"segment_header_bytes,omitempty"`
 
 	// Collected is set only when the daemon ran a GC before reporting.
 	Collected *Collection `json:"collected,omitempty"`

@@ -180,6 +180,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	go a.keepReachable(ctx, pidPath)
 	go a.reclaims().run(ctx)
 	go a.retention(ctx)
+	go a.watchMemPressure(ctx)
 	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
 

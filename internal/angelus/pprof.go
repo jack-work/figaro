@@ -92,6 +92,7 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 		MemLimitBytes:     debug.SetMemoryLimit(-1),
 		PprofSocket:       a.pprofPath,
 	}
+	a.fillFormMem(st)
 	if a.Sessions != nil {
 		st.Sessions = a.Sessions.Count()
 	}

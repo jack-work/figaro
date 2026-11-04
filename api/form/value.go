@@ -66,6 +66,7 @@ func (v Value) canonical() []byte {
 	v.c.once.Do(func() {
 		if canon, err := canonicalJSON(v.raw); err == nil {
 			v.c.bytes = canon
+			accountCanon(v.c, canon)
 		}
 	})
 	return v.c.bytes
@@ -136,6 +137,9 @@ func (v Value) members() (map[string]Value, bool) {
 	}
 	v.o.once.Do(func() {
 		v.o.members, v.o.isObj = parseMembers(v.raw)
+		if v.o.isObj {
+			accountMemo(v.o, v.o.members, len(v.raw))
+		}
 	})
 	return v.o.members, v.o.isObj
 }

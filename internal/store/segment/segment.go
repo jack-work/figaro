@@ -33,6 +33,8 @@ type Segment struct {
 	header    []byte
 	headerLen int64
 
+	closed atomic.Bool
+
 	// registered marks this segment findable by the payload cache's Source.
 	registered atomic.Bool
 	// h is this segment's node in the payload cache, resolved once.
@@ -49,13 +51,15 @@ func Create(path string, codec SegmentCodec, baseIndex uint64, maxSize int64) (*
 		"path", path,
 		"baseIndex", baseIndex,
 		"maxSize", maxSize)
-	return &Segment{
+	s := &Segment{
 		f:         f,
 		path:      path,
 		codec:     codec,
 		baseIndex: baseIndex,
 		maxSize:   maxSize,
-	}, nil
+	}
+	openSegments.Add(1)
+	return s, nil
 }
 
 // Open opens an existing segment for read and write. Any torn tail
@@ -87,6 +91,8 @@ func openRW(path string, codec SegmentCodec, baseIndex uint64, maxSize int64, ha
 		f.Close()
 		return nil, err
 	}
+	openSegments.Add(1)
+	headerBytes.Add(int64(len(s.header)))
 	return s, nil
 }
 
@@ -119,6 +125,8 @@ func openRO(path string, codec SegmentCodec, baseIndex uint64, hasHeader bool) (
 		f.Close()
 		return nil, err
 	}
+	openSegments.Add(1)
+	headerBytes.Add(int64(len(s.header)))
 	return s, nil
 }
 
@@ -237,6 +245,7 @@ func (s *Segment) WriteHeader(payload []byte) error {
 	s.size = int64(n)
 	s.headerLen = int64(n)
 	s.hasHeader = true
+	headerBytes.Add(int64(len(payload) - len(s.header)))
 	s.header = append([]byte(nil), payload...)
 	return nil
 }
@@ -292,7 +301,17 @@ func (s *Segment) Size() int64   { return s.size }
 // Close releases the file handle and the segment's payload block.
 func (s *Segment) Close() error {
 	s.DropCache()
+	if s.closed.CompareAndSwap(false, true) {
+		openSegments.Add(-1)
+		headerBytes.Add(-int64(len(s.header)))
+	}
 	return s.f.Close()
+}
+
+var openSegments, headerBytes atomic.Int64
+
+func OpenSegments() (count, headers int64) {
+	return openSegments.Load(), headerBytes.Load()
 }
 func (s *Segment) Path() string       { return s.path }
 func (s *Segment) ReadOnly() bool     { return s.readOnly }
