@@ -130,6 +130,7 @@ type formResult struct {
 	// applied is what the writer committed after reducing against the
 	// published state: the keys that really changed.
 	applied   message.Patch
+	next      form.Snapshot
 	err       error
 	duplicate bool
 }
@@ -569,7 +570,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res form
 	if err != nil {
 		return nil, formResult{err: err}, false
 	}
-	next = &formState{snap: st.snap.Apply(res.applied), version: version, seqs: st.seqs}
+	next = &formState{snap: res.next, version: version, seqs: st.seqs}
 	next = next.answered(w.origin)
 	// Append to the shared backing array: safe with exactly one drainer, since
 	// a published state holds its own slice length and a later append either
@@ -606,7 +607,8 @@ func (f *Form) judge(st *formState, w *formWrite) formResult {
 			}
 		}
 	}
-	return formResult{version: st.version, applied: effectivePatch(st.snap, w.patch)}
+	next, applied := st.snap.ApplyEffective(w.patch)
+	return formResult{version: st.version, applied: applied, next: next}
 }
 
 func (st *formState) answered(o Origin) *formState {
@@ -650,15 +652,6 @@ func (f *Form) emit(events []Commit) {
 			}()
 		}
 	}
-}
-
-// effectivePatch: the keys a patch changes and the removals that remove
-// something. Every place that dresses a form must agree about what "already
-// wearing it" means.
-func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
-	// Apply and re-diff keeps exactly what changed; a removal of something
-	// absent falls out on its own.
-	return snap.Apply(p).Diff(snap)
 }
 
 // memFormPage is the floor in raw records, one tier under the decoded window

@@ -1448,7 +1448,8 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 
 // additivePatch never removes keys absent from ctx: Context is additive by contract.
 func additivePatch(ctx, snap form.Snapshot) form.Patch {
-	return snap.Apply(ctx.AsPatch()).Diff(snap)
+	_, applied := snap.ApplyEffective(ctx.AsPatch())
+	return applied
 }
 
 func turnStatus(reason string) string {
