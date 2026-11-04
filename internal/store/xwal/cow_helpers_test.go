@@ -7,8 +7,13 @@ import (
 	"testing"
 )
 
+// An empty node is the root's directory, which always exists: a caller that
+// lost the race to learn a trunk's node must not ask about "".
 func nodeDirs(t *testing.T, f *Trunks, node string) []string {
 	t.Helper()
+	if node == "" {
+		t.Fatal("nodeDirs of the root")
+	}
 	names, err := channelNames(f.root)
 	if err != nil {
 		t.Fatal(err)

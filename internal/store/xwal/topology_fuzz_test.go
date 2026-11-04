@@ -30,6 +30,40 @@ func (m *fuzzModel) add(id, node, parent string) {
 	m.order = append(m.order, id)
 }
 
+// spawnWithNode and forkTailWithNode learn the new trunk's node under the
+// tree lock the operation itself holds, so no removal can run first: the
+// fuzz checks every removed trunk's real directories, including a child
+// whose fork raced its parent's recursive removal.
+func spawnWithNode(f *Trunks) (string, string, error) {
+	end, err := f.beginFlatCreate()
+	if err != nil {
+		return "", "", err
+	}
+	defer end()
+	id, err := f.forkFlat("", "conversation", true)
+	if err != nil {
+		return "", "", err
+	}
+	node, _ := f.idx.Head(id)
+	return id, node, nil
+}
+
+func forkTailWithNode(f *Trunks, trunk string) (string, string, error) {
+	unlock := f.lockLineage(trunk)
+	defer unlock()
+	end, err := f.beginFlatCreate()
+	if err != nil {
+		return "", "", err
+	}
+	defer end()
+	child, err := f.forkTailLocked(trunk)
+	if err != nil {
+		return "", "", err
+	}
+	node, _ := f.idx.Head(child)
+	return child, node, nil
+}
+
 func (m *fuzzModel) pick(r *rand.Rand) *fuzzTrunk {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -67,11 +101,10 @@ func TestConcurrentTopologyFuzz(t *testing.T) {
 	}
 	m := &fuzzModel{trunks: map[string]*fuzzTrunk{}}
 	for i := 0; i < 6; i++ {
-		id, err := s.SpawnUnderRoot()
+		id, node, err := spawnWithNode(s.Trunks)
 		if err != nil {
 			t.Fatal(err)
 		}
-		node, _ := s.HeadNode(id)
 		m.add(id, node, "")
 	}
 	const workers, ops = 8, 250
@@ -89,15 +122,14 @@ func TestConcurrentTopologyFuzz(t *testing.T) {
 				}
 				switch k := r.Intn(100); {
 				case k < 8:
-					id, err := s.SpawnUnderRoot()
+					id, node, err := spawnWithNode(s.Trunks)
 					if err != nil {
 						errs <- fmt.Errorf("spawn: %w", err)
 						return
 					}
-					node, _ := s.HeadNode(id)
 					m.add(id, node, "")
 				case k < 18:
-					child, err := s.Trunks.ForkTail(tr.id)
+					child, node, err := forkTailWithNode(s.Trunks, tr.id)
 					if errors.Is(err, ErrUnknownTrunk) {
 						continue
 					}
@@ -105,7 +137,6 @@ func TestConcurrentTopologyFuzz(t *testing.T) {
 						errs <- fmt.Errorf("fork %s: %w", tr.id, err)
 						return
 					}
-					node, _ := s.HeadNode(child)
 					m.add(child, node, tr.id)
 				case k < 55:
 					payload := fmt.Sprintf(`"%s:%d:%d"`, tr.id, w, op)
@@ -208,6 +239,9 @@ func verifyFuzz(t *testing.T, phase string, s *Store, m *fuzzModel) {
 			}
 		}
 		if !isLive {
+			if tr.node == "" {
+				continue
+			}
 			if dirs := nodeDirs(t, s.Trunks, tr.node); len(dirs) != 0 && m.descendsFromRemoved(id) != "" {
 				t.Fatalf("%s: removed %s left %v", phase, id, dirs)
 			}
@@ -249,4 +283,48 @@ func verifyFuzz(t *testing.T, phase string, s *Store, m *fuzzModel) {
 		}
 	}
 	t.Logf("%s: %d trunks, %d live", phase, len(m.order), live)
+}
+
+// The order that once failed under load: a fork, a recursive removal of the
+// parent, then a lookup of the child, which finds nothing. The child's node is
+// learned when it is forked, so its own directories are still checked, in
+// every channel, after the drain.
+func TestTheFuzzChecksAForkedChildThatRacedItsParentsRemoval(t *testing.T) {
+	s, err := OpenStore(t.TempDir(), StoreOptions{Main: "main", SegmentSize: 1024, IdleUnload: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	m := &fuzzModel{trunks: map[string]*fuzzTrunk{}}
+	parent, pnode, err := spawnWithNode(s.Trunks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.add(parent, pnode, "")
+	if _, err := s.Append(parent, "main", 0, []byte(`"p"`), nil); err != nil {
+		t.Fatal(err)
+	}
+	child, cnode, err := forkTailWithNode(s.Trunks, parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cnode == "" {
+		t.Fatal("the fork did not name its node")
+	}
+	m.add(child, cnode, parent)
+	if len(nodeDirs(t, s.Trunks, cnode)) == 0 {
+		t.Fatal("the child has no directories to check")
+	}
+	if err := s.Remove(parent, true); err != nil {
+		t.Fatal(err)
+	}
+	m.trunks[parent].removed = true
+	if late, ok := s.HeadNode(child); ok || late != "" {
+		t.Fatalf("the child's node is still known after its parent's recursive removal: %q", late)
+	}
+	s.Trunks.drainRemovals()
+	if dirs := nodeDirs(t, s.Trunks, cnode); len(dirs) != 0 {
+		t.Fatalf("the child's own directories outlived the removal: %v", dirs)
+	}
+	verifyFuzz(t, "forced order", s, m)
 }
