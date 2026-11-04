@@ -132,27 +132,3 @@ func deepRemove(root map[string]any, path []string) {
 	}
 	delete(cur, path[len(path)-1])
 }
-
-// builtinReducers are reducers xwal provides without caller registration.
-func builtinReducers() map[string]Reducer {
-	return map[string]Reducer{MapReducerName: MapReducer()}
-}
-
-// resolveReducer looks up a reducer: caller registry by reducer name,
-// then by channel name (pre-OpenStore manifests carry standalone reducer
-// names like "jsonmerge"; StoreOptions registries key by channel), then
-// the built-ins (so "map" is always available).
-func resolveReducer(cfg Config, name, channel string) (Reducer, bool) {
-	if cfg.Registry != nil {
-		if r, ok := cfg.Registry[name]; ok {
-			return r, true
-		}
-		if r, ok := cfg.Registry[channel]; ok {
-			return r, true
-		}
-	}
-	if r, ok := builtinReducers()[name]; ok {
-		return r, true
-	}
-	return Reducer{}, false
-}

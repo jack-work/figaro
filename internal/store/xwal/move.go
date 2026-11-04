@@ -408,9 +408,6 @@ func (t *Trunks) reducerKey(c manifestChannel) string {
 	if _, ok := t.cfg.Registry[c.Name]; ok {
 		return c.Name
 	}
-	if _, ok := builtinReducers()[c.Reducer]; ok {
-		return "builtin:" + c.Reducer
-	}
 	return "unresolved:" + c.Reducer
 }
 

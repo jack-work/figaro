@@ -81,9 +81,10 @@ func mapTrunksCfg() Config {
 		Main: "ir",
 		Channels: []ChannelSpec{
 			{Name: "ir", Kind: ChannelLog},
-			{Name: "chalkboard", Kind: ChannelReducible, Reducer: MapReducerName}, // built-in, no registration
+			{Name: "chalkboard", Kind: ChannelReducible, Reducer: MapReducerName},
 		},
 		SegmentSize: 4096,
+		Registry:    map[string]Reducer{MapReducerName: MapReducer()},
 	}
 }
 
@@ -106,9 +107,8 @@ func seedMapTrunk(t *testing.T, dir string) (*Trunks, TrunkID) {
 	return f, id
 }
 
-func TestMap_BuiltinReducerNoRegistration(t *testing.T) {
+func TestMap_ReducerFoldsThroughAChannel(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
-	// Note: cfg.Registry is nil — "map" must resolve from the built-ins.
 	f, root := seedMapTrunk(t, dir)
 	_, lt, _ := f.Append(root, 0, []byte(`"u1"`), nil)
 	sp, _ := MapSetPatch([]string{"system", "provider"}, []byte(`"anthropic"`))
@@ -161,5 +161,15 @@ func TestMap_ForksAlongDeep(t *testing.T) {
 	// alt keeps inherited system.model AND its own deep tags leaf.
 	if string(st) != `{"system":{"model":"opus","tags":{"42":{"cache":"ephemeral"}}}}` {
 		t.Fatalf("alt deep-fork state = %s", st)
+	}
+}
+
+// A reducer name nothing registered is refused at create: there are no
+// built-ins to fall back on.
+func TestAnUnregisteredReducerIsRefused(t *testing.T) {
+	cfg := mapTrunksCfg()
+	cfg.Registry = nil
+	if _, err := createTrunks(filepath.Join(t.TempDir(), "f"), cfg); err == nil {
+		t.Fatal("a store whose reducer nothing registered was created")
 	}
 }

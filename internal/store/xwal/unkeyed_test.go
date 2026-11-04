@@ -15,6 +15,7 @@ func unkeyedCfg() Config {
 			{Name: "chalkboard", Kind: ChannelReducible, Reducer: MapReducerName, Unkeyed: true},
 		},
 		SegmentSize: 4096,
+		Registry:    map[string]Reducer{MapReducerName: MapReducer()},
 	}
 }
 
