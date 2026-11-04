@@ -30,6 +30,11 @@ figaro fork --stay -f -- "take the second option"
 ```
 
 Do not restate the task, the plan or the files to a fork; it can read them.
+The fork answers first with a few-line plan sent to its parent (what it will
+do, in what order, what it will not touch), then does the work; the parent
+corrects the plan rather than writing it. The exception is a fork from an early
+turn (`figaro fork <id>:<turn>`): it holds only that prefix, so brief it as you
+would a `new` aria.
 How a branch learns it was forked, and the fork coordinates, are in
 [reference/trunks.md](reference/trunks.md).
 
