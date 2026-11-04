@@ -20,6 +20,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
@@ -179,6 +180,9 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	token, err := p.tokenSrc.Resolve()
 	if err != nil {
+		if lr, ok := auth.LoginRequired(err); ok {
+			return lr
+		}
 		return fmt.Errorf("responses: resolve token: %w", err)
 	}
 
@@ -187,10 +191,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return err
 	}
 	if ierr := p.tokenSrc.Invalidate(token); ierr != nil {
+		if lr, ok := auth.LoginRequired(ierr); ok {
+			return lr
+		}
 		return fmt.Errorf("responses: invalidate token: %w", ierr)
 	}
 	token, err = p.tokenSrc.Resolve()
 	if err != nil {
+		if lr, ok := auth.LoginRequired(err); ok {
+			return lr
+		}
 		return fmt.Errorf("responses: resolve refreshed token: %w", err)
 	}
 	return p.sendWithToken(ctx, token, in, bus, options)

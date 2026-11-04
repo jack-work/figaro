@@ -3,8 +3,10 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -104,4 +106,40 @@ func TestOAuthStopsAfterPermanentRefresh(t *testing.T) {
 	assert.Equal(t, "fresh", tok)
 	_ = o.Invalidate("fresh")
 	assert.Equal(t, 2, agent.count(), "a new token is refreshed normally")
+}
+
+// Fixes #64: a refusal the IdP will never take back reaches the caller as one
+// actionable line instead of the provider's raw 401, and is not retried.
+func TestAPermanentRefusalSurfacesAsLoginRequiredNotA401(t *testing.T) {
+	captureWarnings(t)
+	agent := &scriptedHush{token: "dead"}
+	o := &OAuth{Hush: agent.serve(t), Name: "band"}
+	sends := 0
+	resp, err := SendRenewing(o, func(string) (*http.Response, error) {
+		sends++
+		return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader("revoked"))}, nil
+	})
+	require.Nil(t, resp, "the raw 401 came back instead of the refusal")
+	require.ErrorIs(t, err, ErrLoginRequired)
+	assert.Equal(t, "band: sign-in expired, run: figaro provider login band", err.Error())
+	assert.Equal(t, 1, sends)
+
+	_, err = SendRenewing(o, func(string) (*http.Response, error) {
+		t.Fatal("a dead grant was sent upstream")
+		return nil, nil
+	})
+	assert.Equal(t, "band: sign-in expired, run: figaro provider login band", err.Error())
+}
+
+// The refusal's text comes from the IdP and could echo request fields; the
+// log keeps only hush's error code.
+func TestTheLoginWarningLogsTheClassNotTheIdPText(t *testing.T) {
+	logs := captureWarnings(t)
+	agent := &scriptedHush{token: "dead"}
+	o := &OAuth{Hush: agent.serve(t), Name: "band"}
+	_ = o.Invalidate("dead")
+	if strings.Contains(logs.String(), "invalid_grant") {
+		t.Fatalf("the IdP's refusal text reached the log:\n%s", logs)
+	}
+	assert.Contains(t, logs.String(), "class=oauth_refresh_permanent")
 }

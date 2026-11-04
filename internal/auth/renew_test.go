@@ -100,3 +100,21 @@ func TestSendRenewingLeavesAnAnonymous401Alone(t *testing.T) {
 		t.Fatalf("resp = %v, err = %v, invalidated %v", resp, err, r.invalidated)
 	}
 }
+
+// A dead grant met at Resolve reads the same, not wrapped in "resolve token".
+func TestSendRenewingReportsADeadGrantAtResolveAsIs(t *testing.T) {
+	dead := &LoginRequiredError{Credential: "band", Cause: errors.New("revoked")}
+	r := deadAtResolve{err: dead}
+	_, err := SendRenewing(r, func(string) (*http.Response, error) {
+		t.Fatal("nothing may be sent with a dead grant")
+		return nil, nil
+	})
+	if err == nil || err.Error() != dead.Error() {
+		t.Fatalf("err = %v, want %q", err, dead.Error())
+	}
+}
+
+type deadAtResolve struct{ err error }
+
+func (d deadAtResolve) Resolve() (string, error) { return "", d.err }
+func (d deadAtResolve) Invalidate(string) error  { return d.err }

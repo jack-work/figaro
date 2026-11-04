@@ -203,6 +203,9 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
+		if lr, ok := auth.LoginRequired(err); ok {
+			return nil, "", lr
+		}
 		return nil, "", fmt.Errorf("resolve token: %w", err)
 	}
 	authRetried := false
@@ -235,7 +238,13 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			resp.Body.Close()
 			authRetried = true
 			ierr := a.auth.Invalidate(apiKey)
+			if lr, ok := auth.LoginRequired(ierr); ok {
+				return nil, apiKey, lr
+			}
 			newKey, rerr := a.auth.Resolve()
+			if lr, ok := auth.LoginRequired(rerr); ok {
+				return nil, apiKey, lr
+			}
 			if rerr != nil {
 				return nil, apiKey, fmt.Errorf("resolve after 401: %w", errors.Join(ierr, rerr))
 			}

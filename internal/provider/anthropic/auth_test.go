@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"errors"
+	"github.com/jack-work/figaro/internal/auth"
 	"io"
 	"net/http"
 	"strings"
@@ -63,4 +64,19 @@ func TestDoWithAuthRetryTokenUnchanged(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "token unchanged after invalidate")
+}
+
+// Fixes #64: a grant hush calls dead stops the request with the login line,
+// not a wrapped "invalidate failed" and not a second send.
+func TestDoWithAuthRetryStopsAtLoginRequired(t *testing.T) {
+	dead := &auth.LoginRequiredError{Credential: "anthropic", Cause: errors.New("invalid_grant")}
+	fr := &fakeResolver{tokens: []string{"tok"}, invErr: dead}
+	a := &Anthropic{auth: fr, HTTPClient: always401()}
+
+	_, _, err := a.doWithAuthRetry(context.Background(), func(apiKey string) (*http.Request, error) {
+		return http.NewRequest("POST", "http://example.invalid", nil)
+	})
+	require.ErrorIs(t, err, auth.ErrLoginRequired)
+	assert.Equal(t, "anthropic: sign-in expired, run: figaro provider login anthropic", err.Error())
+	assert.Equal(t, []string{"tok"}, fr.invalidated)
 }

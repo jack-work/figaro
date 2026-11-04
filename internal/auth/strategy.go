@@ -133,6 +133,35 @@ type deadGrant struct {
 
 var ErrLoginRequired = errors.New("login required")
 
+type LoginRequiredError struct {
+	Credential string
+	Cause      error
+}
+
+func (e *LoginRequiredError) Error() string {
+	return e.Credential + ": sign-in expired, run: figaro provider login " + e.Credential
+}
+
+func (e *LoginRequiredError) Is(target error) bool { return target == ErrLoginRequired }
+
+func (e *LoginRequiredError) Unwrap() error { return e.Cause }
+
+func refusalClass(err error) string {
+	var herr *hush.Error
+	if errors.As(err, &herr) && herr.Code != "" {
+		return herr.Code
+	}
+	return "unknown"
+}
+
+func LoginRequired(err error) (*LoginRequiredError, bool) {
+	var lr *LoginRequiredError
+	if errors.As(err, &lr) {
+		return lr, true
+	}
+	return nil, false
+}
+
 func (o *OAuth) TryResolve() (string, bool, error) {
 	if o.Hush == nil || o.Name == "" {
 		return "", false, nil
@@ -196,9 +225,9 @@ func (o *OAuth) Invalidate(token string) error {
 		return nil
 	}
 	if errors.Is(err, hush.ErrOAuthRefreshPermanent) {
-		dead := &deadGrant{token: token, err: fmt.Errorf("%w: oauth refresh for %q rejected (run: figaro provider login %s): %w", ErrLoginRequired, o.Name, o.Name, err)}
+		dead := &deadGrant{token: token, err: &LoginRequiredError{Credential: o.Name, Cause: err}}
 		if o.dead.Swap(dead) == nil {
-			slog.Warn("provider credential needs login; requests stop until it has one", "credential", o.Name, "run", "figaro provider login "+o.Name)
+			slog.Warn("provider credential needs login; requests stop until it has one", "credential", o.Name, "run", "figaro provider login "+o.Name, "class", refusalClass(err))
 		}
 		return dead.err
 	}
