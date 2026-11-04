@@ -1134,7 +1134,7 @@ children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it rep
 		Name:  "succeed",
 		Group: "Session",
 		Short: "Hand a role to a successor and wind the old aria down",
-		Usage: "succeed <@role> [--turn <n> | --successor <aria>] [--title <t>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
+		Usage: "succeed <@role> [--turn <n> | --successor <aria>] [--title <t>] [-O <outfits>] [-S <k=v>] [-D <keys>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
 		Long: `Replace the aria a role points at. The role must already target an aria
 that exists; that aria is the predecessor.
 
@@ -1142,11 +1142,14 @@ that exists; that aria is the predecessor.
   figaro succeed @warden --turn 5 --title "deploy warden II" -- go
   figaro succeed @warden --successor <aria> -- you hold the seat now
   figaro succeed @warden --ttl 0 -- go          kill the predecessor at once
+  figaro succeed @warden -O default -- go       the successor dressed afresh
 
 In order, stopping at the first step that fails:
 
   1. fork the predecessor at --turn (default 2: the successor keeps turn 1
-     and the prompt becomes its turn 2), its mantra set to --title.
+     and the prompt becomes its turn 2), its mantra set to --title. The
+     fork carries the model its turn was recorded with; -O/-S/-D dress it
+     in the same call, as with fork, so it can come up on today's.
      --successor names an existing aria instead and skips the fork.
   2. demote the predecessor beneath the successor (figaro demote), so its
      branches survive its end. A successor not drawn under it is left where
@@ -1174,6 +1177,9 @@ predecessor, the pager moves to the successor afterwards; --stay keeps it.`,
 			{Long: "ttl", Description: "Reap the predecessor this long from now; 0 kills it (default 10m)"},
 			{Long: "abdication", Description: "retire (refuse prompts) or linger (keep taking them)"},
 			{Long: "stay", IsBool: true, Description: "In the pager, keep showing the predecessor"},
+			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded into the successor's birth patch"},
+			{Long: "set", Short: "S", Description: "Successor birth keys: k=v or a JSON literal"},
+			{Long: "delete", Short: "D", Description: "Key paths the successor's birth patch removes"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON report"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {

@@ -33,6 +33,7 @@ type succeedPlan struct {
 	title      string
 	prompt     string
 	stay       bool
+	dress      dressing
 }
 
 type succeedReport struct {
@@ -113,6 +114,14 @@ func succeedPlanFrom(ctx *cmdkit.RunContext) (succeedPlan, error) {
 		return plan, fmt.Errorf("succeed: %w", err)
 	}
 	plan.stay = ctx.BoolFlag("stay")
+	dress, err := parseDress(ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"))
+	if err != nil {
+		return plan, fmt.Errorf("succeed: %w", err)
+	}
+	if !dress.IsEmpty() && plan.successor != "" {
+		return plan, errors.New("succeed: --outfit, --set and --delete dress the fork; --successor names an aria that already exists, so dress it there (figaro set, or a prompt with -O)")
+	}
+	plan.dress = dress
 	return plan, nil
 }
 
@@ -186,6 +195,19 @@ func succeedAssert(ctx context.Context, acli *sdk.Angelus, plan succeedPlan) (su
 	return p, nil
 }
 
+func (p succeedPlan) birth() ([]string, *rpc.FormPatch) {
+	patch := p.dress.patch
+	if p.title == "" {
+		return p.dress.names, patch
+	}
+	title := mantraPatch(p.title)
+	if patch == nil {
+		return p.dress.names, title
+	}
+	merged := form.Merge(*patch, *title)
+	return p.dress.names, &merged
+}
+
 func mantraPatch(m string) *rpc.FormPatch {
 	raw, _ := json.Marshal(m)
 	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": raw}, nil)
@@ -248,11 +270,8 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		}
 	} else {
 		progress(fmt.Sprintf("forking %s at turn %d", ariaName(old.ID), plan.turn))
-		var patch *rpc.FormPatch
-		if plan.title != "" {
-			patch = mantraPatch(plan.title)
-		}
-		out, err := acli.Fork(ctx, old.ID, plan.turn, 0, nil, patch)
+		outfits, patch := plan.birth()
+		out, err := acli.Fork(ctx, old.ID, plan.turn, 0, outfits, patch)
 		if err != nil {
 			return r, r.fail("fork", err)
 		}

@@ -123,3 +123,32 @@ func TestRecoveryNamesWhatIsLeft(t *testing.T) {
 		t.Errorf("the prompt landed; recovery must not resend it:\n%s", steps)
 	}
 }
+
+// Fixes #50: a successor forked from an old turn comes up on that turn's
+// model; -O/-S/-D dress it in the fork itself, as fork does.
+func TestSucceedDressesTheFork(t *testing.T) {
+	p, err := succeedArgs(t, "@warden", "-O", "default", "-S", "system.model=claude-opus-5.5", "--title", "warden II", "--", "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outfits, patch := p.birth()
+	if strings.Join(outfits, ",") != "default" {
+		t.Fatalf("outfits = %v", outfits)
+	}
+	if patch == nil {
+		t.Fatal("no birth patch")
+	}
+	got := form.Snapshot{}.Apply(*patch)
+	if v, ok := got.Get("system.model"); !ok || string(v) != `"claude-opus-5.5"` {
+		t.Fatalf("system.model = %s %v", v, ok)
+	}
+	if v, ok := got.Get("mantra"); !ok || string(v) != `"warden II"` {
+		t.Fatalf("mantra = %s %v (the title must survive the dress)", v, ok)
+	}
+}
+
+func TestSucceedRefusesToDressAnExistingSuccessor(t *testing.T) {
+	if p, err := succeedArgs(t, "@warden", "--successor", "abc", "-O", "default", "--", "go"); err == nil {
+		t.Fatalf("accepted: %+v", p)
+	}
+}
