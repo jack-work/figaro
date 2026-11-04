@@ -149,6 +149,9 @@ func (a *Angelus) Run(ctx context.Context) error {
 	)
 	defer span.End()
 
+	if err := os.MkdirAll(filepath.Dir(a.SocketPath), 0o700); err != nil {
+		return err
+	}
 	os.Remove(a.SocketPath)
 
 	ln, err := net.Listen("unix", a.SocketPath)

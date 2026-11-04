@@ -158,3 +158,24 @@ func TestAngelus_ShutdownIdempotent(t *testing.T) {
 
 	assert.Zero(t, a.Registry.FigaroCount())
 }
+
+// Fixes #52: under a service manager the daemon starts before any CLI has
+// made its runtime dir ($XDG_RUNTIME_DIR is empty after every boot).
+func TestAngelus_CreatesItsRuntimeDir(t *testing.T) {
+	dir := filepath.Join(testRuntimeDir(t, t.TempDir()), "fresh", "figaro")
+	a := angelus.New(angelus.Config{Backend: store.NewTestBackend(t), RuntimeDir: dir})
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- a.Run(ctx) }()
+	select {
+	case err := <-errCh:
+		t.Fatalf("angelus.Run returned before serving: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	waitForAngelus(t, a.SocketPath)
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	cancel()
+	require.NoError(t, <-errCh)
+}
