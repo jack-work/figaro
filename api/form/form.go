@@ -445,14 +445,6 @@ func asNestedObject(v json.RawMessage) (json.RawMessage, bool) {
 	return nil, false
 }
 
-func mustEncode(t ptree) json.RawMessage {
-	b, err := encodeTree(t)
-	if err != nil {
-		return json.RawMessage(`{}`)
-	}
-	return b
-}
-
 func treeFromJSON(raw json.RawMessage) (ptree, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
