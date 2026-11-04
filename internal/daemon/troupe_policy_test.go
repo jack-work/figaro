@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/jkauthz"
 )
@@ -175,16 +178,50 @@ func TestAnAllGrantingTroupePolicyCannotTakeTheLocalOnlyRights(t *testing.T) {
 
 // The root may sign anything, and a ledger adopts what it signs. A version
 // binding user:* is adopted and spread, and grants nothing on any member.
+//
+// Gossip can deliver the version to b before the test's own Merge does; that
+// Merge then changes nothing and returns while gossip's goroutine is still
+// applying it. The assertions wait for each node's apply, not for the ledger.
 func TestAnAdoptedPolicyBindingAKindWildcardGrantsNothing(t *testing.T) {
 	na, nb, ma, mb, root := pairWith(t, lendingEverything())
+	appliedA, appliedB := policyApplied(t, ma, 1), policyApplied(t, mb, 1)
 	rootStartsPolicy(t, na, root, "[roles.all]\ngrants = [{ verbs = [\"*\"], on = [\"*\"] }]\n\n[[bind]]\nrole = \"all\"\nprincipals = [\"user:*\"]\n", na.id())
 	require.Equal(t, uint64(1), ma.PolicyVersion())
 	_, err := mb.Merge(ma.Entries()...)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), mb.PolicyVersion())
+	waitApplied(t, appliedA, na)
+	waitApplied(t, appliedB, nb)
 	for _, n := range []*ledgerNode{na, nb} {
-		require.Error(t, n.a.Policies.TroupeLoadError(), "on %s", n.id())
-		require.False(t, n.a.Policies.Allow(jkauthz.Subject{Principal: ana}, rpc.VerbSend, authz.Aria("aaaa0001")).Allowed, "user:* granted on %s", n.id())
+		assert.Error(t, n.a.Policies.TroupeLoadError(), "on %s", n.id())
+		assert.False(t, n.a.Policies.Allow(jkauthz.Subject{Principal: ana}, rpc.VerbSend, authz.Aria("aaaa0001")).Allowed, "user:* granted on %s", n.id())
+	}
+}
+
+// policyApplied is closed once this node has applied policy version v. The
+// ledger runs its policy hooks in order, in the merging goroutine, after
+// unlocking; this hook is registered after the node's own apply hook, so it
+// cannot fire before the apply finishes. It must be registered while no
+// policy exists, so that no Merge in flight holds a hook list without it.
+func policyApplied(t *testing.T, m *peer.Ledger, v uint64) <-chan struct{} {
+	t.Helper()
+	require.Nil(t, m.View().Policy, "register before the policy exists")
+	done := make(chan struct{})
+	var once sync.Once
+	m.OnPolicy(func() {
+		if m.PolicyVersion() >= v {
+			once.Do(func() { close(done) })
+		}
+	})
+	return done
+}
+
+func waitApplied(t *testing.T, applied <-chan struct{}, n *ledgerNode) {
+	t.Helper()
+	select {
+	case <-applied:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("the troupe policy never finished applying on %s", n.id())
 	}
 }
 
