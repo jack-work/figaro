@@ -36,7 +36,8 @@ type pitRow struct {
 	// not read.
 	note string
 	// tone cannot ride in the text: pitText strips escapes, and must.
-	tone pitTone
+	tone  pitTone
+	marks []int
 }
 
 type pitTone uint8
@@ -243,6 +244,35 @@ func (d *pit) lines(w, room int) []string {
 }
 
 func pitGray(s string) string { return term.Label(s) }
+
+func markBytes(s string, marks []int) string {
+	if len(marks) == 0 || !term.Enabled() {
+		return s
+	}
+	on := make(map[int]bool, len(marks))
+	for _, m := range marks {
+		if m >= 0 && m < len(s) {
+			on[m] = true
+		}
+	}
+	var b strings.Builder
+	in := false
+	for i := 0; i < len(s); i++ {
+		if on[i] != in {
+			if on[i] {
+				b.WriteString("\x1b[1;4m")
+			} else {
+				b.WriteString("\x1b[22;24m")
+			}
+			in = on[i]
+		}
+		b.WriteByte(s[i])
+	}
+	if in {
+		b.WriteString("\x1b[22;24m")
+	}
+	return b.String()
+}
 
 // The selected row is full strength over the wash; a toned row keeps its colour.
 func pitSelected(s string, tone pitTone) string {

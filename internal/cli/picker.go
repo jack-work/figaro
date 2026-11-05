@@ -297,7 +297,12 @@ func (p *picker) lines(id pitID, w, h int) []string {
 			prefix = mark + " "
 		}
 		// Every row passes pitText once.
-		text := prefix + pitText(p.rows[i].str())
+		body := p.rows[i].str()
+		clean := pitText(body)
+		if clean == body {
+			clean = markBytes(clean, p.rows[i].marks)
+		}
+		text := prefix + clean
 		if note := p.rows[i].note; note != "" {
 			if i == p.cursor {
 				text += "  " + pitText(note)
