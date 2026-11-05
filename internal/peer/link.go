@@ -106,6 +106,11 @@ func (d *Dialer) Open(ctx context.Context, node string, p rpc.Passage, onNotify 
 		return nil, &Unreachable{Node: node, Err: err}
 	}
 	d.Versions.Saw(node, theirs.Version, p.Version, theirs.Policy)
+	if tc, ok := conn.(*tls.Conn); ok {
+		if certs := tc.ConnectionState().PeerCertificates; len(certs) > 0 {
+			d.Versions.Presented(node, certs[0])
+		}
+	}
 	l := &Link{node: node, cli: jkrpc.NewClient(jkrpc.NewConn(conn), onNotify), dialer: d}
 	d.track(l)
 	return l, nil

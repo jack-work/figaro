@@ -855,7 +855,9 @@ replies carry each side's policy version, which `troupe policy show` lists
 per member with the age of the sighting. With `provider = "static"`,
 `[troupe] policy` names an unsigned file instead, read at start and on a
 policy reload. `troupe ls` marks a member quiet after two hours unheard
-and lapsed after seven days.
+and lapsed once unheard longer than the life of the leaf it last presented
+(either side of a handshake records it), or this node's `max_leaf_ttl` when
+none was seen.
 
 `troupe.leave` (admin on the troupe) has the daemon sign its own leave with its node key;
 a root revoke reaches the daemon through `troupe.entries` from a caller

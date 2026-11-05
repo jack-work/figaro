@@ -234,6 +234,11 @@ func TestTheFigaroProviderRefusesADoorItCannotAdvertise(t *testing.T) {
 // a leaf from signer's intermediate, issued at issued, and no intermediate.
 func newLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time) *ledgerNode {
 	t.Helper()
+	return newLeafNodeFor(t, root, signer, issued, troupe.NodeTTL)
+}
+
+func newLeafNodeFor(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time, ttl time.Duration) *ledgerNode {
+	t.Helper()
 	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
 	n.moveDoor()
 	n.open()
@@ -241,7 +246,7 @@ func newLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.
 	require.NoError(t, err)
 	_, nk, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	leaf, err := troupe.IssueNode(ik, inter, "estate", n.id(), nk.Public(), issued, troupe.NodeTTL)
+	leaf, err := troupe.IssueNode(ik, inter, "estate", n.id(), nk.Public(), issued, ttl)
 	require.NoError(t, err)
 	require.NoError(t, n.dir().WriteRoot(root.cert))
 	require.NoError(t, n.dir().WriteNode(leaf, inter, nk))

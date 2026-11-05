@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"crypto/x509"
 	"log/slog"
 	"maps"
 	"sync"
@@ -8,9 +9,10 @@ import (
 )
 
 type Sighting struct {
-	Version uint64
-	Policy  uint64
-	At      time.Time
+	Version  uint64
+	Policy   uint64
+	At       time.Time
+	LeafLife time.Duration
 }
 
 type Versions struct {
@@ -34,7 +36,7 @@ func (v *Versions) Saw(node string, theirs, ours, policy uint64) {
 	if v.seen == nil {
 		v.seen = map[string]Sighting{}
 	}
-	v.seen[node] = Sighting{Version: theirs, Policy: policy, At: time.Now()}
+	v.seen[node] = Sighting{Version: theirs, Policy: policy, At: time.Now(), LeafLife: prev.LeafLife}
 	drift := v.drift
 	v.mu.Unlock()
 	switch {
@@ -44,6 +46,20 @@ func (v *Versions) Saw(node string, theirs, ours, policy uint64) {
 	case !had || prev.Version != theirs:
 		slog.Warn("troupe membership version differs", "node", node, "theirs", theirs, "ours", ours)
 	}
+}
+
+func (v *Versions) Presented(node string, leaf *x509.Certificate) {
+	if v == nil || leaf == nil {
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.seen == nil {
+		v.seen = map[string]Sighting{}
+	}
+	s := v.seen[node]
+	s.LeafLife = leaf.NotAfter.Sub(leaf.NotBefore)
+	v.seen[node] = s
 }
 
 func (v *Versions) Seen(node string) (Sighting, bool) {

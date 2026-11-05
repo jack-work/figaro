@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/peer"
 )
 
 const day = 24 * time.Hour
@@ -86,4 +87,52 @@ func TestANewRequesterRenewsFromARenewerThatPredatesTheField(t *testing.T) {
 	old := func(n *ledgerNode) { n.handlers = beforeTTL }
 	got := renewedOverTheDoor(t, old, `leaf_ttl = "30d"`, "")
 	require.InDelta(t, float64(7*day), float64(got), float64(time.Minute))
+}
+
+func membersOf(t *testing.T, n *ledgerNode) rpc.TroupeMembersResponse {
+	t.Helper()
+	out, err := call(t, n, rpc.MethodTroupeMembers, struct{}{})
+	require.NoError(t, err)
+	return out.(rpc.TroupeMembersResponse)
+}
+
+func leafLifeOf(t *testing.T, m rpc.TroupeMembersResponse, node string) time.Duration {
+	t.Helper()
+	for _, p := range m.Peers {
+		if p.Node == node {
+			return time.Duration(p.LeafLifeMS) * time.Millisecond
+		}
+	}
+	t.Fatalf("%s is not among %+v", node, m.Peers)
+	return 0
+}
+
+// troupe ls judges a member lapsed by the leaf it last presented, so each
+// side of a handshake records the other's leaf life: the door for the node
+// that dialed, the dialer for the node it reached. With no leaf seen, the
+// node's own max_leaf_ttl stands in.
+func TestTroupeMembersCarriesTheLeafEachMemberPresented(t *testing.T) {
+	root := newEstateRoot(t)
+	na := newLedgerNode(t, root)
+	na.troupeLines("leaf_ttl = \"14d\"\nmax_leaf_ttl = \"60d\"")
+	nb := newLeafNodeFor(t, root, na, time.Now(), 30*day)
+	ma := na.start()
+	_, err := ma.Merge(nb.joinedBy(na)...)
+	require.NoError(t, err)
+	mb := nb.start()
+	_, err = mb.Merge(ma.Entries()...)
+	require.NoError(t, err)
+
+	before := membersOf(t, na)
+	require.Equal(t, (60 * day).Milliseconds(), before.MaxLeafMS)
+	require.Zero(t, leafLifeOf(t, before, nb.id()), "a leaf was recorded before any handshake")
+
+	l, err := (&peer.Dialer{Members: mb, Versions: nb.a.PeerVersions, Timeout: 2 * time.Second}).Open(context.Background(), na.id(), rpc.Passage{}, nil)
+	require.NoError(t, err)
+	defer l.Close()
+
+	skew := 10 * time.Minute
+	require.InDelta(t, float64(30*day), float64(leafLifeOf(t, membersOf(t, na), nb.id())), float64(skew), "the door did not record the dialer's leaf")
+	require.InDelta(t, float64(14*day), float64(leafLifeOf(t, membersOf(t, nb), na.id())), float64(skew), "the dialer did not record the door's leaf")
+	require.Equal(t, (30 * day).Milliseconds(), membersOf(t, nb).MaxLeafMS, "the default max_leaf_ttl")
 }

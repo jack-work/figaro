@@ -135,7 +135,7 @@ func TestTroupeLsMarksQuietAndLapsedMembers(t *testing.T) {
 		"lapsed, 8d ago": {Met: true, SeenAt: at(8 * 24 * time.Hour)},
 		"-":              {},
 	} {
-		if got := seen(p, now); got != want {
+		if got := seen(p, 0, now); got != want {
 			t.Errorf("want %q, got %q", want, got)
 		}
 	}
@@ -144,4 +144,34 @@ func TestTroupeLsMarksQuietAndLapsedMembers(t *testing.T) {
 		{Node: "silent", Endpoint: "tls://10.0.0.9:7443", Owner: "user:ana", AdmittedBy: "n", Met: true, Version: 1, SeenAt: at(5 * time.Hour)},
 	}})
 	require.Regexp(t, `silent\s+tls://10\.0\.0\.9:7443\s+user:ana\s+n\s+quiet, 5h ago\s+1`, buf.String())
+}
+
+// A member is lapsed once it has been silent longer than the leaf it last
+// presented, so a 30-day leaf is not lapsed at eight days. Without a leaf
+// seen, this node's max_leaf_ttl stands in, and an older daemon that sends
+// neither issued only seven-day leaves.
+func TestTroupeLsJudgesLapsedByTheMembersOwnLeaf(t *testing.T) {
+	const day = 24 * time.Hour
+	now := time.Now()
+	at := func(d time.Duration) int64 { return now.Add(-d).UnixMilli() }
+	thirty, fourteen := (30 * day).Milliseconds(), (14 * day).Milliseconds()
+	for _, c := range []struct {
+		p    rpc.TroupeMember
+		most int64
+		want string
+	}{
+		{rpc.TroupeMember{Met: true, SeenAt: at(8 * day), LeafLifeMS: thirty}, 0, "quiet, 8d ago"},
+		{rpc.TroupeMember{Met: true, SeenAt: at(31 * day), LeafLifeMS: thirty}, 0, "lapsed, 31d ago"},
+		{rpc.TroupeMember{Met: true, SeenAt: at(8 * day), LeafLifeMS: (7 * day).Milliseconds()}, thirty, "lapsed, 8d ago"},
+		{rpc.TroupeMember{Met: true, SeenAt: at(8 * day)}, fourteen, "quiet, 8d ago"},
+		{rpc.TroupeMember{Met: true, SeenAt: at(15 * day)}, fourteen, "lapsed, 15d ago"},
+		{rpc.TroupeMember{Met: true, SeenAt: at(8 * day)}, 0, "lapsed, 8d ago"},
+	} {
+		require.Equal(t, c.want, seen(c.p, c.most, now), "%+v, max %d", c.p, c.most)
+	}
+	var buf strings.Builder
+	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{Node: "n", Provider: config.ProviderFigaro, Version: 1, MaxLeafMS: thirty, Peers: []rpc.TroupeMember{
+		{Node: "spain", Endpoint: "tls://10.0.0.9:7443", Owner: "user:ana", AdmittedBy: "n", Met: true, Version: 1, SeenAt: at(10 * day)},
+	}})
+	require.Regexp(t, `spain\s+tls://10\.0\.0\.9:7443\s+user:ana\s+n\s+quiet, 10d ago\s+1`, buf.String())
 }

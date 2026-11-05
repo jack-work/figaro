@@ -86,13 +86,23 @@ func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
 
 const quietAfter = 2 * time.Hour
 
-func seen(p rpc.TroupeMember, now time.Time) string {
+func lapsesAfter(p rpc.TroupeMember, maxLeafMS int64) time.Duration {
+	switch {
+	case p.LeafLifeMS > 0:
+		return time.Duration(p.LeafLifeMS) * time.Millisecond
+	case maxLeafMS > 0:
+		return time.Duration(maxLeafMS) * time.Millisecond
+	}
+	return troupe.NodeTTL
+}
+
+func seen(p rpc.TroupeMember, maxLeafMS int64, now time.Time) string {
 	if !p.Met || p.SeenAt == 0 {
 		return "-"
 	}
 	since := now.Sub(time.UnixMilli(p.SeenAt))
 	switch {
-	case since > troupe.NodeTTL:
+	case since > lapsesAfter(p, maxLeafMS):
 		return "lapsed, " + ago(since)
 	case since > quietAfter:
 		return "quiet, " + ago(since)
@@ -130,7 +140,7 @@ func writeTroupeMembers(out io.Writer, m *rpc.TroupeMembersResponse) {
 				if p.Signs {
 					signs = "yes"
 				}
-				cols += "\t" + p.Owner + "\t" + p.AdmittedBy + "\t" + signs + "\t" + seen(p, time.Now())
+				cols += "\t" + p.Owner + "\t" + p.AdmittedBy + "\t" + signs + "\t" + seen(p, m.MaxLeafMS, time.Now())
 			}
 			switch {
 			case !p.Met:

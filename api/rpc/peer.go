@@ -111,6 +111,7 @@ type TroupeMembersResponse struct {
 	Peers      []TroupeMember `json:"peers"`
 	Gone       []TroupeGone   `json:"gone,omitempty"`
 	Keys       *TroupeKeys    `json:"keys,omitempty"`
+	MaxLeafMS  int64          `json:"max_leaf_ms,omitempty"`
 }
 
 type TroupeGone struct {
@@ -135,6 +136,7 @@ type TroupeMember struct {
 	Version    uint64 `json:"version,omitempty"`
 	SeenAt     int64  `json:"seen_at,omitempty"`
 	Drift      bool   `json:"drift,omitempty"`
+	LeafLifeMS int64  `json:"leaf_life_ms,omitempty"`
 }
 
 const (

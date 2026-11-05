@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -21,6 +22,7 @@ func (h *handlers) troupeMembers(context.Context, json.RawMessage) (any, error) 
 	if k := h.angelus.Troupe; k != nil {
 		st := k.Status()
 		out.Keys = &rpc.TroupeKeys{Troupe: st.Troupe, NodeExpires: unixMilli(st.NodeExpires), IntermediateExpires: unixMilli(st.IntermediateExpires)}
+		out.MaxLeafMS = troupe.GrantNodeTTL(math.MaxInt64, k.MaxTTL).Milliseconds()
 		if st.Err != nil {
 			out.Keys.Error = st.Err.Error()
 		}
@@ -50,6 +52,7 @@ func (h *handlers) troupeMembers(context.Context, json.RawMessage) (any, error) 
 		}
 		if s, ok := h.angelus.PeerVersions.Seen(node); ok {
 			row.Met, row.Version, row.SeenAt, row.Drift = true, s.Version, s.At.UnixMilli(), s.Version != out.Version
+			row.LeafLifeMS = s.LeafLife.Milliseconds()
 		}
 		out.Peers = append(out.Peers, row)
 	}

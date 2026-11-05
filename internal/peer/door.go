@@ -135,6 +135,7 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 		return nil, fmt.Errorf("node %s: passage: %w", node, err)
 	}
 	d.Versions.Saw(node, p.Version, d.Members.Version(), p.Policy)
+	d.Versions.Presented(node, cert)
 	ctx = authz.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalNode, ID: node})
 	ctx = context.WithValue(ctx, viaKey{}, node)
 	switch {
