@@ -49,7 +49,7 @@ type Facts interface {
 	Owner(aria string) (jkauthz.Principal, bool)
 	DescendsFrom(aria, root string) bool
 	RoleTarget(role string) string
-	SandboxOf(aria string) string
+	SandboxOf(aria string) (string, bool)
 }
 
 type selectors struct{ facts Facts }
@@ -62,11 +62,12 @@ const (
 	selSandbox = "sandbox:"
 	selTroupe  = "troupe:"
 	selBoxed   = "sandboxed:self"
+	selUnboxed = "unboxed"
 	selSelf    = "self"
 )
 
 func (selectors) Validate(sel string) error {
-	if sel == selOwner || sel == selBoxed {
+	if sel == selOwner || sel == selBoxed || sel == selUnboxed {
 		return nil
 	}
 	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe} {
@@ -77,7 +78,7 @@ func (selectors) Validate(sel string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self or troupe:<name>")
+	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed or troupe:<name>")
 }
 
 func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
@@ -99,7 +100,17 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	switch {
 	case sel == selBoxed:
 		box, ok := BoxOf(s.Principal)
-		return ok && m.facts != nil && m.facts.SandboxOf(r.ID) == box
+		if !ok || m.facts == nil {
+			return false
+		}
+		held, read := m.facts.SandboxOf(r.ID)
+		return read && held == box
+	case sel == selUnboxed:
+		if m.facts == nil {
+			return false
+		}
+		held, read := m.facts.SandboxOf(r.ID)
+		return read && (held == "" || held == "local")
 	case sel == selOwner:
 		if m.facts == nil {
 			return false

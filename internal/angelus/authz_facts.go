@@ -67,13 +67,13 @@ func (f storeFacts) RoleTarget(role string) string {
 	return ""
 }
 
-func (f storeFacts) SandboxOf(aria string) string {
+func (f storeFacts) SandboxOf(aria string) (string, bool) {
 	snap, err := f.backend.FormState(aria)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	if s := snap.Lookup("system.sandbox"); s != nil {
-		return *s
+		return *s, true
 	}
-	return ""
+	return "", true
 }

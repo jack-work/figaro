@@ -310,11 +310,15 @@ the caller could not read.
 
 **The policy** is TOML at `[authz] policy` (relative to the config dir):
 roles of verbs on selectors (`aria:<id>`, `role:@<name>`, `owner:self`,
-`lineage:<id>`, `sandbox:<name>`, `troupe:<name>`, `*`), bound to principals. With none
+`lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`, `troupe:<name>`, `*`), bound to principals. With none
 configured, the daemon's own principal holds every verb and nobody else holds
 any. `outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
-which the birth record writes once and nothing rewrites.
+which the birth record writes once and nothing rewrites. `unboxed` is every
+aria whose `system.sandbox` is exactly empty or `local`: any other value is a
+box (a configured box, one since removed from config, `bwrap`), and a form
+the store cannot read is a box too. Lent to `troupe:<name>`, it keeps a
+troupe's reach off the node's boxes.
 
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
 create, fork, bind, import and `figaro.set`. An aria minted by a sandbox
