@@ -428,6 +428,8 @@ func TestAKeyTheDaemonDeniesIsReadOnlyInThePit(t *testing.T) {
 	}
 }
 
+// A form read-only as a whole refuses every edit with the reason, but does
+// not note it on every leaf: on a catalog that is a note on every row.
 func TestAReadOnlyFormRefusesEveryEdit(t *testing.T) {
 	src := &fakeFormSource{snap: form.FromMap(formKeys("a", `1`))}
 	v := &formView{src: src, open: map[string]bool{}}
@@ -435,8 +437,11 @@ func TestAReadOnlyFormRefusesEveryEdit(t *testing.T) {
 	if v.editable() {
 		t.Error("a read-only form says it is editable")
 	}
-	if got := rowNote(v.Items(80), "a"); got != "read-only" {
-		t.Errorf("note = %q, want read-only", got)
+	if got := rowNote(v.Items(80), "a"); got != "" {
+		t.Errorf("note = %q, want none on a form read-only as a whole", got)
+	}
+	if line, note := v.changeLine("a", "host"); line != "" || note == "" {
+		t.Errorf("c on a read-only form offered %q, note %q; want a refusal with its reason", line, note)
 	}
 	p, _, _ := shownFormEdit(tokenize("set a 2"), src.snap)
 	if err := v.Edit(p); err == nil {

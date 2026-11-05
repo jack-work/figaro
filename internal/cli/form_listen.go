@@ -359,7 +359,7 @@ func (v *formView) Items(width int) []pitRow {
 		row := pitRow{textFrom: n, yankFrom: n, id: n.path}
 		if v.touched[n.path] {
 			row.note = "pending"
-		} else if n.leaf() && v.readOnlyLocked(n.path) {
+		} else if n.leaf() && v.keyDeniedLocked(n.path) {
 			row.note = "read-only"
 		}
 		if k, ok := shape.head(n.path); ok {
@@ -386,12 +386,9 @@ func (v *formView) Items(width int) []pitRow {
 	return out
 }
 
-func (v *formView) readOnlyLocked(path string) bool {
-	if v.access == nil {
+func (v *formView) keyDeniedLocked(path string) bool {
+	if v.access == nil || !v.access.Writable() {
 		return false
-	}
-	if !v.access.Writable() {
-		return true
 	}
 	_, denied := v.access.Refusal(path)
 	return denied
