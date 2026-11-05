@@ -28,6 +28,7 @@ as a float.
 | `runtime` | cli, angelus | `state` (+ `aria` on the daemon) | the turn disposition changed |
 | `token.first` | angelus | `aria`, `turn` | the provider's first delta of a round |
 | `fanout` | angelus | `aria`, `method` | one notification left the agent |
+| `list.warm` | angelus | `rows`, `ms` | the boot-time read of every aria's listing state, so the first list is warm |
 | `mem` | cli | `rss`, `heap_alloc`, `heap_inuse`, `sys`, `gc`, `goroutines`, `window_msgs`, `rowcache_rows` | sampled once a second and at exit |
 
 ## Derived metrics
