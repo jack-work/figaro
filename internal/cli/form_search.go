@@ -61,7 +61,6 @@ func (v *formView) StepQuery(dir int) string {
 		return ""
 	}
 	s.at = ((s.at+dir)%len(s.ranked) + len(s.ranked)) % len(s.ranked)
-	s.rev++
 	return s.current()
 }
 

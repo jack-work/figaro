@@ -148,3 +148,38 @@ func TestTheUnbiddenQueueKeepsItsOwnHeight(t *testing.T) {
 		t.Errorf("the queue asked for with Q drew %d rows, want the partial height %d", got, pickerRows)
 	}
 }
+
+// ^N and ^P while searching moved the cursor and the counter but asked for no
+// frame: the screen caught up only on the pager clock's next repaint, 1-2 s
+// later over a quiet aria. A step paints at once, in a form pit and in a list.
+func TestASearchStepPaintsAtOnce(t *testing.T) {
+	open := map[string]func(*transcript){
+		"form": func(tr *transcript) {
+			v := &formView{src: &fakeFormSource{snap: form.FromMap(formKeys(
+				"alpha.king", `"one"`, "beta.king", `"two"`, "gamma.king", `"three"`,
+			))}, open: map[string]bool{}}
+			tr.showLivePit("arias", v, false)
+		},
+		"list": func(tr *transcript) {
+			tr.setCmdOut("ls", []pitRow{
+				{text: "  king one", id: "a"},
+				{text: "  king two", id: "b"},
+			})
+		},
+	}
+	for name, show := range open {
+		t.Run(name, func(t *testing.T) {
+			var out countingWriter
+			in, lt := navInput(t, &out, true)
+			show(lt.tr)
+			feed(t, in, "/king")
+			for _, key := range []string{"\x0e", "\x10"} {
+				before := out.writes.Load()
+				feed(t, in, key)
+				if out.writes.Load() == before {
+					t.Fatalf("%q stepped the search but painted nothing", key)
+				}
+			}
+		})
+	}
+}

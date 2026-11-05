@@ -55,8 +55,8 @@ func (in *interactiveInput) searchHit(dir int, ev keyEvent) keyVerdict {
 		in.mu.Unlock()
 		return in.selectNodeKey(dir, ev)
 	}
+	tr.render()
 	in.mu.Unlock()
-	in.pageWanted = true
 	return keyHandled
 }
 
