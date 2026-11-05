@@ -22,8 +22,9 @@ type Addr struct {
 }
 
 type Aria struct {
-	cli *jkrpc.Client
-	id  atomic.Pointer[string]
+	cli    *jkrpc.Client
+	id     atomic.Pointer[string]
+	lapsed atomic.Bool
 	// caller is presented on this hop independently of the angelus hop.
 	caller string
 	// ref is the asserted caller reference: attribution only, never a credential.
@@ -61,6 +62,9 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 		if onNotify != nil {
 			onNotify(method, params)
 		}
+		if method == rpc.MethodDoorLapsed {
+			c.lapsed.Store(true)
+		}
 		if method == rpc.MethodAriaClosed && rpc.AriaOf(params) == c.ID() {
 			go func() {
 				<-ready
@@ -87,6 +91,8 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 const followTimeout = 10 * time.Second
 
 func (c *Aria) ID() string { return *c.id.Load() }
+
+func (c *Aria) Lapsed() bool { return c.lapsed.Load() }
 
 // Qua sends a prompt and returns the newest materialized turn id at accept
 // time. A prompt accepted while a turn is active becomes steering; one

@@ -209,13 +209,42 @@ func TestWebDoorClosesAConnectionAtItsMaxAge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	start := time.Now()
+	_, notice, err := c.Read(ctx)
+	require.NoError(t, err, "the door closed without saying why")
+	require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
+	var lapsed struct {
+		Method string         `json:"method"`
+		Params rpc.DoorLapsed `json:"params"`
+	}
+	require.NoError(t, json.Unmarshal(notice, &lapsed))
+	require.Equal(t, rpc.MethodDoorLapsed, lapsed.Method)
+	require.Equal(t, webAgeReason, lapsed.Params.Reason)
 	_, _, err = c.Read(ctx)
 	require.Error(t, err)
 	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "%v", err)
-	require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
 	var ce websocket.CloseError
 	require.True(t, errors.As(err, &ce))
 	require.Equal(t, webAgeReason, ce.Reason)
+}
+
+// An edge door's follow age is shorter than its connection age, so it is the
+// one that ends the connection, and the notice says which limit it was.
+func TestTheEdgeFollowAgeEndsAConnectionBeforeItsMaxAge(t *testing.T) {
+	require.Equal(t, time.Duration(0), func() time.Duration { d, _ := (Web{}).lapse(); return d }())
+	for _, c := range []struct {
+		w      Web
+		after  time.Duration
+		reason string
+	}{
+		{Web{MaxConnAge: 8 * time.Hour}, 8 * time.Hour, webAgeReason},
+		{Web{MaxConnAge: 8 * time.Hour, FollowMaxAge: time.Hour}, time.Hour, webFollowAgeReason},
+		{Web{MaxConnAge: 30 * time.Minute, FollowMaxAge: time.Hour}, 30 * time.Minute, webAgeReason},
+		{Web{FollowMaxAge: time.Hour}, time.Hour, webFollowAgeReason},
+	} {
+		after, reason := c.w.lapse()
+		require.Equal(t, c.after, after, "%+v", c.w)
+		require.Equal(t, c.reason, reason, "%+v", c.w)
+	}
 }
 
 type countingBearer struct {
@@ -272,4 +301,40 @@ func TestWebDoorServesTheWSSClient(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no push reached the wss client")
 	}
+}
+
+// The lapse must not wait on the client: one that follows and stops reading
+// backs a frame up inside the door's write, and the notice queues behind it.
+// The door still ends the connection and drops its follows by the age plus
+// the notice's grace, so the stalled client never resumes onto frames the
+// old subject's follow produced after the limit.
+func TestALapseEndsAConnectionWhoseClientStoppedReading(t *testing.T) {
+	const maxAge = 300 * time.Millisecond
+	hb := newAriaHub("abcd1234")
+	path := serveWeb(t, hb, Web{Admit: admitAs(webPrincipal), FollowMaxAge: maxAge})
+	c, _, err := dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
+	require.NoError(t, err)
+	wsCall(t, c, 1, rpc.MethodFollow, map[string]any{rpc.AriaKey: hb.id})
+	require.Equal(t, 1, hb.Attached())
+	followed := time.Now()
+
+	frame := map[string]string{"text": strings.Repeat("x", 64<<10)}
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if hb.Notify(rpc.MethodAriaFrame, frame) != nil && hb.Attached() == 0 {
+				return
+			}
+		}
+	}()
+
+	require.Eventually(t, func() bool { return hb.Attached() == 0 }, maxAge+lapseNoticeGrace+2*time.Second, 20*time.Millisecond,
+		"a client that stopped reading kept its follow past the lapse")
+	require.Less(t, time.Since(followed), maxAge+lapseNoticeGrace+2*time.Second)
 }

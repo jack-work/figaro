@@ -21,6 +21,13 @@ type AriaClosed struct {
 	FigaroID string `json:"figaro_id"`
 }
 
+const MethodDoorLapsed = "door.lapsed"
+
+type DoorLapsed struct {
+	Reason  string `json:"reason"`
+	AfterMS int64  `json:"after_ms"`
+}
+
 func MethodFollows(method string) bool {
 	switch method {
 	case MethodQua, MethodFollow:

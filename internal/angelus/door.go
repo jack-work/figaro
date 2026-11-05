@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
@@ -210,9 +211,49 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		}
 		close(done)
 	}()
+	var lapsed <-chan time.Time
+	l, lapses := lapseOf(ctx)
+	if lapses {
+		t := time.NewTimer(l.after)
+		defer t.Stop()
+		lapsed = t.C
+	}
 	select {
 	case <-done:
+	case <-lapsed:
+		noticed := make(chan struct{})
+		go func() {
+			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: l.reason, AfterMS: l.after.Milliseconds()})
+			close(noticed)
+		}()
+		grace := time.NewTimer(lapseNoticeGrace)
+		select {
+		case <-noticed:
+		case <-grace.C:
+		}
+		grace.Stop()
+		l.end(errors.New(l.reason))
+		f.srv.Stop()
 	case <-ctx.Done():
 		f.srv.Stop()
 	}
+}
+
+const lapseNoticeGrace = 2 * time.Second
+
+type lapse struct {
+	after  time.Duration
+	reason string
+	end    context.CancelCauseFunc
+}
+
+type lapseKey struct{}
+
+func withLapse(ctx context.Context, l lapse) context.Context {
+	return context.WithValue(ctx, lapseKey{}, l)
+}
+
+func lapseOf(ctx context.Context) (lapse, bool) {
+	l, ok := ctx.Value(lapseKey{}).(lapse)
+	return l, ok && l.after > 0
 }

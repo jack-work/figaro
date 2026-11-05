@@ -20,14 +20,23 @@ import (
 type WebAdmit func(ctx context.Context, r *http.Request) (context.Context, error)
 
 type Web struct {
-	Admit      WebAdmit
-	MaxConnAge time.Duration
+	Admit        WebAdmit
+	MaxConnAge   time.Duration
+	FollowMaxAge time.Duration
+}
+
+func (w Web) lapse() (time.Duration, string) {
+	if w.FollowMaxAge > 0 && (w.MaxConnAge <= 0 || w.FollowMaxAge < w.MaxConnAge) {
+		return w.FollowMaxAge, webFollowAgeReason
+	}
+	return w.MaxConnAge, webAgeReason
 }
 
 const (
 	webReadLimit         = 64 << 20
 	webReadHeaderTimeout = 10 * time.Second
 	webAgeReason         = "connection age limit: reconnect"
+	webFollowAgeReason   = "follow age limit: reconnect for current groups"
 )
 
 func ListenUnix(path string, mode os.FileMode) (net.Listener, error) {
@@ -89,10 +98,11 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			return
 		}
 		c.SetReadLimit(webReadLimit)
-		if w.MaxConnAge > 0 {
-			var cancel context.CancelFunc
-			cctx, cancel = context.WithTimeout(cctx, w.MaxConnAge)
-			defer cancel()
+		if after, reason := w.lapse(); after > 0 {
+			var end context.CancelCauseFunc
+			cctx, end = context.WithCancelCause(cctx)
+			defer end(nil)
+			cctx = withLapse(cctx, lapse{after: after, reason: reason, end: end})
 		}
 		a.handleConn(cctx, authz.DoorWeb, &webConn{io: ctx, life: cctx, c: c})
 	})
@@ -135,7 +145,7 @@ func (w *webConn) Write(p []byte) (int, error) {
 		if i < 0 {
 			return len(p), nil
 		}
-		if err := w.c.Write(w.io, websocket.MessageText, w.wbuf[:i]); err != nil {
+		if err := w.c.Write(w.life, websocket.MessageText, w.wbuf[:i]); err != nil {
 			return 0, err
 		}
 		w.wbuf = append(w.wbuf[:0], w.wbuf[i+1:]...)
@@ -145,10 +155,6 @@ func (w *webConn) Write(p []byte) (int, error) {
 func (w *webConn) Close() error {
 	var err error
 	w.closeOnce.Do(func() {
-		if errors.Is(w.life.Err(), context.DeadlineExceeded) {
-			err = w.c.Close(websocket.StatusPolicyViolation, webAgeReason)
-			return
-		}
 		if cause := context.Cause(w.life); cause != nil && !errors.Is(cause, context.Canceled) {
 			err = w.c.Close(websocket.StatusPolicyViolation, closeReason(cause))
 			return
