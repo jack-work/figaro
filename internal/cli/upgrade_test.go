@@ -109,7 +109,7 @@ func TestUpgradeQuotingRoundTripsThroughTheShell(t *testing.T) {
 			t.Logf("%s not installed; skipped", shell)
 			continue
 		}
-		line := shellQuote(argv[1:], shell)
+		line := commandLineFor(argv[1:], shell)
 		script := "for a in " + line + "; printf '%s\\0' \"$a\"; end"
 		if shell != "fish" {
 			script = "for a in " + line + "; do printf '%s\\0' \"$a\"; done"

@@ -77,7 +77,7 @@ func unreplayable(c paneClient) string {
 	return ""
 }
 
-func shellQuote(argv []string, shell string) string {
+func commandLineFor(argv []string, shell string) string {
 	parts := make([]string, len(argv))
 	for i, a := range argv {
 		parts[i] = quoteWord(a, shell)

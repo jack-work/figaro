@@ -535,7 +535,7 @@ func (o upgradeOptions) respawnClient(s upgradeStep) string {
 	if !ok || shell.TPGID != shell.PGRP {
 		return fmt.Sprintf("left %s (%s): its shell does not hold the terminal; type the command again", c.Pane, line)
 	}
-	if err := o.tmux("send-keys", "-t", c.Pane, "-l", shellQuote(c.Argv, c.Shell)).Run(); err != nil {
+	if err := o.tmux("send-keys", "-t", c.Pane, "-l", commandLineFor(c.Argv, c.Shell)).Run(); err != nil {
 		return fmt.Sprintf("left %s (%s): send-keys failed: %s", c.Pane, line, err)
 	}
 	if err := o.tmux("send-keys", "-t", c.Pane, "Enter").Run(); err != nil {
