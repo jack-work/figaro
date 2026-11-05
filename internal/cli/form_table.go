@@ -160,33 +160,7 @@ func (v *formView) marked(g, r *formNode) bool {
 func (v *formView) tableItems(list *formNode, width int) []pitRow {
 	view := v.view
 	groups := v.viewGroups(list)
-
-	cols := make([]tableCol, 0, len(view.Columns)+1)
-	cols = append(cols, tableCol{})
-	header := []string{""}
-	for _, c := range view.Columns {
-		cols = append(cols, tableCol{right: c.Right, shrink: c.Shrink})
-		title := c.Title
-		if title == "" {
-			title = c.Key
-		}
-		header = append(header, title)
-	}
-	cells := [][]string{header}
-	for _, g := range groups {
-		for _, r := range g.rows {
-			mark := " "
-			if v.marked(g.node, r) {
-				mark = "●"
-			}
-			line := []string{mark}
-			for _, c := range view.Columns {
-				line = append(line, viewCell(r, c))
-			}
-			cells = append(cells, line)
-		}
-	}
-	lines := tabulate(cells, cols, max(width-pitPrefixWidth, 1))
+	lines := v.tableLines(groups, width)
 
 	v.rows = v.rows[:0]
 	v.rowKeys = map[string]viewRowKey{}
@@ -234,6 +208,36 @@ func (v *formView) tableItems(list *formNode, width int) []pitRow {
 		out = append(out, staticRow(""), staticRow(clipLine("  "+strings.Join(hints, " · "), width)))
 	}
 	return out
+}
+
+func (v *formView) tableLines(groups []viewGroup, width int) []string {
+	view := v.view
+	cols := make([]tableCol, 0, len(view.Columns)+1)
+	cols = append(cols, tableCol{})
+	header := []string{""}
+	for _, c := range view.Columns {
+		cols = append(cols, tableCol{right: c.Right, shrink: c.Shrink})
+		title := c.Title
+		if title == "" {
+			title = c.Key
+		}
+		header = append(header, title)
+	}
+	cells := [][]string{header}
+	for _, g := range groups {
+		for _, r := range g.rows {
+			mark := " "
+			if v.marked(g.node, r) {
+				mark = "●"
+			}
+			line := []string{mark}
+			for _, c := range view.Columns {
+				line = append(line, viewCell(r, c))
+			}
+			cells = append(cells, line)
+		}
+	}
+	return tabulate(cells, cols, max(width-pitPrefixWidth, 1))
 }
 
 func (v *formView) groupRow(g *formNode, width int) pitRow {
