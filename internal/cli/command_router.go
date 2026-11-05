@@ -6,7 +6,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
@@ -81,8 +80,26 @@ var overlayVerbs = map[string]bool{
 	"succeed": true,
 	"kill":    true, // may kill the aria on screen, and must then move
 	"import":  true, // reads os.Stdin for `-`
-	// models is a pit; as a routed verb it would print to os.Stdout.
-	"models": true,
+}
+
+type formPit struct {
+	name     string
+	form     string
+	bare     bool
+	opening  func(in *interactiveInput)
+	fallback func(in *interactiveInput, argv []string, v *formView) bool
+}
+
+func formPitFor(verb string) (formPit, bool) {
+	switch verb {
+	case "models":
+		return formPit{name: "models", form: models.FormID, opening: func(in *interactiveInput) { in.models.ensure() }}, true
+	case "reaped":
+		return formPit{name: "reaped", form: rpc.ReapedFormID, bare: true}, true
+	case "ls", "list":
+		return formPit{name: "arias", form: rpc.AriasFormID, bare: true, fallback: (*interactiveInput).troupeListing}, true
+	}
+	return formPit{}, false
 }
 
 // terminalSubverbs take the terminal: `form listen` reads os.Stdin in a loop,
@@ -159,12 +176,8 @@ func (in *interactiveInput) execCommand(line string) {
 		in.runOverlay(verb, argv[1:])
 		return
 	}
-	if verb == "reaped" && len(argv) == 1 {
-		in.runLive("reaped", rpc.ReapedFormID)
-		return
-	}
-	if (verb == "ls" || verb == "list") && len(argv) == 1 {
-		in.openArias(argv)
+	if p, ok := formPitFor(verb); ok && (len(argv) == 1 || !p.bare) {
+		in.openFormPit(p, argv)
 		return
 	}
 	if name, spec, ok := liveForm(argv); ok {
@@ -224,28 +237,24 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 			in.lt.tr.render()
 		}
 		in.mu.Unlock()
-	case "models":
-		in.openModels()
 	default:
 		in.note(fmt.Sprintf("%s: not available inside the pager (it opens a view of its own)", verb))
 	}
 }
 
-func (in *interactiveInput) openModels() {
-	in.models.ensure()
-	in.openLive("models", models.FormID, false)
+func (in *interactiveInput) openFormPit(p formPit, argv []string) {
+	if p.opening != nil {
+		p.opening(in)
+	}
+	var keep func(*formView) bool
+	if p.fallback != nil {
+		keep = func(v *formView) bool { return !p.fallback(in, argv, v) }
+	}
+	in.openLiveIf(p.name, p.form, false, keep)
 }
 
 func (in *interactiveInput) modelsChanged() {
 	in.recomputeLimit()
-}
-
-// chooseModel writes system.model and system.provider in one patch: a model is
-// only meaningful to its own provider.
-
-func mustJSON(s string) json.RawMessage {
-	b, _ := json.Marshal(s)
-	return b
 }
 
 // routerMu serializes in-process router runs: the router's writers are
@@ -566,17 +575,15 @@ func (in *interactiveInput) progressIfSlow(msg string) (finished func()) {
 	}
 }
 
-func (in *interactiveInput) openArias(argv []string) {
-	in.openLiveIf("arias", rpc.AriasFormID, false, func(v *formView) bool {
-		if formPeers(v.source().Shown()) == 0 {
-			return true
-		}
-		if !in.ariasFellBack.Swap(true) {
-			in.note(":ls shows this node's arias as a form only while the troupe has no peers; listing the troupe instead")
-		}
-		in.runThroughRouter(argv)
+func (in *interactiveInput) troupeListing(argv []string, v *formView) bool {
+	if formPeers(v.source().Shown()) == 0 {
 		return false
-	})
+	}
+	if !in.ariasFellBack.Swap(true) {
+		in.note(":ls shows this node's arias as a form only while the troupe has no peers; listing the troupe instead")
+	}
+	in.runThroughRouter(argv)
+	return true
 }
 
 func formPeers(snap form.Snapshot) int {
