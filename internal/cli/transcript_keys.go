@@ -217,7 +217,7 @@ func pagerHelpPit(t *transcript) { t.openHelpPit() }
 
 func pagerListPit(t *transcript) { t.runListCommand("ls") }
 
-func pagerListHome(t *transcript) { t.runListCommand("ls -H") }
+func pagerListHome(t *transcript) { t.runListCommand("troupe") }
 
 func (t *transcript) runListCommand(line string) {
 	if t.command == nil {

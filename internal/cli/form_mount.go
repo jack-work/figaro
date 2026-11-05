@@ -2,13 +2,16 @@ package cli
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 )
 
 const mountSep = "\x1f"
 
-type mountOpener func(addr string) (*formView, actOn, func(), error)
+type mountOpener func(addr string) (*formView, actOn, func(), <-chan struct{}, error)
+
+const mountRedial = time.Second
 
 type viewMount struct {
 	addr  string
@@ -87,7 +90,7 @@ func (v *formView) mountRowsLocked(path, addr, indent string, width int) []pitRo
 }
 
 func (v *formView) openMount(path string, m *viewMount) {
-	view, send, closeFn, err := v.opener(m.addr)
+	view, send, closeFn, done, err := v.opener(m.addr)
 	v.mu.Lock()
 	if v.mounts[path] != m {
 		v.mu.Unlock()
@@ -99,12 +102,44 @@ func (v *formView) openMount(path string, m *viewMount) {
 	if err != nil {
 		m.note = err.Error()
 	} else {
-		view.repaint, view.act, view.change = v.repaint, v.act, v.change
+		view.repaint = func() { v.changed() }
+		view.act = func(a rpc.ViewAction) {
+			if act := v.act; act != nil {
+				act(a)
+			}
+		}
+		view.change = func() {
+			if change := v.change; change != nil {
+				change()
+			}
+		}
 		m.view, m.send, m.close = view, send, closeFn
 	}
 	v.items = nil
 	v.mu.Unlock()
 	v.changed()
+	if err == nil && done != nil {
+		go v.redialWhenDone(path, m, done)
+	}
+}
+
+func (v *formView) redialWhenDone(path string, m *viewMount, done <-chan struct{}) {
+	<-done
+	time.Sleep(mountRedial)
+	v.mu.Lock()
+	if v.mounts[path] != m {
+		v.mu.Unlock()
+		return
+	}
+	fresh := &viewMount{addr: m.addr, node: m.node, note: "reconnecting to " + m.addr}
+	v.mounts[path] = fresh
+	v.items = nil
+	v.mu.Unlock()
+	if m.close != nil {
+		m.close()
+	}
+	v.changed()
+	v.openMount(path, fresh)
 }
 
 func (v *formView) dropMountsLocked(pointers map[string]bool) {

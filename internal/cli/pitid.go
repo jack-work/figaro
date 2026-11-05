@@ -24,6 +24,7 @@ const (
 	pitModels  pitID = "models"
 	pitReaped  pitID = "reaped"
 	pitArias   pitID = "arias"
+	pitTroupe  pitID = "troupe"
 	pitConfirm pitID = "confirm"
 	// Drawn inside the command pit, never opened as its own; the row exists
 	// for its selection marker.
@@ -56,6 +57,7 @@ var pitFaces = map[pitID]pitFace{
 	pitModels:     {"웃", "models", "⟡", modePanel},
 	pitReaped:     {"웃", "reaped", "⁂", modePanel},
 	pitArias:      {"웃", "arias", "⎈", modePanel},
+	pitTroupe:     {"웃", "troupe", "⌘", modePanel},
 	pitConfirm:    {"[y/N]", "confirm", "", modeConfirm},
 	pitCompletion: {"", "completion", "♪", modeBox},
 	pitDecision:   {"⁇", "decision", "", modePanel},

@@ -260,7 +260,7 @@ var helpRows = []helpRow{
 	{helpDecisionPit, "D", "the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpPinned, "p", "expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it"},
-	{helpListPit, "l / L", "list this aria's tree / the home tree, in the pit (Enter attends, x kills)"},
+	{helpListPit, "l / L", "the arias here / every store in the troupe, in the pit (Enter attends, x kills)"},
 	{helpConfirm, "y / n", "answer a confirmation (Esc is no); X on a row kills with no question"},
 	{helpHelpPanel, "h", "close help"},
 }

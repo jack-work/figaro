@@ -88,6 +88,7 @@ type formPit struct {
 	bare     bool
 	opening  func(in *interactiveInput)
 	fallback func(in *interactiveInput, argv []string, v *formView) bool
+	ready    func(in *interactiveInput, v *formView)
 }
 
 func formPitFor(verb string) (formPit, bool) {
@@ -98,6 +99,8 @@ func formPitFor(verb string) (formPit, bool) {
 		return formPit{name: "reaped", form: rpc.ReapedFormID, bare: true}, true
 	case "ls", "list":
 		return formPit{name: "arias", form: rpc.AriasFormID, bare: true, fallback: (*interactiveInput).troupeListing}, true
+	case "troupe":
+		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).mountTroupe}, true
 	}
 	return formPit{}, false
 }
@@ -247,8 +250,11 @@ func (in *interactiveInput) openFormPit(p formPit, argv []string) {
 		p.opening(in)
 	}
 	var keep func(*formView) bool
-	if p.fallback != nil {
+	switch {
+	case p.fallback != nil:
 		keep = func(v *formView) bool { return !p.fallback(in, argv, v) }
+	case p.ready != nil:
+		keep = func(v *formView) bool { p.ready(in, v); return true }
 	}
 	in.openLiveIf(p.name, p.form, false, keep)
 }

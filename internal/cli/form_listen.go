@@ -38,7 +38,11 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		acli.Close()
 		return nil, nil, err
 	}
+	view, closeView, _, err := openFormViewOn(ctx, cancel, ep, resolvedID, intrinsic, onChange, func() { acli.Close() })
+	return view, closeView, err
+}
 
+func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr, resolvedID, intrinsic string, onChange func(), release func()) (*formView, func(), <-chan struct{}, error) {
 	mirror := &formMirror{}
 	view := &formView{mirror: mirror, out: os.Stdout, open: map[string]bool{},
 		aria: resolvedID, intrinsic: intrinsic}
@@ -75,9 +79,9 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		})
 	if err != nil {
 		cancel()
-		acli.Close()
+		release()
 		kick.close()
-		return nil, nil, fmt.Errorf("dial aria: %w", err)
+		return nil, nil, nil, fmt.Errorf("dial aria: %w", err)
 	}
 	if !formPitEditable(intrinsic) {
 		view.refetch = func() (*rpc.FormResponse, error) {
@@ -86,7 +90,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 			return fcli.FormOf(rctx, intrinsic)
 		}
 		view.resync()
-		return view, func() { fcli.Close(); acli.Close(); cancel(); kick.close() }, nil
+		return view, func() { fcli.Close(); release(); cancel(); kick.close() }, fcli.Done(), nil
 	}
 
 	failed := make(chan struct{})
@@ -127,10 +131,10 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		}
 		r.Close()
 		fcli.Close()
-		acli.Close()
+		release()
 		cancel()
 		kick.close()
-	}, nil
+	}, fcli.Done(), nil
 }
 
 var pitLedger struct {

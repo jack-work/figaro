@@ -305,7 +305,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  D                   the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar",
 		"  T                   read the conversation without closing the pit (again to go back)",
 		"  p                   expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it",
-		"  l / L               list this aria's tree / the home tree, in the pit (Enter attends, x kills)",
+		"  l / L               the arias here / every store in the troupe, in the pit (Enter attends, x kills)",
 		"  y / n               answer a confirmation (Esc is no); X on a row kills with no question",
 		"  h                   close help",
 	}

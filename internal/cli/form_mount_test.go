@@ -30,6 +30,7 @@ var thingsHint = &rpc.FormView{
 
 type fakeMounts struct {
 	mu     sync.Mutex
+	links  map[string]chan struct{}
 	forms  map[string]*fakeFormSource
 	errs   map[string]error
 	opened []string
@@ -42,7 +43,7 @@ func newFakeMounts() *fakeMounts {
 	return &fakeMounts{forms: map[string]*fakeFormSource{}, errs: map[string]error{}, kick: make(chan struct{}, 16)}
 }
 
-func (f *fakeMounts) open(addr string) (*formView, actOn, func(), error) {
+func (f *fakeMounts) open(addr string) (*formView, actOn, func(), <-chan struct{}, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.opened = append(f.opened, addr)
@@ -53,7 +54,7 @@ func (f *fakeMounts) open(addr string) (*formView, actOn, func(), error) {
 		}
 	}()
 	if err := f.errs[addr]; err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	v := &formView{src: f.forms[addr], open: map[string]bool{}}
 	v.setView(thingsHint)
@@ -63,11 +64,16 @@ func (f *fakeMounts) open(addr string) (*formView, actOn, func(), error) {
 		f.mu.Unlock()
 		return nil
 	}
+	link := make(chan struct{})
+	if f.links == nil {
+		f.links = map[string]chan struct{}{}
+	}
+	f.links[addr] = link
 	return v, send, func() {
 		f.mu.Lock()
 		f.closed = append(f.closed, addr)
 		f.mu.Unlock()
-	}, nil
+	}, link, nil
 }
 
 func (f *fakeMounts) waitOpened(t *testing.T, n int) {
@@ -358,5 +364,29 @@ func TestLOnAPeerRowOpensItsMount(t *testing.T) {
 	f.waitOpened(t, 1)
 	if _, ok := rowsByID(v.Items(100))["far\x1fitems"]; !ok || f.opened[0] != "far/@things" {
 		t.Errorf("l did not mount far: opened %v", f.opened)
+	}
+}
+
+// When a mount's connection ends (the door lapses it at the token's expiry),
+// the pit dials it again, which resolves a fresh token, and keeps drawing.
+func TestALapsedMountDialsAgain(t *testing.T) {
+	f := newFakeMounts()
+	f.forms["far/@things"] = things("items.a.n", `1`)
+	v := indexView(f)
+	v.Items(100)
+	v.Activate("far")
+	v.Items(100)
+	f.waitOpened(t, 1)
+	f.mu.Lock()
+	close(f.links["far/@things"])
+	f.mu.Unlock()
+	f.waitOpened(t, 2)
+	if _, ok := rowsByID(v.Items(100))["far\x1fitems"]; !ok {
+		t.Error("the redialled mount is not drawn")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if strings.Join(f.closed, ",") != "far/@things" {
+		t.Errorf("closed %v, want the lapsed connection closed once", f.closed)
 	}
 }
