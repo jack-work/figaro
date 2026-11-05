@@ -173,3 +173,102 @@ func TestFormSearchMarksTheMatchedLetters(t *testing.T) {
 		}
 	}
 }
+
+func tableSearchProbe(t *testing.T) (*inputProbe, *formView) {
+	t.Helper()
+	p := newInputProbe(t, true)
+	src := reapedShaped()
+	src.snap = src.snap.Apply(form.Build(src.snap, formKeys("items.n1.reason", `"the daemon restarted"`), nil))
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(reapedView)
+	p.lt.tr.pit.showLive(pitID("form show"), v)
+	return p, v
+}
+
+// In a form drawn as a table, the search matches what each row shows and
+// keeps the table: its header, and only the rows that match.
+func TestTableSearchKeepsTheMatchingRows(t *testing.T) {
+	p, _ := tableSearchProbe(t)
+	tr := p.lt.tr
+	feed(t, p.in, "/second")
+	rows := tr.pit.list().rows
+	if len(rows) != 2 || rows[0].selectable() || rows[1].id != "items.n2" {
+		var got []string
+		for _, r := range rows {
+			got = append(got, r.id+"|"+r.str())
+		}
+		t.Fatalf("want the header and items.n2: %q", got)
+	}
+	if !strings.Contains(rows[0].str(), "mantra") {
+		t.Fatalf("the header is not the table's: %q", rows[0].str())
+	}
+	if row, _ := tr.pit.selected(); row.id != "items.n2" {
+		t.Fatalf("cursor on %q", row.id)
+	}
+	if len(rows[1].marks) == 0 {
+		t.Fatal("the matching cell is not marked")
+	}
+}
+
+// A row matches on a value it does not show; the matching key is shown under
+// it with the text around the match.
+func TestTableSearchShowsAHiddenValueMatchUnderItsRow(t *testing.T) {
+	p, v := tableSearchProbe(t)
+	tr := p.lt.tr
+	feed(t, p.in, "/restarted")
+	var ids []string
+	for _, r := range tr.pit.list().rows {
+		ids = append(ids, r.id)
+	}
+	if strings.Join(ids, ",") != ",items.n1,items.n1.reason" {
+		t.Fatalf("rows %q; want the header, items.n1 and its matching key", ids)
+	}
+	leaf := tr.pit.list().rows[2]
+	if !strings.Contains(leaf.str(), "reason: the daemon restarted") || len(leaf.marks) == 0 {
+		t.Fatalf("hidden match row %q marks %v", leaf.str(), leaf.marks)
+	}
+	if n := formChild(v.root, "items.n1.reason"); n == nil || n.label != "reason" || n.guided {
+		t.Fatalf("drawing the match changed the form's own node: %+v", n)
+	}
+}
+
+// Enter leaves the search on the chosen row of the full table.
+func TestTableSearchEnterKeepsTheRow(t *testing.T) {
+	p, _ := tableSearchProbe(t)
+	tr := p.lt.tr
+	feed(t, p.in, "/first\r")
+	if row, _ := tr.pit.selected(); row.id != "items.n1" {
+		t.Fatalf("after Enter the cursor is on %q", row.id)
+	}
+	if n := len(tr.pit.list().rows); n != 3 {
+		t.Fatalf("after Enter the table has %d rows, want the header and both rows", n)
+	}
+}
+
+// A grouped table (@models) keeps the heading of each group that has a
+// matching row, and a query can name the group with the row.
+func TestTheModelsSearchKeepsMatchingGroups(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := modelsTable(t, modelsFixture(t), "copilot", "claude-opus-5")
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("form show"), v)
+	feed(t, p.in, "/copilot opus")
+	var rows []string
+	for _, r := range tr.pit.list().rows {
+		rows = append(rows, r.id+"|"+strings.Fields(r.str() + " -")[0])
+	}
+	got := strings.Join(rows, " ")
+	if !strings.Contains(got, "|copilot") || strings.Contains(got, "|anthropic") {
+		t.Fatalf("rows %s; want the copilot heading only", got)
+	}
+	sel, _ := tr.pit.selected()
+	if !strings.HasPrefix(sel.id, "copilot.") || !strings.HasSuffix(sel.id, "claude-opus-5") {
+		t.Fatalf("cursor on %q; want copilot's claude-opus-5", sel.id)
+	}
+	feed(t, p.in, "\x1b")
+	feed(t, p.in, "/sonnet")
+	sel, _ = tr.pit.selected()
+	if !strings.HasSuffix(sel.id, "claude-sonnet-4-5") {
+		t.Fatalf("cursor on %q; want anthropic's sonnet", sel.id)
+	}
+}

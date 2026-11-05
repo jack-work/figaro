@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -9,14 +10,24 @@ import (
 )
 
 type formSearch struct {
-	index fuzzy.Index
-	match *fuzzy.Matcher
-	stamp form.Stamp
-	built bool
-	query string
-	hits  []fuzzy.Hit
-	at    int
-	rev   uint64
+	index  fuzzy.Index
+	match  *fuzzy.Matcher
+	stamp  form.Stamp
+	built  bool
+	query  string
+	hits   []fuzzy.Hit
+	table  []tableHit
+	ranked []string
+	at     int
+	rev    uint64
+}
+
+type tableHit struct {
+	row    *formNode
+	group  *formNode
+	score  int
+	onLine bool
+	values []fuzzy.Hit
 }
 
 type liveSearcher interface {
@@ -34,7 +45,7 @@ func (v *formView) SetQuery(q string) string {
 	}
 	s := v.search
 	s.query = q
-	s.refresh(v.source().Shown())
+	v.rank(v.source().Shown())
 	s.at = 0
 	return s.current()
 }
@@ -43,10 +54,10 @@ func (v *formView) StepQuery(dir int) string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	s := v.search
-	if s == nil || len(s.hits) == 0 {
+	if s == nil || len(s.ranked) == 0 {
 		return ""
 	}
-	s.at = ((s.at+dir)%len(s.hits) + len(s.hits)) % len(s.hits)
+	s.at = ((s.at+dir)%len(s.ranked) + len(s.ranked)) % len(s.ranked)
 	s.rev++
 	return s.current()
 }
@@ -64,7 +75,7 @@ func (v *formView) EndQuery(keep string) {
 		}
 		v.openRev++
 	}
-	v.search.query, v.search.hits, v.search.at = "", nil, 0
+	v.search.query, v.search.hits, v.search.table, v.search.ranked, v.search.at = "", nil, nil, nil, 0
 	v.search.rev++
 }
 
@@ -74,39 +85,218 @@ func (v *formView) QueryCount() (at, n int) {
 	if v.search == nil || v.search.query == "" {
 		return 0, 0
 	}
-	if len(v.search.hits) == 0 {
+	if len(v.search.ranked) == 0 {
 		return 0, 0
 	}
-	return v.search.at + 1, len(v.search.hits)
+	return v.search.at + 1, len(v.search.ranked)
 }
 
 func (v *formView) searching() bool { return v.search != nil && v.search.query != "" }
 
-func (s *formSearch) refresh(snap form.Snapshot) {
+func (v *formView) rank(snap form.Snapshot) {
+	s := v.search
 	if st := snap.RootNode().Stamp(); !s.built || st != s.stamp {
 		s.index.Update(snap)
 		s.stamp, s.built = st, true
 	}
-	s.hits = s.index.Query(s.match, s.query)
-	if s.at >= len(s.hits) {
+	s.hits, s.table, s.ranked = nil, nil, s.ranked[:0]
+	if list := v.searchList(snap); list != nil {
+		s.table = v.rankTable(list)
+		for _, h := range s.table {
+			s.ranked = append(s.ranked, h.row.path)
+		}
+	} else {
+		s.hits = s.index.Query(s.match, s.query)
+		for _, h := range s.hits {
+			s.ranked = append(s.ranked, h.Entry.Path)
+		}
+	}
+	if s.at >= len(s.ranked) {
 		s.at = 0
 	}
 	s.rev++
 }
 
 func (s *formSearch) current() string {
-	if len(s.hits) == 0 {
+	if len(s.ranked) == 0 {
 		return ""
 	}
-	return s.hits[s.at].Entry.Path
+	return s.ranked[s.at]
+}
+
+func (v *formView) searchList(snap form.Snapshot) *formNode {
+	if v.view == nil {
+		return nil
+	}
+	if v.root == nil {
+		v.root = newFormRoot(snap)
+	}
+	if list := formChild(v.root, v.view.List); list != nil && !list.leaf() {
+		return list
+	}
+	return nil
+}
+
+const tableMatchWidth = 1000
+
+func (v *formView) rankTable(list *formNode) []tableHit {
+	s := v.search
+	terms := strings.Fields(s.query)
+	if len(terms) == 0 {
+		return nil
+	}
+	groups := v.viewGroups(list)
+	lines := v.tableLines(groups, tableMatchWidth)
+	under := map[string][]*fuzzy.Entry{}
+	rowOf := map[string]string{}
+	for _, g := range groups {
+		for _, r := range g.rows {
+			rowOf[r.path] = r.path
+		}
+	}
+	for _, e := range s.index.Entries() {
+		for p := e.Path; p != ""; {
+			i := strings.LastIndexByte(p, '.')
+			if i < 0 {
+				break
+			}
+			p = p[:i]
+			if row, ok := rowOf[p]; ok {
+				under[row] = append(under[row], e)
+				break
+			}
+		}
+	}
+	var out []tableHit
+	next := 1
+	for _, g := range groups {
+		for _, r := range g.rows {
+			line := lines[next]
+			next++
+			if g.node != nil {
+				line = g.node.label + " " + line
+			}
+			text := fuzzy.NewText(line)
+			h := tableHit{row: r, group: g.node}
+			ok := true
+			for _, t := range terms {
+				if m, found := s.match.Match(&text, []rune(t)); found {
+					h.onLine = true
+					h.score += m.Score
+					continue
+				}
+				lower := strings.ToLower(t)
+				hit := false
+				for _, e := range under[r.path] {
+					if at := e.ValueIndex(lower); at >= 0 {
+						h.values = append(h.values, fuzzy.Hit{Entry: e, ValueAt: at})
+						hit = true
+						break
+					}
+				}
+				if !hit {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				out = append(out, h)
+			}
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		if out[a].onLine != out[b].onLine {
+			return out[a].onLine
+		}
+		return out[a].score > out[b].score
+	})
+	return out
+}
+
+func (v *formView) tableSearchItems(width int) []pitRow {
+	s := v.search
+	byRow := map[string]tableHit{}
+	for _, h := range s.table {
+		byRow[h.row.path] = h
+	}
+	var kept []viewGroup
+	if list := formChild(v.root, v.view.List); list != nil {
+		for _, g := range v.viewGroups(list) {
+			kg := viewGroup{node: g.node}
+			for _, r := range g.rows {
+				if _, ok := byRow[r.path]; ok {
+					kg.rows = append(kg.rows, r)
+				}
+			}
+			if len(kg.rows) > 0 {
+				kept = append(kept, kg)
+			}
+		}
+	}
+	lines := v.tableLines(kept, width)
+	var out []pitRow
+	if v.notice != "" {
+		out = append(out, staticRow(clipLine(v.notice, width)))
+	}
+	out = append(out, staticRow(lines[0]))
+	next := 1
+	for _, g := range kept {
+		if g.node != nil {
+			out = append(out, v.groupRow(g.node, width))
+		}
+		for _, r := range g.rows {
+			h := byRow[r.path]
+			line := lines[next]
+			next++
+			out = append(out, v.tableHitRows(h, line, width)...)
+		}
+	}
+	return out
+}
+
+func (v *formView) tableHitRows(h tableHit, line string, width int) []pitRow {
+	s := v.search
+	var marks []int
+	if h.onLine {
+		text := fuzzy.NewText(line)
+		runes := []rune(line)
+		for _, t := range strings.Fields(s.query) {
+			for _, p := range s.match.Positions(&text, []rune(t)) {
+				if p < len(runes) {
+					marks = append(marks, len(string(runes[:p])))
+				}
+			}
+		}
+	}
+	r := h.row
+	out := []pitRow{{text: line, yankFrom: r, id: r.path, marks: marks}}
+	for j, vh := range h.values {
+		leaf := formChild(v.root, vh.Entry.Path)
+		if leaf == nil || !leaf.leaf() {
+			continue
+		}
+		shown := *leaf
+		shown.guided, shown.pad, shown.width = true, 0, width
+		shown.guide = "   ├─ "
+		if j == len(h.values)-1 {
+			shown.guide = "   └─ "
+		}
+		shown.label = strings.TrimPrefix(vh.Entry.Path, r.path+".")
+		text, vmarks := searchedRow(&shown, vh, s, width)
+		out = append(out, pitRow{text: text, yankFrom: leaf, id: leaf.path, marks: vmarks, dimLead: len(shown.guide)})
+	}
+	return out
 }
 
 func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	s := v.search
 	if st := snap.RootNode().Stamp(); !s.built || st != s.stamp {
 		at := s.at
-		s.refresh(snap)
-		s.at = min(at, max(len(s.hits)-1, 0))
+		v.rank(snap)
+		s.at = min(at, max(len(s.ranked)-1, 0))
+	}
+	if v.searchList(snap) != nil {
+		return v.tableSearchItems(width)
 	}
 	include := map[string]bool{}
 	byPath := map[string]fuzzy.Hit{}

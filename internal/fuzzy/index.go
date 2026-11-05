@@ -23,6 +23,8 @@ type child struct {
 	n   *node
 }
 
+func (e *Entry) ValueIndex(lowerTerm string) int { return strings.Index(e.value, lowerTerm) }
+
 type node struct {
 	stamp form.Stamp
 	kids  []child
