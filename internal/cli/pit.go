@@ -383,6 +383,8 @@ func pitText(s string) string {
 				b.WriteByte(' ')
 			case c < 0x20 || c == 0x7f:
 				// dropped: a newline inside a row is not a row break
+			case c == 0xc2 && i+1 < len(s) && s[i+1] >= 0x80 && s[i+1] <= 0x9f:
+				i++
 			default:
 				b.WriteByte(c)
 			}
@@ -394,7 +396,9 @@ func pitText(s string) string {
 	return b.String()
 }
 
-func isControl(r rune) bool { return r == 0x1b || r == '\t' || r < 0x20 || r == 0x7f }
+func isControl(r rune) bool {
+	return r == 0x1b || r == '\t' || r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
+}
 
 // CSI and OSC are skipped whole; anything else is ESC and one byte.
 func skipEscape(s string, i int) int {
