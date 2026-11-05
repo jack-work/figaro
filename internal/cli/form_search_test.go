@@ -529,3 +529,25 @@ func TestEscPutsTheNextSearchBackInTheTree(t *testing.T) {
 		t.Errorf("rows %v, want the tree under system", ids)
 	}
 }
+
+// A row the filtered view drew collapsed peeked at its key names, because the
+// label peek was stamped only by the normal walk: a fork found by its name read
+// 'id · mantra' instead of its mantra.
+func TestAFoundRowShowsItsLabel(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := forkedArias()
+	v.view.Label = "mantra"
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/kingly")
+	for _, r := range tr.pit.list().rows {
+		if r.id != "arias.parent-one.forks.kingly-fork" {
+			continue
+		}
+		if got := r.str(); !strings.Contains(got, `"a fork of it"`) || strings.Contains(got, "mantra") {
+			t.Fatalf("the found fork reads %q, want its mantra", got)
+		}
+		return
+	}
+	t.Fatalf("no row for the fork: %v", pitIDs(tr))
+}

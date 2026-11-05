@@ -211,8 +211,8 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	}
 	var out []pitRow
 	out = append(out, noticeRows(v.notice, width)...)
-	var walk func(n *formNode, cont string, top bool)
-	walk = func(n *formNode, cont string, top bool) {
+	var walk func(n *formNode, cont string, top bool, segs []string)
+	walk = func(n *formNode, cont string, top bool, segs []string) {
 		var kids []*formNode
 		for _, c := range n.kids() {
 			if _, ok := s.up[c.path]; ok {
@@ -231,10 +231,12 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 			}
 			h, hit := byPath[c.path]
 			if !hit || !c.leaf() {
+				keys := append(segs[:len(segs):len(segs)], c.label)
 				c.open = !c.leaf() && s.below[c.path]
+				c.peek = v.rowPeek(c, keys)
 				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path, marks: s.labelMarks(c)})
 				if c.open {
-					walk(c, c.cont, false)
+					walk(c, c.cont, false, keys)
 				}
 				continue
 			}
@@ -242,8 +244,22 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 			out = append(out, pitRow{text: text, yankFrom: c, id: c.path, marks: marks, dimLead: len(c.lead())})
 		}
 	}
-	walk(v.root, "", true)
+	walk(v.root, "", true, nil)
 	return out
+}
+
+func (v *formView) rowPeek(n *formNode, keys []string) string {
+	if v.view == nil || v.view.Label == "" || n.leaf() {
+		return ""
+	}
+	if _, ok := rpc.MatchPath(v.view.Rows, keys); !ok {
+		return ""
+	}
+	c := formChild(n, v.view.Label)
+	if c == nil || !c.leaf() {
+		return ""
+	}
+	return leafPreview(c.label, c.value)
 }
 
 func searchedRow(n *formNode, h fuzzy.Hit, s *formSearch, width int) (string, []int) {
