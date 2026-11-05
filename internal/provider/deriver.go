@@ -33,7 +33,7 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	if watermark == 0 {
 		return
 	}
-	if at, ok := log.Lookup(watermark); ok {
+	if at, ok := lastCarrierAtOrBefore(log, watermark); ok {
 		d.lastForm = at.FormChannelVersion
 		for fid, v := range at.StudyVersions {
 			d.lastStudy[fid] = v
@@ -65,6 +65,19 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 
 func (d *Deriver) At() uint64 { return d.lastForm }
 
+func lastCarrierAtOrBefore(log store.Log[message.Message], lt uint64) (store.Entry[message.Message], bool) {
+	for ; lt > 0; lt-- {
+		at, ok := log.Lookup(lt)
+		if !ok {
+			return store.Entry[message.Message]{}, false
+		}
+		if at.Payload.Role == message.RoleGenesis || carriesBlocks(at.Payload) {
+			return at, true
+		}
+	}
+	return store.Entry[message.Message]{}, false
+}
+
 // Next returns the message with its patches and study blocks, and the bound form
 // before it. Call in log order, once per entry. It does not advance the
 // cursors: an entry can encode to nothing, and its window must then ride the
@@ -77,12 +90,12 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 		return msg, d.snap, false
 	}
 
-	if d.form != nil {
+	if d.form != nil && carriesBlocks(msg) {
 		msg.Patches = d.form.PatchesBetween(d.lastForm, entry.FormChannelVersion)
 	}
 
 	// A window may only close on an entry that can carry the block.
-	if carriesStudy(msg) {
+	if carriesBlocks(msg) {
 		for fid, upTo := range entry.StudyVersions {
 			acc := d.studies[fid]
 			if acc == nil {
@@ -107,11 +120,12 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 // Commit advances the cursors past an entry whose row was written; call it
 // exactly when the store accepted a row.
 func (d *Deriver) Commit(entry store.Entry[message.Message], msg message.Message) {
+	if !carriesBlocks(msg) {
+		return
+	}
 	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
-	if carriesStudy(msg) {
-		for fid, upTo := range entry.StudyVersions {
-			d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
-		}
+	for fid, upTo := range entry.StudyVersions {
+		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
 	}
 	d.snap = form.Fold(d.snap, msg.Patches)
 }

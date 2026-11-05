@@ -251,9 +251,7 @@ func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
 	return tail.LT, true
 }
 
-// carriesStudy: only a user message carries a studied-form block, so only
-// one may consume a window.
-func carriesStudy(msg message.Message) bool { return msg.Role == message.RoleInput }
+func carriesBlocks(msg message.Message) bool { return msg.Role == message.RoleInput }
 
 // ClearStaleTranslationCache empties a log written under another fingerprint.
 func ClearStaleTranslationCache(rows store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
