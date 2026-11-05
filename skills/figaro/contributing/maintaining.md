@@ -478,8 +478,16 @@ yourself, **from a terminal and not from inside an aria**: the upgrade swaps
 the binary under the running angelus that is hosting you:
 
 ```sh
-figaro stop --keep-pids && nix profile upgrade --all
+figaro upgrade -n   # the plan: which panes restart, which are left
+figaro upgrade      # build, wait for turns, swap, restart the angelus and the figaro panes
 ```
+
+`figaro upgrade` restarts every figaro running in a tmux pane on its own:
+respawn-pane when figaro is the pane's process, the same command typed into
+the pane's shell once the shell holds the terminal again. It names what it
+leaves (piped input, `--stdin`, a pane whose shell is busy) and what runs
+outside tmux (telefono). The manual equivalent is still
+`figaro stop --keep-pids && nix profile upgrade --all`, then each pane by hand.
 
 ## Versions on disk: which one to bump
 
