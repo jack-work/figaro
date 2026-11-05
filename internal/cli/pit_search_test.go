@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
@@ -181,5 +182,44 @@ func TestASearchStepPaintsAtOnce(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ^E and ^Y scroll a list without moving the selection: ^E as e does, ^Y back
+// the other way, so a long list can be read around the selected row.
+func TestCtrlEAndCtrlYScrollAListWithoutMovingTheSelection(t *testing.T) {
+	open := func() (*interactiveInput, *picker, *transcript) {
+		var out countingWriter
+		in, lt := navInput(t, &out, true)
+		rows := make([]pitRow, 40)
+		for i := range rows {
+			rows[i] = pitRow{text: fmt.Sprintf("  row %02d", i), id: fmt.Sprintf("r%02d", i)}
+		}
+		lt.tr.setCmdOut("ls", rows)
+		lt.tr.pit.focus("r05")
+		lt.tr.drawerLines()
+		return in, lt.tr.pit.list(), lt.tr
+	}
+	ref, refList, refTr := open()
+	feed(t, ref, "e")
+	refTr.drawerLines()
+
+	in, p, tr := open()
+	top := p.top
+	feed(t, in, "\x05")
+	tr.drawerLines()
+	if p.top == top || p.top != refList.top {
+		t.Fatalf("^E moved the top from %d to %d, want %d as e does", top, p.top, refList.top)
+	}
+	if row, _ := tr.pit.selected(); row.id != "r05" {
+		t.Errorf("^E moved the selection to %q", row.id)
+	}
+	feed(t, in, "\x19")
+	tr.drawerLines()
+	if p.top != top {
+		t.Fatalf("^Y left the top at %d, want %d", p.top, top)
+	}
+	if row, _ := tr.pit.selected(); row.id != "r05" {
+		t.Errorf("^Y moved the selection to %q", row.id)
 	}
 }

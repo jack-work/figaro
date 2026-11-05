@@ -179,6 +179,7 @@ const (
 	helpPitDrop
 	helpLeavePit
 	helpFormPit
+	helpListScroll
 	helpFocus
 	helpPinned
 	helpVisual
@@ -225,6 +226,7 @@ var helpRows = []helpRow{
 	{helpCmdEdit, "(in :) ^A ^E ^W ^K ^Y", "emacs/readline editing, the whole set"},
 	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
 	{helpPitDrop, "(in a list) x / X", "drop or kill the selected row, asking first / at once"},
+	{helpListScroll, "(in a list) ^E / ^Y", "scroll down / up a line; the selection stays"},
 	{helpYank, "y · M-y", "copy the selection, else the aria's name · its full id"},
 	{helpMore, "M-m", "more: every name beside its other spelling, and addresses in the spare columns"},
 	{helpSticky, "s", "pin the question of the turn you are inside"},

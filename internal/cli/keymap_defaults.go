@@ -192,6 +192,7 @@ var keyActions = []keyAction{
 		atPager(inComposer, composerFullscreen),
 		atPager(inList, listFullscreen)),
 	named("scroll-down", atPager(inList, listScrollDown)),
+	named("scroll-up", atPager(inList, listScrollUp)),
 	named("send", atPager(inComposer, composerSubmit)),
 
 	named("accept-snap", atPager(inBox, boxAcceptSnap)),
@@ -341,7 +342,8 @@ var defaultLayers = []keyLayer{
 		bind("N", "find-prev", helpNone),
 	}},
 	{name: "list", modes: inList, binds: []keyBind{
-		bind("e", "scroll-down", helpNone),
+		bind("e ^E", "scroll-down", helpListScroll),
+		bind("^Y", "scroll-up", helpListScroll),
 		bind("F", "fullscreen", helpNone),
 		bind("0x0e", "down", helpNone),
 		bind("0x10", "up", helpNone),

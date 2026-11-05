@@ -8,6 +8,8 @@ func listBottom(t *transcript)     { t.listMotion(t.pit.toBottom, t.index.total)
 func listTop(t *transcript)        { t.listMotion(t.pit.toTop, -t.index.total) }
 func listScrollDown(t *transcript) { t.listMotion(func() { t.pit.scrollBy(1) }, 1) }
 
+func listScrollUp(t *transcript) { t.listMotion(func() { t.pit.scrollBy(-1) }, -1) }
+
 func (t *transcript) listMotion(pit func(), head int) {
 	if t.headFocused() {
 		t.headScroll(head)
