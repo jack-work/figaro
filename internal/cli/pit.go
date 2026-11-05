@@ -269,7 +269,7 @@ func (r pitRow) dims() (lead, tail int) {
 	return r.dimLead, 0
 }
 
-func paintRow(s string, lead, tail int, marks []int, back, match string) string {
+func paintRow(s string, lead, tail int, marks []int, back, match, quiet string) string {
 	if (lead == 0 && tail == 0 && len(marks) == 0) || !term.Enabled() {
 		return s
 	}
@@ -298,7 +298,7 @@ func paintRow(s string, lead, tail int, marks []int, back, match string) string 
 		case mark:
 			run = match + "\x1b[1;4m" + run + "\x1b[22;24m" + back
 		case dim:
-			run = term.LabelThen(run, back)
+			run = quiet + run + back
 		}
 		b.WriteString(run)
 		i = j
@@ -318,7 +318,14 @@ func (t pitTone) selectedFg() string {
 	if body := t.washBody(); body != "" {
 		return body
 	}
-	return "\x1b[38;5;255m"
+	return term.Bright()
+}
+
+func quietFg(selected bool) string {
+	if selected {
+		return term.Bright()
+	}
+	return term.QuietThen("", "")
 }
 
 func matchFg(selected bool) string {

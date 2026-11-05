@@ -97,3 +97,34 @@ func TestMatchedLettersAreBoldInThePalettesRed(t *testing.T) {
 		t.Error("a raw 196 red, not the palette's")
 	}
 }
+
+// A form row's quiet parts (guides, peeks) were drawn in 242 gray, which
+// under the selection wash was hard to read. They are drawn in the palette's
+// quiet blue on a plain row and its bright foreground on the selected row.
+func TestAFormRowsQuietPartsAreReadable(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	g := len("├─ ")
+	rows := []pitRow{
+		{text: "├─ alpha (2)  body · title", id: "a", dimLead: g},
+		{text: "├─ beta (2)  body · title", id: "b", dimLead: g},
+	}
+	p := newPicker(rows)
+	p.focus("a")
+	var selected, plain string
+	for _, l := range p.lines(pitForm, 60, 10) {
+		if strings.Contains(l, pitWash) {
+			selected = l
+		} else if strings.Contains(stripANSIAll([]string{l})[0], "beta") {
+			plain = l
+		}
+	}
+	if strings.Contains(selected+plain, "38;5;242") {
+		t.Errorf("a quiet part is still 242 gray:\n%q\n%q", selected, plain)
+	}
+	if !strings.Contains(plain, term.QuietThen("├─ ", "")) {
+		t.Errorf("the plain row's guide is not the palette's quiet blue: %q", plain)
+	}
+	if !strings.Contains(selected, term.Bright()+"├─ ") {
+		t.Errorf("the selected row's guide is not the palette's bright foreground: %q", selected)
+	}
+}

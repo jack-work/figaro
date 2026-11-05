@@ -107,6 +107,9 @@ type palette struct {
 	arg   string
 	body  string
 	label string
+	quiet string
+
+	bright string
 
 	diffAdd string
 	diffDel string
@@ -140,6 +143,8 @@ var kanagawa = palette{
 	arg:      "\033[38;5;110m",
 	body:     "\033[38;5;252m",
 	label:    "\033[38;5;242m",
+	quiet:    "\033[38;5;110m",
+	bright:   "\033[38;5;255m",
 	diffAdd:  "\033[38;5;108;48;5;22m",
 	diffDel:  "\033[38;5;167;48;5;52m",
 	present:  "\033[38;5;108m",
@@ -244,13 +249,6 @@ func DiffDel(s string) string { return paint(active.diffDel, s) }
 func Present(s string) string { return paint(active.present, s) }
 func Absent(s string) string  { return paint(active.absent, s) }
 
-func LabelThen(s, back string) string {
-	if !Enabled() {
-		return s
-	}
-	return active.label + s + back
-}
-
 // NoticeInDim paints inside a row the caller has dimmed and hands the row
 // back still dim (39;2), where a full reset would drop the dim.
 func NoticeInDim(s string) string {
@@ -268,6 +266,20 @@ func CautionInDim(s string) string {
 }
 
 // NoticeBody and CautionBody are bare SGR bodies; the caller owns the reset.
+func QuietThen(s, back string) string {
+	if !Enabled() {
+		return s
+	}
+	return active.quiet + s + back
+}
+
+func Bright() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.bright
+}
+
 func NoticeBody() string {
 	if !Enabled() {
 		return ""
