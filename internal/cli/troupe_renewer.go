@@ -46,7 +46,7 @@ func troupeRenewer(ctx context.Context, d revokeDoor, in io.Reader, out io.Write
 
 func runTroupeRenewer(loaded *config.Loaded, name, node, renewer string) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe renewer reads the root key on stdin: op read <ref> | figaro troupe renewer %s %s %s", name, node, renewer)
+		dieUsage("troupe renewer reads the root key on stdin: hush troupe-root renewer %s %s %s", name, node, renewer)
 	}
 	acli := localAngelus()
 	defer acli.Close()

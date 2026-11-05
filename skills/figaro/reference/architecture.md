@@ -720,16 +720,18 @@ there too.
 ### Troupe keys
 
 `[troupe] name` turns them on. The root is an Ed25519 key held outside every
-node (1Password): `op read <ref> | figaro troupe create <name>` derives the
+node. Every command that takes it reads it on stdin and never writes it; it
+lives in hush as the secret of a `troupe-root` command whose script pipes it
+into `figaro troupe "$@"`, so `hush troupe-root create <name>` derives the
 root certificate from it (the same bytes on any machine) and issues this
 node's intermediate, a CA for one year that may sign only leaves under
-`spiffe://<name>/`. `figaro troupe intermediate <name>` renews it, or issues
+`spiffe://<name>/`. `hush troupe-root intermediate <name>` renews it, or issues
 one on another node from the same root. The CLI signs; the root never
 reaches the daemon or the disk. Under `<state>/troupe/<name>/` sit
 `root.crt` and the intermediate and node keys and certificates, 0600.
 
-So that the root stays with the founder, `figaro troupe intermediate <name>
---for <node id> --out <dir>` issues another node's intermediate instead:
+So that the root stays with the founder, `hush troupe-root intermediate
+<name> --for <node id> --out <dir>` issues another node's intermediate instead:
 `root.crt`, `intermediate.crt` and `intermediate.key`, 0600, into `<dir>`,
 which must be a tmpfs unless `--allow-disk`; it prints the fingerprints
 (root, intermediate, public key) and nothing secret, and never overwrites.
@@ -743,8 +745,8 @@ error that closes the node door; a key still at rest beside it is logged.
 A node can hold no intermediate and keep even its node key off the disk.
 `figaro troupe keygen --out <tmpfs dir>` makes the key there and prints its
 public key; it is delivered as a credential and named by `[troupe]
-node_key_credential`. On a node that holds an intermediate, `op read <ref> |
-figaro troupe leaf <name> --for <node id> --public-key <hex> --door
+node_key_credential`. On a node that holds an intermediate, `hush troupe-root
+leaf <name> --for <node id> --public-key <hex> --door
 <host:port> --out <dir>` issues that node a leaf for the key, signs its join
 (owner: the caller), has the root name this node its renewer, has the
 daemon spread both, and writes `root.crt`, `node.crt` and `joined.json` for
@@ -790,7 +792,7 @@ closes them.
 
 A node's certificate counts only when its node's own intermediate issued it,
 or a **renewer** the ledger names for that node: a renewer entry, signed by
-the root (`op read <ref> | figaro troupe renewer <name> <node> <renewer>`)
+the root (`hush troupe-root renewer <name> <node> <renewer>`)
 or by the node's own intermediate. Both TLS verifiers apply this, and so do
 a leave (a leave under a leaf from any other intermediate does not count)
 and the old-key proof of a rejoin, and so does a join: once a node has a
@@ -834,8 +836,8 @@ development roots, and nothing rewrites them.
 (`by`), and the document (policy TOML plus optional `[[issuers]]` and
 `setters = ["<node id>", ...]`), signed by the root or by a node's
 intermediate. Versions are adopted in order: one the root signs always
-counts, and the root signs version 1 (`op read <ref> | figaro troupe policy
-set <name> <file> --root`); any later version counts only if its signer is a
+counts, and the root signs version 1 (`hush troupe-root policy set
+<name> <file> --root`); any later version counts only if its signer is a
 setter of the version adopted before it. So an intermediate the policy does
 not name cannot publish, and a setter dropped from the list cannot return
 by writing a higher version. A ledger stores a node's policies only once

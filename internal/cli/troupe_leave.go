@@ -174,7 +174,7 @@ func runTroupeLeave(loaded *config.Loaded, name string, o joinOpts) {
 
 func runTroupeRevoke(loaded *config.Loaded, name, node string) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe revoke reads the root key on stdin: op read <ref> | figaro troupe revoke %s %s", name, node)
+		dieUsage("troupe revoke reads the root key on stdin: hush troupe-root revoke %s %s", name, node)
 	}
 	acli := localAngelus()
 	defer acli.Close()

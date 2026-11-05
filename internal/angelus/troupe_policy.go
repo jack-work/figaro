@@ -54,7 +54,7 @@ func (h *handlers) troupePolicySet(ctx context.Context, params json.RawMessage) 
 		return nil, err
 	}
 	if view.Policy == nil {
-		return nil, fmt.Errorf("troupe %s has no policy yet, and the root signs the first: op read <root ref> | figaro troupe policy set %s <file> --root", m.Troupe(), m.Troupe())
+		return nil, fmt.Errorf("troupe %s has no policy yet, and the root signs the first: hush troupe-root policy set %s <file> --root", m.Troupe(), m.Troupe())
 	}
 	if setters, _ := troupe.PolicySetters(view.Policy.Body); !slices.Contains(setters, m.Self()) {
 		return nil, fmt.Errorf("version %d names %v as setters, not this node (%s): sign from one of them, or with the root (--root)", view.Policy.Version, setters, m.Self())

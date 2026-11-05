@@ -100,7 +100,7 @@ func issueIntermediate(d troupe.Dir, rootKey ed25519.PrivateKey, name, node stri
 
 func runTroupeIssueFor(name string, o keyOpts) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe intermediate --for reads the root key on stdin: op read <ref> | figaro troupe intermediate %s --for %s --out <dir>", name, o.For)
+		dieUsage("troupe intermediate --for reads the root key on stdin: hush troupe-root intermediate %s --for %s --out <dir>", name, o.For)
 	}
 	out, err := troupeIntermediateFor(os.Stdin, boot.StateDir(), name, o, time.Now())
 	if err != nil {
@@ -111,7 +111,7 @@ func runTroupeIssueFor(name string, o keyOpts) {
 
 func runTroupeKeyVerb(verb, name string) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe %s reads the root key on stdin: op read <ref> | figaro troupe %s %s", verb, verb, name)
+		dieUsage("troupe %s reads the root key on stdin: hush troupe-root %s %s", verb, verb, name)
 	}
 	if err := os.MkdirAll(boot.AriaRoot(), 0o700); err != nil {
 		die("%s", err)

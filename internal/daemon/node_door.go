@@ -177,7 +177,7 @@ func renewer(ctx context.Context, m *peer.Ledger, d *peer.Dialer, door string) t
 		view := m.View()
 		signers := slices.DeleteFunc(view.Signers(time.Now()), func(n string) bool { return !view.MayIssue(m.Self(), n) || n == m.Self() })
 		if len(signers) == 0 {
-			return nil, nil, fmt.Errorf("no renewer of this node is known to hold an intermediate (named: %v); the root names one: op read <root ref> | figaro troupe renewer %s %s <node>", view.Renewers[m.Self()], m.Troupe(), m.Self())
+			return nil, nil, fmt.Errorf("no renewer of this node is known to hold an intermediate (named: %v); the root names one: hush troupe-root renewer %s %s <node>", view.Renewers[m.Self()], m.Troupe(), m.Self())
 		}
 		var errs []error
 		for _, node := range signers {

@@ -25,8 +25,8 @@ an [auth] table naming how a human signs in.
                  With [peers] configured, this node's troupe version and
                  what each peer last showed, from a running daemon
   create <name>        start troupe <name> on this node: the root key
-                       arrives on stdin (op read <ref> | figaro troupe
-                       create <name>) and is never written; root.crt and
+                       arrives on stdin (hush troupe-root create
+                       <name>) and is never written; root.crt and
                        this node's intermediate (one year) are
   intermediate <name>  issue or renew this node's intermediate with the
                        root on stdin: yearly, or on a node joining.

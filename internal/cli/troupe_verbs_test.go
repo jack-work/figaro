@@ -116,9 +116,9 @@ func TestTroupeLsShowsKeyExpiry(t *testing.T) {
 
 	buf.Reset()
 	writeTroupeMembers(&buf, &rpc.TroupeMembersResponse{Node: "n", Peers: []rpc.TroupeMember{}, Keys: &rpc.TroupeKeys{
-		Troupe: "estate", Error: "troupe estate: the node intermediate has expired; run: op read <root ref> | figaro troupe intermediate estate",
+		Troupe: "estate", Error: "troupe estate: the node intermediate has expired; run: hush troupe-root intermediate estate",
 	}})
-	require.Contains(t, buf.String(), "figaro troupe intermediate estate")
+	require.Contains(t, buf.String(), "hush troupe-root intermediate estate")
 }
 
 // A member heard from within the last two hours is shown by age alone; one

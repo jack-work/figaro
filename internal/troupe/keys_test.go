@@ -29,7 +29,7 @@ func newKey(t testing.TB) ed25519.PrivateKey {
 	return k
 }
 
-// The root is held in 1Password, not on any node, so every holder of the
+// The root is held in hush, not on any node, so every holder of the
 // key must derive the same root certificate from it.
 func TestTheRootCertificateIsAFunctionOfTheKey(t *testing.T) {
 	raw := rootPEM(t)

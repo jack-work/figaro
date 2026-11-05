@@ -195,7 +195,7 @@ func troupeKeygen(out io.Writer, o keyOpts) error {
 
 func runTroupeLeaf(loaded *config.Loaded, name, ttl string, o leafOpts) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe leaf reads the root key on stdin: op read <ref> | figaro troupe leaf %s --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]", name)
+		dieUsage("troupe leaf reads the root key on stdin: hush troupe-root leaf %s --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]", name)
 	}
 	var err error
 	if o.MaxTTL, err = loaded.TroupeMaxLeafTTL(); err != nil {

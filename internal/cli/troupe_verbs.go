@@ -246,7 +246,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 	case "leaf":
 		if len(rest) != 1 {
-			dieUsage("troupe leaf takes one troupe: op read <ref> | figaro troupe leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]")
+			dieUsage("troupe leaf takes one troupe: hush troupe-root leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]")
 		}
 		runTroupeLeaf(loaded, rest[0], k.TTL, leafOpts{For: iss.For, PublicKey: iss.PublicKey, Door: o.Door, Out: iss.Out})
 	case "renewer":
@@ -267,7 +267,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 		if iss.For != "" || iss.Out != "" || iss.AllowDisk {
 			if verb != "intermediate" || iss.For == "" {
-				dieUsage("--for, --out and --allow-disk go together, on troupe intermediate: figaro troupe intermediate <name> --for <node-id> --out <tmpfs dir>")
+				dieUsage("--for, --out and --allow-disk go together, on troupe intermediate: hush troupe-root intermediate <name> --for <node-id> --out <tmpfs dir>")
 			}
 			runTroupeIssueFor(rest[0], iss)
 			return nil

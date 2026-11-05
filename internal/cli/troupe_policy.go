@@ -194,7 +194,7 @@ func runTroupePolicy(loaded *config.Loaded, args []string, jsonOut, withRoot boo
 		}
 	case len(args) == 3 && args[0] == "set" && withRoot:
 		if term.IsTerminal(int(os.Stdin.Fd())) {
-			dieUsage("troupe policy set --root reads the root key on stdin: op read <ref> | figaro troupe policy set %s <file> --root", args[1])
+			dieUsage("troupe policy set --root reads the root key on stdin: hush troupe-root policy set %s <file> --root", args[1])
 		}
 		if err := troupeRootPolicySet(ctx, acli, os.Stdin, stdout, localSite(loaded).stateDir, args[1], args[2]); err != nil {
 			die("troupe policy set %s: %s", args[1], err)
