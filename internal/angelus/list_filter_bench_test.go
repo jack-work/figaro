@@ -13,12 +13,15 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
 )
 
 // What the policy adds to figaro.list over a large store: every row is
-// asked about read, and an owner:self grant reads each row's minter.
+// asked about read, and an owner:self grant reads each row's minter. The
+// unenforced case is the daemon with no policy loaded, where only the owner
+// passes, so it names the owner by its peer credential.
 func BenchmarkListFiltered(b *testing.B) {
 	const n = 1500
 	old := slog.Default()
@@ -65,6 +68,11 @@ principals = ["user:guest"]
 `), 0o600); err != nil {
 		b.Fatal(err)
 	}
+	self, err := authz.NewPeercred(0, config.PeercredConfig{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	unenforced := &Angelus{Registry: NewRegistry(), Backend: backend, Peercred: self}
 	enforced := &Angelus{Registry: NewRegistry(), Backend: backend}
 	enforced.Policies = authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "0"}, StoreFacts(backend))
 	if err := enforced.Policies.Reload(policy); err != nil {
@@ -77,7 +85,7 @@ principals = ["user:guest"]
 		who  string
 		want int
 	}{
-		{"unenforced", &Angelus{Registry: NewRegistry(), Backend: backend}, "0", n},
+		{"unenforced", unenforced, "0", n},
 		{"owner", enforced, "0", n},
 		{"guest", enforced, "guest", n / 10},
 	} {
