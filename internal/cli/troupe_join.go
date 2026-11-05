@@ -164,11 +164,15 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 		return err
 	}
 
+	ttl, err := site.loaded.TroupeLeafTTL()
+	if err != nil {
+		return err
+	}
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return err
 	}
-	req := rpc.TroupeSignRequest{Troupe: name, Node: site.node, PublicKey: pub, Door: door}
+	req := rpc.TroupeSignRequest{Troupe: name, Node: site.node, PublicKey: pub, Door: door, TTLMillis: ttl.Milliseconds()}
 	if old, err := dir.Node(); err == nil {
 		if signer, ok := old.PrivateKey.(crypto.Signer); ok && len(old.Certificate) == 2 {
 			sig, err := troupe.SignRejoin(signer, name, site.node, pub, door)
@@ -217,6 +221,9 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 	snippet, err := joinConfig(site.loaded.ConfigPath, name, listen, door, o.UID, id.Principal)
 	fmt.Fprintf(o.Out, "joined troupe %s as node %s, admitted by %s; certificate until %s\n",
 		name, site.node, me.AdmittedBy, leaf.NotAfter.UTC().Format("2006-01-02 15:04Z"))
+	if granted := time.Duration(resp.TTLMillis) * time.Millisecond; granted > 0 && granted < ttl {
+		fmt.Fprintf(o.Out, "  asked for %s, granted %s: the member issues no longer\n", troupe.FormatNodeTTL(ttl), troupe.FormatNodeTTL(granted.Round(time.Hour)))
+	}
 	if err != nil {
 		fmt.Fprintf(o.Out, "could not write %s (%v); add this yourself:\n\n%s\n", site.loaded.ConfigPath, err, snippet)
 		return err

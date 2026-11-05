@@ -246,9 +246,9 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 	case "leaf":
 		if len(rest) != 1 {
-			dieUsage("troupe leaf takes one troupe: op read <ref> | figaro troupe leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir>")
+			dieUsage("troupe leaf takes one troupe: op read <ref> | figaro troupe leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]")
 		}
-		runTroupeLeaf(loaded, rest[0], leafOpts{For: iss.For, PublicKey: iss.PublicKey, Door: o.Door, Out: iss.Out})
+		runTroupeLeaf(loaded, rest[0], k.TTL, leafOpts{For: iss.For, PublicKey: iss.PublicKey, Door: o.Door, Out: iss.Out})
 	case "renewer":
 		if len(rest) != 3 {
 			dieUsage("troupe renewer takes a troupe, a node and the node whose intermediate renews it, and the root key on stdin")

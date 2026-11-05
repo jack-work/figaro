@@ -333,3 +333,27 @@ func TestTroupeJoinWritesTheDelegation(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 	require.Contains(t, none.out.String(), "lends troupe estate nothing")
 }
+
+// A joining node asks the member for its leaf_ttl, the seven-day default
+// when unset; the member decides what it grants.
+func TestTroupeJoinAsksForTheConfiguredLeafLife(t *testing.T) {
+	for cfg, want := range map[string]time.Duration{
+		"default_outfit = \"mock\"\n":                               troupe.NodeTTL,
+		"default_outfit = \"mock\"\n[troupe]\nleaf_ttl = \"30d\"\n": 30 * 24 * time.Hour,
+	} {
+		f := newFakeMember(t)
+		r := newJoinRig(t, cfg)
+		require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true})), r.out.String())
+		require.Equal(t, want.Milliseconds(), f.last.TTLMillis, cfg)
+		require.NotContains(t, r.out.String(), "granted", "a member that does not say what it granted is not reported as capping")
+	}
+}
+
+// A member that grants less than asked says so, and the join passes it on.
+func TestTroupeJoinSaysWhenTheMemberGrantedLess(t *testing.T) {
+	f := newFakeMember(t)
+	f.tamper = func(resp *rpc.TroupeSignResponse) { resp.TTLMillis = troupe.NodeTTL.Milliseconds() }
+	r := newJoinRig(t, "default_outfit = \"mock\"\n[troupe]\nleaf_ttl = \"30d\"\n")
+	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true})), r.out.String())
+	require.Contains(t, r.out.String(), "asked for 30d, granted 7d")
+}

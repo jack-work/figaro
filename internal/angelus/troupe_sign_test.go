@@ -1,13 +1,16 @@
 package angelus
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -271,4 +274,101 @@ func TestARejoinProofFromAnotherIntermediateIsRefused(t *testing.T) {
 		Rejoin: &rpc.TroupeRejoin{Chain: [][]byte{leaf.Raw, qinter.Raw}, Sig: sig}}
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
 	require.ErrorContains(t, err, "came from node-q, which is neither")
+}
+
+func (r *signRig) signFor(ttlMillis int64) (*x509.Certificate, error) {
+	leaf, _, err := r.signForNode("node-b", ttlMillis)
+	return leaf, err
+}
+
+func (r *signRig) signForNode(node string, ttlMillis int64) (*x509.Certificate, time.Duration, error) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(r.t, err)
+	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: node, PublicKey: pub, Door: node + ".lan:7443", TTLMillis: ttlMillis})
+	out, err := r.call[rpc.MethodTroupeSign](as("member"), params)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp := out.(rpc.TroupeSignResponse)
+	leaf, err := x509.ParseCertificate(resp.Chain[0])
+	require.NoError(r.t, err)
+	return leaf, time.Duration(resp.TTLMillis) * time.Millisecond, nil
+}
+
+// The issuer grants the life a node asks for up to its own max_leaf_ttl,
+// never more, and seven days when it asks for nothing.
+func TestTroupeSignGrantsTheAskedLifeUpToItsMost(t *testing.T) {
+	const day = 24 * time.Hour
+	cases := []struct {
+		name  string
+		asked time.Duration
+		most  time.Duration
+		want  time.Duration
+	}{
+		{"nothing asked", 0, 0, troupe.NodeTTL},
+		{"30d under the default most", 30 * day, 0, 30 * day},
+		{"90d capped at the default most", 90 * day, 0, troupe.MaxNodeTTL},
+		{"30d capped at this issuer's 10d", 30 * day, 10 * day, 10 * day},
+	}
+	for _, c := range cases {
+		r := newSignRig(t, true)
+		r.a.Troupe.MaxTTL = c.most
+		before := time.Now()
+		leaf, err := r.signFor(c.asked.Milliseconds())
+		require.NoError(t, err, c.name)
+		require.WithinDuration(t, before.Add(c.want), leaf.NotAfter, time.Minute, c.name)
+	}
+
+	r := newSignRig(t, true)
+	leaf, err := r.signFor(1 << 62)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(troupe.MaxNodeTTL), leaf.NotAfter, time.Minute, "ttl_ms past what a Duration holds")
+
+	_, err = r.signFor(-1)
+	require.ErrorContains(t, err, "ttl_ms -1")
+
+	leaf, _, err = r.signForNode("node-f", 1)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(troupe.MinNodeTTL), leaf.NotAfter, time.Minute, "a 1 ms ask is floored at a day")
+}
+
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	return &buf
+}
+
+// Asking past the issuer's most is granted the most, not refused, so a
+// node never falls out over a mismatch at renewal. The issuer says so once
+// a day per node, and the response carries what was granted.
+func TestAnAskPastTheMostIsGrantedTheMostAndWarnedOncePerNode(t *testing.T) {
+	const day = 24 * time.Hour
+	warned := captureWarnings(t)
+	r := newSignRig(t, true)
+	_, granted, err := r.signForNode("node-b", (60 * day).Milliseconds())
+	require.NoError(t, err)
+	require.InDelta(t, float64(troupe.MaxNodeTTL), float64(granted), float64(time.Minute))
+	_, _, err = r.signForNode("node-b", (60 * day).Milliseconds())
+	require.Error(t, err, "node-b is a member now, so a second sign needs its old key")
+	_, _, err = r.signForNode("node-c", (90 * day).Milliseconds())
+	require.NoError(t, err)
+	_, granted, err = r.signForNode("node-d", (14 * day).Milliseconds())
+	require.NoError(t, err)
+	require.InDelta(t, float64(14*day), float64(granted), float64(time.Minute))
+
+	logged := warned.String()
+	require.Contains(t, logged, "node=node-b asked_ms=5184000000 granted_ms=2592000000")
+	require.Contains(t, logged, "node=node-c asked_ms=7776000000 granted_ms=2592000000")
+	require.NotContains(t, logged, "node=node-d", "an ask under the most was warned about")
+
+	h := &handlers{}
+	now := time.Now()
+	for range 3 {
+		h.warnCapped("node-e", 60*day, 30*day, now)
+	}
+	h.warnCapped("node-e", 60*day, 30*day, now.Add(25*time.Hour))
+	require.Equal(t, 2, strings.Count(warned.String(), "node=node-e"), "the warning is once per node per day")
 }

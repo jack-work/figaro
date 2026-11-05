@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +21,9 @@ import (
 const (
 	IntermediateTTL = 365 * 24 * time.Hour
 	NodeTTL         = 7 * 24 * time.Hour
+	MaxNodeTTL      = 30 * 24 * time.Hour
+	MinNodeTTL      = 24 * time.Hour
+	longestNodeTTL  = 3650 * 24 * time.Hour
 	clockSkew       = 5 * time.Minute
 )
 
@@ -112,6 +116,51 @@ func IssueIntermediate(root ed25519.PrivateKey, rootCert *x509.Certificate, trou
 
 func IntermediateNode(c *x509.Certificate) string {
 	return c.Subject.SerialNumber
+}
+
+func GrantNodeTTL(asked, most time.Duration) time.Duration {
+	if asked <= 0 {
+		asked = NodeTTL
+	}
+	if most <= 0 {
+		most = MaxNodeTTL
+	}
+	return min(max(asked, MinNodeTTL), most)
+}
+
+func ParseNodeTTL(s string) (time.Duration, error) {
+	d, err := parseDays(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q: want days (30d) or a duration (36h)", s)
+	}
+	if d < MinNodeTTL {
+		return 0, fmt.Errorf("%q: a node certificate lives at least %s, so the hourly check renews it in time", s, FormatNodeTTL(MinNodeTTL))
+	}
+	if d > longestNodeTTL {
+		return 0, fmt.Errorf("%q: a node certificate lives at most %s", s, FormatNodeTTL(longestNodeTTL))
+	}
+	return d, nil
+}
+
+func FormatNodeTTL(d time.Duration) string {
+	if d%(24*time.Hour) == 0 {
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	}
+	return d.String()
+}
+
+func parseDays(s string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil {
+			return 0, err
+		}
+		if n > int(longestNodeTTL/(24*time.Hour)) {
+			return longestNodeTTL + 1, nil
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
 }
 
 func IssueNode(inter crypto.Signer, interCert *x509.Certificate, troupe, node string, pub crypto.PublicKey, now time.Time, ttl time.Duration) (*x509.Certificate, error) {

@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/jkauthz"
+	"github.com/jack-work/jkrpc"
 )
 
 type estateRoot struct {
@@ -53,6 +54,7 @@ type ledgerNode struct {
 	backend  *store.XwalBackend
 	stop     context.CancelFunc
 	policy   string
+	handlers func(map[string]jkrpc.HandlerFunc)
 }
 
 func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
@@ -108,6 +110,9 @@ func (n *ledgerNode) start() *peer.Ledger {
 	require.NoError(t, n.a.Policies.Reload(path))
 	require.NoError(t, federateIn(ctx, n.a, loaded, n.stateDir))
 	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: n.a, Config: loaded, Ctx: ctx}).Map
+	if n.handlers != nil {
+		n.handlers(n.a.Handlers)
+	}
 	door, ok, err := loaded.TLSDoor()
 	require.NoError(t, err)
 	require.True(t, ok)

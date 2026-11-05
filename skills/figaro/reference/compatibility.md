@@ -47,6 +47,12 @@ capability's name in the error.
    `needCapability` before it sends the feature.
 3. Anything else: bump `ProtocolVersion`, in a minor release.
 
+`troupe.sign`'s `ttl_ms` (0.54) is case 1, both ways: a renewer from before
+it ignores the request's field and grants seven days, which the asking node
+keeps and renews at a third of its life; the reply's `ttl_ms` (the life
+granted) is absent from an older member, and `troupe join` then says
+nothing about it.
+
 The audit behind this contract: `git diff` of `api/` and `sdk/` across
 every tag since v0.51.0 found only additive changes, apart from images and
 the two fold-rule fixes.

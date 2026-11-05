@@ -10,7 +10,7 @@ func registerTroupe(r *cmdkit.Router) {
 		Name:  "troupe",
 		Group: "System",
 		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> | policy show <name> | policy set <name> <file|-> | apikey mint|ls|revoke <name> ... | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>] | policy show <name> | policy set <name> <file|-> | apikey mint|ls|revoke <name> ... | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -58,7 +58,10 @@ an [auth] table naming how a human signs in.
                        sign its join and name this node its renewer (both
                        spread by the daemon), and write root.crt, node.crt
                        and joined.json for its troupe dir. Its private key
-                       never leaves it; it renews from this node
+                       never leaves it; it renews from this node. --ttl 30d
+                       (default 7d, at most [troupe] max_leaf_ttl, 30d
+                       unless set) is the leaf's life, never past the
+                       intermediate's
   renewer <name> <node> <renewer>  with the root on stdin, let
                  <renewer>'s intermediate issue <node>'s certificates.
                  A member takes a node's certificate only from the node's
@@ -100,7 +103,7 @@ an [auth] table naming how a human signs in.
 			{Long: "allow-disk", IsBool: true, Description: "intermediate --for: allow an --out that is not a tmpfs"},
 			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
 			{Long: "public-key", Description: "leaf: the node's Ed25519 public key in hex, as troupe keygen prints it"},
-			{Long: "ttl", Description: "apikey mint: how long the key lives, like 7d or 12h (default 90d, at most 365d; keep everyday keys short)"},
+			{Long: "ttl", Description: "apikey mint: how long the key lives, like 7d or 12h (default 90d, at most 365d; keep everyday keys short). leaf: the leaf's life (default 7d, at most [troupe] max_leaf_ttl)"},
 			{Long: "nodes", Description: "apikey mint: the node ids the key is good on, comma-separated, or all (default: the minting node)"},
 			{Long: "static", IsBool: true, Description: "apikey mint: print the key and a config stanza; no daemon"},
 		},

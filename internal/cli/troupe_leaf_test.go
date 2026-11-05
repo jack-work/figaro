@@ -117,11 +117,13 @@ func TestALeafRefusesWhatItCannotStandBehind(t *testing.T) {
 		root []byte
 		want string
 	}{
-		"a bad node id":    {leafOpts{For: "spain", PublicKey: good.PublicKey, Door: good.Door}, raw, "not a node id"},
-		"a short key":      {leafOpts{For: otherNode, PublicKey: "abcd", Door: good.Door}, raw, "--public-key"},
-		"a wildcard door":  {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: "0.0.0.0:7443"}, raw, "--door"},
-		"another root":     {good, other, "not troupe estate's root"},
-		"this node itself": {leafOpts{For: founder, PublicKey: good.PublicKey, Door: good.Door}, raw, "names this node"},
+		"a bad node id":     {leafOpts{For: "spain", PublicKey: good.PublicKey, Door: good.Door}, raw, "not a node id"},
+		"a short key":       {leafOpts{For: otherNode, PublicKey: "abcd", Door: good.Door}, raw, "--public-key"},
+		"a wildcard door":   {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: "0.0.0.0:7443"}, raw, "--door"},
+		"another root":      {good, other, "not troupe estate's root"},
+		"this node itself":  {leafOpts{For: founder, PublicKey: good.PublicKey, Door: good.Door}, raw, "names this node"},
+		"past the most":     {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: good.Door, TTL: 31 * 24 * time.Hour}, raw, "--ttl 31d is longer than this node issues: [troupe] max_leaf_ttl is 30d"},
+		"past its own most": {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: good.Door, TTL: 10 * 24 * time.Hour, MaxTTL: 9 * 24 * time.Hour}, raw, "max_leaf_ttl is 9d"},
 	} {
 		d := &fakeLeafDoor{}
 		c.o.Out = filepath.Join(t.TempDir(), "out")
@@ -130,5 +132,30 @@ func TestALeafRefusesWhatItCannotStandBehind(t *testing.T) {
 		require.Empty(t, d.held, name)
 		left, _ := os.ReadDir(c.o.Out)
 		require.Empty(t, left, name)
+	}
+}
+
+// --ttl sets the leaf's life; without it the leaf lives seven days.
+func TestALeafLivesForItsTTL(t *testing.T) {
+	const day = 24 * time.Hour
+	for _, c := range []struct {
+		ttl, most, want time.Duration
+	}{{0, 0, troupe.NodeTTL}, {30 * day, 0, 30 * day}, {14 * day, 14 * day, 14 * day}} {
+		state := t.TempDir()
+		raw, _ := troupeRootPEM(t)
+		_, err := troupeCreate(bytes.NewReader(raw), state, "estate", founder, time.Now())
+		require.NoError(t, err)
+		pub, _, err := ed25519.GenerateKey(nil)
+		require.NoError(t, err)
+		out := filepath.Join(t.TempDir(), "out")
+		o := leafOpts{For: otherNode, PublicKey: hex.EncodeToString(pub), Door: "10.233.1.2:7443", Out: out, TTL: c.ttl, MaxTTL: c.most}
+		now := time.Now()
+		require.NoError(t, troupeLeafFor(context.Background(), &fakeLeafDoor{}, bytes.NewReader(raw), &bytes.Buffer{}, state, "", "estate", o, now))
+		chain, err := os.ReadFile(filepath.Join(out, "node.crt"))
+		require.NoError(t, err)
+		block, _ := pem.Decode(chain)
+		leaf, err := x509.ParseCertificate(block.Bytes)
+		require.NoError(t, err)
+		require.WithinDuration(t, now.Add(c.want), leaf.NotAfter, time.Minute, "--ttl %s", c.ttl)
 	}
 }

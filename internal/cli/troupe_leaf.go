@@ -37,6 +37,8 @@ type leafOpts struct {
 	PublicKey string
 	Door      string
 	Out       string
+	TTL       time.Duration
+	MaxTTL    time.Duration
 }
 
 var leafFiles = []string{"root.crt", "node.crt", "joined.json"}
@@ -48,6 +50,10 @@ func troupeLeafFor(ctx context.Context, d leafDoor, in io.Reader, out io.Writer,
 	pub, err := parsePublicKey(o.PublicKey)
 	if err != nil {
 		return err
+	}
+	ttl := troupe.GrantNodeTTL(o.TTL, o.MaxTTL)
+	if o.TTL > ttl {
+		return fmt.Errorf("--ttl %s is longer than this node issues: [troupe] max_leaf_ttl is %s", troupe.FormatNodeTTL(o.TTL), troupe.FormatNodeTTL(ttl))
 	}
 	if host, _, err := net.SplitHostPort(o.Door); err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
 		return fmt.Errorf("--door %q is not a host:port the troupe can dial", o.Door)
@@ -92,7 +98,7 @@ func troupeLeafFor(ctx context.Context, d leafDoor, in io.Reader, out io.Writer,
 	if err := troupe.ValidOwner(owner); err != nil {
 		return fmt.Errorf("no principal to record as the node's owner: %w", err)
 	}
-	leaf, err := troupe.IssueNode(ikey, inter, name, o.For, pub, now, troupe.NodeTTL)
+	leaf, err := troupe.IssueNode(ikey, inter, name, o.For, pub, now, ttl)
 	if err != nil {
 		return err
 	}
@@ -187,9 +193,18 @@ func troupeKeygen(out io.Writer, o keyOpts) error {
 	return nil
 }
 
-func runTroupeLeaf(loaded *config.Loaded, name string, o leafOpts) {
+func runTroupeLeaf(loaded *config.Loaded, name, ttl string, o leafOpts) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe leaf reads the root key on stdin: op read <ref> | figaro troupe leaf %s --for <node-id> --public-key <hex> --door <host:port> --out <dir>", name)
+		dieUsage("troupe leaf reads the root key on stdin: op read <ref> | figaro troupe leaf %s --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]", name)
+	}
+	var err error
+	if o.MaxTTL, err = loaded.TroupeMaxLeafTTL(); err != nil {
+		die("%s", err)
+	}
+	if ttl != "" {
+		if o.TTL, err = troupe.ParseNodeTTL(ttl); err != nil {
+			dieUsage("troupe leaf --ttl %s", err)
+		}
 	}
 	interKey := ""
 	if id := loaded.TroupeIntermediateKeyCredential(); id != "" {

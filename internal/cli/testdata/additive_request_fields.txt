@@ -139,5 +139,6 @@ TroupeSignRequest.Door
 TroupeSignRequest.Node
 TroupeSignRequest.PublicKey
 TroupeSignRequest.Rejoin
+TroupeSignRequest.TTLMillis
 TroupeSignRequest.Troupe
 UnbindRequest.PID

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -37,6 +38,9 @@ type TroupeConfig struct {
 
 	IntermediateKeyCredential string `toml:"intermediate_key_credential"`
 	NodeKeyCredential         string `toml:"node_key_credential"`
+
+	LeafTTL    string `toml:"leaf_ttl"`
+	MaxLeafTTL string `toml:"max_leaf_ttl"`
 }
 
 const (
@@ -86,6 +90,25 @@ func (l *Loaded) TroupeIntermediateKeyCredential() string {
 
 func (l *Loaded) TroupeNodeKeyCredential() string {
 	return l.cfg().Troupe.NodeKeyCredential
+}
+
+func (l *Loaded) TroupeLeafTTL() (time.Duration, error) {
+	return nodeTTL("troupe.leaf_ttl", l.cfg().Troupe.LeafTTL, troupe.NodeTTL)
+}
+
+func (l *Loaded) TroupeMaxLeafTTL() (time.Duration, error) {
+	return nodeTTL("troupe.max_leaf_ttl", l.cfg().Troupe.MaxLeafTTL, troupe.MaxNodeTTL)
+}
+
+func nodeTTL(key, s string, def time.Duration) (time.Duration, error) {
+	if s == "" {
+		return def, nil
+	}
+	d, err := troupe.ParseNodeTTL(s)
+	if err != nil {
+		return 0, fmt.Errorf("%s %w", key, err)
+	}
+	return d, nil
 }
 
 func (l *Loaded) troupeKeyed(files map[string]string) (bool, error) {

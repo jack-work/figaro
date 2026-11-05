@@ -173,7 +173,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 }
 
 func renewer(ctx context.Context, m *peer.Ledger, d *peer.Dialer, door string) troupe.Renew {
-	return func(pub ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+	return func(pub ed25519.PublicKey, ttl time.Duration) (*x509.Certificate, *x509.Certificate, error) {
 		view := m.View()
 		signers := slices.DeleteFunc(view.Signers(time.Now()), func(n string) bool { return !view.MayIssue(m.Self(), n) || n == m.Self() })
 		if len(signers) == 0 {
@@ -181,7 +181,7 @@ func renewer(ctx context.Context, m *peer.Ledger, d *peer.Dialer, door string) t
 		}
 		var errs []error
 		for _, node := range signers {
-			leaf, issuer, err := renewAt(ctx, d, node, rpc.TroupeSignRequest{Troupe: m.Troupe(), Node: m.Self(), PublicKey: pub, Door: door})
+			leaf, issuer, err := renewAt(ctx, d, node, rpc.TroupeSignRequest{Troupe: m.Troupe(), Node: m.Self(), PublicKey: pub, Door: door, TTLMillis: ttl.Milliseconds()})
 			if err == nil {
 				return leaf, issuer, nil
 			}
@@ -239,6 +239,12 @@ func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, 
 		return nil, err
 	}
 	k := &troupe.Keeper{Dir: troupe.DirFor(stateDir, name), Troupe: name, Node: a.Backend.NodeID()}
+	if k.TTL, err = loaded.TroupeLeafTTL(); err != nil {
+		return nil, err
+	}
+	if k.MaxTTL, err = loaded.TroupeMaxLeafTTL(); err != nil {
+		return nil, err
+	}
 	if id := loaded.TroupeIntermediateKeyCredential(); id != "" {
 		if k.IntermediateKey, err = boot.CredentialPath(id); err != nil {
 			return nil, fmt.Errorf("troupe.intermediate_key_credential %w", err)

@@ -119,7 +119,7 @@ func newLeafRig(t *testing.T) *leafRig {
 	require.NoError(t, d.WriteRoot(root))
 	require.NoError(t, d.WriteNode(leaf, inter, nk))
 	r := &leafRig{c: c, signer: signer}
-	r.k = &Keeper{Dir: d, Troupe: "estate", Node: "node-b", Now: c.now, Renew: func(pub ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+	r.k = &Keeper{Dir: d, Troupe: "estate", Node: "node-b", Now: c.now, Renew: func(pub ed25519.PublicKey, _ time.Duration) (*x509.Certificate, *x509.Certificate, error) {
 		r.asked++
 		leaf, err := IssueNode(ik, inter, "estate", "node-b", pub, c.t, NodeTTL)
 		return leaf, inter, err
@@ -152,7 +152,7 @@ func TestALeafOnlyNodeRenewsFromASignerInTheLastThird(t *testing.T) {
 // expires there is nothing to serve and the remedy is to join again.
 func TestALeafThatCannotBeRenewedIsServedUntilItExpires(t *testing.T) {
 	r := newLeafRig(t)
-	r.k.Renew = func(ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+	r.k.Renew = func(ed25519.PublicKey, time.Duration) (*x509.Certificate, *x509.Certificate, error) {
 		return nil, nil, errors.New("node-a unreachable")
 	}
 	r.c.t = r.c.t.Add(6 * 24 * time.Hour)
@@ -175,14 +175,14 @@ func TestARenewalIsCheckedBeforeItIsKept(t *testing.T) {
 	cases := map[string]func(r *leafRig) Renew{
 		"another key": func(r *leafRig) Renew {
 			inter, ik, _ := r.signer.Dir.Intermediate()
-			return func(ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+			return func(ed25519.PublicKey, time.Duration) (*x509.Certificate, *x509.Certificate, error) {
 				leaf, err := IssueNode(ik, inter, "estate", "node-b", other.Public(), r.c.t, NodeTTL)
 				return leaf, inter, err
 			}
 		},
 		"another node": func(r *leafRig) Renew {
 			inter, ik, _ := r.signer.Dir.Intermediate()
-			return func(pub ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+			return func(pub ed25519.PublicKey, _ time.Duration) (*x509.Certificate, *x509.Certificate, error) {
 				leaf, err := IssueNode(ik, inter, "estate", "node-c", pub, r.c.t, NodeTTL)
 				return leaf, inter, err
 			}
@@ -190,7 +190,7 @@ func TestARenewalIsCheckedBeforeItIsKept(t *testing.T) {
 		"another root": func(r *leafRig) Renew {
 			stranger, _ := keeperRig(t, IntermediateTTL)
 			inter, ik, _ := stranger.Dir.Intermediate()
-			return func(pub ed25519.PublicKey) (*x509.Certificate, *x509.Certificate, error) {
+			return func(pub ed25519.PublicKey, _ time.Duration) (*x509.Certificate, *x509.Certificate, error) {
 				leaf, err := IssueNode(ik, inter, "estate", "node-b", pub, r.c.t, NodeTTL)
 				return leaf, inter, err
 			}

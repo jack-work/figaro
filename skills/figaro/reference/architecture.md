@@ -752,10 +752,16 @@ the node's troupe dir: all public, and the private key never travels. The
 node renews from its renewer for the same key and writes back only
 `node.crt`; a new key means a new credential and a new `troupe leaf`.
 
-The daemon issues its node certificate (seven days, URI SAN
+The daemon issues its node certificate (URI SAN
 `spiffe://<name>/node/<node id>`) from the intermediate at start and renews
 it, with a fresh key, once less than a third of its life is left (checked
-hourly); the node door and the dialer take each new one on the next
+hourly). Its life is `[troupe] leaf_ttl` (default `7d`, one day to ten
+years), never past the issuer's `[troupe] max_leaf_ttl` (default `30d`) or
+the intermediate's end; a leaf-only node sends its `leaf_ttl` to its
+renewer, which grants the same way, and a 30-day leaf renews from day 20.
+A longer leaf trades revocation lag for fewer renewals: it matters only for
+a stolen node key nobody revokes, since a revoked node or intermediate is
+refused whatever its leaf says; the node door and the dialer take each new one on the next
 handshake. With `[troupe] name` set, `[door.tls]` and `[peers.<id>]` may
 omit their certificate files and the peer `identity`. An expired or missing
 intermediate keeps local callers served, closes the node door and the
@@ -800,7 +806,10 @@ needs node ids bound to a long-term node key, which UUID ids are not.
 
 `troupe.sign` admits a node: a caller holding `join` on `troupe:<name>`
 sends a node id, an Ed25519 public key and a door, and a node holding an
-intermediate returns a seven-day leaf, its issuer, the root and the
+intermediate returns a leaf (the `ttl_ms` asked, seven days if none, at
+least a day, under its `max_leaf_ttl`; an ask past that is granted the most
+and logged at Warn once a day per node, and `ttl_ms` in the reply says what
+was granted, which `troupe join` reports), its issuer, the root and the
 entries, which now carry the new join. A node holding only a leaf refuses
 and names the members that can sign. A node id that is already a member is
 signed again only when the request is signed by that node's old key (its

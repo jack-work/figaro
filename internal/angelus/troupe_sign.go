@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net"
 	"slices"
 	"strings"
@@ -117,7 +118,12 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	if err != nil {
 		return nil, err
 	}
-	leaf, err := troupe.IssueNode(ikey, inter, m.Troupe(), req.Node, pub, now, troupe.NodeTTL)
+	asked := askedTTL(req.TTLMillis)
+	granted := h.angelus.Troupe.Grant(asked)
+	if asked > granted {
+		h.warnCapped(req.Node, asked, granted, now)
+	}
+	leaf, err := troupe.IssueNode(ikey, inter, m.Troupe(), req.Node, pub, now, granted)
 	if err != nil {
 		return nil, err
 	}
@@ -135,16 +141,19 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 		return nil, err
 	}
 	if renewal {
-		slog.Info("troupe: renewed a node certificate", "node", req.Node, "until", leaf.NotAfter.Format(time.RFC3339))
+		slog.Info("troupe: renewed a node certificate", "node", req.Node, "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	} else {
-		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Door, "by", authz.PrincipalText(authz.PrincipalOf(ctx)))
+		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Door, "by", authz.PrincipalText(authz.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	}
-	return rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, inter.Raw}, Root: root.Raw, Entries: troupe.Encode(m.Entries())}, nil
+	return rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, inter.Raw}, Root: root.Raw, Entries: troupe.Encode(m.Entries()), TTLMillis: leaf.NotAfter.Sub(now).Milliseconds()}, nil
 }
 
 func checkSignRequest(req rpc.TroupeSignRequest) (ed25519.PublicKey, error) {
 	if err := rpc.ValidateAriaID(req.Node); err != nil {
 		return nil, fmt.Errorf("node: %w", err)
+	}
+	if req.TTLMillis < 0 {
+		return nil, fmt.Errorf("ttl_ms %d: want a lifetime, or none for the default", req.TTLMillis)
 	}
 	if len(req.PublicKey) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("public_key: want %d bytes of Ed25519, got %d", ed25519.PublicKeySize, len(req.PublicKey))
@@ -154,6 +163,31 @@ func checkSignRequest(req rpc.TroupeSignRequest) (ed25519.PublicKey, error) {
 		return nil, fmt.Errorf("door %q is not a host:port another node can dial", req.Door)
 	}
 	return ed25519.PublicKey(req.PublicKey), nil
+}
+
+const cappedWarnEvery = 24 * time.Hour
+
+func (h *handlers) warnCapped(node string, asked, granted time.Duration, now time.Time) {
+	h.cappedMu.Lock()
+	last, seen := h.capped[node]
+	if seen && now.Sub(last) < cappedWarnEvery {
+		h.cappedMu.Unlock()
+		return
+	}
+	if h.capped == nil {
+		h.capped = map[string]time.Time{}
+	}
+	h.capped[node] = now
+	h.cappedMu.Unlock()
+	slog.Warn("troupe: a node asked for a longer leaf than this node issues; granted [troupe] max_leaf_ttl",
+		"node", node, "asked_ms", asked.Milliseconds(), "granted_ms", granted.Milliseconds())
+}
+
+func askedTTL(ms int64) time.Duration {
+	if ms > math.MaxInt64/int64(time.Millisecond) {
+		return math.MaxInt64
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 func cannotSign(m *peer.Ledger, view troupe.View, now time.Time) error {

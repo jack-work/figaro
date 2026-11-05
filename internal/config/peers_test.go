@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -189,4 +190,28 @@ func TestTheAdvertisedDoor(t *testing.T) {
 	require.Equal(t, "gluck.tail:7443", d.Advertise)
 	_, err = door("listen = \"0.0.0.0:7443\"\nadvertise = \"0.0.0.0:7443\"\n")
 	require.Error(t, err)
+}
+
+// A node asks for a seven-day leaf and issues at most thirty unless
+// [troupe] says otherwise; a lifetime it cannot honour is refused by name.
+func TestTroupeLeafLifetimes(t *testing.T) {
+	const day = 24 * time.Hour
+	unset := loadToml(t, "[troupe]\nname = \"estate\"\n")
+	if d, err := unset.TroupeLeafTTL(); err != nil || d != 7*day {
+		t.Fatalf("leaf_ttl unset: %v %v", d, err)
+	}
+	if d, err := unset.TroupeMaxLeafTTL(); err != nil || d != 30*day {
+		t.Fatalf("max_leaf_ttl unset: %v %v", d, err)
+	}
+	set := loadToml(t, "[troupe]\nname = \"estate\"\nleaf_ttl = \"30d\"\nmax_leaf_ttl = \"60d\"\n")
+	if d, err := set.TroupeLeafTTL(); err != nil || d != 30*day {
+		t.Fatalf("leaf_ttl 30d: %v %v", d, err)
+	}
+	if d, err := set.TroupeMaxLeafTTL(); err != nil || d != 60*day {
+		t.Fatalf("max_leaf_ttl 60d: %v %v", d, err)
+	}
+	_, err := loadToml(t, "[troupe]\nleaf_ttl = \"2h\"\n").TroupeLeafTTL()
+	require.ErrorContains(t, err, "troupe.leaf_ttl")
+	_, err = loadToml(t, "[troupe]\nmax_leaf_ttl = \"a month\"\n").TroupeMaxLeafTTL()
+	require.ErrorContains(t, err, "troupe.max_leaf_ttl")
 }

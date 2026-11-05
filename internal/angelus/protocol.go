@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"text/template"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -251,6 +252,9 @@ type handlers struct {
 	decider            *decide.Engine
 	fed                *federation
 	policySign         sync.Mutex
+
+	cappedMu sync.Mutex
+	capped   map[string]time.Time
 
 	reapedForm *store.Form
 	reapedMu   sync.Mutex

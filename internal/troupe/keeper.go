@@ -23,7 +23,7 @@ type Status struct {
 	Err                 error
 }
 
-type Renew func(pub ed25519.PublicKey) (leaf, issuer *x509.Certificate, err error)
+type Renew func(pub ed25519.PublicKey, ttl time.Duration) (leaf, issuer *x509.Certificate, err error)
 
 type Keeper struct {
 	Dir    Dir
@@ -31,6 +31,7 @@ type Keeper struct {
 	Node   string
 	Now    func() time.Time
 	TTL    time.Duration
+	MaxTTL time.Duration
 	Renew  Renew
 
 	IntermediateKey string
@@ -50,11 +51,15 @@ func (k *Keeper) now() time.Time {
 	return k.Now()
 }
 
-func (k *Keeper) ttl() time.Duration {
+func (k *Keeper) asked() time.Duration {
 	if k.TTL <= 0 {
 		return NodeTTL
 	}
 	return k.TTL
+}
+
+func (k *Keeper) Grant(asked time.Duration) time.Duration {
+	return GrantNodeTTL(asked, k.MaxTTL)
 }
 
 func (k *Keeper) remedy() string {
@@ -165,7 +170,7 @@ func (k *Keeper) ensure(now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("troupe %s: %w", k.Troupe, err)
 	}
-	leaf, err := IssueNode(ikey, inter, k.Troupe, k.Node, npub, now, k.ttl())
+	leaf, err := IssueNode(ikey, inter, k.Troupe, k.Node, npub, now, k.Grant(k.asked()))
 	if err != nil {
 		return fmt.Errorf("troupe %s: %w", k.Troupe, err)
 	}
@@ -225,7 +230,7 @@ func (k *Keeper) renewFromPeer(root *x509.Certificate, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	leaf, issuer, err := k.Renew(pub)
+	leaf, issuer, err := k.Renew(pub, k.asked())
 	if err != nil {
 		return err
 	}

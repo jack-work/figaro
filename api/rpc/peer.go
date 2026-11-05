@@ -49,6 +49,7 @@ type TroupeSignRequest struct {
 	PublicKey []byte        `json:"public_key"`
 	Door      string        `json:"door"`
 	Rejoin    *TroupeRejoin `json:"rejoin,omitempty"`
+	TTLMillis int64         `json:"ttl_ms,omitempty"`
 }
 
 type TroupeRejoin struct {
@@ -57,9 +58,10 @@ type TroupeRejoin struct {
 }
 
 type TroupeSignResponse struct {
-	Chain   [][]byte          `json:"chain"`
-	Root    []byte            `json:"root"`
-	Entries []json.RawMessage `json:"entries"`
+	Chain     [][]byte          `json:"chain"`
+	Root      []byte            `json:"root"`
+	Entries   []json.RawMessage `json:"entries"`
+	TTLMillis int64             `json:"ttl_ms,omitempty"`
 }
 
 type TroupeIdentityRequest struct {
