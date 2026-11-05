@@ -36,6 +36,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/jack-work/jkauthz v0.2.0
+	github.com/junegunn/fzf v0.74.5
 	github.com/zalando/go-keyring v0.2.8
 )
 
@@ -55,6 +56,7 @@ require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/junegunn/go-shellwords v0.0.0-20250127100254-2aa3b3277741 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
@@ -80,7 +82,7 @@ require (
 	github.com/jack-work/figaro/api/sandbox v0.1.0
 	github.com/jack-work/jkrpc v0.1.0
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.23
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
