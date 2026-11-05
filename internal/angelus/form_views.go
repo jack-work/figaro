@@ -21,6 +21,11 @@ var formViews = map[string]rpc.FormView{
 			{Key: "X", Label: "purge now", Method: rpc.MethodKill, Params: purgeParams, Confirm: true},
 		},
 	},
+	rpc.TroupeFormID: {
+		Rows:  []string{"*"},
+		Mount: "form",
+		Mark:  &rpc.ViewMark{Key: "self", Equals: "true"},
+	},
 	rpc.AriasFormID: {
 		Rows:    []string{"arias.*", "**.forks.*"},
 		Open:    []string{"arias", "**.forks"},

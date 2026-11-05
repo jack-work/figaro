@@ -88,6 +88,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 	h.noticeUpgrade()
 	h.startReapedForm()
+	h.startTroupeForm()
 	h.publishCatalogs()
 	methods := map[string]jkrpc.HandlerFunc{
 		rpc.MethodCreate:             h.create,
@@ -262,6 +263,7 @@ type handlers struct {
 	capped   map[string]time.Time
 
 	reapedForm *store.Form
+	troupeForm *store.Form
 	reapedMu   sync.Mutex
 
 	arias ariasForms

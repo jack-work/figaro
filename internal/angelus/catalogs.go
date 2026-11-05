@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-var catalogIDs = []string{models.FormID, rpc.ReapedFormID}
+var catalogIDs = []string{models.FormID, rpc.ReapedFormID, rpc.TroupeFormID}
 
 func isCatalogID(id string) bool {
 	for _, d := range catalogIDs {
@@ -32,6 +32,8 @@ func (h *handlers) catalog(id string) *store.Form {
 		}
 	case rpc.ReapedFormID:
 		return h.reapedForm
+	case rpc.TroupeFormID:
+		return h.troupeForm
 	}
 	return nil
 }
