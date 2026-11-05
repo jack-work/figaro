@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/decide"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/methods"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -53,27 +54,6 @@ var boxHeldKeys = []struct{ key, why string }{
 	{store.SystemReapedUntilKey, "it schedules a purge; kill writes it"},
 }
 
-func under(path, key string) bool {
-	return path == key || strings.HasPrefix(path, key+".") || strings.HasPrefix(path, key+"[")
-}
-
-func boxRefusal(path string) (string, bool) {
-	for _, k := range boxHeldKeys {
-		if under(path, k.key) {
-			return k.key + ": " + k.why, true
-		}
-	}
-	if !strings.HasPrefix(path, "system.") {
-		return "", false
-	}
-	for _, k := range boxWritable {
-		if under(path, k) {
-			return "", false
-		}
-	}
-	return path + ": a box writes only the system keys it is listed for", true
-}
-
 func callerBox(ctx context.Context) (string, bool) {
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
@@ -101,30 +81,87 @@ func changedPaths(before, after form.Snapshot) []string {
 	return out
 }
 
+type callerKeys struct {
+	owns  bool
+	boxed bool
+	box   string
+}
+
+func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
+	box, boxed := callerBox(ctx)
+	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box}
+}
+
+func (c callerKeys) deny() []rpc.KeyDeny {
+	var out []rpc.KeyDeny
+	for _, k := range form.SystemManagedKeys() {
+		out = append(out, rpc.KeyDeny{Key: k, Exact: true, Kind: rpc.DenySystemManaged,
+			Reason: "written by the harness, not by hand"})
+	}
+	if !c.owns {
+		for _, k := range form.OwnerHeldKeys() {
+			out = append(out, rpc.KeyDeny{Key: k, Kind: rpc.DenyOwnerHeld,
+				Reason: "owner-held: only the owner sets it"})
+		}
+	}
+	if !c.boxed {
+		return out
+	}
+	for _, k := range boxHeldKeys {
+		out = append(out, rpc.KeyDeny{Key: k.key, Kind: rpc.DenyBoxHeld, Reason: k.why})
+	}
+	return append(out, rpc.KeyDeny{Key: "system.", Below: true, Except: boxWritable, Kind: rpc.DenyBoxUnlisted,
+		Reason: "a box writes only the system keys it is listed for"})
+}
+
+func (c callerKeys) refusal(path string) error {
+	for _, d := range c.deny() {
+		if d.Kind == rpc.DenySystemManaged || !d.Denies(path) {
+			continue
+		}
+		switch d.Kind {
+		case rpc.DenyOwnerHeld:
+			if c.boxed {
+				return fmt.Errorf("box %s may not set %s: it is owner-held", c.box, d.Key)
+			}
+			return fmt.Errorf("%s is owner-held: only the owner sets it", d.Key)
+		case rpc.DenyBoxHeld:
+			return fmt.Errorf("box %s may not set %s: %s", c.box, d.Key, d.Reason)
+		default:
+			return fmt.Errorf("box %s may not set %s: %s", c.box, path, d.Reason)
+		}
+	}
+	return nil
+}
+
 func (h *handlers) refuseCallerKeys(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}
-	box, boxed := callerBox(ctx)
-	owns := h.callerOwns(ctx)
-	if owns && !boxed {
+	c := h.callerKeysOf(ctx)
+	if c.owns && !c.boxed {
 		return nil
 	}
 	for _, p := range changedPaths(before, before.Apply(*patch)) {
-		if key, held := form.OwnerHeld(p); held && !owns {
-			if boxed {
-				return fmt.Errorf("box %s may not set %s: it is owner-held", box, key)
-			}
-			return fmt.Errorf("%s is owner-held: only the owner sets it", key)
-		}
-		if !boxed {
-			continue
-		}
-		if why, refused := boxRefusal(p); refused {
-			return fmt.Errorf("box %s may not set %s", box, why)
+		if err := c.refusal(p); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess {
+	if isCatalogID(id) {
+		return &rpc.FormAccess{Mode: rpc.FormReadOnly}
+	}
+	var req rpc.FormRequest
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &req)
+	}
+	if req.Intrinsic != "" && req.Intrinsic != figaro.IntrinsicState {
+		return &rpc.FormAccess{Mode: rpc.FormReadOnly}
+	}
+	return &rpc.FormAccess{Mode: rpc.FormWritable, Deny: h.callerKeysOf(ctx).deny()}
 }
 
 func (h *handlers) callerOwns(ctx context.Context) bool {

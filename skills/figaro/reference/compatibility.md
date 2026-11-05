@@ -21,6 +21,12 @@ capabilities.
   second: a daemon without it would drop a replica's client and sequence
   number, so a resent edit could apply twice; against it the form pit
   opens read-only.
+- **Additive responses.** `form.access` and `form.view` mark a daemon whose
+  form reads carry `access` (what this caller may write, from the write
+  guard's own rules) and `view` (a table hint for a list in the form). An
+  older daemon sends neither and the pit behaves as before: editable per
+  form, every list nested. Neither is trusted: the daemon still refuses
+  every write it would refuse without them.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

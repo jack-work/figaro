@@ -24,7 +24,9 @@ type ariaHub struct {
 	read  func(ctx context.Context, id, method string, params json.RawMessage) (v any, ok bool, err error)
 	write func(ctx context.Context, id, method string, params json.RawMessage) (v any, ok bool, err error)
 	// dress resolves outfit names before routing: no writer below it reads a file.
-	dress func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
+	dress  func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
+	access func(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess
+	view   func(id string) *rpc.FormView
 	// kind is the node's species; a form has no agent to wake, ever.
 	kind string
 
@@ -144,6 +146,33 @@ var errDormantMethod = errors.New("aria is dormant and this method needs a live 
 // route dresses first, so an outfit that names nothing on disk fails at the
 // boundary rather than landing as a literal on a form.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	v, err := hb.routeTo(ctx, method, params)
+	if err != nil || method != rpc.MethodForm || hb.access == nil {
+		return v, err
+	}
+	var view *rpc.FormView
+	if hb.view != nil {
+		view = hb.view(hb.id)
+	}
+	return withPresentation(v, hb.access(ctx, hb.id, params), view), nil
+}
+
+func withPresentation(v any, a *rpc.FormAccess, view *rpc.FormView) any {
+	switch r := v.(type) {
+	case rpc.FormResponse:
+		r.Access, r.View = a, view
+		return r
+	case *rpc.FormResponse:
+		if r != nil {
+			c := *r
+			c.Access, c.View = a, view
+			return &c
+		}
+	}
+	return v
+}
+
+func (hb *ariaHub) routeTo(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	if hb.dress != nil {
 		dressed, err := hb.dress(ctx, method, params)
 		if err != nil {

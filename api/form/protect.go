@@ -2,6 +2,7 @@ package form
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -30,4 +31,13 @@ func CheckWritable(p Patch, privileged bool) error {
 		return nil
 	}
 	return fmt.Errorf("%s: written by the harness, not by hand", strings.Join(bad, ", "))
+}
+
+func SystemManagedKeys() []string {
+	out := make([]string, 0, len(systemManaged))
+	for k := range systemManaged {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

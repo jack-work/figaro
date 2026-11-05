@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"github.com/jack-work/figaro/api/rpc"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -90,7 +91,7 @@ func TestHeldKeysAreRefusedAndListedKeysAreNot(t *testing.T) {
 			t.Errorf("%s is held but writable", k.key)
 		}
 		for _, w := range boxWritable {
-			if under(k.key, w) || under(w, k.key) {
+			if rpc.KeyUnder(k.key, w) || rpc.KeyUnder(w, k.key) {
 				t.Errorf("%s is both held and listed under %s", k.key, w)
 			}
 		}
@@ -110,7 +111,7 @@ func TestHeldKeysAreRefusedAndListedKeysAreNot(t *testing.T) {
 func TestALifetimeIsNeverBoxWritable(t *testing.T) {
 	for _, key := range []string{"system.ttl", "system.keepalive"} {
 		for _, w := range boxWritable {
-			if under(key, w) || under(w, key) {
+			if rpc.KeyUnder(key, w) || rpc.KeyUnder(w, key) {
 				t.Errorf("%s is box-writable under %s", key, w)
 			}
 		}
@@ -123,9 +124,18 @@ func TestALifetimeIsNeverBoxWritable(t *testing.T) {
 func TestOwnerHeldKeysAreNeverBoxWritable(t *testing.T) {
 	for _, key := range form.OwnerHeldKeys() {
 		for _, w := range boxWritable {
-			if under(key, w) || under(w, key) {
+			if rpc.KeyUnder(key, w) || rpc.KeyUnder(w, key) {
 				t.Errorf("owner-held %s is box-writable under %s", key, w)
 			}
 		}
 	}
+}
+
+// boxRefusal asks the box rules alone, as an owner's box would meet them.
+func boxRefusal(path string) (string, bool) {
+	err := callerKeys{owns: true, boxed: true, box: "b"}.refusal(path)
+	if err == nil {
+		return "", false
+	}
+	return err.Error(), true
 }

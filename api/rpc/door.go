@@ -8,8 +8,10 @@ const ProtocolVersion = 1
 type Capability string
 
 const (
-	CapQuaImages Capability = "qua.images"
-	CapFormSeq   Capability = "form.seq"
+	CapQuaImages  Capability = "qua.images"
+	CapFormSeq    Capability = "form.seq"
+	CapFormAccess Capability = "form.access"
+	CapFormView   Capability = "form.view"
 )
 
 type PrincipalKind string

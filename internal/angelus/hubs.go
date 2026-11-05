@@ -74,6 +74,8 @@ func (h *handlers) hubFor(id string) *ariaHub {
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub
 	hb.dress = h.dressParams
+	hb.access = h.formAccess
+	hb.view = formViewOf
 	if h.angelus.Backend != nil {
 		if n, ok := h.angelus.Backend.Node(id); ok {
 			hb.kind = n.Kind

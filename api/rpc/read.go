@@ -37,6 +37,8 @@ type FormResponse struct {
 	Patches     []FormVersionedPatch `json:"patches,omitempty"`
 	LastSeq     uint64               `json:"last_seq,omitempty"`
 	Origin      string               `json:"origin,omitempty"`
+	Access      *FormAccess          `json:"access,omitempty"`
+	View        *FormView            `json:"view,omitempty"`
 }
 
 // ReadRequest is a keyset read; the answer carries the coordinate to continue
