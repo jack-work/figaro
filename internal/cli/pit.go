@@ -35,6 +35,7 @@ type pitRow struct {
 	// note is drawn at full strength on the selected row: dim on a wash would
 	// not read.
 	note string
+	hint string
 	// tone cannot ride in the text: pitText strips escapes, and must.
 	tone    pitTone
 	marks   []int

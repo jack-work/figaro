@@ -205,7 +205,22 @@ func newFormRoot(snap form.Snapshot) *formNode {
 }
 
 func flattenGuided(n *formNode, open map[string]bool, out []*formNode, cont string, top bool) []*formNode {
+	w := guideWalk{open: open, out: out}
+	w.walk(n, cont, top, nil, nil)
+	return w.out
+}
+
+type guideWalk struct {
+	open  map[string]bool
+	out   []*formNode
+	shape *viewShape
+}
+
+func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, row *viewRowKey) {
 	kids := n.kids()
+	if w.shape != nil {
+		kids = w.shape.order(labels, kids, w.open)
+	}
 	pad := 0
 	for _, c := range kids {
 		if c.leaf() {
@@ -215,7 +230,7 @@ func flattenGuided(n *formNode, open map[string]bool, out []*formNode, cont stri
 	for i, c := range kids {
 		last := i == len(kids)-1
 		c.guided, c.pad = true, pad
-		c.open = !c.leaf() && open[c.path]
+		c.open = !c.leaf() && w.open[c.path]
 		switch {
 		case top:
 			c.guide, c.cont = "", ""
@@ -227,12 +242,16 @@ func flattenGuided(n *formNode, open map[string]bool, out []*formNode, cont stri
 		if c.leaf() && c.label != "" && displayWidth(c.label) > labelPadMax {
 			c.pad = 0
 		}
-		out = append(out, c)
+		w.out = append(w.out, c)
+		segs := append(labels[:len(labels):len(labels)], c.label)
+		under := row
+		if w.shape != nil {
+			under = w.shape.note(c, segs, row)
+		}
 		if c.open {
-			out = flattenGuided(c, open, out, c.cont, false)
+			w.walk(c, c.cont, false, segs, under)
 		}
 	}
-	return out
 }
 
 const labelPadMax = 24

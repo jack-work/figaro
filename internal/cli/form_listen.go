@@ -208,6 +208,7 @@ type formView struct {
 	act       func(rpc.ViewAction)
 	subject   func() form.Snapshot
 	rowKeys   map[string]viewRowKey
+	seeded    map[string]bool
 	armed     string
 	search    *formSearch
 }
@@ -329,19 +330,25 @@ func (v *formView) Items(width int) []pitRow {
 		v.rev++
 		return v.items
 	}
+	var shape *viewShape
 	if v.view != nil {
-		if list := formChild(v.root, v.view.List); list != nil && !list.leaf() {
-			var out []pitRow
-			if v.notice != "" {
-				out = append(out, staticRow(clipLine(v.notice, width)))
-			}
-			out = append(out, v.tableItems(list, width)...)
-			v.items, v.itemsKey = out, key
-			v.rev++
-			return out
+		if v.seeded == nil {
+			v.seeded = map[string]bool{}
+		}
+		shape = &viewShape{hint: v.view, seeded: v.seeded, keys: map[string]viewRowKey{}, heads: map[string]viewRowKey{}}
+		if v.subject != nil {
+			shape.subject = v.subject()
 		}
 	}
-	v.rows = flattenGuided(v.root, v.open, v.rows[:0], "", true)
+	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape}
+	w.walk(v.root, "", true, nil, nil)
+	v.rows = w.out
+	v.rowKeys = nil
+	hint := ""
+	if shape != nil {
+		v.rowKeys = shape.keys
+		hint = shape.actionHint()
+	}
 
 	out := make([]pitRow, 0, len(v.rows)+1)
 	if v.notice != "" {
@@ -354,6 +361,12 @@ func (v *formView) Items(width int) []pitRow {
 			row.note = "pending"
 		} else if n.leaf() && v.readOnlyLocked(n.path) {
 			row.note = "read-only"
+		}
+		if k, ok := shape.head(n.path); ok {
+			if shape.marked(n, k) {
+				row.note = "●"
+			}
+			row.hint = hint
 		}
 		out = append(out, row)
 		if !n.leaf() || !v.open[n.path] {

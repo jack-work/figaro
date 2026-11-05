@@ -12,14 +12,8 @@ var purgeParams, _ = json.Marshal(rpc.KillRequest{Recursive: true, Now: true})
 
 var formViews = map[string]rpc.FormView{
 	rpc.ReapedFormID: {
-		List: "items",
-		Columns: []rpc.ViewColumn{
-			{Key: "", Title: "root"},
-			{Key: "mantra", Shrink: 1},
-			{Key: "nodes", Title: "arias", Format: rpc.FormatCount, Right: true},
-			{Key: "at", Title: "reaped", Format: rpc.FormatTime},
-			{Key: "purge_at", Title: "purged", Format: rpc.FormatTime},
-		},
+		Rows: []string{"items.*"},
+		Open: []string{"items"},
 		Sort: "purge_at",
 		Actions: []rpc.ViewAction{
 			{Key: "r", Label: "restore", Method: rpc.MethodReapedRestore},
@@ -27,17 +21,8 @@ var formViews = map[string]rpc.FormView{
 		},
 	},
 	models.FormID: {
-		Rows: "models",
-		GroupColumns: []rpc.ViewColumn{
-			{Key: "refreshed_at", Title: "listed", Format: rpc.FormatAge},
-			{Key: "error", Shrink: 1, Alert: true},
-		},
-		Columns: []rpc.ViewColumn{
-			{Key: "", Title: "model", Shrink: 1},
-			{Key: "name", Shrink: 2},
-			{Key: "context.default", Title: "context", Right: true},
-			{Key: "max_output", Title: "max out", Right: true},
-		},
+		Rows: []string{"*.models.*"},
+		Open: []string{"*", "*.models"},
 		Skip: "hidden",
 		Mark: &rpc.ViewMark{GroupSubject: models.ProviderKey, RowSubject: models.ModelKey},
 		Actions: []rpc.ViewAction{

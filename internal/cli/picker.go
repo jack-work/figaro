@@ -311,6 +311,9 @@ func (p *picker) lines(id pitID, w, h int) []string {
 				text += "  " + pitGray(pitText(note))
 			}
 		}
+		if hint := p.rows[i].hint; hint != "" && i == p.cursor {
+			text += "  " + pitText(hint)
+		}
 		row := clipToWidth(text, w)
 		if i == p.cursor {
 			out = append(out, pitSelected(row, p.rows[i].tone))

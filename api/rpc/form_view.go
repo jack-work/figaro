@@ -1,34 +1,17 @@
 package rpc
 
-import "encoding/json"
-
-type FormView struct {
-	List         string       `json:"list"`
-	Rows         string       `json:"rows,omitempty"`
-	GroupColumns []ViewColumn `json:"group_columns,omitempty"`
-	Columns      []ViewColumn `json:"columns,omitempty"`
-	Sort         string       `json:"sort,omitempty"`
-	Skip         string       `json:"skip,omitempty"`
-	Mark         *ViewMark    `json:"mark,omitempty"`
-	Actions      []ViewAction `json:"actions,omitempty"`
-}
-
-type ViewFormat string
-
-const (
-	FormatValue ViewFormat = ""
-	FormatCount ViewFormat = "count"
-	FormatTime  ViewFormat = "time"
-	FormatAge   ViewFormat = "age"
+import (
+	"encoding/json"
+	"strings"
 )
 
-type ViewColumn struct {
-	Key    string     `json:"key"`
-	Title  string     `json:"title,omitempty"`
-	Right  bool       `json:"right,omitempty"`
-	Shrink int        `json:"shrink,omitempty"`
-	Format ViewFormat `json:"format,omitempty"`
-	Alert  bool       `json:"alert,omitempty"`
+type FormView struct {
+	Rows    []string     `json:"rows"`
+	Open    []string     `json:"open,omitempty"`
+	Sort    string       `json:"sort,omitempty"`
+	Skip    string       `json:"skip,omitempty"`
+	Mark    *ViewMark    `json:"mark,omitempty"`
+	Actions []ViewAction `json:"actions,omitempty"`
 }
 
 type ViewMark struct {
@@ -60,4 +43,44 @@ type ViewAction struct {
 	Confirm bool               `json:"confirm,omitempty"`
 	Target  ViewTarget         `json:"target,omitempty"`
 	Args    map[string]ViewArg `json:"args,omitempty"`
+}
+
+func MatchPath(patterns []string, segs []string) (group string, ok bool) {
+	for _, p := range patterns {
+		pat := strings.Split(p, ".")
+		if g, ok := matchSegs(pat, segs, ""); ok {
+			if strings.Count(p, "*") < 2 || pat[len(pat)-1] != "*" || strings.Contains(p, "**") {
+				g = ""
+			}
+			return g, true
+		}
+	}
+	return "", false
+}
+
+func matchSegs(pat, segs []string, group string) (string, bool) {
+	if len(pat) == 0 {
+		return group, len(segs) == 0
+	}
+	switch pat[0] {
+	case "**":
+		for n := 1; n <= len(segs); n++ {
+			if g, ok := matchSegs(pat[1:], segs[n:], group); ok {
+				return g, true
+			}
+		}
+		return "", false
+	case "*":
+		if len(segs) == 0 {
+			return "", false
+		}
+		if group == "" {
+			group = segs[0]
+		}
+		return matchSegs(pat[1:], segs[1:], group)
+	}
+	if len(segs) == 0 || segs[0] != pat[0] {
+		return "", false
+	}
+	return matchSegs(pat[1:], segs[1:], group)
 }

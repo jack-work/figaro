@@ -25,41 +25,49 @@ func reapedShaped() *fakeFormSource {
 }
 
 var reapedView = &rpc.FormView{
-	List: "items",
-	Columns: []rpc.ViewColumn{
-		{Key: "", Title: "root"},
-		{Key: "mantra", Shrink: 1},
-		{Key: "nodes", Title: "n", Format: rpc.FormatCount, Right: true},
-	},
+	Rows: []string{"items.*"},
+	Open: []string{"items"},
 	Sort: "purge_at",
 	Mark: &rpc.ViewMark{Key: "mantra", Equals: "second"},
 }
 
-// A form with a view hint draws its list as a table: a header, one row per
-// child in the hint's order, columns read under each child, and the mark.
-func TestAViewHintDrawsTheListAsATable(t *testing.T) {
+// A view hint orders and marks the rows of a catalog; the form view still
+// draws them: guides, aligned values and peeks, never a table.
+func TestAViewHintOrdersRowsTheFormViewDraws(t *testing.T) {
 	v := &formView{src: reapedShaped(), open: map[string]bool{}}
 	v.setView(reapedView)
 	rows := v.Items(80)
-	if len(rows) != 3 {
-		t.Fatalf("got %d rows, want a header and two: %#v", len(rows), rows)
+	var ids []string
+	for _, r := range rows {
+		ids = append(ids, r.id)
+		if _, drawn := r.textFrom.(*formNode); !drawn {
+			t.Errorf("row %q is not drawn by the form view: %q", r.id, r.str())
+		}
 	}
-	if !strings.Contains(rows[0].str(), "root") || !strings.Contains(rows[0].str(), "mantra") || rows[0].selectable() {
-		t.Errorf("header = %q (selectable %v)", rows[0].str(), rows[0].selectable())
+	if got := strings.Join(ids, ","); got != "items,items.n2,items.n1,note" {
+		t.Fatalf("rows = %s, want items open by default and its rows by purge_at", got)
 	}
-	if rows[1].id != "items.n2" || rows[2].id != "items.n1" {
-		t.Errorf("order = %s, %s; want items.n2 then items.n1 (purge_at, not key order)", rows[1].id, rows[2].id)
+	if !strings.HasPrefix(rows[1].str(), "├─ n2 (3)") || !strings.HasPrefix(rows[2].str(), "└─ n1 (3)") {
+		t.Errorf("rows are not drawn as nested branches:\n%s\n%s", rows[1].str(), rows[2].str())
 	}
-	if got := rows[1].str(); !strings.Contains(got, "●") || !strings.Contains(got, "second") || !strings.Contains(got, "2") {
-		t.Errorf("marked row = %q", got)
+	if rows[1].note != "●" || rows[2].note != "" {
+		t.Errorf("mark notes = %q, %q; want only the row whose mantra is second", rows[1].note, rows[2].note)
 	}
-	if strings.Contains(rows[2].str(), "●") {
-		t.Errorf("unmarked row carries the mark: %q", rows[2].str())
+}
+
+// A branch the hint opens by default stays shut once the reader shuts it.
+func TestAReaderClosesABranchTheHintOpened(t *testing.T) {
+	v := &formView{src: reapedShaped(), open: map[string]bool{}}
+	v.setView(reapedView)
+	v.Items(80)
+	v.Activate("items")
+	if rows := v.Items(80); formRowText(rows, "items.n1") != "" {
+		t.Error("items reopened itself after the reader closed it")
 	}
 }
 
 // Opening a row shows its subtree nested, and its leaves stay editable.
-func TestAnOpenedTableRowNestsItsKeys(t *testing.T) {
+func TestAnOpenedRowNestsItsKeys(t *testing.T) {
 	src := reapedShaped()
 	v := &formView{src: src, open: map[string]bool{}}
 	v.setView(reapedView)
@@ -74,18 +82,18 @@ func TestAnOpenedTableRowNestsItsKeys(t *testing.T) {
 	}
 }
 
-// Without a hint, or with one naming a path the form lacks, the pit nests.
-func TestAViewOnAMissingListFallsBackToNesting(t *testing.T) {
+// A hint naming rows the form lacks changes nothing: the pit nests as ever.
+func TestAViewOnMissingRowsFallsBackToNesting(t *testing.T) {
 	v := &formView{src: reapedShaped(), open: map[string]bool{}}
-	v.setView(&rpc.FormView{List: "nowhere"})
+	v.setView(&rpc.FormView{Rows: []string{"nowhere.*"}})
 	if formRowText(v.Items(80), "items") == "" {
-		t.Error("a view naming no list hid the form")
+		t.Error("a view naming no rows hid the form")
 	}
 }
 
 var actingView = &rpc.FormView{
-	List:    "items",
-	Columns: []rpc.ViewColumn{{Key: "", Title: "root"}},
+	Rows: []string{"items.*"},
+	Open: []string{"items"},
 	Actions: []rpc.ViewAction{
 		{Key: "r", Label: "restore", Method: rpc.MethodReapedRestore},
 		{Key: "X", Label: "purge now", Method: rpc.MethodKill, Confirm: true},
@@ -107,9 +115,11 @@ func TestAViewKeyRunsItsAction(t *testing.T) {
 	if len(got) != 2 || got[0] != rpc.MethodReapedRestore || got[1] != rpc.MethodKill {
 		t.Errorf("actions = %v", got)
 	}
-	rows := v.Items(80)
-	if last := rows[len(rows)-1].str(); !strings.Contains(last, "r restore") || !strings.Contains(last, "X purge now") {
-		t.Errorf("the action hints are not shown: %q", last)
+	for _, r := range v.Items(80) {
+		head := r.id == "items.n1" || r.id == "items.n2"
+		if got := r.hint; head != (got == "r restore · X purge now") {
+			t.Errorf("%s carries hint %q", r.id, got)
+		}
 	}
 }
 
@@ -149,7 +159,7 @@ func TestAConfirmedActionRunsOnTheSecondPress(t *testing.T) {
 	}
 }
 
-func tableTranscript(t *testing.T, v *formView) *transcript {
+func shapedTranscript(t *testing.T, v *formView) *transcript {
 	t.Helper()
 	tr := newTranscript(io.Discard, 100, 30, ldrender.NodeText{}, aria.NewClient(), "aria1234", time.Unix(0, 0))
 	tr.enter()
@@ -165,7 +175,7 @@ func TestAViewActionKeyBeatsThePitsOwnBinding(t *testing.T) {
 	v.setView(actingView)
 	var got []string
 	v.act = func(a rpc.ViewAction) { got = append(got, a.Label) }
-	tr := tableTranscript(t, v)
+	tr := shapedTranscript(t, v)
 	before := len(tr.pit.list().rows)
 	tr.key('X')
 	if len(got) != 1 || got[0] != "purge now" {
@@ -181,7 +191,7 @@ func TestAViewActionKeyBeatsThePitsOwnBinding(t *testing.T) {
 func TestDropKeysLeaveAFormPitsRowsAlone(t *testing.T) {
 	v := &formView{src: reapedShaped(), open: map[string]bool{}}
 	v.setView(reapedView)
-	tr := tableTranscript(t, v)
+	tr := shapedTranscript(t, v)
 	tr.dropRow = func(pit, id, next string) { t.Errorf("a drop was sent for %s", id) }
 	before := len(tr.pit.list().rows)
 	tr.key('x')
@@ -192,17 +202,8 @@ func TestDropKeysLeaveAFormPitsRowsAlone(t *testing.T) {
 }
 
 var modelsHint = &rpc.FormView{
-	Rows: "models",
-	GroupColumns: []rpc.ViewColumn{
-		{Key: "refreshed_at", Title: "listed", Format: rpc.FormatAge},
-		{Key: "error", Shrink: 1, Alert: true},
-	},
-	Columns: []rpc.ViewColumn{
-		{Key: "", Title: "model", Shrink: 1},
-		{Key: "name", Shrink: 2},
-		{Key: "context.default", Title: "context", Right: true},
-		{Key: "max_output", Title: "max out", Right: true},
-	},
+	Rows: []string{"*.models.*"},
+	Open: []string{"*", "*.models"},
 	Skip: "hidden",
 	Mark: &rpc.ViewMark{GroupSubject: "system.provider", RowSubject: "system.model"},
 	Actions: []rpc.ViewAction{
@@ -211,7 +212,7 @@ var modelsHint = &rpc.FormView{
 	},
 }
 
-func modelsTable(t *testing.T, catalog form.Snapshot, provider, model string) *formView {
+func modelsView(t *testing.T, catalog form.Snapshot, provider, model string) *formView {
 	t.Helper()
 	v := &formView{src: &fakeFormSource{snap: catalog}, open: map[string]bool{}}
 	v.setView(modelsHint)
@@ -220,68 +221,27 @@ func modelsTable(t *testing.T, catalog form.Snapshot, provider, model string) *f
 	return v
 }
 
-// @models reads as one table grouped by provider: a heading per provider,
-// its listed models beneath, hidden ones left out, columns lined up across
-// every group.
-func TestTheModelsCatalogReadsAsATableGroupedByProvider(t *testing.T) {
-	v := modelsTable(t, modelsFixture(t), "copilot", "claude-opus-5")
-	rows := v.Items(120)
-	var headings, models []string
-	for _, r := range rows {
-		switch {
-		case r.selectable():
-			models = append(models, r.id)
-		case strings.HasPrefix(r.str(), "anthropic") || strings.HasPrefix(r.str(), "copilot"):
-			headings = append(headings, strings.Fields(r.str())[0])
+// @models is the form's own nesting: each provider opens on its models, the
+// hidden ones left out, and only the subject's own provider and model carry
+// the mark.
+func TestTheModelsCatalogNestsByProviderAndMarksTheSubjectsChoice(t *testing.T) {
+	v := modelsView(t, modelsFixture(t), "copilot", "claude-opus-5")
+	var heads []string
+	for _, r := range v.Items(120) {
+		if _, drawn := r.textFrom.(*formNode); !drawn && r.selectable() && !strings.Contains(r.id, "\x00") {
+			t.Errorf("row %q is not drawn by the form view", r.id)
 		}
-	}
-	if strings.Join(headings, ",") != "anthropic,copilot" {
-		t.Errorf("headings = %v", headings)
-	}
-	want := []string{"anthropic.models.claude-opus-5", "anthropic.models.claude-sonnet-4-5", "copilot.models.claude-opus-5", "copilot.models.gpt-5"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
-		t.Errorf("rows = %v, want %v (internal-router is hidden)", models, want)
-	}
-	col := -1
-	for _, r := range rows {
-		if !r.selectable() {
+		if r.hint == "" {
 			continue
 		}
-		at := strings.Index(r.str(), "k ")
-		if col == -1 {
-			col = at
-		}
-		if at != col && at >= 0 {
-			t.Errorf("columns drift across groups: %q", r.str())
+		heads = append(heads, r.id)
+		if want := r.id == "copilot.models.claude-opus-5"; (r.note == "●") != want {
+			t.Errorf("%s marked=%v, want %v", r.id, r.note == "●", want)
 		}
 	}
-}
-
-// The mark follows the subject's own provider and model: the same model id
-// under another provider is not the choice.
-func TestTheModelsMarkIsTheSubjectsChoice(t *testing.T) {
-	v := modelsTable(t, modelsFixture(t), "copilot", "claude-opus-5")
-	for _, r := range v.Items(120) {
-		marked := strings.Contains(r.str(), "●")
-		if want := r.id == "copilot.models.claude-opus-5"; marked != want {
-			t.Errorf("%s marked=%v, want %v", r.id, marked, want)
-		}
-	}
-}
-
-func TestAFailedProviderHeadingIsAnAlert(t *testing.T) {
-	snap := catalogFixture(t, map[string]models.Provider{
-		"anthropic": {Error: "no credential"},
-		"copilot":   {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{"gpt-5": {Source: models.SourceAPI}}},
-	})
-	v := modelsTable(t, snap, "", "")
-	for _, r := range v.Items(120) {
-		if strings.HasPrefix(r.str(), "anthropic") && r.tone != toneError {
-			t.Errorf("a failed provider's heading is not an alert: %q", r.str())
-		}
-		if strings.HasPrefix(r.str(), "copilot") && r.tone != toneNone {
-			t.Errorf("a listed provider's heading is an alert: %q", r.str())
-		}
+	want := []string{"anthropic.models.claude-opus-5", "anthropic.models.claude-sonnet-4-5", "copilot.models.claude-opus-5", "copilot.models.gpt-5"}
+	if strings.Join(heads, ",") != strings.Join(want, ",") {
+		t.Errorf("model rows = %v, want %v (internal-router is hidden)", heads, want)
 	}
 }
 
@@ -293,7 +253,7 @@ func TestEnterOnAModelPicksItForTheSubject(t *testing.T) {
 			"x-ai/grok-4.1": {Source: models.SourceAPI},
 		}},
 	})
-	v := modelsTable(t, snap, "", "")
+	v := modelsView(t, snap, "", "")
 	v.Items(120)
 	if !v.OwnsKey('\r') || !v.OwnsKey('\n') {
 		t.Fatal("Enter is not the view's")
@@ -331,7 +291,7 @@ func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
 	})
 	var out countingWriter
 	in, lt := navInput(t, &out, true)
-	v := modelsTable(t, snap, "", "")
+	v := modelsView(t, snap, "", "")
 	type call struct {
 		method, target string
 		req            rpc.ModelsPickRequest
@@ -349,6 +309,9 @@ func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
 	}
 	lt.tr.showLivePit("models", v, false)
 	lt.tr.pit.lines(100, 20)
+	if !lt.tr.pit.focus("openrouter.models.x-ai/grok-4.1") {
+		t.Fatal("the model row is not in the pit")
+	}
 
 	done := make(chan struct{})
 	go func() {
