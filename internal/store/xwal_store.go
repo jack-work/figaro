@@ -1112,7 +1112,9 @@ func (s *XwalStore) collectStump(name string) {
 		}
 		if err := s.trunks.RemoveStump(name); err != nil {
 			slog.Warn("collect outfit version", "outfit", name, "err", err)
+			return
 		}
+		slog.Info("collected outfit version", "stump", name)
 		return
 	}
 }
