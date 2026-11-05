@@ -105,6 +105,16 @@ type formNode struct {
 	row       string
 	rowWidth  int
 	width     int
+
+	guided   bool
+	guide    string
+	cont     string
+	pad      int
+	open     bool
+	rowGuide string
+	rowPad   int
+	rowOpen  bool
+	tail     int
 }
 
 func (n *formNode) leaf() bool { return !n.branch && len(n.children) == 0 }
@@ -167,10 +177,20 @@ func (n *formNode) kids() []*formNode {
 }
 
 func (n *formNode) rendered(width int) string {
-	if n.rowWidth != width {
-		n.row, n.rowWidth = renderFormRow(n, width, false), width
+	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open {
+		n.row, n.tail = renderTreeRow(n, width)
+		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen = width, n.guide, n.pad, n.open
 	}
 	return n.row
+}
+
+func (n *formNode) rowDims() (lead, tail int) { return len(n.lead()), n.tail }
+
+func (n *formNode) lead() string {
+	if n.guided {
+		return n.guide
+	}
+	return strings.Repeat("  ", max(n.depth-1, 0))
 }
 
 func (n *formNode) yankText() string { return yankFormNode(n) }
@@ -184,6 +204,39 @@ func newFormRoot(snap form.Snapshot) *formNode {
 	return root
 }
 
+func flattenGuided(n *formNode, open map[string]bool, out []*formNode, cont string, top bool) []*formNode {
+	kids := n.kids()
+	pad := 0
+	for _, c := range kids {
+		if c.leaf() {
+			pad = max(pad, min(displayWidth(c.label), labelPadMax))
+		}
+	}
+	for i, c := range kids {
+		last := i == len(kids)-1
+		c.guided, c.pad = true, pad
+		c.open = !c.leaf() && open[c.path]
+		switch {
+		case top:
+			c.guide, c.cont = "", ""
+		case last:
+			c.guide, c.cont = cont+"└─ ", cont+"   "
+		default:
+			c.guide, c.cont = cont+"├─ ", cont+"│  "
+		}
+		if c.leaf() && c.label != "" && displayWidth(c.label) > labelPadMax {
+			c.pad = 0
+		}
+		out = append(out, c)
+		if c.open {
+			out = flattenGuided(c, open, out, c.cont, false)
+		}
+	}
+	return out
+}
+
+const labelPadMax = 24
+
 func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*formNode {
 	for _, c := range n.kids() {
 		out = append(out, c)
@@ -194,8 +247,84 @@ func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*form
 	return out
 }
 
+func renderTreeRow(n *formNode, width int) (string, int) {
+	line := n.lead() + n.label
+	tail := 0
+	switch {
+	case n.leaf():
+		line += ": " + strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + formValuePreview(n.value)
+	case n.open:
+		line += fmt.Sprintf(" (%d)", n.size())
+	default:
+		if inline, ok := inlineBranch(n); ok {
+			line += ": " + inline
+			break
+		}
+		line += fmt.Sprintf(" (%d)", n.size())
+		if peek := branchPeek(n); peek != "" {
+			line += "  "
+			tail = len(line)
+			line += peek
+		}
+	}
+	line = clipToWidthEllipsis(line, width)
+	if tail >= len(line) {
+		tail = 0
+	}
+	return line, tail
+}
+
+const inlineMax = 3
+
+func inlineBranch(n *formNode) (string, bool) {
+	if !n.node.Valid() || n.size() == 0 || n.size() > inlineMax {
+		return "", false
+	}
+	var parts []string
+	for c := range n.node.Children() {
+		if !c.Leaf() {
+			return "", false
+		}
+		raw := c.Value().Raw()
+		if t := bytes.TrimSpace(raw); len(t) > 0 && (t[0] == '{' || t[0] == '[') {
+			return "", false
+		}
+		parts = append(parts, c.Key()+": "+formValuePreview(raw))
+	}
+	text := "{" + strings.Join(parts, ", ") + "}"
+	if displayWidth(text) > 60 {
+		return "", false
+	}
+	return text, true
+}
+
+const peekKeys = 4
+
+func branchPeek(n *formNode) string {
+	if !n.node.Valid() {
+		return ""
+	}
+	var names []string
+	more := false
+	for c := range n.node.Children() {
+		if len(names) == peekKeys {
+			more = true
+			break
+		}
+		names = append(names, c.Key())
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	text := strings.Join(names, " · ")
+	if more {
+		text += " …"
+	}
+	return text
+}
+
 func renderFormRow(n *formNode, width int, selected bool) string {
-	indent := strings.Repeat("  ", n.depth-1)
+	indent := n.lead()
 	line := indent + n.label
 	if n.leaf() {
 		line += ": " + formValuePreview(n.value)

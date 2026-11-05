@@ -341,7 +341,7 @@ func (v *formView) Items(width int) []pitRow {
 			return out
 		}
 	}
-	v.rows = flattenFormTree(v.root, v.open, v.rows[:0])
+	v.rows = flattenGuided(v.root, v.open, v.rows[:0], "", true)
 
 	out := make([]pitRow, 0, len(v.rows)+1)
 	if v.notice != "" {
@@ -359,8 +359,8 @@ func (v *formView) Items(width int) []pitRow {
 		if !n.leaf() || !v.open[n.path] {
 			continue
 		}
-		indent := strings.Repeat("  ", n.depth)
-		for i, line := range v.wrappedValue(n, width-len(indent)-2) {
+		indent := n.cont + "   "
+		for i, line := range v.wrappedValue(n, width-displayWidth(indent)-2) {
 			out = append(out, pitRow{
 				text:     indent + line,
 				yankFrom: n,

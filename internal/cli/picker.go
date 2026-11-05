@@ -300,7 +300,8 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		body := p.rows[i].str()
 		clean := pitText(body)
 		if clean == body {
-			clean = markBytes(clean, p.rows[i].marks)
+			lead, tail := p.rows[i].dims()
+			clean = paintRow(clean, lead, tail, p.rows[i].marks)
 		}
 		text := prefix + clean
 		if note := p.rows[i].note; note != "" {

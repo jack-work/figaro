@@ -36,8 +36,9 @@ type pitRow struct {
 	// not read.
 	note string
 	// tone cannot ride in the text: pitText strips escapes, and must.
-	tone  pitTone
-	marks []int
+	tone    pitTone
+	marks   []int
+	dimLead int
 }
 
 type pitTone uint8
@@ -245,8 +246,15 @@ func (d *pit) lines(w, room int) []string {
 
 func pitGray(s string) string { return term.Label(s) }
 
-func markBytes(s string, marks []int) string {
-	if len(marks) == 0 || !term.Enabled() {
+func (r pitRow) dims() (lead, tail int) {
+	if d, ok := r.textFrom.(interface{ rowDims() (int, int) }); ok {
+		return d.rowDims()
+	}
+	return r.dimLead, 0
+}
+
+func paintRow(s string, lead, tail int, marks []int) string {
+	if (lead == 0 && tail == 0 && len(marks) == 0) || !term.Enabled() {
 		return s
 	}
 	on := make(map[int]bool, len(marks))
@@ -255,21 +263,29 @@ func markBytes(s string, marks []int) string {
 			on[m] = true
 		}
 	}
-	var b strings.Builder
-	in := false
-	for i := 0; i < len(s); i++ {
-		if on[i] != in {
-			if on[i] {
-				b.WriteString("\x1b[1;4m")
-			} else {
-				b.WriteString("\x1b[22;24m")
-			}
-			in = on[i]
-		}
-		b.WriteByte(s[i])
+	style := func(i int) (dim, mark bool) {
+		return i < lead || (tail > 0 && i >= tail), on[i]
 	}
-	if in {
-		b.WriteString("\x1b[22;24m")
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		dim, mark := style(i)
+		j := i + 1
+		for j < len(s) {
+			d, m := style(j)
+			if d != dim || m != mark {
+				break
+			}
+			j++
+		}
+		run := s[i:j]
+		if dim {
+			run = pitGray(run)
+		}
+		if mark {
+			run = "\x1b[1;4m" + run + "\x1b[22;24m"
+		}
+		b.WriteString(run)
+		i = j
 	}
 	return b.String()
 }

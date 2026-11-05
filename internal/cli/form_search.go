@@ -121,31 +121,43 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	if v.notice != "" {
 		out = append(out, staticRow(clipLine(v.notice, width)))
 	}
-	var walk func(n *formNode)
-	walk = func(n *formNode) {
+	var walk func(n *formNode, cont string, top bool)
+	walk = func(n *formNode, cont string, top bool) {
+		var kids []*formNode
 		for _, c := range n.kids() {
-			if !include[c.path] {
-				continue
+			if include[c.path] {
+				kids = append(kids, c)
 			}
-			c.width = width
+		}
+		for i, c := range kids {
+			c.width, c.guided, c.pad = width, true, 0
+			switch {
+			case top:
+				c.guide, c.cont = "", ""
+			case i == len(kids)-1:
+				c.guide, c.cont = cont+"└─ ", cont+"   "
+			default:
+				c.guide, c.cont = cont+"├─ ", cont+"│  "
+			}
 			h, hit := byPath[c.path]
 			if !hit || !c.leaf() {
-				out = append(out, pitRow{text: renderFormRow(c, width, false), yankFrom: c, id: c.path})
+				c.open = !c.leaf()
+				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path})
 				if !c.leaf() {
-					walk(c)
+					walk(c, c.cont, false)
 				}
 				continue
 			}
 			text, marks := searchedRow(c, h, s, width)
-			out = append(out, pitRow{text: text, yankFrom: c, id: c.path, marks: marks})
+			out = append(out, pitRow{text: text, yankFrom: c, id: c.path, marks: marks, dimLead: len(c.lead())})
 		}
 	}
-	walk(v.root)
+	walk(v.root, "", true)
 	return out
 }
 
 func searchedRow(n *formNode, h fuzzy.Hit, s *formSearch, width int) (string, []int) {
-	indent := strings.Repeat("  ", n.depth-1)
+	indent := n.lead()
 	head := indent + n.label + ": "
 	var marks []int
 	if h.OnKey {

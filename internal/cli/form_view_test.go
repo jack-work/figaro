@@ -97,8 +97,8 @@ func TestFormViewFollowsShapeChanges(t *testing.T) {
 	if strings.Join(ids, ",") != "a,a\x000,c,e" {
 		t.Fatalf("rows after a branch became a leaf and a leaf a branch: %q", ids)
 	}
-	if got := formRowText(rows, "c"); !strings.Contains(got, "(1)") {
-		t.Fatalf("c is now a branch of one: %q", got)
+	if got := formRowText(rows, "c"); !strings.Contains(got, "{d: 3}") {
+		t.Fatalf("c is now a branch of one, drawn inline: %q", got)
 	}
 }
 
@@ -154,5 +154,53 @@ func TestPitSkipsUnchangedLiveRows(t *testing.T) {
 	d.lines(80, 10)
 	if got, _ := d.selected(); got.id != "zzz" {
 		t.Fatalf("a moved revision did not reload the rows: selected %q", got.id)
+	}
+}
+
+func formRows(t *testing.T, kv map[string]json.RawMessage, open map[string]bool) []string {
+	t.Helper()
+	v := &formView{src: &fakeFormSource{snap: form.FromMap(kv)}, open: open}
+	v.openRev++
+	var out []string
+	for _, r := range v.Items(100) {
+		out = append(out, r.str())
+	}
+	return out
+}
+
+// Nesting is drawn with guide lines, the last child closing its branch.
+func TestFormRowsDrawGuideLines(t *testing.T) {
+	rows := formRows(t, formKeys("s.a.x", `1`, "s.a.y", `2`, "s.a.z", `3`, "s.a.w", `4`, "s.b", `5`), map[string]bool{"s": true, "s.a": true})
+	want := []string{
+		"s (2)",
+		"├─ a (4)",
+		"│  ├─ w: 4",
+		"│  ├─ x: 1",
+		"│  ├─ y: 2",
+		"│  └─ z: 3",
+		"└─ b: 5",
+	}
+	if strings.Join(rows, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("rows:\n%s\nwant:\n%s", strings.Join(rows, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Sibling values line up in one column.
+func TestFormLeafValuesAlign(t *testing.T) {
+	rows := formRows(t, formKeys("a", `1`, "longer", `2`), map[string]bool{})
+	if rows[0] != "a:      1" || rows[1] != "longer: 2" {
+		t.Fatalf("values not aligned: %q", rows)
+	}
+}
+
+// A collapsed branch shows its first keys; a small one of scalars shows inline.
+func TestACollapsedBranchPeeksAtItsKeys(t *testing.T) {
+	kv := formKeys("skills.brave", `{"filePath":"/a"}`, "skills.cheroot", `1`, "skills.docker", `2`, "skills.figla", `3`, "skills.golang", `4`, "pair.a", `1`, "pair.b", `"x"`)
+	rows := formRows(t, kv, map[string]bool{})
+	if rows[0] != "pair: {a: 1, b: \"x\"}" {
+		t.Fatalf("small branch not inline: %q", rows[0])
+	}
+	if rows[1] != "skills (5)  brave · cheroot · docker · figla …" {
+		t.Fatalf("collapsed branch peek: %q", rows[1])
 	}
 }
