@@ -48,3 +48,52 @@ func TestTheSelectedRowIsWashedAcrossTheWholeLine(t *testing.T) {
 		}
 	}
 }
+
+// Matched letters were bold and underlined in the row's own colour, which on a
+// long @arias list did not stand out. They are drawn in the palette's notice
+// red, still bold, and in its lighter red on the selected row's wash; the
+// row's colour comes back after each match.
+func TestMatchedLettersAreBoldInThePalettesRed(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	g := len("├─ ")
+	king := []int{g, g + 1, g + 2, g + 3}
+	rows := []pitRow{
+		{text: "├─ king of spain", id: "a", dimLead: g, marks: king},
+		{text: "├─ kingdom", id: "b", dimLead: g, marks: king},
+	}
+	p := newPicker(rows)
+	p.focus("a")
+	lines := p.lines(pitForm, 60, 10)
+	var selected, plain string
+	for _, l := range lines {
+		switch {
+		case strings.Contains(l, pitWash):
+			selected = l
+		case strings.Contains(stripANSIAll([]string{l})[0], "kingdom"):
+			plain = l
+		}
+	}
+	for _, c := range []struct {
+		name, line, red string
+	}{
+		{"plain", plain, term.NoticeBody()},
+		{"selected", selected, term.NoticeOnWash()},
+	} {
+		at := strings.Index(c.line, "k")
+		if at < 0 {
+			t.Fatalf("%s: no match drawn: %q", c.name, c.line)
+		}
+		lead := c.line[:at]
+		red := strings.LastIndex(lead, c.red)
+		bold := strings.LastIndex(lead, "\x1b[1")
+		if red < 0 || bold < red {
+			t.Errorf("%s: the match is not red then bold (red at %d, bold at %d): %q", c.name, red, bold, c.line)
+		}
+		if strings.Contains(c.line[at:], "\x1b[0m") {
+			t.Errorf("%s: a full reset inside the row: %q", c.name, c.line)
+		}
+	}
+	if strings.Contains(plain+selected, "38;5;196") {
+		t.Error("a raw 196 red, not the palette's")
+	}
+}

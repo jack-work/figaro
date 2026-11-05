@@ -269,7 +269,7 @@ func (r pitRow) dims() (lead, tail int) {
 	return r.dimLead, 0
 }
 
-func paintRow(s string, lead, tail int, marks []int, back string) string {
+func paintRow(s string, lead, tail int, marks []int, back, match string) string {
 	if (lead == 0 && tail == 0 && len(marks) == 0) || !term.Enabled() {
 		return s
 	}
@@ -294,11 +294,11 @@ func paintRow(s string, lead, tail int, marks []int, back string) string {
 			j++
 		}
 		run := s[i:j]
-		if dim {
+		switch {
+		case mark:
+			run = match + "\x1b[1;4m" + run + "\x1b[22;24m" + back
+		case dim:
 			run = term.LabelThen(run, back)
-		}
-		if mark {
-			run = "\x1b[1;4m" + run + "\x1b[22;24m"
 		}
 		b.WriteString(run)
 		i = j
@@ -319,6 +319,13 @@ func (t pitTone) selectedFg() string {
 		return body
 	}
 	return "\x1b[38;5;255m"
+}
+
+func matchFg(selected bool) string {
+	if selected {
+		return term.NoticeOnWash()
+	}
+	return term.NoticeBody()
 }
 
 func (t pitTone) fg(selected bool) string {
