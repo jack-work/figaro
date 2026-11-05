@@ -20,19 +20,37 @@ type effortRow struct {
 	OutputConfig outputConfig  `json:"output_config"`
 }
 
-func effortRowFor(msg message.Message, bound form.Snapshot) (json.RawMessage, bool) {
-	if msg.Role != message.RoleInput || !turns.Opens(msg) {
+const defaultEffort = "high"
+
+func effortRowFor(msg message.Message, before, after form.Snapshot) (json.RawMessage, bool) {
+	if msg.Role != message.RoleInput {
 		return nil, false
 	}
-	effort := bound.Lookup(provider.ThinkingEffortKey)
-	if effort == nil || *effort == "" {
-		return nil, false
+	effort := effortOf(after)
+	if turns.Opens(msg) {
+		if effort == "" {
+			return nil, false
+		}
+	} else {
+		if effort == effortOf(before) {
+			return nil, false
+		}
+		if effort == "" {
+			effort = defaultEffort
+		}
 	}
-	raw, err := json.Marshal(effortRow{Role: "system", Content: []nativeBlock{}, OutputConfig: outputConfig{Effort: *effort}})
+	raw, err := json.Marshal(effortRow{Role: "system", Content: []nativeBlock{}, OutputConfig: outputConfig{Effort: effort}})
 	if err != nil {
 		return nil, false
 	}
 	return raw, true
+}
+
+func effortOf(bound form.Snapshot) string {
+	if v := bound.Lookup(provider.ThinkingEffortKey); v != nil {
+		return *v
+	}
+	return ""
 }
 
 var outputConfigToken = []byte(`"output_config"`)

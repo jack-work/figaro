@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -545,8 +546,11 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot form.Snapshot) ([]j
 	if err != nil {
 		return nil, fmt.Errorf("marshal nativeMessage: %w", err)
 	}
-	if effort, ok := effortRowFor(msg, snap); ok {
-		return []json.RawMessage{effort, raw}, nil
+	if effort, ok := effortRowFor(msg, prevSnapshot, snap); ok {
+		if turns.Opens(msg) {
+			return []json.RawMessage{effort, raw}, nil
+		}
+		return []json.RawMessage{raw, effort}, nil
 	}
 	return []json.RawMessage{raw}, nil
 }
@@ -1388,7 +1392,7 @@ func applyThinking(req *nativeRequest, snap form.Snapshot, model string, inBand 
 	if provider.IsAdaptiveThinkingModel(model) {
 		// budget_tokens and type "enabled" are a 400 on adaptive models.
 		if effort == "" {
-			effort, inBand = "high", false
+			effort, inBand = defaultEffort, false
 		}
 		req.Thinking = &thinkingParam{Type: "adaptive", Display: "summarized"}
 		if !inBand {

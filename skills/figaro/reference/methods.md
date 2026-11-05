@@ -98,7 +98,11 @@ On those models figaro never sends a top-level `output_config.effort`.
 Every inquiry is preceded by a `{"role":"system","content":[],"output_config":{"effort":…}}`
 row carrying the effort in force for it, under the
 `mid-conversation-output-config-2026-07-01` beta, so a change appends to the
-prefix instead of rewriting it. Anthropic documents a top-level change as a
+prefix instead of rewriting it. A change made while a turn runs (a `figaro
+set` between tool calls) takes effect on the turn's next request: its row goes
+right after the tool results that request delivers. Clearing the key mid-turn
+sends the default, `high`. Providers without per-message effort read the key
+on every request, so they pick up the change at the same point. Anthropic documents a top-level change as a
 cache miss on every message after it
 ([prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching),
 [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta)).
