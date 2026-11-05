@@ -21,6 +21,8 @@ const (
 	pitDropped       pitID = "dropped"
 	// "form listen", "form show", ...: matched by prefix in face().
 	pitForm    pitID = "form"
+	pitModels  pitID = "models"
+	pitReaped  pitID = "reaped"
 	pitConfirm pitID = "confirm"
 	// Drawn inside the command pit, never opened as its own; the row exists
 	// for its selection marker.
@@ -50,6 +52,8 @@ var pitFaces = map[pitID]pitFace{
 	pitDropped:       {"𝄽", "dropped", "♭", modePanel},
 	// 웃 is East Asian Wide, not ambiguous: runewidth reports 2 everywhere.
 	pitForm:       {"웃", "form", "⌖", modePanel},
+	pitModels:     {"웃", "models", "⟡", modePanel},
+	pitReaped:     {"웃", "reaped", "⁂", modePanel},
 	pitConfirm:    {"[y/N]", "confirm", "", modeConfirm},
 	pitCompletion: {"", "completion", "♪", modeBox},
 	pitDecision:   {"⁇", "decision", "", modePanel},
