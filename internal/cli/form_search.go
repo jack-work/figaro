@@ -158,8 +158,15 @@ func (v *formView) rank(snap form.Snapshot) {
 	s.best = make(map[string]fuzzy.Hit, len(s.hits))
 	s.target = make(map[string]int, len(s.hits))
 	s.label = map[string][]int{}
+	through := ""
+	if v.view != nil {
+		through = v.view.Through
+	}
 	for _, h := range s.hits {
-		depth := s.resolve(h)
+		depth := s.resolve(h, through)
+		if depth == 0 {
+			continue
+		}
 		s.target[h.Entry.Path] = depth
 		keys := h.Entry.Keys
 		at := v.hintedRow(keys[:min(depth+1, len(keys))])
@@ -196,7 +203,7 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	for _, h := range s.hits {
 		depth, ok := s.target[h.Entry.Path]
 		if !ok {
-			depth = len(h.Entry.Keys)
+			continue
 		}
 		if formAt(v.root, h.Entry.Keys[:depth], s.up) != nil && depth == len(h.Entry.Keys) {
 			byPath[h.Entry.Path] = h
@@ -383,7 +390,7 @@ func (v *formView) hintedRow(keys []string) string {
 	return ""
 }
 
-func (s *formSearch) resolve(h fuzzy.Hit) int {
+func (s *formSearch) resolve(h fuzzy.Hit, through string) int {
 	keys := h.Entry.Keys
 	if h.ValueAt >= 0 || !h.OnKey {
 		return len(keys)
@@ -393,6 +400,10 @@ func (s *formSearch) resolve(h fuzzy.Hit) int {
 	positions := h.KeyPositions(s.match, s.query)
 	for d, k := range keys {
 		to := from + utf8.RuneCountInString(k)
+		if through != "" && k == through && d+1 < len(keys) {
+			from = to + 1
+			continue
+		}
 		var in []int
 		for _, p := range positions {
 			if p >= from && p < to {
@@ -407,9 +418,6 @@ func (s *formSearch) resolve(h fuzzy.Hit) int {
 			}
 		}
 		from = to + 1
-	}
-	if deepest == 0 {
-		return len(keys)
 	}
 	return deepest
 }

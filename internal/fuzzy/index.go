@@ -1,6 +1,8 @@
 package fuzzy
 
 import (
+	"unicode/utf8"
+
 	"bytes"
 	"encoding/json"
 	"sort"
@@ -123,13 +125,14 @@ type Hit struct {
 	Entry   *Entry
 	Score   int
 	OnKey   bool
+	Spread  bool
 	ValueAt int
 }
 
 func (h Hit) KeyPositions(m *Matcher, query string) []int {
 	var out []int
 	for _, t := range Parse(query) {
-		out = append(out, t.keyPositions(m, &h.Entry.key, h.Entry.Path)...)
+		out = append(out, t.keyPositions(m, h.Entry)...)
 	}
 	sort.Ints(out)
 	return out
@@ -151,6 +154,9 @@ func (ix *Index) Query(m *Matcher, query string) []Hit {
 		}
 	}
 	sort.SliceStable(hits, func(a, b int) bool {
+		if hits[a].Spread != hits[b].Spread {
+			return !hits[a].Spread
+		}
 		if hits[a].OnKey != hits[b].OnKey {
 			return hits[a].OnKey
 		}
@@ -162,7 +168,7 @@ func (ix *Index) Query(m *Matcher, query string) []Hit {
 func match(m *Matcher, terms []Term, e *Entry) (Hit, bool) {
 	h := Hit{Entry: e, ValueAt: -1}
 	for _, t := range terms {
-		score, onKey := t.matchKey(m, &e.key, e.Path)
+		score, onKey, spread := t.matchKey(m, e)
 		at := -1
 		if !onKey {
 			at = t.valueAt(e.value)
@@ -176,6 +182,7 @@ func match(m *Matcher, terms []Term, e *Entry) (Hit, bool) {
 		switch {
 		case onKey:
 			h.OnKey = true
+			h.Spread = h.Spread || spread
 			h.Score += score
 		case at >= 0:
 			if h.ValueAt < 0 {
@@ -187,3 +194,21 @@ func match(m *Matcher, terms []Term, e *Entry) (Hit, bool) {
 	}
 	return h, true
 }
+
+func (e *Entry) start(i int) int {
+	off := 0
+	for _, k := range e.Keys[:i] {
+		off += len(k) + 1
+	}
+	return off
+}
+
+func (e *Entry) segment(i int) []byte {
+	at := e.start(i)
+	if e.key.chars.IsBytes() {
+		return e.key.chars.Bytes()[at : at+len(e.Keys[i])]
+	}
+	return []byte(e.Path[at : at+len(e.Keys[i])])
+}
+
+func (e *Entry) segmentRunes(i int) int { return utf8.RuneCountInString(e.Path[:e.start(i)]) }

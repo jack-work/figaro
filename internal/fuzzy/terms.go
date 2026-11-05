@@ -1,6 +1,7 @@
 package fuzzy
 
 import (
+	"github.com/junegunn/fzf/src/util"
 	"strings"
 	"unicode/utf8"
 )
@@ -57,14 +58,61 @@ func Parse(query string) []Term {
 	return out
 }
 
-func (t Term) matchKey(m *Matcher, key *Text, plain string) (score int, ok bool) {
+func (t Term) spans() bool { return strings.ContainsRune(t.text, '.') }
+
+func containsLower(s []byte, lower string) bool {
+	for _, c := range s {
+		if c >= utf8.RuneSelf {
+			return strings.Contains(strings.ToLower(string(s)), lower)
+		}
+	}
+	n := len(lower)
+	for i := 0; i+n <= len(s); i++ {
+		j := 0
+		for j < n {
+			c := s[i+j]
+			if 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != lower[j] {
+				break
+			}
+			j++
+		}
+		if j == n {
+			return true
+		}
+	}
+	return false
+}
+
+func (t Term) bestKey(m *Matcher, e *Entry) (seg, score int) {
+	seg = -1
+	for i := range e.Keys {
+		text := Text{chars: util.ToChars(e.segment(i))}
+		if got, ok := m.Match(&text, t.runes); ok && (seg < 0 || got.Score > score) {
+			seg, score = i, got.Score
+		}
+	}
+	return seg, score
+}
+
+func (t Term) matchKey(m *Matcher, e *Entry) (score int, ok, spread bool) {
 	if !t.onKey {
-		return 0, false
+		return 0, false, false
 	}
 	if t.kind == termFuzzy {
-		got, found := m.Match(key, t.runes)
-		return got.Score, found
+		if t.spans() {
+			got, found := m.Match(&e.key, t.runes)
+			return got.Score, found, found && !strings.Contains(strings.ToLower(e.Path), t.lower)
+		}
+		seg, score := t.bestKey(m, e)
+		if seg < 0 {
+			return 0, false, false
+		}
+		return score, true, !containsLower(e.segment(seg), t.lower)
 	}
+	plain := e.Path
 	low := strings.ToLower(plain)
 	switch t.kind {
 	case termExact:
@@ -77,7 +125,7 @@ func (t Term) matchKey(m *Matcher, key *Text, plain string) (score int, ok bool)
 	if ok {
 		score = 16 * utf8.RuneCountInString(t.text)
 	}
-	return score, ok
+	return score, ok, false
 }
 
 func (t Term) valueAt(lowerValue string) int {
@@ -99,13 +147,27 @@ func (t Term) valueAt(lowerValue string) int {
 	return strings.Index(lowerValue, t.lower)
 }
 
-func (t Term) keyPositions(m *Matcher, key *Text, plain string) []int {
+func (t Term) keyPositions(m *Matcher, e *Entry) []int {
 	if !t.onKey || t.negate {
 		return nil
 	}
 	if t.kind == termFuzzy {
-		return m.Positions(key, t.runes)
+		if t.spans() {
+			return m.Positions(&e.key, t.runes)
+		}
+		seg, _ := t.bestKey(m, e)
+		if seg < 0 {
+			return nil
+		}
+		text := Text{chars: util.ToChars(e.segment(seg))}
+		out := m.Positions(&text, t.runes)
+		at := e.segmentRunes(seg)
+		for i := range out {
+			out[i] += at
+		}
+		return out
 	}
+	plain := e.Path
 	low := strings.ToLower(plain)
 	at := -1
 	switch t.kind {

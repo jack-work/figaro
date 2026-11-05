@@ -43,7 +43,7 @@ func TestFormSearchFindsAKeyInACollapsedBranch(t *testing.T) {
 	if ids := pitIDs(tr); strings.Contains(strings.Join(ids, " "), "system.tools") {
 		t.Fatalf("fixture: system.tools is already visible: %v", ids)
 	}
-	feed(t, p.in, "/systools")
+	feed(t, p.in, "/sys.tools")
 	ids := pitIDs(tr)
 	if len(ids) == 0 || ids[0] != "system" {
 		t.Fatalf("the matching branch is not shown first: %v", ids)
@@ -91,7 +91,7 @@ func TestFormSearchStepsThroughMatches(t *testing.T) {
 func TestFormSearchEnterRevealsTheRowAndEscRestores(t *testing.T) {
 	p, v := searchProbe(t)
 	tr := p.lt.tr
-	feed(t, p.in, "/systools\r")
+	feed(t, p.in, "/sys.tools\r")
 	if tr.inSearch {
 		t.Fatal("Enter left the search open")
 	}
@@ -150,8 +150,8 @@ func TestAPasteIntoTheFormSearchFilters(t *testing.T) {
 	p, _ := searchProbe(t)
 	tr := p.lt.tr
 	feed(t, p.in, "/")
-	feed(t, p.in, "\x1b[200~sysmodel\x1b[201~")
-	if tr.query != "sysmodel" || tr.boxOpen() {
+	feed(t, p.in, "\x1b[200~sys.model\x1b[201~")
+	if tr.query != "sys.model" || tr.boxOpen() {
 		t.Fatalf("paste went to query %q, box open %v", tr.query, tr.boxOpen())
 	}
 	if row, _ := tr.pit.selected(); row.id != "system.model" {
@@ -163,14 +163,14 @@ func TestAPasteIntoTheFormSearchFilters(t *testing.T) {
 func TestFormSearchMarksTheMatchedLetters(t *testing.T) {
 	p, _ := searchProbe(t)
 	tr := p.lt.tr
-	feed(t, p.in, "/systools")
+	feed(t, p.in, "/sys.tools")
 	row, _ := tr.pit.selected()
 	label := strings.Index(row.str(), "tools")
 	if len(row.marks) < 3 {
 		t.Fatalf("only %d letters marked in %q", len(row.marks), row.str())
 	}
 	for _, m := range row.marks {
-		if m < label || m >= label+len("tools") || !strings.ContainsRune("systools", rune(row.str()[m])) {
+		if m < label || m >= label+len("tools") || !strings.ContainsRune("sys.tools", rune(row.str()[m])) {
 			t.Fatalf("mark at %d (%q) is outside the label or not a query letter in %q", m, row.str()[m], row.str())
 		}
 	}
@@ -550,4 +550,23 @@ func TestAFoundRowShowsItsLabel(t *testing.T) {
 		return
 	}
 	t.Fatalf("no row for the fork: %v", pitIDs(tr))
+}
+
+// The hint's structural key is how forks nest, not something an aria says, so
+// a query whose letters land only in 'forks' made the parent a hit with
+// nothing on screen matching. A structural key is never a target on its own.
+func TestAStructuralKeyIsNeverATargetOnItsOwn(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := forkedArias()
+	v.view.Through = "forks"
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/frk")
+	if len(v.search.ranked) != 0 {
+		t.Errorf("letters only in 'forks' made hits: %v", v.search.ranked)
+	}
+	feed(t, p.in, "\x1b/kingly")
+	if len(v.search.ranked) != 1 || v.search.ranked[0] != "arias.parent-one.forks.kingly-fork" {
+		t.Errorf("a fork's own name found %v, want the fork alone", v.search.ranked)
+	}
 }

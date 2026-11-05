@@ -41,13 +41,13 @@ func TestAKeyAbbreviationRanksTheIntendedPathFirst(t *testing.T) {
 		"skills.tools.filePath": "/p",
 		"mantra":                "m",
 	}))
-	got := paths(ix.Query(NewMatcher(), "systools"))
+	got := paths(ix.Query(NewMatcher(), "sys.tools"))
 	if len(got) == 0 || got[0] != "system.tools" {
-		t.Fatalf("systools ranked %v; want system.tools first", got)
+		t.Fatalf("sys.tools ranked %v; want system.tools first", got)
 	}
 	for _, p := range got {
 		if p == "mantra" {
-			t.Fatalf("mantra matched systools: %v", got)
+			t.Fatalf("mantra matched sys.tools: %v", got)
 		}
 	}
 }
@@ -139,7 +139,7 @@ func TestAnUpdateReusesUntouchedSubtrees(t *testing.T) {
 	if ix.Rebuilt != 1 {
 		t.Fatalf("a one-key change rebuilt %d leaves, want 1", ix.Rebuilt)
 	}
-	if got := ix.Query(NewMatcher(), "sysmodel"); len(got) != 1 {
+	if got := ix.Query(NewMatcher(), "sys.model"); len(got) != 1 {
 		t.Fatalf("updated key lost: %v", paths(got))
 	}
 	gone := next.Apply(form.Build(next, nil, []string{"skills.s007.filePath"}))
@@ -162,17 +162,17 @@ func TestKeyPositionsMarkTheMatchedCharacters(t *testing.T) {
 	var ix Index
 	ix.Update(snapOf(t, map[string]any{"system.tools": 1}))
 	m := NewMatcher()
-	hits := ix.Query(m, "systools")
+	hits := ix.Query(m, "sys.tools")
 	if len(hits) != 1 {
 		t.Fatalf("got %v", paths(hits))
 	}
-	pos := hits[0].KeyPositions(m, "systools")
+	pos := hits[0].KeyPositions(m, "sys.tools")
 	var marked strings.Builder
 	for _, p := range pos {
 		marked.WriteByte(hits[0].Entry.Path[p])
 	}
-	if marked.String() != "systools" {
-		t.Fatalf("marked %q at %v; want the letters of systools", marked.String(), pos)
+	if marked.String() != "sys.tools" {
+		t.Fatalf("marked %q at %v; want the letters of sys.tools", marked.String(), pos)
 	}
 }
 
@@ -224,6 +224,82 @@ func TestExactTermsMarkTheirSpan(t *testing.T) {
 		}
 		if got.String() != want {
 			t.Errorf("%q marked %q, want %q", q, got.String(), want)
+		}
+	}
+}
+
+// A fuzzy term spread its letters across a long path's keys, so 'libretto'
+// matched lime.forks.ibex.forks.brett.forks.otto.ctx ahead of the mantra that
+// says libretto. A term without a dot matches inside one key; one with a dot
+// spans keys as written. A contiguous match, on a key or in a value, ranks
+// ahead of letters spread through a key.
+func TestATermMatchesWithinOneKeyAndContiguousRanksFirst(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{
+		"arias.lime.forks.ibex.forks.brett.forks.otto.ctx": 1,
+		"arias.real.mantra":            "correct the libretto",
+		"arias.lab.forks.liberetto.id": "x",
+		"system.tools":                 "t",
+	}))
+	m := NewMatcher()
+	got := paths(ix.Query(m, "libretto"))
+	if len(got) != 2 || got[0] != "arias.real.mantra" || got[1] != "arias.lab.forks.liberetto.id" {
+		t.Fatalf("libretto: %v; want the mantra, then the key that spreads it within itself", got)
+	}
+	if got := paths(ix.Query(m, "systools")); len(got) != 0 {
+		t.Errorf("systools spanned two keys: %v", got)
+	}
+	for _, q := range []string{"sys.tools", "sys tools"} {
+		if got := paths(ix.Query(m, q)); len(got) != 1 || got[0] != "system.tools" {
+			t.Errorf("%s: %v; want system.tools", q, got)
+		}
+	}
+	hits := ix.Query(m, "libretto")
+	pos := hits[1].KeyPositions(m, "libretto")
+	key := []rune(hits[1].Entry.Path)
+	var marked []rune
+	for _, p := range pos {
+		marked = append(marked, key[p])
+	}
+	if string(marked) != "libretto" {
+		t.Errorf("positions mark %q, want the letters inside one key", string(marked))
+	}
+}
+
+// A key with a non-ASCII rune is matched within itself too, and its letters are
+// marked by rune, not by byte.
+func TestANonASCIIKeyMatchesWithinItself(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{"café.crème.brûlée": 1}))
+	m := NewMatcher()
+	hits := ix.Query(m, "brulee")
+	if len(hits) != 1 {
+		t.Fatalf("got %v", paths(hits))
+	}
+	key := []rune(hits[0].Entry.Path)
+	var marked []rune
+	for _, p := range hits[0].KeyPositions(m, "brulee") {
+		marked = append(marked, key[p])
+	}
+	if string(marked) != "brûlée" {
+		t.Errorf("marked %q, want brûlée", string(marked))
+	}
+}
+
+// The contiguity check folds case without allocating for ASCII keys, and falls
+// back to a full fold for any other key.
+func TestContainsLowerFoldsCase(t *testing.T) {
+	for _, c := range []struct {
+		s, lower string
+		want     bool
+	}{
+		{"KingDom", "king", true},
+		{"kin-g", "king", false},
+		{"Brûlée", "brûlée", true},
+		{"ab", "abc", false},
+	} {
+		if got := containsLower([]byte(c.s), c.lower); got != c.want {
+			t.Errorf("containsLower(%q, %q) = %v, want %v", c.s, c.lower, got, c.want)
 		}
 	}
 }
