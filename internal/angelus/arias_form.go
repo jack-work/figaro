@@ -42,7 +42,7 @@ func ariasKey(ctx context.Context) string {
 	sub, _ := authz.SubjectOf(ctx)
 	groups := slices.Clone(sub.Groups)
 	slices.Sort(groups)
-	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String()}, groups...), "\x00")
+	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String()}, groups...), "\x00")
 }
 
 func (h *handlers) ariasHub(ctx context.Context) *ariaHub {

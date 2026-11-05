@@ -32,11 +32,22 @@ func (w Web) lapse() (time.Duration, string) {
 	return w.MaxConnAge, webAgeReason
 }
 
+func (w Web) lapseFor(ctx context.Context) (time.Duration, string) {
+	after, reason := w.lapse()
+	if exp, ok := authz.ExpiryOf(ctx); ok {
+		if left := time.Until(exp); after <= 0 || left < after {
+			return max(left, time.Millisecond), webTokenReason
+		}
+	}
+	return after, reason
+}
+
 const (
 	webReadLimit         = 64 << 20
 	webReadHeaderTimeout = 10 * time.Second
 	webAgeReason         = "connection age limit: reconnect"
 	webFollowAgeReason   = "follow age limit: reconnect for current groups"
+	webTokenReason       = "the bearer expired: reconnect with a fresh token"
 )
 
 func ListenUnix(path string, mode os.FileMode) (net.Listener, error) {
@@ -98,7 +109,7 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			return
 		}
 		c.SetReadLimit(webReadLimit)
-		if after, reason := w.lapse(); after > 0 {
+		if after, reason := w.lapseFor(cctx); after > 0 {
 			var end context.CancelCauseFunc
 			cctx, end = context.WithCancelCause(cctx)
 			defer end(nil)

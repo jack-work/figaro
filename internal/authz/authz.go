@@ -66,6 +66,23 @@ func WithVerifiedBearer(ctx context.Context, s jkauthz.Subject, token string) co
 	return context.WithValue(ctx, callerKey{}, caller{subject: s, bearer: token})
 }
 
+func IssuerOf(ctx context.Context) string {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.session == nil {
+		return ""
+	}
+	return c.session.Issuer()
+}
+
+func ExpiryOf(ctx context.Context) (time.Time, bool) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.session == nil {
+		return time.Time{}, false
+	}
+	exp := c.session.Expiry()
+	return exp, !exp.IsZero()
+}
+
 func BearerOf(ctx context.Context) (string, bool) {
 	c, _ := ctx.Value(callerKey{}).(caller)
 	switch {

@@ -20,16 +20,22 @@ const IssuerURL = "https://issuer.test.figaro"
 type Issuer struct {
 	t    testing.TB
 	key  *rsa.PrivateKey
+	url  string
 	JWKS *httptest.Server
 }
 
 func NewIssuer(t testing.TB) *Issuer {
 	t.Helper()
+	return NewIssuerAt(t, IssuerURL)
+}
+
+func NewIssuerAt(t testing.TB, url string) *Issuer {
+	t.Helper()
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	is := &Issuer{t: t, key: k}
+	is := &Issuer{t: t, key: k, url: url}
 	is.JWKS = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &k.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"}}})
 	}))
@@ -45,7 +51,7 @@ func (is *Issuer) Mint(client string, ttl time.Duration) string {
 	}
 	now := time.Now()
 	raw, err := josejwt.Signed(signer).Claims(map[string]any{
-		"iss": IssuerURL, "sub": client, "client_id": client,
+		"iss": is.url, "sub": client, "client_id": client,
 		"iat": now.Unix(), "exp": now.Add(ttl).Unix(),
 	}).Serialize()
 	if err != nil {
@@ -59,5 +65,5 @@ func (is *Issuer) Config(clients ...string) []config.IssuerConfig {
 	for _, c := range clients {
 		m[c] = "user"
 	}
-	return []config.IssuerConfig{{Issuer: IssuerURL, JWKS: is.JWKS.URL, Clients: m}}
+	return []config.IssuerConfig{{Issuer: is.url, JWKS: is.JWKS.URL, Clients: m}}
 }

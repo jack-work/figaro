@@ -449,6 +449,12 @@ func (s *Session) Token() string {
 	return s.token
 }
 
+func (s *Session) Issuer() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.claims.Issuer
+}
+
 func (s *Session) Expiry() time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()

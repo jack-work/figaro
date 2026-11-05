@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/peer/peertest"
 	"github.com/jack-work/figaro/sdk"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
@@ -337,4 +338,49 @@ func TestALapseEndsAConnectionWhoseClientStoppedReading(t *testing.T) {
 	require.Eventually(t, func() bool { return hb.Attached() == 0 }, maxAge+lapseNoticeGrace+2*time.Second, 20*time.Millisecond,
 		"a client that stopped reading kept its follow past the lapse")
 	require.Less(t, time.Since(followed), maxAge+lapseNoticeGrace+2*time.Second)
+}
+
+// A bearer connection ends when its token does, before any age limit, and
+// says so: a follow must not outlive an expired or revoked login.
+func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
+	is := peertest.NewIssuer(t)
+	issuers, err := authz.NewIssuers(is.Config("probe"), nil, nil)
+	require.NoError(t, err)
+	session, err := issuers.Open(context.Background(), is.Mint("probe", 2*time.Second))
+	require.NoError(t, err)
+
+	after, reason := (Web{MaxConnAge: 8 * time.Hour, FollowMaxAge: time.Hour}).lapseFor(authz.WithSession(context.Background(), session))
+	require.LessOrEqual(t, after, 2*time.Second)
+	require.Equal(t, webTokenReason, reason)
+	after, reason = (Web{MaxConnAge: 300 * time.Millisecond}).lapseFor(authz.WithSession(context.Background(), session))
+	require.Equal(t, 300*time.Millisecond, after)
+	require.Equal(t, webAgeReason, reason)
+
+	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {
+		if r.Header.Get("Remote-User") == "" {
+			return nil, errors.New("no Remote-User")
+		}
+		return authz.WithSession(ctx, session), nil
+	}
+	path := shortSocketPath(t)
+	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, session.Principal().String())}}
+	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
+	ln, err := ListenUnix(path, 0o660)
+	require.NoError(t, err)
+	sctx, stop := context.WithCancel(context.Background())
+	t.Cleanup(stop)
+	go h.angelus.ServeWeb(sctx, ln, Web{Admit: admit, MaxConnAge: 8 * time.Hour})
+	c, _, err := dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, notice, err := c.Read(ctx)
+	require.NoError(t, err, "the door closed without saying why")
+	var lapsed struct {
+		Params rpc.DoorLapsed `json:"params"`
+	}
+	require.NoError(t, json.Unmarshal(notice, &lapsed))
+	require.Equal(t, webTokenReason, lapsed.Params.Reason)
+	_, _, err = c.Read(ctx)
+	require.Error(t, err)
 }
