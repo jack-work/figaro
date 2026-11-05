@@ -104,5 +104,6 @@ const (
 	MethodSaveBindings   = "angelus.save_bindings"
 	MethodProviderLedger = "angelus.provider_ledger"
 	MethodModelsWant     = "angelus.models.want"
+	MethodModelsPick     = "figaro.models.pick"
 	MethodModelsRefresh  = "angelus.models.refresh"
 )

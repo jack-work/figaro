@@ -82,6 +82,9 @@ ListRequest.Before
 ListRequest.Global
 ListRequest.IDsOnly
 ListRequest.Limit
+ModelsPickRequest.FigaroID
+ModelsPickRequest.Model
+ModelsPickRequest.Provider
 ModelsRefreshRequest.Providers
 ModelsRefreshRequest.Wait
 ModelsWantRequest.Model

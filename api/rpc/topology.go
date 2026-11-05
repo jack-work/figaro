@@ -174,6 +174,17 @@ type ReapedRestoreResponse struct {
 	Restored []string `json:"restored"`
 }
 
+type ModelsPickRequest struct {
+	FigaroID string `json:"figaro_id"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+type ModelsPickResponse struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
 type KillResponse struct {
 	OK      bool  `json:"ok"`
 	PurgeAt int64 `json:"purge_at,omitempty"`

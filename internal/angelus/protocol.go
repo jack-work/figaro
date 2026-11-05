@@ -104,6 +104,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodGC:                 h.gc,
 		rpc.MethodKill:               h.kill,
 		rpc.MethodReapedRestore:      h.reapedRestore,
+		rpc.MethodModelsPick:         h.modelsPick,
 		rpc.MethodList:               h.list,
 		rpc.MethodAttach:             h.attach,
 		rpc.MethodBind:               h.bind,
