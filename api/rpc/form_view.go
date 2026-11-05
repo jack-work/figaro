@@ -1,5 +1,7 @@
 package rpc
 
+import "encoding/json"
+
 type FormView struct {
 	List    string       `json:"list"`
 	Columns []ViewColumn `json:"columns,omitempty"`
@@ -28,7 +30,9 @@ type ViewMark struct {
 	Equals string `json:"equals"`
 }
 type ViewAction struct {
-	Key    string `json:"key"`
-	Label  string `json:"label"`
-	Method string `json:"method"`
+	Key     string          `json:"key"`
+	Label   string          `json:"label"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Confirm bool            `json:"confirm,omitempty"`
 }
