@@ -165,3 +165,24 @@ func TestUpgradeCollectsUnconfirmedEditLines(t *testing.T) {
 		t.Fatalf("nothing to repeat: got %q", got)
 	}
 }
+
+// A command line is replayed with send-keys -l, which delivers every byte as a
+// keystroke: the terminal acts on a control character (^C aborts, ^U kills
+// the line, CR submits, ESC and CSI drive the line editor) before the shell's
+// quoting ever sees it. So an argv holding one is never typed again; the
+// pane is named instead. argv here is what any local process can choose.
+func TestUpgradeNeverTypesACommandLineThatHoldsAControlCharacter(t *testing.T) {
+	for _, arg := range []string{"x\x03rm -rf ~\r", "a\rb", "\x1b[200~", "csi\u009bJ", "del\x7f", "nl\n", "bad\xffutf8"} {
+		c := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Argv: []string{"figaro", "send", "--", arg}}
+		if s := planClient(c); s.Action != upgradeLeave {
+			t.Errorf("%q: got %s (%s), want leave", arg, s.Action, s.Reason)
+		}
+	}
+	if got := shownArgv([]string{"figaro\x03rm", "\x1b]0;x\x07", "\u009b2J"}); holdsControl(got) {
+		t.Errorf("the report would write a control character to the terminal: %q", got)
+	}
+	clean := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Argv: []string{"figaro", "send", "--", "plain words, ünïcode, it's fine"}}
+	if s := planClient(clean); s.Action != upgradeRespawn {
+		t.Errorf("a printable command line is still replayed: got %s (%s)", s.Action, s.Reason)
+	}
+}

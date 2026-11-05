@@ -375,7 +375,7 @@ func printPlan(steps []upgradeStep, skipped []string, extra []string) {
 		fmt.Fprintln(stderrw, "no figaro clients in tmux panes")
 	}
 	for _, s := range steps {
-		fmt.Fprintf(stderrw, "  %-7s %s  %s  (%s)\n", s.Action, s.Client.Pane, strings.Join(s.Client.Argv, " "), s.Reason)
+		fmt.Fprintf(stderrw, "  %-7s %s  %s  (%s)\n", s.Action, s.Client.Pane, shownArgv(s.Client.Argv), s.Reason)
 	}
 	for _, s := range skipped {
 		fmt.Fprintf(stderrw, "  skip    %s\n", s)
@@ -514,7 +514,7 @@ func unconfirmedLines(pane, screen string) []string {
 
 func (o upgradeOptions) respawnClient(s upgradeStep) string {
 	c := s.Client
-	line := strings.Join(c.Argv, " ")
+	line := shownArgv(c.Argv)
 	if s.Action == upgradeLeave {
 		return fmt.Sprintf("left %s (%s): %s; restart it yourself", c.Pane, line, s.Reason)
 	}

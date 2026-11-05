@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 type upgradeOptions struct {
@@ -67,6 +69,9 @@ func unreplayable(c paneClient) string {
 		if a == "--stdin" {
 			return "it reads its prompt from stdin, so the command cannot be typed again"
 		}
+		if holdsControl(a) {
+			return "its command line holds a control character, which a terminal would act on before the shell reads the line"
+		}
 	}
 	if len(c.Argv) == 0 {
 		return "its command line is unreadable"
@@ -75,6 +80,31 @@ func unreplayable(c paneClient) string {
 		return "it is neither the pane's process nor a child of the pane's shell"
 	}
 	return ""
+}
+
+func holdsControl(s string) bool {
+	if !utf8.ValidString(s) {
+		return true
+	}
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
+func shownArgv(argv []string) string {
+	parts := make([]string, len(argv))
+	for i, a := range argv {
+		if holdsControl(a) {
+			q := strconv.Quote(a)
+			parts[i] = q[1 : len(q)-1]
+			continue
+		}
+		parts[i] = a
+	}
+	return strings.Join(parts, " ")
 }
 
 func commandLineFor(argv []string, shell string) string {
