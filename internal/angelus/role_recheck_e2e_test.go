@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -139,4 +140,51 @@ func TestNoRoleArrivesByMove(t *testing.T) {
 	home := a.mint()
 	_, err = a.owner.FormCreate(callCtx(t), home, nil, targetPatch(target))
 	require.ErrorContains(t, err, "is not an unbound form")
+}
+
+// The King of Spain loss was index drift. Here the store's own role index is
+// stale: the role moved from one aria to another and the index still names
+// the old one. The delete of the new target must be refused, because the
+// re-check reads the role from the form's log, not from the index.
+func TestAMovedRoleHoldsItsNewTargetWhenTheStoreIndexIsStale(t *testing.T) {
+	a, acli, ctx, blind := blindDaemon(t)
+	old, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	moved, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	role, err := acli.FormCreate(ctx, "", nil, targetPatch(old.FigaroID))
+	require.NoError(t, err)
+	_, err = dialNode(t, a, role.FormID).c.Set(ctx, *targetPatch(moved.FigaroID), 0)
+	require.NoError(t, err)
+
+	blind.XwalBackend.StaleRoleIndexForTest(role.FormID, old.FigaroID)
+	roles, _ := blind.XwalBackend.RoleTargets()
+	require.Equal(t, role.FormID, roles[old.FigaroID], "the store index is not stale: the case is not covered")
+	require.Empty(t, roles[moved.FigaroID], "the store index is not stale: the case is not covered")
+
+	spend(t, a, moved.FigaroID)
+	a.SweepLifetimesNow()
+	require.True(t, alive(t, a, moved.FigaroID), "a stale store index let the sweep delete the role's new target")
+}
+
+// A form the scan cannot read could hold a role on any aria, so the sweep
+// deletes nothing while the scan fails, even an aria no readable role names.
+func TestAnUnreadableFormStopsEveryDelete(t *testing.T) {
+	a, acli, ctx, blind := blindDaemon(t)
+	target, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	unreadable, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"unreadable"`}))
+	require.NoError(t, err)
+	blind.XwalBackend.FailRoleScanForTest(unreadable.FormID, errors.New("injected read failure"))
+
+	spend(t, a, target.FigaroID)
+	a.SweepLifetimesNow()
+	require.True(t, alive(t, a, target.FigaroID), "the scan skipped an unreadable form and the sweep deleted an aria")
+
+	blind.XwalBackend.FailRoleScanForTest(unreadable.FormID, nil)
+	canary, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	spend(t, a, canary.FigaroID)
+	a.SweepLifetimesNow()
+	require.True(t, reaped(t, a, canary.FigaroID), "canary: once the form reads, a spent aria is taken")
 }

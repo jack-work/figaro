@@ -26,8 +26,9 @@ import (
 var _ Backend = (*XwalBackend)(nil)
 
 type XwalBackend struct {
-	rolesMu sync.Mutex
-	roles   roleIndex
+	rolesMu       sync.Mutex
+	roles         roleIndex
+	roleScanFault map[string]error
 
 	root  string
 	store *XwalStore

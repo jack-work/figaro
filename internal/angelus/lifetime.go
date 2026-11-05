@@ -183,8 +183,14 @@ type roleIndexer interface {
 
 var errRoleIndexMissed = errors.New("a role the index missed points into the delete set")
 
+var errRoleScanFailed = errors.New("the role scan could not read a form: refusing the delete")
+
 func (a *Angelus) scanForRoleIn(taken []string, root string) error {
-	scanned := a.scanRoleTargets()
+	scanned, err := a.scanRoleTargets()
+	if err != nil {
+		slog.Error("role scan failed: refusing the delete", "node", root, "err", err)
+		return errRoleScanFailed
+	}
 	for _, id := range taken {
 		if role, ok := scanned[id]; ok {
 			slog.Error("role index missed a role: refusing the delete",
@@ -195,18 +201,28 @@ func (a *Angelus) scanForRoleIn(taken []string, root string) error {
 	return nil
 }
 
-func (a *Angelus) scanRoleTargets() map[string]string {
+type roleScanner interface {
+	ScanRoleTargets() (map[string]string, error)
+}
+
+func (a *Angelus) scanRoleTargets() (map[string]string, error) {
+	if s, ok := a.Backend.(roleScanner); ok {
+		return s.ScanRoleTargets()
+	}
 	out := map[string]string{}
 	for _, f := range a.Backend.Forms() {
+		if _, ok := store.SourceOfLibretto(f.ID); ok {
+			continue
+		}
 		snap, err := a.Backend.FormState(f.ID)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("role scan: form %s: %w", f.ID, err)
 		}
 		if v := snap.Lookup("target-aria"); v != nil && *v != "" {
 			out[*v] = f.ID
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (a *Angelus) roleTargets() (map[string]string, bool) {
