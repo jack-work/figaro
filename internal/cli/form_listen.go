@@ -367,6 +367,9 @@ func (v *formView) Items(width int) []pitRow {
 				row.note = "●"
 			}
 			row.hint = hint
+			if k.aria != "" {
+				row.yank, row.yankFrom, row.aria = k.aria, nil, k.aria
+			}
 		}
 		out = append(out, row)
 		if !n.leaf() || !v.open[n.path] {

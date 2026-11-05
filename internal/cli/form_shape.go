@@ -54,6 +54,7 @@ func shapeLess(a, b string) bool {
 type viewRowKey struct {
 	group string
 	row   string
+	aria  string
 }
 
 type viewShape struct {
@@ -110,6 +111,9 @@ func (s *viewShape) order(labels []string, kids []*formNode, open map[string]boo
 
 func (s *viewShape) note(c *formNode, segs []string, under *viewRowKey) *viewRowKey {
 	if k, ok := s.row(segs); ok {
+		if s.hint.RowAria != "" {
+			k.aria = leafText(c, s.hint.RowAria)
+		}
 		s.heads[c.path] = k
 		under = &k
 	}
@@ -146,14 +150,18 @@ func (s *viewShape) marked(n *formNode, k viewRowKey) bool {
 	if m == nil {
 		return false
 	}
-	if m.RowSubject == "" {
-		return m.Key != "" && leafText(n, m.Key) == m.Equals
-	}
 	want := func(key string) string {
 		if p := s.subject.Lookup(key); p != nil {
 			return *p
 		}
 		return ""
+	}
+	if m.KeySubject != "" {
+		got := leafText(n, m.Key)
+		return got != "" && got == want(m.KeySubject)
+	}
+	if m.RowSubject == "" {
+		return m.Key != "" && leafText(n, m.Key) == m.Equals
 	}
 	if k.row != want(m.RowSubject) {
 		return false

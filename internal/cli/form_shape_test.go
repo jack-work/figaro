@@ -413,3 +413,94 @@ func TestAHintsLabelKeyIsTheCollapsedRowsPeek(t *testing.T) {
 		t.Errorf("an open row still peeks: %q", got)
 	}
 }
+
+var ariasHint = &rpc.FormView{
+	Rows:    []string{"arias.*", "**.forks.*"},
+	Open:    []string{"arias", "**.forks"},
+	RowAria: "id",
+	Label:   "mantra",
+	Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},
+	Actions: []rpc.ViewAction{
+		{Key: "Enter", Label: "attend", Local: rpc.ViewAttend},
+		{Key: "x", Label: "kill", Method: rpc.MethodKill, Confirm: true},
+	},
+}
+
+func ariasView(t *testing.T, subject string) *formView {
+	t.Helper()
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"peers", `0`,
+		"arias.nearest-tusk.id", `"a0796d46a3ad532d986553f3b2aee31a"`,
+		"arias.nearest-tusk.mantra", `"parent fixture"`,
+		"arias.nearest-tusk.forks.dairy-singles.id", `"38f4563ac90d4206364a64c0a4f4c4fa"`,
+		"arias.nearest-tusk.forks.dairy-singles.mantra", `"a fork"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(ariasHint)
+	snap := form.FromMap(formKeys("aria_id", `"`+subject+`"`))
+	v.subject = func() form.Snapshot { return snap }
+	return v
+}
+
+// In @arias a row is an aria: y and M-y take its id, its actions target the
+// id rather than the label, and the aria on screen carries the mark.
+func TestAnAriasRowIsTheAriaItNames(t *testing.T) {
+	v := ariasView(t, "38f4563ac90d4206364a64c0a4f4c4fa")
+	v.Items(100)
+	v.Activate("arias.nearest-tusk")
+	rows := v.Items(100)
+	byID := map[string]pitRow{}
+	for _, r := range rows {
+		byID[r.id] = r
+	}
+	fork, ok := byID["arias.nearest-tusk.forks.dairy-singles"]
+	if !ok {
+		t.Fatalf("the fork does not nest under its parent: %v", formRowIDs(rows))
+	}
+	if fork.yankText() != "38f4563ac90d4206364a64c0a4f4c4fa" || fork.aria != fork.yankText() {
+		t.Errorf("fork row yanks %q, aria %q; want its id", fork.yankText(), fork.aria)
+	}
+	if fork.note != "●" || byID["arias.nearest-tusk"].note != "" {
+		t.Errorf("marks: fork %q, parent %q; want only the aria on screen", fork.note, byID["arias.nearest-tusk"].note)
+	}
+	k, ok := v.rowKeyOf("arias.nearest-tusk.mantra")
+	if !ok {
+		t.Fatal("a leaf under a row names no row")
+	}
+	_, target, err := actionCall(ariasHint.Actions[1], k, "subject")
+	if err != nil || target != "a0796d46a3ad532d986553f3b2aee31a" {
+		t.Errorf("kill targets %q (%v), want the parent's id", target, err)
+	}
+}
+
+// Enter on an aria attends it, client-side: nothing is sent to the daemon.
+func TestEnterOnAnAriaAttendsIt(t *testing.T) {
+	var out countingWriter
+	in, lt := navInput(t, &out, true)
+	v := ariasView(t, "")
+	var attended string
+	lt.tr.attendAria = func(id string) { attended = id }
+	v.act = func(a rpc.ViewAction) {
+		pitAct(in, a, func(context.Context, string, json.RawMessage, string) error {
+			t.Error("attend sent a daemon call")
+			return nil
+		})
+	}
+	lt.tr.showLivePit("arias", v, false)
+	lt.tr.pit.lines(100, 20)
+	if !lt.tr.pit.focus("arias.nearest-tusk") {
+		t.Fatal("no aria row")
+	}
+	in.consume([]byte("\r"))
+	if attended != "a0796d46a3ad532d986553f3b2aee31a" {
+		t.Errorf("Enter attended %q", attended)
+	}
+}
+
+func formRowIDs(rows []pitRow) []string {
+	var out []string
+	for _, r := range rows {
+		out = append(out, r.id)
+	}
+	return out
+}

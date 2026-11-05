@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -160,6 +161,10 @@ func (in *interactiveInput) execCommand(line string) {
 	}
 	if verb == "reaped" && len(argv) == 1 {
 		in.runLive("reaped", rpc.ReapedFormID)
+		return
+	}
+	if (verb == "ls" || verb == "list") && len(argv) == 1 {
+		in.openArias(argv)
 		return
 	}
 	if name, spec, ok := liveForm(argv); ok {
@@ -499,6 +504,10 @@ func (in *interactiveInput) runLive(name, spec string) { in.openLive(name, spec,
 
 // openLive dials off the input goroutine and installs under the render lock.
 func (in *interactiveInput) openLive(name, spec string, full bool) {
+	in.openLiveIf(name, spec, full, nil)
+}
+
+func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*formView) bool) {
 	if spec == "" {
 		spec = in.currentID()
 	}
@@ -509,6 +518,10 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 		view, closeView, err := openFormView(spec, in.loaded, in.renderLocked)
 		if err != nil {
 			in.note(name + ": " + err.Error())
+			return
+		}
+		if keep != nil && !keep(view) {
+			closeView()
 			return
 		}
 		view.closeConn = closeView
@@ -551,4 +564,26 @@ func (in *interactiveInput) progressIfSlow(msg string) (finished func()) {
 		mu.Unlock()
 		timer.Stop()
 	}
+}
+
+func (in *interactiveInput) openArias(argv []string) {
+	in.openLiveIf("arias", rpc.AriasFormID, false, func(v *formView) bool {
+		if formPeers(v.source().Shown()) == 0 {
+			return true
+		}
+		if !in.ariasFellBack.Swap(true) {
+			in.note(":ls shows this node's arias as a form only while the troupe has no peers; listing the troupe instead")
+		}
+		in.runThroughRouter(argv)
+		return false
+	})
+}
+
+func formPeers(snap form.Snapshot) int {
+	p := snap.Lookup("peers")
+	if p == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(*p)
+	return n
 }

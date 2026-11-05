@@ -281,6 +281,9 @@ func actionCall(a rpc.ViewAction, k viewRowKey, subject string) (json.RawMessage
 		fields[field] = raw
 	}
 	target := k.row
+	if k.aria != "" {
+		target = k.aria
+	}
 	if a.Target == rpc.TargetSubject {
 		target = subject
 	}
@@ -319,6 +322,14 @@ func pitAct(in *interactiveInput, a rpc.ViewAction, send actOn) {
 	name := k.row
 	if k.group != "" {
 		name = k.group + "/" + k.row
+	}
+	if a.Local == rpc.ViewAttend {
+		if t.attendAria == nil {
+			t.note("this session cannot attend (no shell to bind)")
+			return
+		}
+		t.attendAria(target)
+		return
 	}
 	if !v.armAction(a, name) {
 		t.setCommandNote("press " + a.Key + " again to " + a.Label + " " + name)
