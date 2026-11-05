@@ -12,6 +12,7 @@ const (
 	reclaimBackoffMin = time.Minute
 	reclaimBackoffMax = time.Hour
 	reclaimPace       = 20 * time.Millisecond
+	reclaimBatch      = 4
 )
 
 var errNotYet = errors.New("not yet")
@@ -22,9 +23,10 @@ type reclaimFailure struct {
 }
 
 type reclaimer struct {
-	do   func(id string) error
-	now  func() time.Time
-	pace time.Duration
+	do    func(id string) error
+	now   func() time.Time
+	pace  time.Duration
+	batch int
 
 	mu       sync.Mutex
 	queued   map[string]bool
@@ -39,6 +41,7 @@ func newReclaimer(do func(id string) error) *reclaimer {
 		do:       do,
 		now:      time.Now,
 		pace:     reclaimPace,
+		batch:    reclaimBatch,
 		queued:   map[string]bool{},
 		inflight: map[string]bool{},
 		fails:    map[string]reclaimFailure{},
@@ -114,19 +117,31 @@ func (r *reclaimer) drain(ctx context.Context) {
 	}
 }
 
+func (r *reclaimer) pass(ctx context.Context) bool {
+	for n := 0; n < max(r.batch, 1); n++ {
+		if ctx.Err() != nil {
+			return false
+		}
+		id, ok := r.pop()
+		if !ok {
+			return n > 0
+		}
+		r.settle(id, r.do(id))
+	}
+	return true
+}
+
 func (r *reclaimer) run(ctx context.Context) {
 	for {
-		for ctx.Err() == nil {
-			id, ok := r.pop()
-			if !ok {
-				break
-			}
-			r.settle(id, r.do(id))
+		for r.pass(ctx) {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(r.pace):
 			}
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		select {
 		case <-ctx.Done():

@@ -44,3 +44,5 @@ func (a *Angelus) WaitPacedReclaimsForBench() {
 }
 
 func (a *Angelus) RetainFormsForBench(ctx context.Context) { a.retainForms(ctx, false) }
+
+func (a *Angelus) SetReclaimBatchForBench(n int) { a.reclaims().batch = n }

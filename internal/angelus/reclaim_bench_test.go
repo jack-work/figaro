@@ -56,12 +56,26 @@ func BenchmarkLifetimeSweepWith200Due(b *testing.B) {
 // GC must not take the door down: round trips while 200 removals run against
 // the same store, compared with an idle daemon.
 func BenchmarkDoorRoundTripWhileReclaiming(b *testing.B) {
-	for _, mode := range []string{"idle", "reclaiming", "reclaiming-batched"} {
-		name := mode
+	modes := []struct {
+		name  string
+		batch int
+	}{
+		{"idle", 0},
+		{"reclaiming", 1},
+		{"reclaiming-batch-4", 4},
+		{"reclaiming-batch-8", 8},
+		{"reclaiming-batch-16", 16},
+		{"reclaiming-batched", 1},
+	}
+	for _, m := range modes {
+		mode := m.name
 		reclaiming := mode != "idle"
-		b.Run(name, func(b *testing.B) {
+		b.Run(mode, func(b *testing.B) {
 			a, acli, ctx := hardDeleteFixture(b)
 			waitRolesReadyTB(b, a)
+			if m.batch > 0 {
+				a.SetReclaimBatchForBench(m.batch)
+			}
 			target, err := acli.Create(ctx, dress(b, "mock"), nil)
 			require.NoError(b, err)
 			conn := dialAria(b, a, target.FigaroID, nil)

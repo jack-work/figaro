@@ -96,3 +96,84 @@ func TestNothingIsRemovedWhileTheRoleIndexWarms(t *testing.T) {
 		t.Fatalf("removed %v once the index was ready, want [due]", *removed)
 	}
 }
+
+// A batch removes back to back; one delete that is refused (its delete set
+// changed, a role appeared, the disk failed) must not hold up the others in
+// the same pass, and must back off on its own.
+func TestABatchWithOneRefusedDeleteRemovesTheRest(t *testing.T) {
+	var done []string
+	r := newReclaimer(func(id string) error {
+		done = append(done, id)
+		if id == "refused" {
+			return errors.New("delete set changed")
+		}
+		return nil
+	})
+	r.batch = 4
+	for _, id := range []string{"a", "refused", "c", "d"} {
+		r.enqueue(id)
+	}
+	if !r.pass(context.Background()) {
+		t.Fatal("a pass with work reported nothing done")
+	}
+	if len(done) != 4 {
+		t.Fatalf("attempted %v in one pass, want all four", done)
+	}
+	if !r.quiet() {
+		t.Fatal("the batch left work queued or in flight")
+	}
+	fails := r.failing()
+	if _, ok := fails["refused"]; !ok || len(fails) != 1 {
+		t.Fatalf("failures %v, want only the refused delete backing off", fails)
+	}
+}
+
+func TestAPassTakesAtMostOneBatch(t *testing.T) {
+	var done int
+	r := newReclaimer(func(string) error { done++; return nil })
+	r.batch = 2
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		r.enqueue(id)
+	}
+	r.pass(context.Background())
+	if done != 2 {
+		t.Fatalf("one pass removed %d, want the batch of 2", done)
+	}
+	r.pass(context.Background())
+	r.pass(context.Background())
+	if done != 5 || !r.quiet() {
+		t.Fatalf("three passes removed %d of 5", done)
+	}
+	if r.pass(context.Background()) {
+		t.Fatal("an empty queue reported a pass with work")
+	}
+}
+
+// El Inspector's condition for batching: every member of a batch is judged on
+// its own at commit time. A role that comes to point at one member, or a fresh
+// write to another, between the sweep's decision and the batch's commit skips
+// that member only; the rest of the batch is removed as decided.
+func TestABatchJudgesEachMemberAtCommit(t *testing.T) {
+	a, be, removed := ttlSweepFixture(t, "plain", "targeted", "written", "also")
+	for _, id := range []string{"plain", "targeted", "written", "also"} {
+		be.lastTS[id] = hoursAgo(25)
+	}
+	r := a.reclaims()
+	r.batch = 8
+	a.expireTTL()
+
+	be.roles["@role"] = "targeted"
+	be.lastTS["written"] = hoursAgo(0)
+
+	r.pass(context.Background())
+	got := map[string]bool{}
+	for _, id := range *removed {
+		got[id] = true
+	}
+	if !got["plain"] || !got["also"] || len(got) != 2 {
+		t.Fatalf("removed %v, want exactly [plain also]: the targeted and freshly written members are skipped, the rest go", *removed)
+	}
+	if len(r.failing()) != 0 {
+		t.Fatalf("skips were counted as failures: %v", r.failing())
+	}
+}
