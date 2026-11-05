@@ -41,6 +41,16 @@ func resultsFirst(blocks []nativeBlock) []nativeBlock {
 	return out
 }
 
+func joinRows(held, row json.RawMessage, role string) (json.RawMessage, bool) {
+	if role != "system" {
+		return mergeRows(held, row)
+	}
+	if isEffortRow(held) && isEffortRow(row) {
+		return row, true
+	}
+	return nil, false
+}
+
 // mergeRows reports false when either row does not parse; the caller then
 // leaves both alone.
 func mergeRows(a, b json.RawMessage) (json.RawMessage, bool) {

@@ -227,3 +227,75 @@ func TestAnOlderModelPicksUpAMidTurnEffortAtTheTopLevel(t *testing.T) {
 		t.Fatalf("output_config = %+v", req.OutputConfig)
 	}
 }
+
+func formWrite(lt uint64, effort string) message.Message {
+	return message.Message{Role: message.RoleInput, LogicalTime: lt, Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"system.thinking_effort": json.RawMessage(`"` + effort + `"`),
+		"mantra":                 json.RawMessage(`"` + effort + ` effort"`),
+	}, nil)}}
+}
+
+func effortRowsOf(t *testing.T, req nativeRequest) []string {
+	t.Helper()
+	var out []string
+	for i, raw := range req.Messages {
+		if rowRole(raw) != "system" {
+			continue
+		}
+		var row struct {
+			OutputConfig *outputConfig `json:"output_config"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil || row.OutputConfig == nil || row.OutputConfig.Effort == "" {
+			t.Fatalf("messages.%d is a system row without an effort, a 400 (system content must contain at least one block): %s", i, raw)
+		}
+		out = append(out, row.OutputConfig.Effort)
+	}
+	return out
+}
+
+// A fresh aria logs its birth form, effort included, as a patch-only input
+// before its first inquiry. That write changes the effort across it, so it
+// grows a trailing row, and the inquiry opens with its own: two system rows
+// side by side. Coalescing them through nativeMessage dropped output_config
+// and sent {"role":"system","content":[]} at messages.1, which 400s every
+// fresh aria's first turn.
+func TestAFreshAriasFirstTurnKeepsItsEffort(t *testing.T) {
+	a := &Anthropic{MaxTokens: 64, Templates: mustTemplates(t)}
+	rows, snap := encodeAll(t, a, []message.Message{
+		formWrite(1, "high"),
+		{Role: message.RoleInput, LogicalTime: 2, Content: []message.Content{message.TextContent("say ok")}},
+	})
+	req, err := a.projectMessagesWithModel(rows, snap, nil, 64, false, "claude-opus-5-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(effortRowsOf(t, req), ","); got != "high" {
+		t.Fatalf("effort rows %s, roles %s", got, roles(t, req))
+	}
+	if got := roles(t, req); got != "user,system,user" {
+		t.Fatalf("roles = %s", got)
+	}
+}
+
+// An effort set between turns is the same patch-only write; the next inquiry
+// runs at the new level, and the row that says so is the later of the pair.
+func TestAnEffortSetBetweenTurnsReachesTheNextInquiry(t *testing.T) {
+	a := &Anthropic{MaxTokens: 64, Templates: mustTemplates(t)}
+	rows, snap := encodeAll(t, a, []message.Message{
+		formWrite(1, "high"),
+		{Role: message.RoleInput, LogicalTime: 2, Content: []message.Content{message.TextContent("say ok")}},
+		{Role: message.RoleOutput, LogicalTime: 3, StopReason: message.StopEnd, Content: []message.Content{message.TextContent("ok")}},
+		formWrite(4, "low"),
+		{Role: message.RoleInput, LogicalTime: 5, Content: []message.Content{message.TextContent("again")}},
+	})
+	req, err := a.projectMessagesWithModel(rows, snap, nil, 64, false, "claude-opus-5-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(effortRowsOf(t, req), ","); got != "high,low" {
+		t.Fatalf("effort rows %s, roles %s", got, roles(t, req))
+	}
+	if req.OutputConfig != nil {
+		t.Fatalf("top-level effort %+v", req.OutputConfig)
+	}
+}

@@ -201,7 +201,7 @@ func coalesceRowsSeq(in provider.RowSeq) provider.RowSeq {
 		in(func(row json.RawMessage, lt uint64) bool {
 			role := rowRole(row)
 			if have && role != "" && role == heldRole {
-				if merged, ok := mergeRows(held, row); ok {
+				if merged, ok := joinRows(held, row, role); ok {
 					held, heldLT = merged, lt
 					return true
 				}
