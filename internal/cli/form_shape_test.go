@@ -364,3 +364,52 @@ func TestLAndHOpenAndCloseABranchInAFormPit(t *testing.T) {
 		}
 	}
 }
+
+func drawnRow(t *testing.T, v *formView, id string) string {
+	t.Helper()
+	for _, r := range v.Items(120) {
+		if r.id == id {
+			return r.str()
+		}
+	}
+	t.Fatalf("no row %q", id)
+	return ""
+}
+
+// A collapsed row named its keys ("at · mantra · nodes · purge_at"), so the
+// reaped arias' mantras and the models' names were hidden behind a keypress.
+// A hint names the key whose value labels each row; rows it does not name keep
+// the key names.
+func TestAHintsLabelKeyIsTheCollapsedRowsPeek(t *testing.T) {
+	reaped := *reapedView
+	reaped.Label = "mantra"
+	v := &formView{src: reapedShaped(), open: map[string]bool{}}
+	v.setView(&reaped)
+	got := drawnRow(t, v, "items.n2")
+	if !strings.Contains(got, `"second"`) || strings.Contains(got, "mantra") {
+		t.Errorf("reaped row = %q, want its mantra's value and no key names", got)
+	}
+
+	plain := &formView{src: reapedShaped(), open: map[string]bool{}}
+	plain.setView(reapedView)
+	if got := drawnRow(t, plain, "items.n2"); !strings.Contains(got, "mantra") {
+		t.Errorf("without a label key the row = %q, want the key names", got)
+	}
+
+	hint := *modelsHint
+	hint.Label = "name"
+	m := &formView{src: &fakeFormSource{snap: modelsFixture(t)}, open: map[string]bool{}}
+	m.setView(&hint)
+	if got := drawnRow(t, m, "anthropic.models.claude-opus-5"); !strings.Contains(got, `"Claude Opus 5"`) || strings.Contains(got, "context ·") {
+		t.Errorf("models row = %q, want the model's name", got)
+	}
+	if got := drawnRow(t, m, "anthropic"); strings.Contains(got, "Claude") {
+		t.Errorf("a provider row is not a hinted row, but reads %q", got)
+	}
+
+	m.open["anthropic.models.claude-opus-5"] = true
+	m.openRev++
+	if got := drawnRow(t, m, "anthropic.models.claude-opus-5"); strings.Contains(got, "Claude") {
+		t.Errorf("an open row still peeks: %q", got)
+	}
+}

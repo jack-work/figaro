@@ -116,6 +116,8 @@ type formNode struct {
 	rowGuide string
 	rowPad   int
 	rowOpen  bool
+	rowPeek  string
+	peek     string
 	tail     int
 }
 
@@ -179,9 +181,9 @@ func (n *formNode) kids() []*formNode {
 }
 
 func (n *formNode) rendered(width int) string {
-	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open {
+	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek {
 		n.row, n.tail = renderTreeRow(n, width)
-		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen = width, n.guide, n.pad, n.open
+		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek = width, n.guide, n.pad, n.open, n.peek
 	}
 	return n.row
 }
@@ -247,8 +249,10 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		w.out = append(w.out, c)
 		segs := append(labels[:len(labels):len(labels)], c.label)
 		under := row
+		c.peek = ""
 		if w.shape != nil {
 			under = w.shape.note(c, segs, row)
+			c.peek = w.shape.peek(c)
 		}
 		if c.open {
 			w.walk(c, c.cont, false, segs, under)
@@ -276,6 +280,10 @@ func renderTreeRow(n *formNode, width int) (string, int) {
 		line += ": " + strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + leafPreview(n.label, n.value)
 	case n.open:
 		line += fmt.Sprintf(" (%d)", n.size())
+	case n.peek != "":
+		line += fmt.Sprintf(" (%d)  ", n.size())
+		tail = len(line)
+		line += n.peek
 	default:
 		if inline, ok := inlineBranch(n); ok {
 			line += ": " + inline

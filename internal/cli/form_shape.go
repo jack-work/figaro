@@ -119,6 +119,20 @@ func (s *viewShape) note(c *formNode, segs []string, under *viewRowKey) *viewRow
 	return under
 }
 
+func (s *viewShape) peek(n *formNode) string {
+	if s.hint.Label == "" || n.leaf() {
+		return ""
+	}
+	if _, ok := s.heads[n.path]; !ok {
+		return ""
+	}
+	c := formChild(n, s.hint.Label)
+	if c == nil || !c.leaf() {
+		return ""
+	}
+	return leafPreview(c.label, c.value)
+}
+
 func (s *viewShape) head(path string) (viewRowKey, bool) {
 	if s == nil {
 		return viewRowKey{}, false
