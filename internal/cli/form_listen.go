@@ -88,7 +88,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		return view, func() { fcli.Close(); acli.Close(); cancel(); kick.close() }, nil
 	}
 
-	r := replica.New(newReplicaClient(), ariaTransport{fcli}, replica.Options{
+	r := replica.New(newReplicaClient(), ariaTransport{aria: fcli, loaded: view.present}, replica.Options{
 		Debounce: formEditDebounce,
 		MaxWait:  formEditMaxWait,
 		OnChange: func(_, _ form.Snapshot) { kick.kick() },
@@ -199,6 +199,8 @@ type formView struct {
 	refused   bool
 	touched   map[string]bool // paths under an edit the server has not answered
 	stopped   bool
+	access    *rpc.FormAccess
+	view      *rpc.FormView
 	refetch   func() (*rpc.FormResponse, error)
 	closeConn func()
 	repaint   func() // the host's; the view never paints itself
@@ -267,6 +269,7 @@ func (v *formView) resync() {
 		return
 	}
 	v.mirror.reset(resp.Snapshot, resp.Incarnation, resp.Version)
+	v.present(resp)
 	v.changed()
 }
 
@@ -305,6 +308,18 @@ func (v *formView) Items(width int) []pitRow {
 		v.root.take(root)
 		v.root.branch = true
 	}
+	if v.view != nil && v.view.List != "" {
+		if list := formChild(v.root, v.view.List); list != nil && !list.leaf() {
+			var out []pitRow
+			if v.notice != "" {
+				out = append(out, staticRow(clipLine(v.notice, width)))
+			}
+			out = append(out, v.tableItems(list, width)...)
+			v.items, v.itemsKey = out, key
+			v.rev++
+			return out
+		}
+	}
 	v.rows = flattenFormTree(v.root, v.open, v.rows[:0])
 
 	out := make([]pitRow, 0, len(v.rows)+1)
@@ -316,6 +331,8 @@ func (v *formView) Items(width int) []pitRow {
 		row := pitRow{textFrom: n, yankFrom: n, id: n.path}
 		if v.touched[n.path] {
 			row.note = "pending"
+		} else if n.leaf() && v.readOnlyLocked(n.path) {
+			row.note = "read-only"
 		}
 		out = append(out, row)
 		if !n.leaf() || !v.open[n.path] {
@@ -333,6 +350,17 @@ func (v *formView) Items(width int) []pitRow {
 	v.items, v.itemsKey = out, key
 	v.rev++
 	return out
+}
+
+func (v *formView) readOnlyLocked(path string) bool {
+	if v.access == nil {
+		return false
+	}
+	if !v.access.Writable() {
+		return true
+	}
+	_, denied := v.access.Refusal(path)
+	return denied
 }
 
 func touchedPaths(p form.Patch) map[string]bool {

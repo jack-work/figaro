@@ -386,3 +386,69 @@ func TestUnansweredPitEditsAreReportedAtExit(t *testing.T) {
 		t.Fatalf("reported twice: %q", out.String())
 	}
 }
+
+func rowNote(rows []pitRow, id string) string {
+	for _, r := range rows {
+		if r.id == id {
+			return r.note
+		}
+	}
+	return ""
+}
+
+// The daemon says which keys this caller may not write; the pit greys them
+// and refuses the edit with the daemon's reason instead of letting it bounce.
+func TestAKeyTheDaemonDeniesIsReadOnlyInThePit(t *testing.T) {
+	src := &fakeFormSource{snap: form.FromMap(formKeys("system.model", `"m"`, "mantra", `"x"`))}
+	v := &formView{src: src, open: map[string]bool{"system": true}, aria: "host"}
+	v.setAccess(&rpc.FormAccess{Mode: rpc.FormWritable, Deny: []rpc.KeyDeny{
+		{Key: "system.model", Kind: rpc.DenyOwnerHeld, Reason: "owner-held: only the owner sets it"},
+	}})
+	v.openRev++
+	rows := v.Items(80)
+	if got := rowNote(rows, "system.model"); got != "read-only" {
+		t.Errorf("system.model note = %q, want read-only", got)
+	}
+	if got := rowNote(rows, "mantra"); got != "" {
+		t.Errorf("mantra note = %q, want none", got)
+	}
+	if line, note := v.changeLine("system.model", "host"); line != "" || !strings.Contains(note, "owner-held") {
+		t.Errorf("changeLine offered %q (%q) on a denied key", line, note)
+	}
+	if line, _ := v.changeLine("mantra", "host"); line == "" {
+		t.Error("changeLine refused a key the daemon allows")
+	}
+	p, _, _ := shownFormEdit(tokenize(`set system.model "n"`), src.snap)
+	if err := v.Edit(p); err == nil || !strings.Contains(err.Error(), "owner-held") {
+		t.Errorf("Edit on a denied key = %v", err)
+	}
+	ok, _, _ := shownFormEdit(tokenize(`set mantra y`), src.snap)
+	if err := v.Edit(ok); err != nil {
+		t.Errorf("Edit on an allowed key: %v", err)
+	}
+}
+
+func TestAReadOnlyFormRefusesEveryEdit(t *testing.T) {
+	src := &fakeFormSource{snap: form.FromMap(formKeys("a", `1`))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setAccess(&rpc.FormAccess{Mode: rpc.FormReadOnly})
+	if v.editable() {
+		t.Error("a read-only form says it is editable")
+	}
+	if got := rowNote(v.Items(80), "a"); got != "read-only" {
+		t.Errorf("note = %q, want read-only", got)
+	}
+	p, _, _ := shownFormEdit(tokenize("set a 2"), src.snap)
+	if err := v.Edit(p); err == nil {
+		t.Error("a read-only form took an edit")
+	}
+}
+
+// An older daemon sends no access: the pit behaves as it did, editable.
+func TestNoAccessKeepsTheOldBehaviour(t *testing.T) {
+	src := &fakeFormSource{snap: form.FromMap(formKeys("a", `1`))}
+	v := &formView{src: src, open: map[string]bool{}}
+	if !v.editable() || rowNote(v.Items(80), "a") != "" {
+		t.Error("no access changed the pit")
+	}
+}

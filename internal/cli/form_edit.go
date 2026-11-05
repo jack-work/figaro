@@ -24,14 +24,21 @@ const (
 	formFlushOnClose = 2 * time.Second
 )
 
-type ariaTransport struct{ aria *sdk.Aria }
+type ariaTransport struct {
+	aria   *sdk.Aria
+	loaded func(*rpc.FormResponse)
+}
 
 func (t ariaTransport) Set(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
 	return t.aria.SetWith(ctx, req)
 }
 
 func (t ariaTransport) Load(ctx context.Context, client string) (*rpc.FormResponse, error) {
-	return t.aria.FormFor(ctx, client)
+	resp, err := t.aria.FormFor(ctx, client)
+	if err == nil && resp != nil && t.loaded != nil {
+		t.loaded(resp)
+	}
+	return resp, err
 }
 
 type replicaSource struct{ *replica.Replica }
@@ -87,6 +94,17 @@ func (v *formView) Edit(p form.Patch) error {
 		return errFormReadOnly
 	}
 	v.mu.Lock()
+	access := v.access
+	v.mu.Unlock()
+	if !access.Writable() {
+		return errFormReadOnly
+	}
+	for _, ent := range p.Entries() {
+		if d, denied := access.Refusal(ent.Key); denied {
+			return fmt.Errorf("%s is read-only here: %s", ent.Key, d.Reason)
+		}
+	}
+	v.mu.Lock()
 	if v.stopped {
 		notice := v.notice
 		v.mu.Unlock()
@@ -106,8 +124,31 @@ func (v *formView) refuse(err error) {
 }
 
 func (v *formView) editable() bool {
-	_, ok := v.source().(formEditor)
-	return ok
+	if _, ok := v.source().(formEditor); !ok {
+		return false
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.access.Writable()
+}
+
+func (v *formView) setAccess(a *rpc.FormAccess) {
+	v.mu.Lock()
+	v.access = a
+	v.items = nil
+	v.mu.Unlock()
+}
+
+func (v *formView) setView(view *rpc.FormView) {
+	v.mu.Lock()
+	v.view = view
+	v.items = nil
+	v.mu.Unlock()
+}
+
+func (v *formView) present(resp *rpc.FormResponse) {
+	v.setAccess(resp.Access)
+	v.setView(resp.View)
 }
 
 const formChangeMax = 64 << 10
@@ -130,6 +171,12 @@ func (v *formView) changeLine(path, subject string) (string, string) {
 	}
 	if !n.leaf() {
 		return "", "c changes a value: open the branch and pick a key"
+	}
+	v.mu.Lock()
+	d, denied := v.access.Refusal(path)
+	v.mu.Unlock()
+	if denied {
+		return "", path + " is read-only here: " + d.Reason
 	}
 	raw := n.value
 	if len(raw) > formChangeMax {
