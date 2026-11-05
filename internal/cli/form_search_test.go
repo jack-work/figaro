@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/api/rpc"
 	"strings"
 	"testing"
 
@@ -196,8 +197,8 @@ func TestACatalogSearchesAsAForm(t *testing.T) {
 		t.Fatalf("rows %s; want the match under its row", ids)
 	}
 	feed(t, p.in, "\r")
-	if row, _ := tr.pit.selected(); row.id != "items.n1.reason" {
-		t.Fatalf("after Enter the cursor is on %q", row.id)
+	if row, _ := tr.pit.selected(); row.id != "items.n1" {
+		t.Fatalf("after Enter the cursor is on %q, want the hit's row", row.id)
 	}
 	ids := pitIDs(tr)
 	if len(ids) < 3 || ids[1] != "items.n2" {
@@ -294,10 +295,10 @@ func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
 	feed(t, p.in, "\t")
 	var flat []string
 	for _, r := range tr.pit.list().rows {
-		flat = append(flat, r.id)
+		flat = append(flat, r.id+" "+r.str())
 	}
-	if !strings.Contains(strings.Join(flat, ","), "openrouter.models.x-ai/grok-4.1.") {
-		t.Errorf("the ranked list dropped x-ai/grok-4.1's fields: %v", flat)
+	if !strings.Contains(strings.Join(flat, ","), "openrouter.models.x-ai/grok-4.1 openrouter.models.x-ai/grok-4.1.") {
+		t.Errorf("the ranked list dropped x-ai/grok-4.1, or split its id: %v", flat)
 	}
 	feed(t, p.in, "\t")
 
@@ -313,4 +314,86 @@ func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
 	if row, _ := tr.pit.selected(); row.id != sel.id {
 		t.Errorf("after Enter the cursor is on %q, want %q", row.id, sel.id)
 	}
+}
+
+// In a form with a view hint every leaf was its own hit, and a path carries
+// its ancestors' labels, so '/king' in @arias matched nearly every key of
+// every aria and ^N stepped through one aria seven times. Hits under a hinted
+// row fold into one hit on the row, ranked by its best leaf, so ^N moves from
+// row to row; keys outside any row stay hits of their own.
+func TestAHintedRowIsOneHit(t *testing.T) {
+	p := newInputProbe(t, true)
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"arias.a1.mantra", `"king of spain"`, "arias.a1.handle", `"king-one"`, "arias.a1.cwd", `"/home/king"`,
+		"arias.a2.mantra", `"steering lanes"`, "arias.a2.handle", `"plain-two"`,
+		"arias.a3.mantra", `"the king returns"`, "arias.a3.handle", `"three"`,
+		"note", `"a king outside the list"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(&rpc.FormView{Rows: []string{"arias.*"}, Open: []string{"arias"}})
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/king")
+	got := map[string]bool{}
+	for _, id := range v.search.ranked {
+		got[id] = true
+	}
+	want := []string{"arias.a1", "arias.a3", "note"}
+	if len(v.search.ranked) != len(want) {
+		t.Fatalf("hits %v, want one per row and one for note: %v", v.search.ranked, want)
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("no hit for %s in %v", w, v.search.ranked)
+		}
+	}
+	if v.search.ranked[0] != "arias.a1" {
+		t.Errorf("best hit %q, want arias.a1, whose leaves match best", v.search.ranked[0])
+	}
+	seen := map[string]bool{}
+	for i := 0; i < len(want); i++ {
+		row, _ := tr.pit.selected()
+		if seen[row.id] {
+			t.Fatalf("^N came back to %q after %d steps", row.id, i)
+		}
+		seen[row.id] = true
+		if !got[row.id] {
+			t.Errorf("the cursor is on %q, not on a hit", row.id)
+		}
+		feed(t, p.in, "\x0e")
+	}
+	if at, n := v.QueryCount(); n != len(want) || at != 1 {
+		t.Errorf("counter %d/%d after a full lap, want 1/%d", at, n, len(want))
+	}
+}
+
+// A folded hit is its row, and a row was drawn without marks, so a match in an
+// aria's name ('king' in kingdom-utensil) showed no highlighted letter at all.
+// The row marks the letters of its own label that its best leaf's match covers.
+func TestAFoldedRowMarksTheMatchInItsLabel(t *testing.T) {
+	p := newInputProbe(t, true)
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"arias.kingdom-utensil.mantra", `"hunting a vps"`,
+		"arias.other.mantra", `"steering"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(&rpc.FormView{Rows: []string{"arias.*"}, Open: []string{"arias"}})
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/king")
+	for _, r := range tr.pit.list().rows {
+		if r.id != "arias.kingdom-utensil" {
+			continue
+		}
+		text := r.str()
+		var marked []byte
+		for _, m := range r.marks {
+			marked = append(marked, text[m])
+		}
+		if string(marked) != "king" {
+			t.Fatalf("row %q marks %q, want the letters of king", text, marked)
+		}
+		return
+	}
+	t.Fatalf("no row for the hit: %v", pitIDs(tr))
 }

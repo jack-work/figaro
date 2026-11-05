@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/rpc"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/fuzzy"
@@ -16,6 +18,7 @@ type formSearch struct {
 	query  string
 	hits   []fuzzy.Hit
 	ranked []string
+	best   map[string]fuzzy.Hit
 	up     map[string]string
 	at     int
 	rev    uint64
@@ -76,7 +79,7 @@ func (v *formView) EndQuery(keep string) {
 		}
 		v.openRev++
 	}
-	v.search.query, v.search.hits, v.search.ranked, v.search.up, v.search.at = "", nil, nil, nil, 0
+	v.search.query, v.search.hits, v.search.ranked, v.search.best, v.search.up, v.search.at = "", nil, nil, nil, nil, 0
 	v.search.rev++
 }
 
@@ -101,8 +104,16 @@ func (v *formView) rank(snap form.Snapshot) {
 		s.stamp, s.built = st, true
 	}
 	s.hits, s.ranked = s.index.Query(s.match, s.query), s.ranked[:0]
+	s.best = make(map[string]fuzzy.Hit, len(s.hits))
 	for _, h := range s.hits {
-		s.ranked = append(s.ranked, h.Entry.Path)
+		at := v.hintedRow(h.Entry.Keys)
+		if at == "" {
+			at = h.Entry.Path
+		}
+		if _, ok := s.best[at]; !ok {
+			s.best[at] = h
+			s.ranked = append(s.ranked, at)
+		}
 	}
 	if s.at >= len(s.ranked) {
 		s.at = 0
@@ -157,7 +168,7 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 			h, hit := byPath[c.path]
 			if !hit || !c.leaf() {
 				c.open = !c.leaf()
-				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path})
+				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path, marks: s.labelMarks(c)})
 				if !c.leaf() {
 					walk(c, c.cont, false)
 				}
@@ -240,7 +251,8 @@ func (v *formView) flatSearchItems(width int) []pitRow {
 	s := v.search
 	var out []pitRow
 	out = append(out, noticeRows(v.notice, width)...)
-	for _, h := range s.hits {
+	for _, at := range s.ranked {
+		h := s.best[at]
 		n := formAt(v.root, h.Entry.Keys, nil)
 		if n == nil || !n.leaf() {
 			continue
@@ -249,7 +261,7 @@ func (v *formView) flatSearchItems(width int) []pitRow {
 		shown.guided, shown.guide, shown.pad, shown.width = true, "", 0, width
 		shown.label = h.Entry.Path
 		text, marks := searchedRow(&shown, h, s, width)
-		out = append(out, pitRow{text: text, yankFrom: n, id: n.path, marks: marks})
+		out = append(out, pitRow{text: text, yankFrom: n, id: at, marks: marks})
 	}
 	return out
 }
@@ -277,4 +289,35 @@ func formAt(n *formNode, keys []string, up map[string]string) *formNode {
 		}
 	}
 	return n
+}
+
+func (v *formView) hintedRow(keys []string) string {
+	if v.view == nil || len(v.view.Rows) == 0 {
+		return ""
+	}
+	for k := 1; k < len(keys); k++ {
+		if _, ok := rpc.MatchPath(v.view.Rows, keys[:k]); ok {
+			return strings.Join(keys[:k], ".")
+		}
+	}
+	return ""
+}
+
+func (s *formSearch) labelMarks(n *formNode) []int {
+	h, ok := s.best[n.path]
+	if !ok || !h.OnKey {
+		return nil
+	}
+	from := utf8.RuneCountInString(n.path) - utf8.RuneCountInString(n.label)
+	to := from + utf8.RuneCountInString(n.label)
+	label := []rune(n.label)
+	lead := len(n.lead())
+	var out []int
+	for _, p := range h.KeyPositions(s.match, s.query) {
+		if p < from || p >= to {
+			continue
+		}
+		out = append(out, lead+len(string(label[:p-from])))
+	}
+	return out
 }
