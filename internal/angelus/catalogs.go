@@ -121,3 +121,5 @@ func (h *handlers) refreshReapedForm() {
 		_, _, _ = h.reapedForm.ApplyEffect(patch, 0)
 	}
 }
+
+func isLocalFormID(id string) bool { return isCatalogID(id) || id == rpc.AriasFormID }

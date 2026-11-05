@@ -135,6 +135,20 @@ func (hb *ariaHub) Close() {
 	}
 }
 
+func (hb *ariaHub) drop() {
+	hb.mu.Lock()
+	hb.closed = true
+	targets := make([]*follower, 0, len(hb.followers))
+	for f := range hb.followers {
+		targets = append(targets, f)
+	}
+	hb.followers = map[*follower]struct{}{}
+	hb.mu.Unlock()
+	for _, f := range targets {
+		f.forget(hb)
+	}
+}
+
 // subscribableAgent is narrow on purpose: the hub must not be able to run a turn.
 type subscribableAgent interface {
 	figaro.AgentServer

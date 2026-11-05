@@ -227,7 +227,7 @@ func (h *handlers) nodeResolve(ctx context.Context, params json.RawMessage) (any
 	}
 	out := rpc.NodeResolveResponse{IDs: map[string]string{}}
 	for _, ref := range req.Refs {
-		if ref == "" || isCatalogID(ref) || strings.Contains(ref, rpc.NodeSeparator) {
+		if ref == "" || isLocalFormID(ref) || strings.Contains(ref, rpc.NodeSeparator) {
 			continue
 		}
 		if h.holdsMove(ref) != nil {

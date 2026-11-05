@@ -7,6 +7,7 @@ import (
 
 type FormView struct {
 	Rows    []string     `json:"rows"`
+	RowAria string       `json:"row_aria,omitempty"`
 	Open    []string     `json:"open,omitempty"`
 	Sort    string       `json:"sort,omitempty"`
 	Label   string       `json:"label,omitempty"`
@@ -17,6 +18,7 @@ type FormView struct {
 
 type ViewMark struct {
 	Key          string `json:"key,omitempty"`
+	KeySubject   string `json:"key_subject,omitempty"`
 	Equals       string `json:"equals,omitempty"`
 	GroupSubject string `json:"group_subject,omitempty"`
 	RowSubject   string `json:"row_subject,omitempty"`
@@ -36,10 +38,15 @@ const (
 	ArgRow   ViewArg = "row"
 )
 
+type ViewLocal string
+
+const ViewAttend ViewLocal = "attend"
+
 type ViewAction struct {
 	Key     string             `json:"key"`
 	Label   string             `json:"label"`
-	Method  string             `json:"method"`
+	Method  string             `json:"method,omitempty"`
+	Local   ViewLocal          `json:"local,omitempty"`
 	Params  json.RawMessage    `json:"params,omitempty"`
 	Confirm bool               `json:"confirm,omitempty"`
 	Target  ViewTarget         `json:"target,omitempty"`

@@ -27,7 +27,7 @@ func (h *handlers) requireAria(id string) error {
 	if err := rpc.ValidateAriaID(id); err != nil {
 		return err
 	}
-	if h.catalog(id) != nil {
+	if h.catalog(id) != nil || id == rpc.AriasFormID {
 		return nil
 	}
 	if h.angelus.Registry.Get(id) != nil {

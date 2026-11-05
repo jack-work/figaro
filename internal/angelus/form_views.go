@@ -21,6 +21,18 @@ var formViews = map[string]rpc.FormView{
 			{Key: "X", Label: "purge now", Method: rpc.MethodKill, Params: purgeParams, Confirm: true},
 		},
 	},
+	rpc.AriasFormID: {
+		Rows:    []string{"arias.*", "**.forks.*"},
+		Open:    []string{"arias", "**.forks"},
+		RowAria: "id",
+		Label:   "mantra",
+		Sort:    "-active_at",
+		Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},
+		Actions: []rpc.ViewAction{
+			{Key: "Enter", Label: "attend", Local: rpc.ViewAttend},
+			{Key: "x", Label: "kill", Method: rpc.MethodKill, Confirm: true},
+		},
+	},
 	models.FormID: {
 		Rows:  []string{"*.models.*"},
 		Open:  []string{"*", "*.models"},

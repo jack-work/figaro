@@ -186,8 +186,14 @@ func checkedByHandler(method string) bool {
 	return false
 }
 
-func filtersPerRow(method string) bool {
-	return method == rpc.MethodList || method == rpc.MethodNodeResolve
+func filtersPerRow(r Request) bool {
+	switch r.Method {
+	case rpc.MethodList, rpc.MethodNodeResolve:
+		return true
+	case rpc.MethodForm, rpc.MethodFollow, rpc.MethodAttach:
+		return r.Aria == rpc.AriasFormID
+	}
+	return false
 }
 
 func Enforce(p *Policies) Policy {
@@ -202,7 +208,7 @@ func Enforce(p *Policies) Policy {
 		if verb == rpc.VerbNone && r.Door.Trusted() {
 			return Allow()
 		}
-		if verb == rpc.VerbNone || filtersPerRow(r.Method) {
+		if verb == rpc.VerbNone || filtersPerRow(r) {
 			if !p.HoldsRole(r.Subject) {
 				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
 			}

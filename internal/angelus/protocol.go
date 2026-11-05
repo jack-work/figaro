@@ -173,6 +173,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if id == "" {
 			return nil, fmt.Errorf("%s: no %s: an aria method names its aria", method, rpc.AriaKey)
 		}
+		if id == rpc.AriasFormID {
+			return h.ariasMethod(ctx, method, params)
+		}
 		hb := h.angelus.Hubs.get(id)
 		if hb == nil {
 			if err := h.requireAria(id); err != nil {
@@ -260,6 +263,8 @@ type handlers struct {
 
 	reapedForm *store.Form
 	reapedMu   sync.Mutex
+
+	arias ariasForms
 
 	// readerInst's per-aria servers are the window; a reader per call would retain nothing.
 	readerOnce sync.Once

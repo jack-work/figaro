@@ -223,7 +223,7 @@ func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
 }
 
 func (h *handlers) knownID(id string) bool {
-	if isCatalogID(id) {
+	if isLocalFormID(id) {
 		return true
 	}
 	if h.angelus.Hubs != nil && h.angelus.Hubs.get(id) != nil {
