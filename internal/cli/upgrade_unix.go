@@ -28,6 +28,7 @@ type procInfo struct {
 	Cwd                    string
 	Stdin                  string
 	Env                    []string
+	DroppedEnv             []string
 	Daemon                 bool
 }
 
@@ -104,6 +105,7 @@ func clientOf(pane tmuxPane, p procInfo, procs procTable) paneClient {
 		Argv:       p.Argv,
 		Cwd:        p.Cwd,
 		Env:        p.Env,
+		DroppedEnv: p.DroppedEnv,
 		Own:        p.PID == pane.PID,
 		StdinPiped: p.Stdin != "" && !strings.HasPrefix(p.Stdin, "/dev/pts/") && !strings.HasPrefix(p.Stdin, "/dev/tty"),
 	}
@@ -168,11 +170,7 @@ func readProc(pid int) (procInfo, bool) {
 	if isFigaroExe(p.Exe) {
 		env, _ := os.ReadFile(filepath.Join(dir, "environ"))
 		p.Daemon = (len(p.Argv) > 1 && p.Argv[1] == "--angelus") || bytes.Contains(env, []byte("_FIGARO_DAEMON=1\x00"))
-		for _, kv := range strings.Split(string(env), "\x00") {
-			if strings.HasPrefix(kv, "FIGARO_") || strings.HasPrefix(kv, "PATH=") {
-				p.Env = append(p.Env, kv)
-			}
-		}
+		p.Env, p.DroppedEnv = replayableEnv(strings.Split(string(env), "\x00"))
 	}
 	return p, true
 }
@@ -512,6 +510,14 @@ func unconfirmedLines(pane, screen string) []string {
 	return lines
 }
 
+func respawnArgs(c paneClient) []string {
+	args := []string{"respawn-pane", "-k", "-t", c.Pane, "-c", c.Cwd}
+	for _, kv := range c.Env {
+		args = append(args, "-e", kv)
+	}
+	return append(append(args, "--"), c.Argv...)
+}
+
 func (o upgradeOptions) respawnClient(s upgradeStep) string {
 	c := s.Client
 	line := shownArgv(c.Argv)
@@ -519,15 +525,13 @@ func (o upgradeOptions) respawnClient(s upgradeStep) string {
 		return fmt.Sprintf("left %s (%s): %s; restart it yourself", c.Pane, line, s.Reason)
 	}
 	if c.Own {
-		args := []string{"respawn-pane", "-k", "-t", c.Pane, "-c", c.Cwd}
-		for _, kv := range c.Env {
-			args = append(args, "-e", kv)
-		}
-		args = append(append(args, "--"), c.Argv...)
-		err := o.tmux(args...).Run()
+		err := o.tmux(respawnArgs(c)...).Run()
 		_ = o.tmux("set-option", "-p", "-u", "-t", c.Pane, "remain-on-exit").Run()
 		if err != nil {
 			return fmt.Sprintf("left %s (%s): respawn-pane failed: %s", c.Pane, line, err)
+		}
+		if len(c.DroppedEnv) > 0 {
+			return fmt.Sprintf("respawned %s: %s (not carried over: %s; set them in the pane if it needs them)", c.Pane, line, strings.Join(c.DroppedEnv, ", "))
 		}
 		return fmt.Sprintf("respawned %s: %s", c.Pane, line)
 	}

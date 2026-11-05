@@ -186,3 +186,37 @@ func TestUpgradeNeverTypesACommandLineThatHoldsAControlCharacter(t *testing.T) {
 		t.Errorf("a printable command line is still replayed: got %s (%s)", s.Action, s.Reason)
 	}
 }
+
+// respawn-pane -e K=V puts the value on tmux's command line, which every local
+// process can read in /proc. Only figaro's non-secret variables are carried
+// over; a key or passphrase in the client's environment is dropped and named.
+func TestUpgradeNeverCarriesASecretIntoTheTmuxCommandLine(t *testing.T) {
+	environ := []string{
+		"PATH=/run/current-system/sw/bin",
+		"FIGARO_RUNTIME_DIR=/run/user/1000/figaro",
+		"FIGARO_GATEWAY_API_KEY=sk-live-0123456789",
+		"FIGARO_HUSH_PASSPHRASE=correct horse battery staple",
+		"FIGARO_SOMETHING_NEW=maybe-secret",
+		"HOME=/home/g",
+	}
+	kept, dropped := replayableEnv(environ)
+	c := paneClient{Pane: "%2", Own: true, Cwd: "/home/g", Env: kept, DroppedEnv: dropped, Argv: []string{"figaro", "form", "listen", "abc"}}
+	argv := strings.Join(respawnArgs(c), "\x00")
+	for _, secret := range []string{"sk-live-0123456789", "correct horse battery staple", "maybe-secret", "FIGARO_GATEWAY_API_KEY", "FIGARO_HUSH_PASSPHRASE"} {
+		if strings.Contains(argv, secret) {
+			t.Errorf("%q reached the tmux command line: %q", secret, argv)
+		}
+	}
+	for _, carried := range []string{"PATH=/run/current-system/sw/bin", "FIGARO_RUNTIME_DIR=/run/user/1000/figaro"} {
+		if !strings.Contains(argv, carried) {
+			t.Errorf("%q should be carried over: %q", carried, argv)
+		}
+	}
+	want := "FIGARO_GATEWAY_API_KEY FIGARO_HUSH_PASSPHRASE FIGARO_SOMETHING_NEW"
+	if got := strings.Join(dropped, " "); got != want {
+		t.Errorf("dropped and named: got %q, want %q", got, want)
+	}
+	if strings.Contains(strings.Join(dropped, " "), "sk-live") {
+		t.Error("a dropped variable is named, never shown with its value")
+	}
+}

@@ -27,6 +27,7 @@ type paneClient struct {
 	Argv       []string
 	Cwd        string
 	Env        []string
+	DroppedEnv []string
 	Own        bool
 	StdinPiped bool
 }
@@ -92,6 +93,37 @@ func holdsControl(s string) bool {
 		}
 	}
 	return false
+}
+
+var replayedEnv = map[string]bool{
+	"PATH":                    true,
+	"FIGARO_ARIA":             true,
+	"FIGARO_NO_BIND":          true,
+	"FIGARO_RUNTIME_DIR":      true,
+	"FIGARO_STATE_DIR":        true,
+	"FIGARO_CONFIG_DIR":       true,
+	"FIGARO_CACHE_DIR":        true,
+	"FIGARO_DEV_ROOT":         true,
+	"FIGARO_HUSH_APP":         true,
+	"FIGARO_HUSH_DIR":         true,
+	"FIGARO_LOG_LEVEL":        true,
+	"FIGARO_AMBIGUOUS_WIDE":   true,
+	"FIGARO_NO_SCROLL_REGION": true,
+}
+
+func replayableEnv(environ []string) (kept, dropped []string) {
+	for _, kv := range environ {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || (name != "PATH" && !strings.HasPrefix(name, "FIGARO_")) {
+			continue
+		}
+		if replayedEnv[name] {
+			kept = append(kept, kv)
+			continue
+		}
+		dropped = append(dropped, name)
+	}
+	return kept, dropped
 }
 
 func shownArgv(argv []string) string {
