@@ -23,6 +23,7 @@ type formSearch struct {
 	target map[string]int
 	label  map[string][]int
 	below  map[string]bool
+	inPeek map[string]fuzzy.Hit
 	up     map[string]string
 	at     int
 	rev    uint64
@@ -199,10 +200,17 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 		s.at = min(at, max(len(s.ranked)-1, 0))
 	}
 	s.up = map[string]string{}
+	s.inPeek = map[string]fuzzy.Hit{}
 	byPath := map[string]fuzzy.Hit{}
 	for _, h := range s.hits {
 		depth, ok := s.target[h.Entry.Path]
 		if !ok {
+			continue
+		}
+		if row, ok := v.labelLeafOf(h); ok && depth == len(h.Entry.Keys) {
+			if formAt(v.root, h.Entry.Keys[:len(h.Entry.Keys)-1], s.up) != nil {
+				s.inPeek[row] = h
+			}
 			continue
 		}
 		if formAt(v.root, h.Entry.Keys[:depth], s.up) != nil && depth == len(h.Entry.Keys) {
@@ -241,7 +249,22 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 				keys := append(segs[:len(segs):len(segs)], c.label)
 				c.open = !c.leaf() && s.below[c.path]
 				c.peek = v.rowPeek(c, keys)
-				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path, marks: s.labelMarks(c)})
+				marks := s.labelMarks(c)
+				peeked, inPeek := s.inPeek[c.path]
+				var shown []int
+				if inPeek {
+					shown = s.peekMarks(c)
+					marks = append(marks, shown...)
+				}
+				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path, marks: marks})
+				if inPeek && len(shown) == 0 && !c.open {
+					if leaf := formChild(c, v.view.Label); leaf != nil {
+						leaf.width, leaf.guided, leaf.pad = width, true, 0
+						leaf.guide, leaf.cont = c.cont+"└─ ", c.cont+"   "
+						text, lm := searchedRow(leaf, peeked, s, width)
+						out = append(out, pitRow{text: text, yankFrom: leaf, id: leaf.path, marks: lm, dimLead: len(leaf.lead())})
+					}
+				}
 				if c.open {
 					walk(c, c.cont, false, keys)
 				}
@@ -468,4 +491,42 @@ func (v *formView) flatNameRow(keys []string, width int) pitRow {
 		text += "  " + peek
 	}
 	return pitRow{text: clipLine(text, width), yankFrom: n, id: n.path, marks: marks}
+}
+
+func (v *formView) labelLeafOf(h fuzzy.Hit) (string, bool) {
+	keys := h.Entry.Keys
+	if v.view == nil || v.view.Label == "" || h.ValueAt < 0 || len(keys) < 2 || keys[len(keys)-1] != v.view.Label {
+		return "", false
+	}
+	if _, ok := rpc.MatchPath(v.view.Rows, keys[:len(keys)-1]); !ok {
+		return "", false
+	}
+	return strings.Join(keys[:len(keys)-1], "."), true
+}
+
+func (s *formSearch) peekMarks(n *formNode) []int {
+	text := n.rowText()
+	_, tail := n.rowDims()
+	if tail <= 0 || tail >= len(text) {
+		return nil
+	}
+	low := strings.ToLower(text)
+	var out []int
+	for _, t := range fuzzy.Parse(s.query) {
+		term, marked := t.ValueText()
+		if !marked {
+			continue
+		}
+		for from := tail; from < len(low); {
+			i := strings.Index(low[from:], term)
+			if i < 0 {
+				break
+			}
+			for k := 0; k < len(term); k++ {
+				out = append(out, from+i+k)
+			}
+			from += i + len(term)
+		}
+	}
+	return out
 }

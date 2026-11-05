@@ -603,3 +603,64 @@ func TestTabShowsANameHitAsItsRow(t *testing.T) {
 		t.Errorf("marks %q, want the letters of kingly in the fork's name", marked)
 	}
 }
+
+// A hit in a row's mantra drew the mantra twice: once as the row's label and
+// again as the mantra leaf beneath it. The row's label carries the match, its
+// letters marked, and the leaf is not drawn.
+func TestAMantraHitIsDrawnOnce(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := forkedArias()
+	v.view.Label = "mantra"
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/another")
+	row := "arias.parent-one.forks.plain-fork"
+	ids := strings.Join(pitIDs(tr), ",")
+	if strings.Contains(ids, row+".mantra") {
+		t.Errorf("the mantra is drawn as a leaf too: %s", ids)
+	}
+	for _, r := range tr.pit.list().rows {
+		if r.id != row {
+			continue
+		}
+		text := r.str()
+		if strings.Count(text, "another") != 1 {
+			t.Fatalf("the row reads %q, want its mantra once", text)
+		}
+		var marked []byte
+		for _, m := range r.marks {
+			marked = append(marked, text[m])
+		}
+		if string(marked) != "another" {
+			t.Errorf("marks %q in %q, want the match in the label", marked, text)
+		}
+		return
+	}
+	t.Fatalf("no row for the hit: %s", ids)
+}
+
+// A label clipped at the pane's edge can hide the match; then the mantra leaf
+// is drawn after all, so the match is on screen once rather than not at all.
+func TestAMantraHitPastTheClipKeepsItsLeaf(t *testing.T) {
+	p := newInputProbe(t, true)
+	long := strings.Repeat("filler words ", 9) + "needle at the end"
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"arias.one.id", `"o1"`, "arias.one.mantra", `"`+long+`"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(&rpc.FormView{Rows: []string{"arias.*"}, Open: []string{"arias"}, Label: "mantra"})
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/needle")
+	ids := strings.Join(pitIDs(tr), ",")
+	if !strings.Contains(ids, "arias.one.mantra") {
+		t.Fatalf("the clipped match has no leaf: %s", ids)
+	}
+	var shown []string
+	for _, r := range tr.pit.list().rows {
+		shown = append(shown, clipLine(r.str(), tr.w))
+	}
+	if got := strings.Join(shown, "\n"); strings.Count(got, "needle") != 1 {
+		t.Errorf("want the match in the pit once:\n%s", got)
+	}
+}
