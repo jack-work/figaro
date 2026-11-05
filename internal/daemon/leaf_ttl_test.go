@@ -109,8 +109,8 @@ func leafLifeOf(t *testing.T, m rpc.TroupeMembersResponse, node string) time.Dur
 
 // troupe ls judges a member lapsed by the leaf it last presented, so each
 // side of a handshake records the other's leaf life: the door for the node
-// that dialed, the dialer for the node it reached. With no leaf seen, the
-// node's own max_leaf_ttl stands in.
+// that dialed, the dialer for the node it reached. Gossip may handshake
+// before the test dials, so only the values after the dial are asserted.
 func TestTroupeMembersCarriesTheLeafEachMemberPresented(t *testing.T) {
 	root := newEstateRoot(t)
 	na := newLedgerNode(t, root)
@@ -123,9 +123,7 @@ func TestTroupeMembersCarriesTheLeafEachMemberPresented(t *testing.T) {
 	_, err = mb.Merge(ma.Entries()...)
 	require.NoError(t, err)
 
-	before := membersOf(t, na)
-	require.Equal(t, (60 * day).Milliseconds(), before.MaxLeafMS)
-	require.Zero(t, leafLifeOf(t, before, nb.id()), "a leaf was recorded before any handshake")
+	require.Equal(t, (60 * day).Milliseconds(), membersOf(t, na).MaxLeafMS)
 
 	l, err := (&peer.Dialer{Members: mb, Versions: nb.a.PeerVersions, Timeout: 2 * time.Second}).Open(context.Background(), na.id(), rpc.Passage{}, nil)
 	require.NoError(t, err)
