@@ -32,7 +32,7 @@ type formSearch struct {
 type liveSearcher interface {
 	SetQuery(q string) string
 	StepQuery(dir int) string
-	EndQuery(keep string)
+	EndQuery(keep string) string
 	QueryCount() (at, n int)
 	ToggleFlat()
 }
@@ -71,23 +71,67 @@ func (v *formView) StepQuery(dir int) string {
 	return s.current()
 }
 
-func (v *formView) EndQuery(keep string) {
+func (v *formView) EndQuery(keep string) string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.search == nil {
-		return
+		return keep
 	}
+	land := keep
 	if keep != "" {
-		chain := []string{keep}
-		for p, ok := v.search.up[keep]; ok && p != ""; p, ok = v.search.up[p] {
-			chain = append(chain, p)
-		}
-		slices.Reverse(chain)
+		chain := v.search.chainTo(keep)
+		chain = chain[:v.innermostRow(chain)+1]
+		land = chain[len(chain)-1]
 		v.revealLocked(chain)
 	}
 	v.search.query, v.search.hits, v.search.ranked, v.search.at = "", nil, nil, 0
 	v.search.best, v.search.target, v.search.label, v.search.up, v.search.below = nil, nil, nil, nil, nil
 	v.search.rev++
+	return land
+}
+
+func (s *formSearch) chainTo(keep string) []string {
+	at := keep
+	for {
+		if _, ok := s.up[at]; ok {
+			break
+		}
+		i := strings.LastIndexByte(at, '.')
+		if i < 0 {
+			return []string{keep}
+		}
+		at = at[:i]
+	}
+	chain := []string{at}
+	for p, ok := s.up[at]; ok && p != ""; p, ok = s.up[p] {
+		chain = append(chain, p)
+	}
+	slices.Reverse(chain)
+	return chain
+}
+
+func (v *formView) innermostRow(chain []string) int {
+	if v.view == nil || len(v.view.Rows) == 0 {
+		return len(chain) - 1
+	}
+	segs := make([]string, 0, len(chain))
+	parent := ""
+	row := -1
+	for i, p := range chain {
+		label := p
+		if parent != "" {
+			label = strings.TrimPrefix(p, parent+".")
+		}
+		segs = append(segs, label)
+		if _, ok := rpc.MatchPath(v.view.Rows, segs); ok {
+			row = i
+		}
+		parent = p
+	}
+	if row < 0 {
+		return len(chain) - 1
+	}
+	return row
 }
 
 func (v *formView) QueryCount() (at, n int) {

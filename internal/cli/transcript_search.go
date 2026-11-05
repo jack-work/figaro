@@ -99,10 +99,10 @@ func searchAccept(t *transcript) {
 		if row, ok := t.pit.selected(); ok {
 			keep = valuePath(row.id)
 		}
-		ls.EndQuery(keep)
+		land := ls.EndQuery(keep)
 		t.pit.refreshLive(t.w)
-		if keep != "" {
-			t.pit.focus(keep)
+		if land != "" {
+			t.pit.focus(land)
 		}
 		return
 	}

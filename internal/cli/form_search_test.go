@@ -479,3 +479,36 @@ func TestTheFilteredViewDrawsOnlyWhatMatches(t *testing.T) {
 		})
 	}
 }
+
+// Enter hands the search the path under the cursor, which may lie below the
+// hit it was folded into. The reveal walked only the search's own map, so a
+// path below the hit opened nothing; it starts from the deepest node the
+// search reached and lands on the innermost row, revealing through forks.
+func TestEnterRevealsThroughForksToTheInnermostRow(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := forkedArias()
+	v.view.Through = "forks"
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/kingly\r")
+	fork := "arias.parent-one.forks.kingly-fork"
+	if row, _ := tr.pit.selected(); row.id != fork {
+		t.Fatalf("after Enter the cursor is on %q, want the fork", row.id)
+	}
+	ids := strings.Join(pitIDs(tr), ",")
+	if strings.Contains(ids, "arias.parent-one.mantra") || strings.Contains(ids, "arias.parent-one.id") {
+		t.Errorf("the revealed parent shows its own keys: %s", ids)
+	}
+
+	q := forkedArias()
+	q.view.Through = "forks"
+	q.Items(100)
+	q.SetQuery("kingly")
+	q.Items(100)
+	if land := q.EndQuery(fork + ".mantra"); land != fork {
+		t.Errorf("a path below the hit landed on %q, want the fork", land)
+	}
+	if !q.open["arias.parent-one.forks"] {
+		t.Errorf("a path below the hit opened nothing: %v", q.open)
+	}
+}
