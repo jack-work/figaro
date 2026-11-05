@@ -172,10 +172,11 @@ func (h *handlers) ariasRows(ctx context.Context) ([]rpc.FigaroInfoResponse, int
 	if err != nil {
 		return nil, peers
 	}
-	var rows []rpc.FigaroInfoResponse
-	for _, r := range res.(rpc.ListResponse).Figaros {
-		if r.ReapedAt == 0 {
-			rows = append(rows, r)
+	all := res.(rpc.ListResponse).Figaros
+	rows := all[:0]
+	for i := range all {
+		if all[i].ReapedAt == 0 {
+			rows = append(rows, all[i])
 		}
 	}
 	return rows, peers
