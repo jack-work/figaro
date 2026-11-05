@@ -538,15 +538,26 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 		view.change = func() { pitChange(in.lt.tr) }
 		view.act = func(a rpc.ViewAction) { pitAct(in, a, in.actOnDaemon) }
 		in.mu.Lock()
-		if bound := in.bound; bound != nil {
-			view.subject = func() form.Snapshot {
-				snap, _, _ := bound.state()
-				return snap
-			}
-		}
-		in.lt.tr.showLivePit(name, view, full)
+		in.installLivePit(name, view, full)
 		in.mu.Unlock()
 	}()
+}
+
+func (in *interactiveInput) installLivePit(name string, view *formView, full bool) {
+	if bound := in.bound; bound != nil {
+		view.subject = func() form.Snapshot {
+			snap, _, _ := bound.state()
+			return snap
+		}
+	}
+	at := view.revealMarked()
+	t := in.lt.tr
+	t.showLivePit(name, view, full)
+	if at != "" {
+		t.pit.refreshLive(t.w)
+		t.pit.focus(at)
+		t.render()
+	}
 }
 
 func (in *interactiveInput) renderLocked() {

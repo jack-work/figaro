@@ -176,3 +176,53 @@ func (s *viewShape) actionHint() string {
 	}
 	return strings.Join(hints, " · ")
 }
+
+func (v *formView) revealMarked() string {
+	if v.view == nil || v.view.Mark == nil {
+		return ""
+	}
+	snap := v.source().Shown()
+	var subject form.Snapshot
+	if v.subject != nil {
+		subject = v.subject()
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.root == nil {
+		v.root = newFormRoot(snap)
+	} else {
+		v.root.take(snap.RootNode())
+		v.root.branch = true
+	}
+	s := &viewShape{hint: v.view, subject: subject}
+	var find func(n *formNode, labels []string) *formNode
+	find = func(n *formNode, labels []string) *formNode {
+		for _, c := range n.kids() {
+			if c.leaf() {
+				continue
+			}
+			segs := append(labels[:len(labels):len(labels)], c.label)
+			if k, ok := s.row(segs); ok && s.marked(c, k) {
+				return c
+			}
+			if hit := find(c, segs); hit != nil {
+				return hit
+			}
+		}
+		return nil
+	}
+	hit := find(v.root, nil)
+	if hit == nil {
+		return ""
+	}
+	for p := hit.path; ; {
+		i := strings.LastIndexByte(p, '.')
+		if i < 0 {
+			break
+		}
+		p = p[:i]
+		v.open[p] = true
+	}
+	v.openRev++
+	return hit.path
+}

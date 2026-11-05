@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -503,4 +505,50 @@ func formRowIDs(rows []pitRow) []string {
 		out = append(out, r.id)
 	}
 	return out
+}
+
+// :ls opens on the aria on screen: a fork's ancestors open, the cursor on it,
+// scrolled into view, so Enter typed at once attends that same aria.
+func TestAriasOpensOnTheAttendedAria(t *testing.T) {
+	keys := []string{"peers", `0`}
+	for i := 0; i < 60; i++ {
+		h := fmt.Sprintf("aria-%02d", i)
+		keys = append(keys, "arias."+h+".id", fmt.Sprintf(`"%032x"`, i+1000), "arias."+h+".active_at", strconv.Itoa(9_000_000-i))
+	}
+	keys = append(keys,
+		"arias.zz-parent.id", `"a0796d46a3ad532d986553f3b2aee31a"`,
+		"arias.zz-parent.active_at", `1`,
+		"arias.zz-parent.forks.dairy-singles.id", `"38f4563ac90d4206364a64c0a4f4c4fa"`,
+		"arias.zz-parent.forks.dairy-singles.mantra", `"the fork on screen"`,
+	)
+	v := &formView{src: &fakeFormSource{snap: form.FromMap(formKeys(keys...))}, open: map[string]bool{}}
+	hint := *ariasHint
+	hint.Sort = "-active_at"
+	v.setView(&hint)
+	subject := form.FromMap(formKeys("aria_id", `"38f4563ac90d4206364a64c0a4f4c4fa"`))
+	v.subject = func() form.Snapshot { return subject }
+
+	var out countingWriter
+	in, lt := navInput(t, &out, true)
+	var attended string
+	lt.tr.attendAria = func(id string) { attended = id }
+	v.act = func(a rpc.ViewAction) {
+		pitAct(in, a, func(context.Context, string, json.RawMessage, string) error { return nil })
+	}
+	in.mu.Lock()
+	in.installLivePit("arias", v, false)
+	in.mu.Unlock()
+
+	row, _ := lt.tr.pit.selected()
+	if row.id != "arias.zz-parent.forks.dairy-singles" {
+		t.Fatalf("the pit opened on %q, want the attended fork", row.id)
+	}
+	shown := strings.Join(lt.tr.pit.lines(100, 12), "\n")
+	if !strings.Contains(shown, "dairy-singles") {
+		t.Errorf("the attended fork is not scrolled into view:\n%s", shown)
+	}
+	in.consume([]byte("\r"))
+	if attended != "38f4563ac90d4206364a64c0a4f4c4fa" {
+		t.Errorf("Enter on the pit as opened attended %q", attended)
+	}
 }
