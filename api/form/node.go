@@ -34,6 +34,8 @@ func (n Node) Key() string { return n.n.key }
 
 func (n Node) Branch() bool { return n.n.branch && n.n.kids.root != nil }
 
+func (n Node) Leaf() bool { return !n.n.branch }
+
 func (n Node) Len() int {
 	if !n.n.branch {
 		return 0
