@@ -120,7 +120,10 @@ func keysEdit(loaded *config.Loaded, edit func(*keyconf.File) error) error {
 	if err != nil {
 		return err
 	}
-	before := f
+	before, _, err := keyconf.Load(path)
+	if err != nil {
+		return err
+	}
 	if err := edit(&f); err != nil {
 		return err
 	}
@@ -128,7 +131,7 @@ func keysEdit(loaded *config.Loaded, edit func(*keyconf.File) error) error {
 		applyUserKeys(before)
 		return fmt.Errorf("%s", diags[len(diags)-1])
 	}
-	if err := keyconf.Save(path, f); err != nil {
+	if err := keyconf.Save(path, before, f); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, path)

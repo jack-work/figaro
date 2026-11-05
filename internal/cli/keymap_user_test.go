@@ -237,7 +237,7 @@ func TestHelpColumnFollowsARemap(t *testing.T) {
 
 func TestKeysTomlEndToEnd(t *testing.T) {
 	path := t.TempDir() + "/keys.toml"
-	if err := keyconf.Save(path, binds("motions", "J", "half-down")); err != nil {
+	if err := keyconf.Save(path, keyconf.File{}, binds("motions", "J", "half-down")); err != nil {
 		t.Fatal(err)
 	}
 	f, warnings, err := keyconf.Load(path)

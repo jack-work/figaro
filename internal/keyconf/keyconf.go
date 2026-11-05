@@ -83,12 +83,24 @@ func (f *File) Forget(layer, keys string) bool {
 	return false
 }
 
-func Save(path string, f File) error {
+func Save(path string, before, after File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	out := Render(after)
+	src, err := os.ReadFile(path)
+	switch {
+	case err != nil && !os.IsNotExist(err):
+		return err
+	case err == nil && !after.Empty():
+		out = rewrite(string(src), before, after)
+		var got File
+		if _, err := toml.Decode(out, &got); err != nil || Render(got) != Render(after) {
+			return fmt.Errorf("%s: cannot edit it in place without changing what it binds; edit it by hand", path)
+		}
+	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(Render(f)), 0o600); err != nil {
+	if err := os.WriteFile(tmp, []byte(out), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
