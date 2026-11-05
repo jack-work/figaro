@@ -340,7 +340,14 @@ func (v *formView) flatSearchItems(width int) []pitRow {
 	out = append(out, noticeRows(v.notice, width)...)
 	for _, at := range s.ranked {
 		h := s.best[at]
-		n := formAt(v.root, h.Entry.Keys, nil)
+		keys := h.Entry.Keys
+		if depth := s.target[h.Entry.Path]; depth > 0 && depth < len(keys) {
+			if row := v.flatNameRow(keys[:depth], width); row.id != "" {
+				out = append(out, row)
+			}
+			continue
+		}
+		n := formAt(v.root, keys, nil)
 		if n == nil || !n.leaf() {
 			continue
 		}
@@ -436,4 +443,29 @@ func (s *formSearch) labelMarks(n *formNode) []int {
 		}
 	}
 	return out
+}
+
+func (v *formView) flatNameRow(keys []string, width int) pitRow {
+	n := formAt(v.root, keys, nil)
+	if n == nil {
+		return pitRow{}
+	}
+	s := v.search
+	text := n.path
+	var marks []int
+	at := 0
+	for i, k := range keys {
+		path := strings.Join(keys[:i+1], ".")
+		label := []rune(k)
+		for _, p := range s.label[path] {
+			if p < len(label) {
+				marks = append(marks, at+len(string(label[:p])))
+			}
+		}
+		at += len(k) + 1
+	}
+	if peek := v.rowPeek(n, keys); peek != "" {
+		text += "  " + peek
+	}
+	return pitRow{text: clipLine(text, width), yankFrom: n, id: n.path, marks: marks}
 }

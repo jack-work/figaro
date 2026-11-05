@@ -303,7 +303,7 @@ func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
 	for _, r := range tr.pit.list().rows {
 		flat = append(flat, r.id+" "+r.str())
 	}
-	if !strings.Contains(strings.Join(flat, ","), "openrouter.models.x-ai/grok-4.1 openrouter.models.x-ai/grok-4.1.") {
+	if !strings.Contains(strings.Join(flat, ","), "openrouter.models.x-ai/grok-4.1 openrouter.models.x-ai/grok-4.1") {
 		t.Errorf("the ranked list dropped x-ai/grok-4.1, or split its id: %v", flat)
 	}
 	feed(t, p.in, "\t")
@@ -568,5 +568,38 @@ func TestAStructuralKeyIsNeverATargetOnItsOwn(t *testing.T) {
 	feed(t, p.in, "\x1b/kingly")
 	if len(v.search.ranked) != 1 || v.search.ranked[0] != "arias.parent-one.forks.kingly-fork" {
 		t.Errorf("a fork's own name found %v, want the fork alone", v.search.ranked)
+	}
+}
+
+// Tab's ranked list drew each hit from its best leaf, so a hit on a fork's
+// name read as one of the fork's fields ('…kingly-fork.id: "f1"'). A hit on a
+// row's name is drawn as the row: its path and its label, the name's letters
+// marked.
+func TestTabShowsANameHitAsItsRow(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := forkedArias()
+	v.view.Label = "mantra"
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/kingly\t")
+	rows := tr.pit.list().rows
+	if len(rows) != 1 {
+		t.Fatalf("flat rows %v, want the one hit", pitIDs(tr))
+	}
+	r := rows[0]
+	text := r.str()
+	fork := "arias.parent-one.forks.kingly-fork"
+	if r.id != fork || !strings.HasPrefix(text, fork) || !strings.Contains(text, `"a fork of it"`) {
+		t.Fatalf("flat line %q (id %q), want the fork's path and its mantra", text, r.id)
+	}
+	if strings.Contains(text, "id:") || strings.Contains(text, `"f1"`) {
+		t.Errorf("the line shows a field of the fork: %q", text)
+	}
+	var marked []byte
+	for _, m := range r.marks {
+		marked = append(marked, text[m])
+	}
+	if string(marked) != "kingly" {
+		t.Errorf("marks %q, want the letters of kingly in the fork's name", marked)
 	}
 }
