@@ -16,6 +16,7 @@ type formSearch struct {
 	query  string
 	hits   []fuzzy.Hit
 	ranked []string
+	up     map[string]string
 	at     int
 	rev    uint64
 	flat   bool
@@ -71,13 +72,12 @@ func (v *formView) EndQuery(keep string) {
 		return
 	}
 	if keep != "" {
-		segs := strings.Split(keep, ".")
-		for i := 1; i < len(segs); i++ {
-			v.open[strings.Join(segs[:i], ".")] = true
+		for p, ok := v.search.up[keep]; ok && p != ""; p, ok = v.search.up[p] {
+			v.open[p] = true
 		}
 		v.openRev++
 	}
-	v.search.query, v.search.hits, v.search.ranked, v.search.at = "", nil, nil, 0
+	v.search.query, v.search.hits, v.search.ranked, v.search.up, v.search.at = "", nil, nil, nil, 0
 	v.search.rev++
 }
 
@@ -125,17 +125,15 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 		v.rank(snap)
 		s.at = min(at, max(len(s.ranked)-1, 0))
 	}
-	if s.flat {
-		return v.flatSearchItems(width)
-	}
-	include := map[string]bool{}
+	s.up = map[string]string{}
 	byPath := map[string]fuzzy.Hit{}
 	for _, h := range s.hits {
-		byPath[h.Entry.Path] = h
-		segs := strings.Split(h.Entry.Path, ".")
-		for i := 1; i <= len(segs); i++ {
-			include[strings.Join(segs[:i], ".")] = true
+		if formAt(v.root, h.Entry.Keys, s.up) != nil {
+			byPath[h.Entry.Path] = h
 		}
+	}
+	if s.flat {
+		return v.flatSearchItems(width)
 	}
 	var out []pitRow
 	if v.notice != "" {
@@ -145,7 +143,7 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	walk = func(n *formNode, cont string, top bool) {
 		var kids []*formNode
 		for _, c := range n.kids() {
-			if include[c.path] {
+			if _, ok := s.up[c.path]; ok {
 				kids = append(kids, c)
 			}
 		}
@@ -248,7 +246,7 @@ func (v *formView) flatSearchItems(width int) []pitRow {
 		out = append(out, staticRow(clipLine(v.notice, width)))
 	}
 	for _, h := range s.hits {
-		n := formChild(v.root, h.Entry.Path)
+		n := formAt(v.root, h.Entry.Keys, nil)
 		if n == nil || !n.leaf() {
 			continue
 		}
@@ -259,4 +257,29 @@ func (v *formView) flatSearchItems(width int) []pitRow {
 		out = append(out, pitRow{text: text, yankFrom: n, id: n.path, marks: marks})
 	}
 	return out
+}
+
+func formAt(n *formNode, keys []string, up map[string]string) *formNode {
+	chain := make([]*formNode, 0, len(keys)+1)
+	chain = append(chain, n)
+	for _, k := range keys {
+		var next *formNode
+		for _, c := range n.kids() {
+			if c.label == k {
+				next = c
+				break
+			}
+		}
+		if next == nil {
+			return nil
+		}
+		chain = append(chain, next)
+		n = next
+	}
+	if up != nil {
+		for i := 1; i < len(chain); i++ {
+			up[chain[i].path] = chain[i-1].path
+		}
+	}
+	return n
 }

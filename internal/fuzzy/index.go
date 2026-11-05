@@ -13,6 +13,7 @@ const ValueCap = 160
 
 type Entry struct {
 	Path     string
+	Keys     []string
 	key      Text
 	value    string
 	ValueCut bool
@@ -61,7 +62,7 @@ type Index struct {
 
 func (ix *Index) Update(snap form.Snapshot) {
 	ix.Reused, ix.Rebuilt = 0, 0
-	root := ix.build(snap.RootNode(), ix.root, "")
+	root := ix.build(snap.RootNode(), ix.root, "", nil)
 	if root != ix.root || ix.flat == nil {
 		ix.flat = root.collect(ix.flat[:0])
 	}
@@ -70,7 +71,7 @@ func (ix *Index) Update(snap form.Snapshot) {
 
 func (ix *Index) Entries() []*Entry { return ix.flat }
 
-func (ix *Index) build(n form.Node, old *node, path string) *node {
+func (ix *Index) build(n form.Node, old *node, path string, keys []string) *node {
 	st := n.Stamp()
 	if old != nil && old.stamp == st {
 		ix.Reused++
@@ -80,7 +81,7 @@ func (ix *Index) build(n form.Node, old *node, path string) *node {
 	if n.Leaf() {
 		ix.Rebuilt++
 		if path != "" {
-			out.entry = newEntry(path, n.Value().Raw())
+			out.entry = newEntry(path, keys, n.Value().Raw())
 		}
 		return out
 	}
@@ -90,15 +91,15 @@ func (ix *Index) build(n form.Node, old *node, path string) *node {
 		if path == "" {
 			sub = k
 		}
-		out.kids = append(out.kids, child{key: k, n: ix.build(c, old.child(k), sub)})
+		out.kids = append(out.kids, child{key: k, n: ix.build(c, old.child(k), sub, append(keys[:len(keys):len(keys)], k))})
 	}
 	sort.Slice(out.kids, func(a, b int) bool { return out.kids[a].key < out.kids[b].key })
 	return out
 }
 
-func newEntry(path string, raw json.RawMessage) *Entry {
+func newEntry(path string, keys []string, raw json.RawMessage) *Entry {
 	text := valueText(raw)
-	e := &Entry{Path: path, key: NewText(path)}
+	e := &Entry{Path: path, Keys: keys, key: NewText(path)}
 	if len(text) > ValueCap {
 		text, e.ValueCut = text[:ValueCap], true
 	}

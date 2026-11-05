@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/jack-work/figaro/api/models"
 	"strings"
 	"testing"
 
@@ -250,5 +251,66 @@ func TestTheFormSearchTakesTheQuerySyntax(t *testing.T) {
 	ids := strings.Join(pitIDs(tr), " ")
 	if strings.Contains(ids, "xwal") || !strings.Contains(ids, "system.tools") {
 		t.Fatalf("rows %s; want system.* without xwal", ids)
+	}
+}
+
+func dottedModelsProbe(t *testing.T) (*inputProbe, *formView) {
+	t.Helper()
+	p := newInputProbe(t, true)
+	snap := catalogFixture(t, map[string]models.Provider{
+		"openrouter": {Models: map[string]models.Entry{
+			"x-ai/grok-4.1":   {Name: "Grok 4.1", Source: models.SourceAPI},
+			"x-ai/grok-4":     {Name: "Grok 4", Source: models.SourceAPI},
+			"claude-opus-4.5": {Name: "Claude Opus 4.5", Source: models.SourceAPI},
+		}},
+	})
+	v := modelsView(t, snap, "", "")
+	p.lt.tr.pit.showLive(pitID("models"), v)
+	return p, v
+}
+
+// A model id with a dot (x-ai/grok-4.1, claude-opus-4.5) is one key. The search
+// split hit paths on dots to find their rows, so such a model's fields were
+// lost from the ranked list, Enter opened a branch that does not exist, and a
+// sibling whose id is the dotted one's prefix (x-ai/grok-4) was drawn as a hit.
+func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
+	p, v := dottedModelsProbe(t)
+	tr := p.lt.tr
+	feed(t, p.in, "/grok 4.1")
+	ids := strings.Join(pitIDs(tr), ",")
+	if !strings.Contains(ids, "openrouter.models.x-ai/grok-4.1") {
+		t.Fatalf("rows %s; want x-ai/grok-4.1 under its provider", ids)
+	}
+	for _, id := range pitIDs(tr) {
+		if id == "openrouter.models.x-ai/grok-4" {
+			t.Errorf("x-ai/grok-4 drawn as a hit for 'grok 4.1': %s", ids)
+		}
+	}
+	sel, _ := tr.pit.selected()
+	if !strings.HasPrefix(sel.id, "openrouter.models.x-ai/grok-4.1") {
+		t.Fatalf("cursor on %q; want under x-ai/grok-4.1", sel.id)
+	}
+
+	feed(t, p.in, "\t")
+	var flat []string
+	for _, r := range tr.pit.list().rows {
+		flat = append(flat, r.id)
+	}
+	if !strings.Contains(strings.Join(flat, ","), "openrouter.models.x-ai/grok-4.1.") {
+		t.Errorf("the ranked list dropped x-ai/grok-4.1's fields: %v", flat)
+	}
+	feed(t, p.in, "\t")
+
+	feed(t, p.in, "\r")
+	for k := range v.open {
+		if k == "openrouter.models.x-ai/grok-4" || k == "openrouter.models.claude-opus-4" {
+			t.Errorf("Enter opened %q, a branch that does not exist", k)
+		}
+	}
+	if !v.open["openrouter.models.x-ai/grok-4.1"] && sel.id != "openrouter.models.x-ai/grok-4.1" {
+		t.Errorf("Enter did not open x-ai/grok-4.1: %v", v.open)
+	}
+	if row, _ := tr.pit.selected(); row.id != sel.id {
+		t.Errorf("after Enter the cursor is on %q, want %q", row.id, sel.id)
 	}
 }
