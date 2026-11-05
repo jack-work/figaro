@@ -114,7 +114,7 @@ your changes applied.
 | command | command | `Enter 0x0a` activate · `Esc` cancel · `M-Enter` accept-snap · `^A` cmd-home · `^E` cmd-end · `^B` cmd-left · `^F` cmd-right · `M-b` cmd-word-left · `M-f` cmd-word-right · `^L` cmd-redraw · `^D` cmd-delete · `^T` cmd-transpose · `M-t` cmd-transpose-word · `M-u` cmd-upcase · `M-l` cmd-downcase · `M-c` cmd-capitalize · `^K` cmd-kill-to-end · `^U` cmd-kill-to-start · `^W` cmd-kill-word · `M-d` cmd-kill-word-forward · `M-DEL` cmd-kill-word-alpha · `M-\` cmd-delete-space · `^Y` cmd-yank · `M-y` cmd-yank-pop · `^P Up` cmd-history-prev · `^N Down` cmd-history-next · `M-<` cmd-history-first · `M->` cmd-history-last · `^R` cmd-search-prev · `^S` cmd-search-next · `M-p` cmd-prefix-prev · `M-n` cmd-prefix-next · `M-. M-_` cmd-yank-last-arg · `^_` cmd-undo · `M-r` cmd-revert · `^G ^C` cmd-abort · `Tab` cmd-complete · `^V` cmd-paste · `M-?` cmd-list-completions · `M-*` cmd-insert-completions · `Backspace ^H` backspace · `Home` cmd-home · `End` cmd-end · `Left` cmd-left · `Right` cmd-right |
 | composer | composer | `i` insert · `a` insert-after · `I` insert-home · `A` insert-end · `h` left · `Home` line-start · `End` line-end · `v` mark-char · `V` mark-line · `/` search · `?` search-back · `n` find-next · `N` find-prev · `F` fullscreen · `:` command · `Esc` cancel · `M-Enter ^S` send |
 | visual | visual | `Esc` cancel · `Enter 0x0a` activate · `a` attend · `M-Enter` open-path · `Y` yank-coordinate · `H` screen-top · `M` screen-middle · `L` screen-bottom · `n` find-next · `N` find-prev |
-| pit | pit,list | `a` attend · `Enter 0x0a` activate · `Esc` cancel · `x` delete · `X` delete-now · `n` find-next · `N` find-prev |
+| pit | pit,list | `a` attend · `Enter 0x0a` activate · `l` branch-open · `h` branch-close · `Right` right · `Left` left · `Esc` cancel · `x` delete · `X` delete-now · `n` find-next · `N` find-prev |
 | list | list | `e` scroll-down · `F` fullscreen · `0x0e` down · `0x10` up |
 | transcript | transcript | `f` prefix:fork · `c` prefix:comment · `a` attend · `^` attend-parent · `^O` aria-back · `Tab` aria-forward · `Enter 0x0a` activate · `e` toggle-bodies · `Esc` cancel · `x` delete · `0x0e` select-next · `0x10` select-prev · `n` find-next · `N` find-prev |
 | pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `H` hang-up · `S` form · `T` focus · `p` pinned · `h` help · `!` status · `Q` queue |
@@ -156,8 +156,10 @@ your changes applied.
 | `half-up` | transcript,visual,list |
 | `top` | transcript,visual,composer,list |
 | `bottom` | transcript,visual,composer,list |
-| `left` | visual,composer |
-| `right` | visual,composer |
+| `left` | visual,composer,list |
+| `branch-open` | list |
+| `branch-close` | list |
+| `right` | visual,composer,list |
 | `word-next` | visual,composer |
 | `word-prev` | visual,composer |
 | `word-end` | visual,composer |

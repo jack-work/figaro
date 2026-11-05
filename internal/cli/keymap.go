@@ -165,6 +165,7 @@ const (
 	helpListPit
 	helpConfirm
 	helpPitEnter
+	helpPitTree
 	helpVisualSelect
 	helpVisualAttend
 	helpOpenEditor
@@ -240,6 +241,7 @@ var helpRows = []helpRow{
 	{helpExpand, "Enter", "open tool bodies, quoted passages and form deltas within the selection"},
 	{helpToolBody, "e", "open the tool bodies within the selection"},
 	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value or a notification, attend an aria"},
+	{helpPitTree, "(in a form) l/→ · h/←", "open the branch under the cursor; close it, or go up to its parent (a list that is no tree keeps l list, h help)"},
 	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},
 	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
 	{helpOpenEditor, "o", "open the selected messages, or the highlight, in your editor; quitting it comes back here"},

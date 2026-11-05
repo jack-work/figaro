@@ -332,3 +332,35 @@ func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
 		t.Fatal("Enter on a model row sent nothing")
 	}
 }
+
+// In every form pit l and → open the branch under the cursor; h and ← close
+// it, and from a closed branch or a leaf go up to the parent. Typed as bytes,
+// so the keymap's layers decide, not the view.
+func TestLAndHOpenAndCloseABranchInAFormPit(t *testing.T) {
+	for _, keys := range []struct{ open, close string }{{"l", "h"}, {"\x1b[C", "\x1b[D"}} {
+		p, _ := searchProbe(t)
+		tr := p.lt.tr
+		tr.pit.lines(100, 20)
+		if !tr.pit.focus("system") {
+			t.Fatal("no system row")
+		}
+		feed(t, p.in, keys.open)
+		tr.pit.lines(100, 20)
+		if ids := strings.Join(pitIDs(tr), ","); !strings.Contains(ids, "system.model") {
+			t.Fatalf("%q did not open system: %s", keys.open, ids)
+		}
+		feed(t, p.in, "j")
+		if row, _ := tr.pit.selected(); !strings.HasPrefix(row.id, "system.") {
+			t.Fatalf("j left the cursor on %q", row.id)
+		}
+		feed(t, p.in, keys.close)
+		if row, _ := tr.pit.selected(); row.id != "system" {
+			t.Fatalf("%q on a child went to %q, want its parent", keys.close, row.id)
+		}
+		feed(t, p.in, keys.close)
+		tr.pit.lines(100, 20)
+		if ids := strings.Join(pitIDs(tr), ","); strings.Contains(ids, "system.model") {
+			t.Fatalf("%q on an open branch did not close it: %s", keys.close, ids)
+		}
+	}
+}

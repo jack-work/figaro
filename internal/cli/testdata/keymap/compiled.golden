@@ -359,10 +359,10 @@ list       "a"                pager pagerAttendRow
 list       "d"                pager listHalfDown
 list       "e"                pager listScrollDown
 list       "g"                pager prefix:g
-list       "h"                pager panelToggleHelp
+list       "h"                pager pagerBranchClose
 list       "j"                pager listDown
 list       "k"                pager listUp
-list       "l"                pager pagerListPit
+list       "l"                pager pagerBranchOpen
 list       "m"                input inputToggleBarVerbose
 list       "n"                pager pagerFindRowNext
 list       "p"                pager pagerExpandHead
@@ -377,6 +377,8 @@ list       nav:PgUp           pager listHalfUp
 list       nav:PgDn           pager listHalfDown
 list       nav:Home           pager listTop
 list       nav:End            pager listBottom
+list       nav:Left           pager pagerPitClose
+list       nav:Right          pager pagerPitOpen
 list       csi-u ctrl-c       input inputInterrupt
 list       csi-u ctrl-d       input inputDisconnect
 list       csi-u ctrl-l       input inputEnterTranscript

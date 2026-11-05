@@ -104,6 +104,11 @@ type itemView interface {
 	Activate(path string)
 }
 
+type treeView interface {
+	Expand(id string)
+	Collapse(id string) string
+}
+
 func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	if d.live != nil && d.live != v {
 		d.live.Close()

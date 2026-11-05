@@ -168,6 +168,43 @@ func pagerPitActivate(t *transcript) {
 	t.note("nothing to open on this row")
 }
 
+func pagerBranchOpen(t *transcript) {
+	if _, ok := t.pit.live.(treeView); !ok {
+		pagerListPit(t)
+		return
+	}
+	pagerPitOpen(t)
+}
+
+func pagerBranchClose(t *transcript) {
+	if _, ok := t.pit.live.(treeView); !ok {
+		panelToggleHelp(t)
+		return
+	}
+	pagerPitClose(t)
+}
+
+func pagerPitOpen(t *transcript) {
+	tv, ok := t.pit.live.(treeView)
+	row, has := t.pit.selected()
+	if !ok || !has || row.id == "" {
+		return
+	}
+	tv.Expand(row.id)
+}
+
+func pagerPitClose(t *transcript) {
+	tv, ok := t.pit.live.(treeView)
+	row, has := t.pit.selected()
+	if !ok || !has || row.id == "" {
+		return
+	}
+	if to := tv.Collapse(row.id); to != row.id {
+		t.pit.refreshLive(t.w)
+		t.pit.focus(to)
+	}
+}
+
 func pagerAttendRow(t *transcript) {
 	row, ok := t.pit.selected()
 	if !ok || row.id == "" {

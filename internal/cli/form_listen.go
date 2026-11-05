@@ -475,6 +475,43 @@ func (v *formView) Activate(id string) {
 	}
 }
 
+func (v *formView) Expand(id string) {
+	path := valuePath(id)
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for _, n := range v.rows {
+		if n.path == path && !v.open[path] {
+			v.open[path] = true
+			v.openRev++
+			return
+		}
+	}
+}
+
+func (v *formView) Collapse(id string) string {
+	path := valuePath(id)
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for _, n := range v.rows {
+		if n.path != path {
+			continue
+		}
+		if v.open[path] && path == id {
+			v.open[path] = false
+			v.openRev++
+			return path
+		}
+		if path != id {
+			return path
+		}
+		if len(path) > len(n.label) {
+			return path[:len(path)-len(n.label)-1]
+		}
+		return path
+	}
+	return id
+}
+
 func (v *formView) Close() {
 	if v.closeConn != nil {
 		v.closeConn()
