@@ -220,3 +220,33 @@ func TestUpgradeNeverCarriesASecretIntoTheTmuxCommandLine(t *testing.T) {
 		t.Error("a dropped variable is named, never shown with its value")
 	}
 }
+
+// The home-manager activation passes --if-changed: a switch that leaves the
+// figaro build where it was restarts nothing.
+func TestUpgradeRemembersTheBuildItLastSwitchedTo(t *testing.T) {
+	t.Setenv("FIGARO_STATE_DIR", t.TempDir())
+	if lastSwitchExe() != "" {
+		t.Fatal("a fresh state dir names no build")
+	}
+	recordSwitchExe("/nix/store/aaa-figaro/bin/figaro")
+	if got := lastSwitchExe(); got != "/nix/store/aaa-figaro/bin/figaro" {
+		t.Fatalf("got %q", got)
+	}
+	recordSwitchExe("/nix/store/bbb-figaro/bin/figaro")
+	if got := lastSwitchExe(); got != "/nix/store/bbb-figaro/bin/figaro" {
+		t.Fatalf("a newer switch replaces it: got %q", got)
+	}
+	o := upgradeOptions{ifChanged: true}
+	if !switchedAlready(o, "/nix/store/bbb-figaro/bin/figaro") {
+		t.Error("the same build again is a no-op")
+	}
+	if switchedAlready(o, "/nix/store/ccc-figaro/bin/figaro") {
+		t.Error("a changed build restarts")
+	}
+	if switchedAlready(upgradeOptions{}, "/nix/store/bbb-figaro/bin/figaro") {
+		t.Error("without --if-changed the same build still restarts")
+	}
+	if switchedAlready(upgradeOptions{ifChanged: true, dryRun: true}, "/nix/store/bbb-figaro/bin/figaro") {
+		t.Error("a dry run still prints the plan")
+	}
+}

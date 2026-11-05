@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -202,67 +202,6 @@ func (o upgradeOptions) listPanes() ([]tmuxPane, error) {
 	return panes, nil
 }
 
-type profileEntry struct {
-	Name        string
-	OriginalURL string
-	AttrPath    string
-	StorePath   string
-}
-
-func figaroProfileEntry() (profileEntry, error) {
-	out, err := exec.Command("nix", "profile", "list", "--json").Output()
-	if err != nil {
-		return profileEntry{}, fmt.Errorf("nix profile list: %w", err)
-	}
-	var doc struct {
-		Elements map[string]struct {
-			OriginalURL string   `json:"originalUrl"`
-			AttrPath    string   `json:"attrPath"`
-			StorePaths  []string `json:"storePaths"`
-		} `json:"elements"`
-	}
-	if err := json.Unmarshal(out, &doc); err != nil {
-		return profileEntry{}, fmt.Errorf("nix profile list: %w", err)
-	}
-	for name, e := range doc.Elements {
-		for _, sp := range e.StorePaths {
-			if _, err := os.Stat(filepath.Join(sp, "bin", "figaro")); err == nil {
-				return profileEntry{Name: name, OriginalURL: e.OriginalURL, AttrPath: e.AttrPath, StorePath: sp}, nil
-			}
-		}
-	}
-	return profileEntry{}, fmt.Errorf("no nix profile entry provides figaro")
-}
-
-func withRef(flakeURL, ref string) (string, error) {
-	if ref == "" {
-		return flakeURL, nil
-	}
-	u, err := url.Parse(flakeURL)
-	if err != nil {
-		return "", err
-	}
-	q := u.Query()
-	q.Set("ref", ref)
-	u.RawQuery = q.Encode()
-	return u.String(), nil
-}
-
-func buildFigaro(e profileEntry, ref string) (string, error) {
-	src, err := withRef(e.OriginalURL, ref)
-	if err != nil {
-		return "", err
-	}
-	cmd := exec.Command("nix", "build", "--no-link", "--print-out-paths", src+"#"+e.AttrPath)
-	cmd.Stderr = stderrw
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("nix build %s: %w", src, err)
-	}
-	path := strings.TrimSpace(strings.Split(strings.TrimSpace(string(out)), "\n")[0])
-	return filepath.Join(path, "bin", "figaro"), nil
-}
-
 func releaseOf(exe string) string {
 	out, err := exec.Command(exe, "version", "-j").Output()
 	if err != nil {
@@ -281,22 +220,22 @@ func releaseOf(exe string) string {
 	return v.Revision
 }
 
-func runningRelease() string {
+func runningAngelus() (release string, up bool) {
 	cli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer cli.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
 	if err != nil || st == nil {
-		return ""
+		return "", true
 	}
 	if st.Release != "" {
-		return st.Release
+		return st.Release, true
 	}
-	return short12(st.Build)
+	return short12(st.Build), true
 }
 
 func busyArias(ctx context.Context) ([]string, error) {
@@ -384,12 +323,22 @@ func printPlan(steps []upgradeStep, skipped []string, extra []string) {
 }
 
 func runUpgrade(o upgradeOptions) {
-	to, entry, err := upgradeTarget(o)
+	to, err := upgradeTarget(o.to)
 	if err != nil {
 		die("%s", err)
 	}
+	if switchedAlready(o, to) {
+		fmt.Fprintf(stderrw, "figaro: %s is the build already running; nothing to restart\n", to)
+		return
+	}
+	running, up := runningAngelus()
+	if !up && !o.dryRun {
+		recordSwitchExe(to)
+		fmt.Fprintln(stderrw, "figaro: no angelus is running; the next figaro command starts the new build")
+		return
+	}
 	toRelease := releaseOf(to)
-	fmt.Fprintf(stderrw, "angelus %s -> %s (%s)\n", orUnknown(runningRelease()), orUnknown(toRelease), to)
+	fmt.Fprintf(stderrw, "angelus %s -> %s (%s)\n", orUnknown(running), orUnknown(toRelease), to)
 
 	panes, _ := o.listPanes()
 	procs, err := readProcTable()
@@ -413,14 +362,6 @@ func runUpgrade(o upgradeOptions) {
 	if err := waitQuiet(o, liveBusyArias, 2*time.Second); err != nil {
 		die("%s", err)
 	}
-	if entry != nil && !o.afterSwitch {
-		cmd := exec.Command("nix", "profile", "upgrade", entry.Name)
-		cmd.Stdout, cmd.Stderr = stderrw, stderrw
-		if err := cmd.Run(); err != nil {
-			die("nix profile upgrade %s: %s", entry.Name, err)
-		}
-	}
-
 	var unconfirmed []string
 	for i := range steps {
 		if steps[i].Action == upgradeRespawn {
@@ -450,7 +391,29 @@ func runUpgrade(o upgradeOptions) {
 	for _, u := range unconfirmed {
 		fmt.Fprintln(stderrw, u)
 	}
+	recordSwitchExe(to)
 	fmt.Fprintf(stderrw, "figaro %s is running\n", orUnknown(toRelease))
+}
+
+func switchedAlready(o upgradeOptions, to string) bool {
+	return o.ifChanged && !o.dryRun && lastSwitchExe() == to
+}
+
+func switchStatePath() string { return filepath.Join(boot.StateDir(), "switched-to") }
+
+func lastSwitchExe() string {
+	raw, err := os.ReadFile(switchStatePath())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func recordSwitchExe(exe string) {
+	if err := os.MkdirAll(filepath.Dir(switchStatePath()), 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(switchStatePath(), []byte(exe+"\n"), 0o600)
 }
 
 func orUnknown(s string) string {
@@ -460,27 +423,18 @@ func orUnknown(s string) string {
 	return s
 }
 
-func upgradeTarget(o upgradeOptions) (to string, entry *profileEntry, err error) {
-	if o.to != "" {
-		to, err = filepath.Abs(o.to)
-		return to, nil, err
+func upgradeTarget(to string) (string, error) {
+	if to == "" {
+		return "", fmt.Errorf("give the new build with --to <path to its figaro binary>")
 	}
-	e, err := figaroProfileEntry()
+	abs, err := filepath.Abs(to)
 	if err != nil {
-		return "", nil, fmt.Errorf("%w; give the new binary with --to", err)
+		return "", err
 	}
-	installed := filepath.Join(e.StorePath, "bin", "figaro")
-	if o.afterSwitch {
-		return installed, &e, nil
+	if fi, err := os.Stat(abs); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+		return "", fmt.Errorf("%s is not an executable figaro", abs)
 	}
-	to, err = buildFigaro(e, o.ref)
-	if err != nil {
-		return "", nil, err
-	}
-	if to == installed {
-		return "", nil, fmt.Errorf("the profile already holds this build (%s)", to)
-	}
-	return to, &e, nil
+	return abs, nil
 }
 
 func (o upgradeOptions) stopClient(s *upgradeStep) []string {

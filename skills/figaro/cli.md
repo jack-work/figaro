@@ -348,7 +348,6 @@ observer's mouth.
 | `figaro update [--check\|--apply]` | Check for a newer release. |
 | `figaro completion install [shell]` | Install shell completion. |
 | `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |
-| `figaro upgrade` | Build the profile's figaro, wait for running turns, swap the profile, restart the angelus with `stop -k`, and restart every figaro running in a tmux pane. `-n` prints the plan; `--after-switch` after a home-manager or `nix profile upgrade`; `--to <figaro>` for a built binary. |
 
 The angelus respawns on the next command after a stop, so `figaro stop` is how
 you pick up a rebuilt binary. A CLI pointed at another daemon (`FIGARO_TROUPE`

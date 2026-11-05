@@ -9,13 +9,12 @@ import (
 )
 
 type upgradeOptions struct {
-	dryRun      bool
-	afterSwitch bool
-	force       bool
-	to          string
-	ref         string
-	wait        time.Duration
-	tmuxSocket  string
+	dryRun     bool
+	ifChanged  bool
+	force      bool
+	to         string
+	wait       time.Duration
+	tmuxSocket string
 }
 
 type paneClient struct {

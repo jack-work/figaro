@@ -1702,31 +1702,15 @@ error of its last attempt if that failed.
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:  "upgrade",
-		Group: "System",
-		Short: "Move to a new figaro build: swap the binary, restart the angelus, restart the figaro panes",
-		Usage: "upgrade [-n] [--after-switch] [--to <figaro>] [--ref <ref>] [--wait <seconds>] [--force] [--tmux-socket <name>]",
-		Long: `Builds the new figaro first, while everything keeps running, then waits
-until no aria has a turn or a queued prompt, upgrades the nix profile entry,
-stops every figaro client running in a tmux pane, stops the angelus keeping
-its pid bindings (stop -k), starts the new angelus, and starts each client
-again in its pane: respawn-pane when figaro is the pane's own process, the
-same command typed into the pane's shell when that shell holds the terminal
-again. Panes without figaro are never touched; a client whose command
-cannot be replayed (piped input, --stdin) is stopped and named.
-
-  -n/--dry-run     print the plan and change nothing
-  --after-switch   the profile is already switched (home-manager, nix profile
-                   upgrade): skip the build and the swap
-  --to <figaro>    use this binary as the new build (no nix)
-  --ref <ref>      build this git ref of the profile's flake
-  --wait <s>       how long to wait for running turns (default 120)
-  --force          go ahead when turns are still running; they are interrupted`,
+		Name:   "upgrade",
+		Group:  "System",
+		Hidden: true,
+		Usage:  "upgrade --to <figaro> [-n] [--if-changed] [--wait <seconds>] [--force] [--tmux-socket <name>]",
+		Short:  "Restart the angelus and the figaro tmux panes on a build already installed",
 		Flags: []cmdkit.FlagDef{
+			{Long: "to", Description: "The installed figaro binary to move to"},
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Print the plan and change nothing"},
-			{Long: "after-switch", IsBool: true, Description: "The profile is already switched"},
-			{Long: "to", Description: "A built figaro to move to, instead of the nix profile"},
-			{Long: "ref", Description: "The git ref of the profile's flake to build"},
+			{Long: "if-changed", IsBool: true, Description: "Do nothing when the running build is already this one"},
 			{Long: "wait", Description: "Seconds to wait for running turns (default 120)"},
 			{Long: "force", IsBool: true, Description: "Interrupt turns still running after --wait"},
 			{Long: "tmux-socket", Description: "The tmux server's socket name (tmux -L)"},
@@ -1741,13 +1725,12 @@ cannot be replayed (piped input, --stdin) is stopped and named.
 				wait = time.Duration(n) * time.Second
 			}
 			runUpgrade(upgradeOptions{
-				dryRun:      ctx.BoolFlag("dry-run"),
-				afterSwitch: ctx.BoolFlag("after-switch"),
-				force:       ctx.BoolFlag("force"),
-				to:          ctx.Flag("to"),
-				ref:         ctx.Flag("ref"),
-				wait:        wait,
-				tmuxSocket:  ctx.Flag("tmux-socket"),
+				dryRun:     ctx.BoolFlag("dry-run"),
+				ifChanged:  ctx.BoolFlag("if-changed"),
+				force:      ctx.BoolFlag("force"),
+				to:         ctx.Flag("to"),
+				wait:       wait,
+				tmuxSocket: ctx.Flag("tmux-socket"),
 			})
 			return nil
 		},
