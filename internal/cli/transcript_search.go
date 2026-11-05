@@ -28,7 +28,7 @@ func searchAccept(t *transcript) {
 	case t.box == boxComposer:
 		t.composerMode = composerNormal
 		t.composerFind(t.searchStep())
-	case t.pit.open() && t.pit.list() != nil:
+	case t.searchesList():
 		if !t.pit.findRow(t.query, t.searchStep()) {
 			t.setCommandNoteAt("no row matching "+t.query, alertError)
 		}
@@ -39,8 +39,28 @@ func searchAccept(t *transcript) {
 
 func searchCancel(t *transcript) { t.inSearch, t.query = false, "" }
 
-func pagerFindRowNext(t *transcript) { t.findRow(t.searchStep()) }
-func pagerFindRowPrev(t *transcript) { t.findRow(-t.searchStep()) }
+func pagerFindRowNext(t *transcript) {
+	if !t.searchesList() {
+		pagerFindNextVisual(t)
+		return
+	}
+	t.findRow(t.searchStep())
+}
+
+func pagerFindRowPrev(t *transcript) {
+	if !t.searchesList() {
+		pagerFindPrevVisual(t)
+		return
+	}
+	t.findRow(-t.searchStep())
+}
+
+func (t *transcript) searchesList() bool {
+	if !t.pit.open() || t.pit.list() == nil {
+		return false
+	}
+	return !t.showing(pitQueue) || t.queuedByKey
+}
 
 func (t *transcript) findRow(dir int) {
 	// The bar, not a note pit: a note is a pit and would close the list the
@@ -58,7 +78,7 @@ func (t *transcript) searchTarget() string {
 	switch {
 	case t.box == boxComposer:
 		return composerGlyph
-	case t.pit.open() && t.pit.list() != nil:
+	case t.searchesList():
 		return t.pit.id.face().glyph
 	}
 	return ""
