@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -423,4 +424,16 @@ func (c *Angelus) ReapedRestore(ctx context.Context, req rpc.ReapedRestoreReques
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *Angelus) Act(ctx context.Context, a rpc.ViewAction, row string) (json.RawMessage, error) {
+	params, err := rpc.WithAria(a.Params, row)
+	if err != nil {
+		return nil, err
+	}
+	var out json.RawMessage
+	if err := c.call(ctx, a.Method, params, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

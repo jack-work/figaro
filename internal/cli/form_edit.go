@@ -202,11 +202,100 @@ func shellQuote(s string) string {
 }
 
 func (v *formView) Key(b byte) bool {
-	if b != 'c' || v.change == nil {
+	if b == 'c' && v.change != nil {
+		v.change()
+		return true
+	}
+	if v.act == nil {
 		return false
 	}
-	v.change()
-	return true
+	v.mu.Lock()
+	view := v.view
+	v.mu.Unlock()
+	if view == nil {
+		return false
+	}
+	for _, a := range view.Actions {
+		if a.Key == string(b) {
+			v.act(a)
+			return true
+		}
+	}
+	return false
+}
+
+func (v *formView) OwnsKey(b byte) bool {
+	v.mu.Lock()
+	view := v.view
+	v.mu.Unlock()
+	if view == nil {
+		return false
+	}
+	for _, a := range view.Actions {
+		if a.Key == string(b) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *formView) rowName(path string) (string, bool) {
+	v.mu.Lock()
+	view := v.view
+	v.mu.Unlock()
+	if view == nil || view.List == "" {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(path, view.List+".")
+	if !ok || rest == "" {
+		return "", false
+	}
+	name, _, _ := strings.Cut(rest, ".")
+	return name, true
+}
+
+func (v *formView) armAction(a rpc.ViewAction, row string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	key := a.Key + "\x00" + row
+	if !a.Confirm || v.armed == key {
+		v.armed = ""
+		return true
+	}
+	v.armed = key
+	return false
+}
+
+func pitAct(in *interactiveInput, a rpc.ViewAction) {
+	t := in.lt.tr
+	v, ok := t.pit.live.(*formView)
+	if !ok {
+		return
+	}
+	sel, ok := t.pit.selected()
+	if !ok {
+		return
+	}
+	row, ok := v.rowName(valuePath(sel.id))
+	if !ok {
+		t.setCommandNoteAt(a.Label+": pick a row", alertError)
+		return
+	}
+	if !v.armAction(a, row) {
+		t.setCommandNote("press " + a.Key + " again to " + a.Label + " " + row)
+		return
+	}
+	go func() {
+		acli := mustConnectAngelus(in.loaded)
+		defer acli.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := acli.Act(ctx, a, row); err != nil {
+			in.note(a.Label + " " + row + ": " + err.Error())
+			return
+		}
+		in.note(a.Label + " " + row + ": done")
+	}()
 }
 
 func pitChange(t *transcript) {

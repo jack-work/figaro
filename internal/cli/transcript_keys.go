@@ -128,6 +128,10 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		return
 	case modeList:
+		if t.viewTakesKey(ev) {
+			t.render()
+			return
+		}
 		if act := pagerAct.pager(modeList, ev); act != nil {
 			act(t)
 			t.render()
@@ -143,6 +147,10 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		t.closePanels()
 	case modePanel:
+		if t.viewTakesKey(ev) {
+			t.render()
+			return
+		}
 		if act := pagerAct.pager(modePanel, ev); act != nil {
 			act(t)
 			t.render()
@@ -325,3 +333,19 @@ func pagerClearNote(t *transcript) { t.note("") }
 func pagerPitDrop(t *transcript) { t.dropSelected(true) }
 
 func pagerPitDropNow(t *transcript) { t.dropSelected(false) }
+
+type keyOwner interface {
+	OwnsKey(b byte) bool
+}
+
+func (t *transcript) viewTakesKey(ev keyEvent) bool {
+	if ev.nav != navNone || ev.b == 0 {
+		return false
+	}
+	o, ok := t.pit.live.(keyOwner)
+	if !ok || !o.OwnsKey(ev.b) {
+		return false
+	}
+	kv, ok := t.pit.live.(cmdkit.KeyView)
+	return ok && kv.Key(ev.b)
+}

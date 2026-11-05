@@ -205,6 +205,8 @@ type formView struct {
 	closeConn func()
 	repaint   func() // the host's; the view never paints itself
 	change    func() // the host's: fill its : line from the selected row
+	act       func(rpc.ViewAction)
+	armed     string
 }
 
 type formSource interface {

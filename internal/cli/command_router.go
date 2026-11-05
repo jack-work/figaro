@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"strings"
 	"sync"
@@ -155,6 +156,10 @@ func (in *interactiveInput) execCommand(line string) {
 	verb := argv[0]
 	if overlayVerbs[verb] {
 		in.runOverlay(verb, argv[1:])
+		return
+	}
+	if verb == "reaped" && len(argv) == 1 {
+		in.runLive("reaped", rpc.ReapedFormID)
 		return
 	}
 	if name, spec, ok := liveForm(argv); ok {
@@ -544,6 +549,7 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 		view.closeConn = closeView
 		view.repaint = in.renderLocked
 		view.change = func() { pitChange(in.lt.tr) }
+		view.act = func(a rpc.ViewAction) { pitAct(in, a) }
 		in.mu.Lock()
 		in.lt.tr.showLivePit(name, view, full)
 		in.mu.Unlock()

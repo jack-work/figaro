@@ -123,6 +123,7 @@ func (v *formView) tableItems(list *formNode, width int) []pitRow {
 
 	v.rows = v.rows[:0]
 	out := []pitRow{staticRow(lines[0])}
+
 	for i, r := range rows {
 		r.width = width
 		row := pitRow{text: lines[i+1], yankFrom: r, id: r.path}
@@ -145,6 +146,13 @@ func (v *formView) tableItems(list *formNode, width int) []pitRow {
 			out = append(out, nested)
 			v.rows = append(v.rows, n)
 		}
+	}
+	if len(view.Actions) > 0 {
+		var hints []string
+		for _, a := range view.Actions {
+			hints = append(hints, a.Key+" "+a.Label)
+		}
+		out = append(out, staticRow(""), staticRow(clipLine("  "+strings.Join(hints, " · "), width)))
 	}
 	return out
 }
