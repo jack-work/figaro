@@ -426,13 +426,13 @@ func (c *Angelus) ReapedRestore(ctx context.Context, req rpc.ReapedRestoreReques
 	return &resp, nil
 }
 
-func (c *Angelus) Act(ctx context.Context, a rpc.ViewAction, row string) (json.RawMessage, error) {
-	params, err := rpc.WithAria(a.Params, row)
+func (c *Angelus) ActOn(ctx context.Context, method string, params json.RawMessage, figaroID string) (json.RawMessage, error) {
+	withID, err := rpc.WithAria(params, figaroID)
 	if err != nil {
 		return nil, err
 	}
 	var out json.RawMessage
-	if err := c.call(ctx, a.Method, params, &out); err != nil {
+	if err := c.call(ctx, method, withID, &out); err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -549,8 +549,14 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 		view.closeConn = closeView
 		view.repaint = in.renderLocked
 		view.change = func() { pitChange(in.lt.tr) }
-		view.act = func(a rpc.ViewAction) { pitAct(in, a) }
+		view.act = func(a rpc.ViewAction) { pitAct(in, a, in.actOnDaemon) }
 		in.mu.Lock()
+		if bound := in.bound; bound != nil {
+			view.subject = func() form.Snapshot {
+				snap, _, _ := bound.state()
+				return snap
+			}
+		}
 		in.lt.tr.showLivePit(name, view, full)
 		in.mu.Unlock()
 	}()

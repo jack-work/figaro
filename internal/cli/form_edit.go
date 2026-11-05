@@ -209,49 +209,45 @@ func (v *formView) Key(b byte) bool {
 	if v.act == nil {
 		return false
 	}
+	a, ok := v.actionFor(b)
+	if ok {
+		v.act(a)
+	}
+	return ok
+}
+
+func actionKeyIs(a rpc.ViewAction, b byte) bool {
+	if a.Key == "Enter" {
+		return b == '\r' || b == '\n'
+	}
+	return a.Key == string(b)
+}
+
+func (v *formView) actionFor(b byte) (rpc.ViewAction, bool) {
 	v.mu.Lock()
 	view := v.view
 	v.mu.Unlock()
 	if view == nil {
-		return false
+		return rpc.ViewAction{}, false
 	}
 	for _, a := range view.Actions {
-		if a.Key == string(b) {
-			v.act(a)
-			return true
+		if actionKeyIs(a, b) {
+			return a, true
 		}
 	}
-	return false
+	return rpc.ViewAction{}, false
 }
 
 func (v *formView) OwnsKey(b byte) bool {
-	v.mu.Lock()
-	view := v.view
-	v.mu.Unlock()
-	if view == nil {
-		return false
-	}
-	for _, a := range view.Actions {
-		if a.Key == string(b) {
-			return true
-		}
-	}
-	return false
+	_, ok := v.actionFor(b)
+	return ok
 }
 
-func (v *formView) rowName(path string) (string, bool) {
+func (v *formView) rowKeyOf(path string) (viewRowKey, bool) {
 	v.mu.Lock()
-	view := v.view
-	v.mu.Unlock()
-	if view == nil || view.List == "" {
-		return "", false
-	}
-	rest, ok := strings.CutPrefix(path, view.List+".")
-	if !ok || rest == "" {
-		return "", false
-	}
-	name, _, _ := strings.Cut(rest, ".")
-	return name, true
+	defer v.mu.Unlock()
+	k, ok := v.rowKeys[path]
+	return k, ok
 }
 
 func (v *formView) armAction(a rpc.ViewAction, row string) bool {
@@ -266,7 +262,41 @@ func (v *formView) armAction(a rpc.ViewAction, row string) bool {
 	return false
 }
 
-func pitAct(in *interactiveInput, a rpc.ViewAction) {
+func actionCall(a rpc.ViewAction, k viewRowKey, subject string) (json.RawMessage, string, error) {
+	fields := map[string]json.RawMessage{}
+	if len(a.Params) > 0 {
+		if err := json.Unmarshal(a.Params, &fields); err != nil {
+			return nil, "", err
+		}
+	}
+	for field, arg := range a.Args {
+		val := k.row
+		if arg == rpc.ArgGroup {
+			val = k.group
+		}
+		raw, err := json.Marshal(val)
+		if err != nil {
+			return nil, "", err
+		}
+		fields[field] = raw
+	}
+	target := k.row
+	if a.Target == rpc.TargetSubject {
+		target = subject
+	}
+	if target == "" {
+		return nil, "", fmt.Errorf("%s: no aria to act on", a.Label)
+	}
+	params, err := json.Marshal(fields)
+	if err != nil {
+		return nil, "", err
+	}
+	return params, target, nil
+}
+
+type actOn func(ctx context.Context, method string, params json.RawMessage, figaroID string) error
+
+func pitAct(in *interactiveInput, a rpc.ViewAction, send actOn) {
 	t := in.lt.tr
 	v, ok := t.pit.live.(*formView)
 	if !ok {
@@ -276,25 +306,32 @@ func pitAct(in *interactiveInput, a rpc.ViewAction) {
 	if !ok {
 		return
 	}
-	row, ok := v.rowName(valuePath(sel.id))
+	k, ok := v.rowKeyOf(valuePath(sel.id))
 	if !ok {
 		t.setCommandNoteAt(a.Label+": pick a row", alertError)
 		return
 	}
-	if !v.armAction(a, row) {
-		t.setCommandNote("press " + a.Key + " again to " + a.Label + " " + row)
+	params, target, err := actionCall(a, k, t.subjectID())
+	if err != nil {
+		t.setCommandNoteAt(err.Error(), alertError)
+		return
+	}
+	name := k.row
+	if k.group != "" {
+		name = k.group + "/" + k.row
+	}
+	if !v.armAction(a, name) {
+		t.setCommandNote("press " + a.Key + " again to " + a.Label + " " + name)
 		return
 	}
 	go func() {
-		acli := mustConnectAngelus(in.loaded)
-		defer acli.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if _, err := acli.Act(ctx, a, row); err != nil {
-			in.note(a.Label + " " + row + ": " + err.Error())
+		if err := send(ctx, a.Method, params, target); err != nil {
+			in.note(a.Label + " " + name + ": " + err.Error())
 			return
 		}
-		in.note(a.Label + " " + row + ": done")
+		in.note(a.Label + " " + name + ": done")
 	}()
 }
 
@@ -410,4 +447,13 @@ func (in *interactiveInput) editShownForm(argv []string) bool {
 		in.note(typed + ": ok")
 	}()
 	return true
+}
+
+func (in *interactiveInput) actOnDaemon(ctx context.Context, method string, params json.RawMessage, figaroID string) error {
+	acli, err := in.angelus()
+	if err != nil {
+		return err
+	}
+	_, err = acli.ActOn(ctx, method, params, figaroID)
+	return err
 }

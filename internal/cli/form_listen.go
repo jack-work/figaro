@@ -206,6 +206,8 @@ type formView struct {
 	repaint   func() // the host's; the view never paints itself
 	change    func() // the host's: fill its : line from the selected row
 	act       func(rpc.ViewAction)
+	subject   func() form.Snapshot
+	rowKeys   map[string]viewRowKey
 	armed     string
 }
 
@@ -220,6 +222,7 @@ type formEditor interface {
 
 type formItemsKey struct {
 	root      form.Stamp
+	subject   form.Stamp
 	confirmed form.Stamp
 	openRev   uint64
 	width     int
@@ -293,10 +296,14 @@ func (v *formView) Items(width int) []pitRow {
 	} else {
 		snap = src.Shown()
 	}
+	var subjectStamp form.Stamp
+	if v.subject != nil {
+		subjectStamp = v.subject().RootNode().Stamp()
+	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	root := snap.RootNode()
-	key := formItemsKey{root: root.Stamp(), confirmed: confirmed.RootNode().Stamp(), openRev: v.openRev, width: width, notice: v.notice, pending: pending}
+	key := formItemsKey{root: root.Stamp(), subject: subjectStamp, confirmed: confirmed.RootNode().Stamp(), openRev: v.openRev, width: width, notice: v.notice, pending: pending}
 	if v.items != nil && key == v.itemsKey {
 		return v.items
 	}
@@ -310,7 +317,7 @@ func (v *formView) Items(width int) []pitRow {
 		v.root.take(root)
 		v.root.branch = true
 	}
-	if v.view != nil && v.view.List != "" {
+	if v.view != nil {
 		if list := formChild(v.root, v.view.List); list != nil && !list.leaf() {
 			var out []pitRow
 			if v.notice != "" {

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
@@ -113,14 +116,17 @@ func TestAViewKeyRunsItsAction(t *testing.T) {
 func TestAnActionNamesTheRowItSits(t *testing.T) {
 	v := &formView{src: reapedShaped(), open: map[string]bool{}}
 	v.setView(actingView)
-	for path, want := range map[string]string{"items.n1": "n1", "items.n2.mantra": "n2"} {
-		if got, ok := v.rowName(path); !ok || got != want {
-			t.Errorf("rowName(%s) = %q %v, want %s", path, got, ok, want)
+	v.Items(80)
+	v.Activate("items.n2")
+	v.Items(80)
+	for path, want := range map[string]string{"items.n1": "n1", "items.n2": "n2", "items.n2.mantra": "n2"} {
+		if got, ok := v.rowKeyOf(path); !ok || got.row != want {
+			t.Errorf("rowKeyOf(%s) = %+v %v, want row %s", path, got, ok, want)
 		}
 	}
 	for _, path := range []string{"items", "note", ""} {
-		if got, ok := v.rowName(path); ok {
-			t.Errorf("rowName(%s) = %q, want none", path, got)
+		if got, ok := v.rowKeyOf(path); ok {
+			t.Errorf("rowKeyOf(%s) = %+v, want none", path, got)
 		}
 	}
 }
@@ -182,5 +188,184 @@ func TestDropKeysLeaveAFormPitsRowsAlone(t *testing.T) {
 	tr.key('X')
 	if after := len(tr.pit.list().rows); after != before {
 		t.Errorf("x/X removed a form row (%d -> %d)", before, after)
+	}
+}
+
+var modelsHint = &rpc.FormView{
+	Rows: "models",
+	GroupColumns: []rpc.ViewColumn{
+		{Key: "refreshed_at", Title: "listed", Format: rpc.FormatAge},
+		{Key: "error", Shrink: 1, Alert: true},
+	},
+	Columns: []rpc.ViewColumn{
+		{Key: "", Title: "model", Shrink: 1},
+		{Key: "name", Shrink: 2},
+		{Key: "context.default", Title: "context", Right: true},
+		{Key: "max_output", Title: "max out", Right: true},
+	},
+	Skip: "hidden",
+	Mark: &rpc.ViewMark{GroupSubject: "system.provider", RowSubject: "system.model"},
+	Actions: []rpc.ViewAction{
+		{Key: "Enter", Label: "use this model", Method: rpc.MethodModelsPick, Target: rpc.TargetSubject,
+			Args: map[string]rpc.ViewArg{"provider": rpc.ArgGroup, "model": rpc.ArgRow}},
+	},
+}
+
+func modelsTable(t *testing.T, catalog form.Snapshot, provider, model string) *formView {
+	t.Helper()
+	v := &formView{src: &fakeFormSource{snap: catalog}, open: map[string]bool{}}
+	v.setView(modelsHint)
+	subject := form.FromMap(formKeys("system.provider", `"`+provider+`"`, "system.model", `"`+model+`"`))
+	v.subject = func() form.Snapshot { return subject }
+	return v
+}
+
+// @models reads as one table grouped by provider: a heading per provider,
+// its listed models beneath, hidden ones left out, columns lined up across
+// every group.
+func TestTheModelsCatalogReadsAsATableGroupedByProvider(t *testing.T) {
+	v := modelsTable(t, modelsFixture(t), "copilot", "claude-opus-5")
+	rows := v.Items(120)
+	var headings, models []string
+	for _, r := range rows {
+		switch {
+		case r.selectable():
+			models = append(models, r.id)
+		case strings.HasPrefix(r.str(), "anthropic") || strings.HasPrefix(r.str(), "copilot"):
+			headings = append(headings, strings.Fields(r.str())[0])
+		}
+	}
+	if strings.Join(headings, ",") != "anthropic,copilot" {
+		t.Errorf("headings = %v", headings)
+	}
+	want := []string{"anthropic.models.claude-opus-5", "anthropic.models.claude-sonnet-4-5", "copilot.models.claude-opus-5", "copilot.models.gpt-5"}
+	if strings.Join(models, ",") != strings.Join(want, ",") {
+		t.Errorf("rows = %v, want %v (internal-router is hidden)", models, want)
+	}
+	col := -1
+	for _, r := range rows {
+		if !r.selectable() {
+			continue
+		}
+		at := strings.Index(r.str(), "k ")
+		if col == -1 {
+			col = at
+		}
+		if at != col && at >= 0 {
+			t.Errorf("columns drift across groups: %q", r.str())
+		}
+	}
+}
+
+// The mark follows the subject's own provider and model: the same model id
+// under another provider is not the choice.
+func TestTheModelsMarkIsTheSubjectsChoice(t *testing.T) {
+	v := modelsTable(t, modelsFixture(t), "copilot", "claude-opus-5")
+	for _, r := range v.Items(120) {
+		marked := strings.Contains(r.str(), "●")
+		if want := r.id == "copilot.models.claude-opus-5"; marked != want {
+			t.Errorf("%s marked=%v, want %v", r.id, marked, want)
+		}
+	}
+}
+
+func TestAFailedProviderHeadingIsAnAlert(t *testing.T) {
+	snap := catalogFixture(t, map[string]models.Provider{
+		"anthropic": {Error: "no credential"},
+		"copilot":   {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{"gpt-5": {Source: models.SourceAPI}}},
+	})
+	v := modelsTable(t, snap, "", "")
+	for _, r := range v.Items(120) {
+		if strings.HasPrefix(r.str(), "anthropic") && r.tone != toneError {
+			t.Errorf("a failed provider's heading is not an alert: %q", r.str())
+		}
+		if strings.HasPrefix(r.str(), "copilot") && r.tone != toneNone {
+			t.Errorf("a listed provider's heading is an alert: %q", r.str())
+		}
+	}
+}
+
+// Enter on a model asks the daemon to set it on the subject: the provider and
+// model come from the row, the aria is the one on screen, never the row.
+func TestEnterOnAModelPicksItForTheSubject(t *testing.T) {
+	snap := catalogFixture(t, map[string]models.Provider{
+		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{
+			"x-ai/grok-4.1": {Source: models.SourceAPI},
+		}},
+	})
+	v := modelsTable(t, snap, "", "")
+	v.Items(120)
+	if !v.OwnsKey('\r') || !v.OwnsKey('\n') {
+		t.Fatal("Enter is not the view's")
+	}
+	k, ok := v.rowKeyOf("openrouter.models.x-ai/grok-4.1")
+	if !ok || k.group != "openrouter" || k.row != "x-ai/grok-4.1" {
+		t.Fatalf("row key = %+v %v, want openrouter / x-ai/grok-4.1 intact", k, ok)
+	}
+	a, _ := v.actionFor('\r')
+	params, target, err := actionCall(a, k, "subject-aria")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req rpc.ModelsPickRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		t.Fatal(err)
+	}
+	if target != "subject-aria" || req.Provider != "openrouter" || req.Model != "x-ai/grok-4.1" || a.Method != rpc.MethodModelsPick {
+		t.Errorf("pick = %s on %s with %+v", a.Method, target, req)
+	}
+	if _, _, err := actionCall(a, k, ""); err == nil {
+		t.Error("a pick with no aria on screen was built")
+	}
+}
+
+// Enter typed at the terminal over a model row reaches the pick without
+// taking the render lock a second time: consume holds it while the key is
+// dispatched, so an action that re-locks to learn the subject hangs the
+// session (seen live on x-ai/grok-4.1).
+func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
+	snap := catalogFixture(t, map[string]models.Provider{
+		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{
+			"x-ai/grok-4.1": {Source: models.SourceAPI},
+		}},
+	})
+	var out countingWriter
+	in, lt := navInput(t, &out, true)
+	v := modelsTable(t, snap, "", "")
+	type call struct {
+		method, target string
+		req            rpc.ModelsPickRequest
+	}
+	sent := make(chan call, 1)
+	v.act = func(a rpc.ViewAction) {
+		pitAct(in, a, func(_ context.Context, method string, params json.RawMessage, target string) error {
+			c := call{method: method, target: target}
+			if err := json.Unmarshal(params, &c.req); err != nil {
+				return err
+			}
+			sent <- c
+			return nil
+		})
+	}
+	lt.tr.showLivePit("models", v, false)
+	lt.tr.pit.lines(100, 20)
+
+	done := make(chan struct{})
+	go func() {
+		in.consume([]byte("\r"))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Enter on a model row never returned: the input loop is deadlocked")
+	}
+	select {
+	case c := <-sent:
+		if c.method != rpc.MethodModelsPick || c.target != "aria0001" || c.req.Provider != "openrouter" || c.req.Model != "x-ai/grok-4.1" {
+			t.Errorf("pick = %s on %s with %+v", c.method, c.target, c.req)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Enter on a model row sent nothing")
 	}
 }
