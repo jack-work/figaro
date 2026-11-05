@@ -46,11 +46,15 @@ func inputSearchHitPrev(in *interactiveInput, ev keyEvent) keyVerdict { return i
 func (in *interactiveInput) searchHit(dir int, ev keyEvent) keyVerdict {
 	in.mu.Lock()
 	tr := in.lt.tr
-	if tr.liveSearch() == nil {
+	switch {
+	case tr.liveSearch() != nil:
+		tr.searchStepHit(dir)
+	case tr.box != boxComposer && tr.searchesList():
+		tr.searchStepRow(dir)
+	default:
 		in.mu.Unlock()
 		return in.selectNodeKey(dir, ev)
 	}
-	tr.searchStepHit(dir)
 	in.mu.Unlock()
 	in.pageWanted = true
 	return keyHandled
@@ -76,6 +80,15 @@ func (t *transcript) searchStepHit(dir int) {
 	if id := ls.StepQuery(dir); id != "" {
 		t.pit.refreshLive(t.w)
 		t.pit.focus(id)
+	}
+}
+
+func (t *transcript) searchStepRow(dir int) {
+	if t.query == "" {
+		return
+	}
+	if !t.pit.findRow(t.query, dir) {
+		t.setCommandNoteAt("no row matching "+t.query, alertError)
 	}
 }
 

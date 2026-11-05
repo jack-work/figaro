@@ -34,3 +34,39 @@ func TestTheSearchedPitStaysOnScreen(t *testing.T) {
 		t.Errorf("the layout reserved fewer rows than the drawer draws: body %d, drawer %d, pane %d", body, len(during), tr.h)
 	}
 }
+
+// ^N and ^P while typing a search in a plain list (the :ls pit) went to the
+// conversation's node selection, so the rows being searched never moved.
+func TestCtrlNAndCtrlPStepAListPitsMatchesWhileSearching(t *testing.T) {
+	var out countingWriter
+	in, lt := navInput(t, &out, true)
+	lt.tr.setCmdOut("ls", []pitRow{
+		{text: "  alpha row", id: "a"},
+		{text: "  beta match", id: "b"},
+		{text: "  gamma row", id: "c"},
+		{text: "  delta match", id: "d"},
+	})
+	at := func() string {
+		row, _ := lt.tr.pit.selected()
+		return row.id
+	}
+	feed(t, in, "/match")
+	steps := []struct {
+		key, want string
+	}{
+		{"\x0e", "b"},
+		{"\x0e", "d"},
+		{"\x0e", "b"},
+		{"\x10", "d"},
+		{"\x10", "b"},
+	}
+	for i, s := range steps {
+		feed(t, in, s.key)
+		if got := at(); got != s.want {
+			t.Fatalf("step %d (%q): on %q, want %q", i, s.key, got, s.want)
+		}
+	}
+	if !lt.tr.inSearch {
+		t.Error("stepping closed the search line")
+	}
+}

@@ -211,7 +211,7 @@ var helpRows = []helpRow{
 	{helpArrows, "↑/↓ · PgUp/PgDn", "the same, on the arrow cluster"},
 	{helpHomeEnd, "Home / End", "top / bottom"},
 	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
-	{helpSearchHits, "(in a form's /) ^N/^P", "next / previous match, best first"},
+	{helpSearchHits, "(in a pit's /) ^N/^P", "next / previous match, wrapping; a form's best first"},
 	{helpSearchFlat, "(in a form's /) Tab", "matches as a ranked list of paths, or back to the tree"},
 	{helpSearchRepeat, "n / N", "next / previous match, with the cursor on it"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
