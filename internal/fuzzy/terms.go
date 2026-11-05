@@ -131,39 +131,4 @@ func (t Term) keyPositions(m *Matcher, key *Text, plain string) []int {
 	return out
 }
 
-type LineMatch struct {
-	Score     int
-	OnLine    bool
-	Positions []int
-}
-
-func MatchLine(m *Matcher, terms []Term, line string, values func(Term) bool) (LineMatch, bool) {
-	text := NewText(line)
-	var out LineMatch
-	for _, t := range terms {
-		score, onLine := t.matchKey(m, &text, line)
-		inValue := !onLine && values != nil && values(t)
-		if t.negate {
-			if onLine || inValue {
-				return LineMatch{}, false
-			}
-			continue
-		}
-		switch {
-		case onLine:
-			out.OnLine = true
-			out.Score += score
-			out.Positions = append(out.Positions, t.keyPositions(m, &text, line)...)
-		case inValue:
-		default:
-			return LineMatch{}, false
-		}
-	}
-	return out, true
-}
-
-func (t Term) Negated() bool { return t.negate }
-
-func (t Term) InValue(e *Entry) bool { return t.valueAt(e.value) >= 0 }
-
 func (t Term) ValueText() (string, bool) { return t.lower, t.onValue && !t.negate }
