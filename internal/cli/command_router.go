@@ -228,50 +228,15 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 
 func (in *interactiveInput) openModels() {
 	in.models.ensure()
-	in.mu.Lock()
-	bound := in.bound
-	current := func() modelChoice {
-		if bound == nil {
-			return modelChoice{}
-		}
-		snap, _, _ := bound.state()
-		provider, model := models.Subject(snap)
-		return modelChoice{provider: provider, model: model}
-	}
-	in.lt.tr.showLivePit(modelsPit, newModelsView(in.models.snapshot, current, in.chooseModel), false)
-	in.mu.Unlock()
+	in.openLive("models", models.FormID, false)
 }
 
 func (in *interactiveInput) modelsChanged() {
 	in.recomputeLimit()
-	in.mu.Lock()
-	if in.lt.tr.pit.id == modelsPit {
-		in.lt.render()
-	}
-	in.mu.Unlock()
 }
 
 // chooseModel writes system.model and system.provider in one patch: a model is
 // only meaningful to its own provider.
-func (in *interactiveInput) chooseModel(c modelChoice) {
-	cli := in.aria()
-	id := in.currentID()
-	if cli == nil {
-		in.noteErr("models: no aria on screen to set")
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
-	set := map[string]json.RawMessage{"system.model": mustJSON(c.model)}
-	if c.provider != "" {
-		set["system.provider"] = mustJSON(c.provider)
-	}
-	if _, err := cli.Set(ctx, form.Build(form.Snapshot{}, set, nil), 0); err != nil {
-		in.noteErr("models: " + wireErrorText(err))
-		return
-	}
-	in.note(fmt.Sprintf("model: %s (%s) on %s", c.model, c.provider, ariaName(id)))
-}
 
 func mustJSON(s string) json.RawMessage {
 	b, _ := json.Marshal(s)

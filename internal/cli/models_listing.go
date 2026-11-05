@@ -3,7 +3,6 @@ package cli
 import (
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
@@ -11,11 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/mattn/go-runewidth"
 )
-
-type modelChoice struct {
-	provider string
-	model    string
-}
 
 type modelRow struct {
 	ID          string `json:"id"`
@@ -188,116 +182,3 @@ var modelCols = []tableCol{{}, {shrink: 1}, {shrink: 2}, {right: true}, {right: 
 func modelCells(mark string, m modelRow) []string {
 	return []string{mark, m.ID, m.displayName(), dashCount(m.Context), dashCount(m.MaxOutput)}
 }
-
-type modelsView struct {
-	mu      sync.Mutex
-	catalog func() form.Snapshot
-	current func() modelChoice
-	now     func() time.Time
-	choose  func(modelChoice)
-}
-
-func newModelsView(catalog func() form.Snapshot, current func() modelChoice, choose func(modelChoice)) *modelsView {
-	if current == nil {
-		current = func() modelChoice { return modelChoice{} }
-	}
-	return &modelsView{catalog: catalog, current: current, now: time.Now, choose: choose}
-}
-
-const (
-	pitPrefixWidth = 2
-	modelsPit      = "models"
-	modelRowPrefix = "model:"
-)
-
-func modelRowID(provider, model string) string { return modelRowPrefix + provider + "/" + model }
-
-func parseModelRowID(id string) (modelChoice, bool) {
-	rest, ok := strings.CutPrefix(id, modelRowPrefix)
-	if !ok {
-		return modelChoice{}, false
-	}
-	provider, model, ok := strings.Cut(rest, "/")
-	if !ok || provider == "" || model == "" {
-		return modelChoice{}, false
-	}
-	return modelChoice{provider: provider, model: model}, true
-}
-
-func (c modelChoice) marks(provider, model string) bool {
-	return c.model == model && (c.provider == "" || c.provider == provider)
-}
-
-func (v *modelsView) Items(width int) []pitRow {
-	if width <= 0 {
-		width = 80
-	}
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	now := v.now()
-	listings := catalogListings(v.catalog(), now)
-	cur := v.current()
-
-	cells := [][]string{{" ", "MODEL", "NAME", "CONTEXT", "MAX OUT"}}
-	type place struct {
-		listing int
-		model   modelRow
-	}
-	var places []place
-	for li, l := range listings {
-		for _, m := range l.pickable() {
-			mark := " "
-			if cur.marks(l.Provider, m.ID) {
-				mark = "●"
-			}
-			cells = append(cells, modelCells(mark, m))
-			places = append(places, place{li, m})
-		}
-	}
-	noteW := 0
-	for _, l := range listings {
-		noteW = max(noteW, runewidth.StringWidth(l.Provider))
-	}
-	lines := tabulate(cells, modelCols, max(width-pitPrefixWidth-tableGap-noteW, 1))
-
-	if len(listings) == 0 {
-		return []pitRow{staticRow("no models yet: the daemon lists every provider in the background (figaro models --refresh)")}
-	}
-	statusCells := make([][]string, len(listings))
-	for i, l := range listings {
-		statusCells[i] = []string{l.Provider, l.status(now)}
-	}
-	headings := tabulate(statusCells, []tableCol{{}, {shrink: 1}}, max(width-pitPrefixWidth, 1))
-
-	rows := []pitRow{staticRow(lines[0])}
-	next := 0
-	for li, l := range listings {
-		heading := pitRow{text: headings[li]}
-		switch {
-		case l.failed():
-			heading.tone = toneError
-		case l.Stale:
-			heading.tone = toneWarn
-		}
-		rows = append(rows, heading)
-		for next < len(places) && places[next].listing == li {
-			m := places[next].model
-			rows = append(rows, pitRow{text: lines[next+1], note: l.Provider, yank: m.ID, id: modelRowID(l.Provider, m.ID)})
-			next++
-		}
-	}
-	return rows
-}
-
-func (v *modelsView) Activate(id string) {
-	c, ok := parseModelRowID(id)
-	v.mu.Lock()
-	choose := v.choose
-	v.mu.Unlock()
-	if !ok || choose == nil {
-		return
-	}
-	go choose(c)
-}
-
-func (v *modelsView) Close() {}

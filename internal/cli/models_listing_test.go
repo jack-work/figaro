@@ -1,0 +1,88 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mattn/go-runewidth"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
+)
+
+var modelsNow = time.UnixMilli(1_790_000_000_000)
+
+func catalogFixture(t *testing.T, provs map[string]models.Provider) form.Snapshot {
+	t.Helper()
+	set := map[string]json.RawMessage{}
+	for name, p := range provs {
+		raw, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		set[name] = raw
+	}
+	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, set, nil))
+}
+
+func modelsFixture(t *testing.T) form.Snapshot {
+	listed := modelsNow.Add(-2 * time.Hour).UnixMilli()
+	return catalogFixture(t, map[string]models.Provider{
+		"anthropic": {RefreshedAt: listed, Models: map[string]models.Entry{
+			"claude-opus-5":     {Name: "Claude Opus 5", Context: models.Context{Default: 1_000_000}, MaxOutput: 32000, Source: models.SourceAPI},
+			"claude-sonnet-4-5": {Name: "Claude Sonnet 4.5", Context: models.Context{Default: 200_000}, MaxOutput: 64000, Source: models.SourceAPI},
+		}},
+		"copilot": {RefreshedAt: listed, Models: map[string]models.Entry{
+			"gpt-5":           {Name: "GPT-5", Context: models.Context{Default: 400_000}, Source: models.SourceAPI},
+			"claude-opus-5":   {Name: "Claude Opus 5", Context: models.Context{Default: 128_000}, MaxOutput: 16000, Source: models.SourceAPI},
+			"internal-router": {Context: models.Context{Default: 8_000}, Hidden: true, Source: models.SourceAPI},
+		}},
+	})
+}
+
+func TestTabulateAlignsAndClips(t *testing.T) {
+	rows := [][]string{{"a", "long-name-here", "1k"}, {"bbb", "x", "200k"}}
+	cols := []tableCol{{}, {shrink: 1}, {right: true}}
+	got := tabulate(rows, cols, 0)
+	want := []string{"a    long-name-here    1k", "bbb  x               200k"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	narrow := tabulate(rows, cols, 20)
+	for _, l := range narrow {
+		if runewidth.StringWidth(l) > 20 {
+			t.Fatalf("%q exceeds 20", l)
+		}
+		if !strings.HasSuffix(l, "k") {
+			t.Fatalf("the shrinkable column must give way before the right-aligned one: %q", l)
+		}
+	}
+}
+
+func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
+	snap := catalogFixture(t, map[string]models.Provider{
+		"anthropic": {AttemptedAt: modelsNow.Add(-3 * time.Minute).UnixMilli(), Error: "no credential"},
+		"copilot": {RefreshedAt: modelsNow.Add(-2 * time.Hour).UnixMilli(), Models: map[string]models.Entry{
+			"gpt-5": {Name: "OpenAI GPT-5", Context: models.Context{Default: 400_000}, Source: models.SourceAPI},
+		}},
+	})
+	var buf bytes.Buffer
+	old := stdout
+	stdout = &buf
+	defer func() { stdout = old }()
+	printModels(catalogListings(snap, modelsNow), modelsNow)
+	want := strings.Join([]string{
+		"anthropic  failed 3m ago: no credential",
+		"copilot    listed 2h ago",
+		"",
+		"PROVIDER  MODEL  NAME          CONTEXT  MAX OUT",
+		"copilot   gpt-5  OpenAI GPT-5     400k        -",
+		"",
+	}, "\n")
+	if buf.String() != want {
+		t.Fatalf("got\n%s\nwant\n%s", buf.String(), want)
+	}
+}

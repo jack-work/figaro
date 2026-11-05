@@ -260,3 +260,5 @@ func (v *formView) groupRow(g *formNode, width int) pitRow {
 	}
 	return row
 }
+
+const pitPrefixWidth = 2
