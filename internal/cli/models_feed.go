@@ -91,6 +91,9 @@ func (f *modelsFeed) dial() {
 			f.conn = nil
 		}
 		f.mu.Unlock()
+		if conn.Lapsed() {
+			f.ensure()
+		}
 	}()
 	seed, err := conn.Form(ctx)
 	if err != nil {

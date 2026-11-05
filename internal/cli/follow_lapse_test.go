@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
@@ -146,4 +148,40 @@ func TestAPagerFollowsAgainWhenTheEdgeEndsItsFollow(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("once the session has ended, a lapse is a dead subject")
 	}
+}
+
+// A mounted form is opened the way form listen opens one, so it follows again
+// on a lapse too: its Done stays open, an edit made after two lapses lands
+// through the new follow, and closing the mount releases it and ends Done.
+func TestAMountedFormFollowsAgainWhenTheEdgeEndsItsFollow(t *testing.T) {
+	const maxAge = 250 * time.Millisecond
+	_, ep, stub, id := edgeServed(t, maxAge)
+
+	var released atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	view, closeView, done, err := openFormViewOn(ctx, cancel, sdk.Addr{Door: ep, ID: id}, id, "", func() {}, func() { released.Add(1) })
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool { return stub.upgrades.Load() >= 3 }, 5*time.Second, 10*time.Millisecond, "the mount did not follow again after two lapses")
+	select {
+	case <-done:
+		t.Fatal("a lapse ended the mount's link")
+	default:
+	}
+
+	src, ok := view.src.(replicaSource)
+	require.True(t, ok, "the mount does not edit through a replica")
+	require.NoError(t, src.Edit(form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"after the lapses"`)}, nil)))
+	require.Eventually(t, func() bool {
+		v := src.Shown().Lookup("mantra")
+		return src.Pending() == 0 && v != nil && *v == "after the lapses"
+	}, 5*time.Second, 10*time.Millisecond, "an edit after the lapses did not land")
+
+	closeView()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the mount left its link open")
+	}
+	require.EqualValues(t, 1, released.Load())
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/jack-work/figaro/sdk"
 	"io"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
@@ -36,14 +37,18 @@ func plainPrompt(ctx context.Context, ep sdk.Addr, prompt string, out io.Writer,
 	sink := newPlainSink(out)
 	doneCh := sink.doneCh
 
-	fcli, err := sdk.DialAria(ep, sink.handle)
+	var turn atomic.Int64
+	turn.Store(-1)
+	f, err := follow(ctx, ep, sink.handle, func(a *sdk.Aria) { catchUpTurn(ctx, a, int(turn.Load()), sink.handle) })
 	if err != nil {
 		fmt.Fprintln(stderrw, "error: connect figaro:", err)
 		return 1
 	}
-	defer fcli.Close()
+	defer f.Close()
 
-	if _, _, err := quaWith(ctx, fcli, d.request(prompt)); err != nil {
+	cursor, _, err := quaWith(ctx, f.aria(), d.request(prompt))
+	turn.Store(int64(cursor))
+	if err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
 			fmt.Fprintln(stderrw, "error: prompt:", err)
 		}
@@ -56,16 +61,16 @@ func plainPrompt(ctx context.Context, ep sdk.Addr, prompt string, out io.Writer,
 			return 1
 		}
 		return 0
-	case <-fcli.Done():
+	case <-f.Done():
 		fmt.Fprintln(stderrw, "error: agent disconnected before turn completed")
 		return 1
 	case <-ctx.Done():
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = fcli.Interrupt(intCtx)
+		_ = f.aria().Interrupt(intCtx)
 		intCancel()
 		select {
 		case <-doneCh:
-		case <-fcli.Done():
+		case <-f.Done():
 		case <-time.After(3 * time.Second):
 		}
 		return exitInterrupted
@@ -80,14 +85,18 @@ func verbatimPrompt(ctx context.Context, ep sdk.Addr, prompt string, out io.Writ
 	sink := &verbatimSink{out: out, doneCh: make(chan struct{}, 1)}
 	doneCh := sink.doneCh
 
-	fcli, err := sdk.DialAria(ep, sink.handle)
+	var turn atomic.Int64
+	turn.Store(-1)
+	f, err := follow(ctx, ep, sink.handle, func(a *sdk.Aria) { catchUpTurn(ctx, a, int(turn.Load()), sink.handle) })
 	if err != nil {
 		fmt.Fprintln(stderrw, "error: connect figaro:", err)
 		return 1
 	}
-	defer fcli.Close()
+	defer f.Close()
 
-	if _, _, err := quaWith(ctx, fcli, d.request(prompt)); err != nil {
+	cursor, _, err := quaWith(ctx, f.aria(), d.request(prompt))
+	turn.Store(int64(cursor))
+	if err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
 			fmt.Fprintln(stderrw, "error: prompt:", err)
 		}
@@ -100,16 +109,16 @@ func verbatimPrompt(ctx context.Context, ep sdk.Addr, prompt string, out io.Writ
 			return 1
 		}
 		return 0
-	case <-fcli.Done():
+	case <-f.Done():
 		fmt.Fprintln(stderrw, "error: agent disconnected before turn completed")
 		return 1
 	case <-ctx.Done():
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = fcli.Interrupt(intCtx)
+		_ = f.aria().Interrupt(intCtx)
 		intCancel()
 		select {
 		case <-doneCh:
-		case <-fcli.Done():
+		case <-f.Done():
 		case <-time.After(3 * time.Second):
 		}
 		return exitInterrupted
@@ -221,4 +230,26 @@ func plainText(nodes []livedoc.Node) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func catchUpTurn(ctx context.Context, a *sdk.Aria, turn int, handle sdk.NotifyHandler) {
+	if turn < 0 {
+		return
+	}
+	rctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	page, err := a.Read(rctx, aria.Anchor{Turn: uint64(turn)}, 0)
+	if err != nil {
+		return
+	}
+	raw, err := json.Marshal(page)
+	if err != nil {
+		return
+	}
+	handle(rpc.MethodAriaFrame, raw)
+	for _, p := range page.Parts {
+		if p.ID == uint64(turn) && p.Live == nil {
+			handle(rpc.MethodTurnDone, json.RawMessage(`{}`))
+		}
+	}
 }

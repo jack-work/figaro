@@ -25,16 +25,16 @@ const (
 )
 
 type ariaTransport struct {
-	aria   *sdk.Aria
+	aria   func() *sdk.Aria
 	loaded func(*rpc.FormResponse)
 }
 
 func (t ariaTransport) Set(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
-	return t.aria.SetWith(ctx, req)
+	return t.aria().SetWith(ctx, req)
 }
 
 func (t ariaTransport) Load(ctx context.Context, client string) (*rpc.FormResponse, error) {
-	resp, err := t.aria.FormFor(ctx, client)
+	resp, err := t.aria().FormFor(ctx, client)
 	if err == nil && resp != nil && t.loaded != nil {
 		t.loaded(resp)
 	}

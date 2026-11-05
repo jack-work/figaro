@@ -90,7 +90,7 @@ func TestAnOlderDaemonsFormNamesBothBuildsAndFigaroStop(t *testing.T) {
 	t.Run("the replica stops retrying and says why", func(t *testing.T) {
 		before := calls.Load()
 		failed := make(chan error, 1)
-		r := replica.New("pit-test", ariaTransport{aria: fcli}, replica.Options{
+		r := replica.New("pit-test", ariaTransport{aria: func() *sdk.Aria { return fcli }}, replica.Options{
 			Final:    undecodable,
 			OnFailed: func(err error) { failed <- err },
 		})

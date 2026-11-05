@@ -51,7 +51,8 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 
 	// Subscribe before seeding: a seed older than a delta in hand is caught by
 	// the version check; the other order drops deltas.
-	fcli, err := sdk.DialAria(ep,
+	var again atomic.Pointer[func()]
+	f, err := follow(ctx, ep,
 		func(method string, params json.RawMessage) {
 			if method != rpc.MethodFormDelta {
 				return
@@ -76,6 +77,10 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 					d.Schema, rpc.FormDeltaSchema))
 			}
 			kick.kick()
+		}, func(*sdk.Aria) {
+			if fn := again.Load(); fn != nil {
+				(*fn)()
+			}
 		})
 	if err != nil {
 		cancel()
@@ -87,15 +92,17 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 		view.refetch = func() (*rpc.FormResponse, error) {
 			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer rcancel()
-			return fcli.FormOf(rctx, intrinsic)
+			return f.aria().FormOf(rctx, intrinsic)
 		}
+		resync := view.resync
+		again.Store(&resync)
 		view.resync()
-		return view, func() { fcli.Close(); release(); cancel(); kick.close() }, fcli.Done(), nil
+		return view, func() { f.Close(); release(); cancel(); kick.close() }, f.Done(), nil
 	}
 
 	failed := make(chan struct{})
 	var failOnce sync.Once
-	r := replica.New(newReplicaClient(), ariaTransport{aria: fcli, loaded: view.present}, replica.Options{
+	r := replica.New(newReplicaClient(), ariaTransport{aria: f.aria, loaded: view.present}, replica.Options{
 		Debounce: formEditDebounce,
 		MaxWait:  formEditMaxWait,
 		OnChange: func(_, _ form.Snapshot) { kick.kick() },
@@ -114,8 +121,10 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 		},
 	})
 	rep.Store(r)
+	lost := r.Lost
+	again.Store(&lost)
 	view.src = replicaSource{r}
-	go stopPitWhenLinkDies(fcli.Done(), ctx.Done(), view, r)
+	go stopPitWhenLinkDies(f.Done(), ctx.Done(), view, r)
 	notePit(resolvedID, r.Pending)
 	select {
 	case <-r.Ready():
@@ -130,11 +139,11 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 			fcancel()
 		}
 		r.Close()
-		fcli.Close()
+		f.Close()
 		release()
 		cancel()
 		kick.close()
-	}, fcli.Done(), nil
+	}, f.Done(), nil
 }
 
 var pitLedger struct {

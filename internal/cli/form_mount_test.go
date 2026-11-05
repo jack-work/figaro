@@ -368,9 +368,10 @@ func TestLOnAPeerRowOpensItsMount(t *testing.T) {
 	}
 }
 
-// When a mount's connection ends (the door lapses it at the token's expiry),
-// the pit dials it again, which resolves a fresh token, and keeps drawing.
-func TestALapsedMountDialsAgain(t *testing.T) {
+// A lapse is followed again inside the mounted view (with a fresh token: the
+// endpoint resolves its bearer on every dial). When a mount's link ends for
+// any other reason, the pit dials the mount again and keeps drawing.
+func TestAMountWhoseLinkEndsDialsAgain(t *testing.T) {
 	f := newFakeMounts()
 	f.forms["far/@things"] = things("items.a.n", `1`)
 	v := indexView(f)
@@ -388,7 +389,7 @@ func TestALapsedMountDialsAgain(t *testing.T) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if strings.Join(f.closed, ",") != "far/@things" {
-		t.Errorf("closed %v, want the lapsed connection closed once", f.closed)
+		t.Errorf("closed %v, want the ended connection closed once", f.closed)
 	}
 }
 
