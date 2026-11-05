@@ -324,9 +324,9 @@ func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
 
 // In a form with a view hint every leaf was its own hit, and a path carries
 // its ancestors' labels, so '/king' in @arias matched nearly every key of
-// every aria and ^N stepped through one aria seven times. Hits under a hinted
-// row fold into one hit on the row, ranked by its best leaf, so ^N moves from
-// row to row; keys outside any row stay hits of their own.
+// every aria. Hits under a hinted row fold into one ranked hit on the row,
+// ranked by its best leaf, and the search lands there; keys outside any row
+// stay hits of their own.
 func TestAHintedRowIsOneHit(t *testing.T) {
 	p := newInputProbe(t, true)
 	src := &fakeFormSource{snap: form.FromMap(formKeys(
@@ -356,20 +356,8 @@ func TestAHintedRowIsOneHit(t *testing.T) {
 	if v.search.ranked[0] != "arias.a1" {
 		t.Errorf("best hit %q, want arias.a1, whose leaves match best", v.search.ranked[0])
 	}
-	seen := map[string]bool{}
-	for i := 0; i < len(want); i++ {
-		row, _ := tr.pit.selected()
-		if seen[row.id] {
-			t.Fatalf("^N came back to %q after %d steps", row.id, i)
-		}
-		seen[row.id] = true
-		if !got[row.id] {
-			t.Errorf("the cursor is on %q, not on a hit", row.id)
-		}
-		feed(t, p.in, "\x0e")
-	}
-	if at, n := v.QueryCount(); n != len(want) || at != 1 {
-		t.Errorf("counter %d/%d after a full lap, want 1/%d", at, n, len(want))
+	if row, _ := tr.pit.selected(); !strings.HasPrefix(row.id, "arias.a1") {
+		t.Errorf("the search landed on %q, want under the best row arias.a1", row.id)
 	}
 }
 
@@ -662,5 +650,57 @@ func TestAMantraHitPastTheClipKeepsItsLeaf(t *testing.T) {
 	}
 	if got := strings.Join(shown, "\n"); strings.Count(got, "needle") != 1 {
 		t.Errorf("want the match in the pit once:\n%s", got)
+	}
+}
+
+// ^N and ^P stepped over the ranked hits only, folded one per row, so a
+// field drawn with its match marked (an aria's cwd under its row) was never
+// reached, and the order jumped by rank instead of down the screen. They step
+// over every row the filtered view draws as a match, in the order drawn, and
+// the counter counts those rows.
+func TestCtrlNVisitsEveryRowDrawnAsAMatch(t *testing.T) {
+	p := newInputProbe(t, true)
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"arias.alpha.cwd", `"/home/dev/figaro-qua/main"`, "arias.alpha.mantra", `"plain"`,
+		"arias.beta.cwd", `"/tmp"`, "arias.beta.mantra", `"fix figaro paging"`,
+		"arias.gamma.cwd", `"/srv/fig"`, "arias.gamma.mantra", `"tune the fig tree"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(&rpc.FormView{Rows: []string{"arias.*"}, Open: []string{"arias"}})
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/fig")
+	var marked []string
+	for _, r := range tr.pit.list().rows {
+		if len(r.marks) > 0 {
+			marked = append(marked, r.id)
+		}
+	}
+	if len(marked) < 4 {
+		t.Fatalf("fixture: %v drawn as matches", marked)
+	}
+	if _, n := v.QueryCount(); n != len(marked) {
+		t.Errorf("the counter counts %d, the view draws %d matches: %v", n, len(marked), marked)
+	}
+	start, _ := tr.pit.selected()
+	at := -1
+	for i, id := range marked {
+		if id == start.id {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatalf("the search landed on %q, not on a drawn match %v", start.id, marked)
+	}
+	for i := 1; i <= len(marked); i++ {
+		feed(t, p.in, "\x0e")
+		want := marked[(at+i)%len(marked)]
+		if row, _ := tr.pit.selected(); row.id != want {
+			t.Fatalf("^N %d landed on %q, want %q (drawn order %v)", i, row.id, want, marked)
+		}
+	}
+	feed(t, p.in, "\x10")
+	if row, _ := tr.pit.selected(); row.id != marked[(at+len(marked)-1)%len(marked)] {
+		t.Errorf("^P went to %q", row.id)
 	}
 }

@@ -33,9 +33,9 @@ func (t *transcript) searchChanged() {
 	if ls == nil {
 		return
 	}
-	id := ls.SetQuery(t.query)
+	ls.SetQuery(t.query)
 	t.pit.refreshLive(t.w)
-	if id != "" {
+	if id := ls.Current(); id != "" {
 		t.pit.focus(id)
 	}
 }

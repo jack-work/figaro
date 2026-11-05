@@ -25,13 +25,17 @@ type formSearch struct {
 	below  map[string]bool
 	inPeek map[string]fuzzy.Hit
 	up     map[string]string
+	steps  []string
+	cur    string
+	land   bool
 	at     int
 	rev    uint64
 	flat   bool
 }
 
 type liveSearcher interface {
-	SetQuery(q string) string
+	SetQuery(q string)
+	Current() string
 	StepQuery(dir int) string
 	EndQuery(keep string) string
 	QueryCount() (at, n int)
@@ -48,7 +52,7 @@ func (v *formView) ToggleFlat() {
 	v.search.rev++
 }
 
-func (v *formView) SetQuery(q string) string {
+func (v *formView) SetQuery(q string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.search == nil {
@@ -56,20 +60,29 @@ func (v *formView) SetQuery(q string) string {
 	}
 	s := v.search
 	s.query = q
+	s.steps, s.cur, s.land, s.at = nil, "", true, 0
 	v.rank(v.source().Shown())
-	s.at = 0
-	return s.current()
+}
+
+func (v *formView) Current() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.search == nil {
+		return ""
+	}
+	return v.search.current()
 }
 
 func (v *formView) StepQuery(dir int) string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	s := v.search
-	if s == nil || len(s.ranked) == 0 {
+	if s == nil || len(s.steps) == 0 {
 		return ""
 	}
-	s.at = ((s.at+dir)%len(s.ranked) + len(s.ranked)) % len(s.ranked)
-	return s.current()
+	s.at = ((s.at+dir)%len(s.steps) + len(s.steps)) % len(s.steps)
+	s.cur = s.current()
+	return s.cur
 }
 
 func (v *formView) EndQuery(keep string) string {
@@ -86,6 +99,7 @@ func (v *formView) EndQuery(keep string) string {
 		v.revealLocked(chain)
 	}
 	v.search.query, v.search.hits, v.search.ranked, v.search.at, v.search.flat = "", nil, nil, 0, false
+	v.search.steps, v.search.cur, v.search.land = nil, "", false
 	v.search.best, v.search.target, v.search.label, v.search.up, v.search.below = nil, nil, nil, nil, nil
 	v.search.rev++
 	return land
@@ -141,10 +155,10 @@ func (v *formView) QueryCount() (at, n int) {
 	if v.search == nil || v.search.query == "" {
 		return 0, 0
 	}
-	if len(v.search.ranked) == 0 {
+	if len(v.search.steps) == 0 {
 		return 0, 0
 	}
-	return v.search.at + 1, len(v.search.ranked)
+	return v.search.at + 1, len(v.search.steps)
 }
 
 func (v *formView) searching() bool { return v.search != nil && v.search.query != "" }
@@ -179,25 +193,62 @@ func (v *formView) rank(snap form.Snapshot) {
 			s.ranked = append(s.ranked, at)
 		}
 	}
-	if s.at >= len(s.ranked) {
-		s.at = 0
-	}
 	s.rev++
 }
 
 func (s *formSearch) current() string {
-	if len(s.ranked) == 0 {
+	if s.at < 0 || s.at >= len(s.steps) {
 		return ""
 	}
-	return s.ranked[s.at]
+	return s.steps[s.at]
+}
+
+func (s *formSearch) settle(rows []pitRow) {
+	s.steps = s.steps[:0]
+	for _, r := range rows {
+		if r.id != "" && (s.flat || len(r.marks) > 0) {
+			s.steps = append(s.steps, r.id)
+		}
+	}
+	s.at = -1
+	if !s.land {
+		for i, id := range s.steps {
+			if id == s.cur {
+				s.at = i
+				break
+			}
+		}
+	}
+	if s.at < 0 {
+		s.at = s.bestStep()
+	}
+	s.land = false
+	s.cur = s.current()
+}
+
+func (s *formSearch) bestStep() int {
+	if len(s.ranked) == 0 {
+		return 0
+	}
+	best := s.ranked[0]
+	for i, id := range s.steps {
+		if id == best || strings.HasPrefix(id, best+".") {
+			return i
+		}
+	}
+	return 0
 }
 
 func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
+	rows := v.searchRows(snap, width)
+	v.search.settle(rows)
+	return rows
+}
+
+func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 	s := v.search
 	if st := snap.RootNode().Stamp(); !s.built || st != s.stamp {
-		at := s.at
 		v.rank(snap)
-		s.at = min(at, max(len(s.ranked)-1, 0))
 	}
 	s.up = map[string]string{}
 	s.inPeek = map[string]fuzzy.Hit{}
