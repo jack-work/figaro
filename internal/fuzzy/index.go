@@ -127,44 +127,25 @@ type Hit struct {
 
 func (h Hit) KeyPositions(m *Matcher, query string) []int {
 	var out []int
-	for _, t := range strings.Fields(query) {
-		out = append(out, m.Positions(&h.Entry.key, []rune(t))...)
+	for _, t := range Parse(query) {
+		out = append(out, t.keyPositions(m, &h.Entry.key, h.Entry.Path)...)
 	}
 	sort.Ints(out)
 	return out
 }
 
 func (ix *Index) Query(m *Matcher, query string) []Hit {
-	terms := strings.Fields(query)
-	if len(terms) == 0 {
-		return nil
+	terms := Parse(query)
+	positive := false
+	for _, t := range terms {
+		positive = positive || !t.negate
 	}
-	patterns := make([][]rune, len(terms))
-	lower := make([]string, len(terms))
-	for i, t := range terms {
-		patterns[i] = []rune(t)
-		lower[i] = strings.ToLower(t)
+	if !positive {
+		return nil
 	}
 	var hits []Hit
 	for _, e := range ix.Entries() {
-		h := Hit{Entry: e, ValueAt: -1}
-		ok := true
-		for i := range terms {
-			if km, found := m.Match(&e.key, patterns[i]); found {
-				h.OnKey = true
-				h.Score += km.Score
-				continue
-			}
-			if at := strings.Index(e.value, lower[i]); at >= 0 {
-				if h.ValueAt < 0 {
-					h.ValueAt = at
-				}
-				continue
-			}
-			ok = false
-			break
-		}
-		if ok {
+		if h, ok := match(m, terms, e); ok {
 			hits = append(hits, h)
 		}
 	}
@@ -175,4 +156,33 @@ func (ix *Index) Query(m *Matcher, query string) []Hit {
 		return hits[a].Score > hits[b].Score
 	})
 	return hits
+}
+
+func match(m *Matcher, terms []Term, e *Entry) (Hit, bool) {
+	h := Hit{Entry: e, ValueAt: -1}
+	for _, t := range terms {
+		score, onKey := t.matchKey(m, &e.key, e.Path)
+		at := -1
+		if !onKey {
+			at = t.valueAt(e.value)
+		}
+		if t.negate {
+			if onKey || at >= 0 {
+				return Hit{}, false
+			}
+			continue
+		}
+		switch {
+		case onKey:
+			h.OnKey = true
+			h.Score += score
+		case at >= 0:
+			if h.ValueAt < 0 {
+				h.ValueAt = at
+			}
+		default:
+			return Hit{}, false
+		}
+	}
+	return h, true
 }

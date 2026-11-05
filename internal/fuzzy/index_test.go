@@ -3,6 +3,7 @@ package fuzzy
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -172,5 +173,57 @@ func TestKeyPositionsMarkTheMatchedCharacters(t *testing.T) {
 	}
 	if marked.String() != "systools" {
 		t.Fatalf("marked %q at %v; want the letters of systools", marked.String(), pos)
+	}
+}
+
+// fzf's syntax: an exact term, a prefix, a suffix, an exclusion, and a term
+// kept to keys or to values.
+func TestTheQuerySyntax(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{
+		"system.tools":        "bash",
+		"system.model":        "opus",
+		"skills.tools.path":   "/s",
+		"notes.n1":            "tools are listed here",
+		"decide.model":        "luna",
+		"system.thinking_tok": "tools",
+	}))
+	m := NewMatcher()
+	cases := map[string][]string{
+		"'tools":        {"system.tools", "skills.tools.path", "notes.n1", "system.thinking_tok"},
+		"^system":       {"system.tools", "system.model", "system.thinking_tok"},
+		"model$":        {"system.model", "decide.model"},
+		"^system !opus": {"system.tools", "system.thinking_tok"},
+		"k:'tools":      {"system.tools", "skills.tools.path"},
+		"v:tools":       {"notes.n1", "system.thinking_tok"},
+		"!model":        nil,
+	}
+	for q, want := range cases {
+		got := paths(ix.Query(m, q))
+		sort.Strings(got)
+		sort.Strings(want)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%q matched %v, want %v", q, got, want)
+		}
+	}
+}
+
+// The letters an exact or anchored term matched are the ones marked.
+func TestExactTermsMarkTheirSpan(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{"system.tools": 1}))
+	m := NewMatcher()
+	for q, want := range map[string]string{"'tools": "tools", "^sys": "sys", "ols$": "ols"} {
+		hits := ix.Query(m, q)
+		if len(hits) != 1 {
+			t.Fatalf("%q: %v", q, paths(hits))
+		}
+		var got strings.Builder
+		for _, p := range hits[0].KeyPositions(m, q) {
+			got.WriteByte("system.tools"[p])
+		}
+		if got.String() != want {
+			t.Errorf("%q marked %q, want %q", q, got.String(), want)
+		}
 	}
 }
