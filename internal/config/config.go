@@ -624,7 +624,7 @@ const (
 func (l *Loaded) Retention() (Retention, error) {
 	switch r := Retention(l.cfg().Store.GC); r {
 	case "":
-		return RetentionDryRun, nil
+		return RetentionOff, nil
 	case RetentionOff, RetentionDryRun, RetentionOn:
 		return r, nil
 	default:

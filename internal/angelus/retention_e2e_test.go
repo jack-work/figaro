@@ -117,3 +117,13 @@ func TestABadGCSettingIsReportedAndRetainsNothing(t *testing.T) {
 	require.Contains(t, resp.FormsErr, "sometimes")
 	require.Empty(t, resp.Forms)
 }
+
+// Unset, gc keeps every fork point: nothing is planned or dropped.
+func TestGCIsOffWhenUnset(t *testing.T) {
+	a, acli, ctx, _ := daemonFixtureConfig(t, "[store]\nsegment_size = 1048576\n")
+	longForm(t, a, acli, ctx)
+	resp, err := acli.GC(ctx, false)
+	require.NoError(t, err)
+	require.Equal(t, "off", resp.Retention)
+	require.Empty(t, resp.Forms)
+}

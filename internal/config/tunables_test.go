@@ -82,3 +82,23 @@ func TestNodeSweepDefaultsToDryRun(t *testing.T) {
 		t.Error("node_sweep = \"yes\" was accepted")
 	}
 }
+
+// Form history is kept by default: every fork point stays reachable until
+// gc is turned on for the store.
+func TestStoreGCDefaultsToOff(t *testing.T) {
+	for body, want := range map[string]Retention{
+		"":                            RetentionOff,
+		"[store]\ngc = \"dry-run\"\n": RetentionDryRun,
+		"[store]\ngc = \"on\"\n":      RetentionOn,
+		"[store]\ngc = \"off\"\n":     RetentionOff,
+	} {
+		l, err := loadWith(t, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := l.Retention()
+		if err != nil || got != want {
+			t.Errorf("%q: Retention = %q, %v; want %q", body, got, err, want)
+		}
+	}
+}
