@@ -164,6 +164,16 @@ type KillRequest struct {
 	GraceMS   int64  `json:"grace_ms,omitempty"`
 }
 
+type ReapedRestoreRequest struct {
+	FigaroID string `json:"figaro_id"`
+	Keep     bool   `json:"keep,omitempty"`
+}
+
+type ReapedRestoreResponse struct {
+	Root     string   `json:"root"`
+	Restored []string `json:"restored"`
+}
+
 type KillResponse struct {
 	OK      bool  `json:"ok"`
 	PurgeAt int64 `json:"purge_at,omitempty"`

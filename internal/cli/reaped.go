@@ -10,7 +10,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -119,7 +118,7 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 				fmt.Fprintf(stderrw, "purged %s and %d under it\n", ariaName(g.Root), len(g.Nodes)-1)
 				return nil
 			}
-			err = restoreReaped(loaded, g, keep)
+			err = restoreReaped(ctx, acli, g, keep)
 		default:
 			dieUsage("usage: figaro reaped [ls | restore <id> [--keep] | purge <id>] [-j]")
 		}
@@ -128,19 +127,16 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 	return err
 }
 
-func restoreReaped(loaded *config.Loaded, g reapedGroup, keep bool) error {
-	for _, id := range g.Nodes {
-		drops := []string{store.SystemReapedKey, store.SystemReapedUntilKey}
-		if keep && id == g.Root {
-			drops = append(drops, store.SystemTTLKey)
-		}
-		mustCallSet(loaded, id, form.Build(form.Snapshot{}, nil, drops), 0)
+func restoreReaped(ctx context.Context, acli *sdk.Angelus, g reapedGroup, keep bool) error {
+	resp, err := acli.ReapedRestore(ctx, rpc.ReapedRestoreRequest{FigaroID: g.Root, Keep: keep})
+	if err != nil {
+		return fmt.Errorf("reaped restore: %w", err)
 	}
 	note := "the keepalive holds it for a day; unset system.ttl or use --keep to keep it"
 	if keep {
 		note = "system.ttl removed from the root; it will not be reaped again"
 	}
-	fmt.Fprintf(stderrw, "restored %s and %d under it (%s)\n", ariaName(g.Root), len(g.Nodes)-1, note)
+	fmt.Fprintf(stderrw, "restored %s and %d under it (%s)\n", ariaName(resp.Root), len(resp.Restored)-1, note)
 	return nil
 }
 

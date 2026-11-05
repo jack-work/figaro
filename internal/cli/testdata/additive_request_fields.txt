@@ -113,6 +113,8 @@ ReadRequest.Backward
 ReadRequest.FigaroID
 ReadRequest.Floor
 ReadRequest.Limit
+ReapedRestoreRequest.FigaroID
+ReapedRestoreRequest.Keep
 ResolveRequest.PID
 SetRequest.Assert
 SetRequest.IfVersion

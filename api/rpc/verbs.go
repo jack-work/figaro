@@ -69,9 +69,10 @@ var methodVerbs = map[string]Verb{
 	MethodImportCommit: VerbCreate,
 	MethodImportAbort:  VerbCreate,
 
-	MethodFork: VerbFork,
-	MethodKill: VerbKill,
-	MethodMove: VerbKill,
+	MethodFork:          VerbFork,
+	MethodKill:          VerbKill,
+	MethodReapedRestore: VerbSet,
+	MethodMove:          VerbKill,
 
 	MethodNormalize:      VerbAdmin,
 	MethodGC:             VerbAdmin,

@@ -416,3 +416,11 @@ func (c *Angelus) TroupeAPIKeyList(ctx context.Context, troupe string) (*rpc.Tro
 	err := c.call(ctx, rpc.MethodTroupeAPIKeyList, rpc.TroupeAPIKeyListRequest{Troupe: troupe}, &resp)
 	return &resp, err
 }
+
+func (c *Angelus) ReapedRestore(ctx context.Context, req rpc.ReapedRestoreRequest) (*rpc.ReapedRestoreResponse, error) {
+	var resp rpc.ReapedRestoreResponse
+	if err := c.call(ctx, rpc.MethodReapedRestore, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

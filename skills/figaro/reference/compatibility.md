@@ -27,6 +27,10 @@ capabilities.
   older daemon sends neither and the pit behaves as before: editable per
   form, every list nested. Neither is trusted: the daemon still refuses
   every write it would refuse without them.
+- **Restoring a reaped aria** is `figaro.reaped.restore`, a 0.54 method. It
+  needs the `set` verb (not `kill`) on every node of the reaped group, and a
+  troupe policy that grants `set` grants it. A set refused partway leaves the
+  nodes before it restored, and the error names them.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

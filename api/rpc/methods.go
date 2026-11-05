@@ -65,14 +65,15 @@ const (
 	MethodFormCreate = "form.create"
 	// MethodFormBind births a figaro from an unbound form, dormant: a missing
 	// provider fails at the first turn, not at bind.
-	MethodFormBind  = "form.bind"
-	MethodFork      = "figaro.fork"
-	MethodPromote   = "figaro.promote"
-	MethodDemote    = "figaro.demote"
-	MethodImport    = "figaro.import"
-	MethodNormalize = "figaro.normalize"
-	MethodGC        = "figaro.gc"
-	MethodKill      = "figaro.kill"
+	MethodFormBind      = "form.bind"
+	MethodFork          = "figaro.fork"
+	MethodPromote       = "figaro.promote"
+	MethodDemote        = "figaro.demote"
+	MethodImport        = "figaro.import"
+	MethodNormalize     = "figaro.normalize"
+	MethodGC            = "figaro.gc"
+	MethodKill          = "figaro.kill"
+	MethodReapedRestore = "figaro.reaped.restore"
 )
 
 // Sessions: finding an aria, and the pid bindings a shell holds.
