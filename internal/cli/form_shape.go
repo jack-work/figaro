@@ -195,34 +195,46 @@ func (v *formView) revealMarked() string {
 		v.root.branch = true
 	}
 	s := &viewShape{hint: v.view, subject: subject}
-	var find func(n *formNode, labels []string) *formNode
-	find = func(n *formNode, labels []string) *formNode {
+	var chain []string
+	var find func(n *formNode, labels []string) bool
+	find = func(n *formNode, labels []string) bool {
 		for _, c := range n.kids() {
 			if c.leaf() {
 				continue
 			}
 			segs := append(labels[:len(labels):len(labels)], c.label)
+			chain = append(chain, c.path)
 			if k, ok := s.row(segs); ok && s.marked(c, k) {
-				return c
+				return true
 			}
-			if hit := find(c, segs); hit != nil {
-				return hit
+			if find(c, segs) {
+				return true
 			}
+			chain = chain[:len(chain)-1]
 		}
-		return nil
+		return false
 	}
-	hit := find(v.root, nil)
-	if hit == nil {
+	if !find(v.root, nil) {
 		return ""
 	}
-	for p := hit.path; ; {
-		i := strings.LastIndexByte(p, '.')
-		if i < 0 {
-			break
-		}
-		p = p[:i]
+	v.revealLocked(chain)
+	return chain[len(chain)-1]
+}
+
+func (v *formView) revealLocked(chain []string) {
+	through := ""
+	if v.view != nil {
+		through = v.view.Through
+	}
+	for i := 0; i+1 < len(chain); i++ {
+		p := chain[i]
 		v.open[p] = true
+		if through != "" && chain[i+1] == p+"."+through {
+			if v.through == nil {
+				v.through = map[string]bool{}
+			}
+			v.through[p] = true
+		}
 	}
 	v.openRev++
-	return hit.path
 }

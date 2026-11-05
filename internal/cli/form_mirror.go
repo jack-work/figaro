@@ -215,15 +215,19 @@ func flattenGuided(n *formNode, open map[string]bool, out []*formNode, cont stri
 }
 
 type guideWalk struct {
-	open  map[string]bool
-	out   []*formNode
-	shape *viewShape
+	open    map[string]bool
+	out     []*formNode
+	shape   *viewShape
+	through map[string]bool
 }
 
 func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, row *viewRowKey) {
 	kids := n.kids()
 	if w.shape != nil {
 		kids = w.shape.order(labels, kids, w.open)
+		if w.through[n.path] && w.shape.hint.Through != "" {
+			kids = onlyChild(kids, w.shape.hint.Through)
+		}
 	}
 	pad := 0
 	for _, c := range kids {
@@ -252,7 +256,9 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		c.peek = ""
 		if w.shape != nil {
 			under = w.shape.note(c, segs, row)
-			c.peek = w.shape.peek(c)
+			if !c.open || w.through[c.path] {
+				c.peek = w.shape.peek(c)
+			}
 		}
 		if c.open {
 			w.walk(c, c.cont, false, segs, under)
@@ -261,6 +267,15 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 }
 
 const labelPadMax = 24
+
+func onlyChild(kids []*formNode, label string) []*formNode {
+	for _, c := range kids {
+		if c.label == label {
+			return []*formNode{c}
+		}
+	}
+	return nil
+}
 
 func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*formNode {
 	for _, c := range n.kids() {
@@ -278,7 +293,7 @@ func renderTreeRow(n *formNode, width int) (string, int) {
 	switch {
 	case n.leaf():
 		line += ": " + strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + leafPreview(n.label, n.value)
-	case n.open:
+	case n.open && n.peek == "":
 		line += fmt.Sprintf(" (%d)", n.size())
 	case n.peek != "":
 		line += fmt.Sprintf(" (%d)  ", n.size())

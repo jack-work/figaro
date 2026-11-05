@@ -217,6 +217,7 @@ type formView struct {
 	act       func(rpc.ViewAction)
 	subject   func() form.Snapshot
 	rowKeys   map[string]viewRowKey
+	through   map[string]bool
 	seeded    map[string]bool
 	armed     string
 	search    *formSearch
@@ -377,7 +378,7 @@ func (v *formView) Items(width int) []pitRow {
 			shape.subject = v.subject()
 		}
 	}
-	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape}
+	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through}
 	w.walk(v.root, "", true, nil, nil)
 	v.rows = w.out
 	v.rowKeys = nil
@@ -507,6 +508,9 @@ func (v *formView) Activate(id string) {
 	for _, n := range v.rows {
 		if n.path == path {
 			openBranch(n, v.open)
+			if !v.open[path] {
+				delete(v.through, path)
+			}
 			v.openRev++
 			return
 		}
@@ -518,8 +522,9 @@ func (v *formView) Expand(id string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, n := range v.rows {
-		if n.path == path && !v.open[path] {
+		if n.path == path && (!v.open[path] || v.through[path]) {
 			v.open[path] = true
+			delete(v.through, path)
 			v.openRev++
 			return
 		}
@@ -536,6 +541,7 @@ func (v *formView) Collapse(id string) string {
 		}
 		if v.open[path] && path == id {
 			v.open[path] = false
+			delete(v.through, path)
 			v.openRev++
 			return path
 		}

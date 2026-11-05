@@ -420,6 +420,7 @@ var ariasHint = &rpc.FormView{
 	Rows:    []string{"arias.*", "**.forks.*"},
 	Open:    []string{"arias", "**.forks"},
 	RowAria: "id",
+	Through: "forks",
 	Label:   "mantra",
 	Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},
 	Actions: []rpc.ViewAction{
@@ -550,5 +551,42 @@ func TestAriasOpensOnTheAttendedAria(t *testing.T) {
 	in.consume([]byte("\r"))
 	if attended != "38f4563ac90d4206364a64c0a4f4c4fa" {
 		t.Errorf("Enter on the pit as opened attended %q", attended)
+	}
+}
+
+// An ancestor the pit opens on the way to the attended aria shows only its
+// forks, so a deep fork's path reads as the fork tree; l opens one fully, and
+// the search's Enter reveals the same way.
+func TestARevealedAncestorShowsOnlyItsForks(t *testing.T) {
+	v := ariasView(t, "38f4563ac90d4206364a64c0a4f4c4fa")
+	if at := v.revealMarked(); at != "arias.nearest-tusk.forks.dairy-singles" {
+		t.Fatalf("revealed %q", at)
+	}
+	ids := strings.Join(formRowIDs(v.Items(100)), ",")
+	if want := "arias,arias.nearest-tusk,arias.nearest-tusk.forks,arias.nearest-tusk.forks.dairy-singles"; !strings.HasPrefix(ids, want) {
+		t.Fatalf("rows %s, want the fork chain alone: %s", ids, want)
+	}
+	if strings.Contains(ids, "arias.nearest-tusk.mantra") {
+		t.Errorf("the revealed parent shows its own keys: %s", ids)
+	}
+	if got := formRowText(v.Items(100), "arias.nearest-tusk"); !strings.Contains(got, `"parent fixture"`) {
+		t.Errorf("the revealed parent reads %q, want its mantra: the path is a path of names", got)
+	}
+	v.Expand("arias.nearest-tusk")
+	if got := formRowText(v.Items(100), "arias.nearest-tusk"); strings.Contains(got, `"parent fixture"`) {
+		t.Errorf("a parent opened whole still carries its label: %q", got)
+	}
+	if ids := strings.Join(formRowIDs(v.Items(100)), ","); !strings.Contains(ids, "arias.nearest-tusk.mantra") {
+		t.Errorf("l on the revealed parent did not open its keys: %s", ids)
+	}
+
+	s := ariasView(t, "")
+	s.Items(100)
+	s.SetQuery("dairy")
+	s.Items(100)
+	s.EndQuery("arias.nearest-tusk.forks.dairy-singles.mantra")
+	ids = strings.Join(formRowIDs(s.Items(100)), ",")
+	if strings.Contains(ids, "arias.nearest-tusk.mantra") || !strings.Contains(ids, "arias.nearest-tusk.forks.dairy-singles") {
+		t.Errorf("after the search's Enter rows are %s; want the fork chain alone", ids)
 	}
 }

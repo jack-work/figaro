@@ -25,6 +25,7 @@ var formViews = map[string]rpc.FormView{
 		Rows:    []string{"arias.*", "**.forks.*"},
 		Open:    []string{"arias", "**.forks"},
 		RowAria: "id",
+		Through: "forks",
 		Label:   "mantra",
 		Sort:    "-active_at",
 		Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},

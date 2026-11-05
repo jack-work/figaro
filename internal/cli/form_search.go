@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/rpc"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -74,10 +75,12 @@ func (v *formView) EndQuery(keep string) {
 		return
 	}
 	if keep != "" {
+		chain := []string{keep}
 		for p, ok := v.search.up[keep]; ok && p != ""; p, ok = v.search.up[p] {
-			v.open[p] = true
+			chain = append(chain, p)
 		}
-		v.openRev++
+		slices.Reverse(chain)
+		v.revealLocked(chain)
 	}
 	v.search.query, v.search.hits, v.search.ranked, v.search.best, v.search.up, v.search.at = "", nil, nil, nil, nil, 0
 	v.search.rev++
