@@ -100,5 +100,5 @@ func TestANodeKeyCredentialThatIsNotTheCertifiedKeyIsRefused(t *testing.T) {
 	r.k.NodeKey = cred
 	err = r.k.Ensure()
 	require.ErrorContains(t, err, "with the key from the credential")
-	require.ErrorContains(t, err, "figaro troupe leaf estate --for node-b")
+	require.ErrorContains(t, err, "hush troupe-root leaf estate --for node-b")
 }

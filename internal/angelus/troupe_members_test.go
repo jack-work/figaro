@@ -75,5 +75,5 @@ func TestTroupeMembersCarriesKeyExpiry(t *testing.T) {
 	got := out.(rpc.TroupeMembersResponse)
 	require.NotNil(t, got.Keys)
 	require.Equal(t, "estate", got.Keys.Troupe)
-	require.Contains(t, got.Keys.Error, "figaro troupe intermediate estate")
+	require.Contains(t, got.Keys.Error, "hush troupe-root intermediate estate")
 }

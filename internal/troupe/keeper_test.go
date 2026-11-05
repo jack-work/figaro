@@ -78,7 +78,7 @@ func TestAnExpiredIntermediateLeavesNothingToServeAndSaysWhatToRun(t *testing.T)
 	c.t = c.t.Add(3 * 24 * time.Hour)
 	err = k.Ensure()
 	require.True(t, errors.Is(err, ErrIntermediateExpired), "%v", err)
-	require.ErrorContains(t, err, "figaro troupe intermediate estate")
+	require.ErrorContains(t, err, "hush troupe-root intermediate estate")
 	_, err = k.Current()
 	require.Error(t, err, "an expired certificate was still served")
 
@@ -91,7 +91,7 @@ func TestAnExpiredIntermediateLeavesNothingToServeAndSaysWhatToRun(t *testing.T)
 func TestAKeeperWithNoIntermediateSaysHowToGetOne(t *testing.T) {
 	k := &Keeper{Dir: DirFor(t.TempDir(), "estate"), Troupe: "estate", Node: "node-a", Now: time.Now}
 	err := k.Ensure()
-	require.ErrorContains(t, err, "figaro troupe intermediate estate")
+	require.ErrorContains(t, err, "hush troupe-root intermediate estate")
 	_, err = k.Current()
 	require.Error(t, err)
 }

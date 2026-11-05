@@ -48,7 +48,7 @@ func TestANodeWithoutItsTroupeKeysStillStarts(t *testing.T) {
 	if a.Troupe == nil {
 		t.Fatal("no keeper")
 	}
-	if err := a.Troupe.Status().Err; err == nil || !strings.Contains(err.Error(), "figaro troupe intermediate estate") {
+	if err := a.Troupe.Status().Err; err == nil || !strings.Contains(err.Error(), "hush troupe-root intermediate estate") {
 		t.Fatalf("status error %v", err)
 	}
 	if _, err := a.Troupe.Current(); err == nil {

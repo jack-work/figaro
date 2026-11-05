@@ -64,10 +64,10 @@ func (k *Keeper) Grant(asked time.Duration) time.Duration {
 
 func (k *Keeper) remedy() string {
 	if k.IntermediateKey != "" {
-		return fmt.Sprintf("op read <root ref> | figaro troupe intermediate %s --for %s --out <tmpfs dir> on the founder, then deliver intermediate.key to %s and intermediate.crt into %s",
+		return fmt.Sprintf("hush troupe-root intermediate %s --for %s --out <tmpfs dir> on the founder, then deliver intermediate.key to %s and intermediate.crt into %s",
 			k.Troupe, k.Node, k.IntermediateKey, k.Dir)
 	}
-	return fmt.Sprintf("op read <root ref> | figaro troupe intermediate %s", k.Troupe)
+	return fmt.Sprintf("hush troupe-root intermediate %s", k.Troupe)
 }
 
 func (k *Keeper) Intermediate() (*x509.Certificate, ed25519.PrivateKey, error) {
@@ -83,7 +83,7 @@ func (k *Keeper) Intermediate() (*x509.Certificate, ed25519.PrivateKey, error) {
 
 func (k *Keeper) rejoin() string {
 	if k.NodeKey != "" {
-		return fmt.Sprintf("op read <root ref> | figaro troupe leaf %s --for %s --public-key <its key> --door <its door> --out <dir> on a node that holds an intermediate, then deliver node.crt into %s", k.Troupe, k.Node, k.Dir)
+		return fmt.Sprintf("hush troupe-root leaf %s --for %s --public-key <its key> --door <its door> --out <dir> on a node that holds an intermediate, then deliver node.crt into %s", k.Troupe, k.Node, k.Dir)
 	}
 	return fmt.Sprintf("figaro troupe join %s", k.Troupe)
 }
