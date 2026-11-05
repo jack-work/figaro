@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,6 +50,22 @@ func TestWebDoorConfigRefusesWhatItCannotHonour(t *testing.T) {
 	} {
 		if _, _, err := loadToml(t, body).WebDoor(); err == nil {
 			t.Fatalf("accepted %q", body)
+		}
+	}
+}
+
+// An edge follow lives an hour unless [door] says otherwise; anything but a
+// positive duration is refused by name.
+func TestEdgeFollowMaxAge(t *testing.T) {
+	if d, err := loadToml(t, "").EdgeFollowMaxAge(); err != nil || d != time.Hour {
+		t.Fatalf("unset: %v %v", d, err)
+	}
+	if d, err := loadToml(t, "[door]\nedge_follow_max_age = \"15m\"\n").EdgeFollowMaxAge(); err != nil || d != 15*time.Minute {
+		t.Fatalf("15m: %v %v", d, err)
+	}
+	for _, bad := range []string{"0s", "-1m", "an hour"} {
+		if _, err := loadToml(t, "[door]\nedge_follow_max_age = \""+bad+"\"\n").EdgeFollowMaxAge(); err == nil || !strings.Contains(err.Error(), "door.edge_follow_max_age") {
+			t.Errorf("%q: %v", bad, err)
 		}
 	}
 }

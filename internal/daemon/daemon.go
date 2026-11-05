@@ -513,14 +513,29 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 		ln.Close()
 		return fmt.Errorf("door.web: %w", err)
 	}
-	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "admits", admit != nil)
+	door, err := webDoorLimits(loaded, web, admit)
+	if err != nil {
+		ln.Close()
+		return err
+	}
+	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", door.FollowMaxAge.String(), "admits", admit != nil)
 	go func() {
 		defer os.Remove(web.Path)
-		if err := a.ServeWeb(ctx, ln, angelus.Web{Admit: admit, MaxConnAge: web.MaxConnAge}); err != nil {
+		if err := a.ServeWeb(ctx, ln, door); err != nil {
 			slog.Error("web door", "err", err)
 		}
 	}()
 	return nil
+}
+
+func webDoorLimits(loaded *config.Loaded, web config.WebDoor, admit angelus.WebAdmit) (angelus.Web, error) {
+	door := angelus.Web{Admit: admit, MaxConnAge: web.MaxConnAge}
+	if web.Authn != "upstream" {
+		return door, nil
+	}
+	var err error
+	door.FollowMaxAge, err = loaded.EdgeFollowMaxAge()
+	return door, err
 }
 
 func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b authz.Bearers) (angelus.WebAdmit, error) {

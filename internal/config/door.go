@@ -8,8 +8,23 @@ import (
 )
 
 type DoorConfig struct {
-	Web *WebDoorConfig `toml:"web"`
-	TLS *TLSDoorConfig `toml:"tls"`
+	Web              *WebDoorConfig `toml:"web"`
+	TLS              *TLSDoorConfig `toml:"tls"`
+	EdgeFollowMaxAge string         `toml:"edge_follow_max_age"`
+}
+
+const defaultEdgeFollowMaxAge = time.Hour
+
+func (l *Loaded) EdgeFollowMaxAge() (time.Duration, error) {
+	s := l.cfg().Door.EdgeFollowMaxAge
+	if s == "" {
+		return defaultEdgeFollowMaxAge, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("door.edge_follow_max_age %q is not a positive duration", s)
+	}
+	return d, nil
 }
 
 type WebDoorConfig struct {
