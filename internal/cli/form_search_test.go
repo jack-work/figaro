@@ -63,7 +63,7 @@ func TestFormSearchPromptSitsAboveTheForm(t *testing.T) {
 	p, _ := searchProbe(t)
 	feed(t, p.in, "/brave")
 	lines := stripANSIAll(p.lt.tr.drawerLines())
-	if len(lines) == 0 || !strings.Contains(lines[0], "brave") || !strings.Contains(lines[0], "/2") {
+	if len(lines) == 0 || !strings.Contains(lines[0], "brave") || !strings.Contains(lines[0], "1/1") {
 		t.Fatalf("the prompt is not the first drawer row with a count: %q", lines)
 	}
 }
@@ -244,14 +244,20 @@ func TestTabFlipsTheSearchToARankedList(t *testing.T) {
 	}
 }
 
-// The prompt takes fzf's syntax: an excluded term drops rows that match it.
+// The prompt takes fzf's syntax: an anchored term matches a key's start, and
+// an excluded term drops rows that match it.
 func TestTheFormSearchTakesTheQuerySyntax(t *testing.T) {
 	p, _ := searchProbe(t)
 	tr := p.lt.tr
 	feed(t, p.in, "/^system !xwal")
 	ids := strings.Join(pitIDs(tr), " ")
+	if strings.Contains(ids, "xwal") || ids != "system" {
+		t.Fatalf("rows %s; want the system key the anchor names, without xwal", ids)
+	}
+	feed(t, p.in, "/tools !xwal")
+	ids = strings.Join(pitIDs(tr), " ")
 	if strings.Contains(ids, "xwal") || !strings.Contains(ids, "system.tools") {
-		t.Fatalf("rows %s; want system.* without xwal", ids)
+		t.Fatalf("rows %s; want system.tools without xwal", ids)
 	}
 }
 
@@ -444,5 +450,32 @@ func TestAHitOnAForkLandsOnTheFork(t *testing.T) {
 	shown := strings.Join(pitIDs(tr), ",")
 	if !strings.Contains(shown, fork) {
 		t.Errorf("the fork's row is not on screen: %s", shown)
+	}
+}
+
+// The filtered view drew every leaf whose path matched, and a leaf's path
+// carries its ancestors' names, so a hit on a fork's name drew all the fork's
+// fields. It draws the paths that match and the ancestors that reach them,
+// nothing else: no sibling, no field the match is not in.
+func TestTheFilteredViewDrawsOnlyWhatMatches(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  []string
+	}{
+		{"kingly", []string{"arias", "arias.parent-one", "arias.parent-one.forks", "arias.parent-one.forks.kingly-fork"}},
+		{"another", []string{"arias", "arias.parent-one", "arias.parent-one.forks", "arias.parent-one.forks.plain-fork", "arias.parent-one.forks.plain-fork.mantra"}},
+		{"parent-one", []string{"arias", "arias.parent-one"}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			p := newInputProbe(t, true)
+			v := forkedArias()
+			tr := p.lt.tr
+			tr.pit.showLive(pitID("arias"), v)
+			feed(t, p.in, "/"+tc.query)
+			got := strings.Join(pitIDs(tr), ",")
+			if want := strings.Join(tc.want, ","); got != want {
+				t.Errorf("rows\n  %s\nwant\n  %s", got, want)
+			}
+		})
 	}
 }

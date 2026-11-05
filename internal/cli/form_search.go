@@ -20,6 +20,9 @@ type formSearch struct {
 	hits   []fuzzy.Hit
 	ranked []string
 	best   map[string]fuzzy.Hit
+	target map[string]int
+	label  map[string][]int
+	below  map[string]bool
 	up     map[string]string
 	at     int
 	rev    uint64
@@ -82,7 +85,8 @@ func (v *formView) EndQuery(keep string) {
 		slices.Reverse(chain)
 		v.revealLocked(chain)
 	}
-	v.search.query, v.search.hits, v.search.ranked, v.search.best, v.search.up, v.search.at = "", nil, nil, nil, nil, 0
+	v.search.query, v.search.hits, v.search.ranked, v.search.at = "", nil, nil, 0
+	v.search.best, v.search.target, v.search.label, v.search.up, v.search.below = nil, nil, nil, nil, nil
 	v.search.rev++
 }
 
@@ -108,10 +112,15 @@ func (v *formView) rank(snap form.Snapshot) {
 	}
 	s.hits, s.ranked = s.index.Query(s.match, s.query), s.ranked[:0]
 	s.best = make(map[string]fuzzy.Hit, len(s.hits))
+	s.target = make(map[string]int, len(s.hits))
+	s.label = map[string][]int{}
 	for _, h := range s.hits {
-		at := v.hintedRow(h.Entry.Keys)
+		depth := s.resolve(h)
+		s.target[h.Entry.Path] = depth
+		keys := h.Entry.Keys
+		at := v.hintedRow(keys[:min(depth+1, len(keys))])
 		if at == "" {
-			at = h.Entry.Path
+			at = strings.Join(keys[:depth], ".")
 		}
 		if _, ok := s.best[at]; !ok {
 			s.best[at] = h
@@ -141,9 +150,17 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	s.up = map[string]string{}
 	byPath := map[string]fuzzy.Hit{}
 	for _, h := range s.hits {
-		if formAt(v.root, h.Entry.Keys, s.up) != nil {
+		depth, ok := s.target[h.Entry.Path]
+		if !ok {
+			depth = len(h.Entry.Keys)
+		}
+		if formAt(v.root, h.Entry.Keys[:depth], s.up) != nil && depth == len(h.Entry.Keys) {
 			byPath[h.Entry.Path] = h
 		}
+	}
+	s.below = make(map[string]bool, len(s.up))
+	for _, parent := range s.up {
+		s.below[parent] = true
 	}
 	if s.flat {
 		return v.flatSearchItems(width)
@@ -170,9 +187,9 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 			}
 			h, hit := byPath[c.path]
 			if !hit || !c.leaf() {
-				c.open = !c.leaf()
+				c.open = !c.leaf() && s.below[c.path]
 				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path, marks: s.labelMarks(c)})
-				if !c.leaf() {
+				if c.open {
 					walk(c, c.cont, false)
 				}
 				continue
@@ -306,21 +323,49 @@ func (v *formView) hintedRow(keys []string) string {
 	return ""
 }
 
+func (s *formSearch) resolve(h fuzzy.Hit) int {
+	keys := h.Entry.Keys
+	if h.ValueAt >= 0 || !h.OnKey {
+		return len(keys)
+	}
+	deepest := 0
+	from := 0
+	positions := h.KeyPositions(s.match, s.query)
+	for d, k := range keys {
+		to := from + utf8.RuneCountInString(k)
+		var in []int
+		for _, p := range positions {
+			if p >= from && p < to {
+				in = append(in, p-from)
+			}
+		}
+		if len(in) > 0 {
+			deepest = d + 1
+			path := strings.Join(keys[:d+1], ".")
+			if _, seen := s.label[path]; !seen {
+				s.label[path] = in
+			}
+		}
+		from = to + 1
+	}
+	if deepest == 0 {
+		return len(keys)
+	}
+	return deepest
+}
+
 func (s *formSearch) labelMarks(n *formNode) []int {
-	h, ok := s.best[n.path]
-	if !ok || !h.OnKey {
+	in, ok := s.label[n.path]
+	if !ok {
 		return nil
 	}
-	from := utf8.RuneCountInString(n.path) - utf8.RuneCountInString(n.label)
-	to := from + utf8.RuneCountInString(n.label)
 	label := []rune(n.label)
 	lead := len(n.lead())
-	var out []int
-	for _, p := range h.KeyPositions(s.match, s.query) {
-		if p < from || p >= to {
-			continue
+	out := make([]int, 0, len(in))
+	for _, p := range in {
+		if p < len(label) {
+			out = append(out, lead+len(string(label[:p])))
 		}
-		out = append(out, lead+len(string(label[:p-from])))
 	}
 	return out
 }
