@@ -348,10 +348,16 @@ func (t *transcript) viewTakesKey(ev keyEvent) bool {
 	if ev.nav != navNone || ev.b == 0 {
 		return false
 	}
-	o, ok := t.pit.live.(keyOwner)
+	live := any(t.pit.live)
+	if r, ok := live.(interface{ forRow(id string) *formView }); ok {
+		if row, has := t.pit.selected(); has {
+			live = r.forRow(row.id)
+		}
+	}
+	o, ok := live.(keyOwner)
 	if !ok || !o.OwnsKey(ev.b) {
 		return false
 	}
-	kv, ok := t.pit.live.(cmdkit.KeyView)
+	kv, ok := live.(cmdkit.KeyView)
 	return ok && kv.Key(ev.b)
 }

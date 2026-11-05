@@ -309,7 +309,13 @@ func pitAct(in *interactiveInput, a rpc.ViewAction, send actOn) {
 	if !ok {
 		return
 	}
-	k, ok := v.rowKeyOf(valuePath(sel.id))
+	id := sel.id
+	node := ""
+	if m, inner := v.split(id); m != nil {
+		v, id, node, send = m.view, inner, m.node, m.send
+		a.Label = pitText(a.Label)
+	}
+	k, ok := v.rowKeyOf(valuePath(id))
 	if !ok {
 		t.setCommandNoteAt(a.Label+": pick a row", alertError)
 		return
@@ -319,9 +325,19 @@ func pitAct(in *interactiveInput, a rpc.ViewAction, send actOn) {
 		t.setCommandNoteAt(err.Error(), alertError)
 		return
 	}
+	if node != "" {
+		if a.Target == rpc.TargetSubject || strings.Contains(target, rpc.NodeSeparator) {
+			t.setCommandNoteAt(a.Label+": this row names an aria outside "+node+"; refused", alertError)
+			return
+		}
+		target = qualifiedIn(node, target)
+	}
 	name := k.row
 	if k.group != "" {
 		name = k.group + "/" + k.row
+	}
+	if node != "" {
+		name = pitText(node + rpc.NodeSeparator + name)
 	}
 	if a.Local == rpc.ViewAttend {
 		if t.attendAria == nil {
@@ -353,6 +369,10 @@ func pitChange(t *transcript) {
 	}
 	row, ok := t.pit.selected()
 	if !ok {
+		return
+	}
+	if m, _ := v.split(row.id); m != nil {
+		t.setCommandNoteAt("c: a form loaded from "+m.addr+" is read here, not changed", alertError)
 		return
 	}
 	line, note := v.changeLine(valuePath(row.id), t.subjectID())

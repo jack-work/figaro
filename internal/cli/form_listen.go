@@ -218,6 +218,8 @@ type formView struct {
 	subject   func() form.Snapshot
 	rowKeys   map[string]viewRowKey
 	through   map[string]bool
+	mounts    map[string]*viewMount
+	opener    mountOpener
 	seeded    map[string]bool
 	armed     string
 	search    *formSearch
@@ -348,7 +350,7 @@ func (v *formView) Items(width int) []pitRow {
 	if v.search != nil {
 		key.search = v.search.rev
 	}
-	if v.items != nil && key == v.itemsKey {
+	if v.items != nil && key == v.itemsKey && len(v.mounts) == 0 {
 		return v.items
 	}
 	v.touched = nil
@@ -390,7 +392,13 @@ func (v *formView) Items(width int) []pitRow {
 
 	out := make([]pitRow, 0, len(v.rows)+1)
 	out = append(out, noticeRows(v.notice, width)...)
+	var mounted []pitRow
+	mountedUnder := ""
+	pointers := map[string]bool{}
 	for _, n := range v.rows {
+		if mounted != nil && !strings.HasPrefix(n.path, mountedUnder+".") {
+			out, mounted = append(out, mounted...), nil
+		}
 		n.width = width
 		row := pitRow{textFrom: n, yankFrom: n, id: n.path}
 		if v.touched[n.path] {
@@ -407,7 +415,18 @@ func (v *formView) Items(width int) []pitRow {
 				row.yank, row.yankFrom, row.aria = k.aria, nil, k.aria
 			}
 		}
+		if mount := shape.mountKey(); mount != "" && strings.HasSuffix(n.path, "."+mount) && v.isMountLeafLocked(n, mount, shape) {
+			continue
+		}
 		out = append(out, row)
+		if _, head := shape.head(n.path); head && shape.mountKey() != "" {
+			pointers[n.path] = true
+		}
+		if mount := shape.mountKey(); mount != "" && v.open[n.path] {
+			if _, head := shape.head(n.path); head {
+				mounted, mountedUnder = v.mountRowsLocked(n.path, leafText(n, mount), n.cont+"   ", width), n.path
+			}
+		}
 		if !n.leaf() || !v.open[n.path] {
 			continue
 		}
@@ -420,6 +439,8 @@ func (v *formView) Items(width int) []pitRow {
 			})
 		}
 	}
+	out = append(out, mounted...)
+	v.dropMountsLocked(pointers)
 	v.items, v.itemsKey = out, key
 	v.rev++
 	return out
@@ -502,6 +523,10 @@ func valuePath(id string) string {
 
 // Activate runs under the render lock: it must not repaint.
 func (v *formView) Activate(id string) {
+	if m, inner := v.split(id); m != nil {
+		m.view.Activate(inner)
+		return
+	}
 	path := valuePath(id)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -518,6 +543,10 @@ func (v *formView) Activate(id string) {
 }
 
 func (v *formView) Expand(id string) {
+	if m, inner := v.split(id); m != nil {
+		m.view.Expand(inner)
+		return
+	}
 	path := valuePath(id)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -532,6 +561,15 @@ func (v *formView) Expand(id string) {
 }
 
 func (v *formView) Collapse(id string) string {
+	if m, inner := v.split(id); m != nil {
+		pointer := id[:strings.Index(id, mountSep)]
+		wasOpen := m.view.isOpen(inner)
+		to := m.view.Collapse(inner)
+		if to == inner && !wasOpen && !strings.Contains(valuePath(inner), ".") {
+			return pointer
+		}
+		return pointer + mountSep + to
+	}
 	path := valuePath(id)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -557,6 +595,7 @@ func (v *formView) Collapse(id string) string {
 }
 
 func (v *formView) Close() {
+	v.closeMounts()
 	if v.closeConn != nil {
 		v.closeConn()
 	}
@@ -580,4 +619,16 @@ func clampInt(v, lo, hi int) int {
 		return hi
 	}
 	return v
+}
+
+func (v *formView) isOpen(id string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.open[valuePath(id)]
+}
+
+func (v *formView) isMountLeafLocked(n *formNode, mount string, shape *viewShape) bool {
+	parent := strings.TrimSuffix(n.path, "."+mount)
+	_, head := shape.head(parent)
+	return head && n.leaf()
 }

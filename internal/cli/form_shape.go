@@ -137,6 +137,13 @@ func (s *viewShape) peek(n *formNode) string {
 	return leafPreview(c.label, c.value)
 }
 
+func (s *viewShape) mountKey() string {
+	if s == nil {
+		return ""
+	}
+	return s.hint.Mount
+}
+
 func (s *viewShape) head(path string) (viewRowKey, bool) {
 	if s == nil {
 		return viewRowKey{}, false
