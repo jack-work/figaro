@@ -136,7 +136,8 @@ func rowsByID(rows []pitRow) map[string]pitRow {
 
 // A form whose hint names a mount draws the form each row points at under
 // that row, with the mounted form's own hint: its rows, order and labels.
-// The pointer leaf itself is not drawn. Nothing about the mount is @arias.
+// The pointer leaf itself is not drawn, and the row's other leaves stay folded.
+// Nothing about the mount is @arias.
 func TestAMountedFormDrawsUnderItsPointer(t *testing.T) {
 	f := newFakeMounts()
 	f.forms["@things"] = things("items.a.n", `1`, "items.a.name", `"alpha"`, "items.b.n", `2`, "items.b.name", `"beta"`)
@@ -154,7 +155,7 @@ func TestAMountedFormDrawsUnderItsPointer(t *testing.T) {
 		ids = append(ids, r.id)
 	}
 	got := strings.Join(ids, ",")
-	want := "far,here,here.self,here\x1fitems,here\x1fitems.b,here\x1fitems.a"
+	want := "far,here,here\x1fitems,here\x1fitems.b,here\x1fitems.a"
 	if got != want {
 		t.Fatalf("rows = %q, want %q", got, want)
 	}
@@ -223,11 +224,11 @@ func TestAMountThatCannotLoadSaysWhy(t *testing.T) {
 	rows := v.Items(100)
 	var note pitRow
 	for i, r := range rows {
-		if r.id == "far.self" && i+1 < len(rows) {
+		if r.id == "far" && i+1 < len(rows) {
 			note = rows[i+1]
 		}
 	}
-	if !strings.Contains(note.str(), "figaro troupe login kelliher") || note.selectable() {
+	if !strings.HasPrefix(note.str(), "└─ ") || !strings.Contains(note.str(), "figaro troupe login kelliher") || note.selectable() {
 		t.Errorf("far's row says %q (selectable %v), want the login command", note.str(), note.selectable())
 	}
 	if _, ok := rowsByID(rows)["here\x1fitems.a"]; !ok {
@@ -389,4 +390,64 @@ func TestALapsedMountDialsAgain(t *testing.T) {
 	if strings.Join(f.closed, ",") != "far/@things" {
 		t.Errorf("closed %v, want the lapsed connection closed once", f.closed)
 	}
+}
+
+// An open pointer row draws its mount as its last child, under the same
+// guides as the rest of the tree. Its own scalar leaves stay folded until l
+// opens them; closing the row folds them again.
+func TestAnOpenPointerRowFoldsItsOwnLeavesAndGuidesItsMount(t *testing.T) {
+	f := newFakeMounts()
+	f.forms["@things"] = things("items.a.n", `1`, "items.a.name", `"alpha"`, "items.b.n", `2`, "items.b.name", `"beta"`)
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"here.self", `true`, "here.version", `"0.54.1"`, "here.form", `"@things"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}, opener: f.open}
+	v.setView(indexHint)
+	v.Items(100)
+	v.Activate("here")
+	v.Items(100)
+	f.waitOpened(t, 1)
+
+	drawn := func() []string {
+		var out []string
+		for _, r := range v.Items(100) {
+			if r.id != "" {
+				out = append(out, r.id+"|"+r.str())
+			}
+		}
+		return out
+	}
+	want := []string{
+		"here|here (3)",
+		"here\x1fitems|└─ items (2)",
+		"here\x1fitems.b|   ├─ b (2)  \"beta\"",
+		"here\x1fitems.a|   └─ a (2)  \"alpha\"",
+	}
+	check := func(stage string, want []string) {
+		t.Helper()
+		got := drawn()
+		if len(got) != len(want) {
+			t.Fatalf("%s: rows\n%s\nwant\n%s", stage, strings.Join(got, "\n"), strings.Join(want, "\n"))
+		}
+		for i := range want {
+			if !strings.HasPrefix(got[i], want[i]) {
+				t.Fatalf("%s: rows\n%s\nwant\n%s", stage, strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		}
+	}
+	check("open", want)
+
+	v.Expand("here")
+	check("l on the open row", []string{
+		"here|here (3)",
+		"here.self|├─ self:",
+		"here.version|├─ version:",
+		"here\x1fitems|└─ items (2)",
+		"here\x1fitems.b|   ├─ b (2)  \"beta\"",
+		"here\x1fitems.a|   └─ a (2)  \"alpha\"",
+	})
+
+	v.Activate("here")
+	v.Activate("here")
+	check("closed and opened again", want)
 }

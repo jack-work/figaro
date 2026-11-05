@@ -44,7 +44,7 @@ func qualifiedIn(node, id string) string {
 	return node + rpc.NodeSeparator + id
 }
 
-func (v *formView) mountRowsLocked(path, addr, indent string, width int) []pitRow {
+func (v *formView) mountRowsLocked(path, addr, cont string, width int) []pitRow {
 	if v.opener == nil || addr == "" {
 		return nil
 	}
@@ -65,11 +65,13 @@ func (v *formView) mountRowsLocked(path, addr, indent string, width int) []pitRo
 		go v.openMount(path, m)
 	}
 	if m.view == nil {
-		return []pitRow{staticRow(clipLine(indent+m.note, width))}
+		return []pitRow{staticRow(clipLine(cont+"└─ "+m.note, width))}
 	}
-	inner := m.view.Items(max(width-displayWidth(indent), 20))
+	inner := m.view.Items(max(width-displayWidth(cont)-3, 20))
+	indents := mountIndents(inner, cont)
 	out := make([]pitRow, 0, len(inner))
-	for _, r := range inner {
+	for i, r := range inner {
+		indent := indents[i]
 		row := pitRow{textFrom: mountedText{indent: indent, inner: r}, yankFrom: r.yankFrom, yank: r.yank,
 			note: r.note, hint: r.hint, tone: r.tone}
 		for _, at := range r.marks {
@@ -85,6 +87,32 @@ func (v *formView) mountRowsLocked(path, addr, indent string, width int) []pitRo
 			}
 		}
 		out = append(out, row)
+	}
+	return out
+}
+
+func mountIndents(inner []pitRow, cont string) []string {
+	tops := make([]bool, len(inner))
+	last, nodes := -1, false
+	for i, r := range inner {
+		n, ok := r.textFrom.(*formNode)
+		nodes = nodes || ok
+		tops[i] = ok && n.guide == "" || !nodes
+		if tops[i] {
+			last = i
+		}
+	}
+	out := make([]string, len(inner))
+	under := cont + "│  "
+	for i := range inner {
+		switch {
+		case tops[i] && i == last:
+			out[i], under = cont+"└─ ", cont+"   "
+		case tops[i]:
+			out[i], under = cont+"├─ ", cont+"│  "
+		default:
+			out[i] = under
+		}
 	}
 	return out
 }

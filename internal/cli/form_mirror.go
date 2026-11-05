@@ -215,10 +215,12 @@ func flattenGuided(n *formNode, open map[string]bool, out []*formNode, cont stri
 }
 
 type guideWalk struct {
-	open    map[string]bool
-	out     []*formNode
-	shape   *viewShape
-	through map[string]bool
+	open     map[string]bool
+	out      []*formNode
+	shape    *viewShape
+	through  map[string]bool
+	unfolded map[string]bool
+	mounting bool
 }
 
 func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, row *viewRowKey) {
@@ -229,6 +231,10 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 			kids = onlyChild(kids, w.shape.hint.Through)
 		}
 	}
+	pointer := w.pointer(n)
+	if pointer {
+		kids = w.ownKids(n, kids)
+	}
 	pad := 0
 	for _, c := range kids {
 		if c.leaf() {
@@ -236,7 +242,7 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		}
 	}
 	for i, c := range kids {
-		last := i == len(kids)-1
+		last := i == len(kids)-1 && !pointer
 		c.guided, c.pad = true, pad
 		c.open = !c.leaf() && w.open[c.path]
 		switch {
@@ -264,6 +270,30 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 			w.walk(c, c.cont, false, segs, under)
 		}
 	}
+}
+
+func (w *guideWalk) pointer(n *formNode) bool {
+	mount := w.shape.mountKey()
+	if !w.mounting || mount == "" {
+		return false
+	}
+	if _, head := w.shape.head(n.path); !head {
+		return false
+	}
+	c := formChild(n, mount)
+	return c != nil && c.leaf() && leafText(n, mount) != ""
+}
+
+func (w *guideWalk) ownKids(n *formNode, kids []*formNode) []*formNode {
+	mount := w.shape.mountKey()
+	out := make([]*formNode, 0, len(kids))
+	for _, c := range kids {
+		if c.label == mount || c.leaf() && !w.unfolded[n.path] {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 const labelPadMax = 24

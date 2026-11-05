@@ -222,6 +222,7 @@ type formView struct {
 	subject   func() form.Snapshot
 	rowKeys   map[string]viewRowKey
 	through   map[string]bool
+	unfolded  map[string]bool
 	mounts    map[string]*viewMount
 	opener    mountOpener
 	seeded    map[string]bool
@@ -384,7 +385,7 @@ func (v *formView) Items(width int) []pitRow {
 			shape.subject = v.subject()
 		}
 	}
-	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through}
+	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through, unfolded: v.unfolded, mounting: v.opener != nil}
 	w.walk(v.root, "", true, nil, nil)
 	v.rows = w.out
 	v.rowKeys = nil
@@ -419,16 +420,13 @@ func (v *formView) Items(width int) []pitRow {
 				row.yank, row.yankFrom, row.aria = k.aria, nil, k.aria
 			}
 		}
-		if mount := shape.mountKey(); mount != "" && strings.HasSuffix(n.path, "."+mount) && v.isMountLeafLocked(n, mount, shape) {
-			continue
-		}
 		out = append(out, row)
 		if _, head := shape.head(n.path); head && shape.mountKey() != "" {
 			pointers[n.path] = true
 		}
 		if mount := shape.mountKey(); mount != "" && v.open[n.path] {
 			if _, head := shape.head(n.path); head {
-				mounted, mountedUnder = v.mountRowsLocked(n.path, leafText(n, mount), n.cont+"   ", width), n.path
+				mounted, mountedUnder = v.mountRowsLocked(n.path, leafText(n, mount), n.cont, width), n.path
 			}
 		}
 		if !n.leaf() || !v.open[n.path] {
@@ -539,6 +537,7 @@ func (v *formView) Activate(id string) {
 			openBranch(n, v.open)
 			if !v.open[path] {
 				delete(v.through, path)
+				delete(v.unfolded, path)
 			}
 			v.openRev++
 			return
@@ -555,12 +554,23 @@ func (v *formView) Expand(id string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, n := range v.rows {
-		if n.path == path && (!v.open[path] || v.through[path]) {
+		if n.path != path {
+			continue
+		}
+		switch {
+		case !v.open[path] || v.through[path]:
 			v.open[path] = true
 			delete(v.through, path)
-			v.openRev++
+		case v.mounts[path] != nil && !v.unfolded[path]:
+			if v.unfolded == nil {
+				v.unfolded = map[string]bool{}
+			}
+			v.unfolded[path] = true
+		default:
 			return
 		}
+		v.openRev++
+		return
 	}
 }
 
@@ -584,6 +594,7 @@ func (v *formView) Collapse(id string) string {
 		if v.open[path] && path == id {
 			v.open[path] = false
 			delete(v.through, path)
+			delete(v.unfolded, path)
 			v.openRev++
 			return path
 		}
@@ -629,10 +640,4 @@ func (v *formView) isOpen(id string) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.open[valuePath(id)]
-}
-
-func (v *formView) isMountLeafLocked(n *formNode, mount string, shape *viewShape) bool {
-	parent := strings.TrimSuffix(n.path, "."+mount)
-	_, head := shape.head(parent)
-	return head && n.leaf()
 }
