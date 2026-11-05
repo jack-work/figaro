@@ -76,6 +76,9 @@ func unreplayable(c paneClient) string {
 	if len(c.Argv) == 0 {
 		return "its command line is unreadable"
 	}
+	if c.Own && len(c.Argv) == 1 && strings.Contains(c.Argv[0], "=") {
+		return "its command name holds '=', which env would take for a variable"
+	}
 	if !c.Own && c.ShellPID == 0 {
 		return "it is neither the pane's process nor a child of the pane's shell"
 	}

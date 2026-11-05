@@ -250,3 +250,31 @@ func TestUpgradeRemembersTheBuildItLastSwitchedTo(t *testing.T) {
 		t.Error("a dry run still prints the plan")
 	}
 }
+
+// tmux respawn-pane runs a single command argument through a shell and execs
+// two or more directly. A one-word argv is respawned through env, so tmux
+// never hands it to a shell and a metacharacter in it is never interpreted.
+func TestUpgradeNeverRespawnsAOneWordCommandThroughAShell(t *testing.T) {
+	word := "figaro;touch ${HOME}/pwned"
+	c := paneClient{Pane: "%2", Own: true, Cwd: "/home/g", Argv: []string{word}}
+	if s := planClient(c); s.Action != upgradeRespawn {
+		t.Fatalf("a one-word command line is still respawned: got %s (%s)", s.Action, s.Reason)
+	}
+	args := respawnArgs(c)
+	i := 0
+	for i < len(args) && args[i] != "--" {
+		i++
+	}
+	command := args[i+1:]
+	if len(command) < 2 {
+		t.Fatalf("tmux would run %q through a shell: %q", command, args)
+	}
+	if command[len(command)-1] != word {
+		t.Fatalf("the word reaches the program unchanged: %q", command)
+	}
+
+	assignment := paneClient{Pane: "%2", Own: true, Argv: []string{"PATH=/tmp/evil"}}
+	if s := planClient(assignment); s.Action != upgradeLeave {
+		t.Errorf("a one-word command env would take for an assignment is left: got %s", s.Action)
+	}
+}

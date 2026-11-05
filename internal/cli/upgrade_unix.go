@@ -469,7 +469,11 @@ func respawnArgs(c paneClient) []string {
 	for _, kv := range c.Env {
 		args = append(args, "-e", kv)
 	}
-	return append(append(args, "--"), c.Argv...)
+	args = append(args, "--")
+	if len(c.Argv) == 1 {
+		args = append(args, "env", "--")
+	}
+	return append(args, c.Argv...)
 }
 
 func (o upgradeOptions) respawnClient(s upgradeStep) string {
