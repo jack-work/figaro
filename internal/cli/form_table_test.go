@@ -1,6 +1,11 @@
 package cli
 
 import (
+	"io"
+	"time"
+
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/sdk/aria"
 	"strings"
 	"testing"
 
@@ -72,5 +77,32 @@ func TestAViewOnAMissingListFallsBackToNesting(t *testing.T) {
 	v.setView(&rpc.FormView{List: "nowhere"})
 	if formRowText(v.Items(80), "items") == "" {
 		t.Error("a view naming no list hid the form")
+	}
+}
+
+func tableTranscript(t *testing.T, v *formView) *transcript {
+	t.Helper()
+	tr := newTranscript(io.Discard, 100, 30, ldrender.NodeText{}, aria.NewClient(), "aria1234", time.Unix(0, 0))
+	tr.enter()
+	tr.showLivePit("reaped", v, false)
+	tr.pit.lines(100, 20)
+	return tr
+}
+
+// The pit binds X to "delete now" for every list; a view that names X as an
+// action takes it first, so the press reaches the view, not the pit's drop.
+
+// A form pit's row is a path, not an aria: x and X send nothing, so they
+// must not take the row off the screen either.
+func TestDropKeysLeaveAFormPitsRowsAlone(t *testing.T) {
+	v := &formView{src: reapedShaped(), open: map[string]bool{}}
+	v.setView(reapedView)
+	tr := tableTranscript(t, v)
+	tr.dropRow = func(pit, id, next string) { t.Errorf("a drop was sent for %s", id) }
+	before := len(tr.pit.list().rows)
+	tr.key('x')
+	tr.key('X')
+	if after := len(tr.pit.list().rows); after != before {
+		t.Errorf("x/X removed a form row (%d -> %d)", before, after)
 	}
 }

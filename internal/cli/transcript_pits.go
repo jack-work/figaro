@@ -182,7 +182,7 @@ func (t *transcript) dropSelected(ask bool) {
 		return
 	}
 	row, ok := t.pit.selected()
-	if !ok || row.id == "" || t.dropRow == nil {
+	if !ok || row.id == "" || t.dropRow == nil || rpc.ValidateAriaID(row.id) != nil {
 		return
 	}
 	pit, id := string(t.pit.id), row.id
