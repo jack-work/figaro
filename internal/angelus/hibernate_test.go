@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/angelus"
 )
 
 func TestAttendDoesNotWake(t *testing.T) {
@@ -143,13 +144,24 @@ func TestHibernateWakeCycle(t *testing.T) {
 	require.NoError(t, err)
 	id := created.FigaroID
 
-	client := dialAria(t, a, created.FigaroID, func(string, json.RawMessage) {})
+	turnDone := make(chan struct{}, 4)
+	client := dialAria(t, a, created.FigaroID, func(m string, _ json.RawMessage) {
+		if m == rpc.MethodTurnDone {
+			turnDone <- struct{}{}
+		}
+	})
 
 	for round := 0; round < 3; round++ {
-		require.Eventually(t, func() bool {
-			f := a.Registry.Get(id)
-			return f == nil || f.Info().State == "idle"
-		}, 10*time.Second, 20*time.Millisecond)
+		// A woken aria reads idle until it takes the prompt off its inbox,
+		// so after a prompt only the turn's end makes idle mean finished.
+		if round > 0 {
+			select {
+			case <-turnDone:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("round %d: the turn never ended", round)
+			}
+		}
+		waitIdle(t, a, id)
 
 		if a.Registry.Get(id) != nil {
 			require.NoError(t, a.Registry.Hibernate(id), "round %d", round)
@@ -203,4 +215,15 @@ func TestWakeIsAttributedToItsMethod(t *testing.T) {
 	require.False(t, info.AgentSince.Before(before), "AgentSince predates the wake")
 	require.True(t, info.LastActive.Before(info.AgentSince),
 		"a wake by a non-turn method must not count as a turn")
+}
+
+// waitIdle holds until the aria is idle or dormant: turn.done reaches the
+// client before the agent finishes closing the turn, and Hibernate refuses an
+// aria that is not idle.
+func waitIdle(t *testing.T, a *angelus.Angelus, id string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		f := a.Registry.Get(id)
+		return f == nil || f.Info().State == "idle"
+	}, 10*time.Second, 20*time.Millisecond, "aria %s never went idle", id)
 }

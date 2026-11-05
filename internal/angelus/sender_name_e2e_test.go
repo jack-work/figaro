@@ -83,6 +83,7 @@ func TestAnAriaSentPromptCarriesTheSendersName(t *testing.T) {
 		require.True(t, saw, "%s: the read page lost the sender", label)
 	}
 	read("awake")
+	waitIdle(t, a, to.FigaroID)
 	require.NoError(t, a.Registry.Hibernate(to.FigaroID))
 	read("dormant")
 }
