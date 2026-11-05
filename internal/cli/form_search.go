@@ -194,7 +194,7 @@ func searchedRow(n *formNode, h fuzzy.Hit, s *formSearch, width int) (string, []
 		}
 	}
 	if h.ValueAt < 0 {
-		return head + formValuePreview(n.value), marks
+		return head + leafPreview(n.label, n.value), marks
 	}
 	text := searchValueText(n.value)
 	from := max(h.ValueAt-24, 0)

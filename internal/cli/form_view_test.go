@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 )
@@ -202,5 +204,35 @@ func TestACollapsedBranchPeeksAtItsKeys(t *testing.T) {
 	}
 	if rows[1] != "skills (5)  brave · cheroot · docker · figla …" {
 		t.Fatalf("collapsed branch peek: %q", rows[1])
+	}
+}
+
+// A millisecond at or *_at value reads as local time in every form, but only
+// on screen: c still edits the number the form holds.
+func TestAMillisecondAtValueReadsAsLocalTime(t *testing.T) {
+	const ms = 1793880298071
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"refreshed_at", strconv.Itoa(ms),
+		"at", strconv.Itoa(ms),
+		"count", strconv.Itoa(ms),
+		"named_at", `"tomorrow"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}, aria: "host"}
+	rows := v.Items(120)
+	want := time.UnixMilli(ms).Local().Format("2006-01-02 15:04:05")
+	if got := formRowText(rows, "refreshed_at"); !strings.HasSuffix(got, want) {
+		t.Errorf("refreshed_at = %q, want it ending %q", got, want)
+	}
+	if got := formRowText(rows, "at"); !strings.HasSuffix(got, want) {
+		t.Errorf("at = %q, want it ending %q", got, want)
+	}
+	if got := formRowText(rows, "count"); !strings.HasSuffix(got, strconv.Itoa(ms)) {
+		t.Errorf("count = %q: only an *_at key is a time", got)
+	}
+	if got := formRowText(rows, "named_at"); !strings.HasSuffix(got, `"tomorrow"`) {
+		t.Errorf("named_at = %q: only a number is a time", got)
+	}
+	if line, _ := v.changeLine("refreshed_at", "host"); !strings.HasSuffix(line, strconv.Itoa(ms)) {
+		t.Errorf("c offers %q, want the raw number", line)
 	}
 }

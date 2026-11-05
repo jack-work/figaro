@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/jack-work/figaro/api/form"
@@ -271,7 +273,7 @@ func renderTreeRow(n *formNode, width int) (string, int) {
 	tail := 0
 	switch {
 	case n.leaf():
-		line += ": " + strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + formValuePreview(n.value)
+		line += ": " + strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + leafPreview(n.label, n.value)
 	case n.open:
 		line += fmt.Sprintf(" (%d)", n.size())
 	default:
@@ -308,7 +310,7 @@ func inlineBranch(n *formNode) (string, bool) {
 		if t := bytes.TrimSpace(raw); len(t) > 0 && (t[0] == '{' || t[0] == '[') {
 			return "", false
 		}
-		parts = append(parts, c.Key()+": "+formValuePreview(raw))
+		parts = append(parts, c.Key()+": "+leafPreview(c.Key(), raw))
 	}
 	text := "{" + strings.Join(parts, ", ") + "}"
 	if displayWidth(text) > 60 {
@@ -346,7 +348,7 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	indent := n.lead()
 	line := indent + n.label
 	if n.leaf() {
-		line += ": " + formValuePreview(n.value)
+		line += ": " + leafPreview(n.label, n.value)
 	} else {
 		line += fmt.Sprintf(" (%d)", n.size())
 	}
@@ -356,6 +358,20 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 		return "\x1b[7m" + line + strings.Repeat(" ", max(0, width-displayWidth(line))) + "\x1b[0m"
 	}
 	return line
+}
+
+const (
+	epochMSLow  = 1_000_000_000_000
+	epochMSHigh = 100_000_000_000_000
+)
+
+func leafPreview(label string, raw json.RawMessage) string {
+	if label == "at" || strings.HasSuffix(label, "_at") {
+		if ms, err := strconv.ParseInt(string(bytes.TrimSpace(raw)), 10, 64); err == nil && ms >= epochMSLow && ms < epochMSHigh {
+			return time.UnixMilli(ms).Local().Format("2006-01-02 15:04:05")
+		}
+	}
+	return formValuePreview(raw)
 }
 
 func formValuePreview(raw json.RawMessage) string {
