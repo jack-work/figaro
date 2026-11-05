@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sync"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -71,6 +72,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		default:
 			nodeList = h.angelus.Backend.Conversations()
 		}
+		nodeByID = make(map[string]store.NodeView, len(nodeList))
 		for _, n := range nodeList {
 			if n.Kind == conversationKind {
 				conversationIDs = append(conversationIDs, n.ID)
@@ -81,6 +83,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	result = slices.Grow(result, len(conversationIDs))
+	enrichments = slices.Grow(enrichments, len(conversationIDs))
 	for _, id := range conversationIDs {
 		if _, ok := seen[id]; ok {
 			continue
