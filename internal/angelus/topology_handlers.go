@@ -235,6 +235,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
+	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
+		return nil, fmt.Errorf("fork: %w", err)
+	}
 	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo

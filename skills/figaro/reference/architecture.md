@@ -318,7 +318,9 @@ which the birth record writes once and nothing rewrites.
 
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
 create, fork, bind, import and `figaro.set`. An aria minted by a sandbox
-principal is pinned to that sandbox. `form.create` and `form.bind` with a
+principal is pinned to that sandbox; a set, a fork's patch or a cast's role
+patch that names a sandbox the caller holds no `use` on is refused, so a box
+cannot move or mint anything out of its box. `form.create` and `form.bind` with a
 parent need `read` on it, since the new form starts as its copy.
 
 **Box principals.** With no policy file, each box that has a door is bound

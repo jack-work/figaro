@@ -77,6 +77,9 @@ func (h *handlers) holdCastInBox(ctx context.Context, method, id string, params 
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	if err := h.refuseUnheldSandbox(ctx, req.RolePatch); err != nil {
+		return nil, fmt.Errorf("cast: %w", err)
+	}
 	raw, err := json.Marshal(id)
 	if err != nil {
 		return nil, err

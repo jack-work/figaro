@@ -230,6 +230,20 @@ func (h *handlers) checkFormWrite(ctx context.Context, id string, patch form.Pat
 	return nil
 }
 
+func (h *handlers) refuseUnheldSandbox(ctx context.Context, patch *form.Patch) error {
+	if patch == nil || !patchTouches(*patch, "system.sandbox") {
+		return nil
+	}
+	pin, err := h.grantSandbox(ctx, form.Snapshot{}.Apply(*patch), false)
+	if err != nil {
+		return err
+	}
+	if !pin.IsIdentity() {
+		return fmt.Errorf("a sandbox may run an aria only in a sandbox it holds use on")
+	}
+	return nil
+}
+
 func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
