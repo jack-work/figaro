@@ -272,3 +272,39 @@ func TestTheModelsSearchKeepsMatchingGroups(t *testing.T) {
 		t.Fatalf("cursor on %q; want anthropic's sonnet", sel.id)
 	}
 }
+
+// Tab shows the matches as a ranked list of full paths, and back.
+func TestTabFlipsTheSearchToARankedList(t *testing.T) {
+	p, _ := searchProbe(t)
+	tr := p.lt.tr
+	feed(t, p.in, "/tools")
+	feed(t, p.in, "\t")
+	rows := tr.pit.list().rows
+	if len(rows) == 0 || !strings.HasPrefix(rows[0].str(), "system.tools: ") {
+		var got []string
+		for _, r := range rows {
+			got = append(got, r.str())
+		}
+		t.Fatalf("flat list starts %q; want the best match by full path", got)
+	}
+	for _, r := range rows {
+		if r.id == "system" || r.id == "skills" {
+			t.Fatalf("a branch row in the flat list: %q", r.id)
+		}
+	}
+	feed(t, p.in, "\t")
+	if ids := pitIDs(tr); len(ids) == 0 || ids[0] != "skills" && ids[0] != "system" {
+		t.Fatalf("Tab again did not return to the tree: %v", ids)
+	}
+}
+
+// The prompt takes fzf's syntax: an excluded term drops rows that match it.
+func TestTheFormSearchTakesTheQuerySyntax(t *testing.T) {
+	p, _ := searchProbe(t)
+	tr := p.lt.tr
+	feed(t, p.in, "/^system !xwal")
+	ids := strings.Join(pitIDs(tr), " ")
+	if strings.Contains(ids, "xwal") || !strings.Contains(ids, "system.tools") {
+		t.Fatalf("rows %s; want system.* without xwal", ids)
+	}
+}

@@ -56,6 +56,18 @@ func (in *interactiveInput) searchHit(dir int, ev keyEvent) keyVerdict {
 	return keyHandled
 }
 
+func searchToggleFlat(t *transcript) {
+	ls := t.liveSearch()
+	if ls == nil {
+		return
+	}
+	ls.ToggleFlat()
+	t.pit.refreshLive(t.w)
+	if row, ok := t.pit.selected(); ok {
+		t.pit.focus(row.id)
+	}
+}
+
 func (t *transcript) searchStepHit(dir int) {
 	ls := t.liveSearch()
 	if ls == nil {

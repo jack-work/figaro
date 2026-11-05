@@ -110,7 +110,7 @@ your changes applied.
 | Layer | Modes | Bindings |
 |---|---|---|
 | confirm | confirm | `y` yes · `Y` yes · `n N` no · `Esc` cancel |
-| search | search | `Enter 0x0a` activate · `Esc` cancel · `Backspace ^H` backspace · `^N` search-hit-next · `^P` search-hit-prev |
+| search | search | `Enter 0x0a` activate · `Esc` cancel · `Backspace ^H` backspace · `^N` search-hit-next · `^P` search-hit-prev · `Tab` search-flat |
 | command | command | `Enter 0x0a` activate · `Esc` cancel · `M-Enter` accept-snap · `^A` cmd-home · `^E` cmd-end · `^B` cmd-left · `^F` cmd-right · `M-b` cmd-word-left · `M-f` cmd-word-right · `^L` cmd-redraw · `^D` cmd-delete · `^T` cmd-transpose · `M-t` cmd-transpose-word · `M-u` cmd-upcase · `M-l` cmd-downcase · `M-c` cmd-capitalize · `^K` cmd-kill-to-end · `^U` cmd-kill-to-start · `^W` cmd-kill-word · `M-d` cmd-kill-word-forward · `M-DEL` cmd-kill-word-alpha · `M-\` cmd-delete-space · `^Y` cmd-yank · `M-y` cmd-yank-pop · `^P Up` cmd-history-prev · `^N Down` cmd-history-next · `M-<` cmd-history-first · `M->` cmd-history-last · `^R` cmd-search-prev · `^S` cmd-search-next · `M-p` cmd-prefix-prev · `M-n` cmd-prefix-next · `M-. M-_` cmd-yank-last-arg · `^_` cmd-undo · `M-r` cmd-revert · `^G ^C` cmd-abort · `Tab` cmd-complete · `^V` cmd-paste · `M-?` cmd-list-completions · `M-*` cmd-insert-completions · `Backspace ^H` backspace · `Home` cmd-home · `End` cmd-end · `Left` cmd-left · `Right` cmd-right |
 | composer | composer | `i` insert · `a` insert-after · `I` insert-home · `A` insert-end · `h` left · `Home` line-start · `End` line-end · `v` mark-char · `V` mark-line · `/` search · `?` search-back · `n` find-next · `N` find-prev · `F` fullscreen · `:` command · `Esc` cancel · `M-Enter ^S` send |
 | visual | visual | `Esc` cancel · `Enter 0x0a` activate · `a` attend · `M-Enter` open-path · `Y` yank-coordinate · `H` screen-top · `M` screen-middle · `L` screen-bottom · `n` find-next · `N` find-prev |
@@ -179,6 +179,7 @@ your changes applied.
 | `no` | confirm |
 | `search-hit-next` | search |
 | `search-hit-prev` | search |
+| `search-flat` | search |
 | `backspace` | search,command |
 | `attend` | transcript,pit,visual,list |
 | `open-editor` | transcript,visual |

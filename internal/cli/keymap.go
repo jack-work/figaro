@@ -135,6 +135,7 @@ const (
 	helpHomeEnd
 	helpSearch
 	helpSearchHits
+	helpSearchFlat
 	helpSearchRepeat
 	helpJump
 	helpDraft
@@ -210,6 +211,7 @@ var helpRows = []helpRow{
 	{helpHomeEnd, "Home / End", "top / bottom"},
 	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
 	{helpSearchHits, "(in a form's /) ^N/^P", "next / previous match, best first"},
+	{helpSearchFlat, "(in a form's /) Tab", "matches as a ranked list of paths, or back to the tree"},
 	{helpSearchRepeat, "n / N", "next / previous match, with the cursor on it"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
 	{helpDraft, ">", "the composer: type or paste a prompt, newlines and quotes intact (in v it quotes the highlight)"},

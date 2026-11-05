@@ -124,6 +124,7 @@ var keyActions = []keyAction{
 	named("no", atPager(inConfirm, confirmNo)),
 	named("search-hit-next", atInput(inSearchBox, inputSearchHitNext)),
 	named("search-hit-prev", atInput(inSearchBox, inputSearchHitPrev)),
+	named("search-flat", atPager(inSearchBox, searchToggleFlat)),
 	named("backspace",
 		atPager(inSearchBox, searchBackspace),
 		atPager(inBox, boxBackspace)),
@@ -242,6 +243,7 @@ var defaultLayers = []keyLayer{
 		bind("Backspace ^H", "backspace", helpNone),
 		bind("^N", "search-hit-next", helpSearchHits),
 		bind("^P", "search-hit-prev", helpSearchHits),
+		bind("Tab", "search-flat", helpSearchFlat),
 	}},
 	{name: "command", modes: inBox, binds: []keyBind{
 		bind("Enter 0x0a", "activate", helpJump),
