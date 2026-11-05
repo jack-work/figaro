@@ -134,6 +134,7 @@ type interactiveInput struct {
 	set          *renderSettings
 	figaroID     string
 	cancel       context.CancelFunc
+	life         context.Context
 	disconnectCh chan struct{}
 	copyCancel   context.CancelFunc
 	copyGen      uint64

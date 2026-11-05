@@ -118,7 +118,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 
 	in := &interactiveInput{
 		tc: tc, lt: lt, mu: &mu, set: &set,
-		figaroID: opt.figaroID, cancel: cancel, disconnectCh: disconnectCh,
+		figaroID: opt.figaroID, cancel: cancel, life: ctx, disconnectCh: disconnectCh,
 		acli: opt.acli, loaded: opt.loaded, tap: tapeTap(opt.tape),
 		ownsSubject: opt.ownsSubject, subjectDead: make(chan struct{}, 1),
 		prompt: opt.prompt, dress: opt.dress, sendCursor: -1, doneCh: doneCh,

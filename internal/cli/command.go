@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/internal/mark"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -588,6 +589,9 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep sdk.Addr
 		if atomic.LoadUint64(&in.subjectGen) != gen {
 			return
 		}
+		if fcli.Lapsed() && in.refollow(gen, id, ep) {
+			return
+		}
 		select {
 		case in.subjectDead <- struct{}{}:
 		default:
@@ -602,6 +606,23 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep sdk.Addr
 	in.seedSubject(gen)
 	hop()
 	return nil
+}
+
+func (in *interactiveInput) refollow(gen uint64, id string, ep sdk.Addr) bool {
+	in.mu.Lock()
+	owns, life := in.ownsSubject, in.life
+	in.mu.Unlock()
+	if !owns || life == nil || life.Err() != nil {
+		return false
+	}
+	done := mark.Span("hop.refollow", "to", id, "gen", gen)
+	err := in.retarget(life, id, ep)
+	done("err", err != nil)
+	if err != nil {
+		slog.Warn("the door ended the follow at its age limit and following again failed", "aria", id, "err", err)
+		return false
+	}
+	return true
 }
 
 // claimSubject is the swap. The fence is checked here, under the lock, so two
