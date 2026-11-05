@@ -23,6 +23,8 @@ type Options struct {
 	OnChange          func(prev, next form.Snapshot)
 	OnRefused         func(seq uint64, err error)
 	OnIncompatible    func(schema int)
+	Final             func(err error) bool
+	OnFailed          func(err error)
 }
 
 type Replica struct {
@@ -311,6 +313,12 @@ func (r *Replica) reload() {
 		ctx, cancel := context.WithTimeout(context.Background(), r.o.Timeout)
 		defer cancel()
 		resp, err := r.t.Load(ctx, r.client)
+		if err != nil && r.o.Final != nil && r.o.Final(err) {
+			if r.o.OnFailed != nil {
+				r.o.OnFailed(err)
+			}
+			return
+		}
 		if err != nil {
 			r.post(func(s *state) *state { r.reloadLater(); return s })
 			return

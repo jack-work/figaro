@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -88,6 +89,8 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 		return view, func() { fcli.Close(); acli.Close(); cancel(); kick.close() }, nil
 	}
 
+	failed := make(chan struct{})
+	var failOnce sync.Once
 	r := replica.New(newReplicaClient(), ariaTransport{aria: fcli, loaded: view.present}, replica.Options{
 		Debounce: formEditDebounce,
 		MaxWait:  formEditMaxWait,
@@ -100,6 +103,11 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 			view.refuse(err)
 			kick.kick()
 		},
+		Final: undecodable,
+		OnFailed: func(err error) {
+			view.stop(err.Error())
+			failOnce.Do(func() { close(failed) })
+		},
 	})
 	rep.Store(r)
 	view.src = replicaSource{r}
@@ -107,8 +115,9 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	notePit(resolvedID, r.Pending)
 	select {
 	case <-r.Ready():
+	case <-failed:
 	case <-time.After(5 * time.Second):
-		view.setNotice("the form has not loaded yet")
+		view.noticeUnlessStopped("the form has not loaded yet")
 	}
 	return view, func() {
 		if r.Pending() > 0 {
@@ -272,6 +281,10 @@ func (v *formView) resync() {
 		return
 	}
 	resp, err := v.refetch()
+	if undecodable(err) {
+		v.stop(err.Error())
+		return
+	}
 	if err != nil {
 		v.setNotice("resync failed: " + err.Error())
 		return
@@ -279,6 +292,30 @@ func (v *formView) resync() {
 	v.mirror.reset(resp.Snapshot, resp.Incarnation, resp.Version)
 	v.present(resp)
 	v.changed()
+}
+
+func noticeRows(notice string, width int) []pitRow {
+	if notice == "" {
+		return nil
+	}
+	var out []pitRow
+	for _, line := range strings.Split(notice, "\n") {
+		out = append(out, staticRow(clipLine(line, width)))
+	}
+	return out
+}
+
+func undecodable(err error) bool {
+	var d *sdk.DecodeError
+	return errors.As(err, &d)
+}
+
+func (v *formView) noticeUnlessStopped(text string) {
+	v.mu.Lock()
+	if !v.stopped {
+		v.notice = text
+	}
+	v.mu.Unlock()
 }
 
 func (v *formView) setNotice(text string) {
@@ -351,9 +388,7 @@ func (v *formView) Items(width int) []pitRow {
 	}
 
 	out := make([]pitRow, 0, len(v.rows)+1)
-	if v.notice != "" {
-		out = append(out, staticRow(clipLine(v.notice, width)))
-	}
+	out = append(out, noticeRows(v.notice, width)...)
 	for _, n := range v.rows {
 		n.width = width
 		row := pitRow{textFrom: n, yankFrom: n, id: n.path}

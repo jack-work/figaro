@@ -136,9 +136,7 @@ func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 		return v.flatSearchItems(width)
 	}
 	var out []pitRow
-	if v.notice != "" {
-		out = append(out, staticRow(clipLine(v.notice, width)))
-	}
+	out = append(out, noticeRows(v.notice, width)...)
 	var walk func(n *formNode, cont string, top bool)
 	walk = func(n *formNode, cont string, top bool) {
 		var kids []*formNode
@@ -242,9 +240,7 @@ func searchValueText(raw json.RawMessage) string {
 func (v *formView) flatSearchItems(width int) []pitRow {
 	s := v.search
 	var out []pitRow
-	if v.notice != "" {
-		out = append(out, staticRow(clipLine(v.notice, width)))
-	}
+	out = append(out, noticeRows(v.notice, width)...)
 	for _, h := range s.hits {
 		n := formAt(v.root, h.Entry.Keys, nil)
 		if n == nil || !n.leaf() {

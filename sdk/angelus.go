@@ -32,7 +32,7 @@ func (c *Angelus) call(ctx context.Context, method string, params, result any) e
 	if err != nil {
 		return err
 	}
-	return c.cli.Call(ctx, method, raw, result)
+	return decoded(method, c.cli.Call(ctx, method, raw, result))
 }
 
 func DialAngelus(ep transport.Endpoint) (*Angelus, error) {

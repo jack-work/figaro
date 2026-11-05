@@ -366,6 +366,18 @@ func recordDaemon(who string, d daemonIdentity, mine string) {
 	defer daemonSeen.Unlock()
 	daemonSeen.known, daemonSeen.who, daemonSeen.d = true, who, d
 	daemonSeen.same = d.build == mine
+	sdk.DescribePeerBuilds(seenBuilds)
+}
+
+func seenBuilds() string {
+	daemonSeen.Lock()
+	defer daemonSeen.Unlock()
+	if !daemonSeen.known {
+		return ""
+	}
+	return fmt.Sprintf("%s is another build than this CLI:\n  daemon %s\n  cli    %s",
+		daemonSeen.who, describeBuild(daemonSeen.d.build, daemonSeen.d.release),
+		describeBuild(boot.BuildRevision(), boot.BuildRelease()))
 }
 
 func settlePendingNeeds() error {

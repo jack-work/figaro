@@ -39,7 +39,7 @@ func (c *Aria) call(ctx context.Context, method string, params, result any) erro
 	if raw, err = rpc.WithAria(raw, c.ID()); err != nil {
 		return err
 	}
-	return c.cli.Call(ctx, method, raw, result)
+	return decoded(method, c.cli.Call(ctx, method, raw, result))
 }
 
 func DialAria(a Addr, onNotify NotifyHandler) (*Aria, error) {
