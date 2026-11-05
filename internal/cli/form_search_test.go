@@ -397,3 +397,52 @@ func TestAFoldedRowMarksTheMatchInItsLabel(t *testing.T) {
 	}
 	t.Fatalf("no row for the hit: %v", pitIDs(tr))
 }
+
+func forkedArias() *formView {
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"arias.parent-one.id", `"p1"`, "arias.parent-one.mantra", `"steering lanes"`,
+		"arias.parent-one.forks.kingly-fork.id", `"f1"`, "arias.parent-one.forks.kingly-fork.mantra", `"a fork of it"`,
+		"arias.parent-one.forks.plain-fork.id", `"f2"`, "arias.parent-one.forks.plain-fork.mantra", `"another"`,
+		"arias.other.id", `"o1"`, "arias.other.mantra", `"nothing here"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(&rpc.FormView{Rows: []string{"arias.*", "**.forks.*"}, Open: []string{"arias", "**.forks"}})
+	return v
+}
+
+// A hit on a fork's name folded into the outermost row that held it, its
+// parent, so ^N and Enter landed on the parent and the fork stayed folded away.
+// A hit folds into the innermost row: the fork's own. Enter opens every
+// ancestor and leaves the cursor on the fork.
+func TestAHitOnAForkLandsOnTheFork(t *testing.T) {
+	p := newInputProbe(t, true)
+	v := forkedArias()
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	feed(t, p.in, "/kingly")
+	fork := "arias.parent-one.forks.kingly-fork"
+	if len(v.search.ranked) == 0 || v.search.ranked[0] != fork {
+		t.Fatalf("hits %v, want the fork %s first", v.search.ranked, fork)
+	}
+	for _, id := range v.search.ranked {
+		if id == "arias.parent-one" {
+			t.Errorf("the parent is a hit of its own: %v", v.search.ranked)
+		}
+	}
+	if row, _ := tr.pit.selected(); row.id != fork {
+		t.Fatalf("while searching the cursor is on %q, want the fork", row.id)
+	}
+	feed(t, p.in, "\r")
+	if row, _ := tr.pit.selected(); row.id != fork {
+		t.Fatalf("after Enter the cursor is on %q, want the fork", row.id)
+	}
+	for _, a := range []string{"arias", "arias.parent-one", "arias.parent-one.forks"} {
+		if !v.open[a] {
+			t.Errorf("after Enter %s is closed: %v", a, v.open)
+		}
+	}
+	shown := strings.Join(pitIDs(tr), ",")
+	if !strings.Contains(shown, fork) {
+		t.Errorf("the fork's row is not on screen: %s", shown)
+	}
+}

@@ -298,7 +298,7 @@ func (v *formView) hintedRow(keys []string) string {
 	if v.view == nil || len(v.view.Rows) == 0 {
 		return ""
 	}
-	for k := 1; k < len(keys); k++ {
+	for k := len(keys) - 1; k >= 1; k-- {
 		if _, ok := rpc.MatchPath(v.view.Rows, keys[:k]); ok {
 			return strings.Join(keys[:k], ".")
 		}
