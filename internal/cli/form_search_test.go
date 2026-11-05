@@ -512,3 +512,20 @@ func TestEnterRevealsThroughForksToTheInnermostRow(t *testing.T) {
 		t.Errorf("a path below the hit opened nothing: %v", q.open)
 	}
 }
+
+// Tab's ranked list outlived the search: after Esc the next search opened flat.
+// Esc puts the next search back in the tree.
+func TestEscPutsTheNextSearchBackInTheTree(t *testing.T) {
+	p, v := searchProbe(t)
+	feed(t, p.in, "/tools\t")
+	if !v.search.flat {
+		t.Fatal("fixture: Tab did not flip to the ranked list")
+	}
+	feed(t, p.in, "\x1b/tools")
+	if v.search.flat {
+		t.Fatal("the search after Esc opened as the ranked list")
+	}
+	if ids := pitIDs(p.lt.tr); len(ids) == 0 || ids[0] != "system" {
+		t.Errorf("rows %v, want the tree under system", ids)
+	}
+}

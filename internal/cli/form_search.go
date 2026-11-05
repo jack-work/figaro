@@ -84,7 +84,7 @@ func (v *formView) EndQuery(keep string) string {
 		land = chain[len(chain)-1]
 		v.revealLocked(chain)
 	}
-	v.search.query, v.search.hits, v.search.ranked, v.search.at = "", nil, nil, 0
+	v.search.query, v.search.hits, v.search.ranked, v.search.at, v.search.flat = "", nil, nil, 0, false
 	v.search.best, v.search.target, v.search.label, v.search.up, v.search.below = nil, nil, nil, nil, nil
 	v.search.rev++
 	return land
