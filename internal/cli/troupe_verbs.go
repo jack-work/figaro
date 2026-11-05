@@ -164,6 +164,8 @@ func runTroupeList(loaded *config.Loaded, jsonOut bool) {
 	members, membersErr := localMembers(loaded)
 	if jsonOut {
 		_ = json.NewEncoder(stdout).Encode(troupeListing{Troupes: rows, Members: members})
+	} else if len(rows) == 0 && loaded.Detached {
+		fmt.Fprintf(stderrw, "no troupes: %s is set, so this figaro is not the node\n", config.DetachedEnv)
 	} else if len(rows) == 0 {
 		fmt.Fprintf(stderrw, "no troupes (%s/<name>.toml)\n", loaded.TroupesDir())
 	} else {

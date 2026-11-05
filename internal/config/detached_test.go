@@ -1,0 +1,73 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+const liveNode = `default_outfit = "mock"
+[cli]
+troupe = "kelliher"
+[troupe]
+name = "kelliher"
+provider = "figaro"
+[door.tls]
+listen = "100.64.0.1:7443"
+[door.web]
+path = "/run/figaro/web.sock"
+authn = "upstream"
+[authz.upstream]
+issuer = "https://auth.test"
+[sandbox.boxes.judge]
+exec = "/run/figaro/judge.sock"
+door = "/run/figaro/judge-door.sock"
+[peers.b2c1d7a0-0000-4000-8000-000000000002]
+endpoint = "tls://10.77.0.2:7443"
+identity = "spiffe://kelliher/node/b2c1d7a0-0000-4000-8000-000000000002"
+ca = "ca.crt"
+cert = "node.crt"
+key = "node.key"
+`
+
+// A dev shell that reads the live node's config must not start a second
+// copy of the node: detached, the daemon sees no troupe, no node door, no
+// web or box door socket of the live node's, no static peers, and no
+// troupes/ to dial through. Everything else in the config still applies.
+func TestADetachedConfigIsNotTheNode(t *testing.T) {
+	t.Setenv(DetachedEnv, "1")
+	l, err := loadWith(t, liveNode)
+	require.NoError(t, err)
+	require.True(t, l.Detached)
+	require.Equal(t, "mock", l.Config.DefaultOutfit)
+	name, err := l.TroupeName()
+	require.NoError(t, err)
+	require.Empty(t, name)
+	require.Empty(t, l.Config.CLI.Troupe)
+	_, tls, err := l.TLSDoor()
+	require.NoError(t, err)
+	require.False(t, tls, "the node door")
+	_, web, err := l.WebDoor()
+	require.NoError(t, err)
+	require.False(t, web, "the web door")
+	require.Empty(t, l.BoxDoors(), "a box door")
+	box, ok := l.Box("judge")
+	require.True(t, ok, "the box itself stays: an outfit may still run in it")
+	require.Equal(t, "/run/figaro/judge.sock", box.Exec)
+	require.Empty(t, l.Config.Peers)
+	require.Empty(t, l.TroupesDir())
+}
+
+func TestWithoutTheEnvTheConfigIsTheNode(t *testing.T) {
+	t.Setenv(DetachedEnv, "")
+	l, err := loadWith(t, liveNode)
+	require.NoError(t, err)
+	require.False(t, l.Detached)
+	name, _ := l.TroupeName()
+	require.Equal(t, "kelliher", name)
+	_, tls, err := l.TLSDoor()
+	require.NoError(t, err)
+	require.True(t, tls)
+	require.NotEmpty(t, l.BoxDoors())
+	require.NotEmpty(t, l.TroupesDir())
+}

@@ -723,6 +723,21 @@ type Loaded struct {
 	Config     Config
 	ConfigDir  string
 	ConfigPath string
+	Detached   bool
+}
+
+const DetachedEnv = "FIGARO_DETACHED"
+
+func detach(cfg *Config) {
+	cfg.Troupe = TroupeConfig{}
+	cfg.CLI.Troupe = ""
+	cfg.Peers = nil
+	cfg.Door.TLS = nil
+	cfg.Door.Web = nil
+	for name, b := range cfg.Sandbox.Boxes {
+		b.Door = ""
+		cfg.Sandbox.Boxes[name] = b
+	}
 }
 
 func (l *Loaded) ProvidersDir() string {
@@ -734,6 +749,9 @@ func (l *Loaded) ProviderAuthPath(name string) string {
 }
 
 func (l *Loaded) TroupesDir() string {
+	if l != nil && l.Detached {
+		return ""
+	}
 	return filepath.Join(l.dir(), "troupes")
 }
 
@@ -807,6 +825,16 @@ func DefaultConfigDir() string {
 
 // Load returns defaults when config.toml is missing.
 func Load(configDir string) (*Loaded, error) {
+	l, err := load(configDir)
+	if err != nil || os.Getenv(DetachedEnv) == "" {
+		return l, err
+	}
+	detach(&l.Config)
+	l.Detached = true
+	return l, nil
+}
+
+func load(configDir string) (*Loaded, error) {
 	configPath := filepath.Join(configDir, "config.toml")
 	cfg := defaultConfig()
 

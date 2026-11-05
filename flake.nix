@@ -269,6 +269,7 @@
           state   ? "@dev",
           hush    ? "@dev",
           seedConfig ? false,
+          detached ? true,
         }: let
           # Translate a knob value into a shell snippet that either
           # exports the env var or leaves it inherited. "@dev" is
@@ -379,6 +380,9 @@
             ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
             ${mkKnob "FIGARO_CACHE_DIR"   "cache"  state}
             ${mkHushKnob hush}
+            ${if detached then ''
+            export FIGARO_DETACHED=1
+            '' else ""}
 
             ${if seedConfig then ''
             # Seed the dev config dir with a COPY of the real one, once per dev
@@ -469,6 +473,9 @@
                 printf "[figaro-dev:${name}] %-20s = (inherited)\n" "$v" >&2
               fi
             done
+            ${if detached then ''
+            echo "[figaro-dev:${name}] detached: this daemon is not the node (no [troupe], [door.tls], [door.web], box doors, [peers] or troupes/)" >&2
+            '' else ""}
           '';
         };
       in {
@@ -489,7 +496,7 @@
         # First invocation will trigger the hush + figaro first-run
         # flow. Use this for testing first-run UX or for completely
         # blank-slate experiments.
-        clean = mkFigaroShell { name = "clean"; };
+        clean = mkFigaroShell { name = "clean"; detached = false; };
 
         # Share the global hush identity (so you don't have to
         # re-add provider keys) but isolate runtime/config/state.

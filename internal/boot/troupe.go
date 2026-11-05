@@ -73,7 +73,12 @@ func SelectedTroupe(loaded *config.Loaded) (Troupe, bool, error) {
 	return checkTroupe(t)
 }
 
+var errDetached = fmt.Errorf("troupes are off: %s is set, so this figaro is not the node", config.DetachedEnv)
+
 func TroupeNames(loaded *config.Loaded) ([]string, error) {
+	if loaded.TroupesDir() == "" {
+		return nil, nil
+	}
 	entries, err := os.ReadDir(loaded.TroupesDir())
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -94,6 +99,9 @@ func TroupeNames(loaded *config.Loaded) ([]string, error) {
 func LoadTroupe(loaded *config.Loaded, name string) (Troupe, error) {
 	if name == "" || name != filepath.Base(name) {
 		return Troupe{}, fmt.Errorf("troupe name %q is not a bare name", name)
+	}
+	if loaded.TroupesDir() == "" {
+		return Troupe{}, errDetached
 	}
 	path := filepath.Join(loaded.TroupesDir(), name+".toml")
 	var t Troupe
