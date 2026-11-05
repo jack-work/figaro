@@ -67,8 +67,9 @@ func runVaultStatus() error {
 	case errors.Is(err, keyring.ErrNotFound):
 		fmt.Fprintln(stdout, "           no saved passphrase: you'll be prompted")
 	case errors.Is(err, errKeyringTimeout):
-		fmt.Fprintf(stdout, "           no answer in %s (locked collection with no prompter?)\n", keyringTimeout)
-		fmt.Fprintln(stdout, "           this host cannot use the keyring: figaro vault init --file")
+		fmt.Fprintf(stdout, "           no answer in %s: the Secret Service is stuck, or its collection is locked with no prompter\n", keyringTimeout)
+		fmt.Fprintln(stdout, "           stuck daemon: restart gnome-keyring-daemon (or your Secret Service)")
+		fmt.Fprintln(stdout, "           no usable keyring on this host: figaro vault init --file")
 	case err != nil:
 		fmt.Fprintf(stdout, "           unreadable (%v)\n", err)
 	default:

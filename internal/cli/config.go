@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -95,16 +97,29 @@ func promptFirstRunWithoutKeyring(h *managed.Hush, appName string) ([]byte, erro
 func ensureHush() {
 	h := MustHush()
 	if err := h.EnsureReady(); err != nil {
-		// A saved passphrase that stopped decrypting is otherwise a dead end.
-		if strings.Contains(err.Error(), "incorrect passphrase") {
-			fmt.Fprintf(stderrw, "figaro: hush: %s\n\n", err)
-			fmt.Fprintln(stderrw, "The saved passphrase does not decrypt this vault.")
-			fmt.Fprintln(stderrw, "  figaro vault status    inspect it")
-			fmt.Fprintln(stderrw, "  figaro vault forget    clear it and be prompted again")
+		if explainHushFailure(stderrw, err) {
 			os.Exit(1)
 		}
 		die("hush: %s", err)
 	}
+}
+
+func explainHushFailure(w io.Writer, err error) bool {
+	switch {
+	case errors.Is(err, managed.ErrKeyringUnresponsive):
+		fmt.Fprintf(w, "figaro: hush: %s\n\n", err)
+		fmt.Fprintln(w, "The OS keyring did not answer, so the vault could not be unlocked.")
+		fmt.Fprintln(w, "  figaro vault status    see what the vault and the keyring are doing")
+		fmt.Fprintln(w, "  restart the Secret Service (gnome-keyring-daemon) if it stays stuck")
+		return true
+	case strings.Contains(err.Error(), "incorrect passphrase"):
+		fmt.Fprintf(w, "figaro: hush: %s\n\n", err)
+		fmt.Fprintln(w, "The saved passphrase does not decrypt this vault.")
+		fmt.Fprintln(w, "  figaro vault status    inspect it")
+		fmt.Fprintln(w, "  figaro vault forget    clear it and be prompted again")
+		return true
+	}
+	return false
 }
 
 // The dressing is carried down from the plan: a package-global meant two
