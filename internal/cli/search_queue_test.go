@@ -59,3 +59,20 @@ func TestASearchWithAQueueOpenedByQSearchesItsRows(t *testing.T) {
 		t.Fatalf("a search of the queue for a word not in it said %q", note)
 	}
 }
+
+// In the same session the bar went on saying "message queue is empty" for ten
+// seconds after a new prompt filled the queue, beside the pit that showed it.
+func TestAQueueThatRefillsWithdrawsItsEmptyNotice(t *testing.T) {
+	tr := queuePager(t, queuedItem{id: 1, text: "a queued prompt"})
+	tr.showQueuedAuto(true)
+	tr.queued = nil
+	tr.showQueuedAuto(false)
+	if got := tr.status.noticeText(); got != queueEmptyNote {
+		t.Fatalf("a drained queue said %q, want %q; the fixture cannot show the bug", got, queueEmptyNote)
+	}
+	tr.queued = []queuedItem{{id: 2, text: "another queued prompt"}}
+	tr.showQueuedAuto(true)
+	if got := tr.status.noticeText(); got == queueEmptyNote {
+		t.Fatalf("the bar still says %q beside a queue with a prompt in it", got)
+	}
+}

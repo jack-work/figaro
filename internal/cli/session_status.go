@@ -176,6 +176,21 @@ func (s *sessionStatus) failure() string {
 
 func (s *sessionStatus) setNotice(text string) { s.post(text, alertInfo, false) }
 
+func (s *sessionStatus) withdrawNotice(text string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.notices[:0]
+	for _, n := range s.notices {
+		if n.text != text {
+			kept = append(kept, n)
+		}
+	}
+	s.notices = kept
+}
+
 func (s *sessionStatus) pinNotice(text string) {
 	if s == nil {
 		return
