@@ -115,6 +115,11 @@
         };
       };
 
+      homeManagerModules.default = { lib, pkgs, ... }: {
+        imports = [ ./nix/hm-module.nix ];
+        programs.figaro.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
+      };
+
       packages = forAllSystems ({ pkgs }: rec {
         figaro = (import nixpkgs {
           inherit (pkgs) system;
@@ -204,6 +209,7 @@
       } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
         container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
         module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
+        hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
       });
 
       devShells = forAllSystems ({ pkgs }: let

@@ -25,7 +25,12 @@ let
 in
 {
   options.services.figaro = {
-    enable = lib.mkEnableOption "the figaro angelus as a system service";
+    enable = lib.mkEnableOption ''
+      the figaro angelus as a system service. A switch that changes the
+      package restarts the unit through systemd, and no terminal clients are
+      attached to it, so this module needs no restart step of its own
+      (programs.figaro.restartOnSwitch in the home-manager module is for a
+      user's own angelus and its tmux panes)'';
 
     package = mkOption {
       type = types.package;

@@ -478,16 +478,19 @@ yourself, **from a terminal and not from inside an aria**: the upgrade swaps
 the binary under the running angelus that is hosting you:
 
 ```sh
-figaro upgrade -n   # the plan: which panes restart, which are left
-figaro upgrade      # build, wait for turns, swap, restart the angelus and the figaro panes
+figaro stop --keep-pids && nix profile upgrade --all
 ```
 
-`figaro upgrade` restarts every figaro running in a tmux pane on its own:
-respawn-pane when figaro is the pane's process, the same command typed into
-the pane's shell once the shell holds the terminal again. It names what it
-leaves (piped input, `--stdin`, a pane whose shell is busy) and what runs
-outside tmux (telefono). The manual equivalent is still
-`figaro stop --keep-pids && nix profile upgrade --all`, then each pane by hand.
+A home-manager install can do this on every switch instead: the flake's
+`homeManagerModules.default` takes `programs.figaro.restartOnSwitch = true`.
+After a switch that changes the figaro build, the activation step waits up
+to `restartWait` seconds for running turns, restarts the angelus on the new
+build with its bindings kept, and restarts every figaro running in a tmux
+pane (the pane's own process with respawn-pane, a shell's command typed again
+once the shell holds the terminal). It names what it leaves (piped input,
+`--stdin`, control characters in the command line, a busy shell, telefono)
+and never fails the switch. The NixOS `services.figaro` module needs none of
+this: systemd restarts the unit when the package changes.
 
 ## Versions on disk: which one to bump
 
