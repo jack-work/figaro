@@ -4,6 +4,7 @@ package cli
 // none of them may touch the status bar.
 
 import (
+	"math"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -90,6 +91,18 @@ func (d *pit) list() *picker {
 }
 
 func (d *pit) glance() bool { return d.id == pitNote }
+
+func (d *pit) natural() int {
+	p := d.list()
+	if p == nil {
+		return math.MaxInt
+	}
+	n := len(p.rows)
+	if d.title != "" {
+		n++
+	}
+	return n
+}
 
 // A live view holds a subscription and a socket.
 func (d *pit) close() {
@@ -226,25 +239,22 @@ func (d *pit) replaceRows(rows []pitRow, keepID string) {
 
 func (d *pit) removeSelected() { d.motion((*picker).remove) }
 
-func (d *pit) lines(w, room int) []string {
+func (d *pit) lines(w, h int) []string {
 	if !d.open() {
 		return nil
 	}
 	if d.live != nil {
 		d.refreshLive(w)
 	}
-	full := d.visible(room)
-	out := make([]string, 0, full+1)
-	body := full
+	h = max(h, 1)
+	out := make([]string, 0, h)
+	body := h
 	if d.title != "" {
 		out = append(out, pitGray(clipToWidth(pitText(d.title), w)))
 		body--
 	}
 	out = append(out, d.body.lines(d.id, w, body)...)
-	if !d.full {
-		return out
-	}
-	for len(out) < full {
+	for len(out) < h {
 		out = append(out, "")
 	}
 	return out

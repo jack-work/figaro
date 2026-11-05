@@ -73,8 +73,7 @@ func (t *transcript) drawerLines() []string {
 		if !t.pit.open() {
 			return nil
 		}
-		t.pit.full = t.fullPit()
-		return t.pit.lines(t.w, t.pitRoom())
+		return t.pit.lines(t.w, t.pitHeight())
 	}
 	if t.inSearch {
 		if t.liveSearch() != nil {
@@ -90,10 +89,18 @@ func (t *transcript) searchedLines(reserve int) []string {
 	case t.box == boxComposer:
 		return t.boxLines(reserve)
 	case t.pit.open():
-		t.pit.full = t.fullPit()
-		return t.pit.lines(t.w, max(t.pitRoom()-reserve, 1))
+		return t.pit.lines(t.w, t.pitHeight()-reserve)
 	}
 	return nil
+}
+
+func (t *transcript) pitHeight() int {
+	t.pit.full = t.fullPit()
+	h := t.pit.visible(t.pitRoom())
+	if t.pit.glance() || (t.showing(pitQueue) && !t.queuedByKey) {
+		h = min(h, t.pit.natural())
+	}
+	return h
 }
 
 func padTo(s string, n int) string {
