@@ -244,6 +244,13 @@ func DiffDel(s string) string { return paint(active.diffDel, s) }
 func Present(s string) string { return paint(active.present, s) }
 func Absent(s string) string  { return paint(active.absent, s) }
 
+func LabelThen(s, back string) string {
+	if !Enabled() {
+		return s
+	}
+	return active.label + s + back
+}
+
 // NoticeInDim paints inside a row the caller has dimmed and hands the row
 // back still dim (39;2), where a full reset would drop the dim.
 func NoticeInDim(s string) string {

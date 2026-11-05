@@ -301,7 +301,7 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		clean := pitText(body)
 		if clean == body {
 			lead, tail := p.rows[i].dims()
-			clean = paintRow(clean, lead, tail, p.rows[i].marks)
+			clean = paintRow(clean, lead, tail, p.rows[i].marks, p.rows[i].tone.fg(i == p.cursor))
 		}
 		text := prefix + clean
 		if note := p.rows[i].note; note != "" {
@@ -316,7 +316,7 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		}
 		row := clipToWidth(text, w)
 		if i == p.cursor {
-			out = append(out, pitSelected(row, p.rows[i].tone))
+			out = append(out, pitSelected(row, p.rows[i].tone, w))
 			continue
 		}
 		out = append(out, p.rows[i].tone.paint(row))

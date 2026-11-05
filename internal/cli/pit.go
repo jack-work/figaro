@@ -259,7 +259,7 @@ func (r pitRow) dims() (lead, tail int) {
 	return r.dimLead, 0
 }
 
-func paintRow(s string, lead, tail int, marks []int) string {
+func paintRow(s string, lead, tail int, marks []int, back string) string {
 	if (lead == 0 && tail == 0 && len(marks) == 0) || !term.Enabled() {
 		return s
 	}
@@ -285,7 +285,7 @@ func paintRow(s string, lead, tail int, marks []int) string {
 		}
 		run := s[i:j]
 		if dim {
-			run = pitGray(run)
+			run = term.LabelThen(run, back)
 		}
 		if mark {
 			run = "\x1b[1;4m" + run + "\x1b[22;24m"
@@ -297,15 +297,31 @@ func paintRow(s string, lead, tail int, marks []int) string {
 }
 
 // The selected row is full strength over the wash; a toned row keeps its colour.
-func pitSelected(s string, tone pitTone) string {
+func pitSelected(s string, tone pitTone, w int) string {
 	if !term.Enabled() {
 		return s
 	}
-	fg := "\x1b[38;5;255m"
-	if body := tone.washBody(); body != "" {
-		fg = body
+	return "\x1b[48;5;240m" + tone.selectedFg() + s + strings.Repeat(" ", max(w-displayWidth(s), 0)) + "\x1b[39m\x1b[49m"
+}
+
+func (t pitTone) selectedFg() string {
+	if body := t.washBody(); body != "" {
+		return body
 	}
-	return "\x1b[48;5;240m" + fg + s + "\x1b[39m\x1b[49m"
+	return "\x1b[38;5;255m"
+}
+
+func (t pitTone) fg(selected bool) string {
+	if selected {
+		return t.selectedFg()
+	}
+	switch t {
+	case toneError:
+		return term.NoticeBody()
+	case toneWarn:
+		return term.CautionBody()
+	}
+	return "\x1b[39m"
 }
 
 // An untoned row is returned untouched.
