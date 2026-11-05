@@ -207,6 +207,14 @@ func (t *transcript) pasteText(text string) {
 	if text == "" {
 		return
 	}
+	switch t.openPit() {
+	case pitConfirm:
+		return
+	case pitSearch:
+		t.searchPasted(text)
+		t.render()
+		return
+	}
 	if !t.boxOpen() {
 		pagerComposerBox(t)
 	}

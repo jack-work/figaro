@@ -70,6 +70,14 @@ func searchBackspace(t *transcript) {
 	}
 }
 
+func (t *transcript) searchPasted(text string) {
+	for _, r := range pasteIntoLine(text) {
+		if r >= 0x20 && r != 0x7f && (r < 0x80 || r > 0x9f) {
+			t.query += string(r)
+		}
+	}
+}
+
 // A printable key is text, not a binding.
 func (t *transcript) searchLiteral(b byte) {
 	if b >= 0x20 && b < 0x7f {
