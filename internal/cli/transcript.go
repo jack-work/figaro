@@ -114,6 +114,7 @@ type transcript struct {
 	inSearch bool
 	// searchDir: 1 for '/', -1 for '?'; n repeats, N reverses.
 	searchDir  int
+	searchFrom string
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
 	matchAt    searchHit

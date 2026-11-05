@@ -256,6 +256,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
 		"  Home / End          top / bottom",
 		"  / · ?               search forward / backward (in a pit, its rows)",
+		"  (in a form's /) ^N/^P next / previous match, best first",
 		"  n / N               next / previous match, with the cursor on it",
 		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
 		"  >                   the composer: type or paste a prompt, newlines and quotes intact (in v it quotes the highlight)",

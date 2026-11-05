@@ -203,9 +203,15 @@ func pagerTop(t *transcript) {
 	t.wantTop = !t.atAriaFloor()
 }
 
-func pagerSearchPrompt(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", 1 }
+func pagerSearchPrompt(t *transcript) {
+	t.inSearch, t.query, t.searchDir = true, "", 1
+	t.noteSearchFrom()
+}
 
-func pagerSearchPromptBack(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", -1 }
+func pagerSearchPromptBack(t *transcript) {
+	t.inSearch, t.query, t.searchDir = true, "", -1
+	t.noteSearchFrom()
+}
 
 func pagerHelpPit(t *transcript) { t.openHelpPit() }
 

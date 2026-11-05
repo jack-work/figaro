@@ -83,6 +83,8 @@ search     0x08               pager searchBackspace
 search     0x0a               pager searchAccept
 search     0x0c               input inputEnterTranscript
 search     0x0d               pager searchAccept
+search     0x0e               input inputSearchHitNext
+search     0x10               input inputSearchHitPrev
 search     0x14               input inputEnterTranscript
 search     0x1b               pager searchCancel
 search     0x7f               pager searchBackspace
@@ -90,8 +92,8 @@ search     csi-u ctrl-c       input inputInterrupt
 search     csi-u ctrl-d       input inputDisconnect
 search     csi-u ctrl-h       pager searchBackspace
 search     csi-u ctrl-l       input inputEnterTranscript
-search     csi-u ctrl-n       input inputSelectNext
-search     csi-u ctrl-p       input inputSelectPrev
+search     csi-u ctrl-n       input inputSearchHitNext
+search     csi-u ctrl-p       input inputSearchHitPrev
 search     csi-u ctrl-t       input inputEnterTranscript
 search     M-m                input inputToggleMore
 jump       0x01               pager cmdHome

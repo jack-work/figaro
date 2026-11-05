@@ -20,7 +20,67 @@ type transcriptSearch struct {
 	follow bool
 }
 
+func (t *transcript) liveSearch() liveSearcher {
+	if t.box == boxComposer || !t.pit.open() {
+		return nil
+	}
+	ls, _ := t.pit.live.(liveSearcher)
+	return ls
+}
+
+func (t *transcript) searchChanged() {
+	ls := t.liveSearch()
+	if ls == nil {
+		return
+	}
+	id := ls.SetQuery(t.query)
+	t.pit.refreshLive(t.w)
+	if id != "" {
+		t.pit.focus(id)
+	}
+}
+
+func inputSearchHitNext(in *interactiveInput, ev keyEvent) keyVerdict { return in.searchHit(1, ev) }
+func inputSearchHitPrev(in *interactiveInput, ev keyEvent) keyVerdict { return in.searchHit(-1, ev) }
+
+func (in *interactiveInput) searchHit(dir int, ev keyEvent) keyVerdict {
+	in.mu.Lock()
+	tr := in.lt.tr
+	if tr.liveSearch() == nil {
+		in.mu.Unlock()
+		return in.selectNodeKey(dir, ev)
+	}
+	tr.searchStepHit(dir)
+	in.mu.Unlock()
+	in.pageWanted = true
+	return keyHandled
+}
+
+func (t *transcript) searchStepHit(dir int) {
+	ls := t.liveSearch()
+	if ls == nil {
+		return
+	}
+	if id := ls.StepQuery(dir); id != "" {
+		t.pit.refreshLive(t.w)
+		t.pit.focus(id)
+	}
+}
+
 func searchAccept(t *transcript) {
+	if ls := t.liveSearch(); ls != nil {
+		t.inSearch, t.matchQuery = false, ""
+		keep := ""
+		if row, ok := t.pit.selected(); ok {
+			keep = valuePath(row.id)
+		}
+		ls.EndQuery(keep)
+		t.pit.refreshLive(t.w)
+		if keep != "" {
+			t.pit.focus(keep)
+		}
+		return
+	}
 	t.inSearch = false
 	t.matchQuery = t.query
 	// The search targets what is open: the drawer, the list, else the conversation.
@@ -37,7 +97,23 @@ func searchAccept(t *transcript) {
 	}
 }
 
-func searchCancel(t *transcript) { t.inSearch, t.query = false, "" }
+func (t *transcript) noteSearchFrom() {
+	t.searchFrom = ""
+	if row, ok := t.pit.selected(); ok && t.liveSearch() != nil {
+		t.searchFrom = row.id
+	}
+}
+
+func searchCancel(t *transcript) {
+	if ls := t.liveSearch(); ls != nil {
+		ls.EndQuery("")
+		t.pit.refreshLive(t.w)
+		if t.searchFrom != "" {
+			t.pit.focus(t.searchFrom)
+		}
+	}
+	t.inSearch, t.query = false, ""
+}
 
 func pagerFindRowNext(t *transcript) {
 	if !t.searchesList() {
@@ -87,6 +163,7 @@ func (t *transcript) searchTarget() string {
 func searchBackspace(t *transcript) {
 	if len(t.query) > 0 {
 		t.query = t.query[:len(t.query)-1]
+		t.searchChanged()
 	}
 }
 
@@ -96,12 +173,14 @@ func (t *transcript) searchPasted(text string) {
 			t.query += string(r)
 		}
 	}
+	t.searchChanged()
 }
 
 // A printable key is text, not a binding.
 func (t *transcript) searchLiteral(b byte) {
 	if b >= 0x20 && b < 0x7f {
 		t.query += string(b)
+		t.searchChanged()
 	}
 }
 

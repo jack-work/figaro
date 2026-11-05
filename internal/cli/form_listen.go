@@ -209,6 +209,7 @@ type formView struct {
 	subject   func() form.Snapshot
 	rowKeys   map[string]viewRowKey
 	armed     string
+	search    *formSearch
 }
 
 type formSource interface {
@@ -228,6 +229,7 @@ type formItemsKey struct {
 	width     int
 	notice    string
 	pending   int
+	search    uint64
 }
 
 type pendingReader interface {
@@ -304,6 +306,9 @@ func (v *formView) Items(width int) []pitRow {
 	defer v.mu.Unlock()
 	root := snap.RootNode()
 	key := formItemsKey{root: root.Stamp(), subject: subjectStamp, confirmed: confirmed.RootNode().Stamp(), openRev: v.openRev, width: width, notice: v.notice, pending: pending}
+	if v.search != nil {
+		key.search = v.search.rev
+	}
 	if v.items != nil && key == v.itemsKey {
 		return v.items
 	}
@@ -316,6 +321,13 @@ func (v *formView) Items(width int) []pitRow {
 	} else {
 		v.root.take(root)
 		v.root.branch = true
+	}
+	if v.searching() {
+		v.items = v.searchItems(snap, width)
+		key.search = v.search.rev
+		v.itemsKey = key
+		v.rev++
+		return v.items
 	}
 	if v.view != nil {
 		if list := formChild(v.root, v.view.List); list != nil && !list.leaf() {

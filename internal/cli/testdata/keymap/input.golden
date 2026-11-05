@@ -294,6 +294,8 @@ search "0x04" stop=true rest="" act=true off:same fol=true srch=true q="ms" h=fa
 search "0x08" stop=false rest="" act=true off:same fol=true srch=true q="m" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 search "0x0a" stop=false rest="" act=true off:bottom fol=true srch=false q="ms" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 search "0x0d" stop=false rest="" act=true off:bottom fol=true srch=false q="ms" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
+search "0x0e" stop=false rest="" act=true off:sel fol=false srch=true q="ms" h=false s=false Q=false pre=- sel=true verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
+search "0x10" stop=false rest="" act=true off:sel fol=false srch=true q="ms" h=false s=false Q=false pre=- sel=true verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 search "0x1b" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 search "0x20" stop=false rest="" act=true off:same fol=true srch=true q="ms " h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 search "0x21" stop=false rest="" act=true off:same fol=true srch=true q="ms!" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""

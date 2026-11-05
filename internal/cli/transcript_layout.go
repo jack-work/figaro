@@ -77,6 +77,9 @@ func (t *transcript) drawerLines() []string {
 		return t.pit.lines(t.w, t.pitRoom())
 	}
 	if t.inSearch {
+		if t.liveSearch() != nil {
+			return append(rows, t.searchedLines(len(rows))...)
+		}
 		return append(t.searchedLines(len(rows)), rows...)
 	}
 	return rows
@@ -184,7 +187,12 @@ func (t *transcript) inputDrawerLines() []string {
 		if g := t.searchTarget(); g != "" {
 			sigil = g + sigil
 		}
-		rows = []string{pitGray(clipToWidth(sigil+t.query, t.w))}
+		line := sigil + t.query
+		if ls := t.liveSearch(); ls != nil && t.query != "" {
+			at, n := ls.QueryCount()
+			line += fmt.Sprintf("  %d/%d", at, n)
+		}
+		rows = []string{pitGray(clipToWidth(line, t.w))}
 	case t.box != boxNone:
 		rows = t.boxLines(0)
 	default:

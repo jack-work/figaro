@@ -1,0 +1,206 @@
+package cli
+
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/fuzzy"
+)
+
+type formSearch struct {
+	index fuzzy.Index
+	match *fuzzy.Matcher
+	stamp form.Stamp
+	built bool
+	query string
+	hits  []fuzzy.Hit
+	at    int
+	rev   uint64
+}
+
+type liveSearcher interface {
+	SetQuery(q string) string
+	StepQuery(dir int) string
+	EndQuery(keep string)
+	QueryCount() (at, n int)
+}
+
+func (v *formView) SetQuery(q string) string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.search == nil {
+		v.search = &formSearch{match: fuzzy.NewMatcher()}
+	}
+	s := v.search
+	s.query = q
+	s.refresh(v.source().Shown())
+	s.at = 0
+	return s.current()
+}
+
+func (v *formView) StepQuery(dir int) string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	s := v.search
+	if s == nil || len(s.hits) == 0 {
+		return ""
+	}
+	s.at = ((s.at+dir)%len(s.hits) + len(s.hits)) % len(s.hits)
+	s.rev++
+	return s.current()
+}
+
+func (v *formView) EndQuery(keep string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.search == nil {
+		return
+	}
+	if keep != "" {
+		segs := strings.Split(keep, ".")
+		for i := 1; i < len(segs); i++ {
+			v.open[strings.Join(segs[:i], ".")] = true
+		}
+		v.openRev++
+	}
+	v.search.query, v.search.hits, v.search.at = "", nil, 0
+	v.search.rev++
+}
+
+func (v *formView) QueryCount() (at, n int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.search == nil || v.search.query == "" {
+		return 0, 0
+	}
+	if len(v.search.hits) == 0 {
+		return 0, 0
+	}
+	return v.search.at + 1, len(v.search.hits)
+}
+
+func (v *formView) searching() bool { return v.search != nil && v.search.query != "" }
+
+func (s *formSearch) refresh(snap form.Snapshot) {
+	if st := snap.RootNode().Stamp(); !s.built || st != s.stamp {
+		s.index.Update(snap)
+		s.stamp, s.built = st, true
+	}
+	s.hits = s.index.Query(s.match, s.query)
+	if s.at >= len(s.hits) {
+		s.at = 0
+	}
+	s.rev++
+}
+
+func (s *formSearch) current() string {
+	if len(s.hits) == 0 {
+		return ""
+	}
+	return s.hits[s.at].Entry.Path
+}
+
+func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
+	s := v.search
+	if st := snap.RootNode().Stamp(); !s.built || st != s.stamp {
+		at := s.at
+		s.refresh(snap)
+		s.at = min(at, max(len(s.hits)-1, 0))
+	}
+	include := map[string]bool{}
+	byPath := map[string]fuzzy.Hit{}
+	for _, h := range s.hits {
+		byPath[h.Entry.Path] = h
+		segs := strings.Split(h.Entry.Path, ".")
+		for i := 1; i <= len(segs); i++ {
+			include[strings.Join(segs[:i], ".")] = true
+		}
+	}
+	var out []pitRow
+	if v.notice != "" {
+		out = append(out, staticRow(clipLine(v.notice, width)))
+	}
+	var walk func(n *formNode)
+	walk = func(n *formNode) {
+		for _, c := range n.kids() {
+			if !include[c.path] {
+				continue
+			}
+			c.width = width
+			h, hit := byPath[c.path]
+			if !hit || !c.leaf() {
+				out = append(out, pitRow{text: renderFormRow(c, width, false), yankFrom: c, id: c.path})
+				if !c.leaf() {
+					walk(c)
+				}
+				continue
+			}
+			text, marks := searchedRow(c, h, s, width)
+			out = append(out, pitRow{text: text, yankFrom: c, id: c.path, marks: marks})
+		}
+	}
+	walk(v.root)
+	return out
+}
+
+func searchedRow(n *formNode, h fuzzy.Hit, s *formSearch, width int) (string, []int) {
+	indent := strings.Repeat("  ", n.depth-1)
+	head := indent + n.label + ": "
+	var marks []int
+	if h.OnKey {
+		labelAt := len(n.path) - len(n.label)
+		runes := []rune(n.path)
+		for _, p := range h.KeyPositions(s.match, s.query) {
+			if p >= len(runes) {
+				continue
+			}
+			b := len(string(runes[:p]))
+			if b >= labelAt {
+				marks = append(marks, len(indent)+b-labelAt)
+			}
+		}
+	}
+	if h.ValueAt < 0 {
+		return head + formValuePreview(n.value), marks
+	}
+	text := searchValueText(n.value)
+	from := max(h.ValueAt-24, 0)
+	for from > 0 && from < len(text) && !utf8Start(text[from]) {
+		from--
+	}
+	if sp := strings.LastIndexByte(text[:from], ' '); from > 0 && sp >= 0 && from-sp < 16 {
+		from = sp + 1
+	}
+	snippet := text[from:]
+	if from > 0 {
+		snippet = "…" + snippet
+	}
+	snippet = strings.Join(strings.Fields(snippet), " ")
+	row := head + snippet
+	low := strings.ToLower(row)
+	for _, term := range strings.Fields(strings.ToLower(s.query)) {
+		for i := strings.Index(low[len(head):], term); i >= 0; {
+			at := len(head) + i
+			for k := 0; k < len(term); k++ {
+				marks = append(marks, at+k)
+			}
+			next := strings.Index(low[at+len(term):], term)
+			if next < 0 {
+				break
+			}
+			i = at + len(term) + next - len(head)
+		}
+	}
+	return row, marks
+}
+
+func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
+
+func searchValueText(raw json.RawMessage) string {
+	var str string
+	if json.Unmarshal(raw, &str) == nil {
+		return str
+	}
+	return string(raw)
+}
