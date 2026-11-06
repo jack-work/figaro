@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -140,5 +141,60 @@ func TestASearchThatOpensBranchesDoesNotGrowThePit(t *testing.T) {
 	feed(t, in, "/king")
 	if got := len(lt.tr.drawerLines()) - len(lt.tr.inputDrawerLines()); got != opened {
 		t.Fatalf("searching %q the pit is %d rows, want the %d it opened with", lt.tr.query, got, opened)
+	}
+}
+
+type framesWriter struct {
+	countingWriter
+	mu  sync.Mutex
+	all []byte
+}
+
+func (f *framesWriter) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	f.all = append(f.all, p...)
+	f.mu.Unlock()
+	return f.countingWriter.Write(p)
+}
+
+func (f *framesWriter) since(n int) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return string(f.all[n:])
+}
+
+func (f *framesWriter) mark() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.all)
+}
+
+// A search aimed at a pit highlighted its query in the conversation behind
+// the pit too, so every keystroke rewrote each conversation row that held the
+// old or new query. Only a search of the conversation marks the conversation.
+func TestAPitSearchDoesNotMarkTheConversation(t *testing.T) {
+	marked := matchOn + "fox" + matchOff
+	cases := []struct {
+		name string
+		open func(*transcript)
+		want bool
+	}{
+		{"the conversation", func(*transcript) {}, true},
+		{"a form pit", twoRowForm, false},
+		{"a list pit", func(tr *transcript) { tr.setCmdOut("ls", longListRows(3)) }, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var out framesWriter
+			in, lt := navInput(t, &out.countingWriter, true)
+			lt.tr.out = &out
+			c.open(lt.tr)
+			lt.tr.render()
+			from := out.mark()
+			feed(t, in, "/fox")
+			if got := strings.Contains(out.since(from), marked); got != c.want {
+				t.Errorf("searching fox, the conversation is marked: %v, want %v", got, c.want)
+			}
+		})
 	}
 }

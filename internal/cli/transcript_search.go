@@ -368,6 +368,9 @@ func (t *transcript) searchStep() int {
 }
 
 func (t *transcript) activeHighlight() string {
+	if t.box == boxComposer || t.searchesList() {
+		return ""
+	}
 	if t.inSearch && t.query != "" {
 		return t.query
 	}
