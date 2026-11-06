@@ -41,6 +41,7 @@ type Angelus struct {
 	SocketPath string
 	RuntimeDir string
 	Spool      *figaro.Spool
+	StopSelf   func()
 	StartedAt  time.Time
 	Build      string
 	Release    string

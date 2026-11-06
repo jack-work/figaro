@@ -395,6 +395,7 @@ func Run() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	a.StopSelf = cancel
 	boot.OnHush(func(h *managed.Hush) { go keepHushAlive(ctx, h) })
 
 	decider, err := buildDecider(loaded)

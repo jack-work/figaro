@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -212,11 +213,18 @@ func logAttrInt(e logring.Entry, key string) int64 {
 	return 0
 }
 
-func (h *handlers) haltTurns(ctx context.Context, params json.RawMessage) (interface{}, error) {
+func (h *handlers) haltAndStop(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	stop := h.angelus.StopSelf
+	if stop == nil {
+		return nil, fmt.Errorf("this angelus cannot stop itself; nothing was hung up")
+	}
 	n := h.angelus.HaltTurns(5 * time.Second)
-	slog.Info("halted turns ahead of a stop", "turns", n)
-	return rpc.HaltTurnsResponse{Halted: n}, nil
+	slog.Info("halted every turn; stopping", "turns", n)
+	time.AfterFunc(haltReplyGrace, stop)
+	return rpc.HaltAndStopResponse{Halted: n}, nil
 }
+
+const haltReplyGrace = 200 * time.Millisecond
 
 func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	path := h.angelus.BindingsPath()

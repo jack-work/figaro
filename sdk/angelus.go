@@ -289,9 +289,9 @@ func (c *Angelus) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, 
 	return &resp, nil
 }
 
-func (c *Angelus) HaltTurns(ctx context.Context) (*rpc.HaltTurnsResponse, error) {
-	var resp rpc.HaltTurnsResponse
-	if err := c.call(ctx, rpc.MethodHaltTurns, nil, &resp); err != nil {
+func (c *Angelus) HaltAndStop(ctx context.Context) (*rpc.HaltAndStopResponse, error) {
+	var resp rpc.HaltAndStopResponse
+	if err := c.call(ctx, rpc.MethodHaltAndStop, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

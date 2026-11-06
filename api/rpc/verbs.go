@@ -89,7 +89,7 @@ var methodVerbs = map[string]Verb{
 	MethodOutfitReload:   VerbAdmin,
 	MethodConfigure:      VerbAdmin,
 	MethodSaveBindings:   VerbAdmin,
-	MethodHaltTurns:      VerbAdmin,
+	MethodHaltAndStop:    VerbAdmin,
 	MethodProviderLedger: VerbAdmin,
 	MethodTroupeEntries:  VerbAdmin,
 	MethodTroupeLeave:    VerbAdmin,

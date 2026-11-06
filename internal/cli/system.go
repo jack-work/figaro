@@ -2,15 +2,18 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/internal/boot"
-	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/boot"
+	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/jkrpc"
 )
 
 type stopOptions struct {
@@ -20,15 +23,45 @@ type stopOptions struct {
 	hup            bool
 }
 
-func haltTurnsBeforeStop(cli *sdk.Angelus) {
+func haltAndStop(cli *sdk.Angelus, o stopOptions, afterExit func()) {
+	pid := daemonPID()
+	if !o.forgetBindings {
+		saveBindingsBeforeStop(cli)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	resp, err := cli.HaltTurns(ctx)
-	if err != nil {
-		cli.Close()
-		die("hang up the running turns: %s\n  nothing was stopped; `figaro hup <aria>` hangs up one aria", wireErrorText(err))
+	resp, err := cli.HaltAndStop(ctx)
+	cancel()
+	cli.Close()
+	var answered *jkrpc.Error
+	switch {
+	case errors.As(err, &answered) && (answered.Code == methodNotFound || strings.Contains(answered.Message, "has no verb")):
+		die("this angelus predates stop --hup: nothing was hung up and nothing was stopped; `figaro hup <aria>` hangs up one aria")
+	case errors.As(err, &answered):
+		die("the angelus refused to hang up its turns: %s\n  nothing was stopped", answered.Message)
+	case err != nil:
+		die("the angelus did not confirm the hang-up (%s)\n  if the request reached it, it hangs up every turn and stops itself; `figaro status` shows whether it is still up", err)
 	}
 	fmt.Fprintf(stderrw, "hung up %d running turn(s); none resumes after the restart\n", resp.Halted)
+	if pid <= 0 {
+		fmt.Fprintln(stderrw, "the angelus is stopping itself; its pid is unknown, so this does not wait for it")
+		return
+	}
+	stopPid(pid, o.force, afterExit)
+}
+
+const methodNotFound = -32601
+
+func daemonPID() int {
+	if b, err := os.ReadFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid")); err == nil {
+		var pid int
+		if _, err := fmt.Sscanf(string(b), "%d", &pid); err == nil && pid > 0 {
+			return pid
+		}
+	}
+	if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
+		return owner
+	}
+	return 0
 }
 
 func runStop(o stopOptions) {
@@ -51,7 +84,8 @@ func runStop(o stopOptions) {
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := sdk.DialAngelus(ep); err == nil {
 		if o.hup {
-			haltTurnsBeforeStop(cli)
+			haltAndStop(cli, o, afterExit)
+			return
 		}
 		if !o.forgetBindings {
 			saveBindingsBeforeStop(cli)

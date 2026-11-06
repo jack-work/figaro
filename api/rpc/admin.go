@@ -155,7 +155,7 @@ type SaveBindingsResponse struct {
 	Count int  `json:"count"`
 }
 
-type HaltTurnsResponse struct {
+type HaltAndStopResponse struct {
 	Halted int `json:"halted"`
 }
 
