@@ -303,3 +303,88 @@ func TestContainsLowerFoldsCase(t *testing.T) {
 		}
 	}
 }
+
+// Gluck knows an aria by its mantra, and a value matched only as a
+// substring, so an abbreviation of the mantra found nothing while the same
+// letters typed against a key would have. A fuzzy term matches inside one
+// value with fzf's matcher, as it does inside one key.
+func TestAFuzzyTermFindsAValueByItsLetters(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{
+		"arias.real.mantra":  "Restart delivery after a crash",
+		"arias.other.mantra": "tune the fig tree",
+		"arias.real.id":      "09e4b786557992e7a84fbff7606463f7",
+	}))
+	m := NewMatcher()
+	for _, q := range []string{"rstrtdlv", "dlvry rstrt", "RSTRT", "crash restart"} {
+		if got := paths(ix.Query(m, q)); len(got) != 1 || got[0] != "arias.real.mantra" {
+			t.Errorf("%q matched %v, want the mantra", q, got)
+		}
+	}
+	for _, q := range []string{"09e4b786557992e7a84fbff7606463f7", "09e4b7", "09e4b786", "09e4b7865579"} {
+		if got := paths(ix.Query(m, q)); len(got) != 1 || got[0] != "arias.real.id" {
+			t.Errorf("%q matched %v, want the id", q, got)
+		}
+	}
+}
+
+// A value holding the term whole ranks ahead of one that spreads it, as a
+// key does.
+func TestAContiguousValueRanksAheadOfASpreadOne(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{
+		"a.mantra": "line breaks to tonight",
+		"b.mantra": "correct the libretto",
+	}))
+	hits := ix.Query(NewMatcher(), "libretto")
+	if got := paths(hits); len(got) != 2 || got[0] != "b.mantra" {
+		t.Fatalf("libretto ranked %v; want the contiguous value first", got)
+	}
+	if hits[0].Spread || !hits[1].Spread {
+		t.Errorf("spread misreported: %v %v", hits[0].Spread, hits[1].Spread)
+	}
+}
+
+// A term whose letters are scattered through the key but whole in the value
+// is a value hit: it ranks as contiguous and only the value is marked.
+func TestAWholeValueBeatsAScatteredKey(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{"notes.lib_rett_o": "the libretto"}))
+	m := NewMatcher()
+	hits := ix.Query(m, "libretto")
+	if len(hits) != 1 || hits[0].Spread || hits[0].ValueAt != 4 {
+		t.Fatalf("got %+v; want a contiguous value hit at 4", hits)
+	}
+	if pos := hits[0].KeyPositions(m, "libretto"); len(pos) != 0 {
+		t.Errorf("the key is marked at %v for a value hit", pos)
+	}
+}
+
+// The marks drawn on a value are the letters the fuzzy term matched, found
+// in the text as shown, whatever its case; an exact term marks every
+// occurrence; a term that matched the key marks nothing in the value.
+func TestValueMarksAreTheMatchedLetters(t *testing.T) {
+	var ix Index
+	ix.Update(snapOf(t, map[string]any{"arias.real.mantra": "Restart delivery after a crash"}))
+	m := NewMatcher()
+	shown := "mantra: Restart delivery after a crash"
+	from := len("mantra: ")
+	for q, want := range map[string]string{
+		"rstrtdlv":     "Rstrtdlv",
+		"v:'a":         "aaaa",
+		"real rstrt":   "Rstrt",
+		"rstrt crash$": "Rstrtcrash",
+	} {
+		hits := ix.Query(m, q)
+		if len(hits) != 1 {
+			t.Fatalf("%q: %v", q, paths(hits))
+		}
+		var got []byte
+		for _, p := range hits[0].ValueMarks(m, q, shown, from) {
+			got = append(got, shown[p])
+		}
+		if string(got) != want {
+			t.Errorf("%q marked %q, want %q", q, got, want)
+		}
+	}
+}

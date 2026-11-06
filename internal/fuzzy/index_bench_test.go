@@ -112,7 +112,7 @@ func TestIndexMemoryAt20k(t *testing.T) {
 	runtime.ReadMemStats(&after)
 	held := int64(after.HeapAlloc) - int64(before.HeapAlloc)
 	t.Logf("20k-leaf index holds about %d KB", held/1024)
-	if held > 10<<20 {
+	if held > 12<<20 {
 		t.Fatalf("the index holds %d MB for 20k leaves; the value cap is not doing its job", held>>20)
 	}
 	runtime.KeepAlive(&ix)

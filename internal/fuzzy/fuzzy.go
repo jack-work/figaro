@@ -28,11 +28,23 @@ func NewMatcher() *Matcher {
 
 type Match struct {
 	Score     int
+	Start     int
 	Positions []int
 }
 
 func (m *Matcher) Match(t *Text, pattern []rune) (Match, bool) {
 	return m.match(t, pattern, false)
+}
+
+func (m *Matcher) ScanLower(t *Text, lower []rune) (Match, bool) {
+	if len(lower) == 0 {
+		return Match{}, true
+	}
+	r, _ := algo.FuzzyMatchV1(true, true, true, &t.chars, lower, false, m.slab)
+	if r.Start < 0 {
+		return Match{}, false
+	}
+	return Match{Score: r.Score, Start: r.Start}, true
 }
 
 func (m *Matcher) Positions(t *Text, pattern []rune) []int {
@@ -52,5 +64,5 @@ func (m *Matcher) match(t *Text, pattern []rune, withPos bool) (Match, bool) {
 	if pos != nil {
 		positions = append(positions, (*pos)...)
 	}
-	return Match{Score: r.Score, Positions: positions}, true
+	return Match{Score: r.Score, Start: r.Start, Positions: positions}, true
 }

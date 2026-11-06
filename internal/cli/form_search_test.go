@@ -704,3 +704,40 @@ func TestCtrlNVisitsEveryRowDrawnAsAMatch(t *testing.T) {
 		t.Errorf("^P went to %q", row.id)
 	}
 }
+
+// An abbreviation of a mantra found no aria: values matched only as
+// substrings. The row is found, and the letters the abbreviation matched are
+// marked in its label, where the mantra is drawn.
+func TestAMantraIsFoundByItsLettersAndMarkedInTheLabel(t *testing.T) {
+	p := newInputProbe(t, true)
+	src := &fakeFormSource{snap: form.FromMap(formKeys(
+		"arias.one.id", `"09e4b786557992e7a84fbff7606463f7"`, "arias.one.mantra", `"restart delivery after a crash"`,
+		"arias.two.id", `"38f4563ac90d4206364a64c0a4f4c4fa"`, "arias.two.mantra", `"tune the fig tree"`,
+	))}
+	v := &formView{src: src, open: map[string]bool{}}
+	v.setView(&rpc.FormView{Rows: []string{"arias.*"}, Open: []string{"arias"}, Label: "mantra"})
+	tr := p.lt.tr
+	tr.pit.showLive(pitID("arias"), v)
+	for q, want := range map[string]string{"rstrtdlv": "rstrtdlv", "crash rstrt": "rstrtcrash"} {
+		feed(t, p.in, "/"+q)
+		var found bool
+		for _, r := range tr.pit.list().rows {
+			if r.id != "arias.one" {
+				continue
+			}
+			found = true
+			text := r.str()
+			var marked []byte
+			for _, m := range r.marks {
+				marked = append(marked, text[m])
+			}
+			if string(marked) != want {
+				t.Errorf("/%s marks %q in %q, want %q", q, marked, text, want)
+			}
+		}
+		if !found {
+			t.Errorf("/%s found no row for the mantra: %v", q, pitIDs(tr))
+		}
+		feed(t, p.in, "\x1b")
+	}
+}

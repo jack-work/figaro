@@ -1,14 +1,15 @@
 package fuzzy
 
 import (
-	"unicode/utf8"
-
 	"bytes"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/junegunn/fzf/src/util"
 )
 
 const ValueCap = 160
@@ -17,7 +18,8 @@ type Entry struct {
 	Path     string
 	Keys     []string
 	key      Text
-	value    string
+	value    []byte
+	wide     *Text
 	ValueCut bool
 }
 
@@ -25,8 +27,6 @@ type child struct {
 	key string
 	n   *node
 }
-
-func (e *Entry) ValueIndex(lowerTerm string) int { return strings.Index(e.value, lowerTerm) }
 
 type node struct {
 	stamp form.Stamp
@@ -99,13 +99,23 @@ func (ix *Index) build(n form.Node, old *node, path string, keys []string) *node
 	return out
 }
 
+func (e *Entry) valueText() Text {
+	if e.wide != nil {
+		return *e.wide
+	}
+	return Text{chars: util.ToChars(e.value)}
+}
+
 func newEntry(path string, keys []string, raw json.RawMessage) *Entry {
 	text := valueText(raw)
 	e := &Entry{Path: path, Keys: keys, key: NewText(path)}
 	if len(text) > ValueCap {
 		text, e.ValueCut = text[:ValueCap], true
 	}
-	e.value = strings.Clone(strings.ToLower(text))
+	e.value = []byte(strings.ToLower(text))
+	if chars := util.ToChars(e.value); !chars.IsBytes() {
+		e.wide = &Text{chars: chars}
+	}
 	return e
 }
 
@@ -127,15 +137,31 @@ type Hit struct {
 	OnKey   bool
 	Spread  bool
 	ValueAt int
+	onValue uint64
 }
+
+func (h Hit) valueTerm(i int) bool { return i < 64 && h.onValue&(1<<i) != 0 }
 
 func (h Hit) KeyPositions(m *Matcher, query string) []int {
 	var out []int
-	for _, t := range Parse(query) {
-		out = append(out, t.keyPositions(m, h.Entry)...)
+	for i, t := range Parse(query) {
+		if !h.valueTerm(i) {
+			out = append(out, t.keyPositions(m, h.Entry)...)
+		}
 	}
 	sort.Ints(out)
 	return out
+}
+
+func (h Hit) ValueMarks(m *Matcher, query, text string, from int) []int {
+	var out []int
+	for i, t := range Parse(query) {
+		if h.valueTerm(i) {
+			out = append(out, t.valueMarks(m, text, from)...)
+		}
+	}
+	sort.Ints(out)
+	return slices.Compact(out)
 }
 
 func (ix *Index) Query(m *Matcher, query string) []Hit {
@@ -148,46 +174,51 @@ func (ix *Index) Query(m *Matcher, query string) []Hit {
 		return nil
 	}
 	var hits []Hit
-	for _, e := range ix.Entries() {
+	for _, e := range ix.flat {
 		if h, ok := match(m, terms, e); ok {
 			hits = append(hits, h)
 		}
 	}
-	sort.SliceStable(hits, func(a, b int) bool {
-		if hits[a].Spread != hits[b].Spread {
-			return !hits[a].Spread
+	slices.SortStableFunc(hits, func(a, b Hit) int {
+		if a.Spread != b.Spread {
+			return boolOrder(!a.Spread, !b.Spread)
 		}
-		if hits[a].OnKey != hits[b].OnKey {
-			return hits[a].OnKey
+		if a.OnKey != b.OnKey {
+			return boolOrder(a.OnKey, b.OnKey)
 		}
-		return hits[a].Score > hits[b].Score
+		return b.Score - a.Score
 	})
 	return hits
 }
 
 func match(m *Matcher, terms []Term, e *Entry) (Hit, bool) {
 	h := Hit{Entry: e, ValueAt: -1}
-	for _, t := range terms {
+	for i, t := range terms {
 		score, onKey, spread := t.matchKey(m, e)
-		at := -1
-		if !onKey {
-			at = t.valueAt(e.value)
+		var v valueHit
+		if !onKey || spread {
+			v = t.matchValue(m, e)
 		}
 		if t.negate {
-			if onKey || at >= 0 {
+			if onKey || v.ok {
 				return Hit{}, false
 			}
 			continue
 		}
 		switch {
+		case v.ok && (!onKey || !v.spread):
+			if i < 64 {
+				h.onValue |= 1 << i
+			}
+			h.Spread = h.Spread || v.spread
+			h.Score += v.score
+			if h.ValueAt < 0 || v.at < h.ValueAt {
+				h.ValueAt = v.at
+			}
 		case onKey:
 			h.OnKey = true
 			h.Spread = h.Spread || spread
 			h.Score += score
-		case at >= 0:
-			if h.ValueAt < 0 {
-				h.ValueAt = at
-			}
 		default:
 			return Hit{}, false
 		}
@@ -212,3 +243,13 @@ func (e *Entry) segment(i int) []byte {
 }
 
 func (e *Entry) segmentRunes(i int) int { return utf8.RuneCountInString(e.Path[:e.start(i)]) }
+
+func boolOrder(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return -1
+	}
+	return 1
+}

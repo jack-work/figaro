@@ -1,9 +1,11 @@
 package fuzzy
 
 import (
-	"github.com/junegunn/fzf/src/util"
+	"bytes"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/junegunn/fzf/src/util"
 )
 
 type termKind uint8
@@ -22,6 +24,7 @@ type Term struct {
 	onValue bool
 	text    string
 	lower   string
+	lowerB  []byte
 	runes   []rune
 }
 
@@ -52,7 +55,8 @@ func Parse(query string) []Term {
 		if f == "" {
 			continue
 		}
-		t.text, t.lower, t.runes = f, strings.ToLower(f), []rune(f)
+		t.text, t.lower = f, strings.ToLower(f)
+		t.lowerB, t.runes = []byte(t.lower), []rune(t.lower)
 		out = append(out, t)
 	}
 	return out
@@ -128,23 +132,91 @@ func (t Term) matchKey(m *Matcher, e *Entry) (score int, ok, spread bool) {
 	return score, ok, false
 }
 
-func (t Term) valueAt(lowerValue string) int {
+type valueHit struct {
+	ok     bool
+	spread bool
+	at     int
+	score  int
+}
+
+func (t Term) matchValue(m *Matcher, e *Entry) valueHit {
 	if !t.onValue {
-		return -1
+		return valueHit{}
 	}
+	if t.kind != termFuzzy {
+		at := t.valueAt(e.value)
+		return valueHit{ok: at >= 0, at: at, score: 16 * len(t.runes)}
+	}
+	text := e.valueText()
+	got, ok := m.ScanLower(&text, t.runes)
+	if !ok {
+		return valueHit{}
+	}
+	at := got.Start
+	if e.wide != nil {
+		at = runeOffset(e.value, at)
+	}
+	return valueHit{ok: true, spread: !bytes.Contains(e.value, t.lowerB), at: at, score: got.Score}
+}
+
+func runeOffset(s []byte, runes int) int {
+	at := 0
+	for ; runes > 0 && at < len(s); runes-- {
+		_, n := utf8.DecodeRune(s[at:])
+		at += n
+	}
+	return at
+}
+
+func (t Term) valueAt(lowerValue []byte) int {
 	switch t.kind {
 	case termPrefix:
-		if strings.HasPrefix(lowerValue, t.lower) {
+		if bytes.HasPrefix(lowerValue, t.lowerB) {
 			return 0
 		}
 		return -1
 	case termSuffix:
-		if strings.HasSuffix(lowerValue, t.lower) {
-			return len(lowerValue) - len(t.lower)
+		if bytes.HasSuffix(lowerValue, t.lowerB) {
+			return len(lowerValue) - len(t.lowerB)
 		}
 		return -1
 	}
-	return strings.Index(lowerValue, t.lower)
+	return bytes.Index(lowerValue, t.lowerB)
+}
+
+func (t Term) valueMarks(m *Matcher, text string, from int) []int {
+	if from < 0 || from > len(text) {
+		return nil
+	}
+	tail := text[from:]
+	if t.kind == termFuzzy {
+		chars := Text{chars: util.ToChars([]byte(tail))}
+		pos := m.Positions(&chars, t.runes)
+		out := make([]int, 0, len(pos))
+		if chars.chars.IsBytes() {
+			for _, p := range pos {
+				out = append(out, from+p)
+			}
+			return out
+		}
+		for _, p := range pos {
+			out = append(out, from+runeOffset([]byte(tail), p))
+		}
+		return out
+	}
+	low := strings.ToLower(tail)
+	var out []int
+	for at := 0; at < len(low); {
+		i := strings.Index(low[at:], t.lower)
+		if i < 0 {
+			break
+		}
+		for k := range len(t.lower) {
+			out = append(out, from+at+i+k)
+		}
+		at += i + len(t.lower)
+	}
+	return out
 }
 
 func (t Term) keyPositions(m *Matcher, e *Entry) []int {
@@ -192,5 +264,3 @@ func (t Term) keyPositions(m *Matcher, e *Entry) []int {
 	}
 	return out
 }
-
-func (t Term) ValueText() (string, bool) { return t.lower, t.onValue && !t.negate }

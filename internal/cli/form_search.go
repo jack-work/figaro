@@ -364,7 +364,7 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 				peeked, inPeek := s.inPeek[c.path]
 				var shown []int
 				if inPeek {
-					shown = s.peekMarks(c)
+					shown = s.peekMarks(c, peeked)
 					marks = append(marks, shown...)
 				}
 				out = append(out, pitRow{textFrom: c, yankFrom: c, id: c.path, marks: marks})
@@ -440,25 +440,7 @@ func searchedRow(n *formNode, h fuzzy.Hit, s *formSearch, width int) (string, []
 	}
 	snippet = strings.Join(strings.Fields(snippet), " ")
 	row := head + snippet
-	low := strings.ToLower(row)
-	for _, t := range fuzzy.Parse(s.query) {
-		term, marked := t.ValueText()
-		if !marked {
-			continue
-		}
-		for i := strings.Index(low[len(head):], term); i >= 0; {
-			at := len(head) + i
-			for k := 0; k < len(term); k++ {
-				marks = append(marks, at+k)
-			}
-			next := strings.Index(low[at+len(term):], term)
-			if next < 0 {
-				break
-			}
-			i = at + len(term) + next - len(head)
-		}
-	}
-	return row, marks
+	return row, append(marks, h.ValueMarks(s.match, s.query, row, len(head))...)
 }
 
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
@@ -622,29 +604,11 @@ func (v *formView) labelLeafOf(h fuzzy.Hit) (string, bool) {
 	return strings.Join(keys[:len(keys)-1], "."), true
 }
 
-func (s *formSearch) peekMarks(n *formNode) []int {
+func (s *formSearch) peekMarks(n *formNode, h fuzzy.Hit) []int {
 	text := n.rowText()
 	_, tail := n.rowDims()
 	if tail <= 0 || tail >= len(text) {
 		return nil
 	}
-	low := strings.ToLower(text)
-	var out []int
-	for _, t := range fuzzy.Parse(s.query) {
-		term, marked := t.ValueText()
-		if !marked {
-			continue
-		}
-		for from := tail; from < len(low); {
-			i := strings.Index(low[from:], term)
-			if i < 0 {
-				break
-			}
-			for k := 0; k < len(term); k++ {
-				out = append(out, from+i+k)
-			}
-			from += i + len(term)
-		}
-	}
-	return out
+	return h.ValueMarks(s.match, s.query, text, tail)
 }
