@@ -75,6 +75,7 @@ type pit struct {
 
 	liveRev   uint64
 	liveWidth int
+	tall      int
 
 	body act
 	live cmdkit.LiveView
@@ -104,6 +105,14 @@ func (d *pit) natural() int {
 	return n
 }
 
+func (d *pit) fit(w int) int {
+	if d.live != nil {
+		d.refreshLive(w)
+	}
+	d.tall = max(d.tall, d.natural())
+	return d.tall
+}
+
 // A live view holds a subscription and a socket.
 func (d *pit) close() {
 	if d.live != nil {
@@ -126,7 +135,7 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	if d.live != nil && d.live != v {
 		d.live.Close()
 	}
-	d.id, d.title, d.live = id, "", v
+	d.id, d.title, d.live, d.tall = id, "", v, 0
 	switch view := v.(type) {
 	case itemView:
 		d.body = newPicker(view.Items(80))
@@ -167,7 +176,7 @@ func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	if d.live != nil {
 		d.live.Close()
 	}
-	d.id, d.title, d.live = id, title, nil
+	d.id, d.title, d.live, d.tall = id, title, nil, 0
 	d.body = newPicker(rows)
 }
 

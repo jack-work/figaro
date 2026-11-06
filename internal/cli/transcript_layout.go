@@ -97,10 +97,13 @@ func (t *transcript) searchedLines(reserve int) []string {
 func (t *transcript) pitHeight() int {
 	t.pit.full = t.fullPit()
 	h := t.pit.visible(t.pitRoom())
-	if t.pit.glance() || (t.showing(pitQueue) && !t.queuedByKey) {
-		h = min(h, t.pit.natural())
+	if t.pit.full {
+		return h
 	}
-	return h
+	if t.inSearch && t.pit.tall > 0 {
+		return min(h, t.pit.tall)
+	}
+	return min(h, t.pit.fit(t.w))
 }
 
 func padTo(s string, n int) string {

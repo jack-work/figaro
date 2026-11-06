@@ -73,10 +73,8 @@ func TestCtrlNAndCtrlPStepAListPitsMatchesWhileSearching(t *testing.T) {
 	}
 }
 
-// The pit sized itself to its rows, so it opened short on a small list and
-// shrank under the reader's eyes as a search narrowed it. It opens at the
-// partial height whatever it holds, and keeps it while the search line is up,
-// the search line a row of its own.
+// A pit is as tall as the rows it opened with, and keeps that height while
+// a search narrows them, the search line a row of its own.
 func TestThePitKeepsItsHeightThroughASearch(t *testing.T) {
 	open := map[string]func(tr *transcript){
 		"list": func(tr *transcript) {
@@ -99,9 +97,9 @@ func TestThePitKeepsItsHeightThroughASearch(t *testing.T) {
 			tr := newTestTranscript(&out)
 			tr.enter()
 			show(tr)
-			want := pickerRows
-			if got := len(tr.drawerLines()); got != want {
-				t.Fatalf("the pit opened %d rows tall, want the partial height %d", got, want)
+			want := len(tr.drawerLines())
+			if want >= pickerRows {
+				t.Fatalf("fixture: the pit opened %d rows tall, want fewer than the partial height %d", want, pickerRows)
 			}
 			tr.key('/')
 			for _, b := range []byte("beta") {
@@ -130,8 +128,7 @@ func TestAGlanceNoteStaysItsOwnHeight(t *testing.T) {
 }
 
 // The queue opens itself when a message is queued; padded to the partial
-// height it took twelve rows of conversation for one line. Asked for with Q,
-// it is a pit like any other.
+// height it took twelve rows of conversation for one line.
 func TestTheUnbiddenQueueKeepsItsOwnHeight(t *testing.T) {
 	tr := queuePager(t, queuedItem{id: 3, text: "one queued prompt"})
 	tr.showQueuedAuto(true)
@@ -140,14 +137,6 @@ func TestTheUnbiddenQueueKeepsItsOwnHeight(t *testing.T) {
 	}
 	if got, want := len(tr.drawerLines()), len(tr.pit.list().rows); got != want {
 		t.Errorf("the unbidden queue drew %d rows, want its own %d", got, want)
-	}
-	tr.closePanels()
-	tr.key('Q')
-	if !tr.queuedByKey {
-		t.Fatal("fixture: Q did not open the queue")
-	}
-	if got := len(tr.drawerLines()); got != pickerRows {
-		t.Errorf("the queue asked for with Q drew %d rows, want the partial height %d", got, pickerRows)
 	}
 }
 
