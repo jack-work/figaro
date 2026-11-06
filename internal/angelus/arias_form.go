@@ -23,14 +23,33 @@ const (
 	ariasIdle = 30 * time.Second
 )
 
+type callerForm struct {
+	form *store.Form
+	hub  *ariaHub
+}
+
 type ariasWatch struct {
 	build sync.Mutex
 	ctx   context.Context
-	form  *store.Form
-	hub   *ariaHub
+	forms map[string]callerForm
 	used  time.Time
 	print uint64
 	built bool
+}
+
+func (w *ariasWatch) followed() bool {
+	for _, f := range w.forms {
+		if len(f.hub.targets()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *ariasWatch) drop() {
+	for _, f := range w.forms {
+		f.hub.drop()
+	}
 }
 
 type ariasForms struct {
@@ -38,6 +57,10 @@ type ariasForms struct {
 	watches map[string]*ariasWatch
 	ticking bool
 }
+
+var callerFormIDs = []string{rpc.AriasFormID, rpc.TopologyFormID}
+
+func isCallerFormID(id string) bool { return slices.Contains(callerFormIDs, id) }
 
 func ariasKey(ctx context.Context) string {
 	sub, _ := authz.SubjectOf(ctx)
@@ -56,14 +79,7 @@ func (h *handlers) ariasWatchFor(ctx context.Context) *ariasWatch {
 	}
 	w, ok := a.watches[key]
 	if !ok {
-		w = &ariasWatch{ctx: context.WithoutCancel(ctx), form: store.NewMemForm()}
-		w.hub = h.newAriasHub(w)
-		w.form.OnCommit(func(c store.Commit) {
-			_ = w.hub.Notify(rpc.MethodFormDelta, rpc.FormDelta{
-				Schema: rpc.FormDeltaSchema, AriaID: rpc.AriasFormID, Version: c.Version,
-				Patch: c.Patch, At: time.Now().UnixMilli(),
-			})
-		})
+		w = newAriasWatch(context.WithoutCancel(ctx))
 		h.rebuildArias(w)
 		a.watches[key] = w
 	}
@@ -75,27 +91,41 @@ func (h *handlers) ariasWatchFor(ctx context.Context) *ariasWatch {
 	return w
 }
 
-func (h *handlers) newAriasHub(w *ariasWatch) *ariaHub {
-	hb := newAriaHub(rpc.AriasFormID)
-	hb.kind = kindFormNode
-	hb.read = func(_ context.Context, _ string, method string, params json.RawMessage) (any, bool, error) {
+func newAriasWatch(ctx context.Context) *ariasWatch {
+	w := &ariasWatch{ctx: ctx, forms: make(map[string]callerForm, len(callerFormIDs))}
+	for _, id := range callerFormIDs {
+		w.forms[id] = newCallerForm(id)
+	}
+	return w
+}
+
+func newCallerForm(id string) callerForm {
+	f := callerForm{form: store.NewMemForm(), hub: newAriaHub(id)}
+	f.form.OnCommit(func(c store.Commit) {
+		_ = f.hub.Notify(rpc.MethodFormDelta, rpc.FormDelta{
+			Schema: rpc.FormDeltaSchema, AriaID: id, Version: c.Version,
+			Patch: c.Patch, At: time.Now().UnixMilli(),
+		})
+	})
+	f.hub.kind = kindFormNode
+	f.hub.read = func(_ context.Context, _ string, method string, params json.RawMessage) (any, bool, error) {
 		if method != rpc.MethodForm {
-			return nil, true, fmt.Errorf("%s is computed for each caller: %s does not apply, read it with %s", rpc.AriasFormID, method, rpc.MethodForm)
+			return nil, true, fmt.Errorf("%s is computed for each caller: %s does not apply, read it with %s", id, method, rpc.MethodForm)
 		}
 		var req rpc.FormRequest
 		if len(params) > 0 {
 			_ = json.Unmarshal(params, &req)
 		}
 		if req.Intrinsic != "" && req.Intrinsic != figaro.IntrinsicState {
-			return nil, true, fmt.Errorf("%s has no intrinsic %q", rpc.AriasFormID, req.Intrinsic)
+			return nil, true, fmt.Errorf("%s has no intrinsic %q", id, req.Intrinsic)
 		}
-		return figaro.FormResponseOf(w.form.Since(req.Since), ""), true, nil
+		return figaro.FormResponseOf(f.form.Since(req.Since), ""), true, nil
 	}
-	hb.access = func(context.Context, string, json.RawMessage) *rpc.FormAccess {
+	f.hub.access = func(context.Context, string, json.RawMessage) *rpc.FormAccess {
 		return &rpc.FormAccess{Mode: rpc.FormReadOnly}
 	}
-	hb.view = formViewOf
-	return hb
+	f.hub.view = formViewOf
+	return f
 }
 
 func (h *handlers) tickArias() {
@@ -115,10 +145,10 @@ func (h *handlers) ariasTick() bool {
 	for key, w := range a.watches {
 		if !h.ariasMayWatch(w) {
 			delete(a.watches, key)
-			w.hub.drop()
+			w.drop()
 			continue
 		}
-		if len(w.hub.targets()) > 0 {
+		if w.followed() {
 			w.used = time.Now()
 			live = append(live, w)
 			continue
@@ -159,10 +189,15 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 		return
 	}
 	w.print, w.built = print, true
-	next := ariasSnapshot(rows, peers)
-	cur, _ := w.form.Snapshot()
-	if patch := next.Diff(cur); !patch.IsIdentity() {
-		_, _, _ = w.form.ApplyEffect(patch, 0)
+	for id, next := range map[string]form.Snapshot{
+		rpc.AriasFormID:    ariasSnapshot(rows, peers),
+		rpc.TopologyFormID: topologySnapshot(rows),
+	} {
+		f := w.forms[id].form
+		cur, _ := f.Snapshot()
+		if patch := next.Diff(cur); !patch.IsIdentity() {
+			_, _, _ = f.ApplyEffect(patch, 0)
+		}
 	}
 }
 
@@ -246,11 +281,8 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 		base := place(r, map[string]bool{}) + "."
 		put(base+"id", r.ID)
 		put(base+"state", r.State)
-		if up := drawnUnder(r); up != r.Parent {
-			put(base+"promoted", true)
-			if from, ok := byID[r.Parent]; ok {
-				put(base+"history_parent", label(from))
-			}
+		if _, ok := byID[r.Parent]; ok {
+			put(base+"parent", r.Parent)
 		}
 		if r.Mantra != "" {
 			put(base+"mantra", r.Mantra)
@@ -271,23 +303,36 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
 }
 
-func (h *handlers) ariasMethod(ctx context.Context, method string, params json.RawMessage) (any, error) {
+func (h *handlers) callerFormMethod(ctx context.Context, id, method string, params json.RawMessage) (any, error) {
 	w := h.ariasWatchFor(ctx)
-	hb := w.hub
+	hb := w.forms[id].hub
 	switch method {
 	case rpc.MethodFollow:
 		if f := followerOf(ctx); f != nil {
 			f.follow(hb)
 		}
-		return rpc.FollowResponse{OK: true, FigaroID: rpc.AriasFormID}, nil
+		return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 	case rpc.MethodForm:
 		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
 			f.follow(hb)
 		}
 		h.rebuildArias(w)
 		return hb.route(ctx, method, params)
+	case rpc.MethodSet:
+		if id == rpc.TopologyFormID {
+			h.rebuildArias(w)
+			res, err := h.arrange(ctx, w.forms[id].form, params)
+			if err != nil {
+				return nil, err
+			}
+			if res.Outcome == rpc.OutcomeApplied {
+				h.rebuildArias(w)
+				res.Version = w.forms[id].form.Read().Version
+			}
+			return res, nil
+		}
 	}
-	return nil, fmt.Errorf("%s is computed for each caller and read-only: %s does not apply", rpc.AriasFormID, method)
+	return nil, fmt.Errorf("%s is computed for each caller and read-only: %s does not apply", id, method)
 }
 
 func drawnUnder(r *rpc.FigaroInfoResponse) string {

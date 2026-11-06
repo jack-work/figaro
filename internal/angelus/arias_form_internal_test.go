@@ -85,7 +85,7 @@ func guestIn(groups ...string) context.Context {
 
 func ariasShows(t *testing.T, h *handlers, ctx context.Context, id string) bool {
 	t.Helper()
-	out, err := h.ariasMethod(ctx, rpc.MethodForm, nil)
+	out, err := h.callerFormMethod(ctx, rpc.AriasFormID, rpc.MethodForm, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestAWatchThatLostItsRoleSendsNothingMore(t *testing.T) {
 	})
 	t.Cleanup(func() { c.Close() })
 
-	if _, err := r.h.ariasMethod(context.WithValue(ctx, followerKey{}, f), rpc.MethodFollow, nil); err != nil {
+	if _, err := r.h.callerFormMethod(context.WithValue(ctx, followerKey{}, f), rpc.AriasFormID, rpc.MethodFollow, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !ariasShows(t, r.h, ctx, r.owned) {

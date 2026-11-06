@@ -3,6 +3,8 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -250,16 +252,18 @@ func TestAriasFollowsThePresentedTopology(t *testing.T) {
 			t.Fatal(err)
 		}
 		at := ariasPaths(t, r)[c]
-		bPath := ariasPaths(t, r)[b]
-		bHandle := bPath[strings.LastIndex(bPath, ".")+1:]
-		if got, _ := snap.Get(at + ".promoted"); string(got) != "true" {
-			t.Errorf("%s.promoted = %s, want true", at, got)
+		if got, _ := snap.Get(at + ".parent"); string(got) != `"`+b+`"` {
+			t.Errorf("%s.parent = %s, want its history parent %s", at, got, b)
 		}
-		if got, _ := snap.Get(at + ".history_parent"); string(got) != `"`+bHandle+`"` {
-			t.Errorf("%s.history_parent = %s, want %q", at, got, bHandle)
+		over, err := readArias(t, r, asOwner(), rpc.TopologyFormID)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if got, ok := snap.Get(ariasPaths(t, r)[a] + ".promoted"); ok {
-			t.Errorf("an aria where its history puts it carries promoted = %s", got)
+		if got := over.Lookup(c); got == nil || *got != presentedUnder(t, r, c) {
+			t.Errorf("@topology %s = %v, want the aria it is drawn under, %s", c, got, presentedUnder(t, r, c))
+		}
+		if got, ok := over.Get(a); ok {
+			t.Errorf("an aria where its history puts it is overridden: %s", got)
 		}
 	})
 	t.Run("promote two levels", func(t *testing.T) {
@@ -311,4 +315,221 @@ func TestAriasFollowsThePresentedTopology(t *testing.T) {
 		moved(t, b, before)
 		matchesPresentation(t, r, all...)
 	})
+}
+
+func setTopology(t *testing.T, r grantRig, ctx context.Context, set map[string]string, unset ...string) error {
+	t.Helper()
+	keys := map[string]json.RawMessage{}
+	for k, v := range set {
+		keys[k], _ = json.Marshal(v)
+	}
+	req := rpc.SetRequest{Patch: form.Build(form.Snapshot{}, keys, unset), Assert: len(unset) > 0}
+	_, err := r.h[rpc.MethodSet](ctx, withAria(t, rpc.TopologyFormID, req))
+	return err
+}
+
+// @topology is the override half of @arias: a key per aria drawn away from
+// its history, valued with the aria it is drawn under. Writing it moves the
+// row; removing a key sends the aria back under its history parent.
+func TestTopologyIsWrittenThroughItsOwnForm(t *testing.T) {
+	r := newRigWith(t, doorPolicy)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	root, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := root.FigaroID
+	b := ariasFork(t, r, a)
+	c := ariasFork(t, r, b)
+	other, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := other.FigaroID
+
+	if err := setTopology(t, r, asOwner(), map[string]string{c: o}); err != nil {
+		t.Fatal(err)
+	}
+	if up := presentedUnder(t, r, c); up != o {
+		t.Fatalf("after the set %s is presented under %q, want %s", c, up, o)
+	}
+	matchesPresentation(t, r, a, b, c, o)
+	over, err := readArias(t, r, asOwner(), rpc.TopologyFormID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := over.Lookup(c); got == nil || *got != o {
+		t.Errorf("@topology %s = %v, want %s", c, got, o)
+	}
+
+	if err := setTopology(t, r, asOwner(), map[string]string{c: ""}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(ariasPaths(t, r)[c], "arias.") || strings.Contains(ariasPaths(t, r)[c], ".forks.") {
+		t.Errorf("an aria set to \"\" is drawn at %s, not the top", ariasPaths(t, r)[c])
+	}
+
+	if err := setTopology(t, r, asOwner(), map[string]string{a: b}); err == nil {
+		t.Error("an aria was drawn under its own descendant")
+	}
+	if err := setTopology(t, r, asOwner(), nil, c); err != nil {
+		t.Fatal(err)
+	}
+	if up := presentedUnder(t, r, c); up != b {
+		t.Errorf("after the unset %s is presented under %q, want its history parent %s", c, up, b)
+	}
+	over, _ = readArias(t, r, asOwner(), rpc.TopologyFormID)
+	if got, ok := over.Get(c); ok {
+		t.Errorf("@topology still holds %s = %s after the unset", c, got)
+	}
+	if err := setTopology(t, r, asOwner(), nil, c); err == nil {
+		t.Error("unsetting an aria drawn where its history puts it was not refused")
+	}
+
+	if _, err := r.call(asOwner(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: c, Levels: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if up := presentedUnder(t, r, b); up != c {
+		t.Fatalf("after the promote %s is presented under %q, want %s", b, up, c)
+	}
+	if err := setTopology(t, r, asOwner(), nil, c); err != nil {
+		t.Fatal(err)
+	}
+	if err := setTopology(t, r, asOwner(), map[string]string{c: o}); err != nil {
+		t.Fatal(err)
+	}
+	if up := presentedUnder(t, r, b); up != a {
+		t.Errorf("clearing half a promote left the other half behind: %s followed %s under %q", b, c, up)
+	}
+	if err := setTopology(t, r, asOwner(), nil, c); err != nil {
+		t.Fatal(err)
+	}
+
+	guest := as("user", "guest")
+	theirs, err := r.create(guest, "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setTopology(t, r, guest, map[string]string{c: theirs.FigaroID}); err == nil {
+		t.Error("a guest moved the owner's aria")
+	}
+	if err := setTopology(t, r, guest, map[string]string{theirs.FigaroID: a}); err == nil {
+		t.Error("a guest drew its aria under one it cannot read")
+	}
+	if up := presentedUnder(t, r, c); up != b {
+		t.Errorf("a refused write moved %s under %q", c, up)
+	}
+	view, err := readArias(t, r, guest, rpc.TopologyFormID)
+	if err != nil {
+		t.Fatalf("a guest holding a role cannot read @topology: %v", err)
+	}
+	for k := range view.All() {
+		if k != theirs.FigaroID {
+			t.Errorf("the guest's @topology names %s, an aria it cannot read", k)
+		}
+	}
+}
+
+func lend(verbs string, ids ...string) string {
+	on := make([]string, len(ids))
+	for i, id := range ids {
+		on[i] = `"aria:` + id + `"`
+	}
+	return "{ verbs = [" + verbs + "], on = [" + strings.Join(on, ", ") + "] }"
+}
+
+func lendGuest(t *testing.T, r grantRig, grants ...string) {
+	t.Helper()
+	text := doorPolicy + "\n[roles.lent]\ngrants = [" + strings.Join(grants, ", ") + "]\n\n[[bind]]\nrole = \"lent\"\nprincipals = [\"user:guest\"]\n"
+	if err := os.WriteFile(r.policy, []byte(strings.ReplaceAll(text, "SELF", strconv.Itoa(os.Getuid()))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.a.Policies.Reload(r.policy); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Drawing an aria under P changes how P's subtree is drawn, which is a write
+// to P: read on P is not enough, or a guest lent read could hang an aria of
+// its own, with a mantra of its choosing, among the owner's children.
+func TestArrangingUnderAnAriaNeedsSetOnIt(t *testing.T) {
+	r := newRigWith(t, doorPolicy)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	owners, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest := as("user", "guest")
+	theirs, err := r.create(guest, "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, g := owners.FigaroID, theirs.FigaroID
+
+	lendGuest(t, r, lend(`"read"`, p))
+	err = setTopology(t, r, guest, map[string]string{g: p})
+	if err == nil {
+		t.Fatal("a guest lent only read drew its aria under the owner's")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("the refusal tells a readable aria apart from a missing one: %v", err)
+	}
+	if up := presentedUnder(t, r, g); up == p {
+		t.Error("a refused write moved the guest's aria under the owner's")
+	}
+
+	lendGuest(t, r, lend(`"read", "set"`, p))
+	if err := setTopology(t, r, guest, map[string]string{g: p}); err != nil {
+		t.Fatalf("a guest lent set on the owner's aria cannot draw under it: %v", err)
+	}
+}
+
+// Restoring an aria can put another aria's override on a cycle, and dropping
+// that override is a write to the other aria: a caller who may not set it is
+// refused the whole edit.
+func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotSet(t *testing.T) {
+	r := newRigWith(t, doorPolicy)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	root, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	y, z := root.FigaroID, other.FigaroID
+	x := ariasFork(t, r, y)
+	if err := setTopology(t, r, asOwner(), map[string]string{x: z, y: x}); err != nil {
+		t.Fatal(err)
+	}
+	if presentedUnder(t, r, y) != x || presentedUnder(t, r, x) != z {
+		t.Fatalf("the owner's arrangement did not land: %s under %q, %s under %q", y, presentedUnder(t, r, y), x, presentedUnder(t, r, x))
+	}
+
+	guest := as("user", "guest")
+	lendGuest(t, r, lend(`"read", "set"`, x), lend(`"read"`, z))
+	err = setTopology(t, r, guest, nil, x)
+	if err == nil {
+		t.Error("a guest with set on x only undid the owner's override on y")
+	} else if !strings.Contains(err.Error(), "may not change") {
+		t.Errorf("the restore was refused, but not for the override on y: %v", err)
+	}
+	if presentedUnder(t, r, y) != x || presentedUnder(t, r, x) != z {
+		t.Errorf("a refused restore changed the drawing: %s under %q, %s under %q", y, presentedUnder(t, r, y), x, presentedUnder(t, r, x))
+	}
+
+	lendGuest(t, r, lend(`"read", "set"`, x, y), lend(`"read"`, z))
+	if err := setTopology(t, r, guest, nil, x); err != nil {
+		t.Fatalf("a guest with set on both cannot restore x: %v", err)
+	}
+	if presentedUnder(t, r, x) != y || presentedUnder(t, r, y) == x {
+		t.Errorf("after the restore %s under %q, %s under %q", x, presentedUnder(t, r, x), y, presentedUnder(t, r, y))
+	}
 }

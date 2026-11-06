@@ -124,4 +124,4 @@ func (h *handlers) refreshReapedForm() {
 	}
 }
 
-func isLocalFormID(id string) bool { return isCatalogID(id) || id == rpc.AriasFormID }
+func isLocalFormID(id string) bool { return isCatalogID(id) || isCallerFormID(id) }

@@ -58,9 +58,9 @@ func BenchmarkAriasTick(b *testing.B) {
 		}
 		h := &handlers{angelus: a}
 		ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
-		w := &ariasWatch{ctx: ctx, form: store.NewMemForm()}
+		w := newAriasWatch(ctx)
 		h.rebuildArias(w)
-		snap, _ := w.form.Snapshot()
+		snap, _ := w.forms[rpc.AriasFormID].form.Snapshot()
 		leaves := 0
 		for range snap.All() {
 			leaves++
@@ -91,7 +91,7 @@ func BenchmarkAriasTick(b *testing.B) {
 				runtime.GC()
 				runtime.ReadMemStats(&before)
 				for j := range watches {
-					watches[j] = &ariasWatch{ctx: ctx, form: store.NewMemForm()}
+					watches[j] = newAriasWatch(ctx)
 					h.rebuildArias(watches[j])
 				}
 				runtime.GC()
