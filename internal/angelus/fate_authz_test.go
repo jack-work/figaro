@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
@@ -43,10 +44,10 @@ type fateRig struct {
 
 func newFateRig(t *testing.T) *fateRig {
 	t.Helper()
-	h, hs := resolveHandlers(t)
-	h.angelus.Hubs = newHubs()
-	r := &fateRig{t: t, h: h, hs: hs, target: mintConversation(t, h), guests: mintConversation(t, h), other: mintConversation(t, h)}
-	h.angelus.Policies = authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "owner"}, nil)
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs()}
+	pre := &handlers{angelus: a}
+	r := &fateRig{t: t, target: mintConversation(t, pre), guests: mintConversation(t, pre), other: mintConversation(t, pre)}
+	a.Policies = authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "owner"}, nil)
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.owner]
@@ -62,9 +63,11 @@ principals = ["user:`+guestName+`"]
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.angelus.Policies.Reload(policy); err != nil {
+	if err := a.Policies.Reload(policy); err != nil {
 		t.Fatal(err)
 	}
+	r.hs = NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
+	r.h = r.hs.h
 	r.owner = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
 	r.guest = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: guestName})
 	return r
@@ -77,16 +80,16 @@ func (r *fateRig) call(ctx context.Context, method string, params map[string]any
 	return err
 }
 
-// hidden asserts the guest hears the same for ref as for baseline, an id it
-// may not read that has no fate to tell, and that the answer names no node.
+// hidden asserts the guest hears the same for ref as for baseline, an id that
+// never existed, and that the answer names no node.
 func (r *fateRig) hidden(method string, params func(ref string) map[string]any, ref, baseline string) {
 	r.t.Helper()
 	got := r.call(r.guest, method, params(ref))
 	want := r.call(r.guest, method, params(baseline))
-	if got == nil && want == nil {
-		return
+	if got == nil || want == nil {
+		r.t.Fatalf("%s: guest calls answered %v and %v; both must be refused", method, got, want)
 	}
-	if got == nil || want == nil || strings.ReplaceAll(want.Error(), baseline, ref) != got.Error() {
+	if strings.ReplaceAll(want.Error(), baseline, ref) != got.Error() {
 		r.t.Fatalf("%s: the guest tells the hidden aria from a missing one:\n  hidden:  %v\n  missing: %v", method, got, want)
 	}
 	if strings.Contains(got.Error(), fateNode) || strings.Contains(got.Error(), r.h.nodeID()) {
@@ -130,12 +133,22 @@ func (r *fateRig) dropLocalCopy(id string) {
 	}
 }
 
+// The baseline itself: an aria that exists, with no fate to tell, already
+// answers a guest who cannot read it as one that never existed.
+func TestAnAriaAGuestCannotReadIsNotFound(t *testing.T) {
+	r := newFateRig(t)
+	r.bothVerbs(r.other, neverID)
+	if err := r.call(r.owner, rpc.MethodAttach, attachTo(r.other)); err != nil {
+		t.Fatalf("the owner attaches: %v", err)
+	}
+}
+
 func TestAnAriaMidMoveIsNotFoundToACallerWhoCannotReadIt(t *testing.T) {
 	r := newFateRig(t)
 	if err := r.h.moving.claim([]string{r.target}, fateNode); err != nil {
 		t.Fatal(err)
 	}
-	r.bothVerbs(r.target, r.other)
+	r.bothVerbs(r.target, neverID)
 
 	if err := r.call(r.owner, rpc.MethodAttach, attachTo(r.target)); err == nil || !strings.Contains(err.Error(), "moving to node "+fateNode) {
 		t.Fatalf("the owner must still hear the move: %v", err)
@@ -175,7 +188,7 @@ func TestASecondaryIDMidMoveIsHiddenToo(t *testing.T) {
 		t.Fatal(err)
 	}
 	study := func(ref string) map[string]any { return map[string]any{"figaro_id": r.guests, "form_id": ref} }
-	r.hidden(rpc.MethodStudy, study, r.target, r.other)
+	r.hidden(rpc.MethodStudy, study, r.target, neverID)
 }
 
 type fateMembers struct{}

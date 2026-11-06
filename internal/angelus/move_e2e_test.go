@@ -354,3 +354,32 @@ func TestAnAbortTheNewHomeMissedIsDeliveredLater(t *testing.T) {
 	require.NoError(t, setMantra(t, a, "probe", id, `"home"`))
 	require.Equal(t, `"home"`, mantraOf(t, a, id))
 }
+
+// A caller at the old home who may not read a moved aria may still be routed
+// to its new home, which then refuses it. What the caller sees must be what it
+// sees for an id no node ever had, whether or not the old home already knew
+// where the aria went.
+func TestAMovedAriaHidesItsHome(t *testing.T) {
+	a, b := newFedPair(t)
+	id := a.mint()
+	ctx := callCtx(t)
+	_, err := a.as("probe").Move(ctx, id, b.id)
+	require.NoError(t, err)
+
+	never := "0123456789abcdef0123456789abcdef"
+	set := func(ref string) error {
+		_, err := a.ariaAs("stranger", ref, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"peek"`}), 0)
+		return err
+	}
+	cold, missing := set(id), set(never)
+	require.Error(t, cold)
+	require.Error(t, missing)
+	require.Equal(t, strings.ReplaceAll(missing.Error(), never, id), cold.Error(), "the stranger told a moved aria from a missing one")
+
+	require.NoError(t, setMantra(t, a, "probe", id, `"warm"`), "the owner's call teaches the old home the new one")
+	warm := set(id)
+	require.Error(t, warm)
+	require.Equal(t, strings.ReplaceAll(missing.Error(), never, id), warm.Error(), "forwarding to the new home changed what the stranger hears")
+	require.NotContains(t, warm.Error(), b.id)
+	require.Contains(t, mantraOf(t, b, id), "warm")
+}
