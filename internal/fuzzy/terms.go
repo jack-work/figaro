@@ -264,3 +264,25 @@ func (t Term) keyPositions(m *Matcher, e *Entry) []int {
 	}
 	return out
 }
+
+func narrows(prev, next []Term) bool {
+	if len(next) < len(prev) {
+		return false
+	}
+	for i, p := range prev {
+		n := next[i]
+		if p.kind != n.kind || p.negate != n.negate || p.onKey != n.onKey || p.onValue != n.onValue {
+			return false
+		}
+		if p.negate || p.kind == termSuffix {
+			if n.lower != p.lower {
+				return false
+			}
+			continue
+		}
+		if !strings.HasPrefix(n.lower, p.lower) || p.kind == termFuzzy && p.spans() != n.spans() {
+			return false
+		}
+	}
+	return true
+}

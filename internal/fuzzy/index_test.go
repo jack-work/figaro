@@ -388,3 +388,23 @@ func TestValueMarksAreTheMatchedLetters(t *testing.T) {
 		}
 	}
 }
+
+// Typing narrows: a query that extends the last one searches only the last
+// one's hits. Whatever the order of keystrokes, the hits are the ones a fresh
+// index finds for the same query.
+func TestTypingFindsWhatAFreshQueryFinds(t *testing.T) {
+	snap := benchForm(1500)
+	m := NewMatcher()
+	var typed Index
+	typed.Update(snap)
+	for _, q := range []string{"sys.tools", "credo deep", "!aria", "!ar sys", "odel$", "^sys", "'cache mark", "k:sys v:rou", "keepalive", "sysmo"} {
+		for k := 1; k <= len(q); k++ {
+			var fresh Index
+			fresh.Update(snap)
+			want := strings.Join(paths(fresh.Query(m, q[:k])), ",")
+			if got := strings.Join(paths(typed.Query(m, q[:k])), ","); got != want {
+				t.Fatalf("typed %q: got %d hits, a fresh index finds %d", q[:k], strings.Count(got, ",")+1, strings.Count(want, ",")+1)
+			}
+		}
+	}
+}

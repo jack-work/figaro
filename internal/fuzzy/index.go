@@ -56,10 +56,12 @@ func (n *node) collect(out []*Entry) []*Entry {
 }
 
 type Index struct {
-	root    *node
-	flat    []*Entry
-	Reused  int
-	Rebuilt int
+	root      *node
+	flat      []*Entry
+	Reused    int
+	Rebuilt   int
+	lastTerms []Term
+	lastPool  []*Entry
 }
 
 func (ix *Index) Update(snap form.Snapshot) {
@@ -67,6 +69,7 @@ func (ix *Index) Update(snap form.Snapshot) {
 	root := ix.build(snap.RootNode(), ix.root, "", nil)
 	if root != ix.root || ix.flat == nil {
 		ix.flat = root.collect(ix.flat[:0])
+		ix.lastTerms, ix.lastPool = nil, nil
 	}
 	ix.root = root
 }
@@ -171,14 +174,22 @@ func (ix *Index) Query(m *Matcher, query string) []Hit {
 		positive = positive || !t.negate
 	}
 	if !positive {
+		ix.lastTerms, ix.lastPool = nil, nil
 		return nil
 	}
+	pool := ix.flat
+	if ix.lastTerms != nil && narrows(ix.lastTerms, terms) {
+		pool = ix.lastPool
+	}
 	var hits []Hit
-	for _, e := range ix.flat {
+	var kept []*Entry
+	for _, e := range pool {
 		if h, ok := match(m, terms, e); ok {
 			hits = append(hits, h)
+			kept = append(kept, e)
 		}
 	}
+	ix.lastTerms, ix.lastPool = terms, kept
 	slices.SortStableFunc(hits, func(a, b Hit) int {
 		if a.Spread != b.Spread {
 			return boolOrder(!a.Spread, !b.Spread)
