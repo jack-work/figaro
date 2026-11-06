@@ -9,10 +9,6 @@ const wokeByRestart = "restart"
 
 func (hs *Handlers) Redeliver(ctx context.Context) {
 	h := hs.h
-	if err := h.angelus.Spool.Prepare(); err != nil {
-		slog.Error("redeliver: prepare the spool", "err", err)
-		return
-	}
 	ids, err := h.angelus.Spool.Arias()
 	if err != nil {
 		slog.Error("redeliver: list the spool", "err", err)

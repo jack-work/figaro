@@ -357,6 +357,9 @@ func Run() {
 	})
 	a.Build = boot.BuildRevision()
 	a.Release = boot.BuildRelease()
+	if err := a.Spool.Prepare(); err != nil {
+		slog.Error("spool: queued prompts from before this start may not be redelivered", "err", err)
+	}
 	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
