@@ -27,6 +27,8 @@ type Registry struct {
 	retiring map[string]bool
 
 	draining atomic.Bool
+
+	bindingsChanged chan struct{}
 }
 
 func NewRegistry() *Registry {
@@ -37,7 +39,29 @@ func NewRegistry() *Registry {
 		figaroPIDs:  make(map[string]map[int]struct{}),
 		killing:     make(map[string]bool),
 		retiring:    make(map[string]bool),
+
+		bindingsChanged: make(chan struct{}, 1),
 	}
+}
+
+func (r *Registry) BindingsChanged() <-chan struct{} {
+	return r.bindingsChanged
+}
+
+func (r *Registry) markBindingsChanged() {
+	select {
+	case r.bindingsChanged <- struct{}{}:
+	default:
+	}
+}
+
+func (r *Registry) PersistableBindings() (map[string][]int, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.draining.Load() {
+		return nil, false
+	}
+	return r.boundPIDsByFigaroLocked(), true
 }
 
 // Register must not touch figaroPIDs: Bind is that map's only writer.
@@ -77,6 +101,7 @@ func (r *Registry) Kill(id string) error {
 	f.Kill()
 
 	r.mu.Lock()
+	unbound := len(r.figaroPIDs[id]) > 0
 	for pid := range r.figaroPIDs[id] {
 		delete(r.pidToFigaro, pid)
 		delete(r.pidToLT, pid)
@@ -85,6 +110,9 @@ func (r *Registry) Kill(id string) error {
 	delete(r.figaros, id)
 	delete(r.killing, id)
 	r.mu.Unlock()
+	if unbound {
+		r.markBindingsChanged()
+	}
 	return nil
 }
 
@@ -149,6 +177,7 @@ func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
 		r.figaroPIDs[figaroID] = map[int]struct{}{}
 	}
 	r.figaroPIDs[figaroID][pid] = struct{}{}
+	r.markBindingsChanged()
 	return nil
 }
 
@@ -180,6 +209,7 @@ func (r *Registry) unbindLocked(pid int) {
 	if pids, exists := r.figaroPIDs[id]; exists {
 		delete(pids, pid)
 	}
+	r.markBindingsChanged()
 }
 
 func (r *Registry) BoundPIDs(figaroID string) []int {
@@ -215,6 +245,10 @@ func (r *Registry) List() []figaro.FigaroInfo {
 func (r *Registry) BoundPIDsByFigaro() map[string][]int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.boundPIDsByFigaroLocked()
+}
+
+func (r *Registry) boundPIDsByFigaroLocked() map[string][]int {
 	out := make(map[string][]int, len(r.figaroPIDs))
 	for id, pids := range r.figaroPIDs {
 		bound := make([]int, 0, len(pids))

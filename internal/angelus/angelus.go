@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -136,7 +137,7 @@ func uiBudget(settings *config.Loaded) *fwtree.Budget {
 }
 
 func (a *Angelus) BindingsPath() string {
-	return filepath.Join(a.RuntimeDir, "bindings.json")
+	return boot.BindingsPath(a.RuntimeDir)
 }
 
 // Run blocks until ctx is cancelled.

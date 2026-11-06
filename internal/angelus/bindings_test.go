@@ -1,10 +1,13 @@
 package angelus_test
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +46,7 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 	assert.Equal(t, "aria-two", id)
 
 	_, err = os.Stat(path)
-	assert.True(t, os.IsNotExist(err), "bindings file should be removed after restore")
+	assert.NoError(t, err, "a crash right after a restore must find the bindings again")
 }
 
 func TestSaveAndRestoreBindings_DormantAria(t *testing.T) {
@@ -116,9 +119,6 @@ func TestRestoreBindings_SkipsDeadPID(t *testing.T) {
 
 	_, f, _ := r.Resolve(deadPID)
 	assert.Nil(t, f, "dead pid should not be rebound")
-
-	_, err := os.Stat(path)
-	assert.True(t, os.IsNotExist(err))
 }
 
 func TestRestoreBindings_MissingFile(t *testing.T) {
@@ -127,4 +127,98 @@ func TestRestoreBindings_MissingFile(t *testing.T) {
 
 	r := angelus.NewRegistry()
 	angelus.RestoreBindings(r, path, nil)
+}
+
+func persistedIDs(t *testing.T, path string) map[int]string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var file struct {
+		Bindings []struct {
+			PID      int    `json:"pid"`
+			FigaroID string `json:"figaro_id"`
+		} `json:"bindings"`
+	}
+	require.NoError(t, json.Unmarshal(data, &file))
+	out := map[int]string{}
+	for _, b := range file.Bindings {
+		out[b.PID] = b.FigaroID
+	}
+	return out
+}
+
+func waitPersisted(t *testing.T, path string, want map[int]string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := persistedIDs(t, path)
+		if fmt.Sprint(got) == fmt.Sprint(want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("bindings on disk = %v, want %v", got, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A daemon that dies without running any shutdown code (SIGKILL, a panic,
+// the OOM killer) leaves only what is already on disk: every bind, unbind and
+// kill must reach the file while the daemon is still up.
+func TestPersistBindings_EveryChangeReachesDiskWithoutAShutdown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bindings.json")
+	r := angelus.NewRegistry()
+	require.NoError(t, r.Register(newMock("kept")))
+	require.NoError(t, r.Register(newMock("killed")))
+	go angelus.PersistBindings(r, path)
+
+	self, parent := os.Getpid(), os.Getppid()
+	require.NoError(t, r.Bind(self, "kept", 0))
+	require.NoError(t, r.Bind(parent, "killed", 0))
+	waitPersisted(t, path, map[int]string{self: "kept", parent: "killed"})
+
+	require.NoError(t, r.Kill("killed"))
+	waitPersisted(t, path, map[int]string{self: "kept"})
+
+	r.Unbind(self)
+	waitPersisted(t, path, map[int]string{})
+
+	require.NoError(t, r.Bind(self, "kept", 0))
+	waitPersisted(t, path, map[int]string{self: "kept"})
+
+	r2 := angelus.NewRegistry()
+	angelus.RestoreBindings(r2, path, nil)
+	id, _, _ := r2.Resolve(self)
+	assert.Equal(t, "kept", id, "the next daemon did not find the binding the dead one held")
+}
+
+// The drain kills every resident aria, and Kill drops its pids: the file must
+// keep what the shells held before the drain began.
+func TestPersistBindings_TheDrainDoesNotEmptyTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bindings.json")
+	r := angelus.NewRegistry()
+	require.NoError(t, r.Register(newMock("resident")))
+	go angelus.PersistBindings(r, path)
+
+	self := os.Getpid()
+	require.NoError(t, r.Bind(self, "resident", 0))
+	waitPersisted(t, path, map[int]string{self: "resident"})
+
+	r.SetDraining()
+	require.NoError(t, r.Kill("resident"))
+	time.Sleep(200 * time.Millisecond)
+	assert.Equal(t, map[int]string{self: "resident"}, persistedIDs(t, path),
+		"the drain's kills reached the bindings file")
+}
+
+func TestSaveBindings_RefusedWhileDraining(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bindings.json")
+	r := angelus.NewRegistry()
+	require.NoError(t, r.Bind(os.Getpid(), "aria", 0))
+	r.SetDraining()
+	assert.Error(t, angelus.SaveBindings(r, path))
+	_, err := os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "a save during the drain wrote a file")
 }

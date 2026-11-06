@@ -167,6 +167,8 @@ func CacheDir() string {
 // degrades if a caller drifts.
 func AriaRoot() string { return filepath.Join(StateDir(), "arias") }
 
+func BindingsPath(runtimeDir string) string { return filepath.Join(runtimeDir, "bindings.json") }
+
 func AngelusRuntimeDir() string {
 	// FIGARO_RUNTIME_DIR is used as-is, with no "figaro" suffix.
 	if d := os.Getenv("FIGARO_RUNTIME_DIR"); d != "" {

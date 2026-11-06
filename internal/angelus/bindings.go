@@ -3,12 +3,14 @@ package angelus
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 )
 
 // StartTime detects PID reuse.
@@ -27,13 +29,22 @@ type bindingsFile struct {
 // the session leader. A mismatch is skipped, not translated.
 const bindingsVersion = 2
 
+var bindingsWrite sync.Mutex
+
+var errDraining = errors.New("draining: the pid index is being emptied")
+
 // SaveBindings writes atomically, sorted so identical state writes identical bytes.
 func SaveBindings(r *Registry, path string) error {
 	if r == nil {
 		return fmt.Errorf("nil registry")
 	}
 
-	byFigaro := r.BoundPIDsByFigaro()
+	bindingsWrite.Lock()
+	defer bindingsWrite.Unlock()
+	byFigaro, ok := r.PersistableBindings()
+	if !ok {
+		return errDraining
+	}
 	ids := make([]string, 0, len(byFigaro))
 	for id := range byFigaro {
 		ids = append(ids, id)
@@ -76,7 +87,6 @@ func SaveBindings(r *Registry, path string) error {
 // AriaRestorer opens an aria's endpoint; a rebind must not wake anything.
 type AriaRestorer func(ariaID string) error
 
-// RestoreBindings rebinds surviving PIDs and removes the file; errors are logged and skipped.
 func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	if r == nil {
 		return
@@ -88,8 +98,6 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 		}
 		return
 	}
-
-	defer os.Remove(path)
 
 	var file bindingsFile
 	if err := json.Unmarshal(data, &file); err != nil {
@@ -129,6 +137,21 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	}
 	if restored > 0 || skipped > 0 {
 		slog.Info("bindings restored", "restored", restored, "skipped", skipped)
+	}
+}
+
+func PersistBindings(r *Registry, path string) {
+	write := func() {
+		if err := SaveBindings(r, path); err != nil && !errors.Is(err, errDraining) {
+			slog.Warn("bindings save", "path", path, "err", err)
+		}
+	}
+	write()
+	for range r.BindingsChanged() {
+		if r.IsDraining() {
+			return
+		}
+		write()
 	}
 }
 
