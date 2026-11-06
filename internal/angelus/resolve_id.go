@@ -24,37 +24,43 @@ var secondaryIDKeys = []string{"form_id", "role_id", "against", "prefer"}
 
 func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		params, node, err := h.placeParams(ctx, method, params)
+		params, node, ref, err := h.placeParams(ctx, method, params)
 		if err != nil {
 			return nil, err
 		}
-		if node != "" {
-			return h.forward(ctx, node, method, params)
+		if node == "" {
+			return next(ctx, params)
 		}
-		return next(ctx, params)
+		res, err := h.forward(ctx, node, method, params)
+		var answered *jkrpc.Error
+		if err != nil && !errors.As(err, &answered) && !h.mayLearnFate(ctx, method, rpc.AriaOf(params)) {
+			return nil, authz.NotFound(method, ref)
+		}
+		return res, err
 	}
 }
 
-func (h *handlers) placeParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, string, error) {
-	if ref := rpc.AriaOf(params); ref != "" {
-		id, node, err := h.placeID(ctx, ref, h.routes(ctx, method))
+func (h *handlers) placeParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, string, string, error) {
+	ref := rpc.AriaOf(params)
+	if ref != "" {
+		id, node, err := h.placeID(ctx, method, ref, h.routes(ctx, method))
 		if errors.Is(err, peer.ErrNoOwner) {
-			return nil, "", authz.NotFound(method, ref)
+			return nil, "", ref, authz.NotFound(method, ref)
 		}
 		if err != nil {
-			return nil, "", err
+			return nil, "", ref, err
 		}
 		if id != ref {
 			if params, err = rpc.WithAria(params, id); err != nil {
-				return nil, "", err
+				return nil, "", ref, err
 			}
 		}
 		if node != "" {
-			return params, node, nil
+			return params, node, ref, nil
 		}
 	}
 	params, err := h.canonicalParams(ctx, params)
-	return params, "", err
+	return params, "", ref, err
 }
 
 func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
@@ -96,26 +102,34 @@ func mayCarrySecondaryID(params json.RawMessage) bool {
 }
 
 func (h *handlers) canonicalID(ctx context.Context, ref string) (string, error) {
-	id, _, err := h.placeID(ctx, ref, false)
+	id, _, err := h.placeID(ctx, "", ref, false)
 	return id, err
 }
 
-func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string, string, error) {
+func (h *handlers) mayLearnFate(ctx context.Context, method, id string) bool {
+	if h.allowed(ctx, rpc.VerbRead, authz.Aria(id)) == nil {
+		return true
+	}
+	verb, ok := rpc.VerbOf(method)
+	return ok && verb != rpc.VerbNone && verb != rpc.VerbRead && h.allowed(ctx, verb, authz.Aria(id)) == nil
+}
+
+func (h *handlers) placeID(ctx context.Context, method, ref string, route bool) (string, string, error) {
 	node, id := rpc.SplitNode(ref)
 	if node != "" && !h.isSelf(node) {
-		return h.elsewhere(ctx, ref, node, id, route)
+		return h.elsewhere(ctx, method, ref, node, id, route)
 	}
-	if err := h.holdsMove(id); err != nil {
+	if err := h.holdsMove(id); err != nil && h.mayLearnFate(ctx, method, id) {
 		return "", "", err
 	}
 	if h.knownID(id) {
 		return id, "", nil
 	}
-	if t, ok := h.tombstone(id); ok {
-		return h.towardsMoved(ctx, t, route)
+	if t, ok := h.tombstone(id); ok && h.mayLearnFate(ctx, method, id) {
+		return h.towardsMoved(ctx, method, t, route)
 	}
 	if w, ok := handle.Parse(id); ok && h.angelus.Backend != nil {
-		return h.placeWords(ctx, id, w, route)
+		return h.placeWords(ctx, method, id, w, route)
 	}
 	if handle.IsPrefix(id) && !rpc.IsHexID(id) && h.angelus.Backend != nil {
 		return h.placeWordPrefix(ctx, id)
@@ -127,7 +141,7 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	switch len(matches) {
 	case 0:
 		if t, ok := h.tombstoneByPrefix(ctx, id); ok {
-			return h.towardsMoved(ctx, t, route)
+			return h.towardsMoved(ctx, method, t, route)
 		}
 		if handle.IsPrefix(id) {
 			if w, node, err := h.placeWordPrefix(ctx, id); err != nil || w != id {
@@ -135,7 +149,7 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 			}
 		}
 		if route {
-			return h.locate(ctx, id)
+			return h.locate(ctx, method, id)
 		}
 		return id, "", nil
 	case 1:
@@ -148,7 +162,7 @@ func (h *handlers) placeID(ctx context.Context, ref string, route bool) (string,
 	return "", "", fmt.Errorf("%s is ambiguous: %s%s", id, strings.Join(matches, ", "), more)
 }
 
-func (h *handlers) placeWords(ctx context.Context, ref string, w handle.Ref, route bool) (string, string, error) {
+func (h *handlers) placeWords(ctx context.Context, method, ref string, w handle.Ref, route bool) (string, string, error) {
 	var matches []string
 	for _, id := range h.matchReadable(ctx, w.HexPrefix()) {
 		if w.Matches(id) {
@@ -158,7 +172,7 @@ func (h *handlers) placeWords(ctx context.Context, ref string, w handle.Ref, rou
 	switch len(matches) {
 	case 0:
 		if route && w.N == handle.MinWords {
-			return h.locate(ctx, w.HexPrefix())
+			return h.locate(ctx, method, w.HexPrefix())
 		}
 		return ref, "", nil
 	case 1:

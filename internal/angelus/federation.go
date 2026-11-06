@@ -87,12 +87,15 @@ func (h *handlers) peerNamed(node string) (string, bool) {
 	return found[0], true
 }
 
-func (h *handlers) elsewhere(ctx context.Context, ref, node, id string, route bool) (string, string, error) {
+func (h *handlers) elsewhere(ctx context.Context, method, ref, node, id string, route bool) (string, string, error) {
 	own := h.nodeID()
+	full, ok := h.peerNamed(node)
+	if (!ok || !route || forwarded(ctx)) && !h.mayLearnFate(ctx, method, id) {
+		return "", "", fmt.Errorf("%s: %w", ref, peer.ErrNoOwner)
+	}
 	if forwarded(ctx) {
 		return "", "", fmt.Errorf("%s is on node %s, and this is node %s: a forwarded request is served here or refused", ref, node, own)
 	}
-	full, ok := h.peerNamed(node)
 	if !ok {
 		return "", "", fmt.Errorf("%s is on node %s, and this is node %s, which does not peer with it", ref, node, own)
 	}
@@ -102,14 +105,17 @@ func (h *handlers) elsewhere(ctx context.Context, ref, node, id string, route bo
 	return id, full, nil
 }
 
-func (h *handlers) locate(ctx context.Context, id string) (string, string, error) {
+func (h *handlers) locate(ctx context.Context, method, id string) (string, string, error) {
 	if _, ok := authz.BearerOf(ctx); !ok {
-		if node, known := h.fed.dir.Owner(id); known {
+		if node, known := h.fed.dir.Owner(id); known && h.mayLearnFate(ctx, method, id) {
 			return "", "", h.needsBearer(id, node)
 		}
 		return id, "", nil
 	}
 	node, full, err := h.fed.dir.Locate(ctx, id)
+	if err != nil && !errors.Is(err, peer.ErrNoOwner) && !h.mayLearnFate(ctx, method, id) {
+		return "", "", fmt.Errorf("%s: %w", id, peer.ErrNoOwner)
+	}
 	if err != nil {
 		return "", "", err
 	}

@@ -441,3 +441,29 @@ func TestFederationNamesAKnownOwnerThatDied(t *testing.T) {
 	_, err = a.ariaAs("probe", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"lost"`}), 0)
 	require.ErrorContains(t, err, "node "+b.id+" is unreachable")
 }
+
+// A dead owner is named to a caller who may read its aria, and to nobody else:
+// a stranger whose entry node already knew where the aria lived hears what it
+// hears for an id no node ever had, not which node went down.
+func TestADeadOwnerIsNamedOnlyToACallerWhoMayReadItsAria(t *testing.T) {
+	a, b := newFedPair(t)
+	id := b.mint()
+	ctx := callCtx(t)
+
+	_, err := a.as("probe").List(ctx)
+	require.NoError(t, err)
+	b.doorLn.Close()
+
+	never := "0123456789abcdef0123456789abcdef"
+	set := func(client, ref string) error {
+		_, err := a.ariaAs(client, ref, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"lost"`}), 0)
+		return err
+	}
+	warm, cold := set("stranger", id), set("stranger", never)
+	require.Error(t, warm)
+	require.Error(t, cold)
+	require.Equal(t, strings.ReplaceAll(cold.Error(), never, id), warm.Error(), "the stranger told a dead owner from no owner")
+	require.NotContains(t, warm.Error(), b.id)
+
+	require.ErrorContains(t, set("probe", id), "node "+b.id+" is unreachable", "the owner must still hear which node is down")
+}

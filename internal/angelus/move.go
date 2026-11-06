@@ -606,12 +606,12 @@ func (h *handlers) tombstoneByPrefix(ctx context.Context, prefix string) (store.
 	return found[0], true
 }
 
-func (h *handlers) towardsMoved(ctx context.Context, t store.Tombstone, route bool) (string, string, error) {
+func (h *handlers) towardsMoved(ctx context.Context, method string, t store.Tombstone, route bool) (string, string, error) {
+	if !h.mayLearnFate(ctx, method, t.ID) {
+		return "", "", fmt.Errorf("%s: %w", t.ID, peer.ErrNoOwner)
+	}
 	if t.State != store.MoveFinal {
 		return "", "", errMoving(t.ID, t.To)
-	}
-	if h.allowed(ctx, rpc.VerbRead, authz.Aria(t.ID)) != nil {
-		return "", "", fmt.Errorf("%s: %w", t.ID, peer.ErrNoOwner)
 	}
 	if forwarded(ctx) {
 		data, _ := json.Marshal(rpc.Moved{ID: t.ID, Node: t.To})
