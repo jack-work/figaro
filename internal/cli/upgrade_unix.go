@@ -332,6 +332,9 @@ func runUpgrade(o upgradeOptions) {
 		return
 	}
 	running, up := runningAngelus()
+	if err := boot.SpawnRefusal(os.Getenv); up && err != nil {
+		die("%s", err)
+	}
 	if !up && !o.dryRun {
 		recordSwitchExe(to)
 		fmt.Fprintln(stderrw, "figaro: no angelus is running; the next figaro command starts the new build")

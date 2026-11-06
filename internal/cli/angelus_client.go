@@ -80,6 +80,9 @@ func ensureAngelus() {
 		return
 	}
 
+	if err := boot.SpawnRefusal(os.Getenv); err != nil {
+		die("%s", err)
+	}
 	ensureHush()
 	exe, err := os.Executable()
 	if err != nil {

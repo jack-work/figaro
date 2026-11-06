@@ -309,6 +309,10 @@ func Run() {
 	mark.Init("angelus")
 	mark.Mark("boot.begin")
 	boot.PromptPassphrase = nil
+	if err := boot.MissingConfigDir(os.Getenv); err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	loaded, err := boot.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
