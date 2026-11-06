@@ -351,6 +351,7 @@ func Run() {
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
 		PprofDir:   boot.StateDir(),
+		SpoolDir:   filepath.Join(boot.StateDir(), "spool"),
 		Backend:    backend,
 		Settings:   loaded,
 	})
@@ -441,10 +442,9 @@ func Run() {
 		os.Exit(1)
 	}
 
-	// Rebind shells without restoring their arias; an aria wakes on its next
-	// prompt.
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
 	go angelus.PersistBindings(a.Registry, a.BindingsPath())
+	go handlers.Redeliver(ctx)
 
 	drained := make(chan struct{})
 	go func() {

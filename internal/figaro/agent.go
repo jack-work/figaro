@@ -60,6 +60,7 @@ type event struct {
 	form   *rpc.FormInput
 	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
+	resume   bool
 }
 
 // Config is the constructor input for NewAgent.
@@ -75,6 +76,7 @@ type Config struct {
 	LastActive      time.Time
 	// WokeBy names the RPC method restoring this aria from dormancy; empty for a birth.
 	WokeBy string
+	Spool  *Spool
 
 	// Form is the in-memory view of the form channel, which is the durable truth. Closed by Kill.
 	Form *form.State
@@ -131,7 +133,15 @@ type Agent struct {
 	turnCancel  context.CancelFunc
 	turnRunning atomic.Bool // mirrors turnCancel != nil
 	interrupted bool
+	hungUp      bool
+	suspended   atomic.Bool
 	turnReason  string
+
+	spool      *Spool
+	spoolMu    sync.Mutex
+	spoolArmed bool
+	spoolLast  []byte
+	cut        *cutTurn
 
 	mu   sync.RWMutex
 	subs map[Notifier]struct{}
@@ -209,6 +219,7 @@ func NewAgent(cfg Config) *Agent {
 		lastActive:  lastActive,
 		agentSince:  now,
 		wokeBy:      cfg.WokeBy,
+		spool:       cfg.Spool,
 		cancel:      cancel,
 		done:        make(chan struct{}),
 	}
@@ -221,6 +232,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
+	a.inbox.onPersist = a.persistSpool
 
 	entries := a.figLog.Read()
 	messages := unwrapMessages(entries)
@@ -508,7 +520,9 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 	if req.Text != "" {
 		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}
 	}
-	a.inbox.Send(evt)
+	if !a.inbox.Send(evt) {
+		return ErrStopping
+	}
 	if !a.turnActive() {
 		a.publishRuntime(rpc.RuntimeAccepted, "")
 	}
@@ -553,6 +567,19 @@ func (a *Agent) turnActive() bool {
 // Interrupt aborts the current turn and keeps the queue.
 func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 
+func (a *Agent) Suspend() {
+	a.suspended.Store(true)
+	a.mu.Lock()
+	cancel := a.turnCancel
+	if cancel != nil {
+		a.interrupted = true
+	}
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 // Hangup aborts the current turn and reports what became of the queue.
 func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	resp := rpc.InterruptResponse{OK: true, Epoch: a.inbox.Epoch()}
@@ -580,6 +607,7 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 		return resp
 	}
 	a.interrupted = true
+	a.hungUp = true
 	resp.Stopped = true
 	cancel := a.turnCancel
 	a.mu.Unlock()
@@ -653,7 +681,10 @@ func (a *Agent) Subscribe(n Notifier) func() {
 func (a *Agent) Info() FigaroInfo {
 	a.mu.RLock()
 	state := "idle"
-	if !a.inbox.Quiet() {
+	switch {
+	case a.suspended.Load() && !a.turnRunning.Load():
+		state = StateSuspended
+	case !a.inbox.Quiet():
 		state = "active"
 	}
 	info := FigaroInfo{
@@ -830,6 +861,10 @@ func (a *Agent) act(ctx context.Context) {
 	for {
 		evt, ok := a.inbox.Recv()
 		if !ok {
+			return
+		}
+		if evt.typ == eventUserPrompt && a.suspended.Load() {
+			a.inbox.Prepend([]event{evt})
 			return
 		}
 		switch evt.typ {
@@ -1064,6 +1099,7 @@ func (a *Agent) finishTurn(reason string) {
 			lts = []uint64{a.turnFirstLT, last[0].LT}
 		}
 	}
+	a.settleCut()
 	a.stampSealDeltas()
 	a.ariaSrv.Seal(lts)
 	idle := a.inbox.IsIdle()

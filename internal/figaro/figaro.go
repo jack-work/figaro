@@ -7,7 +7,7 @@ import (
 
 type Figaro interface {
 	ID() string
-	Interrupt()
+	Suspend()
 	Info() FigaroInfo
 	Kill()
 }

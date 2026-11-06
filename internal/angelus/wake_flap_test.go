@@ -20,7 +20,7 @@ type wokenFigaro struct {
 }
 
 func (m *wokenFigaro) ID() string { return m.id }
-func (m *wokenFigaro) Interrupt() {}
+func (m *wokenFigaro) Suspend()   {}
 func (m *wokenFigaro) Kill()      { m.killed++ }
 func (m *wokenFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{

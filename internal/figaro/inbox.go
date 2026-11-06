@@ -27,7 +27,8 @@ type Inbox struct {
 	// departed holds the recently dropped and drained: two different facts.
 	departed []promptRef
 
-	onChange func(InboxSnapshot)
+	onChange  func(InboxSnapshot)
+	onPersist func()
 }
 
 // promptRef remembers an id after its event has left the queue; merged keeps
@@ -42,6 +43,7 @@ type promptRef struct {
 	// turn is the turn a committed message became; zero until the turn opens.
 	turn  uint64
 	state rpc.QueueState
+	evt   *event
 }
 
 // QueueItem is one message as the queue intrinsic publishes it.
@@ -86,12 +88,34 @@ func (b *Inbox) OnChange(fn func(InboxSnapshot)) {
 // its own actor, and holding both would order two unrelated serialization points.
 func (b *Inbox) notify() {
 	b.mu.Lock()
-	fn := b.onChange
+	fn, persist := b.onChange, b.onPersist
 	b.mu.Unlock()
+	if persist != nil {
+		persist()
+	}
 	if fn == nil {
 		return
 	}
 	fn(b.Project())
+}
+
+func (b *Inbox) Unanswered() []event {
+	var out []event
+	b.q.Read(func(pending []event) {
+		b.mu.Lock()
+		for _, r := range b.lifted {
+			if r.evt != nil {
+				out = append(out, *r.evt)
+			}
+		}
+		b.mu.Unlock()
+		for _, e := range pending {
+			if e.typ == eventUserPrompt {
+				out = append(out, e)
+			}
+		}
+	})
+	return out
 }
 
 func (b *Inbox) Project() InboxSnapshot {
@@ -251,7 +275,7 @@ func (b *Inbox) liftLocked(evt event) {
 	}
 	b.lifted = append(b.lifted, promptRef{
 		id: evt.id, merged: evt.merged, text: evt.text, sender: senderOf(evt),
-		at: evt.at, state: rpc.QueueStateCommitting,
+		at: evt.at, state: rpc.QueueStateCommitting, evt: &evt,
 	})
 }
 

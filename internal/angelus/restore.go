@@ -130,6 +130,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		UICache:         h.angelus.UICache,
 		Decider:         h.methodAsker(),
 		DefaultForm:     h.defaultForm,
+		Spool:           h.angelus.Spool,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -140,6 +141,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 
 	agent.OnTeardown(h.bindAgentToHub(ariaID, agent))
 	agent.OnTeardown(func() { box.Close() })
+	agent.Redeliver()
 
 	slog.Info("restored figaro",
 		"id", ariaID, "provider", provName, "model", knobs.Model, "woke_by", wokeBy)

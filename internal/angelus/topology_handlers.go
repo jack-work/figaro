@@ -164,6 +164,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		UICache:         h.angelus.UICache,
 		Decider:         h.methodAsker(),
 		DefaultForm:     h.defaultForm,
+		Spool:           h.angelus.Spool,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -174,6 +175,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	agent.OnTeardown(h.bindAgentToHub(id, agent))
 	agent.OnTeardown(func() { box.Close() })
+	agent.Redeliver()
 
 	slog.Info("created figaro",
 		"id", id, "outfit", outfitName, "provider", provName, "model", knobs.Model)
@@ -712,6 +714,9 @@ func (h *handlers) removeAria(id string, recursive bool, expect []string) error 
 		}
 		for _, n := range append(removed, expect...) {
 			h.angelus.held.release(n)
+			if err := h.angelus.Spool.Remove(n); err != nil {
+				slog.Warn("spool remove", "id", n, "err", err)
+			}
 		}
 	}
 	h.releaseWorkspaces(held)

@@ -34,6 +34,8 @@ type QuaImage struct {
 	Data     string `json:"data"`
 }
 
+const DaemonStopping = "the daemon is stopping"
+
 // FormInput is the client's view of state at send time and the delta it means.
 type FormInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`

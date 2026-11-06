@@ -148,6 +148,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.turnCtx = turnCtx
 	a.turnCancel = cancel
 	a.interrupted = false
+	a.hungUp = false
 	a.mu.Unlock()
 	a.turnRunning.Store(true)
 	a.publishRuntime(rpc.RuntimeCommitting, "")
@@ -167,6 +168,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	a.markCut(a.turnID, prompt.resume)
 	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
 	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)
@@ -780,6 +782,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		out.images = append(out.images, p.images...)
 		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
+		out.resume = out.resume || p.resume
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
 		}

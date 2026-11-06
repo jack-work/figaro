@@ -3,6 +3,7 @@ package angelus
 
 import (
 	"fmt"
+	"github.com/jack-work/figaro/api/rpc"
 	"sync"
 	"sync/atomic"
 
@@ -67,7 +68,7 @@ func (r *Registry) PersistableBindings() (map[string][]int, bool) {
 // Register must not touch figaroPIDs: Bind is that map's only writer.
 func (r *Registry) Register(f figaro.Figaro) error {
 	if r.draining.Load() {
-		return fmt.Errorf("angelus: shutting down, refusing new figaros")
+		return fmt.Errorf("angelus: shutting down (%s), refusing new figaros", rpc.DaemonStopping)
 	}
 
 	r.mu.Lock()

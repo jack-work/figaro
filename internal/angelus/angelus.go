@@ -40,6 +40,7 @@ type Angelus struct {
 	Backend    store.Backend
 	SocketPath string
 	RuntimeDir string
+	Spool      *figaro.Spool
 	StartedAt  time.Time
 	Build      string
 	Release    string
@@ -100,6 +101,7 @@ type Angelus struct {
 type Config struct {
 	RuntimeDir string
 	PprofDir   string
+	SpoolDir   string
 	Backend    store.Backend
 	Settings   *config.Loaded // nil = defaults
 	Models     *modelcat.Catalog
@@ -112,6 +114,7 @@ func New(cfg Config) *Angelus {
 		Backend:    cfg.Backend,
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
+		Spool:      figaro.NewSpool(cfg.SpoolDir),
 		pprofDir:   cfg.PprofDir,
 		StartedAt:  time.Now(),
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
@@ -550,7 +553,7 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	slog.Info("angelus graceful shutdown beginning", "figaros", len(figaros))
 
 	for _, f := range figaros {
-		f.Interrupt()
+		f.Suspend()
 	}
 
 	var wg sync.WaitGroup
@@ -589,7 +592,7 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 func waitForIdle(f figaro.Figaro, grace time.Duration) {
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {
-		if f.Info().State == "idle" {
+		if s := f.Info().State; s == "idle" || s == figaro.StateSuspended {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)

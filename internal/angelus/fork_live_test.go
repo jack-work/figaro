@@ -25,7 +25,7 @@ type liveForkFigaro struct {
 }
 
 func (f *liveForkFigaro) ID() string { return f.id }
-func (f *liveForkFigaro) Interrupt() {}
+func (f *liveForkFigaro) Suspend()   {}
 func (f *liveForkFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{ID: f.id, State: "active", MessageCount: 12, Provider: "provider"}
 }
