@@ -89,7 +89,7 @@ func (t *transcript) searchedLines(reserve int) []string {
 	case t.box == boxComposer:
 		return t.boxLines(reserve)
 	case t.pit.open():
-		return t.pit.lines(t.w, t.pitHeight()-reserve)
+		return t.pit.lines(t.w, min(t.pitHeight(), t.pitRoom()-reserve))
 	}
 	return nil
 }

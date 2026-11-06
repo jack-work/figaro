@@ -75,7 +75,8 @@ func TestCtrlNAndCtrlPStepAListPitsMatchesWhileSearching(t *testing.T) {
 
 // The pit sized itself to its rows, so it opened short on a small list and
 // shrank under the reader's eyes as a search narrowed it. It opens at the
-// partial height whatever it holds, and keeps it while the search line is up.
+// partial height whatever it holds, and keeps it while the search line is up,
+// the search line a row of its own.
 func TestThePitKeepsItsHeightThroughASearch(t *testing.T) {
 	open := map[string]func(tr *transcript){
 		"list": func(tr *transcript) {
@@ -105,8 +106,8 @@ func TestThePitKeepsItsHeightThroughASearch(t *testing.T) {
 			tr.key('/')
 			for _, b := range []byte("beta") {
 				tr.key(b)
-				if got := len(tr.drawerLines()); got != want {
-					t.Fatalf("after %q the drawer is %d rows, want %d", tr.query, got, want)
+				if got := len(tr.drawerLines()); got != want+1 {
+					t.Fatalf("after %q the drawer is %d rows, want the pit's %d and the search line", tr.query, got, want)
 				}
 			}
 			tr.key(0x1b)
