@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 )
 
 func readArias(t *testing.T, r grantRig, ctx context.Context, id string) (form.Snapshot, error) {
@@ -146,4 +147,168 @@ func TestAReadOfAriasIsCurrent(t *testing.T) {
 	if snap, _ := readArias(t, r, asOwner(), rpc.AriasFormID); !strings.Contains(ariaIDsIn(snap), second.FigaroID) {
 		t.Error("a later read does not list an aria made since the first")
 	}
+}
+
+func ariasPaths(t *testing.T, r grantRig) map[string]string {
+	t.Helper()
+	snap, err := readArias(t, r, asOwner(), rpc.AriasFormID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for k, v := range snap.All() {
+		if strings.HasSuffix(k, ".id") {
+			out[strings.Trim(string(v), `"`)] = strings.TrimSuffix(k, ".id")
+		}
+	}
+	return out
+}
+
+func ariasFork(t *testing.T, r grantRig, id string) string {
+	t.Helper()
+	out, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out.(rpc.ForkResponse).Alternative
+}
+
+// matchesPresentation checks every listed aria sits, in @arias, directly
+// under the parent the store presents for it (figaro ls's drawnUnder), or at
+// the top when that parent is not an aria.
+func matchesPresentation(t *testing.T, r grantRig, ids ...string) {
+	t.Helper()
+	paths := ariasPaths(t, r)
+	for _, id := range ids {
+		n, ok := r.backend.Node(id)
+		if !ok {
+			continue
+		}
+		up := n.Present
+		if up == "" {
+			up = n.Parent
+		}
+		got := paths[id]
+		if got == "" {
+			t.Errorf("%s is missing from @arias", id)
+			continue
+		}
+		want, listed := paths[up]
+		if !listed {
+			if strings.Contains(got, ".forks.") {
+				t.Errorf("%s is drawn at %s; the store presents it at the top", id, got)
+			}
+			continue
+		}
+		if i := strings.LastIndex(got, ".forks."); i < 0 || got[:i] != want {
+			t.Errorf("%s is drawn at %s; the store presents it under %s (%s)", id, got, up, want)
+		}
+	}
+}
+
+func presentedUnder(t *testing.T, r grantRig, id string) string {
+	t.Helper()
+	n, _ := r.backend.Node(id)
+	return n.Present
+}
+
+// @arias draws the tree the topology presents, as figaro ls does: a promote,
+// a demote and the rehoming that follows a delete move a row, while the
+// history underneath stays where it was.
+func TestAriasFollowsThePresentedTopology(t *testing.T) {
+	r := newGrantRig(t)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	root, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := root.FigaroID
+	b := ariasFork(t, r, a)
+	c := ariasFork(t, r, b)
+	d := ariasFork(t, r, c)
+	e := ariasFork(t, r, d)
+	all := []string{a, b, c, d, e}
+	matchesPresentation(t, r, all...)
+
+	moved := func(t *testing.T, id, before string) {
+		t.Helper()
+		if presentedUnder(t, r, id) == before {
+			t.Fatalf("the operation left %s where it was: the case tests nothing", id)
+		}
+	}
+	t.Run("promote one level", func(t *testing.T) {
+		before := presentedUnder(t, r, c)
+		if _, err := r.call(asOwner(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: c, Levels: 1}); err != nil {
+			t.Fatal(err)
+		}
+		moved(t, c, before)
+		matchesPresentation(t, r, all...)
+		snap, err := readArias(t, r, asOwner(), rpc.AriasFormID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := ariasPaths(t, r)[c]
+		bPath := ariasPaths(t, r)[b]
+		bHandle := bPath[strings.LastIndex(bPath, ".")+1:]
+		if got, _ := snap.Get(at + ".promoted"); string(got) != "true" {
+			t.Errorf("%s.promoted = %s, want true", at, got)
+		}
+		if got, _ := snap.Get(at + ".history_parent"); string(got) != `"`+bHandle+`"` {
+			t.Errorf("%s.history_parent = %s, want %q", at, got, bHandle)
+		}
+		if got, ok := snap.Get(ariasPaths(t, r)[a] + ".promoted"); ok {
+			t.Errorf("an aria where its history puts it carries promoted = %s", got)
+		}
+	})
+	t.Run("promote two levels", func(t *testing.T) {
+		before := presentedUnder(t, r, e)
+		if _, err := r.call(asOwner(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: e, Levels: 2}); err != nil {
+			t.Fatal(err)
+		}
+		moved(t, e, before)
+		matchesPresentation(t, r, all...)
+	})
+	t.Run("demote under another", func(t *testing.T) {
+		before := presentedUnder(t, r, e)
+		out, err := r.call(asOwner(), rpc.MethodDemote, rpc.DemoteRequest{FigaroID: e})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.(rpc.DemoteResponse).Under == "" {
+			t.Fatal("the demote had nowhere to go")
+		}
+		moved(t, e, before)
+		matchesPresentation(t, r, all...)
+	})
+	t.Run("rehomed when what it was drawn under is deleted", func(t *testing.T) {
+		f := ariasFork(t, r, a)
+		g := ariasFork(t, r, f)
+		if _, err := r.call(asOwner(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: g, Levels: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if up := presentedUnder(t, r, f); up != g {
+			t.Fatalf("after the promote %s is presented under %q, want %s", f, up, g)
+		}
+		if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: g, Now: true, Recursive: true}); err != nil {
+			t.Fatal(err)
+		}
+		paths := ariasPaths(t, r)
+		if _, still := paths[g]; still {
+			t.Fatalf("%s is still listed after kill --now", g)
+		}
+		if _, kept := paths[f]; !kept {
+			t.Fatalf("%s went with %s; nothing was rehomed", f, g)
+		}
+		matchesPresentation(t, r, append(all, f)...)
+	})
+	t.Run("promote to the top", func(t *testing.T) {
+		before := presentedUnder(t, r, b)
+		if _, err := r.call(asOwner(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: b, Levels: 9}); err != nil {
+			t.Fatal(err)
+		}
+		moved(t, b, before)
+		matchesPresentation(t, r, all...)
+	})
 }

@@ -201,6 +201,7 @@ func ariasPrint(rows []rpc.FigaroInfoResponse, peers int) uint64 {
 		putStr(r.ID)
 		putStr(r.Handle)
 		putStr(r.Parent)
+		putStr(r.Present)
 		putStr(r.State)
 		putStr(r.Mantra)
 		putStr(r.Cwd)
@@ -232,8 +233,9 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 	}
 	var place func(r *rpc.FigaroInfoResponse, seen map[string]bool) string
 	place = func(r *rpc.FigaroInfoResponse, seen map[string]bool) string {
-		parent, ok := byID[r.Parent]
-		if r.Parent == "" || !ok || seen[r.ID] {
+		up := drawnUnder(r)
+		parent, ok := byID[up]
+		if up == "" || !ok || seen[r.ID] {
 			return "arias." + label(r)
 		}
 		seen[r.ID] = true
@@ -244,6 +246,12 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 		base := place(r, map[string]bool{}) + "."
 		put(base+"id", r.ID)
 		put(base+"state", r.State)
+		if up := drawnUnder(r); up != r.Parent {
+			put(base+"promoted", true)
+			if from, ok := byID[r.Parent]; ok {
+				put(base+"history_parent", label(from))
+			}
+		}
 		if r.Mantra != "" {
 			put(base+"mantra", r.Mantra)
 		}
@@ -280,4 +288,11 @@ func (h *handlers) ariasMethod(ctx context.Context, method string, params json.R
 		return hb.route(ctx, method, params)
 	}
 	return nil, fmt.Errorf("%s is computed for each caller and read-only: %s does not apply", rpc.AriasFormID, method)
+}
+
+func drawnUnder(r *rpc.FigaroInfoResponse) string {
+	if r.Present != "" {
+		return r.Present
+	}
+	return r.Parent
 }
