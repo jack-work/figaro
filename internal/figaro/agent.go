@@ -135,6 +135,7 @@ type Agent struct {
 	interrupted bool
 	hungUp      bool
 	suspended   atomic.Bool
+	halted      atomic.Bool
 	turnReason  string
 
 	spool      *Spool
@@ -568,8 +569,14 @@ func (a *Agent) turnActive() bool {
 func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 
 func (a *Agent) Halt() bool {
+	a.spoolMu.Lock()
+	a.halted.Store(true)
+	a.cut = nil
+	a.spoolMu.Unlock()
 	a.suspended.Store(true)
-	return a.Hangup(rpc.QueueKeep).Stopped
+	stopped := a.Hangup(rpc.QueueKeep).Stopped
+	a.persistSpool()
+	return stopped
 }
 
 func (a *Agent) Suspend() {

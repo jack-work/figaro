@@ -278,3 +278,52 @@ func TestPrepareSweepsTempFilesAndTightensTheDir(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 }
+
+// stubbornProvider never returns, cancelled or not: a turn that will not die.
+type stubbornProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *stubbornProvider) Name() string        { return "mock" }
+func (p *stubbornProvider) Fingerprint() string { return "mock/v0" }
+func (p *stubbornProvider) SetModel(string)     {}
+func (p *stubbornProvider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (p *stubbornProvider) Send(context.Context, provider.SendInput, provider.Bus) error {
+	close(p.started)
+	<-p.release
+	return context.Canceled
+}
+
+// The brake must be on disk when Halt returns: a turn that ignores its
+// cancellation can outlive every grace and die with the process, and the next
+// start must not resume what the user stopped on purpose.
+func TestAHaltIsDurableBeforeTheTurnItHaltsHasEnded(t *testing.T) {
+	be, id := backedConv(t, t.TempDir())
+	dir := filepath.Join(t.TempDir(), "spool")
+	spool := figaro.NewSpool(dir)
+
+	stubborn := &stubbornProvider{started: make(chan struct{}), release: make(chan struct{})}
+	a1 := spoolAgent(t, be, id, spool, stubborn)
+	t.Cleanup(func() {
+		close(stubborn.release)
+		a1.Kill()
+	})
+	a1.SubmitPrompt(rpc.QuaRequest{Text: "runaway"})
+	<-stubborn.started
+	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"cut"`, "a running turn is marked on disk")
+
+	a1.Halt()
+	require.Equal(t, "active", a1.Info().State, "the turn is still running: the provider ignores the cancel")
+	_, err = os.Stat(filepath.Join(dir, id+".json"))
+	require.True(t, os.IsNotExist(err), "the cut mark outlived the halt")
+
+	next := newSpoolProvider(false)
+	a2 := spoolAgent(t, be, id, spool, next)
+	defer a2.Kill()
+	next.quiet(t, 300*time.Millisecond, "a halted turn was resumed")
+}

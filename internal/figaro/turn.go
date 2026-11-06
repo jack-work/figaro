@@ -114,6 +114,10 @@ func (b *turnBus) PushToolReady(call message.Content) {
 
 // runTurn drives one prompt to completion: provider.Send, tool dispatch, repeat.
 func (a *Agent) runTurn(ctx context.Context, prompt event) {
+	if a.halted.Load() {
+		a.inbox.Prepend([]event{prompt})
+		return
+	}
 	a.mu.Lock()
 	a.lastActive = time.Now()
 	a.mu.Unlock()
@@ -147,8 +151,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.mu.Lock()
 	a.turnCtx = turnCtx
 	a.turnCancel = cancel
-	a.interrupted = false
-	a.hungUp = false
+	a.interrupted = a.halted.Load()
+	a.hungUp = a.interrupted
 	a.mu.Unlock()
 	a.turnRunning.Store(true)
 	a.publishRuntime(rpc.RuntimeCommitting, "")

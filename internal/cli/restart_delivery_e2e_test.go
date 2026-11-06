@@ -405,3 +405,38 @@ func TestStopHupLeavesNoTurnToResume(t *testing.T) {
 	}
 	prov.expectQuiet(t, i+1, 3*time.Second, "a turn hung up by stop --hup was resumed")
 }
+
+// The brake must hold even when the turn it brakes will not die: a tool that
+// ignores its cancellation outlives every grace, the daemon is then SIGKILLed,
+// and the next start still resumes nothing.
+func TestStopHupHoldsWhenATurnWillNotDie(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon and kills it; skipped under -short")
+	}
+	started := filepath.Join(t.TempDir(), "tool-started")
+	prov := newScriptedProvider(t, func(last string) (bool, string) {
+		if strings.Contains(last, "stubborn") {
+			return false, sseBash("toolu_stubborn",
+				fmt.Sprintf("trap '' INT TERM HUP; touch %s; for i in $(seq 75); do sleep 0.2; done", started))
+		}
+		return false, sseText("ack")
+	})
+	rig := newSendRig(t, prov.srv.URL)
+
+	rig.mint(t, "stubborn")
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the tool never started")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	n := prov.count()
+
+	rig.must(t, "stop", "--force", "--hup")
+	rig.start(t)
+	prov.expectQuiet(t, n, 4*time.Second, "a turn stopped with --hup was resumed")
+}

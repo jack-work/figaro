@@ -257,7 +257,9 @@ func (a *Agent) persistSpool() {
 
 func (a *Agent) markCut(turn uint64, resumed bool) {
 	a.spoolMu.Lock()
-	a.cut = &cutTurn{Turn: turn, Resumed: resumed}
+	if !a.halted.Load() {
+		a.cut = &cutTurn{Turn: turn, Resumed: resumed}
+	}
 	a.spoolMu.Unlock()
 }
 
@@ -266,7 +268,7 @@ func (a *Agent) settleCut() {
 	hungUp := a.hungUp
 	a.mu.RUnlock()
 	a.spoolMu.Lock()
-	if a.cut != nil && a.suspended.Load() && !hungUp {
+	if a.cut != nil && a.suspended.Load() && !hungUp && !a.halted.Load() {
 		a.cut.Suspended = true
 	} else {
 		a.cut = nil
