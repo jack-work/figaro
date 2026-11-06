@@ -619,6 +619,51 @@ func (s *XwalStore) Demote(id, prefer string) (string, error) {
 	return under, nil
 }
 
+func (s *XwalStore) Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error {
+	if s.tree == nil {
+		return ErrNoTrunkCapability
+	}
+	isAria := func(id string) bool {
+		node, ok := s.Node(id)
+		return ok && node.Kind == string(kindConversation)
+	}
+	for _, id := range restore {
+		if !isAria(id) {
+			return fmt.Errorf("arrange: no aria %q", id)
+		}
+	}
+	placed := make(map[string]string, len(parents))
+	for id, parent := range parents {
+		if !isAria(id) {
+			return fmt.Errorf("arrange: no aria %q", id)
+		}
+		if parent == "" {
+			parent = s.stumpOf(id)
+		} else if parent == id || !isAria(parent) {
+			return fmt.Errorf("arrange: %q cannot be drawn under %q: not another aria", id, parent)
+		}
+		placed[id] = parent
+	}
+	err := s.tree.Arrange(placed, restore, mayUndo)
+	if errors.Is(err, topo.ErrNoPromote) {
+		return ErrNoTrunkCapability
+	}
+	return err
+}
+
+func (s *XwalStore) stumpOf(id string) string {
+	seen := map[string]bool{}
+	for !seen[id] {
+		seen[id] = true
+		node, ok := s.Node(id)
+		if !ok || node.Kind != string(kindConversation) {
+			return id
+		}
+		id = node.Parent
+	}
+	return ""
+}
+
 func (s *XwalStore) demoteTarget(id, prefer string) string {
 	var kids []NodeView
 	for _, k := range s.tree.Children(id) {

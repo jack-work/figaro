@@ -29,6 +29,7 @@ type Tree interface {
 	Forget(ids ...string) error
 	// Reparent pins an aria under a parent.
 	Reparent(id, parent string) error
+	Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error
 }
 
 type Topology interface {
@@ -53,6 +54,9 @@ func (x topoTree) Edges() map[string]string        { return nil }
 func (x topoTree) Rev() uint64                     { return 0 }
 func (x topoTree) Forget(...string) error          { return nil }
 func (x topoTree) Reparent(string, string) error   { return nil }
+func (x topoTree) Arrange(map[string]string, []string, func(string) error) error {
+	return ErrNoPromote
+}
 
 func (x topoTree) DeleteSet(id string) []string {
 	return DescendantClosure(ChildIndex(x.t, x.t.From), id)

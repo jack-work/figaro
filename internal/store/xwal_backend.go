@@ -582,6 +582,10 @@ func (b *XwalBackend) Promote(ariaID string, levels int) (int, error) {
 	return b.store.Promote(ariaID, levels)
 }
 
+func (b *XwalBackend) Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error {
+	return b.store.Arrange(parents, restore, mayUndo)
+}
+
 func (b *XwalBackend) Demote(ariaID, prefer string) (string, error) {
 	return b.store.Demote(ariaID, prefer)
 }
