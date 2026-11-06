@@ -144,6 +144,12 @@ func (v *formView) openMount(path string, m *viewMount) {
 				change()
 			}
 		}
+		view.clear = func() bool {
+			if clear := v.clear; clear != nil {
+				return clear()
+			}
+			return false
+		}
 		m.view, m.send, m.close = view, send, closeFn
 	}
 	v.items = nil

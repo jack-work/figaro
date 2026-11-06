@@ -540,6 +540,7 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 		view.closeConn = closeView
 		view.repaint = in.renderLocked
 		view.change = func() { pitChange(in.lt.tr) }
+		view.clear = func() bool { return pitClear(in.lt.tr) }
 		view.act = func(a rpc.ViewAction) { pitAct(in, a, in.actOnDaemon) }
 		in.mu.Lock()
 		in.installLivePit(name, view, full)

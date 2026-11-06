@@ -15,7 +15,13 @@ type FormView struct {
 	Through string       `json:"through,omitempty"`
 	Skip    string       `json:"skip,omitempty"`
 	Mark    *ViewMark    `json:"mark,omitempty"`
+	Overlay *ViewOverlay `json:"overlay,omitempty"`
 	Actions []ViewAction `json:"actions,omitempty"`
+}
+
+type ViewOverlay struct {
+	Form string `json:"form"`
+	Key  string `json:"key"`
 }
 
 type ViewMark struct {

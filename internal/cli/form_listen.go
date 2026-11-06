@@ -46,6 +46,10 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 	mirror := &formMirror{}
 	view := &formView{mirror: mirror, out: os.Stdout, open: map[string]bool{},
 		aria: resolvedID, intrinsic: intrinsic}
+	view.openOverlay = func(id string, changed func()) (*formView, func(), <-chan struct{}, error) {
+		octx, ocancel := context.WithCancel(ctx)
+		return openFormViewOn(octx, ocancel, sdk.Addr{Door: ep.Door, ID: id}, id, "", changed, func() {})
+	}
 	kick := newFormKicker(onChange)
 	var rep atomic.Pointer[replica.Replica]
 
@@ -97,7 +101,7 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 		resync := view.resync
 		again.Store(&resync)
 		view.resync()
-		return view, func() { f.Close(); release(); cancel(); kick.close() }, f.Done(), nil
+		return view, func() { view.closeOverlay(); f.Close(); release(); cancel(); kick.close() }, f.Done(), nil
 	}
 
 	failed := make(chan struct{})
@@ -133,6 +137,7 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 		view.noticeUnlessStopped("the form has not loaded yet")
 	}
 	return view, func() {
+		view.closeOverlay()
 		if r.Pending() > 0 {
 			fctx, fcancel := context.WithTimeout(context.Background(), formFlushOnClose)
 			_ = r.Flush(fctx)
@@ -237,6 +242,14 @@ type formView struct {
 	seeded    map[string]bool
 	armed     string
 	search    *formSearch
+	clear     func() bool
+
+	openOverlay  overlayOpener
+	overlay      *formView
+	overlayClose func()
+	overlayOn    bool
+	closing      bool
+	merge        *overlayMerge
 }
 
 type formSource interface {
@@ -353,6 +366,10 @@ func (v *formView) Items(width int) []pitRow {
 	} else {
 		snap = src.Shown()
 	}
+	snap, merge := v.overlaid(snap)
+	if merge != nil && pending > 0 {
+		confirmed = mergeOverlay(merge.view, confirmed, merge.from).snap
+	}
 	var subjectStamp form.Stamp
 	if v.subject != nil {
 		subjectStamp = v.subject().RootNode().Stamp()
@@ -424,9 +441,16 @@ func (v *formView) Items(width int) []pitRow {
 			if shape.marked(n, k) {
 				row.note = "●"
 			}
+			row.note = merge.note(n.path, row.note)
 			row.hint = hint
 			if k.aria != "" {
 				row.yank, row.yankFrom, row.aria = k.aria, nil, k.aria
+			}
+		}
+		if _, head := shape.head(n.path); !head && n.leaf() {
+			row.note = merge.note(n.path, row.note)
+			if h := merge.hint(n.path); h != "" {
+				row.hint = h
 			}
 		}
 		out = append(out, row)

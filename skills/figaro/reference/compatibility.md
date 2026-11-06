@@ -31,6 +31,15 @@ capabilities.
   needs the `set` verb (not `kill`) on every node of the reaped group, and a
   troupe policy that grants `set` grants it. A set refused partway leaves the
   nodes before it restored, and the error names them.
+- **@arias rows dropped `promoted` and `history_parent`** after 0.54.3,
+  which shipped them. A row now carries `parent` (its history parent's id),
+  and `@topology` holds the overrides: one key per aria drawn away from its
+  history, valued with the aria it is drawn under. `@arias`'s view hint
+  names `@topology` as its `overlay`; a pit from before ignores the hint and
+  draws `@arias` with no override marks, and a newer pit against a 0.54.3
+  daemon gets no overlay and draws that daemon's two keys as plain values.
+  Writing `@topology` (a `set` on it)
+  needs `set` on each aria moved and `read` on each aria it is drawn under.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

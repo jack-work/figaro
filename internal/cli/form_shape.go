@@ -188,7 +188,7 @@ func (v *formView) revealMarked() string {
 	if v.view == nil || v.view.Mark == nil {
 		return ""
 	}
-	snap := v.source().Shown()
+	snap, _ := v.overlaid(v.source().Shown())
 	var subject form.Snapshot
 	if v.subject != nil {
 		subject = v.subject()

@@ -144,6 +144,7 @@ func (v *formView) setView(view *rpc.FormView) {
 	v.view = view
 	v.items = nil
 	v.mu.Unlock()
+	v.ensureOverlay()
 }
 
 func (v *formView) present(resp *rpc.FormResponse) {
@@ -154,6 +155,9 @@ func (v *formView) present(resp *rpc.FormResponse) {
 const formChangeMax = 64 << 10
 
 func (v *formView) changeLine(path, subject string) (string, string) {
+	if line, ok := v.overlayLine(path, false); ok {
+		return line, ""
+	}
 	if !v.editable() {
 		return "", errFormReadOnly.Error()
 	}
@@ -206,6 +210,9 @@ func (v *formView) Key(b byte) bool {
 		v.change()
 		return true
 	}
+	if b == 'x' && v.clear != nil && v.clear() {
+		return true
+	}
 	if v.act == nil {
 		return false
 	}
@@ -239,6 +246,9 @@ func (v *formView) actionFor(b byte) (rpc.ViewAction, bool) {
 }
 
 func (v *formView) OwnsKey(b byte) bool {
+	if b == 'x' && v.hasOverlay() {
+		return true
+	}
 	_, ok := v.actionFor(b)
 	return ok
 }
@@ -371,8 +381,14 @@ func pitChange(t *transcript) {
 	if !ok {
 		return
 	}
-	if m, _ := v.split(row.id); m != nil {
-		t.setCommandNoteAt("c: a form loaded from "+m.addr+" is read here, not changed", alertError)
+	if m, inner := v.split(row.id); m != nil {
+		line, ok := m.view.overlayLine(valuePath(inner), false)
+		if !ok {
+			t.setCommandNoteAt("c: a form loaded from "+m.addr+" is read here, not changed", alertError)
+			return
+		}
+		pagerCommandBox(t)
+		t.cmdline.set(line)
 		return
 	}
 	line, note := v.changeLine(valuePath(row.id), t.subjectID())
@@ -384,6 +400,28 @@ func pitChange(t *transcript) {
 	}
 	pagerCommandBox(t)
 	t.cmdline.set(line)
+}
+
+func pitClear(t *transcript) bool {
+	v, ok := t.pit.live.(*formView)
+	if !ok {
+		return false
+	}
+	row, ok := t.pit.selected()
+	if !ok {
+		return false
+	}
+	id := row.id
+	if m, inner := v.split(row.id); m != nil {
+		v, id = m.view, inner
+	}
+	line, ok := v.overlayLine(valuePath(id), true)
+	if !ok {
+		return false
+	}
+	pagerCommandBox(t)
+	t.cmdline.set(line)
+	return true
 }
 
 func shownFormEdit(argv []string, base form.Snapshot) (form.Patch, string, bool) {
