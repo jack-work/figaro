@@ -369,3 +369,39 @@ func TestATurnTheUserHungUpIsNotResumedAfterRestart(t *testing.T) {
 	rig.start(t)
 	prov.expectQuiet(t, n, 3*time.Second, "a turn the user hung up was resumed")
 }
+
+// stop --hup is the brake on a runaway turn: every running turn is hung up
+// before the daemon goes, so the next daemon resumes none of them. What was
+// queued is kept and delivered, as a hup keeps it.
+func TestStopHupLeavesNoTurnToResume(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon and restarts it; skipped under -short")
+	}
+	prov := newScriptedProvider(t, func(last string) (bool, string) {
+		return strings.Contains(last, "runaway"), sseText("ack")
+	})
+	rig := newSendRig(t, prov.srv.URL)
+
+	one := rig.mint(t, "runaway one")
+	rig.mint(t, "runaway two")
+	prov.awaitAsk(t, 0, 30*time.Second, "runaway one")
+	prov.awaitAsk(t, 0, 30*time.Second, "runaway two")
+	rig.must(t, "send", "-f", "--id", one, "--", "queued behind it")
+	deadline := time.Now().Add(15 * time.Second)
+	for rig.queued(t, one) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the prompt was never queued behind the runaway turn")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	n := prov.count()
+
+	rig.must(t, "stop", "--hup")
+	rig.start(t)
+
+	i := prov.awaitAsk(t, n, 20*time.Second, "queued behind it")
+	if strings.Contains(prov.ask(i), figaro.ResumeNotice) {
+		t.Fatalf("a turn hung up by stop --hup was resumed with the queue: %q", prov.ask(i))
+	}
+	prov.expectQuiet(t, i+1, 3*time.Second, "a turn hung up by stop --hup was resumed")
+}

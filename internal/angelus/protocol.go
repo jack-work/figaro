@@ -118,6 +118,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodModelsWant:         h.modelsWant,
 		rpc.MethodModelsRefresh:      h.modelsRefresh,
 		rpc.MethodSaveBindings:       h.saveBindings,
+		rpc.MethodHaltTurns:          h.haltTurns,
 		rpc.MethodIR:                 h.ariaRead,
 		rpc.MethodLineage:            h.lineage,
 		rpc.MethodDecide:             h.decide,

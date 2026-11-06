@@ -102,6 +102,7 @@ const (
 	MethodOutfitReload   = "outfit.reload"
 	MethodConfigure      = "angelus.configure"
 	MethodSaveBindings   = "angelus.save_bindings"
+	MethodHaltTurns      = "angelus.halt_turns"
 	MethodProviderLedger = "angelus.provider_ledger"
 	MethodModelsWant     = "angelus.models.want"
 	MethodModelsPick     = "figaro.models.pick"

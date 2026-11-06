@@ -64,6 +64,7 @@ type ttlMockFigaro struct{ id string }
 
 func (m *ttlMockFigaro) ID() string { return m.id }
 func (m *ttlMockFigaro) Suspend()   {}
+func (m *ttlMockFigaro) Halt() bool { return false }
 func (m *ttlMockFigaro) Kill()      {}
 func (m *ttlMockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{ID: m.id, State: "idle", CreatedAt: time.Now()}

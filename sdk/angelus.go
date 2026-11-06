@@ -289,6 +289,14 @@ func (c *Angelus) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, 
 	return &resp, nil
 }
 
+func (c *Angelus) HaltTurns(ctx context.Context) (*rpc.HaltTurnsResponse, error) {
+	var resp rpc.HaltTurnsResponse
+	if err := c.call(ctx, rpc.MethodHaltTurns, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Read fetches one window of an aria's composed history.
 func (c *Angelus) Read(ctx context.Context, req rpc.ReadRequest) (aria.Page, error) {
 	var page aria.Page

@@ -1690,18 +1690,20 @@ error of its last attempt if that failed.
 		Aliases: []string{"rest"},
 		Group:   "System",
 		Short:   "Shut down the angelus daemon and its hush agent",
-		Usage:   "stop [-f] [-k] [--forget-bindings]",
-		Long:    "Stops the angelus, then retires the embedded hush agent that daemon\nspawned: it is figaro's own binary re-exec'd, and nothing else would ever\nretire it. An EXTERNAL hush agent is never touched.\n\nOne agent can have several daemons (the share-hush, snapshot and sandbox\ndev shells share a hush surface across isolated runtime dirs). It is\nretired only when no other live daemon is still using it; otherwise stop\nnames the one that is holding it.\n\nWith no daemon answering, the agent is still retired: one outlives a\ndaemon that was killed rather than stopped, which is where orphans come\nfrom.\n\nEvery shell's binding outlives the daemon: the next angelus binds each\nshell that is still running to the aria it attended, however this one\nended (stop, upgrade, a unit restart, a crash). --forget-bindings is the\none way to start the next angelus with no shell attended.\n\nThe angelus respawns on the next command, so this is how you pick up a\nrebuilt binary.",
+		Usage:   "stop [-f] [-k] [--forget-bindings] [--hup]",
+		Long:    "Stops the angelus, then retires the embedded hush agent that daemon\nspawned: it is figaro's own binary re-exec'd, and nothing else would ever\nretire it. An EXTERNAL hush agent is never touched.\n\nOne agent can have several daemons (the share-hush, snapshot and sandbox\ndev shells share a hush surface across isolated runtime dirs). It is\nretired only when no other live daemon is still using it; otherwise stop\nnames the one that is holding it.\n\nWith no daemon answering, the agent is still retired: one outlives a\ndaemon that was killed rather than stopped, which is where orphans come\nfrom.\n\nEvery shell's binding outlives the daemon: the next angelus binds each\nshell that is still running to the aria it attended, however this one\nended (stop, upgrade, a unit restart, a crash). --forget-bindings is the\none way to start the next angelus with no shell attended.\n\nA turn the stop cuts off resumes on its own when the next angelus starts,\nwith a note telling the aria it was interrupted, and every queued message\nis delivered then. --hup is the brake: it hangs up every running turn\nfirst, as `figaro hup` would, so none of them resumes. Queued messages are\nkept either way; `figaro cut <aria>` drops one aria's queue.\n\nThe angelus respawns on the next command, so this is how you pick up a\nrebuilt binary.",
 		Flags: []cmdkit.FlagDef{
 			{Long: "force", Short: "f", IsBool: true, Description: "SIGKILL instead of graceful shutdown"},
 			{Long: "keep-agent", Short: "k", IsBool: true, Description: "A restart is coming: keep the unlocked hush agent"},
 			{Long: "forget-bindings", IsBool: true, Description: "The next angelus starts with no shell attended"},
+			{Long: "hup", IsBool: true, Description: "Hang up every running turn first, so none resumes after the restart"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runStop(stopOptions{
 				force:          ctx.BoolFlag("force"),
 				keepAgent:      ctx.BoolFlag("keep-agent"),
 				forgetBindings: ctx.BoolFlag("forget-bindings"),
+				hup:            ctx.BoolFlag("hup"),
 			})
 			return nil
 		},

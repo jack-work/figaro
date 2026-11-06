@@ -17,6 +17,18 @@ type stopOptions struct {
 	force          bool
 	keepAgent      bool
 	forgetBindings bool
+	hup            bool
+}
+
+func haltTurnsBeforeStop(cli *sdk.Angelus) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	resp, err := cli.HaltTurns(ctx)
+	if err != nil {
+		cli.Close()
+		die("hang up the running turns: %s\n  nothing was stopped; `figaro hup <aria>` hangs up one aria", wireErrorText(err))
+	}
+	fmt.Fprintf(stderrw, "hung up %d running turn(s); none resumes after the restart\n", resp.Halted)
 }
 
 func runStop(o stopOptions) {
@@ -38,11 +50,17 @@ func runStop(o stopOptions) {
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := sdk.DialAngelus(ep); err == nil {
+		if o.hup {
+			haltTurnsBeforeStop(cli)
+		}
 		if !o.forgetBindings {
 			saveBindingsBeforeStop(cli)
 		}
 		cli.Close()
 	} else if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
+		if o.hup {
+			die("angelus (pid %d) does not answer on %s, so its turns cannot be hung up; nothing was stopped", owner, sockPath)
+		}
 		fmt.Fprintf(stderrw, "angelus (pid %d) holds the store but does not answer on %s\n", owner, sockPath)
 		stopPid(owner, o.force, afterExit)
 		return

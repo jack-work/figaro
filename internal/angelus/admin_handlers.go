@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/logring"
@@ -209,6 +210,12 @@ func logAttrInt(e logring.Entry, key string) int64 {
 		return int64(v)
 	}
 	return 0
+}
+
+func (h *handlers) haltTurns(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	n := h.angelus.HaltTurns(5 * time.Second)
+	slog.Info("halted turns ahead of a stop", "turns", n)
+	return rpc.HaltTurnsResponse{Halted: n}, nil
 }
 
 func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (interface{}, error) {

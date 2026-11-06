@@ -19,6 +19,7 @@ type mockFigaro struct {
 
 func (m *mockFigaro) ID() string { return m.id }
 func (m *mockFigaro) Suspend()   {}
+func (m *mockFigaro) Halt() bool { return false }
 func (m *mockFigaro) Kill()      { m.killed = true }
 func (m *mockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{

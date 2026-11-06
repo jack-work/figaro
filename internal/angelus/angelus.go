@@ -589,6 +589,29 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	}
 }
 
+func (a *Angelus) HaltTurns(grace time.Duration) int {
+	if a.Registry == nil {
+		return 0
+	}
+	figaros := a.Registry.All()
+	halted := 0
+	for _, f := range figaros {
+		if f.Halt() {
+			halted++
+		}
+	}
+	var wg sync.WaitGroup
+	for _, f := range figaros {
+		wg.Add(1)
+		go func(f figaro.Figaro) {
+			defer wg.Done()
+			waitForIdle(f, grace)
+		}(f)
+	}
+	wg.Wait()
+	return halted
+}
+
 func waitForIdle(f figaro.Figaro, grace time.Duration) {
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {

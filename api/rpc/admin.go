@@ -155,6 +155,10 @@ type SaveBindingsResponse struct {
 	Count int  `json:"count"`
 }
 
+type HaltTurnsResponse struct {
+	Halted int `json:"halted"`
+}
+
 // Aria filters to one conversation; Limit takes the newest N (0 for all).
 type ProviderLedgerRequest struct {
 	Aria  string `json:"aria,omitempty"`
