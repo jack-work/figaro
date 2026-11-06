@@ -13,16 +13,23 @@ import (
 	"github.com/jack-work/figaro/api/transport"
 )
 
-func runRestWithFlags(force, keepPIDs bool) {
+type stopOptions struct {
+	force          bool
+	keepAgent      bool
+	forgetBindings bool
+}
 
-	// --keep-pids says a restart is coming: the hush agent holds an unlocked
-	// identity the next daemon would otherwise have to rebuild. Every other
-	// path retires it.
+func runStop(o stopOptions) {
 	retireAgent := func() {
-		if keepPIDs {
-			return
+		if !o.keepAgent {
+			reportRetiredHushAgent()
 		}
-		reportRetiredHushAgent()
+	}
+	afterExit := func() {
+		retireAgent()
+		if o.forgetBindings {
+			forgetBindings()
+		}
 	}
 
 	if d := resolveDoor(); d.configured {
@@ -30,38 +37,25 @@ func runRestWithFlags(force, keepPIDs bool) {
 	}
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
-	if keepPIDs {
-		cli, err := sdk.DialAngelus(ep)
-		if err != nil {
-			fmt.Fprintln(stderrw, "angelus is not running")
-			return
+	if cli, err := sdk.DialAngelus(ep); err == nil {
+		if !o.forgetBindings {
+			saveBindingsBeforeStop(cli)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		resp, err := cli.SaveBindings(ctx)
-		cancel()
-		cli.Close()
-		if err != nil {
-			die("save-bindings: %s", err)
-		}
-		fmt.Fprintf(stderrw, "persisted %d pid binding(s)\n", resp.Count)
-	} else if cli, err := sdk.DialAngelus(ep); err == nil {
 		cli.Close()
 	} else if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
 		fmt.Fprintf(stderrw, "angelus (pid %d) holds the store but does not answer on %s\n", owner, sockPath)
-		stopPid(owner, force, retireAgent)
+		stopPid(owner, o.force, afterExit)
 		return
 	} else {
-		// An agent outlives a daemon that was killed rather than stopped; the
-		// claim file is the daemon's record of the one it owned.
 		fmt.Fprintln(stderrw, "angelus is not running")
-		retireAgent()
+		afterExit()
 		return
 	}
 
 	pidBytes, err := os.ReadFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid"))
 	if err != nil {
 		if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
-			stopPid(owner, force, retireAgent)
+			stopPid(owner, o.force, afterExit)
 			return
 		}
 		os.Remove(sockPath)
@@ -74,10 +68,31 @@ func runRestWithFlags(force, keepPIDs bool) {
 		fmt.Fprintln(stderrw, "angelus pid file unreadable; socket removed")
 		return
 	}
-	stopPid(pid, force, retireAgent)
+	stopPid(pid, o.force, afterExit)
 }
 
-func stopPid(pid int, force bool, retireAgent func()) {
+func saveBindingsBeforeStop(cli *sdk.Angelus) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := cli.SaveBindings(ctx)
+	if err != nil {
+		fmt.Fprintf(stderrw, "figaro: could not save pid bindings: %s\n", err)
+		return
+	}
+	fmt.Fprintf(stderrw, "kept %d pid binding(s) for the next angelus\n", resp.Count)
+}
+
+func forgetBindings() {
+	err := os.Remove(boot.BindingsPath(boot.AngelusRuntimeDir()))
+	switch {
+	case err == nil:
+		fmt.Fprintln(stderrw, "pid bindings forgotten")
+	case !os.IsNotExist(err):
+		fmt.Fprintf(stderrw, "figaro: could not forget pid bindings: %s\n", err)
+	}
+}
+
+func stopPid(pid int, force bool, afterExit func()) {
 	sockPath := boot.AngelusSocketPath()
 
 	if force {
@@ -85,8 +100,7 @@ func stopPid(pid int, force bool, retireAgent func()) {
 		waitForExit(pid, 5*time.Second)
 		os.Remove(sockPath)
 		fmt.Fprintf(stderrw, "angelus (pid %d) forcefully terminated\n", pid)
-		// A SIGKILLed daemon runs no cleanup of its own.
-		retireAgent()
+		afterExit()
 		return
 	}
 
@@ -94,7 +108,7 @@ func stopPid(pid int, force bool, retireAgent func()) {
 
 	if waitForExit(pid, 15*time.Second) {
 		fmt.Fprintf(stderrw, "angelus (pid %d) put to rest\n", pid)
-		retireAgent()
+		afterExit()
 		return
 	}
 

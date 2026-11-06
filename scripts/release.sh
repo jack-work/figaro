@@ -33,7 +33,7 @@
 # What it deliberately does NOT do: install, upgrade, or restart anything
 # here. Follow it yourself, from a terminal, with:
 #
-#   figaro stop --keep-pids && nix profile upgrade --all
+#   figaro stop -k && nix profile upgrade --all
 #
 # (The upgrade swaps the binary under the running angelus, so it must not
 # happen inside an aria that the angelus is hosting.)
@@ -440,5 +440,5 @@ $TAG is cut and pushed. Nothing on this machine was upgraded.
 
 To move this machine onto it, from a terminal: not from inside an aria:
 
-  figaro stop --keep-pids && nix profile upgrade --all
+  figaro stop -k && nix profile upgrade --all
 EOF

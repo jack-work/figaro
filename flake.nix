@@ -579,9 +579,8 @@
         # the shell behaves like a temporary "try this version" gate.
         #
         # On entry:
-        #   1. Stop the running daemon with --keep-pids so PID
-        #      bindings get persisted to disk and any next `fig`
-        #      invocation can restore them.
+        #   1. Stop the running daemon with -k (the hush agent stays up
+        #      for the next daemon; every stop keeps PID bindings).
         #   2. Find the current figaro entry in the user's nix
         #      profile (by storePath match against "figaro-VERSION").
         #      Capture its key and originalUrl.
@@ -590,8 +589,7 @@
         #      path.
         #
         # On exit (bash EXIT trap):
-        #   1. Stop the worktree daemon with --keep-pids (bindings
-        #      survive the swap-back).
+        #   1. Stop the worktree daemon with -k.
         #   2. Remove the worktree entry from the profile.
         #   3. Reinstall the captured original entry, preferring its
         #      originalUrl so the user's flake-tracking is preserved
@@ -634,10 +632,9 @@
             }
 
             _figaro_swap_stop_daemon() {
-              # Use whichever `fig` is on PATH at the moment; bindings
-              # get written to disk regardless of which version it is.
+              # Whichever `fig` is on PATH: -k means the same to every version.
               if command -v fig >/dev/null 2>&1; then
-                fig stop --keep-pids >/dev/null 2>&1 || true
+                fig stop -k >/dev/null 2>&1 || true
               fi
             }
 

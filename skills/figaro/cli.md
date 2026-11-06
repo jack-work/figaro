@@ -317,7 +317,7 @@ observer's mouth.
 
 | Command | Effect |
 |---|---|
-| `figaro stop` | Shut down the angelus and retire its hush agent (see The vault). Alias `rest`. `-f` to SIGKILL, `-k` when a restart is coming. |
+| `figaro stop` | Shut down the angelus and retire its hush agent (see The vault). Alias `rest`. `-f` to SIGKILL, `-k` when a restart is coming, `--forget-bindings` to start the next angelus with no shell attended. |
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
 | `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
@@ -350,7 +350,10 @@ observer's mouth.
 | `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |
 
 The angelus respawns on the next command after a stop, so `figaro stop` is how
-you pick up a rebuilt binary. A CLI pointed at another daemon (`FIGARO_TROUPE`
+you pick up a rebuilt binary. Every shell stays attended across it: the daemon
+keeps `<runtime-dir>/bindings.json` current as shells attend and leave, so a
+stop, an upgrade, a unit restart and a crash all hand the next angelus the
+same bindings. A CLI pointed at another daemon (`FIGARO_TROUPE`
 or `[cli] troupe`, naming `troupes/<name>.toml` or giving a `unix://` or `wss://`
 URL) never spawns one.
 
@@ -396,7 +399,7 @@ token) and keep-alives it from then on, and it serves nobody else. A daemon
 whose keys all come from the environment or from files never starts one.
 So `figaro stop` retires it, including `--force` and
 including the case where no daemon answers, since an agent outlives a daemon
-that was killed rather than stopped. `--keep-pids` keeps it, because a restart
+that was killed rather than stopped. `--keep-agent` (`-k`) keeps it, because a restart
 is coming and the agent holds the unlocked identity the next daemon would
 otherwise rebuild.
 

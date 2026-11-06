@@ -371,7 +371,7 @@ func runUpgrade(o upgradeOptions) {
 			unconfirmed = append(unconfirmed, o.stopClient(&steps[i])...)
 		}
 	}
-	runRestWithFlags(false, true)
+	runStop(stopOptions{keepAgent: true})
 	start := exec.Command(to, "ls", "-j")
 	start.Stdout = nil
 	start.Stderr = stderrw

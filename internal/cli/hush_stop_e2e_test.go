@@ -214,19 +214,19 @@ func TestHushAgentIsRetiredByStopForce(t *testing.T) {
 	}
 }
 
-// --keep-pids says a restart is coming; the unlocked identity stays up for it.
-func TestHushAgentSurvivesStopKeepPIDs(t *testing.T) {
+// -k says a restart is coming; the unlocked identity stays up for it.
+func TestHushAgentSurvivesStopKeepAgent(t *testing.T) {
 	hushE2EEnabled(t)
 	rig := newHushRig(t, "keep")
 	before := rig.start(t)
 
-	if err := rig.run("stop", "--keep-pids"); err != nil {
-		t.Fatalf("figaro stop --keep-pids: %v", err)
+	if err := rig.run("stop", "-k"); err != nil {
+		t.Fatalf("figaro stop -k: %v", err)
 	}
 	time.Sleep(2 * time.Second)
 	after := rig.agentPIDs(t)
 	if len(after) == 0 {
-		t.Fatalf("`figaro stop --keep-pids` retired the agent(s) %v; --keep-pids is the restart gesture and must keep it", before)
+		t.Fatalf("`figaro stop -k` retired the agent(s) %v; -k is the restart gesture and must keep it", before)
 	}
 }
 

@@ -478,7 +478,7 @@ yourself, **from a terminal and not from inside an aria**: the upgrade swaps
 the binary under the running angelus that is hosting you:
 
 ```sh
-figaro stop --keep-pids && nix profile upgrade --all
+figaro stop -k && nix profile upgrade --all
 ```
 
 A home-manager install can do this on every switch instead: the flake's
