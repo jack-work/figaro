@@ -45,6 +45,8 @@ type sessionOpts struct {
 func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts) {
 	defer reportUnansweredPitEdits(stderrw)
 	atExit(func() { reportUnansweredPitEdits(stderrw) })
+	defer reportUnsentHeld(stderrw)
+	atExit(func() { reportUnsentHeld(stderrw) })
 	startedAt := opt.startedAt
 	if startedAt.IsZero() {
 		startedAt = time.Now()
@@ -129,6 +131,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 	// The jumplist starts where the session does, or ^O has nowhere to go back to.
 	in.jumps.visit(opt.figaroID)
+	trackHeld(&in.held)
 	defer func() {
 		if in.ownsSubject && in.subject != nil {
 			in.subject.Close()

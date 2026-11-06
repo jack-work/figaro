@@ -78,8 +78,18 @@ func (in *interactiveInput) sendComposer(text string) { go in.execSendComposer(t
 // execSendComposer submits the draft byte-for-byte: a draft is not a command line.
 func (in *interactiveInput) execSendComposer(text string) {
 	in.commandAsync(func(ctx context.Context) (string, error) {
+		if in.holdWhileAway(text) {
+			return in.heldNote(), nil
+		}
 		plan := sendPlan{prompt: text}
-		id, resp, err := sendVerb(ctx, verbEnv{}, plan, in.aria(), in.currentID())
+		subject := in.aria()
+		id, resp, err := sendVerb(ctx, verbEnv{}, plan, subject, in.currentID())
+		if err != nil && subject != nil && in.mayHold() && daemonGoingDown(err, subject.Done()) {
+			if !in.hold(text) {
+				in.sendHeld(ctx)
+			}
+			return in.heldNote(), nil
+		}
 		if err != nil {
 			return "", fmt.Errorf("send: %w", err)
 		}
@@ -642,6 +652,7 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 		return false
 	}
 	in.dropAngelus()
+	in.setAway()
 	in.progress("the angelus went away: reconnecting to " + ariaName(id))
 	wait := reconnectFirst
 	for {
@@ -652,10 +663,12 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 		}
 		wait = min(wait*2, reconnectMax)
 		if !in.current(gen) {
+			in.sendHeld(life)
 			return true
 		}
 		switch in.ariaReachable(life, id) {
 		case ariaGone:
+			in.dropHeld(id)
 			return false
 		case ariaUnreachable:
 			continue
@@ -665,6 +678,7 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 			continue
 		}
 		in.note("reconnected to " + ariaName(id))
+		in.sendHeld(life)
 		return true
 	}
 }
