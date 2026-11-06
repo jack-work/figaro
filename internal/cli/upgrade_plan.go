@@ -29,6 +29,7 @@ type paneClient struct {
 	DroppedEnv []string
 	Own        bool
 	StdinPiped bool
+	Attends    string
 }
 
 type upgradeAction int

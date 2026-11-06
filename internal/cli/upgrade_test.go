@@ -4,6 +4,7 @@ package cli
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -276,5 +277,22 @@ func TestUpgradeNeverRespawnsAOneWordCommandThroughAShell(t *testing.T) {
 	assignment := paneClient{Pane: "%2", Own: true, Argv: []string{"PATH=/tmp/evil"}}
 	if s := planClient(assignment); s.Action != upgradeLeave {
 		t.Errorf("a one-word command env would take for an assignment is left: got %s", s.Action)
+	}
+}
+
+// An own-pane figaro dies with its session, so its binding cannot outlive the
+// respawn on its own: the respawn must carry it.
+func TestUpgradeRespawnCarriesAnOwnPanesAttendance(t *testing.T) {
+	c := paneClient{Pane: "%3", Own: true, Argv: []string{"figaro", "listen"}, Cwd: "/tmp", Attends: "0123456789abcdef0123456789abcdef"}
+	args := respawnArgs(c)
+	want := handedAttendanceEnv + "=0123456789abcdef0123456789abcdef"
+	if !slices.Contains(args, want) {
+		t.Fatalf("respawn-pane %v does not hand the attendance on (%s)", args, want)
+	}
+	c.Attends = ""
+	for _, a := range respawnArgs(c) {
+		if strings.HasPrefix(a, handedAttendanceEnv+"=") {
+			t.Fatalf("an unattended pane was handed an attendance: %v", respawnArgs(c))
+		}
 	}
 }

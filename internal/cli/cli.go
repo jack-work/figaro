@@ -88,6 +88,7 @@ func Run(progName string, args []string) {
 
 	initBindingPolicy()
 	args = extractNoBindFlag(args)
+	adoptHandedAttendance()
 
 	telemetryDir := boot.StateDir()
 	if loaded, lerr := config.Load(config.DefaultConfigDir()); lerr == nil {

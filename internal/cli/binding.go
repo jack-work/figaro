@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
@@ -27,6 +29,29 @@ func initBindingPolicy() {
 	// Only a human at a terminal speaks for the end user; an aria's shell-out
 	// is never a TTY.
 	rpc.SetInteractive(interactive)
+}
+
+const handedAttendanceEnv = "_FIGARO_ATTEND"
+
+func adoptHandedAttendance() {
+	id := os.Getenv(handedAttendanceEnv)
+	if id == "" {
+		return
+	}
+	os.Unsetenv(handedAttendanceEnv)
+	if rpc.ValidateAriaID(id) != nil || bindingDisabled() || shellPID <= 0 {
+		return
+	}
+	acli, err := sdk.DialAngelus(doorEndpoint())
+	if err != nil {
+		return
+	}
+	defer acli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := acli.Bind(ctx, shellPID, id, 0); err != nil {
+		fmt.Fprintf(stderrw, "figaro: could not attend %s again after the restart: %s\n", ariaName(id), err)
+	}
 }
 
 func envAriaID() string {

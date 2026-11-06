@@ -291,3 +291,32 @@ func TestStopForgetBindingsStartsTheNextDaemonUnattended(t *testing.T) {
 		t.Fatalf("stop --forget-bindings left the shell (pid %d) bound to %s", pid, got)
 	}
 }
+
+// A pane whose own process is figaro has no shell to outlive it: upgrade
+// respawns the pane as a new session, and hands the attendance across in the
+// environment so the new session leader is bound before it reads its binding.
+func TestARespawnedPaneTakesTheAttendanceUpgradeHandsIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns daemons; skipped under -short")
+	}
+	r := newRestartRig(t)
+	id := r.mint()
+
+	c := exec.Command("sh", "-c", `"$0" --bind ls -j >/dev/null 2>&1; exec sleep 600`, r.bin)
+	c.Env = append(append([]string(nil), r.env...), handedAttendanceEnv+"="+id)
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Process.Kill()
+		_ = c.Wait()
+	})
+	deadline := time.Now().Add(15 * time.Second)
+	for r.boundTo(c.Process.Pid) != id {
+		if time.Now().After(deadline) {
+			t.Fatalf("the respawned session (pid %d) never took the attendance %s", c.Process.Pid, id)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

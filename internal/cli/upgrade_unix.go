@@ -349,6 +349,7 @@ func runUpgrade(o upgradeOptions) {
 		die("read processes: %s", err)
 	}
 	clients, skipped := findClients(panes, procs, os.Getpid())
+	recordOwnAttendance(clients)
 	steps := make([]upgradeStep, len(clients))
 	for i, c := range clients {
 		steps[i] = planClient(c)
@@ -396,6 +397,25 @@ func runUpgrade(o upgradeOptions) {
 	}
 	recordSwitchExe(to)
 	fmt.Fprintf(stderrw, "figaro %s is running\n", orUnknown(toRelease))
+}
+
+func recordOwnAttendance(clients []paneClient) {
+	cli, err := sdk.DialAngelus(doorEndpoint())
+	if err != nil {
+		return
+	}
+	defer cli.Close()
+	for i := range clients {
+		if !clients[i].Own {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		resp, err := cli.Resolve(ctx, clients[i].PID)
+		cancel()
+		if err == nil && resp.Found {
+			clients[i].Attends = resp.FigaroID
+		}
+	}
 }
 
 func switchedAlready(o upgradeOptions, to string) bool {
@@ -471,6 +491,9 @@ func respawnArgs(c paneClient) []string {
 	args := []string{"respawn-pane", "-k", "-t", c.Pane, "-c", c.Cwd}
 	for _, kv := range c.Env {
 		args = append(args, "-e", kv)
+	}
+	if c.Attends != "" {
+		args = append(args, "-e", handedAttendanceEnv+"="+c.Attends)
 	}
 	args = append(args, "--")
 	if len(c.Argv) == 1 {
