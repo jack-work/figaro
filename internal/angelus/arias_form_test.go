@@ -127,3 +127,23 @@ func TestAForkNestsUnderItsParent(t *testing.T) {
 		t.Errorf("child at %q, parent at %q: want the child under the parent's forks", childPath, parentPath)
 	}
 }
+
+// A read of @arias that does not follow it still sees the list as it is now,
+// not as the first read built it.
+func TestAReadOfAriasIsCurrent(t *testing.T) {
+	r := newGrantRig(t)
+	first, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ := readArias(t, r, asOwner(), rpc.AriasFormID); !strings.Contains(ariaIDsIn(snap), first.FigaroID) {
+		t.Fatal("the first read does not list the aria")
+	}
+	second, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ := readArias(t, r, asOwner(), rpc.AriasFormID); !strings.Contains(ariaIDsIn(snap), second.FigaroID) {
+		t.Error("a later read does not list an aria made since the first")
+	}
+}

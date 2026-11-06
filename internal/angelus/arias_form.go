@@ -24,6 +24,7 @@ const (
 )
 
 type ariasWatch struct {
+	build sync.Mutex
 	ctx   context.Context
 	form  *store.Form
 	hub   *ariaHub
@@ -45,7 +46,7 @@ func ariasKey(ctx context.Context) string {
 	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String()}, groups...), "\x00")
 }
 
-func (h *handlers) ariasHub(ctx context.Context) *ariaHub {
+func (h *handlers) ariasWatchFor(ctx context.Context) *ariasWatch {
 	key := ariasKey(ctx)
 	a := &h.arias
 	a.mu.Lock()
@@ -71,7 +72,7 @@ func (h *handlers) ariasHub(ctx context.Context) *ariaHub {
 		a.ticking = true
 		go h.tickArias()
 	}
-	return w.hub
+	return w
 }
 
 func (h *handlers) newAriasHub(w *ariasWatch) *ariaHub {
@@ -150,6 +151,8 @@ func (h *handlers) ariasMayWatch(w *ariasWatch) bool {
 }
 
 func (h *handlers) rebuildArias(w *ariasWatch) {
+	w.build.Lock()
+	defer w.build.Unlock()
 	rows, peers := h.ariasRows(w.ctx)
 	print := ariasPrint(rows, peers)
 	if w.built && print == w.print {
@@ -261,7 +264,8 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 }
 
 func (h *handlers) ariasMethod(ctx context.Context, method string, params json.RawMessage) (any, error) {
-	hb := h.ariasHub(ctx)
+	w := h.ariasWatchFor(ctx)
+	hb := w.hub
 	switch method {
 	case rpc.MethodFollow:
 		if f := followerOf(ctx); f != nil {
@@ -272,6 +276,7 @@ func (h *handlers) ariasMethod(ctx context.Context, method string, params json.R
 		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
 			f.follow(hb)
 		}
+		h.rebuildArias(w)
 		return hb.route(ctx, method, params)
 	}
 	return nil, fmt.Errorf("%s is computed for each caller and read-only: %s does not apply", rpc.AriasFormID, method)
