@@ -90,10 +90,9 @@ func interruptExit(wasRunning bool) int {
 // interactiveInput is the input loop shared by send and listen; the keymap owns
 // every key from the keyEvent on.
 type interactiveInput struct {
-	ariasFellBack atomic.Bool
-	tc            term.Client
-	lt            *livelogTurn
-	fcli          transcriptReadClient
+	tc   term.Client
+	lt   *livelogTurn
+	fcli transcriptReadClient
 	// subject is the connection fcli names, held concretely so a switch can
 	// close it and `:send` can Qua on it.
 	subject      *sdk.Aria

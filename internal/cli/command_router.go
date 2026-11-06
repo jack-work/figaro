@@ -11,7 +11,6 @@ import (
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -83,12 +82,11 @@ var overlayVerbs = map[string]bool{
 }
 
 type formPit struct {
-	name     string
-	form     string
-	bare     bool
-	opening  func(in *interactiveInput)
-	fallback func(in *interactiveInput, argv []string, v *formView) bool
-	ready    func(in *interactiveInput, v *formView)
+	name    string
+	form    string
+	bare    bool
+	opening func(in *interactiveInput)
+	ready   func(in *interactiveInput, v *formView)
 }
 
 func formPitFor(verb string) (formPit, bool) {
@@ -98,7 +96,7 @@ func formPitFor(verb string) (formPit, bool) {
 	case "reaped":
 		return formPit{name: "reaped", form: rpc.ReapedFormID, bare: true}, true
 	case "ls", "list":
-		return formPit{name: "arias", form: rpc.AriasFormID, bare: true, fallback: (*interactiveInput).troupeListing}, true
+		return formPit{name: "arias", form: rpc.AriasFormID, bare: true}, true
 	case "troupe":
 		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).mountTroupe}, true
 	}
@@ -180,7 +178,7 @@ func (in *interactiveInput) execCommand(line string) {
 		return
 	}
 	if p, ok := formPitFor(verb); ok && (len(argv) == 1 || !p.bare) {
-		in.openFormPit(p, argv)
+		in.openFormPit(p)
 		return
 	}
 	if name, spec, ok := liveForm(argv); ok {
@@ -245,18 +243,18 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 	}
 }
 
-func (in *interactiveInput) openFormPit(p formPit, argv []string) {
+func (in *interactiveInput) openFormPit(p formPit) {
 	if p.opening != nil {
 		p.opening(in)
 	}
-	var keep func(*formView) bool
-	switch {
-	case p.fallback != nil:
-		keep = func(v *formView) bool { return !p.fallback(in, argv, v) }
-	case p.ready != nil:
-		keep = func(v *formView) bool { p.ready(in, v); return true }
+	in.openLiveIf(p.name, p.form, false, p.keep(in))
+}
+
+func (p formPit) keep(in *interactiveInput) func(*formView) bool {
+	if p.ready == nil {
+		return nil
 	}
-	in.openLiveIf(p.name, p.form, false, keep)
+	return func(v *formView) bool { p.ready(in, v); return true }
 }
 
 func (in *interactiveInput) modelsChanged() {
@@ -590,24 +588,4 @@ func (in *interactiveInput) progressIfSlow(msg string) (finished func()) {
 		mu.Unlock()
 		timer.Stop()
 	}
-}
-
-func (in *interactiveInput) troupeListing(argv []string, v *formView) bool {
-	if formPeers(v.source().Shown()) == 0 {
-		return false
-	}
-	if !in.ariasFellBack.Swap(true) {
-		in.note(":ls shows this node's arias as a form only while the troupe has no peers; listing the troupe instead")
-	}
-	in.runThroughRouter(argv)
-	return true
-}
-
-func formPeers(snap form.Snapshot) int {
-	p := snap.Lookup("peers")
-	if p == nil {
-		return 0
-	}
-	n, _ := strconv.Atoi(*p)
-	return n
 }
