@@ -68,7 +68,10 @@ func (v *formView) mountRowsLocked(path, addr, cont string, width int) []pitRow 
 		return []pitRow{staticRow(clipLine(cont+"└─ "+m.note, width))}
 	}
 	inner := m.view.Items(max(width-displayWidth(cont)-3, 20))
-	indents := mountIndents(inner, cont)
+	return m.adopt(path, inner, mountIndents(inner, cont))
+}
+
+func (m *viewMount) adopt(path string, inner []pitRow, indents []string) []pitRow {
 	out := make([]pitRow, 0, len(inner))
 	for i, r := range inner {
 		indent := indents[i]

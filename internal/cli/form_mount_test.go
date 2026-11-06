@@ -37,6 +37,7 @@ type fakeMounts struct {
 	closed []string
 	sent   []string
 	kick   chan struct{}
+	hint   *rpc.FormView
 }
 
 func newFakeMounts() *fakeMounts {
@@ -57,7 +58,11 @@ func (f *fakeMounts) open(addr string) (*formView, actOn, func(), <-chan struct{
 		return nil, nil, nil, nil, err
 	}
 	v := &formView{src: f.forms[addr], open: map[string]bool{}}
-	v.setView(thingsHint)
+	hint := thingsHint
+	if f.hint != nil {
+		hint = f.hint
+	}
+	v.setView(hint)
 	send := func(_ context.Context, method string, _ json.RawMessage, target string) error {
 		f.mu.Lock()
 		f.sent = append(f.sent, addr+" "+method+" "+target)
@@ -451,4 +456,52 @@ func TestAnOpenPointerRowFoldsItsOwnLeavesAndGuidesItsMount(t *testing.T) {
 	v.Activate("here")
 	v.Activate("here")
 	check("closed and opened again", want)
+}
+
+// A search in the troupe's view indexed only the index's own keys, so Gluck
+// could find "form" and nothing else: never an aria's mantra or id inside a
+// mounted @arias. A search reaches every loaded mount: the hit is drawn under
+// its pointer with its letters marked, ^N counts it, Enter lands on the row,
+// and Enter again attends the aria it names.
+func TestASearchReachesIntoLoadedMounts(t *testing.T) {
+	const id = "09e4b786557992e7a84fbff7606463f7"
+	f := newFakeMounts()
+	f.forms["@things"] = things(
+		"items.a.n", `1`, "items.a.name", `"restart the bindings"`, "items.a.id", `"`+id+`"`,
+		"items.b.n", `2`, "items.b.name", `"beta"`, "items.b.id", `"38f4563ac90d4206364a64c0a4f4c4fa"`,
+	)
+	hint := *thingsHint
+	hint.Actions = []rpc.ViewAction{{Key: "Enter", Label: "attend", Local: rpc.ViewAttend}}
+	f.hint = &hint
+	in, lt, v := mountedPit(t, f, "here")
+	var attended string
+	lt.tr.attendAria = func(a string) { attended = a }
+	for _, q := range []string{"bindings", id, id[:6], id[:8], id[:12]} {
+		feed(t, in, "/"+q)
+		in.mu.Lock()
+		var marked []string
+		for _, r := range lt.tr.pit.list().rows {
+			if len(r.marks) > 0 {
+				marked = append(marked, r.id)
+			}
+		}
+		in.mu.Unlock()
+		if len(marked) == 0 || !strings.HasPrefix(marked[0], "here\x1fitems.a") {
+			t.Fatalf("/%s marked %q, want a row of items.a under its pointer", q, marked)
+		}
+		if _, n := v.QueryCount(); n != len(marked) {
+			t.Errorf("/%s: the counter counts %d, the view draws %d", q, n, len(marked))
+		}
+		feed(t, in, "\r")
+		in.mu.Lock()
+		row, _ := lt.tr.pit.selected()
+		in.mu.Unlock()
+		if row.id != "here\x1fitems.a" {
+			t.Fatalf("/%s Enter landed on %q, want here\\x1fitems.a", q, row.id)
+		}
+	}
+	feed(t, in, "\r")
+	if attended != id {
+		t.Errorf("Enter on the found row attended %q, want %s", attended, id)
+	}
 }

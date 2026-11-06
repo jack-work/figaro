@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/rpc"
+	"maps"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -55,6 +56,10 @@ func (v *formView) ToggleFlat() {
 func (v *formView) SetQuery(q string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.setQueryLocked(q)
+}
+
+func (v *formView) setQueryLocked(q string) {
 	if v.search == nil {
 		v.search = &formSearch{match: fuzzy.NewMatcher()}
 	}
@@ -62,6 +67,54 @@ func (v *formView) SetQuery(q string) {
 	s.query = q
 	s.steps, s.cur, s.land, s.at = nil, "", true, 0
 	v.rank(v.source().Shown())
+}
+
+func (v *formView) followQuery(q string, flat bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.search == nil || v.search.query != q {
+		v.setQueryLocked(q)
+	}
+	if v.search.flat != flat {
+		v.search.flat = flat
+		v.search.rev++
+	}
+}
+
+func (v *formView) mountHitsLocked(width int) map[string][]pitRow {
+	var out map[string][]pitRow
+	for path, m := range v.mounts {
+		if m.view == nil {
+			continue
+		}
+		m.view.followQuery(v.search.query, v.search.flat)
+		depth := strings.Count(path, ".")
+		rows := m.view.Items(max(width-3*depth-3, 20))
+		if _, n := m.view.QueryCount(); n == 0 {
+			continue
+		}
+		if out == nil {
+			out = map[string][]pitRow{}
+		}
+		out[path] = rows
+	}
+	return out
+}
+
+func (v *formView) endMountQueriesLocked(keep string) string {
+	path, inner, _ := strings.Cut(keep, mountSep)
+	land := ""
+	for p, m := range v.mounts {
+		if m.view == nil {
+			continue
+		}
+		if p == path && inner != "" {
+			land = p + mountSep + m.view.EndQuery(inner)
+			continue
+		}
+		m.view.EndQuery("")
+	}
+	return land
 }
 
 func (v *formView) Current() string {
@@ -91,8 +144,11 @@ func (v *formView) EndQuery(keep string) string {
 	if v.search == nil {
 		return keep
 	}
-	land := keep
-	if keep != "" {
+	land := v.endMountQueriesLocked(keep)
+	if path, _, ok := strings.Cut(keep, mountSep); ok && land != "" {
+		v.open[path] = true
+		v.revealLocked(v.search.chainTo(path))
+	} else if keep != "" {
 		chain := v.search.chainTo(keep)
 		chain = chain[:v.innermostRow(chain)+1]
 		land = chain[len(chain)-1]
@@ -268,12 +324,16 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 			byPath[h.Entry.Path] = h
 		}
 	}
+	mounted := v.mountHitsLocked(width)
+	for path := range mounted {
+		formAt(v.root, strings.Split(path, "."), s.up)
+	}
 	s.below = make(map[string]bool, len(s.up))
 	for _, parent := range s.up {
 		s.below[parent] = true
 	}
 	if s.flat {
-		return v.flatSearchItems(width)
+		return v.flatSearchItems(width, mounted)
 	}
 	var out []pitRow
 	out = append(out, noticeRows(v.notice, width)...)
@@ -318,6 +378,9 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 				}
 				if c.open {
 					walk(c, c.cont, false, keys)
+				}
+				if rows, ok := mounted[c.path]; ok {
+					out = append(out, v.mounts[c.path].adopt(c.path, rows, mountIndents(rows, c.cont))...)
 				}
 				continue
 			}
@@ -408,7 +471,7 @@ func searchValueText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func (v *formView) flatSearchItems(width int) []pitRow {
+func (v *formView) flatSearchItems(width int, mounted map[string][]pitRow) []pitRow {
 	s := v.search
 	var out []pitRow
 	out = append(out, noticeRows(v.notice, width)...)
@@ -430,6 +493,10 @@ func (v *formView) flatSearchItems(width int) []pitRow {
 		shown.label = h.Entry.Path
 		text, marks := searchedRow(&shown, h, s, width)
 		out = append(out, pitRow{text: text, yankFrom: n, id: at, marks: marks})
+	}
+	for _, path := range slices.Sorted(maps.Keys(mounted)) {
+		rows := mounted[path]
+		out = append(out, v.mounts[path].adopt(path, rows, make([]string, len(rows)))...)
 	}
 	return out
 }
