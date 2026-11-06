@@ -592,6 +592,9 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep sdk.Addr
 		if fcli.Lapsed() && in.refollow(gen, id, ep) {
 			return
 		}
+		if in.reconnect(gen, id, ep) {
+			return
+		}
 		select {
 		case in.subjectDead <- struct{}{}:
 		default:
@@ -623,6 +626,85 @@ func (in *interactiveInput) refollow(gen uint64, id string, ep sdk.Addr) bool {
 		return false
 	}
 	return true
+}
+
+const (
+	reconnectFirst = 100 * time.Millisecond
+	reconnectMax   = 2 * time.Second
+)
+
+func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
+	in.mu.Lock()
+	owns, life := in.ownsSubject, in.life
+	follows := in.loaded != nil && (in.set.listen || in.lt.inTranscript())
+	in.mu.Unlock()
+	if !owns || !follows || life == nil || life.Err() != nil {
+		return false
+	}
+	in.dropAngelus()
+	in.progress("the angelus went away: reconnecting to " + ariaName(id))
+	wait := reconnectFirst
+	for {
+		select {
+		case <-life.Done():
+			return false
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, reconnectMax)
+		if !in.current(gen) {
+			return true
+		}
+		switch in.ariaReachable(life, id) {
+		case ariaGone:
+			return false
+		case ariaUnreachable:
+			continue
+		}
+		if err := in.retarget(life, id, ep); err != nil {
+			in.dropAngelus()
+			continue
+		}
+		in.note("reconnected to " + ariaName(id))
+		return true
+	}
+}
+
+type ariaReach int
+
+const (
+	ariaUnreachable ariaReach = iota
+	ariaPresent
+	ariaGone
+)
+
+func (in *interactiveInput) ariaReachable(ctx context.Context, id string) ariaReach {
+	acli, err := in.angelus()
+	if err != nil {
+		return ariaUnreachable
+	}
+	actx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	_, err = acli.Attach(actx, id)
+	var answered *jkrpc.Error
+	switch {
+	case err == nil:
+		return ariaPresent
+	case errors.As(err, &answered) && strings.Contains(answered.Message, "not found"):
+		return ariaGone
+	default:
+		in.dropAngelus()
+		return ariaUnreachable
+	}
+}
+
+func (in *interactiveInput) dropAngelus() {
+	in.mu.Lock()
+	stale := in.acli
+	in.acli = nil
+	in.mu.Unlock()
+	if stale != nil {
+		stale.Close()
+	}
 }
 
 // claimSubject is the swap. The fence is checked here, under the lock, so two
