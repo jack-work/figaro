@@ -122,7 +122,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		tc: tc, lt: lt, mu: &mu, set: &set,
 		figaroID: opt.figaroID, cancel: cancel, life: ctx, disconnectCh: disconnectCh,
 		acli: opt.acli, loaded: opt.loaded, tap: tapeTap(opt.tape),
-		ownsSubject: opt.ownsSubject, subjectDead: make(chan struct{}, 1),
+		ownsSubject: opt.ownsSubject, subjectDead: make(chan struct{}, 1), replaying: opt.end != nil,
 		prompt: opt.prompt, dress: opt.dress, sendCursor: -1, doneCh: doneCh,
 		watchInquiry: opt.prompt != "",
 		ownTurn:      make(chan struct{}), noTurn: make(chan struct{}),

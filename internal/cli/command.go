@@ -596,7 +596,7 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep sdk.Addr
 	}
 	go func() {
 		<-fcli.Done()
-		if atomic.LoadUint64(&in.subjectGen) != gen {
+		if in.replaying || atomic.LoadUint64(&in.subjectGen) != gen {
 			return
 		}
 		if fcli.Lapsed() && in.refollow(gen, id, ep) {

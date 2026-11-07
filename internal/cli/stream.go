@@ -106,6 +106,7 @@ type interactiveInput struct {
 	ownsSubject  bool   // a switch may only close a connection this loop dialled
 	subjectGen   uint64 // fences the old connection's handlers off the renderer the instant a switch begins
 	subjectDead  chan struct{}
+	replaying    bool
 	held         heldSends
 	jumps        ariaJumplist         // guarded by in.mu
 	queueEpoch   string               // the daemon refuses a queue mutation without the epoch it was read at
