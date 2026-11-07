@@ -91,8 +91,13 @@ func attendVerb(ctx context.Context, env verbEnv, spec string) (attendOutcome, e
 	if err := bindBinding(ctx, env.acli, env.shellPID, trunk, atMainLT); err != nil {
 		return attendOutcome{}, attendRefusal(ctx, env.acli, trunk, err)
 	}
-	id, ep, err := resolveFigaroTargetEndpoint(ctx, env.loaded, env.acli, trunk, false, dressing{})
+	id, ep, err := resolveTargetEndpoint(ctx, env.loaded, env.acli, trunk, false, dressing{})
 	if err != nil {
+		return attendOutcome{}, err
+	}
+	if held, hep, err := redirectRole(ctx, env.loaded, env.acli, id, ep); err == nil {
+		id, ep = held, hep
+	} else if !errors.As(err, new(notARole)) {
 		return attendOutcome{}, err
 	}
 	return attendOutcome{ID: id, EP: ep, At: at, Note: note}, nil

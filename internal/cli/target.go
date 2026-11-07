@@ -79,7 +79,7 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus,
 	}
 	target := resp.Snapshot.Lookup("target-aria")
 	if target == nil || *target == "" {
-		return "", sdk.Addr{}, fmt.Errorf("%s is a form, not a figaro: this verb needs one.\n  fig bind %s                 birth a figaro from it\n  fig set --id %s target-aria <aria>   make it a ROLE, and this verb reaches the holder", id, id, id)
+		return "", sdk.Addr{}, notARole{id}
 	}
 	if strings.Contains(*target, "@") {
 		return "", sdk.Addr{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)
@@ -115,4 +115,10 @@ func sandboxOfAria(ctx context.Context, ep sdk.Addr) string {
 		return *v
 	}
 	return ""
+}
+
+type notARole struct{ id string }
+
+func (e notARole) Error() string {
+	return fmt.Sprintf("%s is a form, not a figaro: this verb needs one.\n  fig bind %s                 birth a figaro from it\n  fig set --id %s target-aria <aria>   make it a ROLE, and this verb reaches the holder", e.id, e.id, e.id)
 }

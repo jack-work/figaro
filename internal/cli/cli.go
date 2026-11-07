@@ -430,7 +430,7 @@ aria's content; it is written only when you ask for it.`,
 			if len(ctx.Args) > 0 {
 				id = ctx.Args[0]
 			}
-			runListen(ld, id, ctx.Flag("record"), ctx.Flag("note"), false)
+			runListen(ld, id, ctx.Flag("record"), ctx.Flag("note"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -616,7 +616,7 @@ positional slot belongs to the sub-verb.`,
 					dieUsage("queue --watch follows the queue; it does not %s", verb)
 				}
 				// The queue is a form, so watching it is `form show`.
-				runListenIntrinsic(ld, ariaID, "", "", true, intrinsicQueue)
+				runListenIntrinsic(ld, ariaID, "", "", true, intrinsicQueue, resolveFigaroTargetEndpoint)
 				return nil
 			}
 			switch verb {

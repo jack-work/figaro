@@ -199,7 +199,7 @@ func formPitEditable(intrinsic string) bool {
 }
 
 func runFormListen(loaded *config.Loaded, ariaID string) {
-	runListen(loaded, ariaID, "", "", true)
+	runListenIntrinsic(loaded, ariaID, "", "", true, "", resolveTargetEndpoint)
 }
 
 // formView: a delta arrives on the notifier's goroutine while a key is handled, so

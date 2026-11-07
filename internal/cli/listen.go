@@ -17,18 +17,20 @@ import (
 
 // runListen stays open past turn-done; Ctrl-C interrupts the turn, Ctrl-D only
 // disconnects.
-func runListen(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool) {
-	runListenIntrinsic(loaded, ariaID, recordPath, note, formPit, "")
+type targetResolver func(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, sdk.Addr, error)
+
+func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
+	runListenIntrinsic(loaded, ariaID, recordPath, note, false, "", resolveFigaroTargetEndpoint)
 }
 
-func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool, intrinsic string) {
+func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool, intrinsic string, resolve targetResolver) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	resolvedID, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
+	resolvedID, figaroEP, err := resolve(ctx, loaded, acli, ariaID, false, dressing{})
 	if err != nil {
 		die("%s", err)
 	}

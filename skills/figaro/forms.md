@@ -34,6 +34,8 @@ fig set --id @a1b2c3 target-aria <id>  # now it's a ROLE: fig send @a1b2c3 reach
 - **Roles are duck-typed.** A form carrying `target-aria` is a role;
   verbs that need a figaro (`send`, `listen`) resolve it *at each
   invocation*: repoint the key and the next send reaches the successor.
+  The `form` verbs (`fig form`, `fig form listen`) read the form itself,
+  a role's included.
 
 ## What a figaro SEES of all this
 
