@@ -73,7 +73,7 @@ func newMarkdownRenderer(width int) *markdownRenderer {
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
-		ansi.NewRenderer(ansi.Options{WordWrap: max(width+2, 1), TableWrap: &tableWrap, Styles: st}), 1000))))
+		ansi.NewRenderer(ansi.Options{WordWrap: max(width+2, 1), TableWrap: &tableWrap, Styles: st, PreserveNewLines: true}), 1000))))
 	var marker xansi.Style
 	if c := st.Document.Color; c != nil {
 		marker = marker.ForegroundColor(lipgloss.Color(*c))
@@ -84,6 +84,7 @@ func newMarkdownRenderer(width int) *markdownRenderer {
 func (r *markdownRenderer) Render(md string) (string, error) {
 	source := r.holdHyphens([]byte(layoutMarks.Replace(md)))
 	doc := r.md.Parser().Parse(text.NewReader(source))
+	softBreaksAsSpaces(doc, source)
 	layout := layOutLists(doc)
 	var buf bytes.Buffer
 	if err := r.md.Renderer().Render(&buf, source, doc); err != nil {
@@ -346,4 +347,23 @@ func quotedBlankAt(row string, depth int) string {
 		seen++
 	}
 	return row[:cut] + "\x1b[m" + marks
+}
+
+func softBreaksAsSpaces(doc gast.Node, source []byte) {
+	_ = gast.Walk(doc, func(n gast.Node, entering bool) (gast.WalkStatus, error) {
+		t, ok := n.(*gast.Text)
+		if !entering || !ok || !t.SoftLineBreak() || t.HardLineBreak() {
+			return gast.WalkContinue, nil
+		}
+		end := t.Segment.Stop
+		for end < len(source) && (source[end] == ' ' || source[end] == '\t') {
+			end++
+		}
+		if end < len(source) && (source[end] == '\n' || source[end] == '\r') {
+			source[end] = ' '
+			t.Segment = t.Segment.WithStop(end + 1)
+			t.SetSoftLineBreak(false)
+		}
+		return gast.WalkContinue, nil
+	})
 }
