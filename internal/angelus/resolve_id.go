@@ -18,6 +18,7 @@ import (
 const (
 	minIDPrefix   = 4
 	ambiguityList = 5
+	fullIDLen     = 32
 )
 
 var secondaryIDKeys = []string{"form_id", "role_id", "against", "prefer"}
@@ -115,6 +116,77 @@ func (h *handlers) mayLearnFate(ctx context.Context, method, id string) bool {
 }
 
 func (h *handlers) placeID(ctx context.Context, method, ref string, route bool) (string, string, error) {
+	name, named := roleNameOf(ref)
+	if !named {
+		return h.placeRef(ctx, method, ref, route)
+	}
+	id, node, err := h.placeRef(ctx, method, ref, false)
+	if err != nil || id != ref || h.knownID(id) {
+		return id, node, err
+	}
+	if role, found, err := h.roleNamed(ctx, name); found || err != nil {
+		return role, "", err
+	}
+	if !route {
+		return id, node, nil
+	}
+	return h.placeRef(ctx, method, ref, route)
+}
+
+func roleNameOf(ref string) (string, bool) {
+	name, ok := strings.CutPrefix(ref, "@")
+	return name, ok && name != "" && !(len(name) == fullIDLen && rpc.IsHexID(name)) && !strings.Contains(ref, rpc.NodeSeparator)
+}
+
+type roleNamer interface {
+	RolesNamed(name string) ([]string, bool)
+}
+
+func (h *handlers) roleNamed(ctx context.Context, name string) (string, bool, error) {
+	var roles []string
+	if n, ok := h.angelus.Backend.(roleNamer); ok {
+		var ready bool
+		if roles, ready = n.RolesNamed(name); !ready {
+			roles = h.scanRolesNamed(name)
+		}
+	} else if h.angelus.Backend != nil {
+		roles = h.scanRolesNamed(name)
+	}
+	var readable []string
+	for _, id := range roles {
+		if h.allowed(ctx, rpc.VerbRead, authz.Aria(id)) == nil {
+			readable = append(readable, id)
+		}
+	}
+	switch len(readable) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return readable[0], true, nil
+	}
+	named := make([]string, len(readable))
+	for i, id := range readable {
+		named[i] = handle.Words(id, handle.MinWords)
+	}
+	return "", false, fmt.Errorf("@%s names %d roles: %s; name one by its handle", name, len(readable), strings.Join(named, ", "))
+}
+
+func (h *handlers) scanRolesNamed(name string) []string {
+	var out []string
+	for _, f := range h.angelus.Backend.Forms() {
+		snap, err := h.angelus.Backend.FormState(f.ID)
+		if err != nil {
+			continue
+		}
+		target, own := snap.Lookup("target-aria"), snap.Lookup("name")
+		if target != nil && *target != "" && own != nil && *own == name {
+			out = append(out, f.ID)
+		}
+	}
+	return out
+}
+
+func (h *handlers) placeRef(ctx context.Context, method, ref string, route bool) (string, string, error) {
 	node, id := rpc.SplitNode(ref)
 	if node != "" && !h.isSelf(node) {
 		return h.elsewhere(ctx, method, ref, node, id, route)

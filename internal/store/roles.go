@@ -3,15 +3,20 @@ package store
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
 )
 
-const targetAriaKey = "target-aria"
+const (
+	targetAriaKey = "target-aria"
+	nameKey       = "name"
+)
 
 type roleIndex struct {
 	byForm map[string]string
+	names  map[string]string
 	ready  bool
 }
 
@@ -32,9 +37,25 @@ func (b *XwalBackend) roleNoted(formID, target string) {
 	b.roles.byForm[formID] = target
 }
 
+func (b *XwalBackend) nameNoted(formID, name string) {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	if b.roles.names == nil {
+		b.roles.names = map[string]string{}
+	}
+	if name == "" {
+		delete(b.roles.names, formID)
+		return
+	}
+	b.roles.names[formID] = name
+}
+
 func (b *XwalBackend) roleCommitted(formID string, patch message.Patch) {
 	if target, spoke := targetOf(patch); spoke {
 		b.roleNoted(formID, target)
+	}
+	if name, spoke := stringKeyOf(patch, nameKey); spoke {
+		b.nameNoted(formID, name)
 	}
 }
 
@@ -48,6 +69,11 @@ func (b *XwalBackend) roleFromState(formID string) {
 		target = *v
 	}
 	b.roleNoted(formID, target)
+	name := ""
+	if v := snap.Lookup(nameKey); v != nil {
+		name = *v
+	}
+	b.nameNoted(formID, name)
 }
 
 func (b *XwalBackend) rolesForgotten(ids []string) {
@@ -55,7 +81,21 @@ func (b *XwalBackend) rolesForgotten(ids []string) {
 	defer b.rolesMu.Unlock()
 	for _, id := range ids {
 		delete(b.roles.byForm, id)
+		delete(b.roles.names, id)
 	}
+}
+
+func (b *XwalBackend) RolesNamed(name string) ([]string, bool) {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	var out []string
+	for formID, target := range b.roles.byForm {
+		if target != "" && b.roles.names[formID] == name {
+			out = append(out, formID)
+		}
+	}
+	sort.Strings(out)
+	return out, b.roles.ready
 }
 
 func (b *XwalBackend) RoleTargets() (map[string]string, bool) {

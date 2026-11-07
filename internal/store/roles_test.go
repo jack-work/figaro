@@ -78,3 +78,69 @@ func TestRoleIndexSeedsFromDiskAfterARestart(t *testing.T) {
 		t.Fatalf("roles %v ready=%v after the seed, want aria-9 -> %s", got, ready, role)
 	}
 }
+
+func namePatch(name string) form.Patch {
+	if name == "" {
+		return form.Build(form.Snapshot{}, nil, []string{nameKey})
+	}
+	raw, _ := json.Marshal(name)
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{nameKey: raw}, nil)
+}
+
+// A name typed after @ is looked up on every resolve of an unknown ref; the
+// index must follow renames, uncasts and deletes without opening a form, and
+// rebuild itself after a restart.
+func TestRolesByNameFollowEveryWrite(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.SeedRoles(context.Background(), 0)
+	named := func(name string) []string {
+		got, _ := b.RolesNamed(name)
+		return got
+	}
+	role, _, err := b.CreateForm("", targetPatch("aria-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ApplyForm(role, namePatch("figaro")); err != nil {
+		t.Fatal(err)
+	}
+	if got := named("figaro"); len(got) != 1 || got[0] != role {
+		t.Fatalf("roles named figaro %v, want [%s]", got, role)
+	}
+	if _, err := b.ApplyForm(role, namePatch("barber")); err != nil {
+		t.Fatal(err)
+	}
+	if got := named("figaro"); len(got) != 0 {
+		t.Fatalf("a renamed role still answers to its old name: %v", got)
+	}
+	if _, err := b.ApplyForm(role, targetPatch("")); err != nil {
+		t.Fatal(err)
+	}
+	if got := named("barber"); len(got) != 0 {
+		t.Fatalf("a form that is no longer a role answers to its name: %v", got)
+	}
+	if _, err := b.ApplyForm(role, targetPatch("aria-2")); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+
+	b, err = NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	b.SeedRoles(context.Background(), 0)
+	if got := named("barber"); len(got) != 1 || got[0] != role {
+		t.Fatalf("after a restart, roles named barber %v, want [%s]", got, role)
+	}
+	if err := b.Remove(role, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := named("barber"); len(got) != 0 {
+		t.Fatalf("a deleted role answers to its name: %v", got)
+	}
+}
