@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -150,10 +151,18 @@ func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string,
 		reportCast(out, false)
 	}
 	if prompt != "" {
-		// A role redirects to its holder, so the bare prompt path reaches the
-		// same figaro either way.
-		runPrompt(loaded, dressing{images: d.images}, prompt, set)
+		promptMinted(loaded, ariaID, prompt, set, dressing{images: d.images})
 	}
+}
+
+func promptMinted(loaded *config.Loaded, ariaID, prompt string, set renderSettings, d dressing) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	if set.jsonMode {
+		submitAndExit(ctx, loaded, ariaID, prompt, d)
+		return
+	}
+	mustPromptFigaro(ctx, ariaAddr(ariaID), ariaID, prompt, loaded, set, d)
 }
 
 func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, asJSON, stay bool) {
