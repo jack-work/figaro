@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
@@ -173,4 +174,45 @@ func TestLoad_DirSkill_UserSymlinkAndLowercaseManifest(t *testing.T) {
 	assert.Equal(t, strings.ToLower(filepath.Join(link, "skill.md")), strings.ToLower(linked.FilePath))
 	_, supplementalSurfaced := patch.Entry("skills.reference")
 	assert.False(t, supplementalSurfaced)
+}
+
+// An outfit that layered one with a credo file and set credo = "..." of its
+// own lost its string: the layer's credo.content and credo.filePath and the
+// string at credo itself went into one build, which kept the branch, so
+// `figaro state outfit` reported no changes. A key an outfit sets replaces
+// whatever an earlier layer, or an earlier outfit in the list, put at that
+// key or under it; the caller's own keys replace the outfits' the same way.
+func TestALaterCredoStringReplacesALayersCredoFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "credo.md"), []byte("---\nname: house\n---\nhouse credo"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	write := func(name, body string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", name+".toml"), []byte(body), 0600))
+	}
+	write("house", "[system]\ncredo = { fileName = \"credo.md\" }\nmodel = \"m\"\n")
+	write("plain", "[system]\ncredo = \"a plain credo\"\n")
+	write("layered", "layers = [\"house\"]\n[system]\ncredo = \"a plain credo\"\n")
+	write("onfile", "layers = [\"plain\"]\n[system]\ncredo = { fileName = \"credo.md\" }\n")
+	o := outfit.New(dir)
+	credo := func(names []string, patch form.Patch) string {
+		t.Helper()
+		p, err := o.Dress(names, patch, "")
+		require.NoError(t, err)
+		raw, ok := form.Snapshot{}.Apply(p).Get("system.credo")
+		require.True(t, ok, "%v: no system.credo", names)
+		return string(raw)
+	}
+	assert.Equal(t, `"a plain credo"`, credo([]string{"layered"}, form.Patch{}))
+	assert.Equal(t, `"a plain credo"`, credo([]string{"house", "plain"}, form.Patch{}))
+	caller := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.credo": json.RawMessage(`"from -S"`)}, nil)
+	assert.Equal(t, `"from -S"`, credo([]string{"house"}, caller))
+
+	var env outfit.ContentEnvelope
+	require.NoError(t, json.Unmarshal([]byte(credo([]string{"onfile"}, form.Patch{})), &env))
+	assert.Equal(t, "name: house", env.Frontmatter)
+
+	p, err := o.Dress([]string{"layered"}, form.Patch{}, "")
+	require.NoError(t, err)
+	model, _ := form.Snapshot{}.Apply(p).Get("system.model")
+	assert.Equal(t, `"m"`, string(model), "a sibling the layer set survives")
 }

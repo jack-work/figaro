@@ -112,21 +112,26 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 		if err != nil {
 			return form.Patch{}, err
 		}
-		for _, e := range folded.Entries() {
-			if !e.IsRemoval() {
-				layered[e.Key] = e.New
-			}
-		}
+		layerOver(layered, folded)
 	}
 	var drops []string
 	for _, e := range patch.Entries() {
 		if e.IsRemoval() {
 			drops = append(drops, e.Key)
-			continue
 		}
-		layered[e.Key] = e.New
 	}
+	layerOver(layered, patch)
 	return form.Build(form.Snapshot{}, layered, drops), nil
+}
+
+func layerOver(dst map[string]json.RawMessage, p form.Patch) {
+	src, roots := map[string]json.RawMessage{}, map[string]bool{}
+	for _, e := range p.Entries() {
+		if !e.IsRemoval() {
+			src[e.Key], roots[e.Key] = e.New, true
+		}
+	}
+	overlay(dst, src, roots)
 }
 
 func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {

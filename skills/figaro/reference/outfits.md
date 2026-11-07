@@ -254,8 +254,13 @@ credo  = { fileName = "credo.md" }
 
 A file that begins with a `---` fence is enveloped **front-matter only** (the
 agent gets a `filePath` and reads the body if it decides to); anything else
-lands whole. Bundled first-party skills load first and the config directory
-overrides them by name.
+lands whole. A plain string works too (`credo = "Be brief."`). Bundled
+first-party skills load first and the config directory overrides them by name.
+
+A key an outfit sets replaces whatever its layers, or an earlier outfit in a
+comma list, put at that key or beneath it: a string credo over a layer's
+`credo = { fileName = ... }` is the credo, not a stray leaf beside the file's.
+Keys passed on `-S` replace the outfits' the same way.
 
 ## What makes two births the same outfit
 

@@ -271,9 +271,11 @@ func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]j
 		return nil, perr
 	}
 	delete(raw, "layers")
-	if err := o.flatten("", raw, flat, r); err != nil {
+	own, roots := map[string]json.RawMessage{}, map[string]bool{}
+	if err := o.flatten("", raw, own, roots, r); err != nil {
 		return nil, err
 	}
+	overlay(flat, own, roots)
 	o.putFold(ep.gen, name, flat)
 	return flat, nil
 }
@@ -333,8 +335,7 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 	}
 }
 
-// flatten walks a TOML tree into dotted form keys, expanding fileName/dirName single-key tables.
-func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, r *reader) error {
+func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, roots map[string]bool, r *reader) error {
 	for k, v := range in {
 		key := k
 		if prefix != "" {
@@ -352,6 +353,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, err)
 				}
 				emitEnvelope(out, key, contentEnvelope(string(body), path))
+				roots[key] = true
 				continue
 			}
 			if dn, ok := val["dirName"].(string); ok && len(val) == 1 {
@@ -383,10 +385,11 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				}
 				for name, env := range m {
 					emitEnvelope(out, key+"."+name, env)
+					roots[key+"."+name] = true
 				}
 				continue
 			}
-			if err := o.flatten(key, val, out, r); err != nil {
+			if err := o.flatten(key, val, out, roots, r); err != nil {
 				return err
 			}
 		default:
@@ -395,9 +398,35 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				return fmt.Errorf("outfit: marshal %s: %w", key, err)
 			}
 			out[key] = b
+			roots[key] = true
 		}
 	}
 	return nil
+}
+
+func overlay(dst, src map[string]json.RawMessage, roots map[string]bool) {
+	for k := range dst {
+		if roots[k] || underRoot(k, roots) {
+			delete(dst, k)
+		}
+	}
+	for root := range roots {
+		for i := strings.LastIndexByte(root, '.'); i >= 0; i = strings.LastIndexByte(root[:i], '.') {
+			delete(dst, root[:i])
+		}
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+func underRoot(key string, roots map[string]bool) bool {
+	for i := strings.LastIndexByte(key, '.'); i >= 0; i = strings.LastIndexByte(key[:i], '.') {
+		if roots[key[:i]] {
+			return true
+		}
+	}
+	return false
 }
 
 // assetPath refuses a reference that resolves outside root, symlinks included.
