@@ -159,9 +159,10 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
 
-`ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID
-(the aria's word handle), OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
-row shows `▸`, not `●`, so identify yourself from the header instead.
+`ls` columns: ARIA (mantra, with `▸` running, `●` this shell, `○` idle), ID
+(the aria's word handle), OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. Running
+outranks this shell: while your own turn is in flight your row shows `▸`, so
+identify yourself from the header ("attending ...") instead.
 
 `attend` binds the **terminal**, not the process that typed it: on unix the key
 is the session leader, so subshells, pipelines, `$(...)`, `timeout figaro …`

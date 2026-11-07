@@ -290,15 +290,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 
 	short := namesOf(figs)
 	now := time.Now()
-	marker := func(f rpc.FigaroInfoResponse) string {
-		if slices.Contains(f.BoundPIDs, ppid) {
-			return "●"
-		}
-		if f.State == "active" {
-			return "▸"
-		}
-		return "○"
-	}
+	marker := func(f rpc.FigaroInfoResponse) string { return lsMark(f, slices.Contains(f.BoundPIDs, ppid)) }
 	build := func(f rpc.FigaroInfoResponse) *figtree.Node {
 		label := f.Mantra
 		if label == "" {
@@ -381,13 +373,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 	short := namesOf(figs)
 	now := time.Now()
 	mark := func(f rpc.FigaroInfoResponse) string {
-		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit) {
-			return "●"
-		}
-		if f.State == "active" {
-			return "▸"
-		}
-		return "○"
+		return lsMark(f, slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit))
 	}
 	var grow func(id string, depth int) *figtree.Node
 	grow = func(id string, depth int) *figtree.Node {
@@ -1142,4 +1128,14 @@ func printUnreachable(nodes []rpc.NodeUnreachable) {
 	for _, n := range nodes {
 		fmt.Fprintf(stderrw, "node %s: %s\n", n.Node, n.Error)
 	}
+}
+
+func lsMark(f rpc.FigaroInfoResponse, here bool) string {
+	switch {
+	case f.State == "active":
+		return "▸"
+	case here:
+		return "●"
+	}
+	return "○"
 }

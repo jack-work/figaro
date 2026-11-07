@@ -222,7 +222,7 @@ with no credentials and no tokens.
   incl. null + outfits, **always**. Rejects every other flag.
 
 Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
-`●`this-shell / `▸`running / `○`idle marker), **ID** (opaque hex), **OUTFIT**,
+`▸`running / `●`this-shell / `○`idle marker, running first), **ID** (opaque hex), **OUTFIT**,
 **VER** (`live` or a short content-hash), **FORK** (`yes` for a branch, `-`
 for a top-level aria: the fork POINT is an LT and the coordinate you would
 type is a turn, so `figaro status <id>` prints the `parent:turn` you can
