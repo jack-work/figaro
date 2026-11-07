@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
@@ -237,5 +239,47 @@ func TestANodeQualifiedIDIsHiddenFromACallerWhoCannotReadIt(t *testing.T) {
 	}
 	if err := r.call(r.owner, rpc.MethodAttach, attachTo(stranger+"/"+remoteID)); err == nil || !strings.Contains(err.Error(), "does not peer") {
 		t.Fatalf("the owner must still hear the node is not a peer: %v", err)
+	}
+}
+
+// form.create and form.bind resolve a parent by handle or prefix. To a
+// guest, a parent it may not read must answer exactly as a parent that never
+// existed (the refs swapped), and mint nothing; the owner's same refs
+// resolve.
+func TestAFormsParentIsHiddenFromACallerWhoCannotReadIt(t *testing.T) {
+	r := newFateRig(t)
+	parent, _, err := r.h.angelus.Backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"private"`)}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	never := "@" + neverID
+	if r.h.angelus.Backend.MatchID(never[:9], -1) != nil {
+		t.Fatal("fixture: the never-existing prefix matches a minted id")
+	}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"x": json.RawMessage(`1`)}, nil)
+	create := func(ref string) map[string]any { return map[string]any{"parent": ref, "patch": patch} }
+	bind := func(ref string) map[string]any { return map[string]any{"parent": ref} }
+	refs := map[string]string{
+		handle.Words(parent, handle.MinWords): handle.Words(never, handle.MinWords),
+		parent[:9]:                            never[:9],
+	}
+	before := len(r.h.angelus.Backend.Forms())
+	for ref, baseline := range refs {
+		if r.call(r.guest, rpc.MethodFormCreate, create(ref)) == nil || r.call(r.guest, rpc.MethodFormBind, bind(ref)) == nil {
+			t.Fatalf("the guest reached a parent it may not read through %q", ref)
+		}
+		r.hidden(rpc.MethodFormCreate, create, ref, baseline)
+		r.hidden(rpc.MethodFormBind, bind, ref, baseline)
+	}
+	if after := len(r.h.angelus.Backend.Forms()); after != before {
+		t.Fatalf("the guest's refused calls minted %d forms", after-before)
+	}
+	for ref := range refs {
+		if err := r.call(r.owner, rpc.MethodFormCreate, create(ref)); err != nil {
+			t.Errorf("form.create under %q for the owner: %v", ref, err)
+		}
+		if err := r.call(r.owner, rpc.MethodFormBind, bind(ref)); err != nil && strings.Contains(err.Error(), "not an unbound form") {
+			t.Errorf("form.bind of %q for the owner: %v", ref, err)
+		}
 	}
 }

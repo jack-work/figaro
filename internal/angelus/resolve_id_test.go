@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
@@ -189,5 +191,37 @@ principals = ["user:guest"]
 	_, err := hs.Map[rpc.MethodAttach](guest, json.RawMessage(`{"figaro_id":"abcd9"}`))
 	if err == nil || strings.Contains(err.Error(), theirs) {
 		t.Fatalf("the refusal named the hidden aria: %v", err)
+	}
+}
+
+// `figaro form fork <handle>` answered "xwal: unknown trunk": the parent of
+// form.create and form.bind went to the store as typed. It resolves like
+// every other id a verb names: a handle, a short prefix, the full id.
+func TestAFormsParentResolvesLikeAnyID(t *testing.T) {
+	h, hs := resolveHandlers(t)
+	parent, _, err := h.angelus.Backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"kept"`)}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := inProcess(context.Background())
+	for _, ref := range []string{handle.Words(parent, handle.MinWords), parent[:9], parent} {
+		patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"x": json.RawMessage(`1`)}, nil)
+		raw, _ := json.Marshal(rpc.FormCreateRequest{Parent: ref, Patch: &patch})
+		out, err := hs.Map[rpc.MethodFormCreate](ctx, raw)
+		if err != nil {
+			t.Fatalf("form.create under %q: %v", ref, err)
+		}
+		child := out.(rpc.FormCreateResponse).FormID
+		snap, err := h.angelus.Backend.FormState(child)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v, _ := snap.Get("brief"); string(v) != `"kept"` {
+			t.Errorf("fork of %q did not copy its parent: brief=%s", ref, v)
+		}
+		bind, _ := json.Marshal(rpc.FormBindRequest{Parent: ref})
+		if _, err := hs.Map[rpc.MethodFormBind](ctx, bind); err != nil && strings.Contains(err.Error(), "not an unbound form") {
+			t.Errorf("form.bind of %q: %v", ref, err)
+		}
 	}
 }

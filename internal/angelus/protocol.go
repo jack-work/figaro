@@ -358,6 +358,11 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 		return nil, err
 	}
 	if req.Parent != "" {
+		parent, err := h.canonicalID(ctx, req.Parent)
+		if err != nil {
+			return nil, fmt.Errorf("form.create: %w", err)
+		}
+		req.Parent = parent
 		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.Parent)); err != nil {
 			return nil, fmt.Errorf("form.create: a copy of %s reads it: %w", req.Parent, err)
 		}
@@ -411,6 +416,10 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		parent = ""
 	}
 	if parent != "" {
+		var err error
+		if parent, err = h.canonicalID(ctx, parent); err != nil {
+			return nil, fmt.Errorf("form.bind: %w", err)
+		}
 		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(parent)); err != nil {
 			return nil, fmt.Errorf("form.bind: a fork of %s reads it: %w", parent, err)
 		}
