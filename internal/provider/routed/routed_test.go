@@ -340,7 +340,7 @@ func (b *captureBus) PushFigaro(message.Message, ...provider.AssistantCache) {}
 func TestCopilotResponsesFingerprintIsUnchanged(t *testing.T) {
 	p := mustNew(t, Spec{Name: "copilot", BaseURL: func() string { return "" }, Catalog: "/models"})
 	p.SetModel("gpt-6-astra")
-	if got := p.responsesBackend().Fingerprint(); got != "copilot-responses/v5/gpt-6-astra" {
+	if got := p.responsesBackend().Fingerprint(); got != "copilot-responses/v6/gpt-6-astra" {
 		t.Errorf("fingerprint %q", got)
 	}
 }

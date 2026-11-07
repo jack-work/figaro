@@ -148,7 +148,7 @@ func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chat
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentProse:
-				text = joinText(text, c.Text)
+				text = joinText(text, provider.PromptText(c))
 				spoke = spoke || c.Text != ""
 			case message.ContentToolResult:
 				body := c.Text

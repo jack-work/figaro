@@ -73,7 +73,7 @@ func (p *Provider) Fingerprint() string {
 	if p.Route.MarkPlan(mode).Blocks {
 		shape = "blocks"
 	}
-	return "openai-chat/" + p.Route.Name + "/" + shape + "/v3"
+	return "openai-chat/" + p.Route.Name + "/" + shape + "/v4"
 }
 
 func (p *Provider) SetModel(model string) {
