@@ -39,16 +39,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			target := roleTargetOf(f, snap)
 			targetState := ""
 			if target != "" {
-				targetState = "missing"
-				for i := range resp.Figaros {
-					if resp.Figaros[i].ID == target {
-						targetState = resp.Figaros[i].State
-						if targetState == "" {
-							targetState = "known"
-						}
-						break
-					}
-				}
+				targetState = holderState(ctx, acli, resp.Figaros, target)
 			}
 			if jsonOut {
 				st := formStatus(f, snap, version)
@@ -201,6 +192,22 @@ func speciesOf(f *rpc.FigaroInfoResponse) string {
 	default:
 		return "form"
 	}
+}
+
+func holderState(ctx context.Context, acli *sdk.Angelus, rows []rpc.FigaroInfoResponse, target string) string {
+	id := target
+	if resolved, err := doorID(ctx, acli, target); err == nil {
+		id = resolved
+	}
+	for i := range rows {
+		if rows[i].ID == id {
+			if rows[i].State == "" {
+				return "known"
+			}
+			return rows[i].State
+		}
+	}
+	return "missing"
 }
 
 // The listing can lag a cast by one refresh; the form is the truth.
