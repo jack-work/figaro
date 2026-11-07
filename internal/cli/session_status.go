@@ -240,6 +240,9 @@ func (s *sessionStatus) update(metrics aria.Metrics) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.turn.moving() && !metrics.ContextExact && metrics.ContextTokens < s.metrics.ContextTokens {
+		metrics.ContextTokens, metrics.ContextExact = s.metrics.ContextTokens, s.metrics.ContextExact
+	}
 	if s.metrics == metrics {
 		return false
 	}
