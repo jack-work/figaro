@@ -381,8 +381,7 @@ func tailOutput(output string, limit int) (string, int) {
 	return output[at+1:], total
 }
 
-// timeNow is indirected so the golden can freeze a running call's elapsed time.
-var timeNow = time.Now
+var sessionNow = time.Now
 
 // toolElapsed counts from the model opening the call, not from the tool starting.
 func toolElapsed(n livedoc.Node) string {
@@ -395,7 +394,7 @@ func toolElapsed(n livedoc.Node) string {
 	}
 	to := n.FinishedAt
 	if to == 0 {
-		to = timeNow().UnixMilli()
+		to = sessionNow().UnixMilli()
 	}
 	return formatDuration(to - from)
 }

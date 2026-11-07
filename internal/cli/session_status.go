@@ -260,7 +260,7 @@ func (s *sessionStatus) beginTurn() {
 	if !s.turn.authoritative() {
 		s.turn = turnStatusSending
 	}
-	s.lastAt = time.Now()
+	s.lastAt = sessionNow()
 	s.mu.Unlock()
 }
 
@@ -291,7 +291,7 @@ func (s *sessionStatus) finishTurn(reason string) {
 		return
 	}
 	s.mu.Lock()
-	s.lastAt = time.Now()
+	s.lastAt = sessionNow()
 	reason = strings.ToLower(reason)
 	switch {
 	case strings.Contains(reason, "interrupt"):
@@ -335,7 +335,7 @@ func (s *sessionStatus) setRuntime(rt runtimeView) bool {
 	changed := s.turn != st
 	s.turn = st
 	if changed {
-		s.lastAt = time.Now()
+		s.lastAt = sessionNow()
 	}
 	if rt.Model != "" && s.model != rt.Model {
 		s.model, changed = rt.Model, true

@@ -92,8 +92,8 @@ func toolBlockCases() []struct {
 
 func TestToolBlockGolden(t *testing.T) {
 	// A running call's elapsed time is `now - opened`: freeze the clock.
-	defer func(prev func() time.Time) { timeNow = prev }(timeNow)
-	timeNow = func() time.Time { return time.UnixMilli(1785862030000 + 17_200) }
+	defer func(prev func() time.Time) { sessionNow = prev }(sessionNow)
+	sessionNow = func() time.Time { return time.UnixMilli(1785862030000 + 17_200) }
 
 	// The block prints a wall clock, so pin the zone too.
 	defer func(prev func() *time.Location) { timeLocation = prev }(timeLocation)

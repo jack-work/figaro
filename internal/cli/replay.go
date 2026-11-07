@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -76,6 +77,7 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	if h.Model != nil {
 		window = h.Model.ContextWindow
 	}
+	sessionNow = newTapeClock(started, frames, srv.position).now
 	tailFigaro(ctx, cancel, sdk.Addr{Door: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started, window: window})
 }
 
@@ -198,6 +200,69 @@ func (s *tapeServer) position() time.Duration {
 		return played
 	}
 	return s.sent
+}
+
+type tapeClock struct {
+	anchors  []clockAnchor
+	position func() time.Duration
+}
+
+type clockAnchor struct {
+	t    time.Duration
+	wall int64
+}
+
+func newTapeClock(started time.Time, frames []tape.Frame, position func() time.Duration) tapeClock {
+	c := tapeClock{position: position}
+	if !started.IsZero() {
+		c.anchors = append(c.anchors, clockAnchor{wall: started.UnixMilli()})
+	}
+	for _, f := range frames {
+		if f.Dir != tape.In || f.Method() != rpc.MethodFormDelta {
+			continue
+		}
+		var m struct {
+			Params struct {
+				At int64 `json:"at"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(f.Msg, &m) != nil || m.Params.At <= 0 {
+			continue
+		}
+		a := clockAnchor{t: f.At(), wall: m.Params.At}
+		if n := len(c.anchors); n > 0 {
+			last := &c.anchors[n-1]
+			if a.wall <= last.wall {
+				continue
+			}
+			if a.t <= last.t {
+				last.wall = a.wall
+				continue
+			}
+		}
+		c.anchors = append(c.anchors, a)
+	}
+	return c
+}
+
+func (c tapeClock) now() time.Time { return c.wallAt(c.position()) }
+
+func (c tapeClock) wallAt(t time.Duration) time.Time {
+	if len(c.anchors) == 0 {
+		return time.Now()
+	}
+	i := sort.Search(len(c.anchors), func(i int) bool { return c.anchors[i].t > t })
+	switch {
+	case i == 0:
+		a := c.anchors[0]
+		return time.UnixMilli(a.wall).Add(t - a.t)
+	case i == len(c.anchors):
+		a := c.anchors[i-1]
+		return time.UnixMilli(a.wall).Add(t - a.t)
+	}
+	a, b := c.anchors[i-1], c.anchors[i]
+	frac := float64(t-a.t) / float64(b.t-a.t)
+	return time.UnixMilli(a.wall + int64(frac*float64(b.wall-a.wall)))
 }
 
 type recordedAnswer struct {
