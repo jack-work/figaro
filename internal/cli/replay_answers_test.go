@@ -1,0 +1,84 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/tape"
+	"github.com/jack-work/figaro/sdk"
+)
+
+func tapeFrame(t *testing.T, at float64, dir tape.Direction, msg string) tape.Frame {
+	t.Helper()
+	if !json.Valid([]byte(msg)) {
+		t.Fatalf("bad frame %s", msg)
+	}
+	return tape.Frame{T: at, Dir: dir, Msg: json.RawMessage(msg)}
+}
+
+func metricsProbeFrames(t *testing.T, id int, at float64, tokens int) []tape.Frame {
+	ask := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"figaro.read","params":{"figaro_id":"a","at":{"turn":18446744073709551615,"node":0},"floor":{"turn":0,"node":0},"limit":1,"x-caller":{"duke":true}}}`, id)
+	reply := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"more":{},"metrics":{"context_tokens":%d,"context_exact":false}}}`, id, tokens)
+	return []tape.Frame{tapeFrame(t, at, tape.Out, ask), tapeFrame(t, at, tape.In, reply)}
+}
+
+// The bar polls metrics on its own cadence, never on the recording's. A replay
+// that handed out recorded replies first-come-first-served gave a poll made
+// during the last turn the figures from the first one: Gluck's 199k aria read
+// ~14.8k, then ~38.4k, then ~114.0k as the queue drained (gen4 bug 5). A
+// request is answered with what the daemon said at that point of the tape.
+func TestAReplayAnswersAPollWithTheFiguresOfItsMomentOnTheTape(t *testing.T) {
+	var frames []tape.Frame
+	frames = append(frames, metricsProbeFrames(t, 1, 0.01, 14811)...)
+	frames = append(frames, metricsProbeFrames(t, 2, 0.02, 38382)...)
+	frames = append(frames, metricsProbeFrames(t, 3, 0.03, 199365)...)
+	frames = append(frames,
+		tapeFrame(t, 0.5, tape.In, `{"jsonrpc":"2.0","method":"turn.done","params":{"figaro_id":"a","reason":"stop"}}`),
+		tapeFrame(t, 600, tape.In, `{"jsonrpc":"2.0","method":"turn.done","params":{"figaro_id":"a","reason":"stop"}}`),
+	)
+
+	dir, err := os.MkdirTemp("", "figtape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	ep := transport.UnixEndpoint(filepath.Join(dir, "agent.sock"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := &tapeServer{frames: frames, speed: 1, done: make(chan struct{})}
+	if err := srv.listen(ctx, ep); err != nil {
+		t.Fatal(err)
+	}
+	passed := make(chan struct{}, 1)
+	cli, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(method string, _ json.RawMessage) {
+		select {
+		case passed <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	select {
+	case <-passed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the tape never reached 0.5s")
+	}
+
+	for poll := range 3 {
+		m, err := cli.Metrics(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m == nil || m.ContextTokens != 199365 {
+			t.Fatalf("poll %d at 0.5s into the tape: context %+v, want the 199365 the daemon reported by then", poll, m)
+		}
+	}
+}

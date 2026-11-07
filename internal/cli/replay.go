@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
@@ -110,6 +111,10 @@ type tapeServer struct {
 	speed  float64
 	done   chan struct{}
 	closed bool
+
+	mu    sync.Mutex
+	start time.Time
+	sent  time.Duration
 }
 
 func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
@@ -132,26 +137,7 @@ func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
 }
 
 func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
-	// replies[m] is the queue of recorded results for method m, consumed as
-	// the client asks.
-	replies := map[string][]json.RawMessage{}
-	for i, f := range s.frames {
-		if f.Dir != tape.Out || f.Method() == "" {
-			continue
-		}
-		id := f.ID()
-		for _, g := range s.frames[i:] {
-			if g.Dir == tape.In && g.ID() == id && g.Method() == "" {
-				var m struct {
-					Result json.RawMessage `json:"result"`
-				}
-				_ = json.Unmarshal(g.Msg, &m)
-				replies[f.Method()] = append(replies[f.Method()], m.Result)
-				break
-			}
-		}
-	}
-
+	answers := recordedAnswers(s.frames)
 	handlers := map[string]jkrpc.HandlerFunc{}
 	for _, m := range []string{
 		rpc.MethodRead, rpc.MethodQueued, rpc.MethodForm, rpc.MethodContext,
@@ -160,24 +146,24 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 	} {
 		method := m
 		handlers[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			q := replies[method]
-			if len(q) == 0 {
-				return nil, nil
+			if r := answers.at(method, params, s.position()); r != nil {
+				return r, nil
 			}
-			replies[method] = q[1:]
-			return q[0], nil
+			return nil, nil
 		}
 	}
 
 	srv := jkrpc.NewServer(jkrpc.NewConn(conn), handlers)
 	go srv.Serve(ctx)
 
-	start := time.Now()
+	s.mu.Lock()
+	s.start = time.Now()
+	s.mu.Unlock()
 	for _, f := range s.frames {
 		if f.Dir != tape.In || f.Method() == "" {
 			continue
 		}
-		if err := s.waitUntil(ctx, start, f.At()); err != nil {
+		if err := s.waitUntil(ctx, s.start, f.At()); err != nil {
 			break
 		}
 		var m struct {
@@ -187,6 +173,11 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 		if json.Unmarshal(f.Msg, &m) != nil {
 			continue
 		}
+		s.mu.Lock()
+		if f.At() > s.sent {
+			s.sent = f.At()
+		}
+		s.mu.Unlock()
 		if srv.Notify(m.Method, m.Params) != nil {
 			break
 		}
@@ -195,6 +186,86 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 		s.closed = true
 		close(s.done)
 	}
+}
+
+func (s *tapeServer) position() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.speed <= 0 || s.start.IsZero() {
+		return s.sent
+	}
+	if played := time.Duration(float64(time.Since(s.start)) * s.speed); played > s.sent {
+		return played
+	}
+	return s.sent
+}
+
+type recordedAnswer struct {
+	asked  time.Duration
+	result json.RawMessage
+}
+
+type tapeAnswers struct {
+	byAsk    map[string][]recordedAnswer
+	byMethod map[string][]recordedAnswer
+}
+
+func recordedAnswers(frames []tape.Frame) tapeAnswers {
+	a := tapeAnswers{byAsk: map[string][]recordedAnswer{}, byMethod: map[string][]recordedAnswer{}}
+	for i, f := range frames {
+		method := f.Method()
+		if f.Dir != tape.Out || method == "" {
+			continue
+		}
+		id := f.ID()
+		for _, g := range frames[i:] {
+			if g.Dir != tape.In || g.ID() != id || g.Method() != "" {
+				continue
+			}
+			var m struct {
+				Result json.RawMessage `json:"result"`
+			}
+			_ = json.Unmarshal(g.Msg, &m)
+			var req struct {
+				Params json.RawMessage `json:"params"`
+			}
+			_ = json.Unmarshal(f.Msg, &req)
+			r := recordedAnswer{asked: f.At(), result: m.Result}
+			key := askKey(method, req.Params)
+			a.byAsk[key] = append(a.byAsk[key], r)
+			a.byMethod[method] = append(a.byMethod[method], r)
+			break
+		}
+	}
+	return a
+}
+
+func (a tapeAnswers) at(method string, params json.RawMessage, now time.Duration) json.RawMessage {
+	rs := a.byAsk[askKey(method, params)]
+	if len(rs) == 0 {
+		rs = a.byMethod[method]
+	}
+	if len(rs) == 0 {
+		return nil
+	}
+	pick := rs[0]
+	for _, r := range rs {
+		if r.asked > now {
+			break
+		}
+		pick = r
+	}
+	return pick.result
+}
+
+func askKey(method string, params json.RawMessage) string {
+	var p map[string]json.RawMessage
+	if json.Unmarshal(params, &p) != nil {
+		return method + " " + string(params)
+	}
+	delete(p, "x-caller")
+	canon, _ := json.Marshal(p)
+	return method + " " + string(canon)
 }
 
 // speed <= 0 plays as fast as the client will take frames.
