@@ -44,6 +44,7 @@ func (w Web) lapseFor(ctx context.Context) (time.Duration, string) {
 
 const (
 	webReadLimit         = 64 << 20
+	webWriteGrace        = 500 * time.Millisecond
 	webReadHeaderTimeout = 10 * time.Second
 	webAgeReason         = "connection age limit: reconnect"
 	webFollowAgeReason   = "follow age limit: reconnect for current groups"
@@ -115,20 +116,32 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			defer end(nil)
 			cctx = withLapse(cctx, lapse{after: after, reason: reason, end: end})
 		}
-		a.handleConn(cctx, authz.DoorWeb, &webConn{io: ctx, life: cctx, c: c})
+		wc, release := newWebConn(ctx, cctx, c)
+		defer release()
+		a.handleConn(cctx, authz.DoorWeb, wc)
 	})
 }
 
 type webConn struct {
-	io   context.Context
-	life context.Context
-	c    *websocket.Conn
-	rbuf []byte
+	io     context.Context
+	life   context.Context
+	writes context.Context
+	c      *websocket.Conn
+	rbuf   []byte
 
 	wmu  sync.Mutex
 	wbuf []byte
 
 	closeOnce sync.Once
+}
+
+func newWebConn(io, life context.Context, c *websocket.Conn) (*webConn, func()) {
+	writes, stopWrites := context.WithCancel(io)
+	stopAfter := context.AfterFunc(life, func() { time.AfterFunc(webWriteGrace, stopWrites) })
+	return &webConn{io: io, life: life, writes: writes, c: c}, func() {
+		stopAfter()
+		stopWrites()
+	}
 }
 
 func (w *webConn) Read(p []byte) (int, error) {
@@ -156,7 +169,10 @@ func (w *webConn) Write(p []byte) (int, error) {
 		if i < 0 {
 			return len(p), nil
 		}
-		if err := w.c.Write(w.life, websocket.MessageText, w.wbuf[:i]); err != nil {
+		if err := w.life.Err(); err != nil {
+			return 0, err
+		}
+		if err := w.c.Write(w.writes, websocket.MessageText, w.wbuf[:i]); err != nil {
 			return 0, err
 		}
 		w.wbuf = append(w.wbuf[:0], w.wbuf[i+1:]...)

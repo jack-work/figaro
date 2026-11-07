@@ -1,11 +1,14 @@
 package angelus
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +49,60 @@ func TestWebDoorClosesAKeysConnectionOnRevoke(t *testing.T) {
 	require.Error(t, err)
 	var ce websocket.CloseError
 	require.True(t, errors.As(err, &ce), "%v", err)
+	require.Equal(t, websocket.StatusPolicyViolation, ce.Code)
+	require.Contains(t, ce.Reason, "revoked")
+}
+
+// The revoke test flaked with "failed to read frame header: EOF": the door's
+// writes ran under the connection's life, and the websocket library closes
+// the socket outright when a write's context ends. A revoke that landed while
+// a write was in flight (or before the library had cleared its write timer)
+// dropped the connection with no close frame, so a revoked client saw EOF
+// instead of the reason. Whether the revoke lands mid-write (the usual case
+// here) or before the write starts, the client hears the reason: the whole
+// frame then the close, or the close alone, never EOF.
+func TestARevokeDuringAWriteStillClosesWithTheReason(t *testing.T) {
+	accepted := make(chan *websocket.Conn, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(rw, r, nil)
+		if err != nil {
+			return
+		}
+		accepted <- c
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.CloseNow() })
+	client.SetReadLimit(-1)
+	server := <-accepted
+
+	life, end := context.WithCancelCause(context.Background())
+	w, release := newWebConn(context.Background(), life, server)
+	defer release()
+	big := append(bytes.Repeat([]byte("x"), 16<<20), '\n')
+	wrote := make(chan error, 1)
+	go func() {
+		_, err := w.Write(big)
+		wrote <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	end(errors.New("api key revoked"))
+	go func() {
+		<-wrote
+		_ = w.Close()
+	}()
+
+	_, msg, err := client.Read(ctx)
+	if err == nil {
+		require.Len(t, msg, len(big)-1, "a partial frame reached the client")
+		_, _, err = client.Read(ctx)
+	}
+	var ce websocket.CloseError
+	require.True(t, errors.As(err, &ce), "the revoked client saw %v, not the reason", err)
 	require.Equal(t, websocket.StatusPolicyViolation, ce.Code)
 	require.Contains(t, ce.Reason, "revoked")
 }
