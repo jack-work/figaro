@@ -28,6 +28,14 @@ type Header struct {
 	Binary  string `json:"binary,omitempty"`  // figaro version + build sha
 	Command string `json:"command,omitempty"` // argv that took the recording
 	Note    string `json:"note,omitempty"`    // free text: what was being hunted
+	Model   *Model `json:"model,omitempty"`
+}
+
+type Model struct {
+	Provider      string `json:"provider,omitempty"`
+	Name          string `json:"name,omitempty"`
+	ContextWindow int    `json:"context_window,omitempty"`
+	MaxOutput     int    `json:"max_output,omitempty"`
 }
 
 type Direction string

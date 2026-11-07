@@ -95,28 +95,29 @@ type interactiveInput struct {
 	fcli transcriptReadClient
 	// subject is the connection fcli names, held concretely so a switch can
 	// close it and `:send` can Qua on it.
-	subject      *sdk.Aria
-	acli         *sdk.Angelus
-	loaded       *config.Loaded
-	tap          transport.Tap
-	seed         seedPlan
-	parked       map[string]*parkedSubject
-	parkOrder    []string // oldest first
-	lineageEpoch uint64
-	ownsSubject  bool   // a switch may only close a connection this loop dialled
-	subjectGen   uint64 // fences the old connection's handlers off the renderer the instant a switch begins
-	subjectDead  chan struct{}
-	replaying    bool
-	held         heldSends
-	jumps        ariaJumplist         // guarded by in.mu
-	queueEpoch   string               // the daemon refuses a queue mutation without the epoch it was read at
-	queueDebut   map[uint64]time.Time // guarded by in.mu
-	debutTimer   *time.Timer
-	intrinsics   *intrinsicMirrors
-	bound        *formMirror // the subject's form; guarded by in.mu, parked with the subject
-	models       *modelsFeed
-	interrupting bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user
-	hangup       hangupClient // nil leaves H inert
+	subject        *sdk.Aria
+	acli           *sdk.Angelus
+	loaded         *config.Loaded
+	tap            transport.Tap
+	seed           seedPlan
+	parked         map[string]*parkedSubject
+	parkOrder      []string // oldest first
+	lineageEpoch   uint64
+	ownsSubject    bool   // a switch may only close a connection this loop dialled
+	subjectGen     uint64 // fences the old connection's handlers off the renderer the instant a switch begins
+	subjectDead    chan struct{}
+	replaying      bool
+	recordedWindow int
+	held           heldSends
+	jumps          ariaJumplist         // guarded by in.mu
+	queueEpoch     string               // the daemon refuses a queue mutation without the epoch it was read at
+	queueDebut     map[uint64]time.Time // guarded by in.mu
+	debutTimer     *time.Timer
+	intrinsics     *intrinsicMirrors
+	bound          *formMirror // the subject's form; guarded by in.mu, parked with the subject
+	models         *modelsFeed
+	interrupting   bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user
+	hangup         hangupClient // nil leaves H inert
 	// The send half. ownTurn closes when a frame carries our question, noTurn
 	// when the agent errors instead; Qua's `active` is sampled before the
 	// prompt is queued and can race, the event cannot.

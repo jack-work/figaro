@@ -75,3 +75,12 @@ nothing about it.
 The audit behind this contract: `git diff` of `api/` and `sdk/` across
 every tag since v0.51.0 found only additive changes, apart from images and
 the two fold-rule fixes.
+
+## Tapes
+
+A tape (`listen --record`, `figaro replay`) is format 1: a header line, then
+frames. The header may carry an optional `model`: the provider, name,
+effective context window and max output the recording saw. A replay with it
+draws that window and never asks the replaying host's `@models`; a tape
+without it (older recordings) falls back to the live catalog, as before. An
+older replay ignores the field. Additive, so the format stays 1.

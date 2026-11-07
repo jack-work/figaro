@@ -87,6 +87,14 @@ func (in *interactiveInput) syncComments() {
 }
 
 func (in *interactiveInput) recomputeLimit() {
+	if in.recordedWindow > 0 {
+		in.mu.Lock()
+		if in.lt.status.setLimit(in.recordedWindow) {
+			in.lt.render()
+		}
+		in.mu.Unlock()
+		return
+	}
 	in.models.ensure()
 	in.mu.Lock()
 	bound := in.bound

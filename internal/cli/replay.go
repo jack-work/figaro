@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
@@ -69,7 +71,11 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	if id == "" {
 		id = "tape"
 	}
-	tailFigaro(ctx, cancel, sdk.Addr{Door: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started})
+	window := 0
+	if h.Model != nil {
+		window = h.Model.ContextWindow
+	}
+	tailFigaro(ctx, cancel, sdk.Addr{Door: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started, window: window})
 }
 
 func printTapeSummary(w *os.File, h tape.Header, frames []tape.Frame) {
@@ -207,4 +213,53 @@ func (s *tapeServer) waitUntil(ctx context.Context, start time.Time, at time.Dur
 	case <-time.After(d):
 		return nil
 	}
+}
+
+const recordModelWait = 3 * time.Second
+
+func recordedModel(ctx context.Context, acli *sdk.Angelus, ep sdk.Addr) *tape.Model {
+	ctx, cancel := context.WithTimeout(ctx, recordModelWait)
+	defer cancel()
+	bound, err := readForm(ctx, ep)
+	if err != nil {
+		return nil
+	}
+	provider, name := models.Subject(bound)
+	catalogAt := sdk.Addr{Door: ep.Door, ID: models.FormID}
+	catalog, _ := readForm(ctx, catalogAt)
+	limit := models.ContextLimit(catalog, bound)
+	if limit <= 0 && provider != "" && name != "" && acli != nil && acli.ModelsWant(ctx, provider, name) == nil {
+		wait := time.NewTicker(100 * time.Millisecond)
+		defer wait.Stop()
+		for limit <= 0 && ctx.Err() == nil {
+			select {
+			case <-ctx.Done():
+			case <-wait.C:
+				catalog, _ = readForm(ctx, catalogAt)
+				limit = models.ContextLimit(catalog, bound)
+			}
+		}
+	}
+	return modelEntry(catalog, provider, name, limit)
+}
+
+func modelEntry(catalog form.Snapshot, provider, name string, limit int) *tape.Model {
+	if name == "" && limit <= 0 {
+		return nil
+	}
+	e, _ := models.Lookup(catalog, provider, name)
+	return &tape.Model{Provider: provider, Name: name, ContextWindow: limit, MaxOutput: e.MaxOutput}
+}
+
+func readForm(ctx context.Context, ep sdk.Addr) (form.Snapshot, error) {
+	c, err := sdk.DialAria(ep, nil)
+	if err != nil {
+		return form.Snapshot{}, err
+	}
+	defer c.Close()
+	resp, err := c.Form(ctx)
+	if err != nil {
+		return form.Snapshot{}, err
+	}
+	return resp.Snapshot, nil
 }

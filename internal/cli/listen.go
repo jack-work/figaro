@@ -47,6 +47,7 @@ func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, 
 			Binary:  boot.BuildRevision(),
 			Command: strings.Join(os.Args, " "),
 			Note:    note,
+			Model:   recordedModel(ctx, acli, figaroEP),
 		})
 		if err != nil {
 			die("record: %s", err)
@@ -71,6 +72,7 @@ type tailOpts struct {
 	startedAt     time.Time       // a replay passes the recording's start; zero is time.Now
 	formPit       bool
 	formIntrinsic string // "" is the host's own form
+	window        int    // a replay's recorded context window; 0 reads the live catalog
 }
 
 func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr, figaroID string, loaded *config.Loaded, opt tailOpts) {
@@ -81,7 +83,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr, fig
 		set:  listenSettings(loaded),
 		acli: opt.acli, tape: opt.tape, end: opt.end, startedAt: opt.startedAt,
 		formPit: opt.formPit, formIntrinsic: opt.formIntrinsic, ownsSubject: true,
-		signals: true,
+		signals: true, window: opt.window,
 	})
 }
 
