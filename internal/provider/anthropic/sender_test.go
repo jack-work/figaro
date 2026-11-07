@@ -28,16 +28,21 @@ func renderedInput(t *testing.T, c message.Content) []byte {
 
 // A fork's `figaro send` reached its parent as a plain user prompt: the
 // sender was recorded and never rendered, so the model answered it as the
-// user's. A prompt from another figaro names it (handle and id) in the text
-// the provider sends, the same bytes on every render so the cached prefix
-// holds; the owner's prompts are sent as they always were.
-func TestAnotherFigarosPromptNamesItsSender(t *testing.T) {
+// user's. A prompt from another figaro carries a sender reminder (handle and
+// short id) in the same user message, ahead of its text, through the same
+// <system-reminder> channel form state uses; the text itself is sent as
+// typed, the bytes are the same on every render so the cached prefix holds,
+// and the owner's prompts are sent as they always were.
+func TestAnotherFigarosPromptCarriesASenderReminder(t *testing.T) {
 	first := renderedInput(t, message.SenderText(forkID, "review my branch"))
 	require.Equal(t, first, renderedInput(t, message.SenderText(forkID, "review my branch")), "two renders differ")
-	for _, want := range []string{handle.Words(forkID, handle.MinWords), forkID, "review my branch"} {
-		require.True(t, bytes.Contains(first, []byte(want)), "the rendered prompt lacks %q: %s", want, first)
-	}
-	require.Less(t, strings.Index(string(first), forkID), strings.Index(string(first), "review my branch"), "the sender comes after the text")
+	tag := "<system-reminder name=\"sender\">\nfigaro " + handle.Words(forkID, handle.MinWords) + " (" + forkID[:5] + ")\n</system-reminder>"
+	quoted, err := json.Marshal(tag)
+	require.NoError(t, err)
+	wire := string(quoted[1 : len(quoted)-1])
+	require.True(t, bytes.Contains(first, []byte(wire)), "no sender reminder %s in %s", tag, first)
+	require.Less(t, strings.Index(string(first), wire), strings.Index(string(first), "review my branch"), "the reminder comes after the text")
+	require.False(t, bytes.Contains(first, []byte("[from figaro")), "the text still carries a leading line: %s", first)
 
 	plain := renderedInput(t, message.TextContent("review my branch"))
 	for _, owner := range []string{"", "Gluck", "user"} {

@@ -343,7 +343,7 @@ func (a *Anthropic) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v9"
+	return "anthropic/" + rr + "/v10"
 }
 
 func (a *Anthropic) SetModel(model string) {
@@ -563,7 +563,10 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentProse:
-				blocks = append(blocks, nativeBlock{Type: "text", Text: provider.PromptText(c)})
+				if r := provider.SenderReminder(c.Sender); r != "" && c.Text != "" {
+					blocks = append(blocks, nativeBlock{Type: "text", Text: r})
+				}
+				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentImage:
 				// Claimed images render inside their tool_result below.
 				if _, claimed := toolImages[c.ToolCallID]; claimed && c.ToolCallID != "" {

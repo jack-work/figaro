@@ -822,7 +822,10 @@ func encodeResponseMessage(
 			case message.ContentProse:
 				if content.Text != "" {
 					spoke = true
-					userContent = append(userContent, responseContent{Type: "input_text", Text: provider.PromptText(content)})
+					if r := provider.SenderReminder(content.Sender); r != "" {
+						userContent = append(userContent, responseContent{Type: "input_text", Text: r})
+					}
+					userContent = append(userContent, responseContent{Type: "input_text", Text: content.Text})
 				}
 			case message.ContentImage:
 				if content.Data != "" {
@@ -1030,7 +1033,7 @@ func (p *Provider) fingerprintFor(model string) string {
 	if model == "" {
 		model = "unset"
 	}
-	return p.namespace + "/v6/" + model
+	return p.namespace + "/v7/" + model
 }
 
 func responseOptionsFor(snap form.Snapshot) (responseRequestOptions, error) {

@@ -4,26 +4,20 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/handle"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-func PromptText(c message.Content) string {
-	line := SenderLine(c.Sender)
-	if line == "" || c.Text == "" {
-		return c.Text
-	}
-	return line + "\n\n" + c.Text
-}
-
-func SenderLine(sender string) string {
+func SenderReminder(sender string) string {
 	id, _ := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
 	_, bare := rpc.SplitNode(id)
-	if !rpc.IsHexID(bare) || len(strings.TrimPrefix(bare, "@")) < rpc.OldIDLen {
+	body := strings.TrimPrefix(bare, "@")
+	if !rpc.IsHexID(bare) || len(body) < rpc.OldIDLen {
 		return ""
 	}
-	if name := handle.Words(bare, handle.MinWords); name != "" {
-		return "[from figaro " + name + ", aria " + id + "]"
+	short := bare[:len(bare)-len(body)] + body[:min(rpc.ShortIDLen, len(body))]
+	name := "figaro " + short
+	if words := handle.Words(bare, handle.MinWords); words != "" {
+		name = "figaro " + words + " (" + short + ")"
 	}
-	return "[from figaro " + id + "]"
+	return "<system-reminder name=\"sender\">\n" + name + "\n</system-reminder>"
 }

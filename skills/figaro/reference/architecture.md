@@ -232,11 +232,13 @@ What the sender is recorded as:
 | unknown | empty |
 
 The pager draws every sender (`figaro <handle>` for an aria). The model sees
-only an aria's: every provider prefixes a prompt from another figaro with
-`[from figaro <handle>, aria <id>]` and a blank line, built from the id alone
-so the bytes never change between renders. The duke's and a label's prompts
-go to the model as typed: recorded history cannot tell a label from a
-`duke-title`, and both name the owner's side.
+only an aria's: every provider puts a
+`<system-reminder name="sender">figaro <handle> (<short id>)</system-reminder>`
+in the same user message, just before that figaro's text, through the channel
+form-state reminders use. It is built from the id alone, so the bytes never
+change between renders, and the text itself is sent as typed. The duke's and a
+label's prompts go to the model as typed: recorded history cannot tell a label
+from a `duke-title`, and both name the owner's side.
 
 **The duke is the end user**: the person the agent serves, as distinct from an
 aria or an anonymous script. Their name does not live in shell config: an
