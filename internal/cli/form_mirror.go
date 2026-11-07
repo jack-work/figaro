@@ -429,6 +429,7 @@ func leafPreview(label string, raw json.RawMessage) string {
 
 func formValuePreview(raw json.RawMessage) string {
 	const cols = 120
+	raw = withoutHTMLEscapes(raw)
 	var b strings.Builder
 	w, space := 0, false
 	for _, r := range string(raw) {
@@ -565,4 +566,18 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func withoutHTMLEscapes(raw json.RawMessage) json.RawMessage {
+	var s string
+	if len(raw) == 0 || raw[0] != '"' || !bytes.Contains(raw, []byte(`\u00`)) || json.Unmarshal(raw, &s) != nil {
+		return raw
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(s) != nil {
+		return raw
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 }
