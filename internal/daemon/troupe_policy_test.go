@@ -148,9 +148,16 @@ func TestAnIntermediateThatIsNoSetterCannotPublishAPolicy(t *testing.T) {
 // A document granting every verb on everything, in force on nodes that
 // lend the troupe everything, still cannot change the troupe policy,
 // revoke a node, or reach sandbox:local, on any node.
+//
+// b's ledger can hold the version, from gossip, while gossip's goroutine is
+// still applying it, so the grant was asserted before it existed (2 in 30).
+// The assertions wait for each node's apply.
 func TestAnAllGrantingTroupePolicyCannotTakeTheLocalOnlyRights(t *testing.T) {
-	na, nb, _, mb, root := pairWith(t, lendingEverything())
+	na, nb, ma, mb, root := pairWith(t, lendingEverything())
+	appliedA, appliedB := policyApplied(t, ma, 1), policyApplied(t, mb, 1)
 	rootStartsPolicy(t, na, root, anaHoldsEverything, na.id(), nb.id())
+	waitApplied(t, appliedA, na)
+	waitApplied(t, appliedB, nb)
 	require.Equal(t, uint64(1), mb.PolicyVersion())
 
 	revoke, err := troupe.SignRevoke(root.key, "estate", nb.id(), time.Now())
