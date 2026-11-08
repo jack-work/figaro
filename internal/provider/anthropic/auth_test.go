@@ -80,3 +80,20 @@ func TestDoWithAuthRetryStopsAtLoginRequired(t *testing.T) {
 	assert.Equal(t, "anthropic: sign-in expired, run: figaro provider login anthropic", err.Error())
 	assert.Equal(t, []string{"tok"}, fr.invalidated)
 }
+
+type unsignedResolver struct{}
+
+func (unsignedResolver) Resolve() (string, error) {
+	return "", &auth.NotSignedInError{Provider: "anthropic"}
+}
+func (unsignedResolver) Invalidate(string) error { return nil }
+
+func TestARequestWithNoSignInSaysSoWithoutAResolvePrefix(t *testing.T) {
+	a := &Anthropic{auth: unsignedResolver{}, HTTPClient: always401()}
+	_, _, err := a.doWithAuthRetry(context.Background(), func(string) (*http.Request, error) {
+		t.Fatal("built a request with no credential")
+		return nil, nil
+	})
+	require.Error(t, err)
+	assert.Equal(t, "no provider signed in: type :login, or run figaro provider login anthropic", err.Error())
+}

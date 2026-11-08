@@ -48,7 +48,7 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 			return &auth.OAuth{Hush: c, Name: providerName}
 		}})
 	}
-	return &auth.Aggregate{Strategies: strategies}, nil
+	return &auth.Aggregate{Strategies: strategies, Unsigned: func() error { return notSignedIn(loaded, providerName) }}, nil
 }
 
 func fileStrategies(pf *providerAuthFile) []auth.CredentialStrategy {
@@ -176,7 +176,14 @@ func (e *exchangeResolver) Resolve() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return o.Resolve()
+	tok, ok, err := o.TryResolve()
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", notSignedIn(e.loaded, e.name)
+	}
+	return tok, nil
 }
 
 func (e *exchangeResolver) Invalidate(token string) error {

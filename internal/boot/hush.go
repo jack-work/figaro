@@ -83,6 +83,15 @@ func OnHush(f func(*managed.Hush)) {
 	}
 }
 
+func startedHushClient() *hush.Client {
+	hushUsersMu.Lock()
+	defer hushUsersMu.Unlock()
+	if hushUsed == nil {
+		return nil
+	}
+	return hushUsed.Client()
+}
+
 func strategyHush() (*managed.Hush, error) {
 	h, err := Hush()
 	if err != nil {

@@ -116,3 +116,24 @@ func serviceTokenWhere(loaded *config.Loaded, name string) string {
 	}
 	return where
 }
+
+func notSignedIn(loaded *config.Loaded, name string) error {
+	var oauth []string
+	if h := startedHushClient(); h != nil {
+		oauth, _ = h.OAuthList()
+	}
+	return &auth.NotSignedInError{Provider: name, Elsewhere: signedInElsewhere(loaded, name, oauth)}
+}
+
+func signedInElsewhere(loaded *config.Loaded, name string, oauth []string) bool {
+	for _, n := range providerPkg.Names() {
+		reg := providerPkg.Lookup(n)
+		if n == name || reg == nil {
+			continue
+		}
+		if srcs, err := CredentialSources(loaded, reg, oauth); err == nil && len(srcs) > 0 {
+			return true
+		}
+	}
+	return false
+}

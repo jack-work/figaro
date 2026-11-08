@@ -183,7 +183,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	token, err := p.tokenSrc.Resolve()
 	if err != nil {
-		if lr, ok := auth.LoginRequired(err); ok {
+		if lr, ok := auth.SignInNeeded(err); ok {
 			return lr
 		}
 		return fmt.Errorf("responses: resolve token: %w", err)
@@ -194,14 +194,14 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return err
 	}
 	if ierr := p.tokenSrc.Invalidate(token); ierr != nil {
-		if lr, ok := auth.LoginRequired(ierr); ok {
+		if lr, ok := auth.SignInNeeded(ierr); ok {
 			return lr
 		}
 		return fmt.Errorf("responses: invalidate token: %w", ierr)
 	}
 	token, err = p.tokenSrc.Resolve()
 	if err != nil {
-		if lr, ok := auth.LoginRequired(err); ok {
+		if lr, ok := auth.SignInNeeded(err); ok {
 			return lr
 		}
 		return fmt.Errorf("responses: resolve refreshed token: %w", err)

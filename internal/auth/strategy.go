@@ -22,6 +22,7 @@ type CredentialStrategy interface {
 // Aggregate walks strategies in priority order on every call.
 type Aggregate struct {
 	Strategies []CredentialStrategy
+	Unsigned   func() error
 }
 
 func (a *Aggregate) Resolve() (string, error) {
@@ -37,6 +38,9 @@ func (a *Aggregate) Resolve() (string, error) {
 	}
 	if firstErr != nil {
 		return "", fmt.Errorf("no credential available; first strategy error: %w", firstErr)
+	}
+	if a.Unsigned != nil {
+		return "", a.Unsigned()
 	}
 	return "", fmt.Errorf("no credential available (no strategy returned a token)")
 }
@@ -158,6 +162,30 @@ func LoginRequired(err error) (*LoginRequiredError, bool) {
 	var lr *LoginRequiredError
 	if errors.As(err, &lr) {
 		return lr, true
+	}
+	return nil, false
+}
+
+type NotSignedInError struct {
+	Provider  string
+	Elsewhere bool
+}
+
+func (e *NotSignedInError) Error() string {
+	fix := "type :login, or run figaro provider login " + e.Provider
+	if e.Elsewhere {
+		return e.Provider + " is not signed in: " + fix
+	}
+	return "no provider signed in: " + fix
+}
+
+func SignInNeeded(err error) (error, bool) {
+	if lr, ok := LoginRequired(err); ok {
+		return lr, true
+	}
+	var ns *NotSignedInError
+	if errors.As(err, &ns) {
+		return ns, true
 	}
 	return nil, false
 }

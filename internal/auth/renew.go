@@ -9,7 +9,7 @@ import (
 func SendRenewing(r TokenResolver, send func(token string) (*http.Response, error)) (*http.Response, error) {
 	token, err := r.Resolve()
 	if err != nil {
-		if lr, ok := LoginRequired(err); ok {
+		if lr, ok := SignInNeeded(err); ok {
 			return nil, lr
 		}
 		return nil, fmt.Errorf("resolve token: %w", err)
@@ -19,7 +19,7 @@ func SendRenewing(r TokenResolver, send func(token string) (*http.Response, erro
 		return resp, err
 	}
 	if ierr := r.Invalidate(token); ierr != nil {
-		if lr, ok := LoginRequired(ierr); ok {
+		if lr, ok := SignInNeeded(ierr); ok {
 			discard(resp)
 			return nil, lr
 		}
@@ -28,7 +28,7 @@ func SendRenewing(r TokenResolver, send func(token string) (*http.Response, erro
 	fresh, err := r.Resolve()
 	if err != nil {
 		resp.Body.Close()
-		if lr, ok := LoginRequired(err); ok {
+		if lr, ok := SignInNeeded(err); ok {
 			return nil, lr
 		}
 		return nil, fmt.Errorf("HTTP 401, and no fresh token: %w", err)
