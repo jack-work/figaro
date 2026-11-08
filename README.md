@@ -22,19 +22,59 @@ A coding agent with few opinions, firmly held. Tutto pulito, bravo bravissimo.
 > [!NOTE]
 > figaro is under heavy development. Releases go out several times a day, most of them cut by figaros themselves (the agent builds, tests and releases itself, with a human signing off). Things move and sometimes break. Pin a version if you need it to sit still; see [Releases](#releases).
 
-## Why figaro
+## Fast from the shell
 
-Rather than running a binary and typing a message in a chatbox, figaro wants to be passed messages from the shell using CLI verbs. You send a message and get your shell back. When you want to look at what it's doing, `figaro listen` follows it live and `figaro show` prints recent turns.
+Rather than running a binary and typing a message in a chatbox, figaro wants to be passed messages from the shell using CLI verbs. `figaro -- <prompt>` and you have your shell back. That's the whole sell, really: speed.
 
-Arias are append-only logs on disk. `figaro fork` branches one at any turn, and `figaro attend` points your shell at one, like `cd` for conversations.
+Your arias live in a daemon called the angelus (for you catholics out there). It works like a tmux server: close the terminal, drop the SSH connection, and the turn keeps running. Attend it again from any shell and pick up where it is. The pager is a convenience on top, and the whole thing stays usable over SSH.
 
-Any aria can message any other with `figaro send`, and `-f` hands the message off without blocking. Fork one and hand it the work, or have one review another. This repo is mostly built that way.
+Jumping between agents is easy and fast, and figaro doesn't hide what its subagents do:
 
-Each aria has a form: key/value state the model sees as system reminders, which you can edit without a model round trip (`figaro set mantra "..."`).
+- `figaro attend <id>` points your shell at any of them; `figaro listen <id>` follows one live; `figaro show <id>` prints its turns, every tool call included.
+- `figaro promote <id>` raises a fork in the tree at once. It's presentation only, so it never waits on history.
+- `figaro send -f --id <id> -- <p>` hands one work and gets your shell back.
 
-Bare `figaro` opens the pager: vim keys, search, and the tree of all your arias.
+You can build a whole workflow out of that. This repo is mostly built that way.
 
-Provider, model, credo and skills live in outfits, small TOML files that layer. Switch models between turns with `figaro set`.
+## Transcripts you can fork
+
+An aria is an actor: one inbox, one turn loop, and a transcript that is strictly append-only.
+
+- `figaro fork <id>:12 -- <p>` branches a transcript at any turn.
+- Compaction is a macro of those primitives, and the history it leaves behind stays whole. `figaro succeed @role -- <handoff>` forks the role's aria, sinks the old one beneath the new one, sends the handoff and recasts the role onto the successor. You can read exactly what was carried over, because it's a turn like any other.
+- Forks share their prefix on disk and in the daemon's cache, and they reuse the provider's prompt cache. A subagent only costs the turns it adds.
+
+## State lives in forms
+
+Every aria has a form: key/value state the model sees as system reminders. `figaro set mantra "..."` and the model sees it next turn, no round trip. Unbound forms stand on their own, and an aria can study one: `figaro study <aria> @form`, and each change reaches it as a delta on its next turn. The model learns its environment without rewriting its prompt, so the prompt cache holds and the history stays whole.
+
+Web API data goes into a form in one line (after `figaro form new -S name=repo` makes the form):
+
+```bash
+figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/figaro | jq -c '{stars: .stargazers_count, issues: .open_issues_count}')"
+```
+
+From there it's easy to build automation that watches state and reacts: a figaro that studies the form gets each change on its next turn, `figaro form listen` follows it live, and the Go SDK (`github.com/jack-work/figaro/sdk`) dials an aria or a form, reads and patches its state, and gets every change as it lands. More languages are coming.
+
+### Methods
+
+Methods are small, fast (system 1) models that fill in form data on hooks, before your main model is called. The first one picks the reasoning effort for every message: [`system.methods`](skills/figaro/reference/methods.md) renders a template, a decision model picks one of its options, and the turn runs on the pick. More are coming.
+
+## Federation and deployment
+
+- Listen to a figaro on any server you can reach: `FIGARO_TROUPE=<name> figaro listen <id>`, signed in with `figaro troupe login <name>`.
+- Several machines can federate as a troupe (`figaro troupe`): signed membership, node certificates, and arias that move between nodes.
+- Every call is authorized against a principal. Grants and troupe policy decide what each one may do, and your own identity system plugs in: trust any OIDC issuer (`[[authz.issuers]]`), take users and groups from the reverse proxy in front of the web door (`authn = "upstream"`), or mint api keys (`figaro troupe apikey mint`).
+- Nix for reproducible deployments: the flake, a NixOS module, a home-manager module, and a NixOS container that runs figaro as a service.
+- Sandboxing and containerization are coming in gradually. `figaro box serve` already gives an aria a sandbox with only what you lend it.
+
+Troupes are in development: solid for keys, membership and cross-node listing, not settled for moves and policy. Opening a remote aria in your own pager is being built now.
+
+## Security, plainly
+
+figaro isn't secure out of the box. It runs with your own user's permissions, and any aria can message any other on its node. For now it's bring your own sandbox; releases with secure modules and defaults are coming.
+
+No MCP, by design. figaro is CLI first: its tools are bash, read, write, edit, process and image, and the model already knows how to drive a CLI. If you want an MCP server, wrap it in a CLI and sandbox it.
 
 ## Install
 
@@ -114,17 +154,7 @@ Keys are rebindable in `~/.config/figaro/keys.toml` (`figaro keys` lists them).
 
 <p align="center"><img src="docs/media/topology.gif" alt="figaro ls prints a tree of arias with their mantras; in the pager, l opens the same tree and the cursor moves between forks" width="820"></p>
 
-## Concepts
-
-- aria: a conversation. An append-only log on disk, loaded by the daemon (the angelus) only when you touch it.
-- fork: a branch at a turn. Both sides share the prefix on disk and in the provider's prompt cache.
-- form: key/value state the model sees as reminders. An aria's own form is its board. A form that points at an aria is a role, so `figaro send @reviewer` reaches whoever holds it.
-- mantra: the 5 to 10 words `figaro ls` prints next to each aria. The aria keeps it current.
-- outfit: a TOML file with provider, model, credo and skills. New arias are made from one, and they layer.
-- skill: a markdown file the model opens when it needs it. The `figaro` skill is built into the binary.
-- tools: bash, read, write, edit, process, image, run in parallel.
-
-The skill is the real manual: [`skills/figaro`](skills/figaro/SKILL.md), with the [CLI reference](skills/figaro/cli.md), [forms](skills/figaro/forms.md), [providers](skills/figaro/reference/providers.md) and [architecture](skills/figaro/reference/architecture.md).
+The [`figaro` skill](skills/figaro/SKILL.md) is the real manual, and it ships inside the binary so the agent always knows how to drive itself: the [CLI reference](skills/figaro/cli.md), [forms](skills/figaro/forms.md), [providers](skills/figaro/reference/providers.md), [architecture](skills/figaro/reference/architecture.md).
 
 ## Providers
 
@@ -146,14 +176,6 @@ Most releases are cut by an aria that ran the release script after the tests and
 - To pin: `github:jack-work/figaro/v0.56.0` in a flake, `go install ...@v0.56.0`, or `install.sh -s -- --version v0.56.0`.
 
 Pre-1.0, minors may change the on-disk format or the client/daemon protocol. When they do, the notes say so and say whether anything migrates.
-
-## In development
-
-These are in the tree and I use them every day, but they will change:
-
-- Troupes: several machines' figaros as one troupe, with signed membership, node certificates and arias that move between nodes. See `figaro troupe` and the [architecture notes](skills/figaro/reference/architecture.md#troupe-keys).
-- Sandboxes: `figaro box` serves a sandbox over a unix socket so an aria gets only what you give it. Today figaro otherwise runs with your own user's permissions and can message any other aria on its node.
-- Remote attend: opening an aria on another node in your pager, with your own login. Being built now.
 
 ## Contributing
 
