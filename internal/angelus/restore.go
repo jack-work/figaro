@@ -64,6 +64,11 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 }
 
 func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
+	if b := h.angelus.Backend; b != nil {
+		if _, err := b.OpenFigIR(ariaID); err != nil {
+			return nil, fmt.Errorf("restore %s: %w", ariaID, err)
+		}
+	}
 	cb := h.openAriaForm(ariaID)
 	if cb == nil {
 		return nil, fmt.Errorf("restore %s: form unavailable", ariaID)
