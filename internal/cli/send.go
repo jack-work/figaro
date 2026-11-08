@@ -284,8 +284,8 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "forget", Short: "f", IsBool: true, Description: "Submit and exit; do not stream"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Submit, print one JSON object, exit"},
 	{Long: "outfit", Short: "O", Description: "Outfit NAMES to dress the aria in (comma-separated)"},
-	{Long: "set", Short: "S", Description: "Form keys: k=v or a JSON literal, comma-separated"},
-	{Long: "delete", Short: "D", Description: "Form key paths to remove, comma-separated"},
+	{Long: "set", Short: "S", Repeats: true, Description: "Form keys: k=v or a JSON literal, comma-separated; repeats"},
+	{Long: "delete", Short: "D", Repeats: true, Description: "Form key paths to remove, comma-separated; repeats"},
 	{Long: "cast", Short: "C", IsBool: true, Description: "new: cast the fresh aria into a role (named @form, or minted from -O/-S)"},
 }
 
@@ -684,8 +684,8 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Target a specific existing aria"},
 	{Long: "outfit", Short: "O", Description: "Dress the aria in an outfit"},
-	{Long: "set", Short: "S", Description: "Patch the bound form in the same call: k=v"},
-	{Long: "delete", Short: "D", Description: "Remove bound form keys in the same call"},
+	{Long: "set", Short: "S", Repeats: true, Description: "Patch the bound form in the same call: k=v; repeats"},
+	{Long: "delete", Short: "D", Repeats: true, Description: "Remove bound form keys in the same call; repeats"},
 	{Long: "raw", Short: "r", IsBool: true, Description: "Stream verbatim to stdout: no ANSI, no markdown"},
 	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the raw wire frames as JSON"},
 	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},

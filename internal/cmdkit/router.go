@@ -255,6 +255,19 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 	}
 
 	expanded := expandBundled(args, cmd.Flags)
+	given := map[string]bool{}
+	take := func(fd *FlagDef, val string) error {
+		switch {
+		case !given[fd.Long]:
+			ctx.Flags[fd.Long] = val
+		case fd.Repeats:
+			ctx.Flags[fd.Long] += "," + val
+		default:
+			return fmt.Errorf("flag --%s given twice (%q, then %q); give it once", fd.Long, ctx.Flags[fd.Long], val)
+		}
+		given[fd.Long] = true
+		return nil
+	}
 
 	i := 0
 	for i < len(expanded) {
@@ -293,13 +306,17 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 				if inline == "" {
 					return nil, fmt.Errorf("flag --%s requires a value", name)
 				}
-				ctx.Flags[fd.Long] = inline
+				if err := take(fd, inline); err != nil {
+					return nil, err
+				}
 			} else {
 				i++
 				if i >= len(expanded) {
 					return nil, fmt.Errorf("flag --%s requires a value", name)
 				}
-				ctx.Flags[fd.Long] = expanded[i]
+				if err := take(fd, expanded[i]); err != nil {
+					return nil, err
+				}
 			}
 			i++
 			continue
@@ -318,7 +335,9 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 				if i >= len(expanded) {
 					return nil, fmt.Errorf("flag -%s requires a value", ch)
 				}
-				ctx.Flags[fd.Long] = expanded[i]
+				if err := take(fd, expanded[i]); err != nil {
+					return nil, err
+				}
 			}
 			i++
 			continue

@@ -27,6 +27,11 @@ Outfits are NAMES; patches are DATA; a directive never rides inside a patch.
 | `-S`/`--set` | `k=v` or a whole JSON literal, comma-separated | second |
 | `-D`/`--delete` | form key paths, comma-separated | last |
 
+`-S` and `-D` repeat on every verb that takes them: each occurrence appends
+to the comma list, in order, so a later `-S` of the same key wins. `send` and
+`new` append a repeated `-O` the same way; on every other verb a flag that
+takes a value is refused when given twice, naming it.
+
 ```
 -O sonn5                   a name: outfits/sonn5.toml
 -O sonn5,focus             two names, focus winning

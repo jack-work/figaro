@@ -64,6 +64,7 @@ type FlagDef struct {
 
 	// Subwords names the sub-verbs this flag belongs to; the router refuses it elsewhere before Run.
 	Subwords []string
+	Repeats  bool
 }
 
 type RunContext struct {

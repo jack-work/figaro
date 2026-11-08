@@ -44,8 +44,8 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-O`, `--outfit <names>` | Dress the aria in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-rO sonn5` or `-rOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
-| `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Folded AFTER `-O`, so your key beats the outfit's. |
-| `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Folded last. |
+| `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Repeats append (`-S a=1 -S b=2` = `-S a=1,b=2`), a later key winning. Folded AFTER `-O`, so your key beats the outfit's. |
+| `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Repeats append. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Start with more on: names beside their other spelling, node addresses. `M-m` toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
