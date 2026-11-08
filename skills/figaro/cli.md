@@ -374,7 +374,7 @@ observer's mouth.
 | `figaro box exec --socket <path> [--cwd <dir>] -- <command>` | Run one command through a served box, stream its output, exit with its code. |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models [--refresh] [-j]` | The daemon's model catalog (`@models`): every provider's models, when each was listed, and its last error. `--refresh` lists them all now. |
-| `figaro update [--check\|--apply]` | Check for a newer release and print the command that upgrades this install; a nix profile entry is named as `nix profile list` names it. |
+| `figaro update [--check\|--apply]` | Check for a newer release and print the command that upgrades this install; a nix profile entry is named as `nix profile list` names it. The installers leave a `.figaro-channel` marker beside the binary, so the channel is read rather than guessed. |
 | `figaro completion install [shell]` | Install shell completion. |
 | `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |
 

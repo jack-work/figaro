@@ -469,6 +469,14 @@ backwards; asserts that the tag and the version a built binary reports are the
 same string; and writes the GitHub release title and notes **out of the tag
 message**, so the two cannot disagree.
 
+Strip any `replace` line from `go.mod` before tagging (`grep -n '^replace' go.mod`).
+Pushing the tag runs `.github/workflows/release.yml`: GoReleaser builds the
+linux, darwin and windows archives and uploads them with `checksums.txt` to the
+release the script already made (`mode: keep-existing`, so the notes survive).
+The installers at figar.org download those archives. Smoke test with
+`go install github.com/jack-work/figaro/cmd/figaro@vX.Y.Z`, and bump the
+flake's `vendorHash` if the build asks.
+
 The version lives in `flake.nix` and nowhere else. The bump argument is
 optional: with one, `flake.nix` moves and the tag follows; without one,
 whatever `flake.nix` already declares gets cut.

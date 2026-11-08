@@ -56,6 +56,84 @@ with no transport, a bad glob, or a spec with no way to route at all.
 | `openrouter` | default `chat`; OpenRouter host; `anthropic/` model prefix | everything. |
 | `azure` | default `chat`; credential from `AZURE_OPENAI_API_KEY`, a stored key, or a Microsoft Entra login | everything. `base_url` is required; `AZURE_BASE_URL` wins over the file. |
 
+## Copilot: models, credentials, Responses settings
+
+The `copilot` provider routes models by the capability advertised in the
+Copilot catalog. Claude-compatible models use the Anthropic Messages
+transport; Responses-capable models such as `gpt-5.6-terra` use Figaro's
+native WebSocket Responses transport. Figaro does not start a Copilot CLI
+process.
+
+```bash
+figaro models
+```
+
+For noninteractive use, Copilot credentials are read in this order:
+`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, then `GITHUB_TOKEN`.
+
+Choose a catalog model in an outfit:
+
+```toml
+[system]
+provider = "copilot"
+model = "gpt-5.6-terra"
+context_tier = "long_context"
+thinking_effort = "high"
+reasoning_context = "all_turns"
+reasoning_summary = "auto"
+verbosity = "low"
+max_tokens = 16000
+```
+
+Responses settings can change between turns on a live aria:
+
+```bash
+figaro set system.model '"gpt-5.6-luna"'
+figaro set system.context_tier '"default"'
+figaro set system.reasoning_context '"current_turn"'
+figaro set system.reasoning_summary '"auto"'
+figaro set system.max_context_tokens 120000
+figaro set system.parallel_tool_calls false
+figaro set system.temperature 0.4
+```
+
+`system.context_tier` selects the catalog's default or long-context replay
+budget; `system.max_context_tokens` can impose a smaller cap. Figaro rejects
+a turn that would exceed that budget rather than dropping cached history.
+`system.reasoning_context` maps to the Responses API's `auto`,
+`current_turn`, or `all_turns` mode. `system.reasoning_summary` accepts
+`"auto"`, `"concise"`, or `"detailed"` and requests a readable reasoning
+summary; it does not expose raw private chain-of-thought.
+`system.temperature` and `system.top_p` are mutually exclusive. A model
+switch starts a new Responses cache lineage so opaque reasoning is never
+replayed under a different model.
+
+## What CTX counts
+
+`figaro status` and the `CTX` column in `figaro list` report **context used**:
+the last turn's prompt plus that turn's output, i.e.
+
+```
+input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens
+```
+
+All three input buckets count: with prompt caching on (the default) most of
+the prompt comes back as a cache read, so summing only `input_tokens` would
+under-report a long aria by orders of magnitude. Messages appended after the
+last metered turn are estimated at chars/4 and the figure is prefixed `~`.
+
+The window it is measured against comes from the provider (Anthropic reports
+`max_input_tokens` on `/v1/models`; `figaro models` shows the same numbers).
+`system.max_context_tokens` overrides it in either direction:
+
+```bash
+figaro set system.max_context_tokens 200000   # pin the window
+figaro unset system.max_context_tokens        # back to the provider's number
+```
+
+Unknown models report no window rather than a guessed one, and status then
+prints a bare token count.
+
 ## Azure AI Foundry, signed in with Microsoft Entra
 
 ```sh

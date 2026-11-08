@@ -99,7 +99,7 @@ about changing figaro rather than using it live under
 | [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
 | [reference/compatibility.md](reference/compatibility.md) | A CLI and a daemon of different builds or releases, the wire contract, or adding a field, method or capability to `api/rpc`. |
-| [reference/providers.md](reference/providers.md) | Writing `providers/<name>.toml`, pointing a gateway at a new endpoint, signing in to Azure with Entra, or a model failing on one provider and working on another. |
+| [reference/providers.md](reference/providers.md) | Writing `providers/<name>.toml`, pointing a gateway at a new endpoint, signing in to Azure with Entra, Copilot's Responses settings, what CTX counts, or a model failing on one provider and working on another. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
 | [reference/keys.md](reference/keys.md) | Moving a key in the pager, filling the leader, writing `keys.toml`, or why a key means one thing in one mode and another elsewhere. |
 | [reference/quoting.md](reference/quoting.md) | Quoting a passage into a prompt (`<412.0:23-1180>!`), visual selection, and the pager's `:send` / `:fork` / `:listen` / `:attend`. |
