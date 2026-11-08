@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="452" viewBox="0 0 1200 452" role="img" aria-label="figaro, a terminal coding agent you message from your shell">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="452" viewBox="0 0 1200 452" role="img" aria-label="figaro, a programmer's harness">
 <rect width="1200" height="452" rx="14" fill="#1F1F28"/>
 <g font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="16" fill="#98BB6C">
 <text x="254.4" y="50.0" textLength="124.8" lengthAdjust="spacingAndGlyphs">$$$$$$$$$$$$$</text>
@@ -96,6 +96,6 @@
 <text x="436.8" y="322.0" textLength="48.0" lengthAdjust="spacingAndGlyphs">$$$$$</text>
 </g>
 <text x="80" y="357.0" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="16" fill="#76946A" textLength="1036.8" lengthAdjust="spacingAndGlyphs">═════════════────═════════════════════════───═════════════────═════════════════════════───═════════════────═</text>
-<text x="600.0" y="397.0" text-anchor="middle" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="21" fill="#DCD7BA">a terminal coding agent you message from your shell</text>
+<text x="600.0" y="397.0" text-anchor="middle" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="21" fill="#DCD7BA">a programmer's harness</text>
 <text x="600.0" y="427.0" text-anchor="middle" font-family="DejaVu Serif, Georgia, serif" font-style="italic" font-size="15" fill="#727169">largo al factotum della città</text>
 </svg>

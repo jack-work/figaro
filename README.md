@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://figar.org"><img src="docs/media/banner.svg" alt="figaro, a terminal coding agent you message from your shell" width="100%"></a>
+  <a href="https://figar.org"><img src="docs/media/banner.svg" alt="figaro, a programmer's harness" width="100%"></a>
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
 
 *Largo al factotum della calcolatore.*
 
-figaro is an AI coding agent you talk to from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other, so five agents at once is five shell commands. It's all one Go binary: the CLI and the daemon that runs the agents. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and anything that speaks the OpenAI API.
+figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other, so five agents at once is five shell commands. It's all one Go binary: the CLI and the daemon that runs the agents. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and anything that speaks the OpenAI API.
 
 A coding agent with few opinions, firmly held. Tutto pulito, bravo bravissimo.
 
