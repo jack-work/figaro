@@ -194,7 +194,12 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			hb = h.hubFor(id)
 		}
 		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) && h.allowed(ctx, rpc.VerbListen, authz.Aria(id)) == nil {
+			done, err := h.angelus.guard.enter(id)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", method, err)
+			}
 			f.follow(hb)
+			done()
 		}
 		if method == rpc.MethodFollow {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
@@ -217,6 +222,13 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		}
 		if err := h.refuseCredoChange(method, id, dressed); err != nil {
 			return nil, err
+		}
+		if targets := roleTargetsIn(method, dressed); len(targets) > 0 {
+			done, err := h.angelus.guard.enter(targets...)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", method, err)
+			}
+			defer done()
 		}
 		return hb.route(ctx, method, dressed)
 	}
@@ -281,6 +293,7 @@ type handlers struct {
 
 	gcOnce      sync.Once
 	gcCollector *gc.Collector
+	gcReapHook  func(stage, id string)
 
 	arias        ariasForms
 	outfitHashes outfitHashes
@@ -404,6 +417,15 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	}
 	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
+	}
+	if req.Patch != nil {
+		if targets := roleTargetsOf(*req.Patch); len(targets) > 0 {
+			done, err := h.angelus.guard.enter(targets...)
+			if err != nil {
+				return nil, fmt.Errorf("form.create: %w", err)
+			}
+			defer done()
+		}
 	}
 	if req.Parent != "" {
 		parent, err := h.canonicalID(ctx, req.Parent)

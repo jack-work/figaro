@@ -16,6 +16,11 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.requireAria(req.FigaroID); err != nil {
 		return nil, fmt.Errorf("bind: %w", err)
 	}
+	done, err := h.angelus.guard.enter(req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("bind: %w", err)
+	}
+	defer done()
 	if err := h.angelus.Registry.Bind(req.PID, req.FigaroID, req.AtMainLT); err != nil {
 		return nil, err
 	}

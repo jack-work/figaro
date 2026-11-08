@@ -30,6 +30,11 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
 	}
+	done, err := h.angelus.guard.enter(ariaID)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
 	h.restoreMu.Lock()
 	if h.releasing[ariaID] {
 		h.restoreMu.Unlock()

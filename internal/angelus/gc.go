@@ -118,12 +118,39 @@ func (w gcWorld) Stumps() []gc.Stump {
 	return out
 }
 
+func (w gcWorld) name(id string) string {
+	if words := w.Handle(id); words != "" {
+		return words
+	}
+	return id
+}
+
+func (h *handlers) gcReapStage(stage, id string) {
+	if h.gcReapHook != nil {
+		h.gcReapHook(stage, id)
+	}
+}
+
 func (w gcWorld) Collect(stump string) error { return w.h.angelus.Backend.CollectStump(stump) }
 
 func (w gcWorld) Reap(root string, expect []string, stamp string) error {
 	grace := w.h.killGrace(root, 0)
 	if grace <= 0 {
 		return errors.New("gc reaps and never deletes, and the kill grace here is 0")
+	}
+	w.h.gcReapStage("seal", root)
+	release, busy := w.h.angelus.guard.seal(expect)
+	if busy != "" {
+		return fmt.Errorf("%w: %s is waking, binding or being cast to", gc.ErrHeld, w.name(busy))
+	}
+	defer release()
+	w.h.gcReapStage("sealed", root)
+	by, why, err := w.h.holdOf(expect, root, time.Now())
+	if err != nil {
+		return err
+	}
+	if why != "" {
+		return fmt.Errorf("%w: %s: %s", gc.ErrHeld, w.name(by), why)
 	}
 	_, ok, err := w.h.reapGroup(root, true, time.Now().Add(grace), expect, stamp)
 	if errors.Is(err, store.ErrDeleteSetChanged) {

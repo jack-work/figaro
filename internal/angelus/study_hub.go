@@ -78,6 +78,11 @@ func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRe
 	if b == nil {
 		return rpc.CastResponse{}, fmt.Errorf("cast: no backend")
 	}
+	done, err := h.angelus.guard.enter(ariaID)
+	if err != nil {
+		return rpc.CastResponse{}, fmt.Errorf("cast: %w", err)
+	}
+	defer done()
 	res := rpc.CastResponse{RoleID: req.FormID}
 
 	if req.RolePatch != nil && !req.RolePatch.IsIdentity() {

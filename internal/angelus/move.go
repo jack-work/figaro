@@ -115,6 +115,18 @@ func (h *handlers) move(ctx context.Context, params json.RawMessage) (any, error
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	entered, err := h.angelus.guard.enter(req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("move %s: %w", req.FigaroID, err)
+	}
+	left := false
+	leave := func() {
+		if !left {
+			left = true
+			entered()
+		}
+	}
+	defer leave()
 	if h.fed == nil {
 		return nil, errors.New("move: this node has no peers")
 	}
@@ -136,7 +148,14 @@ func (h *handlers) move(ctx context.Context, params json.RawMessage) (any, error
 			return nil, fmt.Errorf("move %s: the fork tree holds an aria this caller may not kill: %w", req.FigaroID, err)
 		}
 	}
-	if err := h.moving.claim(ids, to); err != nil {
+	claiming, err := h.angelus.guard.enter(ids...)
+	if err != nil {
+		return nil, fmt.Errorf("move %s: %w", req.FigaroID, err)
+	}
+	err = h.moving.claim(ids, to)
+	claiming()
+	leave()
+	if err != nil {
 		return nil, fmt.Errorf("move %s: %w", req.FigaroID, err)
 	}
 	settled := false

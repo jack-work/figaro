@@ -17,6 +17,7 @@ var (
 	ErrNotYourPlan  = errors.New("the plan belongs to another caller")
 	ErrOutsideBox   = errors.New("a box plans only in its own box")
 	ErrSetChanged   = errors.New("the nodes it would take changed since the plan")
+	ErrHeld         = errors.New("held at the reap")
 	ErrUnknownUnder = errors.New("under names nothing in this store")
 )
 
@@ -428,6 +429,10 @@ func (c *Collector) Apply(p Plan) (Result, error) {
 		if err := w.Reap(cand.ID, cand.Set, "gc:"+p.Run); err != nil {
 			if errors.Is(err, ErrSetChanged) {
 				drop(ErrSetChanged.Error())
+				continue
+			}
+			if errors.Is(err, ErrHeld) {
+				drop(err.Error())
 				continue
 			}
 			res.Failed = append(res.Failed, Dropped{ID: cand.ID, Handle: cand.Handle, Why: err.Error()})

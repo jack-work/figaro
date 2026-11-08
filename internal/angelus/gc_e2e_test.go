@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	api "github.com/jack-work/figaro/api/sandbox"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/sandbox/local"
@@ -304,4 +305,117 @@ func TestGCBytesAreTheSumOfTheSetsOwnBytes(t *testing.T) {
 	own := a.Backend.(interface{ OwnBytes(string) int64 })
 	require.Equal(t, own.OwnBytes(root)+own.OwnBytes(child), plan.Candidates[0].Bytes)
 	require.Equal(t, []string{child}, plan.Candidates[0].Takes)
+}
+
+// El Inspector XII, change 1: a figaro that wakes between apply's re-plan
+// and the reap is dropped, never stopped; its turn completes.
+func TestGCNeverStopsAFigaroThatWokeBeforeTheReap(t *testing.T) {
+	r := newGCRig(t)
+	id := idleSince(t, r.a, r.acli, r.ctx, 40*24*time.Hour)
+	plan := planGC(t, r.a, r.acli, r.ctx, rpc.GCSelector{OlderMS: month.Milliseconds()})
+	require.Equal(t, []string{id}, chosen(plan))
+	turned := make(chan error, 1)
+	r.hs.OnGCReap(func(stage, root string) {
+		if stage != "seal" || root != id {
+			return
+		}
+		fcli, err := sdk.DialAria(ariaAddr(r.a, id), nil)
+		if err != nil {
+			turned <- err
+			return
+		}
+		defer fcli.Close()
+		_, _, err = fcli.Qua(r.ctx, "a prompt that lands at the reap", nil)
+		turned <- err
+	})
+	res, err := r.acli.GCApply(r.ctx, plan.Run)
+	require.NoError(t, err)
+	require.NoError(t, <-turned)
+	require.Empty(t, res.Reaped)
+	require.Len(t, res.Dropped, 1)
+	require.Contains(t, res.Dropped[0].Why, "an agent is live")
+	require.NotNil(t, r.a.Registry.Get(id), "gc stopped a figaro that woke before the reap")
+	waitIdle(t, r.a, id)
+	ir, err := r.acli.IRAll(r.ctx, id, 0)
+	require.NoError(t, err)
+	var said bool
+	for _, e := range ir.Entries {
+		said = said || strings.Contains(string(e.Payload), "a prompt that lands at the reap")
+	}
+	require.True(t, said, "the turn did not land")
+	require.True(t, alive(t, r.a, id))
+}
+
+// While gc holds a delete set sealed, a wake, a bind or a cast onto any
+// member is refused rather than started under it.
+func TestASealedSetRefusesAWakeABindACastAndAMove(t *testing.T) {
+	r := newGCRig(t)
+	id := idleSince(t, r.a, r.acli, r.ctx, 40*24*time.Hour)
+	plan := planGC(t, r.a, r.acli, r.ctx, rpc.GCSelector{OlderMS: month.Milliseconds()})
+	require.Equal(t, []string{id}, chosen(plan))
+	var wake, bind, cast, move error
+	r.hs.OnGCReap(func(stage, root string) {
+		if stage != "sealed" || root != id {
+			return
+		}
+		_, wake = r.hs.Restore(r.ctx, id, "test")
+		other, err := sdk.DialAngelus(transport.UnixEndpoint(r.a.SocketPath))
+		if err != nil {
+			bind = err
+			return
+		}
+		defer other.Close()
+		bind = other.Bind(r.ctx, os.Getpid(), id, 0)
+		_, move = other.Move(r.ctx, id, "elsewhere")
+		raw, _ := json.Marshal(rpc.CastRequest{RolePatch: mantraPatch("a role")})
+		withID, _ := rpc.WithAria(raw, id)
+		var out rpc.CastResponse
+		cast = dialAria(t, r.a, id, nil).Client.Call(r.ctx, rpc.MethodCast, withID, &out)
+	})
+	res, err := r.acli.GCApply(r.ctx, plan.Run)
+	require.NoError(t, err)
+	for what, err := range map[string]error{"wake": wake, "bind": bind, "cast": cast, "move": move} {
+		require.ErrorContains(t, err, "being reaped", "%s under a sealed set", what)
+	}
+	require.Len(t, res.Reaped, 1)
+	require.True(t, reaped(t, r.a, id))
+	require.Nil(t, r.a.Registry.Get(id))
+}
+
+// El Inspector XII: reapGroup's expect is the last guard against reaping a
+// branch born after apply's re-plan. A fork landing there refuses the reap,
+// and the fork survives.
+func TestGCRefusesTheReapWhenABranchIsBornAfterTheReplan(t *testing.T) {
+	r := newGCRig(t)
+	id := idleSince(t, r.a, r.acli, r.ctx, 40*24*time.Hour)
+	plan := planGC(t, r.a, r.acli, r.ctx, rpc.GCSelector{OlderMS: month.Milliseconds()})
+	require.Equal(t, []string{id}, chosen(plan))
+	var child string
+	var forkErr error
+	r.hs.OnGCReap(func(stage, root string) {
+		if stage != "sealed" || root != id {
+			return
+		}
+		other, err := sdk.DialAngelus(transport.UnixEndpoint(r.a.SocketPath))
+		if err != nil {
+			forkErr = err
+			return
+		}
+		defer other.Close()
+		f, err := other.Fork(r.ctx, id, 0, 0, nil, nil)
+		if err != nil {
+			forkErr = err
+			return
+		}
+		child = f.Alternative
+	})
+	res, err := r.acli.GCApply(r.ctx, plan.Run)
+	require.NoError(t, err)
+	require.NoError(t, forkErr)
+	require.NotEmpty(t, child)
+	require.Empty(t, res.Reaped)
+	require.Len(t, res.Dropped, 1)
+	require.Contains(t, res.Dropped[0].Why, "changed")
+	require.True(t, alive(t, r.a, id))
+	require.True(t, alive(t, r.a, child), "the branch born after the re-plan was reaped")
 }
