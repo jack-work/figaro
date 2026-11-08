@@ -10,6 +10,11 @@ import (
 
 var purgeParams, _ = json.Marshal(rpc.KillRequest{Recursive: true, Now: true})
 
+var ariaRowActions = []rpc.ViewAction{
+	{Key: "Enter", Label: "attend", Local: rpc.ViewAttend},
+	{Key: "x", Label: "kill", Method: rpc.MethodKill, Confirm: true},
+}
+
 var formViews = map[string]rpc.FormView{
 	rpc.ReapedFormID: {
 		Rows:  []string{"items.*"},
@@ -35,10 +40,16 @@ var formViews = map[string]rpc.FormView{
 		Sort:    "-active_at",
 		Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},
 		Overlay: &rpc.ViewOverlay{Form: rpc.TopologyFormID, Key: "parent"},
-		Actions: []rpc.ViewAction{
-			{Key: "Enter", Label: "attend", Local: rpc.ViewAttend},
-			{Key: "x", Label: "kill", Method: rpc.MethodKill, Confirm: true},
-		},
+		Actions: ariaRowActions,
+	},
+	rpc.RecentFormID: {
+		Rows:    []string{"*"},
+		RowAria: "id",
+		Label:   "title",
+		Aside:   "active_at",
+		Sort:    "-active_at",
+		Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},
+		Actions: ariaRowActions,
 	},
 	models.FormID: {
 		Rows:  []string{"*.models.*"},

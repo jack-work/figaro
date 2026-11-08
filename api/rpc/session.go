@@ -118,3 +118,5 @@ const AriasFormID = "@arias"
 const TroupeFormID = "@troupe"
 
 const TopologyFormID = "@topology"
+
+const RecentFormID = "@recent"

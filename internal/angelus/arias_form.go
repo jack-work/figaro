@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/recent"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -37,6 +38,12 @@ type ariasWatch struct {
 	print   uint64
 	built   bool
 	builtAt time.Time
+	recent  recentWant
+}
+
+type recentWant struct {
+	asked bool
+	built bool
 }
 
 func (w *ariasWatch) followed() bool {
@@ -66,7 +73,7 @@ type ariasForms struct {
 	ticking bool
 }
 
-var callerFormIDs = []string{rpc.AriasFormID, rpc.TopologyFormID}
+var callerFormIDs = []string{rpc.AriasFormID, rpc.TopologyFormID, rpc.RecentFormID}
 
 func isCallerFormID(id string) bool { return slices.Contains(callerFormIDs, id) }
 
@@ -77,7 +84,7 @@ func ariasKey(ctx context.Context) string {
 	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String()}, groups...), "\x00")
 }
 
-func (h *handlers) ariasWatchFor(ctx context.Context) (*ariasWatch, bool) {
+func (h *handlers) ariasWatchFor(ctx context.Context, id string) (*ariasWatch, bool) {
 	key := ariasKey(ctx)
 	a := &h.arias
 	a.mu.Lock()
@@ -88,6 +95,7 @@ func (h *handlers) ariasWatchFor(ctx context.Context) (*ariasWatch, bool) {
 	w, ok := a.watches[key]
 	if !ok {
 		w = newAriasWatch(context.WithoutCancel(ctx))
+		w.recent.asked = id == rpc.RecentFormID
 		h.rebuildArias(w)
 		a.watches[key] = w
 	}
@@ -194,14 +202,21 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 	rows, peers := h.ariasRows(w.ctx)
 	w.builtAt = time.Now()
 	print := ariasPrint(rows, peers)
-	if w.built && print == w.print {
+	fresh := !w.built || print != w.print
+	w.print, w.built = print, true
+	if !fresh && (!w.recent.asked || w.recent.built) {
 		return
 	}
-	w.print, w.built = print, true
-	for id, next := range map[string]form.Snapshot{
-		rpc.AriasFormID:    ariasSnapshot(rows, peers),
-		rpc.TopologyFormID: topologySnapshot(rows),
-	} {
+	next := make(map[string]form.Snapshot, len(callerFormIDs))
+	if fresh {
+		next[rpc.AriasFormID] = ariasSnapshot(rows, peers)
+		next[rpc.TopologyFormID] = topologySnapshot(rows)
+	}
+	if w.recent.asked && (fresh || !w.recent.built) {
+		next[rpc.RecentFormID] = recent.Snapshot(recent.Rows(rows))
+		w.recent.built = true
+	}
+	for id, next := range next {
 		f := w.forms[id].form
 		cur, _ := f.Snapshot()
 		if patch := next.Diff(cur); !patch.IsIdentity() {
@@ -313,7 +328,10 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 }
 
 func (h *handlers) callerFormMethod(ctx context.Context, id, method string, params json.RawMessage) (any, error) {
-	w, built := h.ariasWatchFor(ctx)
+	w, built := h.ariasWatchFor(ctx, id)
+	if id == rpc.RecentFormID && !built {
+		w.askRecent()
+	}
 	hb := w.forms[id].hub
 	switch method {
 	case rpc.MethodFollow:

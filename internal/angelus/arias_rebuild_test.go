@@ -63,7 +63,7 @@ func TestATopologyReadTakesTheRebuildAnAriasReadJustMade(t *testing.T) {
 	if _, err := r.h.callerFormMethod(ctx, rpc.AriasFormID, rpc.MethodForm, nil); err != nil {
 		t.Fatal(err)
 	}
-	w, _ := r.h.ariasWatchFor(ctx)
+	w, _ := r.h.ariasWatchFor(ctx, rpc.AriasFormID)
 	built := w.builtAt
 	if _, err := r.h.callerFormMethod(ctx, rpc.TopologyFormID, rpc.MethodForm, nil); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func (c *listCounter) Conversations() []store.NodeView {
 // A cold read builds the caller's watch and answers from that build: a second
 // listing in the same read doubles the cold cost of l.
 func TestAColdCallerFormReadListsOnce(t *testing.T) {
-	for _, id := range []string{rpc.AriasFormID, rpc.TopologyFormID} {
+	for _, id := range []string{rpc.AriasFormID, rpc.TopologyFormID, rpc.RecentFormID} {
 		t.Run(id, func(t *testing.T) {
 			r := newAriasRig(t)
 			counter := &listCounter{Backend: r.backend}

@@ -208,7 +208,7 @@ func filtersPerRow(r Request) bool {
 	case rpc.MethodList, rpc.MethodNodeResolve:
 		return true
 	case rpc.MethodForm, rpc.MethodFollow, rpc.MethodAttach:
-		return r.Aria == rpc.AriasFormID || r.Aria == rpc.TopologyFormID || r.Aria == rpc.TroupeFormID
+		return r.Aria == rpc.AriasFormID || r.Aria == rpc.TopologyFormID || r.Aria == rpc.TroupeFormID || r.Aria == rpc.RecentFormID
 	case rpc.MethodSet:
 		return r.Aria == rpc.TopologyFormID
 	}
