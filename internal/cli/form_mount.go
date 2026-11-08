@@ -150,6 +150,9 @@ func (v *formView) openMount(path string, m *viewMount) {
 			}
 			return false
 		}
+		if m.node == "" {
+			view.subject = v.subject
+		}
 		m.view, m.send, m.close = view, send, closeFn
 	}
 	v.items = nil
