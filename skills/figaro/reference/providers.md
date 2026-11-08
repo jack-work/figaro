@@ -101,6 +101,7 @@ client_id = "house"
 scopes    = ["openid", "profile", "groups"]   # the device flow adds offline_access
 flow      = "device"                       # the default, or "pkce" (below)
 # discovery = "http://.../.well-known/..." # fills issuer, client_id, scopes the file leaves out
+# redirect_uri = "https://login.example/callback"  # pkce only: sign in from another machine (below)
 ```
 
 ```sh
@@ -132,6 +133,16 @@ redirect to `http://127.0.0.1:<port>/callback`, an IP literal rather than
 `state` is not this login's is answered 400 and the login keeps waiting.
 Scopes go out as written, with no `offline_access` added, and a login that
 gets no `refresh_token` fails, since hush could not keep it fresh.
+
+`redirect_uri` (pkce only) is for a login whose browser is not on the machine
+running figaro, such as a remote shell. figaro starts no listener: the authorize
+URL names that URI, and the login prompts for the code the page shows, or for
+the full URL the browser landed on. A bare code is followed by a prompt for
+`state`. A `state` that is not this login's is refused before anything reaches
+the token endpoint. The page needs no secret and should post nothing: the code
+is useless without the verifier, which never leaves figaro. The URI must be
+https (plain http only on a loopback address), and the IdP must allow exactly
+that URI for the client.
 
 Without `[oauth]`, the provider takes `api_key`, or the variable
 `api_key_env` names, and may run keyless, as `gateway` does.
