@@ -11,7 +11,7 @@
 
 *Largo al factotum della calcolatore.*
 
-figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other. It's all one Go binary: the CLI and the daemon that runs the agents. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and any OpenAI-compatible endpoint.
+figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other. It's all one Go binary: the CLI and the daemon that runs the agents, and the daemon keeps well over a thousand of them in under 500 MB of memory. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and any OpenAI-compatible endpoint.
 
 A coding agent with few opinions, firmly held. Tutto pulito, bravo bravissimo.
 
@@ -36,7 +36,7 @@ You can build a whole workflow out of that. This repo is mostly built that way.
 
 ## Running a lot of them
 
-figaro is built to keep hundreds of arias around on thin margins. My store holds about 1,700 of them, and my angelus runs with `[memory] soft_limit_mb = 512` (the Go runtime's soft memory limit; the default is 2048). It sits around 320 MB and doesn't stagger. I daily-drive it at my big tech employer: hundreds of hours of heavy use so far, and it cooks.
+figaro is built to keep hundreds of agents around on thin margins. My store holds about 1,700 of them, and the angelus serving them all sits around 320 MB of memory, under a 512 MB cap (`[memory] soft_limit_mb = 512`, the Go runtime's soft memory limit; the default is 2048). It doesn't stagger. I daily-drive it at my big tech employer: hundreds of hours of heavy use so far, and it cooks.
 
 What makes that many livable:
 
