@@ -18,6 +18,7 @@ type Client struct {
 	closedLimit int
 	closedRev   uint64
 	rev         uint64
+	heard       bool
 	// Highest fully sealed turn.
 	lastCommittedLT int
 
@@ -284,6 +285,7 @@ func (c *Client) Apply(p Page, f Fold) []Message {
 	c.mu.Lock()
 	finalized, desync := c.fold(p)
 	c.rev++
+	c.heard = true
 	haveLive := c.store.OpenTurn() != 0
 	live := c.openMessage()
 	c.mu.Unlock()
@@ -566,6 +568,12 @@ func (c *Client) ClosedRevision() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closedRev + 1
+}
+
+func (c *Client) Heard() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.heard
 }
 
 // Revision changes on every change to the local view, the open message included.
