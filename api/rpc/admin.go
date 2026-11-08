@@ -170,7 +170,16 @@ type ProviderLedgerResponse struct {
 	// Retained is how many rows the ring holds at all.
 	Retained int `json:"retained"`
 	// Connections is nil from a daemon that predates it.
-	Connections *ProviderConnections `json:"connections,omitempty"`
+	Connections  *ProviderConnections `json:"connections,omitempty"`
+	DecideRoutes []DecideRoute        `json:"decide_routes,omitempty"`
+}
+
+type DecideRoute struct {
+	Route     string `json:"route"`
+	Failures  int    `json:"failures"`
+	SinceMS   int64  `json:"since_ms"`
+	NextTryMS int64  `json:"next_try_ms"`
+	LastError string `json:"last_error,omitempty"`
 }
 
 // Dropped counts closed provider connections by reason since the daemon
