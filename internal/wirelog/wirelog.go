@@ -84,7 +84,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if reqBytes <= 0 {
 		reqBytes = int64(len(bodyBytes))
 	}
-	seq := depart(logCfg.aria, req.Method, req.URL.String(), reqBytes)
+	seq := depart(logCfg.aria, req.Method, redactedURL(req.URL).String(), reqBytes)
 
 	var counted countingBody
 	if req.Body != nil && req.Body != http.NoBody {
@@ -108,7 +108,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	if logBase != "" {
-		respFile, ferr := os.Create(logBase + ".resp.http")
+		respFile, ferr := createPrivate(logBase + ".resp.http")
 		if ferr == nil {
 			fmt.Fprintf(respFile, "%s %s\r\n", resp.Proto, resp.Status)
 			redacted(resp.Header).Write(respFile)
@@ -127,7 +127,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, reqBytes int64, logBase string, err error) {
 	attrs := []attribute.KeyValue{
 		attribute.String("http.method", req.Method),
-		attribute.String("http.url", req.URL.String()),
+		attribute.String("http.url", redactedURL(req.URL).String()),
 		attribute.Int64("http.duration_ms", duration.Milliseconds()),
 		attribute.Int64("http.req_bytes", reqBytes),
 	}
@@ -175,6 +175,9 @@ func dumpBase(c cfg) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return ""
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return ""
+	}
 	return filepath.Join(dir, fmt.Sprintf("%d", time.Now().UnixNano()))
 }
 
@@ -196,14 +199,14 @@ func (d *FrameDump) Request(method, rawURL string, header http.Header, body []by
 	if d == nil {
 		return
 	}
-	f, err := os.Create(d.base + ".req.http")
+	f, err := createPrivate(d.base + ".req.http")
 	if err != nil {
 		return
 	}
 	defer f.Close()
 	target, host := rawURL, ""
 	if u, err := url.Parse(rawURL); err == nil {
-		target, host = u.RequestURI(), u.Host
+		target, host = redactedURL(u).RequestURI(), u.Host
 	}
 	fmt.Fprintf(f, "%s %s HTTP/1.1\r\n", method, target)
 	if host != "" {
@@ -218,7 +221,7 @@ func (d *FrameDump) Response(status string, header http.Header) {
 	if d == nil || d.resp != nil {
 		return
 	}
-	f, err := os.Create(d.base + ".resp.http")
+	f, err := createPrivate(d.base + ".resp.http")
 	if err != nil {
 		return
 	}
@@ -244,13 +247,49 @@ func (d *FrameDump) Close() {
 	d.resp = nil
 }
 
+func createPrivate(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+}
+
+func redactedURL(u *url.URL) *url.URL {
+	if u == nil {
+		return &url.URL{}
+	}
+	out := *u
+	if _, has := u.User.Password(); has {
+		out.User = url.UserPassword(u.User.Username(), "[redacted]")
+	}
+	if u.RawQuery == "" {
+		return &out
+	}
+	q, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		out.RawQuery = "[redacted]"
+		return &out
+	}
+	masked := false
+	for name, values := range q {
+		if !isCredentialName(name) {
+			continue
+		}
+		for i := range values {
+			values[i] = "[redacted]"
+		}
+		masked = true
+	}
+	if masked {
+		out.RawQuery = q.Encode()
+	}
+	return &out
+}
+
 func writeReqLog(path string, req *http.Request, body []byte) {
-	f, err := os.Create(path)
+	f, err := createPrivate(path)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "%s %s %s\r\n", req.Method, req.URL.RequestURI(), req.Proto)
+	fmt.Fprintf(f, "%s %s %s\r\n", req.Method, redactedURL(req.URL).RequestURI(), req.Proto)
 	if req.Host != "" {
 		fmt.Fprintf(f, "Host: %s\r\n", req.Host)
 	}
@@ -262,7 +301,7 @@ func writeReqLog(path string, req *http.Request, body []byte) {
 func redacted(h http.Header) http.Header {
 	out := make(http.Header, len(h))
 	for name, values := range h {
-		if !isCredentialHeader(name) {
+		if !isCredentialName(name) {
 			out[name] = values
 			continue
 		}
@@ -278,7 +317,7 @@ func redacted(h http.Header) http.Header {
 	return out
 }
 
-func isCredentialHeader(name string) bool {
+func isCredentialName(name string) bool {
 	n := strings.ToLower(name)
 	if n == "cookie" || n == "set-cookie" {
 		return true

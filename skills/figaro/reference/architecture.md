@@ -563,6 +563,18 @@ session.
   opaque identifiers or free-form provider errors. An unknown event increments
   a counter rather than growing a log of provider-controlled strings.
 
+### Wire dumps: `system.environment.figaro_wire_dir`
+
+Set on an aria, it makes every provider (messages, chat, responses) write each
+call as `<dir>/<aria>/<ns>.req.http` and `.resp.http`: the request line,
+headers and body, then the status, headers and the stream (one frame per line
+for responses). Files are created `0600` in a directory held at `0700`.
+Credentials are masked by name, in headers and query parameters alike: any
+name containing `auth`, `key`, `token` or `secret`, and cookies.
+`Authorization` keeps its scheme. The body is not masked. It is the whole
+conversation, tool output included, so a secret that entered the context is
+written in clear: a second copy outside the store, which nothing cleans up.
+
 ### The provider binding is live, not a birthmark
 
 `system.provider` is form state like any other key, and the bound form is
