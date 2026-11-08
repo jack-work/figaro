@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		Protocol:     rpc.ProtocolVersion,
 		Capabilities: daemonCapabilities,
 		Node:         h.nodeID(),
+		Cwd:          daemonDir(),
 		Mem:          mem,
 	}, nil
 }
@@ -245,4 +247,9 @@ func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (in
 		OK:    true,
 		Count: h.angelus.Registry.BoundPIDCount(),
 	}, nil
+}
+
+func daemonDir() string {
+	dir, _ := os.Getwd()
+	return dir
 }

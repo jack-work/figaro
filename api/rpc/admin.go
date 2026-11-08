@@ -67,6 +67,7 @@ type StatusResponse struct {
 	Protocol     int          `json:"protocol,omitempty"`
 	Capabilities []Capability `json:"capabilities,omitempty"`
 	Node         string       `json:"node,omitempty"`
+	Cwd          string       `json:"cwd,omitempty"`
 
 	// Mem is a pointer so an older daemon's silence reads as unknown, not zero.
 	Mem *MemStatus `json:"mem,omitempty"`

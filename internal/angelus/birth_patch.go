@@ -174,8 +174,7 @@ func birthCwd(requested string) string {
 	if requested != "" {
 		slog.Error("birth cwd unusable, falling back to the daemon's", "cwd", requested)
 	}
-	dir, _ := os.Getwd()
-	return dir
+	return daemonDir()
 }
 
 func isDir(path string) bool {
