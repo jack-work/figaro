@@ -40,7 +40,7 @@ func landingHelpRows(sendKey string) [][2]string {
 		{":fork -- <text>", "to branch, and prompt the branch"},
 		{":state", "for config and agent-visible state"},
 		{":models", "to pick a model"},
-		{":ls", "for the aria tree"},
+		{":ls", "for the figaro tree"},
 		{":help", "for help"},
 		{"q", "to quit"},
 	}
