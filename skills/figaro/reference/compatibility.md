@@ -11,9 +11,10 @@ capabilities.
   method renamed or removed, a field that changes type or meaning, a frame
   an older side cannot read. A different protocol is refused.
 - **Patch releases** (0.52.4 to 0.52.5) never break the wire. A patch may
-  add an optional request field that an older side ignores and that changes
-  nothing for a caller that does not send it, as 0.56.1's `except_nodes` on
-  a listing does. Anything more waits for a minor.
+  add an optional field, in a request or a response, that an older side
+  ignores and that changes nothing for a side that does not use it, as
+  0.56.1's `except_nodes` and 0.56.2's `peers_unasked` on a listing do.
+  Anything more waits for a minor.
 - **Minor releases** (0.52 to 0.53) may add to it: new methods, new
   optional fields, new frames an older side can ignore. Nothing an older
   side relies on changes.
