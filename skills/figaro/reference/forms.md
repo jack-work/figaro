@@ -423,15 +423,23 @@ A `$FIGARO_CACHE_DIR/models.json` left by an older daemon is imported as its
 first patch, then removed.
 
 ```
-<provider>.models.<model>.{name, context.default, context.long, max_output, hidden, source}
-<provider>.{refreshed_at, attempted_at, error}
+<provider>.models.<model>.{name, context.default, context.long, max_output, images,
+    max_prompt_image_size, max_prompt_images, tools, reasoning, hidden, endpoints, src.<field>}
+<provider>.{ir, refreshed_at, attempted_at, error}
 ```
 
 It is keyed by provider, then model: the same model id under two providers is
-two entries, and a miss under one never borrows another's. `source` is `api`
-for what the provider's model listing said and `table` for the built-in
-Anthropic window table, which answers for aliases the listing never names.
-`hidden` is a provider's own word that a model stays out of pickers.
+two entries, and a miss under one never borrows another's. Every provider's
+list lands in this one shape, read through that provider's mapping (see
+providers.md, "The model catalog"). A field nobody stated is absent;
+`src.<field>` says who stated it: `api` (the provider's list), `mapping` (a
+fact figaro ships, such as Anthropic's windows for aliases its list never
+names) or `config` (the provider file). `hidden` is a provider's own word
+that a model stays out of pickers.
+
+`ir` is the shape's version. A reader ignores the models under a provider
+whose `ir` is not its own, and the daemon drops such a provider at boot
+along with any key that names no provider; the next listing writes it back.
 
 | fills it | when |
 |---|---|

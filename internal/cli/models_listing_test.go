@@ -67,7 +67,9 @@ func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
 		"anthropic": {AttemptedAt: modelsNow.Add(-3 * time.Minute).UnixMilli(), Error: "no credential"},
 		"copilot": {RefreshedAt: modelsNow.Add(-2 * time.Hour).UnixMilli(), Models: map[string]models.Entry{
-			"gpt-5": {Name: "OpenAI GPT-5", Context: models.Context{Default: 400_000}},
+			"gpt-5":   {Name: "OpenAI GPT-5", Context: models.Context{Default: 400_000}, Src: map[string]string{"context": "api", "name": "api"}},
+			"gpt-6":   {Context: models.Context{Default: 872_000}, MaxOutput: 64_000, Src: map[string]string{"context": "api", "max_output": "config"}},
+			"private": {},
 		}},
 	})
 	var buf bytes.Buffer
@@ -79,8 +81,10 @@ func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 		"anthropic  failed 3m ago: no credential",
 		"copilot    listed 2h ago",
 		"",
-		"PROVIDER  MODEL  NAME          CONTEXT  MAX OUT",
-		"copilot   gpt-5  OpenAI GPT-5     400k        -",
+		"PROVIDER  MODEL    NAME          CONTEXT  MAX OUT  SRC",
+		"copilot   gpt-5    OpenAI GPT-5     400k        -  api",
+		"copilot   gpt-6                     872k      64k  api+config",
+		"copilot   private                      -        -  -",
 		"",
 	}, "\n")
 	if buf.String() != want {

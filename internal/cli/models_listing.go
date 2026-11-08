@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,13 +13,8 @@ import (
 )
 
 type modelRow struct {
-	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
-	Context     int    `json:"context,omitempty"`
-	LongContext int    `json:"long_context,omitempty"`
-	MaxOutput   int    `json:"max_output,omitempty"`
-	Hidden      bool   `json:"hidden,omitempty"`
-	Source      string `json:"source"`
+	ID string `json:"id"`
+	models.Entry
 }
 
 type providerListing struct {
@@ -43,10 +39,7 @@ func catalogListings(catalog form.Snapshot, now time.Time) []providerListing {
 			Models:      make([]modelRow, 0, len(p.Models)),
 		}
 		for id, e := range p.Models {
-			l.Models = append(l.Models, modelRow{
-				ID: id, Name: e.Name, Context: e.Window(""), LongContext: e.Window(models.LongContextTier),
-				MaxOutput: e.MaxOutput, Hidden: e.Hidden, Source: e.Source("context"),
-			})
+			l.Models = append(l.Models, modelRow{ID: id, Entry: e})
 		}
 		sort.Slice(l.Models, func(i, j int) bool { return l.Models[i].ID < l.Models[j].ID })
 		out = append(out, l)
@@ -177,8 +170,21 @@ func shrinkWidths(widths []int, cols []tableCol, width int) {
 	}
 }
 
-var modelCols = []tableCol{{}, {shrink: 1}, {shrink: 2}, {right: true}, {right: true}}
+var modelCols = []tableCol{{}, {shrink: 1}, {shrink: 2}, {right: true}, {right: true}, {}}
 
 func modelCells(mark string, m modelRow) []string {
-	return []string{mark, m.ID, m.displayName(), dashCount(m.Context), dashCount(m.MaxOutput)}
+	return []string{mark, m.ID, m.displayName(), dashCount(m.Window("")), dashCount(m.MaxOutput), m.sources()}
+}
+
+func (m modelRow) sources() string {
+	var out []string
+	for _, f := range []string{"context", "max_output"} {
+		if s := m.Source(f); s != "" && !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return "-"
+	}
+	return strings.Join(out, "+")
 }
