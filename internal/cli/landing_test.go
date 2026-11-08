@@ -10,7 +10,7 @@ import (
 func landingText(w, h int, sendKey string) string {
 	restore := term.SetColorMode(term.ColorNever)
 	defer restore()
-	return strings.Join(landingPage(w, h, "figaro v0.0.0", sendKey, signInsSome), "\n")
+	return strings.Join(landingPage(w, h, "figaro v0.0.0", sendKey), "\n")
 }
 
 func TestTheLandingHelpNamesTheSendKeyAndTheNewRows(t *testing.T) {
@@ -59,7 +59,7 @@ func TestOnlyTheLandingArtIsPaintedGreen(t *testing.T) {
 	green := term.Brand("x")
 	green = green[:strings.Index(green, "x")]
 
-	page := landingPage(160, 45, "figaro v0.0.0", "ctrl+s", signInsSome)
+	page := landingPage(160, 45, "figaro v0.0.0", "ctrl+s")
 	var art, other int
 	for _, row := range page {
 		switch {
@@ -119,20 +119,12 @@ func TestTheLandingPageDropsArtThenHelpThenEverything(t *testing.T) {
 		}
 	}
 }
-func TestTheLandingPutsLoginFirstUntilAProviderIsSignedIn(t *testing.T) {
-	order := func(s signInState) string {
-		var keys []string
-		for _, r := range landingHelpRows("ctrl+s", s) {
-			keys = append(keys, r[0])
-		}
-		return strings.Join(keys, " ")
+func TestLoginHeadsTheLandingHelp(t *testing.T) {
+	var keys []string
+	for _, r := range landingHelpRows("ctrl+s") {
+		keys = append(keys, r[0])
 	}
-	if got, want := order(signInsNone), ":login > :new :fork -- <text> :state :models :ls :help q"; got != want {
-		t.Errorf("nothing signed in: %s\nwant %s", got, want)
-	}
-	for _, s := range []signInState{signInsSome, signInsUnknown, signInsProbing} {
-		if got, want := order(s), "> :new :fork -- <text> :state :models :login :ls :help q"; got != want {
-			t.Errorf("state %d: %s\nwant %s", s, got, want)
-		}
+	if got, want := strings.Join(keys, " "), ":login > :new :fork -- <text> :state :models :ls :help q"; got != want {
+		t.Errorf("%s\nwant %s", got, want)
 	}
 }

@@ -127,9 +127,6 @@ type transcript struct {
 	cmdline lineEditor
 	ask     *boxQuestion
 	askline lineEditor
-
-	signIns      signInState
-	probeSignIns func()
 	// draft outlives the drawer: Esc puts it away and '>' brings it back.
 	draft lineEditor
 	// composerMode is which keymap the drawer answers to (composer_normal.go).

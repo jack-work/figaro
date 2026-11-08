@@ -971,7 +971,6 @@ func (in *interactiveInput) wireHooks() {
 	// Hooks called from dispatch already hold the render lock: hand off.
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
 	in.lt.tr.openPath = in.openPath
-	in.lt.tr.probeSignIns = func() { go in.relistLogin() }
 }
 
 func (in *interactiveInput) seedSubject(gen uint64) {
