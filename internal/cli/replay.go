@@ -46,7 +46,9 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	if err != nil {
 		die("replay: %s", err)
 	}
-	defer os.RemoveAll(dir)
+	removeDir := sync.OnceFunc(func() { os.RemoveAll(dir) })
+	atExit(removeDir)
+	defer removeDir()
 	sock := filepath.Join(dir, "agent.sock")
 	ep := transport.UnixEndpoint(sock)
 
