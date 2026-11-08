@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
@@ -559,6 +560,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 		a.endTurn("interrupted")
 		return true
+	}
+	if sendErr != nil && !appended && a.answersToolsWithSilence(sendErr) {
+		sendErr = nil
 	}
 	if sendErr != nil {
 		if a.turn == nil {
@@ -1411,6 +1415,15 @@ func (a *Agent) cancelCurrentTurn() {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+func (a *Agent) answersToolsWithSilence(err error) bool {
+	var fault *provider.CompletionFault
+	if !errors.As(err, &fault) || !fault.CleanEmpty() || a.figLog == nil {
+		return false
+	}
+	tail, ok := a.figLog.PeekTail()
+	return ok && tail.Payload.Role == message.RoleInput && !tail.Payload.Steering && turns.HasToolResult(tail.Payload)
 }
 
 func assistantToolInvokes(m message.Message) []message.Content {

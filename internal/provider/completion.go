@@ -42,6 +42,10 @@ func (f *CompletionFault) Error() string {
 	return fmt.Sprintf("%s: the provider stopped for a reason figaro does not know (stop_reason=%s)", f.Provider, f.Wire)
 }
 
+func (f *CompletionFault) CleanEmpty() bool {
+	return f.Empty && AnthropicStopReason(f.Wire) == message.StopEnd
+}
+
 // CheckCompletion returns nil when the message may land as a reply. A message
 // with no content is never one, whatever the stop reason says.
 func CheckCompletion(providerName string, msg message.Message, wire string) error {
