@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,7 +60,7 @@ func stallingGateway(t *testing.T, how stall, transport string) *httptest.Server
 	return srv
 }
 
-func sendWithFirstByte(t *testing.T, srv *httptest.Server, transport, timeout string) error {
+func sendWithFirstByte(t *testing.T, srv *httptest.Server, transport, timeout string, wrote ...func()) error {
 	t.Helper()
 	name := "fbgw" + strings.NewReplacer("/", "", "_", "").Replace(t.Name())
 	p := gatewayAt(t, name, "preset = \"gateway\"\nbase_url = \""+srv.URL+"/v1\"\n[routing]\ncatalog = \"off\"\ndefault = \""+transport+"\"\n")
@@ -73,6 +75,9 @@ func sendWithFirstByte(t *testing.T, srv *httptest.Server, transport, timeout st
 	snap := form.FromMap(map[string]json.RawMessage{provider.FirstByteTimeoutKey: raw})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	for _, fn := range wrote {
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { fn() }})
+	}
 	return p.Send(ctx, provider.SendInput{AriaID: aria, FigLog: figLog, Snapshot: snap, MaxTokens: 64}, &nullBus{})
 }
 
@@ -83,8 +88,13 @@ func TestARequestThatGetsNoByteByTheDeadlineIsAStreamCut(t *testing.T) {
 	for _, transport := range []string{"chat", "messages", "responses"} {
 		for name, how := range map[string]stall{"no headers": stallBeforeHeaders, "headers only": stallAfterHeaders} {
 			t.Run(transport+"/"+name, func(t *testing.T) {
-				start := time.Now()
-				err := sendWithFirstByte(t, stallingGateway(t, how, transport), transport, "100ms")
+				var mu sync.Mutex
+				var written time.Time
+				err := sendWithFirstByte(t, stallingGateway(t, how, transport), transport, "100ms", func() {
+					mu.Lock()
+					written = time.Now()
+					mu.Unlock()
+				})
 				cut, ok := provider.AsStreamCut(err)
 				if !ok {
 					t.Fatalf("got %v, want a StreamCut", err)
@@ -95,8 +105,13 @@ func TestARequestThatGetsNoByteByTheDeadlineIsAStreamCut(t *testing.T) {
 				if !strings.Contains(err.Error(), "no byte arrived within 100ms; system.first_byte_timeout raises it") {
 					t.Errorf("error = %q", err)
 				}
-				if waited := time.Since(start); waited > 2*time.Second {
-					t.Errorf("waited %s for a 100ms deadline", waited)
+				mu.Lock()
+				defer mu.Unlock()
+				if written.IsZero() {
+					t.Fatal("the request was never written, so the clock never ran")
+				}
+				if waited := time.Since(written); waited > 2*time.Second {
+					t.Errorf("waited %s after the request was written for a 100ms deadline", waited)
 				}
 			})
 		}
