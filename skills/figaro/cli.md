@@ -155,10 +155,11 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
 | `figaro attend <id>` | Bind this shell to a figaro. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn; `:head` alone drops the pending fork point. |
+| `figaro attend <node>/<id>` | Bind this shell to a figaro on another node. The id is resolved on that node, through the door of the `troupes/*.toml` profile that answers for it, and this node's daemon keeps the binding (the node must be a troupe member). Plain `figaro`, `listen` and `figaro -- <prompt>` in this shell then reach that figaro through the same door with that profile's login; `ls`, `new` and every verb that names no figaro stay on this node. `:<turn>` is refused there. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
 | `figaro show [<id>]` | Render history: the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One node in focus, whichever species it is. A FIGARO: provider, model, context, cost. A FORM: its name, version, key count, and that it is not cast. A ROLE: the same plus `target-aria` and the state of the figaro it points at (live, dormant, or missing). `-m` adds cwd/outfit/fork origin for a figaro, and parent plus the keys held for a form. `-j` carries `species`. |
-| `figaro listen [<id>]` | Attach to the live stream without prompting. With no id and no figaro attended, mints one from the default outfit and attends it. On an unbound form (named, or attended with `fig at @form`) it opens the pager on the form's pit, live; a prompt there is refused, since a form has no turn loop. A role opens on the figaro that holds it. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
+| `figaro listen [<id>]` | Attach to the live stream without prompting. `<node>/<id>` on another node listens through that node's door (see the troupe file below). With no id and no figaro attended, mints one from the default outfit and attends it. On an unbound form (named, or attended with `fig at @form`) it opens the pager on the form's pit, live; a prompt there is refused, since a form has no turn loop. A role opens on the figaro that holds it. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
@@ -400,6 +401,17 @@ client_id = "figaro-cli"
 
 `figaro troupe login spain` runs the device flow and hush holds the token as
 `troupe:spain`. A key the file does not define is refused when it is read.
+
+With no troupe selected, an id on another node (`<node>/<id>`, the node
+whole or 8+ characters) goes to the door of the profile that answers for that
+node: figaro asks each wss profile once for its node id and keeps the answers
+in `<cache-dir>/troupe-doors.json`, keyed by url, asking again when a node is
+missing. Profiles sharing a url are one door; `[troupe] name` speaks first,
+else the first signed in. A profile's token only goes to its own url. A node
+no profile reaches is refused (`no troupe profile reaches node <n>`), as is a
+node two doors claim. A login the door refuses or hush lacks reads
+`figaro troupe login <name>`. The topology (`l`, `L`) opens another node's
+rows the same way.
 
 A troupe that a service reaches with an api key:
 
