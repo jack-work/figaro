@@ -495,3 +495,10 @@ func (b *XwalBackend) LastAccess(id string) int64 {
 	}
 	return ms
 }
+
+const SystemKeepKey = "system.keep"
+
+func KeepSet(snap form.Snapshot) bool {
+	raw, ok := snap.Get(SystemKeepKey)
+	return ok && retiredValue(lifetimeString(raw))
+}
