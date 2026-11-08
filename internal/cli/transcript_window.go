@@ -83,11 +83,21 @@ func (t *transcript) tailKeep() int {
 // local daemon round trip.
 const transcriptPrefetchScreens = 2
 
-func (t *transcript) wantOlder() bool {
+func (t *transcript) wantOlder() bool { return t.wantOlderAt(t.offset) }
+
+func (t *transcript) wantOlderAt(offset int) bool {
 	if t.search != nil {
 		return true
 	}
-	return t.offset < transcriptPrefetchScreens*t.h
+	return offset < transcriptPrefetchScreens*t.h
+}
+
+func (t *transcript) restingOffset() int {
+	if !t.follow {
+		return t.offset
+	}
+	_, maxOff := t.layoutNow()
+	return maxOff
 }
 
 func (t *transcript) atAriaFloor() bool {

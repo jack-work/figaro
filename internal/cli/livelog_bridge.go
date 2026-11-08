@@ -817,6 +817,13 @@ func (t *livelogTurn) transcriptShowsGap() bool {
 	return false
 }
 
+func (t *livelogTurn) transcriptWantsHistory() bool {
+	if t.transcriptShowsGap() {
+		return true
+	}
+	return t.tr.active && t.tr.wantOlderAt(t.tr.restingOffset()) && !t.tr.atAriaFloor()
+}
+
 func (t *livelogTurn) keptScroll() bool { return t.tr.kept }
 
 func (t *livelogTurn) renderNow() {

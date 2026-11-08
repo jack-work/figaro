@@ -213,6 +213,7 @@ func (in *interactiveInput) enterPager(history bool) {
 		in.lt.setQueuedFetch(in.refreshQueued)
 		in.lt.setHistoryFetcher(in.historyFetcher())
 		in.mu.Unlock()
+		in.chaseHistory()
 		return
 	}
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -232,6 +233,17 @@ func (in *interactiveInput) enterPager(history bool) {
 		in.lt.setMoreBefore(r.More.Before)
 	}
 	in.mu.Unlock()
+	in.chaseHistory()
+}
+
+func (in *interactiveInput) chaseHistory() {
+	in.mu.Lock()
+	in.lt.tr.settle()
+	want := in.chaseWantedLocked()
+	in.mu.Unlock()
+	if want {
+		in.pageTranscript()
+	}
 }
 
 func (in *interactiveInput) pagerCatchUp() {
@@ -273,6 +285,16 @@ func (in *interactiveInput) readHistoryIntoPager() {
 	in.lt.setMoreBefore(r.More.Before)
 	in.lt.invalidateTranscriptWindow()
 	in.lt.render()
+	if in.chaseWantedLocked() {
+		goSettled(func() { in.pageTranscript() })
+	}
+}
+
+func (in *interactiveInput) chaseWantedLocked() bool {
+	if in.replaying {
+		return in.lt.transcriptShowsGap()
+	}
+	return in.lt.transcriptWantsHistory()
 }
 
 // pageTranscript never blocks: one fetch runs at a time and chains into the next

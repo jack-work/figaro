@@ -929,9 +929,7 @@ func (in *interactiveInput) notifyHandler(gen uint64, id string) sdk.NotifyHandl
 		case rpc.MethodTurnDone:
 			in.turnDone(params)
 		}
-		// A gap a live frame put on screen is chased now, not at the next
-		// keystroke.
-		chase := in.lt.transcriptShowsGap()
+		chase := in.chaseWantedLocked()
 		in.mu.Unlock()
 		if chase {
 			goSettled(func() { in.pageTranscript() })
