@@ -155,6 +155,12 @@ func (in *interactiveInput) relistLogin() {
 	defer in.mu.Unlock()
 	s := in.loginState()
 	s.providers, s.hushNote, s.listed = rows, note, true
+	in.lt.tr.signIns = signInsNone
+	for _, p := range rows {
+		if p.in {
+			in.lt.tr.signIns = signInsSome
+		}
+	}
 	in.loginChanged()
 }
 

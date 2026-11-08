@@ -10,7 +10,7 @@ import (
 func landingText(w, h int, sendKey string) string {
 	restore := term.SetColorMode(term.ColorNever)
 	defer restore()
-	return strings.Join(landingPage(w, h, "figaro v0.0.0", sendKey), "\n")
+	return strings.Join(landingPage(w, h, "figaro v0.0.0", sendKey, signInsSome), "\n")
 }
 
 func TestTheLandingHelpNamesTheSendKeyAndTheNewRows(t *testing.T) {
@@ -59,7 +59,7 @@ func TestOnlyTheLandingArtIsPaintedGreen(t *testing.T) {
 	green := term.Brand("x")
 	green = green[:strings.Index(green, "x")]
 
-	page := landingPage(160, 45, "figaro v0.0.0", "ctrl+s")
+	page := landingPage(160, 45, "figaro v0.0.0", "ctrl+s", signInsSome)
 	var art, other int
 	for _, row := range page {
 		switch {
@@ -91,8 +91,8 @@ func TestTheLandingPageDropsArtThenHelpThenEverything(t *testing.T) {
 		{60, 20, false, true, true, true},
 		{60, 30, true, true, true, true},
 		{58, 20, false, true, true, false},
-		{70, 11, false, true, true, true},
-		{70, 10, false, false, true, false},
+		{70, 12, false, true, true, true},
+		{70, 11, false, false, true, false},
 		{40, 12, false, false, true, false},
 		{20, 1, false, false, false, false},
 	}
@@ -116,6 +116,23 @@ func TestTheLandingPageDropsArtThenHelpThenEverything(t *testing.T) {
 		want := [4]bool{tc.art, tc.help, tc.title, tc.hint}
 		if got != want {
 			t.Errorf("%dx%d: art/help/title/hint = %v, want %v:\n%s", tc.w, tc.h, got, want, page)
+		}
+	}
+}
+func TestTheLandingPutsLoginFirstUntilAProviderIsSignedIn(t *testing.T) {
+	order := func(s signInState) string {
+		var keys []string
+		for _, r := range landingHelpRows("ctrl+s", s) {
+			keys = append(keys, r[0])
+		}
+		return strings.Join(keys, " ")
+	}
+	if got, want := order(signInsNone), ":login > :new :fork -- <text> :state :models :ls :help q"; got != want {
+		t.Errorf("nothing signed in: %s\nwant %s", got, want)
+	}
+	for _, s := range []signInState{signInsSome, signInsUnknown, signInsProbing} {
+		if got, want := order(s), "> :new :fork -- <text> :state :models :login :ls :help q"; got != want {
+			t.Errorf("state %d: %s\nwant %s", s, got, want)
 		}
 	}
 }

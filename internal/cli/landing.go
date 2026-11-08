@@ -28,12 +28,22 @@ func loadLandingArt(names ...string) [][]string {
 	return arts
 }
 
-func landingHelpRows(sendKey string) [][2]string {
+type signInState uint8
+
+const (
+	signInsUnknown signInState = iota
+	signInsProbing
+	signInsNone
+	signInsSome
+)
+
+func landingHelpRows(sendKey string, signIns signInState) [][2]string {
 	compose := "to compose a prompt"
 	if sendKey != "" {
 		compose += " (" + sendKey + " to send)"
 	}
-	return [][2]string{
+	login := [2]string{":login", "to sign in to a provider"}
+	rows := [][2]string{
 		{">", compose},
 		{":new", "for a fresh figaro"},
 		{":fork -- <text>", "to branch, and prompt the branch"},
@@ -43,6 +53,10 @@ func landingHelpRows(sendKey string) [][2]string {
 		{":help", "for help"},
 		{"q", "to quit"},
 	}
+	if signIns == signInsNone {
+		return append([][2]string{login}, rows...)
+	}
+	return append(rows[:5:5], append([][2]string{login}, rows[5:]...)...)
 }
 
 func landingSendKey() string {
@@ -71,6 +85,14 @@ func (t *transcript) landing() bool {
 	return t.index.total == 0 && t.client.Heard() && t.client.Count() == 0 && t.client.Open() == nil
 }
 
+func (t *transcript) landingSignIns() signInState {
+	if t.signIns == signInsUnknown && t.probeSignIns != nil {
+		t.signIns = signInsProbing
+		t.probeSignIns()
+	}
+	return t.signIns
+}
+
 var landingVersion = sync.OnceValue(func() string {
 	if r := boot.BuildRelease(); r != "" {
 		return "figaro v" + strings.TrimPrefix(r, "v")
@@ -95,7 +117,7 @@ func (s landingStanza) width() int {
 	return n
 }
 
-func landingPage(w, h int, version, sendKey string) []string {
+func landingPage(w, h int, version, sendKey string, signIns signInState) []string {
 	info := []landingStanza{
 		{rows: []string{version}, style: term.Label, center: true},
 		{rows: []string{"by John Kelliher, et al."}, style: plainStyle, center: true},
@@ -105,7 +127,7 @@ func landingPage(w, h int, version, sendKey string) []string {
 		return nil
 	}
 	page := info
-	if help, ok := landingHelpFor(w, h-need-1, sendKey); ok {
+	if help, ok := landingHelpFor(w, h-need-1, sendKey, signIns); ok {
 		page = append(page, landingStanza{rows: []string{""}, style: plainStyle}, help)
 		need += 1 + len(help.rows)
 	}
@@ -145,9 +167,9 @@ func landingArtFor(w, rows int) []string {
 	return nil
 }
 
-func landingHelpFor(w, rows int, sendKey string) (landingStanza, bool) {
+func landingHelpFor(w, rows int, sendKey string, signIns signInState) (landingStanza, bool) {
 	for _, key := range []string{sendKey, ""} {
-		help := landingStanza{rows: landingHelpText(landingHelpRows(key)), style: styleLandingHelp}
+		help := landingStanza{rows: landingHelpText(landingHelpRows(key, signIns)), style: styleLandingHelp}
 		if len(help.rows) <= rows && help.width() <= w {
 			return help, true
 		}

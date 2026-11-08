@@ -251,7 +251,7 @@ func (t *transcript) renderFrame() {
 	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
 	copy(screen[min(push, len(screen)):], t.rowBuf)
 	if t.landing() {
-		copy(screen[min(push, len(screen)):], landingPage(t.w, body, landingVersion(), landingSendKey()))
+		copy(screen[min(push, len(screen)):], landingPage(t.w, body, landingVersion(), landingSendKey(), t.landingSignIns()))
 	}
 	t.noteHandoff()
 	t.releasedRule(screen, push, body)
