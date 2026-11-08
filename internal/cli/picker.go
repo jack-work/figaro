@@ -2,7 +2,10 @@ package cli
 
 // Every pit is a picker; a cursor is a property of the rows, not a mode.
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type picker struct {
 	rows   []pitRow
@@ -11,7 +14,9 @@ type picker struct {
 	height int // the height last drawn at: a motion between paints pages against it
 	// dir: a marker never says "1 more", so some tops are unrepresentable and
 	// a motion must round away from where it came.
-	dir int
+	dir    int
+	span   int
+	spanOf string
 }
 
 // Fixed, so a position means the same thing on every screen.
@@ -86,6 +91,17 @@ func (p *picker) focus(id string) bool {
 		}
 	}
 	return false
+}
+
+func (p *picker) focusSubtree(id string) bool {
+	if !p.focus(id) {
+		return false
+	}
+	p.span, p.spanOf = 0, id
+	for i := p.cursor + 1; i < len(p.rows) && strings.HasPrefix(p.rows[i].id, id+"."); i++ {
+		p.span++
+	}
+	return true
 }
 
 func (p *picker) find(q string, dir int) bool {
@@ -204,6 +220,7 @@ func (p *picker) dragCursorIntoView() {
 
 func (p *picker) scroll(d int) {
 	p.dir = sign(d)
+	p.span = 0
 	p.top = clampInt(p.top+d, 0, p.maxTop())
 }
 
@@ -211,6 +228,7 @@ func (p *picker) scroll(d int) {
 func (p *picker) half(d int) { p.pick(d * max(p.visible()/2, 1)) }
 
 func (p *picker) home() {
+	p.span = 0
 	p.top = 0
 	if p.hasCursor() {
 		p.cursor = p.nextSelectable(-1, 1)
@@ -218,6 +236,7 @@ func (p *picker) home() {
 }
 
 func (p *picker) end() {
+	p.span = 0
 	p.top = p.maxTop()
 	if p.hasCursor() {
 		p.cursor = p.nextSelectable(len(p.rows), -1)
@@ -340,6 +359,9 @@ func boolToInt(b bool) int {
 // marker below means top <= len-height-2. Nearest top to where the reader is,
 // cursor inside, fewer markers on ties.
 func (p *picker) window(budget int) (above, below bool) {
+	if row, ok := p.selected(); !ok || row.id != p.spanOf {
+		p.span, p.spanOf = 0, ""
+	}
 	want := clampInt(p.top, 0, max(len(p.rows)-1, 0))
 	best, bestCost := -1, 0
 	var bestTop, bestHeight int
@@ -373,11 +395,17 @@ func (p *picker) window(budget int) (above, below bool) {
 			if p.cursor >= top+height {
 				top = clampInt(p.cursor-height+1, lo, hi)
 			}
+			if end := p.cursor + p.span; p.span > 0 && end >= top+height {
+				top = clampInt(min(p.cursor, end-height+1), lo, hi)
+			}
 			if p.cursor < top || p.cursor >= top+height {
 				continue
 			}
 		}
 		cost := abs(top-want)*4 + boolToInt(a) + boolToInt(b)
+		if p.span > 0 && p.cursor+p.span >= top+height {
+			cost += 4 * len(p.rows)
+		}
 		// Round away from where the reader came from, or the motion looks
 		// like a dead key.
 		if (p.dir > 0 && top < want) || (p.dir < 0 && top > want) {

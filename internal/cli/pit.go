@@ -187,6 +187,13 @@ func (d *pit) focus(id string) bool {
 	return false
 }
 
+func (d *pit) focusSubtree(id string) bool {
+	if p := d.list(); p != nil {
+		return p.focusSubtree(id)
+	}
+	return false
+}
+
 func (d *pit) findRow(q string, dir int) bool {
 	p := d.list()
 	if p == nil || q == "" {
