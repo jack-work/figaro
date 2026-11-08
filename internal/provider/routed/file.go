@@ -25,6 +25,7 @@ type File struct {
 	MessagesPath     string                       `toml:"messages_path,omitempty"`
 	MaxRequestBytes  int                          `toml:"max_request_bytes,omitempty"`
 	TextOnly         bool                         `toml:"text_only,omitempty"`
+	Models           map[string]ModelFile         `toml:"models,omitempty"`
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
 	Routing          struct {
@@ -35,6 +36,10 @@ type File struct {
 			Transport string `toml:"transport"`
 		} `toml:"rule,omitempty"`
 	} `toml:"routing"`
+}
+
+type ModelFile struct {
+	TextOnly *bool `toml:"text_only,omitempty"`
 }
 
 func LoadFile(loaded *config.Loaded, name string) (File, error) {
@@ -68,6 +73,14 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	}
 	if f.TextOnly {
 		spec.TextOnly = true
+	}
+	for id, m := range f.Models {
+		if m.TextOnly != nil {
+			if spec.TextOnlyModels == nil {
+				spec.TextOnlyModels = map[string]bool{}
+			}
+			spec.TextOnlyModels[id] = *m.TextOnly
+		}
 	}
 	if len(f.Headers) > 0 {
 		spec.Headers = merge(spec.Headers, f.Headers)

@@ -87,6 +87,32 @@ func BodySize(body BodyFunc) (int, error) {
 	return c.n, nil
 }
 
+func ShapeRequest(label string, rows RowSeq, in SendInput, routeLimit int, dialect ImageDialect, body func(RowSeq) BodyFunc) (RowSeq, error) {
+	if in.TextOnly != "" {
+		rows = ElideImages(rows, dialect, "[image omitted: "+in.TextOnly+"]")
+	}
+	return FitRequest(label, rows, MaxRequestBytes(in.Snapshot, routeLimit), dialect, body)
+}
+
+func ElideImages(rows RowSeq, dialect ImageDialect, note string) RowSeq {
+	return func(yield func(json.RawMessage, uint64) bool) {
+		for row, lt := range rows {
+			if bytes.Contains(row, []byte("image")) {
+				for {
+					smaller, ok := elideOneImage(row, dialect, note)
+					if !ok {
+						break
+					}
+					row = smaller
+				}
+			}
+			if !yield(row, lt) {
+				return
+			}
+		}
+	}
+}
+
 func FitRequest(provider string, rows RowSeq, limit int, dialect ImageDialect, body func(RowSeq) BodyFunc) (RowSeq, error) {
 	if limit <= 0 {
 		return rows, nil

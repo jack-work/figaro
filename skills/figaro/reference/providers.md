@@ -34,6 +34,21 @@ keep-alive line counts as a byte. Raise it for a model on the `chat` wire that
 thinks for minutes before it sends anything. The idle timer between events is
 separate.
 
+## Images, per model
+
+Each model on a provider takes images or text only. figaro asks, in order:
+`[models."<id>"] text_only` in the provider file, then the model catalog
+(`capabilities.image_input.supported`, or Copilot's `supports.vision`), then
+the provider-wide `text_only`. When none says, images are sent. A
+text-only model gets each image part replaced with a note saying which of
+the three decided it, on every transport, at send time; the aria's history
+keeps its images for the next model.
+
+```toml
+[models."explabs/glm-5.3"]
+text_only = true
+```
+
 ## A body cap
 
 A gateway that cuts request bodies at a size (rou2 at 8 MiB, which then
@@ -62,7 +77,7 @@ base_url      = "http://localhost:4000/v1"
 api_key       = "..."                       # or the provider's env var
 cache_markers = "trusted"                   # chat only; see cache-control.md
 messages_path = "/v1/messages"              # when base_url does not end in /v1
-text_only     = true                        # chat only: send images as a text stand-in
+text_only     = true                        # every model: send images as a text stand-in
 max_request_bytes = 8323072                 # the gateway's body cap, less headroom
 headers       = { "X-Team" = "figaro" }     # every request, every transport
 

@@ -262,12 +262,11 @@ func (p *Provider) sendWithToken(
 		body.MaxOutputTokens = maxTokens
 	}
 
-	limit := provider.MaxRequestBytes(in.Snapshot, p.maxBytes)
 	label := p.name
 	if label == "" {
 		label = p.Namespace()
 	}
-	fitted, err := provider.FitRequest(label, provider.SliceRows(body.Input, nil), limit, provider.ResponsesImages, func(r provider.RowSeq) provider.BodyFunc {
+	fitted, err := provider.ShapeRequest(label, provider.SliceRows(body.Input, nil), in, p.maxBytes, provider.ResponsesImages, func(r provider.RowSeq) provider.BodyFunc {
 		b := body
 		b.Input, _ = provider.CollectRows(r)
 		return func(w io.Writer) error {

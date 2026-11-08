@@ -89,6 +89,8 @@ type SendInput struct {
 	Studies   map[string]Form
 	Tools     []Tool
 	MaxTokens int
+
+	TextOnly string
 }
 
 type Provider interface {

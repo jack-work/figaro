@@ -159,7 +159,6 @@ func (p *Provider) chatBackend() (*openaichat.Provider, error) {
 		Caps:         p.spec.Caps,
 		Headers:      p.spec.headersFor(Chat),
 		AuthOptional: p.spec.AuthOptional,
-		TextOnly:     p.spec.TextOnly,
 
 		MaxRequestBytes: p.spec.MaxRequestBytes,
 	}
@@ -245,7 +244,32 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	return p.sendVia(ctx, moved, model, in, bus)
 }
 
+func (p *Provider) textOnly(model string) string {
+	if v, ok := p.spec.TextOnlyModels[model]; ok {
+		if v {
+			return fmt.Sprintf("model %s takes text only ([models.%q] text_only in providers/%s.toml)", model, model, p.spec.Name)
+		}
+		return ""
+	}
+	p.mu.RLock()
+	entry, known := p.catalog[model]
+	p.mu.RUnlock()
+	if known {
+		if takes, said := entry.takesImages(); said {
+			if !takes {
+				return fmt.Sprintf("model %s takes text only (%s's model catalog)", model, p.spec.Name)
+			}
+			return ""
+		}
+	}
+	if p.spec.TextOnly {
+		return fmt.Sprintf("provider %s takes text only (text_only in providers/%s.toml)", p.spec.Name, p.spec.Name)
+	}
+	return ""
+}
+
 func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in provider.SendInput, bus provider.Bus) error {
+	in.TextOnly = p.textOnly(model)
 	switch t {
 	case Responses, ResponsesWS:
 		r := p.responsesBackend()
@@ -503,7 +527,23 @@ type catalogModel struct {
 			MaxContextWindowTokens int `json:"max_context_window_tokens"`
 			MaxOutputTokens        int `json:"max_output_tokens"`
 		} `json:"limits"`
+		Supports struct {
+			Vision *bool `json:"vision"`
+		} `json:"supports"`
+		ImageInput struct {
+			Supported *bool `json:"supported"`
+		} `json:"image_input"`
 	} `json:"capabilities"`
+}
+
+func (m catalogModel) takesImages() (bool, bool) {
+	if v := m.Capabilities.ImageInput.Supported; v != nil {
+		return *v, true
+	}
+	if v := m.Capabilities.Supports.Vision; v != nil {
+		return *v, true
+	}
+	return false, false
 }
 
 func (m catalogModel) contextLimits() responses.ContextLimits {

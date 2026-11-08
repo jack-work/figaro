@@ -124,7 +124,6 @@ type Route struct {
 	Headers     map[string]string
 
 	MaxRequestBytes int
-	TextOnly        bool
 
 	// AuthOptional: a local gateway holds the real keys itself.
 	AuthOptional bool

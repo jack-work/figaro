@@ -52,6 +52,8 @@ type Spec struct {
 	MarkMode    provider.MarkMode
 	TextOnly    bool
 
+	TextOnlyModels map[string]bool
+
 	MaxRequestBytes int
 }
 

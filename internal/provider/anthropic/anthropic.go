@@ -977,7 +977,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	if rows, err = a.fitRequest(providerName, req, rows, in.Snapshot); err != nil {
+	if rows, err = a.shapeRequest(providerName, req, rows, in); err != nil {
 		return err
 	}
 	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
@@ -1093,7 +1093,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if label == "" {
 		label = "copilot"
 	}
-	if rows, err = a.fitRequest(label, req, rows, in.Snapshot); err != nil {
+	if rows, err = a.shapeRequest(label, req, rows, in); err != nil {
 		return err
 	}
 	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
@@ -1117,9 +1117,8 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(label, bus)
 }
 
-func (a *Anthropic) fitRequest(label string, req nativeRequest, rows provider.RowSeq, snap form.Snapshot) (provider.RowSeq, error) {
-	limit := provider.MaxRequestBytes(snap, a.MaxRequestBytes)
-	return provider.FitRequest(label, rows, limit, provider.MessagesImages, func(r provider.RowSeq) provider.BodyFunc {
+func (a *Anthropic) shapeRequest(label string, req nativeRequest, rows provider.RowSeq, in provider.SendInput) (provider.RowSeq, error) {
+	return provider.ShapeRequest(label, rows, in, a.MaxRequestBytes, provider.MessagesImages, func(r provider.RowSeq) provider.BodyFunc {
 		return bodyFuncSeq(req, r)
 	})
 }

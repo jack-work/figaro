@@ -146,3 +146,27 @@ func TestTheRequestLimitReadsItsKnob(t *testing.T) {
 		t.Error("0 turns the limit off")
 	}
 }
+
+func TestATextOnlyModelGetsEveryImageReplacedWithTheReason(t *testing.T) {
+	rows := []json.RawMessage{chatImageRow(t, "one", 10), textRow(t, "plain"), chatImageRow(t, "two", 10)}
+	in := SendInput{TextOnly: "model explabs/glm-5.3 takes text only"}
+	got, err := ShapeRequest("rou2", SliceRows(rows, nil), in, 0, ChatImages, chatFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := CollectRows(got)
+	if imagesIn(out) != 0 || strings.Count(strings.Join(rawStrings(out), ""), "[image omitted: model explabs/glm-5.3 takes text only]") != 2 {
+		t.Errorf("got %s", out)
+	}
+	if string(out[1]) != string(rows[1]) {
+		t.Errorf("a text row was rewritten: %s", out[1])
+	}
+}
+
+func rawStrings(rows []json.RawMessage) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = string(r)
+	}
+	return out
+}

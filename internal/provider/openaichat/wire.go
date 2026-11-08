@@ -138,7 +138,7 @@ func stampLeafCache(m *chatMessage, cc *cacheControl) bool {
 }
 
 // encodeMessage never writes markers: its output is cached per-LT.
-func encodeMessage(msg message.Message, blocks bool, route provider.Route, reminders []string) ([]chatMessage, error) {
+func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chatMessage, error) {
 	switch msg.Role {
 	case message.RoleInput:
 		var text string
@@ -170,10 +170,6 @@ func encodeMessage(msg message.Message, blocks bool, route provider.Route, remin
 				lastResult, lastBody = len(results)-1, body
 			case message.ContentImage:
 				spoke = true
-				if route.TextOnly {
-					text = joinText(text, fmt.Sprintf("[image omitted: provider %s declares text_only = true]", route.Name))
-					continue
-				}
 				parts := []contentPart{{
 					Type:     "image_url",
 					ImageURL: &imageURL{URL: dataURL(c.MimeType, c.Data)},

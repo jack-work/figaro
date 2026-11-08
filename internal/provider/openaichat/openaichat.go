@@ -76,9 +76,6 @@ func (p *Provider) Fingerprint() string {
 	if p.Route.MarkPlan(mode).Blocks {
 		shape = "blocks"
 	}
-	if p.Route.TextOnly {
-		shape += "-text"
-	}
 	return "openai-chat/" + p.Route.Name + "/" + shape + "/v6"
 }
 
@@ -190,8 +187,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	limit := provider.MaxRequestBytes(in.Snapshot, p.Route.MaxRequestBytes)
-	fitted, err := provider.FitRequest(p.Route.Name, provider.SliceRows(req.Messages, nil), limit, provider.ChatImages, func(r provider.RowSeq) provider.BodyFunc {
+	fitted, err := provider.ShapeRequest(p.Route.Name, provider.SliceRows(req.Messages, nil), in, p.Route.MaxRequestBytes, provider.ChatImages, func(r provider.RowSeq) provider.BodyFunc {
 		q := req
 		q.Messages, _ = provider.CollectRows(r)
 		return bodyFunc(q)
@@ -317,7 +313,7 @@ func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]js
 	reminders := p.renderPatches(msg.Patches, prevSnapshot)
 	reminders = append(reminders, provider.StudyReminderTexts(msg, prevSnapshot)...)
 	reminders = append(reminders, provider.ForkReminderTexts(msg, prevSnapshot)...)
-	msgs, err := encodeMessage(msg, p.plan().Blocks, p.Route, reminders)
+	msgs, err := encodeMessage(msg, p.plan().Blocks, reminders)
 	if err != nil {
 		return nil, err
 	}
