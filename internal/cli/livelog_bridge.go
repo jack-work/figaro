@@ -166,9 +166,14 @@ type framePacer struct {
 	after   func(time.Duration, func())
 	last    time.Time
 	pending bool
+	held    bool
 }
 
 func (p *framePacer) allow() bool {
+	if p.held {
+		p.pending = true
+		return false
+	}
 	if p.min <= 0 {
 		return true
 	}
@@ -192,11 +197,17 @@ func (p *framePacer) trailing() {
 
 func (p *framePacer) painted() { p.last = p.now() }
 
+func (t *livelogTurn) lockstepFlush() {
+	t.pace.pending = false
+	t.tr.flush()
+}
+
 // The pacer's trailing render runs on a timer goroutine, so it exists only once
 // the render mutex is known.
 func (t *livelogTurn) setRenderLock(mu sync.Locker) {
 	t.pace.lock = mu
 	t.pace.min = transcriptFrameInterval
+	t.pace.held = activeLockstep != nil
 	if t.pace.now == nil {
 		t.pace.now = clk.Now
 	}
@@ -565,7 +576,9 @@ func (t *livelogTurn) leaveTranscript() {
 		return
 	}
 	t.tr.leave()
-	t.flushTail()
+	if activeLockstep == nil {
+		t.flushTail()
+	}
 	// The flushed tail closes under a plain rule; a failed turn still owes its
 	// bar. Re-post: the alert may have retired.
 	if t.finished && !t.failSealed && t.status.lastTurnFailed() {

@@ -890,6 +890,12 @@ func (in *interactiveInput) seedMetrics(gen uint64) {
 // subscribed before claimSubject swaps the client (#25).
 func (in *interactiveInput) notifyHandler(gen uint64, id string) sdk.NotifyHandler {
 	return func(method string, params json.RawMessage) {
+		if method == lockstepSentinel {
+			if ls := activeLockstep; ls != nil {
+				ls.ack()
+			}
+			return
+		}
 		if atomic.LoadUint64(&in.subjectGen) != gen {
 			return
 		}

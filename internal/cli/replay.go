@@ -29,12 +29,20 @@ func tapeTap(w *tape.Writer) transport.Tap {
 	return func(c net.Conn) net.Conn { return tape.Tap(c, w) }
 }
 
-func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
+type replayOpts struct {
+	speed    float64
+	summary  bool
+	lockstep string
+	fps      int
+	animFPS  int
+}
+
+func runReplay(loaded *config.Loaded, path string, opt replayOpts) {
 	h, frames, err := tape.Read(path)
 	if err != nil {
 		die("%s", err)
 	}
-	if note {
+	if opt.summary {
 		printTapeSummary(os.Stdout, h, frames)
 		return
 	}
@@ -55,22 +63,43 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := &tapeServer{frames: frames, speed: speed, done: make(chan struct{})}
+	started, _ := time.Parse(time.RFC3339Nano, h.Started)
+	var driver net.Conn
+	if opt.lockstep != "" {
+		if driver, err = acceptLockstepDriver(opt.lockstep); err != nil {
+			die("replay --lockstep: %s", err)
+		}
+	}
+
+	srv := &tapeServer{frames: frames, speed: opt.speed, done: make(chan struct{})}
+	end := make(chan struct{})
+	if driver != nil {
+		ls, err := startLockstep(ctx, h, srv, driver, opt.fps, opt.animFPS, started)
+		if err != nil {
+			driver.Close()
+			die("replay --lockstep: %s", err)
+		}
+		atExit(ls.close)
+		defer ls.close()
+		end = ls.end
+		if os.Getenv("FIGARO_AMBIGUOUS_WIDE") == "" {
+			os.Setenv("FIGARO_AMBIGUOUS_WIDE", "0")
+		}
+		applyAmbiguousWidth()
+	}
 	if err := srv.listen(ctx, ep); err != nil {
 		die("replay: %s", err)
 	}
 	// The renderer leaves through tailFigaro's end-of-stream door, not ctx
 	// cancellation, which would report an interrupt that never happened.
-	end := make(chan struct{})
-	go func() {
-		<-srv.done
-		time.Sleep(300 * time.Millisecond) // let the last frame paint
-		close(end)
-	}()
+	if driver == nil {
+		go func() {
+			<-srv.done
+			time.Sleep(300 * time.Millisecond) // let the last frame paint
+			close(end)
+		}()
+	}
 
-	// The recording's start time is the session clock, so the status row
-	// paints as it did when taken.
-	started, _ := time.Parse(time.RFC3339Nano, h.Started)
 	id := h.Aria
 	if id == "" {
 		id = "tape"
@@ -123,6 +152,11 @@ type tapeServer struct {
 	metrics   json.RawMessage
 	metricsAt time.Duration
 	sides     []*jkrpc.Server
+
+	stepped func() time.Duration
+	main    *jkrpc.Server
+	ready   chan struct{}
+	cursor  int
 }
 
 func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
@@ -143,6 +177,13 @@ func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
 			}
 			srv := jkrpc.NewServer(jkrpc.NewConn(conn), s.handlers(answers))
 			go srv.Serve(ctx)
+			if first && s.stepped != nil {
+				s.mu.Lock()
+				s.main = srv
+				s.mu.Unlock()
+				close(s.ready)
+				continue
+			}
 			if first {
 				go s.serve(ctx, srv)
 				continue
@@ -185,34 +226,8 @@ func (s *tapeServer) serve(ctx context.Context, srv *jkrpc.Server) {
 		if err := s.waitUntil(ctx, s.start, f.At()); err != nil {
 			break
 		}
-		var m struct {
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-		}
-		if json.Unmarshal(f.Msg, &m) != nil {
-			continue
-		}
-		var carried struct {
-			Metrics json.RawMessage `json:"metrics"`
-		}
-		_ = json.Unmarshal(m.Params, &carried)
-		s.mu.Lock()
-		if f.At() > s.sent {
-			s.sent = f.At()
-		}
-		if len(carried.Metrics) > 0 && string(carried.Metrics) != "null" {
-			s.metrics, s.metricsAt = carried.Metrics, f.At()
-		}
-		var sides []*jkrpc.Server
-		if m.Method == rpc.MethodFormDelta {
-			sides = s.sides
-		}
-		s.mu.Unlock()
-		if srv.Notify(m.Method, m.Params) != nil {
+		if !s.push(srv, f) {
 			break
-		}
-		for _, side := range sides {
-			_ = side.Notify(m.Method, m.Params)
 		}
 	}
 	if !s.closed {
@@ -221,7 +236,77 @@ func (s *tapeServer) serve(ctx context.Context, srv *jkrpc.Server) {
 	}
 }
 
+func (s *tapeServer) push(srv *jkrpc.Server, f tape.Frame) bool {
+	var m struct {
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	if json.Unmarshal(f.Msg, &m) != nil {
+		return true
+	}
+	var carried struct {
+		Metrics json.RawMessage `json:"metrics"`
+	}
+	_ = json.Unmarshal(m.Params, &carried)
+	s.mu.Lock()
+	if f.At() > s.sent {
+		s.sent = f.At()
+	}
+	if len(carried.Metrics) > 0 && string(carried.Metrics) != "null" {
+		s.metrics, s.metricsAt = carried.Metrics, f.At()
+	}
+	var sides []*jkrpc.Server
+	if m.Method == rpc.MethodFormDelta {
+		sides = s.sides
+	}
+	s.mu.Unlock()
+	if srv.Notify(m.Method, m.Params) != nil {
+		return false
+	}
+	for _, side := range sides {
+		_ = side.Notify(m.Method, m.Params)
+	}
+	return true
+}
+
+func (s *tapeServer) nextAt() (time.Duration, bool) {
+	for ; s.cursor < len(s.frames); s.cursor++ {
+		if f := s.frames[s.cursor]; f.Dir == tape.In && f.Method() != "" {
+			return f.At(), true
+		}
+	}
+	return 0, false
+}
+
+func (s *tapeServer) pushThrough(bound time.Duration, at func(time.Duration)) bool {
+	var due []tape.Frame
+	for i := s.cursor; i < len(s.frames); i++ {
+		f := s.frames[i]
+		if f.Dir != tape.In || f.Method() == "" {
+			continue
+		}
+		if f.At() > bound {
+			break
+		}
+		due = append(due, f)
+		s.cursor = i + 1
+	}
+	if len(due) == 0 {
+		return true
+	}
+	at(due[len(due)-1].At())
+	for _, f := range due {
+		if !s.push(s.main, f) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *tapeServer) position() time.Duration {
+	if s.stepped != nil {
+		return s.stepped()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.speed <= 0 || s.start.IsZero() {

@@ -32,7 +32,9 @@ func Run(progName string, args []string) {
 	mark.Init("cli")
 	atExit(profileSession())
 
-	applyAmbiguousWidth()
+	if !lockstepReplayArgs(args) {
+		applyAmbiguousWidth()
+	}
 
 	// Arm the console before the first escape leaves the process.
 	restoreConsole := sync.OnceFunc(term.ArmOutput())
@@ -453,7 +455,7 @@ aria's content; it is written only when you ask for it.`,
 		Name:  "replay",
 		Group: "Prompt",
 		Short: "Replay a recorded aria wire tape through the real renderer",
-		Usage: "replay <tape> [--speed <x>] [--summary]",
+		Usage: "replay <tape> [--speed <x>] [--summary] [--lockstep <sock> [--fps <n>] [--anim-fps <n>]]",
 		Long: `Play back a tape taken with ` + "`figaro listen --record`" + `.
 
 The tape is the whole world: no angelus, no agent, no provider, no aria
@@ -463,24 +465,56 @@ same pacer, same catch-up: draws them. What you see is what was seen.
 
   figaro replay bug.tape              real time
   figaro replay bug.tape --speed 4    four times faster
-  figaro replay bug.tape --summary    what is on the tape, without playing it`,
+  figaro replay bug.tape --summary    what is on the tape, without playing it
+
+With --lockstep a driver steps the replay on a virtual clock instead.
+Replay listens on <sock> and waits up to 10s for one driver. Each line
+"step" (the next step) or "step N" (through step N, counting from 0)
+renders steps at tape time n/fps, nothing read from the wall clock:
+every tape frame and timer due by then, settled, drawn once. Each step
+writes OSC 7717;step=<n> BEL after its bytes and answers
+"done <n> <bytes>", bytes being the running total written, markers
+included. "rate <n>" sets the animation rate (--anim-fps, default 12).
+The renderer runs on its own pty sized from the tape header; keys and
+resizes do not reach it. Closing the socket ends the replay.`,
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "speed", Description: "Playback rate; 1 is real time (default 1)"},
 			{Long: "summary", IsBool: true, Description: "Describe the tape and exit"},
+			{Long: "lockstep", Description: "Step on a virtual clock, driven over this unix socket"},
+			{Long: "fps", Description: "Lockstep steps per tape second (default 60)"},
+			{Long: "anim-fps", Description: "Lockstep animation rate, spinner included (default 12)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			speed := 1.0
+			opt := replayOpts{speed: 1, summary: ctx.BoolFlag("summary"), lockstep: ctx.Flag("lockstep"),
+				fps: lockstepFPS, animFPS: lockstepAnimFPS}
 			if v := ctx.Flag("speed"); v != "" {
 				f, err := strconv.ParseFloat(v, 64)
 				if err != nil {
 					return fmt.Errorf("--speed %q: not a number", v)
 				}
-				speed = f
+				opt.speed = f
 			}
-			runReplay(ld, ctx.Args[0], speed, ctx.BoolFlag("summary"))
+			for _, n := range []struct {
+				flag string
+				into *int
+			}{{"fps", &opt.fps}, {"anim-fps", &opt.animFPS}} {
+				v := ctx.Flag(n.flag)
+				if v == "" {
+					continue
+				}
+				if opt.lockstep == "" {
+					return fmt.Errorf("--%s steps a --lockstep replay", n.flag)
+				}
+				i, err := strconv.Atoi(v)
+				if err != nil || i <= 0 {
+					return fmt.Errorf("--%s %q: want a positive whole number", n.flag, v)
+				}
+				*n.into = i
+			}
+			runReplay(ld, ctx.Args[0], opt)
 			return nil
 		},
 		CompleteArgs: completeFileArg,

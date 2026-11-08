@@ -538,7 +538,7 @@ func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiv
 	// Metrics are still pulled: they are not yet an intrinsic form.
 	metricsEvery := max(spinnerFPS/metricsPollHz, 1) * 4
 	n := 0
-	return clk.Every(time.Second/spinnerFPS, func() {
+	tick := func() {
 		n++
 		mu.Lock()
 		lt.tick()
@@ -551,7 +551,11 @@ func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiv
 			in.seedMetrics(in.subjectGeneration())
 			in.reseedIfEmpty()
 		}
-	})
+	}
+	if ls := activeLockstep; ls != nil {
+		return ls.animate(tick)
+	}
+	return clk.Every(time.Second/spinnerFPS, tick)
 }
 
 // refreshQueued is the resync path; the last completion wins.

@@ -24,8 +24,21 @@ Nothing in the daemon: recording is a property of a request, one process, one
 connection. Replay serves a temp socket and calls `tailFigaro`, the same
 function `listen` does; requests answered by lookup, notifications on the clock.
 
-**Determinism**: session clock off the header, spinner is a counter, pacer is
-real time: so frame *count* varies and goldens belong on the headless path.
+**Determinism**: plain replay runs on the wall clock (pacer, spinner, timers),
+so frame *count* varies. `--lockstep <sock>` does not: a driver steps it and
+step n is tape time n/fps (`--fps`, default 60). Each step delivers the frames
+and fires the timers due by then, waits for the async work they started
+(`goSettled`), draws once and writes `OSC 7717;step=n BEL`; the socket
+answers `done n bytes` (running pty total, markers included). Animations run
+at `--anim-fps` or `rate n` (default 12). The renderer sits on its own pty
+sized from the header; keys, resizes and the ambiguous-width probe never reach
+it. Every time read on the render path goes through `clk`: a direct
+`time.Now` there breaks `TestALockstepReplayIsThePureFunctionOfItsSteps`.
+
+**Isolation**: a replay answers from the tape or refuses. `S`, `:form` and
+`:state` read the subject's form from the tape; every other verb says "a replay
+has only its tape", and the process dies before it would dial a daemon or
+open the vault.
 
 **A tape holds the aria's content**: prose, thinking, tool output, cwd. Read a
 recording before committing it as a fixture; `testdata/tapes/README.md` records

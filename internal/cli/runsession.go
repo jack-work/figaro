@@ -109,7 +109,9 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	lt.setRenderLock(&mu)
 	// The watchdog dumps every goroutine when the render lock is held for
 	// seconds; SIGUSR1/SIGUSR2 on demand.
-	defer watchRenderLock(&mu)()
+	if activeLockstep == nil {
+		defer watchRenderLock(&mu)()
+	}
 	defer armFreezeSignals()()
 	defer markMemory(&mu, lt, time.Second)()
 
@@ -201,6 +203,10 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		} else {
 			fmt.Fprintf(os.Stderr, "figaro: terminal input disabled: enter raw mode: %v\n", err)
 		}
+	}
+
+	if ls := activeLockstep; ls != nil {
+		ls.attach(&lockstepSession{mu: &mu, lt: lt})
 	}
 
 	if opt.prompt != "" {
