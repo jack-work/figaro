@@ -9,7 +9,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -21,7 +20,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/store/segment"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/topo"
 )
@@ -217,7 +215,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 		return nil, err
 	}
 	_ = xw.Close()
-	if err := b.refuseCorruptChannel(id, chanIR); err != nil {
+	if err := b.refuseUnreadableChannel(id, chanIR); err != nil {
 		return nil, err
 	}
 	h := &ariaHandle{
@@ -235,13 +233,13 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	return h, nil
 }
 
-func (b *XwalBackend) refuseCorruptChannel(node, channel string) error {
+func (b *XwalBackend) refuseUnreadableChannel(node, channel string) error {
 	xw, err := b.store.openNode(node)
 	if err != nil {
-		return nil
+		return fmt.Errorf("%s: %w", node, err)
 	}
 	defer xw.Close()
-	if err := xw.OpenChannel(channel); errors.Is(err, segment.ErrCorrupt) {
+	if err := xw.OpenChannel(channel); err != nil {
 		return fmt.Errorf("%s %s: %w", node, channel, err)
 	}
 	return nil
@@ -298,7 +296,7 @@ func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.Ra
 	cache := b.transCacheFor(providerName)
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	if err := b.refuseCorruptChannel(ariaID, ch); err != nil {
+	if err := b.refuseUnreadableChannel(ariaID, ch); err != nil {
 		return nil, err
 	}
 	c := newTreeLog[[]json.RawMessage](
@@ -362,7 +360,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 
 	// Replay outside the registry lock: it reads files, and holding the map
 	// through that would serialize every aria behind one cold open.
-	if err := b.refuseCorruptChannel(ariaID, chanForm); err != nil {
+	if err := b.refuseUnreadableChannel(ariaID, chanForm); err != nil {
 		return nil, err
 	}
 	opened, err := OpenForm(&xwalFormLog{backend: b, ariaID: ariaID})
