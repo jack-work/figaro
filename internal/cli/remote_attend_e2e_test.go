@@ -149,6 +149,11 @@ func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsDoor(t *testing.T) {
 	require.NoError(t, err, "the far aria answers through its door")
 	require.Greater(t, p.edge.upgrades.Load(), before)
 
+	_, row, err := statusRow(ctx, p.local, "", "")
+	require.NoError(t, err)
+	require.Equal(t, p.farAria, row.ID, "status reads the attended aria on its node")
+	require.Equal(t, p.far[:8]+"/"+ariaName(p.farAria), ariaName(p.far+"/"+p.farAria))
+
 	list, err := p.local.List(ctx)
 	require.NoError(t, err)
 	for _, f := range list.Figaros {

@@ -37,6 +37,9 @@ func applyIDStyle(loaded *config.Loaded) error {
 }
 
 func ariaName(id string) string {
+	if node, bare := rpc.SplitNode(id); node != "" {
+		return node[:min(rpc.NodeShortLen, len(node))] + rpc.NodeSeparator + ariaName(bare)
+	}
 	if shownIDs == idsAsShortHex {
 		return shortHex(id)
 	}

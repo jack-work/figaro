@@ -78,6 +78,9 @@ func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (
 		ariaID = nameArg
 	}
 	var resolveErr error
+	if foreignNode(ariaID) != "" {
+		return foreignStatusRow(ctx, ariaID)
+	}
 	if ariaID != "" {
 		if id, err := doorID(ctx, acli, ariaID); err == nil {
 			ariaID = id
@@ -95,6 +98,9 @@ func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (
 		}
 		ariaID = r.FigaroID
 	}
+	if foreignNode(ariaID) != "" {
+		return foreignStatusRow(ctx, ariaID)
+	}
 	resp, err := acli.ListGlobal(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list: %w", err)
@@ -109,6 +115,30 @@ func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (
 	}
 	die("no aria or form %q (try: figaro ls -g)", ariaID)
 	return nil, nil, nil
+}
+
+func foreignStatusRow(ctx context.Context, ref string) (*rpc.ListResponse, *rpc.FigaroInfoResponse, error) {
+	id, a, err := attachForeign(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	acli, err := sdk.DialAngelus(a.Door)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer acli.Close()
+	resp, err := acli.ListGlobal(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list: %w", err)
+	}
+	node, bare := rpc.SplitNode(id)
+	for i := range resp.Figaros {
+		f := &resp.Figaros[i]
+		if f.ID == bare && (f.Node == "" || nodeMatches(f.Node, node)) {
+			return resp, f, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("no aria or form %q on its node", ref)
 }
 
 func runName(loaded *config.Loaded, idFlag string, args []string, more bool) {

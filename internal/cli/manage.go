@@ -138,6 +138,10 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		if r, rerr := resolveBinding(ctx, acli, shellPID); rerr == nil && r.Found {
 			boundID = r.FigaroID
 		}
+		if foreignNode(boundID) != "" {
+			fmt.Fprintf(stderrw, "attending %s on another node; listing this one\n", ariaName(boundID))
+			boundID, o.home = "", o.rootID == ""
+		}
 
 		// An attended form has no row in the flat table; draw its genealogy
 		// instead, bounded from the form's parent.
