@@ -61,5 +61,9 @@ func chooseDoor(configDir string) door {
 func doorEndpoint() transport.Endpoint { return resolveDoor().ep }
 
 func ariaAddr(id string) sdk.Addr {
-	return sdk.Addr{Door: doorEndpoint(), ID: id}
+	a, err := doorFor(id)
+	if err != nil {
+		die("%s", err)
+	}
+	return a
 }

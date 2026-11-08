@@ -55,3 +55,7 @@ func readNodeID(path string) (string, error) {
 func (s *XwalStore) NodeID() string { return s.nodeID }
 
 func NodeIDAt(root string) (string, error) { return ensureNodeID(root) }
+
+func ReadNodeIDAt(root string) (string, error) {
+	return readNodeID(filepath.Join(root, nodeIDFileName))
+}
