@@ -329,7 +329,11 @@ func (in *interactiveInput) turnFrame(params json.RawMessage) {
 		}
 		mark.Mark("aria.frame", "bytes", len(params), "parts", len(r.Parts), "live", live, "deltas", nodes)
 	}
+	submitFrame(in.figaroID, r)
 	in.lt.apply(r)
+	if !in.lt.tr.active {
+		submitPainted(in.figaroID)
+	}
 }
 
 func (in *interactiveInput) turnDone(params json.RawMessage) {

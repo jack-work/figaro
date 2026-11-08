@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/jack-work/figaro/api/rpc"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
 var requestFieldCapabilities = map[string]rpc.Capability{
@@ -16,6 +17,7 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 }
 
 type quaer interface {
+	ID() string
 	QuaWith(ctx context.Context, req rpc.QuaRequest) (int, bool, error)
 }
 
@@ -23,7 +25,17 @@ func quaWith(ctx context.Context, a quaer, req rpc.QuaRequest) (int, bool, error
 	if err := refuseUnknownFields(req); err != nil {
 		return 0, false, err
 	}
-	return a.QuaWith(ctx, req)
+	ctx, span := startSubmit(ctx, a.ID(), len(req.Text))
+	req.TraceParent = figOtel.TraceParent(ctx)
+	cursor, active, err := a.QuaWith(ctx, req)
+	span.AddEvent("rpc.acked")
+	if err != nil {
+		figOtel.RecordError(ctx, "cli.submit.error", err)
+		span.End()
+		return cursor, active, err
+	}
+	awaitFirstPaint(a.ID(), cursor, span)
+	return cursor, active, err
 }
 
 func refuseUnknownFields(req any) error {

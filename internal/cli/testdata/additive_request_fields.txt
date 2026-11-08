@@ -105,6 +105,7 @@ ProviderLedgerRequest.Aria
 ProviderLedgerRequest.Limit
 QuaRequest.Form
 QuaRequest.Text
+QuaRequest.TraceParent
 QuarantineReleaseRequest.At
 QuarantineReleaseRequest.Channel
 QuarantineReleaseRequest.Confirm

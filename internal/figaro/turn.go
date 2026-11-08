@@ -133,15 +133,15 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 	}
 
-	turnCtx, span := figOtel.Start(ctx, "figaro.qua",
-		figOtel.WithAttributes(
-			attribute.String("figaro.id", a.id),
-			attribute.String("figaro.model", a.currentModel()),
-			attribute.String("figaro.provider", a.providerName()),
-		),
+	started, rounds := time.Now(), 0
+	turnCtx, span := figOtel.StartFromRemote(ctx, "figaro.qua", prompt.traces,
+		attribute.String("figaro.id", a.id),
+		attribute.String("figaro.model", a.currentModel()),
+		attribute.String("figaro.provider", a.providerName()),
+		attribute.Int("figaro.prompts", len(promptIDs(prompt))),
+		attribute.Int64("figaro.queue_wait_ms", queueWaitMS(prompt.at, started)),
 	)
 	defer span.End()
-	started, rounds := time.Now(), 0
 	a.streamCuts = 0
 	defer func() {
 		figOtel.RecordTurn(turnCtx, time.Since(started), rounds,
@@ -168,12 +168,15 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	}()
 
 	if prompt.text != "" {
-		a.runInquiryMethods(turnCtx, prompt.text)
+		methodsCtx, methodsSpan := figOtel.Start(turnCtx, "figaro.methods")
+		a.runInquiryMethods(methodsCtx, prompt.text)
+		methodsSpan.End()
 	}
 	if _, err := a.appendUserPrompt(prompt, false); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID)))
 	a.markCut(a.turnID, prompt.resume)
 	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
@@ -799,6 +802,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
 		out.resume = out.resume || p.resume
+		out.traces = append(out.traces, p.traces...)
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
 		}
@@ -1521,4 +1525,14 @@ func (a *Agent) regionMessages() []message.Message {
 	}
 	n := len(a.regionMsgs)
 	return a.regionMsgs[:n:n]
+}
+
+func queueWaitMS(arrivedMS int64, started time.Time) int64 {
+	if arrivedMS <= 0 {
+		return 0
+	}
+	if w := started.UnixMilli() - arrivedMS; w > 0 {
+		return w
+	}
+	return 0
 }

@@ -61,6 +61,7 @@ type event struct {
 	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
 	resume   bool
+	traces   []string
 }
 
 // Config is the constructor input for NewAgent.
@@ -518,6 +519,9 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		typ:    eventUserPrompt,
 		text:   req.Text,
 		images: images,
+	}
+	if req.TraceParent != "" {
+		evt.traces = []string{req.TraceParent}
 	}
 	if req.Text != "" {
 		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}

@@ -74,12 +74,13 @@ func (in *interactiveInput) progress(msg string) {
 func (in *interactiveInput) noteLocked(msg string) { in.lt.tr.setCommandNote(msg) }
 
 // sendComposer is called with the render lock held, so it hands off.
-func (in *interactiveInput) sendComposer(text string) { go in.execSendComposer(text) }
+func (in *interactiveInput) sendComposer(text string) { go in.execSendComposer(text, time.Now()) }
 
 // execSendComposer submits the draft byte-for-byte: a draft is not a command line.
-func (in *interactiveInput) execSendComposer(text string) {
+func (in *interactiveInput) execSendComposer(text string, submittedAt time.Time) {
 	in.commandAsync(func(ctx context.Context) (string, error) {
 		defer in.progressIfSlow("…sending")()
+		ctx = withSubmittedAt(ctx, submittedAt)
 		if in.holdWhileAway(text) {
 			return in.heldNote(), nil
 		}

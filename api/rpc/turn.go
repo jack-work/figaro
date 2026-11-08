@@ -19,9 +19,10 @@ type ErrorData struct {
 }
 
 type QuaRequest struct {
-	Text   string     `json:"text"`
-	Form   *FormInput `json:"form,omitempty"`
-	Images []QuaImage `json:"images,omitempty"`
+	Text        string     `json:"text"`
+	Form        *FormInput `json:"form,omitempty"`
+	Images      []QuaImage `json:"images,omitempty"`
+	TraceParent string     `json:"traceparent,omitempty"`
 }
 
 const (
