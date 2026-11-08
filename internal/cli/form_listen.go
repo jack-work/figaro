@@ -239,6 +239,9 @@ type formView struct {
 	unfolded  map[string]bool
 	mounts    map[string]*viewMount
 	opener    mountOpener
+	seeks     bool
+	seeking   string
+	focus     func(id string)
 	seeded    map[string]bool
 	armed     string
 	search    *formSearch

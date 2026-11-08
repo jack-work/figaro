@@ -592,22 +592,22 @@ func TestARevealedAncestorShowsOnlyItsForks(t *testing.T) {
 }
 
 // With a peer in the troupe, :ls dropped @arias for the router's listing,
-// which is not a form, so a search found only the text it drew. :ls opens
-// this node's @arias whatever the troupe; L is the troupe's view.
-func TestLsOpensAriasWithAPeerInTheTroupe(t *testing.T) {
+// which is not a form, so a search found only the text it drew. :ls opens a
+// form whatever the troupe: the topology, at the attended aria.
+func TestLsOpensAFormWithAPeerInTheTroupe(t *testing.T) {
 	t.Setenv("FIGARO_RUNTIME_DIR", t.TempDir())
 	t.Setenv("FIGARO_NO_SELF_SPAWN", "1")
 	var out countingWriter
 	in, _ := navInput(t, &out, true)
 	p, ok := formPitFor("ls")
-	if !ok || p.form != rpc.AriasFormID {
-		t.Fatalf(":ls opens %q, want %s", p.form, rpc.AriasFormID)
+	if !ok || p.form != rpc.TroupeFormID {
+		t.Fatalf(":ls opens %q, want %s", p.form, rpc.TroupeFormID)
 	}
 	v := &formView{src: &fakeFormSource{snap: form.FromMap(formKeys(
 		"peers", `1`,
 		"arias.alkaline-litter.id", `"09e4b786557992e7a84fbff7606463f7"`,
 	))}, open: map[string]bool{}}
 	if keep := p.keep(in); keep != nil && !keep(v) {
-		t.Fatal(":ls with a peer in the troupe dropped @arias")
+		t.Fatal(":ls with a peer in the troupe dropped its form")
 	}
 }

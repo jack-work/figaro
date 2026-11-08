@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
@@ -12,15 +11,11 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-func (in *interactiveInput) mountTroupe(v *formView) {
+func (in *interactiveInput) troupeAtRoot(v *formView) { v.opener = in.mountForm }
+
+func (in *interactiveInput) troupeAtAttended(v *formView) {
 	v.opener = in.mountForm
-	v.Items(80)
-	for k, raw := range v.source().Shown().All() {
-		if row, ok := strings.CutSuffix(k, ".self"); ok && string(raw) == "true" {
-			v.Activate(row)
-			v.Items(80)
-		}
-	}
+	v.seeks = true
 }
 
 func (in *interactiveInput) mountForm(addr string) (*formView, actOn, func(), <-chan struct{}, error) {

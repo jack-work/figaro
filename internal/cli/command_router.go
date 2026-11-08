@@ -96,9 +96,9 @@ func formPitFor(verb string) (formPit, bool) {
 	case "reaped":
 		return formPit{name: "reaped", form: rpc.ReapedFormID, bare: true}, true
 	case "ls", "list":
-		return formPit{name: "arias", form: rpc.AriasFormID, bare: true}, true
+		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtAttended}, true
 	case "troupe":
-		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).mountTroupe}, true
+		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtRoot}, true
 	}
 	return formPit{}, false
 }
@@ -559,7 +559,18 @@ func (in *interactiveInput) installLivePit(name string, view *formView, full boo
 			return snap
 		}
 	}
-	at := view.revealMarked()
+	view.focus = func(id string) {
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		t := in.lt.tr
+		if t.pit.live != cmdkit.LiveView(view) {
+			return
+		}
+		t.pit.refreshLive(t.w)
+		t.pit.focus(id)
+		t.render()
+	}
+	at := view.seekMarked()
 	t := in.lt.tr
 	t.showLivePit(name, view, full)
 	if at != "" {

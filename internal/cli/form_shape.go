@@ -228,6 +228,21 @@ func (v *formView) revealMarked() string {
 	return chain[len(chain)-1]
 }
 
+func (v *formView) seekMarked() string {
+	at := v.revealMarked()
+	if at == "" || !v.seeks {
+		return at
+	}
+	v.mu.Lock()
+	if v.view != nil && v.view.Mount != "" {
+		v.open[at] = true
+		v.seeking = at
+		v.openRev++
+	}
+	v.mu.Unlock()
+	return at
+}
+
 func (v *formView) revealLocked(chain []string) {
 	through := ""
 	if v.view != nil {

@@ -273,7 +273,7 @@ A spent lifetime does not delete a node in use. `system.keepalive` (same
 syntax; default one day, `[memory] keepalive_minutes`) keeps a node whose
 lifetime is spent while it was used within that window. Use is a successful
 call that names the aria: a prompt, a `set`, a read or `show`, attend, bind,
-listen, a fork from it, a queue read. `ls`, the tree view, the `L` pit, status
+listen, a fork from it, a queue read. `ls`, the tree view, the pager's topology pit, status
 and `doctor ttl` are not use, and neither is a call that was refused. Records
 nobody asked for (translation catch-up, study marks) do not count either: a
 node is measured from its last use, and from its newest record only until it
@@ -300,7 +300,7 @@ kill_grace_hours`), and at that deadline it is purged whatever holds it: a kill
 is a delete deferred, not a request. A sweep-reaped group keeps
 `reaped_grace_hours`; killing one gives it the kill's deadline.
 
-`ls`, the tree view and the pager's `L` mark a row `[reaps in 3h]` inside the
+`ls`, the tree view and the pager's topology pit mark a row `[reaps in 3h]` inside the
 last quarter of its keepalive (at most six hours), `[reaping]` once it is due
 and only held, and `[retired]`; a row past its reap time that nothing holds,
 and every reaped row, is omitted, with a count of what was withheld.

@@ -155,8 +155,18 @@ func (v *formView) openMount(path string, m *viewMount) {
 		}
 		m.view, m.send, m.close = view, send, closeFn
 	}
+	seek := err == nil && v.seeking == path
+	if seek {
+		v.seeking = ""
+	}
+	focus := v.focus
 	v.items = nil
 	v.mu.Unlock()
+	if seek && focus != nil {
+		if at := view.revealMarked(); at != "" {
+			focus(path + mountSep + at)
+		}
+	}
 	v.changed()
 	if err == nil && done != nil {
 		go v.redialWhenDone(path, m, done)
