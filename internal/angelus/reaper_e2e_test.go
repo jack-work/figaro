@@ -246,11 +246,9 @@ func TestSoftDeletion(t *testing.T) {
 	})
 
 	t.Run("restoring takes it back out of the index and lets it talk", func(t *testing.T) {
-		a, _, ctx, root, child := reap(t)
-		for _, id := range []string{root, child} {
-			var set rpc.SetResponse
-			require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodSet, setKeys(t, nil, store.SystemReapedKey), &set))
-		}
+		a, acli, ctx, root, child := reap(t)
+		_, err := acli.ReapedRestore(ctx, rpc.ReapedRestoreRequest{FigaroID: root})
+		require.NoError(t, err)
 		require.True(t, alive(t, a, root))
 		require.Empty(t, reapedFormItems(t, a))
 		var out rpc.QuaResponse
@@ -318,11 +316,11 @@ func TestReapedDeadline(t *testing.T) {
 	})
 
 	t.Run("restoring clears the deadline", func(t *testing.T) {
-		a, _, ctx, root, child := reap(t)
+		a, acli, ctx, root, child := reap(t)
 		setReapedUntil(t, a, time.Now().Add(time.Hour), root, child)
+		_, err := acli.ReapedRestore(ctx, rpc.ReapedRestoreRequest{FigaroID: root})
+		require.NoError(t, err)
 		for _, id := range []string{root, child} {
-			var set rpc.SetResponse
-			require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodSet, setKeys(t, nil, store.SystemReapedKey), &set))
 			meta, err := a.Backend.Meta(id)
 			require.NoError(t, err)
 			require.Zero(t, meta.ReapedUntilMS, "%s keeps a purge deadline after restore", id)

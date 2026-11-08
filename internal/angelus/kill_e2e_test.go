@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -39,13 +37,10 @@ func requireNear(t *testing.T, want, got time.Time) {
 	require.True(t, d > -5*time.Second && d < 5*time.Second, "want about %s, got %s", want, got)
 }
 
-func restore(t *testing.T, a *angelus.Angelus, ctx context.Context, ids ...string) {
+func restore(t *testing.T, acli *sdk.Angelus, ctx context.Context, id string) {
 	t.Helper()
-	for _, id := range ids {
-		var set rpc.SetResponse
-		require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodSet,
-			setKeys(t, nil, store.SystemReapedKey, store.SystemReapedUntilKey), &set))
-	}
+	_, err := acli.ReapedRestore(ctx, rpc.ReapedRestoreRequest{FigaroID: id})
+	require.NoError(t, err)
 }
 
 func TestKillReaps(t *testing.T) {
@@ -168,7 +163,7 @@ func TestKillReaps(t *testing.T) {
 		c, err := acli.Create(ctx, dress(t, "mock"), nil)
 		require.NoError(t, err)
 		kill(t, acli, ctx, rpc.KillRequest{FigaroID: c.FigaroID})
-		restore(t, a, ctx, c.FigaroID)
+		restore(t, acli, ctx, c.FigaroID)
 		require.True(t, alive(t, a, c.FigaroID))
 		require.Empty(t, reapedFormItems(t, a))
 		var out rpc.QuaResponse

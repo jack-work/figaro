@@ -141,9 +141,38 @@ func (c callerKeys) refusal(path string) error {
 	return nil
 }
 
+var reapKeys = []string{store.SystemReapedKey, store.SystemReapedUntilKey, store.SystemReapedByKey}
+
+func refuseReapKeys(before form.Snapshot, patch form.Patch) error {
+	var after *form.Snapshot
+	for _, e := range patch.Entries() {
+		for _, k := range reapKeys {
+			switch {
+			case e.Key == k || strings.HasPrefix(e.Key, k+".") || strings.HasPrefix(e.Key, k+"["):
+			case strings.HasPrefix(k, e.Key+"."):
+				if after == nil {
+					after = ptr(before.Apply(patch))
+				}
+				was, _ := before.Get(k)
+				now, _ := after.Get(k)
+				if bytes.Equal(was, now) {
+					continue
+				}
+			default:
+				continue
+			}
+			return fmt.Errorf("a caller may not set %s: only kill, gc and reaped restore write it", k)
+		}
+	}
+	return nil
+}
+
 func (h *handlers) refuseCallerKeys(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
 		return nil
+	}
+	if err := refuseReapKeys(before, *patch); err != nil {
+		return err
 	}
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
@@ -180,7 +209,9 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 }
 
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
-	if _, boxed := callerBox(ctx); !boxed && h.callerOwns(ctx) {
+	_, boxed := callerBox(ctx)
+	owner := !boxed && h.callerOwns(ctx)
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch
@@ -198,7 +229,7 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 		}
 		if req.Form != nil {
 			patch = req.Form.Patch
-			if open := openKeys(req.Form.Context); len(open) > 0 {
+			if open := openKeys(req.Form.Context); len(open) > 0 && !owner {
 				snap, err := h.angelus.Backend.FormState(id)
 				if err != nil {
 					return err

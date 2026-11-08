@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -38,6 +39,9 @@ func (h *handlers) reapedRestore(ctx context.Context, params json.RawMessage) (a
 }
 
 func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
+	if box, ok := callerBox(ctx); ok {
+		return fmt.Errorf("box %s may not restore a reaped aria: its purge is what the box's grace promises", box)
+	}
 	for _, id := range group.nodes {
 		if err := h.allowed(ctx, rpc.VerbSet, authz.Aria(id)); err != nil {
 			return err
@@ -48,22 +52,32 @@ func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
 
 func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep bool) (rpc.ReapedRestoreResponse, error) {
 	resp := rpc.ReapedRestoreResponse{Root: group.root}
+	rk, ok := h.angelus.Backend.(reapedKeeper)
+	if !ok {
+		return resp, fmt.Errorf("reaped restore: this store keeps no reaped index")
+	}
+	lifetime := form.Build(form.Snapshot{}, nil, []string{store.SystemTTLKey, store.SystemReapIfEmptyKey})
+	if keep {
+		snap, err := h.angelus.Backend.FormState(group.root)
+		if err != nil {
+			return resp, err
+		}
+		if err := h.refuseCallerKeys(ctx, snap, &lifetime); err != nil {
+			return resp, fmt.Errorf("reaped restore %s --keep: %w", group.root, err)
+		}
+	}
+	unreap := form.Build(form.Snapshot{}, nil, reapKeys)
 	for _, id := range group.nodes {
-		drops := []string{store.SystemReapedKey, store.SystemReapedUntilKey, store.SystemReapedByKey}
+		patch := unreap
 		if keep && id == group.root {
-			drops = append(drops, store.SystemTTLKey, store.SystemReapIfEmptyKey)
+			patch = form.Merge(unreap, lifetime)
 		}
-		raw, err := json.Marshal(rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, drops)})
-		if err != nil {
-			return resp, err
-		}
-		withAria, err := rpc.WithAria(raw, id)
-		if err != nil {
-			return resp, err
-		}
-		if _, err := h.ariaMethod(rpc.MethodSet)(ctx, withAria); err != nil {
+		if _, err := rk.ApplyForm(id, patch); err != nil {
 			return resp, fmt.Errorf("reaped restore %s: stopped at %s after restoring %d of %d (%s): %w",
 				group.root, id, len(resp.Restored), len(group.nodes), strings.Join(resp.Restored, ", "), err)
+		}
+		if t, ok := h.angelus.Backend.(toucher); ok {
+			t.Touch(id, time.Now())
 		}
 		resp.Restored = append(resp.Restored, id)
 	}

@@ -1,7 +1,9 @@
 package angelus_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
@@ -195,3 +197,131 @@ func TestSystemKeepIsOwnerHeld(t *testing.T) {
 		t.Fatalf("a guest set system.keep on its own aria: %v", err)
 	}
 }
+
+// El Inspector XII, change 2: the reap keys schedule a purge with no kill
+// and no grace, so no caller writes them by a set, the owner included. Only
+// kill, gc and reaped restore write them, through their own paths.
+func TestNoCallerSetsTheReapKeys(t *testing.T) {
+	reapKeys := map[string]any{
+		store.SystemReapedKey:      "x",
+		store.SystemReapedUntilKey: "2020-01-01T00:00:00Z",
+		store.SystemReapedByKey:    "gc:forged",
+	}
+	r := newRigWith(t, lentKillPolicy)
+	made, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	troupe := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authz.KindTroupe), ID: "kelliher"})
+	if _, err := r.call(troupe, rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: *mantraPatch("lent set works")})); err != nil {
+		t.Fatalf("the lent set grant does not reach set, so this test proves nothing: %v", err)
+	}
+	d := boxDoorRig(t, "true")
+	inBox, err := d.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := d.dial(t)
+	for key, val := range reapKeys {
+		set := rpc.SetRequest{Patch: *keyPatch(key, val)}
+		for who, ctx := range map[string]context.Context{"owner": asOwner(), "troupe": troupe} {
+			if _, err := r.call(ctx, rpc.MethodSet, withAria(t, made.FigaroID, set)); err == nil {
+				t.Errorf("%s set %s", who, key)
+			}
+		}
+		if _, err := r.call(asOwner(), rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, []string{key})})); err == nil {
+			t.Errorf("the owner unset %s", key)
+		}
+		nested := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system": json.RawMessage(`{"` + strings.TrimPrefix(key, "system.") + `":"x"}`)}, nil)
+		if _, err := r.call(asOwner(), rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: nested})); err == nil {
+			t.Errorf("the owner set %s inside a whole system object", key)
+		}
+		if _, err := r.call(asOwner(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"mock"}, Cwd: r.cwd, Patch: keyPatch(key, val)}); err == nil {
+			t.Errorf("the owner set %s at birth", key)
+		}
+		if _, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: made.FigaroID, Patch: keyPatch(key, val)}); err == nil {
+			t.Errorf("the owner set %s on a fork", key)
+		}
+		if err := boxOnAria(t, c, rpc.MethodSet, inBox.FigaroID, set, nil); err == nil {
+			t.Errorf("the box set %s", key)
+		}
+	}
+	if m, _ := r.backend.Meta(made.FigaroID); m == nil || m.ReapedAtMS != 0 {
+		t.Fatalf("a refused set reaped: %+v", m)
+	}
+
+	if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: made.FigaroID}); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := r.backend.Meta(made.FigaroID); m == nil || m.ReapedAtMS == 0 || m.ReapedUntilMS == 0 {
+		t.Fatalf("kill did not write the reap keys: %+v", m)
+	}
+	if _, err := r.call(asOwner(), rpc.MethodReapedRestore, rpc.ReapedRestoreRequest{FigaroID: made.FigaroID}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := r.backend.FormState(made.FigaroID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range reapKeys {
+		if snap.Lookup(key) != nil {
+			t.Errorf("restore left %s", key)
+		}
+	}
+}
+
+func TestRestoreKeepIsTheOwners(t *testing.T) {
+	r := newRigWith(t, lentKillPolicy)
+	made, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.call(asOwner(), rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: *keyPatch(store.SystemTTLKey, "30d")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: made.FigaroID}); err != nil {
+		t.Fatal(err)
+	}
+	troupe := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authz.KindTroupe), ID: "kelliher"})
+	if _, err := r.call(troupe, rpc.MethodReapedRestore, rpc.ReapedRestoreRequest{FigaroID: made.FigaroID, Keep: true}); err == nil || !strings.Contains(err.Error(), "owner-held") {
+		t.Fatalf("a lent set restored with --keep, removing the owner's ttl: %v", err)
+	}
+	if snap, _ := r.backend.FormState(made.FigaroID); snap.Lookup(store.SystemTTLKey) == nil {
+		t.Fatal("the refused --keep dropped system.ttl")
+	}
+	if _, err := r.call(troupe, rpc.MethodReapedRestore, rpc.ReapedRestoreRequest{FigaroID: made.FigaroID}); err != nil {
+		t.Fatalf("a lent set restore without --keep: %v", err)
+	}
+}
+
+// JSON lets a key arrive escaped; the owner's fast path must not let
+// "system.re\u0061ped_until" through as a key it never saw.
+func TestAnEscapedReapKeyIsRefusedFromTheOwner(t *testing.T) {
+	r := newRigWith(t, lentKillPolicy)
+	made, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range reapKeyNames {
+		raw, err := json.Marshal(rpc.SetRequest{Patch: *keyPatch(key, "2020-01-01T00:00:00Z")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		escaped := bytes.ReplaceAll(raw, []byte("reaped"), []byte(`re\u0061ped`))
+		if bytes.Equal(escaped, raw) {
+			t.Fatalf("the patch for %s never spells the key: %s", key, raw)
+		}
+		params, err := rpc.WithAria(escaped, made.FigaroID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.h[rpc.MethodSet](asOwner(), params); err == nil {
+			t.Errorf("the owner set %s spelled with an escape", key)
+		}
+	}
+	if m, _ := r.backend.Meta(made.FigaroID); m == nil || m.ReapedAtMS != 0 || m.ReapedUntilMS != 0 {
+		t.Fatalf("an escaped key landed: %+v", m)
+	}
+}
+
+var reapKeyNames = []string{store.SystemReapedKey, store.SystemReapedUntilKey, store.SystemReapedByKey}
