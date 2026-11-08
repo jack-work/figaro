@@ -322,7 +322,7 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 		for _, m := range list {
 			rows = append(rows, modelRow{
 				ID: name + "/" + m.ID, Object: "model", OwnedBy: name,
-				Name: m.Name, ContextWindow: m.ContextWindow, MaxOutput: m.MaxTokens,
+				Name: m.Name, ContextWindow: m.Window(""), MaxOutput: m.MaxOutput,
 			})
 		}
 	}

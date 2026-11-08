@@ -55,7 +55,7 @@ func boundFormPatch(base form.Snapshot, kv map[string]string) form.Patch {
 
 func catalogPatch(t *testing.T, base form.Snapshot, provider string, entries map[string]int) form.Patch {
 	t.Helper()
-	p := models.Provider{Models: map[string]models.Entry{}}
+	p := models.Provider{IR: models.IRVersion, Models: map[string]models.Entry{}}
 	for id, w := range entries {
 		p.Models[id] = models.Entry{Context: models.Context{Default: w}}
 	}

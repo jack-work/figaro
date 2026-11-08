@@ -108,7 +108,7 @@ func (c *fakeCatalog) Want(provider, model string) {
 }
 
 func (c *fakeCatalog) fill(provider, model string, window int) {
-	raw, _ := json.Marshal(models.Provider{Models: map[string]models.Entry{model: {Context: models.Context{Default: window}}}})
+	raw, _ := json.Marshal(models.Provider{IR: models.IRVersion, Models: map[string]models.Entry{model: {Context: models.Context{Default: window}}}})
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.snap = c.snap.Apply(form.Build(c.snap, map[string]json.RawMessage{provider: raw}, nil))

@@ -9,9 +9,12 @@ import (
 
 const FormID = "@models"
 
+const IRVersion = 1
+
 const (
-	SourceAPI   = "api"
-	SourceTable = "table"
+	SourceAPI     = "api"
+	SourceMapping = "mapping"
+	SourceConfig  = "config"
 )
 
 const (
@@ -28,14 +31,44 @@ type Context struct {
 }
 
 type Entry struct {
-	Name      string  `json:"name,omitempty"`
-	Context   Context `json:"context"`
-	MaxOutput int     `json:"max_output,omitempty"`
-	Hidden    bool    `json:"hidden,omitempty"`
-	Source    string  `json:"source"`
+	Name       string            `json:"name,omitempty"`
+	Context    Context           `json:"context,omitzero"`
+	MaxOutput  int               `json:"max_output,omitempty"`
+	Images     *bool             `json:"images,omitempty"`
+	ImageBytes int               `json:"max_prompt_image_size,omitempty"`
+	ImageCount int               `json:"max_prompt_images,omitempty"`
+	Tools      *bool             `json:"tools,omitempty"`
+	Reasoning  *bool             `json:"reasoning,omitempty"`
+	Hidden     bool              `json:"hidden,omitempty"`
+	Endpoints  []string          `json:"endpoints,omitempty"`
+	Src        map[string]string `json:"src,omitempty"`
+}
+
+func (e Entry) Window(tier string) int {
+	if tier == LongContextTier && e.Context.Long > 0 {
+		return e.Context.Long
+	}
+	return e.Context.Default
+}
+
+func (e Entry) TakesImages() (takes bool, src string) {
+	if e.Images == nil {
+		return false, ""
+	}
+	return *e.Images, e.Source("images")
+}
+
+func (e Entry) Source(field string) string { return e.Src[field] }
+
+func (e *Entry) Mark(field, src string) {
+	if e.Src == nil {
+		e.Src = map[string]string{}
+	}
+	e.Src[field] = src
 }
 
 type Provider struct {
+	IR          int              `json:"ir,omitempty"`
 	Models      map[string]Entry `json:"models,omitempty"`
 	RefreshedAt int64            `json:"refreshed_at,omitempty"`
 	AttemptedAt int64            `json:"attempted_at,omitempty"`
@@ -57,12 +90,23 @@ func Providers(catalog form.Snapshot) (map[string]Provider, error) {
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
+	for name, p := range out {
+		if p.IR != IRVersion {
+			p.Models = nil
+			out[name] = p
+		}
+	}
 	return out, nil
+}
+
+func Current(catalog form.Snapshot, provider string) bool {
+	n, ok := intAt(catalog, provider+".ir")
+	return ok && n == IRVersion
 }
 
 func Lookup(catalog form.Snapshot, provider, model string) (Entry, bool) {
 	var e Entry
-	if provider == "" || model == "" {
+	if provider == "" || model == "" || !Current(catalog, provider) {
 		return e, false
 	}
 	raw, ok := catalog.Get(provider + ".models." + model)
@@ -112,14 +156,15 @@ func ContextLimit(catalog, bound form.Snapshot) int {
 }
 
 func EntryLimit(catalog form.Snapshot, provider, model, tier string) int {
-	e, ok := Lookup(catalog, provider, model)
-	if !ok {
+	if provider == "" || model == "" || !Current(catalog, provider) {
 		return 0
 	}
-	if tier == LongContextTier && e.Context.Long > 0 {
-		return e.Context.Long
+	raw, ok := catalog.Get(provider + ".models." + model + ".context")
+	var c Context
+	if !ok || json.Unmarshal(raw, &c) != nil {
+		return 0
 	}
-	return e.Context.Default
+	return Entry{Context: c}.Window(tier)
 }
 
 func intAt(s form.Snapshot, key string) (int, bool) {

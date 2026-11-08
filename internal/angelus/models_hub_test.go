@@ -33,7 +33,7 @@ func modelsHandlers(t *testing.T) (*handlers, *modelcat.Catalog) {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	cat := modelcat.New(modelcat.Config{Build: func(string) (provider.Provider, error) {
-		return listingProvider{list: []provider.ModelInfo{{ID: "gpt-4.1", ContextWindow: 1_047_576}, {ID: "claude-z", ContextWindow: 1_047_576}}}, nil
+		return listingProvider{list: []provider.ModelInfo{{ID: "gpt-4.1", Entry: models.Entry{Context: models.Context{Default: 1_047_576}}}, {ID: "claude-z", Entry: models.Entry{Context: models.Context{Default: 1_047_576}}}}}, nil
 	}})
 	a := &Angelus{Hubs: newHubs(), RuntimeDir: dir, Models: cat}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -129,7 +129,7 @@ func TestModelsRefreshAnswersAfterTheListingLands(t *testing.T) {
 	require.True(t, resp.(rpc.ModelsRefreshResponse).Done)
 	e, ok := models.Lookup(cat.Snapshot(), "openai", "claude-z")
 	require.True(t, ok)
-	require.Equal(t, 1_047_576, e.Context.Default)
+	require.Equal(t, 1_047_576, e.Window(""))
 }
 
 func TestModelsRefreshIsAnAdminVerb(t *testing.T) {

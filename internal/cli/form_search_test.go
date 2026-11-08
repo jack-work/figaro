@@ -266,9 +266,9 @@ func dottedModelsProbe(t *testing.T) (*inputProbe, *formView) {
 	p := newInputProbe(t, true)
 	snap := catalogFixture(t, map[string]models.Provider{
 		"openrouter": {Models: map[string]models.Entry{
-			"x-ai/grok-4.1":   {Name: "Grok 4.1", Source: models.SourceAPI},
-			"x-ai/grok-4":     {Name: "Grok 4", Source: models.SourceAPI},
-			"claude-opus-4.5": {Name: "Claude Opus 4.5", Source: models.SourceAPI},
+			"x-ai/grok-4.1":   {Name: "Grok 4.1"},
+			"x-ai/grok-4":     {Name: "Grok 4"},
+			"claude-opus-4.5": {Name: "Claude Opus 4.5"},
 		}},
 	})
 	v := modelsView(t, snap, "", "")

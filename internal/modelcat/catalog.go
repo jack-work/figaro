@@ -84,7 +84,7 @@ func New(cfg Config) *Catalog {
 		provs: map[string]*provState{},
 		ctx:   context.Background(),
 	}
-	c.dropStrangers()
+	c.prune()
 	return c
 }
 
@@ -92,12 +92,12 @@ func (c *Catalog) known(providerName string) bool {
 	return providerName != "" && (c.cfg.Known == nil || c.cfg.Known(providerName))
 }
 
-func (c *Catalog) dropStrangers() {
+func (c *Catalog) prune() {
 	snap, _ := c.form.Snapshot()
 	provs, _ := models.Providers(snap)
 	var gone []string
 	for name := range provs {
-		if !c.known(name) {
+		if !c.known(name) || !models.Current(snap, name) {
 			gone = append(gone, name)
 		}
 	}
@@ -105,7 +105,7 @@ func (c *Catalog) dropStrangers() {
 		return
 	}
 	sort.Strings(gone)
-	slog.Info("models: dropping entries for names that are not providers", "names", gone)
+	slog.Info("models: dropping entries that are not providers or not this catalog version", "names", gone)
 	if _, _, err := c.form.ApplyEffect(form.Build(snap, nil, gone), 0); err != nil {
 		slog.Error("models: drop refused", "names", gone, "err", err)
 	}
@@ -354,23 +354,24 @@ func (c *Catalog) fetch(ctx context.Context, providerName string, wanted []strin
 	prov, err := c.cfg.Build(providerName)
 	if err != nil {
 		if list {
-			c.record(providerName, nil, now, err)
+			c.record(providerName, nil, nil, now, err)
 		}
 		return
 	}
-	if table, ok := prov.(provider.ModelTable); ok {
-		var seeded []provider.ModelInfo
+	seeder, _ := prov.(provider.ModelSeeder)
+	if seeder != nil {
+		seeded := map[string]models.Entry{}
 		snap := c.Snapshot()
 		for _, m := range wanted {
 			if _, have := models.Lookup(snap, providerName, m); have {
 				continue
 			}
-			if info, ok := table.TableModel(m); ok {
-				seeded = append(seeded, info)
+			if e, ok := seeder.SeedModel(m); ok {
+				seeded[m] = e
 			}
 		}
 		if len(seeded) > 0 {
-			c.merge(providerName, seeded, models.SourceTable)
+			c.merge(providerName, seeded)
 		}
 	}
 
@@ -380,21 +381,21 @@ func (c *Catalog) fetch(ctx context.Context, providerName string, wanted []strin
 	fctx, cancel := context.WithTimeout(ctx, c.cfg.FetchTimeout)
 	listed, err := prov.Models(fctx)
 	cancel()
-	c.record(providerName, listed, now, err)
+	c.record(providerName, seeder, listed, now, err)
 }
 
-func (c *Catalog) merge(providerName string, infos []provider.ModelInfo, source string) {
+func (c *Catalog) merge(providerName string, seeded map[string]models.Entry) {
 	cur := c.current(providerName)
 	if cur.Models == nil {
 		cur.Models = map[string]models.Entry{}
 	}
-	for _, info := range infos {
-		cur.Models[info.ID] = entryOf(info, source)
+	for id, e := range seeded {
+		cur.Models[id] = withoutEchoedName(id, e)
 	}
 	c.publish(providerName, cur)
 }
 
-func (c *Catalog) record(providerName string, listed []provider.ModelInfo, now time.Time, err error) {
+func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, listed []provider.ModelInfo, now time.Time, err error) {
 	cur := c.current(providerName)
 	cur.AttemptedAt = now.UnixMilli()
 	if err != nil {
@@ -406,16 +407,21 @@ func (c *Catalog) record(providerName string, listed []provider.ModelInfo, now t
 		return
 	}
 	next := map[string]models.Entry{}
-	for id, e := range cur.Models {
-		if e.Source == models.SourceTable {
-			next[id] = e
-		}
-	}
 	for _, info := range listed {
 		if info.ID == "" {
 			continue
 		}
-		next[info.ID] = entryOf(info, models.SourceAPI)
+		next[info.ID] = withoutEchoedName(info.ID, info.Entry)
+	}
+	if seeder != nil {
+		for id := range cur.Models {
+			if _, listed := next[id]; listed {
+				continue
+			}
+			if e, ok := seeder.SeedModel(id); ok {
+				next[id] = withoutEchoedName(id, e)
+			}
+		}
 	}
 	cur.Models = next
 	cur.RefreshedAt = now.UnixMilli()
@@ -423,18 +429,12 @@ func (c *Catalog) record(providerName string, listed []provider.ModelInfo, now t
 	c.publish(providerName, cur)
 }
 
-func entryOf(info provider.ModelInfo, source string) models.Entry {
-	name := info.Name
-	if name == info.ID {
-		name = ""
+func withoutEchoedName(id string, e models.Entry) models.Entry {
+	if e.Name == id {
+		e.Name = ""
+		delete(e.Src, "name")
 	}
-	return models.Entry{
-		Name:      name,
-		Context:   models.Context{Default: info.ContextWindow, Long: info.LongContextWindow},
-		MaxOutput: info.MaxTokens,
-		Hidden:    info.Hidden,
-		Source:    source,
-	}
+	return e
 }
 
 func (c *Catalog) current(providerName string) models.Provider {
@@ -442,6 +442,10 @@ func (c *Catalog) current(providerName string) models.Provider {
 	if raw, ok := c.Snapshot().Get(providerName); ok {
 		_ = json.Unmarshal(raw, &p)
 	}
+	if p.IR != models.IRVersion {
+		p.Models = nil
+	}
+	p.IR = models.IRVersion
 	return p
 }
 

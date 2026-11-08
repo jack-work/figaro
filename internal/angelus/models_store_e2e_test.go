@@ -30,7 +30,7 @@ func (p countedListing) Send(context.Context, provider.SendInput, provider.Bus) 
 }
 func (p countedListing) Models(context.Context) ([]provider.ModelInfo, error) {
 	p.calls.Add(1)
-	return []provider.ModelInfo{{ID: "gpt-4.1", ContextWindow: 1_047_576}}, nil
+	return []provider.ModelInfo{{ID: "gpt-4.1", Entry: models.Entry{Context: models.Context{Default: 1_047_576}}}}, nil
 }
 
 // A cold daemon on a store that already holds the catalog answers `figaro

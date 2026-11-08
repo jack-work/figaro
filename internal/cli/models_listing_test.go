@@ -19,6 +19,7 @@ func catalogFixture(t *testing.T, provs map[string]models.Provider) form.Snapsho
 	t.Helper()
 	set := map[string]json.RawMessage{}
 	for name, p := range provs {
+		p.IR = models.IRVersion
 		raw, err := json.Marshal(p)
 		if err != nil {
 			t.Fatal(err)
@@ -32,13 +33,13 @@ func modelsFixture(t *testing.T) form.Snapshot {
 	listed := modelsNow.Add(-2 * time.Hour).UnixMilli()
 	return catalogFixture(t, map[string]models.Provider{
 		"anthropic": {RefreshedAt: listed, Models: map[string]models.Entry{
-			"claude-opus-5":     {Name: "Claude Opus 5", Context: models.Context{Default: 1_000_000}, MaxOutput: 32000, Source: models.SourceAPI},
-			"claude-sonnet-4-5": {Name: "Claude Sonnet 4.5", Context: models.Context{Default: 200_000}, MaxOutput: 64000, Source: models.SourceAPI},
+			"claude-opus-5":     {Name: "Claude Opus 5", Context: models.Context{Default: 1_000_000}, MaxOutput: 32000},
+			"claude-sonnet-4-5": {Name: "Claude Sonnet 4.5", Context: models.Context{Default: 200_000}, MaxOutput: 64000},
 		}},
 		"copilot": {RefreshedAt: listed, Models: map[string]models.Entry{
-			"gpt-5":           {Name: "GPT-5", Context: models.Context{Default: 400_000}, Source: models.SourceAPI},
-			"claude-opus-5":   {Name: "Claude Opus 5", Context: models.Context{Default: 128_000}, MaxOutput: 16000, Source: models.SourceAPI},
-			"internal-router": {Context: models.Context{Default: 8_000}, Hidden: true, Source: models.SourceAPI},
+			"gpt-5":           {Name: "GPT-5", Context: models.Context{Default: 400_000}},
+			"claude-opus-5":   {Name: "Claude Opus 5", Context: models.Context{Default: 128_000}, MaxOutput: 16000},
+			"internal-router": {Context: models.Context{Default: 8_000}, Hidden: true},
 		}},
 	})
 }
@@ -66,7 +67,7 @@ func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
 		"anthropic": {AttemptedAt: modelsNow.Add(-3 * time.Minute).UnixMilli(), Error: "no credential"},
 		"copilot": {RefreshedAt: modelsNow.Add(-2 * time.Hour).UnixMilli(), Models: map[string]models.Entry{
-			"gpt-5": {Name: "OpenAI GPT-5", Context: models.Context{Default: 400_000}, Source: models.SourceAPI},
+			"gpt-5": {Name: "OpenAI GPT-5", Context: models.Context{Default: 400_000}},
 		}},
 	})
 	var buf bytes.Buffer

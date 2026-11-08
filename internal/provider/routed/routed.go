@@ -17,6 +17,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	apimodels "github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -461,15 +462,21 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 			name = m.ID
 		}
 		limits := m.contextLimits()
-		models = append(models, provider.ModelInfo{
-			ID:                m.ID,
-			Name:              name,
-			Provider:          p.spec.Name,
-			ContextWindow:     limits.Default,
-			LongContextWindow: limits.Long,
-			MaxTokens:         m.Capabilities.Limits.MaxOutputTokens,
-			Hidden:            m.ModelPickerEnabled != nil && !*m.ModelPickerEnabled,
-		})
+		e := apimodels.Entry{Name: name}
+		e.Mark("name", apimodels.SourceAPI)
+		if limits.Default > 0 || limits.Long > 0 {
+			e.Context = apimodels.Context{Default: limits.Default, Long: limits.Long}
+			e.Mark("context", apimodels.SourceAPI)
+		}
+		if n := m.Capabilities.Limits.MaxOutputTokens; n > 0 {
+			e.MaxOutput = n
+			e.Mark("max_output", apimodels.SourceAPI)
+		}
+		if m.ModelPickerEnabled != nil {
+			e.Hidden = !*m.ModelPickerEnabled
+			e.Mark("hidden", apimodels.SourceAPI)
+		}
+		models = append(models, provider.ModelInfo{ID: m.ID, Provider: p.spec.Name, Entry: e})
 	}
 	return models, nil
 }

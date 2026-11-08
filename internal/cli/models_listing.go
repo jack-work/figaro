@@ -44,8 +44,8 @@ func catalogListings(catalog form.Snapshot, now time.Time) []providerListing {
 		}
 		for id, e := range p.Models {
 			l.Models = append(l.Models, modelRow{
-				ID: id, Name: e.Name, Context: e.Context.Default, LongContext: e.Context.Long,
-				MaxOutput: e.MaxOutput, Hidden: e.Hidden, Source: e.Source,
+				ID: id, Name: e.Name, Context: e.Window(""), LongContext: e.Window(models.LongContextTier),
+				MaxOutput: e.MaxOutput, Hidden: e.Hidden, Source: e.Source("context"),
 			})
 		}
 		sort.Slice(l.Models, func(i, j int) bool { return l.Models[i].ID < l.Models[j].ID })

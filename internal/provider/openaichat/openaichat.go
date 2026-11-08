@@ -16,6 +16,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -136,13 +137,15 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	}
 	out := make([]provider.ModelInfo, 0, len(payload.Data))
 	for _, m := range payload.Data {
-		name := m.Name
-		if name == "" {
-			name = m.ID
+		e := models.Entry{Name: m.Name}
+		if m.Name != "" {
+			e.Mark("name", models.SourceAPI)
 		}
-		out = append(out, provider.ModelInfo{
-			ID: m.ID, Name: name, Provider: p.Route.Name, ContextWindow: m.ContextLength,
-		})
+		if m.ContextLength > 0 {
+			e.Context = models.Context{Default: m.ContextLength}
+			e.Mark("context", models.SourceAPI)
+		}
+		out = append(out, provider.ModelInfo{ID: m.ID, Provider: p.Route.Name, Entry: e})
 	}
 	return out, nil
 }

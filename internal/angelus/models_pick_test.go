@@ -26,7 +26,7 @@ func (p listing) Models(context.Context) ([]provider.ModelInfo, error) { return 
 func withModels(t *testing.T, d doorRig) {
 	t.Helper()
 	cat := modelcat.New(modelcat.Config{Build: func(string) (provider.Provider, error) {
-		return listing{list: []provider.ModelInfo{{ID: "m-2.5", ContextWindow: 200_000}}}, nil
+		return listing{list: []provider.ModelInfo{{ID: "m-2.5", Entry: models.Entry{Context: models.Context{Default: 200_000}}}}}, nil
 	}})
 	d.a.Models = cat
 	cat.Want("mock", "m-2.5")

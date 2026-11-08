@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/modelcat"
@@ -65,9 +66,9 @@ func BenchmarkAriasRebuildDressed(b *testing.B) {
 		b.Fatal(err)
 	}
 	a := &Angelus{Registry: NewRegistry(), Backend: backend}
-	listing := []provider.ModelInfo{{ID: "perf-model", ContextWindow: 200_000}}
+	listing := []provider.ModelInfo{{ID: "perf-model", Entry: models.Entry{Context: models.Context{Default: 200_000}}}}
 	for i := range 120 {
-		listing = append(listing, provider.ModelInfo{ID: fmt.Sprintf("model-%03d", i), ContextWindow: 128_000 + i})
+		listing = append(listing, provider.ModelInfo{ID: fmt.Sprintf("model-%03d", i), Entry: models.Entry{Context: models.Context{Default: 128_000 + i}}})
 	}
 	a.Models = modelcat.New(modelcat.Config{Build: func(string) (provider.Provider, error) {
 		return listingProvider{list: listing}, nil

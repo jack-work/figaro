@@ -7,17 +7,14 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/store"
 )
 
 type ModelInfo struct {
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	Provider          string `json:"provider"`
-	ContextWindow     int    `json:"context_window"`
-	LongContextWindow int    `json:"long_context_window,omitempty"`
-	MaxTokens         int    `json:"max_tokens"`
-	Hidden            bool   `json:"hidden,omitempty"`
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	models.Entry
 }
 
 func Pickable(all []ModelInfo) []ModelInfo {
@@ -105,8 +102,8 @@ type Provider interface {
 	Send(ctx context.Context, in SendInput, bus Bus) error
 }
 
-type ModelTable interface {
-	TableModel(model string) (ModelInfo, bool)
+type ModelSeeder interface {
+	SeedModel(model string) (models.Entry, bool)
 }
 
 // StreamRequestBodyKey, default on; false buffers the whole conversation.

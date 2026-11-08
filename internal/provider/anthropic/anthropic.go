@@ -21,6 +21,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -353,25 +354,33 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		return nil, fmt.Errorf("decode models: %w", err)
 	}
 
-	var models []provider.ModelInfo
+	var listed []provider.ModelInfo
 	for _, m := range result.Data {
-		models = append(models, provider.ModelInfo{
-			ID:            m.ID,
-			Name:          m.DisplayName,
-			Provider:      providerName,
-			ContextWindow: m.MaxInputTokens,
-			MaxTokens:     m.MaxTokens,
-		})
+		e := models.Entry{Name: m.DisplayName}
+		if m.DisplayName != "" {
+			e.Mark("name", models.SourceAPI)
+		}
+		if m.MaxInputTokens > 0 {
+			e.Context = models.Context{Default: m.MaxInputTokens}
+			e.Mark("context", models.SourceAPI)
+		}
+		if m.MaxTokens > 0 {
+			e.MaxOutput = m.MaxTokens
+			e.Mark("max_output", models.SourceAPI)
+		}
+		listed = append(listed, provider.ModelInfo{ID: m.ID, Provider: providerName, Entry: e})
 	}
-	return models, nil
+	return listed, nil
 }
 
-func (a *Anthropic) TableModel(model string) (provider.ModelInfo, bool) {
+func (a *Anthropic) SeedModel(model string) (models.Entry, bool) {
 	window := anthropicmodels.ContextWindow(model)
 	if window <= 0 {
-		return provider.ModelInfo{}, false
+		return models.Entry{}, false
 	}
-	return provider.ModelInfo{ID: model, Provider: providerName, ContextWindow: window}, true
+	e := models.Entry{Context: models.Context{Default: window}}
+	e.Mark("context", models.SourceMapping)
+	return e, true
 }
 
 func isOAuthToken(key string) bool {

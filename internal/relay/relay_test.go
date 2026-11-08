@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/routed"
@@ -328,7 +329,7 @@ func TestListenRefusesNonLoopback(t *testing.T) {
 func TestModelsArePrefixedByProvider(t *testing.T) {
 	fr := front(t, map[string]Upstream{
 		"meta":    &fakeUpstream{cred: &rotatingToken{tokens: []string{"k"}}, models: []provider.ModelInfo{{ID: "muse-wonder-1.0"}}},
-		"copilot": &fakeUpstream{cred: &rotatingToken{tokens: []string{"k"}}, models: []provider.ModelInfo{{ID: "gpt-6-astra", ContextWindow: 400000}}},
+		"copilot": &fakeUpstream{cred: &rotatingToken{tokens: []string{"k"}}, models: []provider.ModelInfo{{ID: "gpt-6-astra", Entry: models.Entry{Context: models.Context{Default: 400000}}}}},
 	})
 	resp, err := http.Get(fr.URL + "/v1/models")
 	if err != nil {

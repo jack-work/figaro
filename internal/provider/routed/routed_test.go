@@ -122,11 +122,11 @@ func TestModelsReportPromptCapsAndKeepHiddenModels(t *testing.T) {
 		byID[m.ID] = m
 	}
 	m := byID["m"]
-	if m.ContextWindow != 128000 || m.LongContextWindow != 1000000 || m.MaxTokens != 64000 || m.Hidden {
+	if m.Window("") != 128000 || m.Window("long_context") != 1000000 || m.MaxOutput != 64000 || m.Hidden {
 		t.Errorf("m: %+v", m)
 	}
 	h, ok := byID["hidden"]
-	if !ok || !h.Hidden || h.ContextWindow != 200000 {
+	if !ok || !h.Hidden || h.Window("") != 200000 {
 		t.Errorf("hidden: %+v (present %v)", h, ok)
 	}
 	if picks := provider.Pickable(got); len(picks) != 1 || picks[0].ID != "m" {

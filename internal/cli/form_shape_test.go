@@ -252,7 +252,7 @@ func TestTheModelsCatalogNestsByProviderAndMarksTheSubjectsChoice(t *testing.T) 
 func TestEnterOnAModelPicksItForTheSubject(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
 		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{
-			"x-ai/grok-4.1": {Source: models.SourceAPI},
+			"x-ai/grok-4.1": {Context: models.Context{Default: 1}},
 		}},
 	})
 	v := modelsView(t, snap, "", "")
@@ -288,7 +288,7 @@ func TestEnterOnAModelPicksItForTheSubject(t *testing.T) {
 func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
 		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{
-			"x-ai/grok-4.1": {Source: models.SourceAPI},
+			"x-ai/grok-4.1": {Context: models.Context{Default: 1}},
 		}},
 	})
 	var out countingWriter

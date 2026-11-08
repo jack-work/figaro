@@ -66,9 +66,11 @@ type tableProvider struct {
 	table map[string]int
 }
 
-func (p *tableProvider) TableModel(model string) (provider.ModelInfo, bool) {
+func (p *tableProvider) SeedModel(model string) (models.Entry, bool) {
 	w, ok := p.table[model]
-	return provider.ModelInfo{ID: model, ContextWindow: w}, ok
+	e := models.Entry{Context: models.Context{Default: w}}
+	e.Mark("context", models.SourceMapping)
+	return e, ok
 }
 
 type clock struct {
@@ -105,8 +107,8 @@ func TestWantNeverBlocksAndFillsFromTheListing(t *testing.T) {
 	var calls atomic.Int32
 	gate := make(chan struct{})
 	fp := &fakeProvider{calls: &calls, gate: gate, list: []provider.ModelInfo{
-		{ID: "m1", Name: "Model One", ContextWindow: 200_000, LongContextWindow: 1_000_000, MaxTokens: 64_000},
-		{ID: "m2", ContextWindow: 128_000},
+		{ID: "m1", Entry: models.Entry{Name: "Model One", Context: models.Context{Default: 200_000, Long: 1_000_000}, MaxOutput: 64_000}},
+		{ID: "m2", Entry: models.Entry{Context: models.Context{Default: 128_000}}},
 	}}
 	clk := newClock()
 	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now})
@@ -129,7 +131,7 @@ func TestWantNeverBlocksAndFillsFromTheListing(t *testing.T) {
 	e, ok := models.Lookup(c.Snapshot(), "gw", "m1")
 	require.True(t, ok)
 	require.Equal(t, models.Entry{Name: "Model One", Context: models.Context{Default: 200_000, Long: 1_000_000},
-		MaxOutput: 64_000, Source: models.SourceAPI}, e)
+		MaxOutput: 64_000}, e)
 	require.Equal(t, 128_000, limitOf(c, "gw", "m2"))
 	st, ok := models.ProviderStatus(c.Snapshot(), "gw")
 	require.True(t, ok)
@@ -145,7 +147,7 @@ func TestTableSeedsAWantedAliasBeforeTheNetworkAnswers(t *testing.T) {
 	var calls atomic.Int32
 	gate := make(chan struct{})
 	tp := &tableProvider{
-		fakeProvider: &fakeProvider{calls: &calls, gate: gate, list: []provider.ModelInfo{{ID: "claude-x-20260101", ContextWindow: 400_000}}},
+		fakeProvider: &fakeProvider{calls: &calls, gate: gate, list: []provider.ModelInfo{{ID: "claude-x-20260101", Entry: models.Entry{Context: models.Context{Default: 400_000}}}}},
 		table:        map[string]int{"claude-x": 1_000_000},
 	}
 	c := New(Config{Build: func(string) (provider.Provider, error) { return tp, nil }, Now: newClock().Now})
@@ -158,14 +160,14 @@ func TestTableSeedsAWantedAliasBeforeTheNetworkAnswers(t *testing.T) {
 	waitFor(t, func() bool { return limitOf(c, "anthropic", "claude-x-20260101") == 400_000 })
 	e, ok := models.Lookup(c.Snapshot(), "anthropic", "claude-x")
 	require.True(t, ok, "a successful listing must not drop the table's alias")
-	require.Equal(t, models.SourceTable, e.Source)
+	require.Equal(t, models.SourceMapping, e.Source("context"))
 }
 
 // A failing provider is not hammered: one attempt per retry window, its error
 // on the record, and whatever it knew before kept.
 func TestFailureIsRecordedAndRetriedOnlyAfterTheWindow(t *testing.T) {
 	var calls, builds atomic.Int32
-	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "m", ContextWindow: 100}}}
+	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "m", Entry: models.Entry{Context: models.Context{Default: 100}}}}}
 	clk := newClock()
 	c := New(Config{
 		Build: func(string) (provider.Provider, error) { builds.Add(1); return fp, nil },
@@ -209,7 +211,7 @@ func TestFailureIsRecordedAndRetriedOnlyAfterTheWindow(t *testing.T) {
 func TestAnUnlistedAliasAfterAFreshListingIsSeededAtOnce(t *testing.T) {
 	var calls atomic.Int32
 	tp := &tableProvider{
-		fakeProvider: &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "claude-x-20260101", ContextWindow: 400_000}}},
+		fakeProvider: &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "claude-x-20260101", Entry: models.Entry{Context: models.Context{Default: 400_000}}}}},
 		table:        map[string]int{"claude-old": 200_000},
 	}
 	c := New(Config{Build: func(string) (provider.Provider, error) { return tp, nil }, Now: newClock().Now})
@@ -224,7 +226,7 @@ func TestAnUnlistedAliasAfterAFreshListingIsSeededAtOnce(t *testing.T) {
 
 func TestFreshEntriesAreNotRefetched(t *testing.T) {
 	var calls atomic.Int32
-	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "m", ContextWindow: 100}}}
+	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "m", Entry: models.Entry{Context: models.Context{Default: 100}}}}}
 	clk := newClock()
 	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, TTL: time.Hour})
 
@@ -247,7 +249,7 @@ func TestFreshEntriesAreNotRefetched(t *testing.T) {
 // every entry and wake every client for nothing.
 func TestAnUnchangedRefreshTouchesOnlyTheStamp(t *testing.T) {
 	var calls atomic.Int32
-	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "a", ContextWindow: 1}, {ID: "b", ContextWindow: 2}}}
+	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "a", Entry: models.Entry{Context: models.Context{Default: 1}}}, {ID: "b", Entry: models.Entry{Context: models.Context{Default: 2}}}}}
 	clk := newClock()
 	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, TTL: time.Hour})
 	c.Want("p", "a")
@@ -302,7 +304,7 @@ func TestTheCatalogSurvivesARestart(t *testing.T) {
 	f, err := be.ModelsForm()
 	require.NoError(t, err)
 	var calls atomic.Int32
-	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "gpt-4.1", ContextWindow: 1_047_576}}}
+	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "gpt-4.1", Entry: models.Entry{Context: models.Context{Default: 1_047_576}}}}}
 	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Form: f})
 	ctx, cancel := context.WithCancel(context.Background())
 	ran := make(chan struct{})
@@ -326,7 +328,7 @@ func TestTheCatalogSurvivesARestart(t *testing.T) {
 func TestTheOldCacheFileIsImportedOnceAndRemoved(t *testing.T) {
 	root := t.TempDir()
 	old := New(Config{})
-	old.publish("openai", models.Provider{RefreshedAt: 7, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 1_047_576}}}})
+	old.publish("openai", models.Provider{IR: models.IRVersion, RefreshedAt: 7, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 1_047_576}}}})
 	data, err := json.Marshal(old.Snapshot())
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "models.json")
@@ -346,7 +348,7 @@ func TestTheOldCacheFileIsImportedOnceAndRemoved(t *testing.T) {
 	require.Equal(t, 1_047_576, models.EntryLimit(snap, "openai", "gpt-4.1", ""))
 
 	stale := New(Config{})
-	stale.publish("openai", models.Provider{RefreshedAt: 1, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 8}}}})
+	stale.publish("openai", models.Provider{IR: models.IRVersion, RefreshedAt: 1, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 8}}}})
 	data, err = json.Marshal(stale.Snapshot())
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, data, 0o644))
@@ -413,8 +415,8 @@ func perProvider(fps map[string]*fakeProvider) Builder {
 // The daemon lists every configured provider on its own clock, so a reader
 // never waits on a provider: nobody has to want a model first.
 func TestThePollListsEveryProviderWithoutAWant(t *testing.T) {
-	a := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "a1", ContextWindow: 100}}}
-	b := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "b1", ContextWindow: 200}}}
+	a := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "a1", Entry: models.Entry{Context: models.Context{Default: 100}}}}}
+	b := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "b1", Entry: models.Entry{Context: models.Context{Default: 200}}}}}
 	c := New(Config{
 		Build:     perProvider(map[string]*fakeProvider{"a": a, "b": b}),
 		Providers: func() []string { return []string{"a", "b"} },
@@ -430,8 +432,8 @@ func TestThePollListsEveryProviderWithoutAWant(t *testing.T) {
 // the poll.
 func TestStartListsOnlyStaleProviders(t *testing.T) {
 	clk := newClock()
-	fresh := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "f1", ContextWindow: 1}}}
-	stale := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "s1", ContextWindow: 1}}}
+	fresh := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "f1", Entry: models.Entry{Context: models.Context{Default: 1}}}}}
+	stale := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "s1", Entry: models.Entry{Context: models.Context{Default: 1}}}}}
 	st, f := openModelsStore(t, t.TempDir())
 	seed := New(Config{Build: perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}), Form: f, Now: clk.Now})
 	require.NoError(t, seed.Refresh(context.Background(), "fresh", "stale"))
@@ -463,7 +465,7 @@ func TestStartListsOnlyStaleProviders(t *testing.T) {
 // may have begun before a login and would answer with the old credential.
 func TestRefreshWaitsForAListingThatStartsAfterIt(t *testing.T) {
 	gate := make(chan struct{})
-	fp := &fakeProvider{calls: new(atomic.Int32), gate: gate, list: []provider.ModelInfo{{ID: "m", ContextWindow: 1}}}
+	fp := &fakeProvider{calls: new(atomic.Int32), gate: gate, list: []provider.ModelInfo{{ID: "m", Entry: models.Entry{Context: models.Context{Default: 1}}}}}
 	c := New(Config{Build: perProvider(map[string]*fakeProvider{"p": fp})})
 	first := c.list("p")
 	waitFor(t, func() bool { return fp.calls.Load() == 1 })
@@ -492,7 +494,7 @@ func TestRefreshIsBoundedByItsContext(t *testing.T) {
 
 func TestThePickerFlagSurvivesIntoTheCatalog(t *testing.T) {
 	fp := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{
-		{ID: "shown", ContextWindow: 1}, {ID: "kept-out", ContextWindow: 1, Hidden: true},
+		{ID: "shown", Entry: models.Entry{Context: models.Context{Default: 1}}}, {ID: "kept-out", Entry: models.Entry{Context: models.Context{Default: 1}, Hidden: true}},
 	}}
 	c := New(Config{Build: perProvider(map[string]*fakeProvider{"p": fp})})
 	require.NoError(t, c.Refresh(context.Background(), "p"))
@@ -525,7 +527,7 @@ func TestStrangersLeftByAnOlderDaemonAreDroppedAtBoot(t *testing.T) {
 	st, f := openModelsStore(t, root)
 	old := New(Config{Form: f})
 	old.publish("claude-opus-5-5", models.Provider{AttemptedAt: 7, Error: "unknown provider: \"claude-opus-5-5\""})
-	old.publish("anthropic", models.Provider{RefreshedAt: 7, Models: map[string]models.Entry{"claude-opus-5-5": {Context: models.Context{Default: 1_000_000}}}})
+	old.publish("anthropic", models.Provider{IR: models.IRVersion, RefreshedAt: 7, Models: map[string]models.Entry{"claude-opus-5-5": {Context: models.Context{Default: 1_000_000}}}})
 
 	f = st.reopen(t)
 	c := New(Config{Form: f, Known: func(name string) bool { return name == "anthropic" }})
@@ -537,4 +539,25 @@ func TestStrangersLeftByAnOlderDaemonAreDroppedAtBoot(t *testing.T) {
 	snap, _ := f.Snapshot()
 	_, ok = models.ProviderStatus(snap, "claude-opus-5-5")
 	require.False(t, ok, "the drop is stored, not only served")
+}
+
+// The entries a 0.57 daemon wrote have no IR version: their numbers are
+// dropped at boot, and the first listing writes them again in the new shape.
+func TestPreIREntriesAreDroppedAtBootAndRelisted(t *testing.T) {
+	root := t.TempDir()
+	st, f := openModelsStore(t, root)
+	old := json.RawMessage(`{"refreshed_at":7,"models":{"gpt-4.1":{"context":{"default":1047576},"source":"api"}}}`)
+	snap, _ := f.Snapshot()
+	_, _, err := f.ApplyEffect(form.Build(snap, map[string]json.RawMessage{"openai": old}, nil), 0)
+	require.NoError(t, err)
+
+	f = st.reopen(t)
+	fp := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "gpt-4.1", Entry: models.Entry{Context: models.Context{Default: 1_047_576}}}}}
+	c := New(Config{Form: f, Build: func(string) (provider.Provider, error) { return fp, nil }, Providers: func() []string { return []string{"openai"} }})
+	_, ok := c.Snapshot().Get("openai")
+	require.False(t, ok, "the old shape is gone before anything reads it")
+
+	require.NoError(t, c.Refresh(context.Background(), "openai"))
+	require.Equal(t, 1_047_576, limitOf(c, "openai", "gpt-4.1"))
+	require.True(t, models.Current(c.Snapshot(), "openai"))
 }
