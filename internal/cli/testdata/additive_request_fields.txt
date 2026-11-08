@@ -40,7 +40,10 @@ FormCreateRequest.Parent
 FormCreateRequest.Patch
 FormRequest.Intrinsic
 FormRequest.Since
+GCApplyRequest.Run
+GCPlanRequest.Selector
 GCRequest.DryRun
+GCUndoRequest.Run
 HelloRequest.Capabilities
 HelloRequest.Node
 HelloRequest.Version

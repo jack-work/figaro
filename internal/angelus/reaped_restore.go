@@ -31,24 +31,35 @@ func (h *handlers) reapedRestore(ctx context.Context, params json.RawMessage) (a
 	if group == nil {
 		return nil, fmt.Errorf("reaped restore: %s is not reaped", req.FigaroID)
 	}
+	if err := h.mayRestore(ctx, *group); err != nil {
+		return nil, fmt.Errorf("reaped restore %s: %w", group.root, err)
+	}
+	return h.restoreGroup(ctx, *group, req.Keep)
+}
+
+func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
 	for _, id := range group.nodes {
 		if err := h.allowed(ctx, rpc.VerbSet, authz.Aria(id)); err != nil {
-			return nil, fmt.Errorf("reaped restore %s: %w", group.root, err)
+			return err
 		}
 	}
+	return nil
+}
+
+func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep bool) (rpc.ReapedRestoreResponse, error) {
 	resp := rpc.ReapedRestoreResponse{Root: group.root}
 	for _, id := range group.nodes {
-		drops := []string{store.SystemReapedKey, store.SystemReapedUntilKey}
-		if req.Keep && id == group.root {
+		drops := []string{store.SystemReapedKey, store.SystemReapedUntilKey, store.SystemReapedByKey}
+		if keep && id == group.root {
 			drops = append(drops, store.SystemTTLKey, store.SystemReapIfEmptyKey)
 		}
 		raw, err := json.Marshal(rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, drops)})
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 		withAria, err := rpc.WithAria(raw, id)
 		if err != nil {
-			return nil, err
+			return resp, err
 		}
 		if _, err := h.ariaMethod(rpc.MethodSet)(ctx, withAria); err != nil {
 			return resp, fmt.Errorf("reaped restore %s: stopped at %s after restoring %d of %d (%s): %w",

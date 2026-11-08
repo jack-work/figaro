@@ -73,6 +73,9 @@ var methodVerbs = map[string]Verb{
 	MethodFork:          VerbFork,
 	MethodKill:          VerbKill,
 	MethodReapedRestore: VerbSet,
+	MethodGCPlan:        VerbKill,
+	MethodGCApply:       VerbKill,
+	MethodGCUndo:        VerbSet,
 	MethodModelsPick:    VerbSet,
 	MethodMove:          VerbKill,
 

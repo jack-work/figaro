@@ -197,7 +197,8 @@ func PrincipalText(p rpc.Principal) string {
 func checkedByHandler(method string) bool {
 	switch method {
 	case rpc.MethodImportStatus, rpc.MethodNodeLearn, rpc.MethodTroupeEntries, rpc.MethodTroupeSign, rpc.MethodTroupeIdentity, rpc.MethodTroupeLeave, rpc.MethodTroupePolicySet,
-		rpc.MethodTroupeAPIKeyMint, rpc.MethodTroupeAPIKeyRevoke, rpc.MethodTroupeAPIKeyList:
+		rpc.MethodTroupeAPIKeyMint, rpc.MethodTroupeAPIKeyRevoke, rpc.MethodTroupeAPIKeyList,
+		rpc.MethodGCPlan, rpc.MethodGCApply, rpc.MethodGCUndo:
 		return true
 	}
 	return false

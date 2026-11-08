@@ -43,6 +43,7 @@ type reapedGroup struct {
 	root    string
 	atMS    int64
 	untilMS int64
+	by      string
 	nodes   []string
 }
 
@@ -74,7 +75,7 @@ func groupReaped(entries []store.ReapedEntry) []reapedGroup {
 		}
 		g.nodes = append(g.nodes, e.ID)
 		if e.ID == e.Root {
-			g.atMS, g.untilMS = e.AtMS, e.UntilMS
+			g.atMS, g.untilMS, g.by = e.AtMS, e.UntilMS, e.By
 		}
 	}
 	out := make([]reapedGroup, 0, len(order))

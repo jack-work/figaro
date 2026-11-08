@@ -72,6 +72,9 @@ const (
 	MethodImport        = "figaro.import"
 	MethodNormalize     = "figaro.normalize"
 	MethodGC            = "figaro.gc"
+	MethodGCPlan        = "figaro.gc.plan"
+	MethodGCApply       = "figaro.gc.apply"
+	MethodGCUndo        = "figaro.gc.undo"
 	MethodKill          = "figaro.kill"
 	MethodReapedRestore = "figaro.reaped.restore"
 )

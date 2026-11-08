@@ -106,6 +106,9 @@ func (h *handlers) refreshReapedForm() {
 	for _, g := range groupReaped(idx.Reaped()) {
 		base := "items." + g.root + "."
 		put(base+"nodes", g.nodes)
+		if g.by != "" {
+			put(base+"by", g.by)
+		}
 		if g.atMS > 0 {
 			put(base+"at", g.atMS)
 			put(base+"purge_at", g.purgeAt(h.angelus.reapedGraceOf(g, grace)).UnixMilli())

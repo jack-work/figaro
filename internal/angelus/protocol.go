@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/gc"
 	"github.com/jack-work/figaro/internal/methods"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -105,6 +106,9 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodConfigure:          h.configure,
 		rpc.MethodNormalize:          h.normalize,
 		rpc.MethodGC:                 h.gc,
+		rpc.MethodGCPlan:             h.gcPlan,
+		rpc.MethodGCApply:            h.gcApply,
+		rpc.MethodGCUndo:             h.gcUndo,
 		rpc.MethodKill:               h.kill,
 		rpc.MethodReapedRestore:      h.reapedRestore,
 		rpc.MethodModelsPick:         h.modelsPick,
@@ -274,6 +278,9 @@ type handlers struct {
 	reapedForm *store.Form
 	troupeForm *store.Form
 	reapedMu   sync.Mutex
+
+	gcOnce      sync.Once
+	gcCollector *gc.Collector
 
 	arias        ariasForms
 	outfitHashes outfitHashes

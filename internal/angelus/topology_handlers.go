@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/gc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/store"
@@ -470,40 +470,41 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 			return nil, err
 		}
 	}
-
-	nodes := h.angelus.Backend.Nodes()
-	children := map[string]int{}
-	for _, n := range nodes {
-		if n.Parent != "" {
-			children[n.Parent]++
+	caller := gc.Caller{Principal: authz.PrincipalText(authz.PrincipalOf(ctx))}
+	c := h.collector()
+	p, err := c.Plan(gc.Selector{}, caller)
+	if err != nil {
+		return nil, err
+	}
+	if p, err = c.Take(p.Run, caller.Principal); err != nil {
+		return nil, err
+	}
+	failed := map[string]string{}
+	if !req.DryRun {
+		res, err := c.Apply(p)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range append(res.Failed, res.Dropped...) {
+			failed[f.ID] = f.Why
+		}
+		if len(res.Collected) > 0 {
+			slog.Info("collected outfit versions", "count", len(res.Collected))
 		}
 	}
-
 	resp := rpc.GCResponse{DryRun: req.DryRun}
-	for _, n := range nodes {
-		if n.Kind != "outfit" {
-			continue
-		}
-		entry := rpc.GCStump{
-			ID: n.ID, Outfit: n.Outfit, Version: n.Version,
-			Children: children[n.ID],
-		}
-		if entry.Children == 0 {
+	for _, s := range p.Stumps {
+		entry := rpc.GCStump{ID: s.ID, Outfit: s.Outfit, Version: s.Version, Children: s.Children}
+		if s.Children == 0 {
 			entry.Collected = true
-			if !req.DryRun {
-				if err := h.angelus.Backend.CollectStump(n.ID); err != nil {
-					entry.Collected, entry.Err = false, err.Error()
-				}
+			if why, bad := failed[s.ID]; bad {
+				entry.Collected, entry.Err = false, why
 			}
-			if entry.Collected {
-				resp.Collected++
-			}
+		}
+		if entry.Collected {
+			resp.Collected++
 		}
 		resp.Stumps = append(resp.Stumps, entry)
-	}
-	sort.Slice(resp.Stumps, func(i, j int) bool { return resp.Stumps[i].ID < resp.Stumps[j].ID })
-	if !req.DryRun && resp.Collected > 0 {
-		slog.Info("collected outfit versions", "count", resp.Collected)
 	}
 	pass := h.angelus.retainForms(ctx, req.DryRun)
 	resp.Retention, resp.FormsPlanned = string(pass.Mode), pass.DryRun

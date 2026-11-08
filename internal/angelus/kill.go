@@ -16,6 +16,10 @@ type killReaper interface {
 }
 
 func (h *handlers) reapKilled(id string, recursive bool, until time.Time) (time.Time, bool, error) {
+	return h.reapGroup(id, recursive, until, nil, "")
+}
+
+func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect []string, by string) (time.Time, bool, error) {
 	rk, ok := h.angelus.Backend.(killReaper)
 	if !ok {
 		return time.Time{}, false, nil
@@ -37,9 +41,9 @@ func (h *handlers) reapKilled(id string, recursive bool, until time.Time) (time.
 			mark = append(mark, e.ID)
 		}
 	}
-	taken := rk.DeleteSet(id)
-	if len(taken) == 0 {
-		taken = []string{id}
+	taken := orSelf(rk.DeleteSet(id), id)
+	if expect != nil && !sameMembers(taken, expect) {
+		return time.Time{}, false, fmt.Errorf("%w: %q takes %v, decided on %v", store.ErrDeleteSetChanged, id, taken, expect)
 	}
 	var fresh []string
 	for _, n := range taken {
@@ -64,17 +68,24 @@ func (h *handlers) reapKilled(id string, recursive bool, until time.Time) (time.
 	mark = append(mark, fresh...)
 	rootRaw, _ := json.Marshal(root)
 	untilRaw, _ := json.Marshal(store.ReapedUntilValue(until))
-	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+	keys := map[string]json.RawMessage{
 		store.SystemReapedKey:      rootRaw,
 		store.SystemReapedUntilKey: untilRaw,
-	}, nil)
+	}
+	var drops []string
+	if by != "" {
+		keys[store.SystemReapedByKey], _ = json.Marshal(by)
+	} else {
+		drops = append(drops, store.SystemReapedByKey)
+	}
+	patch := form.Build(form.Snapshot{}, keys, drops)
 	for _, n := range mark {
 		if _, err := rk.ApplyForm(n, patch); err != nil {
 			return time.Time{}, true, fmt.Errorf("kill %s: reaping %s: %w", id, n, err)
 		}
 	}
 	slog.Info("killed figaro, reaped until its grace runs out",
-		"id", id, "root", root, "nodes", len(mark), "purge", until.Format(time.RFC3339))
+		"id", id, "root", root, "nodes", len(mark), "purge", until.Format(time.RFC3339), "by", by)
 	return until, true, nil
 }
 

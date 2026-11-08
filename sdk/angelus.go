@@ -152,6 +152,30 @@ func (c *Angelus) GC(ctx context.Context, dryRun bool) (*rpc.GCResponse, error) 
 	return &resp, err
 }
 
+func (c *Angelus) GCPlan(ctx context.Context, sel rpc.GCSelector) (*rpc.GCPlanResponse, error) {
+	var resp rpc.GCPlanResponse
+	if err := c.call(ctx, rpc.MethodGCPlan, rpc.GCPlanRequest{Selector: sel}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Angelus) GCApply(ctx context.Context, run string) (*rpc.GCApplyResponse, error) {
+	var resp rpc.GCApplyResponse
+	if err := c.call(ctx, rpc.MethodGCApply, rpc.GCApplyRequest{Run: run}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Angelus) GCUndo(ctx context.Context, run string) (*rpc.GCUndoResponse, error) {
+	var resp rpc.GCUndoResponse
+	if err := c.call(ctx, rpc.MethodGCUndo, rpc.GCUndoRequest{Run: run}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Fork branches a conversation. Zero forks at the head; atTurn replaces that
 // turn, atLT forks at that logical time exactly. They are distinct wire fields.
 func (c *Angelus) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, outfits []string, patch *rpc.FormPatch) (*rpc.ForkResponse, error) {

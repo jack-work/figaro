@@ -49,3 +49,11 @@ func (a *Angelus) RetainFormsForBench(ctx context.Context) { a.retainForms(ctx, 
 func (a *Angelus) SetReclaimBatchForBench(n int) { a.reclaims().batch = n }
 
 func FormViewForTest(id string) *rpc.FormView { return formViewOf(id) }
+
+func (a *Angelus) SeedRolesNow() {
+	if s, ok := a.Backend.(roleSeeder); ok {
+		if _, ready := a.roleTargets(); !ready {
+			s.SeedRoles(context.Background(), 0)
+		}
+	}
+}
