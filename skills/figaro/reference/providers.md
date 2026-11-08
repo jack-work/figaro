@@ -106,9 +106,10 @@ fails the provider's build.
 A gateway that cuts request bodies at a size (rou2 at 8 MiB, which then
 answers "Request body must contain valid JSON") declares it with
 `max_request_bytes` in its file. `system.max_request_bytes` overrides it per
-aria; `0` means no limit. Over the limit, figaro replaces the oldest image
-parts with a note saying so until the body fits, newest images last, and
-never touches text. If the text alone is over, the send fails with
+aria; `0` means no limit. Over the limit, figaro first sends the oldest
+images smaller (re-encoded or resized, with a note giving the factor that maps
+coordinates back), and only if that is not enough replaces the oldest image
+parts with a note saying so, newest images last. It never touches text. If the text alone is over, the send fails with
 "request too large" and names the knob. Only the request changes: the
 aria's history keeps its images.
 

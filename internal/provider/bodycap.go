@@ -35,20 +35,29 @@ func MaxRequestBytes(snapshot form.Snapshot, routeDefault int) int {
 type ImageDialect struct {
 	Is   func(part map[string]any) bool
 	Text func(note string) map[string]any
+
+	data     func(part map[string]any) (wireImage, bool)
+	withData func(part map[string]any, img wireImage) map[string]any
 }
 
 var (
 	MessagesImages = ImageDialect{
-		Is:   func(p map[string]any) bool { return p["type"] == "image" },
-		Text: func(note string) map[string]any { return map[string]any{"type": "text", "text": note} },
+		Is:       func(p map[string]any) bool { return p["type"] == "image" },
+		Text:     func(note string) map[string]any { return map[string]any{"type": "text", "text": note} },
+		data:     messagesImageData,
+		withData: messagesWithImageData,
 	}
 	ChatImages = ImageDialect{
-		Is:   func(p map[string]any) bool { return p["type"] == "image_url" },
-		Text: func(note string) map[string]any { return map[string]any{"type": "text", "text": note} },
+		Is:       func(p map[string]any) bool { return p["type"] == "image_url" },
+		Text:     func(note string) map[string]any { return map[string]any{"type": "text", "text": note} },
+		data:     chatImageData,
+		withData: chatWithImageData,
 	}
 	ResponsesImages = ImageDialect{
-		Is:   func(p map[string]any) bool { return p["type"] == "input_image" },
-		Text: func(note string) map[string]any { return map[string]any{"type": "input_text", "text": note} },
+		Is:       func(p map[string]any) bool { return p["type"] == "input_image" },
+		Text:     func(note string) map[string]any { return map[string]any{"type": "input_text", "text": note} },
+		data:     responsesImageData,
+		withData: responsesWithImageData,
 	}
 )
 
@@ -122,6 +131,9 @@ func FitRequest(provider string, rows RowSeq, limit int, dialect ImageDialect, b
 		return rows, err
 	}
 	list, lts := CollectRows(rows)
+	if total, err = downscaleOldest(provider, list, lts, total, limit, dialect, body); err != nil || total <= limit {
+		return SliceRows(list, lts), err
+	}
 	note := fmt.Sprintf("[image elided: the request was over %s's %s request limit, so figaro dropped the oldest images first]", provider, humanBytes(limit))
 	elided, i := 0, 0
 	for total > limit {
@@ -153,6 +165,58 @@ func FitRequest(provider string, rows RowSeq, limit int, dialect ImageDialect, b
 	fitted := SliceRows(list, lts)
 	slog.Warn("request over the provider's limit; the oldest images were elided", "provider", provider, "elided", elided, "bytes", total, "limit", limit)
 	return fitted, nil
+}
+
+func downscaleOldest(provider string, list []json.RawMessage, lts []uint64, total, limit int, dialect ImageDialect, body func(RowSeq) BodyFunc) (int, error) {
+	if dialect.data == nil {
+		return total, nil
+	}
+	shrunk := 0
+	for i := 0; i < len(list) && total > limit; i++ {
+		if !bytes.Contains(list[i], []byte("image")) {
+			continue
+		}
+		v, ok := decodeRow(list[i])
+		if !ok {
+			continue
+		}
+		over := total - limit
+		changed := rewriteImages(&v, dialect, func(part map[string]any) []any {
+			if over <= 0 {
+				return nil
+			}
+			img, ok := dialect.data(part)
+			if !ok {
+				return nil
+			}
+			target := len(img.Data) - over
+			smaller, fitted, ok := downscaleImage(img, target)
+			if !ok {
+				return nil
+			}
+			over -= len(img.Data) - len(smaller.Data)
+			shrunk++
+			why := fmt.Sprintf("the request was over %s's %s request limit, so figaro sent the oldest images smaller first", provider, humanBytes(limit))
+			return []any{dialect.Text(downscaleNote(why, fitted)), dialect.withData(part, smaller)}
+		})
+		if !changed {
+			continue
+		}
+		out, err := json.Marshal(v)
+		if err != nil {
+			continue
+		}
+		total += len(out) - len(list[i])
+		list[i] = out
+	}
+	if shrunk == 0 {
+		return total, nil
+	}
+	total, err := BodySize(body(SliceRows(list, lts)))
+	if err == nil {
+		slog.Warn("request over the provider's limit; the oldest images were downscaled", "provider", provider, "downscaled", shrunk, "bytes", total, "limit", limit)
+	}
+	return total, err
 }
 
 func elideOneImage(row json.RawMessage, dialect ImageDialect, note string) (json.RawMessage, bool) {
