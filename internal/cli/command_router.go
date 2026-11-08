@@ -556,12 +556,14 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 		in.openTapeForm(name, spec, full, keep)
 		return
 	}
+	finished := func() {}
 	if !full {
-		in.progress("…" + name + " " + spec)
+		finished = in.progressIfSlow("…" + name + " " + spec)
 	}
 	go func() {
 		acli, err := in.angelus()
 		if err != nil {
+			finished()
 			in.note(name + ": " + err.Error())
 			return
 		}
@@ -572,9 +574,11 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 		}
 		view.subject = in.subjectState()
 		if keep != nil && !keep(view) {
+			finished()
 			closeView()
 			return
 		}
+		finished()
 		in.installFormView(name, view, closeView, full)
 	}()
 }

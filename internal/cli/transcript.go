@@ -38,6 +38,9 @@ type transcript struct {
 	handoff ruleHandoff
 	wake    func(time.Duration)
 	waking  bool
+	after   func(time.Duration, func())
+	held    bool
+	holdGen int
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool

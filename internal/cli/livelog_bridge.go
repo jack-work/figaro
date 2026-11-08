@@ -223,6 +223,13 @@ func (t *livelogTurn) setRenderLock(mu sync.Locker) {
 			t.tr.render()
 		})
 	}
+	t.tr.after = func(d time.Duration, fn func()) {
+		t.pace.after(d, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			fn()
+		})
+	}
 	t.tr.gate = t.pace.allow
 	t.tr.painted = t.pace.painted
 }

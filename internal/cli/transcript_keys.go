@@ -70,6 +70,7 @@ func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
 func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
 func (t *transcript) dispatch(ev keyEvent) {
+	t.held = false
 	if t.pending != "" {
 		bd := t.prefixed(ev)
 		t.pending = ""

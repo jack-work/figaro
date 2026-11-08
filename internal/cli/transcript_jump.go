@@ -407,6 +407,7 @@ func (t *transcript) boxSubmit(snap bool) {
 	if snap {
 		pagerTail(t)
 	}
+	t.holdFrames(progressDelay)
 	t.command(expanded)
 }
 

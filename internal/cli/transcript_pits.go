@@ -11,6 +11,7 @@ import (
 // A row is selectable because its verb said what it names, not because its text
 // looks aria-shaped.
 func (t *transcript) setCmdOut(title string, rows []pitRow) {
+	t.held = false
 	t.queuedByKey = false
 	t.pit.showList(pitOutput, ":"+title, rows)
 	t.pit.focus(t.status.figaroID)
@@ -117,6 +118,7 @@ func (t *transcript) openNotificationsPit() {
 }
 
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
+	t.held = false
 	t.queuedByKey = false
 	t.status.retireProgress()
 	t.pit.showLive(pitID(name), v)
@@ -137,10 +139,12 @@ func (t *transcript) setProgressNote(note string) {
 		return
 	}
 	t.status.setProgress(note)
+	t.held = false
 	t.render()
 }
 
 func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
+	t.held = false
 	// Every note is posted to the history, whatever the bar does with it.
 	t.notes.post(level, "cli", note)
 	if note == "" {

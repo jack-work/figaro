@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 
@@ -162,7 +163,7 @@ func (t *transcript) render() {
 	if t.offset < 0 {
 		t.offset = 0
 	}
-	if t.batch > 0 || (t.gate != nil && !t.gate()) {
+	if t.batch > 0 || t.held || (t.gate != nil && !t.gate()) {
 		t.dirty = true
 		return
 	}
@@ -171,6 +172,21 @@ func (t *transcript) render() {
 	if t.painted != nil {
 		t.painted()
 	}
+}
+
+func (t *transcript) holdFrames(d time.Duration) {
+	if t.after == nil {
+		return
+	}
+	t.held = true
+	t.holdGen++
+	gen := t.holdGen
+	t.after(d, func() {
+		if t.held && t.holdGen == gen {
+			t.held = false
+			t.render()
+		}
+	})
 }
 
 // beginBatch/endBatch bracket state changes that must produce one frame.
@@ -188,7 +204,7 @@ func (t *transcript) endBatch() {
 
 // Whoever refuses a frame owes a later flush, so the final state is always on screen.
 func (t *transcript) flush() {
-	if !t.active || !t.dirty || t.batch > 0 {
+	if !t.active || !t.dirty || t.batch > 0 || t.held {
 		return
 	}
 	t.dirty = false
@@ -201,6 +217,7 @@ func (t *transcript) flush() {
 // The ceiling is for a stream, not for an answer: a subject switch is one discrete
 // thing and appears at once. A batch still holds it.
 func (t *transcript) renderNow() {
+	t.held = false
 	if !t.active || t.batch > 0 {
 		t.render()
 		return

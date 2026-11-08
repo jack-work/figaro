@@ -55,6 +55,7 @@ type pitFrames struct {
 	tr    *transcript
 	tape  *frameTape
 	clock time.Time
+	later []func()
 }
 
 func pitFramesPager(t *testing.T, w, h int) *pitFrames {
@@ -76,6 +77,7 @@ func pitFramesPager(t *testing.T, w, h int) *pitFrames {
 	p.tr = newTranscript(p.tape, w, h, view, client, "aria1234", time.Time{})
 	p.tr.now = func() time.Time { return p.clock }
 	p.tr.wake = func(time.Duration) {}
+	p.tr.after = func(_ time.Duration, fn func()) { p.later = append(p.later, fn) }
 	p.tr.enter()
 	p.tr.render()
 	p.settle()
@@ -85,13 +87,21 @@ func pitFramesPager(t *testing.T, w, h int) *pitFrames {
 func (p *pitFrames) settle() {
 	for range 64 {
 		p.tr.waking = false
-		p.clock = p.clock.Add(handoffFrame)
+		p.clock = p.clock.Add(time.Second / 60)
 		p.tr.render()
 		if !p.tr.handoffRunning() {
-			p.clock = p.clock.Add(handoffLength)
+			p.clock = p.clock.Add(time.Second)
 			p.tr.render()
 			return
 		}
+	}
+}
+
+func (p *pitFrames) fire() {
+	later := p.later
+	p.later = nil
+	for _, fn := range later {
+		fn()
 	}
 }
 
@@ -129,5 +139,49 @@ func TestPitToggleGoesStraightToTheNewFrame_Keys(t *testing.T) {
 			p.settle()
 			p.assertStraight(t, "close "+string(key), from)
 		})
+	}
+}
+
+func TestPitToggleGoesStraightToTheNewFrame_Command(t *testing.T) {
+	p := pitFramesPager(t, 100, 30)
+	var ran []string
+	p.tr.command = func(line string) { ran = append(ran, line) }
+	pressKeys(p.tr, ":ls")
+	p.settle()
+	from := p.tape.mark()
+	p.tr.key('\r')
+	if len(ran) != 1 || ran[0] != "ls" {
+		t.Fatalf("fixture: the command line ran %q", ran)
+	}
+	p.tr.setCmdOut("ls", []pitRow{staticRow("  one"), staticRow("  two"), staticRow("  three")})
+	p.settle()
+	p.assertStraight(t, ":ls", from)
+	if !p.tr.pit.open() {
+		t.Fatal("the pit never opened")
+	}
+}
+
+// The hold is bounded: a command that answers with nothing still closes its
+// command line.
+func TestCommandLineHoldIsBounded(t *testing.T) {
+	p := pitFramesPager(t, 100, 30)
+	p.tr.command = func(string) {}
+	pressKeys(p.tr, ":ls")
+	p.settle()
+	p.tr.key('\r')
+	p.settle()
+	if len(p.later) == 0 {
+		t.Fatal("the hold armed no release")
+	}
+	from := p.tape.mark()
+	p.fire()
+	p.settle()
+	if p.tape.mark() == from {
+		t.Fatal("the release painted nothing")
+	}
+	for _, row := range p.tape.frames[len(p.tape.frames)-1] {
+		if strings.HasPrefix(row, ":ls") {
+			t.Fatalf("the command line is still up after the hold:\n%s", strings.Join(p.tape.frames[len(p.tape.frames)-1], "\n"))
+		}
 	}
 }
