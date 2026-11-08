@@ -715,8 +715,8 @@ positional slot belongs to the sub-verb.`,
 		Aliases: []string{"at"},
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at a turn)",
-		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | null",
-		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point: the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses: reach\nanother aria with an explicit --id instead.",
+		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | :head | null",
+		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point: the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria, and `:head`\nalone drops its pending fork-point.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses: reach\nanother aria with an explicit --id instead.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -897,6 +897,7 @@ so anything already addressing it keeps working. Only an INTERIOR fork
 
   figaro fork                 branch the bound aria at its head
   figaro fork <id>            branch another aria at its head (maintenance)
+  figaro fork <id>:head       the same, spelled out
   figaro fork <id>:12         interior fork: history before turn 12 is shared,
                               the original suffix becomes the continuation
   figaro fork <id>:12.10      inside turn 12: node 10 and everything after it
@@ -912,7 +913,8 @@ an LT -- one step of the model's experience, the number show -v prints.
 Prefer the colon: most LTs sit mid-tool, where a fork strands a tool_invoke
 without its result. Reach for the dot when you already hold an LT, or need a
 point no turn boundary names. All three work for send, fork and attend;
-naming more than one at once is an error.
+naming more than one at once is an error. :head is the head spelled out;
+naming no coordinate means :head.
 
 A NODE IS FINER THAN A FORK POINT, and the difference is reported rather
 than hidden. An assistant message that says a paragraph and then calls a

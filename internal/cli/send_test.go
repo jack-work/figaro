@@ -234,6 +234,10 @@ func TestParseTarget(t *testing.T) {
 		{"t1.", "", 0, 0, true},
 		{"t1.x", "", 0, 0, true},
 		{"t1.0", "", 0, 0, true},
+		{"t1:head", "t1", 0, 0, false},
+		{":head", "", 0, 0, false},
+		{"t1:head.3", "", 0, 0, true},
+		{"t1:HEAD", "", 0, 0, true},
 	}
 	for _, c := range cases {
 		trunk, at, err := parseTarget(c.spec)

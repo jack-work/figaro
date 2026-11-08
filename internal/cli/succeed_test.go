@@ -55,6 +55,8 @@ func TestSucceedRefusals(t *testing.T) {
 		"two roles":              {"@a", "@b", "--", "go"},
 		"turn zero":              {"@a", "--turn", "0", "--", "go"},
 		"turn not a number":      {"@a", "--turn", "two", "--", "go"},
+		"turn with a node":       {"@a", "--turn", "3.2", "--", "go"},
+		"head with a node":       {"@a", "--turn", "head.1", "--", "go"},
 		"turn and successor":     {"@a", "--turn", "3", "--successor", "x", "--", "go"},
 		"negative ttl":           {"@a", "--ttl", "-5m", "--", "go"},
 		"unknown abdication":     {"@a", "--abdication", "flee", "--", "go"},

@@ -18,7 +18,6 @@ import (
 const (
 	succeedDefaultTurn = 2
 	succeedHeadTurn    = 0
-	succeedHead        = "head"
 	succeedDefaultTTL  = "10m"
 	succeededPrefix    = "SUCCEEDED: "
 
@@ -77,16 +76,14 @@ func parseSucceedPlan(role, successor, turn, ttl, abdication, title, prompt stri
 		return p, errors.New("the succession prompt must follow `--`")
 	}
 	if turn != "" {
-		n := uint64(succeedHeadTurn)
-		if turn != succeedHead {
-			if _, err := fmt.Sscanf(turn, "%d", &n); err != nil || n < 1 || fmt.Sprint(n) != turn {
-				return p, fmt.Errorf("--turn %q: want a turn number, 1 or more, or head", turn)
-			}
+		at, err := parseTurnCoord(turn, turn)
+		if err != nil || at.hasNode {
+			return p, fmt.Errorf("--turn %q: want a turn number, 1 or more, or head", turn)
 		}
 		if successor != "" {
 			return p, errors.New("--turn picks where to fork; --successor names an aria that already exists. Pass one")
 		}
-		p.turn = n
+		p.turn = at.turn
 	}
 	if ttl == "" {
 		ttl = succeedDefaultTTL

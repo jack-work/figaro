@@ -363,11 +363,16 @@ func parseTarget(spec string) (trunk string, at forkPoint, err error) {
 	return trunk, at, nil
 }
 
+const headCoord = "head"
+
 func parseTurnCoord(spec, coord string) (forkPoint, error) {
+	if coord == headCoord {
+		return forkPoint{}, nil
+	}
 	turnText, nodeText, hasNode := strings.Cut(coord, ".")
 	turn, err := strconv.ParseUint(turnText, 10, 64)
 	if err != nil || turn == 0 {
-		return forkPoint{}, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n>, turns start at 1)", spec)
+		return forkPoint{}, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n> or [<trunk>]:head, turns start at 1)", spec)
 	}
 	if !hasNode {
 		return forkPoint{turn: turn}, nil
