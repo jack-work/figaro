@@ -193,3 +193,47 @@ func TestASecondConnectionToATapeIsAnsweredAndFollowsItsForm(t *testing.T) {
 		t.Fatal("the tape's form delta never reached the second connection")
 	}
 }
+
+// gen5 t29 under the stage manager's driver: a replay run from inside an
+// aria (FIGARO_ARIA set) sends its own caller id with every request, and
+// the tape's requests carry the recorder's or none. The answers keyed on
+// that id missed, fell back to the latest answer of the method, and the
+// runtime seed came back as some other form: the footer read ✓ through a
+// singing turn and the history read came back short. Caller metadata is
+// not part of the question.
+func TestAReplayAnswersWhoeverAsks(t *testing.T) {
+	t.Setenv("FIGARO_ARIA", "0123456789abcdef0123456789abcdef")
+	frames := []tape.Frame{
+		tapeFrame(t, 0.01, tape.Out, `{"jsonrpc":"2.0","id":3,"method":"figaro.form","params":{"figaro_id":"a","x-internal-figaro-id":"e83ae209","x-caller":{"duke":true}}}`),
+		tapeFrame(t, 0.01, tape.Out, `{"jsonrpc":"2.0","id":5,"method":"figaro.form","params":{"figaro_id":"a","intrinsic":"runtime","x-internal-figaro-id":"e83ae209","x-caller":{"duke":true}}}`),
+		tapeFrame(t, 0.02, tape.In, `{"jsonrpc":"2.0","id":5,"result":{"snapshot":{"turn":{"state":"thinking"}},"version":9,"intrinsic":"runtime"}}`),
+		tapeFrame(t, 0.03, tape.In, `{"jsonrpc":"2.0","id":3,"result":{"snapshot":{"aria_id":"a"},"version":4}}`),
+		tapeFrame(t, 600, tape.In, `{"jsonrpc":"2.0","method":"turn.done","params":{"figaro_id":"a","reason":"stop"}}`),
+	}
+	dir, err := os.MkdirTemp("", "figtape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	ep := transport.UnixEndpoint(filepath.Join(dir, "agent.sock"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := &tapeServer{frames: frames, speed: 1, done: make(chan struct{})}
+	if err := srv.listen(ctx, ep); err != nil {
+		t.Fatal(err)
+	}
+	cli, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(string, json.RawMessage) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	fctx, fcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer fcancel()
+	rt, err := cli.FormOf(fctx, "runtime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Version != 9 || rt.Intrinsic != "runtime" {
+		t.Fatalf("asked for the runtime form, got version %d of %q: the recorded host form", rt.Version, rt.Intrinsic)
+	}
+}

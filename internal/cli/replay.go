@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -466,7 +467,11 @@ func askKey(method string, params json.RawMessage) string {
 	if json.Unmarshal(params, &p) != nil {
 		return method + " " + string(params)
 	}
-	delete(p, "x-caller")
+	for k := range p {
+		if strings.HasPrefix(k, "x-") {
+			delete(p, k)
+		}
+	}
 	delete(p, "client")
 	canon, _ := json.Marshal(p)
 	return method + " " + string(canon)
