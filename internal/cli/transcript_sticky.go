@@ -131,7 +131,14 @@ func (t *transcript) stickyRows() []transcriptRow {
 		r.mark = ""
 		rows[stickyText-1] = r
 	}
-	return rows
+	return rows[:min(len(rows), t.stickyRoom())]
+}
+
+// The header, its rule included, never covers more of the body than it leaves
+// showing: on a short pane the question's text goes first, then the heading.
+func (t *transcript) stickyRoom() int {
+	body, _ := t.layoutNow()
+	return max(body/2-1, 0)
 }
 
 func ownWordsRow(q stickyQuestion, inq aria.Inquiry) int {
