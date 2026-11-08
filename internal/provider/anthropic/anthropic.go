@@ -49,6 +49,8 @@ type Anthropic struct {
 	// invalidate an aria's translation cache.
 	Route provider.Route
 
+	TransportLabel string
+
 	Templates *template.Template
 
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
@@ -1053,12 +1055,16 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		return err
 	}
 	defer resp.Body.Close()
+	label := a.TransportLabel
+	if label == "" {
+		label = "copilot"
+	}
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("copilot: %s", apiErrorMessage(resp.StatusCode, errBody))
+		return fmt.Errorf("%s: %s", label, apiErrorMessage(resp.StatusCode, errBody))
 	}
 
-	return a.land(a.drainSSE(ctx, resp.Body, model, bus))("copilot", bus)
+	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(label, bus)
 }
 
 func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantCache, error) {

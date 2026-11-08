@@ -137,6 +137,7 @@ func (p *Provider) messagesBackend() (*anthropic.Anthropic, error) {
 		return nil, err
 	}
 	m.CacheNamespace = p.spec.namespace(Messages)
+	m.TransportLabel = p.spec.Name
 	m.Templates = p.templates
 	p.messages = m
 	return m, nil

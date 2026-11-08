@@ -499,3 +499,16 @@ func TestTheMessagesPathJoinsTheBaseLikeTheOthers(t *testing.T) {
 		}
 	}
 }
+
+// A Messages route on a gateway said "copilot:" in every error it raised,
+// a stream cut included, whatever its name.
+func TestAMessagesRouteNamesItselfInItsErrors(t *testing.T) {
+	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return "http://gw/v1" }, Default: Messages})
+	m, err := p.messagesBackend()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.TransportLabel != "gw" {
+		t.Errorf("TransportLabel = %q, want gw", m.TransportLabel)
+	}
+}
