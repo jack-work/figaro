@@ -80,6 +80,19 @@ it shows on the inquiry as a delta (`Δ`) and in `figaro state`. The daemon log
 records every run: `method`, the verdict (`decided`, `defaulted`, `kept`),
 the value and the time taken.
 
+A decision route that fails three times in a row rests. A route is the
+decision provider, model and base URL. A failure is the route's own: an HTTP
+error, a response that carries no answer, a missing credential, or no answer within the 1.5 s.
+A refusal made before any request (a box that does not allow the provider)
+does not count. While a route rests, its methods are not asked: each writes
+its `default` at once, or leaves its key alone without one. After one minute a
+single inquiry asks again. If that fails, the rest doubles, up to half an
+hour. Any answer ends it. The daemon logs once when a route starts resting
+(Warn) and once when it answers again (Info). The skipped runs are logged at
+Debug only. `figaro doctor provider` lists the resting routes, with the failure
+count, when the rest began, when the next try goes, and the last error. Rests
+are per daemon and end with it.
+
 ## The prompt cache comes first
 
 A method changes its key before nearly every request, so a key that the

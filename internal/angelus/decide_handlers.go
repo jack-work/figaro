@@ -56,7 +56,7 @@ type defaultedAsker struct{ h *handlers }
 func (d defaultedAsker) Ask(ctx context.Context, src decide.Source, q decide.Question) (rpc.DecideResponse, error) {
 	src.Defaults = d.h.defaultForm()
 	src.Allowed = d.h.decisionProvidersFor(ctx, src.BoundForm)
-	return d.h.decider.Ask(ctx, src, q)
+	return d.h.breaker.Guard(d.h.decider).Ask(ctx, src, q)
 }
 
 func (h *handlers) methodAsker() methods.Asker {

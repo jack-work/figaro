@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/methods"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
@@ -82,6 +83,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		outfitter:          newOutfitter(cfg.Angelus, cfg.Config),
 		availableProviders: cfg.AvailableProviders,
 		decider:            cfg.Decider,
+		breaker:            methods.NewBreaker(),
 	}
 	if cfg.Config != nil {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
@@ -257,6 +259,7 @@ type handlers struct {
 	outfitter          *outfit.Outfitter
 	availableProviders []string
 	decider            *decide.Engine
+	breaker            *methods.Breaker
 	fed                *federation
 	policySign         sync.Mutex
 

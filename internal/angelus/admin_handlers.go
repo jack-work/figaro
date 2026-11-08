@@ -100,7 +100,8 @@ func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (
 	}
 	conns := upstream.Shared().Stats()
 	return rpc.ProviderLedgerResponse{Rounds: out, Retained: retained,
-		Connections: &rpc.ProviderConnections{Open: conns.Open, Dropped: conns.Dropped}}, nil
+		Connections:  &rpc.ProviderConnections{Open: conns.Open, Dropped: conns.Dropped},
+		DecideRoutes: h.breaker.Resting()}, nil
 }
 
 // roundFromLog reads what wirelog wrote; the attribute names are the whole contract.

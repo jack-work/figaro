@@ -109,3 +109,18 @@ func TestConnectionsLineNamesEachDropReason(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+func TestDoctorNamesARestingDecisionRoute(t *testing.T) {
+	since := time.Date(2026, 11, 8, 0, 30, 0, 0, time.Local)
+	routes := []rpc.DecideRoute{{Route: "rou2/gpt-6-luna", Failures: 3, SinceMS: since.UnixMilli(),
+		NextTryMS: since.Add(time.Minute).UnixMilli(), LastError: "decide: HTTP 429: no credits"}}
+	out := captureStdout(t, func() { printRestingRoutes(routes) })
+	for _, want := range []string{"rou2/gpt-6-luna", "3 failures", "00:30:00", "until 00:31:00", "HTTP 429: no credits"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if out := captureStdout(t, func() { printRestingRoutes(nil) }); out != "" {
+		t.Errorf("no resting route, yet:\n%s", out)
+	}
+}

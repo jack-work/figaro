@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 
@@ -37,7 +38,11 @@ func (a *Agent) runInquiryMethods(ctx context.Context, inquiry string) {
 	inquiries := append([]string{inquiry}, a.inquiriesBefore(methods.Depth(ms))...)
 	set := map[string]json.RawMessage{}
 	for _, o := range methods.RunAll(ctx, a.decider, decide.Source{BoundForm: snap}, ms, inquiries) {
-		slog.Info("method", "aria", a.id, "method", o.Method.Name, "key", o.Method.Key,
+		level := slog.LevelInfo
+		if errors.Is(o.Err, methods.ErrResting) {
+			level = slog.LevelDebug
+		}
+		slog.Log(ctx, level, "method", "aria", a.id, "method", o.Method.Name, "key", o.Method.Key,
 			"verdict", string(o.Verdict), "value", o.Value, "elapsed", o.Elapsed, "err", o.Err)
 		if o.Verdict == methods.Kept {
 			continue

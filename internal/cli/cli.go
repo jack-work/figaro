@@ -1805,7 +1805,7 @@ the daemon neither reads nor writes it.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; unit says whether the daemon on the socket is the systemd unit's",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; unit says whether the daemon on the socket is the systemd unit's",
 		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | skills [-j] | keys | ttl [-j] | unit [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},

@@ -51,6 +51,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		if line := connectionsLine(resp.Connections); line != "" {
 			fmt.Fprintln(stdout, line)
 		}
+		printRestingRoutes(resp.DecideRoutes)
 		return nil
 	}
 
@@ -96,8 +97,19 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 	if line := connectionsLine(resp.Connections); line != "" {
 		fmt.Fprintln(stdout, "\n"+line)
 	}
+	printRestingRoutes(resp.DecideRoutes)
 	summarizeProviderTrouble(resp.Rounds)
 	return nil
+}
+
+func printRestingRoutes(routes []rpc.DecideRoute) {
+	for _, r := range routes {
+		fmt.Fprintf(stdout, "decide route %s: resting after %d failures since %s; methods write their defaults until %s\n",
+			r.Route, r.Failures, time.UnixMilli(r.SinceMS).Format("15:04:05"), time.UnixMilli(r.NextTryMS).Format("15:04:05"))
+		if r.LastError != "" {
+			fmt.Fprintf(stdout, "  last error: %s\n", r.LastError)
+		}
+	}
 }
 
 func connectionsLine(c *rpc.ProviderConnections) string {
