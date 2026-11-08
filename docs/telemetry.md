@@ -33,7 +33,19 @@ process exits or resubmits first. Its W3C traceparent rides
 `.cache_creation.input_tokens`, `round.output_deltas`,
 `round.tool_arg_deltas`, `round.first_output_ms`, `round.stream_ms`,
 `round.itl_bounds_ms` with `round.itl_counts` (gaps between streamed
-deltas; the last count is above the last bound), `error.type` on failure.
+deltas; the last count is above the last bound), `round.output_span_ms`
+and `round.streamed`, `error.type` on failure.
+
+`round.output_span_ms` is the time from the first to the last output delta
+that carried text, thinking or tool arguments, at microsecond precision; an
+empty delta (a tool call's opening `input_json_delta` of "") does not start
+it. `round.streamed` is false when the round has at least 32 output tokens
+and that span is under 1 ms per 10 of them (faster than 10k tokens/s, past
+any real decode): the output arrived in one burst, and its span says nothing
+about generation speed. Copilot's messages
+route does this to tool arguments (traced on 11-08: the opening empty delta
+at once, nothing for 2.7 to 5.9 s, then every argument within about 20 ms);
+its text streamed. Leave rounds with `round.streamed=false` out of TPOT.
 Timestamped events: `provider.request_built`, `http.body_sent` (upload
 done, `http.req_bytes`), `http.request` (response headers),
 `http.first_byte`, `first_thinking`, `first_text`, `first_tool`,

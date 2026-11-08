@@ -22,18 +22,20 @@ type roundClock struct {
 
 	mu                                                      sync.Mutex
 	firstThinking, firstText, firstTool, firstToolArg, last time.Time
+	firstFilled, lastFilled                                 time.Time
 	deltas, toolArgDeltas                                   int64
 	gaps                                                    [12]int64
 }
 
 func newRoundClock(start time.Time) *roundClock { return &roundClock{start: start} }
 
-func (c *roundClock) delta(kind message.ContentType) {
+func (c *roundClock) delta(kind message.ContentType, size int) {
 	if c == nil {
 		return
 	}
 	now := time.Now()
 	c.mu.Lock()
+	c.filled(now, size)
 	if kind == message.ContentThinking {
 		stampFirst(&c.firstThinking, now)
 	} else {
@@ -54,16 +56,37 @@ func (c *roundClock) toolStart() {
 	c.mu.Unlock()
 }
 
-func (c *roundClock) toolArg() {
+func (c *roundClock) toolArg(size int) {
 	if c == nil {
 		return
 	}
 	now := time.Now()
 	c.mu.Lock()
+	c.filled(now, size)
 	stampFirst(&c.firstToolArg, now)
 	c.toolArgDeltas++
 	c.gap(now)
 	c.mu.Unlock()
+}
+
+func (c *roundClock) filled(now time.Time, size int) {
+	if size == 0 {
+		return
+	}
+	stampFirst(&c.firstFilled, now)
+	c.lastFilled = now
+}
+
+const (
+	streamedMinTokens     = 32
+	streamedTokensPerMSAt = 10
+)
+
+func streamedRound(outputTokens int, span time.Duration) bool {
+	if outputTokens < streamedMinTokens {
+		return true
+	}
+	return span.Seconds()*1000*streamedTokensPerMSAt >= float64(outputTokens)
 }
 
 func stampFirst(t *time.Time, now time.Time) {
@@ -89,7 +112,7 @@ func itlBucket(d time.Duration) int {
 	return len(itlBoundsMS)
 }
 
-func (c *roundClock) annotate(span trace.Span) {
+func (c *roundClock) annotate(span trace.Span, outputTokens int) {
 	if c == nil || !span.IsRecording() {
 		return
 	}
@@ -124,6 +147,12 @@ func (c *roundClock) annotate(span trace.Span) {
 		span.AddEvent("last_output", trace.WithTimestamp(c.last))
 		attrs = append(attrs, attribute.Int64("round.stream_ms", c.last.Sub(first).Milliseconds()))
 	}
+	if !c.firstFilled.IsZero() {
+		out := c.lastFilled.Sub(c.firstFilled)
+		attrs = append(attrs,
+			attribute.Float64("round.output_span_ms", float64(out.Microseconds())/1000),
+			attribute.Bool("round.streamed", streamedRound(outputTokens, out)))
+	}
 	if c.deltas+c.toolArgDeltas > 1 {
 		attrs = append(attrs,
 			attribute.Int64Slice("round.itl_bounds_ms", itlBoundsMS),
@@ -149,7 +178,11 @@ func endRound(span trace.Span, clock *roundClock, out *message.Message, sendErr,
 	if !span.IsRecording() {
 		return
 	}
-	clock.annotate(span)
+	tokens := 0
+	if out != nil && out.Usage != nil {
+		tokens = out.Usage.OutputTokens
+	}
+	clock.annotate(span, tokens)
 	if out != nil {
 		span.SetAttributes(attribute.String("gen_ai.response.finish_reason", string(out.StopReason)))
 		if u := out.Usage; u != nil {

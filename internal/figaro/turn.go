@@ -70,7 +70,7 @@ func newTurnBus(ctx context.Context) *turnBus {
 }
 
 func (b *turnBus) PushDelta(c message.Content) {
-	b.clock.delta(c.Type)
+	b.clock.delta(c.Type, len(c.Text))
 	b.events <- busEvent{kind: evDelta, content: c}
 }
 
@@ -102,7 +102,7 @@ func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
 }
 
 func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
-	b.clock.toolArg()
+	b.clock.toolArg(len(partialJSON))
 	b.events <- busEvent{kind: evToolArgs, id: toolCallID, partial: partialJSON}
 }
 
