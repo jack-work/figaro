@@ -908,7 +908,7 @@ func countCacheMarkers(req nativeRequest) int {
 	return n
 }
 
-func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) (err error) {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
@@ -943,6 +943,8 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("encode request: %w", err)
 	}
 
+	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
+	defer func() { err = provider.NameStreamCut(settle(err), providerName) }()
 	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
 		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), nil)
 		if herr != nil {
@@ -1021,7 +1023,7 @@ type TransportFn func(ctx context.Context, body *provider.RequestBody, header ht
 
 // SendWithTransport delegates the HTTP call to fn; oauth injects the Claude
 // Code identity preamble.
-func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, oauth bool, fn TransportFn) error {
+func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, oauth bool, fn TransportFn) (err error) {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
@@ -1050,15 +1052,17 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	}
 
 	figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
+	label := a.TransportLabel
+	if label == "" {
+		label = "copilot"
+	}
+	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
+	defer func() { err = provider.NameStreamCut(settle(err), label) }()
 	resp, err := fn(ctx, body, betaHeader(messageBetas(model)))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	label := a.TransportLabel
-	if label == "" {
-		label = "copilot"
-	}
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("%s: %s", label, apiErrorMessage(resp.StatusCode, errBody))
@@ -1218,6 +1222,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 			return nm, ctx.Err()
 		case line = <-scanCh:
 			lines++
+			provider.SawByte(ctx)
 			scanNext()
 		case err := <-scanErr:
 			var cut bodyReadError

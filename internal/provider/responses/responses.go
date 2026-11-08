@@ -266,6 +266,8 @@ func (p *Provider) sendWithToken(
 	dump := wirelog.OpenFrameDump(ctx)
 	defer dump.Close()
 
+	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
+	defer func() { sendErr = settle(sendErr) }()
 	var frames responseFrames
 	if transport == HTTP {
 		payload, err := json.Marshal(responseStreamRequest{responseBody: body, Stream: true})
@@ -660,7 +662,7 @@ func statusRejectionCode(status int, fallback string) string {
 func sseFrames(r io.Reader) responseFrames {
 	reader := bufio.NewReaderSize(r, 64<<10)
 	finished := false
-	return func(context.Context) ([]byte, error) {
+	return func(ctx context.Context) ([]byte, error) {
 		if finished {
 			return nil, io.EOF
 		}
@@ -670,6 +672,9 @@ func sseFrames(r io.Reader) responseFrames {
 			line, err := readSSELine(reader)
 			if err != nil && err != io.EOF {
 				return nil, err
+			}
+			if len(line) > 0 {
+				provider.SawByte(ctx)
 			}
 			atEOF := err == io.EOF
 			line = bytes.TrimRight(line, "\r\n")

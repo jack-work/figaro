@@ -27,6 +27,13 @@ was cut, and sends again after 1 s, then 3 s. A third cut in the same turn
 fails it. A tool that already started is never sent twice: that cut fails the
 turn as before.
 
+A request that gets no byte at all (no headers, or headers and then nothing)
+within `system.first_byte_timeout` (a Go duration, default `90s`; `0` turns
+it off) is a stream cut with no events, and is resent the same way. A
+keep-alive line counts as a byte. Raise it for a model on the `chat` wire that
+thinks for minutes before it sends anything. The idle timer between events is
+separate.
+
 ## Route order
 
 1. The first `[[routing.rule]]` whose `model` glob matches.

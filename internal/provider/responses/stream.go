@@ -251,6 +251,7 @@ func readResponseStream(ctx context.Context, next responseFrames, bus provider.B
 			return responseObject{Output: state.partial.outputItems()}, cut
 		}
 		state.events++
+		provider.SawByte(ctx)
 		var event responseStreamEvent
 		if err := json.Unmarshal(raw, &event); err != nil {
 			return responseObject{Output: state.partial.outputItems()}, fmt.Errorf("responses: decode event: %w", err)

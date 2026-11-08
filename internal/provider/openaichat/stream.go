@@ -48,6 +48,7 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 			return out, ctx.Err()
 		default:
 		}
+		provider.SawByte(ctx)
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
 			continue

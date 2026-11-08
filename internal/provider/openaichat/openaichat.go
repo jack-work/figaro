@@ -163,7 +163,7 @@ func (p *Provider) authorize(req *http.Request, token string) {
 	}
 }
 
-func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) (err error) {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
@@ -192,6 +192,8 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("encode request: %w", err)
 	}
 
+	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
+	defer func() { err = provider.NameStreamCut(settle(err), p.Route.Name) }()
 	resp, err := auth.SendRenewing(p.credential(), func(token string) (*http.Response, error) {
 		httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), nil)
 		if err != nil {
@@ -215,7 +217,6 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	out, err := drainSSE(ctx, resp.Body, bus)
-	err = provider.NameStreamCut(err, p.Route.Name)
 	if err != nil {
 		// A cancelled turn hands over the partial marked aborted; any other
 		// stream failure drops it.
