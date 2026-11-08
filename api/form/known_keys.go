@@ -62,6 +62,10 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},
 		{Key: "token_budget", Short: "Context window usage indicator", Mode: KeySystemManaged},
 		{Key: "truncation", Short: "Last tool truncation notice", Mode: KeySystemManaged},
+		{Key: FailureReasonKey, Short: "Why the last turn failed, as the provider or the daemon said it; removed by the next turn that ends without error", Mode: KeySystemManaged},
+		{Key: FailureCategoryKey, Short: `The last failure's kind: "rate_limited", "auth", "provider_error", "timeout", "refused" or "other"`, Mode: KeySystemManaged},
+		{Key: FailureTurnKey, Short: "The turn that failed", Mode: KeySystemManaged},
+		{Key: FailureAtKey, Short: "When it failed, unix millis", Mode: KeySystemManaged},
 
 		{Key: "datetime", Short: "Per-turn wall-clock time", Mode: KeyEphemeralPerTurn},
 	}

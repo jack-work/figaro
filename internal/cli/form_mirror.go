@@ -28,6 +28,8 @@ type formMirror struct {
 	// schema is non-zero once a peer sent an envelope version we cannot read:
 	// the mirror has stopped tracking.
 	schema int
+
+	failureShown string
 }
 
 type formApply int

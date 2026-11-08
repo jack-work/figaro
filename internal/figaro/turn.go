@@ -149,6 +149,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	)
 	defer span.End()
 	a.streamCuts = 0
+	a.turnFault = nil
 	defer func() {
 		figOtel.RecordTurn(turnCtx, time.Since(started), rounds,
 			attribute.String("provider", a.providerName()),
@@ -594,6 +595,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 	}
 	if sendErr != nil {
+		a.turnFault = sendErr
 		if a.turn == nil {
 			if appended {
 				a.endTurn("error: " + sendErr.Error())

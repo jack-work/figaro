@@ -139,6 +139,7 @@ type Agent struct {
 	suspended   atomic.Bool
 	halted      atomic.Bool
 	turnReason  string
+	turnFault   error
 
 	spool      *Spool
 	spoolMu    sync.Mutex
@@ -1092,6 +1093,7 @@ func (a *Agent) endTurnDiscarding(reason string) {
 
 func (a *Agent) finishTurn(reason string) {
 	a.turnReason = reason
+	a.recordFailure(reason)
 	// asm holds the whole streamed reply; an idle aria must not keep it.
 	if a.turn != nil {
 		a.turn.asm = nil

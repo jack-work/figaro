@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
@@ -22,7 +23,7 @@ func TestPrintStatusPanelShowsContextCapacityAndTokenCost(t *testing.T) {
 		ContextExact:  true,
 		TokensIn:      10000,
 		TokensOut:     5000,
-	}, false, 0)
+	}, false, 0, form.Snapshot{})
 	if err := out.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestPrintStatusPanelOmitsOutfitParentAsForkOrigin(t *testing.T) {
 		Parent:     "default-outfit",
 		BranchedLT: 0,
 		Vector:     []int{0},
-	}, true, 0)
+	}, true, 0, form.Snapshot{})
 	if err := out.Close(); err != nil {
 		t.Fatal(err)
 	}

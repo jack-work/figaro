@@ -71,7 +71,31 @@ func (in *interactiveInput) applyBoundFormDelta(gen uint64, d rpc.FormDelta) {
 
 func (in *interactiveInput) boundFormMoved() {
 	in.syncComments()
+	in.syncFailure()
 	in.recomputeLimit()
+}
+
+func (in *interactiveInput) syncFailure() {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.bound == nil {
+		return
+	}
+	snap, _, _ := in.bound.state()
+	failure, failed := failureOf(snap)
+	shown := ""
+	if failed {
+		shown = failure.line()
+	}
+	if in.bound.failureShown == shown {
+		return
+	}
+	in.bound.failureShown = shown
+	if !failed {
+		return
+	}
+	in.lt.status.setNoticeAt("error: "+failure.reason, alertError)
+	in.lt.render()
 }
 
 func (in *interactiveInput) syncComments() {

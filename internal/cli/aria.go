@@ -111,6 +111,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	width := termWidth()
+	snap, _ := softFormSnapshot(loaded, figaroID)
+	failure, failed := failureOf(snap)
 	// The window is labelled by turn id, not slice position.
 	if lo >= hi {
 		if w.atHead {
@@ -140,6 +142,9 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		}, width, 0, renderSettings{more: opts.details, details: opts.details, coordFormat: loaded.CoordFormat()})
 		auditRows(rows, width, "show")
 		fmt.Fprintln(stdout, strings.Join(rows, "\n"))
+		if failed && failure.turn == u.ID {
+			fmt.Fprintln(stdout, term.Red(clipToWidth("✗ "+failure.line(), width)))
+		}
 		fmt.Fprintln(stdout)
 	}
 }

@@ -67,7 +67,8 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 				}
 			}
 		}
-		printStatusPanel(stdout, f, more, forkTurn)
+		snap, _ := softFormSnapshot(loaded, f.ID)
+		printStatusPanel(stdout, f, more, forkTurn, snap)
 		return nil
 	})
 }
@@ -319,7 +320,7 @@ func printFormStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, snap form.Sn
 }
 
 // Empty or zero fields print "-" so unknown is tellable from zero.
-func printStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, more bool, forkTurn uint64) {
+func printStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, more bool, forkTurn uint64, snap form.Snapshot) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
 	rowf := func(k, format string, args ...any) { row(k, fmt.Sprintf(format, args...)) }
@@ -336,6 +337,9 @@ func printStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, more bool, forkT
 		row("short", f.Short)
 	}
 	row("state", dash(f.State))
+	if failure, failed := failureOf(snap); failed {
+		row("last-turn", failure.line())
+	}
 	row("mantra", dash(f.Mantra))
 	row("provider", dash(f.Provider))
 	row("model", dash(f.Model))
