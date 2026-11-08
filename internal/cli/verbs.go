@@ -196,6 +196,9 @@ func forkVerb(ctx context.Context, env verbEnv, plan forkPlan, intent bindIntent
 		}
 		target = bound
 	}
+	if foreignNode(target) != "" {
+		return forkOutcome{}, fmt.Errorf("%s is on another node: forking there is not supported yet", target)
+	}
 	resp, err := waitForFork(ctx, env.acli, target, at, plan.opts.outfit, plan.prompt)
 	if err != nil {
 		return forkOutcome{}, err

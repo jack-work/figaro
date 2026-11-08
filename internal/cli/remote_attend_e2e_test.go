@@ -158,6 +158,8 @@ func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsDoor(t *testing.T) {
 	require.ErrorContains(t, err, "is on another node: attend it at its head")
 	_, err = attendVerb(ctx, env, ":1")
 	require.ErrorContains(t, err, "is on another node: attend it at its head")
+	_, err = forkVerb(ctx, env, forkPlan{}, bindBranch)
+	require.ErrorContains(t, err, "is on another node: forking there is not supported yet")
 }
 
 func callCtxCLI(t *testing.T) context.Context {
