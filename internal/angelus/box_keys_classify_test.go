@@ -27,6 +27,10 @@ var boxInertOpenKeys = map[string]string{
 	"figaro_id":            "an rpc param, not a board key",
 	"x-internal-figaro-id": "an rpc param, not a board key",
 	"x-caller":             "an rpc param, not a board key",
+
+	"anthropic-ratelimit-unified-status":               "an HTTP response header, not a board key",
+	"anthropic-ratelimit-unified-reset":                "an HTTP response header, not a board key",
+	"anthropic-ratelimit-unified-representative-claim": "an HTTP response header, not a board key",
 }
 
 var (

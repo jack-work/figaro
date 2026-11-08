@@ -204,6 +204,32 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 
 var retryAfterBound = 60 * time.Second
 
+func finalRateLimit(resp *http.Response, retryAfter time.Duration, now time.Time) *provider.RateLimited {
+	if resp.StatusCode != http.StatusTooManyRequests {
+		return nil
+	}
+	if resp.Header.Get("anthropic-ratelimit-unified-status") != "rejected" && retryAfter <= retryAfterBound {
+		return nil
+	}
+	limit := &provider.RateLimited{Provider: providerName, Window: rateLimitWindow(resp.Header.Get("anthropic-ratelimit-unified-representative-claim"))}
+	if secs, err := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("anthropic-ratelimit-unified-reset")), 10, 64); err == nil && secs > 0 {
+		limit.Resets = time.Unix(secs, 0)
+	} else if retryAfter > 0 {
+		limit.Resets = now.Add(retryAfter)
+	}
+	return limit
+}
+
+func rateLimitWindow(claim string) string {
+	switch {
+	case strings.HasPrefix(claim, "seven_day"):
+		return "7-day"
+	case strings.HasPrefix(claim, "five_hour"):
+		return "5-hour"
+	}
+	return ""
+}
+
 // doWithAuthRetry retries once on 401 with a fresh token and up to
 // maxTransientRetries on transient failures, before any body is read.
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
@@ -271,6 +297,10 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			ra := parseRetryAfter(resp.Header)
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
+			if limit := finalRateLimit(resp, ra, time.Now()); limit != nil {
+				slog.WarnContext(ctx, "anthropic rate limit reached, not retrying", "window", limit.Window, "resets", limit.Resets)
+				return nil, apiKey, limit
+			}
 			lastErr = fmt.Errorf("anthropic %d (transient)", resp.StatusCode)
 			if ra > 0 {
 				delay = min(ra, retryAfterBound)
