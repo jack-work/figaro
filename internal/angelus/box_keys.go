@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -43,6 +44,8 @@ var boxWritable = []string{
 	decide.ModelKey,
 	decide.APIKey,
 }
+
+var boxRetires = []string{store.SystemRetiredKey}
 
 var boxHeldKeys = []struct{ key, why string }{
 	{"system.environment", "it names a host directory the daemon writes wire logs to"},
@@ -100,6 +103,9 @@ func (c callerKeys) deny() []rpc.KeyDeny {
 	}
 	if !c.owns {
 		for _, k := range form.OwnerHeldKeys() {
+			if c.boxed && slices.Contains(boxRetires, k) {
+				continue
+			}
 			out = append(out, rpc.KeyDeny{Key: k, Kind: rpc.DenyOwnerHeld,
 				Reason: "owner-held: only the owner sets it"})
 		}

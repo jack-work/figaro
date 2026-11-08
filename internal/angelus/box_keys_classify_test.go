@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -121,8 +122,13 @@ func TestALifetimeIsNeverBoxWritable(t *testing.T) {
 	}
 }
 
+// system.retired is the one exception, by name: figaro retire works inside a
+// box on the box's own arias.
 func TestOwnerHeldKeysAreNeverBoxWritable(t *testing.T) {
 	for _, key := range form.OwnerHeldKeys() {
+		if slices.Contains(boxRetires, key) {
+			continue
+		}
 		for _, w := range boxWritable {
 			if rpc.KeyUnder(key, w) || rpc.KeyUnder(w, key) {
 				t.Errorf("owner-held %s is box-writable under %s", key, w)

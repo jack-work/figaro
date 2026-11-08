@@ -22,6 +22,8 @@ func TestOwnerHeldCoversEachKeyAndWhatIsUnderIt(t *testing.T) {
 		"system.ttl":                         "system.ttl",
 		"system.reap_if_empty":               "system.reap_if_empty",
 		"system.ttl_note":                    "",
+		"system.keepalive":                   "system.keepalive",
+		"system.retired":                     "system.retired",
 	} {
 		got, held := OwnerHeld(path)
 		if got != want || held != (want != "") {

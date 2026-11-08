@@ -363,12 +363,14 @@ the daemon assigns is under "Workspaces under a sandbox" below.
 **Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
 `system.max_context_tokens`, `system.credo`, `system.tools`,
 `system.methods`, `system.environment` (where wire dumps go),
-`system.decide.base_url` (where a provider credential goes), `system.ttl` and
-`system.reap_if_empty` (when the sweep deletes a node and its subtree)
+`system.decide.base_url` (where a provider credential goes), and
+`system.ttl`, `system.reap_if_empty`, `system.keepalive` and
+`system.retired` (when the sweep deletes a node and its subtree)
 (`api/form/owner_held.go`) are set or removed only by the
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
-and form.create/bind. `system.tools` lists the tools an aria may use; `[]` is
+and form.create/bind. The one exception is `system.retired` for a box, on
+the arias in that box, so `figaro retire` works inside one. `system.tools` lists the tools an aria may use; `[]` is
 none, unset is all, and a value that is not a list is none. It is enforced
 where tools are offered to the model and again where a call runs, so a
 forged call to an unlisted tool is refused. Owner-held does not bind an

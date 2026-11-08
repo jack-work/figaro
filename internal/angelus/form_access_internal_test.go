@@ -30,7 +30,7 @@ func accessPaths() []string {
 // guardOracle restates, independently of deny(), what refuseCallerKeys and
 // CheckWritable refused before access existed.
 func guardOracle(c callerKeys, path string) (managed, refused bool) {
-	if _, ok := form.OwnerHeld(path); ok && !c.owns {
+	if _, ok := form.OwnerHeld(path); ok && !c.owns && !(c.boxed && rpc.KeyUnder(path, "system.retired")) {
 		return false, true
 	}
 	if c.boxed {
