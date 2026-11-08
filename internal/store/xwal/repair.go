@@ -51,6 +51,10 @@ func repairCoherentCuts(t *Trunks) error {
 			continue
 		}
 		mainTail, err := nodeMainTail(t.irDir(key), codec)
+		if errors.Is(err, segment.ErrCorrupt) {
+			quarantine(key, err)
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("xwal: repair leaf %q: %w", key, err)
 		}
@@ -63,6 +67,10 @@ func repairCoherentCuts(t *Trunks) error {
 				continue
 			}
 			trimmed, err := trimChannelNode(dir, codec, mc.Kind == ChannelReducible.String(), mainTail)
+			if errors.Is(err, segment.ErrCorrupt) {
+				quarantine(key, err)
+				break
+			}
 			if err != nil {
 				return fmt.Errorf("xwal: repair channel %q leaf %q: %w", mc.Name, key, err)
 			}
@@ -73,6 +81,11 @@ func repairCoherentCuts(t *Trunks) error {
 		}
 	}
 	return nil
+}
+
+func quarantine(leaf string, err error) {
+	slog.Error("xwal: leaf left unrepaired: a corrupt frame has valid records after it, so nothing past it is trimmed",
+		"leaf", leaf, "err", err)
 }
 
 type frameSpan struct {
@@ -91,7 +104,7 @@ func scanSegmentFrames(path string, codec segment.SegmentCodec) ([]frameSpan, er
 		spans = append(spans, frameSpan{off: off, len: frameLen})
 		return nil
 	}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return spans, nil
 }

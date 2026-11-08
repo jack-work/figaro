@@ -302,6 +302,15 @@ func (x *XWAL) ChannelBounds(name string) (first, last uint64, ok bool) {
 	return l.FirstIndex(), l.LastIndex(), true
 }
 
+func (x *XWAL) OpenChannel(name string) error {
+	ch := x.channel(name)
+	if ch == nil {
+		return nil
+	}
+	_, err := ch.Log()
+	return err
+}
+
 // ChannelForkBase is one channel's fork base, opening only that channel.
 func (x *XWAL) ChannelForkBase(name string) (uint64, bool) {
 	ch := x.channel(name)
