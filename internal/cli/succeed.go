@@ -17,6 +17,8 @@ import (
 
 const (
 	succeedDefaultTurn = 2
+	succeedHeadTurn    = 0
+	succeedHead        = "head"
 	succeedDefaultTTL  = "10m"
 	succeededPrefix    = "SUCCEEDED: "
 
@@ -75,9 +77,11 @@ func parseSucceedPlan(role, successor, turn, ttl, abdication, title, prompt stri
 		return p, errors.New("the succession prompt must follow `--`")
 	}
 	if turn != "" {
-		var n uint64
-		if _, err := fmt.Sscanf(turn, "%d", &n); err != nil || n < 1 || fmt.Sprint(n) != turn {
-			return p, fmt.Errorf("--turn %q: want a turn number, 1 or more", turn)
+		n := uint64(succeedHeadTurn)
+		if turn != succeedHead {
+			if _, err := fmt.Sscanf(turn, "%d", &n); err != nil || n < 1 || fmt.Sprint(n) != turn {
+				return p, fmt.Errorf("--turn %q: want a turn number, 1 or more, or head", turn)
+			}
 		}
 		if successor != "" {
 			return p, errors.New("--turn picks where to fork; --successor names an aria that already exists. Pass one")
@@ -269,7 +273,11 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 			}
 		}
 	} else {
-		progress(fmt.Sprintf("forking %s at turn %d", ariaName(old.ID), plan.turn))
+		if plan.turn == succeedHeadTurn {
+			progress(fmt.Sprintf("forking %s at its head", ariaName(old.ID)))
+		} else {
+			progress(fmt.Sprintf("forking %s at turn %d", ariaName(old.ID), plan.turn))
+		}
 		outfits, patch := plan.birth()
 		out, err := acli.Fork(ctx, old.ID, plan.turn, 0, outfits, patch)
 		if err != nil {

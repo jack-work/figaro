@@ -352,6 +352,9 @@ func completeSucceed(c *cmdkit.CompleteContext) []string {
 	if n := len(c.Args); n > 0 && c.Args[n-1] == "--abdication" {
 		return []string{abdicateRetire, abdicateLinger}
 	}
+	if n := len(c.Args); n > 0 && c.Args[n-1] == "--turn" {
+		return []string{succeedHead}
+	}
 	if positionals(c.Args, "--turn", "--successor", "--title", "--ttl", "--abdication") == 0 {
 		return fetchNames(c, "form")
 	}

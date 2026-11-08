@@ -1139,11 +1139,12 @@ children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it rep
 		Name:  "succeed",
 		Group: "Session",
 		Short: "Hand a role to a successor and wind the old aria down",
-		Usage: "succeed <@role> [--turn <n> | --successor <aria>] [--title <t>] [-O <outfits>] [-S <k=v>] [-D <keys>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
+		Usage: "succeed <@role> [--turn <n>|head | --successor <aria>] [--title <t>] [-O <outfits>] [-S <k=v>] [-D <keys>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
 		Long: `Replace the aria a role points at. The role must already target an aria
 that exists; that aria is the predecessor.
 
   figaro succeed @warden -- take over from here
+  figaro succeed @warden --turn head -- carry on from the last turn
   figaro succeed @warden --turn 5 --title "deploy warden II" -- go
   figaro succeed @warden --successor <aria> -- you hold the seat now
   figaro succeed @warden --ttl 0 -- go          kill the predecessor at once
@@ -1151,10 +1152,15 @@ that exists; that aria is the predecessor.
 
 In order, stopping at the first step that fails:
 
-  1. fork the predecessor at --turn (default 2: the successor keeps turn 1
-     and the prompt becomes its turn 2), its mantra set to --title. The
-     fork carries the model its turn was recorded with; -O/-S/-D dress it
-     in the same call, as with fork, so it can come up on today's.
+  1. fork the predecessor, its mantra set to --title. --turn says what the
+     successor keeps:
+       (none)    turn 1 only; the prompt becomes its turn 2
+       --turn N  turns 1..N-1; the prompt becomes its turn N
+       --turn head
+                 every turn; the prompt follows the last. On an aria
+                 with N turns, --turn N+1 is the same
+     The fork carries the model its turn was recorded with; -O/-S/-D dress
+     it in the same call, as with fork, so it can come up on today's.
      --successor names an existing aria instead and skips the fork.
   2. demote the predecessor beneath the successor (figaro demote), so its
      branches survive its end. A successor not drawn under it is left where
@@ -1176,7 +1182,7 @@ In the pager, :succeed takes the same flags. When the aria on screen is the
 predecessor, the pager moves to the successor afterwards; --stay keeps it.`,
 		ArgsMin: 0,
 		Flags: []cmdkit.FlagDef{
-			{Long: "turn", Description: "Fork the predecessor at this turn (default 2)"},
+			{Long: "turn", Description: "Fork the predecessor at this turn, or head to keep every turn (default 2)"},
 			{Long: "successor", Description: "An existing aria to take the role, instead of a fork"},
 			{Long: "title", Description: "The successor's mantra"},
 			{Long: "ttl", Description: "Reap the predecessor this long from now; 0 kills it (default 10m)"},
