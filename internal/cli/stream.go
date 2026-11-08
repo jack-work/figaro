@@ -684,6 +684,12 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				break
 			} else if ok {
 				i += consumed
+				in.mu.Lock()
+				waiting := in.lt.tr.pitPending()
+				in.mu.Unlock()
+				if waiting {
+					continue
+				}
 				delta := 0
 				switch ev.Button {
 				case ldmouse.WheelUp:

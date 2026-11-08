@@ -70,12 +70,9 @@ func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
 func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
 func (t *transcript) dispatch(ev keyEvent) {
-	if t.awaiting {
-		if t.pit.shown == t.awaitShown {
-			t.awaitKeys = append(t.awaitKeys, ev)
-			return
-		}
-		t.pitArrived()
+	if t.pitPending() {
+		t.awaitKeys = append(t.awaitKeys, ev)
+		return
 	}
 	t.held = false
 	if t.pending != "" {

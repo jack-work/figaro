@@ -39,6 +39,17 @@ func (t *transcript) awaitPit() {
 	})
 }
 
+func (t *transcript) pitPending() bool {
+	if !t.awaiting {
+		return false
+	}
+	if t.pit.shown == t.awaitShown {
+		return true
+	}
+	t.pitArrived()
+	return false
+}
+
 func (t *transcript) pitArrived() {
 	if !t.awaiting {
 		return
