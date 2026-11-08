@@ -107,10 +107,15 @@ func (t *transcript) atAriaFloor() bool {
 	if t.from.Turn <= 1 && t.from.Node == 0 {
 		return true
 	}
-	if _, held := t.client.Before(t.from, 1); held > 0 {
+	if t.holdsBelowFloor() {
 		return false
 	}
 	return !t.client.MoreBefore()
+}
+
+func (t *transcript) holdsBelowFloor() bool {
+	_, held := t.client.Before(t.from, 1)
+	return held > 0
 }
 
 func (t *transcript) growWindow(n int) []aria.Message {
@@ -174,7 +179,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		hole := *gap
 		return transcriptPageRequest{fill: &hole}, true
 	}
-	if !t.wantOlder() {
+	if !t.wantOlder() || t.holdsBelowFloor() {
 		return transcriptPageRequest{}, false
 	}
 	if t.atAriaFloor() {

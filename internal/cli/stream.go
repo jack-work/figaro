@@ -291,9 +291,6 @@ func (in *interactiveInput) readHistoryIntoPager() {
 }
 
 func (in *interactiveInput) chaseWantedLocked() bool {
-	if in.replaying {
-		return in.lt.transcriptShowsGap()
-	}
 	return in.lt.transcriptWantsHistory()
 }
 

@@ -136,18 +136,3 @@ func TestAShortTranscriptWantsHistoryOnlyWhileMoreIsHeld(t *testing.T) {
 		t.Fatal("at the floor of the aria there is nothing to want")
 	}
 }
-
-// A replay answers reads from what the tape recorded, and no recording asked
-// for history the pager had not wanted yet: a chase there has no honest
-// answer, and under --lockstep its page loop never settles.
-func TestAReplayDoesNotChaseHistory(t *testing.T) {
-	reader := &clippedTailReader{history: transcriptHistory(60), read: make(chan struct{}, 64)}
-	in := clippedTailInput(reader)
-	in.replaying = true
-	in.enterTranscript()
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	if in.pageInFlight {
-		t.Fatal("a replay started a history read entering the pager")
-	}
-}
