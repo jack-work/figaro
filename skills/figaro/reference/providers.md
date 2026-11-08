@@ -60,8 +60,8 @@ cannot be made that small is replaced with a note. Over the count, the oldest
 images are replaced with a note. A provider's own catalog numbers (Copilot
 states one image of 3 MiB) are listed but not enforced up front: Copilot took
 two images and a 4.5 MB image on such models on 2026-11-08. When a provider
-refuses a request over an image's size (Anthropic's wording through Copilot's
-messages route: "image exceeds 10 MB maximum"), figaro downscales to the
+refuses a request over an image's size (Anthropic's wording, directly or
+through Copilot's messages route: "image exceeds 10 MB maximum"), figaro downscales to the
 catalog's size, or to the size the refusal names, and sends once more; it
 never tries a third time.
 

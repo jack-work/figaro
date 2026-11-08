@@ -1013,39 +1013,57 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		in.Images = provider.ImageLimitsOf(e, providerName, model, false)
 	}
 
-	req, rows, err := a.projectRequest(src, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
+	req, projected, err := a.projectRequest(src, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
 	if err != nil {
 		return err
 	}
-	if rows, err = a.shapeRequest(providerName, req, rows, in); err != nil {
-		return err
-	}
-	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
-	if err != nil {
-		return fmt.Errorf("encode request: %w", err)
-	}
-	figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
 
 	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
 	defer func() { err = provider.NameStreamCut(settle(err), providerName) }()
-	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
-		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), nil)
-		if herr != nil {
-			return nil, fmt.Errorf("create request: %w", herr)
+	post := func(in provider.SendInput) (*http.Response, error) {
+		rows, err := a.shapeRequest(providerName, req, projected, in)
+		if err != nil {
+			return nil, err
 		}
-		body.Attach(httpReq)
-		httpReq.Header.Set("Content-Type", "application/json")
-		a.setAuthHeaders(httpReq, token, betaMessages, messageBetas(model)...)
-		return httpReq, nil
-	})
+		body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
+		if err != nil {
+			return nil, fmt.Errorf("encode request: %w", err)
+		}
+		figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
+		resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
+			httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), nil)
+			if herr != nil {
+				return nil, fmt.Errorf("create request: %w", herr)
+			}
+			body.Attach(httpReq)
+			httpReq.Header.Set("Content-Type", "application/json")
+			a.setAuthHeaders(httpReq, token, betaMessages, messageBetas(model)...)
+			return httpReq, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			errBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, refusalOf(resp.StatusCode, errBody, fmt.Errorf("anthropic: %s", apiErrorMessage(resp.StatusCode, errBody)))
+		}
+		return resp, nil
+	}
+	resp, err := post(in)
+	var refused *provider.ImageRefused
+	if errors.As(err, &refused) && ctx.Err() == nil {
+		e, _ := a.SeedModel(model)
+		if lim, ok := provider.RefitAfterRefusal(e, providerName, model, refused); ok {
+			slog.InfoContext(ctx, "anthropic refused an image; refitting and resending once", "model", model, "max_bytes", lim.MaxBytes, "err", err)
+			in.Images = lim
+			resp, err = post(in)
+		}
+	}
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(resp.Body)
-		return refusalOf(resp.StatusCode, errBody, fmt.Errorf("anthropic: %s", apiErrorMessage(resp.StatusCode, errBody)))
-	}
 
 	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(providerName, bus)
 }

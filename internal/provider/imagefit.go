@@ -274,3 +274,13 @@ type ImageRefused struct {
 func (e *ImageRefused) Error() string { return e.Err.Error() }
 
 func (e *ImageRefused) Unwrap() error { return e.Err }
+
+func RefitAfterRefusal(e models.Entry, providerName, model string, refused *ImageRefused) (ImageLimits, bool) {
+	lim := ImageLimitsOf(e, providerName, model, true)
+	lim.MaxCount, lim.CountWhy = 0, ""
+	if said := refused.MaxBase64 * 3 / 4; said > 0 && (lim.MaxBytes == 0 || said < lim.MaxBytes) {
+		lim.MaxBytes = said
+		lim.BytesWhy = fmt.Sprintf("%s refused an image over %s for model %s", providerName, tool.FormatSize(refused.MaxBase64), model)
+	}
+	return lim, lim.MaxBytes > 0
+}

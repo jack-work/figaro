@@ -27,7 +27,6 @@ import (
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -306,13 +305,8 @@ func (p *Provider) refitAfterRefusal(ctx context.Context, model string, err erro
 		_, _ = p.fetchCatalog(cctx)
 		cancel()
 	}
-	lim := p.imageLimits(model, true)
-	lim.MaxCount, lim.CountWhy = 0, ""
-	if said := refused.MaxBase64 * 3 / 4; said > 0 && (lim.MaxBytes == 0 || said < lim.MaxBytes) {
-		lim.MaxBytes = said
-		lim.BytesWhy = fmt.Sprintf("%s refused an image over %s for model %s", p.spec.Name, tool.FormatSize(refused.MaxBase64), model)
-	}
-	return lim, lim.MaxBytes > 0
+	e, _ := p.entry(model)
+	return provider.RefitAfterRefusal(e, p.spec.Name, model, refused)
 }
 
 func (p *Provider) imageLimits(model string, anySource bool) provider.ImageLimits {
