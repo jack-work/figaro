@@ -52,8 +52,11 @@ Five rules that are not guessable:
   outranks `-A`; mint with `new` instead. See [subagents.md](subagents.md).
 - **A fork's prompt is a nudge, never a brief.** The branch holds your whole
   conversation already, so `go` or `take the second option` is a complete
-  instruction. Write a full prompt only for `new`, whose aria starts empty.
-  See [reference/trunks.md](reference/trunks.md).
+  instruction. Write a full prompt only for `new`, whose aria starts empty,
+  or for a fork from an early turn (`<id>:<turn>`), which holds only that prefix.
+  The branch's first move is a short plan sent to its parent
+  (`figaro send -f --id <parent> -- "plan: ..."`); the parent corrects the plan
+  instead of pre-writing it. See [reference/trunks.md](reference/trunks.md).
 - **`ls` is scoped to where you are attended.** It is `ls`, not `ls -R /`.
   Start scoped; widen with `-H` (home) or `-g` (global) only when scoped comes
   back empty.
