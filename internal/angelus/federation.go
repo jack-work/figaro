@@ -284,6 +284,7 @@ func (h *handlers) listingPeers(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 		_ = json.Unmarshal(params, &req)
 		nodes := slices.DeleteFunc(h.fed.members.Nodes(), func(n string) bool { return slices.Contains(req.ExceptNodes, n) })
 		if _, ok := authz.BearerOf(ctx); !ok {
+			local.PeersUnasked = len(nodes)
 			return local, nil
 		}
 		answers := make([]nodeListing, len(nodes))

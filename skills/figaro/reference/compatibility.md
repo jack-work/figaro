@@ -61,6 +61,12 @@ capabilities.
   then drops whatever that daemon says about its node, refusal included,
   in favour of its own daemon's answer. An older CLI sends nothing and
   gets today's listing.
+- **A listing with no bearer asks no peer** (0.56.2): a peer would refuse
+  the call anyway, so the owner's own ls lists this node only, where it
+  once warned once per peer. The response's `peers_unasked` counts the
+  peers it left out, and `ls` says so in one line. An older daemon still
+  tries and the CLI prints its warnings as before; an older CLI ignores
+  the count.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

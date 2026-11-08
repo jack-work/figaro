@@ -79,6 +79,8 @@ type ListResponse struct {
 	Figaros     []FigaroInfoResponse `json:"figaros"`
 	NextBefore  string               `json:"next_before,omitempty"`
 	Unreachable []NodeUnreachable    `json:"unreachable,omitempty"`
+
+	PeersUnasked int `json:"peers_unasked,omitempty"`
 }
 
 type BindRequest struct {

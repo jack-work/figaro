@@ -60,7 +60,7 @@ func nodesAnswering(resp *rpc.ListResponse, door string) map[string]bool {
 }
 
 func mergeHome(away, home *rpc.ListResponse, homeNode, door string, covered map[string]bool) *rpc.ListResponse {
-	out := &rpc.ListResponse{NextBefore: away.NextBefore}
+	out := &rpc.ListResponse{NextBefore: away.NextBefore, PeersUnasked: away.PeersUnasked + home.PeersUnasked}
 	for _, r := range away.Figaros {
 		if r.Node != homeNode {
 			out.Figaros = append(out.Figaros, r)

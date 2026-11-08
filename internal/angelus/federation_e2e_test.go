@@ -379,8 +379,8 @@ func TestFederationListSkipNarrowsOnlyTheFanOut(t *testing.T) {
 }
 
 // A caller with no bearer (the owner on its peercred socket) cannot reach a
-// peer, so the listing does not try: it lists this node only. Every plain ls
-// on gluck once warned that spain refused it.
+// peer, so the listing does not try: it lists this node and counts the peers
+// it left out. Every plain ls on gluck once warned that spain refused it.
 func TestFederationListWithoutABearerAsksNoPeer(t *testing.T) {
 	a, b := newFedPair(t)
 	here, there := a.mint(), b.mint()
@@ -389,12 +389,21 @@ func TestFederationListWithoutABearerAsksNoPeer(t *testing.T) {
 	resp, err := a.owner.List(ctx)
 	require.NoError(t, err)
 	require.Empty(t, resp.Unreachable)
+	require.Equal(t, 1, resp.PeersUnasked)
 	ids := map[string]bool{}
 	for _, r := range resp.Figaros {
 		ids[r.ID] = true
 	}
 	require.True(t, ids[here])
 	require.False(t, ids[there])
+
+	resp, err = a.owner.ListWith(ctx, rpc.ListRequest{ExceptNodes: []string{b.id}})
+	require.NoError(t, err)
+	require.Zero(t, resp.PeersUnasked, "a peer the caller named is not one it is missing")
+
+	resp, err = a.as("probe").List(ctx)
+	require.NoError(t, err)
+	require.Zero(t, resp.PeersUnasked)
 }
 
 // A fork stays on its parent's node.

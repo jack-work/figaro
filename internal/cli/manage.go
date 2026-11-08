@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -149,6 +150,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderFormScope(figs, boundID, o.limit)
 			printExpiredNote(hidden, withheldReaped(resp.Figaros, figs))
+			printPeersUnasked(loaded, resp.PeersUnasked)
 			return nil
 		}
 
@@ -161,6 +163,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderGlobal(figs, boundID, o.limit)
 			printExpiredNote(hidden, withheldReaped(resp.Figaros, figs))
+			printPeersUnasked(loaded, resp.PeersUnasked)
 			return nil
 		}
 
@@ -234,8 +237,24 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			fmt.Fprintf(stderrw, "\n%s\n", note)
 		}
 		printExpiredNote(hidden, reapedHidden)
+		printPeersUnasked(loaded, resp.PeersUnasked)
 		return nil
 	})
+}
+
+func printPeersUnasked(loaded *config.Loaded, n int) {
+	if n == 0 {
+		return
+	}
+	if resolveDoor().configured {
+		fmt.Fprintf(stderrw, "\n%d peer(s) of this node not listed\n", n)
+		return
+	}
+	troupe := "<troupe>"
+	if names, _ := boot.TroupeNames(loaded); len(names) == 1 {
+		troupe = names[0]
+	}
+	fmt.Fprintf(stderrw, "\nthis node only: %d peer(s) not asked (FIGARO_TROUPE=%s figaro ls asks the troupe)\n", n, troupe)
 }
 
 func printExpiredNote(n, reaped int) {

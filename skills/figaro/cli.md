@@ -147,7 +147,7 @@ The wire behind all of this: the interrupt's queue disposition, the
 
 | Command | Effect |
 |---|---|
-| `figaro ls [<id>]` | List arias. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. Through a troupe door, this node's rows come from its own daemon, not from the door. |
+| `figaro ls [<id>]` | List arias. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. Through a troupe door, this node's rows come from its own daemon, not from the door. Without one, it lists this node only and says how many peers it did not ask. |
 | `figaro ls ^` / `^2` / `^^` | Climb N layers: your parent's subtree, you still in it. Past the root it clamps to the top-level aria and prints a note. |
 | `figaro ls -H` | Home view: every top-level aria, without unbinding you. (`-h` is help, on every verb.) |
 | `figaro lsh` | `ls -H`, spelled shorter. Same flags. |

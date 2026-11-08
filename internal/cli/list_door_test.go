@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -101,4 +103,31 @@ func TestMergeHomeDropsTheDoorsWordOnThisNode(t *testing.T) {
 	}
 	require.Equal(t, map[string]string{"on-door": "", "on-peer": "peer", "mine": "home", "only-home-sees": "lone"}, ids)
 	require.Equal(t, []rpc.NodeUnreachable{{Node: "far", Error: "down (as seen from node door; this node did not try it)"}}, got.Unreachable)
+}
+
+// A local listing names the peers it could not ask in one line, never one
+// warning per peer, and names the troupe when this config has only one.
+func TestLocalListSaysOnceWhatItDidNotAsk(t *testing.T) {
+	cfg := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(cfg, "troupes"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(cfg, "troupes", "kelliher.toml"), []byte("url = \"wss://x\"\n"), 0o600))
+	t.Setenv("FIGARO_CONFIG_DIR", cfg)
+	t.Setenv("FIGARO_TROUPE", "")
+	loaded, err := config.Load(cfg)
+	require.NoError(t, err)
+
+	var errs bytes.Buffer
+	prev := stderrw
+	stderrw = &errs
+	t.Cleanup(func() { stderrw = prev })
+
+	printPeersUnasked(loaded, 0)
+	require.Empty(t, errs.String())
+	printPeersUnasked(loaded, 2)
+	require.Equal(t, "\nthis node only: 2 peer(s) not asked (FIGARO_TROUPE=kelliher figaro ls asks the troupe)\n", errs.String())
+}
+
+func TestMergeHomeCountsBothSidesUnaskedPeers(t *testing.T) {
+	got := mergeHome(&rpc.ListResponse{PeersUnasked: 1}, &rpc.ListResponse{PeersUnasked: 2}, "home", "door", map[string]bool{"door": true})
+	require.Equal(t, 3, got.PeersUnasked)
 }
