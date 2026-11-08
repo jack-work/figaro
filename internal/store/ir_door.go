@@ -110,6 +110,18 @@ func GuardIR(inner Log[message.Message]) Log[message.Message] {
 	return &figIRLog{Log: inner}
 }
 
+func (l *figIRLog) TailAfter(lt uint64) ([]Entry[message.Message], int) {
+	return TailAfter(l.Log, lt)
+}
+
+func (l *figIRLog) TailSnapshot(n int) []Entry[message.Message] {
+	return TailSnapshot(l.Log, n)
+}
+
+func (l *figIRLog) ScanRange(from, to uint64, yield func(Entry[message.Message]) bool) {
+	Scan(l.Log, from, to, yield)
+}
+
 // CloseOpenToolCalls: the door does this on the next append anyway; the
 // interrupt path calls it so a fork or read taken before the next write never
 // sees a call without a result.

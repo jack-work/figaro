@@ -407,7 +407,7 @@ func (l *treeLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 	}
 	from := l.key(suffix[0]) - 1
 	to := l.key(suffix[len(suffix)-1])
-	return l.span(from, to), total
+	return l.peek(from, to), total
 }
 
 // TailSnapshot is a count, not a coordinate span: the key space is sparse, so

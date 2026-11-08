@@ -117,6 +117,35 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 	return out
 }
 
+func (l *xwalLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
+	var (
+		out   []Entry[T]
+		total int
+	)
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		first, last, ok := channelBounds(xw, l.channel)
+		if !ok {
+			return nil
+		}
+		total = int(last-first) + 1
+		start := first
+		if lt+1 > start {
+			start = lt + 1
+		}
+		for at := start; at <= last; at++ {
+			r, err := xw.ReadAt(l.channel, at)
+			if err != nil {
+				continue
+			}
+			if e, ok := decodeRecord[T](r); ok {
+				out = append(out, e)
+			}
+		}
+		return nil
+	})
+	return out, total
+}
+
 // ScanRange walks (from..to] under one open, handing each record over before
 // the next is read.
 func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
