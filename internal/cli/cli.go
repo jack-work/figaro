@@ -1839,8 +1839,8 @@ the daemon neither reads nor writes it.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; snapshot copies the most recently active arias, with their history and every form, into a new store; unit says whether the daemon on the socket is the systemd unit's",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j]>",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; snapshot copies the most recently active arias, with their history and every form, into a new store; quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, normalize)"},
@@ -1851,16 +1851,22 @@ the daemon neither reads nor writes it.`,
 			{Long: "from", Description: "snapshot: the store to copy from (default: this one)"},
 			{Long: "arias", Description: "snapshot: how many of the most recently active arias (default 50, 0 = all)"},
 			{Long: "max-mb", Description: "snapshot: the size cap in MB (default 500, 0 = none)"},
+			{Long: "at", Description: "quarantine release: the corrupt frame's byte offset, as ls prints it"},
+			{Long: "channel", Description: "quarantine release: the channel, when several hold a bad frame at that offset"},
+			{Long: "yes", Short: "y", IsBool: true, Description: "quarantine release: release without asking"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) == 2 && ctx.Args[0] == "pprof" {
 				return runDoctorPprof(ctx.Args[1])
 			}
+			if len(ctx.Args) >= 1 && ctx.Args[0] == "quarantine" {
+				return runDoctorQuarantine(ctx.Args[1:], ctx.Flag("at"), ctx.Flag("channel"), ctx.BoolFlag("json"), ctx.BoolFlag("yes"))
+			}
 			if len(ctx.Args) == 2 && ctx.Args[0] == "snapshot" {
 				return runDoctorSnapshot(ctx.Args[1], ctx.Flag("from"), ctx.Flag("arias"), ctx.Flag("max-mb"), ctx.BoolFlag("json"))
 			}
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1889,7 +1895,7 @@ the daemon neither reads nor writes it.`,
 			case "unit":
 				return runDoctorUnit(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},
@@ -1898,6 +1904,7 @@ the daemon neither reads nor writes it.`,
 			{"skills", "what the binary ships"}, {"ttl", "nodes carrying a lifetime"},
 			{"unit", "whether the daemon on the socket is the systemd unit's"},
 			{"snapshot", "copy recent arias into a new store"},
+			{"quarantine", "segments a corrupt frame keeps closed, and releasing one"},
 		}, nil),
 	})
 

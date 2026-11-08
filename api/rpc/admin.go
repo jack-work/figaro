@@ -250,3 +250,33 @@ type PprofArmRequest struct {
 type PprofArmResponse struct {
 	Socket string `json:"socket,omitempty"`
 }
+
+type QuarantineEntry struct {
+	Figaro  string   `json:"figaro"`
+	Node    string   `json:"node"`
+	Channel string   `json:"channel"`
+	Segment string   `json:"segment"`
+	Offset  int64    `json:"offset"`
+	Shared  []string `json:"shared,omitempty"`
+}
+
+type QuarantineListResponse struct {
+	Entries []QuarantineEntry `json:"entries"`
+}
+
+type QuarantineReleaseRequest struct {
+	Figaro  string `json:"figaro"`
+	Channel string `json:"channel,omitempty"`
+	At      int64  `json:"at"`
+	Confirm bool   `json:"confirm,omitempty"`
+}
+
+type QuarantineReleaseResponse struct {
+	QuarantineEntry
+	BytesCut      int64          `json:"bytes_cut"`
+	LaterSegments []string       `json:"later_segments,omitempty"`
+	Aside         string         `json:"aside"`
+	Trimmed       map[string]int `json:"trimmed,omitempty"`
+	Applied       bool           `json:"applied"`
+	Warning       string         `json:"warning,omitempty"`
+}

@@ -105,6 +105,10 @@ ProviderLedgerRequest.Aria
 ProviderLedgerRequest.Limit
 QuaRequest.Form
 QuaRequest.Text
+QuarantineReleaseRequest.At
+QuarantineReleaseRequest.Channel
+QuarantineReleaseRequest.Confirm
+QuarantineReleaseRequest.Figaro
 QueueDeleteRequest.All
 QueueDeleteRequest.Epoch
 QueueDeleteRequest.IDs

@@ -28,6 +28,10 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 		return f, nil
 	}
 	h.restoreMu.Lock()
+	if h.releasing[ariaID] {
+		h.restoreMu.Unlock()
+		return nil, fmt.Errorf("%s is being released from quarantine; try again when that is done", ariaID)
+	}
 	if err := h.holdsMove(ariaID); err != nil {
 		h.restoreMu.Unlock()
 		return nil, err

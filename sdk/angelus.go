@@ -450,3 +450,15 @@ func (c *Angelus) ActOn(ctx context.Context, method string, params json.RawMessa
 	}
 	return out, nil
 }
+
+func (c *Angelus) QuarantineList(ctx context.Context) (*rpc.QuarantineListResponse, error) {
+	var resp rpc.QuarantineListResponse
+	err := c.call(ctx, rpc.MethodQuarantineList, struct{}{}, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) QuarantineRelease(ctx context.Context, req rpc.QuarantineReleaseRequest) (*rpc.QuarantineReleaseResponse, error) {
+	var resp rpc.QuarantineReleaseResponse
+	err := c.call(ctx, rpc.MethodQuarantineRelease, req, &resp)
+	return &resp, err
+}

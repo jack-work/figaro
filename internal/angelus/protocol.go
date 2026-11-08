@@ -116,6 +116,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodStatus:             h.status,
 		rpc.MethodMemCollect:         h.memCollect,
 		rpc.MethodPprofArm:           h.pprofArm,
+		rpc.MethodQuarantineList:     h.quarantineList,
+		rpc.MethodQuarantineRelease:  h.quarantineRelease,
 		rpc.MethodProviderLedger:     h.providerLedger,
 		rpc.MethodModelsWant:         h.modelsWant,
 		rpc.MethodModelsRefresh:      h.modelsRefresh,
@@ -287,6 +289,7 @@ type handlers struct {
 	// while a wake is running.
 	restoreMu sync.Mutex
 	restoring map[string]*restoreCall
+	releasing map[string]bool
 
 	moving    moving
 	settling  atomic.Bool
