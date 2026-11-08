@@ -25,7 +25,7 @@ func (t *transcript) clock() time.Time {
 	if t.now != nil {
 		return t.now()
 	}
-	return time.Now()
+	return clk.Now()
 }
 
 func (t *transcript) stickyEdge() (turn, line int) {

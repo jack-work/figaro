@@ -198,10 +198,10 @@ func (t *livelogTurn) setRenderLock(mu sync.Locker) {
 	t.pace.lock = mu
 	t.pace.min = transcriptFrameInterval
 	if t.pace.now == nil {
-		t.pace.now = time.Now
+		t.pace.now = clk.Now
 	}
 	if t.pace.after == nil {
-		t.pace.after = func(d time.Duration, fn func()) { time.AfterFunc(d, fn) }
+		t.pace.after = func(d time.Duration, fn func()) { clk.AfterFunc(d, fn) }
 	}
 	t.pace.flush = t.tr.flush
 	t.tr.wake = func(d time.Duration) {
@@ -376,7 +376,7 @@ func (t *livelogTurn) abandon(st turnStatus) {
 
 func (t *livelogTurn) tick() {
 	// The ticker retires the alert: an expiry must repaint when nothing arrived.
-	retired := t.status.retireAlert(time.Now())
+	retired := t.status.retireAlert(clk.Now())
 
 	// With nothing animating a tick would recompose and diff the open message
 	// for a no-op paint.

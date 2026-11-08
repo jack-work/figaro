@@ -381,7 +381,7 @@ func tailOutput(output string, limit int) (string, int) {
 	return output[at+1:], total
 }
 
-var sessionNow = time.Now
+var sessionNow = func() time.Time { return clk.Now() }
 
 // toolElapsed counts from the model opening the call, not from the tool starting.
 func toolElapsed(n livedoc.Node) string {

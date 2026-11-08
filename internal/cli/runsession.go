@@ -50,7 +50,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	atExit(func() { reportUnsentHeld(stderrw) })
 	startedAt := opt.startedAt
 	if startedAt.IsZero() {
-		startedAt = time.Now()
+		startedAt = clk.Now()
 	}
 	status := newSessionStatus(opt.figaroID, startedAt)
 	status.setMore(opt.set.more)

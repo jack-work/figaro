@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/mattn/go-runewidth"
 
@@ -29,7 +28,7 @@ func (t *transcript) resyncDue() bool {
 		return false
 	}
 	if t.now == nil {
-		t.now = time.Now
+		t.now = clk.Now
 	}
 	return t.now().Sub(t.lastFull) >= transcriptResyncInterval
 }

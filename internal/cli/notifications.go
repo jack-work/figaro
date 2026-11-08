@@ -63,7 +63,7 @@ func (s *notificationStore) post(level alertLevel, source, text string) {
 		line, detail = text[:i], text
 	}
 	line = strings.Join(strings.Fields(line), " ")
-	now := time.Now()
+	now := clk.Now()
 	key := coalesceKey(source, level, line)
 
 	s.mu.Lock()

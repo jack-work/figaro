@@ -113,7 +113,7 @@ type interactiveInput struct {
 	jumps          ariaJumplist         // guarded by in.mu
 	queueEpoch     string               // the daemon refuses a queue mutation without the epoch it was read at
 	queueDebut     map[uint64]time.Time // guarded by in.mu
-	debutTimer     *time.Timer
+	debutTimer     func() bool
 	intrinsics     *intrinsicMirrors
 	bound          *formMirror // the subject's form; guarded by in.mu, parked with the subject
 	models         *modelsFeed
@@ -535,32 +535,23 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 
 // current is read under the render lock and returns nil until the input loop is wired.
 func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiveInput) func() {
-	stop := make(chan struct{})
 	// Metrics are still pulled: they are not yet an intrinsic form.
 	metricsEvery := max(spinnerFPS/metricsPollHz, 1) * 4
-	go func() {
-		t := time.NewTicker(time.Second / spinnerFPS)
-		defer t.Stop()
-		for n := 1; ; n++ {
-			select {
-			case <-stop:
-				return
-			case <-t.C:
-				mu.Lock()
-				lt.tick()
-				in := current()
-				mu.Unlock()
-				if in == nil {
-					continue
-				}
-				if n%metricsEvery == 0 {
-					in.seedMetrics(in.subjectGeneration())
-					in.reseedIfEmpty()
-				}
-			}
+	n := 0
+	return clk.Every(time.Second/spinnerFPS, func() {
+		n++
+		mu.Lock()
+		lt.tick()
+		in := current()
+		mu.Unlock()
+		if in == nil {
+			return
 		}
-	}()
-	return func() { close(stop) }
+		if n%metricsEvery == 0 {
+			in.seedMetrics(in.subjectGeneration())
+			in.reseedIfEmpty()
+		}
+	})
 }
 
 // refreshQueued is the resync path; the last completion wins.

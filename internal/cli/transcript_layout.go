@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -133,7 +132,7 @@ func (t *transcript) barRows() int {
 	if t.status == nil {
 		return 1
 	}
-	return max(t.status.viewOf(t.openPit(), t.status.barVerbose(), time.Now()).height(t.w), 1)
+	return max(t.status.viewOf(t.openPit(), t.status.barVerbose(), clk.Now()).height(t.w), 1)
 }
 
 func (t *transcript) footerRows(total, body int) (rule string, bar []string) {

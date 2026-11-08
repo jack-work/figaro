@@ -761,7 +761,7 @@ func (in *interactiveInput) claimSubject(gen uint64, id, from string, fcli *sdk.
 	in.subject, in.fcli, in.hangup, in.ownsSubject = fcli, fcli, fcli, true
 	in.figaroID = id
 	in.caughtUp = false
-	status := newSessionStatus(id, time.Now())
+	status := newSessionStatus(id, clk.Now())
 	status.setMore(in.set != nil && in.set.more)
 	// The outgoing subject is shelved before the new one takes its place,
 	// because retarget drops it.

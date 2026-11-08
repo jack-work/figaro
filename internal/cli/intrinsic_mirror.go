@@ -307,7 +307,7 @@ func (in *interactiveInput) projectQueue() {
 	rtSnap, _, _ := in.intrinsics.runtime.state()
 	busy := readRuntime(rtSnap).State.Busy()
 
-	now := time.Now()
+	now := clk.Now()
 	in.mu.Lock()
 	if in.queueDebut == nil {
 		in.queueDebut = map[uint64]time.Time{}
@@ -319,11 +319,11 @@ func (in *interactiveInput) projectQueue() {
 		in.lt.render()
 	}
 	if in.debutTimer != nil {
-		in.debutTimer.Stop()
+		in.debutTimer()
 		in.debutTimer = nil
 	}
 	if !next.IsZero() {
-		in.debutTimer = time.AfterFunc(next.Sub(now), in.projectQueue)
+		in.debutTimer = clk.AfterFunc(next.Sub(now), in.projectQueue)
 	}
 	in.mu.Unlock()
 }
@@ -334,7 +334,7 @@ func (in *interactiveInput) forgetQueueDebuts() {
 	defer in.mu.Unlock()
 	in.queueDebut = nil
 	if in.debutTimer != nil {
-		in.debutTimer.Stop()
+		in.debutTimer()
 		in.debutTimer = nil
 	}
 }

@@ -242,7 +242,7 @@ func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool) 
 		return nil
 	}
 	rows := []string{term.Dim(s.ruleLine(w, "", pos))}
-	for _, r := range s.viewOf(pit, verbose, time.Now()).render(w) {
+	for _, r := range s.viewOf(pit, verbose, clk.Now()).render(w) {
 		rows = append(rows, term.Dim(r))
 	}
 	return rows

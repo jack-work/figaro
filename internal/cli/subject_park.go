@@ -47,7 +47,7 @@ func (t *transcript) park(id string) *parkedSubject {
 	return &parkedSubject{
 		id: id, client: t.client,
 		rows: t.rowCache, sticky: t.stickyCache, expand: t.expanded, adorn: t.metaOpen,
-		from: t.from, offset: t.offset, follow: t.follow, at: time.Now(),
+		from: t.from, offset: t.offset, follow: t.follow, at: clk.Now(),
 	}
 }
 

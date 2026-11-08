@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/jack-work/figaro/internal/mark"
@@ -549,7 +548,7 @@ func (t *transcript) paint(screen []string) {
 	if full {
 		base = nil
 		if t.now == nil {
-			t.now = time.Now
+			t.now = clk.Now
 		}
 		t.lastFull = t.now()
 	} else if plan, ok := t.planScroll(screen); ok {
