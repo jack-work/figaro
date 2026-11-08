@@ -2,6 +2,7 @@ package store
 
 import (
 	"log/slog"
+	"strings"
 	"sync/atomic"
 
 	"github.com/jack-work/figaro/api/message"
@@ -112,4 +113,41 @@ func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMet
 	}
 	metaIdentityHealed.Add(1)
 	return &up
+}
+
+var mirroredIdentity = []struct {
+	key   string
+	field func(*AriaMeta) *string
+}{
+	{"mantra", func(m *AriaMeta) *string { return &m.Mantra }},
+	{"system.cwd", func(m *AriaMeta) *string { return &m.Cwd }},
+}
+
+func (b *XwalBackend) identityCommitted(ariaID string, patch message.Patch, f *Form) {
+	var touched []int
+	for i, k := range mirroredIdentity {
+		if patchReaches(patch, k.key) {
+			touched = append(touched, i)
+		}
+	}
+	if len(touched) == 0 {
+		return
+	}
+	snap := f.Read().Snapshot
+	if err := b.UpdateMeta(ariaID, func(m *AriaMeta) {
+		for _, i := range touched {
+			*mirroredIdentity[i].field(m) = snapString(snap, mirroredIdentity[i].key)
+		}
+	}); err != nil {
+		slog.Warn("identity: sidecar unwritable", "aria", ariaID, "err", err)
+	}
+}
+
+func patchReaches(patch message.Patch, key string) bool {
+	for _, e := range patch.Entries() {
+		if e.Key == key || strings.HasPrefix(key, e.Key+".") || strings.HasPrefix(e.Key, key+".") {
+			return true
+		}
+	}
+	return false
 }

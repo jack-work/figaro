@@ -375,6 +375,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		patch := c.Patch
 		b.wroteTo(ariaID, time.Now().UnixMilli())
 		b.roleCommitted(ariaID, patch)
+		b.identityCommitted(ariaID, patch, opened)
 		if namesOutfit(patch) {
 			b.labelChanged(ariaID)
 			b.mirrorFormLifetime(ariaID, opened.Read().Snapshot)
