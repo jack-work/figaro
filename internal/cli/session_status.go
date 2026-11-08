@@ -191,6 +191,21 @@ func (s *sessionStatus) withdrawNotice(text string) {
 	s.notices = kept
 }
 
+func (s *sessionStatus) retireProgress() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.notices[:0]
+	for _, n := range s.notices {
+		if !n.progress {
+			kept = append(kept, n)
+		}
+	}
+	s.notices = kept
+}
+
 func (s *sessionStatus) pinNotice(text string) {
 	if s == nil {
 		return

@@ -118,6 +118,7 @@ func (t *transcript) openNotificationsPit() {
 
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false
+	t.status.retireProgress()
 	t.pit.showLive(pitID(name), v)
 	if full {
 		t.full = true

@@ -320,3 +320,16 @@ func TestProgressIsNotANotification(t *testing.T) {
 		t.Fatalf("the bar should still show it, shows %q", tr.status.noticeText())
 	}
 }
+
+// The progress note says a pit is on its way; once the pit is up it says
+// nothing true, and a bar still reading "…troupe" for the notice's ttl looks
+// like a list that has not loaded.
+func TestALivePitRetiresItsProgressNote(t *testing.T) {
+	tr := jumpFixture(t, 1, 4)
+	tr.setCommandNote("an earlier result")
+	tr.setProgressNote("…troupe @troupe")
+	tr.showLivePit("troupe", &formView{src: things("a", `1`), open: map[string]bool{}}, false)
+	if got := tr.status.noticeText(); got != "an earlier result" {
+		t.Fatalf("the bar reads %q once the pit is up, want the earlier result back", got)
+	}
+}
