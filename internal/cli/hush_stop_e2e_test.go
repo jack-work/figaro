@@ -74,6 +74,7 @@ func newHushRigSharing(t *testing.T, name, shareHush string) *hushRig {
 	rig.env = append(os.Environ(),
 		"FIGARO_RUNTIME_DIR="+filepath.Join(root, "run"),
 		"FIGARO_NO_ANGELUS_SCOPE=1",
+		"HUSH_NO_AGENT_SCOPE=1",
 		"FIGARO_STATE_DIR="+filepath.Join(root, "state"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(root, "config"),
 		"FIGARO_HUSH_APP=figaro-test-hushstop",

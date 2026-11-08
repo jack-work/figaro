@@ -193,6 +193,7 @@ func smokeStore(t *testing.T) []string {
 		"FIGARO_STATE_DIR="+filepath.Join(dir, "state"),
 		"FIGARO_RUNTIME_DIR="+filepath.Join(dir, "run"),
 		"FIGARO_NO_ANGELUS_SCOPE=1",
+		"HUSH_NO_AGENT_SCOPE=1",
 		"FIGARO_CONFIG_DIR="+filepath.Join(dir, "config"),
 	)
 }

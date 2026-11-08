@@ -96,6 +96,7 @@ func newSendRig(t *testing.T, baseURL string) *sendRig {
 	rig := &sendRig{bin: smokeBinary(t), env: append(env,
 		"FIGARO_RUNTIME_DIR="+filepath.Join(root, "run"),
 		"FIGARO_NO_ANGELUS_SCOPE=1",
+		"HUSH_NO_AGENT_SCOPE=1",
 		"FIGARO_STATE_DIR="+filepath.Join(root, "state"),
 		"FIGARO_CACHE_DIR="+filepath.Join(root, "cache"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(root, "config"),

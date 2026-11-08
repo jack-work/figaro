@@ -76,7 +76,7 @@ func (u *unitRig) inUnit(wait bool, args ...string) *exec.Cmd {
 	}
 	for _, kv := range u.rig.env {
 		k, _, _ := strings.Cut(kv, "=")
-		if k == "FIGARO_NO_ANGELUS_SCOPE" || !(strings.HasPrefix(k, "FIGARO_") || strings.HasPrefix(k, "ANTHROPIC_")) {
+		if k == "FIGARO_NO_ANGELUS_SCOPE" || !(strings.HasPrefix(k, "FIGARO_") || strings.HasPrefix(k, "ANTHROPIC_") || strings.HasPrefix(k, "HUSH_")) {
 			continue
 		}
 		run = append(run, "--setenv", kv)
