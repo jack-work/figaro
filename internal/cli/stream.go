@@ -238,7 +238,7 @@ func (in *interactiveInput) pagerCatchUp() {
 		return
 	}
 	in.caughtUp = true
-	go in.readHistoryIntoPager()
+	goSettled(func() { in.readHistoryIntoPager() })
 }
 
 // reseedIfEmpty retries a failed catch-up from the pager's clock.
@@ -250,7 +250,7 @@ func (in *interactiveInput) reseedIfEmpty() {
 	}
 	in.mu.Unlock()
 	if owed {
-		go in.readHistoryIntoPager()
+		goSettled(func() { in.readHistoryIntoPager() })
 	}
 }
 
@@ -305,7 +305,7 @@ func (in *interactiveInput) pageTranscript() {
 	done := make(chan struct{})
 	in.pageDone = done
 	in.mu.Unlock()
-	go in.prefetchTranscriptPages(req, done)
+	goSettled(func() { in.prefetchTranscriptPages(req, done) })
 }
 
 func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, done chan struct{}) {
@@ -556,7 +556,7 @@ func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiv
 
 // refreshQueued is the resync path; the last completion wins.
 func (in *interactiveInput) refreshQueued() {
-	go in.resyncIntrinsic(intrinsicQueue)
+	goSettled(func() { in.resyncIntrinsic(intrinsicQueue) })
 }
 
 // inputGate parks the read loop between reads, the only point that neither loses

@@ -31,7 +31,7 @@ const commandTimeout = 10 * time.Second
 // commandAsync runs fn off the input goroutine; the note is a verb's only
 // feedback channel.
 func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error)) {
-	go func() {
+	goSettled(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
 		msg, err := fn(withProgress(ctx, in.note))
@@ -40,7 +40,7 @@ func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error
 			return
 		}
 		in.note(msg)
-	}()
+	})
 }
 
 func wireErrorText(err error) string {
@@ -868,7 +868,7 @@ func (in *interactiveInput) seedMetrics(gen uint64) {
 	if cli == nil {
 		return
 	}
-	go func() {
+	goSettled(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
 		m, err := cli.Metrics(ctx)
@@ -882,7 +882,7 @@ func (in *interactiveInput) seedMetrics(gen uint64) {
 		}
 		in.lt.status.update(*m)
 		in.lt.render()
-	}()
+	})
 }
 
 // notifyHandler folds a connection's frames only while that connection is the
@@ -919,14 +919,14 @@ func (in *interactiveInput) notifyHandler(gen uint64, id string) sdk.NotifyHandl
 		chase := in.lt.transcriptShowsGap()
 		in.mu.Unlock()
 		if chase {
-			go in.pageTranscript()
+			goSettled(func() { in.pageTranscript() })
 		}
 	}
 }
 
 func (in *interactiveInput) desyncHandler(gen uint64) func(int) {
 	return func(sinceLT int) {
-		go func() {
+		goSettled(func() {
 			if atomic.LoadUint64(&in.subjectGen) != gen {
 				return
 			}
@@ -943,7 +943,7 @@ func (in *interactiveInput) desyncHandler(gen uint64) func(int) {
 			in.mu.Lock()
 			in.lt.apply(r)
 			in.mu.Unlock()
-		}()
+		})
 	}
 }
 
@@ -1031,7 +1031,7 @@ func (in *interactiveInput) dropPitRow(name, id, next string) {
 	if err != nil {
 		return
 	}
-	go func() {
+	goSettled(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
 		cli := in.aria()
@@ -1057,5 +1057,5 @@ func (in *interactiveInput) dropPitRow(name, id, next string) {
 			}
 		}
 		in.refreshQueued()
-	}()
+	})
 }

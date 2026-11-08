@@ -200,7 +200,7 @@ func (in *interactiveInput) applyFormDelta(gen uint64, params json.RawMessage) {
 	}
 	switch mirror.apply(d) {
 	case formResync:
-		go in.resyncIntrinsic(d.Intrinsic)
+		goSettled(func() { in.resyncIntrinsic(d.Intrinsic) })
 		return
 	case formIncompatible:
 		return
@@ -231,7 +231,7 @@ func (in *interactiveInput) resyncIntrinsic(name string) {
 
 func (in *interactiveInput) seedIntrinsics() {
 	for _, name := range intrinsicNames() {
-		go in.resyncIntrinsic(name)
+		goSettled(func() { in.resyncIntrinsic(name) })
 	}
 }
 

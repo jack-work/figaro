@@ -41,7 +41,7 @@ func (in *interactiveInput) seedBoundForm(gen uint64) {
 	if cli == nil || bound == nil {
 		return
 	}
-	go func() {
+	goSettled(func() {
 		_, version, _ := bound.state()
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
@@ -51,7 +51,7 @@ func (in *interactiveInput) seedBoundForm(gen uint64) {
 		}
 		bound.catchUp(resp)
 		in.boundFormMoved()
-	}()
+	})
 }
 
 func (in *interactiveInput) applyBoundFormDelta(gen uint64, d rpc.FormDelta) {
