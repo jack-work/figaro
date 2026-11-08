@@ -3,10 +3,13 @@
 package term
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // ProbeAmbiguousWide asks the terminal how wide it draws an ambiguous glyph.
@@ -32,34 +35,33 @@ func ProbeAmbiguousWide(timeout time.Duration) (wide, ok bool) {
 }
 
 func readCursorCol(timeout time.Duration) (int, bool) {
-	type result struct {
-		col int
-		ok  bool
-	}
-	ch := make(chan result, 1)
-	go func() {
-		var b strings.Builder
-		buf := make([]byte, 1)
-		for b.Len() < 32 {
-			n, err := os.Stdin.Read(buf)
-			if err != nil || n == 0 {
-				ch <- result{0, false}
-				return
-			}
-			b.WriteByte(buf[0])
-			if buf[0] == 'R' {
-				ch <- parseCursorReply(b.String())
-				return
-			}
+	fd := int(os.Stdin.Fd())
+	deadline := time.Now().Add(timeout)
+	var b strings.Builder
+	buf := make([]byte, 1)
+	for b.Len() < 32 {
+		left := time.Until(deadline)
+		if left <= 0 {
+			return 0, false
 		}
-		ch <- result{0, false}
-	}()
-	select {
-	case r := <-ch:
-		return r.col, r.ok
-	case <-time.After(timeout):
-		return 0, false
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		n, err := unix.Poll(fds, int(left.Milliseconds())+1)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil || n == 0 || fds[0].Revents&unix.POLLIN == 0 {
+			return 0, false
+		}
+		if n, err := unix.Read(fd, buf); err != nil || n == 0 {
+			return 0, false
+		}
+		b.WriteByte(buf[0])
+		if buf[0] == 'R' {
+			r := parseCursorReply(b.String())
+			return r.col, r.ok
+		}
 	}
+	return 0, false
 }
 
 func parseCursorReply(s string) (r struct {
