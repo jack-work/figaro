@@ -47,6 +47,17 @@ capabilities.
   normalize through one that does not, since an older daemon would drop
   `dry_run` and do the real thing. `figaro normalize` became `figaro
   doctor normalize`, with the old name kept hidden for one minor.
+- **`figaro.list` takes `except_nodes`** (0.56.1): nodes whose rows the
+  caller already has, so the serving node does not ask them. It only
+  narrows that node's fan-out to its peers; its own rows, and any node not
+  named exactly by full id, are listed as before. `ls` through a troupe door
+  names its local node there and adds the local daemon's rows itself; a
+  node the door could not reach is reported as the door saw it, and the
+  local daemon does not try it. An
+  older daemon ignores the field and still asks the caller's node; the CLI
+  then drops whatever that daemon says about its node, refusal included,
+  in favour of its own daemon's answer. An older CLI sends nothing and
+  gets today's listing.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

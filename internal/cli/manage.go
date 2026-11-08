@@ -115,7 +115,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		defer cancel()
 
 		if o.jsonOut {
-			resp, err := acli.ListGlobal(ctx)
+			resp, err := listWithHome(ctx, acli, rpc.ListRequest{Global: true})
 			if err != nil {
 				die("list: %s", err)
 			}
@@ -141,7 +141,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		// An attended form has no row in the flat table; draw its genealogy
 		// instead, bounded from the form's parent.
 		if !o.global && o.rootID == "" && !o.home && strings.HasPrefix(boundID, "@") {
-			resp, err := acli.ListGlobal(ctx)
+			resp, err := listWithHome(ctx, acli, rpc.ListRequest{Global: true})
 			if err != nil {
 				die("list: %s", err)
 			}
@@ -153,7 +153,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 
 		if o.global {
-			resp, err := acli.ListGlobal(ctx)
+			resp, err := listWithHome(ctx, acli, rpc.ListRequest{Global: true})
 			if err != nil {
 				die("list: %s", err)
 			}
@@ -165,7 +165,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 
 		limit := o.limit
-		resp, err := acli.List(ctx)
+		resp, err := listWithHome(ctx, acli, rpc.ListRequest{})
 		if err != nil {
 			die("list: %s", err)
 		}
