@@ -9,15 +9,13 @@
   <img src="https://img.shields.io/badge/nix-flake-957FB8?labelColor=1F1F28" alt="nix flake">
 </p>
 
-# figaro
-
 *Largo al factotum della calcolatore.*
 
-figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other, so five agents at once is five shell commands. It's all one Go binary: the CLI and the daemon that runs the agents. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and anything that speaks the OpenAI API.
+figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other. It's all one Go binary: the CLI and the daemon that runs the agents. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and any OpenAI-compatible endpoint.
 
 A coding agent with few opinions, firmly held. Tutto pulito, bravo bravissimo.
 
-<p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
+<p align="center"><img src="docs/media/engine.gif" alt="from a plain shell: two arias prompted in the background, figaro ls with both running, a fork prompted at the head, a form made, studied and set, the aria answering about the change, and figaro show printing a turn" width="820"></p>
 
 > [!NOTE]
 > figaro is under heavy development. Releases go out several times a day, most of them cut by figaros themselves (the agent builds, tests and releases itself, with a human signing off). Things move and sometimes break. Pin a version if you need it to sit still; see [Releases](#releases).
@@ -36,25 +34,55 @@ Jumping between agents is easy and fast, and figaro doesn't hide what its subage
 
 You can build a whole workflow out of that. This repo is mostly built that way.
 
+## Running a lot of them
+
+figaro is built to keep hundreds of arias around on thin margins. My store holds about 1,700 of them, and my angelus runs with `[memory] soft_limit_mb = 512` (the Go runtime's soft memory limit; the default is 2048). It sits around 320 MB and doesn't stagger. I daily-drive it at my big tech employer: hundreds of hours of heavy use so far, and it cooks.
+
+What makes that many livable:
+
+- Switching: in the pager `^O` and `Tab` step back and forward through the arias you've visited, `a` attends the one under the cursor, `^` its parent.
+- Finding: `/` in `:ls` is a fuzzy finder over handles, ids and mantras.
+- Comments: select a passage and `:comment -- <text>` pins a note to it; `c j` and `c k` jump between them.
+- Links into your editor: in visual mode `M-Enter` opens the path under the cursor in your editor, at the line when it has one (`client.go:42`).
+- Durability: every log is append-only. A prompt sent while the angelus restarts is spooled to disk and delivered once it's back, and clients reconnect on their own.
+
 ## Transcripts you can fork
 
 An aria is an actor: one inbox, one turn loop, and a transcript that is strictly append-only.
 
 - `figaro fork <id>:12 -- <p>` branches a transcript at any turn.
 - Compaction is a macro of those primitives, and the history it leaves behind stays whole. `figaro succeed @role -- <handoff>` forks the role's aria, sinks the old one beneath the new one, sends the handoff and recasts the role onto the successor. You can read exactly what was carried over, because it's a turn like any other.
-- Forks share their prefix on disk and in the daemon's cache, and they reuse the provider's prompt cache. A subagent only costs the turns it adds.
+- Forks share their prefix on disk and in the daemon's cache. A subagent only costs the turns it adds.
+
+## The prompt cache stays warm
+
+Providers keep a KV cache: for a prompt prefix they have already processed, they hold on to the attention keys and values, and a request that starts with the same bytes skips that work. Reading from it is cheaper and faster than sending fresh input. Anthropic bills cache reads at 0.1x the base input price (0.05x on Opus 5.5 and Sonnet 5.5) and cache writes at 1.25x ([prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)). OpenAI discounts cached input by up to 95% and charges 1.25x for cache writes on GPT-5.6 and later ([prompt caching](https://platform.openai.com/docs/guides/prompt-caching)). Both say a cached prefix shortens the time to the first token.
+
+One changed byte early in a prompt invalidates the cache for everything after it. Inside an aria, figaro keeps the prefix byte-stable:
+
+- Each provider's translation of a message is written once to its own channel and sent byte for byte on every later turn.
+- State the model sees (the mantra, skills, studied forms) arrives as reminders on the newest message, never as edits to old ones.
+- Forks and `figaro succeed` successors start from their parent's bytes, so a subagent begins on a warm prefix.
+- A model can't read another model's cache, so switching models costs one cold turn on the new one. History isn't rewritten, so each model's prefix stays the same, and switching back finds it cached for as long as the provider keeps it. Changing the credo does change the system prompt, and the cache rebuilds from there.
+
+Across the 1,646 arias in my store since July, 93% of input tokens were cache reads (91% over the last week). That's `cache_read_tokens` over cache reads, cache writes and uncached input, summed from `figaro ls -j`.
 
 ## State lives in forms
 
-Every aria has a form: key/value state the model sees as system reminders. `figaro set mantra "..."` and the model sees it next turn, no round trip. Unbound forms stand on their own, and an aria can study one: `figaro study <aria> @form`, and each change reaches it as a delta on its next turn. The model learns its environment without rewriting its prompt, so the prompt cache holds and the history stays whole.
+A form is a durable object: key/value state with a log of patches behind it. Every aria has one (the model sees it as system reminders), and unbound forms stand on their own.
 
-Web API data goes into a form in one line (after `figaro form new -S name=repo` makes the form):
+- Writes are append-only. A patch is appended to the form's log on disk and fsync'd before anyone can read it; concurrent writes share one fsync.
+- In memory a form is an immutable AVL tree. Each write copies only the path it touches and publishes a new version, so any number of readers see a complete snapshot without taking a lock.
+- Because a form is a log, a cursor can fold the patches since the model last looked into one delta. That's what `figaro study <aria> @form` does: the change rides in as a reminder on the aria's next message. It doesn't start a turn and doesn't wait on one, and the old messages stay as they were.
+- Each form has its own writer, so config and state live in separate concurrency domains. A form takes writes and broadcasts them while the model is busy, without blocking it.
+
+So online data can become a form that your figaros study. One line turns a web API into one (after `figaro form new -S name=repo` makes the form):
 
 ```bash
 figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/figaro | jq -c '{stars: .stargazers_count, issues: .open_issues_count}')"
 ```
 
-From there it's easy to build automation that watches state and reacts: a figaro that studies the form gets each change on its next turn, `figaro form listen` follows it live, and the Go SDK (`github.com/jack-work/figaro/sdk`) dials an aria or a form, reads and patches its state, and gets every change as it lands. More languages are coming.
+Pair that with a heartbeat or a `figaro send` from your own automation and your agents respond to changes in your data as they happen. `figaro form listen` follows a form live, and the Go SDK (`github.com/jack-work/figaro/sdk`) dials an aria or a form, reads and patches its state, and gets every change as it lands. More languages are coming.
 
 ### Methods
 
@@ -101,18 +129,10 @@ figaro is also reachable as `fig`. Every path above installs the alias except `g
 
 ```bash
 figaro provider login anthropic   # or copilot, openrouter, azure
-figaro                            # opens the pager on a fresh aria
-```
-
-<p align="center"><img src="docs/media/landing.gif" alt="bare figaro opens a landing page with the blackletter logo; :new makes a fresh aria and l opens the topology" width="820"></p>
-
-You can also sign in from the pager with `:login`. Type `>` to write a prompt and `ctrl+s` to send it. Or skip the pager entirely:
-
-```bash
 figaro -- buongiorno
 ```
 
-`figaro -- :skills.howto!` starts a tutorial, taught by figaro in character.
+Bare `figaro` opens the same aria in [the pager](#the-pager) instead. `figaro -- :skills.howto!` starts a tutorial, taught by figaro in character.
 
 ## Everyday use
 
@@ -140,7 +160,12 @@ Idiomatically, a shell alias or binary `q` may be defined which aliases to `fig 
 
 ### The pager
 
-In the pager:
+The pager is a view over the same arias: for reading a long turn, scrolling back, or moving around without typing commands. Bare `figaro` opens it, and `q` gives you the shell back.
+
+<p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
+
+<p align="center"><img src="docs/media/landing.gif" alt="bare figaro opens a landing page with the blackletter logo; :new makes a fresh aria and l opens the topology" width="820"></p>
+
 
 - `>` composes, `ctrl+s` sends, `esc` backs out
 - `:new`, `:fork -- <text>`, `:attend <id>` move between arias
@@ -152,7 +177,6 @@ In the pager:
 
 Keys are rebindable in `~/.config/figaro/keys.toml` (`figaro keys` lists them).
 
-<p align="center"><img src="docs/media/topology.gif" alt="figaro ls prints a tree of arias with their mantras; in the pager, l opens the same tree and the cursor moves between forks" width="820"></p>
 
 The [`figaro` skill](skills/figaro/SKILL.md) is the real manual, and it ships inside the binary so the agent always knows how to drive itself: the [CLI reference](skills/figaro/cli.md), [forms](skills/figaro/forms.md), [providers](skills/figaro/reference/providers.md), [architecture](skills/figaro/reference/architecture.md).
 
@@ -164,9 +188,9 @@ The [`figaro` skill](skills/figaro/SKILL.md) is the real manual, and it ships in
 | GitHub Copilot | personal or enterprise | Claude models over Messages, GPT models over the Responses WebSocket |
 | OpenRouter | API key | |
 | Azure OpenAI / AI Foundry | API key or Microsoft Entra | |
-| any OpenAI-compatible gateway | optional key | Chat Completions or Responses |
+| anything OpenAI-compatible | optional key | point a provider file's `base_url` at it; Chat Completions or Responses |
 
-Each lives in `~/.config/figaro/providers/<name>.toml`; [providers.md](skills/figaro/reference/providers.md) has the details, and `figaro models` shows what's reachable right now. File an issue if you want to see another provider supported.
+Each lives in `~/.config/figaro/providers/<name>.toml`. A local model server or your company's gateway is one file with a `base_url`; [providers.md](skills/figaro/reference/providers.md) has the details, and `figaro models` shows what's reachable right now. File an issue if you want to see another provider supported.
 
 ## Releases
 
