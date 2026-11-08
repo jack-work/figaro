@@ -71,7 +71,7 @@ func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
 func (t *transcript) dispatch(ev keyEvent) {
 	if t.pitPending() {
-		t.awaitKeys = append(t.awaitKeys, ev)
+		t.awaitInput = append(t.awaitInput, awaitedInput{key: ev})
 		return
 	}
 	t.held = false

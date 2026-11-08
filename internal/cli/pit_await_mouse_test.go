@@ -2,11 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
-// Keys typed while a pit opens wait for it (32caf3ba); the wheel and a click
-// went round that queue, straight to the transcript underneath.
+// Keys typed while a pit opens wait for it (32caf3ba); the wheel, a click and
+// a paste went round that queue, straight to the transcript underneath.
 
 func awaitingPager(t *testing.T) (*interactiveInput, *livelogTurn, int, int) {
 	t.Helper()
@@ -69,5 +70,22 @@ func TestTheWheelReachesThePitOnceItIsUp(t *testing.T) {
 	defer in.mu.Unlock()
 	if lt.tr.offset != before-3 {
 		t.Fatalf("the wheel with the pit up moved the transcript %d -> %d, want a notch", before, lt.tr.offset)
+	}
+}
+
+// A paste is input too: it opened the composer underneath while the pit
+// was still on its way.
+func TestAPasteWhileAPitOpensWaitsForIt(t *testing.T) {
+	in, lt, _, _ := awaitingPager(t)
+	in.consume([]byte("/\x1b[200~bravo\x1b[201~\r"))
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if lt.tr.boxOpen() {
+		t.Fatal("a paste while the pit opened went to a box in the transcript underneath")
+	}
+	lt.tr.setCmdOut("ls", awaitRows())
+	row, ok := lt.tr.pit.selected()
+	if !ok || !strings.Contains(row.str(), "bravo") {
+		t.Fatalf("the paste typed while the pit opened did not reach its search: selected %q", row.str())
 	}
 }

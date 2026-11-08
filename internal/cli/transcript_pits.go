@@ -27,7 +27,7 @@ func (t *transcript) awaitPit() {
 	t.awaiting = true
 	t.awaitGen++
 	t.awaitShown = t.pit.shown
-	t.awaitKeys = nil
+	t.awaitInput = nil
 	if t.after == nil {
 		return
 	}
@@ -54,15 +54,24 @@ func (t *transcript) pitArrived() {
 	if !t.awaiting {
 		return
 	}
-	keys := t.awaitKeys
-	t.awaiting, t.awaitKeys = false, nil
-	for _, ev := range keys {
-		t.dispatch(ev)
+	queued := t.awaitInput
+	t.awaiting, t.awaitInput = false, nil
+	for _, in := range queued {
+		if in.paste != "" {
+			t.pasteText(in.paste)
+			continue
+		}
+		t.dispatch(in.key)
 	}
 }
 
 func (t *transcript) pitFailed() {
-	t.awaiting, t.awaitKeys = false, nil
+	t.awaiting, t.awaitInput = false, nil
+}
+
+type awaitedInput struct {
+	key   keyEvent
+	paste string
 }
 
 func (t *transcript) statusPanelLines() []string {

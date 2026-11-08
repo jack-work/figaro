@@ -46,7 +46,7 @@ type transcript struct {
 	awaiting   bool
 	awaitGen   int
 	awaitShown int
-	awaitKeys  []keyEvent
+	awaitInput []awaitedInput
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool

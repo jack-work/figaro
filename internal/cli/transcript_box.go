@@ -221,6 +221,10 @@ func (t *transcript) pasteText(text string) {
 	if text == "" {
 		return
 	}
+	if t.pitPending() {
+		t.awaitInput = append(t.awaitInput, awaitedInput{paste: text})
+		return
+	}
 	switch t.openPit() {
 	case pitConfirm:
 		return
