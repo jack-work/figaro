@@ -45,6 +45,10 @@ prefix.
 (`listen`) do nothing, `q` (`leave`) with no pit open ends the session, and
 `Esc` (`cancel`) only cancels what is open.
 
+An aria with no messages opens on a landing page: the figaro mark (a smaller
+one in a smaller pane, none when even that will not fit), the version, and
+the first commands to type. The first message replaces it.
+
 ## keys.toml
 
 Beside `config.toml`, read once when figaro starts. Three shapes:
