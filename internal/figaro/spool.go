@@ -144,6 +144,14 @@ func (s *Spool) Remove(ariaID string) error {
 	return err
 }
 
+func (s *Spool) Holds(ariaID string) bool {
+	if s == nil {
+		return false
+	}
+	_, err := os.Stat(s.path(ariaID))
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
 func (s *Spool) Arias() ([]string, error) {
 	if s == nil {
 		return nil, nil

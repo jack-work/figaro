@@ -194,10 +194,20 @@ func (h *handlers) fillTTL(result []rpc.FigaroInfoResponse) {
 		if !ok {
 			continue
 		}
-		result[i].TTLMS = e.TTL.Milliseconds()
-		result[i].ExpiresAt = e.DeadlineMS
-		result[i].KeepaliveMS = e.KeepaliveOr(def).Milliseconds()
-		result[i].ReapsAt = e.ReapsAt(def, h.angelus.Backend.LastTS(e.ID))
+		empty := e.ReapIfEmpty && result[i].MessageCount == 0 && len(result[i].BoundPIDs) == 0 && result[i].State == "dormant"
+		if e.TTL == 0 && !empty {
+			continue
+		}
+		last := h.angelus.Backend.LastTS(e.ID)
+		if e.TTL > 0 {
+			result[i].TTLMS = e.TTL.Milliseconds()
+			result[i].ExpiresAt = e.DeadlineMS
+			result[i].KeepaliveMS = e.KeepaliveOr(def).Milliseconds()
+			result[i].ReapsAt = e.ReapsAt(def, last)
+		}
+		if empty && (result[i].ReapsAt == 0 || e.EmptyReapsAt(last) < result[i].ReapsAt) {
+			result[i].ReapsAt = e.EmptyReapsAt(last)
+		}
 		if held, ok := h.angelus.held.get(e.ID); ok {
 			result[i].HeldBy, result[i].HeldWhy, result[i].HeldSince = held.By, held.Why, held.Since.UnixMilli()
 		}

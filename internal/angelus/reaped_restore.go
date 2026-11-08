@@ -40,7 +40,7 @@ func (h *handlers) reapedRestore(ctx context.Context, params json.RawMessage) (a
 	for _, id := range group.nodes {
 		drops := []string{store.SystemReapedKey, store.SystemReapedUntilKey}
 		if req.Keep && id == group.root {
-			drops = append(drops, store.SystemTTLKey)
+			drops = append(drops, store.SystemTTLKey, store.SystemReapIfEmptyKey)
 		}
 		raw, err := json.Marshal(rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, drops)})
 		if err != nil {

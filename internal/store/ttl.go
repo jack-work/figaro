@@ -25,6 +25,10 @@ const SystemKeepaliveKey = "system.keepalive"
 
 const SystemRetiredKey = "system.retired"
 
+const SystemReapIfEmptyKey = "system.reap_if_empty"
+
+const ReapIfEmptyGrace = time.Minute
+
 type TTLEntry struct {
 	ID           string
 	TTL          time.Duration
@@ -34,9 +38,18 @@ type TTLEntry struct {
 	RetiredAtMS  int64
 	LastAccessMS int64
 	ReapedAtMS   int64
+	ReapIfEmpty  bool
 }
 
-func (e TTLEntry) Expired(nowMS int64) bool { return e.DeadlineMS <= nowMS }
+func (e TTLEntry) Expired(nowMS int64) bool { return e.TTL > 0 && e.DeadlineMS <= nowMS }
+
+func (e TTLEntry) Due(nowMS int64) bool {
+	return e.Expired(nowMS) || (e.ReapIfEmpty && e.CreatedAtMS+ReapIfEmptyGrace.Milliseconds() <= nowMS)
+}
+
+func (e TTLEntry) EmptyReapsAt(lastWriteMS int64) int64 {
+	return max(e.CreatedAtMS, LastUse(e.LastAccessMS, lastWriteMS)) + ReapIfEmptyGrace.Milliseconds()
+}
 
 func (e TTLEntry) KeepaliveOr(def time.Duration) time.Duration {
 	if e.Keepalive != nil {
@@ -120,6 +133,10 @@ func lifetimeString(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &s); err == nil {
 		return s
 	}
+	var b bool
+	if err := json.Unmarshal(raw, &b); err == nil {
+		return strconv.FormatBool(b)
+	}
 	var n json.Number
 	if err := json.Unmarshal(raw, &n); err == nil {
 		return n.String()
@@ -132,6 +149,7 @@ type lifetimeChange struct {
 	keepalive    *time.Duration
 	keepaliveSet bool
 	retired      *bool
+	reapIfEmpty  *bool
 	reapedRoot   *string
 	reapedUntil  *int64
 }
@@ -171,6 +189,10 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		on := retiredValue(raw)
 		c.retired = &on
 	}
+	if raw, spoke := valueOf(SystemReapIfEmptyKey); spoke {
+		on := retiredValue(raw)
+		c.reapIfEmpty = &on
+	}
 	if raw, spoke := valueOf(SystemReapedKey); spoke {
 		root := strings.TrimSpace(raw)
 		c.reapedRoot = &root
@@ -182,7 +204,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 			c.reapedUntil = &ms
 		}
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapedRoot != nil || c.reapedUntil != nil
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil
 }
 
 func retiredValue(raw string) bool {
@@ -213,6 +235,9 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 			m.RetiredAtMS = 0
 		}
 	}
+	if c.reapIfEmpty != nil {
+		m.ReapIfEmpty = *c.reapIfEmpty
+	}
 	if c.reapedRoot != nil {
 		switch {
 		case *c.reapedRoot == "":
@@ -231,7 +256,7 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 
 func sameLifetime(a, b *AriaMeta) bool {
 	ka, kb := a.KeepaliveMS, b.KeepaliveMS
-	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS &&
+	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.ReapIfEmpty == b.ReapIfEmpty &&
 		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS &&
 		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb)
 }
@@ -316,17 +341,24 @@ func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 }
 
 func ttlEntryOf(id string, meta *AriaMeta) (TTLEntry, bool) {
-	if meta == nil || meta.TTLMS <= 0 {
+	if meta == nil {
+		return TTLEntry{}, false
+	}
+	mayBeEmpty := meta.ReapIfEmpty && meta.MessageCount == 0
+	if meta.TTLMS <= 0 && !mayBeEmpty {
 		return TTLEntry{}, false
 	}
 	e := TTLEntry{
 		ID:           id,
-		TTL:          time.Duration(meta.TTLMS) * time.Millisecond,
 		CreatedAtMS:  meta.CreatedAtMS,
-		DeadlineMS:   meta.CreatedAtMS + meta.TTLMS,
 		RetiredAtMS:  meta.RetiredAtMS,
 		LastAccessMS: meta.LastAccessMS,
 		ReapedAtMS:   meta.ReapedAtMS,
+		ReapIfEmpty:  mayBeEmpty,
+	}
+	if meta.TTLMS > 0 {
+		e.TTL = time.Duration(meta.TTLMS) * time.Millisecond
+		e.DeadlineMS = meta.CreatedAtMS + meta.TTLMS
 	}
 	if meta.KeepaliveMS != nil {
 		ka := time.Duration(*meta.KeepaliveMS) * time.Millisecond
@@ -394,7 +426,7 @@ func (b *XwalBackend) TTLEntries() []TTLEntry {
 func (b *XwalBackend) TTLDue(nowMS int64) []TTLEntry {
 	var due []TTLEntry
 	for _, e := range b.TTLEntries() {
-		if e.Expired(nowMS) {
+		if e.Due(nowMS) {
 			due = append(due, e)
 		}
 	}

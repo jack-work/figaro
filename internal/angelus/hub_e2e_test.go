@@ -62,6 +62,12 @@ model = "mock-model"
 // are built, which is when a daemon wires its catalogs.
 func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend)) (*angelus.Angelus, *sdk.Angelus, context.Context) {
 	t.Helper()
+	a, acli, ctx, _ := daemonWithHandlers(t, dir, setup)
+	return a, acli, ctx
+}
+
+func daemonWithHandlers(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend)) (*angelus.Angelus, *sdk.Angelus, context.Context, *angelus.Handlers) {
+	t.Helper()
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 	backend, err := store.NewXwalBackend(dir+"/arias", loaded.SegmentSize())
@@ -104,7 +110,7 @@ func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store
 	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
-	return a, acli, ctx
+	return a, acli, ctx, hs
 }
 
 // ariaConn is one connection on the door addressing one aria, the way

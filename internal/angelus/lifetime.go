@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
@@ -48,11 +49,18 @@ func (a *Angelus) expireTTL() {
 		if e.ReapedAtMS > 0 {
 			continue
 		}
-		if e.ReapsAt(def, a.Backend.LastTS(e.ID)) > now.UnixMilli() {
+		if a.reapsAt(e, def) > now.UnixMilli() {
 			continue
 		}
 		a.reclaims().enqueue(e.ID)
 	}
+}
+
+func (a *Angelus) reapsAt(e store.TTLEntry, def time.Duration) int64 {
+	if e.Expired(time.Now().UnixMilli()) {
+		return e.ReapsAt(def, a.Backend.LastTS(e.ID))
+	}
+	return e.EmptyReapsAt(a.Backend.LastTS(e.ID))
 }
 
 func (a *Angelus) reapOne(id string) error {
@@ -84,6 +92,9 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 	if !found || e.ReapedAtMS > 0 {
 		return nil
 	}
+	if !e.Expired(now.UnixMilli()) {
+		return a.expireEmpty(keeper, e, now)
+	}
 	def := a.keepalive()
 	if reaps := e.ReapsAt(def, a.Backend.LastTS(e.ID)); reaps > now.UnixMilli() {
 		a.held.release(e.ID)
@@ -109,6 +120,76 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 		return nil
 	}
 	a.held.release(e.ID)
+	if err := a.take(keeper, e, taken); err != nil {
+		return err
+	}
+	slog.Info("removed a node whose lifetime was spent",
+		"node", e.ID, "ttl", e.TTL, "taken", len(taken),
+		"created", time.UnixMilli(e.CreatedAtMS),
+		"expired", time.UnixMilli(e.DeadlineMS))
+	return nil
+}
+
+func (a *Angelus) expireEmpty(keeper ttlKeeper, e store.TTLEntry, now time.Time) error {
+	if !a.isEmpty(e.ID) {
+		if e.TTL == 0 {
+			keeper.TTLForget(e.ID)
+		}
+		a.held.release(e.ID)
+		return nil
+	}
+	if reaps := e.EmptyReapsAt(a.Backend.LastTS(e.ID)); reaps > now.UnixMilli() {
+		a.held.release(e.ID)
+		return nil
+	}
+	roles, ready := a.roleTargets()
+	if !ready {
+		return errNotYet
+	}
+	taken := keeper.DeleteSet(e.ID)
+	for _, id := range taken {
+		if id != e.ID {
+			a.held.keep(e.ID, id, "it would take another node", "empty, kept: it would take another node")
+			return nil
+		}
+	}
+	taken = []string{e.ID}
+	if node, why := a.liveIn(taken, a.Registry.BoundPIDsByFigaro(), roles); why != "" {
+		a.held.keep(e.ID, node, why, "empty, kept: "+why)
+		return nil
+	}
+	a.held.release(e.ID)
+	if err := a.take(keeper, e, taken); err != nil {
+		return err
+	}
+	slog.Info("removed an aria that never had a message", "node", e.ID,
+		"created", time.UnixMilli(e.CreatedAtMS))
+	return nil
+}
+
+const emptyLogCeiling = 64
+
+func (a *Angelus) isEmpty(id string) bool {
+	if a.Spool.Holds(id) {
+		return false
+	}
+	meta, err := a.Backend.Meta(id)
+	if err != nil || meta == nil || meta.MessageCount > 0 {
+		return false
+	}
+	log, err := a.Backend.OpenFigIR(id)
+	if err != nil || log.Len() > emptyLogCeiling {
+		return false
+	}
+	for _, en := range log.ReadFrom(0, emptyLogCeiling) {
+		if !message.IsCeremonial(en.Payload) {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *Angelus) take(keeper ttlKeeper, e store.TTLEntry, taken []string) error {
 	if err := a.scanForRoleIn(taken, e.ID); err != nil {
 		return err
 	}
@@ -119,10 +200,6 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 		return err
 	}
 	keeper.TTLForget(e.ID)
-	slog.Info("removed a node whose lifetime was spent",
-		"node", e.ID, "ttl", e.TTL, "taken", len(taken),
-		"created", time.UnixMilli(e.CreatedAtMS),
-		"expired", time.UnixMilli(e.DeadlineMS))
 	return nil
 }
 

@@ -284,6 +284,17 @@ its branches) has a live agent, a bound shell, a role pointing at it, or a use
 within its own keepalive. A retired aria (`figaro retire`) is held only by a
 keepalive it states itself, so `retire --ttl 1h` really ends it in an hour.
 
+`system.reap_if_empty = true` reaps an aria that never had a message: no
+prompt, no reply. Empty means no messages, not no state: an aria used only as
+a board (keys set, no turns) is reaped too. Once it is a minute past its birth
+and its last use, the sweep reaps it the way a spent lifetime would, unless it
+has a live agent, a bound shell or a role pointing at it, a branch under it,
+or a prompt spooled across a restart. The first message
+ends the matter: from then on the key does nothing, and `system.ttl` still
+applies on its own. Set it at birth (`-S system.reap_if_empty=true`) or in an
+outfit's `[system]`, so an aria minted and left unused does not pile up. A
+shell still attending it holds it until the shell exits or attends elsewhere.
+
 What the sweep takes, it first reaps rather than deletes: the node and
 everything its delete would take get `system.reaped` (naming the root), leave
 `ls`, refuse prompts, and are indexed in the catalog `@reaped`
