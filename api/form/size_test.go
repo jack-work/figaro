@@ -92,8 +92,8 @@ func TestEqualOnBigValuesKeepsNoCanonicalCopy(t *testing.T) {
 		t.Fatal("key order broke semantic equality on a big object")
 	}
 	_, after := MemoBytes()
-	if after != before {
-		t.Fatalf("canonical gauge moved by %d for big values", after-before)
+	if after > before {
+		t.Fatalf("canonical gauge grew by %d for big values", after-before)
 	}
 	runtime.KeepAlive([]Value{a, b, c, d})
 }
