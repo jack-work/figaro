@@ -339,6 +339,7 @@ observer's mouth.
 | `figaro stop` | Shut down the angelus and retire its hush agent (see The vault). Alias `rest`. `-f` to SIGKILL, `-k` when a restart is coming, `--forget-bindings` to start the next angelus with no shell attended. |
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
+| `figaro doctor normalize [-n] [-j]` | Make every promoted aria own its history, then drop the `@topology` overrides that change no delete set (aria gone, or naming exactly its history parent), each with its reason. `-n` reports both halves without touching anything. Blocks while it copies; meant for off hours. See [reference/trunks.md](reference/trunks.md). |
 | `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
 | `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, which a keepalive still holds, which are due, and which the sweep keeps past their lifetime (held: by which node, why, since when). The sweep logs a held node once per holder and reason. |
 | `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |

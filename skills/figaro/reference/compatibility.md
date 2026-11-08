@@ -45,7 +45,8 @@ capabilities.
   `dropped` overrides (`id`, `handle`, `under`, `reason`) instead of a
   `detached` count. The daemon reports `normalize.report`; a CLI refuses to
   normalize through one that does not, since an older daemon would drop
-  `dry_run` and do the real thing.
+  `dry_run` and do the real thing. `figaro normalize` became `figaro
+  doctor normalize`, with the old name kept hidden for one minor.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

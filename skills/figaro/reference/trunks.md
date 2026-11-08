@@ -259,11 +259,12 @@ top-level conversation has nothing above it to promote into and is refused
 outfit instead. `promote <id> 10` on an aria three levels deep climbs three
 and reports three; it is not an error to ask for more than the tree has.
 
-**`figaro normalize [-n] [-j]`** makes every aria own its history
+**`figaro doctor normalize [-n] [-j]`** makes every aria own its history
 outright, so no delete can owe anything at its boundary, then drops every
 override the history now agrees with. It is the one operation here that is
-not instant (it copies the prefix each promoted aria borrows). `-n` reports
-what each half would do and touches nothing.
+not instant (it copies the prefix each promoted aria borrows), so it suits
+an off-hours job. `-n` reports what each half would do and touches nothing.
+`figaro normalize` is a hidden alias for it until 0.57.
 
 An override is **redundant** when dropping it changes no delete set: its
 aria is gone, or it names exactly the aria's history parent. Normalize

@@ -982,24 +982,8 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:  "normalize",
-		Group: "Session",
-		Short: "Run deferred topology work now",
-		Usage: "normalize [-n|--dry-run] [-j|--json]",
-		Long: `Make every aria independent of ancestors it is no longer presented
-under: each absorbs the history it currently reads through them. Then drop
-every @topology override that changes no delete set: its aria is gone, or
-it names exactly the aria's history parent.
-
-Everything else in the trunk surface is instant because this can be
-postponed. Deletes repair only what they must, at delete time. Run this
-when you would rather pay the cost now, in one blocking pass.
-
-  figaro normalize -n   report what would be detached and dropped
-  figaro normalize      do it
-
-Nothing changes about what any aria reads, where any row is drawn, or what
-any delete would take; only where the bytes live.`,
+		Name:    "normalize",
+		Hidden:  true,
 		ArgsMin: 0,
 		ArgsMax: 0,
 		Flags: []cmdkit.FlagDef{
@@ -1007,6 +991,7 @@ any delete would take; only where the bytes live.`,
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit the report as JSON"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
+			fmt.Fprintln(stderrw, "figaro normalize moved to `figaro doctor normalize`")
 			runNormalize(ctx.Extra.(*config.Loaded), ctx.BoolFlag("dry-run"), ctx.BoolFlag("json"))
 			return nil
 		},
@@ -1820,11 +1805,11 @@ the daemon neither reads nor writes it.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; unit says whether the daemon on the socket is the systemd unit's",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j]>",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; unit says whether the daemon on the socket is the systemd unit's",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | skills [-j] | keys | ttl [-j] | unit [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, normalize)"},
 			{Long: "id", Description: "Restrict to one aria (provider)"},
 			// -n is already dry-run on this command.
 			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
@@ -1835,7 +1820,7 @@ the daemon neither reads nor writes it.`,
 				return runDoctorPprof(ctx.Args[1])
 			}
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1850,6 +1835,9 @@ the daemon neither reads nor writes it.`,
 				return runDoctorProvider(ctx.Flag("id"), ctx.Flag("count"), ctx.BoolFlag("json"))
 			case "librettos":
 				return runDoctorLibrettos(ctx.BoolFlag("dry-run"))
+			case "normalize":
+				runNormalize(ctx.Extra.(*config.Loaded), ctx.BoolFlag("dry-run"), ctx.BoolFlag("json"))
+				return nil
 			case "toolcalls":
 				return runDoctorToolCalls(ctx.BoolFlag("dry-run"))
 			case "keys":
@@ -1861,12 +1849,13 @@ the daemon neither reads nor writes it.`,
 			case "unit":
 				return runDoctorUnit(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j]>")
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},
 			{"mem", "the daemon's footprint"}, {"pprof", "arm or disarm the live profiler"}, {"provider", "recent provider round-trips"},
-			{"librettos", "recount derived-form observers"}, {"skills", "what the binary ships"}, {"ttl", "nodes carrying a lifetime"},
+			{"librettos", "recount derived-form observers"}, {"normalize", "detach promoted arias, drop overrides history agrees with"},
+			{"skills", "what the binary ships"}, {"ttl", "nodes carrying a lifetime"},
 			{"unit", "whether the daemon on the socket is the systemd unit's"},
 		}, nil),
 	})
