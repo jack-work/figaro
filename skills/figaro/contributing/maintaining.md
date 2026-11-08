@@ -65,14 +65,21 @@ isolate. Every preset is a choice about which ones to isolate.
 | `.#share-hush` | config, runtime, state | testing credential resolution or refresh against a live provider. Real OAuth and AGE keys stay reachable, so you meet the first-run outfit picker. |
 | `.#share-config` | runtime, state, hush | iterating on outfit or agent logic. Real outfits and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig provider login <name>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
 | `.#clean` | everything | the truth test for the first-run flow and for auth migration |
-| `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real figaros and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
+| `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a COPY of a slice of your real store (`figaro doctor snapshot`) and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
 | `.#sandbox` | runtime, state, config (a writable COPY) | exercising real outfits, skills and credo while you EDIT them. `providers/` is symlinked, hush is shared, so turns run. `figaro-config-reseed` for a fresh copy. |
 | `.#swap` | nothing | swap the nix-profile binary for this build, restore on exit |
 | `.#tools` | n/a: no figaro on PATH | `go get`, `go mod tidy`, a `vendorHash` bump. Every other shell builds the package first, and that build fails the moment `go.mod` moves ahead of `vendorHash`. |
 
 `.#snapshot` copies once per dev root and then leaves the copy alone, so a
-half-migrated store survives for inspection. It is **disposable and not cheap**
-(hundreds of MB):
+half-migrated store survives for inspection. The slice is the
+`FIGARO_SNAPSHOT_ARIAS` (default 50) most recently active arias, with every
+node their history reads, and every unbound form and outfit stump, kept under
+`FIGARO_SNAPSHOT_MAX_MB` (default 500): an aria whose history would break the
+cap is passed over for the next. `0` lifts either limit, and
+`FIGARO_SNAPSHOT_ARIAS=0 FIGARO_SNAPSHOT_MAX_MB=0` copies the whole store.
+Recency is the newest file in the aria's own node directories and its `_meta`
+sidecar, read with stat alone. Arias left out are gone from the copy, so a
+message from one carries no sender name there. It is **disposable**:
 
 ```
 figaro-snapshot-reseed     # discard the copy, take a fresh one

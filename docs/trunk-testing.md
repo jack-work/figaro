@@ -24,10 +24,12 @@ to `allowed[]` knowing a trunkless figaro can no longer build it.
 ## Dev shells
 
     nix develop                # normal dev shell, isolated runtime
-    nix develop .#snapshot     # a COPY of the real store, for migration
-                               # and real-shaped-data work
+    nix develop .#snapshot     # a COPY of a slice of the real store, for
+                               # migration and real-shaped-data work
 
-`.#snapshot` reseeds from your daemon's arias into `$FIGARO_STATE_DIR`. It
+`.#snapshot` reseeds from your daemon's arias into `$FIGARO_STATE_DIR`: the 50
+most recently active arias with their history, and every form, under 500 MB
+(`FIGARO_SNAPSHOT_ARIAS`, `FIGARO_SNAPSHOT_MAX_MB`; `0` for no limit). It
 is a copy. Migration testing goes here and ONLY here: never against
 `~/.local/state/figaro/arias`, because a bad migration cannot be undone by
 rebuilding.

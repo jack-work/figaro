@@ -427,19 +427,16 @@
             '' else ""}
 
             ${if name == "snapshot" then ''
-            # Seed the dev state dir with a COPY of the real arias, once per
-            # dev root. The source is only ever read; every write in this shell
-            # lands on the copy. Nothing here can reach the live daemon, whose
-            # runtime dir is dev-scoped above.
             figaro-snapshot-reseed() {
               local src="''${XDG_STATE_HOME:-$HOME/.local/state}/figaro/arias"
               if [ ! -d "$src" ]; then
                 echo "snapshot: no arias at $src" >&2; return 1
               fi
-              echo "snapshot: copying $(du -sh "$src" | cut -f1) from $src ..." >&2
               rm -rf "$FIGARO_STATE_DIR/arias"
               mkdir -p "$FIGARO_STATE_DIR"
-              cp -a "$src" "$FIGARO_STATE_DIR/arias"
+              echo "snapshot: slicing $src (FIGARO_SNAPSHOT_ARIAS=''${FIGARO_SNAPSHOT_ARIAS:-50}, FIGARO_SNAPSHOT_MAX_MB=''${FIGARO_SNAPSHOT_MAX_MB:-500}; 0 = no limit) ..." >&2
+              "${figaroPkg}/bin/figaro" doctor snapshot "$FIGARO_STATE_DIR/arias" --from "$src" \
+                --arias "''${FIGARO_SNAPSHOT_ARIAS:-50}" --max-mb "''${FIGARO_SNAPSHOT_MAX_MB:-500}" >&2 || return 1
               date -Is > "$FIGARO_STATE_DIR/.snapshot-taken"
               echo "snapshot: ready at $FIGARO_STATE_DIR/arias" >&2
             }
@@ -529,8 +526,7 @@
         # daemon is never touched; the snapshot is seeded once per dev root and
         # then belongs to you.
         #
-        # It is DISPOSABLE by design and it is not cheap (the author's store is
-        # ~385MB). Tear it down when the experiment is over:
+        # It is DISPOSABLE by design. Tear it down when the experiment is over:
         #     rm -rf $FIGARO_DEV_ROOT
         #
         # Re-seed a fresh copy without leaving the shell:
