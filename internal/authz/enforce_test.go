@@ -139,3 +139,48 @@ func TestHelloOffTheLocalDoorNeedsARole(t *testing.T) {
 		}
 	}
 }
+
+// A box granted only send on an aria must be able to attach to it, since a CLI
+// send attaches first (#68); attach answers the id and nothing else. Send does
+// not open reads, and an aria held with neither read nor send stays as unknown
+// as a missing one.
+const sendOnlyPolicy = `
+[roles.owner]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[roles.box]
+grants = [{ verbs = ["send"], on = ["aria:aaaa0003"] }]
+
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+
+[[bind]]
+role = "box"
+principals = ["sandbox:dev-3"]
+`
+
+func TestSendOnlyAttachesToWhatItMaySendTo(t *testing.T) {
+	p := loaded(t, sendOnlyPolicy)
+	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
+	h := Guard(map[string]jkrpc.HandlerFunc{
+		rpc.MethodAttach: ok,
+		rpc.MethodForm:   ok,
+	}, AriaHeader{}, Enforce(p))
+	boxCtx := WithSubject(context.Background(), subject(box))
+
+	if err := call(t, h, boxCtx, rpc.MethodAttach, "aaaa0003"); err != nil {
+		t.Fatalf("a send-only box attaching to the aria it may send to: %v", err)
+	}
+	hidden := call(t, h, boxCtx, rpc.MethodAttach, "aaaa0002")
+	absent := call(t, h, boxCtx, rpc.MethodAttach, "ffff0009")
+	if hidden == nil || absent == nil {
+		t.Fatalf("hidden=%v absent=%v", hidden, absent)
+	}
+	if strings.Replace(hidden.Error(), "aaaa0002", "ffff0009", 1) != absent.Error() {
+		t.Fatalf("an aria held with neither read nor send answers unlike a missing one: %q, %q", hidden, absent)
+	}
+	if err := call(t, h, boxCtx, rpc.MethodForm, "aaaa0003"); err == nil {
+		t.Fatal("send let the box read the aria's form")
+	}
+}

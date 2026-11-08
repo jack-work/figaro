@@ -238,6 +238,12 @@ func Enforce(p *Policies) Policy {
 			res = Aria(r.Aria)
 		}
 		if d := p.Allow(r.Subject, verb, res); !d.Allowed {
+			// Attach answers only the aria's id (session_handlers.go attach), never its history, and a CLI send
+			// attaches first: a caller granted send must be able to address the aria it may send to (#68).
+			// Holding neither read nor send stays Hidden below, so existence is still no oracle.
+			if r.Method == rpc.MethodAttach && res.Kind == ResourceAria && p.Allow(r.Subject, rpc.VerbSend, res).Allowed {
+				return Allow()
+			}
 			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !p.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
 				return Decision{Hidden: true}
 			}
