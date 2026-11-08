@@ -45,10 +45,12 @@ type Facts struct {
 }
 
 type Override struct {
-	TextOnly  *bool `toml:"text_only,omitempty"`
-	Context   int   `toml:"context,omitempty"`
-	Long      int   `toml:"long,omitempty"`
-	MaxOutput int   `toml:"max_output,omitempty"`
+	TextOnly   *bool `toml:"text_only,omitempty"`
+	Context    int   `toml:"context,omitempty"`
+	Long       int   `toml:"long,omitempty"`
+	MaxOutput  int   `toml:"max_output,omitempty"`
+	ImageBytes int   `toml:"max_prompt_image_size,omitempty"`
+	ImageCount int   `toml:"max_prompt_images,omitempty"`
 }
 
 func (m Mapping) With(over *Mapping) Mapping {
@@ -373,6 +375,14 @@ func applyOverride(e *models.Entry, o Override) {
 	if o.MaxOutput > 0 {
 		e.MaxOutput = o.MaxOutput
 		e.Mark("max_output", models.SourceConfig)
+	}
+	if o.ImageBytes > 0 {
+		e.ImageBytes = o.ImageBytes
+		e.Mark("max_prompt_image_size", models.SourceConfig)
+	}
+	if o.ImageCount > 0 {
+		e.ImageCount = o.ImageCount
+		e.Mark("max_prompt_images", models.SourceConfig)
 	}
 	if o.TextOnly != nil {
 		takes := !*o.TextOnly

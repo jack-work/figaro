@@ -260,3 +260,14 @@ context = 3
 	require.Equal(t, 3, got.Facts["b*"].Context)
 	require.Equal(t, builtin, builtin.With(nil))
 }
+
+func TestTheProviderFileStatesImageLimits(t *testing.T) {
+	r, err := New(Mapping{}, map[string]Override{"m": {ImageBytes: 1 << 20, ImageCount: 2}})
+	require.NoError(t, err)
+	e, ok := r.Seed("m")
+	require.True(t, ok)
+	require.Equal(t, 1<<20, e.ImageBytes)
+	require.Equal(t, 2, e.ImageCount)
+	require.Equal(t, models.SourceConfig, e.Source("max_prompt_image_size"))
+	require.Equal(t, models.SourceConfig, e.Source("max_prompt_images"))
+}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -154,5 +155,37 @@ func TestATextOnlyFactNamesTheMapping(t *testing.T) {
 	}
 	if got := p.textOnly("vendor/seeing"); got != "" {
 		t.Errorf("an unknown model is sent images, got %q", got)
+	}
+}
+
+// A model's image limits are enforced up front only when the provider file
+// or figaro's mapping states them: Copilot's own catalog says one image of
+// 3 MiB for models that took two images and a 4.5 MB image on 2026-11-08.
+func TestImageLimitsAreEnforcedUpFrontOnlyFromConfigOrAFact(t *testing.T) {
+	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return "http://127.0.0.1:1" }, Default: Chat,
+		Mapping:   catalog.Mapping{Facts: map[string]catalog.Facts{"faceted*": {ImageCount: 4}}},
+		Overrides: map[string]catalog.Override{"configured": {ImageBytes: 1 << 20, ImageCount: 2}}})
+	p.catalog = map[string]models.Entry{"listed": {ImageBytes: 3 << 20, ImageCount: 1, Src: map[string]string{
+		"max_prompt_image_size": models.SourceAPI, "max_prompt_images": models.SourceAPI}}}
+
+	if got := p.imageLimits("listed", false); got != (provider.ImageLimits{}) {
+		t.Errorf("the provider's own numbers were enforced up front: %+v", got)
+	}
+	if got := p.imageLimits("listed", true); got.MaxCount != 1 || got.MaxBytes != 3<<20 || !strings.Contains(got.CountWhy, "gw's model catalog") {
+		t.Errorf("a refit after a refusal reads the catalog: %+v", got)
+	}
+	got := p.imageLimits("configured", false)
+	if got.MaxBytes != 1<<20 || got.MaxCount != 2 || !strings.Contains(got.CountWhy, `[models."configured"] max_prompt_images in providers/gw.toml`) {
+		t.Errorf("config: %+v", got)
+	}
+	if got := p.imageLimits("vendor/faceted-2", false); got.MaxCount != 4 || !strings.Contains(got.CountWhy, "figaro's catalog mapping for gw") {
+		t.Errorf("fact: %+v", got)
+	}
+}
+
+func TestAConfiguredImageSizeIsAppliedOnTheWire(t *testing.T) {
+	got := joined(sendImageThroughChat(t, "[models.\"explabs/qwen3.8-max\"]\nmax_prompt_image_size = 1\n", "explabs/qwen3.8-max"))
+	if strings.Contains(got, "image_url") || !strings.Contains(got, `takes images up to 1B ([models.\"explabs/qwen3.8-max\"] max_prompt_image_size in providers/`) {
+		t.Errorf("got %s", got)
 	}
 }

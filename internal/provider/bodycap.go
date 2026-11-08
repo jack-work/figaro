@@ -99,6 +99,8 @@ func BodySize(body BodyFunc) (int, error) {
 func ShapeRequest(label string, rows RowSeq, in SendInput, routeLimit int, dialect ImageDialect, body func(RowSeq) BodyFunc) (RowSeq, error) {
 	if in.TextOnly != "" {
 		rows = ElideImages(rows, dialect, "[image omitted: "+in.TextOnly+"]")
+	} else {
+		rows = FitImages(rows, in.Images, dialect)
 	}
 	return FitRequest(label, rows, MaxRequestBytes(in.Snapshot, routeLimit), dialect, body)
 }

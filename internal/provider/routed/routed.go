@@ -284,8 +284,14 @@ func (p *Provider) textOnly(model string) string {
 	return ""
 }
 
+func (p *Provider) imageLimits(model string, anySource bool) provider.ImageLimits {
+	e, _ := p.entry(model)
+	return provider.ImageLimitsOf(e, p.spec.Name, model, anySource)
+}
+
 func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in provider.SendInput, bus provider.Bus) error {
 	in.TextOnly = p.textOnly(model)
+	in.Images = p.imageLimits(model, false)
 	switch t {
 	case Responses, ResponsesWS:
 		r := p.responsesBackend()

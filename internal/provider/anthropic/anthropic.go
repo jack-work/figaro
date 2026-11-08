@@ -985,6 +985,9 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("resolve token: %w", err)
 	}
 	model := a.resolveModel(in.Snapshot)
+	if e, ok := a.SeedModel(model); ok {
+		in.Images = provider.ImageLimitsOf(e, providerName, model, false)
+	}
 
 	req, rows, err := a.projectRequest(src, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
 	if err != nil {

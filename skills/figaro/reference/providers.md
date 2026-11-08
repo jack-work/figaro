@@ -50,6 +50,23 @@ send time; the aria's history keeps its images for the next model.
 text_only = true
 ```
 
+## Image size and count, per model
+
+`max_prompt_image_size` (bytes of the decoded image) and `max_prompt_images`
+(per request) are fitted before a send when the provider file or a fact in
+figaro's mapping states them. An image over the size is sent smaller, with a
+note naming the limit and the factor that maps coordinates back; one that
+cannot be made that small is replaced with a note. Over the count, the oldest
+images are replaced with a note. A provider's own catalog numbers (Copilot
+states one image of 3 MiB) are listed but not enforced up front: Copilot took
+two images and a 4.5 MB image on such models on 2026-11-08.
+
+```toml
+[models."explabs/qwen3.8-max"]
+max_prompt_image_size = 5242880
+max_prompt_images     = 8
+```
+
 ## The model catalog
 
 Every provider's model list lands in `@models` (`figaro models`, the

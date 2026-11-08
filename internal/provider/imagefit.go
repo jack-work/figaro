@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
 
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -173,4 +175,93 @@ func downscaleNote(why string, f tool.FittedImage) string {
 		return "[image downscaled: " + why + ". " + strings.TrimSuffix(strings.TrimPrefix(note, "["), "]") + "]"
 	}
 	return "[image downscaled: " + why + "]"
+}
+
+func FitImages(rows RowSeq, lim ImageLimits, dialect ImageDialect) RowSeq {
+	if (lim.MaxBytes <= 0 && lim.MaxCount <= 0) || dialect.data == nil {
+		return rows
+	}
+	list, lts := CollectRows(rows)
+	drop := 0
+	if lim.MaxCount > 0 {
+		drop = countImages(list, dialect) - lim.MaxCount
+	}
+	maxBase64 := 0
+	if lim.MaxBytes > 0 {
+		maxBase64 = base64.StdEncoding.EncodedLen(lim.MaxBytes)
+	}
+	countNote := dialect.Text("[image elided: " + lim.CountWhy + ", so figaro dropped the oldest]")
+	for i, row := range list {
+		if !bytes.Contains(row, []byte("image")) || (drop <= 0 && (maxBase64 == 0 || len(row) <= maxBase64)) {
+			continue
+		}
+		v, ok := decodeRow(row)
+		if !ok {
+			continue
+		}
+		changed := rewriteImages(&v, dialect, func(part map[string]any) []any {
+			if drop > 0 {
+				drop--
+				return []any{countNote}
+			}
+			img, ok := dialect.data(part)
+			if maxBase64 == 0 || !ok || len(img.Data) <= maxBase64 {
+				return nil
+			}
+			smaller, fitted, ok := downscaleImage(img, maxBase64)
+			if !ok {
+				return []any{dialect.Text("[image elided: " + lim.BytesWhy + ", and it could not be made that small]")}
+			}
+			return []any{dialect.Text(downscaleNote(lim.BytesWhy, fitted)), dialect.withData(part, smaller)}
+		})
+		if !changed {
+			continue
+		}
+		if out, err := json.Marshal(v); err == nil {
+			list[i] = out
+		}
+	}
+	return SliceRows(list, lts)
+}
+
+func countImages(list []json.RawMessage, dialect ImageDialect) int {
+	n := 0
+	for _, row := range list {
+		if !bytes.Contains(row, []byte("image")) {
+			continue
+		}
+		v, ok := decodeRow(row)
+		if !ok {
+			continue
+		}
+		rewriteImages(&v, dialect, func(map[string]any) []any {
+			n++
+			return nil
+		})
+	}
+	return n
+}
+
+func ImageLimitsOf(e models.Entry, providerName, model string, anySource bool) ImageLimits {
+	enforced := func(field string) (string, bool) {
+		switch e.Source(field) {
+		case models.SourceConfig:
+			return fmt.Sprintf("[models.%q] %s in providers/%s.toml", model, field, providerName), true
+		case models.SourceMapping:
+			return "figaro's catalog mapping for " + providerName, true
+		case models.SourceAPI:
+			return providerName + "'s model catalog", anySource
+		}
+		return "", false
+	}
+	var lim ImageLimits
+	if why, ok := enforced("max_prompt_image_size"); ok && e.ImageBytes > 0 {
+		lim.MaxBytes = e.ImageBytes
+		lim.BytesWhy = fmt.Sprintf("model %s takes images up to %s (%s)", model, tool.FormatSize(e.ImageBytes), why)
+	}
+	if why, ok := enforced("max_prompt_images"); ok && e.ImageCount > 0 {
+		lim.MaxCount = e.ImageCount
+		lim.CountWhy = fmt.Sprintf("model %s takes at most %d images per request (%s)", model, e.ImageCount, why)
+	}
+	return lim
 }

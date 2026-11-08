@@ -88,6 +88,14 @@ type SendInput struct {
 	MaxTokens int
 
 	TextOnly string
+	Images   ImageLimits
+}
+
+type ImageLimits struct {
+	MaxBytes int
+	BytesWhy string
+	MaxCount int
+	CountWhy string
 }
 
 type Provider interface {

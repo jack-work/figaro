@@ -125,3 +125,72 @@ func TestADownscaleThatResizesSaysHowToMapCoordinates(t *testing.T) {
 		t.Errorf("a resized image must say how to map coordinates: %.300s", got[0])
 	}
 }
+
+func shapeChat(t *testing.T, rows []json.RawMessage, in SendInput) []json.RawMessage {
+	t.Helper()
+	got, err := ShapeRequest("rou2", SliceRows(rows, nil), in, 0, ChatImages, chatFrame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := CollectRows(got)
+	return out
+}
+
+func TestAnImageCountKeepsTheNewestAndSaysWhy(t *testing.T) {
+	small := shot(8, 8)
+	rows := []json.RawMessage{chatPictureRow(t, "a", small), textRow(t, "x"), chatPictureRow(t, "b", small), chatPictureRow(t, "c", small)}
+	in := SendInput{Images: ImageLimits{MaxCount: 2, CountWhy: "model m takes at most 2 images per request (why)"}}
+	got := shapeChat(t, rows, in)
+	if imagesIn(got) != 2 || imagesIn(got[:1]) != 0 {
+		t.Fatalf("want the two newest kept: %s", rawStrings(got))
+	}
+	if !strings.Contains(string(got[0]), "[image elided: model m takes at most 2 images per request (why), so figaro dropped the oldest]") {
+		t.Errorf("the elided image does not say why: %s", got[0])
+	}
+	if string(got[1]) != string(rows[1]) || string(got[3]) != string(rows[3]) {
+		t.Error("rows that keep their images were rewritten")
+	}
+}
+
+func TestAnImageOverItsSizeIsDownscaledAndOneThatCannotBeIsElided(t *testing.T) {
+	big := noisy(400, 300)
+	raw, _ := base64.StdEncoding.DecodeString(big)
+	rows := []json.RawMessage{chatPictureRow(t, "big", big), chatPictureRow(t, "garbage", strings.Repeat("A", len(big)))}
+	in := SendInput{Images: ImageLimits{MaxBytes: len(raw) / 3, BytesWhy: "model m takes images up to 0.10 MiB (why)"}}
+	got := shapeChat(t, rows, in)
+	if imagesIn(got[:1]) != 1 || !strings.Contains(string(got[0]), "[image downscaled: model m takes images up to 0.10 MiB (why). Image: 400x300") {
+		t.Errorf("the big image was not downscaled with a note: %.300s", got[0])
+	}
+	img, ok := ChatImages.data(mustPart(t, got[0]))
+	if !ok || len(img.Data) > base64.StdEncoding.EncodedLen(len(raw)/3) {
+		t.Errorf("the downscaled image is still over the limit")
+	}
+	if imagesIn(got[1:]) != 0 || !strings.Contains(string(got[1]), "[image elided: model m takes images up to 0.10 MiB (why), and it could not be made that small]") {
+		t.Errorf("an image that cannot be decoded must be elided with the reason: %.300s", got[1])
+	}
+}
+
+func TestNoImageLimitsLeaveTheRequestAlone(t *testing.T) {
+	rows := []json.RawMessage{chatPictureRow(t, "big", noisy(64, 64))}
+	got := shapeChat(t, rows, SendInput{})
+	if string(got[0]) != string(rows[0]) {
+		t.Error("a request with no image limits was rewritten")
+	}
+}
+
+func mustPart(t *testing.T, row json.RawMessage) map[string]any {
+	t.Helper()
+	var r struct {
+		Content []map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(row, &r); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range r.Content {
+		if ChatImages.Is(p) {
+			return p
+		}
+	}
+	t.Fatalf("no image in %s", row)
+	return nil
+}
