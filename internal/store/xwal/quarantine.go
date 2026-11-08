@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/jack-work/figaro/internal/store/disk"
 	"github.com/jack-work/figaro/internal/store/segment"
@@ -68,16 +69,18 @@ func (t *Trunks) ScanQuarantine() ([]Quarantined, error) {
 			if err != nil {
 				return nil, err
 			}
-			for _, base := range bases {
+			for i, base := range bases {
 				path := filepath.Join(dir, segFileName(base, codec))
-				_, serr := scanSegmentFrames(path, codec)
-				var cf *segment.CorruptFrameError
-				if !errors.As(serr, &cf) {
+				at, bad, err := corruptAt(path, codec, i < len(bases)-1)
+				if err != nil {
+					return nil, err
+				}
+				if !bad {
 					continue
 				}
 				out = append(out, Quarantined{
 					Trunk: nodes[key].Trunk, Node: key, Channel: mc.Name,
-					Segment: path, Offset: cf.Offset, Shared: t.descendantTrunks(key, nodes[key].Trunk),
+					Segment: path, Offset: at, Shared: t.descendantTrunks(key, nodes[key].Trunk),
 				})
 			}
 		}
@@ -319,4 +322,81 @@ func firstFrameEnd(path string, codec segment.SegmentCodec) int64 {
 		return io.EOF
 	})
 	return end
+}
+
+var verifiedSegments sync.Map
+
+func (t *Trunks) CheckLineage(trunk, channel string) error {
+	t.mu.RLock()
+	leaf, ok := t.idx.Head(trunk)
+	t.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	man, err := readManifestFile(t.root)
+	if err != nil {
+		return err
+	}
+	codec, err := codecByName(man.Codec)
+	if err != nil {
+		return err
+	}
+	for _, key := range t.lineageKeys(leaf) {
+		dir := t.channelDir(channel, key)
+		if !pathExists(dir) {
+			continue
+		}
+		bases, err := segmentBases(dir, codec)
+		if err != nil {
+			return err
+		}
+		for i, base := range bases {
+			path := filepath.Join(dir, segFileName(base, codec))
+			fi, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+			stamp := [2]int64{fi.Size(), fi.ModTime().UnixNano()}
+			if seen, ok := verifiedSegments.Load(path); ok && seen.([2]int64) == stamp {
+				continue
+			}
+			at, bad, err := corruptAt(path, codec, i < len(bases)-1)
+			if err != nil {
+				return err
+			}
+			if bad {
+				return fmt.Errorf("segment %s: %w", path, &segment.CorruptFrameError{Offset: at})
+			}
+			verifiedSegments.Store(path, stamp)
+		}
+	}
+	return nil
+}
+
+func corruptAt(path string, codec segment.SegmentCodec, sealed bool) (int64, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false, err
+	}
+	defer f.Close()
+	end := int64(0)
+	serr := codec.ScanFrames(f, func(off int64, frameLen int) error {
+		end = off + int64(frameLen)
+		return nil
+	})
+	var cf *segment.CorruptFrameError
+	if errors.As(serr, &cf) {
+		return cf.Offset, true, nil
+	}
+	if serr != nil {
+		return 0, false, serr
+	}
+	if !sealed {
+		return 0, false, nil
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, false, err
+	}
+	return end, end < fi.Size(), nil
 }

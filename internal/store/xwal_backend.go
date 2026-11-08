@@ -242,6 +242,9 @@ func (b *XwalBackend) refuseUnreadableChannel(node, channel string) error {
 	if err := xw.OpenChannel(channel); err != nil {
 		return fmt.Errorf("%s %s: %w", node, channel, err)
 	}
+	if err := b.store.trunks.CheckLineage(node, channel); err != nil {
+		return fmt.Errorf("%s %s: %w", node, channel, err)
+	}
 	return nil
 }
 

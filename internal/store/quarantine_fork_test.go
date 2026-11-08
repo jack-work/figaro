@@ -14,9 +14,13 @@ import (
 )
 
 func forkOverCorruptParent(t *testing.T) (dir string, parent, child string) {
+	return forkOverCorruptParentSized(t, 0)
+}
+
+func forkOverCorruptParentSized(t *testing.T, segmentSize int) (dir string, parent, child string) {
 	t.Helper()
 	dir = t.TempDir()
-	be, err := NewXwalBackend(dir, 0)
+	be, err := NewXwalBackend(dir, segmentSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,5 +82,36 @@ func TestAReleaseRefusesACorruptSegmentAForkShares(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "shares") {
 			t.Fatalf("release of %s through a shared node: %v", id, err)
 		}
+	}
+}
+
+// A fork reads its prefix through the node it was forked from. A corrupt
+// frame there must refuse the fork too, not hand it a history that stops
+// short at the parent's bad record.
+func TestAForkOverACorruptParentRefusesRatherThanReadingAShortHistory(t *testing.T) {
+	for _, size := range []int{0, 256} {
+		t.Run(fmt.Sprintf("segment size %d", size), func(t *testing.T) { forkOverCorruptParentRefuses(t, size) })
+	}
+}
+
+func forkOverCorruptParentRefuses(t *testing.T, size int) {
+	dir, _, child := forkOverCorruptParentSized(t, size)
+	be, err := NewXwalBackend(dir, size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+	lg, err := be.OpenFigIR(child)
+	if err == nil {
+		var texts []string
+		for _, e := range lg.Read() {
+			for _, c := range e.Payload.Content {
+				texts = append(texts, c.Text)
+			}
+		}
+		t.Fatalf("the fork opened over a corrupt parent and read %v", texts)
+	}
+	if !strings.Contains(err.Error(), "corrupt frame") {
+		t.Fatalf("the refusal does not say why: %v", err)
 	}
 }
