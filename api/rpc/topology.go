@@ -68,15 +68,27 @@ type ForkResponse struct {
 	OwnerNote    string `json:"owner_note,omitempty"`
 }
 
-// NormalizeRequest forces deferred topology work to run now.
 type NormalizeRequest struct {
-	// Segments is not yet implemented; the server reports it as unsupported.
-	Segments bool `json:"segments,omitempty"`
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+type NormalizedAria struct {
+	ID     string `json:"id"`
+	Handle string `json:"handle,omitempty"`
+}
+
+type DroppedOverride struct {
+	NormalizedAria
+	Under       string `json:"under"`
+	UnderHandle string `json:"under_handle,omitempty"`
+	Reason      string `json:"reason"`
 }
 
 type NormalizeResponse struct {
-	Detached    int  `json:"detached"`
-	Unsupported bool `json:"unsupported,omitempty"`
+	DryRun      bool              `json:"dry_run,omitempty"`
+	Detached    []NormalizedAria  `json:"detached"`
+	Dropped     []DroppedOverride `json:"dropped"`
+	Unsupported bool              `json:"unsupported,omitempty"`
 }
 
 // PromoteRequest climbs a trunk up to Levels levels, absorbing its

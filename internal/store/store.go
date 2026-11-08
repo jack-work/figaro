@@ -210,8 +210,7 @@ type Backend interface {
 
 	Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error
 
-	// Normalize runs deferred topology work now: blocking, O(absorbed bytes).
-	Normalize() (detached int, err error)
+	Normalize(dryRun bool) (NormalizeReport, error)
 
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
 

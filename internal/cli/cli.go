@@ -985,27 +985,29 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
 		Name:  "normalize",
 		Group: "Session",
 		Short: "Run deferred topology work now",
-		Usage: "normalize [--segments]",
+		Usage: "normalize [-n|--dry-run] [-j|--json]",
 		Long: `Make every aria independent of ancestors it is no longer presented
-under: each absorbs the history it currently reads through them.
+under: each absorbs the history it currently reads through them. Then drop
+every @topology override that changes no delete set: its aria is gone, or
+it names exactly the aria's history parent.
 
 Everything else in the trunk surface is instant because this can be
 postponed. Deletes repair only what they must, at delete time. Run this
 when you would rather pay the cost now, in one blocking pass.
 
-  figaro normalize             absorb history for every promoted aria
-  figaro normalize --segments  also repack partially filled segments
+  figaro normalize -n   report what would be detached and dropped
+  figaro normalize      do it
 
-Nothing changes about what any aria reads; only where the bytes live.
-Needs the trunk capability -- a trunkless figaro is normalized already.`,
+Nothing changes about what any aria reads, where any row is drawn, or what
+any delete would take; only where the bytes live.`,
 		ArgsMin: 0,
 		ArgsMax: 0,
 		Flags: []cmdkit.FlagDef{
-			{Long: "segments", IsBool: true, Description: "Also repack partially filled segments"},
+			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would change; touch nothing"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit the report as JSON"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			runNormalize(ld, ctx.BoolFlag("segments"))
+			runNormalize(ctx.Extra.(*config.Loaded), ctx.BoolFlag("dry-run"), ctx.BoolFlag("json"))
 			return nil
 		},
 	})

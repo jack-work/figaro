@@ -40,6 +40,12 @@ capabilities.
   daemon gets no overlay and draws that daemon's two keys as plain values.
   Writing `@topology` (a `set` on it)
   needs `set` on each aria moved and `read` on each aria it is drawn under.
+- **`figaro.normalize` changed shape in 0.56.** The request takes
+  `dry_run` (`segments` is gone); the response lists `detached` arias and
+  `dropped` overrides (`id`, `handle`, `under`, `reason`) instead of a
+  `detached` count. The daemon reports `normalize.report`; a CLI refuses to
+  normalize through one that does not, since an older daemon would drop
+  `dry_run` and do the real thing.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

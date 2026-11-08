@@ -1164,22 +1164,40 @@ func (s *XwalStore) collectStump(name string) {
 	}
 }
 
-// Normalize detaches every aria presented under something it was not born
-// under: each absorbs the prefix it reads through an ancestor, so a delete's
-// boundary is empty afterwards whatever the presentation hierarchy says.
-func (s *XwalStore) Normalize() (int, error) {
-	done := 0
-	for _, id := range s.tree.Overridden() {
+type NormalizeReport struct {
+	Detached []string
+	Dropped  []topo.Stale
+}
+
+func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
+	var r NormalizeReport
+	if s.tree == nil {
+		return r, nil
+	}
+	detach := s.tree.Overridden()
+	if dryRun {
+		assume := make(map[string]string, len(detach))
+		for _, id := range detach {
+			assume[id] = rootID
+		}
+		r.Detached = detach
+		dropped, err := s.tree.Prune(s.redundantGiven(assume), true)
+		r.Dropped = dropped
+		return r, err
+	}
+	for _, id := range detach {
 		node, ok := s.trunks.HeadNode(id)
 		if !ok {
-			return done, fmt.Errorf("normalize: no node for %s", id)
+			return r, fmt.Errorf("normalize: no node for %s", id)
 		}
 		if err := s.trunks.Detach(node); err != nil {
-			return done, fmt.Errorf("normalize %s: %w", id, err)
+			return r, fmt.Errorf("normalize %s: %w", id, err)
 		}
-		done++
+		r.Detached = append(r.Detached, id)
 	}
-	return done, nil
+	dropped, err := s.CleanTopology(false)
+	r.Dropped = dropped
+	return r, err
 }
 
 func (s *XwalStore) CleanTopology(dryRun bool) ([]topo.Stale, error) {

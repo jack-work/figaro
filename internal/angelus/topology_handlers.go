@@ -503,21 +503,34 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 
 func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.NormalizeRequest
-	if err := json.Unmarshal(params, &req); err != nil {
-		return nil, err
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
 	}
-	if req.Segments {
-		return nil, errors.New("normalize: --segments is not implemented yet")
-	}
-	n, err := h.angelus.Backend.Normalize()
+	report, err := h.angelus.Backend.Normalize(req.DryRun)
 	if errors.Is(err, store.ErrNoTrunkCapability) {
 		return rpc.NormalizeResponse{Unsupported: true}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("normalized topology", "detached", n)
-	return rpc.NormalizeResponse{Detached: n}, nil
+	resp := rpc.NormalizeResponse{DryRun: req.DryRun, Detached: []rpc.NormalizedAria{}, Dropped: []rpc.DroppedOverride{}}
+	named := func(id string) rpc.NormalizedAria {
+		_, words := names(h.angelus.Backend, id)
+		return rpc.NormalizedAria{ID: id, Handle: words}
+	}
+	for _, id := range report.Detached {
+		resp.Detached = append(resp.Detached, named(id))
+	}
+	for _, st := range report.Dropped {
+		_, under := names(h.angelus.Backend, st.Under)
+		resp.Dropped = append(resp.Dropped, rpc.DroppedOverride{NormalizedAria: named(st.ID), Under: st.Under, UnderHandle: under, Reason: st.Reason})
+	}
+	if !req.DryRun {
+		slog.Info("normalized", "detached", len(resp.Detached), "dropped", len(resp.Dropped))
+	}
+	return resp, nil
 }
 
 func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (interface{}, error) {

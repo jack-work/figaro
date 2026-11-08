@@ -12,6 +12,7 @@ const (
 	CapFormSeq    Capability = "form.seq"
 	CapFormAccess Capability = "form.access"
 	CapFormView   Capability = "form.view"
+	CapNormalize  Capability = "normalize.report"
 )
 
 type PrincipalKind string

@@ -957,28 +957,56 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 
 // runNormalize makes every aria absorb the history it is presented away from,
 // so no delete owes a boundary repair.
-func runNormalize(loaded *config.Loaded, segments bool) {
+func runNormalize(loaded *config.Loaded, dryRun, jsonOut bool) {
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		if err := needCapability(rpc.CapNormalize, "normalize"); err != nil {
+			return err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		resp, err := acli.Normalize(ctx, segments)
+		resp, err := acli.Normalize(ctx, dryRun)
 		if err != nil {
-			die("normalize: %s", err)
+			return fmt.Errorf("normalize: %w", err)
 		}
-		if resp.Unsupported {
-			die("normalize: this figaro has no trunk capability, so its hierarchy already\n" +
-				"  follows fork history and there is nothing to normalize.")
+		if jsonOut {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(resp)
 		}
-		switch resp.Detached {
-		case 0:
-			fmt.Fprintln(stderrw, "normalize: already normalized, nothing to absorb")
-		case 1:
-			fmt.Fprintln(stderrw, "normalize: 1 aria now owns its history outright")
-		default:
-			fmt.Fprintf(stderrw, "normalize: %d arias now own their history outright\n", resp.Detached)
-		}
+		printNormalize(*resp)
 		return nil
 	})
+}
+
+func printNormalize(resp rpc.NormalizeResponse) {
+	if resp.Unsupported {
+		fmt.Fprintln(stdout, "no trunk capability: the tree already follows fork history")
+		return
+	}
+	detach, drop := "detached", "dropped"
+	if resp.DryRun {
+		detach, drop = "would detach", "would drop"
+	}
+	label := func(a rpc.NormalizedAria) string {
+		if a.Handle != "" {
+			return a.Handle
+		}
+		return a.ID
+	}
+	for _, a := range resp.Detached {
+		fmt.Fprintf(stdout, "%s  %s\n", detach, label(a))
+	}
+	for _, d := range resp.Dropped {
+		under := d.UnderHandle
+		if under == "" {
+			under = d.Under
+		}
+		if under == "" {
+			under = "the top"
+		}
+		fmt.Fprintf(stdout, "%s  override %s under %s: %s\n", drop, label(d.NormalizedAria), under, d.Reason)
+	}
+	fmt.Fprintf(stderrw, "%d %s, %d override(s) %s\n", len(resp.Detached), detach, len(resp.Dropped), drop)
 }
 
 // runPromote changes only the presentation hierarchy: nothing moves on disk.

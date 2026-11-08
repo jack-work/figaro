@@ -188,11 +188,11 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 	if b.Store().Tree().Normalized() {
 		t.Fatal("a promoted forest must not be normalized")
 	}
-	n, err := b.Normalize()
+	r, err := b.Normalize(false)
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if n == 0 {
+	if len(r.Detached) == 0 {
 		t.Fatal("normalize absorbed nothing, but an aria was promoted")
 	}
 	before, _ := b.FormState(alt)
@@ -213,12 +213,12 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 // Normalize on a trunkless figaro is a no-op, not an error.
 func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
 	b, _ := backend(t, false)
-	n, err := b.Normalize()
+	r, err := b.Normalize(false)
 	if err != nil {
 		t.Fatalf("normalize without the capability: %v", err)
 	}
-	if n != 0 {
-		t.Fatalf("normalize absorbed %d on a trunkless figaro", n)
+	if len(r.Detached) != 0 || len(r.Dropped) != 0 {
+		t.Fatalf("normalize changed a trunkless figaro: %+v", r)
 	}
 }
 
@@ -235,21 +235,21 @@ func TestNormalizeIsIdempotent(t *testing.T) {
 	if _, err := b.Store().Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
-	first, err := b.Normalize()
+	first, err := b.Normalize(false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first == 0 {
+	if len(first.Detached) == 0 {
 		t.Fatal("normalize absorbed nothing, but an aria was promoted")
 	}
 	if !b.Store().Tree().Normalized() {
 		t.Error("after normalize the tree must report itself normalized")
 	}
-	second, err := b.Normalize()
+	second, err := b.Normalize(false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second != 0 {
-		t.Fatalf("second normalize absorbed %d again; it is not idempotent", second)
+	if len(second.Detached) != 0 || len(second.Dropped) != 0 {
+		t.Fatalf("second normalize changed things again; it is not idempotent: %+v", second)
 	}
 }

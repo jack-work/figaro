@@ -190,7 +190,9 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 }
 
 // Normalize runs deferred topology work now.
-func (b *XwalBackend) Normalize() (int, error) { return b.store.Normalize() }
+func (b *XwalBackend) Normalize(dryRun bool) (NormalizeReport, error) {
+	return b.store.Normalize(dryRun)
+}
 
 func (b *XwalBackend) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 	return b.store.CleanTopology(dryRun)

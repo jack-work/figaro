@@ -155,10 +155,9 @@ func (c *Angelus) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64
 	return &resp, err
 }
 
-// Normalize forces deferred topology work to run now. Blocks.
-func (c *Angelus) Normalize(ctx context.Context, segments bool) (*rpc.NormalizeResponse, error) {
+func (c *Angelus) Normalize(ctx context.Context, dryRun bool) (*rpc.NormalizeResponse, error) {
 	var resp rpc.NormalizeResponse
-	err := c.cli.Call(ctx, rpc.MethodNormalize, rpc.NormalizeRequest{Segments: segments}, &resp)
+	err := c.cli.Call(ctx, rpc.MethodNormalize, rpc.NormalizeRequest{DryRun: dryRun}, &resp)
 	if err != nil {
 		return nil, err
 	}

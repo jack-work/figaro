@@ -259,9 +259,19 @@ top-level conversation has nothing above it to promote into and is refused
 outfit instead. `promote <id> 10` on an aria three levels deep climbs three
 and reports three; it is not an error to ask for more than the tree has.
 
-**`figaro normalize`** makes every aria own its history outright, so no
-delete can owe anything at its boundary. It is the one operation here that
-is not instant (it copies the prefix each promoted aria borrows).
+**`figaro normalize [-n] [-j]`** makes every aria own its history
+outright, so no delete can owe anything at its boundary, then drops every
+override the history now agrees with. It is the one operation here that is
+not instant (it copies the prefix each promoted aria borrows). `-n` reports
+what each half would do and touches nothing.
+
+An override is **redundant** when dropping it changes no delete set: its
+aria is gone, or it names exactly the aria's history parent. Normalize
+makes the second happen when it detaches an aria whose override names the
+root. An override naming anything else stays, even one that draws nothing
+differently: kill `-r`, `form rm -r`, a lifetime and a reap all take what is
+drawn under the node, outfit versions and forms included, so an override
+to the root, a form or an outfit version decides what those take.
 
 Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
 RPC, `PromoteResponse{FigaroID, Climbed, AtStump}`, the boundary check in
@@ -328,6 +338,9 @@ It holds OVERRIDES, never a full tree, so a lost topology form degrades to
   out of the forest.
 - **A legacy `trunks.json` is folded in on first open** and renamed
   `trunks.json.migrated`.
+- **The clean is one patch of removals**, conditional on the form version
+  it judged: an arrangement that lands mid-pass refuses it and nothing the
+  arrangement set is lost.
 - **Retention is not built yet**: it keeps every record until figwal grows a
   compacting channel.
 

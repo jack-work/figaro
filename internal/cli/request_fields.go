@@ -8,10 +8,11 @@ import (
 )
 
 var requestFieldCapabilities = map[string]rpc.Capability{
-	"QuaRequest.Images":  rpc.CapQuaImages,
-	"SetRequest.Seq":     rpc.CapFormSeq,
-	"SetRequest.Client":  rpc.CapFormSeq,
-	"FormRequest.Client": rpc.CapFormSeq,
+	"QuaRequest.Images":       rpc.CapQuaImages,
+	"SetRequest.Seq":          rpc.CapFormSeq,
+	"SetRequest.Client":       rpc.CapFormSeq,
+	"FormRequest.Client":      rpc.CapFormSeq,
+	"NormalizeRequest.DryRun": rpc.CapNormalize,
 }
 
 type quaer interface {
