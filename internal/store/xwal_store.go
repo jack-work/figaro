@@ -1253,12 +1253,19 @@ func (s *XwalStore) deleteOrphans(id string) []string {
 // for pre-timestamp history.
 func (s *XwalStore) LastTS(id string) int64 {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Trunk first, by map lookup: a stump scan per row made a listing O(n²).
-	if _, ok := s.trunks.Kind(id); ok {
-		return s.trunks.LastTS(id)
+	key, ok := s.lastTSKeyLocked(id)
+	s.mu.Unlock()
+	if !ok {
+		return 0
 	}
-	return s.trunks.StumpLastTS(id)
+	return s.trunks.LastTSAt(key)
+}
+
+func (s *XwalStore) lastTSKeyLocked(id string) (string, bool) {
+	if _, ok := s.trunks.Kind(id); ok {
+		return s.trunks.LastTSKey(id)
+	}
+	return s.trunks.StumpLastTSKey(id)
 }
 
 const KindForm = string(kindForm)

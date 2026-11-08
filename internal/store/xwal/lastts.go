@@ -22,6 +22,7 @@ type lastTSRegistry struct {
 type nodeTS struct {
 	ts       atomic.Int64
 	hydrated atomic.Bool
+	probing  sync.Mutex
 }
 
 func newLastTSRegistry() *lastTSRegistry {
@@ -66,19 +67,26 @@ func mergeMax(ts *atomic.Int64, v int64) {
 // probe of the node's newest segment per channel, a file read, never a full
 // Open. Zero for pre-timestamp history.
 func (t *Trunks) LastTS(trunk TrunkID) int64 {
-	key, ok := t.anchorOf(trunk)
+	key, ok := t.LastTSKey(trunk)
 	if !ok {
 		return 0
 	}
-	return t.lastTSOf(key)
+	return t.LastTSAt(key)
 }
+
+func (t *Trunks) LastTSKey(trunk TrunkID) (string, bool) { return t.anchorOf(trunk) }
+
+func (t *Trunks) StumpLastTSKey(name string) (string, bool) { return name, t.node(name) != nil }
+
+func (t *Trunks) LastTSAt(key string) int64 { return t.lastTSOf(key) }
 
 // StumpLastTS is LastTS for a named stump (legacy forms).
 func (t *Trunks) StumpLastTS(name string) int64 {
-	if n := t.node(name); n == nil {
+	key, ok := t.StumpLastTSKey(name)
+	if !ok {
 		return 0
 	}
-	return t.lastTSOf(name)
+	return t.LastTSAt(key)
 }
 
 func (t *Trunks) lastTSOf(key string) int64 {
@@ -86,8 +94,12 @@ func (t *Trunks) lastTSOf(key string) int64 {
 	if n.hydrated.Load() {
 		return n.ts.Load()
 	}
-	mergeMax(&n.ts, t.probeLastTS(key))
-	n.hydrated.Store(true)
+	n.probing.Lock()
+	defer n.probing.Unlock()
+	if !n.hydrated.Load() {
+		mergeMax(&n.ts, t.probeLastTS(key))
+		n.hydrated.Store(true)
+	}
 	return n.ts.Load()
 }
 
