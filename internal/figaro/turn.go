@@ -142,6 +142,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	)
 	defer span.End()
 	started, rounds := time.Now(), 0
+	a.streamCuts = 0
 	defer func() {
 		figOtel.RecordTurn(turnCtx, time.Since(started), rounds,
 			attribute.String("provider", a.providerName()),
@@ -563,6 +564,13 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 	if sendErr != nil && !appended && a.answersToolsWithSilence(sendErr) {
 		sendErr = nil
+	}
+	if sendErr != nil && !appended && !appendedInline {
+		if cut, ok := provider.AsStreamCut(sendErr); ok {
+			if resumed, done := a.resumeAfterStreamCut(turnCtx, cut, spec, specDone, toolBuf); resumed {
+				return done
+			}
+		}
 	}
 	if sendErr != nil {
 		if a.turn == nil {
@@ -1115,6 +1123,12 @@ func newSpecDispatcher(events chan toolEvent) *specDispatcher {
 }
 
 // dispatch launches tc unless already in flight for that tool_call_id.
+func (s *specDispatcher) started() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.pending) > 0
+}
+
 func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.Content) *toolPending {
 	if tc.Type != message.ContentToolInvoke || tc.ToolCallID == "" {
 		return nil

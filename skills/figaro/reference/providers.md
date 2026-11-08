@@ -13,6 +13,18 @@ to choose a transport for each model. `anthropic` (native OAuth) is separate.
 | `responses` | OpenAI Responses, HTTP SSE | `base_url` + `/responses` |
 | `responses-ws` | OpenAI Responses, WebSocket | `ws(s)://` `base_url` + `/responses` |
 
+## A stream cut mid-reply
+
+Requests that fail before the body starts are retried by the transport. A
+`messages` stream that ends before `message_stop` (an HTTP/2 reset, a dropped
+connection, a clean close too early) is a stream cut, and the error names the
+provider, the events read and the cause. If no tool from that reply has
+started, the turn keeps what streamed (the prose; a tool call still being
+written is dropped), appends a `continue:` notice from `angelus` saying what
+was cut, and sends again after 1 s, then 3 s. A third cut in the same turn
+fails it. A tool that already started is never sent twice: that cut fails the
+turn as before.
+
 ## Route order
 
 1. The first `[[routing.rule]]` whose `model` glob matches.

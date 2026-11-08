@@ -333,6 +333,9 @@ func (s *sessionStatus) setRuntime(rt runtimeView) bool {
 		st = turnStatusAccepted
 	case rpc.RuntimeThinking:
 		st = turnStatusThinking
+		if rt.Reason != "" {
+			s.post(rt.Reason, alertWarn, false)
+		}
 	case rpc.RuntimeTooling:
 		st = turnStatusTooling
 	case rpc.RuntimeIdle:
