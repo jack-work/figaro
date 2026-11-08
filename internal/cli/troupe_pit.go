@@ -3,9 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
@@ -22,20 +20,17 @@ func seekAttended(v *formView, open mountOpener) {
 }
 
 func (in *interactiveInput) mountForm(addr string) (*formView, actOn, func(), <-chan struct{}, error) {
-	node, _ := rpc.SplitNode(addr)
-	ctx, cancel := context.WithCancel(context.Background())
-	if node == "" {
-		view, closeView, done, err := openFormViewOn(ctx, cancel, ariaAddr(addr), addr, "", in.renderLocked, func() {})
-		return view, in.actOnDaemon, closeView, done, err
-	}
-	ep, err := in.troupeDoor()
+	a, err := doorFor(addr)
 	if err != nil {
-		cancel()
 		return nil, nil, nil, nil, err
 	}
-	view, closeView, done, err := openFormViewOn(ctx, cancel, sdk.Addr{Door: ep, ID: addr}, addr, "", in.renderLocked, func() {})
+	ctx, cancel := context.WithCancel(context.Background())
+	view, closeView, done, err := openFormViewOn(ctx, cancel, a, addr, "", in.renderLocked, func() {})
+	if foreignNode(addr) == "" {
+		return view, in.actOnDaemon, closeView, done, err
+	}
 	send := func(ctx context.Context, method string, params json.RawMessage, target string) error {
-		acli, err := sdk.DialAngelus(ep)
+		acli, err := sdk.DialAngelus(a.Door)
 		if err != nil {
 			return err
 		}
@@ -51,26 +46,4 @@ var troupeBearer = func(tr boot.Troupe) transport.Bearer {
 		return r
 	}
 	return nil
-}
-
-func (in *interactiveInput) troupeDoor() (transport.Endpoint, error) {
-	name := ""
-	if in.loaded != nil {
-		name = in.loaded.Config.Troupe.Name
-	}
-	if name == "" {
-		return transport.Endpoint{}, fmt.Errorf("this node names no troupe ([troupe] name)")
-	}
-	tr, err := boot.LoadTroupe(in.loaded, name)
-	if err != nil || !tr.Remote() {
-		return transport.Endpoint{}, fmt.Errorf("no door for clients in troupes/%s.toml: figaro troupe login %s", name, name)
-	}
-	bearer := troupeBearer(tr)
-	if bearer == nil {
-		return transport.Endpoint{}, fmt.Errorf("figaro troupe login %s", name)
-	}
-	if _, err := bearer.Resolve(); err != nil {
-		return transport.Endpoint{}, fmt.Errorf("figaro troupe login %s", name)
-	}
-	return transport.WSSEndpoint(tr.URL, bearer), nil
 }

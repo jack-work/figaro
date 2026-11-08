@@ -39,7 +39,7 @@ func adoptHandedAttendance() {
 		return
 	}
 	os.Unsetenv(handedAttendanceEnv)
-	if rpc.ValidateAriaID(id) != nil || bindingDisabled() || shellPID <= 0 {
+	if rpc.ValidateAriaRef(id) != nil || bindingDisabled() || shellPID <= 0 {
 		return
 	}
 	acli, err := sdk.DialAngelus(doorEndpoint())

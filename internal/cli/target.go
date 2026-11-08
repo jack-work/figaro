@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -35,6 +36,9 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 		return r.FigaroID, ariaAddr(r.FigaroID), nil
 	}
 
+	if foreignNode(explicitID) != "" {
+		return attachForeign(ctx, explicitID)
+	}
 	attachCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, explicitID)
 	cancel()
@@ -48,6 +52,37 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 }
 
 func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
+
+func attachForeign(ctx context.Context, ref string) (string, sdk.Addr, error) {
+	a, err := doorFor(ref)
+	if err != nil {
+		return "", sdk.Addr{}, err
+	}
+	acli, err := sdk.DialAngelus(a.Door)
+	if err != nil {
+		return "", sdk.Addr{}, err
+	}
+	defer acli.Close()
+	attachCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, err := acli.Attach(attachCtx, ref)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return "", sdk.Addr{}, fmt.Errorf("no such aria: %s", ref)
+		}
+		return "", sdk.Addr{}, fmt.Errorf("attach %q: %w", ref, err)
+	}
+	id := onNodeOf(ref, resp.FigaroID)
+	return id, sdk.Addr{Door: a.Door, ID: id}, nil
+}
+
+func onNodeOf(ref, id string) string {
+	node, _ := rpc.SplitNode(ref)
+	if node == "" || strings.Contains(id, rpc.NodeSeparator) {
+		return id
+	}
+	return node + rpc.NodeSeparator + id
+}
 
 // An unbound-form target is resolved through its role, late, per call; the
 // `form` namespace never redirects.
@@ -79,6 +114,10 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus,
 	target := resp.Snapshot.Lookup("target-aria")
 	if target == nil || *target == "" {
 		return "", sdk.Addr{}, notARole{id}
+	}
+	if foreignNode(id) != "" {
+		held := onNodeOf(id, *target)
+		target = &held
 	}
 	if strings.Contains(*target, "@") {
 		return "", sdk.Addr{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)

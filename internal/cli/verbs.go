@@ -72,6 +72,9 @@ func attendVerb(ctx context.Context, env verbEnv, spec string) (attendOutcome, e
 		}
 		trunk = bound
 	}
+	if foreignNode(trunk) != "" {
+		return attendForeign(ctx, env, trunk, at)
+	}
 	// A binding anchor is an LT, so a named turn or node is resolved here.
 	anchor, note, err := resolveForkPoint(ctx, env.acli, trunk, at)
 	if err != nil {
@@ -101,6 +104,28 @@ func attendVerb(ctx context.Context, env verbEnv, spec string) (attendOutcome, e
 		return attendOutcome{}, err
 	}
 	return attendOutcome{ID: id, EP: ep, At: at, Note: note}, nil
+}
+
+func attendForeign(ctx context.Context, env verbEnv, ref string, at forkPoint) (attendOutcome, error) {
+	if !at.isHead() {
+		return attendOutcome{}, fmt.Errorf("%s is on another node: attend it at its head (a fork-point there is not supported yet)", ref)
+	}
+	if env.shellPID <= 0 {
+		return attendOutcome{}, errors.New("this pager has no shell to bind")
+	}
+	id, ep, err := attachForeign(ctx, ref)
+	if err != nil {
+		return attendOutcome{}, err
+	}
+	if err := bindBinding(ctx, env.acli, env.shellPID, id, 0); err != nil {
+		return attendOutcome{}, err
+	}
+	if held, hep, err := redirectRole(ctx, env.loaded, env.acli, id, ep); err == nil {
+		id, ep = held, hep
+	} else if !errors.As(err, new(notARole)) {
+		return attendOutcome{}, err
+	}
+	return attendOutcome{ID: id, EP: ep, At: at}, nil
 }
 
 func unattendVerb(ctx context.Context, env verbEnv) (attendOutcome, error) {
