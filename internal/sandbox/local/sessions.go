@@ -36,6 +36,18 @@ func (h *Host) Count() int {
 	return len(h.sessions)
 }
 
+func (h *Host) Running(scope string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, s := range h.sessions {
+		if s.scope == scope && s.ended().IsZero() {
+			n++
+		}
+	}
+	return n
+}
+
 func (h *Host) KillScope(scope string) int {
 	h.mu.Lock()
 	var victims []*session
