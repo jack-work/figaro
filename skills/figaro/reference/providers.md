@@ -62,8 +62,9 @@ provider file). The context % uses `context`; routing uses `endpoints`.
 
 Each provider reads its list through a mapping: per field, paths into a
 list entry, and the first that holds a value of the field's type wins.
-copilot and meta ship their own. A gateway preset (rou2, `gateway`) reads
-the generic one, which knows the usual names (`context_length`,
+copilot, meta, anthropic and openrouter ship their own; anthropic's carries
+the context windows its list leaves out as facts. azure and a gateway
+preset (rou2, `gateway`) read the generic one, which knows the usual names (`context_length`,
 `context_window`, `max_input_tokens`, `max_output_tokens`, `max_tokens`,
 `name`, `display_name`, `capabilities.image_input.supported`,
 `supports_tools`, `supported_endpoints` and the like), so a gateway that

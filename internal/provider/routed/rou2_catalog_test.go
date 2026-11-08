@@ -139,3 +139,37 @@ func TestABadCatalogTableFailsTheBuild(t *testing.T) {
 	_, err := provider.Lookup("badmap").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("")})
 	require.ErrorContains(t, err, "images")
 }
+
+// OpenRouter's documented shape, read through openrouter.toml on the chat
+// backend's listing (openrouter routes statically, with no catalog fetch).
+func TestOpenRouterListsThroughItsMapping(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"x-ai/grok-4.1","name":"xAI: Grok 4.1","context_length":2000000,
+			 "architecture":{"input_modalities":["text","image"]},
+			 "top_provider":{"context_length":2000000,"max_completion_tokens":30000},
+			 "supported_parameters":["tools","reasoning"]},
+			{"id":"z-ai/glm-5.3","context_length":1048576,"architecture":{"input_modalities":["text"]},"supported_parameters":[]}
+		]}`))
+	}))
+	defer srv.Close()
+	t.Setenv("OPENROUTER_BASE_URL", srv.URL)
+	p, err := provider.Lookup(openRouterName).Build(provider.BuildContext{Loaded: declaredDir(t, nil), Resolver: staticToken("k")})
+	require.NoError(t, err)
+	got := listedByID(t, p.(*Provider))
+
+	grok := got["x-ai/grok-4.1"]
+	require.Equal(t, "xAI: Grok 4.1", grok.Name)
+	require.Equal(t, 2_000_000, grok.Window(""))
+	require.Equal(t, 30_000, grok.MaxOutput)
+	takes, _ := grok.TakesImages()
+	require.True(t, takes)
+	require.Equal(t, true, *grok.Tools)
+	require.Equal(t, true, *grok.Reasoning)
+
+	glm := got["z-ai/glm-5.3"]
+	takes, src := glm.TakesImages()
+	require.False(t, takes)
+	require.Equal(t, models.SourceAPI, src)
+	require.Equal(t, false, *glm.Tools)
+}

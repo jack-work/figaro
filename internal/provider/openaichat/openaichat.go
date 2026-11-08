@@ -16,8 +16,9 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalog"
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -44,6 +45,8 @@ type Provider struct {
 	markMode provider.MarkMode
 
 	Templates *template.Template
+
+	Catalog *catalog.Reader
 }
 
 func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route,
@@ -125,27 +128,19 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("%s models API %d: %s", p.Route.Name, resp.StatusCode, body)
 	}
-	var payload struct {
-		Data []struct {
-			ID            string `json:"id"`
-			Name          string `json:"name"`
-			ContextLength int    `json:"context_length"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	out := make([]provider.ModelInfo, 0, len(payload.Data))
-	for _, m := range payload.Data {
-		e := models.Entry{Name: m.Name}
-		if m.Name != "" {
-			e.Mark("name", models.SourceAPI)
+	reader := p.Catalog
+	if reader == nil {
+		if reader, err = catalog.New(catalogmaps.Builtin("generic"), nil); err != nil {
+			return nil, err
 		}
-		if m.ContextLength > 0 {
-			e.Context = models.Context{Default: m.ContextLength}
-			e.Mark("context", models.SourceAPI)
-		}
-		out = append(out, provider.ModelInfo{ID: m.ID, Provider: p.Route.Name, Entry: e})
+	}
+	listed, _, err := reader.Page(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%s models: %w", p.Route.Name, err)
+	}
+	out := make([]provider.ModelInfo, 0, len(listed))
+	for _, m := range listed {
+		out = append(out, provider.ModelInfo{ID: m.ID, Provider: p.Route.Name, Entry: m.Entry})
 	}
 	return out, nil
 }

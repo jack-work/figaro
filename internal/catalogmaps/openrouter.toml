@@ -1,0 +1,9 @@
+[catalog]
+list       = "data"
+id         = ["id"]
+name       = ["name"]
+context    = ["context_length", "top_provider.context_length"]
+max_output = ["top_provider.max_completion_tokens"]
+images     = ["architecture.input_modalities has:image"]
+tools      = ["supported_parameters has:tools"]
+reasoning  = ["supported_parameters has:reasoning"]

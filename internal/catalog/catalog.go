@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/jack-work/figaro/api/models"
 )
 
@@ -93,6 +95,19 @@ func (m Mapping) With(over *Mapping) Mapping {
 		}
 	}
 	return out
+}
+
+type File struct {
+	Catalog *Mapping            `toml:"catalog,omitempty"`
+	Models  map[string]Override `toml:"models,omitempty"`
+}
+
+func Decode(data []byte) (File, error) {
+	var f File
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return File{}, err
+	}
+	return f, nil
 }
 
 type Model struct {

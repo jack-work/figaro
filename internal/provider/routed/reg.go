@@ -61,6 +61,7 @@ func buildAzure(ctx provider.BuildContext) (provider.Provider, error) {
 	spec, err := f.Apply(Spec{
 		Name:    azureName,
 		Default: Chat,
+		Mapping: catalogmaps.Builtin("generic"),
 		Caps:    provider.UncachedRoute(f.BaseURL).Caps,
 	})
 	if err != nil {
@@ -80,6 +81,7 @@ func buildOpenRouter(ctx provider.BuildContext) (provider.Provider, error) {
 		Name:        openRouterName,
 		BaseURL:     func() string { return base },
 		Default:     Chat,
+		Mapping:     catalogmaps.Builtin(openRouterName),
 		ModelPrefix: route.ModelPrefix,
 		Caps:        route.Caps,
 	})
@@ -114,7 +116,7 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 		Name:         name,
 		AuthOptional: f.OAuth == nil && f.ServiceToken == "",
 		Catalog:      "/models",
-		Mapping:      catalogmaps.Builtin(PresetGateway),
+		Mapping:      catalogmaps.Builtin("generic"),
 		Default:      Chat,
 		Caps:         caps,
 	})

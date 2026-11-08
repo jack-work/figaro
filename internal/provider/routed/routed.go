@@ -175,6 +175,7 @@ func (p *Provider) chatBackend() (*openaichat.Provider, error) {
 		return nil, err
 	}
 	c.Templates = p.templates
+	c.Catalog = p.reader
 	if p.spec.MarkMode != "" && p.spec.MarkMode != provider.MarkAuto {
 		c.SetMarkMode(p.spec.MarkMode)
 	}

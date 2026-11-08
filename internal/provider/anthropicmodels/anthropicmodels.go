@@ -1,29 +1,11 @@
-// Package anthropicmodels holds context-window and client-version facts
-// shared by the Anthropic-shaped providers.
+// Package anthropicmodels holds the client-version facts shared by the
+// Anthropic-shaped providers.
 package anthropicmodels
 
 import (
 	"strconv"
 	"strings"
 )
-
-// windowTable is keyed by normalized model-id prefix; longest match wins.
-var windowTable = map[string]int{
-	"claude-opus-5":     1_000_000,
-	"claude-opus-4-8":   1_000_000,
-	"claude-opus-4-7":   1_000_000,
-	"claude-opus-4-6":   1_000_000,
-	"claude-sonnet-5":   1_000_000,
-	"claude-sonnet-4-6": 1_000_000,
-	"claude-sonnet-4-5": 1_000_000,
-	"claude-fable-5":    1_000_000,
-
-	"claude-opus-4":   200_000,
-	"claude-opus-4-1": 200_000,
-	"claude-opus-4-5": 200_000,
-	"claude-haiku-4":  200_000,
-	"claude-3":        200_000,
-}
 
 // normalize folds "claude-opus-4.6" and "anthropic/claude-opus-4-6" onto
 // "claude-opus-4-6".
@@ -33,23 +15,6 @@ func normalize(model string) string {
 		m = m[i+1:]
 	}
 	return strings.ReplaceAll(m, ".", "-")
-}
-
-// ContextWindow returns 0 for a model not in the table.
-func ContextWindow(model string) int {
-	m := normalize(model)
-	best, window := 0, 0
-	for prefix, w := range windowTable {
-		if len(prefix) <= best || !strings.HasPrefix(m, prefix) {
-			continue
-		}
-		// "claude-opus-4" must not match "claude-opus-42".
-		if len(m) > len(prefix) && m[len(prefix)] != '-' {
-			continue
-		}
-		best, window = len(prefix), w
-	}
-	return window
 }
 
 // ClaudeCodeVersion is the client version presented to the API, which gates

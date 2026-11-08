@@ -23,6 +23,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalog"
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
@@ -59,6 +61,8 @@ type Anthropic struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
+
+	Catalog *catalog.Reader
 }
 
 func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
@@ -323,9 +327,41 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 	return nil, apiKey, fmt.Errorf("anthropic: giving up after %d attempts: %w", maxTransientRetries+1, lastErr)
 }
 
+func (a *Anthropic) catalogReader() *catalog.Reader {
+	if a.Catalog != nil {
+		return a.Catalog
+	}
+	r, _ := catalog.New(catalogmaps.Builtin(providerName), nil)
+	return r
+}
+
 func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	reader := a.catalogReader()
+	first := a.route().ModelsURL() + "?limit=100"
+	var out []provider.ModelInfo
+	seen := map[string]bool{}
+	for next := first; next != "" && !seen[next]; {
+		seen[next] = true
+		listed, cursor, err := a.modelsPage(ctx, reader, next)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range listed {
+			out = append(out, provider.ModelInfo{ID: m.ID, Provider: providerName, Entry: m.Entry})
+		}
+		next = ""
+		if cursor != "" {
+			if next, err = reader.NextURL(first, cursor); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+func (a *Anthropic) modelsPage(ctx context.Context, reader *catalog.Reader, url string) ([]catalog.Model, string, error) {
 	resp, _, err := a.doWithAuthRetry(ctx, func(apiKey string) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, "GET", a.route().ModelsURL()+"?limit=100", nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -333,54 +369,22 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		return req, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("anthropic models API %d: %s", resp.StatusCode, body)
+		return nil, "", fmt.Errorf("anthropic models API %d: %s", resp.StatusCode, body)
 	}
-
-	var result struct {
-		Data []struct {
-			ID             string `json:"id"`
-			DisplayName    string `json:"display_name"`
-			MaxInputTokens int    `json:"max_input_tokens"`
-			MaxTokens      int    `json:"max_tokens"`
-		} `json:"data"`
+	listed, cursor, err := reader.Page(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("anthropic models: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode models: %w", err)
-	}
-
-	var listed []provider.ModelInfo
-	for _, m := range result.Data {
-		e := models.Entry{Name: m.DisplayName}
-		if m.DisplayName != "" {
-			e.Mark("name", models.SourceAPI)
-		}
-		if m.MaxInputTokens > 0 {
-			e.Context = models.Context{Default: m.MaxInputTokens}
-			e.Mark("context", models.SourceAPI)
-		}
-		if m.MaxTokens > 0 {
-			e.MaxOutput = m.MaxTokens
-			e.Mark("max_output", models.SourceAPI)
-		}
-		listed = append(listed, provider.ModelInfo{ID: m.ID, Provider: providerName, Entry: e})
-	}
-	return listed, nil
+	return listed, cursor, nil
 }
 
 func (a *Anthropic) SeedModel(model string) (models.Entry, bool) {
-	window := anthropicmodels.ContextWindow(model)
-	if window <= 0 {
-		return models.Entry{}, false
-	}
-	e := models.Entry{Context: models.Context{Default: window}}
-	e.Mark("context", models.SourceMapping)
-	return e, true
+	return a.catalogReader().Seed(model)
 }
 
 func isOAuthToken(key string) bool {
