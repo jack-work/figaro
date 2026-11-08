@@ -114,6 +114,7 @@ jump (`:12`, `:12.3`, `:0`).
 | `:send [<id>] -- <text>` | submit; the transcript does NOT follow another aria |
 | `:fork [<id>[:<turn>]] -- <text>` | branch, prompt it, ATTEND it and show it |
 | `:fork --stay -- <text>` | branch and prompt it, attendance and screen untouched |
+| `:new [-O <outfits>] [-S k=v] [-D <keys>]` | mint an aria (the default outfit unless `-O`), ATTEND it and show it; a prompt or `-C` goes through the shell |
 | `:listen <id>` | show that aria; the shell's binding does not move |
 | `:attend <id>` | show it AND bind this shell to it |
 | `:attend null` | go home: drop the binding, keep showing what is on screen |

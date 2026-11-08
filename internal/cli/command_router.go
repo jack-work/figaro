@@ -223,6 +223,10 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandFork(ctx, args)
 		})
+	case "new":
+		in.commandAsync(func(ctx context.Context) (string, error) {
+			return in.commandNew(ctx, args)
+		})
 	case "succeed":
 		in.commandSucceed(args)
 	case "decide":

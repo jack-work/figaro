@@ -329,6 +329,7 @@ a prompt follows ` + "`--`" + `: sends it.
   figaro new -O <spec>              fresh aria on a named outfit, attended, no turn
   figaro new -S ttl=1h -- <p>       fresh aria with a birth patch (-O names, -S data)
   figaro new                        fresh aria on the default outfit, attended
+  :new [-O <spec>] [-S k=v]         in the pager: the same, shown in place
   figaro new -C <@form>             fresh aria, cast into that role at birth
   figaro new --stdin < prompt.txt   the prompt from stdin, never from argv
   figaro new --image r.jpg --stdin  a picture with the prompt from stdin

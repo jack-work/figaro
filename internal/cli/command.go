@@ -137,6 +137,29 @@ func (in *interactiveInput) commandSend(ctx context.Context, args []string) (str
 
 // commandFork is `:fork [<spec>] [-S k=v] [-O outfit] [--stay] -- <prompt>`:
 // mint, rebind, prompt, show the branch.
+func (in *interactiveInput) commandNew(ctx context.Context, args []string) (string, error) {
+	opts, rest, err := extractPromptFlags(args, false)
+	if err != nil {
+		return "", fmt.Errorf("new: %w", err)
+	}
+	if len(rest) > 0 || opts.cast || len(opts.images) > 0 {
+		return "", errors.New("new: the pager takes -O, -S and -D; a prompt or -C goes through the shell")
+	}
+	acli, err := in.angelus()
+	if err != nil {
+		return "", fmt.Errorf("new: %w", err)
+	}
+	created, err := acli.Create(ctx, opts.outfit.names, opts.outfit.patch)
+	if err != nil {
+		return "", fmt.Errorf("new: %w", err)
+	}
+	msg, err := in.switchSubject(ctx, created.FigaroID, true)
+	if err != nil {
+		return "", fmt.Errorf("new: created %s but could not show it: %w", ariaName(created.FigaroID), err)
+	}
+	return "created " + ariaName(created.FigaroID) + "; " + msg, nil
+}
+
 func (in *interactiveInput) commandFork(ctx context.Context, args []string) (string, error) {
 	plan, err := prepareFork(args, pagerSurface)
 	if err != nil {
