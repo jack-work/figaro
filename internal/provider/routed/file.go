@@ -23,6 +23,7 @@ type File struct {
 	BaseURL          string                       `toml:"base_url,omitempty"`
 	CacheMarkers     string                       `toml:"cache_markers,omitempty"`
 	MessagesPath     string                       `toml:"messages_path,omitempty"`
+	MaxRequestBytes  int                          `toml:"max_request_bytes,omitempty"`
 	TextOnly         bool                         `toml:"text_only,omitempty"`
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
@@ -61,6 +62,9 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	}
 	if f.MessagesPath != "" {
 		spec.MessagesPath = f.MessagesPath
+	}
+	if f.MaxRequestBytes > 0 {
+		spec.MaxRequestBytes = f.MaxRequestBytes
 	}
 	if f.TextOnly {
 		spec.TextOnly = true

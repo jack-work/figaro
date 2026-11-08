@@ -51,6 +51,8 @@ type Spec struct {
 	Caps        provider.CacheCaps
 	MarkMode    provider.MarkMode
 	TextOnly    bool
+
+	MaxRequestBytes int
 }
 
 func (s Spec) Validate() error {

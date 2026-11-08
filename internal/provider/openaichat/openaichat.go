@@ -190,6 +190,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
+	limit := provider.MaxRequestBytes(in.Snapshot, p.Route.MaxRequestBytes)
+	fitted, err := provider.FitRequest(p.Route.Name, provider.SliceRows(req.Messages, nil), limit, provider.ChatImages, func(r provider.RowSeq) provider.BodyFunc {
+		q := req
+		q.Messages, _ = provider.CollectRows(r)
+		return bodyFunc(q)
+	})
+	if err != nil {
+		return err
+	}
+	req.Messages, _ = provider.CollectRows(fitted)
 	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)

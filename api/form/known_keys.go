@@ -33,6 +33,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.thinking_budget", Short: "Extended-thinking token budget for budget-based models (>=1024 enables; unset/0 = off)", Mode: KeyUserSettable},
 		{Key: "system.model", Short: "Active provider model; switchable between turns", Mode: KeyUserSettable},
 		{Key: "system.max_tokens", Short: "Maximum output tokens for the next provider response", Mode: KeyUserSettable},
+		{Key: "system.max_request_bytes", Short: "Largest request body figaro sends to the provider, in bytes; over it the oldest images are elided first (default: max_request_bytes in providers/<name>.toml; 0 = no limit)", Mode: KeyUserSettable},
 		{Key: "system.first_byte_timeout", Short: `How long a provider request may wait for its first byte before it counts as a stream cut and is resent (Go duration, default "90s"; "0" turns it off)`, Mode: KeyUserSettable},
 		{Key: "system.context_tier", Short: `Copilot context-budget tier: "default" or "long_context"`, Mode: KeyUserSettable},
 		{Key: "system.max_context_tokens", Short: "Optional local cap for replayed prompt context tokens", Mode: KeyUserSettable},

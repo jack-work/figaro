@@ -51,6 +51,8 @@ type Anthropic struct {
 
 	TransportLabel string
 
+	MaxRequestBytes int
+
 	Templates *template.Template
 
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
@@ -975,6 +977,9 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
+	if rows, err = a.fitRequest(providerName, req, rows, in.Snapshot); err != nil {
+		return err
+	}
 	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
@@ -1084,16 +1089,19 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
+	label := a.TransportLabel
+	if label == "" {
+		label = "copilot"
+	}
+	if rows, err = a.fitRequest(label, req, rows, in.Snapshot); err != nil {
+		return err
+	}
 	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
 
 	figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
-	label := a.TransportLabel
-	if label == "" {
-		label = "copilot"
-	}
 	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
 	defer func() { err = provider.NameStreamCut(settle(err), label) }()
 	resp, err := fn(ctx, body, betaHeader(messageBetas(model)))
@@ -1107,6 +1115,13 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	}
 
 	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(label, bus)
+}
+
+func (a *Anthropic) fitRequest(label string, req nativeRequest, rows provider.RowSeq, snap form.Snapshot) (provider.RowSeq, error) {
+	limit := provider.MaxRequestBytes(snap, a.MaxRequestBytes)
+	return provider.FitRequest(label, rows, limit, provider.MessagesImages, func(r provider.RowSeq) provider.BodyFunc {
+		return bodyFuncSeq(req, r)
+	})
 }
 
 func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantCache, error) {

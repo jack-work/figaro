@@ -40,6 +40,9 @@ type Config struct {
 	BaseURL   func(token string) string
 	Headers   func(token string, ids IDs) http.Header
 	Envelope  func(ids IDs) map[string]string
+
+	Name            string
+	MaxRequestBytes int
 }
 
 type TokenSource interface {
@@ -74,6 +77,8 @@ type Provider struct {
 	sessionID string
 	limits    map[string]ContextLimits
 	transport map[string]Transport
+	maxBytes  int
+	name      string
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -102,6 +107,8 @@ func New(
 		transport: map[string]Transport{},
 		baseURL:   cfg.BaseURL,
 		dial:      dialResponses,
+		maxBytes:  cfg.MaxRequestBytes,
+		name:      cfg.Name,
 	}
 }
 
@@ -254,6 +261,23 @@ func (p *Provider) sendWithToken(
 	if maxTokens > 0 {
 		body.MaxOutputTokens = maxTokens
 	}
+
+	limit := provider.MaxRequestBytes(in.Snapshot, p.maxBytes)
+	label := p.name
+	if label == "" {
+		label = p.Namespace()
+	}
+	fitted, err := provider.FitRequest(label, provider.SliceRows(body.Input, nil), limit, provider.ResponsesImages, func(r provider.RowSeq) provider.BodyFunc {
+		b := body
+		b.Input, _ = provider.CollectRows(r)
+		return func(w io.Writer) error {
+			return json.NewEncoder(w).Encode(responseStreamRequest{responseBody: b, Stream: true})
+		}
+	})
+	if err != nil {
+		return err
+	}
+	body.Input, _ = provider.CollectRows(fitted)
 
 	transport := p.transportFor(model)
 	method, endpoint := wirelog.StreamMethodWS, responsesEndpoint(base)

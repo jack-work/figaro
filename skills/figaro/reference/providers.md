@@ -34,6 +34,17 @@ keep-alive line counts as a byte. Raise it for a model on the `chat` wire that
 thinks for minutes before it sends anything. The idle timer between events is
 separate.
 
+## A body cap
+
+A gateway that cuts request bodies at a size (rou2 at 8 MiB, which then
+answers "Request body must contain valid JSON") declares it with
+`max_request_bytes` in its file. `system.max_request_bytes` overrides it per
+aria; `0` means no limit. Over the limit, figaro replaces the oldest image
+parts with a note saying so until the body fits, newest images last, and
+never touches text. If the text alone is over, the send fails with
+"request too large" and names the knob. Only the request changes: the
+aria's history keeps its images.
+
 ## Route order
 
 1. The first `[[routing.rule]]` whose `model` glob matches.
@@ -52,6 +63,7 @@ api_key       = "..."                       # or the provider's env var
 cache_markers = "trusted"                   # chat only; see cache-control.md
 messages_path = "/v1/messages"              # when base_url does not end in /v1
 text_only     = true                        # chat only: send images as a text stand-in
+max_request_bytes = 8323072                 # the gateway's body cap, less headroom
 headers       = { "X-Team" = "figaro" }     # every request, every transport
 
 [transport_headers.responses]               # one transport only

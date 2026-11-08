@@ -1,0 +1,179 @@
+package provider
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"sort"
+	"strconv"
+
+	"github.com/jack-work/figaro/api/form"
+)
+
+const MaxRequestBytesKey = "system.max_request_bytes"
+
+func MaxRequestBytes(snapshot form.Snapshot, routeDefault int) int {
+	raw, ok := snapshot.Get(MaxRequestBytesKey)
+	if !ok {
+		return routeDefault
+	}
+	var n int
+	if json.Unmarshal(raw, &n) == nil && n >= 0 {
+		return n
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return routeDefault
+}
+
+type ImageDialect struct {
+	Is   func(part map[string]any) bool
+	Text func(note string) map[string]any
+}
+
+var (
+	MessagesImages = ImageDialect{
+		Is:   func(p map[string]any) bool { return p["type"] == "image" },
+		Text: func(note string) map[string]any { return map[string]any{"type": "text", "text": note} },
+	}
+	ChatImages = ImageDialect{
+		Is:   func(p map[string]any) bool { return p["type"] == "image_url" },
+		Text: func(note string) map[string]any { return map[string]any{"type": "text", "text": note} },
+	}
+	ResponsesImages = ImageDialect{
+		Is:   func(p map[string]any) bool { return p["type"] == "input_image" },
+		Text: func(note string) map[string]any { return map[string]any{"type": "input_text", "text": note} },
+	}
+)
+
+type RequestTooLarge struct {
+	Provider string
+	Bytes    int
+	Limit    int
+	Elided   int
+}
+
+func (e *RequestTooLarge) Error() string {
+	after := ""
+	if e.Elided > 0 {
+		after = fmt.Sprintf(" after eliding all %d images", e.Elided)
+	}
+	return fmt.Sprintf("%s: request too large: %s%s, over the limit of %s (%s); fork or succeed the aria to send less",
+		e.Provider, humanBytes(e.Bytes), after, humanBytes(e.Limit), MaxRequestBytesKey)
+}
+
+func humanBytes(n int) string {
+	return fmt.Sprintf("%.2f MiB (%d bytes)", float64(n)/(1<<20), n)
+}
+
+type countingWriter struct{ n int }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.n += len(p)
+	return len(p), nil
+}
+
+func BodySize(body BodyFunc) (int, error) {
+	var c countingWriter
+	if err := body(&c); err != nil {
+		return 0, err
+	}
+	return c.n, nil
+}
+
+func FitRequest(provider string, rows RowSeq, limit int, dialect ImageDialect, body func(RowSeq) BodyFunc) (RowSeq, error) {
+	if limit <= 0 {
+		return rows, nil
+	}
+	total, err := BodySize(body(rows))
+	if err != nil || total <= limit {
+		return rows, err
+	}
+	list, lts := CollectRows(rows)
+	note := fmt.Sprintf("[image elided: the request was over %s's %s request limit, so figaro dropped the oldest images first]", provider, humanBytes(limit))
+	elided, i := 0, 0
+	for total > limit {
+		before := elided
+		for ; i < len(list) && total > limit; i++ {
+			for total > limit {
+				smaller, ok := elideOneImage(list[i], dialect, note)
+				if !ok {
+					break
+				}
+				total -= len(list[i]) - len(smaller)
+				list[i] = smaller
+				elided++
+			}
+			if total <= limit {
+				break
+			}
+		}
+		if total, err = BodySize(body(SliceRows(list, lts))); err != nil {
+			return nil, err
+		}
+		if elided == before || i >= len(list) {
+			break
+		}
+	}
+	if total > limit {
+		return nil, &RequestTooLarge{Provider: provider, Bytes: total, Limit: limit, Elided: elided}
+	}
+	fitted := SliceRows(list, lts)
+	slog.Warn("request over the provider's limit; the oldest images were elided", "provider", provider, "elided", elided, "bytes", total, "limit", limit)
+	return fitted, nil
+}
+
+func elideOneImage(row json.RawMessage, dialect ImageDialect, note string) (json.RawMessage, bool) {
+	dec := json.NewDecoder(bytes.NewReader(row))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return row, false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return row, false
+	}
+	if !replaceFirstImage(&v, dialect, note) {
+		return row, false
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return row, false
+	}
+	return out, true
+}
+
+func replaceFirstImage(v *any, dialect ImageDialect, note string) bool {
+	switch x := (*v).(type) {
+	case map[string]any:
+		if dialect.Is(x) {
+			*v = dialect.Text(note)
+			return true
+		}
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			child := x[k]
+			if replaceFirstImage(&child, dialect, note) {
+				x[k] = child
+				return true
+			}
+		}
+	case []any:
+		for i := range x {
+			if replaceFirstImage(&x[i], dialect, note) {
+				return true
+			}
+		}
+	}
+	return false
+}

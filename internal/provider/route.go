@@ -122,7 +122,9 @@ type Route struct {
 	ModelPrefix string // e.g. "anthropic/" for OpenRouter model ids
 	Caps        CacheCaps
 	Headers     map[string]string
-	TextOnly    bool
+
+	MaxRequestBytes int
+	TextOnly        bool
 
 	// AuthOptional: a local gateway holds the real keys itself.
 	AuthOptional bool

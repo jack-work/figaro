@@ -137,6 +137,7 @@ func (p *Provider) messagesBackend() (*anthropic.Anthropic, error) {
 		return nil, err
 	}
 	m.CacheNamespace = p.spec.namespace(Messages)
+	m.MaxRequestBytes = p.spec.MaxRequestBytes
 	m.TransportLabel = p.spec.Name
 	m.Templates = p.templates
 	p.messages = m
@@ -159,6 +160,8 @@ func (p *Provider) chatBackend() (*openaichat.Provider, error) {
 		Headers:      p.spec.headersFor(Chat),
 		AuthOptional: p.spec.AuthOptional,
 		TextOnly:     p.spec.TextOnly,
+
+		MaxRequestBytes: p.spec.MaxRequestBytes,
 	}
 	c, err := openaichat.New(p.knobsNow(), p.resolver, route, p.opener(Chat))
 	if err != nil {
@@ -196,6 +199,9 @@ func (p *Provider) responsesBackend() *responses.Provider {
 			return h
 		},
 		Envelope: identity,
+
+		Name:            p.spec.Name,
+		MaxRequestBytes: p.spec.MaxRequestBytes,
 	}
 	r := responses.New(p.knobsNow(), p.resolver, cfg, p.opener(Responses))
 	r.SetTemplates(p.templates)
