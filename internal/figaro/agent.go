@@ -43,6 +43,7 @@ type promptSegment struct {
 	sender    string
 	principal string
 	text      string
+	notice    bool
 }
 
 type event struct {
@@ -92,6 +93,8 @@ type Config struct {
 
 	Decider     methods.Asker
 	DefaultForm func() form.Snapshot
+
+	TellFailure func(FailureNotice)
 }
 
 type ModelCatalog interface {
@@ -107,6 +110,7 @@ type Agent struct {
 	models      ModelCatalog
 	decider     methods.Asker
 	defaultForm func() form.Snapshot
+	tellFailure func(FailureNotice)
 	tools       *tool.Registry
 	proj        Projector
 	// figLog is read directly and written through journal only; see journal.go.
@@ -139,6 +143,7 @@ type Agent struct {
 	suspended   atomic.Bool
 	halted      atomic.Bool
 	turnReason  string
+	turnSenders []promptSegment
 	turnFault   error
 
 	spool      *Spool
@@ -219,6 +224,7 @@ func NewAgent(cfg Config) *Agent {
 		models:      cfg.Models,
 		decider:     cfg.Decider,
 		defaultForm: cfg.DefaultForm,
+		tellFailure: cfg.TellFailure,
 		createdAt:   createdAt,
 		lastActive:  lastActive,
 		agentSince:  now,
@@ -1094,6 +1100,7 @@ func (a *Agent) endTurnDiscarding(reason string) {
 func (a *Agent) finishTurn(reason string) {
 	a.turnReason = reason
 	a.recordFailure(reason)
+	a.tellSenders(reason)
 	// asm holds the whole streamed reply; an idle aria must not keep it.
 	if a.turn != nil {
 		a.turn.asm = nil

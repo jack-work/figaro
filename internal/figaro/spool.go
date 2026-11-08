@@ -51,6 +51,7 @@ type spooledSegment struct {
 	Sender    string `json:"sender,omitempty"`
 	Principal string `json:"principal,omitempty"`
 	Text      string `json:"text,omitempty"`
+	Notice    bool   `json:"notice,omitempty"`
 }
 
 type cutTurn struct {
@@ -177,7 +178,7 @@ func (s *Spool) Arias() ([]string, error) {
 func spooled(e event) spooledPrompt {
 	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume}
 	for _, s := range e.segments {
-		p.Segments = append(p.Segments, spooledSegment{Sender: s.sender, Principal: s.principal, Text: s.text})
+		p.Segments = append(p.Segments, spooledSegment{Sender: s.sender, Principal: s.principal, Text: s.text, Notice: s.notice})
 	}
 	return p
 }
@@ -185,7 +186,7 @@ func spooled(e event) spooledPrompt {
 func (p spooledPrompt) event() event {
 	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume}
 	for _, s := range p.Segments {
-		e.segments = append(e.segments, promptSegment{sender: s.Sender, principal: s.Principal, text: s.Text})
+		e.segments = append(e.segments, promptSegment{sender: s.Sender, principal: s.Principal, text: s.Text, notice: s.Notice})
 	}
 	return e
 }

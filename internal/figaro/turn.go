@@ -149,6 +149,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	)
 	defer span.End()
 	a.streamCuts = 0
+	a.turnSenders = nil
 	a.turnFault = nil
 	defer func() {
 		figOtel.RecordTurn(turnCtx, time.Since(started), rounds,
@@ -227,6 +228,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 		}
 	}
 	msg.Content = append(msg.Content, fitPromptImagesTotal(prompt.images, a.settings.InlineImageBudget())...)
+	a.turnSenders = append(a.turnSenders, prompt.segments...)
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -78,4 +80,51 @@ func (a *Agent) recordFailure(reason string) {
 		return
 	}
 	a.form.Apply(patch)
+}
+
+type FailureNotice struct {
+	To, From  string
+	Principal string
+	Text      string
+}
+
+func failureNoticeText(from string, turn uint64, category FailureCategory) string {
+	return fmt.Sprintf("figaro %s: turn %d failed (%s). The reason is in %s on its form.", from, turn, category, form.FailureReasonKey)
+}
+
+func (a *Agent) tellSenders(reason string) {
+	if _, failed := failedReason(reason); !failed || a.tellFailure == nil {
+		return
+	}
+	senders := a.turnSenders
+	a.turnSenders = nil
+	text := failureNoticeText(a.id, a.turnID, failureCategory(a.turnFault))
+	told := map[string]bool{}
+	for _, seg := range senders {
+		to := seg.sender
+		if seg.notice || to == a.id || told[to] || !figaroSender(to) {
+			continue
+		}
+		told[to] = true
+		a.tellFailure(FailureNotice{To: to, From: a.id, Principal: seg.principal, Text: text})
+	}
+}
+
+func (a *Agent) SubmitFailureNotice(from, text string) error {
+	evt := event{
+		typ:      eventUserPrompt,
+		text:     text,
+		segments: []promptSegment{{sender: from, text: text, notice: true}},
+	}
+	if !a.inbox.Send(evt) {
+		return ErrStopping
+	}
+	if !a.turnActive() {
+		a.publishRuntime(rpc.RuntimeAccepted, "")
+	}
+	return nil
+}
+
+func figaroSender(sender string) bool {
+	return !strings.HasPrefix(sender, "@") && len(sender) >= rpc.OldIDLen && rpc.IsHexID(sender)
 }
