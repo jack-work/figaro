@@ -54,6 +54,7 @@ type AriaMeta struct {
 	ReapedAtMS    int64  `json:"reaped_at_ms,omitempty"`
 	ReapedRoot    string `json:"reaped_root,omitempty"`
 	ReapedUntilMS int64  `json:"reaped_until_ms,omitempty"`
+	ReapedBy      string `json:"reaped_by,omitempty"`
 	ReapIfEmpty   bool   `json:"reap_if_empty,omitempty"`
 	// MetaVersion below CurrentMetaVersion is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
@@ -69,18 +70,19 @@ type Lifetime struct {
 	ReapedAtMS    int64
 	ReapedRoot    string
 	ReapedUntilMS int64
+	ReapedBy      string
 	ReapIfEmpty   bool
 }
 
 func (m *AriaMeta) Lifetime() Lifetime {
 	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS,
 		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot,
-		ReapedUntilMS: m.ReapedUntilMS, ReapIfEmpty: m.ReapIfEmpty}
+		ReapedUntilMS: m.ReapedUntilMS, ReapedBy: m.ReapedBy, ReapIfEmpty: m.ReapIfEmpty}
 }
 
 func (m *AriaMeta) SetLifetime(l Lifetime) {
 	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
-	m.ReapedAtMS, m.ReapedRoot, m.ReapedUntilMS = l.ReapedAtMS, l.ReapedRoot, l.ReapedUntilMS
+	m.ReapedAtMS, m.ReapedRoot, m.ReapedUntilMS, m.ReapedBy = l.ReapedAtMS, l.ReapedRoot, l.ReapedUntilMS, l.ReapedBy
 	m.ReapIfEmpty = l.ReapIfEmpty
 }
 

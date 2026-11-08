@@ -11,18 +11,21 @@ const SystemReapedKey = "system.reaped"
 
 const SystemReapedUntilKey = "system.reaped_until"
 
+const SystemReapedByKey = "system.reaped_by"
+
 type ReapedEntry struct {
 	ID      string
 	Root    string
 	AtMS    int64
 	UntilMS int64
+	By      string
 }
 
 func reapedEntryOf(id string, meta *AriaMeta) (ReapedEntry, bool) {
 	if meta == nil || meta.ReapedAtMS == 0 || meta.ReapedRoot == "" {
 		return ReapedEntry{}, false
 	}
-	return ReapedEntry{ID: id, Root: meta.ReapedRoot, AtMS: meta.ReapedAtMS, UntilMS: meta.ReapedUntilMS}, true
+	return ReapedEntry{ID: id, Root: meta.ReapedRoot, AtMS: meta.ReapedAtMS, UntilMS: meta.ReapedUntilMS, By: meta.ReapedBy}, true
 }
 
 func ReapedUntilValue(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

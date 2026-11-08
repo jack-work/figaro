@@ -152,6 +152,7 @@ type lifetimeChange struct {
 	reapIfEmpty  *bool
 	reapedRoot   *string
 	reapedUntil  *int64
+	reapedBy     *string
 }
 
 func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
@@ -204,7 +205,11 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 			c.reapedUntil = &ms
 		}
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil
+	if raw, spoke := valueOf(SystemReapedByKey); spoke {
+		by := strings.TrimSpace(raw)
+		c.reapedBy = &by
+	}
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil
 }
 
 func retiredValue(raw string) bool {
@@ -249,15 +254,18 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 	if c.reapedUntil != nil {
 		m.ReapedUntilMS = *c.reapedUntil
 	}
+	if c.reapedBy != nil {
+		m.ReapedBy = *c.reapedBy
+	}
 	if m.ReapedAtMS == 0 {
-		m.ReapedUntilMS = 0
+		m.ReapedUntilMS, m.ReapedBy = 0, ""
 	}
 }
 
 func sameLifetime(a, b *AriaMeta) bool {
 	ka, kb := a.KeepaliveMS, b.KeepaliveMS
 	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.ReapIfEmpty == b.ReapIfEmpty &&
-		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS &&
+		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS && a.ReapedBy == b.ReapedBy &&
 		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb)
 }
 

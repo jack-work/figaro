@@ -66,3 +66,33 @@ func TestAHardDeleteForgetsTheReapedEntry(t *testing.T) {
 		t.Fatalf("%d reaped after the hard delete", n)
 	}
 }
+
+func TestReapedByMirrorsIntoTheIndexAndGoesWithTheReap(t *testing.T) {
+	b := newTTLBackend(t)
+	id := mustNewAria(t, b)
+	setBoundFormKey(t, b, id, SystemReapedKey, id)
+	setBoundFormKey(t, b, id, SystemReapedByKey, "gc:run-1")
+	if got := b.Reaped(); len(got) != 1 || got[0].By != "gc:run-1" {
+		t.Fatalf("reaped %+v, want one entry by gc:run-1", got)
+	}
+	b.ttlMu.Lock()
+	b.ttl, b.reaped = nil, nil
+	b.ttlMu.Unlock()
+	if got := b.Reaped(); len(got) != 1 || got[0].By != "gc:run-1" {
+		t.Fatalf("after a fresh scan %+v: the sidecar must carry who reaped it", got)
+	}
+	child, _, err := b.ForkWith(id, 0, setPatch(map[string]string{"mantra": "revived"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := b.Meta(child); m != nil && m.ReapedBy != "" {
+		t.Fatalf("a fork inherited reaped_by %q", m.ReapedBy)
+	}
+	if snap, err := b.FormState(child); err != nil || snap.Lookup(SystemReapedByKey) != nil {
+		t.Fatalf("a fork's form carries %s: %v", SystemReapedByKey, err)
+	}
+	removeBoundFormKey(t, b, id, SystemReapedKey)
+	if m, _ := b.Meta(id); m == nil || m.ReapedBy != "" {
+		t.Fatalf("a restored aria still says who reaped it: %+v", m)
+	}
+}
