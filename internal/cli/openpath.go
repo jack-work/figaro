@@ -7,6 +7,8 @@ package cli
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -110,7 +112,47 @@ func takesPlusLine(cmd string) bool {
 // here (a stat), requests the pause here so it orders before the next Read, and
 // works on its own goroutine.
 func (in *interactiveInput) openPath(text string) {
-	cwd, _ := os.Getwd()
+	if node := foreignNode(in.figaroID); node != "" {
+		go in.note(text + ": the path is on another node (" + node + ")")
+		return
+	}
+	if cwd, ok := in.subjectCwd(); ok {
+		in.openPathIn(text, cwd)
+		return
+	}
+	if in.editorSpec() == "" {
+		go in.note("no editor: set editor under [cli] in config.toml, or $VISUAL / $EDITOR")
+		return
+	}
+	paused, resume := in.gate.request()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), editorFetchWait)
+		cwd, err := in.daemonDir(ctx)
+		cancel()
+		var argv []string
+		path := ""
+		if err == nil {
+			p, line, ok := editorTarget(text, cwd, os.Getenv("HOME"), isRegularFile)
+			if ok {
+				path, argv = p, editorArgv(in.editorSpec(), p, line)
+			} else {
+				err = errors.New(text + " is not an aria id or a file")
+			}
+		}
+		if err != nil {
+			select {
+			case <-paused:
+			case <-time.After(editorParkWait):
+			}
+			close(resume)
+			in.note(err.Error())
+			return
+		}
+		in.runEditor(argv, "edited "+filepath.Base(path), paused, resume)
+	}()
+}
+
+func (in *interactiveInput) openPathIn(text, cwd string) {
 	path, line, ok := editorTarget(text, cwd, os.Getenv("HOME"), isRegularFile)
 	if !ok {
 		go in.note(text + " is not an aria id or a file")
@@ -123,6 +165,29 @@ func (in *interactiveInput) openPath(text string) {
 	}
 	paused, resume := in.gate.request()
 	go in.runEditor(argv, "edited "+filepath.Base(path), paused, resume)
+}
+
+func (in *interactiveInput) subjectCwd() (string, bool) {
+	if in.bound == nil {
+		return "", false
+	}
+	snap, _, _ := in.bound.state()
+	if c := snap.Lookup(cwdKey); c != nil && *c != "" {
+		return *c, true
+	}
+	return "", false
+}
+
+func (in *interactiveInput) daemonDir(ctx context.Context) (string, error) {
+	acli, err := in.angelus()
+	if err != nil {
+		return "", err
+	}
+	dir, err := daemonCwd(ctx, acli.Status)
+	if err != nil {
+		return "", fmt.Errorf("editor: the figaro has no %s, and %w", cwdKey, err)
+	}
+	return dir, nil
 }
 
 func (in *interactiveInput) editorSpec() string {
@@ -251,9 +316,11 @@ func (in *interactiveInput) runEditor(argv []string, done string, paused <-chan 
 	}
 }
 
+var runEditorCommand = runEditorForeground
+
 // The editor runs as its own foreground process group; a non-zero exit is
 // reported, not raised.
-func runEditorCommand(argv []string) error {
+func runEditorForeground(argv []string) error {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.SysProcAttr = editorProcAttr()
