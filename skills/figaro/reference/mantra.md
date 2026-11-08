@@ -1,17 +1,17 @@
 # Mantra
 
-Every aria carries a **mantra**: a short, vivid 5-10 word phrase capturing the
-essence of *this* conversation: its current quest. It shows next to the aria
-in `figaro list`, so a human scanning their arias can tell at a glance what
-each one is about. Think of it as the aria's title card, rewritten as the
+Every figaro carries a **mantra**: a short, vivid 5-10 word phrase capturing the
+essence of *this* conversation: its current quest. It shows next to the figaro
+in `figaro list`, so a human scanning their figaros can tell at a glance what
+each one is about. Think of it as the figaro's title card, rewritten as the
 story turns.
 
 ## Your identity
 
-Your aria id is supplied in your form as a
+Your figaro id is supplied in your form as a
 `<system-reminder name="aria_id">` block, and your bash tool carries it as
 `$FIGARO_ARIA`. You are statically attended to yourself, so **no `--id` is
-needed to address yourself**: pass one only to touch a *different* aria.
+needed to address yourself**: pass one only to touch a *different* figaro.
 
 ## Setting it
 
@@ -25,7 +25,7 @@ Stored as a plain string: quote it, 5-10 words, no trailing punctuation.
 
 ```bash
 figaro set mantra "wrestling a root-access AWS billing puzzle"
-figaro set --id 7a5f8e3f mantra "..."     # another aria, explicitly
+figaro set --id 7a5f8e3f mantra "..."     # another figaro, explicitly
 ```
 
 ## When to (re)write it

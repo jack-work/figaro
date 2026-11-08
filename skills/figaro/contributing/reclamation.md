@@ -5,14 +5,14 @@
 daemon is bigger than you expect and you want to know which of several caches is
 holding it.
 
-The short version: **an aria's liveness is a memory decision, invisible to
+The short version: **a figaro's liveness is a memory decision, invisible to
 anyone attached to it.** Attending does not wake. Listening does not wake. Going
 dormant does not disconnect a client, kill a background job, or lose a frame.
 Waking resumes the stream mid-flight.
 
-## What a live aria costs
+## What a live figaro costs
 
-Measured on two real arias, not estimated
+Measured on two real figaros, not estimated
 (`internal/angelus/realaria_probe_test.go`, env-gated: point it at a *copy* of
 a store):
 
@@ -28,10 +28,10 @@ The decoded IR runs **4-5x its encoded bytes** and dominates. Two consequences
 that are easy to get backwards:
 
 - **Synthetic data lies about this.** Uniform small prose messages make the
-  composed UI look like 1.5x the decoded IR. On real arias it is 0.2x: tool
+  composed UI look like 1.5x the decoded IR. On real figaros it is 0.2x: tool
   calls and large results inflate the IR far more than the projection of them.
   Any claim about which holder dominates has to be made against a real store.
-- **Translations are wildly variable.** Kilobytes on a single-provider aria,
+- **Translations are wildly variable.** Kilobytes on a single-provider figaro,
   megabytes on one with a provider switch in its lineage.
 
 ## Three layers reclaim, each owning only its own
@@ -42,7 +42,7 @@ that are easy to get backwards:
 | **backend cache** | decoded IR, translations, bound form, meta | `EvictIdle(live, dormantAfter)`, refuses anything live | `store/xwal_backend.go` |
 | **agent** | the whole agent: composed UI, goroutines, provider binding | `Registry.Hibernate`, `dormant_after_minutes` | `angelus/registry.go` |
 
-They cascade: hibernate drops the agent → the aria stops being `live` → the
+They cascade: hibernate drops the agent → the figaro stops being `live` → the
 backend sweep can now reach its caches → figwal unloads the head beneath that.
 Each layer only reclaims what it owns and never has to know about the one above.
 
@@ -53,22 +53,22 @@ Hibernation is not a separate memory feature; it is the unlock.
 
 ## The endpoint outlives the agent: `ariaHub`
 
-The inversion everything else rests on. The **angelus** owns each aria's hub:
+The inversion everything else rests on. The **angelus** owns each figaro's hub:
 the router for its methods and the set of connections following it; the agent
 is a producer the hub binds. See `angelus/hub.go` and `angelus/door.go`.
 
-- Creating a hub is a map entry, on the first call naming the aria. It
+- Creating a hub is a map entry, on the first call naming the figaro. It
   constructs **no agent**.
 - The hub is the agent's **only** subscriber, so the agent's subscriber set is
   always ≤1 and lifetime-independent of any client. `Agent.OnTeardown` carries
   the unbind, because the endpoint must survive the agent and therefore cannot
   be owned by it.
-- Following is per-(conn, aria): one connection on the door may follow many
-  arias, and every push names its aria.
+- Following is per-(conn, figaro): one connection on the door may follow many
+  figaros, and every push names its figaro.
 
 Requests route on liveness. `rpc.MethodNeedsAgent` classifies the surface:
 `figaro.read`, `figaro.context` and `figaro.form` are pure functions of
-the store and are served from it while the aria is dormant; everything else
+the store and are served from it while the figaro is dormant; everything else
 wakes. **Default is `true`**, a method added later and left unclassified wakes
 rather than being answered from stale bytes, because a needless restore costs
 milliseconds and a stale mutation costs correctness.
@@ -78,10 +78,10 @@ milliseconds and a stale mutation costs correctness.
 `Registry.Hibernate` is `Kill` minus the deletion. What survives is the feature:
 
 - **pid bindings**, so a bound shell's next bare prompt lands on the same trunk
-  rather than minting a new aria;
+  rather than minting a new figaro;
 - **the hub**, so attached terminals stay connected;
 - **background sessions**, which live on the daemon (`Angelus.Sessions`), keyed
-  by aria id as scope. `figaro kill` reaps them via `KillScope`; hibernation
+  by figaro id as scope. `figaro kill` reaps them via `KillScope`; hibernation
   deliberately does not. Deletion takes its children; dormancy does not.
 
 The sweep's predicate is only what it needs to be:
@@ -91,7 +91,7 @@ state == "idle" && now - max(LastActive, AgentSince) > dormant_after
 ```
 
 Notably absent: bound pids, attached clients, running sessions. Each would have
-made hibernation impossible for exactly the arias that cost most, a terminal
+made hibernation impossible for exactly the figaros that cost most, a terminal
 left open all afternoon is the common case, and each is gone because what it
 protected moved elsewhere.
 
@@ -111,7 +111,7 @@ and undoing it on the next tick costs more than the memory it saves.
 ### A restore is never anonymous
 
 Every wake carries the RPC method that needed the agent: `FigaroInfo.WokeBy`
-(empty for an aria born rather than restored), on the `restored figaro` log
+(empty for a figaro born rather than restored), on the `restored figaro` log
 line as `woke_by`, and in `figaro list -j` beside `agent_since`. The sweep
 reads it too: reclaiming an agent that was woken and never took a turn is
 ordinary once (`figaro queue` on a sleeper), but the second consecutive time
@@ -126,7 +126,7 @@ That line is the instrument #22 lacked. If it appears, find the client
 issuing that method on a clock; do not add an attachment guard to the sweep
 (`ariaHub.Attached` says why).
 
-**There is no fourth state.** A reclaimed aria *is* `dormant`; the vocabulary
+**There is no fourth state.** A reclaimed figaro *is* `dormant`; the vocabulary
 stays `dormant | idle | active`. "Was it reclaimed or never loaded" is a
 *reason*, not a state.
 
@@ -167,13 +167,13 @@ Entries are sized from `Entry.EncodedBytes * irDecodeInflation`. Sizing from the
 decoded struct was tried and abandoned: guessing allocator rounding for every
 string, slice and boxed map value came out **3x low**. The encoded size is known
 for free at decode, and the ratio is stable enough (4.0x and 5.3x on two real
-arias) that one constant beats a model.
+figaros) that one constant beats a model.
 
 ### Reading only the tail
 
 `xwalLog.TailBudgeted` reads **backward** from the channel tail and decodes only
 what it keeps, because `xwal.ReadAt` is random access by LT and a record's
-encoded size is known *before* it is decoded. Opening a 2000-message aria:
+encoded size is known *before* it is decoded. Opening a 2000-message figaro:
 
 | | time | bytes | allocs |
 |---|---|---|---|
@@ -181,7 +181,7 @@ encoded size is known *before* it is decoded. Opening a 2000-message aria:
 | `budget=256KiB` | 5.0 ms | 1.35 MB | 11,827 |
 
 Beware one number when profiling this: **figwal's `OpenNode` costs ~27.5 MiB of
-transient allocation the first time an aria is opened**: loading the lineage
+transient allocation the first time a figaro is opened**: loading the lineage
 head, and ~0 on every open after. It dominates a wake and is figwal-side, not
 ours. Cold reads through a trimmed window are cheap once that head is warm.
 
@@ -189,7 +189,7 @@ ours. Cold reads through a trimmed window are cheap once that head is warm.
 
 The reaper says *when*; the cache decides *how*. `Backend.TrimResident(live,
 keep)` is reached through an optional interface, the same pattern `idleEvictor`
-already uses, and skips live arias for the same reason.
+already uses, and skips live figaros for the same reason.
 
 The window **also self-trims on append**, because a log growing through a long
 autonomous turn has to be bounded now rather than at the next sweep, and that
@@ -215,7 +215,7 @@ an outfit or the form.
 dormant_after_minutes  = 15   # 0 disables reclamation entirely
 sweep_interval_seconds = 120  # floored at 1s
 keepalive_minutes      = 1440 # default system.keepalive; 0 = none
-reaped_grace_hours     = 168  # reaped arias wait this long; 0 = delete at once
+reaped_grace_hours     = 168  # reaped figaros wait this long; 0 = delete at once
 max_live_arias         = 0    # 0 = unbounded; SOFT cap
 ir_window_mb           = 4    # 0 = unbounded; the knob that matters
 ir_window              = 0    # row-count safety, floored at 64
@@ -227,12 +227,12 @@ segment_cache_mb       = 32   # raw figwal payloads, whole process; 0 = none
 ```
 
 **`ir_window_mb` defaults to 4 now**, not unbounded. The decoded IR is 63 to
-86 percent of a real aria's footprint, so leaving the one bound that governs
-it switched off meant every aria anyone touched kept all of it.
+86 percent of a real figaro's footprint, so leaving the one bound that governs
+it switched off meant every figaro anyone touched kept all of it.
 
 **AND THE NUMBER NOW MEANS REAL BYTES** (2026-08-19). `ir_window_mb` used to be
 denominated in an ESTIMATE of decoded bytes: encoded size times a factor of 5,
-where the factor measures 1.13x on the largest arias and about 1.30x across the
+where the factor measures 1.13x on the largest figaros and about 1.30x across the
 whole store. A window believing it held 4 MiB held about 0.9 MiB, so it evicted
 roughly 4.4x earlier than its number claimed. The factor is now 1.35 (chosen
 above the measured 1.30 so a budget under-holds) and THE DEFAULT DROPPED FROM 4
@@ -246,7 +246,7 @@ daemon's boot path, which meant a `store.NewXwalBackend` built anywhere else,
 now bounds itself at construction (`store.DefaultIRBudgetBytes`,
 `store.DefaultTranslationBudgetBytes`) and these keys TUNE it: a key you do
 not set is a key that leaves the store's own bound alone, and an explicit `0`
-is still a real answer meaning unbounded. Measured on a 400-message aria of
+is still a real answer meaning unbounded. Measured on a 400-message figaro of
 8 KiB messages: 16.4 MB resident unbounded against 5.7 MB bounded.
 
 **`soft_limit_mb` is a ceiling AND a licence.** Go collects harder only as it
@@ -267,8 +267,8 @@ the O(history) cost the view exists to avoid.
 **`segment_cache_mb` is the bound the other three sit on.** `ir_window_mb`,
 `translation_window_mb` and `form_patch_window` all cap DECODED copies of
 bytes figwal was holding raw and without any limit: opening a channel used to
-copy its whole history into memory, so one `fig ls` on a 515-aria store
-retained 116 MiB with no aria loaded. figwal now loads a segment's payloads
+copy its whole history into memory, so one `fig ls` on a 515-figaro store
+retained 116 MiB with no figaro loaded. figwal now loads a segment's payloads
 on the read that lands in one and drops them, least recently used first, at
 this budget. The same listing retains 48 MiB at the 32 MiB default and 17.6
 MiB at 4 MiB, so residency is a dial. A dropped block costs only the next
@@ -284,7 +284,7 @@ together or not at all. The last two must be set BEFORE the store and the
 forms open, which is why they are package-level and armed in `runAngelus`
 rather than read per call.
 
-`max_live_arias` is soft by design: an aria mid-turn counts toward it and is
+`max_live_arias` is soft by design: a figaro mid-turn counts toward it and is
 skipped, because hitting a number is never worth killing a turn. It logs once
 per situation when it cannot be met, and exempts anything woken in the last
 minute.
@@ -296,7 +296,7 @@ reachability, one collector, on its own goroutine (`angelus/retention.go`),
 five minutes after boot and hourly, never on the sweep loop.
 
 Unit: a sealed segment of an unbound form's `form` channel. Pins: for every
-child of the form (an aria or form born from it), its `.fork` base minus one,
+child of the form (a figaro or form born from it), its `.fork` base minus one,
 the last version it reads from the form. A segment holding no pin goes; the
 newest sealed segment and the active one never do. Pins are read and the
 drop made under one tracked read lock (`xwal.Trunks.Retain`), so no birth can
@@ -337,10 +337,10 @@ everything: the sweep is skipped, or that directory is kept, with a warning.
 
 ## Seeing it
 
-`figaro doctor mem [-j]` reports live arias, resident handles, resident IR rows
+`figaro doctor mem [-j]` reports live figaros, resident handles, resident IR rows
 and bytes, figwal's loaded heads and segment cache, open endpoints, attached clients, sessions, goroutines and the heap.
 It names out loud the state in which idle eviction can free nothing (every
-resident aria having a live agent).
+resident figaro having a live agent).
 
 `net/http/pprof` serves on `$FIGARO_RUNTIME_DIR/pprof.sock` when `FIGARO_PPROF`
 is set: 0600, same trust boundary as `angelus.sock`. Off by default: pprof's
@@ -352,7 +352,7 @@ go tool pprof -http=: 'http+unix://$XDG_RUNTIME_DIR/figaro/pprof.sock/debug/ppro
 ```
 
 `scripts/hibernate-demo.sh` is the same thing with your own eyes: N seeded
-arias, a `figaro listen` pane on each, an aggressively short dormancy window,
+figaros, a `figaro listen` pane on each, an aggressively short dormancy window,
 and the counters as the sweep runs. What to look for is two numbers at once -
 `live=0` with `attached-clients=N`.
 
@@ -365,7 +365,7 @@ and the counters as the sweep runs. What to look for is two numbers at once -
   would remove the search. `TODO(perf)` in `store/xwal_log.go`.
 - **The form patch list is not windowed.** It holds the bound form plus every
   patch. Measured at ~45 KiB, so this is design tidiness, not a memory win.
-- **The first `fig ls` on a 515-aria store takes 2.7 s and nobody knows why
+- **The first `fig ls` on a 515-figaro store takes 2.7 s and nobody knows why
   yet.** It is NOT the segment scan: figwal now opens only the newest segment
   of a node (the rest on the read that lands in them), and the wall time did
   not move. Measured in-process, the whole listing is ~390 ms (topology and

@@ -81,7 +81,7 @@ figaro set system.tags[<LT>].cache_control ephemeral
 figaro unset system.tags[<LT>].cache_control
 ```
 
-where `<LT>` is a logical time in your own aria. Pick **stable prefixes** (the
+where `<LT>` is a logical time in your own figaro. Pick **stable prefixes** (the
 credo, settled tool outputs): never the current turn, and place them roughly
 monotonically.
 
@@ -98,7 +98,7 @@ own OpenAI-compatible shim drops it silently while still billing full input
 marked with nothing.
 
 Routes that support sticky routing also carry a session key derived from the
-aria id (`session_id` in the body, `x-session-id` as a header,
+figaro id (`session_id` in the body, `x-session-id` as a header,
 `prompt_cache_key` as the fallback name). It keeps a multi-provider gateway
 pinned to the endpoint holding the warm cache. It is a hash, it maps to
 nothing, and it never enters telemetry.
@@ -126,5 +126,5 @@ InputTokens + CacheReadTokens + CacheWriteTokens + OutputTokens
 (`tokens.ContextSize`) and the agent's incremental fast path
 (`Agent.refreshMetrics`) go through it, and `TestRefreshMetricsIncrementalMatchesFullFold`
 keeps them honest. Summing only Input+Output, as figaro did before: reports
-a cached aria as a few thousand tokens when it is really a few hundred
+a cached figaro as a few thousand tokens when it is really a few hundred
 thousand.

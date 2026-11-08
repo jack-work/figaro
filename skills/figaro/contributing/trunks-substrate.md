@@ -10,7 +10,7 @@ and the codepaths as they exist today.
 
 > The word **trunk** echoes opera's *aria di baule*: the "trunk aria" (or "suitcase
 > aria") a singer carried from production to production, packed in their travel trunk and
-> inserted wherever it fit. A figaro **trunk** is likewise the portable canonical line a
+> inserted wherever it fit. A figaro's **trunk** is likewise the portable canonical line a
 > conversation carries through its forks.
 
 It is written so someone with zero prior context can follow the whole stack from the
@@ -61,7 +61,7 @@ wrapper **xwal** (which forks several parallel logs: the IR, the form, the
 translation caches: together as one unit), and figwal's **`xwal.Trunks`** forest layer
 (nodes + trunks + heads on disk). figaro stacks only *policy* on top: a null root →
 outfit versions → conversation trunks. The **trunk** is the thing humans and the API
-address: its id is the aria id, **stable across forks** (the continuation keeps it) -
+address: its id is the figaro id, **stable across forks** (the continuation keeps it) -
 while the per-fork **node id** (`n0/n1/…`) is pure plumbing, never addressed.
 
 ---
@@ -89,9 +89,9 @@ lives.** Key facts:
   becomes **read-only** (a "branch point"), the original continuation moves to an
   "old-future" child subdir, and a fresh child subdir is created. `.fork` markers carry
   `base=N`; the parent resolves by walking `..`.
-- **Freeze-on-fork is an invariant — of log nodes, not of arias.** Any node with child
+- **Freeze-on-fork is an invariant — of log nodes, not of figaros.** Any node with child
   subdirs is read-only; there is **no fork-in-place**. `disk/fork.go:487` sets `readOnly`;
-  only leaves are writable. This is a storage fact: the *aria* on either side stays live
+  only leaves are writable. This is a storage fact: the *figaro* on either side stays live
   and promptable at its own id. See `internal/cli/fork.go` for the wording users see.
 - **Copy-on-write reads.** A fork's `Read`/`Range` delegate to the parent chain for
   `idx < forkBase`; the shared prefix is never duplicated. The global index is continuous
@@ -160,7 +160,7 @@ is the trunk id per node, kept in a **`.trunk` marker** in each node's `ir/` dir
 ### Layer 3: figaro store (`internal/store/`): policy only
 With the forest in figwal, figaro keeps **only policy**. `XwalStore`
 (`xwal_store.go`) is a thin layer over `xwal.Trunks`; `XwalBackend`
-(`xwal_backend.go`) adds the memoized per-aria handle cache + the `store.Backend`
+(`xwal_backend.go`) adds the memoized per-figaro handle cache + the `store.Backend`
 interface.
 
 - **`nodeKind`**: `null` | `outfit` | `conversation`. It is derived from XWAL
@@ -179,7 +179,7 @@ interface.
     **once** into a shared prefix. **Closed.**
   - **`conversation` trunks**: `CreateConversation` = `SpawnUnderStump(outfit)`; inherit the
     outfit's rendered prefix via the fork watermark. **Live.** A conversation whose parent
-    is an outfit is a **top-level aria** (a root of the conversation forest).
+    is an outfit is a **top-level figaro** (a root of the conversation forest).
   - **branches**: forks of conversations; a conversation whose parent is *another
     conversation*. (Still `kindConversation`; the distinction is lineage.)
 - **Cauterization** (`cauterized` = kind is null or outfit): the root and outfit versions are
@@ -187,7 +187,7 @@ interface.
   A fork/send "at" a cauterized trunk does **not** re-split it: `Fork`/`ForkAt` redirect to
   `SpawnChild(owner)`, a fresh child conversation: instead of `ForkTail`/`ForkAt`. This
   is why "create" and "fork an outfit" are one mechanism.
-- **The aria id is the trunk id**, returned stable from `Fork`/`ForkAt` as `cont == id`
+- **The figaro id is the trunk id**, returned stable from `Fork`/`ForkAt` as `cont == id`
   (bind-to-trunk: forking your own trunk doesn't move you).
 - **Forest vectors** (`vectorsLocked`): each conversation trunk gets a child-index path
   among conversation trunks (roots `[0],[1],…`; a branch is `parentVec+[k]`). Used by
@@ -199,7 +199,7 @@ interface.
 - **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`FormState`/
   `ApplyForm`/`FormPatchesBetween`/`CreateOutfit`/`CreateConversation`/`Fork`/`ForkAt`/
   `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.
-  `XwalBackend` memoizes one shared row cache per aria; callers never close what `Open`
+  `XwalBackend` memoizes one shared row cache per figaro; callers never close what `Open`
   returns.
 
 ### The daemon & client (`internal/angelus/`, `internal/cli/`, `internal/rpc/`)
@@ -209,7 +209,7 @@ interface.
   channel. The conversation inherits the outfit's full form (`skills.*`,
   `system.credo`, `system.model`, …).
 - **Fork**: kills the live agent; `ForkAt`/`Fork`; returns `{Parent, Continuation,
-  Alternative}` (Continuation == the stable aria id).
+  Alternative}` (Continuation == the stable figaro id).
 - **Attend/bind**: `pid → trunkID` map (the angelus binding registry), persisted with PID
   start-time for reuse detection; `Bind`/`Resolve`/`Unbind` RPCs. Bind carries an optional
   `atMainLT`, a **one-shot pending fork-point** consumed by the next bare prompt. The
@@ -218,7 +218,7 @@ interface.
   and the conversation RPCs are fully resolved to a trunk before the call. `attend null`
   (the required literal; `attend ~` is a legacy alias that needs quoting in the shell) is
   "go home": `Unbind`; new conversations then default to the live outfit. Attending a
-  **cauterized** (null/outfit) aria is rejected with a nudge toward
+  **cauterized** (null/outfit) figaro is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
 - **The store flock**: the angelus is a strict singleton via an exclusive flock on
   `<store>/arias/.daemon.lock`, acquired **before** the backend opens and before the socket
@@ -230,7 +230,7 @@ interface.
   `send <id>:<turn> -- …` forks at that turn then sends to the new branch
   (rebinds; `--stay` to park). `fork [<id>[:<turn>]] [--stay]` is the imperative no-prompt
   branch (`runFork`, `manage.go`). `kill <id>` removes a trunk + subtree (`--recursive` for
-  live branches). `show [<id>]` takes the aria id **positionally** (bare-N replaced by
+  live branches). `show [<id>]` takes the figaro id **positionally** (bare-N replaced by
   `-n/--last`); turns are labeled by **turn id**, which is exactly the `:N` a fork takes.
   `--from`/`--to`/`--before` are turn ids too; `-n` paginates backwards from the end. `status -m/--more` surfaces derived detail (mantra, cwd, outfit version,
   fork origin, created); `-j/--json` (`-mj` clusters). `list`/`status`/`state` all take
@@ -245,20 +245,20 @@ The **trunk** is the primary identity; the rename below shipped.
 
 | Concept | figwal name | figaro name | What it is |
 |---|---|---|---|
-| The continuation-chain identity | **trunk id** | **aria id** | Stable thread identity; flows down the continuation side of every fork; never moves, only grows. **The only thing the API/CLI addresses.** |
+| The continuation-chain identity | **trunk id** | **figaro id** | Stable thread identity; flows down the continuation side of every fork; never moves, only grows. **The only thing the API/CLI addresses.** |
 | One fork node | **node id** (`n0/n1/…`) | node id | A single forkable point in the main-channel dir tree. Plumbing; never addressed. |
-| The whole tree |: | "the arias" | The forest under the null root. |
+| The whole tree |: | "the figaros" | The forest under the null root. |
 | Logical time | **LT** (channel/main index) | **LT** | Per-branch, gapless, continuous across a trunk's node chain. The **model's** coordinate and xwal's join key. Visible under `show -v/-l`; it is **not** an address. |
 | Turn | **turn id** (`message.TurnID`) | **turn** | 1-based ordinal per trunk, seeded from the parent at a fork. The **human's** coordinate: `show` labels by it and `send`/`fork`/`attend` `:N` take it. |
 
-`attend`/`send`/`fork`/`kill` accept only aria(trunk) ids; node ids are never addressed.
+`attend`/`send`/`fork`/`kill` accept only figaro(trunk) ids; node ids are never addressed.
 
 ---
 
 ## 3. The trunk model
 
 **A trunk is the chain of continuations**: the "keep working" side of every fork; a
-root-to-leaf path through the fork forest. It has a stable id (the aria id), a
+root-to-leaf path through the fork forest. It has a stable id (the figaro id), a
 dynamically-resolved **head node** (the live writable leaf), a **mantra** (essence phrase,
 from the form, auto-seeded from the first user message), and a parent trunk +
 **branched-at LT**.
@@ -279,7 +279,7 @@ ids are plumbing; you address `T0`.
   from the trunk's view nothing it owns changed.)
 - **Continuation inherits the trunk; alternative founds a new one.** (Maps directly onto
   xwal's old-future-vs-child distinction.)
-- **Only leaves are writable; the head is the writable leaf.** Resolving an aria id =
+- **Only leaves are writable; the head is the writable leaf.** Resolving a figaro id =
   resolving its trunk → its head node → endpoint.
 - **`attend` is pure client/session state.** See §4.1.
 
@@ -296,7 +296,7 @@ The client owns: `pid → attended trunk` (plus an optional one-shot pending for
 `attend <id>`/`<id>:<turn>`/`:<turn>` set it; **`attend null`** (the required literal; `~` is a
 legacy alias that needs quoting in the shell) clears it -
 "go home," after which new conversations default to the live outfit. There is **no
-`detach`** (removed). Attending a cauterized (null/outfit) aria is rejected with a nudge
+`detach`** (removed). Attending a cauterized (null/outfit) figaro is rejected with a nudge
 toward `attend null` / `ls -H` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
@@ -315,7 +315,7 @@ the RPC does with it.
 | `send :<turn> -- msg` | pid → trunk (fail if none); turn → `atMainLT` via `resolveTurn` | fork there, send to new branch, rebind |
 | `send <trunk>:<turn> -- msg` | turn → `atMainLT` | same |
 | `fork [<trunk>[:<turn>]]` | pid → trunk if bare; turn → `atMainLT` | imperative tail/interior fork, no message |
-| `fork [<trunk>[:<turn>]] -- msg` | same | fork, then send to the **alternative**; rebind there iff the target was your own bound aria and no `--stay` |
+| `fork [<trunk>[:<turn>]] -- msg` | same | fork, then send to the **alternative**; rebind there iff the target was your own bound figaro and no `--stay` |
 | `attend <id>` / `:<turn>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
 | `attend null` |: | unbind (go home); next conversation defaults to the live outfit |
 | `kill <trunk>` |: | remove trunk + subtree (`-r` for live branches) |
@@ -329,7 +329,7 @@ the RPC does with it.
 - `fig new`, `fig new -O <spec>`, and `fig send --` *with nothing attended* all resolve a
   outfit version → spawn a conversation under it → bind → send (`CreateOutfit` dedups by
   content version; `CreateConversation` = `SpawnUnderStump(outfit)`).
-- Form-key completion falls back to the **default outfit** when no aria is bound.
+- Form-key completion falls back to the **default outfit** when no figaro is bound.
 
 ### 4.5 Outfit materialization
 - Outfits materialize **lazily** on first create (`CreateOutfit`): the stable outfit patch
@@ -342,7 +342,7 @@ the RPC does with it.
 
 ## 5. Identity & addressing
 
-- **Aria id = trunk id** is the durable, stable handle (opaque 4-byte hex). It survives forks
+- **Figaro id = trunk id** is the durable, stable handle (opaque 4-byte hex). It survives forks
   and re-homes (re-home is a `mv`; ids/LTs unchanged). It is the *only* thing clients address.
 - **Node ids** (`n0/n1/…`) are internal plumbing; resolved via `trunk → head node`. Never
   shown, never addressed.
@@ -366,7 +366,7 @@ the RPC does with it.
 - **The forest lives in figwal** (`xwal.Trunks`): nodes/trunks/heads/forks/LTs on disk, disk
   as the sole source of truth. The markerless root and named outfit versions make separate
   policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
-- **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
+- **Figaro id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: fork-then-send and plain append are the same codepath, discriminated
   by whether the address carries a turn. The gesture semantics of `send`, `fork`, `attend`
@@ -374,11 +374,11 @@ the RPC does with it.
 - **Cauterization**: the null root and outfit versions are closed: forking/sending "at"
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
 - **The four-layer outfit tree**: `null` → content-versioned **outfit** versions (dedup'd by
-  `name@version`) → **top-level arias** (conversations under an outfit) → **branches** (forks
+  `name@version`) → **top-level figaros** (conversations under an outfit) → **branches** (forks
   of conversations); conversations inherit the outfit form.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
   `-H/--home` (view without unbinding), `-g/--global` (+ null/outfit anchors), cap
-  `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + outfits, rejects other
+  `-a/--all` | `-n N` (default 10), `--json` (all figaros incl. null + outfits, rejects other
   flags); `status -m/-j`, `state -j`, positional `show <id>` with `-n/--last`; LT realigned
   so shown N == `:N`.
 - **Single-daemon flock** on `<store>/arias/.daemon.lock` (`cli/angelus.go`).
@@ -397,6 +397,6 @@ the RPC does with it.
 - **`set`-then-immediate-`fork`** with no committed turn between drops the pending form
   patch at the boundary (it keys to next-LT, which is the fork point): commit a turn first.
 - A freshly-spawned **dormant** child shows `MSGS 0` in `list` until it takes a turn (count
-  comes from the per-aria `_meta` sidecar).
+  comes from the per-figaro `_meta` sidecar).
 - **Default outfit source:** the configured `default_outfit` (`config.go`), latest hash;
-  form-key completion falls back to it when no aria is bound.
+  form-key completion falls back to it when no figaro is bound.

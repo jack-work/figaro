@@ -21,12 +21,12 @@ sense.
 
 | term | one line |
 |---|---|
-| **bound form** | An aria's own form, addressed by the bare aria id; its keys reach the agent every turn. |
+| **bound form** | A figaro's own form, addressed by the bare figaro id; its keys reach the agent every turn. |
 | **unbound form** | A form with no figaro, addressed by an `@` id: patchable, forkable, bindable, studiable. |
-| **role** | An unbound form carrying `target-aria`; turn-shaped verbs reach whichever aria it names at the moment of the call. |
-| **default form** | The template `fig new` forks for every new aria, minted from the default outfit and named in `default_form.json`. |
+| **role** | An unbound form carrying `target-aria`; turn-shaped verbs reach whichever figaro it names at the moment of the call. |
+| **default form** | The template `fig new` forks for every new figaro, minted from the default outfit and named in `default_form.json`. |
 | **libretto** | `@libretto::<id>`, the durable copy of a studied form's state: one per source, shared by every observer, refcounted, never listed or forked. |
-| **outfit** | A named patch in `outfits/<name>.toml`, folded into a form at birth or onto a live aria, and stored once per content version (`<name>@<hash>`). |
+| **outfit** | A named patch in `outfits/<name>.toml`, folded into a form at birth or onto a live figaro, and stored once per content version (`<name>@<hash>`). |
 | **intrinsic** | A form a host publishes as part of itself (`<id>/runtime`, `<id>/queue`): derived, never persisted, gone with its host. |
 | **catalog** | A live, daemon-scoped, read-only form: `@models` and `@reaped`. |
 | **stump** | A form that cannot be forked or branched. Three today, as special cases: the null (ur) form, `@topology`, and the store behind `@models`. |
@@ -51,13 +51,13 @@ fig form new -O focus -S ttl=1h            # an outfit works too; the daemon
 **Read.** `fig form @a5af1a83` prints the nested tree; `-j` is already
 its shape. `fig status @a5af1a83` answers the other question: what this
 node IS (form, role, or figaro), its name and version, how many keys it
-holds, and, for a role, where it points and whether that aria is live,
+holds, and, for a role, where it points and whether that figaro is live,
 dormant or gone. `fig form listen @a5af1a83` watches it live (deltas ride
 `form.delta`; reconnect resyncs). Each delta names its form schema, which moves whenever
 the rules for folding a patch change (2 since 0.53); a client of another
 schema stops tracking and says so rather than fold it its own way.
 
-**Write.** The same verbs an aria's bound form uses:
+**Write.** The same verbs a figaro's bound form uses:
 
 ```sh
 fig set --id @a5af1a83 status.phase canary
@@ -94,7 +94,7 @@ the node, read without waking anything.
 $ fig send --id @a5af1a83 -- hello
 error: @a5af1a83 is a form, not a figaro: this verb needs one.
   fig bind @a5af1a83                 birth a figaro from it
-  fig set --id @a5af1a83 target-aria <aria>   make it a ROLE, and this verb reaches the holder
+  fig set --id @a5af1a83 target-aria <figaro>   make it a ROLE, and this verb reaches the holder
 ```
 
 ---
@@ -133,13 +133,13 @@ cache; that reuse is deliberately load-bearing.
 the compute lands on the next `fig new`: unchanged files and an
 untouched form no-op, a moved file hash remints, and a hand-patched
 default form remints too: the lifecycle refuses to propagate an ad-hoc
-patch to every future aria. There is deliberately **no `outfit write`**:
+patch to every future figaro. There is deliberately **no `outfit write`**:
 outfit files are one-way sources of truth.
 
 **A figaro's bound form is a form with a turn loop attached.** `fig set` on
-an aria projects the patch as a `<system-reminder>` into its next turn;
-on a *dormant* aria the write lands without waking it. `fig form
-listen <aria-id>` watches a figaro's bound form exactly as it watches a
+a figaro projects the patch as a `<system-reminder>` into its next turn;
+on a *dormant* figaro the write lands without waking it. `fig form
+listen <id>` watches a figaro's bound form exactly as it watches a
 form.
 
 **Scripting.** Every form verb takes `-j`:
@@ -168,7 +168,7 @@ marker); the resolver checks it before anything else.
 | `fig send` / `q` | attended-null: `fig new` path + autobind | role: **follows `target-aria`**, once, late, per call; plain: refused with the two remedies | the turn, as ever |
 | `fig listen` |: | role: follows the target (banner `role @x → aria y`); plain: refused | transcript |
 | `fig at` | home (drops binding) | attends the form | attends the figaro |
-| `fig ls` | header | **never shown** | rows; form-born arias show `@parent` in OUTFIT |
+| `fig ls` | header | **never shown** | rows; form-born figaros show `@parent` in OUTFIT |
 | `fig ls -g` | root | washed rows | tails |
 | `fig form rm` / `kill` |: | removes | removes |
 
@@ -196,7 +196,7 @@ only unbound forms count (the key is inert on a figaro's bound form).
 and the queue verbs against a role read the form THEN, a banner says
 `role @x → aria y`, and reach whatever the key names at that moment.
 Two invocations with a repoint between them land on two different
-arias: that is the succession property, not a race. Rules that keep it
+figaros: that is the succession property, not a race. Rules that keep it
 honest:
 
 - **The `form` namespace never redirects.** `fig form @role`,
@@ -216,12 +216,12 @@ fig send --id @role -- status?                # reaches the holder, whoever that
 
 **Succession, in one gesture.** `fig succeed @role -- <prompt>` replaces
 the holder rather than just repointing. The role must already target an
-aria that exists, the predecessor.
+figaro that exists, the predecessor.
 
 ```sh
 fig succeed @role -- take over                       # fork at turn 2, retire the old one in 10m
 fig succeed @role --turn 9 --title "warden II" -- go # fork later; the title is the new mantra
-fig succeed @role --successor <aria> -- you're up    # an aria that exists; no fork
+fig succeed @role --successor <figaro> -- you're up    # a figaro that exists; no fork
 fig succeed @role --ttl 0 -- go                      # kill the predecessor outright
 fig succeed @role --abdication linger -- go          # it keeps taking prompts until reaped
 ```
@@ -243,8 +243,8 @@ job by hand. In the pager `:succeed` takes the same flags; when the
 predecessor is on screen the pager attends the successor before the
 predecessor is retired, unless `--stay`.
 
-**Study and cast.** `fig study [<aria>] <@form>` subscribes a figaro to
-an unbound form; `fig drop` unsubscribes; `fig cast [<aria>] <@form>`
+**Study and cast.** `fig study [<figaro>] <@form>` subscribes a figaro to
+an unbound form; `fig drop` unsubscribes; `fig cast [<figaro>] <@form>`
 (or `-O <names>` / `-S <k=v>` to mint the role born cast) points the role here AND
 ensures the study, serialized through the figaro's actor loop. The
 mechanism is the bound form's, generalized: every IR record stamps the
@@ -252,7 +252,7 @@ positions of the whole OBSERVED SET (own bound form plus studied forms), and
 the provider translator derives each member's patch-fold between
 consecutive stamps at translation time: folded into the provider IR
 exactly as the form's transitions are, re-derived on every
-retranslate, never baked into this aria's records. Began/stopped
+retranslate, never baked into this figaro's records. Began/stopped
 observing are stated IR marks; a studied form removed mid-observation
 renders a tombstone; observation advances at main-record boundaries
 (the stamp IS the moment of observation).
@@ -263,12 +263,12 @@ form in front of it. Same operation, two entrances. Which thing the dressing
 dresses is decided by which thing does not exist yet:
 
 ```sh
-fig new -C @role -O sonn5     # the role exists; -O dresses the ARIA
+fig new -C @role -O sonn5     # the role exists; -O dresses the FIGARO
 fig new -CO reviewer          # no role named; -O mints the ROLE
 fig new -CS name=x -- go      # mint both, then prompt
-fig cast -O reviewer          # attending an aria: -O mints the ROLE
+fig cast -O reviewer          # attending a figaro: -O mints the ROLE
 fig cast                      # attending @form: mint a figaro to play it
-fig cast -O sonn5             # attending @form: -O dresses the minted ARIA
+fig cast -O sonn5             # attending @form: -O dresses the minted FIGARO
 ```
 
 Two objects across two writers is not a transaction. A figaro that is minted
@@ -286,8 +286,8 @@ unknown key is named, all of it in the daemon log, and the block it decorates
 still renders.
 
 ```sh
-fig set --id <aria> 'system.study_incantation={"onupdate":"the brief moved; re-read it"}'
-fig set --id <aria> 'system.fork_incantation=you are a branch; the trunk went on without you'
+fig set --id <figaro> 'system.study_incantation={"onupdate":"the brief moved; re-read it"}'
+fig set --id <figaro> 'system.fork_incantation=you are a branch; the trunk went on without you'
 ```
 
 ---
@@ -303,7 +303,7 @@ An **intrinsic form** is a form the harness publishes as *part of* a host
 rather than alongside it. It is derived, never persisted, and dies with its
 host.
 
-"Intrinsic" is the load-bearing word: these are not attached to an aria, they
+"Intrinsic" is the load-bearing word: these are not attached to a figaro, they
 are properties *of* one. Nothing mints them, nothing forks them, and no
 `figaro set` reaches them.
 
@@ -323,7 +323,7 @@ distinction:
 |---|---|
 | `<id>` | **shorthand for `<id>/state`** |
 | `<id>/state` | the host's own form |
-| `<id>/runtime` | what the aria is DOING right now |
+| `<id>/runtime` | what the figaro is DOING right now |
 | `<id>/queue` | the messages accepted but not yet answered |
 
 `state` is the reserved **identity segment**: it names the host's own form and
@@ -353,13 +353,13 @@ They push. `form.delta` carries a `intrinsic` field; empty means the identity
 segment, which is what every form delta on that wire has always meant, so an
 older peer that ignores the field reads exactly what it read before.
 
-An intrinsic dies with its agent, so an aria woken from dormancy publishes a
+An intrinsic dies with its agent, so a figaro woken from dormancy publishes a
 new one whose versions start again at 1. Every delta and every read of an
 intrinsic carries an `incarnation`, increasing across the daemon's lifetime, and
 a mirror orders on (incarnation, version): a newer incarnation means re-read, an
 older one is ignored. Without it a client watching across a hibernation took
 the new form's deltas for replays and kept the last turn's verdict on the bar
-while the aria worked.
+while the figaro worked.
 
 ### `<id>/runtime`
 
@@ -413,7 +413,7 @@ restored (`figaro reaped restore`, or removing `system.reaped` by hand).
 
 ## `@models`: the model catalog
 
-`@models` is the daemon's catalog of model metadata, one form for every aria.
+`@models` is the daemon's catalog of model metadata, one form for every figaro.
 It is a stump in the store: its patches are its truth, its version survives a
 restart, and a cold daemon answers from it before any network. Every poll
 restamps it, so once its form channel rotates the sealed segments are
@@ -441,7 +441,7 @@ Anthropic window table, which answers for aliases the listing never names.
 | a want for a pair it lacks, or a provider older than a day | the daemon refreshes that provider in the background; a want never waits |
 | a failed refresh | records `error` and `attempted_at`, keeps the last good entries, retries after ten minutes |
 
-The daemon wants the pair on its own whenever it reads an aria's metrics, and a
+The daemon wants the pair on its own whenever it reads a figaro's metrics, and a
 client asks (`angelus.models.want`) when its own lookup misses.
 
 ```sh
@@ -449,8 +449,8 @@ fig form show @models         # the catalog as a live tree
 fig models                    # the same, as a table, with each provider's age and last error
 ```
 
-**A client derives an aria's context percentage itself:** it mirrors the
-aria's bound form and `@models`, and looks up the bound form's `system.provider` ×
+**A client derives a figaro's context percentage itself:** it mirrors the
+figaro's bound form and `@models`, and looks up the bound form's `system.provider` ×
 `system.model`. `system.max_context_tokens` on the bound form wins outright, and
 `system.context_tier = "long_context"` selects `context.long`. A model switch
 is a bound form delta, so the bar follows it with no round trip; a catalog fill is

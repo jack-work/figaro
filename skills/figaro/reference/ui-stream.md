@@ -1,6 +1,6 @@
 # The UI stream
 
-How a figaro conversation reaches your terminal: the **aria read** wire, the
+How a figaro conversation reaches your terminal: the **read** wire, the
 default **inline-freeze** renderer (native scrollback), and the opt-in
 **transcript** pager (a live, scrollable full-screen view).
 
@@ -15,10 +15,10 @@ There is exactly one conversation-read shape, `aria.Page`, served two ways:
 - **pushed** as `figaro.aria` JSON-RPC notifications while a turn changes;
 - **pulled** with `figaro.read` for initial state, paging, and desync recovery.
 
-A connection follows an aria after `figaro.follow` (or a prompt) naming it in
+A connection follows a figaro after `figaro.follow` (or a prompt) naming it in
 `params.figaro_id`; reads never subscribe. Follow, issue a read on
 the same NDJSON JSON-RPC connection, then continue consuming pushed frames,
-each of which names its aria. Read/push overlap is allowed and application is idempotent.
+each of which names its figaro. Read/push overlap is allowed and application is idempotent.
 
 ```go
 type Page struct {
@@ -178,7 +178,7 @@ spelling beside it (`atom-factory (1756f)`, or `1756f (atom-factory)` under
 right of its first row, ending in the same column as the gutter marker, which
 sits over its last cell. An address that does not fit is cut, never painted over
 text. In an open metadata section (below) it labels the first row of each kind
-(`meta`, `delta`, `comment`) and gives an aria id its other spelling, the same
+(`meta`, `delta`, `comment`) and gives a figaro id its other spelling, the same
 way. Toggling it repaints only the rows that changed, and it is exempt from the
 painter's two-second resync, so an idle pager does not flash. It stays inline:
 pressed in the incipit it does not open the pager.
@@ -286,7 +286,7 @@ its output, prose off the first line of its own text, and a question
 **encloses** its section between its text and the rule that closes the seam, so
 its snake runs down to a `╰` corner instead of up to a block. A fork is lifted
 out of the question's section and into its header row, named the way every
-aria is named. Anywhere else a `system.forked_from` is a key like any other.
+figaro is named. Anywhere else a `system.forked_from` is a key like any other.
 
 `c j` / `c k` open the section a comment lives in and land on it. A comment's
 passage stays washed in the block's text whether or not the section is open. A
@@ -302,7 +302,7 @@ version. On mismatch it re-reads from its highest fully sealed turn. A part with
 
 ### The queue: interrupt disposition, identity, and refusals
 
-Prompts accepted while a turn is running wait in the aria's queue.
+Prompts accepted while a turn is running wait in the figaro's queue.
 `figaro.queued` reads it (`{"include_carriers":true}` adds the empty-text
 form carriers, which the default omits, as it always has);
 `figaro.queue.update` and `figaro.queue.delete` mutate it. There is no create
@@ -367,13 +367,13 @@ The daemon listens on one door, a local Unix-domain socket; the transport
 payload is JSON-RPC 2.0 with one JSON object per line. The runtime root is
 `$FIGARO_RUNTIME_DIR` when set, otherwise `$XDG_RUNTIME_DIR/figaro`, otherwise
 the platform temporary directory plus `figaro`. On Windows the last case is
-normally `%TEMP%\figaro`. The door is `angelus.sock`; there are no per-aria
+normally `%TEMP%\figaro`. The door is `angelus.sock`; there are no per-figaro
 sockets.
 
-Every aria request names its aria in `params.figaro_id`, an id or a unique
-prefix of 4+ characters. Follow the aria,
+Every figaro request names its figaro in `params.figaro_id`, an id or a unique
+prefix of 4+ characters. Follow the figaro,
 then issue an idempotent catch-up read, and keep one reader consuming
-interleaved responses and notifications. Neither wakes the aria; it wakes on
+interleaved responses and notifications. Neither wakes the figaro; it wakes on
 the first request that needs a turn loop, which for a transcript or a pager is
 never. See [reclamation.md](../contributing/reclamation.md).
 
@@ -405,7 +405,7 @@ independent frontends are treated as supported clients:
 1. define compatibility and required/optional-field rules;
 2. publish the wire structs and delta-folding client outside `internal/` (plus
    a language-neutral schema for non-Go clients); and
-3. bound each subscriber independently so a slow reader cannot block aria
+3. bound each subscriber independently so a slow reader cannot block figaro
    fan-out.
 
 Until then, external clients should be revision-pinned. Every call is
@@ -498,16 +498,16 @@ pit follows a remap, so it shows your map rather than this one.
 | `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a queued message opens in full under its row (again, from any of its rows, folds it; `j`/`k` walk it, `F` gives it the pane, `y` yanks it whole), a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `c j` / `c k` | next / previous comment; Enter on one opens its thread. See [quoting.md](quoting.md) |
-| `a` | attend the aria that fork point came from; in a list, the selected row's |
-| `^` | attend this aria's parent, or say it is top-level |
-| `l` / `L` | the topology in the pit: `l` opens this node and every fork down to the attended aria, cursor on it; `L` shows only the root (the troupe's nodes, this one marked), each opening with `l` or Enter. `:ls` is `l`, `:troupe` is `L` |
-| `x` / `X` | in a list, kill the aria the selected row names, asking first / at once; in the queue, drop the message |
+| `a` | attend the figaro that fork point came from; in a list, the selected row's |
+| `^` | attend this figaro's parent, or say it is top-level |
+| `l` / `L` | the topology in the pit: `l` opens this node and every fork down to the attended figaro, cursor on it; `L` shows only the root (the troupe's nodes, this one marked), each opening with `l` or Enter. `:ls` is `l`, `:troupe` is `L` |
+| `x` / `X` | in a list, kill the figaro the selected row names, asking first / at once; in the queue, drop the message |
 | `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up; the sentence rides the bar's alert and `[y/N]` its command slot, so the question costs no height |
 | `h` | the help panel |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, Enter selects the node under the cursor (then `e` expands it); `e` itself stays the word-end motion; `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
-| `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
+| `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the figaros attended here |
 | `q` | close the open pit; with none open, end the session (a send or a listen). The turn keeps running |
 
 A pasted paragraph needs no key at all: with no box open, a paste opens the
@@ -544,12 +544,12 @@ moves the draft's cursor; with a list up it walks that list's rows, and `n`/`N`
 repeat it there. The box says which with one glyph before the sigil: `✎/`,
 `웃/`, `𝄚/`. With nothing open it is the conversation, as before.
 
-A listing opens with the cursor on the aria you are attending, not on the top
+A listing opens with the cursor on the figaro you are attending, not on the top
 row. `x` and `:kill` ask before they kill. The question holds the keyboard and the
 bar, and nothing else: the sentence is the bar's alert, `[y/N]` is its command
 token, and the view underneath is untouched. `X` on a row does the same work
-with no question. Killing the aria on screen moves the pager to the row the cursor
-falls onto, else the jumplist's previous aria, else the parent, and ends the
+with no question. Killing the figaro on screen moves the pager to the row the cursor
+falls onto, else the jumplist's previous figaro, else the parent, and ends the
 session only when there is none of the three.
 
 ### Coordinates and the `:` jump
@@ -568,13 +568,13 @@ addressable the same way.
 | `:12` | the head of turn 12 |
 | `:12.3` | node 3 of turn 12 |
 | `:12.-1` | turn 12's question |
-| `:0` | the beginning of the aria |
+| `:0` | the beginning of the figaro |
 
 The landing snaps: the target's first row goes to the top and the selection is
 placed on it, so you can see what you were sent to.
 
 `:0` is a **sentinel, not an address**. Turn ids are dense and 1-based within an
-aria, but a forked aria continues its parent's numbering, so a fork's first turn
+figaro, but a forked figaro continues its parent's numbering, so a fork's first turn
 is not turn 1, and `Anchor{Turn: 0}` means *unset* on the wire, so asking for
 it on a backward read returns the tail. `:0` therefore means "the lowest turn
 that actually exists", found by walking back until the store says there is
@@ -591,7 +591,7 @@ the other's box.
 
 **A hole is not a turn.** The window can contain gaps, a `N turns not loaded`
 rule where history was evicted or arrived non-contiguously, and a gap entry
-carries turn `0`, an id no aria issues. A coordinate that lands inside one is
+carries turn `0`, an id no figaro issues. A coordinate that lands inside one is
 *not yet*, never *absent*: the walk stays up, asks for that hole to be filled
 (even one the viewport cannot see), and **snaps to the real turn once the entry
 is ungapped**. `:0` likewise waits rather than landing on the sentinel standing
@@ -667,7 +667,7 @@ command stays open until you close the pager.
 
 ### The pager can open without being asked
 
-Three doors reach it, and **every one of them reads the aria's tail first**:
+Three doors reach it, and **every one of them reads the figaro's tail first**:
 
 | door | when |
 |---|---|
@@ -678,7 +678,7 @@ Three doors reach it, and **every one of them reads the aria's tail first**:
 The last two are **automatic promotions**, and they used to open on nothing but
 the turn being streamed: no history above it, `More.Before` never set by any
 wire answer, and so the pager concluded that the question you had just typed was
-the beginning of the aria: scrolling up found nothing, forever. The read is now
+the beginning of the figaro: scrolling up found nothing, forever. The read is now
 owed by the promotion itself (`livelogTurn.enterPager` → `catchUp`) and runs
 **off the render lock**, since one of its callers is the frame path. A failed
 read is not a floor: the claim is released so a later gesture retries.
@@ -739,7 +739,7 @@ floor never wears a down stroke; there is nothing under it but the status bar.
 
 ## Steering: messages mid-turn
 
-A message sent to a **busy** aria does not wait for a new turn: it folds into
+A message sent to a **busy** figaro does not wait for a new turn: it folds into
 the *current* turn as a **steering** node, which the model reads on its next
 round. In the stream it appears as a `steering` node (rendered under a
 `↳ input` gutter) positioned where it arrived, inside the agent's turn. The
@@ -747,7 +747,7 @@ client tells "my turn is done" from "a turn ended with my steer still queued"
 via `turn.done`'s idle flag, so a steering send waits for *its own* completion.
 
 **Timing is the whole rule, and there is no flag.** One command, identical
-whether or not the aria is busy: arrive while a turn is running and you steer
+whether or not the figaro is busy: arrive while a turn is running and you steer
 it; arrive when nothing is running and you open a turn. A steer is not a turn,
 so it does not get one.
 

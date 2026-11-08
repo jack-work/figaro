@@ -53,10 +53,10 @@ nix develop .#share-config   # isolated runtime+state, YOUR config + hush
 Inside it, `figaro`/`fig`/`q` are **this worktree's build, already stamped**
 (`flake.nix` passes `-X …internal/boot.commit=${rev}`), and
 `FIGARO_RUNTIME_DIR`/`FIGARO_STATE_DIR` are dev-scoped, so nothing you do
-touches your live daemon or arias. `duck/HOW_TO_TEST.md` is the long version.
+touches your live daemon or figaros. `duck/HOW_TO_TEST.md` is the long version.
 
 Presets: `share-config` (real providers work: use this), `clean` (hermetic,
-fresh hush + first-run), `snapshot` (a copy of your real arias), `share-hush`,
+fresh hush + first-run), `snapshot` (a copy of your real figaros), `share-hush`,
 `sandbox`, `default` (everything inherited).
 
 Exporting `FIGARO_*` by hand instead is how you end up talking to **another
@@ -87,7 +87,7 @@ echo "$FIGARO_STATE_DIR"
 # 2. start from empty: stop the dev daemon FIRST, or it rebuilds the store
 figaro stop
 rm -rf "$FIGARO_STATE_DIR/arias"
-figaro ls                       # must print 0 top-level arias
+figaro ls                       # must print 0 top-level figaros
 
 # ... capture ...
 
@@ -258,7 +258,7 @@ divergence, which the purity invariant forbids.
   assertion that has never failed is not evidence.
 - Does the double call the real function? The paging double treated `limit` as a
   *count* while production used a *byte budget*, and never called `Paginate`.
-  ~30 tests green while the pager rendered one node for an 800-node aria.
+  ~30 tests green while the pager rendered one node for an 800-node figaro.
 - Does the fixture still exercise its own path? One test had silently stopped
   scrolling and could no longer fail for its stated reason.
 - Is it pinning current behaviour or intended behaviour? Two tests *asserted the
@@ -268,10 +268,10 @@ divergence, which the purity invariant forbids.
   a handler, or hands the mode in as an argument, would still pass if the key
   decoder and the mode arbiter were deleted. See **modal-input-debugging**.
 
-## Twelve arias, one daemon, one build
+## Twelve figaros, one daemon, one build
 
 The suite proves one client at a time. The failures that cost releases were
-concurrent: twelve shells minting, dressing and prompting arias through ONE
+concurrent: twelve shells minting, dressing and prompting figaros through ONE
 daemon, each in its own nix devshell over the same build. Not a Go test: it
 spends tokens and it needs the real provider: so it is a recipe, run by hand
 before anything that touches the store, the form writer or the inbox lands.

@@ -1,13 +1,13 @@
 ---
 name: figaro
-description: Read before running any figaro command, addressing another aria, changing the figaro repo, or editing these docs. Holds the daily gestures (send and forget, ls, show, fork), the vocabulary, and an index that says when to open each deeper section.
+description: Read before running any figaro command, addressing another figaro, changing the figaro repo, or editing these docs. Holds the daily gestures (send and forget, ls, show, fork), the vocabulary, and an index that says when to open each deeper section.
 ---
 
 # Figaro
 
 A local coding-agent daemon. One static Go binary, three roles: the `CLI` you
-type at, the `Angelus` supervisor that outlives your shell, and one `Agent` per
-conversation. An **aria** is one conversation.
+type at, the `Angelus` supervisor that outlives your shell, and an `Agent` actor
+for each **figaro**, one conversation apiece.
 
 ## If you are a figaro, reading your own context
 
@@ -31,14 +31,14 @@ change, and what configures it.
 Nine commands cover almost everything. Exact forms, not summaries.
 
 ```sh
-figaro -- <prompt>                 prompt the aria this shell is attended to
+figaro -- <prompt>                 prompt the figaro this shell is attended to
 figaro send -f --id <id> -- <p>    fire and forget: submit, do not stream, exit now
-figaro send -A -f -S system.ttl=1h -- <p>   a one-off: a fresh aria that reaps itself
+figaro send -A -f -S system.ttl=1h -- <p>   a one-off: a fresh figaro that reaps itself
 figaro ls                          your own lineage: parent, siblings, branches
-figaro show <id> -n 5              the last 5 turns of an aria
+figaro show <id> -n 5              the last 5 turns of a figaro
 figaro fork <id>:12 -- <nudge>     branch at turn 12 and nudge the new branch
-figaro attend <id>                 bind this shell to an aria, like cd
-figaro state <id>                  that aria's form
+figaro attend <id>                 bind this shell to a figaro, like cd
+figaro state <id>                  that figaro's form
 figaro status <id> -j | jq -r .state    dormant, idle, or active
 ```
 
@@ -48,17 +48,17 @@ Five rules that are not guessable:
 - **`-f` is how you avoid waiting.** Without it, `send` attaches to the stream
   and stays until the turn ends. With it, the daemon keeps working and you get
   your shell back. Follow along later with `figaro listen <id>`.
-- **Inside an aria, `send` without `--id` reaches you.** `FIGARO_ARIA`
+- **Inside a figaro, `send` without `--id` reaches you.** `FIGARO_ARIA`
   outranks `-A`; mint with `new` instead. See [subagents.md](subagents.md).
 - **A fork's prompt is a nudge, never a brief.** The branch holds your whole
   conversation already, so `go` or `take the second option` is a complete
-  instruction. Write a full prompt only for `new`, whose aria starts empty.
+  instruction. Write a full prompt only for `new`, whose figaro starts empty.
   See [reference/trunks.md](reference/trunks.md).
 - **`ls` is scoped to where you are attended.** It is `ls`, not `ls -R /`.
   Start scoped; widen with `-H` (home) or `-g` (global) only when scoped comes
   back empty.
 
-Every command takes `--id <id>` to address a specific aria, `-j` for one line
+Every command takes `--id <id>` to address a specific figaro, `-j` for one line
 of JSON on stdout, and `-h` for its own help.
 
 ## Vocabulary
@@ -67,12 +67,13 @@ One definition each. The file named owns the model behind it.
 
 | Term | One sentence | Owner |
 |---|---|---|
-| aria | One conversation, addressed by an opaque hex id or its two-word handle (`nursery-lioness`); see "Naming an aria". | [cli.md](cli.md) |
-| trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
+| figaro | One agent and its whole conversation, addressed by an opaque hex id or its two-word handle (`nursery-lioness`); see "Naming a figaro". | [cli.md](cli.md) |
+| aria | The append-only log under a figaro, and the old name for a figaro. Commands, flags, JSON keys and env vars still say aria (`aria_id`, `FIGARO_ARIA`, `target-aria`, `--aria`, the ARIA column of `ls`) until a later release renames them. | [reference/store.md](reference/store.md) |
+| trunk | A root-to-leaf path through the fork forest; the figaro id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
-| form | Versioned JSON state. Every aria's own form is its BOUND form; an UNBOUND form (`@`-sigiled id) has no figaro and stands alone; a form carrying `target-aria` is a ROLE. The rest (catalog, stump, libretto, intrinsic) are in the glossary. | [reference/forms.md](reference/forms.md#glossary) |
-| outfit | A named patch for a form: model, credo, skills. Named by NAME (`-O sonn5,focus`), folded at birth or onto a live aria; keys travel beside it on `-S`. | [reference/outfits.md](reference/outfits.md) |
+| form | Versioned JSON state. Every figaro's own form is its BOUND form; an UNBOUND form (`@`-sigiled id) has no figaro and stands alone; a form carrying `target-aria` is a ROLE. The rest (catalog, stump, libretto, intrinsic) are in the glossary. | [reference/forms.md](reference/forms.md#glossary) |
+| outfit | A named patch for a form: model, credo, skills. Named by NAME (`-O sonn5,focus`), folded at birth or onto a live figaro; keys travel beside it on `-S`. | [reference/outfits.md](reference/outfits.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
 ## Where everything else lives
@@ -96,7 +97,7 @@ about changing figaro rather than using it live under
 |---|---|
 | [reference/trunks.md](reference/trunks.md) | Forking, branches, `attend`, and what `<id>:<turn>` and `<id>.<lt>` address. |
 | [reference/turns.md](reference/turns.md) | Turn ids, the turn-shaped read wire, pagination. |
-| [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
+| [reference/store.md](reference/store.md) | Reading a figaro off disk, and the store layout. |
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
 | [reference/compatibility.md](reference/compatibility.md) | A CLI and a daemon of different builds or releases, the wire contract, or adding a field, method or capability to `api/rpc`. |
 | [reference/providers.md](reference/providers.md) | Writing `providers/<name>.toml`, pointing a gateway at a new endpoint, signing in to Azure with Entra, Copilot's Responses settings, what CTX counts, or a model failing on one provider and working on another. |
@@ -108,8 +109,8 @@ about changing figaro rather than using it live under
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |
-| [debugging/tapes.md](debugging/tapes.md) | Record an aria's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
-| [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
+| [debugging/tapes.md](debugging/tapes.md) | Record a figaro's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
+| [reference/mantra.md](reference/mantra.md) | Maintaining your figaro's mantra. |
 
 This skill is the ONLY one that ships inside the binary, so anything an agent
 must be able to reach without a preinstalled config lives here, [subagents.md]

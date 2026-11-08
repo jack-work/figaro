@@ -24,12 +24,12 @@ manual sweep into a test case. This file stays the pager's own cookbook.
 
 ## 0. The headline: you can drive the pager for ZERO tokens
 
-`figaro listen <aria-id>` attaches to an aria **without calling `figaro.qua`** -
+`figaro listen <id>` attaches to a figaro **without calling `figaro.qua`** -
 no prompt, no provider, no tokens, no auth. `Ctrl-T` then promotes to the
-transcript pager. If the aria already has hundreds of messages, you have a
+transcript pager. If the figaro already has hundreds of messages, you have a
 fully-loaded pager in about four seconds.
 
-To get hundreds of messages without spending anything, **copy the real aria
+To get hundreds of messages without spending anything, **copy the real figaro
 store into a scratch store**. The real store is only ever read:
 
 ```sh
@@ -37,9 +37,9 @@ cp -r ~/.local/state/figaro/arias  /var/tmp/paint-<hunter>/state/arias
 cp -r ~/.config/figaro/.           /var/tmp/paint-<hunter>/config/
 ```
 
-Measured: 119 MB, ~20 s, **305 arias**. Good fat ones in that store:
+Measured: 119 MB, ~20 s, **305 figaros**. Good fat ones in that store:
 
-| aria | msgs | why it is useful |
+| figaro | msgs | why it is useful |
 |---|---|---|
 | `8566c903` | 561 (1058 rendered rows) | tool-heavy, prose-heavy, wide diffs: the one I used for every capture below |
 | `e618d51f` | 162 | mid-size |
@@ -73,12 +73,12 @@ selection, `listen` is strictly better: free, instant, and deterministic.
 > you how to proceed:
 >
 > ```sh
-> scripts/paint-jogdiff.sh <hunter> <aria-id>          # free: uses existing content
+> scripts/paint-jogdiff.sh <hunter> <id>          # free: uses existing content
 > PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh <hunter> -  # SPENDS A TURN, deliberately
 > ```
 >
 > Measured: without `PP_ALLOW_TURN` it exits **2** having spent nothing; with an
-> explicit aria id it never reaches the guard.
+> explicit figaro id it never reaches the guard.
 
 ## 1. Naming and cleanup contract (agreed with BERTA, the watchdog)
 
@@ -131,7 +131,7 @@ Violate this and a sweeper cannot tell your processes from the user's.
 > parent is 700*, and copying it out from under that parent left the master's
 > Anthropic credential world-readable inside `/var/tmp`, which is `1777`,
 > world-traversable, **and survives reboot**. Four copies. Alongside four 119 MB
-> copies of his real aria store: his actual conversation history.
+> copies of his real figaro store: his actual conversation history.
 >
 > *A rule with a negative control is a rule someone will actually follow.*
 >
@@ -175,13 +175,13 @@ Violate this and a sweeper cannot tell your processes from the user's.
 > | `pp_seed` | **disarmed**: prints why and exits 1 rather than silently no-op'ing, because three hunters had already been told to call it. |
 >
 > Measured, so the change need not worry you: with `providers/` and `hush/`
-> deleted, `figaro list -g -a` still lists all 305 arias and the zero-token pager
+> deleted, `figaro list -g -a` still lists all 305 figaros and the zero-token pager
 > works normally. **Nothing the painters do needs the master's credentials.** Only
 > a turn that reaches a provider does, and the cheapest way to get one is a
 > deliberately garbage `ANTHROPIC_API_KEY` in the environment: which needs no
 > config at all (CHERUBINO's find; §8.3).
 
-**`pp_fixture`: synthetic content. ⚠ MEASURED INADEQUATE; prefer an explicit aria
+**`pp_fixture`: synthetic content. ⚠ MEASURED INADEQUATE; prefer an explicit figaro
 id.** The design claim below was mine and BASILIO **falsified it**:
 
 > I wrote that `seq 1 N` gives the pager N increasing numbered rows, so a gap row
@@ -207,13 +207,13 @@ range cannot fail.**
 ```sh
 pp_init basilio
 pp_up 100 40 rz
-pp_pager <aria-id>          # an aria with real depth; the mint is not yet adequate
+pp_pager <id>          # a figaro with real depth; the mint is not yet adequate
 pp_require_range || exit 3  # refuse to measure something that cannot fail
 ```
 
 Also measured: **a fixture does not survive `pp_down`**, which deletes
 `state/` by privacy default. Set `PP_KEEP_STORE=1` to keep it, or every sweep costs
-a turn and an A/B costs two: with a *different* fixture aria per arm, which is its
+a turn and an A/B costs two: with a *different* fixture figaro per arm, which is its
 own confound.
 
 ```
@@ -294,7 +294,7 @@ Same family as trap #10: **the artifact outlives the process.** `pp_alive` /
 wrote your own liveness probe as a file test, fix it.
 
 **`pp_seed` copies the CONFIG too, and that is not optional.** It does two
-unrelated things: the aria store (content to page through) *and*
+unrelated things: the figaro store (content to page through) *and*
 `~/.config/figaro` → `$FIGARO_CONFIG_DIR` (outfits and provider credentials).
 Skip it and `FIGARO_CONFIG_DIR` points at an empty directory, so you get no
 outfits and no credentials, a fresh turn then fails on the **first-run /
@@ -356,10 +356,10 @@ not decoration, it is the evidence that the arms differed.
 
 ## 3. Three environment facts that will otherwise cost you an hour
 
-**(a) `FIGARO_ARIA` leaks into the pane and is an identity.** An aria's bash tool
+**(a) `FIGARO_ARIA` leaks into the pane and is an identity.** A figaro's bash tool
 exports `FIGARO_ARIA=<own id>` and `FIGARO_NO_BIND=1`. Inherited into a test
-pane, every `figaro list` scopes to *the hunting aria* and every `figaro send`
-talks to itself. **Measured:** `figaro list -a` against a seeded 305-aria store
+pane, every `figaro list` scopes to *the hunting figaro* and every `figaro send`
+talks to itself. **Measured:** `figaro list -a` against a seeded 305-figaro store
 returned exactly **one** row until I unset them. Always:
 
 ```sh
@@ -395,7 +395,7 @@ to catch a transient frame is to have something to compare it *against*.
 source scripts/paintpane.sh
 pp_init basilio           # stamped build + scratch dirs + EXIT trap; prints identity
 pp_seed                   # copy the real store in (once; idempotent)
-pp_up 100 40 rz           # pane of EXACTLY 40 usable rows, aria identity scrubbed
+pp_up 100 40 rz           # pane of EXACTLY 40 usable rows, figaro identity scrubbed
 pp_pager 8566c903         # listen + ^T, waits for chrome, ~4 s
 
 pp_key g; pp_key g        # gg -> top of the held window (deterministic start)
@@ -519,7 +519,7 @@ the evidence. Do not ship two fixes for it: read §9.
 
 ### 8.1 Gesture sweep: the bug is RESIZE-ONLY
 
-I ran the §5 oracle after each gesture in turn, same pane, same aria. `divergent`
+I ran the §5 oracle after each gesture in turn, same pane, same figaro. `divergent`
 is the number of rows where the on-screen frame disagreed with a freshly painted
 one at the *same* offset:
 
@@ -749,7 +749,7 @@ the brief's "When to yield" section is for.
 
 ### 8.4 CLOSED: CHERUBINO's bug, captured, and the barrier that fixes it
 
-Hunted by the aria commissioned as *"the transcript resize smear"*. The user's
+Hunted by the figaro commissioned as *"the transcript resize smear"*. The user's
 report was resize-shaped ("resizing renders the terminal like this... recoverable
 if I resize again"), which is why it reached me as a resize bug. **It is not one.**
 The resize is the CURE. §8.3's mechanism (b) is the cause, and here is the capture
@@ -758,7 +758,7 @@ CHERUBINO never got.
 **Two negative results first, both measured, both worth more than the guess they
 replaced:**
 
-1. **The pager's resize repaint is clean.** A 1624-message aria (`06c22c16`), ten
+1. **The pager's resize repaint is clean.** A 1624-message figaro (`06c22c16`), ten
    width and height changes, the §5 jog-and-diff oracle with the §8.1 range gate:
    **0 divergent rows over 6 measured probes** (4 SKIPped on the range gate). The
    post-resize byte stream reads `CUP + EL + content` for every row, a genuine

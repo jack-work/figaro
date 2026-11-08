@@ -1,8 +1,8 @@
 # Subagents: parallel figaro sessions
 
-Spawn several `figaro` processes in parallel, each with its own aria, prompt
+Spawn several `figaro` processes in parallel, each with its own agent, prompt
 and tool access. Monitor progress by log growth, collect results when they
-finish, revisit any aria later.
+finish, revisit any of those agents later.
 
 ## The one thing that is not guessable
 
@@ -19,7 +19,7 @@ figaro send -f --id <id> -- "<p>"  steer that worker later
 
 ## Spawn or fork
 
-`new` starts an aria with no history, so its prompt is the whole brief. If
+`new` starts a figaro with no history, so its prompt is the whole brief. If
 the work belongs to a conversation you are already in, **fork it instead**:
 the branch inherits everything you know, and its prompt is a nudge, not a
 brief.
@@ -37,11 +37,11 @@ How a branch learns it was forked, and the fork coordinates, are in
 
 | Mode | Command | Use case |
 |------|---------|----------|
-| Spawn, fire and forget | `figaro new -f -j -- "<prompt>"` | Launch a worker and get its aria id back immediately |
+| Spawn, fire and forget | `figaro new -f -j -- "<prompt>"` | Launch a worker and get its figaro id back immediately |
 | Spawn, stream to a log | `figaro new -r -- "<prompt>"` | Background work you want to read as it lands |
-| One-off | `figaro new -r -S system.ttl=1h -- "<prompt>"` | A throwaway answer; the aria reaps itself |
+| One-off | `figaro new -r -S system.ttl=1h -- "<prompt>"` | A throwaway answer; the figaro reaps itself |
 | Steer | `figaro send -f --id <id> -- "<p>"` | Give a running worker new instructions |
-| Reattach | `figaro listen <id>` | Watch a running aria's stream |
+| Reattach | `figaro listen <id>` | Watch a running figaro's stream |
 | Check status | `figaro status <id> -j` | `dormant`, `idle` or `active` |
 
 `-r` (raw) disables ANSI/TUI formatting, giving clean plaintext suitable for
@@ -53,7 +53,7 @@ piping and log capture. `-j` emits one line of JSON on stdout for scripting.
 1. **Launch subagents** backgrounded with `&`, capturing output to log files.
 2. **Monitor** via process count, log file sizes, or `figaro status <id>`.
 3. **Collect results** by reading log files after processes exit.
-4. **Resume** any persistent aria with `figaro listen <id>` or send follow-ups with `figaro send --id <id> -- "<prompt>"`.
+4. **Resume** any persistent figaro with `figaro listen <id>` or send follow-ups with `figaro send --id <id> -- "<prompt>"`.
 
 ## Example: parallel research
 
@@ -79,9 +79,9 @@ echo "All done. Results in $LOG_DIR/"
 ## Example: fire and forget with id tracking
 
 ```bash
-# Launch and capture the aria ID for later
+# Launch and capture the figaro id for later
 ARIA=$(figaro new -f -j -- "Refactor internal/tool to use interfaces" | jq -r .aria_id)
-echo "Launched aria: $ARIA"
+echo "Launched figaro: $ARIA"
 
 # Check on it later
 figaro status "$ARIA"
@@ -113,17 +113,17 @@ wc -c "$LOG_DIR"/*.log
 # Watch growth
 watch -n5 'wc -c /tmp/figaro-subagents/*.log'
 
-# List all arias (global view)
+# List all figaros (global view)
 figaro list -g
 ```
 
 ## Notes
 
 - Each subagent gets its own context window and token budget.
-- Every aria remains in the store until removed. Clean up with `figaro kill --now <id>` (a plain `kill` reaps it for three days first, so a fan-out of throwaways lingers in `figaro reaped`), or state a lifetime at birth (`-S system.ttl=1h`) and the daemon removes it once spent; `figaro doctor ttl` lists what is due.
-- The angelus daemon manages all concurrent arias. It starts automatically on the first command that needs it.
-- Practical concurrency: depends on your provider's rate limits. 4-8 simultaneous arias is typical before throttling.
-- Subagents inherit the default outfit (provider, model, skills). Override per-aria with `figaro set --id <id> system.model <model>` after creation.
+- Every figaro remains in the store until removed. Clean up with `figaro kill --now <id>` (a plain `kill` reaps it for three days first, so a fan-out of throwaways lingers in `figaro reaped`), or state a lifetime at birth (`-S system.ttl=1h`) and the daemon removes it once spent; `figaro doctor ttl` lists what is due.
+- The angelus daemon manages all concurrent figaros. It starts automatically on the first command that needs it.
+- Practical concurrency: depends on your provider's rate limits. 4-8 simultaneous figaros is typical before throttling.
+- Subagents inherit the default outfit (provider, model, skills). Override per-figaro with `figaro set --id <id> system.model <model>` after creation.
 - **Always pass `--id` when steering a subagent.** Your own shell-outs carry
   `FIGARO_ARIA=<your id>`: you are statically attended to *yourself*, so a
   bare `figaro send`/`set`/`status` addresses you, not the subagent. The id is

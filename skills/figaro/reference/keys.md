@@ -45,7 +45,7 @@ prefix.
 (`listen`) do nothing, `q` (`leave`) with no pit open ends the session, and
 `Esc` (`cancel`) only cancels what is open.
 
-An aria with no messages opens on a landing page: the figaro mark (a smaller
+A figaro with no messages opens on a landing page: the figaro mark (a smaller
 one in a smaller pane, none when even that will not fit), the version, and
 the first commands to type. The first message replaces it. The compose row
 names the key bound to send in the composer, and drops the hint when that
@@ -68,7 +68,7 @@ Beside `config.toml`, read once when figaro starts. Three shapes:
 in it is a test: if one stops doing what its comment says, the build fails.
 
 A value that starts with `:` is a **command binding**: the rest is a command
-line, run as if typed at `:` on the aria on screen, and its one-line answer
+line, run as if typed at `:` on the figaro on screen, and its one-line answer
 lands in the status bar. It works with the pager up and inline (incipit), and
 never in the `:` line, the `/` box or a y/n question. `M-e =
 ":toggle system.methods.enabled"` turns the reasoning-effort method off and

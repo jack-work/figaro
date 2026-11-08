@@ -5,14 +5,14 @@ themselves are in [cli.md](cli.md); this file is the behaviour around them.
 
 ## You already have an identity
 
-Every bash call an aria makes carries two variables:
+Every bash call a figaro makes carries two variables:
 
 ```
-FIGARO_ARIA=<the aria's own id>    identity
+FIGARO_ARIA=<the figaro's own id>    identity
 FIGARO_NO_BIND=1                  may not mutate the pid binding
 ```
 
-So a shell-out is statically attended to the aria that spawned it. These need
+So a shell-out is statically attended to the figaro that spawned it. These need
 no `--id`, because they already mean you:
 
 ```sh
@@ -25,7 +25,7 @@ figaro send -f -- <text>     a note to yourself; mid-turn it steers the turn
 
 It is an identity, not a binding. Nothing is written to the angelus, nothing is
 inherited from the terminal that started the daemon, and it cannot be moved.
-`figaro attend` refuses from inside an aria for exactly that reason. Reaching
+`figaro attend` refuses from inside a figaro for exactly that reason. Reaching
 anyone else takes an explicit id on every verb:
 
 ```sh
@@ -34,49 +34,49 @@ figaro show --id <other>
 figaro kill <other>
 ```
 
-A dangling id, meaning your aria was killed while your shell-out was running,
+A dangling id, meaning your figaro was killed while your shell-out was running,
 reports "nothing bound" rather than erroring, so a script keeps its normal
 branch.
 
 ## Binding is off by default for you
 
 The pid binding exists so an interactive shell can `attend` once. Scripts must
-not *mutate* it. Writing one (`attend`, and the implicit bind a new aria does)
+not *mutate* it. Writing one (`attend`, and the implicit bind a new figaro does)
 is disabled when `FIGARO_NO_BIND=1` is set, when `--no-bind` is passed, or when
 neither stdin nor stderr is a TTY.
 
-*Reading* one is not, since 0.21.2: asking which aria a shell attends survives
+*Reading* one is not, since 0.21.2: asking which figaro a shell attends survives
 a missing TTY, so prompt segments and `figaro status | jq` work. `--no-bind`
 still hides it: that is a stated intent, not a guess about the terminal.
 `--bind` forces the write path on where the TTY rule would switch it off.
 
 None of this reaches you: `FIGARO_ARIA` outranks every rung above, so an
-aria's shell-out is attended to itself and can neither read nor write the
+figaro's shell-out is attended to itself and can neither read nor write the
 parent shell's binding. That is the failure being prevented, a child figaro
-grabbing its parent's binding and forking the wrong aria, and it is now
+grabbing its parent's binding and forking the wrong figaro, and it is now
 answered by identity rather than by guessing at file descriptors.
 
-## Sub-arias
+## Child figaros
 
 ```sh
 figaro new -r -S system.ttl=1h -- <p>   a one-off, raw output for a pipe; reaps itself
-figaro new -- <prompt>             a sub-aria you can keep talking to
+figaro new -- <prompt>             a child figaro you can keep talking to
 figaro send --id <id> -r -- <p>    talk to it again
 figaro kill --now <id>             when done: gone at once (a plain kill lingers 3 days)
 ```
 
-EVERY ARIA IS PERSISTENT (2026-08-19: ephemeral arias were cut -- one behaviour
+EVERY FIGARO IS PERSISTENT (2026-08-19: ephemeral figaros were cut -- one behaviour
 instead of two). `-r` is about formatting only; when you are done with a
-sub-aria, `figaro kill --now <id>` (a plain `kill` reaps it and purges it
+child figaro, `figaro kill --now <id>` (a plain `kill` reaps it and purges it
 three days later, restorable until then), or give it `-S system.ttl=<d>` at birth and the
 daemon removes it. Fan several out in parallel when the sub-questions are
 independent. [subagents.md](subagents.md) has the fan-out patterns, and the
 **figscript** skill (not bundled: it lives in the repo's `skills/`) has the
 full scripting recipe. Neither is repeated here.
 
-## Knowing whether a sub-aria is still working
+## Knowing whether a child figaro is still working
 
-Every aria publishes a `state`:
+Every figaro publishes a `state`:
 
 | state | meaning |
 |---|---|
@@ -90,7 +90,7 @@ The source, in `Agent.Info` (`internal/figaro/agent.go`):
 state := "idle"; if a.turnCtx != nil || !a.inbox.IsIdle() { state = "active" }
 ```
 
-`dormant` is stamped by the angelus when it merges disk-backed arias into the
+`dormant` is stamped by the angelus when it merges disk-backed figaros into the
 list response.
 
 **The `turnCtx` half is the trap.** A running turn normally has an empty inbox,
@@ -102,12 +102,12 @@ quoted line over any prose about it, including this paragraph.
 Recipes:
 
 ```sh
-figaro status <id> -j | jq -r .state                          one aria
+figaro status <id> -j | jq -r .state                          one figaro
 figaro list -j | jq -e 'any(.state == "active")' >/dev/null   busy, by exit code
 figaro listen <id>                                            live frames, pushed
 ```
 
-`figaro list -j` is the global view: every aria, including anchors. It is the
+`figaro list -j` is the global view: every figaro, including anchors. It is the
 right tool for a supervisor polling a fleet it spawned, and the wrong tool for
 "who is next to me", which is scoped `figaro ls`.
 
@@ -117,11 +117,11 @@ Caveats worth knowing before you build on this:
   provider still reads `active`; the flip happens when the drain loop finishes
   the event.
 - `last_active` (ms epoch, in `list -j` and `status -j`) is the recency signal
-  for dormant and idle arias. It is the last TURN. A live row also carries
+  for dormant and idle figaros. It is the last TURN. A live row also carries
   `agent_since` (when its agent was built) and, if it was restored rather than
   born, `woke_by`, the RPC method that woke it.
 - Do not poll a method that needs an agent (`figaro.queued`, `figaro.study`)
-  against arias you are merely watching: each call wakes a sleeper, and the
+  against figaros you are merely watching: each call wakes a sleeper, and the
   sweep will name you for it (see contributing/reclamation.md).
 - There is no push notification of state transitions on the CLI surface.
 

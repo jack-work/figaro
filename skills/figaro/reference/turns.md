@@ -43,7 +43,7 @@ spec change.
 3. **`atMainLT` is INCLUSIVE of the frozen prefix.** figwal `disk/fork.go:194`
    reads *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at
    least one entry"*, which sounds exclusive. **It is not**: measured, not
-   inferred: forking a real aria at `atMainLT = 5` produced a branch that still
+   inferred: forking a real figaro at `atMainLT = 5` produced a branch that still
    contained LT 5. So prefix = `[First, atMainLT]`, branch = `(atMainLT, Last]`.
    Fork at turn T therefore uses **`atMainLT = min(LTs of T) - 1`**: the LT just
    before the prompt. The branch retains everything through the end of turn T−1
@@ -187,7 +187,7 @@ ordinals, not LTs**.
 **Budget in bytes, granularity in nodes.** Emit nodes in order until the
 serialized size would exceed the budget; stop at a node boundary; **always emit
 at least one node**, even if it alone exceeds the budget. Node count is a poor
-budget: measured over 127 turns in 40 real arias at width 100, turns run median
+budget: measured over 127 turns in 40 real figaros at width 100, turns run median
 221 rows, p90 3043, max 7988: so a fixed node count could mean 40 bytes or
 400 KB.
 
@@ -249,7 +249,7 @@ suffix; only `Sealed:true` closes the entire turn.
 
 ## Worked example
 
-The real `quick test` exchange from aria `84de420c`.
+The real `quick test` exchange from figaro `84de420c`.
 
 **fig IR**: 4 messages, 7 content blocks:
 

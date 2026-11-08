@@ -15,10 +15,10 @@ as a float.
 |---|---|---|---|
 | `key` | cli | `chord`, `mode` | a keystroke reached the dispatcher; the start of every user-initiated measurement |
 | `hop` | cli | `from`, `to`, `gen`, `ms` | one subject change, keystroke to seeded window; the phases below add up to it |
-| `hop.dial` | cli | `to`, `gen`, `ms` | connecting to the new aria |
+| `hop.dial` | cli | `to`, `gen`, `ms` | connecting to the new figaro |
 | `hop.read` | cli | `kind`, `ms`, `parts`, `err` | one read on the pager's behalf: `seed` (retarget), `enter` (cold pager), `catchup`, `history` (scrolling up), `page` (a jump) |
-| `hop.early` | cli | `to`, `method` | a frame from the aria being dialled arrived before the hop claimed it, and was dropped (issue #25: it used to land in the aria being left); the seed read covers it |
-| `wire.rx`, `wire.tx` | cli | `conn`, `bytes` | bytes on one aria connection, as they pass |
+| `hop.early` | cli | `to`, `method` | a frame from the figaro being dialled arrived before the hop claimed it, and was dropped (issue #25: it used to land in the figaro being left); the seed read covers it |
+| `wire.rx`, `wire.tx` | cli | `conn`, `bytes` | bytes on one figaro connection, as they pass |
 | `aria.frame` | cli | `bytes`, `parts`, `live`, `deltas` | one `figaro.aria` notification arrived |
 | `frame` | cli | `aria` or `view`, `bytes`, `full`, `content`, `tail`, `rows` | the terminal was written: a painted frame. `content` says the transcript had rows; `tail` says the view was following |
 | `frame.quiet` | cli | `aria` or `view` | a render produced nothing the screen did not already hold |
@@ -28,7 +28,7 @@ as a float.
 | `runtime` | cli, angelus | `state` (+ `aria` on the daemon) | the turn disposition changed |
 | `token.first` | angelus | `aria`, `turn` | the provider's first delta of a round |
 | `fanout` | angelus | `aria`, `method` | one notification left the agent |
-| `list.warm` | angelus | `rows`, `ms` | the boot-time read of every aria's listing state, so the first list is warm |
+| `list.warm` | angelus | `rows`, `ms` | the boot-time read of every figaro's listing state, so the first list is warm |
 | `mem` | cli | `rss`, `heap_alloc`, `heap_inuse`, `sys`, `gc`, `goroutines`, `window_msgs`, `rowcache_rows` | sampled once a second and at exit |
 
 ## Derived metrics
@@ -36,7 +36,7 @@ as a float.
 - TTFCP (time to first contentful paint): for a hop, `frame{content:true}` with
   the new `aria` minus the `key` that started it. For a send: the first `frame`
   after `submit.qua` whose bytes rose.
-- TTT (time to tail): first `frame{tail:true}` for the new aria minus the key.
+- TTT (time to tail): first `frame{tail:true}` for the new figaro minus the key.
 - Hop cost: `hop.ms`, split by `hop.dial.ms` and each `hop.read.ms`; bytes are
   the `wire.rx` sum on the connection the hop opened.
 - Frame jitter: intervals between consecutive `frame` lines while `runtime` is

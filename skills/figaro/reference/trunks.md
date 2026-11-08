@@ -1,14 +1,14 @@
 # Trunks & forking
 
-figaro's aria store is backed by **figwal** (a segmented WAL with native
-forking). The aria id IS a figwal **trunk id**, and it is **stable across
+figaro's store is backed by **figwal** (a segmented WAL with native
+forking). The figaro id IS a figwal **trunk id**, and it is **stable across
 forks**: the continuation line keeps it. This file is the model: trunks,
 cauterization, LT numbering, and the `attend`/`ls`/`fork`/`kill` surface. For
-how the bytes sit on disk, see [arias.md](arias.md).
+how the bytes sit on disk, see [store.md](store.md).
 
 > The word **trunk** echoes opera's *aria di baule*: the "trunk aria" (or
 > "suitcase aria") a singer carried from production to production, packed in
-> their travel trunk and slotted in wherever it fit. A figaro **trunk** is
+> their travel trunk and slotted in wherever it fit. A figaro's **trunk** is
 > likewise the portable canonical line a conversation carries through its forks.
 
 ## A trunk is a path, not a node
@@ -41,7 +41,7 @@ conversations. The full tree, top to bottom:
 - **branch**, a fork of a conversation. Also a conversation, just one whose
   parent is another conversation rather than an outfit.
 
-**Top-level aria vs branch.** A **top-level aria** is a conversation whose
+**Top-level figaro vs branch.** A **top-level figaro** is a conversation whose
 parent is an outfit, a root of the conversation forest. A **branch** is a
 conversation whose parent is another conversation. (Both are `kindConversation`
 on disk; the distinction is lineage.)
@@ -132,15 +132,15 @@ with no credentials and no tokens.
   empty alternative diverges. `:<turn>.<node>` cuts INSIDE that turn, at the
   message the node begins (see above). `.<lt>` forks at that logical time
   exactly. No
-  coordinate = tail fork. Forking your **own** bound aria rebinds you to the
+  coordinate = tail fork. Forking your **own** bound figaro rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
-  forking any other aria, or `--stay`, leaves your session untouched.
+  forking any other figaro, or `--stay`, leaves your session untouched.
 
   **With a prompt** it forks *and sends*, the way `new -- <prompt>` does. The
   prompt always lands on the **alternative**: the fresh empty branch, and
   the continuation is never written to. `--stay` then governs only the
-  **shell**: without it, forking your own aria moves you to the alternative
-  (that is where the prompt went); forking anyone else's aria never moves
+  **shell**: without it, forking your own figaro moves you to the alternative
+  (that is where the prompt went); forking anyone else's figaro never moves
   you, so `fork <other>:12 --stay -- "try it this way"` is a clean fan-out.
   Flags are `send`'s (same parser, same dispatch): `-r` raw, `-v` verbatim,
   `-o` verbose, `-l` listen, `-x`(+`-n`/`-y`) exec, `-f` forget. A send flag without a
@@ -150,7 +150,7 @@ with no credentials and no tokens.
 
   **A fork's prompt is a nudge, never a brief.** The branch inherits the whole
   conversation up to the fork point: the task, the files read, the plan, and
-  what was just decided. It is reading exactly what the forking aria is
+  what was just decided. It is reading exactly what the forking figaro is
   reading, so anything a brief would tell it, it already has. Prompt it with
   the next step in a few words, `go`, `take the second option`, `run the pty
   test and report back`, and nothing more. A long prompt that re-explains the
@@ -160,8 +160,8 @@ with no credentials and no tokens.
   The branch learns that it IS a branch from the fork reminder
   (`<system-reminder name="fork">`), which carries `forked_from` and the
   bound form's `system.fork_incantation`. Set the incantation once in an
-  outfit (`core.toml` reaches every aria) and no forking prompt has to say
-  it; unset, nothing tells the branch it was forked. A fresh aria from `new`
+  outfit (`core.toml` reaches every figaro) and no forking prompt has to say
+  it; unset, nothing tells the branch it was forked. A fresh figaro from `new`
   is the opposite case: it has no history, and its prompt must carry
   everything (see [../subagents.md](../subagents.md)).
 
@@ -169,7 +169,7 @@ with no credentials and no tokens.
   > sends to the *original* trunk. `send`'s subject is the message (*where
   > does this land?*); `fork`'s is the branch (*what did I just make?*).
 
-  An aria may fork itself from inside its own running turn: `figaro fork
+  A figaro may fork itself from inside its own running turn: `figaro fork
   --stay -f -- go` from a tool call returns at once with the new ids, and the
   running turn carries on.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**): bind this shell,
@@ -177,16 +177,16 @@ with no credentials and no tokens.
   registry) is the binding authority; the figwal layer knows nothing of it. An
   `:<turn>` sets a **one-shot pending fork-point** consumed by the next bare
   prompt (`fig -- …` forks there and moves to the new branch); `:<turn>` alone
-  re-pins the already-bound aria, and `:head` alone drops its pending fork-point. **Terminal-only**: inside an aria's own bash
-  tool `attend` refuses, because `FIGARO_ARIA` pins that shell to the aria
-  that spawned it, permanently (see the figaro SKILL). An aria reaches another
-  aria with an explicit `--id`, never by attending it.
+  re-pins the already-bound figaro, and `:head` alone drops its pending fork-point. **Terminal-only**: inside a figaro's own bash
+  tool `attend` refuses, because `FIGARO_ARIA` pins that shell to the figaro
+  that spawned it, permanently (see the figaro SKILL). A figaro reaches another
+  figaro with an explicit `--id`, never by attending it.
 - **`attend null`** (the literal `null`): **go home**: unbind the shell. New
   conversations then default to the live outfit. The word echoes the
   **kindNull** genesis root that sits above every outfit. There is **no
   `detach`** (removed): `attend null` is the unbind. `attend ~` is kept as
   a legacy alias (the tilde must be quoted in the shell). Attending a
-  cauterized (null/outfit) aria is rejected with a nudge toward
+  cauterized (null/outfit) figaro is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
 - **`kill <id>`**: remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` when anything is drawn under it; a
@@ -198,34 +198,34 @@ with no credentials and no tokens.
 
 **Scope:**
 
-- **`figaro ls`**: current scope. **Attended** → your aria's fork tree
-  (with `●` marking you); **detached** → home (all top-level arias).
-- **`figaro ls <id>`**: scope to that aria's subtree.
+- **`figaro ls`**: current scope. **Attended** → your figaro's fork tree
+  (with `●` marking you); **detached** → home (all top-level figaros).
+- **`figaro ls <id>`**: scope to that figaro's subtree.
 
 **Views (don't unbind you):**
 
-- **`-H`/`--home`**: the home view (all top-level arias + their branches)
-  *without* unbinding; `●` stays on your real aria.
+- **`-H`/`--home`**: the home view (all top-level figaros + their branches)
+  *without* unbinding; `●` stays on your real figaro.
 - **`-g`/`--global`**: home **plus** the null + versioned-outfit anchors,
   drawn above the conversations (the infrastructure trunks).
 
 **Cap:**
 
 - default = the first **10 ROWS** of the drawn tree, whole trees ordered by
-  their most recent member. It is a row budget, not a "ten newest arias"
+  their most recent member. It is a row budget, not a "ten newest figaros"
   filter, so a deep tree can spend the whole budget and the footer says how
   many are left. **`-a`/`--all`** removes the cap; **`-n N`** sets it. `-a`
   and `-n` are mutually exclusive.
 
 **JSON:**
 
-- **`--json`**, a pro/dev escape hatch: the global state of **all** arias
+- **`--json`**, a pro/dev escape hatch: the global state of **all** figaros
   incl. null + outfits, **always**. Rejects every other flag.
 
 Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
 `▸`running / `●`this-shell / `○`idle marker, running first), **ID** (opaque hex), **OUTFIT**,
 **VER** (`live` or a short content-hash), **FORK** (`yes` for a branch, `-`
-for a top-level aria: the fork POINT is an LT and the coordinate you would
+for a top-level figaro: the fork POINT is an LT and the coordinate you would
 type is a turn, so `figaro status <id>` prints the `parent:turn` you can
 fork at rather than a number here that reads like one), AGE, MSGS, CTX, CWD.
 
@@ -234,41 +234,41 @@ The tree a listing draws follows the PRESENTATION edge (`present` in
 
 ## promote
 
-**`promote [<id>] [levels]`** raises an aria in the tree `figaro ls` draws:
+**`promote [<id>] [levels]`** raises a figaro in the tree `figaro ls` draws:
 it takes its parent's place, and the parent it displaced comes to sit under
 it. Presentation only. No history moves, no id changes, your binding is
-untouched, and the aria still reads exactly the turns it read before, so a
+untouched, and the figaro still reads exactly the turns it read before, so a
 promote is O(1) in conversation length and cannot fail halfway.
 
 ```sh
-figaro promote              the bound aria, one level
-figaro promote <id>         another aria, one level
+figaro promote              the bound figaro, one level
+figaro promote <id>         another figaro, one level
 figaro promote <id> 10      up to 10 levels, stopping at the outfit
 ```
 
 **Two hierarchies, and which one answers what.** The TOPOLOGY (`.from` on
-disk) says where an aria's history comes from: forking, reading and
+disk) says where a figaro's history comes from: forking, reading and
 context always follow it, and nothing in this section can move it. The
 PRESENTATION says where a row is drawn and what a delete warns about. They
 start identical; a promote is the only thing that parts them.
 
 Promotion stops at the outfit boundary. Only conversations nest, so an
-outfit version and the genesis root are never reparented under an aria: a
+outfit version and the genesis root are never reparented under a figaro: a
 top-level conversation has nothing above it to promote into and is refused
 ("cannot promote into an outfit"), with a nudge toward making or editing an
-outfit instead. `promote <id> 10` on an aria three levels deep climbs three
+outfit instead. `promote <id> 10` on a figaro three levels deep climbs three
 and reports three; it is not an error to ask for more than the tree has.
 
-**`figaro doctor normalize [-n] [-j]`** makes every aria own its history
+**`figaro doctor normalize [-n] [-j]`** makes every figaro own its history
 outright, so no delete can owe anything at its boundary, then drops every
 override the history now agrees with. It is the one operation here that is
-not instant (it copies the prefix each promoted aria borrows), so it suits
+not instant (it copies the prefix each promoted figaro borrows), so it suits
 an off-hours job. `-n` reports what each half would do and touches nothing.
 `figaro normalize` is a hidden alias for it until 0.57.
 
 An override is **redundant** when dropping it changes no delete set: its
-aria is gone, or it names exactly the aria's history parent. Normalize
-makes the second happen when it detaches an aria whose override names the
+figaro is gone, or it names exactly the figaro's history parent. Normalize
+makes the second happen when it detaches a figaro whose override names the
 root. An override naming anything else stays, even one that draws nothing
 differently: kill `-r`, `form rm -r`, a lifetime and a reap all take what is
 drawn under the node, outfit versions and forms included, so an override
@@ -283,10 +283,10 @@ and `present` (where the row is drawn, what the vector follows).
 ## demote
 
 **`demote [<id>] [--under <child>]`** is the opposite move, made for a
-delete: the aria sinks to a leaf, so a kill or a reap takes it and nothing
-else. One child takes its place; the aria's other children move under that
+delete: the figaro sinks to a leaf, so a kill or a reap takes it and nothing
+else. One child takes its place; the figaro's other children move under that
 child, keeping their depth (grandchildren ride along under their own
-parents); the aria hangs beneath it with no rows of its own.
+parents); the figaro hangs beneath it with no rows of its own.
 
 ```sh
 figaro demote <id>                  the child branched earliest takes its place
@@ -294,9 +294,9 @@ figaro demote <id> --under <child>  that child does, if it is one
 ```
 
 A `--under` that is not a child is not an error: the earliest child is used
-and the tool says so. An aria with no children is left where it is. Like a
+and the tool says so. A figaro with no children is left where it is. Like a
 promote it is one patch on the topology form, so it lands whole or not at
-all, and it moves no history. `figaro succeed` demotes the aria it replaces.
+all, and it moves no history. `figaro succeed` demotes the figaro it replaces.
 
 Implementation: `runDemote` (`internal/cli/manage.go`), the `figaro.demote`
 RPC, `DemoteResponse{FigaroID, Under, Preferred}`, `XwalStore.Demote` (which
@@ -307,16 +307,16 @@ picks the child) and `TopologyTree.Demote` (which writes the patch).
 `kill <id>` counts on one tree and cuts on the other, deliberately:
 
 - **What it refuses** is counted on the DRAWN tree, so the warning matches
-  what you see: `kill <id>` on an aria with rows under it refuses and names
+  what you see: `kill <id>` on a figaro with rows under it refuses and names
   how many; `-r` takes them.
 - **What it removes** is the HISTORY subtree, because that is what owns
   bytes on disk.
-- An aria merely promoted under the target therefore survives. Its
+- A figaro merely promoted under the target therefore survives. Its
   presentation edge is forgotten and it returns to where its history puts
   it.
 - A survivor that read its history THROUGH the removed set absorbs that
   prefix first, and is then pinned where it was drawn, so a delete never
-  teleports an untouched aria to the genesis root.
+  teleports an untouched figaro to the genesis root.
 
 A refused delete writes nothing at all: the count is taken before any
 repair, because a repair cannot be taken back.
@@ -327,7 +327,7 @@ The presentation lives in the **topology form**: a reserved stump,
 `@topology`: it cannot be forked or branched. One per store, and so 1:1 with
 the angelus that owns it.
 It holds OVERRIDES, never a full tree, so a lost topology form degrades to
-"draw every aria where its history puts it" rather than to a wrong tree.
+"draw every figaro where its history puts it" rather than to a wrong tree.
 
 - **A promote is ONE patch naming two edges**, so the pair lands together or
   not at all. The `trunks.json` it replaces rewrote the whole document per

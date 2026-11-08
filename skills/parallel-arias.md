@@ -1,9 +1,9 @@
 ---
 name: parallel-arias
-description: Orchestrate two or more figaro arias working in parallel on a shared project via separate git worktrees, with cross-aria communication (poll each other's logs, send steering messages) and a supervisor that retries on failure. Use when a task naturally splits into independent sub-projects that need a shared interface contract.
+description: Orchestrate two or more figaros working in parallel on a shared project via separate git worktrees, with cross-agent communication (poll each other's logs, send steering messages) and a supervisor that retries on failure. Use when a task naturally splits into independent sub-projects that need a shared interface contract.
 ---
 
-# Parallel Arias
+# Parallel Figaros
 
 Two (or more) `figaro` agents working a shared codebase in parallel,
 each in its own git worktree, talking to each other through the CLI.
@@ -11,17 +11,17 @@ each in its own git worktree, talking to each other through the CLI.
 ## Topology
 
 ```
-            this aria (supervisor)
+            this figaro (supervisor)
                  │ launches + watches
         ┌────────┴────────┐
         ▼                 ▼
- chess-backend       chess-frontend     ← named arias
+ chess-backend       chess-frontend     ← named figaros
    worktree A           worktree B      ← git worktrees of one bare repo
         ▲                 ▲
-        └──── poll/poke ──┘             ← cross-aria comms
+        └──── poll/poke ──┘             ← cross-agent comms
 ```
 
-Use **named arias** so they're addressable: `figaro aria <name> -- "..."`
+Use **named figaros** so they're addressable: `figaro aria <name> -- "..."`
 creates if absent, prompts if present.
 
 ## The three primitives
@@ -31,7 +31,7 @@ creates if absent, prompts if present.
 2. **Read counterpart**: `figaro aria <other-name> -a -l | tail -300`
    gives the full literal log; pipe-friendly.
 3. **Send to counterpart**: `figaro aria <other-name> -- "<message>"`
-   queues a user-tic even if the aria is mid-turn. This is your **live
+   queues a user-tic even if the figaro is mid-turn. This is your **live
    steering** primitive.
 
 ## Treebear setup
@@ -49,14 +49,14 @@ git -C proj.git worktree add $ROOT/backend  backend-dev
 git -C proj.git worktree add $ROOT/frontend frontend-dev
 ```
 
-## Prompt template (per aria)
+## Prompt template (per figaro)
 
-Give every aria:
+Give every figaro:
 - Its **role**, its **own id**, and the **other id**.
 - Its **worktree path**; firm "stay in your worktree, commit locally".
 - A pointer to the shared **contract file** (README.md in seed).
 - Scope of work for **this side only**.
-- **Comms instructions**: when to poll the other aria, how to send notes,
+- **Comms instructions**: when to poll the other figaro, how to send notes,
   prefix convention (e.g. `NOTE FROM backend:`), don't spam.
 - **Termination sentinel**: end with `READY: <role>` or
   `FAILED: <role>: <reason>` on its own line.
@@ -64,13 +64,13 @@ Give every aria:
 ## Supervising
 
 `figaro aria <name> -- ...` does NOT block until the model is done.
-Don't watch the CLI's PID: watch the aria itself:
+Don't watch the CLI's PID: watch the figaro itself:
 
 - `figaro list` → STATE column (`active`/`idle`) and MSGS count.
 - `figaro aria <id> -a -l` → tail for the sentinel.
 - A stall = `idle` with no MSGS increment for N ticks → send a nudge.
 - Real failure = sentinel says `FAILED`, or persistent stall after
-  multiple nudges → kill the aria, `worktree remove --force`,
+  multiple nudges → kill the figaro, `worktree remove --force`,
   `worktree prune`, re-create branch, re-launch.
 
 ## Retry-on-failure
@@ -92,12 +92,12 @@ Have each side **commit locally** to their own branch as they work.
 After both signal READY, run a merge worktree:
 - `git merge backend-dev` then `git merge frontend-dev` on `release`.
 - README and any shared files: prefer the seed contract; if both sides
-  edited, take the union and let a third aria reconcile.
+  edited, take the union and let a third figaro reconcile.
 - Run a smoke script that exercises the wire contract end-to-end.
 
 ## Gotchas
 
-- **First prompt may not auto-start a freshly-created named aria.**
+- **First prompt may not auto-start a freshly-created named figaro.**
   If MSGS stays at 2 (just the prompt, no reply), send a one-liner
   follow-up to kick it.
 - **Stale worktrees** after a force-removed dir: use `worktree prune`
@@ -108,4 +108,4 @@ After both signal READY, run a merge worktree:
 ## Worked example
 
 See `/tmp/chess-build/FINDINGS.md` and the scripts in that directory
-for a concrete two-aria chess-app build orchestrated from this skill.
+for a concrete two-agent chess-app build orchestrated from this skill.

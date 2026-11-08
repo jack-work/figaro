@@ -8,11 +8,11 @@ source named here and trust it over this file.
 - **CLI** (`internal/cli`): what the user runs. Connects to the daemon's door
   and renders the stream.
 - **Angelus** (`internal/angelus`): the long-running supervisor (single
-  instance via flock). Owns the registry of arias, the **endpoint** each aria is
+  instance via flock). Owns the registry of figaros, the **endpoint** each figaro is
   reachable at, the daemon-wide session registry, pid bindings, and
   `figaro.list`/`create`/`kill`/`attach`. Survives shells. `figaro rest` stops
   it; [cli.md](../cli.md) says when the next command respawns it.
-- **Agent** (`internal/figaro`): one per aria (= one conversation), and
+- **Agent** (`internal/figaro`): one per figaro (= one conversation), and
   **transient**. Owns the figLog (IR), the form, the tool registry, and
   the turn loop. Mutations funnel through its **inbox** (an event queue), so
   there is exactly one writer to the form and the log: e.g. a `figaro
@@ -21,8 +21,8 @@ source named here and trust it over this file.
   section).
 
 An agent is a memory decision, not an identity. It is built on demand and
-reclaimed when idle, while the aria's endpoint, bindings and background jobs
-outlive it: so "the aria" and "the agent serving it" are different lifetimes.
+reclaimed when idle, while the figaro's endpoint, bindings and background jobs
+outlive it: so "the figaro" and "the agent serving it" are different lifetimes.
 See [reclamation.md](../contributing/reclamation.md).
 
 ## The IR: `internal/message`
@@ -76,7 +76,7 @@ and takes the turn with it. So:
 
 ## The form: `internal/form`
 
-Per-aria key→JSON state. Two namespaces:
+Per-figaro key→JSON state. Two namespaces:
 
 - `system.*`: harness-reserved. Providers read these directly
   (`system.credo`, `system.model`, `system.cwd`, `system.cache_control`,
@@ -129,8 +129,8 @@ type Snapshot struct {
   bound form: `cur.Apply(candidate).Diff(cur)`.
 - `MarshalJSON`/`UnmarshalJSON` emit and read the **flat object** form
   (`{"key": value, …}`, keys lexical). Three things consume it: the reducible
-  form channel's watermark/state records in the aria store (see
-  [arias.md](arias.md): those are content-hashed), the `figaro.form` RPC
+  form channel's watermark/state records in the figaro store (see
+  [store.md](store.md): those are content-hashed), the `figaro.form` RPC
   response, and `State.Save`'s the form channel when a State is opened with a
   path (the agent opens with `""`, i.e. in-memory only). `MarshalJSON`
   delegates to `encoding/json` over a `map[string]json.RawMessage` and never
@@ -166,34 +166,34 @@ body on demand. Bundled first-party skills merge under the user's by name.
 
 ## The wire protocol: `internal/rpc`
 
-Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
+Per-figaro request methods: `figaro.qua` (prompt), `figaro.context`,
 `figaro.interrupt`, `figaro.set`, `figaro.form`,
 `figaro.queued`, and `figaro.read` (catch-up/paging). Angelus includes
 `figaro.create`/`fork`/`promote`/`kill`/`list`/`attach`,
 `pid.bind`/`resolve`/`unbind`, `aria.read`, `aria.page`/`context`/`form`
-(the same reads addressed by aria id), and status/binding persistence.
+(the same reads addressed by figaro id), and status/binding persistence.
 
 `aria.read` answers one page, capped at 1000 entries whatever the limit asks,
-and names the next LT in `next_from`. Anything that wants the whole aria
+and names the next LT in `next_from`. Anything that wants the whole figaro
 (`export`, the CLI-side turn resolution behind `attend <id>:N` and `status`)
 goes through
 `sdk.Angelus.IRAll`, which walks `next_from` to the end; a single call there
 is issue #23 again.
 
-The transport is NDJSON-framed JSON-RPC 2.0 over one door per daemon. An aria
-method names its aria in `params.figaro_id`. A connection follows an aria
+The transport is NDJSON-framed JSON-RPC 2.0 over one door per daemon. A figaro
+method names its figaro in `params.figaro_id`. A connection follows a figaro
 after `figaro.follow` or a prompt there; reads never subscribe. Follow, call
 `figaro.read` for initial state, then keep reading notifications, each of which
-names its aria.
+names its figaro.
 
-Aria methods are served by the **angelus**, not by the agent, and answer
+Figaro methods are served by the **angelus**, not by the agent, and answer
 whether or not an agent is resident: `rpc.MethodNeedsAgent` decides which
-methods are served from the store and which wake the aria. See
+methods are served from the store and which wake the figaro. See
 [reclamation.md](../contributing/reclamation.md).
 
 ### Caller identity: `x-internal-figaro-id`
 
-Every request carries the **calling aria's** id in a reserved params field
+Every request carries the **calling figaro's** id in a reserved params field
 (`rpc.CallerKey`), injected by both client hops (`WithCaller`) and read back by
 `CallerOf`. It rides in `params` and not in a top-level `meta` because the
 envelope belongs to **jkrpc**, an external module: `Client.Call` takes
@@ -206,9 +206,9 @@ Injection is generic rather than a field on each request struct because
 nothing to embed in, and those methods must still be attributed.
 
 This is **not** the target-selection rule. Selection is
-`--id > FIGARO_ARIA > pid binding` and answers *which aria am I talking about*;
-caller identity answers *which aria am I*, and only `FIGARO_ARIA` can: `--id`
-is an argument the caller chose, and a pid binding says which aria a shell is
+`--id > FIGARO_ARIA > pid binding` and answers *which figaro am I talking about*;
+caller identity answers *which figaro am I*, and only `FIGARO_ARIA` can: `--id`
+is an argument the caller chose, and a pid binding says which figaro a shell is
 *attending*, not that it is one.
 
 ### Attribution: who sent each part of a message
@@ -226,13 +226,13 @@ What the sender is recorded as:
 
 | caller | `Sender` |
 |---|---|
-| authenticated aria | its id |
-| **the duke** (end user) | the target aria's `duke-title`, else `user` |
+| authenticated figaro | its id |
+| **the duke** (end user) | the target figaro's `duke-title`, else `user` |
 | explicit label (`FIGARO_CALLER`) | bare, e.g. `ci-bot` |
 | unknown | empty |
 
-The pager draws every sender (`figaro <handle>` for an aria). The model sees
-only an aria's: every provider puts a
+The pager draws every sender (`figaro <handle>` for a figaro). The model sees
+only a figaro's: every provider puts a
 `<system-reminder name="sender">figaro <handle> (<short id>)</system-reminder>`
 in the same user message, just before that figaro's text, through the channel
 form-state reminders use. It is built from the id alone, so the bytes never
@@ -241,9 +241,9 @@ label's prompts go to the model as typed: recorded history cannot tell a label
 from a `duke-title`, and both name the owner's side.
 
 **The duke is the end user**: the person the agent serves, as distinct from an
-aria or an anonymous script. Their name does not live in shell config: an
+figaro or an anonymous script. Their name does not live in shell config: an
 *interactive* CLI sends a **placeholder** in `x-caller`, and the agent resolves
-it against the **target aria's** form key **`duke-title`** (default
+it against the **target figaro's** form key **`duke-title`** (default
 `user`). Set it in an outfit:
 
 ```toml
@@ -255,7 +255,7 @@ rather than tidiness: `FIGARO_CALLER` only ever populates `label`, so no value
 of it can produce `duke: true`. The guarantee is a type, not a reserved word.
 
 Only an **interactive** process presents the duke: the same TTY signal that
-decides the binding policy: so an aria's shell-out cannot speak as its master
+decides the binding policy: so a figaro's shell-out cannot speak as its master
 by accident. A figaro that deliberately allocates itself a terminal still can,
 which is why authorization reads the door's principal and never the duke.
 
@@ -300,20 +300,20 @@ refused by name.
 **Every call is decided.** `authz.Guard` wraps the whole handler map with
 `authz.Enforce`: each method maps to one verb (`api/rpc/verbs.go`; an
 unclassified method fails `TestEveryMethodHasAVerb`), checked on
-`aria:<id>` when the request names an aria and on the daemon otherwise.
+`aria:<id>` when the request names a figaro and on the daemon otherwise.
 `figaro.hello` is exempt; `figaro.list` is served and drops the rows the
 caller cannot read before it pages, and `node.resolve` answers only the refs
 the caller may read. A call that reaches a second resource
 checks it too: `study` reads its form, `cast` sets its role, `lineage`
-reads `against`, `kill -r` needs `kill` on every aria it takes. A prompt or
+reads `against`, `kill -r` needs `kill` on every figaro it takes. A prompt or
 `figaro.follow` subscribes the connection only where the caller holds
 `listen`. Denials are JSON-RPC **-32020** with the reason verbatim. A request
-for an aria another node holds is forwarded before this node's policy runs,
+for a figaro another node holds is forwarded before this node's policy runs,
 and the owner decides it (the node door, under "JSON-RPC surface" in
 `ARCHITECTURE.md`).
 
 Ids are resolved before the policy sees them, and a prefix resolves only
-among arias the caller may read, so resolution cannot list or expand an id
+among figaros the caller may read, so resolution cannot list or expand an id
 the caller could not read.
 
 **The policy** is TOML at `[authz] policy` (relative to the config dir):
@@ -323,36 +323,36 @@ configured, the daemon's own principal holds every verb and nobody else holds
 any. `outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
 which the birth record writes once and nothing rewrites. `unboxed` is every
-aria whose `system.sandbox` is exactly empty or `local`: any other value is a
+figaro whose `system.sandbox` is exactly empty or `local`: any other value is a
 box (a configured box, one since removed from config, `bwrap`), and a form
 the store cannot read is a box too. Lent to `troupe:<name>`, it keeps a
 troupe's reach off the node's boxes.
 
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
-create, fork, bind, import and `figaro.set`. An aria minted by a sandbox
+create, fork, bind, import and `figaro.set`. A figaro minted by a sandbox
 principal is pinned to that sandbox; a set, a fork's patch or a cast's role
 patch that names a sandbox the caller holds no `use` on is refused, so a box
 cannot move or mint anything out of its box. `form.create` and `form.bind` with a
 parent need `read` on it, since the new form starts as its copy.
 
 **Box principals.** With no policy file, each box that has a door is bound
-to `create`, `use` on `sandbox:self` (its own box) and every aria verb but
-`admin` on `sandboxed:self`: the arias and forms whose `system.sandbox` is that box.
-Arias in one box share its files and processes, so the box is the unit a
-policy can separate; an aria moved out of the box leaves the box's reach.
+to `create`, `use` on `sandbox:self` (its own box) and every figaro verb but
+`admin` on `sandboxed:self`: the figaros and forms whose `system.sandbox` is that box.
+Figaros in one box share its files and processes, so the box is the unit a
+policy can separate; a figaro moved out of the box leaves the box's reach.
 A policy file binds boxes itself, with the same two selectors. A box
 writes only the `system.` keys `boxWritable` lists (`internal/angelus/box_keys.go`):
 sampling knobs, tags, cwd, sandbox, the decision provider and model. Among those it may not write, the daemon dereferences
 `system.environment.*` (a directory it writes wire logs to),
 `system.decide.base_url` (a URL it sends a credential to), `system.methods`
-(keys it writes for the aria), `system.studies` (forms it reads) and
+(keys it writes for the figaro), `system.studies` (forms it reads) and
 `system.reaped(_until)`. Open keys are its own except `target-aria`, and a
 test fails on any open key the daemon reads that no one has classified. That holds for set, prompt, cast, create, fork and
 form.create/bind; values from outfits it names are the owner's. A box may not
 import, and the cwd it sends at birth is never looked up on the host. An
 unbound form a box mints, by `form.create` or by `cast` with a role patch, is
 held in that box (`system.sandbox` stamped by the daemon, which the box cannot
-change), at most 256 per box. A role held in a box points only at an aria in
+change), at most 256 per box. A role held in a box points only at a figaro in
 it: `set`, `cast` and `form.create` refuse any other `target-aria`, the CLI
 refuses to follow one, and `form ls`, `ls` and `status` name the box. Shell
 bindings stay admin-only, since they are keyed by a pid and a box has its own
@@ -370,22 +370,22 @@ the daemon assigns is under "Workspaces under a sandbox" below.
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
 and form.create/bind. The one exception is `system.retired` for a box, on
-the arias in that box, so `figaro retire` works inside one. `system.tools` lists the tools an aria may use; `[]` is
+the figaros in that box, so `figaro retire` works inside one. `system.tools` lists the tools a figaro may use; `[]` is
 none, unset is all, and a value that is not a list is none. It is enforced
 where tools are offered to the model and again where a call runs, so a
 forged call to an unlisted tool is refused. Owner-held does not bind an
-unboxed aria whose tools include bash or process: those tools reach the
+unboxed figaro whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 
 **Box providers.** `[sandbox.boxes.<name>] providers = [...]` names the
-providers an aria in that box may run on. Anything else is refused where the
+providers a figaro in that box may run on. Anything else is refused where the
 provider is resolved: at birth, at wake, on a rebind, and for a decision
-asked by the box or for an aria in it. A box with a door must set it; see
+asked by the box or for a figaro in it. A box with a door must set it; see
 below.
 
 **Box outfits.** `[sandbox.boxes.<name>] outfits = [...]` names the outfits
 a box may dress in. A box naming any other outfit is refused at create, fork,
-set, prompt, cast and form.create/bind. Whatever mints an aria from the box
+set, prompt, cast and form.create/bind. Whatever mints a figaro from the box
 names a listed outfit, or is refused with the list: create and form.bind
 always, and a fork unless it is a head fork of a conversation, which carries
 its parent's dress. No implicit default. The owner is never limited by it.
@@ -397,14 +397,14 @@ box and the missing list, and opens the other doors. A list of exactly
 beside names is a config error. A box without a door needs neither.
 
 **Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long
-a reaped or killed aria in that box waits before it is purged, in place of
+a reaped or killed figaro in that box waits before it is purged, in place of
 `[memory] reaped_grace_hours` and `kill_grace_hours`. A kill asking for a
 longer grace gets the box's; `kill --now` still purges at once.
 
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
 caller), `troupe.leave`, `troupe.policy.set` and `troupe.apikey.mint`, since
-the guard knows only arias and the daemon. `troupe.apikey.revoke` and
+the guard knows only figaros and the daemon. `troupe.apikey.revoke` and
 `troupe.apikey.ls` decide for themselves too (below).
 
 **The troupe layer.** A call the node's own policy refuses may still be
@@ -437,7 +437,7 @@ its own target cannot impersonate it. The stamped principal rides beside it
 on every prompt block (`message.Content.Principal`), so a transcript says who
 spoke as well as who claimed to.
 
-An aria may fork itself from inside its own running turn. The fork handler
+A figaro may fork itself from inside its own running turn. The fork handler
 calls `Backend.ForkWith` directly rather than queueing on the agent's inbox,
 so nothing waits on the turn that issued it
 (`TestFigaroCanForkItselfFromInsideItsOwnTurn`).
@@ -494,7 +494,7 @@ data rather than terminal rows, ANSI, width, theme, or animation ticks.
 ## Provider layer: `internal/provider/anthropic`
 
 Direct HTTP+SSE, no SDK. Translates IR <-> Anthropic wire and caches the
-per-aria wire bytes (`store.Log[[]json.RawMessage]`, keyed by figaro LT).
+per-figaro wire bytes (`store.Log[[]json.RawMessage]`, keyed by figaro LT).
 
 - **Cache the exact accumulated turn, never a lossy re-encode.** `Send`
   caches the sanitized provider-native assistant response, which preserves
@@ -512,7 +512,7 @@ per-aria wire bytes (`store.Log[[]json.RawMessage]`, keyed by figaro LT).
   ends `error: <provider>: the provider refused the completion
   (stop_reason=refusal): ...` with the wire's word in it. Before this an
   upstream filter answering 200 with an empty body recorded a normal `stop`
-  with no content, the aria went quiet, and since the trigger stayed in
+  with no content, the figaro went quiet, and since the trigger stayed in
   history every later turn did the same (jack-work/figaro#24). The SSE
   drain no longer synthesises `end_turn` for a `message_stop` that arrived
   without one either; the empty string travels and decodes as the fault it is.
@@ -570,8 +570,8 @@ session.
 
 ### Wire dumps: `system.environment.figaro_wire_dir`
 
-Set on an aria, it makes every provider (messages, chat, responses) write each
-call as `<dir>/<aria>/<ns>.req.http` and `.resp.http`: the request line,
+Set on a figaro, it makes every provider (messages, chat, responses) write each
+call as `<dir>/<figaro>/<ns>.req.http` and `.resp.http`: the request line,
 headers and body, then the status, headers and the stream (one frame per line
 for responses). Files are created `0600` in a directory held at `0700`.
 Credentials are masked by name, in headers and query parameters alike: any
@@ -588,8 +588,8 @@ authoritative. The agent holds a `ProviderFactory` and re-resolves the binding
 at the top of **every** provider round (`internal/figaro/provbind.go`,
 `syncProvider`), after that round's queued `set`s are serviced: so
 `figaro set system.provider copilot` (or a re-applied outfit that moves the
-aria) takes effect on the next round, with no restart and no fork. Before
-this, the instance was frozen at create/restore: an aria whose provider was
+figaro) takes effect on the next round, with no restart and no fork. Before
+this, the instance was frozen at create/restore: a figaro whose provider was
 wedged (a persistent `overloaded_error`, say) could not be moved off it while
 the angelus stayed up, and `figaro status` cheerfully reported the *old*
 provider while the bound form said otherwise.
@@ -610,9 +610,9 @@ provider while the bound form said otherwise.
   has not seen. That makes the cache-miss encoder load-bearing: it must drop
   unsigned thinking blocks (both the SDK and raw Anthropic encoders do).
 
-### Credentials belong to hush, not to an aria: `internal/auth`
+### Credentials belong to hush, not to a figaro: `internal/auth`
 
-A provider instance is per-aria, so anything cached on one is cached N
+A provider instance is per-figaro, so anything cached on one is cached N
 times. That is fine for a wire projection and wrong for a credential.
 
 figaro holds no credential state at all. hush does, one agent per machine,
@@ -687,15 +687,15 @@ Rule of thumb: don't background with bare `&` and assume completion. Use
 `background:true` + the `process` tool, `& wait`, or serial commands.
 
 Sessions live on the **daemon** (`Angelus.Sessions`), not on the agent, keyed by
-aria id as scope: so a backgrounded job survives its agent being reclaimed and
-keeps its id across a wake. `figaro kill` reaps an aria's sessions; hibernation
+figaro id as scope: so a backgrounded job survives its agent being reclaimed and
+keeps its id across a wake. `figaro kill` reaps a figaro's sessions; hibernation
 does not.
 
 ### Boxes: `internal/sandbox/box`
 
 A box is a unit (an nspawn container, a VM) the daemon reaches only over a
 unix socket. `figaro box serve` runs inside it and serves `api/sandbox` from
-the `local` provider over jkrpc: `box.open` (scope = aria id, workspace,
+the `local` provider over jkrpc: `box.open` (scope = figaro id, workspace,
 env), `box.exec` and `box.session.*` with output as `box.chunk` and
 `box.exit` notifications keyed by a handle the caller picks, and
 `box.fs.*`, where an update is a compare-and-swap on the old bytes'
@@ -715,7 +715,7 @@ missing), refuses anything but a socket, and connects through
 `/proc/self/fd`: a link there cannot point it at another socket. So a
 configured `exec` path must contain no symlink at all, a legitimate one
 included (`/var/run/...` is refused; write `/run/...`). Paths are paths in the box: a box
-aria is born without the CLI's host cwd, `system.cwd` (if dressed)
+figaro is born without the CLI's host cwd, `system.cwd` (if dressed)
 resolves against the box's `--workspace`, and none of it needs `use` on
 `sandbox:local`. Cancelling an exec or killing a session signals its
 process group in the box. When the socket drops, everything started over
@@ -733,10 +733,10 @@ never starts a daemon there.
 
 Under `bwrap`, `system.cwd` is the box's read-write bind.
 A birth keeps a requested cwd only if it is a directory on the daemon's
-host; otherwise the aria gets `<workspace_root>/<id>` (0700) from
+host; otherwise the figaro gets `<workspace_root>/<id>` (0700) from
 `[sandbox] workspace_root` in `config.toml`, and with no root the birth is
 refused. `local` falls back to the daemon's cwd. A fork copies
-`system.cwd`, so a workspace is removed only when no remaining aria names
+`system.cwd`, so a workspace is removed only when no remaining figaro names
 it; nothing outside the root is ever removed. `[sandbox]` is read at
 daemon start: changing it takes a restart, not `outfit reload`.
 
@@ -753,7 +753,7 @@ there too.
 
 **Federation status: in development.** Solid: troupe keys, membership (join, leave, revoke,
 gossip) and the cross-node listing (`ls`, the pager's `L`). Not yet settled:
-moves across nodes, what one node answers about an aria held on another
+moves across nodes, what one node answers about a figaro held on another
 (moving, moved, owner down), and troupe policy v2 (binding principals other
 than the owner).
 
@@ -989,8 +989,8 @@ secret is out of reach; a limit for hygiene belongs at the edge.
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,
 `form/`, and `translations/<provider>/`, plus `_meta/<id>.json`
-for list/status metadata. See arias.md for reading these safely.
+for list/status metadata. See store.md for reading these safely.
 
-`XwalBackend` memoizes one row cache per (aria, channel) so a reader sees the
+`XwalBackend` memoizes one row cache per (figaro, channel) so a reader sees the
 writer's appends lock-free. Those caches are bounded and evictable; what they
 cost and when they are released is [reclamation.md](../contributing/reclamation.md).

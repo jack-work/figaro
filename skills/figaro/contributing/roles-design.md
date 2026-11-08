@@ -1,6 +1,6 @@
 # Roles: the design
 
-A role is how one aria is addressed by what it DOES rather than by which
+A role is how one figaro is addressed by what it DOES rather than by which
 conversation it is. For someone changing `internal/figaro/study.go`,
 `internal/cli/cast_family.go`, or the redirect in `internal/cli/target.go`.
 Read [forms-design.md](forms-design.md) first: a role is a form, and every
@@ -11,7 +11,7 @@ invariant there holds here.
 An unbound form carrying `target-aria` is a role. There is no role kind, no
 role marker, no conversion. The consequences are deliberate:
 
-- Any form becomes a role the moment someone points it at an aria, and stops
+- Any form becomes a role the moment someone points it at a figaro, and stops
   being one when the key is removed.
 - Exclusivity with bound forms is enforced in the READERS, not in the
   schema. `cast` refuses a bound target, and `target-aria` is never read off
@@ -46,11 +46,11 @@ stream whose subject changes without the reader being told.
 
 ## 3. Cast is a casting call
 
-`fig cast [<aria>] <@form>` does two things that must not half-happen: the
-aria STUDIES the role, and the role POINTS at the aria.
+`fig cast [<figaro>] <@form>` does two things that must not half-happen: the
+figaro STUDIES the role, and the role POINTS at the figaro.
 
 Serialization USED to be the figaro's own actor loop, and that cost more than
-it bought: a cast issued from inside the aria's own turn waited for a loop
+it bought: a cast issued from inside the figaro's own turn waited for a loop
 that was waiting for the turn that issued it, the SELF-CAST DEADLOCK, and
 "create a role as step one" asks for exactly that shape.
 
@@ -80,7 +80,7 @@ transactional guarantee. That is cast's job.
 The pair (a figaro and the role it plays) can be minted from either end, and
 both entrances land in the same `autocast` in `internal/cli/cast_new.go`:
 
-- `fig new -C [<@form>]`: the aria does not exist yet. The role positional is
+- `fig new -C [<@form>]`: the figaro does not exist yet. The role positional is
   lifted out of the argv BEFORE the prompt parser sees it, because `new`
   refuses bare arguments and that refusal is right for everything except this
   one. The `@` sigil makes the lift lexical, and nothing after `--` is
@@ -90,22 +90,22 @@ both entrances land in the same `autocast` in `internal/cli/cast_new.go`:
 
 Which thing the dressing dresses follows from which thing is missing, and
 that is the only reading in which each invocation is unambiguous: with a role
-named, `-O`/`-S` dress the ARIA; with no role named, they mint the ROLE.
+named, `-O`/`-S` dress the FIGARO; with no role named, they mint the ROLE.
 
 Two objects across two writers is not a transaction, so the partial is a
 REPORTED state and never an exit. By the time the cast runs the figaro
 exists; `WithSessionFor`'s dying error path is deliberately not used, because
-an aria whose id is never printed is an orphan.
+a figaro whose id is never printed is an orphan.
 
 ## 4. The positional grammar
 
 The form is always the LAST positional; `-O`/`-S` occupy the form slot.
 
 ```
-fig cast <aria> <@form>      two positionals
-fig cast <aria> -O <names>   one positional and a spec: the positional is the aria
+fig cast <figaro> <@form>      two positionals
+fig cast <figaro> -O <names>   one positional and a spec: the positional is the figaro
 fig cast <@form>             one positional alone: it is the form
-fig cast -O <names>          no aria available, so one is minted from the default form
+fig cast -O <names>          no figaro available, so one is minted from the default form
 fig cast                     attending a @form: mint a figaro to play it
 ```
 
@@ -115,7 +115,7 @@ misuse lexical before it is semantic.
 
 ## 5. Observation, and why the rendering is the design
 
-A cast aria studies the role, so the role's changes reach the model. That
+A cast figaro studies the role, so the role's changes reach the model. That
 path is [forms-design.md](forms-design.md) §8: pull at the stamp, derived
 at translate time.
 
@@ -162,9 +162,9 @@ demote and the predecessor's retirement folded in; see
 over the existing RPCs and is deliberately not a transaction: each step is
 recoverable by hand, and the report says which landed.
 
-`target-aria` is ONE pointer. Casting N arias into one role is N
+`target-aria` is ONE pointer. Casting N figaros into one role is N
 repointings, and the last one wins. That is the semantic, not a bug: a role
-is a seat, and a seat holds one occupant. Many arias may STUDY a role
+is a seat, and a seat holds one occupant. Many figaros may STUDY a role
 without being cast into it, which is the fan-out shape.
 
 ## 7. What is proven, and what is not

@@ -5,7 +5,7 @@ effort, say), when a key changed and nobody ran `figaro set`, or when you are
 changing `internal/methods`.
 
 A **method** is a form entry under `system.methods`. On every inquiry, before
-the provider is called, figaro renders the method's template, asks the aria's
+the provider is called, figaro renders the method's template, asks the figaro's
 decision model to pick one of its options, and writes the pick to the method's
 key. The turn then runs on the new value.
 
@@ -63,7 +63,7 @@ question, so it is asked a choice and figaro weights the probabilities itself.
 Either way the level is rounded to the option it lands on. A scale needs an
 order, so `score` refuses options given as an object.
 
-The provider and model are the aria's `system.decide` settings, falling back
+The provider and model are the figaro's `system.decide` settings, falling back
 to the default outfit's, exactly as for `figaro decide`
 ([decisions.md](decisions.md)).
 
@@ -131,9 +131,9 @@ A method owns its key while it is enabled: a `figaro set` of that key holds
 until the next inquiry. To pin a value, turn the method off
 (`figaro set system.methods.reasoning-effort.enabled false`) and set the key.
 
-Methods are read from the aria's `system.methods` laid over the default
+Methods are read from the figaro's `system.methods` laid over the default
 outfit's, leaf by leaf, the same fallback the `system.decide` settings use. An
-aria minted before the outfit gained a method still runs it, and anything the
-aria sets (`enabled = false`, a different `default`) wins. `figaro toggle`
-reads an absent key the same way, so the first M-e on such an aria turns the
+figaro minted before the outfit gained a method still runs it, and anything the
+figaro sets (`enabled = false`, a different `default`) wins. `figaro toggle`
+reads an absent key the same way, so the first M-e on such a figaro turns the
 method off.

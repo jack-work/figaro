@@ -18,16 +18,18 @@ ephemeral          1 per user            N per user
 | **Angelus**: supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock`, the door |
 | **Figaro**, actor: one inbox, one drain loop | per conversation | none: addressed through the door by `figaro_id` |
 
+The append-only log under a figaro is still called an aria in code, on disk and on the wire (`arias/`, `api/aria`, `aria_id`, `FIGARO_ARIA`, `target-aria`); a later release renames the parts users see.
+
 ## Packages
 
 ```
 cmd/figaro/                multi-call entry: figaro / q / l + --angelus daemon
-sdk/                       Go client: angelus + aria connections
+sdk/                       Go client: angelus + figaro connections
 skills.go                  embeds skills/figaro into the binary
 
 api/aria/                  wire types of the paginated read API (Page, TurnPart, deltas)
 api/decide/                the ?? option grammar, -C choices, @refs; renders a decision
-api/form/                  per-aria structured state + system-reminder templates
+api/form/                  per-figaro structured state + system-reminder templates
 api/livedoc/               live-render protocol core: one markdown blob, splice deltas
 api/message/               provider-agnostic IR (Message, Content, Patch)
 api/quote/                 quoted-coordinate grammar at the head of a prompt
@@ -52,19 +54,19 @@ internal/logring/          bounded in-memory slog tail
 internal/mark/             timing sink for transcript benchmarks
 internal/methods/          system.methods: templated decisions that set a form key on each inquiry
 internal/otel/             OpenTelemetry init + span helpers
-internal/outfit/           assembles an aria's form from on-disk config; unpacks bundled skills
+internal/outfit/           assembles a figaro's form from on-disk config; unpacks bundled skills
 internal/partialjson/      string field from a truncated JSON prefix
 internal/provider/         Provider interface; anthropic (direct HTTP+SSE), anthropicmodels,
                            copilot, meta, openaichat, responses, routed
 internal/render/           markdown -> ANSI rows (glamour)
 internal/store/            generic Log[T]; XWAL backend, forms, libretto, fork tree;
                            disk/ log/ segment/ tree/ xwal/ layers
-internal/tape/             record/replay of the aria wire
+internal/tape/             record/replay of the figaro wire
 internal/term/             terminal color, width, TTY detection
 internal/tokens/           context-window accounting
 internal/tool/             tool interface + bash/read/write/edit, image fitting
 internal/toolout/          bounds and coalesces streamed tool text
-internal/topo/             aria hierarchy for rendering and deletion
+internal/topo/             figaro hierarchy for rendering and deletion
 internal/tui/              bubbletea first-run components
 internal/turns/            fig IR turn arithmetic
 internal/uiir/             UI IR projection
@@ -74,7 +76,7 @@ internal/wirelog/          RoundTripper tracing + optional raw dumps, credential
 
 ## Streams
 
-Every aria is one XWAL trunk with related channels:
+Every figaro is one XWAL trunk with related channels:
 
 ```
 arias/
@@ -139,7 +141,7 @@ tool results when the IR tail has unresolved tool calls. There is no turn
 journal and no checkpoint record. `journal.go` is the agent's one append door
 to the IR (append, then announce), not a recovery log. Recovery never resumes
 a remote stream and never calls the provider. After panic or seal failure, the
-live aria server is rebuilt from canonical IR so it neither commits a
+live figaro server is rebuilt from canonical IR so it neither commits a
 speculative-only unit nor hides a durable assistant.
 
 `PushFigaro` carries the canonical assistant candidate plus its exact
@@ -192,7 +194,7 @@ only for response-only fields (`stop_reason`, `model`, `usage`). The
 provider-agnostic IR encoder remains a cache-miss fallback and cannot recreate
 signed/redacted thinking. Splice is verbatim: no per-request stripping.
 
-The per-message bytes are written exactly once and reused on every subsequent turn. The prefix is **byte-identical** across requests within an aria's lifetime, Anthropic's `cache_control` markers actually hit.
+The per-message bytes are written exactly once and reused on every subsequent turn. The prefix is **byte-identical** across requests within a figaro's lifetime, Anthropic's `cache_control` markers actually hit.
 
 ## Credo
 
@@ -200,7 +202,7 @@ Providers read `system.credo` from the form and inject it as the API's system pr
 
 ## Form
 
-Structured per-aria state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `form.json`. Each key has a body template (`api/form/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
+Structured per-figaro state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `form.json`. Each key has a body template (`api/form/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
 
 The `system.*` namespace is harness-reserved. Clients write under any other key.
 
@@ -216,9 +218,9 @@ One door serves every method, and every request passes `authz.Guard` once.
 `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.mem.collect`,
 `angelus.outfits`, `outfit.reload`, `angelus.configure`,
 `angelus.save_bindings`, `angelus.provider_ledger`, `figaro.ir`,
-`figaro.lineage`. `figaro.attach` proves an aria exists without waking it.
+`figaro.lineage`. `figaro.attach` proves a figaro exists without waking it.
 
-**Aria methods**, each naming its aria in `params.figaro_id`
+**Figaro methods**, each naming its figaro in `params.figaro_id`
 (`rpc.AriaKey`): `figaro.qua` (prompt; optional `form`), `figaro.interrupt`,
 `figaro.set`, `figaro.queued`, `figaro.queue.update`, `figaro.queue.delete`,
 `figaro.study`, `figaro.drop`, `figaro.cast`, `figaro.follow`, and the reads
@@ -227,12 +229,12 @@ the store answers otherwise.
 
 `api/rpc/methods.go` and `api/rpc/address.go` are the list of record.
 
-A connection follows an aria once it opens or steers its stream there,
+A connection follows a figaro once it opens or steers its stream there,
 `figaro.follow` or `figaro.qua` (`rpc.MethodFollows`), and only where the
 caller holds `listen`. Reads and every other
 method never subscribe, so a connection used for lookups collects no pushes.
-Pushes carry `figaro_id`, so one connection may follow several arias. When an
-aria's endpoint closes (kill, drain) its followers get `figaro.closed` and
+Pushes carry `figaro_id`, so one connection may follow several figaros. When an
+figaro's endpoint closes (kill, drain) its followers get `figaro.closed` and
 their connections stay up.
 
 A second, web door is configured by `[door.web]` (`path`, `mode`, default
@@ -248,7 +250,7 @@ fronting proxy authorizes only the upgrade.
 
 **Federation status: in development.** Solid: troupe keys, membership (join, leave, revoke,
 gossip) and the cross-node listing (`ls`, the pager's `L`). Not yet settled:
-moves across nodes, what one node answers about an aria held on another
+moves across nodes, what one node answers about a figaro held on another
 (moving, moved, owner down), and troupe policy v2 (binding principals other
 than the owner).
 
@@ -265,13 +267,13 @@ caller, `forwarded` with the caller's bearer, which the owner verifies against
 own version. Each side logs once when the other's differs and refuses
 nothing for it; `figaro troupe ls` shows what each peer last showed.
 
-An aria lives on the node that minted it, forks included. A request naming
-an aria this node does not hold (by id, prefix, or `<node>/<id>`) goes once,
+A figaro lives on the node that minted it, forks included. A request naming
+a figaro this node does not hold (by id, prefix, or `<node>/<id>`) goes once,
 whole, to its owner on a link kept per caller connection, and the owner's
 pushes come back the same way. The owner authorizes; the entry node only
 requires a bearer to forward. A forwarded request is served where it lands or
-refused. A caller that may not read an aria is told it is not found, in the
-words a missing aria gets, wherever it asked from; only a caller that may
+refused. A caller that may not read a figaro is told it is not found, in the
+words a missing figaro gets, wherever it asked from; only a caller that may
 read it hears which verb the policy withholds. `internal/peer` holds the
 door, the links and the directory of remote owners, which learns from forks,
 listings and `node.resolve` lookups and keeps the most recently used
@@ -288,10 +290,10 @@ listing. Each caller connection holds its own TLS connection to each peer it
 reaches.
 
 `figaro.move {figaro_id, to}` changes the home of a fork tree: every
-conversation sharing history with the named aria (its parent chain up to the
-outfit version, and every fork below). The caller needs `kill` on each aria
-here; the new home checks `create` and `use` on each aria's sandbox under the
-same bearer. Any aria of the tree with a turn in flight or queued refuses the
+conversation sharing history with the named figaro (its parent chain up to the
+outfit version, and every fork below). The caller needs `kill` on each figaro
+here; the new home checks `create` and `use` on each figaro's sandbox under the
+same bearer. Any figaro of the tree with a turn in flight or queued refuses the
 move; otherwise the tree's agents are hibernated and its ids answer as moving
 until the move settles.
 
@@ -310,14 +312,14 @@ A final departure is a forwarding address, kept indefinitely: a caller there
 is routed to the new home, a forwarded request is answered with a
 `moved` error (code -32030, data `{id, node}`) that the entry node follows
 once, and `node.resolve` answers it under `moved`. Each answer first asks
-whether the caller could have read the aria, from the owner and lineage the
+whether the caller could have read the figaro, from the owner and lineage the
 departure recorded, so a caller who could not hears not found. The old home
-also tells every other peer (`node.learn`). An aria that moves back drops the
+also tells every other peer (`node.learn`). A figaro that moves back drops the
 address. Accepted limits: background sessions on the old host are killed,
 followers there are disconnected, `system.cwd` still names a path on the old
 host, and studies the moved forms held of forms left behind lapse.
 
-### Streaming: the turn-shaped aria page
+### Streaming: the turn-shaped figaro page
 
 The wire carries the **UI IR**, not canonical `message.Message` IR. The one
 conversation shape is `aria.Page`, used by both pull and push:
@@ -371,14 +373,14 @@ spinners animate on the consumer, producing no timer traffic on the wire.
 | `q <prompt>` / `figaro -- <prompt>` | Prompt (auto-resolves or creates) |
 | `figaro send [--id <id>] [-e] [-r] [-x] -- <prompt>` | Explicit prompt; `-e` ephemeral, `-r` raw, `-x` bash exec (orthogonal flags) |
 | `figaro new -- <prompt>` | New conversation with chosen outfit/patch |
-| `figaro list` | List all arias (live + dormant) |
-| `figaro kill <id>` | Kill + delete aria |
+| `figaro list` | List all figaros (live + dormant) |
+| `figaro kill <id>` | Kill + delete figaro |
 | `figaro attend <id>` | Rebind this shell |
 | `figaro show <id> -j` | Dump materialized UI turns as a `Page` |
 | `figaro models` | List provider models |
 | `figaro provider login\|logout\|ls <name>` | Model credentials: sign in, remove figaro's copy, list each source |
 | `figaro troupe login <name>` / `troupe ls` | Sign in to a troupe's door; list `troupes/` |
-| `figaro listen <id>` | Follow an aria without sending a prompt |
+| `figaro listen <id>` | Follow a figaro without sending a prompt |
 | `figaro stop` | Shut down the angelus |
 
 ## Layout
@@ -399,7 +401,7 @@ $XDG_RUNTIME_DIR/figaro/          angelus.sock, angelus.pid
   outside `internal/`, and a language-neutral schema. Exact build matching is
   the temporary guard.
 - Isolate subscriber backpressure with bounded per-client delivery; one slow
-  external listener must not block the aria's ordered fan-out.
+  external listener must not block the figaro's ordered fan-out.
 - More providers.
 - Agent pooling.
 - Context compaction.

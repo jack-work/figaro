@@ -26,9 +26,9 @@ Four consequences, all of which we have hit:
    become closed messages the pager's frozen window does not hold. Rendering
    live would make content vanish, so it renders stale instead.
 2. **`gg` means "top of the buffer"**, because a second range cannot be
-   represented. There is nowhere to put "the head of the aria" while also
+   represented. There is nowhere to put "the head of the figaro" while also
    holding the tail.
-3. **Eviction is bottom-only** (`trimClosed` + `closedFloor`). A long aria
+3. **Eviction is bottom-only** (`trimClosed` + `closedFloor`). A long figaro
    cannot forget its middle, because forgetting the middle would make a hole
    and there is no hole.
 4. **A pending prompt is invisible.** Between submit and the drain's
@@ -98,7 +98,7 @@ type Range struct {
     Msgs     []Message // contiguous; identity is (Turn, From) per Message's doc
 }
 
-// Store is the client's whole model of one aria.
+// Store is the client's whole model of one figaro.
 type Store struct {
     ranges  []Range   // sorted by From; non-overlapping; NEVER adjacent
     more    More      // is there anything beyond the outermost edges
@@ -345,7 +345,7 @@ Order, and why:
 ## Open questions: decide before coding the affected phase
 
 - **What should `gg` mean?** "Top of what I hold" (today) or "the beginning of
-  the aria"? The second needs `Ensure` to be interruptible and
+  the figaro"? The second needs `Ensure` to be interruptible and
   progress-reporting, and makes the gap row a landing target rather than only a
   trigger. This is a product decision, not a technical one.
 - **Coalescing across a streaming turn.** A range whose `To` sits inside the

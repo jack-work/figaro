@@ -31,21 +31,21 @@ capabilities.
   older daemon sends neither and the pit behaves as before: editable per
   form, every list nested. Neither is trusted: the daemon still refuses
   every write it would refuse without them.
-- **Restoring a reaped aria** is `figaro.reaped.restore`, a 0.54 method. It
+- **Restoring a reaped figaro** is `figaro.reaped.restore`, a 0.54 method. It
   needs the `set` verb (not `kill`) on every node of the reaped group, and a
   troupe policy that grants `set` grants it. A set refused partway leaves the
   nodes before it restored, and the error names them.
-- **@arias rows dropped `promoted` and `history_parent`** after 0.54.3,
+- **@figaros rows dropped `promoted` and `history_parent`** after 0.54.3,
   which shipped them. A row now carries `parent` (its history parent's id),
-  and `@topology` holds the overrides: one key per aria drawn away from its
-  history, valued with the aria it is drawn under. `@arias`'s view hint
+  and `@topology` holds the overrides: one key per figaro drawn away from its
+  history, valued with the figaro it is drawn under. `@arias`'s view hint
   names `@topology` as its `overlay`; a pit from before ignores the hint and
   draws `@arias` with no override marks, and a newer pit against a 0.54.3
   daemon gets no overlay and draws that daemon's two keys as plain values.
   Writing `@topology` (a `set` on it)
-  needs `set` on each aria moved and `read` on each aria it is drawn under.
+  needs `set` on each figaro moved and `read` on each figaro it is drawn under.
 - **`figaro.normalize` changed shape in 0.56.** The request takes
-  `dry_run` (`segments` is gone); the response lists `detached` arias and
+  `dry_run` (`segments` is gone); the response lists `detached` figaros and
   `dropped` overrides (`id`, `handle`, `under`, `reason`) instead of a
   `detached` count. The daemon reports `normalize.report`; a CLI refuses to
   normalize through one that does not, since an older daemon would drop

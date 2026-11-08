@@ -24,7 +24,7 @@ The north star is to **converge them** so the fig IR carries (or trivially
 projects to) the UI shape, and the live-turn machinery is shared. We are not
 there yet; the blocker is tool handling (below). Today the UI projection is
 materialized in `aria.Server` and recomputed from canonical IR when a dormant
-aria hydrates. A linked `ui` xwal channel remains an optional derived cache, not
+figaro hydrates. A linked `ui` xwal channel remains an optional derived cache, not
 current storage.
 
 > **The convergence now has a plan and a shared coordinate.** See

@@ -1,17 +1,17 @@
-# Reading arias
+# Reading figaros
 
-An **aria** is one conversation. Its id is a **figwal trunk id**: stable
-across forks (the continuation keeps it). The whole aria forest is backed by
-**figwal** (a segmented WAL with native forking), not per-aria directories.
+A **figaro** is one conversation. Its id is a **figwal trunk id**: stable
+across forks (the continuation keeps it). The whole figaro forest is backed by
+**figwal** (a segmented WAL with native forking), not per-figaro directories.
 See [trunks.md](trunks.md) for the fork/trunk/attend model; this file is just
-about *reading* an aria's contents off disk.
+about *reading* a figaro's contents off disk.
 
 Two ways to read one: pick deliberately:
 
 1. **The `figaro` CLI**: routes through the angelus's shared LogCache. Safe
-   even while the aria is being written to live. Use for anything mid-flight.
+   even while the figaro is being written to live. Use for anything mid-flight.
 2. **Direct JSONL reads**: `cat`/`jq`/`rg` against the segment files. Use for
-   offline batch work across many dormant arias.
+   offline batch work across many dormant figaros.
 
 When in doubt, prefer the CLI: direct reads understand neither forks (a
 trunk's history is spread across its node chain, with shared prefixes pulled
@@ -20,8 +20,8 @@ from parent dirs) nor the form watermark fold.
 ## Disk layout
 
 The store root is `~/.local/state/figaro/arias/`. It is one figwal *trunk
-store*, **not** a directory per aria. The aria id IS the trunk id; a trunk is
-a root-to-leaf path through a fork forest of nodes, so an aria's bytes are
+store*, **not** a directory per figaro. The figaro id IS the trunk id; a trunk is
+a root-to-leaf path through a fork forest of nodes, so a figaro's bytes are
 spread across the node dirs along its path.
 
 ```
@@ -65,11 +65,11 @@ func transChannel(provider string) string { return "translations-v2/" + provider
 
 Key points:
 
-- **Per-channel trees, not per-aria dirs.** `ir/`, `form/`, and
+- **Per-channel trees, not per-figaro dirs.** `ir/`, `form/`, and
   `translations-v2/<provider>/` each mirror the same node tree (`n0/n1/…` with a
   `.fork` marker carrying the fork base index). A fork forks all channels as a
   unit. Node ids (`n<N>`) are pure plumbing: never address them; address the
-  trunk (= aria) id, which lives in the `.trunk` marker in the `ir/` tree.
+  trunk (= figaro) id, which lives in the `.trunk` marker in the `ir/` tree.
 - **The IR is truth.** `translations-v2/*` is a derivable wire cache; the
   form is reducible (a watermark + jsonmerge patches), so there is **no
   the form channel**: fold it via the CLI's `state` (or figwal `StateAt`),
@@ -115,8 +115,8 @@ form mutations riding on user-role tics.
 
 ```
 figaro list                       the conversation forest (id, outfit, ver, fork, mantra…). alias: ls
-figaro show                       render the bound aria's history (last 10 turns)
-figaro show <id>                  render a specific aria (the id is positional now)
+figaro show                       render the bound figaro's history (last 10 turns)
+figaro show <id>                  render a specific figaro (the id is positional now)
 figaro show <id> -n 20            last 20 turns (paginates backwards from the end)
 figaro show <id> -a               every turn, no truncation
 figaro show <id> -v               verbose: include patches, thinking, usage, transitions
@@ -126,19 +126,19 @@ figaro status <id> -m             provider/model/ctx + derived detail (mantra, c
 figaro state <id>                 the folded form snapshot (-j for JSON)
 ```
 
-`show` takes the aria id as a **positional** (or `--id`, or: inside an aria's
+`show` takes the figaro id as a **positional** (or `--id`, or: inside a figaro's
 own bash tool: `$FIGARO_ARIA`, or the terminal's pid binding);
 turns are labeled by their **turn id** (the coordinate `send`/`fork
 <id>:<turn>` address: see [trunks.md](trunks.md)). Thinking blocks render muted by
-default. `figaro show` is the **only safe way** to read a live aria: the
+default. `figaro show` is the **only safe way** to read a live figaro: the
 angelus serves through a lock-free cache, sidestepping the truncation race on
 the active segment, and it stitches the trunk's node chain into one history.
 
 ## Path B: direct JSONL reads
 
-There is **no per-aria dir** to `cat` anymore. All IR segments for all arias
+There is **no per-figaro dir** to `cat` anymore. All IR segments for all figaros
 live in the one `ir/` node tree, so direct reads are now *forest-wide* greps,
-not per-aria ones. They cannot reconstruct a single trunk's stitched history
+not per-figaro ones. They cannot reconstruct a single trunk's stitched history
 (that needs the fork chain): use the CLI for that. Direct reads are good for
 "does this phrase appear anywhere on disk" sweeps over dormant data.
 
@@ -146,7 +146,7 @@ not per-aria ones. They cannot reconstruct a single trunk's stitched history
 ARIAS=~/.local/state/figaro/arias
 ```
 
-**Grep a phrase across every aria's IR (forest-wide):**
+**Grep a phrase across every figaro's IR (forest-wide):**
 
 ```bash
 rg -l --color=never -g '*.jsonl' . "$ARIAS/ir" | while read -r f; do
@@ -155,8 +155,8 @@ rg -l --color=never -g '*.jsonl' . "$ARIAS/ir" | while read -r f; do
 done
 ```
 
-**List arias by derived message count, newest first** (from the `_meta`
-sidecars, keyed by aria/trunk id: these are the reliable per-aria stat):
+**List figaros by derived message count, newest first** (from the `_meta`
+sidecars, keyed by figaro/trunk id: these are the reliable per-figaro stat):
 
 ```bash
 for m in "$ARIAS"/_meta/*.json; do
@@ -180,7 +180,7 @@ for case-insensitive, `rg -F` for literal strings.)
 
 | Situation | Use |
 |---|---|
-| Aria might be live / actively written | CLI |
+| Figaro might be live / actively written | CLI |
 | A single trunk's stitched history (across forks) | CLI |
 | Pretty rendering, last N units | CLI |
 | Folded form state | CLI (`state`) |

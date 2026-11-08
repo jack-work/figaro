@@ -1,6 +1,6 @@
 # Translation Cache Lineages
 
-Translation channels are parallel XWAL channels, not per-aria copies. A fork
+Translation channels are parallel XWAL channels, not per-figaro copies. A fork
 shares the same immutable IR and translation prefix locations as its parent;
 each child directory contains only its divergent suffix and fork metadata.
 
@@ -33,7 +33,7 @@ For a matching fingerprint:
 3. Encode and append only that suffix.
 4. Advance the in-memory projection and watermark.
 
-Normal work is one or two messages regardless of aria length. Fingerprint
+Normal work is one or two messages regardless of figaro length. Fingerprint
 changes explicitly clear and rebuild the translation lineage. Request
 serialization may remain proportional to prompt bytes; cache validation,
 translation lookup, and catch-up may not scan the prefix.

@@ -6,7 +6,7 @@ description: Getting started with figaro forms and roles: durable, versioned, fo
 # Forms and roles: getting started
 
 A **form** is durable, versioned, forkable state: a JSON tree with
-history, stored in the same WAL an aria's conversation lives in. A
+history, stored in the same WAL a figaro's conversation lives in. A
 figaro's form IS one. An id starting with `@` is an **unbound**
 form: no figaro attached, and none ever will be: making a figaro from a
 form *forks* it, and nothing in the system converts.
@@ -27,7 +27,7 @@ fig set --id @a1b2c3 target-aria <id>  # now it's a ROLE: fig send @a1b2c3 reach
 
 - **Nothing converts.** `fig new` itself is sugar: bind the
   daemon's *default form* (minted from your default outfit, reused so
-  every aria shares one rendered prefix, and one warm provider cache).
+  every figaro shares one rendered prefix, and one warm provider cache).
 - **One id namespace.** A figaro is addressed by its bound form's id;
   the `@` sigil is how you tell the species apart. Attendance
   (`fig at`) is kind-agnostic, and unattended ≡ attending `null`.
@@ -89,7 +89,7 @@ inherits it. One key, a few lines, and no figaro has to be told twice.
 ## Where things show
 
 `fig form ls`: unbound forms (NAME, TARGET, AGE, PARENT), scoped to
-what you attend. `fig ls`: figaros only; a form-born aria shows its
+what you attend. `fig ls`: figaros only; a form-born figaro shows its
 `@form` in the OUTFIT column. `fig ls -g`: the whole genealogy as one
 tree, form rows washed in the selection grey.
 

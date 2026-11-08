@@ -1,4 +1,4 @@
-# Aria tapes
+# Figaro tapes
 
 Every JSON-RPC message between one CLI and one agent, with the time it crossed.
 Replay drives the real renderer: no daemon, provider, store or tokens.
@@ -40,7 +40,7 @@ it. Every time read on the render path goes through `clk`: a direct
 has only its tape", and the process dies before it would dial a daemon or
 open the vault.
 
-**A tape holds the aria's content**: prose, thinking, tool output, cwd. Read a
+**A tape holds the figaro's content**: prose, thinking, tool output, cwd. Read a
 recording before committing it as a fixture; `testdata/tapes/README.md` records
 which are expected to fail.
 

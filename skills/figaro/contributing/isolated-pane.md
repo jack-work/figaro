@@ -31,7 +31,7 @@ dp_down                         # tmux server, daemon, gateway, unit dir
 ```
 
 `DP_SHELL` picks the preset (`.#clean` by default). `DP_KEEP=1` keeps the unit
-dir, so a second run reuses the store instead of minting a new aria.
+dir, so a second run reuses the store instead of minting a new figaro.
 `dp_verify_clean` after `dp_down`.
 
 ## What each piece is isolating, and from what

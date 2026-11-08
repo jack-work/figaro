@@ -9,7 +9,7 @@ Using figaro is a different job; that lives in [cli.md](../cli.md) and
 ## The one rule: never test against the live daemon
 
 Reinstalling into `~/.nix-profile` stomps the running angelus, the owner's
-arias, and the hush identity. Work in a worktree, test through a dev shell.
+figaros, and the hush identity. Work in a worktree, test through a dev shell.
 
 The angelus is a strict singleton via an exclusive flock on
 `<store>/arias/.daemon.lock`, taken before it opens the backend or binds the
@@ -18,7 +18,7 @@ anything. That protects against an accidental race. It does not make sharing a
 store safe: the lock makes two daemons contend, it does not merge them.
 
 The corollary for an agent: **never stop, restart or upgrade the daemon from
-inside an aria.** `figaro stop`, `nix profile upgrade` and `.#swap` all swap or
+inside a figaro.** `figaro stop`, `nix profile upgrade` and `.#swap` all swap or
 kill the process hosting the conversation that issued them. Ask the owner to do
 it from a terminal.
 
@@ -55,7 +55,7 @@ isolate. Every preset is a choice about which ones to isolate.
 |---|---|
 | `FIGARO_RUNTIME_DIR` | socket, PID, bindings |
 | `FIGARO_CONFIG_DIR` | config.toml, outfits, providers, credo, skills |
-| `FIGARO_STATE_DIR` | aria store, OTel |
+| `FIGARO_STATE_DIR` | figaro store, OTel |
 | `FIGARO_CACHE_DIR` | regenerable cache (update-check memo and friends) |
 | `FIGARO_HUSH_APP` | provider credentials |
 
@@ -65,7 +65,7 @@ isolate. Every preset is a choice about which ones to isolate.
 | `.#share-hush` | config, runtime, state | testing credential resolution or refresh against a live provider. Real OAuth and AGE keys stay reachable, so you meet the first-run outfit picker. |
 | `.#share-config` | runtime, state, hush | iterating on outfit or agent logic. Real outfits and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig provider login <name>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
 | `.#clean` | everything | the truth test for the first-run flow and for auth migration |
-| `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real arias and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
+| `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real figaros and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
 | `.#sandbox` | runtime, state, config (a writable COPY) | exercising real outfits, skills and credo while you EDIT them. `providers/` is symlinked, hush is shared, so turns run. `figaro-config-reseed` for a fresh copy. |
 | `.#swap` | nothing | swap the nix-profile binary for this build, restore on exit |
 | `.#tools` | n/a: no figaro on PATH | `go get`, `go mod tidy`, a `vendorHash` bump. Every other shell builds the package first, and that build fails the moment `go.mod` moves ahead of `vendorHash`. |
@@ -101,7 +101,7 @@ FIGARO_RUNTIME_DIR=/var/tmp/x/run FIGARO_STATE_DIR=/var/tmp/x/state \
 
 Real credentials and real outfits, an isolated store and socket, the flake's
 own binary, and no first-run picker, because the config knob was overridden.
-From inside an aria, prefix `env -u FIGARO_ARIA`: the shell inherits your id,
+From inside a figaro, prefix `env -u FIGARO_ARIA`: the shell inherits your id,
 and `send` would address that id in the dev store rather than mint.
 A shell entry takes tens of seconds, so give it room in any timeout.
 
@@ -271,7 +271,7 @@ suite, a counter of source calls instead of an assertion about contents, a
 
 ### Ask what the instrument would still report if its subject were gone
 
-Distilled by aria 9ed3f561 (2026-08-18) after sixteen documented instances,
+Distilled by figaro 9ed3f561 (2026-08-18) after sixteen documented instances,
 three of them found by pointing a rule it had written back at itself within
 the hour of writing it. It is the practice the rest of this section keeps
 re-deriving, and it is one question:
@@ -301,7 +301,7 @@ you retire a column, state its final numbers IN THE COMMIT THAT RETIRES IT,
 so the comparison survives as a cross-commit assertion rather than
 evaporating with the code.
 
-AND THE VARIANT FOR STRUCTURE, contributed by aria 6ec565b5 the same night
+AND THE VARIANT FOR STRUCTURE, contributed by figaro 6ec565b5 the same night
 after the single-layer accretion was traced: **ASK WHAT THE INSTRUMENT
 WOULD STILL REPORT IF ITS SUBJECT WERE SOMEWHERE ELSE.** The sixth maxim
 catches an instrument whose subject is GONE; this catches one whose subject
@@ -312,7 +312,7 @@ declining locally, produced two cache shapes over one structure that nobody
 ever decided to keep.
 
 AND THE COROLLARY ABOUT PEOPLE, paid for three times in one evening by three
-different arias: A RULE IS NOT INTERNALISED BY BEING WRITTEN, OR EVEN BY
+different figaros: A RULE IS NOT INTERNALISED BY BEING WRITTEN, OR EVEN BY
 BEING PROPOSED. Recognition attaches to the situation it was learned in, not
 to the mechanism, which is why a known failure mode survives review by the
 very author who named it. Knowing better is exactly what makes you stop
@@ -331,11 +331,11 @@ in the failure message that the workaround can now be removed. That test pays
 attention while nobody is looking; a red one only accumulates apologies.
 
 **Worked example, and the shape of the mistake is the useful part.**
-`TestHibernateRefusesActiveAria` waits for an aria to report `idle`, then
+`TestHibernateRefusesActiveAria` waits for a figaro to report `idle`, then
 asserts `require.NoError(Hibernate(id))` once. But `Registry.Hibernate`
 re-checks liveness AFTER taking the retiring flag, deliberately, *"a turn that
 opened while we were taking the flag wins"*, so between the poll and the call
-the aria may legitimately be active again, and **the refusal is correct
+the figaro may legitimately be active again, and **the refusal is correct
 behaviour reported as a test failure.** Under load it goes red; alone it passes
 12 of 12. The fix asserts the fact: `require.Eventually(Hibernate succeeds)`,
 it eventually hibernates, and the refusals along the way are the design
@@ -482,7 +482,7 @@ optional: with one, `flake.nix` moves and the tag follows; without one,
 whatever `flake.nix` already declares gets cut.
 
 Nothing on this machine is upgraded by the script, deliberately. Take it
-yourself, **from a terminal and not from inside an aria**: the upgrade swaps
+yourself, **from a terminal and not from inside a figaro**: the upgrade swaps
 the binary under the running angelus that is hosting you:
 
 ```sh
@@ -497,9 +497,9 @@ build with its bindings kept, and restarts each figaro in a tmux pane that
 cannot follow it alone (the pane's own process with respawn-pane, a shell's
 command typed again once the shell holds the terminal). A client from 0.54.3
 on reconnects by itself and is kept running. A client that sent a prompt is
-never typed again: it comes back as `figaro listen <aria>` on the aria it
+never typed again: it comes back as `figaro listen <figaro>` on the figaro it
 sent to. It names what it leaves (piped input, `--stdin`, control characters
-in the command line, a prompt with no aria to listen to, a busy shell,
+in the command line, a prompt with no figaro to listen to, a busy shell,
 telefono) and never fails the switch. The NixOS `services.figaro` module needs none of
 this: systemd restarts the unit when the package changes.
 

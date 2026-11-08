@@ -1,12 +1,12 @@
 ---
 name: inquire-figaro
-description: Fan a single question out to every other opened figaro aria in parallel, gather each response as it lands, and synthesize the results (into chat, a document, or a tool action). Use when the user says "ask my other figaros", "poll my arias about X", "gather everyone's take on Y", or otherwise wants a cross-aria roundtable. Assumes the target arias already exist. Always exclude the current aria.
+description: Fan a single question out to every other opened figaro in parallel, gather each response as it lands, and synthesize the results (into chat, a document, or a tool action). Use when the user says "ask my other figaros", "poll my figaros about X", "gather everyone's take on Y", or otherwise wants a cross-aria roundtable. Assumes the target figaros already exist. Always exclude the current figaro.
 ---
 
 # Inquire-figaro
 
 A one-shot "ask everyone else" fan-out. Given a user question and a
-time window, dispatch that question to every eligible aria, collect
+time window, dispatch that question to every eligible figaro, collect
 each reply as it completes, and synthesize.
 
 *This skill is a stopgap.* Once the `figaro` binary grows native async
@@ -15,9 +15,9 @@ delete this file.
 
 ## Ground rules
 
-- **Never inquire yourself.** Your aria id arrives in the form
+- **Never inquire yourself.** Your figaro id arrives in the form
   as `<system-reminder name="aria_id">`. Filter it out.
-- **Only already-opened arias.** Don't `figaro new`. The set is
+- **Only already-opened figaros.** Don't `figaro new`. The set is
   discovered, not created.
 - **Kind must be `conversation`.** Skip loadout/null anchors.
 - **Respect the time window.** Filter on `last_active` (ms epoch)
@@ -35,8 +35,8 @@ delete this file.
 
 ```bash
 # you should be able to use the environment variable set in the caller figaro for this if its called by a figaro
-# if and only if that value is lost need you use the aria id from the form.
-SELF="<your aria id from the form>"
+# if and only if that value is lost need you use your id from the form (key aria_id).
+SELF="<your id from the form>"
 WINDOW_MS=$((60*60*1000))   # e.g. last hour; adjust per user ask
 NOW=$(date +%s%3N)
 CUT=$((NOW - WINDOW_MS))
@@ -55,12 +55,12 @@ are more than a handful, a courtesy, not a blocker.
 
 ### 2. Fan out in parallel
 
-One `bash` tool call per aria, `background: true`, capturing raw
+One `bash` tool call per figaro, `background: true`, capturing raw
 stdout. `-r` strips ANSI so the output is clean text ready for
 synthesis.
 
 ```bash
-figaro send --id <ARIA_ID> -r -- "<the user's question>"
+figaro send --id <ID> -r -- "<the user's question>"
 ```
 
 Each becomes its own session. Record `{aria_id → session_id}`.
@@ -70,7 +70,7 @@ skill's whole point is *collecting* the reply.
 
 ### 3. Monitor and harvest
 
-Poll the sessions. As each finishes, its stdout is that aria's
+Poll the sessions. As each finishes, its stdout is that figaro's
 reply. Two useful signals:
 
 - `process poll <session>`: status + output since last poll.
@@ -85,20 +85,20 @@ reports done.
 Fold the replies into whatever the user asked for:
 
 - **Chat**: a compact, attributed summary: "**a1b2c3d4** (mantra):
-  their take" per aria, then a short comparative synthesis.
+  their take" per figaro, then a short comparative synthesis.
 - **Document**: write a markdown file (or edit an existing one) with
   each reply quoted verbatim, followed by your synthesis.
 - **Tool action**: interpret the collective as a decision and take
   the action (open a PR, send an email, run a command). Confirm with
   the user before any destructive action.
 
-Always attribute. The user needs to know which aria said what.
+Always attribute. The user needs to know which figaro said what.
 
 ## Failure modes to handle
 
 - **Target went `dormant` mid-turn**: it errored or was killed. Note
   it in the synthesis; don't hide it.
-- **Empty target set**: tell the user "no arias match that window"
+- **Empty target set**: tell the user "no figaros match that window"
   and offer to widen it.
 - **A session hangs**: give it a generous timeout (a few minutes for
   a real reply), then note the timeout in the synthesis and move on.

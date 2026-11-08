@@ -26,9 +26,9 @@ Pin behavior to what `--help` says today, not what this skill remembers.
 - `figaro new -r -S system.ttl=1h -- <prompt>`: a one-off. Use for
   transforms (classify this line, summarize this blob). `-r` is `--raw`
   (no ANSI, no markdown; verbatim stdout); `system.ttl` has the daemon
-  remove the aria an hour after its birth. Every aria persists until
-  then. `new`, because inside an aria a bare `send` reaches yourself.
-- `figaro new -- <prompt>`: opens a fresh aria with a chosen
+  remove the figaro an hour after its birth. Every figaro persists until
+  then. `new`, because inside a figaro a bare `send` reaches yourself.
+- `figaro new -- <prompt>`: opens a fresh figaro with a chosen
   loadout / patch. Use when you want the work auditable later, or when
   the sub-task needs tools / a multi-turn life of its own.
 
@@ -41,7 +41,7 @@ with `-x` since the script governs its own output.)
 ## Parallel fan-out
 
 Independent prompts → run them concurrently. The angelus handles
-multiple arias fine.
+multiple figaros fine.
 
 ```bash
 # xargs -P: N workers, one prompt each
@@ -70,10 +70,10 @@ wait
   piping into a downstream consumer that reacts incrementally.
 - **Don't recurse blindly.** A figaro process spawning figaro
   processes is fine; a figaro *agent* spawning itself can wedge if
-  the same aria is reentered. Use `new` for sub-work, not
+  the same figaro is reentered. Use `new` for sub-work, not
   `aria <self-id>`.
 
-## When to reach for an aria instead
+## When to reach for a figaro instead
 
 If the sub-task needs many turns, tool use, or human follow-up
 later, `figaro new --` is right. If it's a stateless function call,
@@ -82,7 +82,7 @@ a one-off (`new -r -S system.ttl=1h`) is right. When unsure, start with the one-
 ## Polling job state
 
 When you fan out with `figaro new`, each
-aria carries a **`state`** field the daemon publishes: the way to
+figaro carries a **`state`** field the daemon publishes: the way to
 tell whether a worker is still going. Three values:
 
 | state | meaning |
@@ -101,7 +101,7 @@ you've backgrounded.)
 figaro list -j | jq -r '.[] | select(.kind=="conversation") | "\(.state)\t\(.id)\t\(.mantra)"'
 ```
 
-**Poll one aria:**
+**Poll one figaro:**
 
 ```bash
 figaro status <id> -j | jq -r .state
@@ -128,7 +128,7 @@ while :; do
 done
 ```
 
-**Live tail one aria** (pushed, not polled):
+**Live tail one figaro** (pushed, not polled):
 
 ```bash
 figaro listen <id>
@@ -144,7 +144,7 @@ as they happen. Ctrl-D detaches without killing the turn.
   the drain loop finishes the event. Good for "is work in flight?" -
   not a heartbeat.
 - `last_active` (ms epoch, in `list -j` / `status -j`) is your recency
-  signal for dormant/idle arias: pair it with `state` if you want
+  signal for dormant/idle figaros: pair it with `state` if you want
   "working *and* recently touched".
 - No push notification of state transitions on the CLI surface. Poll
   `list -j` on an interval, or `listen` for the frame-level truth.

@@ -15,7 +15,7 @@ both:
 
 A yes/no is the same quantity on both, the probability the answer is yes, so
 nothing is lost converting between them; an OpenAI predicate simply carries no
-confidence. jev does not converse, so it is never an aria's `system.model`
+confidence. jev does not converse, so it is never a figaro's `system.model`
 (setting it there is refused). luna does converse, through the Responses API,
 so it is not refused; as a decision model it is asked with the same verb.
 
@@ -33,7 +33,7 @@ figaro -A decide --context - -- does this log show a crash? < run.log
 | Flag | Means |
 |---|---|
 | `-C`, `--choices` | options, comma separated; quotes keep a comma; repeatable |
-| `--id <id>` | read that aria instead of the one this shell is attended to |
+| `--id <id>` | read that figaro instead of the one this shell is attended to |
 | `-m`, `--model` | the decision model for this call |
 | `--context <text>` / `-` | text to decide over (stdin with `-`) |
 | `--budget <n>` | cap the context tokens sent |
@@ -41,8 +41,8 @@ figaro -A decide --context - -- does this log show a crash? < run.log
 | `-j` | the response as JSON |
 | `-A` (global) | ignore the binding: decide over `--context` and training alone |
 
-**It only reads.** Bound to an aria, `decide` reads its conversation and form
-straight from the store: it never enters the aria's inbox, never waits on a
+**It only reads.** Bound to a figaro, `decide` reads its conversation and form
+straight from the store: it never enters the figaro's inbox, never waits on a
 running turn, and writes nothing to the log. The answer is printed and that is
 all. A figaro calling it from bash sees the answer as that tool's output, which
 is how it lands in an LLM's context. The SDK has the same call:
@@ -66,7 +66,7 @@ is asked a choice and figaro weights its probabilities the same way. The
 level, rounded, picks the option, and the rows stay in scale order. This is
 what a method with `score = true` asks ([methods.md](methods.md)).
 
-`@key` names a form key on the aria:
+`@key` names a form key on the figaro:
 
 - **A key with children** becomes one option per child, and the child's value,
   as JSON, is what the model reads about it. `@skills` makes every skill an
@@ -129,7 +129,7 @@ whether or not a turn is running. A `??` line meant literally is `\??`.
 Decisions go through a provider: its `base_url` with `/systemone` or
 `/decisions` appended, and its credential, so `figaro provider login <name>`
 covers decide too. There is no decisions provider of its own. Set it once in
-an outfit, `core.toml` to reach every aria:
+an outfit, `core.toml` to reach every figaro:
 
 ```toml
 [system.decide]
@@ -137,8 +137,8 @@ provider = "rou2"
 model    = "openai/gpt-6-luna"
 ```
 
-Each setting is the flag, else the aria's form, else the default outfit's, so
-an aria minted before the outfit changed still follows it:
+Each setting is the flag, else the figaro's form, else the default outfit's, so
+a figaro minted before the outfit changed still follows it:
 
 | Flag | Key | Is |
 |---|---|---|

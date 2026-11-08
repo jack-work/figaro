@@ -12,7 +12,7 @@ anything under `internal/outfit`.
 
 | Noun | What it is |
 |---|---|
-| form | An aria's key → JSON state, versioned alongside the conversation. Non-`system` keys the agent sees change; `system.*` is the harness's own namespace (model, credo, skills, cwd). |
+| form | A figaro's key → JSON state, versioned alongside the conversation. Non-`system` keys the agent sees change; `system.*` is the harness's own namespace (model, credo, skills, cwd). |
 | outfit | A named patch for a form, in a file `<name>.toml` anywhere under `~/.config/figaro/outfits/`. |
 | spec | What you type where an outfit is asked for: an ordered list of terms. |
 
@@ -84,14 +84,14 @@ On the wire the two axes stay apart: names in `outfits`, data in `patch`.
 ## Birth versus fold
 
 Two different things happen to an outfit, and which one you get depends on
-whether the call creates the aria.
+whether the call creates the figaro.
 
 **Birth.** `figaro new -O <names>`, and `send -O` when this call has to mint an
-aria (an unbound shell, or `-A`).
+figaro (an unbound shell, or `-A`).
 
 TWO PATCHES, and which is which is the whole economy. The **parent** carries a
 closure and nothing else, one node per content version, so its identity is a
-pure function of that closure and every aria wearing it shares one node, one
+pure function of that closure and every figaro wearing it shares one node, one
 set of records, and one rendered prefix in the provider's cache. The **child**
 carries the caller's KEYS (`-S`/`-D`) plus the runtime fill-ins.
 
@@ -121,9 +121,9 @@ under the fork.
 
 Collection spares the LIVE default, by hash rather than by name: edit an
 outfit's files and the hash moves, so the version nobody wears is reaped once
-its last aria dies while the current one stays warm.
+its last figaro dies while the current one stays warm.
 
-**Fold.** Everywhere else. The spec is folded and applied to the aria's
+**Fold.** Everywhere else. The spec is folded and applied to the figaro's
 existing form, **additively**: keys already holding that value are
 skipped, and nothing is ever removed. Re-applying is therefore free, and the
 agent sees a `<system-reminder>` for exactly what changed.
@@ -135,7 +135,7 @@ figaro fork -O focus                    fold onto the new branch, say nothing
 figaro state outfit focus               fold, no prompt
 ```
 
-A fold does not re-stamp `system.outfit_name`: the stamp is where the aria was
+A fold does not re-stamp `system.outfit_name`: the stamp is where the figaro was
 born, which is provenance and does not change.
 
 ## One call, not two
@@ -144,7 +144,7 @@ On the prompt verbs the dressing travels **on the prompt itself**
 (`figaro.qua`'s `form.outfits` and `form.patch`). A name is not resolved by the
 client and it is not resolved by the writer either: it is resolved ONCE, at the
 daemon's API boundary, by the single dressing call every method routes through
-(`angelus.dress`, and `dressParams` for the methods that reach an aria through
+(`angelus.dress`, and `dressParams` for the methods that reach a figaro through
 its hub). So:
 
 - a spec that does not resolve fails the call, with the layer closure attached,
@@ -231,7 +231,7 @@ figaro state outfit --list              what the server has on disk
 figaro state outfit --refresh           re-read outfits and config from disk
 ```
 
-`--tree` reads the config directory directly, so it works with no aria and no
+`--tree` reads the config directory directly, so it works with no figaro and no
 daemon, and exits non-zero when the picture has red in it.
 
 ## Absence
@@ -303,7 +303,7 @@ to the new one; the version-versus-child economy described earlier in this file
 is the part to trust about WHICH patch a term lands in.)*
 
 Two outfits with identical bodies and different NAMES stay two outfits, because
-the name is hashed with the body, a listing that reported an aria under a name
+the name is hashed with the body, a listing that reported a figaro under a name
 nobody asked for would be worse than a duplicate version.
 
 Content decides sameness; the label in the id is a readable restatement of what
@@ -311,30 +311,30 @@ the hash already covers, and it renders a literal as something no name may
 contain, so a stamp carrying one cannot be re-resolved by accident.
 
 Change one byte of an outfit file and the next birth hashes differently, so it
-mints a new version; arias already under the old one stay there, and `figaro ls`
+mints a new version; figaros already under the old one stay there, and `figaro ls`
 shows their version instead of `live`.
 
 ## The label is a UI concern; the hash is the value
 
-`figaro ls`'s OUTFIT column names the **outfit version** an aria was born under, read
+`figaro ls`'s OUTFIT column names the **outfit version** a figaro was born under, read
 from the topology. It is not `system.outfit_name`. That key still rides the
 form, where the agent can see it (and change it: the form is
 mutable by design), but nothing structural reads it: a `set system.outfit_name
-x` used to rename the aria's outfit in every listing and, because the column is
+x` used to rename the figaro's outfit in every listing and, because the column is
 what the version is re-resolved against, report an unchanged outfit as stale in
 the same breath.
 
-So a row's outfit is immutable for the life of the aria, and a fork keeps its
-parent's: the branch is under the same outfit version. An aria spawned under the root
+So a row's outfit is immutable for the life of the figaro, and a fork keeps its
+parent's: the branch is under the same outfit version. A figaro spawned under the root
 with no outfit carries no outfit rather than borrowing one, and an outfit with
 no names in it displays as `{}` with its hash in the VER column.
 
 ## Outfit versions and `gc`
 
 One outfit version exists per content hash, so editing an outfit mints a new
-version the next time an aria is born under it. Killing an aria collects its
+version the next time a figaro is born under it. Killing a figaro collects its
 version when it was the last child; `figaro gc` sweeps the versions that
-predate that. Collecting loses nothing: the version is content-addressed, so the next aria
+predate that. Collecting loses nothing: the version is content-addressed, so the next figaro
 wanting that outfit re-mints the same id.
 
 ## Source

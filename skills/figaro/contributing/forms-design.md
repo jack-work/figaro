@@ -22,7 +22,7 @@ null form ──mint+patch──▶ unbound form ──fork+patch⊇{aria_id}─
 - **Unbound form** carries kind `form` in the figwal node marker. Patchable,
   independently forkable, bindable, studiable.
 - **Bound form is a figaro.** Born by forking an unbound form with a birth
-  patch containing `aria_id`. One public id: the aria id IS the bound form's
+  patch containing `aria_id`. One public id: the figaro id IS the bound form's
   id.
 - **Role** is a duck type, not a kind: an unbound form carrying
   `target-aria`. See [roles-design.md](roles-design.md).
@@ -72,7 +72,7 @@ easy to rediscover the hard way:
 2. It is the only place both write paths pass through. Two implementations
    of "already wearing it" is how the agent path and the hub path came to
    disagree, which mattered most for observation: a no-op patch on a role
-   moved its version, and every observing aria derived a transition
+   moved its version, and every observing figaro derived a transition
    announcing nothing.
 
 `ApplyEffect` returns what actually landed. A caller that reports to a human
@@ -84,7 +84,7 @@ the requested one.
 The single writer is a LAZY ACTOR (`internal/actor.Lazy`): one drainer,
 spawned on submit, gone after an idle window. It was a mutex, and before
 that a permanently parked goroutine per form, which cost the daemon one
-goroutine per aria anyone had merely LISTED.
+goroutine per figaro anyone had merely LISTED.
 
 One drain does: reduce each submission against a RUNNING state, append, ONE
 fsync for the whole batch, publish, emit, answer. Two consequences worth
@@ -135,7 +135,7 @@ Outfitting is figaro API, not part of the reduction core. Every request that
 carries dressing carries it as NAMES in an `outfits` field, beside a patch
 that is pure data, and exactly one call at the daemon's API boundary turns
 the first into the second (`angelus.dress`, plus `dressParams` for the
-methods that reach an aria through its hub).
+methods that reach a figaro through its hub).
 
 Below that boundary nothing reads a file. `layers` is respected in exactly
 one place: the unmarshal that builds a patch from an outfit FILE. Written
@@ -163,7 +163,7 @@ the agent's opens, both in-daemon and actor-serialized.
 
 ## 6. Fork under a form mints a new trunk
 
-`ForkTail` is continuation: the child keeps the trunk id, because the aria
+`ForkTail` is continuation: the child keeps the trunk id, because the figaro
 id IS the trunk id. Binding and form-forking need the spawn-beneath shape
 instead, generalized from outfit versions to arbitrary form nodes. This is the
 sharpest store-level edge in the whole design; a change here is a change to
@@ -177,21 +177,21 @@ not a sidecar field and must not become one again.
 The listing reads lineage and kind from the figwal index without opening
 heads. That is what keeps `fig ls` off the 300ms path, and it is fragile in
 a specific way: any per-row read that opens a node turns a listing into a
-scan. One did, once, and cost +6784% at 300 arias.
+scan. One did, once, and cost +6784% at 300 figaros.
 
 GC collects forms that are unreferenced AND unbound AND not the default.
 Legacy outfit versions stay readable and are listed as legacy.
 
 ## 8. Observation is pull at the stamp
 
-An aria observes a SET of forms. Its own bound form is member zero, the fork it
+A figaro observes a SET of forms. Its own bound form is member zero, the fork it
 was born restudying; studied forms are the shared members.
 
 Every IR append stamps the whole set's positions into ONE cursor map
 (figwal `AppendMainCursors`). The provider translator derives each member's
 patch-fold between consecutive stamps and folds it into the provider IR
 exactly as it folds the form's own transitions. It is re-derived on
-every retranslate and never baked into the aria's records.
+every retranslate and never baked into the figaro's records.
 
 Consequences worth stating, because they look like bugs if you do not know
 them:
@@ -205,7 +205,7 @@ them:
   observation began. **The mark rides the INBOX**: written from an RPC
   goroutine it could land between an assistant `tool_use` and its
   `tool_result`, which every provider refuses ("tool_use ids were found
-  without tool_result blocks") and which bricked two real arias. The loop
+  without tool_result blocks") and which bricked two real figaros. The loop
   writes it, immediately when idle, at a round boundary when a turn is in
   flight. The rule it obeys, for anything that later wants to stamp the IR:
   **no out-of-band record between a `tool_use` and its results.**
@@ -247,9 +247,9 @@ Three properties, each load-bearing:
   and nothing else: a non-object is refused wholesale, a non-string field is
   dropped alone, an unknown key is named in the log, and the block it
   decorates still renders. A strict parse would mean one typo in a shared
-  outfit silently breaking every aria wearing it.
+  outfit silently breaking every figaro wearing it.
 - **Fork's default is silence, and stays silence.** `form.Render` skips the
-  whole `system.` namespace, so a forked aria was never told it was forked.
+  whole `system.` namespace, so a forked figaro was never told it was forked.
   The incantation is what overrides that; with no key set, nothing changes
   for anybody.
 
@@ -259,7 +259,7 @@ The warnings go to the daemon log, which nobody reads. There is a
 ## 8b. The default form, and what an upgrade does to it
 
 `fig new` reuses one default form, and that reuse IS the prompt cache: every
-aria minted from the same node shares its rendered prefix. So the pointer is
+figaro minted from the same node shares its rendered prefix. So the pointer is
 reused with NO comparison while it is clean, and `fig outfit reload` is a
 flag rather than a computation.
 
@@ -267,7 +267,7 @@ That cheapness has one hole, and it is the shipped skills. An upgrade
 replaces the first-party skill the binary carries (it is embedded, unpacked to
 a content-hashed directory under the state dir, and the loader merges it OVER
 a user's copy of the same name), but nothing in the store changed, so a clean
-pointer would go on minting arias wearing the skills of the build you
+pointer would go on minting figaros wearing the skills of the build you
 replaced, until somebody happened to run `fig outfit reload`.
 
 The default-form record therefore carries the BUNDLED ROOT it was minted
@@ -283,9 +283,9 @@ Two consequences to know:
   skills, and an old daemon holds the old ones. The build-identity guard
   already forces the restart, because a new CLI refuses to pair with a daemon
   of another build.
-- EXISTING arias keep what they were born wearing. A form is per-aria state,
+- EXISTING figaros keep what they were born wearing. A form is per-figaro state,
   and no upgrade may silently rewrite it. `fig state outfit <name>` re-folds
-  the new skills onto a live aria, additively.
+  the new skills onto a live figaro, additively.
 
 ## 9. Deliberate absences
 

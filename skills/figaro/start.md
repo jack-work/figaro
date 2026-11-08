@@ -22,30 +22,30 @@ and `figaro provider logout <name>` removes figaro's copy. See
 
 ## 2. Turn on completion
 
-Do this second, because it makes everything after it easier. Aria ids are
+Do this second, because it makes everything after it easier. Figaro ids are
 opaque hex, and completion means you never type one by hand.
 
 ```sh
 figaro completion install
 ```
 
-Open a new shell afterwards. Now `figaro attend <TAB>` offers real arias.
+Open a new shell afterwards. Now `figaro attend <TAB>` offers your real agents.
 
-## 3. Arias, and walking among them
+## 3. Figaros, and walking among them
 
-An **aria** is one conversation. It has an id, a mantra (a short phrase naming
-what it is about), and a history.
+Every **figaro** has an id, a mantra (a short phrase naming what it is about),
+and a history.
 
 ```sh
 figaro ls                    what conversations exist, scoped to where you are
 figaro show <id> -n 5        the last five turns of one
 figaro attend <id>           bind this shell to it, like cd
-figaro -- <prompt>           now this prompts that aria
+figaro -- <prompt>           now this prompts that figaro
 figaro attend null           go home, unbind
 ```
 
 `attend` is the `cd` of the system and `ls` follows it: attended, `ls` shows
-your own lineage; unattended, it shows every top-level aria. There is no
+your own lineage; unattended, it shows every top-level figaro. There is no
 `detach`; `attend null` is how you leave.
 
 Two flags on `send` are worth learning on day one:
@@ -76,7 +76,7 @@ rewritten. The model behind this, including which child keeps the id, is
 
 ## 5. The form, and the mantra
 
-Every aria carries a small key-value slate that rides along with the
+Every figaro carries a small key-value slate that rides along with the
 conversation. The agent sees non-`system` keys change as they change.
 
 ```sh
@@ -99,7 +99,7 @@ file's), and `config.toml` names the default.
 ```sh
 figaro state outfit --list        what profiles exist
 figaro new -O <name>              start a conversation under one
-figaro send -O <name> -- <p>      dress the aria you are talking to, then ask
+figaro send -O <name> -- <p>      dress the figaro you are talking to, then ask
 figaro state outfit <name>        dress it now, with nothing to say
 figaro state outfit --tree <name> draw the layer closure; applies nothing
 ```

@@ -85,7 +85,7 @@ verbosity = "low"
 max_tokens = 16000
 ```
 
-Responses settings can change between turns on a live aria:
+Responses settings can change between turns on a live figaro:
 
 ```bash
 figaro set system.model '"gpt-5.6-luna"'
@@ -119,7 +119,7 @@ input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_to
 
 All three input buckets count: with prompt caching on (the default) most of
 the prompt comes back as a cache read, so summing only `input_tokens` would
-under-report a long aria by orders of magnitude. Messages appended after the
+under-report a long figaro by orders of magnitude. Messages appended after the
 last metered turn are estimated at chars/4 and the figure is prefixed `~`.
 
 The window it is measured against comes from the provider (Anthropic reports
@@ -241,7 +241,7 @@ audience          = ["https://rou2.kelliher.info"]
 
 `service_token` replaces every other source: a failed mint is an error, never a
 keyless request, and it cannot sit beside `[oauth]`. The daemon mints one token
-per client and shares it across arias, renews it a minute before expiry, and
+per client and shares it across figaros, renews it a minute before expiry, and
 mints again when the gateway answers 401. `provider login` refuses such a
 provider; `provider ls` shows the client and flags a missing secret.
 
@@ -304,7 +304,7 @@ token past it, so the daemon's next request already goes without.
 
 ## Not a provider: decision models
 
-A decision model (jev, decision-1) is never an aria's `system.model`; setting
+A decision model (jev, decision-1) is never a figaro's `system.model`; setting
 one is refused. It is asked with `figaro decide`, which sends through an
 ordinary provider named by `system.decide.provider`. See
 [decisions.md](decisions.md).
@@ -312,7 +312,7 @@ ordinary provider named by `system.decide.provider`. See
 ## Translation channels
 
 `chat` writes `<name>`, `messages` writes `<name>-messages`, and both Responses
-transports write `<name>-responses`. The names predate routing, so existing arias
+transports write `<name>-responses`. The names predate routing, so existing figaros
 keep their caches. Entries are translated as they land only when routing is
 static (a default, no catalog, no rules); otherwise they are translated at send
 time, once the model's transport is known. A gateway is static only with

@@ -86,15 +86,15 @@ merge unchanged.
 
 The old geometry was 3 pages × 30 messages. A message is 4 rows or 400, so:
 
-| aria | retained window |
+| figaro | retained window |
 |---|---|
 | one-line answers | ~180 rows |
 | heavy tool output | **4137 rows** (≈ 100 screens) |
 
 The window is now expressed in **rows**: `transcriptWindowRows` is the budget
 across all retained pages, and the per-fetch message count is derived from the
-rows-per-message of the aria being read (`pageMessages()`, clamped to
-`[6, 30]`) and carried on the page request. Light arias never reach the budget
+rows-per-message of the figaro being read (`pageMessages()`, clamped to
+`[6, 30]`) and carried on the page request. Light figaros never reach the budget
 and keep exactly the old 30×3 geometry.
 
 ### The merge makes the measurement exact
@@ -155,7 +155,7 @@ What is left is churn versus retained memory. The 120-message round trip
 | 4800 | 4137 | 4 | 0 | 600 | 3.74 MB / 17415 | 2389 KB | 6.55 ms |
 
 (300 and 600 are identical because `transcriptMinPageSize` floors a page at 6
-messages: on a heavy aria every budget below ~800 rows produces the same window.
+messages: on a heavy figaro every budget below ~800 rows produces the same window.
 The sweep keeps 300 so that floor is visible rather than hidden.)
 
 Read alone this table says 1200 again: it is where refetch churn hits zero. But
@@ -195,7 +195,7 @@ now bytes-per-retained-row, and bytes are much cheaper than microseconds were.
 
 Unchanged by the merge, and it is why the budget can be raised at all. With a
 cold row cache the pager cannot know how tall the messages are, and the old code
-guessed the *ceiling* (30 messages): opening the pager on an aria of 400-row tool
+guessed the *ceiling* (30 messages): opening the pager on a figaro of 400-row tool
 dumps rendered thirty of them to paint one screen. It now starts at the floor (6)
 and `tuneTail` grows the window into the row budget once the first frame has
 measured it: so `enter` costs *one page*, not one window, and the 3.80 → 4.79 ms
@@ -327,7 +327,7 @@ more methods in the package. Worth recording, not worth chasing.
 **`Journey` +20% wall on out20** (27.9 → 33.4 ms) while doing *less work*:
 −27% node re-renders (840 → 612), −19% allocated bytes, −8% allocations. This is
 the rows-based geometry doing exactly what it was built to do. The pre-merge tree
-still has the message-count window (3 × 30 = 4137 rows for this aria), so a
+still has the message-count window (3 × 30 = 4137 rows for this figaro), so a
 120-message journey needs only 4 page turns; the merged window is 2343 rows and
 needs 8, and the return leg costs 69 more keystrokes-with-repaint. Journey wall
 is monotone in window size and nothing else: the merged tree at budget 4800
@@ -335,7 +335,7 @@ is monotone in window size and nothing else: the merged tree at budget 4800
 
 So this is the price of the smaller retained window, and it buys the −40% Ctrl-T,
 the −85% follow-frame garbage, and a pager whose frame cost no longer depends on
-what the aria happens to contain. It is also 2.5× better than it would have been
+what the figaro happens to contain. It is also 2.5× better than it would have been
 at D's solo budget of 1200 (16 fetches).
 
 
@@ -362,7 +362,7 @@ at D's solo budget of 1200 (16 fetches).
 ## Behaviour changes an integrator must know
 
 1. **The retained window is smaller than the old message-count geometry for
-   heavy arias, but larger than D solo shipped** (~2343 rows vs D's ~1101 and the
+   heavy figaros, but larger than D solo shipped** (~2343 rows vs D's ~1101 and the
    original 4137). The footer's scroll total (`48-97/97`) is relative to the
    retained window, so those numbers changed.
 2. **Expansion state survives a round trip.** Rows and `expanded` are dropped

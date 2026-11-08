@@ -47,14 +47,14 @@ Folded, this is the whole state:
 ```jsonc
 {
   "version": 1,
-  "parent": {                  // aria id -> the aria it is DRAWN under
+  "parent": {                  // figaro id -> the figaro it is DRAWN under
     "86d12409": "01efd291",
     "e2a75c6b": "86d12409"
   }
 }
 ```
 
-An aria absent from `parent` is drawn where its history puts it. The map
+A figaro absent from `parent` is drawn where its history puts it. The map
 holds OVERRIDES, never a full tree, so a lost document degrades to the
 truthful default rather than to a wrong one. Keep that property: it is the
 same reason figwal can rebuild its index from markers.
@@ -75,7 +75,7 @@ not be able to half-land.
 
 The store's genesis root already hosts named depth-one children. The
 hierarchy form is one more of those, minted on first use, under a reserved
-name (`@trunks`), never forked, never bound, never listed as an aria. It
+name (`@trunks`), never forked, never bound, never listed as a figaro. It
 must be excluded from `Conversations()` the way form nodes already are, and
 from `ls -g`'s form rows, or the listing grows a row describing itself.
 
@@ -132,7 +132,7 @@ thing to tune it for.
   store whose snapshot it feeds. Resolve the document ONCE at open, keep it
   in memory, and write through; never read it on the snapshot path.
 - **An unsound edge stays refusable.** `topo.Present` drops an edge naming
-  a missing aria or closing a cycle. A document is not more trustworthy
+  a missing figaro or closing a cycle. A document is not more trustworthy
   than a file just because a WAL wrote it.
 
 ## Migration

@@ -22,7 +22,7 @@ file can run a hunt end to end; a test suite cannot yet.
 | **`scripts/paintpane.sh`** + `paint-jogdiff.sh`, `paint-gapcheck.sh` | the runnable shell harness (`pp_*` verbs) and two packaged oracles. |
 | **[isolated-pane.md](isolated-pane.md)** + `scripts/devpane.sh` | the same isolation with the binary coming out of a DEV SHELL and the provider faked, for a hunt into chrome rather than into paint. |
 | **`internal/cli/tmuxsmoke_*_test.go`** | the automated end of the same method: `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -count=1 -run TestSmoke`. Real binary, real pty, real provider, skipped by default. |
-| **[tapes.md](../debugging/tapes.md)** | recording a live aria's wire and replaying it: the honest fixture when the bug needs a real session's shape, and the CI end of one. |
+| **[tapes.md](../debugging/tapes.md)** | recording a live figaro's wire and replaying it: the honest fixture when the bug needs a real session's shape, and the CI end of one. |
 | **this file** | the PROCEDURE that stitches them together, and the promotion path from a hunt to a case. |
 
 ---
@@ -96,9 +96,9 @@ Non-negotiables, each of which has cost somebody a wrong answer:
 Three ways to get a pager, in increasing cost:
 
 ```sh
-pp_pager <aria-id>                      # `figaro listen` + ^T: ZERO tokens, instant
-<fig> send --id <aria> -l -- "<prompt>" # a live turn: the spinner animates
-<fig> send --id <aria> -- "<prompt>"    # inline (incipit), no pager
+pp_pager <id>                      # `figaro listen` + ^T: ZERO tokens, instant
+<fig> send --id <figaro> -l -- "<prompt>" # a live turn: the spinner animates
+<fig> send --id <figaro> -- "<prompt>"    # inline (incipit), no pager
 ```
 
 `listen` is the workhorse: it attaches without calling `figaro.qua`, so a
@@ -108,7 +108,7 @@ turn-end, or interrupts.
 
 **Getting volume cheaply.** Rows, not tokens, are what the pager pages. A dozen
 small turns asking for a long numbered list gives ~1500 rendered rows for a few
-thousand tokens. Copying the real aria store is a last resort: it is 130 MB of
+thousand tokens. Copying the real figaro store is a last resort: it is 130 MB of
 the user's own conversations, and if you do it, `mkdir -p -m 700` first, copy no
 `providers/` or `hush/`, and delete it in P7, a capture of a full pane is a
 photograph of somebody's private conversation.
@@ -362,7 +362,7 @@ The status-bar smear (`docs/paint-repro.md` §8.4), in the phases above:
 
 ```
 P0  scratch store on /var/tmp, private socket, stamped build
-P1  `figaro listen <aria>` + ^T          (zero tokens), then a live turn for the spinner
+P1  `figaro listen <figaro>` + ^T          (zero tokens), then a live turn for the spinner
 P2  oracle: the status line may appear on exactly ONE row      (§3c)
 P3  resize sweep -> CLEAN. Negative result, recorded.
     byte stream -> a full, correct repaint. Composer exonerated. (§5 P5)

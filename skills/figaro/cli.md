@@ -17,7 +17,7 @@ These hold across the whole CLI:
   `--` inside the prompt body is prompt text, and nothing before the boundary
   is dropped in silence, an unrecognized token is an error.
 - **Targeting** is `--id <id>` everywhere, or a positional `<id>` on most
-  verbs. With neither, a verb targets the aria this shell is attended to. The
+  verbs. With neither, a verb targets the figaro this shell is attended to. The
   precedence is `--id` beats `FIGARO_ARIA` beats the pid binding.
 - **`-j`/`--json`** submits and exits, printing one machine-readable line on
   stdout and nothing else. It contradicts anything that streams or renders
@@ -31,20 +31,20 @@ These hold across the whole CLI:
 
 | Command | Effect |
 |---|---|
-| `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
+| `figaro -- <prompt>` | Prompt the attended figaro. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
-| `figaro new [-O <names>] [-S <k=v>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
-| `figaro new -C [<@form>]` | Mint the aria and CAST it in one gesture. With a role named, `-O`/`-S` dress the aria; with none, they mint the role (`new -CO reviewer`, `new -CS name=x`). When the call MINTS a role, the shell ends up attending that role (`--stay` opts out); a role redirects turn-shaped verbs to its holder, so prompts still reach the aria. A figaro minted but not cast is reported as that partial, with its id. |
-| `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. In the pager, `:new [-O] [-S] [-D]` does the same and shows the new aria there. |
+| `figaro new [-O <names>] [-S <k=v>] -- <prompt>` | Mint a fresh figaro, bind this shell to it, prompt it. |
+| `figaro new -C [<@form>]` | Mint the figaro and CAST it in one gesture. With a role named, `-O`/`-S` dress the figaro; with none, they mint the role (`new -CO reviewer`, `new -CS name=x`). When the call MINTS a role, the shell ends up attending that role (`--stay` opts out); a role redirects turn-shaped verbs to its holder, so prompts still reach the figaro. A figaro minted but not cast is reported as that partial, with its id. |
+| `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. In the pager, `:new [-O] [-S] [-D]` does the same and shows the new figaro there. |
 | `figaro` | At a terminal, with no arguments: `figaro listen`. Off a terminal: the usage. |
-| `figaro decide [-C <a,b>] -- <question>` | Ask a decision model (jev or luna) a yes/no or multiple-choice question over the attended aria's conversation. Reads only; prints the scored answer. See [reference/decisions.md](reference/decisions.md). |
+| `figaro decide [-C <a,b>] -- <question>` | Ask a decision model (jev or luna) a yes/no or multiple-choice question over the attended figaro's conversation. Reads only; prints the scored answer. See [reference/decisions.md](reference/decisions.md). |
 
 `send` flags, all combinable unless noted:
 
 | Flag | Meaning |
 |---|---|
-| `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
-| `-O`, `--outfit <names>` | Dress the aria in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-rO sonn5` or `-rOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints a figaro if this shell has none (the id goes to stderr, or to stdout with `-j`). |
+| `-O`, `--outfit <names>` | Dress the figaro in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-rO sonn5` or `-rOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
 | `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Repeats append (`-S a=1 -S b=2` = `-S a=1,b=2`), a later key winning. Folded AFTER `-O`, so your key beats the outfit's. |
 | `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Repeats append. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
@@ -54,16 +54,16 @@ These hold across the whole CLI:
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
 | `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`. |
 | `--stdin` | Read the prompt from stdin, never argv, so the text stays out of the process table. A prompt after `--` beside it is refused, as is `-x`. |
-| `--image <file>` | Attach a png, jpeg, gif or webp ahead of the prompt's text; repeat for up to 4, 10 MB each. The daemon sniffs the bytes and shrinks a picture to fit the message, so an aria with `system.tools = []` still sees it. A picture that already fits is sent byte for byte: EXIF, including GPS location, is NOT removed; strip it first if it matters. Needs a prompt; refused with `-x`, `-v`, fork and the pager. |
+| `--image <file>` | Attach a png, jpeg, gif or webp ahead of the prompt's text; repeat for up to 4, 10 MB each. The daemon sniffs the bytes and shrinks a picture to fit the message, so a figaro with `system.tools = []` still sees it. A picture that already fits is sent byte for byte: EXIF, including GPS location, is NOT removed; strip it first if it matters. Needs a prompt; refused with `-x`, `-v`, fork and the pager. |
 
 `-O`, `-S`, `-D` and `--image` repeat; `--id` or `--record` given twice is
 refused.
 
-Every aria persists. A one-off is an ordinary send that mints and states its
+Every figaro persists. A one-off is an ordinary send that mints and states its
 own lifetime: `figaro send -A -f -S system.ttl=1h -- <prompt>`, or `-r` in
 place of `-f` to stream plain text into a pipe. `-A` ignores this shell's
-binding, so the send mints instead of steering the attended aria. Inside an
-aria's own shell `FIGARO_ARIA` outranks `-A` and the send reaches you; mint
+binding, so the send mints instead of steering the attended figaro. Inside an
+figaro's own shell `FIGARO_ARIA` outranks `-A` and the send reaches you; mint
 with `new` there ([subagents.md](subagents.md)).
 
 Timing is not a flag. A prompt that arrives while a turn is running joins it as
@@ -74,7 +74,7 @@ The classification happens where the queue is drained, and nowhere else.
 
 **Every drain coalesces the contiguous run of queued prompts into one message;
 a queued `set` or `fork` is a barrier.** Four chained sends against an idle
-aria are one reply and then ONE combined question: not four turns to sit
+figaro are one reply and then ONE combined question: not four turns to sit
 through, and the same is true of messages queued behind a turn you then
 interrupt. The messages are separated by a blank line, so they stay separate
 lines on screen and separate messages to the model. A `set` queued between two
@@ -83,7 +83,7 @@ answer that prompt against a form it was never written against.
 
 A single submit is untouched: one message in, one message out.
 
-Prompts that arrive while the aria is busy wait in its **queue**. They are
+Prompts that arrive while the figaro is busy wait in its **queue**. They are
 addressed by an id from the listing, paired with the **epoch** that id was read
 in: ids restart whenever the agent is rebuilt (a daemon restart, a
 dormant→attach), so every mutation re-reads first and hands the epoch back. A
@@ -92,14 +92,14 @@ against whatever holds that number now.
 
 | Command | Effect |
 |---|---|
-| `figaro queue [--id <aria>] [-j]` | List: id, state, age, text. |
+| `figaro queue [--id <figaro>] [-j]` | List: id, state, age, text. |
 | `figaro queue rm <id>...` | Drop those messages. |
 | `figaro queue rm --all` | Drop all of them. |
 | `figaro queue edit <id> -- <text>` | Rewrite one. |
 
 To ADD to the queue, `send`, a queued message is just a prompt that arrived
-while the aria was busy, so there is no separate create verb. The sub-verb owns
-the positional slot, so another aria is `--id`, never a bare id.
+while the figaro was busy, so there is no separate create verb. The sub-verb owns
+the positional slot, so another figaro is `--id`, never a bare id.
 
 A refusal is an **answer**, not a crash. The agent declines to delete a message
 it has already committed, and says which: `committing` (lifted by the drain
@@ -147,42 +147,42 @@ The wire behind all of this: the interrupt's queue disposition, the
 
 | Command | Effect |
 |---|---|
-| `figaro ls [<id>]` | List arias. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. Through a troupe door, this node's rows come from its own daemon, not from the door. Without one, it lists this node only and says how many peers it did not ask. |
-| `figaro ls ^` / `^2` / `^^` | Climb N layers: your parent's subtree, you still in it. Past the root it clamps to the top-level aria and prints a note. |
-| `figaro ls -H` | Home view: every top-level aria, without unbinding you. (`-h` is help, on every verb.) |
+| `figaro ls [<id>]` | List figaros. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. Through a troupe door, this node's rows come from its own daemon, not from the door. Without one, it lists this node only and says how many peers it did not ask. |
+| `figaro ls ^` / `^2` / `^^` | Climb N layers: your parent's subtree, you still in it. Past the root it clamps to the top-level figaro and prints a note. |
+| `figaro ls -H` | Home view: every top-level figaro, without unbinding you. (`-h` is help, on every verb.) |
 | `figaro lsh` | `ls -H`, spelled shorter. Same flags. |
 | `figaro ls -g` | Home plus the null root and outfit anchors. |
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
-| `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |
+| `figaro attend <id>` | Bind this shell to a figaro. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn; `:head` alone drops the pending fork point. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
 | `figaro show [<id>]` | Render history: the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
-| `figaro status [<id>]` | One node in focus, whichever species it is. A FIGARO: provider, model, context, cost. A FORM: its name, version, key count, and that it is not cast. A ROLE: the same plus `target-aria` and the state of the aria it points at (live, dormant, or missing). `-m` adds cwd/outfit/fork origin for a figaro, and parent plus the keys held for a form. `-j` carries `species`. |
-| `figaro listen [<id>]` | Attach to the live stream without prompting. With no id and no aria attended, mints one from the default outfit and attends it. On an unbound form (named, or attended with `fig at @form`) it opens the pager on the form's pit, live; a prompt there is refused, since a form has no turn loop. A role opens on the aria that holds it. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
+| `figaro status [<id>]` | One node in focus, whichever species it is. A FIGARO: provider, model, context, cost. A FORM: its name, version, key count, and that it is not cast. A ROLE: the same plus `target-aria` and the state of the figaro it points at (live, dormant, or missing). `-m` adds cwd/outfit/fork origin for a figaro, and parent plus the keys held for a form. `-j` carries `species`. |
+| `figaro listen [<id>]` | Attach to the live stream without prompting. With no id and no figaro attended, mints one from the default outfit and attends it. On an unbound form (named, or attended with `fig at @form`) it opens the pager on the form's pit, live; a prompt there is refused, since a form has no turn loop. A role opens on the figaro that holds it. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
 
 `ls` columns: ARIA (mantra, with `▸` running, `●` this shell, `○` idle), ID
-(the aria's word handle), OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. Running
+(the figaro's word handle), OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. Running
 outranks this shell: while your own turn is in flight your row shows `▸`, so
 identify yourself from the header ("attending ...") instead.
 
 `attend` binds the **terminal**, not the process that typed it: on unix the key
 is the session leader, so subshells, pipelines, `$(...)`, `timeout figaro …`
-and a shell-prompt segment all resolve to the same aria. A script run from an
-attended shell therefore speaks to that shell's aria: it cannot move the
+and a shell-prompt segment all resolve to the same figaro. A script run from an
+attended shell therefore speaks to that shell's figaro: it cannot move the
 attendance, only use it. Windows has no POSIX session and keys on the parent.
 Override with `--no-bind`/`-A` (ignore the binding) or `--bind` (use it where
 the no-TTY rule would switch writes off); both go before the verb.
 
-### Naming an aria
+### Naming a figaro
 
-Every `<id>` above takes any of these, and all of them name the same aria:
+Every `<id>` above takes any of these, and all of them name the same figaro:
 
 | Form | Example |
 |---|---|
-| the full id | `a5647bfbc216b8a09ffea9586393c289` (old arias: `d9a9cebf`) |
+| the full id | `a5647bfbc216b8a09ffea9586393c289` (old figaros: `d9a9cebf`) |
 | its word handle | `nursery-lioness` |
 | the handle's stems, 3+ letters a word | `nur-lio` |
 | any unique prefix of the handle, 3+ letters | `nurs` |
@@ -193,7 +193,7 @@ Every `<id>` above takes any of these, and all of them name the same aria:
 
 `@<name>` is tried only when no id or handle answers. It matches the `name`
 key exactly, among the forms you may read: a role first, then a form not yet
-cast, which is what `figaro cast <aria> @<name>` takes. A name two roles (or,
+cast, which is what `figaro cast <figaro> @<name>` takes. A name two roles (or,
 with no role, two forms) carry is refused, naming both by handle. A form held
 in a box answers its name only inside that box; from outside, use its handle. In the
 form slot of `cast`, `study` and `drop`, a name nothing carries is refused as
@@ -215,34 +215,34 @@ every CLI line. `-j` keeps `id`, `short` and `handle` as they are and adds
 `display`, the name the setting shows, for scripts that print one, and
 `figaro name [<id>] [-m]` prints it alone (`-m` adds the other spelling): sign
 a herald footer with `--sender-id "$(figaro name)"`. In the
-pager `y` copies the name shown (the attended aria's, or a listing row's) and
+pager `y` copies the name shown (the attended figaro's, or a listing row's) and
 `M-y` the full id.
 
 ## Branching
 
 | Command | Effect |
 |---|---|
-| `figaro fork` | Branch the attended aria at its head. |
+| `figaro fork` | Branch the attended figaro at its head. |
 | `figaro fork <id>:12` | Interior fork: history through turn 11 is shared, the original suffix continues, a fresh empty alternative diverges. |
 | `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags. |
 | `figaro fork --stay` | Branch without moving this shell. |
-| `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
-| `figaro succeed <@role> [--turn <n> \| --successor <aria>] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the aria it targets at `--turn` (default 2) or take `--successor`, demote the predecessor beneath it, prompt and cast the successor, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
-| `figaro demote <id> [--under <child>]` | Sink an aria to a leaf: a child takes its place, the other children move under that child, and a kill then takes the aria alone. Presentation only. |
-| `figaro kill <id> [-r] [--when <d> \| --now]` | Stop a trunk's agent and sessions, then reap it (and with `-r` its branches, which a kill without `-r` refuses) until its grace runs out: `--when` (`90m`, `6h`, `2d`, `1w`), else `[memory] kill_grace_hours`, three days. `--now` or `--when 0` deletes at once. Killing a reaped aria moves its group's purge to the new grace. |
+| `figaro promote <id> [levels]` | Raise a figaro in the tree `ls` draws; it takes its parent's place. Presentation only. |
+| `figaro succeed <@role> [--turn <n> \| --successor <figaro>] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the figaro it targets at `--turn` (default 2) or take `--successor`, demote the predecessor beneath it, prompt and cast the successor, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
+| `figaro demote <id> [--under <child>]` | Sink a figaro to a leaf: a child takes its place, the other children move under that child, and a kill then takes the figaro alone. Presentation only. |
+| `figaro kill <id> [-r] [--when <d> \| --now]` | Stop a trunk's agent and sessions, then reap it (and with `-r` its branches, which a kill without `-r` refuses) until its grace runs out: `--when` (`90m`, `6h`, `2d`, `1w`), else `[memory] kill_grace_hours`, three days. `--now` or `--when 0` deletes at once. Killing a reaped figaro moves its group's purge to the new grace. |
 | `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What `kill` and the ttl sweep soft-deleted, when each group is purged, and the way back. |
-| `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop an aria taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |
-| `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, form, every message. |
+| `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop a figaro taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |
+| `figaro export [<id>] [-o <f>]` | Write a figaro to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
 
 The model behind these, including what freezes and which child keeps the id, is
 [reference/trunks.md](reference/trunks.md).
 
-**Moving an aria between stores**: out of a dev shell, onto another machine -
+**Moving a figaro between stores**: out of a dev shell, onto another machine -
 is `export` then `import`. They carry CONTENT, not identity: node ids, fork
-bases and LTs belong to the store an aria is in, so the destination mints its
+bases and LTs belong to the store a figaro is in, so the destination mints its
 own and an import can never collide with what is already there. Three things do
-not travel: the aria's id (a trunk id is unique per store: the old one is
+not travel: the figaro's id (a trunk id is unique per store: the old one is
 reported as provenance), branches, and the provider translation caches, so the
 first turn after an import re-translates. Preserving all three needs a byte-level
 graft, which is designed in [proposals/aria-graft.md](../../proposals/aria-graft.md)
@@ -256,12 +256,12 @@ that goes wrong yields a store that looks fine.
 | `figaro state [show] [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`; `show` is the explicit spelling. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro toggle [--id <id>] <key>` | Flip a true/false key. Absent on the aria, it reads the default outfit's value, else false. Refuses any other value. |
+| `figaro toggle [--id <id>] <key>` | Flip a true/false key. Absent on the figaro, it reads the default outfit's value, else false. Refuses any other value. |
 | `figaro form set <key> <value>` | The same, from the form family. `form set a=1,b=2` takes the `-S` grammar instead. |
 | `figaro form delete <paths>` | Remove key paths, comma-separated (the `-D` grammar). `unset` is its older name. |
 | `figaro form help <topic>` | A help page, from the form family's third position. |
-| `figaro state outfit <names>` | Fold outfits onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. Takes NAMES only: keys are the other axis (`form set`). The names travel as names and the daemon resolves them once, at its API boundary, so the same `-O` means the same thing at birth and on a live aria. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
-| `figaro gc [--dry-run]` | Collect outfit versions nothing is using. One version exists per outfit content hash; killing an aria collects its version when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected version is re-minted identically by the next aria that wants it. |
+| `figaro state outfit <names>` | Fold outfits onto this figaro now: additive, nothing removed, a `<system-reminder>` for what changed. Takes NAMES only: keys are the other axis (`form set`). The names travel as names and the daemon resolves them once, at its API boundary, so the same `-O` means the same thing at birth and on a live figaro. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
+| `figaro gc [--dry-run]` | Collect outfit versions nothing is using. One version exists per outfit content hash; killing a figaro collects its version when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected version is re-minted identically by the next figaro that wants it. |
 | `figaro form listen [<id>]` | Watch the form as a live JSON tree, in the alt screen. The client keeps its OWN copy and applies the patches the server broadcasts (`form.delta`), so it is the same tree and the same algebra on both ends. `j`/`k` move, `enter` expands, `y` yanks, `e`/`d` page. |
 | `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing: green where a layer resolves, red where it does not. The angelus resolves it: the outfits directory is the server's state, so a client asks rather than reading it. Exits non-zero when the closure has a gap. |
 
@@ -273,7 +273,7 @@ under `system.` are hidden from the agent and read directly by the harness.
 the daemon's reclamation sweep deletes that node and its subtree once the
 lifetime is spent. `-S system.ttl=1h` states one at birth, on `new`, `fork`, or
 a `send` that mints, and an outfit's `[system] ttl` does the same for every
-aria dressed in it (the shared default form keeps none of its own). It is counted from when the node was CREATED, not from its
+figaro dressed in it (the shared default form keeps none of its own). It is counted from when the node was CREATED, not from its
 last turn, and a fork inherits the key with its own creation time. Go duration
 syntax plus `d` and `w`; `0`, an empty value or `unset system.ttl` means no
 lifetime and nothing is ever deleted.
@@ -281,7 +281,7 @@ lifetime and nothing is ever deleted.
 A spent lifetime does not delete a node in use. `system.keepalive` (same
 syntax; default one day, `[memory] keepalive_minutes`) keeps a node whose
 lifetime is spent while it was used within that window. Use is a successful
-call that names the aria: a prompt, a `set`, a read or `show`, attend, bind,
+call that names the figaro: a prompt, a `set`, a read or `show`, attend, bind,
 listen, a fork from it, a queue read. `ls`, the tree view, the pager's topology pit, status
 and `doctor ttl` are not use, and neither is a call that was refused. Records
 nobody asked for (translation catch-up, study marks) do not count either: a
@@ -291,20 +291,20 @@ The sweep runs on `[memory] sweep_interval_seconds` (two minutes by default)
 and also passes over a node when anything its delete would take (the node and
 its branches) has a live agent, a bound shell, a role pointing at it, a prompt
 spooled across a restart and not yet delivered, or a use within its own
-keepalive. A retired aria (`figaro retire`) is held only by a
+keepalive. A retired figaro (`figaro retire`) is held only by a
 keepalive it states itself, so `retire --ttl 1h` really ends it in an hour.
 
-`system.reap_if_empty = true` reaps an aria that never had a message: no
-prompt, no reply. Empty means no messages, not no state: an aria used only as
+`system.reap_if_empty = true` reaps a figaro that never had a message: no
+prompt, no reply. Empty means no messages, not no state: a figaro used only as
 a board (keys set, no turns) is reaped too. Once it is a minute past its birth
 and its last use, the sweep reaps it the way a spent lifetime would, unless it
 has a live agent, a bound shell or a role pointing at it, a branch under it,
 or a spooled prompt. The first message
 ends the matter: from then on the key does nothing, and `system.ttl` still
 applies on its own. Set it at birth (`-S system.reap_if_empty=true`) or in an
-outfit's `[system]`, so an aria minted and left unused does not pile up;
+outfit's `[system]`, so a figaro minted and left unused does not pile up;
 first-run setup writes it into the starter outfit, so on a fresh install that
-is every new aria, boards included. A shell still attending it holds it until
+is every new figaro, boards included. A shell still attending it holds it until
 the shell exits or attends elsewhere.
 
 What the sweep takes, it first reaps rather than deletes: the node and
@@ -315,7 +315,7 @@ default; `0` deletes at once) the sweep purges the group, unless it has a live
 agent, a bound shell or a role pointing in. `figaro reaped` lists the groups,
 `figaro reaped restore <id>` brings one back (the keepalive then holds it a
 day; `--keep` also unsets its ttl), and `figaro reaped purge <id>` deletes it
-now. A fork of a reaped aria is not reaped.
+now. A fork of a reaped figaro is not reaped.
 
 `figaro kill` reaps the same way, but the group carries its own deadline
 (`system.reaped_until`, the kill time plus `--when` or `[memory]
@@ -348,8 +348,8 @@ observer's mouth.
 | `figaro stop` | Shut down the angelus and retire its hush agent (see The vault). Alias `rest`. `-f` to SIGKILL, `-k` when a restart is coming, `--forget-bindings` to start the next angelus with no shell attended. |
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
-| `figaro doctor normalize [-n] [-j]` | Make every promoted aria own its history, then drop the `@topology` overrides that change no delete set (aria gone, or naming exactly its history parent), each with its reason. `-n` reports both halves without touching anything. Blocks while it copies; meant for off hours. See [reference/trunks.md](reference/trunks.md). |
-| `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
+| `figaro doctor normalize [-n] [-j]` | Make every promoted figaro own its history, then drop the `@topology` overrides that change no delete set (figaro gone, or naming exactly its history parent), each with its reason. `-n` reports both halves without touching anything. Blocks while it copies; meant for off hours. See [reference/trunks.md](reference/trunks.md). |
+| `figaro doctor mem [-j]` | What the daemon is holding: live/resident figaros, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
 | `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, which a keepalive still holds, which are due, and which the sweep keeps past their lifetime (held: by which node, why, since when). The sweep logs a held node once per holder and reason. |
 | `figaro keys [init\|actions\|bind\|unbind\|reset]` | The pager's keybindings, by layer, and `keys.toml` behind them. `init` starts one from the shipped recipes. See [reference/keys.md](reference/keys.md). |
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
@@ -457,7 +457,7 @@ With neither flag, `init` and `reset` choose the file when no OS keyring
 answers, since a passphrase with nowhere to be remembered is a question asked on
 every command: this is the WSL case, where gnome-keyring runs but no collection
 can be created headlessly. What `reset` costs you is the provider tokens that
-identity encrypted and nothing else, since arias, forms and outfits are not
+identity encrypted and nothing else, since figaros, forms and outfits are not
 encrypted with it; the old identity and token files are renamed `*.reset-<stamp>`,
 not deleted.
 
@@ -478,4 +478,4 @@ bytes. Fixed in v0.6.3: verification runs against a copy.
 | Ctrl-D | Disconnect this CLI, leave the turn running. |
 | Ctrl-T | Open the transcript pager. |
 | Alt-m | More: names beside their other spelling, node addresses in spare columns. |
-| Ctrl-O / Ctrl-I | Jumplist: back / forward through the arias attended here. |
+| Ctrl-O / Ctrl-I | Jumplist: back / forward through the figaros attended here. |

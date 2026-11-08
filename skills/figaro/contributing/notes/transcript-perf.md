@@ -31,7 +31,7 @@ The last row is B's, and it is the one you feel over ssh: a one-line scroll used
 to retransmit the whole viewport and now moves it with a scroll region and
 repaints the two rows that actually changed.
 
-Entering the pager on a heavy aria (`HeavyEnter`): **33.7 ms → 3.13 ms**, and
+Entering the pager on a heavy figaro (`HeavyEnter`): **33.7 ms → 3.13 ms**, and
 13563 B → 3727 B of paint.
 
 A 24-event mouse-wheel flick: **24 frames → 1 frame** (`BurstFrames`,

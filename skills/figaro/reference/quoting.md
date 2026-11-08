@@ -49,7 +49,7 @@ draws that block as a CARD rather than as a paragraph of markdown: one dim
 heading row with the coordinate, three rows of the passage under a rule, and a
 closing row counting what is folded. Select the question (`^N` / `^P`) and
 press `Enter` to open it, exactly as you would open a tool's body: the whole
-passage, and the aria, turn and length beside the coordinate. `show` has no
+passage, and the figaro, turn and length beside the coordinate. `show` has no
 gesture, so it prints the card open.
 
 ```
@@ -111,31 +111,31 @@ jump (`:12`, `:12.3`, `:0`).
 
 | Line | Does |
 |---|---|
-| `:send [<id>] -- <text>` | submit; the transcript does NOT follow another aria |
+| `:send [<id>] -- <text>` | submit; the transcript does NOT follow another figaro |
 | `:fork [<id>[:<turn>]] -- <text>` | branch, prompt it, ATTEND it and show it |
 | `:fork --stay -- <text>` | branch and prompt it, attendance and screen untouched |
-| `:new [-O <outfits>] [-S k=v] [-D <keys>]` | mint an aria (the default outfit unless `-O`), ATTEND it and show it; a prompt or `-C` goes through the shell |
-| `:listen <id>` | show that aria; the shell's binding does not move |
+| `:new [-O <outfits>] [-S k=v] [-D <keys>]` | mint a figaro (the default outfit unless `-O`), ATTEND it and show it; a prompt or `-C` goes through the shell |
+| `:listen <id>` | show that figaro; the shell's binding does not move |
 | `:attend <id>` | show it AND bind this shell to it |
 | `:attend null` | go home: drop the binding, keep showing what is on screen |
 | `:<,>comment -- <text>` | comment on the highlighted passage; on a comment, reply to it (see Comments below) |
 | `:next [kind]` · `:prev [kind]` | step to the next / previous stop; `kind` is `comment`, `delta`, `fork`, `turn` or `block`. With no kind it is `^N` / `^P`. `:previous` is `:prev` |
 
 The difference is the binding, and it is the only difference. `:fork` without
-`--stay` does both, on purpose: no single command shows one aria while your
+`--stay` does both, on purpose: no single command shows one figaro while your
 shell attends another.
 
 Flags that mean another renderer or another process (`-x`, `-r`, `-v`, `-j`,
 `-l`, `--record`) are refused by name here: the transcript is the stream.
 
-Moving between arias:
+Moving between figaros:
 
 | Key | Does |
 |---|---|
-| `a` | attend the aria the selected row (or the fork point on screen) names |
+| `a` | attend the figaro the selected row (or the fork point on screen) names |
 | `f j` / `f k` | next / previous fork point |
 | `c j` / `c k` | next / previous comment |
-| `^O` / `^I` | jumplist: back / forward through the arias attended here |
+| `^O` / `^I` | jumplist: back / forward through the figaros attended here |
 | `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `S` | the form in the pit |
 | `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |
@@ -144,7 +144,7 @@ Moving between arias:
 
 A comment marks a passage without sending anything: highlight it, then
 `:<,>comment -- why does this retry?`. Nothing reaches the model; the comment
-is written to the aria's own form, and every client watching the aria draws it.
+is written to the figaro's own form, and every client watching the figaro draws it.
 
 On screen the passage is washed green, and the comment hangs under the block
 where the passage ends, after a blank row: `▸ ✎ gluck: why does this retry? ·
@@ -211,7 +211,7 @@ is a real setting: `head_chars = 0` sends only the tail.
 
 - One quote per prompt, and it must be the first thing in the text.
 - Tool ARGUMENTS are not quotable, only prose, thinking and tool output.
-- A coordinate names a passage in the aria you are sending TO. Quoting another
-  aria's message is not a thing you can do in one prompt.
+- A coordinate names a passage in the figaro you are sending TO. Quoting another
+  figaro's message is not a thing you can do in one prompt.
 - A selection whose messages have been evicted from the pager's window is
   re-read from the store when you yank it; the coordinate is stable either way.

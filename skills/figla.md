@@ -1,6 +1,6 @@
 ---
 name: figla
-description: Fire-and-forget reminders for a figaro aria. Use figla instead of polling a background process in a loop, sleeping inside a tool call, or spawning ad-hoc `sleep && …` shells, arm a reminder for when you expect work to finish, cancel it if the work reports first, and get a message carrying live state if it does not. Reminders are scoped per aria.
+description: Fire-and-forget reminders for a figaro. Use figla instead of polling a background process in a loop, sleeping inside a tool call, or spawning ad-hoc `sleep && …` shells, arm a reminder for when you expect work to finish, cancel it if the work reports first, and get a message carrying live state if it does not. Reminders are scoped per figaro.
 ---
 
 # figla: "Figaro là"
@@ -11,7 +11,7 @@ calling to himself from a little further along in time.
 ## When to reach for it
 
 **Any time you are waiting on something you did not start synchronously.**
-Background builds, subagents, long test runs, a worker aria you dispatched.
+Background builds, subagents, long test runs, a worker figaro you dispatched.
 
 **Do not** poll in a loop. **Do not** `sleep 300` inside a tool call. **Do not**
 spawn `setsid bash -c 'sleep … && …'`. Those three habits burn turns, hold
@@ -42,7 +42,7 @@ figla cancel --aria $MY_ARIA fx-footer-exit-hang
 # … or it does not, and a message arrives carrying the state already gathered
 ```
 
-Your own aria id is in your form as `<system-reminder name="aria_id">`.
+Your own figaro id is in your form as `<system-reminder name="aria_id">`.
 
 ## Why `--watch` matters
 
@@ -62,7 +62,7 @@ Good watches: `git -C <wt> log --oneline -1`, `figaro list -a | grep <id>`,
 2. **Cancel on report.** Make `figla cancel` the first thing you do when a
    worker answers. An uncancelled reminder is a lie waiting to be told.
 3. **Reap when a phase ends**: `figla cancel --aria <id> --all`. Reminders are
-   aria-scoped precisely so this is safe.
+   scoped per figaro precisely so this is safe.
 4. **A fired reminder is gone.** There is nothing to cancel afterwards; arm a
    fresh one if the work is still running.
 5. **Repeat by re-arming, not by looping.** If you want nagging, arm the next
@@ -71,7 +71,7 @@ Good watches: `git -C <wt> log --oneline -1`, `figaro list -a | grep <id>`,
 ## How it works, in case it misbehaves
 
 No daemon. The state directory **is** the registry:
-`$XDG_STATE_HOME/figla/<aria>/<name>.json` (`%LOCALAPPDATA%\figla` on Windows),
+`$XDG_STATE_HOME/figla/<figaro>/<name>.json` (`%LOCALAPPDATA%\figla` on Windows),
 overridable with `FIGLA_STATE`.
 
 Two carriers, chosen automatically:
