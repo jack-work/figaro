@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
@@ -86,7 +88,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	seq := depart(logCfg.aria, req.Method, redactedURL(req.URL).String(), reqBytes)
 
-	var counted countingBody
+	counted := countingBody{ctx: req.Context(), want: req.ContentLength}
 	if req.Body != nil && req.Body != http.NoBody {
 		counted.ReadCloser = req.Body
 		req.Body = &counted
@@ -105,6 +107,9 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	if err != nil || resp == nil {
 		return resp, err
+	}
+	if trace.SpanFromContext(req.Context()).IsRecording() && resp.Body != nil {
+		resp.Body = &timedBody{ReadCloser: resp.Body, span: trace.SpanFromContext(req.Context())}
 	}
 
 	if logBase != "" {
@@ -158,13 +163,53 @@ func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, re
 
 type countingBody struct {
 	io.ReadCloser
-	n int64
+	ctx  context.Context
+	want int64
+	n    int64
+	sent bool
 }
 
 func (c *countingBody) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
 	c.n += int64(n)
+	if !c.sent && (err == io.EOF || (c.want > 0 && c.n >= c.want)) {
+		c.sent = true
+		figOtel.Event(c.ctx, "http.body_sent", attribute.Int64("http.req_bytes", c.n))
+	}
 	return n, err
+}
+
+type timedBody struct {
+	io.ReadCloser
+	span  trace.Span
+	n     int64
+	first bool
+	done  atomic.Bool
+}
+
+func (b *timedBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 && !b.first {
+		b.first = true
+		b.span.AddEvent("http.first_byte")
+	}
+	b.n += int64(n)
+	if err != nil && !b.done.Swap(true) {
+		b.span.AddEvent("http.body_done", trace.WithAttributes(attribute.Int64("http.resp_bytes", b.n)))
+	}
+	return n, err
+}
+
+func (b *timedBody) Close() error {
+	b.finish()
+	return b.ReadCloser.Close()
+}
+
+func (b *timedBody) finish() {
+	if b.done.Swap(true) {
+		return
+	}
+	b.span.AddEvent("http.body_done")
 }
 
 func dumpBase(c cfg) string {

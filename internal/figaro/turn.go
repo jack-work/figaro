@@ -58,6 +58,7 @@ type turnBus struct {
 	events     chan busEvent
 	toolsReady chan message.Content
 	ctx        context.Context
+	clock      *roundClock
 }
 
 func newTurnBus(ctx context.Context) *turnBus {
@@ -68,7 +69,10 @@ func newTurnBus(ctx context.Context) *turnBus {
 	}
 }
 
-func (b *turnBus) PushDelta(c message.Content) { b.events <- busEvent{kind: evDelta, content: c} }
+func (b *turnBus) PushDelta(c message.Content) {
+	b.clock.delta(c.Type)
+	b.events <- busEvent{kind: evDelta, content: c}
+}
 
 func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCache) {
 	if len(caches) > 1 {
@@ -93,10 +97,12 @@ func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCach
 }
 
 func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
+	b.clock.toolStart()
 	b.events <- busEvent{kind: evToolStart, id: toolCallID, name: toolName}
 }
 
 func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
+	b.clock.toolArg()
 	b.events <- busEvent{kind: evToolArgs, id: toolCallID, partial: partialJSON}
 }
 
@@ -333,7 +339,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 	sendDone := make(chan error, 1)
 	started := time.Now()
-	figOtel.Event(turnCtx, "agent.round.send", attribute.String("provider", prov.Name()))
+	roundCtx, roundSpan := figOtel.Start(turnCtx, "figaro.round", figOtel.WithAttributes(
+		attribute.String("figaro.id", a.id),
+		attribute.Int64("figaro.turn", int64(a.turnID)),
+		attribute.String("provider", prov.Name()),
+		attribute.String("model", a.currentModel()),
+	))
+	bus.clock = newRoundClock(started)
+	var roundOut *message.Message
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -342,7 +355,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			close(bus.events)
 			close(bus.toolsReady)
 		}()
-		err := prov.Send(turnCtx, in, bus)
+		err := prov.Send(roundCtx, in, bus)
 		figOtel.RecordRequestDuration(turnCtx, time.Since(started),
 			attribute.String("provider", prov.Name()),
 			attribute.String("model", a.currentModel()),
@@ -421,6 +434,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			var ackErr error
 			// An interrupted turn still takes the provider's message: it carries native
 			// blocks (thinking signatures) that repair can only synthesise as text.
+			if ev.kind == evFigaro && roundOut == nil {
+				out := ev.msg
+				roundOut = &out
+			}
 			if ev.kind == evFigaro && roundErr == nil {
 				staged := store.Entry[message.Message]{Payload: ev.msg}
 				a.stageAssistant(&staged)
@@ -525,6 +542,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 	}
 	sendErr := <-sendDone
+	endRound(roundSpan, bus.clock, roundOut, sendErr, roundErr)
 
 	if roundErr != nil {
 		a.waitWithForks(specDone)

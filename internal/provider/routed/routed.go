@@ -218,6 +218,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	figOtel.Event(ctx, "provider.route",
 		attribute.String("model", model), attribute.String("transport", string(t)),
 		attribute.Int64("elapsed_ms", time.Since(routeStart).Milliseconds()))
+	figOtel.SetAttributes(ctx, attribute.String("provider.transport", string(t)))
 	if err != nil {
 		return err
 	}
@@ -230,7 +231,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if !ok {
 		return err
 	}
-	slog.Info("provider catalog moved the model's route; retrying once",
+	figOtel.Event(ctx, "provider.reroute", attribute.String("from", string(t)), attribute.String("to", string(moved)),
+		attribute.String("error.type", wirelog.ErrorClass(err)))
+	figOtel.SetAttributes(ctx, attribute.String("provider.transport", string(moved)))
+	slog.InfoContext(ctx, "provider catalog moved the model's route; retrying once",
 		"provider", p.spec.Name, "model", model, "from", t, "to", moved, "err", err)
 	return p.sendVia(ctx, moved, model, in, bus)
 }

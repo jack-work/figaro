@@ -12,9 +12,12 @@ import (
 	"text/template"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/auth"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/upstream"
@@ -191,6 +194,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
+	figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
 
 	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
 	defer func() { err = provider.NameStreamCut(settle(err), p.Route.Name) }()

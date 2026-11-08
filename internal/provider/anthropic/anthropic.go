@@ -233,7 +233,9 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			}
 			lastErr = fmt.Errorf("http: %w", err)
 			delay = backoffDelay(attempt)
-			slog.Warn("anthropic request failed, retrying", "attempt", attempt+1, "err", err)
+			slog.WarnContext(ctx, "anthropic request failed, retrying", "attempt", attempt+1, "err", err)
+			figOtel.Event(ctx, "provider.retry", attribute.Int("attempt", attempt+1),
+				attribute.String("error.type", wirelog.ErrorClass(err)))
 			continue
 		}
 		// The 401 retry does not consume the transient budget.
@@ -272,7 +274,9 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			} else {
 				delay = backoffDelay(attempt)
 			}
-			slog.Warn("anthropic transient status, retrying", "status", resp.StatusCode, "attempt", attempt+1)
+			slog.WarnContext(ctx, "anthropic transient status, retrying", "status", resp.StatusCode, "attempt", attempt+1)
+			figOtel.Event(ctx, "provider.retry", attribute.Int("attempt", attempt+1),
+				attribute.String("error.type", fmt.Sprintf("http_%d", resp.StatusCode)))
 			continue
 		}
 		return resp, apiKey, nil
@@ -942,6 +946,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
+	figOtel.Event(ctx, "provider.request_built", attribute.Int("bytes", body.Len()))
 
 	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
 	defer func() { err = provider.NameStreamCut(settle(err), providerName) }()
