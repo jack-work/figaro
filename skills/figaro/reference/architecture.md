@@ -361,8 +361,10 @@ the caller names is a host path and needs `use` on `sandbox:local`; the one
 the daemon assigns is under "Workspaces under a sandbox" below.
 
 **Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
-`system.max_context_tokens`, `system.credo`, `system.tools` and
-`system.methods` (`api/form/owner_held.go`) are set or removed only by the
+`system.max_context_tokens`, `system.credo`, `system.tools`,
+`system.methods`, `system.environment` (where wire dumps go) and
+`system.decide.base_url` (where a provider credential goes)
+(`api/form/owner_held.go`) are set or removed only by the
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
 and form.create/bind. `system.tools` lists the tools an aria may use; `[]` is
@@ -574,6 +576,7 @@ name containing `auth`, `key`, `token` or `secret`, and cookies.
 `Authorization` keeps its scheme. The body is not masked. It is the whole
 conversation, tool output included, so a secret that entered the context is
 written in clear: a second copy outside the store, which nothing cleans up.
+The key is owner-held.
 
 ### The provider binding is live, not a birthmark
 

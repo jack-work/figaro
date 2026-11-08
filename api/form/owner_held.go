@@ -10,6 +10,8 @@ var ownerHeldKeys = []string{
 	"system.credo",
 	"system.tools",
 	"system.methods",
+	"system.environment",
+	"system.decide.base_url",
 }
 
 func OwnerHeldKeys() []string { return append([]string(nil), ownerHeldKeys...) }
