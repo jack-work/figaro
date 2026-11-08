@@ -33,7 +33,7 @@ func TestTheIdPsRefusalOfAPKCESignInArrivesQuoted(t *testing.T) {
 	refuse := func(state string) url.Values {
 		return url.Values{"error": {hostileText}, "error_description": {hostileText}, "state": {state}}
 	}
-	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second)
+	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second, quiet{})
 	assertNoRawControl(t, err)
 }
 
@@ -57,7 +57,7 @@ func TestADeviceFlowErrorArrivesQuoted(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]string{"error": hostileText, "error_description": hostileText})
 	}))
 	defer srv.Close()
-	_, err := LoginDeviceCode(DeviceCodeConfig{ClientID: "c", DeviceURL: srv.URL + "/device", TokenURL: srv.URL + "/token"}, func(DevicePrompt) error { return nil })
+	_, err := LoginDeviceCode(context.Background(), DeviceCodeConfig{ClientID: "c", DeviceURL: srv.URL + "/device", TokenURL: srv.URL + "/token"}, quiet{})
 	assertNoRawControl(t, err)
 }
 

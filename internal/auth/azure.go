@@ -1,13 +1,11 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
-
-	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
@@ -76,17 +74,15 @@ func azureScope(scope string) string {
 	return strings.Join(append(parts, offlineAccess), " ")
 }
 
-func LoginAzure(cfg DeviceCodeConfig) (DeviceTokens, error) {
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim("Azure signs in with the Microsoft Entra device flow."))
-	fmt.Fprintln(os.Stderr)
-	tok, err := LoginDeviceCode(cfg, printDevicePrompt)
+func LoginAzure(ctx context.Context, cfg DeviceCodeConfig, c Console) (DeviceTokens, error) {
+	c.Note("Azure signs in with the Microsoft Entra device flow.")
+	tok, err := LoginDeviceCode(ctx, cfg, c)
 	if err != nil {
 		return DeviceTokens{}, err
 	}
 	if tok.RefreshToken == "" {
 		return DeviceTokens{}, fmt.Errorf("azure: Entra issued no refresh token, so the login would end with this access token; the scope must include offline_access")
 	}
-	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized with Microsoft Entra")
+	c.Done("Authorized with Microsoft Entra")
 	return tok, nil
 }

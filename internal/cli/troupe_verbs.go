@@ -216,7 +216,8 @@ func runTroupeLogin(loaded *config.Loaded, name string) {
 		return
 	}
 	next := "FIGARO_TROUPE=" + name + " figaro ls, or [cli] troupe = \"" + name + "\""
-	if err := runOAuthLogin(name, tr.HushCredential(), tr.Auth.OAuthSettings, next); err != nil {
+	ensureHush()
+	if err := runOAuthLogin(context.Background(), name, tr.HushCredential(), tr.Auth.OAuthSettings, next, stderrConsole{}); err != nil {
 		die("%s", err)
 	}
 }

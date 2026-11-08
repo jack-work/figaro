@@ -1,16 +1,14 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
-
-	"github.com/jack-work/figaro/internal/term"
 )
 
 const FlowDevice = "device"
@@ -124,17 +122,15 @@ func getJSONWith(client *http.Client, endpoint string, out any) error {
 	return nil
 }
 
-func LoginOIDCDevice(cfg DeviceCodeConfig, issuer string) (DeviceTokens, error) {
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim(cfg.ProviderName+" signs in with "+issuer+" (device flow)."))
-	fmt.Fprintln(os.Stderr)
-	tok, err := LoginDeviceCode(cfg, printDevicePrompt)
+func LoginOIDCDevice(ctx context.Context, cfg DeviceCodeConfig, issuer string, c Console) (DeviceTokens, error) {
+	c.Note(cfg.ProviderName + " signs in with " + issuer + " (device flow).")
+	tok, err := LoginDeviceCode(ctx, cfg, c)
 	if err != nil {
 		return DeviceTokens{}, err
 	}
 	if tok.RefreshToken == "" {
 		return DeviceTokens{}, fmt.Errorf("%s: %s issued no refresh token, so the login would end with this access token", cfg.ProviderName, issuer)
 	}
-	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized by "+issuer)
+	c.Done("Authorized by " + issuer)
 	return tok, nil
 }

@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/BurntSushi/toml"
 	hush "github.com/jack-work/hush/client"
@@ -31,28 +32,21 @@ type providerChoice struct {
 	label    string
 	provider string
 	hint     string
-	setup    func(loaded *config.Loaded) error
+	setup    func(ctx context.Context, loaded *config.Loaded, c auth.Console) error
 }
 
 func init() {
 	if r := providerPkg.Lookup("copilot"); r != nil {
-		r.Setup = runCopilotLogin
 		r.Login = runCopilotLogin
 	}
 	if r := providerPkg.Lookup("meta"); r != nil {
-		r.Setup = runMetaLogin
 		r.Login = runMetaLogin
 	}
 	if r := providerPkg.Lookup(azureProvider); r != nil {
-		r.Setup = runAzureLogin
 		r.Login = runAzureLogin
 	}
 	if r := providerPkg.Lookup("anthropic"); r != nil {
-		login := func(loaded *config.Loaded) error {
-			return runOAuthInline("anthropic", auth.AnthropicOAuth)
-		}
-		r.Setup = login
-		r.Login = login
+		r.Login = runAnthropicLogin
 	}
 }
 
@@ -80,15 +74,15 @@ var providerCatalog = []providerChoice{
 		label:    "Anthropic (Claude.ai login)",
 		provider: "anthropic",
 		hint:     "no API key to manage",
-		setup: func(loaded *config.Loaded) error {
-			return runOAuthInline("anthropic", auth.AnthropicOAuth)
-		},
+		setup:    runAnthropicLogin,
 	},
 	{
 		label:    "Anthropic (API key)",
 		provider: "anthropic",
 		hint:     "paste a key from console.anthropic.com",
-		setup:    func(loaded *config.Loaded) error { return runAPIKeyInline(loaded, "anthropic") },
+		setup: func(ctx context.Context, loaded *config.Loaded, c auth.Console) error {
+			return runAPIKeyInline(ctx, loaded, "anthropic", c)
+		},
 	},
 }
 
@@ -263,26 +257,21 @@ func pickFromMenuNumbered(options []providerChoice) (providerChoice, error) {
 }
 
 func setupCredentialsFor(loaded *config.Loaded, choice providerChoice) error {
-	return choice.setup(loaded)
+	return choice.setup(context.Background(), loaded, stderrConsole{})
 }
 
-func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
-	h := MustHush()
-	hushClient := h.Client()
-	return auth.Login(hushClient, cfg, func() (string, error) {
-		line, err := term.ReadLine("")
-		return strings.TrimSpace(line), err
-	})
+func runAnthropicLogin(ctx context.Context, _ *config.Loaded, c auth.Console) error {
+	return auth.Login(ctx, MustHush().Client(), auth.AnthropicOAuth, c)
 }
 
-func runCopilotLogin(loaded *config.Loaded) error {
-	line, err := term.ReadLine("       GitHub Enterprise domain (blank for github.com): ")
+func runCopilotLogin(ctx context.Context, loaded *config.Loaded, c auth.Console) error {
+	line, err := c.Ask(ctx, "GitHub Enterprise domain (blank for github.com): ")
 	if err != nil {
 		return fmt.Errorf("read domain: %w", err)
 	}
 	domain := strings.TrimSpace(line)
 
-	githubToken, err := auth.LoginCopilot(domain)
+	githubToken, err := auth.LoginCopilot(ctx, domain, c)
 	if err != nil {
 		return err
 	}
@@ -310,7 +299,7 @@ func runCopilotLogin(loaded *config.Loaded) error {
 	}); err != nil {
 		return fmt.Errorf("hand the GitHub token to hush: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" hush holds the Copilot credential and minted a session "+dim("(hush oauth list)"))
+	c.Done("hush holds the Copilot credential and minted a session (hush oauth list)")
 	return nil
 }
 
@@ -354,35 +343,30 @@ func writeCopilotDomain(loaded *config.Loaded, domain string) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
-	fmt.Fprintf(os.Stderr, "       API key: ")
-	key, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(os.Stderr)
+func runAPIKeyInline(ctx context.Context, loaded *config.Loaded, providerName string, c auth.Console) error {
+	key, err := c.AskSecret(ctx, "API key: ")
 	if err != nil {
 		return fmt.Errorf("read api key: %w", err)
 	}
+	defer clear(key)
 	if len(key) == 0 {
 		return fmt.Errorf("empty api key")
 	}
-	err = storeEncryptedAPIKey(loaded, providerName, string(key))
-	for i := range key {
-		key[i] = 0
-	}
-	return err
+	return storeEncryptedAPIKey(loaded, providerName, string(key), c)
 }
 
-func runMetaLogin(loaded *config.Loaded) error {
-	minted, err := auth.LoginMeta()
+func runMetaLogin(ctx context.Context, loaded *config.Loaded, c auth.Console) error {
+	minted, err := auth.LoginMeta(ctx, c)
 	if err != nil {
 		return err
 	}
 	if minted.Email != "" {
-		fmt.Fprintln(os.Stderr, "       "+dim("Muse Code subscription key minted for "+minted.Email))
+		c.Note("Muse Code subscription key minted for " + minted.Email)
 	}
-	return storeEncryptedAPIKey(loaded, "meta", minted.APIKey)
+	return storeEncryptedAPIKey(loaded, "meta", minted.APIKey, c)
 }
 
-func storeEncryptedAPIKey(loaded *config.Loaded, providerName, key string) error {
+func storeEncryptedAPIKey(loaded *config.Loaded, providerName, key string, c auth.Console) error {
 	encrypted, err := MustHush().Client().Encrypt(map[string]string{"api_key": key})
 	if err != nil {
 		return fmt.Errorf("encrypt api key via hush: %w", err)
@@ -414,7 +398,7 @@ func storeEncryptedAPIKey(loaded *config.Loaded, providerName, key string) error
 	if err := toml.NewEncoder(f).Encode(doc); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("✓")+" stored encrypted api key → "+dim(path))
+	c.Done("stored encrypted api key → " + path)
 	return nil
 }
 

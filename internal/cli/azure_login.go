@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
@@ -26,7 +26,7 @@ type azureFile struct {
 	auth.AzureSettings
 }
 
-func runAzureLogin(loaded *config.Loaded) error {
+func runAzureLogin(ctx context.Context, loaded *config.Loaded, c auth.Console) error {
 	var f azureFile
 	if _, err := toml.DecodeFile(loaded.ProviderAuthPath(azureProvider), &f); err != nil && !os.IsNotExist(err) {
 		return err
@@ -36,7 +36,7 @@ func runAzureLogin(loaded *config.Loaded) error {
 		base = f.BaseURL
 	}
 	if base == "" {
-		line, err := term.ReadLine("       Endpoint (https://<resource>.openai.azure.com/openai/v1): ")
+		line, err := c.Ask(ctx, "Endpoint (https://<resource>.openai.azure.com/openai/v1): ")
 		if err != nil {
 			return fmt.Errorf("read endpoint: %w", err)
 		}
@@ -47,7 +47,7 @@ func runAzureLogin(loaded *config.Loaded) error {
 		return err
 	}
 	if f.Tenant == "" {
-		line, err := term.ReadLine("       Tenant (domain or id, blank for any work account): ")
+		line, err := c.Ask(ctx, "Tenant (domain or id, blank for any work account): ")
 		if err != nil {
 			return fmt.Errorf("read tenant: %w", err)
 		}
@@ -57,11 +57,10 @@ func runAzureLogin(loaded *config.Loaded) error {
 	if err != nil {
 		return err
 	}
-	ensureHush()
 	if err := MustHush().EnsureGrant(entraGrant); err != nil {
 		return azureGrantError(err)
 	}
-	tok, err := auth.LoginAzure(cfg)
+	tok, err := auth.LoginAzure(ctx, cfg, c)
 	if err != nil {
 		return err
 	}
@@ -71,8 +70,8 @@ func runAzureLogin(loaded *config.Loaded) error {
 	if err := writeAzureSettings(loaded, base, f.AzureSettings); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" hush holds the Entra credential and refreshes it "+dim("(hush oauth list)"))
-	fmt.Fprintln(os.Stderr, "  "+dim("next: figaro set system.provider azure; figaro set system.model <deployment name>"))
+	c.Done("hush holds the Entra credential and refreshes it (hush oauth list)")
+	c.Note("next: figaro set system.provider azure; figaro set system.model <deployment name>")
 	return nil
 }
 

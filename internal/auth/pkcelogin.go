@@ -10,11 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
-
-	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
@@ -63,8 +60,8 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 	}, nil
 }
 
-func LoginPKCE(cfg PKCEConfig) (DeviceTokens, error) {
-	return loginPKCE(context.Background(), cfg, openBrowser, pkceTimeout)
+func LoginPKCE(ctx context.Context, cfg PKCEConfig, c Console) (DeviceTokens, error) {
+	return loginPKCE(ctx, cfg, openBrowser, pkceTimeout, c)
 }
 
 type pkceRedirect struct {
@@ -72,7 +69,7 @@ type pkceRedirect struct {
 	err  error
 }
 
-func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration) (DeviceTokens, error) {
+func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration, c Console) (DeviceTokens, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return DeviceTokens{}, err
@@ -92,10 +89,8 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	defer srv.Close()
 
 	authorize := authorizeURL(cfg, redirect, state, pkce.Challenge)
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim(cfg.ProviderName+" signs in through your browser (authorization code with PKCE). If it does not open, visit:"))
-	fmt.Fprintln(os.Stderr, "       "+term.Cyan(authorize))
-	fmt.Fprintln(os.Stderr)
+	c.Note(cfg.ProviderName + " signs in through your browser (authorization code with PKCE). If it does not open, visit:")
+	c.Link(authorize)
 	open(authorize)
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -104,6 +99,9 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	select {
 	case got = <-done:
 	case <-ctx.Done():
+		if ctx.Err() == context.Canceled {
+			return DeviceTokens{}, ctx.Err()
+		}
 		return DeviceTokens{}, fmt.Errorf("%s: no sign-in came back within %s", cfg.ProviderName, timeout)
 	}
 	if got.err != nil {
@@ -123,7 +121,7 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 		return DeviceTokens{}, errors.New(cfg.ProviderName + ": the IdP issued no refresh_token, so hush could not keep this sign-in fresh; " +
 			"check that the client may refresh, or that its scopes ask for it (some IdPs want offline_access)")
 	}
-	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized by "+cfg.AuthorizeURL)
+	c.Done("Authorized by " + cfg.AuthorizeURL)
 	return DeviceTokens{AccessToken: tr.AccessToken, RefreshToken: tr.RefreshToken, ExpiresIn: tr.ExpiresIn}, nil
 }
 
@@ -199,21 +197,21 @@ type OIDCSignIn struct {
 	Tokens   DeviceTokens
 }
 
-func (s OAuthSettings) SignIn(provider string) (OIDCSignIn, error) {
+func (s OAuthSettings) SignIn(ctx context.Context, provider string, c Console) (OIDCSignIn, error) {
 	switch s.Flow {
 	case "", FlowDevice:
 		cfg, err := s.DeviceConfig(provider)
 		if err != nil {
 			return OIDCSignIn{}, err
 		}
-		tok, err := LoginOIDCDevice(cfg, s.Issuer)
+		tok, err := LoginOIDCDevice(ctx, cfg, s.Issuer, c)
 		return OIDCSignIn{TokenURL: cfg.TokenURL, ClientID: cfg.ClientID, Scope: cfg.Scope, Tokens: tok}, err
 	case FlowPKCE:
 		cfg, err := s.PKCEConfig(provider)
 		if err != nil {
 			return OIDCSignIn{}, err
 		}
-		tok, err := LoginPKCE(cfg)
+		tok, err := LoginPKCE(ctx, cfg, c)
 		return OIDCSignIn{TokenURL: cfg.TokenURL, ClientID: cfg.ClientID, Scope: cfg.Scope, Tokens: tok}, err
 	}
 	return OIDCSignIn{}, fmt.Errorf("%s: oauth flow %q is not %q or %q", provider, s.Flow, FlowDevice, FlowPKCE)

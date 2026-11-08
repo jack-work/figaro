@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -134,30 +135,49 @@ func leaveHint(s boot.CredentialSource) string {
 }
 
 func runProviderLogin(loaded *config.Loaded, name string) {
-	reg, err := lookupProvider(name)
-	if err != nil {
+	if _, err := lookupProvider(name); err != nil {
 		dieUsage("%s", err)
 	}
-	if st, err := boot.ServiceTokenOf(loaded, name); err != nil || st != "" {
-		if err != nil {
-			die("%s", err)
-		}
-		die("%s authenticates as service token %s ([service_tokens.%s] in config.toml); there is nothing to log in", name, st, st)
-	}
-	switch {
-	case reg.Login != nil:
-		err = reg.Login(loaded)
-	case reg.OAuth != nil:
-		err = runOAuthLogin(name, name, *reg.OAuth,
-			"figaro set system.provider "+name+"; figaro set system.model <model>")
-	default:
-		ensureHush()
-		err = runAPIKeyInline(loaded, name)
-	}
+	reg, err := loginTarget(loaded, name)
 	if err != nil {
 		die("%s", err)
 	}
+	ensureHush()
+	if err := signIn(context.Background(), loaded, name, reg, stderrConsole{}); err != nil {
+		die("%s", err)
+	}
+}
+
+func loginTarget(loaded *config.Loaded, name string) (*providerPkg.Registration, error) {
+	reg, err := lookupProvider(name)
+	if err != nil {
+		return nil, err
+	}
+	if st, err := boot.ServiceTokenOf(loaded, name); err != nil || st != "" {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s authenticates as service token %s ([service_tokens.%s] in config.toml); there is nothing to log in", name, st, st)
+	}
+	return reg, nil
+}
+
+func signIn(ctx context.Context, loaded *config.Loaded, name string, reg *providerPkg.Registration, c auth.Console) error {
+	var err error
+	switch {
+	case reg.Login != nil:
+		err = reg.Login(ctx, loaded, c)
+	case reg.OAuth != nil:
+		err = runOAuthLogin(ctx, name, name, *reg.OAuth,
+			"figaro set system.provider "+name+"; figaro set system.model <model>", c)
+	default:
+		err = runAPIKeyInline(ctx, loaded, name, c)
+	}
+	if err != nil {
+		return err
+	}
 	relistProvider(name)
+	return nil
 }
 
 func relistProvider(name string) {

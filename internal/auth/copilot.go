@@ -1,10 +1,8 @@
 package auth
 
 import (
+	"context"
 	"fmt"
-	"os"
-
-	"github.com/jack-work/figaro/internal/term"
 )
 
 const copilotClientID = "Iv1.b507a08c87ecfe98"
@@ -22,29 +20,23 @@ func copilotDeviceConfig(domain string) DeviceCodeConfig {
 	}
 }
 
-func LoginCopilot(domain string) (string, error) {
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim("GitHub Copilot uses the device code flow."))
-	fmt.Fprintln(os.Stderr)
-
-	token, err := LoginDeviceCode(copilotDeviceConfig(domain), printDevicePrompt)
+func LoginCopilot(ctx context.Context, domain string, c Console) (string, error) {
+	c.Note("GitHub Copilot uses the device code flow.")
+	token, err := LoginDeviceCode(ctx, copilotDeviceConfig(domain), c)
 	if err != nil {
 		return "", err
 	}
-	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized with GitHub")
+	c.Done("Authorized with GitHub")
 	return token.AccessToken, nil
 }
 
-func printDevicePrompt(p DevicePrompt) error {
+func showDevicePrompt(c Console, p DevicePrompt) {
 	if p.Prefilled {
-		fmt.Fprintln(os.Stderr, "       "+term.Dim("Open this URL and confirm the code matches:"))
+		c.Note("Open this URL and confirm the code matches:")
 	} else {
-		fmt.Fprintln(os.Stderr, "       "+term.Dim("Open this URL and enter the code:"))
+		c.Note("Open this URL and enter the code:")
 	}
-	fmt.Fprintln(os.Stderr, "       "+term.Cyan(p.VerificationURI))
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       Code: "+term.Cyan(p.UserCode))
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim("Waiting for authorization..."))
-	return nil
+	c.Link(p.VerificationURI)
+	c.Code(p.UserCode)
+	c.Note("Waiting for authorization...")
 }

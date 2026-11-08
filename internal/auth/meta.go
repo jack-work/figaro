@@ -2,15 +2,13 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
-
-	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
@@ -33,16 +31,13 @@ type MuseCodeKey struct {
 	Email  string
 }
 
-func LoginMeta() (MuseCodeKey, error) {
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim("Muse Code signs in with the Meta device flow."))
-	fmt.Fprintln(os.Stderr)
-
-	access, err := LoginDeviceCode(metaDeviceConfig, printDevicePrompt)
+func LoginMeta(ctx context.Context, c Console) (MuseCodeKey, error) {
+	c.Note("Muse Code signs in with the Meta device flow.")
+	access, err := LoginDeviceCode(ctx, metaDeviceConfig, c)
 	if err != nil {
 		return MuseCodeKey{}, err
 	}
-	fmt.Fprintln(os.Stderr, "       "+term.Green("\u2713")+" Authorized with Meta")
+	c.Done("Authorized with Meta")
 	return MintMuseCodeKey(http.DefaultClient, MetaAPIBase, access.AccessToken)
 }
 

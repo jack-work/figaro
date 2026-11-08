@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,7 +34,7 @@ type DevicePrompt struct {
 	Prefilled       bool
 }
 
-func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (DeviceTokens, error) {
+func LoginDeviceCode(ctx context.Context, cfg DeviceCodeConfig, c Console) (DeviceTokens, error) {
 	form := url.Values{"client_id": {cfg.ClientID}}
 	if cfg.Scope != "" {
 		form.Set("scope", cfg.Scope)
@@ -67,9 +68,7 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (Dev
 		p.VerificationURI = device.VerificationURIComplete
 		p.Prefilled = true
 	}
-	if err := prompt(p); err != nil {
-		return DeviceTokens{}, err
-	}
+	showDevicePrompt(c, p)
 	openBrowser(p.VerificationURI)
 
 	interval := max(time.Duration(device.Interval)*time.Second, 5*time.Second)
@@ -79,7 +78,11 @@ func LoginDeviceCode(cfg DeviceCodeConfig, prompt func(DevicePrompt) error) (Dev
 	}
 	deadline := time.Now().Add(time.Duration(expiresIn) * time.Second)
 	for {
-		time.Sleep(interval)
+		select {
+		case <-ctx.Done():
+			return DeviceTokens{}, ctx.Err()
+		case <-time.After(interval):
+		}
 		if time.Now().After(deadline) {
 			return DeviceTokens{}, fmt.Errorf("device code expired (user did not authorize in time)")
 		}

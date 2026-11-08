@@ -1,20 +1,19 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/term"
 	hush "github.com/jack-work/hush/client"
 )
 
 // Login runs the PKCE flow and registers the result with the hush agent,
 // which owns refresh from then on.
-func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, error)) error {
+func Login(ctx context.Context, hushClient *hush.Client, cfg OAuthConfig, c Console) error {
 	if err := hushClient.Ping(); err != nil {
 		return fmt.Errorf("hush agent is not running. Start it: hush up -d")
 	}
@@ -36,19 +35,16 @@ func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, 
 	}
 	authURL := cfg.AuthorizeURL + "?" + params.Encode()
 
-	// promptCode must not print its own prompt.
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "       "+term.Dim("Opening your browser to sign in. If it doesn't open, visit:"))
-	fmt.Fprintln(os.Stderr, "       "+term.Cyan(authURL))
-	fmt.Fprintln(os.Stderr)
+	c.Note("Opening your browser to sign in. If it doesn't open, visit:")
+	c.Link(authURL)
 	openBrowser(authURL)
 
-	fmt.Fprint(os.Stderr, "       Paste the code here: ")
-	codeInput, err := promptCode()
+	pasted, err := c.AskSecret(ctx, "Paste the code here: ")
 	if err != nil {
 		return fmt.Errorf("read code: %w", err)
 	}
-	codeInput = strings.TrimSpace(codeInput)
+	codeInput := strings.TrimSpace(string(pasted))
+	clear(pasted)
 
 	parts := strings.SplitN(codeInput, "#", 2)
 	code := parts[0]
@@ -101,6 +97,6 @@ func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, 
 		return fmt.Errorf("register with hush: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "       "+term.Green("✓")+" Logged in"+term.Dim(fmt.Sprintf(" · token expires in %ds", tokenResp.ExpiresIn)))
+	c.Done(fmt.Sprintf("Logged in · token expires in %ds", tokenResp.ExpiresIn))
 	return nil
 }

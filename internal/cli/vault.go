@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -355,7 +356,7 @@ func reloginProviders(loaded *config.Loaded, providers []string) error {
 			failed = append(failed, name)
 			continue
 		}
-		if err := reg.Login(loaded); err != nil {
+		if err := reg.Login(context.Background(), loaded, stderrConsole{}); err != nil {
 			fmt.Fprintf(stderrw, "login %s failed: %v\n", name, err)
 			failed = append(failed, name)
 			continue

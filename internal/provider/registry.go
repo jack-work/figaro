@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"text/template"
@@ -21,10 +22,7 @@ type Registration struct {
 	Declared  bool
 	OAuth     *auth.OAuthSettings
 
-	// Setup is set by the CLI at startup (import cycle with TUI/hush).
-	Setup func(loaded *config.Loaded) error
-
-	Login func(loaded *config.Loaded) error
+	Login func(ctx context.Context, loaded *config.Loaded, c auth.Console) error
 
 	Build func(BuildContext) (Provider, error)
 
