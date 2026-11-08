@@ -50,8 +50,8 @@ figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/fi
 ## Federation and deployment
 
 - Listen to a figaro on any server with `FIGARO_TROUPE=<name> figaro listen <id>`. Machines federate as troupes, still in development.
-- Your identity system plugs in: OIDC issuers, your reverse proxy's user headers, or api keys, with grants and troupe policy for each principal.
-- A Nix flake with NixOS, home-manager and container modules. Sandboxing (`figaro box`) is coming in gradually.
+- Identity and authorization plug in across machines too; see [Security](#security-bring-your-own-sandbox).
+- A Nix flake with NixOS, home-manager and container modules. Sandboxing with `figaro box` and the container module.
 
 ## The shell or the pager
 
@@ -59,9 +59,16 @@ Drive figaros from the shell (`figaro -- <prompt>`, `figaro send -f`) or from th
 
 <p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
 
-## Security, plainly
+## Security: bring your own sandbox
 
-figaro isn't secure out of the box: it runs with your user's permissions, and any figaro can message any other on its node. Bring your own sandbox for now; secure defaults are coming. No MCP, by design: figaro is CLI-first, so wrap an MCP server in a CLI and sandbox it.
+figaro is built to run inside the sandbox and identity system you already have, and every piece of that is pluggable.
+
+- **Sandboxes.** A figaro's tools run wherever you put them: `figaro box serve` gives a workspace its own door, and the NixOS container module runs the whole daemon isolated. Boxed figaros only reach what their box allows.
+- **Identity.** Every caller is a principal: your local user by peer credentials, or a remote one through OIDC issuers you trust (`[[authz.issuers]]`), your reverse proxy's user headers (`authn = "upstream"`), or troupe API keys. Nodes in a troupe prove themselves with certificates from your own troupe root.
+- **Authorization.** Grants give each principal verbs (read, send, set, kill, admin) on the figaros and forms it may touch; troupe policy does the same across machines; lifetime and environment keys stay owner-held.
+- **No MCP, by design.** figaro is CLI-first: wrap an MCP server in a CLI and put it in a box.
+
+Out of the box, with no sandbox configured, a figaro has your user's permissions. Secure defaults ship in coming releases.
 
 ## Install
 
