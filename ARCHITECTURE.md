@@ -69,7 +69,7 @@ internal/tui/              bubbletea first-run components
 internal/turns/            fig IR turn arithmetic
 internal/uiir/             UI IR projection
 internal/update/           release discovery and upgrade
-internal/wirelog/          RoundTripper tracing + optional raw dumps
+internal/wirelog/          RoundTripper tracing + optional raw dumps, credentials redacted
 ```
 
 ## Streams

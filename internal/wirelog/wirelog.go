@@ -115,7 +115,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		respFile, ferr := os.Create(logBase + ".resp.http")
 		if ferr == nil {
 			fmt.Fprintf(respFile, "%s %s\r\n", resp.Proto, resp.Status)
-			resp.Header.Write(respFile)
+			redacted(resp.Header).Write(respFile)
 			fmt.Fprintf(respFile, "\r\n")
 			resp.Body = &teeBody{
 				body: resp.Body,
@@ -181,9 +181,41 @@ func writeReqLog(path string, req *http.Request, body []byte) {
 	if req.Host != "" {
 		fmt.Fprintf(f, "Host: %s\r\n", req.Host)
 	}
-	req.Header.Write(f)
+	redacted(req.Header).Write(f)
 	fmt.Fprintf(f, "\r\n")
 	f.Write(body)
+}
+
+func redacted(h http.Header) http.Header {
+	out := make(http.Header, len(h))
+	for name, values := range h {
+		if !isCredentialHeader(name) {
+			out[name] = values
+			continue
+		}
+		masked := make([]string, len(values))
+		for i, v := range values {
+			masked[i] = "[redacted]"
+			if scheme, _, ok := strings.Cut(v, " "); ok && strings.HasSuffix(strings.ToLower(name), "authorization") {
+				masked[i] = scheme + " [redacted]"
+			}
+		}
+		out[name] = masked
+	}
+	return out
+}
+
+func isCredentialHeader(name string) bool {
+	n := strings.ToLower(name)
+	if n == "cookie" || n == "set-cookie" {
+		return true
+	}
+	for _, part := range []string{"auth", "key", "token", "secret"} {
+		if strings.Contains(n, part) {
+			return true
+		}
+	}
+	return false
 }
 
 type teeBody struct {
