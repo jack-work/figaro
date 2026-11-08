@@ -24,6 +24,7 @@ lost. They are here so the next person has them.
 | `idlemem.sh` | PSS of an idle daemon, before and after | that the base never returns its arena (251 → 259 MB) and this build does (141 → 51) |
 | `onappendlive.sh` | the fig IR write path translating an entry AS IT LANDS, discriminated by a `study` that appends an entry and sends nothing | a SECOND translation at one FigaroLT: the write path rendered the assistant message that the provider was about to commit natively, and a warm read serves the FIRST -- so the model would have been shown unsigned text with the signed original unreachable beneath it |
 | `fdcount.sh` | file descriptors held by a listing | that lazy segment opening does NOT save descriptors, killing a claim I had made in a commit message |
+| `senderlive.sh` | three turns per provider:model (owner, another figaro, owner) against real models, wire dumped | run it on every change to what a provider is sent: a unit test proves the bytes, only a model proves it reads them |
 
 ## Rules
 

@@ -27,6 +27,7 @@ nix build         # flake.nix is a first-class build path
 - **Stamp the revision** when you build a binary to run: `go build -ldflags "-X github.com/jack-work/figaro/internal/boot.commit=$(git rev-parse HEAD)" -o /tmp/figaro ./cmd/figaro`. A plain `go build` in a worktree records no VCS revision, so the CLI/daemon build handshake can only warn instead of refusing. See the **tmux-testing** skill.
 - `hush` and `largo` are ordinary `go.mod` requires (no replace directives) in active development. `nix develop .#tools` is the shell for bumping them. Don't pin or vendor without asking.
 - CGO disabled in nix builds. Keep it that way.
+- **Changing what a provider is sent** (an encoder, a reminder, the sender, system prompt assembly): run `scripts/live/senderlive.sh` before calling it done. It drives real models across every wire (messages, chat, responses) and names which one broke. It needs the owner's provider logins and costs a few cents.
 
 When you change deps (`go.mod` / `go.sum`), the flake's `vendorHash` will need updating: the build will tell you the right hash. Surface flake updates in your summary so the user can audit.
 
