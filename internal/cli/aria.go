@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -273,10 +272,10 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 		start = len(entries) - opts.last
 	}
 
-	var w io.Writer = os.Stdout
+	var w io.Writer = stdout
 	flush := func() {}
 	if !opts.literal {
-		sw, err := largo.NewWriter(os.Stdout, largo.Options{})
+		sw, err := largo.NewWriter(stdout, largo.Options{})
 		if err != nil {
 			die("largo: %s", err)
 		}
@@ -326,7 +325,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 	fmt.Fprintln(stdout, "---")
 	fmt.Fprintln(stdout, "## state transitions")
 	fmt.Fprintln(stdout)
-	printTransitions(os.Stdout, entries)
+	printTransitions(stdout, entries)
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "---")
 	fmt.Fprintln(stdout, "## form")

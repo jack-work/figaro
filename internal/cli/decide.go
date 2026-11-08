@@ -250,7 +250,7 @@ Set them once in an outfit, core.toml to reach every aria:
 			ld := ctx.Extra.(*config.Loaded)
 			outw := ctx.Out
 			if outw == nil {
-				outw = os.Stdout
+				outw = stdout
 			}
 			inr := ctx.In
 			if inr == nil {

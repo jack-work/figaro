@@ -105,12 +105,12 @@ func runDoctorUnit(asJSON bool) error {
 	owner, _ := socketOwnerPID(boot.AngelusSocketPath())
 	v := judgeDaemonUnit(findDaemonUnit(daemonUnitName()), owner)
 	if asJSON {
-		return json.NewEncoder(os.Stdout).Encode(v)
+		return json.NewEncoder(stdout).Encode(v)
 	}
 	mark := "ok"
 	if !v.OK {
 		mark = "WARN"
 	}
-	fmt.Printf("%s  %s\n", mark, v.Message)
+	fmt.Fprintf(stdout, "%s  %s\n", mark, v.Message)
 	return nil
 }

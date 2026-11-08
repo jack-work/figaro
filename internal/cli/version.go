@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/jack-work/figaro/internal/boot"
@@ -14,15 +13,15 @@ import (
 func runVersion(asJSON bool) {
 	v, ok := boot.Version()
 	if !ok {
-		fmt.Fprintln(os.Stdout, "figaro (build info unavailable)")
+		fmt.Fprintln(stdout, "figaro (build info unavailable)")
 		return
 	}
 	v.Node = reachableNode()
 	if asJSON {
-		json.NewEncoder(os.Stdout).Encode(v)
+		json.NewEncoder(stdout).Encode(v)
 		return
 	}
-	boot.PrintVersion(os.Stdout, v)
+	boot.PrintVersion(stdout, v)
 }
 
 func reachableNode() string {

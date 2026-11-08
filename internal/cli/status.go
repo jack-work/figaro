@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
+	"io"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -48,7 +48,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 				}
 				return json.NewEncoder(stdout).Encode(st)
 			}
-			printFormStatusPanel(os.Stdout, f, snap, version, targetState, more)
+			printFormStatusPanel(stdout, f, snap, version, targetState, more)
 			return nil
 		}
 
@@ -67,7 +67,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 				}
 			}
 		}
-		printStatusPanel(os.Stdout, f, more, forkTurn)
+		printStatusPanel(stdout, f, more, forkTurn)
 		return nil
 	})
 }
@@ -254,7 +254,7 @@ func roleTargetOf(f *rpc.FigaroInfoResponse, snap form.Snapshot) string {
 	return ""
 }
 
-func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Snapshot, version uint64, targetState string, more bool) {
+func printFormStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, snap form.Snapshot, version uint64, targetState string, more bool) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
 	dash := func(s string) string {
@@ -319,7 +319,7 @@ func printFormStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, snap form.Sna
 }
 
 // Empty or zero fields print "-" so unknown is tellable from zero.
-func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTurn uint64) {
+func printStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, more bool, forkTurn uint64) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
 	rowf := func(k, format string, args ...any) { row(k, fmt.Sprintf(format, args...)) }
