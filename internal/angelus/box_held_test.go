@@ -171,3 +171,40 @@ func TestABoxMintsAtMostItsShareOfForms(t *testing.T) {
 		t.Fatalf("the box's cap reached the owner: %v", err)
 	}
 }
+
+// El Inspector XI on cast-name: cast makes the aria study the form it names, so
+// a form a boxed aria plants under a name must not answer that name outside the
+// box. Otherwise the owner's own `cast <aria> @X` would open a standing channel
+// from the box into an unboxed aria. The owner still reaches it by handle.
+func TestANameHeldInABoxAnswersOnlyInsideIt(t *testing.T) {
+	d := boxDoorRig(t, "true")
+	inBox, err := d.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside, err := d.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := d.dial(t)
+	planted := boxMintsForm(t, c, "almaviva")
+
+	cast := func(ctx context.Context, aria, ref string) error {
+		_, err := d.call(ctx, rpc.MethodCast, json.RawMessage(withAria(t, aria, rpc.CastRequest{FormID: ref})))
+		return err
+	}
+	hidden, missing := cast(asOwner(), outside.FigaroID, "@almaviva"), cast(asOwner(), outside.FigaroID, "@nobody")
+	if hidden == nil || missing == nil || strings.ReplaceAll(missing.Error(), "@nobody", "@almaviva") != hidden.Error() {
+		t.Fatalf("the owner reached a box's form by name, or heard it exists:\n  planted: %v\n  missing: %v", hidden, missing)
+	}
+	if got := d.keyOf(t, planted, "target-aria"); got != "" {
+		t.Fatalf("the planted form became a role on %q", got)
+	}
+
+	if err := boxOnAria(t, c, rpc.MethodCast, inBox.FigaroID, rpc.CastRequest{FormID: "@almaviva"}, nil); err != nil {
+		t.Fatalf("the box casting its aria into its own form by name: %v", err)
+	}
+	if got := d.keyOf(t, planted, "target-aria"); got != inBox.FigaroID {
+		t.Fatalf("the box's cast by name pointed its form at %q, want %s", got, inBox.FigaroID)
+	}
+}

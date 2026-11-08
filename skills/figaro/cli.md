@@ -194,7 +194,8 @@ Every `<id>` above takes any of these, and all of them name the same aria:
 `@<name>` is tried only when no id or handle answers. It matches the `name`
 key exactly, among the forms you may read: a role first, then a form not yet
 cast, which is what `figaro cast <aria> @<name>` takes. A name two roles (or,
-with no role, two forms) carry is refused, naming both by handle. In the
+with no role, two forms) carry is refused, naming both by handle. A form held
+in a box answers its name only inside that box; from outside, use its handle. In the
 form slot of `cast`, `study` and `drop`, a name nothing carries is refused as
 `no role or form named @<name>`.
 

@@ -147,10 +147,26 @@ type formNamer interface {
 
 func (h *handlers) formNamed(ctx context.Context, name string) (string, bool, error) {
 	roles, forms := h.formsNamed(name)
+	box, _ := callerBox(ctx)
+	roles, forms = h.nameableFrom(box, roles), h.nameableFrom(box, forms)
 	if id, found, err := h.oneReadable(ctx, name, "roles", roles); found || err != nil {
 		return id, found, err
 	}
 	return h.oneReadable(ctx, name, "forms", forms)
+}
+
+func (h *handlers) nameableFrom(box string, ids []string) []string {
+	var out []string
+	for _, id := range ids {
+		snap, err := h.angelus.Backend.FormState(id)
+		if err != nil {
+			continue
+		}
+		if held := h.heldBox(snap); held == "" || held == box {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (h *handlers) formsNamed(name string) (roles, forms []string) {
