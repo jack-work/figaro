@@ -73,6 +73,7 @@ transcript csi-u ctrl-n       input inputSelectNext
 transcript csi-u ctrl-o       pager pagerAriaBack
 transcript csi-u ctrl-p       input inputSelectPrev
 transcript csi-u ctrl-t       input inputEnterTranscript
+transcript M-l                pager pagerRecentPit
 transcript M-m                input inputToggleMore
 transcript M-n                input inputQuestionNext
 transcript M-p                input inputQuestionPrev
@@ -205,6 +206,7 @@ panel      csi-u ctrl-l       input inputEnterTranscript
 panel      csi-u ctrl-n       input inputSelectNext
 panel      csi-u ctrl-p       input inputSelectPrev
 panel      csi-u ctrl-t       input inputEnterTranscript
+panel      M-l                pager pagerRecentPit
 panel      M-m                input inputToggleMore
 panel      M-n                input inputQuestionNext
 panel      M-p                input inputQuestionPrev
@@ -389,6 +391,7 @@ list       csi-u ctrl-n       input inputSelectNext
 list       csi-u ctrl-p       input inputSelectPrev
 list       csi-u ctrl-t       input inputEnterTranscript
 list       csi-u ctrl-y       pager listScrollUp
+list       M-l                pager pagerRecentPit
 list       M-m                input inputToggleMore
 list       M-n                input inputQuestionNext
 list       M-p                input inputQuestionPrev
@@ -455,6 +458,7 @@ opens      csi-u ctrl-i
 opens      csi-u ctrl-n
 opens      csi-u ctrl-o
 opens      csi-u ctrl-p
+opens      M-l
 opens      M-n
 opens      M-p
 csi-u      ctrl-a
@@ -480,6 +484,7 @@ csi-u      ctrl-w
 csi-u      ctrl-y
 meta       incipit    M-m
 meta       incipit    M-y
+meta       transcript M-l
 meta       transcript M-m
 meta       transcript M-n
 meta       transcript M-p
@@ -506,6 +511,7 @@ meta       jump       M-t
 meta       jump       M-u
 meta       jump       M-y
 meta       jump       M-DEL
+meta       panel      M-l
 meta       panel      M-m
 meta       panel      M-n
 meta       panel      M-p
@@ -517,6 +523,7 @@ meta       confirm    M-m
 meta       composer   M-
 meta       composer   M-m
 meta       composer   M-y
+meta       list       M-l
 meta       list       M-m
 meta       list       M-n
 meta       list       M-p

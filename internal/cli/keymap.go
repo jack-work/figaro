@@ -192,6 +192,7 @@ const (
 	helpCommentDelete
 	helpAttend
 	helpAriaJump
+	helpRecentPit
 )
 
 // Every visible binding is documented by exactly one row, and every row documents
@@ -263,6 +264,7 @@ var helpRows = []helpRow{
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpPinned, "p", "expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it"},
 	{helpListPit, "l / L", "the topology open at the attended aria / at its root, in the pit (Enter attends, x kills)"},
+	{helpRecentPit, "M-l", "every figaro, most recently active first, in the pit (Enter attends, x kills)"},
 	{helpConfirm, "y / n", "answer a confirmation (Esc is no); X on a row kills with no question"},
 	{helpHelpPanel, "h", "close help"},
 }

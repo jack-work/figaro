@@ -307,6 +307,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  T                   read the conversation without closing the pit (again to go back)",
 		"  p                   expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it",
 		"  l / L               the topology open at the attended aria / at its root, in the pit (Enter attends, x kills)",
+		"  M-l                 every figaro, most recently active first, in the pit (Enter attends, x kills)",
 		"  y / n               answer a confirmation (Esc is no); X on a row kills with no question",
 		"  h                   close help",
 	}

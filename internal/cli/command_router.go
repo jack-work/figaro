@@ -99,6 +99,8 @@ func formPitFor(verb string) (formPit, bool) {
 		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtAttended}, true
 	case "troupe":
 		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtRoot}, true
+	case "recent":
+		return formPit{name: "recent", form: rpc.RecentFormID, bare: true}, true
 	}
 	return formPit{}, false
 }

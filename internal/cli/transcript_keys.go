@@ -222,6 +222,8 @@ func pagerListPit(t *transcript) { t.runListCommand("ls") }
 
 func pagerListHome(t *transcript) { t.runListCommand("troupe") }
 
+func pagerRecentPit(t *transcript) { t.runListCommand("recent") }
+
 func (t *transcript) runListCommand(line string) {
 	if t.command == nil {
 		t.note("this session cannot run commands")

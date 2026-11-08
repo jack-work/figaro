@@ -56,7 +56,7 @@ help 0x3e - off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pr
 help 0x3f search-back off:bottom fol=true srch=true q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x44 decisions off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x46 fullscreen off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+full
-help 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/65
+help 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/66
 help 0x4c list-home off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x4e find-prev off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x53 form off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
@@ -82,7 +82,7 @@ help Down down off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false 
 help PgUp half-up off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help PgDn half-down off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help Home top off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
-help End bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/65
+help End bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/66
 help+focus inert off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 help+focus 0x09 - off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help+focus 0x0a activate off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T

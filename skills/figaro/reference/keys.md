@@ -128,7 +128,7 @@ your changes applied.
 | pit | pit,list | `a` attend · `Enter 0x0a` activate · `l` branch-open · `h` branch-close · `Right` right · `Left` left · `Esc` cancel · `x` delete · `X` delete-now · `n` find-next · `N` find-prev |
 | list | list | `e ^E` scroll-down · `^Y` scroll-up · `F` fullscreen · `0x0e` down · `0x10` up |
 | transcript | transcript | `f` prefix:fork · `c` prefix:comment · `a` attend · `^` attend-parent · `^O` aria-back · `Tab` aria-forward · `Enter 0x0a` activate · `e` toggle-bodies · `Esc` cancel · `x` delete · `0x0e` select-next · `0x10` select-prev · `n` find-next · `N` find-prev |
-| pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `H` hang-up · `S` form · `T` focus · `p` pinned · `h` help · `!` status · `Q` queue |
+| pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `M-l` recent · `H` hang-up · `S` form · `T` focus · `p` pinned · `h` help · `!` status · `Q` queue |
 | reading | transcript,pit,visual,list | `q` leave · `m` bar-verbose · `/` search · `?` search-back |
 | conversation | transcript,visual | `v` mark-char · `V` mark-line · `X` hang-up-drop · `:` command · `>` compose · `o` open-editor |
 | clipboard | incipit,transcript,pit,visual,composer,list | `y` yank · `M-y` yank-id |
@@ -214,6 +214,7 @@ your changes applied.
 | `decisions` | transcript,pit,list |
 | `list` | transcript,pit,list |
 | `list-home` | transcript,pit,list |
+| `recent` | transcript,pit,list |
 | `form` | transcript,pit,list |
 | `focus` | transcript,pit,list |
 | `pinned` | transcript,pit,list |
