@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"text/template"
@@ -108,7 +109,7 @@ func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *
 	a.RemoveAria = hs.RemoveAria
 	a.RemoveAriaIf = hs.RemoveAriaIf
 
-	go a.Run(ctx)
+	runDaemon(t, ctx, a)
 	t.Cleanup(func() { a.Shutdown(0) })
 	waitForAngelus(t, a.SocketPath)
 
@@ -116,6 +117,29 @@ func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
 	return a, acli, ctx, hs
+}
+
+// serving holds, per socket path, a channel closed when the daemon serving it
+// returns from Run. Shutdown only cancels Run: the listener closes a moment
+// later, and a daemon restarted on the same path before then is dialed
+// through its predecessor, whose drain then closes the connection under it.
+var serving sync.Map
+
+func runDaemon(t testing.TB, ctx context.Context, a *angelus.Angelus) {
+	t.Helper()
+	if prev, ok := serving.Load(a.SocketPath); ok {
+		select {
+		case <-prev.(chan struct{}):
+		case <-time.After(10 * time.Second):
+			t.Fatalf("the daemon before this one on %s never stopped serving", a.SocketPath)
+		}
+	}
+	ran := make(chan struct{})
+	serving.Store(a.SocketPath, ran)
+	go func() {
+		defer close(ran)
+		_ = a.Run(ctx)
+	}()
 }
 
 // ariaConn is one connection on the door addressing one aria, the way

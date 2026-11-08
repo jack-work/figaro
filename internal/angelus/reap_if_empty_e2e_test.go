@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
@@ -233,17 +234,15 @@ func spooledAcrossARestart(t *testing.T, birth *form.Patch, expire func(*testing
 	require.True(t, ariaExists(b, c.FigaroID), "an aria with a spooled prompt was taken by the sweep")
 
 	hs.Redeliver(bctx)
-	var lastErr error
-	require.Eventually(t, func() bool {
+	require.EventuallyWithT(t, func(c2 *assert.CollectT) {
 		resp, err := bcli.IRAll(bctx, c.FigaroID, 0)
-		if lastErr = err; err != nil {
-			return false
+		if !assert.NoError(c2, err, "reading the aria") {
+			return
 		}
+		var texts []string
 		for _, e := range resp.Entries {
-			if strings.Contains(string(e.Payload), "the prompt that waited") {
-				return true
-			}
+			texts = append(texts, string(e.Payload))
 		}
-		return false
-	}, 10*time.Second, 50*time.Millisecond, "the spooled prompt was never delivered (last read: %v)", lastErr)
+		assert.Contains(c2, strings.Join(texts, "\n"), "the prompt that waited", "the spooled prompt was never delivered")
+	}, 10*time.Second, 50*time.Millisecond)
 }
