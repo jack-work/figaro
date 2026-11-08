@@ -251,7 +251,7 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 		if ok {
 			r.SetContextLimits(model, entry.contextLimits())
 		}
-		return r.Send(ctx, in, bus)
+		return provider.NameStreamCut(r.Send(ctx, in, bus), p.Name())
 	case Messages:
 		m, err := p.messagesBackend()
 		if err != nil {

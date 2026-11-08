@@ -300,7 +300,7 @@ func TestAnHTTPStreamThatEndsEarlyIsAnError(t *testing.T) {
 	if err == nil {
 		t.Fatal("a stream with no terminal event reported success")
 	}
-	if !strings.Contains(err.Error(), "receive") {
+	if _, ok := provider.AsStreamCut(err); !ok || !strings.Contains(err.Error(), "copilot: the upstream closed the stream after") || !strings.Contains(err.Error(), "before response.completed") {
 		t.Errorf("error %q does not say the stream broke", err)
 	}
 	if bus.text.String() != "pong" {

@@ -215,6 +215,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	out, err := drainSSE(ctx, resp.Body, bus)
+	err = provider.NameStreamCut(err, p.Route.Name)
 	if err != nil {
 		// A cancelled turn hands over the partial marked aborted; any other
 		// stream failure drops it.

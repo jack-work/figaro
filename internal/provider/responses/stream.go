@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -216,6 +217,16 @@ type responseStreamState struct {
 	byIndex map[int]*responseCall
 	partial responsePartial
 	started bool
+	events  int
+}
+
+func (s *responseStreamState) anyCallReady() bool {
+	for _, call := range s.calls {
+		if call.ready {
+			return true
+		}
+	}
+	return false
 }
 
 func newResponseStreamState() *responseStreamState {
@@ -228,12 +239,18 @@ func readResponseStream(ctx context.Context, next responseFrames, bus provider.B
 		raw, err := next(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				err = ctx.Err()
-			} else {
-				err = fmt.Errorf("responses: receive: %w", err)
+				return responseObject{Output: state.partial.outputItems()}, ctx.Err()
 			}
-			return responseObject{Output: state.partial.outputItems()}, err
+			cut := &provider.StreamCut{Awaited: "response.completed", Events: state.events}
+			if !errors.Is(err, io.EOF) {
+				cut.Err = err
+			}
+			if !state.anyCallReady() {
+				return responseObject{}, cut
+			}
+			return responseObject{Output: state.partial.outputItems()}, cut
 		}
+		state.events++
 		var event responseStreamEvent
 		if err := json.Unmarshal(raw, &event); err != nil {
 			return responseObject{Output: state.partial.outputItems()}, fmt.Errorf("responses: decode event: %w", err)

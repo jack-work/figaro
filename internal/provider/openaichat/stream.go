@@ -39,6 +39,7 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 	lastIdx, haveLast := 0, false
 	nextSynthetic := -1
 
+	events, done := 0, false
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
@@ -53,8 +54,10 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
+			done = true
 			break
 		}
+		events++
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			// Keep-alives and comments are not a reason to lose the turn.
@@ -121,7 +124,13 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return out, err
+		if ctx.Err() != nil {
+			return out, ctx.Err()
+		}
+		return out, &provider.StreamCut{Awaited: "a finish reason", Events: events, Err: err}
+	}
+	if !done && out.StopReason == "" && events > 0 {
+		return out, &provider.StreamCut{Awaited: "a finish reason", Events: events}
 	}
 	for _, idx := range order {
 		call := byIndex[idx]
