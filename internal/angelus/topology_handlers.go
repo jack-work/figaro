@@ -613,16 +613,13 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		}
 	}
 	meta := &store.AriaMeta{
-		MessageCount: len(req.Messages),
-		OutfitName:   req.Outfit,
-		Mantra:       req.Mantra,
-		Provider:     req.Provider,
-		Model:        req.Model,
+		OutfitName: req.Outfit,
+		Mantra:     req.Mantra,
+		Provider:   req.Provider,
+		Model:      req.Model,
 	}
-	for _, m := range req.Messages {
-		if m.Role == message.RoleOutput {
-			meta.TurnCount++
-		}
+	for _, e := range log.Read() {
+		meta.Fold(e)
 	}
 	if err := h.angelus.Backend.SetMeta(id, meta); err != nil {
 		slog.Warn("import: set meta", "id", id, "err", err)

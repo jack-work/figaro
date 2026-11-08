@@ -34,25 +34,7 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	meta := *st.Value
 	folded := int64(0)
 	for _, e := range log.ReadFrom(meta.LastFigaroLT+1, 0) {
-		m := e.Payload
-		if m.Usage != nil {
-			meta.TokensIn += m.Usage.InputTokens
-			meta.TokensOut += m.Usage.OutputTokens
-			meta.CacheReadTokens += m.Usage.CacheReadTokens
-			meta.CacheWriteTokens += m.Usage.CacheWriteTokens
-			meta.ContextTokens = tokens.ContextFromUsage(m.Usage)
-			meta.ContextExact = true
-		} else {
-			meta.ContextTokens += tokens.EstimateMessage(m)
-			meta.ContextExact = false
-		}
-		if !message.IsCeremonial(m) {
-			meta.MessageCount++
-		}
-		if m.Role == message.RoleOutput {
-			meta.TurnCount++
-		}
-		meta.LastFigaroLT = e.LT
+		meta.Fold(e)
 		folded++
 	}
 	metaHealFolded.Add(folded)
@@ -60,6 +42,28 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 		return
 	}
 	slog.Info("meta healed", "aria", ariaID, "from", st.Value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
+}
+
+func (meta *AriaMeta) Fold(e Entry[message.Message]) {
+	m := e.Payload
+	if m.Usage != nil {
+		meta.TokensIn += m.Usage.InputTokens
+		meta.TokensOut += m.Usage.OutputTokens
+		meta.CacheReadTokens += m.Usage.CacheReadTokens
+		meta.CacheWriteTokens += m.Usage.CacheWriteTokens
+		meta.ContextTokens = tokens.ContextFromUsage(m.Usage)
+		meta.ContextExact = true
+	} else {
+		meta.ContextTokens += tokens.EstimateMessage(m)
+		meta.ContextExact = false
+	}
+	if !message.IsCeremonial(m) {
+		meta.MessageCount++
+	}
+	if m.Role == message.RoleOutput {
+		meta.TurnCount++
+	}
+	meta.LastFigaroLT = e.LT
 }
 
 var metaIdentityHealed atomic.Int64
