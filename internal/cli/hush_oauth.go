@@ -13,6 +13,7 @@ func (noOAuth) OAuthList() ([]string, error) { return nil, nil }
 func (noOAuth) OAuthDelete(string) error     { return nil }
 
 func cliOAuthStore(interactive bool) (oauthStore, error) {
+	refuseOffTape("the vault")
 	h, err := boot.Hush()
 	if err != nil {
 		return nil, err

@@ -137,3 +137,59 @@ func TestAReplayNeverAnswersAPollWithFiguresOlderThanItHasPushed(t *testing.T) {
 		t.Fatalf("a poll after the seal answered %+v, older than the exact 148379 already pushed", m)
 	}
 }
+
+// The form pit in a replay dials the tape a second time. The tape server took
+// one connection, so the second hung in the backlog; it is answered from the
+// recording, and the form deltas the tape pushes reach it too.
+func TestASecondConnectionToATapeIsAnsweredAndFollowsItsForm(t *testing.T) {
+	frames := []tape.Frame{
+		tapeFrame(t, 0.01, tape.Out, `{"jsonrpc":"2.0","id":7,"method":"figaro.form","params":{"figaro_id":"a","x-caller":{"duke":true}}}`),
+		tapeFrame(t, 0.01, tape.In, `{"jsonrpc":"2.0","id":7,"result":{"snapshot":{"aria_id":"a","marker":"recorded"},"version":3}}`),
+		tapeFrame(t, 0.4, tape.In, `{"jsonrpc":"2.0","method":"form.delta","params":{"figaro_id":"a","version":4}}`),
+		tapeFrame(t, 600, tape.In, `{"jsonrpc":"2.0","method":"turn.done","params":{"figaro_id":"a","reason":"stop"}}`),
+	}
+	dir, err := os.MkdirTemp("", "figtape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	ep := transport.UnixEndpoint(filepath.Join(dir, "agent.sock"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := &tapeServer{frames: frames, speed: 1, done: make(chan struct{})}
+	if err := srv.listen(ctx, ep); err != nil {
+		t.Fatal(err)
+	}
+	main, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(string, json.RawMessage) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer main.Close()
+	deltas := make(chan struct{}, 1)
+	side, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(method string, _ json.RawMessage) {
+		if method == "form.delta" {
+			select {
+			case deltas <- struct{}{}:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer side.Close()
+	fctx, fcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer fcancel()
+	resp, err := side.FormFor(fctx, "pit")
+	if err != nil {
+		t.Fatalf("the second connection's form read: %v", err)
+	}
+	if resp.Version != 3 {
+		t.Fatalf("the second connection read form version %d, want the recorded 3", resp.Version)
+	}
+	select {
+	case <-deltas:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the tape's form delta never reached the second connection")
+	}
+}

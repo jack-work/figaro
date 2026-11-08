@@ -62,6 +62,7 @@ func refuseSelfSpawn(exe string) {
 func isTestBinary(exe string) bool { return boot.IsTestBinary(exe) }
 
 func ensureAngelus() {
+	refuseOffTape("the daemon")
 	if d := resolveDoor(); d.configured {
 		cli, err := sdk.DialAngelus(d.ep)
 		if err != nil {

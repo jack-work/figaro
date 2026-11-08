@@ -80,6 +80,7 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 		window = h.Model.ContextWindow
 	}
 	sessionNow = newTapeClock(started, frames, srv.position).now
+	tapeOnly.Store(true)
 	tailFigaro(ctx, cancel, sdk.Addr{Door: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started, window: window})
 }
 
@@ -121,6 +122,7 @@ type tapeServer struct {
 	sent      time.Duration
 	metrics   json.RawMessage
 	metricsAt time.Duration
+	sides     []*jkrpc.Server
 }
 
 func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
@@ -133,17 +135,27 @@ func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
 		ln.Close()
 	}()
 	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
+		answers := recordedAnswers(s.frames)
+		for first := true; ; first = false {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			srv := jkrpc.NewServer(jkrpc.NewConn(conn), s.handlers(answers))
+			go srv.Serve(ctx)
+			if first {
+				go s.serve(ctx, srv)
+				continue
+			}
+			s.mu.Lock()
+			s.sides = append(s.sides, srv)
+			s.mu.Unlock()
 		}
-		s.serve(ctx, conn)
 	}()
 	return nil
 }
 
-func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
-	answers := recordedAnswers(s.frames)
+func (s *tapeServer) handlers(answers tapeAnswers) map[string]jkrpc.HandlerFunc {
 	handlers := map[string]jkrpc.HandlerFunc{}
 	for _, m := range []string{
 		rpc.MethodRead, rpc.MethodQueued, rpc.MethodForm, rpc.MethodContext,
@@ -159,10 +171,10 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 			return s.withNotifiedMetrics(ans), nil
 		}
 	}
+	return handlers
+}
 
-	srv := jkrpc.NewServer(jkrpc.NewConn(conn), handlers)
-	go srv.Serve(ctx)
-
+func (s *tapeServer) serve(ctx context.Context, srv *jkrpc.Server) {
 	s.mu.Lock()
 	s.start = time.Now()
 	s.mu.Unlock()
@@ -191,9 +203,16 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 		if len(carried.Metrics) > 0 && string(carried.Metrics) != "null" {
 			s.metrics, s.metricsAt = carried.Metrics, f.At()
 		}
+		var sides []*jkrpc.Server
+		if m.Method == rpc.MethodFormDelta {
+			sides = s.sides
+		}
 		s.mu.Unlock()
 		if srv.Notify(m.Method, m.Params) != nil {
 			break
+		}
+		for _, side := range sides {
+			_ = side.Notify(m.Method, m.Params)
 		}
 	}
 	if !s.closed {
@@ -363,6 +382,7 @@ func askKey(method string, params json.RawMessage) string {
 		return method + " " + string(params)
 	}
 	delete(p, "x-caller")
+	delete(p, "client")
 	canon, _ := json.Marshal(p)
 	return method + " " + string(canon)
 }

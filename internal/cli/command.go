@@ -555,6 +555,9 @@ func (in *interactiveInput) angelus() (*sdk.Angelus, error) {
 	if in.acli != nil {
 		return in.acli, nil
 	}
+	if in.replaying {
+		return nil, errOffTape
+	}
 	if in.loaded == nil {
 		return nil, fmt.Errorf("this session has no daemon connection")
 	}

@@ -164,6 +164,10 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 func (in *interactiveInput) runCommand(line string) { go in.execCommand(line) }
 
 func (in *interactiveInput) execCommand(line string) {
+	if in.replaying {
+		in.execOnTape(line)
+		return
+	}
 	if isCommentVerb(line) {
 		in.commandComment(line)
 		return
@@ -453,6 +457,15 @@ func (in *interactiveInput) complete(line string) []string {
 		current = argv[len(argv)-1]
 		argv = argv[:len(argv)-1]
 	}
+	if len(argv) == 0 && in.replaying {
+		return matchPrefix([]string{
+			cmdkit.Candidate("form", "the form as the tape recorded it (S)"),
+			cmdkit.Candidate("notifications", "what figaro said, and what went wrong (space n)"),
+		}, current)
+	}
+	if in.replaying {
+		return nil
+	}
 	if len(argv) == 0 {
 		verbs := append(buildRouter("figaro", in.loaded).CommandCandidates(),
 			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"),
@@ -528,6 +541,10 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 	if spec == "" {
 		spec = in.currentID()
 	}
+	if in.replaying {
+		in.openTapeForm(name, spec, full, keep)
+		return
+	}
 	if !full {
 		in.progress("…" + name + " " + spec)
 	}
@@ -541,15 +558,19 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 			closeView()
 			return
 		}
-		view.closeConn = closeView
-		view.repaint = in.renderLocked
-		view.change = func() { pitChange(in.lt.tr) }
-		view.clear = func() bool { return pitClear(in.lt.tr) }
-		view.act = func(a rpc.ViewAction) { pitAct(in, a, in.actOnDaemon) }
-		in.mu.Lock()
-		in.installLivePit(name, view, full)
-		in.mu.Unlock()
+		in.installFormView(name, view, closeView, full)
 	}()
+}
+
+func (in *interactiveInput) installFormView(name string, view *formView, closeView func(), full bool) {
+	view.closeConn = closeView
+	view.repaint = in.renderLocked
+	view.change = func() { pitChange(in.lt.tr) }
+	view.clear = func() bool { return pitClear(in.lt.tr) }
+	view.act = func(a rpc.ViewAction) { pitAct(in, a, in.actOnDaemon) }
+	in.mu.Lock()
+	in.installLivePit(name, view, full)
+	in.mu.Unlock()
 }
 
 func (in *interactiveInput) installLivePit(name string, view *formView, full bool) {

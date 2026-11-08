@@ -131,6 +131,9 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		startInline: opt.prompt != "" && !set.listen,
 		intrinsics:  newIntrinsicMirrors(),
 	}
+	if in.replaying {
+		in.tape = opt.ep
+	}
 	// The jumplist starts where the session does, or ^O has nowhere to go back to.
 	in.jumps.visit(opt.figaroID)
 	trackHeld(&in.held)

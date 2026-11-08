@@ -107,6 +107,7 @@ type interactiveInput struct {
 	subjectGen     uint64 // fences the old connection's handlers off the renderer the instant a switch begins
 	subjectDead    chan struct{}
 	replaying      bool
+	tape           sdk.Addr
 	recordedWindow int
 	held           heldSends
 	jumps          ariaJumplist         // guarded by in.mu

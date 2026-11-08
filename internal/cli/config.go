@@ -29,6 +29,7 @@ func MustLoadConfig() *config.Loaded {
 }
 
 func MustHush() *managed.Hush {
+	refuseOffTape("the vault")
 	h, err := boot.Hush()
 	if err != nil {
 		die("%s", err)

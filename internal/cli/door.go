@@ -24,6 +24,7 @@ var (
 )
 
 func resolveDoor() door {
+	refuseOffTape("the daemon")
 	k := doorKey{os.Getenv("FIGARO_TROUPE"), config.DefaultConfigDir(), boot.AngelusRuntimeDir()}
 	doorMu.Lock()
 	defer doorMu.Unlock()
