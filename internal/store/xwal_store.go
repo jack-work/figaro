@@ -1182,6 +1182,29 @@ func (s *XwalStore) Normalize() (int, error) {
 	return done, nil
 }
 
+func (s *XwalStore) CleanTopology(dryRun bool) ([]topo.Stale, error) {
+	if s.tree == nil {
+		return nil, nil
+	}
+	return s.tree.Prune(s.redundantGiven(nil), dryRun)
+}
+
+func (s *XwalStore) redundantGiven(assume map[string]string) func(map[string]string) []topo.Stale {
+	return func(edges map[string]string) []topo.Stale {
+		snap := s.topologySnapshot()
+		parent := make(map[string]string, len(snap.nodes))
+		for _, n := range snap.nodes {
+			parent[n.ID] = n.Parent
+		}
+		for id, up := range assume {
+			if _, ok := parent[id]; ok {
+				parent[id] = up
+			}
+		}
+		return topo.Redundant(parent, edges)
+	}
+}
+
 func (s *XwalStore) DeleteSet(id string) []string { return s.tree.DeleteSet(id) }
 
 // deleteOrphans is the survivors a delete of id would strand. Empty whenever

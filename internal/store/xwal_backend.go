@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	"github.com/jack-work/figaro/internal/topo"
 )
 
 var _ Backend = (*XwalBackend)(nil)
@@ -190,6 +191,10 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 
 // Normalize runs deferred topology work now.
 func (b *XwalBackend) Normalize() (int, error) { return b.store.Normalize() }
+
+func (b *XwalBackend) CleanTopology(dryRun bool) ([]topo.Stale, error) {
+	return b.store.CleanTopology(dryRun)
+}
 
 func (b *XwalBackend) Store() *XwalStore { return b.store }
 
