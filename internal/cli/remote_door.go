@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,6 +22,8 @@ import (
 )
 
 const troupeProbeTimeout = 5 * time.Second
+
+var troupeHTTPClient *http.Client
 
 type doorRecord struct {
 	Node     string `json:"node"`
@@ -121,10 +124,19 @@ func (d troupeDoor) endpoint(own string) (transport.Endpoint, string, error) {
 		if _, err := bearer.Resolve(); err != nil {
 			continue
 		}
-		return transport.WSSEndpoint(tr.URL, bearer), tr.Name, nil
+		ep := transport.WSSEndpoint(tr.URL, renewingBearer{Bearer: bearer, name: tr.Name})
+		ep.HTTPClient = troupeHTTPClient
+		return ep, tr.Name, nil
 	}
 	return transport.Endpoint{}, ps[0].Name, troupeLoginLine(ps[0].Name)
 }
+
+type renewingBearer struct {
+	transport.Bearer
+	name string
+}
+
+func (b renewingBearer) Renewal() string { return troupeLoginLine(b.name).Error() }
 
 func troupeLoginLine(name string) error { return fmt.Errorf("figaro troupe login %s", name) }
 

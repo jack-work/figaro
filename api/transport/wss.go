@@ -45,11 +45,20 @@ func upgrade(ep Endpoint, retried bool) (*websocket.Conn, error) {
 	if err == nil {
 		return c, nil
 	}
-	if resp != nil && resp.StatusCode == http.StatusUnauthorized && ep.Bearer != nil && !retried {
-		if ierr := ep.Bearer.Invalidate(token); ierr != nil {
-			return nil, errors.Join(fmt.Errorf("%s: refused the credential (401)", ep.Address), ierr)
+	if resp != nil && resp.StatusCode == http.StatusUnauthorized && ep.Bearer != nil {
+		r, renewable := ep.Bearer.(Renewable)
+		if retried && renewable {
+			return nil, errors.New(r.Renewal())
 		}
-		return upgrade(ep, true)
+		if !retried {
+			if ierr := ep.Bearer.Invalidate(token); ierr != nil {
+				if renewable {
+					return nil, errors.New(r.Renewal())
+				}
+				return nil, errors.Join(fmt.Errorf("%s: refused the credential (401)", ep.Address), ierr)
+			}
+			return upgrade(ep, true)
+		}
 	}
 	if resp != nil {
 		return nil, fmt.Errorf("%s: upgrade refused: HTTP %d", ep.Address, resp.StatusCode)

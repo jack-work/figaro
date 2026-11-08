@@ -22,6 +22,10 @@ type Bearer interface {
 	Invalidate(token string) error
 }
 
+type Renewable interface {
+	Renewal() string
+}
+
 func UnixEndpoint(path string) Endpoint {
 	return Endpoint{Scheme: "unix", Address: path}
 }

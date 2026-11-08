@@ -2,8 +2,11 @@ package cli
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -11,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/boot"
+	"github.com/jack-work/figaro/sdk"
 )
 
 const (
@@ -36,6 +40,7 @@ func newRemoteRig(t *testing.T, config string, profiles map[string]string) *remo
 	t.Setenv("FIGARO_CACHE_DIR", t.TempDir())
 	t.Setenv("FIGARO_RUNTIME_DIR", t.TempDir())
 	t.Setenv("FIGARO_TROUPE", "")
+	t.Setenv("FIGARO_ARIA", "")
 	require.NoError(t, os.WriteFile(filepath.Join(cfg, "config.toml"), []byte(config), 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Join(cfg, "troupes"), 0o700))
 	for name, url := range profiles {
@@ -241,4 +246,26 @@ func TestTheOwnNodeReadWritesNothing(t *testing.T) {
 	require.Equal(t, "", ownNode())
 	_, err := os.Stat(filepath.Join(boot.AriaRoot(), "node-id"))
 	require.True(t, os.IsNotExist(err), "node-id must not be created: %v", err)
+}
+
+// A login the door stops taking after the node was learned still ends in
+// the one line that renews it.
+func TestADoorRefusingTheLoginNamesTheLoginCommand(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	url := "wss://" + strings.TrimPrefix(srv.URL, "https://") + "/"
+	r := newRemoteRig(t, "", map[string]string{"spain": url})
+	r.own(nodeGluck)
+	require.NoError(t, writeDoorCache(map[string]doorRecord{url: {Node: nodeSpain}}))
+	old := troupeHTTPClient
+	troupeHTTPClient = srv.Client()
+	t.Cleanup(func() { troupeHTTPClient = old })
+
+	a, err := doorFor(nodeSpain + "/abc")
+	require.NoError(t, err)
+	require.Zero(t, r.probeCount())
+	_, err = sdk.DialAria(a, nil)
+	require.EqualError(t, err, "figaro troupe login spain")
 }

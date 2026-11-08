@@ -120,3 +120,23 @@ func TestWSSRefusesAPlainURL(t *testing.T) {
 		t.Fatal("a ws:// url was dialed as wss")
 	}
 }
+
+type renewableBearer struct{ rotatingBearer }
+
+func (*renewableBearer) Renewal() string { return "figaro troupe login far" }
+
+// A door that keeps refusing a bearer which names its renewal gets that
+// command as the whole error, after the one retry.
+func TestWSSNamesTheRenewalWhenTheDoorKeepsRefusing(t *testing.T) {
+	srv, _ := echoDoor(t, "never")
+	b := &renewableBearer{}
+	ep := WSSEndpoint(wssURL(srv), b)
+	ep.HTTPClient = srv.Client()
+	_, err := DialRaw(ep)
+	if err == nil || err.Error() != "figaro troupe login far" {
+		t.Fatalf("err = %v, want the renewal alone", err)
+	}
+	if b.invalidated.Load() != 1 {
+		t.Fatalf("invalidated %d times, want exactly one retry", b.invalidated.Load())
+	}
+}
