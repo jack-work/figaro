@@ -2,8 +2,8 @@
 list       = "data"
 id         = ["id"]
 name       = ["name"]
-context    = ["billing.token_prices.default.max_prompt_tokens", "capabilities.limits.max_context_window_tokens"]
-long       = ["billing.token_prices.long_context.max_prompt_tokens", "capabilities.limits.max_context_window_tokens"]
+context    = ["capabilities.limits.max_prompt_tokens", "billing.token_prices.default.max_prompt_tokens", "capabilities.limits.max_context_window_tokens"]
+long       = ["capabilities.limits.max_prompt_tokens", "billing.token_prices.long_context.max_prompt_tokens", "capabilities.limits.max_context_window_tokens"]
 max_output = ["capabilities.limits.max_output_tokens"]
 images     = ["capabilities.supports.vision"]
 tools      = ["capabilities.supports.tool_calls"]

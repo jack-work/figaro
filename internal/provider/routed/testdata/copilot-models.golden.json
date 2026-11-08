@@ -19,32 +19,32 @@
     {
       "id": "gpt-5.4-nano",
       "name": "GPT-5.4 nano",
-      "context": 400000,
-      "long": 400000,
+      "context": 272000,
+      "long": 272000,
       "max_output": 128000,
       "hidden": true
     },
     {
       "id": "gpt-6-luna",
       "name": "GPT-6 Luna",
-      "context": 1000000,
-      "long": 1000000,
+      "context": 872000,
+      "long": 872000,
       "max_output": 128000,
       "hidden": false
     },
     {
       "id": "grok-4.7",
       "name": "Grok 4.7",
-      "context": 500000,
-      "long": 500000,
+      "context": 372000,
+      "long": 372000,
       "max_output": 128000,
       "hidden": false
     },
     {
       "id": "mai-code-2",
       "name": "MAI-Code-2.x1",
-      "context": 1050000,
-      "long": 1050000,
+      "context": 922000,
+      "long": 922000,
       "max_output": 128000,
       "hidden": false
     }
