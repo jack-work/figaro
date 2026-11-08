@@ -50,6 +50,7 @@ type Spec struct {
 	ModelPrefix string
 	Caps        provider.CacheCaps
 	MarkMode    provider.MarkMode
+	TextOnly    bool
 }
 
 func (s Spec) Validate() error {

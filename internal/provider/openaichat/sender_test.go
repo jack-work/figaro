@@ -10,13 +10,14 @@ import (
 
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 const forkID = "38f4563ac90d4206364a64c0a4f4c4fa"
 
 func encodedInput(t *testing.T, c message.Content) []byte {
 	t.Helper()
-	out, err := encodeMessage(message.Message{Role: message.RoleInput, Content: []message.Content{c}}, true, nil)
+	out, err := encodeMessage(message.Message{Role: message.RoleInput, Content: []message.Content{c}}, true, provider.Route{}, nil)
 	require.NoError(t, err)
 	raw, err := json.Marshal(out)
 	require.NoError(t, err)

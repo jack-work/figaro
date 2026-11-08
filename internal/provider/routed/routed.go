@@ -158,6 +158,7 @@ func (p *Provider) chatBackend() (*openaichat.Provider, error) {
 		Caps:         p.spec.Caps,
 		Headers:      p.spec.headersFor(Chat),
 		AuthOptional: p.spec.AuthOptional,
+		TextOnly:     p.spec.TextOnly,
 	}
 	c, err := openaichat.New(p.knobsNow(), p.resolver, route, p.opener(Chat))
 	if err != nil {

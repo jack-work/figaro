@@ -73,7 +73,10 @@ func (p *Provider) Fingerprint() string {
 	if p.Route.MarkPlan(mode).Blocks {
 		shape = "blocks"
 	}
-	return "openai-chat/" + p.Route.Name + "/" + shape + "/v5"
+	if p.Route.TextOnly {
+		shape += "-text"
+	}
+	return "openai-chat/" + p.Route.Name + "/" + shape + "/v6"
 }
 
 func (p *Provider) SetModel(model string) {
@@ -298,7 +301,7 @@ func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]js
 	reminders := p.renderPatches(msg.Patches, prevSnapshot)
 	reminders = append(reminders, provider.StudyReminderTexts(msg, prevSnapshot)...)
 	reminders = append(reminders, provider.ForkReminderTexts(msg, prevSnapshot)...)
-	msgs, err := encodeMessage(msg, p.plan().Blocks, reminders)
+	msgs, err := encodeMessage(msg, p.plan().Blocks, p.Route, reminders)
 	if err != nil {
 		return nil, err
 	}

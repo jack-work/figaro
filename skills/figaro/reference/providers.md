@@ -42,6 +42,7 @@ base_url      = "http://localhost:4000/v1"
 api_key       = "..."                       # or the provider's env var
 cache_markers = "trusted"                   # chat only; see cache-control.md
 messages_path = "/v1/messages"              # when base_url does not end in /v1
+text_only     = true                        # chat only: send images as a text stand-in
 headers       = { "X-Team" = "figaro" }     # every request, every transport
 
 [transport_headers.responses]               # one transport only
