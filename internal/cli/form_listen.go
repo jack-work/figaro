@@ -237,6 +237,7 @@ type formView struct {
 	unfolded  map[string]bool
 	mounts    map[string]*viewMount
 	opener    mountOpener
+	node      string
 	seeks     bool
 	seeking   string
 	focus     func(id string)
@@ -425,12 +426,12 @@ func (v *formView) Items(width int) []pitRow {
 
 	out := make([]pitRow, 0, len(v.rows)+1)
 	out = append(out, noticeRows(v.notice, width)...)
-	var mounted []pitRow
-	mountedUnder := ""
+	var held []heldMount
 	pointers := map[string]bool{}
 	for _, n := range v.rows {
-		if mounted != nil && !strings.HasPrefix(n.path, mountedUnder+".") {
-			out, mounted = append(out, mounted...), nil
+		for len(held) > 0 && !strings.HasPrefix(n.path, held[len(held)-1].under+".") {
+			out = append(out, held[len(held)-1].rows...)
+			held = held[:len(held)-1]
 		}
 		n.width = width
 		row := pitRow{textFrom: n, yankFrom: n, id: n.path}
@@ -459,9 +460,9 @@ func (v *formView) Items(width int) []pitRow {
 		if _, head := shape.head(n.path); head && shape.mountKey() != "" {
 			pointers[n.path] = true
 		}
-		if mount := shape.mountKey(); mount != "" && v.open[n.path] {
+		if mount := shape.mountKey(); mount != "" && v.open[n.path] && !v.through[n.path] {
 			if _, head := shape.head(n.path); head {
-				mounted, mountedUnder = v.mountRowsLocked(n.path, leafText(n, mount), n.cont, width), n.path
+				held = append(held, heldMount{under: n.path, rows: v.mountRowsLocked(n.path, leafText(n, mount), n.cont, width)})
 			}
 		}
 		if !n.leaf() || !v.open[n.path] {
@@ -476,11 +477,18 @@ func (v *formView) Items(width int) []pitRow {
 			})
 		}
 	}
-	out = append(out, mounted...)
+	for i := len(held) - 1; i >= 0; i-- {
+		out = append(out, held[i].rows...)
+	}
 	v.dropMountsLocked(pointers)
 	v.items, v.itemsKey = out, key
 	v.rev++
 	return out
+}
+
+type heldMount struct {
+	under string
+	rows  []pitRow
 }
 
 func (v *formView) keyDeniedLocked(path string) bool {

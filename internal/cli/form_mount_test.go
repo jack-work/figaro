@@ -38,6 +38,7 @@ type fakeMounts struct {
 	sent   []string
 	kick   chan struct{}
 	hint   *rpc.FormView
+	plain  map[string]bool
 }
 
 func newFakeMounts() *fakeMounts {
@@ -62,7 +63,9 @@ func (f *fakeMounts) open(addr string) (*formView, actOn, func(), <-chan struct{
 	if f.hint != nil {
 		hint = f.hint
 	}
-	v.setView(hint)
+	if !f.plain[addr] {
+		v.setView(hint)
+	}
 	send := func(_ context.Context, method string, _ json.RawMessage, target string) error {
 		f.mu.Lock()
 		f.sent = append(f.sent, addr+" "+method+" "+target)

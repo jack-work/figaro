@@ -41,6 +41,13 @@ func (m mountedText) rowDims() (int, int) {
 	return lead + len(m.indent), tail
 }
 
+func (v *formView) onNode(addr string) string {
+	if strings.Contains(addr, rpc.NodeSeparator) {
+		return addr
+	}
+	return qualifiedIn(v.node, addr)
+}
+
 func qualifiedIn(node, id string) string {
 	if node == "" || id == "" {
 		return id
@@ -52,6 +59,7 @@ func (v *formView) mountRowsLocked(path, addr, cont string, width int) []pitRow 
 	if v.opener == nil || addr == "" {
 		return nil
 	}
+	addr = v.onNode(addr)
 	if v.mounts == nil {
 		v.mounts = map[string]*viewMount{}
 	}
@@ -157,6 +165,7 @@ func (v *formView) openMount(path string, m *viewMount) {
 		if m.node == "" {
 			view.subject = v.subject
 		}
+		view.opener, view.node = v.opener, m.node
 		m.view, m.send, m.close = view, send, closeFn
 	}
 	seek := err == nil && v.seeking == path
@@ -192,6 +201,7 @@ func (v *formView) loadMount(path string) {
 	if !ok || json.Unmarshal(raw, &addr) != nil || addr == "" {
 		return
 	}
+	addr = v.onNode(addr)
 	node, _ := rpc.SplitNode(addr)
 	m := &viewMount{addr: addr, node: node, note: "loading " + addr}
 	v.mu.Lock()
@@ -264,6 +274,15 @@ func (v *formView) split(id string) (*viewMount, string) {
 		return nil, id
 	}
 	return m, id[i+len(mountSep):]
+}
+
+func (v *formView) mountedView(path string) *formView {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if m := v.mounts[path]; m != nil {
+		return m.view
+	}
+	return nil
 }
 
 func (v *formView) forRow(id string) *formView {
