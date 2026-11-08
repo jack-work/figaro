@@ -24,11 +24,13 @@ in
       default = false;
       description = ''
         After a switch that changes the figaro build, restart the running
-        angelus on the new build, keeping its pid bindings, and restart every
-        figaro running in a tmux pane: the pane's own process with
-        respawn-pane, a shell's command typed again once that shell holds the
-        terminal. Panes without figaro, piped or --stdin clients and anything
-        outside tmux are named and left alone. When turns are still running
+        angelus on the new build, keeping its pid bindings, and restart each
+        figaro in a tmux pane that cannot reconnect by itself (builds before
+        0.54.3): the pane's own process with respawn-pane, a shell's command
+        typed again once that shell holds the terminal. A client that sent a
+        prompt comes back as figaro listen on its aria, never sending the
+        prompt again. Panes without figaro, piped or --stdin clients and
+        anything outside tmux are named and left alone. When turns are still running
         after restartWait seconds nothing restarts; the switch never fails
         because of this step.
       '';

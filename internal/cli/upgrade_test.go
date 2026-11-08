@@ -174,15 +174,19 @@ func TestUpgradeCollectsUnconfirmedEditLines(t *testing.T) {
 // pane is named instead. argv here is what any local process can choose.
 func TestUpgradeNeverTypesACommandLineThatHoldsAControlCharacter(t *testing.T) {
 	for _, arg := range []string{"x\x03rm -rf ~\r", "a\rb", "\x1b[200~", "csi\u009bJ", "del\x7f", "nl\n", "bad\xffutf8"} {
-		c := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Argv: []string{"figaro", "send", "--", arg}}
+		c := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Argv: []string{"figaro", "listen", arg}}
 		if s := planClient(c); s.Action != upgradeLeave {
 			t.Errorf("%q: got %s (%s), want leave", arg, s.Action, s.Reason)
+		}
+		sent := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Attends: "abc", Argv: []string{"figaro", "send", "--", arg}}
+		if s := planClient(sent); s.Action == upgradeRespawn && holdsControl(strings.Join(s.Argv, " ")) {
+			t.Errorf("%q: would type %q", arg, s.Argv)
 		}
 	}
 	if got := shownArgv([]string{"figaro\x03rm", "\x1b]0;x\x07", "\u009b2J"}); holdsControl(got) {
 		t.Errorf("the report would write a control character to the terminal: %q", got)
 	}
-	clean := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Argv: []string{"figaro", "send", "--", "plain words, ünïcode, it's fine"}}
+	clean := paneClient{Pane: "%9", ShellPID: 200, Shell: "bash", Argv: []string{"figaro", "listen", "ünïcode-it's-fine"}}
 	if s := planClient(clean); s.Action != upgradeRespawn {
 		t.Errorf("a printable command line is still replayed: got %s (%s)", s.Action, s.Reason)
 	}
@@ -202,7 +206,7 @@ func TestUpgradeNeverCarriesASecretIntoTheTmuxCommandLine(t *testing.T) {
 	}
 	kept, dropped := replayableEnv(environ)
 	c := paneClient{Pane: "%2", Own: true, Cwd: "/home/g", Env: kept, DroppedEnv: dropped, Argv: []string{"figaro", "form", "listen", "abc"}}
-	argv := strings.Join(respawnArgs(c), "\x00")
+	argv := strings.Join(respawnArgs(upgradeStep{Client: c, Argv: c.Argv}), "\x00")
 	for _, secret := range []string{"sk-live-0123456789", "correct horse battery staple", "maybe-secret", "FIGARO_GATEWAY_API_KEY", "FIGARO_HUSH_PASSPHRASE"} {
 		if strings.Contains(argv, secret) {
 			t.Errorf("%q reached the tmux command line: %q", secret, argv)
@@ -258,10 +262,11 @@ func TestUpgradeRemembersTheBuildItLastSwitchedTo(t *testing.T) {
 func TestUpgradeNeverRespawnsAOneWordCommandThroughAShell(t *testing.T) {
 	word := "figaro;touch ${HOME}/pwned"
 	c := paneClient{Pane: "%2", Own: true, Cwd: "/home/g", Argv: []string{word}}
-	if s := planClient(c); s.Action != upgradeRespawn {
+	s := planClient(c)
+	if s.Action != upgradeRespawn {
 		t.Fatalf("a one-word command line is still respawned: got %s (%s)", s.Action, s.Reason)
 	}
-	args := respawnArgs(c)
+	args := respawnArgs(s)
 	i := 0
 	for i < len(args) && args[i] != "--" {
 		i++
@@ -284,15 +289,88 @@ func TestUpgradeNeverRespawnsAOneWordCommandThroughAShell(t *testing.T) {
 // respawn on its own: the respawn must carry it.
 func TestUpgradeRespawnCarriesAnOwnPanesAttendance(t *testing.T) {
 	c := paneClient{Pane: "%3", Own: true, Argv: []string{"figaro", "listen"}, Cwd: "/tmp", Attends: "0123456789abcdef0123456789abcdef"}
-	args := respawnArgs(c)
+	args := respawnArgs(upgradeStep{Client: c, Argv: c.Argv})
 	want := handedAttendanceEnv + "=0123456789abcdef0123456789abcdef"
 	if !slices.Contains(args, want) {
 		t.Fatalf("respawn-pane %v does not hand the attendance on (%s)", args, want)
 	}
 	c.Attends = ""
-	for _, a := range respawnArgs(c) {
+	for _, a := range respawnArgs(upgradeStep{Client: c, Argv: c.Argv}) {
 		if strings.HasPrefix(a, handedAttendanceEnv+"=") {
-			t.Fatalf("an unattended pane was handed an attendance: %v", respawnArgs(c))
+			t.Fatalf("an unattended pane was handed an attendance: %v", a)
 		}
+	}
+}
+
+// Gluck's 0.54.4 -> 0.55.6 upgrade planned to type `figaro -- <prompt>` into
+// three panes again, which sends the prompt a second time. A client that
+// sent a prompt comes back as a listen on the aria it sent to, and one that
+// cannot name that aria is left alone.
+func TestUpgradeNeverSendsAPromptAgain(t *testing.T) {
+	bound := "0123456789abcdef0123456789abcdef"
+	cases := []struct {
+		name string
+		c    paneClient
+		want []string
+	}{
+		{"bare form in a shell", paneClient{Pane: "%1", ShellPID: 10, Shell: "fish", Attends: bound, Argv: []string{"figaro", "--", "ship it"}}, []string{"figaro", "listen", bound}},
+		{"bare form as the pane", paneClient{Pane: "%2", Own: true, Attends: bound, Argv: []string{"figaro", "-l", "--", "ship it"}}, []string{"figaro", "listen", bound}},
+		{"send --id names its aria", paneClient{Pane: "%3", ShellPID: 10, Shell: "bash", Attends: bound, Argv: []string{"figaro", "send", "--id", "abc12", "--", "ship it"}}, []string{"figaro", "listen", "abc12"}},
+		{"send's positional target", paneClient{Pane: "%4", ShellPID: 10, Shell: "bash", Argv: []string{"figaro", "--no-bind", "qua", "-O", "sonn5", "able-baker", "--", "ship it"}}, []string{"figaro", "listen", "able-baker"}},
+		{"bare --id=", paneClient{Pane: "%5", ShellPID: 10, Shell: "bash", Argv: []string{"figaro", "--id=abc12", "--", "ship it"}}, []string{"figaro", "listen", "abc12"}},
+		{"fork follows the binding it moved", paneClient{Pane: "%6", ShellPID: 10, Shell: "bash", Attends: bound, Argv: []string{"figaro", "fork", "abc12", "--", "ship it"}}, []string{"figaro", "listen", bound}},
+	}
+	for _, tc := range cases {
+		s := planClient(tc.c)
+		if s.Action != upgradeRespawn || !slices.Equal(s.Argv, tc.want) {
+			t.Errorf("%s: got %s %q (%s), want respawn %q", tc.name, s.Action, s.Argv, s.Reason, tc.want)
+		}
+		if slices.Contains(s.Argv, "ship it") || slices.Contains(s.Argv, "--") {
+			t.Errorf("%s: the prompt would be sent again: %q", tc.name, s.Argv)
+		}
+		if tc.c.Own && slices.Contains(respawnArgs(s), "ship it") {
+			t.Errorf("%s: respawn-pane carries the prompt: %q", tc.name, respawnArgs(s))
+		}
+	}
+	lost := paneClient{Pane: "%7", ShellPID: 10, Shell: "bash", Argv: []string{"figaro", "--", "ship it"}}
+	if s := planClient(lost); s.Action != upgradeLeave {
+		t.Errorf("a prompt with no aria to listen to is left: got %s %q", s.Action, s.Argv)
+	}
+	listen := paneClient{Pane: "%8", ShellPID: 10, Shell: "bash", Argv: []string{"figaro", "listen", "abc12"}}
+	if s := planClient(listen); s.Action != upgradeRespawn || !slices.Equal(s.Argv, listen.Argv) {
+		t.Errorf("a listen is typed again as it was: got %s %q", s.Action, s.Argv)
+	}
+}
+
+// Since 0.54.3 a listen, and a send whose pager is up, reconnects to the next
+// angelus on its own; 31 such clients did so in Gluck's upgrade while the
+// plan restarted 14 of them.
+func TestUpgradeKeepsAClientThatFollowsTheNewAngelusByItself(t *testing.T) {
+	for _, release := range []string{"0.54.3", "0.55.6", "v0.55.0", "1.0.0"} {
+		c := paneClient{Pane: "%1", ShellPID: 10, Shell: "bash", Release: release, Argv: []string{"figaro", "--", "ship it"}}
+		if s := planClient(c); s.Action != upgradeKeep {
+			t.Errorf("%s: got %s (%s), want keep", release, s.Action, s.Reason)
+		}
+	}
+	for _, release := range []string{"0.54.2", "v0.53.9", "", "(devel)", "dev-38a566469655"} {
+		c := paneClient{Pane: "%1", ShellPID: 10, Shell: "bash", Release: release, Argv: []string{"figaro", "listen"}}
+		if s := planClient(c); s.Action != upgradeRespawn {
+			t.Errorf("%q: got %s (%s), want respawn", release, s.Action, s.Reason)
+		}
+	}
+}
+
+func TestUpgradeAsksEachBuildItsReleaseOnce(t *testing.T) {
+	clients := []paneClient{{Exe: "/a/figaro"}, {Exe: "/b/figaro"}, {Exe: "/a/figaro"}}
+	asked := map[string]int{}
+	recordReleases(clients, func(exe string) string {
+		asked[exe]++
+		return map[string]string{"/a/figaro": "0.54.2", "/b/figaro": "0.55.6"}[exe]
+	})
+	if asked["/a/figaro"] != 1 || asked["/b/figaro"] != 1 {
+		t.Errorf("asked %v", asked)
+	}
+	if clients[0].Release != "0.54.2" || clients[1].Release != "0.55.6" || clients[2].Release != "0.54.2" {
+		t.Errorf("got %+v", clients)
 	}
 }

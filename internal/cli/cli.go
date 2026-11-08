@@ -1728,7 +1728,7 @@ error of its last attempt if that failed.
 		Group:  "System",
 		Hidden: true,
 		Usage:  "upgrade --to <figaro> [-n] [--if-changed] [--wait <seconds>] [--force] [--tmux-socket <name>]",
-		Short:  "Restart the angelus and the figaro tmux panes on a build already installed",
+		Short:  "Restart the angelus on a build already installed, and the tmux panes that cannot reconnect",
 		Flags: []cmdkit.FlagDef{
 			{Long: "to", Description: "The installed figaro binary to move to"},
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Print the plan and change nothing"},

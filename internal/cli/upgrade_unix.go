@@ -22,14 +22,14 @@ import (
 )
 
 type procInfo struct {
-	PID, PPID, PGRP, TPGID int
-	Exe                    string
-	Argv                   []string
-	Cwd                    string
-	Stdin                  string
-	Env                    []string
-	DroppedEnv             []string
-	Daemon                 bool
+	PID, PPID, PGRP, SID, TPGID int
+	Exe                         string
+	Argv                        []string
+	Cwd                         string
+	Stdin                       string
+	Env                         []string
+	DroppedEnv                  []string
+	Daemon                      bool
 }
 
 type procTable struct {
@@ -101,6 +101,7 @@ func clientOf(pane tmuxPane, p procInfo, procs procTable) paneClient {
 	c := paneClient{
 		Pane:       pane.ID,
 		PID:        p.PID,
+		SID:        p.SID,
 		Exe:        p.Exe,
 		Argv:       p.Argv,
 		Cwd:        p.Cwd,
@@ -157,6 +158,7 @@ func readProc(pid int) (procInfo, bool) {
 	}
 	p.PPID, _ = strconv.Atoi(fields[1])
 	p.PGRP, _ = strconv.Atoi(fields[2])
+	p.SID, _ = strconv.Atoi(fields[3])
 	p.TPGID, _ = strconv.Atoi(fields[5])
 	p.Exe, _ = os.Readlink(filepath.Join(dir, "exe"))
 	if raw, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
@@ -349,7 +351,8 @@ func runUpgrade(o upgradeOptions) {
 		die("read processes: %s", err)
 	}
 	clients, skipped := findClients(panes, procs, os.Getpid())
-	recordOwnAttendance(clients)
+	recordReleases(clients, releaseOf)
+	recordAttendance(clients)
 	steps := make([]upgradeStep, len(clients))
 	for i, c := range clients {
 		steps[i] = planClient(c)
@@ -399,18 +402,32 @@ func runUpgrade(o upgradeOptions) {
 	fmt.Fprintf(stderrw, "figaro %s is running\n", orUnknown(toRelease))
 }
 
-func recordOwnAttendance(clients []paneClient) {
+func recordReleases(clients []paneClient, release func(exe string) string) {
+	known := map[string]string{}
+	for i := range clients {
+		exe := clients[i].Exe
+		r, ok := known[exe]
+		if !ok {
+			r = release(exe)
+			known[exe] = r
+		}
+		clients[i].Release = r
+	}
+}
+
+func recordAttendance(clients []paneClient) {
 	cli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return
 	}
 	defer cli.Close()
 	for i := range clients {
-		if !clients[i].Own {
-			continue
+		session := clients[i].SID
+		if session <= 0 {
+			session = clients[i].PID
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		resp, err := cli.Resolve(ctx, clients[i].PID)
+		resp, err := cli.Resolve(ctx, session)
 		cancel()
 		if err == nil && resp.Found {
 			clients[i].Attends = resp.FigaroID
@@ -487,7 +504,8 @@ func unconfirmedLines(pane, screen string) []string {
 	return lines
 }
 
-func respawnArgs(c paneClient) []string {
+func respawnArgs(s upgradeStep) []string {
+	c := s.Client
 	args := []string{"respawn-pane", "-k", "-t", c.Pane, "-c", c.Cwd}
 	for _, kv := range c.Env {
 		args = append(args, "-e", kv)
@@ -496,20 +514,24 @@ func respawnArgs(c paneClient) []string {
 		args = append(args, "-e", handedAttendanceEnv+"="+c.Attends)
 	}
 	args = append(args, "--")
-	if len(c.Argv) == 1 {
+	if len(s.Argv) == 1 {
 		args = append(args, "env", "--")
 	}
-	return append(args, c.Argv...)
+	return append(args, s.Argv...)
 }
 
 func (o upgradeOptions) respawnClient(s upgradeStep) string {
 	c := s.Client
 	line := shownArgv(c.Argv)
-	if s.Action == upgradeLeave {
+	switch s.Action {
+	case upgradeLeave:
 		return fmt.Sprintf("left %s (%s): %s; restart it yourself", c.Pane, line, s.Reason)
+	case upgradeKeep:
+		return fmt.Sprintf("kept %s (%s): %s", c.Pane, line, s.Reason)
 	}
+	line = shownArgv(s.Argv)
 	if c.Own {
-		err := o.tmux(respawnArgs(c)...).Run()
+		err := o.tmux(respawnArgs(s)...).Run()
 		_ = o.tmux("set-option", "-p", "-u", "-t", c.Pane, "remain-on-exit").Run()
 		if err != nil {
 			return fmt.Sprintf("left %s (%s): respawn-pane failed: %s", c.Pane, line, err)
@@ -523,7 +545,7 @@ func (o upgradeOptions) respawnClient(s upgradeStep) string {
 	if !ok || shell.TPGID != shell.PGRP {
 		return fmt.Sprintf("left %s (%s): its shell does not hold the terminal; type the command again", c.Pane, line)
 	}
-	if err := o.tmux("send-keys", "-t", c.Pane, "-l", commandLineFor(c.Argv, c.Shell)).Run(); err != nil {
+	if err := o.tmux("send-keys", "-t", c.Pane, "-l", commandLineFor(s.Argv, c.Shell)).Run(); err != nil {
 		return fmt.Sprintf("left %s (%s): send-keys failed: %s", c.Pane, line, err)
 	}
 	if err := o.tmux("send-keys", "-t", c.Pane, "Enter").Run(); err != nil {

@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/jack-work/figaro/internal/update"
 )
 
 type upgradeOptions struct {
@@ -22,7 +25,9 @@ type paneClient struct {
 	Shell      string
 	ShellPID   int
 	PID        int
+	SID        int
 	Exe        string
+	Release    string
 	Argv       []string
 	Cwd        string
 	Env        []string
@@ -37,11 +42,15 @@ type upgradeAction int
 const (
 	upgradeRespawn upgradeAction = iota
 	upgradeLeave
+	upgradeKeep
 )
 
 func (a upgradeAction) String() string {
-	if a == upgradeRespawn {
+	switch a {
+	case upgradeRespawn:
 		return "respawn"
+	case upgradeKeep:
+		return "keep"
 	}
 	return "leave"
 }
@@ -49,24 +58,77 @@ func (a upgradeAction) String() string {
 type upgradeStep struct {
 	Client paneClient
 	Action upgradeAction
+	Argv   []string
 	Reason string
 }
 
-func planClient(c paneClient) upgradeStep {
-	if why := unreplayable(c); why != "" {
-		return upgradeStep{Client: c, Action: upgradeLeave, Reason: why}
-	}
-	if c.Own {
-		return upgradeStep{Client: c, Action: upgradeRespawn, Reason: "the pane's own process: respawn-pane"}
-	}
-	return upgradeStep{Client: c, Action: upgradeRespawn, Reason: "typed again into " + c.Shell + " once it holds the foreground"}
+const firstReconnectingRelease = "0.54.3"
+
+func reconnectsByItself(release string) bool {
+	return update.Compare(release, firstReconnectingRelease) >= 0
 }
 
-func unreplayable(c paneClient) string {
+func planClient(c paneClient) upgradeStep {
+	if reconnectsByItself(c.Release) {
+		return upgradeStep{Client: c, Action: upgradeKeep, Reason: "figaro " + c.Release + " follows the new angelus by itself"}
+	}
+	argv, why := replayArgv(c)
+	if why == "" {
+		why = unreplayable(c, argv)
+	}
+	if why != "" {
+		return upgradeStep{Client: c, Action: upgradeLeave, Reason: why}
+	}
+	how := "typed again into " + c.Shell + " once it holds the foreground"
+	if c.Own {
+		how = "the pane's own process: respawn-pane"
+	}
+	if !slices.Equal(argv, c.Argv) {
+		how = "it sent a prompt, so it opens " + shownArgv(argv) + " rather than send it again; " + how
+	}
+	return upgradeStep{Client: c, Action: upgradeRespawn, Argv: argv, Reason: how}
+}
+
+func replayArgv(c paneClient) ([]string, string) {
+	if len(c.Argv) == 0 {
+		return nil, "its command line is unreadable"
+	}
+	args := extractNoBindFlag(append([]string(nil), c.Argv[1:]...))
+	if !hasDashBoundary(args) {
+		return c.Argv, ""
+	}
+	aria := promptTarget(args)
+	if aria == "" {
+		aria = c.Attends
+	}
+	if aria == "" {
+		return nil, "it sent a prompt and attends no aria to listen to; open it again with figaro listen <aria>"
+	}
+	return []string{c.Argv[0], "listen", aria}, ""
+}
+
+func promptTarget(args []string) string {
+	switch {
+	case args[0] == "send" || args[0] == "qua":
+		args = args[1:]
+	case !strings.HasPrefix(args[0], "-"):
+		return ""
+	}
+	opts, _, err := extractSendFlags(args)
+	if err != nil {
+		return ""
+	}
+	if opts.id != "" {
+		return opts.id
+	}
+	return opts.target
+}
+
+func unreplayable(c paneClient, argv []string) string {
 	if c.StdinPiped {
 		return "its input is piped, so the command cannot be typed again"
 	}
-	for _, a := range c.Argv {
+	for _, a := range argv {
 		if a == "--stdin" {
 			return "it reads its prompt from stdin, so the command cannot be typed again"
 		}
@@ -74,10 +136,7 @@ func unreplayable(c paneClient) string {
 			return "its command line holds a control character, which a terminal would act on before the shell reads the line"
 		}
 	}
-	if len(c.Argv) == 0 {
-		return "its command line is unreadable"
-	}
-	if c.Own && len(c.Argv) == 1 && strings.Contains(c.Argv[0], "=") {
+	if c.Own && len(argv) == 1 && strings.Contains(argv[0], "=") {
 		return "its command name holds '=', which env would take for a variable"
 	}
 	if !c.Own && c.ShellPID == 0 {

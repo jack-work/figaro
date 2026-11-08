@@ -485,11 +485,14 @@ A home-manager install can do this on every switch instead: the flake's
 `homeManagerModules.default` takes `programs.figaro.restartOnSwitch = true`.
 After a switch that changes the figaro build, the activation step waits up
 to `restartWait` seconds for running turns, restarts the angelus on the new
-build with its bindings kept, and restarts every figaro running in a tmux
-pane (the pane's own process with respawn-pane, a shell's command typed again
-once the shell holds the terminal). It names what it leaves (piped input,
-`--stdin`, control characters in the command line, a busy shell, telefono)
-and never fails the switch. The NixOS `services.figaro` module needs none of
+build with its bindings kept, and restarts each figaro in a tmux pane that
+cannot follow it alone (the pane's own process with respawn-pane, a shell's
+command typed again once the shell holds the terminal). A client from 0.54.3
+on reconnects by itself and is kept running. A client that sent a prompt is
+never typed again: it comes back as `figaro listen <aria>` on the aria it
+sent to. It names what it leaves (piped input, `--stdin`, control characters
+in the command line, a prompt with no aria to listen to, a busy shell,
+telefono) and never fails the switch. The NixOS `services.figaro` module needs none of
 this: systemd restarts the unit when the package changes.
 
 ## Versions on disk: which one to bump
