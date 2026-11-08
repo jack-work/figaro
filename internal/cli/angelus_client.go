@@ -107,6 +107,11 @@ func ensureAngelus() {
 	if err := cmd.Start(); err != nil {
 		die("start angelus: %s", err)
 	}
+	if placement, ok := placeAngelus(os.Getenv, socketExists, boot.AngelusRuntimeDir()); ok {
+		if _, err := moveIntoScope(placement, cmd.Process.Pid); err != nil && cmd.Stderr != nil {
+			fmt.Fprintf(cmd.Stderr, "angelus: left in the caller's cgroup, so it ends with the caller's unit: %s\n", err)
+		}
+	}
 
 	// The daemon is our child until we exit, so a fast failure is observable.
 	exited := make(chan error, 1)

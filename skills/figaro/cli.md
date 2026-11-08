@@ -401,7 +401,13 @@ The angelus respawns on the next command after a stop, so `figaro stop` is how
 you pick up a rebuilt binary. Every shell stays attended across it: the daemon
 keeps `<runtime-dir>/bindings.json` current as shells attend and leave, so a
 stop, an upgrade, a unit restart and a crash all hand the next angelus the
-same bindings. A CLI pointed at another daemon (`FIGARO_TROUPE`
+same bindings. Where a systemd user manager answers, a daemon a command starts
+runs in its own transient scope, `figaro-angelus-<instance>-<pid>.scope`
+(`figaro-angelus-dev-...` from a dev shell), so it outlives the unit or shell
+that started it; with no user manager, or with `FIGARO_NO_ANGELUS_SCOPE=1`
+(every test run sets it), it stays in the caller's cgroup, detached by setsid
+alone. A daemon a unit runs itself (`figaro --angelus`) is never moved. A CLI
+pointed at another daemon (`FIGARO_TROUPE`
 or `[cli] troupe`, naming `troupes/<name>.toml` or giving a `unix://` or `wss://`
 URL) never spawns one.
 

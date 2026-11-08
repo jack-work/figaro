@@ -24,6 +24,9 @@ func Install() {
 	if err := os.Setenv("FIGARO_NO_BROWSER", "1"); err != nil {
 		panic(err)
 	}
+	if err := os.Setenv("FIGARO_NO_ANGELUS_SCOPE", "1"); err != nil {
+		panic(err)
+	}
 	for _, k := range inheritedVault {
 		if err := os.Unsetenv(k); err != nil {
 			panic(err)

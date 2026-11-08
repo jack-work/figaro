@@ -192,6 +192,7 @@ func smokeStore(t *testing.T) []string {
 	return append(env,
 		"FIGARO_STATE_DIR="+filepath.Join(dir, "state"),
 		"FIGARO_RUNTIME_DIR="+filepath.Join(dir, "run"),
+		"FIGARO_NO_ANGELUS_SCOPE=1",
 		"FIGARO_CONFIG_DIR="+filepath.Join(dir, "config"),
 	)
 }

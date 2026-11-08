@@ -49,6 +49,7 @@ func TestAReplayNeverLeavesItsTape(t *testing.T) {
 	}
 	env = append(env,
 		"FIGARO_RUNTIME_DIR="+filepath.Join(root, "run"),
+		"FIGARO_NO_ANGELUS_SCOPE=1",
 		"FIGARO_STATE_DIR="+filepath.Join(root, "state"),
 		"FIGARO_CACHE_DIR="+filepath.Join(root, "cache"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(root, "config"),
