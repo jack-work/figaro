@@ -170,9 +170,6 @@ func (a *Angelus) expireEmpty(keeper ttlKeeper, e store.TTLEntry, now time.Time)
 const emptyLogCeiling = 64
 
 func (a *Angelus) isEmpty(id string) bool {
-	if a.Spool.Holds(id) {
-		return false
-	}
 	meta, err := a.Backend.Meta(id)
 	if err != nil || meta == nil || meta.MessageCount > 0 {
 		return false

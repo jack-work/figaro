@@ -3,7 +3,7 @@ package angelus_test
 import (
 	"encoding/json"
 	"os"
-	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,6 +189,21 @@ func TestReapIfEmpty(t *testing.T) {
 // nor the log. A restart forgets every in-memory access stamp, so a sweep
 // that runs before the spool is redelivered must not take the aria with it.
 func TestReapIfEmptyKeepsAPromptSpooledAcrossARestart(t *testing.T) {
+	spooledAcrossARestart(t, reapIfEmpty(true), func(t *testing.T, b *angelus.Angelus, id string) {
+		idleFor(t, b, id, 10*time.Minute)
+	})
+}
+
+// The same for a spent lifetime: a ttl'd aria past its deadline and its
+// keepalive is kept while a prompt for it waits in the spool.
+func TestASpentLifetimeKeepsAPromptSpooledAcrossARestart(t *testing.T) {
+	spooledAcrossARestart(t, nil, func(t *testing.T, b *angelus.Angelus, id string) {
+		age(t, b, id, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
+	})
+}
+
+func spooledAcrossARestart(t *testing.T, birth *form.Patch, expire func(*testing.T, *angelus.Angelus, string)) {
+	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
@@ -196,7 +211,7 @@ func TestReapIfEmptyKeepsAPromptSpooledAcrossARestart(t *testing.T) {
 	withSpool := func(a *angelus.Angelus, _ *store.XwalBackend) { a.Spool = figaro.NewSpool(dir + "/spool") }
 
 	a, acli, ctx, _ := daemonWithHandlers(t, dir, withSpool)
-	c, err := acli.Create(ctx, dress(t, "mock"), reapIfEmpty(true))
+	c, err := acli.Create(ctx, dress(t, "mock"), birth)
 	require.NoError(t, err)
 	_, err = acli.Attach(ctx, c.FigaroID)
 	require.NoError(t, err)
@@ -213,12 +228,22 @@ func TestReapIfEmptyKeepsAPromptSpooledAcrossARestart(t *testing.T) {
 	require.True(t, a.Spool.Holds(c.FigaroID), "the suspended agent did not spool the prompt")
 
 	b, bcli, bctx, hs := daemonWithHandlers(t, dir, withSpool)
-	idleFor(t, b, c.FigaroID, 10*time.Minute)
+	expire(t, b, c.FigaroID)
 	b.SweepLifetimesNow()
-	require.True(t, ariaExists(b, c.FigaroID), "an aria with a spooled prompt was reaped as empty")
+	require.True(t, ariaExists(b, c.FigaroID), "an aria with a spooled prompt was taken by the sweep")
 
 	hs.Redeliver(bctx)
+	var lastErr error
 	require.Eventually(t, func() bool {
-		return slices.Contains(promptsOf(t, bcli, bctx, c.FigaroID), "the prompt that waited")
-	}, 10*time.Second, 50*time.Millisecond, "the spooled prompt was never delivered")
+		resp, err := bcli.IRAll(bctx, c.FigaroID, 0)
+		if lastErr = err; err != nil {
+			return false
+		}
+		for _, e := range resp.Entries {
+			if strings.Contains(string(e.Payload), "the prompt that waited") {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 50*time.Millisecond, "the spooled prompt was never delivered (last read: %v)", lastErr)
 }

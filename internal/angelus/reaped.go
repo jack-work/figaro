@@ -135,6 +135,9 @@ func (a *Angelus) liveIn(ids []string, bound map[string][]int, roles map[string]
 		if a.Registry.Get(id) != nil {
 			return id, "an agent is live"
 		}
+		if a.Spool.Holds(id) {
+			return id, "a prompt is spooled"
+		}
 		if len(bound[id]) > 0 {
 			return id, "a shell is bound"
 		}
