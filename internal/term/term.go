@@ -133,6 +133,7 @@ type palette struct {
 	nodeWash, nodeWashFocus     string
 	commentWash, commentWash256 string
 	commentMark                 string
+	brand, brand256             string
 }
 
 var kanagawa = palette{
@@ -164,6 +165,8 @@ var kanagawa = palette{
 	commentWash:    "\033[48;2;54;72;48m",
 	commentWash256: "\033[48;5;22m",
 	commentMark:    "\033[38;5;107m",
+	brand:          "\033[38;2;152;187;108m",
+	brand256:       "\033[38;5;107m",
 	cursor:         "\033[38;2;22;22;29;48;2;220;215;186m",
 	cursor256:      "\033[38;5;234;48;5;187m",
 }
@@ -198,6 +201,13 @@ func CommentWash() string {
 }
 
 func CommentMark(s string) string { return paint(active.commentMark, s) }
+
+func Brand(s string) string {
+	if TrueColor() {
+		return paint(active.brand, s)
+	}
+	return paint(active.brand256, s)
+}
 
 func CommentUnderline() string {
 	if !Enabled() {

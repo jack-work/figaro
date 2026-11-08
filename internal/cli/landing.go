@@ -28,14 +28,41 @@ func loadLandingArt(names ...string) [][]string {
 	return arts
 }
 
-var landingHelpRows = [][2]string{
-	{">", "to compose a prompt"},
-	{":new", "for a fresh aria"},
-	{":fork -- <text>", "to branch, and prompt the branch"},
-	{":state", "for config and agent-visible state"},
-	{":ls", "for the aria tree"},
-	{":help", "for help"},
-	{"q", "to quit"},
+func landingHelpRows(sendKey string) [][2]string {
+	compose := "to compose a prompt"
+	if sendKey != "" {
+		compose += " (" + sendKey + " to send)"
+	}
+	return [][2]string{
+		{">", compose},
+		{":new", "for a fresh figaro"},
+		{":fork -- <text>", "to branch, and prompt the branch"},
+		{":state", "for config and agent-visible state"},
+		{":models", "to pick a model"},
+		{":ls", "for the aria tree"},
+		{":help", "for help"},
+		{"q", "to quit"},
+	}
+}
+
+func landingSendKey() string {
+	for i := range liveRows {
+		bd := &liveRows[i]
+		if bd.modes&inBox != 0 && bd.action == "cmd-search-next" {
+			return friendlyKey(bd.chord.spell())
+		}
+	}
+	return ""
+}
+
+func friendlyKey(spelled string) string {
+	if rest, ok := strings.CutPrefix(spelled, "^"); ok && rest != "" {
+		return "ctrl+" + strings.ToLower(rest)
+	}
+	if rest, ok := strings.CutPrefix(spelled, "M-"); ok && rest != "" {
+		return "alt+" + strings.ToLower(rest)
+	}
+	return strings.ToLower(spelled)
 }
 
 const landingKeyColumn = 18
@@ -68,23 +95,22 @@ func (s landingStanza) width() int {
 	return n
 }
 
-func landingPage(w, h int, version string) []string {
+func landingPage(w, h int, version, sendKey string) []string {
 	info := []landingStanza{
 		{rows: []string{version}, style: term.Label, center: true},
 		{rows: []string{"by John Kelliher, et al."}, style: plainStyle, center: true},
 	}
-	help := landingStanza{rows: landingHelpText(), style: styleLandingHelp}
 	need := len(info)
 	if need > h || info[0].width() > w || info[1].width() > w {
 		return nil
 	}
 	page := info
-	if need+1+len(help.rows) <= h && help.width() <= w {
+	if help, ok := landingHelpFor(w, h-need-1, sendKey); ok {
 		page = append(page, landingStanza{rows: []string{""}, style: plainStyle}, help)
 		need += 1 + len(help.rows)
 	}
 	if art := landingArtFor(w, h-need-1); art != nil {
-		page = append([]landingStanza{{rows: art, style: plainStyle}, {rows: []string{""}, style: plainStyle}}, page...)
+		page = append([]landingStanza{{rows: art, style: term.Brand}, {rows: []string{""}, style: plainStyle}}, page...)
 		need += len(art) + 1
 	}
 
@@ -119,9 +145,22 @@ func landingArtFor(w, rows int) []string {
 	return nil
 }
 
-func landingHelpText() []string {
-	out := make([]string, len(landingHelpRows))
-	for i, r := range landingHelpRows {
+func landingHelpFor(w, rows int, sendKey string) (landingStanza, bool) {
+	for _, key := range []string{sendKey, ""} {
+		help := landingStanza{rows: landingHelpText(landingHelpRows(key)), style: styleLandingHelp}
+		if len(help.rows) <= rows && help.width() <= w {
+			return help, true
+		}
+		if key == "" {
+			break
+		}
+	}
+	return landingStanza{}, false
+}
+
+func landingHelpText(rows [][2]string) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
 		out[i] = "type  " + r[0] + strings.Repeat(" ", max(landingKeyColumn-runewidth.StringWidth(r[0]), 2)) + r[1]
 	}
 	return out

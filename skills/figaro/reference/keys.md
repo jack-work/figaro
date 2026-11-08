@@ -47,7 +47,9 @@ prefix.
 
 An aria with no messages opens on a landing page: the figaro mark (a smaller
 one in a smaller pane, none when even that will not fit), the version, and
-the first commands to type. The first message replaces it.
+the first commands to type. The first message replaces it. The compose row
+names the key bound to send in the composer, and drops the hint when that
+key is unbound.
 
 ## keys.toml
 
