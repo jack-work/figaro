@@ -66,7 +66,7 @@ figaro                            # opens the pager on a fresh aria
 
 <p align="center"><img src="docs/media/landing.gif" alt="bare figaro opens a landing page with the blackletter logo; :new makes a fresh aria and l opens the topology" width="820"></p>
 
-Type `>` to write a prompt and `ctrl+s` to send it. Or skip the pager entirely:
+You can also sign in from the pager with `:login`. Type `>` to write a prompt and `ctrl+s` to send it. Or skip the pager entirely:
 
 ```bash
 figaro -- buongiorno
@@ -106,6 +106,7 @@ In the pager:
 - `:new`, `:fork -- <text>`, `:attend <id>` move between arias
 - `l` opens the topology at the aria you're on, `L` at the root, `:ls` the whole tree
 - `:state` shows the form, `:models` picks a model
+- `:login` signs in to a provider, without leaving the pager
 - `/` searches, `v` and `V` select, `y` yanks
 - `q` leaves, and the turn keeps running
 
