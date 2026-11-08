@@ -556,7 +556,7 @@ type rowSink interface {
 	WriteRow(line string, a listedAria)
 }
 
-type listedAria struct{ id, name string }
+type listedAria struct{ id, name, aside string }
 
 func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
 	text := renderListRows(rows, width, global)

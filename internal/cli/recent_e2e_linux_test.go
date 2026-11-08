@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -93,4 +94,44 @@ func lineWith(screen, text string) int {
 		}
 	}
 	return -1
+}
+
+// figaro recent prints what the pit shows: newest activity first whatever the
+// order of birth, led by each handle's first word; -n keeps the newest and -j
+// gives the same rows as JSON.
+func TestFigaroRecentListsNewestFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns daemons; skipped under -short")
+	}
+	prov := newScriptedProvider(t, func(string) (bool, string) { return false, sseText("noted") })
+	r := newRestartRig(t)
+	r.env = append(r.env, "ANTHROPIC_BASE_URL="+prov.srv.URL)
+	made := r.newEmptyAria()
+	later := r.newEmptyAria()
+	never := r.newEmptyAria()
+	r.run("send", "--id", later, "--", "first")
+	r.run("send", "--id", made, "--", "last")
+
+	var rows []recent.Row
+	if err := json.Unmarshal([]byte(r.run("recent", "-j")), &rows); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+		if want := recent.FirstWord(r.ariaField(row.ID, "handle")); !strings.HasPrefix(row.Name, want) {
+			t.Errorf("%s is named %q, want its first word %q", row.ID, row.Name, want)
+		}
+	}
+	if got, want := strings.Join(ids, ","), strings.Join([]string{made, later, never}, ","); got != want {
+		t.Fatalf("recent -j order %s, want %s: last touched first, never prompted last", got, want)
+	}
+	if rows[0].LastActive <= rows[1].LastActive || rows[1].LastActive <= rows[2].LastActive {
+		t.Errorf("last_active = %d, %d, %d", rows[0].LastActive, rows[1].LastActive, rows[2].LastActive)
+	}
+
+	text := strings.Split(strings.TrimSpace(r.run("recent", "-n", "2")), "\n")
+	if len(text) != 2 || !strings.HasPrefix(text[0], rows[0].Name+" ") || !strings.HasPrefix(text[1], rows[1].Name+" ") {
+		t.Fatalf("recent -n 2 printed:\n%s", strings.Join(text, "\n"))
+	}
 }

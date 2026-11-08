@@ -153,6 +153,7 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro lsh` | `ls -H`, spelled shorter. Same flags. |
 | `figaro ls -g` | Home plus the null root and outfit anchors. |
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
+| `figaro recent [-n N] [-j]` | Every figaro on this node, most recently active first, no tree: each row is its handle's first word (the whole handle when two rows share it), its mantra, and how long ago it was active. The pager's `M-l` and `:recent` show the same list as a pit. |
 | `figaro attend <id>` | Bind this shell to a figaro. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn; `:head` alone drops the pending fork point. |
 | `figaro attend <node>/<id>` | Bind this shell to a figaro on another node. The id is resolved on that node, through the door of the `troupes/*.toml` profile that answers for it, and this node's daemon keeps the binding (the node must be a troupe member). Plain `figaro`, `listen` and `figaro -- <prompt>` in this shell then reach that figaro through the same door with that profile's login; `ls`, `new` and every verb that names no figaro stay on this node. `:<turn>` is refused there. |

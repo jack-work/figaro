@@ -754,6 +754,38 @@ positional slot belongs to the sub-verb.`,
 	r.Register(&lshCmd)
 
 	r.Register(&cmdkit.Command{
+		Name:  "recent",
+		Group: "Session",
+		Short: "Every figaro, most recently active first, one row each",
+		Usage: "recent [-n <count>] [-j|--json]",
+		Long: "Every figaro you may read on this node, newest activity first, with no\n" +
+			"tree: the list M-l and :recent show in the pager. A row leads with the\n" +
+			"first word of the figaro's handle (its whole handle when another row\n" +
+			"shares the word), then its mantra, else its handle, then how long ago\n" +
+			"it was last active.\n\n" +
+			"  -n <count>    the newest <count> rows\n" +
+			"  -j, --json    the rows as JSON: name, id, handle, title, state, cwd,\n" +
+			"                last_active (unix ms)",
+		ArgsMax: 0,
+		Flags: []cmdkit.FlagDef{
+			{Long: "limit", Short: "n", Description: "The newest N rows"},
+			{Long: "json", Short: "j", IsBool: true, Description: "The rows as JSON"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			limit := 0
+			if v := ctx.Flag("limit"); v != "" {
+				n, err := strconv.Atoi(v)
+				if err != nil || n < 1 {
+					dieUsage("recent: -n takes a positive count, got %q", v)
+				}
+				limit = n
+			}
+			runRecent(ctx.Extra.(*config.Loaded), limit, ctx.BoolFlag("json"))
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "attend",
 		Aliases: []string{"at"},
 		Group:   "Session",
