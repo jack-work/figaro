@@ -99,6 +99,13 @@ func WriteJSONWithRowSeq(w io.Writer, frame any, field string, rows RowSeq) erro
 				break
 			}
 		}
+		if canonicalRow(row) {
+			if _, werr = w.Write(row); werr != nil {
+				break
+			}
+			n++
+			continue
+		}
 		compacted.Reset()
 		if werr = json.Compact(&compacted, row); werr != nil {
 			werr = fmt.Errorf("row %d: %w", n, werr)
@@ -142,4 +149,32 @@ func WriteJSONWithRows(w io.Writer, frame any, field string, rows []json.RawMess
 		return WriteJSONWithRowSeq(w, frame, field, nil)
 	}
 	return WriteJSONWithRowSeq(w, frame, field, SliceRows(rows, nil))
+}
+
+func canonicalRow(row []byte) bool {
+	if len(row) == 0 {
+		return false
+	}
+	inString := false
+	for i := 0; i < len(row); i++ {
+		c := row[i]
+		switch {
+		case c == '<' || c == '>' || c == '&':
+			return false
+		case c == 0xE2 && i+2 < len(row) && row[i+1] == 0x80 && (row[i+2] == 0xA8 || row[i+2] == 0xA9):
+			return false
+		case inString:
+			switch c {
+			case '\\':
+				i++
+			case '"':
+				inString = false
+			}
+		case c == '"':
+			inString = true
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
+			return false
+		}
+	}
+	return !inString
 }
