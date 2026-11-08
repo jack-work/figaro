@@ -47,7 +47,6 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 	return "", sdk.Addr{}, fmt.Errorf("attach %q: %w", explicitID, err)
 }
 
-// Prompt verbs mint when unbound; read-only verbs (hup, listen, outfit) do not.
 func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
 
 // An unbound-form target is resolved through its role, late, per call; the

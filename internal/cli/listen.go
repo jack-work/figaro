@@ -20,7 +20,13 @@ import (
 type targetResolver func(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, sdk.Addr, error)
 
 func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
-	runListenIntrinsic(loaded, ariaID, recordPath, note, false, "", resolveFigaroTargetEndpoint)
+	runListenIntrinsic(loaded, ariaID, recordPath, note, false, "", mintingWhenUnbound(resolveFigaroTargetEndpoint))
+}
+
+func mintingWhenUnbound(resolve targetResolver) targetResolver {
+	return func(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, _ bool, d dressing) (string, sdk.Addr, error) {
+		return resolve(ctx, loaded, acli, explicitID, true, d)
+	}
 }
 
 func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool, intrinsic string, resolve targetResolver) {

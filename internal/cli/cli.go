@@ -397,14 +397,15 @@ already exists (--id, -x) are refused rather than ignored.
 	r.Register(&cmdkit.Command{
 		Name:  "listen",
 		Group: "Prompt",
-		Short: "Attach to an aria's live stream without sending a prompt",
+		Short: "Open an aria in the pager without sending a prompt",
 		Usage: "listen [<id>]",
 		Long: `Attach to an aria's live stream without calling figaro.qua. Listen
 opens straight into the full-screen transcript pager, caught up to the
 committed cursor and following live frames. It has no inline view: the
 pager is the whole session, and it stays open until you end it.
 
-With no id, the pid-bound aria is used.
+With no id, the aria this shell attends is used. With none attended,
+listen mints one from the default outfit, attends it, and opens that.
 
 Keys:
   q        With a pit open, close it; with none open, end listen. The
