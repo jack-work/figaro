@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,12 +67,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		logBase   string
 	)
 
-	if logCfg.dir != "" && logCfg.aria != "" {
-		dir := filepath.Join(logCfg.dir, sanitize(logCfg.aria))
-		if err := os.MkdirAll(dir, 0o700); err == nil {
-			logBase = filepath.Join(dir, fmt.Sprintf("%d", time.Now().UnixNano()))
-		}
-	}
+	logBase = dumpBase(logCfg)
 
 	if logBase != "" && req.Body != nil {
 		b, err := io.ReadAll(req.Body)
@@ -169,6 +165,83 @@ func (c *countingBody) Read(p []byte) (int, error) {
 	n, err := c.ReadCloser.Read(p)
 	c.n += int64(n)
 	return n, err
+}
+
+func dumpBase(c cfg) string {
+	if c.dir == "" || c.aria == "" {
+		return ""
+	}
+	dir := filepath.Join(c.dir, sanitize(c.aria))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	return filepath.Join(dir, fmt.Sprintf("%d", time.Now().UnixNano()))
+}
+
+type FrameDump struct {
+	base string
+	resp *os.File
+}
+
+func OpenFrameDump(ctx context.Context) *FrameDump {
+	c, _ := cfgFromContext(ctx)
+	base := dumpBase(c)
+	if base == "" {
+		return nil
+	}
+	return &FrameDump{base: base}
+}
+
+func (d *FrameDump) Request(method, rawURL string, header http.Header, body []byte) {
+	if d == nil {
+		return
+	}
+	f, err := os.Create(d.base + ".req.http")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	target, host := rawURL, ""
+	if u, err := url.Parse(rawURL); err == nil {
+		target, host = u.RequestURI(), u.Host
+	}
+	fmt.Fprintf(f, "%s %s HTTP/1.1\r\n", method, target)
+	if host != "" {
+		fmt.Fprintf(f, "Host: %s\r\n", host)
+	}
+	redacted(header).Write(f)
+	fmt.Fprintf(f, "\r\n")
+	f.Write(body)
+}
+
+func (d *FrameDump) Response(status string, header http.Header) {
+	if d == nil || d.resp != nil {
+		return
+	}
+	f, err := os.Create(d.base + ".resp.http")
+	if err != nil {
+		return
+	}
+	d.resp = f
+	fmt.Fprintf(f, "%s\r\n", status)
+	redacted(header).Write(f)
+	fmt.Fprintf(f, "\r\n")
+}
+
+func (d *FrameDump) Frame(b []byte) {
+	if d == nil || d.resp == nil {
+		return
+	}
+	d.resp.Write(b)
+	d.resp.Write([]byte("\n"))
+}
+
+func (d *FrameDump) Close() {
+	if d == nil || d.resp == nil {
+		return
+	}
+	d.resp.Close()
+	d.resp = nil
 }
 
 func writeReqLog(path string, req *http.Request, body []byte) {

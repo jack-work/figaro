@@ -162,6 +162,9 @@ func (p *Provider) Fingerprint() string {
 }
 
 func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
+		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
+	}
 	if model, ok, err := responseOptionalString(in.Snapshot, "system.model"); err != nil {
 		return err
 	} else if ok && model != "" {
@@ -260,6 +263,8 @@ func (p *Provider) sendWithToken(
 	trace := wirelog.BeginStream(ctx, in.AriaID, method, endpoint)
 	terminalStatus := ""
 	defer func() { trace.Finish(terminalStatus, sendErr) }()
+	dump := wirelog.OpenFrameDump(ctx)
+	defer dump.Close()
 
 	var frames responseFrames
 	if transport == HTTP {
@@ -268,12 +273,13 @@ func (p *Provider) sendWithToken(
 			return fmt.Errorf("responses: encode request: %w", err)
 		}
 		trace.RequestBytes(int64(len(payload)))
-		stream, err := postResponses(ctx, endpoint, headers, payload)
+		dump.Request(http.MethodPost, endpoint, headers, payload)
+		stream, err := postResponses(ctx, endpoint, headers, payload, dump)
 		if err != nil {
 			return fmt.Errorf("responses: post: %w", err)
 		}
 		defer stream.Close()
-		frames = sseFrames(stream)
+		frames = dumpedFrames(sseFrames(stream), dump)
 	} else {
 		conn, err := p.dial(ctx, endpoint, headers)
 		if err != nil {
@@ -291,10 +297,12 @@ func (p *Provider) sendWithToken(
 			return fmt.Errorf("responses: encode create: %w", err)
 		}
 		trace.RequestBytes(int64(len(payload)))
+		dump.Request("WS", endpoint, headers, payload)
+		dump.Response("HTTP/1.1 101 Switching Protocols", nil)
 		if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
 			return fmt.Errorf("responses: send create: %w", err)
 		}
-		frames = socketFrames(conn)
+		frames = dumpedFrames(socketFrames(conn), dump)
 	}
 
 	response, err := readResponseStream(ctx, frames, bus, trace)
@@ -582,7 +590,20 @@ func socketFrames(conn *websocket.Conn) responseFrames {
 
 const maxResponseFrame = 32 << 20
 
-func postResponses(ctx context.Context, endpoint string, headers http.Header, payload []byte) (io.ReadCloser, error) {
+func dumpedFrames(next responseFrames, dump *wirelog.FrameDump) responseFrames {
+	if dump == nil {
+		return next
+	}
+	return func(ctx context.Context) ([]byte, error) {
+		raw, err := next(ctx)
+		if err == nil {
+			dump.Frame(raw)
+		}
+		return raw, err
+	}
+}
+
+func postResponses(ctx context.Context, endpoint string, headers http.Header, payload []byte, dump *wirelog.FrameDump) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -597,9 +618,11 @@ func postResponses(ctx context.Context, endpoint string, headers http.Header, pa
 	if err != nil {
 		return nil, err
 	}
+	dump.Response(resp.Proto+" "+resp.Status, resp.Header)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
+		dump.Frame(raw)
 		return nil, httpResponseRejection(resp.StatusCode, raw)
 	}
 	return resp.Body, nil
