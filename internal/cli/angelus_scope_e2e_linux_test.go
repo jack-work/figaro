@@ -5,6 +5,7 @@ package cli
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +30,7 @@ type unitRig struct {
 	unit string
 }
 
-func newUnitRig(t *testing.T) *unitRig {
+func newUnitRig(t *testing.T, providerURL string) *unitRig {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("starts a daemon under the user manager; skipped under -short")
@@ -41,7 +42,7 @@ func newUnitRig(t *testing.T) *unitRig {
 	if _, err := exec.LookPath("systemd-run"); err != nil {
 		t.Skip("no systemd-run here")
 	}
-	rig := newSendRig(t, "http://127.0.0.1:9")
+	rig := newSendRig(t, providerURL)
 	u := &unitRig{t: t, rig: rig}
 	for _, kv := range rig.env {
 		if v, ok := strings.CutPrefix(kv, "FIGARO_RUNTIME_DIR="); ok {
@@ -115,7 +116,13 @@ func isOurDaemon(pid int, run string) bool {
 }
 
 func TestAnAutostartedDaemonOutlivesTheUnitThatStartedIt(t *testing.T) {
-	u := newUnitRig(t)
+	prov := newScriptedProvider(t, func(last string) (bool, string) {
+		if strings.Contains(last, "scoped-") {
+			return false, sseText("done")
+		}
+		return false, sseBashArgs("toolu_scope", map[string]any{"command": "echo scoped-$$; sleep 300", "yieldMs": 500})
+	})
+	u := newUnitRig(t, prov.srv.URL)
 	if out, err := u.inUnit(true, "ls").CombinedOutput(); err != nil {
 		t.Fatalf("figaro ls in a transient service: %v\n%s", err, out)
 	}
@@ -133,10 +140,63 @@ func TestAnAutostartedDaemonOutlivesTheUnitThatStartedIt(t *testing.T) {
 	if again := u.daemonPID(); again != pid {
 		t.Fatalf("a second ls found daemon %d, not the one the unit started (%d)", again, pid)
 	}
+
+	u.rig.mint(t, "run a command")
+	prov.awaitAsk(t, 0, 60*time.Second, "scoped-")
+	tree := descendants(pid)
+	t.Cleanup(func() {
+		for _, child := range tree {
+			_ = syscall.Kill(child, syscall.SIGKILL)
+		}
+	})
+	if len(tree) == 0 {
+		t.Fatalf("a turn that ran bash left the daemon %d no child to check", pid)
+	}
+	for _, child := range tree {
+		if got := cgroupOf(child); got != cg {
+			t.Errorf("process %d under the daemon is in %q, not the daemon's %q", child, got, cg)
+		}
+	}
+}
+
+func sseBashArgs(id string, args map[string]any) string {
+	raw, _ := json.Marshal(args)
+	partial, _ := json.Marshal(string(raw))
+	return strings.Replace(sseBash(id, ""), `"partial_json":"{\"command\":\"\"}"`, `"partial_json":`+string(partial), 1)
+}
+
+func descendants(root int) []int {
+	children := map[int][]int{}
+	entries, _ := os.ReadDir("/proc")
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		raw, err := os.ReadFile("/proc/" + e.Name() + "/stat")
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(string(raw[strings.LastIndexByte(string(raw), ')')+1:]))
+		if len(fields) < 2 {
+			continue
+		}
+		ppid, _ := strconv.Atoi(fields[1])
+		children[ppid] = append(children[ppid], pid)
+	}
+	var out []int
+	queue := append([]int(nil), children[root]...)
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		out = append(out, pid)
+		queue = append(queue, children[pid]...)
+	}
+	return out
 }
 
 func TestADaemonRunByAUnitStaysThatUnits(t *testing.T) {
-	u := newUnitRig(t)
+	u := newUnitRig(t, "http://127.0.0.1:9")
 	if out, err := u.inUnit(false, "--angelus").CombinedOutput(); err != nil {
 		t.Fatalf("figaro --angelus as a transient service: %v\n%s", err, out)
 	}

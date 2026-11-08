@@ -401,7 +401,9 @@ The angelus respawns on the next command after a stop, so `figaro stop` is how
 you pick up a rebuilt binary. Every shell stays attended across it: the daemon
 keeps `<runtime-dir>/bindings.json` current as shells attend and leave, so a
 stop, an upgrade, a unit restart and a crash all hand the next angelus the
-same bindings. Where a systemd user manager answers, a daemon a command starts
+same bindings. Where a systemd user manager answers (its socket under
+`$XDG_RUNTIME_DIR/systemd`, a directory this user owns and nobody else can
+write), a daemon a command starts
 runs in its own transient scope, `figaro-angelus-<instance>-<pid>.scope`
 (`figaro-angelus-dev-...` from a dev shell), so it outlives the unit or shell
 that started it; with no user manager, or with `FIGARO_NO_ANGELUS_SCOPE=1`

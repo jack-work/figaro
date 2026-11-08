@@ -13,13 +13,13 @@ type angelusPlacement struct {
 	scopePrefix   string
 }
 
-func placeAngelus(getenv func(string) string, exists func(string) bool, runtimeDir string) (angelusPlacement, bool) {
+func placeAngelus(getenv func(string) string, managerAt func(string) bool, runtimeDir string) (angelusPlacement, bool) {
 	xdg := getenv("XDG_RUNTIME_DIR")
 	if xdg == "" || envTruthy(getenv("FIGARO_NO_ANGELUS_SCOPE")) {
 		return angelusPlacement{}, false
 	}
 	socket := filepath.Join(xdg, "systemd", "private")
-	if !exists(socket) {
+	if !managerAt(socket) {
 		return angelusPlacement{}, false
 	}
 	sum := sha256.Sum256([]byte(runtimeDir))
