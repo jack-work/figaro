@@ -18,6 +18,16 @@ var (
 	ErrReservedKey = errors.New("payload uses reserved sidecar key (_idx or _hash)")
 )
 
+type CorruptFrameError struct {
+	Offset int64
+}
+
+func (e *CorruptFrameError) Error() string {
+	return fmt.Sprintf("corrupt frame at byte %d with valid frames after it", e.Offset)
+}
+
+func (e *CorruptFrameError) Unwrap() error { return ErrCorrupt }
+
 // SegmentCodec abstracts the on-disk representation of one entry.
 type SegmentCodec interface {
 	// Frame wraps payload into the on-disk byte sequence for one entry,
@@ -30,8 +40,6 @@ type SegmentCodec interface {
 	// entry; codecs that self-describe length may ignore it.
 	ReadFrame(r io.ReaderAt, off, nextOff int64) (payload []byte, frameLen int, err error)
 
-	// ScanFrames enumerates every frame in r in order, calling fn with
-	// each frame's offset and length. Returns nil on torn tail or clean EOF.
 	ScanFrames(r io.Reader, fn func(off int64, frameLen int) error) error
 
 	// Hash returns the integrity token this codec uses for payload, as a
@@ -115,6 +123,9 @@ func (BinaryCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) erro
 		}
 		sum := binary.LittleEndian.Uint32(hdr[4:8])
 		if crc32.ChecksumIEEE(payload) != sum {
+			if binaryFrameFollows(r) {
+				return &CorruptFrameError{Offset: off}
+			}
 			return nil
 		}
 		frameLen := headerSize + int(n)
@@ -122,6 +133,23 @@ func (BinaryCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) erro
 			return err
 		}
 		off += int64(frameLen)
+	}
+}
+
+func binaryFrameFollows(r io.Reader) bool {
+	for {
+		var hdr [headerSize]byte
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
+			return false
+		}
+		n := int64(binary.LittleEndian.Uint32(hdr[0:4]))
+		h := crc32.NewIEEE()
+		if copied, err := io.CopyN(h, r, n); err != nil || copied != n {
+			return false
+		}
+		if n > 0 && h.Sum32() == binary.LittleEndian.Uint32(hdr[4:8]) {
+			return true
+		}
 	}
 }
 
@@ -224,13 +252,38 @@ func (JSONLCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) error
 			frame = line
 		}
 		if _, err := decodeJSONLLine(frame, true); err != nil {
-			return nil // torn tail or corruption
+			if jsonlLineFollows(reader) {
+				return &CorruptFrameError{Offset: off}
+			}
+			return nil
 		}
 		frameLen := len(frame)
 		if err := fn(off, frameLen); err != nil {
 			return err
 		}
 		off += int64(frameLen)
+		line = line[:0]
+	}
+}
+
+func jsonlLineFollows(reader *bufio.Reader) bool {
+	var line []byte
+	for {
+		part, err := reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			line = append(line, part...)
+			continue
+		}
+		if err != nil {
+			return false
+		}
+		frame := part
+		if len(line) > 0 {
+			frame = append(line, part...)
+		}
+		if _, derr := decodeJSONLLine(append([]byte(nil), frame...), true); derr == nil {
+			return true
+		}
 		line = line[:0]
 	}
 }

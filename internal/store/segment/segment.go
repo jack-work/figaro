@@ -130,8 +130,6 @@ func openRO(path string, codec SegmentCodec, baseIndex uint64, hasHeader bool) (
 	return s, nil
 }
 
-// recover rebuilds the entry index and, for read-write segments, truncates a
-// torn tail: every frame before the first torn one is accepted.
 func (s *Segment) recover() error {
 	start := time.Now()
 	if _, err := s.f.Seek(0, 0); err != nil {
@@ -154,7 +152,7 @@ func (s *Segment) recover() error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("segment %s: %w; refusing to open it rather than drop what follows", s.path, err)
 	}
 	s.size = off
 	if s.hasHeader && headerEnd > 0 {
