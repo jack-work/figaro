@@ -121,6 +121,14 @@ func (t *transcript) dropQueuedSelected() {
 }
 
 // Opening defers to a reader who has said what they want on screen; closing does not.
+func (t *transcript) dropQueue() {
+	t.queued, t.queuedErr, t.queuedRows = nil, "", nil
+	t.queueDismissed, t.queuedByKey = false, false
+	if t.showing(pitQueue) {
+		t.pit.close()
+	}
+}
+
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
 		t.status.withdrawNotice(queueEmptyNote)

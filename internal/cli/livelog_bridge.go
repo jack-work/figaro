@@ -854,6 +854,7 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus, base int)
 	t.lastFrozen = sliceCursor{}
 	t.pagerClosed = nil
 	t.queued, t.queuedErr = nil, ""
+	t.tr.dropQueue()
 	// The hold itself is the caller's.
 	t.held = nil
 	t.seeded = aria.Page{}
@@ -910,6 +911,7 @@ func (t *livelogTurn) adopt(figaroID string, status *sessionStatus, p *parkedSub
 	t.lastFrozen = sliceCursor{}
 	t.pagerClosed = nil
 	t.queued, t.queuedErr = nil, ""
+	t.tr.dropQueue()
 	t.held = nil
 	t.seeded = aria.Page{}
 	t.tr.adopt(p, status, here, base)
