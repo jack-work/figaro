@@ -154,7 +154,7 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro attend null` | Go home. There is no `detach` verb. |
 | `figaro show [<id>]` | Render history: the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One node in focus, whichever species it is. A FIGARO: provider, model, context, cost. A FORM: its name, version, key count, and that it is not cast. A ROLE: the same plus `target-aria` and the state of the aria it points at (live, dormant, or missing). `-m` adds cwd/outfit/fork origin for a figaro, and parent plus the keys held for a form. `-j` carries `species`. |
-| `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. A daemon restart does not end it: it waits for the next angelus and follows on. |
+| `figaro listen [<id>]` | Attach to the live stream without prompting. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |

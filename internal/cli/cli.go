@@ -399,19 +399,23 @@ already exists (--id, -x) are refused rather than ignored.
 		Group: "Prompt",
 		Short: "Attach to an aria's live stream without sending a prompt",
 		Usage: "listen [<id>]",
-		Long: `Attach to an aria's live stream. Same view as a send mid-stream:
-catches up to the committed cursor, follows live frames, and supports
-Ctrl-T transcript mode: just without calling figaro.qua. Stays open
-until you close it.
+		Long: `Attach to an aria's live stream without calling figaro.qua. Listen
+opens straight into the full-screen transcript pager, caught up to the
+committed cursor and following live frames. It has no inline view: the
+pager is the whole session, and it stays open until you end it.
 
 With no id, the pid-bound aria is used.
 
 Keys:
-  Ctrl-C   Interrupt the in-flight turn (like in send).
-  Ctrl-D   Disconnect this CLI; the turn keeps running.
-  Ctrl-T   Open the full-screen transcript pager.
+  q        With a pit open, close it; with none open, end listen. The
+           turn keeps running.
+  Ctrl-D   End listen; the turn keeps running.
+  Ctrl-C   End listen, interrupting the turn in flight.
+  Esc      Cancel what is open (a selection, a pit, a search, visual
+           mode). It does not end listen.
+  Ctrl-T   Nothing: the pager is already open.
   M-m      Toggle verbose tool-input expansion.
-  q / Esc  (in pager) leave pager and return to the inline tail.
+  h        The pager's key help.
 
 TESTING: --record <file> writes a wire tape: every JSON-RPC message
 this CLI exchanged with the agent, with the time it crossed. Replay it

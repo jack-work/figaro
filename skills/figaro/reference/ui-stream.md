@@ -453,7 +453,9 @@ want a guaranteed-stable, scrollable view.
 
 Press **`Ctrl-T`** to open the transcript, a full-screen, alternate-screen
 pager over the *whole* conversation that **keeps streaming live** while you
-scroll. It shares the same `aria.Client`/range store as the inline view. On
+scroll. `figaro listen` and `figaro replay` open in it and have no inline view
+at all: there Ctrl-T does nothing, Esc only cancels what is open, and `q` with
+no pit open (or Ctrl-D) ends the session. It shares the same `aria.Client`/range store as the inline view. On
 entry it pulls a recent backward page, fetches older ranges on demand, and
 continues folding live pushes, so both views render the same content; only the
 active view paints.
@@ -506,7 +508,7 @@ pit follows a remap, so it shows your map rather than this one.
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
-| `q` / `Esc` / `Ctrl-T` | exit the pager |
+| `q` | close the open pit; with none open, end the session (a send or a listen). The turn keeps running |
 
 A pasted paragraph needs no key at all: with no box open, a paste opens the
 composer and lands in it, because a paragraph arriving in a pager is a
