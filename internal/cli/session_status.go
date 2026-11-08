@@ -140,7 +140,7 @@ func (s *sessionStatus) post(text string, level alertLevel, progress bool) {
 		return
 	}
 	n := barNotice{text: text, level: level, progress: progress}
-	if s.noticeTTL > 0 {
+	if s.noticeTTL > 0 && !progress {
 		n.until = clk.Now().Add(s.noticeTTL)
 	}
 	if level == alertError {

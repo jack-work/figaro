@@ -159,3 +159,20 @@ func TestTheBarPaintsNoEscapeFromANotice(t *testing.T) {
 		t.Fatalf("pinned notice %q", got)
 	}
 }
+
+func TestAProgressNoticeHoldsUntilSomethingReplacesIt(t *testing.T) {
+	s := statusFixture("")
+	s.setProgress("…sending")
+	s.retireAlert(time.Now().Add(time.Hour))
+	if got := s.noticeText(); got != "…sending" {
+		t.Fatalf("a progress notice expired with nothing in its place: %q", got)
+	}
+	s.setNoticeAt("send: context deadline exceeded", alertError)
+	if got := s.noticeText(); got != "send: context deadline exceeded" {
+		t.Fatalf("the result did not replace the progress: %q", got)
+	}
+	s.retireAlert(time.Now().Add(time.Hour))
+	if got := s.noticeText(); got != "" {
+		t.Fatalf("an ordinary notice outlived its TTL: %q", got)
+	}
+}
