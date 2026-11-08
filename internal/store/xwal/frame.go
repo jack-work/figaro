@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+
+	"github.com/jack-work/figaro/internal/store/segment"
 )
 
 // A channel entry is stored as a JSON object so it round-trips through
@@ -72,9 +74,14 @@ func encodeStampedFrame(mainLT uint64, payload, meta []byte, opaque bool, cursor
 	return b
 }
 
+func verifiesReads(codec segment.SegmentCodec) bool {
+	v, ok := codec.(interface{ VerifiesOnRead() bool })
+	return ok && v.VerifiesOnRead()
+}
+
 // decodeFrame ignores meta.
 func decodeFrame(f []byte) (uint64, []byte, error) {
-	if m, p, _, _, ok := fastDecodeFrame(f); ok {
+	if m, p, _, _, ok := fastDecodeFrame(f, false); ok {
 		return m, p, nil
 	}
 	var o frameObj
@@ -89,13 +96,13 @@ func decodeFrame(f []byte) (uint64, []byte, error) {
 }
 
 func decodeRecord(channelLT uint64, f []byte) (Record, error) {
-	return decodeRecordFrom(channelLT, f, false)
+	return decodeRecordFrom(channelLT, f, false, false)
 }
 
 // isMain selects the slow path: only a main record carries a cursor stamp and
 // the fast decode does not look for one.
-func decodeRecordFrom(channelLT uint64, f []byte, isMain bool) (Record, error) {
-	if m, p, x, ts, ok := fastDecodeFrame(f); ok && !isMain {
+func decodeRecordFrom(channelLT uint64, f []byte, isMain, verified bool) (Record, error) {
+	if m, p, x, ts, ok := fastDecodeFrame(f, verified); ok && !isMain {
 		return Record{ChannelLT: channelLT, MainLT: m, Payload: p, Meta: x, TS: ts}, nil
 	}
 	var o frameObj
@@ -120,8 +127,8 @@ func (o frameObj) payload() ([]byte, error) {
 	return payload, nil
 }
 
-func decodeMainLT(f []byte) (uint64, error) {
-	if m, ok := fastDecodeMainLT(f); ok {
+func decodeMainLT(f []byte, verified bool) (uint64, error) {
+	if m, ok := fastDecodeMainLT(f, verified); ok {
 		return m, nil
 	}
 	var o struct {
@@ -133,9 +140,9 @@ func decodeMainLT(f []byte) (uint64, error) {
 	return o.M, nil
 }
 
-func fastDecodeMainLT(f []byte) (uint64, bool) {
+func fastDecodeMainLT(f []byte, verified bool) (uint64, bool) {
 	const prefix = `{"m":`
-	if len(f) <= len(prefix) || string(f[:len(prefix)]) != prefix || !json.Valid(f) {
+	if len(f) <= len(prefix) || string(f[:len(prefix)]) != prefix || !(verified || json.Valid(f)) {
 		return 0, false
 	}
 	i := len(prefix)
@@ -152,9 +159,9 @@ func fastDecodeMainLT(f []byte) (uint64, bool) {
 	return mainLT, i > start && i < len(f) && f[i] == ','
 }
 
-func fastDecodeFrame(f []byte) (uint64, []byte, []byte, int64, bool) {
+func fastDecodeFrame(f []byte, verified bool) (uint64, []byte, []byte, int64, bool) {
 	const prefix = `{"m":`
-	if len(f) <= len(prefix) || string(f[:len(prefix)]) != prefix || !json.Valid(f) {
+	if len(f) <= len(prefix) || string(f[:len(prefix)]) != prefix || !(verified || json.Valid(f)) {
 		return 0, nil, nil, 0, false
 	}
 	i := len(prefix)

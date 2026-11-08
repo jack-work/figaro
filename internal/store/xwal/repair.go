@@ -119,7 +119,7 @@ func readFrameMainLT(path string, codec segment.SegmentCodec, span frameSpan) (u
 	if err != nil {
 		return 0, err
 	}
-	return decodeMainLT(payload)
+	return decodeMainLT(payload, verifiesReads(codec))
 }
 
 func segmentBases(dir string, codec segment.SegmentCodec) ([]uint64, error) {

@@ -193,8 +193,8 @@ func (JSONLCodec) Frame(idx uint64, payload []byte) ([]byte, error) {
 	return append(line, '\n'), nil
 }
 
-// ReadFrame does not verify the stored hash; ScanFrames does, during
-// recovery. A canonical line (what Frame emits) decodes with no JSON parse.
+func (JSONLCodec) VerifiesOnRead() bool { return true }
+
 func (JSONLCodec) ReadFrame(r io.ReaderAt, off, nextOff int64) ([]byte, int, error) {
 	if nextOff <= off {
 		return nil, 0, errors.New("jsonl ReadFrame requires nextOff > off")
@@ -204,7 +204,7 @@ func (JSONLCodec) ReadFrame(r io.ReaderAt, off, nextOff int64) ([]byte, int, err
 	if _, err := r.ReadAt(buf, off); err != nil {
 		return nil, 0, err
 	}
-	payload, err := decodeJSONLLine(buf, false)
+	payload, err := decodeJSONLLine(buf, true)
 	if err != nil {
 		return nil, 0, err
 	}

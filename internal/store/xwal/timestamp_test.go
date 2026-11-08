@@ -150,7 +150,7 @@ func TestLegacyFramesReadZeroTS(t *testing.T) {
 			t.Errorf("%s: TS = %d, want 0", tt.name, rec.TS)
 		}
 		// Slow path (main).
-		rec, err = decodeRecordFrom(1, tt.frame, true)
+		rec, err = decodeRecordFrom(1, tt.frame, true, false)
 		if err != nil {
 			t.Fatalf("%s (main): %v", tt.name, err)
 		}
@@ -179,7 +179,7 @@ func TestFastDecodeParsesTimestampShapes(t *testing.T) {
 		{"t then c falls back", []byte(`{"m":3,"p":{},"t":5,"c":{"b":1}}`), 5, false},
 	}
 	for _, tt := range cases {
-		_, _, _, ts, ok := fastDecodeFrame(tt.frame)
+		_, _, _, ts, ok := fastDecodeFrame(tt.frame, false)
 		if ok != tt.wantOK {
 			t.Errorf("%s: fast ok = %v, want %v", tt.name, ok, tt.wantOK)
 			continue
@@ -191,7 +191,7 @@ func TestFastDecodeParsesTimestampShapes(t *testing.T) {
 		// it — and wantTS is the truth for BOTH paths: order-agnostic
 		// json.Unmarshal reads t wherever it sits.
 		var rec Record
-		rec, err := decodeRecordFrom(1, tt.frame, true)
+		rec, err := decodeRecordFrom(1, tt.frame, true, false)
 		if err != nil {
 			t.Fatalf("%s: slow path: %v", tt.name, err)
 		}
@@ -266,7 +266,7 @@ func TestEncoderOutputTakesFastPath(t *testing.T) {
 	}
 	codec := segment.JSONLCodec{}
 	for name, f := range frames {
-		_, _, _, ts, ok := fastDecodeFrame(f)
+		_, _, _, ts, ok := fastDecodeFrame(f, false)
 		if !ok {
 			t.Errorf("%s: encoder output rejected by fast path: %s", name, f)
 			continue
@@ -284,7 +284,7 @@ func TestEncoderOutputTakesFastPath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: codec.ReadFrame: %v", name, err)
 		}
-		_, _, _, ts, ok = fastDecodeFrame(back)
+		_, _, _, ts, ok = fastDecodeFrame(back, false)
 		if !ok {
 			t.Errorf("%s: DISK bytes rejected by fast path: %s", name, back)
 			continue

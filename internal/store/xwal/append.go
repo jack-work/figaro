@@ -190,7 +190,7 @@ func coherentTarget(ch *channel, mainTail uint64) (uint64, error) {
 		if err != nil {
 			return 0, err
 		}
-		m, err := decodeMainLT(f)
+		m, err := decodeMainLT(f, ch.verified)
 		if err != nil {
 			return 0, err
 		}

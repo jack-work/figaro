@@ -340,7 +340,7 @@ func TestInteriorForkDropsRelatedRecordsPastTheForkPoint(t *testing.T) {
 		return // nothing inherited at all is fine
 	}
 	if err := ch.mustLog().Range(1, func(idx uint64, payload []byte) error {
-		m, derr := decodeMainLT(payload)
+		m, derr := decodeMainLT(payload, false)
 		if derr != nil {
 			return derr
 		}
@@ -382,7 +382,7 @@ func TestTailForkDropsRelatedRecordsAheadOfMain(t *testing.T) {
 	mainTailLT := mainTail(x)
 	ch := x.channel("translations")
 	if err := ch.mustLog().Range(1, func(idx uint64, payload []byte) error {
-		m, derr := decodeMainLT(payload)
+		m, derr := decodeMainLT(payload, false)
 		if derr != nil {
 			return derr
 		}

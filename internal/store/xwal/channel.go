@@ -16,13 +16,14 @@ type channel struct {
 	dir   string
 	// log is nil until first use; openErr remembers a failure so a broken
 	// channel is not retried on every touch.
-	openMu  sync.Mutex
-	opener  func() (*log.Log, error)
-	openErr error
-	lg      *log.Log
-	fold    FoldFunc
-	initial []byte
-	opaque  bool
+	openMu   sync.Mutex
+	opener   func() (*log.Log, error)
+	openErr  error
+	lg       *log.Log
+	fold     FoldFunc
+	initial  []byte
+	opaque   bool
+	verified bool
 	// unkeyed: records carry no main LT. Appended with no reference to the
 	// timeline; a fork learns what to inherit from main's cursor stamp.
 	unkeyed     bool
@@ -73,7 +74,7 @@ func (ch *channel) lookupAtOrBelow(mainLT uint64) (uint64, bool, error) {
 	}
 	found, ok := uint64(0), false
 	err := l.ScanFromEnd(l.LastIndex(), func(idx uint64, payload []byte) error {
-		m, derr := decodeMainLT(payload)
+		m, derr := decodeMainLT(payload, ch.verified)
 		if derr != nil {
 			return derr
 		}
@@ -108,7 +109,7 @@ func (ch *channel) lookup(mainLT uint64) (uint64, bool, error) {
 	}
 	stopped := false
 	err := l.ScanFromEnd(ch.fkNext, func(idx uint64, payload []byte) error {
-		m, err := decodeMainLT(payload)
+		m, err := decodeMainLT(payload, ch.verified)
 		if err != nil {
 			return err
 		}

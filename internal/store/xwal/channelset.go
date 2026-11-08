@@ -82,7 +82,7 @@ func (x *XWAL) publishLocked(mc manifestChannel) error {
 }
 
 func (x *XWAL) newChannel(mc manifestChannel) (*channel, error) {
-	ch := &channel{name: mc.Name, rname: mc.Reducer, opaque: mc.Opaque, unkeyed: mc.Unkeyed}
+	ch := &channel{name: mc.Name, rname: mc.Reducer, opaque: mc.Opaque, unkeyed: mc.Unkeyed, verified: verifiesReads(x.codec)}
 	switch mc.Kind {
 	case "reducible":
 		ch.kind = ChannelReducible

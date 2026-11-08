@@ -162,7 +162,7 @@ func tailFrameTS(dir string, codec segment.SegmentCodec) int64 {
 	if err != nil {
 		return 0
 	}
-	rec, err := decodeRecordFrom(0, payload, false)
+	rec, err := decodeRecordFrom(0, payload, false, verifiesReads(codec))
 	if err != nil {
 		return 0
 	}
@@ -219,7 +219,7 @@ func (x *XWAL) hydrateLastTS() {
 		if err != nil {
 			continue
 		}
-		r, err := decodeRecordFrom(last, f, name == x.main)
+		r, err := decodeRecordFrom(last, f, name == x.main, ch.verified)
 		if err != nil {
 			continue
 		}

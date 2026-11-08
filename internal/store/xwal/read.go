@@ -28,7 +28,7 @@ func (x *XWAL) ReadAt(channelName string, channelLT uint64) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	return decodeRecordFrom(channelLT, f, channelName == x.main)
+	return decodeRecordFrom(channelLT, f, channelName == x.main, ch.verified)
 }
 
 // Lookup is the foreign-key view; the last entry wins if several share the main LT.
@@ -86,7 +86,7 @@ func (x *XWAL) RecordsFrom(channelName string, fromMainLT uint64, limit int) ([]
 
 	var first uint64
 	err := snapshot.ScanFromEnd(0, func(idx uint64, frame []byte) error {
-		mainLT, err := decodeMainLT(frame)
+		mainLT, err := decodeMainLT(frame, ch.verified)
 		if err != nil {
 			return err
 		}
@@ -105,7 +105,7 @@ func (x *XWAL) RecordsFrom(channelName string, fromMainLT uint64, limit int) ([]
 
 	records := make([]Record, 0)
 	err = snapshot.Range(first, func(idx uint64, frame []byte) error {
-		record, err := decodeRecordFrom(idx, frame, channelName == x.main)
+		record, err := decodeRecordFrom(idx, frame, channelName == x.main, ch.verified)
 		if err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ func (x *XWAL) LatestChannelRecord(channelName string, minMainLT uint64) (Record
 	var latest Record
 	found := false
 	err := l.Snapshot().ScanFromEnd(0, func(idx uint64, frame []byte) error {
-		record, err := decodeRecordFrom(idx, frame, channelName == x.main)
+		record, err := decodeRecordFrom(idx, frame, channelName == x.main, ch.verified)
 		if err != nil {
 			return err
 		}
@@ -206,7 +206,7 @@ func (x *XWAL) tailMain(ch *channel) (uint64, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	m, err := decodeMainLT(f)
+	m, err := decodeMainLT(f, ch.verified)
 	return m, true, err
 }
 
