@@ -155,3 +155,54 @@ func TestRule_HandoffGrowsOnAnEvenFrameCadence(t *testing.T) {
 		}
 	}
 }
+
+// Gluck's capture, 2026-11-07: half a page up out of a deep answer drew the
+// release sweep on a blank row between two tool blocks. The header had drawn
+// that edge itself, so the body held no rule to hand back. A sweep may only
+// ever land on a row that is a turn rule in the transcript.
+func TestRule_ASweepLandsOnlyOnATurnRule(t *testing.T) {
+	tr := stickyPager(t, 1, 4, 14, 24)
+	clock := time.Unix(1000, 0)
+	tr.now = func() time.Time { return clock }
+	tr.wake = func(time.Duration) {}
+	whole := time.Duration(dyadicReach(handoffLevel, max(tr.w, 3))+1) * handoffTick()
+	_, maxOff := tr.layoutNow()
+	settle := func(off int) {
+		tr.offset = off
+		tr.renderFrame()
+		clock = clock.Add(2 * whole)
+		tr.renderFrame()
+	}
+	deep := 0
+	for from := 0; from <= maxOff; from++ {
+		for _, step := range []int{-tr.h / 2, -1, 1, tr.h / 2} {
+			to := from + step
+			if to < 0 || to > maxOff {
+				continue
+			}
+			settle(from)
+			if turn, above := tr.stickyTurn(); turn != 0 && above >= len(tr.stickyBlockOf(turn).rows) {
+				deep++
+			}
+			tr.offset = to
+			tr.renderFrame()
+			clock = clock.Add(whole / 2)
+			tr.renderFrame()
+			head := len(headRowsOf(tr))
+			body, _ := tr.layout(len(tr.footLines()))
+			under := tr.window(tr.offset, tr.offset+body, nil)
+			for r := head; r < min(body, len(tr.prev)); r++ {
+				if !strings.Contains(stripANSI(tr.prev[r]), ruleDouble) {
+					continue
+				}
+				if text := strings.TrimSpace(stripANSI(under[r])); text == "" || strings.Trim(text, ruleSingle) != "" {
+					t.Fatalf("offset %d -> %d: row %d swept over %q, which is not a turn rule:\n%s",
+						from, to, r, text, strings.Join(plain(tr.prev), "\n"))
+				}
+			}
+		}
+	}
+	if deep == 0 {
+		t.Fatal("fixture: the header never pinned deep inside an answer")
+	}
+}

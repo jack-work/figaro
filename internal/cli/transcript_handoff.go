@@ -53,10 +53,13 @@ func (t *transcript) stickyEdge() (turn, line int) {
 	}
 	turn, above := t.stickyTurn()
 	line = t.offset + len(rows)
-	if above < len(t.stickyBlockOf(turn).rows) && !t.turnRuleAt(line) {
+	if t.turnRuleAt(line) {
+		return turn, line
+	}
+	if above < len(t.stickyBlockOf(turn).rows) {
 		return 0, -1
 	}
-	return turn, line
+	return turn, -1
 }
 
 func (t *transcript) turnRuleAt(line int) bool {
@@ -72,7 +75,7 @@ func (t *transcript) noteHandoff() {
 	h := &t.handoff
 	if h.seen && turn != h.turn {
 		now := t.clock()
-		if h.turn != 0 {
+		if h.turn != 0 && h.line >= 0 {
 			h.releaseAt, h.releaseLine = now, h.line
 		}
 		if turn != 0 {
@@ -112,7 +115,7 @@ func (t *transcript) releasedRule(screen []string, top, body int) {
 	if row < top || row >= top+body || row >= len(screen) {
 		return
 	}
-	if strings.Trim(pitText(screen[row]), ruleSingle) != "" {
+	if !t.turnRuleAt(h.releaseLine) || strings.Trim(pitText(screen[row]), ruleSingle) != "" {
 		return
 	}
 	n := max(t.w, 3)
