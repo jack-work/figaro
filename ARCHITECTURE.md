@@ -112,13 +112,22 @@ Recv → synchronize → dispatch
 
 ## Durability and the ack contract
 
-The store is memory-first: appends land in RAM and return; a background
-flusher persists lineage-coherent cuts every FlushInterval (1s), bounded
-in bytes by MaxUnflushedBytes. A client ack (including the rendered echo
-of a user prompt) therefore precedes durability by up to the flush lag;
-user tics call Kick to expedite the next flush but do not wait for it.
-Cooperative shutdown (drain + Close) loses nothing; a hard crash loses at
-most the flush lag plus the in-flight partial stream.
+Every append is synced before anything sees it. figaro opens figwal with
+`NoBackgroundFlush` (`xwal_store.go`), so there is no periodic flusher:
+`xwalLog.Append` fsyncs the channel through the new record
+(`SyncChannelThrough`) before it returns, on the IR and every side channel,
+and the journal announces a message only after that. A form write goes
+through `Form.runBatch`: the batch's patches are reduced and appended, one
+`SyncThrough` covers the whole batch, and only then is the new version
+published and its subscribers told. A failed sync rejects every write in the
+batch, takes its records back, and leaves the state as it was. One fsync per
+durable write is the cost; batching recovers it under load
+([forms-design.md](skills/figaro/contributing/forms-design.md)).
+
+So a client never renders a message or a form version that is not yet on
+disk. A hard crash loses only what was never appended: the in-flight partial
+turn, which is memory-only (below). Cooperative shutdown (drain + Close)
+loses nothing.
 
 ## In-progress turn durability
 
