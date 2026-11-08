@@ -26,7 +26,7 @@ type KeyDoc struct {
 func WellKnownKeys() []KeyDoc {
 	return []KeyDoc{
 		{Key: "duke-title", Short: `What this aria calls its END USER (default "user"); set it in an outfit and a human's prompts are attributed to that name`, Mode: KeyUserSettable},
-		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt", Mode: KeyUserSettable},
+		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt. Fixed at birth: set by the outfit or birth patch, refused once the figaro has spoken (fork -S or succeed for another)", Mode: KeyUserSettable},
 		{Key: "system.tags", Short: "Per-LT annotations (e.g. system.tags[42].cache_control)", Mode: KeyUserSettable},
 		{Key: "system.cache_control", Short: `Auto cache-marker policy; ON by default (short). "none" stops SIGNALLING (implicit-caching providers cache anyway); "5m"/"1h" force a TTL`, Mode: KeyUserSettable},
 		{Key: "system.cache_markers", Short: `How a route is marked: "auto" (default), "blocks", "top-level", "none"`, Mode: KeyUserSettable},

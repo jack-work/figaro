@@ -209,6 +209,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err := h.refuseRetired(method, id, dressed); err != nil {
 			return nil, err
 		}
+		if err := h.refuseCredoChange(method, id, dressed); err != nil {
+			return nil, err
+		}
 		return hb.route(ctx, method, dressed)
 	}
 }

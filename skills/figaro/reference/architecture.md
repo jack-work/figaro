@@ -377,6 +377,14 @@ forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed figaro whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 
+**The credo is fixed at birth.** `system.credo` is the system block, so a
+change rewrites the head of every request and drops the prompt cache. It is
+set by the outfit or the birth patch of `new`, `fork -S` or `succeed`; once a
+figaro has a message that is not ceremonial, a `set`, `unset`, `state
+outfit` or a prompt's `-O`/`-S` that would change it is refused, for the
+owner too
+(`internal/angelus/credo_birth.go`). The same value again is not a change.
+
 **Box providers.** `[sandbox.boxes.<name>] providers = [...]` names the
 providers a figaro in that box may run on. Anything else is refused where the
 provider is resolved: at birth, at wake, on a rebind, and for a decision
