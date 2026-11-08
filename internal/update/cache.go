@@ -74,6 +74,9 @@ func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, current
 	if exe, err := os.Executable(); err == nil {
 		info.Exe = exe
 	}
+	if info.Channel == ChannelNix {
+		info.NixEntry = nixProfileEntry(ctx, info.Exe)
+	}
 	latest, err := FetchLatest(ctx, module)
 	if err != nil {
 		info.FetchError = err.Error()
@@ -94,7 +97,7 @@ func Nudge(info *Info, module string) string {
 		return ""
 	}
 	msg := fmt.Sprintf("figaro %s → %s available", info.Current, info.Latest)
-	if cmd := UpgradeCommand(info.Channel, module, info.Latest); cmd != "" {
+	if cmd := UpgradeCommand(info, module); cmd != "" {
 		msg += "  ·  run: " + cmd
 	} else {
 		msg += "  ·  run: figaro update"

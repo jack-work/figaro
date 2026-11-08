@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -40,6 +41,7 @@ type Info struct {
 	Exe        string    `json:"exe"`
 	CheckedAt  time.Time `json:"checked_at"`
 	FetchError string    `json:"fetch_error,omitempty"`
+	NixEntry   string    `json:"nix_entry,omitempty"`
 }
 
 func DetectChannel() Channel {
@@ -213,22 +215,65 @@ func suffix(s string) string {
 }
 
 // UpgradeCommand is "" when the channel has no suggestion.
-func UpgradeCommand(ch Channel, module, latest string) string {
-	switch ch {
+func UpgradeCommand(info *Info, module string) string {
+	switch info.Channel {
 	case ChannelGoInstall:
-		v := latest
+		v := info.Latest
 		if v == "" {
 			v = "latest"
 		}
 		return "go install " + module + "/cmd/figaro@" + v
 	case ChannelNix:
-		return "nix profile upgrade figaro   # or your flake input, then: nix profile upgrade '.*'"
+		if info.NixEntry != "" {
+			return "nix profile upgrade '" + strings.ReplaceAll(info.NixEntry, "'", `'\''`) + "'"
+		}
+		return "nix profile upgrade <figaro's name in: nix profile list>"
 	case ChannelDevShell:
 		return "git pull && exit && nix develop   # (dev shell: rebuild by re-entering)"
 	case ChannelScript:
 		return "curl -fsSL https://figar.org/install.sh | sh"
 	case ChannelHomebrew:
 		return "brew upgrade figaro"
+	}
+	return ""
+}
+
+var nixProfileList = func(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "nix", "profile", "list", "--json").Output()
+}
+
+func nixProfileEntry(ctx context.Context, exe string) string {
+	out, err := nixProfileList(ctx)
+	if err != nil {
+		return ""
+	}
+	return NixProfileEntry(exe, out)
+}
+
+func NixProfileEntry(exe string, listJSON []byte) string {
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	rest, ok := strings.CutPrefix(exe, "/nix/store/")
+	if !ok {
+		return ""
+	}
+	pkg, _, _ := strings.Cut(rest, "/")
+	storePath := "/nix/store/" + pkg
+	var list struct {
+		Elements map[string]struct {
+			StorePaths []string `json:"storePaths"`
+		} `json:"elements"`
+	}
+	if json.Unmarshal(listJSON, &list) != nil {
+		return ""
+	}
+	for name, el := range list.Elements {
+		for _, p := range el.StorePaths {
+			if p == storePath {
+				return name
+			}
+		}
 	}
 	return ""
 }

@@ -118,7 +118,7 @@ func runUpdate(loaded *config.Loaded, args []string) error {
 		fmt.Fprintln(stdout, "  status:  up to date  ✓")
 		return nil
 	}
-	cmd := update.UpgradeCommand(info.Channel, figaroModule, info.Latest)
+	cmd := update.UpgradeCommand(info, figaroModule)
 	if cmd == "" {
 		fmt.Fprintln(stdout, "  status:  new release available")
 		fmt.Fprintln(stdout, "  no automatic upgrade command for this install channel;")
