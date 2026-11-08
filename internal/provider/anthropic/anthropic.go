@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -966,8 +967,15 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 // accumulator holds (its native payload keeps the signed thinking); any
 // other stream error drops it. A clean close that is not a reply hands over
 // the partial and fails the send with the wire's stop reason.
+type bodyReadError struct{ err error }
+
+func (e bodyReadError) Error() string { return e.err.Error() }
+
+func (e bodyReadError) Unwrap() error { return e.err }
+
 func (a *Anthropic) land(nm nativeMessage, err error) func(label string, bus provider.Bus) error {
 	return func(label string, bus provider.Bus) error {
+		err = provider.NameStreamCut(err, label)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
 				return err
@@ -1142,18 +1150,27 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 	)
 
 	pr, pw := io.Pipe()
+	defer pr.Close()
+	var drained atomic.Bool
+	defer drained.Store(true)
 	go func() {
-		defer pw.Close()
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := body.Read(buf)
 			if n > 0 {
-				pw.Write(buf[:n])
+				if _, werr := pw.Write(buf[:n]); werr != nil {
+					return
+				}
+			}
+			if err == io.EOF {
+				pw.Close()
+				return
 			}
 			if err != nil {
-				if err != io.EOF {
+				if !drained.Load() && ctx.Err() == nil {
 					slog.Warn("anthropic sse body read", "err", err)
 				}
+				pw.CloseWithError(bodyReadError{err})
 				return
 			}
 		}
@@ -1184,6 +1201,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 	var (
 		eventType string
 		lines     int
+		events    int
 	)
 	scanNext()
 	for {
@@ -1196,12 +1214,16 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 			lines++
 			scanNext()
 		case err := <-scanErr:
-			if err != nil {
+			var cut bodyReadError
+			if err != nil && !errors.As(err, &cut) {
 				slog.Warn("anthropic sse scanner", "lines", lines, "err", err)
 				return nm, fmt.Errorf("sse scanner: %w", err)
 			}
-			slog.Warn("anthropic sse stream ended before message_stop", "lines", lines)
-			return nm, fmt.Errorf("sse stream ended before message_stop")
+			if ctx.Err() != nil {
+				return nm, ctx.Err()
+			}
+			slog.Warn("anthropic sse stream ended before message_stop", "lines", lines, "events", events, "err", cut.err)
+			return nm, &provider.StreamCut{Awaited: "message_stop", Events: events, Err: cut.err}
 		case <-time.After(sseReadTimeout):
 			slog.Warn("anthropic sse read timeout", "lines", lines)
 			return nm, fmt.Errorf("sse read timeout")
@@ -1214,6 +1236,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 			continue
 		}
 		data := []byte(strings.TrimPrefix(line, "data: "))
+		events++
 		a.foldSSEEvent(ctx, eventType, data, &nm, &usage, &stopReason, bus)
 		if eventType == "message_stop" {
 			return finalizeClean()
