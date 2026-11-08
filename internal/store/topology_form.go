@@ -163,20 +163,21 @@ func edgesOf(snap form.Snapshot) map[string]string {
 	return out
 }
 
-func (t *TopologyTree) Prune(judge func(edges map[string]string) []topo.Stale, dryRun bool) ([]topo.Stale, error) {
+func (t *TopologyTree) Prune(judge func(edges map[string]string) []topo.Stale, dryRun bool) ([]topo.Stale, uint64, error) {
 	snap, version := t.form.Snapshot()
 	stale := judge(edgesOf(snap))
 	if dryRun || len(stale) == 0 {
-		return stale, nil
+		return stale, version, nil
 	}
 	remove := make([]string, len(stale))
 	for i, st := range stale {
 		remove[i] = st.ID
 	}
-	if _, _, err := t.form.applyEffect(form.Build(snap, nil, remove), version, Ensure, true); err != nil {
-		return nil, err
+	landed, _, err := t.form.applyEffect(form.Build(snap, nil, remove), version, Ensure, true)
+	if err != nil {
+		return nil, version, err
 	}
-	return stale, nil
+	return stale, landed, nil
 }
 
 // Rev is the form's version: it moves on every landed edit.

@@ -30,7 +30,7 @@ type Tree interface {
 	// Reparent pins an aria under a parent.
 	Reparent(id, parent string) error
 	Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error
-	Prune(judge func(edges map[string]string) []Stale, dryRun bool) ([]Stale, error)
+	Prune(judge func(edges map[string]string) []Stale, dryRun bool) ([]Stale, uint64, error)
 }
 
 type Topology interface {
@@ -58,7 +58,9 @@ func (x topoTree) Reparent(string, string) error   { return nil }
 func (x topoTree) Arrange(map[string]string, []string, func(string) error) error {
 	return ErrNoPromote
 }
-func (x topoTree) Prune(func(map[string]string) []Stale, bool) ([]Stale, error) { return nil, nil }
+func (x topoTree) Prune(func(map[string]string) []Stale, bool) ([]Stale, uint64, error) {
+	return nil, 0, nil
+}
 
 func (x topoTree) DeleteSet(id string) []string {
 	return DescendantClosure(ChildIndex(x.t, x.t.From), id)

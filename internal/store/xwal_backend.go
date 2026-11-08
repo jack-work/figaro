@@ -194,6 +194,8 @@ func (b *XwalBackend) Normalize(dryRun bool) (NormalizeReport, error) {
 	return b.store.Normalize(dryRun)
 }
 
+func (b *XwalBackend) TopologyDirty() bool { return b.store.TopologyDirty() }
+
 func (b *XwalBackend) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 	return b.store.CleanTopology(dryRun)
 }

@@ -175,7 +175,8 @@ type XwalStore struct {
 	now        func() int64
 	// tree is the presentation hierarchy: what fig ls draws and what a delete
 	// takes. Never consulted for forking: that reads .from.
-	tree topo.Tree
+	tree    topo.Tree
+	cleaned atomic.Pointer[cleanMark]
 	// deleting serializes whole deletes: two interleaved would re-home an aria
 	// under a parent the other is in the middle of taking.
 	deleting sync.Mutex
@@ -1181,7 +1182,7 @@ func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
 			assume[id] = rootID
 		}
 		r.Detached = detach
-		dropped, err := s.tree.Prune(s.redundantGiven(assume), true)
+		dropped, _, err := s.tree.Prune(s.redundantGiven(assume), true)
 		r.Dropped = dropped
 		return r, err
 	}
@@ -1200,11 +1201,24 @@ func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
 	return r, err
 }
 
+type cleanMark struct{ trunks, present uint64 }
+
+func (s *XwalStore) TopologyDirty() bool {
+	m := s.cleaned.Load()
+	return m == nil || m.trunks != s.trunks.Version() || m.present != s.presentRev()
+}
+
 func (s *XwalStore) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 	if s.tree == nil {
 		return nil, nil
 	}
-	return s.tree.Prune(s.redundantGiven(nil), dryRun)
+	trunks := s.trunks.Version()
+	stale, present, err := s.tree.Prune(s.redundantGiven(nil), dryRun)
+	if err != nil || dryRun {
+		return stale, err
+	}
+	s.cleaned.Store(&cleanMark{trunks: trunks, present: present})
+	return stale, nil
 }
 
 func (s *XwalStore) redundantGiven(assume map[string]string) func(map[string]string) []topo.Stale {

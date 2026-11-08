@@ -342,6 +342,11 @@ It holds OVERRIDES, never a full tree, so a lost topology form degrades to
 - **The clean is one patch of removals**, conditional on the form version
   it judged: an arrangement that lands mid-pass refuses it and nothing the
   arrangement set is lost.
+- **The daemon also cleans on its own.** The store counts the topology
+  dirty when the disk's version or the form's has moved since the last
+  clean (and at boot). The daemon checks hourly, five minutes after boot
+  first, and cleans a dirty topology. Arranging and listing never wait on
+  it.
 - **Retention is not built yet**: it keeps every record until figwal grows a
   compacting channel.
 

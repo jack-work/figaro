@@ -90,29 +90,6 @@ func TestNormalizeKeepsAnOverrideToANodeThatIsNotItsHistory(t *testing.T) {
 	}
 }
 
-// The dry run reports exactly what the real run then does.
-func TestNormalizeDryRunReportsTheRealRun(t *testing.T) {
-	b, _, _, _ := promotedPair(t)
-	edges := b.Store().Tree().Edges()
-	plan, err := b.Normalize(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := b.Store().Tree().Edges(); !reflect.DeepEqual(got, edges) {
-		t.Fatalf("the dry run changed the overrides: %v -> %v", edges, got)
-	}
-	if b.Store().Tree().Normalized() {
-		t.Fatal("the dry run detached something")
-	}
-	done, err := b.Normalize(false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(plan, done) {
-		t.Fatalf("dry run %+v, real run %+v", plan, done)
-	}
-}
-
 // The incident this guards against: an aria drawn at the top (the root,
 // "null"), away from the form it was born of, must not fall back into that form's delete set when
 // the clean runs, or the form's lifetime takes it.
@@ -155,12 +132,66 @@ func TestAnAriaDrawnAwayFromATTLdBirthFormSurvivesItsExpiryAfterAClean(t *testin
 	}
 }
 
+// The dry run reports exactly what the real run then does.
+func TestNormalizeDryRunReportsTheRealRun(t *testing.T) {
+	b, _, _, _ := promotedPair(t)
+	edges := b.Store().Tree().Edges()
+	plan, err := b.Normalize(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := b.Store().Tree().Edges(); !reflect.DeepEqual(got, edges) {
+		t.Fatalf("the dry run changed the overrides: %v -> %v", edges, got)
+	}
+	if b.Store().Tree().Normalized() {
+		t.Fatal("the dry run detached something")
+	}
+	done, err := b.Normalize(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan, done) {
+		t.Fatalf("dry run %+v, real run %+v", plan, done)
+	}
+}
+
+// The store says when the overrides may have drifted from the disk: at boot,
+// after any change to either, and not after a clean.
+func TestTopologyDirtyFollowsTheDiskAndTheOverrides(t *testing.T) {
+	b, stump, conv, alt := promotedPair(t)
+	s := b.Store()
+	if !s.TopologyDirty() {
+		t.Fatal("a store nobody has cleaned must be dirty")
+	}
+	if _, err := s.CleanTopology(false); err != nil {
+		t.Fatal(err)
+	}
+	if s.TopologyDirty() {
+		t.Fatal("dirty straight after a clean")
+	}
+	if _, err := b.CreateConversation(stump); err != nil {
+		t.Fatal(err)
+	}
+	if !s.TopologyDirty() {
+		t.Fatal("a new aria on disk left the topology clean")
+	}
+	if _, err := s.CleanTopology(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Arrange(map[string]string{conv: ""}, []string{alt}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !s.TopologyDirty() {
+		t.Fatal("an arrangement left the topology clean")
+	}
+}
+
 // The clean writes nothing when what it judged has moved on: an arrangement
 // that lands mid-pass is kept whole.
 func TestPruneRefusesWhenAnArrangementLandsMidPass(t *testing.T) {
 	b, stump, conv, alt := promotedPair(t)
 	tree := b.Store().Tree()
-	_, err := tree.Prune(func(edges map[string]string) []topo.Stale {
+	_, _, err := tree.Prune(func(edges map[string]string) []topo.Stale {
 		if err := tree.Reparent(conv, stump); err != nil {
 			t.Fatal(err)
 		}
