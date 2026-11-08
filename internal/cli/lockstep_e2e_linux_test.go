@@ -69,7 +69,9 @@ func lockstepDrive(t *testing.T, bin, tapePath string, steps int, env []string, 
 	defer ptmx.Close()
 	var stderr bytes.Buffer
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, &stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// A test binary that dies on -timeout or a signal runs no defer and no
+	// cleanup; without this the replay outlives it, reparented to init.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

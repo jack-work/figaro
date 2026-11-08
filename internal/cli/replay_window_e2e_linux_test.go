@@ -69,7 +69,7 @@ func replayInPtyAt(t *testing.T, r *restartRig, path, speed string) *listenScree
 		t.Fatal(err)
 	}
 	replay.Stdin, replay.Stdout, replay.Stderr = tty, tty, tty
-	replay.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	replay.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Pdeathsig: syscall.SIGKILL}
 	if err := replay.Start(); err != nil {
 		t.Fatal(err)
 	}
