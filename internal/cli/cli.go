@@ -117,6 +117,10 @@ func Run(progName string, args []string) {
 
 	router := buildRouter(progName, loaded)
 
+	if args, err = dotGetArgs(args); err != nil {
+		dieUsage("%s", err)
+	}
+
 	// Bare `figaro [send-flags] -- <prompt>` is the prompt verb; args[0] must
 	// not name a command.
 	if isBareForm(args, router.HasCommand) {
@@ -1493,6 +1497,59 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 			return nil
 		},
 		CompleteArgs: completeSetArgs,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "get",
+		Group: "State",
+		Short: "Print form values by path",
+		Usage: "get [--id <id>] [-j] <path> [<path>...]",
+		Long: `Print form values, by the same paths set and unset take.
+
+  figaro get system.cwd             a string prints bare
+  figaro get system.model mantra    one line per path, in order
+  figaro get comments.p24 -j        JSON, a string quoted
+  figaro .system.cwd                the same as get system.cwd
+  figaro show .mantra               likewise
+
+A string prints without quotes; a number, bool or null prints as JSON; an
+object or array prints as indented JSON. -j prints JSON for every value, and
+with several paths one object keyed by path. A path that is not on the form
+is an error naming it (exit 1); the paths that are print first.
+
+A leading '.' stands for get, before any verb or as show's argument. '.N'
+(digits only) is refused: it reads as an LT coordinate.`,
+		ArgsMin: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target figaro or form id (overrides pid binding)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON for every value; several paths make one object"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runGet(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "pwd",
+		Group: "State",
+		Short: "Print the directory a figaro's tools run in",
+		Usage: "pwd [--id <id>] [-j]",
+		Long: `Print system.cwd: the directory a figaro's tools resolve relative paths
+against, and where the pager resolves a relative path it opens in your editor.
+When system.cwd is unset, the tools run in the daemon's own working directory,
+and pwd prints that. Change it with figaro cd.`,
+		ArgsMax: 0,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target figaro id (overrides pid binding)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "The directory as a JSON string"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runPwd(ld, ctx.Flag("id"), ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{

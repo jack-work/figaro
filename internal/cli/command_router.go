@@ -190,6 +190,11 @@ func (in *interactiveInput) execCommand(line string) {
 	if len(argv) == 0 {
 		return
 	}
+	argv, err := dotGetArgs(argv)
+	if err != nil {
+		in.note(err.Error())
+		return
+	}
 	verb := argv[0]
 	switch {
 	case verb == "login":
