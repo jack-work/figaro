@@ -203,13 +203,13 @@ func (h *handlers) checkForkLT(ariaID string, lt uint64) error {
 }
 
 // forkPointOf maps a turn to the main-LT a fork takes.
-func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
+func (h *handlers) forkPointOf(ariaID string, turn uint64) (lt uint64, head bool, err error) {
 	if turn == 0 {
-		return 0, nil
+		return 0, true, nil
 	}
 	log, err := h.angelus.Backend.OpenFigIR(ariaID)
 	if err != nil {
-		return 0, fmt.Errorf("fork: open %s: %w", ariaID, err)
+		return 0, false, fmt.Errorf("fork: open %s: %w", ariaID, err)
 	}
 	entries := log.Read()
 	msgs := make([]message.Message, len(entries))
@@ -218,13 +218,17 @@ func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
 		msgs[i].LogicalTime = e.LT
 	}
 	first, _, ok := turns.Span(msgs, turn)
-	if !ok {
-		if last := turns.StampIDs(msgs); last > 0 {
-			return 0, fmt.Errorf("aria %s has no turn %d (it has turns 1..%d)", ariaID, turn, last)
-		}
-		return 0, fmt.Errorf("aria %s has no turns yet", ariaID)
+	if ok {
+		return first - 1, false, nil
 	}
-	return first - 1, nil
+	last := turns.StampIDs(msgs)
+	if turn == last+1 {
+		return 0, true, nil
+	}
+	if last > 0 {
+		return 0, false, fmt.Errorf("aria %s has no turn %d (it has turns 1..%d; %d is its head)", ariaID, turn, last, last+1)
+	}
+	return 0, false, fmt.Errorf("aria %s has no turns yet", ariaID)
 }
 
 // fork never kills or restarts the addressed trunk: it keeps its id and
@@ -249,9 +253,12 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	atMainLT := req.AtLT
 	if req.AtTurn > 0 {
-		lt, terr := h.forkPointOf(req.FigaroID, req.AtTurn)
+		lt, head, terr := h.forkPointOf(req.FigaroID, req.AtTurn)
 		if terr != nil {
 			return nil, terr
+		}
+		if head {
+			req.AtTurn = 0
 		}
 		atMainLT = lt
 	}
