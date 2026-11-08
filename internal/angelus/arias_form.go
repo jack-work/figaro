@@ -77,7 +77,7 @@ func ariasKey(ctx context.Context) string {
 	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String()}, groups...), "\x00")
 }
 
-func (h *handlers) ariasWatchFor(ctx context.Context) *ariasWatch {
+func (h *handlers) ariasWatchFor(ctx context.Context) (*ariasWatch, bool) {
 	key := ariasKey(ctx)
 	a := &h.arias
 	a.mu.Lock()
@@ -96,7 +96,7 @@ func (h *handlers) ariasWatchFor(ctx context.Context) *ariasWatch {
 		a.ticking = true
 		go h.tickArias()
 	}
-	return w
+	return w, !ok
 }
 
 func newAriasWatch(ctx context.Context) *ariasWatch {
@@ -313,7 +313,7 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 }
 
 func (h *handlers) callerFormMethod(ctx context.Context, id, method string, params json.RawMessage) (any, error) {
-	w := h.ariasWatchFor(ctx)
+	w, built := h.ariasWatchFor(ctx)
 	hb := w.forms[id].hub
 	switch method {
 	case rpc.MethodFollow:
@@ -325,7 +325,7 @@ func (h *handlers) callerFormMethod(ctx context.Context, id, method string, para
 		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
 			f.follow(hb)
 		}
-		if id != rpc.TopologyFormID || !w.builtWithin(ariasPair) {
+		if !built && (id != rpc.TopologyFormID || !w.builtWithin(ariasPair)) {
 			h.rebuildArias(w)
 		}
 		return hb.route(ctx, method, params)

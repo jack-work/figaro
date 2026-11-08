@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,7 +63,7 @@ func TestATopologyReadTakesTheRebuildAnAriasReadJustMade(t *testing.T) {
 	if _, err := r.h.callerFormMethod(ctx, rpc.AriasFormID, rpc.MethodForm, nil); err != nil {
 		t.Fatal(err)
 	}
-	w := r.h.ariasWatchFor(ctx)
+	w, _ := r.h.ariasWatchFor(ctx)
 	built := w.builtAt
 	if _, err := r.h.callerFormMethod(ctx, rpc.TopologyFormID, rpc.MethodForm, nil); err != nil {
 		t.Fatal(err)
@@ -93,5 +94,40 @@ func TestATopologyReadTakesTheRebuildAnAriasReadJustMade(t *testing.T) {
 	}
 	if !held {
 		t.Errorf("the rebuild a late @topology read made does not hold %s, born before it", fresh)
+	}
+}
+
+type listCounter struct {
+	store.Backend
+	lists atomic.Int32
+}
+
+func (c *listCounter) Conversations() []store.NodeView {
+	c.lists.Add(1)
+	return c.Backend.Conversations()
+}
+
+// A cold read builds the caller's watch and answers from that build: a second
+// listing in the same read doubles the cold cost of l.
+func TestAColdCallerFormReadListsOnce(t *testing.T) {
+	for _, id := range []string{rpc.AriasFormID, rpc.TopologyFormID} {
+		t.Run(id, func(t *testing.T) {
+			r := newAriasRig(t)
+			counter := &listCounter{Backend: r.backend}
+			r.h.angelus.Backend = counter
+			ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
+			if _, err := r.h.callerFormMethod(ctx, id, rpc.MethodForm, nil); err != nil {
+				t.Fatal(err)
+			}
+			if n := counter.lists.Load(); n != 1 {
+				t.Errorf("a cold %s read listed the store %d times, want 1", id, n)
+			}
+			if _, err := r.h.callerFormMethod(ctx, rpc.AriasFormID, rpc.MethodForm, nil); err != nil {
+				t.Fatal(err)
+			}
+			if n := counter.lists.Load(); n != 2 {
+				t.Errorf("a warm @arias read after it listed %d times in all, want 2: a read is current", n)
+			}
+		})
 	}
 }
