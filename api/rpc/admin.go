@@ -54,6 +54,10 @@ type ConfigureResponse struct {
 	Refreshed     bool   `json:"refreshed,omitempty"`
 }
 
+type StatusRequest struct {
+	SkipMem bool `json:"skip_mem,omitempty"`
+}
+
 type StatusResponse struct {
 	Uptime       int64        `json:"uptime_ms"` // millis since angelus start
 	FigaroCount  int          `json:"figaro_count"`

@@ -61,7 +61,13 @@ func (c *Angelus) Hello(ctx context.Context) (*rpc.HelloResponse, error) {
 // Status reports the daemon's uptime, population and build.
 func (c *Angelus) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	var resp rpc.StatusResponse
-	err := c.call(ctx, rpc.MethodStatus, struct{}{}, &resp)
+	err := c.call(ctx, rpc.MethodStatus, rpc.StatusRequest{SkipMem: true}, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) MemStatus(ctx context.Context) (*rpc.StatusResponse, error) {
+	var resp rpc.StatusResponse
+	err := c.call(ctx, rpc.MethodStatus, rpc.StatusRequest{}, &resp)
 	return &resp, err
 }
 

@@ -124,6 +124,7 @@ SetRequest.Assert
 SetRequest.IfVersion
 SetRequest.Outfits
 SetRequest.Patch
+StatusRequest.SkipMem
 StudyRequest.FormID
 TroupeAPIKeyListRequest.Troupe
 TroupeAPIKeyMintRequest.Hash

@@ -170,7 +170,7 @@ func runDoctorMem(asJSON, collect bool) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	st, err := cli.Status(ctx)
+	st, err := cli.MemStatus(ctx)
 	if collect {
 		st, err = cli.MemCollect(ctx)
 		if err != nil && strings.Contains(err.Error(), "method not found") {

@@ -17,6 +17,14 @@ import (
 )
 
 func (h *handlers) status(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.StatusRequest
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &req)
+	}
+	var mem *rpc.MemStatus
+	if !req.SkipMem {
+		mem = h.angelus.MemStatus()
+	}
 	return rpc.StatusResponse{
 		Uptime:       h.angelus.StartedAt.UnixMilli(),
 		FigaroCount:  h.angelus.Registry.FigaroCount(),
@@ -26,7 +34,7 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		Protocol:     rpc.ProtocolVersion,
 		Capabilities: daemonCapabilities,
 		Node:         h.nodeID(),
-		Mem:          h.angelus.MemStatus(),
+		Mem:          mem,
 	}, nil
 }
 
