@@ -27,7 +27,7 @@ figaro is a programmer's harness. Its agents, figaros, are durable: each one is 
 
 ## The prompt cache stays warm
 
-Providers keep a KV cache: the attention keys and values for a prompt prefix they have already processed, reused by any request that starts with the same bytes. Cache reads cost a fraction of fresh input ([Anthropic](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching): 0.1x, or 0.05x on Opus 5.5 and Sonnet 5.5; [OpenAI](https://platform.openai.com/docs/guides/prompt-caching): up to 95% off) and reach the first token sooner. figaro keeps each agent's prefix byte-stable: a message is translated once and resent byte for byte, state arrives as reminders on the newest message, and forks start from their parent's bytes. Across 1,646 figaros on my machine since July, 93% of input tokens were cache reads. Switching models costs one cold turn, since a model can't read another's cache; changing the credo rebuilds it.
+Providers keep a KV cache: the attention keys and values for a prompt prefix they have already processed, reused by any request that starts with the same bytes. Cache reads cost a fraction of fresh input ([Anthropic](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching): 0.1x, or 0.05x on Opus 5.5 and Sonnet 5.5; [OpenAI](https://platform.openai.com/docs/guides/prompt-caching): up to 95% off) and reach the first token sooner. figaro keeps each agent's prefix byte-stable: a message is translated once and resent byte for byte, state arrives as reminders on the newest message, and forks start from their parent's bytes. In my tests about 96% of input tokens are cache reads.
 
 ## Forms
 
