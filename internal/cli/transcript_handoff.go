@@ -7,10 +7,25 @@ import (
 )
 
 const (
-	handoffLength = 220 * time.Millisecond
-	handoffFrame  = time.Second / 60
-	handoffLevel  = 3
+	handoffTickRate = 30
+	handoffWakeRate = 60
+	handoffSlack    = time.Millisecond
+	handoffLevel    = 3
 )
+
+func handoffTick() time.Duration {
+	if ls := activeLockstep; ls != nil {
+		return 2 * time.Second / time.Duration(ls.fps)
+	}
+	return time.Second / handoffTickRate
+}
+
+func handoffWake() time.Duration {
+	if ls := activeLockstep; ls != nil {
+		return time.Second / time.Duration(ls.fps)
+	}
+	return time.Second / handoffWakeRate
+}
 
 type ruleHandoff struct {
 	seen        bool
@@ -67,26 +82,29 @@ func (t *transcript) noteHandoff() {
 	h.seen, h.turn, h.line = true, turn, line
 }
 
-func (t *transcript) handoffProgress(at time.Time) (float64, bool) {
+func (t *transcript) handoffRadius(at time.Time) (int, bool) {
+	n := max(t.w, 3)
+	full := dyadicReach(handoffLevel, n) + 1
 	if at.IsZero() {
-		return 1, false
+		return full, false
 	}
-	p := float64(t.clock().Sub(at)) / float64(handoffLength)
-	return math.Min(math.Max(p, 0), 1), p < 1
+	r := int((t.clock().Sub(at)+handoffSlack)/handoffTick()) + 1
+	r = min(max(r, 1), full)
+	return r, r < full
 }
 
 func (t *transcript) edgeRule() string {
-	p, running := t.handoffProgress(t.handoff.pinAt)
+	r, running := t.handoffRadius(t.handoff.pinAt)
 	if !running {
 		return t.headRule()
 	}
 	n := max(t.w, 3)
-	return dimRuleOf(n, func(i int) bool { return dyadicDouble(handoffLevel, i, n, p) })
+	return dimRuleOf(n, func(i int) bool { return dyadicDouble(handoffLevel, i, n, r) })
 }
 
 func (t *transcript) releasedRule(screen []string, top, body int) {
 	h := &t.handoff
-	p, running := t.handoffProgress(h.releaseAt)
+	r, running := t.handoffRadius(h.releaseAt)
 	if !running {
 		return
 	}
@@ -98,12 +116,12 @@ func (t *transcript) releasedRule(screen []string, top, body int) {
 		return
 	}
 	n := max(t.w, 3)
-	screen[row] = dimRuleOf(n, func(i int) bool { return !dyadicDouble(handoffLevel, i, n, p) })
+	screen[row] = dimRuleOf(n, func(i int) bool { return !dyadicDouble(handoffLevel, i, n, r) })
 }
 
 func (t *transcript) handoffRunning() bool {
-	_, pin := t.handoffProgress(t.handoff.pinAt)
-	_, release := t.handoffProgress(t.handoff.releaseAt)
+	_, pin := t.handoffRadius(t.handoff.pinAt)
+	_, release := t.handoffRadius(t.handoff.releaseAt)
 	return pin || release
 }
 
@@ -112,15 +130,24 @@ func (t *transcript) wakeForHandoff() {
 		return
 	}
 	t.waking = true
-	t.wake(handoffFrame)
+	t.wake(handoffWake())
 }
 
-func dyadicDouble(level, i, n int, p float64) bool {
-	if p <= 0 {
-		return false
+func dyadicDouble(level, i, n, r int) bool {
+	return dyadicDistance(level, i, n) < r
+}
+
+func dyadicReach(level, n int) int {
+	reach := 0
+	for i := range n {
+		reach = max(reach, dyadicDistance(level, i, n))
 	}
-	if p >= 1 || n < 2 {
-		return true
+	return reach
+}
+
+func dyadicDistance(level, i, n int) int {
+	if n < 2 {
+		return 0
 	}
 	intervals := 1 << level
 	spacing := float64(n-1) / float64(intervals)
@@ -133,5 +160,5 @@ func dyadicDouble(level, i, n int, p float64) bool {
 		seed := math.Round(float64(s) * spacing)
 		nearest = math.Min(nearest, math.Abs(float64(i)-seed))
 	}
-	return nearest <= p*spacing/2
+	return int(nearest)
 }

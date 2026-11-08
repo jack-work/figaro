@@ -71,6 +71,7 @@ func TestRule_HandoffAnimatesFromTheDyadicSeeds(t *testing.T) {
 	var woke []time.Duration
 	tr.wake = func(d time.Duration) { woke = append(woke, d) }
 	pinned, loose := edgeOffsets(t, tr)
+	whole := time.Duration(dyadicReach(handoffLevel, max(tr.w, 3))+1) * handoffTick()
 
 	tr.offset = loose
 	tr.renderFrame()
@@ -84,7 +85,7 @@ func TestRule_HandoffAnimatesFromTheDyadicSeeds(t *testing.T) {
 	if !strings.Contains(mid, ruleSingle) {
 		t.Fatalf("at the first frame the edge is already whole: %q", mid)
 	}
-	clock = clock.Add(handoffLength / 2)
+	clock = clock.Add(whole / 2)
 	edge = plain(headRowsOf(tr))
 	half := edge[len(edge)-1]
 	if strings.Count(half, ruleDouble) <= strings.Count(mid, ruleDouble) || !strings.Contains(half, ruleSingle) {
@@ -93,7 +94,7 @@ func TestRule_HandoffAnimatesFromTheDyadicSeeds(t *testing.T) {
 	if !strings.HasPrefix(half, ruleDouble) || !strings.HasSuffix(half, ruleDouble) {
 		t.Fatalf("the ends are seeds and turn first: %q", half)
 	}
-	clock = clock.Add(handoffLength)
+	clock = clock.Add(whole)
 	edge = plain(headRowsOf(tr))
 	if done := edge[len(edge)-1]; strings.Contains(done, ruleSingle) {
 		t.Fatalf("the edge did not settle double: %q", done)
@@ -101,7 +102,7 @@ func TestRule_HandoffAnimatesFromTheDyadicSeeds(t *testing.T) {
 
 	tr.offset = loose
 	tr.renderFrame()
-	clock = clock.Add(handoffLength / 2)
+	clock = clock.Add(whole / 2)
 	tr.renderFrame()
 	if tr.handoff.releaseLine < tr.offset {
 		t.Fatal("the release lost its line")
@@ -110,9 +111,47 @@ func TestRule_HandoffAnimatesFromTheDyadicSeeds(t *testing.T) {
 	if !strings.Contains(row, ruleDouble) || !strings.Contains(row, ruleSingle) {
 		t.Fatalf("halfway through the release the old edge is %q", row)
 	}
-	clock = clock.Add(handoffLength)
+	clock = clock.Add(whole)
 	tr.renderFrame()
 	if row := plain([]string{tr.prev[tr.handoff.releaseLine-tr.offset]})[0]; strings.Contains(row, ruleDouble) {
 		t.Fatalf("the released rule did not settle single: %q", row)
+	}
+}
+
+// gen5 t29: on the 60 fps lockstep grid the edge's wipe grew a cell every 2
+// or 3 frames (2910, 2912, 2915, 2918, 2921, 2923), a judder beside the
+// spinners' even 5. Each cell of the wipe now lands on the same number of
+// frames.
+func TestRule_HandoffGrowsOnAnEvenFrameCadence(t *testing.T) {
+	tr := stickyPager(t, 1, 4, 6, 72)
+	start := time.Unix(1000, 0)
+	clock := start
+	tr.now = func() time.Time { return clock }
+	tr.wake = func(time.Duration) {}
+	pinned, loose := edgeOffsets(t, tr)
+	tr.offset = loose
+	tr.renderFrame()
+	tr.offset = pinned
+	tr.renderFrame()
+	var changes []int
+	last := -1
+	for n := 0; n <= 60; n++ {
+		clock = start.Add(time.Duration(int64(n) * int64(time.Second) / 60))
+		edge := plain(headRowsOf(tr))
+		doubles := strings.Count(edge[len(edge)-1], ruleDouble)
+		if doubles != last {
+			if last >= 0 {
+				changes = append(changes, n)
+			}
+			last = doubles
+		}
+	}
+	if len(changes) < 3 {
+		t.Fatalf("the wipe changed on frames %v: too few to judge a cadence", changes)
+	}
+	for i := 2; i < len(changes); i++ {
+		if changes[i]-changes[i-1] != changes[1]-changes[0] {
+			t.Fatalf("the wipe advanced on frames %v: an uneven cadence", changes)
+		}
 	}
 }
