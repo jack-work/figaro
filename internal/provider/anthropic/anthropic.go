@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -178,6 +179,29 @@ func apiErrorMessage(status int, body []byte) string {
 		return fmt.Sprintf("HTTP %d", status)
 	}
 	return fmt.Sprintf("HTTP %d: %s", status, string(body))
+}
+
+var imageTooBig = regexp.MustCompile(`image exceeds [0-9.]+ MB maximum: [0-9]+ bytes > ([0-9]+) bytes`)
+
+func refusalOf(status int, body []byte, err error) error {
+	if status != http.StatusBadRequest {
+		return err
+	}
+	var parsed struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &parsed) != nil || parsed.Error.Type != "invalid_request_error" {
+		return err
+	}
+	m := imageTooBig.FindStringSubmatch(parsed.Error.Message)
+	if m == nil {
+		return err
+	}
+	limit, _ := strconv.Atoi(m[1])
+	return &provider.ImageRefused{Err: err, MaxBase64: limit}
 }
 
 func backoffDelay(attempt int) time.Duration {
@@ -1020,7 +1044,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("anthropic: %s", apiErrorMessage(resp.StatusCode, errBody))
+		return refusalOf(resp.StatusCode, errBody, fmt.Errorf("anthropic: %s", apiErrorMessage(resp.StatusCode, errBody)))
 	}
 
 	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(providerName, bus)
@@ -1127,7 +1151,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: %s", label, apiErrorMessage(resp.StatusCode, errBody))
+		return refusalOf(resp.StatusCode, errBody, fmt.Errorf("%s: %s", label, apiErrorMessage(resp.StatusCode, errBody)))
 	}
 
 	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(label, bus)

@@ -265,3 +265,12 @@ func ImageLimitsOf(e models.Entry, providerName, model string, anySource bool) I
 	}
 	return lim
 }
+
+type ImageRefused struct {
+	Err       error
+	MaxBase64 int
+}
+
+func (e *ImageRefused) Error() string { return e.Err.Error() }
+
+func (e *ImageRefused) Unwrap() error { return e.Err }

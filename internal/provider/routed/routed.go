@@ -3,6 +3,7 @@ package routed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -241,6 +243,13 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err == nil || watched.spoke.Load() || ctx.Err() != nil {
 		return err
 	}
+	if lim, ok := p.refitAfterRefusal(ctx, model, err); ok {
+		figOtel.Event(ctx, "provider.image_refit", attribute.Int("max_bytes", lim.MaxBytes))
+		slog.InfoContext(ctx, "provider refused an image; refitting to the catalog's limits and resending once",
+			"provider", p.spec.Name, "model", model, "max_bytes", lim.MaxBytes, "max_images", lim.MaxCount, "err", err)
+		in.Images = lim
+		return p.sendVia(ctx, t, model, in, bus)
+	}
 	moved, ok := p.rerouteAfterFailure(ctx, model, t)
 	if !ok {
 		return err
@@ -284,6 +293,28 @@ func (p *Provider) textOnly(model string) string {
 	return ""
 }
 
+func (p *Provider) refitAfterRefusal(ctx context.Context, model string, err error) (provider.ImageLimits, bool) {
+	var refused *provider.ImageRefused
+	if !errors.As(err, &refused) {
+		return provider.ImageLimits{}, false
+	}
+	p.mu.RLock()
+	_, listed := p.catalog[model]
+	p.mu.RUnlock()
+	if !listed && p.spec.Catalog != "" {
+		cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
+		_, _ = p.fetchCatalog(cctx)
+		cancel()
+	}
+	lim := p.imageLimits(model, true)
+	lim.MaxCount, lim.CountWhy = 0, ""
+	if said := refused.MaxBase64 * 3 / 4; said > 0 && (lim.MaxBytes == 0 || said < lim.MaxBytes) {
+		lim.MaxBytes = said
+		lim.BytesWhy = fmt.Sprintf("%s refused an image over %s for model %s", p.spec.Name, tool.FormatSize(refused.MaxBase64), model)
+	}
+	return lim, lim.MaxBytes > 0
+}
+
 func (p *Provider) imageLimits(model string, anySource bool) provider.ImageLimits {
 	e, _ := p.entry(model)
 	return provider.ImageLimitsOf(e, p.spec.Name, model, anySource)
@@ -291,7 +322,9 @@ func (p *Provider) imageLimits(model string, anySource bool) provider.ImageLimit
 
 func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in provider.SendInput, bus provider.Bus) error {
 	in.TextOnly = p.textOnly(model)
-	in.Images = p.imageLimits(model, false)
+	if in.Images == (provider.ImageLimits{}) {
+		in.Images = p.imageLimits(model, false)
+	}
 	switch t {
 	case Responses, ResponsesWS:
 		r := p.responsesBackend()
