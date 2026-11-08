@@ -20,8 +20,12 @@ func (t *transcript) footLines() []string {
 }
 
 func (t *transcript) transcriptRule() string {
-	total := t.index.total
 	body, _ := t.layoutNow()
+	return t.transcriptRuleFor(body)
+}
+
+func (t *transcript) transcriptRuleFor(body int) string {
+	total := t.index.total
 	pos := ""
 	if total > body {
 		end := min(t.offset+body, total)

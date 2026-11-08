@@ -235,6 +235,9 @@ func (t *transcript) renderFrame() {
 	if t.offset < 0 {
 		t.offset = 0
 	}
+	if len(foot) > 0 && !t.fullPit() {
+		foot[0] = t.transcriptRuleFor(body)
+	}
 	screen := t.nextScreen()
 	push := t.headPush()
 	// Only the rows about to be painted are materialized, decorated and
