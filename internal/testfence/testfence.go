@@ -10,10 +10,15 @@ import (
 
 const DeadSessionBus = "unix:path=/nonexistent/figaro-tests-have-no-session-bus"
 
+const NoBrowser = "true"
+
 var inheritedVault = []string{"FIGARO_HUSH_DIR", "FIGARO_HUSH_PASSPHRASE"}
 
 func Install() {
 	if err := os.Setenv("DBUS_SESSION_BUS_ADDRESS", DeadSessionBus); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("BROWSER", NoBrowser); err != nil {
 		panic(err)
 	}
 	for _, k := range inheritedVault {
