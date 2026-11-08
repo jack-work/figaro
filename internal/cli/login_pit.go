@@ -45,6 +45,7 @@ type loginProvider struct {
 }
 
 type loginBackend struct {
+	open    func(url string) bool
 	list    func() ([]loginProvider, string)
 	signIn  func(ctx context.Context, name string, c auth.Console) error
 	signOut func(name string) (logoutReport, error)
@@ -52,6 +53,7 @@ type loginBackend struct {
 
 func liveLoginBackend(loaded *config.Loaded) loginBackend {
 	return loginBackend{
+		open: auth.OpenBrowser,
 		list: func() ([]loginProvider, string) { return loginRows(loaded) },
 		signIn: func(ctx context.Context, name string, c auth.Console) error {
 			reg, err := loginTarget(loaded, name)
@@ -303,6 +305,13 @@ func (c *pitConsole) Note(s string) { c.add(loginNote, s) }
 func (c *pitConsole) Link(u string) { c.add(loginLink, u) }
 func (c *pitConsole) Code(s string) { c.add(loginCode, s) }
 func (c *pitConsole) Done(s string) { c.add(loginDone, s) }
+
+func (c *pitConsole) Open(u string) bool {
+	c.in.mu.Lock()
+	open := c.in.loginState().backend.open
+	c.in.mu.Unlock()
+	return open != nil && open(u)
+}
 
 func (c *pitConsole) Ask(ctx context.Context, prompt string) (string, error) {
 	return c.ask(ctx, prompt, false)

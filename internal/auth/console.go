@@ -7,6 +7,7 @@ type Console interface {
 	Link(url string)
 	Code(code string)
 	Done(text string)
+	Open(url string) bool
 	Ask(ctx context.Context, prompt string) (string, error)
 	AskSecret(ctx context.Context, prompt string) ([]byte, error)
 }

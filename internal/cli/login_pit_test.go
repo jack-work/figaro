@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -228,6 +230,46 @@ func TestThePagerRoutesLoginVerbsToThePit(t *testing.T) {
 		in.execCommand(line)
 		in.eventually(t, line+" opens the login pit", func(tr *transcript, _ *loginSession) bool { return tr.showing(pitLogin) })
 	}
+}
+
+func TestTheLoginPitUnderTestCannotOpenABrowser(t *testing.T) {
+	if auth.BrowserAllowed() || liveLoginBackend(nil).open("https://example.invalid/") {
+		t.Fatal("the test fence leaves the live opener able to launch a browser")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"device_code":"dc","user_code":"WXYZ-0001","verification_uri":"https://idp.invalid/device",` +
+			`"verification_uri_complete":"https://idp.invalid/device?code=WXYZ-0001","interval":5,"expires_in":60}`))
+	}))
+	defer srv.Close()
+	opened := make(chan string, 4)
+	in, _ := loginRig(t, loginBackend{
+		open: func(u string) bool { opened <- u; return false },
+		list: oneProvider("not signed in", false),
+		signIn: func(ctx context.Context, _ string, c auth.Console) error {
+			_, err := auth.LoginDeviceCode(ctx, auth.DeviceCodeConfig{ClientID: "c", DeviceURL: srv.URL, TokenURL: srv.URL}, c)
+			return err
+		},
+	})
+	in.openLoginPit([]string{"anthropic"})
+	select {
+	case u := <-opened:
+		if u != "https://idp.invalid/device?code=WXYZ-0001" {
+			t.Fatalf("the pit's opener got %q", u)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the device flow never asked the pit to open its link")
+	}
+	in.eventually(t, "the link and code are rows", func(tr *transcript, _ *loginSession) bool {
+		pit := strings.Join(tr.pit.lines(tr.w, 30), "\n")
+		return strings.Contains(pit, "https://idp.invalid/device?code=WXYZ-0001") && strings.Contains(pit, "code  WXYZ-0001")
+	})
+	in.mu.Lock()
+	in.lt.tr.pit.focus(loginRowID("anthropic"))
+	in.mu.Unlock()
+	in.keys("x")
+	in.eventually(t, "x cancels the sign-in", func(_ *transcript, s *loginSession) bool { return !s.flow.running() })
 }
 
 const osc52 = "\x1b]52;c;cGF5bG9hZA==\x07"

@@ -35,9 +35,9 @@ func Login(ctx context.Context, hushClient *hush.Client, cfg OAuthConfig, c Cons
 	}
 	authURL := cfg.AuthorizeURL + "?" + params.Encode()
 
-	c.Note("Opening your browser to sign in. If it doesn't open, visit:")
+	c.Note("Sign in at this link, then paste the code it gives you:")
 	c.Link(authURL)
-	openBrowser(authURL)
+	c.Open(authURL)
 
 	pasted, err := c.AskSecret(ctx, "Paste the code here: ")
 	if err != nil {

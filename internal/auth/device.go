@@ -69,7 +69,7 @@ func LoginDeviceCode(ctx context.Context, cfg DeviceCodeConfig, c Console) (Devi
 		p.Prefilled = true
 	}
 	showDevicePrompt(c, p)
-	openBrowser(p.VerificationURI)
+	c.Open(p.VerificationURI)
 
 	interval := max(time.Duration(device.Interval)*time.Second, 5*time.Second)
 	expiresIn := device.ExpiresIn

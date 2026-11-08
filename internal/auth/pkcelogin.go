@@ -61,7 +61,7 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 }
 
 func LoginPKCE(ctx context.Context, cfg PKCEConfig, c Console) (DeviceTokens, error) {
-	return loginPKCE(ctx, cfg, openBrowser, pkceTimeout, c)
+	return loginPKCE(ctx, cfg, func(u string) { c.Open(u) }, pkceTimeout, c)
 }
 
 type pkceRedirect struct {
@@ -89,7 +89,7 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	defer srv.Close()
 
 	authorize := authorizeURL(cfg, redirect, state, pkce.Challenge)
-	c.Note(cfg.ProviderName + " signs in through your browser (authorization code with PKCE). If it does not open, visit:")
+	c.Note(cfg.ProviderName + " signs in through your browser (authorization code with PKCE) at this link:")
 	c.Link(authorize)
 	open(authorize)
 

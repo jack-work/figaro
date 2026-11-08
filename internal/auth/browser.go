@@ -7,14 +7,35 @@ import (
 	"strings"
 )
 
-func openBrowser(u string) {
+const NoBrowserEnv = "FIGARO_NO_BROWSER"
+
+func BrowserAllowed() bool {
+	return browserAllowed(os.Getenv, runtime.GOOS)
+}
+
+func browserAllowed(getenv func(string) string, goos string) bool {
+	if getenv(NoBrowserEnv) != "" {
+		return false
+	}
+	switch goos {
+	case "darwin", "windows":
+		return true
+	}
+	return getenv("DISPLAY") != "" || getenv("WAYLAND_DISPLAY") != ""
+}
+
+func OpenBrowser(u string) bool {
+	if !BrowserAllowed() {
+		return false
+	}
 	for _, argv := range browserCommands(os.Getenv("BROWSER"), runtime.GOOS, u) {
 		cmd := exec.Command(argv[0], argv[1:]...)
 		if cmd.Start() == nil {
 			go cmd.Wait()
-			return
+			return true
 		}
 	}
+	return false
 }
 
 func browserCommands(browser, goos, u string) [][]string {
