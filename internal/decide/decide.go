@@ -241,7 +241,7 @@ func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p p
 	target, err := e.targets(set.provider)
 	targetSpan.End()
 	if err != nil {
-		return out, fmt.Errorf("decision provider %q: %w", set.provider, err)
+		return out, fromUpstream(fmt.Errorf("decision provider %q: %w", set.provider, err))
 	}
 	client := NewClient(firstOf(set.baseURL, target.BaseURL), target.Auth)
 	client.headers = target.Headers
@@ -275,11 +275,11 @@ func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p p
 		avail = avail * retryShare / retryOf
 	}
 	if err != nil {
-		return out, err
+		return out, fromUpstream(err)
 	}
 	a, ok := resp.Answers[questionKey]
 	if !ok {
-		return out, fmt.Errorf("%s: the response carries no answer", Name)
+		return out, fromUpstream(fmt.Errorf("%s: the response carries no answer", Name))
 	}
 	out.Model = firstOf(resp.Model, model)
 	out.API = api
