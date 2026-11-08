@@ -47,8 +47,8 @@ func (a barAlert) paint(text string) string {
 // A full date: a pager left open across midnight makes a bare clock ambiguous.
 const lastAtFormat = "01/02/06 15:04:05"
 
-// render returns one row when both groups fit, else left, blank, right; the caller
-// reserves height from the same count.
+// render returns one row when both groups fit, else the left group over the right
+// one, still flush right; the caller reserves height from the same count.
 func (v statusView) render(w int) []string {
 	if w <= 0 {
 		return nil
@@ -78,10 +78,10 @@ func (v statusView) render(w int) []string {
 	if lw, rw := displayWidth(l), displayWidth(r); lw+rw+2 <= w {
 		return []string{l + strings.Repeat(" ", w-lw-rw) + r}
 	}
+	r = clipToWidthEllipsis(r, w)
 	return []string{
 		clipToWidthEllipsis(joinFields(v.withMantra(bare, at, w-bareW-mantraGap)), w),
-		"",
-		clipToWidthEllipsis(r, w),
+		strings.Repeat(" ", max(w-displayWidth(r), 0)) + r,
 	}
 }
 

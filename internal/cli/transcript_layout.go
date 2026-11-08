@@ -55,7 +55,7 @@ func (t *transcript) fullPit() bool {
 }
 
 // The only place this arithmetic is done: the pane, minus the bar (one row, or
-// three when it wraps), the blank above it, the rule, and a row of conversation.
+// two when it wraps), the blank above it, the rule, and a row of conversation.
 func (t *transcript) pitRoom() int {
 	if t.fullPit() {
 		// Fullscreen: everything but the status bar and the blank above
@@ -116,8 +116,8 @@ func padTo(s string, n int) string {
 	return s
 }
 
-// The bar is not always one row: on a narrow pane it is three, and reserving one
-// while painting three pushes the conversation off the top.
+// The bar is not always one row: on a narrow pane it is two, and reserving one
+// while painting two pushes the conversation off the top.
 func (t *transcript) layout(foot int) (body, maxOff int) {
 	body = t.h - 1 - t.barRows() - foot - t.headPush()
 	if t.follow {

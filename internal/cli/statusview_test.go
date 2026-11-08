@@ -42,9 +42,9 @@ func TestStatusViewGoldens(t *testing.T) {
 			want: []string{"𝄚 queue · done ✓ · 123abc · test · claude-opus              9.8k/1.0m (1.0%) · 08/28/26 12:47:31"},
 		},
 		{
-			name: "narrow: left, blank, right", width: 24,
+			name: "narrow: left over right, no blank between", width: 24,
 			view: func(v statusView) statusView { return v },
-			want: []string{"✓ · 123abc · test", "", "9.8k/1.0m (1.0%)"},
+			want: []string{"✓ · 123abc · test", "        9.8k/1.0m (1.0%)"},
 		},
 		{
 			name: "the mantra sheds before the bar grows", width: 32,
