@@ -560,7 +560,12 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 		in.progress("…" + name + " " + spec)
 	}
 	go func() {
-		view, closeView, err := openFormView(spec, in.loaded, in.renderLocked)
+		acli, err := in.angelus()
+		if err != nil {
+			in.note(name + ": " + err.Error())
+			return
+		}
+		view, closeView, err := openFormView(acli, spec, in.loaded, in.renderLocked)
 		if err != nil {
 			in.note(name + ": " + err.Error())
 			return

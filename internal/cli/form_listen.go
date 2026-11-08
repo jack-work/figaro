@@ -21,7 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formView, func(), error) {
+func openFormView(acli *sdk.Angelus, ariaID string, loaded *config.Loaded, onChange func()) (*formView, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	spec, intrinsic := splitIntrinsic(ariaID)
@@ -31,14 +31,12 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 			intrinsic, strings.Join(intrinsicNames(), ", "), intrinsicState)
 	}
 
-	acli := mustConnectAngelus(loaded)
 	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, spec, false, dressing{})
 	if err != nil {
 		cancel()
-		acli.Close()
 		return nil, nil, err
 	}
-	view, closeView, _, err := openFormViewOn(ctx, cancel, ep, resolvedID, intrinsic, onChange, func() { acli.Close() })
+	view, closeView, _, err := openFormViewOn(ctx, cancel, ep, resolvedID, intrinsic, onChange, func() {})
 	return view, closeView, err
 }
 
