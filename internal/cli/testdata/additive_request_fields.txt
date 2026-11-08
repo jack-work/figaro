@@ -79,6 +79,7 @@ KillRequest.Recursive
 LineageRequest.Against
 LineageRequest.FigaroID
 ListRequest.Before
+ListRequest.ExceptNodes
 ListRequest.Global
 ListRequest.IDsOnly
 ListRequest.Limit

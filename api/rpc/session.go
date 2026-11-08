@@ -71,6 +71,8 @@ type ListRequest struct {
 	Global  bool   `json:"global,omitempty"`
 	Limit   int    `json:"limit,omitempty"`
 	Before  string `json:"before,omitempty"`
+
+	ExceptNodes []string `json:"except_nodes,omitempty"`
 }
 
 type ListResponse struct {

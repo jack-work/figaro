@@ -336,6 +336,48 @@ func TestFederationListsEveryNode(t *testing.T) {
 	require.True(t, ids[here])
 }
 
+// A caller listing through A names the nodes whose rows it already has; A
+// does not ask them. gluck listing through spain once had spain ask gluck,
+// which refused, and ls warned about the caller's own node.
+func TestFederationListSkipsTheNodesTheCallerNames(t *testing.T) {
+	a, b := newFedPair(t)
+	here, there := a.mint(), b.mint()
+	ctx := callCtx(t)
+	b.doorLn.Close()
+
+	resp, err := a.as("probe").ListWith(ctx, rpc.ListRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.Unreachable, 1, "the fixture must fan out to b and fail")
+
+	resp, err = a.as("probe").ListWith(ctx, rpc.ListRequest{ExceptNodes: []string{b.id}})
+	require.NoError(t, err)
+	require.Empty(t, resp.Unreachable)
+	ids := map[string]bool{}
+	for _, r := range resp.Figaros {
+		ids[r.ID] = true
+	}
+	require.True(t, ids[here])
+	require.False(t, ids[there])
+}
+
+// The skip only narrows the fan-out: naming the serving node, a prefix of a
+// peer, or a stranger hides nothing.
+func TestFederationListSkipNarrowsOnlyTheFanOut(t *testing.T) {
+	a, b := newFedPair(t)
+	here, there := a.mint(), b.mint()
+	ctx := callCtx(t)
+
+	resp, err := a.as("probe").ListWith(ctx, rpc.ListRequest{ExceptNodes: []string{a.id, b.id[:8], "not-a-node"}})
+	require.NoError(t, err)
+	require.Empty(t, resp.Unreachable)
+	ids := map[string]bool{}
+	for _, r := range resp.Figaros {
+		ids[r.ID] = true
+	}
+	require.True(t, ids[here])
+	require.True(t, ids[there])
+}
+
 // A fork stays on its parent's node.
 func TestFederationForksOnTheParentsNode(t *testing.T) {
 	a, b := newFedPair(t)
