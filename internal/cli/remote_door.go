@@ -297,15 +297,59 @@ func nodeDoor(node string) (transport.Endpoint, error) {
 		return ep, nil
 	}
 	loaded, _ := config.Load(k.configDir)
-	ep, err := newNodeRouter(loaded).door(node)
+	for range 2 {
+		r := newNodeRouter(loaded)
+		ep, err := r.door(node)
+		if err != nil {
+			return transport.Endpoint{}, err
+		}
+		answered, err := checkRoutedDoor(ep)
+		if err != nil {
+			return transport.Endpoint{}, err
+		}
+		if nodeMatches(answered, node) {
+			if nodeDoorCached == nil {
+				nodeDoorCached = map[nodeDoorKey]transport.Endpoint{}
+			}
+			nodeDoorCached[k] = ep
+			return ep, nil
+		}
+		r.learned(ep.Address, answered)
+	}
+	return transport.Endpoint{}, fmt.Errorf("no troupe profile reaches node %s", node)
+}
+
+func (r *nodeRouter) learned(url, node string) {
+	r.cache[url] = doorRecord{Node: node, ProbedMS: time.Now().UnixMilli()}
+	if err := writeDoorCache(r.cache); err != nil {
+		fmt.Fprintf(stderrw, "figaro: troupe door cache: %s\n", err)
+	}
+}
+
+var checkRoutedDoor = func(ep transport.Endpoint) (string, error) {
+	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
-		return transport.Endpoint{}, err
+		return "", err
 	}
-	if nodeDoorCached == nil {
-		nodeDoorCached = map[nodeDoorKey]transport.Endpoint{}
+	defer acli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), troupeProbeTimeout)
+	defer cancel()
+	h, err := acli.Hello(ctx)
+	if err != nil {
+		return "", err
 	}
-	nodeDoorCached[k] = ep
-	return ep, nil
+	st, err := acli.Status(ctx)
+	if err != nil {
+		return "", err
+	}
+	d, mine := identityOf(st), boot.BuildRevision()
+	switch buildHandshake(d, mine, boot.BuildRelease()) {
+	case handshakeProtocolMismatch:
+		return "", fmt.Errorf("the daemon at %s speaks protocol %d and this CLI speaks %d", ep.Address, d.protocol, rpc.ProtocolVersion)
+	case handshakeRefuse:
+		return "", fmt.Errorf("the daemon at %s is build %s and this CLI is %s, and it reports no protocol to check", ep.Address, short12(d.build), short12(mine))
+	}
+	return h.Node, nil
 }
 
 func ownNode() string {

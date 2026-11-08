@@ -56,6 +56,7 @@ func newRemotePair(t *testing.T) *remotePair {
 		}
 		return h.Node, nil
 	}
+	checkRoutedDoor = r.realCheck
 	old := troupeHTTPClient
 	troupeHTTPClient = edge.HTTPClient
 	t.Cleanup(func() { troupeHTTPClient = old })

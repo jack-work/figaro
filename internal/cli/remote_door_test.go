@@ -30,6 +30,9 @@ type remoteRig struct {
 	mu     sync.Mutex
 	probes []transport.Endpoint
 	signed map[string]bool
+
+	realCheck func(transport.Endpoint) (string, error)
+	checks    []string
 }
 
 func newRemoteRig(t *testing.T, config string, profiles map[string]string) *remoteRig {
@@ -51,11 +54,18 @@ func newRemoteRig(t *testing.T, config string, profiles map[string]string) *remo
 	for name := range profiles {
 		r.signed[name] = true
 	}
-	oldBearer, oldProbe := troupeBearer, probeTroupeNode
+	oldBearer, oldProbe, oldCheck := troupeBearer, probeTroupeNode, checkRoutedDoor
 	t.Cleanup(func() {
-		troupeBearer, probeTroupeNode = oldBearer, oldProbe
+		troupeBearer, probeTroupeNode, checkRoutedDoor = oldBearer, oldProbe, oldCheck
 		forgetDoors()
 	})
+	r.realCheck = oldCheck
+	checkRoutedDoor = func(ep transport.Endpoint) (string, error) {
+		r.mu.Lock()
+		r.checks = append(r.checks, ep.Address)
+		r.mu.Unlock()
+		return r.nodes[ep.Address], nil
+	}
 	troupeBearer = func(tr boot.Troupe) transport.Bearer {
 		if !r.signed[tr.Name] {
 			return stubBearer{err: errors.New("no credential")}
@@ -259,13 +269,60 @@ func TestADoorRefusingTheLoginNamesTheLoginCommand(t *testing.T) {
 	r := newRemoteRig(t, "", map[string]string{"spain": url})
 	r.own(nodeGluck)
 	require.NoError(t, writeDoorCache(map[string]doorRecord{url: {Node: nodeSpain}}))
+	stub := checkRoutedDoor
+	checkRoutedDoor = r.realCheck
 	old := troupeHTTPClient
 	troupeHTTPClient = srv.Client()
 	t.Cleanup(func() { troupeHTTPClient = old })
 
+	_, err := doorFor(nodeSpain + "/abc")
+	require.EqualError(t, err, "figaro troupe login spain", "the route's own check meets the refusal")
+
+	checkRoutedDoor = stub
+	r.nodes[url] = nodeSpain
+	forgetDoors()
 	a, err := doorFor(nodeSpain + "/abc")
 	require.NoError(t, err)
 	require.Zero(t, r.probeCount())
 	_, err = sdk.DialAria(a, nil)
-	require.EqualError(t, err, "figaro troupe login spain")
+	require.EqualError(t, err, "figaro troupe login spain", "and so does any later dial")
+}
+
+// A routed door gets the build check a configured troupe gets: a refusal
+// there ends the route before any call carries the id.
+func TestARoutedDoorOfAnotherProtocolIsRefused(t *testing.T) {
+	r := newRemoteRig(t, "", map[string]string{"spain": "wss://spain.example"})
+	r.own(nodeGluck)
+	r.nodes["wss://spain.example"] = nodeSpain
+	checkRoutedDoor = func(ep transport.Endpoint) (string, error) {
+		return "", errors.New("the daemon at " + ep.Address + " speaks protocol 9 and this CLI speaks 1")
+	}
+	_, err := doorFor(nodeSpain + "/abc")
+	require.EqualError(t, err, "the daemon at wss://spain.example speaks protocol 9 and this CLI speaks 1")
+}
+
+// A cached door that now answers as another node is not trusted: the first
+// route in a process asks the door who it is, learns the new answer, and
+// finds the node again or refuses it. Nothing carrying the id reaches the
+// door that answered wrongly.
+func TestAStaleCachedDoorIsCheckedBeforeAnIDGoesThere(t *testing.T) {
+	r := newRemoteRig(t, "", map[string]string{"spain": "wss://spain.example", "third": "wss://third.example"})
+	r.own(nodeGluck)
+	require.NoError(t, writeDoorCache(map[string]doorRecord{"wss://spain.example": {Node: nodeSpain}}))
+	r.nodes["wss://spain.example"] = nodeThird
+
+	_, err := doorFor(nodeSpain + "/abc")
+	require.EqualError(t, err, "no troupe profile reaches node "+nodeSpain)
+	require.Equal(t, []string{"wss://spain.example"}, r.checks, "only the who-are-you check reached the stale door")
+	require.Equal(t, nodeThird, readDoorCache()["wss://spain.example"].Node, "the new answer is cached")
+
+	r.nodes["wss://third.example"] = nodeSpain
+	forgetDoors()
+	require.NoError(t, writeDoorCache(map[string]doorRecord{"wss://spain.example": {Node: nodeSpain}}))
+	r.checks = nil
+	a, err := doorFor(nodeSpain + "/abc")
+	require.NoError(t, err)
+	require.Equal(t, "wss://third.example", a.Door.Address, "re-routed after the re-probe")
+	require.Equal(t, "third", bearerOf(t, a.Door))
+	require.Equal(t, []string{"wss://spain.example", "wss://third.example"}, r.checks)
 }

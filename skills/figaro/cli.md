@@ -406,7 +406,8 @@ With no troupe selected, an id on another node (`<node>/<id>`, the node
 whole or 8+ characters) goes to the door of the profile that answers for that
 node: figaro asks each wss profile once for its node id and keeps the answers
 in `<cache-dir>/troupe-doors.json`, keyed by url, asking again when a node is
-missing. Profiles sharing a url are one door; `[troupe] name` speaks first,
+missing. The first route to a door in a process checks that it still answers
+as that node, and applies the build check `FIGARO_TROUPE` gets. Profiles sharing a url are one door; `[troupe] name` speaks first,
 else the first signed in. A profile's token only goes to its own url. A node
 no profile reaches is refused (`no troupe profile reaches node <n>`), as is a
 node two doors claim. A login the door refuses or hush lacks reads
