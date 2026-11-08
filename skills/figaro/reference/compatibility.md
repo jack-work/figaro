@@ -35,7 +35,7 @@ capabilities.
   needs the `set` verb (not `kill`) on every node of the reaped group, and a
   troupe policy that grants `set` grants it. A set refused partway leaves the
   nodes before it restored, and the error names them.
-- **@figaros rows dropped `promoted` and `history_parent`** after 0.54.3,
+- **@arias rows dropped `promoted` and `history_parent`** after 0.54.3,
   which shipped them. A row now carries `parent` (its history parent's id),
   and `@topology` holds the overrides: one key per figaro drawn away from its
   history, valued with the figaro it is drawn under. `@arias`'s view hint
