@@ -13,7 +13,7 @@
 
 figaro is a programmer's harness. Its agents, figaros, are durable: each one is a log on disk, served by a daemon called the angelus (for you catholics out there) that keeps well over a thousand of them in under 500 MB of memory and runs fast on a laptop from 2004. Works with Claude, GitHub Copilot, OpenRouter, Azure, and any provider that speaks Anthropic Messages, OpenAI Chat Completions or the Responses API.
 
-<p align="center"><img src="docs/media/engine.gif" alt="from a plain shell: two figaros prompted in the background, figaro ls with both running, a fork prompted at the head, a form made, studied and set, the figaro answering about the change, and figaro show printing a turn" width="820"></p>
+<p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
 
 > [!NOTE]
 > figaro is under heavy development and released several times a day, mostly by figaros themselves. Pin a version if you need it to sit still ([Releases](#releases)).
@@ -57,7 +57,7 @@ figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/fi
 
 Drive figaros from the shell (`figaro -- <prompt>`, `figaro send -f`) or from the pager (bare `figaro`). Neither is required; the shell is the quick one.
 
-<p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
+<p align="center"><img src="docs/media/topology.gif" alt="figaro ls prints the tree of figaros with their mantras; in the pager, l opens the same tree and the cursor moves between forks" width="820"></p>
 
 ## Security: bring your own sandbox
 
