@@ -116,11 +116,14 @@ func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMet
 }
 
 var mirroredIdentity = []struct {
-	key   string
-	field func(*AriaMeta) *string
+	key          string
+	field        func(*AriaMeta) *string
+	keepOnRemove bool
 }{
-	{"mantra", func(m *AriaMeta) *string { return &m.Mantra }},
-	{"system.cwd", func(m *AriaMeta) *string { return &m.Cwd }},
+	{"mantra", func(m *AriaMeta) *string { return &m.Mantra }, false},
+	{"system.cwd", func(m *AriaMeta) *string { return &m.Cwd }, false},
+	{"system.provider", func(m *AriaMeta) *string { return &m.Provider }, true},
+	{"system.model", func(m *AriaMeta) *string { return &m.Model }, true},
 }
 
 func (b *XwalBackend) identityCommitted(ariaID string, patch message.Patch, f *Form) {
@@ -136,7 +139,12 @@ func (b *XwalBackend) identityCommitted(ariaID string, patch message.Patch, f *F
 	snap := f.Read().Snapshot
 	if err := b.UpdateMeta(ariaID, func(m *AriaMeta) {
 		for _, i := range touched {
-			*mirroredIdentity[i].field(m) = snapString(snap, mirroredIdentity[i].key)
+			k := mirroredIdentity[i]
+			v := snapString(snap, k.key)
+			if v == "" && k.keepOnRemove {
+				continue
+			}
+			*k.field(m) = v
 		}
 	}); err != nil {
 		slog.Warn("identity: sidecar unwritable", "aria", ariaID, "err", err)
