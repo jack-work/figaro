@@ -47,6 +47,7 @@ func (in *interactiveInput) onTape(spec string) bool {
 
 func (in *interactiveInput) openTapeForm(name, spec string, full bool, keep func(*formView) bool) {
 	if !in.onTape(spec) {
+		in.pitFailed("")
 		in.refuseOffTape(name)
 		return
 	}
@@ -55,10 +56,12 @@ func (in *interactiveInput) openTapeForm(name, spec string, full bool, keep func
 		ctx, cancel := context.WithCancel(context.Background())
 		view, closeView, _, err := openFormViewOn(ctx, cancel, in.tape, in.currentID(), intrinsic, in.renderLocked, func() {})
 		if err != nil {
+			in.pitFailed("")
 			in.noteErr(name + ": " + err.Error())
 			return
 		}
 		if keep != nil && !keep(view) {
+			in.pitFailed("")
 			closeView()
 			return
 		}

@@ -70,6 +70,13 @@ func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
 func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
 func (t *transcript) dispatch(ev keyEvent) {
+	if t.awaiting {
+		if t.pit.shown == t.awaitShown {
+			t.awaitKeys = append(t.awaitKeys, ev)
+			return
+		}
+		t.pitArrived()
+	}
 	t.held = false
 	if t.pending != "" {
 		bd := t.prefixed(ev)
@@ -229,6 +236,7 @@ func (t *transcript) runListCommand(line string) {
 		t.note("this session cannot run commands")
 		return
 	}
+	t.awaitPit()
 	t.command(line)
 }
 func pagerFindNext(t *transcript)    { t.findRepeat(1) }
@@ -243,6 +251,7 @@ func pagerFormPit(t *transcript) {
 		return
 	}
 	if t.openForm != nil {
+		t.awaitPit()
 		t.openForm()
 	}
 }

@@ -83,6 +83,7 @@ func (r pitRow) yankText() string {
 type pit struct {
 	id    pitID
 	title string
+	shown int
 
 	liveRev   uint64
 	liveWidth int
@@ -129,7 +130,7 @@ func (d *pit) close() {
 	if d.live != nil {
 		d.live.Close()
 	}
-	*d = pit{}
+	*d = pit{shown: d.shown + 1}
 }
 
 type itemView interface {
@@ -147,6 +148,7 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 		d.live.Close()
 	}
 	d.id, d.title, d.live, d.tall = id, "", v, 0
+	d.shown++
 	switch view := v.(type) {
 	case itemView:
 		d.body = newPicker(view.Items(80))
@@ -188,6 +190,7 @@ func (d *pit) showList(id pitID, title string, rows []pitRow) {
 		d.live.Close()
 	}
 	d.id, d.title, d.live, d.tall = id, title, nil, 0
+	d.shown++
 	d.body = newPicker(rows)
 }
 

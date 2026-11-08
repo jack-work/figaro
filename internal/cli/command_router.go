@@ -105,6 +105,18 @@ func formPitFor(verb string) (formPit, bool) {
 	return formPit{}, false
 }
 
+func opensPit(line string) bool {
+	argv := tokenize(line)
+	if len(argv) == 0 || isCommentVerb(line) || overlayVerbs[argv[0]] {
+		return false
+	}
+	if p, ok := formPitFor(argv[0]); ok && (len(argv) == 1 || !p.bare) {
+		return true
+	}
+	_, _, ok := liveForm(argv)
+	return ok
+}
+
 // terminalSubverbs take the terminal: `form listen` reads os.Stdin in a loop,
 // which would race the pager's input loop for the fd and hold routerMu forever.
 var terminalSubverbs = map[string]bool{
@@ -566,17 +578,19 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 		acli, err := in.angelus()
 		if err != nil {
 			finished()
-			in.note(name + ": " + err.Error())
+			in.pitFailed(name + ": " + err.Error())
 			return
 		}
 		view, closeView, err := openFormView(acli, spec, in.loaded, in.renderLocked)
 		if err != nil {
-			in.note(name + ": " + err.Error())
+			finished()
+			in.pitFailed(name + ": " + err.Error())
 			return
 		}
 		view.subject = in.subjectState()
 		if keep != nil && !keep(view) {
 			finished()
+			in.pitFailed("")
 			closeView()
 			return
 		}
@@ -636,6 +650,7 @@ func (in *interactiveInput) installLivePit(name string, view *formView, full boo
 		t.pit.refreshLive(t.w)
 		t.pit.focusSubtree(at)
 	}
+	t.pitArrived()
 	t.endBatch()
 }
 

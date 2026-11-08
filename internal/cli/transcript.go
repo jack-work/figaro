@@ -33,14 +33,18 @@ type transcript struct {
 	full bool
 	// A fullscreen pit recedes when the transcript takes focus (`T`) rather
 	// than closing.
-	focused pitFocus
-	head    questionHead
-	handoff ruleHandoff
-	wake    func(time.Duration)
-	waking  bool
-	after   func(time.Duration, func())
-	held    bool
-	holdGen int
+	focused    pitFocus
+	head       questionHead
+	handoff    ruleHandoff
+	wake       func(time.Duration)
+	waking     bool
+	after      func(time.Duration, func())
+	held       bool
+	holdGen    int
+	awaiting   bool
+	awaitGen   int
+	awaitShown int
+	awaitKeys  []keyEvent
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool

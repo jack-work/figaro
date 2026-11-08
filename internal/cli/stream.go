@@ -794,7 +794,8 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		}
 		in.mu.Lock()
 		var armed *keyBinding
-		if in.lt.tr.pending != "" {
+		awaiting := in.lt.tr.awaiting
+		if in.lt.tr.pending != "" && !awaiting {
 			if armed = in.lt.tr.prefixed(ev); armed == nil {
 				in.lt.tr.pending = ""
 			}
@@ -802,6 +803,8 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		in.mu.Unlock()
 		var act inputFunc
 		switch {
+		case awaiting:
+			act = inputAct.input(modeConfirm, ev)
 		case armed != nil && armed.input != nil:
 			in.mu.Lock()
 			in.lt.tr.pending = ""

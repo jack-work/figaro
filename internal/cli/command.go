@@ -65,6 +65,15 @@ func (in *interactiveInput) note(msg string) {
 	in.mu.Unlock()
 }
 
+func (in *interactiveInput) pitFailed(msg string) {
+	in.mu.Lock()
+	in.lt.tr.pitFailed()
+	if msg != "" {
+		in.lt.tr.setCommandNote(msg)
+	}
+	in.mu.Unlock()
+}
+
 func (in *interactiveInput) progress(msg string) {
 	in.mu.Lock()
 	in.lt.tr.setProgressNote(msg)

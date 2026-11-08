@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -17,6 +18,40 @@ func (t *transcript) setCmdOut(title string, rows []pitRow) {
 	t.pit.focus(t.status.figaroID)
 	t.focused = focusPit
 	t.render()
+	t.pitArrived()
+}
+
+const pitAwaitLimit = 5 * time.Second
+
+func (t *transcript) awaitPit() {
+	t.awaiting = true
+	t.awaitGen++
+	t.awaitShown = t.pit.shown
+	t.awaitKeys = nil
+	if t.after == nil {
+		return
+	}
+	gen := t.awaitGen
+	t.after(pitAwaitLimit, func() {
+		if t.awaiting && t.awaitGen == gen {
+			t.pitFailed()
+		}
+	})
+}
+
+func (t *transcript) pitArrived() {
+	if !t.awaiting {
+		return
+	}
+	keys := t.awaitKeys
+	t.awaiting, t.awaitKeys = false, nil
+	for _, ev := range keys {
+		t.dispatch(ev)
+	}
+}
+
+func (t *transcript) pitFailed() {
+	t.awaiting, t.awaitKeys = false, nil
 }
 
 func (t *transcript) statusPanelLines() []string {
