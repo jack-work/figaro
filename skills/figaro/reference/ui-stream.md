@@ -500,7 +500,7 @@ pit follows a remap, so it shows your map rather than this one.
 | `c j` / `c k` | next / previous comment; Enter on one opens its thread. See [quoting.md](quoting.md) |
 | `a` | attend the figaro that fork point came from; in a list, the selected row's |
 | `^` | attend this figaro's parent, or say it is top-level |
-| `l` / `L` | the topology in the pit: `l` opens this node and every fork down to the attended figaro, cursor on it and its own forks open and in view, all in the first frame it draws; `L` shows only the root (the troupe's nodes, this one marked), each opening with `l` or Enter. `:ls` is `l`, `:troupe` is `L` |
+| `l` / `L` | the topology in the pit: `l` opens this node and every fork down to the attended figaro, cursor on it, opened whole: its own forks, then its own form folded as `:state` folds it, all in the first frame it draws. `l` or → on any figaro row opens it the same way; `L` shows only the root (the troupe's nodes, this one marked), each opening with `l` or Enter. `:ls` is `l`, `:troupe` is `L` |
 | `x` / `X` | in a list, kill the figaro the selected row names, asking first / at once; in the queue, drop the message |
 | `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up; the sentence rides the bar's alert and `[y/N]` its command slot, so the question costs no height |
 | `h` | the help panel |

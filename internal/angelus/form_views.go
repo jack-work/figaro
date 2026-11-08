@@ -35,6 +35,7 @@ var formViews = map[string]rpc.FormView{
 		Rows:    []string{"arias.*", "**.forks.*"},
 		Open:    []string{"arias", "**.forks"},
 		RowAria: "id",
+		Mount:   "id",
 		Through: "forks",
 		Label:   "mantra",
 		Sort:    "-active_at",
@@ -45,6 +46,7 @@ var formViews = map[string]rpc.FormView{
 	rpc.RecentFormID: {
 		Rows:    []string{"*"},
 		RowAria: "id",
+		Mount:   "id",
 		Label:   "title",
 		Aside:   "active_at",
 		Sort:    "-active_at",

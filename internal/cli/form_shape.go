@@ -303,15 +303,10 @@ func (v *formView) revealOpen() string {
 		return ""
 	}
 	v.mu.Lock()
-	defer v.mu.Unlock()
 	v.open[at] = true
-	if v.view != nil && v.view.Through != "" {
-		if v.through == nil {
-			v.through = map[string]bool{}
-		}
-		v.through[at] = true
-	}
+	delete(v.through, at)
 	v.openRev++
+	v.mu.Unlock()
 	return at
 }
 

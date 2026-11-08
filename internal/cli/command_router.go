@@ -98,9 +98,9 @@ func formPitFor(verb string) (formPit, bool) {
 	case "ls", "list":
 		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtAttended}, true
 	case "troupe":
-		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtRoot}, true
+		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).withMounts}, true
 	case "recent":
-		return formPit{name: "recent", form: rpc.RecentFormID, bare: true}, true
+		return formPit{name: "recent", form: rpc.RecentFormID, bare: true, ready: (*interactiveInput).withMounts}, true
 	}
 	return formPit{}, false
 }
