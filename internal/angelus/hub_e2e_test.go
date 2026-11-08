@@ -68,6 +68,11 @@ func daemonOnStore(t testing.TB, dir string, setup func(*angelus.Angelus, *store
 
 func daemonWithHandlers(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend)) (*angelus.Angelus, *sdk.Angelus, context.Context, *angelus.Handlers) {
 	t.Helper()
+	return daemonWithProvider(t, dir, setup, func() provider.Provider { return &mockProviderForIntegration{} })
+}
+
+func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend), mock func() provider.Provider) (*angelus.Angelus, *sdk.Angelus, context.Context, *angelus.Handlers) {
+	t.Helper()
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 	backend, err := store.NewXwalBackend(dir+"/arias", loaded.SegmentSize())
@@ -93,7 +98,7 @@ func daemonWithHandlers(t testing.TB, dir string, setup func(*angelus.Angelus, *
 			if name != "mock" {
 				return nil, fmt.Errorf("unknown provider %q", name)
 			}
-			return &mockProviderForIntegration{}, nil
+			return mock(), nil
 		},
 		Ctx: ctx,
 		// Without FormTemplates restoreOne fails "form unavailable".

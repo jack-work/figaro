@@ -20,6 +20,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/uiir"
@@ -389,8 +390,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 		copy.TokensOut = 0
 		copy.CacheReadTokens = 0
 		copy.CacheWriteTokens = 0
-		copy.ContextTokens = 0
-		copy.ContextExact = false
+		copy.ContextTokens, copy.ContextExact = h.contextAt(parent, atMainLT)
 		copy.LastFigaroLT = atMainLT
 		copy.Provider = ""
 		copy.Model = ""
@@ -427,6 +427,21 @@ func (h *handlers) outfitAncestor(id string) string {
 		id = node.Parent
 	}
 	return ""
+}
+
+func (h *handlers) contextAt(id string, atMainLT uint64) (int, bool) {
+	log, err := h.angelus.Backend.OpenFigIR(id)
+	if err != nil {
+		return 0, false
+	}
+	var msgs []message.Message
+	for _, e := range log.Read() {
+		if e.LT > atMainLT {
+			break
+		}
+		msgs = append(msgs, e.Payload)
+	}
+	return tokens.ContextSize(msgs)
 }
 
 func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
