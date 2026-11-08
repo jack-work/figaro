@@ -240,6 +240,32 @@ func (b *Inbox) Send(evt event) bool {
 	return true
 }
 
+func (b *Inbox) SendAll(events []event) bool {
+	if len(events) == 0 {
+		return true
+	}
+	if b.q.Closed() {
+		return false
+	}
+	now := time.Now().UnixMilli()
+	b.mu.Lock()
+	for i := range events {
+		if events[i].typ != eventUserPrompt || events[i].id != 0 {
+			continue
+		}
+		b.nextID++
+		events[i].id = b.nextID
+		if events[i].at == 0 {
+			events[i].at = now
+		}
+	}
+	b.mu.Unlock()
+	b.q.Do(func(pending []event) []event { return append(pending, events...) })
+	b.signalWake()
+	b.notify()
+	return true
+}
+
 func (b *Inbox) Wake() <-chan struct{} { return b.wake }
 
 func (b *Inbox) Recv() (event, bool) {

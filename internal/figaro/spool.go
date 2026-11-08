@@ -226,9 +226,7 @@ func (a *Agent) Redeliver() {
 		slog.Info("redelivering after restart", "aria", a.id,
 			"queued", len(f.Queued), "resume", f.Cut.owesResume())
 	}
-	for _, e := range events {
-		a.inbox.Send(e)
-	}
+	a.inbox.SendAll(events)
 	a.persistSpool()
 }
 

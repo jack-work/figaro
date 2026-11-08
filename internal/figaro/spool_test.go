@@ -75,6 +75,16 @@ func (p *spoolProvider) await(t *testing.T) string {
 	return p.asks[len(p.asks)-1]
 }
 
+// first is the first thing the model was asked: a later ask can carry what an
+// earlier turn should have.
+func (p *spoolProvider) first(t *testing.T) string {
+	t.Helper()
+	p.await(t)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.asks[0]
+}
+
 func (p *spoolProvider) quiet(t *testing.T, d time.Duration, why string) {
 	t.Helper()
 	select {
@@ -146,9 +156,9 @@ func TestASuspendedTurnAndItsQueueAreRedeliveredByTheNextAgent(t *testing.T) {
 	second := newSpoolProvider(false)
 	a2 := spoolAgent(t, be, id, spool, second)
 	defer a2.Kill()
-	ask := second.await(t)
+	ask := second.first(t)
 	require.Contains(t, ask, figaro.ResumeNotice)
-	require.Contains(t, ask, "second")
+	require.Contains(t, ask, "second", "the resumed turn ran without the queue, which became a turn of its own")
 }
 
 // A prompt accepted while the agent is suspending is spooled, not run and not lost.
