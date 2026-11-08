@@ -19,7 +19,6 @@ type TelemetryConfig struct {
 	// Level is the sink floor (debug, info, warn, error); empty means info. FIGARO_LOG_LEVEL wins.
 	Level string `toml:"level"`
 
-	// OTLPEndpoint additionally exports logs and traces over OTLP; the file sinks keep working.
 	OTLPEndpoint string `toml:"otlp_endpoint"`
 }
 

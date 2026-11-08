@@ -329,7 +329,9 @@ func Run() {
 	}
 	defer lockF.Close()
 
-	otelShutdown, err := figOtel.Init(context.Background(), boot.StateDir())
+	figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
+	figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
+	otelShutdown, err := figOtel.Init(context.Background(), loaded.TelemetryDir(boot.StateDir()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
 	} else {

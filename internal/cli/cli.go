@@ -95,6 +95,7 @@ func Run(progName string, args []string) {
 	telemetryDir := boot.StateDir()
 	if loaded, lerr := config.Load(config.DefaultConfigDir()); lerr == nil {
 		figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
+		figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
 		telemetryDir = loaded.TelemetryDir(boot.StateDir())
 	}
 	shutdown, err := figOtel.Init(ctx, telemetryDir)

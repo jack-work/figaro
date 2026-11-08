@@ -174,6 +174,13 @@ func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
 	return sdktrace.NewSimpleSpanProcessor(exp)
 }
 
+func processRole() string {
+	if os.Getenv("_FIGARO_DAEMON") == "1" {
+		return "angelus"
+	}
+	return "cli"
+}
+
 // configuredLevel is the [telemetry] level from config; FIGARO_LOG_LEVEL
 // overrides it.
 var configuredLevel string
@@ -190,11 +197,20 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		return nil, fmt.Errorf("state dir: %w", err)
 	}
 
-	res, err := resource.New(ctx, resource.WithAttributes(
+	res, err := resource.New(ctx, resource.WithHost(), resource.WithAttributes(
 		semconv.ServiceNameKey.String("figaro"),
+		attribute.String("figaro.process", processRole()),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("resource: %w", err)
+	}
+
+	var remote *otlpSinks
+	if configuredOTLP != "" {
+		if remote, err = newOTLPSinks(ctx, configuredOTLP); err != nil {
+			slog.Warn("otlp export off", "endpoint", configuredOTLP, "err", err)
+			remote = nil
+		}
 	}
 
 	traceFile, err := newRotatingWriter(filepath.Join(dir, "traces.jsonl"), telemetryFileMax)
@@ -206,10 +222,14 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		traceFile.Close()
 		return nil, fmt.Errorf("trace exporter: %w", err)
 	}
-	tp := sdktrace.NewTracerProvider(
+	traceOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithSpanProcessor(newSpanProcessor(traceExp)),
 		sdktrace.WithResource(res),
-	)
+	}
+	if remote != nil {
+		traceOpts = append(traceOpts, sdktrace.WithSpanProcessor(remote.spans))
+	}
+	tp := sdktrace.NewTracerProvider(traceOpts...)
 	otel.SetTracerProvider(tp)
 
 	logFile, err := newRotatingWriter(filepath.Join(dir, "logs.jsonl"), telemetryFileMax)
@@ -223,10 +243,14 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		logFile.Close()
 		return nil, fmt.Errorf("log exporter: %w", err)
 	}
-	lp := sdklog.NewLoggerProvider(
+	logOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithProcessor(newLogProcessor(logExp, fileQueue)),
 		sdklog.WithResource(res),
-	)
+	}
+	if remote != nil {
+		logOpts = append(logOpts, sdklog.WithProcessor(remote.logs))
+	}
+	lp := sdklog.NewLoggerProvider(logOpts...)
 	otellogglobal.SetLoggerProvider(lp)
 	bridge := otelslog.NewHandler(scopeName, otelslog.WithLoggerProvider(lp))
 	// The ring retains in addition to exporting, never instead.
@@ -252,14 +276,23 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		metricFile.Close()
 		return nil, fmt.Errorf("metric exporter: %w", err)
 	}
-	mp := sdkmetric.NewMeterProvider(
+	metricOpts := []sdkmetric.Option{
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(30*time.Second))),
 		sdkmetric.WithResource(res),
-	)
+	}
+	if remote != nil {
+		metricOpts = append(metricOpts, sdkmetric.WithReader(remote.metrics))
+	}
+	mp := sdkmetric.NewMeterProvider(metricOpts...)
 	otel.SetMeterProvider(mp)
 	initInstruments(mp.Meter(scopeName))
 
 	shutdown := func(ctx context.Context) error {
+		if _, ok := ctx.Deadline(); !ok && remote != nil {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, otlpTimeout)
+			defer cancel()
+		}
 		var first error
 		setFirst := func(err error) {
 			if err != nil && first == nil {
