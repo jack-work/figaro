@@ -223,6 +223,10 @@ func (h *handlers) scanFormsNamed(name string) (roles, forms []string) {
 
 func (h *handlers) placeRef(ctx context.Context, method, ref string, route bool) (string, string, error) {
 	node, id := rpc.SplitNode(ref)
+	if node != "" && !h.isSelf(node) && method == rpc.MethodBind {
+		qualified, err := h.memberRef(ref)
+		return qualified, "", err
+	}
 	if node != "" && !h.isSelf(node) {
 		return h.elsewhere(ctx, method, ref, node, id, route)
 	}

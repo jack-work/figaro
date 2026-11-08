@@ -47,6 +47,7 @@ type fedNode struct {
 	doorLn  net.Listener
 	tlsCfg  *tls.Config
 	members *peer.Static
+	hs      *angelus.Handlers
 
 	pendingPeers []func() config.Peer
 	alsoOwners   []string
@@ -146,7 +147,7 @@ func (n *fedNode) start() {
 
 	n.ctx, n.stop = context.WithCancel(context.Background())
 	t.Cleanup(n.stop)
-	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
+	n.hs = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus: n.a,
 		Config:  loaded,
 		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
@@ -157,7 +158,8 @@ func (n *fedNode) start() {
 		},
 		Ctx:           n.ctx,
 		FormTemplates: template.New("t"),
-	}).Map
+	})
+	n.a.Handlers = n.hs.Map
 	go n.a.Run(n.ctx)
 	t.Cleanup(func() { n.a.Shutdown(0) })
 	waitForAngelus(t, n.a.SocketPath)

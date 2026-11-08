@@ -22,8 +22,24 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.BindResponse{OK: true}, nil
 }
 
+func (h *handlers) memberRef(ref string) (string, error) {
+	if err := rpc.ValidateAriaRef(ref); err != nil {
+		return "", err
+	}
+	node, id := rpc.SplitNode(ref)
+	full, ok := h.peerNamed(node)
+	if !ok || h.isSelf(full) {
+		return "", fmt.Errorf("%s: node %s is not a member of this node's troupe", ref, node)
+	}
+	return full + rpc.NodeSeparator + id, nil
+}
+
 // requireAria proves an aria exists without constructing anything.
 func (h *handlers) requireAria(id string) error {
+	if node, _ := rpc.SplitNode(id); node != "" && !h.isSelf(node) {
+		_, err := h.memberRef(id)
+		return err
+	}
 	if err := rpc.ValidateAriaID(id); err != nil {
 		return err
 	}
