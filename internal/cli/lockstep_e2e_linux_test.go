@@ -35,6 +35,19 @@ type lockstepRun struct {
 // that read the wall clock lands differently.
 func lockstepDrive(t *testing.T, bin, tapePath string, steps int, env []string, pause time.Duration) lockstepRun {
 	t.Helper()
+	cmds := make([]string, steps)
+	for n := range cmds {
+		cmds[n] = fmt.Sprintf("step %d", n)
+	}
+	return lockstepScript(t, bin, tapePath, cmds, env, pause)
+}
+
+// lockstepScript sends each command and cuts the stream at its marker:
+// run.steps[i] holds the bytes command i drew. A command is "step N" or
+// "resize C R"; "refuse <command>" sends the command and wants an error that
+// draws nothing.
+func lockstepScript(t *testing.T, bin, tapePath string, cmds []string, env []string, pause time.Duration) lockstepRun {
+	t.Helper()
 	root := t.TempDir()
 	for _, sub := range []string{"run", "state", "cache", "config"} {
 		if err := os.MkdirAll(filepath.Join(root, sub), 0o700); err != nil {
@@ -118,27 +131,52 @@ func lockstepDrive(t *testing.T, bin, tapePath string, steps int, env []string, 
 	answers := bufio.NewReader(conn)
 	var run lockstepRun
 	var pending []byte
-	for n := 0; n < steps; n++ {
+	for n, cmd := range cmds {
 		if pause > 0 && n%25 == 0 {
 			time.Sleep(pause)
 		}
-		if _, err := fmt.Fprintf(conn, "step %d\n", n); err != nil {
+		refused, refuse := strings.CutPrefix(cmd, "refuse ")
+		if refuse {
+			cmd = refused
+		}
+		if _, err := fmt.Fprintf(conn, "%s\n", cmd); err != nil {
 			t.Fatal(err)
 		}
 		line, err := answers.ReadString('\n')
 		if err != nil {
-			t.Fatalf("step %d: the socket said nothing (%v); stderr:\n%s", n, err, stderr.String())
+			t.Fatalf("%s: the socket said nothing (%v); stderr:\n%s", cmd, err, stderr.String())
 		}
-		var got, total int64
-		if _, err := fmt.Sscanf(line, "done %d %d", &got, &total); err != nil || got != int64(n) {
-			t.Fatalf("step %d answered %q", n, line)
+		if refuse {
+			if !strings.HasPrefix(line, "error ") {
+				t.Fatalf("%s answered %q, want an error", cmd, line)
+			}
+			run.dones = append(run.dones, run.read)
+			run.steps = append(run.steps, nil)
+			continue
+		}
+		var total int64
+		var marker []byte
+		if c, r, ok := resizeCommand(cmd); ok {
+			var gc, gr int
+			if _, err := fmt.Sscanf(line, "resized %d %d %d", &gc, &gr, &total); err != nil || gc != c || gr != r {
+				t.Fatalf("%s answered %q", cmd, line)
+			}
+			marker = resizeMarker(c, r)
+		} else {
+			var step, got int64
+			if _, err := fmt.Sscanf(cmd, "step %d", &step); err != nil {
+				t.Fatalf("lockstepScript drives step and resize, not %q", cmd)
+			}
+			if _, err := fmt.Sscanf(line, "done %d %d", &got, &total); err != nil || got != step {
+				t.Fatalf("%s answered %q", cmd, line)
+			}
+			marker = stepMarker(uint64(step))
 		}
 		run.dones = append(run.dones, total)
-		marker := stepMarker(uint64(n))
 		for !bytes.Contains(pending, marker) {
 			chunk, ok := <-screen
 			if !ok {
-				t.Fatalf("step %d: the pty closed before its marker; stderr:\n%s", n, stderr.String())
+				t.Fatalf("%s: the pty closed before its marker; stderr:\n%s", cmd, stderr.String())
 			}
 			pending = append(pending, chunk...)
 		}
@@ -147,14 +185,19 @@ func lockstepDrive(t *testing.T, bin, tapePath string, steps int, env []string, 
 		run.read += int64(i + len(marker))
 		pending = pending[i+len(marker):]
 		if total != run.read {
-			t.Fatalf("step %d: done counts %d bytes, the pty gave %d", n, total, run.read)
+			t.Fatalf("%s: the answer counts %d bytes, the pty gave %d", cmd, total, run.read)
 		}
 		if bytes.Contains(run.steps[n], []byte("\x1b]7717;")) {
-			t.Fatalf("step %d carries a marker that is not its own", n)
+			t.Fatalf("%s carries a marker that is not its own", cmd)
 		}
 	}
 	conn.Close()
 	return run
+}
+
+func resizeCommand(cmd string) (cols, rows int, ok bool) {
+	_, err := fmt.Sscanf(cmd, "resize %d %d", &cols, &rows)
+	return cols, rows, err == nil
 }
 
 func tapeSteps(t *testing.T, path string, fps int) int {

@@ -8,6 +8,7 @@ Fixtures for `tape_replay_test.go` and `figaro replay`. Format:
 | `spike.tape` | minted (`-mint-tape`), synthetic content | PASS since the tailFit fix; it was the repro |
 | `stream-eager.tape` | recorded, anthropic direct with `system.eager_tool_streaming = true` | PASS. The arguments STREAM: 17 input patches |
 | `stream-buffered.tape` | recorded, same route with the flag off | PASS. The arguments DO NOT stream: 0 input patches, the API having buffered each parameter until it was whole |
+| `fork-almaviva.tape` | gen5 t34 fork plate (conducted), 48x14: first 96 frames, shifted 21.9 s earlier, turn 1's libretto cut from the history page | PASS. A fork streaming prose between three bash calls; the lockstep resize fixture |
 
 Adding one: read it first if it is a recording (tool output lands verbatim),
 and say here whether it is expected to fail.

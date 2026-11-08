@@ -20,6 +20,9 @@ const (
 	lockstepWait     = 10 * time.Second
 	lockstepFPS      = 60
 	lockstepAnimFPS  = 12
+	lockstepMinCols  = 20
+	lockstepMinRows  = 5
+	lockstepMaxScale = 4
 )
 
 type lockstep struct {
@@ -30,6 +33,8 @@ type lockstep struct {
 	box    *stepBox
 	driver net.Conn
 	end    chan struct{}
+	cols   int
+	rows   int
 
 	acks     chan struct{}
 	attached chan struct{}
@@ -42,8 +47,9 @@ type lockstep struct {
 }
 
 type lockstepSession struct {
-	mu *renderLock
-	lt *livelogTurn
+	mu     *renderLock
+	lt     *livelogTurn
+	resize func(w, h int)
 }
 
 var activeLockstep *lockstep
@@ -87,7 +93,7 @@ func startLockstep(ctx context.Context, h tape.Header, srv *tapeServer, driver n
 		return nil, err
 	}
 	ls := &lockstep{
-		ctx: ctx, fps: fps, clk: newStepClock(started), srv: srv, box: box, driver: driver,
+		ctx: ctx, fps: fps, clk: newStepClock(started), srv: srv, box: box, driver: driver, cols: cols, rows: rows,
 		end: make(chan struct{}), acks: make(chan struct{}, 1), attached: make(chan struct{}),
 		animFPS: animFPS,
 	}
@@ -188,8 +194,31 @@ func (ls *lockstep) command(words []string, next *uint64) bool {
 			}
 		}
 		return true
+	case words[0] == "resize" && len(words) == 3:
+		cols, rows, err := ls.resizeBounds(words[1], words[2])
+		if err != nil {
+			return ls.reply("error resize %s %s: %s", words[1], words[2], err)
+		}
+		total, ok := ls.resize(cols, rows)
+		return ok && ls.reply("resized %d %d %d", cols, rows, total)
 	}
 	return ls.reply("error unknown command %q", strings.Join(words, " "))
+}
+
+func (ls *lockstep) resizeBounds(colArg, rowArg string) (int, int, error) {
+	cols, err := strconv.Atoi(colArg)
+	if err != nil {
+		return 0, 0, fmt.Errorf("columns not a number")
+	}
+	rows, err := strconv.Atoi(rowArg)
+	if err != nil {
+		return 0, 0, fmt.Errorf("rows not a number")
+	}
+	maxCols, maxRows := ls.cols*lockstepMaxScale, ls.rows*lockstepMaxScale
+	if cols < lockstepMinCols || rows < lockstepMinRows || cols > maxCols || rows > maxRows {
+		return 0, 0, fmt.Errorf("want %d to %d columns and %d to %d rows", lockstepMinCols, maxCols, lockstepMinRows, maxRows)
+	}
+	return cols, rows, nil
 }
 
 func (ls *lockstep) reply(format string, args ...any) bool {
@@ -197,13 +226,20 @@ func (ls *lockstep) reply(format string, args ...any) bool {
 	return err == nil
 }
 
-func (ls *lockstep) step(n uint64) (int64, bool) {
+func (ls *lockstep) started() bool {
 	for _, ready := range []chan struct{}{ls.srv.ready, ls.attached} {
 		select {
 		case <-ready:
 		case <-ls.ctx.Done():
-			return 0, false
+			return false
 		}
+	}
+	return true
+}
+
+func (ls *lockstep) step(n uint64) (int64, bool) {
+	if !ls.started() {
+		return 0, false
 	}
 	at := ls.stepAt(n)
 	for {
@@ -228,13 +264,24 @@ func (ls *lockstep) step(n uint64) (int64, bool) {
 		ls.clk.fireOne(at)
 	}
 	ls.clk.advance(at)
+	return ls.flushThrough(stepMarker(n))
+}
+
+func (ls *lockstep) resize(cols, rows int) (int64, bool) {
+	if !ls.started() || ls.box.setSize(cols, rows) != nil {
+		return 0, false
+	}
+	ls.session.resize(cols, rows)
+	return ls.flushThrough(resizeMarker(cols, rows))
+}
+
+func (ls *lockstep) flushThrough(marker []byte) (int64, bool) {
 	settling.wait()
 	s := ls.session
 	s.mu.Lock()
 	s.lt.lockstepFlush()
 	s.mu.Unlock()
 	reached := make(chan int64, 1)
-	marker := stepMarker(n)
 	ls.box.expect(marker, func(total int64) { reached <- total })
 	if _, err := os.Stdout.Write(marker); err != nil {
 		return 0, false

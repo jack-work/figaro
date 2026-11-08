@@ -32,6 +32,10 @@ type stepBox struct {
 
 func stepMarker(n uint64) []byte { return fmt.Appendf(nil, "\x1b]7717;step=%d\x07", n) }
 
+func resizeMarker(cols, rows int) []byte {
+	return fmt.Appendf(nil, "\x1b]7717;resize=%dx%d\x07", cols, rows)
+}
+
 func openStepBox(cols, rows int) (*stepBox, error) {
 	master, slave, err := pty.Open()
 	if err != nil {
@@ -70,6 +74,10 @@ func openStepBox(cols, rows int) (*stepBox, error) {
 		}
 	}
 	return b, nil
+}
+
+func (b *stepBox) setSize(cols, rows int) error {
+	return pty.Setsize(b.slave, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
 func (b *stepBox) expect(marker []byte, reached func(total int64)) {

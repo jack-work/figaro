@@ -156,11 +156,14 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 
 	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
 
-	defer tc.OnResize(func(w, h int) {
+	onResize := func(w, h int) {
 		mu.Lock()
 		lt.resize(w, h)
 		mu.Unlock()
-	})()
+	}
+	if activeLockstep == nil {
+		defer tc.OnResize(onResize)()
+	}
 
 	// Raw mode: Ctrl-C and Ctrl-D arrive as input bytes, owned by the input
 	// loop, not a signal.
@@ -206,7 +209,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 
 	if ls := activeLockstep; ls != nil {
-		ls.attach(&lockstepSession{mu: &mu, lt: lt})
+		ls.attach(&lockstepSession{mu: &mu, lt: lt, resize: onResize})
 	}
 
 	if opt.prompt != "" {

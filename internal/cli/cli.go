@@ -477,7 +477,11 @@ writes OSC 7717;step=<n> BEL after its bytes and answers
 "done <n> <bytes>", bytes being the running total written, markers
 included. "rate <n>" sets the animation rate (--anim-fps, default 12).
 The renderer runs on its own pty sized from the tape header; keys and
-resizes do not reach it. Closing the socket ends the replay.`,
+SIGWINCH do not reach it. "resize <cols> <rows>" resizes that pty
+between steps, with no tape time passing, and redraws as a terminal
+resize would: OSC 7717;resize=<cols>x<rows> BEL follows the redraw and
+the answer is "resized <cols> <rows> <bytes>". At least 20x5, at most
+four times the tape's size. Closing the socket ends the replay.`,
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
