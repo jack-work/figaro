@@ -21,6 +21,7 @@ import (
 const (
 	ariasTick = time.Second
 	ariasIdle = 30 * time.Second
+	ariasPair = 250 * time.Millisecond
 )
 
 type callerForm struct {
@@ -29,12 +30,13 @@ type callerForm struct {
 }
 
 type ariasWatch struct {
-	build sync.Mutex
-	ctx   context.Context
-	forms map[string]callerForm
-	used  time.Time
-	print uint64
-	built bool
+	build   sync.Mutex
+	ctx     context.Context
+	forms   map[string]callerForm
+	used    time.Time
+	print   uint64
+	built   bool
+	builtAt time.Time
 }
 
 func (w *ariasWatch) followed() bool {
@@ -44,6 +46,12 @@ func (w *ariasWatch) followed() bool {
 		}
 	}
 	return false
+}
+
+func (w *ariasWatch) builtWithin(d time.Duration) bool {
+	w.build.Lock()
+	defer w.build.Unlock()
+	return w.built && time.Since(w.builtAt) < d
 }
 
 func (w *ariasWatch) drop() {
@@ -184,6 +192,7 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 	w.build.Lock()
 	defer w.build.Unlock()
 	rows, peers := h.ariasRows(w.ctx)
+	w.builtAt = time.Now()
 	print := ariasPrint(rows, peers)
 	if w.built && print == w.print {
 		return
@@ -316,7 +325,9 @@ func (h *handlers) callerFormMethod(ctx context.Context, id, method string, para
 		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
 			f.follow(hb)
 		}
-		h.rebuildArias(w)
+		if id != rpc.TopologyFormID || !w.builtWithin(ariasPair) {
+			h.rebuildArias(w)
+		}
 		return hb.route(ctx, method, params)
 	case rpc.MethodSet:
 		if id == rpc.TopologyFormID {

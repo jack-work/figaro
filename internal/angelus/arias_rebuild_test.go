@@ -1,11 +1,19 @@
 package angelus
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // The outfit's content version is kept between listings, so it must move
@@ -41,5 +49,49 @@ func TestAListedOutfitVersionFollowsAnEditToTheOutfit(t *testing.T) {
 	h.outfitter.SetStaleWindow(0)
 	if got, _ := h.currentOutfitHash("perf"); got == first {
 		t.Fatalf("a reloaded outfitter at the same generation took the old outfitter's %q", first)
+	}
+}
+
+// A pager opening @arias reads @topology a moment later; both forms come out
+// of one rebuild, so the second read takes it instead of listing every aria
+// again. Past the pair window a @topology read rebuilds, and a change made in
+// the meantime shows.
+func TestATopologyReadTakesTheRebuildAnAriasReadJustMade(t *testing.T) {
+	r := newAriasRig(t)
+	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
+	if _, err := r.h.callerFormMethod(ctx, rpc.AriasFormID, rpc.MethodForm, nil); err != nil {
+		t.Fatal(err)
+	}
+	w := r.h.ariasWatchFor(ctx)
+	built := w.builtAt
+	if _, err := r.h.callerFormMethod(ctx, rpc.TopologyFormID, rpc.MethodForm, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !w.builtAt.Equal(built) {
+		t.Fatal("a @topology read straight after an @arias read listed every aria again")
+	}
+
+	fresh, _, err := r.backend.ForkWith(r.owned, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"mantra": json.RawMessage(`"born later"`),
+	}, nil), store.MintedBy("user:0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(ariasPair)
+	if _, err := r.h.callerFormMethod(ctx, rpc.TopologyFormID, rpc.MethodForm, nil); err != nil {
+		t.Fatal(err)
+	}
+	if w.builtAt.Equal(built) {
+		t.Fatal("a @topology read past the pair window took the old rebuild")
+	}
+	snap, _ := w.forms[rpc.AriasFormID].form.Snapshot()
+	held := false
+	for k, v := range snap.All() {
+		if strings.HasSuffix(k, ".id") && strings.Trim(string(v), `"`) == fresh {
+			held = true
+		}
+	}
+	if !held {
+		t.Errorf("the rebuild a late @topology read made does not hold %s, born before it", fresh)
 	}
 }
