@@ -232,7 +232,7 @@ pager `y` copies the name shown (the attended figaro's, or a listing row's) and
 | `figaro succeed <@role> [--turn <n> \| --successor <figaro>] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the figaro it targets at `--turn` (default 2) or take `--successor`, demote the predecessor beneath it, prompt and cast the successor, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
 | `figaro demote <id> [--under <child>]` | Sink a figaro to a leaf: a child takes its place, the other children move under that child, and a kill then takes the figaro alone. Presentation only. |
 | `figaro kill <id> [-r] [--when <d> \| --now]` | Stop a trunk's agent and sessions, then reap it (and with `-r` its branches, which a kill without `-r` refuses) until its grace runs out: `--when` (`90m`, `6h`, `2d`, `1w`), else `[memory] kill_grace_hours`, three days. `--now` or `--when 0` deletes at once. Killing a reaped figaro moves its group's purge to the new grace. |
-| `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What `kill` and the ttl sweep soft-deleted, when each group is purged, and the way back. |
+| `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What `kill`, `gc` and the ttl sweep reaped, who reaped each group, when it is purged, and the way back. |
 | `figaro retire <id> [--ttl <d>] [-O ..] [-S ..] [--undo]` | Stop a figaro taking prompts. Reads and forks still work; a fork is not retired. The outfits and keys land in the same write; `--ttl 1h` reaps it an hour from now unless something holds it. |
 | `figaro export [<id>] [-o <f>]` | Write a figaro to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
@@ -263,7 +263,8 @@ that goes wrong yields a store that looks fine.
 | `figaro form delete <paths>` | Remove key paths, comma-separated (the `-D` grammar). `unset` is its older name. |
 | `figaro form help <topic>` | A help page, from the form family's third position. |
 | `figaro state outfit <names>` | Fold outfits onto this figaro now: additive, nothing removed, a `<system-reminder>` for what changed. Takes NAMES only: keys are the other axis (`form set`). The names travel as names and the daemon resolves them once, at its API boundary, so the same `-O` means the same thing at birth and on a live figaro. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
-| `figaro gc [--dry-run]` | Collect outfit versions nothing is using. One version exists per outfit content hash; killing a figaro collects its version when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected version is re-minted identically by the next figaro that wants it. |
+| `figaro gc [<selector>] [--yes \| --dry-run] [-j]` | Plan, then reap the figaros the selector chooses: `--idle 30d`, `--empty`, `--older 1d`, `--outfit <name>`, `--under <id>`, `--match <fzf query>`, `--box <name>`, ANDed. Prints candidates, what is kept and why, and the bytes freed at purge; asks on a terminal, changes nothing piped without `--yes`. With no selector it collects outfit versions no aria was born under (content-addressed, so the next aria wanting one re-mints it). |
+| `figaro gc --undo <run>` | Restore every group one gc run reaped. |
 | `figaro form listen [<id>]` | Watch the form as a live JSON tree, in the alt screen. The client keeps its OWN copy and applies the patches the server broadcasts (`form.delta`), so it is the same tree and the same algebra on both ends. `j`/`k` move, `enter` expands, `y` yanks, `e`/`d` page. |
 | `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing: green where a layer resolves, red where it does not. The angelus resolves it: the outfits directory is the server's state, so a client asks rather than reading it. Exits non-zero when the closure has a gap. |
 
@@ -324,6 +325,19 @@ now. A fork of a reaped figaro is not reaped.
 kill_grace_hours`), and at that deadline it is purged whatever holds it: a kill
 is a delete deferred, not a request. A sweep-reaped group keeps
 `reaped_grace_hours`; killing one gives it the kill's deadline.
+
+`figaro gc <selector>` chooses figaros for you and reaps them the way `kill -r`
+does, with the kill's grace, each group stamped `system.reaped_by =
+"gc:<run>"` so `figaro gc --undo <run>` brings the run back. It never takes a
+figaro that has, or whose delete would take one that has, a live agent, a
+bound shell or attending pane, a role pointing in, a spooled prompt, a
+background session, a use within its keepalive, or `system.keep = true`
+(owner-held); nor one whose delete would take a figaro the selector did not
+choose. Those are listed as kept. Apply runs the selector again: a figaro
+used, held or forked since the plan is dropped from the run and named. A
+plan lasts ten minutes and only its caller applies it. Unboxed, gc is the
+owner's (`admin`); a box plans and reaps only its own figaros, and the
+owner's plan skips boxes unless `--box` names one.
 
 `ls`, the tree view and the pager's topology pit mark a row `[reaps in 3h]` inside the
 last quarter of its keepalive (at most six hours), `[reaping]` once it is due

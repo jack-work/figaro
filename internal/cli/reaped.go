@@ -19,6 +19,7 @@ type reapedGroup struct {
 	Nodes   []string `json:"nodes"`
 	AtMS    int64    `json:"at"`
 	PurgeMS int64    `json:"purge_at"`
+	By      string   `json:"by,omitempty"`
 }
 
 func parseReapedForm(snap form.Snapshot) ([]reapedGroup, error) {
@@ -32,6 +33,7 @@ func parseReapedForm(snap form.Snapshot) ([]reapedGroup, error) {
 			Nodes   []string `json:"nodes"`
 			At      int64    `json:"at"`
 			PurgeAt int64    `json:"purge_at"`
+			By      string   `json:"by"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -39,7 +41,7 @@ func parseReapedForm(snap form.Snapshot) ([]reapedGroup, error) {
 	}
 	out := make([]reapedGroup, 0, len(doc.Items))
 	for root, it := range doc.Items {
-		out = append(out, reapedGroup{Root: root, Mantra: it.Mantra, Nodes: it.Nodes, AtMS: it.At, PurgeMS: it.PurgeAt})
+		out = append(out, reapedGroup{Root: root, Mantra: it.Mantra, Nodes: it.Nodes, AtMS: it.At, PurgeMS: it.PurgeAt, By: it.By})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PurgeMS < out[j].PurgeMS })
 	return out, nil
@@ -151,14 +153,14 @@ func printReaped(groups []reapedGroup, asJSON bool) error {
 		return nil
 	}
 	now := time.Now()
-	fmt.Fprintf(stdout, "%-22s %-5s %-10s %-10s %s\n", "ARIA", "NODES", "REAPED", "PURGE IN", "MANTRA")
+	fmt.Fprintf(stdout, "%-22s %-5s %-10s %-10s %-25s %s\n", "ARIA", "NODES", "REAPED", "PURGE IN", "BY", "MANTRA")
 	for _, g := range groups {
 		purge := "due"
 		if left := time.UnixMilli(g.PurgeMS).Sub(now); left > 0 {
 			purge = shortDuration(left)
 		}
-		fmt.Fprintf(stdout, "%-22s %-5d %-10s %-10s %s\n",
-			truncRunes(ariaName(g.Root), 22), len(g.Nodes), relAge(g.AtMS), purge, truncRunes(g.Mantra, 48))
+		fmt.Fprintf(stdout, "%-22s %-5d %-10s %-10s %-25s %s\n",
+			truncRunes(ariaName(g.Root), 22), len(g.Nodes), relAge(g.AtMS), purge, dash(g.By), truncRunes(g.Mantra, 48))
 	}
 	return nil
 }

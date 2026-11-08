@@ -51,6 +51,11 @@ capabilities.
   normalize through one that does not, since an older daemon would drop
   `dry_run` and do the real thing. `figaro normalize` became `figaro
   doctor normalize`, with the old name kept hidden for one minor.
+- **`figaro gc` plans before it acts.** It calls `figaro.gc.plan`,
+  `figaro.gc.apply` and `figaro.gc.undo`, methods a daemon before them
+  lacks; against one the verb fails with an unknown method and changes
+  nothing. `figaro.gc` stays for an older CLI: it still collects childless
+  outfit versions with no plan, and still runs the form-history pass.
 - **`figaro.list` takes `except_nodes`** (0.56.1): nodes whose rows the
   caller already has, so the serving node does not ask them. It only
   narrows that node's fan-out to its peers; its own rows, and any node not

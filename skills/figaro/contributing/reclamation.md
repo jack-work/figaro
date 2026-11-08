@@ -316,8 +316,9 @@ gc = "off"   # default: retain everything; "dry-run" logs what would drop; "on" 
 Dropping a segment makes every version in it unreachable: a fork point
 there, and `Form.StateAt` of any version in it. Every fork point is kept
 by default, so turning gc on for a store needs Gluck and El Inspector,
-after reading that store's dry-run report. With gc off, `figaro gc` plans
-nothing; set `gc = "dry-run"` to see the plan.
+after reading that store's dry-run report. `figaro gc` does not run this
+pass; it chooses figaros through `internal/gc` (one selector, plan and apply,
+reaping through kill's path).
 
 ## Disk: node directories nothing names
 

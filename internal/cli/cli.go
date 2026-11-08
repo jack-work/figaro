@@ -1309,7 +1309,7 @@ bound shell, a role pointing into it, or a recently used branch under it.
 	r.Register(&cmdkit.Command{
 		Name:  "reaped",
 		Group: "Session",
-		Short: "Arias the ttl sweep soft-deleted: list, restore or purge them",
+		Short: "Arias kill, gc and the ttl sweep reaped: list, restore or purge them",
 		Usage: "reaped [ls | restore <id> [--keep] | purge <id>] [-j]",
 		Long: `When an aria's lifetime is spent and nothing holds it, the sweep does not
 delete it at once: it reaps it. A reaped aria and everything under it are
@@ -1619,29 +1619,53 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "gc",
 		Group: "System",
-		Short: "Collect outfit versions and form history nothing is using",
-		Usage: "gc [--dry-run] [-j|--json]",
-		Long: "An outfit is stored once per VERSION, content-addressed (<outfit>@<hash>):\n" +
-			"editing an outfit mints a new version the next time an aria is born\n" +
-			"under it. Killing an aria collects its version when it was the\n" +
-			"last child, so `gc` is the sweep for versions that predate that.\n\n" +
-			"Collecting loses nothing: the version is content-addressed, so the next\n" +
-			"aria wanting that outfit re-mints the same id. Only versions with no\n" +
-			"arias under them are taken.\n\n" +
-			"It also drops a form's old history segments: a segment goes when no\n" +
-			"aria or form was born from a version inside it, and never the newest.\n" +
-			"Reads of the form's history below what is kept answer from its state\n" +
-			"instead. The daemon does the same hourly. [store] gc decides:\n" +
-			"\"dry-run\" (default) only reports, \"on\" drops, \"off\" skips.\n\n" +
-			"  figaro gc --dry-run   show what would go\n" +
-			"  figaro gc             take it",
+		Short: "Choose figaros nobody uses and reap them, after a plan you confirm",
+		Usage: "gc [--idle <d>] [--empty] [--older <d>] [--outfit <name>] [--under <id>] [--match <query>] [--box <name>] [--yes | --dry-run] [-j] | gc --undo <run>",
+		Long: "gc plans first. It prints what it would reap, what it keeps and why,\n" +
+			"and the bytes freed at purge; on a terminal it then asks. Piped, it\n" +
+			"prints the plan and changes nothing unless --yes is given.\n\n" +
+			"The flags choose figaros and AND together:\n" +
+			"  --idle 30d        unused for at least that long\n" +
+			"  --empty           never had a message\n" +
+			"  --older 1d        born at least that long ago\n" +
+			"  --outfit <name>   born under that outfit, any version\n" +
+			"  --under <id>      presented under that aria or form\n" +
+			"  --match <query>   fzf syntax over mantra, handle and cwd\n" +
+			"  --box <name>      in that box; without it the owner's plan skips boxes\n\n" +
+			"Nothing is chosen while it has a live agent, a bound shell or attending\n" +
+			"pane, a role pointing at it, a spooled prompt, a background session, a\n" +
+			"use within its keepalive, or system.keep = true; nor while anything its\n" +
+			"kill would take does. The plan lists those as kept.\n\n" +
+			"Applying reaps, never deletes: each figaro and its branches go to\n" +
+			"`figaro reaped` for [memory] kill_grace_hours (3 days), stamped with\n" +
+			"the run. `figaro gc --undo <run>` restores the whole run. A plan lasts\n" +
+			"10 minutes, and apply checks every figaro again: one used or held\n" +
+			"since the plan is dropped from the run and named.\n\n" +
+			"With no flag, gc collects outfit versions no aria was born under.\n" +
+			"Old form history is the daemon's hourly job under [store] gc\n" +
+			"(\"off\" by default, \"dry-run\" or \"on\"); gc does not touch it.\n\n" +
+			"  figaro gc --idle 30d             plan, then ask\n" +
+			"  figaro gc --empty --older 1d -y  apply without asking\n" +
+			"  figaro gc --undo <run>           restore what one run reaped",
 		Flags: []cmdkit.FlagDef{
-			{Long: "dry-run", IsBool: true, Description: "Report what would be collected; remove nothing"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit the report as JSON"},
+			{Long: "idle", Description: "Choose figaros unused for at least this long (30d, 12h, 2w)"},
+			{Long: "empty", IsBool: true, Description: "Choose figaros that never had a message"},
+			{Long: "older", Description: "Choose figaros born at least this long ago"},
+			{Long: "outfit", Description: "Choose figaros born under this outfit"},
+			{Long: "under", Description: "Choose figaros presented under this aria or form"},
+			{Long: "match", Description: "Choose figaros whose mantra, handle or cwd match (fzf syntax)"},
+			{Long: "box", Description: "Choose figaros in this box"},
+			{Long: "yes", Short: "y", IsBool: true, Description: "Apply the plan without asking"},
+			{Long: "dry-run", IsBool: true, Description: "Print the plan only"},
+			{Long: "undo", Description: "Restore every figaro one run reaped"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Print the plan (or with --yes, the result) as JSON"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			runGC(ld, ctx.BoolFlag("dry-run"), ctx.BoolFlag("json"))
+			o, err := gcOptsOf(ctx)
+			if err != nil {
+				dieUsage("gc: %s", err)
+			}
+			runGCCommand(ctx.Extra.(*config.Loaded), o)
 			return nil
 		},
 	})
