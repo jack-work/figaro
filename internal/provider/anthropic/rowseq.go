@@ -22,6 +22,14 @@ func dropDuplicateResultsSeq(in provider.RowSeq) provider.RowSeq {
 			if !bytes.Contains(row, toolResultToken) {
 				return yield(row, lt)
 			}
+			if refs, ok := scanBlocks(row); ok && !repeatsResult(refs, seen) {
+				for _, b := range refs {
+					if b.typ == "tool_result" && b.toolUseID != "" {
+						seen[b.toolUseID] = true
+					}
+				}
+				return yield(row, lt)
+			}
 			var m nativeMessage
 			if json.Unmarshal(row, &m) != nil {
 				return yield(row, lt)
@@ -120,6 +128,17 @@ func pairRow(row json.RawMessage, open []string) (answered, calls []string, rewr
 	if !bytes.Contains(row, toolResultToken) && !bytes.Contains(row, toolUseToken) {
 		return nil, nil, nil, false
 	}
+	if refs, ok := scanBlocks(row); ok && answersOnly(refs, open) {
+		for _, b := range refs {
+			switch {
+			case b.typ == "tool_result" && b.toolUseID != "":
+				answered = append(answered, b.toolUseID)
+			case b.typ == "tool_use" && b.id != "":
+				calls = append(calls, b.id)
+			}
+		}
+		return answered, calls, nil, false
+	}
 	var m nativeMessage
 	if json.Unmarshal(row, &m) != nil {
 		return nil, nil, nil, false
@@ -151,6 +170,29 @@ func pairRow(row json.RawMessage, open []string) (answered, calls []string, rewr
 		return answered, calls, nil, false
 	}
 	return answered, calls, fixed, false
+}
+
+func repeatsResult(refs []blockRef, seen map[string]bool) bool {
+	mine := map[string]bool{}
+	for _, b := range refs {
+		if b.typ != "tool_result" || b.toolUseID == "" {
+			continue
+		}
+		if seen[b.toolUseID] || mine[b.toolUseID] {
+			return true
+		}
+		mine[b.toolUseID] = true
+	}
+	return false
+}
+
+func answersOnly(refs []blockRef, open []string) bool {
+	for _, b := range refs {
+		if b.typ == "tool_result" && b.toolUseID != "" && !contains(open, b.toolUseID) {
+			return false
+		}
+	}
+	return true
 }
 
 func closingResultsRow(ids []string) (json.RawMessage, error) {

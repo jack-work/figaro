@@ -5,6 +5,9 @@ import (
 )
 
 func rowRole(raw json.RawMessage) string {
+	if role, ok := headRole(raw); ok {
+		return role
+	}
 	var m struct {
 		Role string `json:"role"`
 	}
