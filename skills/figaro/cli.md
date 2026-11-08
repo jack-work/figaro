@@ -292,8 +292,10 @@ has a live agent, a bound shell or a role pointing at it, a branch under it,
 or a prompt spooled across a restart. The first message
 ends the matter: from then on the key does nothing, and `system.ttl` still
 applies on its own. Set it at birth (`-S system.reap_if_empty=true`) or in an
-outfit's `[system]`, so an aria minted and left unused does not pile up. A
-shell still attending it holds it until the shell exits or attends elsewhere.
+outfit's `[system]`, so an aria minted and left unused does not pile up;
+first-run setup writes it into the starter outfit, so on a fresh install that
+is every new aria, boards included. A shell still attending it holds it until
+the shell exits or attends elsewhere.
 
 What the sweep takes, it first reaps rather than deletes: the node and
 everything its delete would take get `system.reaped` (naming the root), leave

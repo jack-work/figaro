@@ -456,6 +456,7 @@ skills = { dirName = "skills" }
 
 [system]
 provider = %q
+reap_if_empty = true
 `, providerName)
 	if model != "" {
 		body += fmt.Sprintf("model = %q\n", model)

@@ -18,6 +18,7 @@ func TestStarterOutfitBodyDeclaresNoSkills(t *testing.T) {
 	body := starterOutfitBody("anthropic", "claude-opus-4")
 	require.Contains(t, string(body), `provider = "anthropic"`)
 	require.Contains(t, string(body), `model = "claude-opus-4"`)
+	require.Contains(t, string(body), "reap_if_empty = true", "an aria minted and never used must not pile up")
 
 	// The skills table is what makes the bundled skills load.
 	require.Contains(t, string(body), `dirName = "skills"`)
