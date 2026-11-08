@@ -2,6 +2,7 @@ package otel
 
 import (
 	"context"
+	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -31,6 +32,9 @@ func StartFromRemote(ctx context.Context, name string, traceparents []string, at
 	opts := []trace.SpanStartOption{trace.WithAttributes(attrs...)}
 	parented := false
 	for _, tp := range traceparents {
+		if !ValidTraceParent(tp) {
+			continue
+		}
 		sc := remoteSpanContext(tp)
 		if !sc.IsValid() {
 			continue
@@ -50,4 +54,23 @@ func SetAttributes(ctx context.Context, attrs ...attribute.KeyValue) {
 	if span.IsRecording() {
 		span.SetAttributes(attrs...)
 	}
+}
+
+func ValidTraceParent(tp string) bool {
+	if len(tp) != 55 || tp[2] != '-' || tp[35] != '-' || tp[52] != '-' || tp[:2] != "00" {
+		return false
+	}
+	traceID, spanID, flags := tp[3:35], tp[36:52], tp[53:55]
+	return lowerHex(traceID) && lowerHex(spanID) && lowerHex(flags) &&
+		strings.Trim(traceID, "0") != "" && strings.Trim(spanID, "0") != ""
+}
+
+func lowerHex(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

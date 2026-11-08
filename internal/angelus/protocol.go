@@ -211,6 +211,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
+		if dressed, err = h.trustTraceparent(ctx, method, dressed); err != nil {
+			return nil, err
+		}
 		if dressed, err = h.holdCastInBox(ctx, method, id, dressed); err != nil {
 			return nil, err
 		}

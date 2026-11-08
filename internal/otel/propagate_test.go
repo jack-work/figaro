@@ -39,3 +39,35 @@ func TestStartFromRemoteParentsOnTheFirstAndLinksTheRest(t *testing.T) {
 		t.Error("a context without a span has no traceparent")
 	}
 }
+
+func TestValidTraceParentTakesOnlyVersion00WithRealIDs(t *testing.T) {
+	ok := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	if !figOtel.ValidTraceParent(ok) {
+		t.Fatal("a W3C version 00 traceparent was refused")
+	}
+	for _, bad := range []string{
+		"", "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		"00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+		"00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+		"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0g",
+		"00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
+		"00_4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+		ok + "-x",
+	} {
+		if figOtel.ValidTraceParent(bad) {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+func TestStartFromRemoteIgnoresAMalformedTraceparent(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)))
+	defer otel.SetTracerProvider(prev)
+	_, span := figOtel.StartFromRemote(context.Background(), "turn", []string{"01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"})
+	span.End()
+	if got := rec.Ended()[0]; got.Parent().IsValid() || got.SpanContext().TraceID().String() == "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatal("a malformed traceparent parented the turn")
+	}
+}
