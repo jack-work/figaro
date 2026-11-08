@@ -154,6 +154,8 @@ type tapeServer struct {
 	metricsAt time.Duration
 	sides     []*jkrpc.Server
 
+	deltas map[string][]rpc.FormDelta
+
 	stepped func() time.Duration
 	main    *jkrpc.Server
 	ready   chan struct{}
@@ -210,6 +212,9 @@ func (s *tapeServer) handlers(answers tapeAnswers) map[string]jkrpc.HandlerFunc 
 			if !ok {
 				return nil, nil
 			}
+			if method == rpc.MethodForm {
+				return s.withPushedDeltas(params, ans.result), nil
+			}
 			return s.withNotifiedMetrics(ans), nil
 		}
 	}
@@ -259,6 +264,13 @@ func (s *tapeServer) push(srv *jkrpc.Server, f tape.Frame) bool {
 	var sides []*jkrpc.Server
 	if m.Method == rpc.MethodFormDelta {
 		sides = s.sides
+		var d rpc.FormDelta
+		if json.Unmarshal(m.Params, &d) == nil {
+			if s.deltas == nil {
+				s.deltas = map[string][]rpc.FormDelta{}
+			}
+			s.deltas[d.Intrinsic] = append(s.deltas[d.Intrinsic], d)
+		}
 	}
 	s.mu.Unlock()
 	if srv.Notify(m.Method, m.Params) != nil {
@@ -317,6 +329,37 @@ func (s *tapeServer) position() time.Duration {
 		return played
 	}
 	return s.sent
+}
+
+func (s *tapeServer) withPushedDeltas(params, result json.RawMessage) json.RawMessage {
+	var ask struct {
+		Intrinsic string `json:"intrinsic"`
+		Since     uint64 `json:"since"`
+	}
+	var resp rpc.FormResponse
+	if json.Unmarshal(params, &ask) != nil || ask.Since != 0 || json.Unmarshal(result, &resp) != nil || resp.Delta {
+		return result
+	}
+	s.mu.Lock()
+	pushed := s.deltas[ask.Intrinsic]
+	s.mu.Unlock()
+	moved := false
+	for _, d := range pushed {
+		if d.Incarnation != resp.Incarnation || d.Version != resp.Version+1 {
+			continue
+		}
+		resp.Snapshot = resp.Snapshot.Apply(d.Patch)
+		resp.Version = d.Version
+		moved = true
+	}
+	if !moved {
+		return result
+	}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return result
+	}
+	return out
 }
 
 func (s *tapeServer) withNotifiedMetrics(ans recordedAnswer) json.RawMessage {
