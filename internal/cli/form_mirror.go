@@ -118,6 +118,9 @@ type formNode struct {
 	rowOpen  bool
 	rowPeek  string
 	peek     string
+	rowSum   bool
+	summary  bool
+	aside    *formNode
 	tail     int
 }
 
@@ -181,9 +184,9 @@ func (n *formNode) kids() []*formNode {
 }
 
 func (n *formNode) rendered(width int) string {
-	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek {
+	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek || n.rowSum != n.summary {
 		n.row, n.tail = renderTreeRow(n, width)
-		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek = width, n.guide, n.pad, n.open, n.peek
+		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek, n.rowSum = width, n.guide, n.pad, n.open, n.peek, n.summary
 	}
 	return n.row
 }
@@ -198,6 +201,13 @@ func (n *formNode) lead() string {
 }
 
 func (n *formNode) yankText() string { return yankFormNode(n) }
+
+func (n *formNode) rowAside() string {
+	if n.aside == nil {
+		return ""
+	}
+	return asideText(n.aside)
+}
 
 func (n *formNode) rowText() string { return n.rendered(n.width) }
 
@@ -235,15 +245,21 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 	if pointer {
 		kids = w.ownKids(n, kids)
 	}
-	pad := 0
+	pad, rowPad := 0, 0
 	for _, c := range kids {
-		if c.leaf() {
+		switch {
+		case c.leaf():
 			pad = max(pad, min(displayWidth(c.label), labelPadMax))
+		case w.shape.asides(append(labels[:len(labels):len(labels)], c.label)):
+			rowPad = max(rowPad, min(displayWidth(c.label), labelPadMax))
 		}
 	}
 	for i, c := range kids {
 		last := i == len(kids)-1 && !pointer
 		c.guided, c.pad = true, pad
+		if !c.leaf() {
+			c.pad = rowPad
+		}
 		c.open = !c.leaf() && w.open[c.path]
 		switch {
 		case top:
@@ -259,12 +275,13 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		w.out = append(w.out, c)
 		segs := append(labels[:len(labels):len(labels)], c.label)
 		under := row
-		c.peek = ""
+		c.peek, c.aside, c.summary = "", nil, false
 		if w.shape != nil {
 			under = w.shape.note(c, segs, row)
 			if !c.open || w.through[c.path] {
 				c.peek = w.shape.peek(c)
 			}
+			c.aside, c.summary = w.shape.aside(c)
 		}
 		if c.open {
 			w.walk(c, c.cont, false, segs, under)
@@ -323,6 +340,12 @@ func renderTreeRow(n *formNode, width int) (string, int) {
 	switch {
 	case n.leaf():
 		line += ": " + strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + leafPreview(n.label, n.value)
+	case n.summary:
+		if n.peek != "" {
+			line += strings.Repeat(" ", max(n.pad-displayWidth(n.label), 0)) + "  "
+			tail = len(line)
+			line += n.peek
+		}
 	case n.open && n.peek == "":
 		line += fmt.Sprintf(" (%d)", n.size())
 	case n.peek != "":
@@ -419,12 +442,18 @@ const (
 )
 
 func leafPreview(label string, raw json.RawMessage) string {
-	if label == "at" || strings.HasSuffix(label, "_at") {
-		if ms, err := strconv.ParseInt(string(bytes.TrimSpace(raw)), 10, 64); err == nil && ms >= epochMSLow && ms < epochMSHigh {
-			return time.UnixMilli(ms).Local().Format("2006-01-02 15:04:05")
-		}
+	if ms, ok := epochMS(label, raw); ok {
+		return time.UnixMilli(ms).Local().Format("2006-01-02 15:04:05")
 	}
 	return formValuePreview(raw)
+}
+
+func epochMS(label string, raw json.RawMessage) (int64, bool) {
+	if label != "at" && !strings.HasSuffix(label, "_at") {
+		return 0, false
+	}
+	ms, err := strconv.ParseInt(string(bytes.TrimSpace(raw)), 10, 64)
+	return ms, err == nil && ms >= epochMSLow && ms < epochMSHigh
 }
 
 func formValuePreview(raw json.RawMessage) string {

@@ -137,6 +137,50 @@ func (s *viewShape) peek(n *formNode) string {
 	return leafPreview(c.label, c.value)
 }
 
+func (s *viewShape) asides(segs []string) bool {
+	if s == nil || s.hint.Aside == "" {
+		return false
+	}
+	_, ok := s.row(segs)
+	return ok
+}
+
+func (s *viewShape) aside(n *formNode) (*formNode, bool) {
+	if s.hint.Aside == "" || n.leaf() {
+		return nil, false
+	}
+	if _, ok := s.heads[n.path]; !ok {
+		return nil, false
+	}
+	return asideLeaf(n, s.hint.Aside), true
+}
+
+func asideLeaf(n *formNode, key string) *formNode {
+	c := formChild(n, key)
+	if c == nil || !c.leaf() {
+		return nil
+	}
+	return c
+}
+
+func asideText(leaf *formNode) string {
+	if ms, ok := epochMS(leaf.label, leaf.value); ok {
+		return relAge(ms)
+	}
+	return formValuePreview(leaf.value)
+}
+
+const asideRoomMin = 8
+
+func withAside(line, aside string, width int) string {
+	room := width - displayWidth(aside) - 2
+	if room < asideRoomMin {
+		return line
+	}
+	line = clipToWidthEllipsis(line, room)
+	return line + strings.Repeat(" ", room-displayWidth(line)+2) + aside
+}
+
 func (s *viewShape) mountKey() string {
 	if s == nil {
 		return ""

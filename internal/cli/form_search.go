@@ -360,6 +360,7 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 				keys := append(segs[:len(segs):len(segs)], c.label)
 				c.open = !c.leaf() && s.below[c.path]
 				c.peek = v.rowPeek(c, keys)
+				c.aside, c.summary = v.rowAside(c, keys)
 				marks := s.labelMarks(c)
 				peeked, inPeek := s.inPeek[c.path]
 				var shown []int
@@ -404,6 +405,16 @@ func (v *formView) rowPeek(n *formNode, keys []string) string {
 		return ""
 	}
 	return leafPreview(c.label, c.value)
+}
+
+func (v *formView) rowAside(n *formNode, keys []string) (*formNode, bool) {
+	if v.view == nil || v.view.Aside == "" || n.leaf() {
+		return nil, false
+	}
+	if _, ok := rpc.MatchPath(v.view.Rows, keys); !ok {
+		return nil, false
+	}
+	return asideLeaf(n, v.view.Aside), true
 }
 
 func searchedRow(n *formNode, h fuzzy.Hit, s *formSearch, width int) (string, []int) {
@@ -590,7 +601,11 @@ func (v *formView) flatNameRow(keys []string, width int) pitRow {
 	if peek := v.rowPeek(n, keys); peek != "" {
 		text += "  " + peek
 	}
-	return pitRow{text: clipLine(text, width), yankFrom: n, id: n.path, marks: marks}
+	row := pitRow{text: clipLine(text, width), yankFrom: n, id: n.path, marks: marks}
+	if leaf, _ := v.rowAside(n, keys); leaf != nil {
+		row.aside = asideText(leaf)
+	}
+	return row
 }
 
 func (v *formView) labelLeafOf(h fuzzy.Hit) (string, bool) {

@@ -41,6 +41,7 @@ type pitRow struct {
 	tone    pitTone
 	marks   []int
 	dimLead int
+	aside   string
 }
 
 type pitTone uint8
@@ -60,6 +61,16 @@ func (r pitRow) str() string {
 		return r.textFrom.rowText()
 	}
 	return r.text
+}
+
+func (r pitRow) asideText() string {
+	if r.aside != "" {
+		return r.aside
+	}
+	if a, ok := r.textFrom.(interface{ rowAside() string }); ok {
+		return a.rowAside()
+	}
+	return ""
 }
 
 func (r pitRow) yankText() string {
