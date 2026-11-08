@@ -216,6 +216,14 @@ func (c *Client) SetMoreBefore(more bool) {
 	c.store.SetMore(m)
 }
 
+func (c *Client) SetMoreAfter(more bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m := c.store.More()
+	m.After = more
+	c.store.SetMore(m)
+}
+
 func (c *Client) MoreBefore() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

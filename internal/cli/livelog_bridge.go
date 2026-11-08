@@ -272,6 +272,7 @@ func (t *livelogTurn) armThinking() {
 // Only a read's More.Before may be recorded: a pushed frame's More describes the
 // delta window, not the conversation.
 func (t *livelogTurn) setMoreBefore(more bool) { t.client.SetMoreBefore(more) }
+func (t *livelogTurn) setMoreAfter(more bool)  { t.client.SetMoreAfter(more) }
 
 func (t *livelogTurn) apply(r aria.Page) {
 	if t.hold {

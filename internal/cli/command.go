@@ -1034,6 +1034,9 @@ func (in *interactiveInput) seedSubject(gen uint64) {
 		if plan.kind == seedWindow {
 			in.lt.setMoreBefore(r.More.Before)
 		}
+		if len(r.Parts) == 0 {
+			in.lt.setMoreAfter(false)
+		}
 	}
 	in.wireHooks()
 	in.lt.invalidateTranscriptWindow()
