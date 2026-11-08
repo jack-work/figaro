@@ -19,6 +19,9 @@ func TestOwnerHeldCoversEachKeyAndWhatIsUnderIt(t *testing.T) {
 		"system.decide.provider":             "",
 		"system.credos":                      "",
 		"system.max_tokens_per_tool_out":     "",
+		"system.ttl":                         "system.ttl",
+		"system.reap_if_empty":               "system.reap_if_empty",
+		"system.ttl_note":                    "",
 	} {
 		got, held := OwnerHeld(path)
 		if got != want || held != (want != "") {

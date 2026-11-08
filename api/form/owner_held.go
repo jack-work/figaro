@@ -12,6 +12,8 @@ var ownerHeldKeys = []string{
 	"system.methods",
 	"system.environment",
 	"system.decide.base_url",
+	"system.ttl",
+	"system.reap_if_empty",
 }
 
 func OwnerHeldKeys() []string { return append([]string(nil), ownerHeldKeys...) }

@@ -55,7 +55,7 @@ func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
 		"system.model":          rpc.DenyOwnerHeld,
 		"system.tools":          rpc.DenyOwnerHeld,
 		"target-aria":           rpc.DenyBoxHeld,
-		"system.ttl":            rpc.DenyBoxUnlisted,
+		"system.ttl":            rpc.DenyOwnerHeld,
 		"system.added_tomorrow": rpc.DenyBoxUnlisted,
 	} {
 		if d, denied := boxed.Access.Refusal(path); !denied || d.Kind != kind {

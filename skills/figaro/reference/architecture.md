@@ -362,8 +362,9 @@ the daemon assigns is under "Workspaces under a sandbox" below.
 
 **Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
 `system.max_context_tokens`, `system.credo`, `system.tools`,
-`system.methods`, `system.environment` (where wire dumps go) and
-`system.decide.base_url` (where a provider credential goes)
+`system.methods`, `system.environment` (where wire dumps go),
+`system.decide.base_url` (where a provider credential goes), `system.ttl` and
+`system.reap_if_empty` (when the sweep deletes a node and its subtree)
 (`api/form/owner_held.go`) are set or removed only by the
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
