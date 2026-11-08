@@ -147,3 +147,15 @@ func TestDisplayWidthIgnoresEscapes(t *testing.T) {
 		t.Errorf("displayWidth = %d, want 4", got)
 	}
 }
+
+func TestTheBarPaintsNoEscapeFromANotice(t *testing.T) {
+	s := statusFixture("")
+	s.setNoticeAt("refused by the provider\x1b]52;c;cGF5bG9hZA==\x07 body", alertError)
+	if got := s.noticeText(); got != "refused by the provider body" {
+		t.Fatalf("notice %q", got)
+	}
+	s.pinNotice("sign out?\x1b[2J")
+	if got := s.noticeText(); got != "sign out?" {
+		t.Fatalf("pinned notice %q", got)
+	}
+}

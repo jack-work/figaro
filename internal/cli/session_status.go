@@ -132,7 +132,7 @@ func (s *sessionStatus) post(text string, level alertLevel, progress bool) {
 	if s == nil {
 		return
 	}
-	text = strings.Join(strings.Fields(text), " ")
+	text = noticeSafe(text)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if text == "" {
@@ -211,9 +211,11 @@ func (s *sessionStatus) pinNotice(text string) {
 		return
 	}
 	s.mu.Lock()
-	s.notices = []barNotice{{text: strings.Join(strings.Fields(text), " "), level: alertInfo}}
+	s.notices = []barNotice{{text: noticeSafe(text), level: alertInfo}}
 	s.mu.Unlock()
 }
+
+func noticeSafe(s string) string { return pitText(strings.Join(strings.Fields(s), " ")) }
 
 func (s *sessionStatus) noticeText() string {
 	if s == nil {
