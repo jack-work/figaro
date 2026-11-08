@@ -8,6 +8,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -76,10 +77,10 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	}
 	for id, m := range f.Models {
 		if m.TextOnly != nil {
-			if spec.TextOnlyModels == nil {
-				spec.TextOnlyModels = map[string]bool{}
+			if spec.Overrides == nil {
+				spec.Overrides = map[string]catalog.Override{}
 			}
-			spec.TextOnlyModels[id] = *m.TextOnly
+			spec.Overrides[id] = catalog.Override{TextOnly: m.TextOnly}
 		}
 	}
 	if len(f.Headers) > 0 {

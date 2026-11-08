@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -139,5 +140,19 @@ func TestTextOnlyIsReadFromTheModelCatalog(t *testing.T) {
 		if !wantImage && !strings.Contains(got, "model catalog") {
 			t.Errorf("%s: the stand-in does not name the catalog: %s", model, got)
 		}
+	}
+}
+
+// A fact in figaro's own mapping is named as such: the reader learns the
+// decision was figaro's, not the provider's.
+func TestATextOnlyFactNamesTheMapping(t *testing.T) {
+	no := false
+	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return "http://127.0.0.1:1" }, Default: Chat,
+		Mapping: catalog.Mapping{Facts: map[string]catalog.Facts{"blind*": {Images: &no}}}})
+	if got := p.textOnly("vendor/blind-2"); !strings.Contains(got, "figaro's catalog mapping for gw") {
+		t.Errorf("stand-in %q does not name the mapping", got)
+	}
+	if got := p.textOnly("vendor/seeing"); got != "" {
+		t.Errorf("an unknown model is sent images, got %q", got)
 	}
 }

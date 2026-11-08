@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/responses"
 )
@@ -43,6 +44,8 @@ type Spec struct {
 	IdentityHeaders  func(responses.IDs) map[string]string
 
 	Catalog      string
+	Mapping      catalog.Mapping
+	Overrides    map[string]catalog.Override
 	Default      Transport
 	Rules        []Rule
 	MessagesPath string
@@ -51,8 +54,6 @@ type Spec struct {
 	Caps        provider.CacheCaps
 	MarkMode    provider.MarkMode
 	TextOnly    bool
-
-	TextOnlyModels map[string]bool
 
 	MaxRequestBytes int
 }
@@ -74,6 +75,9 @@ func (s Spec) Validate() error {
 	}
 	if s.Catalog == "" && s.Default == "" && len(s.Rules) == 0 {
 		return fmt.Errorf("%s: routing needs a catalog, a default transport or a rule", s.Name)
+	}
+	if _, err := catalog.New(s.Mapping, s.Overrides); err != nil {
+		return fmt.Errorf("%s: %w", s.Name, err)
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -113,6 +114,7 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 		Name:         name,
 		AuthOptional: f.OAuth == nil && f.ServiceToken == "",
 		Catalog:      "/models",
+		Mapping:      catalogmaps.Builtin(PresetGateway),
 		Default:      Chat,
 		Caps:         caps,
 	})

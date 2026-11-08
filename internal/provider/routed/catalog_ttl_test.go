@@ -93,7 +93,7 @@ func movingProvider(t *testing.T, g *movingGateway) (*Provider, *testClock, func
 	if _, err := toml.Decode(doc, &f); err != nil {
 		t.Fatal(err)
 	}
-	spec, err := f.Apply(Spec{Name: "moving"})
+	spec, err := f.Apply(Spec{Name: "moving", Mapping: copilotShape})
 	if err != nil {
 		t.Fatal(err)
 	}

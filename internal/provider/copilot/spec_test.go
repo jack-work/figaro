@@ -1,8 +1,10 @@
 package copilot
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/provider/routed"
 )
@@ -26,5 +28,8 @@ func TestTheCopilotSpecCarriesItsHandshake(t *testing.T) {
 	}
 	if spec.Catalog != "/models" {
 		t.Errorf("catalog %q", spec.Catalog)
+	}
+	if !reflect.DeepEqual(spec.Mapping, catalogmaps.Builtin("copilot")) {
+		t.Errorf("copilot reads its catalog with %+v, not its built-in mapping", spec.Mapping)
 	}
 }

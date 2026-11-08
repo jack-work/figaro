@@ -19,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	apimodels "github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalog"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
@@ -42,7 +43,8 @@ type Provider struct {
 	mu        sync.RWMutex
 	model     string
 	templates *template.Template
-	catalog   map[string]catalogModel
+	reader    *catalog.Reader
+	catalog   map[string]apimodels.Entry
 	fetched   time.Time
 	tried     time.Time
 	now       func() time.Time
@@ -58,6 +60,10 @@ func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translato
 	if resolver == nil {
 		return nil, fmt.Errorf("%s: nil token resolver", spec.Name)
 	}
+	reader, err := catalog.New(spec.Mapping, spec.Overrides)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", spec.Name, err)
+	}
 	if spec.MessagesPath == "" {
 		spec.MessagesPath = "/messages"
 	}
@@ -70,7 +76,8 @@ func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translato
 		resolver:    resolver,
 		translators: translators,
 		model:       knobs.Model,
-		catalog:     map[string]catalogModel{},
+		reader:      reader,
+		catalog:     map[string]apimodels.Entry{},
 		now:         time.Now,
 	}, nil
 }
@@ -245,23 +252,28 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	return p.sendVia(ctx, moved, model, in, bus)
 }
 
-func (p *Provider) textOnly(model string) string {
-	if v, ok := p.spec.TextOnlyModels[model]; ok {
-		if v {
-			return fmt.Sprintf("model %s takes text only ([models.%q] text_only in providers/%s.toml)", model, model, p.spec.Name)
-		}
-		return ""
-	}
+func (p *Provider) entry(model string) (apimodels.Entry, bool) {
 	p.mu.RLock()
-	entry, known := p.catalog[model]
+	e, known := p.catalog[model]
 	p.mu.RUnlock()
 	if known {
-		if takes, said := entry.takesImages(); said {
-			if !takes {
-				return fmt.Sprintf("model %s takes text only (%s's model catalog)", model, p.spec.Name)
-			}
-			return ""
-		}
+		return e, true
+	}
+	return p.reader.Seed(model)
+}
+
+func (p *Provider) textOnly(model string) string {
+	e, _ := p.entry(model)
+	switch takes, src := e.TakesImages(); {
+	case src == "":
+	case takes:
+		return ""
+	case src == apimodels.SourceConfig:
+		return fmt.Sprintf("model %s takes text only ([models.%q] text_only in providers/%s.toml)", model, model, p.spec.Name)
+	case src == apimodels.SourceMapping:
+		return fmt.Sprintf("model %s takes text only (figaro's catalog mapping for %s)", model, p.spec.Name)
+	default:
+		return fmt.Sprintf("model %s takes text only (%s's model catalog)", model, p.spec.Name)
 	}
 	if p.spec.TextOnly {
 		return fmt.Sprintf("provider %s takes text only (text_only in providers/%s.toml)", p.spec.Name, p.spec.Name)
@@ -280,11 +292,8 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 			transport = responses.Socket
 		}
 		r.SetTransport(model, transport)
-		p.mu.RLock()
-		entry, ok := p.catalog[model]
-		p.mu.RUnlock()
-		if ok {
-			r.SetContextLimits(model, entry.contextLimits())
+		if e, ok := p.entry(model); ok && e.Context.Default > 0 {
+			r.SetContextLimits(model, responses.ContextLimits{Default: e.Context.Default, Long: e.Context.Long})
 		}
 		return provider.NameStreamCut(r.Send(ctx, in, bus), p.Name())
 	case Messages:
@@ -372,7 +381,7 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 			p.mu.RUnlock()
 		}
 		if known {
-			if t := transportForEndpoints(entry.SupportedEndpoints); t != "" {
+			if t := transportForEndpoints(entry.Endpoints); t != "" {
 				return t, nil
 			}
 		}
@@ -411,7 +420,7 @@ func (p *Provider) cachedRoute(model string) Transport {
 	entry, known := p.catalog[model]
 	p.mu.RUnlock()
 	if known {
-		if t := transportForEndpoints(entry.SupportedEndpoints); t != "" {
+		if t := transportForEndpoints(entry.Endpoints); t != "" {
 			return t
 		}
 	}
@@ -448,37 +457,18 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		}
 		return nil, fmt.Errorf("%s: no catalog configured to list models from", p.spec.Name)
 	}
-	catalog, err := p.fetchCatalog(ctx)
+	listed, err := p.fetchCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	models := make([]provider.ModelInfo, 0, len(catalog))
-	for _, m := range catalog {
+	out := make([]provider.ModelInfo, 0, len(listed))
+	for _, m := range listed {
 		if p.cachedRoute(m.ID) == "" {
 			continue
 		}
-		name := m.Name
-		if name == "" {
-			name = m.ID
-		}
-		limits := m.contextLimits()
-		e := apimodels.Entry{Name: name}
-		e.Mark("name", apimodels.SourceAPI)
-		if limits.Default > 0 || limits.Long > 0 {
-			e.Context = apimodels.Context{Default: limits.Default, Long: limits.Long}
-			e.Mark("context", apimodels.SourceAPI)
-		}
-		if n := m.Capabilities.Limits.MaxOutputTokens; n > 0 {
-			e.MaxOutput = n
-			e.Mark("max_output", apimodels.SourceAPI)
-		}
-		if m.ModelPickerEnabled != nil {
-			e.Hidden = !*m.ModelPickerEnabled
-			e.Mark("hidden", apimodels.SourceAPI)
-		}
-		models = append(models, provider.ModelInfo{ID: m.ID, Provider: p.spec.Name, Entry: e})
+		out = append(out, provider.ModelInfo{ID: m.ID, Provider: p.spec.Name, Entry: m.Entry})
 	}
-	return models, nil
+	return out, nil
 }
 
 func (p *Provider) staticEncoder() provider.EntryEncoder {
@@ -514,64 +504,11 @@ func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]jso
 	return enc.EncodeMessage(msg, prev)
 }
 
-type catalogModel struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	ModelPickerEnabled *bool    `json:"model_picker_enabled"`
-	SupportedEndpoints []string `json:"supported_endpoints"`
-	Billing            struct {
-		TokenPrices struct {
-			Default struct {
-				MaxPromptTokens int `json:"max_prompt_tokens"`
-			} `json:"default"`
-			LongContext struct {
-				MaxPromptTokens int `json:"max_prompt_tokens"`
-			} `json:"long_context"`
-		} `json:"token_prices"`
-	} `json:"billing"`
-	Capabilities struct {
-		Limits struct {
-			MaxContextWindowTokens int `json:"max_context_window_tokens"`
-			MaxOutputTokens        int `json:"max_output_tokens"`
-		} `json:"limits"`
-		Supports struct {
-			Vision *bool `json:"vision"`
-		} `json:"supports"`
-		ImageInput struct {
-			Supported *bool `json:"supported"`
-		} `json:"image_input"`
-	} `json:"capabilities"`
-}
-
-func (m catalogModel) takesImages() (bool, bool) {
-	if v := m.Capabilities.ImageInput.Supported; v != nil {
-		return *v, true
-	}
-	if v := m.Capabilities.Supports.Vision; v != nil {
-		return *v, true
-	}
-	return false, false
-}
-
-func (m catalogModel) contextLimits() responses.ContextLimits {
-	limits := responses.ContextLimits{
-		Default: m.Billing.TokenPrices.Default.MaxPromptTokens,
-		Long:    m.Billing.TokenPrices.LongContext.MaxPromptTokens,
-	}
-	if limits.Default == 0 {
-		limits.Default = m.Capabilities.Limits.MaxContextWindowTokens
-	}
-	if limits.Long == 0 {
-		limits.Long = m.Capabilities.Limits.MaxContextWindowTokens
-	}
-	return limits
-}
-
-func (p *Provider) fetchCatalog(ctx context.Context) (models []catalogModel, err error) {
+func (p *Provider) fetchCatalog(ctx context.Context) (listed []catalog.Model, err error) {
 	start := time.Now()
 	defer func() {
 		attrs := []attribute.KeyValue{
-			attribute.Int("models", len(models)),
+			attribute.Int("models", len(listed)),
 			attribute.Int64("elapsed_ms", time.Since(start).Milliseconds()),
 		}
 		if err != nil {
@@ -579,8 +516,36 @@ func (p *Provider) fetchCatalog(ctx context.Context) (models []catalogModel, err
 		}
 		figOtel.Event(ctx, "provider.catalog", attrs...)
 	}()
+	next := p.base() + p.spec.Catalog
+	seen := map[string]bool{}
+	for next != "" && !seen[next] {
+		seen[next] = true
+		page, cursor, err := p.catalogPage(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		listed = append(listed, page...)
+		next = ""
+		if cursor != "" {
+			if next, err = p.reader.NextURL(p.base()+p.spec.Catalog, cursor); err != nil {
+				return nil, err
+			}
+		}
+	}
+	byID := make(map[string]apimodels.Entry, len(listed))
+	for _, m := range listed {
+		byID[m.ID] = m.Entry
+	}
+	p.mu.Lock()
+	p.catalog = byID
+	p.fetched = p.now()
+	p.mu.Unlock()
+	return listed, nil
+}
+
+func (p *Provider) catalogPage(ctx context.Context, url string) ([]catalog.Model, string, error) {
 	resp, err := auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
-		req, err := http.NewRequestWithContext(ctx, "GET", p.base()+p.spec.Catalog, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -594,28 +559,18 @@ func (p *Provider) fetchCatalog(ctx context.Context) (models []catalogModel, err
 		return catalogClient.Do(req)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s models: %w", p.spec.Name, err)
+		return nil, "", fmt.Errorf("%s models: %w", p.spec.Name, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return nil, fmt.Errorf("%s models %d: %s", p.spec.Name, resp.StatusCode, body)
+		return nil, "", fmt.Errorf("%s models %d: %s", p.spec.Name, resp.StatusCode, body)
 	}
-	var raw struct {
-		Data []catalogModel `json:"data"`
+	listed, cursor, err := p.reader.Page(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("%s models: %w", p.spec.Name, err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-	catalog := make(map[string]catalogModel, len(raw.Data))
-	for _, m := range raw.Data {
-		catalog[m.ID] = m
-	}
-	p.mu.Lock()
-	p.catalog = catalog
-	p.fetched = p.now()
-	p.mu.Unlock()
-	return raw.Data, nil
+	return listed, cursor, nil
 }
 
 func snapshotString(snapshot form.Snapshot, key string) string {

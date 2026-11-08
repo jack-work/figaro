@@ -1,0 +1,10 @@
+[catalog]
+list       = "data"
+id         = ["id"]
+name       = ["name"]
+context    = ["billing.token_prices.default.max_prompt_tokens", "capabilities.limits.max_context_window_tokens"]
+long       = ["billing.token_prices.long_context.max_prompt_tokens", "capabilities.limits.max_context_window_tokens"]
+max_output = ["capabilities.limits.max_output_tokens"]
+images     = ["capabilities.image_input.supported", "capabilities.supports.vision"]
+visible    = ["model_picker_enabled"]
+endpoints  = ["supported_endpoints"]

@@ -1,0 +1,67 @@
+{
+  "models": [
+    {
+      "id": "billing-shaped",
+      "name": "Billing Shaped",
+      "context": 128000,
+      "long": 1000000,
+      "max_output": 64000,
+      "hidden": false
+    },
+    {
+      "id": "claude-opus-5.5",
+      "name": "Claude Opus 5.5",
+      "context": 1000000,
+      "long": 1000000,
+      "max_output": 128000,
+      "hidden": false
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "name": "GPT-5.4 nano",
+      "context": 400000,
+      "long": 400000,
+      "max_output": 128000,
+      "hidden": true
+    },
+    {
+      "id": "gpt-6-luna",
+      "name": "GPT-6 Luna",
+      "context": 1000000,
+      "long": 1000000,
+      "max_output": 128000,
+      "hidden": false
+    },
+    {
+      "id": "grok-4.7",
+      "name": "Grok 4.7",
+      "context": 500000,
+      "long": 500000,
+      "max_output": 128000,
+      "hidden": false
+    },
+    {
+      "id": "mai-code-2",
+      "name": "MAI-Code-2.x1",
+      "context": 1050000,
+      "long": 1050000,
+      "max_output": 128000,
+      "hidden": false
+    }
+  ],
+  "routes": {
+    "billing-shaped": "responses",
+    "claude-opus-5.5": "messages",
+    "gpt-4o-mini": "",
+    "gpt-5.4-nano": "responses-ws",
+    "gpt-6-luna": "responses-ws",
+    "gpt-6-luna-decisions": "",
+    "gpt-image-2.5-flare": "",
+    "grok-4.7": "responses",
+    "mai-code-2": "responses",
+    "text-embedding-3-small": ""
+  },
+  "text_only": [
+    "billing-shaped"
+  ]
+}

@@ -16,6 +16,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -48,10 +50,10 @@ func TestRouteOrderIsRuleThenCatalogThenDefault(t *testing.T) {
 		Default: Chat,
 		Rules:   []Rule{{Model: "grok-*", Transport: Responses}},
 	})
-	p.catalog = map[string]catalogModel{
-		"grok-4.7": {ID: "grok-4.7", SupportedEndpoints: []string{"/v1/messages"}},
-		"claude-x": {ID: "claude-x", SupportedEndpoints: []string{"/v1/messages"}},
-		"silent":   {ID: "silent"},
+	p.catalog = map[string]models.Entry{
+		"grok-4.7": {Endpoints: []string{"/v1/messages"}},
+		"claude-x": {Endpoints: []string{"/v1/messages"}},
+		"silent":   {},
 	}
 	for model, want := range map[string]Transport{"grok-4.7": Responses, "claude-x": Messages, "silent": Chat} {
 		got, err := p.route(context.Background(), model)
@@ -111,7 +113,7 @@ func TestModelsReportPromptCapsAndKeepHiddenModels(t *testing.T) {
 		]}`)
 	}))
 	defer srv.Close()
-	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return srv.URL }, Catalog: "/models"})
+	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return srv.URL }, Catalog: "/models", Mapping: copilotShape})
 
 	got, err := p.Models(context.Background())
 	if err != nil {
@@ -144,7 +146,7 @@ func (r *refusingResolver) Invalidate(string) error { return nil }
 
 func TestKnownModelSettingsAreRefusedBeforeAnyNetwork(t *testing.T) {
 	src := &refusingResolver{}
-	p, err := New(Spec{Name: "t", BaseURL: func() string { return "http://127.0.0.1:1" }, Catalog: "/models"},
+	p, err := New(Spec{Name: "t", BaseURL: func() string { return "http://127.0.0.1:1" }, Catalog: "/models", Mapping: copilotShape},
 		provider.Knobs{Model: "gpt-6-astra"}, src, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -338,7 +340,7 @@ func (b *captureBus) PushFigaro(message.Message, ...provider.AssistantCache) {}
 // Rows as the pre-routing binary wrote them: a different string here
 // re-encodes every existing Responses aria's history.
 func TestCopilotResponsesFingerprintIsUnchanged(t *testing.T) {
-	p := mustNew(t, Spec{Name: "copilot", BaseURL: func() string { return "" }, Catalog: "/models"})
+	p := mustNew(t, Spec{Name: "copilot", BaseURL: func() string { return "" }, Catalog: "/models", Mapping: copilotShape})
 	p.SetModel("gpt-6-astra")
 	if got := p.responsesBackend().Fingerprint(); got != "copilot-responses/v7/gpt-6-astra" {
 		t.Errorf("fingerprint %q", got)
@@ -420,7 +422,7 @@ func TestAGatewayRejectionRenewsTheTokenOnEveryTransport(t *testing.T) {
 	if _, err := toml.Decode(doc, &f); err != nil {
 		t.Fatal(err)
 	}
-	spec, err := f.Apply(Spec{Name: "rou2"})
+	spec, err := f.Apply(Spec{Name: "rou2", Mapping: copilotShape})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,3 +514,5 @@ func TestAMessagesRouteNamesItselfInItsErrors(t *testing.T) {
 		t.Errorf("TransportLabel = %q, want gw", m.TransportLabel)
 	}
 }
+
+var copilotShape = catalogmaps.Builtin("copilot")

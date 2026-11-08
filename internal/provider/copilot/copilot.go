@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/provider/routed"
 )
@@ -48,6 +49,7 @@ func Spec(tokens *CopilotTokenSource) routed.Spec {
 		},
 		IdentityHeaders: identityHeaders,
 		Catalog:         "/models",
+		Mapping:         catalogmaps.Builtin(providerName),
 		MessagesPath:    "/v1/messages",
 		Rules:           []routed.Rule{{Model: "claude-*", Transport: routed.Messages}},
 	}

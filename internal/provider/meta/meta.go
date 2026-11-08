@@ -2,6 +2,7 @@ package meta
 
 import (
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/routed"
 )
@@ -24,6 +25,7 @@ func Spec() routed.Spec {
 		Name:    providerName,
 		BaseURL: func() string { return base },
 		Catalog: "/models",
+		Mapping: catalogmaps.Builtin(providerName),
 		Default: routed.Responses,
 	}
 }
