@@ -11,7 +11,7 @@
 
 *Largo al factotum della calcolatore.*
 
-figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other. It's all one Go binary: the CLI and the daemon that runs the agents, and the daemon keeps well over a thousand of them in under 500 MB of memory. It runs fast on a laptop from 2004. Works with Claude (API key or Max subscription), GitHub Copilot, OpenRouter, Azure, and any OpenAI-compatible endpoint.
+figaro is a programmer's harness: AI coding agents you run and fork from your terminal. Send it a message and keep using your shell; short replies print inline, long ones open in a pager. Conversations (we call them arias) live on disk, fork at any turn, and can message each other. It's all one Go binary: the CLI and the daemon that runs the agents, and the daemon keeps well over a thousand of them in under 500 MB of memory. It runs fast on a laptop from 2004. Works with Claude, GitHub Copilot, OpenRouter, Azure, and any OpenAI-compatible endpoint.
 
 A coding agent with few opinions, firmly held. Tutto pulito, bravo bravissimo.
 
