@@ -124,6 +124,8 @@ type transcript struct {
 	box boxKind
 	// cmdline is the ':' box's editor.
 	cmdline lineEditor
+	ask     *boxQuestion
+	askline lineEditor
 	// draft outlives the drawer: Esc puts it away and '>' brings it back.
 	draft lineEditor
 	// composerMode is which keymap the drawer answers to (composer_normal.go).

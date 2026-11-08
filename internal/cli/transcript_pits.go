@@ -177,9 +177,30 @@ func (t *transcript) dropRowAt(pit, id, next string) {
 	}
 }
 
+type rowDropper interface {
+	DropPrompt(id string) (string, bool)
+	Drop(id string)
+}
+
 func (t *transcript) dropSelected(ask bool) {
 	if t.pit.id == pitQueue {
 		t.dropQueuedSelected()
+		return
+	}
+	if d, ok := t.pit.live.(rowDropper); ok {
+		row, has := t.pit.selected()
+		if !has {
+			return
+		}
+		id := row.id
+		prompt, ok := d.DropPrompt(id)
+		switch {
+		case !ok:
+		case ask && prompt != "":
+			t.askConfirm(prompt, func() { d.Drop(id) })
+		default:
+			d.Drop(id)
+		}
 		return
 	}
 	row, ok := t.pit.selected()

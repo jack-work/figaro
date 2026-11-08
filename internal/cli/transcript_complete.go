@@ -215,6 +215,9 @@ func (t *transcript) wordAtCursor() (before, word string) {
 // The word is cut back to its stem so the pool does not depend on the letters
 // still being typed.
 func (t *transcript) candidates() func(string) []string {
+	if t.box == boxAsk {
+		return nil
+	}
 	if t.box == boxComposer {
 		if t.composerCompleter != nil {
 			return t.composerCompleter

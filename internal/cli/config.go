@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/hush/managed"
@@ -37,10 +38,15 @@ func MustHush() *managed.Hush {
 	return h
 }
 
+var pagerHoldsTerminal atomic.Bool
+
 // With no identity on disk: choose one, twice, and the keyring promise only
 // where there is a keyring, else a key file. With an identity: ask once,
 // bounded retry.
 func promptVaultPassphrase(h *managed.Hush, appName string) ([]byte, error) {
+	if pagerHoldsTerminal.Load() {
+		return nil, errHushAsleep
+	}
 	if h == nil {
 		return tui.PromptPassphrase(tui.PassphraseRequest{App: appName, Mode: tui.PassphraseCreate})
 	}

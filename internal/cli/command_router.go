@@ -177,6 +177,17 @@ func (in *interactiveInput) execCommand(line string) {
 		return
 	}
 	verb := argv[0]
+	switch {
+	case verb == "login":
+		in.openLoginPit(argv[1:])
+		return
+	case verb == "provider" && len(argv) > 1 && argv[1] == "login":
+		in.openLoginPit(argv[2:])
+		return
+	case verb == "provider" && len(argv) == 3 && argv[1] == "logout":
+		in.askLogout(argv[2])
+		return
+	}
 	if overlayVerbs[verb] {
 		in.runOverlay(verb, argv[1:])
 		return

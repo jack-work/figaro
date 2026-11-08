@@ -17,6 +17,7 @@ const (
 	boxNone boxKind = iota
 	boxCommand
 	boxComposer
+	boxAsk
 )
 
 func (t *transcript) boxSigil() string {
@@ -26,12 +27,18 @@ func (t *transcript) boxSigil() string {
 		}
 		return t.composerSigil()
 	}
+	if t.box == boxAsk && t.ask != nil {
+		return t.ask.prompt
+	}
 	return ":"
 }
 
 func (t *transcript) composerTitle() []string {
 	if t.box == boxComposer && t.askOptions {
 		return t.optionsTitle()
+	}
+	if t.box == boxAsk {
+		return t.askTitle()
 	}
 	return nil
 }
@@ -61,6 +68,9 @@ func (t *transcript) editor() *lineEditor {
 			return &t.optline
 		}
 		return &t.draft
+	}
+	if t.box == boxAsk {
+		return &t.askline
 	}
 	return &t.cmdline
 }
@@ -106,6 +116,10 @@ func boxEnter(t *transcript) {
 			return
 		}
 		t.edit(func(e *lineEditor) { e.insertNewline() })
+		return
+	}
+	if t.box == boxAsk {
+		t.answerAsk()
 		return
 	}
 	t.boxSubmit(false)
@@ -215,7 +229,7 @@ func (t *transcript) pasteText(text string) {
 		t.render()
 		return
 	}
-	if !t.boxOpen() {
+	if !t.boxOpen() && !t.reopenAsk() {
 		pagerComposerBox(t)
 	}
 	t.editor().endSearch()

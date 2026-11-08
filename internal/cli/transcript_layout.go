@@ -166,7 +166,7 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 // wraps on the pit's page; the drawer may take the pane (F), the command line
 // may not.
 func (t *transcript) boxLines(reserve int) []string {
-	e := t.editor()
+	e := t.shownEditor()
 	rows := t.composerTitle()
 	room := max(min(t.boxRows(), t.pitRoom()-reserve)-len(rows), 1)
 	if t.fullPit() {

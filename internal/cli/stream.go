@@ -117,6 +117,7 @@ type interactiveInput struct {
 	intrinsics     *intrinsicMirrors
 	bound          *formMirror // the subject's form; guarded by in.mu, parked with the subject
 	models         *modelsFeed
+	login          *loginSession
 	interrupting   bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user
 	hangup         hangupClient // nil leaves H inert
 	// The send half. ownTurn closes when a frame carries our question, noTurn

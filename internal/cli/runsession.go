@@ -168,6 +168,8 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 			// normal return.
 			restoreOnce := sync.OnceFunc(restore)
 			defer restoreOnce()
+			pagerHoldsTerminal.Store(true)
+			defer pagerHoldsTerminal.Store(false)
 			atExit(restoreOnce)
 			fmt.Fprint(os.Stdout, enableModifiedKeyReporting+enableBracketedPaste)
 			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting+disableBracketedPaste)

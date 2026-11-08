@@ -137,6 +137,10 @@ func boxCancel(t *transcript) {
 		composerNormalEnter(t)
 		return
 	}
+	if t.box == boxAsk {
+		t.closeAsk()
+		return
+	}
 	boxClose(t)
 }
 
@@ -246,6 +250,10 @@ func cmdAbort(t *transcript) {
 		t.composerClose(true)
 		return
 	}
+	if t.box == boxAsk {
+		t.closeAsk()
+		return
+	}
 	boxClose(t)
 }
 
@@ -266,6 +274,10 @@ func cmdSearchPrev(t *transcript) {
 func cmdSearchNext(t *transcript) {
 	if t.box == boxComposer {
 		composerSubmit(t)
+		return
+	}
+	if t.box == boxAsk {
+		t.answerAsk()
 		return
 	}
 	t.clearCompletions()
@@ -336,6 +348,10 @@ func boxAccept(t *transcript) { boxEnter(t) }
 func boxAcceptSnap(t *transcript) {
 	if t.box == boxComposer {
 		composerSubmit(t)
+		return
+	}
+	if t.box == boxAsk {
+		t.answerAsk()
 		return
 	}
 	t.boxSubmit(true)

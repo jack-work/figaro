@@ -25,6 +25,8 @@ const (
 	pitReaped  pitID = "reaped"
 	pitTroupe  pitID = "troupe"
 	pitConfirm pitID = "confirm"
+	pitLogin   pitID = "login"
+	pitAsk     pitID = "answer"
 	// Drawn inside the command pit, never opened as its own; the row exists
 	// for its selection marker.
 	pitCompletion pitID = "completion"
@@ -59,6 +61,8 @@ var pitFaces = map[pitID]pitFace{
 	pitConfirm:    {"[y/N]", "confirm", "", modeConfirm},
 	pitCompletion: {"", "completion", "♪", modeBox},
 	pitDecision:   {"⁇", "decision", "", modePanel},
+	pitLogin:      {"⚷", "login", "▸", modePanel},
+	pitAsk:        {"⚷", "answer", "", modeBox},
 }
 
 func (d pitID) face() pitFace {
