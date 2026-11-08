@@ -326,6 +326,8 @@ func (o *Outfitter) current() *epoch {
 	return ep
 }
 
+func (o *Outfitter) Generation() uint64 { return o.current().gen }
+
 // A fresh epoch drops the whole fold cache.
 func (o *Outfitter) rollLocked() {
 	o.folds = map[string]foldEntry{}

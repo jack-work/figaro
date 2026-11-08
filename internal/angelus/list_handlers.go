@@ -219,6 +219,7 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 		return
 	}
 	workers := min(8, len(tasks))
+	limits := &limitMemo{byModel: map[[2]string]int{}}
 	queue := make(chan listEnrichment)
 	var wg sync.WaitGroup
 	for range workers {
@@ -229,7 +230,7 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 				entry := &result[task.index]
 				meta, _ := h.angelus.Backend.Meta(task.ariaID)
 				if meta != nil {
-					h.fillFromMeta(meta, entry)
+					h.fillFromMeta(meta, entry, limits)
 				}
 				entry.LastActive = h.angelus.Backend.LastTS(task.ariaID)
 			}
@@ -242,14 +243,34 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 	wg.Wait()
 }
 
-func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoResponse) {
+type limitMemo struct {
+	mu      sync.Mutex
+	byModel map[[2]string]int
+}
+
+func (h *handlers) contextLimit(m *limitMemo, provider, model string) int {
+	key := [2]string{provider, model}
+	m.mu.Lock()
+	limit, ok := m.byModel[key]
+	m.mu.Unlock()
+	if ok {
+		return limit
+	}
+	limit = h.angelus.Models.Limit(provider, model)
+	m.mu.Lock()
+	m.byModel[key] = limit
+	m.mu.Unlock()
+	return limit
+}
+
+func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoResponse, limits *limitMemo) {
 	entry.MessageCount = meta.MessageCount
 	entry.TokensIn = meta.TokensIn
 	entry.TokensOut = meta.TokensOut
 	entry.CacheReadTokens = meta.CacheReadTokens
 	entry.CacheWriteTokens = meta.CacheWriteTokens
 	entry.ContextTokens = meta.ContextTokens
-	entry.ContextLimit = h.angelus.Models.Limit(meta.Provider, meta.Model)
+	entry.ContextLimit = h.contextLimit(limits, meta.Provider, meta.Model)
 	entry.ContextExact = meta.ContextExact
 	entry.Provider = meta.Provider
 	entry.Model = meta.Model

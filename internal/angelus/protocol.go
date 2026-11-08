@@ -273,7 +273,8 @@ type handlers struct {
 	troupeForm *store.Form
 	reapedMu   sync.Mutex
 
-	arias ariasForms
+	arias        ariasForms
+	outfitHashes outfitHashes
 
 	// readerInst's per-aria servers are the window; a reader per call would retain nothing.
 	readerOnce sync.Once
@@ -325,6 +326,10 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	if ofit == nil {
 		return "", ""
 	}
+	gen := ofit.Generation()
+	if hashes, ok := h.outfitHashes.get(ofit, gen, name); ok {
+		return hashes[0], hashes[1]
+	}
 	names, perr := outfit.TermNames(name)
 	if perr != nil || len(names) == 0 {
 		return "", ""
@@ -335,7 +340,34 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	}
 	current, _ = store.OutfitVersion(name, p)
 	legacy, _ = store.LegacyOutfitVersion(p)
+	h.outfitHashes.put(ofit, gen, name, [2]string{current, legacy})
 	return current, legacy
+}
+
+type outfitHashes struct {
+	mu     sync.Mutex
+	of     *outfit.Outfitter
+	gen    uint64
+	byName map[string][2]string
+}
+
+func (c *outfitHashes) get(of *outfit.Outfitter, gen uint64, name string) ([2]string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.of != of || c.gen != gen {
+		return [2]string{}, false
+	}
+	h, ok := c.byName[name]
+	return h, ok
+}
+
+func (c *outfitHashes) put(of *outfit.Outfitter, gen uint64, name string, h [2]string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.of != of || c.gen != gen {
+		c.of, c.gen, c.byName = of, gen, map[string][2]string{}
+	}
+	c.byName[name] = h
 }
 
 func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) string {
