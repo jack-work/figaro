@@ -13,12 +13,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/sdk"
@@ -78,12 +79,12 @@ func (in *interactiveInput) sendComposer(text string) { go in.execSendComposer(t
 // execSendComposer submits the draft byte-for-byte: a draft is not a command line.
 func (in *interactiveInput) execSendComposer(text string) {
 	in.commandAsync(func(ctx context.Context) (string, error) {
+		defer in.progressIfSlow("…sending")()
 		if in.holdWhileAway(text) {
 			return in.heldNote(), nil
 		}
-		plan := sendPlan{prompt: text}
 		subject := in.aria()
-		id, resp, err := sendVerb(ctx, verbEnv{}, plan, subject, in.currentID())
+		resp, err := in.quaDraft(ctx, subject, text)
 		if err != nil && subject != nil && in.mayHold() && daemonGoingDown(err, subject.Done()) {
 			if !in.hold(text) {
 				in.sendHeld(ctx)
@@ -98,9 +99,16 @@ func (in *interactiveInput) execSendComposer(text string) {
 			in.lt.tr.openQueueFromKey()
 			in.mu.Unlock()
 		}
-		_ = id
 		return "sent", nil
 	})
+}
+
+func (in *interactiveInput) quaDraft(ctx context.Context, subject *sdk.Aria, text string) (*rpc.QuaResponse, error) {
+	if in.draftQua != nil {
+		return in.draftQua(ctx, text)
+	}
+	_, resp, err := sendVerb(ctx, verbEnv{}, sendPlan{prompt: text}, subject, in.currentID())
+	return resp, err
 }
 
 func (in *interactiveInput) completeComposer(line string) []string {
