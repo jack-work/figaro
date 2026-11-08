@@ -410,6 +410,7 @@ func Run() {
 	a.Models = modelcat.New(modelcat.Config{
 		Build:     func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
 		Providers: func() []string { return catalogProviders(loaded) },
+		Known:     func(name string) bool { return providerPkg.Lookup(name) != nil },
 		Poll:      loaded.ModelsPoll(),
 		Form:      modelsForm(backend),
 	})

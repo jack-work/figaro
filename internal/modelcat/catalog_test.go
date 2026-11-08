@@ -502,3 +502,39 @@ func TestThePickerFlagSurvivesIntoTheCatalog(t *testing.T) {
 	e, _ = models.Lookup(c.Snapshot(), "p", "shown")
 	require.False(t, e.Hidden)
 }
+
+// A model id once written as system.provider made the want record a build
+// error under that id, and the row stayed in @models for good.
+func TestANameThatIsNotAProviderNeverLandsInTheCatalog(t *testing.T) {
+	var builds atomic.Int32
+	known := func(name string) bool { return name == "anthropic" }
+	build := func(name string) (provider.Provider, error) {
+		builds.Add(1)
+		return nil, errors.New("unknown provider: " + name)
+	}
+	c := New(Config{Build: build, Known: known, Now: newClock().Now})
+	c.Want("claude-opus-5-5", "m")
+	<-c.list("claude-opus-5-5")
+	_, ok := models.ProviderStatus(c.Snapshot(), "claude-opus-5-5")
+	require.False(t, ok)
+	require.Zero(t, builds.Load(), "a stranger is never built")
+}
+
+func TestStrangersLeftByAnOlderDaemonAreDroppedAtBoot(t *testing.T) {
+	root := t.TempDir()
+	st, f := openModelsStore(t, root)
+	old := New(Config{Form: f})
+	old.publish("claude-opus-5-5", models.Provider{AttemptedAt: 7, Error: "unknown provider: \"claude-opus-5-5\""})
+	old.publish("anthropic", models.Provider{RefreshedAt: 7, Models: map[string]models.Entry{"claude-opus-5-5": {Context: models.Context{Default: 1_000_000}}}})
+
+	f = st.reopen(t)
+	c := New(Config{Form: f, Known: func(name string) bool { return name == "anthropic" }})
+	_, ok := models.ProviderStatus(c.Snapshot(), "claude-opus-5-5")
+	require.False(t, ok)
+	require.Equal(t, 1_000_000, limitOf(c, "anthropic", "claude-opus-5-5"))
+
+	f = st.reopen(t)
+	snap, _ := f.Snapshot()
+	_, ok = models.ProviderStatus(snap, "claude-opus-5-5")
+	require.False(t, ok, "the drop is stored, not only served")
+}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type Builder func(providerName string) (provider.Provider, error)
 type Config struct {
 	Build        Builder
 	Providers    func() []string
+	Known        func(providerName string) bool
 	Poll         time.Duration
 	Form         *store.Form
 	TTL          time.Duration
@@ -76,11 +78,36 @@ func New(cfg Config) *Catalog {
 	if f == nil {
 		f = store.NewMemForm()
 	}
-	return &Catalog{
+	c := &Catalog{
 		cfg:   cfg,
 		form:  f,
 		provs: map[string]*provState{},
 		ctx:   context.Background(),
+	}
+	c.dropStrangers()
+	return c
+}
+
+func (c *Catalog) known(providerName string) bool {
+	return providerName != "" && (c.cfg.Known == nil || c.cfg.Known(providerName))
+}
+
+func (c *Catalog) dropStrangers() {
+	snap, _ := c.form.Snapshot()
+	provs, _ := models.Providers(snap)
+	var gone []string
+	for name := range provs {
+		if !c.known(name) {
+			gone = append(gone, name)
+		}
+	}
+	if len(gone) == 0 {
+		return
+	}
+	sort.Strings(gone)
+	slog.Info("models: dropping entries for names that are not providers", "names", gone)
+	if _, _, err := c.form.ApplyEffect(form.Build(snap, nil, gone), 0); err != nil {
+		slog.Error("models: drop refused", "names", gone, "err", err)
 	}
 }
 
@@ -191,7 +218,7 @@ func (c *Catalog) Kick(names ...string) []<-chan struct{} {
 }
 
 func (c *Catalog) list(providerName string) <-chan struct{} {
-	if providerName == "" || c.cfg.Build == nil {
+	if !c.known(providerName) || c.cfg.Build == nil {
 		return closedChan
 	}
 	c.mu.Lock()
@@ -235,7 +262,7 @@ func (c *Catalog) start(providerName string, st *provState) {
 }
 
 func (c *Catalog) Want(providerName, model string) {
-	if c == nil || providerName == "" || model == "" || c.cfg.Build == nil {
+	if c == nil || !c.known(providerName) || model == "" || c.cfg.Build == nil {
 		return
 	}
 	snap := c.Snapshot()
