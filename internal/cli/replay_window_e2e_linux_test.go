@@ -53,7 +53,12 @@ func tapeWithModel(t *testing.T, src string, m map[string]any) string {
 
 func replayInPty(t *testing.T, r *restartRig, path string) *listenScreen {
 	t.Helper()
-	replay := r.cmd("replay", path, "--speed", "50")
+	return replayInPtyAt(t, r, path, "50")
+}
+
+func replayInPtyAt(t *testing.T, r *restartRig, path, speed string) *listenScreen {
+	t.Helper()
+	replay := r.cmd("replay", path, "--speed", speed)
 	replay.Env = append(replay.Env, "TERM=xterm-256color")
 	ptmx, tty, err := pty.Open()
 	if err != nil {

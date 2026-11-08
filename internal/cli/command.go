@@ -955,6 +955,7 @@ func (in *interactiveInput) desyncHandler(gen uint64) func(int) {
 
 // wireHooks is the one place the pager's hooks are armed. Caller holds the render lock.
 func (in *interactiveInput) wireHooks() {
+	in.lt.tr.quietDrain = in.replaying
 	in.lt.setQueuedFetch(in.refreshQueued)
 	in.lt.setHistoryFetcher(in.historyFetcher())
 	in.lt.setCommandRunner(in.runCommand)

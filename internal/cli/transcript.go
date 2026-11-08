@@ -41,6 +41,7 @@ type transcript struct {
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool
+	quietDrain     bool
 	queuedRows     []string // pre-rendered, for the inline trailer
 	queued         []queuedItem
 	queueOpen      map[uint64]bool

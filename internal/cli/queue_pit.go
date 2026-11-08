@@ -140,11 +140,12 @@ func (t *transcript) showQueuedAuto(on bool) {
 	if !t.showing(pitQueue) {
 		return
 	}
-	// A drained queue closes its pit, opened by hand or not, and says so on
-	// the bar.
+	byKey := t.queuedByKey
 	t.queuedByKey = false
 	t.pit.close()
-	t.noteQueueEmpty()
+	if byKey || !t.quietDrain {
+		t.noteQueueEmpty()
+	}
 }
 
 // The stale snapshot renders immediately; the async refresh replaces it in place.
