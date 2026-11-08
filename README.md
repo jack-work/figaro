@@ -57,7 +57,7 @@ figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/fi
 
 Drive figaros from the shell (`figaro -- <prompt>`, `figaro send -f`) or from the pager (bare `figaro`). Neither is required; the shell is the quick one.
 
-<p align="center"><img src="docs/media/topology.gif" alt="figaro ls prints the tree of figaros with their mantras; in the pager, l opens the same tree and the cursor moves between forks" width="820"></p>
+<p align="center"><img src="docs/media/tree-fork-form.gif" alt="in the pager: the tree of figaros, a fuzzy find to a fork, the fork at work, its form taking a change live, and ^O back" width="820"></p>
 
 ## Security: bring your own sandbox
 
