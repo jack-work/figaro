@@ -22,7 +22,7 @@ A coding agent with few opinions, firmly held. Tutto pulito, bravo bravissimo.
 
 ## Fast from the shell
 
-Rather than running a binary and typing a message in a chatbox, figaro wants to be passed messages from the shell using CLI verbs. `figaro -- <prompt>` and you have your shell back. That's the whole sell, really: speed.
+Rather than running a binary and typing a message in a chatbox, figaro wants to be passed messages from the shell using CLI verbs. `figaro -- <prompt>` and you have your shell back. It's fast, and that's a big part of the point.
 
 Your arias live in a daemon called the angelus (for you catholics out there). It works like a tmux server: close the terminal, drop the SSH connection, and the turn keeps running. Attend it again from any shell and pick up where it is. The pager is a convenience on top, and the whole thing stays usable over SSH.
 
