@@ -116,9 +116,11 @@ type tapeServer struct {
 	done   chan struct{}
 	closed bool
 
-	mu    sync.Mutex
-	start time.Time
-	sent  time.Duration
+	mu        sync.Mutex
+	start     time.Time
+	sent      time.Duration
+	metrics   json.RawMessage
+	metricsAt time.Duration
 }
 
 func (s *tapeServer) listen(ctx context.Context, ep transport.Endpoint) error {
@@ -150,10 +152,11 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 	} {
 		method := m
 		handlers[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			if r := answers.at(method, params, s.position()); r != nil {
-				return r, nil
+			ans, ok := answers.at(method, params, s.position())
+			if !ok {
+				return nil, nil
 			}
-			return nil, nil
+			return s.withNotifiedMetrics(ans), nil
 		}
 	}
 
@@ -177,9 +180,16 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 		if json.Unmarshal(f.Msg, &m) != nil {
 			continue
 		}
+		var carried struct {
+			Metrics json.RawMessage `json:"metrics"`
+		}
+		_ = json.Unmarshal(m.Params, &carried)
 		s.mu.Lock()
 		if f.At() > s.sent {
 			s.sent = f.At()
+		}
+		if len(carried.Metrics) > 0 && string(carried.Metrics) != "null" {
+			s.metrics, s.metricsAt = carried.Metrics, f.At()
 		}
 		s.mu.Unlock()
 		if srv.Notify(m.Method, m.Params) != nil {
@@ -202,6 +212,28 @@ func (s *tapeServer) position() time.Duration {
 		return played
 	}
 	return s.sent
+}
+
+func (s *tapeServer) withNotifiedMetrics(ans recordedAnswer) json.RawMessage {
+	s.mu.Lock()
+	fresh, at := s.metrics, s.metricsAt
+	s.mu.Unlock()
+	if fresh == nil || at < ans.asked {
+		return ans.result
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(ans.result, &fields) != nil {
+		return ans.result
+	}
+	if _, ok := fields["metrics"]; !ok {
+		return ans.result
+	}
+	fields["metrics"] = fresh
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return ans.result
+	}
+	return out
 }
 
 type tapeClock struct {
@@ -307,13 +339,13 @@ func recordedAnswers(frames []tape.Frame) tapeAnswers {
 	return a
 }
 
-func (a tapeAnswers) at(method string, params json.RawMessage, now time.Duration) json.RawMessage {
+func (a tapeAnswers) at(method string, params json.RawMessage, now time.Duration) (recordedAnswer, bool) {
 	rs := a.byAsk[askKey(method, params)]
 	if len(rs) == 0 {
 		rs = a.byMethod[method]
 	}
 	if len(rs) == 0 {
-		return nil
+		return recordedAnswer{}, false
 	}
 	pick := rs[0]
 	for _, r := range rs {
@@ -322,7 +354,7 @@ func (a tapeAnswers) at(method string, params json.RawMessage, now time.Duration
 		}
 		pick = r
 	}
-	return pick.result
+	return pick, pick.result != nil
 }
 
 func askKey(method string, params json.RawMessage) string {

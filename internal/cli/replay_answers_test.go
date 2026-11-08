@@ -82,3 +82,58 @@ func TestAReplayAnswersAPollWithTheFiguresOfItsMomentOnTheTape(t *testing.T) {
 		}
 	}
 }
+
+// gen4 take 4: a fork pane's footer went back to "~11/200.0k 0.0%" a second
+// after its turn sealed at an exact 148379. The recording's last poll before
+// the seal answered with the turn's running estimate, and the recorder took
+// no poll after it, so the replay's own post-seal poll got that estimate. A
+// poll is never answered with figures older than the ones the replay has
+// already pushed.
+func TestAReplayNeverAnswersAPollWithFiguresOlderThanItHasPushed(t *testing.T) {
+	var frames []tape.Frame
+	frames = append(frames, metricsProbeFrames(t, 1, 0.01, 11)...)
+	frames = append(frames,
+		tapeFrame(t, 0.3, tape.In, `{"jsonrpc":"2.0","method":"figaro.aria","params":{"figaro_id":"a","parts":[],"more":{},"metrics":{"context_tokens":148379,"context_exact":true}}}`),
+		tapeFrame(t, 0.31, tape.In, `{"jsonrpc":"2.0","method":"turn.done","params":{"figaro_id":"a","reason":"stop","idle":true}}`),
+		tapeFrame(t, 600, tape.In, `{"jsonrpc":"2.0","method":"turn.done","params":{"figaro_id":"a","reason":"stop"}}`),
+	)
+
+	dir, err := os.MkdirTemp("", "figtape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	ep := transport.UnixEndpoint(filepath.Join(dir, "agent.sock"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := &tapeServer{frames: frames, speed: 1, done: make(chan struct{})}
+	if err := srv.listen(ctx, ep); err != nil {
+		t.Fatal(err)
+	}
+	sealed := make(chan struct{}, 1)
+	cli, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(method string, _ json.RawMessage) {
+		if method == "turn.done" {
+			select {
+			case sealed <- struct{}{}:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	select {
+	case <-sealed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the tape never sealed its turn")
+	}
+
+	m, err := cli.Metrics(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m == nil || m.ContextTokens != 148379 || !m.ContextExact {
+		t.Fatalf("a poll after the seal answered %+v, older than the exact 148379 already pushed", m)
+	}
+}
