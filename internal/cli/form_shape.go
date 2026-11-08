@@ -234,12 +234,40 @@ func (v *formView) seekMarked() string {
 		return at
 	}
 	v.mu.Lock()
-	if v.view != nil && v.view.Mount != "" {
-		v.open[at] = true
+	if v.view == nil || v.view.Mount == "" {
+		v.mu.Unlock()
+		return at
+	}
+	v.open[at] = true
+	v.openRev++
+	m := v.mounts[at]
+	if m == nil || m.view == nil {
 		v.seeking = at
-		v.openRev++
+		v.mu.Unlock()
+		return at
 	}
 	v.mu.Unlock()
+	if inner := m.view.revealOpen(); inner != "" {
+		return at + mountSep + inner
+	}
+	return at
+}
+
+func (v *formView) revealOpen() string {
+	at := v.revealMarked()
+	if at == "" {
+		return ""
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.open[at] = true
+	if v.view != nil && v.view.Through != "" {
+		if v.through == nil {
+			v.through = map[string]bool{}
+		}
+		v.through[at] = true
+	}
+	v.openRev++
 	return at
 }
 

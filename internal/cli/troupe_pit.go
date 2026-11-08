@@ -13,9 +13,12 @@ import (
 
 func (in *interactiveInput) troupeAtRoot(v *formView) { v.opener = in.mountForm }
 
-func (in *interactiveInput) troupeAtAttended(v *formView) {
-	v.opener = in.mountForm
+func (in *interactiveInput) troupeAtAttended(v *formView) { seekAttended(v, in.mountForm) }
+
+func seekAttended(v *formView, open mountOpener) {
+	v.opener = open
 	v.seeks = true
+	v.loadMount(v.revealMarked())
 }
 
 func (in *interactiveInput) mountForm(addr string) (*formView, actOn, func(), <-chan struct{}, error) {

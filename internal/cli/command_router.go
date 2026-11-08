@@ -570,6 +570,7 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 			in.note(name + ": " + err.Error())
 			return
 		}
+		view.subject = in.subjectState()
 		if keep != nil && !keep(view) {
 			closeView()
 			return
@@ -589,12 +590,26 @@ func (in *interactiveInput) installFormView(name string, view *formView, closeVi
 	in.mu.Unlock()
 }
 
+func (in *interactiveInput) subjectState() func() form.Snapshot {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.subjectStateLocked()
+}
+
+func (in *interactiveInput) subjectStateLocked() func() form.Snapshot {
+	bound := in.bound
+	if bound == nil {
+		return nil
+	}
+	return func() form.Snapshot {
+		snap, _, _ := bound.state()
+		return snap
+	}
+}
+
 func (in *interactiveInput) installLivePit(name string, view *formView, full bool) {
-	if bound := in.bound; bound != nil {
-		view.subject = func() form.Snapshot {
-			snap, _, _ := bound.state()
-			return snap
-		}
+	if view.subject == nil {
+		view.subject = in.subjectStateLocked()
 	}
 	view.focus = func(id string) {
 		in.mu.Lock()
@@ -604,17 +619,18 @@ func (in *interactiveInput) installLivePit(name string, view *formView, full boo
 			return
 		}
 		t.pit.refreshLive(t.w)
-		t.pit.focus(id)
+		t.pit.focusSubtree(id)
 		t.render()
 	}
 	at := view.seekMarked()
 	t := in.lt.tr
+	t.beginBatch()
 	t.showLivePit(name, view, full)
 	if at != "" {
 		t.pit.refreshLive(t.w)
-		t.pit.focus(at)
-		t.render()
+		t.pit.focusSubtree(at)
 	}
+	t.endBatch()
 }
 
 func (in *interactiveInput) renderLocked() {

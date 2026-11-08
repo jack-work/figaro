@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -11,7 +12,10 @@ const mountSep = "\x1f"
 
 type mountOpener func(addr string) (*formView, actOn, func(), <-chan struct{}, error)
 
-const mountRedial = time.Second
+const (
+	mountRedial      = time.Second
+	mountOverlayWait = 2 * time.Second
+)
 
 type viewMount struct {
 	addr  string
@@ -163,13 +167,45 @@ func (v *formView) openMount(path string, m *viewMount) {
 	v.items = nil
 	v.mu.Unlock()
 	if seek && focus != nil {
-		if at := view.revealMarked(); at != "" {
+		if at := view.revealOpen(); at != "" {
 			focus(path + mountSep + at)
 		}
 	}
 	v.changed()
 	if err == nil && done != nil {
 		go v.redialWhenDone(path, m, done)
+	}
+}
+
+func (v *formView) loadMount(path string) {
+	v.mu.Lock()
+	key := ""
+	if v.opener != nil && v.view != nil {
+		key = v.view.Mount
+	}
+	v.mu.Unlock()
+	if key == "" || path == "" {
+		return
+	}
+	raw, ok := v.source().Shown().Get(path + "." + key)
+	var addr string
+	if !ok || json.Unmarshal(raw, &addr) != nil || addr == "" {
+		return
+	}
+	node, _ := rpc.SplitNode(addr)
+	m := &viewMount{addr: addr, node: node, note: "loading " + addr}
+	v.mu.Lock()
+	if v.mounts == nil {
+		v.mounts = map[string]*viewMount{}
+	}
+	v.mounts[path] = m
+	v.mu.Unlock()
+	v.openMount(path, m)
+	v.mu.Lock()
+	view := m.view
+	v.mu.Unlock()
+	if view != nil {
+		view.awaitOverlay(mountOverlayWait)
 	}
 }
 

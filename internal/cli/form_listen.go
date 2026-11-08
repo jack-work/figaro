@@ -245,12 +245,13 @@ type formView struct {
 	search    *formSearch
 	clear     func() bool
 
-	openOverlay  overlayOpener
-	overlay      *formView
-	overlayClose func()
-	overlayOn    bool
-	closing      bool
-	merge        *overlayMerge
+	openOverlay    overlayOpener
+	overlay        *formView
+	overlayClose   func()
+	overlayOn      bool
+	overlayDialled chan struct{}
+	closing        bool
+	merge          *overlayMerge
 }
 
 type formSource interface {

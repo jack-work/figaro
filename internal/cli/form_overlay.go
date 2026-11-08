@@ -188,15 +188,31 @@ func (v *formView) ensureOverlay() {
 	v.overlayOn = true
 	id := overlayFormID(v.aria, v.view.Overlay.Form)
 	open := v.openOverlay
+	dialled := make(chan struct{})
+	v.overlayDialled = dialled
 	v.mu.Unlock()
-	go v.dialOverlay(id, open)
+	go v.dialOverlay(id, open, dialled)
 }
 
-func (v *formView) dialOverlay(id string, open overlayOpener) {
+func (v *formView) awaitOverlay(limit time.Duration) {
+	v.mu.Lock()
+	dialled := v.overlayDialled
+	v.mu.Unlock()
+	if dialled == nil {
+		return
+	}
+	select {
+	case <-dialled:
+	case <-time.After(limit):
+	}
+}
+
+func (v *formView) dialOverlay(id string, open overlayOpener, dialled chan struct{}) {
 	ov, closeFn, done, err := open(id, v.changed)
 	v.mu.Lock()
 	if v.closing {
 		v.mu.Unlock()
+		close(dialled)
 		if closeFn != nil {
 			closeFn()
 		}
@@ -207,12 +223,14 @@ func (v *formView) dialOverlay(id string, open overlayOpener) {
 		v.overlayOn = false
 		v.items = nil
 		v.mu.Unlock()
+		close(dialled)
 		v.changed()
 		return
 	}
 	v.overlay, v.overlayClose = ov, closeFn
 	v.items = nil
 	v.mu.Unlock()
+	close(dialled)
 	v.changed()
 	if done == nil {
 		return

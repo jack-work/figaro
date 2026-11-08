@@ -132,3 +132,67 @@ func TestLsSeeksTheAttendedAriaAndTroupeDoesNot(t *testing.T) {
 		}
 	}
 }
+
+// l painted the node row first, then the cursor jumped to the attended aria
+// once this node's store mounted, and the aria's own forks stayed closed.
+// The store now loads before the pit is shown, so the first frame the pit
+// paints already has the cursor on the attended aria with its forks open,
+// and no later frame moves it.
+func TestTheFirstFrameIsFocusedOnTheAttendedAriaWithItsForksOpen(t *testing.T) {
+	f := newFakeMounts()
+	f.hint = ariasLikeHint
+	f.forms["@things"] = things(
+		"arias.top.id", `"aaa"`, "arias.top.mantra", `"top"`,
+		"arias.top.forks.mid.id", `"bbb"`, "arias.top.forks.mid.mantra", `"mid"`,
+		"arias.top.forks.mid.forks.me.id", `"ccc"`, "arias.top.forks.mid.forks.me.mantra", `"me"`,
+		"arias.top.forks.mid.forks.me.forks.kid.id", `"eee"`, "arias.top.forks.mid.forks.me.forks.kid.mantra", `"kid"`,
+		"arias.other.id", `"ddd"`, "arias.other.mantra", `"other"`,
+	)
+	var out countingWriter
+	in, lt := navInput(t, &out, true)
+	v := indexView(f)
+	v.subject = attending("ccc")
+	seekAttended(v, f.open)
+
+	lt.tr.h = 12
+	type frame struct {
+		cursor string
+		shown  map[string]bool
+	}
+	var frames []frame
+	prev := lt.tr.painted
+	lt.tr.painted = func() {
+		if p := lt.tr.pit.list(); lt.tr.pit.id != "" && p != nil {
+			row, _ := p.selected()
+			shown := map[string]bool{}
+			for _, r := range p.rows[p.top:min(p.top+p.height, len(p.rows))] {
+				shown[r.id] = true
+			}
+			frames = append(frames, frame{row.id, shown})
+		}
+		if prev != nil {
+			prev()
+		}
+	}
+	in.mu.Lock()
+	in.installLivePit("troupe", v, false)
+	in.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+
+	me := "here\x1farias.top.forks.mid.forks.me"
+	kid := me + ".forks.kid"
+	if len(frames) == 0 {
+		t.Fatal("the pit painted no frame")
+	}
+	for i, fr := range frames {
+		if fr.cursor != me {
+			t.Errorf("frame %d: cursor on %q, want %q from the first frame on", i, fr.cursor, me)
+		}
+		if !fr.shown[me] || !fr.shown[kid] {
+			t.Errorf("frame %d: a short pit does not show the attended aria with its fork under it: %v", i, fr.shown)
+		}
+	}
+	if len(f.opened) != 1 || f.opened[0] != "@things" {
+		t.Errorf("opened %v, want this node's store alone", f.opened)
+	}
+}
