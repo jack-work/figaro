@@ -257,6 +257,13 @@ func (in *interactiveInput) onIntrinsicChanged(name string) {
 // it is drawn only if it outlives the grace.
 const queueDebutGrace = 150 * time.Millisecond
 
+func queueDebutGraceNow() time.Duration {
+	if activeLockstep != nil {
+		return 0
+	}
+	return queueDebutGrace
+}
+
 // debut carries each row's deadline across calls so a second mutation inside the
 // grace does not restart it; the caller owes next a wake-up.
 func queueDebut(rows []queueRow, busy bool, now time.Time, debut map[uint64]time.Time) (items []queuedItem, next time.Time) {
@@ -271,7 +278,7 @@ func queueDebut(rows []queueRow, busy bool, now time.Time, debut map[uint64]time
 		if !seen {
 			at = now
 			if !busy {
-				at = now.Add(queueDebutGrace)
+				at = now.Add(queueDebutGraceNow())
 			}
 			debut[r.ID] = at
 		}
