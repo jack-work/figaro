@@ -16,7 +16,7 @@ form *forks* it, and nothing in the system converts.
 ```sh
 fig form new -S name=deploys -j        # mint state → {"form_id":"@a1b2c3",…}
 fig set --id @a1b2c3 status.phase canary   # write (or: fig at @a1b2c3; fig set …)
-fig form @a1b2c3                       # read; `fig form listen @a1b2c3` to watch
+fig form @a1b2c3                       # read; `fig form listen @a1b2c3` to watch, `fig listen @a1b2c3` in the pager
 fig bind @a1b2c3                       # birth a figaro from it (dormant; never rebinds your shell)
 fig set --id @a1b2c3 target-aria <id>  # now it's a ROLE: fig send @a1b2c3 reaches the holder
 ```

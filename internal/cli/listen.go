@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
 	"log/slog"
@@ -20,7 +21,21 @@ import (
 type targetResolver func(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, sdk.Addr, error)
 
 func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
-	runListenIntrinsic(loaded, ariaID, recordPath, note, false, "", mintingWhenUnbound(resolveFigaroTargetEndpoint))
+	runListenIntrinsic(loaded, ariaID, recordPath, note, false, "", listenTarget)
+}
+
+var listenTarget = mintingWhenUnbound(resolveFigaroOrForm)
+
+func resolveFigaroOrForm(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, sdk.Addr, error) {
+	id, ep, err := resolveTargetEndpoint(ctx, loaded, acli, explicitID, autoCreate, d)
+	if err != nil {
+		return id, ep, err
+	}
+	held, hep, err := redirectRole(ctx, loaded, acli, id, ep)
+	if errors.As(err, new(notARole)) {
+		return id, ep, nil
+	}
+	return held, hep, err
 }
 
 func mintingWhenUnbound(resolve targetResolver) targetResolver {
@@ -40,6 +55,7 @@ func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, 
 	if err != nil {
 		die("%s", err)
 	}
+	formPit = formPit || isFormID(resolvedID)
 
 	var rec *tape.Writer
 	if recordPath != "" {

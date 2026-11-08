@@ -303,7 +303,10 @@ func completeProviderAfterVerb(c *cmdkit.CompleteContext) []string {
 
 // Forms and arias share one listing, and a form offered where an aria is wanted
 // is silently accepted, so each slot asks for its kind.
-func isFormID(id string) bool { return strings.HasPrefix(id, "@") }
+func isFormID(id string) bool {
+	_, local := rpc.SplitNode(id)
+	return strings.HasPrefix(local, "@")
+}
 
 func positionals(args []string, valued ...string) int {
 	n := 0
