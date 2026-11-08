@@ -55,6 +55,42 @@ func TestARoleIsAddressedByItsNameAtEveryVerb(t *testing.T) {
 	}
 }
 
+// gen5 bugs #1: a form minted with only a name, then cast by that name. The
+// cast must make it the aria's role, and a name nobody carries must be refused
+// in words that name no trunk.
+func TestCastReachesAnUncastFormByItsName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon; skipped under -short")
+	}
+	rig := newSendRig(t, "http://127.0.0.1:9")
+	holder := rig.mint(t, "holder")
+	out, err := rig.cmd("form", "new", "-j", "name=almaviva").Output()
+	if err != nil {
+		t.Fatalf("form new: %v\n%s", err, out)
+	}
+	var minted struct {
+		FormID string `json:"form_id"`
+	}
+	if err := json.Unmarshal(lastLine(out), &minted); err != nil || minted.FormID == "" {
+		t.Fatalf("form new -j printed no form id: %q", out)
+	}
+
+	if out, err := rig.cmd("cast", holder, "@almaviva").CombinedOutput(); err != nil {
+		t.Fatalf("cast %s @almaviva: %v\n%s", holder, err, out)
+	}
+	if got, _ := rig.cmd("state", "--id", minted.FormID).CombinedOutput(); !strings.Contains(string(got), holder) {
+		t.Fatalf("cast @almaviva did not point the form at %s:\n%s", holder, got)
+	}
+
+	out, err = rig.cmd("cast", holder, "@nobody").CombinedOutput()
+	if err == nil {
+		t.Fatalf("cast @nobody succeeded:\n%s", out)
+	}
+	if !strings.Contains(string(out), "no role or form named @nobody") || strings.Contains(string(out), "trunk") {
+		t.Fatalf("cast @nobody said %q, want: no role or form named @nobody", out)
+	}
+}
+
 func lastLine(out []byte) []byte {
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	return []byte(lines[len(lines)-1])

@@ -85,17 +85,29 @@ func (b *XwalBackend) rolesForgotten(ids []string) {
 	}
 }
 
-func (b *XwalBackend) RolesNamed(name string) ([]string, bool) {
+func (b *XwalBackend) FormsNamed(name string) (roles, forms []string, ready bool) {
 	b.rolesMu.Lock()
-	defer b.rolesMu.Unlock()
-	var out []string
-	for formID, target := range b.roles.byForm {
-		if target != "" && b.roles.names[formID] == name {
-			out = append(out, formID)
+	var plain []string
+	for formID, n := range b.roles.names {
+		if n != name {
+			continue
+		}
+		if b.roles.byForm[formID] != "" {
+			roles = append(roles, formID)
+		} else {
+			plain = append(plain, formID)
 		}
 	}
-	sort.Strings(out)
-	return out, b.roles.ready
+	ready = b.roles.ready
+	b.rolesMu.Unlock()
+	for _, id := range plain {
+		if kind, ok := b.store.trunks.Kind(id); ok && kind == string(kindForm) {
+			forms = append(forms, id)
+		}
+	}
+	sort.Strings(roles)
+	sort.Strings(forms)
+	return roles, forms, ready
 }
 
 func (b *XwalBackend) RoleTargets() (map[string]string, bool) {

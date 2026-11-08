@@ -133,12 +133,57 @@ func TestANameIsMatchedExactly(t *testing.T) {
 	}
 }
 
-func TestOnlyARoleIsReachedByName(t *testing.T) {
+// A form not yet cast is what `figaro cast <aria> @name` names, so it answers
+// to its name too, but a role carrying the same name comes first.
+func TestAnUncastFormIsReachedByNameAfterRoles(t *testing.T) {
 	r := newNameRig(t)
-	r.role("plain", "")
+	plain := r.role("plain", "")
+	r.role("shared", "")
+	role := r.role("shared", r.aria())
 	r.serve()
 
-	r.resolves(r.owner, "@plain", "@plain")
+	r.resolves(r.owner, "@plain", plain)
+	r.resolves(r.owner, "@shared", role)
+}
+
+func TestANameTwoUncastFormsShareIsAnError(t *testing.T) {
+	r := newNameRig(t)
+	one, two := r.role("twin", ""), r.role("twin", "")
+	r.serve()
+
+	_, err := r.h.canonicalID(r.owner, "@twin")
+	if err == nil {
+		t.Fatal("@twin resolved though two forms carry that name")
+	}
+	for _, id := range []string{one, two} {
+		if !strings.Contains(err.Error(), handle.Words(id, handle.MinWords)) {
+			t.Fatalf("the ambiguity does not name %s by its handle: %v", id, err)
+		}
+	}
+}
+
+// The form slot of a cast or a study is resolved before the aria's agent sees
+// it; a name nothing carries is refused there, in words that name no trunk,
+// and a guest hears the same for a form it may not read.
+func TestAFormSlotNamingNothingSaysSo(t *testing.T) {
+	r := newNameRig(t)
+	aria := r.aria()
+	r.role("hidden", "")
+	r.serve(aria)
+
+	cast := func(ctx context.Context, ref string) error {
+		raw, _ := json.Marshal(map[string]any{"figaro_id": aria, "form_id": ref})
+		_, err := r.hs.Map[rpc.MethodCast](ctx, raw)
+		return err
+	}
+	err := cast(r.owner, "@nobody")
+	if err == nil || err.Error() != "no role or form named @nobody" {
+		t.Fatalf("cast @nobody answered %v, want: no role or form named @nobody", err)
+	}
+	hidden, missing := cast(r.guest, "@hidden"), cast(r.guest, "@nobody")
+	if hidden == nil || missing == nil || strings.ReplaceAll(missing.Error(), "@nobody", "@hidden") != hidden.Error() {
+		t.Fatalf("the guest tells a hidden form from a missing one:\n  hidden:  %v\n  missing: %v", hidden, missing)
+	}
 }
 
 func TestANameTwoRolesShareIsAnErrorNamingBoth(t *testing.T) {

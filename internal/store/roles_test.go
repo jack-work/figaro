@@ -98,7 +98,7 @@ func TestRolesByNameFollowEveryWrite(t *testing.T) {
 	}
 	b.SeedRoles(context.Background(), 0)
 	named := func(name string) []string {
-		got, _ := b.RolesNamed(name)
+		got, _, _ := b.FormsNamed(name)
 		return got
 	}
 	role, _, err := b.CreateForm("", targetPatch("aria-1"))
@@ -121,7 +121,10 @@ func TestRolesByNameFollowEveryWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := named("barber"); len(got) != 0 {
-		t.Fatalf("a form that is no longer a role answers to its name: %v", got)
+		t.Fatalf("a form that is no longer a role answers to its name as a role: %v", got)
+	}
+	if _, forms, _ := b.FormsNamed("barber"); len(forms) != 1 || forms[0] != role {
+		t.Fatalf("an uncast form named barber is not listed among forms: %v", forms)
 	}
 	if _, err := b.ApplyForm(role, targetPatch("aria-2")); err != nil {
 		t.Fatal(err)
@@ -142,5 +145,35 @@ func TestRolesByNameFollowEveryWrite(t *testing.T) {
 	}
 	if got := named("barber"); len(got) != 0 {
 		t.Fatalf("a deleted role answers to its name: %v", got)
+	}
+}
+
+// A form not yet cast is found by its name too, after the roles; an aria's own
+// board carrying a name key is not a form anyone casts, so it never answers.
+func TestFormsByNameAreUnboundFormsOnly(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	b.SeedRoles(context.Background(), 0)
+	plain, _, err := b.CreateForm("", namePatch("almaviva"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outfit, err := b.CreateOutfit("named", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aria, err := b.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ApplyForm(aria, namePatch("almaviva")); err != nil {
+		t.Fatal(err)
+	}
+	roles, forms, ready := b.FormsNamed("almaviva")
+	if !ready || len(roles) != 0 || len(forms) != 1 || forms[0] != plain {
+		t.Fatalf("named almaviva: roles %v forms %v ready=%v, want forms [%s] alone", roles, forms, ready, plain)
 	}
 }

@@ -82,6 +82,9 @@ func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) 
 		if err != nil {
 			return nil, err
 		}
+		if _, named := roleNameOf(ref); named && id == ref && !h.knownID(id) {
+			return nil, fmt.Errorf("no role or form named %s", ref)
+		}
 		if id != ref {
 			fields[k], _ = json.Marshal(id)
 			changed = true
@@ -124,8 +127,8 @@ func (h *handlers) placeID(ctx context.Context, method, ref string, route bool) 
 	if err != nil || id != ref || h.knownID(id) {
 		return id, node, err
 	}
-	if role, found, err := h.roleNamed(ctx, name); found || err != nil {
-		return role, "", err
+	if named, found, err := h.formNamed(ctx, name); found || err != nil {
+		return named, "", err
 	}
 	if !route {
 		return id, node, nil
@@ -138,22 +141,34 @@ func roleNameOf(ref string) (string, bool) {
 	return name, ok && name != "" && !(len(name) == fullIDLen && rpc.IsHexID(name)) && !strings.Contains(ref, rpc.NodeSeparator)
 }
 
-type roleNamer interface {
-	RolesNamed(name string) ([]string, bool)
+type formNamer interface {
+	FormsNamed(name string) (roles, forms []string, ready bool)
 }
 
-func (h *handlers) roleNamed(ctx context.Context, name string) (string, bool, error) {
-	var roles []string
-	if n, ok := h.angelus.Backend.(roleNamer); ok {
-		var ready bool
-		if roles, ready = n.RolesNamed(name); !ready {
-			roles = h.scanRolesNamed(name)
-		}
-	} else if h.angelus.Backend != nil {
-		roles = h.scanRolesNamed(name)
+func (h *handlers) formNamed(ctx context.Context, name string) (string, bool, error) {
+	roles, forms := h.formsNamed(name)
+	if id, found, err := h.oneReadable(ctx, name, "roles", roles); found || err != nil {
+		return id, found, err
 	}
+	return h.oneReadable(ctx, name, "forms", forms)
+}
+
+func (h *handlers) formsNamed(name string) (roles, forms []string) {
+	if n, ok := h.angelus.Backend.(formNamer); ok {
+		roles, forms, ready := n.FormsNamed(name)
+		if ready {
+			return roles, forms
+		}
+	}
+	if h.angelus.Backend == nil {
+		return nil, nil
+	}
+	return h.scanFormsNamed(name)
+}
+
+func (h *handlers) oneReadable(ctx context.Context, name, species string, ids []string) (string, bool, error) {
 	var readable []string
-	for _, id := range roles {
+	for _, id := range ids {
 		if h.allowed(ctx, rpc.VerbRead, authz.Aria(id)) == nil {
 			readable = append(readable, id)
 		}
@@ -168,22 +183,26 @@ func (h *handlers) roleNamed(ctx context.Context, name string) (string, bool, er
 	for i, id := range readable {
 		named[i] = handle.Words(id, handle.MinWords)
 	}
-	return "", false, fmt.Errorf("@%s names %d roles: %s; name one by its handle", name, len(readable), strings.Join(named, ", "))
+	return "", false, fmt.Errorf("@%s names %d %s: %s; name one by its handle", name, len(readable), species, strings.Join(named, ", "))
 }
 
-func (h *handlers) scanRolesNamed(name string) []string {
-	var out []string
+func (h *handlers) scanFormsNamed(name string) (roles, forms []string) {
 	for _, f := range h.angelus.Backend.Forms() {
 		snap, err := h.angelus.Backend.FormState(f.ID)
 		if err != nil {
 			continue
 		}
-		target, own := snap.Lookup("target-aria"), snap.Lookup("name")
-		if target != nil && *target != "" && own != nil && *own == name {
-			out = append(out, f.ID)
+		own := snap.Lookup("name")
+		if own == nil || *own != name {
+			continue
+		}
+		if target := snap.Lookup("target-aria"); target != nil && *target != "" {
+			roles = append(roles, f.ID)
+		} else {
+			forms = append(forms, f.ID)
 		}
 	}
-	return out
+	return roles, forms
 }
 
 func (h *handlers) placeRef(ctx context.Context, method, ref string, route bool) (string, string, error) {

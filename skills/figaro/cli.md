@@ -189,6 +189,14 @@ Every `<id>` above takes any of these, and all of them name the same aria:
 | any unique hex prefix, 4+ characters | `a5647` |
 | either, on another node | `spain2/nursery-lioness` |
 | a form | `@` before any of them |
+| a form by its `name` key | `@almaviva` |
+
+`@<name>` is tried only when no id or handle answers. It matches the `name`
+key exactly, among the forms you may read: a role first, then a form not yet
+cast, which is what `figaro cast <aria> @<name>` takes. A name two roles (or,
+with no role, two forms) carry is refused, naming both by handle. In the
+form slot of `cast`, `study` and `drop`, a name nothing carries is refused as
+`no role or form named @<name>`.
 
 The two words spell the id's first five hex digits, so the handle and the
 five-character prefix are one name written two ways. A new id is redrawn at
