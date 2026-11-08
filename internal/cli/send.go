@@ -163,10 +163,16 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			if i+1 >= len(expanded) || expanded[i+1] == "--" {
 				return opts, nil, fmt.Errorf("--record requires a path")
 			}
+			if opts.record != "" {
+				return opts, nil, fmt.Errorf("--record given more than once")
+			}
 			opts.record = expanded[i+1]
 			i += 2
 			continue
 		case strings.HasPrefix(a, "--record="):
+			if opts.record != "" {
+				return opts, nil, fmt.Errorf("--record given more than once")
+			}
 			opts.record = strings.TrimPrefix(a, "--record=")
 			if opts.record == "" {
 				return opts, nil, fmt.Errorf("--record requires a path")

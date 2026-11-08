@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/config"
@@ -31,5 +32,28 @@ func TestEveryRoutedVerbKeepsEverySetAndDelete(t *testing.T) {
 	}
 	if _, err := r.Parse("form", []string{"new", "-O", "a", "-O", "b", "-S", "k=v"}); err == nil {
 		t.Errorf("form new took -O twice and kept one")
+	}
+}
+
+// send and new parse their own flags: --id already refused a second value,
+// but --record kept the last one silently, so a tape landed where the user
+// had not looked. Both are refused, naming the flag; -O, -S and -D still join.
+func TestSendRefusesARepeatedIDOrRecord(t *testing.T) {
+	for _, args := range [][]string{
+		{"--record", "a.tape", "--record", "b.tape", "--", "hi"},
+		{"--record=a.tape", "--record", "b.tape", "--", "hi"},
+		{"--id", "abcd1234", "--id=dcba4321", "--", "hi"},
+	} {
+		_, _, err := extractPromptFlags(args, false)
+		if err == nil || !strings.Contains(err.Error(), "given more than once") {
+			t.Errorf("%v: %v, want a refusal naming the flag", args, err)
+		}
+	}
+	opts, _, err := extractPromptFlags([]string{"-O", "a", "-O", "b", "-S", "x=1", "-S", "y=2", "--", "hi"}, false)
+	if err != nil {
+		t.Fatalf("-O and -S repeated: %v", err)
+	}
+	if opts.setText != "x=1,y=2" {
+		t.Errorf("-S joined to %q, want x=1,y=2", opts.setText)
 	}
 }
