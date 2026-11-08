@@ -189,6 +189,42 @@ func (t *transcript) holdFrames(d time.Duration) {
 	})
 }
 
+const gapGrace = progressDelay
+
+func (t *transcript) graceForGap(body int) bool {
+	if t.after == nil || !t.gapOnScreen(body) {
+		t.gapSince = time.Time{}
+		return false
+	}
+	now := t.clock()
+	if t.gapSince.IsZero() {
+		t.gapSince = now
+	}
+	wait := gapGrace - now.Sub(t.gapSince)
+	if wait <= 0 {
+		return false
+	}
+	t.dirty = true
+	if !t.gapWaking {
+		t.gapWaking = true
+		t.after(wait, func() {
+			t.gapWaking = false
+			t.render()
+		})
+	}
+	return true
+}
+
+func (t *transcript) gapOnScreen(body int) bool {
+	for k := range t.index.entries {
+		e := &t.index.entries[k]
+		if e.isGap() && e.start >= t.offset && e.start < t.offset+body {
+			return true
+		}
+	}
+	return false
+}
+
 // beginBatch/endBatch bracket state changes that must produce one frame.
 func (t *transcript) beginBatch() { t.batch++ }
 
@@ -254,6 +290,9 @@ func (t *transcript) renderFrame() {
 	}
 	if len(foot) > 0 && !t.fullPit() {
 		foot[0] = t.transcriptRuleFor(body)
+	}
+	if t.graceForGap(body) {
+		return
 	}
 	screen := t.nextScreen()
 	push := t.headPush()

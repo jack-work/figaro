@@ -41,6 +41,8 @@ type transcript struct {
 	after      func(time.Duration, func())
 	held       bool
 	holdGen    int
+	gapSince   time.Time
+	gapWaking  bool
 	awaiting   bool
 	awaitGen   int
 	awaitShown int
