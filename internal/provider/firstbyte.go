@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptrace"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -43,21 +45,51 @@ func (e *FirstByteTimeoutError) Error() string {
 
 type firstByteKey struct{}
 
-type firstByte struct{ seen atomic.Bool }
+type firstByte struct {
+	after  time.Duration
+	cancel context.CancelCauseFunc
+	seen   atomic.Bool
+	mu     sync.Mutex
+	timer  *time.Timer
+}
+
+func (fb *firstByte) arm() {
+	if fb.seen.Load() {
+		return
+	}
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	if fb.timer != nil {
+		fb.timer.Stop()
+	}
+	fb.timer = time.AfterFunc(fb.after, func() {
+		if !fb.seen.Load() {
+			fb.cancel(&FirstByteTimeoutError{After: fb.after})
+		}
+	})
+}
+
+func (fb *firstByte) pause() {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	if fb.timer != nil {
+		fb.timer.Stop()
+		fb.timer = nil
+	}
+}
 
 func WatchFirstByte(ctx context.Context, d time.Duration) (context.Context, func(error) error) {
 	if d <= 0 {
 		return ctx, func(err error) error { return err }
 	}
-	fb := &firstByte{}
-	reqCtx, cancel := context.WithCancelCause(context.WithValue(ctx, firstByteKey{}, fb))
-	timer := time.AfterFunc(d, func() {
-		if !fb.seen.Load() {
-			cancel(&FirstByteTimeoutError{After: d})
-		}
+	reqCtx, cancel := context.WithCancelCause(ctx)
+	fb := &firstByte{after: d, cancel: cancel}
+	reqCtx = context.WithValue(reqCtx, firstByteKey{}, fb)
+	reqCtx = httptrace.WithClientTrace(reqCtx, &httptrace.ClientTrace{
+		WroteRequest: func(httptrace.WroteRequestInfo) { fb.arm() },
 	})
 	return reqCtx, func(err error) error {
-		timer.Stop()
+		fb.pause()
 		cause := context.Cause(reqCtx)
 		cancel(nil)
 		var late *FirstByteTimeoutError
@@ -71,5 +103,12 @@ func WatchFirstByte(ctx context.Context, d time.Duration) (context.Context, func
 func SawByte(ctx context.Context) {
 	if fb, ok := ctx.Value(firstByteKey{}).(*firstByte); ok && !fb.seen.Load() {
 		fb.seen.Store(true)
+		fb.pause()
+	}
+}
+
+func PauseFirstByte(ctx context.Context) {
+	if fb, ok := ctx.Value(firstByteKey{}).(*firstByte); ok {
+		fb.pause()
 	}
 }

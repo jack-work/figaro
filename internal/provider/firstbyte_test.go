@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httptrace"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,10 +33,24 @@ func TestTheFirstByteTimeoutReadsItsKnob(t *testing.T) {
 	}
 }
 
+func silentUpstream(t *testing.T) *httptest.Server {
+	t.Helper()
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		<-release
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	return srv
+}
+
 func TestARequestWithNoByteBeforeTheDeadlineIsAStreamCut(t *testing.T) {
+	srv := silentUpstream(t)
 	ctx, settle := WatchFirstByte(context.Background(), 20*time.Millisecond)
-	<-ctx.Done()
-	err := settle(ctx.Err())
+	req, _ := http.NewRequestWithContext(ctx, "POST", srv.URL, strings.NewReader("{}"))
+	_, err := srv.Client().Do(req)
+	err = settle(err)
 
 	cut, ok := AsStreamCut(err)
 	if !ok {
@@ -40,6 +59,35 @@ func TestARequestWithNoByteBeforeTheDeadlineIsAStreamCut(t *testing.T) {
 	var late *FirstByteTimeoutError
 	if cut.Events != 0 || cut.Awaited != "a first byte" || !errors.As(err, &late) {
 		t.Errorf("cut = %+v", cut)
+	}
+}
+
+func TestTheClockDoesNotRunBeforeTheRequestIsWritten(t *testing.T) {
+	ctx, settle := WatchFirstByte(context.Background(), 20*time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatalf("the deadline fired with no request written: %v", context.Cause(ctx))
+	}
+	if err := settle(nil); err != nil {
+		t.Errorf("settle(nil) = %v", err)
+	}
+}
+
+func TestAPauseStopsTheClockUntilTheNextWrite(t *testing.T) {
+	ctx, settle := WatchFirstByte(context.Background(), 40*time.Millisecond)
+	defer settle(nil)
+	wrote := httptrace.ContextClientTrace(ctx).WroteRequest
+	wrote(httptrace.WroteRequestInfo{})
+	PauseFirstByte(ctx)
+	time.Sleep(80 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatalf("the deadline fired while paused: %v", context.Cause(ctx))
+	}
+	wrote(httptrace.WroteRequestInfo{})
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("the next written request did not restart the clock")
 	}
 }
 

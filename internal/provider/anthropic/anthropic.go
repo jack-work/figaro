@@ -202,6 +202,8 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+var retryAfterBound = 60 * time.Second
+
 // doWithAuthRetry retries once on 401 with a fresh token and up to
 // maxTransientRetries on transient failures, before any body is read.
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
@@ -217,6 +219,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 	var delay time.Duration
 	for attempt := 0; attempt <= maxTransientRetries; attempt++ {
 		if delay > 0 {
+			provider.PauseFirstByte(ctx)
 			if !sleepCtx(ctx, delay) {
 				return nil, apiKey, ctx.Err()
 			}
@@ -270,7 +273,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			resp.Body.Close()
 			lastErr = fmt.Errorf("anthropic %d (transient)", resp.StatusCode)
 			if ra > 0 {
-				delay = ra
+				delay = min(ra, retryAfterBound)
 			} else {
 				delay = backoffDelay(attempt)
 			}
