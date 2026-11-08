@@ -11,8 +11,11 @@ import (
 	"time"
 	"unicode"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/decide"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
 const (
@@ -110,6 +113,7 @@ func (b *Breaker) record(name string, err error) {
 			return
 		}
 		if r.failures >= RestAfter {
+			figOtel.AddRestingRoutes(context.Background(), -1, attribute.String("route", name))
 			slog.Info("decision route answering again", "route", name,
 				"failures", r.failures, "rested", b.now().Sub(r.since).Round(time.Second))
 		}
@@ -126,6 +130,7 @@ func (b *Breaker) record(name string, err error) {
 		case r.failures == RestAfter:
 			r.rest = FirstRest
 			r.until = b.now().Add(r.rest)
+			figOtel.AddRestingRoutes(context.Background(), 1, attribute.String("route", name))
 			slog.Warn("decision route resting: methods write their defaults without asking", "route", name,
 				"failures", r.failures, "until", r.until, "err", r.last)
 		case r.failures > RestAfter:

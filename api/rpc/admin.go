@@ -120,6 +120,7 @@ type MemStatus struct {
 	HeapSysBytes      uint64 `json:"heap_sys_bytes"`
 	SysBytes          uint64 `json:"sys_bytes"`
 	NumGC             uint32 `json:"num_gc"`
+	GCPauseTotalNs    uint64 `json:"gc_pause_total_ns,omitempty"`
 	MemLimitBytes     int64  `json:"mem_limit_bytes"` // armed GOMEMLIMIT; MaxInt64 = unlimited
 	HeapLiveBytes     uint64 `json:"heap_live_bytes,omitempty"`
 	MemPressure       bool   `json:"mem_pressure,omitempty"`

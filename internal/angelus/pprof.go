@@ -165,6 +165,7 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 		HeapSysBytes:      ms.HeapSys,
 		SysBytes:          ms.Sys,
 		NumGC:             ms.NumGC,
+		GCPauseTotalNs:    ms.PauseTotalNs,
 		MemLimitBytes:     debug.SetMemoryLimit(-1),
 		PprofSocket:       a.pprofSocket(),
 	}

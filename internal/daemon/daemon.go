@@ -390,7 +390,8 @@ func Run() {
 	figOtel.SetMemProbe(func() figOtel.MemSample {
 		st := a.MemStatus()
 		return figOtel.MemSample{HeapInuse: int64(st.HeapInuseBytes), HeapReleased: int64(st.HeapReleasedBytes),
-			ResidentArias: st.ResidentArias, Goroutines: st.Goroutines}
+			ResidentArias: st.ResidentArias, Goroutines: st.Goroutines,
+			LiveFigaros: st.LiveArias, NumGC: st.NumGC, GCPauseTotalNs: st.GCPauseTotalNs}
 	})
 
 	formTmpls := boot.BuildFormTemplates()

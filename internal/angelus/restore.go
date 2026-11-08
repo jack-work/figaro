@@ -7,8 +7,11 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/figaro"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/tool"
@@ -58,7 +61,9 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		call.f = f
 	} else {
+		woke := time.Now()
 		call.f, call.err = h.restoreOne(ctx, ariaID, wokeBy)
+		figOtel.RecordWake(ctx, time.Since(woke), attribute.String("woke_by", wokeBy), attribute.Bool("ok", call.err == nil))
 	}
 	h.restoreMu.Lock()
 	delete(h.restoring, ariaID)

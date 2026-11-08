@@ -125,6 +125,10 @@ var (
 	decideUpstream  otelmetric.Float64Histogram
 	decideWindow    otelmetric.Int64Histogram
 
+	wakeDuration      otelmetric.Float64Histogram
+	hibernateDuration otelmetric.Float64Histogram
+	restingRoutes     otelmetric.Int64UpDownCounter
+
 	memProbe atomic.Pointer[func() MemSample]
 
 	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
@@ -372,6 +376,7 @@ func initInstruments(m otelmetric.Meter) {
 	decideWindow = counts(m, "figaro.decide.window", "{token}", "Estimated tokens of context one decision sent")
 	rss, heapInuse, heapReleased := gauge(m, "figaro.mem.rss", "By"), gauge(m, "figaro.mem.heap_inuse", "By"), gauge(m, "figaro.mem.heap_released", "By")
 	resident, goroutines := gauge(m, "figaro.mem.resident_arias", "{aria}"), gauge(m, "figaro.mem.goroutines", "{goroutine}")
+	live, gcCount, gcPause := gauge(m, "figaro.live", "{figaro}"), gauge(m, "figaro.gc.count", "{gc}"), gauge(m, "figaro.gc.pause_total", "ns")
 	_, err = m.RegisterCallback(func(_ context.Context, o otelmetric.Observer) error {
 		probe := memProbe.Load()
 		if probe == nil {
@@ -383,10 +388,20 @@ func initInstruments(m otelmetric.Meter) {
 		o.ObserveInt64(heapReleased, s.HeapReleased)
 		o.ObserveInt64(resident, int64(s.ResidentArias))
 		o.ObserveInt64(goroutines, int64(s.Goroutines))
+		o.ObserveInt64(live, int64(s.LiveFigaros))
+		o.ObserveInt64(gcCount, int64(s.NumGC))
+		o.ObserveInt64(gcPause, int64(s.GCPauseTotalNs))
 		return nil
-	}, rss, heapInuse, heapReleased, resident, goroutines)
+	}, rss, heapInuse, heapReleased, resident, goroutines, live, gcCount, gcPause)
 	if err != nil {
 		slog.Warn("metric init", "name", "mem", "err", err)
+	}
+	wakeDuration = histogram(m, "figaro.wake.duration", "Restoring a dormant figaro, by the method that woke it", subMS)
+	hibernateDuration = histogram(m, "figaro.hibernate.duration", "Putting an idle figaro to sleep", subMS)
+	restingRoutes, err = m.Int64UpDownCounter("figaro.decide.resting_routes", otelmetric.WithUnit("{route}"),
+		otelmetric.WithDescription("Decision routes the method breaker is resting"))
+	if err != nil {
+		slog.Warn("metric init", "name", "decide.resting_routes", "err", err)
 	}
 	tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
 		otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
@@ -398,6 +413,23 @@ func initInstruments(m otelmetric.Meter) {
 type MemSample struct {
 	HeapInuse, HeapReleased   int64
 	ResidentArias, Goroutines int
+	LiveFigaros               int
+	NumGC                     uint32
+	GCPauseTotalNs            uint64
+}
+
+func RecordWake(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, wakeDuration, d, attrs...)
+}
+
+func RecordHibernate(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
+	record(ctx, hibernateDuration, d, attrs...)
+}
+
+func AddRestingRoutes(ctx context.Context, n int64, attrs ...attribute.KeyValue) {
+	if restingRoutes != nil {
+		restingRoutes.Add(ctx, n, otelmetric.WithAttributes(attrs...))
+	}
 }
 
 // SetMemProbe supplies the daemon-side numbers the gauges observe every reader tick.

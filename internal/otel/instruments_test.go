@@ -51,7 +51,8 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 	shutdown, err := figOtel.Init(ctx, dir)
 	require.NoError(t, err)
 	figOtel.SetMemProbe(func() figOtel.MemSample {
-		return figOtel.MemSample{HeapInuse: 1, HeapReleased: 2, ResidentArias: 3, Goroutines: 4}
+		return figOtel.MemSample{HeapInuse: 1, HeapReleased: 2, ResidentArias: 3, Goroutines: 4,
+			LiveFigaros: 5, NumGC: 6, GCPauseTotalNs: 7}
 	})
 
 	attrs := []attribute.KeyValue{attribute.String("provider", "test")}
@@ -70,6 +71,9 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 	figOtel.RecordOutfitDress(ctx, time.Millisecond)
 	figOtel.RecordDecideUpstream(ctx, time.Second, attrs...)
 	figOtel.RecordDecideWindow(ctx, 12000, attrs...)
+	figOtel.RecordWake(ctx, time.Millisecond)
+	figOtel.RecordHibernate(ctx, time.Millisecond)
+	figOtel.AddRestingRoutes(ctx, 1)
 	require.NoError(t, shutdown(ctx))
 
 	got := exportedMetrics(t, dir)
@@ -98,6 +102,12 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 		"figaro.mem.heap_released",
 		"figaro.mem.resident_arias",
 		"figaro.mem.goroutines",
+		"figaro.live",
+		"figaro.gc.count",
+		"figaro.gc.pause_total",
+		"figaro.wake.duration",
+		"figaro.hibernate.duration",
+		"figaro.decide.resting_routes",
 	} {
 		assert.Contains(t, got, name)
 	}

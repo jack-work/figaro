@@ -391,7 +391,10 @@ func (a *Angelus) hibernateIdleArias() {
 		if info.State != "idle" || since.After(cutoff) {
 			continue
 		}
-		if err := a.Registry.Hibernate(info.ID); err != nil {
+		slept := time.Now()
+		err := a.Registry.Hibernate(info.ID)
+		figOtel.RecordHibernate(context.Background(), time.Since(slept), attribute.Bool("ok", err == nil))
+		if err != nil {
 			// Ordinary: the aria took a prompt between decision and teardown.
 			slog.Debug("hibernate declined", "aria", info.ID, "err", err)
 			continue
