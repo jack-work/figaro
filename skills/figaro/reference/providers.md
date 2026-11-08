@@ -36,18 +36,69 @@ separate.
 
 ## Images, per model
 
-Each model on a provider takes images or text only. figaro asks, in order:
-`[models."<id>"] text_only` in the provider file, then the model catalog
-(`capabilities.image_input.supported`, or Copilot's `supports.vision`), then
-the provider-wide `text_only`. When none says, images are sent. A
-text-only model gets each image part replaced with a note saying which of
-the three decided it, on every transport, at send time; the aria's history
-keeps its images for the next model.
+Each model on a provider takes images or text only. figaro reads the
+model's `images` field in the catalog (below): `[models."<id>"] text_only`
+in the provider file, then what the provider's catalog says
+(`capabilities.image_input.supported`, Copilot's `supports.vision`), then a
+fact in figaro's mapping. When none says, the provider-wide `text_only`
+decides, and without it images are sent. A text-only model gets each image
+part replaced with a note naming what decided it, on every transport, at
+send time; the aria's history keeps its images for the next model.
 
 ```toml
 [models."explabs/glm-5.3"]
 text_only = true
 ```
+
+## The model catalog
+
+Every provider's model list lands in `@models` (`figaro models`, the
+`:models` pit) as one shape: `name`, `context` (`default`, `long`),
+`max_output`, `images`, `max_prompt_image_size`, `max_prompt_images`,
+`tools`, `reasoning`, `hidden`, `endpoints`. A field the provider does not
+state is absent, not zero. `src` says where each field came from: `api`
+(the provider's list), `mapping` (a fact figaro ships) or `config` (the
+provider file). The context % uses `context`; routing uses `endpoints`.
+
+Each provider reads its list through a mapping: per field, paths into a
+list entry, and the first that holds a value of the field's type wins.
+copilot and meta ship their own. A gateway preset (rou2, `gateway`) reads
+the generic one, which knows the usual names (`context_length`,
+`context_window`, `max_input_tokens`, `max_output_tokens`, `max_tokens`,
+`name`, `display_name`, `capabilities.image_input.supported`,
+`supports_tools`, `supported_endpoints` and the like), so a gateway that
+serves them needs no catalog config. rou2 needs none: its only line is
+glm-5.3's `text_only`, which no catalog states.
+
+A provider file can override a model's numbers, and they win over the list.
+They also hold for a model the list never names:
+
+```toml
+[models."openai/gpt-6-luna"]
+context    = 400000        # long = context unless long is given
+max_output = 128000
+```
+
+A `[catalog]` table replaces keys of the built-in mapping one by one; a key
+set to `[]` reads nothing. Rarely needed: for a gateway whose list uses
+names the generic mapping does not know.
+
+```toml
+[catalog]
+list       = "data"                                      # where the array is
+context    = ["limits.prompt", "context_length"]
+images     = ["architecture.input_modalities has:image"] # array holds the value
+reasoning  = ["capabilities.reasoning_effort nonempty"]  # array or object has members
+visible    = ["enabled"]                                 # false hides the model
+
+[catalog.facts."glm-5*"]                                 # what the list doesn't say
+context = 1048576
+```
+
+A path is a dotted key. A fact applies to a model id lower-cased, without
+its vendor prefix and with dots as dashes; `glm-5*` matches `glm-5` and
+`glm-5-3`, not `glm-50`; the longest pattern wins. A bad path or pattern
+fails the provider's build.
 
 ## A body cap
 

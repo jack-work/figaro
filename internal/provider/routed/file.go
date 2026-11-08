@@ -26,7 +26,8 @@ type File struct {
 	MessagesPath     string                       `toml:"messages_path,omitempty"`
 	MaxRequestBytes  int                          `toml:"max_request_bytes,omitempty"`
 	TextOnly         bool                         `toml:"text_only,omitempty"`
-	Models           map[string]ModelFile         `toml:"models,omitempty"`
+	Catalog          *catalog.Mapping             `toml:"catalog,omitempty"`
+	Models           map[string]catalog.Override  `toml:"models,omitempty"`
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
 	Routing          struct {
@@ -37,10 +38,6 @@ type File struct {
 			Transport string `toml:"transport"`
 		} `toml:"rule,omitempty"`
 	} `toml:"routing"`
-}
-
-type ModelFile struct {
-	TextOnly *bool `toml:"text_only,omitempty"`
 }
 
 func LoadFile(loaded *config.Loaded, name string) (File, error) {
@@ -75,12 +72,11 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	if f.TextOnly {
 		spec.TextOnly = true
 	}
-	for id, m := range f.Models {
-		if m.TextOnly != nil {
-			if spec.Overrides == nil {
-				spec.Overrides = map[string]catalog.Override{}
-			}
-			spec.Overrides[id] = catalog.Override{TextOnly: m.TextOnly}
+	spec.Mapping = spec.Mapping.With(f.Catalog)
+	if len(f.Models) > 0 {
+		spec.Overrides = make(map[string]catalog.Override, len(f.Models))
+		for id, m := range f.Models {
+			spec.Overrides[id] = m
 		}
 	}
 	if len(f.Headers) > 0 {

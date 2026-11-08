@@ -1,0 +1,421 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "capabilities": {
+        "batch": {
+          "supported": true
+        },
+        "citations": {
+          "supported": true
+        },
+        "code_execution": {
+          "supported": true
+        },
+        "context_management": {
+          "clear_thinking_20251015": {
+            "supported": true
+          },
+          "clear_tool_uses_20250919": {
+            "supported": true
+          },
+          "compact_20260112": {
+            "supported": true
+          },
+          "supported": true
+        },
+        "effort": {
+          "high": {
+            "supported": true
+          },
+          "low": {
+            "supported": true
+          },
+          "max": {
+            "supported": true
+          },
+          "medium": {
+            "supported": true
+          },
+          "supported": true,
+          "xhigh": {
+            "supported": true
+          }
+        },
+        "image_input": {
+          "supported": true
+        },
+        "pdf_input": {
+          "supported": true
+        },
+        "server_tools": {
+          "code_execution": {
+            "supported": true
+          },
+          "supported": true,
+          "web_search": {
+            "supported": true
+          }
+        },
+        "structured_outputs": {
+          "supported": true
+        },
+        "thinking": {
+          "supported": true,
+          "types": {
+            "adaptive": {
+              "supported": true
+            },
+            "between_tools": {
+              "supported": false
+            },
+            "disabled": {
+              "supported": true
+            },
+            "enabled": {
+              "supported": false
+            }
+          }
+        }
+      },
+      "created_at": "2026-10-07T18:00:00Z",
+      "deprecated_at": null,
+      "display_name": "Claude Haiku 5.5",
+      "id": "anthropic/claude-haiku-5-5",
+      "lifecycle": "active",
+      "line": "haiku",
+      "max_input_tokens": 1000000,
+      "max_tokens": 128000,
+      "retires_at": null,
+      "rou2_upstream": "anthropic",
+      "supported_endpoints": [
+        "/v1/messages"
+      ],
+      "type": "model"
+    },
+    {
+      "capabilities": {
+        "batch": {
+          "supported": true
+        },
+        "citations": {
+          "supported": true
+        },
+        "code_execution": {
+          "supported": true
+        },
+        "context_management": {
+          "clear_thinking_20251015": {
+            "supported": true
+          },
+          "clear_tool_uses_20250919": {
+            "supported": true
+          },
+          "compact_20260112": {
+            "supported": true
+          },
+          "supported": true
+        },
+        "effort": {
+          "high": {
+            "supported": true
+          },
+          "low": {
+            "supported": true
+          },
+          "max": {
+            "supported": true
+          },
+          "medium": {
+            "supported": true
+          },
+          "supported": true,
+          "xhigh": {
+            "supported": true
+          }
+        },
+        "image_input": {
+          "supported": true
+        },
+        "pdf_input": {
+          "supported": true
+        },
+        "server_tools": {
+          "code_execution": {
+            "supported": true
+          },
+          "supported": true,
+          "web_search": {
+            "supported": true
+          }
+        },
+        "structured_outputs": {
+          "supported": true
+        },
+        "thinking": {
+          "supported": true,
+          "types": {
+            "adaptive": {
+              "supported": true
+            },
+            "between_tools": {
+              "supported": false
+            },
+            "disabled": {
+              "supported": false
+            },
+            "enabled": {
+              "supported": false
+            }
+          }
+        }
+      },
+      "created_at": "2026-09-21T16:24:00Z",
+      "deprecated_at": null,
+      "display_name": "Claude Opus 5.5",
+      "id": "anthropic/claude-opus-5-5",
+      "lifecycle": "active",
+      "line": "opus",
+      "max_input_tokens": 1000000,
+      "max_tokens": 128000,
+      "retires_at": null,
+      "rou2_upstream": "anthropic",
+      "supported_endpoints": [
+        "/v1/messages"
+      ],
+      "type": "model"
+    },
+    {
+      "cache_write_cost_per_million_tokens_usd": null,
+      "cached_input_cost_per_million_tokens_usd": null,
+      "chat_max_tokens_field": "max_tokens",
+      "context_length": 1048576,
+      "context_window": 1048576,
+      "context_window_tokens": 1048576,
+      "created": 0,
+      "emits_images": false,
+      "id": "explabs/deepseek-v4-flash",
+      "input_cost_per_million_tokens_usd": null,
+      "max_output_tokens": 384000,
+      "maximum_output_tokens": 384000,
+      "maximum_temperature": 2,
+      "maximum_top_k": null,
+      "maximum_top_p": 1,
+      "minimum_temperature": 0,
+      "minimum_top_k": null,
+      "minimum_top_p": 0.01,
+      "name": "DeepSeek V4 Flash",
+      "object": "model",
+      "output_cost_per_million_tokens_usd": null,
+      "owned_by": "exp",
+      "reasoning_content_native": false,
+      "reasoning_effort": "none",
+      "reasoning_output_exposed": false,
+      "reasoning_output_hidden": false,
+      "reports_cache_creation_input_tokens": false,
+      "reports_cached_input_tokens": false,
+      "reports_reasoning_tokens": false,
+      "rou2_upstream": "explabs",
+      "sampling_requires_reasoning_none": false,
+      "service_tier_pricing_enabled": false,
+      "supported_params": {
+        "logprobs": true,
+        "reasoning": true,
+        "response_format": true,
+        "seed": true,
+        "stop": true,
+        "structured_outputs": true,
+        "temperature": true,
+        "tools": true,
+        "top_k": true,
+        "top_p": true
+      },
+      "supported_reasoning_efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "supports_completions": true,
+      "supports_embeddings": null,
+      "supports_frequency_penalty": null,
+      "supports_image_generation": null,
+      "supports_logprobs": true,
+      "supports_presence_penalty": null,
+      "supports_reasoning": true,
+      "supports_structured_output": true,
+      "supports_temperature": true,
+      "supports_tools": true,
+      "supports_top_k": false,
+      "supports_top_p": true,
+      "system_messages_leading_only": false,
+      "top_provider": {
+        "context_length": 1048576,
+        "max_completion_tokens": 384000
+      },
+      "uncensored": false
+    },
+    {
+      "cache_write_cost_per_million_tokens_usd": null,
+      "cached_input_cost_per_million_tokens_usd": null,
+      "chat_max_tokens_field": "max_tokens",
+      "context_length": 1048576,
+      "context_window": 1048576,
+      "context_window_tokens": 1048576,
+      "created": 0,
+      "emits_images": false,
+      "id": "explabs/glm-5.3",
+      "input_cost_per_million_tokens_usd": null,
+      "max_output_tokens": 131072,
+      "maximum_output_tokens": 131072,
+      "maximum_temperature": 2,
+      "maximum_top_k": null,
+      "maximum_top_p": 1,
+      "minimum_temperature": 0,
+      "minimum_top_k": null,
+      "minimum_top_p": 0,
+      "name": "GLM 5.3",
+      "object": "model",
+      "output_cost_per_million_tokens_usd": null,
+      "owned_by": "exp",
+      "reasoning_content_native": false,
+      "reasoning_effort": "high",
+      "reasoning_output_exposed": false,
+      "reasoning_output_hidden": false,
+      "reports_cache_creation_input_tokens": false,
+      "reports_cached_input_tokens": false,
+      "reports_reasoning_tokens": false,
+      "rou2_upstream": "explabs",
+      "sampling_requires_reasoning_none": false,
+      "service_tier_pricing_enabled": false,
+      "supported_params": {
+        "logprobs": true,
+        "reasoning": true,
+        "response_format": true,
+        "seed": false,
+        "stop": true,
+        "structured_outputs": true,
+        "temperature": true,
+        "tools": true,
+        "top_k": true,
+        "top_p": true
+      },
+      "supported_reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "supports_completions": true,
+      "supports_embeddings": null,
+      "supports_frequency_penalty": null,
+      "supports_image_generation": null,
+      "supports_logprobs": false,
+      "supports_presence_penalty": null,
+      "supports_reasoning": true,
+      "supports_structured_output": true,
+      "supports_temperature": true,
+      "supports_tools": true,
+      "supports_top_k": false,
+      "supports_top_p": true,
+      "system_messages_leading_only": false,
+      "top_provider": {
+        "context_length": 1048576,
+        "max_completion_tokens": 131072
+      },
+      "uncensored": false
+    },
+    {
+      "cache_write_cost_per_million_tokens_usd": null,
+      "cached_input_cost_per_million_tokens_usd": null,
+      "chat_max_tokens_field": "max_completion_tokens",
+      "context_length": 1000000,
+      "context_window": 1000000,
+      "context_window_tokens": 1000000,
+      "created": 0,
+      "emits_images": false,
+      "id": "explabs/qwen3.8-max",
+      "input_cost_per_million_tokens_usd": null,
+      "max_output_tokens": 131072,
+      "maximum_output_tokens": 131072,
+      "maximum_temperature": 1.99,
+      "maximum_top_k": null,
+      "maximum_top_p": 1,
+      "minimum_temperature": 0,
+      "minimum_top_k": 1,
+      "minimum_top_p": 0,
+      "name": "Qwen3.8 Max",
+      "object": "model",
+      "output_cost_per_million_tokens_usd": null,
+      "owned_by": "exp",
+      "reasoning_content_native": true,
+      "reasoning_effort": "high",
+      "reasoning_output_exposed": true,
+      "reasoning_output_hidden": false,
+      "reports_cache_creation_input_tokens": false,
+      "reports_cached_input_tokens": true,
+      "reports_reasoning_tokens": false,
+      "rou2_upstream": "explabs",
+      "sampling_requires_reasoning_none": false,
+      "service_tier_pricing_enabled": false,
+      "supported_params": {
+        "logprobs": true,
+        "reasoning": true,
+        "response_format": true,
+        "seed": true,
+        "stop": true,
+        "structured_outputs": true,
+        "temperature": true,
+        "tools": true,
+        "top_k": true,
+        "top_p": true
+      },
+      "supported_reasoning_efforts": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "supports_completions": true,
+      "supports_embeddings": null,
+      "supports_frequency_penalty": null,
+      "supports_image_generation": null,
+      "supports_logprobs": false,
+      "supports_presence_penalty": null,
+      "supports_reasoning": true,
+      "supports_structured_output": true,
+      "supports_temperature": true,
+      "supports_tools": true,
+      "supports_top_k": true,
+      "supports_top_p": true,
+      "system_messages_leading_only": false,
+      "top_provider": {
+        "context_length": 1000000,
+        "max_completion_tokens": 131072
+      },
+      "uncensored": false
+    },
+    {
+      "created": 1789406102,
+      "id": "openai/gpt-6-luna",
+      "object": "model",
+      "owned_by": "system",
+      "rou2_upstream": "openai",
+      "shutdown_date": null
+    },
+    {
+      "created": 1772691852,
+      "id": "openai/gpt-5.4",
+      "object": "model",
+      "owned_by": "system",
+      "rou2_upstream": "openai",
+      "shutdown_date": null
+    }
+  ]
+}

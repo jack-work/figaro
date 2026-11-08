@@ -262,6 +262,8 @@ func (p *Provider) entry(model string) (apimodels.Entry, bool) {
 	return p.reader.Seed(model)
 }
 
+func (p *Provider) SeedModel(model string) (apimodels.Entry, bool) { return p.reader.Seed(model) }
+
 func (p *Provider) textOnly(model string) string {
 	e, _ := p.entry(model)
 	switch takes, src := e.TakesImages(); {
