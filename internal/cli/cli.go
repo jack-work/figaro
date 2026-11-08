@@ -1277,7 +1277,9 @@ catalog @reaped (figaro form show @reaped).
 		Long: `Moves the aria's fork tree (every aria sharing its history) to a peer
 node under the same ids. The old node keeps a forwarding address, so the
 ids keep working from anywhere. Refused while any aria of the tree has a
-turn in flight or queued. Reaching another node needs a bearer.`,
+turn in flight or queued. Reaching another node needs a bearer.
+
+Status: in development; cross-node moves are not settled yet.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{

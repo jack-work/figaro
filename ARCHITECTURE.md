@@ -237,6 +237,12 @@ Admission and the policy are in the Authorization section of
 reaching its age is closed with 1008 and must upgrade again, because a
 fronting proxy authorizes only the upgrade.
 
+**Federation status: in development.** Solid: troupe keys, membership (join, leave, revoke,
+gossip) and the cross-node listing (`ls`, the pager's `L`). Not yet settled:
+moves across nodes, what one node answers about an aria held on another
+(moving, moved, owner down), and troupe policy v2 (binding principals other
+than the owner).
+
 A third, node door is configured by `[door.tls]` (`listen`, `cert`, `key`,
 `client_ca`) and serves the same methods to peers over mutual TLS. Peers are
 static, `[peers.<node id>]` (`endpoint = "tls://host:port"`, `identity`, the

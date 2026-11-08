@@ -15,6 +15,9 @@ func registerTroupe(r *cmdkit.Router) {
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
 
+Status: in development. Solid: keys, membership, the cross-node
+listing. Not yet settled: moves, cross-node answers, policy v2.
+
   login <name>   sign in to the troupe's door. scheme = "oidc-device":
                  hush holds the token as troupe:<name>. scheme =
                  "api-key": reads the key without echo (or one line of

@@ -733,6 +733,12 @@ there too.
 
 ### Troupe keys
 
+**Federation status: in development.** Solid: troupe keys, membership (join, leave, revoke,
+gossip) and the cross-node listing (`ls`, the pager's `L`). Not yet settled:
+moves across nodes, what one node answers about an aria held on another
+(moving, moved, owner down), and troupe policy v2 (binding principals other
+than the owner).
+
 `[troupe] name` turns them on. The root is an Ed25519 key held outside every
 node. Every command that takes it reads it on stdin and never writes it; it
 lives in hush as the secret of a `troupe-root` command whose script pipes it
