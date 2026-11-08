@@ -283,6 +283,9 @@ func (h *handlers) listingPeers(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 		var req rpc.ListRequest
 		_ = json.Unmarshal(params, &req)
 		nodes := slices.DeleteFunc(h.fed.members.Nodes(), func(n string) bool { return slices.Contains(req.ExceptNodes, n) })
+		if _, ok := authz.BearerOf(ctx); !ok {
+			return local, nil
+		}
 		answers := make([]nodeListing, len(nodes))
 		var wg sync.WaitGroup
 		for i, node := range nodes {
