@@ -40,7 +40,7 @@ prefix.
 
 `pager` is every mode with the pager up; `all` is every mode.
 
-`figaro listen` and `figaro replay` never stream inline: they open in
+`figaro listen` (and bare `figaro` at a terminal) and `figaro replay` never stream inline: they open in
 `transcript` and stay in the pager until they end. There `^T` and `^L`
 (`listen`) do nothing, `q` (`leave`) with no pit open ends the session, and
 `Esc` (`cancel`) only cancels what is open.

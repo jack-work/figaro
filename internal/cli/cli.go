@@ -102,6 +102,11 @@ func Run(progName string, args []string) {
 		defer shutdown(ctx)
 	}
 
+	if len(args) == 0 && bareOpensPager() {
+		runListen(loaded, "", "", "")
+		return
+	}
+
 	// The update nudge rides only help surfaces.
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		runUpdateCheck(loaded)
@@ -406,6 +411,8 @@ pager is the whole session, and it stays open until you end it.
 
 With no id, the aria this shell attends is used. With none attended,
 listen mints one from the default outfit, attends it, and opens that.
+Bare ` + "`figaro`" + `, with no arguments at a terminal, is the same as
+` + "`figaro listen`" + `; off a terminal it prints the usage.
 
 Keys:
   q        With a pit open, close it; with none open, end listen. The
@@ -1987,7 +1994,10 @@ auto-load it on the next tab.
 	registerDecide(r)
 
 	// The bare form is not a registered command, so it needs its own usage line.
-	r.Synopsis = []string{progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)"}
+	r.Synopsis = []string{
+		progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)",
+		progName + "                            at a terminal: the pager, as `" + progName + " listen`",
+	}
 	// Consumed by extractNoBindFlag before dispatch, so no Command declares them.
 	r.GlobalFlags = []cmdkit.FlagDef{
 		{Long: "no-bind", Short: "A", IsBool: true,

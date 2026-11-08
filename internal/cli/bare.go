@@ -2,13 +2,19 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // The bare prompt form: `figaro [send-flags] -- <prompt>`.
+
+func bareOpensPager() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+}
 
 func hasDashBoundary(args []string) bool {
 	for _, a := range args {

@@ -13,13 +13,14 @@ import (
 	"github.com/creack/pty"
 )
 
-// `figaro listen` with no aria bound mints an aria from the default outfit,
-// attends it and opens the pager on it.
-func TestUnboundListenOpensThePagerOnANewAria(t *testing.T) {
+// Bare `figaro` at a terminal, and `figaro listen` with no aria bound, mint an
+// aria from the default outfit, attend it and open the pager on it. Off a
+// terminal, bare `figaro` still prints the usage.
+func TestBareFigaroAndUnboundListenOpenThePagerOnANewAria(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns daemons; skipped under -short")
 	}
-	for _, argv := range [][]string{{"listen"}} {
+	for _, argv := range [][]string{{}, {"listen"}} {
 		name := "figaro " + strings.Join(argv, " ")
 		t.Run(name, func(t *testing.T) {
 			r := newRestartRig(t)
@@ -87,6 +88,15 @@ func TestUnboundListenOpensThePagerOnANewAria(t *testing.T) {
 		})
 	}
 
+	t.Run("figaro off a terminal", func(t *testing.T) {
+		r := newRestartRig(t)
+		c := r.cmd()
+		c.Stdin = nil
+		out, _ := c.CombinedOutput()
+		if !strings.Contains(string(out), "Usage: figaro <command>") {
+			t.Fatalf("bare figaro off a terminal must print the usage, got:\n%s", out)
+		}
+	})
 }
 
 func (r *restartRig) ariaIDs() []string {
