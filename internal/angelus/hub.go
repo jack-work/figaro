@@ -31,22 +31,22 @@ type ariaHub struct {
 	kind string
 
 	mu        sync.Mutex
-	followers map[*follower]struct{}
+	followers map[*follower]channels
 	agent     figaro.AgentServer
 	closed    bool
 }
 
 func newAriaHub(id string) *ariaHub {
-	return &ariaHub{id: id, followers: map[*follower]struct{}{}}
+	return &ariaHub{id: id, followers: map[*follower]channels{}}
 }
 
-func (hb *ariaHub) add(f *follower) bool {
+func (hb *ariaHub) add(f *follower, ch channels) bool {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	if hb.closed {
 		return false
 	}
-	hb.followers[f] = struct{}{}
+	hb.followers[f] = ch
 	return true
 }
 
@@ -56,18 +56,20 @@ func (hb *ariaHub) remove(f *follower) {
 	hb.mu.Unlock()
 }
 
-func (hb *ariaHub) targets() []*follower {
+func (hb *ariaHub) targets(ch channels) []*follower {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	out := make([]*follower, 0, len(hb.followers))
-	for f := range hb.followers {
-		out = append(out, f)
+	for f, wants := range hb.followers {
+		if wants&ch != 0 {
+			out = append(out, f)
+		}
 	}
 	return out
 }
 
 func (hb *ariaHub) Notify(method string, params any) error {
-	targets := hb.targets()
+	targets := hb.targets(channelOf(method))
 	if len(targets) == 0 {
 		return nil
 	}
@@ -124,9 +126,9 @@ func (hb *ariaHub) Close() {
 	}
 	hb.closed = true
 	hb.mu.Unlock()
-	targets := hb.targets()
+	targets := hb.targets(allChannels)
 	hb.mu.Lock()
-	hb.followers = map[*follower]struct{}{}
+	hb.followers = map[*follower]channels{}
 	hb.mu.Unlock()
 	raw, _ := json.Marshal(rpc.AriaClosed{FigaroID: hb.id})
 	for _, f := range targets {
@@ -142,7 +144,7 @@ func (hb *ariaHub) drop() {
 	for f := range hb.followers {
 		targets = append(targets, f)
 	}
-	hb.followers = map[*follower]struct{}{}
+	hb.followers = map[*follower]channels{}
 	hb.mu.Unlock()
 	for _, f := range targets {
 		f.forget(hb)

@@ -14,6 +14,7 @@ const (
 	CapFormView   Capability = "form.view"
 	CapNormalize  Capability = "normalize.report"
 	CapUnfollow   Capability = "unfollow"
+	CapChannels   Capability = "follow.channels"
 )
 
 type PrincipalKind string

@@ -10,6 +10,15 @@ const AriaKey = "figaro_id"
 
 const MethodFollow = "figaro.follow"
 
+const (
+	FollowTranscript = "transcript"
+	FollowForms      = "forms"
+)
+
+type FollowRequest struct {
+	Channels []string `json:"channels,omitempty"`
+}
+
 type FollowResponse struct {
 	OK       bool   `json:"ok"`
 	FigaroID string `json:"figaro_id,omitempty"`

@@ -48,7 +48,7 @@ type recentWant struct {
 
 func (w *ariasWatch) followed() bool {
 	for _, f := range w.forms {
-		if len(f.hub.targets()) > 0 {
+		if f.hub.Attached() > 0 {
 			return true
 		}
 	}
@@ -335,14 +335,15 @@ func (h *handlers) callerFormMethod(ctx context.Context, id, method string, para
 	hb := w.forms[id].hub
 	switch method {
 	case rpc.MethodFollow:
+		ch, err := followChannels(params)
+		if err != nil {
+			return nil, err
+		}
 		if f := followerOf(ctx); f != nil {
-			f.follow(hb)
+			f.follow(hb, ch)
 		}
 		return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 	case rpc.MethodForm:
-		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) {
-			f.follow(hb)
-		}
 		if !built && (id != rpc.TopologyFormID || !w.builtWithin(ariasPair)) {
 			h.rebuildArias(w)
 		}

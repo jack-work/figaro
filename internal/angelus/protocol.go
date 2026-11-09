@@ -195,11 +195,19 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			hb = h.hubFor(id)
 		}
 		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) && h.allowed(ctx, rpc.VerbListen, authz.Aria(id)) == nil {
+			follow := f.followUnlessFollowing
+			if method == rpc.MethodFollow {
+				ch, err := followChannels(params)
+				if err != nil {
+					return nil, err
+				}
+				follow = func(hb *ariaHub) { f.follow(hb, ch) }
+			}
 			done, err := h.angelus.guard.enter(id)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", method, err)
 			}
-			f.follow(hb)
+			follow(hb)
 			done()
 		}
 		if method == rpc.MethodFollow {

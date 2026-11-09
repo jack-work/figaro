@@ -382,6 +382,17 @@ never. See [reclamation.md](../contributing/reclamation.md).
 {"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{"figaro_id":"85ac180e","sinceLT":0,"limit":65536}}
 ```
 
+A follow may name the channels it wants: `"channels": ["forms"]` receives
+`form.delta` only, `["transcript"]` receives `figaro.aria` and `turn.done`
+only, and a follow that names none receives both.
+`figaro.closed` reaches every follower whatever it named. Following again
+replaces the channels; a prompt on a figaro already followed keeps them. A
+daemon that has this lists `follow.channels` in `figaro.hello` capabilities.
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"figaro.follow","params":{"figaro_id":"85ac180e","channels":["forms"]}}
+```
+
 `figaro.unfollow` with the same `figaro_id` releases one follow on a live
 connection: that figaro's frames stop and its hub forgets the connection,
 while the connection's other follows go on. It answers `{"released": true}`
