@@ -1,0 +1,35 @@
+[[bind]]
+principals = ["user:2001", "user:admin@auth.kelliher.info"]
+role = "owner"
+
+[[bind]]
+principals = ["sandbox:box0@local:box", "sandbox:chat@local:box", "sandbox:receipt@local:box"]
+role = "box"
+
+[[bind]]
+principals = ["troupe:kelliher"]
+role = "lent-to-troupe"
+
+[[roles.box.grants]]
+on = ["*"]
+verbs = ["create"]
+
+[[roles.box.grants]]
+on = ["sandbox:self"]
+verbs = ["use"]
+
+[[roles.box.grants]]
+on = ["sandboxed:self"]
+verbs = ["read", "listen", "send", "fork", "set", "kill"]
+
+[[roles.lent-to-troupe.grants]]
+on = ["unboxed"]
+verbs = ["read", "listen", "send", "fork", "set", "kill"]
+
+[[roles.lent-to-troupe.grants]]
+on = ["*"]
+verbs = ["create"]
+
+[[roles.owner.grants]]
+on = ["*"]
+verbs = ["*"]

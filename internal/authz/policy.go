@@ -174,6 +174,7 @@ type Policies struct {
 	scopes []string
 	troupe atomic.Pointer[troupeLayer]
 	held   atomic.Pointer[jkauthz.Policy[Resource]]
+	fences atomic.Pointer[[]fence]
 	schema jkauthz.Schema[Resource]
 	boxes  []string
 }
@@ -231,10 +232,19 @@ func (p *Policies) load(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := p.store.LoadBytes(data); err != nil {
+	grants, fences, err := splitFences(data, p.schema)
+	if err != nil {
+		return err
+	}
+	if err := p.store.LoadBytes(grants); err != nil {
 		return err
 	}
 	p.held.Store(held)
+	if len(fences) == 0 {
+		p.fences.Store(nil)
+	} else {
+		p.fences.Store(&fences)
+	}
 	return nil
 }
 
@@ -376,9 +386,15 @@ func (p *Policies) Path() string {
 type Verdict struct {
 	jkauthz.Decision
 	undelegated string
+	fence       string
 }
 
+func (v Verdict) Fenced() bool { return v.fence != "" }
+
 func (v Verdict) Reason() string {
+	if v.fence != "" {
+		return v.fence
+	}
 	if v.undelegated != "" {
 		return fmt.Sprintf("%s; troupe %s grants it, but this node does not delegate it to the troupe", v.Decision.Reason(), v.undelegated)
 	}

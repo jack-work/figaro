@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
@@ -238,8 +239,12 @@ func Enforce(p *Policies) Policy {
 		if r.Aria != "" {
 			res = Aria(r.Aria)
 		}
-		if d := p.Allow(r.Subject, verb, res); !d.Allowed {
-			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !p.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
+		figaro := r.Identity.FigaroID
+		if d := p.AllowFigaro(r.Subject, figaro, verb, res); !d.Allowed {
+			if d.Fenced() {
+				slog.Info("authz: fence refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
+			}
+			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !p.AllowFigaro(r.Subject, figaro, rpc.VerbRead, res).Allowed) {
 				return Decision{Hidden: true}
 			}
 			return Deny("%s: %s", r.Method, d.Reason())
