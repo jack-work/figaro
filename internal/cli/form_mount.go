@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"encoding/json"
 	"strings"
 	"time"
@@ -134,7 +135,7 @@ func (m *viewMount) adopt(path string, inner []pitRow, indents []string) []pitRo
 		if r.aria != "" && !strings.Contains(r.aria, rpc.NodeSeparator) {
 			row.aria = qualifiedIn(m.node, r.aria)
 			if r.yankFrom == nil {
-				row.yank = row.aria
+				row.yank = qualifiedIn(m.node, cmp.Or(r.yank, r.aria))
 			}
 		}
 		out = append(out, row)

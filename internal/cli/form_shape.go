@@ -67,6 +67,7 @@ type viewRowKey struct {
 	group string
 	row   string
 	aria  string
+	name  string
 }
 
 type viewShape struct {
@@ -138,6 +139,7 @@ func (s *viewShape) note(c *formNode, segs []string, under *viewRowKey) *viewRow
 	if k, ok := s.row(segs); ok {
 		if s.hint.RowAria != "" {
 			k.aria = leafText(c, s.hint.RowAria)
+			k.name = figaroRowName(c, k.aria)
 		}
 		s.heads[c.path] = k
 		under = &k
@@ -146,6 +148,18 @@ func (s *viewShape) note(c *formNode, segs []string, under *viewRowKey) *viewRow
 		s.keys[c.path] = *under
 	}
 	return under
+}
+
+// A figaro's row is named by its handle: the row's handle leaf, else its key,
+// which a listing spells as the handle when there is one.
+func figaroRowName(n *formNode, id string) string {
+	if h := leafText(n, "handle"); h != "" {
+		return h
+	}
+	if n.label != "" {
+		return n.label
+	}
+	return id
 }
 
 func (s *viewShape) peek(n *formNode) string {

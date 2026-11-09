@@ -447,7 +447,7 @@ func (v *formView) Items(width int) []pitRow {
 			row.note = merge.note(n.path, row.note)
 			row.hint = hint
 			if k.aria != "" {
-				row.yank, row.yankFrom, row.aria = k.aria, nil, k.aria
+				row.yank, row.yankFrom, row.aria = k.name, nil, k.aria
 			}
 		}
 		if _, head := shape.head(n.path); !head && n.leaf() {

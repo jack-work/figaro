@@ -445,8 +445,8 @@ func ariasView(t *testing.T, subject string) *formView {
 	return v
 }
 
-// In @arias a row is an aria: y and M-y take its id, its actions target the
-// id rather than the label, and the aria on screen carries the mark.
+// In @arias a row is an aria: y takes its handle and M-y its id, its actions
+// target the id rather than the label, and the aria on screen carries the mark.
 func TestAnAriasRowIsTheAriaItNames(t *testing.T) {
 	v := ariasView(t, "38f4563ac90d4206364a64c0a4f4c4fa")
 	v.Items(100)
@@ -460,8 +460,8 @@ func TestAnAriasRowIsTheAriaItNames(t *testing.T) {
 	if !ok {
 		t.Fatalf("the fork does not nest under its parent: %v", formRowIDs(rows))
 	}
-	if fork.yankText() != "38f4563ac90d4206364a64c0a4f4c4fa" || fork.aria != fork.yankText() {
-		t.Errorf("fork row yanks %q, aria %q; want its id", fork.yankText(), fork.aria)
+	if fork.yankText() != "dairy-singles" || fork.aria != "38f4563ac90d4206364a64c0a4f4c4fa" {
+		t.Errorf("fork row yanks %q, aria %q; want its handle and its id", fork.yankText(), fork.aria)
 	}
 	if fork.note != "●" || byID["arias.nearest-tusk"].note != "" {
 		t.Errorf("marks: fork %q, parent %q; want only the aria on screen", fork.note, byID["arias.nearest-tusk"].note)
