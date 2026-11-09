@@ -24,6 +24,8 @@ type viewMount struct {
 	send  actOn
 	close func()
 	note  string
+	width int
+	rev   uint64
 }
 
 type mountedText struct {
@@ -79,8 +81,26 @@ func (v *formView) mountRowsLocked(path, addr, cont string, width int) []pitRow 
 	if m.view == nil {
 		return []pitRow{staticRow(clipLine(cont+"└─ "+m.note, width))}
 	}
-	inner := m.view.Items(max(width-displayWidth(cont)-3, 20))
+	m.width = max(width-displayWidth(cont)-3, 20)
+	inner := m.view.Items(m.width)
+	m.rev = m.view.Revision()
 	return m.adopt(path, inner, mountIndents(inner, cont))
+}
+
+func (v *formView) mountsUnchangedLocked() bool {
+	for _, m := range v.mounts {
+		if m.view == nil {
+			continue
+		}
+		if m.width == 0 {
+			return false
+		}
+		m.view.Items(m.width)
+		if m.view.Revision() != m.rev {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *viewMount) adopt(path string, inner []pitRow, indents []string) []pitRow {

@@ -384,7 +384,7 @@ func (v *formView) Items(width int) []pitRow {
 	if v.search != nil {
 		key.search = v.search.rev
 	}
-	if v.items != nil && key == v.itemsKey && len(v.mounts) == 0 {
+	if v.items != nil && key == v.itemsKey && v.mountsUnchangedLocked() {
 		return v.items
 	}
 	v.touched = nil

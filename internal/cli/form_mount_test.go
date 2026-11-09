@@ -217,6 +217,36 @@ func TestMountsUpdateIndependentlyAndCloseWithTheirPointer(t *testing.T) {
 	}
 }
 
+// Items runs several times per frame. With a mount open it rebuilt the whole
+// tree every call, so held j in l spent 12 ms a key on 400 figaros and fell
+// behind the key repeat. Nothing changed means the same rows, not a rebuild;
+// a change inside the mount still rebuilds.
+func TestAnOpenMountDoesNotRebuildAnUnchangedPit(t *testing.T) {
+	f := newFakeMounts()
+	f.forms["@things"] = things("items.a.name", `"alpha"`)
+	f.forms["far/@things"] = things("items.z.name", `"zulu"`)
+	v := indexView(f)
+	v.Items(100)
+	v.Activate("far")
+	v.Items(100)
+	f.waitOpened(t, 1)
+	v.Items(100)
+	rev := v.Revision()
+	for range 5 {
+		v.Items(100)
+	}
+	if got := v.Revision(); got != rev {
+		t.Fatalf("five unchanged reads rebuilt the pit %d times", got-rev)
+	}
+	f.forms["far/@things"].snap = form.FromMap(formKeys("items.z.name", `"zulu"`, "items.y.name", `"yankee"`))
+	if _, ok := rowsByID(v.Items(100))["far\x1fitems.y"]; !ok {
+		t.Fatal("a change in the mount did not reach the pit")
+	}
+	if v.Revision() == rev {
+		t.Fatal("a change in the mount did not rebuild the pit")
+	}
+}
+
 // A mount that cannot load says why on the row, and the rest of the pit is
 // unaffected.
 func TestAMountThatCannotLoadSaysWhy(t *testing.T) {
