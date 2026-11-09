@@ -42,7 +42,7 @@ figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/fi
 
 ## Hierarchies, not factories
 
-figaro doesn't hand each task to a fresh worker and throw it away. Figaros grow into hierarchies with a clear leader: its history and context are shared with the figaros under it, and each of them can change what it inherited. The unit keeps running between tasks and follows the way your work actually goes, rather than a pipeline drawn in advance.
+figaro doesn't hand each task to a fresh worker and throw it away. A fork inherits its parent's history up to the fork point and appends its own from there; history is never rewritten. Because forks share that history, they group naturally under the figaro they came from, and the tree can be rearranged later with `promote` and `succeed`. A figaro can fan out as the work demands, and a branch earns its permanence over time, at the pace of your work rather than a pipeline drawn in advance.
 
 Three verbs grow a hierarchy: `fork` branches at any turn, `promote` raises a branch, and `succeed` hands a seat to a fork of whoever holds it. When a branch produces something worth keeping, cast it into a role (a named form that always reaches its current holder) and dress it with an outfit, which sets the credo, rules and model it runs under:
 
