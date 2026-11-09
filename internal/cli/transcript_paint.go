@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/jack-work/figaro/internal/mark"
@@ -571,13 +570,13 @@ func (t *transcript) paint(screen []string) {
 		// Nothing to say: the resync debt stays owed until a frame differs.
 		t.paintBuf = buf[:0]
 		t.screenSpare, t.prev = t.prev, screen
-		t.keys.painted(t.paintView(), time.Now())
+		t.answerKeys()
 		mark.Mark("frame.quiet", "aria", t.subjectID())
 		return
 	}
 	buf = append(buf, "\x1b[?2026l"...)
 	_, _ = t.out.Write(buf)
-	t.keys.painted(t.paintView(), time.Now())
+	t.answerKeys()
 	t.paintBuf = buf
 	t.screenSpare, t.prev = t.prev, screen
 	submitPainted(t.subjectID())

@@ -42,3 +42,44 @@ func TestKeysWaitingForPaintAreBounded(t *testing.T) {
 		t.Fatalf("%d keys held, want at most %d", len(k.at), keysAwaitingMax)
 	}
 }
+
+// A key typed while a pit opens was answered by whatever frame came next,
+// usually one without the pit, or dropped at the end of its read because no
+// frame was owed. The slowest case, a pit that takes seconds to open, never
+// reached the histogram. Those keys are owed until the pit is on screen.
+func TestKeysTypedWhileAPitOpensAreAnsweredByThePit(t *testing.T) {
+	in, lt := navInput(t, &countingWriter{}, true)
+	lt.tr.command = func(string) {}
+	in.consume([]byte("lj"))
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if n := len(lt.tr.keys.at); n != 2 {
+		t.Fatalf("%d keys owed while the pit opens, want 2", n)
+	}
+	lt.tr.setCmdOut("ls", awaitRows())
+	lt.tr.render()
+	if n := len(lt.tr.keys.at); n != 0 {
+		t.Fatalf("%d keys still owed after the pit painted", n)
+	}
+}
+
+func TestEachPitIsItsOwnView(t *testing.T) {
+	in, lt := navInput(t, &countingWriter{}, true)
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	for _, c := range []struct {
+		open func()
+		want string
+	}{
+		{func() {}, "transcript"},
+		{func() { lt.tr.setCmdOut("ls", awaitRows()) }, "pit"},
+		{func() { lt.tr.inSearch = true }, "search"},
+		{func() { lt.tr.inSearch = false; lt.tr.box = boxCommand }, "command"},
+		{func() { lt.tr.box = boxComposer }, "composer"},
+	} {
+		c.open()
+		if got := lt.tr.paintView().String(); got != c.want {
+			t.Errorf("paintView = %q, want %q", got, c.want)
+		}
+	}
+}

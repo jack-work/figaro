@@ -16,16 +16,26 @@ type paintView uint8
 const (
 	viewTranscript paintView = iota
 	viewPit
+	viewSearch
+	viewCommand
 	viewComposer
+	paintViews
 )
 
-var paintViewNames = [...]string{viewTranscript: "transcript", viewPit: "pit", viewComposer: "composer"}
-
-var paintViewAttrs = [...]otelmetric.MeasurementOption{
-	viewTranscript: otelmetric.WithAttributeSet(attribute.NewSet(attribute.String("view", "transcript"))),
-	viewPit:        otelmetric.WithAttributeSet(attribute.NewSet(attribute.String("view", "pit"))),
-	viewComposer:   otelmetric.WithAttributeSet(attribute.NewSet(attribute.String("view", "composer"))),
+var paintViewNames = [paintViews]string{
+	viewTranscript: "transcript",
+	viewPit:        "pit",
+	viewSearch:     "search",
+	viewCommand:    "command",
+	viewComposer:   "composer",
 }
+
+var paintViewAttrs = func() (out [paintViews]otelmetric.MeasurementOption) {
+	for v, name := range paintViewNames {
+		out[v] = otelmetric.WithAttributeSet(attribute.NewSet(attribute.String("view", name)))
+	}
+	return out
+}()
 
 func (v paintView) String() string { return paintViewNames[v] }
 
@@ -65,6 +75,19 @@ func (t *transcript) paintView() paintView {
 		return viewTranscript
 	case pitComposer:
 		return viewComposer
+	case pitSearch:
+		return viewSearch
+	case pitCommand:
+		return viewCommand
 	}
 	return viewPit
 }
+
+func (t *transcript) answerKeys() {
+	if t.awaiting && t.pit.shown == t.awaitShown {
+		return
+	}
+	t.keys.painted(t.paintView(), time.Now())
+}
+
+func (t *transcript) owesKeys() bool { return t.dirty || t.awaiting && t.pit.shown == t.awaitShown }

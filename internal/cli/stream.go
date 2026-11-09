@@ -652,7 +652,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 	defer func() {
 		in.mu.Lock()
 		in.lt.endTranscriptBatch()
-		if !in.lt.tr.dirty {
+		if !in.lt.tr.owesKeys() {
 			in.lt.tr.keys.forget()
 		}
 		in.mu.Unlock()
