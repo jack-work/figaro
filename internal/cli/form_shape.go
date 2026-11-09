@@ -35,6 +35,9 @@ func leafText(n *formNode, key string) string {
 	if c == nil || !c.leaf() {
 		return ""
 	}
+	if len(c.value) == 0 || c.value[0] != '"' && string(c.value) != "null" {
+		return string(c.value)
+	}
 	var s string
 	if json.Unmarshal(c.value, &s) == nil {
 		return s
@@ -42,13 +45,22 @@ func leafText(n *formNode, key string) string {
 	return string(c.value)
 }
 
-func shapeLess(a, b string) bool {
-	x, xerr := strconv.ParseFloat(a, 64)
-	y, yerr := strconv.ParseFloat(b, 64)
-	if xerr == nil && yerr == nil {
-		return x < y
+type shapeKey struct {
+	text    string
+	num     float64
+	numeric bool
+}
+
+func newShapeKey(s string) shapeKey {
+	n, err := strconv.ParseFloat(s, 64)
+	return shapeKey{text: s, num: n, numeric: err == nil}
+}
+
+func (a shapeKey) less(b shapeKey) bool {
+	if a.numeric && b.numeric {
+		return a.num < b.num
 	}
-	return a < b
+	return a.text < b.text
 }
 
 type viewRowKey struct {
@@ -98,13 +110,26 @@ func (s *viewShape) order(labels []string, kids []*formNode, open map[string]boo
 	if by := s.hint.Sort; by != "" {
 		desc := strings.HasPrefix(by, "-")
 		by = strings.TrimPrefix(by, "-")
-		sort.SliceStable(rows, func(i, j int) bool {
-			a, b := leafText(rows[i], by), leafText(rows[j], by)
+		keys := make([]shapeKey, len(rows))
+		for i, r := range rows {
+			keys[i] = newShapeKey(leafText(r, by))
+		}
+		idx := make([]int, len(rows))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.SliceStable(idx, func(i, j int) bool {
+			a, b := keys[idx[i]], keys[idx[j]]
 			if desc {
-				return shapeLess(b, a)
+				return b.less(a)
 			}
-			return shapeLess(a, b)
+			return a.less(b)
 		})
+		sorted := make([]*formNode, len(rows))
+		for i, k := range idx {
+			sorted[i] = rows[k]
+		}
+		rows = sorted
 	}
 	return append(rest, rows...)
 }
