@@ -12,6 +12,10 @@ type Dropped struct {
 	Why string `json:"why"`
 }
 
+func (h History) Clone() History {
+	return History{IDs: append([]string(nil), h.IDs...), Pos: h.Pos}
+}
+
 func (h History) Current() string {
 	if h.Pos < 0 || h.Pos >= len(h.IDs) {
 		return ""
