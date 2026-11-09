@@ -771,7 +771,7 @@ func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
 
 	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
 	p := newResponsesTestProvider(server, cache)
-	input, err := p.inputFor(provider.SendInput{AriaID: "aria-1", FigLog: log})
+	input, err := p.inputFor(context.Background(), provider.SendInput{AriaID: "aria-1", FigLog: log})
 	require.NoError(t, err)
 	require.Len(t, input, 2)
 	assert.Equal(t, string(rawAssistant), string(input[1]))
@@ -817,14 +817,14 @@ func TestResponsesInputWarmPreservesPrefixBytes(t *testing.T) {
 	log := newResponsesInputLog(t)
 	in := provider.SendInput{AriaID: "aria-1", FigLog: log}
 
-	first, err := p.inputFor(in)
+	first, err := p.inputFor(context.Background(), in)
 	require.NoError(t, err)
 	prefix := append([]byte(nil), first[0]...)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, err := p.inputFor(in)
+	second, err := p.inputFor(context.Background(), in)
 	require.NoError(t, err)
 
 	assert.Greater(t, len(second), len(first))

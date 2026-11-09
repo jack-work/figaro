@@ -1,6 +1,7 @@
 package responses
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -55,7 +56,7 @@ func BenchmarkWarmResponsesInputLongAria(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				input, err := p.inputFor(in)
+				input, err := p.inputFor(context.Background(), in)
 				if err != nil {
 					b.Fatal(err)
 				}

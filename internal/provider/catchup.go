@@ -29,6 +29,17 @@ type CatchUpConfig struct {
 
 	ReportEncodeError func(uint64, error)
 	ReportWriteError  func(uint64, error)
+	Phase             func(name string)
+}
+
+func TracePhases(ctx context.Context) func(string) {
+	return func(name string) { figOtel.Event(ctx, "provider.catchup."+name) }
+}
+
+func (cfg CatchUpConfig) phase(name string) {
+	if cfg.Phase != nil {
+		cfg.Phase(name)
+	}
 }
 
 type CatchUpStats struct {
@@ -69,8 +80,11 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 		}
 	}
+	cfg.phase("peeked")
 	entries, total := store.TailAfter(cfg.Log, watermark)
+	cfg.phase("tail_read")
 	if watermark > 0 && store.VerifyOnce(cfg.Translator) {
+		cfg.phase("verifying")
 		if owed := total - len(entries) - genesisBelow(cfg.Log, watermark); cfg.Translator.Len() != owed {
 			if gap, cut, found := firstGap(cfg, watermark); found {
 				tail, _ := cfg.Translator.PeekTail()
@@ -93,6 +107,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 		}
 	}
+	cfg.phase("verified")
 	stats.Entries = total
 	stats.Visited = len(entries)
 	if len(entries) == 0 {
@@ -101,6 +116,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 
 	d := NewDeriver(cfg.Form, cfg.Studies)
 	d.SeedAt(cfg.Log, SeedLT(cfg.Translator))
+	cfg.phase("seeded")
 
 	for _, entry := range entries {
 		msg, snap, translatable := d.Next(entry)

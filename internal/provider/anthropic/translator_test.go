@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -23,14 +24,14 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	firstSeq, _ := a.catchUp(log, cache, nil, nil)
+	firstSeq, _ := a.catchUp(context.Background(), log, cache, nil, nil)
 	first, _ := provider.CollectRows(firstSeq)
 	prefix := append([]byte(nil), first[0]...)
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	secondSeq, _ := a.catchUp(log, cache, nil, nil)
+	secondSeq, _ := a.catchUp(context.Background(), log, cache, nil, nil)
 	second, _ := provider.CollectRows(secondSeq)
 
 	require.Len(t, second, 3)

@@ -173,7 +173,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	src, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	src, err := p.catchUp(ctx, in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -391,13 +391,14 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 // watermark is the row log's tail.
 //
 //nolint:lll // signature mirrors the other providers
-func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
+func (p *Provider) catchUp(ctx context.Context, figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
 	form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
 		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
+		Phase:       provider.TracePhases(ctx),
 		Fingerprint: p.Fingerprint(),
 		Provider:    p.Name(),
 		Encode:      p.encode,

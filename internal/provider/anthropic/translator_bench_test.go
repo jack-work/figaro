@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"sync/atomic"
@@ -102,7 +103,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				a := &Anthropic{ReminderRenderer: "tag"}
 				b.StartTimer()
-				drainCatchUp(a.catchUp(log, cache, nil, nil))
+				drainCatchUp(a.catchUp(context.Background(), log, cache, nil, nil))
 			}
 		})
 		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
@@ -111,49 +112,49 @@ func BenchmarkCatchUp(b *testing.B) {
 			appendDirectBenchSuffix(b, log)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			drainCatchUp(a.catchUp(prefix, cache, nil, nil))
-			drainCatchUp(a.catchUp(log, cache, nil, nil))
+			drainCatchUp(a.catchUp(context.Background(), prefix, cache, nil, nil))
+			drainCatchUp(a.catchUp(context.Background(), log, cache, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
 			for i := 0; i < b.N; i++ {
-				drainCatchUp(a.catchUp(log, cache, nil, nil))
+				drainCatchUp(a.catchUp(context.Background(), log, cache, nil, nil))
 			}
 		})
 		b.Run("WarmSteady/"+strconv.Itoa(n), func(b *testing.B) {
 			log := directBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			drainCatchUp(a.catchUp(log, cache, nil, nil))
+			drainCatchUp(a.catchUp(context.Background(), log, cache, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				drainCatchUp(a.catchUp(log, cache, nil, nil))
+				drainCatchUp(a.catchUp(context.Background(), log, cache, nil, nil))
 			}
 		})
 		b.Run("ColdHandle/"+strconv.Itoa(n), func(b *testing.B) {
 			log := directBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			drainCatchUp(a.catchUp(log, cache, nil, nil))
+			drainCatchUp(a.catchUp(context.Background(), log, cache, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				drainCatchUp(a.catchUp(log, &freshHandle[[]json.RawMessage]{copyingBenchLog: cache}, nil, nil))
+				drainCatchUp(a.catchUp(context.Background(), log, &freshHandle[[]json.RawMessage]{copyingBenchLog: cache}, nil, nil))
 			}
 		})
 		b.Run("HoleNearTail/"+strconv.Itoa(n), func(b *testing.B) {
 			log := directBenchLog(b, n)
 			full := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			drainCatchUp(a.catchUp(log, full, nil, nil))
+			drainCatchUp(a.catchUp(context.Background(), log, full, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
 				holed := copyRows(b, full, uint64(n-10))
 				b.StartTimer()
-				drainCatchUp(a.catchUp(log, holed, nil, nil))
+				drainCatchUp(a.catchUp(context.Background(), log, holed, nil, nil))
 			}
 		})
 	}

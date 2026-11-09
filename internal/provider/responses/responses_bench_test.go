@@ -1,6 +1,7 @@
 package responses
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
@@ -86,7 +87,7 @@ func BenchmarkInputFor(b *testing.B) {
 				p := responsesBenchProvider(cache)
 				in := provider.SendInput{AriaID: "bench", FigLog: log}
 				b.StartTimer()
-				if _, err := p.inputFor(in); err != nil {
+				if _, err := p.inputFor(context.Background(), in); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -97,18 +98,18 @@ func BenchmarkInputFor(b *testing.B) {
 			appendResponsesBenchSuffix(b, log)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := responsesBenchProvider(cache)
-			if _, err := p.inputFor(provider.SendInput{AriaID: "bench", FigLog: prefix}); err != nil {
+			if _, err := p.inputFor(context.Background(), provider.SendInput{AriaID: "bench", FigLog: prefix}); err != nil {
 				b.Fatal(err)
 			}
 			in := provider.SendInput{AriaID: "bench", FigLog: log}
-			if _, err := p.inputFor(in); err != nil {
+			if _, err := p.inputFor(context.Background(), in); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
 			for i := 0; i < b.N; i++ {
-				if _, err := p.inputFor(in); err != nil {
+				if _, err := p.inputFor(context.Background(), in); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -118,13 +119,13 @@ func BenchmarkInputFor(b *testing.B) {
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := responsesBenchProvider(cache)
 			in := provider.SendInput{AriaID: "bench", FigLog: log}
-			if _, err := p.inputFor(in); err != nil {
+			if _, err := p.inputFor(context.Background(), in); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := p.inputFor(in); err != nil {
+				if _, err := p.inputFor(context.Background(), in); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -156,7 +157,7 @@ func BenchmarkMarshalResponseRequest(b *testing.B) {
 			log := responsesBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := responsesBenchProvider(cache)
-			input, err := p.inputFor(provider.SendInput{AriaID: "bench", FigLog: log})
+			input, err := p.inputFor(context.Background(), provider.SendInput{AriaID: "bench", FigLog: log})
 			if err != nil {
 				b.Fatal(err)
 			}

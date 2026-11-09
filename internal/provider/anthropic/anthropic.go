@@ -993,7 +993,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	src, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	src, err := a.catchUp(ctx, in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -1133,7 +1133,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	src, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	src, err := a.catchUp(ctx, in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -1232,7 +1232,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 
 // catchUp translates the untranslated delta and returns a walk over the rows
 // on disk, never a slice of them. Nil means the log has no rows.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
+func (a *Anthropic) catchUp(ctx context.Context, figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
 		Translator:  rows,
@@ -1241,6 +1241,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]
 		Fingerprint: a.Fingerprint(),
 		Provider:    a.Name(),
 		Encode:      a.encode,
+		Phase:       provider.TracePhases(ctx),
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropic encode", "flt", lt, "err", err)
 		},

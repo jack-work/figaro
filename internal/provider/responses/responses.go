@@ -223,7 +223,7 @@ func (p *Provider) sendWithToken(
 	bus provider.Bus,
 	options responseRequestOptions,
 ) (sendErr error) {
-	input, err := p.inputFor(in)
+	input, err := p.inputFor(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -534,7 +534,7 @@ func (p *Provider) invalidateCache(cache store.Log[[]json.RawMessage], fingerpri
 	return err == nil
 }
 
-func (p *Provider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
+func (p *Provider) inputFor(ctx context.Context, in provider.SendInput) ([]json.RawMessage, error) {
 	rows, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return nil, err
@@ -542,6 +542,7 @@ func (p *Provider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 	templates := p.templatesForEncoding()
 
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
+		Phase:       provider.TracePhases(ctx),
 		Log:         in.FigLog,
 		Translator:  rows,
 		Form:        in.Form,
