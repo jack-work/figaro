@@ -171,3 +171,41 @@ func TestLOnARecentRowShowsItsForm(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A peer's form is the peer's to write: a row in it naming a third node's
+// figaro must not send this client there. Expanding it mounts nothing and
+// says why; a row naming the peer itself, spelled in full, still mounts.
+func TestAPeersRowCannotMountAThirdNode(t *testing.T) {
+	f, v := expandRig("none")
+	f.forms["far/@things"] = things(
+		"arias.stray.id", `"third/ddd"`, "arias.stray.mantra", `"points away"`,
+		"arias.home.id", `"far/ddd"`, "arias.home.mantra", `"points home"`,
+	)
+	f.forms["third/ddd"], f.plain["third/ddd"] = figaroForm("elsewhere"), true
+	v.Items(100)
+	v.Activate("far")
+	v.Items(100)
+	f.waitOpened(t, 1)
+	stray, home := "far"+mountSep+"arias.stray", "far"+mountSep+"arias.home"
+	v.Items(100)
+	v.Expand(stray)
+	v.Expand(home)
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Contains(opened(f), "far/ddd") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the peer's own figaro did not mount: opened %v", opened(f))
+		}
+		v.Items(100)
+		time.Sleep(10 * time.Millisecond)
+	}
+	if slices.Contains(opened(f), "third/ddd") {
+		t.Fatalf("a peer's row sent the client to another node: opened %v", opened(f))
+	}
+	var said bool
+	for _, r := range v.Items(100) {
+		said = said || strings.Contains(r.str(), "refused: third/ddd is not on far")
+	}
+	if !said {
+		t.Errorf("the refused row does not say why")
+	}
+}

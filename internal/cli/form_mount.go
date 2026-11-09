@@ -43,11 +43,18 @@ func (m mountedText) rowDims() (int, int) {
 	return lead + len(m.indent), tail
 }
 
-func (v *formView) onNode(addr string) string {
-	if strings.Contains(addr, rpc.NodeSeparator) {
-		return addr
+// A form read from another node mounts only that node's forms: its rows
+// cannot send this client to a third node. This node's own forms may point at
+// a peer's.
+func (v *formView) onNode(addr string) (string, bool) {
+	node, _ := rpc.SplitNode(addr)
+	switch {
+	case node == "":
+		return qualifiedIn(v.node, addr), true
+	case v.node == "":
+		return addr, true
 	}
-	return qualifiedIn(v.node, addr)
+	return addr, node == v.node
 }
 
 func qualifiedIn(node, id string) string {
@@ -61,7 +68,16 @@ func (v *formView) mountRowsLocked(path, addr, cont string, width int) []pitRow 
 	if v.opener == nil || addr == "" {
 		return nil
 	}
-	addr = v.onNode(addr)
+	addr, ok := v.onNode(addr)
+	if !ok {
+		if m := v.mounts[path]; m != nil {
+			delete(v.mounts, path)
+			if m.close != nil {
+				go m.close()
+			}
+		}
+		return []pitRow{staticRow(clipLine(cont+"└─ refused: "+pitText(addr)+" is not on "+v.node, width))}
+	}
 	if v.mounts == nil {
 		v.mounts = map[string]*viewMount{}
 	}
@@ -221,7 +237,10 @@ func (v *formView) loadMount(path string) {
 	if !ok || json.Unmarshal(raw, &addr) != nil || addr == "" {
 		return
 	}
-	addr = v.onNode(addr)
+	addr, onNode := v.onNode(addr)
+	if !onNode {
+		return
+	}
 	node, _ := rpc.SplitNode(addr)
 	m := &viewMount{addr: addr, node: node, note: "loading " + addr}
 	v.mu.Lock()
