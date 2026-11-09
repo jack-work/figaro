@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	otelmetric "go.opentelemetry.io/otel/metric"
 
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
@@ -74,6 +75,9 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 	figOtel.RecordWake(ctx, time.Millisecond)
 	figOtel.RecordHibernate(ctx, time.Millisecond)
 	figOtel.AddRestingRoutes(ctx, 1)
+	view := otelmetric.WithAttributes(attribute.String("view", "pit"))
+	figOtel.RecordKeyToPaint(ctx, time.Millisecond, view)
+	figOtel.AddFramesSkipped(ctx, 2, view)
 	require.NoError(t, shutdown(ctx))
 
 	got := exportedMetrics(t, dir)
@@ -108,6 +112,8 @@ func TestInstruments_EveryRecorderLandsInTheFile(t *testing.T) {
 		"figaro.wake.duration",
 		"figaro.hibernate.duration",
 		"figaro.decide.resting_routes",
+		"figaro.pager.key_to_paint",
+		"figaro.pager.frames_skipped",
 	} {
 		assert.Contains(t, got, name)
 	}
@@ -126,6 +132,23 @@ func TestRequestDuration_ExplicitBoundaries(t *testing.T) {
 	require.Len(t, m.Data.DataPoints, 1)
 	assert.Equal(t, []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000},
 		m.Data.DataPoints[0].Bounds)
+}
+
+// The pager's key-to-paint histogram is read for p95 by version in figscope:
+// its bounds must be fine across one to two frames, or p95 lands in a bucket
+// wider than the regression it is meant to catch.
+func TestKeyToPaint_FrameScaleBoundaries(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	shutdown, err := figOtel.Init(ctx, dir)
+	require.NoError(t, err)
+	figOtel.RecordKeyToPaint(ctx, 3*time.Millisecond, otelmetric.WithAttributes(attribute.String("view", "pit")))
+	require.NoError(t, shutdown(ctx))
+
+	m, ok := exportedMetrics(t, dir)["figaro.pager.key_to_paint"]
+	require.True(t, ok)
+	require.Len(t, m.Data.DataPoints, 1)
+	assert.Equal(t, []float64{1, 2, 4, 8, 12, 16, 24, 33, 50, 75, 100, 200, 500, 1000}, m.Data.DataPoints[0].Bounds)
 }
 
 // figscope compares pager latency by release, and reads the release off the

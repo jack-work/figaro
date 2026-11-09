@@ -90,9 +90,10 @@ func interruptExit(wasRunning bool) int {
 // interactiveInput is the input loop shared by send and listen; the keymap owns
 // every key from the keyEvent on.
 type interactiveInput struct {
-	tc   term.Client
-	lt   *livelogTurn
-	fcli transcriptReadClient
+	tc     term.Client
+	readAt time.Time
+	lt     *livelogTurn
+	fcli   transcriptReadClient
 	// subject is the connection fcli names, held concretely so a switch can
 	// close it and `:send` can Qua on it.
 	subject        *sdk.Aria
@@ -631,6 +632,7 @@ func (in *interactiveInput) run() {
 			in.cancel()
 			return
 		}
+		in.readAt = time.Now()
 		data := append(pending, buf[:n]...)
 		pending = nil
 		rest, stop := in.consume(data)
@@ -650,6 +652,9 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 	defer func() {
 		in.mu.Lock()
 		in.lt.endTranscriptBatch()
+		if !in.lt.tr.dirty {
+			in.lt.tr.keys.forget()
+		}
 		in.mu.Unlock()
 		if in.pageWanted {
 			in.pageWanted = false
@@ -796,6 +801,9 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			in.mu.Unlock()
 		}
 		in.mu.Lock()
+		if in.lt.tr.active {
+			in.lt.tr.keys.arrived(in.readAt)
+		}
 		var armed *keyBinding
 		awaiting := in.lt.tr.awaiting
 		if in.lt.tr.pending != "" && !awaiting {

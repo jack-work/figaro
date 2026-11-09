@@ -23,6 +23,7 @@ type transcript struct {
 	status *sessionStatus
 
 	active bool
+	keys   keysAwaitingPaint
 	// pit is the one transient region below the transcript; none of its
 	// contents may touch the status bar.
 	pit         pit

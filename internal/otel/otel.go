@@ -129,10 +129,14 @@ var (
 	hibernateDuration otelmetric.Float64Histogram
 	restingRoutes     otelmetric.Int64UpDownCounter
 
+	keyToPaint    otelmetric.Float64Histogram
+	framesSkipped otelmetric.Int64Counter
+
 	memProbe atomic.Pointer[func() MemSample]
 
-	turnMS = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
-	subMS  = []float64{1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}
+	turnMS  = []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000}
+	subMS   = []float64{1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}
+	frameMS = []float64{1, 2, 4, 8, 12, 16, 24, 33, 50, 75, 100, 200, 500, 1000}
 )
 
 func envLogLevel() slog.Level {
@@ -412,6 +416,12 @@ func initInstruments(m otelmetric.Meter) {
 	if err != nil {
 		slog.Warn("metric init", "name", "decide.resting_routes", "err", err)
 	}
+	keyToPaint = histogram(m, "figaro.pager.key_to_paint", "From a key reaching the pager to the frame that shows it, by view", frameMS)
+	framesSkipped, err = m.Int64Counter("figaro.pager.frames_skipped", otelmetric.WithUnit("{frame}"),
+		otelmetric.WithDescription("Keys whose own state never reached the screen because a later key's frame covered it, by view"))
+	if err != nil {
+		slog.Warn("metric init", "name", "pager.frames_skipped", "err", err)
+	}
 	tokens, err = m.Int64Counter("figaro.tokens", otelmetric.WithUnit("{token}"),
 		otelmetric.WithDescription("Tokens by kind: input, output, cache_read, cache_write"))
 	if err != nil {
@@ -514,6 +524,18 @@ func AddTokens(ctx context.Context, in, out, cacheRead, cacheWrite int, attrs ..
 	}
 	for kind, n := range map[string]int{"input": in, "output": out, "cache_read": cacheRead, "cache_write": cacheWrite} {
 		tokens.Add(ctx, int64(n), otelmetric.WithAttributes(append(attrs, attribute.String("kind", kind))...))
+	}
+}
+
+func RecordKeyToPaint(ctx context.Context, d time.Duration, view otelmetric.MeasurementOption) {
+	if keyToPaint != nil {
+		keyToPaint.Record(ctx, float64(d.Microseconds())/1000, view)
+	}
+}
+
+func AddFramesSkipped(ctx context.Context, n int, view otelmetric.MeasurementOption) {
+	if framesSkipped != nil && n > 0 {
+		framesSkipped.Add(ctx, int64(n), view)
 	}
 }
 
