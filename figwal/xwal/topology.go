@@ -207,26 +207,6 @@ func beginRootTopologyMutationFor(root string, owner *Trunks) (func(), string, e
 	}, root, nil
 }
 
-func beginRootAdditiveMutation(root string) (func(), error) {
-	root, err := canonicalRoot(root)
-	if err != nil {
-		return nil, err
-	}
-	state := rootTopologyStateFor(root)
-	state.mu.Lock()
-	for state.mutating {
-		state.ready.Wait()
-	}
-	state.mutating = true
-	state.mu.Unlock()
-	return func() {
-		state.mu.Lock()
-		state.mutating = false
-		state.ready.Broadcast()
-		state.mu.Unlock()
-	}, nil
-}
-
 func beginRootBorrow(root string, owner *Trunks) error {
 	state := rootTopologyStateFor(root)
 	state.mu.Lock()

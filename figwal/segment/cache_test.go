@@ -166,3 +166,6 @@ func TestSweepIdleDropsWhatNobodyReads(t *testing.T) {
 		t.Fatalf("swept segment no longer reads: %v", err)
 	}
 }
+
+// CachedRanges reports how many resident ranges tree holds for segments.
+func CachedRanges() int { return payloadCache.ResidentRuns() }

@@ -1,11 +1,14 @@
 package xwal
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/figwal/disk"
 )
 
 func TestOpenTrunksCompletesPendingChannelBeforeManifest(t *testing.T) {
@@ -384,4 +387,20 @@ func TestPeerForkWaitsForLineageAppend(t *testing.T) {
 	if _, got, err := head.Read("ir", 2); err != nil || string(got) != `"append"` {
 		t.Fatalf("continuation append = %s, err=%v", got, err)
 	}
+}
+
+func writeChannelPending(root string, plan channelPendingPlan) error {
+	body, err := json.Marshal(plan)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(root, channelPendingName)
+	tmp := path + ".tmp"
+	if err := writeSyncedFile(tmp, body); err != nil {
+		return err
+	}
+	if err := atomicReplaceFile(tmp, path); err != nil {
+		return err
+	}
+	return disk.SyncDir(root)
 }

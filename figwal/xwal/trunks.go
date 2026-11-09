@@ -40,7 +40,6 @@ type Trunks struct {
 	validatedForkBranches    map[string]uint64
 
 	testAfterReadLock func()
-	testDeepRepair    func()
 	testRemovalStep   func(string)
 	testStoreClose    func()
 	testAppendBorrow  func()

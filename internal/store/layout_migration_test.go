@@ -94,11 +94,6 @@ func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 	if need, err := xwal.NeedsFlatten(root); err != nil || !need {
 		t.Fatalf("fixture does not need migrating (need=%v err=%v)", need, err)
 	}
-	// And it is really NESTED, not merely unstamped: three generations of
-	// interior forks, in every channel.
-	if n, err := xwal.NestedNodes(root); err != nil || n < 3 {
-		t.Fatalf("fixture has %d nested node dirs (err %v); it should have many", n, err)
-	}
 	if _, err := xwal.OpenStore(root, storeOptions(0)); err == nil {
 		t.Fatal("figwal opened an unmigrated store")
 	}

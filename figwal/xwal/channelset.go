@@ -57,12 +57,6 @@ func (x *XWAL) adopt() {
 	x.cs.gen.Store(gen)
 }
 
-func (x *XWAL) publish(mc manifestChannel) error {
-	x.cs.mu.Lock()
-	defer x.cs.mu.Unlock()
-	return x.publishLocked(mc)
-}
-
 func (x *XWAL) publishLocked(mc manifestChannel) error {
 	cur := x.cs.cur.Load()
 	if cur.byName[mc.Name] != nil {
@@ -246,15 +240,4 @@ func rootChannel(root string, cfg Config, man manifest, mc manifestChannel) erro
 func channelGenFor(root string) func() uint64 {
 	state := rootTopologyStateFor(root)
 	return state.channelGen.Load
-}
-
-func (x *XWAL) addChannel(spec ChannelSpec) error {
-	if x.channels().byName[spec.Name] != nil {
-		return fmt.Errorf("xwal: channel %q already exists", spec.Name)
-	}
-	if err := registerChannel(x.root, x.cfg, spec); err != nil {
-		return err
-	}
-	x.cfg = withChannelSpec(x.cfg, spec)
-	return x.publish(spec.manifest())
 }

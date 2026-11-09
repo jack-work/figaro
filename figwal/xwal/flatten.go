@@ -417,8 +417,7 @@ type FlattenReport struct {
 // Flatten plans and applies in one call, under the store lock, so it refuses
 // to run against a live daemon.
 func Flatten(root string) (FlattenReport, error) {
-	plan, err := PlanFlatten(root)
-	if err != nil {
+	if _, err := PlanFlatten(root); err != nil {
 		return FlattenReport{}, err
 	}
 	lock, err := lockRoot(root)
@@ -428,7 +427,7 @@ func Flatten(root string) (FlattenReport, error) {
 	defer unlockRoot(lock)
 	// The shape can have changed between planning and locking, so plan
 	// again now that we are the only writer. This is the plan that runs.
-	plan, err = PlanFlatten(root)
+	plan, err := PlanFlatten(root)
 	if err != nil {
 		return FlattenReport{}, err
 	}
@@ -505,28 +504,6 @@ func (p *FlattenPlan) apply() (FlattenReport, error) {
 		}
 	}
 	return rep, nil
-}
-
-// NestedNodes counts node directories below depth 1 across every channel;
-// zero means flat.
-func NestedNodes(root string) (int, error) {
-	chanList, _, _, err := flattenManifest(root)
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, ch := range chanList {
-		paths, err := nodePaths(filepath.Join(root, ch))
-		if err != nil {
-			return 0, err
-		}
-		for _, rel := range paths {
-			if pathDepth(rel) > 1 {
-				n++
-			}
-		}
-	}
-	return n, nil
 }
 
 // nodePaths is every node directory under a channel dir, as channel-relative

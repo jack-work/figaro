@@ -33,12 +33,10 @@ func buildNestedFixture(t *testing.T) (dir string, before treeSnapshot) {
 	}
 	// A chain, so the fixture has depth: each conversation forks the one
 	// before it, which in v3 means each nests inside the last.
-	var chain []string
 	prev, err := s.SpawnUnderStump("config@abc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	chain = append(chain, string(prev))
 	for i := 0; i < 3; i++ {
 		var last uint64
 		for j := 0; j < 3; j++ {
@@ -65,7 +63,6 @@ func buildNestedFixture(t *testing.T) (dir string, before treeSnapshot) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		chain = append(chain, next)
 		prev = TrunkID(next)
 	}
 	// One conversation straight off the root, the n161 case: already at
@@ -972,4 +969,26 @@ func TestFlattenResumesAChainWhoseMiddleWasAlreadyDemoted(t *testing.T) {
 	if recs, err := s.RecordsFrom(id, "ir", 0, 0); err != nil || len(recs) == 0 {
 		t.Errorf("the surviving head reads %d records (err %v)", len(recs), err)
 	}
+}
+
+// NestedNodes counts node directories below depth 1 across every channel;
+// zero means flat.
+func NestedNodes(root string) (int, error) {
+	chanList, _, _, err := flattenManifest(root)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, ch := range chanList {
+		paths, err := nodePaths(filepath.Join(root, ch))
+		if err != nil {
+			return 0, err
+		}
+		for _, rel := range paths {
+			if pathDepth(rel) > 1 {
+				n++
+			}
+		}
+	}
+	return n, nil
 }

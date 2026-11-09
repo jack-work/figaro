@@ -142,7 +142,7 @@ func TestLegacyFramesReadZeroTS(t *testing.T) {
 	}
 	for _, tt := range legacy {
 		// Fast path (related channel).
-		rec, err := decodeRecord(1, tt.frame)
+		rec, err := decodeRecordFrom(1, tt.frame, false, false)
 		if err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}

@@ -65,7 +65,7 @@ func buildLongAria(b *testing.B, records int) (string, Config) {
 			if spec.Name == "state" {
 				payload = []byte(fmt.Sprintf(`{"turn":%d}`, i))
 			}
-			if err := l.Write(uint64(i), encodeFrame(uint64(i), payload, []byte(`{"source":"bench"}`), benchTS)); err != nil {
+			if err := l.Write(uint64(i), encodeChannelFrame(uint64(i), payload, []byte(`{"source":"bench"}`), false, benchTS)); err != nil {
 				b.Fatal(err)
 			}
 		}

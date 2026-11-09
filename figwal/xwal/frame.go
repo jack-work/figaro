@@ -50,10 +50,6 @@ func embedJSON(b []byte) json.RawMessage {
 	return json.RawMessage(q)
 }
 
-func encodeFrame(mainLT uint64, payload, meta []byte, ts int64) []byte {
-	return encodeChannelFrame(mainLT, payload, meta, false, ts)
-}
-
 func encodeChannelFrame(mainLT uint64, payload, meta []byte, opaque bool, ts int64) []byte {
 	return encodeStampedFrame(mainLT, payload, meta, opaque, nil, ts)
 }
@@ -93,10 +89,6 @@ func decodeFrame(f []byte) (uint64, []byte, error) {
 		return 0, nil, err
 	}
 	return o.M, payload, nil
-}
-
-func decodeRecord(channelLT uint64, f []byte) (Record, error) {
-	return decodeRecordFrom(channelLT, f, false, false)
 }
 
 // isMain selects the slow path: only a main record carries a cursor stamp and

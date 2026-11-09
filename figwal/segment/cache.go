@@ -83,9 +83,6 @@ func CachedBytes() int64 { resident, _, _ := payloadBudget.Stats(); return resid
 // with distinct ranges means runs are dropped as fast as they are built.
 func CacheLoads() int64 { return loads.Load() }
 
-// CachedRanges reports how many resident ranges tree holds for segments.
-func CachedRanges() int { return payloadCache.ResidentRuns() }
-
 // cachedPayload returns record i's payload if the cache can serve it.
 func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 	if CacheBudget() <= 0 {

@@ -206,19 +206,6 @@ func validateChannelSpec(root string, cfg Config, man manifest, spec ChannelSpec
 	return nil
 }
 
-func withChannelSpec(cfg Config, spec ChannelSpec) Config {
-	channels := append([]ChannelSpec(nil), cfg.Channels...)
-	for i := range channels {
-		if channels[i].Name == spec.Name {
-			channels[i] = spec
-			cfg.Channels = channels
-			return cfg
-		}
-	}
-	cfg.Channels = append(channels, spec)
-	return cfg
-}
-
 func writeManifest(dir string, m manifest) error {
 	body, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -233,22 +220,6 @@ func writeManifest(dir string, m manifest) error {
 		return err
 	}
 	return disk.SyncDir(dir)
-}
-
-func writeChannelPending(root string, plan channelPendingPlan) error {
-	body, err := json.Marshal(plan)
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(root, channelPendingName)
-	tmp := path + ".tmp"
-	if err := writeSyncedFile(tmp, body); err != nil {
-		return err
-	}
-	if err := atomicReplaceFile(tmp, path); err != nil {
-		return err
-	}
-	return disk.SyncDir(root)
 }
 
 func readChannelPending(root string) (channelPendingPlan, bool, error) {
