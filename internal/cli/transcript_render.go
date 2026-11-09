@@ -278,6 +278,8 @@ func (t *transcript) renderFrame() {
 	t.settle()
 	foot := t.footLines()
 	body, maxOff := t.layout(len(foot))
+	t.frameBody = body
+	defer func() { t.frameBody = 0 }()
 	total := t.index.total
 	if t.follow {
 		t.offset = maxOff

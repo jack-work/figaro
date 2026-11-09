@@ -46,7 +46,7 @@ func TestANarrowShortPagerKeepsItsConversation(t *testing.T) {
 		replyRows int
 	}{
 		{48, 14, 1, true, true, 4},
-		{48, 9, 1, false, true, 2},
+		{48, 9, 1, true, true, 2},
 		{32, 9, 2, false, true, 2},
 		{80, 6, 1, false, false, 2},
 	} {

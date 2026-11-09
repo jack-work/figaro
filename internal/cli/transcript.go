@@ -201,7 +201,8 @@ type transcript struct {
 	// Reused buffers, each with one owner so none can alias.
 	rowBuf      []string  // valid until the next render()
 	frameRefs   []nodeRef // the node behind each body row of the last painted frame
-	lineBuf     []string  // valid until the next lines()
+	frameBody   int
+	lineBuf     []string // valid until the next lines()
 	keepBuf     map[int]bool
 	paintBuf    []byte
 	predBuf     []string

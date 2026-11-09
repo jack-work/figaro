@@ -137,7 +137,10 @@ func (t *transcript) stickyRows() []transcriptRow {
 // The header, its rule included, never covers more of the body than it leaves
 // showing: on a short pane the question's text goes first, then the heading.
 func (t *transcript) stickyRoom() int {
-	body, _ := t.layoutNow()
+	body := t.frameBody
+	if body == 0 {
+		body, _ = t.layout(len(t.footLines()))
+	}
 	return max(body/2-1, 0)
 }
 
