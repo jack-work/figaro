@@ -2,6 +2,8 @@ package angelus_test
 
 import (
 	"encoding/json"
+	"os"
+	"strconv"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -65,6 +67,53 @@ func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
 	for _, path := range []string{"system.thinking_effort", "mantra", "notes.today"} {
 		if d, denied := boxed.Access.Refusal(path); denied {
 			t.Errorf("box %s is denied (%+v) but the guard lets a box write it", path, d)
+		}
+	}
+}
+
+const readerPolicy = `
+[roles.owner]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[roles.reader]
+grants = [{ verbs = ["read", "listen"], on = ["*"] }]
+
+[roles.editor]
+grants = [{ verbs = ["read", "listen", "set"], on = ["*"] }]
+
+[[bind]]
+role = "owner"
+principals = ["user:SELF"]
+
+[[bind]]
+role = "reader"
+principals = ["user:reader"]
+
+[[bind]]
+role = "editor"
+principals = ["user:editor"]
+`
+
+// A reader was told access.mode=write, offered an edit, and refused with
+// -32020 only when it sent the set. The mode now says what the caller's
+// verbs allow, so a client refuses before it shows an edit.
+func TestFormAccessModeFollowsTheCallersSetVerb(t *testing.T) {
+	r := newRigWith(t, readerPolicy)
+	owner := as("user", strconv.Itoa(os.Getuid()))
+	made, err := r.create(owner, "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		who  string
+		want rpc.FormMode
+	}{{"reader", rpc.FormReadOnly}, {"editor", rpc.FormWritable}} {
+		out, err := r.h[rpc.MethodForm](as("user", c.who), withAria(t, made.FigaroID, rpc.FormRequest{}))
+		if err != nil {
+			t.Fatalf("%s reading the form: %v", c.who, err)
+		}
+		if a := formAccessOf(t, out); a == nil || a.Mode != c.want {
+			t.Errorf("%s got access %+v, want mode %q", c.who, a, c.want)
 		}
 	}
 }

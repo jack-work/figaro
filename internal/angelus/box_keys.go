@@ -197,6 +197,9 @@ func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMes
 	if req.Intrinsic != "" && req.Intrinsic != figaro.IntrinsicState {
 		return &rpc.FormAccess{Mode: rpc.FormReadOnly}
 	}
+	if h.allowed(ctx, rpc.VerbSet, authz.Aria(id)) != nil {
+		return &rpc.FormAccess{Mode: rpc.FormReadOnly}
+	}
 	return &rpc.FormAccess{Mode: rpc.FormWritable, Deny: h.callerKeysOf(ctx).deny()}
 }
 
