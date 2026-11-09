@@ -52,20 +52,17 @@ done >>"$found"
 direct="$tmp/direct"
 go list -f '{{.ImportPath}} {{join .Imports " "}}' ./... >"$direct"
 
-# Rule 2 (direct): figwal must not import internal/ or api/. The tree may not
-# exist yet; no packages is a pass.
+# Rule 2 (direct, tests included): figwal imports nothing from figaro but
+# figwal.
 NRULES=$((NRULES + 1))
-if [ -d figwal ]; then
-	go list -f '{{.ImportPath}} {{join .Imports " "}}' ./figwal/... | while IFS= read -r line; do
-		importer=${line%% *}
-		deps=${line#"$importer"}
-		for dep in $deps; do
-			if under "$dep" "$MOD/internal" || under "$dep" "$MOD/api"; then
-				echo "$importer $dep figwal-imports"
-			fi
-		done
-	done >>"$found"
-fi
+go list -f '{{.ImportPath}} {{join .Imports " "}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./figwal/... | while IFS= read -r line; do
+	importer=${line%% *}
+	for dep in ${line#"$importer"}; do
+		if under "$dep" "$MOD" && ! under "$dep" "$MOD/figwal"; then
+			echo "$importer $dep figwal-imports"
+		fi
+	done
+done >>"$found"
 
 # Rule 3 (direct): internal/tool goes through api/sandbox, never exec or a pty.
 NRULES=$((NRULES + 1))
