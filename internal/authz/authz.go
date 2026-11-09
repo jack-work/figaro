@@ -43,6 +43,31 @@ type caller struct {
 	bearer  string
 }
 
+func Authenticated(authn Authenticator, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
+	return func(ctx context.Context, params json.RawMessage) (any, error) {
+		return next(withIdentity(ctx, authn.Authenticate(PrincipalOf(ctx), params)), params)
+	}
+}
+
+type identityKey struct{}
+
+func withIdentity(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, identityKey{}, &id)
+}
+
+func identityOf(ctx context.Context) (Identity, bool) {
+	id, _ := ctx.Value(identityKey{}).(*Identity)
+	if id == nil || id.Principal != PrincipalOf(ctx) {
+		return Identity{}, false
+	}
+	return *id, true
+}
+
+func FigaroOf(ctx context.Context) string {
+	id, _ := identityOf(ctx)
+	return id.FigaroID
+}
+
 func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 	p, err := peer(conn)
 	if err != nil {
@@ -161,8 +186,13 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 			if err != nil {
 				return nil, &jkrpc.Error{Code: ErrCode, Message: err.Error()}
 			}
+			id, ok := identityOf(ctx)
+			if !ok {
+				id = authn.Authenticate(PrincipalOf(ctx), params)
+				ctx = withIdentity(ctx, id)
+			}
 			req := Request{
-				Identity: authn.Authenticate(PrincipalOf(ctx), params),
+				Identity: id,
 				Subject:  subject,
 				Door:     DoorOf(ctx),
 				Method:   method,

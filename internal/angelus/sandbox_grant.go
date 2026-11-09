@@ -26,11 +26,12 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet 
 	if err != nil {
 		return form.Patch{}, err
 	}
+	figaro := authz.FigaroOf(ctx)
 	kind := ""
 	if s := snap.Lookup("system.sandbox"); s != nil {
 		kind = *s
 	}
-	if d := policies.Allow(sub, rpc.VerbUse, authz.Sandbox(kind)); !d.Allowed {
+	if d := policies.AllowFigaro(sub, figaro, rpc.VerbUse, authz.Sandbox(kind)); !d.Allowed {
 		home, ok := homeSandbox(sub.Principal)
 		if !ok || sandbox.HostPath(home) {
 			return form.Patch{}, fmt.Errorf("sandbox %q: %s", sandboxName(kind), d.Reason())
@@ -39,7 +40,7 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet 
 		return form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": pin}, nil), nil
 	}
 	if cwdSet && sandbox.HostPath(kind) {
-		if d := policies.Allow(sub, rpc.VerbUse, authz.Sandbox("local")); !d.Allowed {
+		if d := policies.AllowFigaro(sub, figaro, rpc.VerbUse, authz.Sandbox("local")); !d.Allowed {
 			return form.Patch{}, fmt.Errorf("system.cwd under sandbox %q is a path on this host, which needs use on sandbox:local: %s", sandboxName(kind), d.Reason())
 		}
 	}
@@ -165,7 +166,7 @@ func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resourc
 		}
 		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authz.DoorOf(ctx))
 	}
-	if d := p.Allow(sub, verb, res); !d.Allowed {
+	if d := p.AllowFigaro(sub, authz.FigaroOf(ctx), verb, res); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, res, d.Reason())
 	}
 	return nil
@@ -255,9 +256,10 @@ func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) 
 		}
 		return nil
 	}
+	figaro := authz.FigaroOf(ctx)
 	out := rows[:0]
 	for _, r := range rows {
-		if h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
+		if h.angelus.Policies.AllowFigaro(sub, figaro, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
 			out = append(out, r)
 		}
 	}

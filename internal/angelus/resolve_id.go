@@ -335,9 +335,10 @@ func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
 		}
 		return nil
 	}
+	figaro := authz.FigaroOf(ctx)
 	var out []string
 	for _, id := range h.angelus.Backend.MatchID(prefix, -1) {
-		if h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed {
+		if h.angelus.Policies.AllowFigaro(sub, figaro, rpc.VerbRead, authz.Aria(id)).Allowed {
 			out = append(out, id)
 			if len(out) > ambiguityList {
 				break
@@ -369,5 +370,5 @@ func (h *handlers) readableID(ctx context.Context, id string) bool {
 	if err != nil {
 		return false
 	}
-	return h.angelus.Policies.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed
+	return h.angelus.Policies.AllowFigaro(sub, authz.FigaroOf(ctx), rpc.VerbRead, authz.Aria(id)).Allowed
 }

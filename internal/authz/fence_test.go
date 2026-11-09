@@ -290,3 +290,21 @@ func TestAFenceTheCutCannotSetApartRefusesThePolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestTheStampReachesTheHandlerContext(t *testing.T) {
+	p := loaded(t, sandboxPolicy)
+	var inner context.Context
+	h := Guard(map[string]jkrpc.HandlerFunc{
+		rpc.MethodQua: func(ctx context.Context, _ json.RawMessage) (any, error) { inner = ctx; return "ok", nil },
+	}, AriaHeader{}, Enforce(p))
+	ctx := WithSubject(context.Background(), subject(me))
+	if _, err := Authenticated(AriaHeader{}, h[rpc.MethodQua])(ctx, stamped(t, "aaaa0002", figY)); err != nil {
+		t.Fatal(err)
+	}
+	if got := FigaroOf(inner); got != figY {
+		t.Fatalf("handler saw %q, want %q", got, figY)
+	}
+	if got := FigaroOf(WithSubject(inner, subject(other))); got != "" {
+		t.Fatalf("another principal inherited the stamp %q", got)
+	}
+}

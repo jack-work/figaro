@@ -177,7 +177,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		guarded[rpc.MethodList] = h.listingPeers(list)
 	}
 	for m, fn := range guarded {
-		guarded[m] = h.resolvingIDs(m, h.touching(m, fn))
+		guarded[m] = authz.Authenticated(authz.AriaHeader{}, h.resolvingIDs(m, h.touching(m, fn)))
 	}
 	return guarded
 }
