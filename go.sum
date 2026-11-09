@@ -107,8 +107,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 h1:HWRh5R2+9EifMyIHV7ZV+MIZqgz
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0/go.mod h1:JfhWUomR1baixubs02l85lZYYOm7LV6om4ceouMv45c=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/jack-work/hush v0.14.5 h1:uybNCLhqcsA+jOqiLaj1x8f3LVXoExz7gDOL9QVbjHI=
-github.com/jack-work/hush v0.14.5/go.mod h1:HIA3gGTJMyn95Z1BVEiRpqkPddVUFfj3/M77hfuTRt0=
+github.com/jack-work/hush v0.14.6 h1:b8EFhHGkSpUCi4ORSnoPlzel1S7b2ATT9Rpf/vw1pGU=
+github.com/jack-work/hush v0.14.6/go.mod h1:HIA3gGTJMyn95Z1BVEiRpqkPddVUFfj3/M77hfuTRt0=
 github.com/jack-work/jkauthz v0.2.0 h1:zKljvbEd71xclcmBLFhdx2fCH6NMwcbzumMvpcgvhBk=
 github.com/jack-work/jkauthz v0.2.0/go.mod h1:kEMjCKddE5EuaQXNE+Fm/lmViMTnmz7CTmvtIJRJ2ZM=
 github.com/jack-work/jkrpc v0.1.0 h1:qx03oLiVLuCL/2j3MDy0KLPvGs0Soja/oaQ4YlM9cVg=
