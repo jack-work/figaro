@@ -184,10 +184,7 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 		return "", fmt.Errorf("fork: %w", err)
 	}
 	if plan.compose {
-		return "", errors.New("fork: the prompt must follow `--` (the pager has no composer)")
-	}
-	if plan.prompt == "" {
-		return "", errors.New("fork: the prompt must follow `--` (a bare fork has no reply to show here; use the shell)")
+		return "", errors.New("fork: the prompt must follow `--`")
 	}
 	if plan.spec == "" {
 		plan.spec = in.currentID()
@@ -210,16 +207,19 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	if err != nil {
 		return "", fmt.Errorf("fork: forked %s but could not reach it: %w", branch, err)
 	}
-	fcli, err := sdk.DialAria(ep, nil)
-	if err != nil {
-		return "", fmt.Errorf("fork: forked %s but could not connect: %w", ariaName(branch), err)
-	}
-	if _, _, err := quaWith(ctx, fcli, plan.opts.outfit.request(plan.prompt)); err != nil {
+	done := fmt.Sprintf("forked %s at %s into %s", ariaName(out.Parent), out.At, ariaName(branch))
+	if plan.prompt != "" {
+		fcli, err := sdk.DialAria(ep, nil)
+		if err != nil {
+			return "", fmt.Errorf("fork: forked %s but could not connect: %w", ariaName(branch), err)
+		}
+		if _, _, err := quaWith(ctx, fcli, plan.opts.outfit.request(plan.prompt)); err != nil {
+			fcli.Close()
+			return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", ariaName(branch), err)
+		}
 		fcli.Close()
-		return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", ariaName(branch), err)
+		done = fmt.Sprintf("forked %s at %s, prompting %s", ariaName(out.Parent), out.At, ariaName(branch))
 	}
-	fcli.Close()
-	done := fmt.Sprintf("forked %s at %s, prompting %s", ariaName(out.Parent), out.At, ariaName(branch))
 	if plan.opts.stay {
 		return done + " (:listen " + ariaName(branch) + " to follow)", nil
 	}

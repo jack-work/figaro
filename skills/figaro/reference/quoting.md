@@ -111,9 +111,9 @@ jump (`:12`, `:12.3`, `:0`).
 
 | Line | Does |
 |---|---|
-| `:send [<id>] -- <text>` | submit; the transcript does NOT follow another figaro |
-| `:fork [<id>[:<turn>]] -- <text>` | branch, prompt it, ATTEND it and show it |
-| `:fork --stay -- <text>` | branch and prompt it, attendance and screen untouched |
+| `:send [<id>] -- <text>` | submit; the transcript does NOT follow another figaro. `-f` is taken and ignored: nothing here streams |
+| `:fork [<id>[:<turn>]] [-- <text>]` | branch (and prompt it), ATTEND it and show it |
+| `:fork -f [-- <text>]` | branch (and prompt it), attendance and screen untouched; `--stay` is the same |
 | `:new [-O <outfits>] [-S k=v] [-D <keys>]` | mint a figaro (the default outfit unless `-O`), ATTEND it and show it; a prompt or `-C` goes through the shell |
 | `:listen <id>` | show that figaro; the shell's binding does not move |
 | `:attend <id>` | show it AND bind this shell to it |
@@ -122,7 +122,7 @@ jump (`:12`, `:12.3`, `:0`).
 | `:next [kind]` · `:prev [kind]` | step to the next / previous stop; `kind` is `comment`, `delta`, `fork`, `turn` or `block`. With no kind it is `^N` / `^P`. `:previous` is `:prev` |
 
 The difference is the binding, and it is the only difference. `:fork` without
-`--stay` does both, on purpose: no single command shows one figaro while your
+`-f` does both, on purpose: no single command shows one figaro while your
 shell attends another.
 
 Flags that mean another renderer or another process (`-x`, `-r`, `-v`, `-j`,

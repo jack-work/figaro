@@ -276,21 +276,18 @@ func prepareSend(args []string, s surface) (sendPlan, error) {
 	if err != nil {
 		return sendPlan{}, err
 	}
+	if !s.forgets {
+		plan.opts.forget = false
+	}
 	return plan, s.refuse(plan.opts)
 }
 
 func prepareFork(args []string, s surface) (forkPlan, error) {
-	plan, err := planFork(args)
+	plan, err := planForkOn(args, s)
 	if err != nil {
 		return forkPlan{}, err
 	}
-	if err := s.refuse(plan.opts); err != nil {
-		return forkPlan{}, err
-	}
-	if !s.forgets && plan.opts.forget {
-		return forkPlan{}, errors.New("-f is a shell notion (the transcript is the stream); --stay mints and prompts without following")
-	}
-	return plan, nil
+	return plan, s.refuse(plan.opts)
 }
 
 type sendPlan struct {

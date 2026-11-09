@@ -87,13 +87,6 @@ func TestPagerRefusesWhatItCannotHonour(t *testing.T) {
 			t.Errorf("fork %v refused at a shell: %v", argv, err)
 		}
 	}
-	// -f is a stream's notion: the pager is one.
-	if _, err := prepareFork([]string{"-f", "--", "hi"}, pagerSurface); err == nil {
-		t.Error("the pager accepted fork -f")
-	}
-	if _, err := prepareFork([]string{"-f", "--", "hi"}, shellSurface); err != nil {
-		t.Errorf("the shell refused fork -f: %v", err)
-	}
 	for _, argv := range [][]string{
 		{"--", "hi"},
 		{"abcd1234", "--", "hi"},
@@ -135,18 +128,26 @@ func TestForkBindingIntent(t *testing.T) {
 	}
 }
 
-func TestCommandFork_RefusesForgetAndNoPrompt(t *testing.T) {
-	p := newInputProbe(t, true)
-	_, err := p.in.commandFork(context.Background(), []string{"-f", "--", "hello"})
-	if err == nil || !strings.Contains(err.Error(), "-f") || !strings.Contains(err.Error(), "--stay") {
-		t.Fatalf("-f: %v", err)
+// In the pager nothing streams for -f to forget: on fork it keeps attendance
+// where it is, as --stay does, with or without a prompt; on send it is taken
+// and ignored. At a shell -f is still forget.
+func TestThePagerTakesFAsStay(t *testing.T) {
+	for _, argv := range [][]string{{"-f", "--", "hi"}, {"-f"}, {"--forget", "abcd1234"}, {"--stay", "--", "hi"}} {
+		plan, err := prepareFork(argv, pagerSurface)
+		if err != nil || !plan.opts.stay || plan.opts.forget {
+			t.Errorf("pager fork %v: stay=%v forget=%v err=%v, want stay", argv, plan.opts.stay, plan.opts.forget, err)
+		}
 	}
-	_, err = p.in.commandFork(context.Background(), []string{"abcd1234"})
-	if err == nil || !strings.Contains(err.Error(), "--") {
-		t.Fatalf("no prompt: %v", err)
+	plan, err := prepareFork([]string{"--", "hi"}, pagerSurface)
+	if err != nil || plan.opts.stay {
+		t.Errorf("pager fork without -f: stay=%v err=%v, want it to attend", plan.opts.stay, err)
 	}
-	if plan, err := planFork([]string{"--stay", "--", "x"}); err != nil || !plan.opts.stay {
-		t.Fatalf("--stay: %+v %v", plan, err)
+	if plan, err := prepareFork([]string{"-f", "--", "hi"}, shellSurface); err != nil || !plan.opts.forget || plan.opts.stay {
+		t.Errorf("shell fork -f: forget=%v stay=%v err=%v, want forget", plan.opts.forget, plan.opts.stay, err)
+	}
+	send, err := prepareSend([]string{"-f", "--", "hi"}, pagerSurface)
+	if err != nil || send.opts.forget || send.prompt != "hi" {
+		t.Errorf("pager send -f: %+v %v, want it taken and ignored", send, err)
 	}
 }
 

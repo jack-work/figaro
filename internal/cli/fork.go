@@ -27,10 +27,16 @@ type forkPlan struct {
 func (p forkPlan) hasPrompt() bool { return p.prompt != "" || p.compose }
 
 // planFork never touches the daemon.
-func planFork(args []string) (forkPlan, error) {
+func planFork(args []string) (forkPlan, error) { return planForkOn(args, shellSurface) }
+
+// Where nothing streams to forget, -f keeps attendance where it is: --stay.
+func planForkOn(args []string, s surface) (forkPlan, error) {
 	opts, rest, err := extractForkFlags(args)
 	if err != nil {
 		return forkPlan{}, err
+	}
+	if !s.forgets && opts.forget {
+		opts.forget, opts.stay = false, true
 	}
 	if opts.stdin {
 		return forkPlan{}, errors.New("--stdin is for send and new")
