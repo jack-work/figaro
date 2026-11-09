@@ -54,7 +54,7 @@ func openReducible(t *testing.T, dir string, segSize int64) *Log {
 func TestReducible_RepeatedEmptyBaseOneForkKeepsInitial(t *testing.T) {
 	dir := t.TempDir()
 	root := openReducible(t, dir, 4096)
-	child, err := root.Fork(1, "child", "continuation")
+	child, err := forkChild(root, 1, "child")
 	if err != nil {
 		root.Close()
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestReducible_RepeatedEmptyBaseOneForkKeepsInitial(t *testing.T) {
 	}
 
 	child = openReducible(t, filepath.Join(dir, "child"), 4096)
-	grandchild, err := child.Fork(1, "grandchild", "continuation")
+	grandchild, err := forkChild(child, 1, "grandchild")
 	if err != nil {
 		child.Close()
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestReducible_SingleSegmentEmptyWatermark(t *testing.T) {
 func TestReducible_ForkEmptyRoot(t *testing.T) {
 	l := openReducible(t, t.TempDir(), 48)
 	defer l.Close()
-	child, err := l.Fork(1, "child")
+	child, err := forkChild(l, 1, "child")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestReducible_Fork(t *testing.T) {
 	}
 
 	const at = uint64(7)
-	child, err := l.Fork(at, "child")
+	child, err := forkChild(l, at, "child")
 	if err != nil {
 		t.Fatalf("fork: %v", err)
 	}

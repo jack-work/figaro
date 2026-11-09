@@ -598,49 +598,6 @@ func (l *Log) SegmentBaseIndexes() []uint64 {
 	return out
 }
 
-// RangeOwn iterates this log's own entries only, holding the read lock for
-// the duration so new writes cannot append while a caller materializes.
-func (l *Log) RangeOwn(from uint64, fn func(idx uint64, payload []byte) error) error {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	walk := func(s *segment.Segment) error {
-		base := s.BaseIndex()
-		count := s.Count()
-		for i := uint64(0); i < count; i++ {
-			idx := base + i
-			if idx < from {
-				continue
-			}
-			payload, err := s.ReadIndex(i)
-			if err != nil {
-				return err
-			}
-			if err := fn(idx, payload); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	for _, ss := range l.sealed {
-		if ss.LastIndex() < from {
-			continue
-		}
-		s, err := l.openSealed(ss)
-		if err != nil {
-			return err
-		}
-		if err := walk(s); err != nil {
-			return err
-		}
-	}
-	if l.active != nil {
-		if err := walk(l.active); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (l *Log) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

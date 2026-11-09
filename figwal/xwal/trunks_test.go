@@ -403,10 +403,6 @@ func TestTrunks_Owner(t *testing.T) {
 			t.Fatalf("Owner(%d) = %+v err=%v, want trunk %s", lt, o, err, conv)
 		}
 	}
-	// OwnerTrunk still resolves the trunk id (empty for ceremonial owners).
-	if got, _ := f.OwnerTrunk(conv, 3); got != conv {
-		t.Fatalf("OwnerTrunk(3) = %q, want %s", got, conv)
-	}
 }
 
 func TestTrunks_Remove(t *testing.T) {

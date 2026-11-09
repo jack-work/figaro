@@ -438,15 +438,6 @@ func (c *Cache[U]) DropNode(node string) {
 	}
 }
 
-// RangeAt serves ONE NODE with no lineage, for a tenant whose data has no
-// fork structure at this layer.
-func (c *Cache[U]) RangeAt(node string, from, to uint64) ([]U, error) {
-	if to <= from {
-		return nil, nil
-	}
-	return c.rangeInNode(Coord{Node: node, From: from, To: to})
-}
-
 // split maps (from..to] onto per-node coords by fork base; lineage is root-first.
 func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 	var cuts []Coord

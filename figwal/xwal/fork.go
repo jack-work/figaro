@@ -235,10 +235,6 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 	return trunk, nil
 }
 
-func (t *Trunks) SpawnChild(parent TrunkID) (TrunkID, error) {
-	return t.SpawnChildKind(parent, "conversation")
-}
-
 // SpawnChildKind: the parent is not written, not frozen, and stays
 // appendable; a fork snapshots the parent's channels at their bases and later
 // parent appends belong to the parent alone.

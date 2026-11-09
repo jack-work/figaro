@@ -94,7 +94,7 @@ func TestHeaderFold_AcrossAForkTheNaivePairingIsWrong(t *testing.T) {
 	// fork base that live in the parent's EARLIER segments -- the ones the
 	// child knows nothing about.
 	const cut = 30
-	child, err := parent.Fork(cut, "branch")
+	child, err := forkChild(parent, cut, "branch")
 	if err != nil {
 		parent.Close()
 		t.Fatal(err)

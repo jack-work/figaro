@@ -325,10 +325,6 @@ func (x *XWAL) ChannelForkBase(name string) (uint64, bool) {
 	return l.ForkBase(), true
 }
 
-// ChannelNames lists the channels in declared order, from the manifest. No
-// channel is opened.
-func (x *XWAL) ChannelNames() []string { return append([]string(nil), x.channels().order...) }
-
 // Channels opens every channel to read bounds; ChannelBounds is the
 // one-channel question.
 func (x *XWAL) Channels() []ChannelInfo {

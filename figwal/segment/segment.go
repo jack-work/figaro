@@ -252,9 +252,6 @@ func (s *Segment) WriteHeader(payload []byte) error {
 // segment has none.
 func (s *Segment) Header() []byte { return s.header }
 
-// HasHeader reports whether the segment carries a block-0 header.
-func (s *Segment) HasHeader() bool { return s.hasHeader }
-
 // ReadAt is the offset-based debug path; ReadIndex is the fast path.
 func (s *Segment) ReadAt(offset int64) ([]byte, error) {
 	nextOff := s.nextOffsetAfter(offset)

@@ -139,15 +139,3 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	}
 	return disk.SyncDir(dir)
 }
-
-// DetachAll detaches every node in the set. Order does not matter: each
-// absorbs from the chain as it stands when its turn comes, and an ancestor
-// that has already detached still serves the same bytes.
-func (t *Trunks) DetachAll(nodes []string) error {
-	for _, n := range nodes {
-		if err := t.Detach(n); err != nil {
-			return err
-		}
-	}
-	return nil
-}

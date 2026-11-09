@@ -45,7 +45,7 @@ func BenchmarkReplayCachedVsDisk(b *testing.B) {
 			b.Run(fmt.Sprintf("disk/n=%d/size=%d", n, size), func(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					if err := l.RangeOwn(0, func(uint64, []byte) error { return nil }); err != nil {
+					if err := l.inner.Range(1, func(uint64, []byte) error { return nil }); err != nil {
 						b.Fatal(err)
 					}
 				}

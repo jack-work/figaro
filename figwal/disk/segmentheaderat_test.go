@@ -114,7 +114,7 @@ func TestSegmentHeaderAt_AcrossAForkItAgreesWhereThePairingDoesNot(t *testing.T)
 	}
 
 	const cut = 30
-	child, err := parent.Fork(cut, "branch")
+	child, err := forkChild(parent, cut, "branch")
 	if err != nil {
 		parent.Close()
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestSegmentHeaderAt_TwoLevelsOfForkGrandchildReadsGrandparent(t *testing.T)
 	}
 
 	const cut1 = 30
-	child, err := gp.Fork(cut1, "child")
+	child, err := forkChild(gp, cut1, "child")
 	if err != nil {
 		gp.Close()
 		t.Fatal(err)
@@ -188,7 +188,7 @@ func TestSegmentHeaderAt_TwoLevelsOfForkGrandchildReadsGrandparent(t *testing.T)
 		}
 	}
 	const cut2 = 36
-	grand, err := child.Fork(cut2, "grand")
+	grand, err := forkChild(child, cut2, "grand")
 	if err != nil {
 		child.Close()
 		t.Fatal(err)
@@ -252,7 +252,7 @@ func TestSegmentHeaderAt_OnAFrozenBranchPoint(t *testing.T) {
 		}
 	}
 	const cut = 30
-	child, err := parent.Fork(cut, "branch")
+	child, err := forkChild(parent, cut, "branch")
 	if err != nil {
 		t.Fatal(err)
 	}

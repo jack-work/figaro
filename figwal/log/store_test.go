@@ -1,7 +1,6 @@
 package log
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -21,14 +20,14 @@ func TestStoreSiblingForksSharePhysicalPrefixAndSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	a, err := root.Fork(3, "a")
+	a, err := forkChild(root, 3, "a", Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}
-	b, err := root.Fork(3, "b")
+	b, err := forkChild(root, 3, "b", Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,9 +56,6 @@ func TestStoreSiblingForksSharePhysicalPrefixAndSnapshot(t *testing.T) {
 	}
 	if got, err := a.Read(2); err != nil || string(got) != `{"i":2}` {
 		t.Fatalf("shared prefix read = %q, %v", got, err)
-	}
-	if _, err := a.Fork(3, "nested"); !errors.Is(err, ErrSharedMutation) {
-		t.Fatalf("shared fork error = %v, want ErrSharedMutation", err)
 	}
 }
 

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/figwal/segment"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/jack-work/figaro/figwal/disk"
+	"github.com/jack-work/figaro/figwal/segment"
 )
 
 func TestCachedRoundTrip(t *testing.T) {
@@ -156,25 +158,11 @@ func TestCachedForkSplitsCache(t *testing.T) {
 	for i := uint64(1); i <= 6; i++ {
 		c.Write(i, []byte(fmt.Sprintf(`{"i":%d}`, i)))
 	}
-	child, err := c.Fork(4, "alt")
+	child, err := forkChild(c, 4, "alt", Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer child.Close()
-	// Parent now only sees [1, 3] in its own snapshot.
-	if c.LastIndex() != 3 {
-		t.Fatalf("parent LastIndex=%d", c.LastIndex())
-	}
-	for i := uint64(1); i <= 3; i++ {
-		got, err := c.Read(i)
-		if err != nil {
-			t.Fatalf("parent read %d: %v", i, err)
-		}
-		want := fmt.Sprintf(`{"i":%d}`, i)
-		if string(got) != want {
-			t.Fatalf("parent[%d]=%q want %q", i, got, want)
-		}
-	}
 	// Child reads of the prefix fall through to parent snapshot.
 	for i := uint64(1); i <= 3; i++ {
 		got, err := child.Read(i)
@@ -202,7 +190,7 @@ func TestCachedEmptyParentChildFirstIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	child, err := c.Fork(1, "child")
+	child, err := forkChild(c, 1, "child", Options{Codec: segment.BinaryCodec{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,59 +248,6 @@ func TestCachedRangeStopsAtUntruncatedParentBoundary(t *testing.T) {
 	}
 }
 
-// A fork moves the parent's suffix into another directory, so a Snapshot
-// taken before a fork can only serve what the parent still owns; a topology
-// mutation demands a private log.
-func TestSnapshotAcrossAForkServesTheKeptPrefix(t *testing.T) {
-	dir := t.TempDir()
-	c, err := Open(dir, Options{Codec: segment.JSONLCodec{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	for i := uint64(1); i <= 8; i++ {
-		if err := c.Write(i, []byte(fmt.Sprintf(`{"i":%d}`, i))); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := c.Sync(); err != nil {
-		t.Fatal(err)
-	}
-	before := c.Snapshot()
-	child, err := c.Fork(4, "alt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer child.Close()
-
-	// The kept prefix reads identically through the pre-fork snapshot.
-	for i := uint64(1); i <= 3; i++ {
-		got, err := before.Read(i)
-		if err != nil {
-			t.Fatalf("pre-fork snapshot lost kept record %d: %v", i, err)
-		}
-		if want := fmt.Sprintf(`{"i":%d}`, i); string(got) != want {
-			t.Fatalf("pre-fork snapshot read %d = %s, want %s", i, got, want)
-		}
-	}
-	// The moved suffix is gone from the parent's view, and the pre-fork
-	// snapshot does not pretend otherwise: it lives in the old future now,
-	// which serves it byte for byte.
-	if _, err := before.Read(4); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("pre-fork snapshot read of a moved record = %v, want ErrNotFound", err)
-	}
-	oldFuture, err := Open(filepath.Join(dir, filepath.Base(dir)),
-		Options{Codec: segment.JSONLCodec{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer oldFuture.Close()
-	got, err := oldFuture.Read(4)
-	if err != nil || string(got) != `{"i":4}` {
-		t.Fatalf("old future read 4 = %q, %v", got, err)
-	}
-}
-
 // Sibling forks read their shared prefix through ONE parent handle rather
 // than through copies of it: nothing below the fork point is duplicated in
 // memory, because nothing below it is in memory at all until it is read.
@@ -323,7 +258,7 @@ func TestCachedSiblingForksShareTheParentHandle(t *testing.T) {
 	for i := uint64(1); i <= 4; i++ {
 		c.Write(i, []byte(fmt.Sprintf(`{"i":%d}`, i)))
 	}
-	a, err := c.Fork(3, "a")
+	a, err := forkChild(c, 3, "a", Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +268,7 @@ func TestCachedSiblingForksShareTheParentHandle(t *testing.T) {
 	}
 	// N-ary: a branch point accepts a second sibling at the same split
 	// point, reading the same trunk.
-	b, err := c.Fork(3, "b")
+	b, err := forkChild(c, 3, "b", Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		t.Fatalf("second sibling fork should succeed, got %v", err)
 	}
@@ -474,4 +409,23 @@ func BenchmarkCachedRangeFull(b *testing.B) {
 			b.Fatalf("seen=%d", seen)
 		}
 	}
+}
+
+func forkChild(parent *Log, base uint64, name string, opts Options) (*Log, error) {
+	if err := parent.Sync(); err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(parent.inner.Dir(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".fork"), fmt.Appendf(nil, "base=%d\n", base), 0o644); err != nil {
+		return nil, err
+	}
+	opts.Parent = parent.inner
+	inner, err := disk.Open(dir, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Log{inner: inner, maxLag: parent.maxLag}, nil
 }

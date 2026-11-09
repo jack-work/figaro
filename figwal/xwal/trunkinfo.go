@@ -23,28 +23,6 @@ func (t *Trunks) ownerOf(node string, atMainLT uint64) (string, error) {
 	return "", nil
 }
 
-// OwnerTrunk is the trunk of the deepest ancestor whose own segments contain atMainLT.
-func (t *Trunks) OwnerTrunk(trunk string, atMainLT uint64) (string, error) {
-	endRead, err := t.beginTrackedRead()
-	if err != nil {
-		return "", err
-	}
-	defer endRead()
-	branch, err := t.headKey(trunk)
-	if err != nil {
-		return "", err
-	}
-	ob, err := t.ownerOf(branch, atMainLT)
-	if err != nil {
-		return "", err
-	}
-	n := t.node(ob)
-	if n == nil {
-		return "", fmt.Errorf("xwal: no owner node for main-LT %d on trunk %q", atMainLT, trunk)
-	}
-	return n.Trunk, nil
-}
-
 // Owner: an LT owned by the root or a stump is ceremonial, so a fork there
 // spawns a fresh child rather than re-splitting.
 type Owner struct {

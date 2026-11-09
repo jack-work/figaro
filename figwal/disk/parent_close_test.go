@@ -14,7 +14,7 @@ func TestAutoOpenedParentClosesWithChild(t *testing.T) {
 	if err := parent.Write(1, []byte("one")); err != nil {
 		t.Fatal(err)
 	}
-	child, err := parent.Fork(2, "child")
+	child, err := forkChild(parent, 2, "child")
 	if err != nil {
 		t.Fatal(err)
 	}

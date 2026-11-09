@@ -81,7 +81,7 @@ func TestScanFromEndAcrossFork(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	child, err := root.Fork(4, "alternative", "continuation")
+	child, err := forkChild(root, 4, "alternative")
 	if err != nil {
 		t.Fatal(err)
 	}

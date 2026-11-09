@@ -295,50 +295,6 @@ func (l *Log) Hash(idx uint64) (string, error) {
 	return l.inner.HashPayload(payload)
 }
 
-// Fork: see disk.Log.Fork. The child reads its inherited prefix through the
-// parent handle.
-func (l *Log) Fork(atIdx uint64, name string, oldFutureNameOpt ...string) (*Log, error) {
-	if l.shared {
-		return nil, ErrSharedMutation
-	}
-	if err := l.Sync(); err != nil {
-		return nil, err
-	}
-	l.wmu.Lock()
-	defer l.wmu.Unlock()
-	if pend := l.pend.Load(); pend != nil && len(pend.entries) > 0 {
-		return nil, fmt.Errorf("log fork: raced a concurrent write")
-	}
-
-	childInner, err := l.inner.Fork(atIdx, name, oldFutureNameOpt...)
-	if err != nil {
-		return nil, err
-	}
-	return &Log{inner: childInner, maxLag: l.maxLag}, nil
-}
-
-// ForkRehome forks with an explicit list of children to move into the old
-// future. It has the same semantics as Fork.
-func (l *Log) ForkRehome(atIdx uint64, name, oldFutureName string, rehome []string) (*Log, error) {
-	if l.shared {
-		return nil, ErrSharedMutation
-	}
-	if err := l.Sync(); err != nil {
-		return nil, err
-	}
-	l.wmu.Lock()
-	defer l.wmu.Unlock()
-	if pend := l.pend.Load(); pend != nil && len(pend.entries) > 0 {
-		return nil, fmt.Errorf("log fork: raced a concurrent write")
-	}
-
-	childInner, err := l.inner.ForkRehome(atIdx, name, oldFutureName, rehome)
-	if err != nil {
-		return nil, err
-	}
-	return &Log{inner: childInner, maxLag: l.maxLag}, nil
-}
-
 // TruncateFront drops entries below beforeIdx on disk. Only this Log's
 // own entries are affected; parent entries are untouched.
 func (l *Log) TruncateFront(beforeIdx uint64) error {
@@ -384,16 +340,6 @@ func (l *Log) Disk() *disk.Log { return l.inner }
 func (l *Log) ForkBase() uint64 { return l.inner.ForkBase() }
 
 func (l *Log) Absent() bool { return l.inner.Absent() }
-
-// RangeOwn delegates an own-entry iteration for topology operations. It sees
-// only what is on disk; callers that may have unsynced entries use Range.
-func (l *Log) RangeOwn(from uint64, fn func(idx uint64, payload []byte) error) error {
-	return l.inner.RangeOwn(from, fn)
-}
-
-func (l *Log) ChildForkBases() (map[string]uint64, error) {
-	return l.inner.ChildForkBases()
-}
 
 // StateAt reconstructs a header-mode state from the on-disk watermark.
 // The disk fold must see every appended patch, so pending entries are

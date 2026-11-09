@@ -80,15 +80,6 @@ func (t *Trunks) StumpLastTSKey(name string) (string, bool) { return name, t.nod
 
 func (t *Trunks) LastTSAt(key string) int64 { return t.lastTSOf(key) }
 
-// StumpLastTS is LastTS for a named stump (legacy forms).
-func (t *Trunks) StumpLastTS(name string) int64 {
-	key, ok := t.StumpLastTSKey(name)
-	if !ok {
-		return 0
-	}
-	return t.LastTSAt(key)
-}
-
 func (t *Trunks) lastTSOf(key string) int64 {
 	n := t.ltsReg.counter(key)
 	if n.hydrated.Load() {

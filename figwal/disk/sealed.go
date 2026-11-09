@@ -106,25 +106,3 @@ func (l *Log) openSealed(ss *sealedSeg) (*segment.Segment, error) {
 	}
 	return ss.open(l.codec, l.opts.OnSegmentOpen != nil)
 }
-
-// materializeLocked opens every sealed segment: the topology operations
-// reason about the whole log, so they take the eager path rather than an
-// on-demand open in the middle of a committed plan. Write lock held.
-func (l *Log) materializeLocked() error {
-	for _, ss := range l.sealed {
-		if _, err := l.openSealed(ss); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// sealedSegments returns every sealed segment, opened. Only for callers that
-// are already materializing (fork).
-func (l *Log) sealedSegments() []*segment.Segment {
-	out := make([]*segment.Segment, 0, len(l.sealed))
-	for _, ss := range l.sealed {
-		out = append(out, ss.loaded())
-	}
-	return out
-}
