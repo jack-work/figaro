@@ -56,7 +56,7 @@ figaro succeed @reviewer -O reviewer --turn head -- "You hold the review seat no
 figaro send -f @reviewer -- "Review the next change."
 ```
 
-The comments are the handles figaro printed, and `reviewer` is `~/.config/figaro/outfits/reviewer.toml`, a `[system]` table holding one `credo`. The fork keeps turn 1 and asks a new turn 2. The credo is fixed at birth, so the outfit goes on with `succeed` (or `fork -O`): the successor is a fork of the reviewer that carries its whole history under the new credo, and the predecessor retires beneath it. `figaro ls` then shows:
+The comments are the handles figaro printed, and `reviewer` is `~/.config/figaro/outfits/reviewer.toml`, a `[system]` table holding one `credo`. The fork keeps turn 1 and asks a new turn 2. Instructions are written into a figaro's history early, and a change of instructions is appended so that it occludes the old ones rather than rewriting them; forks taken at earlier points keep their prompt caches. Here the outfit goes on with `succeed` (or `fork -O`): the successor is a fork of the reviewer that carries its whole history with the new credo on top, and the predecessor retires beneath it. `figaro ls` then shows:
 
 ```
 ├─○ reviewer @freeway-yiddish                             @freeway-yiddish  role → dynamite-boiler
@@ -67,6 +67,8 @@ The comments are the handles figaro printed, and `reviewer` is `~/.config/figaro
 ```
 
 Anything that sends to `@reviewer` reaches `dynamite-boiler` now, and its successor later.
+
+In practice a hierarchy doubles as an agent management structure: roles, outfits and inheritance let you define complex relationships across a large cast of figaros.
 
 ## Scale and durability
 
