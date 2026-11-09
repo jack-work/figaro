@@ -40,6 +40,34 @@ figaro set --id @repo stats "$(curl -s https://api.github.com/repos/jack-work/fi
 
 [Methods](skills/figaro/reference/methods.md) are small, fast models that write form data on hooks; the first one picks the reasoning effort for each message. The Go SDK (`sdk/`) reads, patches and follows forms from your own code.
 
+## Hierarchies, not factories
+
+figaro doesn't hand each task to a fresh worker and throw it away. Figaros grow into hierarchies with a clear leader: its history and context are shared with the figaros under it, and each of them can change what it inherited. The unit keeps running between tasks and follows the way your work actually goes, rather than a pipeline drawn in advance.
+
+Three verbs grow a hierarchy: `fork` branches at any turn, `promote` raises a branch, and `succeed` hands a seat to a fork of whoever holds it. When a branch produces something worth keeping, cast it into a role (a named form that always reaches its current holder) and dress it with an outfit, which sets the credo, rules and model it runs under:
+
+```bash
+figaro new -- "Read internal/store and summarize how a fork is written."    # tubeless-obtain
+figaro send -- "List the fsync calls on that path."
+figaro fork tubeless-obtain:2 -- "Review that path for a missed fsync."    # dioxide-fiddle
+figaro form new -S name=reviewer
+figaro cast dioxide-fiddle @reviewer
+figaro succeed @reviewer -O reviewer --turn head -- "You hold the review seat now."
+figaro send -f @reviewer -- "Review the next change."
+```
+
+The comments are the handles figaro printed, and `reviewer` is `~/.config/figaro/outfits/reviewer.toml`, a `[system]` table holding one `credo`. The fork keeps turn 1 and asks a new turn 2. The credo is fixed at birth, so the outfit goes on with `succeed` (or `fork -O`): the successor is a fork of the reviewer that carries its whole history under the new credo, and the predecessor retires beneath it. `figaro ls` then shows:
+
+```
+├─○ reviewer @freeway-yiddish                             @freeway-yiddish  role → dynamite-boiler
+└─○ form @kamikaze-feline                                 @kamikaze-feline  unbound
+  └─○ Read internal/store and summarize how a fork..      tubeless-obtain   4 msgs
+    └─▸ Read internal/store and summarize how a fork..    dynamite-boiler   10 msgs
+      └─○ SUCCEEDED: Read inte.. [retired, reaps in 10m]  dioxide-fiddle    6 msgs
+```
+
+Anything that sends to `@reviewer` reaches `dynamite-boiler` now, and its successor later.
+
 ## Scale and durability
 
 - About 1,700 figaros on my machine, and the angelus sits around 320 MB under a 512 MB soft limit (`[memory] soft_limit_mb`).
