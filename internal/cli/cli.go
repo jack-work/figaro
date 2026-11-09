@@ -98,6 +98,7 @@ func Run(progName string, args []string) {
 		figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
 		telemetryDir = loaded.TelemetryDir(boot.StateDir())
 	}
+	figOtel.SetServiceVersion(boot.ServiceVersion())
 	shutdown, err := figOtel.Init(ctx, telemetryDir)
 	if err != nil {
 		fmt.Fprintf(stderrw, "warning: otel init: %s\n", err)

@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,11 @@ var (
 // BuildRevision is empty when unknown; callers must skip the comparison rather
 // than treat it as a mismatch.
 func BuildRelease() string { return semver }
+
+func ServiceVersion() string {
+	v, _ := Version()
+	return cmp.Or(v.Release, v.Revision)
+}
 
 func BuildRevision() string {
 	if commit != "" {

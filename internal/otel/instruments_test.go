@@ -127,3 +127,19 @@ func TestRequestDuration_ExplicitBoundaries(t *testing.T) {
 	assert.Equal(t, []float64{250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000},
 		m.Data.DataPoints[0].Bounds)
 }
+
+// figscope compares pager latency by release, and reads the release off the
+// resource rather than off each point.
+func TestTheResourceNamesTheVersion(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	figOtel.SetServiceVersion("9.9.9-test")
+	shutdown, err := figOtel.Init(ctx, dir)
+	require.NoError(t, err)
+	figOtel.RecordRPC(ctx, time.Millisecond)
+	require.NoError(t, shutdown(ctx))
+
+	data, err := os.ReadFile(filepath.Join(dir, "metrics.jsonl"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"Key":"service.version","Value":{"Type":"STRING","Value":"9.9.9-test"}`)
+}

@@ -185,6 +185,14 @@ func processRole() string {
 	return "cli"
 }
 
+var serviceVersion = "unknown"
+
+func SetServiceVersion(v string) {
+	if v != "" {
+		serviceVersion = v
+	}
+}
+
 // configuredLevel is the [telemetry] level from config; FIGARO_LOG_LEVEL
 // overrides it.
 var configuredLevel string
@@ -203,6 +211,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 
 	res, err := resource.New(ctx, resource.WithHost(), resource.WithAttributes(
 		semconv.ServiceNameKey.String("figaro"),
+		semconv.ServiceVersionKey.String(serviceVersion),
 		attribute.String("figaro.process", processRole()),
 	))
 	if err != nil {
