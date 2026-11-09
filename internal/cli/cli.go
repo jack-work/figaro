@@ -103,7 +103,13 @@ func Run(progName string, args []string) {
 	if err != nil {
 		fmt.Fprintf(stderrw, "warning: otel init: %s\n", err)
 	} else {
-		defer shutdown(ctx)
+		flush := sync.OnceFunc(func() {
+			ctx, cancel := context.WithTimeout(ctx, cliTelemetryFlush)
+			defer cancel()
+			shutdown(ctx)
+		})
+		atExit(flush)
+		defer flush()
 	}
 
 	if len(args) == 0 && bareOpensPager() {
@@ -132,6 +138,8 @@ func Run(progName string, args []string) {
 	code := router.Run(args)
 	exitAt(code)
 }
+
+const cliTelemetryFlush = 2 * time.Second
 
 func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r := cmdkit.NewRouter(progName)
