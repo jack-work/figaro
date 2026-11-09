@@ -28,6 +28,7 @@ var methodVerbs = map[string]Verb{
 	MethodTurnDone:   VerbListen,
 	MethodFormDelta:  VerbListen,
 	MethodFollow:     VerbListen,
+	MethodUnfollow:   VerbListen,
 	MethodAriaClosed: VerbListen,
 	MethodDoorLapsed: VerbListen,
 

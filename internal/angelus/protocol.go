@@ -167,6 +167,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		methods[m] = h.ariaMethod(m)
 	}
 	methods[rpc.MethodFollow] = h.ariaMethod(rpc.MethodFollow)
+	methods[rpc.MethodUnfollow] = h.unfollow
 	guarded := authz.Guard(methods, authz.AriaHeader{}, policy)
 	if list, ok := guarded[rpc.MethodList]; ok {
 		guarded[rpc.MethodList] = h.listingPeers(list)
@@ -235,6 +236,18 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		}
 		return hb.route(ctx, method, dressed)
 	}
+}
+
+func (h *handlers) unfollow(ctx context.Context, params json.RawMessage) (any, error) {
+	id := rpc.AriaOf(params)
+	if id == "" {
+		return nil, fmt.Errorf("%s: no %s: an aria method names its aria", rpc.MethodUnfollow, rpc.AriaKey)
+	}
+	resp := rpc.UnfollowResponse{FigaroID: id}
+	if f := followerOf(ctx); f != nil {
+		resp.Released = f.unfollow(id)
+	}
+	return resp, nil
 }
 
 func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, error) {

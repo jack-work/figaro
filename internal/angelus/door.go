@@ -55,6 +55,22 @@ func (f *follower) follow(hb *ariaHub) {
 	}
 }
 
+func (f *follower) unfollow(id string) bool {
+	f.mu.Lock()
+	var held []*ariaHub
+	for hb := range f.hubs {
+		if hb.id == id {
+			held = append(held, hb)
+			delete(f.hubs, hb)
+		}
+	}
+	f.mu.Unlock()
+	for _, hb := range held {
+		hb.remove(f)
+	}
+	return len(held) > 0
+}
+
 func (f *follower) forget(hb *ariaHub) {
 	f.mu.Lock()
 	delete(f.hubs, hb)

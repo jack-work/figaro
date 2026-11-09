@@ -382,6 +382,16 @@ never. See [reclamation.md](../contributing/reclamation.md).
 {"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{"figaro_id":"85ac180e","sinceLT":0,"limit":65536}}
 ```
 
+`figaro.unfollow` with the same `figaro_id` releases one follow on a live
+connection: that figaro's frames stop and its hub forgets the connection,
+while the connection's other follows go on. It answers `{"released": true}`
+if the connection was following, `false` otherwise, and never wakes anyone.
+A daemon that has it lists `unfollow` in `figaro.hello` capabilities.
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"figaro.unfollow","params":{"figaro_id":"85ac180e"}}
+```
+
 Each connection has its own outbound queue, so a reader that falls behind
 never holds up the figaro or its other followers. The daemon drops a
 connection whose queue passes 16 MiB, or one with a single write stalled for

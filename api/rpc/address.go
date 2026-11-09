@@ -15,6 +15,13 @@ type FollowResponse struct {
 	FigaroID string `json:"figaro_id,omitempty"`
 }
 
+const MethodUnfollow = "figaro.unfollow"
+
+type UnfollowResponse struct {
+	Released bool   `json:"released"`
+	FigaroID string `json:"figaro_id,omitempty"`
+}
+
 const MethodAriaClosed = "figaro.closed"
 
 type AriaClosed struct {
