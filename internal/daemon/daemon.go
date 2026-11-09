@@ -416,6 +416,7 @@ func Run() {
 		Form:      modelsForm(backend),
 	})
 	go a.Models.Run(ctx)
+	go warmRoutes(build, catalogProviders(loaded))
 
 	if err := federate(ctx, a, loaded); err != nil {
 		slog.Error("angelus peers", "err", err)
@@ -570,6 +571,18 @@ func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b au
 		return b.AdmitRequest, nil
 	}
 	return nil, fmt.Errorf("authn %q: want \"upstream\" or \"bearer\"", name)
+}
+
+func warmRoutes(build angelus.ProviderFactory, names []string) {
+	for _, name := range names {
+		p, err := build(name, providerPkg.Knobs{})
+		if err != nil {
+			continue
+		}
+		if w, ok := p.(interface{ Warm() }); ok {
+			w.Warm()
+		}
+	}
 }
 
 func catalogProviders(loaded *config.Loaded) []string {

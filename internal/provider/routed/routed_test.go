@@ -50,11 +50,11 @@ func TestRouteOrderIsRuleThenCatalogThenDefault(t *testing.T) {
 		Default: Chat,
 		Rules:   []Rule{{Model: "grok-*", Transport: Responses}},
 	})
-	p.catalog = map[string]models.Entry{
+	p.cat = newCatalogCache(map[string]models.Entry{
 		"grok-4.7": {Endpoints: []string{"/v1/messages"}},
 		"claude-x": {Endpoints: []string{"/v1/messages"}},
 		"silent":   {},
-	}
+	})
 	for model, want := range map[string]Transport{"grok-4.7": Responses, "claude-x": Messages, "silent": Chat} {
 		got, err := p.route(context.Background(), model)
 		if err != nil || got != want {

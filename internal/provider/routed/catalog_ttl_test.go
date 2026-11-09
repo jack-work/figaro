@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -127,10 +128,43 @@ func wantHits(t *testing.T, got []string, want ...string) {
 	}
 }
 
+func (p *Provider) settled(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, flying := p.cat.inFlight(); !flying {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the catalog refresh never finished")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func wantHitsAround(t *testing.T, got []string, head []string, middle []string, tail []string) {
+	t.Helper()
+	if len(got) != len(head)+len(middle)+len(tail) {
+		t.Fatalf("requests %v, want %v then %v in any order then %v", got, head, middle, tail)
+	}
+	mid := append([]string(nil), got[len(head):len(head)+len(middle)]...)
+	want := append([]string(nil), middle...)
+	sort.Strings(mid)
+	sort.Strings(want)
+	if strings.Join(got[:len(head)], " ") != strings.Join(head, " ") ||
+		strings.Join(mid, " ") != strings.Join(want, " ") ||
+		strings.Join(got[len(head)+len(middle):], " ") != strings.Join(tail, " ") {
+		t.Fatalf("requests %v, want %v then %v in any order then %v", got, head, middle, tail)
+	}
+}
+
 // Issue #36: a cached model used to keep its route for the provider's life.
+// An aged catalog is refetched, but beside the round, never inside it: the
+// turn that finds it old goes out on the route it knows, and the next one
+// takes the route the fresh catalog names.
 func TestACachedRouteIsRefetchedOnceTheCatalogAges(t *testing.T) {
 	g := &movingGateway{endpoint: "/chat/completions"}
-	_, clock, send := movingProvider(t, g)
+	p, clock, send := movingProvider(t, g)
 	if err := send(); err != nil {
 		t.Fatal(err)
 	}
@@ -143,15 +177,19 @@ func TestACachedRouteIsRefetchedOnceTheCatalogAges(t *testing.T) {
 	if err := send(); err != nil {
 		t.Fatal(err)
 	}
-	wantHits(t, g.seen(),
-		"/v1/models", "/v1/chat/completions",
-		"/v1/chat/completions",
-		"/v1/models", "/v1/messages")
+	p.settled(t)
+	if err := send(); err != nil {
+		t.Fatal(err)
+	}
+	wantHitsAround(t, g.seen(),
+		[]string{"/v1/models", "/v1/chat/completions", "/v1/chat/completions"},
+		[]string{"/v1/models", "/v1/chat/completions"},
+		[]string{"/v1/messages"})
 }
 
 func TestAnAgedCatalogThatCannotBeRefetchedStillRoutes(t *testing.T) {
 	g := &movingGateway{endpoint: "/chat/completions"}
-	_, clock, send := movingProvider(t, g)
+	p, clock, send := movingProvider(t, g)
 	if err := send(); err != nil {
 		t.Fatal(err)
 	}
@@ -160,14 +198,15 @@ func TestAnAgedCatalogThatCannotBeRefetchedStillRoutes(t *testing.T) {
 	if err := send(); err != nil {
 		t.Fatalf("a stale catalog that cannot be refreshed must keep routing, got %v", err)
 	}
+	p.settled(t)
 	clock.advance(time.Minute)
 	if err := send(); err != nil {
 		t.Fatal(err)
 	}
-	wantHits(t, g.seen(),
-		"/v1/models", "/v1/chat/completions",
-		"/v1/models", "/v1/chat/completions",
-		"/v1/chat/completions")
+	wantHitsAround(t, g.seen(),
+		[]string{"/v1/models", "/v1/chat/completions"},
+		[]string{"/v1/models", "/v1/chat/completions"},
+		[]string{"/v1/chat/completions"})
 }
 
 // The grok-4.7 failure: the gateway moved a model to another transport and

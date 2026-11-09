@@ -165,8 +165,8 @@ func TestImageLimitsAreEnforcedUpFrontOnlyFromConfigOrAFact(t *testing.T) {
 	p := mustNew(t, Spec{Name: "gw", BaseURL: func() string { return "http://127.0.0.1:1" }, Default: Chat,
 		Mapping:   catalog.Mapping{Facts: map[string]catalog.Facts{"faceted*": {ImageCount: 4}}},
 		Overrides: map[string]catalog.Override{"configured": {ImageBytes: 1 << 20, ImageCount: 2}}})
-	p.catalog = map[string]models.Entry{"listed": {ImageBytes: 3 << 20, ImageCount: 1, Src: map[string]string{
-		"max_prompt_image_size": models.SourceAPI, "max_prompt_images": models.SourceAPI}}}
+	p.cat = newCatalogCache(map[string]models.Entry{"listed": {ImageBytes: 3 << 20, ImageCount: 1, Src: map[string]string{
+		"max_prompt_image_size": models.SourceAPI, "max_prompt_images": models.SourceAPI}}})
 
 	if got := p.imageLimits("listed", false); got != (provider.ImageLimits{}) {
 		t.Errorf("the provider's own numbers were enforced up front: %+v", got)

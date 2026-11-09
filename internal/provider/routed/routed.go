@@ -45,9 +45,7 @@ type Provider struct {
 	model     string
 	templates *template.Template
 	reader    *catalog.Reader
-	catalog   map[string]apimodels.Entry
-	fetched   time.Time
-	tried     time.Time
+	cat       *catalogCache
 	now       func() time.Time
 	messages  *anthropic.Anthropic
 	chat      *openaichat.Provider
@@ -78,7 +76,7 @@ func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translato
 		translators: translators,
 		model:       knobs.Model,
 		reader:      reader,
-		catalog:     map[string]apimodels.Entry{},
+		cat:         sharedCatalog(spec.Name, strings.TrimRight(spec.BaseURL(), "/")),
 		now:         time.Now,
 	}, nil
 }
@@ -262,10 +260,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 }
 
 func (p *Provider) entry(model string) (apimodels.Entry, bool) {
-	p.mu.RLock()
-	e, known := p.catalog[model]
-	p.mu.RUnlock()
-	if known {
+	if e, known := p.cat.lookup(model); known {
 		return e, true
 	}
 	return p.reader.Seed(model)
@@ -297,10 +292,7 @@ func (p *Provider) refitAfterRefusal(ctx context.Context, model string, err erro
 	if !errors.As(err, &refused) {
 		return provider.ImageLimits{}, false
 	}
-	p.mu.RLock()
-	_, listed := p.catalog[model]
-	p.mu.RUnlock()
-	if !listed && p.spec.Catalog != "" {
+	if _, listed := p.cat.lookup(model); !listed && p.spec.Catalog != "" {
 		cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 		_, _ = p.fetchCatalog(cctx)
 		cancel()
@@ -379,7 +371,7 @@ func (p *Provider) rerouteAfterFailure(ctx context.Context, model string, failed
 	if _, ruled := p.spec.ruleFor(model); ruled || p.spec.Catalog == "" {
 		return "", false
 	}
-	if !p.catalogDue(catalogRecheck) {
+	if !p.cat.due(p.now(), catalogRecheck) {
 		return "", false
 	}
 	cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
@@ -396,25 +388,19 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 	if t, ok := p.spec.ruleFor(model); ok {
 		return t, nil
 	}
+	var waited error
 	if p.spec.Catalog != "" {
-		p.mu.RLock()
-		entry, known := p.catalog[model]
-		stale := known && p.now().Sub(p.fetched) >= catalogTTL
-		p.mu.RUnlock()
-		if (!known && (p.spec.Default == "" || p.catalogDue(catalogRetry))) || (stale && p.catalogDue(catalogRetry)) {
-			cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
-			_, err := p.fetchCatalog(cctx)
-			cancel()
-			if err != nil {
-				if !known && p.spec.Default == "" {
-					return "", fmt.Errorf("%s: route %q: %w", p.spec.Name, model, err)
-				}
-				slog.Warn("provider catalog unavailable; routing by rules and default",
-					"provider", p.spec.Name, "model", model, "default", p.spec.Default, "err", err)
+		entry, known := p.cat.lookup(model)
+		switch {
+		case known:
+			if p.cat.stale(p.now(), catalogTTL) {
+				p.refreshCatalog(catalogRetry)
 			}
-			p.mu.RLock()
-			entry, known = p.catalog[model]
-			p.mu.RUnlock()
+		case p.spec.Default != "" && !p.cat.empty():
+			p.refreshCatalog(catalogRetry)
+		default:
+			waited = p.awaitCatalog(ctx)
+			entry, known = p.cat.lookup(model)
 		}
 		if known {
 			if t := transportForEndpoints(entry.Endpoints); t != "" {
@@ -424,6 +410,9 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 	}
 	if p.spec.Default != "" {
 		return p.spec.Default, nil
+	}
+	if waited != nil {
+		return "", fmt.Errorf("%s: route %q: %w", p.spec.Name, model, waited)
 	}
 	return "", fmt.Errorf("%s: model %q has no route: no rule matches, the catalog offers no transport for it, and there is no default", p.spec.Name, model)
 }
@@ -437,25 +426,11 @@ const (
 	catalogTimeout = 10 * time.Second
 )
 
-func (p *Provider) catalogDue(every time.Duration) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	now := p.now()
-	if !p.tried.IsZero() && now.Sub(p.tried) < every {
-		return false
-	}
-	p.tried = now
-	return true
-}
-
 func (p *Provider) cachedRoute(model string) Transport {
 	if t, ok := p.spec.ruleFor(model); ok {
 		return t
 	}
-	p.mu.RLock()
-	entry, known := p.catalog[model]
-	p.mu.RUnlock()
-	if known {
+	if entry, known := p.cat.lookup(model); known {
 		if t := transportForEndpoints(entry.Endpoints); t != "" {
 			return t
 		}
@@ -572,10 +547,7 @@ func (p *Provider) fetchCatalog(ctx context.Context) (listed []catalog.Model, er
 	for _, m := range listed {
 		byID[m.ID] = m.Entry
 	}
-	p.mu.Lock()
-	p.catalog = byID
-	p.fetched = p.now()
-	p.mu.Unlock()
+	p.cat.store(byID, p.now())
 	return listed, nil
 }
 

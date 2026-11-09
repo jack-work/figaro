@@ -150,6 +150,7 @@ func Build(ctx provider.BuildContext, spec Spec, apiKey string) (*Provider, erro
 	if err != nil {
 		return nil, err
 	}
+	p.seedFromIR(ctx.Backend)
 	p.SetTemplates(ctx.Templates)
 	rules := make([]string, 0, len(spec.Rules))
 	for _, r := range spec.Rules {

@@ -139,8 +139,14 @@ aria's history keeps its images.
 1. The first `[[routing.rule]]` whose `model` glob matches.
 2. The catalog: `GET base_url + routing.catalog`, then the model's
    `supported_endpoints`. Preference: `responses-ws` > `responses` > `messages` >
-   `chat`. A `ws:` prefix marks a socket. With a default, a catalog that is
-   missing or fails is logged and skipped, and asked again after five minutes.
+   `chat`. A `ws:` prefix marks a socket. One catalog serves every figaro
+   on that gateway. A restarted daemon routes from the catalog it persisted
+   in `@models`, and refreshes it in the background at start; a catalog older
+   than 30 minutes is refreshed beside the turn, never inside it. A turn
+   waits for the catalog only when it knows nothing yet and the model is not
+   in it with no default to fall back on, and then for at most 3 s. With a
+   default, a catalog that is missing or fails is logged and skipped, and
+   asked again after five minutes.
 3. `routing.default`.
 4. Otherwise the send is refused, and the error names all three.
 
