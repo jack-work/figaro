@@ -803,6 +803,31 @@ positional slot belongs to the sub-verb.`,
 		},
 	})
 
+	for _, hop := range []struct {
+		name, short string
+		sign        int
+	}{
+		{"back", "Attend the figaro this shell attended before (ctrl+o in the pager)", -1},
+		{"forward", "Undo a back: attend the next figaro in this shell's history (Tab in the pager)", 1},
+	} {
+		r.Register(&cmdkit.Command{
+			Name:    hop.name,
+			Group:   "Session",
+			Short:   hop.short,
+			Usage:   hop.name + " [<n>]",
+			Long:    "Moves this shell's attendance along its history, n steps (default 1).\nEvery attend is an entry: an attend after a back drops what was ahead,\nand the newest 50 are kept. A figaro killed or reaped since is passed over\nand dropped. The daemon keeps the history with the shell's attendance, so\nevery pager on this shell shares it; `:history` in the pager lists it.",
+			ArgsMax: 1,
+			Run: func(ctx *cmdkit.RunContext) error {
+				n, err := hopCount(hop.name, ctx.Args)
+				if err != nil {
+					dieUsage("%s", err)
+				}
+				runHop(ctx.Extra.(*config.Loaded), hop.name, hop.sign*n)
+				return nil
+			},
+		})
+	}
+
 	r.Register(&cmdkit.Command{
 		Name:    "attend",
 		Aliases: []string{"at"},

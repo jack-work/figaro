@@ -94,62 +94,6 @@ func TestAttendFromAForkPoint(t *testing.T) {
 	}
 }
 
-// A hop asks first (peek) and is recorded when the switch lands (arrive).
-func TestAriaJumplist(t *testing.T) {
-	var j ariaJumplist
-	j.visit("a")
-	j.arrive("a", "b")
-	j.arrive("b", "c")
-
-	hop := func(dir int) string {
-		id, ok := j.peek(dir)
-		if !ok {
-			return ""
-		}
-		// A landed hop moves the cursor; the path does not grow.
-		j.visit(j.ids[j.pos])
-		j.stepTo(id)
-		return id
-	}
-	if id := hop(-1); id != "b" {
-		t.Fatalf("back = %q", id)
-	}
-	if id := hop(-1); id != "a" {
-		t.Fatalf("back again = %q", id)
-	}
-	if _, ok := j.peek(-1); ok {
-		t.Fatal("there is nothing older than the first aria")
-	}
-	if id := hop(1); id != "b" {
-		t.Fatalf("forward = %q", id)
-	}
-	if pos, total := j.where(); pos != 2 || total != 3 {
-		t.Fatalf("hopping must not grow the list: %d/%d", pos, total)
-	}
-	if id, ok := j.peek(-1); !ok || id != "a" {
-		t.Fatalf("peek back = %q %v", id, ok)
-	}
-	if pos, _ := j.where(); pos != 2 {
-		t.Fatalf("peek moved the cursor to %d", pos)
-	}
-	j.arrive("b", "d")
-	if pos, total := j.where(); pos != 3 || total != 3 {
-		t.Fatalf("a visit from the middle drops what was ahead: %d/%d", pos, total)
-	}
-	if id, ok := j.peek(1); ok {
-		t.Fatalf("nothing is newer than the aria just visited, got %q", id)
-	}
-	// A transition from an unknown aria records both ends.
-	var k ariaJumplist
-	k.arrive("A", "B")
-	if pos, total := k.where(); pos != 2 || total != 2 {
-		t.Fatalf("the first attend left %d/%d; ^O has nowhere to go", pos, total)
-	}
-	if id, ok := k.peek(-1); !ok || id != "A" {
-		t.Fatalf("back from the first attend = %q %v", id, ok)
-	}
-}
-
 func stripANSIAll(lines []string) []string {
 	out := make([]string, len(lines))
 	for i, l := range lines {
@@ -178,27 +122,5 @@ func TestAPagerRowsNoteReachesTheBar(t *testing.T) {
 	screen := strings.Join(stripANSIAll(ft.Screen()), "\n")
 	if !strings.Contains(screen, "no fork point") {
 		t.Fatalf("the note never reached the screen:\n%s", screen)
-	}
-}
-
-// A deliberate attend is a new arrival even onto the aria the cursor stands
-// next to; folding it into a cursor step leaves ^O nothing to reverse.
-func TestAriaJumplist_ADeliberateAttendIsNotAStep(t *testing.T) {
-	var j ariaJumplist
-	j.visit("a")
-	j.arrive("a", "b")
-
-	j.arrive("b", "a")
-	if pos, total := j.where(); pos != 3 || total != 3 {
-		t.Fatalf("a deliberate attend onto the previous aria gave %d/%d, want 3/3", pos, total)
-	}
-	if id, ok := j.peek(-1); !ok || id != "b" {
-		t.Fatalf("back from there is %q (%v), want the b we came from", id, ok)
-	}
-
-	j.visit(j.ids[j.pos])
-	j.stepTo("b")
-	if pos, total := j.where(); pos != 2 || total != 3 {
-		t.Fatalf("the step back gave %d/%d, want 2/3", pos, total)
 	}
 }

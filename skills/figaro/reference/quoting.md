@@ -135,7 +135,7 @@ Moving between figaros:
 | `a` | attend the figaro the selected row (or the fork point on screen) names |
 | `f j` / `f k` | next / previous fork point |
 | `c j` / `c k` | next / previous comment |
-| `^O` / `^I` | jumplist: back / forward through the figaros attended here |
+| `^O` / `^I` | back / forward through the figaros this shell attended (`:back`, `:forward`) |
 | `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `S` | the form in the pit |
 | `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |

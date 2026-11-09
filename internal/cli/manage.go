@@ -1190,3 +1190,30 @@ func lsMark(f rpc.FigaroInfoResponse, here bool) string {
 	}
 	return "○"
 }
+
+func runHop(loaded *config.Loaded, verb string, steps int) {
+	if id := envAriaID(); id != "" {
+		die("%s: this shell is statically attended to %s (FIGARO_ARIA) and has no history", verb, ariaName(id))
+	}
+	if bindingDisabled() {
+		die("%s: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this shell has no history here", verb)
+	}
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		h, err := acli.Hop(ctx, shellPID, steps)
+		if err != nil {
+			return fmt.Errorf("%s: %w", verb, err)
+		}
+		dropped := droppedNote(h.Dropped)
+		if !h.Moved {
+			way := "newer"
+			if steps < 0 {
+				way = "older"
+			}
+			die("%s: nothing %s (%d/%d)%s", verb, way, h.Pos, h.Total, dropped)
+		}
+		fmt.Fprintf(stderrw, "attending %s (%d/%d)%s\n", ariaName(h.FigaroID), h.Pos, h.Total, dropped)
+		return nil
+	})
+}

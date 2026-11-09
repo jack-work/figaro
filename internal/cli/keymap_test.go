@@ -281,7 +281,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  c j / c k           next / previous comment",
 		"  x                   on a comment or its message: delete the whole thread (asks first)",
 		"  a                   attend the fork point's aria (in a list, the selected row's)",
-		"  ^O / ^I             jumplist: back / forward through attended arias",
+		"  ^O / ^I             history: back / forward through the figaros this shell attended (:back, :forward)",
 		"  M-n / M-p           travel to the next / previous question",
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
 		"  Enter               open tool bodies, quoted passages and form deltas within the selection",

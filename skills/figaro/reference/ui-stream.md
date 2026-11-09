@@ -542,7 +542,7 @@ pit follows a remap, so it shows your map rather than this one.
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, Enter selects the node under the cursor (then `e` expands it); `e` itself stays the word-end motion; `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
-| `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the figaros attended here |
+| `Ctrl-O` / `Ctrl-I` | back / forward through this shell's history of attended figaros (`:back [n]`, `:forward [n]`, or `:aria-back`/`:aria-forward`; `:history` lists it). The daemon keeps it with the shell's attendance, so every pager on the shell and `figaro back`/`forward` share one cursor, and it outlives the pager. Every attend is an entry, an attend after a back drops what was ahead, the newest 50 are kept, and a figaro killed or reaped since is passed over |
 | `q` | close the open pit; with none open, end the session (a send or a listen). The turn keeps running |
 
 A pasted paragraph needs no key at all: with no box open, a paste opens the
@@ -584,7 +584,7 @@ row. `x` and `:kill` ask before they kill. The question holds the keyboard and t
 bar, and nothing else: the sentence is the bar's alert, `[y/N]` is its command
 token, and the view underneath is untouched. `X` on a row does the same work
 with no question. Killing the figaro on screen moves the pager to the row the cursor
-falls onto, else the jumplist's previous figaro, else the parent, and ends the
+falls onto, else the history's previous figaro, else the parent, and ends the
 session only when there is none of the three.
 
 ### Coordinates and the `:` jump

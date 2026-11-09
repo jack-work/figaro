@@ -489,9 +489,6 @@ func (in *interactiveInput) succeed(ctx context.Context, args []string) (string,
 		return nil
 	}
 	r, err := succeedVerb(ctx, acli, plan, succeedHooks{progress: in.progress, handover: handover})
-	if r.Killed {
-		in.forgetAria(r.Predecessor)
-	}
 	if err != nil {
 		if steps := r.recovery(plan); len(steps) > 0 {
 			return "", fmt.Errorf("%w; to finish: %s", err, strings.Join(steps, "; "))

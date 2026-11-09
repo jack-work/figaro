@@ -111,7 +111,7 @@ type interactiveInput struct {
 	tape           sdk.Addr
 	recordedWindow int
 	held           heldSends
-	jumps          ariaJumplist         // guarded by in.mu
+	hopMu          sync.Mutex
 	queueEpoch     string               // the daemon refuses a queue mutation without the epoch it was read at
 	queueDebut     map[uint64]time.Time // guarded by in.mu
 	debutTimer     func() bool

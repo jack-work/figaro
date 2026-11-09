@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,9 +77,12 @@ var overlayVerbs = map[string]bool{
 	"send": true, "s": true,
 	"decide": true,
 	"new":    true, "replay": true, "fork": true,
-	"succeed": true,
-	"kill":    true, // may kill the aria on screen, and must then move
-	"import":  true, // reads os.Stdin for `-`
+	"succeed":   true,
+	"kill":      true, // may kill the aria on screen, and must then move
+	"import":    true, // reads os.Stdin for `-`
+	"aria-back": true, "back": true,
+	"aria-forward": true, "forward": true,
+	"history": true,
 }
 
 type formPit struct {
@@ -247,6 +251,22 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 			}
 			return in.switchSubject(ctx, spec, true)
 		})
+	case "aria-back", "back", "aria-forward", "forward":
+		n, err := hopCount(verb, args)
+		if err != nil {
+			in.noteErr(err.Error())
+			return
+		}
+		if verb == "aria-back" || verb == "back" {
+			n = -n
+		}
+		in.hopAria(n)
+	case "history":
+		if shellPID <= 0 || bindingDisabled() {
+			in.noteErr("history: this pager attends no shell, so it has no history")
+			return
+		}
+		in.openFormPit(formPit{name: "history", form: rpc.NavFormID(shellPID), bare: true})
 	case "kill":
 		in.askKill(args)
 	case "send", "s":
@@ -683,4 +703,18 @@ func (in *interactiveInput) progressIfSlow(msg string) (finished func()) {
 		mu.Unlock()
 		timer.Stop()
 	}
+}
+
+func hopCount(verb string, args []string) (int, error) {
+	switch len(args) {
+	case 0:
+		return 1, nil
+	case 1:
+		n, err := strconv.Atoi(args[0])
+		if err != nil || n < 1 {
+			return 0, fmt.Errorf("%s takes a count of 1 or more, not %q", verb, args[0])
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("%s takes at most a count", verb)
 }

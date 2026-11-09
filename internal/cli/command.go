@@ -234,11 +234,9 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	if !owns {
 		return done + "; this is a send session and cannot change aria (:listen " + branch + " from a listen)", nil
 	}
-	from := in.currentID()
 	if err := in.retarget(ctx, branch, ep); err != nil {
 		return "", fmt.Errorf("%s, but could not show it: %w", done, err)
 	}
-	in.recordAttend(from, branch, arrivalNew)
 	return done, nil
 }
 
@@ -253,10 +251,6 @@ func (in *interactiveInput) verbEnv() (verbEnv, error) {
 // switchSubject points the transcript at another aria; attend also binds the shell
 // to it.
 func (in *interactiveInput) switchSubject(ctx context.Context, spec string, attend bool) (string, error) {
-	return in.switchSubjectAs(ctx, spec, attend, arrivalNew)
-}
-
-func (in *interactiveInput) switchSubjectAs(ctx context.Context, spec string, attend bool, how arrival) (string, error) {
 	// A session that does not own its connection (`figaro send`) cannot change
 	// subject: its notify pump is not fenced by the subject generation.
 	in.mu.Lock()
@@ -292,40 +286,24 @@ func (in *interactiveInput) switchSubjectAs(ctx context.Context, spec string, at
 		}
 		return "already showing " + id, nil
 	}
-	from := in.currentID()
 	if err := in.retarget(ctx, id, ep); err != nil {
 		return "", err
 	}
 	if attend {
-		pos, total := in.recordAttend(from, id, how)
-		return fmt.Sprintf("attending %s (%d/%d)", ariaName(id), pos, total), nil
+		return "attending " + ariaName(id) + navWhere(ctx, env), nil
 	}
 	return "showing " + id, nil
 }
 
-// arrival says how a switch enters the jumplist: a new destination, or a step
-// along the existing path.
-type arrival int
-
-const (
-	arrivalNew  arrival = 0
-	arrivalStep arrival = 1
-)
-
-// recordAttend is the one place an attendance transition enters the jumplist.
-func (in *interactiveInput) recordAttend(from, to string, how arrival) (int, int) {
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	switch how {
-	case arrivalStep:
-		in.jumps.visit(from)
-		if to != "" {
-			in.jumps.stepTo(to)
-		}
-	default:
-		in.jumps.arrive(from, to)
+func navWhere(ctx context.Context, env verbEnv) string {
+	if env.shellPID <= 0 || bindingDisabled() {
+		return ""
 	}
-	return in.jumps.where()
+	r, err := env.acli.Resolve(ctx, env.shellPID)
+	if err != nil || len(r.History) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d/%d)", r.Pos+1, len(r.History))
 }
 
 // attendFromPager runs on the dispatch path, which holds the render lock, so
@@ -371,7 +349,6 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
 			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
-		in.forgetAria(id)
 		return "killed " + ariaName(id), nil
 	}
 	successor := in.successorFor(ctx, acli, id, prefer)
@@ -379,7 +356,6 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
 			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
-		in.forgetAria(id)
 		in.leaveSession()
 		return "killed " + ariaName(id) + ": nothing left to attend", nil
 	}
@@ -390,14 +366,7 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
 		return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 	}
-	in.forgetAria(id)
 	return "killed " + ariaName(id) + "; " + note, nil
-}
-
-func (in *interactiveInput) forgetAria(id string) {
-	in.mu.Lock()
-	in.jumps.forget(id)
-	in.mu.Unlock()
 }
 
 func (in *interactiveInput) askKill(args []string) {
@@ -445,7 +414,7 @@ func parseKillArgs(args []string) (spec string, recursive bool, err error) {
 	return spec, recursive, nil
 }
 
-// successorFor: the caller's preferred neighbour, else the jumplist's most
+// successorFor: the caller's preferred neighbour, else the history's most
 // recent living aria, else the parent.
 func (in *interactiveInput) successorFor(ctx context.Context, acli *sdk.Angelus, id, prefer string) string {
 	resp, err := acli.List(ctx)
@@ -467,9 +436,12 @@ func (in *interactiveInput) successorFor(ctx context.Context, acli *sdk.Angelus,
 	if prefer != "" && prefer != id && alive[prefer] {
 		return prefer
 	}
-	in.mu.Lock()
-	trail := in.jumps.trail()
-	in.mu.Unlock()
+	var trail []string
+	if shellPID > 0 && !resolveDisabled() {
+		if r, err := acli.Resolve(ctx, shellPID); err == nil && r.Pos < len(r.History) {
+			trail = r.History[:r.Pos+1]
+		}
+	}
 	for i := len(trail) - 1; i >= 0; i-- {
 		if trail[i] != id && alive[trail[i]] {
 			return trail[i]
@@ -522,38 +494,70 @@ func (in *interactiveInput) leaveSession() {
 }
 
 func (in *interactiveInput) attendNote(ctx context.Context, id string) (string, error) {
-	return in.attendNoteAs(ctx, id, arrivalNew)
-}
-
-func (in *interactiveInput) attendNoteAs(ctx context.Context, id string, how arrival) (string, error) {
-	note, err := in.switchSubjectAs(ctx, id, true, how)
+	note, err := in.switchSubject(ctx, id, true)
 	if err != nil {
 		return "", fmt.Errorf("attend: %w", err)
 	}
 	return note, nil
 }
 
-func (in *interactiveInput) hopAria(dir int) { go in.hop(dir) }
-
-// hop moves the cursor first, so the attend that follows is recorded as
-// arriving where the cursor already stands.
-func (in *interactiveInput) hop(dir int) {
-	in.mu.Lock()
-	in.jumps.visit(in.figaroID)
-	id, ok := in.jumps.peek(dir)
-	pos, total := in.jumps.where()
-	in.mu.Unlock()
-	if !ok {
-		if dir < 0 {
-			in.note(fmt.Sprintf("jumplist: nothing older (%d/%d)", pos, total))
-		} else {
-			in.note(fmt.Sprintf("jumplist: nothing newer (%d/%d)", pos, total))
-		}
-		return
-	}
+func (in *interactiveInput) hopAria(steps int) {
 	in.commandAsync(func(ctx context.Context) (string, error) {
-		return in.attendNoteAs(ctx, id, arrivalStep)
+		in.hopMu.Lock()
+		defer in.hopMu.Unlock()
+		return in.hop(ctx, steps)
 	})
+}
+
+func (in *interactiveInput) hop(ctx context.Context, steps int) (string, error) {
+	in.mu.Lock()
+	owns := in.ownsSubject
+	in.mu.Unlock()
+	if !owns {
+		return "", fmt.Errorf("changing figaro needs a `figaro listen` session (this one is a send)")
+	}
+	env, err := in.verbEnv()
+	if err != nil {
+		return "", err
+	}
+	if env.shellPID <= 0 || bindingDisabled() {
+		return "", errors.New("history: this pager attends no shell, so it has no history")
+	}
+	h, err := env.acli.Hop(ctx, env.shellPID, steps)
+	if err != nil {
+		return "", fmt.Errorf("history: %w", err)
+	}
+	dropped := droppedNote(h.Dropped)
+	if !h.Moved {
+		way := "newer"
+		if steps < 0 {
+			way = "older"
+		}
+		return fmt.Sprintf("history: nothing %s (%d/%d)%s", way, h.Pos, h.Total, dropped), nil
+	}
+	id, ep, err := in.resolve(ctx, h.FigaroID)
+	if err != nil {
+		return "", fmt.Errorf("history: %s: %w", ariaName(h.FigaroID), err)
+	}
+	where := fmt.Sprintf("attending %s (%d/%d)%s", ariaName(id), h.Pos, h.Total, dropped)
+	if id == in.currentID() {
+		return where, nil
+	}
+	if err := in.retarget(ctx, id, ep); err != nil {
+		return "", err
+	}
+	return where, nil
+}
+
+func droppedNote(dropped []rpc.HopDropped) string {
+	if len(dropped) == 0 {
+		return ""
+	}
+	parts := make([]string, len(dropped))
+	for i, d := range dropped {
+		parts[i] = ariaName(d.ID) + " " + d.Why
+	}
+	return "; passed over " + strings.Join(parts, ", ")
 }
 
 // resolve goes through the same resolver `figaro listen` uses, so `@role`

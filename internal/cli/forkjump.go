@@ -240,89 +240,10 @@ func pagerAttendParent(t *transcript) {
 
 func (t *transcript) hopAria(dir int) {
 	if t.ariaHop == nil {
-		t.note("this session has no jumplist (no shell to bind)")
+		t.note("this session has no history (no shell to bind)")
 		return
 	}
 	t.ariaHop(dir)
 }
-
-// Browser model, not vim's: visiting from the middle of the list drops what was ahead.
-type ariaJumplist struct {
-	ids []string
-	pos int
-}
-
-// Arriving where you already are is not a jump; a hop has already moved pos.
-func (j *ariaJumplist) visit(id string) {
-	if id == "" {
-		return
-	}
-	if len(j.ids) > 0 && j.pos < len(j.ids) && j.ids[j.pos] == id {
-		return
-	}
-	j.ids = append(j.ids[:min(j.pos+1, len(j.ids))], id)
-	j.pos = len(j.ids) - 1
-}
-
-// The cursor moves when the switch succeeds (stepTo), not when it is asked for.
-func (j *ariaJumplist) peek(dir int) (string, bool) {
-	next := j.pos + dir
-	if next < 0 || next >= len(j.ids) {
-		return "", false
-	}
-	return j.ids[next], true
-}
-
-// Always a new arrival, even next to the cursor: folding it would make the move
-// irreversible.
-func (j *ariaJumplist) arrive(from, to string) {
-	j.visit(from)
-	if to == "" {
-		return
-	}
-	j.visit(to)
-}
-
-// A hop that lands somewhere not adjacent on the path is recorded as an arrival.
-func (j *ariaJumplist) stepTo(to string) {
-	if j.pos > 0 && j.ids[j.pos-1] == to {
-		j.pos--
-		return
-	}
-	if j.pos+1 < len(j.ids) && j.ids[j.pos+1] == to {
-		j.pos++
-		return
-	}
-	j.visit(to)
-}
-
-func (j *ariaJumplist) trail() []string {
-	if j.pos < 0 || len(j.ids) == 0 {
-		return nil
-	}
-	return append([]string(nil), j.ids[:min(j.pos+1, len(j.ids))]...)
-}
-
-// A killed aria must not be somewhere ^O can land.
-func (j *ariaJumplist) forget(id string) {
-	kept := j.ids[:0]
-	moved := 0
-	for i, v := range j.ids {
-		if v == id {
-			if i <= j.pos {
-				moved++
-			}
-			continue
-		}
-		kept = append(kept, v)
-	}
-	j.ids = kept
-	j.pos = clampInt(j.pos-moved, -1, len(j.ids)-1)
-	if len(j.ids) == 0 {
-		j.pos = 0
-	}
-}
-
-func (j *ariaJumplist) where() (int, int) { return j.pos + 1, len(j.ids) }
 
 // Swallows the key: Esc must not clear a selection the reader did not mean to touch.
