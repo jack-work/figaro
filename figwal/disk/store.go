@@ -26,7 +26,6 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	if err != nil {
 		return nil, err
 	}
-	abs = filepath.Clean(abs)
 
 	s.mu.Lock()
 	if s.closed {
@@ -78,18 +77,18 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	return l, nil
 }
 
-// Close closes every cached log; the Store owns their lifetime.
 func (s *Store) Has(dir string) bool {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return false
 	}
 	s.mu.Lock()
-	_, ok := s.logs[filepath.Clean(abs)]
+	_, ok := s.logs[abs]
 	s.mu.Unlock()
 	return ok
 }
 
+// Close closes every cached log; the Store owns their lifetime.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -128,7 +127,6 @@ func (s *Store) Forget(dir string) error {
 	if err != nil {
 		return err
 	}
-	abs = filepath.Clean(abs)
 	s.mu.Lock()
 	var children, owner []*Log
 	for key, l := range s.logs {

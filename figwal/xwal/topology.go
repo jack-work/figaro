@@ -155,7 +155,7 @@ func canonicalRoot(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Clean(abs), nil
+	return abs, nil
 }
 
 func beginRootTopologyMutation(root string) (func(), string, error) {

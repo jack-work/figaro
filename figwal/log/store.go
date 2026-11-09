@@ -42,7 +42,6 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	if err != nil {
 		return nil, err
 	}
-	abs = filepath.Clean(abs)
 
 	s.mu.Lock()
 	if s.closed {
@@ -98,7 +97,6 @@ func (s *Store) Evict(dir string) error {
 	if err != nil {
 		return err
 	}
-	abs = filepath.Clean(abs)
 	s.mu.Lock()
 	l := s.logs[abs]
 	s.mu.Unlock()
@@ -117,27 +115,25 @@ func (s *Store) Evict(dir string) error {
 	return nil
 }
 
-// Forget syncs and drops the cached logs for dir and for every log reading it
-// as a parent, then has the disk store close them, so the next Open reads the
-// files as they now are.
 func (s *Store) Holds(dir string) bool {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return false
 	}
-	abs = filepath.Clean(abs)
 	s.mu.Lock()
 	_, ok := s.logs[abs]
 	s.mu.Unlock()
 	return ok || s.disk.Has(abs)
 }
 
+// Forget syncs and drops the cached logs for dir and for every log reading it
+// as a parent, then has the disk store close them, so the next Open reads the
+// files as they now are.
 func (s *Store) Forget(dir string) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return err
 	}
-	abs = filepath.Clean(abs)
 	s.mu.Lock()
 	var stale []*Log
 	for key, l := range s.logs {

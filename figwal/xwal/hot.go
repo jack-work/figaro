@@ -488,7 +488,7 @@ func retireTrunkStores(root string) {
 	if err != nil {
 		return
 	}
-	registryRoot := filepath.Clean(abs)
+	registryRoot := abs
 	trunkRegistry.Lock()
 	peers := make([]*Trunks, 0, len(trunkRegistry.roots[registryRoot]))
 	for peer := range trunkRegistry.roots[registryRoot] {
