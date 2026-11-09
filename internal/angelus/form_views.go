@@ -66,7 +66,22 @@ var formViews = map[string]rpc.FormView{
 	},
 }
 
+var navView = rpc.FormView{
+	Rows:    []string{"entries.*"},
+	Open:    []string{"entries"},
+	RowAria: "id",
+	Label:   "name",
+	Aside:   "mantra",
+	Sort:    "n",
+	Mark:    &rpc.ViewMark{Key: "here", Equals: "true"},
+	Actions: []rpc.ViewAction{{Key: "Enter", Label: "attend", Local: rpc.ViewAttend}},
+}
+
 func formViewOf(id string) *rpc.FormView {
+	if isNavFormID(id) {
+		v := navView
+		return &v
+	}
 	v, ok := formViews[id]
 	if !ok {
 		return nil

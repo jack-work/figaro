@@ -452,8 +452,10 @@ func Run() {
 		os.Exit(1)
 	}
 
+	handlers.LoadNav()
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
 	go angelus.PersistBindings(a.Registry, a.BindingsPath())
+	go handlers.PersistNav(ctx.Done())
 	go handlers.Redeliver(ctx)
 
 	drained := make(chan struct{})

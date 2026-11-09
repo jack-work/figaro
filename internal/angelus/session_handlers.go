@@ -24,6 +24,7 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.angelus.Registry.Bind(req.PID, req.FigaroID, req.AtMainLT); err != nil {
 		return nil, err
 	}
+	h.navPush(req.PID, req.FigaroID)
 	return rpc.BindResponse{OK: true}, nil
 }
 
@@ -48,7 +49,7 @@ func (h *handlers) requireAria(id string) error {
 	if err := rpc.ValidateAriaID(id); err != nil {
 		return err
 	}
-	if h.catalog(id) != nil || isCallerFormID(id) {
+	if h.catalog(id) != nil || isCallerFormID(id) || isNavFormID(id) {
 		return nil
 	}
 	if h.angelus.Registry.Get(id) != nil {
@@ -79,10 +80,11 @@ func (h *handlers) resolve(ctx context.Context, params json.RawMessage) (interfa
 	}
 	// A dormant aria is a found aria; resolving must not wake it.
 	id, _, lt := h.angelus.Registry.Resolve(req.PID)
+	hist := h.nav.Get(req.PID)
 	if id == "" {
-		return rpc.ResolveResponse{Found: false}, nil
+		return rpc.ResolveResponse{Found: false, History: hist.IDs, Pos: hist.Pos}, nil
 	}
-	return rpc.ResolveResponse{FigaroID: id, Found: true, AtMainLT: lt}, nil
+	return rpc.ResolveResponse{FigaroID: id, Found: true, AtMainLT: lt, History: hist.IDs, Pos: hist.Pos}, nil
 }
 
 func (h *handlers) unbind(ctx context.Context, params json.RawMessage) (interface{}, error) {

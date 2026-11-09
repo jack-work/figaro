@@ -306,6 +306,14 @@ func (c *Angelus) Resolve(ctx context.Context, pid int) (*rpc.ResolveResponse, e
 	return &resp, nil
 }
 
+func (c *Angelus) Hop(ctx context.Context, pid, steps int) (*rpc.HopResponse, error) {
+	var resp rpc.HopResponse
+	if err := c.call(ctx, rpc.MethodHop, rpc.HopRequest{PID: pid, Steps: steps}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Angelus) Unbind(ctx context.Context, pid int) error {
 	return c.call(ctx, rpc.MethodUnbind, rpc.UnbindRequest{PID: pid}, nil)
 }

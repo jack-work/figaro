@@ -86,6 +86,7 @@ const (
 	MethodBind    = "pid.bind"
 	MethodResolve = "pid.resolve"
 	MethodUnbind  = "pid.unbind"
+	MethodHop     = "pid.hop"
 )
 
 // Administration: the daemon's own state, which may not share a filesystem

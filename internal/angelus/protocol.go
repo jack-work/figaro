@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/internal/decide"
+	"github.com/jack-work/figaro/internal/navstack"
+	"github.com/jack-work/figaro/internal/primitive"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -90,6 +92,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
 	h.noticeUpgrade()
+	h.startNav()
 	h.startReapedForm()
 	h.startTroupeForm()
 	h.publishCatalogs()
@@ -117,6 +120,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodBind:               h.bind,
 		rpc.MethodResolve:            h.resolve,
 		rpc.MethodUnbind:             h.unbind,
+		rpc.MethodHop:                h.hop,
 		rpc.MethodStatus:             h.status,
 		rpc.MethodMemCollect:         h.memCollect,
 		rpc.MethodPprofArm:           h.pprofArm,
@@ -186,6 +190,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		}
 		if isCallerFormID(id) {
 			return h.callerFormMethod(ctx, id, method, params)
+		}
+		if isNavFormID(id) {
+			return h.navFormMethod(ctx, id, method, params)
 		}
 		hb := h.angelus.Hubs.get(id)
 		if hb == nil {
@@ -313,6 +320,8 @@ type handlers struct {
 
 	reapedForm *store.Form
 	troupeForm *store.Form
+	nav        *primitive.Sessions[navstack.History]
+	navForms   navForms
 	reapedMu   sync.Mutex
 
 	gcOnce      sync.Once

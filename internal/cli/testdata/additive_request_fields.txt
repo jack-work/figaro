@@ -48,6 +48,8 @@ GCUndoRequest.Run
 HelloRequest.Capabilities
 HelloRequest.Node
 HelloRequest.Version
+HopRequest.PID
+HopRequest.Steps
 IRRequest.Before
 IRRequest.FigaroID
 IRRequest.From

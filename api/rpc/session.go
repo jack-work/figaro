@@ -1,5 +1,7 @@
 package rpc
 
+import "strconv"
+
 type FigaroInfoResponse struct {
 	ID               string `json:"id"`
 	Short            string `json:"short,omitempty"`
@@ -98,10 +100,34 @@ type ResolveRequest struct {
 }
 
 type ResolveResponse struct {
-	FigaroID string `json:"figaro_id,omitempty"`
-	Found    bool   `json:"found"`
-	AtMainLT uint64 `json:"at_main_lt,omitempty"` // pending fork-point bound to this pid
+	FigaroID string   `json:"figaro_id,omitempty"`
+	Found    bool     `json:"found"`
+	AtMainLT uint64   `json:"at_main_lt,omitempty"` // pending fork-point bound to this pid
+	History  []string `json:"history,omitempty"`
+	Pos      int      `json:"pos,omitempty"`
 }
+
+type HopRequest struct {
+	PID   int `json:"pid"`
+	Steps int `json:"steps"`
+}
+
+type HopDropped struct {
+	ID  string `json:"id"`
+	Why string `json:"why"`
+}
+
+type HopResponse struct {
+	FigaroID string       `json:"figaro_id,omitempty"`
+	Moved    bool         `json:"moved"`
+	Pos      int          `json:"pos"`
+	Total    int          `json:"total"`
+	Dropped  []HopDropped `json:"dropped,omitempty"`
+}
+
+const NavFormPrefix = "@navstack-"
+
+func NavFormID(pid int) string { return NavFormPrefix + strconv.Itoa(pid) }
 
 type UnbindRequest struct {
 	PID int `json:"pid"`
