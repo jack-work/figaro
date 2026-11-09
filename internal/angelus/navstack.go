@@ -198,13 +198,17 @@ func (h *handlers) navFormMethod(ctx context.Context, id, method string, params 
 	}
 	switch method {
 	case rpc.MethodFollow:
+		ch, err := followChannels(params)
+		if err != nil {
+			return nil, err
+		}
 		if fl := followerOf(ctx); fl != nil {
-			fl.follow(f.hub)
+			fl.follow(f.hub, ch)
 		}
 		return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 	case rpc.MethodForm:
 		if fl := followerOf(ctx); fl != nil && rpc.MethodFollows(method) {
-			fl.follow(f.hub)
+			fl.follow(f.hub, allChannels)
 		}
 		return f.hub.route(ctx, method, params)
 	}
