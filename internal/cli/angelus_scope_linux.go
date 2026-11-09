@@ -5,29 +5,34 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 )
 
-const scopeJobWait = 5 * time.Second
+const scopeMoveWait = 5 * time.Second
 
 func moveIntoScope(p angelusPlacement, pid int) (string, error) {
-	conn, err := dbus.Dial("unix:path=" + p.managerSocket)
+	name := p.scopeFor(pid)
+	ctx, cancel := context.WithTimeout(context.Background(), scopeMoveWait)
+	defer cancel()
+	conn, err := dbus.Dial("unix:path="+p.managerSocket, dbus.WithContext(ctx))
 	if err != nil {
-		return "", err
+		return name, err
 	}
 	defer conn.Close()
-	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getuid()))}); err != nil {
-		return "", err
+	authed := make(chan error, 1)
+	go func() { authed <- conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getuid()))}) }()
+	select {
+	case err := <-authed:
+		if err != nil {
+			return name, err
+		}
+	case <-ctx.Done():
+		conn.Close()
+		return name, fmt.Errorf("the user manager did not authenticate us in %s", scopeMoveWait)
 	}
-	manager := conn.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1")
-	signals := make(chan *dbus.Signal, 16)
-	conn.Signal(signals)
-	if err := manager.Call("org.freedesktop.systemd1.Manager.Subscribe", 0).Err; err != nil {
-		return "", err
-	}
-	name := p.scopeFor(pid)
 	props := []struct {
 		Name  string
 		Value dbus.Variant
@@ -43,30 +48,23 @@ func moveIntoScope(p angelusPlacement, pid int) (string, error) {
 			Value dbus.Variant
 		}
 	}{}
-	var job dbus.ObjectPath
-	if err := manager.Call("org.freedesktop.systemd1.Manager.StartTransientUnit", 0, name, "fail", props, aux).Store(&job); err != nil {
-		return "", err
+	manager := conn.Object("org.freedesktop.systemd1", "/org/freedesktop/systemd1")
+	if err := manager.CallWithContext(ctx, "org.freedesktop.systemd1.Manager.StartTransientUnit", 0, name, "fail", props, aux).Err; err != nil {
+		return name, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), scopeJobWait)
-	defer cancel()
 	for {
-		select {
-		case s, ok := <-signals:
-			if !ok {
-				return name, fmt.Errorf("the user manager hung up before %s started", name)
-			}
-			if s.Name != "org.freedesktop.systemd1.Manager.JobRemoved" || len(s.Body) < 4 {
-				continue
-			}
-			if path, _ := s.Body[1].(dbus.ObjectPath); path != job {
-				continue
-			}
-			if result, _ := s.Body[3].(string); result != "done" {
-				return name, fmt.Errorf("starting %s: %s", name, result)
-			}
+		if inScope(pid, name) {
 			return name, nil
+		}
+		select {
 		case <-ctx.Done():
-			return name, fmt.Errorf("starting %s: no answer in %s", name, scopeJobWait)
+			return name, fmt.Errorf("%d was not in %s after %s", pid, name, scopeMoveWait)
+		case <-time.After(5 * time.Millisecond):
 		}
 	}
+}
+
+func inScope(pid int, scope string) bool {
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	return err == nil && strings.Contains(string(raw), "/"+scope+"\n")
 }
