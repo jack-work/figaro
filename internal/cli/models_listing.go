@@ -182,15 +182,15 @@ func shrinkWidths(widths []int, cols []tableCol, width int) {
 	}
 }
 
-var modelCols = []tableCol{{}, {shrink: 1}, {shrink: 2}, {right: true}, {right: true}, {}}
+var modelCols = []tableCol{{}, {shrink: 1}, {shrink: 2}, {right: true}, {right: true}, {right: true}, {}}
 
 func modelCells(mark string, m modelRow) []string {
-	return []string{mark, m.ID, m.displayName(), dashCount(m.Window("")), dashCount(m.MaxOutput), m.sources()}
+	return []string{mark, m.ID, m.displayName(), dashCount(m.Window("")), dashCount(m.MaxPrompt), dashCount(m.MaxOutput), m.sources()}
 }
 
 func (m modelRow) sources() string {
 	var out []string
-	for _, f := range []string{"context", "max_output"} {
+	for _, f := range []string{"context", "max_prompt", "max_output"} {
 		if s := m.Source(f); s != "" && !slices.Contains(out, s) {
 			out = append(out, s)
 		}

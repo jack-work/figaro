@@ -2,8 +2,9 @@
 list       = "data"
 id         = ["id"]
 name       = ["name", "display_name"]
-context    = ["context_length", "context_window", "max_input_tokens", "capabilities.limits.max_prompt_tokens", "capabilities.limits.max_context_window_tokens", "top_provider.context_length"]
+context    = ["context_length", "context_window", "max_input_tokens", "capabilities.limits.max_context_window_tokens", "top_provider.context_length"]
 max_output = ["max_output_tokens", "max_tokens", "capabilities.limits.max_output_tokens", "top_provider.max_completion_tokens"]
+max_prompt = ["capabilities.limits.max_prompt_tokens"]
 images     = ["capabilities.image_input.supported", "capabilities.supports.vision", "architecture.input_modalities has:image"]
 tools      = ["supports_tools", "capabilities.supports.tool_calls", "supported_parameters has:tools"]
 reasoning  = ["supports_reasoning", "capabilities.thinking.supported", "capabilities.supports.reasoning_effort nonempty"]

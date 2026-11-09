@@ -76,7 +76,7 @@ func printModels(listings []providerListing, now time.Time) {
 	for _, line := range tabulate(status, []tableCol{{}, {}}, 0) {
 		fmt.Fprintln(stdout, line)
 	}
-	cells := [][]string{{"PROVIDER", "MODEL", "NAME", "CONTEXT", "MAX OUT", "SRC"}}
+	cells := [][]string{{"PROVIDER", "MODEL", "NAME", "CONTEXT", "PROMPT", "MAX OUT", "SRC"}}
 	for _, l := range listings {
 		for _, m := range l.pickable() {
 			cells = append(cells, modelCells(l.Provider, m))

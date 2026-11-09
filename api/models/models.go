@@ -9,7 +9,7 @@ import (
 
 const FormID = "@models"
 
-const IRVersion = 1
+const IRVersion = 2
 
 const (
 	SourceAPI     = "api"
@@ -35,6 +35,7 @@ type Entry struct {
 	Name       string            `json:"name,omitempty"`
 	Context    Context           `json:"context,omitzero"`
 	MaxOutput  int               `json:"max_output,omitempty"`
+	MaxPrompt  int               `json:"max_prompt,omitempty"`
 	Images     *bool             `json:"images,omitempty"`
 	ImageBytes int               `json:"max_prompt_image_size,omitempty"`
 	ImageCount int               `json:"max_prompt_images,omitempty"`

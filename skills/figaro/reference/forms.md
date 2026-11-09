@@ -423,7 +423,7 @@ A `$FIGARO_CACHE_DIR/models.json` left by an older daemon is imported as its
 first patch, then removed.
 
 ```
-<provider>.models.<model>.{name, context.default, context.long, max_output, images,
+<provider>.models.<model>.{name, context.default, context.long, max_prompt, max_output, images,
     max_prompt_image_size, max_prompt_images, tools, reasoning, hidden, endpoints, src.<field>}
 <provider>.{ir, refreshed_at, attempted_at, error}
 ```

@@ -20,6 +20,7 @@ type Mapping struct {
 	Context     []string         `toml:"context,omitempty"`
 	Long        []string         `toml:"long,omitempty"`
 	MaxOutput   []string         `toml:"max_output,omitempty"`
+	MaxPrompt   []string         `toml:"max_prompt,omitempty"`
 	Images      []string         `toml:"images,omitempty"`
 	ImageBytes  []string         `toml:"max_prompt_image_size,omitempty"`
 	ImageCount  []string         `toml:"max_prompt_images,omitempty"`
@@ -76,6 +77,7 @@ func (m Mapping) With(over *Mapping) Mapping {
 		Context:     pick(m.Context, over.Context),
 		Long:        pick(m.Long, over.Long),
 		MaxOutput:   pick(m.MaxOutput, over.MaxOutput),
+		MaxPrompt:   pick(m.MaxPrompt, over.MaxPrompt),
 		Images:      pick(m.Images, over.Images),
 		ImageBytes:  pick(m.ImageBytes, over.ImageBytes),
 		ImageCount:  pick(m.ImageCount, over.ImageCount),
@@ -124,6 +126,7 @@ type Reader struct {
 	context   []path
 	long      []path
 	maxOutput []path
+	maxPrompt []path
 	images    []path
 	imgBytes  []path
 	imgCount  []path
@@ -169,7 +172,7 @@ func New(m Mapping, overrides map[string]Override) (*Reader, error) {
 		into *[]path
 	}{
 		{"id", m.ID, &r.id}, {"name", m.Name, &r.name}, {"context", m.Context, &r.context},
-		{"long", m.Long, &r.long}, {"max_output", m.MaxOutput, &r.maxOutput}, {"images", m.Images, &r.images},
+		{"long", m.Long, &r.long}, {"max_output", m.MaxOutput, &r.maxOutput}, {"max_prompt", m.MaxPrompt, &r.maxPrompt}, {"images", m.Images, &r.images},
 		{"max_prompt_image_size", m.ImageBytes, &r.imgBytes}, {"max_prompt_images", m.ImageCount, &r.imgCount},
 		{"tools", m.Tools, &r.tools}, {"reasoning", m.Reasoning, &r.reasoning}, {"visible", m.Visible, &r.visible},
 		{"endpoints", m.Endpoints, &r.endpoints},
@@ -288,6 +291,7 @@ func (r *Reader) entry(id string, item any) models.Entry {
 		e.Mark("context", models.SourceAPI)
 	}
 	setInt(&e, "max_output", &e.MaxOutput, item, r.maxOutput)
+	setInt(&e, "max_prompt", &e.MaxPrompt, item, r.maxPrompt)
 	setInt(&e, "max_prompt_image_size", &e.ImageBytes, item, r.imgBytes)
 	setInt(&e, "max_prompt_images", &e.ImageCount, item, r.imgCount)
 	setBool(&e, "images", &e.Images, item, r.images)

@@ -82,11 +82,14 @@ max_prompt_images     = 8
 
 Every provider's model list lands in `@models` (`figaro models`, the
 `:models` pit) as one shape: `name`, `context` (`default`, `long`),
-`max_output`, `images`, `max_prompt_image_size`, `max_prompt_images`,
-`tools`, `reasoning`, `hidden`, `endpoints`. A field the provider does not
-state is absent, not zero. `src` says where each field came from: `api`
-(the provider's list), `mapping` (a fact figaro ships) or `config` (the
-provider file). The context % uses `context`; routing uses `endpoints`.
+`max_prompt`, `max_output`, `images`, `max_prompt_image_size`,
+`max_prompt_images`, `tools`, `reasoning`, `hidden`, `endpoints`. A field
+the provider does not state is absent, not zero. `src` says where each field
+came from: `api` (the provider's list), `mapping` (a fact figaro ships) or
+`config` (the provider file). The context % uses `context`, the model's
+window; routing uses `endpoints`. `max_prompt` is the prompt cap a provider
+states (Copilot's `max_prompt_tokens`, below the window): `figaro models`
+lists it, nothing enforces it, because Copilot accepts prompts over it.
 
 Each provider reads its list through a mapping: per field, paths into a
 list entry, and the first that holds a value of the field's type wins.
