@@ -247,6 +247,29 @@ func TestAnOpenMountDoesNotRebuildAnUnchangedPit(t *testing.T) {
 	}
 }
 
+// A search re-read the mounted form at the width of the plain tree to check
+// the cache, then at its own width to draw: two widths, so every read rebuilt
+// the mount and the whole search, three or four times a keystroke.
+func TestASearchDoesNotRebuildAnUnchangedMount(t *testing.T) {
+	f := newFakeMounts()
+	f.forms["@things"] = things("items.a.name", `"alpha"`)
+	f.forms["far/@things"] = things("items.z.name", `"zulu alpha"`)
+	v := indexView(f)
+	v.Items(100)
+	v.Activate("far")
+	v.Items(100)
+	f.waitOpened(t, 1)
+	v.SetQuery("alpha")
+	v.Items(100)
+	rev := v.Revision()
+	for range 5 {
+		v.Items(100)
+	}
+	if got := v.Revision(); got != rev {
+		t.Fatalf("five reads of an unchanged search rebuilt it %d times", got-rev)
+	}
+}
+
 // A mount that cannot load says why on the row, and the rest of the pit is
 // unaffected.
 func TestAMountThatCannotLoadSaysWhy(t *testing.T) {

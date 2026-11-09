@@ -89,7 +89,9 @@ func (v *formView) mountHitsLocked(width int) map[string][]pitRow {
 		}
 		m.view.followQuery(v.search.query, v.search.flat)
 		depth := strings.Count(path, ".")
-		rows := m.view.Items(max(width-3*depth-3, 20))
+		m.width = max(width-3*depth-3, 20)
+		rows := m.view.Items(m.width)
+		m.rev = m.view.Revision()
 		if _, n := m.view.QueryCount(); n == 0 {
 			continue
 		}
