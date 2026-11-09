@@ -6,19 +6,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/jack-work/figaro/figwal/disk"
 )
 
 func (t *Trunks) readForkBase(key string) (uint64, error) {
-	b, err := os.ReadFile(filepath.Join(t.irDir(key), ".fork"))
-	if err != nil {
+	dir := t.irDir(key)
+	if _, err := os.Stat(filepath.Join(dir, ".fork")); err != nil {
 		return 0, err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "base="); ok {
-			return strconv.ParseUint(strings.TrimSpace(v), 10, 64)
-		}
-	}
-	return 0, fmt.Errorf("xwal: malformed fork marker for %q", key)
+	return disk.ForkBaseOf(dir)
 }
 
 // ForkTail mints a sibling sharing the trunk's whole present.
@@ -58,7 +55,7 @@ func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool) (string, error
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", err
 		}
-		if err := writeSyncedFile(filepath.Join(dir, ".fork"), fmt.Appendf(nil, "base=%d\n", base)); err != nil {
+		if err := writeForkMarker(dir, base); err != nil {
 			return "", err
 		}
 	}
@@ -91,7 +88,7 @@ func (t *Trunks) forkFlatNamed(parentKey, name, kind string) error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
-		if err := writeSyncedFile(filepath.Join(dir, ".fork"), fmt.Appendf(nil, "base=%d\n", base)); err != nil {
+		if err := writeForkMarker(dir, base); err != nil {
 			return err
 		}
 	}
@@ -224,7 +221,7 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", err
 		}
-		if err := writeSyncedFile(filepath.Join(dir, ".fork"), fmt.Appendf(nil, "base=%d\n", base)); err != nil {
+		if err := writeForkMarker(dir, base); err != nil {
 			return "", err
 		}
 	}
@@ -344,17 +341,7 @@ func (t *Trunks) SetBranchedTurn(trunk string, base, turn uint64, exact bool) er
 	return nil
 }
 
-// forkBaseOf reads the .fork marker directly; no log open.
 func (t *Trunks) forkBaseOf(key string) uint64 {
-	b, err := os.ReadFile(filepath.Join(t.irDir(key), ".fork"))
-	if err != nil {
-		return 0
-	}
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "base="); ok {
-			n, _ := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
-			return n
-		}
-	}
-	return 0
+	base, _ := disk.ForkBaseOf(t.irDir(key))
+	return base
 }

@@ -222,7 +222,7 @@ func TestUnkeyedForkCeilingsAtTheParentTail(t *testing.T) {
 
 func (t *Trunks) readChannelBase(tb testing.TB, node, channel string) uint64 {
 	tb.Helper()
-	b, err := readForkBaseFile(filepath.Join(t.root, channel, node, ".fork"))
+	b, err := readForkBaseFile(filepath.Join(t.root, channel, node))
 	if err != nil {
 		tb.Fatalf("read %s base for %s: %v", channel, node, err)
 	}

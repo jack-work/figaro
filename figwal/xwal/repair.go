@@ -158,7 +158,7 @@ func nodeMainTail(dir string, codec segment.SegmentCodec) (uint64, error) {
 			return bases[i] + uint64(len(spans)) - 1, nil
 		}
 	}
-	base, err := readForkBaseFile(filepath.Join(dir, ".fork"))
+	base, err := readForkBaseFile(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}

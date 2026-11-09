@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/jack-work/figaro/figwal/disk"
 )
@@ -40,24 +38,23 @@ func mkdirAllSynced(path string) error {
 	return disk.SyncDir(path)
 }
 
-func readForkBaseFile(path string) (uint64, error) {
+func readForkBaseFile(dir string) (uint64, error) {
+	path := filepath.Join(dir, ".fork")
 	if err := recoverAtomicReplacement(path); err != nil {
 		return 0, err
 	}
-	body, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		return 0, err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
-		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "base="); ok {
-			base, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
-			if err != nil || base == 0 {
-				return 0, fmt.Errorf("xwal: malformed fork marker %q", path)
-			}
-			return base, nil
-		}
+	base, err := disk.ForkBaseOf(dir)
+	if err == nil && base == 0 {
+		err = fmt.Errorf("xwal: malformed fork marker %q", path)
 	}
-	return 0, fmt.Errorf("xwal: malformed fork marker %q", path)
+	return base, err
+}
+
+func writeForkMarker(dir string, base uint64) error {
+	return writeSyncedFile(filepath.Join(dir, ".fork"), fmt.Appendf(nil, "base=%d\n", base))
 }
 
 func atomicReplaceFile(tmp, final string) error {

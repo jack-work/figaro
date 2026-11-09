@@ -158,7 +158,7 @@ func materializeNode(dir string, ch *channel, codec segment.SegmentCodec) error 
 	}
 	marker := filepath.Join(dir, ".fork")
 	if _, err := os.Stat(marker); errors.Is(err, os.ErrNotExist) {
-		if err := writeSyncedFile(marker, []byte("base=1\n")); err != nil {
+		if err := writeForkMarker(dir, 1); err != nil {
 			return err
 		}
 		if err := disk.SyncDir(dir); err != nil {

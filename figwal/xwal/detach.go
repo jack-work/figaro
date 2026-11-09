@@ -63,7 +63,7 @@ func (t *Trunks) Detach(node string) error {
 	// unflipped one delegates, and the two are byte-identical. Clearing .from
 	// first would strand every channel not yet flipped.
 	for _, dir := range dirs {
-		if err := writeSyncedFile(filepath.Join(dir, ".fork"), []byte("base=1\n")); err != nil {
+		if err := writeForkMarker(dir, 1); err != nil {
 			return err
 		}
 	}

@@ -222,7 +222,7 @@ func (x *XWAL) channelDir(name string) string {
 		cand := filepath.Join(append([]string{base}, fsNames(x.branch[:i])...)...)
 		if pathExists(cand) {
 			if name != x.main {
-				if _, err := readForkBaseFile(filepath.Join(cand, ".fork")); err != nil &&
+				if _, err := readForkBaseFile(cand); err != nil &&
 					!errors.Is(err, os.ErrNotExist) {
 					break
 				}

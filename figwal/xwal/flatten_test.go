@@ -170,7 +170,7 @@ func forkBases(t *testing.T, dir string) map[string]map[string]uint64 {
 			t.Fatal(err)
 		}
 		for _, rel := range paths {
-			base, err := readForkBaseFile(filepath.Join(dir, ch, rel, ".fork"))
+			base, err := readForkBaseFile(filepath.Join(dir, ch, rel))
 			if err != nil {
 				continue // the "owns its log from 1" case; nothing to compare
 			}

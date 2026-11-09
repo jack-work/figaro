@@ -201,7 +201,7 @@ func (t *Trunks) exportTop(e *Export) error {
 		if err := absorbPrefix(dir, l, base, initial, x.codec); err != nil {
 			return fmt.Errorf("xwal: export %q channel %q: %w", top, c.Name, err)
 		}
-		if err := writeSyncedFile(filepath.Join(dir, ".fork"), []byte("base=1\n")); err != nil {
+		if err := writeForkMarker(dir, 1); err != nil {
 			return err
 		}
 	}

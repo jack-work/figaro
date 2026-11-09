@@ -118,7 +118,7 @@ func TestReplacementRecoveryPhases(t *testing.T) {
 		if err := writeSyncedFile(final+".tmp", []byte("base=3\n")); err != nil {
 			t.Fatal(err)
 		}
-		base, err := readForkBaseFile(final)
+		base, err := readForkBaseFile(filepath.Dir(final))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -139,7 +139,7 @@ func TestReplacementRecoveryPhases(t *testing.T) {
 		if err := os.Rename(final, final+".invalid"); err != nil {
 			t.Fatal(err)
 		}
-		base, err := readForkBaseFile(final)
+		base, err := readForkBaseFile(filepath.Dir(final))
 		if err != nil {
 			t.Fatal(err)
 		}
