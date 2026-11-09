@@ -175,7 +175,7 @@ func (s *Segment) extendTail(payload []byte) {
 	}
 	last := s.count - 1 // the record just appended, 0-based
 	lo := (last / chunkRecords) * chunkRecords
-	// ResidentAt, not RangeAt: an append must extend what is resident and
+	// ResidentAt, not Range: an append must extend what is resident and
 	// never fault it in.
 	units, ok := s.handle().ResidentAt(lo, last)
 	if !ok {

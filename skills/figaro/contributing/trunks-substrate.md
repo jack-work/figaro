@@ -24,138 +24,80 @@ physical log up to the CLI.
 > for why the −1). See
 > [../reference/turns.md](../reference/turns.md).
 
-### `atMainLT` is inclusive of the frozen prefix
+### `atMainLT` is inclusive of the shared prefix
 
-figwal `disk/fork.go:194` says:
-
-> *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at least one
-> entry."*
-
-That phrasing reads as though the prefix were `[First, atMainLT)`. **It is
-not.** Measured against a real store: forking at `atMainLT = 5` produced a
-branch whose history still contained LT 5.
-
-So **prefix = `[First, atMainLT]`**, **branch = `(atMainLT, Last]`**. The shared
-history includes the named coordinate; the branch owns everything after it.
-
-Turn addressing therefore applies **one deliberate adjustment**: fork at turn T
-with `atMainLT = min(LTs of T) - 1`: the LT immediately before the prompt: so
-the frozen prefix ends at the tail of turn T−1 and the branch replaces the
-question and everything downstream. The −1 is fork policy and lives in exactly
-one place, `cli.resolveTurn`; `compose.TurnSpan` reports the honest span.
-
-It also means a turn-addressed fork **always lands on a user
-prompt**, so the shared prefix always terminates on a complete assistant
-message and can never strand a `tool_invoke` without its `tool_result` -
-making the `repairTurnTail` / tail-repair-at-open synthesis unreachable for
-user-initiated forks.
+`Trunks.ForkAt(trunk, atMainLT)` shares `[1..atMainLT]` and the new branch
+owns everything after it. Turn addressing applies one adjustment: fork at
+turn T with `atMainLT = min(LTs of T) - 1`, the LT just before the prompt, so
+the shared prefix ends at the tail of turn T-1 and the branch replaces the
+question and everything after it. The -1 lives in exactly one place,
+`cli.resolveTurn`; `compose.TurnSpan` reports the honest span. A
+turn-addressed fork therefore always lands on a user prompt and can never
+strand a `tool_invoke` without its `tool_result`.
 
 ---
 
 ## 0. One-paragraph orientation
 
-A figaro conversation is an append-only log that can **fork**: at any point, history
-can diverge into two branches that share an immutable prefix. The storage substrate is
-**figwal** (a segmented write-ahead log with a native fork engine), its multi-channel
-wrapper **xwal** (which forks several parallel logs: the IR, the form, the
-translation caches: together as one unit), and figwal's **`xwal.Trunks`** forest layer
-(nodes + trunks + heads on disk). figaro stacks only *policy* on top: a null root →
-outfit versions → conversation trunks. The **trunk** is the thing humans and the API
-address: its id is the figaro id, **stable across forks** (the continuation keeps it) -
-while the per-fork **node id** (`n0/n1/…`) is pure plumbing, never addressed.
+A figaro conversation is an append-only log that can **fork**: history can
+diverge into branches that share an immutable prefix. The substrate is
+**figwal** (`figwal/`): segmented logs that read an inherited prefix through a
+parent, **xwal**, which joins several such logs (the IR, the form, the
+translation caches) into one timeline, and **`xwal.Trunks`**, the node forest
+on disk. figaro stacks only policy on top: a null root, then outfit versions,
+then conversation trunks. The **trunk** id is what humans and the API address
+and it is stable across forks; the per-fork **node** is plumbing.
 
 ---
 
 ## 1. The stack, bottom-up (with terminology)
 
-Four layers. Each owns a strict slice of the problem; the dividing lines matter.
+### Layer 0: `segment` (`figwal/segment/`)
+An append-only file of framed records addressed by a global index, in one of
+two codecs: `BinaryCodec` (`.seg`) and `JSONLCodec` (`.jsonl`, the default,
+which is why the tree is greppable). A segment may carry an opaque, uncounted
+**block-0 header** (the watermark) that reducible state rides on.
 
-### Layer 0: `segment` (figwal: `segment/`)
-The physical atom: an append-only file of length-framed records, addressed by a global
-index. Two codecs: `BinaryCodec` (`.seg`) and `JSONLCodec` (`.jsonl`, the default -
-human-readable NDJSON, which is *why* the on-disk tree is greppable). A segment may
-carry an opaque **block-0 header** (the "watermark"), uncounted by the index: this is
-how reducible state rides along (see Layer 2).
+### Layer 1: `disk.Log` (`figwal/disk/`)
+A directory of segments, append-only (`Write(idx)` takes only `LastIndex+1`).
+A log with a `.fork` marker (`base=N`) owns `[N, ...]` and serves indices
+below `N` from its parent (given at open, or `..` when none is), so a shared
+prefix is never copied and the index stays continuous across the seam. A
+directory with child subdirectories opens read-only. `Open` refuses a
+directory holding `.fork-pending`, which only older builds' nested fork wrote.
 
-### Layer 1: `disk.Log` (figwal: `disk/`): the fork engine
-A directory of segments plus the fork structure. **This is where forking physically
-lives.** Key facts:
-
-- **Append-only, index-addressed.** `Write(idx, payload)` only accepts `idx == LastIndex+1`
-  (or `forkBase` for a fresh fork). No overwrite, no interior insert: interior placement
-  has exactly one coherent meaning, which is *fork*. `disk/log.go:175` gates writes on
-  `readOnly`.
-- **A fork = a subdirectory.** Forking splits the log at `atIdx`; the prefix `[first,atIdx-1]`
-  becomes **read-only** (a "branch point"), the original continuation moves to an
-  "old-future" child subdir, and a fresh child subdir is created. `.fork` markers carry
-  `base=N`; the parent resolves by walking `..`.
-- **Freeze-on-fork is an invariant — of log nodes, not of figaros.** Any node with child
-  subdirs is read-only; there is **no fork-in-place**. `disk/fork.go:487` sets `readOnly`;
-  only leaves are writable. This is a storage fact: the *figaro* on either side stays live
-  and promptable at its own id. See `internal/cli/fork.go` for the wording users see.
-- **Copy-on-write reads.** A fork's `Read`/`Range` delegate to the parent chain for
-  `idx < forkBase`; the shared prefix is never duplicated. The global index is continuous
-  across the parent→child seam: so within any one branch, indices are unique and gapless.
-- **N-ary branch points.** Forking again at the tail (`atIdx == LastIndex+1`) just adds
-  *another sibling* child: no data moves (`disk/fork.go:254-270`, `oldFutureExists==false`).
-- **Re-split-below.** Forking *below* an index where children already exist inserts an
-  intermediate branch point and **re-homes the existing child subdirs** into the old-future
-  via directory moves; `..`-walk parent resolution adapts (`disk/fork.go:222-227` captures
-  children, `:438-446` re-homes them). This is the mechanism for forking deep history.
-- **Crash safety** via a `.fork-pending` sentinel.
-
-### Layer 2: `xwal.XWAL` (figwal: `xwal/`): the triune
-A **multi-channel** wrapper: one **main** channel plus N **related** channels, forked as a
-unit. figaro's three channels (the "triune"):
+### Layer 2: `xwal.XWAL` (`figwal/xwal/`): the triune
+One **main** channel plus related channels, each its own `disk.Log`:
 
 | channel | kind | role |
 |---|---|---|
 | `ir` | `ChannelLog` (main) | the canonical message timeline; LTs come from here |
-| `translations/<provider>` | `ChannelLog` | cached wire-bytes per IR LT (preserves thinking signatures) |
+| `translations/<provider>` | `ChannelLog` | cached wire bytes per IR LT (keeps thinking signatures) |
 | `form` | `ChannelReducible` | structured state as patches on a watermark base |
 
-Terminology & mechanics (`xwal/xwal.go`, `xwal/fork.go`):
-- **`XWAL` = one *opened branch*** of the multi-channel log. `branch []string` is the chain
-  of fork names from the root (empty = the trunk-of-the-xwal, distinct from figaro "trunk").
-- **Every channel entry is `(channelLT, mainLT, payload, meta)`.** `mainLT` is the foreign
-  key to the IR timeline; it must be non-decreasing per channel and may reference *future*
-  IR LTs (for catch-up). `AppendMain(payload,meta)` (`xwal/append.go`) writes the IR and returns
-  its LT; `Append(channel, mainLT, payload, meta)` (`xwal/append.go`) writes a related channel.
-- **Reducible channels** ride a per-segment **watermark** + patches; `StateAt(channel, lt)`
-  (`xwal/read.go`) folds the nearest watermark with the patches after it. The form is
-  this: there is **no the form channel**; the channel is the durable truth.
-- **`meta`** is an opaque per-entry side-channel (`xwal/frame.go`): figaro stores the
-  translation fingerprint here.
-- **Joint fork** (`xwal/fork.go:51`): `Fork(atMainLT, childName, oldFutureName) → *XWAL`.
-  The **main channel forks at `atMainLT`**; each related channel forks at its own boundary -
-  the first channel LT whose `mainLT >= atMainLT` (`boundaryFor`, figwal `xwal/fork.go:638`). The
-  **old-future is the original continuation; the child is the new alternative**: both names
-  are used identically across every channel, so a branch is addressable as a unit. The fork
-  is **crash-atomic** across channels (a `.xwal-fork-pending` plan sentinel; `Open` rolls a
-  partial fork forward). Empty / empty-own-log channels are skipped (`fork.go:85-97`).
-- `AddChannel` (for a newly-seen provider), `Clear` (cache invalidation).
+- **Every channel entry is `(channelLT, mainLT, payload, meta)`.** `mainLT` is
+  the foreign key into the IR; it is non-decreasing per channel.
+  `AppendMain` writes the IR and returns its LT; `Append(channel, mainLT, ...)`
+  writes a related channel (`xwal/append.go`).
+- **Reducible channels** fold the nearest watermark with the patches after it
+  (`StateAt`, `xwal/read.go`). The form channel is the durable truth.
+- **`meta`** is an opaque per-entry side channel (`xwal/frame.go`); figaro keeps
+  the translation fingerprint there.
 
-> **What xwal does NOT have today:** any notion of a *node*, a *tree of branches*, a *trunk*,
-> or a *head pointer*. It models exactly one opened branch + a joint fork. The whole
-> forest/tree layer currently lives one level up, in figaro.
+### Layer 2.5: `xwal.Trunks` (`figwal/xwal/trunks.go`): the forest
+Disk is the source of truth. Every node is a flat, depth-1 directory in each
+channel it has written, with a `.fork` marker giving its base and a node
+marker naming its parent, kind and trunk. Forks write nothing the parent owns:
+no freeze, no moved suffix.
 
-### Layer 2.5: `xwal.Trunks` (figwal: `xwal/trunks.go`): the forest
-The forest manager now lives **in figwal**, not figaro (the deferred "lift into xwal" of
-the old plan landed). `xwal.Trunks` owns the node tree, trunk identity, and heads on disk;
-**disk is the sole source of truth.** The node tree is the **main channel's directory tree**
-(`ir/`, with `n0/n1/…` child dirs + `.fork` markers); the only datum not derivable from it
-is the trunk id per node, kept in a **`.trunk` marker** in each node's `ir/` dir. Key API:
-
-- `CreateTrunks(dir, cfg) → (*Trunks, rootTrunkID)` seeds the genesis root trunk;
-  `OpenTrunks(dir, cfg)` reopens.
-- `SpawnChild(trunk)` mints an N-ary child trunk under a (typically cauterized) trunk -
-  the create path for both outfits and conversations.
-- `ForkTail(trunk)` / `ForkAt(trunk, atMainLT)` branch; the **continuation keeps the
-  trunk id**, the alternative is the returned new id. `Owner(id, atMainLT)` resolves
-  which root, outfit version, or trunk owns an interior LT.
-- `Head(trunk) → *XWAL` opens the trunk's live writable leaf. `Remove(trunk, recursive)`
-  deletes a trunk and (with `recursive`) its subtree. `List()` returns live trunks;
-  closed ones aren't listed.
+- `CreateTrunks(dir, cfg)` seeds the genesis root; `OpenTrunks(dir, cfg)` reopens.
+- `SpawnChildKind(trunk, kind)` mints a child under an outfit or a trunk; the
+  create path for both outfits and conversations.
+- `ForkTail(trunk)` / `ForkAt(trunk, atMainLT)` branch; the original keeps its
+  trunk id and its suffix, the alternative is the returned id.
+  `Owner(id, atMainLT)` says which root, outfit or trunk owns an interior LT.
+- `Head(trunk)` opens the trunk's writable leaf; `Remove(trunk, recursive)`
+  deletes it; `List()` returns live trunks.
 
 ### Layer 3: figaro store (`internal/store/`): policy only
 With the forest in figwal, figaro keeps **only policy**. `XwalStore`
@@ -185,7 +127,7 @@ interface.
 - **Cauterization** (`cauterized` = kind is null or outfit): the root and outfit versions are
   **closed**: you can't append to or continue them; they are structure, not conversation.
   A fork/send "at" a cauterized trunk does **not** re-split it: `Fork`/`ForkAt` redirect to
-  `SpawnChild(owner)`, a fresh child conversation: instead of `ForkTail`/`ForkAt`. This
+  `SpawnChildKind(owner)`, a fresh child conversation: instead of `ForkTail`/`ForkAt`. This
   is why "create" and "fork an outfit" are one mechanism.
 - **The figaro id is the trunk id**, returned stable from `Fork`/`ForkAt` as `cont == id`
   (bind-to-trunk: forking your own trunk doesn't move you).
@@ -275,11 +217,9 @@ ids are plumbing; you address `T0`.
 **Invariants:**
 - **Trunks are append-only and immutable.** A trunk only ever grows at its tail or spawns a
   *new* trunk at an interior point. Its identity never moves and its content is never
-  rewritten. (Internally an interior fork still freezes a node and re-homes a suffix: but
-  from the trunk's view nothing it owns changed.)
-- **Continuation inherits the trunk; alternative founds a new one.** (Maps directly onto
-  xwal's old-future-vs-child distinction.)
-- **Only leaves are writable; the head is the writable leaf.** Resolving a figaro id =
+  rewritten. A fork writes nothing the parent owns.
+- **Continuation inherits the trunk; alternative founds a new one.**
+- **The head is the writable node.** Resolving a figaro id =
   resolving its trunk → its head node → endpoint.
 - **`attend` is pure client/session state.** See §4.1.
 

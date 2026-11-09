@@ -17,9 +17,9 @@ below it, and the public surface a consumer addresses is the *top* layer
   └───────────────────────────┬─────────────────────────────────┘
                               │ depends on
   ┌───────────────────────────▼─────────────────────────────────┐
-  │  disk.Log         the fork engine over segments; .fork       │
-  │  (log.go,         markers; own-range vs inherited prefix;    │
-  │   fork.go)        Fork / ForkRehome / ChildForkBases         │
+  │  disk.Log         segments plus an inherited parent prefix;  │
+  │  (log.go,         .fork markers; own-range vs inherited      │
+  │   fork.go)        prefix                                     │
   └───────────────────────────┬─────────────────────────────────┘
                               │ depends on
   ┌───────────────────────────▼─────────────────────────────────┐
@@ -52,7 +52,7 @@ Provides:
 - `Create` / `Open` / `OpenReadOnly` (and `*Headered` variants),
   `Append`, `ReadIndex`, `ReadAt`, `Count`, `FirstIndex` / `BaseIndex` /
   `LastIndex`, `Sync`.
-- **Block-0 header** (`WriteHeader` / `Header` / `HasHeader`): an opaque
+- **Block-0 header** (`WriteHeader` / `Header`): an opaque
   first record framed like any other but *not* counted in the entry
   index. This is the watermark slot the reducible model rides on; the
   segment stores the bytes verbatim and never interprets them.
@@ -65,18 +65,18 @@ Provides:
 
 ---
 
-## `disk.Log`: the fork engine over segments
+## `disk.Log`: segments over an inherited prefix
 
 **File:** `disk/log.go`, `disk/fork.go`. **Depends on:** `segment`.
 
-A `Log` is a directory of segment files plus the machinery to fork that
-directory. It is where the fork model actually lives.
+A `Log` is a directory of segment files that may read a prefix through a
+parent log.
 
 **Fork bases & the `.fork` marker.** A child fork's directory carries a
-`.fork` file (`readForkMarker` / `writeForkMarker`) declaring the global
-index (`base=<N>`) at which it begins; the parent is always the
-immediate parent directory. On `Open`, a log with `forkBase > 0` and no
-explicit `Parent` auto-walks `..` to resolve its parent chain.
+`.fork` file (`ForkBaseOf`) declaring the global
+index (`base=<N>`) at which it begins. Its parent is the `Parent` given to
+`Open` (xwal's flat forks always give one); without one, a log with
+`forkBase > 0` walks `..` to resolve its parent chain.
 
 **Own-range vs inherited prefix (watermarks).** A fork *owns* the index
 range `[forkBase, …]`; indices below `forkBase` are inherited and served
@@ -102,32 +102,8 @@ Inherited `Range` traversal stops at the child's `forkBase` even if a legacy
 parent still physically contains later records. The child own range is the
 only source for indices at and beyond that boundary.
 
-**`Fork` / `ForkRehome` / `ChildForkBases`** (`fork.go`):
-
-- `Fork(atIdx, childName, oldFutureName?)` splits the log at `atIdx`: the
-  log keeps the prefix `[FirstIndex, atIdx-1]` and becomes read-only; the
-  suffix moves into an "old-future" subdir; a fresh empty child subdir is
-  created, writable from `atIdx`. Branch points are N-ary and
-  re-splittable. The *heuristic* re-home applies, on a re-split (own
-  segments split) all existing children move into the old-future.
-- `ForkRehome(atIdx, child, oldFuture, rehome)` forks with an *explicit*
-  re-home list instead of the heuristic. The xwal joint fork uses this so
-  every channel re-homes the **same** children (decided once from the
-  main channel) and the triune's trees stay in lockstep.
-- `ChildForkBases()` returns each child subdir's `.fork` base, the input
-  the joint fork uses to decide which children re-home.
-
-**Empty-log handling.** An empty root forks at index 1; an **empty-own**
-fork child (`forkBase > 0`, all content inherited) forks at its
-`forkBase`. Both materialize empty inheriting children, so every node gets
-its own branch in every channel (per-trunk write isolation). Header-mode
-children inherit the empty node's watermark. This keeps dynamically added
-channels mirrored by later topology operations without adding payload
-records.
-
-Crash safety is per-log: a `.fork-pending` sentinel is written before any
-destructive change and removed on completion; `Open` refuses a log that
-still has the sentinel.
+`Open` refuses a log holding a `.fork-pending` sentinel, which only the
+nested fork of older builds wrote.
 
 ---
 
@@ -168,17 +144,6 @@ non-decreasing, so a lookup near the active end reads only the suffix needed
 to prove the answer; later lookups extend that same reverse-built index.
 Repeated and last-wins lookups remain O(1) once their suffix is indexed.
 
-**Forks all channels as a unit** (`fork.go`). `XWAL.Fork(atMainLT,
-child, oldFuture)` builds a `forkPlan`: the main channel forks at
-`atMainLT`, each related channel forks at its own boundary
-(`boundaryFor`, the first own entry whose main LT ≥ `atMainLT`, or
-own-tail+1 if it has not caught up; empty-own channels fork at their own
-first index). The re-home set is decided once from the main channel and
-applied to every channel by name via `ForkRehome`. A `.xwal-fork-pending`
-plan sentinel makes the join crash-atomic across channels: `Open`
-roll-forward-completes any interrupted fork before serving a branch, so
-the triune is never observed half-diverged.
-
 A node has a directory in a related channel only if it wrote that channel,
 or it was forked from a parent that had one. A missing directory means the
 node inherited nothing there: it reads as an empty log (an Initial state for
@@ -218,7 +183,7 @@ shared channels, so repeated head views continue the same O(delta) lookup
 rather than rebuilding it. A topology rebuild or XWAL filesystem mutation
 retires the generation; existing borrowers keep it alive until `XWAL.Close`,
 while new opens use a fresh store. A shared `XWAL` detaches to private handles
-before `Fork` or `Clear`, so filesystem mutation never runs
+before `Clear`, so filesystem mutation never runs
 through a stale shared generation. `Trunks.Close` releases the current hot
 generation; callers should use it when a trunk store has a shorter lifetime
 than the process.
@@ -233,8 +198,8 @@ mutation returns `ErrTopologyBusy` rather than risking a partial rename or
 removal while Windows still has segment handles open.
 
 Provides the trunk-level operations: `CreateTrunks` / `OpenTrunks`,
-`Head`, `Append`, `ForkAt` / `ForkTail`, `SpawnChild`, `Remove`,
-`OwnerTrunk`, `EnsureChannel`, `AppendChannel`, `SyncChannel`,
+`Head`, `Append`, `ForkAt` / `ForkTail`, `SpawnChildKind`, `Remove`,
+`Owner`, `EnsureChannel`, `AppendChannel`, `SyncChannel`,
 `LatestChannelRecord`, `List` / `Nodes`.
 
 `EnsureChannel` registers a channel: it creates the channel's root directory
@@ -267,9 +232,7 @@ inherited fork prefixes. Opaque records retain payload bytes exactly across
 append, cached reopen, inherited prefixes, and divergent forks.
 
 This durability surface implements workload
-`212c263a-64b4-47af-9570-95702e164055`. See
-[`primitives.md`](./primitives.md) for each one's signature and
-invariant.
+`212c263a-64b4-47af-9570-95702e164055`.
 
 ## Recency: LastTS
 
@@ -281,8 +244,8 @@ simply lack the field and decode with `TS == 0`; they are tolerated
 forever and never migrated (the JSONL `_hash` covers the payload, so old
 bytes stand).
 
-"When was this node last written" is answered by `Trunks.LastTS(trunk)`
-(and `StumpLastTS(name)` for legacy forms), designed for the consumer
+"When was this node last written" is answered by `Trunks.LastTS(trunk)`,
+designed for the consumer
 that asks it N times per listing:
 
 - **The counter outlives the handle.** `Trunks` owns a registry of
