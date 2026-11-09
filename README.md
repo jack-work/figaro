@@ -98,7 +98,7 @@ figaro is built to run inside the sandbox and identity system you already have, 
 - Authorization: Grants give each principal verbs (read, send, set, kill, admin) on the figaros and forms it may touch; troupe policy does the same across machines; lifetime and environment keys stay owner-held.
 - No MCP, by design: figaro is CLI-first: wrap an MCP server in a CLI and put it in a box.
 
-Out of the box, with no sandbox configured, a figaro has your user's permissions. Secure defaults ship in coming releases.
+Out of the box, with no sandbox configured, a figaro has your user's permissions. A policy can fence one figaro off from another (`[[fence]]`), but that is advisory: it keys on an id any tool running as you can forge. Secure defaults ship in coming releases.
 
 ## Install
 

@@ -377,6 +377,44 @@ forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed figaro whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 
+**Figaro fences are advisory.** A figaro's tools reach the local door as the
+owner, so every grant above sees them as the owner. The aria id the CLI stamps
+from `FIGARO_ARIA` (`x-internal-figaro-id`) is the only thing that tells one
+figaro from another, and any process running as the owner can drop it or
+forge it. A fence uses it anyway, to stop accidents and well-behaved figaros;
+it is not a boundary, which only a box gives.
+
+```toml
+[[fence]]
+verbs = ["read", "send"]
+on = ["aria:<id>"]
+allow = ["figaro:<id>", "figaro:@engineer", "figaro:self"]
+
+[[fence]]
+verbs = ["kill"]
+on = ["*"]
+deny = ["figaro:*"]
+```
+
+A fence binds only calls on the owner's principal that carry a stamp: an
+unstamped call (your shell, telefono) passes every fence, and any other
+principal is decided by its grants alone. It covers its `verbs` on the
+resources its `on` selectors match (the selectors above) and names figaros
+by full id, by `@role` (the role's current `target-aria`), `self` (the aria
+the call names) or `*`. `allow` refuses every stamped figaro it does not
+name; `deny` refuses the ones it does. Each fence has exactly one of the two,
+and any fence that refuses wins. With no fence the policy behaves as before.
+A refused read hides the aria as one the caller cannot read (not found, and
+dropped from `ls` and prefix resolution); other refusals are -32020 naming
+the figaro and the fence. The id itself is not hidden: a role's
+`target-aria`, a fork's parent or any form the figaro may read can still name
+the fenced aria, and using that id is refused all the same. Each refusal at
+the guard logs one `authz: fence refused` line at info in the daemon's log
+(the owner's, not the figaro's), with the figaro, method, verb and resource;
+allowed calls log nothing. The fences are cut out of the policy text before
+the grants are compiled, and a policy whose grants would read differently
+without them is refused, so write each fence as a `[[fence]]` table.
+
 **The credo is fixed at birth.** `system.credo` is the system block, so a
 change rewrites the head of every request and drops the prompt cache. It is
 set by the outfit or the birth patch of `new`, `fork -S` or `succeed`; once a
