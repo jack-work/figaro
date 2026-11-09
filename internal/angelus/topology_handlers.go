@@ -20,7 +20,6 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/uiir"
@@ -385,18 +384,16 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	copy.ReapedAtMS, copy.ReapedRoot, copy.ReapedUntilMS = own.ReapedAtMS, own.ReapedRoot, own.ReapedUntilMS
 	copy.ReapIfEmpty = own.ReapIfEmpty
 	if interior {
-		copy.MessageCount = h.messageCountAt(parent, atMainLT)
-		copy.TurnCount = 0
+		held := h.heldBy(child)
+		copy.MessageCount = held.MessageCount
+		copy.TurnCount = held.TurnCount
 		copy.TokensIn = 0
 		copy.TokensOut = 0
 		copy.CacheReadTokens = 0
 		copy.CacheWriteTokens = 0
-		copy.ContextTokens, copy.ContextExact = h.contextAt(parent, atMainLT)
+		copy.ContextTokens, copy.ContextExact = held.ContextTokens, held.ContextExact
 		copy.LastFigaroLT = atMainLT
-		copy.Provider = ""
-		copy.Model = ""
-		copy.Mantra = ""
-		copy.Cwd = ""
+		copy.Provider, copy.Model, copy.Mantra, copy.Cwd = h.dressedAs(child)
 		copy.OutfitName = ""
 		copy.OutfitVersion = ""
 		if !owner.IsRoot {
@@ -430,38 +427,30 @@ func (h *handlers) outfitAncestor(id string) string {
 	return ""
 }
 
-func (h *handlers) contextAt(id string, atMainLT uint64) (int, bool) {
-	log, err := h.angelus.Backend.OpenFigIR(id)
+func (h *handlers) dressedAs(id string) (provider, model, mantra, cwd string) {
+	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
-		return 0, false
+		return "", "", "", ""
 	}
-	var msgs []message.Message
-	for _, e := range log.Read() {
-		if e.LT > atMainLT {
-			break
+	get := func(key string) string {
+		if v := snap.Lookup(key); v != nil {
+			return *v
 		}
-		msgs = append(msgs, e.Payload)
+		return ""
 	}
-	return tokens.ContextSize(msgs)
+	return get("system.provider"), get("system.model"), get("mantra"), get("system.cwd")
 }
 
-func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
-	count := int(atMainLT)
-	if count > 0 {
-		count--
+func (h *handlers) heldBy(id string) store.AriaMeta {
+	var held store.AriaMeta
+	log, err := h.angelus.Backend.OpenFigIR(id)
+	if err != nil {
+		return held
 	}
-	for count > 0 {
-		node, ok := h.angelus.Backend.Node(id)
-		if !ok || node.Parent == "" {
-			break
-		}
-		if parent, ok := h.angelus.Backend.Node(node.Parent); ok && parent.Kind == string(outfitKind) {
-			count--
-			break
-		}
-		id = node.Parent
+	for _, e := range log.Read() {
+		held.Fold(e)
 	}
-	return max(0, count)
+	return held
 }
 
 func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{}, error) {

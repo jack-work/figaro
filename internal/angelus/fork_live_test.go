@@ -44,8 +44,12 @@ type liveForkBackend struct {
 	log        store.Log[message.Message]
 }
 
-// The log holds one completed exchange so turn 1 resolves.
-func (f *liveForkBackend) OpenFigIR(string) (store.Log[message.Message], error) {
+// The parent's log holds one completed exchange so turn 1 resolves; a
+// fork's own log is empty, as a fork at the genesis root holds nothing.
+func (f *liveForkBackend) OpenFigIR(id string) (store.Log[message.Message], error) {
+	if id == "alternative" {
+		return store.NewMemLog[message.Message](), nil
+	}
 	if f.log == nil {
 		l := store.NewMemLog[message.Message]()
 		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, TurnID: 1}})
@@ -85,6 +89,10 @@ func (b *liveForkBackend) ForkWith(_ string, _ uint64, patch message.Patch, _ ..
 func (b *liveForkBackend) ForkAt(id string, _ uint64) (string, string, error) {
 	b.forked = true
 	return id, "alternative", nil
+}
+
+func (b *liveForkBackend) FormState(id string) (form.Snapshot, error) {
+	return form.Snapshot{}.Apply(b.form[id]), nil
 }
 
 func (b *liveForkBackend) OwnerResolution(string, uint64) (store.OwnerInfo, error) {
