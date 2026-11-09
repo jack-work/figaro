@@ -180,3 +180,31 @@ func TestCatchUpSkipsWhatADeltaAlreadyApplied(t *testing.T) {
 	require.Equal(t, uint64(9), v)
 	require.False(t, snap.Has("a"), "a full answer replaces the mirror")
 }
+
+// A replay has only its tape. A tape recorded with no window (older than the
+// header field, or recorded before the catalog answered) draws tokens alone:
+// today's @models would put a window the recording never saw under it, and
+// 0.58.0's 136k against a 200k tape is exactly that drift.
+func TestAReplayWithNoRecordedWindowDrawsNoPercentage(t *testing.T) {
+	tapeOnly.Store(true)
+	t.Cleanup(func() { tapeOnly.Store(false) })
+	in, asks := capacitySession(t)
+	cat, _, _ := in.models.mirror.state()
+	delta, err := json.Marshal(rpc.FormDelta{Schema: rpc.FormDeltaSchema, AriaID: models.FormID, Version: 1,
+		Patch: catalogPatch(t, cat, "copilot", map[string]int{"claude-haiku-4.5": 136_000})})
+	require.NoError(t, err)
+	in.models.handle(rpc.MethodFormDelta, delta)
+
+	bound, _, _ := in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
+		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"copilot"`, "system.model": `"claude-haiku-4.5"`})})
+	in.recomputeLimit()
+	require.Contains(t, barText(in), "12.4k")
+	require.NotContains(t, barText(in), "%", "the live catalog never reaches a replay's bar")
+	require.Never(t, func() bool { return len(asks.list()) > 0 }, 50*time.Millisecond, 5*time.Millisecond,
+		"a replay asks the daemon for nothing")
+
+	in.recordedWindow = 200_000
+	in.recomputeLimit()
+	require.Contains(t, barText(in), "12.4k/200.0k 6.2%")
+}
