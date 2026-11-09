@@ -91,3 +91,33 @@ func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 		t.Fatalf("got\n%s\nwant\n%s", buf.String(), want)
 	}
 }
+
+// A model's id, name and a provider's error come from the provider: a name
+// carrying an escape sequence must print as text, never reach the terminal.
+func TestPrintModelsSanitisesWhatAProviderSays(t *testing.T) {
+	snap := catalogFixture(t, map[string]models.Provider{
+		"evil": {RefreshedAt: modelsNow.Add(-time.Minute).UnixMilli(), Models: map[string]models.Entry{
+			"m\x1b[2Jx": {Name: "Nice\x1b]52;c;cGF3bmVk\x07 Name\x1b[31m", Context: models.Context{Default: 1000}},
+		}},
+		"broken": {AttemptedAt: modelsNow.Add(-time.Minute).UnixMilli(), Error: "denied\x1b[2J\r\nfake prompt$ "},
+	})
+	var buf bytes.Buffer
+	old := stdout
+	stdout = &buf
+	defer func() { stdout = old }()
+	printModels(catalogListings(snap, modelsNow), modelsNow)
+	out := buf.String()
+	if strings.ContainsAny(out, "\x1b\x07\r") {
+		t.Fatalf("control bytes reached the terminal: %q", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "fake prompt") {
+			t.Errorf("a provider's error broke the line: %q", out)
+		}
+	}
+	for _, want := range []string{"Nice", "Name", "denied"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q lost its text: %q", want, out)
+		}
+	}
+}

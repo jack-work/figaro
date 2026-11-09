@@ -102,7 +102,19 @@ type tableCol struct {
 
 const tableGap = 2
 
+func plainCells(rows [][]string) [][]string {
+	out := make([][]string, len(rows))
+	for n, r := range rows {
+		out[n] = make([]string, len(r))
+		for i, cell := range r {
+			out[n][i] = pitText(cell)
+		}
+	}
+	return out
+}
+
 func tabulate(rows [][]string, cols []tableCol, width int) []string {
+	rows = plainCells(rows)
 	widths := make([]int, len(cols))
 	for _, r := range rows {
 		for i, cell := range r {
