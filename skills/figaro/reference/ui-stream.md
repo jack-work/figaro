@@ -382,6 +382,22 @@ never. See [reclamation.md](../contributing/reclamation.md).
 {"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{"figaro_id":"85ac180e","sinceLT":0,"limit":65536}}
 ```
 
+Each connection has its own outbound queue, so a reader that falls behind
+never holds up the figaro or its other followers. The daemon drops a
+connection whose queue passes 16 MiB, or one with a single write stalled for
+30 s while more waits. A stall is noticed only when the next frame for that
+connection arrives: a connection that stalls with nothing after it holds one
+frame and one goroutine until it disconnects. All of a daemon's door queues
+also share one budget, `[door] outbox_budget_mib` (192 by default): past it,
+the connection furthest behind is dropped, so many connections that stop
+reading cannot add up. The rule has one known cost: if many small
+connections that stopped reading push the total over while a reading client
+briefly holds the largest queue (one big reply in flight), that reader is
+the one dropped. It reconnects; nothing is lost, and a per-principal cap
+would close the gap if it ever matters. A unix client sees the socket close; a web client
+gets close code 1008 with the reason. Either way the client reconnects,
+follows again and reads to catch up, as after any disconnect.
+
 A full frontend can also call `figaro.qua`, `figaro.interrupt`,
 `figaro.context`, `figaro.form`, `figaro.set`, `figaro.outfit`,
 `figaro.queued`, `figaro.queue.update` and `figaro.queue.delete` the same way;
@@ -402,11 +418,9 @@ shapes change between builds. Clients that cannot dial a unix socket use the
 web door (WebSocket, see `[door.web]` in `ARCHITECTURE.md`). Before
 independent frontends are treated as supported clients:
 
-1. define compatibility and required/optional-field rules;
+1. define compatibility and required/optional-field rules; and
 2. publish the wire structs and delta-folding client outside `internal/` (plus
-   a language-neutral schema for non-Go clients); and
-3. bound each subscriber independently so a slow reader cannot block figaro
-   fan-out.
+   a language-neutral schema for non-Go clients).
 
 Until then, external clients should be revision-pinned. Every call is
 authorized against the caller's principal (see Authorization in

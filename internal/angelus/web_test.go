@@ -384,3 +384,35 @@ func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 	_, _, err = c.Read(ctx)
 	require.Error(t, err)
 }
+
+// A browser that stops reading is dropped once its queue passes the bound.
+// The close says why, so a page that was only slow learns to reconnect and
+// resync rather than report a network fault; one that never reads again is
+// cut off when the close itself times out.
+func TestAWebFollowerThatFallsBehindIsClosedWithTheReason(t *testing.T) {
+	setOutboxForTest(t, 256<<10, time.Minute)
+	hb := newAriaHub("abcd1234")
+	path := serveWeb(t, hb, Web{Admit: admitAs(webPrincipal)})
+	c, _, err := dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
+	require.NoError(t, err)
+	wsCall(t, c, 1, rpc.MethodFollow, map[string]any{rpc.AriaKey: hb.id})
+	require.Equal(t, 1, hb.Attached())
+
+	frame := map[string]string{"text": strings.Repeat("x", 64<<10)}
+	for range 200 {
+		hb.Notify(rpc.MethodAriaFrame, frame)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for {
+		if _, _, err = c.Read(ctx); err != nil {
+			break
+		}
+	}
+	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "%v", err)
+	var ce websocket.CloseError
+	require.True(t, errors.As(err, &ce))
+	require.Contains(t, ce.Reason, "fell behind")
+	require.Eventually(t, func() bool { return hb.Attached() == 0 }, 5*time.Second, 10*time.Millisecond)
+}

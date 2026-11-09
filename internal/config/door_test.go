@@ -69,3 +69,17 @@ func TestEdgeFollowMaxAge(t *testing.T) {
 		}
 	}
 }
+
+// All door queues share 192 MiB unless [door] says otherwise; a negative
+// size is refused by name.
+func TestDoorOutboxBudget(t *testing.T) {
+	if n, err := loadToml(t, "").DoorOutboxBudget(); err != nil || n != 192<<20 {
+		t.Fatalf("unset: %v %v", n, err)
+	}
+	if n, err := loadToml(t, "[door]\noutbox_budget_mib = 64\n").DoorOutboxBudget(); err != nil || n != 64<<20 {
+		t.Fatalf("64: %v %v", n, err)
+	}
+	if _, err := loadToml(t, "[door]\noutbox_budget_mib = -1\n").DoorOutboxBudget(); err == nil || !strings.Contains(err.Error(), "door.outbox_budget_mib") {
+		t.Errorf("-1: %v", err)
+	}
+}

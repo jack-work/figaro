@@ -11,6 +11,20 @@ type DoorConfig struct {
 	Web              *WebDoorConfig `toml:"web"`
 	TLS              *TLSDoorConfig `toml:"tls"`
 	EdgeFollowMaxAge string         `toml:"edge_follow_max_age"`
+	OutboxBudgetMiB  int            `toml:"outbox_budget_mib"`
+}
+
+const DefaultOutboxBudgetMiB = 192
+
+func (l *Loaded) DoorOutboxBudget() (int, error) {
+	mib := l.cfg().Door.OutboxBudgetMiB
+	switch {
+	case mib == 0:
+		return DefaultOutboxBudgetMiB << 20, nil
+	case mib < 0:
+		return 0, fmt.Errorf("door.outbox_budget_mib %d is not a positive size", mib)
+	}
+	return mib << 20, nil
 }
 
 const defaultEdgeFollowMaxAge = time.Hour

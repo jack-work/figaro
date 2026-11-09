@@ -191,6 +191,12 @@ func (w *webConn) Close() error {
 	return err
 }
 
+func (w *webConn) closeWith(reason error) error {
+	var err error
+	w.closeOnce.Do(func() { err = w.c.Close(websocket.StatusPolicyViolation, closeReason(reason)) })
+	return err
+}
+
 func closeReason(err error) string {
 	const max = 123
 	msg := err.Error()

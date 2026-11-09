@@ -95,9 +95,12 @@ type Angelus struct {
 	// lastLibrettoSweep is what the boot reconciliation found, for `doctor mem`.
 	lastLibrettoSweep atomic.Pointer[store.LibrettoAudit]
 
-	cancel   context.CancelFunc
-	pprof    pprofState
-	pprofDir string
+	cancel context.CancelFunc
+	pprof  pprofState
+
+	outboxOnce sync.Once
+	outboxes   *outboxBudget
+	pprofDir   string
 }
 
 type Config struct {

@@ -199,9 +199,13 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		conn.Close()
 		return
 	}
-	defer conn.Close()
+	out := newOutbox(conn, a.outboxBudget(), func(err error) {
+		slog.Warn("door dropped a follower", "door", door.String(), "err", err)
+		endWith(conn, err)
+	})
+	defer out.Close()
 	f := &follower{hubs: map[*ariaHub]struct{}{}}
-	f.srv = jkrpc.NewServer(jkrpc.NewConn(capFrames(conn, maxDoorFrame)), a.Handlers)
+	f.srv = jkrpc.NewServer(jkrpc.NewConn(capFrames(out, maxDoorFrame)), a.Handlers)
 	defer f.close()
 
 	done := make(chan struct{})
@@ -221,17 +225,8 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 	select {
 	case <-done:
 	case <-lapsed:
-		noticed := make(chan struct{})
-		go func() {
-			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: l.reason, AfterMS: l.after.Milliseconds()})
-			close(noticed)
-		}()
-		grace := time.NewTimer(lapseNoticeGrace)
-		select {
-		case <-noticed:
-		case <-grace.C:
-		}
-		grace.Stop()
+		_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: l.reason, AfterMS: l.after.Milliseconds()})
+		out.drain(lapseNoticeGrace)
 		l.end(errors.New(l.reason))
 		f.srv.Stop()
 	case <-ctx.Done():
@@ -240,6 +235,18 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 }
 
 const lapseNoticeGrace = 2 * time.Second
+
+type reasonedCloser interface {
+	closeWith(reason error) error
+}
+
+func endWith(conn io.Closer, reason error) {
+	if r, ok := conn.(reasonedCloser); ok {
+		r.closeWith(reason)
+		return
+	}
+	conn.Close()
+}
 
 type lapse struct {
 	after  time.Duration

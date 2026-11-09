@@ -81,7 +81,7 @@ func (hb *ariaHub) Notify(method string, params any) error {
 	}
 	var firstErr error
 	for _, f := range targets {
-		if err := f.notify(method, raw); err != nil && firstErr == nil {
+		if err := f.notify(method, raw); err != nil && firstErr == nil && !errors.As(err, new(*fellBehind)) {
 			firstErr = err
 		}
 	}
