@@ -2,10 +2,10 @@ package angelus
 
 import (
 	"github.com/jack-work/figaro/api/message"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/turns"
 )
 

@@ -1,0 +1,202 @@
+package log
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/jack-work/figaro/figwal/disk"
+)
+
+// Store owns shared log handles for one directory tree: one Log per physical
+// log, and fork children point at the same parent rather than copying.
+type Store struct {
+	mu      sync.Mutex
+	disk    *disk.Store
+	logs    map[string]*Log
+	opening map[string]*storeOpen
+	closed  bool
+}
+
+type storeOpen struct {
+	ready chan struct{}
+	log   *Log
+	err   error
+}
+
+func NewStore() *Store {
+	return &Store{
+		disk:    disk.NewStore(),
+		logs:    make(map[string]*Log),
+		opening: make(map[string]*storeOpen),
+	}
+}
+
+// Open returns the single shared cached Log for dir. Concurrent opens of the
+// same log wait for one cache construction; sibling opens share the same
+// parent snapshot pointer. An explicit opts.Parent is honoured only for the
+// first open of dir; the cache keys on dir alone.
+func (s *Store) Open(dir string, opts Options) (*Log, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	abs = filepath.Clean(abs)
+
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil, errors.New("log store is closed")
+	}
+	if l := s.logs[abs]; l != nil {
+		if !l.Absent() || !dirExists(abs) {
+			s.mu.Unlock()
+			return l, nil
+		}
+		delete(s.logs, abs)
+	}
+	if pending := s.opening[abs]; pending != nil {
+		s.mu.Unlock()
+		<-pending.ready
+		return pending.log, pending.err
+	}
+	pending := &storeOpen{ready: make(chan struct{})}
+	s.opening[abs] = pending
+	s.mu.Unlock()
+
+	l, openErr := s.open(abs, opts)
+
+	s.mu.Lock()
+	if s.closed && openErr == nil {
+		openErr = errors.New("log store is closed")
+		l = nil
+	}
+	if openErr == nil {
+		s.logs[abs] = l
+	}
+	pending.log, pending.err = l, openErr
+	delete(s.opening, abs)
+	close(pending.ready)
+	s.mu.Unlock()
+	return l, openErr
+}
+
+func (s *Store) open(abs string, opts Options) (*Log, error) {
+	inner, err := s.disk.Open(abs, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Log{inner: inner, shared: true, maxLag: maxLagFor(opts)}, nil
+}
+
+// Evict syncs and drops the cached Log for dir, releasing its payload blocks;
+// the disk log stays cached for cheap reload. On sync failure the log stays,
+// so no pending entry is orphaned.
+func (s *Store) Evict(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	abs = filepath.Clean(abs)
+	s.mu.Lock()
+	l := s.logs[abs]
+	s.mu.Unlock()
+	if l == nil {
+		return nil
+	}
+	if err := l.Sync(); err != nil {
+		return err
+	}
+	l.inner.DropPayloadCache()
+	s.mu.Lock()
+	if s.logs[abs] == l {
+		delete(s.logs, abs)
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// Forget syncs and drops the cached logs for dir and for every log reading it
+// as a parent, then has the disk store close them, so the next Open reads the
+// files as they now are.
+func (s *Store) Holds(dir string) bool {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	abs = filepath.Clean(abs)
+	s.mu.Lock()
+	_, ok := s.logs[abs]
+	s.mu.Unlock()
+	return ok || s.disk.Has(abs)
+}
+
+func (s *Store) Forget(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	abs = filepath.Clean(abs)
+	s.mu.Lock()
+	var stale []*Log
+	for key, l := range s.logs {
+		for d := l.inner; d != nil; d = d.Parent() {
+			if d.Dir() == abs {
+				stale = append(stale, l)
+				delete(s.logs, key)
+				break
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, l := range stale {
+		if err := l.Sync(); err != nil {
+			return err
+		}
+	}
+	return s.disk.Forget(abs)
+}
+
+// Close syncs queued entries and closes every disk log after all
+// in-flight cache constructions finish. The Store cannot be used again.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
+	for len(s.opening) > 0 {
+		var ready <-chan struct{}
+		for _, pending := range s.opening {
+			ready = pending.ready
+			break
+		}
+		s.mu.Unlock()
+		<-ready
+		s.mu.Lock()
+	}
+	logs := make([]*Log, 0, len(s.logs))
+	for _, l := range s.logs {
+		logs = append(logs, l)
+	}
+	d := s.disk
+	s.logs = nil
+	s.mu.Unlock()
+	var errs []error
+	for _, l := range logs {
+		if err := l.Sync(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := d.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func dirExists(dir string) bool {
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
+}

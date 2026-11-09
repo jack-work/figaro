@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/jack-work/figaro/internal/store/segment"
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/segment"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 // Entry is one record on a Log. LT/FigaroLT are stamped on append.

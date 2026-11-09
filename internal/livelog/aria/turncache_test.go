@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // fatTurn builds a sealed, bracketed turn of roughly kb kilobytes.

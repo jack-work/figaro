@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // The flat tail window's published-view slice against the tree's Range over

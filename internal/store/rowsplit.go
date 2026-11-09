@@ -3,7 +3,7 @@ package store
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 // A translator record is a JSON array; its rows are split as windows onto the

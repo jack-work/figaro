@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 const modelsStump = "@models"

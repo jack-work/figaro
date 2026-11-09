@@ -15,8 +15,8 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // The daemon inherits the descriptor for its lifetime, so the startup log

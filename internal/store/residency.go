@@ -1,6 +1,6 @@
 package store
 
-import "github.com/jack-work/figaro/internal/store/segment"
+import "github.com/jack-work/figaro/figwal/segment"
 
 func OpenSegments() (count, headerBytes int64) { return segment.OpenSegments() }
 

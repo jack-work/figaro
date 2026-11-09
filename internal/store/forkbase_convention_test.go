@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	// Aliased: the bare package name collides with the tree() fixture helper.
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // Pins the fork-base convention across three parties: figwal's .fork marker,

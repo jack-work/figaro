@@ -4,7 +4,7 @@ Moved in from figwal's forest note -- its own docs/ directory, a path
 deliberately not written out here because it does not resolve in this
 repository and our citation test would fail on it -- at version
 v0.18.1-0.20260819002022-d3ea52f, when the packages came in-tree. The
-package it documents is internal/store/tree; see its package comment for
+package it documents is figwal/tree; see its package comment for
 the design. This note
 carries the CONSOLIDATION SURVEY from the port (2026-08-14), because a
 library's dead code cannot be judged from its own mains -- deadcode
@@ -12,8 +12,8 @@ flagged SetPayloadCacheBudget, which is figaro's config plumb.
 
 Candidates needing CONSUMER-side verification before any cut
 (grep figaro, not figwal):
-  internal/store/disk.Log: ForkRehome, ChildForkBases, TruncateFront, Dir, Hash,
-  HashPayload, HeaderAt, RangeOwn; internal/store/log.SetPayloadCacheBudget
+  figwal/disk.Log: ForkRehome, ChildForkBases, TruncateFront, Dir, Hash,
+  HashPayload, HeaderAt, RangeOwn; figwal/log.SetPayloadCacheBudget
   and that package's delegation shims generally (5-36 one-line forwards).
 internal/store/crashtest/bind_trunks.go carries genuinely unreachable helpers
 (its own package, no consumer): safe to prune with the next touch.
@@ -52,7 +52,7 @@ source rather than against the document:
     feat/layered-cache, added by 872ac168 "store: pin the fork-base
     convention before trusting prefix sharing". So the drift the paragraph
     above says is pinned is, on main, unpinned until that branch lands.
-  - `disk.Log.forkBase` is NO LONGER PRIVATE. `internal/store/disk/log.go`
+  - `disk.Log.forkBase` is NO LONGER PRIVATE. `figwal/disk/log.go`
     declares `func (l *Log) ForkBase() uint64` at line 476. The accessor the
     paragraph above calls "the real gap" was exported upstream at some point
     between that verdict and v0.18.1-d3ea52f. The verdict's conclusion may

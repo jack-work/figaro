@@ -15,6 +15,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
@@ -25,7 +26,6 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/figaro/internal/uiir"

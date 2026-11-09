@@ -1,7 +1,7 @@
 package store
 
 import (
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // Link is one node of an ancestry walk. BaseTurn is BaseLT as a turn of the

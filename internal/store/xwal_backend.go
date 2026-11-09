@@ -19,8 +19,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/topo"
 )
 

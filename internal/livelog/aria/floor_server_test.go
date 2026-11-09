@@ -3,7 +3,7 @@ package aria
 import (
 	"testing"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // floorServer is a bounded server over history it must recompose to read.

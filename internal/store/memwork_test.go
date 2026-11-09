@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/store/segment"
+	"github.com/jack-work/figaro/figwal/segment"
 )
 
 func memworkInt(name string, def int) int {

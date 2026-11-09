@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 // schemaFileName sits beside figwal's xwal.json, not inside it: figwal

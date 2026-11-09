@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // Evicted takes no lock. A consumer that calls Put while holding its write

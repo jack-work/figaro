@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync/atomic"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // treeLog is a Log[T] whose residency is the shared tree cache: one node per

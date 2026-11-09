@@ -10,9 +10,9 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // The snapshot dev shell copies a slice of the real store: the most recently

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // Scan pollution, asserted: a whole-history read through tree.Cache does

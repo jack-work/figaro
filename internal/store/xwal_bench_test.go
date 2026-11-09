@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 func TestMain(m *testing.M) {

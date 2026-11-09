@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // A fresh fork holds only inherited rows, so every read of a new branch takes

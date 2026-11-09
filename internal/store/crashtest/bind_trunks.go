@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 func isNoChannel(err error) bool {

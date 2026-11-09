@@ -3,7 +3,7 @@ package aria
 import (
 	"sort"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // Composer recomposes one node's sealed turns for an LT bracket. It must

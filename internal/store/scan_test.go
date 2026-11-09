@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // collect drains a scan into the slice Read would have built. TESTS ONLY: the

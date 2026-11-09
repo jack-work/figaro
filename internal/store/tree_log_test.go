@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	fwtree "github.com/jack-work/figaro/internal/store/tree"
+	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
 // The tree-backed log must answer exactly as the log beneath it, whatever

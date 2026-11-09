@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/store/xwal"
 	"github.com/jack-work/jkrpc"
 )
 

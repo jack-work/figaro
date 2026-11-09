@@ -20,10 +20,10 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/message"
+	fwlog "github.com/jack-work/figaro/figwal/log"
+	"github.com/jack-work/figaro/figwal/segment"
+	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/config"
-	fwlog "github.com/jack-work/figaro/internal/store/log"
-	"github.com/jack-work/figaro/internal/store/segment"
-	"github.com/jack-work/figaro/internal/store/xwal"
 	"github.com/jack-work/figaro/internal/topo"
 )
 

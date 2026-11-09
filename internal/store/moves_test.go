@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 func departureOf(token, to string, ids ...string) Departure {

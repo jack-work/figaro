@@ -1,6 +1,6 @@
 package store
 
-import fwtree "github.com/jack-work/figaro/internal/store/tree"
+import fwtree "github.com/jack-work/figaro/figwal/tree"
 
 // The old constructors, kept for the tests that still assert a live
 // property: they build the tree-backed log over the same substrate with a

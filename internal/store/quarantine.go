@@ -3,7 +3,7 @@ package store
 import (
 	"path/filepath"
 
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 type Quarantined = xwal.Quarantined

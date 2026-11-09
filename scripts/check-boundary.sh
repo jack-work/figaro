@@ -40,7 +40,7 @@ NRULES=0
 # Rule 1 (transitive): cmd/figaro must not reach the daemon-side trees.
 NRULES=$((NRULES + 1))
 go list -deps -f '{{.ImportPath}}' "$MOD/cmd/figaro" | while IFS= read -r dep; do
-	for p in internal/angelus internal/figaro internal/store internal/provider internal/tool internal/outfit; do
+	for p in internal/angelus internal/figaro internal/store figwal internal/provider internal/tool internal/outfit; do
 		if under "$dep" "$MOD/$p"; then
 			echo "$MOD/cmd/figaro $dep cmd/figaro-reaches"
 			break
@@ -87,7 +87,7 @@ grep "^$MOD/internal/cli " "$direct" | while IFS= read -r line; do
 	for dep in $deps; do
 		case "$dep" in
 		"$MOD/internal/angelus" | "$MOD/internal/figaro" | "$MOD/internal/figaro/wire" | \
-			"$MOD/internal/store" | "$MOD/internal/store/xwal" | "$MOD/internal/tool" | "$MOD/internal/outfit")
+			"$MOD/internal/store" | "$MOD/figwal/xwal" | "$MOD/internal/tool" | "$MOD/internal/outfit")
 			echo "$importer $dep cli-imports" ;;
 		esac
 		if under "$dep" "$MOD/internal/provider"; then

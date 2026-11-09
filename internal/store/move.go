@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 type Outbound struct {
