@@ -7,6 +7,9 @@ import (
 )
 
 const liveNode = `default_outfit = "mock"
+[telemetry]
+otlp_endpoint = "http://127.0.0.1:4380"
+dir = "/home/node/.local/state/figaro"
 [cli]
 troupe = "kelliher"
 [troupe]
@@ -56,6 +59,8 @@ func TestADetachedConfigIsNotTheNode(t *testing.T) {
 	require.Equal(t, "/run/figaro/judge.sock", box.Exec)
 	require.Empty(t, l.Config.Peers)
 	require.Empty(t, l.TroupesDir())
+	require.Empty(t, l.TelemetryOTLPEndpoint(), "the live node's collector")
+	require.Empty(t, l.Config.Telemetry.Dir, "the live node's telemetry files")
 }
 
 func TestWithoutTheEnvTheConfigIsTheNode(t *testing.T) {
@@ -70,4 +75,18 @@ func TestWithoutTheEnvTheConfigIsTheNode(t *testing.T) {
 	require.True(t, tls)
 	require.NotEmpty(t, l.BoxDoors())
 	require.NotEmpty(t, l.TroupesDir())
+	require.Equal(t, "http://127.0.0.1:4380", l.TelemetryOTLPEndpoint())
+}
+
+// Dev runs exported pager latency into the live figscope and spoiled its
+// release comparisons. FIGARO_OTLP_ENDPOINT overrides the config: off (or
+// empty) exports nothing, anything else is the endpoint.
+func TestTheOTLPEnvOverridesTheConfig(t *testing.T) {
+	t.Setenv(DetachedEnv, "")
+	l, err := loadWith(t, liveNode)
+	require.NoError(t, err)
+	for env, want := range map[string]string{"off": "", "": "", "http://10.0.0.9:4318": "http://10.0.0.9:4318"} {
+		t.Setenv(OTLPEndpointEnv, env)
+		require.Equal(t, want, l.TelemetryOTLPEndpoint(), "FIGARO_OTLP_ENDPOINT=%q", env)
+	}
 }

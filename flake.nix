@@ -213,7 +213,9 @@
       });
 
       devShells = forAllSystems ({ pkgs }: let
-        figaroPkg = self.packages.${pkgs.system}.default;
+        figaroPkg = self.packages.${pkgs.system}.default.overrideAttrs (old: {
+          ldflags = old.ldflags ++ [ "-X github.com/jack-work/figaro/internal/boot.build=dev" ];
+        });
 
         # benchstat is NOT in nixpkgs, so it is BUILT here rather than
         # assumed to be on somebody's PATH. It parses the DOCUMENTED Go
@@ -380,6 +382,8 @@
             ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
             ${mkKnob "FIGARO_CACHE_DIR"   "cache"  state}
             ${mkHushKnob hush}
+            : "''${FIGARO_OTLP_ENDPOINT:=off}"
+            export FIGARO_OTLP_ENDPOINT
             ${if detached then ''
             export FIGARO_DETACHED=1
             '' else ""}
@@ -471,7 +475,7 @@
               fi
             done
             ${if detached then ''
-            echo "[figaro-dev:${name}] detached: this daemon is not the node (no [troupe], [door.tls], [door.web], box doors, [peers] or troupes/)" >&2
+            echo "[figaro-dev:${name}] detached: this daemon is not the node (no [troupe], [door.tls], [door.web], box doors, [peers], troupes/ or [telemetry]); OTLP export off" >&2
             '' else ""}
           '';
         };

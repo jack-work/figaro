@@ -381,9 +381,14 @@ func (l *Loaded) TelemetryLevel() string {
 	return l.cfg().Telemetry.Level
 }
 
+const OTLPEndpointEnv = "FIGARO_OTLP_ENDPOINT"
+
 func (l *Loaded) TelemetryOTLPEndpoint() string {
-	if l == nil {
-		return ""
+	if v, set := os.LookupEnv(OTLPEndpointEnv); set {
+		if v == "off" {
+			return ""
+		}
+		return v
 	}
 	return l.cfg().Telemetry.OTLPEndpoint
 }
@@ -728,6 +733,7 @@ type Loaded struct {
 const DetachedEnv = "FIGARO_DETACHED"
 
 func detach(cfg *Config) {
+	cfg.Telemetry = TelemetryConfig{}
 	cfg.Troupe = TroupeConfig{}
 	cfg.CLI.Troupe = ""
 	cfg.Peers = nil

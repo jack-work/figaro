@@ -5,8 +5,16 @@ under `[telemetry] dir` (default the state dir), 16 MB plus one `.1` each.
 `[telemetry] otlp_endpoint = "http://host:4318"` sends the same three
 signals over OTLP/HTTP as well: batched spans, a bounded log queue, delta
 metrics every 15 s (up/down counters and gauges cumulative). A dead
-collector costs neither turns nor the files. The resource carries
-`host.name` and `figaro.process` (`angelus` or `cli`).
+collector costs neither turns nor the files. `FIGARO_OTLP_ENDPOINT`
+overrides the config: `off` exports nothing, any other value is the
+endpoint. Every flake dev shell sets it to `off`, and a detached dev shell
+drops the copied `[telemetry]` table as well, so a dev run never reaches the
+live collector or the live files.
+
+The resource carries `host.name`, `figaro.process` (`angelus` or `cli`) and
+`service.version`: the release (`0.58.3`) for a release build, `0.58.3+dev`
+for a dev-shell build, `0.58.3+dirty` for a dirty tree, and `dev-<rev>` (or
+`dev`) for a build nothing stamped. Compare releases on plain `X.Y.Z` only.
 
 Nothing below carries prompt or reply text: counts, sizes, timings,
 names and error classes only.

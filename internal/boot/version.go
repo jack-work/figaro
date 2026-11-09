@@ -1,7 +1,6 @@
 package boot
 
 import (
-	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +15,7 @@ var (
 	commitTime  = ""
 	commitDirty = ""
 	semver      = ""
+	build       = ""
 )
 
 // BuildRevision is empty when unknown; callers must skip the comparison rather
@@ -24,7 +24,15 @@ func BuildRelease() string { return semver }
 
 func ServiceVersion() string {
 	v, _ := Version()
-	return cmp.Or(v.Release, v.Revision)
+	switch {
+	case semver == "":
+		return strings.TrimSuffix("dev-"+v.Revision, "-")
+	case v.Dirty:
+		return semver + "+dirty"
+	case build == "dev":
+		return semver + "+dev"
+	}
+	return semver
 }
 
 func BuildRevision() string {
