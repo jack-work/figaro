@@ -45,6 +45,13 @@ decides, and without it images are sent. A text-only model gets each image
 part replaced with a note naming what decided it, on every transport, at
 send time; the aria's history keeps its images for the next model.
 
+When nothing says and the provider refuses the images (rou2's chat route:
+400 `unsupported_capability`, "carries an image, and the selected model
+route accepts text only"), figaro sends once more with the notes in their
+place, and treats the model as text-only (`src` `refusal` in `@models`)
+until the daemon restarts. Only `text_only = false` in the provider file
+outranks a refusal.
+
 ```toml
 [models."explabs/glm-5.3"]
 text_only = true

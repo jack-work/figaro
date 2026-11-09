@@ -240,6 +240,12 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err == nil || watched.spoke.Load() || ctx.Err() != nil {
 		return err
 	}
+	if p.forgetImagesAfterRefusal(model, err) {
+		figOtel.Event(ctx, "provider.images_refused")
+		slog.InfoContext(ctx, "provider refused images for the model; resending once with text stand-ins",
+			"provider", p.spec.Name, "model", model, "err", err)
+		return p.sendVia(ctx, t, model, in, bus)
+	}
 	if lim, ok := p.refitAfterRefusal(ctx, model, err); ok {
 		figOtel.Event(ctx, "provider.image_refit", attribute.Int("max_bytes", lim.MaxBytes))
 		slog.InfoContext(ctx, "provider refused an image; refitting to the catalog's limits and resending once",
@@ -260,13 +266,45 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 }
 
 func (p *Provider) entry(model string) (apimodels.Entry, bool) {
-	if e, known := p.cat.lookup(model); known {
-		return e, true
+	e, known := p.cat.lookup(model)
+	if !known {
+		e, known = p.reader.Seed(model)
 	}
-	return p.reader.Seed(model)
+	return p.withRefusals(model, e, known)
 }
 
-func (p *Provider) SeedModel(model string) (apimodels.Entry, bool) { return p.reader.Seed(model) }
+func (p *Provider) SeedModel(model string) (apimodels.Entry, bool) {
+	e, ok := p.reader.Seed(model)
+	return p.withRefusals(model, e, ok)
+}
+
+var refusedImages sync.Map
+
+func refusalKey(providerName, model string) string { return providerName + "\x00" + model }
+
+func (p *Provider) withRefusals(model string, e apimodels.Entry, known bool) (apimodels.Entry, bool) {
+	if _, refused := refusedImages.Load(refusalKey(p.spec.Name, model)); !refused || e.Source("images") == apimodels.SourceConfig {
+		return e, known
+	}
+	no := false
+	e.Images = &no
+	src := make(map[string]string, len(e.Src)+1)
+	for k, v := range e.Src {
+		src[k] = v
+	}
+	e.Src = src
+	e.Mark("images", apimodels.SourceRefusal)
+	return e, true
+}
+
+func (p *Provider) forgetImagesAfterRefusal(model string, err error) bool {
+	var refused *provider.ImagesRefused
+	if !errors.As(err, &refused) || p.textOnly(model) != "" {
+		return false
+	}
+	refusedImages.Store(refusalKey(p.spec.Name, model), true)
+	return p.textOnly(model) != ""
+}
 
 func (p *Provider) textOnly(model string) string {
 	e, _ := p.entry(model)
@@ -278,6 +316,8 @@ func (p *Provider) textOnly(model string) string {
 		return fmt.Sprintf("model %s takes text only ([models.%q] text_only in providers/%s.toml)", model, model, p.spec.Name)
 	case src == apimodels.SourceMapping:
 		return fmt.Sprintf("model %s takes text only (figaro's catalog mapping for %s)", model, p.spec.Name)
+	case src == apimodels.SourceRefusal:
+		return fmt.Sprintf("model %s takes text only (%s refused its images earlier this session)", model, p.spec.Name)
 	default:
 		return fmt.Sprintf("model %s takes text only (%s's model catalog)", model, p.spec.Name)
 	}
@@ -464,7 +504,11 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 			if err != nil {
 				return nil, err
 			}
-			return c.Models(ctx)
+			listed, err := c.Models(ctx)
+			for i := range listed {
+				listed[i].Entry, _ = p.withRefusals(listed[i].ID, listed[i].Entry, true)
+			}
+			return listed, err
 		}
 		return nil, fmt.Errorf("%s: no catalog configured to list models from", p.spec.Name)
 	}
@@ -477,7 +521,8 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		if p.cachedRoute(m.ID) == "" {
 			continue
 		}
-		out = append(out, provider.ModelInfo{ID: m.ID, Provider: p.spec.Name, Entry: m.Entry})
+		e, _ := p.withRefusals(m.ID, m.Entry, true)
+		out = append(out, provider.ModelInfo{ID: m.ID, Provider: p.spec.Name, Entry: e})
 	}
 	return out, nil
 }

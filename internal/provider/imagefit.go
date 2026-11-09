@@ -284,3 +284,11 @@ func RefitAfterRefusal(e models.Entry, providerName, model string, refused *Imag
 	}
 	return lim, lim.MaxBytes > 0
 }
+
+type ImagesRefused struct {
+	Err error
+}
+
+func (e *ImagesRefused) Error() string { return e.Err.Error() }
+
+func (e *ImagesRefused) Unwrap() error { return e.Err }

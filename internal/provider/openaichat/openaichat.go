@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -221,7 +222,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: HTTP %d: %s", p.Route.Name, resp.StatusCode, errBody)
+		return imagesRefusalOf(resp.StatusCode, errBody, fmt.Errorf("%s: HTTP %d: %s", p.Route.Name, resp.StatusCode, errBody))
 	}
 
 	out, err := drainSSE(ctx, resp.Body, bus)
@@ -424,3 +425,20 @@ func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]jso
 }
 
 func (p *Provider) TranslatorChannel() string { return p.CacheNamespace }
+
+func imagesRefusalOf(status int, body []byte, err error) error {
+	if status != http.StatusBadRequest {
+		return err
+	}
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &parsed) != nil || parsed.Error.Code != "unsupported_capability" ||
+		!strings.Contains(parsed.Error.Message, "carries an image") {
+		return err
+	}
+	return &provider.ImagesRefused{Err: err}
+}

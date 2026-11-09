@@ -15,6 +15,7 @@ const (
 	SourceAPI     = "api"
 	SourceMapping = "mapping"
 	SourceConfig  = "config"
+	SourceRefusal = "refusal"
 )
 
 const (
