@@ -8,6 +8,7 @@ import (
 	"time"
 
 	apimodels "github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -20,6 +21,8 @@ type catalogCache struct {
 	tried   time.Time
 	flight  chan struct{}
 	lastErr error
+	etag    string
+	listed  []catalog.Model
 }
 
 var catalogCaches sync.Map
@@ -64,10 +67,32 @@ func (c *catalogCache) seed(entries map[string]apimodels.Entry, at time.Time) {
 	c.entries, c.fetched = entries, at
 }
 
-func (c *catalogCache) store(entries map[string]apimodels.Entry, at time.Time) {
+func (c *catalogCache) store(entries map[string]apimodels.Entry, listed []catalog.Model, etag string, at time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.entries, c.fetched, c.lastErr = entries, at, nil
+	c.listed, c.etag = listed, etag
+}
+
+func (c *catalogCache) validator() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.listed == nil {
+		return ""
+	}
+	return c.etag
+}
+
+func (c *catalogCache) revalidated(etag string, at time.Time) ([]catalog.Model, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.listed == nil {
+		return nil, false
+	}
+	if c.etag == etag {
+		c.fetched, c.lastErr = at, nil
+	}
+	return c.listed, true
 }
 
 func (c *catalogCache) due(now time.Time, every time.Duration) bool {

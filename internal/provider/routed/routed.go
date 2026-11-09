@@ -572,13 +572,28 @@ func (p *Provider) fetchCatalog(ctx context.Context) (listed []catalog.Model, er
 		}
 		figOtel.Event(ctx, "provider.catalog", attrs...)
 	}()
-	next := p.base() + p.spec.Catalog
+	first := p.base() + p.spec.Catalog
+	held := p.cat.validator()
+	next, etag := first, ""
 	seen := map[string]bool{}
 	for next != "" && !seen[next] {
 		seen[next] = true
-		page, cursor, err := p.catalogPage(ctx, next)
+		ifNoneMatch := ""
+		if next == first {
+			ifNoneMatch = held
+		}
+		page, cursor, tag, err := p.catalogPage(ctx, next, ifNoneMatch)
+		if errors.Is(err, errNotModified) {
+			if kept, ok := p.cat.revalidated(held, p.now()); ok {
+				return kept, nil
+			}
+			err = fmt.Errorf("%s models: 304 for a catalog figaro no longer holds", p.spec.Name)
+		}
 		if err != nil {
 			return nil, err
+		}
+		if next == first {
+			etag = tag
 		}
 		listed = append(listed, page...)
 		next = ""
@@ -592,11 +607,16 @@ func (p *Provider) fetchCatalog(ctx context.Context) (listed []catalog.Model, er
 	for _, m := range listed {
 		byID[m.ID] = m.Entry
 	}
-	p.cat.store(byID, p.now())
+	if len(seen) > 1 {
+		etag = ""
+	}
+	p.cat.store(byID, listed, etag, p.now())
 	return listed, nil
 }
 
-func (p *Provider) catalogPage(ctx context.Context, url string) ([]catalog.Model, string, error) {
+var errNotModified = errors.New("catalog not modified")
+
+func (p *Provider) catalogPage(ctx context.Context, url, ifNoneMatch string) ([]catalog.Model, string, string, error) {
 	resp, err := auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
@@ -609,21 +629,27 @@ func (p *Provider) catalogPage(ctx context.Context, url string) ([]catalog.Model
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		req.Header.Set("Accept", "application/json")
+		if ifNoneMatch != "" {
+			req.Header.Set("If-None-Match", ifNoneMatch)
+		}
 		return catalogClient.Do(req)
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("%s models: %w", p.spec.Name, err)
+		return nil, "", "", fmt.Errorf("%s models: %w", p.spec.Name, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotModified && ifNoneMatch != "" {
+		return nil, "", "", errNotModified
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return nil, "", fmt.Errorf("%s models %d: %s", p.spec.Name, resp.StatusCode, body)
+		return nil, "", "", fmt.Errorf("%s models %d: %s", p.spec.Name, resp.StatusCode, body)
 	}
 	listed, cursor, err := p.reader.Page(resp.Body)
 	if err != nil {
-		return nil, "", fmt.Errorf("%s models: %w", p.spec.Name, err)
+		return nil, "", "", fmt.Errorf("%s models: %w", p.spec.Name, err)
 	}
-	return listed, cursor, nil
+	return listed, cursor, resp.Header.Get("ETag"), nil
 }
 
 func snapshotString(snapshot form.Snapshot, key string) string {
