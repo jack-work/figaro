@@ -399,7 +399,10 @@ principal. `figaro grants <id>` shows each level, the ceiling and the
 effective set, and so does `figaro.grants`.
 
 A provider must read the effective set from `figaro.grants`, not the raw key:
-the key holds only that aria's own narrowing. A value that does not parse is
+the key holds only that aria's own narrowing. A `*` verb means figaro's verbs
+only, never `egress:` or `cred:`, whoever writes it; so that no reader takes it
+for more, `figaro.grants` spells every `*` verb out as figaro's verbs, one
+grant each. A value that does not parse is
 refused on write, and one stored before holds nothing. A figaro that moves to
 another node writes its effective set into its own key first, so leaving its
 ancestors behind does not widen it.

@@ -145,13 +145,17 @@ func (h *handlers) grants(ctx context.Context, params json.RawMessage) (interfac
 	if !ok {
 		return nil, authz.NotFound(rpc.MethodGrants, req.FigaroID)
 	}
-	out := rpc.GrantsResponse{FigaroID: req.FigaroID, Effective: g.Effective.Strings(), CeilingSet: g.CeilingSet, Ceiling: g.Ceiling.Strings()}
-	if out.Effective == nil {
-		out.Effective = []string{}
+	out := rpc.GrantsResponse{FigaroID: req.FigaroID, Effective: authz.ExportGrants(g.Effective), CeilingSet: g.CeilingSet}
+	if g.CeilingSet {
+		out.Ceiling = authz.ExportGrants(g.Ceiling)
 	}
 	for _, id := range g.Chain {
 		own, set := g.Own[id]
-		out.Chain = append(out.Chain, rpc.GrantsLevel{FigaroID: id, Grants: own.Strings(), Set: set, Unreadable: slices.Contains(g.Unread, id)})
+		level := rpc.GrantsLevel{FigaroID: id, Set: set, Unreadable: slices.Contains(g.Unread, id)}
+		if set {
+			level.Grants = authz.ExportGrants(own)
+		}
+		out.Chain = append(out.Chain, level)
 	}
 	return out, nil
 }
