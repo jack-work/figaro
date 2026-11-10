@@ -96,7 +96,7 @@ func writeDelegation(out io.Writer, loaded *config.Loaded, name, lend, self stri
 	if len(existing) == 0 {
 		add = authz.DefaultPolicy(mustPrincipal(self), loaded.DooredBoxes())
 	}
-	add += fmt.Sprintf("\n[roles.%s]\ngrants = [{ verbs = [\"*\"], on = [\"*\"] }]\n\n[[bind]]\nrole = %q\nprincipals = [%q]\n", lentRole, lentRole, troupeP)
+	add += fmt.Sprintf("\n[roles.%s]\ngrants = [\"*:*\"]\n\n[[bind]]\nrole = %q\nprincipals = [%q]\n", lentRole, lentRole, troupeP)
 	if path == "" {
 		path = filepath.Join(loaded.ConfigDir, "policy.toml")
 		if err := setPolicyPath(loaded.ConfigPath, "policy.toml"); err != nil {

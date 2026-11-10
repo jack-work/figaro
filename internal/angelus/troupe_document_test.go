@@ -12,7 +12,7 @@ import (
 
 const documentWithAnIssuer = `
 [roles.r]
-grants = [{ verbs = ["read"], on = ["*"] }]
+grants = ["read:*"]
 
 [[bind]]
 role = "r"

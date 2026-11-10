@@ -14,14 +14,14 @@ import (
 
 const narrowRoles = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:1000"]
 
 [roles.reader]
-grants = [{ verbs = ["read"], on = ["aria:aaaa0001"] }]
+grants = ["read:aria:aaaa0001"]
 
 [[bind]]
 role = "reader"
@@ -52,13 +52,13 @@ func TestHoldsRoleIsAnyBindingByPrincipalOrGroup(t *testing.T) {
 // A troupe binding seats a subject only where this node lends the troupe a
 // role; a troupe document that does not load seats nobody.
 func TestATroupeBindingHoldsARoleOnlyWhereTheNodeDelegates(t *testing.T) {
-	if p := withTroupe(t, localDelegating(t, `{ verbs = ["read"], on = ["*"] }`), everything); !p.HoldsRole(subject(guest)) {
+	if p := withTroupe(t, localDelegating(t, `"read:*"`), everything); !p.HoldsRole(subject(guest)) {
 		t.Fatal("a troupe-bound subject on a delegating node holds no role")
 	}
 	if p := withTroupe(t, loaded(t, narrowRoles), everything); p.HoldsRole(subject(guest)) {
 		t.Fatal("a node that lends the troupe nothing seated a troupe-bound subject")
 	}
-	p := localDelegating(t, `{ verbs = ["read"], on = ["*"] }`)
+	p := localDelegating(t, `"read:*"`)
 	if err := p.SetTroupe("estate", []byte("[roles.all\n")); err == nil {
 		t.Fatal("a broken troupe document loaded")
 	}

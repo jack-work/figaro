@@ -15,7 +15,7 @@ import (
 
 const mixedPolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -90,7 +90,7 @@ func TestReloadWarnsOnUnscopedNamesAndStillLoads(t *testing.T) {
 
 const wildcardPolicy = `
 [roles.r]
-grants = [{ verbs = ["read"], on = ["*"] }]
+grants = ["read:*"]
 
 [[bind]]
 role = "r"

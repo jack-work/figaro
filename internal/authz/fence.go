@@ -22,18 +22,16 @@ const (
 )
 
 type fence struct {
-	n     int
-	verbs []rpc.Verb
-	on    []string
-	allow []string
-	deny  []string
+	n      int
+	grants jkauthz.Grants
+	allow  []string
+	deny   []string
 }
 
 type fenceDoc struct {
-	Verbs []string `toml:"verbs"`
-	On    []string `toml:"on"`
-	Allow []string `toml:"allow"`
-	Deny  []string `toml:"deny"`
+	Grants []string `toml:"grants"`
+	Allow  []string `toml:"allow"`
+	Deny   []string `toml:"deny"`
 }
 
 func splitFences(data []byte, schema jkauthz.Schema[Resource]) ([]byte, []fence, error) {
@@ -104,31 +102,18 @@ func sameGrants(whole, grants []byte) error {
 }
 
 func compileFence(n int, d fenceDoc, schema jkauthz.Schema[Resource]) (fence, error) {
-	f := fence{n: n, on: d.On, allow: d.Allow, deny: d.Deny}
-	if len(d.Verbs) == 0 || len(d.On) == 0 {
-		return f, fmt.Errorf("fence %d: needs verbs and on", n)
+	f := fence{n: n, allow: d.Allow, deny: d.Deny}
+	if len(d.Grants) == 0 {
+		return f, fmt.Errorf("fence %d: needs grants", n)
 	}
 	if (len(d.Allow) == 0) == (len(d.Deny) == 0) {
 		return f, fmt.Errorf("fence %d: needs allow or deny, not both", n)
 	}
-	for _, v := range d.Verbs {
-		if v == jkauthz.Any {
-			f.verbs = rpc.Verbs()
-			break
-		}
-		if !slices.Contains(schema.Verbs, v) {
-			return f, fmt.Errorf("fence %d: unknown verb %q", n, v)
-		}
-		f.verbs = append(f.verbs, rpc.Verb(v))
+	grants, err := schema.ParseGrants(d.Grants)
+	if err != nil {
+		return f, fmt.Errorf("fence %d: %w", n, err)
 	}
-	for _, sel := range d.On {
-		if sel == jkauthz.Any {
-			continue
-		}
-		if err := schema.Selectors.Validate(sel); err != nil {
-			return f, fmt.Errorf("fence %d: selector %q: %w", n, sel, err)
-		}
-	}
+	f.grants = grants
 	for _, name := range slices.Concat(d.Allow, d.Deny) {
 		if err := validFigaroName(name); err != nil {
 			return f, fmt.Errorf("fence %d: %w", n, err)
@@ -152,11 +137,8 @@ func validFigaroName(name string) error {
 }
 
 func (f fence) covers(m selectors, s jkauthz.Subject, verb rpc.Verb, r Resource) bool {
-	if !slices.Contains(f.verbs, verb) {
-		return false
-	}
-	for _, sel := range f.on {
-		if sel == jkauthz.Any || m.Match(sel, s, r) {
+	for _, g := range f.grants {
+		if (g.Verb == jkauthz.Any || g.Verb == string(verb)) && (g.Object == jkauthz.Any || m.Match(g.Object, s, r)) {
 			return true
 		}
 	}

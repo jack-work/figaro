@@ -432,12 +432,14 @@ func TestTopologyIsWrittenThroughItsOwnForm(t *testing.T) {
 	}
 }
 
-func lend(verbs string, ids ...string) string {
-	on := make([]string, len(ids))
-	for i, id := range ids {
-		on[i] = `"aria:` + id + `"`
+func lend(verbs []string, ids ...string) string {
+	var grants []string
+	for _, v := range verbs {
+		for _, id := range ids {
+			grants = append(grants, `"`+v+`:aria:`+id+`"`)
+		}
 	}
-	return "{ verbs = [" + verbs + "], on = [" + strings.Join(on, ", ") + "] }"
+	return strings.Join(grants, ", ")
 }
 
 func lendGuest(t *testing.T, r grantRig, grants ...string) {
@@ -470,7 +472,7 @@ func TestArrangingUnderAnAriaNeedsSetOnIt(t *testing.T) {
 	}
 	p, g := owners.FigaroID, theirs.FigaroID
 
-	lendGuest(t, r, lend(`"read"`, p))
+	lendGuest(t, r, lend([]string{"read"}, p))
 	err = setTopology(t, r, guest, map[string]string{g: p})
 	if err == nil {
 		t.Fatal("a guest lent only read drew its aria under the owner's")
@@ -482,7 +484,7 @@ func TestArrangingUnderAnAriaNeedsSetOnIt(t *testing.T) {
 		t.Error("a refused write moved the guest's aria under the owner's")
 	}
 
-	lendGuest(t, r, lend(`"read", "set"`, p))
+	lendGuest(t, r, lend([]string{"read", "set"}, p))
 	if err := setTopology(t, r, guest, map[string]string{g: p}); err != nil {
 		t.Fatalf("a guest lent set on the owner's aria cannot draw under it: %v", err)
 	}
@@ -514,7 +516,7 @@ func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotSet(t *testing.T) {
 	}
 
 	guest := as("user", "guest")
-	lendGuest(t, r, lend(`"read", "set"`, x), lend(`"read"`, z))
+	lendGuest(t, r, lend([]string{"read", "set"}, x), lend([]string{"read"}, z))
 	err = setTopology(t, r, guest, nil, x)
 	if err == nil {
 		t.Error("a guest with set on x only undid the owner's override on y")
@@ -525,7 +527,7 @@ func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotSet(t *testing.T) {
 		t.Errorf("a refused restore changed the drawing: %s under %q, %s under %q", y, presentedUnder(t, r, y), x, presentedUnder(t, r, x))
 	}
 
-	lendGuest(t, r, lend(`"read", "set"`, x, y), lend(`"read"`, z))
+	lendGuest(t, r, lend([]string{"read", "set"}, x, y), lend([]string{"read"}, z))
 	if err := setTopology(t, r, guest, nil, x); err != nil {
 		t.Fatalf("a guest with set on both cannot restore x: %v", err)
 	}

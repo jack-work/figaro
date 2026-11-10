@@ -524,7 +524,7 @@ func TestAGroupFromTheWrongIssuerSatisfiesNoBinding(t *testing.T) {
 	path := filepath.Join(dir, "policy.toml")
 	src := `
 [roles.admin]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "admin"

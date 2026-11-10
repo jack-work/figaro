@@ -13,7 +13,7 @@ var guest = jkauthz.Principal{Kind: jkauthz.KindUser, ID: "ana@auth.kelliher.inf
 
 const everything = `
 [roles.all]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "all"
@@ -24,7 +24,7 @@ func localDelegating(t *testing.T, delegated string) *Policies {
 	t.Helper()
 	return loaded(t, `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -50,7 +50,7 @@ func withTroupe(t *testing.T, p *Policies, body string) *Policies {
 // A troupe grant counts on a node only as far as that node's own policy
 // lends the same right to the troupe.
 func TestATroupeGrantAppliesOnlyAsFarAsTheNodeDelegates(t *testing.T) {
-	p := withTroupe(t, localDelegating(t, `{ verbs = ["read", "listen"], on = ["*"] }`), everything)
+	p := withTroupe(t, localDelegating(t, `"read:*", "listen:*"`), everything)
 	if d := p.Allow(subject(guest), rpc.VerbRead, Aria("aaaa0002")); !d.Allowed {
 		t.Fatalf("delegated read: %s", d.Reason())
 	}
@@ -64,7 +64,7 @@ func TestATroupeGrantAppliesOnlyAsFarAsTheNodeDelegates(t *testing.T) {
 }
 
 func TestWithoutATroupePolicyOrDelegationTheLocalPolicyDecidesAsBefore(t *testing.T) {
-	p := localDelegating(t, `{ verbs = ["*"], on = ["*"] }`)
+	p := localDelegating(t, `"*:*"`)
 	if d := p.Allow(subject(guest), rpc.VerbRead, Aria("aaaa0002")); d.Allowed {
 		t.Fatal("no troupe policy, yet a stranger reads")
 	}
@@ -87,7 +87,7 @@ func TestWithoutATroupePolicyOrDelegationTheLocalPolicyDecidesAsBefore(t *testin
 // the troupe everything, never reaches the two local-only rights: admin on
 // the troupe (changing its policy, revoking, leaving) and sandbox:local.
 func TestAnAllGrantingTroupeDocumentCannotReachTheLocalOnlyRights(t *testing.T) {
-	p := withTroupe(t, localDelegating(t, `{ verbs = ["*"], on = ["*"] }`), everything)
+	p := withTroupe(t, localDelegating(t, `"*:*"`), everything)
 	for _, c := range []struct {
 		verb rpc.Verb
 		r    Resource
@@ -110,8 +110,8 @@ func TestAnAllGrantingTroupeDocumentCannotReachTheLocalOnlyRights(t *testing.T) 
 }
 
 func TestATroupeDocumentThatDoesNotCompileGrantsNothing(t *testing.T) {
-	p := localDelegating(t, `{ verbs = ["*"], on = ["*"] }`)
-	if err := p.SetTroupe("estate", []byte("[roles.x]\ngrants = [{ verbs = [\"fly\"], on = [\"*\"] }]\n")); err == nil {
+	p := localDelegating(t, `"*:*"`)
+	if err := p.SetTroupe("estate", []byte("[roles.x]\ngrants = [\"fly:*\"]\n")); err == nil {
 		t.Fatal("an unknown verb compiled")
 	}
 	if d := p.Allow(subject(guest), rpc.VerbRead, Aria("aaaa0002")); d.Allowed {
@@ -122,8 +122,8 @@ func TestATroupeDocumentThatDoesNotCompileGrantsNothing(t *testing.T) {
 // A document arrives by the ledger without passing a door's set check; one
 // the set check would refuse loads as nothing.
 func TestATroupeDocumentThatBreaksASetRuleGrantsNothing(t *testing.T) {
-	p := localDelegating(t, `{ verbs = ["*"], on = ["*"] }`)
-	err := p.SetTroupe("estate", []byte("[roles.r]\ngrants = [{ verbs = [\"read\"], on = [\"*\"] }]\n\n[[bind]]\nrole = \"r\"\nprincipals = [\"user:*\"]\n"))
+	p := localDelegating(t, `"*:*"`)
+	err := p.SetTroupe("estate", []byte("[roles.r]\ngrants = [\"read:*\"]\n\n[[bind]]\nrole = \"r\"\nprincipals = [\"user:*\"]\n"))
 	if err == nil || p.TroupeLoadError() == nil {
 		t.Fatal("a bare user:* loaded")
 	}
@@ -135,8 +135,8 @@ func TestATroupeDocumentThatBreaksASetRuleGrantsNothing(t *testing.T) {
 func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 	ok := []string{
 		everything,
-		"[roles.j]\ngrants = [{ verbs = [\"join\"], on = [\"troupe:estate\"] }]\n",
-		"[roles.s]\ngrants = [{ verbs = [\"use\"], on = [\"sandbox:dev-3\"] }]\n",
+		"[roles.j]\ngrants = [\"join:troupe:estate\"]\n",
+		"[roles.s]\ngrants = [\"use:sandbox:dev-3\"]\n",
 		everything + "\n[[issuers]]\nissuer = \"https://id.example.org\"\njwks = \"https://id.example.org/jwks\"\nclients = { x = \"service\" }\n",
 		everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"node:*\", \"user:ana@id.example.org\"]\n",
 	}
@@ -146,12 +146,12 @@ func TestSettingATroupeDocumentRefusesTheLocalOnlyGrants(t *testing.T) {
 		}
 	}
 	bad := map[string]string{
-		"use on sandbox:local":      "[roles.s]\ngrants = [{ verbs = [\"use\"], on = [\"sandbox:local\"] }]\n",
-		"admin on the troupe":       "[roles.a]\ngrants = [{ verbs = [\"admin\"], on = [\"troupe:estate\"] }]\n",
-		"every verb on the troupe":  "[roles.a]\ngrants = [{ verbs = [\"*\"], on = [\"troupe:estate\"] }]\n",
+		"use on sandbox:local":      "[roles.s]\ngrants = [\"use:sandbox:local\"]\n",
+		"admin on the troupe":       "[roles.a]\ngrants = [\"admin:troupe:estate\"]\n",
+		"every verb on the troupe":  "[roles.a]\ngrants = [\"*:troupe:estate\"]\n",
 		"binding the troupe itself": everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"troupe:estate\"]\n",
 		"an http issuer":            everything + "\n[[issuers]]\nissuer = \"http://id.example.org\"\njwks = \"http://j\"\nclients = { x = \"service\" }\n",
-		"an unknown verb":           "[roles.x]\ngrants = [{ verbs = [\"fly\"], on = [\"*\"] }]\n",
+		"an unknown verb":           "[roles.x]\ngrants = [\"fly:*\"]\n",
 	}
 	for _, name := range []string{"user:*", "service:*", "sandbox:*"} {
 		bad["binding "+name] = everything + "\n[[bind]]\nrole = \"all\"\nprincipals = [\"user:ana@id.example.org\", \"" + name + "\"]\n"
@@ -196,7 +196,7 @@ func TestNoCallerMayBeTheTroupe(t *testing.T) {
 func TestAKindWildcardMatchesEveryIssuersScope(t *testing.T) {
 	pol, err := jkauthz.Compile([]byte(`
 [roles.r]
-grants = [{ verbs = ["read"], on = ["*"] }]
+grants = ["read:*"]
 
 [[bind]]
 role = "r"

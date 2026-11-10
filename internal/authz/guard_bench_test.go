@@ -32,7 +32,7 @@ func BenchmarkGuardedOwnerCall(b *testing.B) {
 	}{
 		{"unstamped", sandboxPolicy, plain},
 		{"stamped", sandboxPolicy, stampedBody},
-		{"stamped-fenced", sandboxPolicy + "\n[[fence]]\nverbs = [\"send\"]\non = [\"aria:aaaa0002\"]\nallow = [\"figaro:dddd0001\"]\n", stampedBody},
+		{"stamped-fenced", sandboxPolicy + "\n[[fence]]\ngrants = [\"send:aria:aaaa0002\"]\nallow = [\"figaro:dddd0001\"]\n", stampedBody},
 	} {
 		b.Run(c.name, func(b *testing.B) {
 			p := NewPolicies(me, facts())

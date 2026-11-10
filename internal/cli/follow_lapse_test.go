@@ -51,7 +51,7 @@ func edgeServed(t *testing.T, maxAge time.Duration) (*sdk.Angelus, transport.End
 	policy := filepath.Join(cfg, "policy.toml")
 	require.NoError(t, os.WriteFile(policy, []byte(`
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:`+strconv.Itoa(os.Getuid())+`", "user:admin@auth.test"]

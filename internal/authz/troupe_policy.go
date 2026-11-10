@@ -3,7 +3,6 @@ package authz
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -64,14 +63,6 @@ func CompileTroupePolicy(body []byte, troupe string, schema jkauthz.Schema[Resou
 	return pol, nil
 }
 
-func troupeHolders(body []byte) (*jkauthz.Policy[Resource], error) {
-	doc, err := ParseTroupeDocument(body)
-	if err != nil {
-		return nil, fmt.Errorf("troupe policy: %w", err)
-	}
-	return holders(doc.policy)
-}
-
 func CheckTroupeDocument(body []byte, troupe string, facts Facts) error {
 	_, err := CompileTroupePolicy(body, troupe, Schema(facts))
 	return err
@@ -89,21 +80,18 @@ func checkTroupeRules(doc TroupeDocument, troupe string) error {
 			return fmt.Errorf("troupe policy: %w", err)
 		}
 	}
-	var grants struct {
+	var declared struct {
 		Roles map[string]struct {
-			Grants []struct {
-				Verbs []string `toml:"verbs"`
-				On    []string `toml:"on"`
-			} `toml:"grants"`
+			Grants []string `toml:"grants"`
 		} `toml:"roles"`
 		Bind []struct {
 			Principals []string `toml:"principals"`
 		} `toml:"bind"`
 	}
-	if _, err := toml.Decode(string(doc.policy), &grants); err != nil {
+	if _, err := toml.Decode(string(doc.policy), &declared); err != nil {
 		return err
 	}
-	for _, b := range grants.Bind {
+	for _, b := range declared.Bind {
 		for _, name := range b.Principals {
 			pr, err := jkauthz.ParsePrincipal(name)
 			if err != nil {
@@ -117,16 +105,17 @@ func checkTroupeRules(doc TroupeDocument, troupe string) error {
 			}
 		}
 	}
-	for role, r := range grants.Roles {
-		for _, g := range r.Grants {
-			all := slices.Contains(g.Verbs, jkauthz.Any)
-			for _, on := range g.On {
-				switch {
-				case on == selSandbox+"local":
-					return fmt.Errorf("troupe policy: role %s grants on sandbox:local, which only each node's own policy decides", role)
-				case on == selTroupe+troupe && (all || slices.Contains(g.Verbs, string(rpc.VerbAdmin))):
-					return fmt.Errorf("troupe policy: role %s grants admin on troupe:%s, which only each signer node's own policy decides (join may be granted)", role, troupe)
-				}
+	for role, r := range declared.Roles {
+		for _, text := range r.Grants {
+			g, err := jkauthz.ParseGrant(text)
+			if err != nil {
+				return err
+			}
+			switch {
+			case g.Object == selSandbox+"local":
+				return fmt.Errorf("troupe policy: role %s grants %s, which only each node's own policy decides", role, g)
+			case g.Object == selTroupe+troupe && (g.Verb == jkauthz.Any || g.Verb == string(rpc.VerbAdmin)):
+				return fmt.Errorf("troupe policy: role %s grants %s, which only each signer node's own policy decides (join may be granted)", role, g)
 			}
 		}
 	}

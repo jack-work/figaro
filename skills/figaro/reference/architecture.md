@@ -317,8 +317,14 @@ among figaros the caller may read, so resolution cannot list or expand an id
 the caller could not read.
 
 **The policy** is TOML at `[authz] policy` (relative to the config dir):
-roles of verbs on selectors (`aria:<id>`, `role:@<name>`, `owner:self`,
-`lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`, `troupe:<name>`, `*`), bound to principals. With none
+roles of grants, bound to principals. A grant is `verb:selector`
+(`send:role:@herald`, `read:owner:self`, `*:*`); the verb ends at the first
+colon, and either side may be `*`. Selectors are `aria:<id>`, `role:@<name>`,
+`owner:self`, `lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`
+and `troupe:<name>`. A role's grants are kept canonical: duplicates and
+grants another covers are dropped, then sorted by verb and selector. The
+`{ verbs, on }` tables of 0.59 and earlier are refused, and the error spells them as
+grants. With none
 configured, the daemon's own principal holds every verb and nobody else holds
 any. `outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
@@ -385,20 +391,18 @@ it is not a boundary, which only a box gives.
 
 ```toml
 [[fence]]
-verbs = ["read", "send"]
-on = ["aria:<id>"]
+grants = ["read:aria:<id>", "send:aria:<id>"]
 allow = ["figaro:<id>", "figaro:@engineer", "figaro:self"]
 
 [[fence]]
-verbs = ["kill"]
-on = ["*"]
+grants = ["kill:*"]
 deny = ["figaro:*"]
 ```
 
 A fence binds only calls on the owner's principal that carry a stamp: an
 unstamped call (your shell, telefono) passes every fence, and any other
-principal is decided by its grants alone. It covers its `verbs` on the
-resources its `on` selectors match (the selectors above) and names figaros
+principal is decided by its grants alone. It covers the calls its `grants`
+reach (the grant syntax and selectors above) and names figaros
 by full id, by `@role` (the role's current `target-aria`), `self` (the aria
 the call names) or `*`. `allow` refuses every stamped figaro it does not
 name; `deny` refuses the ones it does. Each fence has exactly one of the two,

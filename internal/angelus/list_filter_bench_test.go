@@ -56,9 +56,9 @@ func BenchmarkListFiltered(b *testing.B) {
 	policy := filepath.Join(b.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 [roles.guest]
-grants = [{ verbs = ["read"], on = ["owner:self"] }]
+grants = ["read:owner:self"]
 [[bind]]
 role = "owner"
 principals = ["user:0"]

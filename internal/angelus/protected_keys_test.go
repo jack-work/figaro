@@ -173,10 +173,10 @@ func TestOpenProtectedKeysKeepTodaysRules(t *testing.T) {
 
 const remoteSetsPolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [roles.remote]
-grants = [{ verbs = ["set", "read", "create", "use"], on = ["*"] }]
+grants = ["set:*", "read:*", "create:*", "use:*"]
 
 [[bind]]
 role = "owner"

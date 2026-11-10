@@ -24,13 +24,13 @@ import (
 
 const troupeAdminPolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:0"]
 
 [roles.member]
-grants = [{ verbs = ["join", "read"], on = ["troupe:estate"] }]
+grants = ["join:troupe:estate", "read:troupe:estate"]
 [[bind]]
 role = "member"
 principals = ["user:member"]

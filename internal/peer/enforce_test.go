@@ -63,7 +63,7 @@ func TestTheNodeDoorIsDecidedByThePolicy(t *testing.T) {
 
 	reload(`
 [roles.peer]
-grants = [{ verbs = ["read"], on = ["*"] }]
+grants = ["read:*"]
 [[bind]]
 role = "peer"
 principals = ["node:a"]

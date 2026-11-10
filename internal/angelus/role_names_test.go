@@ -62,16 +62,16 @@ func (r *nameRig) role(name, target string) string {
 func (r *nameRig) serve(guestReads ...string) {
 	r.t.Helper()
 	r.a.Policies = authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "owner"}, nil)
-	on := []string{`"aria:nothing-at-all"`}
+	on := []string{`"read:aria:nothing-at-all"`}
 	for _, id := range guestReads {
-		on = append(on, `"aria:`+id+`"`)
+		on = append(on, `"read:aria:`+id+`"`)
 	}
 	policy := filepath.Join(r.t.TempDir(), "policy.toml")
 	body := `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 [roles.guest]
-grants = [{ verbs = ["read"], on = [` + strings.Join(on, ", ") + `] }]
+grants = [` + strings.Join(on, ", ") + `]
 [[bind]]
 role = "owner"
 principals = ["user:owner"]

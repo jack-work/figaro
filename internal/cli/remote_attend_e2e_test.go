@@ -70,7 +70,7 @@ func newRemotePair(t *testing.T) *remotePair {
 	require.NoError(t, err)
 
 	policy := filepath.Join(r.cfg, "policy.toml")
-	require.NoError(t, os.WriteFile(policy, []byte("[roles.owner]\ngrants = [{ verbs = [\"*\"], on = [\"*\"] }]\n[[bind]]\nrole = \"owner\"\nprincipals = [\"user:"+strconv.Itoa(os.Getuid())+"\"]\n"), 0o600))
+	require.NoError(t, os.WriteFile(policy, []byte("[roles.owner]\ngrants = [\"*:*\"]\n[[bind]]\nrole = \"owner\"\nprincipals = [\"user:"+strconv.Itoa(os.Getuid())+"\"]\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(r.cfg, "config.toml"), []byte("[authz]\npolicy = \""+policy+"\"\n"), 0o600))
 	loaded, err := config.Load(r.cfg)
 	require.NoError(t, err)

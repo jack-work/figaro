@@ -32,14 +32,13 @@ func newFenceRig(t *testing.T) *fenceRig {
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:owner"]
 
 [[fence]]
-verbs = ["read", "send", "listen"]
-on = ["aria:`+r.x+`"]
+grants = ["read:aria:`+r.x+`", "send:aria:`+r.x+`", "listen:aria:`+r.x+`"]
 allow = ["figaro:`+r.y+`"]
 `), 0o600); err != nil {
 		t.Fatal(err)

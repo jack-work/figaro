@@ -69,7 +69,7 @@ func seats(t testing.TB, principals ...string) *authz.Policies {
 	path := filepath.Join(t.TempDir(), "policy.toml")
 	require.NoError(t, os.WriteFile(path, []byte(`
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"

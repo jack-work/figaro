@@ -11,10 +11,10 @@ import (
 
 const creatorPolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [roles.creator]
-grants = [{ verbs = ["create"], on = ["*"] }, { verbs = ["use"], on = ["sandbox:local"] }, { verbs = ["read"], on = ["owner:self"] }]
+grants = ["create:*", "use:sandbox:local", "read:owner:self"]
 
 [[bind]]
 role = "owner"

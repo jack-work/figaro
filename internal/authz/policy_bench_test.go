@@ -38,7 +38,7 @@ func BenchmarkPoliciesAllowTroupe(b *testing.B) {
 	p := NewPolicies(me, facts())
 	if err := p.store.LoadBytes([]byte(sandboxPolicy + `
 [roles.lent]
-grants = [{ verbs = ["read", "listen", "send"], on = ["*"] }]
+grants = ["read:*", "listen:*", "send:*"]
 
 [[bind]]
 role = "lent"
@@ -48,7 +48,7 @@ principals = ["troupe:estate"]
 	}
 	if err := p.SetTroupe("estate", []byte(`
 [roles.all]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "all"

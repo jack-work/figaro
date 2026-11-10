@@ -12,7 +12,7 @@ import (
 
 const boxLeavePolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -20,9 +20,9 @@ principals = ["user:SELF"]
 
 [roles.box]
 grants = [
-  { verbs = ["create"], on = ["*"] },
-  { verbs = ["use"], on = ["sandbox:self"] },
-  { verbs = ["read", "listen", "send", "fork", "set", "kill"], on = ["sandboxed:self"] },
+  "create:*",
+  "use:sandbox:self",
+  "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self", "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self",
 ]
 
 [[bind]]

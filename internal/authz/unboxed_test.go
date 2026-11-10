@@ -39,7 +39,7 @@ func loadedWith(t *testing.T, f Facts, src string) *Policies {
 
 const unboxedReader = `
 [roles.reader]
-grants = [{ verbs = ["read", "set"], on = ["unboxed"] }]
+grants = ["read:unboxed", "set:unboxed"]
 
 [[bind]]
 role = "reader"
@@ -113,14 +113,14 @@ func TestValidateTakesUnboxedAndNamesIt(t *testing.T) {
 func TestATroupeCeilingOfUnboxedStopsAtBoxes(t *testing.T) {
 	p := loadedWith(t, unboxedFacts(), `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:1000"]
 
 [roles.lent]
-grants = [{ verbs = ["read", "set", "send"], on = ["unboxed"] }]
+grants = ["read:unboxed", "set:unboxed", "send:unboxed"]
 
 [[bind]]
 role = "lent"

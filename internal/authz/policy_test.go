@@ -95,13 +95,13 @@ func TestTheDefaultPolicyIsTheDaemonsOwnUidAndNobodyElse(t *testing.T) {
 
 const sandboxPolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [roles.box]
 grants = [
-  { verbs = ["read", "listen", "send", "set"], on = ["owner:self", "role:@herald", "lineage:cccc0001"] },
-  { verbs = ["create"], on = ["*"] },
-  { verbs = ["use"], on = ["sandbox:dev-3"] },
+  "read:owner:self", "read:role:@herald", "read:lineage:cccc0001", "listen:owner:self", "listen:role:@herald", "listen:lineage:cccc0001", "send:owner:self", "send:role:@herald", "send:lineage:cccc0001", "set:owner:self", "set:role:@herald", "set:lineage:cccc0001",
+  "create:*",
+  "use:sandbox:dev-3",
 ]
 
 [[bind]]
@@ -147,7 +147,7 @@ func TestSelectorsMatchFigarosResources(t *testing.T) {
 func TestASandboxSelectorNeverMatchesAnAria(t *testing.T) {
 	p := loaded(t, `
 [roles.r]
-grants = [{ verbs = ["read"], on = ["sandbox:dev-3"] }]
+grants = ["read:sandbox:dev-3"]
 [[bind]]
 role = "r"
 principals = ["sandbox:dev-3"]
@@ -163,7 +163,7 @@ principals = ["sandbox:dev-3"]
 func TestJoinIsGrantedOnANamedTroupe(t *testing.T) {
 	p := loaded(t, `
 [roles.member]
-grants = [{ verbs = ["join"], on = ["troupe:estate"] }, { verbs = ["read"], on = ["troupe:estate"] }]
+grants = ["join:troupe:estate", "read:troupe:estate"]
 [[bind]]
 role = "member"
 principals = ["user:1001"]
@@ -204,7 +204,7 @@ func TestSelectorsFigaroDoesNotKnowAreRefusedAtLoad(t *testing.T) {
 		p := NewPolicies(me, facts())
 		err := p.Reload(writePolicy(t, `
 [roles.r]
-grants = [{ verbs = ["read"], on = ["`+sel+`"] }]`))
+grants = ["read:`+sel+`"]`))
 		if err == nil {
 			t.Errorf("%q loaded", sel)
 		}

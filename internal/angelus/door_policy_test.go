@@ -13,13 +13,13 @@ import (
 
 const doorPolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [roles.guest]
 grants = [
-  { verbs = ["read", "listen", "send", "set"], on = ["owner:self"] },
-  { verbs = ["create"], on = ["*"] },
-  { verbs = ["use"], on = ["sandbox:local"] },
+  "read:owner:self", "listen:owner:self", "send:owner:self", "set:owner:self",
+  "create:*",
+  "use:sandbox:local",
 ]
 
 [[bind]]
@@ -115,7 +115,7 @@ func TestTheDoorDecidesEveryCallOnTheCallersRoles(t *testing.T) {
 func TestARecursiveKillNeedsKillOnEveryAriaItTakes(t *testing.T) {
 	r := newRigWith(t, doorPolicy+`
 [roles.reaper]
-grants = [{ verbs = ["kill", "fork", "read"], on = ["owner:self"] }]
+grants = ["kill:owner:self", "fork:owner:self", "read:owner:self"]
 
 [[bind]]
 role = "reaper"

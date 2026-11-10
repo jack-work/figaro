@@ -1,7 +1,6 @@
 package authz
 
 import (
-	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -139,7 +138,7 @@ func Schema(facts Facts) jkauthz.Schema[Resource] {
 func DefaultPolicy(self jkauthz.Principal, boxes []string) string {
 	text := fmt.Sprintf(`
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -155,9 +154,10 @@ principals = [%q]
 	return text + fmt.Sprintf(`
 [roles.box]
 grants = [
-  { verbs = ["create"], on = ["*"] },
-  { verbs = ["use"], on = ["sandbox:self"] },
-  { verbs = ["read", "listen", "send", "fork", "set", "kill"], on = ["sandboxed:self"] },
+  "create:*",
+  "use:sandbox:self",
+  "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self",
+  "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self",
 ]
 
 [[bind]]
@@ -173,7 +173,6 @@ type Policies struct {
 	path   string
 	scopes []string
 	troupe atomic.Pointer[troupeLayer]
-	held   atomic.Pointer[jkauthz.Policy[Resource]]
 	fences atomic.Pointer[[]fence]
 	schema jkauthz.Schema[Resource]
 	boxes  []string
@@ -183,7 +182,6 @@ type troupeLayer struct {
 	name   string
 	as     jkauthz.Subject
 	policy *jkauthz.Policy[Resource]
-	held   *jkauthz.Policy[Resource]
 	err    error
 }
 
@@ -228,10 +226,6 @@ func (p *Policies) Reload(path string) error {
 }
 
 func (p *Policies) load(data []byte) error {
-	held, err := holders(data)
-	if err != nil {
-		return err
-	}
 	grants, fences, err := splitFences(data, p.schema)
 	if err != nil {
 		return err
@@ -239,7 +233,6 @@ func (p *Policies) load(data []byte) error {
 	if err := p.store.LoadBytes(grants); err != nil {
 		return err
 	}
-	p.held.Store(held)
 	if len(fences) == 0 {
 		p.fences.Store(nil)
 	} else {
@@ -248,47 +241,17 @@ func (p *Policies) load(data []byte) error {
 	return nil
 }
 
-const verbHold = "hold"
-
-var holdSchema = jkauthz.Schema[Resource]{Verbs: []string{verbHold}}
-
-func holders(policy []byte) (*jkauthz.Policy[Resource], error) {
-	type grant struct {
-		Verbs []string `toml:"verbs"`
-		On    []string `toml:"on"`
-	}
-	type bind struct {
-		Role       string   `toml:"role"`
-		Principals []string `toml:"principals,omitempty"`
-		Groups     []string `toml:"groups,omitempty"`
-	}
-	doc := struct {
-		Roles map[string]map[string][]grant `toml:"roles"`
-		Bind  []bind                        `toml:"bind"`
-	}{Roles: map[string]map[string][]grant{"held": {"grants": {{Verbs: []string{verbHold}, On: []string{jkauthz.Any}}}}}}
-	for _, b := range binds(policy) {
-		if len(b.Principals)+len(b.Groups) > 0 {
-			doc.Bind = append(doc.Bind, bind{Role: "held", Principals: b.Principals, Groups: b.Groups})
-		}
-	}
-	var buf bytes.Buffer
-	if err := toml.NewEncoder(&buf).Encode(doc); err != nil {
-		return nil, err
-	}
-	return jkauthz.Compile(buf.Bytes(), holdSchema)
-}
-
-func holdsRole(pol *jkauthz.Policy[Resource], s jkauthz.Subject) bool {
-	return pol != nil && pol.Allow(s, verbHold, Daemon).Allowed
+func bound(pol *jkauthz.Policy[Resource], s jkauthz.Subject) bool {
+	return pol != nil && pol.Binds(s)
 }
 
 func (p *Policies) HoldsRole(s jkauthz.Subject) bool {
-	local := p.held.Load()
-	if holdsRole(local, s) {
+	local := p.store.Policy()
+	if bound(local, s) {
 		return true
 	}
 	t := p.troupe.Load()
-	return t != nil && t.policy != nil && holdsRole(t.held, s) && holdsRole(local, t.as)
+	return t != nil && bound(t.policy, s) && bound(local, t.as)
 }
 
 func IssuerScopes(cfg config.AuthzConfig) []string {
@@ -450,9 +413,6 @@ func (p *Policies) SetTroupe(name string, body []byte) error {
 		return nil
 	}
 	pol, err := CompileTroupePolicy(body, name, p.schema)
-	if err == nil {
-		layer.held, err = troupeHolders(body)
-	}
 	if err != nil {
 		layer.err = err
 		p.troupe.Store(layer)

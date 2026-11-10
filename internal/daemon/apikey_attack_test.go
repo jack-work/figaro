@@ -33,7 +33,7 @@ func TestAnUnnamedIntermediateCannotMintForAGrantedPrincipal(t *testing.T) {
 	root := newEstateRoot(t)
 	const granted = "service:ci@troupe:estate"
 	policy, err := troupe.SignRootPolicy(root.key, "estate", 1, "root:estate",
-		"setters = [\"node-setter\"]\n[roles.ci]\ngrants = [{ verbs = [\"*\"], on = [\"*\"] }]\n[[bind]]\nrole = \"ci\"\nprincipals = [\""+granted+"\"]\n", time.Now())
+		"setters = [\"node-setter\"]\n[roles.ci]\ngrants = [\"*:*\"]\n[[bind]]\nrole = \"ci\"\nprincipals = [\""+granted+"\"]\n", time.Now())
 	require.NoError(t, err)
 
 	mint := func(node string) (string, troupe.Entry) {

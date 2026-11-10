@@ -161,9 +161,9 @@ func TestAPrefixResolvesOnlyAmongWhatTheCallerMayRead(t *testing.T) {
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 [roles.guest]
-grants = [{ verbs = ["read"], on = ["aria:`+mine+`"] }]
+grants = ["read:aria:`+mine+`"]
 [[bind]]
 role = "owner"
 principals = ["user:owner"]

@@ -23,12 +23,12 @@ import (
 
 const edgePolicy = `
 [roles.owner]
-grants = [{ verbs = ["*"], on = ["*"] }]
+grants = ["*:*"]
 
 [roles.guest]
 grants = [
-  { verbs = ["read", "listen", "send"], on = ["owner:self"] },
-  { verbs = ["create"], on = ["*"] },
+  "read:owner:self", "listen:owner:self", "send:owner:self",
+  "create:*",
 ]
 
 [[bind]]

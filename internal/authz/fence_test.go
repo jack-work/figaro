@@ -18,13 +18,11 @@ import (
 
 const fencedPolicy = sandboxPolicy + `
 [[fence]]
-verbs = ["send", "read"]
-on = ["aria:aaaa0002"]
+grants = ["send:aria:aaaa0002", "read:aria:aaaa0002"]
 allow = ["figaro:dddd0001", "figaro:@herald", "figaro:self"]
 
 [[fence]]
-verbs = ["kill"]
-on = ["*"]
+grants = ["kill:*"]
 deny = ["figaro:*"]
 `
 
@@ -120,15 +118,15 @@ func TestAPolicyReloadedWithoutFencesDropsThem(t *testing.T) {
 
 func TestMalformedFencesRefuseTheWholePolicy(t *testing.T) {
 	for name, fence := range map[string]string{
-		"no names":       `verbs = ["read"]` + "\n" + `on = ["*"]`,
-		"allow and deny": `verbs = ["read"]` + "\n" + `on = ["*"]` + "\n" + `allow = ["figaro:*"]` + "\n" + `deny = ["figaro:*"]`,
-		"no verbs":       `on = ["*"]` + "\n" + `deny = ["figaro:*"]`,
-		"unknown verb":   `verbs = ["shave"]` + "\n" + `on = ["*"]` + "\n" + `deny = ["figaro:*"]`,
-		"bad selector":   `verbs = ["read"]` + "\n" + `on = ["moon:1"]` + "\n" + `deny = ["figaro:*"]`,
-		"a user":         `verbs = ["read"]` + "\n" + `on = ["*"]` + "\n" + `deny = ["user:1000"]`,
-		"empty role":     `verbs = ["read"]` + "\n" + `on = ["*"]` + "\n" + `deny = ["figaro:@"]`,
-		"bad id":         `verbs = ["read"]` + "\n" + `on = ["*"]` + "\n" + `deny = ["figaro:../x"]`,
-		"unknown key":    `verbs = ["read"]` + "\n" + `on = ["*"]` + "\n" + `deny = ["figaro:*"]` + "\n" + `except = ["figaro:*"]`,
+		"no names":       `grants = ["read:*"]`,
+		"allow and deny": `grants = ["read:*"]` + "\n" + `allow = ["figaro:*"]` + "\n" + `deny = ["figaro:*"]`,
+		"no grants":      `deny = ["figaro:*"]`,
+		"unknown verb":   `grants = ["shave:*"]` + "\n" + `deny = ["figaro:*"]`,
+		"bad selector":   `grants = ["read:moon:1"]` + "\n" + `deny = ["figaro:*"]`,
+		"a user":         `grants = ["read:*"]` + "\n" + `deny = ["user:1000"]`,
+		"empty role":     `grants = ["read:*"]` + "\n" + `deny = ["figaro:@"]`,
+		"bad id":         `grants = ["read:*"]` + "\n" + `deny = ["figaro:../x"]`,
+		"unknown key":    `grants = ["read:*"]` + "\n" + `deny = ["figaro:*"]` + "\n" + `except = ["figaro:*"]`,
 	} {
 		path := filepath.Join(t.TempDir(), "policy.toml")
 		if err := os.WriteFile(path, []byte(sandboxPolicy+"\n[[fence]]\n"+fence+"\n"), 0o600); err != nil {
@@ -228,13 +226,13 @@ func TestFencesLeaveEveryGrantDecisionAsItWas(t *testing.T) {
 	}
 	fences := map[string]func(string) string{
 		"appended": func(p string) string {
-			return p + "\n[[fence]]\nverbs = [\"read\"]\non = [\"*\"]\ndeny = [\"figaro:*\"]\n"
+			return p + "\n[[fence]]\ngrants = [\"read:*\"]\ndeny = [\"figaro:*\"]\n"
 		},
 		"first, commented, multi-line": func(p string) string {
-			return "# fences\n[[fence]] # one\nverbs = [\n  \"send\",\n  \"kill\",\n]\non = [\"aria:aaaa0002\"]\nallow = [\"figaro:@herald\"]\n\n" + p
+			return "# fences\n[[fence]] # one\ngrants = [\n  \"send:aria:aaaa0002\",\n  \"kill:aria:aaaa0002\",\n]\nallow = [\"figaro:@herald\"]\n\n" + p
 		},
 		"between every table": func(p string) string {
-			return strings.ReplaceAll(p, "\n[", "\n[[fence]]\nverbs = [\"set\"]\non = [\"role:@herald\"]\ndeny = [\"figaro:self\"]\n\n[")
+			return strings.ReplaceAll(p, "\n[", "\n[[fence]]\ngrants = [\"set:role:@herald\"]\ndeny = [\"figaro:self\"]\n\n[")
 		},
 	}
 	f := facts()
@@ -280,8 +278,8 @@ func TestFencesLeaveEveryGrantDecisionAsItWas(t *testing.T) {
 
 func TestAFenceTheCutCannotSetApartRefusesThePolicy(t *testing.T) {
 	for name, src := range map[string]string{
-		"inline":        "fence = [{ verbs = [\"read\"], on = [\"*\"], deny = [\"figaro:*\"] }]\n" + sandboxPolicy,
-		"quoted header": sandboxPolicy + "\n[[\"fence\"]]\nverbs = [\"read\"]\non = [\"*\"]\ndeny = [\"figaro:*\"]\n",
+		"inline":        "fence = [{ grants = [\"read:*\"], deny = [\"figaro:*\"] }]\n" + sandboxPolicy,
+		"quoted header": sandboxPolicy + "\n[[\"fence\"]]\ngrants = [\"read:*\"]\ndeny = [\"figaro:*\"]\n",
 	} {
 		p := NewPolicies(me, facts())
 		err := p.load([]byte(src))

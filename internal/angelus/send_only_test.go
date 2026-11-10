@@ -25,11 +25,11 @@ func TestAttachServesASendOnlyCallerAndHidesFromAStranger(t *testing.T) {
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.sender]
-grants = [{ verbs = ["send"], on = ["aria:`+target+`"] }]
+grants = ["send:aria:`+target+`"]
 [roles.reader]
-grants = [{ verbs = ["read"], on = ["aria:`+target+`"] }]
+grants = ["read:aria:`+target+`"]
 [roles.stranger]
-grants = [{ verbs = ["read", "send"], on = ["aria:`+neverID+`"] }]
+grants = ["read:aria:`+neverID+`", "send:aria:`+neverID+`"]
 [[bind]]
 role = "sender"
 principals = ["user:sender"]
