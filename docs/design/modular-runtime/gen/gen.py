@@ -180,52 +180,117 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .legend{font-size:12px;color:var(--mute)}
 .legend i{display:inline-block;width:22px;height:0;border-top:2px solid var(--ok);vertical-align:middle;margin:0 4px 0 10px}
 .legend i.bad{border-top:2px solid var(--bad)}
+
+.tog{display:inline-block;width:16px;cursor:pointer;color:var(--mute)}
+details[open]>summary .tog{transform:rotate(90deg)}
+.box.ext{border-color:#9a948a}.box.sel{background:#1d1b17;color:#fff}.box.sel .n,.box.sel .tog{color:#ddd}
+.box.dep{background:#e8f0f8;border-color:#2f5d8a}.box.anc{background:#fbeee0;border-color:#b0651b}
+.box.sel .tag{color:#ddd;border-color:#666}
+#panel{min-height:40px;margin:6px 0 14px}
+.cols{display:grid;grid-template-columns:1fr 1.5fr 1.5fr;gap:14px}
+.col{border-left:4px solid var(--line);padding:2px 10px;font-size:13px}.col ul{margin:4px 0;padding-left:18px}
+.col.self{border-color:var(--ink)}.col.dep{border-color:#2f5d8a}.col.anc{border-color:#b0651b}
+.legend i.dep{border-top:2px solid #2f5d8a}.legend i.anc{border-top:2px solid #b0651b}.legend i.bad{border-top:2px dashed var(--bad)}
+svg text.cnt{font:11px ui-monospace,monospace;paint-order:stroke;stroke:#fbfaf7;stroke-width:4px}
+.band{margin-bottom:46px}.row{gap:22px 26px}
 """
 
 JS = """
 (function(){
-var stage=document.getElementById('stage'),svg=document.getElementById('wires');
+var stage=document.getElementById('stage'),svg=document.getElementById('wires'),panel=document.getElementById('panel');
 var E=JSON.parse(document.getElementById('edges').textContent);
-var show={target:true,today:false};
-function c(el){var r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{x:r.left-s.left+r.width/2,y:r.top-s.top,b:r.top-s.top+r.height,h:r.height}}
+var NS='http://www.w3.org/2000/svg';
+var graph=document.querySelector('input[name=graph]:checked');graph=graph?graph.value:'today';
+var sel=null,slice=false,all=false;
+function boxes(){return Array.prototype.slice.call(document.querySelectorAll('.box[id^="b-"]'))}
+function key(el){return el.id.slice(2)}
+function ext(k){var b=document.getElementById('b-'+k);return b&&b.dataset.ext==='1'}
+function name(k){var b=document.getElementById('b-'+k);return b?b.querySelector('h3').textContent:k}
+function live(){return E.filter(function(e){return e.kind===graph})}
+function closure(start,dir){
+ var es=live(),seen={},q=[start],out={};
+ while(q.length){var n=q.shift();es.forEach(function(e){var a=dir>0?e.from:e.to,b=dir>0?e.to:e.from;
+  if(a===n&&!seen[b]&&b!==start){seen[b]=1;out[b]=1;if(!ext(b))q.push(b)}})}
+ return out;
+}
+function rect(el){var r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{l:r.left-s.left,t:r.top-s.top,w:r.width,h:r.height}}
+function mk(tag,attrs){var e=document.createElementNS(NS,tag);for(var k in attrs)e.setAttribute(k,attrs[k]);return e}
+function defs(){var d=mk('defs',{});[['dep','#2f5d8a'],['anc','#b0651b'],['bad','#c0392b'],['all','#8a8f98']].forEach(function(c){
+ var m=mk('marker',{id:'ah-'+c[0],viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});
+ m.appendChild(mk('path',{d:'M0 0L10 5L0 10z',fill:c[1]}));d.appendChild(m)});svg.appendChild(d)}
 function draw(){
  while(svg.firstChild)svg.removeChild(svg.firstChild);
- E.forEach(function(e){
-  if(!show[e.kind])return;
-  var a=document.getElementById('b-'+e.from),b=document.getElementById('b-'+e.to);
-  if(!a||!b||a.classList.contains('dim')&&b.classList.contains('dim'))return;
-  var p=c(a),q=c(b),y1,y2;
-  if(q.y>=p.b){y1=p.b;y2=q.y}else if(p.y>=q.b){y1=p.y;y2=q.b}else{y1=p.y+p.h/2;y2=q.y+q.h/2}
-  var m=(y1+y2)/2,path=document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d','M'+p.x+' '+y1+' C'+p.x+' '+m+' '+q.x+' '+m+' '+q.x+' '+y2);
-  path.setAttribute('fill','none');
-  path.setAttribute('stroke',e.kind==='today'?'#c0392b':'#7b8794');
-  path.setAttribute('stroke-width',e.kind==='today'?Math.min(1+Math.log(1+e.count),5):1.4);
-  path.setAttribute('stroke-opacity',e.kind==='today'?.75:.55);
-  var t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=e.label;path.appendChild(t);
-  svg.appendChild(path);
+ svg.setAttribute('width',stage.scrollWidth);svg.setAttribute('height',stage.scrollHeight);defs();
+ var dep=sel?closure(sel,1):{},anc=sel?closure(sel,-1):{};
+ var show=live().filter(function(e){
+  if(!sel)return all;
+  var inDep=(e.from===sel||dep[e.from]&&!ext(e.from))&&dep[e.to],inAnc=(e.to===sel||anc[e.to]&&!ext(e.to))&&anc[e.from];
+  return inDep||inAnc;
+ }).map(function(e){var g=!sel?'all':((e.from===sel||dep[e.from])&&dep[e.to]?'dep':'anc');return{e:e,g:g}})
+ .filter(function(x){var a=document.getElementById('b-'+x.e.from),b=document.getElementById('b-'+x.e.to);return a&&b&&a.offsetParent&&b.offsetParent});
+ var ports={};
+ show.forEach(function(x){
+  var a=rect(document.getElementById('b-'+x.e.from)),b=rect(document.getElementById('b-'+x.e.to));
+  var down=b.t>=a.t+a.h-2,up=b.t+b.h<=a.t+2;
+  x.sa=down?'b':up?'t':(b.l>a.l?'r':'l');x.sb=down?'t':up?'b':(b.l>a.l?'l':'r');
+  x.a=a;x.b=b;
+  (ports[x.e.from+x.sa]=ports[x.e.from+x.sa]||[]).push([x,'a',b.l+b.w/2]);
+  (ports[x.e.to+x.sb]=ports[x.e.to+x.sb]||[]).push([x,'b',a.l+a.w/2]);
  });
- svg.setAttribute('width',stage.scrollWidth);svg.setAttribute('height',stage.scrollHeight);
+ Object.keys(ports).forEach(function(k){var l=ports[k];l.sort(function(p,q){return p[2]-q[2]});
+  l.forEach(function(p,i){var x=p[0],end=p[1],r=x[end],side=end==='a'?x.sa:x.sb,f=(i+1)/(l.length+1);
+   x[end+'p']=side==='b'?[r.l+r.w*f,r.t+r.h]:side==='t'?[r.l+r.w*f,r.t]:side==='r'?[r.l+r.w,r.t+r.h*f]:[r.l,r.t+r.h*f];x[end+'s']=side})});
+ show.forEach(function(x){
+  var p=x.ap,q=x.bp,dx=0,dy=0,k=Math.max(40,Math.abs(q[1]-p[1])/2);
+  var c1=x.as==='b'?[p[0],p[1]+k]:x.as==='t'?[p[0],p[1]-k]:x.as==='r'?[p[0]+60,p[1]]:[p[0]-60,p[1]];
+  var c2=x.bs==='t'?[q[0],q[1]-k]:x.bs==='b'?[q[0],q[1]+k]:x.bs==='l'?[q[0]-60,q[1]]:[q[0]+60,q[1]];
+  var direct=x.e.from===sel||x.e.to===sel,col=x.e.bad?'bad':x.g,stroke={dep:'#2f5d8a',anc:'#b0651b',bad:'#c0392b',all:'#8a8f98'}[col];
+  var path=mk('path',{d:'M'+p+' C'+c1+' '+c2+' '+q,fill:'none',stroke:stroke,'stroke-width':!sel?1.2:direct?2.4:1.1,'stroke-opacity':!sel?.5:direct?.95:.35,'marker-end':'url(#ah-'+col+')'});
+  if(x.e.bad)path.setAttribute('stroke-dasharray','6 4');
+  var t=mk('title',{});t.textContent=x.e.label;path.appendChild(t);svg.appendChild(path);
+  if(sel&&direct&&x.e.count>1){var mx=(p[0]+q[0])/2*.5+(c1[0]+c2[0])/2*.5,my=(p[1]+q[1])/2*.5+(c1[1]+c2[1])/2*.5;
+   var tx=mk('text',{x:mx,y:my+4,'text-anchor':'middle','class':'cnt',fill:stroke});tx.textContent=x.e.count;svg.appendChild(tx)}
+ });
 }
-document.querySelectorAll('input[data-kind]').forEach(function(i){
- show[i.dataset.kind]=i.checked;
- i.addEventListener('change',function(){show[i.dataset.kind]=i.checked;draw()});
-});
+function list(title,set,cls){
+ var ks=Object.keys(set);if(!ks.length)return '<div class="col '+cls+'"><b>'+title+'</b><p class=meta>none</p></div>';
+ var es=live(),h='<div class="col '+cls+'"><b>'+title+' ('+ks.length+')</b><ul>';
+ ks.sort(function(a,b){return name(a).localeCompare(name(b))}).forEach(function(k){
+  var d=es.filter(function(e){return (e.from===sel&&e.to===k)||(e.to===sel&&e.from===k)})[0];
+  h+='<li><a href="#" data-sel="'+k+'">'+name(k)+'</a>'+(d?' <span class=meta>direct'+(graph==='today'?', '+d.count+' imports':'')+'</span>':'')+(d&&d.bad?' <span class="tag bad">wrong way</span>':'')+'</li>'});
+ return h+'</ul></div>';
+}
+function apply(){
+ var dep=sel?closure(sel,1):{},anc=sel?closure(sel,-1):{};
+ boxes().forEach(function(b){var k=key(b),hit=!sel||k===sel||dep[k]||anc[k];
+  b.classList.toggle('sel',k===sel);b.classList.toggle('dep',!!dep[k]);b.classList.toggle('anc',!!anc[k]);
+  b.classList.toggle('dim',!!sel&&!hit);b.style.display=slice&&sel&&!hit?'none':''});
+ document.querySelectorAll('.band').forEach(function(bd){var vis=Array.prototype.some.call(bd.querySelectorAll('.box'),function(b){return b.style.display!=='none'});bd.style.display=vis?'':'none'});
+ panel.innerHTML=sel?'<div class=cols><div class="col self"><b>selected</b><p>'+name(sel)+'</p><p class=meta>Esc or click it again to clear</p></div>'+list('depends on, transitively',dep,'dep')+list('used by, transitively',anc,'anc')+'</div>':'<p class=meta>Click a box title to select it: what it depends on turns blue, what depends on it turns orange, and only those wires are drawn. Dashed red wires are imports that point the wrong way.</p>';
+ panel.querySelectorAll('a[data-sel]').forEach(function(a){a.addEventListener('click',function(ev){ev.preventDefault();pick(a.dataset.sel)})});
+ draw();
+}
+function pick(k){sel=sel===k?null:k;clearTag();try{history.replaceState(null,'',sel?'#sel='+sel:location.pathname+location.search)}catch(e){}apply()}
+function clearTag(){document.querySelectorAll('.bar button[data-pick]').forEach(function(o){o.classList.remove('on')});document.querySelectorAll('.card').forEach(function(o){o.classList.remove('on')});document.querySelectorAll('.box').forEach(function(b){b.classList.remove('hl')})}
+boxes().forEach(function(b){b.querySelector('summary').addEventListener('click',function(ev){
+ if(ev.target.closest('.tog'))return;ev.preventDefault();pick(key(b))})});
+document.querySelectorAll('input[name=graph]').forEach(function(i){i.addEventListener('change',function(){graph=i.value;apply()})});
+var sl=document.getElementById('slice');if(sl)sl.addEventListener('change',function(){slice=sl.checked;apply()});
+var al=document.getElementById('allw');if(al)al.addEventListener('change',function(){all=al.checked;draw()});
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&sel){sel=null;apply()}});
 var picked=null;
 document.querySelectorAll('.bar button[data-pick]').forEach(function(btn){
  btn.addEventListener('click',function(){
-  var k=btn.dataset.pick;picked=picked===k?null:k;
+  var k=btn.dataset.pick;picked=picked===k?null:k;sel=null;apply();
   document.querySelectorAll('.bar button[data-pick]').forEach(function(o){o.classList.toggle('on',o.dataset.pick===picked)});
   document.querySelectorAll('.card').forEach(function(o){o.classList.toggle('on',o.id==='card-'+picked)});
-  document.querySelectorAll('.box[data-tags]').forEach(function(bx){
-   var hit=picked&&bx.dataset.tags.split(' ').indexOf(picked)>=0;
-   bx.classList.toggle('hl',!!hit);bx.classList.toggle('dim',!!picked&&!hit);
-  });
-  draw();
+  boxes().forEach(function(bx){var hit=picked&&(bx.dataset.tags||'').split(' ').indexOf(picked)>=0;
+   bx.classList.toggle('hl',!!hit);bx.classList.toggle('dim',!!picked&&!hit)});
  });
 });
 document.querySelectorAll('details').forEach(function(d){d.addEventListener('toggle',draw)});
-addEventListener('resize',draw);addEventListener('load',draw);draw();
+var h=/^#sel=(.+)$/.exec(location.hash);if(h&&document.getElementById('b-'+h[1]))sel=h[1];
+addEventListener('resize',draw);addEventListener('load',apply);apply();
 })();
 """
 
@@ -290,11 +355,17 @@ def cards(include_steps, include_issues):
     return "".join(out)
 
 
-def legend():
+def legend(graphs):
+    radio = ""
+    if graphs:
+        radio = ('<b>graph</b><label><input type=radio name=graph value=target checked> target dependencies</label>'
+                 '<label><input type=radio name=graph value=today> today\'s imports</label>')
     return (
-        '<div class=bar><b>wires</b><label><input type=checkbox data-kind=target checked> target dependencies</label>'
-        '<label><input type=checkbox data-kind=today> today\'s imports that point the wrong way</label></div>'
-        '<p class=legend>Solid box: required module. Dashed: optional module. Dotted: new code. Every module may import api + leaf libs; those wires are not drawn.<i></i>target<i class=bad></i>today, wrong way (hover for count)</p>'
+        f'<div class=bar>{radio}<b>view</b><label><input type=checkbox id=slice> show only the selection</label>'
+        '<label><input type=checkbox id=allw> all wires</label></div>'
+        '<p class=legend>Solid box: required module. Dashed: optional. Dotted: new code. Click a title to select; the arrow on the title opens the files.'
+        '<i class=dep></i>depends on<i class=anc></i>used by<i class=bad></i>wrong way</p>'
+        '<div id=panel></div>'
     )
 
 
@@ -339,7 +410,7 @@ def module_box(mod, files, bad_out):
     iss = issues_for(mod)
     tags = " ".join(st + [f"#{n}" for n in iss])
     page_of = next(l["page"] for l in M.LAYERS if mod in l["modules"])
-    out = [f'<details class="{cls}" id="b-{mod}" data-tags="{esc(tags)}"><summary><h3 style="display:inline">{esc(m["name"])}</h3>'
+    out = [f'<details class="{cls}" id="b-{mod}" data-tags="{esc(tags)}"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">{esc(m["name"])}</h3>'
            f'<span class=n>{fmt(total)} lines, {pk} pkgs</span><span class=tags>']
     out += [f"<span class=tag>{s}</span>" for s in st]
     out += [f"<span class='tag i'>#{n}</span>" for n in iss]
@@ -360,7 +431,7 @@ def overview(files, e):
         "<p>The target stack from the design (figaro-design, issue #75), with today's code mapped onto it. Imports point down. "
         "Open a box for its packages; open a layer page for components, files and the imports to cut. "
         "Pick a step or an issue to see what it touches.</p>",
-        legend(), picker(M.STEPS, [i for i in M.ISSUES if i["module"] != "all"]),
+        legend(True), picker(M.STEPS, [i for i in M.ISSUES if i["module"] != "all"]),
         cards(M.STEPS, [i for i in M.ISSUES if i["module"] != "all"]),
         '<div id=stage><svg id=wires></svg>',
     ]
@@ -376,12 +447,10 @@ def overview(files, e):
     el = []
     for mod, m in M.MODULES.items():
         for d in m["deps"]:
-            if d == "base":
-                continue
-            el.append({"from": mod, "to": d, "kind": "target", "count": 1, "label": f"{mod} -> {d}"})
+            el.append({"from": mod, "to": d, "kind": "target", "count": 1, "bad": False, "label": f"{mod} -> {d}"})
     for (a, b), v in e.items():
-        if not allowed(a, b):
-            el.append({"from": a, "to": b, "kind": "today", "count": v["count"], "label": f"{a} -> {b}: {v['count']} imports"})
+        bad = not allowed(a, b)
+        el.append({"from": a, "to": b, "kind": "today", "count": v["count"], "bad": bad, "label": f"{a} -> {b}: {v['count']} imports" + (" (wrong way)" if bad else "")})
     return page("index.html", "figaro modular runtime: overview", "\n".join(body), el)
 
 
@@ -432,16 +501,26 @@ def layer_page(fname, title, mods, intro, files, e):
                     if mod == dm and dep in c["pkgs"]:
                         inbound_to[(f["module"], cid[(mod, i)], mod)] += 1
                         break
-    others_below = sorted({t for (_, t) in ext if t in M.MODULES})
-    others_above = sorted(m for m in inbound if m not in mods)
+    order = [m for layer in M.LAYERS for m in layer["modules"]]
+    top = min(order.index(m) for m in mods)
+    outside = sorted({t for (_, t) in ext if t in M.MODULES and t not in mods} | {m for m in inbound if m not in mods}, key=order.index)
+    others_above = [o for o in outside if order.index(o) < top]
+    others_below = [o for o in outside if order.index(o) > top]
+    out_n = defaultdict(int)
+    for (src, t), v in ext.items():
+        if t in M.MODULES:
+            out_n[t] += v["count"]
     ctags = {t for _, _, c in comps for t in c["tags"].split()}
     rel_steps = [s for s in M.STEPS if s["id"] in ctags or any(m in s["touches"] for m in mods)]
     rel_issues = [i for i in M.ISSUES if f"#{i['n']}" in ctags]
-    body = [f"<p>{esc(intro)}</p>", legend(), picker(rel_steps, rel_issues), cards(rel_steps, rel_issues), '<div id=stage><svg id=wires></svg>']
+    body = [f"<p>{esc(intro)}</p>", legend(False), picker(rel_steps, rel_issues), cards(rel_steps, rel_issues), '<div id=stage><svg id=wires></svg>']
+    def ext_box(o):
+        counts = ", ".join(x for x in (f"{inbound[o]} imports in" if inbound.get(o) else "", f"{out_n[o]} imports out" if out_n.get(o) else "") if x)
+        return (f'<details class="box ext" id="b-{o}" data-tags="" data-ext=1><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">{esc(M.MODULES[o]["name"])}</h3>'
+                f'<span class=n>{counts}</span></summary><div class=body><p>{esc(M.MODULES[o]["owns"])}</p></div></details>')
     if others_above:
-        body.append('<div class=band><div class=lbl>used by</div><div class=row>')
-        for o in others_above:
-            body.append(f'<details class=box id="b-{o}" data-tags=""><summary><h3 style="display:inline">{esc(M.MODULES[o]["name"])}</h3><span class=n>{inbound[o]} imports in</span></summary></details>')
+        body.append('<div class=band><div class=lbl>layers above</div><div class=row>')
+        body += [ext_box(o) for o in others_above]
         body.append("</div></div>")
     for mod in mods:
         body.append(f'<div class=band><div class=lbl>{esc(M.MODULES[mod]["name"])}</div><div class=row>')
@@ -453,7 +532,7 @@ def layer_page(fname, title, mods, intro, files, e):
             tags = c["tags"].split()
             bad = sum(v["count"] for (s, t), v in ext.items() if s == cid[(mod, i)] and v["bad"])
             cls = "box" + (" opt" if mod in ("hierarchy", "federation") else "") + (" new" if mod == "bash" else "")
-            body.append(f'<details class="{cls}" id="b-{cid[(mod, i)]}" data-tags="{esc(" ".join(tags))}"><summary><h3 style="display:inline">{esc(c["name"])}</h3><span class=n>{fmt(n)} lines</span><span class=tags>')
+            body.append(f'<details class="{cls}" id="b-{cid[(mod, i)]}" data-tags="{esc(" ".join(tags))}"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">{esc(c["name"])}</h3><span class=n>{fmt(n)} lines</span><span class=tags>')
             body += [f"<span class=tag>{t}</span>" if not t.startswith("#") else f"<span class='tag i'>{t}</span>" for t in tags]
             if bad:
                 body.append(f"<span class='tag bad'>{bad} wrong-way imports</span>")
@@ -470,20 +549,16 @@ def layer_page(fname, title, mods, intro, files, e):
             body.append("</div></details>")
         body.append("</div></div>")
     if others_below:
-        body.append('<div class=band><div class=lbl>depends on</div><div class=row>')
-        for o in others_below:
-            if o in mods:
-                continue
-            n = sum(v["count"] for (s, t), v in ext.items() if t == o)
-            body.append(f'<details class=box id="b-{o}" data-tags=""><summary><h3 style="display:inline">{esc(M.MODULES[o]["name"])}</h3><span class=n>{n} imports out</span></summary><div class=body><p>{esc(M.MODULES[o]["owns"])}</p></div></details>')
+        body.append('<div class=band><div class=lbl>layers below</div><div class=row>')
+        body += [ext_box(o) for o in others_below]
         body.append("</div></div>")
     body.append("</div>")
     el = []
     for (s, t), v in ext.items():
-        el.append({"from": s, "to": t, "kind": "today" if v["bad"] else "target", "count": v["count"], "label": f"{s} -> {t}: {v['count']} imports" + (" (wrong way)" if v["bad"] else "")})
+        el.append({"from": s, "to": t, "kind": "today", "count": v["count"], "bad": v["bad"], "label": f"{s} -> {t}: {v['count']} imports" + (" (wrong way)" if v["bad"] else "")})
     for (o, t, mod), n in inbound_to.items():
-        kind = "target" if allowed(o, mod) else "today"
-        el.append({"from": o, "to": t, "kind": kind, "count": n, "label": f"{o} -> {t}: {n} imports"})
+        bad = not allowed(o, mod)
+        el.append({"from": o, "to": t, "kind": "today", "count": n, "bad": bad, "label": f"{o} -> {t}: {n} imports" + (" (wrong way)" if bad else "")})
     return page(fname, title, "\n".join(body), el)
 
 
