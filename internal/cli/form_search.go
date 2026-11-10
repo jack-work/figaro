@@ -82,6 +82,9 @@ func (v *formView) followQuery(q string, flat bool) {
 }
 
 func (v *formView) mountHitsLocked(width int) map[string][]pitRow {
+	if !v.searchesMounts() {
+		return nil
+	}
 	var out map[string][]pitRow
 	for path, m := range v.mounts {
 		if m.view == nil {
@@ -117,6 +120,39 @@ func (v *formView) endMountQueriesLocked(keep string) string {
 		m.view.EndQuery("")
 	}
 	return land
+}
+
+func (v *formView) searchesMounts() bool { return v.view == nil || v.view.RowAria == "" }
+
+func (v *formView) bestHit() (fuzzy.Hit, string, bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.bestHitLocked()
+}
+
+func (v *formView) bestHitLocked() (fuzzy.Hit, string, bool) {
+	s := v.search
+	if s == nil {
+		return fuzzy.Hit{}, "", false
+	}
+	var best fuzzy.Hit
+	id, ok := "", false
+	if len(s.ranked) > 0 {
+		id, best, ok = s.ranked[0], s.best[s.ranked[0]], true
+	}
+	if !v.searchesMounts() {
+		return best, id, ok
+	}
+	for _, path := range slices.Sorted(maps.Keys(v.mounts)) {
+		m := v.mounts[path]
+		if m.view == nil {
+			continue
+		}
+		if h, at, found := m.view.bestHit(); found && (!ok || fuzzy.Compare(h, best) < 0) {
+			best, id, ok = h, path+mountSep+at, true
+		}
+	}
+	return best, id, ok
 }
 
 func (v *formView) Current() string {
@@ -261,7 +297,7 @@ func (s *formSearch) current() string {
 	return s.steps[s.at]
 }
 
-func (s *formSearch) settle(rows []pitRow) {
+func (s *formSearch) settle(rows []pitRow, best string) {
 	s.steps = s.steps[:0]
 	for _, r := range rows {
 		if r.id != "" && (s.flat || len(r.marks) > 0) {
@@ -278,17 +314,16 @@ func (s *formSearch) settle(rows []pitRow) {
 		}
 	}
 	if s.at < 0 {
-		s.at = s.bestStep()
+		s.at = s.bestStep(best)
 	}
 	s.land = false
 	s.cur = s.current()
 }
 
-func (s *formSearch) bestStep() int {
-	if len(s.ranked) == 0 {
+func (s *formSearch) bestStep(best string) int {
+	if best == "" {
 		return 0
 	}
-	best := s.ranked[0]
 	for i, id := range s.steps {
 		if id == best || strings.HasPrefix(id, best+".") {
 			return i
@@ -299,7 +334,8 @@ func (s *formSearch) bestStep() int {
 
 func (v *formView) searchItems(snap form.Snapshot, width int) []pitRow {
 	rows := v.searchRows(snap, width)
-	v.search.settle(rows)
+	_, best, _ := v.bestHitLocked()
+	v.search.settle(rows, best)
 	return rows
 }
 
