@@ -174,6 +174,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 			if h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID)) != nil {
 				return authz.NotFound(method, req.FormID)
 			}
+			if h.studiesAFigaro(req.FormID) && !h.callerIsOwner(ctx) {
+				return authz.NotFound(method, req.FormID)
+			}
 		}
 	case rpc.MethodCast:
 		var req rpc.CastRequest
@@ -305,4 +308,13 @@ func (h *handlers) subtree(id string) []string {
 		queue = append(queue, children[n]...)
 	}
 	return out
+}
+
+func (h *handlers) studiesAFigaro(id string) bool {
+	b := h.angelus.Backend
+	if b == nil {
+		return false
+	}
+	n, ok := b.Node(id)
+	return ok && n.Kind != "form"
 }

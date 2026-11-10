@@ -65,9 +65,9 @@ whole changed value, so keep studied values small if context matters.
   bound form as `system.studies`, which is system-managed: only the verbs write it.
 - `fig study <me> <figaro> --keys comments` studies another figaro's bound
   form by its bare id, mirroring only keys at or under the listed prefixes
-  (`system.study_keys.<id>` on your bound form). It needs read on that figaro,
-  as `state show --id` does; a figaro cannot study itself, and `cast` still
-  takes unbound forms only. To change the keys, drop and study again.
+  (`system.study_keys.<id>` on your bound form). Only the owner may study
+  another figaro; anyone else hears "not found". A figaro cannot study
+  itself, and `cast` still takes unbound forms only. To change the keys, drop and study again.
 - `system.study_incantation` on **your own bound form**: `{onstudy, onupdate,
   ondrop}`, a sentence added to each event so a figaro is told what the change
   MEANS to it, not just what changed.

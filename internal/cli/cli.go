@@ -901,8 +901,8 @@ copy. No arguments lists the attended figaro's studies. The form is
 always the LAST positional; with --keys a lone positional is the form.
 
 --keys mirrors only keys at or under the named prefixes; without it every
-key but system.* is mirrored. A figaro cannot study itself, and studying
-another needs read on it.
+key but system.* is mirrored. A figaro cannot study itself, and only the
+owner may study another figaro.
 
   figaro study <me> <parent> --keys comments`,
 		ArgsMax: 2,
