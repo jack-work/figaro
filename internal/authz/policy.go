@@ -176,7 +176,6 @@ type Policies struct {
 	path   string
 	scopes []string
 	troupe atomic.Pointer[troupeLayer]
-	fences atomic.Pointer[[]fence]
 	schema jkauthz.Schema[Resource]
 	boxes  []string
 	parsed parsedGrants
@@ -233,11 +232,10 @@ func (p *Policies) Reload(path string) error {
 }
 
 func (p *Policies) load(data []byte) error {
-	grants, fences, err := splitFences(data, p.schema)
-	if err != nil {
+	if err := refuseFences(data); err != nil {
 		return err
 	}
-	grants, ceiling, err := splitCeiling(grants)
+	grants, ceiling, err := splitCeiling(data)
 	if err != nil {
 		return err
 	}
@@ -245,11 +243,6 @@ func (p *Policies) load(data []byte) error {
 		return err
 	}
 	p.figaroCeiling.Store(ceiling)
-	if len(fences) == 0 {
-		p.fences.Store(nil)
-	} else {
-		p.fences.Store(&fences)
-	}
 	return nil
 }
 

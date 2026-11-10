@@ -409,46 +409,23 @@ ancestors behind does not widen it.
 grants = ["read:*", "send:*", "*:lineage:self", "egress:*"]
 ```
 
-The claim is the CLI's stamp (`FIGARO_ARIA`), so on the local door a tool can
-drop it and be judged as the owner. In a box the claim must name a figaro
-running in that box, and `[authz] figaro_claim = "required"` refuses a box
-call that names none.
+The claim is the CLI's stamp (`FIGARO_ARIA`), so a tool can drop it and be
+judged by its principal alone: the owner on the local door, the box in a box.
+A claim only ever narrows, so a forged one gains nothing. On the box door a
+claim counts only for a figaro that runs in that box; any other (an unknown
+id, another box's figaro, an unboxed one) is dropped and the call is judged
+as the box. `[authz] figaro_claim = "required"` refuses those calls instead,
+and any box call that names no figaro.
 
-**Figaro fences are advisory.** A figaro's tools reach the local door as the
-owner, so every grant above sees them as the owner. The aria id the CLI stamps
-from `FIGARO_ARIA` (`x-internal-figaro-id`) is the only thing that tells one
-figaro from another, and any process running as the owner can drop it or
-forge it. A fence uses it anyway, to stop accidents and well-behaved figaros;
-it is not a boundary, which only a box gives.
-
-```toml
-[[fence]]
-grants = ["read:aria:<id>", "send:aria:<id>"]
-allow = ["figaro:<id>", "figaro:@engineer", "figaro:self"]
-
-[[fence]]
-grants = ["kill:*"]
-deny = ["figaro:*"]
-```
-
-A fence binds only calls on the owner's principal that carry a stamp: an
-unstamped call (your shell, telefono) passes every fence, and any other
-principal is decided by its grants alone. It covers the calls its `grants`
-reach (the grant syntax and selectors above) and names figaros
-by full id, by `@role` (the role's current `target-aria`), `self` (the aria
-the call names) or `*`. `allow` refuses every stamped figaro it does not
-name; `deny` refuses the ones it does. Each fence has exactly one of the two,
-and any fence that refuses wins. With no fence the policy behaves as before.
 A refused read hides the aria as one the caller cannot read (not found, and
-dropped from `ls` and prefix resolution); other refusals are -32020 naming
-the figaro and the fence. The id itself is not hidden: a role's
-`target-aria`, a fork's parent or any form the figaro may read can still name
-the fenced aria, and using that id is refused all the same. Each refusal at
-the guard logs one `authz: fence refused` line at info in the daemon's log
-(the owner's, not the figaro's), with the figaro, method, verb and resource;
-allowed calls log nothing. The fences are cut out of the policy text before
-the grants are compiled, and a policy whose grants would read differently
-without them is refused, so write each fence as a `[[fence]]` table.
+dropped from `ls` and prefix resolution); other refusals are -32020 naming the
+figaro and its effective set. Each refusal at the guard logs one
+`authz: figaro refused` line at info in the daemon's log, with the figaro,
+method, verb and resource; allowed calls log nothing. `[[fence]]` tables are
+gone: a policy that still carries one is refused at load. A fence that denied
+every figaro is the `[figaros]` ceiling without those grants; one that let
+only some figaros in is the ceiling without them plus those figaros' own
+`system.grants`.
 
 **The credo is fixed at birth.** `system.credo` is the system block, so a
 change rewrites the head of every request and drops the prompt cache. It is

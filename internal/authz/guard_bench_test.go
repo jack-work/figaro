@@ -13,8 +13,8 @@ import (
 )
 
 // One guarded call on the owner's connection, as the angelus door serves
-// it: a prompt-sized body, with and without the CLI's stamp, and with a
-// fence loaded that covers the call but lets it through.
+// it: a prompt-sized body, with and without the CLI's stamp, and stamped
+// by a figaro three deep, with and without grants on its lineage.
 func BenchmarkGuardedOwnerCall(b *testing.B) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -40,7 +40,6 @@ func BenchmarkGuardedOwnerCall(b *testing.B) {
 		{"stamped", sandboxPolicy, stampedBody, nil},
 		{"stamped-no-grants-depth-3", sandboxPolicy, stampedBody, granted(nil)},
 		{"stamped-grants-depth-3", sandboxPolicy, stampedBody, granted(map[string]string{"top": `["*:*", "egress:*"]`, "kid": `["read:*", "send:*", "kill:lineage:self"]`, "dddd0001": `["send:aria:aaaa0002", "read:*"]`})},
-		{"stamped-fenced", sandboxPolicy + "\n[[fence]]\ngrants = [\"send:aria:aaaa0002\"]\nallow = [\"figaro:dddd0001\"]\n", stampedBody, nil},
 	} {
 		b.Run(c.name, func(b *testing.B) {
 			var f Facts = facts()

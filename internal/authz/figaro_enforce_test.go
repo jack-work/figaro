@@ -1,8 +1,11 @@
 package authz
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -165,5 +168,91 @@ func TestTheClaimRequirementStaysOnTheBoxDoor(t *testing.T) {
 	plain, _ := json.Marshal(map[string]any{"figaro_id": "aaaa0001"})
 	if _, err := call(WithSubject(context.Background(), subject(me)), plain); err != nil {
 		t.Fatalf("the requirement reached another door: %v", err)
+	}
+}
+
+func stamped(t *testing.T, aria, figaro string) json.RawMessage {
+	t.Helper()
+	raw, err := rpc.WithCaller(map[string]string{"figaro_id": aria}, figaro, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestTheGuardRefusesANarrowedFigaroAndLogsOneLine(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	p := narrowed(t, sandboxPolicy, map[string]string{"kid": `["set:*", "read:aria:aaaa0001"]`})
+	reached := 0
+	ok := func(context.Context, json.RawMessage) (any, error) { reached++; return "ok", nil }
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok, rpc.MethodIR: ok, rpc.MethodSet: ok}, AriaHeader{}, Enforce(p))
+	ctx := WithSubject(context.Background(), subject(me))
+
+	if _, err := h[rpc.MethodQua](ctx, stamped(t, "aaaa0002", "top")); err != nil {
+		t.Fatalf("a figaro with no grants: %v", err)
+	}
+	if _, err := h[rpc.MethodQua](ctx, json.RawMessage(`{"figaro_id":"aaaa0002"}`)); err != nil {
+		t.Fatalf("the unstamped owner: %v", err)
+	}
+	if _, err := h[rpc.MethodSet](ctx, stamped(t, "aaaa0002", "kid")); err != nil {
+		t.Fatalf("a granted verb: %v", err)
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("allowed calls logged:\n%s", logs.String())
+	}
+	_, err := h[rpc.MethodIR](ctx, stamped(t, "aaaa0002", "kid"))
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("a read the figaro's grants refuse: %v, want the aria hidden", err)
+	}
+	if n := strings.Count(logs.String(), "authz: figaro refused"); n != 1 {
+		t.Fatalf("a refusal logged %d lines:\n%s", n, logs.String())
+	}
+	if !strings.Contains(logs.String(), "figaro=kid") {
+		t.Fatalf("the log line does not name the figaro:\n%s", logs.String())
+	}
+	if reached != 3 {
+		t.Fatalf("handler reached %d times, want 3", reached)
+	}
+}
+
+func TestTheGuardNamesTheFigaroWhenItMayStillRead(t *testing.T) {
+	p := narrowed(t, sandboxPolicy, map[string]string{"kid": `["read:*"]`})
+	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodKill: ok}, AriaHeader{}, Enforce(p))
+	ctx := WithSubject(context.Background(), subject(me))
+	_, err := h[rpc.MethodKill](ctx, stamped(t, "aaaa0001", "kid"))
+	var jerr *jkrpc.Error
+	if !errors.As(err, &jerr) || jerr.Code != ErrCode || !strings.Contains(jerr.Message, "figaro:kid") || !strings.Contains(jerr.Message, "read:*") {
+		t.Fatalf("kill by a figaro holding read:*: %v, want -32020 naming the figaro and its grants", err)
+	}
+}
+
+func TestTheStampReachesTheHandlerContext(t *testing.T) {
+	p := loaded(t, sandboxPolicy)
+	var inner context.Context
+	h := Guard(map[string]jkrpc.HandlerFunc{
+		rpc.MethodQua: func(ctx context.Context, _ json.RawMessage) (any, error) { inner = ctx; return "ok", nil },
+	}, AriaHeader{}, Enforce(p))
+	ctx := WithSubject(context.Background(), subject(me))
+	if _, err := Authenticated(AriaHeader{}, h[rpc.MethodQua])(ctx, stamped(t, "aaaa0002", "dddd0001")); err != nil {
+		t.Fatal(err)
+	}
+	if got := FigaroOf(inner); got != "dddd0001" {
+		t.Fatalf("handler saw %q, want dddd0001", got)
+	}
+	if got := FigaroOf(WithSubject(inner, subject(other))); got != "" {
+		t.Fatalf("another principal inherited the stamp %q", got)
+	}
+}
+
+func TestAPolicyWithFencesIsRefusedNamingTheReplacement(t *testing.T) {
+	p := NewPolicies(me, facts())
+	err := p.load([]byte(sandboxPolicy + "\n[[fence]]\ngrants = [\"kill:*\"]\ndeny = [\"figaro:*\"]\n"))
+	if err == nil || !strings.Contains(err.Error(), "system.grants") || !strings.Contains(err.Error(), "[figaros]") {
+		t.Fatalf("%v", err)
 	}
 }
