@@ -9,7 +9,8 @@
 // Spec.Env, scope on the box wire, and the Figaro-Id header (FigaroHeader)
 // on every request to a provider reached over HTTP; wrap the provider's
 // client transport in FigaroTransport. figaro signs nothing and attaches
-// no grants.
+// no grants. FIGARO_ARIA in Env is a label a process can change, never an
+// identity: key nothing on it.
 //
 // The provider trusts the id. Only the daemon calls a provider, and
 // authenticating that channel (socket permissions, OIDC between services,
