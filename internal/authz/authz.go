@@ -147,9 +147,10 @@ type Request struct {
 }
 
 type Decision struct {
-	Allow  bool
-	Reason string
-	Hidden bool
+	Allow     bool
+	Reason    string
+	Hidden    bool
+	DropClaim bool
 }
 
 func NotFound(method, id string) error {
@@ -199,11 +200,16 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 				Aria:     rpc.AriaOf(params),
 				Params:   params,
 			}
-			if d := policy.Check(req); !d.Allow {
+			d := policy.Check(req)
+			if !d.Allow {
 				if d.Hidden {
 					return nil, NotFound(method, req.Aria)
 				}
 				return nil, &jkrpc.Error{Code: ErrCode, Message: d.Reason}
+			}
+			if d.DropClaim {
+				id.FigaroID = ""
+				ctx = withIdentity(ctx, id)
 			}
 			start := time.Now()
 			res, err := next(ctx, params)
@@ -253,8 +259,22 @@ func Enforce(p *Policies) Policy {
 		if !ok {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
+		figaro, dropped := r.Identity.FigaroID, false
+		if r.Door == DoorBox && !p.pinnedToBox(r.Subject, figaro) {
+			if p.FigaroClaimRequired() && verb != rpc.VerbNone {
+				if figaro == "" {
+					return Deny("%s: this node's box door takes only calls that name their figaro ([authz] figaro_claim = \"required\")", r.Method)
+				}
+				return Deny("%s: figaro %s does not run in this box, and this node's box door takes only calls that name one that does ([authz] figaro_claim = \"required\")", r.Method, figaro)
+			}
+			figaro, dropped = "", figaro != ""
+		}
+		decided := func(d Decision) Decision {
+			d.DropClaim = dropped
+			return d
+		}
 		if checkedByHandler(r.Method) {
-			return Allow()
+			return decided(Allow())
 		}
 		if verb == rpc.VerbNone && r.Door.Trusted() {
 			return Allow()
@@ -263,33 +283,45 @@ func Enforce(p *Policies) Policy {
 			if !p.HoldsRole(r.Subject) {
 				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
 			}
-			return Allow()
+			return decided(Allow())
 		}
 		res := Daemon
 		if r.Aria != "" {
 			res = Aria(r.Aria)
 		}
-		figaro := r.Identity.FigaroID
 		if d := p.AllowFigaro(r.Subject, figaro, verb, res); !d.Allowed {
-			if allowedByAnother(p, r, verb, res) {
-				return Allow()
+			if allowedByAnother(p, figaro, r, verb, res) {
+				return decided(Allow())
 			}
-			if d.Fenced() {
-				slog.Info("authz: fence refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
+			if d.Narrowed() {
+				slog.Info("authz: figaro refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
 			}
 			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !p.AllowFigaro(r.Subject, figaro, rpc.VerbRead, res).Allowed) {
 				return Decision{Hidden: true}
 			}
 			return Deny("%s: %s", r.Method, d.Reason())
 		}
-		return Allow()
+		return decided(Allow())
 	})
 }
 
-func allowedByAnother(p *Policies, r Request, refused rpc.Verb, res Resource) bool {
+func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
+	box, ok := BoxOf(s.Principal)
+	if !ok || figaro == "" {
+		return false
+	}
+	m, _ := p.schema.Selectors.(selectors)
+	if m.facts == nil {
+		return false
+	}
+	held, read := m.facts.SandboxOf(figaro)
+	return read && held == box
+}
+
+func allowedByAnother(p *Policies, figaro string, r Request, refused rpc.Verb, res Resource) bool {
 	verbs, _ := rpc.VerbsOf(r.Method)
 	for _, v := range verbs {
-		if v != refused && p.AllowFigaro(r.Subject, r.Identity.FigaroID, v, res).Allowed {
+		if v != refused && p.AllowFigaro(r.Subject, figaro, v, res).Allowed {
 			return true
 		}
 	}

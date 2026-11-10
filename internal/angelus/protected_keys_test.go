@@ -125,8 +125,8 @@ func TestAClaimOfAFigaroOutsideTheBoxIsRefused(t *testing.T) {
 	boxedChild := out.(rpc.ForkResponse).Alternative
 	c := r.dial(t)
 	err = r.setAs(t, c, outside.FigaroID, boxedChild, grantsPatch(t, []string{"cred:x"}))
-	if err == nil || !strings.Contains(err.Error(), "does not run in it") {
-		t.Fatalf("a claim of a figaro outside the box passed: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "names no figaro") {
+		t.Fatalf("a claim of a figaro outside the box passed, or was not dropped at the guard: %v", err)
 	}
 	if err := r.setAs(t, c, "", boxedChild, grantsPatch(t, []string{"cred:x"})); err == nil || !strings.Contains(err.Error(), "names no figaro") {
 		t.Fatalf("an unclaimed call passed: %v", err)

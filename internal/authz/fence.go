@@ -201,7 +201,10 @@ func (p *Policies) AllowFigaro(s jkauthz.Subject, figaro string, verb rpc.Verb, 
 		return v
 	}
 	if why := p.fenced(s, figaro, verb, r); why != "" {
-		return Verdict{fence: why}
+		return Verdict{narrowed: why}
+	}
+	if why := p.figaroRefuses(s, figaro, verb, r); why != "" {
+		return Verdict{narrowed: why}
 	}
 	return v
 }

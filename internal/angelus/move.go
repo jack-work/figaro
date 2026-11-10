@@ -167,6 +167,9 @@ func (h *handlers) move(ctx context.Context, params json.RawMessage) (any, error
 	if err := h.quiesce(ids); err != nil {
 		return nil, fmt.Errorf("move %s refused: %w", req.FigaroID, err)
 	}
+	if err := h.carryNarrowing(req.FigaroID); err != nil {
+		return nil, fmt.Errorf("move %s: %w", req.FigaroID, err)
+	}
 	start := time.Now()
 	token := moveToken()
 	out, err := mv.ExportComponent(req.FigaroID, token)

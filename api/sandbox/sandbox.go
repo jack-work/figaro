@@ -18,9 +18,10 @@
 //
 // The provider decides whether to serve a figaro, and with what. It may
 // key boxes by figaro id, reusing the one it made for that id or creating
-// one on first sight. Once figaro serves a figaro's permission set
-// (system.grants), the provider may read it, build a box that can do
-// exactly what the set allows, and poll or study the form to resize the
+// one on first sight. It may read the figaro's effective permission set
+// from figaro.grants (not the raw system.grants key, which holds only that
+// figaro's own narrowing), build a box that can do exactly what the set
+// allows, and poll or study the form to resize the
 // box when the set changes. Whatever it does, Isolation declares honestly
 // what it enforces, and nothing more.
 //

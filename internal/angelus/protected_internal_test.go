@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkauthz"
 )
 
 // The box door already hides an aria outside the box; this holds the
@@ -66,3 +67,66 @@ func TestAnAncestorInABoxManagesOnlyDescendantsStillInIt(t *testing.T) {
 		t.Fatalf("the old box's ancestor manages a moved child: %v", err)
 	}
 }
+
+func TestAFigaroLeavingItsAncestorsCarriesTheirNarrowing(t *testing.T) {
+	backend, err := store.NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { backend.Close() })
+	a := &Angelus{Backend: backend}
+	a.Policies = authz.NewPolicies(jkauthzOwner(), StoreFacts(backend))
+	if err := a.Policies.Reload(""); err != nil {
+		t.Fatal(err)
+	}
+	h := &handlers{angelus: a}
+	grant := func(id string, gs ...string) {
+		raw, _ := json.Marshal(gs)
+		if _, err := backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: raw}, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outfit, err := backend.CreateOutfit("o", form.Patch{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, err := backend.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant(top, "read:*", "egress:a:1")
+	_, kid, err := backend.Fork(top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.carryNarrowing(top); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := keyOf(t, backend, top); raw != `["read:*","egress:a:1"]` {
+		t.Fatalf("a top-level figaro's grants were rewritten: %s", raw)
+	}
+	grant(kid, "*:*", "egress:*")
+	if err := h.carryNarrowing(kid); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := keyOf(t, backend, kid)
+	if raw != `["read:*","egress:a:1"]` {
+		t.Fatalf("the moved figaro carries %s", raw)
+	}
+	alone, _ := a.Policies.EffectiveAlone(kid)
+	if alone.String() != "read:*, egress:a:1" {
+		t.Fatalf("alone it holds %s", alone)
+	}
+}
+
+func keyOf(t *testing.T, b *store.XwalBackend, id string) (string, bool) {
+	t.Helper()
+	snap, err := b.FormState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := snap.Get(form.GrantsKey)
+	return string(raw), ok
+}
+
+func jkauthzOwner() jkauthz.Principal { return jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"} }

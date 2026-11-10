@@ -494,3 +494,11 @@ func (c *Angelus) QuarantineRelease(ctx context.Context, req rpc.QuarantineRelea
 	err := c.call(ctx, rpc.MethodQuarantineRelease, req, &resp)
 	return &resp, err
 }
+
+func (c *Angelus) Grants(ctx context.Context, id string) (*rpc.GrantsResponse, error) {
+	var out rpc.GrantsResponse
+	if err := c.cli.Call(ctx, rpc.MethodGrants, rpc.GrantsRequest{FigaroID: id}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

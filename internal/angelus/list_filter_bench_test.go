@@ -40,17 +40,27 @@ func BenchmarkListFiltered(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	var first string
 	for i := 0; i < n; i++ {
 		minter := "user:0"
 		if i%10 == 0 {
 			minter = "user:guest"
 		}
-		_, _, err := backend.ForkWith(outfit, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		id, _, err := backend.ForkWith(outfit, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"mantra": json.RawMessage(fmt.Sprintf("%q", fmt.Sprintf("aria %d", i))),
 		}, nil), store.MintedBy(minter))
 		if err != nil {
 			b.Fatal(err)
 		}
+		if first == "" {
+			first = id
+		}
+	}
+	granted, _, err := backend.ForkWith(outfit, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		form.GrantsKey: json.RawMessage(`["read:owner:self", "send:*", "egress:*"]`),
+	}, nil), store.MintedBy("user:0"))
+	if err != nil {
+		b.Fatal(err)
 	}
 
 	policy := filepath.Join(b.TempDir(), "policy.toml")
@@ -80,17 +90,27 @@ principals = ["user:guest"]
 	}
 
 	for _, c := range []struct {
-		name string
-		a    *Angelus
-		who  string
-		want int
+		name   string
+		a      *Angelus
+		who    string
+		figaro string
+		want   int
 	}{
-		{"unenforced", unenforced, "0", n},
-		{"owner", enforced, "0", n},
-		{"guest", enforced, "guest", n / 10},
+		{"unenforced", unenforced, "0", "", n + 1},
+		{"owner", enforced, "0", "", n + 1},
+		{"guest", enforced, "guest", "", n / 10},
+		{"owner-claiming-no-grants", enforced, "0", first, n + 1},
+		{"owner-claiming-grants", enforced, "0", granted, n + 1 - n/10},
 	} {
 		h := &handlers{angelus: c.a}
 		ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: c.who})
+		if c.figaro != "" {
+			claim, _ := rpc.WithCaller(map[string]any{}, c.figaro, nil)
+			_, _ = authz.Authenticated(authz.AriaHeader{}, func(stamped context.Context, _ json.RawMessage) (any, error) {
+				ctx = stamped
+				return nil, nil
+			})(ctx, claim)
+		}
 		for _, page := range []string{"full", "page-6"} {
 			params := json.RawMessage(nil)
 			want := c.want

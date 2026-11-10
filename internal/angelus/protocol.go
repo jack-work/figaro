@@ -133,6 +133,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodHaltAndStop:        h.haltAndStop,
 		rpc.MethodIR:                 h.ariaRead,
 		rpc.MethodLineage:            h.lineage,
+		rpc.MethodGrants:             h.grants,
 		rpc.MethodDecide:             h.decide,
 		rpc.MethodHello:              h.hello,
 		rpc.MethodNodeResolve:        h.nodeResolve,

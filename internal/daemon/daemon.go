@@ -371,6 +371,7 @@ func Run() {
 	a.Peercred = peer
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetBoxes(loaded.DooredBoxes())
+	a.Policies.SetFigaroClaimRequired(loaded.Config.Authz.RequiresFigaroClaim())
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
 	if a.Issuers, err = newIssuers(loaded.Config.Authz.Issuers); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
