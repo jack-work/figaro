@@ -2,7 +2,8 @@ package rpc
 
 // StudyRequest with an empty FormID on figaro.study lists.
 type StudyRequest struct {
-	FormID string `json:"form_id,omitempty"`
+	FormID string   `json:"form_id,omitempty"`
+	Keys   []string `json:"keys,omitempty"`
 }
 
 type StudyResponse struct {

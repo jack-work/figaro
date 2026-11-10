@@ -214,7 +214,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	studiesDecl, err := be.StudyForm(aria, role)
+	studiesDecl, err := be.StudyForm(aria, role, nil)
 	studies := studiesDecl.Studies
 	if err != nil {
 		t.Fatal(err)

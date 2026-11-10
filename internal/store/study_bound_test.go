@@ -1,6 +1,7 @@
 package store
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -30,7 +31,7 @@ func TestAFigaroStudiesAnotherFigarosBoundForm(t *testing.T) {
 	if err := RequireStudyTarget(be, child, parent); err != nil {
 		t.Fatalf("study of another figaro refused: %v", err)
 	}
-	if _, err := be.StudyForm(child, parent); err != nil {
+	if _, err := be.StudyForm(child, parent, []string{"comments"}); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(parent)
@@ -79,5 +80,89 @@ func TestCastStillTakesOnlyUnboundForms(t *testing.T) {
 	err = RequireCastTarget(be, parent)
 	if err == nil || !strings.Contains(err.Error(), "figaro, not an unbound form") {
 		t.Fatalf("cast of a figaro: %v", err)
+	}
+}
+
+func TestStudyKeysRideTheDeclarationAndLeaveWithTheDrop(t *testing.T) {
+	be, parent, child := twoFigaros(t)
+	if _, err := be.StudyForm(child, parent, []string{"comments.", " comments", "mantra"}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := be.FormState(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := StudyKeys(snap, parent); !slices.Equal(got, []string{"comments", "mantra"}) {
+		t.Fatalf("declared keys = %v", got)
+	}
+
+	if _, err := be.StudyForm(child, parent, []string{"mantra", "comments"}); err != nil {
+		t.Fatalf("the same keys again must be a no-op: %v", err)
+	}
+	if _, err := be.StudyForm(child, parent, []string{"comments"}); err == nil || !strings.Contains(err.Error(), "drop it first") {
+		t.Fatalf("changing the keys of a standing study: %v", err)
+	}
+
+	if _, err := be.DropForm(child, parent); err != nil {
+		t.Fatal(err)
+	}
+	snap, err = be.FormState(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, ok := snap.Get(StudyKeysKey); ok {
+		t.Fatalf("the drop left the keys behind: %s", raw)
+	}
+	if _, err := be.StudyForm(child, parent, nil); err != nil {
+		t.Fatalf("after a drop the study starts fresh: %v", err)
+	}
+	snap, _ = be.FormState(child)
+	if got := StudyKeys(snap, parent); got != nil {
+		t.Fatalf("an unfiltered study carries keys %v", got)
+	}
+}
+
+func TestStudyKeyShown(t *testing.T) {
+	cases := []struct {
+		key  string
+		keys []string
+		want bool
+	}{
+		{"mantra", nil, true},
+		{"system.model", nil, false},
+		{"comments", []string{"comments"}, true},
+		{"comments.c1.thread.a", []string{"comments"}, true},
+		{"commentsx", []string{"comments"}, false},
+		{"mantra", []string{"comments"}, false},
+		{"system.model", []string{"comments"}, false},
+		{"system.model", []string{"system.model"}, true},
+	}
+	for _, c := range cases {
+		if got := StudyKeyShown(c.key, c.keys); got != c.want {
+			t.Errorf("StudyKeyShown(%q, %v) = %v, want %v", c.key, c.keys, got, c.want)
+		}
+	}
+}
+
+func TestDroppingOneFilteredStudyKeepsAnothersKeys(t *testing.T) {
+	be, parent, child := twoFigaros(t)
+	other, _, err := be.CreateForm("", setPatch(map[string]string{"name": "x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range []string{parent, other} {
+		if _, err := be.StudyForm(child, src, []string{"comments"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := be.DropForm(child, parent); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := be.FormState(child)
+	if got := StudyKeys(snap, other); !slices.Equal(got, []string{"comments"}) {
+		t.Fatalf("the other study's keys after a drop: %v", got)
+	}
+	if got := StudyKeys(snap, parent); got != nil {
+		t.Fatalf("the dropped study's keys: %v", got)
 	}
 }

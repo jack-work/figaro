@@ -15,13 +15,13 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, formInFlags bool, verb string) (ariaID, formID string, err error) {
+func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, formInFlags, filtered bool, verb string) (ariaID, formID string, err error) {
 	switch {
 	case len(args) == 2:
 		ariaID, formID = args[0], args[1]
 	case len(args) == 1 && formInFlags:
 		ariaID = args[0]
-	case len(args) == 1 && verb == "study" && !strings.HasPrefix(args[0], "@"):
+	case len(args) == 1 && verb == "study" && !filtered && !strings.HasPrefix(args[0], "@"):
 		// A lone positional that cannot be a form is the aria; the sigil makes
 		// this lexical.
 		ariaID = args[0]
@@ -43,7 +43,7 @@ func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, for
 	return ariaID, formID, nil
 }
 
-func runStudy(loaded *config.Loaded, args []string, drop, asJSON bool) {
+func runStudy(loaded *config.Loaded, args []string, keysFlag string, drop, asJSON bool) {
 	verb := "study"
 	if drop {
 		verb = "drop"
@@ -53,23 +53,32 @@ func runStudy(loaded *config.Loaded, args []string, drop, asJSON bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, false, verb)
+	keys := splitStudyKeys(keysFlag)
+	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, false, len(keys) > 0, verb)
 	if err != nil {
 		die("%s", err)
 	}
 	if ariaID == "" {
 		die("%s: no figaro attended; attend one or name it: fig %s <aria> <@form | figaro>", verb, verb)
 	}
+	if len(keys) > 0 && formID == "" {
+		die("study: --keys filters a study: name what to study: fig study [<aria>] <@form | figaro> --keys %s", keysFlag)
+	}
 	if formID == "" && drop {
 		die("drop: name the form: fig drop [<aria>] <@form | figaro>")
 	}
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
+		if len(keys) > 0 {
+			if err := needCapability(rpc.CapStudyKeys, "study --keys"); err != nil {
+				return err
+			}
+		}
 		var resp *rpc.StudyResponse
 		var err error
 		if drop {
 			resp, err = s.Figaro.Drop(ctx, formID)
 		} else {
-			resp, err = s.Figaro.Study(ctx, formID)
+			resp, err = s.Figaro.Study(ctx, formID, keys...)
 		}
 		if err != nil {
 			die("%s: %s", verb, err)
@@ -84,6 +93,16 @@ func runStudy(loaded *config.Loaded, args []string, drop, asJSON bool) {
 		}
 		return nil
 	})
+}
+
+func splitStudyKeys(flag string) []string {
+	var out []string
+	for _, k := range strings.Split(flag, ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 func verbGerund(v string) string {
@@ -123,7 +142,7 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 		}
 	}
 
-	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, minting, "cast")
+	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, minting, false, "cast")
 	if err != nil {
 		die("%s", err)
 	}

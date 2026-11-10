@@ -15,6 +15,7 @@ const (
 	CapNormalize  Capability = "normalize.report"
 	CapUnfollow   Capability = "unfollow"
 	CapChannels   Capability = "follow.channels"
+	CapStudyKeys  Capability = "study.keys"
 )
 
 type PrincipalKind string

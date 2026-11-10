@@ -12,7 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, error) {
+func (h *handlers) studyForHub(ariaID, formID string, keys []string, drop bool) ([]string, error) {
 	b := h.angelus.Backend
 	if b == nil {
 		return nil, fmt.Errorf("study: no backend")
@@ -23,7 +23,7 @@ func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, erro
 		}
 	}
 	// The two-participant write and its crash ordering live in the store, once.
-	decl, err := studyThroughStore(b, ariaID, formID, drop)
+	decl, err := studyThroughStore(b, ariaID, formID, keys, drop)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, erro
 	return decl.Studies, nil
 }
 
-func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) (store.StudyDecl, error) {
+func studyThroughStore(b store.Backend, ariaID, formID string, keys []string, drop bool) (store.StudyDecl, error) {
 	sb, ok := b.(studyBackend)
 	if !ok || formID == "" {
 		return store.StudyDecl{}, fmt.Errorf("study: this backend cannot study")
@@ -46,11 +46,11 @@ func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) (store
 	if drop {
 		return sb.DropForm(ariaID, formID)
 	}
-	return sb.StudyForm(ariaID, formID)
+	return sb.StudyForm(ariaID, formID, keys)
 }
 
 type studyBackend interface {
-	StudyForm(observerID, sourceFormID string) (store.StudyDecl, error)
+	StudyForm(observerID, sourceFormID string, keys []string) (store.StudyDecl, error)
 	DropForm(observerID, sourceFormID string) (store.StudyDecl, error)
 }
 
@@ -100,7 +100,7 @@ func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRe
 		}
 	}
 
-	studies, err := h.studyForHub(ariaID, res.RoleID, false)
+	studies, err := h.studyForHub(ariaID, res.RoleID, nil, false)
 	if err != nil {
 		return res, fmt.Errorf("cast: study %s: %w", res.RoleID, err)
 	}

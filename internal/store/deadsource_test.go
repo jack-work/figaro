@@ -18,7 +18,7 @@ func TestDropAfterTheSourceIsUnlinked(t *testing.T) {
 	if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{"brief": "doomed"})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The form is DELETED, not merely tombstoned: files unlinked, node gone.
@@ -49,7 +49,7 @@ func TestForkWithADeadStudiedForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(parent, sourceID); err != nil {
+	if _, err := be.StudyForm(parent, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := be.Remove(sourceID, false); err != nil {
@@ -80,7 +80,7 @@ func TestDropAfterTheSourceIsUnlinkedAcrossARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := be.Remove(sourceID, false); err != nil {

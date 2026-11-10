@@ -18,10 +18,14 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 	var out []string
 	var incantation form.StudyIncantation
 	limits := form.DeltaLimits{KeyBytes: -1, TotalBytes: -1}
+	declared := bound
 	if msg.Study != nil || len(msg.StudyPatches) > 0 {
 		incantation = form.ReadStudyIncantation(bound)
 		// Point-in-time limits, so a cold retranslation reproduces the bytes.
 		limits = form.ReadDeltaLimits(bound)
+		for _, p := range msg.Patches {
+			declared = declared.Apply(p)
+		}
 	}
 	// The began mark carries the baseline state; no separate fold block is
 	// emitted for the same form at the same stamp.
@@ -38,7 +42,7 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 			if v, ok := msg.StudyAt[msg.Study.FormID]; ok {
 				body["version"] = v
 			}
-			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID], limits); fold != nil {
+			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID], store.StudyKeys(declared, msg.Study.FormID), limits); fold != nil {
 				if set, ok := fold["set"]; ok {
 					body["state"] = set
 				}
@@ -60,7 +64,7 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 			if fid == begun {
 				continue // its state rode the mark
 			}
-			if body := studyFold(fid, msg.StudyPatches[fid], limits); body != nil {
+			if body := studyFold(fid, msg.StudyPatches[fid], store.StudyKeys(declared, fid), limits); body != nil {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
 				}
@@ -84,7 +88,7 @@ func studyBlock(name string, body any) string {
 }
 
 // studyFold is nil when nothing readable changed.
-func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map[string]any {
+func studyFold(fid string, patches []message.Patch, keys []string, limits form.DeltaLimits) map[string]any {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
 	changes := 0
@@ -93,7 +97,9 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 		if p.IsIdentity() {
 			continue
 		}
-		changes++
+		if len(keys) == 0 || touchesShown(p, keys) {
+			changes++
+		}
 		for _, ent := range p.Entries() {
 			k, v := ent.Key, ent.New
 			if ent.IsRemoval() {
@@ -108,7 +114,7 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 				}
 				continue
 			}
-			if strings.HasPrefix(k, "system.") {
+			if !store.StudyKeyShown(k, keys) {
 				continue
 			}
 			set[k] = v
@@ -119,7 +125,7 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 				continue
 			}
 			k := ent.Key
-			if strings.HasPrefix(k, "system.") {
+			if !store.StudyKeyShown(k, keys) {
 				continue
 			}
 			removed[k] = true
@@ -173,6 +179,15 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 		body["removed"] = keys
 	}
 	return body
+}
+
+func touchesShown(p message.Patch, keys []string) bool {
+	for _, ent := range p.Entries() {
+		if store.StudyKeyShown(ent.Key, keys) {
+			return true
+		}
+	}
+	return false
 }
 
 func escapeStudyAttr(s string) string {

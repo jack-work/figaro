@@ -28,7 +28,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 		"aria_id": json.RawMessage(`"a1"`)}, nil))
 	require.NoError(t, err)
 
-	studiesDecl, err := backend.StudyForm(id, src)
+	studiesDecl, err := backend.StudyForm(id, src, nil)
 	studies := studiesDecl.Studies
 	require.NoError(t, err)
 	backend.SetObservedForms(id, studies)

@@ -892,20 +892,26 @@ Folding an outfit onto a LIVE aria is a different act: see
 		Name:  "study",
 		Group: "Session",
 		Short: "Subscribe this figaro to a form or another figaro (see its changes)",
-		Usage: "study [<aria>] <@form-id> | study <aria> <figaro-id> | study [-j]",
+		Usage: "study [<aria>] <@form-id | figaro-id> [--keys <prefix,...>] | study [-j]",
 		Long: `Subscribes a figaro to an unbound form, or to another figaro's bound
 form: committed patches reach the figaro as <system-reminder> blocks on
 its next turn. Durable on the figaro's own bound form (system.studies);
 revival resubscribes; a fork inherits the relationship, never a private
 copy. No arguments lists the attended figaro's studies. The form is
-always the LAST positional. Every key but system.* is mirrored. A figaro
-cannot study itself, and studying another needs read on it.`,
+always the LAST positional; with --keys a lone positional is the form.
+
+--keys mirrors only keys at or under the named prefixes; without it every
+key but system.* is mirrored. A figaro cannot study itself, and studying
+another needs read on it.
+
+  figaro study <me> <parent> --keys comments`,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
+			{Long: "keys", Short: "k", Description: "Mirror only keys under these comma-separated prefixes"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, false, ctx.BoolFlag("json"))
+			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("keys"), false, ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeFormVerb,
@@ -922,7 +928,7 @@ cannot study itself, and studying another needs read on it.`,
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, true, ctx.BoolFlag("json"))
+			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, "", true, ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeFormVerb,

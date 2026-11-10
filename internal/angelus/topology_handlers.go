@@ -598,6 +598,18 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		}
 		delete(keys, figaro.StudiesKey)
 	}
+	studyKeys := map[string][]string{}
+	for k, raw := range keys {
+		fid, ok := strings.CutPrefix(k, store.StudyKeysKey+".")
+		if !ok {
+			continue
+		}
+		var held []string
+		if json.Unmarshal(raw, &held) == nil {
+			studyKeys[fid] = held
+		}
+		delete(keys, k)
+	}
 	if b, mErr := json.Marshal(id); mErr == nil {
 		keys["aria_id"] = b
 	}
@@ -611,7 +623,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	// A study naming a form this store lacks is not an error: the libretto
 	// holds an empty copy and follows if that form ever arrives.
 	for _, formID := range studies {
-		if _, err := studyThroughStore(h.angelus.Backend, id, formID, false); err != nil {
+		if _, err := studyThroughStore(h.angelus.Backend, id, formID, studyKeys[formID], false); err != nil {
 			slog.Warn("import: could not restore a study",
 				"aria", id, "form", formID, "err", err)
 		}

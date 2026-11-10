@@ -56,7 +56,7 @@ func TestAForkRecordsTheChildNotTheParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(observer, sourceID); err != nil {
+	if _, err := be.StudyForm(observer, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, child, err := be.Fork(observer)

@@ -56,13 +56,13 @@ func (a *Agent) requireStudyTarget(formID string) error {
 
 // Study is durable on the bound form, declared to the store, and stated in the IR.
 // No transactional guarantee: that is cast's job.
-func (a *Agent) Study(formID string) ([]string, error) {
+func (a *Agent) Study(formID string, keys []string) ([]string, error) {
 	if err := a.requireStudyTarget(formID); err != nil {
 		return nil, err
 	}
 	// Libretto retained first, bound form declared second: a crash leaves the count
 	// too high (the sweep repairs it), never too low.
-	decl, err := a.declareStudy(formID, false)
+	decl, err := a.declareStudy(formID, keys, false)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (a *Agent) Study(formID string) ([]string, error) {
 
 // Drop unsubscribes: bound form first, then the store's mirror, then the mark.
 func (a *Agent) Drop(formID string) ([]string, error) {
-	decl, err := a.declareStudy(formID, true)
+	decl, err := a.declareStudy(formID, nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 
 // declareStudy writes through the store, then refreshes the agent's own bound form
 // mirror, which renders from an in-memory snapshot.
-func (a *Agent) declareStudy(formID string, drop bool) (store.StudyDecl, error) {
+func (a *Agent) declareStudy(formID string, keys []string, drop bool) (store.StudyDecl, error) {
 	sb, ok := a.backend.(studyBackend)
 	if !ok {
 		// A missing source is legal on drop; a missing store is not.
@@ -97,7 +97,7 @@ func (a *Agent) declareStudy(formID string, drop bool) (store.StudyDecl, error) 
 	if drop {
 		decl, err = sb.DropForm(a.id, formID)
 	} else {
-		decl, err = sb.StudyForm(a.id, formID)
+		decl, err = sb.StudyForm(a.id, formID, keys)
 	}
 	if err != nil || !decl.Changed {
 		return decl, err
@@ -127,7 +127,7 @@ func (a *Agent) publishStudies(decl store.StudyDecl) {
 
 // studyBackend is optional: an ephemeral backend has no librettos.
 type studyBackend interface {
-	StudyForm(observerID, sourceFormID string) (store.StudyDecl, error)
+	StudyForm(observerID, sourceFormID string, keys []string) (store.StudyDecl, error)
 	DropForm(observerID, sourceFormID string) (store.StudyDecl, error)
 }
 
@@ -198,7 +198,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 		}
 	}
 	if !already {
-		if _, err := a.Study(res.roleID); err != nil {
+		if _, err := a.Study(res.roleID, nil); err != nil {
 			res.err = fmt.Errorf("cast: study %s: %w", res.roleID, err)
 			return res
 		}

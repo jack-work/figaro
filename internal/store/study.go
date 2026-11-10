@@ -21,7 +21,8 @@ type StudyDecl struct {
 // StudyForm mints, seeds, retains and follows the libretto, then the bound form
 // declares it. Idempotent: the bound form is a set and the refcount is derived
 // from the bound forms.
-func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, error) {
+func (b *XwalBackend) StudyForm(observerID, sourceFormID string, keys []string) (StudyDecl, error) {
+	keys = NormalizeStudyKeys(keys)
 	lib, err := b.libretto(sourceFormID)
 	if err != nil {
 		return StudyDecl{}, err
@@ -39,11 +40,15 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 	}()
 
 	for attempt := 0; attempt < studyAttempts; attempt++ {
-		studies, version, err := b.studiesAndVersion(observerID)
+		at, err := b.FormAt(observerID)
 		if err != nil {
 			return StudyDecl{}, err
 		}
+		studies, version := studiesOf(at.Snapshot), at.Version
 		if slices.Contains(studies, sourceFormID) {
+			if held := StudyKeys(at.Snapshot, sourceFormID); !slices.Equal(held, keys) {
+				return StudyDecl{}, fmt.Errorf("already studying %s with keys %s: drop it first to change them", sourceFormID, describeKeys(held))
+			}
 			// The bound form already declares it: make the backref agree.
 			if _, err := lib.Retain(observerID); err != nil {
 				return StudyDecl{}, err
@@ -56,7 +61,7 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 			return StudyDecl{}, err
 		}
 		next := append(append([]string(nil), studies...), sourceFormID)
-		landed, err := b.setStudies(observerID, next, version)
+		landed, err := b.setStudies(observerID, next, studyKeysEdit{source: sourceFormID, keys: keys}, version)
 		if err == nil {
 			declared = true
 			return StudyDecl{Studies: next, Version: landed, Changed: true}, nil
@@ -92,19 +97,19 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, erro
 	// names, which the sweep cannot tell from a legitimate observer.
 	undeclared := false
 	for attempt := 0; attempt < studyAttempts; attempt++ {
-		var version uint64
-		var err error
-		studies, version, err = b.studiesAndVersion(observerID)
+		at, err := b.FormAt(observerID)
 		if err != nil {
 			return StudyDecl{}, err
 		}
+		studies = studiesOf(at.Snapshot)
+		version := at.Version
 		idx := slices.Index(studies, sourceFormID)
 		if idx < 0 {
 			return StudyDecl{Studies: studies}, nil
 		}
 		// Bound form first, so a crash between the two over-counts rather than under-counts.
 		next := slices.Delete(append([]string(nil), studies...), idx, idx+1)
-		v, err := b.setStudies(observerID, next, version)
+		v, err := b.setStudies(observerID, next, studyKeysEdit{source: sourceFormID, clear: StudyKeys(at.Snapshot, sourceFormID) != nil, last: onlyStudyKeys(at.Snapshot, sourceFormID)}, version)
 		if err != nil {
 			if errors.Is(err, ErrFormMoved) {
 				backoff(attempt)
@@ -299,24 +304,35 @@ func (b *XwalBackend) studiesOfBoundForm(observerID string) ([]string, error) {
 
 // setStudies is guarded by the bound form version so two arias studying at once
 // cannot overwrite each other's declaration.
-func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint64) (uint64, error) {
+func (b *XwalBackend) setStudies(observerID string, ids []string, edit studyKeysEdit, ifVersion uint64) (uint64, error) {
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	raw, err := json.Marshal(ids)
 	if err != nil {
 		return 0, err
 	}
+	set := map[string]json.RawMessage{StudiesKey: raw}
+	var remove []string
+	switch {
+	case len(edit.keys) > 0:
+		k, err := json.Marshal(edit.keys)
+		if err != nil {
+			return 0, err
+		}
+		set[studyKeysPath(edit.source)] = k
+	case edit.clear && edit.last:
+		remove = append(remove, StudyKeysKey)
+	case edit.clear:
+		remove = append(remove, studyKeysPath(edit.source))
+	}
 	version, _, err := b.ApplyFormEffectPrivilegedIf(observerID,
-		form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil), ifVersion)
+		form.Build(form.Snapshot{}, set, remove), ifVersion)
 	return version, err
 }
 
-func (b *XwalBackend) studiesAndVersion(observerID string) ([]string, uint64, error) {
-	// One atomic load: a set and a version read separately can be a pair that
-	// never existed, and the guard would then pass over another aria's declaration.
-	at, err := b.FormAt(observerID)
-	if err != nil {
-		return nil, 0, err
-	}
-	return studiesOf(at.Snapshot), at.Version, nil
+type studyKeysEdit struct {
+	source string
+	keys   []string
+	clear  bool
+	last   bool
 }

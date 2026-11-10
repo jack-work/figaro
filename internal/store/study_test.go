@@ -29,7 +29,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := be.StudyForm(watcherA, sourceID); err != nil {
+	if _, err := be.StudyForm(watcherA, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -59,7 +59,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 
 	// Studying twice is not two references: the bound form is a SET, and the
 	// count is derived from the bound forms.
-	if _, err := be.StudyForm(watcherA, sourceID); err != nil {
+	if _, err := be.StudyForm(watcherA, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := lib.Refs(); got != 1 {
@@ -67,7 +67,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 	}
 
 	// A second observer shares the one libretto.
-	if _, err := be.StudyForm(watcherB, sourceID); err != nil {
+	if _, err := be.StudyForm(watcherB, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := lib.Refs(); got != 2 {
@@ -102,7 +102,7 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := be.DropForm(watcher, sourceID); err != nil {
@@ -159,7 +159,7 @@ func TestDropAfterTheSourceIsDead(t *testing.T) {
 	if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{"brief": "doomed"})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -202,7 +202,7 @@ func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(parent, sourceID); err != nil {
+	if _, err := be.StudyForm(parent, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -251,7 +251,7 @@ func TestKillReleasesWhatItsBoundFormStudied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -302,7 +302,7 @@ func TestEveryForkEntryPointInheritsTheReference(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := be.StudyForm(parent, sourceID); err != nil {
+			if _, err := be.StudyForm(parent, sourceID, nil); err != nil {
 				t.Fatal(err)
 			}
 			if err := tc.fork(be, parent); err != nil {
@@ -337,7 +337,7 @@ func TestLibrettoStumpsAreNeverListed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := be.Libretto(sourceID); err != nil {
@@ -368,7 +368,7 @@ func TestRetainDeclaredStudiesCoversAnImportedBoundForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(live, sourceID); err != nil {
+	if _, err := be.StudyForm(live, sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -447,7 +447,7 @@ func TestConcurrentStudiesOfOneForm(t *testing.T) {
 	errs := make(chan error, observers)
 	for _, w := range watchers {
 		go func(w string) {
-			_, err := be.StudyForm(w, sourceID)
+			_, err := be.StudyForm(w, sourceID, nil)
 			errs <- err
 		}(w)
 	}
@@ -529,7 +529,7 @@ func TestAFailedStudyLeavesNoReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := lib.Refs()
-	if _, err := be.StudyForm(watcher, sourceID); err == nil {
+	if _, err := be.StudyForm(watcher, sourceID, nil); err == nil {
 		t.Fatal("studying onto a sealed bound form succeeded")
 	}
 	if got := lib.Refs(); got != before {
@@ -567,7 +567,7 @@ func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 		go func(w string) {
 			defer func() { done <- struct{}{} }()
 			for i := 0; i < 12; i++ {
-				if _, err := be.StudyForm(w, sourceID); err != nil {
+				if _, err := be.StudyForm(w, sourceID, nil); err != nil {
 					t.Errorf("study: %v", err)
 					return
 				}
@@ -599,7 +599,7 @@ func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 	}
 
 	// And the survivor still follows: one more study, one more patch.
-	if _, err := be.StudyForm(ids[0], sourceID); err != nil {
+	if _, err := be.StudyForm(ids[0], sourceID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{"brief": "after the storm"})); err != nil {
@@ -625,7 +625,7 @@ func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(aria, src); err != nil {
+	if _, err := be.StudyForm(aria, src, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(src)

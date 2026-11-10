@@ -280,9 +280,9 @@ func (c *Aria) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (*r
 
 // Study subscribes the aria to an unbound form or another figaro ("" lists); Drop unsubscribes;
 // Cast runs one casting call.
-func (c *Aria) Study(ctx context.Context, formID string) (*rpc.StudyResponse, error) {
+func (c *Aria) Study(ctx context.Context, formID string, keys ...string) (*rpc.StudyResponse, error) {
 	var resp rpc.StudyResponse
-	if err := c.call(ctx, rpc.MethodStudy, rpc.StudyRequest{FormID: formID}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodStudy, rpc.StudyRequest{FormID: formID, Keys: keys}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

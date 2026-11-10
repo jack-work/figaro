@@ -116,6 +116,28 @@ func TestAStudiedParentsChangeArrivesAsOneReminder(t *testing.T) {
 	require.NotContains(t, got[0], "system.")
 }
 
+// The forkcomment loop: a comment left on the parent reaches the studying
+// figaro as one study reminder, and --keys keeps the rest of the parent out.
+func TestAStudiedParentsCommentArrivesAsOneReminder(t *testing.T) {
+	a, r, pc, cc, parent, child, ctx := studyBoundFixture(t)
+	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	resp, err := cc.c.Study(callCtx, parent, "comments")
+	require.NoError(t, err)
+	require.Contains(t, resp.Studies, parent)
+
+	commentAndMantra(t, callCtx, a, pc, parent)
+	cc.turn(t, callCtx, "anything for me?")
+
+	got := r.blocks(child, "study:"+parent)
+	require.Len(t, got, 1, "want one study reminder for the parent, got %q", got)
+	require.Contains(t, got[0], `"comments.c1.body":"why this design?"`)
+	require.NotContains(t, got[0], "parent busy", "a key outside --keys was mirrored")
+	require.NotContains(t, got[0], "system.", "the parent's system keys were mirrored")
+	require.NotContains(t, strings.Join(r.blocks(child, "study"), "\n"), "system.", "the began mark mirrored the parent's system keys")
+}
+
 func TestAFigaroStudyingItselfIsRefused(t *testing.T) {
 	_, _, _, cc, parent, child, ctx := studyBoundFixture(t)
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)

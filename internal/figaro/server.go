@@ -52,7 +52,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if req.FormID == "" {
 			return rpc.StudyResponse{OK: true, Studies: a.StudyList()}, nil
 		}
-		studies, err := a.Study(req.FormID)
+		studies, err := a.Study(req.FormID, req.Keys)
 		if err != nil {
 			return nil, err
 		}

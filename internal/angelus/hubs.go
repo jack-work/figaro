@@ -120,7 +120,7 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 			}
 			return rpc.StudyResponse{OK: true, Studies: figaro.StudiesFromSnapshot(snap)}, true, nil
 		}
-		studies, err := h.studyForHub(id, req.FormID, method == rpc.MethodDrop)
+		studies, err := h.studyForHub(id, req.FormID, req.Keys, method == rpc.MethodDrop)
 		if err != nil {
 			return nil, true, err
 		}

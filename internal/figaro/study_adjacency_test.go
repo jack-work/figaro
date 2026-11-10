@@ -40,7 +40,7 @@ func TestStudyMarkCannotLandInsideARound(t *testing.T) {
 	}
 	require.Equal(t, 0, studyMarks(), "a mark existed before the study")
 
-	if _, err := a.Study(formID); err != nil {
+	if _, err := a.Study(formID, nil); err != nil {
 		t.Fatalf("study while a round is in flight: %v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestStudyMintsAndRetainsItsLibretto(t *testing.T) {
 	})
 	require.True(t, ok, "the xwal backend should carry the libretto half")
 
-	if _, err := a.Study(formID); err != nil {
+	if _, err := a.Study(formID, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := lb.Libretto(formID)
@@ -93,7 +93,7 @@ func TestStudyMintsAndRetainsItsLibretto(t *testing.T) {
 	}, 3*time.Second, 5*time.Millisecond, "the libretto is not following the source")
 
 	// Studying again is not a second reference: the bound form is a set.
-	if _, err := a.Study(formID); err != nil {
+	if _, err := a.Study(formID, nil); err != nil {
 		t.Fatal(err)
 	}
 	require.Equal(t, 1, lib.Refs(), "a repeated study double-counted")

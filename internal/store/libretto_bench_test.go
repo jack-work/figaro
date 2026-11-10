@@ -144,7 +144,7 @@ func benchStorm(b *testing.B, observers int) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := be.StudyForm(watcher, sourceID); err != nil {
+		if _, err := be.StudyForm(watcher, sourceID, nil); err != nil {
 			b.Fatal(err)
 		}
 	}

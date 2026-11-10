@@ -72,7 +72,7 @@ func TestMemWorkloadIssue59(t *testing.T) {
 		}
 	}
 	for i := 0; i < studied && i+1 < len(ids); i++ {
-		if _, err := be.StudyForm(ids[len(ids)-1-i], ids[i]); err != nil {
+		if _, err := be.StudyForm(ids[len(ids)-1-i], ids[i], nil); err != nil {
 			t.Fatal(err)
 		}
 	}

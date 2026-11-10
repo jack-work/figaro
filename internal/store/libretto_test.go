@@ -378,7 +378,7 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(aria, src); err != nil {
+	if _, err := be.StudyForm(aria, src, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -420,7 +420,7 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(aria, src); err != nil {
+	if _, err := be.StudyForm(aria, src, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(src)
@@ -492,7 +492,7 @@ func TestLibrettoReadersWhileItFolds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.StudyForm(aria, src); err != nil {
+	if _, err := be.StudyForm(aria, src, nil); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(src)

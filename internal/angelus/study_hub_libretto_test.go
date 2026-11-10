@@ -35,7 +35,7 @@ func hubStudyFixture(t *testing.T) (*handlers, *store.XwalBackend, string, strin
 func TestHubStudyRetainsTheLibretto(t *testing.T) {
 	h, be, aria, formID := hubStudyFixture(t)
 
-	studies, err := h.studyForHub(aria, formID, false)
+	studies, err := h.studyForHub(aria, formID, nil, false)
 	require.NoError(t, err)
 	require.Contains(t, studies, formID)
 
@@ -44,7 +44,7 @@ func TestHubStudyRetainsTheLibretto(t *testing.T) {
 	require.Equal(t, 1, lib.Refs(), "the hub declared a study nothing counted")
 
 	// Idempotent: the bound form is a set, so a repeat is not a second reference.
-	_, err = h.studyForHub(aria, formID, false)
+	_, err = h.studyForHub(aria, formID, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, 1, lib.Refs(), "a repeated hub study double-counted")
 
@@ -55,10 +55,10 @@ func TestHubStudyRetainsTheLibretto(t *testing.T) {
 
 func TestHubDropReleasesTheLibretto(t *testing.T) {
 	h, be, aria, formID := hubStudyFixture(t)
-	_, err := h.studyForHub(aria, formID, false)
+	_, err := h.studyForHub(aria, formID, nil, false)
 	require.NoError(t, err)
 
-	studies, err := h.studyForHub(aria, formID, true)
+	studies, err := h.studyForHub(aria, formID, nil, true)
 	require.NoError(t, err)
 	require.NotContains(t, studies, formID)
 
@@ -67,7 +67,7 @@ func TestHubDropReleasesTheLibretto(t *testing.T) {
 	require.Equal(t, 0, lib.Refs(), "the hub dropped a study without releasing it")
 
 	// And again: dropping what is not declared moves nothing.
-	_, err = h.studyForHub(aria, formID, true)
+	_, err = h.studyForHub(aria, formID, nil, true)
 	require.NoError(t, err)
 	require.Equal(t, 0, lib.Refs(), "a repeated hub drop went below zero")
 
@@ -84,7 +84,7 @@ func TestImportRestoresStudiesThroughTheVerb(t *testing.T) {
 	imported, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
 
-	_, err = studyThroughStore(be, imported, formID, false)
+	_, err = studyThroughStore(be, imported, formID, nil, false)
 	require.NoError(t, err)
 
 	lib, err := be.Libretto(formID)
