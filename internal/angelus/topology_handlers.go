@@ -34,7 +34,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
-	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 
@@ -238,7 +238,8 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	inherited, _ := h.angelus.Backend.FormState(req.FigaroID)
+	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), inherited, req.Patch); err != nil {
 		return nil, err
 	}
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {

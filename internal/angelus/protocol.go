@@ -448,7 +448,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 	if req.Patch != nil {
@@ -511,12 +511,12 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		return nil, err
 	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
-	if err := h.refuseCallerKeys(ctx, form.Snapshot{}, req.Patch); err != nil {
-		return nil, err
-	}
 	parent := req.Parent
 	if parent == "null" {
 		parent = ""
+	}
+	if err := h.refuseCallerKeys(ctx, birthUnder(parent), form.Snapshot{}, req.Patch); err != nil {
+		return nil, err
 	}
 	if parent != "" {
 		var err error

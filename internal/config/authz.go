@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"time"
 )
@@ -13,6 +14,7 @@ type AuthzConfig struct {
 	Upstream      UpstreamConfig `toml:"upstream"`
 	Issuers       []IssuerConfig `toml:"issuers"`
 	APIKeys       []APIKeyConfig `toml:"api_keys"`
+	ProtectedKeys string         `toml:"protected_keys"`
 }
 
 type APIKeyConfig struct {
@@ -44,6 +46,21 @@ type IssuerConfig struct {
 }
 
 var errRetiredBearer = errors.New("[authz.bearer] is now [[authz.issuers]]: same keys, one table per issuer, and principals carry the issuer (user:jack@auth.kelliher.info)")
+
+const (
+	ProtectedByLineage = "lineage"
+	ProtectedOpen      = "open"
+)
+
+func (c AuthzConfig) ProtectsByLineage() bool { return c.ProtectedKeys != ProtectedOpen }
+
+func (c AuthzConfig) checkProtectedKeys() error {
+	switch c.ProtectedKeys {
+	case "", ProtectedByLineage, ProtectedOpen:
+		return nil
+	}
+	return fmt.Errorf("[authz] protected_keys = %q: want %q or %q", c.ProtectedKeys, ProtectedByLineage, ProtectedOpen)
+}
 
 func (c AuthzConfig) TakesTroupeIssuers() bool {
 	return c.TroupeIssuers == nil || *c.TroupeIssuers

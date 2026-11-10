@@ -16,6 +16,7 @@ const (
 	DenyOwnerHeld     KeyDenyKind = "owner-held"
 	DenyBoxHeld       KeyDenyKind = "box-held"
 	DenyBoxUnlisted   KeyDenyKind = "box-unlisted"
+	DenyProtected     KeyDenyKind = "protected"
 )
 
 type KeyDeny struct {

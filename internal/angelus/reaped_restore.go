@@ -62,7 +62,7 @@ func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep boo
 		if err != nil {
 			return resp, err
 		}
-		if err := h.refuseCallerKeys(ctx, snap, &lifetime); err != nil {
+		if err := h.refuseCallerKeys(ctx, lineage{of: group.root}, snap, &lifetime); err != nil {
 			return resp, fmt.Errorf("reaped restore %s --keep: %w", group.root, err)
 		}
 	}

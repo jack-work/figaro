@@ -858,6 +858,9 @@ func load(configDir string) (*Loaded, error) {
 	if md.IsDefined("authz", "bearer") {
 		return nil, fmt.Errorf("%s: %w", configPath, errRetiredBearer)
 	}
+	if err := cfg.Authz.checkProtectedKeys(); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
 	// default_loadout is the pre-rename key.
 	if cfg.DefaultOutfit == "" {
 		var legacy struct {

@@ -86,14 +86,72 @@ func changedPaths(before, after form.Snapshot) []string {
 }
 
 type callerKeys struct {
-	owns  bool
-	boxed bool
-	box   string
+	owns    bool
+	boxed   bool
+	box     string
+	lineage bool
+	heir    bool
 }
 
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 	box, boxed := callerBox(ctx)
-	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box}
+	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box, lineage: h.protectsByLineage()}
+}
+
+func (h *handlers) callerKeysOn(ctx context.Context, line lineage) callerKeys {
+	c := h.callerKeysOf(ctx)
+	c.heir = c.lineage && h.refuseProtected(ctx, c, line, "") == nil
+	return c
+}
+
+func (h *handlers) protectsByLineage() bool {
+	loaded, _ := h.settings()
+	return loaded == nil || loaded.Config.Authz.ProtectsByLineage()
+}
+
+type lineage struct {
+	of   string
+	self bool
+}
+
+func birthUnder(parent string) lineage { return lineage{of: parent, self: true} }
+
+func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line lineage, key string) error {
+	if c.owns && !c.boxed {
+		return nil
+	}
+	if key == "" {
+		key = "a protected key"
+	}
+	if !c.boxed {
+		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door", key)
+	}
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return fmt.Errorf("box %s may not set %s: it is protected and the call names no figaro", c.box, key)
+	}
+	if got := h.sandboxOf(f); got != c.box {
+		return fmt.Errorf("box %s may not set %s: the call claims figaro %s, which does not run in it", c.box, key, f)
+	}
+	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
+		return fmt.Errorf("box %s may not set %s: it is protected, and figaro %s is no ancestor of the aria", c.box, key, f)
+	}
+	return nil
+}
+
+func (h *handlers) ancestorsOf(line lineage) []string {
+	chain, err := h.angelus.chainOf(line.of)
+	if err != nil || len(chain) == 0 || chain[len(chain)-1].Node != line.of {
+		return nil
+	}
+	if !line.self {
+		chain = chain[:len(chain)-1]
+	}
+	out := make([]string, len(chain))
+	for i, l := range chain {
+		out[i] = l.Node
+	}
+	return out
 }
 
 func (c callerKeys) deny() []rpc.KeyDeny {
@@ -111,13 +169,23 @@ func (c callerKeys) deny() []rpc.KeyDeny {
 				Reason: "owner-held: only the owner sets it"})
 		}
 	}
+	except := boxWritable
+	if c.lineage && !(c.owns && !c.boxed) {
+		if !c.heir {
+			for _, k := range form.ProtectedKeys() {
+				out = append(out, rpc.KeyDeny{Key: k, Kind: rpc.DenyProtected,
+					Reason: "protected: only the owner or an ancestor figaro sets it"})
+			}
+		}
+		except = append(slices.Clone(boxWritable), form.ProtectedKeys()...)
+	}
 	if !c.boxed {
 		return out
 	}
 	for _, k := range boxHeldKeys {
 		out = append(out, rpc.KeyDeny{Key: k.key, Kind: rpc.DenyBoxHeld, Reason: k.why})
 	}
-	return append(out, rpc.KeyDeny{Key: "system.", Below: true, Except: boxWritable, Kind: rpc.DenyBoxUnlisted,
+	return append(out, rpc.KeyDeny{Key: "system.", Below: true, Except: except, Kind: rpc.DenyBoxUnlisted,
 		Reason: "a box writes only the system keys it is listed for"})
 }
 
@@ -182,7 +250,7 @@ func refuseMalformedRetirement(before form.Snapshot, patch form.Patch) error {
 	return err
 }
 
-func (h *handlers) refuseCallerKeys(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
+func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}
@@ -192,11 +260,21 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, before form.Snapshot, p
 	if err := refuseMalformedRetirement(before, *patch); err != nil {
 		return err
 	}
+	after := before.Apply(*patch)
+	if err := form.CheckGrants(after); err != nil {
+		return err
+	}
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
 		return nil
 	}
-	for _, p := range changedPaths(before, before.Apply(*patch)) {
+	for _, p := range changedPaths(before, after) {
+		if k, ok := form.Protected(p); ok && c.lineage {
+			if err := h.refuseProtected(ctx, c, line, k); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := c.refusal(p); err != nil {
 			return err
 		}
@@ -218,7 +296,7 @@ func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMes
 	if h.allowed(ctx, rpc.VerbSet, authz.Aria(id)) != nil {
 		return &rpc.FormAccess{Mode: rpc.FormReadOnly}
 	}
-	return &rpc.FormAccess{Mode: rpc.FormWritable, Deny: h.callerKeysOf(ctx).deny()}
+	return &rpc.FormAccess{Mode: rpc.FormWritable, Deny: h.callerKeysOn(ctx, lineage{of: id}).deny()}
 }
 
 func (h *handlers) callerOwns(ctx context.Context) bool {
@@ -232,7 +310,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch
@@ -255,7 +333,7 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 				if err != nil {
 					return err
 				}
-				if err := h.refuseCallerKeys(ctx, snap, ptr(form.FromMap(open).AsPatch())); err != nil {
+				if err := h.refuseCallerKeys(ctx, lineage{of: id}, snap, ptr(form.FromMap(open).AsPatch())); err != nil {
 					return err
 				}
 			}
@@ -276,7 +354,11 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	if err != nil {
 		return err
 	}
-	return h.refuseCallerKeys(ctx, snap, patch)
+	line := lineage{of: id}
+	if method == rpc.MethodCast {
+		line = lineage{}
+	}
+	return h.refuseCallerKeys(ctx, line, snap, patch)
 }
 
 func openKeys(m map[string]json.RawMessage) map[string]json.RawMessage {
