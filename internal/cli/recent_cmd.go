@@ -59,7 +59,7 @@ func printRecent(w io.Writer, rows []recent.Row, width int) {
 		line := r.Name + pad(nameW-displayWidth(r.Name)) + "  " + r.Title
 		age := pad(ageW-len(ages[i])) + ages[i]
 		if rowed {
-			sink.WriteRow(line, listedAria{id: r.ID, name: r.Name, aside: ages[i]})
+			sink.WriteRow(line, listedAria{id: r.ID, name: r.Name, aside: ages[i], to: r.ID})
 			continue
 		}
 		if width > 0 {

@@ -33,6 +33,7 @@ type pitRow struct {
 	yankFrom interface{ yankText() string }
 	id       string
 	aria     string
+	to       string
 	// note is drawn at full strength on the selected row: dim on a wash would
 	// not read.
 	note string

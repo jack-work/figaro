@@ -27,6 +27,7 @@ const (
 	pitConfirm pitID = "confirm"
 	pitLogin   pitID = "login"
 	pitAsk     pitID = "answer"
+	pitSendTo  pitID = "send"
 	// Drawn inside the command pit, never opened as its own; the row exists
 	// for its selection marker.
 	pitCompletion pitID = "completion"
@@ -63,6 +64,7 @@ var pitFaces = map[pitID]pitFace{
 	pitDecision:   {"⁇", "decision", "", modePanel},
 	pitLogin:      {"⚷", "login", "▸", modePanel},
 	pitAsk:        {"⚷", "answer", "", modeBox},
+	pitSendTo:     {"✎", "send", "", modeBox},
 }
 
 func (d pitID) face() pitFace {

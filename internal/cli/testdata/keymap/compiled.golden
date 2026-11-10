@@ -348,6 +348,7 @@ list       0x1b               pager panelDismiss
 list       " "                pager prefix:leader
 list       "!"                pager panelToggleStatus
 list       "/"                pager pagerSearchPrompt
+list       ">"                pager listSendTo
 list       "?"                pager pagerSearchPromptBack
 list       "D"                pager pagerDecisionPit
 list       "F"                pager listFullscreen

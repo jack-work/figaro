@@ -449,7 +449,7 @@ func (c captured) rows(lines []string) []pitRow {
 	out := make([]pitRow, 0, len(lines))
 	for i, line := range lines {
 		a := c.arias[i]
-		out = append(out, pitRow{text: line, yank: a.name, id: a.id, aria: a.id, aside: a.aside})
+		out = append(out, pitRow{text: line, yank: a.name, id: a.id, aria: a.id, aside: a.aside, to: a.to})
 	}
 	return out
 }

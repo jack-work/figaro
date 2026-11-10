@@ -66,6 +66,7 @@ func listOptsFrom(ctx *cmdkit.RunContext, forceHome bool) lsOpts {
 const (
 	fieldID     = "id"
 	fieldAriaID = "aria-id"
+	fieldSendTo = "send-to"
 	fieldOutfit = "outfit"
 	fieldVer    = "ver"
 	fieldFork   = "fork"
@@ -338,6 +339,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
 				fieldAriaID: f.ID,
+				fieldSendTo: sendAddress(f),
 				fieldOutfit: dash(bornOf(f)),
 				fieldVer:    dash(f.OutfitVer),
 				fieldFork:   fork,
@@ -434,6 +436,7 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
 				fieldAriaID: f.ID,
+				fieldSendTo: sendAddress(f),
 				fieldDetail: detail,
 				fieldMsgs:   strconv.Itoa(f.MessageCount),
 				fieldKind:   f.Kind,
@@ -556,7 +559,20 @@ type rowSink interface {
 	WriteRow(line string, a listedAria)
 }
 
-type listedAria struct{ id, name, aside string }
+type listedAria struct{ id, name, aside, to string }
+
+func sendAddress(f rpc.FigaroInfoResponse) string {
+	switch f.Kind {
+	case "null", "outfit":
+		return ""
+	case "form":
+		if f.TargetAria == "" {
+			return ""
+		}
+		return "@" + f.ID
+	}
+	return f.ID
+}
 
 func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
 	text := renderListRows(rows, width, global)
@@ -570,7 +586,8 @@ func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
 	for i, line := range lines {
 		var a listedAria
 		if i >= off && off >= 0 {
-			a = listedAria{id: rows[i-off].Field(fieldAriaID), name: rows[i-off].Field(fieldID)}
+			r := rows[i-off]
+			a = listedAria{id: r.Field(fieldAriaID), name: r.Field(fieldID), to: r.Field(fieldSendTo)}
 		}
 		sink.WriteRow(line, a)
 	}

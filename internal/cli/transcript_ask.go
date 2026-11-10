@@ -7,6 +7,8 @@ type boxQuestion struct {
 	secret bool
 	title  []string
 	answer func(text string)
+	pit    pitID
+	once   bool
 }
 
 func (t *transcript) asking() bool { return t.box == boxAsk }
@@ -36,6 +38,9 @@ func (t *transcript) answerAsk() {
 }
 
 func (t *transcript) closeAsk() {
+	if t.ask != nil && t.ask.once {
+		t.ask = nil
+	}
 	t.askline = lineEditor{}
 	if t.box == boxAsk {
 		t.box = boxNone

@@ -53,6 +53,8 @@ func (t *transcript) openPit() pitID {
 		return pitCommand
 	case t.box == boxComposer:
 		return pitComposer
+	case t.box == boxAsk && t.ask != nil && t.ask.pit != "":
+		return t.ask.pit
 	case t.box == boxAsk:
 		return pitAsk
 	case t.pit.open():

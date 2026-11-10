@@ -82,6 +82,7 @@ type transcript struct {
 	// attendAria and ariaHop dial, so they hand off to a goroutine on the same
 	// rule as openForm.
 	attendAria   func(id string)
+	sendTo       func(to, handle, text string)
 	ariaHop      func(dir int)
 	attendParent func()
 	confirm      *confirmAsk

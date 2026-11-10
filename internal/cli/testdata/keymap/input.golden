@@ -244,7 +244,7 @@ panel "0x20" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=t
 panel "0x21" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=false s=true Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 panel "0x2f" stop=false rest="" act=true off:bottom fol=true srch=true q="" h=true s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 panel "0x3a" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=true jq=""
-panel "0x3e" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=false s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=true jq=""
+panel "0x3e" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=true s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 panel "0x3f" stop=false rest="" act=true off:bottom fol=true srch=true q="" h=true s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 panel "0x44" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=true s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""
 panel "0x46" stop=false rest="" act=true off:bottom fol=true srch=false q="" h=true s=false Q=false pre=- sel=false verb=false disc=0 canc=false clip="" cpfail=false cping=false jmp=false jq=""

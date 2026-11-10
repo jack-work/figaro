@@ -126,7 +126,7 @@ your changes applied.
 | composer | composer | `i` insert · `a` insert-after · `I` insert-home · `A` insert-end · `h` left · `Home` line-start · `End` line-end · `v` mark-char · `V` mark-line · `/` search · `?` search-back · `n` find-next · `N` find-prev · `F` fullscreen · `:` command · `Esc` cancel · `M-Enter ^S` send |
 | visual | visual | `Esc` cancel · `Enter 0x0a` activate · `a` attend · `M-Enter` open-path · `Y` yank-coordinate · `H` screen-top · `M` screen-middle · `L` screen-bottom · `n` find-next · `N` find-prev |
 | pit | pit,list | `a` attend · `Enter 0x0a` activate · `l` branch-open · `h` branch-close · `Right` right · `Left` left · `Esc` cancel · `x` delete · `X` delete-now · `n` find-next · `N` find-prev |
-| list | list | `e ^E` scroll-down · `^Y` scroll-up · `F` fullscreen · `0x0e` down · `0x10` up |
+| list | list | `e ^E` scroll-down · `^Y` scroll-up · `>` send-to · `F` fullscreen · `0x0e` down · `0x10` up |
 | transcript | transcript | `f` prefix:fork · `c` prefix:comment · `a` attend · `^` attend-parent · `^O` aria-back · `Tab` aria-forward · `Enter 0x0a` activate · `e` toggle-bodies · `Esc` cancel · `x` delete · `0x0e` select-next · `0x10` select-prev · `n` find-next · `N` find-prev |
 | pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `M-l` recent · `H` hang-up · `S` form · `T` focus · `p` pinned · `h` help · `!` status · `Q` queue |
 | reading | transcript,pit,visual,list | `q` leave · `m` bar-verbose · `/` search · `?` search-back |
@@ -233,6 +233,7 @@ your changes applied.
 | `scroll-down` | list |
 | `scroll-up` | list |
 | `send` | composer |
+| `send-to` | list |
 | `accept-snap` | command |
 | `cmd-home` | command |
 | `cmd-end` | command |
