@@ -231,8 +231,8 @@ func TestExactTermsMarkTheirSpan(t *testing.T) {
 // A fuzzy term spread its letters across a long path's keys, so 'libretto'
 // matched lime.forks.ibex.forks.brett.forks.otto.ctx ahead of the mantra that
 // says libretto. A term without a dot matches inside one key; one with a dot
-// spans keys as written. A contiguous match, on a key or in a value, ranks
-// ahead of letters spread through a key.
+// spans keys as written. Letters spread through a key are a hit only when
+// nothing holds the term whole.
 func TestATermMatchesWithinOneKeyAndContiguousRanksFirst(t *testing.T) {
 	var ix Index
 	ix.Update(snapOf(t, map[string]any{
@@ -243,8 +243,11 @@ func TestATermMatchesWithinOneKeyAndContiguousRanksFirst(t *testing.T) {
 	}))
 	m := NewMatcher()
 	got := paths(ix.Query(m, "libretto"))
-	if len(got) != 2 || got[0] != "arias.real.mantra" || got[1] != "arias.lab.forks.liberetto.id" {
-		t.Fatalf("libretto: %v; want the mantra, then the key that spreads it within itself", got)
+	if len(got) != 1 || got[0] != "arias.real.mantra" {
+		t.Fatalf("libretto: %v; want the mantra alone", got)
+	}
+	if got := paths(ix.Query(m, "librtto")); len(got) != 2 || got[0] != "arias.lab.forks.liberetto.id" {
+		t.Errorf("librtto: %v; with nothing whole, the key that spreads it within itself is a hit", got)
 	}
 	if got := paths(ix.Query(m, "systools")); len(got) != 0 {
 		t.Errorf("systools spanned two keys: %v", got)
@@ -254,14 +257,14 @@ func TestATermMatchesWithinOneKeyAndContiguousRanksFirst(t *testing.T) {
 			t.Errorf("%s: %v; want system.tools", q, got)
 		}
 	}
-	hits := ix.Query(m, "libretto")
-	pos := hits[1].KeyPositions(m, "libretto")
-	key := []rune(hits[1].Entry.Path)
+	hits := ix.Query(m, "librtto")
+	pos := hits[0].KeyPositions(m, "librtto")
+	key := []rune(hits[0].Entry.Path)
 	var marked []rune
 	for _, p := range pos {
 		marked = append(marked, key[p])
 	}
-	if string(marked) != "libretto" {
+	if string(marked) != "librtto" {
 		t.Errorf("positions mark %q, want the letters inside one key", string(marked))
 	}
 }
@@ -328,20 +331,24 @@ func TestAFuzzyTermFindsAValueByItsLetters(t *testing.T) {
 	}
 }
 
-// A value holding the term whole ranks ahead of one that spreads it, as a
-// key does.
-func TestAContiguousValueRanksAheadOfASpreadOne(t *testing.T) {
+// Gluck typed a word of a mantra and got every long value whose letters
+// happened to fall in order: "rossini" hit "rou2 ... access ... spain". A value
+// holding the term whole hides the ones that spread it; with none whole, the
+// spread ones are the hits.
+func TestAWholeHitHidesSpreadOnes(t *testing.T) {
 	var ix Index
 	ix.Update(snapOf(t, map[string]any{
 		"a.mantra": "line breaks to tonight",
 		"b.mantra": "correct the libretto",
 	}))
-	hits := ix.Query(NewMatcher(), "libretto")
-	if got := paths(hits); len(got) != 2 || got[0] != "b.mantra" {
-		t.Fatalf("libretto ranked %v; want the contiguous value first", got)
+	m := NewMatcher()
+	hits := ix.Query(m, "libretto")
+	if got := paths(hits); len(got) != 1 || got[0] != "b.mantra" || hits[0].Spread {
+		t.Fatalf("libretto: %v; want the whole value alone", got)
 	}
-	if hits[0].Spread || !hits[1].Spread {
-		t.Errorf("spread misreported: %v %v", hits[0].Spread, hits[1].Spread)
+	hits = ix.Query(m, "lnbrk")
+	if got := paths(hits); len(got) != 1 || got[0] != "a.mantra" || !hits[0].Spread {
+		t.Errorf("lnbrk: %v; with nothing whole, want the spread value", got)
 	}
 }
 

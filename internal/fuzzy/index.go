@@ -183,23 +183,30 @@ func (ix *Index) Query(m *Matcher, query string) []Hit {
 	}
 	var hits []Hit
 	var kept []*Entry
+	tight := false
 	for _, e := range pool {
 		if h, ok := match(m, terms, e); ok {
 			hits = append(hits, h)
 			kept = append(kept, e)
+			tight = tight || !h.Spread
 		}
 	}
 	ix.lastTerms, ix.lastPool = terms, kept
-	slices.SortStableFunc(hits, func(a, b Hit) int {
-		if a.Spread != b.Spread {
-			return boolOrder(!a.Spread, !b.Spread)
-		}
-		if a.OnKey != b.OnKey {
-			return boolOrder(a.OnKey, b.OnKey)
-		}
-		return b.Score - a.Score
-	})
+	if tight {
+		hits = slices.DeleteFunc(hits, func(h Hit) bool { return h.Spread })
+	}
+	slices.SortStableFunc(hits, Compare)
 	return hits
+}
+
+func Compare(a, b Hit) int {
+	if a.Spread != b.Spread {
+		return boolOrder(!a.Spread, !b.Spread)
+	}
+	if a.OnKey != b.OnKey {
+		return boolOrder(a.OnKey, b.OnKey)
+	}
+	return b.Score - a.Score
 }
 
 func match(m *Matcher, terms []Term, e *Entry) (Hit, bool) {
