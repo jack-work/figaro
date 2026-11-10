@@ -539,6 +539,16 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 	return resp, nil
 }
 
+func importedKeys(p form.Patch) map[string]json.RawMessage {
+	keys := map[string]json.RawMessage{}
+	for _, e := range p.Entries() {
+		if !e.IsRemoval() {
+			keys[e.Key] = e.New
+		}
+	}
+	return keys
+}
+
 func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ImportRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -549,6 +559,15 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	}
 	if req.Outfit == "" {
 		return nil, errors.New("import: no outfit named")
+	}
+	if !h.callerOwns(ctx) {
+		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &req.OutfitPatch); err != nil {
+			return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
+		}
+		imported := form.Build(form.Snapshot{}, importedKeys(req.Form), nil)
+		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &imported); err != nil {
+			return nil, fmt.Errorf("import: %w", err)
+		}
 	}
 	outfitID, err := h.angelus.Backend.CreateOutfit(req.Outfit, req.OutfitPatch)
 	if err != nil {
@@ -569,12 +588,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	}
 	// The form last, as one patch; aria_id is re-stamped because the export
 	// carries the id it had in the source store.
-	keys := map[string]json.RawMessage{}
-	for _, e := range req.Form.Entries() {
-		if !e.IsRemoval() {
-			keys[e.Key] = e.New
-		}
-	}
+	keys := importedKeys(req.Form)
 	// system.studies is refcounted on a shared libretto, so it is replayed
 	// through the verb below rather than copied as a key.
 	var studies []string
