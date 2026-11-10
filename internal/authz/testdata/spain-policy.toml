@@ -14,7 +14,7 @@ role = "lent-to-troupe"
 grants = ["create:*", "use:sandbox:self", "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self", "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self"]
 
 [roles.lent-to-troupe]
-grants = ["read:unboxed", "listen:unboxed", "send:unboxed", "fork:unboxed", "set:unboxed", "kill:unboxed", "create:*"]
+grants = ["create:*", "read:unboxed", "listen:unboxed", "send:unboxed", "fork:unboxed", "set:unboxed", "kill:unboxed"]
 
 [roles.owner]
 grants = ["*:*"]

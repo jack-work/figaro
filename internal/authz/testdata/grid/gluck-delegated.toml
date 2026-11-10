@@ -1,0 +1,14 @@
+
+[roles.owner]
+grants = ["*:*"]
+
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+
+[roles.lent-to-troupe]
+grants = ["*:*"]
+
+[[bind]]
+role = "lent-to-troupe"
+principals = ["troupe:kelliher"]

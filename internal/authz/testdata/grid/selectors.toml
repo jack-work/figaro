@@ -1,0 +1,34 @@
+[roles.owner]
+grants = ["*:*"]
+[roles.covered]
+grants = [
+  "admin:*", "admin:troupe:kelliher",
+  "*:aria:a-guest",
+  "read:aria:a-guest", "read:lineage:a-box0", "kill:aria:a-guest", "kill:lineage:a-box0",
+]
+[roles.mixed]
+grants = [
+  "read:owner:self", "read:role:@herald", "read:lineage:a-box0", "read:unboxed", "listen:owner:self", "listen:role:@herald", "listen:lineage:a-box0", "listen:unboxed", "send:owner:self", "send:role:@herald", "send:lineage:a-box0", "send:unboxed", "fork:owner:self", "fork:role:@herald", "fork:lineage:a-box0", "fork:unboxed",
+  "set:sandboxed:self", "set:aria:a-admin", "kill:sandboxed:self", "kill:aria:a-admin",
+  "use:sandbox:self", "use:sandbox:bwrap", "use:sandbox:local",
+  "join:troupe:kelliher", "join:troupe:other", "admin:troupe:kelliher", "admin:troupe:other",
+  "read:unboxed", "read:unboxed", "read:unboxed", "read:unboxed",
+]
+[roles.boxed]
+grants = ["create:sandbox:self", "create:sandboxed:self", "use:sandbox:self", "use:sandboxed:self", "read:sandbox:self", "read:sandboxed:self"]
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+[[bind]]
+role = "covered"
+principals = ["user:bob@auth.kelliher.info"]
+[[bind]]
+role = "mixed"
+principals = ["user:guest@auth.kelliher.info", "peer1/user:2001"]
+groups = ["ops@auth.kelliher.info"]
+[[bind]]
+role = "boxed"
+principals = ["sandbox:box0@local:box", "sandbox:*"]
+[[bind]]
+role = "covered"
+principals = ["troupe:kelliher"]
