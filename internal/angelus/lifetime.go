@@ -362,8 +362,12 @@ func (h *handlers) refuseRetired(method, id string, params json.RawMessage) erro
 		return fmt.Errorf("%w: %s was reaped %s; it takes no prompts (figaro reaped restore %s)",
 			ErrReaped, id, time.UnixMilli(meta.ReapedAtMS).Format(time.RFC3339), id)
 	}
-	return fmt.Errorf("%w: %s retired %s; it takes no prompts (figaro retire --undo %s)",
-		ErrRetired, id, time.UnixMilli(meta.RetiredAtMS).Format(time.RFC3339), id)
+	why := ""
+	if meta.RetiredReason == store.RetiredContext {
+		why = " at its context threshold"
+	}
+	return fmt.Errorf("%w: %s retired%s %s; it takes no prompts (figaro retire --undo %s)",
+		ErrRetired, id, why, time.UnixMilli(meta.RetiredAtMS).Format(time.RFC3339), id)
 }
 
 func (a *Angelus) removeDecided(id string, taken []string) error {

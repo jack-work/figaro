@@ -301,6 +301,15 @@ spooled across a restart and not yet delivered, or a use within its own
 keepalive. A retired figaro (`figaro retire`) is held only by a
 keepalive it states itself, so `retire --ttl 1h` really ends it in an hour.
 
+`system.retirement = { context_threshold = 700000, ttl = "72h" }` (owner-held)
+retires a figaro by itself: when a turn ends and that turn's last request
+carried at least `context_threshold` input tokens as the provider counted them,
+it retires as `figaro retire` would, with `system.retired = "context"`. A
+threshold like `"60%"` is of the model's context window. The turn in flight
+and prompts already queued finish; `ttl` counts from the retirement. A fork
+starts unretired but keeps the setting, so a fork taken above the threshold
+retires again at the end of its first turn.
+
 `system.reap_if_empty = true` reaps a figaro that never had a message: no
 prompt, no reply. Empty means no messages, not no state: a figaro used only as
 a board (keys set, no turns) is reaped too. Once it is a minute past its birth
@@ -349,7 +358,7 @@ and only held, and `[retired]`; a row past its reap time that nothing holds,
 and every reaped row, is omitted, with a count of what was withheld.
 `figaro doctor ttl` reports every lifetime with when the sweep may take it, and
 `ls -j` carries `ttl_ms`, `expires_at`, `reaps_at`, `keepalive_ms`,
-`retired_at` and `reaped_at`.
+`retired_at`, `retired_reason` (`context` or `manual`) and `reaped_at`.
 
 Two `system.` keys are exceptions in one direction: they do not render
 themselves, they change what OTHER events say.

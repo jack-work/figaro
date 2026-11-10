@@ -53,6 +53,7 @@ func TestAnUnboxedGuestCannotGiveTheOwnersAriaALifetime(t *testing.T) {
 		store.SystemReapIfEmptyKey: true,
 		store.SystemKeepaliveKey:   "0",
 		store.SystemRetiredKey:     "2026-11-07T00:00:00Z",
+		store.SystemRetirementKey:  map[string]any{"context_threshold": "1%", "ttl": "1m"},
 	} {
 		if _, held := form.OwnerHeld(key); !held {
 			t.Errorf("%s is not owner-held", key)

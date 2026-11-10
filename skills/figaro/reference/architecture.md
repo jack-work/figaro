@@ -363,8 +363,8 @@ the caller names is a host path and needs `use` on `sandbox:local`.
 `system.max_context_tokens`, `system.credo`, `system.tools`,
 `system.methods`, `system.environment` (where wire dumps go),
 `system.decide.base_url` (where a provider credential goes), and
-`system.ttl`, `system.reap_if_empty`, `system.keepalive` and
-`system.retired` (when the sweep deletes a node and its subtree)
+`system.ttl`, `system.reap_if_empty`, `system.keepalive`,
+`system.retired` and `system.retirement` (when the sweep deletes a node and its subtree)
 (`api/form/owner_held.go`) are set or removed only by the
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork

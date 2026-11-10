@@ -55,6 +55,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.methods.<name>", Short: `A method: on each inquiry the decision model picks one of {options} from the rendered {context} ({{inquiry}}, {{inquiry~N}}) and writes it to {key}; {score, default, enabled, event, keep_cache} optional; keep_cache (default true) holds a method whose change would break the prompt cache`, Mode: KeyUserSettable},
 		{Key: "system.tools", Short: "Owner-held allowlist of tool names the aria may use; [] means none, unset means all. Owner-held does not bind an unboxed aria whose tools include bash or process (issue #57)", Mode: KeyUserSettable},
 		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
+		{Key: "system.retirement", Short: `Owner-held {context_threshold, ttl}: at the end of a turn whose last request carried at least context_threshold input tokens (a count, or "60%" of the context window), the aria retires itself (system.retired = "context"); ttl counts from then`, Mode: KeyUserSettable},
 		{Key: "system.keep", Short: "Owner-held; true and `figaro gc` never chooses this aria, nor anything whose delete would take it", Mode: KeyUserSettable},
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},

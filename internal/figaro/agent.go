@@ -1128,6 +1128,7 @@ func (a *Agent) finishTurn(reason string) {
 	a.settleCut()
 	a.stampSealDeltas()
 	a.ariaSrv.Seal(lts)
+	a.retireIfFull()
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()
@@ -1141,6 +1142,33 @@ func (a *Agent) finishTurn(reason string) {
 	a.publishRuntime(rpc.RuntimeIdle, reason)
 
 	a.publishMetadata()
+}
+
+func (a *Agent) retireIfFull() {
+	snap := a.Snapshot()
+	r, err := store.RetirementOf(snap)
+	if err != nil {
+		slog.Warn("system.retirement ignored", "aria", a.id, "err", err)
+		return
+	}
+	if !r.Set() || store.RetiredIn(snap) {
+		return
+	}
+	a.mu.RLock()
+	used, exact, created := a.contextTokens, a.contextExact, a.createdAt.UnixMilli()
+	a.mu.RUnlock()
+	threshold := r.Threshold(a.contextLimit())
+	if !exact || threshold <= 0 || used < threshold {
+		return
+	}
+	if meta, _ := a.backend.Meta(a.id); meta != nil && meta.CreatedAtMS > 0 {
+		created = meta.CreatedAtMS
+	}
+	if _, _, err := a.applyFormPatch(store.RetirePatch(store.RetiredContext, created, r.TTL, time.Now()), 0, false, "retire"); err != nil {
+		slog.Error("retire at the context threshold", "aria", a.id, "err", err)
+		return
+	}
+	slog.Info("retired at the context threshold", "aria", a.id, "context", used, "threshold", threshold, "ttl", r.TTL)
 }
 
 func (a *Agent) publishMetadata() {
