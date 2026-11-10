@@ -51,7 +51,7 @@ func (a *Agent) resumeStudies() {
 
 // requireStudyTarget shares one rule and wording with the hub's half.
 func (a *Agent) requireStudyTarget(formID string) error {
-	return store.RequireStudyTarget(a.backend, formID)
+	return store.RequireStudyTarget(a.backend, a.id, formID)
 }
 
 // Study is durable on the bound form, declared to the store, and stated in the IR.
@@ -184,7 +184,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 		res.roleID = id
 		res.patched = true
 	} else {
-		if err := a.requireStudyTarget(op.roleID); err != nil {
+		if err := store.RequireCastTarget(a.backend, op.roleID); err != nil {
 			res.err = err
 			return res
 		}

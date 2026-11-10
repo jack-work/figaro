@@ -145,21 +145,43 @@ func KindWord(kind string) string {
 	}
 }
 
-// RequireStudyTarget: only an unbound form is study-able or castable. An
-// outfit is a seed, a bound form is private to its figaro, and a libretto is
-// derived and never reaches this check.
-func RequireStudyTarget(b Backend, formID string) error {
-	if b == nil {
-		return fmt.Errorf("study: ephemeral aria has no store")
+func RequireStudyTarget(b Backend, observerID, targetID string) error {
+	n, err := studyTargetNode(b, targetID)
+	if err != nil {
+		return err
 	}
-	n, ok := b.Node(formID)
-	if !ok {
-		return fmt.Errorf("%s: no such form", formID)
+	switch n.Kind {
+	case string(kindForm):
+		return nil
+	case string(kindConversation):
+		if strings.TrimPrefix(targetID, "@") == strings.TrimPrefix(observerID, "@") {
+			return fmt.Errorf("%s is this figaro: a figaro does not study its own bound form (its writes would come back to it as reminders)", targetID)
+		}
+		return nil
 	}
-	if n.Kind != "form" {
-		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound form is private to its figaro)", formID, KindWord(n.Kind))
+	return fmt.Errorf("%s is a %s: study takes an unbound form or another figaro", targetID, KindWord(n.Kind))
+}
+
+func RequireCastTarget(b Backend, formID string) error {
+	n, err := studyTargetNode(b, formID)
+	if err != nil {
+		return err
+	}
+	if n.Kind != string(kindForm) {
+		return fmt.Errorf("%s is a %s: cast takes unbound forms (an outfit is a seed, a bound form is private to its figaro)", formID, KindWord(n.Kind))
 	}
 	return nil
+}
+
+func studyTargetNode(b Backend, id string) (NodeView, error) {
+	if b == nil {
+		return NodeView{}, fmt.Errorf("study: ephemeral aria has no store")
+	}
+	n, ok := b.Node(id)
+	if !ok {
+		return NodeView{}, fmt.Errorf("%s: no such form", id)
+	}
+	return n, nil
 }
 
 // StudiedBy reads the durable bound form, not an in-memory mirror of it.

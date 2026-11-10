@@ -37,7 +37,7 @@ func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, for
 	if ariaID != "" && strings.HasPrefix(ariaID, "@") {
 		return "", "", fmt.Errorf("%s: %s is a form, but this slot takes the FIGARO doing the %s (the form goes last)", verb, ariaID, verbGerund(verb))
 	}
-	if formID != "" && !strings.Contains(formID, "@") && formID != "" {
+	if verb == "cast" && formID != "" && !strings.Contains(formID, "@") {
 		return "", "", fmt.Errorf("%s: %s is a figaro, but this slot takes an unbound form (@id)", verb, formID)
 	}
 	return ariaID, formID, nil
@@ -58,10 +58,10 @@ func runStudy(loaded *config.Loaded, args []string, drop, asJSON bool) {
 		die("%s", err)
 	}
 	if ariaID == "" {
-		die("%s: no figaro attended; attend one or name it: fig %s <aria> <@form>", verb, verb)
+		die("%s: no figaro attended; attend one or name it: fig %s <aria> <@form | figaro>", verb, verb)
 	}
 	if formID == "" && drop {
-		die("drop: name the form: fig drop [<aria>] <@form>")
+		die("drop: name the form: fig drop [<aria>] <@form | figaro>")
 	}
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		var resp *rpc.StudyResponse

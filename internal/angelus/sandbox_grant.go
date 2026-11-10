@@ -171,7 +171,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 	case rpc.MethodStudy:
 		var req rpc.StudyRequest
 		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
-			return h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID))
+			if h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID)) != nil {
+				return authz.NotFound(method, req.FormID)
+			}
 		}
 	case rpc.MethodCast:
 		var req rpc.CastRequest

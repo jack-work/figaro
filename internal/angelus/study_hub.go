@@ -12,17 +12,13 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func (h *handlers) requireUnboundForm(formID string) error {
-	return store.RequireStudyTarget(h.angelus.Backend, formID)
-}
-
 func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, error) {
 	b := h.angelus.Backend
 	if b == nil {
 		return nil, fmt.Errorf("study: no backend")
 	}
 	if !drop {
-		if err := h.requireUnboundForm(formID); err != nil {
+		if err := store.RequireStudyTarget(b, ariaID, formID); err != nil {
 			return nil, err
 		}
 	}
@@ -99,7 +95,7 @@ func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRe
 		}
 		res.RoleID, res.Patched = id, true
 	} else {
-		if err := h.requireUnboundForm(res.RoleID); err != nil {
+		if err := store.RequireCastTarget(b, res.RoleID); err != nil {
 			return res, err
 		}
 	}

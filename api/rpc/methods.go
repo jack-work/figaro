@@ -25,8 +25,8 @@ const (
 	MethodQueueDelete = "figaro.queue.delete"
 )
 
-// Study and cast: an aria's subscriptions to unbound forms, durable under
-// system.studies.
+// Study and cast: an aria's subscriptions to unbound forms and other figaros'
+// bound forms, durable under system.studies. Cast takes unbound forms only.
 const (
 	MethodStudy = "figaro.study"
 	MethodDrop  = "figaro.drop"

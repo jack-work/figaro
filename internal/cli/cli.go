@@ -891,13 +891,15 @@ Folding an outfit onto a LIVE aria is a different act: see
 	r.Register(&cmdkit.Command{
 		Name:  "study",
 		Group: "Session",
-		Short: "Subscribe this figaro to an unbound form (see its changes)",
-		Usage: "study [<aria>] <@form-id> | study [-j]",
-		Long: `Subscribes a figaro to an unbound form: committed patches to the form
-reach the figaro as <system-reminder> blocks on its next turn. Durable on
-the figaro's own bound form (system.studies); revival resubscribes; a fork
-inherits the relationship, never a private copy. No arguments lists the
-attended figaro's studies. The form is always the LAST positional.`,
+		Short: "Subscribe this figaro to a form or another figaro (see its changes)",
+		Usage: "study [<aria>] <@form-id> | study <aria> <figaro-id> | study [-j]",
+		Long: `Subscribes a figaro to an unbound form, or to another figaro's bound
+form: committed patches reach the figaro as <system-reminder> blocks on
+its next turn. Durable on the figaro's own bound form (system.studies);
+revival resubscribes; a fork inherits the relationship, never a private
+copy. No arguments lists the attended figaro's studies. The form is
+always the LAST positional. Every key but system.* is mirrored. A figaro
+cannot study itself, and studying another needs read on it.`,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
@@ -913,7 +915,7 @@ attended figaro's studies. The form is always the LAST positional.`,
 		Name:    "drop",
 		Group:   "Session",
 		Short:   "Unsubscribe this figaro from a studied form",
-		Usage:   "drop [<aria>] <@form-id>",
+		Usage:   "drop [<aria>] <@form-id | figaro-id>",
 		ArgsMin: 1,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{

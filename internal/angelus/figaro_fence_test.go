@@ -108,8 +108,8 @@ func TestAFencedAriaIsReadOnlyByTheFigaroItNames(t *testing.T) {
 func TestAFencedFigaroCannotStudyTheFencedAriasForm(t *testing.T) {
 	r := newFenceRig(t)
 	study := map[string]any{"figaro_id": r.z, "form_id": r.x}
-	if _, err := r.call(r.z, rpc.MethodStudy, study); err == nil || !strings.Contains(err.Error(), "fence 1") {
-		t.Fatalf("study by a stranger: %v, want a refusal naming fence 1", err)
+	if _, err := r.call(r.z, rpc.MethodStudy, study); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("study by a stranger: %v, want not found, as for attach", err)
 	}
 }
 
