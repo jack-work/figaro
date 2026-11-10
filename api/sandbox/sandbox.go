@@ -1,12 +1,37 @@
 // Package sandbox is the contract between the tool runtime and wherever a
 // tool's side effects land. Every tool reaches the filesystem and the shell
 // through a Sandbox and nothing else; the daemon's credentials never cross it.
+//
+// figaro hands the provider the id of the figaro every call is for, and the
+// provider decides everything else.
+//
+// figaro sends the id on every call: Spec.Figaro on Open, FIGARO_ARIA in
+// Spec.Env, scope on the box wire, and the Figaro-Id header (FigaroHeader)
+// on every request to a provider reached over HTTP; wrap the provider's
+// client transport in FigaroTransport. figaro signs nothing and attaches
+// no grants.
+//
+// The provider trusts the id. Only the daemon calls a provider, and
+// authenticating that channel (socket permissions, OIDC between services,
+// a token stamped by a gateway) is the deployer's job.
+//
+// The provider decides whether to serve a figaro, and with what. It may
+// key boxes by figaro id, reusing the one it made for that id or creating
+// one on first sight. Once figaro serves a figaro's permission set
+// (system.grants), the provider may read it, build a box that can do
+// exactly what the set allows, and poll or study the form to resize the
+// box when the set changes. Whatever it does, Isolation declares honestly
+// what it enforces, and nothing more.
+//
+// If a figaro's provider is unavailable, the call fails. There is no
+// fallback to another sandbox.
 package sandbox
 
 import (
 	"context"
 	"errors"
 	"io/fs"
+	"net/http"
 	"time"
 )
 
@@ -24,6 +49,8 @@ type Provider interface {
 }
 
 type Spec struct {
+	// Figaro is the id of the figaro the box is opened for.
+	Figaro string
 	// Workspace is the one path the box sees read-write, and the root
 	// every FS path resolves against. Absolute, on the host.
 	Workspace string
@@ -31,6 +58,30 @@ type Spec struct {
 	// Isolation.Env adds nothing from the daemon's environment; one that
 	// does not lays Env over what the daemon has.
 	Env map[string]string
+}
+
+// FigaroHeader carries Spec.Figaro on every request to a provider reached
+// over HTTP.
+const FigaroHeader = "Figaro-Id"
+
+// FigaroTransport sets FigaroHeader to figaro on every request it carries,
+// replacing any value the caller set. A nil base is http.DefaultTransport.
+func FigaroTransport(figaro string, base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return figaroTransport{figaro: figaro, base: base}
+}
+
+type figaroTransport struct {
+	figaro string
+	base   http.RoundTripper
+}
+
+func (t figaroTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set(FigaroHeader, t.figaro)
+	return t.base.RoundTrip(r)
 }
 
 // Sandbox is one opened Spec. Closing it drops the handle; whether running
