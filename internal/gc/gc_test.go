@@ -164,6 +164,8 @@ func TestEachSelectorFieldChoosesOnItsOwn(t *testing.T) {
 		{"match on mantra and cwd", Selector{Match: "tapes"}, []string{"incwd", "tapes"}},
 		{"match on handle", Selector{Match: "'h-opus"}, []string{"opus"}},
 		{"a negated term", Selector{Match: "tapes !gluck"}, []string{"tapes"}},
+		{"match on id", Selector{Match: "^fresh"}, []string{"fresh"}},
+		{"letters spread through a mantra choose nothing", Selector{Match: "rcdtps"}, nil},
 		{"under", Selector{Under: "form-1"}, []string{"under"}},
 		{"box", Selector{Box: "judge"}, []string{"boxed"}},
 		{"fields AND together", Selector{Idle: 30 * 24 * time.Hour, Older: 24 * time.Hour, Match: "tapes"}, []string{"incwd", "tapes"}},

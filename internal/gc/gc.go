@@ -312,7 +312,7 @@ func (c *Collector) matches(sel Selector, r Row, now time.Time, match *matcher) 
 	if sel.Under != "" && !c.under(r, sel.Under) {
 		return false
 	}
-	if match != nil && !match.matches(r.Mantra, c.world.Handle(r.ID), r.Cwd) {
+	if match != nil && !match.matches(r.Mantra, c.world.Handle(r.ID), r.ID, r.Cwd) {
 		return false
 	}
 	if sel.Empty && !c.world.Empty(r.ID) {
