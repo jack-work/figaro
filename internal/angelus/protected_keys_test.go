@@ -33,7 +33,7 @@ func newLineageRig(t *testing.T, boxExtra string) lineageRig {
 		return out.(rpc.ForkResponse).Alternative
 	}
 	r := lineageRig{doorRig: d, parent: p.FigaroID, child: fork(), sibling: fork()}
-	if _, err := d.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: grantsPatch(t, []string{"read:aria:*", "a", "x"})})); err != nil {
+	if _, err := d.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: grantsPatch(t, []string{"*:*", "egress:a:1", "cred:x"})})); err != nil {
 		t.Fatal(err)
 	}
 	return r
@@ -73,7 +73,7 @@ func grantsOn(t *testing.T, r lineageRig, id string) string {
 func TestAFigaroCannotSetItsOwnProtectedKeys(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
-	err := r.setAs(t, c, r.child, r.child, grantsPatch(t, []string{"read:aria:*"}))
+	err := r.setAs(t, c, r.child, r.child, grantsPatch(t, []string{"read:*"}))
 	if err == nil || !strings.Contains(err.Error(), "no ancestor") {
 		t.Fatalf("the child set its own grants: %v", err)
 	}
@@ -85,10 +85,10 @@ func TestAFigaroCannotSetItsOwnProtectedKeys(t *testing.T) {
 func TestTheParentSetsItsChildsProtectedKeysThroughTheBoxDoor(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
-	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:aria:*"})); err != nil {
+	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:*"})); err != nil {
 		t.Fatal(err)
 	}
-	if got := grantsOn(t, r, r.child); got != `["read:aria:*"]` {
+	if got := grantsOn(t, r, r.child); got != `["read:*"]` {
 		t.Fatalf("grants %s", got)
 	}
 }
@@ -96,15 +96,15 @@ func TestTheParentSetsItsChildsProtectedKeysThroughTheBoxDoor(t *testing.T) {
 func TestASiblingCannotSetProtectedKeys(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
-	err := r.setAs(t, c, r.sibling, r.child, grantsPatch(t, []string{"x"}))
+	err := r.setAs(t, c, r.sibling, r.child, grantsPatch(t, []string{"cred:x"}))
 	if err == nil || !strings.Contains(err.Error(), "no ancestor") {
 		t.Fatalf("a sibling set grants: %v", err)
 	}
-	err = r.forkAs(t, c, r.sibling, r.child, grantsPatch(t, []string{"x"}))
+	err = r.forkAs(t, c, r.sibling, r.child, grantsPatch(t, []string{"cred:x"}))
 	if err == nil || !strings.Contains(err.Error(), "no ancestor") {
 		t.Fatalf("a sibling forked the child with grants: %v", err)
 	}
-	if err := r.forkAs(t, c, r.parent, r.child, grantsPatch(t, []string{"x"})); err != nil {
+	if err := r.forkAs(t, c, r.parent, r.child, grantsPatch(t, []string{"cred:x"})); err != nil {
 		t.Fatalf("control: an ancestor forks a descendant with grants it holds: %v", err)
 	}
 	if err := r.forkAs(t, c, r.sibling, r.child, *heldPatch(t, map[string]any{"system.sandbox": "judge"})); err != nil {
@@ -124,31 +124,31 @@ func TestAClaimOfAFigaroOutsideTheBoxIsRefused(t *testing.T) {
 	}
 	boxedChild := out.(rpc.ForkResponse).Alternative
 	c := r.dial(t)
-	err = r.setAs(t, c, outside.FigaroID, boxedChild, grantsPatch(t, []string{"x"}))
+	err = r.setAs(t, c, outside.FigaroID, boxedChild, grantsPatch(t, []string{"cred:x"}))
 	if err == nil || !strings.Contains(err.Error(), "does not run in it") {
 		t.Fatalf("a claim of a figaro outside the box passed: %v", err)
 	}
-	if err := r.setAs(t, c, "", boxedChild, grantsPatch(t, []string{"x"})); err == nil || !strings.Contains(err.Error(), "names no figaro") {
+	if err := r.setAs(t, c, "", boxedChild, grantsPatch(t, []string{"cred:x"})); err == nil || !strings.Contains(err.Error(), "names no figaro") {
 		t.Fatalf("an unclaimed call passed: %v", err)
 	}
 }
 
 func TestTheOwnerSetsProtectedKeys(t *testing.T) {
 	r := newLineageRig(t, "")
-	if _, err := r.call(asOwner(), rpc.MethodSet, rpc.SetRequest{Patch: grantsPatch(t, []string{"a"})}); err == nil {
+	if _, err := r.call(asOwner(), rpc.MethodSet, rpc.SetRequest{Patch: grantsPatch(t, []string{"egress:a:1"})}); err == nil {
 		t.Fatal("a set naming no aria passed")
 	}
-	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"a"})})); err != nil {
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"egress:a:1"})})); err != nil {
 		t.Fatal(err)
 	}
-	if got := grantsOn(t, r, r.child); got != `["a"]` {
+	if got := grantsOn(t, r, r.child); got != `["egress:a:1"]` {
 		t.Fatalf("grants %s", got)
 	}
 }
 
 func TestGrantsMustBeAnArrayOfStrings(t *testing.T) {
 	r := newLineageRig(t, "")
-	for _, bad := range []any{"read", []int{1}, map[string]any{"a": 1}, nil, []string{" a"}, []string{"a "}, []string{"a", ""}} {
+	for _, bad := range []any{"read", []int{1}, map[string]any{"a": 1}, nil, []string{" a"}, []string{"a "}, []string{"a", ""}, []string{"a"}, []string{"read:aria:*"}, []string{"fly:"}, []string{"read:moon:1"}} {
 		_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, bad)}))
 		if err == nil || !strings.Contains(err.Error(), form.GrantsKey) {
 			t.Errorf("grants %v: %v", bad, err)
@@ -162,11 +162,11 @@ func TestGrantsMustBeAnArrayOfStrings(t *testing.T) {
 func TestOpenProtectedKeysKeepTodaysRules(t *testing.T) {
 	r := newLineageRig(t, protectedOpen)
 	c := r.dial(t)
-	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"x"}))
+	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"cred:x"}))
 	if err == nil || !strings.Contains(err.Error(), "listed for") {
 		t.Fatalf("open: a box set an unlisted system key: %v", err)
 	}
-	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"a"})})); err != nil {
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"egress:a:1"})})); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -206,7 +206,7 @@ func TestAnUnboxedNonOwnerCannotSetProtectedKeys(t *testing.T) {
 			if !tc.refused && err != nil {
 				t.Fatal(err)
 			}
-			_, err = r.h[rpc.MethodSet](as("user", "remote"), claimed(t, a.FigaroID, withAria(t, a.FigaroID, rpc.SetRequest{Patch: grantsPatch(t, []string{"x"})})))
+			_, err = r.h[rpc.MethodSet](as("user", "remote"), claimed(t, a.FigaroID, withAria(t, a.FigaroID, rpc.SetRequest{Patch: grantsPatch(t, []string{"cred:x"})})))
 			if err == nil {
 				t.Fatal("a non-owner with no grants of its own wrote grants")
 			}
@@ -216,7 +216,7 @@ func TestAnUnboxedNonOwnerCannotSetProtectedKeys(t *testing.T) {
 
 func TestAForkInheritsBothProtectedKeys(t *testing.T) {
 	r := newLineageRig(t, "")
-	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: grantsPatch(t, []string{"read:aria:*"})})); err != nil {
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: grantsPatch(t, []string{"read:*"})})); err != nil {
 		t.Fatal(err)
 	}
 	out, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent})
@@ -224,7 +224,7 @@ func TestAForkInheritsBothProtectedKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	alt := out.(rpc.ForkResponse).Alternative
-	if got := grantsOn(t, r, alt); got != `["read:aria:*"]` {
+	if got := grantsOn(t, r, alt); got != `["read:*"]` {
 		t.Fatalf("the fork's grants %s", got)
 	}
 	if got := r.sandboxOf(t, alt); got != "judge" {
@@ -261,13 +261,13 @@ func TestTheFormAccessDenyListsProtectedKeysForAllButHeirs(t *testing.T) {
 func TestABoxAncestorLosesADescendantTheOwnerMovedOut(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
-	if err := r.setAs(t, c, r.parent, r.sibling, grantsPatch(t, []string{"a"})); err != nil {
+	if err := r.setAs(t, c, r.parent, r.sibling, grantsPatch(t, []string{"egress:a:1"})); err != nil {
 		t.Fatalf("control: the parent sets grants on a child still in its box: %v", err)
 	}
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.sandbox": "elsewhere"})})); err != nil {
 		t.Fatal(err)
 	}
-	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"a"}))
+	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"egress:a:1"}))
 	if err == nil {
 		t.Fatal("the old box's ancestor set grants on a moved descendant")
 	}
@@ -280,7 +280,7 @@ func TestABoxAncestorLosesADescendantTheOwnerMovedOut(t *testing.T) {
 func TestAFigaroGrantsOnlyWhatItHolds(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
-	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"a", "write:aria:*"}))
+	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"egress:a:1", "write:aria:*"}))
 	if err == nil || !strings.Contains(err.Error(), "does not hold") {
 		t.Fatalf("the parent granted what it does not hold: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestAFigaroGrantsOnlyWhatItHolds(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "does not hold") {
 		t.Fatalf("a fork -S granted beyond its writer: %v", err)
 	}
-	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"a", "x"})); err != nil {
+	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"egress:a:1", "cred:x"})); err != nil {
 		t.Fatalf("control: a subset: %v", err)
 	}
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"write:aria:*"})})); err != nil {
@@ -301,7 +301,41 @@ func TestAFigaroGrantsOnlyWhatItHolds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := grantsOn(t, r, out.(rpc.ForkResponse).Alternative); got != `["read:aria:*","a","x"]` {
+	if got := grantsOn(t, r, out.(rpc.ForkResponse).Alternative); got != `["*:*","egress:a:1","cred:x"]` {
 		t.Fatalf("a plain fork's grants %s", got)
+	}
+}
+
+func TestAWriterGrantsWhatItsEffectiveSetCovers(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:aria:" + r.sibling, "kill:lineage:self", "egress:a:1"})); err != nil {
+		t.Fatalf("*:* and egress:a:1 cover these: %v", err)
+	}
+	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"cred:other"}))
+	if err == nil || !strings.Contains(err.Error(), "cred:other") {
+		t.Fatalf("granted a foreign verb the writer lacks: %v", err)
+	}
+}
+
+func TestAWriterWithNoGrantsHoldsEveryFigaroVerbAndNoForeignOne(t *testing.T) {
+	d := boxDoorRigConfigured(t, defaultPolicy, "true", "")
+	p, err := d.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := d.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: p.FigaroID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := out.(rpc.ForkResponse).Alternative
+	r := lineageRig{doorRig: d, parent: p.FigaroID, child: child}
+	c := r.dial(t)
+	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:*", "send:aria:" + r.parent})); err != nil {
+		t.Fatalf("figaro verbs: %v", err)
+	}
+	err = r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:*", "egress:*"}))
+	if err == nil || !strings.Contains(err.Error(), "egress:*") {
+		t.Fatalf("a writer with no grants gave a foreign one: %v", err)
 	}
 }

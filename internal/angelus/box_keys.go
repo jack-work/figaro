@@ -145,47 +145,39 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	return nil
 }
 
-func (h *handlers) refuseGrantsBeyondWriter(ctx context.Context, c callerKeys, before, after form.Snapshot) error {
+func checkGrantsParse(before, after form.Snapshot) error {
 	was, _ := before.Get(form.GrantsKey)
 	now, ok := after.Get(form.GrantsKey)
 	if !ok || bytes.Equal(was, now) {
 		return nil
 	}
-	var want []string
-	if err := json.Unmarshal(now, &want); err != nil {
-		return err
-	}
-	held := h.writerGrants(ctx, c)
-	for _, g := range want {
-		if !held[g] {
-			return fmt.Errorf("%s: the writer does not hold %q, and a figaro grants only what it holds", form.GrantsKey, g)
-		}
+	if _, err := authz.DecodeFigaroGrants(now); err != nil {
+		return fmt.Errorf("%s: %w", form.GrantsKey, err)
 	}
 	return nil
 }
 
-func (h *handlers) writerGrants(ctx context.Context, c callerKeys) map[string]bool {
-	f := authz.FigaroOf(ctx)
-	if !c.boxed || f == "" || h.sandboxOf(f) != c.box {
+func (h *handlers) refuseGrantsBeyondWriter(ctx context.Context, c callerKeys, line lineage, before, after form.Snapshot) error {
+	was, _ := before.Get(form.GrantsKey)
+	now, ok := after.Get(form.GrantsKey)
+	if !ok || bytes.Equal(was, now) {
 		return nil
 	}
-	snap, err := h.angelus.Backend.FormState(f)
+	want, err := authz.DecodeFigaroGrants(now)
 	if err != nil {
+		return err
+	}
+	f := authz.FigaroOf(ctx)
+	if p := h.angelus.Policies; p != nil && c.boxed && f != "" && h.sandboxOf(f) == c.box {
+		if err := p.HoldsGrants(f, want, line.of); err != nil {
+			return fmt.Errorf("%s: %w", form.GrantsKey, err)
+		}
 		return nil
 	}
-	raw, ok := snap.Get(form.GrantsKey)
-	if !ok {
+	if len(want) == 0 {
 		return nil
 	}
-	var grants []string
-	if json.Unmarshal(raw, &grants) != nil {
-		return nil
-	}
-	held := make(map[string]bool, len(grants))
-	for _, g := range grants {
-		held[g] = true
-	}
-	return held
+	return fmt.Errorf("%s: the writer does not hold %q, and a figaro grants only what it holds", form.GrantsKey, want[0])
 }
 
 func (h *handlers) ancestorsOf(line lineage) []string {
@@ -313,6 +305,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if err := form.CheckGrants(after); err != nil {
 		return err
 	}
+	if err := checkGrantsParse(before, after); err != nil {
+		return err
+	}
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
 		return nil
@@ -328,7 +323,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			return err
 		}
 	}
-	return h.refuseGrantsBeyondWriter(ctx, c, before, after)
+	return h.refuseGrantsBeyondWriter(ctx, c, line, before, after)
 }
 
 func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess {

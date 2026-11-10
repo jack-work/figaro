@@ -1,6 +1,9 @@
 package angelus
 
 import (
+	"encoding/json"
+
+	"github.com/jack-work/figaro/api/form"
 	"slices"
 
 	"github.com/jack-work/figaro/internal/authz"
@@ -76,4 +79,29 @@ func (f storeFacts) SandboxOf(aria string) (string, bool) {
 		return *s, true
 	}
 	return "", true
+}
+
+func (f storeFacts) Ancestry(aria string) ([]string, bool) {
+	n, ok := f.backend.Node(aria)
+	if !ok {
+		return nil, false
+	}
+	out := []string{aria}
+	for n.Parent != "" && !slices.Contains(out, n.Parent) {
+		if n, ok = f.backend.Node(n.Parent); !ok || n.Kind != "conversation" {
+			break
+		}
+		out = append(out, n.ID)
+	}
+	slices.Reverse(out)
+	return out, true
+}
+
+func (f storeFacts) OwnGrants(aria string) (json.RawMessage, bool, error) {
+	snap, err := f.backend.FormState(aria)
+	if err != nil {
+		return nil, false, err
+	}
+	raw, ok := snap.Get(form.GrantsKey)
+	return raw, ok, nil
 }
