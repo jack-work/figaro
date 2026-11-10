@@ -96,10 +96,11 @@ func TestThePagerWalksTheShellsHistory(t *testing.T) {
 	}
 }
 
-// A form is a place in the history like any figaro: ctrl+o and Tab land on it.
-// Defends the pager refusing to hop onto a form ("is a form, not a figaro")
-// after the daemon had already moved the shell.
-func TestThePagerWalksOntoAForm(t *testing.T) {
+// A form is a place in the history like any figaro: ctrl+o and Tab land on it,
+// and landing on it opens its state in the pit, fullscreen; landing on a
+// figaro opens no pit. Defends the pager refusing to hop onto a form ("is a
+// form, not a figaro") after the daemon had already moved the shell.
+func TestThePagerWalksOntoAFormAndOpensItsPit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns daemons; skipped under -short")
 	}
@@ -132,16 +133,20 @@ func TestThePagerWalksOntoAForm(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+	formPit := func(s string) bool { return strings.Contains(s, "웃") }
+	fullscreen := func(s string) bool {
+		return formPit(s) && strings.Contains(s, "walked-onto-the-form") && !strings.Contains(s, "─ live")
+	}
 	onForm := func(where string) {
 		t.Helper()
-		waitFor("attending the form "+where, func(s string) bool {
-			return r.boundTo(shell) == f && strings.Contains(s, "attending "+ariaName(f)+" "+where)
+		waitFor("attending the form "+where+" with its pit fullscreen", func(s string) bool {
+			return r.boundTo(shell) == f && strings.Contains(s, "attending "+ariaName(f)+" "+where) && fullscreen(s)
 		})
 	}
 	onFigaro := func(id, where string) {
 		t.Helper()
-		waitFor("attending "+ariaHandle(id)+" "+where, func(s string) bool {
-			return r.boundTo(shell) == id && strings.Contains(s, "attending "+ariaHandle(id)+" "+where)
+		waitFor("attending "+ariaHandle(id)+" "+where+" with no pit", func(s string) bool {
+			return r.boundTo(shell) == id && strings.Contains(s, "attending "+ariaHandle(id)+" "+where) && !formPit(s)
 		})
 	}
 	waitFor("the pager paints", func(s string) bool { return strings.Contains(s, "live") })

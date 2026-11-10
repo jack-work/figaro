@@ -289,6 +289,7 @@ func (in *interactiveInput) switchSubject(ctx context.Context, spec string, atte
 	if err := in.retarget(ctx, id, ep); err != nil {
 		return "", err
 	}
+	in.arrived(id)
 	if attend {
 		return "attending " + ariaName(id) + navWhere(ctx, env), nil
 	}
@@ -546,6 +547,7 @@ func (in *interactiveInput) hop(ctx context.Context, steps int) (string, error) 
 	if err := in.retarget(ctx, id, ep); err != nil {
 		return "", err
 	}
+	in.arrived(id)
 	return where, nil
 }
 
@@ -576,6 +578,13 @@ func (in *interactiveInput) resolveAttendable(ctx context.Context, spec string) 
 		return "", sdk.Addr{}, err
 	}
 	return resolveFigaroOrForm(ctx, in.loaded, acli, spec, false, dressing{})
+}
+
+func (in *interactiveInput) arrived(id string) {
+	if !isFormID(id) {
+		return
+	}
+	in.openLiveIf("form show", id, true, func(*formView) bool { return in.currentID() == id })
 }
 
 // angelus dials the daemon lazily, on first use.
