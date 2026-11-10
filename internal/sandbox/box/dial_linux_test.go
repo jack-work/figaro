@@ -57,7 +57,7 @@ func TestALinkedDirectoryOnTheExecPathIsRefused(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(dir, "linked")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Provider{Name: "t", Socket: filepath.Join(dir, "linked", "exec.sock"), Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err == nil {
+	if _, err := (Provider{Name: "t", Socket: filepath.Join(dir, "linked", "exec.sock")}).Open(context.Background(), sandbox.Spec{Figaro: "a"}); err == nil {
 		t.Fatal("dialed through a linked directory")
 	}
 	quiet(t, accepted)
@@ -78,18 +78,18 @@ func TestWithoutOpenat2TheFinalLinkIsStillRefused(t *testing.T) {
 	if err := os.Symlink(filepath.Join(dir, "canary.sock"), exec); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Provider{Name: "t", Socket: exec, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err == nil {
+	if _, err := (Provider{Name: "t", Socket: exec}).Open(context.Background(), sandbox.Spec{Figaro: "a"}); err == nil {
 		t.Fatal("the fallback dialed through a symlink")
 	}
 	quiet(t, accepted)
-	if _, err := (Provider{Name: "t", Socket: exec, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err == nil {
+	if _, err := (Provider{Name: "t", Socket: exec}).Open(context.Background(), sandbox.Spec{Figaro: "a"}); err == nil {
 		t.Fatal("the fallback dialed through a symlink")
 	}
 	if n := strings.Count(logged.String(), "level=WARN"); n != 1 {
 		t.Fatalf("the fallback warned %d times over two opens, want once:\n%s", n, logged.String())
 	}
 	s := serve(t)
-	if _, err := (Provider{Name: "t", Socket: s.sock, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err != nil {
+	if _, err := (Provider{Name: "t", Socket: s.sock}).Open(context.Background(), sandbox.Spec{Figaro: "a"}); err != nil {
 		t.Fatalf("canary: the fallback cannot dial a real socket: %v", err)
 	}
 }

@@ -48,7 +48,7 @@ func serve(t *testing.T) served {
 
 func open(t *testing.T, s served, scope string) *Box {
 	t.Helper()
-	b, err := Provider{Name: "t", Socket: s.sock, Scope: scope}.Open(context.Background(), sandbox.Spec{Env: map[string]string{"BOXVAR": "here"}})
+	b, err := Provider{Name: "t", Socket: s.sock}.Open(context.Background(), sandbox.Spec{Figaro: scope, Env: map[string]string{"BOXVAR": "here"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestRedialAfterTheServerReturns(t *testing.T) {
 		return func() { cancel(); <-done }
 	}
 	stop := start()
-	b, err := Provider{Name: "t", Socket: sock, Scope: "a"}.Open(context.Background(), sandbox.Spec{})
+	b, err := Provider{Name: "t", Socket: sock}.Open(context.Background(), sandbox.Spec{Figaro: "a"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestWorkspaceResolvesUnderTheServedRoot(t *testing.T) {
 		{"sub", filepath.Join(s.ws, "sub")},
 		{"missing", s.ws},
 	} {
-		b, err := Provider{Name: "t", Socket: s.sock, Scope: "a"}.Open(context.Background(), sandbox.Spec{Workspace: c.asked})
+		b, err := Provider{Name: "t", Socket: s.sock}.Open(context.Background(), sandbox.Spec{Figaro: "a", Workspace: c.asked})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -356,7 +356,7 @@ func TestWorkspaceResolvesUnderTheServedRoot(t *testing.T) {
 func TestRelativePathsResolveAgainstTheOpenedWorkspace(t *testing.T) {
 	s := serve(t)
 	os.MkdirAll(filepath.Join(s.ws, "sub", "d"), 0o755)
-	b, err := Provider{Name: "t", Socket: s.sock, Scope: "a"}.Open(context.Background(), sandbox.Spec{Workspace: "sub"})
+	b, err := Provider{Name: "t", Socket: s.sock}.Open(context.Background(), sandbox.Spec{Figaro: "a", Workspace: "sub"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestKillScopeReachesOnlyItsScopeInTheBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err := Provider{Name: "t", Socket: s.sock, Scope: "a"}.KillScope(context.Background())
+	n, err := Provider{Name: "t", Socket: s.sock}.KillScope(context.Background(), "a")
 	if err != nil || n != 1 {
 		t.Fatalf("KillScope = %d, %v; want 1", n, err)
 	}

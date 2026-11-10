@@ -204,7 +204,7 @@ func (c *serverConn) open(r openReq) (any, error) {
 	env := map[string]string{}
 	maps.Copy(env, r.Env)
 	maps.Copy(env, c.srv.env)
-	b, err := local.Provider{Host: c.srv.host, Scope: r.Scope}.Open(c.ctx, sandbox.Spec{Workspace: ws, Env: env})
+	b, err := local.Provider{Host: c.srv.host}.Open(c.ctx, sandbox.Spec{Figaro: r.Scope, Workspace: ws, Env: env})
 	if err != nil {
 		return nil, err
 	}

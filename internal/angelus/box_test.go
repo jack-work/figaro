@@ -147,7 +147,7 @@ func TestKillingABoxedAriaKillsItsSessionsInTheBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := box.Provider{Name: "judge", Socket: sb.sock, Scope: resp.FigaroID}.Open(context.Background(), api.Spec{})
+	b, err := box.Provider{Name: "judge", Socket: sb.sock}.Open(context.Background(), api.Spec{Figaro: resp.FigaroID})
 	if err != nil {
 		t.Fatal(err)
 	}

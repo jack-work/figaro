@@ -18,7 +18,7 @@ func openScoped(t *testing.T, host *local.Host, scope, dir string) sandbox.Sandb
 	if dir == "" {
 		dir = t.TempDir()
 	}
-	box, err := local.Provider{Host: host, Scope: scope}.Open(context.Background(), sandbox.Spec{Workspace: dir})
+	box, err := local.Provider{Host: host}.Open(context.Background(), sandbox.Spec{Figaro: scope, Workspace: dir})
 	require.NoError(t, err)
 	return box
 }

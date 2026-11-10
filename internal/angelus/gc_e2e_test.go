@@ -231,7 +231,7 @@ func TestEveryHoldKeepsAMatch(t *testing.T) {
 			idleFor(t, r.a, id, 40*24*time.Hour)
 		}, "accessed within its keepalive"},
 		{"a background session", func(t *testing.T, r gcRig, id string) {
-			sb, err := local.Provider{Host: r.a.Sessions, Scope: id}.Open(r.ctx, api.Spec{Workspace: t.TempDir()})
+			sb, err := local.Provider{Host: r.a.Sessions}.Open(r.ctx, api.Spec{Figaro: id, Workspace: t.TempDir()})
 			require.NoError(t, err)
 			s, err := sb.Sessions().Start(api.ExecRequest{Command: "sleep 30"})
 			require.NoError(t, err)

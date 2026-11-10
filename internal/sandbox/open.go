@@ -34,7 +34,7 @@ func Open(ctx context.Context, host *local.Host, loaded *config.Loaded, kind, ar
 		}
 		workspace, _ = os.Getwd()
 	}
-	box, err := local.Provider{Host: host, Scope: aria}.Open(ctx, api.Spec{Workspace: workspace, Env: ariaEnv(aria)})
+	box, err := local.Provider{Host: host}.Open(ctx, api.Spec{Figaro: aria, Workspace: workspace, Env: ariaEnv(aria)})
 	if err != nil {
 		return Opened{}, err
 	}
@@ -42,7 +42,7 @@ func Open(ctx context.Context, host *local.Host, loaded *config.Loaded, kind, ar
 }
 
 func openBox(ctx context.Context, name string, b config.BoxConfig, aria, workspace string) (Opened, error) {
-	opened, err := box.Provider{Name: name, Socket: b.Exec, Scope: aria}.Open(ctx, api.Spec{Workspace: workspace, Env: ariaEnv(aria)})
+	opened, err := box.Provider{Name: name, Socket: b.Exec}.Open(ctx, api.Spec{Figaro: aria, Workspace: workspace, Env: ariaEnv(aria)})
 	if err != nil {
 		return Opened{}, err
 	}
@@ -54,7 +54,7 @@ func KillBoxScope(ctx context.Context, loaded *config.Loaded, kind, aria string)
 	if !ok {
 		return 0, nil
 	}
-	return box.Provider{Name: kind, Socket: b.Exec, Scope: aria}.KillScope(ctx)
+	return box.Provider{Name: kind, Socket: b.Exec}.KillScope(ctx, aria)
 }
 
 func ariaEnv(aria string) map[string]string {

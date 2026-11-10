@@ -19,7 +19,7 @@ import (
 
 func open(t *testing.T, env map[string]string) sandbox.Sandbox {
 	t.Helper()
-	box, err := Provider{Host: NewHost(DefaultTTL), Scope: t.Name()}.Open(context.Background(), sandbox.Spec{Workspace: t.TempDir(), Env: env})
+	box, err := Provider{Host: NewHost(DefaultTTL)}.Open(context.Background(), sandbox.Spec{Figaro: t.Name(), Workspace: t.TempDir(), Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}

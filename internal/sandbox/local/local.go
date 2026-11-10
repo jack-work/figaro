@@ -48,12 +48,11 @@ func MergeEnv(base []string, over map[string]string) []string {
 }
 
 type Provider struct {
-	Host  *Host
-	Scope string
+	Host *Host
 }
 
 func (p Provider) Open(_ context.Context, spec sandbox.Spec) (sandbox.Sandbox, error) {
-	return New(p.Host, p.Scope, &Sandbox{
+	return New(p.Host, spec.Figaro, &Sandbox{
 		Workspace: spec.Workspace,
 		Env:       MergeEnv(Environ(), spec.Env),
 		Argv:      func(_, command string) []string { return []string{bashPath(), "-c", command} },

@@ -101,7 +101,7 @@ func runBoxExec(sock, cwd, scope, command string) (int, error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	b, err := box.Provider{Name: sock, Socket: sock, Scope: scope}.Open(ctx, sandbox.Spec{})
+	b, err := box.Provider{Name: sock, Socket: sock}.Open(ctx, sandbox.Spec{Figaro: scope})
 	if err != nil {
 		return 0, err
 	}

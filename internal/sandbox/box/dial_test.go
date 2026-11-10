@@ -35,7 +35,7 @@ func TestTheProviderNeverFollowsALinkToAnotherSocket(t *testing.T) {
 	if err := os.Symlink(canaryPath, exec); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Provider{Name: "t", Socket: exec, Scope: "a"}.Open(context.Background(), sandbox.Spec{})
+	_, err = Provider{Name: "t", Socket: exec}.Open(context.Background(), sandbox.Spec{Figaro: "a"})
 	if err == nil {
 		t.Fatal("the provider dialed through a symlink")
 	}
@@ -49,12 +49,12 @@ func TestTheProviderNeverFollowsALinkToAnotherSocket(t *testing.T) {
 	if err := os.WriteFile(plain, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Provider{Name: "t", Socket: plain, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err == nil || !strings.Contains(err.Error(), "not a socket") {
+	if _, err := (Provider{Name: "t", Socket: plain}).Open(context.Background(), sandbox.Spec{Figaro: "a"}); err == nil || !strings.Contains(err.Error(), "not a socket") {
 		t.Fatalf("a regular file at the exec path: %v", err)
 	}
 
 	s := serve(t)
-	if _, err := (Provider{Name: "t", Socket: s.sock, Scope: "a"}).Open(context.Background(), sandbox.Spec{}); err != nil {
+	if _, err := (Provider{Name: "t", Socket: s.sock}).Open(context.Background(), sandbox.Spec{Figaro: "a"}); err != nil {
 		t.Fatalf("canary: the real socket does not dial, so the refusal above proves nothing: %v", err)
 	}
 }

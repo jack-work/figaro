@@ -28,7 +28,6 @@ var lostResult = sandbox.Result{ExitCode: -1}
 type Provider struct {
 	Name   string
 	Socket string
-	Scope  string
 }
 
 func (p Provider) Open(ctx context.Context, spec sandbox.Spec) (sandbox.Sandbox, error) {
@@ -41,8 +40,8 @@ func (p Provider) Open(ctx context.Context, spec sandbox.Spec) (sandbox.Sandbox,
 	return b, nil
 }
 
-func (p Provider) KillScope(ctx context.Context) (int, error) {
-	b := &Box{prov: p}
+func (p Provider) KillScope(ctx context.Context, figaro string) (int, error) {
+	b := &Box{prov: p, spec: sandbox.Spec{Figaro: figaro}}
 	l, err := b.dial(ctx)
 	if err != nil {
 		return 0, err
@@ -84,7 +83,7 @@ func (b *Box) dial(ctx context.Context) (*link, error) {
 		l.drop(b.prov)
 	}()
 	var resp openResp
-	if err := l.rpc.Call(ctx, mOpen, openReq{Scope: b.prov.Scope, Workspace: b.spec.Workspace, Env: b.spec.Env}, &resp); err != nil {
+	if err := l.rpc.Call(ctx, mOpen, openReq{Scope: b.spec.Figaro, Workspace: b.spec.Workspace, Env: b.spec.Env}, &resp); err != nil {
 		l.rpc.Close()
 		return nil, fmt.Errorf("box %s: open: %w", b.prov.Name, fromWire(err))
 	}

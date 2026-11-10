@@ -16,7 +16,7 @@ import (
 
 func TestMemStatusReportsCounters(t *testing.T) {
 	a := New(Config{RuntimeDir: t.TempDir()})
-	box, err := local.Provider{Host: a.Sessions, Scope: "aria-a"}.Open(context.Background(), sandbox.Spec{Workspace: t.TempDir()})
+	box, err := local.Provider{Host: a.Sessions}.Open(context.Background(), sandbox.Spec{Figaro: "aria-a", Workspace: t.TempDir()})
 	require.NoError(t, err)
 	_, err = box.Sessions().Start(sandbox.ExecRequest{Command: "sleep 30"})
 	require.NoError(t, err)
