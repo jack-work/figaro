@@ -528,9 +528,13 @@ func (in *interactiveInput) complete(line string) []string {
 	completionSubject = in.figaroID
 	out, _ := in.routeCaptured(req)
 	completionSubject = ""
-	cands := matchPrefix(splitOutputLines(out.text), current)
+	answered := splitOutputLines(out.text)
+	cands := matchPrefix(answered, current)
 	if len(cands) == 0 && looksLikePath(current) {
 		cands = pathCandidatesFor(&cmdkit.CompleteContext{Describe: true}, current, false)
+	}
+	if len(cands) == 0 {
+		return answered
 	}
 	return cands
 }

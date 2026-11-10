@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/fuzzy"
 	"os"
 	"path/filepath"
 	"slices"
@@ -88,6 +89,19 @@ func nameCandidates(c *cmdkit.CompleteContext, figs []rpc.FigaroInfoResponse, cu
 			continue
 		}
 		out = append(out, described(c, value, candidateDesc(f)))
+		if len(out) == limit {
+			break
+		}
+	}
+	if len(out) > 0 || current == "" {
+		return out
+	}
+	fields := make([][]string, len(rows))
+	for i := range rows {
+		fields[i] = []string{rowName(&rows[i]), rows[i].ID, rows[i].Mantra}
+	}
+	for _, i := range fuzzy.FilterValues(fuzzy.NewMatcher(), fuzzy.Parse(current), fields) {
+		out = append(out, described(c, rowName(&rows[i]), candidateDesc(&rows[i])))
 		if len(out) == limit {
 			break
 		}

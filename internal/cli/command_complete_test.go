@@ -406,3 +406,43 @@ func TestTabPitAsksAgainWhenTheCappedPoolMisses(t *testing.T) {
 		t.Fatalf("Tab on typed hex: line %q; want the one id completed", got)
 	}
 }
+
+// With no prefix match the menu offered candidates containing the text
+// literally. It matches as :ls does: whole words first, letters in order
+// only when nothing holds the word whole.
+func TestALooseCompletionMatchesAsTheFormSearchDoes(t *testing.T) {
+	pool := []completionCand{
+		{value: "edged-aardvark", desc: "Can rou2 use figaro's Anthropic access on spain"},
+		{value: "jukebox-hexagon", desc: "Lyrics editor: spans of notes carry Rossini's words"},
+	}
+	if shown, loose := filterCompletions(pool, "rossini"); !loose || len(shown) != 1 || shown[0].value != "jukebox-hexagon" {
+		t.Fatalf("rossini shows %v, want jukebox-hexagon alone", shown)
+	}
+	if shown, _ := filterCompletions(pool, "lyrcsedtr"); len(shown) != 1 || shown[0].value != "jukebox-hexagon" {
+		t.Fatalf("lyrcsedtr shows %v, want jukebox-hexagon by its letters", shown)
+	}
+}
+
+// A mantra word starts no handle, so the dispatcher answers with figaros whose
+// mantra holds it, older than the capped pool. The pit shows that answer: the
+// newest pool's letters-in-order hit does not stand in for it.
+func TestTabPitTakesTheDispatchersMantraMatch(t *testing.T) {
+	newest := []string{
+		cmdkit.Candidate("ejection-rulebook", "El Anfitrion: B checks finishing, C at Inspector, A pending"),
+		cmdkit.Candidate("suds-obtain", "idle"),
+	}
+	ask := func(line string) []string {
+		if lastWord(line) == "" {
+			return newest
+		}
+		return []string{cmdkit.Candidate("quote-sneezing", "lockstep tape: virtual clock, MIDI-driven text")}
+	}
+	tr := jumpFixture(t, 1, 4)
+	tr.completer = ask
+	tr.key(':')
+	typeInto(tr, "attend lockstep")
+	cmdComplete(tr)
+	if got := tr.cmdline.String(); got != "attend quote-sneezing " {
+		t.Fatalf("Tab on a mantra word: line %q; want quote-sneezing", got)
+	}
+}

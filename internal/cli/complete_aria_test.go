@@ -111,3 +111,21 @@ func TestNameCandidatesOfferHandles(t *testing.T) {
 		t.Fatalf("bare completion offers the %d newest, got %d starting %q", idCandidatesBare, len(got), got[0])
 	}
 }
+
+// :attend <Tab> offered only the 50 newest figaros, and a mantra word only as a
+// literal substring of those. A word no handle starts with completes to every
+// figaro whose handle, id or mantra holds it, however old.
+func TestAMantraWordCompletesToItsFigaroAtAnyAge(t *testing.T) {
+	many := make([]rpc.FigaroInfoResponse, 3*idCandidatesBare)
+	for i := range many {
+		many[i] = rpc.FigaroInfoResponse{ID: fmt.Sprintf("%032x", i), Handle: fmt.Sprintf("word-%d", i), Mantra: "a figaro", LastActive: int64(i)}
+	}
+	many[0].Mantra = "Lyrics editor: spans of notes carry Rossini's words"
+	many[1].Mantra = "Can rou2 use figaro's Anthropic access on spain"
+	if got := nameCandidates(nil, many, "rossini", "conversation"); len(got) != 1 || got[0] != "word-0" {
+		t.Fatalf("rossini completes to %v, want the oldest figaro, whose mantra names it", got)
+	}
+	if got := nameCandidates(nil, many, "notes rossini", "conversation"); len(got) != 1 || got[0] != "word-0" {
+		t.Fatalf("two words complete to %v, want word-0", got)
+	}
+}

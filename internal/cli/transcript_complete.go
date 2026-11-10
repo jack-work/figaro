@@ -11,6 +11,7 @@ package cli
 // context and filtered in memory after.
 
 import (
+	"github.com/jack-work/figaro/internal/fuzzy"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -248,10 +249,7 @@ func (t *transcript) typedPool(before, word string) (pool, shown []completionCan
 	}
 	pool = candsOf(ask(before + word))
 	shown, loose = filterCompletions(pool, word)
-	if loose {
-		return nil, nil, false
-	}
-	return pool, shown, false
+	return pool, shown, loose
 }
 
 func candsOf(lines []string) []completionCand {
@@ -309,11 +307,12 @@ func filterCompletions(pool []completionCand, word string) (shown []completionCa
 	if needle == "" {
 		return nil, false
 	}
-	for _, c := range pool {
-		if strings.Contains(strings.ToLower(c.value), needle) ||
-			strings.Contains(strings.ToLower(c.desc), needle) {
-			shown = append(shown, c)
-		}
+	fields := make([][]string, len(pool))
+	for i, c := range pool {
+		fields[i] = []string{c.value, c.desc}
+	}
+	for _, i := range fuzzy.FilterValues(fuzzy.NewMatcher(), fuzzy.Parse(needle), fields) {
+		shown = append(shown, pool[i])
 	}
 	return shown, true
 }
