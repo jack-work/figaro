@@ -1,0 +1,5 @@
+[roles.r]
+grants = [{ verbs = ["read"], on = ["*"] }]
+[[bind]]
+role = "r"
+principals = ["troupe:kelliher"]

@@ -1,0 +1,14 @@
+
+[roles.owner]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+
+[roles.lent-to-troupe]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[[bind]]
+role = "lent-to-troupe"
+principals = ["troupe:kelliher"]

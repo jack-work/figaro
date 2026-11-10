@@ -1,0 +1,8 @@
+setters = ["432732ed-17b8-4967-8cdf-576b6da4c5c6"]
+
+[roles.owner]
+grants = [{ verbs = ["*"], on = ["*"] }]
+
+[[bind]]
+role = "owner"
+principals = ["user:admin@auth.kelliher.info"]

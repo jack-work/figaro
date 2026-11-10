@@ -1,0 +1,34 @@
+[roles.owner]
+grants = [{ verbs = ["*"], on = ["*"] }]
+[roles.covered]
+grants = [
+  { verbs = ["admin"], on = ["*", "troupe:kelliher"] },
+  { verbs = ["*"], on = ["aria:a-guest"] },
+  { verbs = ["read", "kill"], on = ["aria:a-guest", "lineage:a-box0"] },
+]
+[roles.mixed]
+grants = [
+  { verbs = ["read", "listen", "send", "fork"], on = ["owner:self", "role:@herald", "lineage:a-box0", "unboxed"] },
+  { verbs = ["set", "kill"], on = ["sandboxed:self", "aria:a-admin"] },
+  { verbs = ["use"], on = ["sandbox:self", "sandbox:bwrap", "sandbox:local"] },
+  { verbs = ["join", "admin"], on = ["troupe:kelliher", "troupe:other"] },
+  { verbs = ["read", "read"], on = ["unboxed", "unboxed"] },
+]
+[roles.boxed]
+grants = [{ verbs = ["create", "use", "read"], on = ["sandbox:self", "sandboxed:self"] }]
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+[[bind]]
+role = "covered"
+principals = ["user:bob@auth.kelliher.info"]
+[[bind]]
+role = "mixed"
+principals = ["user:guest@auth.kelliher.info", "peer1/user:2001"]
+groups = ["ops@auth.kelliher.info"]
+[[bind]]
+role = "boxed"
+principals = ["sandbox:box0@local:box", "sandbox:*"]
+[[bind]]
+role = "covered"
+principals = ["troupe:kelliher"]

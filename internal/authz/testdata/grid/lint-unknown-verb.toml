@@ -1,0 +1,2 @@
+[roles.r]
+grants = [{ verbs = ["fly"], on = ["*"] }]

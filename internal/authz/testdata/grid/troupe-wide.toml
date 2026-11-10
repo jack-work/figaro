@@ -1,0 +1,17 @@
+[roles.ops]
+grants = [
+  { verbs = ["read", "listen", "send"], on = ["unboxed", "role:@herald", "owner:self"] },
+  { verbs = ["create", "join"], on = ["*"] },
+  { verbs = ["admin"], on = ["*"] },
+  { verbs = ["use"], on = ["sandbox:box0", "sandbox:self"] },
+  { verbs = ["kill", "set"], on = ["lineage:a-box0", "sandboxed:self"] },
+]
+[roles.guest]
+grants = [{ verbs = ["read"], on = ["aria:a-guest", "troupe:kelliher"] }]
+[[bind]]
+role = "ops"
+principals = ["user:bob@auth.kelliher.info", "peer1/user:2001"]
+groups = ["ops@auth.kelliher.info"]
+[[bind]]
+role = "guest"
+principals = ["user:guest@auth.kelliher.info", "sandbox:box0@local:box"]

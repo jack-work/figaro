@@ -1,0 +1,5 @@
+[roles.r]
+grants = [{ verbs = ["use"], on = ["sandbox:local"] }]
+[[bind]]
+role = "r"
+principals = ["user:bob@auth.kelliher.info"]
