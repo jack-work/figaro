@@ -51,20 +51,37 @@ func (r Retirement) Threshold(window int) int {
 }
 
 func RetirementOf(snap form.Snapshot) (Retirement, error) {
+	raw, ok := snap.Get(SystemRetirementKey)
+	if !ok || string(raw) == "null" {
+		return Retirement{}, nil
+	}
+	return ParseRetirement(raw)
+}
+
+func ParseRetirement(raw json.RawMessage) (Retirement, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return Retirement{}, fmt.Errorf("%s: want a table {context_threshold, ttl}, got %s", SystemRetirementKey, raw)
+	}
 	var r Retirement
-	raw, ok := snap.Get(SystemRetirementKey + ".context_threshold")
-	if !ok {
-		return r, nil
-	}
-	if err := r.parseThreshold(raw); err != nil {
-		return Retirement{}, err
-	}
-	if raw, ok := snap.Get(SystemRetirementKey + ".ttl"); ok {
-		ttl, err := ParseTTL(lifetimeString(raw))
-		if err != nil {
-			return Retirement{}, fmt.Errorf("%s.ttl: %w", SystemRetirementKey, err)
+	for k, v := range fields {
+		switch k {
+		case "context_threshold":
+			if err := r.parseThreshold(v); err != nil {
+				return Retirement{}, err
+			}
+		case "ttl":
+			ttl, err := ParseTTL(lifetimeString(v))
+			if err != nil || ttl < 0 || (ttl == 0 && lifetimeString(v) == "") {
+				return Retirement{}, fmt.Errorf("%s.ttl %s: want a duration (90m, 6h, 2d)", SystemRetirementKey, v)
+			}
+			r.TTL = ttl
+		default:
+			return Retirement{}, fmt.Errorf("%s.%s: unknown field; want context_threshold or ttl", SystemRetirementKey, k)
 		}
-		r.TTL = ttl
+	}
+	if !r.Set() {
+		return Retirement{}, fmt.Errorf("%s.context_threshold: required", SystemRetirementKey)
 	}
 	return r, nil
 }

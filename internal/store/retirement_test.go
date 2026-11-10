@@ -29,7 +29,6 @@ func TestRetirementThresholds(t *testing.T) {
 		{"tokens as a string", map[string]any{"context_threshold": "700000"}, 1_000_000, 700000, 0},
 		{"percent of the window", map[string]any{"context_threshold": "60%"}, 200_000, 120_000, 0},
 		{"percent with no known window", map[string]any{"context_threshold": "60%"}, 0, 0, 0},
-		{"ttl alone sets nothing", map[string]any{"ttl": "1h"}, 1_000, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, err := RetirementOf(retirementSnap(t, tc.value))
@@ -52,8 +51,17 @@ func TestRetirementRefusesNonsense(t *testing.T) {
 			t.Errorf("context_threshold %v accepted", v)
 		}
 	}
-	if _, err := RetirementOf(retirementSnap(t, map[string]any{"context_threshold": 10, "ttl": "soon"})); err == nil {
-		t.Error("ttl soon accepted")
+	for name, v := range map[string]any{
+		"bad ttl":      map[string]any{"context_threshold": 10, "ttl": "soon"},
+		"negative ttl": map[string]any{"context_threshold": 10, "ttl": "-1h"},
+		"typo":         map[string]any{"context_treshold": 10},
+		"ttl alone":    map[string]any{"ttl": "1h"},
+		"not a table":  "60%",
+		"empty table":  map[string]any{},
+	} {
+		if _, err := RetirementOf(retirementSnap(t, v)); err == nil {
+			t.Errorf("%s accepted", name)
+		}
 	}
 }
 

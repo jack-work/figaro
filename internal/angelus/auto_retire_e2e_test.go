@@ -138,3 +138,29 @@ func TestAForkOfAnAriaRetiredByContextTakesPrompts(t *testing.T) {
 		turnOn(t, a, child, "carry on")
 	}
 }
+
+func TestAMalformedRetirementIsRefusedAtSet(t *testing.T) {
+	a, acli, ctx, _ := usageDaemon(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	conn := dialAria(t, a, created.FigaroID, nil)
+	set := func(v any) error {
+		var out rpc.SetResponse
+		return conn.Call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.retirement": v})}, &out)
+	}
+	for field, v := range map[string]any{
+		"context_treshold":  map[string]any{"context_treshold": 1000},
+		"context_threshold": map[string]any{"context_threshold": "150%"},
+		"ttl":               map[string]any{"context_threshold": 1000, "ttl": "soon"},
+	} {
+		require.ErrorContains(t, set(v), "system.retirement."+field)
+	}
+	snap, err := a.Backend.FormState(created.FigaroID)
+	require.NoError(t, err)
+	require.False(t, snap.Has("system.retirement"), "a refused value landed")
+	require.NoError(t, set(map[string]any{"context_threshold": "60%", "ttl": "1h"}))
+
+	var out rpc.SetResponse
+	err = conn.Call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.retirement.context_threshold": 0})}, &out)
+	require.ErrorContains(t, err, "system.retirement.context_threshold", "a dotted set is checked against the whole table")
+}

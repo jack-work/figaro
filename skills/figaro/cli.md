@@ -308,7 +308,9 @@ it retires as `figaro retire` would, with `system.retired = "context"`. A
 threshold like `"60%"` is of the model's context window. The turn in flight
 and prompts already queued finish; `ttl` counts from the retirement. A fork
 starts unretired but keeps the setting, so a fork taken above the threshold
-retires again at the end of its first turn.
+retires again at the end of its first turn. A malformed table (an unknown
+field, a threshold outside 1 token to 100%, a ttl that is not a duration) is
+refused at set.
 
 `system.reap_if_empty = true` reaps a figaro that never had a message: no
 prompt, no reply. Empty means no messages, not no state: a figaro used only as

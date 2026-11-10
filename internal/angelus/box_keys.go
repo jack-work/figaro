@@ -167,11 +167,29 @@ func refuseReapKeys(before form.Snapshot, patch form.Patch) error {
 	return nil
 }
 
+func refuseMalformedRetirement(before form.Snapshot, patch form.Patch) error {
+	touched := false
+	for _, e := range patch.Entries() {
+		if e.Key == store.SystemRetirementKey || strings.HasPrefix(e.Key, store.SystemRetirementKey+".") || strings.HasPrefix(store.SystemRetirementKey, e.Key+".") {
+			touched = true
+			break
+		}
+	}
+	if !touched {
+		return nil
+	}
+	_, err := store.RetirementOf(before.Apply(patch))
+	return err
+}
+
 func (h *handlers) refuseCallerKeys(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}
 	if err := refuseReapKeys(before, *patch); err != nil {
+		return err
+	}
+	if err := refuseMalformedRetirement(before, *patch); err != nil {
 		return err
 	}
 	c := h.callerKeysOf(ctx)
@@ -214,7 +232,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch
