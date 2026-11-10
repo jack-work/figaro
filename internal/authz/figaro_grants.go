@@ -393,9 +393,15 @@ func cutTable(data []byte, header *regexp.Regexp) []byte {
 	return out
 }
 
-func (p *Policies) SetFigaroClaimRequired(on bool) { p.claimRequired.Store(on) }
+func (p *Policies) SetBoxesRequiringClaim(boxes []string) {
+	boxes = slices.Clone(boxes)
+	p.claimRequired.Store(&boxes)
+}
 
-func (p *Policies) FigaroClaimRequired() bool { return p.claimRequired.Load() }
+func (p *Policies) claimRequiredIn(box string) bool {
+	boxes := p.claimRequired.Load()
+	return boxes != nil && slices.Contains(*boxes, box)
+}
 
 type FigaroView struct {
 	p      *Policies

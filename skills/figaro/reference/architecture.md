@@ -417,8 +417,8 @@ judged by its principal alone: the owner on the local door, the box in a box.
 A claim only ever narrows, so a forged one gains nothing. On the box door a
 claim counts only for a figaro that runs in that box; any other (an unknown
 id, another box's figaro, an unboxed one) is dropped and the call is judged
-as the box. `[authz] figaro_claim = "required"` refuses those calls instead,
-and any box call that names no figaro.
+as the box. `[sandbox.boxes.<name>] figaro_claim = "required"` refuses those
+calls instead, and any call through that box's door that names no figaro.
 
 A refused read hides the aria as one the caller cannot read (not found, and
 dropped from `ls` and prefix resolution); other refusals are -32020 naming the
@@ -456,6 +456,17 @@ its parent's dress. No implicit default. The owner is never limited by it.
 box and the missing list, and opens the other doors. A list of exactly
 `["*"]` allows any outfit or any provider, logged when the door opens; `"*"`
 beside names is a config error. A box without a door needs neither.
+
+**Host doors.** `[sandbox.boxes.<name>] host_door = "<path>"` opens a second
+socket for a doored box, for services on the host (a chat backend, a receipt
+worker) rather than processes in the box. The daemon tells the two apart by
+the socket a connection came through, never by what the caller says. A
+host-door caller is the box's principal, `sandbox:<name>@local:box`, so it is
+exactly as strong as the box: every grant the box holds, it holds. The box's
+`figaro_claim = "required"` binds only its in-box door; host-door calls are
+answered without a claim, and a claim on one counts by the same rule as in
+the box. The host door must sit outside every box's door directory, since a
+box reaches its own; the daemon refuses one inside any of them.
 
 **Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long
 a reaped or killed figaro in that box waits before it is purged, in place of

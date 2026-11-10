@@ -16,6 +16,7 @@ const (
 	DoorNode
 	DoorWeb
 	DoorBox
+	DoorHost
 )
 
 func (d Door) String() string {
@@ -28,6 +29,8 @@ func (d Door) String() string {
 		return "web"
 	case DoorBox:
 		return "box"
+	case DoorHost:
+		return "host"
 	case DoorInProcess:
 		return "in-process"
 	case DoorUnknown:

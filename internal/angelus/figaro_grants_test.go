@@ -101,7 +101,7 @@ func TestPromoteKeepsTheNarrowingAFigaroHadUnderItsParent(t *testing.T) {
 }
 
 func TestTheBoxDoorRefusesAnUnclaimedCallWhenConfigured(t *testing.T) {
-	r := newLineageRig(t, "[authz]\nfigaro_claim = \"required\"\n")
+	r := newLineageRig(t, "figaro_claim = \"required\"\n")
 	c := r.dial(t)
 	var out rpc.FormResponse
 	if err := c.Call(context.Background(), rpc.MethodForm, withAria(t, r.child, rpc.FormRequest{}), &out); err == nil || !strings.Contains(err.Error(), "figaro_claim") {

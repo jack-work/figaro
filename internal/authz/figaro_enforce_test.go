@@ -102,7 +102,7 @@ func TestTheCeilingTableIsChecked(t *testing.T) {
 	}
 }
 
-func boxClaimRig(t *testing.T) (func(figaro string, method string, on string) (string, error), *Policies) {
+func boxClaimRig(t *testing.T, door Door) (func(figaro string, method string, on string) (string, error), *Policies) {
 	t.Helper()
 	f := lineageFakes(map[string]string{"in-judge": `["read:*"]`})
 	f.boxed = map[string]string{"in-judge": "judge", "in-other": "other", "local-one": "local"}
@@ -116,7 +116,7 @@ func boxClaimRig(t *testing.T) (func(figaro string, method string, on string) (s
 	var seen string
 	ok := func(ctx context.Context, _ json.RawMessage) (any, error) { seen = FigaroOf(ctx); return nil, nil }
 	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodIR: ok, rpc.MethodKill: ok}, AriaHeader{}, Enforce(p))
-	ctx := WithDoor(WithSubject(context.Background(), jkauthz.Subject{Principal: BoxPrincipal("judge")}), DoorBox)
+	ctx := WithDoor(WithSubject(context.Background(), jkauthz.Subject{Principal: BoxPrincipal("judge")}), door)
 	return func(figaro, method, on string) (string, error) {
 		seen = "unreached"
 		params, _ := json.Marshal(map[string]any{"figaro_id": on})
@@ -129,7 +129,7 @@ func boxClaimRig(t *testing.T) (func(figaro string, method string, on string) (s
 }
 
 func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
-	call, p := boxClaimRig(t)
+	call, p := boxClaimRig(t, DoorBox)
 	if seen, err := call("made-up", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
 		t.Fatalf("a made-up claim must fall back to the box: seen %q, %v", seen, err)
 	}
@@ -143,7 +143,11 @@ func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
 		t.Fatalf("the box's own figaro reads: seen %q, %v", seen, err)
 	}
 
-	p.SetFigaroClaimRequired(true)
+	p.SetBoxesRequiringClaim([]string{"other"})
+	if _, err := call("", rpc.MethodIR, "in-judge"); err != nil {
+		t.Fatalf("another box's requirement reached this one: %v", err)
+	}
+	p.SetBoxesRequiringClaim([]string{"judge"})
 	for _, figaro := range []string{"", "made-up", "in-other", "local-one"} {
 		if _, err := call(figaro, rpc.MethodIR, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro_claim") {
 			t.Errorf("required, claim %q: %v", figaro, err)
@@ -157,12 +161,31 @@ func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
 	}
 }
 
+func TestAHostDoorIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
+	call, p := boxClaimRig(t, DoorHost)
+	p.SetBoxesRequiringClaim([]string{"judge"})
+	if seen, err := call("", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
+		t.Fatalf("an unclaimed host-door call to a required box: seen %q, %v", seen, err)
+	}
+	if seen, err := call("made-up", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
+		t.Fatalf("a made-up claim on the host door must fall back to the box: seen %q, %v", seen, err)
+	}
+	if _, err := call("in-judge", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro:in-judge") {
+		t.Fatalf("a claim of the box's own figaro on the host door is narrowed: %v", err)
+	}
+	inBox, q := boxClaimRig(t, DoorBox)
+	q.SetBoxesRequiringClaim([]string{"judge"})
+	if _, err := inBox("", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro_claim") {
+		t.Fatalf("the same unclaimed call in the box: %v", err)
+	}
+}
+
 func TestTheClaimRequirementStaysOnTheBoxDoor(t *testing.T) {
 	p := NewPolicies(me, facts())
 	if err := p.load([]byte(sandboxPolicy)); err != nil {
 		t.Fatal(err)
 	}
-	p.SetFigaroClaimRequired(true)
+	p.SetBoxesRequiringClaim([]string{"dev-3"})
 	ok := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
 	call := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok}, AriaHeader{}, Enforce(p))[rpc.MethodQua]
 	plain, _ := json.Marshal(map[string]any{"figaro_id": "aaaa0001"})
