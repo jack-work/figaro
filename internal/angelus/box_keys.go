@@ -145,6 +145,49 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	return nil
 }
 
+func (h *handlers) refuseGrantsBeyondWriter(ctx context.Context, c callerKeys, before, after form.Snapshot) error {
+	was, _ := before.Get(form.GrantsKey)
+	now, ok := after.Get(form.GrantsKey)
+	if !ok || bytes.Equal(was, now) {
+		return nil
+	}
+	var want []string
+	if err := json.Unmarshal(now, &want); err != nil {
+		return err
+	}
+	held := h.writerGrants(ctx, c)
+	for _, g := range want {
+		if !held[strings.TrimSpace(g)] {
+			return fmt.Errorf("%s: the writer does not hold %q, and a figaro grants only what it holds", form.GrantsKey, g)
+		}
+	}
+	return nil
+}
+
+func (h *handlers) writerGrants(ctx context.Context, c callerKeys) map[string]bool {
+	f := authz.FigaroOf(ctx)
+	if !c.boxed || f == "" || h.sandboxOf(f) != c.box {
+		return nil
+	}
+	snap, err := h.angelus.Backend.FormState(f)
+	if err != nil {
+		return nil
+	}
+	raw, ok := snap.Get(form.GrantsKey)
+	if !ok {
+		return nil
+	}
+	var grants []string
+	if json.Unmarshal(raw, &grants) != nil {
+		return nil
+	}
+	held := make(map[string]bool, len(grants))
+	for _, g := range grants {
+		held[strings.TrimSpace(g)] = true
+	}
+	return held
+}
+
 func (h *handlers) ancestorsOf(line lineage) []string {
 	chain, err := h.angelus.chainOf(line.of)
 	if err != nil || len(chain) == 0 || chain[len(chain)-1].Node != line.of {
@@ -285,7 +328,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			return err
 		}
 	}
-	return nil
+	return h.refuseGrantsBeyondWriter(ctx, c, before, after)
 }
 
 func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess {
