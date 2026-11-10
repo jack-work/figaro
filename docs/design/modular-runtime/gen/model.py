@@ -213,7 +213,8 @@ FILES = {
 COMPONENTS = {
     "base": [
         {"name": "wire types", "tags": "S7d K1 #68", "pkgs": ["api/rpc", "api/message", "api/handle", "api/aria", "api/livedoc", "api/quote", "api/models", "api/decide", "api/transport"], "note": "Separate go.mod only where an outside consumer exists (api/sandbox has one today)."},
-        {"name": "form algebra", "tags": "S5", "pkgs": ["api/form", "api/form/replica"], "note": "Patch, fold, diff. Audit row 3 (one apply, one diff) is still open: Patch.Apply and diff.go beside the tree path."},
+        {"name": "form algebra", "tags": "S5", "pkgs": ["api/form"], "note": "Patch, fold, diff; imports nothing. Audit row 3 (one apply, one diff) is still open: Patch.Apply and diff.go beside the tree path."},
+        {"name": "form replica", "tags": "", "pkgs": ["api/form/replica"], "note": "The optimistic client replica of a form. It speaks form.set and form.delta, so it imports api/rpc as well as api/form; it sits above both. Used by the cli and figaro-forms."},
         {"name": "sandbox contract", "tags": "X1", "pkgs": ["api/sandbox"], "note": "Own go.mod (api/sandbox/v0.1.0)."},
         {"name": "telemetry and leaf libs", "tags": "#73", "pkgs": ["internal/otel", "internal/logring", "internal/mark", "internal/partialjson", "internal/fuzzy"], "note": ""},
         {"name": "test tools", "tags": "", "pkgs": ["internal/testfence", "internal/formgen", "internal/formsim", "internal/tape"], "note": ""},
