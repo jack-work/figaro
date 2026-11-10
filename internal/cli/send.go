@@ -664,7 +664,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 		die("%s", err)
 	}
 
-	fcli, derr := sdk.DialAria(figaroEP, func(string, json.RawMessage) {})
+	fcli, derr := sdk.DialAria(figaroEP, nil)
 	if derr != nil {
 		die("connect figaro: %s", derr)
 	}
