@@ -10,8 +10,7 @@ import (
 )
 
 type SandboxConfig struct {
-	WorkspaceRoot string               `toml:"workspace_root"`
-	Boxes         map[string]BoxConfig `toml:"boxes"`
+	Boxes map[string]BoxConfig `toml:"boxes"`
 }
 
 type BoxConfig struct {
@@ -28,17 +27,6 @@ func (b BoxConfig) AnyOutfit() bool { return isAnyList(b.Outfits) }
 func (b BoxConfig) AnyProvider() bool { return isAnyList(b.Providers) }
 
 func isAnyList(l []string) bool { return len(l) == 1 && l[0] == "*" }
-
-func (l *Loaded) WorkspaceRoot() (string, error) {
-	root := l.cfg().Sandbox.WorkspaceRoot
-	if root == "" {
-		return "", nil
-	}
-	if !filepath.IsAbs(root) {
-		return "", fmt.Errorf("sandbox.workspace_root %q: want an absolute path", root)
-	}
-	return filepath.Clean(root), nil
-}
 
 func (l *Loaded) Box(name string) (BoxConfig, bool) {
 	b, ok := l.cfg().Sandbox.Boxes[name]

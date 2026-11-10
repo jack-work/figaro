@@ -369,10 +369,6 @@ func Run() {
 		os.Exit(1)
 	}
 	a.Peercred = peer
-	if _, err := loaded.WorkspaceRoot(); err != nil {
-		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
-		os.Exit(1)
-	}
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetBoxes(loaded.DooredBoxes())
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))

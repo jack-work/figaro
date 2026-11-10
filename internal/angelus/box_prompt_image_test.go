@@ -63,7 +63,7 @@ func TestABoxSendsAPictureToAnAriaWithNoTools(t *testing.T) {
 	door := filepath.Join(filepath.Dir(sb.sock), "door.sock")
 	p := &promptRecorder{seen: make(chan seenTurn, 1)}
 	r := newRigProviding(t, defaultPolicy,
-		fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n[sandbox]\nworkspace_root = %q\n", sb.sock, door, filepath.Join(filepath.Dir(sb.sock), "workspaces")),
+		fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n", sb.sock, door),
 		func(string, provider.Knobs) (provider.Provider, error) { return p, nil })
 	ln, err := angelus.ListenUnix(door, 0o660)
 	if err != nil {

@@ -125,7 +125,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if err := h.grantSandboxOn(ctx, id, chosen || patchTouches(dress, "system.cwd")); err != nil {
 			return nil, err
 		}
-		if err := h.placeWorkspace(id, chosen, patchTouches(dress, "system.cwd")); err != nil {
+		if err := h.dropHostCwdInBox(id, patchTouches(dress, "system.cwd")); err != nil {
 			return nil, err
 		}
 		snap, serr := backend.FormState(id)
@@ -722,13 +722,11 @@ func (h *handlers) removeAria(id string, recursive bool, expect []string) error 
 		slog.Info("killed aria sessions", "id", id, "sessions", n)
 	}
 
-	var held []string
 	if h.angelus.Backend != nil {
 		removed := []string{id}
 		if recursive {
 			removed = append(removed, h.subtree(id)...)
 		}
-		held = h.ownWorkspaces(removed)
 		remove := func() error { return h.angelus.Backend.Remove(id, recursive) }
 		if expect != nil && decided {
 			remove = func() error { return dr.RemoveIf(id, expect) }
@@ -743,7 +741,6 @@ func (h *handlers) removeAria(id string, recursive bool, expect []string) error 
 			}
 		}
 	}
-	h.releaseWorkspaces(held)
 
 	// The endpoint outlives the agent, not the aria; this EOF must not happen on hibernate.
 	if hb := h.angelus.Hubs.drop(id); hb != nil {

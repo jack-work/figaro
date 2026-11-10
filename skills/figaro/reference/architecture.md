@@ -357,8 +357,7 @@ it: `set`, `cast` and `form.create` refuse any other `target-aria`, the CLI
 refuses to follow one, and `form ls`, `ls` and `status` name the box. Shell
 bindings stay admin-only, since they are keyed by a pid and a box has its own
 pid namespace; `figaro new` inside a box prints the id instead of attending. Under `local` or `bwrap` a `system.cwd`
-the caller names is a host path and needs `use` on `sandbox:local`; the one
-the daemon assigns is under "Workspaces under a sandbox" below.
+the caller names is a host path and needs `use` on `sandbox:local`.
 
 **Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
 `system.max_context_tokens`, `system.credo`, `system.tools`,
@@ -777,14 +776,9 @@ never starts a daemon there.
 
 ### Workspaces under a sandbox
 
-Under `bwrap`, `system.cwd` is the box's read-write bind.
-A birth keeps a requested cwd only if it is a directory on the daemon's
-host; otherwise the figaro gets `<workspace_root>/<id>` (0700) from
-`[sandbox] workspace_root` in `config.toml`, and with no root the birth is
-refused. `local` falls back to the daemon's cwd. A fork copies
-`system.cwd`, so a workspace is removed only when no remaining figaro names
-it; nothing outside the root is ever removed. `[sandbox]` is read at
-daemon start: changing it takes a restart, not `outfit reload`.
+Under `bwrap`, `system.cwd` is the box's read-write bind, and a birth
+whose cwd is not a directory on the daemon's host is refused. `local` falls
+back to the daemon's cwd.
 
 The box also replaces the daemon's resolved state and config dirs with empty
 tmpfs, wherever they resolved from (`FIGARO_STATE_DIR`, `XDG_STATE_HOME`, or

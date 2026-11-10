@@ -192,34 +192,21 @@ func TestABoxCannotPointADecisionAtAHostOfItsChoosing(t *testing.T) {
 	}
 }
 
-// A box aria's system.cwd is a path in the box. Releasing workspaces deletes
-// directories under workspace_root that the last aria naming them leaves, so a
-// box's value must never name one.
-func TestKillingABoxAriaNeverReleasesAHostWorkspace(t *testing.T) {
+// A box aria's system.cwd is a path in the box: a host path the box sends
+// at birth is dropped, and the box may set its own afterwards.
+func TestAHostCwdABoxSendsNeverBecomesSystemCwd(t *testing.T) {
 	d := boxDoorRig(t, "true")
-	victim := filepath.Join(filepath.Dir(d.sb.sock), "workspaces", "victim")
-	if err := os.MkdirAll(victim, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(victim, "keep"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	host := t.TempDir()
 	c := d.dial(t)
 	var made rpc.CreateResponse
-	if err := c.Call(context.Background(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"mock"}, Cwd: victim}, &made); err != nil {
+	if err := c.Call(context.Background(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"mock"}, Cwd: host}, &made); err != nil {
 		t.Fatal(err)
 	}
 	if v, ok := keyOn(t, d.grantRig, made.FigaroID, "system.cwd"); ok {
 		t.Fatalf("the host cwd the box sent became system.cwd %s", v)
 	}
-	if err := setKey(t, c, made.FigaroID, "system.cwd", victim); err != nil {
+	if err := setKey(t, c, made.FigaroID, "system.cwd", "/work"); err != nil {
 		t.Fatalf("a box aria's cwd is the box's: %v", err)
-	}
-	if err := c.Call(context.Background(), rpc.MethodKill, rpc.KillRequest{FigaroID: made.FigaroID, Now: true}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(victim, "keep")); err != nil {
-		t.Fatalf("killing a box aria released a host workspace: %v", err)
 	}
 }
 
