@@ -14,13 +14,12 @@ const (
 	localAria   = "dddd0002"
 	boxAria     = "dddd0003"
 	goneBoxAria = "dddd0004"
-	bwrapAria   = "dddd0005"
 	unreadable  = "dddd0006"
 )
 
 func unboxedFacts() fakeFacts {
 	f := facts()
-	f.boxed = map[string]string{localAria: "local", boxAria: "judge", goneBoxAria: "since-removed", bwrapAria: "bwrap"}
+	f.boxed = map[string]string{localAria: "local", boxAria: "judge", goneBoxAria: "since-removed"}
 	f.unreadable = map[string]bool{unreadable: true}
 	return f
 }
@@ -48,9 +47,9 @@ principals = ["user:1001"]
 `
 
 // unboxed is an aria whose system.sandbox is exactly "" or "local". Any
-// other value is a box, whether or not config still names it, and so is
-// bwrap; a form that cannot be read is a box too, so a store error never
-// opens a box to the selector.
+// other value is a box, whether or not config still names it; a form that
+// cannot be read is a box too, so a store error never opens a box to the
+// selector.
 func TestUnboxedMatchesOnlyAriasOutsideEveryBox(t *testing.T) {
 	p := loadedWith(t, unboxedFacts(), unboxedReader)
 	for id, want := range map[string]bool{
@@ -58,7 +57,6 @@ func TestUnboxedMatchesOnlyAriasOutsideEveryBox(t *testing.T) {
 		localAria:   true,
 		boxAria:     false,
 		goneBoxAria: false,
-		bwrapAria:   false,
 		unreadable:  false,
 	} {
 		for _, v := range []rpc.Verb{rpc.VerbRead, rpc.VerbSet} {
@@ -130,7 +128,7 @@ principals = ["troupe:estate"]
 `)
 	withTroupe(t, p, everything)
 	ceiling := subject(TroupePrincipal("estate"))
-	for id, want := range map[string]bool{plainAria: true, localAria: true, boxAria: false, goneBoxAria: false, bwrapAria: false, unreadable: false} {
+	for id, want := range map[string]bool{plainAria: true, localAria: true, boxAria: false, goneBoxAria: false, unreadable: false} {
 		if got := p.Allow(subject(guest), rpc.VerbSet, Aria(id)).Allowed; got != want {
 			t.Errorf("troupe guest set on %s: allowed %v, want %v", id, got, want)
 		}

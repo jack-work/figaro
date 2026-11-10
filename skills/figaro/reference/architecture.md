@@ -324,7 +324,7 @@ any. `outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
 which the birth record writes once and nothing rewrites. `unboxed` is every
 figaro whose `system.sandbox` is exactly empty or `local`: any other value is a
-box (a configured box, one since removed from config, `bwrap`), and a form
+box (a configured box, one since removed from config, the removed `bwrap`), and a form
 the store cannot read is a box too. Lent to `troupe:<name>`, it keeps a
 troupe's reach off the node's boxes.
 
@@ -356,7 +356,7 @@ change), at most 256 per box. A role held in a box points only at a figaro in
 it: `set`, `cast` and `form.create` refuse any other `target-aria`, the CLI
 refuses to follow one, and `form ls`, `ls` and `status` name the box. Shell
 bindings stay admin-only, since they are keyed by a pid and a box has its own
-pid namespace; `figaro new` inside a box prints the id instead of attending. Under `local` or `bwrap` a `system.cwd`
+pid namespace; `figaro new` inside a box prints the id instead of attending. Under `local` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`.
 
 **Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
@@ -774,20 +774,12 @@ The daemon listens on each `door` (0660) at start; `box serve --door
 `FIGARO_RUNTIME_DIR`, so `figaro` in the box calls back as the box and
 never starts a daemon there.
 
-### Workspaces under a sandbox
+### Removed: bwrap
 
-Under `bwrap`, `system.cwd` is the box's read-write bind, and a birth
-whose cwd is not a directory on the daemon's host is refused. `local` falls
-back to the daemon's cwd.
-
-The box also replaces the daemon's resolved state and config dirs with empty
-tmpfs, wherever they resolved from (`FIGARO_STATE_DIR`, `XDG_STATE_HOME`, or
-under `HOME`), then binds the workspace, the runtime dir and the bundled
-skills back. So no tool reads `<state>/troupe/<name>/`, the node's
-intermediate key among it. The NixOS module sets `HOME` and
-`FIGARO_STATE_DIR` to its `stateDir`, and the container mounts the host's
-state dir at `/var/lib/figaro` under the same module, so the rule holds
-there too.
+`system.sandbox = "bwrap"` named a bubblewrap provider on the daemon's
+host. It is gone: such a figaro refuses to open its sandbox until
+`system.sandbox` is `local` or a box. Under `local` an unusable
+`system.cwd` falls back to the daemon's cwd.
 
 ### Troupe keys
 

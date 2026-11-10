@@ -127,7 +127,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		lastActive = time.UnixMilli(ts)
 	}
 	loaded, _ := h.settings()
-	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"), h.angelus.RuntimeDir)
+	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"))
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
 	}

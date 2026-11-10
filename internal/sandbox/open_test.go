@@ -10,61 +10,33 @@ import (
 	"github.com/jack-work/figaro/internal/sandbox/local"
 )
 
-func fakeBwrapOnPath(t *testing.T) {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "bwrap"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
+// A form left on the removed bwrap provider must not fall back to local,
+// which confines nothing; it is refused with the way out.
+func TestBwrapIsRefusedAsRemoved(t *testing.T) {
+	_, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, "bwrap", "a1", t.TempDir())
+	if err == nil {
+		t.Fatal("opened a bwrap sandbox")
 	}
-	t.Setenv("PATH", dir)
-}
-
-// A confining provider binds its workspace read-write on the host. Falling
-// back to the daemon's working directory (/ under systemd) would hand an
-// aria with a stale system.cwd the whole filesystem, so the open must fail.
-func TestAConfiningProviderRefusesAnUnusableWorkspace(t *testing.T) {
-	fakeBwrapOnPath(t)
-	host := local.NewHost(local.DefaultTTL)
-	file := filepath.Join(t.TempDir(), "plain-file")
-	if err := os.WriteFile(file, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for name, ws := range map[string]string{
-		"missing":   filepath.Join(t.TempDir(), "gone"),
-		"not a dir": file,
-		"unset":     "",
-	} {
-		t.Run(name, func(t *testing.T) {
-			box, err := Open(context.Background(), host, nil, "bwrap", "a1", ws, t.TempDir())
-			if err == nil {
-				t.Fatalf("opened with workspace %q", box.Workspace)
-			}
-			if !strings.Contains(err.Error(), "system.cwd") {
-				t.Fatalf("the error should say what to fix: %v", err)
-			}
-		})
+	for _, want := range []string{"removed", "local", "box"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the error should say %q: %v", want, err)
+		}
 	}
 }
 
-func TestAConfiningProviderOpensOnAUsableWorkspace(t *testing.T) {
-	fakeBwrapOnPath(t)
-	ws := t.TempDir()
-	box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, "bwrap", "a1", ws, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, _ := filepath.EvalSymlinks(ws)
-	if box.Workspace != ws && box.Workspace != want {
-		t.Fatalf("workspace %q, want %q", box.Workspace, ws)
+func TestAnUnknownSandboxIsRefused(t *testing.T) {
+	_, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, "nowhere", "a1", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `unknown provider "nowhere"`) {
+		t.Fatalf("err %v", err)
 	}
 }
 
 // local confines nothing, so the fallback costs nothing and keeps a stale
 // aria usable.
-func TestLocalStillFallsBackToTheDaemonsDirectory(t *testing.T) {
+func TestLocalFallsBackToTheDaemonsDirectory(t *testing.T) {
 	daemon, _ := os.Getwd()
 	for _, kind := range []string{"", "local"} {
-		box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, kind, "a1", filepath.Join(t.TempDir(), "gone"), t.TempDir())
+		box, err := Open(context.Background(), local.NewHost(local.DefaultTTL), nil, kind, "a1", filepath.Join(t.TempDir(), "gone"))
 		if err != nil {
 			t.Fatalf("%q: %v", kind, err)
 		}

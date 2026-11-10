@@ -20,8 +20,8 @@ func serviceLoaded(st config.ServiceToken) *config.Loaded {
 	return &config.Loaded{Config: config.Config{ServiceTokens: map[string]config.ServiceToken{"herald": st}}}
 }
 
-// The secret must sit in $CREDENTIALS_DIRECTORY, which the bwrap provider
-// hides from tools; a path anywhere else could be read by one.
+// The secret must be a credential id under $CREDENTIALS_DIRECTORY; a path
+// is refused.
 func TestServiceTokenSecretMustBeACredentialID(t *testing.T) {
 	serverEnv(t)
 	for _, id := range []string{"", "/etc/figaro/secret", "../secret", "sub/secret", ".."} {

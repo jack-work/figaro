@@ -84,7 +84,7 @@ a long turn keeps its http and tool events.
 | long-aria request body | | 941 KB | 941 KB |
 | long-aria cache_read per turn | | 349k | 349k |
 
-bwrap costs about 71 ms per tool call over local.
+bwrap costs about 71 ms per tool call over local. (The bwrap provider has since been removed.)
 
 ### First touch of a cold aria, same arias, fresh copies per build
 

@@ -13,11 +13,10 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
-	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/jkauthz"
 )
 
-func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet bool) (form.Patch, error) {
+func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot) (form.Patch, error) {
 	policies := h.angelus.Policies
 	if policies == nil {
 		return form.Patch{}, nil
@@ -33,16 +32,11 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot, cwdSet 
 	}
 	if d := policies.AllowFigaro(sub, figaro, rpc.VerbUse, authz.Sandbox(kind)); !d.Allowed {
 		home, ok := homeSandbox(sub.Principal)
-		if !ok || sandbox.HostPath(home) {
+		if !ok || sandboxName(home) == "local" {
 			return form.Patch{}, fmt.Errorf("sandbox %q: %s", sandboxName(kind), d.Reason())
 		}
 		pin, _ := json.Marshal(home)
 		return form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": pin}, nil), nil
-	}
-	if cwdSet && sandbox.HostPath(kind) {
-		if d := policies.AllowFigaro(sub, figaro, rpc.VerbUse, authz.Sandbox("local")); !d.Allowed {
-			return form.Patch{}, fmt.Errorf("system.cwd under sandbox %q is a path on this host, which needs use on sandbox:local: %s", sandboxName(kind), d.Reason())
-		}
 	}
 	return form.Patch{}, nil
 }
@@ -64,7 +58,7 @@ func sandboxName(kind string) string {
 	return kind
 }
 
-func (h *handlers) grantSandboxOn(ctx context.Context, id string, cwdSet bool) error {
+func (h *handlers) grantSandboxOn(ctx context.Context, id string) error {
 	if h.angelus.Policies == nil {
 		return nil
 	}
@@ -72,7 +66,7 @@ func (h *handlers) grantSandboxOn(ctx context.Context, id string, cwdSet bool) e
 	if err != nil {
 		return err
 	}
-	pin, err := h.grantSandbox(ctx, snap, cwdSet)
+	pin, err := h.grantSandbox(ctx, snap)
 	if err != nil {
 		return err
 	}
@@ -221,7 +215,7 @@ func (h *handlers) checkFormWrite(ctx context.Context, id string, patch form.Pat
 	if !cwd && !held {
 		return nil
 	}
-	pin, err := h.grantSandbox(ctx, snap.Apply(patch), cwd)
+	pin, err := h.grantSandbox(ctx, snap.Apply(patch))
 	if err != nil {
 		return err
 	}
@@ -235,7 +229,7 @@ func (h *handlers) refuseUnheldSandbox(ctx context.Context, patch *form.Patch) e
 	if patch == nil || !patchTouches(*patch, "system.sandbox") {
 		return nil
 	}
-	pin, err := h.grantSandbox(ctx, form.Snapshot{}.Apply(*patch), false)
+	pin, err := h.grantSandbox(ctx, form.Snapshot{}.Apply(*patch))
 	if err != nil {
 		return err
 	}

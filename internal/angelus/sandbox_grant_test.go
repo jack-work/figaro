@@ -26,7 +26,7 @@ grants = [{ verbs = ["*"], on = ["*"] }]
 grants = [{ verbs = ["create", "fork"], on = ["*"] }, { verbs = ["use"], on = ["sandbox:dev-3"] }]
 
 [roles.remote]
-grants = [{ verbs = ["create"], on = ["*"] }, { verbs = ["use"], on = ["sandbox:bwrap"] }]
+grants = [{ verbs = ["create"], on = ["*"] }, { verbs = ["use"], on = ["sandbox:elsewhere"] }]
 
 [[bind]]
 role = "owner"
@@ -76,7 +76,6 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	}
 	for name, body := range map[string]string{
 		"mock":             "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
-		"boxed":            "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"bwrap\"\n",
 		"judged":           "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 		"judged-chat":      "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\nttl = \"24h\"\nkeepalive = \"24h\"\n",
 		"judged-elsewhere": "[system]\nprovider = \"anthropic\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
@@ -177,20 +176,6 @@ func TestTheOwnerCreatesOnLocalAsBefore(t *testing.T) {
 	}
 	if m, _ := r.backend.Meta(resp.FigaroID); m == nil || m.MintedBy != "user:"+strconv.Itoa(os.Getuid()) {
 		t.Fatalf("minted_by %+v", m)
-	}
-}
-
-// A caller allowed bwrap but not local cannot pick a host directory: under
-// bwrap the cwd becomes the read-write bind on this machine.
-func TestACwdOnAHostPathSandboxNeedsUseOnLocal(t *testing.T) {
-	r := newGrantRig(t)
-	before := len(r.backend.ConversationIDs())
-	_, err := r.create(as("user", "remote"), "boxed")
-	if err == nil || !strings.Contains(err.Error(), "sandbox:local") {
-		t.Fatalf("err %v", err)
-	}
-	if after := len(r.backend.ConversationIDs()); after != before {
-		t.Fatalf("a refused birth left %d aria(s) behind", after-before)
 	}
 }
 

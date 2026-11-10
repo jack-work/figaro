@@ -55,10 +55,9 @@ func TestThePprofSocketArmsAndDisarmsWithoutARestart(t *testing.T) {
 	require.Zero(t, runtime.SetMutexProfileFraction(-1), "disarmed but mutex profiling still samples")
 }
 
-// El Inspector X: bwrap binds the daemon's RuntimeDir read-write into every
-// box at the owner's uid, so a pprof socket there answers inside a box, which
-// can then profile the daemon, read its argv, or swap the socket for its own.
-// The socket lives in a 0700 directory outside RuntimeDir.
+// El Inspector X: the pprof socket lives in a 0700 directory of its own,
+// outside RuntimeDir, so whatever is handed the runtime dir cannot profile
+// the daemon, read its argv, or swap the socket for its own.
 func TestThePprofSocketIsOutsideTheRuntimeDirBoxesSee(t *testing.T) {
 	root := t.TempDir()
 	runtimeDir := filepath.Join(root, "run")

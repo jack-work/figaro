@@ -15,7 +15,6 @@ func TestBoxesLoadAndRefuseWhatTheyCannotBe(t *testing.T) {
 		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\ndoor = \"/run/door/judge.sock\"\nprofile = \"build\"\n", true},
 		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n", true},
 		{"[sandbox.boxes.local]\nexec = \"/x\"\n", false},
-		{"[sandbox.boxes.bwrap]\nexec = \"/x\"\n", false},
 		{"[sandbox.boxes.\"a@b\"]\nexec = \"/x\"\n", false},
 		{"[sandbox.boxes.judge]\nexec = \"judge.sock\"\n", false},
 		{"[sandbox.boxes.judge]\nexec = \"/x\"\ndoor = \"door.sock\"\n", false},
@@ -41,6 +40,18 @@ func TestBoxesLoadAndRefuseWhatTheyCannotBe(t *testing.T) {
 				t.Errorf("%q: box %+v", c.body, b)
 			}
 		}
+	}
+}
+
+// A box named bwrap would silently run every form left on the removed bwrap
+// provider, so the name stays reserved.
+func TestABoxNamedBwrapIsRefusedAtLoad(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[sandbox.boxes.bwrap]\nexec = \"/run/box/bwrap.sock\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "sandbox.boxes.bwrap") {
+		t.Fatalf("a box named bwrap loaded: %v", err)
 	}
 }
 

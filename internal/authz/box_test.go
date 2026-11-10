@@ -71,7 +71,7 @@ func TestTheDefaultPolicyHoldsABoxToItsOwnBox(t *testing.T) {
 	if !p.Allow(judge, rpc.VerbUse, Sandbox("judge")).Allowed {
 		t.Error("a box cannot use itself")
 	}
-	for _, s := range []string{"local", "other", "bwrap"} {
+	for _, s := range []string{"local", "other"} {
 		if p.Allow(judge, rpc.VerbUse, Sandbox(s)).Allowed {
 			t.Errorf("box judge may use %s", s)
 		}

@@ -109,7 +109,6 @@ in
         gnugrep
         gnused
         git
-        bubblewrap
       ];
       description = "On PATH for the angelus and therefore for every tool call.";
     };

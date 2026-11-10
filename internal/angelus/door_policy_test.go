@@ -101,13 +101,13 @@ func TestTheDoorDecidesEveryCallOnTheCallersRoles(t *testing.T) {
 	if err := set(guest, mine.FigaroID, "mantra", "mine"); err != nil {
 		t.Fatalf("guest setting its own mantra: %v", err)
 	}
-	if err := set(guest, mine.FigaroID, "system.sandbox", "bwrap"); err == nil {
+	if err := set(guest, mine.FigaroID, "system.sandbox", "elsewhere"); err == nil {
 		t.Fatal("guest moved its aria to a sandbox it holds no use on")
 	}
 	if got := r.sandboxOf(t, mine.FigaroID); got != "" {
 		t.Fatalf("a refused set landed: sandbox %q", got)
 	}
-	if err := set(owner, theirs.FigaroID, "system.sandbox", "bwrap"); err != nil {
+	if err := set(owner, theirs.FigaroID, "system.sandbox", "elsewhere"); err != nil {
 		t.Fatalf("the owner: %v", err)
 	}
 }
