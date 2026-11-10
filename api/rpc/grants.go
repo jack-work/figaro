@@ -5,7 +5,9 @@ type GrantsRequest struct {
 }
 
 // Effective is what figaro enforces and what a provider should read: the
-// raw system.grants key is only this figaro's own narrowing.
+// raw system.grants key is only this figaro's own narrowing. No grant here
+// has a * verb: figaro's verbs are spelled out one by one, and a verb that
+// is not figaro's (egress, cred) appears only where someone wrote it.
 type GrantsResponse struct {
 	FigaroID   string        `json:"figaro_id"`
 	Effective  []string      `json:"effective"`

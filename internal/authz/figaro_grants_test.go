@@ -3,6 +3,7 @@ package authz
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/jkauthz"
@@ -184,5 +185,33 @@ func TestAWriterHoldsWhatItsEffectiveSetCovers(t *testing.T) {
 		if err := p.HoldsGrants("top", gs, "kid"); (err == nil) != ok {
 			t.Errorf("%s: %v", want, err)
 		}
+	}
+}
+
+func TestAStarVerbCoversOnlyFigarosVerbs(t *testing.T) {
+	m := selectors{}
+	star := jkauthz.Grants{{Verb: "*", Object: "*"}}
+	for _, g := range []jkauthz.Grant{{Verb: "egress", Object: "*"}, {Verb: "cred", Object: "github"}, {Verb: "egress", Object: "host:443"}} {
+		if m.covered(star, g) {
+			t.Errorf("*:* covers %s", g)
+		}
+	}
+	if !m.covered(star, jkauthz.Grant{Verb: "kill", Object: "aria:x"}) {
+		t.Error("*:* does not cover a figaro verb")
+	}
+}
+
+func TestExportedSetsSpellEveryStarVerbOut(t *testing.T) {
+	gs, err := DecodeFigaroGrants(json.RawMessage(`["*:aria:x", "read:*", "egress:*"]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ExportGrants(gs)
+	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, egress:*"
+	if strings.Join(got, ", ") != want {
+		t.Fatalf("got  %s\nwant %s", strings.Join(got, ", "), want)
+	}
+	if out := ExportGrants(nil); out == nil || len(out) != 0 {
+		t.Fatalf("an empty set exports %#v, want []", out)
 	}
 }

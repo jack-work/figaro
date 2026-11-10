@@ -472,3 +472,24 @@ func (p *Policies) AllowFigaro(s jkauthz.Subject, figaro string, verb rpc.Verb, 
 	}
 	return p.Figaro(figaro).Allow(s, verb, r)
 }
+
+// ExportGrants spells a set for anyone outside figaro: a * verb means
+// figaro's verbs only, which a reader that treats * as every verb would
+// take for egress and credentials too, so it is written out verb by verb.
+func ExportGrants(gs jkauthz.Grants) []string {
+	out := make(jkauthz.Grants, 0, len(gs))
+	for _, g := range gs {
+		if g.Verb != jkauthz.Any {
+			out = append(out, g)
+			continue
+		}
+		for _, v := range rpc.Verbs() {
+			out = append(out, jkauthz.Grant{Verb: string(v), Object: g.Object})
+		}
+	}
+	strs := canonicalGrants(selectors{}, out).Strings()
+	if strs == nil {
+		return []string{}
+	}
+	return strs
+}

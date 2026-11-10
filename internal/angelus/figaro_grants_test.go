@@ -30,14 +30,14 @@ func TestNoGrantsAnywhereServesEveryFigaroVerbAndNoForeignOne(t *testing.T) {
 	}
 	kid := out.(rpc.ForkResponse).Alternative
 	g := grantsOf(t, r, kid)
-	if strings.Join(g.Effective, ",") != "*:*" {
-		t.Fatalf("effective %v", g.Effective)
+	var every []string
+	for _, v := range rpc.Verbs() {
+		every = append(every, string(v)+":*")
 	}
-	for _, e := range g.Effective {
-		if v, _, _ := strings.Cut(e, ":"); v != "*" && v != "read" {
-			t.Fatalf("a figaro with no grants carries %s", e)
-		}
+	if strings.Join(g.Effective, ",") != strings.Join(every, ",") {
+		t.Fatalf("effective %v, want every figaro verb spelled out", g.Effective)
 	}
+	exportedOnlyFigaroVerbs(t, g)
 	if g.CeilingSet || len(g.Chain) != 2 || g.Chain[0].FigaroID != top.FigaroID || g.Chain[1].Set {
 		t.Fatalf("%+v", g)
 	}
@@ -109,5 +109,47 @@ func TestTheBoxDoorRefusesAnUnclaimedCallWhenConfigured(t *testing.T) {
 	}
 	if err := c.Call(context.Background(), rpc.MethodForm, claimed(t, r.parent, withAria(t, r.child, rpc.FormRequest{})), &out); err != nil {
 		t.Fatalf("a claimed call: %v", err)
+	}
+}
+
+func exportedOnlyFigaroVerbs(t *testing.T, g rpc.GrantsResponse) {
+	t.Helper()
+	sets := map[string][]string{"effective": g.Effective, "ceiling": g.Ceiling}
+	for _, l := range g.Chain {
+		sets["chain "+l.FigaroID] = l.Grants
+	}
+	for name, gs := range sets {
+		for _, e := range gs {
+			v, _, _ := strings.Cut(e, ":")
+			if v == "*" {
+				t.Errorf("%s exports %s: a reader taking * for every verb would open egress and cred", name, e)
+			}
+		}
+	}
+}
+
+func TestAnOwnerWrittenStarReachesOnlyFigaroVerbs(t *testing.T) {
+	r := newRigConfigured(t, defaultPolicy, "")
+	top, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, top.FigaroID, rpc.SetRequest{Patch: grantsPatch(t, []string{"*:*", "*:aria:self", "cred:github"})})); err != nil {
+		t.Fatal(err)
+	}
+	g := grantsOf(t, r, top.FigaroID)
+	exportedOnlyFigaroVerbs(t, g)
+	var want []string
+	for _, v := range rpc.Verbs() {
+		want = append(want, string(v)+":*")
+	}
+	want = append(want, "cred:github")
+	if strings.Join(g.Effective, ",") != strings.Join(want, ",") {
+		t.Fatalf("effective %v, want %v", g.Effective, want)
+	}
+	for _, e := range g.Effective {
+		if strings.HasPrefix(e, "egress:") {
+			t.Fatalf("*:* reached a foreign verb: %s", e)
+		}
 	}
 }
