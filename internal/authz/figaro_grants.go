@@ -319,6 +319,17 @@ func (p *Policies) ceiling() (jkauthz.Grants, bool) {
 	return *c, true
 }
 
+func refuseFences(policy []byte) error {
+	var doc map[string]any
+	if _, err := toml.Decode(string(policy), &doc); err != nil {
+		return err
+	}
+	if _, ok := doc["fence"]; ok {
+		return fmt.Errorf("[[fence]] is gone: a figaro's own system.grants narrows it, and [figaros] grants narrows every top-level one (figaro grants <id> shows the result)")
+	}
+	return nil
+}
+
 func splitCeiling(policy []byte) ([]byte, *jkauthz.Grants, error) {
 	var doc map[string]any
 	md, err := toml.Decode(string(policy), &doc)
@@ -428,4 +439,17 @@ func (p *Policies) Covers(held, want jkauthz.Grants) bool {
 		}
 	}
 	return true
+}
+
+const figaroPrefix = "figaro:"
+
+func (p *Policies) AllowFigaro(s jkauthz.Subject, figaro string, verb rpc.Verb, r Resource) Verdict {
+	v := p.Allow(s, verb, r)
+	if !v.Allowed {
+		return v
+	}
+	if why := p.figaroRefuses(s, figaro, verb, r); why != "" {
+		return Verdict{narrowed: why}
+	}
+	return v
 }
