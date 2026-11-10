@@ -260,12 +260,12 @@ func Enforce(p *Policies) Policy {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
 		figaro, dropped := r.Identity.FigaroID, false
-		if r.Door == DoorBox && !p.pinnedToBox(r.Subject, figaro) {
-			if p.FigaroClaimRequired() && verb != rpc.VerbNone {
+		if (r.Door == DoorBox || r.Door == DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
+			if box, _ := BoxOf(r.Subject.Principal); r.Door == DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
 				if figaro == "" {
-					return Deny("%s: this node's box door takes only calls that name their figaro ([authz] figaro_claim = \"required\")", r.Method)
+					return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
 				}
-				return Deny("%s: figaro %s does not run in this box, and this node's box door takes only calls that name one that does ([authz] figaro_claim = \"required\")", r.Method, figaro)
+				return Deny("%s: figaro %s does not run in box %s, whose door takes only calls that name one that does (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, figaro, box, box)
 			}
 			figaro, dropped = "", figaro != ""
 		}

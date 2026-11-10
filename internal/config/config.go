@@ -741,6 +741,7 @@ func detach(cfg *Config) {
 	cfg.Door.Web = nil
 	for name, b := range cfg.Sandbox.Boxes {
 		b.Door = ""
+		b.HostDoor = ""
 		cfg.Sandbox.Boxes[name] = b
 	}
 }
@@ -858,8 +859,8 @@ func load(configDir string) (*Loaded, error) {
 	if md.IsDefined("authz", "bearer") {
 		return nil, fmt.Errorf("%s: %w", configPath, errRetiredBearer)
 	}
-	if err := cfg.Authz.checkFigaroClaim(); err != nil {
-		return nil, fmt.Errorf("%s: %w", configPath, err)
+	if md.IsDefined("authz", "figaro_claim") {
+		return nil, fmt.Errorf("%s: [authz] figaro_claim is now per box: set figaro_claim = \"required\" under [sandbox.boxes.<name>], which binds that box's in-box door and never its host door", configPath)
 	}
 	if err := cfg.Authz.checkProtectedKeys(); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)

@@ -181,7 +181,7 @@ type Policies struct {
 	parsed parsedGrants
 
 	figaroCeiling atomic.Pointer[jkauthz.Grants]
-	claimRequired atomic.Bool
+	claimRequired atomic.Pointer[[]string]
 }
 
 type troupeLayer struct {

@@ -92,3 +92,43 @@ func TestABoxDoorNeedsBothLists(t *testing.T) {
 		}
 	}
 }
+
+func TestAHostDoorLivesWhereNoBoxCanReach(t *testing.T) {
+	const chat = "[sandbox.boxes.chat]\nexec = \"/run/sb/chat/exec/exec.sock\"\ndoor = \"/run/sb/chat/door/door.sock\"\n"
+	const receipt = "[sandbox.boxes.receipt]\nexec = \"/run/sb/receipt/exec/exec.sock\"\ndoor = \"/run/sb/receipt/door/door.sock\"\n"
+	for _, c := range []struct {
+		name, body string
+		refusal    string
+	}{
+		{"its own directory", chat + "host_door = \"/run/sb/chat/host-door/host.sock\"\nfigaro_claim = \"required\"\n", ""},
+		{"no door", "[sandbox.boxes.chat]\nexec = \"/x\"\nhost_door = \"/run/sb/chat/host-door/host.sock\"\n", "has none"},
+		{"relative", chat + "host_door = \"host.sock\"\n", "absolute"},
+		{"its own door directory", chat + "host_door = \"/run/sb/chat/door/host.sock\"\n", "door directory"},
+		{"below its own door directory", chat + "host_door = \"/run/sb/chat/door/h/host.sock\"\n", "door directory"},
+		{"another box's door directory", chat + "host_door = \"/run/sb/receipt/door/host.sock\"\n" + receipt, "box receipt's door directory"},
+		{"the door itself", chat + "host_door = \"/run/sb/chat/door/door.sock\"\n", "also"},
+		{"another box's host door", chat + "host_door = \"/run/sb/h/host.sock\"\n" + receipt + "host_door = \"/run/sb/h/host.sock\"\n", "also"},
+		{"a claim without a door", "[sandbox.boxes.chat]\nexec = \"/x\"\nfigaro_claim = \"required\"\n", "no door"},
+		{"an unknown claim", chat + "figaro_claim = \"optional\"\n", "want \"required\""},
+		{"the retired node-wide claim", "[authz]\nfigaro_claim = \"required\"\n", "per box"},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(c.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		l, err := Load(dir)
+		switch {
+		case c.refusal == "" && err != nil:
+			t.Errorf("%s: %v", c.name, err)
+		case c.refusal != "" && (err == nil || !strings.Contains(err.Error(), c.refusal)):
+			t.Errorf("%s: %v, want a refusal naming %q", c.name, err, c.refusal)
+		case c.refusal == "":
+			if got := l.HostDoors()["chat"]; got != "/run/sb/chat/host-door/host.sock" {
+				t.Errorf("%s: host door %q", c.name, got)
+			}
+			if got := l.BoxesRequiringClaim(); len(got) != 1 || got[0] != "chat" {
+				t.Errorf("%s: required %v", c.name, got)
+			}
+		}
+	}
+}

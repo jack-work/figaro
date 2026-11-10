@@ -14,13 +14,17 @@ type SandboxConfig struct {
 }
 
 type BoxConfig struct {
-	Exec       string   `toml:"exec"`
-	Door       string   `toml:"door"`
-	Profile    string   `toml:"profile"`
-	Providers  []string `toml:"providers"`
-	Outfits    []string `toml:"outfits"`
-	PurgeGrace string   `toml:"purge_grace"`
+	Exec        string   `toml:"exec"`
+	Door        string   `toml:"door"`
+	Profile     string   `toml:"profile"`
+	Providers   []string `toml:"providers"`
+	Outfits     []string `toml:"outfits"`
+	PurgeGrace  string   `toml:"purge_grace"`
+	HostDoor    string   `toml:"host_door"`
+	FigaroClaim string   `toml:"figaro_claim"`
 }
+
+const FigaroClaimRequired = "required"
 
 func (b BoxConfig) AnyOutfit() bool { return isAnyList(b.Outfits) }
 
@@ -66,6 +70,26 @@ func (l *Loaded) BoxDoors() map[string]string {
 	return out
 }
 
+func (l *Loaded) HostDoors() map[string]string {
+	out := map[string]string{}
+	for name, b := range l.cfg().Sandbox.Boxes {
+		if b.HostDoor != "" {
+			out[name] = filepath.Clean(b.HostDoor)
+		}
+	}
+	return out
+}
+
+func (l *Loaded) BoxesRequiringClaim() []string {
+	var out []string
+	for _, name := range sortedKeys(l.cfg().Sandbox.Boxes) {
+		if l.cfg().Sandbox.Boxes[name].FigaroClaim == FigaroClaimRequired {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func (l *Loaded) DooredBoxes() []string {
 	return sortedKeys(l.BoxDoors())
 }
@@ -102,6 +126,14 @@ func (c Config) validateSandbox() error {
 			return fmt.Errorf("%s.exec: want the absolute path of the socket box serve listens on", where)
 		case b.Door != "" && !filepath.IsAbs(b.Door):
 			return fmt.Errorf("%s.door: want an absolute socket path", where)
+		case b.HostDoor != "" && !filepath.IsAbs(b.HostDoor):
+			return fmt.Errorf("%s.host_door: want an absolute socket path", where)
+		case b.HostDoor != "" && b.Door == "":
+			return fmt.Errorf("%s.host_door: a host door reaches the box's door, and this box has none", where)
+		case b.FigaroClaim != "" && b.FigaroClaim != FigaroClaimRequired:
+			return fmt.Errorf("%s.figaro_claim = %q: want %q, or leave it out", where, b.FigaroClaim, FigaroClaimRequired)
+		case b.FigaroClaim != "" && b.Door == "":
+			return fmt.Errorf("%s.figaro_claim: the box has no door to require it on", where)
 		}
 		for field, list := range map[string][]string{"outfits": b.Outfits, "providers": b.Providers} {
 			if len(list) > 1 && slices.Contains(list, "*") {
@@ -113,15 +145,38 @@ func (c Config) validateSandbox() error {
 				return fmt.Errorf("%s.purge_grace %q: want a duration like \"1h\"", where, b.PurgeGrace)
 			}
 		}
-		if b.Door != "" {
-			door := filepath.Clean(b.Door)
-			if other, ok := doors[door]; ok {
-				return fmt.Errorf("%s.door: %s is also box %s's door", where, door, other)
+		for field, path := range map[string]string{"door": b.Door, "host_door": b.HostDoor} {
+			if path == "" {
+				continue
 			}
-			doors[door] = name
+			path = filepath.Clean(path)
+			if other, ok := doors[path]; ok {
+				return fmt.Errorf("%s.%s: %s is also %s", where, field, path, other)
+			}
+			doors[path] = "sandbox.boxes." + name + "." + field
+		}
+	}
+	for _, name := range sortedKeys(c.Sandbox.Boxes) {
+		host := c.Sandbox.Boxes[name].HostDoor
+		if host == "" {
+			continue
+		}
+		for _, other := range sortedKeys(c.Sandbox.Boxes) {
+			door := c.Sandbox.Boxes[other].Door
+			if door == "" {
+				continue
+			}
+			if within(filepath.Dir(filepath.Clean(door)), filepath.Clean(host)) {
+				return fmt.Errorf("sandbox.boxes.%s.host_door: %s is inside %s, box %s's door directory, which that box can reach; a host door lives where no box does", name, host, filepath.Dir(filepath.Clean(door)), other)
+			}
 		}
 	}
 	return nil
+}
+
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
 func sortedKeys[V any](m map[string]V) []string {
