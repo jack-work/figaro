@@ -535,7 +535,7 @@ func (in *interactiveInput) hop(ctx context.Context, steps int) (string, error) 
 		}
 		return fmt.Sprintf("history: nothing %s (%d/%d)%s", way, h.Pos, h.Total, dropped), nil
 	}
-	id, ep, err := in.resolve(ctx, h.FigaroID)
+	id, ep, err := in.resolveAttendable(ctx, h.FigaroID)
 	if err != nil {
 		return "", fmt.Errorf("history: %s: %w", ariaName(h.FigaroID), err)
 	}
@@ -568,6 +568,14 @@ func (in *interactiveInput) resolve(ctx context.Context, spec string) (string, s
 		return "", sdk.Addr{}, err
 	}
 	return resolveFigaroTargetEndpoint(ctx, in.loaded, acli, spec, false, dressing{})
+}
+
+func (in *interactiveInput) resolveAttendable(ctx context.Context, spec string) (string, sdk.Addr, error) {
+	acli, err := in.angelus()
+	if err != nil {
+		return "", sdk.Addr{}, err
+	}
+	return resolveFigaroOrForm(ctx, in.loaded, acli, spec, false, dressing{})
 }
 
 // angelus dials the daemon lazily, on first use.
