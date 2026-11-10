@@ -113,6 +113,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	a.Settings = loaded
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetBoxes(loaded.DooredBoxes())
+	a.Policies.SetFigaroClaimRequired(loaded.RequiresFigaroClaim())
 	if err := a.Policies.Reload(policy); err != nil {
 		t.Fatal(err)
 	}

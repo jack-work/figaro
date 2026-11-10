@@ -15,6 +15,7 @@ type AuthzConfig struct {
 	Issuers       []IssuerConfig `toml:"issuers"`
 	APIKeys       []APIKeyConfig `toml:"api_keys"`
 	ProtectedKeys string         `toml:"protected_keys"`
+	FigaroClaim   string         `toml:"figaro_claim"`
 }
 
 type APIKeyConfig struct {
@@ -54,6 +55,17 @@ const (
 
 func (c AuthzConfig) ProtectsByLineage() bool { return c.ProtectedKeys != ProtectedOpen }
 
+const FigaroClaimRequired = "required"
+
+func (c AuthzConfig) RequiresFigaroClaim() bool { return c.FigaroClaim == FigaroClaimRequired }
+
+func (c AuthzConfig) checkFigaroClaim() error {
+	if c.FigaroClaim == "" || c.FigaroClaim == FigaroClaimRequired {
+		return nil
+	}
+	return fmt.Errorf("[authz] figaro_claim = %q: want %q, or leave it out", c.FigaroClaim, FigaroClaimRequired)
+}
+
 func (c AuthzConfig) checkProtectedKeys() error {
 	switch c.ProtectedKeys {
 	case "", ProtectedByLineage, ProtectedOpen:
@@ -73,3 +85,5 @@ func (l *Loaded) PolicyPath() string {
 	}
 	return filepath.Join(l.dir(), p)
 }
+
+func (l *Loaded) RequiresFigaroClaim() bool { return l.cfg().Authz.RequiresFigaroClaim() }

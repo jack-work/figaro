@@ -382,6 +382,38 @@ forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed figaro whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 
+**Figaro grants.** `system.grants` narrows what one figaro may do. It is a
+protected key: the owner writes it, or an ancestor figaro through its box
+door, and a figaro writes only grants its own effective set covers. Its value
+is a list of grants in the policy syntax. A figaro's effective set is the
+policy's `[figaros]` ceiling, intersected with `system.grants` of each aria on
+its lineage, top first. An aria that sets none narrows nothing for figaro's
+verbs and holds none of anyone else's: `egress:`, `cred:` and any verb figaro
+does not know reach a figaro only when every aria on its lineage writes them,
+and the ceiling, when set, allows them. A figaro with no grants anywhere holds
+no such verb. In a set, `aria:self` and `lineage:self`
+mean the aria the set is written on. A call that names a figaro this node holds is
+allowed only when both its principal and the figaro's effective set allow
+it; a call naming no figaro, or one held elsewhere, is decided by its
+principal. `figaro grants <id>` shows each level, the ceiling and the
+effective set, and so does `figaro.grants`.
+
+A provider must read the effective set from `figaro.grants`, not the raw key:
+the key holds only that aria's own narrowing. A value that does not parse is
+refused on write, and one stored before holds nothing. A figaro that moves to
+another node writes its effective set into its own key first, so leaving its
+ancestors behind does not widen it.
+
+```toml
+[figaros]
+grants = ["read:*", "send:*", "*:lineage:self", "egress:*"]
+```
+
+The claim is the CLI's stamp (`FIGARO_ARIA`), so on the local door a tool can
+drop it and be judged as the owner. In a box the claim must name a figaro
+running in that box, and `[authz] figaro_claim = "required"` refuses a box
+call that names none.
+
 **Figaro fences are advisory.** A figaro's tools reach the local door as the
 owner, so every grant above sees them as the owner. The aria id the CLI stamps
 from `FIGARO_ARIA` (`x-internal-figaro-id`) is the only thing that tells one

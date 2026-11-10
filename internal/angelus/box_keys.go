@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -429,4 +430,25 @@ func hostCwdOf(ctx context.Context, requested string) string {
 		return ""
 	}
 	return requested
+}
+
+func (h *handlers) carryNarrowing(id string) error {
+	p := h.angelus.Policies
+	if p == nil {
+		return nil
+	}
+	eff, held := p.Effective(id)
+	alone, _ := p.EffectiveAlone(id)
+	if !held || p.Covers(eff, alone) {
+		return nil
+	}
+	raw, err := json.Marshal(eff.Strings())
+	if err != nil {
+		return err
+	}
+	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: raw}, nil)); err != nil {
+		return fmt.Errorf("writing the grants its ancestors narrowed it to: %w", err)
+	}
+	slog.Info("grants: a figaro leaving its ancestors carries their narrowing", "id", id, "grants", eff.String())
+	return nil
 }

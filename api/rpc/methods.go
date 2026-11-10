@@ -44,6 +44,9 @@ const (
 	// MethodLineage returns the tree shape and the turn at which two paths
 	// differ, no conversation.
 	MethodLineage = "figaro.lineage"
+	// MethodGrants returns what a figaro may do: its own grants, each
+	// ancestor's, the policy ceiling and the effective set.
+	MethodGrants = "figaro.grants"
 )
 
 // MethodNeedsAgent is the routing predicate: a new read must opt in to being

@@ -44,6 +44,7 @@ var methodVerbs = map[string]Verb{
 	MethodForm:    VerbRead,
 	MethodIR:      VerbRead,
 	MethodLineage: VerbRead,
+	MethodGrants:  VerbRead,
 	MethodList:    VerbRead,
 	MethodAttach:  VerbRead,
 	MethodOutfits: VerbRead,

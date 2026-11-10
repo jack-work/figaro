@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
@@ -125,5 +126,32 @@ func (h *handlers) lineage(ctx context.Context, params json.RawMessage) (interfa
 	}
 	out.Against = against
 	out.Ancestor, out.Divergence = divergence(chain, against)
+	return out, nil
+}
+
+func (h *handlers) grants(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.GrantsRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodGrants, err)
+	}
+	if err := rpc.ValidateAriaID(req.FigaroID); err != nil {
+		return nil, err
+	}
+	p := h.angelus.Policies
+	if p == nil {
+		return nil, fmt.Errorf("%s: this daemon enforces no policy, so no figaro is narrowed", rpc.MethodGrants)
+	}
+	g, ok := p.ExplainGrants(req.FigaroID)
+	if !ok {
+		return nil, authz.NotFound(rpc.MethodGrants, req.FigaroID)
+	}
+	out := rpc.GrantsResponse{FigaroID: req.FigaroID, Effective: g.Effective.Strings(), CeilingSet: g.CeilingSet, Ceiling: g.Ceiling.Strings()}
+	if out.Effective == nil {
+		out.Effective = []string{}
+	}
+	for _, id := range g.Chain {
+		own, set := g.Own[id]
+		out.Chain = append(out.Chain, rpc.GrantsLevel{FigaroID: id, Grants: own.Strings(), Set: set, Unreadable: slices.Contains(g.Unread, id)})
+	}
 	return out, nil
 }

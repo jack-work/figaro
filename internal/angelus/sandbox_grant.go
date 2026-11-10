@@ -102,6 +102,7 @@ func (h *handlers) reloadPolicy() error {
 	}
 	loaded, _ := h.settings()
 	p.SetBoxes(loaded.DooredBoxes())
+	p.SetFigaroClaimRequired(loaded.RequiresFigaroClaim())
 	if err := p.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: policy reload failed; the previous policy stays in force", "err", err)
 		return err

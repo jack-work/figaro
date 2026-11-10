@@ -70,7 +70,7 @@ func TestAFenceLetsOnlyTheFigarosItNames(t *testing.T) {
 		if d.Allowed != c.want {
 			t.Errorf("%s: allowed=%v (%s), want %v", c.name, d.Allowed, d.Reason(), c.want)
 		}
-		if !d.Allowed && (!d.Fenced() || !strings.Contains(d.Reason(), "figaro:"+c.figaro)) {
+		if !d.Allowed && (!d.Narrowed() || !strings.Contains(d.Reason(), "figaro:"+c.figaro)) {
 			t.Errorf("%s: refusal does not name the figaro or the fence: %q", c.name, d.Reason())
 		}
 	}
@@ -187,7 +187,7 @@ func TestTheGuardRefusesAFencedFigaroAndLogsOneLine(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("a fenced read: %v, want the aria hidden", err)
 	}
-	if n := strings.Count(logs.String(), "authz: fence refused"); n != 1 {
+	if n := strings.Count(logs.String(), "authz: figaro refused"); n != 1 {
 		t.Fatalf("a refusal logged %d lines:\n%s", n, logs.String())
 	}
 	if !strings.Contains(logs.String(), "figaro="+figZ) {

@@ -1,11 +1,16 @@
 package authz
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/jkauthz"
@@ -212,10 +217,12 @@ func (c *parsedGrants) get(raw json.RawMessage) (jkauthz.Grants, error) {
 }
 
 type FigaroGrants struct {
-	Ceiling   jkauthz.Grants
-	Own       map[string]jkauthz.Grants
-	Effective jkauthz.Grants
-	Unread    []string
+	Chain      []string
+	Ceiling    jkauthz.Grants
+	CeilingSet bool
+	Own        map[string]jkauthz.Grants
+	Effective  jkauthz.Grants
+	Unread     []string
 }
 
 func (p *Policies) figaroFacts() (FigaroFacts, selectors, bool) {
@@ -225,7 +232,7 @@ func (p *Policies) figaroFacts() (FigaroFacts, selectors, bool) {
 }
 
 func (p *Policies) Effective(figaro string) (jkauthz.Grants, bool) {
-	ff, m, ok := p.figaroFacts()
+	ff, _, ok := p.figaroFacts()
 	if !ok || figaro == "" {
 		return nil, false
 	}
@@ -233,6 +240,22 @@ func (p *Policies) Effective(figaro string) (jkauthz.Grants, bool) {
 	if !held || len(chain) == 0 {
 		return nil, false
 	}
+	return p.effectiveDown(chain), true
+}
+
+func (p *Policies) EffectiveAlone(figaro string) (jkauthz.Grants, bool) {
+	ff, _, ok := p.figaroFacts()
+	if !ok || figaro == "" {
+		return nil, false
+	}
+	if _, held := ff.Ancestry(figaro); !held {
+		return nil, false
+	}
+	return p.effectiveDown([]string{figaro}), true
+}
+
+func (p *Policies) effectiveDown(chain []string) jkauthz.Grants {
+	ff, m, _ := p.figaroFacts()
 	var eff jkauthz.Grants
 	for i, id := range chain {
 		raw, present, err := ff.OwnGrants(id)
@@ -241,7 +264,7 @@ func (p *Policies) Effective(figaro string) (jkauthz.Grants, bool) {
 			own, err = p.parsed.get(raw)
 		}
 		if err != nil {
-			return nil, true
+			return nil
 		}
 		own = resolveSelf(own, id)
 		switch {
@@ -258,7 +281,7 @@ func (p *Policies) Effective(figaro string) (jkauthz.Grants, bool) {
 			}
 		}
 	}
-	return eff, true
+	return eff
 }
 
 func (p *Policies) ExplainGrants(figaro string) (FigaroGrants, bool) {
@@ -270,8 +293,8 @@ func (p *Policies) ExplainGrants(figaro string) (FigaroGrants, bool) {
 	if !held || len(chain) == 0 {
 		return FigaroGrants{}, false
 	}
-	ceiling, _ := p.ceiling()
-	out := FigaroGrants{Ceiling: ceiling, Own: map[string]jkauthz.Grants{}}
+	ceiling, set := p.ceiling()
+	out := FigaroGrants{Chain: chain, Ceiling: ceiling, CeilingSet: set, Own: map[string]jkauthz.Grants{}}
 	for _, id := range chain {
 		raw, present, err := ff.OwnGrants(id)
 		if err == nil && present {
@@ -289,7 +312,98 @@ func (p *Policies) ExplainGrants(figaro string) (FigaroGrants, bool) {
 }
 
 func (p *Policies) ceiling() (jkauthz.Grants, bool) {
-	return nil, false
+	c := p.figaroCeiling.Load()
+	if c == nil {
+		return nil, false
+	}
+	return *c, true
+}
+
+func splitCeiling(policy []byte) ([]byte, *jkauthz.Grants, error) {
+	var doc map[string]any
+	md, err := toml.Decode(string(policy), &doc)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !md.IsDefined("figaros") {
+		return policy, nil, nil
+	}
+	var typed struct {
+		Figaros struct {
+			Grants []string `toml:"grants"`
+		} `toml:"figaros"`
+	}
+	md, err = toml.Decode(string(policy), &typed)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, k := range md.Undecoded() {
+		if len(k) > 0 && k[0] == "figaros" {
+			return nil, nil, fmt.Errorf("unknown key %s: [figaros] holds only grants", k)
+		}
+	}
+	if typed.Figaros.Grants == nil {
+		return nil, nil, fmt.Errorf("[figaros] needs grants: the most any figaro may do here; [] is nothing")
+	}
+	ceiling, err := ParseFigaroGrants(typed.Figaros.Grants)
+	if err != nil {
+		return nil, nil, fmt.Errorf("[figaros]: %w", err)
+	}
+	grants := cutTable(policy, ceilingHeader)
+	var rest map[string]any
+	delete(doc, "figaros")
+	if _, err := toml.Decode(string(grants), &rest); err != nil || !reflect.DeepEqual(doc, rest) {
+		return nil, nil, fmt.Errorf("the [figaros] table could not be set apart from the grants: write it as a [figaros] table of its own")
+	}
+	return grants, &ceiling, nil
+}
+
+var (
+	ceilingHeader  = regexp.MustCompile(`^\s*\[\s*figaros\s*\]\s*(#.*)?$`)
+	anyTableHeader = regexp.MustCompile(`^\s*\[`)
+)
+
+func cutTable(data []byte, header *regexp.Regexp) []byte {
+	out := make([]byte, 0, len(data))
+	cutting := false
+	for _, line := range bytes.SplitAfter(data, []byte("\n")) {
+		bare := bytes.TrimRight(line, "\r\n")
+		switch {
+		case header.Match(bare):
+			cutting = true
+			continue
+		case cutting && anyTableHeader.Match(bare):
+			cutting = false
+		}
+		if !cutting {
+			out = append(out, line...)
+		}
+	}
+	return out
+}
+
+func (p *Policies) SetFigaroClaimRequired(on bool) { p.claimRequired.Store(on) }
+
+func (p *Policies) FigaroClaimRequired() bool { return p.claimRequired.Load() }
+
+func (p *Policies) figaroRefuses(s jkauthz.Subject, figaro string, verb rpc.Verb, r Resource) string {
+	if figaro == "" {
+		return ""
+	}
+	eff, held := p.Effective(figaro)
+	if !held {
+		return ""
+	}
+	m, _ := p.schema.Selectors.(selectors)
+	for _, g := range eff {
+		if verbCovers(g.Verb, string(verb)) && (g.Object == jkauthz.Any || m.Match(g.Object, s, r)) {
+			return ""
+		}
+	}
+	if len(eff) == 0 {
+		return fmt.Sprintf("%s%s may not %s on %s: it holds no grants", figaroPrefix, figaro, verb, r)
+	}
+	return fmt.Sprintf("%s%s may not %s on %s: its grants (%s) do not reach it", figaroPrefix, figaro, verb, r, eff)
 }
 
 func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string) error {
@@ -304,4 +418,14 @@ func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string
 		}
 	}
 	return nil
+}
+
+func (p *Policies) Covers(held, want jkauthz.Grants) bool {
+	m, _ := p.schema.Selectors.(selectors)
+	for _, g := range want {
+		if !m.covered(held, g) {
+			return false
+		}
+	}
+	return true
 }

@@ -180,6 +180,9 @@ type Policies struct {
 	schema jkauthz.Schema[Resource]
 	boxes  []string
 	parsed parsedGrants
+
+	figaroCeiling atomic.Pointer[jkauthz.Grants]
+	claimRequired atomic.Bool
 }
 
 type troupeLayer struct {
@@ -234,9 +237,14 @@ func (p *Policies) load(data []byte) error {
 	if err != nil {
 		return err
 	}
+	grants, ceiling, err := splitCeiling(grants)
+	if err != nil {
+		return err
+	}
 	if err := p.store.LoadBytes(grants); err != nil {
 		return err
 	}
+	p.figaroCeiling.Store(ceiling)
 	if len(fences) == 0 {
 		p.fences.Store(nil)
 	} else {
@@ -353,14 +361,14 @@ func (p *Policies) Path() string {
 type Verdict struct {
 	jkauthz.Decision
 	undelegated string
-	fence       string
+	narrowed    string
 }
 
-func (v Verdict) Fenced() bool { return v.fence != "" }
+func (v Verdict) Narrowed() bool { return v.narrowed != "" }
 
 func (v Verdict) Reason() string {
-	if v.fence != "" {
-		return v.fence
+	if v.narrowed != "" {
+		return v.narrowed
 	}
 	if v.undelegated != "" {
 		return fmt.Sprintf("%s; troupe %s grants it, but this node does not delegate it to the troupe", v.Decision.Reason(), v.undelegated)

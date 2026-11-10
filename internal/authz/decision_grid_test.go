@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,11 +105,42 @@ func gridSubject(t *testing.T, text string) jkauthz.Subject {
 	return s
 }
 
+func gridPolicies(t *testing.T, dir string, c gridCombo, f Facts) *Policies {
+	t.Helper()
+	self, err := jkauthz.ParsePrincipal(c.self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewPolicies(self, f)
+	p.SetBoxes(c.boxes)
+	local := c.local
+	if local != "" && !filepath.IsAbs(local) {
+		local = filepath.Join(dir, local)
+	}
+	if err := p.Reload(local); err != nil {
+		t.Fatalf("%s: %v", c.name, err)
+	}
+	if c.troupe != "" {
+		body, err := os.ReadFile(filepath.Join(dir, c.troupe))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.SetTroupe("kelliher", body); err != nil {
+			t.Fatalf("%s: troupe %s: %v", c.name, c.troupe, err)
+		}
+	}
+	return p
+}
+
 func gridDecision(p *Policies, s jkauthz.Subject, verb rpc.Verb, r Resource) byte {
-	if p.AllowFigaro(s, "", verb, r).Allowed {
+	return gridClaimDecision(p, s, "", verb, r)
+}
+
+func gridClaimDecision(p *Policies, s jkauthz.Subject, figaro string, verb rpc.Verb, r Resource) byte {
+	if p.AllowFigaro(s, figaro, verb, r).Allowed {
 		return 'A'
 	}
-	if r.Kind == ResourceAria && (verb == rpc.VerbRead || !p.AllowFigaro(s, "", rpc.VerbRead, r).Allowed) {
+	if r.Kind == ResourceAria && (verb == rpc.VerbRead || !p.AllowFigaro(s, figaro, rpc.VerbRead, r).Allowed) {
 		return 'H'
 	}
 	return 'D'
@@ -118,28 +150,7 @@ func gridRows(t *testing.T, dir string) []string {
 	t.Helper()
 	var rows []string
 	for _, c := range gridCombos {
-		self, err := jkauthz.ParsePrincipal(c.self)
-		if err != nil {
-			t.Fatal(err)
-		}
-		p := NewPolicies(self, gridFacts())
-		p.SetBoxes(c.boxes)
-		local := ""
-		if c.local != "" {
-			local = filepath.Join(dir, c.local)
-		}
-		if err := p.Reload(local); err != nil {
-			t.Fatalf("%s: %v", c.name, err)
-		}
-		if c.troupe != "" {
-			body, err := os.ReadFile(filepath.Join(dir, c.troupe))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := p.SetTroupe("kelliher", body); err != nil {
-				t.Fatalf("%s: troupe %s: %v", c.name, c.troupe, err)
-			}
-		}
+		p := gridPolicies(t, dir, c, gridFacts())
 		for _, text := range gridSubjects {
 			s := gridSubject(t, text)
 			rows = append(rows, fmt.Sprintf("hold %s %s %v", c.name, text, p.HoldsRole(s)))
@@ -162,6 +173,66 @@ func gridRows(t *testing.T, dir string) []string {
 			verdict = "refused"
 		}
 		rows = append(rows, fmt.Sprintf("lint %s %s", name, verdict))
+	}
+	return append(rows, gridClaimRows(t, dir)...)
+}
+
+// Claim rows are new with figaro grants: what a call naming a figaro may do,
+// the caller's grants intersected with the figaro's. They were written by
+// the code that introduced them; the rows above them are the old answers.
+type gridFigaroFacts struct {
+	fakeFacts
+	chains map[string][]string
+	own    map[string]string
+}
+
+func (f gridFigaroFacts) Ancestry(id string) ([]string, bool) {
+	c, ok := f.chains[id]
+	return c, ok
+}
+
+func (f gridFigaroFacts) OwnGrants(id string) (json.RawMessage, bool, error) {
+	raw, ok := f.own[id]
+	return json.RawMessage(raw), ok, nil
+}
+
+var gridClaimed = []string{"a-box0", "a-child", "a-grandchild", "a-2001", "a-guest"}
+
+func gridClaimRows(t *testing.T, dir string) []string {
+	f := gridFigaroFacts{
+		fakeFacts: gridFacts(),
+		chains: map[string][]string{
+			"a-box0": {"a-box0"}, "a-child": {"a-box0", "a-child"}, "a-grandchild": {"a-box0", "a-child", "a-grandchild"},
+			"a-2001": {"a-2001"}, "a-guest": {"a-guest"},
+		},
+		own: map[string]string{
+			"a-box0":       `["read:*", "listen:*", "send:lineage:self", "kill:aria:self", "use:sandbox:self", "egress:*"]`,
+			"a-grandchild": `["*:*", "create:*"]`,
+			"a-guest":      `[]`,
+		},
+	}
+	combos := []gridCombo{
+		{name: "spain", self: "user:2001", local: "../spain-policy.toml", troupe: "kelliher-v1.toml"},
+		{name: "spain-ceiling", self: "user:2001", local: "spain-ceiling.toml"},
+		{name: "gluck-default-boxes", self: "user:1000", boxes: []string{"box0"}},
+		{name: "selectors", self: "user:1000", local: "selectors.toml", troupe: "troupe-wide.toml"},
+	}
+	subjects := []string{"user:2001", "user:1000", "user:admin@auth.kelliher.info", "user:bob@auth.kelliher.info", "sandbox:box0@local:box"}
+	var rows []string
+	for _, c := range combos {
+		p := gridPolicies(t, dir, c, f)
+		for _, text := range subjects {
+			s := gridSubject(t, text)
+			for _, figaro := range gridClaimed {
+				for _, r := range gridResources() {
+					var line []byte
+					for _, v := range rpc.Verbs() {
+						line = append(line, gridClaimDecision(p, s, figaro, v, r))
+					}
+					rows = append(rows, fmt.Sprintf("claim %s %s %s %s %s", c.name, text, figaro, strings.ReplaceAll(r.String(), " ", "-"), line))
+				}
+			}
+		}
 	}
 	return rows
 }
@@ -196,5 +267,77 @@ func TestEveryDecisionMatchesTheGridRecordedBeforeGrantsWereStrings(t *testing.T
 	}
 	if diffs > 0 {
 		t.Fatalf("%d of %d rows differ", diffs, len(want))
+	}
+}
+
+// A [figaros] table is cut out of the policy text before jkauthz reads the
+// grants, so a ceiling of *:* placed anywhere must leave every unclaimed
+// decision of every shipped policy as it was.
+func TestACeilingOfEverythingChangesNoDecision(t *testing.T) {
+	dir := filepath.Join("testdata", "grid")
+	ceiling := "[figaros]\ngrants = [\"*:*\"]\n"
+	placements := map[string]func(string) string{
+		"appended":           func(p string) string { return p + "\n" + ceiling },
+		"first, commented":   func(p string) string { return "# ceiling\n[figaros] # all\ngrants = [\n  \"*:*\",\n]\n\n" + p },
+		"before every table": func(p string) string { return strings.Replace(p, "\n[", "\n"+ceiling+"\n[", 1) },
+	}
+	for _, c := range gridCombos {
+		text := DefaultPolicy(jkauthz.Principal{Kind: jkauthz.KindUser, ID: strings.TrimPrefix(c.self, "user:")}, c.boxes)
+		if c.local != "" {
+			raw, err := os.ReadFile(filepath.Join(dir, c.local))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text = string(raw)
+		}
+		want := comboRows(t, dir, c, "")
+		for name, place := range placements {
+			got := comboRows(t, dir, c, place(text))
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Errorf("%s, ceiling %s: decisions moved", c.name, name)
+			}
+		}
+	}
+}
+
+func comboRows(t *testing.T, dir string, c gridCombo, policy string) []string {
+	t.Helper()
+	if policy != "" {
+		path := filepath.Join(t.TempDir(), "policy.toml")
+		if err := os.WriteFile(path, []byte(policy), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c.local, c.boxes = path, nil
+	}
+	p := gridPolicies(t, dir, c, gridFacts())
+	if policy != "" {
+		if _, set := p.ceiling(); !set {
+			t.Fatalf("%s: the ceiling did not load", c.name)
+		}
+	}
+	var rows []string
+	for _, text := range gridSubjects {
+		s := gridSubject(t, text)
+		rows = append(rows, fmt.Sprintf("hold %v", p.HoldsRole(s)))
+		for _, r := range gridResources() {
+			var line []byte
+			for _, v := range rpc.Verbs() {
+				line = append(line, gridDecision(p, s, v, r))
+			}
+			rows = append(rows, string(line))
+		}
+	}
+	return rows
+}
+
+func TestACeilingTheCutCannotSetApartRefusesThePolicy(t *testing.T) {
+	for name, src := range map[string]string{
+		"inline":        "figaros = { grants = [\"*:*\"] }\n" + sandboxPolicy,
+		"quoted header": sandboxPolicy + "\n[\"figaros\"]\ngrants = [\"*:*\"]\n",
+	} {
+		p := NewPolicies(me, facts())
+		if err := p.load([]byte(src)); err == nil || !strings.Contains(err.Error(), "table of its own") {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
