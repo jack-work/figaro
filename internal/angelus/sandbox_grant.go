@@ -256,10 +256,10 @@ func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) 
 		}
 		return nil
 	}
-	figaro := authz.FigaroOf(ctx)
+	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
 	out := rows[:0]
 	for _, r := range rows {
-		if h.angelus.Policies.AllowFigaro(sub, figaro, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
+		if view.Allow(sub, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
 			out = append(out, r)
 		}
 	}

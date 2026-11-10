@@ -340,10 +340,10 @@ func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
 		}
 		return nil
 	}
-	figaro := authz.FigaroOf(ctx)
+	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
 	var out []string
 	for _, id := range h.angelus.Backend.MatchID(prefix, -1) {
-		if h.angelus.Policies.AllowFigaro(sub, figaro, rpc.VerbRead, authz.Aria(id)).Allowed {
+		if view.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed {
 			out = append(out, id)
 			if len(out) > ambiguityList {
 				break
