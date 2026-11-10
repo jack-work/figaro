@@ -225,10 +225,10 @@ func succeededMantra(m string) string {
 func abdicationPatch(plan succeedPlan, mantra string, createdAt int64, now time.Time) rpc.FormPatch {
 	patch := form.Build(form.Snapshot{}, nil, nil)
 	if plan.abdication == abdicateRetire {
-		patch = retirePatch(dressing{}, false, now)
+		patch = retirePatch(dressing{}, false)
 	}
 	raw, _ := json.Marshal(succeededMantra(mantra))
-	ttl, _ := json.Marshal(ttlFromNow(createdAt, plan.ttl, now))
+	ttl, _ := json.Marshal(store.TTLFromRetirement(createdAt, plan.ttl, now))
 	return form.Merge(patch, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra":           raw,
 		store.SystemTTLKey: ttl,

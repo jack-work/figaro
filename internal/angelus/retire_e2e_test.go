@@ -115,6 +115,7 @@ func TestTheListingMarksARetiredAria(t *testing.T) {
 		require.NoError(t, err)
 		for _, f := range resp.Figaros {
 			if f.ID == id {
+				require.Equal(t, store.RetiredManual, f.RetiredReason, "a hand-set retirement is manual")
 				return f.RetiredAt
 			}
 		}

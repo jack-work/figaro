@@ -50,6 +50,7 @@ type AriaMeta struct {
 	TTLMS         int64  `json:"ttl_ms,omitempty"`
 	KeepaliveMS   *int64 `json:"keepalive_ms,omitempty"`
 	RetiredAtMS   int64  `json:"retired_at_ms,omitempty"`
+	RetiredReason string `json:"retired_reason,omitempty"`
 	LastAccessMS  int64  `json:"last_access_ms,omitempty"`
 	ReapedAtMS    int64  `json:"reaped_at_ms,omitempty"`
 	ReapedRoot    string `json:"reaped_root,omitempty"`
@@ -66,6 +67,7 @@ type Lifetime struct {
 	TTLMS         int64
 	KeepaliveMS   *int64
 	RetiredAtMS   int64
+	RetiredReason string
 	LastAccessMS  int64
 	ReapedAtMS    int64
 	ReapedRoot    string
@@ -75,7 +77,7 @@ type Lifetime struct {
 }
 
 func (m *AriaMeta) Lifetime() Lifetime {
-	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS,
+	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS, RetiredReason: m.RetiredReason,
 		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot,
 		ReapedUntilMS: m.ReapedUntilMS, ReapedBy: m.ReapedBy, ReapIfEmpty: m.ReapIfEmpty}
 }
@@ -83,7 +85,7 @@ func (m *AriaMeta) Lifetime() Lifetime {
 func (m *AriaMeta) SetLifetime(l Lifetime) {
 	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
 	m.ReapedAtMS, m.ReapedRoot, m.ReapedUntilMS, m.ReapedBy = l.ReapedAtMS, l.ReapedRoot, l.ReapedUntilMS, l.ReapedBy
-	m.ReapIfEmpty = l.ReapIfEmpty
+	m.ReapIfEmpty, m.RetiredReason = l.ReapIfEmpty, l.RetiredReason
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.

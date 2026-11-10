@@ -66,21 +66,20 @@ func TestWithLifeNoteKeepsTheNoteWhole(t *testing.T) {
 	}
 }
 
-func TestRetirePatchStampsAndUndoes(t *testing.T) {
-	now := time.Date(2026, 10, 21, 6, 0, 0, 0, time.UTC)
+func TestRetirePatchNamesManualAndUndoes(t *testing.T) {
 	d, err := parseDress("", "system.ttl=1h,mantra=epitaph", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := retirePatch(d, false, now)
+	p := retirePatch(d, false)
 	e, ok := p.Entry(store.SystemRetiredKey)
-	if !ok || string(e.New) != `"2026-10-21T06:00:00Z"` {
-		t.Fatalf("retired entry %+v, want the stamp", e)
+	if !ok || string(e.New) != `"manual"` {
+		t.Fatalf("retired entry %+v, want the manual reason", e)
 	}
 	if _, ok := p.Entry("system.ttl"); !ok {
 		t.Fatal("-S keys must ride the same write as the retirement")
 	}
-	undo := retirePatch(d, true, now)
+	undo := retirePatch(d, true)
 	for _, e := range undo.Entries() {
 		if e.Key == store.SystemRetiredKey && !e.IsRemoval() {
 			t.Fatal("--undo set the key instead of removing it")
@@ -91,7 +90,7 @@ func TestRetirePatchStampsAndUndoes(t *testing.T) {
 func TestTTLFromNowCountsTheAge(t *testing.T) {
 	now := time.Now()
 	created := now.Add(-72 * time.Hour).UnixMilli()
-	got, err := store.ParseTTL(ttlFromNow(created, time.Hour, now))
+	got, err := store.ParseTTL(store.TTLFromRetirement(created, time.Hour, now))
 	if err != nil {
 		t.Fatal(err)
 	}

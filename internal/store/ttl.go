@@ -148,7 +148,7 @@ type lifetimeChange struct {
 	ttl          *time.Duration
 	keepalive    *time.Duration
 	keepaliveSet bool
-	retired      *bool
+	retired      *string
 	reapIfEmpty  *bool
 	reapedRoot   *string
 	reapedUntil  *int64
@@ -187,8 +187,8 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		}
 	}
 	if raw, spoke := valueOf(SystemRetiredKey); spoke {
-		on := retiredValue(raw)
-		c.retired = &on
+		reason := RetiredReason(raw)
+		c.retired = &reason
 	}
 	if raw, spoke := valueOf(SystemReapIfEmptyKey); spoke {
 		on := retiredValue(raw)
@@ -234,10 +234,12 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 	}
 	if c.retired != nil {
 		switch {
-		case *c.retired && m.RetiredAtMS == 0:
-			m.RetiredAtMS = now
-		case !*c.retired:
-			m.RetiredAtMS = 0
+		case *c.retired == "":
+			m.RetiredAtMS, m.RetiredReason = 0, ""
+		case m.RetiredAtMS == 0:
+			m.RetiredAtMS, m.RetiredReason = now, *c.retired
+		default:
+			m.RetiredReason = *c.retired
 		}
 	}
 	if c.reapIfEmpty != nil {
@@ -264,7 +266,7 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 
 func sameLifetime(a, b *AriaMeta) bool {
 	ka, kb := a.KeepaliveMS, b.KeepaliveMS
-	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.ReapIfEmpty == b.ReapIfEmpty &&
+	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.RetiredReason == b.RetiredReason && a.ReapIfEmpty == b.ReapIfEmpty &&
 		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS && a.ReapedBy == b.ReapedBy &&
 		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb)
 }
@@ -321,7 +323,7 @@ func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
 		}
 	}
 	if c.retired != nil {
-		slog.Info("node retirement changed", "node", id, "retired", *c.retired)
+		slog.Info("node retirement changed", "node", id, "retired", *c.retired != "", "reason", *c.retired)
 	}
 	if c.reapedRoot != nil {
 		slog.Info("node reaped state changed", "node", id, "root", *c.reapedRoot)

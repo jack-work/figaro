@@ -12,15 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func ttlFromNow(createdAtMS int64, d time.Duration, now time.Time) string {
-	var age time.Duration
-	if createdAtMS > 0 && now.UnixMilli() > createdAtMS {
-		age = now.Sub(time.UnixMilli(createdAtMS))
-	}
-	return (age + d).Round(time.Second).String()
-}
-
-func retirePatch(d dressing, undo bool, now time.Time) rpc.FormPatch {
+func retirePatch(d dressing, undo bool) rpc.FormPatch {
 	keys := map[string]json.RawMessage{}
 	var drops []string
 	if d.patch != nil {
@@ -36,8 +28,7 @@ func retirePatch(d dressing, undo bool, now time.Time) rpc.FormPatch {
 		delete(keys, store.SystemRetiredKey)
 		drops = append(drops, store.SystemRetiredKey)
 	} else {
-		stamp, _ := json.Marshal(now.UTC().Format(time.RFC3339))
-		keys[store.SystemRetiredKey] = stamp
+		keys[store.SystemRetiredKey], _ = json.Marshal(store.RetiredManual)
 	}
 	return form.Build(form.Snapshot{}, keys, drops)
 }
@@ -66,13 +57,13 @@ func runRetire(loaded *config.Loaded, idFlag string, args []string, outfits, set
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		now := time.Now()
-		patch := retirePatch(d, undo, now)
+		patch := retirePatch(d, undo)
 		if grace > 0 {
 			created, err := createdAt(ctx, s, s.AriaID)
 			if err != nil {
 				die("retire: %s", err)
 			}
-			raw, _ := json.Marshal(ttlFromNow(created, grace, now))
+			raw, _ := json.Marshal(store.TTLFromRetirement(created, grace, now))
 			patch = form.Merge(patch, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: raw}, nil))
 		}
 		r, err := s.Figaro.SetDressed(ctx, d.names, patch, 0)
