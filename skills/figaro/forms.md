@@ -46,7 +46,7 @@ uninvited:
 |---|---|---|
 | **bound form** | your own form | one `<system-reminder name="<key>">` per key, every turn |
 | **unbound form** `@x` | free-standing state, no figaro | not at all, unless you study it |
-| **studied form** | an unbound form you observe | a `study` block when you begin, a `study:@x` block on each change |
+| **studied form** | an unbound form, or another figaro's bound form, you observe | a `study` block when you begin, a `study:@x` (or `study:<id>`) block on each change |
 | **role** | a form carrying `target-aria` | an ordinary form: visible only if you study it. `fig cast` studies it for you |
 
 Every kind of form, these and the rest, is defined once in the
@@ -63,11 +63,15 @@ whole changed value, so keep studied values small if context matters.
 
 - `fig study @x` / `fig drop @x`, the subscription itself. It lives on your
   bound form as `system.studies`, which is system-managed: only the verbs write it.
+- `fig study <me> <figaro> --keys comments` studies another figaro's bound
+  form by its bare id, mirroring only keys at or under the listed prefixes
+  (`system.study_keys.<id>` on your bound form). It needs read on that figaro,
+  as `state show --id` does; a figaro cannot study itself, and `cast` still
+  takes unbound forms only. To change the keys, drop and study again.
 - `system.study_incantation` on **your own bound form**: `{onstudy, onupdate,
   ondrop}`, a sentence added to each event so a figaro is told what the change
   MEANS to it, not just what changed.
-- Nothing else. There is no per-key filter today: a studied form is mirrored
-  whole.
+- Without `--keys` every key but `system.*` is mirrored.
 
 **Recommended**: put a short primer in your **base outfit**, every key an
 outfit sets becomes a reminder of that name, so every figaro you ever mint

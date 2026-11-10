@@ -6,7 +6,8 @@ channel. A figaro's form has always been exactly this: the only
 news is that the primitive now stands alone. One id namespace covers
 both: an id with the `@` sigil (`@a1b2c3`) is an unbound form; a bare
 hex id is a figaro, which IS its bound form. Nothing ever converts
-between the two: **binding forks**, and the form goes on living.
+between the two: **binding forks**, and the form goes on living. Where a
+verb takes either (`study`, `drop`), the spelling says which.
 
 ```
 null form ──mint──▶ unbound forms ──fork+aria_id──▶ figaros
@@ -21,7 +22,7 @@ sense.
 
 | term | one line |
 |---|---|
-| **bound form** | A figaro's own form, addressed by the bare figaro id; its keys reach the agent every turn. |
+| **bound form** | A figaro's own form, addressed by the bare figaro id; its keys reach the agent every turn, and another figaro may study it. |
 | **unbound form** | A form with no figaro, addressed by an `@` id: patchable, forkable, bindable, studiable. |
 | **role** | An unbound form carrying `target-aria`; turn-shaped verbs reach whichever figaro it names at the moment of the call. |
 | **default form** | The template `fig new` forks for every new figaro, minted from the default outfit and named in `default_form.json`. |
@@ -244,7 +245,8 @@ predecessor is on screen the pager attends the successor before the
 predecessor is retired, unless `--stay`.
 
 **Study and cast.** `fig study [<figaro>] <@form>` subscribes a figaro to
-an unbound form; `fig drop` unsubscribes; `fig cast [<figaro>] <@form>`
+an unbound form, and `fig study <figaro> <other> [--keys <prefix,…>]` to
+another figaro's bound form; `fig drop` unsubscribes; `fig cast [<figaro>] <@form>`
 (or `-O <names>` / `-S <k=v>` to mint the role born cast) points the role here AND
 ensures the study, serialized through the figaro's actor loop. The
 mechanism is the bound form's, generalized: every IR record stamps the

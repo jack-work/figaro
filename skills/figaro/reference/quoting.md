@@ -189,6 +189,27 @@ one: `figaro set comments.<id>.thread.<key> '{"by":"figaro","text":"…"}'`
 answers, `figaro unset comments.<id>` removes it. A comment whose passage is
 not in the pager's window is reached by `c k`, which pages its turn in.
 
+### forkcomment: a fork answers its parent's comments
+
+A comment is a write to the figaro's own form, and a figaro does not study
+itself, so the parent never sees it arrive. Its fork can:
+
+```sh
+figaro study <child> <parent> --keys comments
+```
+
+Each new thread entry reaches the fork as one `study:<parent>` reminder. The
+fork answers in the **parent's** thread and marks its entry:
+
+```sh
+figaro set --id <parent> comments.<id>.thread.<key> \
+  '{"by":"figaro","text":"…","skill":"forkcomment","fork":"<child>"}'
+```
+
+The answer comes back to the fork as a change too; its own `fork` field says
+to let it pass. The parent keeps its context and learns only that the question
+was handled.
+
 ## Settings
 
 `[quote]` in `config.toml` governs what a quote looks like in the log:
