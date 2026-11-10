@@ -35,7 +35,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/godbus/dbus/v5 v5.2.2
-	github.com/jack-work/jkauthz v0.2.1-0.20261110094912-58177255640e
+	github.com/jack-work/jkauthz v0.3.0
 	github.com/junegunn/fzf v0.74.5
 	github.com/zalando/go-keyring v0.2.8
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
