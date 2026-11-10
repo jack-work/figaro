@@ -157,7 +157,7 @@ func (h *handlers) refuseGrantsBeyondWriter(ctx context.Context, c callerKeys, b
 	}
 	held := h.writerGrants(ctx, c)
 	for _, g := range want {
-		if !held[strings.TrimSpace(g)] {
+		if !held[g] {
 			return fmt.Errorf("%s: the writer does not hold %q, and a figaro grants only what it holds", form.GrantsKey, g)
 		}
 	}
@@ -183,7 +183,7 @@ func (h *handlers) writerGrants(ctx context.Context, c callerKeys) map[string]bo
 	}
 	held := make(map[string]bool, len(grants))
 	for _, g := range grants {
-		held[strings.TrimSpace(g)] = true
+		held[g] = true
 	}
 	return held
 }

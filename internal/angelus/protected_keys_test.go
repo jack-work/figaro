@@ -148,9 +148,9 @@ func TestTheOwnerSetsProtectedKeys(t *testing.T) {
 
 func TestGrantsMustBeAnArrayOfStrings(t *testing.T) {
 	r := newLineageRig(t, "")
-	for _, bad := range []any{"read", []int{1}, map[string]any{"a": 1}, nil} {
+	for _, bad := range []any{"read", []int{1}, map[string]any{"a": 1}, nil, []string{" a"}, []string{"a "}, []string{"a", ""}} {
 		_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, bad)}))
-		if err == nil || !strings.Contains(err.Error(), "array of strings") {
+		if err == nil || !strings.Contains(err.Error(), form.GrantsKey) {
 			t.Errorf("grants %v: %v", bad, err)
 		}
 	}
@@ -291,8 +291,8 @@ func TestAFigaroGrantsOnlyWhatItHolds(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "does not hold") {
 		t.Fatalf("a fork -S granted beyond its writer: %v", err)
 	}
-	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{" a ", "x"})); err != nil {
-		t.Fatalf("control: a subset, compared trimmed: %v", err)
+	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"a", "x"})); err != nil {
+		t.Fatalf("control: a subset: %v", err)
 	}
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"write:aria:*"})})); err != nil {
 		t.Fatalf("control: the owner is exempt: %v", err)

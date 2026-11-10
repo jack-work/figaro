@@ -30,5 +30,10 @@ func CheckGrants(s Snapshot) error {
 	if err := json.Unmarshal(raw, &grants); err != nil || grants == nil {
 		return fmt.Errorf("%s must be a JSON array of strings, got %s", GrantsKey, raw)
 	}
+	for _, g := range grants {
+		if g == "" || strings.TrimSpace(g) != g {
+			return fmt.Errorf("%s: grant %q is empty or has surrounding whitespace", GrantsKey, g)
+		}
+	}
 	return nil
 }
