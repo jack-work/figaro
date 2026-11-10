@@ -119,7 +119,7 @@ func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (
 }
 
 func foreignStatusRow(ctx context.Context, ref string) (*rpc.ListResponse, *rpc.FigaroInfoResponse, error) {
-	id, a, err := attachForeign(ctx, ref)
+	id, a, _, err := attachForeign(ctx, ref)
 	if err != nil {
 		return nil, nil, err
 	}

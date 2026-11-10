@@ -659,7 +659,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ariaID, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+	ariaID, figaroEP, grant, err := resolveFigaroTargetGrant(ctx, loaded, acli, opts.id, true, opts.outfit)
 	if err != nil {
 		die("%s", err)
 	}
@@ -682,7 +682,14 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 		}{AriaID: ariaID, Handle: ariaHandle(ariaID), Mode: "forget"})
 		return
 	}
-	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaName(ariaID), ariaName(ariaID))
+	fmt.Fprintln(stderrw, forgotHint(ariaID, grant))
+}
+
+func forgotHint(ariaID string, grant rpc.AttachResponse) string {
+	if grant.MayNot(rpc.VerbListen) {
+		return fmt.Sprintf("sent to %s", ariaName(ariaID))
+	}
+	return fmt.Sprintf("forgot %s: use `figaro listen %s` to follow", ariaName(ariaID), ariaName(ariaID))
 }
 
 // promptFlagDefs exists for completion only: send, new and fork are PassRaw and

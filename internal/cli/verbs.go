@@ -113,7 +113,7 @@ func attendForeign(ctx context.Context, env verbEnv, ref string, at forkPoint) (
 	if env.shellPID <= 0 {
 		return attendOutcome{}, errors.New("this pager has no shell to bind")
 	}
-	id, ep, err := attachForeign(ctx, ref)
+	id, ep, _, err := attachForeign(ctx, ref)
 	if err != nil {
 		return attendOutcome{}, err
 	}
