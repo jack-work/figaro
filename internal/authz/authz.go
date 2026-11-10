@@ -289,14 +289,15 @@ func Enforce(p *Policies) Policy {
 		if r.Aria != "" {
 			res = Aria(r.Aria)
 		}
-		if d := p.AllowFigaro(r.Subject, figaro, verb, res); !d.Allowed {
-			if allowedByAnother(p, figaro, r, verb, res) {
+		view := p.Figaro(figaro)
+		if d := view.Allow(r.Subject, verb, res); !d.Allowed {
+			if allowedByAnother(view, r, verb, res) {
 				return decided(Allow())
 			}
 			if d.Narrowed() {
 				slog.Info("authz: figaro refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
 			}
-			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !p.AllowFigaro(r.Subject, figaro, rpc.VerbRead, res).Allowed) {
+			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !view.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
 				return Decision{Hidden: true}
 			}
 			return Deny("%s: %s", r.Method, d.Reason())
@@ -318,10 +319,10 @@ func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
 	return read && held == box
 }
 
-func allowedByAnother(p *Policies, figaro string, r Request, refused rpc.Verb, res Resource) bool {
+func allowedByAnother(view FigaroView, r Request, refused rpc.Verb, res Resource) bool {
 	verbs, _ := rpc.VerbsOf(r.Method)
 	for _, v := range verbs {
-		if v != refused && p.AllowFigaro(r.Subject, figaro, v, res).Allowed {
+		if v != refused && view.Allow(r.Subject, v, res).Allowed {
 			return true
 		}
 	}

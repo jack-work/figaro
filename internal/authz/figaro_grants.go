@@ -397,24 +397,46 @@ func (p *Policies) SetFigaroClaimRequired(on bool) { p.claimRequired.Store(on) }
 
 func (p *Policies) FigaroClaimRequired() bool { return p.claimRequired.Load() }
 
-func (p *Policies) figaroRefuses(s jkauthz.Subject, figaro string, verb rpc.Verb, r Resource) string {
-	if figaro == "" {
+type FigaroView struct {
+	p      *Policies
+	figaro string
+	eff    jkauthz.Grants
+	held   bool
+}
+
+func (p *Policies) Figaro(figaro string) FigaroView {
+	v := FigaroView{p: p, figaro: figaro}
+	if figaro != "" {
+		v.eff, v.held = p.Effective(figaro)
+	}
+	return v
+}
+
+func (v FigaroView) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
+	d := v.p.Allow(s, verb, r)
+	if !d.Allowed {
+		return d
+	}
+	if why := v.refuses(s, verb, r); why != "" {
+		return Verdict{narrowed: why}
+	}
+	return d
+}
+
+func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string {
+	if !v.held {
 		return ""
 	}
-	eff, held := p.Effective(figaro)
-	if !held {
-		return ""
-	}
-	m, _ := p.schema.Selectors.(selectors)
-	for _, g := range eff {
+	m, _ := v.p.schema.Selectors.(selectors)
+	for _, g := range v.eff {
 		if verbCovers(g.Verb, string(verb)) && (g.Object == jkauthz.Any || m.Match(g.Object, s, r)) {
 			return ""
 		}
 	}
-	if len(eff) == 0 {
-		return fmt.Sprintf("%s%s may not %s on %s: it holds no grants", figaroPrefix, figaro, verb, r)
+	if len(v.eff) == 0 {
+		return fmt.Sprintf("%s%s may not %s on %s: it holds no grants", figaroPrefix, v.figaro, verb, r)
 	}
-	return fmt.Sprintf("%s%s may not %s on %s: its grants (%s) do not reach it", figaroPrefix, figaro, verb, r, eff)
+	return fmt.Sprintf("%s%s may not %s on %s: its grants (%s) do not reach it", figaroPrefix, v.figaro, verb, r, v.eff)
 }
 
 func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string) error {
@@ -444,12 +466,9 @@ func (p *Policies) Covers(held, want jkauthz.Grants) bool {
 const figaroPrefix = "figaro:"
 
 func (p *Policies) AllowFigaro(s jkauthz.Subject, figaro string, verb rpc.Verb, r Resource) Verdict {
-	v := p.Allow(s, verb, r)
-	if !v.Allowed {
-		return v
+	d := p.Allow(s, verb, r)
+	if !d.Allowed || figaro == "" {
+		return d
 	}
-	if why := p.figaroRefuses(s, figaro, verb, r); why != "" {
-		return Verdict{narrowed: why}
-	}
-	return v
+	return p.Figaro(figaro).Allow(s, verb, r)
 }
