@@ -1,6 +1,9 @@
 package rpc
 
-import "strconv"
+import (
+	"slices"
+	"strconv"
+)
 
 type FigaroInfoResponse struct {
 	ID               string `json:"id"`
@@ -64,6 +67,11 @@ type AttachRequest struct {
 
 type AttachResponse struct {
 	FigaroID string `json:"figaro_id"`
+	May      []Verb `json:"may,omitempty"`
+}
+
+func (r AttachResponse) MayNot(v Verb) bool {
+	return r.May != nil && !slices.Contains(r.May, v)
 }
 
 // IDsOnly skips the per-aria form and tree fills. Global also lists the

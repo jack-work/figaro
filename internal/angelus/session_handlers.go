@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 )
 
 func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -70,7 +71,17 @@ func (h *handlers) attach(ctx context.Context, params json.RawMessage) (interfac
 	if err := h.requireAria(req.FigaroID); err != nil {
 		return nil, fmt.Errorf("attach %s: %w", req.FigaroID, err)
 	}
-	return rpc.AttachResponse{FigaroID: req.FigaroID}, nil
+	return rpc.AttachResponse{FigaroID: req.FigaroID, May: h.mayOn(ctx, req.FigaroID)}, nil
+}
+
+func (h *handlers) mayOn(ctx context.Context, id string) []rpc.Verb {
+	may := []rpc.Verb{}
+	for _, v := range []rpc.Verb{rpc.VerbRead, rpc.VerbListen, rpc.VerbSend} {
+		if h.allowed(ctx, v, authz.Aria(id)) == nil {
+			may = append(may, v)
+		}
+	}
+	return may
 }
 
 func (h *handlers) resolve(ctx context.Context, params json.RawMessage) (interface{}, error) {

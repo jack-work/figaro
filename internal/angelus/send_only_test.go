@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -58,13 +59,16 @@ principals = ["user:stranger"]
 		return got, nil
 	}
 
-	for _, who := range []string{"sender", "reader"} {
+	for who, may := range map[string][]rpc.Verb{"sender": {rpc.VerbSend}, "reader": {rpc.VerbRead}} {
 		got, err := attach(who, target)
 		if err != nil {
 			t.Fatalf("%s attach: %v", who, err)
 		}
 		if got.FigaroID != target {
 			t.Fatalf("%s attach answered %q, want %q", who, got.FigaroID, target)
+		}
+		if !slices.Equal(got.May, may) {
+			t.Fatalf("%s attach says it may %v, want %v", who, got.May, may)
 		}
 	}
 

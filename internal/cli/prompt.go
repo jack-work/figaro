@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -204,25 +205,36 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ep, err := resolveAria(ctx, acli, ariaID)
+	ep, may, err := resolveAriaFor(ctx, acli, ariaID)
 	if err != nil {
 		die("%s", err)
+	}
+	if may.MayNot(rpc.VerbListen) {
+		fmt.Fprintf(stderrw, "you may send to %s but not listen to it: sending without following\n", ariaName(ariaID))
+		acli.Close()
+		runSendForget(loaded, sendOpts{id: ariaID, outfit: d}, prompt)
+		return
 	}
 	mustPromptFigaro(ctx, ep, ep.ID, prompt, loaded, set, d)
 }
 
 // Aria ids are system-minted: an unknown id is an error, not a new conversation.
 func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (sdk.Addr, error) {
+	ep, _, err := resolveAriaFor(ctx, acli, ariaID)
+	return ep, err
+}
+
+func resolveAriaFor(ctx context.Context, acli *sdk.Angelus, ariaID string) (sdk.Addr, rpc.AttachResponse, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, ariaID)
 	attachCancel()
 	if err == nil {
-		return ariaAddr(resp.FigaroID), nil
+		return ariaAddr(resp.FigaroID), *resp, nil
 	}
 	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
-		return sdk.Addr{}, fmt.Errorf("no such aria %q (ids are system-minted; run `figaro` to start one)", ariaID)
+		return sdk.Addr{}, rpc.AttachResponse{}, fmt.Errorf("no such aria %q (ids are system-minted; run `figaro` to start one)", ariaID)
 	}
-	return sdk.Addr{}, fmt.Errorf("attach %q: %w", ariaID, err)
+	return sdk.Addr{}, rpc.AttachResponse{}, fmt.Errorf("attach %q: %w", ariaID, err)
 }
 
 // An empty dressing is the configured default_outfit, resolved server-side.
