@@ -114,8 +114,13 @@ func (h *handlers) mayLearnFate(ctx context.Context, method, id string) bool {
 	if h.allowed(ctx, rpc.VerbRead, authz.Aria(id)) == nil {
 		return true
 	}
-	verb, ok := rpc.VerbOf(method)
-	return ok && verb != rpc.VerbNone && verb != rpc.VerbRead && h.allowed(ctx, verb, authz.Aria(id)) == nil
+	verbs, _ := rpc.VerbsOf(method)
+	for _, verb := range verbs {
+		if verb != rpc.VerbNone && verb != rpc.VerbRead && h.allowed(ctx, verb, authz.Aria(id)) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *handlers) placeID(ctx context.Context, method, ref string, route bool) (string, string, error) {

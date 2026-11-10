@@ -271,6 +271,9 @@ func Enforce(p *Policies) Policy {
 		}
 		figaro := r.Identity.FigaroID
 		if d := p.AllowFigaro(r.Subject, figaro, verb, res); !d.Allowed {
+			if allowedByAnother(p, r, verb, res) {
+				return Allow()
+			}
 			if d.Fenced() {
 				slog.Info("authz: fence refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
 			}
@@ -281,4 +284,14 @@ func Enforce(p *Policies) Policy {
 		}
 		return Allow()
 	})
+}
+
+func allowedByAnother(p *Policies, r Request, refused rpc.Verb, res Resource) bool {
+	verbs, _ := rpc.VerbsOf(r.Method)
+	for _, v := range verbs {
+		if v != refused && p.AllowFigaro(r.Subject, r.Identity.FigaroID, v, res).Allowed {
+			return true
+		}
+	}
+	return false
 }

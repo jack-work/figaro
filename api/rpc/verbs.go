@@ -116,3 +116,15 @@ func VerbOf(method string) (Verb, bool) {
 	v, ok := methodVerbs[method]
 	return v, ok
 }
+
+var sufficientVerbs = map[string][]Verb{
+	MethodAttach: {VerbSend},
+}
+
+func VerbsOf(method string) ([]Verb, bool) {
+	v, ok := methodVerbs[method]
+	if !ok {
+		return nil, false
+	}
+	return append([]Verb{v}, sufficientVerbs[method]...), true
+}
