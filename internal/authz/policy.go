@@ -74,6 +74,9 @@ func (selectors) Validate(sel string) error {
 			if rest == "" {
 				return fmt.Errorf("%s names nothing", prefix)
 			}
+			if strings.Contains(rest, jkauthz.Any) {
+				return fmt.Errorf("%s matches no %s: a selector takes no wildcard, and %s alone is every resource", sel, strings.TrimSuffix(prefix, ":"), jkauthz.Any)
+			}
 			return nil
 		}
 	}
@@ -176,6 +179,7 @@ type Policies struct {
 	fences atomic.Pointer[[]fence]
 	schema jkauthz.Schema[Resource]
 	boxes  []string
+	parsed parsedGrants
 }
 
 type troupeLayer struct {
