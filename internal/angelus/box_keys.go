@@ -100,7 +100,10 @@ func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 
 func (h *handlers) callerKeysOn(ctx context.Context, line lineage) callerKeys {
 	c := h.callerKeysOf(ctx)
-	c.heir = c.lineage && h.refuseProtected(ctx, c, line, "") == nil
+	if c.lineage {
+		snap, _ := h.angelus.Backend.FormState(line.of)
+		c.heir = h.refuseProtected(ctx, c, line, "", snap) == nil
+	}
 	return c
 }
 
@@ -116,7 +119,7 @@ type lineage struct {
 
 func birthUnder(parent string) lineage { return lineage{of: parent, self: true} }
 
-func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line lineage, key string) error {
+func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line lineage, key string, current form.Snapshot) error {
 	if c.owns && !c.boxed {
 		return nil
 	}
@@ -135,6 +138,9 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	}
 	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
 		return fmt.Errorf("box %s may not set %s: it is protected, and figaro %s is no ancestor of the aria", c.box, key, f)
+	}
+	if s := current.Lookup("system.sandbox"); s == nil || *s != c.box {
+		return fmt.Errorf("box %s may not set %s: the aria runs in sandbox %q, not in this box", c.box, key, sandboxName(deref(s)))
 	}
 	return nil
 }
@@ -270,7 +276,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	}
 	for _, p := range changedPaths(before, after) {
 		if k, ok := form.Protected(p); ok && c.lineage {
-			if err := h.refuseProtected(ctx, c, line, k); err != nil {
+			if err := h.refuseProtected(ctx, c, line, k, before); err != nil {
 				return err
 			}
 			continue
@@ -372,6 +378,13 @@ func openKeys(m map[string]json.RawMessage) map[string]json.RawMessage {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
 
 func hostCwdOf(ctx context.Context, requested string) string {
 	if _, ok := callerBox(ctx); ok {

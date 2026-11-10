@@ -248,3 +248,22 @@ func TestTheFormAccessDenyListsProtectedKeysForAllButHeirs(t *testing.T) {
 		t.Fatalf("the parent may not write its child's protected keys: %+v", a)
 	}
 }
+
+func TestABoxAncestorLosesADescendantTheOwnerMovedOut(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	if err := r.setAs(t, c, r.parent, r.sibling, grantsPatch(t, []string{"a"})); err != nil {
+		t.Fatalf("control: the parent sets grants on a child still in its box: %v", err)
+	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.sandbox": "elsewhere"})})); err != nil {
+		t.Fatal(err)
+	}
+	err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"a"}))
+	if err == nil {
+		t.Fatal("the old box's ancestor set grants on a moved descendant")
+	}
+	t.Log(err)
+	if got := grantsOn(t, r, r.child); got != "" {
+		t.Fatalf("grants landed: %s", got)
+	}
+}

@@ -515,7 +515,8 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if parent == "null" {
 		parent = ""
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(parent), form.Snapshot{}, req.Patch); err != nil {
+	inherited, _ := h.angelus.Backend.FormState(parent)
+	if err := h.refuseCallerKeys(ctx, birthUnder(parent), inherited, req.Patch); err != nil {
 		return nil, err
 	}
 	if parent != "" {
