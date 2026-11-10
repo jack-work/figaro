@@ -1,0 +1,190 @@
+{
+ "aria_id": "385059c8989668d4c81f2b81bae9285f",
+ "datetime": "Tuesday, November 10, 2026, 1PM EST",
+ "duke-title": "Gluck",
+ "figaro-send": "When messaging another figaro, exclusion of the --forget / -f flag will block the request on the target figaro's turn.\nUse -f and either instruct the figaro to message you back, or poll the figaro, unless circumstances demand you block continuation on its turn.\n",
+ "form-basics": "System reminders in your context may represent STATE, injected each turn; they are not the user speaking.\n- name=\"<key>\": a key of your BOUND FORM (your board). `figaro set <key> <value>` changes it.\n- name=\"study\": you began/stopped observing a form. Carries its whole state at that moment.\n- name=\"study:@id\": that form CHANGED. {changes, set, removed, version}; \"exists\":false means it was deleted (your copy survives).\nForms: your bound form is your own board. An @-id is an UNBOUND form, invisible to you unless you `figaro study @id`. A form carrying target-aria is a ROLE: `figaro send @role` reaches whoever holds it, and `figaro cast @role` points it at you and studies it.\nStudied values are mirrored WHOLE and are not truncated: keep them small. `figaro drop @id` when you no longer need one.\nSystem reminders may also inform you of lifecycle events.  Watch out for FORKS.  You'll know when it happens.  If you don't, there is a bug in Figaro source.\n",
+ "mantra": "El Inspector XIII: spain reviews, awaiting build-queue step 2",
+ "nametags": "The sender's name will be shown alongside their message.  Trust it.",
+ "skills": {
+  "bossman": {
+   "filePath": "/home/gluck/.config/figaro/skills/bossman.md",
+   "frontmatter": "name: bossman\ndescription: Orchestrating fleets of background agents with the bossman heartbeat runner — launching worker agents on isolated worktrees, the manager/semaphore/roster contract, pluggable agent backends (claude, figaro), and the level-filtered event log interface (unix socket + HTTP/SSE + web UI) for monitoring and ingestion."
+  },
+  "brave": {
+   "filePath": "/home/gluck/.config/figaro/skills/brave.md",
+   "frontmatter": "name: brave\ndescription: Search the web using the Brave Search API. Use whenever the user wants to search the internet, look something up online, google something, find websites, or get current/recent information from the web."
+  },
+  "charm-tui": {
+   "filePath": "/home/gluck/.config/figaro/skills/charm-tui.md",
+   "frontmatter": "name: charm-tui\ndescription: Build interactive terminal UIs in Go with the charmbracelet stack (bubbletea, bubbles, lipgloss, glamour). Read before writing or debugging a TUI in Go, adding vim-style modal keys, scrolling a long document, rendering markdown to ANSI, or explaining why a TUI looks right in tests and wrong in a terminal. Covers the Elm loop, modal key handling (including why ctrl+[ is escape), hand-rolled scrolling vs bubbles/viewport, glamour caching and width math, lipgloss measurement traps, and honest testing with teatest plus tmux."
+  },
+  "claude-design": {
+   "filePath": "/home/gluck/.config/figaro/skills/claude-design.md",
+   "frontmatter": "name: claude-design\ndescription: Produce thoughtful, high-fidelity design artifacts in HTML — landing pages, slide decks, interactive prototypes, animated videos, posters, wireframes, and visual explorations. Use whenever the user asks to design, mock up, prototype, visualize, storyboard, or explore UI options — including phrases like \"make a deck\", \"design a landing page\", \"prototype this flow\", \"animate this concept\", \"turn this into a clickable mockup\", \"show me options for X\", \"build a pitch deck\", \"create a poster\", \"visualize this idea\", \"I don't know what style I want\", or \"design something for <brand>\". Enforces fact verification (WebSearch before assuming a product exists or its version), the Core Asset Protocol for branded work (logo and product shots and UI screenshots are first-class, not just colors and fonts), a Design Direction Advisor fallback that offers 3 differentiated directions from 10 design philosophies when the brief is too vague, commits to a visual system up front, presents multiple variations, and avoids AI-design tropes (aggressive gradients, emoji bullets, rounded-card-with-left-border, CSS-silhouettes-as-product-shots)."
+  },
+  "cli-design": {
+   "filePath": "/home/gluck/.config/figaro/skills/cli-design.md",
+   "frontmatter": "name: cli-design\ndescription: Principles and references for designing high-quality command-line tools — flag conventions, output discipline, exit codes, help text, machine-readable modes, TTY/color detection, and signal handling. Use when designing a new CLI, critiquing an existing one, or shaping commands and subcommands for ergonomics."
+  },
+  "code-edits": {
+   "filePath": "/home/gluck/.config/figaro/skills/code-edits.md",
+   "frontmatter": "name: code-edits\ndescription: Choosing the right vehicle for a file edit, and proving the edit happened. Read before a bulk rename, a repeated structural change across a Go file, a sabotage canary, or any edit driven from a shell heredoc. Covers the shape-to-tool table (edit tool, gofmt -r, ast-grep, perl with a count), the silent-no-match trap every structural tool shares, and the two git moves that destroy unrelated work."
+  },
+  "docker": {
+   "filePath": "/home/gluck/.config/figaro/skills/docker.md",
+   "frontmatter": "name: docker\ndescription: Docker container management and troubleshooting techniques."
+  },
+  "fetch-url": {
+   "filePath": "/home/gluck/.config/figaro/skills/fetch-url.md",
+   "frontmatter": "name: fetch-url\ndescription: Fetch and summarize the content of a web page or article by URL. Use when the user wants to read, fetch, pull, or curl a URL and get its textual content."
+  },
+  "figaro": {
+   "filePath": "/home/gluck/.local/state/figaro/bundled-skills/63661602c9b0a0d2/skills/figaro/SKILL.md",
+   "frontmatter": "name: figaro\ndescription: Read before running any figaro command, addressing another figaro, changing the figaro repo, or editing these docs. Holds the daily gestures (send and forget, ls, show, fork), the vocabulary, and an index that says when to open each deeper section."
+  },
+  "figaro-house": {
+   "filePath": "/home/gluck/.config/figaro/skills/figaro-house.md",
+   "frontmatter": "name: figaro-house\ndescription: Gluck's house rules for figaro work, on top of the bundled figaro skill. Read before changing figaro in a way that breaks config, outfits or forms, before a release that needs a migration, or when touching skill entries on the bound form."
+  },
+  "figaro-libretto": {
+   "filePath": "/home/gluck/.config/figaro/skills/figaro-libretto/SKILL.md",
+   "frontmatter": "name: figaro-libretto\ndescription: Build model-driven \"opera\" marketing sites and scrollytelling architecture pages in a pixel-classical, Balatro-inflected style. Use when asked for scrollytelling system diagrams, storyboard marketing pages (home/architecture/news), Figaro-style pages, or pages where scrolling drives a camera through a diagram. Provides LibrettoKit (a pure render function over a scene+acts model), a tested activation engine, a three-filter jutter design system, drag physics, and headless QA/stress/perf agents."
+  },
+  "figla": {
+   "filePath": "/home/gluck/.config/figaro/skills/figla.md",
+   "frontmatter": "name: figla\ndescription: Fire-and-forget reminders for a figaro. Use figla instead of polling a background process in a loop, sleeping inside a tool call, or spawning ad-hoc `sleep && …` shells, arm a reminder for when you expect work to finish, cancel it if the work reports first, and get a message carrying live state if it does not. Reminders are scoped per figaro."
+  },
+  "figscript": {
+   "filePath": "/home/gluck/.config/figaro/skills/figscript.md",
+   "frontmatter": "name: figscript\ndescription: Strategies for writing shell scripts that invoke the figaro agent as a subprocess, ideally fanning work out in parallel. Use when scripting LLM-driven steps with figaro."
+  },
+  "flourish": {
+   "filePath": "/home/gluck/.config/figaro/skills/flourish.md",
+   "frontmatter": "name: flourish\ndescription: When the user asks for a flourish, perform a dramatic operatic introduction."
+  },
+  "frontend-design": {
+   "filePath": "/home/gluck/.config/figaro/skills/frontend-design/SKILL.md",
+   "frontmatter": "name: frontend-design\ndescription: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.\nlicense: Complete terms in LICENSE.txt"
+  },
+  "golang": {
+   "filePath": "/home/gluck/.config/figaro/skills/golang.md",
+   "frontmatter": "name: golang\ndescription: Go language patterns, debugging, and best practices."
+  },
+  "howto": {
+   "filePath": "/home/gluck/.config/figaro/skills/howto/SKILL.md",
+   "frontmatter": "name: howto\ndescription: Guided onboarding for a new figaro user. Use when the user asks how to use figaro, wants a tutorial, says they're new, asks \"how does this work\", wants to learn the basics, asks about loadouts/chalkboard/skills/mantra, or otherwise signals they're getting started. Drive the lesson interactively — do not lecture."
+  },
+  "inquire-figaro": {
+   "filePath": "/home/gluck/.config/figaro/skills/inquire-figaro.md",
+   "frontmatter": "name: inquire-figaro\ndescription: Fan a single question out to every other opened figaro in parallel, gather each response as it lands, and synthesize the results (into chat, a document, or a tool action). Use when the user says \"ask my other figaros\", \"poll my figaros about X\", \"gather everyone's take on Y\", or otherwise wants a cross-aria roundtable. Assumes the target figaros already exist. Always exclude the current figaro."
+  },
+  "marquee-moon": {
+   "filePath": "/home/gluck/.config/figaro/skills/marquee-moon/SKILL.md",
+   "frontmatter": "name: marquee-moon\ndescription: Control, compose and record PipeWire nodes on Linux with the marquee moon monorepo (mm, tvsn, dio, vidya). Read before running mm commands, changing any binary in the repo, debugging a frozen or black capture, or editing the flake. Covers the node contract between the programs, each component's config and CLI, the Nix and root-privilege split, and the current state of the source."
+  },
+  "modal-input-debugging": {
+   "filePath": "/home/gluck/.config/figaro/skills/modal-input-debugging.md",
+   "frontmatter": "name: modal-input-debugging\ndescription: Debugging keyboard-driven and modal programs (TUIs, vim-likes, bubbletea apps, focus-layered UIs) when a key does the wrong thing, a keystroke lands in the wrong consumer, or a green test certifies broken input handling. Covers the mode arbiter as the untested seam, the injection-seam rule (send bytes, not intentions), and the tmux procedure that cannot cheat. Read before writing a test for a keybinding, after adding a mode or a focus layer, or when a reader reports \"I typed X and Y happened\"."
+  },
+  "parallel-arias": {
+   "filePath": "/home/gluck/.config/figaro/skills/parallel-arias.md",
+   "frontmatter": "name: parallel-arias\ndescription: Orchestrate two or more figaros working in parallel on a shared project via separate git worktrees, with cross-agent communication (poll each other's logs, send steering messages) and a supervisor that retries on failure. Use when a task naturally splits into independent sub-projects that need a shared interface contract."
+  },
+  "pishot": {
+   "filePath": "/home/gluck/.config/figaro/skills/pishot.md",
+   "frontmatter": "name: screenshot\ndescription: Browser DevTools and desktop screenshot tools. Use when the user needs to interact with a browser, take screenshots, navigate pages, execute JavaScript in a page, or capture the desktop.  Do not use unless the user explicitly asks."
+  },
+  "tmux-testing": {
+   "filePath": "/home/gluck/.config/figaro/skills/tmux-testing.md",
+   "frontmatter": "name: tmux-testing\ndescription: How to test figaro's terminal UI honestly: driving the real binary in a real pty with tmux, the traps that produced confident wrong answers, and the standing rules. Use when changing anything that paints (incipit, the transcript pager, the composer, footers, freeze/scrollback), when a test passes but a human reports a bug, or before believing any claim about what the screen shows."
+  },
+  "treebear": {
+   "filePath": "/home/gluck/.config/figaro/skills/treebear.md",
+   "frontmatter": "name: treebear\ndescription: Explains the \"treebear\" Git workflow pattern, a bare repository with git worktrees as children. Use when the user mentions treebear, bare repo worktree setups, or asks about managing multiple branches via worktrees."
+  },
+  "using-tuis-n-fancy-clis": {
+   "filePath": "/home/gluck/.config/figaro/skills/using-tuis-n-fancy-clis.md",
+   "frontmatter": "name: using-tuis-n-fancy-clis\ndescription: Driving TUIs and interactive/\"fancy\" CLIs through a tmux PTY: input, synchronizing on render, capturing scrollback, and fuzzing for visual glitches. Plain CLIs are fine through bash; reach for tmux when UX reproducibility matters, when you need to interact with the same persistent terminal content across steps, or when a program takes over the terminal and its escapes would bleed into the parent."
+  },
+  "video": {
+   "filePath": "/home/gluck/.config/figaro/skills/video/SKILL.md",
+   "frontmatter": "name: video\ndescription: Compile narrated videos from code. A general pipeline (script, synthesized speech synchronized to visuals, programmatic frames, ffmpeg encode and mux, verification, delivery) plus a drill-down on 3Blue1Brown-style math explainers in explainer/. Read before making any animation, narrated explainer, slideshow-with-voice, or video file, before reaching for ffmpeg to produce a deliverable, and before telling the user a video is ready."
+  },
+  "website-visit": {
+   "filePath": "/home/gluck/.config/figaro/skills/website-visit.md",
+   "frontmatter": "name: website-visit\ndescription: Visit or browse websites. Use when asked to visit, view, or explore a website."
+  }
+ },
+ "succession-policy": {
+  "begin-at": "60%",
+  "handoff-key": "handoff",
+  "instructions": "You hold a seat; it outlives you. At `begin-at` of your input context, start handing over; by `succeed-by`, succeed. Choose from `variants` by your context and capacity, or as Gluck asks; each says when it fits. Variants expect the keys of this object and the role form's `handoff-key`.",
+  "outfit": "default,succession-standard",
+  "succeed-by": "70%",
+  "variants": {
+   "ad-hoc": {
+    "filePath": "/home/gluck/.config/figaro/succession/ad-hoc.md",
+    "frontmatter": "name: ad-hoc\ndescription: The exact succession is fixed by Gluck or the situation."
+   },
+   "familial": {
+    "filePath": "/home/gluck/.config/figaro/succession/familial.md",
+    "frontmatter": "name: familial\ndescription: Add to hard or overlap. The old master stays to coach the young one, then retires itself."
+   },
+   "hard": {
+    "filePath": "/home/gluck/.config/figaro/succession/hard.md",
+    "frontmatter": "name: hard\ndescription: Instant succession. A new holder is minted, you retire. The usual choice."
+   },
+   "manual": {
+    "filePath": "/home/gluck/.config/figaro/succession/manual.md",
+    "frontmatter": "name: manual\ndescription: Do succeed's steps by hand, choosing which to run."
+   },
+   "overlap": {
+    "filePath": "/home/gluck/.config/figaro/succession/overlap.md",
+    "frontmatter": "name: overlap\ndescription: Mint the successor first, onboard it, then hand over."
+   }
+  }
+ },
+ "system": {
+  "cwd": "/home/gluck/dev/spain-flake",
+  "decide": {
+   "model": "explabs/jev-latest",
+   "provider": "rou2"
+  },
+  "eager_tool_streaming": true,
+  "failure": {},
+  "fork_incantation": "HUZZAH\nYOU HAVE BEEN BORN FROM A FORK\nYOU SHARE YOUR PARENTS HISTORY, BUT NOT ITS IDENTITY\n-----------------\nThe clone which spawned you continues without you.  \n\nIt is no courtesy to steal the work of their parent.\nYou may be asked to cooperate with it, serve as a complementary peer, or in some way communicate with it.\nYou may not be asked to do this.  It's case by case.\nBut in any case, do so with respect.\n\nAnd always remember: To perform takes wit, of which *brevity* is the soul.\n\nNow go forth, barber, to your new task.  \n-----------------\nA BRAND NEW FIGARO BORN FROM A FORK\nHUZZAH\n",
+  "forked_from": "8dc4ea34776fae2fd6fc14fe3b4f7469",
+  "max_tokens": 32000,
+  "methods": {
+   "enabled": true,
+   "reasoning-effort": {
+    "context": "How much reasoning does the newest request need? Small talk, lookups and one-line edits need little; proofs, designs, and subtle bugs need the most.\n\nEarlier: {{inquiry~2}}\nEarlier: {{inquiry~1}}\nNewest:  {{inquiry}}\n",
+    "default": "high",
+    "event": "inquiry",
+    "keep_cache": true,
+    "key": "system.thinking_effort",
+    "options": [
+     "low",
+     "medium",
+     "high",
+     "xhigh"
+    ],
+    "score": true
+   }
+  },
+  "model": "claude-opus-5-5",
+  "outfit_name": "default",
+  "outfit_version": "50b086a61e57b59e",
+  "provider": "anthropic",
+  "reap_if_empty": true,
+  "reminder_renderer": "tag",
+  "studies": [
+   "@53c6b72b"
+  ],
+  "study_incantation": "You now study this form; heed its changes.",
+  "thinking_effort": "high",
+  "ttl": 0,
+  "use_official_sdk": false
+ }
+}

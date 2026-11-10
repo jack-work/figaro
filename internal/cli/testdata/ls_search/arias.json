@@ -1,0 +1,391 @@
+{
+ "arias": {
+  "aerosol-bubblegum": {
+   "active_at": 1794326417554,
+   "forks": {
+    "flight-yahoo": {
+     "active_at": 1794326417644,
+     "id": "a3aed10ab764a0e500efaf375b3b8169",
+     "mantra": "Grade UL report against the rubric with forks",
+     "state": "dormant"
+    }
+   },
+   "id": "7f3f8e634e1b6ee8c6208bf961f7d312",
+   "mantra": "Grade UL report against the rubric with forks",
+   "state": "dormant"
+  },
+  "amendment-varied": {
+   "active_at": 1794326435059,
+   "id": "a2d159fe374dff30199b8c623c28b953",
+   "mantra": "El Taller XI: keel owner, scratch closed",
+   "state": "dormant"
+  },
+  "announcer-aromatic": {
+   "active_at": 1794339058387,
+   "id": "ce221838b8722064b952326f74071a25",
+   "mantra": "Diagnose fuzzy search missing mantras, keel doc",
+   "state": "dormant"
+  },
+  "barracuda-failsafe": {
+   "active_at": 1793893787523,
+   "id": "e84cc06907d7a0e94c24104664da6e7c",
+   "mantra": "You are being addressed over Telegram, through herald.  To r…",
+   "state": "dormant"
+  },
+  "blurred-flight": {
+   "active_at": 1794334544009,
+   "id": "c2d16bd1741f5c4d8019fe3e2a04798f",
+   "mantra": "Ministro de TV V",
+   "state": "dormant"
+  },
+  "bubblegum-mural": {
+   "active_at": 1794326420035,
+   "forks": {
+    "urban-vinegar": {
+     "active_at": 1794326420332,
+     "id": "1f55c0896b4d4294ab6d6fd992c23078",
+     "mantra": "UL notes and demos (keel watch handed off)",
+     "state": "dormant"
+    }
+   },
+   "id": "8415d06105a466786303c373b9311da8",
+   "mantra": "UL report: hypotheses review and project work",
+   "state": "dormant"
+  },
+  "cytoplasm-revolver": {
+   "active_at": 1794125954282,
+   "id": "1cbbafce457ae4d9ac1790c39e0ba96a",
+   "mantra": "do I hava discord client on this box?",
+   "state": "dormant"
+  },
+  "deliverer-apricot": {
+   "active_at": 1793893788369,
+   "forks": {
+    "babbling-vogue": {
+     "active_at": 1794326428750,
+     "id": "b503daa841700311114e93ced0eb0551",
+     "mantra": "El Formista: v0.1.2 released, idle",
+     "state": "dormant"
+    },
+    "tuxedo-wizardry": {
+     "active_at": 1794327662094,
+     "id": "2ea290ca2aec73efdf63d0b07ef61232",
+     "mantra": "idle: seven lanes READY; pager latency watch",
+     "state": "dormant"
+    }
+   },
+   "id": "a4189d9a1ca8cfc5aa44b69729ada964",
+   "mantra": "SUCCEEDED: Figaro Engineer: releases and the module runtime audit",
+   "state": "dormant"
+  },
+  "dorsal-umpire": {
+   "active_at": 1794326422792,
+   "forks": {
+    "duckling-basket": {
+     "active_at": 1794326423059,
+     "id": "7d80adff03b33a976054a9e587a14443",
+     "mantra": "UL report: narrative framing and intro",
+     "state": "dormant"
+    }
+   },
+   "id": "b777d90b550d07a4b37e2e718d6e4a71",
+   "mantra": "UL report: runs wired, visuals delegated",
+   "state": "dormant"
+  },
+  "dynamite-cobweb": {
+   "active_at": 1794333686558,
+   "id": "04b3fd2eadf45cbc4749729f4bd5bac0",
+   "mantra": "Kindle books grant, device-code, read books/ only",
+   "state": "dormant"
+  },
+  "edged-aardvark": {
+   "active_at": 1794326930066,
+   "id": "ea0bad6fb196bf9175cd482742dd2d6b",
+   "mantra": "Can rou2 use figaro's Anthropic access on spain",
+   "state": "dormant"
+  },
+  "finalist-upload": {
+   "active_at": 1794338916130,
+   "forks": {
+    "idiocy-veteran": {
+     "active_at": 1794326426166,
+     "forks": {
+      "pamphlet-lizard": {
+       "active_at": 1794326426204,
+       "id": "15ee56580192396020aeace648056c21",
+       "mantra": "scope-e2e-hang: bounded waits in the unit test",
+       "state": "dormant"
+      }
+     },
+     "id": "97610e7f355264e8abca54aad0c47389",
+     "mantra": "handed off to tuxedo-wizardry",
+     "state": "dormant"
+    },
+    "selected-aidless": {
+     "active_at": 1794326428539,
+     "id": "e7e318da27f6903a4879365db96e9101",
+     "mantra": "Figaro Engineer: 0.58.1 and the lanes",
+     "state": "dormant"
+    }
+   },
+   "id": "53682e4fdb8847eec090995596a8b025",
+   "mantra": "Figaro Engineer: 0.59.0 out, 0.60.0 grants next",
+   "state": "dormant"
+  },
+  "garlic-asbestos": {
+   "active_at": 1794326429800,
+   "id": "40442aea90e936bca88fe096dfb9e36e",
+   "mantra": "Picking a live terminal Whisper transcriber",
+   "state": "dormant"
+  },
+  "headband-wreckage": {
+   "active_at": 1794326430580,
+   "forks": {
+    "snugness-zillion": {
+     "active_at": 1794222003102,
+     "id": "8f23e37604609c474d415c30c7002a30",
+     "mantra": "Punctuation and style census of SL and OL reports",
+     "state": "dormant"
+    }
+   },
+   "id": "a1fcd9f6de69dd086cb15028eb8558a5",
+   "mantra": "Rephrase UL report section from todos",
+   "state": "dormant"
+  },
+  "jujitsu-uranium": {
+   "active_at": 1793805879453,
+   "id": "31afe34a26ff48da8f840c90bfc615e6",
+   "state": "dormant"
+  },
+  "jukebox-hexagon": {
+   "active_at": 1794326431714,
+   "id": "4e5de78694b8a5ad58505ae01ff3ff87",
+   "mantra": "Lyrics editor: spans of notes carry Rossini's words",
+   "state": "dormant"
+  },
+  "lemon-ought": {
+   "active_at": 1794326432310,
+   "id": "eacb6827d449648b5df02d2432ae163a",
+   "mantra": "lane-runner: retired at the 11-06 seam, handed to a69c4039c20948d78be94e2dbb50738e",
+   "state": "dormant"
+  },
+  "macaroni-pogo": {
+   "active_at": 1794326432665,
+   "forks": {
+    "buffalo-opera": {
+     "active_at": 1794326432706,
+     "id": "33904436bfdd9d71b1c37e990cf8876e",
+     "mantra": "test pls ack",
+     "state": "dormant"
+    }
+   },
+   "id": "5bb100b21e82addf40bb28ec82b29bbf",
+   "mantra": "child",
+   "state": "dormant"
+  },
+  "moaning-clubhouse": {
+   "active_at": 1794326432931,
+   "id": "ced16d558f4b997ef06bf3db3a322cb5",
+   "mantra": "ebac maintainer: seated, handoff taken, open items listed",
+   "state": "dormant"
+  },
+  "muppet-pauper": {
+   "active_at": 1794335589686,
+   "forks": {
+    "foamless-hardhat": {
+     "active_at": 1794327248474,
+     "id": "68ede097df016c5a8f410114daf88fd0",
+     "mantra": "King of Spain XI: holding the spain seat",
+     "state": "dormant"
+    },
+    "hydrant-foggy": {
+     "active_at": 1794336105287,
+     "id": "385059c8989668d4c81f2b81bae9285f",
+     "mantra": "El Inspector XIII: spain reviews, awaiting build-queue step 2",
+     "state": "dormant"
+    },
+    "saffron-dalmatian": {
+     "active_at": 1793893790530,
+     "forks": {
+      "cosmetics-haughty": {
+       "active_at": 1794335595174,
+       "id": "6f90618d5669fb14c6219c68c7a6c63c",
+       "mantra": "El Vigía V: netmon owner, wan-loss row landed",
+       "state": "dormant"
+      },
+      "ejection-rulebook": {
+       "active_at": 1794329046736,
+       "id": "eeac45676cdb680f01f75b9177322c01",
+       "mantra": "El Anfitrion: B checks finishing, C at Inspector, A pending",
+       "state": "dormant"
+      }
+     },
+     "id": "aee8097dcc431fed0c16f0b292cb2283",
+     "mantra": "SUCCEEDED: King of Spain VI: holding the seat",
+     "state": "dormant"
+    },
+    "widow-asocial": {
+     "active_at": 1794326435570,
+     "id": "b9bc42cc271745a6a062a7cf8bc8f94c",
+     "mantra": "King of Spain X (retired): answering Gluck's comments",
+     "state": "dormant"
+    }
+   },
+   "id": "e7ab50efaf305861ce0fccbcdefc22fa",
+   "mantra": "King of Spain XI: holding the spain seat",
+   "state": "dormant"
+  },
+  "outhouse-giftshop": {
+   "active_at": 1794326437186,
+   "id": "afe86a0269242d8f779bf6246a7cbad3",
+   "mantra": "Hunting hidden booby-trap text in example PDFs",
+   "state": "dormant"
+  },
+  "ozone-albatross": {
+   "active_at": 1794326437226,
+   "id": "49a9e6946eac6786af5bb24bb6ff7b6e",
+   "mantra": "Search Claude Code TTFT latency percentiles",
+   "state": "dormant"
+  },
+  "quote-sneezing": {
+   "active_at": 1794143775968,
+   "forks": {
+    "dwindling-utmost": {
+     "active_at": 1794326438118,
+     "id": "1b892be37df85dfd8bfd58fd42f2845e",
+     "mantra": "gen6 shipped; waiting on Gluck's lyric map for gen7",
+     "state": "dormant"
+    }
+   },
+   "id": "941b6c28287cf0dacf69060bd244fed0",
+   "mantra": "lockstep tape: virtual clock, MIDI-driven text, bar-snapped cuts",
+   "state": "dormant"
+  },
+  "rimmed-dozed": {
+   "active_at": 1794336384908,
+   "id": "acb64d962e05801dc16f3c0ab2c3b68c",
+   "mantra": "grants: step 1 live; standing by for step 2",
+   "state": "dormant"
+  },
+  "rugby-amiable": {
+   "active_at": 1794200155663,
+   "id": "6b4c429f132aeda69859bb04c2c11cd2",
+   "mantra": "/tmp/question read that, and then answer the trailing questi…",
+   "state": "dormant"
+  },
+  "statue-opera": {
+   "active_at": 1794326440609,
+   "id": "d8e817fc19af23ddb609aaf5f3db57b2",
+   "mantra": "davis handed off to elsewhere-daffodil",
+   "state": "dormant"
+  },
+  "suds-obtain": {
+   "active_at": 1794326427550,
+   "forks": {
+    "symphony-reporter": {
+     "active_at": 1794326428006,
+     "forks": {
+      "dresser-jogging": {
+       "active_at": 1792441538691,
+       "forks": {
+        "uppercut-fiscally": {
+         "active_at": 1793893789718,
+         "forks": {
+          "settler-ipad": {
+           "active_at": 1794326428136,
+           "forks": {
+            "puppy-gerbil": {
+             "active_at": 1794335592211,
+             "id": "5124f9f0c245464f03a3e5fa823597db",
+             "mantra": "edge lane: spain windows, idle until next tag",
+             "state": "dormant"
+            }
+           },
+           "id": "c2380bfb451275343dc800360e9e552e",
+           "mantra": "edge idle; spain on figaro 0.56.0",
+           "state": "dormant"
+          }
+         },
+         "id": "46e2b9bfdb3cf484623bc7f352ab0c90",
+         "mantra": "edge: handed off to ce1ef6b2 (settler-ipad)",
+         "state": "dormant"
+        }
+       },
+       "id": "69b4e119f30a24ed19c35f002aadc1ea",
+       "mantra": "edge lane: rou2 Anthropic upstream deploy",
+       "state": "dormant"
+      }
+     },
+     "id": "1b6708070387626142c02620b1189ae3",
+     "mantra": "edge lane: handed off to 45609467",
+     "state": "dormant"
+    }
+   },
+   "id": "90c14de657986206ef020a0e44187bef",
+   "mantra": "Former Impresario: handed to sardine-bouquet",
+   "state": "dormant"
+  },
+  "ungloved-osmosis": {
+   "active_at": 1794326441716,
+   "id": "f5bdff955446860e054c79e702819d57",
+   "mantra": "Records vault and ledger auth via Spain",
+   "state": "dormant"
+  },
+  "vogue-garlic": {
+   "active_at": 1794326443233,
+   "id": "6083d6a3d77c336bb9eb42b545ba6601",
+   "mantra": "You are being addressed over Telegram, through herald.  To r…",
+   "state": "dormant"
+  },
+  "wrangle-crystal": {
+   "active_at": 1794326443617,
+   "id": "fb7ef18a5317cda445b2cfcf040ca208",
+   "mantra": "Taming a fetch tool that wraps in tmux",
+   "state": "dormant"
+  },
+  "yahoo-waving": {
+   "active_at": 1794326443687,
+   "forks": {
+    "cahoots-lantern": {
+     "active_at": 1794326443744,
+     "id": "d0daced82b672a63a856023d69197f2d",
+     "mantra": "Hunting the hidden text in the OL spec",
+     "state": "dormant"
+    }
+   },
+   "id": "f4d75b8d5b938016d4ba2421ceaaa9bc",
+   "mantra": "UL report: hidden text audit, tex boilerplate, readings",
+   "state": "dormant"
+  },
+  "yiddish-nextdoor": {
+   "active_at": 1794326443796,
+   "id": "3014493772afac0b74b72c7585710aa4",
+   "mantra": "lane-runner: retired at the 10-23 seam, handed to 5b5c73baa647d0db552131ecdc0af838",
+   "state": "dormant"
+  },
+  "yield-dryer": {
+   "active_at": 1794326443845,
+   "id": "66ccb28fa5966690e660943bf96b4919",
+   "mantra": "run: echo storm-20 && date; then answer in one line: what di…",
+   "state": "dormant"
+  },
+  "yield-eruption": {
+   "active_at": 1794326443872,
+   "id": "bdb7a06d8e36821c9a21c005f797d3b9",
+   "mantra": "Enumerating translator channel bytes: disk to wire",
+   "state": "dormant"
+  },
+  "yodel-upfront": {
+   "active_at": 1794326443934,
+   "id": "247f1830698fad9a6d2762fbe52036c7",
+   "mantra": "run: echo storm-14 && date; then answer in one line: what di…",
+   "state": "dormant"
+  },
+  "zealot-boots": {
+   "active_at": 1794326443965,
+   "id": "05fa512a429e4df76d874fb2bf73221d",
+   "mantra": "Hunting the renewal clause in a lease",
+   "state": "dormant"
+  }
+ }
+}
