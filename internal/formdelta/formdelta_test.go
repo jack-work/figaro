@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -386,5 +387,71 @@ func TestSeamWithNoFollowingTurnWaits(t *testing.T) {
 	})
 	if _, ok := turns[0].FormDeltas["a1.system.forked_from"]; ok {
 		t.Fatalf("a trailing seam must wait for the turn it opens: %+v", turns[0].FormDeltas)
+	}
+}
+
+// The transcript shows a studied bound form through the same filter as the
+// context: --keys, and never system.* unless a prefix names it.
+func studiedParentDeltas(t *testing.T, keys []string) (string, map[string]livedoc.FormDelta) {
+	t.Helper()
+	be := backend(t)
+	parent, _, err := be.ForkWith("", 0, patchOf(map[string]string{"aria_id": `"p"`, "system.model": `"m"`, "mantra": `"born"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aria, _, err := be.ForkWith("", 0, patchOf(map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, err := be.StudyForm(aria, parent, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	be.SetObservedForms(aria, decl.Studies)
+	lib, err := be.Libretto(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := be.OpenFigIR(aria)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendRecord(t, log, message.RoleInput)
+	v, err := be.ApplyForm(parent, patchOf(map[string]string{"mantra": `"busy"`, "system.model": `"m2"`, "comments.c1.body": `"why?"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFold(t, lib, v)
+	appendRecord(t, log, message.RoleOutput)
+
+	per := PerRecord(be, aria, log.Read())
+	all := map[string]livedoc.FormDelta{}
+	for _, lt := range orderedLTs(per) {
+		for k, v := range per[lt] {
+			all[k] = v
+		}
+	}
+	return parent, all
+}
+
+func TestAStudiedBoundFormShowsOnlyItsKeys(t *testing.T) {
+	parent, all := studiedParentDeltas(t, []string{"mantra"})
+	if d, ok := all[parent+".mantra"]; !ok || string(d.Value) != `"busy"` {
+		t.Fatalf("mantra missing: %v", all)
+	}
+	for k := range all {
+		if strings.HasPrefix(k, parent+".system.") || strings.HasPrefix(k, parent+".comments") {
+			t.Fatalf("%s shown outside --keys mantra", k)
+		}
+	}
+
+	parent, all = studiedParentDeltas(t, nil)
+	if _, ok := all[parent+".comments.c1.body"]; !ok {
+		t.Fatalf("control: without --keys the comment shows: %v", all)
+	}
+	for k := range all {
+		if strings.HasPrefix(k, parent+".system.") {
+			t.Fatalf("%s shown without --keys", k)
+		}
 	}
 }

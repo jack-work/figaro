@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -51,6 +52,7 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 		lastStudy[k] = v
 	}
 	studied := map[string]*studiedForm{}
+	observer := observerState{b: b, id: ariaID}
 
 	for _, entry := range entries {
 		if entry.Payload.Role == message.RoleGenesis {
@@ -67,6 +69,7 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 			if ps, err := b.FormPatchesBetween(ariaID, lastForm, entry.FormChannelVersion); err == nil {
 				for _, vp := range ps {
 					foldPatch(deltas, ariaID, livedoc.FormBound, vp.Patch)
+					observer.advance(vp.Patch)
 				}
 			}
 			lastForm = entry.FormChannelVersion
@@ -88,8 +91,9 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[me
 			if sf.lib == nil {
 				continue
 			}
+			keys := observer.keysAt(entry.FormChannelVersion, fid)
 			for _, vp := range sf.lib.PatchesBetween(prev, upTo) {
-				foldStudied(deltas, fid, sf, vp.Patch)
+				foldStudied(deltas, fid, sf, keys, vp.Patch)
 			}
 		}
 
@@ -145,7 +149,7 @@ func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.
 
 // foldStudied strips libretto machinery; the death arrives as FormDeleted on
 // the form itself rather than as a key.
-func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedForm, p message.Patch) {
+func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedForm, keys []string, p message.Patch) {
 	kind := livedoc.FormStudied
 	if sf.role {
 		kind = livedoc.FormRole
@@ -161,7 +165,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 			}
 			continue
 		}
-		if store.HiddenLibrettoKey(k) {
+		if store.HiddenLibrettoKey(k) || !store.StudyKeyShown(k, keys) {
 			continue
 		}
 		put(deltas, fid+"."+k, livedoc.FormDelta{Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: fid})
@@ -171,7 +175,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 			continue
 		}
 		k := ent.Key
-		if store.HiddenLibrettoKey(k) || k == store.KeyLibrettoAlive {
+		if store.HiddenLibrettoKey(k) || k == store.KeyLibrettoAlive || !store.StudyKeyShown(k, keys) {
 			continue
 		}
 		put(deltas, fid+"."+k, livedoc.FormDelta{Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: fid})
@@ -283,4 +287,38 @@ func put(deltas map[string]livedoc.FormDelta, key string, d livedoc.FormDelta) {
 		d.Prev = prior.Prev
 	}
 	deltas[key] = d
+}
+
+type formStateAt interface {
+	FormStateAt(ariaID string, version uint64) (form.Snapshot, error)
+}
+
+// observerState is the observer's bound form as of the record being folded,
+// read once and advanced by the patches the loop already holds.
+type observerState struct {
+	b      Backend
+	id     string
+	snap   form.Snapshot
+	loaded bool
+}
+
+func (o *observerState) advance(p message.Patch) {
+	if o.loaded {
+		o.snap = o.snap.Apply(p)
+	}
+}
+
+func (o *observerState) keysAt(version uint64, fid string) []string {
+	if !o.loaded {
+		at, ok := o.b.(formStateAt)
+		if !ok {
+			return nil
+		}
+		snap, err := at.FormStateAt(o.id, version)
+		if err != nil {
+			return nil
+		}
+		o.snap, o.loaded = snap, true
+	}
+	return store.StudyKeys(o.snap, fid)
 }
